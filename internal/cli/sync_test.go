@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,12 @@ func TestSyncOneFile_RestoresProblemSemanticEnvelopeFromCarrierBlock(t *testing.
 	}
 	if fields.Signal != "Markdown carrier must restore structured_data into SQLite." {
 		t.Fatalf("signal = %q", fields.Signal)
+	}
+	if fields.Semantic.PublicationUnit.SourceEditionPin.Hash != fields.Semantic.SemanticEdition.Hash {
+		t.Fatalf("source edition pin = %q, want %q", fields.Semantic.PublicationUnit.SourceEditionPin.Hash, fields.Semantic.SemanticEdition.Hash)
+	}
+	if fields.Semantic.PublicationUnit.PublicationHash == "" || fields.Semantic.PublicationUnit.CarrierHash == "" {
+		t.Fatalf("publication unit missing hashes: %+v", fields.Semantic.PublicationUnit)
 	}
 }
 
@@ -99,5 +106,49 @@ Old markdown has no structured data carrier block.
 	}
 	if len(fields.Semantic.Warnings) == 0 {
 		t.Fatal("legacy import should carry audit warning")
+	}
+	if len(fields.Semantic.PublicationUnit.Losses) == 0 {
+		t.Fatalf("legacy import should expose publication loss: %+v", fields.Semantic.PublicationUnit)
+	}
+}
+
+func TestSyncOneFile_RejectsUnknownProblemSemanticSchema(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+	filePath := filepath.Join(t.TempDir(), "prob-unknown-schema.md")
+	now := time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC).Format(time.RFC3339)
+
+	content := `---
+id: prob-unknown-schema
+kind: ProblemCard
+version: 1
+status: active
+title: Unknown schema
+created_at: ` + now + `
+updated_at: ` + now + `
+---
+
+# Unknown schema
+
+## Signal
+
+Do not import future semantic envelopes as exact.
+` + artifact.RenderStructuredDataBlock(`{
+  "signal": "Do not import future semantic envelopes as exact.",
+  "semantic": {
+    "schema_version": 999,
+    "status": "exact"
+  }
+}`)
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := syncOneFile(ctx, store, filePath)
+	if err == nil {
+		t.Fatal("expected unknown schema sync to fail closed")
+	}
+	if !strings.Contains(err.Error(), "unsupported problem semantic schema_version 999") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }

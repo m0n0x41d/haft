@@ -76,6 +76,15 @@ func TestFrameProblem_Success(t *testing.T) {
 	if semantic.CarrierBinding.SourceOfTruth != "sqlite" {
 		t.Fatalf("source_of_truth = %q, want sqlite", semantic.CarrierBinding.SourceOfTruth)
 	}
+	if semantic.SemanticEdition.Hash == "" {
+		t.Fatal("semantic edition hash missing")
+	}
+	if semantic.PublicationUnit.SourceEditionPin.Hash != semantic.SemanticEdition.Hash {
+		t.Fatalf("source edition pin = %q, want %q", semantic.PublicationUnit.SourceEditionPin.Hash, semantic.SemanticEdition.Hash)
+	}
+	if semantic.PublicationUnit.PublicationHash == "" || semantic.PublicationUnit.CarrierHash == "" {
+		t.Fatalf("publication unit missing hashes: %+v", semantic.PublicationUnit)
+	}
 	if filePath == "" {
 		t.Error("file path should not be empty")
 	}

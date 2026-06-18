@@ -243,15 +243,35 @@ func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *tes
 	if semantic["status"] != string(artifact.SemanticStatusExact) {
 		t.Fatalf("semantic.status = %#v, want exact", semantic["status"])
 	}
+	publicationUnit := semantic["publication_unit"].(map[string]any)
+	if publicationUnit["publication_hash"] == "" || publicationUnit["carrier_hash"] == "" {
+		t.Fatalf("semantic publication_unit missing hashes: %#v", publicationUnit)
+	}
 
 	views := card["views"].(map[string]any)
 	working := views["working"].(map[string]any)
 	if working["semantic_status"] != string(artifact.SemanticStatusExact) {
 		t.Fatalf("working.semantic_status = %#v, want exact", working["semantic_status"])
 	}
+	if working["source_edition_hash"] == "" || working["publication_hash"] == "" {
+		t.Fatalf("working view missing source/publication hashes: %#v", working)
+	}
+	exact := views["exact"].(map[string]any)
+	if _, ok := exact["source_episteme"].(map[string]any); !ok {
+		t.Fatalf("exact view missing source_episteme: %#v", exact)
+	}
+	if _, ok := exact["publication_projection"].(map[string]any); !ok {
+		t.Fatalf("exact view missing publication_projection: %#v", exact)
+	}
+	if _, ok := exact["carrier_bytes"].(map[string]any); !ok {
+		t.Fatalf("exact view missing carrier_bytes: %#v", exact)
+	}
 	audit := views["audit"].(map[string]any)
 	if audit["semantic_status"] != string(artifact.SemanticStatusExact) {
 		t.Fatalf("audit.semantic_status = %#v, want exact", audit["semantic_status"])
+	}
+	if _, ok := audit["publication_unit"].(map[string]any); !ok {
+		t.Fatalf("audit view missing publication_unit: %#v", audit)
 	}
 }
 

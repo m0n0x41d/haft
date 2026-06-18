@@ -63,6 +63,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exposes the read-only claim register and advisory findings for mixed,
   unclassified, or unsupported declared claims; no prose is extracted into
   canonical claims.
+- **ProblemCard PublicationUnit v1.** Exact ProblemCard semantic envelopes now
+  carry source-edition pins, source/publication/carrier hashes, and explicit
+  omission/loss/recoverability fields. `haft_query(action="related")` exact and
+  audit views distinguish source episteme, publication projection, and carrier
+  bytes; markdown sync rejects future semantic/publication-unit schema versions
+  instead of importing them as exact.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

@@ -153,7 +153,7 @@ func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
 	for _, shape := range capability.InputContract.FieldShapes {
 		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
 	}
-	for _, want := range []string{"problem_card.semantic", "exact|legacy|degraded", "problem_card.views", "working", "audit"} {
+	for _, want := range []string{"problem_card.semantic", "publication_unit", "source_edition_pin", "problem_card.views", "source_episteme", "publication_projection", "carrier_bytes"} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("related field shapes missing %q:\n%s", want, fieldShapes)
 		}

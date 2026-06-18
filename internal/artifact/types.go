@@ -363,6 +363,7 @@ type SemanticEnvelope struct {
 	ReferenceScheme       ReferenceScheme       `json:"reference_scheme"`
 	CarrierBinding        CarrierBinding        `json:"carrier_binding"`
 	PublicationProjection PublicationProjection `json:"publication_projection"`
+	PublicationUnit       PublicationUnit       `json:"publication_unit"`
 	EvidencePathRefs      []string              `json:"evidence_path_refs,omitempty"`
 	Warnings              []string              `json:"warnings,omitempty"`
 }
@@ -380,6 +381,7 @@ type SemanticEditionRef struct {
 	Family    string `json:"family"`
 	Version   int    `json:"version"`
 	CreatedAt string `json:"created_at,omitempty"`
+	Hash      string `json:"hash,omitempty"`
 }
 
 type ReferenceScheme struct {
@@ -398,6 +400,34 @@ type PublicationProjection struct {
 	ProjectionKind string   `json:"projection_kind"`
 	Views          []string `json:"views,omitempty"`
 	SyncPolicy     string   `json:"sync_policy"`
+	Hash           string   `json:"hash,omitempty"`
+}
+
+type PublicationUnit struct {
+	SchemaVersion    int                       `json:"schema_version"`
+	SourceEditionPin SourceEditionPin          `json:"source_edition_pin"`
+	PublicationHash  string                    `json:"publication_hash"`
+	CarrierHash      string                    `json:"carrier_hash"`
+	OmittedFields    []string                  `json:"omitted_fields,omitempty"`
+	Losses           []PublicationLoss         `json:"losses,omitempty"`
+	Recoverability   PublicationRecoverability `json:"recoverability"`
+}
+
+type SourceEditionPin struct {
+	Ref    string `json:"ref"`
+	Hash   string `json:"hash,omitempty"`
+	Status string `json:"status"`
+}
+
+type PublicationLoss struct {
+	Field       string `json:"field"`
+	Reason      string `json:"reason"`
+	Recoverable bool   `json:"recoverable"`
+}
+
+type PublicationRecoverability struct {
+	Status    string   `json:"status"`
+	Mechanism []string `json:"mechanism,omitempty"`
 }
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.

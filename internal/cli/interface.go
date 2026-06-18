@@ -298,10 +298,10 @@ func haftInterfaceCatalog() []interfaceCapability {
 									"summary": "Lowest latency under the declared parity window.",
 								},
 							},
-							"incomparable":             []any{},
-							"policy_applied":           "Prefer the lowest-risk Pareto-front variant.",
+							"incomparable":              []any{},
+							"policy_applied":            "Prefer the lowest-risk Pareto-front variant.",
 							"legacy_recommendation_ref": "V1",
-							"recommendation_rationale": "V1 best satisfies the declared target under parity.",
+							"recommendation_rationale":  "V1 best satisfies the declared target under parity.",
 						},
 					},
 				},
@@ -558,13 +558,13 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "problem_card.semantic",
-						Shape: `{"status":"exact|legacy|degraded","profile":{"id":"...","hash":"sha256:..."}}`,
+						Shape: `{"status":"exact|legacy|degraded","profile":{"id":"...","hash":"sha256:..."},"publication_unit":{"source_edition_pin":{...},"publication_hash":"sha256:...","carrier_hash":"sha256:..."}}`,
 						Note:  "Semantic status is explicit; missing legacy envelopes are not promoted to exact.",
 					},
 					{
 						Field: "problem_card.views",
-						Shape: `{"working":{...},"exact":{...},"audit":{...}}`,
-						Note:  "working is compact; exact/audit expose semantic envelope, carrier binding, and provenance.",
+						Shape: `{"working":{...},"exact":{"source_episteme":{...},"publication_projection":{...},"carrier_bytes":{...}},"audit":{...}}`,
+						Note:  "working is compact; exact/audit split source episteme, publication projection, carrier bytes, and provenance.",
 					},
 				},
 				Notes: []string{

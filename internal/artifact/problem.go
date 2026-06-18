@@ -129,7 +129,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	}
 
 	// Populate structured data — canonical fields alongside markdown body
-	sd, _ := json.Marshal(ProblemFields{
+	fields := ProblemFields{
 		ProblemType:           problemType,
 		Signal:                input.Signal,
 		Constraints:           input.Constraints,
@@ -138,8 +138,9 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		Acceptance:            input.Acceptance,
 		BlastRadius:           input.BlastRadius,
 		Reversibility:         input.Reversibility,
-		Semantic:              semanticPtr(NewProblemSemanticEnvelope(id, now)),
-	})
+	}
+	fields.Semantic = semanticPtr(NewProblemSemanticEnvelopeForProblem(id, now, fields, a.Body))
+	sd, _ := json.Marshal(fields)
 	a.StructuredData = string(sd)
 
 	return a, nil
@@ -283,6 +284,7 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 		Dimensions: cloneDimensions(input.Dimensions),
 		ParityPlan: cloneParityPlan(parityPlan),
 	})
+	fields.Semantic = semanticPtr(NewProblemSemanticEnvelopeForProblem(a.Meta.ID, time.Now().UTC(), fields, a.Body))
 	sd, _ := json.Marshal(fields)
 	a.StructuredData = string(sd)
 

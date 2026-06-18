@@ -1967,33 +1967,46 @@ func artifactQueryContractPayload(item *artifact.Artifact) map[string]any {
 func artifactProblemSemanticViews(item *artifact.Artifact) map[string]any {
 	fields := item.UnmarshalProblemFields()
 	semantic := artifact.ProblemSemanticEnvelopeForArtifact(item)
+	carrierBytes := map[string]any{
+		"carrier_kind": semantic.CarrierBinding.CarrierKind,
+		"carrier_ref":  semantic.CarrierBinding.CarrierRef,
+		"hash":         semantic.PublicationUnit.CarrierHash,
+	}
 
 	return map[string]any{
 		"working": map[string]any{
-			"id":              item.Meta.ID,
-			"title":           item.Meta.Title,
-			"semantic_status": string(semantic.Status),
-			"profile_id":      semantic.Profile.ID,
-			"signal":          fields.Signal,
-			"acceptance":      fields.Acceptance,
+			"id":                  item.Meta.ID,
+			"title":               item.Meta.Title,
+			"semantic_status":     string(semantic.Status),
+			"profile_id":          semantic.Profile.ID,
+			"source_edition_hash": semantic.SemanticEdition.Hash,
+			"publication_hash":    semantic.PublicationUnit.PublicationHash,
+			"signal":              fields.Signal,
+			"acceptance":          fields.Acceptance,
 		},
 		"exact": map[string]any{
-			"id":                 item.Meta.ID,
-			"semantic":           semantic,
-			"problem_fields":     fields,
-			"carrier_binding":    semantic.CarrierBinding,
-			"reference_scheme":   semantic.ReferenceScheme,
-			"publication_policy": semantic.PublicationProjection,
+			"id":                     item.Meta.ID,
+			"semantic":               semantic,
+			"problem_fields":         fields,
+			"source_episteme":        semantic.SemanticEdition,
+			"publication_projection": semantic.PublicationProjection,
+			"publication_unit":       semantic.PublicationUnit,
+			"carrier_bytes":          carrierBytes,
+			"carrier_binding":        semantic.CarrierBinding,
+			"reference_scheme":       semantic.ReferenceScheme,
 		},
 		"audit": map[string]any{
-			"id":                 item.Meta.ID,
-			"semantic_status":    string(semantic.Status),
-			"profile":            semantic.Profile,
-			"semantic_edition":   semantic.SemanticEdition,
-			"carrier_binding":    semantic.CarrierBinding,
-			"reference_scheme":   semantic.ReferenceScheme,
-			"publication_policy": semantic.PublicationProjection,
-			"warnings":           semantic.Warnings,
+			"id":                     item.Meta.ID,
+			"semantic_status":        string(semantic.Status),
+			"profile":                semantic.Profile,
+			"source_episteme":        semantic.SemanticEdition,
+			"semantic_edition":       semantic.SemanticEdition,
+			"publication_projection": semantic.PublicationProjection,
+			"publication_unit":       semantic.PublicationUnit,
+			"carrier_bytes":          carrierBytes,
+			"carrier_binding":        semantic.CarrierBinding,
+			"reference_scheme":       semantic.ReferenceScheme,
+			"warnings":               semantic.Warnings,
 		},
 	}
 }

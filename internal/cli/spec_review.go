@@ -87,6 +87,7 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 		))
 	}
 	builder.WriteString("authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission\n")
+	builder.WriteString("state_readings: per-section profile names bearer, frame, use, and reopen_condition; not global ready/pass/current\n")
 
 	if len(packet.Findings) > 0 {
 		builder.WriteString("\nFindings:\n")

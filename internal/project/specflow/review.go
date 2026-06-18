@@ -60,10 +60,21 @@ type ReviewSection struct {
 	Frame         string                       `json:"frame"`
 	SystemFrame   project.SystemReferenceFrame `json:"system_frame"`
 	StrongerUse   string                       `json:"stronger_use"`
+	StateReading  StateReading                 `json:"state_reading"`
 	ClaimRegister ClaimRegisterSummary         `json:"claim_register"`
 	Claims        []ReviewClaim                `json:"claims,omitempty"`
 	Source        SourceSpan                   `json:"source"`
 	FindingCodes  []string                     `json:"finding_codes,omitempty"`
+}
+
+type StateReading struct {
+	SchemaVersion   int    `json:"schema_version"`
+	Profile         string `json:"profile"`
+	Bearer          string `json:"bearer"`
+	Frame           string `json:"frame"`
+	Use             string `json:"use"`
+	Reading         string `json:"reading"`
+	ReopenCondition string `json:"reopen_condition"`
 }
 
 type ReviewFinding struct {
@@ -393,6 +404,8 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 		claims[index].FindingCodes = reviewClaimFindingCodes(claims[index], findings)
 	}
 
+	strongerUse := sectionStrongerUse(findings)
+
 	return ReviewSection{
 		SectionID:     subject.section.ID,
 		Title:         subject.section.Title,
@@ -403,12 +416,35 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 		Bearer:        subject.bearer,
 		Frame:         subject.frame,
 		SystemFrame:   subject.section.SystemFrame,
-		StrongerUse:   sectionStrongerUse(findings),
+		StrongerUse:   strongerUse,
+		StateReading:  sectionStateReading(subject, strongerUse),
 		ClaimRegister: claimRegisterSummary(claims, findings),
 		Claims:        claims,
 		Source:        subject.source,
 		FindingCodes:  codes,
 	}
+}
+
+func sectionStateReading(subject reviewSubject, strongerUse string) StateReading {
+	return StateReading{
+		SchemaVersion:   1,
+		Profile:         "spec_semantic_review_v1",
+		Bearer:          subject.bearer,
+		Frame:           subject.frame,
+		Use:             strongerUse,
+		Reading:         strongerUse,
+		ReopenCondition: sectionReopenCondition(subject, strongerUse),
+	}
+}
+
+func sectionReopenCondition(subject reviewSubject, strongerUse string) string {
+	return fmt.Sprintf(
+		"reopen this %s reading if bearer %q, frame %q, use %q, carrier bytes, support refs, or valid_until/currentness change",
+		"spec_semantic_review_v1",
+		subject.bearer,
+		subject.frame,
+		strongerUse,
+	)
 }
 
 func reviewClaimFindingCodes(claim ReviewClaim, findings []ReviewFinding) []string {

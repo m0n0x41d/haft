@@ -36,6 +36,16 @@ func TestReviewSpecificationSet_FindsMissingBearerAndSupport(t *testing.T) {
 	if packet.Sections[0].StrongerUse != ReviewUseBlockedForStrongerUse {
 		t.Fatalf("stronger_use = %q, want %q", packet.Sections[0].StrongerUse, ReviewUseBlockedForStrongerUse)
 	}
+	reading := packet.Sections[0].StateReading
+	if reading.Profile != "spec_semantic_review_v1" {
+		t.Fatalf("state_reading.profile = %q", reading.Profile)
+	}
+	if reading.Bearer == "" || reading.Frame == "" || reading.Use == "" || reading.ReopenCondition == "" {
+		t.Fatalf("state_reading must name bearer/frame/use/reopen condition: %+v", reading)
+	}
+	if reading.Reading == "ready" || reading.Reading == "pass" || reading.Reading == "current" {
+		t.Fatalf("state_reading uses unqualified reading: %+v", reading)
+	}
 }
 
 func TestReviewSpecificationSet_BlocksFrameMismatch(t *testing.T) {

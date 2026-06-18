@@ -54,6 +54,12 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if section.SystemFrame.Kind != "target_system" || section.SystemFrame.Source == "" {
 		t.Fatalf("section system frame = %+v, want typed target_system frame", section.SystemFrame)
 	}
+	if section.StateReading.Profile != "spec_semantic_review_v1" {
+		t.Fatalf("state_reading = %+v, want spec semantic review profile", section.StateReading)
+	}
+	if section.StateReading.Bearer == "" || section.StateReading.Frame == "" || section.StateReading.Use == "" || section.StateReading.ReopenCondition == "" {
+		t.Fatalf("state_reading must qualify bearer/frame/use/reopen condition: %+v", section.StateReading)
+	}
 	if len(section.Claims) != 1 || section.Claims[0].Class != specflow.ReviewClaimClassLaw {
 		t.Fatalf("section claims = %#v, want one L claim", section.Claims)
 	}
@@ -85,6 +91,9 @@ func TestRunSpecReviewSummaryNamesAdvisoryBoundary(t *testing.T) {
 	}
 	if !strings.Contains(result, "not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission") {
 		t.Fatalf("summary missing authority disclaimer:\n%s", result)
+	}
+	if !strings.Contains(result, "state_readings: per-section profile names bearer, frame, use, and reopen_condition") {
+		t.Fatalf("summary missing qualified state readings line:\n%s", result)
 	}
 	if !strings.Contains(result, "claims: explicit=1 declared=1") {
 		t.Fatalf("summary missing claim register counts:\n%s", result)

@@ -93,6 +93,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   option/basis/rule fields from explicit DRR inputs, while legacy or minimal
   `choice_result` carriers continue to parse as compatibility projections and
   no ComparisonResult `selected_ref` is promoted into a bound choice.
+- **StateReadings v1 for spec semantic review.** `haft spec review --json`
+  now emits per-section `state_reading` objects that name the reading profile,
+  bearer, frame, use, reading, and reopen condition. The compact text summary
+  names this qualified-reading policy instead of implying global
+  ready/pass/current authority.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

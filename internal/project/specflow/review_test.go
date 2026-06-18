@@ -37,7 +37,7 @@ func TestReviewSpecificationSet_FindsMissingBearerAndSupport(t *testing.T) {
 		t.Fatalf("stronger_use = %q, want %q", packet.Sections[0].StrongerUse, ReviewUseBlockedForStrongerUse)
 	}
 	reading := packet.Sections[0].StateReading
-	if reading.Profile != "spec_semantic_review_v1" {
+	if reading.Profile != ReviewProfileSemanticV2 {
 		t.Fatalf("state_reading.profile = %q", reading.Profile)
 	}
 	if reading.Bearer == "" || reading.Frame == "" || reading.Use == "" || reading.ReopenCondition == "" {
@@ -46,6 +46,24 @@ func TestReviewSpecificationSet_FindsMissingBearerAndSupport(t *testing.T) {
 	if reading.Reading == "ready" || reading.Reading == "pass" || reading.Reading == "current" {
 		t.Fatalf("state_reading uses unqualified reading: %+v", reading)
 	}
+}
+
+func TestReviewSpecificationSet_ReturnsV2ProfileModelBoundaries(t *testing.T) {
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{})
+
+	if packet.Profile.ID != ReviewProfileSemanticV2 {
+		t.Fatalf("profile.id = %q, want %q", packet.Profile.ID, ReviewProfileSemanticV2)
+	}
+	if packet.Profile.Authority != ReviewAuthority {
+		t.Fatalf("profile.authority = %q, want %q", packet.Profile.Authority, ReviewAuthority)
+	}
+
+	assertReviewProfileInput(t, packet.Profile, "claim_register_v1", ReviewModelDispositionUsed)
+	assertReviewProfileInput(t, packet.Profile, "system_reference_frame_v1", ReviewModelDispositionUsed)
+	assertReviewProfileInput(t, packet.Profile, "state_readings_v1", ReviewModelDispositionUsed)
+	assertReviewProfileInput(t, packet.Profile, "publication_unit_v1", ReviewModelDispositionBoundaryPreserved)
+	assertReviewProfileInput(t, packet.Profile, "transformation_record_v1", ReviewModelDispositionBoundaryPreserved)
+	assertReviewProfileInput(t, packet.Profile, "value_slice", ReviewModelDispositionAbstain)
 }
 
 func TestReviewSpecificationSet_BlocksFrameMismatch(t *testing.T) {
@@ -72,6 +90,31 @@ func TestReviewSpecificationSet_BlocksFrameMismatch(t *testing.T) {
 	})
 
 	assertReviewFinding(t, packet, "system_frame_mismatch", ReviewSeverityBlockedForStrongerUse)
+}
+
+func TestReviewSpecificationSet_BlocksLicensingPlatformWithoutExplicitClaims(t *testing.T) {
+	section := reviewSectionFixture(
+		"ES.licensing-platform.001",
+		"enabling-system",
+		"enabling.licensing_platform",
+		"Licensing platform policy",
+		"definition",
+		"object",
+		nil,
+	)
+	section.Claims = nil
+	section.EvidenceRequired = []project.SpecEvidenceRequirement{
+		{Kind: "review", Description: "Human confirms the section still holds."},
+	}
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{section},
+	})
+
+	assertReviewFinding(t, packet, "unknown_high_risk_without_explicit_claims", ReviewSeverityBlockedForStrongerUse)
+	if packet.Sections[0].StrongerUse != ReviewUseBlockedForStrongerUse {
+		t.Fatalf("stronger_use = %q, want blocked", packet.Sections[0].StrongerUse)
+	}
 }
 
 func TestReviewSpecificationSet_DoesNotFalseBlockLegitimateMultiView(t *testing.T) {
@@ -106,6 +149,26 @@ func TestReviewSpecificationSet_DoesNotFalseBlockLegitimateMultiView(t *testing.
 	if packet.Summary.CheckedSections != 2 {
 		t.Fatalf("checked_sections = %d, want 2", packet.Summary.CheckedSections)
 	}
+}
+
+func TestReviewSpecificationSet_BlocksDescriptionTreatedAsAuthority(t *testing.T) {
+	section := reviewSectionFixture(
+		"ES.explanation-authority.001",
+		"enabling-system",
+		"enabling.agent_policy",
+		"Explanation attached to work authority",
+		"explanation",
+		"work",
+		nil,
+	)
+	section.EvidenceRequired = nil
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{section},
+	})
+
+	assertReviewFinding(t, packet, "authority_like_without_evidence_requirement", ReviewSeverityBlockedForStrongerUse)
+	assertReviewFinding(t, packet, "description_use_confusion", ReviewSeverityWarn)
 }
 
 func TestReviewSpecificationSet_UsesDeclaredFrameInsteadOfKindPrefix(t *testing.T) {
@@ -288,4 +351,28 @@ func assertNoReviewFinding(
 			t.Fatalf("unexpected finding %q in %#v", ruleID, packet.Findings)
 		}
 	}
+}
+
+func assertReviewProfileInput(
+	t *testing.T,
+	profile ReviewProfile,
+	name string,
+	disposition string,
+) {
+	t.Helper()
+
+	for _, input := range profile.ModelInputs {
+		if input.Name != name {
+			continue
+		}
+		if input.Disposition != disposition {
+			t.Fatalf("%s disposition = %q, want %q", name, input.Disposition, disposition)
+		}
+		if input.Reading == "" {
+			t.Fatalf("%s reading is empty in %+v", name, profile)
+		}
+		return
+	}
+
+	t.Fatalf("profile input %q not found in %+v", name, profile)
 }

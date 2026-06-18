@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	ReviewKindSpecSemantic = "spec_semantic_review"
-	ReviewAuthority        = "advisory_only"
+	ReviewKindSpecSemantic  = "spec_semantic_review"
+	ReviewProfileSemanticV2 = "spec_semantic_review_v2"
+	ReviewAuthority         = "advisory_only"
 
 	ReviewSeverityInfo                  = "info"
 	ReviewSeverityWarn                  = "warn"
@@ -22,14 +23,32 @@ const (
 	ReviewUseBlockedForAuthorityUse   = "blocked_for_authority_use"
 	ReviewUseBlockedForStrongerUse    = "blocked_for_stronger_use"
 	ReviewUseAdvisoryFindingInputOnly = "advisory_finding_input_only"
+
+	ReviewModelDispositionUsed              = "used"
+	ReviewModelDispositionBoundaryPreserved = "boundary_preserved"
+	ReviewModelDispositionAbstain           = "abstain"
 )
 
 type ReviewPacket struct {
 	ReviewKind string          `json:"review_kind"`
 	Authority  string          `json:"authority"`
+	Profile    ReviewProfile   `json:"profile"`
 	Summary    ReviewSummary   `json:"summary"`
 	Sections   []ReviewSection `json:"sections"`
 	Findings   []ReviewFinding `json:"findings"`
+}
+
+type ReviewProfile struct {
+	SchemaVersion int                `json:"schema_version"`
+	ID            string             `json:"id"`
+	Authority     string             `json:"authority"`
+	ModelInputs   []ReviewModelInput `json:"model_inputs"`
+}
+
+type ReviewModelInput struct {
+	Name        string `json:"name"`
+	Disposition string `json:"disposition"`
+	Reading     string `json:"reading"`
 }
 
 type ReviewSummary struct {
@@ -115,6 +134,7 @@ func ReviewSpecificationSet(set project.ProjectSpecificationSet) ReviewPacket {
 	packet := ReviewPacket{
 		ReviewKind: ReviewKindSpecSemantic,
 		Authority:  ReviewAuthority,
+		Profile:    semanticReviewProfile(),
 		Summary: ReviewSummary{
 			TotalSections:   len(set.Sections),
 			ActiveSections:  len(subjects),
@@ -133,6 +153,46 @@ func ReviewSpecificationSet(set project.ProjectSpecificationSet) ReviewPacket {
 	packet.Summary = summarizeReview(packet)
 
 	return packet
+}
+
+func semanticReviewProfile() ReviewProfile {
+	return ReviewProfile{
+		SchemaVersion: 1,
+		ID:            ReviewProfileSemanticV2,
+		Authority:     ReviewAuthority,
+		ModelInputs: []ReviewModelInput{
+			{
+				Name:        "claim_register_v1",
+				Disposition: ReviewModelDispositionUsed,
+				Reading:     "explicit SpecSection claims are classified as L/A/D/E and checked for claim-scoped support",
+			},
+			{
+				Name:        "system_reference_frame_v1",
+				Disposition: ReviewModelDispositionUsed,
+				Reading:     "declared target/enabling system_frame drives frame diagnostics",
+			},
+			{
+				Name:        "state_readings_v1",
+				Disposition: ReviewModelDispositionUsed,
+				Reading:     "per-section readings name bearer, frame, use, and reopen condition",
+			},
+			{
+				Name:        "publication_unit_v1",
+				Disposition: ReviewModelDispositionBoundaryPreserved,
+				Reading:     "review preserves source/publication/carrier boundaries and does not treat carrier bytes as semantic authority",
+			},
+			{
+				Name:        "transformation_record_v1",
+				Disposition: ReviewModelDispositionBoundaryPreserved,
+				Reading:     "review requires transformation authority to come from explicit referenced records, not descriptive spec prose",
+			},
+			{
+				Name:        "value_slice",
+				Disposition: ReviewModelDispositionAbstain,
+				Reading:     "no first-class ValueSlice model exists in this slice; high-risk value/platform sections block stronger use until explicit claims and support exist",
+			},
+		},
+	}
 }
 
 func reviewSubjects(set project.ProjectSpecificationSet) []reviewSubject {
@@ -208,6 +268,7 @@ func reviewSubjectFindings(subject reviewSubject) []ReviewFinding {
 	findings = append(findings, claimRegisterFindings(subject)...)
 	findings = append(findings, strongClaimSupportFindings(subject)...)
 	findings = append(findings, authoritySupportFindings(subject)...)
+	findings = append(findings, highRiskUnknownFindings(subject)...)
 	findings = append(findings, mixedStatementLayerFindings(subject)...)
 
 	return findings
@@ -346,6 +407,30 @@ func authoritySupportFindings(subject reviewSubject) []ReviewFinding {
 	}
 }
 
+func highRiskUnknownFindings(subject reviewSubject) []ReviewFinding {
+	fieldPath := sectionHighRiskSignalFieldPath(subject.section)
+	if fieldPath == "" {
+		return nil
+	}
+	if sectionHasExplicitClaims(subject.section) {
+		return nil
+	}
+
+	return []ReviewFinding{
+		newReviewFinding(
+			subject,
+			"unknown_high_risk_without_explicit_claims",
+			ReviewSeverityBlockedForStrongerUse,
+			"high-risk SpecSection has no explicit claim register entries",
+			"Licensing, legal, compliance, privacy, and security platform sections can affect external obligations; prose alone must not become authority.",
+			"Unknown high-risk use must abstain",
+			"Declare explicit L/A/D/E `claims` with claim-scoped support refs before using this section as authority, admission, or execution input.",
+			ReviewUseBlockedForStrongerUse,
+			fieldPath,
+		),
+	}
+}
+
 func mixedStatementLayerFindings(subject reviewSubject) []ReviewFinding {
 	statementType := strings.ToLower(strings.TrimSpace(subject.section.StatementType))
 	claimLayer := strings.ToLower(strings.TrimSpace(subject.section.ClaimLayer))
@@ -428,7 +513,7 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 func sectionStateReading(subject reviewSubject, strongerUse string) StateReading {
 	return StateReading{
 		SchemaVersion:   1,
-		Profile:         "spec_semantic_review_v1",
+		Profile:         ReviewProfileSemanticV2,
 		Bearer:          subject.bearer,
 		Frame:           subject.frame,
 		Use:             strongerUse,
@@ -440,7 +525,7 @@ func sectionStateReading(subject reviewSubject, strongerUse string) StateReading
 func sectionReopenCondition(subject reviewSubject, strongerUse string) string {
 	return fmt.Sprintf(
 		"reopen this %s reading if bearer %q, frame %q, use %q, carrier bytes, support refs, or valid_until/currentness change",
-		"spec_semantic_review_v1",
+		ReviewProfileSemanticV2,
 		subject.bearer,
 		subject.frame,
 		strongerUse,
@@ -608,6 +693,56 @@ func sectionHasSupportRefs(section project.SpecSection) bool {
 		return true
 	}
 	if len(section.EvidenceRequired) > 0 {
+		return true
+	}
+
+	return false
+}
+
+type reviewStructuredTextField struct {
+	fieldPath string
+	value     string
+}
+
+func sectionHighRiskSignalFieldPath(section project.SpecSection) string {
+	fields := []reviewStructuredTextField{
+		{fieldPath: "kind", value: section.Kind},
+		{fieldPath: "title", value: section.Title},
+		{fieldPath: "spec", value: section.Spec},
+		{fieldPath: "statement_type", value: section.StatementType},
+		{fieldPath: "claim_layer", value: section.ClaimLayer},
+	}
+	for index, term := range section.Terms {
+		fields = append(fields, reviewStructuredTextField{
+			fieldPath: fmt.Sprintf("terms[%d]", index),
+			value:     term,
+		})
+	}
+	for _, field := range fields {
+		if !textHasHighRiskSignal(field.value) {
+			continue
+		}
+
+		return field.fieldPath
+	}
+
+	return ""
+}
+
+func textHasHighRiskSignal(value string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	signals := []string{
+		"licens",
+		"legal",
+		"compliance",
+		"privacy",
+		"security",
+	}
+	for _, signal := range signals {
+		if !strings.Contains(normalized, signal) {
+			continue
+		}
+
 		return true
 	}
 

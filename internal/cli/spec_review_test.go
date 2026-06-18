@@ -41,6 +41,12 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if packet.Authority != specflow.ReviewAuthority {
 		t.Fatalf("authority = %q, want %q", packet.Authority, specflow.ReviewAuthority)
 	}
+	if packet.Profile.ID != specflow.ReviewProfileSemanticV2 {
+		t.Fatalf("profile.id = %q, want %q", packet.Profile.ID, specflow.ReviewProfileSemanticV2)
+	}
+	if specReviewModelDisposition(packet.Profile, "value_slice") != specflow.ReviewModelDispositionAbstain {
+		t.Fatalf("profile value_slice disposition = %+v", packet.Profile)
+	}
 	if packet.Summary.CheckedSections != 2 {
 		t.Fatalf("checked_sections = %d, want 2", packet.Summary.CheckedSections)
 	}
@@ -54,7 +60,7 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if section.SystemFrame.Kind != "target_system" || section.SystemFrame.Source == "" {
 		t.Fatalf("section system frame = %+v, want typed target_system frame", section.SystemFrame)
 	}
-	if section.StateReading.Profile != "spec_semantic_review_v1" {
+	if section.StateReading.Profile != specflow.ReviewProfileSemanticV2 {
 		t.Fatalf("state_reading = %+v, want spec semantic review profile", section.StateReading)
 	}
 	if section.StateReading.Bearer == "" || section.StateReading.Frame == "" || section.StateReading.Use == "" || section.StateReading.ReopenCondition == "" {
@@ -97,6 +103,9 @@ func TestRunSpecReviewSummaryNamesAdvisoryBoundary(t *testing.T) {
 	}
 	if !strings.Contains(result, "claims: explicit=1 declared=1") {
 		t.Fatalf("summary missing claim register counts:\n%s", result)
+	}
+	if !strings.Contains(result, "profile: spec_semantic_review_v2; value_slice=abstain") {
+		t.Fatalf("summary missing profile boundary:\n%s", result)
 	}
 }
 
@@ -229,4 +238,16 @@ func specReviewSectionByID(t *testing.T, packet specflow.ReviewPacket, sectionID
 
 	t.Fatalf("section %q not found in %#v", sectionID, packet.Sections)
 	return specflow.ReviewSection{}
+}
+
+func specReviewModelDisposition(profile specflow.ReviewProfile, name string) string {
+	for _, input := range profile.ModelInputs {
+		if input.Name != name {
+			continue
+		}
+
+		return input.Disposition
+	}
+
+	return ""
 }

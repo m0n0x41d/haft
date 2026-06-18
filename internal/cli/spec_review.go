@@ -86,6 +86,7 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 			packet.Summary.MissingSupportClaims,
 		))
 	}
+	builder.WriteString(formatSpecReviewProfile(packet.Profile))
 	builder.WriteString("authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission\n")
 	builder.WriteString("state_readings: per-section profile names bearer, frame, use, and reopen_condition; not global ready/pass/current\n")
 
@@ -100,6 +101,32 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 	_, err := io.WriteString(w, builder.String())
 
 	return err
+}
+
+func formatSpecReviewProfile(profile specflow.ReviewProfile) string {
+	id := strings.TrimSpace(profile.ID)
+	if id == "" {
+		return ""
+	}
+
+	return fmt.Sprintf(
+		"profile: %s; value_slice=%s\n",
+		id,
+		reviewModelDisposition(profile, "value_slice"),
+	)
+}
+
+func reviewModelDisposition(profile specflow.ReviewProfile, name string) string {
+	needle := strings.TrimSpace(name)
+	for _, input := range profile.ModelInputs {
+		if strings.TrimSpace(input.Name) != needle {
+			continue
+		}
+
+		return strings.TrimSpace(input.Disposition)
+	}
+
+	return "unknown"
 }
 
 func formatSpecReviewFinding(finding specflow.ReviewFinding) string {

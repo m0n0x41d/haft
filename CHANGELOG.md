@@ -98,6 +98,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   bearer, frame, use, reading, and reopen condition. The compact text summary
   names this qualified-reading policy instead of implying global
   ready/pass/current authority.
+- **Spec semantic review v2 profile.** `haft spec review` now exposes a
+  read-only `spec_semantic_review_v2` profile that names which semantic-spine
+  inputs are used, boundary-preserved, or explicitly abstained. The review uses
+  ClaimRegister, SystemReferenceFrame, and StateReadings signals, preserves
+  PublicationUnit and TransformationRecord authority boundaries, and blocks
+  high-risk licensing/legal/compliance/privacy/security sections from stronger
+  use until explicit L/A/D/E claims and support refs exist.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

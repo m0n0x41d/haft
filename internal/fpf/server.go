@@ -447,7 +447,11 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"parity_plan": parityPlanMCPSchema("(compare) Structured parity plan. REQUIRED for deep mode: baseline_set, window, budget, and missing_data_policy MUST be present. Standard/tactical modes accept any subset and warn on gaps. Per FPF G.9:4.2."),
 					"selected_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) Advisory recommendation variant ID; the human still chooses",
+						"description": "(compare) Legacy advisory recommendation variant ID; not a ChoiceResult and not a bound human choice",
+					},
+					"legacy_recommendation_ref": map[string]string{
+						"type":        "string",
+						"description": "(compare) Preferred alias for selected_ref. Advisory recommendation only; the human still chooses via h-decide.",
 					},
 					"recommendation_rationale": map[string]string{
 						"type":        "string",
@@ -483,6 +487,27 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"why_selected": map[string]string{
 						"type":        "string",
 						"description": "(decide) Why this variant was chosen",
+					},
+					"choice_result": map[string]interface{}{
+						"type":        "object",
+						"description": "(decide) Exact human choice outcome. ComparisonResult never creates this; h-decide may carry choose_now/reject_current_set/probe_again/reroute.",
+						"properties": map[string]interface{}{
+							"subject_ref": map[string]string{
+								"type":        "string",
+								"description": "Chooser-bearing human/team/system, not the decision question text",
+							},
+							"next_move": map[string]interface{}{
+								"type": "string",
+								"enum": []interface{}{"choose_now", "reject_current_set", "probe_again", "reroute"},
+							},
+							"variant_ref": map[string]string{"type": "string"},
+							"problem_refs": map[string]interface{}{
+								"type":  "array",
+								"items": map[string]string{"type": "string"},
+							},
+							"portfolio_ref": map[string]string{"type": "string"},
+							"reason":        map[string]string{"type": "string"},
+						},
 					},
 					"selection_policy": map[string]string{
 						"type":        "string",

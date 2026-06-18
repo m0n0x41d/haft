@@ -234,7 +234,8 @@ func writeComparePresentationRules(b *strings.Builder) {
   4. Trade-off explanation — for each Pareto-front variant, explain what it gives up and what it gains.
   5. Advisory recommendation — state which variant you recommend, why, and what risk the human accepts if they choose it.
 - Recommendation is advisory. The human choice is separate.
-- selected_ref means "recommended candidate for the human to consider", not "the human already selected this variant".
+- selected_ref is the legacy name for legacy_recommendation_ref: the recommended candidate for the human to consider, not proof that the human already selected it.
+- ChoiceResult belongs to h-decide/manual choice, never to compare.
 - In delegated reasoning, ask the user to choose only AFTER the Pareto front and trade-offs are explained.
 `)
 }

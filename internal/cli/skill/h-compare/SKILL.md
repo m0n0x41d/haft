@@ -163,6 +163,11 @@ Surface:
 - Recommendation (advisory only — the operator decides via /h-decide)
 - Soft warnings from the kernel (read them — they may flag rigged comparison: missing parity, single-dimension, selected-not-in-non-dominated, etc.)
 
+`selected_ref` is a legacy advisory recommendation field, equivalent in
+meaning to `legacy_recommendation_ref`. It is NOT a `ChoiceResult`, NOT a
+human selection, and NOT execution authority. The binding choice happens only
+through manual `/h-decide`.
+
 **Re-grounding discipline (FPF A.7).** Every variant label (`V1`, `V2`,
 …) and artifact ID (`sol-...`, `prob-...`) in your Pareto-front summary,
 dominance explanation, and recommendation paragraphs MUST be paired with

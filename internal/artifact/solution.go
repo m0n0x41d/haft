@@ -1660,6 +1660,7 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
 		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
 		PolicyApplied:           result.PolicyApplied,
+		LegacyRecommendationRef: result.LegacyRecommendationRef,
 		SelectedRef:             result.SelectedRef,
 		RecommendationRationale: result.RecommendationRationale,
 		ParityPlan:              cloneParityPlan(result.ParityPlan),
@@ -1680,6 +1681,35 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	}
 
 	return cloned
+}
+
+func normalizeComparisonRecommendationAlias(result ComparisonResult) ComparisonResult {
+	selectedRef := strings.TrimSpace(result.SelectedRef)
+	legacyRecommendationRef := strings.TrimSpace(result.LegacyRecommendationRef)
+
+	recommendationRef := selectedRef
+	if recommendationRef == "" {
+		recommendationRef = legacyRecommendationRef
+	}
+
+	result.SelectedRef = recommendationRef
+	result.LegacyRecommendationRef = recommendationRef
+	return result
+}
+
+func normalizeComparisonRecommendationAliasStrict(result ComparisonResult) (ComparisonResult, error) {
+	selectedRef := strings.TrimSpace(result.SelectedRef)
+	legacyRecommendationRef := strings.TrimSpace(result.LegacyRecommendationRef)
+
+	if selectedRef != "" && legacyRecommendationRef != "" && selectedRef != legacyRecommendationRef {
+		return ComparisonResult{}, fmt.Errorf(
+			"selected_ref %q conflicts with legacy_recommendation_ref %q — comparison may recommend only one advisory candidate",
+			selectedRef,
+			legacyRecommendationRef,
+		)
+	}
+
+	return normalizeComparisonRecommendationAlias(result), nil
 }
 
 func cloneDominatedVariantExplanations(notes []DominatedVariantExplanation) []DominatedVariantExplanation {
@@ -1729,6 +1759,11 @@ func normalizeParetoTradeoffNotes(notes []ParetoTradeoffNote, aliasMap map[strin
 }
 
 func normalizeComparisonVariantReferences(result ComparisonResult, identities []portfolioVariantIdentity) (ComparisonResult, error) {
+	result, err := normalizeComparisonRecommendationAliasStrict(result)
+	if err != nil {
+		return ComparisonResult{}, err
+	}
+
 	aliasMap := portfolioVariantAliasMap(identities)
 	normalized := ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
@@ -1736,10 +1771,12 @@ func normalizeComparisonVariantReferences(result ComparisonResult, identities []
 		DominatedVariants:       normalizeDominatedVariantExplanations(result.DominatedVariants, aliasMap),
 		ParetoTradeoffs:         normalizeParetoTradeoffNotes(result.ParetoTradeoffs, aliasMap),
 		PolicyApplied:           result.PolicyApplied,
+		LegacyRecommendationRef: normalizeVariantReference(result.LegacyRecommendationRef, aliasMap),
 		SelectedRef:             normalizeVariantReference(result.SelectedRef, aliasMap),
 		RecommendationRationale: strings.TrimSpace(result.RecommendationRationale),
 		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
+	normalized = normalizeComparisonRecommendationAlias(normalized)
 
 	normalized.NonDominatedSet = normalizeVariantReferences(result.NonDominatedSet, aliasMap)
 	normalized.NonDominatedSet = dedupeTrimmedStrings(normalized.NonDominatedSet)
@@ -1820,10 +1857,12 @@ func normalizeComparisonResult(result ComparisonResult, comparedVariants []strin
 		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
 		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
 		PolicyApplied:           result.PolicyApplied,
+		LegacyRecommendationRef: result.LegacyRecommendationRef,
 		SelectedRef:             result.SelectedRef,
 		RecommendationRationale: result.RecommendationRationale,
 		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
+	normalized = normalizeComparisonRecommendationAlias(normalized)
 
 	for _, pair := range result.Incomparable {
 		normalized.Incomparable = append(normalized.Incomparable, append([]string(nil), pair...))

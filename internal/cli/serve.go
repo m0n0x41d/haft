@@ -877,6 +877,9 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		if v, ok := args["selected_ref"].(string); ok {
 			input.Results.SelectedRef = v
 		}
+		if v, ok := args["legacy_recommendation_ref"].(string); ok {
+			input.Results.LegacyRecommendationRef = v
+		}
 		if v, ok := args["recommendation_rationale"].(string); ok {
 			input.Results.RecommendationRationale = v
 		}
@@ -1019,6 +1022,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 		if input.Predictions, err = parsePredictionInputsFromArgs(args, "predictions"); err != nil {
+			return "", "", err
+		}
+		if _, err := parseJSONArg(args, "choice_result", &input.ChoiceResult); err != nil {
 			return "", "", err
 		}
 		if input.ProblemRef == "" {

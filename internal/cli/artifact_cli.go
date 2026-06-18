@@ -55,6 +55,7 @@ type artifactCompareFileInput struct {
 	DominatedVariants       []artifact.DominatedVariantExplanation `json:"dominated_variants,omitempty"`
 	ParetoTradeoffs         []artifact.ParetoTradeoffNote          `json:"pareto_tradeoffs,omitempty"`
 	PolicyApplied           string                                 `json:"policy_applied,omitempty"`
+	LegacyRecommendationRef string                                 `json:"legacy_recommendation_ref,omitempty"`
 	SelectedRef             string                                 `json:"selected_ref,omitempty"`
 	RecommendationRationale string                                 `json:"recommendation_rationale,omitempty"`
 	ParityPlan              *artifact.ParityPlan                   `json:"parity_plan,omitempty"`
@@ -207,6 +208,9 @@ func (input artifactCompareFileInput) toCompareInput() artifact.CompareInput {
 	}
 	if results.PolicyApplied == "" {
 		results.PolicyApplied = input.PolicyApplied
+	}
+	if results.LegacyRecommendationRef == "" {
+		results.LegacyRecommendationRef = input.LegacyRecommendationRef
 	}
 	if results.SelectedRef == "" {
 		results.SelectedRef = input.SelectedRef

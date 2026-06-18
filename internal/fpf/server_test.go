@@ -262,10 +262,18 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("selected_ref schema missing or wrong type: %#v", compareSchema["selected_ref"])
 	}
+	if selectedRef["type"] != "string" {
+		t.Fatalf("selected_ref type = %#v, want string", selectedRef["type"])
+	}
 
-	description, _ := selectedRef["description"].(string)
-	if description != "(compare) Advisory recommendation variant ID; the human still chooses" {
-		t.Fatalf("unexpected selected_ref description: %q", description)
+	legacyRef, ok := compareSchema["legacy_recommendation_ref"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("legacy_recommendation_ref schema missing or wrong type: %#v", compareSchema["legacy_recommendation_ref"])
+	}
+
+	legacyDescription, _ := legacyRef["description"].(string)
+	if !strings.Contains(legacyDescription, "Advisory recommendation only") {
+		t.Fatalf("unexpected legacy_recommendation_ref description: %q", legacyDescription)
 	}
 }
 
@@ -333,6 +341,35 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	for _, key := range []string{"predictions", "claim_refs", "claim_scope"} {
 		if _, ok := decisionSchema[key]; !ok {
 			t.Fatalf("expected decision schema to expose %q", key)
+		}
+	}
+}
+
+func TestHandleToolsList_DecisionSchemaExposesChoiceResult(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+
+	choiceResult, ok := decisionSchema["choice_result"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("choice_result schema missing or wrong type: %#v", decisionSchema["choice_result"])
+	}
+
+	properties, ok := choiceResult["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("choice_result properties missing or wrong type: %#v", choiceResult["properties"])
+	}
+
+	nextMove, ok := properties["next_move"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("choice_result.next_move missing or wrong type: %#v", properties["next_move"])
+	}
+
+	encoded, err := json.Marshal(nextMove["enum"])
+	if err != nil {
+		t.Fatalf("marshal next_move enum: %v", err)
+	}
+	for _, want := range []string{"choose_now", "reject_current_set", "probe_again", "reroute"} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("choice_result.next_move enum missing %q: %s", want, encoded)
 		}
 	}
 }

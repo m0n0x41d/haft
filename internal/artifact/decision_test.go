@@ -144,6 +144,24 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(fields.ProblemRefs, []string{prob.Meta.ID}) {
 		t.Fatalf("problem refs in structured state = %#v, want [%q]", fields.ProblemRefs, prob.Meta.ID)
 	}
+	if fields.ChoiceResult == nil {
+		t.Fatal("expected h-decide to persist exact choice_result")
+	}
+	if fields.ChoiceResult.NextMove != ChoiceNextMoveChooseNow {
+		t.Fatalf("choice_result.next_move = %q, want %q", fields.ChoiceResult.NextMove, ChoiceNextMoveChooseNow)
+	}
+	if fields.ChoiceResult.SubjectRef != "operator" {
+		t.Fatalf("choice_result.subject_ref = %q, want operator", fields.ChoiceResult.SubjectRef)
+	}
+	if fields.ChoiceResult.VariantRef != "NATS JetStream" {
+		t.Fatalf("choice_result.variant_ref = %q, want selected title", fields.ChoiceResult.VariantRef)
+	}
+	if !reflect.DeepEqual(fields.ChoiceResult.ProblemRefs, []string{prob.Meta.ID}) {
+		t.Fatalf("choice_result.problem_refs = %#v, want [%q]", fields.ChoiceResult.ProblemRefs, prob.Meta.ID)
+	}
+	if fields.ChoiceResult.PortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("choice_result.portfolio_ref = %q, want %q", fields.ChoiceResult.PortfolioRef, portfolio.Meta.ID)
+	}
 	if fields.SelectionPolicy == "" {
 		t.Error("expected selection_policy in structured data")
 	}
@@ -175,6 +193,9 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(reloadedFields.ProblemRefs, fields.ProblemRefs) {
 		t.Fatalf("reloaded problem refs = %#v, want %#v", reloadedFields.ProblemRefs, fields.ProblemRefs)
 	}
+	if !reflect.DeepEqual(reloadedFields.ChoiceResult, fields.ChoiceResult) {
+		t.Fatalf("reloaded choice_result = %#v, want %#v", reloadedFields.ChoiceResult, fields.ChoiceResult)
+	}
 	if !reflect.DeepEqual(reloadedFields.PreConditions, fields.PreConditions) {
 		t.Fatalf("reloaded pre-conditions = %#v, want %#v", reloadedFields.PreConditions, fields.PreConditions)
 	}
@@ -189,6 +210,33 @@ func TestDecide_FullDRR(t *testing.T) {
 	files, _ := store.GetAffectedFiles(ctx, a.Meta.ID)
 	if len(files) != 2 {
 		t.Errorf("expected 2 affected files, got %d", len(files))
+	}
+}
+
+func TestValidateChoiceResultRejectsUnknownNextMove(t *testing.T) {
+	err := ValidateChoiceResult(&ChoiceResult{
+		SubjectRef: "operator",
+		NextMove:   ChoiceNextMove("approve_this"),
+		VariantRef: "V1",
+	})
+	if err == nil {
+		t.Fatal("expected invalid next_move error")
+	}
+	if !strings.Contains(err.Error(), "choose_now") {
+		t.Fatalf("expected valid next_move values in error, got %v", err)
+	}
+}
+
+func TestValidateChoiceResultRequiresVariantForChooseNow(t *testing.T) {
+	err := ValidateChoiceResult(&ChoiceResult{
+		SubjectRef: "operator",
+		NextMove:   ChoiceNextMoveChooseNow,
+	})
+	if err == nil {
+		t.Fatal("expected missing variant_ref error")
+	}
+	if !strings.Contains(err.Error(), "variant_ref") {
+		t.Fatalf("expected variant_ref error, got %v", err)
 	}
 }
 

@@ -17,6 +17,12 @@ This is the binding moment. The DecisionRecord becomes the authoritative
 choice that downstream commissions, runtime runs, and verification cycles
 reference. Take it seriously.
 
+Comparison recommendations are not choices. If a previous `/h-compare` set
+`selected_ref`, treat it as legacy `legacy_recommendation_ref`: advisory only.
+Manual `/h-decide` is the first point where the kernel may persist an exact
+`ChoiceResult` (`choose_now`, `reject_current_set`, `probe_again`, or
+`reroute`) on the DecisionRecord.
+
 ## Compact interface discovery
 
 If you need the exact compact contract, run:

@@ -58,6 +58,11 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 		}
 	}
 
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	if !strings.Contains(optionals, "choice_result") {
+		t.Fatalf("decision optional fields missing choice_result in %q", optionals)
+	}
+
 	invariants := strings.Join(capability.Invariants, " ")
 	if !strings.Contains(invariants, "Human binding remains mandatory") {
 		t.Fatalf("decision interface must preserve manual binding invariant:\n%s", invariants)
@@ -258,7 +263,7 @@ func TestInterfaceCompareTemplateUsesFlatCanonicalScores(t *testing.T) {
 	}
 
 	_, templates := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{`"scores"`, `"V1"`, `"latency"`, `"dominated_variants"`, `"pareto_tradeoffs"`} {
+	for _, want := range []string{`"scores"`, `"V1"`, `"latency"`, `"dominated_variants"`, `"pareto_tradeoffs"`, `"legacy_recommendation_ref"`} {
 		if !strings.Contains(templates, want) {
 			t.Fatalf("solution.compare template missing %q:\n%s", want, templates)
 		}

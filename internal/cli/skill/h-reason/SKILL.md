@@ -308,6 +308,7 @@ When the operator is ready to commit to a chosen variant from a SolutionPortfoli
 
 - Surface the Pareto front summary
 - Recommend the variant you would pick (with rationale)
+- Treat `/h-compare` `selected_ref` / `legacy_recommendation_ref` as advisory only, not `ChoiceResult`
 - Tell the operator: **«this needs your explicit /h-decide to bind»**
 - Stop and wait
 

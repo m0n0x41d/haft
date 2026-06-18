@@ -403,6 +403,7 @@ type PublicationProjection struct {
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
 	ProblemRefs          []string             `json:"problem_refs,omitempty"`
+	ChoiceResult         *ChoiceResult        `json:"choice_result,omitempty"`
 	SelectedTitle        string               `json:"selected_title"`
 	WhySelected          string               `json:"why_selected"`
 	SelectionPolicy      string               `json:"selection_policy,omitempty"`
@@ -503,6 +504,7 @@ func (a *Artifact) UnmarshalDecisionFields() DecisionFields {
 	}
 	var df DecisionFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &df)
+	df.ChoiceResult = NormalizeChoiceResult(df.ChoiceResult)
 	df.Claims = normalizeDecisionClaims(df.Claims)
 	if len(df.Claims) == 0 {
 		df.Claims = decisionClaimsFromPredictions(df.Predictions)
@@ -518,6 +520,10 @@ func (a *Artifact) UnmarshalPortfolioFields() PortfolioFields {
 	}
 	var pf PortfolioFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &pf)
+	if pf.Comparison != nil {
+		normalized := normalizeComparisonRecommendationAlias(*pf.Comparison)
+		pf.Comparison = &normalized
+	}
 	return pf
 }
 
@@ -704,6 +710,101 @@ type ParetoTradeoffNote struct {
 	Summary string `json:"summary"`
 }
 
+// ChoiceNextMove is the exact next action produced by a human choice.
+type ChoiceNextMove string
+
+const (
+	ChoiceNextMoveChooseNow        ChoiceNextMove = "choose_now"
+	ChoiceNextMoveRejectCurrentSet ChoiceNextMove = "reject_current_set"
+	ChoiceNextMoveProbeAgain       ChoiceNextMove = "probe_again"
+	ChoiceNextMoveReroute          ChoiceNextMove = "reroute"
+)
+
+// ValidChoiceNextMoveNames returns exact ChoiceResult next_move values.
+func ValidChoiceNextMoveNames() []string {
+	return []string{
+		string(ChoiceNextMoveChooseNow),
+		string(ChoiceNextMoveRejectCurrentSet),
+		string(ChoiceNextMoveProbeAgain),
+		string(ChoiceNextMoveReroute),
+	}
+}
+
+// ChoiceResult records the human-side choice outcome. ComparisonResult may
+// recommend; it does not create this object.
+type ChoiceResult struct {
+	SubjectRef   string         `json:"subject_ref"`
+	NextMove     ChoiceNextMove `json:"next_move"`
+	VariantRef   string         `json:"variant_ref,omitempty"`
+	ProblemRefs  []string       `json:"problem_refs,omitempty"`
+	PortfolioRef string         `json:"portfolio_ref,omitempty"`
+	Reason       string         `json:"reason,omitempty"`
+}
+
+// NormalizeChoiceResult trims a choice without inventing one from legacy data.
+func NormalizeChoiceResult(choice *ChoiceResult) *ChoiceResult {
+	if choice == nil {
+		return nil
+	}
+
+	normalized := &ChoiceResult{
+		SubjectRef:   strings.TrimSpace(choice.SubjectRef),
+		NextMove:     ChoiceNextMove(strings.TrimSpace(string(choice.NextMove))),
+		VariantRef:   strings.TrimSpace(choice.VariantRef),
+		ProblemRefs:  compactStrings(choice.ProblemRefs),
+		PortfolioRef: strings.TrimSpace(choice.PortfolioRef),
+		Reason:       strings.TrimSpace(choice.Reason),
+	}
+
+	return normalized
+}
+
+// ValidateChoiceResult enforces exact choice next_move semantics.
+func ValidateChoiceResult(choice *ChoiceResult) error {
+	normalized := NormalizeChoiceResult(choice)
+	if normalized == nil {
+		return nil
+	}
+
+	if normalized.SubjectRef == "" {
+		return fmt.Errorf("choice_result.subject_ref is required — subject is the chooser-bearing human/team/system, not the decision question text")
+	}
+	if !isValidChoiceNextMove(normalized.NextMove) {
+		return fmt.Errorf("choice_result.next_move %q is invalid; expected one of: %s",
+			normalized.NextMove,
+			strings.Join(ValidChoiceNextMoveNames(), ", "))
+	}
+	if normalized.NextMove == ChoiceNextMoveChooseNow && normalized.VariantRef == "" {
+		return fmt.Errorf("choice_result.variant_ref is required when next_move=choose_now")
+	}
+
+	return nil
+}
+
+// NewDecisionChoiceResult creates the exact choice emitted by explicit h-decide.
+func NewDecisionChoiceResult(problemRefs []string, portfolioRef string, selectedTitle string, whySelected string) *ChoiceResult {
+	choice := &ChoiceResult{
+		SubjectRef:   "operator",
+		NextMove:     ChoiceNextMoveChooseNow,
+		VariantRef:   strings.TrimSpace(selectedTitle),
+		ProblemRefs:  compactStrings(problemRefs),
+		PortfolioRef: strings.TrimSpace(portfolioRef),
+		Reason:       strings.TrimSpace(whySelected),
+	}
+
+	return choice
+}
+
+func isValidChoiceNextMove(nextMove ChoiceNextMove) bool {
+	for _, valid := range ValidChoiceNextMoveNames() {
+		if string(nextMove) == valid {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ComparisonResult holds the outcome of comparing variants.
 type ComparisonResult struct {
 	Dimensions              []string                      `json:"dimensions"`
@@ -713,6 +814,7 @@ type ComparisonResult struct {
 	DominatedVariants       []DominatedVariantExplanation `json:"dominated_variants,omitempty"`
 	ParetoTradeoffs         []ParetoTradeoffNote          `json:"pareto_tradeoffs,omitempty"`
 	PolicyApplied           string                        `json:"policy_applied,omitempty"`
+	LegacyRecommendationRef string                        `json:"legacy_recommendation_ref,omitempty"`
 	SelectedRef             string                        `json:"selected_ref,omitempty"`
 	RecommendationRationale string                        `json:"recommendation_rationale,omitempty"`
 	ParityPlan              *ParityPlan                   `json:"parity_plan,omitempty"`

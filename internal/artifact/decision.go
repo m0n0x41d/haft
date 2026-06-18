@@ -26,6 +26,7 @@ type DecideInput struct {
 	ProblemRef          string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
 	ProblemRefs         []string          `json:"problem_refs,omitempty"` // multiple problems
 	PortfolioRef        string            `json:"portfolio_ref,omitempty"`
+	ChoiceResult        *ChoiceResult     `json:"choice_result,omitempty"`
 	SelectedTitle       string            `json:"selected_title"`
 	WhySelected         string            `json:"why_selected"`
 	SelectionPolicy     string            `json:"selection_policy"`
@@ -238,6 +239,7 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.TaskContext = strings.TrimSpace(input.TaskContext)
 	input.Mode = strings.TrimSpace(input.Mode)
 	input.SearchKeywords = strings.TrimSpace(input.SearchKeywords)
+	input.ChoiceResult = NormalizeChoiceResult(input.ChoiceResult)
 
 	input.WhyNotOthers = normalizeRejectionReasons(input.WhyNotOthers)
 	input.Invariants = compactStrings(input.Invariants)
@@ -296,6 +298,12 @@ func validateDecisionInput(input DecideInput) error {
 	}
 	if input.Rollback == nil || len(input.Rollback.Triggers) == 0 {
 		addMissing("rollback", "at least one trigger that would force reversal (FPF DEC-05)")
+	}
+	if err := ValidateChoiceResult(input.ChoiceResult); err != nil {
+		missing = append(missing, missingField{
+			Field: "choice_result",
+			Hint:  err.Error(),
+		})
 	}
 
 	// Structural checks on present fields — not subject to skip.
@@ -532,8 +540,19 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		rollbackBlastRadius = input.Rollback.BlastRadius
 	}
 
+	choiceResult := input.ChoiceResult
+	if choiceResult == nil {
+		choiceResult = NewDecisionChoiceResult(
+			dctx.ProblemRefs,
+			input.PortfolioRef,
+			input.SelectedTitle,
+			input.WhySelected,
+		)
+	}
+
 	decisionFields := DecisionFields{
 		ProblemRefs:          dctx.ProblemRefs,
+		ChoiceResult:         NormalizeChoiceResult(choiceResult),
 		SelectedTitle:        input.SelectedTitle,
 		WhySelected:          input.WhySelected,
 		SelectionPolicy:      input.SelectionPolicy,

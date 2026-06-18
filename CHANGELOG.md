@@ -30,6 +30,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   governance boundary, layered substrate architecture, artifact production
   rules, mutation authority, host-agent policy, commission/runtime policy, and
   evidence freshness policy.
+- **ChoiceResult compatibility slice.** `DecisionRecord` structured data can
+  now carry an exact `choice_result` with `next_move` values
+  (`choose_now`, `reject_current_set`, `probe_again`, `reroute`), while
+  `ComparisonResult.selected_ref` stays a legacy advisory recommendation.
+  `legacy_recommendation_ref` is the preferred advisory alias for comparison
+  output; compare never creates a bound human choice or execution authority.
 - **FPF retrieval provenance metadata.** FPF section retrieval now carries
   compact profile/index provenance (profile id, embedded source, upstream
   commit hash when present, index schema version, and retrieval mode) through

@@ -251,7 +251,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"portfolio_ref", "dimensions", "scores"},
-				OptionalFields: []string{"non_dominated_set", "incomparable", "dominated_variants", "pareto_tradeoffs", "policy_applied", "recommendation_rationale", "selected_ref"},
+				OptionalFields: []string{"non_dominated_set", "incomparable", "dominated_variants", "pareto_tradeoffs", "policy_applied", "recommendation_rationale", "legacy_recommendation_ref", "selected_ref"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "scores",
@@ -300,12 +300,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 							},
 							"incomparable":             []any{},
 							"policy_applied":           "Prefer the lowest-risk Pareto-front variant.",
+							"legacy_recommendation_ref": "V1",
 							"recommendation_rationale": "V1 best satisfies the declared target under parity.",
 						},
 					},
 				},
 				Notes: []string{
 					"Declare parity before scoring; preserve incomparable variants instead of forcing a scalar winner.",
+					"legacy_recommendation_ref is advisory and is the preferred alias for legacy selected_ref; it is not ChoiceResult.",
 					"CLI input-file still accepts legacy results{...}, but agents should use the flat fields shown in flat_compare.",
 				},
 			},
@@ -329,8 +331,13 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"selected_title", "why_selected", "selection_policy", "weakest_link", "counterargument", "why_not_others", "rollback", "predictions", "invariants", "affected_files", "valid_until"},
-				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "_skips", "_skip_reason"},
+				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "_skips", "_skip_reason"},
 				FieldShapes: []fieldShape{
+					{
+						Field: "choice_result",
+						Shape: `{"subject_ref":"operator","next_move":"choose_now","variant_ref":"V1","reason":"explicit h-decide"}`,
+						Note:  "Exact human choice outcome; compare never creates it.",
+					},
 					{
 						Field: "why_not_others[]",
 						Shape: `{"variant":"V2","reason":"Worse fit under the declared selection policy."}`,

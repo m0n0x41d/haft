@@ -123,6 +123,53 @@ func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.
 	}
 }
 
+func TestHandleQuintSolution_CompareAcceptsLegacyRecommendationRef(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
+
+	_, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+		"action":        "compare",
+		"portfolio_ref": portfolio.Meta.ID,
+		"dimensions":    []any{"latency"},
+		"scores": map[string]any{
+			"REST": map[string]any{"latency": "42ms"},
+			"gRPC": map[string]any{"latency": "18ms"},
+		},
+		"non_dominated_set": []any{"gRPC"},
+		"dominated_variants": []map[string]any{{
+			"variant":      "REST",
+			"dominated_by": []string{"gRPC"},
+			"summary":      "Higher latency with no compensating benefit in this comparison.",
+		}},
+		"pareto_tradeoffs": []map[string]any{{
+			"variant": "gRPC",
+			"summary": "Lowest latency result among the compared variants.",
+		}},
+		"legacy_recommendation_ref": "gRPC",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, portfolio.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	comparison := reloaded.UnmarshalPortfolioFields().Comparison
+	if comparison == nil {
+		t.Fatal("expected persisted comparison")
+	}
+	if comparison.LegacyRecommendationRef != "V2" {
+		t.Fatalf("legacy_recommendation_ref = %q, want V2", comparison.LegacyRecommendationRef)
+	}
+	if comparison.SelectedRef != "V2" {
+		t.Fatalf("selected_ref compatibility alias = %q, want V2", comparison.SelectedRef)
+	}
+}
+
 func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

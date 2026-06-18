@@ -18,27 +18,31 @@ import (
 )
 
 var (
-	specCheckJSON         bool
-	specCoverageJSON      bool
-	specPlanJSON          bool
-	specPlanAcceptID      string
-	specStatusJSON        bool
-	specNextJSON          bool
-	specOnboardJSON       bool
-	specOnboardApproveID  string
-	specOnboardReopenID   string
-	specOnboardRebaseline string
-	specOnboardReason     string
-	specOnboardApprovedBy string
-	specApproveJSON       bool
-	specApproveApprovedBy string
-	specRebaselineJSON    bool
-	specRebaselineReason  string
-	specRebaselineBy      string
-	specReopenJSON        bool
-	specReopenReason      string
-	specCheckExit         = os.Exit
-	specCoverageExit      = os.Exit
+	specCheckJSON          bool
+	specCoverageJSON       bool
+	specPlanJSON           bool
+	specPlanAcceptID       string
+	specStatusJSON         bool
+	specNextJSON           bool
+	specUseJSON            bool
+	specUseContext         string
+	specUsePolicy          string
+	specUseWaiverExpiresAt string
+	specOnboardJSON        bool
+	specOnboardApproveID   string
+	specOnboardReopenID    string
+	specOnboardRebaseline  string
+	specOnboardReason      string
+	specOnboardApprovedBy  string
+	specApproveJSON        bool
+	specApproveApprovedBy  string
+	specRebaselineJSON     bool
+	specRebaselineReason   string
+	specRebaselineBy       string
+	specReopenJSON         bool
+	specReopenReason       string
+	specCheckExit          = os.Exit
+	specCoverageExit       = os.Exit
 )
 
 var specCmd = &cobra.Command{
@@ -152,6 +156,10 @@ func init() {
 	specNextCmd.Flags().BoolVar(&specNextJSON, "json", false, "print structured JSON output")
 	specCoverageCmd.Flags().BoolVar(&specCoverageJSON, "json", false, "print structured JSON output")
 	specReviewCmd.Flags().BoolVar(&specReviewJSON, "json", false, "print structured JSON output")
+	specUseCmd.Flags().BoolVar(&specUseJSON, "json", false, "print structured JSON output")
+	specUseCmd.Flags().StringVar(&specUseContext, "context", "", "declared use context for the SpecificationUseRecord")
+	specUseCmd.Flags().StringVar(&specUsePolicy, "policy", "", "admission policy: documentary_only, stronger_use_requires_current_source, or temporary_waiver")
+	specUseCmd.Flags().StringVar(&specUseWaiverExpiresAt, "waiver-expires-at", "", "expiry for temporary_waiver policy (RFC3339 or YYYY-MM-DD)")
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
 	specOnboardCmd.Flags().BoolVar(&specOnboardJSON, "json", false, "print structured JSON output")
@@ -172,6 +180,7 @@ func init() {
 	specCmd.AddCommand(specNextCmd)
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specReviewCmd)
+	specCmd.AddCommand(specUseCmd)
 	specCmd.AddCommand(specPlanCmd)
 	specCmd.AddCommand(specOnboardCmd)
 	specCmd.AddCommand(specApproveCmd)

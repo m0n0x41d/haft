@@ -105,6 +105,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   PublicationUnit and TransformationRecord authority boundaries, and blocks
   high-risk licensing/legal/compliance/privacy/security sections from stronger
   use until explicit L/A/D/E claims and support refs exist.
+- **SpecificationUseRecord v1.** `haft spec use SECTION_ID` and
+  `haft_query(action="spec_use")` now build a read-only spec-use admission
+  record for a declared use context and policy. The payload separates source
+  edition, baseline currentness, admission policy, waiver expiry, and
+  `gate_decision=not_applicable_no_operational_gate` so a current baseline
+  cannot masquerade as admission and a spec-use admission cannot masquerade as
+  an OperationalGate pass.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

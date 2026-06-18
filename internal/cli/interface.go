@@ -606,6 +606,42 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.spec_use",
+			Purpose: "Build a read-only SpecificationUseRecord for one SpecSection and one declared use context.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "spec_use",
+				MCPCall:          `haft_query(action="spec_use", section_id="TS.role.001", use_context="commission preflight", policy="stronger_use_requires_current_source")`,
+				CLIStatus:        "available",
+				DiscoveryCommand: "haft interface query.spec_use --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"section_id", "use_context", "policy"},
+				OptionalFields: []string{"waiver_expires_at"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "policy",
+						Shape: `"documentary_only" | "stronger_use_requires_current_source" | "temporary_waiver"`,
+						Note:  "Admission policy is explicit and never inferred from baseline currentness alone.",
+					},
+					{
+						Field: "response",
+						Shape: `{"source_edition":{...},"baseline_currentness":{...},"admission":{...},"gate_decision":{"status":"not_applicable_no_operational_gate"}}`,
+						Note:  "Currentness, admission, waiver expiry, and gate status are separate fields.",
+					},
+				},
+				Notes: []string{
+					"SpecificationUseRecord is read-only; it does not approve/rebaseline specs, create evidence, create WorkCommissions, or pass an OperationalGate.",
+					"Use policy=temporary_waiver only with waiver_expires_at; the waiver is represented in the response and is not global truth.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON SpecificationUseRecord"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Baseline currentness is not admission; admission policy is a distinct field.",
+				"No GateDecision is emitted unless a real OperationalGate profile exists.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

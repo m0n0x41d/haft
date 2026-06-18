@@ -1849,11 +1849,30 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "spec_use":
+		projectRoot := filepath.Dir(haftDir)
+		record, err := buildSpecUseRecord(
+			projectRoot,
+			stringArg(args, "section_id"),
+			stringArg(args, "use_context"),
+			stringArg(args, "policy"),
+			stringArg(args, "waiver_expires_at"),
+			time.Now().UTC(),
+		)
+		if err != nil {
+			return "", fmt.Errorf("build spec use record: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal spec use record: %w", err)
+		}
+		return string(payload), nil
+
 	case "resolve_term":
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', or 'resolve_term'", action)
 	}
 }
 

@@ -795,14 +795,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Search past decisions, check status, find related artifacts, render audience projections, list all artifacts by kind, show module coverage, or run explicit read-only spec semantic review. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'projection' renders deterministic audience views, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
+			Description: "Search/status/related/projection/list/coverage plus explicit read-only spec review/use drill-downs.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "resolve_term"},
-						"description": "search=FTS5 search; status=compact dashboard; related=decisions affecting a file; code_context=progressive code-governance context. Default code_context is lane=index, then request lane=symbols|decisions|invariants|notes|problems|portfolios|all as needed; full=true is audit/backcompat dump. callees/callers/impact traverse code graph with governance; node reads one symbol with governance; explore summarizes a flow; ceremony recommends task ceremony; projection/list/coverage/fpf/check/spec_review/resolve_term are auxiliary query surfaces.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "resolve_term"},
+						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/resolve_term.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -811,6 +811,23 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"term": map[string]string{
 						"type":        "string",
 						"description": "(resolve_term) Umbrella or load-bearing term to ground in the project's bounded context — e.g. 'auth service', 'ready', 'process'. Returned shape: term_map_entries, spec_section_refs, artifact_mentions, resolution (resolved | ambiguous | absent), next_action.",
+					},
+					"section_id": map[string]string{
+						"type":        "string",
+						"description": "(spec_use) SpecSection id.",
+					},
+					"use_context": map[string]string{
+						"type":        "string",
+						"description": "(spec_use) Declared use context.",
+					},
+					"policy": map[string]interface{}{
+						"type":        "string",
+						"enum":        []interface{}{"documentary_only", "stronger_use_requires_current_source", "temporary_waiver"},
+						"description": "(spec_use) Admission policy; currentness/waiver/gate stay separate.",
+					},
+					"waiver_expires_at": map[string]string{
+						"type":        "string",
+						"description": "(spec_use) temporary_waiver expiry.",
 					},
 					"kind": map[string]string{
 						"type":        "string",

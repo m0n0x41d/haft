@@ -24,6 +24,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `semantic` plus `views.working`, `views.exact`, and `views.audit`, and
   `haft interface query.related --json` documents the compact discovery
   contract.
+- **Haft's own spec spine.** The repository now tracks `.haft/specs/`
+  carriers for the target system, enabling system, and term map while keeping
+  runtime governance state ignored. The active sections cover Haft's
+  governance boundary, layered substrate architecture, artifact production
+  rules, mutation authority, host-agent policy, commission/runtime policy, and
+  evidence freshness policy.
 - **FPF retrieval provenance metadata.** FPF section retrieval now carries
   compact profile/index provenance (profile id, embedded source, upstream
   commit hash when present, index schema version, and retrieval mode) through

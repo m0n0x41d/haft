@@ -1816,11 +1816,23 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "spec_review":
+		projectRoot := filepath.Dir(haftDir)
+		packet, err := buildSpecReviewPacket(projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("build spec review packet: %w", err)
+		}
+		payload, err := json.Marshal(packet)
+		if err != nil {
+			return "", fmt.Errorf("marshal spec review packet: %w", err)
+		}
+		return string(payload), nil
+
 	case "resolve_term":
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', or 'resolve_term'", action)
 	}
 }
 

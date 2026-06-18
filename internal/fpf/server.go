@@ -739,14 +739,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Search past decisions, check status, find related artifacts, render audience projections, list all artifacts by kind, or show module coverage. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'projection' renders deterministic audience views, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
+			Description: "Search past decisions, check status, find related artifacts, render audience projections, list all artifacts by kind, show module coverage, or run explicit read-only spec semantic review. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'projection' renders deterministic audience views, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "resolve_term"},
-						"description": "search=FTS5 search; status=compact dashboard; related=decisions affecting a file; code_context=progressive code-governance context. Default code_context is lane=index, then request lane=symbols|decisions|invariants|notes|problems|portfolios|all as needed; full=true is audit/backcompat dump. callees/callers/impact traverse code graph with governance; node reads one symbol with governance; explore summarizes a flow; ceremony recommends task ceremony; projection/list/coverage/fpf/check/resolve_term are auxiliary query surfaces.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "resolve_term"},
+						"description": "search=FTS5 search; status=compact dashboard; related=decisions affecting a file; code_context=progressive code-governance context. Default code_context is lane=index, then request lane=symbols|decisions|invariants|notes|problems|portfolios|all as needed; full=true is audit/backcompat dump. callees/callers/impact traverse code graph with governance; node reads one symbol with governance; explore summarizes a flow; ceremony recommends task ceremony; projection/list/coverage/fpf/check/spec_review/resolve_term are auxiliary query surfaces.",
 					},
 					"query": map[string]string{
 						"type":        "string",

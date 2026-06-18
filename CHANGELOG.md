@@ -36,6 +36,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `ComparisonResult.selected_ref` stays a legacy advisory recommendation.
   `legacy_recommendation_ref` is the preferred advisory alias for comparison
   output; compare never creates a bound human choice or execution authority.
+- **Read-only spec semantic review.** `haft spec review` and the MCP
+  drill-down `haft_query(action="spec_review")` now run an advisory semantic
+  review over active `SpecSection` records. Findings return FPF-oriented hints
+  for missing bearers, frame mismatches, unsupported strong claims, and
+  description/authority confusion; the review is explicitly non-authoritative
+  and does not create evidence, approvals, rebaselines, `GateDecision`, or
+  `SpecUseAdmission`.
 - **FPF retrieval provenance metadata.** FPF section retrieval now carries
   compact profile/index provenance (profile id, embedded source, upstream
   commit hash when present, index schema version, and retrieval mode) through

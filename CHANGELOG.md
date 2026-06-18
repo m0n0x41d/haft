@@ -124,6 +124,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ChoiceResult, evidence item refs, and optional EvidencePath records. The case
   is explicitly a projection, not a new FPF root kind, proof, approval,
   `GateDecision`, work occurrence, or global truth.
+- **Qualified correspondence graph v1.** `haft correspondence graph
+  DECISION_REF` and `haft_query(action="correspondence_graph")` now derive a
+  read-only expected-vs-observed graph from DecisionRecord claims,
+  TransformationRecord, affected files, and claim-bound evidence. Every edge is
+  qualified by origin/source refs and `path_status=graph_path_not_proof`, so a
+  graph path cannot masquerade as evidence, proof, approval, `GateDecision`, or
+  global truth.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

@@ -1894,6 +1894,26 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "correspondence_graph":
+		decisionRef := stringArg(args, "artifact_ref")
+		if decisionRef == "" {
+			decisionRef = stringArg(args, "decision_ref")
+		}
+		record, err := buildQualifiedCorrespondenceGraph(
+			ctx,
+			store,
+			artifact.CorrespondenceGraphInput{DecisionRef: decisionRef},
+			time.Now().UTC(),
+		)
+		if err != nil {
+			return "", fmt.Errorf("build correspondence graph: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal correspondence graph: %w", err)
+		}
+		return string(payload), nil
+
 	case "evidence_path":
 		record, err := buildEvidencePathRecord(
 			ctx,
@@ -1922,7 +1942,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

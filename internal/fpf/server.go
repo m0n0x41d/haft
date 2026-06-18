@@ -801,8 +801,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "evidence_path", "resolve_term"},
-						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/evidence_path/resolve_term.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "correspondence_graph", "evidence_path", "resolve_term"},
+						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/correspondence_graph/evidence_path/resolve_term.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -831,7 +831,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",
-						"description": "(change_case/evidence_path) Artifact id; for change_case this is the DecisionRecord id.",
+						"description": "(change_case/correspondence_graph/evidence_path) Artifact id; for change/correspondence this is the DecisionRecord id.",
 					},
 					"evidence_ref": map[string]string{
 						"type":        "string",

@@ -706,6 +706,37 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.correspondence_graph",
+			Purpose: "Build a read-only expected-vs-observed correspondence graph for one DecisionRecord.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "correspondence_graph",
+				MCPCall:          `haft_query(action="correspondence_graph", artifact_ref="dec-...")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft correspondence graph DECISION_REF --json",
+				DiscoveryCommand: "haft interface query.correspondence_graph --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"artifact_ref"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"path_status":"graph_path_not_proof","expected_realization":[...],"observed_realization":[...],"edges":[{"relation_kind":"...","origin":"declared","path_status":"graph_path_not_proof"}],"gaps":[...],"authority_boundary":{"proof":"not_proof","evidence":"not_evidence"}}`,
+						Note:  "Edges are candidate correspondence paths; they are not evidence, proof, approval, GateDecision, or global truth.",
+					},
+				},
+				Notes: []string{
+					"Expected nodes come from decision intent, claims, and TransformationRecord when present.",
+					"Observed nodes come from affected_files and evidence items; missing bindings stay as gaps.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON QualifiedCorrespondenceGraph"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Graph path is not proof.",
+				"Correspondence edges are qualified by origin and source refs.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

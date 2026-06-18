@@ -720,8 +720,26 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		if v, ok := args["problem_type"].(string); ok {
 			input.ProblemType = v
 		}
+		if v, ok := args["problem_profile"].(string); ok {
+			input.ProblemProfile = v
+		}
+		if v, ok := args["source_kind"].(string); ok {
+			input.SourceKind = v
+		}
 		if v, ok := args["signal"].(string); ok {
 			input.Signal = v
+		}
+		if v, ok := args["why_now"].(string); ok {
+			input.WhyNow = v
+		}
+		if v, ok := args["scope"].(string); ok {
+			input.Scope = v
+		}
+		if v, ok := args["acceptance_probe"].(string); ok {
+			input.AcceptanceProbe = v
+		}
+		if v, ok := args["freshness_disposition"].(string); ok {
+			input.FreshnessDisposition = v
 		}
 		if v, ok := args["acceptance"].(string); ok {
 			input.Acceptance = v
@@ -1979,6 +1997,8 @@ func artifactProblemSemanticViews(item *artifact.Artifact) map[string]any {
 			"title":               item.Meta.Title,
 			"semantic_status":     string(semantic.Status),
 			"profile_id":          semantic.Profile.ID,
+			"problem_profile":     problemProfileLevel(fields),
+			"p2w_readiness":       problemReadinessLabel(fields),
 			"source_edition_hash": semantic.SemanticEdition.Hash,
 			"publication_hash":    semantic.PublicationUnit.PublicationHash,
 			"signal":              fields.Signal,
@@ -2009,6 +2029,22 @@ func artifactProblemSemanticViews(item *artifact.Artifact) map[string]any {
 			"warnings":               semantic.Warnings,
 		},
 	}
+}
+
+func problemProfileLevel(fields artifact.ProblemFields) string {
+	if fields.Profile == nil {
+		return ""
+	}
+
+	return fields.Profile.Level
+}
+
+func problemReadinessLabel(fields artifact.ProblemFields) string {
+	if fields.Profile == nil {
+		return ""
+	}
+
+	return fields.Profile.Readiness
 }
 
 // parseStringArrayFromArgs handles MCP client serialization differences.

@@ -74,6 +74,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carrier kind compatibility fallback. `haft spec review --json` reports that
   frame and frame diagnostics now compare declared target/enabling frame against
   the carrier frame instead of inferring authority from TS/ES or kind prefixes.
+- **ProblemCard C.22.2 profile fields.** Problem framing now records
+  cue/thin/deep profile level, source posture, why-now, scope, acceptance
+  probe, freshness disposition, computed P2W readiness, and blockers. Wish,
+  ticket, and chosen-method sources cannot become P2W-ready without an explicit
+  boundary, and `query.related` working views expose the profile/readiness
+  labels without changing compact defaults.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

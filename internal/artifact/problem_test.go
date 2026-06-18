@@ -194,6 +194,126 @@ func TestFrameProblem_InvalidProblemType(t *testing.T) {
 	}
 }
 
+func TestFrameProblem_DeepProfileBecomesP2WReadyWithBoundary(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	card, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+		Title:                "Spec review blocks unclear admission",
+		ProblemProfile:       ProblemProfileDeep,
+		SourceKind:           ProblemSourceObserved,
+		Signal:               "Spec sections can be used before the use context is explicit.",
+		WhyNow:               "Semantic review is now part of the implementation loop.",
+		Scope:                "ProblemCards that feed implementation admission for semantic spine slices.",
+		AcceptanceProbe:      "A review finding names the missing admission context before work starts.",
+		FreshnessDisposition: "Re-check when spec review v2 lands.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profile := card.UnmarshalProblemFields().Profile
+	if profile == nil {
+		t.Fatal("problem profile missing")
+	}
+	if profile.Level != ProblemProfileDeep {
+		t.Fatalf("profile.level = %q, want %q", profile.Level, ProblemProfileDeep)
+	}
+	if profile.Readiness != ProblemReadinessReady {
+		t.Fatalf("profile.readiness = %q, want %q; blockers=%v", profile.Readiness, ProblemReadinessReady, profile.Blockers)
+	}
+	if profile.BoundaryStatus != ProblemBoundaryExplicit {
+		t.Fatalf("profile.boundary_status = %q, want %q", profile.BoundaryStatus, ProblemBoundaryExplicit)
+	}
+	if len(profile.Blockers) != 0 {
+		t.Fatalf("profile.blockers = %v, want empty", profile.Blockers)
+	}
+
+	for _, want := range []string{"## Problem Profile\n\ndeep", "## P2W Readiness\n\np2w_ready", "## Why Now", "## Scope", "## Acceptance Probe", "## Freshness Disposition"} {
+		if !strings.Contains(card.Body, want) {
+			t.Fatalf("problem body missing %q:\n%s", want, card.Body)
+		}
+	}
+}
+
+func TestFrameProblem_WishWithoutBoundaryCannotBeP2WReady(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	card, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+		Title:                "Expose a nicer planning surface",
+		ProblemProfile:       ProblemProfileDeep,
+		SourceKind:           ProblemSourceWish,
+		Signal:               "Operator wants a nicer planning surface.",
+		WhyNow:               "The semantic spine rewrite is in progress.",
+		FreshnessDisposition: "Re-check after the current slice train completes.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profile := card.UnmarshalProblemFields().Profile
+	if profile == nil {
+		t.Fatal("problem profile missing")
+	}
+	if profile.Readiness == ProblemReadinessReady {
+		t.Fatalf("wish without boundary became ready: %+v", profile)
+	}
+	if profile.Readiness != ProblemReadinessBlocked {
+		t.Fatalf("profile.readiness = %q, want %q", profile.Readiness, ProblemReadinessBlocked)
+	}
+	if profile.BoundaryStatus != ProblemBoundaryMissing {
+		t.Fatalf("profile.boundary_status = %q, want %q", profile.BoundaryStatus, ProblemBoundaryMissing)
+	}
+	if !stringSliceContains(profile.Blockers, "wish/ticket/chosen_method source requires explicit boundary before P2W readiness") {
+		t.Fatalf("profile.blockers missing source boundary blocker: %v", profile.Blockers)
+	}
+}
+
+func TestFrameProblem_RejectsInvalidProblemProfile(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+		Title:          "Some problem",
+		ProblemProfile: "ready",
+		Signal:         "Something is broken.",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid problem_profile")
+	}
+	if !strings.Contains(err.Error(), "problem_profile must be cue, thin, or deep") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestFrameProblem_RejectsInvalidSourceKind(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+		Title:      "Some problem",
+		SourceKind: "recommendation",
+		Signal:     "Something is broken.",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid source_kind")
+	}
+	if !strings.Contains(err.Error(), "source_kind must be observed_problem, wish, ticket, or chosen_method") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func stringSliceContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+
+	return false
+}
+
 func TestFrameProblem_TacticalMode(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

@@ -337,6 +337,7 @@ func ParseProblemType(value string) (ProblemType, error) {
 type ProblemFields struct {
 	ProblemType           ProblemType                `json:"problem_type,omitempty"`
 	Signal                string                     `json:"signal"`
+	Profile               *ProblemCardProfile        `json:"profile,omitempty"`
 	Constraints           []string                   `json:"constraints,omitempty"`
 	OptimizationTargets   []string                   `json:"optimization_targets,omitempty"`
 	ObservationIndicators []string                   `json:"observation_indicators,omitempty"`
@@ -345,6 +346,18 @@ type ProblemFields struct {
 	Reversibility         string                     `json:"reversibility,omitempty"`
 	Characterizations     []CharacterizationSnapshot `json:"characterizations,omitempty"`
 	Semantic              *SemanticEnvelope          `json:"semantic,omitempty"`
+}
+
+type ProblemCardProfile struct {
+	Level                string   `json:"level"`
+	SourceKind           string   `json:"source_kind,omitempty"`
+	Readiness            string   `json:"readiness"`
+	BoundaryStatus       string   `json:"boundary_status"`
+	WhyNow               string   `json:"why_now,omitempty"`
+	Scope                string   `json:"scope,omitempty"`
+	AcceptanceProbe      string   `json:"acceptance_probe,omitempty"`
+	FreshnessDisposition string   `json:"freshness_disposition,omitempty"`
+	Blockers             []string `json:"blockers,omitempty"`
 }
 
 type SemanticStatus string

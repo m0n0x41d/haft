@@ -69,6 +69,34 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	}
 }
 
+func TestInterfaceProblemFrameExposesProblemProfileAdmissionFields(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "problem.frame")
+	if !ok {
+		t.Fatal("problem.frame capability missing")
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{
+		"problem_profile",
+		"source_kind",
+		"why_now",
+		"scope",
+		"acceptance_probe",
+		"freshness_disposition",
+	} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("problem.frame optional fields missing %q in %q", want, optionals)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"P2W readiness is computed", "wish/ticket/chosen_method"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("problem.frame notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
 func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.status")
 	if !ok {

@@ -257,9 +257,35 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"type":        "string",
 							"description": "(frame) Problem type: optimization, diagnosis, search, or synthesis",
 						},
+						"problem_profile": map[string]interface{}{
+							"type":        "string",
+							"enum":        []interface{}{"cue", "thin", "deep"},
+							"description": "(frame) ProblemCard profile level: cue, thin, or deep. Only deep cards with explicit boundary/probe/freshness can be P2W-ready.",
+						},
+						"source_kind": map[string]interface{}{
+							"type":        "string",
+							"enum":        []interface{}{"observed_problem", "wish", "ticket", "chosen_method"},
+							"description": "(frame) Source posture: observed_problem, wish, ticket, or chosen_method. Wish/ticket/chosen_method require explicit boundary before P2W readiness.",
+						},
 						"signal": map[string]string{
 							"type":        "string",
 							"description": "(frame) What's anomalous, broken, or needs changing",
+						},
+						"why_now": map[string]string{
+							"type":        "string",
+							"description": "(frame) Why this problem matters now, not just someday.",
+						},
+						"scope": map[string]string{
+							"type":        "string",
+							"description": "(frame) Explicit boundary/scope for what is inside and outside the problem.",
+						},
+						"acceptance_probe": map[string]string{
+							"type":        "string",
+							"description": "(frame) Probe that would show the problem is sufficiently bounded/solved.",
+						},
+						"freshness_disposition": map[string]string{
+							"type":        "string",
+							"description": "(frame) How fresh/current the problem signal is and when to revisit it.",
 						},
 						"constraints": map[string]interface{}{
 							"type":        "array",

@@ -311,17 +311,49 @@ func schemaEnumContains(values []interface{}, want string) bool {
 	return false
 }
 
-func TestHandleToolsList_ProblemSchemaIncludesProblemType(t *testing.T) {
+func TestHandleToolsList_ProblemSchemaIncludesProfileFields(t *testing.T) {
 	problemSchema := mustListToolProperties(t, "haft_problem")
 
-	problemType, ok := problemSchema["problem_type"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("problem_type schema missing or wrong type: %#v", problemSchema["problem_type"])
+	for _, key := range []string{
+		"problem_type",
+		"problem_profile",
+		"source_kind",
+		"why_now",
+		"scope",
+		"acceptance_probe",
+		"freshness_disposition",
+	} {
+		if _, ok := problemSchema[key].(map[string]interface{}); !ok {
+			t.Fatalf("%s schema missing or wrong type: %#v", key, problemSchema[key])
+		}
 	}
 
+	problemType := problemSchema["problem_type"].(map[string]interface{})
 	description, _ := problemType["description"].(string)
 	if !strings.Contains(description, "optimization") {
 		t.Fatalf("unexpected problem_type description: %q", description)
+	}
+
+	problemProfile := problemSchema["problem_profile"].(map[string]interface{})
+	profileEnum, ok := problemProfile["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("problem_profile enum missing or wrong type: %#v", problemProfile["enum"])
+	}
+	for _, want := range []string{"cue", "thin", "deep"} {
+		if !schemaEnumContains(profileEnum, want) {
+			t.Fatalf("problem_profile enum = %#v, missing %q", profileEnum, want)
+		}
+	}
+
+	sourceKind := problemSchema["source_kind"].(map[string]interface{})
+	sourceEnum, ok := sourceKind["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("source_kind enum missing or wrong type: %#v", sourceKind["enum"])
+	}
+	for _, want := range []string{"observed_problem", "wish", "ticket", "chosen_method"} {
+		if !schemaEnumContains(sourceEnum, want) {
+			t.Fatalf("source_kind enum = %#v, missing %q", sourceEnum, want)
+		}
 	}
 }
 

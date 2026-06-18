@@ -13,7 +13,13 @@ type ProblemFrameInput struct {
 	Title                 string   `json:"title"`
 	TaskContext           string   `json:"task_context,omitempty"`
 	ProblemType           string   `json:"problem_type,omitempty"`
+	ProblemProfile        string   `json:"problem_profile,omitempty"`
+	SourceKind            string   `json:"source_kind,omitempty"`
 	Signal                string   `json:"signal"`
+	WhyNow                string   `json:"why_now,omitempty"`
+	Scope                 string   `json:"scope,omitempty"`
+	AcceptanceProbe       string   `json:"acceptance_probe,omitempty"`
+	FreshnessDisposition  string   `json:"freshness_disposition,omitempty"`
 	Constraints           []string `json:"constraints,omitempty"`
 	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
 	ObservationIndicators []string `json:"observation_indicators,omitempty"`
@@ -23,6 +29,24 @@ type ProblemFrameInput struct {
 	Context               string   `json:"context,omitempty"`
 	Mode                  string   `json:"mode,omitempty"`
 }
+
+const (
+	ProblemProfileCue  = "cue"
+	ProblemProfileThin = "thin"
+	ProblemProfileDeep = "deep"
+
+	ProblemReadinessCueOnly   = "cue_only"
+	ProblemReadinessCandidate = "p2w_candidate"
+	ProblemReadinessReady     = "p2w_ready"
+	ProblemReadinessBlocked   = "p2w_blocked"
+	ProblemBoundaryExplicit   = "explicit"
+	ProblemBoundaryMissing    = "missing"
+	ProblemBoundaryPartial    = "partial"
+	ProblemSourceObserved     = "observed_problem"
+	ProblemSourceWish         = "wish"
+	ProblemSourceTicket       = "ticket"
+	ProblemSourceChosenMethod = "chosen_method"
+)
 
 // CharacterizeInput is the input for adding comparison dimensions.
 type CharacterizeInput struct {
@@ -57,6 +81,10 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	if err != nil {
 		return nil, err
 	}
+	profile, err := BuildProblemCardProfile(input)
+	if err != nil {
+		return nil, err
+	}
 
 	var mode Mode
 	if input.Mode == "" {
@@ -75,6 +103,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	if problemType != "" {
 		body.WriteString(fmt.Sprintf("\n## Problem Type\n\n%s\n", problemType))
 	}
+	renderProblemProfileSections(&body, profile)
 
 	if len(input.Constraints) > 0 {
 		body.WriteString("\n## Constraints\n\n")
@@ -132,6 +161,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	fields := ProblemFields{
 		ProblemType:           problemType,
 		Signal:                input.Signal,
+		Profile:               profilePtr(profile),
 		Constraints:           input.Constraints,
 		OptimizationTargets:   input.OptimizationTargets,
 		ObservationIndicators: input.ObservationIndicators,
@@ -148,6 +178,144 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 
 func semanticPtr(value SemanticEnvelope) *SemanticEnvelope {
 	return &value
+}
+
+func profilePtr(value ProblemCardProfile) *ProblemCardProfile {
+	return &value
+}
+
+func BuildProblemCardProfile(input ProblemFrameInput) (ProblemCardProfile, error) {
+	level, err := normalizeProblemProfileLevel(input.ProblemProfile)
+	if err != nil {
+		return ProblemCardProfile{}, err
+	}
+	sourceKind, err := normalizeProblemSourceKind(input.SourceKind)
+	if err != nil {
+		return ProblemCardProfile{}, err
+	}
+
+	profile := ProblemCardProfile{
+		Level:                level,
+		SourceKind:           sourceKind,
+		WhyNow:               strings.TrimSpace(input.WhyNow),
+		Scope:                strings.TrimSpace(input.Scope),
+		AcceptanceProbe:      strings.TrimSpace(input.AcceptanceProbe),
+		FreshnessDisposition: strings.TrimSpace(input.FreshnessDisposition),
+	}
+	profile.BoundaryStatus = problemBoundaryStatus(profile)
+	profile.Blockers = problemReadinessBlockers(profile)
+	profile.Readiness = problemReadiness(profile)
+
+	return profile, nil
+}
+
+func normalizeProblemProfileLevel(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return ProblemProfileThin, nil
+	}
+
+	switch normalized {
+	case ProblemProfileCue, ProblemProfileThin, ProblemProfileDeep:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("problem_profile must be cue, thin, or deep")
+	}
+}
+
+func normalizeProblemSourceKind(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	if normalized == "" {
+		return ProblemSourceObserved, nil
+	}
+
+	switch normalized {
+	case ProblemSourceObserved, ProblemSourceWish, ProblemSourceTicket, ProblemSourceChosenMethod:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("source_kind must be observed_problem, wish, ticket, or chosen_method")
+	}
+}
+
+func problemBoundaryStatus(profile ProblemCardProfile) string {
+	hasScope := strings.TrimSpace(profile.Scope) != ""
+	hasProbe := strings.TrimSpace(profile.AcceptanceProbe) != ""
+	if hasScope && hasProbe {
+		return ProblemBoundaryExplicit
+	}
+	if hasScope || hasProbe {
+		return ProblemBoundaryPartial
+	}
+
+	return ProblemBoundaryMissing
+}
+
+func problemReadinessBlockers(profile ProblemCardProfile) []string {
+	blockers := make([]string, 0)
+	if profile.Level != ProblemProfileDeep {
+		blockers = append(blockers, "problem_profile is not deep")
+	}
+	if strings.TrimSpace(profile.WhyNow) == "" {
+		blockers = append(blockers, "why_now missing")
+	}
+	if strings.TrimSpace(profile.Scope) == "" {
+		blockers = append(blockers, "scope boundary missing")
+	}
+	if strings.TrimSpace(profile.AcceptanceProbe) == "" {
+		blockers = append(blockers, "acceptance_probe missing")
+	}
+	if strings.TrimSpace(profile.FreshnessDisposition) == "" {
+		blockers = append(blockers, "freshness_disposition missing")
+	}
+	if sourceKindNeedsBoundary(profile.SourceKind) && profile.BoundaryStatus != ProblemBoundaryExplicit {
+		blockers = append(blockers, "wish/ticket/chosen_method source requires explicit boundary before P2W readiness")
+	}
+
+	return blockers
+}
+
+func sourceKindNeedsBoundary(sourceKind string) bool {
+	switch sourceKind {
+	case ProblemSourceWish, ProblemSourceTicket, ProblemSourceChosenMethod:
+		return true
+	default:
+		return false
+	}
+}
+
+func problemReadiness(profile ProblemCardProfile) string {
+	if profile.Level == ProblemProfileCue {
+		return ProblemReadinessCueOnly
+	}
+	if len(profile.Blockers) == 0 {
+		return ProblemReadinessReady
+	}
+	if sourceKindNeedsBoundary(profile.SourceKind) && profile.BoundaryStatus != ProblemBoundaryExplicit {
+		return ProblemReadinessBlocked
+	}
+	if profile.Level == ProblemProfileDeep {
+		return ProblemReadinessBlocked
+	}
+
+	return ProblemReadinessCandidate
+}
+
+func renderProblemProfileSections(body *strings.Builder, profile ProblemCardProfile) {
+	body.WriteString(fmt.Sprintf("\n## Problem Profile\n\n%s\n", profile.Level))
+	body.WriteString(fmt.Sprintf("\n## P2W Readiness\n\n%s\n", profile.Readiness))
+	if profile.WhyNow != "" {
+		body.WriteString(fmt.Sprintf("\n## Why Now\n\n%s\n", profile.WhyNow))
+	}
+	if profile.Scope != "" {
+		body.WriteString(fmt.Sprintf("\n## Scope\n\n%s\n", profile.Scope))
+	}
+	if profile.AcceptanceProbe != "" {
+		body.WriteString(fmt.Sprintf("\n## Acceptance Probe\n\n%s\n", profile.AcceptanceProbe))
+	}
+	if profile.FreshnessDisposition != "" {
+		body.WriteString(fmt.Sprintf("\n## Freshness Disposition\n\n%s\n", profile.FreshnessDisposition))
+	}
 }
 
 // FrameProblem creates a ProblemCard artifact. Orchestrates effects around BuildProblemArtifact.

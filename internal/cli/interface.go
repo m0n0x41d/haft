@@ -121,8 +121,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"title", "signal"},
-				OptionalFields: []string{"problem_type", "constraints", "optimization_targets", "observation_indicators", "acceptance", "blast_radius", "reversibility", "context", "mode", "task_context"},
-				Notes:          []string{"Frame before exploring when the problem is fuzzy or a solution was proposed before acceptance criteria."},
+				OptionalFields: []string{"problem_type", "problem_profile", "source_kind", "why_now", "scope", "acceptance_probe", "freshness_disposition", "constraints", "optimization_targets", "observation_indicators", "acceptance", "blast_radius", "reversibility", "context", "mode", "task_context"},
+				Notes:          []string{"Frame before exploring when the problem is fuzzy or a solution was proposed before acceptance criteria.", "P2W readiness is computed: wish/ticket/chosen_method sources cannot become ready without explicit scope and acceptance probe."},
 			},
 			Invariants: commonInterfaceInvariants(),
 		},

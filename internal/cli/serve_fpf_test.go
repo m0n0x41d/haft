@@ -217,9 +217,14 @@ func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *tes
 	store := setupCLIArtifactStore(t)
 
 	problem, _, err := artifact.FrameProblem(ctx, store, t.TempDir(), artifact.ProblemFrameInput{
-		Title:      "Exact semantic payload",
-		Signal:     "Fresh ProblemCards should expose exact semantic views.",
-		Acceptance: "related payload includes working, exact, and audit views.",
+		Title:                "Exact semantic payload",
+		ProblemProfile:       artifact.ProblemProfileDeep,
+		Signal:               "Fresh ProblemCards should expose exact semantic views.",
+		WhyNow:               "PublicationUnit is now part of the semantic spine.",
+		Scope:                "ProblemCard related payload views.",
+		AcceptanceProbe:      "related payload includes working, exact, and audit views.",
+		FreshnessDisposition: "Re-check when related view shape changes.",
+		Acceptance:           "related payload includes working, exact, and audit views.",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -256,6 +261,12 @@ func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *tes
 	if working["source_edition_hash"] == "" || working["publication_hash"] == "" {
 		t.Fatalf("working view missing source/publication hashes: %#v", working)
 	}
+	if working["problem_profile"] != artifact.ProblemProfileDeep {
+		t.Fatalf("working.problem_profile = %#v, want %q", working["problem_profile"], artifact.ProblemProfileDeep)
+	}
+	if working["p2w_readiness"] != artifact.ProblemReadinessReady {
+		t.Fatalf("working.p2w_readiness = %#v, want %q", working["p2w_readiness"], artifact.ProblemReadinessReady)
+	}
 	exact := views["exact"].(map[string]any)
 	if _, ok := exact["source_episteme"].(map[string]any); !ok {
 		t.Fatalf("exact view missing source_episteme: %#v", exact)
@@ -272,6 +283,51 @@ func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *tes
 	}
 	if _, ok := audit["publication_unit"].(map[string]any); !ok {
 		t.Fatalf("audit view missing publication_unit: %#v", audit)
+	}
+}
+
+func TestHandleQuintProblem_FramePersistsProblemProfile(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+
+	result, err := handleQuintProblem(ctx, store, t.TempDir(), map[string]any{
+		"action":                "frame",
+		"title":                 "Ticket cannot become work without boundary",
+		"problem_profile":       artifact.ProblemProfileDeep,
+		"source_kind":           artifact.ProblemSourceTicket,
+		"signal":                "A ticket names a request but not an implementation boundary.",
+		"why_now":               "The slice train is consuming problem frames.",
+		"freshness_disposition": "Re-check before admission.",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintProblem returned error: %v", err)
+	}
+	if !strings.Contains(result, "Problem framed") {
+		t.Fatalf("unexpected frame response:\n%s", result)
+	}
+
+	items, err := artifact.SelectProblems(ctx, store, "", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("created problem count = %d, want 1", len(items))
+	}
+
+	reloaded, err := store.Get(ctx, items[0].Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	profile := reloaded.UnmarshalProblemFields().Profile
+	if profile == nil {
+		t.Fatal("problem profile missing")
+	}
+	if profile.SourceKind != artifact.ProblemSourceTicket {
+		t.Fatalf("profile.source_kind = %q, want %q", profile.SourceKind, artifact.ProblemSourceTicket)
+	}
+	if profile.Readiness != artifact.ProblemReadinessBlocked {
+		t.Fatalf("profile.readiness = %q, want %q", profile.Readiness, artifact.ProblemReadinessBlocked)
 	}
 }
 

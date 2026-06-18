@@ -159,6 +159,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- `haft init` instruction carriers restore the peer-engineering communication
+  style from the original `CLAUDE.md`: dry technical humor is allowed when it
+  helps, and agents are told to sound like pairing engineers rather than
+  executive-presenting bots. Fixes [#92](https://github.com/m0n0x41d/haft/issues/92).
 - Shared `haft-embed` daemons no longer inherit the first client project's
   working directory; the launcher now starts them from the private socket
   directory and resolves configured cache paths to absolute paths before launch.

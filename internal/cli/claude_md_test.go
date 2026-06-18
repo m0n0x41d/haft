@@ -159,6 +159,42 @@ func TestClaudeMDTemplateInSyncWithRepoRoot(t *testing.T) {
 	}
 }
 
+func TestInstructionCarriersPreservePeerEngineeringStyle(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("skipping sync check outside repo: %v", err)
+	}
+
+	claudeData, err := os.ReadFile(filepath.Join(repoRoot, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read repo CLAUDE.md: %v", err)
+	}
+	agentsData, err := os.ReadFile(filepath.Join(repoRoot, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read repo AGENTS.md: %v", err)
+	}
+
+	claudeContent := string(claudeData)
+	agentsContent := string(agentsData)
+
+	assertContains(t, "embedded template", embeddedClaudeMDTemplate, "Be a peer engineer, not a cheerleader")
+	assertContains(t, "embedded template", embeddedClaudeMDTemplate, "Use dry, technical humor when appropriate")
+	assertContains(t, "embedded template", embeddedClaudeMDTemplate, "Talk like you're pairing with a staff engineer, not pitching to a VP")
+	assertContains(t, "repo CLAUDE.md", claudeContent, "Be a peer engineer, not a cheerleader")
+	assertContains(t, "repo CLAUDE.md", claudeContent, "Use dry, technical humor when appropriate")
+	assertContains(t, "repo CLAUDE.md", claudeContent, "Talk like you're pairing with a staff engineer, not pitching to a VP")
+	assertContains(t, "repo AGENTS.md", agentsContent, "Be a peer engineer, not a cheerleader")
+	assertContains(t, "repo AGENTS.md", agentsContent, "Use dry, technical humor when appropriate")
+	assertContains(t, "repo AGENTS.md", agentsContent, "Talk like you're pairing with a staff engineer, not pitching to a VP")
+}
+
+func assertContains(t *testing.T, carrier string, content string, fragment string) {
+	t.Helper()
+	if !strings.Contains(content, fragment) {
+		t.Fatalf("%s missing %q", carrier, fragment)
+	}
+}
+
 // findRepoRoot walks up from cwd looking for a go.mod file. Returns the
 // directory containing it, or an error if none found.
 func findRepoRoot() (string, error) {

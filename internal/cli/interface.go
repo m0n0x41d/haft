@@ -674,6 +674,38 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.change_case",
+			Purpose: "Build a read-only EngineeringChangeCase projection over one DecisionRecord's problem, transformation, choice, and evidence refs.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "change_case",
+				MCPCall:          `haft_query(action="change_case", artifact_ref="dec-...", attempted_use="implementation review", method_ref="mpull-...")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft change case DECISION_REF --attempted-use ... --method-ref ... --json",
+				DiscoveryCommand: "haft interface query.change_case --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"artifact_ref"},
+				OptionalFields: []string{"attempted_use", "producer_ref", "method_ref", "work_ref"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"case_ref":"change-case:dec-...","problem_card_refs":[...],"transformation_refs":[...],"choice_result_ref":"...","evidence_item_refs":[...],"evidence_path_refs":[...],"authority_boundary":{"proof":"not_proof","gate_decision":"not_gate_decision","work_occurrence":"not_work_occurrence"}}`,
+						Note:  "The case is derived from existing artifacts; it is not a new root kind, proof, approval, GateDecision, or performed work.",
+					},
+				},
+				Notes: []string{
+					"EvidencePath records are included only when attempted_use is declared.",
+					"Missing referenced ProblemCards remain visible as refs instead of being fabricated.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON EngineeringChangeCase projection"},
+			Invariants: append(commonInterfaceInvariants(),
+				"EngineeringChangeCase is a derived projection, not a mutation or new FPF root kind.",
+				"Default status, related, and code_context payloads do not inline change cases.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

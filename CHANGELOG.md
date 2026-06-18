@@ -118,6 +118,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   The payload binds claim refs, producer/method/work trace refs, currentness
   windows, and authority boundaries; evidence presence cannot create approval,
   `GateDecision`, or global truth.
+- **EngineeringChangeCase v1 projection.** `haft change case DECISION_REF` and
+  `haft_query(action="change_case")` now derive a read-only case aggregate over
+  one DecisionRecord's ProblemCard refs, TransformationRecord payload,
+  ChoiceResult, evidence item refs, and optional EvidencePath records. The case
+  is explicitly a projection, not a new FPF root kind, proof, approval,
+  `GateDecision`, work occurrence, or global truth.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

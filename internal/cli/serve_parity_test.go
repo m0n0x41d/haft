@@ -55,7 +55,7 @@ func TestTransportActionParity(t *testing.T) {
 		},
 		{
 			toolName:          "haft_query",
-			mcpActions:        []string{"search", "status", "board", "related", "projection", "list", "coverage", "fpf", "spec_review", "spec_use", "evidence_path"},
+			mcpActions:        []string{"search", "status", "board", "related", "projection", "list", "coverage", "fpf", "spec_review", "spec_use", "change_case", "evidence_path"},
 			standaloneActions: []string{"search", "status", "related", "projection", "fpf"},
 		},
 	}
@@ -79,6 +79,7 @@ func TestTransportActionParity(t *testing.T) {
 			"coverage":      "MCP-only — module coverage report; standalone uses status",
 			"spec_review":   "MCP-only — explicit read-only spec semantic review packet; standalone has CLI `haft spec review` instead of the old standalone tool transport",
 			"spec_use":      "MCP-only — explicit read-only SpecificationUseRecord packet; standalone has CLI `haft spec use` instead of the old standalone tool transport",
+			"change_case":   "MCP-only — explicit read-only EngineeringChangeCase projection; standalone has CLI `haft change case` instead of the old standalone tool transport",
 			"evidence_path": "MCP-only — explicit read-only EvidencePath/RelianceDisposition packet; standalone has CLI `haft evidence path` instead of the old standalone tool transport",
 		},
 	}

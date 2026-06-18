@@ -1868,6 +1868,32 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "change_case":
+		decisionRef := stringArg(args, "artifact_ref")
+		if decisionRef == "" {
+			decisionRef = stringArg(args, "decision_ref")
+		}
+		record, err := buildEngineeringChangeCase(
+			ctx,
+			store,
+			artifact.EngineeringChangeCaseInput{
+				DecisionRef:  decisionRef,
+				AttemptedUse: stringArg(args, "attempted_use"),
+				ProducerRef:  stringArg(args, "producer_ref"),
+				MethodRef:    stringArg(args, "method_ref"),
+				WorkRef:      stringArg(args, "work_ref"),
+			},
+			time.Now().UTC(),
+		)
+		if err != nil {
+			return "", fmt.Errorf("build engineering change case: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal engineering change case: %w", err)
+		}
+		return string(payload), nil
+
 	case "evidence_path":
 		record, err := buildEvidencePathRecord(
 			ctx,
@@ -1896,7 +1922,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

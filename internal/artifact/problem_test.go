@@ -66,6 +66,16 @@ func TestFrameProblem_Success(t *testing.T) {
 	if got := a.UnmarshalProblemFields().ProblemType; got != ProblemTypeDiagnosis {
 		t.Errorf("problem_type = %q, want %q", got, ProblemTypeDiagnosis)
 	}
+	semantic := a.UnmarshalProblemFields().Semantic
+	if semantic == nil {
+		t.Fatal("semantic envelope missing")
+	}
+	if semantic.Status != SemanticStatusExact {
+		t.Fatalf("semantic status = %q, want exact", semantic.Status)
+	}
+	if semantic.CarrierBinding.SourceOfTruth != "sqlite" {
+		t.Fatalf("source_of_truth = %q, want sqlite", semantic.CarrierBinding.SourceOfTruth)
+	}
 	if filePath == "" {
 		t.Error("file path should not be empty")
 	}

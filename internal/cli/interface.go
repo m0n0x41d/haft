@@ -536,6 +536,46 @@ func haftInterfaceCatalog() []interfaceCapability {
 			Invariants: commonInterfaceInvariants(),
 		},
 		{
+			ID:      "query.related",
+			Purpose: "Recover one artifact carrier by ref, including explicit ProblemCard semantic views when available.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "related",
+				MCPCall:          `haft_query(action="related", ref="prob-...")`,
+				CLIStatus:        "mcp_projection",
+				DiscoveryCommand: "haft interface query.related --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"ref"},
+				OptionalFields: []string{"artifact_id"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "problem_card.semantic",
+						Shape: `{"status":"exact|legacy|degraded","profile":{"id":"...","hash":"sha256:..."}}`,
+						Note:  "Semantic status is explicit; missing legacy envelopes are not promoted to exact.",
+					},
+					{
+						Field: "problem_card.views",
+						Shape: `{"working":{...},"exact":{...},"audit":{...}}`,
+						Note:  "working is compact; exact/audit expose semantic envelope, carrier binding, and provenance.",
+					},
+				},
+				Notes: []string{
+					"For ProblemCard refs, the response preserves legacy keys and adds semantic + views.",
+					"SQLite remains runtime source of truth; markdown is a carrier imported through explicit sync.",
+					"Audit views must label legacy/degraded semantics instead of fabricating exact provenance.",
+				},
+			},
+			OutputVolume: []string{
+				"default: one JSON artifact payload",
+				"ProblemCard: legacy payload plus semantic, working, exact, and audit view objects",
+			},
+			Invariants: append(commonInterfaceInvariants(),
+				"No new top-level MCP action; related remains the single-artifact recovery path.",
+				"Compatibility projections must not become authority or evidence by presentation.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

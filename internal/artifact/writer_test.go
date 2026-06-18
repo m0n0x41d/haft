@@ -101,6 +101,41 @@ func TestWriteFileWithLinks(t *testing.T) {
 	}
 }
 
+func TestWriteFileIncludesStructuredDataCarrierBlock(t *testing.T) {
+	haftDir := t.TempDir()
+
+	a := &Artifact{
+		Meta: Meta{
+			ID:        "prob-20260618-001",
+			Kind:      KindProblemCard,
+			Version:   1,
+			Status:    StatusActive,
+			Title:     "Structured carrier",
+			CreatedAt: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+			UpdatedAt: time.Date(2026, 6, 18, 12, 0, 0, 0, time.UTC),
+		},
+		Body:           "## Signal\n\nCarrier must preserve structured data.\n",
+		StructuredData: `{"signal":"Carrier must preserve structured data."}`,
+	}
+
+	path, err := WriteFile(haftDir, a)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(content)
+	if !strings.Contains(s, StructuredDataBlockStart) {
+		t.Fatalf("missing structured_data block:\n%s", s)
+	}
+	if !strings.Contains(s, `"signal": "Carrier must preserve structured data."`) {
+		t.Fatalf("structured_data block should pretty-print JSON:\n%s", s)
+	}
+}
+
 func TestWriteFileCreatesSubdirectory(t *testing.T) {
 	haftDir := t.TempDir()
 

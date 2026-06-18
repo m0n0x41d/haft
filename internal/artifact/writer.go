@@ -72,6 +72,7 @@ func RenderArtifactFile(a *Artifact) string {
 	if !strings.HasSuffix(a.Body, "\n") {
 		sb.WriteString("\n")
 	}
+	sb.WriteString(RenderStructuredDataBlock(a.StructuredData))
 
 	return sb.String()
 }

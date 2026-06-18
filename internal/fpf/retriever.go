@@ -36,12 +36,22 @@ type SpecRetrievalResult struct {
 // SpecRetrievedSection is a presentation-ready FPF section hit with either
 // snippet-sized content or the full section body.
 type SpecRetrievedSection struct {
-	PatternID string
-	Heading   string
-	Tier      string
-	Reason    string
-	Summary   string
-	Content   string
+	PatternID  string
+	Heading    string
+	Tier       string
+	Reason     string
+	Summary    string
+	Content    string
+	Provenance SpecRetrievalProvenance
+}
+
+type SpecRetrievalProvenance struct {
+	ProfileID          string
+	SourceKind         string
+	SourceRef          string
+	SourceHash         string
+	IndexSchemaVersion string
+	RetrievalMode      string
 }
 
 // RetrieveSpec resolves deterministic FPF search hits and hydrates content for
@@ -53,9 +63,10 @@ func RetrieveSpec(db *sql.DB, request SpecRetrievalRequest) (SpecRetrievalResult
 		return SpecRetrievalResult{}, err
 	}
 
+	provenance := buildSpecRetrievalProvenance(db, request)
 	results := make([]SpecRetrievedSection, 0, len(searchResults))
 	for _, searchResult := range searchResults {
-		results = append(results, hydrateRetrievedSection(db, searchResult, request.Full))
+		results = append(results, hydrateRetrievedSection(db, searchResult, request.Full, provenance))
 	}
 
 	return SpecRetrievalResult{
@@ -111,7 +122,7 @@ func normalizeSpecRetrievalMode(mode string) string {
 	return ""
 }
 
-func hydrateRetrievedSection(db *sql.DB, searchResult SpecSearchResult, full bool) SpecRetrievedSection {
+func hydrateRetrievedSection(db *sql.DB, searchResult SpecSearchResult, full bool, provenance SpecRetrievalProvenance) SpecRetrievedSection {
 	content := searchResult.Snippet
 	if full {
 		body, err := GetSpecSection(db, firstNonEmpty(searchResult.PatternID, searchResult.Heading))
@@ -121,11 +132,41 @@ func hydrateRetrievedSection(db *sql.DB, searchResult SpecSearchResult, full boo
 	}
 
 	return SpecRetrievedSection{
-		PatternID: searchResult.PatternID,
-		Heading:   searchResult.Heading,
-		Tier:      searchResult.Tier,
-		Reason:    searchResult.Reason,
-		Summary:   searchResult.Summary,
-		Content:   content,
+		PatternID:  searchResult.PatternID,
+		Heading:    searchResult.Heading,
+		Tier:       searchResult.Tier,
+		Reason:     searchResult.Reason,
+		Summary:    searchResult.Summary,
+		Content:    content,
+		Provenance: provenance,
 	}
+}
+
+func buildSpecRetrievalProvenance(db *sql.DB, request SpecRetrievalRequest) SpecRetrievalProvenance {
+	info, _ := GetSpecIndexInfo(db)
+	return SpecRetrievalProvenance{
+		ProfileID:          "fpf-spec-index-v" + firstNonEmpty(info.SchemaVersion, SpecIndexSchemaVersion),
+		SourceKind:         "embedded-fpf-index",
+		SourceRef:          info.SpecPath,
+		SourceHash:         info.Commit,
+		IndexSchemaVersion: firstNonEmpty(info.SchemaVersion, SpecIndexSchemaVersion),
+		RetrievalMode:      effectiveSpecRetrievalMode(request),
+	}
+}
+
+func effectiveSpecRetrievalMode(request SpecRetrievalRequest) string {
+	mode := strings.TrimSpace(request.Mode)
+	if strings.EqualFold(mode, SpecSearchModeTree) {
+		return SpecSearchModeTree
+	}
+	if normalizeSpecRetrievalMode(mode) == SpecRetrievalModeFTS {
+		return SpecRetrievalModeFTS
+	}
+	if strings.TrimSpace(request.Tier) != "" {
+		return "tier-filter"
+	}
+	if request.HybridSearch != nil {
+		return "hybrid"
+	}
+	return SpecRetrievalModeFTS
 }

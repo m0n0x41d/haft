@@ -138,10 +138,15 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		Acceptance:            input.Acceptance,
 		BlastRadius:           input.BlastRadius,
 		Reversibility:         input.Reversibility,
+		Semantic:              semanticPtr(NewProblemSemanticEnvelope(id, now)),
 	})
 	a.StructuredData = string(sd)
 
 	return a, nil
+}
+
+func semanticPtr(value SemanticEnvelope) *SemanticEnvelope {
+	return &value
 }
 
 // FrameProblem creates a ProblemCard artifact. Orchestrates effects around BuildProblemArtifact.

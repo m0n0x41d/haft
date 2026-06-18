@@ -38,6 +38,12 @@ func TestRetrieveSpec_UsesStructuredSnippetByDefault(t *testing.T) {
 	if strings.Contains(hit.Content, "TAIL-MARKER") {
 		t.Fatalf("expected default retrieval to keep snippet-sized content, got %q", hit.Content)
 	}
+	if hit.Provenance.ProfileID == "" {
+		t.Fatal("expected retrieval provenance profile id")
+	}
+	if hit.Provenance.RetrievalMode != SpecRetrievalModeFTS {
+		t.Fatalf("retrieval mode = %q, want fts", hit.Provenance.RetrievalMode)
+	}
 }
 
 func TestRetrieveSpec_HydratesFullSectionContent(t *testing.T) {

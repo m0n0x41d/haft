@@ -33,6 +33,14 @@ func presentFPFRetrieval(results []fpf.SpecRetrievedSection) []present.FPFSearch
 			Reason:    result.Reason,
 			Summary:   result.Summary,
 			Content:   result.Content,
+			Provenance: present.FPFSearchProvenance{
+				ProfileID:          result.Provenance.ProfileID,
+				SourceKind:         result.Provenance.SourceKind,
+				SourceRef:          result.Provenance.SourceRef,
+				SourceHash:         result.Provenance.SourceHash,
+				IndexSchemaVersion: result.Provenance.IndexSchemaVersion,
+				RetrievalMode:      result.Provenance.RetrievalMode,
+			},
 		})
 	}
 

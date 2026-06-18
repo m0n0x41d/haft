@@ -14,7 +14,12 @@ func ParseFile(content string) (*Artifact, error) {
 		return nil, err
 	}
 
-	a := &Artifact{Body: body}
+	body, structuredData := ExtractStructuredDataBlock(body)
+
+	a := &Artifact{
+		Body:           body,
+		StructuredData: structuredData,
+	}
 	if err := parseFrontmatter(meta, &a.Meta); err != nil {
 		return nil, fmt.Errorf("parse frontmatter: %w", err)
 	}

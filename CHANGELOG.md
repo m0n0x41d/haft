@@ -8,6 +8,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **ProblemCard semantic-spine first slice.** New ProblemCards now carry an
+  additive semantic envelope in `structured_data` with explicit profile
+  provenance, semantic-edition identity, carrier binding, reference scheme,
+  publication projection, and `exact`/`legacy` status. `haft_query(action=
+  "related", ref="prob-...")` keeps the legacy payload shape while adding
+  `semantic` plus `views.working`, `views.exact`, and `views.audit`, and
+  `haft interface query.related --json` documents the compact discovery
+  contract.
+- **FPF retrieval provenance metadata.** FPF section retrieval now carries
+  compact profile/index provenance (profile id, embedded source, upstream
+  commit hash when present, index schema version, and retrieval mode) through
+  the internal retrieval/presentation path. Default search output stays compact;
+  metadata appears only when callers request metadata/explain surfaces.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for
@@ -91,6 +104,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Markdown carriers round-trip structured artifact data through `haft sync`.**
+  Artifact markdown projections now include a hidden `structured_data` carrier
+  block when structured JSON exists. The shared artifact parser extracts that
+  block back into SQLite on `haft sync`; legacy ProblemCard markdown without an
+  envelope imports as `legacy` with audit warnings instead of being promoted to
+  exact v3 semantics.
 - **Default `h-status` is now an operator cockpit.** `haft_query(action="status")`
   renders capped high-signal lanes for operator attention, active work,
   decision-health counts, and a one-line coverage cue; detailed status remains

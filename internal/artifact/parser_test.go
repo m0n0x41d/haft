@@ -4,6 +4,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParseFile_Basic(t *testing.T) {
@@ -256,4 +257,54 @@ func TestRoundTrip(t *testing.T) {
 			t.Errorf("link[%d].type: %q != %q", i, parsed.Meta.Links[i].Type, original.Meta.Links[i].Type)
 		}
 	}
+}
+
+func TestRoundTrip_PreservesStructuredDataCarrierBlock(t *testing.T) {
+	original := &Artifact{
+		Meta: Meta{
+			ID:        "prob-20260618-001",
+			Kind:      KindProblemCard,
+			Version:   1,
+			Status:    StatusActive,
+			Title:     "Semantic roundtrip",
+			CreatedAt: timeMustParse("2026-06-18T12:00:00Z"),
+			UpdatedAt: timeMustParse("2026-06-18T12:00:00Z"),
+		},
+		Body:           "# Semantic roundtrip\n\n## Signal\n\nNeed structured data in the markdown carrier.\n",
+		StructuredData: `{"signal":"Need structured data in the markdown carrier.","semantic":{"schema_version":1,"status":"exact"}}`,
+	}
+
+	dir := t.TempDir()
+	path, err := WriteFile(dir, original)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), StructuredDataBlockStart) {
+		t.Fatalf("written carrier missing structured_data block:\n%s", string(data))
+	}
+
+	parsed, err := ParseFile(string(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if parsed.StructuredData == "" {
+		t.Fatal("structured_data was not restored from carrier block")
+	}
+	if strings.Contains(parsed.Body, StructuredDataBlockStart) {
+		t.Fatalf("body should not include structured_data carrier block:\n%s", parsed.Body)
+	}
+}
+
+func timeMustParse(value string) time.Time {
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		panic(err)
+	}
+	return parsed
 }

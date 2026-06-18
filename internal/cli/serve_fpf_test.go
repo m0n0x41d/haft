@@ -190,6 +190,69 @@ func TestHandleQuintQuery_RelatedArtifactIDReturnsProblemCardJSON(t *testing.T) 
 	if card["structured_data"] != problem.StructuredData {
 		t.Fatalf("problem_card.structured_data = %#v", card["structured_data"])
 	}
+	semantic, ok := card["semantic"].(map[string]any)
+	if !ok {
+		t.Fatalf("problem_card.semantic missing or wrong shape: %#v", card["semantic"])
+	}
+	if semantic["status"] != string(artifact.SemanticStatusLegacy) {
+		t.Fatalf("problem_card.semantic.status = %#v, want legacy", semantic["status"])
+	}
+	views, ok := card["views"].(map[string]any)
+	if !ok {
+		t.Fatalf("problem_card.views missing or wrong shape: %#v", card["views"])
+	}
+	if _, ok := views["working"]; !ok {
+		t.Fatalf("problem_card.views missing working view: %#v", views)
+	}
+	if _, ok := views["exact"]; !ok {
+		t.Fatalf("problem_card.views missing exact view: %#v", views)
+	}
+	if _, ok := views["audit"]; !ok {
+		t.Fatalf("problem_card.views missing audit view: %#v", views)
+	}
+}
+
+func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+
+	problem, _, err := artifact.FrameProblem(ctx, store, t.TempDir(), artifact.ProblemFrameInput{
+		Title:      "Exact semantic payload",
+		Signal:     "Fresh ProblemCards should expose exact semantic views.",
+		Acceptance: "related payload includes working, exact, and audit views.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action": "related",
+		"ref":    problem.Meta.ID,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery returned error: %v", err)
+	}
+
+	var payload map[string]map[string]any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		t.Fatalf("expected JSON response, got %v:\n%s", err, result)
+	}
+
+	card := payload["problem_card"]
+	semantic := card["semantic"].(map[string]any)
+	if semantic["status"] != string(artifact.SemanticStatusExact) {
+		t.Fatalf("semantic.status = %#v, want exact", semantic["status"])
+	}
+
+	views := card["views"].(map[string]any)
+	working := views["working"].(map[string]any)
+	if working["semantic_status"] != string(artifact.SemanticStatusExact) {
+		t.Fatalf("working.semantic_status = %#v, want exact", working["semantic_status"])
+	}
+	audit := views["audit"].(map[string]any)
+	if audit["semantic_status"] != string(artifact.SemanticStatusExact) {
+		t.Fatalf("audit.semantic_status = %#v, want exact", audit["semantic_status"])
+	}
 }
 
 func setupCLIArtifactStore(t *testing.T) *artifact.Store {

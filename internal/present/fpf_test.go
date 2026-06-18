@@ -16,6 +16,14 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 			Reason:    "exact pattern id",
 			Summary:   "Keep boundary claims evolvable by routing each statement to the right layer.",
 			Content:   "Boundary routing body",
+			Provenance: present.FPFSearchProvenance{
+				ProfileID:          "fpf-spec-index-v4",
+				SourceKind:         "embedded-fpf-index",
+				SourceRef:          "data/FPF/FPF-Spec.md",
+				SourceHash:         "abc123",
+				IndexSchemaVersion: "4",
+				RetrievalMode:      "fts",
+			},
 		},
 		{
 			PatternID: "A.6.B",
@@ -37,6 +45,7 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 		"### 1. A.6 — Signature Stack & Boundary Discipline",
 		"tier: pattern · exact pattern id",
 		"summary: Keep boundary claims evolvable by routing each statement to the right layer.",
+		"profile: fpf-spec-index-v4 · source_kind=embedded-fpf-index · source_ref=data/FPF/FPF-Spec.md · source_hash=abc123 · index_schema=4 · retrieval=fts",
 		"Boundary routing body",
 		"### 2. A.6.B — Boundary Norm Square",
 		"tier: route · Boundary discipline and routing",

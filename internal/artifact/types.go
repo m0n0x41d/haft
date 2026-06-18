@@ -344,6 +344,60 @@ type ProblemFields struct {
 	BlastRadius           string                     `json:"blast_radius,omitempty"`
 	Reversibility         string                     `json:"reversibility,omitempty"`
 	Characterizations     []CharacterizationSnapshot `json:"characterizations,omitempty"`
+	Semantic              *SemanticEnvelope          `json:"semantic,omitempty"`
+}
+
+type SemanticStatus string
+
+const (
+	SemanticStatusExact    SemanticStatus = "exact"
+	SemanticStatusLegacy   SemanticStatus = "legacy"
+	SemanticStatusDegraded SemanticStatus = "degraded"
+)
+
+type SemanticEnvelope struct {
+	SchemaVersion         int                   `json:"schema_version"`
+	Status                SemanticStatus        `json:"status"`
+	Profile               FPFProfileRef         `json:"profile"`
+	SemanticEdition       SemanticEditionRef    `json:"semantic_edition"`
+	ReferenceScheme       ReferenceScheme       `json:"reference_scheme"`
+	CarrierBinding        CarrierBinding        `json:"carrier_binding"`
+	PublicationProjection PublicationProjection `json:"publication_projection"`
+	EvidencePathRefs      []string              `json:"evidence_path_refs,omitempty"`
+	Warnings              []string              `json:"warnings,omitempty"`
+}
+
+type FPFProfileRef struct {
+	ID         string `json:"id"`
+	SourceKind string `json:"source_kind"`
+	SourceRef  string `json:"source_ref"`
+	Hash       string `json:"hash"`
+	ValidUntil string `json:"valid_until,omitempty"`
+}
+
+type SemanticEditionRef struct {
+	ID        string `json:"id"`
+	Family    string `json:"family"`
+	Version   int    `json:"version"`
+	CreatedAt string `json:"created_at,omitempty"`
+}
+
+type ReferenceScheme struct {
+	Primary string   `json:"primary"`
+	Anchors []string `json:"anchors,omitempty"`
+}
+
+type CarrierBinding struct {
+	CarrierKind   string `json:"carrier_kind"`
+	CarrierRef    string `json:"carrier_ref"`
+	StorageKind   string `json:"storage_kind"`
+	SourceOfTruth string `json:"source_of_truth"`
+}
+
+type PublicationProjection struct {
+	ProjectionKind string   `json:"projection_kind"`
+	Views          []string `json:"views,omitempty"`
+	SyncPolicy     string   `json:"sync_policy"`
 }
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.

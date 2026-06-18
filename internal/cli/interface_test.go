@@ -28,7 +28,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "refresh.scan"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "refresh.scan"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -131,6 +131,32 @@ func TestInterfaceCodeContextNamesLaneEscalation(t *testing.T) {
 	}
 	if !strings.Contains(outputVolume, "typed lanes") || !strings.Contains(outputVolume, "full=true: complete audit dump") {
 		t.Fatalf("code_context interface should name typed lanes and audit dump:\n%s", outputVolume)
+	}
+}
+
+func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.related")
+	if !ok {
+		t.Fatal("query.related capability missing")
+	}
+
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `action="related"`) {
+		t.Fatalf("related interface should name related action:\n%#v", capability.CurrentExecution)
+	}
+
+	fieldShapes := ""
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
+	}
+	for _, want := range []string{"problem_card.semantic", "exact|legacy|degraded", "problem_card.views", "working", "audit"} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("related field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	if !strings.Contains(notes, "SQLite remains runtime source of truth") {
+		t.Fatalf("related notes should document source-of-truth policy:\n%s", notes)
 	}
 }
 

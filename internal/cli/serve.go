@@ -1920,7 +1920,7 @@ func artifactQueryContractPayload(item *artifact.Artifact) map[string]any {
 		"links":       item.Meta.Links,
 	}
 
-	return map[string]any{
+	payload := map[string]any{
 		"id":              item.Meta.ID,
 		"kind":            string(item.Meta.Kind),
 		"version":         item.Meta.Version,
@@ -1937,6 +1937,46 @@ func artifactQueryContractPayload(item *artifact.Artifact) map[string]any {
 		"search_keywords": item.SearchKeywords,
 		"structured_data": item.StructuredData,
 		"meta":            meta,
+	}
+	if item.Meta.Kind == artifact.KindProblemCard {
+		payload["semantic"] = artifact.ProblemSemanticEnvelopeForArtifact(item)
+		payload["views"] = artifactProblemSemanticViews(item)
+	}
+
+	return payload
+}
+
+func artifactProblemSemanticViews(item *artifact.Artifact) map[string]any {
+	fields := item.UnmarshalProblemFields()
+	semantic := artifact.ProblemSemanticEnvelopeForArtifact(item)
+
+	return map[string]any{
+		"working": map[string]any{
+			"id":              item.Meta.ID,
+			"title":           item.Meta.Title,
+			"semantic_status": string(semantic.Status),
+			"profile_id":      semantic.Profile.ID,
+			"signal":          fields.Signal,
+			"acceptance":      fields.Acceptance,
+		},
+		"exact": map[string]any{
+			"id":                 item.Meta.ID,
+			"semantic":           semantic,
+			"problem_fields":     fields,
+			"carrier_binding":    semantic.CarrierBinding,
+			"reference_scheme":   semantic.ReferenceScheme,
+			"publication_policy": semantic.PublicationProjection,
+		},
+		"audit": map[string]any{
+			"id":                 item.Meta.ID,
+			"semantic_status":    string(semantic.Status),
+			"profile":            semantic.Profile,
+			"semantic_edition":   semantic.SemanticEdition,
+			"carrier_binding":    semantic.CarrierBinding,
+			"reference_scheme":   semantic.ReferenceScheme,
+			"publication_policy": semantic.PublicationProjection,
+			"warnings":           semantic.Warnings,
+		},
 	}
 }
 

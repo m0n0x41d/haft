@@ -7,12 +7,22 @@ import (
 
 // FPFSearchResult is the presentation model for an FPF search hit.
 type FPFSearchResult struct {
-	PatternID string
-	Heading   string
-	Tier      string
-	Reason    string
-	Summary   string
-	Content   string
+	PatternID  string
+	Heading    string
+	Tier       string
+	Reason     string
+	Summary    string
+	Content    string
+	Provenance FPFSearchProvenance
+}
+
+type FPFSearchProvenance struct {
+	ProfileID          string
+	SourceKind         string
+	SourceRef          string
+	SourceHash         string
+	IndexSchemaVersion string
+	RetrievalMode      string
 }
 
 // FPFSearchOptions controls how FPF search results are rendered.
@@ -138,8 +148,37 @@ func formatFPFResultMetadata(result FPFSearchResult, showMetadata bool) string {
 	if summary != "" {
 		lines = append(lines, "summary: "+summary)
 	}
+	if provenance := formatFPFProvenance(result.Provenance); provenance != "" {
+		lines = append(lines, provenance)
+	}
 
 	return strings.Join(lines, "\n")
+}
+
+func formatFPFProvenance(provenance FPFSearchProvenance) string {
+	profileID := strings.TrimSpace(provenance.ProfileID)
+	if profileID == "" {
+		return ""
+	}
+
+	parts := []string{"profile: " + profileID}
+	if sourceKind := strings.TrimSpace(provenance.SourceKind); sourceKind != "" {
+		parts = append(parts, "source_kind="+sourceKind)
+	}
+	if sourceRef := strings.TrimSpace(provenance.SourceRef); sourceRef != "" {
+		parts = append(parts, "source_ref="+sourceRef)
+	}
+	if sourceHash := strings.TrimSpace(provenance.SourceHash); sourceHash != "" {
+		parts = append(parts, "source_hash="+sourceHash)
+	}
+	if schemaVersion := strings.TrimSpace(provenance.IndexSchemaVersion); schemaVersion != "" {
+		parts = append(parts, "index_schema="+schemaVersion)
+	}
+	if retrievalMode := strings.TrimSpace(provenance.RetrievalMode); retrievalMode != "" {
+		parts = append(parts, "retrieval="+retrievalMode)
+	}
+
+	return strings.Join(parts, " · ")
 }
 
 func ensureTrailingNewline(text string) string {

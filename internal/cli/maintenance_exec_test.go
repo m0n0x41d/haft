@@ -445,7 +445,7 @@ func createMaintExecDecision(t *testing.T, root string) string {
 
 	ctx := context.Background()
 	haftDir := filepath.Join(root, ".haft")
-	ripe := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	ripe := time.Now().Add(-48 * time.Hour).Format("2006-01-02")
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
 		SelectedTitle:   "Maintenance executor fixture decision",

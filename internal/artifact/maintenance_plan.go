@@ -342,7 +342,7 @@ func claimTask(item StaleItem, claim DecisionClaim) MaintenanceTask {
 }
 
 // evidenceDatesToday returns the claim refs that already received evidence
-// today (UTC), keyed by claim ID. Evidence IDs carry their date prefix
+// today, keyed by claim ID. Evidence IDs carry their local date prefix
 // (evid-YYYYMMDD-...), so no extra storage is needed for the cooldown.
 func evidenceDatesToday(ctx context.Context, store ArtifactStore, decisionRef string) map[string]bool {
 	out := make(map[string]bool)
@@ -350,7 +350,7 @@ func evidenceDatesToday(ctx context.Context, store ArtifactStore, decisionRef st
 	if err != nil {
 		return out
 	}
-	today := time.Now().UTC().Format("20060102")
+	today := time.Now().Format("20060102")
 	for _, item := range items {
 		if !strings.HasPrefix(item.ID, "evid-"+today+"-") {
 			continue

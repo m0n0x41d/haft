@@ -46,7 +46,7 @@ func TestBuildMaintenancePlan_RungClassification(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	ripe := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	ripe := time.Now().Add(-48 * time.Hour).Format("2006-01-02")
 	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Maintenance plan fixture decision",
 		WhySelected:   "For testing",
@@ -112,7 +112,7 @@ func TestBuildMaintenancePlan_CooldownSkipsClaimWithTodayEvidence(t *testing.T) 
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	ripe := time.Now().Add(-24 * time.Hour).Format("2006-01-02")
+	ripe := time.Now().Add(-48 * time.Hour).Format("2006-01-02")
 	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
 		SelectedTitle: "Cooldown fixture decision",
 		WhySelected:   "For testing",
@@ -130,6 +130,11 @@ func TestBuildMaintenancePlan_CooldownSkipsClaimWithTodayEvidence(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
+	claims := dec.UnmarshalDecisionFields().Claims
+	if len(claims) != 1 {
+		t.Fatalf("fixture decision claims = %#v, want one claim", claims)
+	}
+	claimRef := claims[0].ID
 
 	if _, err := AttachEvidence(ctx, store, EvidenceInput{
 		ArtifactRef:     dec.Meta.ID,
@@ -137,7 +142,7 @@ func TestBuildMaintenancePlan_CooldownSkipsClaimWithTodayEvidence(t *testing.T) 
 		Type:            "test",
 		Verdict:         "supports",
 		CongruenceLevel: 3,
-		ClaimRefs:       []string{"claim-001"},
+		ClaimRefs:       []string{claimRef},
 		Provenance:      ProvenanceMachine,
 	}); err != nil {
 		t.Fatal(err)
@@ -149,7 +154,7 @@ func TestBuildMaintenancePlan_CooldownSkipsClaimWithTodayEvidence(t *testing.T) 
 	}
 
 	for _, task := range plan.Tasks {
-		if task.DecisionRef == dec.Meta.ID && task.ClaimID == "claim-001" {
+		if task.DecisionRef == dec.Meta.ID && task.ClaimID == claimRef {
 			t.Error("claim with today's evidence must be cooldown-skipped, not re-planned")
 		}
 	}

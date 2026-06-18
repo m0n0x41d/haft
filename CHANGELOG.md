@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **Maintenance evidence cooldown date basis.** The maintenance plan cooldown
+  now compares today's evidence using the same local date prefix that
+  `AttachEvidence` writes into `evid-YYYYMMDD-*` IDs, avoiding duplicate
+  machine-check tasks around local/UTC day boundaries.
+
 ### Added
 
 - **`haft init --hermes`.** Hermes initialization now materializes a

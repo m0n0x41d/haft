@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
@@ -37,6 +38,12 @@ func TestRunFPFSearch_ExplainTierAndLimit(t *testing.T) {
 	}
 	if !strings.Contains(output, "summary: Boundary routing keeps claims on the right layer.") {
 		t.Fatalf("expected explain output to include the section summary, got:\n%s", output)
+	}
+	if !strings.Contains(output, "source_kind=fpf_route_carrier_over_spec_section") {
+		t.Fatalf("expected route output to name non-source carrier kind, got:\n%s", output)
+	}
+	if !strings.Contains(output, "normativity=navigation_carrier_non_normative") {
+		t.Fatalf("expected route output to avoid normative FPF masquerade, got:\n%s", output)
 	}
 	if strings.Contains(output, "tier: fts") {
 		t.Fatalf("expected tier filter to exclude fts results, got:\n%s", output)
@@ -74,6 +81,50 @@ func TestRunFPFSearch_FullFlagLoadsFullSectionBody(t *testing.T) {
 	}
 	if !strings.Contains(fullOutput, "TAIL-MARKER") {
 		t.Fatalf("expected --full output to include the complete section body, got:\n%s", fullOutput)
+	}
+}
+
+func TestRunFPFSearchJSONIncludesExplicitProvenance(t *testing.T) {
+	dbPath := buildFPFSearchTestDB(t)
+
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+
+	restoreFlags := stubFPFSearchFlags(t, 1, false, false, fpf.SpecSearchTierRoute, "")
+	defer restoreFlags()
+	fpfSearchJSON = true
+
+	output, err := captureStdout(t, func() error {
+		return runFPFSearch(nil, []string{"boundary"})
+	})
+	if err != nil {
+		t.Fatalf("runFPFSearch returned error: %v", err)
+	}
+
+	var retrieval fpf.SpecRetrievalResult
+	if err := json.Unmarshal([]byte(output), &retrieval); err != nil {
+		t.Fatalf("decode retrieval JSON: %v\n%s", err, output)
+	}
+
+	if len(retrieval.Results) != 1 {
+		t.Fatalf("expected one JSON result, got %#v", retrieval.Results)
+	}
+
+	provenance := retrieval.Results[0].Provenance
+	if provenance.SourceKind != "fpf_route_carrier_over_spec_section" {
+		t.Fatalf("source_kind = %q", provenance.SourceKind)
+	}
+	if provenance.SourceEdition == "" {
+		t.Fatalf("source_edition must be explicit in JSON provenance: %#v", provenance)
+	}
+	if provenance.SourceHash != "unknown" {
+		t.Fatalf("source_hash = %q, want explicit unknown fallback", provenance.SourceHash)
+	}
+	if provenance.ProfileValidity != "not_declared" {
+		t.Fatalf("profile_validity = %q", provenance.ProfileValidity)
+	}
+	if provenance.Normativity != "navigation_carrier_non_normative" {
+		t.Fatalf("normativity = %q", provenance.Normativity)
 	}
 }
 
@@ -731,12 +782,14 @@ func stubFPFSearchFlags(t *testing.T, limit int, full bool, explain bool, tier s
 	originalLimit := fpfSearchLimit
 	originalFull := fpfSearchFull
 	originalExplain := fpfSearchExplain
+	originalJSON := fpfSearchJSON
 	originalTier := fpfSearchTier
 	originalMode := fpfSearchMode
 
 	fpfSearchLimit = limit
 	fpfSearchFull = full
 	fpfSearchExplain = explain
+	fpfSearchJSON = false
 	fpfSearchTier = tier
 	fpfSearchMode = mode
 
@@ -744,6 +797,7 @@ func stubFPFSearchFlags(t *testing.T, limit int, full bool, explain bool, tier s
 		fpfSearchLimit = originalLimit
 		fpfSearchFull = originalFull
 		fpfSearchExplain = originalExplain
+		fpfSearchJSON = originalJSON
 		fpfSearchTier = originalTier
 		fpfSearchMode = originalMode
 	}

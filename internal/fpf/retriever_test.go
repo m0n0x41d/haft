@@ -41,8 +41,59 @@ func TestRetrieveSpec_UsesStructuredSnippetByDefault(t *testing.T) {
 	if hit.Provenance.ProfileID == "" {
 		t.Fatal("expected retrieval provenance profile id")
 	}
+	if hit.Provenance.SourceKind != specRetrievalSourceKindSection {
+		t.Fatalf("source kind = %q, want %q", hit.Provenance.SourceKind, specRetrievalSourceKindSection)
+	}
+	if hit.Provenance.Normativity != specRetrievalNormativitySource {
+		t.Fatalf("normativity = %q, want %q", hit.Provenance.Normativity, specRetrievalNormativitySource)
+	}
 	if hit.Provenance.RetrievalMode != SpecRetrievalModeFTS {
 		t.Fatalf("retrieval mode = %q, want fts", hit.Provenance.RetrievalMode)
+	}
+}
+
+func TestRetrieveSpec_ProvenanceCarriesEditionValidityAndRouteNormativity(t *testing.T) {
+	dbPath, db, cleanup := buildRetrievalTestIndex(t)
+	defer cleanup()
+
+	if err := SetSpecMetaEntries(dbPath, map[string]string{
+		"fpf_commit":          "abc1234",
+		"source_edition":      "FPF-2026-06-18",
+		"profile_valid_until": "2026-07-18",
+		"spec_path":           "data/FPF/FPF-Spec.md",
+		"schema_version":      SpecIndexSchemaVersion,
+	}); err != nil {
+		t.Fatalf("SetSpecMetaEntries failed: %v", err)
+	}
+
+	result, err := RetrieveSpec(db, SpecRetrievalRequest{
+		Query: "boundary",
+		Limit: 1,
+		Tier:  SpecSearchTierRoute,
+	})
+	if err != nil {
+		t.Fatalf("RetrieveSpec returned error: %v", err)
+	}
+
+	if len(result.Results) != 1 {
+		t.Fatalf("expected 1 route result, got %d", len(result.Results))
+	}
+
+	provenance := result.Results[0].Provenance
+	if provenance.SourceKind != specRetrievalSourceKindRouteCarrier {
+		t.Fatalf("source kind = %q, want %q", provenance.SourceKind, specRetrievalSourceKindRouteCarrier)
+	}
+	if provenance.SourceEdition != "FPF-2026-06-18" {
+		t.Fatalf("source edition = %q", provenance.SourceEdition)
+	}
+	if provenance.SourceHash != "abc1234" {
+		t.Fatalf("source hash = %q", provenance.SourceHash)
+	}
+	if provenance.ProfileValidity != "valid_until=2026-07-18" {
+		t.Fatalf("profile validity = %q", provenance.ProfileValidity)
+	}
+	if provenance.Normativity != specRetrievalNormativityRouteCarrier {
+		t.Fatalf("normativity = %q, want %q", provenance.Normativity, specRetrievalNormativityRouteCarrier)
 	}
 }
 

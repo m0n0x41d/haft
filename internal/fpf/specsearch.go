@@ -61,11 +61,13 @@ const SpecIndexSchemaVersion = "4"
 
 // SpecIndexInfo exposes inspectable build provenance for the embedded index.
 type SpecIndexInfo struct {
-	Commit          string
-	IndexedSections string
-	BuildTime       string
-	SpecPath        string
-	SchemaVersion   string
+	Commit            string
+	IndexedSections   string
+	BuildTime         string
+	SpecPath          string
+	SchemaVersion     string
+	SourceEdition     string
+	ProfileValidUntil string
 }
 
 const relatedExpansionLimit = 10
@@ -901,6 +903,8 @@ func GetSpecIndexInfo(db *sql.DB) (SpecIndexInfo, error) {
 		{key: "build_time", target: &info.BuildTime},
 		{key: "spec_path", target: &info.SpecPath},
 		{key: "schema_version", target: &info.SchemaVersion},
+		{key: "source_edition", target: &info.SourceEdition},
+		{key: "profile_valid_until", target: &info.ProfileValidUntil},
 	}
 
 	for _, reader := range readers {

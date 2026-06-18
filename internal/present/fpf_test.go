@@ -18,9 +18,12 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 			Content:   "Boundary routing body",
 			Provenance: present.FPFSearchProvenance{
 				ProfileID:          "fpf-spec-index-v4",
-				SourceKind:         "embedded-fpf-index",
+				SourceKind:         "fpf_spec_section",
+				SourceEdition:      "FPF-2026-06-18",
 				SourceRef:          "data/FPF/FPF-Spec.md",
 				SourceHash:         "abc123",
+				ProfileValidity:    "valid_until=2026-07-18",
+				Normativity:        "normative_fpf_source",
 				IndexSchemaVersion: "4",
 				RetrievalMode:      "fts",
 			},
@@ -45,7 +48,7 @@ func TestFormatFPFSearch_NumberedWithHeader(t *testing.T) {
 		"### 1. A.6 — Signature Stack & Boundary Discipline",
 		"tier: pattern · exact pattern id",
 		"summary: Keep boundary claims evolvable by routing each statement to the right layer.",
-		"profile: fpf-spec-index-v4 · source_kind=embedded-fpf-index · source_ref=data/FPF/FPF-Spec.md · source_hash=abc123 · index_schema=4 · retrieval=fts",
+		"profile: fpf-spec-index-v4 · source_kind=fpf_spec_section · source_edition=FPF-2026-06-18 · source_ref=data/FPF/FPF-Spec.md · source_hash=abc123 · profile_validity=valid_until=2026-07-18 · normativity=normative_fpf_source · index_schema=4 · retrieval=fts",
 		"Boundary routing body",
 		"### 2. A.6.B — Boundary Norm Square",
 		"tier: route · Boundary discipline and routing",
@@ -131,18 +134,22 @@ func TestFormatFPFSection(t *testing.T) {
 
 func TestFormatFPFInfo(t *testing.T) {
 	output := present.FormatFPFInfo(present.FPFInfo{
-		Version:         "dev",
-		Commit:          "abc1234",
-		IndexedSections: "321",
-		BuildTime:       "2026-03-26T12:34:56Z",
-		SpecPath:        "data/FPF/FPF-Spec.md",
-		SchemaVersion:   "1",
+		Version:           "dev",
+		Commit:            "abc1234",
+		IndexedSections:   "321",
+		BuildTime:         "2026-03-26T12:34:56Z",
+		SpecPath:          "data/FPF/FPF-Spec.md",
+		SchemaVersion:     "1",
+		SourceEdition:     "FPF-2026-06-18",
+		ProfileValidUntil: "2026-07-18",
 	})
 
 	checks := []string{
 		"haft fpf version: dev",
 		"FPF index schema version: 1",
 		"FPF upstream commit: abc1234",
+		"FPF source edition: FPF-2026-06-18",
+		"FPF profile valid until: 2026-07-18",
 		"Indexed sections: 321",
 		"Build time: 2026-03-26T12:34:56Z",
 		"Spec path: data/FPF/FPF-Spec.md",

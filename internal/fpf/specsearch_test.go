@@ -1149,11 +1149,13 @@ func TestSetSpecMetaEntries_AndGetSpecIndexInfo(t *testing.T) {
 	defer cleanup()
 
 	metadata := map[string]string{
-		"fpf_commit":       "9442ffb733de574859cfd715b5fe67c06c7bb239",
-		"indexed_sections": "1",
-		"build_time":       "2026-03-26T12:34:56Z",
-		"spec_path":        "data/FPF/FPF-Spec.md",
-		"schema_version":   SpecIndexSchemaVersion,
+		"fpf_commit":          "9442ffb733de574859cfd715b5fe67c06c7bb239",
+		"indexed_sections":    "1",
+		"build_time":          "2026-03-26T12:34:56Z",
+		"spec_path":           "data/FPF/FPF-Spec.md",
+		"schema_version":      SpecIndexSchemaVersion,
+		"source_edition":      "FPF-2026-06-18",
+		"profile_valid_until": "2026-07-18",
 	}
 	if err := SetSpecMetaEntries(dbPath, metadata); err != nil {
 		t.Fatalf("SetSpecMetaEntries failed: %v", err)
@@ -1178,6 +1180,12 @@ func TestSetSpecMetaEntries_AndGetSpecIndexInfo(t *testing.T) {
 	}
 	if info.SchemaVersion != metadata["schema_version"] {
 		t.Fatalf("expected schema version %q, got %q", metadata["schema_version"], info.SchemaVersion)
+	}
+	if info.SourceEdition != metadata["source_edition"] {
+		t.Fatalf("expected source edition %q, got %q", metadata["source_edition"], info.SourceEdition)
+	}
+	if info.ProfileValidUntil != metadata["profile_valid_until"] {
+		t.Fatalf("expected profile validity %q, got %q", metadata["profile_valid_until"], info.ProfileValidUntil)
 	}
 }
 

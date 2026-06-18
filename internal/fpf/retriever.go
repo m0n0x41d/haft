@@ -29,29 +29,69 @@ type SpecRetrievalRequest struct {
 // SpecRetrievalResult is the structured retrieval response returned to shell
 // layers before any surface-specific formatting is applied.
 type SpecRetrievalResult struct {
-	Query   string
-	Results []SpecRetrievedSection
+	Query   string                 `json:"query"`
+	Results []SpecRetrievedSection `json:"results"`
 }
 
 // SpecRetrievedSection is a presentation-ready FPF section hit with either
 // snippet-sized content or the full section body.
 type SpecRetrievedSection struct {
-	PatternID  string
-	Heading    string
-	Tier       string
-	Reason     string
-	Summary    string
-	Content    string
-	Provenance SpecRetrievalProvenance
+	PatternID  string                  `json:"pattern_id"`
+	Heading    string                  `json:"heading"`
+	Tier       string                  `json:"tier"`
+	Reason     string                  `json:"reason"`
+	Summary    string                  `json:"summary"`
+	Content    string                  `json:"content"`
+	Provenance SpecRetrievalProvenance `json:"provenance"`
 }
 
 type SpecRetrievalProvenance struct {
-	ProfileID          string
-	SourceKind         string
-	SourceRef          string
-	SourceHash         string
-	IndexSchemaVersion string
-	RetrievalMode      string
+	ProfileID          string `json:"profile_id"`
+	SourceKind         string `json:"source_kind"`
+	SourceEdition      string `json:"source_edition"`
+	SourceRef          string `json:"source_ref"`
+	SourceHash         string `json:"source_hash"`
+	ProfileValidity    string `json:"profile_validity"`
+	Normativity        string `json:"normativity"`
+	IndexSchemaVersion string `json:"index_schema_version"`
+	RetrievalMode      string `json:"retrieval_mode"`
+}
+
+const (
+	specRetrievalSourceKindSection       = "fpf_spec_section"
+	specRetrievalSourceKindRouteCarrier  = "fpf_route_carrier_over_spec_section"
+	specRetrievalSourceKindRelatedGraph  = "fpf_relation_graph_over_spec_section"
+	specRetrievalNormativitySource       = "normative_fpf_source"
+	specRetrievalNormativityRouteCarrier = "navigation_carrier_non_normative"
+	specRetrievalNormativityGraphCarrier = "relation_carrier_non_normative"
+)
+
+type specRetrievalSourceProfile struct {
+	SourceKind  string
+	Normativity string
+}
+
+var specRetrievalSourceProfiles = map[string]specRetrievalSourceProfile{
+	SpecSearchTierPattern: {
+		SourceKind:  specRetrievalSourceKindSection,
+		Normativity: specRetrievalNormativitySource,
+	},
+	SpecSearchTierDrillDown: {
+		SourceKind:  specRetrievalSourceKindSection,
+		Normativity: specRetrievalNormativitySource,
+	},
+	SpecSearchTierFTS: {
+		SourceKind:  specRetrievalSourceKindSection,
+		Normativity: specRetrievalNormativitySource,
+	},
+	SpecSearchTierRoute: {
+		SourceKind:  specRetrievalSourceKindRouteCarrier,
+		Normativity: specRetrievalNormativityRouteCarrier,
+	},
+	SpecSearchTierRelated: {
+		SourceKind:  specRetrievalSourceKindRelatedGraph,
+		Normativity: specRetrievalNormativityGraphCarrier,
+	},
 }
 
 // RetrieveSpec resolves deterministic FPF search hits and hydrates content for
@@ -63,9 +103,10 @@ func RetrieveSpec(db *sql.DB, request SpecRetrievalRequest) (SpecRetrievalResult
 		return SpecRetrievalResult{}, err
 	}
 
-	provenance := buildSpecRetrievalProvenance(db, request)
+	indexInfo, _ := GetSpecIndexInfo(db)
 	results := make([]SpecRetrievedSection, 0, len(searchResults))
 	for _, searchResult := range searchResults {
+		provenance := buildSpecRetrievalProvenance(indexInfo, request, searchResult)
 		results = append(results, hydrateRetrievedSection(db, searchResult, request.Full, provenance))
 	}
 
@@ -142,16 +183,49 @@ func hydrateRetrievedSection(db *sql.DB, searchResult SpecSearchResult, full boo
 	}
 }
 
-func buildSpecRetrievalProvenance(db *sql.DB, request SpecRetrievalRequest) SpecRetrievalProvenance {
-	info, _ := GetSpecIndexInfo(db)
+func buildSpecRetrievalProvenance(info SpecIndexInfo, request SpecRetrievalRequest, result SpecSearchResult) SpecRetrievalProvenance {
+	profile := specRetrievalSourceProfileForTier(result.Tier)
+
 	return SpecRetrievalProvenance{
 		ProfileID:          "fpf-spec-index-v" + firstNonEmpty(info.SchemaVersion, SpecIndexSchemaVersion),
-		SourceKind:         "embedded-fpf-index",
+		SourceKind:         profile.SourceKind,
+		SourceEdition:      specRetrievalSourceEdition(info),
 		SourceRef:          info.SpecPath,
-		SourceHash:         info.Commit,
+		SourceHash:         firstNonEmpty(info.Commit, "unknown"),
+		ProfileValidity:    specRetrievalProfileValidity(info),
+		Normativity:        profile.Normativity,
 		IndexSchemaVersion: firstNonEmpty(info.SchemaVersion, SpecIndexSchemaVersion),
 		RetrievalMode:      effectiveSpecRetrievalMode(request),
 	}
+}
+
+func specRetrievalSourceProfileForTier(tier string) specRetrievalSourceProfile {
+	profile, ok := specRetrievalSourceProfiles[strings.TrimSpace(tier)]
+	if ok {
+		return profile
+	}
+
+	return specRetrievalSourceProfile{
+		SourceKind:  specRetrievalSourceKindSection,
+		Normativity: specRetrievalNormativitySource,
+	}
+}
+
+func specRetrievalSourceEdition(info SpecIndexInfo) string {
+	if edition := strings.TrimSpace(info.SourceEdition); edition != "" {
+		return edition
+	}
+	if commit := strings.TrimSpace(info.Commit); commit != "" {
+		return "fpf@" + commit
+	}
+	return "embedded-index-schema-" + firstNonEmpty(info.SchemaVersion, SpecIndexSchemaVersion)
+}
+
+func specRetrievalProfileValidity(info SpecIndexInfo) string {
+	if validUntil := strings.TrimSpace(info.ProfileValidUntil); validUntil != "" {
+		return "valid_until=" + validUntil
+	}
+	return "not_declared"
 }
 
 func effectiveSpecRetrievalMode(request SpecRetrievalRequest) string {

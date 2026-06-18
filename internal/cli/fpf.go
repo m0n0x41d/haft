@@ -2,6 +2,7 @@ package cli
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -63,6 +64,7 @@ var (
 	fpfSearchLimit   int
 	fpfSearchFull    bool
 	fpfSearchExplain bool
+	fpfSearchJSON    bool
 	fpfSearchTier    string
 	fpfSearchMode    string
 )
@@ -73,6 +75,7 @@ func init() {
 	fpfSearchCmd.Flags().IntVar(&fpfSearchLimit, "limit", 10, "Maximum number of results")
 	fpfSearchCmd.Flags().BoolVar(&fpfSearchFull, "full", false, "Show full section content instead of snippets")
 	fpfSearchCmd.Flags().BoolVar(&fpfSearchExplain, "explain", false, "Show why each result matched")
+	fpfSearchCmd.Flags().BoolVar(&fpfSearchJSON, "json", false, "Print structured JSON with explicit retrieval provenance")
 	fpfSearchCmd.Flags().StringVar(&fpfSearchTier, "tier", "", "Restrict results to one tier: pattern, drilldown, route, related, or fts")
 	fpfSearchCmd.Flags().StringVar(&fpfSearchMode, "mode", "", "Experimental retrieval mode; currently supports tree")
 
@@ -140,6 +143,13 @@ func runFPFSearch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("search error: %w", err)
 	}
 
+	if fpfSearchJSON {
+		encoder := json.NewEncoder(os.Stdout)
+		encoder.SetIndent("", "  ")
+
+		return encoder.Encode(retrieval)
+	}
+
 	if len(retrieval.Results) == 0 {
 		fmt.Print(formatCLIFPFSearchWithExplain(nil, fpfSearchExplain))
 		return nil
@@ -190,6 +200,8 @@ func runFPFInfo(cmd *cobra.Command, args []string) error {
 	info.BuildTime = indexInfo.BuildTime
 	info.SpecPath = indexInfo.SpecPath
 	info.SchemaVersion = indexInfo.SchemaVersion
+	info.SourceEdition = indexInfo.SourceEdition
+	info.ProfileValidUntil = indexInfo.ProfileValidUntil
 
 	fmt.Print(present.FormatFPFInfo(info))
 	return nil

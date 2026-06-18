@@ -51,10 +51,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and does not create evidence, approvals, rebaselines, `GateDecision`, or
   `SpecUseAdmission`.
 - **FPF retrieval provenance metadata.** FPF section retrieval now carries
-  compact profile/index provenance (profile id, embedded source, upstream
-  commit hash when present, index schema version, and retrieval mode) through
-  the internal retrieval/presentation path. Default search output stays compact;
-  metadata appears only when callers request metadata/explain surfaces.
+  explicit profile/index provenance (profile id, source kind, source edition,
+  source hash, profile validity, normativity, index schema version, and
+  retrieval mode) through the internal retrieval path. `haft fpf search --json`
+  exposes those fields structurally, while explain/exact text views name
+  route/related carriers as non-normative projections over FPF sections.
+  Default search output stays compact.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

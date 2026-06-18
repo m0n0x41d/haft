@@ -19,8 +19,11 @@ type FPFSearchResult struct {
 type FPFSearchProvenance struct {
 	ProfileID          string
 	SourceKind         string
+	SourceEdition      string
 	SourceRef          string
 	SourceHash         string
+	ProfileValidity    string
+	Normativity        string
 	IndexSchemaVersion string
 	RetrievalMode      string
 }
@@ -35,12 +38,14 @@ type FPFSearchOptions struct {
 
 // FPFInfo contains inspectable FPF index metadata for presentation.
 type FPFInfo struct {
-	Version         string
-	Commit          string
-	IndexedSections string
-	BuildTime       string
-	SpecPath        string
-	SchemaVersion   string
+	Version           string
+	Commit            string
+	IndexedSections   string
+	BuildTime         string
+	SpecPath          string
+	SchemaVersion     string
+	SourceEdition     string
+	ProfileValidUntil string
 }
 
 // FormatFPFSearch renders FPF search results as markdown.
@@ -97,6 +102,12 @@ func FormatFPFInfo(info FPFInfo) string {
 	}
 	if commit := strings.TrimSpace(info.Commit); commit != "" {
 		lines = append(lines, fmt.Sprintf("FPF upstream commit: %s", commit))
+	}
+	if sourceEdition := strings.TrimSpace(info.SourceEdition); sourceEdition != "" {
+		lines = append(lines, fmt.Sprintf("FPF source edition: %s", sourceEdition))
+	}
+	if profileValidUntil := strings.TrimSpace(info.ProfileValidUntil); profileValidUntil != "" {
+		lines = append(lines, fmt.Sprintf("FPF profile valid until: %s", profileValidUntil))
 	}
 	if indexedSections := strings.TrimSpace(info.IndexedSections); indexedSections != "" {
 		lines = append(lines, fmt.Sprintf("Indexed sections: %s", indexedSections))
@@ -165,11 +176,20 @@ func formatFPFProvenance(provenance FPFSearchProvenance) string {
 	if sourceKind := strings.TrimSpace(provenance.SourceKind); sourceKind != "" {
 		parts = append(parts, "source_kind="+sourceKind)
 	}
+	if sourceEdition := strings.TrimSpace(provenance.SourceEdition); sourceEdition != "" {
+		parts = append(parts, "source_edition="+sourceEdition)
+	}
 	if sourceRef := strings.TrimSpace(provenance.SourceRef); sourceRef != "" {
 		parts = append(parts, "source_ref="+sourceRef)
 	}
 	if sourceHash := strings.TrimSpace(provenance.SourceHash); sourceHash != "" {
 		parts = append(parts, "source_hash="+sourceHash)
+	}
+	if profileValidity := strings.TrimSpace(provenance.ProfileValidity); profileValidity != "" {
+		parts = append(parts, "profile_validity="+profileValidity)
+	}
+	if normativity := strings.TrimSpace(provenance.Normativity); normativity != "" {
+		parts = append(parts, "normativity="+normativity)
 	}
 	if schemaVersion := strings.TrimSpace(provenance.IndexSchemaVersion); schemaVersion != "" {
 		parts = append(parts, "index_schema="+schemaVersion)

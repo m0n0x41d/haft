@@ -4,7 +4,7 @@
 
 **FPF governance substrate for AI-assisted software delivery.**
 
-Your agents (Claude Code, Codex) write code fast. Most repositories are not ready
+Your agents (Claude Code, Codex, Hermes) write code fast. Most repositories are not ready
 for serious harness engineering: the target system is underspecified, the
 enabling system is implicit, term maps are missing, and runtime evidence is
 detached from the spec. Haft makes the project harnessable before it scales
@@ -30,7 +30,7 @@ engineering work.
 
 Haft is consumed through three surfaces over one `.haft/` artifact graph:
 
-- **Skills + slash commands** in your coding agent (Claude Code, Codex, OpenCode, Cursor) — workflow skills auto-trigger; `/h-frame /h-decide /h-verify ...` run manually
+- **Skills + slash commands** in your coding agent (Claude Code, Codex, Hermes, OpenCode, Cursor) — workflow skills auto-trigger; `/h-frame /h-decide /h-verify ...` run manually
 - **CLI** (`haft problem`, `haft solution`, `haft decision`, ...) — manual access, no LLM in the loop
 - **MCP server** (`haft serve`) — programmatic access for any LLM agent over the Model Context Protocol
 
@@ -94,12 +94,13 @@ Then in your project, init with your host-agent flag:
 haft init            # Claude Code (default)
 haft init --local    # Claude Code, repo-local commands
 haft init --codex    # Codex CLI / Codex App
+haft init --hermes   # Hermes MCP + external skills directory
 haft init --all      # Claude Code + Codex
 ```
 
-Claude Code and Codex are the supported hosts. Cursor, Gemini CLI, and OpenCode
-have experimental config flags (`--cursor`, `--gemini`, `--opencode`) while
-their runtime and docs converge.
+Claude Code and Codex are the supported hosts. Hermes, Cursor, Gemini CLI, and
+OpenCode have experimental config flags (`--hermes`, `--cursor`, `--gemini`,
+`--opencode`) while their runtime and docs converge.
 
 **Cursor:** after init, open Settings → MCP → find `haft` → enable the toggle.
 Cursor adds MCP servers disabled by default.
@@ -113,6 +114,7 @@ differ.
 |------|-----------|--------------------|--------|
 | Claude Code | `.mcp.json` (project root) | `~/.claude/commands/` (or `.claude/commands/` with `--local`) | `~/.claude/skills/` (15 skills) |
 | Codex CLI / App | `.codex/config.toml` | `~/.codex/prompts/` (or `.codex/prompts/` with `--local`) | `~/.agents/skills/` (15 skills) |
+| Hermes | `~/.hermes/config.yaml` (or `$HERMES_HOME/config.yaml`; profile via `--profile`) | n/a | `skills.external_dirs` pointing at generated Hermes-adapted haft skills |
 
 Project-scoped configs (`.mcp.json`, `.codex/config.toml`) use portable
 project-root paths, so they are safe to commit for shared repositories.

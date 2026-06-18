@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **`haft init --hermes`.** Hermes initialization now materializes a
+  Hermes-adapted haft skills tree with bare `haft_*` tool references, appends
+  it to `skills.external_dirs` in `~/.hermes/config.yaml` (or
+  `$HERMES_HOME/config.yaml` / `--profile`), and installs the `haft` MCP server
+  with absolute `HAFT_PROJECT_ROOT` plus `HAFT_EXPECTED_PROJECT_ID` in the
+  user-local Hermes config. Existing Hermes config keys, other MCP servers, and
+  foreign external skill directories are preserved; the legacy `quint-code`
+  MCP server key is removed.
 - **ProblemCard semantic-spine first slice.** New ProblemCards now carry an
   additive semantic envelope in `structured_data` with explicit profile
   provenance, semantic-edition identity, carrier binding, reference scheme,

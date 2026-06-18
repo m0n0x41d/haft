@@ -774,6 +774,38 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.blocked_use_attention",
+			Purpose: "Build a read-only object-first attention item for one blocked use with exact source return.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "blocked_use",
+				MCPCall:          `haft_query(action="blocked_use", bearer_ref="dec-...", blocked_use="release reliance", source_refs=["dec-..."], exact_record_needed="current EvidencePath")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft attention blocked BEARER_REF --blocked-use ... --source-ref ... --exact-record-needed ... --json",
+				DiscoveryCommand: "haft interface query.blocked_use_attention --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"bearer_ref", "blocked_use"},
+				OptionalFields: []string{"label", "finding_kind", "source_refs", "exact_record_needed", "next_actions", "role_ref", "valid_until"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"object":{"bearer_ref":"...","entity_or_subject_label":"..."},"blocked_use":"...","source_return":{"status":"source_return_declared|exact_record_needed|missing_source_return","source_refs":[...]},"next_admissible_actions":[...],"authority_boundary":{"work_plan":"not_work_plan","gate_decision":"not_gate_decision"}}`,
+						Note:  "The item points back to exact source records; action invitations are not WorkPlans.",
+					},
+				},
+				Notes: []string{
+					"Use this when a compact cockpit cue is insufficient and the agent needs the exact object/source return before stronger use.",
+					"Missing source refs fail closed as missing_source_return and suggest recover_exact_source_record.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON BlockedUseAttentionItem"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Attention items are read-only review inputs, not WorkPlans or evidence.",
+				"Default status, related, and code_context payloads do not inline attention items.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

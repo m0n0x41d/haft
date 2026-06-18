@@ -1926,6 +1926,36 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "blocked_use":
+		nextActions := parseStringArrayFromArgs(args, "next_actions")
+		if len(nextActions) == 0 {
+			nextActions = parseStringArrayFromArgs(args, "next_admissible_actions")
+		}
+		label := stringArg(args, "label")
+		if label == "" {
+			label = stringArg(args, "entity_or_subject_label")
+		}
+		roleRef := stringArg(args, "role_ref")
+		if roleRef == "" {
+			roleRef = stringArg(args, "required_role_assignment_ref")
+		}
+		record := artifact.BuildBlockedUseAttentionItem(artifact.BlockedUseAttentionInput{
+			BearerRef:                 stringArg(args, "bearer_ref"),
+			EntityOrSubjectLabel:      label,
+			FindingKind:               stringArg(args, "finding_kind"),
+			BlockedUse:                stringArg(args, "blocked_use"),
+			SourceRefs:                parseStringArrayFromArgs(args, "source_refs"),
+			ExactRecordNeeded:         stringArg(args, "exact_record_needed"),
+			NextAdmissibleActions:     nextActions,
+			RequiredRoleAssignmentRef: roleRef,
+			ValidUntil:                stringArg(args, "valid_until"),
+		})
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal blocked-use attention item: %w", err)
+		}
+		return string(payload), nil
+
 	case "evidence_path":
 		record, err := buildEvidencePathRecord(
 			ctx,
@@ -1954,7 +1984,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'blocked_use', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

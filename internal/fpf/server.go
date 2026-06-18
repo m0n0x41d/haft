@@ -801,8 +801,8 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "evidence_path", "resolve_term"},
-						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/correspondence_graph/drift_route/evidence_path/resolve_term.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "blocked_use", "evidence_path", "resolve_term"},
+						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/correspondence_graph/drift_route/blocked_use/evidence_path/resolve_term.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -863,7 +863,24 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"bearer_ref": map[string]string{
 						"type":        "string",
-						"description": "(drift_route) Artifact/object carrying drift.",
+						"description": "(drift_route/blocked_use) Artifact/object carrying drift or blocked use.",
+					},
+					"label": map[string]string{
+						"type":        "string",
+						"description": "(blocked_use) Human-readable bearer label.",
+					},
+					"blocked_use": map[string]string{
+						"type":        "string",
+						"description": "(blocked_use) Use blocked until source return or repair.",
+					},
+					"source_refs": map[string]interface{}{
+						"type":        "array",
+						"items":       map[string]interface{}{"type": "string"},
+						"description": "(blocked_use) Exact source refs.",
+					},
+					"exact_record_needed": map[string]string{
+						"type":        "string",
+						"description": "(blocked_use) Exact record needed before stronger use.",
 					},
 					"kind": map[string]string{
 						"type":        "string",

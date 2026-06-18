@@ -137,6 +137,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   publication, and description-layer drift do not route directly to code repair,
   unknown drift kinds fail closed, and the route never mutates code, carriers,
   evidence, decisions, baselines, or gates.
+- **Blocked-use attention item v1.** `haft attention blocked BEARER_REF` and
+  `haft_query(action="blocked_use")` now build a read-only object-first
+  attention item with exact source-return refs, blocked-use context, admissible
+  next-action invitations, and authority boundaries. The item is not a WorkPlan,
+  evidence, approval, `GateDecision`, or global truth, and it is available only
+  through explicit drill-down surfaces.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

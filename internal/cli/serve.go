@@ -1045,6 +1045,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if _, err := parseJSONArg(args, "choice_result", &input.ChoiceResult); err != nil {
 			return "", "", err
 		}
+		if _, err := parseJSONArg(args, "transformation_record", &input.TransformationRecord); err != nil {
+			return "", "", err
+		}
 		if input.ProblemRef == "" {
 			p, _ := artifact.FindActiveProblem(ctx, store, contextName)
 			if p != nil {

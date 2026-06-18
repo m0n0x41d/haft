@@ -240,6 +240,103 @@ func TestValidateChoiceResultRequiresVariantForChooseNow(t *testing.T) {
 	}
 }
 
+func TestDecide_PersistsExplicitTransformationRecord(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	record := &TransformationRecord{
+		TransformedEntity: "ProblemCard profile",
+		InitialState:      "Problem posture is implicit prose.",
+		PostState:         "Problem posture is typed as cue/thin/deep with readiness blockers.",
+		Relation:          "makes explicit",
+		Context:           "semantic-spine ProblemCard slice",
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle:        "Add ProblemCard profile fields",
+		WhySelected:          "The target transformation needs to be explicit without implying work or evidence authority.",
+		TransformationRecord: record,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TransformationRecord == nil {
+		t.Fatal("transformation_record missing")
+	}
+	if fields.TransformationRecord.SchemaVersion != TransformationRecordSchemaVersion {
+		t.Fatalf("schema_version = %d, want %d", fields.TransformationRecord.SchemaVersion, TransformationRecordSchemaVersion)
+	}
+	if fields.TransformationRecord.TransformedEntity != record.TransformedEntity {
+		t.Fatalf("transformed_entity = %q, want %q", fields.TransformationRecord.TransformedEntity, record.TransformedEntity)
+	}
+	if !strings.Contains(decision.Body, "Transformation record") {
+		t.Fatalf("decision body missing transformation section:\n%s", decision.Body)
+	}
+	if !strings.Contains(decision.Body, "not method, work authorization, evidence, or publication") {
+		t.Fatalf("decision body does not preserve separation boundary:\n%s", decision.Body)
+	}
+
+	reloaded, err := store.Get(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(reloadedFields.TransformationRecord, fields.TransformationRecord) {
+		t.Fatalf("reloaded transformation_record = %#v, want %#v", reloadedFields.TransformationRecord, fields.TransformationRecord)
+	}
+}
+
+func TestValidateTransformationRecordRejectsIncompleteRecord(t *testing.T) {
+	err := ValidateTransformationRecord(&TransformationRecord{
+		TransformedEntity: "DecisionRecord",
+		InitialState:      "Legacy aggregate",
+		Relation:          "separates",
+		Context:           "semantic spine",
+	})
+	if err == nil {
+		t.Fatal("expected incomplete transformation_record error")
+	}
+	if !strings.Contains(err.Error(), "post_state") {
+		t.Fatalf("expected post_state validation error, got %v", err)
+	}
+}
+
+func TestValidateTransformationRecordRejectsUnsupportedSchemaVersion(t *testing.T) {
+	err := ValidateTransformationRecord(&TransformationRecord{
+		SchemaVersion:     2,
+		TransformedEntity: "DecisionRecord",
+		InitialState:      "Legacy aggregate",
+		PostState:         "Typed transformation object",
+		Relation:          "separates",
+		Context:           "semantic spine",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported transformation_record schema error")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported schema error, got %v", err)
+	}
+}
+
+func TestArtifact_UnmarshalDecisionFields_DoesNotInventTransformationRecord(t *testing.T) {
+	decision := &Artifact{
+		Meta: Meta{ID: "dec-legacy", Kind: KindDecisionRecord, Title: "Legacy decision"},
+		StructuredData: `{
+			"selected_title":"Legacy decision",
+			"why_selected":"Already shipped",
+			"post_conditions":["new state exists"]
+		}`,
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TransformationRecord != nil {
+		t.Fatalf("legacy decision invented transformation_record: %#v", fields.TransformationRecord)
+	}
+}
+
 func TestDecide_TaskContextSlugInIDAndFilename(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

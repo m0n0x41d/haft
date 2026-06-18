@@ -69,6 +69,54 @@ func TestHandleQuintDecision_DecidePersistsPredictions(t *testing.T) {
 	}
 }
 
+func TestHandleQuintDecision_DecidePersistsTransformationRecord(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	_, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+		"action":           "decide",
+		"selected_title":   "Separate transformation description",
+		"why_selected":     "The target state change should be explicit without implying implementation work.",
+		"selection_policy": "Prefer explicit semantic objects that preserve legacy DecisionRecord compatibility.",
+		"counterargument":  "A nested object can be ignored by old carriers if discovery is weak.",
+		"weakest_link":     "Agents may still confuse transformed state with completed work unless the boundary is visible.",
+		"why_not_others": []map[string]any{{
+			"variant": "Post-conditions only",
+			"reason":  "Post-conditions do not name the transformed entity and initial state.",
+		}},
+		"rollback": map[string]any{
+			"triggers": []string{"DecisionRecord compatibility parsing regresses."},
+		},
+		"transformation_record": map[string]any{
+			"transformed_entity": "DecisionRecord compatibility projection",
+			"initial_state":      "choice, transformation, work, and evidence are described in one prose aggregate",
+			"post_state":         "transformation has a first-class object-state description",
+			"relation":           "separates",
+			"context":            "semantic-spine TransformationRecord v1",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, err := store.Get(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	record := decision.UnmarshalDecisionFields().TransformationRecord
+	if record == nil {
+		t.Fatal("transformation_record missing")
+	}
+	if record.SchemaVersion != artifact.TransformationRecordSchemaVersion {
+		t.Fatalf("schema_version = %d, want %d", record.SchemaVersion, artifact.TransformationRecordSchemaVersion)
+	}
+	if record.TransformedEntity != "DecisionRecord compatibility projection" {
+		t.Fatalf("transformed_entity = %q", record.TransformedEntity)
+	}
+}
+
 func TestHandleQuintDecision_DecideUsesTaskContextInArtifactID(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

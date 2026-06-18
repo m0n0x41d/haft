@@ -535,6 +535,29 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"reason":        map[string]string{"type": "string"},
 						},
 					},
+					"transformation_record": map[string]interface{}{
+						"type":        "object",
+						"description": "(decide) TransformationRecord v1: target object-state transformation only; not method, work authorization, evidence, or publication.",
+						"properties": map[string]interface{}{
+							"schema_version": map[string]string{"type": "integer"},
+							"transformed_entity": map[string]string{
+								"type": "string",
+							},
+							"initial_state": map[string]string{
+								"type": "string",
+							},
+							"post_state": map[string]string{
+								"type": "string",
+							},
+							"relation": map[string]string{
+								"type": "string",
+							},
+							"context": map[string]string{
+								"type": "string",
+							},
+						},
+						"required": []string{"transformed_entity", "initial_state", "post_state", "relation", "context"},
+					},
 					"selection_policy": map[string]string{
 						"type":        "string",
 						"description": "(decide) Explicit policy used to choose the winning variant",

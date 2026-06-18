@@ -445,31 +445,32 @@ type PublicationRecoverability struct {
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	ProblemRefs          []string             `json:"problem_refs,omitempty"`
-	ChoiceResult         *ChoiceResult        `json:"choice_result,omitempty"`
-	SelectedTitle        string               `json:"selected_title"`
-	WhySelected          string               `json:"why_selected"`
-	SelectionPolicy      string               `json:"selection_policy,omitempty"`
-	CounterArgument      string               `json:"counterargument,omitempty"`
-	WeakestLink          string               `json:"weakest_link,omitempty"`
-	TaskContext          string               `json:"task_context,omitempty"`
-	SectionRefs          []string             `json:"section_refs,omitempty"`
-	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
-	Claims               []DecisionClaim      `json:"claims,omitempty"`
-	Predictions          []DecisionPrediction `json:"predictions,omitempty"`
-	PreConditions        []string             `json:"pre_conditions,omitempty"`
-	RollbackTriggers     []string             `json:"rollback_triggers,omitempty"`
-	RollbackSteps        []string             `json:"rollback_steps,omitempty"`
-	RollbackBlastRadius  string               `json:"rollback_blast_radius,omitempty"`
-	Invariants           []string             `json:"invariants,omitempty"`
-	PostConds            []string             `json:"post_conditions,omitempty"`
-	Admissibility        []string             `json:"admissibility,omitempty"`
-	EvidenceRequirements []string             `json:"evidence_requirements,omitempty"`
-	RefreshTriggers      []string             `json:"refresh_triggers,omitempty"`
-	Skips                []string             `json:"_skips,omitempty"`
-	SkipReason           string               `json:"_skip_reason,omitempty"`
-	FirstModuleCoverage  bool                 `json:"first_module_coverage,omitempty"`
-	DriftManifests       []DriftScopeManifest `json:"drift_manifests,omitempty"`
+	ProblemRefs          []string              `json:"problem_refs,omitempty"`
+	ChoiceResult         *ChoiceResult         `json:"choice_result,omitempty"`
+	TransformationRecord *TransformationRecord `json:"transformation_record,omitempty"`
+	SelectedTitle        string                `json:"selected_title"`
+	WhySelected          string                `json:"why_selected"`
+	SelectionPolicy      string                `json:"selection_policy,omitempty"`
+	CounterArgument      string                `json:"counterargument,omitempty"`
+	WeakestLink          string                `json:"weakest_link,omitempty"`
+	TaskContext          string                `json:"task_context,omitempty"`
+	SectionRefs          []string              `json:"section_refs,omitempty"`
+	WhyNotOthers         []RejectionReason     `json:"why_not_others,omitempty"`
+	Claims               []DecisionClaim       `json:"claims,omitempty"`
+	Predictions          []DecisionPrediction  `json:"predictions,omitempty"`
+	PreConditions        []string              `json:"pre_conditions,omitempty"`
+	RollbackTriggers     []string              `json:"rollback_triggers,omitempty"`
+	RollbackSteps        []string              `json:"rollback_steps,omitempty"`
+	RollbackBlastRadius  string                `json:"rollback_blast_radius,omitempty"`
+	Invariants           []string              `json:"invariants,omitempty"`
+	PostConds            []string              `json:"post_conditions,omitempty"`
+	Admissibility        []string              `json:"admissibility,omitempty"`
+	EvidenceRequirements []string              `json:"evidence_requirements,omitempty"`
+	RefreshTriggers      []string              `json:"refresh_triggers,omitempty"`
+	Skips                []string              `json:"_skips,omitempty"`
+	SkipReason           string                `json:"_skip_reason,omitempty"`
+	FirstModuleCoverage  bool                  `json:"first_module_coverage,omitempty"`
+	DriftManifests       []DriftScopeManifest  `json:"drift_manifests,omitempty"`
 	// GovernanceMode declares how affected_files relate to drift detection.
 	// "module" (default, preserves pre-6.2.x behavior): each affected_file
 	// widens to its parent directory; sibling additions count as governed
@@ -482,6 +483,7 @@ type decisionFieldsJSON DecisionFields
 func (df DecisionFields) MarshalJSON() ([]byte, error) {
 	encoded := decisionFieldsJSON(df)
 	encoded.Claims = normalizeDecisionClaims(encoded.Claims)
+	encoded.TransformationRecord = NormalizeTransformationRecord(encoded.TransformationRecord)
 
 	if len(encoded.Claims) == 0 {
 		encoded.Claims = decisionClaimsFromPredictions(encoded.Predictions)
@@ -505,6 +507,7 @@ func (df *DecisionFields) UnmarshalJSON(data []byte) error {
 	}
 
 	decoded.Predictions = decisionPredictionsFromClaims(decoded.Claims)
+	decoded.TransformationRecord = NormalizeTransformationRecord(decoded.TransformationRecord)
 	*df = DecisionFields(decoded)
 
 	return nil
@@ -782,6 +785,75 @@ type ChoiceResult struct {
 	ProblemRefs  []string       `json:"problem_refs,omitempty"`
 	PortfolioRef string         `json:"portfolio_ref,omitempty"`
 	Reason       string         `json:"reason,omitempty"`
+}
+
+const TransformationRecordSchemaVersion = 1
+
+// TransformationRecord describes the target object-state transformation only.
+// Method, work authorization, evidence, and publication remain separate
+// record families.
+type TransformationRecord struct {
+	SchemaVersion     int    `json:"schema_version"`
+	TransformedEntity string `json:"transformed_entity"`
+	InitialState      string `json:"initial_state"`
+	PostState         string `json:"post_state"`
+	Relation          string `json:"relation"`
+	Context           string `json:"context"`
+}
+
+func NormalizeTransformationRecord(record *TransformationRecord) *TransformationRecord {
+	if record == nil {
+		return nil
+	}
+
+	normalized := &TransformationRecord{
+		SchemaVersion:     record.SchemaVersion,
+		TransformedEntity: strings.TrimSpace(record.TransformedEntity),
+		InitialState:      strings.TrimSpace(record.InitialState),
+		PostState:         strings.TrimSpace(record.PostState),
+		Relation:          strings.TrimSpace(record.Relation),
+		Context:           strings.TrimSpace(record.Context),
+	}
+	if normalized.SchemaVersion == 0 {
+		normalized.SchemaVersion = TransformationRecordSchemaVersion
+	}
+
+	return normalized
+}
+
+func ValidateTransformationRecord(record *TransformationRecord) error {
+	normalized := NormalizeTransformationRecord(record)
+	if normalized == nil {
+		return nil
+	}
+
+	if normalized.SchemaVersion != TransformationRecordSchemaVersion {
+		return fmt.Errorf("transformation_record.schema_version %d is unsupported; expected %d",
+			normalized.SchemaVersion,
+			TransformationRecordSchemaVersion)
+	}
+
+	missing := []string{}
+	if normalized.TransformedEntity == "" {
+		missing = append(missing, "transformed_entity")
+	}
+	if normalized.InitialState == "" {
+		missing = append(missing, "initial_state")
+	}
+	if normalized.PostState == "" {
+		missing = append(missing, "post_state")
+	}
+	if normalized.Relation == "" {
+		missing = append(missing, "relation")
+	}
+	if normalized.Context == "" {
+		missing = append(missing, "context")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("transformation_record missing required field(s): %s", strings.Join(missing, ", "))
+	}
+
+	return nil
 }
 
 // NormalizeChoiceResult trims a choice without inventing one from legacy data.

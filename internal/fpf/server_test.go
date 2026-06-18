@@ -406,6 +406,36 @@ func TestHandleToolsList_DecisionSchemaExposesChoiceResult(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_DecisionSchemaExposesTransformationRecord(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+
+	transformationRecord, ok := decisionSchema["transformation_record"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("transformation_record schema missing or wrong type: %#v", decisionSchema["transformation_record"])
+	}
+
+	properties, ok := transformationRecord["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("transformation_record properties missing or wrong type: %#v", transformationRecord["properties"])
+	}
+
+	for _, key := range []string{"schema_version", "transformed_entity", "initial_state", "post_state", "relation", "context"} {
+		if _, ok := properties[key].(map[string]interface{}); !ok {
+			t.Fatalf("transformation_record.%s schema missing or wrong type: %#v", key, properties[key])
+		}
+	}
+
+	required, ok := transformationRecord["required"].([]interface{})
+	if !ok {
+		t.Fatalf("transformation_record required list missing or wrong type: %#v", transformationRecord["required"])
+	}
+	for _, want := range []string{"transformed_entity", "initial_state", "post_state", "relation", "context"} {
+		if !schemaEnumContains(required, want) {
+			t.Fatalf("transformation_record required = %#v, missing %q", required, want)
+		}
+	}
+}
+
 func TestHaftDecisionSchemaExposesTaskContext(t *testing.T) {
 	decisionSchema := mustListToolProperties(t, "haft_decision")
 

@@ -23,32 +23,33 @@ import (
 
 // DecideInput is the input for creating a DecisionRecord.
 type DecideInput struct {
-	ProblemRef          string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
-	ProblemRefs         []string          `json:"problem_refs,omitempty"` // multiple problems
-	PortfolioRef        string            `json:"portfolio_ref,omitempty"`
-	ChoiceResult        *ChoiceResult     `json:"choice_result,omitempty"`
-	SelectedTitle       string            `json:"selected_title"`
-	WhySelected         string            `json:"why_selected"`
-	SelectionPolicy     string            `json:"selection_policy"`
-	CounterArgument     string            `json:"counterargument"`
-	WhyNotOthers        []RejectionReason `json:"why_not_others,omitempty"`
-	Invariants          []string          `json:"invariants,omitempty"`
-	PreConditions       []string          `json:"pre_conditions,omitempty"`
-	PostConditions      []string          `json:"post_conditions,omitempty"`
-	Admissibility       []string          `json:"admissibility,omitempty"`
-	EvidenceReqs        []string          `json:"evidence_requirements,omitempty"`
-	Rollback            *RollbackSpec     `json:"rollback,omitempty"`
-	RefreshTriggers     []string          `json:"refresh_triggers,omitempty"`
-	WeakestLink         string            `json:"weakest_link,omitempty"`
-	ValidUntil          string            `json:"valid_until,omitempty"`
-	Context             string            `json:"context,omitempty"`
-	TaskContext         string            `json:"task_context,omitempty"`
-	Mode                string            `json:"mode,omitempty"`
-	SectionRefs         []string          `json:"section_refs,omitempty"`
-	AffectedFiles       []string          `json:"affected_files,omitempty"`
-	Predictions         []PredictionInput `json:"predictions,omitempty"`
-	SearchKeywords      string            `json:"search_keywords,omitempty"`
-	FirstModuleCoverage bool              `json:"first_module_coverage,omitempty"`
+	ProblemRef           string                `json:"problem_ref,omitempty"`  // single problem (backward compat)
+	ProblemRefs          []string              `json:"problem_refs,omitempty"` // multiple problems
+	PortfolioRef         string                `json:"portfolio_ref,omitempty"`
+	ChoiceResult         *ChoiceResult         `json:"choice_result,omitempty"`
+	TransformationRecord *TransformationRecord `json:"transformation_record,omitempty"`
+	SelectedTitle        string                `json:"selected_title"`
+	WhySelected          string                `json:"why_selected"`
+	SelectionPolicy      string                `json:"selection_policy"`
+	CounterArgument      string                `json:"counterargument"`
+	WhyNotOthers         []RejectionReason     `json:"why_not_others,omitempty"`
+	Invariants           []string              `json:"invariants,omitempty"`
+	PreConditions        []string              `json:"pre_conditions,omitempty"`
+	PostConditions       []string              `json:"post_conditions,omitempty"`
+	Admissibility        []string              `json:"admissibility,omitempty"`
+	EvidenceReqs         []string              `json:"evidence_requirements,omitempty"`
+	Rollback             *RollbackSpec         `json:"rollback,omitempty"`
+	RefreshTriggers      []string              `json:"refresh_triggers,omitempty"`
+	WeakestLink          string                `json:"weakest_link,omitempty"`
+	ValidUntil           string                `json:"valid_until,omitempty"`
+	Context              string                `json:"context,omitempty"`
+	TaskContext          string                `json:"task_context,omitempty"`
+	Mode                 string                `json:"mode,omitempty"`
+	SectionRefs          []string              `json:"section_refs,omitempty"`
+	AffectedFiles        []string              `json:"affected_files,omitempty"`
+	Predictions          []PredictionInput     `json:"predictions,omitempty"`
+	SearchKeywords       string                `json:"search_keywords,omitempty"`
+	FirstModuleCoverage  bool                  `json:"first_module_coverage,omitempty"`
 	// GovernanceMode is "module" | "exact" | "" (default "module"). Controls
 	// whether affected_files widen to module scope at baseline time.
 	GovernanceMode string `json:"governance_mode,omitempty"`
@@ -240,6 +241,7 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.Mode = strings.TrimSpace(input.Mode)
 	input.SearchKeywords = strings.TrimSpace(input.SearchKeywords)
 	input.ChoiceResult = NormalizeChoiceResult(input.ChoiceResult)
+	input.TransformationRecord = NormalizeTransformationRecord(input.TransformationRecord)
 
 	input.WhyNotOthers = normalizeRejectionReasons(input.WhyNotOthers)
 	input.Invariants = compactStrings(input.Invariants)
@@ -302,6 +304,12 @@ func validateDecisionInput(input DecideInput) error {
 	if err := ValidateChoiceResult(input.ChoiceResult); err != nil {
 		missing = append(missing, missingField{
 			Field: "choice_result",
+			Hint:  err.Error(),
+		})
+	}
+	if err := ValidateTransformationRecord(input.TransformationRecord); err != nil {
+		missing = append(missing, missingField{
+			Field: "transformation_record",
 			Hint:  err.Error(),
 		})
 	}
@@ -478,6 +486,21 @@ func predictionValidationProblems(index int, prediction PredictionInput) []strin
 	return problems
 }
 
+func renderTransformationRecord(body *strings.Builder, record *TransformationRecord) {
+	normalized := NormalizeTransformationRecord(record)
+	if normalized == nil {
+		return
+	}
+
+	body.WriteString("**Transformation record:**\n")
+	body.WriteString("- Kind: target-state transformation only; not method, work authorization, evidence, or publication.\n")
+	body.WriteString(fmt.Sprintf("- Transformed entity: %s\n", normalized.TransformedEntity))
+	body.WriteString(fmt.Sprintf("- Initial state: %s\n", normalized.InitialState))
+	body.WriteString(fmt.Sprintf("- Post state: %s\n", normalized.PostState))
+	body.WriteString(fmt.Sprintf("- Relation: %s\n", normalized.Relation))
+	body.WriteString(fmt.Sprintf("- Context: %s\n\n", normalized.Context))
+}
+
 // BuildDecisionArtifact constructs a DecisionRecord from input and pre-fetched context. Pure — no side effects.
 func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, error) {
 	input = normalizeDecisionInput(input)
@@ -530,6 +553,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	body.WriteString(fmt.Sprintf("**Selected:** %s\n\n", input.SelectedTitle))
 	body.WriteString(fmt.Sprintf("**Selection policy:** %s\n\n", input.SelectionPolicy))
 	body.WriteString(fmt.Sprintf("**Why selected:** %s\n\n", input.WhySelected))
+	if input.TransformationRecord != nil {
+		renderTransformationRecord(&body, input.TransformationRecord)
+	}
 
 	rollbackTriggers := []string(nil)
 	rollbackSteps := []string(nil)
@@ -553,6 +579,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	decisionFields := DecisionFields{
 		ProblemRefs:          dctx.ProblemRefs,
 		ChoiceResult:         NormalizeChoiceResult(choiceResult),
+		TransformationRecord: NormalizeTransformationRecord(input.TransformationRecord),
 		SelectedTitle:        input.SelectedTitle,
 		WhySelected:          input.WhySelected,
 		SelectionPolicy:      input.SelectionPolicy,

@@ -80,6 +80,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ticket, and chosen-method sources cannot become P2W-ready without an explicit
   boundary, and `query.related` working views expose the profile/readiness
   labels without changing compact defaults.
+- **TransformationRecord v1 compatibility payload.** `DecisionRecord`
+  structured data may now carry an explicit `transformation_record` describing
+  the transformed entity, initial state, post state, relation, and context.
+  The field is validated and discoverable through `haft_decision` and
+  `haft interface decision.decide --json`, but no record is synthesized from
+  legacy prose, post-conditions, method runs, WorkCommissions, evidence, or
+  publication units.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

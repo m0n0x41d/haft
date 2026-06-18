@@ -331,12 +331,17 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"selected_title", "why_selected", "selection_policy", "weakest_link", "counterargument", "why_not_others", "rollback", "predictions", "invariants", "affected_files", "valid_until"},
-				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "_skips", "_skip_reason"},
+				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "transformation_record", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "_skips", "_skip_reason"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "choice_result",
 						Shape: `{"subject_ref":"operator","next_move":"choose_now","variant_ref":"V1","reason":"explicit h-decide"}`,
 						Note:  "Exact human choice outcome; compare never creates it.",
+					},
+					{
+						Field: "transformation_record",
+						Shape: `{"schema_version":1,"transformed_entity":"ProblemCard profile","initial_state":"implicit prose","post_state":"typed profile/readiness object","relation":"makes explicit","context":"semantic-spine slice"}`,
+						Note:  "Describes the target transformation only; method/work/evidence/publication remain separate.",
 					},
 					{
 						Field: "why_not_others[]",
@@ -358,8 +363,16 @@ func haftInterfaceCatalog() []interfaceCapability {
 					{
 						Name: "decide",
 						Value: map[string]any{
-							"problem_ref":      "prob-...",
-							"portfolio_ref":    "sol-...",
+							"problem_ref":   "prob-...",
+							"portfolio_ref": "sol-...",
+							"transformation_record": map[string]any{
+								"schema_version":     1,
+								"transformed_entity": "interface contract discovery",
+								"initial_state":      "nested schema hidden in long tool descriptions",
+								"post_state":         "explicit input template reachable by interface discovery",
+								"relation":           "separates discovery carrier from execution authority",
+								"context":            "agent-facing planning",
+							},
 							"selected_title":   "Typed contract templates in haft interface",
 							"why_selected":     "Agents can see the nested input shape before their first tool call.",
 							"selection_policy": "Prefer compact discoverability that does not bloat tools/list.",
@@ -388,7 +401,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 						},
 					},
 				},
-				Notes: []string{"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason."},
+				Notes: []string{"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason.", "transformation_record is an explicit target-state description, not a MethodRun, WorkCommission, evidence item, or publication unit."},
 			},
 			Invariants: append(commonInterfaceInvariants(), "Human binding remains mandatory for DecisionRecord creation."),
 		},

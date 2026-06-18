@@ -62,10 +62,28 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	if !strings.Contains(optionals, "choice_result") {
 		t.Fatalf("decision optional fields missing choice_result in %q", optionals)
 	}
+	if !strings.Contains(optionals, "transformation_record") {
+		t.Fatalf("decision optional fields missing transformation_record in %q", optionals)
+	}
+
+	fieldShapes := ""
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
+	}
+	for _, want := range []string{"transformation_record", "transformed_entity", "initial_state", "post_state", "relation", "context"} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("decision field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
 
 	invariants := strings.Join(capability.Invariants, " ")
 	if !strings.Contains(invariants, "Human binding remains mandatory") {
 		t.Fatalf("decision interface must preserve manual binding invariant:\n%s", invariants)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	if !strings.Contains(notes, "not a MethodRun, WorkCommission, evidence item, or publication unit") {
+		t.Fatalf("decision interface notes missing transformation separation warning:\n%s", notes)
 	}
 }
 

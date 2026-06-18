@@ -143,6 +143,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   next-action invitations, and authority boundaries. The item is not a WorkPlan,
   evidence, approval, `GateDecision`, or global truth, and it is available only
   through explicit drill-down surfaces.
+- **Haft engineering-value characteristic space v1.** `haft value space
+  BEARER_REF` and `haft_query(action="value_space")` now build a read-only
+  `HaftEngineeringValueECS` projection with no single Haft/FPF score. Every
+  characteristic names bearer, method, window, denominator, evidence refs,
+  protected trade-offs, and reopen condition; healthy reopening is not counted
+  as simple failure, and missing evidence blocks value claims instead of
+  fabricating movement.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

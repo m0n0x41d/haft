@@ -806,6 +806,38 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.value_space",
+			Purpose: "Build a read-only Haft engineering-value characteristic space with no single score.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "value_space",
+				MCPCall:          `haft_query(action="value_space", bearer_ref="release-...", context="2026-Q3", method_ref="method-...", source_refs=["evid-..."])`,
+				CLIStatus:        "available",
+				CLICommand:       "haft value space BEARER_REF --window ... --method-ref ... --evidence-ref ... --json",
+				DiscoveryCommand: "haft interface query.value_space --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"bearer_ref"},
+				OptionalFields: []string{"context", "method_ref", "source_refs"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"score_policy":{"single_score":"no_single_haft_or_fpf_score","aggregation":"characteristic_space_only"},"characteristics":[{"bearer_ref":"...","method":"...","window":"...","denominator":"...","evidence_refs":[...],"reopen_condition":"..."}],"interpretation_rules":{"healthy_reopening":"healthy_reopening_not_counted_as_simple_failure"}}`,
+						Note:  "Every characteristic names bearer, method, window, denominator, and evidence refs; missing evidence blocks a value claim.",
+					},
+				},
+				Notes: []string{
+					"Use source_refs for evidence refs in the compact MCP schema; CLI names them --evidence-ref.",
+					"Healthy reopening is interpreted separately from avoidable rework or simple failure.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON HaftEngineeringValueECS projection"},
+			Invariants: append(commonInterfaceInvariants(),
+				"No single Haft or FPF value score exists.",
+				"Value characteristics are review inputs, not evidence, approval, GateDecision, or global truth.",
+			),
+		},
+		{
 			ID:      "refresh.scan",
 			Purpose: "Scan stale decisions and drift; use verbose=true for full per-file and impact dumps.",
 			CurrentExecution: interfaceExecution{

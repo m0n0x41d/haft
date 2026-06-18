@@ -1956,6 +1956,31 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "value_space":
+		bearerRef := stringArg(args, "bearer_ref")
+		if bearerRef == "" {
+			bearerRef = stringArg(args, "artifact_ref")
+		}
+		evidenceRefs := parseStringArrayFromArgs(args, "source_refs")
+		if len(evidenceRefs) == 0 {
+			evidenceRefs = parseStringArrayFromArgs(args, "evidence_refs")
+		}
+		window := stringArg(args, "context")
+		if window == "" {
+			window = stringArg(args, "window")
+		}
+		record := artifact.BuildEngineeringValueSpace(artifact.EngineeringValueSpaceInput{
+			BearerRef:    bearerRef,
+			Window:       window,
+			MethodRef:    stringArg(args, "method_ref"),
+			EvidenceRefs: evidenceRefs,
+		})
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal engineering value space: %w", err)
+		}
+		return string(payload), nil
+
 	case "evidence_path":
 		record, err := buildEvidencePathRecord(
 			ctx,
@@ -1984,7 +2009,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'blocked_use', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

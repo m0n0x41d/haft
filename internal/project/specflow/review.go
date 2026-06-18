@@ -50,19 +50,20 @@ type ReviewSummary struct {
 }
 
 type ReviewSection struct {
-	SectionID     string               `json:"section_id"`
-	Title         string               `json:"title,omitempty"`
-	DocumentKind  string               `json:"document_kind"`
-	Kind          string               `json:"kind"`
-	StatementType string               `json:"statement_type"`
-	ClaimLayer    string               `json:"claim_layer"`
-	Bearer        string               `json:"bearer"`
-	Frame         string               `json:"frame"`
-	StrongerUse   string               `json:"stronger_use"`
-	ClaimRegister ClaimRegisterSummary `json:"claim_register"`
-	Claims        []ReviewClaim        `json:"claims,omitempty"`
-	Source        SourceSpan           `json:"source"`
-	FindingCodes  []string             `json:"finding_codes,omitempty"`
+	SectionID     string                       `json:"section_id"`
+	Title         string                       `json:"title,omitempty"`
+	DocumentKind  string                       `json:"document_kind"`
+	Kind          string                       `json:"kind"`
+	StatementType string                       `json:"statement_type"`
+	ClaimLayer    string                       `json:"claim_layer"`
+	Bearer        string                       `json:"bearer"`
+	Frame         string                       `json:"frame"`
+	SystemFrame   project.SystemReferenceFrame `json:"system_frame"`
+	StrongerUse   string                       `json:"stronger_use"`
+	ClaimRegister ClaimRegisterSummary         `json:"claim_register"`
+	Claims        []ReviewClaim                `json:"claims,omitempty"`
+	Source        SourceSpan                   `json:"source"`
+	FindingCodes  []string                     `json:"finding_codes,omitempty"`
 }
 
 type ReviewFinding struct {
@@ -231,12 +232,12 @@ func missingFrameFindings(subject reviewSubject) []ReviewFinding {
 			subject,
 			"missing_system_frame",
 			ReviewSeverityAbstain,
-			"active SpecSection is not clearly in target-system or enabling-system frame",
+			"active SpecSection does not declare a target-system or enabling-system frame",
 			"Semantic review must know whether the section describes the target system or the enabling system before it can advise stronger use.",
 			"Target system != enabling system",
-			"Move the carrier under the canonical target-system or enabling-system spec file, or make the section frame explicit.",
+			"Set `system_frame` to target_system or enabling_system, or move the carrier under the matching canonical spec file.",
 			ReviewUseAbstainUntilClarified,
-			"document_kind",
+			"system_frame",
 		),
 	}
 }
@@ -255,9 +256,9 @@ func frameMismatchFindings(subject reviewSubject) []ReviewFinding {
 			mismatch,
 			"Cross-frame carriers can make target-system claims look like enabling-system policy or the reverse.",
 			"Target system != enabling system",
-			"Align section id/kind with its carrier frame, or split the views into separate target and enabling sections.",
+			"Align `system_frame` with its carrier frame, or split the views into separate target and enabling sections.",
 			ReviewUseBlockedForStrongerUse,
-			"kind",
+			"system_frame",
 		),
 	}
 }
@@ -401,6 +402,7 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 		ClaimLayer:    subject.section.ClaimLayer,
 		Bearer:        subject.bearer,
 		Frame:         subject.frame,
+		SystemFrame:   subject.section.SystemFrame,
 		StrongerUse:   sectionStrongerUse(findings),
 		ClaimRegister: claimRegisterSummary(claims, findings),
 		Claims:        claims,
@@ -491,14 +493,12 @@ func sectionBearer(section project.SpecSection) string {
 }
 
 func sectionFrame(section project.SpecSection) string {
-	switch strings.TrimSpace(section.DocumentKind) {
-	case string(project.SpecDocumentKindTargetSystem):
-		return "target_system"
-	case string(project.SpecDocumentKindEnablingSystem):
-		return "enabling_system"
-	default:
+	frame := strings.TrimSpace(section.SystemFrame.Kind)
+	if frame == "" {
 		return "unknown"
 	}
+
+	return frame
 }
 
 func sectionHasExplicitBearer(section project.SpecSection) bool {
@@ -517,20 +517,13 @@ func sectionHasExplicitBearer(section project.SpecSection) bool {
 
 func frameMismatch(section project.SpecSection) string {
 	documentKind := strings.TrimSpace(section.DocumentKind)
-	sectionID := strings.ToUpper(strings.TrimSpace(section.ID))
-	sectionKind := strings.ToLower(strings.TrimSpace(section.Kind))
+	frame := sectionFrame(section)
 
-	if strings.HasPrefix(sectionID, "TS.") && documentKind != string(project.SpecDocumentKindTargetSystem) {
-		return fmt.Sprintf("section id %q reads as target-system but carrier frame is %q", section.ID, documentKind)
+	if frame == "target_system" && documentKind != string(project.SpecDocumentKindTargetSystem) {
+		return fmt.Sprintf("declared system_frame %q conflicts with carrier frame %q", frame, documentKind)
 	}
-	if strings.HasPrefix(sectionID, "ES.") && documentKind != string(project.SpecDocumentKindEnablingSystem) {
-		return fmt.Sprintf("section id %q reads as enabling-system but carrier frame is %q", section.ID, documentKind)
-	}
-	if strings.HasPrefix(sectionKind, "target.") && documentKind != string(project.SpecDocumentKindTargetSystem) {
-		return fmt.Sprintf("section kind %q reads as target-system but carrier frame is %q", section.Kind, documentKind)
-	}
-	if strings.HasPrefix(sectionKind, "enabling.") && documentKind != string(project.SpecDocumentKindEnablingSystem) {
-		return fmt.Sprintf("section kind %q reads as enabling-system but carrier frame is %q", section.Kind, documentKind)
+	if frame == "enabling_system" && documentKind != string(project.SpecDocumentKindEnablingSystem) {
+		return fmt.Sprintf("declared system_frame %q conflicts with carrier frame %q", frame, documentKind)
 	}
 
 	return ""

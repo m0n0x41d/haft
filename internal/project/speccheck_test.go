@@ -340,6 +340,60 @@ func TestProjectSpecificationSetParsesExplicitClaims(t *testing.T) {
 	}
 }
 
+func TestProjectSpecificationSetParsesSystemReferenceFrame(t *testing.T) {
+	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.001 System frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.001\n" +
+				"spec: target-system\n" +
+				"system_frame:\n" +
+				"  id: target_system\n" +
+				"  kind: target_system\n" +
+				"kind: target.frame\n" +
+				"title: System frame\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/enabling-system.md",
+			Kind: "enabling-system",
+			Content: "## ES.frame.001 System frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: ES.frame.001\n" +
+				"spec: enabling-system\n" +
+				"system_frame: enabling_system\n" +
+				"kind: enabling.frame\n" +
+				"title: System frame\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+	})
+
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none", specSet.Findings)
+	}
+	if got := specSet.Sections[0].SystemFrame.Kind; got != "target_system" {
+		t.Fatalf("target system frame = %q, want target_system", got)
+	}
+	if got := specSet.Sections[0].SystemFrame.Source; got != "system_frame" {
+		t.Fatalf("target system frame source = %q, want system_frame", got)
+	}
+	if got := specSet.Sections[1].SystemFrame.Kind; got != "enabling_system" {
+		t.Fatalf("enabling system frame = %q, want enabling_system", got)
+	}
+}
+
 func TestProjectSpecificationSetDistinguishesSectionLifecycleStates(t *testing.T) {
 	now := time.Date(2026, 4, 26, 12, 0, 0, 0, time.UTC)
 	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{{
@@ -488,6 +542,29 @@ func TestCheckSpecDocumentsValidatesExplicitClaimShapes(t *testing.T) {
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[1].class")
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[2]")
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[3].support_refs")
+}
+
+func TestCheckSpecDocumentsValidatesSystemReferenceFrame(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.001\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.001\n" +
+				"kind: target.frame\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"system_frame:\n" +
+				"  kind: third_system\n" +
+				"```\n",
+		},
+	})
+
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_system_frame", "$.system_frame.kind")
 }
 
 func TestCheckSpecDocumentsGuardsActiveTargetCarrierClaims(t *testing.T) {

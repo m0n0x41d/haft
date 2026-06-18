@@ -51,6 +51,9 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if section.ClaimRegister.ExplicitClaims != 1 {
 		t.Fatalf("section claim register = %+v, want one explicit claim", section.ClaimRegister)
 	}
+	if section.SystemFrame.Kind != "target_system" || section.SystemFrame.Source == "" {
+		t.Fatalf("section system frame = %+v, want typed target_system frame", section.SystemFrame)
+	}
 	if len(section.Claims) != 1 || section.Claims[0].Class != specflow.ReviewClaimClassLaw {
 		t.Fatalf("section claims = %#v, want one L claim", section.Claims)
 	}

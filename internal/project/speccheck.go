@@ -80,6 +80,7 @@ const (
 type SpecSection struct {
 	ID               string                    `json:"id"`
 	Spec             string                    `json:"spec"`
+	SystemFrame      SystemReferenceFrame      `json:"system_frame"`
 	Kind             string                    `json:"kind"`
 	Title            string                    `json:"title,omitempty"`
 	StatementType    string                    `json:"statement_type"`
@@ -96,6 +97,12 @@ type SpecSection struct {
 	Path             string                    `json:"path"`
 	Line             int                       `json:"line,omitempty"`
 	Malformed        bool                      `json:"malformed,omitempty"`
+}
+
+type SystemReferenceFrame struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Source string `json:"source,omitempty"`
 }
 
 type SpecClaim struct {
@@ -666,9 +673,13 @@ func validateSpecSectionFields(
 	if title, ok := scalarString(fields["title"]); ok {
 		section.Title = title
 	}
+	if spec, ok := scalarString(fields["spec"]); ok {
+		section.Spec = spec
+	}
 	if validUntil, ok := specSectionValidUntilString(fields["valid_until"]); ok {
 		section.ValidUntil = validUntil
 	}
+	section.SystemFrame = specSectionSystemFrame(fields, section.Spec, documentKind)
 	section.Terms = specSectionStringList(fields, "terms")
 	section.DependsOn = specSectionRefList(fields, "depends_on")
 	section.TargetRefs = specSectionRefList(fields, "target_refs")
@@ -832,6 +843,79 @@ func specSectionClaims(fields map[string]any) []SpecClaim {
 	return claims
 }
 
+func specSectionSystemFrame(fields map[string]any, spec string, documentKind string) SystemReferenceFrame {
+	if raw, ok := fields["system_frame"]; ok {
+		frame := systemFrameFromRaw(raw, "system_frame")
+		if frame.Kind != "" {
+			return frame
+		}
+	}
+	if spec, ok := strictString(fields["spec"]); ok {
+		frame := systemFrameFromString(spec, "spec")
+		if frame.Kind != "" {
+			return frame
+		}
+	}
+	if frame := systemFrameFromString(spec, "spec_default"); frame.Kind != "" {
+		return frame
+	}
+
+	return systemFrameFromString(documentKind, "carrier_kind")
+}
+
+func systemFrameFromRaw(raw any, source string) SystemReferenceFrame {
+	if value, ok := strictString(raw); ok {
+		return systemFrameFromString(value, source)
+	}
+
+	fields, ok := raw.(map[string]any)
+	if !ok {
+		return SystemReferenceFrame{Source: source}
+	}
+
+	if kind, ok := strictString(fields["kind"]); ok {
+		frame := systemFrameFromString(kind, source)
+		if frame.ID == "" {
+			if id, ok := strictString(fields["id"]); ok {
+				frame.ID = id
+			}
+		}
+		return frame
+	}
+	if id, ok := strictString(fields["id"]); ok {
+		return systemFrameFromString(id, source)
+	}
+
+	return SystemReferenceFrame{Source: source}
+}
+
+func systemFrameFromString(value string, source string) SystemReferenceFrame {
+	kind := normalizeSystemFrameKind(value)
+	if kind == "" {
+		return SystemReferenceFrame{Source: source}
+	}
+
+	return SystemReferenceFrame{
+		ID:     kind,
+		Kind:   kind,
+		Source: source,
+	}
+}
+
+func normalizeSystemFrameKind(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+
+	switch normalized {
+	case "target_system", "target":
+		return "target_system"
+	case "enabling_system", "enabling":
+		return "enabling_system"
+	default:
+		return ""
+	}
+}
+
 func specClaimStringList(fields map[string]any, field string) []string {
 	raw, ok := fields[field]
 	if !ok {
@@ -859,6 +943,7 @@ func specClaimStringList(fields map[string]any, field string) []string {
 func validateSpecSectionShape(path string, line int, documentKind string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
+	findings = append(findings, validateOptionalSpecSystemFrame(path, line, section.ID, fields)...)
 	findings = append(findings, validateOptionalSpecStringList(path, line, section.ID, fields, "terms", "spec_section_invalid_terms")...)
 	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "depends_on", "spec_section_invalid_depends_on")...)
 	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "target_refs", "spec_section_invalid_target_refs")...)
@@ -1027,6 +1112,44 @@ func duplicateAliasFindings(path string, entries []TermMapEntry, seen map[string
 	}
 
 	return findings
+}
+
+func validateOptionalSpecSystemFrame(path string, line int, sectionID string, fields map[string]any) []SpecCheckFinding {
+	raw, ok := fields["system_frame"]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := "$.system_frame"
+	if value, ok := strictString(raw); ok {
+		if normalizeSystemFrameKind(value) != "" {
+			return nil
+		}
+
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "spec-section `system_frame` must be target_system or enabling_system")}
+	}
+
+	itemFields, ok := raw.(map[string]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "spec-section `system_frame` must be a string or mapping")}
+	}
+
+	if kind, ok := strictString(itemFields["kind"]); ok {
+		if normalizeSystemFrameKind(kind) != "" {
+			return nil
+		}
+
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "kind"), "spec_section_invalid_system_frame", "system_frame.kind must be target_system or enabling_system")}
+	}
+	if id, ok := strictString(itemFields["id"]); ok {
+		if normalizeSystemFrameKind(id) != "" {
+			return nil
+		}
+
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "id"), "spec_section_invalid_system_frame", "system_frame.id must be target_system or enabling_system")}
+	}
+
+	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "system_frame mapping must include `kind` or `id`")}
 }
 
 func validateOptionalRefList(path string, line int, sectionID string, fields map[string]any, field string, code string) []SpecCheckFinding {
@@ -1768,6 +1891,8 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 		return "replace the field value with one of the canonical spec-section enum values"
 	case "spec_section_invalid_terms":
 		return "make `terms` a YAML list of non-empty strings"
+	case "spec_section_invalid_system_frame":
+		return "set `system_frame` to target_system or enabling_system, or remove the field and rely on the carrier compatibility frame"
 	case "spec_section_invalid_depends_on", "spec_section_invalid_target_refs":
 		return "make the reference field a YAML list of stable spec-section ids"
 	case "spec_section_invalid_evidence_required":

@@ -1,6 +1,7 @@
 package specflow
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/project"
@@ -12,6 +13,7 @@ func TestReviewSpecificationSet_FindsMissingBearerAndSupport(t *testing.T) {
 			{
 				ID:            "ES.agent-policy.001",
 				Spec:          "enabling-system",
+				SystemFrame:   project.SystemReferenceFrame{ID: "enabling_system", Kind: "enabling_system", Source: "test"},
 				DocumentKind:  "enabling-system",
 				Kind:          "enabling.agent_policy",
 				StatementType: "duty",
@@ -42,8 +44,9 @@ func TestReviewSpecificationSet_BlocksFrameMismatch(t *testing.T) {
 			{
 				ID:            "TS.boundary.001",
 				Spec:          "enabling-system",
+				SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "test"},
 				DocumentKind:  "enabling-system",
-				Kind:          "target.boundary",
+				Kind:          "boundary",
 				Title:         "Boundary in wrong carrier",
 				StatementType: "definition",
 				ClaimLayer:    "object",
@@ -92,6 +95,28 @@ func TestReviewSpecificationSet_DoesNotFalseBlockLegitimateMultiView(t *testing.
 	}
 	if packet.Summary.CheckedSections != 2 {
 		t.Fatalf("checked_sections = %d, want 2", packet.Summary.CheckedSections)
+	}
+}
+
+func TestReviewSpecificationSet_UsesDeclaredFrameInsteadOfKindPrefix(t *testing.T) {
+	section := reviewSectionFixture(
+		"TS.boundary.001",
+		"enabling-system",
+		"target.boundary",
+		"Compatibility naming in enabling frame",
+		"definition",
+		"object",
+		nil,
+	)
+	section.SystemFrame = project.SystemReferenceFrame{ID: "enabling_system", Kind: "enabling_system", Source: "test"}
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{section},
+	})
+
+	assertNoReviewFinding(t, packet, "system_frame_mismatch")
+	if packet.Sections[0].Frame != "enabling_system" {
+		t.Fatalf("frame = %q, want declared enabling_system", packet.Sections[0].Frame)
 	}
 }
 
@@ -197,8 +222,13 @@ func reviewSectionFixture(
 	targetRefs []string,
 ) project.SpecSection {
 	return project.SpecSection{
-		ID:            id,
-		Spec:          documentKind,
+		ID:   id,
+		Spec: documentKind,
+		SystemFrame: project.SystemReferenceFrame{
+			ID:     strings.ReplaceAll(documentKind, "-", "_"),
+			Kind:   strings.ReplaceAll(documentKind, "-", "_"),
+			Source: "test",
+		},
 		DocumentKind:  documentKind,
 		Kind:          kind,
 		Title:         title,

@@ -69,6 +69,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   audit views distinguish source episteme, publication projection, and carrier
   bytes; markdown sync rejects future semantic/publication-unit schema versions
   instead of importing them as exact.
+- **Spec SystemReferenceFrame v1.** SpecSection parsing now derives a typed
+  `system_frame` object from explicit `system_frame`, existing `spec`, or the
+  carrier kind compatibility fallback. `haft spec review --json` reports that
+  frame and frame diagnostics now compare declared target/enabling frame against
+  the carrier frame instead of inferring authority from TS/ES or kind prefixes.
 - **Repository-move audit and repair in `haft doctor`.** `haft doctor
   --moved-from <old-root>` now reports stale project-root carriers after a
   checkout move, and `--repair` performs an explicit exact-match repair for

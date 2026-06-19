@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **ProblemCard semantic identity sync coverage.** `haft sync` tests now pin a
+  richer DB -> Markdown carrier -> empty DB round-trip, covering typed
+  ProblemCard profile fields, semantic edition pins, source-of-truth binding,
+  and exact publication recoverability instead of only the minimal signal
+  envelope.
 - **Drift added-file noise.** Module-scope drift detection now lists current
   scope files through `git ls-files --cached --others --exclude-standard` when
   available, preserving modified/missing checks for baselined files while

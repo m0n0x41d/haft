@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -53,6 +54,95 @@ func TestSyncOneFile_RestoresProblemSemanticEnvelopeFromCarrierBlock(t *testing.
 	}
 	if fields.Semantic.PublicationUnit.PublicationHash == "" || fields.Semantic.PublicationUnit.CarrierHash == "" {
 		t.Fatalf("publication unit missing hashes: %+v", fields.Semantic.PublicationUnit)
+	}
+}
+
+func TestSyncOneFile_RoundTripsRichProblemSemanticIdentityFromCarrier(t *testing.T) {
+	ctx := context.Background()
+	sourceStore := setupCLIArtifactStore(t)
+	haftDir := t.TempDir()
+
+	problem, filePath, err := artifact.FrameProblem(ctx, sourceStore, haftDir, artifact.ProblemFrameInput{
+		Title:                 "Rich semantic identity",
+		ProblemType:           string(artifact.ProblemTypeSynthesis),
+		ProblemProfile:        artifact.ProblemProfileDeep,
+		SourceKind:            artifact.ProblemSourceObserved,
+		Signal:                "Markdown carrier import must preserve typed semantic identity fields.",
+		WhyNow:                "Semantic-spine slices now rely on the carrier as a recoverable projection.",
+		Scope:                 "ProblemCard structured_data round-trip only.",
+		AcceptanceProbe:       "Empty-store import reconstructs the same typed problem profile and semantic envelope.",
+		FreshnessDisposition:  "Reopen if carrier import drops profile, source, or publication-unit fields.",
+		Constraints:           []string{"do not promote markdown prose to authority"},
+		OptimizationTargets:   []string{"semantic identity loss rate"},
+		ObservationIndicators: []string{"legacy carrier warning count"},
+		Acceptance:            "Imported structured_data keeps profile and publication source pin.",
+		BlastRadius:           "ProblemCard sync only.",
+		Reversibility:         "Test-only guard.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	importStore := setupCLIArtifactStore(t)
+	result, err := syncOneFile(ctx, importStore, filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "created" {
+		t.Fatalf("sync result = %q, want created", result)
+	}
+
+	imported, err := importStore.Get(ctx, problem.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := imported.UnmarshalProblemFields()
+	if fields.ProblemType != artifact.ProblemTypeSynthesis {
+		t.Fatalf("problem_type = %q, want synthesis", fields.ProblemType)
+	}
+	if fields.Profile == nil {
+		t.Fatal("profile missing after carrier import")
+	}
+	if fields.Profile.Level != artifact.ProblemProfileDeep {
+		t.Fatalf("profile.level = %q, want deep", fields.Profile.Level)
+	}
+	if fields.Profile.Readiness != artifact.ProblemReadinessReady {
+		t.Fatalf("profile.readiness = %q, want ready", fields.Profile.Readiness)
+	}
+	if fields.Profile.BoundaryStatus != artifact.ProblemBoundaryExplicit {
+		t.Fatalf("profile.boundary_status = %q, want explicit", fields.Profile.BoundaryStatus)
+	}
+	if fields.Profile.WhyNow != "Semantic-spine slices now rely on the carrier as a recoverable projection." {
+		t.Fatalf("profile.why_now = %q", fields.Profile.WhyNow)
+	}
+	if !slices.Equal(fields.Constraints, []string{"do not promote markdown prose to authority"}) {
+		t.Fatalf("constraints = %#v", fields.Constraints)
+	}
+	if !slices.Equal(fields.OptimizationTargets, []string{"semantic identity loss rate"}) {
+		t.Fatalf("optimization_targets = %#v", fields.OptimizationTargets)
+	}
+	if !slices.Equal(fields.ObservationIndicators, []string{"legacy carrier warning count"}) {
+		t.Fatalf("observation_indicators = %#v", fields.ObservationIndicators)
+	}
+	if fields.Semantic == nil {
+		t.Fatal("semantic envelope missing after carrier import")
+	}
+	if fields.Semantic.Status != artifact.SemanticStatusExact {
+		t.Fatalf("semantic.status = %q, want exact", fields.Semantic.Status)
+	}
+	if fields.Semantic.CarrierBinding.SourceOfTruth != "sqlite" {
+		t.Fatalf("source_of_truth = %q, want sqlite", fields.Semantic.CarrierBinding.SourceOfTruth)
+	}
+	if fields.Semantic.PublicationUnit.SourceEditionPin.Hash == "" {
+		t.Fatal("source edition pin hash missing")
+	}
+	if fields.Semantic.PublicationUnit.SourceEditionPin.Hash != fields.Semantic.SemanticEdition.Hash {
+		t.Fatalf("source edition pin = %q, want semantic edition hash %q",
+			fields.Semantic.PublicationUnit.SourceEditionPin.Hash,
+			fields.Semantic.SemanticEdition.Hash)
+	}
+	if fields.Semantic.PublicationUnit.Recoverability.Status != "exact" {
+		t.Fatalf("recoverability.status = %q, want exact", fields.Semantic.PublicationUnit.Recoverability.Status)
 	}
 }
 

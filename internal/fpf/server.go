@@ -833,6 +833,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "string",
 						"description": "(spec_use) temporary_waiver expiry.",
 					},
+					"operational_gate": map[string]interface{}{
+						"type":        "object",
+						"description": "(spec_use) Optional OperationalGate v1; shape: `haft interface query.spec_use --json`.",
+					},
 					"artifact_ref": map[string]string{
 						"type":        "string",
 						"description": "(change_case/correspondence_graph/evidence_path) Artifact id; for change/correspondence this is the DecisionRecord id.",
@@ -960,7 +964,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 func compactToolDescriptions(tools []Tool) []Tool {
 	compacted := make([]Tool, 0, len(tools))
 	for _, tool := range tools {
-		tool.Description = "See `haft interface`"
+		tool.Description = "See interface"
 		compactSchemaDescriptions(tool.InputSchema, tool.Name)
 		compacted = append(compacted, tool)
 	}

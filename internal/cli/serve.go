@@ -23,6 +23,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 	"github.com/m0n0x41d/haft/internal/recall"
 	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
@@ -1870,12 +1871,22 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 
 	case "spec_use":
 		projectRoot := filepath.Dir(haftDir)
+		var gate specflow.OperationalGateProfile
+		gatePresent, err := decodeStrictArgFromArgs(args, "operational_gate", &gate)
+		if err != nil {
+			return "", fmt.Errorf("parse operational_gate: %w", err)
+		}
+		var gatePtr *specflow.OperationalGateProfile
+		if gatePresent {
+			gatePtr = &gate
+		}
 		record, err := buildSpecUseRecord(
 			projectRoot,
 			stringArg(args, "section_id"),
 			stringArg(args, "use_context"),
 			stringArg(args, "policy"),
 			stringArg(args, "waiver_expires_at"),
+			gatePtr,
 			time.Now().UTC(),
 		)
 		if err != nil {

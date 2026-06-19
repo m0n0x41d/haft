@@ -80,6 +80,154 @@ func TestBuildSpecificationUseRecordTemporaryWaiverDoesNotCreateGateDecision(t *
 	}
 }
 
+func TestBuildSpecificationUseRecordOperationalGatePassesCurrentAdmittedUse(t *testing.T) {
+	section := specUseActiveSection()
+	record := BuildSpecificationUseRecord(
+		section,
+		specUseCurrentBaseline(section),
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          SpecUsePolicyStrongerUseRequiresCurrentSource,
+			OperationalGate: specUseGate(section.ID, "commission preflight"),
+			Now:             specUseNow(),
+		},
+	)
+
+	if record.GateDecision.Status != SpecUseGateDecisionPassed {
+		t.Fatalf("gate_decision = %+v, want passed", record.GateDecision)
+	}
+	if record.GateDecision.Reason != "operational_gate_passed_for_declared_use" {
+		t.Fatalf("reason = %q", record.GateDecision.Reason)
+	}
+	if record.GateDecision.AuthorityBoundary.Approval != "not_spec_approval" {
+		t.Fatalf("authority boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
+	if record.GateDecision.OperationalGate == nil {
+		t.Fatal("operational gate profile missing from gate decision")
+	}
+}
+
+func TestBuildSpecificationUseRecordOperationalGateBlocksNonCurrentSource(t *testing.T) {
+	section := specUseActiveSection()
+	record := BuildSpecificationUseRecord(
+		section,
+		SpecificationUseBaselineInput{Status: SpecUseBaselineDrifted},
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          SpecUsePolicyStrongerUseRequiresCurrentSource,
+			OperationalGate: specUseGate(section.ID, "commission preflight"),
+			Now:             specUseNow(),
+		},
+	)
+
+	if record.GateDecision.Status != SpecUseGateDecisionBlocked {
+		t.Fatalf("gate_decision = %+v, want blocked", record.GateDecision)
+	}
+	if record.GateDecision.Reason != "source_edition_not_current" {
+		t.Fatalf("reason = %q, want source_edition_not_current", record.GateDecision.Reason)
+	}
+}
+
+func TestBuildSpecificationUseRecordOperationalGateBlocksAdmissionMismatch(t *testing.T) {
+	section := specUseActiveSection()
+	record := BuildSpecificationUseRecord(
+		section,
+		specUseCurrentBaseline(section),
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          "",
+			OperationalGate: specUseGate(section.ID, "commission preflight"),
+			Now:             specUseNow(),
+		},
+	)
+
+	if record.GateDecision.Status != SpecUseGateDecisionBlocked {
+		t.Fatalf("gate_decision = %+v, want blocked", record.GateDecision)
+	}
+	if record.GateDecision.Reason != "admission_not_granted" {
+		t.Fatalf("reason = %q, want admission_not_granted", record.GateDecision.Reason)
+	}
+}
+
+func TestBuildSpecificationUseRecordOperationalGateBlocksBearerAndUseMismatch(t *testing.T) {
+	section := specUseActiveSection()
+	record := BuildSpecificationUseRecord(
+		section,
+		specUseCurrentBaseline(section),
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          SpecUsePolicyStrongerUseRequiresCurrentSource,
+			OperationalGate: specUseGate("TS.other.001", "commission preflight"),
+			Now:             specUseNow(),
+		},
+	)
+	if record.GateDecision.Reason != "operational_gate_bearer_mismatch" {
+		t.Fatalf("reason = %q, want bearer mismatch", record.GateDecision.Reason)
+	}
+
+	record = BuildSpecificationUseRecord(
+		section,
+		specUseCurrentBaseline(section),
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          SpecUsePolicyStrongerUseRequiresCurrentSource,
+			OperationalGate: specUseGate(section.ID, "release approval"),
+			Now:             specUseNow(),
+		},
+	)
+	if record.GateDecision.Reason != "operational_gate_use_context_mismatch" {
+		t.Fatalf("reason = %q, want use context mismatch", record.GateDecision.Reason)
+	}
+}
+
+func TestBuildSpecificationUseRecordOperationalGateFailsClosed(t *testing.T) {
+	section := specUseActiveSection()
+	for name, gate := range map[string]*OperationalGateProfile{
+		"unknown schema": {
+			SchemaVersion: 999,
+			GateRef:       "gate-1",
+			BearerRef:     section.ID,
+			UseContext:    "commission preflight",
+			Rule:          OperationalGateRuleCurrentAdmittedUse,
+		},
+		"unknown rule": {
+			SchemaVersion: OperationalGateSchemaVersion,
+			GateRef:       "gate-1",
+			BearerRef:     section.ID,
+			UseContext:    "commission preflight",
+			Rule:          "approve_because_green",
+		},
+		"expired": {
+			SchemaVersion: OperationalGateSchemaVersion,
+			GateRef:       "gate-1",
+			BearerRef:     section.ID,
+			UseContext:    "commission preflight",
+			Rule:          OperationalGateRuleCurrentAdmittedUse,
+			ExpiresAt:     "2026-06-01T00:00:00Z",
+		},
+	} {
+		record := BuildSpecificationUseRecord(
+			section,
+			specUseCurrentBaseline(section),
+			SpecificationUseInput{
+				SectionID:       section.ID,
+				UseContext:      "commission preflight",
+				Policy:          SpecUsePolicyStrongerUseRequiresCurrentSource,
+				OperationalGate: gate,
+				Now:             specUseNow(),
+			},
+		)
+		if record.GateDecision.Status != SpecUseGateDecisionBlocked {
+			t.Fatalf("%s: gate_decision = %+v, want blocked", name, record.GateDecision)
+		}
+	}
+}
+
 func specUseActiveSection() project.SpecSection {
 	return project.SpecSection{
 		ID:            "TS.use.001",
@@ -94,6 +242,33 @@ func specUseActiveSection() project.SpecSection {
 		ValidUntil:    "2099-01-01",
 		Path:          ".haft/specs/target-system.md",
 		Line:          4,
+	}
+}
+
+func specUseCurrentBaseline(section project.SpecSection) SpecificationUseBaselineInput {
+	return SpecificationUseBaselineInput{
+		ProjectID: "proj-1",
+		Status:    SpecUseBaselineCurrent,
+		Baseline: SectionBaseline{
+			ProjectID:  "proj-1",
+			SectionID:  section.ID,
+			Hash:       HashSection(section),
+			ApprovedBy: "human",
+			CapturedAt: specUseNow(),
+		},
+	}
+}
+
+func specUseGate(sectionID string, useContext string) *OperationalGateProfile {
+	return &OperationalGateProfile{
+		SchemaVersion:   OperationalGateSchemaVersion,
+		GateRef:         "gate-spec-use-1",
+		BearerRef:       sectionID,
+		UseContext:      useContext,
+		Rule:            OperationalGateRuleCurrentAdmittedUse,
+		EvidenceRefs:    []string{"evid-1"},
+		ExpiresAt:       "2099-01-01T00:00:00Z",
+		ReopenCondition: "section baseline drifts or admission policy changes",
 	}
 }
 

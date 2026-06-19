@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -22,7 +23,7 @@ declared use context.
 
 The record separates source edition, baseline currentness, admission policy,
 waiver expiry, and GateDecision status. It does not approve, rebaseline,
-create evidence, create WorkCommissions, or pass an OperationalGate.`,
+create evidence, create WorkCommissions, or mutate an OperationalGate.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSpecUse,
 }
@@ -33,7 +34,20 @@ func runSpecUse(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
-	record, err := buildSpecUseRecord(projectRoot, args[0], specUseContext, specUsePolicy, specUseWaiverExpiresAt, time.Now().UTC())
+	gate, err := readSpecUseGateFile(specUseGateFile)
+	if err != nil {
+		return err
+	}
+
+	record, err := buildSpecUseRecord(
+		projectRoot,
+		args[0],
+		specUseContext,
+		specUsePolicy,
+		specUseWaiverExpiresAt,
+		gate,
+		time.Now().UTC(),
+	)
 	if err != nil {
 		return err
 	}
@@ -52,6 +66,7 @@ func buildSpecUseRecord(
 	useContext string,
 	policy string,
 	waiverExpiresAt string,
+	gate *specflow.OperationalGateProfile,
 	now time.Time,
 ) (specflow.SpecificationUseRecord, error) {
 	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
@@ -70,10 +85,30 @@ func buildSpecUseRecord(
 		UseContext:      useContext,
 		Policy:          policy,
 		WaiverExpiresAt: waiverExpiresAt,
+		OperationalGate: gate,
 		Now:             now,
 	}
 
 	return specflow.BuildSpecificationUseRecord(section, baseline, input), nil
+}
+
+func readSpecUseGateFile(path string) (*specflow.OperationalGateProfile, error) {
+	trimmed := strings.TrimSpace(path)
+	if trimmed == "" {
+		return nil, nil
+	}
+
+	data, err := os.ReadFile(trimmed)
+	if err != nil {
+		return nil, fmt.Errorf("read operational gate file: %w", err)
+	}
+
+	var gate specflow.OperationalGateProfile
+	if err := json.Unmarshal(data, &gate); err != nil {
+		return nil, fmt.Errorf("parse operational gate file: %w", err)
+	}
+
+	return &gate, nil
 }
 
 func specUseSectionByID(
@@ -166,8 +201,10 @@ func writeSpecUseSummary(w io.Writer, record specflow.SpecificationUseRecord) er
 		shortSpecUseHash(record.BaselineCurrentness.BaselineHash),
 	))
 	builder.WriteString(fmt.Sprintf(
-		"gate_decision: %s\n",
+		"gate_decision: %s reason=%s gate=%s\n",
 		record.GateDecision.Status,
+		record.GateDecision.Reason,
+		record.GateDecision.GateRef,
 	))
 
 	_, err := io.WriteString(w, builder.String())

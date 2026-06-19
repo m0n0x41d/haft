@@ -218,6 +218,13 @@ func TestHandleToolsList_RefreshSchemaIncludesReview(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_QuerySchemaIncludesOperationalGate(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+	if _, ok := querySchema["operational_gate"].(map[string]interface{}); !ok {
+		t.Fatalf("haft_query schema missing operational_gate: %#v", querySchema)
+	}
+}
+
 func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
 	for _, name := range []string{"haft_method", "haft_commission", "haft_spec_section"} {
 		t.Run(name, func(t *testing.T) {

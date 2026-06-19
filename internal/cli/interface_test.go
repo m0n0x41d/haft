@@ -363,6 +363,24 @@ func TestInterfaceNestedContractsExposeShapesAndTemplates(t *testing.T) {
 	}
 }
 
+func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_use")
+	if !ok {
+		t.Fatal("query.spec_use capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"operational_gate", "require_current_source_and_admitted_use", "passed|blocked"} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.spec_use contract missing %q:\n%s", want, shapes)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	if !strings.Contains(invariants, "GateDecision remains a derived reading") {
+		t.Fatalf("query.spec_use invariants missing derived-reading boundary:\n%s", invariants)
+	}
+}
+
 func TestInterfaceCompareTemplateUsesFlatCanonicalScores(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
 	if !ok {

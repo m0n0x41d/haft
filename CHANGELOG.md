@@ -25,6 +25,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **OperationalGate v1 for spec use.** `SpecificationUseRecord` can now include
+  an explicit read-only OperationalGate profile and derived gate decision for a
+  declared use context. CLI callers pass `haft spec use --gate-file <json>`;
+  MCP callers pass `operational_gate` to `haft_query(action="spec_use")`. The
+  first gate rule, `require_current_source_and_admitted_use`, passes only when
+  the source edition is current, the admission policy grants the declared use,
+  the bearer/use context match, and the gate is not expired. Gate decisions
+  remain derived readings, not spec approval, evidence creation, or work
+  authority.
 - **Read-only maintenance judgment packet.** `haft_refresh(action="review")`
   and `haft overseer judgment --json` now build a grouped packet for rung-3
   maintenance tasks that need judgment. The packet classifies tasks by

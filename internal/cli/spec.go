@@ -28,6 +28,7 @@ var (
 	specUseContext         string
 	specUsePolicy          string
 	specUseWaiverExpiresAt string
+	specUseGateFile        string
 	specOnboardJSON        bool
 	specOnboardApproveID   string
 	specOnboardReopenID    string
@@ -160,6 +161,7 @@ func init() {
 	specUseCmd.Flags().StringVar(&specUseContext, "context", "", "declared use context for the SpecificationUseRecord")
 	specUseCmd.Flags().StringVar(&specUsePolicy, "policy", "", "admission policy: documentary_only, stronger_use_requires_current_source, or temporary_waiver")
 	specUseCmd.Flags().StringVar(&specUseWaiverExpiresAt, "waiver-expires-at", "", "expiry for temporary_waiver policy (RFC3339 or YYYY-MM-DD)")
+	specUseCmd.Flags().StringVar(&specUseGateFile, "gate-file", "", "JSON OperationalGate profile for local read-only gate evaluation")
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
 	specOnboardCmd.Flags().BoolVar(&specOnboardJSON, "json", false, "print structured JSON output")

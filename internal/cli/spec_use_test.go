@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -17,7 +19,7 @@ func TestRunSpecUseJSONReturnsSpecificationUseRecord(t *testing.T) {
 	restoreRoot := enterTestProjectRoot(t, root)
 	defer restoreRoot()
 
-	restoreFlags := stubSpecUseFlags(t, true, "agent planning read", specflow.SpecUsePolicyDocumentaryOnly, "")
+	restoreFlags := stubSpecUseFlags(t, true, "agent planning read", specflow.SpecUsePolicyDocumentaryOnly, "", "")
 	defer restoreFlags()
 
 	var output bytes.Buffer
@@ -55,7 +57,7 @@ func TestRunSpecUseSummaryNamesSeparatedFields(t *testing.T) {
 	restoreRoot := enterTestProjectRoot(t, root)
 	defer restoreRoot()
 
-	restoreFlags := stubSpecUseFlags(t, false, "commission preflight", specflow.SpecUsePolicyStrongerUseRequiresCurrentSource, "")
+	restoreFlags := stubSpecUseFlags(t, false, "commission preflight", specflow.SpecUsePolicyStrongerUseRequiresCurrentSource, "", "")
 	defer restoreFlags()
 
 	var output bytes.Buffer
@@ -72,6 +74,47 @@ func TestRunSpecUseSummaryNamesSeparatedFields(t *testing.T) {
 		if !strings.Contains(result, want) {
 			t.Fatalf("summary missing %q:\n%s", want, result)
 		}
+	}
+}
+
+func TestRunSpecUseJSONWithGateFileReturnsGateDecision(t *testing.T) {
+	root := newSpecReviewCLIProject(t)
+	restoreRoot := enterTestProjectRoot(t, root)
+	defer restoreRoot()
+
+	gateFile := writeSpecUseGateFile(t, specflow.OperationalGateProfile{
+		SchemaVersion:   specflow.OperationalGateSchemaVersion,
+		GateRef:         "gate-cli-1",
+		BearerRef:       "TS.environment.001",
+		UseContext:      "agent planning read",
+		Rule:            specflow.OperationalGateRuleCurrentAdmittedUse,
+		ExpiresAt:       "2099-01-01T00:00:00Z",
+		ReopenCondition: "section baseline drifts",
+	})
+	restoreFlags := stubSpecUseFlags(t, true, "agent planning read", specflow.SpecUsePolicyDocumentaryOnly, "", gateFile)
+	defer restoreFlags()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	err := runSpecUse(cmd, []string{"TS.environment.001"})
+	if err != nil {
+		t.Fatalf("runSpecUse returned error: %v", err)
+	}
+
+	var record specflow.SpecificationUseRecord
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("decode spec use JSON: %v\n%s", err, output.String())
+	}
+	if record.GateDecision.Status != specflow.SpecUseGateDecisionBlocked {
+		t.Fatalf("gate_decision = %+v, want blocked without baseline DB", record.GateDecision)
+	}
+	if record.GateDecision.GateRef != "gate-cli-1" {
+		t.Fatalf("gate_ref = %q, want gate-cli-1", record.GateDecision.GateRef)
+	}
+	if record.GateDecision.OperationalGate == nil {
+		t.Fatal("operational_gate missing")
 	}
 }
 
@@ -105,12 +148,47 @@ func TestHandleQuintQuerySpecUseReturnsCurrentnessRecord(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuerySpecUseAcceptsOperationalGateObject(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action":      "spec_use",
+		"section_id":  "TS.environment.001",
+		"use_context": "commission preflight",
+		"policy":      specflow.SpecUsePolicyStrongerUseRequiresCurrentSource,
+		"operational_gate": map[string]any{
+			"schema_version":   float64(specflow.OperationalGateSchemaVersion),
+			"gate_ref":         "gate-mcp-1",
+			"bearer_ref":       "TS.environment.001",
+			"use_context":      "commission preflight",
+			"rule":             specflow.OperationalGateRuleCurrentAdmittedUse,
+			"evidence_refs":    []any{"evid-1"},
+			"expires_at":       "2099-01-01T00:00:00Z",
+			"reopen_condition": "section baseline drifts",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery spec_use returned error: %v", err)
+	}
+
+	var record specflow.SpecificationUseRecord
+	if err := json.Unmarshal([]byte(result), &record); err != nil {
+		t.Fatalf("decode spec_use packet: %v\n%s", err, result)
+	}
+	if record.GateDecision.Status != specflow.SpecUseGateDecisionPassed {
+		t.Fatalf("gate_decision = %+v, want passed", record.GateDecision)
+	}
+	if record.GateDecision.AuthorityBoundary.WorkCommission != "not_work_commission" {
+		t.Fatalf("authority boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
+}
+
 func stubSpecUseFlags(
 	t *testing.T,
 	jsonOutput bool,
 	useContext string,
 	policy string,
 	waiverExpiresAt string,
+	gateFile string,
 ) func() {
 	t.Helper()
 
@@ -118,16 +196,35 @@ func stubSpecUseFlags(
 	previousContext := specUseContext
 	previousPolicy := specUsePolicy
 	previousWaiver := specUseWaiverExpiresAt
+	previousGateFile := specUseGateFile
 
 	specUseJSON = jsonOutput
 	specUseContext = useContext
 	specUsePolicy = policy
 	specUseWaiverExpiresAt = waiverExpiresAt
+	specUseGateFile = gateFile
 
 	return func() {
 		specUseJSON = previousJSON
 		specUseContext = previousContext
 		specUsePolicy = previousPolicy
 		specUseWaiverExpiresAt = previousWaiver
+		specUseGateFile = previousGateFile
 	}
+}
+
+func writeSpecUseGateFile(t *testing.T, gate specflow.OperationalGateProfile) string {
+	t.Helper()
+
+	data, err := json.Marshal(gate)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := filepath.Join(t.TempDir(), "gate.json")
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return path
 }

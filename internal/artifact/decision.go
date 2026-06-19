@@ -1498,6 +1498,10 @@ func listScopeFilesCached(projectRoot, scope string, cache map[string][]string) 
 
 func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 	scope = normalizeDriftScope(scope)
+	if files, ok := listGitScopeFiles(projectRoot, scope); ok {
+		return files, nil
+	}
+
 	scopePath := filepath.Join(projectRoot, scope)
 	entries := make([]string, 0)
 	ignoreChecker := codebase.NewIgnoreChecker(projectRoot)
@@ -1516,6 +1520,12 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 		}
 		normalizedPath := normalizeProjectPath(relPath)
 
+		if driftPathNeverScanned(normalizedPath) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if entry.IsDir() {
 			if codebase.IsExcludedDir(entry.Name()) {
 				return filepath.SkipDir
@@ -1542,6 +1552,63 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 	sort.Strings(entries)
 
 	return entries, nil
+}
+
+func listGitScopeFiles(projectRoot string, scope string) ([]string, bool) {
+	if strings.TrimSpace(projectRoot) == "" {
+		return nil, false
+	}
+
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard", "--", scope)
+	cmd.Dir = projectRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+
+	seen := map[string]struct{}{}
+	files := make([]string, 0)
+	for _, line := range strings.Split(string(output), "\n") {
+		path := normalizeProjectPath(line)
+		if path == "." || path == "" {
+			continue
+		}
+		if driftPathNeverScanned(path) {
+			continue
+		}
+		if !driftPathExistsAsFile(projectRoot, path) {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		files = append(files, path)
+	}
+
+	sort.Strings(files)
+	return files, true
+}
+
+func driftPathExistsAsFile(projectRoot string, relPath string) bool {
+	info, err := os.Stat(filepath.Join(projectRoot, relPath))
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func driftPathNeverScanned(relPath string) bool {
+	normalized := normalizeProjectPath(relPath)
+	if normalized == "." || normalized == "" {
+		return false
+	}
+	for _, part := range strings.Split(normalized, "/") {
+		if codebase.IsExcludedDir(part) {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeDriftScope(scope string) string {

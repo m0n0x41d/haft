@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -452,6 +453,67 @@ func TestCheckDriftIgnoresAddedFilesExcludedByGitignore(t *testing.T) {
 	}
 }
 
+func TestCheckDriftIgnoresAddedFilesExcludedByNestedGitignore(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	initTestGitRepository(t, projectRoot)
+
+	writeTestFile(t, projectRoot, "embed-sidecar/.gitignore", "/target\n")
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-016b", "Governed root with nested ignores")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "embed-sidecar/target/release/libhaft_embed.a", "ignored build artifact\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected nested-gitignored build artifact to stay out of drift, got %#v", reports)
+	}
+}
+
+func TestCheckDriftIgnoresAddedRuntimeCarrierDirectories(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	initTestGitRepository(t, projectRoot)
+
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-016c", "Governed root with runtime carrier")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "open-sleigh/.haft/project.yaml", "project_id: local-runtime\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected runtime carrier directory to stay out of drift, got %#v", reports)
+	}
+}
+
 func TestScanStaleIncludesDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -568,6 +630,15 @@ func writeTestFile(t *testing.T, root, path, content string) {
 	}
 	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func initTestGitRepository(t *testing.T, root string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", root, "init")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git init: %v\n%s", err, string(output))
 	}
 }
 

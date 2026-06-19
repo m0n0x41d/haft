@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Drift added-file noise.** Module-scope drift detection now lists current
+  scope files through `git ls-files --cached --others --exclude-standard` when
+  available, preserving modified/missing checks for baselined files while
+  keeping nested-gitignored build output and local governance/runtime carrier
+  directories such as `open-sleigh/.haft/` out of added-file drift.
 - **Maintenance evidence cooldown date basis.** The maintenance plan cooldown
   now compares today's evidence using the same local date prefix that
   `AttachEvidence` writes into `evid-YYYYMMDD-*` IDs, avoiding duplicate

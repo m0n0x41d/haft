@@ -16,8 +16,22 @@ You are running the FPF verification loop: baseline → measure → evidence →
 
 If `decision_ref` is given, use it. Otherwise:
 - `mcp__haft__haft_query(action="status")` — surfaces stale/refresh-due decisions
+- `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe maintenance closures and needs_operator groups
 - `mcp__haft__haft_query(action="list", kind="DecisionRecord")` — full list
 - Ask the operator which decision to verify
+
+When the operator asks to verify/drain the project maintenance backlog, do not
+stop after status. Use the explicit drain loop:
+
+1. `mcp__haft__haft_refresh(action="drain", dry_run=true)` to preview closed /
+   failed / needs_operator classes.
+2. If the operator's request already authorizes safe closure (for example:
+   "h-verify and close what you can"), call
+   `mcp__haft__haft_refresh(action="drain", dry_run=false)`.
+3. Report every automatic closure and every needs_operator item. The drain may
+   close only rung-1 deterministic drift and rung-2 allowlisted machine
+   evidence/revalidation. Material drift, semantic uncertainty, reopen/supersede
+   choices, and weak waivers stay operator-facing.
 
 ## Step 2 — Read the decision's predictions
 

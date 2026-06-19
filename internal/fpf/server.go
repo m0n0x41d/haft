@@ -743,14 +743,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "haft_refresh",
-			Description: "Manage artifact lifecycle — detect stale items, extend validity, archive, replace, or find note-decision overlaps. Works on ALL artifact types. Actions: 'scan' finds expired and evidence-degraded artifacts, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant, 'reconcile' finds notes that overlap with decisions.",
+			Description: "Manage artifact lifecycle — detect stale items, compile maintenance work orders, review judgment-only tasks, drain machine-safe maintenance work, extend validity, archive, replace, or find note-decision overlaps. Works on ALL artifact types. Actions: 'scan' finds expired and evidence-degraded artifacts, 'plan' compiles rung-classified maintenance tasks, 'review' builds a read-only judgment packet for rung-3 tasks, 'drain' explicitly executes only rung-1/rung-2 machine-safe maintenance actions and reports the rest, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant, 'reconcile' finds notes that overlap with decisions.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"scan", "plan", "waive", "reopen", "supersede", "deprecate", "reconcile"},
-						"description": "scan=find stale/degraded, plan=compile typed maintenance work order (rung-classified micro-tasks), waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
+						"enum":        []interface{}{"scan", "plan", "review", "drain", "waive", "reopen", "supersede", "deprecate", "reconcile"},
+						"description": "scan=find stale/degraded, plan=compile typed maintenance work order (rung-classified micro-tasks), review=read-only judgment packet for rung-3 tasks, drain=explicitly execute only machine-safe maintenance actions and report needs_operator, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",
@@ -787,6 +787,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"verbose": map[string]string{
 						"type":        "boolean",
 						"description": "(scan) Include full per-file drift dump. Default false — drift is summarized as counts + top-5 modified paths per decision. Full mode can exceed context budget on repos with vendor subtrees or large added-files sets.",
+					},
+					"dry_run": map[string]string{
+						"type":        "boolean",
+						"description": "(drain) Propose machine-safe actions without mutating baselines, evidence, or stored maintenance runs.",
 					},
 				},
 				"required": []string{"action"},
@@ -956,7 +960,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 func compactToolDescriptions(tools []Tool) []Tool {
 	compacted := make([]Tool, 0, len(tools))
 	for _, tool := range tools {
-		tool.Description = "Use `haft interface --json`."
+		tool.Description = "See `haft interface`"
 		compactSchemaDescriptions(tool.InputSchema, tool.Name)
 		compacted = append(compacted, tool)
 	}

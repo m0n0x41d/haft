@@ -1821,6 +1821,8 @@ func (t *HaftRefreshTool) Schema() agent.ToolSchema {
 
 Actions:
 - scan: Find all stale artifacts (expired valid_until, evidence decay, pending verify_after claims).
+- plan: Compile the rung-classified maintenance work order.
+- review: Build a read-only judgment packet for rung-3 maintenance tasks.
 - drift: Check if files under decisions have changed since baseline.
 - waive: Extend validity of an artifact with justification (artifact_ref, reason required).
 - reopen: Start new problem cycle from a decision (artifact_ref, reason required).
@@ -1829,7 +1831,7 @@ Actions:
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":           map[string]any{"type": "string", "enum": []string{"scan", "plan", "drift", "waive", "reopen", "supersede", "deprecate"}, "description": "What to do"},
+				"action":           map[string]any{"type": "string", "enum": []string{"scan", "plan", "review", "drift", "waive", "reopen", "supersede", "deprecate"}, "description": "What to do"},
 				"artifact_ref":     map[string]any{"type": "string", "description": "Artifact ID to act on (waive/reopen/supersede/deprecate)"},
 				"task_context":     map[string]any{"type": "string", "description": "Optional filename slug context for refresh reports and reopened problems"},
 				"reason":           map[string]any{"type": "string", "description": "Why this action is being taken"},
@@ -1862,6 +1864,21 @@ func (t *HaftRefreshTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			return agent.PlainResult("No stale artifacts found."), nil
 		}
 		return agent.PlainResult(present.ScanResponse(items, "")), nil
+
+	case "plan":
+		plan, err := artifact.BuildMaintenancePlan(ctx, t.store, t.projectRoot)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		return agent.PlainResult(present.MaintenancePlanResponse(plan, "")), nil
+
+	case "review":
+		plan, err := artifact.BuildMaintenancePlan(ctx, t.store, t.projectRoot)
+		if err != nil {
+			return agent.ToolResult{}, err
+		}
+		review := artifact.BuildMaintenanceJudgmentReview(plan)
+		return agent.PlainResult(present.MaintenanceJudgmentReviewResponse(review, "")), nil
 
 	case "drift":
 		reports, err := artifact.CheckDrift(ctx, t.store, t.projectRoot)

@@ -431,6 +431,46 @@ func TestRunOverseerMaintainStoresMaintenanceRun(t *testing.T) {
 	}
 }
 
+func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	restoreFlags := stubOverseerJudgmentFlags(t, true)
+	defer restoreFlags()
+
+	before := countArtifacts(t, fixture)
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	if err := runOverseerJudgment(cmd, nil); err != nil {
+		t.Fatalf("runOverseerJudgment returned error: %v", err)
+	}
+
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("artifact count changed: before=%d after=%d", before, after)
+	}
+
+	review := artifact.MaintenanceJudgmentReview{}
+	if err := json.Unmarshal(output.Bytes(), &review); err != nil {
+		t.Fatalf("unmarshal judgment review: %v\n%s", err, output.String())
+	}
+	if review.JudgmentTasks == 0 {
+		t.Fatalf("expected judgment tasks from seeded governance debt: %#v", review)
+	}
+	if review.AuthorityBoundary.Mutation != "not_mutation" || review.AuthorityBoundary.ApplySurface != "operator_approval_required" {
+		t.Fatalf("authority boundary = %#v", review.AuthorityBoundary)
+	}
+	if review.Counts.ByRecommendation[artifact.JudgmentRecommendationReviewMaterialDrift] == 0 &&
+		review.Counts.ByRecommendation[artifact.JudgmentRecommendationTriageStaleDecision] == 0 {
+		t.Fatalf("review did not classify judgment tasks: %#v", review.Counts.ByRecommendation)
+	}
+}
+
 func TestRunOverseerHookRunsConfiguredReviewer(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	setupOverseerGitRepo(t, fixture.root)
@@ -903,6 +943,17 @@ func stubOverseerMaintainFlags(t *testing.T, jsonFlag bool) func() {
 
 	return func() {
 		overseerMaintainJSON = previousJSON
+	}
+}
+
+func stubOverseerJudgmentFlags(t *testing.T, jsonFlag bool) func() {
+	t.Helper()
+
+	previousJSON := overseerJudgmentJSON
+	overseerJudgmentJSON = jsonFlag
+
+	return func() {
+		overseerJudgmentJSON = previousJSON
 	}
 }
 

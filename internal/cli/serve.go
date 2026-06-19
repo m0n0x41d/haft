@@ -1362,6 +1362,25 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		}
 		return present.MaintenancePlanResponse(plan, navStrip), nil
 
+	case artifact.RefreshReview:
+		projectRoot := filepath.Dir(haftDir)
+		plan, err := artifact.BuildMaintenancePlan(ctx, store, projectRoot)
+		if err != nil {
+			return "", err
+		}
+		review := artifact.BuildMaintenanceJudgmentReview(plan)
+		return present.MaintenanceJudgmentReviewResponse(review, navStrip), nil
+
+	case artifact.RefreshDrain:
+		projectRoot := filepath.Dir(haftDir)
+		dryRun, _ := args["dry_run"].(bool)
+		report, err := buildMaintenanceDrainReport(ctx, store, projectRoot, dryRun)
+		if err != nil {
+			return "", err
+		}
+		navStrip = present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
+		return present.MaintenanceDrainResponse(report, navStrip), nil
+
 	case artifact.RefreshWaive:
 		if artifactRef == "" {
 			return "artifact_ref is required for waive.\n" + navStrip, nil

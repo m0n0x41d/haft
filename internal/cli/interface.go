@@ -532,7 +532,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				Notes: []string{
 					"Default output is a compact operator cockpit; omitted detail is not evidence of absence.",
 					"Pass full=true for detailed status, including shipped/pending/unassessed decision lists, addressed problems, recent notes, and full coverage when available.",
-					"Use haft_query(action=\"coverage\") for module coverage, haft_refresh(action=\"scan\", verbose=true) for drift/stale detail, and haft_refresh(action=\"plan\") for the maintenance work order.",
+					"Use haft_query(action=\"coverage\") for module coverage, haft_refresh(action=\"scan\", verbose=true) for drift/stale detail, haft_refresh(action=\"plan\") for the maintenance work order, haft_refresh(action=\"review\") for a read-only needs-judgment packet, and haft_refresh(action=\"drain\", dry_run=true) to preview safe closures.",
 				},
 			},
 			OutputVolume: []string{"default: compact cockpit plus one-line coverage cue", "full=true: detailed status plus complete coverage projection"},
@@ -854,6 +854,56 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			OutputVolume: []string{"default: compact drift summary", "verbose=true: full drift detail"},
 			Invariants:   commonInterfaceInvariants(),
+		},
+		{
+			ID:      "refresh.review",
+			Purpose: "Build a read-only judgment packet for rung-3 maintenance tasks; never mutates, approves, or creates evidence.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_refresh",
+				MCPAction:        "review",
+				MCPCall:          `haft_refresh(action="review")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft overseer judgment --json",
+				DiscoveryCommand: "haft interface refresh.review --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				OptionalFields: []string{"context"},
+				Notes: []string{
+					"Output groups only rung-3 needs-judgment tasks by recommendation, confidence, source, and category.",
+					"Suggested commands are candidates for explicit operator approval; the packet is not evidence, approval, or mutation.",
+				},
+			},
+			OutputVolume: []string{"default: compact grouped judgment packet", "CLI --json: full task list with source return and suggested commands"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Rung-3 judgment remains outside automated execution.",
+				"Confidence labels are review metadata, not authority.",
+			),
+		},
+		{
+			ID:      "refresh.drain",
+			Purpose: "Explicitly execute machine-safe maintenance actions and return a closed/failed/needs_operator report.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_refresh",
+				MCPAction:        "drain",
+				MCPCall:          `haft_refresh(action="drain", dry_run=true)`,
+				CLIStatus:        "available",
+				CLICommand:       "haft overseer drain --dry-run --json",
+				DiscoveryCommand: "haft interface refresh.drain --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				OptionalFields: []string{"dry_run", "context"},
+				Notes: []string{
+					"dry_run=true proposes machine-safe actions without mutating; dry_run=false executes only rung-1/rung-2 safe actions.",
+					"Material drift, semantic uncertainty, reopen/supersede choices, and weak waivers are returned as needs_operator.",
+				},
+			},
+			OutputVolume: []string{"default: compact drain report", "CLI --json: executed actions plus needs_operator groups"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Drain is opt-in; default status and refresh.review remain read-only.",
+				"Drain does not create semantic approval, GateDecision, or global truth.",
+			),
 		},
 	}
 }

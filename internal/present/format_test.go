@@ -560,6 +560,8 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		"Full status: `haft_query(action=\"status\", full=true)`",
 		"Coverage: `haft_query(action=\"coverage\")`",
 		"Maintenance plan: `haft_refresh(action=\"plan\")`",
+		"Judgment review: `haft_refresh(action=\"review\")`",
+		"Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`",
 		"Default status omits shipped/pending decision lists",
 	} {
 		if !strings.Contains(output, want) {

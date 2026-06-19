@@ -50,6 +50,62 @@ func TestApplyRefreshReminderKeepsHumanReadableReminder(t *testing.T) {
 	}
 }
 
+func TestHandleQuintRefreshReviewBuildsReadOnlyJudgmentPacket(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	before := countArtifacts(t, fixture)
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action": "review",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(review) returned error: %v", err)
+	}
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("artifact count changed: before=%d after=%d", before, after)
+	}
+
+	for _, want := range []string{
+		"Maintenance Judgment Review",
+		"not_mutation",
+		"operator_approval_required",
+		"review_material_drift",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("review response missing %q:\n%s", want, result)
+		}
+	}
+}
+
+func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	before := countArtifacts(t, fixture)
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "drain",
+		"dry_run": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(drain dry-run) returned error: %v", err)
+	}
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("dry-run artifact count changed: before=%d after=%d", before, after)
+	}
+
+	for _, want := range []string{
+		"Maintenance Drain (dry-run)",
+		"not_mutation",
+		"Needs operator:",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("drain dry-run response missing %q:\n%s", want, result)
+		}
+	}
+}
+
 func seedStaleRefreshScan(t *testing.T, ctx context.Context, store *artifact.Store) {
 	t.Helper()
 

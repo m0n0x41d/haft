@@ -1134,6 +1134,8 @@ func appendCockpitDrillDown(sb *strings.Builder) {
 	sb.WriteString("- Coverage: `haft_query(action=\"coverage\")`.\n")
 	sb.WriteString("- Drift/stale detail: `haft_refresh(action=\"scan\", verbose=true)`.\n")
 	sb.WriteString("- Maintenance plan: `haft_refresh(action=\"plan\")`.\n")
+	sb.WriteString("- Judgment review: `haft_refresh(action=\"review\")` / `haft overseer judgment --json`.\n")
+	sb.WriteString("- Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`.\n")
 	sb.WriteString("\nDefault status omits shipped/pending decision lists, full module coverage, recent notes, and full drift/stale tails.\n")
 }
 

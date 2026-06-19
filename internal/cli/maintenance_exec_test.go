@@ -143,6 +143,121 @@ func TestMaintenanceExecutePhase_GateModesAndUndo(t *testing.T) {
 	})
 }
 
+func TestMaintenanceDrainDryRunReportsProposalsAndNeedsOperatorWithoutMutation(t *testing.T) {
+	restore := overrideGoldenE2EFlags(t)
+	defer restore()
+
+	root := newGoldenE2ERepo(t)
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+	t.Setenv("HOME", filepath.Join(root, ".test-home"))
+
+	initLocal = true
+	if err := runInit(&cobra.Command{}, nil); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	ctx := context.Background()
+	safeDecisionID := createMaintExecDecision(t, root)
+	createDrainJudgmentDecision(t, root)
+	writeGoldenE2EFile(t, filepath.Join(root, "internal/app/extra.go"),
+		"package app\n\nfunc Extra() string {\n\treturn \"added\"\n}\n")
+
+	var report maintenanceDrainReport
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		var err error
+		report, err = buildMaintenanceDrainReport(ctx, store, root, true)
+		if err != nil {
+			t.Fatalf("build drain report: %v", err)
+		}
+		return nil
+	})
+
+	if !report.DryRun {
+		t.Fatal("dry-run report should set dry_run=true")
+	}
+	if report.Summary.ProposedActions == 0 {
+		t.Fatalf("dry-run should propose safe actions: %+v", report.Summary)
+	}
+	if report.Summary.AppliedActions != 0 || report.Summary.EvidenceActions != 0 {
+		t.Fatalf("dry-run must not apply or attach evidence: %+v", report.Summary)
+	}
+	if report.Summary.NeedsOperatorTasks == 0 {
+		t.Fatalf("dry-run should surface needs_operator tasks: %+v", report)
+	}
+
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		if !driftPresent(t, ctx, store, root, safeDecisionID) {
+			t.Fatal("dry-run must leave additive drift visible")
+		}
+		if machineEvidenceCount(t, ctx, store, safeDecisionID) != 0 {
+			t.Fatal("dry-run must not attach machine evidence")
+		}
+		return nil
+	})
+}
+
+func TestMaintenanceDrainClosesSafeItemsAndReportsNeedsOperator(t *testing.T) {
+	restore := overrideGoldenE2EFlags(t)
+	defer restore()
+
+	root := newGoldenE2ERepo(t)
+	restoreCwd := enterTestProjectRoot(t, root)
+	defer restoreCwd()
+	t.Setenv("HOME", filepath.Join(root, ".test-home"))
+
+	initLocal = true
+	if err := runInit(&cobra.Command{}, nil); err != nil {
+		t.Fatalf("run init: %v", err)
+	}
+
+	ctx := context.Background()
+	safeDecisionID := createMaintExecDecision(t, root)
+	judgmentDecisionID := createDrainJudgmentDecision(t, root)
+	writeGoldenE2EFile(t, filepath.Join(root, "internal/app/extra.go"),
+		"package app\n\nfunc Extra() string {\n\treturn \"added\"\n}\n")
+
+	var report maintenanceDrainReport
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		var err error
+		report, err = buildMaintenanceDrainReport(ctx, store, root, false)
+		if err != nil {
+			t.Fatalf("build drain report: %v", err)
+		}
+		return nil
+	})
+
+	if report.DryRun {
+		t.Fatal("real drain should set dry_run=false")
+	}
+	if report.MaintenanceRunID == "" {
+		t.Fatal("real drain should store a maintenance run for audit/undo")
+	}
+	if report.Summary.AppliedActions == 0 || report.Summary.EvidenceActions == 0 {
+		t.Fatalf("real drain should apply safe actions and attach evidence: %+v", report.Summary)
+	}
+	if report.Summary.NeedsOperatorTasks == 0 {
+		t.Fatalf("real drain should keep judgment tasks operator-facing: %+v", report)
+	}
+
+	withMaintStore(t, root, func(store *artifact.Store) []overseer.MaintenanceAction {
+		if driftPresent(t, ctx, store, root, safeDecisionID) {
+			t.Fatal("real drain should rebaseline additive-only drift")
+		}
+		if machineEvidenceCount(t, ctx, store, safeDecisionID) == 0 {
+			t.Fatal("real drain should attach machine evidence for allowlisted observable")
+		}
+		refreshed, err := store.Get(ctx, judgmentDecisionID)
+		if err != nil {
+			t.Fatalf("get judgment decision: %v", err)
+		}
+		if refreshed.Meta.ValidUntil == "" || !strings.HasPrefix(refreshed.Meta.ValidUntil, "20") {
+			t.Fatalf("judgment decision valid_until unexpectedly blank: %#v", refreshed.Meta)
+		}
+		return nil
+	})
+}
+
 func TestMaintenanceExecutePhaseDisabledConfigSkipsMutations(t *testing.T) {
 	restore := overrideGoldenE2EFlags(t)
 	defer restore()
@@ -477,6 +592,45 @@ func createMaintExecDecision(t *testing.T, root string) string {
 	return decision.Meta.ID
 }
 
+func createDrainJudgmentDecision(t *testing.T, root string) string {
+	t.Helper()
+
+	writeGoldenE2EFile(t, filepath.Join(root, "internal/app/judgment.go"),
+		"package app\n\nfunc Judgment() string {\n\treturn \"operator\"\n}\n")
+
+	database, store := openGoldenE2EStore(t, root)
+	defer database.Close()
+
+	ctx := context.Background()
+	haftDir := filepath.Join(root, ".haft")
+	ripe := time.Now().Add(-48 * time.Hour).Format("2006-01-02")
+	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		SelectedTitle:   "Drain needs operator fixture decision",
+		WhySelected:     "E2E fixture for operator-only maintenance tasks.",
+		SelectionPolicy: "Fixture.",
+		CounterArgument: "Fixture.",
+		WeakestLink:     "Fixture.",
+		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:      []string{"Judgment remains operator-reviewed"},
+		Predictions: []artifact.PredictionInput{{
+			Claim:       "Operator confidence remains high",
+			Observable:  "operator interview",
+			Threshold:   "human judgment supports",
+			VerifyAfter: ripe,
+		}},
+		AffectedFiles:  []string{"internal/app/judgment.go"},
+		ValidUntil:     stale,
+		GovernanceMode: "exact",
+	})
+	if err != nil {
+		t.Fatalf("decide judgment fixture: %v", err)
+	}
+	return decision.Meta.ID
+}
+
 func saveMaintenanceModes(t *testing.T, root, rebaseline, revalidate string) {
 	t.Helper()
 	cfg, err := overseer.LoadConfig(root)
@@ -506,6 +660,21 @@ func assertActionOutcome(t *testing.T, actions []overseer.MaintenanceAction, kin
 	}
 	t.Fatalf("no action kind=%s decision=%s outcome=%s in ledger: %+v", kind, decisionRef, outcome, actions)
 	return overseer.MaintenanceAction{}
+}
+
+func machineEvidenceCount(t *testing.T, ctx context.Context, store *artifact.Store, decisionID string) int {
+	t.Helper()
+	items, err := store.GetEvidenceItems(ctx, decisionID)
+	if err != nil {
+		t.Fatalf("get evidence: %v", err)
+	}
+	count := 0
+	for _, item := range items {
+		if item.Provenance == artifact.ProvenanceMachine {
+			count++
+		}
+	}
+	return count
 }
 
 func driftPresent(t *testing.T, ctx context.Context, store *artifact.Store, root, decisionID string) bool {

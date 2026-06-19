@@ -21,6 +21,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/overseer"
+	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/logger"
 )
@@ -43,6 +44,9 @@ var (
 	overseerShowJSON          bool
 	overseerRemindJSON        bool
 	overseerMaintainJSON      bool
+	overseerJudgmentJSON      bool
+	overseerDrainJSON         bool
+	overseerDrainDryRun       bool
 	overseerDaemonJSON        bool
 	overseerDaemonIdleTimeout = 300
 	overseerDaemonPollSeconds = 2
@@ -124,6 +128,18 @@ var overseerMaintainCmd = &cobra.Command{
 	Use:   "maintain",
 	Short: "Scan governance maintenance debt and store advisory overseer signals",
 	RunE:  runOverseerMaintain,
+}
+
+var overseerJudgmentCmd = &cobra.Command{
+	Use:   "judgment",
+	Short: "Build a read-only judgment packet for maintenance tasks that need human judgment",
+	RunE:  runOverseerJudgment,
+}
+
+var overseerDrainCmd = &cobra.Command{
+	Use:   "drain",
+	Short: "Explicitly drain machine-safe maintenance tasks and report the rest",
+	RunE:  runOverseerDrain,
 }
 
 var overseerUndoCmd = &cobra.Command{
@@ -208,6 +224,9 @@ func init() {
 	overseerShowCmd.Flags().BoolVar(&overseerShowJSON, "json", false, "print structured JSON output")
 	overseerRemindCmd.Flags().BoolVar(&overseerRemindJSON, "json", false, "print structured JSON output")
 	overseerMaintainCmd.Flags().BoolVar(&overseerMaintainJSON, "json", false, "print structured JSON output")
+	overseerJudgmentCmd.Flags().BoolVar(&overseerJudgmentJSON, "json", false, "print structured JSON output")
+	overseerDrainCmd.Flags().BoolVar(&overseerDrainJSON, "json", false, "print structured JSON output")
+	overseerDrainCmd.Flags().BoolVar(&overseerDrainDryRun, "dry-run", false, "propose safe actions without mutating baselines, evidence, or stored maintenance runs")
 	overseerDaemonStartCmd.Flags().BoolVar(&overseerDaemonJSON, "json", false, "print structured JSON output")
 	overseerDaemonRunCmd.Flags().IntVar(&overseerDaemonIdleTimeout, "idle-timeout", 300, "exit after this many idle seconds; 0 waits forever")
 	overseerDaemonRunCmd.Flags().IntVar(&overseerDaemonPollSeconds, "poll-interval", 2, "queue poll interval in seconds")
@@ -234,6 +253,8 @@ func init() {
 	overseerCmd.AddCommand(overseerRemindCmd)
 	overseerStatusCmd.Flags().BoolVar(&overseerStatusJSON, "json", false, "print structured JSON output")
 	overseerCmd.AddCommand(overseerMaintainCmd)
+	overseerCmd.AddCommand(overseerJudgmentCmd)
+	overseerCmd.AddCommand(overseerDrainCmd)
 	overseerCmd.AddCommand(overseerUndoCmd)
 	overseerCmd.AddCommand(overseerStatusCmd)
 	overseerDaemonCmd.AddCommand(overseerDaemonStartCmd)
@@ -492,6 +513,46 @@ func runOverseerMaintain(cmd *cobra.Command, _ []string) error {
 		return writeJSON(cmd.OutOrStdout(), run)
 	}
 	return writeOverseerMaintenanceSummary(cmd.OutOrStdout(), run)
+}
+
+func runOverseerJudgment(cmd *cobra.Command, _ []string) error {
+	ctx := context.Background()
+	projectRoot, store, closeStore, err := openOverseerProjectStore()
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+
+	plan, err := artifact.BuildMaintenancePlan(ctx, store, projectRoot)
+	if err != nil {
+		return err
+	}
+	review := artifact.BuildMaintenanceJudgmentReview(plan)
+
+	if overseerJudgmentJSON {
+		return writeJSON(cmd.OutOrStdout(), review)
+	}
+	_, err = fmt.Fprint(cmd.OutOrStdout(), present.MaintenanceJudgmentReviewResponse(review, ""))
+	return err
+}
+
+func runOverseerDrain(cmd *cobra.Command, _ []string) error {
+	ctx := context.Background()
+	projectRoot, store, closeStore, err := openOverseerProjectStore()
+	if err != nil {
+		return err
+	}
+	defer closeStore()
+
+	report, err := buildMaintenanceDrainReport(ctx, store, projectRoot, overseerDrainDryRun)
+	if err != nil {
+		return err
+	}
+	if overseerDrainJSON {
+		return writeJSON(cmd.OutOrStdout(), report)
+	}
+	_, err = fmt.Fprint(cmd.OutOrStdout(), present.MaintenanceDrainResponse(report, ""))
+	return err
 }
 
 func runOverseerDaemonStart(cmd *cobra.Command, _ []string) error {

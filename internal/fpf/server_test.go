@@ -197,6 +197,27 @@ func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_RefreshSchemaIncludesReview(t *testing.T) {
+	refreshSchema := mustListToolProperties(t, "haft_refresh")
+
+	action, ok := refreshSchema["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("haft_refresh action schema missing: %#v", refreshSchema["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("haft_refresh action enum missing: %#v", action["enum"])
+	}
+	for _, want := range []string{"scan", "plan", "review", "drain", "waive", "reopen", "supersede", "deprecate", "reconcile"} {
+		if !schemaEnumContains(enum, want) {
+			t.Fatalf("haft_refresh action enum = %#v, missing %q", enum, want)
+		}
+	}
+	if _, ok := refreshSchema["dry_run"].(map[string]interface{}); !ok {
+		t.Fatalf("haft_refresh schema missing dry_run field: %#v", refreshSchema)
+	}
+}
+
 func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
 	for _, name := range []string{"haft_method", "haft_commission", "haft_spec_section"} {
 		t.Run(name, func(t *testing.T) {

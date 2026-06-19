@@ -19,6 +19,8 @@ type RefreshAction string
 const (
 	RefreshScan      RefreshAction = "scan"
 	RefreshPlan      RefreshAction = "plan"
+	RefreshReview    RefreshAction = "review"
+	RefreshDrain     RefreshAction = "drain"
 	RefreshWaive     RefreshAction = "waive"
 	RefreshReopen    RefreshAction = "reopen"
 	RefreshSupersede RefreshAction = "supersede"

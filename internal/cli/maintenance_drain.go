@@ -1,0 +1,242 @@
+package cli
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/overseer"
+	"github.com/m0n0x41d/haft/internal/present"
+)
+
+const maintenanceDrainSchemaVersion = "maintenance_drain.v1"
+
+type maintenanceDrainReport struct {
+	SchemaVersion      string                              `json:"schema_version"`
+	CreatedAt          string                              `json:"created_at"`
+	DryRun             bool                                `json:"dry_run"`
+	MaintenanceRunID   string                              `json:"maintenance_run_id,omitempty"`
+	AuthorityBoundary  maintenanceDrainAuthority           `json:"authority_boundary"`
+	Summary            maintenanceDrainSummary             `json:"summary"`
+	Executed           []overseer.MaintenanceAction        `json:"executed,omitempty"`
+	NeedsOperator      []artifact.MaintenanceJudgmentGroup `json:"needs_operator,omitempty"`
+	NextOperatorAction []string                            `json:"next_operator_action,omitempty"`
+}
+
+type maintenanceDrainAuthority struct {
+	Trigger      string `json:"trigger"`
+	Mutation     string `json:"mutation"`
+	Approval     string `json:"approval"`
+	Evidence     string `json:"evidence"`
+	GateDecision string `json:"gate_decision"`
+}
+
+type maintenanceDrainSummary struct {
+	BeforeTasks        int `json:"before_tasks"`
+	BeforeJudgment     int `json:"before_judgment"`
+	ExecutedActions    int `json:"executed_actions"`
+	AppliedActions     int `json:"applied_actions"`
+	EvidenceActions    int `json:"evidence_actions"`
+	ProposedActions    int `json:"proposed_actions"`
+	FailedActions      int `json:"failed_actions"`
+	NeedsOperatorTasks int `json:"needs_operator_tasks"`
+}
+
+func buildMaintenanceDrainReport(
+	ctx context.Context,
+	store *artifact.Store,
+	projectRoot string,
+	dryRun bool,
+) (maintenanceDrainReport, error) {
+	beforePlan, err := artifact.BuildMaintenancePlan(ctx, store, projectRoot)
+	if err != nil {
+		return maintenanceDrainReport{}, err
+	}
+
+	cfg := explicitDrainConfig(dryRun)
+	executed := executeMaintenancePlan(ctx, store, projectRoot, cfg)
+
+	run, err := buildMaintenanceRunAfterDrain(ctx, store, projectRoot, executed)
+	if err != nil {
+		return maintenanceDrainReport{}, err
+	}
+	if !dryRun {
+		if err := overseer.StoreMaintenanceRun(projectRoot, run); err != nil {
+			return maintenanceDrainReport{}, err
+		}
+	}
+
+	afterPlan, err := artifact.BuildMaintenancePlan(ctx, store, projectRoot)
+	if err != nil {
+		return maintenanceDrainReport{}, err
+	}
+	review := artifact.BuildMaintenanceJudgmentReview(afterPlan)
+
+	report := maintenanceDrainReport{
+		SchemaVersion:      maintenanceDrainSchemaVersion,
+		CreatedAt:          time.Now().UTC().Format(time.RFC3339),
+		DryRun:             dryRun,
+		AuthorityBoundary:  maintenanceDrainAuthorityFor(dryRun),
+		Summary:            maintenanceDrainSummaryFor(beforePlan, run.Executed, review),
+		Executed:           maintenanceDrainActionsWithUndo(run),
+		NeedsOperator:      review.Groups,
+		NextOperatorAction: maintenanceDrainNextActions(review),
+	}
+	if !dryRun {
+		report.MaintenanceRunID = run.MaintenanceID
+	}
+	return report, nil
+}
+
+func maintenanceDrainActionsWithUndo(run overseer.MaintenanceRun) []overseer.MaintenanceAction {
+	actions := append([]overseer.MaintenanceAction(nil), run.Executed...)
+	if run.MaintenanceID == "" {
+		return actions
+	}
+	for i := range actions {
+		if actions[i].PriorState == "" {
+			continue
+		}
+		actions[i].Undo = "haft overseer undo " + run.MaintenanceID + " " + actions[i].ID
+	}
+	return actions
+}
+
+func explicitDrainConfig(dryRun bool) overseer.Config {
+	cfg := overseer.DefaultConfig()
+	cfg.Enabled = true
+	if dryRun {
+		cfg.MaintenanceRebaseline = overseer.MaintenanceModePropose
+		cfg.MaintenanceRevalidateStale = overseer.MaintenanceModePropose
+		return cfg
+	}
+	cfg.MaintenanceRebaseline = overseer.MaintenanceModeAuto
+	cfg.MaintenanceRevalidateStale = overseer.MaintenanceModeAuto
+	return cfg
+}
+
+func buildMaintenanceRunAfterDrain(
+	ctx context.Context,
+	store *artifact.Store,
+	projectRoot string,
+	executed []overseer.MaintenanceAction,
+) (overseer.MaintenanceRun, error) {
+	report, err := buildCheckReport(ctx, store, projectRoot)
+	if err != nil {
+		return overseer.MaintenanceRun{}, err
+	}
+	return overseer.BuildMaintenanceRun(overseer.MaintenanceInput{
+		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
+		Stale:        mapMaintenanceStale(report.Stale),
+		Drift:        mapMaintenanceDrift(report.Drifted),
+		SpecHealth:   mapMaintenanceSpecHealth(report.SpecHealth),
+		CoverageGaps: mapMaintenanceCoverage(report.CoverageGaps),
+		Executed:     executed,
+	})
+}
+
+func maintenanceDrainAuthorityFor(dryRun bool) maintenanceDrainAuthority {
+	mutation := "machine_safe_only"
+	evidence := "machine_evidence_only"
+	if dryRun {
+		mutation = "not_mutation"
+		evidence = "not_evidence"
+	}
+	return maintenanceDrainAuthority{
+		Trigger:      "explicit_h_verify_or_overseer_drain",
+		Mutation:     mutation,
+		Approval:     "not_semantic_approval",
+		Evidence:     evidence,
+		GateDecision: "not_gate_decision",
+	}
+}
+
+func maintenanceDrainSummaryFor(
+	beforePlan *artifact.MaintenancePlan,
+	executed []overseer.MaintenanceAction,
+	review *artifact.MaintenanceJudgmentReview,
+) maintenanceDrainSummary {
+	summary := maintenanceDrainSummary{
+		ExecutedActions: len(executed),
+	}
+	if beforePlan != nil {
+		summary.BeforeTasks = len(beforePlan.Tasks)
+		summary.BeforeJudgment = beforePlan.JudgmentNeeded
+	}
+	if review != nil {
+		summary.NeedsOperatorTasks = review.JudgmentTasks
+	}
+	for _, action := range executed {
+		switch action.Outcome {
+		case "applied":
+			summary.AppliedActions++
+		case "evidence_attached":
+			summary.EvidenceActions++
+		case "proposed":
+			summary.ProposedActions++
+		case "failed":
+			summary.FailedActions++
+		}
+	}
+	return summary
+}
+
+func maintenanceDrainNextActions(review *artifact.MaintenanceJudgmentReview) []string {
+	if review == nil || review.JudgmentTasks == 0 {
+		return []string{"No operator judgment tasks remain in the post-drain maintenance plan."}
+	}
+	return []string{
+		"Review needs_operator groups before any baseline, waive, reopen, or supersede.",
+		"Use `haft_refresh(action=\"review\")` or `haft overseer judgment --json` for exact task drill-down.",
+	}
+}
+
+func (r maintenanceDrainReport) GetMaintenanceDrainFields() present.MaintenanceDrainFields {
+	return present.MaintenanceDrainFields{
+		DryRun:             r.DryRun,
+		MaintenanceRunID:   r.MaintenanceRunID,
+		Mutation:           r.AuthorityBoundary.Mutation,
+		Approval:           r.AuthorityBoundary.Approval,
+		Evidence:           r.AuthorityBoundary.Evidence,
+		GateDecision:       r.AuthorityBoundary.GateDecision,
+		ExecutedActions:    r.Summary.ExecutedActions,
+		AppliedActions:     r.Summary.AppliedActions,
+		EvidenceActions:    r.Summary.EvidenceActions,
+		ProposedActions:    r.Summary.ProposedActions,
+		FailedActions:      r.Summary.FailedActions,
+		NeedsOperatorTasks: r.Summary.NeedsOperatorTasks,
+		ExecutedLines:      maintenanceDrainActionLines(r.Executed),
+		NeedsOperatorLines: maintenanceDrainNeedLines(r.NeedsOperator),
+		NextActions:        r.NextOperatorAction,
+	}
+}
+
+func maintenanceDrainActionLines(actions []overseer.MaintenanceAction) []string {
+	lines := make([]string, 0, len(actions))
+	for _, action := range actions {
+		line := fmt.Sprintf("`%s` %s `%s` (%s): %s",
+			action.Kind,
+			action.Outcome,
+			action.DecisionRef,
+			action.Title,
+			action.Detail)
+		if action.Undo != "" {
+			line += " · undo: `" + action.Undo + "`"
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func maintenanceDrainNeedLines(groups []artifact.MaintenanceJudgmentGroup) []string {
+	lines := make([]string, 0, len(groups))
+	for _, group := range groups {
+		lines = append(lines, fmt.Sprintf("%s/%s: %d task(s) — %s",
+			group.Recommendation,
+			group.Confidence,
+			group.TaskCount,
+			group.SuggestedAction))
+	}
+	return lines
+}

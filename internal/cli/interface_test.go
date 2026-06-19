@@ -28,7 +28,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "refresh.scan"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "refresh.scan", "refresh.review", "refresh.drain"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -136,6 +136,8 @@ func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
 		`haft_query(action="coverage")`,
 		`haft_refresh(action="scan", verbose=true)`,
 		`haft_refresh(action="plan")`,
+		`haft_refresh(action="review")`,
+		`haft_refresh(action="drain", dry_run=true)`,
 	} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("status interface notes missing %q:\n%s", want, notes)
@@ -151,6 +153,62 @@ func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
 	} {
 		if !strings.Contains(outputVolume, want) {
 			t.Fatalf("status output volume missing %q:\n%s", want, outputVolume)
+		}
+	}
+}
+
+func TestInterfaceRefreshReviewNamesAuthorityBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.review")
+	if !ok {
+		t.Fatal("refresh.review capability missing")
+	}
+
+	if capability.CurrentExecution.MCPCall != `haft_refresh(action="review")` {
+		t.Fatalf("refresh.review MCP call = %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft overseer judgment --json") {
+		t.Fatalf("refresh.review CLI command missing judgment path:\n%#v", capability.CurrentExecution)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"rung-3", "not evidence", "approval", "mutation"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("refresh.review notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"outside automated execution", "review metadata, not authority"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("refresh.review invariant missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceRefreshDrainNamesSafeClosureBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.drain")
+	if !ok {
+		t.Fatal("refresh.drain capability missing")
+	}
+
+	if capability.CurrentExecution.MCPCall != `haft_refresh(action="drain", dry_run=true)` {
+		t.Fatalf("refresh.drain MCP call = %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft overseer drain --dry-run --json") {
+		t.Fatalf("refresh.drain CLI command missing drain path:\n%#v", capability.CurrentExecution)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"dry_run=true", "rung-1/rung-2", "needs_operator"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("refresh.drain notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"opt-in", "not create semantic approval"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("refresh.drain invariant missing %q:\n%s", want, invariants)
 		}
 	}
 }

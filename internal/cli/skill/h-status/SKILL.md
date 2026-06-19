@@ -23,6 +23,8 @@ Use explicit follow-up calls for detail:
 - `mcp__haft__haft_query(action="coverage")` — module coverage
 - `mcp__haft__haft_refresh(action="scan", verbose=true)` — drift/stale detail
 - `mcp__haft__haft_refresh(action="plan")` — maintenance work order
+- `mcp__haft__haft_refresh(action="review")` — read-only needs-judgment packet
+- `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe closures
 
 ## Step 0 — Maintenance check (FPF B.3.4 evidence decay)
 
@@ -65,7 +67,7 @@ The default status payload is a compact cockpit. Read it as:
 - **Active Work** — the most relevant in-progress problems and backlog count
 - **Decision Health** — counts for healthy, pending, unassessed, refresh-due, and drifted decisions
 - **Coverage Cue** — one-line module coverage orientation when modules were scanned
-- **Drill-down** — exact calls for the omitted detailed status, coverage, drift/stale, and maintenance plan
+- **Drill-down** — exact calls for the omitted detailed status, coverage, drift/stale, maintenance plan, read-only judgment packet, and safe drain preview
 
 `full=true` restores the detailed status renderer with shipped/pending/unassessed
 decision lists, addressed problems, recent notes, and full module coverage when

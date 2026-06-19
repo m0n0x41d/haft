@@ -20,6 +20,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Read-only maintenance judgment packet.** `haft_refresh(action="review")`
+  and `haft overseer judgment --json` now build a grouped packet for rung-3
+  maintenance tasks that need judgment. The packet classifies tasks by
+  recommendation, confidence, source, and category, includes exact drill-down
+  calls plus suggested command candidates, and explicitly labels itself as
+  not mutation, not approval, and not evidence.
+- **Bounded maintenance drain for `$h-verify`.** `haft_refresh(action="drain")`
+  and `haft overseer drain` now run the existing maintenance executor only
+  behind an explicit invocation: rung-1 deterministic drift may rebaseline,
+  rung-2 allowlisted observables may attach machine evidence and revalidate,
+  and all semantic/material/judgment cases return as `needs_operator`.
+  `dry_run=true` / `--dry-run` previews the same report without mutation.
 - **`haft init --hermes`.** Hermes initialization now materializes a
   Hermes-adapted haft skills tree with bare `haft_*` tool references, appends
   it to `skills.external_dirs` in `~/.hermes/config.yaml` (or

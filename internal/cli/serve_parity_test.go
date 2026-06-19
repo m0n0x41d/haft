@@ -50,8 +50,8 @@ func TestTransportActionParity(t *testing.T) {
 		},
 		{
 			toolName:          "haft_refresh",
-			mcpActions:        []string{"scan", "waive", "reopen", "supersede", "deprecate", "reconcile"},
-			standaloneActions: []string{"scan", "drift", "waive", "reopen", "supersede", "deprecate"},
+			mcpActions:        []string{"scan", "plan", "review", "drain", "waive", "reopen", "supersede", "deprecate", "reconcile"},
+			standaloneActions: []string{"scan", "plan", "review", "drift", "waive", "reopen", "supersede", "deprecate"},
 		},
 		{
 			toolName:          "haft_query",
@@ -71,6 +71,7 @@ func TestTransportActionParity(t *testing.T) {
 		},
 		"haft_refresh": {
 			"drift":     "standalone-only — drift scan as separate action; MCP folds it into scan",
+			"drain":     "MCP/CLI-only — explicit maintenance drain uses the CLI maintenance executor and must not run inside the old standalone tool shell",
 			"reconcile": "MCP-only — overlap reconciliation; standalone uses search + manual reconcile",
 		},
 		"haft_query": {

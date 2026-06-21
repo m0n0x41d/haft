@@ -180,11 +180,9 @@ func ReviewResultJSONSchema() string {
               "additionalProperties": false,
               "properties": {
                 "path": {"type": "string"},
-                "line_start": {"type": "integer"},
-                "line_end": {"type": "integer"},
-                "evidence_ref": {"type": "string"}
+                "line_start": {"type": "integer"}
               },
-              "required": ["path"]
+              "required": ["path", "line_start"]
             }
           }
         },

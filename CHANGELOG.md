@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer review schema.** The structured-output schema for
+  `haft overseer review` now requires every declared strict location property
+  and drops optional location fields that the reviewer did not require,
+  preventing strict JSON schema rejection before review execution starts.
 - **ProblemCard semantic identity sync coverage.** `haft sync` tests now pin a
   richer DB -> Markdown carrier -> empty DB round-trip, covering typed
   ProblemCard profile fields, semantic edition pins, source-of-truth binding,

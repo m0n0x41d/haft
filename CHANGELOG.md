@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **OperationalGate admission posture.** `require_current_source_and_admitted_use`
+  now passes only for current-source stronger-use admission; documentary-only
+  reading and temporary waiver admission remain admitted/waived for their own
+  contexts but block derived gate passage.
 - **Operator-facing Haft artifact transparency.** Agent-facing workflow,
   status, refresh, projection, maintenance, baseline, evidence, and measure
   responses now pair governance artifact refs with human-readable titles, for

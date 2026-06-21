@@ -108,6 +108,60 @@ func TestBuildSpecificationUseRecordOperationalGatePassesCurrentAdmittedUse(t *t
 	}
 }
 
+func TestBuildSpecificationUseRecordOperationalGateBlocksTemporaryWaiver(t *testing.T) {
+	section := specUseActiveSection()
+	record := BuildSpecificationUseRecord(
+		section,
+		specUseCurrentBaseline(section),
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          SpecUsePolicyTemporaryWaiver,
+			WaiverExpiresAt: "2099-01-01T00:00:00Z",
+			OperationalGate: specUseGate(section.ID, "commission preflight"),
+			Now:             specUseNow(),
+		},
+	)
+
+	if record.Admission.Disposition != SpecUseDispositionWaived {
+		t.Fatalf("admission = %+v, want waived", record.Admission)
+	}
+	if record.GateDecision.Status != SpecUseGateDecisionBlocked {
+		t.Fatalf("gate_decision = %+v, want blocked", record.GateDecision)
+	}
+	if record.GateDecision.Reason != "admission_not_granted" {
+		t.Fatalf("reason = %q, want admission_not_granted", record.GateDecision.Reason)
+	}
+}
+
+func TestBuildSpecificationUseRecordOperationalGateBlocksDocumentaryOnly(t *testing.T) {
+	section := specUseActiveSection()
+	record := BuildSpecificationUseRecord(
+		section,
+		specUseCurrentBaseline(section),
+		SpecificationUseInput{
+			SectionID:       section.ID,
+			UseContext:      "commission preflight",
+			Policy:          SpecUsePolicyDocumentaryOnly,
+			OperationalGate: specUseGate(section.ID, "commission preflight"),
+			Now:             specUseNow(),
+		},
+	)
+
+	if record.Admission.Disposition != SpecUseDispositionAdmitted {
+		t.Fatalf("admission = %+v, want admitted documentary reading", record.Admission)
+	}
+	if record.Admission.StrongerUse != ReviewUseDocumentaryReading {
+		t.Fatalf("stronger_use = %q, want documentary reading", record.Admission.StrongerUse)
+	}
+	if record.GateDecision.Status != SpecUseGateDecisionBlocked {
+		t.Fatalf("gate_decision = %+v, want blocked", record.GateDecision)
+	}
+	if record.GateDecision.Reason != "admission_not_granted" {
+		t.Fatalf("reason = %q, want admission_not_granted", record.GateDecision.Reason)
+	}
+}
+
 func TestBuildSpecificationUseRecordOperationalGateBlocksNonCurrentSource(t *testing.T) {
 	section := specUseActiveSection()
 	record := BuildSpecificationUseRecord(

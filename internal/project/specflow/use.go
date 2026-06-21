@@ -463,12 +463,14 @@ func operationalGateCurrentnessCheck(currentness SpecificationUseCurrentness) st
 }
 
 func operationalGateAdmissionCheck(admission SpecificationUseAdmission) string {
-	switch admission.Disposition {
-	case SpecUseDispositionAdmitted, SpecUseDispositionWaived:
-		return ""
-	default:
+	if admission.Disposition != SpecUseDispositionAdmitted {
 		return "admission_not_granted"
 	}
+	if admission.StrongerUse != SpecUseReadingStrongerUseAdmitted {
+		return "admission_not_granted"
+	}
+
+	return ""
 }
 
 func operationalGateExpiryCheck(gate *OperationalGateProfile, now time.Time) string {

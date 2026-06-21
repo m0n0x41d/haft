@@ -1182,8 +1182,9 @@ func (r DriftReport) SymbolVerdict() string {
 
 // ModuleImpact describes a dependent module affected by drift propagation.
 type ModuleImpact struct {
-	ModuleID    string   `json:"module_id"`
-	ModulePath  string   `json:"module_path"`
-	DecisionIDs []string `json:"decision_ids,omitempty"` // decisions governing this module
-	IsBlind     bool     `json:"is_blind"`               // no decisions = unmonitored impact
+	ModuleID       string            `json:"module_id"`
+	ModulePath     string            `json:"module_path"`
+	DecisionIDs    []string          `json:"decision_ids,omitempty"`    // decisions governing this module
+	DecisionTitles map[string]string `json:"decision_titles,omitempty"` // decision ID -> title, presentation support
+	IsBlind        bool              `json:"is_blind"`                  // no decisions = unmonitored impact
 }

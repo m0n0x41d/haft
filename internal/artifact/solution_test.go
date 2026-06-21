@@ -304,7 +304,7 @@ func TestCompareSolutions_Success(t *testing.T) {
 	if !strings.Contains(a.Body, "## Non-Dominated Set") {
 		t.Error("missing Non-Dominated Set section")
 	}
-	if !strings.Contains(a.Body, "Kafka, NATS") {
+	if !strings.Contains(a.Body, "Kafka `V1`, NATS `V2`") {
 		t.Error("missing Pareto front members")
 	}
 	if !strings.Contains(a.Body, "## Dominated Variant Elimination") {
@@ -2151,7 +2151,7 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a.Body, "Baseline set: REST, gRPC") {
+	if !strings.Contains(a.Body, "Baseline set: REST `V1`, gRPC `V2`") {
 		t.Fatalf("expected parity plan baseline to render human-readable labels, body: %s", a.Body)
 	}
 
@@ -2307,7 +2307,7 @@ func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(a.Body, "**Recommendation (advisory):** NATS") {
+	if !strings.Contains(a.Body, "**Recommendation (advisory):** NATS `V2`") {
 		t.Fatalf("expected human-readable recommended title, body: %s", a.Body)
 	}
 

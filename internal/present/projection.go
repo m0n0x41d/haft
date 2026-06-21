@@ -93,11 +93,42 @@ func collectProjectionSources(graph artifact.ProjectionGraph) []projectionSource
 	return sources
 }
 
+func projectionArtifactLabels(graph artifact.ProjectionGraph) map[string]string {
+	labels := make(map[string]string, len(graph.Problems)+len(graph.Portfolios)+len(graph.Decisions))
+	for _, problem := range graph.Problems {
+		labels[problem.Meta.ID] = formatArtifactLabel(problem.Meta.Title, problem.Meta.ID)
+	}
+	for _, portfolio := range graph.Portfolios {
+		labels[portfolio.Meta.ID] = formatArtifactLabel(portfolio.Meta.Title, portfolio.Meta.ID)
+	}
+	for _, decision := range graph.Decisions {
+		labels[decision.Meta.ID] = formatArtifactLabel(decision.Meta.Title, decision.Meta.ID)
+	}
+	return labels
+}
+
+func formatProjectionRefs(refs []string, labels map[string]string) string {
+	out := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			continue
+		}
+		if label := labels[ref]; label != "" {
+			out = append(out, label)
+			continue
+		}
+		out = append(out, formatArtifactLabel("", ref))
+	}
+	return strings.Join(out, ", ")
+}
+
 func engineerProjectionResponse(graph artifact.ProjectionGraph) string {
 	if projectionGraphEmpty(graph) {
 		return "No active artifacts available for the engineer projection.\n"
 	}
 
+	labels := projectionArtifactLabels(graph)
 	var sb strings.Builder
 	sb.WriteString("## Engineer View\n\n")
 
@@ -116,10 +147,10 @@ func engineerProjectionResponse(graph artifact.ProjectionGraph) string {
 				sb.WriteString(fmt.Sprintf("Targets: %s\n", strings.Join(problem.OptimizationTargets, ", ")))
 			}
 			if len(problem.PortfolioRefs) > 0 {
-				sb.WriteString(fmt.Sprintf("Portfolios: %s\n", strings.Join(problem.PortfolioRefs, ", ")))
+				sb.WriteString(fmt.Sprintf("Portfolios: %s\n", formatProjectionRefs(problem.PortfolioRefs, labels)))
 			}
 			if len(problem.DecisionRefs) > 0 {
-				sb.WriteString(fmt.Sprintf("Decisions: %s\n", strings.Join(problem.DecisionRefs, ", ")))
+				sb.WriteString(fmt.Sprintf("Decisions: %s\n", formatProjectionRefs(problem.DecisionRefs, labels)))
 			}
 			sb.WriteString("\n")
 		}
@@ -131,10 +162,10 @@ func engineerProjectionResponse(graph artifact.ProjectionGraph) string {
 			sb.WriteString(fmt.Sprintf("#### %s `%s`\n\n", portfolio.Meta.Title, portfolio.Meta.ID))
 			sb.WriteString(fmt.Sprintf("Mode: %s | Status: %s\n", portfolio.Meta.Mode, portfolio.Meta.Status))
 			if len(portfolio.ProblemRefs) > 0 {
-				sb.WriteString(fmt.Sprintf("Problems: %s\n", strings.Join(portfolio.ProblemRefs, ", ")))
+				sb.WriteString(fmt.Sprintf("Problems: %s\n", formatProjectionRefs(portfolio.ProblemRefs, labels)))
 			}
 			if len(portfolio.DecisionRefs) > 0 {
-				sb.WriteString(fmt.Sprintf("Decisions: %s\n", strings.Join(portfolio.DecisionRefs, ", ")))
+				sb.WriteString(fmt.Sprintf("Decisions: %s\n", formatProjectionRefs(portfolio.DecisionRefs, labels)))
 			}
 			sb.WriteString(fmt.Sprintf("Variants (%d): %s\n", len(portfolio.Variants), strings.Join(projectionVariantTitles(portfolio.Variants), ", ")))
 			if portfolio.Comparison != nil {
@@ -150,10 +181,10 @@ func engineerProjectionResponse(graph artifact.ProjectionGraph) string {
 			sb.WriteString(fmt.Sprintf("#### %s `%s`\n\n", decision.Meta.Title, decision.Meta.ID))
 			sb.WriteString(fmt.Sprintf("Mode: %s | Status: %s\n", decision.Meta.Mode, decision.Meta.Status))
 			if len(decision.ProblemRefs) > 0 {
-				sb.WriteString(fmt.Sprintf("Problems: %s\n", strings.Join(decision.ProblemRefs, ", ")))
+				sb.WriteString(fmt.Sprintf("Problems: %s\n", formatProjectionRefs(decision.ProblemRefs, labels)))
 			}
 			if len(decision.PortfolioRefs) > 0 {
-				sb.WriteString(fmt.Sprintf("Portfolios: %s\n", strings.Join(decision.PortfolioRefs, ", ")))
+				sb.WriteString(fmt.Sprintf("Portfolios: %s\n", formatProjectionRefs(decision.PortfolioRefs, labels)))
 			}
 			if decision.SelectedTitle != "" {
 				sb.WriteString(fmt.Sprintf("Selected: %s\n", decision.SelectedTitle))
@@ -294,6 +325,7 @@ func auditProjectionResponse(graph artifact.ProjectionGraph) string {
 
 func compareProjectionResponse(graph artifact.ProjectionGraph) string {
 	comparedPortfolios := make([]artifact.PortfolioProjection, 0, len(graph.Portfolios))
+	labels := projectionArtifactLabels(graph)
 	for _, portfolio := range graph.Portfolios {
 		if portfolio.Comparison == nil {
 			continue
@@ -312,10 +344,10 @@ func compareProjectionResponse(graph artifact.ProjectionGraph) string {
 	for _, portfolio := range comparedPortfolios {
 		sb.WriteString(fmt.Sprintf("### %s `%s`\n\n", portfolio.Meta.Title, portfolio.Meta.ID))
 		if len(portfolio.ProblemRefs) > 0 {
-			sb.WriteString(fmt.Sprintf("Problems: %s\n", strings.Join(portfolio.ProblemRefs, ", ")))
+			sb.WriteString(fmt.Sprintf("Problems: %s\n", formatProjectionRefs(portfolio.ProblemRefs, labels)))
 		}
 		if len(portfolio.DecisionRefs) > 0 {
-			sb.WriteString(fmt.Sprintf("Decisions: %s\n", strings.Join(portfolio.DecisionRefs, ", ")))
+			sb.WriteString(fmt.Sprintf("Decisions: %s\n", formatProjectionRefs(portfolio.DecisionRefs, labels)))
 		}
 		sb.WriteString(fmt.Sprintf("Variants: %s\n", strings.Join(projectionVariantTitles(portfolio.Variants), ", ")))
 

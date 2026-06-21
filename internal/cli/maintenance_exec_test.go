@@ -197,6 +197,27 @@ func TestMaintenanceDrainDryRunReportsProposalsAndNeedsOperatorWithoutMutation(t
 	})
 }
 
+func TestMaintenanceDrainActionLinesRenderDecisionTitleBeforeRef(t *testing.T) {
+	lines := maintenanceDrainActionLines([]overseer.MaintenanceAction{{
+		Kind:        maintenanceActionObservable,
+		DecisionRef: "dec-20260620-134e8f83",
+		Title:       "Adaptive stage gate",
+		Outcome:     "evidence_attached",
+		Detail:      "go test ./internal/cli — green",
+	}})
+
+	if len(lines) != 1 {
+		t.Fatalf("lines = %d, want 1", len(lines))
+	}
+	want := "**Adaptive stage gate** `dec-20260620-134e8f83`"
+	if !strings.Contains(lines[0], want) {
+		t.Fatalf("drain line should render decision title before ref, want %q in:\n%s", want, lines[0])
+	}
+	if strings.HasPrefix(lines[0], "`"+maintenanceActionObservable+"`") {
+		t.Fatalf("drain line regressed to machine-marker-first format:\n%s", lines[0])
+	}
+}
+
 func TestMaintenanceDrainClosesSafeItemsAndReportsNeedsOperator(t *testing.T) {
 	restore := overrideGoldenE2EFlags(t)
 	defer restore()

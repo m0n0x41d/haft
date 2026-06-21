@@ -89,9 +89,9 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 		}
 		title := action.Title
 		if title == "" {
-			title = action.DecisionRef
+			title = "Untitled decision"
 		}
-		fmt.Fprintf(&sb, "  - [%s] %s — %s (%s) `%s`\n", action.ID, action.Kind, title, action.Outcome, action.DecisionRef)
+		fmt.Fprintf(&sb, "  - [%s] %s — %s `%s` (%s)\n", action.ID, action.Kind, title, action.DecisionRef, action.Outcome)
 	}
 	return sb.String()
 }

@@ -116,8 +116,23 @@ func TestDriftResponseSummary_StaysCompactOnImpactFanout(t *testing.T) {
 		impacts := make([]artifact.ModuleImpact, 0, 20)
 		for i := 0; i < 20; i++ {
 			impacts = append(impacts, artifact.ModuleImpact{
-				ModulePath:  fmt.Sprintf("internal/mod-%02d-%02d", r, i),
-				DecisionIDs: []string{"dec-a", "dec-b", "dec-c", "dec-d", "dec-e", "dec-f"},
+				ModulePath: fmt.Sprintf("internal/mod-%02d-%02d", r, i),
+				DecisionIDs: []string{
+					"dec-a",
+					"dec-b",
+					"dec-c",
+					"dec-d",
+					"dec-e",
+					"dec-f",
+				},
+				DecisionTitles: map[string]string{
+					"dec-a": "Decision A",
+					"dec-b": "Decision B",
+					"dec-c": "Decision C",
+					"dec-d": "Decision D",
+					"dec-e": "Decision E",
+					"dec-f": "Decision F",
+				},
 			})
 		}
 		reports = append(reports, artifact.DriftReport{
@@ -133,8 +148,9 @@ func TestDriftResponseSummary_StaysCompactOnImpactFanout(t *testing.T) {
 	summary := present.DriftResponseSummary(reports, "")
 
 	for _, want := range []string{
-		"Impact propagation for dec-impact-00",
+		"Impact propagation for **Impact 00** `dec-impact-00`",
 		"internal/mod-00-00",
+		"**Decision A** `dec-a`",
 		"... +2",
 		"... and 15 more impacted module(s)",
 		"... and 5 more decision(s) with impact propagation omitted from summary",
@@ -174,6 +190,9 @@ func TestDriftResponseSummary_EmptyAndNoBaseline(t *testing.T) {
 	if !strings.Contains(got, "git activity detected after decision date") {
 		t.Fatalf("summary should preserve LikelyImplemented hint:\n%s", got)
 	}
+	if !strings.Contains(got, "**Implemented decision** `dec-001`") {
+		t.Fatalf("summary should render no-baseline decisions title-first with ref:\n%s", got)
+	}
 }
 
 func TestScanResponseSummary_StaysCompactAndKeepsVerboseRecoveryHint(t *testing.T) {
@@ -194,6 +213,9 @@ func TestScanResponseSummary_StaysCompactAndKeepsVerboseRecoveryHint(t *testing.
 	}
 	if !strings.Contains(summary, "dec-stale-09") {
 		t.Fatalf("summary should include top stale items:\n%s", summary)
+	}
+	if !strings.Contains(summary, "**Stale 00** `dec-stale-00`") {
+		t.Fatalf("summary should render stale items title-first with ref:\n%s", summary)
 	}
 	if strings.Contains(summary, "dec-stale-10") {
 		t.Fatalf("summary should omit stale item 11+:\n%s", summary)
@@ -246,6 +268,12 @@ func TestProblemResponse_ShowsRecall(t *testing.T) {
 
 	response := present.ProblemResponse("frame", a, "/tmp/test.md", "\n-- nav --\n")
 
+	if !strings.Contains(response, "Problem framed: **Test problem** `prob-001`") {
+		t.Fatalf("frame response should pair problem title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "\nID: prob-001\n") {
+		t.Fatalf("frame response should not expose a standalone bare problem ID:\n%s", response)
+	}
 	if !strings.Contains(response, "Related History") {
 		t.Error("frame response should surface Related History from body")
 	}
@@ -346,6 +374,7 @@ func TestSolutionResponse_ExploreShowsVariantsIndexAndUsageHint(t *testing.T) {
 	response := present.SolutionResponse("explore", a, "/tmp/sol.md", "")
 
 	required := []string{
+		"Portfolio created: **Transport portfolio** `sol-001`",
 		"Variants:",
 		"V1 — Kafka",
 		"V2 — NATS JetStream",
@@ -361,6 +390,9 @@ func TestSolutionResponse_ExploreShowsVariantsIndexAndUsageHint(t *testing.T) {
 		if !strings.Contains(response, want) {
 			t.Fatalf("explore response missing %q:\n%s", want, response)
 		}
+	}
+	if strings.Contains(response, "\nID: sol-001\n") {
+		t.Fatalf("explore response should not expose a standalone bare portfolio ID:\n%s", response)
 	}
 }
 
@@ -405,13 +437,14 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 	response := present.SolutionResponse("compare", a, "/tmp/sol.md", "\n-- nav --\n")
 
 	required := []string{
+		"Comparison added to: **Transport portfolio** `sol-001`",
 		"File: /tmp/sol.md",
-		"Computed Pareto front: Kafka, NATS",
+		"Computed Pareto front: Kafka `V1`, NATS `V2`",
 		"Dominated variant elimination:",
-		"Redis Streams: dominated by NATS. Lower throughput with no compensating operations win.",
+		"Redis Streams `V3`: dominated by NATS `V2`. Lower throughput with no compensating operations win.",
 		"Pareto-front trade-offs:",
-		"Kafka: Best throughput, but highest ops cost.",
-		"Recommendation (advisory): NATS",
+		"Kafka `V1`: Best throughput, but highest ops cost.",
+		"Recommendation (advisory): NATS `V2`",
 		"Recommendation rationale: Meets the throughput floor while minimizing operational burden.",
 		"Human choice remains open until decide.",
 	}
@@ -420,6 +453,9 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 		if !strings.Contains(response, want) {
 			t.Fatalf("compare response missing %q:\n%s", want, response)
 		}
+	}
+	if strings.Contains(response, "\nID: sol-001\n") {
+		t.Fatalf("compare response should not expose a standalone bare portfolio ID:\n%s", response)
 	}
 }
 
@@ -539,7 +575,8 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		InProgressProblems: []*artifact.Artifact{
 			{Meta: artifact.Meta{ID: "prob-progress", Title: "Progress problem"}},
 		},
-		InProgressBy: map[string]string{"prob-progress": "sol-001"},
+		InProgressBy:    map[string]string{"prob-progress": "sol-001"},
+		PortfolioTitles: map[string]string{"sol-001": "Progress portfolio"},
 		RecentNotes: []*artifact.Artifact{
 			{Meta: artifact.Meta{ID: "note-hidden", Title: "Hidden note"}},
 		},
@@ -556,7 +593,7 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		"**Drift detected** (1 decision(s))",
 		"Drifted decision",
 		"1 modified, 1 added",
-		"**Progress problem** `prob-progress` → sol-001",
+		"**Progress problem** `prob-progress` → **Progress portfolio** `sol-001`",
 		"Full status: `haft_query(action=\"status\", full=true)`",
 		"Coverage: `haft_query(action=\"coverage\")`",
 		"Maintenance plan: `haft_refresh(action=\"plan\")`",
@@ -624,8 +661,10 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		OpenCommissions: []artifact.WorkCommissionStatus{
 			{
 				ID:               "wc-stale",
+				Title:            "Drain stale decision",
 				State:            "queued",
 				DecisionRef:      "dec-stale",
+				DecisionTitle:    "Stale decision",
 				AttentionReason:  "open longer than 24h0m0s",
 				SuggestedActions: []string{"inspect", "requeue", "cancel"},
 			},
@@ -633,8 +672,10 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		CommissionAttention: []artifact.WorkCommissionStatus{
 			{
 				ID:               "wc-stale",
+				Title:            "Drain stale decision",
 				State:            "queued",
 				DecisionRef:      "dec-stale",
+				DecisionTitle:    "Stale decision",
 				AttentionReason:  "open longer than 24h0m0s",
 				SuggestedActions: []string{"inspect", "requeue", "cancel"},
 			},
@@ -649,7 +690,7 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		"### Unassessed (1)",
 		"**Stale decision** `dec-stale` — Shipped / Stale — evidence degraded (R_eff: 0.40)",
 		"### WorkCommissions Need Attention (1)",
-		"`wc-stale` queued → dec-stale — open longer than 24h0m0s — actions: inspect, requeue, cancel",
+		"**Drain stale decision** `wc-stale` queued → **Stale decision** `dec-stale` — open longer than 24h0m0s — actions: inspect, requeue, cancel",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)
@@ -680,14 +721,23 @@ func TestStatusResponse_ShowsProblemTypeInListings(t *testing.T) {
 				StructuredData: string(inProgressFields),
 			},
 		},
-		InProgressBy: map[string]string{"prob-progress": "sol-001"},
+		InProgressBy:    map[string]string{"prob-progress": "sol-001"},
+		PortfolioTitles: map[string]string{"sol-001": "Progress portfolio"},
+		AddressedProblems: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{ID: "prob-addressed", Title: "Addressed problem"},
+			},
+		},
+		AddressedBy:    map[string]string{"prob-addressed": "dec-001"},
+		DecisionTitles: map[string]string{"dec-001": "Accepted decision"},
 	}
 
 	output := present.StatusResponse(data)
 
 	for _, want := range []string{
-		"**In progress problem (diagnosis)** `prob-progress` → sol-001",
+		"**In progress problem (diagnosis)** `prob-progress` → **Progress portfolio** `sol-001`",
 		"**Backlog problem (search)** `prob-backlog`",
+		"**Addressed problem** `prob-addressed` → **Accepted decision** `dec-001`",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)
@@ -773,8 +823,49 @@ func TestDecisionResponse_PreservesDecisionBodyVerbatim(t *testing.T) {
 
 	response := present.DecisionResponse("decide", a, "", "", "\n-- nav --\n")
 
+	if !strings.Contains(response, "Decision recorded: **Fix DecisionRecord parser** `dec-001`") {
+		t.Fatalf("decide response should pair decision title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "\nID: dec-001\n") {
+		t.Fatalf("decide response should not expose a standalone bare decision ID:\n%s", response)
+	}
 	if !strings.Contains(response, body) {
 		t.Fatalf("expected decision body to stay verbatim, got:\n%s", response)
+	}
+}
+
+func TestNoteResponse_PairsTitleWithRef(t *testing.T) {
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "note-001",
+			Kind:  artifact.KindNote,
+			Title: "Operator transparency invariant",
+		},
+	}
+
+	response := present.NoteResponse(a, "/tmp/note.md", artifact.NoteValidation{OK: true}, "\n-- nav --\n")
+
+	if !strings.Contains(response, "Recorded: **Operator transparency invariant** `note-001`") {
+		t.Fatalf("note response should pair note title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "\nID: note-001\n") {
+		t.Fatalf("note response should not expose a standalone bare note ID:\n%s", response)
+	}
+}
+
+func TestBaselineResponse_PairsDecisionTitleWithRef(t *testing.T) {
+	response := present.BaselineResponse(
+		"Operator transparency decision",
+		"dec-001",
+		[]artifact.AffectedFile{{Path: "internal/present/format.go", Hash: "1234567890abcdef"}},
+		"\n-- nav --\n",
+	)
+
+	if !strings.Contains(response, "Baseline set for **Operator transparency decision** `dec-001`") {
+		t.Fatalf("baseline response should pair decision title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "Baseline set for dec-001") {
+		t.Fatalf("baseline response should not expose a bare decision ref:\n%s", response)
 	}
 }
 
@@ -899,7 +990,8 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 			wants: []string{
 				"## Engineer View",
 				"Signal: Latency variance between protocols",
-				"Portfolios: sol-001",
+				"Portfolios: **Solutions for: Transport choice** `sol-001`",
+				"Decisions: **gRPC** `dec-001`",
 				"Selected: gRPC",
 				"Predictions:",
 				"supported: Latency stays under 50ms (observable: publish latency p99; threshold: < 50ms)",
@@ -927,9 +1019,11 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 			view: artifact.ProjectionViewCompare,
 			wants: []string{
 				"## Compare/Pareto View",
-				"Computed Pareto front: gRPC",
+				"Problems: **Transport choice** `prob-001`",
+				"Decisions: **gRPC** `dec-001`",
+				"Computed Pareto front: gRPC `V2`",
 				"Dominated variant elimination:",
-				"Recommendation (advisory): gRPC",
+				"Recommendation (advisory): gRPC `V2`",
 			},
 		},
 		{

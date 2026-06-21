@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -620,11 +622,17 @@ func TestHaftProblemTool_AdoptFindsLinkedDecisionWithoutFTSCarrierMatch(t *testi
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(result.DisplayText, "Found portfolio: "+portfolio.Meta.ID) {
+	if !strings.Contains(result.DisplayText, "Found portfolio: "+present.ArtifactLabel(portfolio.Meta.Title, portfolio.Meta.ID)) {
 		t.Fatalf("expected adopt result to surface linked portfolio:\n%s", result.DisplayText)
 	}
-	if !strings.Contains(result.DisplayText, "Found decision: "+decision.Meta.ID) {
+	if !strings.Contains(result.DisplayText, "Found decision: "+present.ArtifactLabel(decision.Meta.Title, decision.Meta.ID)) {
 		t.Fatalf("expected adopt result to surface linked decision:\n%s", result.DisplayText)
+	}
+	if strings.Contains(result.DisplayText, "Found portfolio: "+portfolio.Meta.ID+"\n") {
+		t.Fatalf("adopt result should not surface a bare linked portfolio ref:\n%s", result.DisplayText)
+	}
+	if strings.Contains(result.DisplayText, "Found decision: "+decision.Meta.ID+"\n") {
+		t.Fatalf("adopt result should not surface a bare linked decision ref:\n%s", result.DisplayText)
 	}
 	if result.Meta == nil {
 		t.Fatal("expected adopt metadata")
@@ -637,6 +645,203 @@ func TestHaftProblemTool_AdoptFindsLinkedDecisionWithoutFTSCarrierMatch(t *testi
 	}
 	if result.Meta.AdoptDecisionRef != decision.Meta.ID {
 		t.Fatalf("AdoptDecisionRef = %q, want %q", result.Meta.AdoptDecisionRef, decision.Meta.ID)
+	}
+}
+
+func TestHaftWorkflowToolResponsesPairArtifactTitlesWithRefs(t *testing.T) {
+	store := setupHaftToolStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problemTool := NewHaftProblemTool(store, haftDir)
+	frameResult, err := problemTool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":     "frame",
+		"title":      "Opaque workflow references",
+		"signal":     "Agents cite refs without telling the operator what they mean",
+		"acceptance": "Workflow output pairs every artifact ref with a semantic label",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(frameResult.DisplayText, "Problem framed: **Opaque workflow references** `"+frameResult.Meta.ArtifactRef+"`") {
+		t.Fatalf("frame output should pair problem title with ref:\n%s", frameResult.DisplayText)
+	}
+	if strings.Contains(frameResult.DisplayText, "\nID: "+frameResult.Meta.ArtifactRef+"\n") {
+		t.Fatalf("frame output should not expose a standalone bare problem ref:\n%s", frameResult.DisplayText)
+	}
+
+	characterizeResult, err := problemTool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":      "characterize",
+		"problem_ref": frameResult.Meta.ArtifactRef,
+		"dimensions": []map[string]any{
+			{"name": "operator clarity", "role": "constraint"},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(characterizeResult.DisplayText, "Problem characterized: **Opaque workflow references** `"+frameResult.Meta.ArtifactRef+"`") {
+		t.Fatalf("characterize output should pair problem title with ref:\n%s", characterizeResult.DisplayText)
+	}
+
+	solutionTool := NewHaftSolutionTool(store, haftDir, nil)
+	exploreResult, err := solutionTool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":      "explore",
+		"problem_ref": frameResult.Meta.ArtifactRef,
+		"variants": []map[string]any{
+			{
+				"title":          "Central display helper",
+				"weakest_link":   "legacy paths can bypass it",
+				"novelty_marker": "One presentation helper owns artifact labels",
+			},
+			{
+				"title":          "Rename artifacts",
+				"weakest_link":   "renaming breaks stable refs",
+				"novelty_marker": "Make identifiers self-descriptive at creation time",
+			},
+		},
+		"no_stepping_stone_rationale": "Both variants are direct remediation paths.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, err := store.Get(ctx, exploreResult.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(exploreResult.DisplayText, "Solution portfolio created: "+present.ArtifactLabel(portfolio.Meta.Title, portfolio.Meta.ID)) {
+		t.Fatalf("explore output should pair portfolio title with ref:\n%s", exploreResult.DisplayText)
+	}
+	if !strings.Contains(exploreResult.DisplayText, "V1 — Central display helper") {
+		t.Fatalf("explore output should surface generated variant IDs:\n%s", exploreResult.DisplayText)
+	}
+	if !strings.Contains(exploreResult.DisplayText, "Use these IDs verbatim") {
+		t.Fatalf("explore output should tell agents how to reuse variant IDs:\n%s", exploreResult.DisplayText)
+	}
+	if strings.Contains(exploreResult.DisplayText, "\nID: "+portfolio.Meta.ID+"\n") {
+		t.Fatalf("explore output should not expose a standalone bare portfolio ref:\n%s", exploreResult.DisplayText)
+	}
+
+	compareResult, err := solutionTool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":            "compare",
+		"portfolio_ref":     portfolio.Meta.ID,
+		"dimensions":        []string{"operator clarity"},
+		"scores":            map[string]map[string]string{"V1": {"operator clarity": "clearer"}, "V2": {"operator clarity": "riskier"}},
+		"non_dominated_set": []string{"V1"},
+		"pareto_tradeoffs": []map[string]any{
+			{"variant": "V1", "summary": "Keeps stable refs while adding titles."},
+			{"variant": "V2", "summary": "Makes future refs descriptive but breaks existing traceability."},
+		},
+		"selected_ref":   "V1",
+		"policy_applied": "Preserve stable refs while adding semantic labels.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(compareResult.DisplayText, "Comparison recorded: "+present.ArtifactLabel(portfolio.Meta.Title, portfolio.Meta.ID)) {
+		t.Fatalf("compare output should pair portfolio title with ref:\n%s", compareResult.DisplayText)
+	}
+	if strings.Contains(compareResult.DisplayText, "\nID: "+portfolio.Meta.ID+"\n") {
+		t.Fatalf("compare output should not expose a standalone bare portfolio ref:\n%s", compareResult.DisplayText)
+	}
+
+	_, err = solutionTool.Execute(ctx, mustJSON(t, map[string]any{
+		"action":        "compare",
+		"portfolio_ref": portfolio.Meta.ID,
+		"scores":        "not a score object",
+	}))
+	if err == nil {
+		t.Fatal("expected malformed scores to fail instead of being silently dropped")
+	}
+	if !strings.Contains(err.Error(), `argument "scores" does not match the expected JSON shape`) {
+		t.Fatalf("unexpected malformed scores error: %v", err)
+	}
+}
+
+func TestHaftDecisionToolResponsePairsTitleWithRef(t *testing.T) {
+	fixture := setupDecisionToolFixture(t)
+	projectRoot := t.TempDir()
+	affectedPath := filepath.Join("internal", "transport", "grpc.go")
+	if err := os.MkdirAll(filepath.Join(projectRoot, "internal", "transport"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(projectRoot, affectedPath), []byte("package transport\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, projectRoot, nil)
+
+	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
+		"action":         "decide",
+		"problem_ref":    fixture.problem.Meta.ID,
+		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
+		"selected_title": "gRPC",
+		"why_selected":   "The comparison shows the operator-facing trade-off clearly enough to bind.",
+		"weakest_link":   "Operational confidence still depends on limited production-grade evidence.",
+		"affected_files": []string{affectedPath},
+	})))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Meta == nil {
+		t.Fatal("expected decision metadata")
+	}
+
+	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result.DisplayText, "Decision recorded: "+present.ArtifactLabel(decision.Meta.Title, decision.Meta.ID)) {
+		t.Fatalf("decide output should pair decision title with ref:\n%s", result.DisplayText)
+	}
+	if strings.Contains(result.DisplayText, "\nID: "+decision.Meta.ID+"\n") {
+		t.Fatalf("decide output should not expose a standalone bare decision ref:\n%s", result.DisplayText)
+	}
+
+	evidenceResult, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":           "evidence",
+		"artifact_ref":     decision.Meta.ID,
+		"evidence_content": "The workflow output now carries a semantic label beside the stable ref.",
+		"evidence_type":    "review",
+		"evidence_verdict": "supports",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(evidenceResult.DisplayText, "Artifact: "+present.ArtifactLabel(decision.Meta.Title, decision.Meta.ID)) {
+		t.Fatalf("evidence output should pair artifact title with ref:\n%s", evidenceResult.DisplayText)
+	}
+	if strings.Contains(evidenceResult.DisplayText, "Artifact: "+decision.Meta.ID+"\n") {
+		t.Fatalf("evidence output should not expose a bare artifact ref:\n%s", evidenceResult.DisplayText)
+	}
+
+	baselineResult, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":       "baseline",
+		"decision_ref": decision.Meta.ID,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(baselineResult.DisplayText, "Baseline recorded: "+present.ArtifactLabel(decision.Meta.Title, decision.Meta.ID)) {
+		t.Fatalf("baseline output should pair decision title with ref:\n%s", baselineResult.DisplayText)
+	}
+	if strings.Contains(baselineResult.DisplayText, "Baseline recorded: "+decision.Meta.ID+"\n") {
+		t.Fatalf("baseline output should not expose a bare decision ref:\n%s", baselineResult.DisplayText)
+	}
+
+	measureResult, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
+		"action":       "measure",
+		"decision_ref": decision.Meta.ID,
+		"findings":     "The operator-facing workflow output is inspectable by title and ref.",
+		"verdict":      "accepted",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(measureResult.DisplayText, "Artifact: "+present.ArtifactLabel(decision.Meta.Title, decision.Meta.ID)) {
+		t.Fatalf("measure output should pair decision title with ref:\n%s", measureResult.DisplayText)
+	}
+	if strings.Contains(measureResult.DisplayText, "Artifact: "+decision.Meta.ID+"\n") {
+		t.Fatalf("measure output should not expose a bare decision ref:\n%s", measureResult.DisplayText)
 	}
 }
 

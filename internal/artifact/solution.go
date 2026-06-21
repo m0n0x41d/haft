@@ -734,7 +734,7 @@ func compareScoresShapeHint() string {
 // BuildComparisonBody appends comparison results to an existing portfolio body. Pure.
 func BuildComparisonBody(existingBody string, results ComparisonResult, comparedVariants []string, warnings []string) string {
 	var section strings.Builder
-	displayLabels := portfolioVariantDisplayLabels(existingBody)
+	displayLabels := portfolioVariantComparisonLabels(existingBody)
 	section.WriteString("\n## Comparison\n\n")
 
 	header := "| Variant |"
@@ -1194,6 +1194,35 @@ func portfolioVariantDisplayLabels(body string) map[string]string {
 		labels[key] = label
 		if strings.TrimSpace(ref.Title) != "" {
 			labels[strings.TrimSpace(ref.Title)] = label
+		}
+	}
+	return labels
+}
+
+func portfolioVariantComparisonLabels(body string) map[string]string {
+	labels := make(map[string]string)
+	for _, ref := range extractPortfolioVariantRefs(body) {
+		key := strings.TrimSpace(ref.ID)
+		if key == "" {
+			key = strings.TrimSpace(ref.Title)
+		}
+		if key == "" {
+			continue
+		}
+
+		title := strings.TrimSpace(ref.Title)
+		refID := strings.TrimSpace(ref.ID)
+		label := title
+		if title != "" && refID != "" {
+			label = fmt.Sprintf("%s `%s`", title, refID)
+		}
+		if label == "" {
+			label = key
+		}
+
+		labels[key] = label
+		if title != "" {
+			labels[title] = title
 		}
 	}
 	return labels

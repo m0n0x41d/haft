@@ -215,11 +215,11 @@ func (r maintenanceDrainReport) GetMaintenanceDrainFields() present.MaintenanceD
 func maintenanceDrainActionLines(actions []overseer.MaintenanceAction) []string {
 	lines := make([]string, 0, len(actions))
 	for _, action := range actions {
-		line := fmt.Sprintf("`%s` %s `%s` (%s): %s",
+		line := fmt.Sprintf("**%s** `%s` — `%s` %s: %s",
+			maintenanceDrainDecisionTitle(action),
+			action.DecisionRef,
 			action.Kind,
 			action.Outcome,
-			action.DecisionRef,
-			action.Title,
 			action.Detail)
 		if action.Undo != "" {
 			line += " · undo: `" + action.Undo + "`"
@@ -227,6 +227,13 @@ func maintenanceDrainActionLines(actions []overseer.MaintenanceAction) []string 
 		lines = append(lines, line)
 	}
 	return lines
+}
+
+func maintenanceDrainDecisionTitle(action overseer.MaintenanceAction) string {
+	if action.Title != "" {
+		return action.Title
+	}
+	return "Untitled decision"
 }
 
 func maintenanceDrainNeedLines(groups []artifact.MaintenanceJudgmentGroup) []string {

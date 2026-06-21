@@ -472,6 +472,22 @@ func applyCrossProjectIndex(ctx context.Context, name, action string, args map[s
 	}
 }
 
+func decisionTitlesForRefs(ctx context.Context, store *artifact.Store, refs []string) map[string]string {
+	titles := make(map[string]string, len(refs))
+	for _, ref := range refs {
+		trimmedRef := strings.TrimSpace(ref)
+		if trimmedRef == "" {
+			continue
+		}
+		decision, err := store.Get(ctx, trimmedRef)
+		if err != nil {
+			continue
+		}
+		titles[trimmedRef] = decision.Meta.Title
+	}
+	return titles
+}
+
 // applyRefreshReminder appends a reminder if >5 days since last stale scan.
 func applyRefreshReminder(ctx context.Context, result, name string, store *artifact.Store) string {
 	if refreshReminderDisabled(name) {
@@ -1260,7 +1276,11 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		result := present.BaselineResponse(input.DecisionRef, files, navStrip)
+		decisionTitle := ""
+		if decision, err := store.Get(ctx, input.DecisionRef); err == nil {
+			decisionTitle = decision.Meta.Title
+		}
+		result := present.BaselineResponse(decisionTitle, input.DecisionRef, files, navStrip)
 		for _, w := range baselineWarnings {
 			result = "⚠ " + w + "\n" + result
 		}
@@ -1328,10 +1348,11 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 				if len(impacts) > 0 {
 					for _, imp := range impacts {
 						driftReports[i].ImpactedModules = append(driftReports[i].ImpactedModules, artifact.ModuleImpact{
-							ModuleID:    imp.ModuleID,
-							ModulePath:  imp.ModulePath,
-							DecisionIDs: imp.DecisionIDs,
-							IsBlind:     imp.IsBlind,
+							ModuleID:       imp.ModuleID,
+							ModulePath:     imp.ModulePath,
+							DecisionIDs:    imp.DecisionIDs,
+							DecisionTitles: decisionTitlesForRefs(ctx, store, imp.DecisionIDs),
+							IsBlind:        imp.IsBlind,
 						})
 					}
 				}

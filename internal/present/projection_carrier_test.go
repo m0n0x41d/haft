@@ -51,6 +51,28 @@ func TestProjection_Compare_IncludesCarrierFootnote(t *testing.T) {
 	assertCarrierFootnoteWithRef(t, out, "sol-20260513-bbbb2222")
 }
 
+func TestProjection_RendersMissingRelationshipRefsAsUntitledArtifacts(t *testing.T) {
+	graph := artifact.ProjectionGraph{
+		Context:     "fixture",
+		GeneratedAt: time.Now().UTC(),
+		Problems: []artifact.ProblemProjection{
+			{
+				Meta:          artifact.Meta{ID: "prob-1", Title: "Known problem", Kind: artifact.KindProblemCard, Status: artifact.StatusActive},
+				PortfolioRefs: []string{"sol-missing"},
+			},
+		},
+	}
+
+	out := ProjectionResponse(graph, artifact.ProjectionViewEngineer)
+
+	if !strings.Contains(out, "Portfolios: **untitled artifact** `sol-missing`") {
+		t.Fatalf("missing projection refs should stay explicit, not bare:\n%s", out)
+	}
+	if strings.Contains(out, "Portfolios: `sol-missing`") {
+		t.Fatalf("projection fallback should not render a bare ref:\n%s", out)
+	}
+}
+
 func TestProjection_NoSources_StillRendersFootnoteWithInformationalNote(t *testing.T) {
 	empty := artifact.ProjectionGraph{Context: "empty", GeneratedAt: time.Now().UTC()}
 	out := ProjectionResponse(empty, artifact.ProjectionViewDelegatedAgent)

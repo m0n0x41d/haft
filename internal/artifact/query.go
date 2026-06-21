@@ -106,9 +106,11 @@ type StatusData struct {
 	CommissionAttention []WorkCommissionStatus
 	InProgressProblems  []*Artifact
 	InProgressBy        map[string]string // problem ID -> portfolio ID
+	PortfolioTitles     map[string]string // portfolio ID -> title
 	BacklogProblems     []*Artifact
 	AddressedProblems   []*Artifact
 	AddressedBy         map[string]string // problem ID -> decision ID
+	DecisionTitles      map[string]string // decision ID -> title
 	RecentNotes         []*Artifact
 
 	// Drift reports for active decisions whose baselined affected_files
@@ -130,6 +132,8 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	var data StatusData
 	data.InProgressBy = make(map[string]string)
 	data.AddressedBy = make(map[string]string)
+	data.PortfolioTitles = make(map[string]string)
+	data.DecisionTitles = make(map[string]string)
 	data.DecisionHealth = make(map[string]DecisionHealth)
 
 	// Active decisions
@@ -211,9 +215,11 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 					if linked.Meta.Kind == KindDecisionRecord {
 						hasDecision = true
 						data.AddressedBy[p.Meta.ID] = linked.Meta.ID
+						data.DecisionTitles[linked.Meta.ID] = linked.Meta.Title
 					} else if linked.Meta.Kind == KindSolutionPortfolio {
 						hasPortfolio = true
 						data.InProgressBy[p.Meta.ID] = linked.Meta.ID
+						data.PortfolioTitles[linked.Meta.ID] = linked.Meta.Title
 					}
 				}
 			}
@@ -282,8 +288,10 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 
 type WorkCommissionStatus struct {
 	ID               string
+	Title            string
 	State            string
 	DecisionRef      string
+	DecisionTitle    string
 	PlanRef          string
 	ValidUntil       string
 	FetchedAt        string
@@ -315,7 +323,14 @@ func FetchWorkCommissionStatuses(ctx context.Context, store ArtifactStore) ([]Wo
 			payload["id"] = item.Meta.ID
 		}
 
-		statuses = append(statuses, workCommissionStatusFromPayload(payload, now))
+		status := workCommissionStatusFromPayload(payload, now)
+		status.Title = item.Meta.Title
+		if status.DecisionRef != "" {
+			if decision, err := store.Get(ctx, status.DecisionRef); err == nil {
+				status.DecisionTitle = decision.Meta.Title
+			}
+		}
+		statuses = append(statuses, status)
 	}
 
 	return statuses, nil

@@ -8,6 +8,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Operator-facing Haft artifact transparency.** Agent-facing workflow,
+  status, refresh, projection, maintenance, baseline, evidence, and measure
+  responses now pair governance artifact refs with human-readable titles, for
+  example `**Decision title** \`dec-...\`` instead of bare IDs. Linked
+  ProblemCard/SolutionPortfolio/DecisionRecord refs in status and adoption
+  flows resolve to titles when available, missing projection refs render as
+  explicit untitled artifacts, generated `Variant.ID` values remain visible for
+  direct compare calls, and malformed direct compare payloads now fail instead
+  of being silently dropped.
 - **Overseer review schema.** The structured-output schema for
   `haft overseer review` now requires every declared strict location property
   and drops optional location fields that the reviewer did not require,

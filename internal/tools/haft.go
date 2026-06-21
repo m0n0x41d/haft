@@ -115,7 +115,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		if err != nil {
 			return agent.ToolResult{}, err
 		}
-		display := fmt.Sprintf("Problem framed: %s\nID: %s\nFile: %s", a.Meta.Title, a.Meta.ID, filePath)
+		display := fmt.Sprintf("Problem framed: %s\nFile: %s", present.ArtifactLabel(a.Meta.Title, a.Meta.ID), filePath)
 		if warn := artifact.UmbrellaWarning(input.Title, input.Signal, input.Acceptance); warn != "" {
 			display += "\n\n" + warn
 		}
@@ -149,12 +149,12 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 		decisionRef := relatedRefs.DecisionRef
 
 		var b strings.Builder
-		fmt.Fprintf(&b, "Adopted problem: %s\nID: %s\n", a.Meta.Title, a.Meta.ID)
+		fmt.Fprintf(&b, "Adopted problem: %s\n", present.ArtifactLabel(a.Meta.Title, a.Meta.ID))
 		if portfolioRef != "" {
-			fmt.Fprintf(&b, "Found portfolio: %s\n", portfolioRef)
+			fmt.Fprintf(&b, "Found portfolio: %s\n", resolvedArtifactLabel(ctx, t.store, portfolioRef))
 		}
 		if decisionRef != "" {
-			fmt.Fprintf(&b, "Found decision: %s\n", decisionRef)
+			fmt.Fprintf(&b, "Found decision: %s\n", resolvedArtifactLabel(ctx, t.store, decisionRef))
 		}
 
 		return agent.ToolResult{
@@ -231,7 +231,7 @@ func (t *HaftProblemTool) Execute(ctx context.Context, argsJSON string) (agent.T
 			dimNames = append(dimNames, label)
 		}
 		display := fmt.Sprintf("Problem characterized: %s\nDimensions: %s\nFile: %s",
-			a.Meta.ID, strings.Join(dimNames, ", "), filePath)
+			present.ArtifactLabel(a.Meta.Title, a.Meta.ID), strings.Join(dimNames, ", "), filePath)
 		return agent.PlainResult(display), nil
 
 	default:
@@ -427,11 +427,13 @@ func (t *HaftSolutionTool) explore(ctx context.Context, args map[string]any) (ag
 	}
 
 	var b strings.Builder
-	fmt.Fprintf(&b, "Solution portfolio created: %s\nID: %s\nFile: %s\n\n", a.Meta.Title, a.Meta.ID, filePath)
+	fmt.Fprintf(&b, "Solution portfolio created: %s\nFile: %s\n\n", present.ArtifactLabel(a.Meta.Title, a.Meta.ID), filePath)
 	fmt.Fprintf(&b, "Variants:\n")
-	for _, v := range input.Variants {
-		fmt.Fprintf(&b, "- %s (WLNK: %s)\n", v.Title, v.WeakestLink)
+	fields := a.UnmarshalPortfolioFields()
+	for _, v := range artifact.MaterializeVariantIDs(fields.Variants) {
+		fmt.Fprintf(&b, "- %s — %s (WLNK: %s)\n", v.ID, v.Title, v.WeakestLink)
 	}
+	fmt.Fprintf(&b, "\nUse these IDs verbatim as keys in scores, dominated_variants[].variant, pareto_tradeoffs[].variant, non_dominated_set, and selected_ref when calling haft_solution(action=\"compare\").\n")
 	return agent.ToolResult{
 		DisplayText: b.String(),
 		Meta: &agent.ArtifactMeta{
@@ -515,10 +517,18 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 	input.Results.RecommendationRationale = jsonStr(args, "recommendation_rationale")
 	input.Results.PolicyApplied = jsonStr(args, "policy_applied")
 
-	_ = jsonDecodeArg(args, "scores", &input.Results.Scores)
-	_ = jsonDecodeArg(args, "incomparable", &input.Results.Incomparable)
-	_ = jsonDecodeArg(args, "dominated_variants", &input.Results.DominatedVariants)
-	_ = jsonDecodeArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs)
+	if _, err := jsonDecodeArgStrict(args, "scores", &input.Results.Scores); err != nil {
+		return agent.ToolResult{}, err
+	}
+	if _, err := jsonDecodeArgStrict(args, "incomparable", &input.Results.Incomparable); err != nil {
+		return agent.ToolResult{}, err
+	}
+	if _, err := jsonDecodeArgStrict(args, "dominated_variants", &input.Results.DominatedVariants); err != nil {
+		return agent.ToolResult{}, err
+	}
+	if _, err := jsonDecodeArgStrict(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs); err != nil {
+		return agent.ToolResult{}, err
+	}
 	if parityPlan, ok := jsonParityPlan(args, "parity_plan"); ok {
 		input.Results.ParityPlan = parityPlan
 	}
@@ -529,8 +539,7 @@ func (t *HaftSolutionTool) compare(ctx context.Context, args map[string]any) (ag
 	}
 
 	var display strings.Builder
-	display.WriteString("Comparison recorded.\n")
-	display.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+	display.WriteString(fmt.Sprintf("Comparison recorded: %s\n", present.ArtifactLabel(a.Meta.Title, a.Meta.ID)))
 	if filePath != "" {
 		display.WriteString(fmt.Sprintf("File: %s\n", filePath))
 	}
@@ -636,6 +645,23 @@ func hasBasedOnLink(links []artifact.Link, ref string) bool {
 	}
 
 	return false
+}
+
+func resolvedArtifactLabel(ctx context.Context, store artifact.ArtifactStore, ref string) string {
+	trimmedRef := strings.TrimSpace(ref)
+	if trimmedRef == "" {
+		return present.ArtifactLabel("", "")
+	}
+	if store == nil {
+		return present.ArtifactLabel("", trimmedRef)
+	}
+
+	a, err := store.Get(ctx, trimmedRef)
+	if err != nil {
+		return present.ArtifactLabel("", trimmedRef)
+	}
+
+	return present.ArtifactLabel(a.Meta.Title, a.Meta.ID)
 }
 
 func validateCycleProblemBinding(ctx context.Context, store artifact.ArtifactStore, cycle *agent.Cycle) error {
@@ -1452,7 +1478,7 @@ func (t *HaftDecisionTool) evidence(ctx context.Context, args map[string]any) (a
 		"Evidence attached: %s [%s]\nArtifact: %s\nVerdict: %s\nWLNK: %s",
 		item.ID,
 		item.Type,
-		input.ArtifactRef,
+		resolvedArtifactLabel(ctx, t.store, input.ArtifactRef),
 		item.Verdict,
 		wlnk.Summary,
 	)
@@ -1530,7 +1556,7 @@ func (t *HaftDecisionTool) baseline(ctx context.Context, args map[string]any) (a
 	for _, f := range files {
 		paths = append(paths, f.Path)
 	}
-	display := fmt.Sprintf("Baseline recorded: %s\nFiles: %s", decisionRef, strings.Join(paths, ", "))
+	display := fmt.Sprintf("Baseline recorded: %s\nFiles: %s", resolvedArtifactLabel(ctx, t.store, decisionRef), strings.Join(paths, ", "))
 	return agent.ToolResult{DisplayText: display}, nil
 }
 
@@ -1602,7 +1628,7 @@ func (t *HaftDecisionTool) measure(ctx context.Context, args map[string]any) (ag
 		return agent.ToolResult{}, err
 	}
 
-	display := fmt.Sprintf("Measurement recorded: verdict=%s\nArtifact: %s", input.Verdict, result.Meta.ID)
+	display := fmt.Sprintf("Measurement recorded: verdict=%s\nArtifact: %s", input.Verdict, present.ArtifactLabel(result.Meta.Title, result.Meta.ID))
 	if calibration := t.calibrationSummary(ctx); calibration != "" {
 		display += "\n\n" + calibration
 	}
@@ -2006,7 +2032,7 @@ func (t *HaftNoteTool) Execute(ctx context.Context, argsJSON string) (agent.Tool
 	if err != nil {
 		return agent.ToolResult{}, err
 	}
-	display := fmt.Sprintf("Note recorded: %s\nID: %s\nFile: %s", a.Meta.Title, a.Meta.ID, filePath)
+	display := fmt.Sprintf("Note recorded: %s\nFile: %s", present.ArtifactLabel(a.Meta.Title, a.Meta.ID), filePath)
 	if len(validation.Warnings) > 0 {
 		display += "\nWarnings: " + strings.Join(validation.Warnings, "; ")
 	}
@@ -2088,6 +2114,24 @@ func jsonDecodeArg(args map[string]any, key string, target any) bool {
 	}
 
 	return true
+}
+
+func jsonDecodeArgStrict(args map[string]any, key string, target any) (bool, error) {
+	value, ok := args[key]
+	if !ok {
+		return false, nil
+	}
+
+	data, err := json.Marshal(value)
+	if err != nil {
+		return true, fmt.Errorf("argument %q is not JSON-encodable: %w", key, err)
+	}
+
+	if err := json.Unmarshal(data, target); err != nil {
+		return true, fmt.Errorf("argument %q does not match the expected JSON shape: %w", key, err)
+	}
+
+	return true, nil
 }
 
 func jsonStrictStringArray(args map[string]any, key string) ([]string, error) {

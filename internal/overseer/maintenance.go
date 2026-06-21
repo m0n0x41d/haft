@@ -202,12 +202,15 @@ func signalDetail(parts ...string) string {
 
 func signalTitle(id string, title string) string {
 	title = strings.TrimSpace(title)
+	id = strings.TrimSpace(id)
 	if title != "" {
+		if id != "" {
+			return fmt.Sprintf("%s `%s`", title, id)
+		}
 		return title
 	}
-	id = strings.TrimSpace(id)
 	if id != "" {
-		return id
+		return "untitled artifact `" + id + "`"
 	}
 	return "unnamed signal"
 }

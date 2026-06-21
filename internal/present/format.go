@@ -64,8 +64,7 @@ func NoteResponse(a *artifact.Artifact, filePath string, validation artifact.Not
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("Recorded: %s\n", a.Meta.Title))
-	sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+	sb.WriteString(fmt.Sprintf("Recorded: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 	if filePath != "" {
 		sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 	}
@@ -143,7 +142,7 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 			kindLabel = "DecisionRecord"
 		}
 		kindLabel = UserFacingArtifactKindLabel(kindLabel)
-		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] (%s)\n", i+1, item.Title, item.ID, kindLabel))
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, formatArtifactLabel(item.Title, item.ID), kindLabel))
 		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
 	}
 
@@ -181,7 +180,7 @@ func ScanResponseSummary(items []artifact.StaleItem, navStrip string) string {
 			kindLabel = "DecisionRecord"
 		}
 		kindLabel = UserFacingArtifactKindLabel(kindLabel)
-		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] (%s)\n", i+1, item.Title, item.ID, kindLabel))
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, formatArtifactLabel(item.Title, item.ID), kindLabel))
 		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
 	}
 	if omitted := len(items) - topStaleItems; omitted > 0 {
@@ -253,9 +252,9 @@ func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact
 }
 
 // BaselineResponse formats the result of a baseline action.
-func BaselineResponse(decisionRef string, files []artifact.AffectedFile, navStrip string) string {
+func BaselineResponse(decisionTitle string, decisionRef string, files []artifact.AffectedFile, navStrip string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", decisionRef, len(files)))
+	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", formatArtifactLabel(decisionTitle, decisionRef), len(files)))
 	for _, f := range files {
 		sb.WriteString(fmt.Sprintf("  %s — %s\n", f.Path, f.Hash[:12]))
 	}
@@ -342,7 +341,7 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 					missing++
 				}
 			}
-			sb.WriteString(fmt.Sprintf("### %s [%s]\n", r.DecisionTitle, r.DecisionID))
+			sb.WriteString(fmt.Sprintf("### %s\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			sb.WriteString(fmt.Sprintf("  %d modified, %d added, %d missing\n", modified, added, missing))
 			sb.WriteString(fmt.Sprintf("  Symbol verdict: %s%s\n", r.SymbolVerdict(), symbolVerdictHint(r.SymbolVerdict())))
 			if len(changedSymbols) > 0 {
@@ -377,7 +376,7 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 			}
 			impactReports++
 
-			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
+			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			for i, impact := range r.ImpactedModules {
 				if i >= topImpactedModulesPerReport {
 					break
@@ -385,7 +384,7 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 				if impact.IsBlind {
 					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
 				} else {
-					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, summarizedDecisionIDs(impact.DecisionIDs, topDecisionIDsPerImpact)))
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, summarizedDecisionLabels(impact.DecisionIDs, impact.DecisionTitles, topDecisionIDsPerImpact)))
 				}
 			}
 			if omitted := len(r.ImpactedModules) - topImpactedModulesPerReport; omitted > 0 {
@@ -410,8 +409,8 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 			if r.LikelyImplemented {
 				gitHint = "git activity detected after decision date"
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
+			sb.WriteString(fmt.Sprintf("- %s — %d file(s) unmonitored, %s\n",
+				formatArtifactLabel(r.DecisionTitle, r.DecisionID), len(r.Files), gitHint))
 		}
 		sb.WriteString("\n")
 	}
@@ -420,13 +419,22 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 	return sb.String()
 }
 
-func summarizedDecisionIDs(ids []string, limit int) string {
-	if len(ids) <= limit {
-		return strings.Join(ids, ", ")
+func summarizedDecisionLabels(ids []string, titles map[string]string, limit int) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	if limit <= 0 || limit > len(ids) {
+		limit = len(ids)
 	}
 
-	visible := strings.Join(ids[:limit], ", ")
-	return fmt.Sprintf("%s, ... +%d", visible, len(ids)-limit)
+	shown := make([]string, 0, limit+1)
+	for _, id := range ids[:limit] {
+		shown = append(shown, formatArtifactLabel(titles[id], id))
+	}
+	if len(ids) > limit {
+		shown = append(shown, fmt.Sprintf("... +%d", len(ids)-limit))
+	}
+	return strings.Join(shown, ", ")
 }
 
 // DriftResponse formats drift check results for the agent (verbose: full
@@ -460,7 +468,7 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 			if !r.HasBaseline {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("### %s [%s]\n\n", r.DecisionTitle, r.DecisionID))
+			sb.WriteString(fmt.Sprintf("### %s\n\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			for _, f := range r.Files {
 				switch f.Status {
 				case artifact.DriftModified:
@@ -477,12 +485,12 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
+			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			for _, impact := range r.ImpactedModules {
 				if impact.IsBlind {
 					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
 				} else {
-					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, summarizedDecisionLabels(impact.DecisionIDs, impact.DecisionTitles, len(impact.DecisionIDs))))
 				}
 			}
 			sb.WriteString("\n")
@@ -501,8 +509,8 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 			if r.LikelyImplemented {
 				gitHint = "git activity detected after decision date"
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
+			sb.WriteString(fmt.Sprintf("- %s — %d file(s) unmonitored, %s\n",
+				formatArtifactLabel(r.DecisionTitle, r.DecisionID), len(r.Files), gitHint))
 		}
 		sb.WriteString("\n**Action:** Verify implementation status by reading affected files before baselining.\n\n")
 	}
@@ -517,7 +525,7 @@ func DecisionResponse(action string, a *artifact.Artifact, filePath string, extr
 
 	switch action {
 	case "decide":
-		sb.WriteString(fmt.Sprintf("Decision recorded: %s\nID: %s\n", a.Meta.Title, a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Decision recorded: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		if a.Meta.ValidUntil != "" {
 			sb.WriteString(fmt.Sprintf("Valid until: %s\n", a.Meta.ValidUntil))
 		}
@@ -529,8 +537,7 @@ func DecisionResponse(action string, a *artifact.Artifact, filePath string, extr
 	case "apply":
 		sb.WriteString(extra)
 	case "measure":
-		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		sb.WriteString(extra)
 	case "evidence":
 		sb.WriteString(extra)
@@ -546,15 +553,13 @@ func SolutionResponse(action string, a *artifact.Artifact, filePath string, navS
 
 	switch action {
 	case "explore":
-		sb.WriteString(fmt.Sprintf("Portfolio created: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Portfolio created: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
 		sb.WriteString(formatVariantsIndex(a))
 	case "compare":
-		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
@@ -716,7 +721,7 @@ func solutionVariantLabels(variants []artifact.Variant) map[string]string {
 		title := strings.TrimSpace(variant.Title)
 		id := strings.TrimSpace(variant.ID)
 		if id != "" && title != "" {
-			labels[id] = title
+			labels[id] = fmt.Sprintf("%s `%s`", title, id)
 		}
 		if title != "" {
 			labels[title] = title
@@ -761,8 +766,7 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 
 	switch action {
 	case "frame":
-		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		sb.WriteString(fmt.Sprintf("Mode: %s\n", a.Meta.Mode))
 		if problemType := artifact.ProblemTypeLabel(a); problemType != "" {
 			sb.WriteString(fmt.Sprintf("Type: %s\n", problemType))
@@ -779,8 +783,7 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 			sb.WriteString("\n" + a.Body[idx:])
 		}
 	case "characterize":
-		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 	}
 
 	sb.WriteString(navStrip)
@@ -835,7 +838,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(items)-cap))
 				break
 			}
-			line := fmt.Sprintf("- **%s** `%s`", d.Meta.Title, d.Meta.ID)
+			line := "- " + formatArtifactLabel(d.Meta.Title, d.Meta.ID)
 			if d.Meta.ValidUntil != "" {
 				vu := d.Meta.ValidUntil
 				if len(vu) > 10 {
@@ -873,7 +876,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more (use /h-refresh to see all)\n", len(data.StaleItems)-cap))
 				break
 			}
-			line := fmt.Sprintf("- **%s** `%s`", s.Title, s.ID)
+			line := "- " + formatArtifactLabel(s.Title, s.ID)
 			if health, ok := data.DecisionHealth[s.ID]; ok {
 				line += fmt.Sprintf(" — %s", health.Label())
 			}
@@ -920,7 +923,7 @@ func StatusResponse(data artifact.StatusData) string {
 			if summary == "" {
 				summary = "no file changes"
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", r.DecisionTitle, r.DecisionID, summary))
+			sb.WriteString(fmt.Sprintf("- %s — %s\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID), summary))
 		}
 		sb.WriteString("\n→ Run /h-verify on a drifted decision to gather evidence; /h-refresh scan for full file-level diff.\n\n")
 	}
@@ -957,7 +960,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.InProgressProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), data.InProgressBy[p.Meta.ID]))
+			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), statusPortfolioLabel(data, p.Meta.ID)))
 		}
 		sb.WriteString("\n")
 	}
@@ -983,7 +986,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.AddressedProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), data.AddressedBy[p.Meta.ID]))
+			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), statusDecisionLabel(data, p.Meta.ID)))
 		}
 		sb.WriteString("\n")
 	}
@@ -991,7 +994,7 @@ func StatusResponse(data artifact.StatusData) string {
 	if len(data.RecentNotes) > 0 {
 		sb.WriteString(fmt.Sprintf("### Recent Notes (%d)\n\n", len(data.RecentNotes)))
 		for _, n := range data.RecentNotes {
-			sb.WriteString(fmt.Sprintf("- %s `%s` (%s)\n", n.Meta.Title, n.Meta.ID, n.Meta.CreatedAt.Format("2006-01-02")))
+			sb.WriteString(fmt.Sprintf("- %s (%s)\n", formatArtifactLabel(n.Meta.Title, n.Meta.ID), n.Meta.CreatedAt.Format("2006-01-02")))
 		}
 		sb.WriteString("\n")
 	}
@@ -1048,7 +1051,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_refresh(action=\"scan\", verbose=true)`.\n", len(data.StaleItems)-staleCap))
 				break
 			}
-			line := fmt.Sprintf("  - **%s** `%s`", stale.Title, stale.ID)
+			line := "  - " + formatArtifactLabel(stale.Title, stale.ID)
 			if health, ok := data.DecisionHealth[stale.ID]; ok {
 				line += fmt.Sprintf(" — %s", health.Label())
 			}
@@ -1066,7 +1069,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 				break
 			}
 			summary := formatDriftFileSummary(report.Files)
-			sb.WriteString(fmt.Sprintf("  - **%s** `%s` — %s\n", report.DecisionTitle, report.DecisionID, summary))
+			sb.WriteString(fmt.Sprintf("  - %s — %s\n", formatArtifactLabel(report.DecisionTitle, report.DecisionID), summary))
 		}
 	}
 
@@ -1098,7 +1101,7 @@ func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {
 			sb.WriteString(fmt.Sprintf("- ... and %d more in progress; run `haft_query(action=\"status\", full=true)`.\n", len(data.InProgressProblems)-progressCap))
 			break
 		}
-		sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(problem), data.InProgressBy[problem.Meta.ID]))
+		sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(problem), statusPortfolioLabel(data, problem.Meta.ID)))
 	}
 
 	if len(data.BacklogProblems) > 0 {
@@ -1173,9 +1176,9 @@ func formatDriftFileSummary(files []artifact.DriftItem) string {
 }
 
 func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) string {
-	line := fmt.Sprintf("- `%s` %s", commission.ID, commission.State)
+	line := fmt.Sprintf("- %s %s", formatArtifactLabel(commission.Title, commission.ID), commission.State)
 	if commission.DecisionRef != "" {
-		line += fmt.Sprintf(" → %s", commission.DecisionRef)
+		line += fmt.Sprintf(" → %s", formatArtifactLabel(commission.DecisionTitle, commission.DecisionRef))
 	}
 	if commission.AttentionReason != "" {
 		line += " — " + commission.AttentionReason
@@ -1184,6 +1187,16 @@ func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) strin
 		line += " — actions: " + strings.Join(commission.SuggestedActions, ", ")
 	}
 	return line
+}
+
+func statusPortfolioLabel(data artifact.StatusData, problemID string) string {
+	ref := strings.TrimSpace(data.InProgressBy[problemID])
+	return formatArtifactLabel(data.PortfolioTitles[ref], ref)
+}
+
+func statusDecisionLabel(data artifact.StatusData, problemID string) string {
+	ref := strings.TrimSpace(data.AddressedBy[problemID])
+	return formatArtifactLabel(data.DecisionTitles[ref], ref)
 }
 
 // ListResponse formats artifacts of a given kind as markdown.
@@ -1370,8 +1383,30 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 	return sb.String()
 }
 
+func formatArtifactLabel(title string, ref string) string {
+	title = strings.TrimSpace(title)
+	ref = strings.TrimSpace(ref)
+
+	switch {
+	case title != "" && ref != "":
+		return fmt.Sprintf("**%s** `%s`", title, ref)
+	case title != "":
+		return fmt.Sprintf("**%s**", title)
+	case ref != "":
+		return fmt.Sprintf("**untitled artifact** `%s`", ref)
+	default:
+		return "**unnamed artifact**"
+	}
+}
+
+// ArtifactLabel renders an operator-facing artifact reference with semantic
+// context first and the stable ref second.
+func ArtifactLabel(title string, ref string) string {
+	return formatArtifactLabel(title, ref)
+}
+
 func formatProblemListEntry(problem *artifact.Artifact) string {
-	return fmt.Sprintf("**%s** `%s`", formatProblemTitleWithType(problem), problem.Meta.ID)
+	return formatArtifactLabel(formatProblemTitleWithType(problem), problem.Meta.ID)
 }
 
 func formatProblemTitleWithType(problem *artifact.Artifact) string {

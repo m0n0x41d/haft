@@ -900,7 +900,7 @@ func TestHandleToolsList_QuerySchemaIncludesCodeContextLane(t *testing.T) {
 	}
 
 	description, _ := lane["description"].(string)
-	for _, want := range []string{"Progressive disclosure lane", "Default index", "full=true audit"} {
+	for _, want := range []string{"Lane", "Default index", "full=true audit"} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("lane description missing %q: %q", want, description)
 		}

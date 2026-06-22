@@ -887,7 +887,7 @@ func (s *Server) ToolCatalog() []Tool {
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
-						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/carrier_manifest/carrier_check/contract_audit/contract_generation/spec_review/spec_use/change_case/correspondence_graph/drift_route/drift_events/decision_reconcile/governing_set/blocked_use/value_space/evidence_path/term.",
+						"description": "Read-only query/drill-down action.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -934,7 +934,7 @@ func (s *Server) ToolCatalog() []Tool {
 					},
 					"evidence_ref": map[string]string{
 						"type":        "string",
-						"description": "(evidence_path) Evidence item id.",
+						"description": "(evidence_path) Evidence id.",
 					},
 					"claim_ref": map[string]string{
 						"type":        "string",
@@ -942,7 +942,11 @@ func (s *Server) ToolCatalog() []Tool {
 					},
 					"attempted_use": map[string]string{
 						"type":        "string",
-						"description": "(evidence_path) Declared bounded use.",
+						"description": "(evidence_path) Bounded use.",
+					},
+					"requires_current_formality": map[string]interface{}{
+						"type":        "boolean",
+						"description": "Require current F0-F9.",
 					},
 					"producer_ref": map[string]string{
 						"type":        "string",
@@ -1000,7 +1004,7 @@ func (s *Server) ToolCatalog() []Tool {
 					"lane": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
-						"description": "Progressive disclosure lane; Default index; full=true audit",
+						"description": "Lane. Default index; full=true audit",
 					},
 					"depth": map[string]interface{}{
 						"type":        "integer",
@@ -1092,7 +1096,7 @@ func isLoadBearingSchemaDescription(description string) bool {
 		"tree mode",
 		"projection views",
 		"Advisory recommendation only",
-		"Progressive disclosure lane",
+		"Lane. Default index",
 		"lane=index",
 		"optimization",
 		"simulation_only",

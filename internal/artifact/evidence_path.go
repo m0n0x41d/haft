@@ -34,13 +34,14 @@ const (
 )
 
 type EvidencePathInput struct {
-	ArtifactRef  string
-	EvidenceRef  string
-	ClaimRef     string
-	AttemptedUse string
-	ProducerRef  string
-	MethodRef    string
-	WorkRef      string
+	ArtifactRef              string
+	EvidenceRef              string
+	ClaimRef                 string
+	AttemptedUse             string
+	RequiresCurrentFormality bool
+	ProducerRef              string
+	MethodRef                string
+	WorkRef                  string
 }
 
 type EvidencePathRecord struct {
@@ -92,7 +93,8 @@ type EvidenceCurrentnessWindow struct {
 }
 
 type EvidenceAttemptedUse struct {
-	Context string `json:"context,omitempty"`
+	Context                  string `json:"context,omitempty"`
+	RequiresCurrentFormality bool   `json:"requires_current_formality,omitempty"`
 }
 
 type RelianceDisposition struct {
@@ -117,7 +119,10 @@ func BuildEvidencePathRecord(
 	claimBinding := evidenceClaimBinding(normalized.ClaimRef, item)
 	traceBinding := evidenceTraceBinding(normalized)
 	currentness := evidenceCurrentnessWindow(item, now)
-	attemptedUse := EvidenceAttemptedUse{Context: normalized.AttemptedUse}
+	attemptedUse := EvidenceAttemptedUse{
+		Context:                  normalized.AttemptedUse,
+		RequiresCurrentFormality: normalized.RequiresCurrentFormality,
+	}
 
 	return EvidencePathRecord{
 		SchemaVersion:       EvidencePathRecordSchemaVersion,
@@ -140,13 +145,14 @@ func BuildEvidencePathRecord(
 
 func normalizeEvidencePathInput(input EvidencePathInput) EvidencePathInput {
 	return EvidencePathInput{
-		ArtifactRef:  strings.TrimSpace(input.ArtifactRef),
-		EvidenceRef:  strings.TrimSpace(input.EvidenceRef),
-		ClaimRef:     strings.TrimSpace(input.ClaimRef),
-		AttemptedUse: strings.TrimSpace(input.AttemptedUse),
-		ProducerRef:  strings.TrimSpace(input.ProducerRef),
-		MethodRef:    strings.TrimSpace(input.MethodRef),
-		WorkRef:      strings.TrimSpace(input.WorkRef),
+		ArtifactRef:              strings.TrimSpace(input.ArtifactRef),
+		EvidenceRef:              strings.TrimSpace(input.EvidenceRef),
+		ClaimRef:                 strings.TrimSpace(input.ClaimRef),
+		AttemptedUse:             strings.TrimSpace(input.AttemptedUse),
+		RequiresCurrentFormality: input.RequiresCurrentFormality,
+		ProducerRef:              strings.TrimSpace(input.ProducerRef),
+		MethodRef:                strings.TrimSpace(input.MethodRef),
+		WorkRef:                  strings.TrimSpace(input.WorkRef),
 	}
 }
 
@@ -267,6 +273,9 @@ func evidenceRelianceDisposition(
 	if claimBinding.Status == EvidenceClaimBindingNotBound {
 		return evidenceReliance(EvidenceRelianceBlocked, "claim_not_bound_to_evidence", boundaries)
 	}
+	if attemptedUse.RequiresCurrentFormality && !evidenceHasCurrentFormality(item) {
+		return evidenceReliance(EvidenceRelianceBlocked, "current_formality_required", boundaries)
+	}
 	if item.Verdict == "supports" || item.Verdict == "accepted" {
 		return evidenceReliance(EvidenceRelianceBounded, "evidence_supports_declared_attempted_use_with_boundaries", boundaries)
 	}
@@ -280,4 +289,13 @@ func evidenceReliance(disposition string, reason string, boundaries []string) Re
 		Reason:      reason,
 		Boundaries:  append([]string(nil), boundaries...),
 	}
+}
+
+func evidenceHasCurrentFormality(item EvidenceItem) bool {
+	if item.FormalityScale == nil {
+		return true
+	}
+
+	scale := reff.NormalizeFormalityScale(*item.FormalityScale)
+	return scale.ScaleID == reff.FormalityScaleCurrent
 }

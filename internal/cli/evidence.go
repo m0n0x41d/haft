@@ -14,12 +14,13 @@ import (
 )
 
 var (
-	evidencePathJSON         bool
-	evidencePathClaimRef     string
-	evidencePathAttemptedUse string
-	evidencePathProducerRef  string
-	evidencePathMethodRef    string
-	evidencePathWorkRef      string
+	evidencePathJSON                     bool
+	evidencePathClaimRef                 string
+	evidencePathAttemptedUse             string
+	evidencePathRequiresCurrentFormality bool
+	evidencePathProducerRef              string
+	evidencePathMethodRef                string
+	evidencePathWorkRef                  string
 )
 
 var evidenceCmd = &cobra.Command{
@@ -43,6 +44,7 @@ func init() {
 	evidencePathCmd.Flags().BoolVar(&evidencePathJSON, "json", false, "print structured JSON output")
 	evidencePathCmd.Flags().StringVar(&evidencePathClaimRef, "claim-ref", "", "claim id/ref the attempted use relies on")
 	evidencePathCmd.Flags().StringVar(&evidencePathAttemptedUse, "attempted-use", "", "declared attempted use boundary")
+	evidencePathCmd.Flags().BoolVar(&evidencePathRequiresCurrentFormality, "requires-current-formality", false, "block bounded reliance unless evidence uses current F0-F9 formality")
 	evidencePathCmd.Flags().StringVar(&evidencePathProducerRef, "producer-ref", "", "producer trace ref for the evidence")
 	evidencePathCmd.Flags().StringVar(&evidencePathMethodRef, "method-ref", "", "method trace ref for the evidence")
 	evidencePathCmd.Flags().StringVar(&evidencePathWorkRef, "work-ref", "", "work trace ref for the evidence")
@@ -61,13 +63,14 @@ func runEvidencePath(cmd *cobra.Command, args []string) error {
 		cmd.Context(),
 		store,
 		artifact.EvidencePathInput{
-			ArtifactRef:  args[0],
-			EvidenceRef:  args[1],
-			ClaimRef:     evidencePathClaimRef,
-			AttemptedUse: evidencePathAttemptedUse,
-			ProducerRef:  evidencePathProducerRef,
-			MethodRef:    evidencePathMethodRef,
-			WorkRef:      evidencePathWorkRef,
+			ArtifactRef:              args[0],
+			EvidenceRef:              args[1],
+			ClaimRef:                 evidencePathClaimRef,
+			AttemptedUse:             evidencePathAttemptedUse,
+			RequiresCurrentFormality: evidencePathRequiresCurrentFormality,
+			ProducerRef:              evidencePathProducerRef,
+			MethodRef:                evidencePathMethodRef,
+			WorkRef:                  evidencePathWorkRef,
 		},
 		time.Now().UTC(),
 	)
@@ -141,6 +144,10 @@ func writeEvidencePathSummary(w io.Writer, record artifact.EvidencePathRecord) e
 		"currentness: %s valid_until=%s\n",
 		record.CurrentnessWindow.Status,
 		record.CurrentnessWindow.ValidUntil,
+	))
+	builder.WriteString(fmt.Sprintf(
+		"attempted_use: current_formality_required=%t\n",
+		record.AttemptedUse.RequiresCurrentFormality,
 	))
 	builder.WriteString(fmt.Sprintf(
 		"formality: %s\n",

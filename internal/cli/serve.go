@@ -2164,17 +2164,19 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return string(payload), nil
 
 	case "evidence_path":
+		requiresCurrentFormality, _ := args["requires_current_formality"].(bool)
 		record, err := buildEvidencePathRecord(
 			ctx,
 			store,
 			artifact.EvidencePathInput{
-				ArtifactRef:  stringArg(args, "artifact_ref"),
-				EvidenceRef:  stringArg(args, "evidence_ref"),
-				ClaimRef:     stringArg(args, "claim_ref"),
-				AttemptedUse: stringArg(args, "attempted_use"),
-				ProducerRef:  stringArg(args, "producer_ref"),
-				MethodRef:    stringArg(args, "method_ref"),
-				WorkRef:      stringArg(args, "work_ref"),
+				ArtifactRef:              stringArg(args, "artifact_ref"),
+				EvidenceRef:              stringArg(args, "evidence_ref"),
+				ClaimRef:                 stringArg(args, "claim_ref"),
+				AttemptedUse:             stringArg(args, "attempted_use"),
+				RequiresCurrentFormality: requiresCurrentFormality,
+				ProducerRef:              stringArg(args, "producer_ref"),
+				MethodRef:                stringArg(args, "method_ref"),
+				WorkRef:                  stringArg(args, "work_ref"),
 			},
 			time.Now().UTC(),
 		)

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **EvidencePath current-formality guard.** `haft evidence path` and
+  `haft_query(action="evidence_path")` now accept an explicit
+  current-formality requirement for stronger attempted uses. When enabled,
+  legacy or undeclared/lossy formality blocks bounded reliance instead of being
+  treated as current F0-F9 evidence; the record remains read-only and still
+  cannot create approval, gate passage, or global truth.
 - **Audit projection formality scale labels.** Audit/evidence projections now
   print `F_eff` with the associated formality scale id and bridge-loss posture,
   so projection consumers no longer see a bare F-level without knowing whether

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
@@ -58,6 +59,98 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	}
 	if items[0].ValidUntil != validUntil {
 		t.Fatalf("valid_until = %q, want %q", items[0].ValidUntil, validUntil)
+	}
+}
+
+func TestHandleQuintQuery_EvidencePathBlocksLegacyFormalityWhenCurrentRequired(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		SelectedTitle:   "Require current-formality evidence",
+		WhySelected:     "Need a decision artifact with claim-scoped legacy evidence.",
+		SelectionPolicy: "Use the smallest decision that exercises stronger evidence-path reliance.",
+		CounterArgument: "A synthetic decision only validates the projection contract.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Use unbound evidence",
+			Reason:  "The test needs claim binding so only formality can block bounded reliance.",
+		}},
+		WeakestLink: "legacy formality bridge",
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"EvidencePath stops blocking legacy formality for current-formality attempted use"},
+		},
+		Predictions: []artifact.PredictionInput{{
+			Claim:      "Release evidence must be current-formality evidence",
+			Observable: "formality scale",
+			Threshold:  "current F0-F9",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claims := reloaded.UnmarshalDecisionFields().Claims
+	if len(claims) != 1 {
+		t.Fatalf("expected 1 claim, got %+v", claims)
+	}
+
+	validUntil := time.Now().Add(14 * 24 * time.Hour).UTC().Format(time.RFC3339)
+	item, err := artifact.AttachEvidence(ctx, store, artifact.EvidenceInput{
+		ArtifactRef:      decision.Meta.ID,
+		Content:          "Legacy checker supports the claim but uses old formality semantics.",
+		Type:             "test",
+		Verdict:          "supports",
+		CarrierRef:       "internal/cli/serve_evidence_test.go",
+		CongruenceLevel:  3,
+		FormalityLevel:   2,
+		FormalityScaleID: reff.FormalityScaleLegacy,
+		ClaimRefs:        []string{claims[0].ID},
+		ValidUntil:       validUntil,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleQuintQuery(ctx, store, nil, haftDir, map[string]any{
+		"action":                     "evidence_path",
+		"artifact_ref":               decision.Meta.ID,
+		"evidence_ref":               item.ID,
+		"claim_ref":                  claims[0].ID,
+		"attempted_use":              "release reliance for the declared claim",
+		"requires_current_formality": true,
+		"method_ref":                 "mpull-test-evidence-path",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery evidence_path returned error: %v", err)
+	}
+
+	var record artifact.EvidencePathRecord
+	if err := json.Unmarshal([]byte(result), &record); err != nil {
+		t.Fatalf("decode evidence_path record: %v\n%s", err, result)
+	}
+
+	if record.AttemptedUse.RequiresCurrentFormality != true {
+		t.Fatalf("attempted_use = %+v, want current formality requirement", record.AttemptedUse)
+	}
+	if record.RelianceDisposition.Disposition != artifact.EvidenceRelianceBlocked {
+		t.Fatalf("reliance = %+v, want blocked", record.RelianceDisposition)
+	}
+	if record.RelianceDisposition.Reason != "current_formality_required" {
+		t.Fatalf("reason = %q, want current_formality_required", record.RelianceDisposition.Reason)
+	}
+	if record.AuthorityBoundary.Approval != artifact.EvidenceBoundaryNotApproval {
+		t.Fatalf("approval boundary = %q", record.AuthorityBoundary.Approval)
+	}
+	if record.AuthorityBoundary.GateDecision != artifact.EvidenceBoundaryNotGateDecision {
+		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
+	}
+	if record.AuthorityBoundary.GlobalTruth != artifact.EvidenceBoundaryNotGlobalTruth {
+		t.Fatalf("truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
 	}
 }
 

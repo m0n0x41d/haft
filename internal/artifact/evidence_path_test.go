@@ -73,6 +73,48 @@ func TestBuildEvidencePathRecordKeepsFormalitySeparateFromAuthority(t *testing.T
 	}
 }
 
+func TestBuildEvidencePathRecordBlocksLegacyFormalityWhenCurrentRequired(t *testing.T) {
+	item := evidencePathItem()
+	scale := reff.LegacyFormalityScale(2)
+	bridge := reff.LegacyFormalityBridge(2)
+	item.FormalityScale = &scale
+	item.FormalityBridge = &bridge
+
+	record := BuildEvidencePathRecord(
+		EvidencePathInput{
+			ArtifactRef:              "dec-1",
+			EvidenceRef:              "evid-1",
+			ClaimRef:                 "claim-1",
+			AttemptedUse:             "release gate reliance",
+			RequiresCurrentFormality: true,
+			ProducerRef:              "agent:local",
+			MethodRef:                "mpull-1",
+			WorkRef:                  "wc-1",
+		},
+		item,
+		evidencePathNow(),
+	)
+
+	if record.AttemptedUse.RequiresCurrentFormality != true {
+		t.Fatalf("attempted_use = %+v, want current formality requirement", record.AttemptedUse)
+	}
+	if record.RelianceDisposition.Disposition != EvidenceRelianceBlocked {
+		t.Fatalf("reliance = %+v, want blocked", record.RelianceDisposition)
+	}
+	if record.RelianceDisposition.Reason != "current_formality_required" {
+		t.Fatalf("reason = %q, want current_formality_required", record.RelianceDisposition.Reason)
+	}
+	if record.AuthorityBoundary.Approval != EvidenceBoundaryNotApproval {
+		t.Fatalf("approval boundary = %q", record.AuthorityBoundary.Approval)
+	}
+	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
+		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
+	}
+	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
+		t.Fatalf("global truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+}
+
 func TestBuildEvidencePathRecordBlocksMissingAttemptedUse(t *testing.T) {
 	record := BuildEvidencePathRecord(
 		EvidencePathInput{

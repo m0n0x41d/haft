@@ -908,24 +908,25 @@ func haftInterfaceCatalog() []interfaceCapability {
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "evidence_path",
-				MCPCall:          `haft_query(action="evidence_path", artifact_ref="dec-...", evidence_ref="evid-...", attempted_use="verification reliance", method_ref="mpull-...")`,
+				MCPCall:          `haft_query(action="evidence_path", artifact_ref="dec-...", evidence_ref="evid-...", attempted_use="verification reliance", requires_current_formality=true, method_ref="mpull-...")`,
 				CLIStatus:        "available",
-				CLICommand:       "haft evidence path ARTIFACT_REF EVIDENCE_REF --attempted-use ... --method-ref ... --json",
+				CLICommand:       "haft evidence path ARTIFACT_REF EVIDENCE_REF --attempted-use ... --requires-current-formality --method-ref ... --json",
 				DiscoveryCommand: "haft interface query.evidence_path --json",
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"artifact_ref", "evidence_ref", "attempted_use"},
-				OptionalFields: []string{"claim_ref", "producer_ref", "method_ref", "work_ref"},
+				OptionalFields: []string{"claim_ref", "requires_current_formality", "producer_ref", "method_ref", "work_ref"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"evidence":{"formality_level":7,"formality_scale":{"scale_id":"fpf-2026-f0-f9","level":7},"formality_bridge":{"loss":"source-scale-not-declared"}},"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
+						Shape: `{"attempted_use":{"requires_current_formality":true},"evidence":{"formality_level":7,"formality_scale":{"scale_id":"fpf-2026-f0-f9","level":7},"formality_bridge":{"loss":"source-scale-not-declared"}},"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
 						Note:  "Reliance is bounded to the declared use; formality scale/bridge are diagnostics and never create approval, gate passage, or global truth.",
 					},
 				},
 				Notes: []string{
 					"EvidencePathRecord is read-only and derived from an existing EvidenceItem.",
 					"Missing attempted use, missing trace refs, expired evidence, refuting evidence, or an unbound requested claim cannot produce bounded reliance.",
+					"`requires_current_formality=true` blocks bounded reliance when the evidence only carries legacy or undeclared/lossy formality.",
 					"Exact/audit views must name formality scale and bridge/loss when evidence uses legacy or undeclared formality levels.",
 				},
 			},

@@ -656,7 +656,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_generated_schema","source":"kernel_interface_catalog_field_shapes","source_digest":"sha256:...","summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0},"targets":[]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_generated_schema","source":"kernel_interface_catalog_field_shapes","source_digest":"sha256:...","summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[]}`,
 						Note:  "The manifest is the kernel-owned queue for future generation; it does not generate schemas or authorize binding actions.",
 					},
 				},
@@ -1377,6 +1377,7 @@ type interfaceContractGenerationReport struct {
 	Source        string                              `json:"source"`
 	SourceDigest  string                              `json:"source_digest"`
 	Summary       interfaceContractGenerationSummary  `json:"summary"`
+	SurfacePolicy interfaceContractGenerationPolicy   `json:"surface_policy"`
 	Targets       []interfaceContractGenerationTarget `json:"targets"`
 	Notes         []string                            `json:"notes"`
 }
@@ -1385,6 +1386,15 @@ type interfaceContractGenerationSummary struct {
 	Capabilities            int `json:"capabilities"`
 	GeneratorTargetSurfaces int `json:"generator_target_surfaces"`
 	GeneratorTargetFields   int `json:"generator_target_fields"`
+}
+
+type interfaceContractGenerationPolicy struct {
+	DefaultStatus         string   `json:"default_status"`
+	DefaultCodeContext    string   `json:"default_code_context"`
+	ToolsList             string   `json:"tools_list"`
+	CompactCLI            string   `json:"compact_cli"`
+	GeneratedDescriptions string   `json:"generated_descriptions"`
+	RequiredGuards        []string `json:"required_guards"`
 }
 
 type interfaceContractGenerationTarget struct {
@@ -1460,11 +1470,28 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		Source:        "kernel_interface_catalog_field_shapes",
 		SourceDigest:  interfaceContractGenerationDigest(targets),
 		Summary:       summary,
+		SurfacePolicy: interfaceContractGenerationSurfacePolicy(),
 		Targets:       targets,
 		Notes: []string{
 			"This manifest is derived from contract-audit generator targets; it is not a generated schema.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
+		},
+	}
+}
+
+func interfaceContractGenerationSurfacePolicy() interfaceContractGenerationPolicy {
+	return interfaceContractGenerationPolicy{
+		DefaultStatus:         "cue_or_count_only_never_inline_generation_manifest",
+		DefaultCodeContext:    "lane_index_only_never_inline_generated_descriptions",
+		ToolsList:             "action_enum_and_compact_description_only_no_generated_schema_fragments",
+		CompactCLI:            "summary_counts_only_field_targets_require_json",
+		GeneratedDescriptions: "drill_down_only_validate_with_carrier_semio_before_host_materialization",
+		RequiredGuards: []string{
+			"carrier_semio_authority_boundary",
+			"tools_list_context_budget",
+			"compact_status_no_manifest_inline",
+			"code_context_lane_index_default",
 		},
 	}
 }

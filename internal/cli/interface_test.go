@@ -216,6 +216,18 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if report.Summary.GeneratorTargetSurfaces != 0 || report.Summary.GeneratorTargetFields != 0 {
 		t.Fatalf("expected empty generator target queue after nested schema coverage: %#v", report.Summary)
 	}
+	if report.SurfacePolicy.DefaultStatus != "cue_or_count_only_never_inline_generation_manifest" {
+		t.Fatalf("default status policy = %q", report.SurfacePolicy.DefaultStatus)
+	}
+	if report.SurfacePolicy.DefaultCodeContext != "lane_index_only_never_inline_generated_descriptions" {
+		t.Fatalf("code_context policy = %q", report.SurfacePolicy.DefaultCodeContext)
+	}
+	if report.SurfacePolicy.ToolsList != "action_enum_and_compact_description_only_no_generated_schema_fragments" {
+		t.Fatalf("tools/list policy = %q", report.SurfacePolicy.ToolsList)
+	}
+	if !stringSliceContains(report.SurfacePolicy.RequiredGuards, "carrier_semio_authority_boundary") {
+		t.Fatalf("surface policy missing semio guard: %#v", report.SurfacePolicy.RequiredGuards)
+	}
 
 	if len(report.Targets) != 0 {
 		t.Fatalf("expected no current generator targets: %#v", report.Targets)
@@ -267,8 +279,23 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 	if report.Authority != "read_only_generation_manifest_not_generated_schema" {
 		t.Fatalf("authority = %q", report.Authority)
 	}
+	if report.SurfacePolicy.GeneratedDescriptions != "drill_down_only_validate_with_carrier_semio_before_host_materialization" {
+		t.Fatalf("generated description policy = %q", report.SurfacePolicy.GeneratedDescriptions)
+	}
 	if len(report.Targets) != 0 {
 		t.Fatalf("expected empty generator target manifest from MCP query: %#v", report.Targets)
+	}
+}
+
+func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation capability missing")
+	}
+
+	shape := capability.InputContract.FieldShapes[0].Shape
+	if !strings.Contains(shape, "surface_policy") {
+		t.Fatalf("contract generation discovery fields missing surface_policy: %s", shape)
 	}
 }
 

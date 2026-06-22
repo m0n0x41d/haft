@@ -138,6 +138,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   descriptions as virtual surfaces and reports them through
   `checked_generated_surfaces`, so host-facing catalog text is covered before it
   is materialized into tool/schema carriers.
+- **Contract generation surface policy.** The read-only
+  `haft interface contract-generation --json` manifest now carries a typed
+  `surface_policy` naming the no-default-bloat rules for status, code_context,
+  tools/list, compact CLI output, and future generated descriptions. The policy
+  keeps generation targets as explicit drill-down data and requires carrier
+  semio authority-boundary checks before host materialization.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

@@ -919,13 +919,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
-						Note:  "Reliance is bounded to the declared use and never creates approval, gate passage, or global truth.",
+						Shape: `{"evidence":{"formality_level":7,"formality_scale":{"scale_id":"fpf-2026-f0-f9","level":7},"formality_bridge":{"loss":"source-scale-not-declared"}},"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
+						Note:  "Reliance is bounded to the declared use; formality scale/bridge are diagnostics and never create approval, gate passage, or global truth.",
 					},
 				},
 				Notes: []string{
 					"EvidencePathRecord is read-only and derived from an existing EvidenceItem.",
 					"Missing attempted use, missing trace refs, expired evidence, refuting evidence, or an unbound requested claim cannot produce bounded reliance.",
+					"Exact/audit views must name formality scale and bridge/loss when evidence uses legacy or undeclared formality levels.",
 				},
 			},
 			OutputVolume: []string{"default: one JSON EvidencePathRecord"},

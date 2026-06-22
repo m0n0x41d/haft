@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 var (
@@ -142,6 +143,10 @@ func writeEvidencePathSummary(w io.Writer, record artifact.EvidencePathRecord) e
 		record.CurrentnessWindow.ValidUntil,
 	))
 	builder.WriteString(fmt.Sprintf(
+		"formality: %s\n",
+		evidencePathFormalitySummary(record.Evidence),
+	))
+	builder.WriteString(fmt.Sprintf(
 		"authority_boundary: approval=%s gate_decision=%s global_truth=%s\n",
 		record.AuthorityBoundary.Approval,
 		record.AuthorityBoundary.GateDecision,
@@ -151,4 +156,31 @@ func writeEvidencePathSummary(w io.Writer, record artifact.EvidencePathRecord) e
 	_, err := io.WriteString(w, builder.String())
 
 	return err
+}
+
+func evidencePathFormalitySummary(evidence artifact.EvidencePathEvidence) string {
+	scale := reff.CurrentFormalityScale(evidence.FormalityLevel)
+	if evidence.FormalityScale != nil {
+		scale = reff.NormalizeFormalityScale(*evidence.FormalityScale)
+	}
+	if evidence.FormalityBridge == nil {
+		return fmt.Sprintf(
+			"level=F%d scale=%s bridge=none loss=%s",
+			scale.Level,
+			scale.ScaleID,
+			reff.FormalityBridgeNoLoss,
+		)
+	}
+
+	bridge := *evidence.FormalityBridge
+	return fmt.Sprintf(
+		"level=F%d scale=%s bridge=%s->%s source_level=F%d target_level=F%d loss=%s",
+		scale.Level,
+		scale.ScaleID,
+		bridge.SourceScaleID,
+		bridge.TargetScaleID,
+		bridge.SourceLevel,
+		bridge.TargetLevel,
+		bridge.Loss,
+	)
 }

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **EvidencePath formality diagnostics.** The read-only `haft evidence path`
+  text summary and `query.evidence_path` discovery contract now name evidence
+  formality scale, bridge, and loss posture explicitly. Legacy or undeclared
+  F-levels stay diagnostic-only and still cannot create approval, gate passage,
+  or global truth.
 - **DriftEvent resolution target binding.** `haft drift events resolve` now
   stores the current event target identity (`changed_target_ref`, `target_kind`,
   `target_status`, and `root_cause`) in the non-binding resolution ledger.

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec carrier-change field registry.** SpecSection carrier-change
+  classification now uses a single typed registry for high-risk, semantic
+  scalar, relationship, and carrier-only fields. This preserves the current
+  read-only classifier behavior while making future canonical fields and
+  relations extend through one mechanism instead of scattered one-off checks.
 - **Contract fragment posture in interface audit.** `haft interface
   contract-audit` and `haft_query(action="contract_audit")` now classify every
   interface fragment as validated, generated-target, legacy/manual, or

@@ -20,6 +20,21 @@ const (
 	SpecCarrierImportPostureAbstainBlock       SpecCarrierImportPosture = "abstain_block"
 )
 
+type specCarrierChangeFieldClass string
+
+const (
+	specCarrierChangeFieldHighRisk     specCarrierChangeFieldClass = "high_risk"
+	specCarrierChangeFieldScalar       specCarrierChangeFieldClass = "semantic_scalar"
+	specCarrierChangeFieldRelationship specCarrierChangeFieldClass = "relationship"
+	specCarrierChangeFieldCarrierOnly  specCarrierChangeFieldClass = "carrier_only"
+)
+
+type specCarrierChangeFieldRule struct {
+	Field   string
+	Class   specCarrierChangeFieldClass
+	Changed func(before SpecSection, after SpecSection) bool
+}
+
 type SpecCarrierChangeReport struct {
 	SectionID           string                   `json:"section_id"`
 	Kind                SpecCarrierChangeKind    `json:"kind"`
@@ -45,58 +60,17 @@ func ClassifySpecSectionCarrierChange(before SpecSection, after SpecSection) Spe
 		report.SectionID = after.ID
 	}
 
-	report.HighRiskFields = append(report.HighRiskFields, specCarrierHighRiskFields(before, after)...)
-	report.ScalarFields = append(report.ScalarFields, specCarrierScalarFields(before, after)...)
-	report.RelationshipFields = append(report.RelationshipFields, specCarrierRelationshipFields(before, after)...)
-	report.CarrierOnlyFields = append(report.CarrierOnlyFields, specCarrierCarrierOnlyFields(before, after)...)
+	for _, rule := range specCarrierChangeFieldRegistry() {
+		if !rule.Changed(before, after) {
+			continue
+		}
+		report = appendSpecCarrierChangeField(report, rule)
+	}
 
 	report.Kind = specCarrierChangeKind(report)
 	report.ImportPosture = specCarrierImportPosture(report.Kind)
 	report.RequiresOperatorAct = report.ImportPosture != SpecCarrierImportPostureNoSemanticMutation
 	return report
-}
-
-func specCarrierHighRiskFields(before SpecSection, after SpecSection) []string {
-	var fields []string
-	fields = appendChangedStringField(fields, "id", before.ID, after.ID)
-	fields = appendChangedStringField(fields, "document_kind", before.DocumentKind, after.DocumentKind)
-	if before.Malformed != after.Malformed {
-		fields = append(fields, "malformed")
-	}
-	return fields
-}
-
-func specCarrierScalarFields(before SpecSection, after SpecSection) []string {
-	var fields []string
-	fields = appendChangedStringField(fields, "spec", before.Spec, after.Spec)
-	fields = appendChangedSystemFrameField(fields, before.SystemFrame, after.SystemFrame)
-	fields = appendChangedStringField(fields, "kind", before.Kind, after.Kind)
-	fields = appendChangedStringField(fields, "title", before.Title, after.Title)
-	fields = appendChangedStringField(fields, "statement_type", before.StatementType, after.StatementType)
-	fields = appendChangedStringField(fields, "claim_layer", before.ClaimLayer, after.ClaimLayer)
-	fields = appendChangedStringField(fields, "owner", before.Owner, after.Owner)
-	fields = appendChangedStringField(fields, "status", before.Status, after.Status)
-	fields = appendChangedStringField(fields, "valid_until", before.ValidUntil, after.ValidUntil)
-	return fields
-}
-
-func specCarrierRelationshipFields(before SpecSection, after SpecSection) []string {
-	var fields []string
-	fields = appendChangedStringSliceField(fields, "terms", before.Terms, after.Terms)
-	fields = appendChangedStringSliceField(fields, "depends_on", before.DependsOn, after.DependsOn)
-	fields = appendChangedStringSliceField(fields, "target_refs", before.TargetRefs, after.TargetRefs)
-	fields = appendChangedEvidenceField(fields, before.EvidenceRequired, after.EvidenceRequired)
-	fields = appendChangedClaimsField(fields, before.Claims, after.Claims)
-	return fields
-}
-
-func specCarrierCarrierOnlyFields(before SpecSection, after SpecSection) []string {
-	var fields []string
-	fields = appendChangedStringField(fields, "path", before.Path, after.Path)
-	if before.Line != after.Line {
-		fields = append(fields, "line")
-	}
-	return fields
 }
 
 func specCarrierChangeKind(report SpecCarrierChangeReport) SpecCarrierChangeKind {
@@ -125,39 +99,131 @@ func specCarrierImportPosture(kind SpecCarrierChangeKind) SpecCarrierImportPostu
 	return SpecCarrierImportPostureRecognizedUpdate
 }
 
-func appendChangedStringField(fields []string, field string, before string, after string) []string {
-	if before == after {
-		return fields
+func appendSpecCarrierChangeField(
+	report SpecCarrierChangeReport,
+	rule specCarrierChangeFieldRule,
+) SpecCarrierChangeReport {
+	switch rule.Class {
+	case specCarrierChangeFieldHighRisk:
+		report.HighRiskFields = append(report.HighRiskFields, rule.Field)
+	case specCarrierChangeFieldScalar:
+		report.ScalarFields = append(report.ScalarFields, rule.Field)
+	case specCarrierChangeFieldRelationship:
+		report.RelationshipFields = append(report.RelationshipFields, rule.Field)
+	case specCarrierChangeFieldCarrierOnly:
+		report.CarrierOnlyFields = append(report.CarrierOnlyFields, rule.Field)
 	}
-	return append(fields, field)
+	return report
 }
 
-func appendChangedSystemFrameField(fields []string, before SystemReferenceFrame, after SystemReferenceFrame) []string {
-	if before == after {
-		return fields
+func specCarrierChangeFieldRegistry() []specCarrierChangeFieldRule {
+	return []specCarrierChangeFieldRule{
+		specCarrierStringFieldRule("id", specCarrierChangeFieldHighRisk, func(section SpecSection) string {
+			return section.ID
+		}),
+		specCarrierStringFieldRule("document_kind", specCarrierChangeFieldHighRisk, func(section SpecSection) string {
+			return section.DocumentKind
+		}),
+		{
+			Field: "malformed",
+			Class: specCarrierChangeFieldHighRisk,
+			Changed: func(before SpecSection, after SpecSection) bool {
+				return before.Malformed != after.Malformed
+			},
+		},
+		specCarrierStringFieldRule("spec", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.Spec
+		}),
+		{
+			Field: "system_frame",
+			Class: specCarrierChangeFieldScalar,
+			Changed: func(before SpecSection, after SpecSection) bool {
+				return before.SystemFrame != after.SystemFrame
+			},
+		},
+		specCarrierStringFieldRule("kind", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.Kind
+		}),
+		specCarrierStringFieldRule("title", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.Title
+		}),
+		specCarrierStringFieldRule("statement_type", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.StatementType
+		}),
+		specCarrierStringFieldRule("claim_layer", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.ClaimLayer
+		}),
+		specCarrierStringFieldRule("owner", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.Owner
+		}),
+		specCarrierStringFieldRule("status", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.Status
+		}),
+		specCarrierStringFieldRule("valid_until", specCarrierChangeFieldScalar, func(section SpecSection) string {
+			return section.ValidUntil
+		}),
+		specCarrierStringSliceFieldRule("terms", specCarrierChangeFieldRelationship, func(section SpecSection) []string {
+			return section.Terms
+		}),
+		specCarrierStringSliceFieldRule("depends_on", specCarrierChangeFieldRelationship, func(section SpecSection) []string {
+			return section.DependsOn
+		}),
+		specCarrierStringSliceFieldRule("target_refs", specCarrierChangeFieldRelationship, func(section SpecSection) []string {
+			return section.TargetRefs
+		}),
+		{
+			Field: "evidence_required",
+			Class: specCarrierChangeFieldRelationship,
+			Changed: func(before SpecSection, after SpecSection) bool {
+				return !slices.Equal(before.EvidenceRequired, after.EvidenceRequired)
+			},
+		},
+		{
+			Field: "claims",
+			Class: specCarrierChangeFieldRelationship,
+			Changed: func(before SpecSection, after SpecSection) bool {
+				return !slices.EqualFunc(before.Claims, after.Claims, specClaimEqual)
+			},
+		},
+		specCarrierStringFieldRule("path", specCarrierChangeFieldCarrierOnly, func(section SpecSection) string {
+			return section.Path
+		}),
+		{
+			Field: "line",
+			Class: specCarrierChangeFieldCarrierOnly,
+			Changed: func(before SpecSection, after SpecSection) bool {
+				return before.Line != after.Line
+			},
+		},
 	}
-	return append(fields, "system_frame")
 }
 
-func appendChangedStringSliceField(fields []string, field string, before []string, after []string) []string {
-	if slices.Equal(before, after) {
-		return fields
+func specCarrierStringFieldRule(
+	field string,
+	class specCarrierChangeFieldClass,
+	read func(section SpecSection) string,
+) specCarrierChangeFieldRule {
+	return specCarrierChangeFieldRule{
+		Field: field,
+		Class: class,
+		Changed: func(before SpecSection, after SpecSection) bool {
+			return read(before) != read(after)
+		},
 	}
-	return append(fields, field)
 }
 
-func appendChangedEvidenceField(fields []string, before []SpecEvidenceRequirement, after []SpecEvidenceRequirement) []string {
-	if slices.Equal(before, after) {
-		return fields
+func specCarrierStringSliceFieldRule(
+	field string,
+	class specCarrierChangeFieldClass,
+	read func(section SpecSection) []string,
+) specCarrierChangeFieldRule {
+	return specCarrierChangeFieldRule{
+		Field: field,
+		Class: class,
+		Changed: func(before SpecSection, after SpecSection) bool {
+			return !slices.Equal(read(before), read(after))
+		},
 	}
-	return append(fields, "evidence_required")
-}
-
-func appendChangedClaimsField(fields []string, before []SpecClaim, after []SpecClaim) []string {
-	if slices.EqualFunc(before, after, specClaimEqual) {
-		return fields
-	}
-	return append(fields, "claims")
 }
 
 func specClaimEqual(left SpecClaim, right SpecClaim) bool {

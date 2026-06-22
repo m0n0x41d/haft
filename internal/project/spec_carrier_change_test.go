@@ -116,6 +116,51 @@ func TestClassifySpecSectionCarrierChange_UnknownHighRiskBlocks(t *testing.T) {
 	}
 }
 
+func TestSpecCarrierChangeFieldRegistryNamesRecognizedFields(t *testing.T) {
+	byClass := map[specCarrierChangeFieldClass][]string{}
+	for _, rule := range specCarrierChangeFieldRegistry() {
+		byClass[rule.Class] = append(byClass[rule.Class], rule.Field)
+		if rule.Changed == nil {
+			t.Fatalf("%s missing changed predicate", rule.Field)
+		}
+	}
+
+	want := map[specCarrierChangeFieldClass][]string{
+		specCarrierChangeFieldHighRisk: []string{
+			"id",
+			"document_kind",
+			"malformed",
+		},
+		specCarrierChangeFieldScalar: []string{
+			"spec",
+			"system_frame",
+			"kind",
+			"title",
+			"statement_type",
+			"claim_layer",
+			"owner",
+			"status",
+			"valid_until",
+		},
+		specCarrierChangeFieldRelationship: []string{
+			"terms",
+			"depends_on",
+			"target_refs",
+			"evidence_required",
+			"claims",
+		},
+		specCarrierChangeFieldCarrierOnly: []string{
+			"path",
+			"line",
+		},
+	}
+	for class, fields := range want {
+		if !slices.Equal(byClass[class], fields) {
+			t.Fatalf("%s fields = %#v, want %#v", class, byClass[class], fields)
+		}
+	}
+}
+
 func specCarrierChangeSection() SpecSection {
 	return SpecSection{
 		ID:            "TS.sync.001",

@@ -624,7 +624,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":32,"kernel_owned_contracts":32,"mcp_mirrored_actions":20,"cli_available_surfaces":12,"binding_authority_surfaces":4,"legacy_transport_exceptions":18,"schema_covered_surfaces":20,"schema_missing_surfaces":0,"schema_excluded_fields":8,"shape_covered_surfaces":20,"shape_missing_surfaces":0,"shape_generator_targets":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":32,"kernel_owned_contracts":32,"mcp_mirrored_actions":20,"cli_available_surfaces":12,"binding_authority_surfaces":4,"legacy_transport_exceptions":18,"schema_covered_surfaces":20,"schema_missing_surfaces":0,"schema_excluded_fields":8,"shape_covered_surfaces":20,"shape_missing_surfaces":0,"shape_generator_targets":0,"generated_target_fragments":0,"validated_fragments":20,"legacy_fragments":12,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, approve binding actions, or change tool descriptions.",
 					},
 				},
@@ -1344,24 +1344,29 @@ type interfaceContractAuditSummary struct {
 	ValidatedMCPMirrors        int `json:"validated_mcp_mirrors"`
 	ManualCLIContracts         int `json:"manual_cli_contracts"`
 	UnvalidatedHostFragments   int `json:"unvalidated_host_fragments"`
+	GeneratedTargetFragments   int `json:"generated_target_fragments"`
+	ValidatedFragments         int `json:"validated_fragments"`
+	LegacyFragments            int `json:"legacy_fragments"`
+	UnvalidatedFragments       int `json:"unvalidated_fragments"`
 }
 
 type interfaceContractAuditSurface struct {
-	CapabilityID          string                               `json:"capability_id"`
-	MCPTool               string                               `json:"mcp_tool"`
-	MCPAction             string                               `json:"mcp_action,omitempty"`
-	CLIStatus             string                               `json:"cli_status"`
-	CLICommand            string                               `json:"cli_command,omitempty"`
-	ContractSources       []string                             `json:"contract_sources"`
-	ContractSourcePosture string                               `json:"contract_source_posture"`
-	HostSchemaPosture     string                               `json:"host_schema_posture"`
-	SchemaPosture         string                               `json:"schema_posture"`
-	AuthorityPosture      string                               `json:"authority_posture"`
-	ValidationRefs        []string                             `json:"validation_refs"`
-	LegacyException       bool                                 `json:"legacy_exception"`
-	Notes                 []string                             `json:"notes,omitempty"`
-	SchemaCoverage        interfaceContractAuditSchemaCoverage `json:"schema_coverage"`
-	ShapeCoverage         interfaceContractAuditShapeCoverage  `json:"shape_coverage"`
+	CapabilityID            string                               `json:"capability_id"`
+	MCPTool                 string                               `json:"mcp_tool"`
+	MCPAction               string                               `json:"mcp_action,omitempty"`
+	CLIStatus               string                               `json:"cli_status"`
+	CLICommand              string                               `json:"cli_command,omitempty"`
+	ContractSources         []string                             `json:"contract_sources"`
+	ContractSourcePosture   string                               `json:"contract_source_posture"`
+	ContractFragmentPosture string                               `json:"contract_fragment_posture"`
+	HostSchemaPosture       string                               `json:"host_schema_posture"`
+	SchemaPosture           string                               `json:"schema_posture"`
+	AuthorityPosture        string                               `json:"authority_posture"`
+	ValidationRefs          []string                             `json:"validation_refs"`
+	LegacyException         bool                                 `json:"legacy_exception"`
+	Notes                   []string                             `json:"notes,omitempty"`
+	SchemaCoverage          interfaceContractAuditSchemaCoverage `json:"schema_coverage"`
+	ShapeCoverage           interfaceContractAuditShapeCoverage  `json:"shape_coverage"`
 }
 
 type interfaceContractAuditSchemaCoverage struct {
@@ -1576,6 +1581,16 @@ func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceC
 		default:
 			summary.UnvalidatedHostFragments++
 		}
+		switch surface.ContractFragmentPosture {
+		case "generated_target_fragment":
+			summary.GeneratedTargetFragments++
+		case "validated_fragment":
+			summary.ValidatedFragments++
+		case "legacy_fragment":
+			summary.LegacyFragments++
+		default:
+			summary.UnvalidatedFragments++
+		}
 	}
 
 	return interfaceContractAuditReport{
@@ -1587,6 +1602,7 @@ func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceC
 		Notes: []string{
 			"Kernel interface catalog is the audited contract source for this report.",
 			"Host schema posture classifies each fragment as a validated mirror, manual CLI contract, or unvalidated host fragment.",
+			"Contract fragment posture classifies every fragment as generated target, validated, legacy/manual, or unvalidated.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Generated MCP/host schema work remains a later phase and must validate against this inventory.",
 			"Default status must not inline this report; use haft interface contract-audit --json or haft_query(action=\"contract_audit\").",
@@ -1616,6 +1632,7 @@ func buildInterfaceContractAuditSurface(
 	}
 	surface.ContractSourcePosture = interfaceContractAuditContractSourcePosture(surface)
 	surface.HostSchemaPosture = interfaceContractAuditHostSchemaPosture(surface)
+	surface.ContractFragmentPosture = interfaceContractAuditContractFragmentPosture(surface)
 
 	if surface.LegacyException {
 		surface.Notes = append(surface.Notes, "old standalone transport differs by documented exception; do not treat it as current host schema truth")
@@ -1648,6 +1665,19 @@ func interfaceContractAuditHostSchemaPosture(surface interfaceContractAuditSurfa
 		return "validated_mcp_mirror_with_generator_targets"
 	}
 	return "validated_mcp_mirror"
+}
+
+func interfaceContractAuditContractFragmentPosture(surface interfaceContractAuditSurface) string {
+	switch surface.HostSchemaPosture {
+	case "validated_mcp_mirror":
+		return "validated_fragment"
+	case "validated_mcp_mirror_with_generator_targets":
+		return "generated_target_fragment"
+	case "manual_cli_contract_not_generated":
+		return "legacy_fragment"
+	default:
+		return "unvalidated_fragment"
+	}
 }
 
 func interfaceContractAuditShapeCoverageFor(
@@ -2169,7 +2199,7 @@ func writeInterfaceContractAuditText(output io.Writer, report interfaceContractA
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d kernel_owned=%d mcp_mirrored=%d cli_available=%d binding_sensitive=%d read_only=%d legacy_exceptions=%d schema_coverage=%d covered/%d missing excluded_fields=%d shape_coverage=%d covered/%d missing generator_targets=%d fields=%d skipped_fields=%d host_fragments=%d validated_mcp/%d manual_cli/%d unvalidated\n",
+		"summary: capabilities=%d kernel_owned=%d mcp_mirrored=%d cli_available=%d binding_sensitive=%d read_only=%d legacy_exceptions=%d schema_coverage=%d covered/%d missing excluded_fields=%d shape_coverage=%d covered/%d missing generator_targets=%d fields=%d skipped_fields=%d host_fragments=%d validated_mcp/%d manual_cli/%d unvalidated fragment_posture=%d generated_targets/%d validated/%d legacy/%d unvalidated\n",
 		report.Summary.Capabilities,
 		report.Summary.KernelOwnedContracts,
 		report.Summary.MCPMirroredActions,
@@ -2188,12 +2218,16 @@ func writeInterfaceContractAuditText(output io.Writer, report interfaceContractA
 		report.Summary.ValidatedMCPMirrors,
 		report.Summary.ManualCLIContracts,
 		report.Summary.UnvalidatedHostFragments,
+		report.Summary.GeneratedTargetFragments,
+		report.Summary.ValidatedFragments,
+		report.Summary.LegacyFragments,
+		report.Summary.UnvalidatedFragments,
 	); err != nil {
 		return err
 	}
 
 	for _, surface := range report.Surfaces {
-		if _, err := fmt.Fprintf(output, "- %s source=%s host_schema=%s schema=%s schema_coverage=%s shape_coverage=%s authority=%s cli=%s\n", surface.CapabilityID, surface.ContractSourcePosture, surface.HostSchemaPosture, surface.SchemaPosture, surface.SchemaCoverage.Status, surface.ShapeCoverage.Status, surface.AuthorityPosture, surface.CLIStatus); err != nil {
+		if _, err := fmt.Fprintf(output, "- %s source=%s fragment=%s host_schema=%s schema=%s schema_coverage=%s shape_coverage=%s authority=%s cli=%s\n", surface.CapabilityID, surface.ContractSourcePosture, surface.ContractFragmentPosture, surface.HostSchemaPosture, surface.SchemaPosture, surface.SchemaCoverage.Status, surface.ShapeCoverage.Status, surface.AuthorityPosture, surface.CLIStatus); err != nil {
 			return err
 		}
 	}

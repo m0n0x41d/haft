@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contract fragment posture in interface audit.** `haft interface
+  contract-audit` and `haft_query(action="contract_audit")` now classify every
+  interface fragment as validated, generated-target, legacy/manual, or
+  unvalidated, with summary counts kept in the explicit drill-down report. This
+  makes generated/validated/legacy contract posture visible without generating
+  schemas or expanding default status payloads.
 - **EvidencePath formality diagnostics.** `haft evidence path` and
   `haft_query(action="evidence_path")` now expose explicit
   `formality_diagnostics` for current F0-F9, legacy lossy, and unversioned

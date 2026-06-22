@@ -66,6 +66,18 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	if report.Summary.UnvalidatedHostFragments != 0 {
 		t.Fatalf("unexpected unvalidated host fragments in summary: %#v", report.Summary)
 	}
+	if report.Summary.UnvalidatedFragments != 0 {
+		t.Fatalf("unexpected unvalidated contract fragments in summary: %#v", report.Summary)
+	}
+	if report.Summary.ValidatedFragments == 0 {
+		t.Fatalf("expected validated contract fragments in summary: %#v", report.Summary)
+	}
+	if report.Summary.LegacyFragments == 0 {
+		t.Fatalf("expected legacy/manual contract fragments in summary: %#v", report.Summary)
+	}
+	if got := report.Summary.GeneratedTargetFragments + report.Summary.ValidatedFragments + report.Summary.LegacyFragments + report.Summary.UnvalidatedFragments; got != report.Summary.Capabilities {
+		t.Fatalf("fragment posture counts = %d, capabilities = %d: %#v", got, report.Summary.Capabilities, report.Summary)
+	}
 
 	decide, ok := findContractAuditSurface(report, "decision.decide")
 	if !ok {
@@ -76,6 +88,9 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	}
 	if decide.HostSchemaPosture != "validated_mcp_mirror" {
 		t.Fatalf("decision.decide host schema posture = %q", decide.HostSchemaPosture)
+	}
+	if decide.ContractFragmentPosture != "validated_fragment" {
+		t.Fatalf("decision.decide contract fragment posture = %q", decide.ContractFragmentPosture)
 	}
 	if decide.AuthorityPosture != "binding_denied_by_default_mcp" {
 		t.Fatalf("decision.decide authority posture = %q", decide.AuthorityPosture)
@@ -118,6 +133,9 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	}
 	if audit.HostSchemaPosture != "validated_mcp_mirror" {
 		t.Fatalf("query.contract_audit host schema posture = %q", audit.HostSchemaPosture)
+	}
+	if audit.ContractFragmentPosture != "validated_fragment" {
+		t.Fatalf("query.contract_audit contract fragment posture = %q", audit.ContractFragmentPosture)
 	}
 	if audit.AuthorityPosture != "read_only_drill_down" {
 		t.Fatalf("query.contract_audit authority posture = %q", audit.AuthorityPosture)
@@ -177,6 +195,9 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	if !strings.Contains(notes, "Host schema posture classifies each fragment") {
 		t.Fatalf("audit notes missing host schema posture boundary:\n%s", notes)
 	}
+	if !strings.Contains(notes, "Contract fragment posture classifies every fragment") {
+		t.Fatalf("audit notes missing contract fragment posture boundary:\n%s", notes)
+	}
 }
 
 func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
@@ -189,11 +210,22 @@ func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
 		if surface.HostSchemaPosture == "" || surface.HostSchemaPosture == "unvalidated_host_schema_fragment" {
 			t.Fatalf("%s has unvalidated host schema posture: %#v", surface.CapabilityID, surface)
 		}
+		if surface.ContractFragmentPosture == "" || surface.ContractFragmentPosture == "unvalidated_fragment" {
+			t.Fatalf("%s has unvalidated contract fragment posture: %#v", surface.CapabilityID, surface)
+		}
 		if surface.MCPTool != "" && surface.MCPAction != "" && !strings.HasPrefix(surface.HostSchemaPosture, "validated_mcp_mirror") {
 			t.Fatalf("%s MCP-backed surface should be a validated mirror, got %q", surface.CapabilityID, surface.HostSchemaPosture)
 		}
+		if surface.MCPTool != "" && surface.MCPAction != "" &&
+			surface.ContractFragmentPosture != "validated_fragment" &&
+			surface.ContractFragmentPosture != "generated_target_fragment" {
+			t.Fatalf("%s MCP-backed fragment posture = %q", surface.CapabilityID, surface.ContractFragmentPosture)
+		}
 		if surface.MCPTool == "" && surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
 			t.Fatalf("%s CLI/manual surface posture = %q", surface.CapabilityID, surface.HostSchemaPosture)
+		}
+		if surface.MCPTool == "" && surface.ContractFragmentPosture != "legacy_fragment" {
+			t.Fatalf("%s CLI/manual fragment posture = %q", surface.CapabilityID, surface.ContractFragmentPosture)
 		}
 	}
 }
@@ -468,7 +500,9 @@ func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
 		"shape_coverage=",
 		"generator_targets=",
 		"host_fragments=",
+		"fragment_posture=",
 		"host_schema=",
+		"fragment=",
 		"query.contract_audit",
 	} {
 		if !strings.Contains(text, want) {

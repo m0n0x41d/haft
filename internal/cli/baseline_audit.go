@@ -50,12 +50,13 @@ func init() {
 }
 
 type baselineTermAuditReport struct {
-	Kind          string                      `json:"kind"`
-	SchemaVersion int                         `json:"schema_version"`
-	Authority     string                      `json:"authority"`
-	ScanPolicy    baselineTermAuditScanPolicy `json:"scan_policy"`
-	Summary       baselineTermAuditSummary    `json:"summary"`
-	Findings      []baselineTermAuditFinding  `json:"findings,omitempty"`
+	Kind          string                        `json:"kind"`
+	SchemaVersion int                           `json:"schema_version"`
+	Authority     string                        `json:"authority"`
+	ScanPolicy    baselineTermAuditScanPolicy   `json:"scan_policy"`
+	Summary       baselineTermAuditSummary      `json:"summary"`
+	Diagnostics   []baselineTermAuditDiagnostic `json:"diagnostics,omitempty"`
+	Findings      []baselineTermAuditFinding    `json:"findings,omitempty"`
 }
 
 type baselineTermAuditScanPolicy struct {
@@ -73,6 +74,18 @@ type baselineTermAuditSummary struct {
 	ComparisonOrBenchmark       int `json:"comparison_or_benchmark_baseline"`
 	OrdinaryLanguageBaseline    int `json:"ordinary_language_baseline"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
+	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
+}
+
+type baselineTermAuditDiagnostic struct {
+	Level      string   `json:"level"`
+	Code       string   `json:"code"`
+	Category   string   `json:"category"`
+	Count      int      `json:"count"`
+	Files      int      `json:"files"`
+	Message    string   `json:"message"`
+	NextAction string   `json:"next_action"`
+	Examples   []string `json:"examples,omitempty"`
 }
 
 type baselineTermAuditFinding struct {
@@ -146,8 +159,62 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	for _, finding := range report.Findings {
 		report.Summary.add(finding.Category)
 	}
+	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
+	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
 	return report, nil
+}
+
+func baselineAuditDiagnostics(
+	findings []baselineTermAuditFinding,
+	summary baselineTermAuditSummary,
+) []baselineTermAuditDiagnostic {
+	if summary.LegacyAmbiguousBaseline == 0 {
+		return nil
+	}
+	return []baselineTermAuditDiagnostic{{
+		Level:    "warn",
+		Code:     "legacy_ambiguous_baseline_terms",
+		Category: baselineAuditLegacyAmbiguous,
+		Count:    summary.LegacyAmbiguousBaseline,
+		Files:    summary.LegacyAmbiguousFiles,
+		Message:  "baseline wording remains overloaded and is not typed as spec approval, pre-work reference, verified-state snapshot, comparison, or ordinary fixture wording",
+		NextAction: strings.Join([]string{
+			"rename the usage to a typed baseline concept when it writes or reads state",
+			"or add local wording that classifies it as comparison/fixture/ordinary language",
+			"do not treat this audit finding as permission to rewrite baselines",
+		}, "; "),
+		Examples: baselineAuditDiagnosticExamples(findings, baselineAuditLegacyAmbiguous, 5),
+	}}
+}
+
+func baselineAuditCategoryFiles(findings []baselineTermAuditFinding, category string) int {
+	files := map[string]struct{}{}
+	for _, finding := range findings {
+		if finding.Category != category {
+			continue
+		}
+		files[finding.Path] = struct{}{}
+	}
+	return len(files)
+}
+
+func baselineAuditDiagnosticExamples(
+	findings []baselineTermAuditFinding,
+	category string,
+	limit int,
+) []string {
+	examples := []string{}
+	for _, finding := range findings {
+		if finding.Category != category {
+			continue
+		}
+		examples = append(examples, fmt.Sprintf("%s:%d", finding.Path, finding.Line))
+		if len(examples) >= limit {
+			break
+		}
+	}
+	return examples
 }
 
 func baselineAuditPaths(root string) ([]string, error) {
@@ -395,6 +462,23 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	if report.Summary.LegacyAmbiguousBaseline == 0 {
 		_, err := fmt.Fprintln(w, "legacy_ambiguous: none")
 		return err
+	}
+
+	for _, diagnostic := range report.Diagnostics {
+		if diagnostic.Category != baselineAuditLegacyAmbiguous {
+			continue
+		}
+		if _, err := fmt.Fprintf(
+			w,
+			"diagnostic: [%s/%s] %d legacy ambiguous baseline line(s) across %d file(s); next_action: %s\n",
+			diagnostic.Level,
+			diagnostic.Code,
+			diagnostic.Count,
+			diagnostic.Files,
+			diagnostic.NextAction,
+		); err != nil {
+			return err
+		}
 	}
 
 	if _, err := fmt.Fprintln(w, "legacy_ambiguous:"); err != nil {

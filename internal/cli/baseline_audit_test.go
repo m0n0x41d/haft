@@ -45,6 +45,25 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.LegacyAmbiguousBaseline != 1 {
 		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
 	}
+	if report.Summary.LegacyAmbiguousFiles != 1 {
+		t.Fatalf("legacy ambiguous files = %d, want 1", report.Summary.LegacyAmbiguousFiles)
+	}
+	if len(report.Diagnostics) != 1 {
+		t.Fatalf("diagnostics = %#v, want one legacy ambiguous diagnostic", report.Diagnostics)
+	}
+	diagnostic := report.Diagnostics[0]
+	if diagnostic.Code != "legacy_ambiguous_baseline_terms" {
+		t.Fatalf("diagnostic code = %q", diagnostic.Code)
+	}
+	if diagnostic.Count != 1 || diagnostic.Files != 1 {
+		t.Fatalf("diagnostic count/files = %#v", diagnostic)
+	}
+	if !strings.Contains(diagnostic.NextAction, "typed baseline concept") {
+		t.Fatalf("diagnostic next_action = %q", diagnostic.NextAction)
+	}
+	if len(diagnostic.Examples) != 1 || !strings.Contains(diagnostic.Examples[0], ".haft/decisions/dec.md") {
+		t.Fatalf("diagnostic examples = %#v", diagnostic.Examples)
+	}
 
 	for _, finding := range report.Findings {
 		if strings.Contains(finding.Path, "open-sleigh") {
@@ -69,7 +88,16 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			MatchedLines:            2,
 			VerifiedStateSnapshot:   1,
 			LegacyAmbiguousBaseline: 1,
+			LegacyAmbiguousFiles:    1,
 		},
+		Diagnostics: []baselineTermAuditDiagnostic{{
+			Level:      "warn",
+			Code:       "legacy_ambiguous_baseline_terms",
+			Category:   baselineAuditLegacyAmbiguous,
+			Count:      1,
+			Files:      1,
+			NextAction: "rename the usage to a typed baseline concept",
+		}},
 		Findings: []baselineTermAuditFinding{{
 			Path:     ".haft/decisions/dec.md",
 			Line:     12,
@@ -88,6 +116,8 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"verified_state=1",
 		"legacy_ambiguous=1",
+		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
+		"next_action: rename the usage to a typed baseline concept",
 		".haft/decisions/dec.md:12 Run baseline before release.",
 	} {
 		if !strings.Contains(text, want) {

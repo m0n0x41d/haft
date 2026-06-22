@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit legacy diagnostics.** `haft baseline audit` now emits
+  explicit read-only diagnostics for legacy ambiguous baseline terminology,
+  including affected file count, examples, and next-action guidance to classify
+  wording without mutating baseline state.
 - **Decision reconciliation preview cues.** Compact
   `haft decision reconcile` text now surfaces read-only preview cues for top
   groups, including lineage relation count, downstream dependents, downstream

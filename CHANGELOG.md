@@ -156,6 +156,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   supports JSON/text output and stays classification-only: it does not sync SQL,
   approve sections, rebaseline drift, or promote surrounding Markdown prose to
   authority.
+- **SpecSection SQL edition storage.** Added additive
+  `spec_section_editions` storage for current project-local SpecSection source
+  editions. The new store persists the typed section JSON, semantic hash, source
+  kind, carrier path, and timestamp for future Markdown sync-back without
+  reusing SpecSectionApprovalBaseline hashes or switching existing spec readers
+  away from carrier parsing.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

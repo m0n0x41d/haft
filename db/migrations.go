@@ -457,4 +457,22 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE evidence_items ADD COLUMN formality_bridge TEXT DEFAULT ''",
 		},
 	},
+	{
+		Version:     32,
+		Description: "Add current SpecSection edition storage for SQL-backed spec sync",
+		Statements: []string{
+			`CREATE TABLE IF NOT EXISTS spec_section_editions (
+				project_id TEXT NOT NULL,
+				section_id TEXT NOT NULL,
+				semantic_hash TEXT NOT NULL,
+				section_json TEXT NOT NULL,
+				source_kind TEXT NOT NULL DEFAULT '',
+				carrier_path TEXT NOT NULL DEFAULT '',
+				updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				PRIMARY KEY (project_id, section_id)
+			)`,
+			`CREATE INDEX IF NOT EXISTS idx_spec_section_editions_project ON spec_section_editions(project_id)`,
+			`CREATE INDEX IF NOT EXISTS idx_spec_section_editions_hash ON spec_section_editions(project_id, semantic_hash)`,
+		},
+	},
 }

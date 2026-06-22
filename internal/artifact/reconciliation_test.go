@@ -188,6 +188,22 @@ func TestDecisionReconciliationPreviewReportsDownstreamImpact(t *testing.T) {
 	if !strings.Contains(impact.ReviewCue, "does not relink") {
 		t.Fatalf("review_cue = %q", impact.ReviewCue)
 	}
+	migration := plan.Groups[0].Preview.DownstreamMigration
+	if migration == nil {
+		t.Fatal("downstream migration report missing")
+	}
+	if !migration.RequiredBeforeApply {
+		t.Fatalf("required_before_apply = false, want true for external dependents")
+	}
+	if migration.AutoRelink {
+		t.Fatalf("auto_relink = true, want false")
+	}
+	if !containsString(migration.DependentRefs, "evid-1") || !containsString(migration.DependentRefs, "work-1") {
+		t.Fatalf("migration dependent_refs = %#v", migration.DependentRefs)
+	}
+	if !strings.Contains(strings.Join(migration.ReviewSteps, "\n"), "does not relink") {
+		t.Fatalf("migration review_steps = %#v, want no auto relink boundary", migration.ReviewSteps)
+	}
 }
 
 func TestDecisionReconciliationPreviewForScopeEnrichmentIsReadOnly(t *testing.T) {

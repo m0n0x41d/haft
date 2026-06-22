@@ -93,6 +93,7 @@ type DecisionReconciliationPreview struct {
 	RequiredSelectionFields []string                           `json:"required_selection_fields,omitempty"`
 	ValidationNotes         []string                           `json:"validation_notes,omitempty"`
 	DownstreamImpact        *DecisionReconciliationDownstream  `json:"downstream_impact,omitempty"`
+	DownstreamMigration     *DecisionReconciliationMigration   `json:"downstream_migration_report,omitempty"`
 	DownstreamReview        []string                           `json:"downstream_review,omitempty"`
 	MutationBoundary        []string                           `json:"mutation_boundary"`
 	ApprovalCue             string                             `json:"approval_cue,omitempty"`
@@ -114,6 +115,15 @@ type DecisionReconciliationDownstreamEdge struct {
 	LinkType    string `json:"link_type"`
 	Ref         string `json:"ref"`
 	Scope       string `json:"scope"`
+}
+
+type DecisionReconciliationMigration struct {
+	RequiredBeforeApply bool     `json:"required_before_apply"`
+	AutoRelink          bool     `json:"auto_relink"`
+	Policy              string   `json:"policy"`
+	DependentRefs       []string `json:"dependent_refs,omitempty"`
+	ReviewSteps         []string `json:"review_steps,omitempty"`
+	SelectionImpact     []string `json:"selection_impact,omitempty"`
 }
 
 type DecisionReconciliationPreviewState struct {
@@ -884,6 +894,7 @@ func decisionReconciliationPreview(
 	applyOperation := decisionReconciliationPreviewApplyOperation(operation)
 	current := decisionReconciliationPreviewCurrent(group, items)
 	proposed := decisionReconciliationPreviewProposed(operation, group, items)
+	downstreamImpact := decisionReconciliationPreviewDownstreamImpact(items)
 
 	return DecisionReconciliationPreview{
 		Authority:               "report_only_preview_not_binding_authority",
@@ -894,7 +905,8 @@ func decisionReconciliationPreview(
 		Proposed:                proposed,
 		RequiredSelectionFields: decisionReconciliationPreviewRequiredFields(operation),
 		ValidationNotes:         decisionReconciliationPreviewValidationNotes(operation, group, items),
-		DownstreamImpact:        decisionReconciliationPreviewDownstreamImpact(items),
+		DownstreamImpact:        downstreamImpact,
+		DownstreamMigration:     decisionReconciliationPreviewMigration(operation, downstreamImpact),
 		DownstreamReview:        decisionReconciliationPreviewDownstreamReview(operation),
 		MutationBoundary:        decisionReconciliationPreviewMutationBoundary(operation),
 		ApprovalCue:             decisionReconciliationPreviewApprovalCue(operation),
@@ -1141,6 +1153,61 @@ func decisionReconciliationPreviewDownstreamImpact(
 		return left.LinkType < right.LinkType
 	})
 	return &impact
+}
+
+func decisionReconciliationPreviewMigration(
+	operation string,
+	impact *DecisionReconciliationDownstream,
+) *DecisionReconciliationMigration {
+	if impact == nil || !isDecisionReconciliationApplyOperation(operation) {
+		return nil
+	}
+	report := DecisionReconciliationMigration{
+		RequiredBeforeApply: impact.ExternalEdges > 0,
+		AutoRelink:          false,
+		Policy:              "review_dependents_before_apply_no_auto_relink",
+		DependentRefs:       compactSortedStrings(impact.DependentRefs),
+		ReviewSteps: []string{
+			"inspect every external dependent ref before approving the selection",
+			"decide whether each dependent should point to the successor, remain historical, or be reopened separately",
+			"record follow-up relinks as explicit operator-approved work; this report does not relink dependencies",
+		},
+		SelectionImpact: decisionReconciliationMigrationImpact(operation),
+	}
+	if !report.RequiredBeforeApply {
+		report.Policy = "internal_group_edges_only_no_external_relink_required"
+		report.ReviewSteps = []string{
+			"internal group edges are preserved as lineage context",
+			"no external dependent refs require migration before this selection",
+		}
+	}
+	return &report
+}
+
+func decisionReconciliationMigrationImpact(operation string) []string {
+	switch operation {
+	case DecisionReconciliationOperationMergeThroughSuccessor,
+		DecisionReconciliationOperationSupersede:
+		return []string{
+			"downstream dependents may need to move from old decision IDs to the selected successor",
+			"old decision IDs remain searchable history after apply",
+		}
+	case DecisionReconciliationOperationRetireWithoutSuccessor:
+		return []string{
+			"downstream dependents may need explicit retirement or reopen follow-up because no successor is selected",
+			"old decision IDs remain searchable history after apply",
+		}
+	case DecisionReconciliationOperationReopen:
+		return []string{
+			"downstream dependents may need review after the reopened problem is resolved",
+		}
+	case DecisionReconciliationOperationEnrichScope:
+		return []string{
+			"scope enrichment does not relink dependents but may change future drift/current-authority grouping",
+		}
+	default:
+		return nil
+	}
 }
 
 func decisionReconciliationDownstreamEdge(

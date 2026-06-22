@@ -38,6 +38,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `mergedFrom`, `supersedes`, `retiredWithSuccessor`, and
   `retiredWithoutSuccessor`, keeping authority-frontier cleanup auditable
   without treating preview text as a binding mutation.
+- **Decision reconciliation downstream migration report.** Read-only
+  reconciliation previews now include `downstream_migration_report` with
+  before-apply review policy, dependent refs, selection impact, and an explicit
+  `auto_relink=false` boundary so successor/retirement selections cannot hide
+  downstream dependency work.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

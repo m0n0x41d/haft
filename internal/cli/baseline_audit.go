@@ -24,6 +24,7 @@ const (
 	baselineAuditHistoricalGov    = "historical_governance_carrier_baseline"
 	baselineAuditSupportArchive   = "support_archive_carrier_baseline"
 	baselineAuditSourceSpec       = "source_spec_reference_baseline"
+	baselineAuditTypedModel       = "typed_baseline_model"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -82,6 +83,8 @@ type baselineTermAuditSummary struct {
 	SupportArchiveFiles         int `json:"support_archive_carrier_files"`
 	SourceSpecReference         int `json:"source_spec_reference_baseline"`
 	SourceSpecFiles             int `json:"source_spec_reference_files"`
+	TypedBaselineModel          int `json:"typed_baseline_model"`
+	TypedBaselineModelFiles     int `json:"typed_baseline_model_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -171,6 +174,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	report.Summary.HistoricalGovernanceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditHistoricalGov)
 	report.Summary.SupportArchiveFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSupportArchive)
 	report.Summary.SourceSpecFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSourceSpec)
+	report.Summary.TypedBaselineModelFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditTypedModel)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -359,6 +363,23 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 	):
 		return baselineAuditLegacyAmbiguous, "explicitly names legacy ambiguous baseline posture"
 	case containsAnyBaselineTerm(value,
+		"baselinekind",
+		"sectionbaseline",
+		"section baseline",
+		"specsection baseline",
+		"specsection baselines",
+		"spec_section_baselines",
+		"baselinestore",
+		"baseline store",
+		"baselinekindprofile",
+		"baseline kind profile",
+		"baseline-shaped",
+		"baseline shaped",
+		"typed baseline",
+		"baseline type details",
+	):
+		return baselineAuditTypedModel, "names the typed baseline model or compatibility projection"
+	case containsAnyBaselineTerm(value,
 		"normalization baseline",
 		"baseline db",
 		"baseline test",
@@ -514,6 +535,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.SupportArchiveCarrier++
 	case baselineAuditSourceSpec:
 		summary.SourceSpecReference++
+	case baselineAuditTypedModel:
+		summary.TypedBaselineModel++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -528,7 +551,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -539,6 +562,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.HistoricalGovernanceCarrier,
 		report.Summary.SupportArchiveCarrier,
 		report.Summary.SourceSpecReference,
+		report.Summary.TypedBaselineModel,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

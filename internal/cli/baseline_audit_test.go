@@ -18,6 +18,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/methods/swe-core/refactor.yaml", "baseline and post-change checks make the claim concrete.\n")
 	writeBaselineAuditFixture(t, root, "data/FPF/FPF-Spec.md", "Baseline is source-spec terminology.\n")
+	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline_model.go", "type BaselineKind string\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -63,6 +64,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}
 	if report.Summary.SourceSpecFiles != 1 {
 		t.Fatalf("source spec files = %d, want 1", report.Summary.SourceSpecFiles)
+	}
+	if report.Summary.TypedBaselineModel != 1 {
+		t.Fatalf("typed baseline model count = %d, want 1", report.Summary.TypedBaselineModel)
+	}
+	if report.Summary.TypedBaselineModelFiles != 1 {
+		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
 	if report.Summary.LegacyAmbiguousBaseline != 1 {
 		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
@@ -112,6 +119,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
+			TypedBaselineModel:          1,
 			LegacyAmbiguousBaseline:     1,
 			LegacyAmbiguousFiles:        1,
 		},
@@ -143,6 +151,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"historical_governance=1",
 		"support_archive=1",
 		"source_spec=1",
+		"typed_model=1",
 		"legacy_ambiguous=1",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit typed-model classification.** `haft baseline audit` now
+  classifies explicit `BaselineKind`, `SectionBaseline`, `BaselineStore`, and
+  baseline-shaped compatibility/projection terminology as typed baseline model
+  surface rather than legacy-ambiguous debt, while keeping actual unknown legacy
+  posture visible as legacy.
 - **Baseline audit source-spec classification.** `haft baseline audit` now
   classifies upstream FPF source specification carriers under
   `data/FPF/` separately from current legacy-ambiguous baseline terminology

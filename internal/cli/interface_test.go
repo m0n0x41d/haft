@@ -322,6 +322,35 @@ func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.
 	}
 }
 
+func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.value_space")
+	if !ok {
+		t.Fatal("query.value_space capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"simplify_kill_criteria",
+		"read_only_review_trigger_not_automatic_gate",
+		"not automatic gates",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.value_space shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"not evidence",
+		"GateDecision",
+		"product-value proof",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.value_space notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
 func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_review")
 	if !ok {

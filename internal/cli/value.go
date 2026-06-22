@@ -79,6 +79,11 @@ func writeEngineeringValueSpaceSummary(w io.Writer, space artifact.EngineeringVa
 		strings.Join(space.ProtectedTradeOffs, ","),
 	))
 	builder.WriteString(fmt.Sprintf(
+		"simplify_kill_criteria: %d authority=%s\n",
+		len(space.SimplifyKillCriteria),
+		artifact.EngineeringValueSimplifyKillAuthority,
+	))
+	builder.WriteString(fmt.Sprintf(
 		"authority_boundary: score=%s evidence=%s approval=%s gate_decision=%s global_truth=%s\n",
 		space.AuthorityBoundary.Score,
 		space.AuthorityBoundary.Evidence,

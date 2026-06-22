@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Engineering value simplify/kill criteria.** `haft value space` and
+  `haft_query(action="value_space")` now include read-only
+  `simplify_kill_criteria` review triggers for scope violations, missing
+  parity comparisons, evidence gaps, false blocking, ceremony without measured
+  value movement, and scalarized proxy-value claims. The criteria remain
+  explicit review input only: they are not automatic gates, evidence, approval,
+  `GateDecision`, or product-value proof.
 - **Contract-generation no-default-bloat guards.** Added regressions proving
   the read-only contract generation manifest remains drill-down only and is not
   inlined into default `haft_query(status)` or MCP `tools/list` payloads.

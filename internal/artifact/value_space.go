@@ -17,6 +17,11 @@ const (
 	EngineeringValueBoundaryNotApproval     = "not_approval"
 	EngineeringValueBoundaryNotGateDecision = "not_gate_decision"
 	EngineeringValueBoundaryNotGlobalTruth  = "not_global_truth"
+
+	EngineeringValueSimplifyKillAuthority = "read_only_review_trigger_not_automatic_gate"
+	EngineeringValueSimplifyAction        = "simplify_or_remove_capability"
+	EngineeringValueKillAction            = "stop_or_retire_capability"
+	EngineeringValueReviewAction          = "review_before_continuing_investment"
 )
 
 type EngineeringValueSpaceInput struct {
@@ -27,15 +32,16 @@ type EngineeringValueSpaceInput struct {
 }
 
 type EngineeringValueSpace struct {
-	SchemaVersion       int                                    `json:"schema_version"`
-	RecordKind          string                                 `json:"record_kind"`
-	Authority           string                                 `json:"authority"`
-	EvaluatedObject     EngineeringValueEvaluatedObject        `json:"evaluated_object"`
-	ScorePolicy         EngineeringValueScorePolicy            `json:"score_policy"`
-	Characteristics     []EngineeringValueCharacteristic       `json:"characteristics"`
-	ProtectedTradeOffs  []string                               `json:"protected_trade_offs"`
-	InterpretationRules EngineeringValueInterpretationRules    `json:"interpretation_rules"`
-	AuthorityBoundary   EngineeringValueSpaceAuthorityBoundary `json:"authority_boundary"`
+	SchemaVersion        int                                     `json:"schema_version"`
+	RecordKind           string                                  `json:"record_kind"`
+	Authority            string                                  `json:"authority"`
+	EvaluatedObject      EngineeringValueEvaluatedObject         `json:"evaluated_object"`
+	ScorePolicy          EngineeringValueScorePolicy             `json:"score_policy"`
+	Characteristics      []EngineeringValueCharacteristic        `json:"characteristics"`
+	SimplifyKillCriteria []EngineeringValueSimplifyKillCriterion `json:"simplify_kill_criteria"`
+	ProtectedTradeOffs   []string                                `json:"protected_trade_offs"`
+	InterpretationRules  EngineeringValueInterpretationRules     `json:"interpretation_rules"`
+	AuthorityBoundary    EngineeringValueSpaceAuthorityBoundary  `json:"authority_boundary"`
 }
 
 type EngineeringValueEvaluatedObject struct {
@@ -65,6 +71,16 @@ type EngineeringValueCharacteristic struct {
 	Floor              string   `json:"floor"`
 	ProtectedTradeOffs []string `json:"protected_trade_offs"`
 	ReopenCondition    string   `json:"reopen_condition"`
+}
+
+type EngineeringValueSimplifyKillCriterion struct {
+	ID                 string   `json:"id"`
+	Name               string   `json:"name"`
+	Trigger            string   `json:"trigger"`
+	ReviewAction       string   `json:"review_action"`
+	EvidenceRule       string   `json:"evidence_rule"`
+	AuthorityBoundary  string   `json:"authority_boundary"`
+	ProtectedTradeOffs []string `json:"protected_trade_offs"`
 }
 
 type EngineeringValueInterpretationRules struct {
@@ -111,15 +127,90 @@ func BuildEngineeringValueSpace(input EngineeringValueSpaceInput) EngineeringVal
 			Aggregation:   EngineeringValueCharacteristicOnly,
 			GoodhartGuard: "do_not_optimize_one_metric_as_value_truth",
 		},
-		Characteristics:     engineeringValueCharacteristics(normalized),
-		ProtectedTradeOffs:  engineeringValueProtectedTradeOffs(),
-		InterpretationRules: engineeringValueInterpretationRules(),
+		Characteristics:      engineeringValueCharacteristics(normalized),
+		SimplifyKillCriteria: engineeringValueSimplifyKillCriteria(),
+		ProtectedTradeOffs:   engineeringValueProtectedTradeOffs(),
+		InterpretationRules:  engineeringValueInterpretationRules(),
 		AuthorityBoundary: EngineeringValueSpaceAuthorityBoundary{
 			Score:        EngineeringValueBoundaryNotScore,
 			Evidence:     EngineeringValueBoundaryNotEvidence,
 			Approval:     EngineeringValueBoundaryNotApproval,
 			GateDecision: EngineeringValueBoundaryNotGateDecision,
 			GlobalTruth:  EngineeringValueBoundaryNotGlobalTruth,
+		},
+	}
+}
+
+func engineeringValueSimplifyKillCriteria() []EngineeringValueSimplifyKillCriterion {
+	return []EngineeringValueSimplifyKillCriterion{
+		{
+			ID:                "scope_violation_not_blocked_or_surfaced",
+			Name:              "Scope violation not blocked or surfaced",
+			Trigger:           "feature_or_agent_surface_allows_stronger_use_outside_declared_bearer_frame_or_attempted_use",
+			ReviewAction:      EngineeringValueKillAction,
+			EvidenceRule:      "compare attempted use, bearer, exact source refs, and blocked-use attention records before continuing investment",
+			AuthorityBoundary: EngineeringValueSimplifyKillAuthority,
+			ProtectedTradeOffs: []string{
+				"semantic_fidelity_vs_ceremony",
+				"automation_vs_principal_control",
+			},
+		},
+		{
+			ID:                "ceremony_exceeds_value_movement",
+			Name:              "Ceremony exceeds measured value movement",
+			Trigger:           "governance_ceremony_time_increases_without_movement_in_at_least_one_declared_value_characteristic",
+			ReviewAction:      EngineeringValueSimplifyAction,
+			EvidenceRule:      "pair ceremony samples with characteristic evidence in the same bearer/window; missing value evidence keeps the trigger advisory",
+			AuthorityBoundary: EngineeringValueSimplifyKillAuthority,
+			ProtectedTradeOffs: []string{
+				"semantic_fidelity_vs_ceremony",
+				"exactness_vs_cognitive_ergonomics",
+			},
+		},
+		{
+			ID:                "false_block_rate_exceeds_tolerance",
+			Name:              "False blocking exceeds tolerance",
+			Trigger:           "semantic_review_false_block_rate_exceeds_operator_declared_tolerance_for_the_window",
+			ReviewAction:      EngineeringValueSimplifyAction,
+			EvidenceRule:      "operator-reviewed blocked findings must separate legitimate multi-view same-object cases from true high-risk blocks",
+			AuthorityBoundary: EngineeringValueSimplifyKillAuthority,
+			ProtectedTradeOffs: []string{
+				"early_detection_vs_false_positives",
+				"exactness_vs_cognitive_ergonomics",
+			},
+		},
+		{
+			ID:                "missing_equal_budget_comparison",
+			Name:              "Missing equal-budget comparison",
+			Trigger:           "value_claim_is_made_without_equal_budget_baseline_or_explicit_abstain",
+			ReviewAction:      EngineeringValueReviewAction,
+			EvidenceRule:      "compare against declared baseline under parity or label the value claim unavailable for the window",
+			AuthorityBoundary: EngineeringValueSimplifyKillAuthority,
+			ProtectedTradeOffs: []string{
+				"durable_traceability_vs_artifact_explosion",
+				"compact_views_vs_source_recoverability",
+			},
+		},
+		{
+			ID:                "evidence_refs_missing",
+			Name:              "Evidence refs missing",
+			Trigger:           "characteristic_or_dashboard_claim_has_no_source_refs_for_the_declared_window",
+			ReviewAction:      EngineeringValueReviewAction,
+			EvidenceRule:      "source refs must identify evidence records before the dashboard can support a product-value claim",
+			AuthorityBoundary: EngineeringValueSimplifyKillAuthority,
+			ProtectedTradeOffs: []string{
+				"compact_views_vs_source_recoverability",
+				"automation_vs_principal_control",
+			},
+		},
+		{
+			ID:                 "single_proxy_value_claim",
+			Name:               "Single proxy value claim",
+			Trigger:            "one_metric_or_scalar_score_is_presented_as_haft_or_fpf_value_truth",
+			ReviewAction:       EngineeringValueKillAction,
+			EvidenceRule:       "inspect the surface for scalarized value claims and recover the protected trade-offs hidden by the proxy",
+			AuthorityBoundary:  EngineeringValueSimplifyKillAuthority,
+			ProtectedTradeOffs: engineeringValueProtectedTradeOffs(),
 		},
 	}
 }

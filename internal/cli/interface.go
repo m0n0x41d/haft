@@ -1211,13 +1211,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"score_policy":{"single_score":"no_single_haft_or_fpf_score","aggregation":"characteristic_space_only"},"characteristics":[{"bearer_ref":"...","method":"...","window":"...","denominator":"...","evidence_refs":[...],"reopen_condition":"..."}],"interpretation_rules":{"healthy_reopening":"healthy_reopening_not_counted_as_simple_failure"}}`,
-						Note:  "Every characteristic names bearer, method, window, denominator, and evidence refs; missing evidence blocks a value claim.",
+						Shape: `{"score_policy":{"single_score":"no_single_haft_or_fpf_score","aggregation":"characteristic_space_only"},"characteristics":[{"bearer_ref":"...","method":"...","window":"...","denominator":"...","evidence_refs":[...],"reopen_condition":"..."}],"simplify_kill_criteria":[{"trigger":"...","review_action":"...","evidence_rule":"...","authority_boundary":"read_only_review_trigger_not_automatic_gate"}],"interpretation_rules":{"healthy_reopening":"healthy_reopening_not_counted_as_simple_failure"}}`,
+						Note:  "Every characteristic names bearer, method, window, denominator, and evidence refs; simplify/kill criteria are visible read-only review triggers, not automatic gates.",
 					},
 				},
 				Notes: []string{
 					"Use source_refs for evidence refs in the compact MCP schema; CLI names them --evidence-ref.",
 					"Healthy reopening is interpreted separately from avoidable rework or simple failure.",
+					"Simplify/kill criteria require source-backed review before changing scope; they are not evidence, approval, GateDecision, or product-value proof.",
 				},
 			},
 			OutputVolume: []string{"default: one JSON HaftEngineeringValueECS projection"},

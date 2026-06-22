@@ -38,6 +38,12 @@ func TestHandleQuintQuery_ValueSpaceReturnsCharacteristicSpace(t *testing.T) {
 	if len(space.Characteristics[0].EvidenceRefs) != 1 {
 		t.Fatalf("evidence refs = %#v", space.Characteristics[0].EvidenceRefs)
 	}
+	if len(space.SimplifyKillCriteria) == 0 {
+		t.Fatalf("expected simplify/kill criteria")
+	}
+	if space.SimplifyKillCriteria[0].AuthorityBoundary != artifact.EngineeringValueSimplifyKillAuthority {
+		t.Fatalf("simplify/kill authority = %+v", space.SimplifyKillCriteria[0])
+	}
 	if space.AuthorityBoundary.Score != artifact.EngineeringValueBoundaryNotScore {
 		t.Fatalf("authority boundary = %+v", space.AuthorityBoundary)
 	}

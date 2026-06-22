@@ -2912,22 +2912,24 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 // R_eff is computed per FPF B.3: min(effective_score_i) across all evidence,
 // where effective_score = max(0, base_score - clPenalty).
 type WLNKSummary struct {
-	ArtifactID    string
-	EvidenceCount int
-	Supporting    int
-	Weakening     int
-	Refuting      int
-	HasEvidence   bool     // true if at least one evidence item exists
-	FEff          int      // computed: min(formality_level_i) across evidence chain
-	GEff          []string // computed: union(claim_scope_i) across evidence chain
-	REff          float64  // computed: min(effective_score) across evidence chain
-	MinFreshness  string   // earliest parsed valid_until across all evidence, preserving the original carrier string
-	WeakestCL     int      // minimum congruence level
-	WeakestF      int      // compatibility alias for FEff
-	ExpectedScope []string // explicit acceptance identifiers, when available
-	CoverageGaps  []string // expected scope not covered by GEff
-	CoverageKnown bool     // false when the problem frame has no explicit identifiers
-	Summary       string   // human-readable one-liner
+	ArtifactID          string
+	EvidenceCount       int
+	Supporting          int
+	Weakening           int
+	Refuting            int
+	HasEvidence         bool     // true if at least one evidence item exists
+	FEff                int      // computed: min(formality_level_i) across evidence chain
+	FormalityScaleID    string   // scale id for the evidence item that determines FEff
+	FormalityBridgeLoss string   // bridge/loss label for the evidence item that determines FEff
+	GEff                []string // computed: union(claim_scope_i) across evidence chain
+	REff                float64  // computed: min(effective_score) across evidence chain
+	MinFreshness        string   // earliest parsed valid_until across all evidence, preserving the original carrier string
+	WeakestCL           int      // minimum congruence level
+	WeakestF            int      // compatibility alias for FEff
+	ExpectedScope       []string // explicit acceptance identifiers, when available
+	CoverageGaps        []string // expected scope not covered by GEff
+	CoverageKnown       bool     // false when the problem frame has no explicit identifiers
+	Summary             string   // human-readable one-liner
 }
 
 // ComputeWLNKSummary returns a WLNK summary for an artifact based on its evidence items.
@@ -2995,6 +2997,9 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		}
 		if e.FormalityLevel < minFormality {
 			minFormality = e.FormalityLevel
+			formalityScale := evidenceItemFormalityScale(e)
+			result.FormalityScaleID = formalityScale.ScaleID
+			result.FormalityBridgeLoss = evidenceItemFormalityBridgeLoss(e, formalityScale)
 		}
 
 		expiry, ok := reff.ParseValidUntil(e.ValidUntil)
@@ -3108,6 +3113,25 @@ func evidenceFormalityBridge(scale reff.FormalityScale) *reff.FormalityBridge {
 	default:
 		return nil
 	}
+}
+
+func evidenceItemFormalityScale(item EvidenceItem) reff.FormalityScale {
+	if item.FormalityScale != nil {
+		return reff.NormalizeFormalityScale(*item.FormalityScale)
+	}
+
+	return reff.CurrentFormalityScale(item.FormalityLevel)
+}
+
+func evidenceItemFormalityBridgeLoss(item EvidenceItem, scale reff.FormalityScale) string {
+	if item.FormalityBridge != nil {
+		return item.FormalityBridge.Loss
+	}
+	if bridge := evidenceFormalityBridge(scale); bridge != nil {
+		return bridge.Loss
+	}
+
+	return reff.FormalityBridgeNoLoss
 }
 
 func normalizeClaimScope(scope []string) []string {
@@ -3447,7 +3471,22 @@ func trimTrailingCriterionGroup(value string, open byte, close byte) (string, bo
 }
 
 func formatAssuranceSummary(summary WLNKSummary) string {
-	formality := fmt.Sprintf("F%d (%s)", summary.FEff, formalityLabel(summary.FEff))
+	scaleID := summary.FormalityScaleID
+	if scaleID == "" {
+		scaleID = reff.FormalityScaleCurrent
+	}
+	bridgeLoss := summary.FormalityBridgeLoss
+	if bridgeLoss == "" {
+		bridgeLoss = reff.FormalityBridgeNoLoss
+	}
+
+	formality := fmt.Sprintf(
+		"F%d (%s) scale=%s bridge_loss=%s",
+		summary.FEff,
+		formalityLabel(summary.FEff),
+		scaleID,
+		bridgeLoss,
+	)
 	coverage := "G: no claim scope"
 	switch {
 	case summary.CoverageKnown:

@@ -1210,8 +1210,56 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	if !strings.Contains(wlnk.Summary, "Assurance: F7 (machine-checkable-obligations)") {
 		t.Errorf("summary should show structured assurance: %q", wlnk.Summary)
 	}
+	if !strings.Contains(wlnk.Summary, "scale=fpf-2026-f0-f9") {
+		t.Errorf("summary should name current F0-F9 scale: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "bridge_loss=none") {
+		t.Errorf("summary should name no-loss bridge posture: %q", wlnk.Summary)
+	}
 	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {
 		t.Errorf("summary should show coverage ratio: %q", wlnk.Summary)
+	}
+}
+
+func TestWLNKSummary_NamesLegacyFormalityBridgeLoss(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep legacy evidence readable",
+		WhySelected:   "Legacy evidence remains audit input but not current-formality proof.",
+		WeakestLink:   "legacy formality bridge",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:      dec.Meta.ID,
+		Content:          "Old checker produced a structured result.",
+		Type:             "test",
+		Verdict:          "supports",
+		CongruenceLevel:  3,
+		FormalityLevel:   2,
+		FormalityScaleID: reff.FormalityScaleLegacy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if wlnk.FormalityScaleID != reff.FormalityScaleLegacy {
+		t.Fatalf("FormalityScaleID = %q, want legacy", wlnk.FormalityScaleID)
+	}
+	if wlnk.FormalityBridgeLoss != reff.FormalityBridgeLegacyLoss {
+		t.Fatalf("FormalityBridgeLoss = %q, want legacy loss", wlnk.FormalityBridgeLoss)
+	}
+	if !strings.Contains(wlnk.Summary, "scale=haft-legacy-f0-f3") {
+		t.Errorf("summary should name legacy scale: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "bridge_loss=legacy-scale-has-fewer-buckets") {
+		t.Errorf("summary should name legacy bridge loss: %q", wlnk.Summary)
 	}
 }
 

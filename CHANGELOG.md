@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Assurance summary formality scale labels.** WLNK assurance summaries now
+  retain the existing `F_eff` display while adding the scale id and bridge-loss
+  posture for the evidence item that determines the weakest formality reading.
+  Legacy F0-F3 evidence remains readable as lossy legacy formality rather than
+  being silently presented as current F0-F9 authority.
 - **EvidencePath formality diagnostics.** The read-only `haft evidence path`
   text summary and `query.evidence_path` discovery contract now name evidence
   formality scale, bridge, and loss posture explicitly. Legacy or undeclared

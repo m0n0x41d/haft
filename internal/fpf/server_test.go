@@ -170,6 +170,21 @@ func TestHandleToolsList_StaysUnderContextBudget(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
+	body := string(mustToolsListResponseBytes(t))
+	for _, forbidden := range []string{
+		"haft_interface_contract_generation_manifest",
+		"source_digest",
+		"generator_target_surfaces",
+		"generator_target_fields",
+		"surface_policy",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("tools/list inlined contract generation manifest fragment %q", forbidden)
+		}
+	}
+}
+
 func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 	methodSchema := mustListToolProperties(t, "haft_method")
 

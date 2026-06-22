@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contract-generation no-default-bloat guards.** Added regressions proving
+  the read-only contract generation manifest remains drill-down only and is not
+  inlined into default `haft_query(status)` or MCP `tools/list` payloads.
 - **Pi package metadata carrier guard.** `haft carrier check` now includes
   `packages/haft-pi/package.json` in the semio scan set while still excluding
   package-lock dependency noise, so plugin/Pi metadata cannot imply operator

@@ -287,6 +287,29 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 	}
 }
 
+func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
+	fixture := newCheckTestProject(t)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "status",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery status returned error: %v", err)
+	}
+
+	for _, forbidden := range []string{
+		"haft_interface_contract_generation_manifest",
+		"read_only_generation_manifest_not_generated_schema",
+		"generator_target_surfaces",
+		"generator_target_fields",
+		"surface_policy",
+	} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("default status inlined contract generation manifest fragment %q:\n%s", forbidden, result)
+		}
+	}
+}
+
 func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
 	if !ok {

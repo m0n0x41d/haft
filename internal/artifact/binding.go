@@ -3,6 +3,7 @@ package artifact
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -39,6 +40,7 @@ const (
 	BindingResolutionSourceMarkdownSection       = "markdown_section_target"
 	BindingResolutionSourceTargetMarker          = "target_marker"
 	BindingResolutionSourceYAMLTarget            = "yaml_target"
+	BindingResolutionSourceJSONTarget            = "json_target"
 )
 
 type BindingResolutionOptions struct {
@@ -440,15 +442,20 @@ func attachExplicitTargetEvaluator(projectRoot string, target BindingTarget) Bin
 
 	section, ok := extractMarkedTargetRange(projectRoot, target.FilePath, target.TargetRef)
 	if !ok {
-		yamlSection, yamlOK := extractYAMLTargetRange(projectRoot, target.FilePath, target.TargetRef)
-		if yamlOK {
-			section = yamlSection
+		jsonSection, jsonOK := extractJSONTargetRange(projectRoot, target.FilePath, target.TargetRef)
+		if jsonOK {
+			section = jsonSection
 		} else {
-			markdownSection, markdownOK := extractMarkdownTargetRange(projectRoot, target.FilePath, target.TargetRef)
-			if !markdownOK {
-				return target
+			yamlSection, yamlOK := extractYAMLTargetRange(projectRoot, target.FilePath, target.TargetRef)
+			if yamlOK {
+				section = yamlSection
+			} else {
+				markdownSection, markdownOK := extractMarkdownTargetRange(projectRoot, target.FilePath, target.TargetRef)
+				if !markdownOK {
+					return target
+				}
+				section = markdownSection
 			}
-			section = markdownSection
 		}
 	}
 	target.Line = section.StartLine
@@ -609,6 +616,125 @@ func extractYAMLTargetRange(projectRoot, relPath, targetRef string) (markdownTar
 		TextHash:   hex.EncodeToString(textHash[:]),
 		Source:     BindingResolutionSourceYAMLTarget,
 	}, true
+}
+
+func extractJSONTargetRange(projectRoot, relPath, targetRef string) (markdownTargetRange, bool) {
+	if strings.ToLower(filepath.Ext(relPath)) != ".json" {
+		return markdownTargetRange{}, false
+	}
+	targetRef = normalizeSemanticTargetRef(targetRef)
+	if targetRef == "" {
+		return markdownTargetRange{}, false
+	}
+	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	if err != nil {
+		return markdownTargetRange{}, false
+	}
+	decoder := json.NewDecoder(strings.NewReader(string(content)))
+	decoder.UseNumber()
+	start, end, ok := findJSONTargetObject(decoder, targetRef, semanticTargetLookupToken(targetRef))
+	if !ok || start < 0 || end > len(content) || start >= end {
+		return markdownTargetRange{}, false
+	}
+	startLine := bindingLineForOffset(content, start)
+	endLine := bindingLineForOffset(content, end)
+	lines := splitBindingTextLines(string(content))
+	text := strings.Join(lines[startLine-1:endLine], "\n")
+	normalized := normalizeBindingRangeText(text)
+	anchorHash := sha256.Sum256([]byte(firstBindingNonEmptyLine(normalized)))
+	textHash := sha256.Sum256([]byte(normalized))
+	return markdownTargetRange{
+		StartLine:  startLine,
+		EndLine:    endLine,
+		AnchorHash: hex.EncodeToString(anchorHash[:]),
+		TextHash:   hex.EncodeToString(textHash[:]),
+		Source:     BindingResolutionSourceJSONTarget,
+	}, true
+}
+
+func findJSONTargetObject(decoder *json.Decoder, targetRef string, token string) (int, int, bool) {
+	valueStart := int(decoder.InputOffset())
+	value, err := decoder.Token()
+	if err != nil {
+		return 0, 0, false
+	}
+	delimiter, ok := value.(json.Delim)
+	if !ok {
+		return 0, 0, false
+	}
+	switch delimiter {
+	case '{':
+		return findJSONTargetObjectBody(decoder, valueStart, targetRef, token)
+	case '[':
+		for decoder.More() {
+			start, end, ok := findJSONTargetObject(decoder, targetRef, token)
+			if ok {
+				return start, end, true
+			}
+		}
+		_, _ = decoder.Token()
+	}
+	return 0, 0, false
+}
+
+func findJSONTargetObjectBody(
+	decoder *json.Decoder,
+	objectStart int,
+	targetRef string,
+	token string,
+) (int, int, bool) {
+	matches := false
+	for decoder.More() {
+		keyToken, err := decoder.Token()
+		if err != nil {
+			return 0, 0, false
+		}
+		key, ok := keyToken.(string)
+		if !ok {
+			return 0, 0, false
+		}
+		if key == "id" || key == "target_ref" {
+			valueToken, err := decoder.Token()
+			if err != nil {
+				return 0, 0, false
+			}
+			value, ok := valueToken.(string)
+			if ok && jsonTargetValueMatches(key, value, targetRef, token) {
+				matches = true
+			}
+			continue
+		}
+		start, end, ok := findJSONTargetObject(decoder, targetRef, token)
+		if ok {
+			return start, end, true
+		}
+	}
+	_, err := decoder.Token()
+	if err != nil {
+		return 0, 0, false
+	}
+	if matches {
+		return objectStart, int(decoder.InputOffset()), true
+	}
+	return 0, 0, false
+}
+
+func jsonTargetValueMatches(key string, value string, targetRef string, token string) bool {
+	value = normalizeSemanticTargetRef(value)
+	if value == targetRef {
+		return true
+	}
+	return key == "id" && value == token
+}
+
+func bindingLineForOffset(content []byte, offset int) int {
+	if offset < 0 {
+		offset = 0
+	}
+	if offset > len(content) {
+		offset = len(content)
+	}
+	return strings.Count(string(content[:offset]), "\n") + 1
 }
 
 func yamlLineMatchesTarget(line string, targetRef string, token string) bool {

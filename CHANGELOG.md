@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   a low-confidence `retarget_candidate` if exactly one same-name symbol exists
   elsewhere with a changed body. Ambiguous matches stay unretargeted, and fuzzy
   candidates always require binding resolution rather than moving authority.
+- **JSON semantic target evaluator.** Explicit spec-section, API-contract, and
+  invariant binding targets can now attach bounded evaluators from JSON carrier
+  objects using structured `id` or `target_ref` fields. Sibling JSON object
+  edits remain audit-only; matching object edits become semantic-target drift.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

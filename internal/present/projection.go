@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 // ProjectionResponse renders one deterministic audience projection over the same artifact graph.
@@ -300,7 +301,14 @@ func auditProjectionResponse(graph artifact.ProjectionGraph) string {
 			if decision.NeedsRefresh {
 				sb.WriteString("Refresh state: due\n")
 			}
-			sb.WriteString(fmt.Sprintf("Assurance: R_eff=%.2f | F_eff=%d | weakest CL=%d\n", decision.Evidence.WLNK.REff, decision.Evidence.WLNK.FEff, decision.Evidence.WLNK.WeakestCL))
+			sb.WriteString(fmt.Sprintf(
+				"Assurance: R_eff=%.2f | F_eff=%d scale=%s bridge_loss=%s | weakest CL=%d\n",
+				decision.Evidence.WLNK.REff,
+				decision.Evidence.WLNK.FEff,
+				projectionFormalityScaleID(decision.Evidence.WLNK),
+				projectionFormalityBridgeLoss(decision.Evidence.WLNK),
+				decision.Evidence.WLNK.WeakestCL,
+			))
 			sb.WriteString("\n")
 		}
 	}
@@ -321,6 +329,24 @@ func auditProjectionResponse(graph artifact.ProjectionGraph) string {
 	}
 
 	return sb.String()
+}
+
+func projectionFormalityScaleID(summary artifact.WLNKSummary) string {
+	scaleID := strings.TrimSpace(summary.FormalityScaleID)
+	if scaleID == "" {
+		return reff.FormalityScaleCurrent
+	}
+
+	return scaleID
+}
+
+func projectionFormalityBridgeLoss(summary artifact.WLNKSummary) string {
+	loss := strings.TrimSpace(summary.FormalityBridgeLoss)
+	if loss == "" {
+		return reff.FormalityBridgeNoLoss
+	}
+
+	return loss
 }
 
 func compareProjectionResponse(graph artifact.ProjectionGraph) string {

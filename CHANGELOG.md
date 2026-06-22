@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Audit projection formality scale labels.** Audit/evidence projections now
+  print `F_eff` with the associated formality scale id and bridge-loss posture,
+  so projection consumers no longer see a bare F-level without knowing whether
+  it came from current F0-F9 or a legacy/lossy reading.
 - **Assurance summary formality scale labels.** WLNK assurance summaries now
   retain the existing `F_eff` display while adding the scale id and bridge-loss
   posture for the evidence item that determines the weakest formality reading.

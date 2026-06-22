@@ -29,6 +29,11 @@ var (
 	specUsePolicy          string
 	specUseWaiverExpiresAt string
 	specUseGateFile        string
+	specClassifyChangeJSON bool
+	specClassifyBefore     string
+	specClassifyAfter      string
+	specClassifySection    string
+	specClassifyKind       string
 	specOnboardJSON        bool
 	specOnboardApproveID   string
 	specOnboardReopenID    string
@@ -97,6 +102,21 @@ primary truth.`,
 	RunE: runSpecCoverage,
 }
 
+var specClassifyChangeCmd = &cobra.Command{
+	Use:   "classify-change",
+	Short: "Classify an explicit before/after SpecSection carrier change",
+	Long: `Classify one explicit before/after SpecSection carrier change.
+
+The command parses the given carrier files, compares the requested section, and
+reports whether the change is carrier-only, a recognized semantic scalar
+update, a relationship update, mixed, or unknown/high-risk.
+
+This is read-only review input for the future sync-back path. It does not write
+SQLite, approve sections, rebaseline drift, or treat surrounding prose as
+authority.`,
+	RunE: runSpecClassifyChange,
+}
+
 var specOnboardCmd = &cobra.Command{
 	Use:   "onboard",
 	Short: "Drive the spec onboarding method one step at a time",
@@ -162,6 +182,11 @@ func init() {
 	specUseCmd.Flags().StringVar(&specUsePolicy, "policy", "", "admission policy: documentary_only, stronger_use_requires_current_source, or temporary_waiver")
 	specUseCmd.Flags().StringVar(&specUseWaiverExpiresAt, "waiver-expires-at", "", "expiry for temporary_waiver policy (RFC3339 or YYYY-MM-DD)")
 	specUseCmd.Flags().StringVar(&specUseGateFile, "gate-file", "", "JSON OperationalGate profile for local read-only gate evaluation")
+	specClassifyChangeCmd.Flags().BoolVar(&specClassifyChangeJSON, "json", false, "print structured JSON output")
+	specClassifyChangeCmd.Flags().StringVar(&specClassifyBefore, "before", "", "path to the before spec carrier")
+	specClassifyChangeCmd.Flags().StringVar(&specClassifyAfter, "after", "", "path to the after spec carrier")
+	specClassifyChangeCmd.Flags().StringVar(&specClassifySection, "section", "", "SpecSection id to compare")
+	specClassifyChangeCmd.Flags().StringVar(&specClassifyKind, "kind", "", "carrier kind override: target-system, enabling-system, or term-map")
 	specPlanCmd.Flags().BoolVar(&specPlanJSON, "json", false, "print structured JSON output")
 	specPlanCmd.Flags().StringVar(&specPlanAcceptID, "accept", "", "accept proposal id and create one DecisionRecord")
 	specOnboardCmd.Flags().BoolVar(&specOnboardJSON, "json", false, "print structured JSON output")
@@ -183,6 +208,7 @@ func init() {
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specReviewCmd)
 	specCmd.AddCommand(specUseCmd)
+	specCmd.AddCommand(specClassifyChangeCmd)
 	specCmd.AddCommand(specPlanCmd)
 	specCmd.AddCommand(specOnboardCmd)
 	specCmd.AddCommand(specApproveCmd)

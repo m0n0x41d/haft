@@ -150,6 +150,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   updates, relationship updates, mixed updates, and unknown/high-risk edits that
   must abstain/block, without mutating SQL or treating arbitrary prose as
   authority.
+- **Read-only spec carrier change review.** Added
+  `haft spec classify-change --before <file> --after <file> --section <id>` as
+  an explicit before/after review surface over the classifier. The command
+  supports JSON/text output and stays classification-only: it does not sync SQL,
+  approve sections, rebaseline drift, or promote surrounding Markdown prose to
+  authority.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

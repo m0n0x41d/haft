@@ -189,6 +189,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `id`, `section_id`, or `target_ref`. Edits to sibling fenced blocks remain
   audit-only; edits inside the governed fenced section become semantic-target
   drift instead of whole-file fallback.
+- **Decision reconciliation metrics packet.** Added read-only
+  `haft decision reconcile metrics --json` for R9 dogfood cleanup. The packet
+  combines reconciliation, current governing-set, and DriftEvent metrics so
+  scope-enrichment batches can record before/after fallback scope, fanout,
+  material/audit drift, and current-authority conflict counts without applying
+  or authorizing any reconciliation selection.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

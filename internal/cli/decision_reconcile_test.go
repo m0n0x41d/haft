@@ -83,6 +83,63 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 	}
 }
 
+func TestWriteDecisionReconciliationMetricsSummary(t *testing.T) {
+	var output bytes.Buffer
+	packet := artifact.ReconciliationMetricsPacket{
+		SchemaVersion: 1,
+		Authority:     artifact.ReconciliationMetricsAuthority,
+		CapturePolicy: "capture_before_and_after_operator_approved_reconciliation_apply",
+		Reconciliation: artifact.ReconciliationPlanMetrics{
+			ReviewedDecisions:         10,
+			Groups:                    6,
+			WholeFileFallbackOnly:     3,
+			MissingExplicitSubject:    4,
+			ScopeEnrichmentCandidates: 5,
+			ConflictRequiresOperator:  1,
+		},
+		GoverningSet: artifact.ReconciliationGoverningMetrics{
+			CurrentDecisions:    9,
+			GoverningSets:       7,
+			FallbackTargetSets:  2,
+			ScopeEnrichmentSets: 3,
+			ConflictSets:        1,
+			OverlapReviewSets:   2,
+			TerminalHistoryRefs: 8,
+		},
+		DriftEvents: artifact.ReconciliationDriftMetrics{
+			UniqueEvents:                 11,
+			ImpactedDecisions:            13,
+			MaterialEvents:               6,
+			AuditOnlyEvents:              4,
+			NeedsBindingResolutionEvents: 5,
+			SemanticTargetEvents:         7,
+			FileFallbackEvents:           2,
+			UnknownHighRiskEvents:        1,
+			MaxFanout:                    9,
+		},
+	}
+
+	if err := writeDecisionReconciliationMetricsSummary(&output, packet); err != nil {
+		t.Fatalf("writeDecisionReconciliationMetricsSummary: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Decision reconciliation metrics v1",
+		"authority: read_only_reconciliation_metrics_not_binding_authority",
+		"whole_file_fallback_only=3",
+		"scope_enrichment=5",
+		"fallback_sets=2",
+		"conflicts=1",
+		"unique=11",
+		"max_fanout=9",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestHandleQuintQueryDecisionReconcileReturnsReportOnlyPlan(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")

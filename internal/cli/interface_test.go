@@ -972,6 +972,9 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile --json") {
 		t.Fatalf("decision_reconcile CLI command missing: %#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile metrics --json") {
+		t.Fatalf("decision_reconcile metrics CLI command missing: %#v", capability.CurrentExecution)
+	}
 
 	shapes, _ := marshalContractFragments(t, capability.InputContract)
 	for _, want := range []string{
@@ -989,6 +992,10 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		"preview is advisory and cannot authorize apply",
 		"downstream_impact",
 		"does not relink downstream artifacts",
+		"read_only_reconciliation_metrics_not_binding_authority",
+		"capture_before_and_after_operator_approved_reconciliation_apply",
+		"fallback_target_sets",
+		"max_fanout",
 	} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.decision_reconcile contract missing %q:\n%s", want, shapes)

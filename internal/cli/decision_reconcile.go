@@ -16,6 +16,7 @@ import (
 var (
 	decisionReconcileJSON          bool
 	decisionReconcileApplyJSON     bool
+	decisionReconcileMetricsJSON   bool
 	decisionGoverningSetJSON       bool
 	decisionGoverningSetQuery      string
 	decisionGoverningSetSubjectRef string
@@ -57,6 +58,16 @@ slice.`,
 	RunE: runDecisionReconcileApply,
 }
 
+var decisionReconcileMetricsCmd = &cobra.Command{
+	Use:   "metrics",
+	Short: "Capture read-only reconciliation before/after metrics",
+	Long: `Capture the current read-only metrics packet used to compare old-decision
+scope-enrichment cleanup before and after an operator-approved reconciliation
+apply. This command does not mutate decisions, links, evidence, baselines, or
+carriers.`,
+	RunE: runDecisionReconcileMetrics,
+}
+
 var decisionGoverningSetCmd = &cobra.Command{
 	Use:   "governing-set",
 	Short: "Build a read-only current governing set projection",
@@ -75,10 +86,12 @@ this symbol / contract / spec section" without expanding default status.`,
 func init() {
 	decisionReconcileCmd.Flags().BoolVar(&decisionReconcileJSON, "json", false, "print structured JSON output")
 	decisionReconcileApplyCmd.Flags().BoolVar(&decisionReconcileApplyJSON, "json", false, "print structured JSON output")
+	decisionReconcileMetricsCmd.Flags().BoolVar(&decisionReconcileMetricsJSON, "json", false, "print structured JSON output")
 	decisionGoverningSetCmd.Flags().BoolVar(&decisionGoverningSetJSON, "json", false, "print structured JSON output")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetQuery, "query", "", "filter governing sets by substring across subject, target, decision refs, and repair hints")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetSubjectRef, "subject-ref", "", "filter governing sets by exact subject ref")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetTargetRef, "target-ref", "", "filter governing sets by exact target ref")
+	decisionReconcileCmd.AddCommand(decisionReconcileMetricsCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileApplyCmd)
 	decisionCmd.AddCommand(decisionGoverningSetCmd)
 	decisionCmd.AddCommand(decisionReconcileCmd)
@@ -167,6 +180,43 @@ func runDecisionReconcileApply(cmd *cobra.Command, args []string) error {
 	return writeDecisionReconciliationApplySummary(cmd.OutOrStdout(), result)
 }
 
+func runDecisionReconcileMetrics(cmd *cobra.Command, _ []string) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+
+	store, closeFn, err := openArtifactStore(projectRoot)
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+
+	ctx := context.Background()
+	plan, err := artifact.BuildDecisionReconciliationPlan(ctx, store)
+	if err != nil {
+		return fmt.Errorf("build decision reconciliation plan: %w", err)
+	}
+	governing, err := artifact.BuildCurrentGoverningSetReport(ctx, store)
+	if err != nil {
+		return fmt.Errorf("build current governing set: %w", err)
+	}
+	driftReports, err := artifact.CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		return fmt.Errorf("check drift for reconciliation metrics: %w", err)
+	}
+	packet := artifact.BuildReconciliationMetricsPacket(
+		plan,
+		governing,
+		artifact.BuildDriftEventReport(driftReports),
+	)
+
+	if decisionReconcileMetricsJSON {
+		return writeJSON(cmd.OutOrStdout(), packet)
+	}
+	return writeDecisionReconciliationMetricsSummary(cmd.OutOrStdout(), packet)
+}
+
 func readDecisionReconciliationSelectionDocument(
 	path string,
 ) (artifact.DecisionReconciliationSelectionDocument, error) {
@@ -244,6 +294,57 @@ func writeDecisionReconciliationSummary(
 		return err
 	}
 	return nil
+}
+
+func writeDecisionReconciliationMetricsSummary(
+	output io.Writer,
+	packet artifact.ReconciliationMetricsPacket,
+) error {
+	if _, err := fmt.Fprintf(output, "Decision reconciliation metrics v%d\n", packet.SchemaVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "authority: %s\n", packet.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "capture_policy: %s\n", packet.CapturePolicy); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output,
+		"reconciliation: reviewed=%d groups=%d whole_file_fallback_only=%d missing_subject=%d scope_enrichment=%d conflicts=%d\n",
+		packet.Reconciliation.ReviewedDecisions,
+		packet.Reconciliation.Groups,
+		packet.Reconciliation.WholeFileFallbackOnly,
+		packet.Reconciliation.MissingExplicitSubject,
+		packet.Reconciliation.ScopeEnrichmentCandidates,
+		packet.Reconciliation.ConflictRequiresOperator,
+	); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output,
+		"governing_set: current=%d sets=%d fallback_sets=%d scope_enrichment_sets=%d conflicts=%d overlap=%d terminal_history=%d\n",
+		packet.GoverningSet.CurrentDecisions,
+		packet.GoverningSet.GoverningSets,
+		packet.GoverningSet.FallbackTargetSets,
+		packet.GoverningSet.ScopeEnrichmentSets,
+		packet.GoverningSet.ConflictSets,
+		packet.GoverningSet.OverlapReviewSets,
+		packet.GoverningSet.TerminalHistoryRefs,
+	); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(output,
+		"drift_events: unique=%d impacted=%d material=%d audit_only=%d needs_binding=%d semantic=%d file_fallback=%d unknown_high_risk=%d max_fanout=%d\n",
+		packet.DriftEvents.UniqueEvents,
+		packet.DriftEvents.ImpactedDecisions,
+		packet.DriftEvents.MaterialEvents,
+		packet.DriftEvents.AuditOnlyEvents,
+		packet.DriftEvents.NeedsBindingResolutionEvents,
+		packet.DriftEvents.SemanticTargetEvents,
+		packet.DriftEvents.FileFallbackEvents,
+		packet.DriftEvents.UnknownHighRiskEvents,
+		packet.DriftEvents.MaxFanout,
+	)
+	return err
 }
 
 func writeCurrentGoverningSetSummary(

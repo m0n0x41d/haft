@@ -19,6 +19,7 @@ type specApplyChangeResult struct {
 	Applied           bool                            `json:"applied"`
 	Noop              bool                            `json:"noop"`
 	Change            project.SpecCarrierChangeReport `json:"change"`
+	Audit             specSyncEditionAudit            `json:"audit"`
 	Edition           *specSyncImportedEntry          `json:"edition,omitempty"`
 }
 
@@ -84,6 +85,12 @@ func applySpecCarrierChangeToSQL(
 	result := specApplyChangeResult{
 		SchemaVersion:     1,
 		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		Audit: specSyncEditionAudit{
+			SourceEpisteme:        "sql_spec_section_edition",
+			PublicationProjection: "typed_yaml_spec_section_projection",
+			CarrierBytes:          input.AfterPath,
+			AuthorityBoundary:     "not_approval_not_rebaseline_not_evidence",
+		},
 	}
 
 	before, err := loadSpecCarrierChangeSection(input.BeforePath, input.Kind, input.SectionID)
@@ -100,6 +107,7 @@ func applySpecCarrierChangeToSQL(
 	switch change.ImportPosture {
 	case project.SpecCarrierImportPostureNoSemanticMutation:
 		result.Noop = true
+		result.Audit.CarrierOnlyDisposition = "carrier_only_no_semantic_edition_created"
 		return result, nil
 	case project.SpecCarrierImportPostureRecognizedUpdate:
 		edition := specflow.NewSpecSectionEdition(projectID, after, specflow.SpecSectionSourceSyncBack, time.Now().UTC())
@@ -107,11 +115,19 @@ func applySpecCarrierChangeToSQL(
 			return result, err
 		}
 		result.Applied = true
+		result.Audit.ImportedSemanticMutation = string(change.Kind)
 		result.Edition = &specSyncImportedEntry{
 			SectionID:    edition.SectionID,
 			SemanticHash: edition.SemanticHash,
 			SourceKind:   string(edition.SourceKind),
 			CarrierPath:  edition.CarrierPath,
+			Audit: specSyncEditionAudit{
+				SourceEpisteme:           "sql_spec_section_edition",
+				PublicationProjection:    "typed_yaml_spec_section_projection",
+				CarrierBytes:             edition.CarrierPath,
+				ImportedSemanticMutation: string(change.Kind),
+				AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+			},
 		}
 		return result, nil
 	default:

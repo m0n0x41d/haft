@@ -172,6 +172,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and writes the after-section to `spec_section_editions` only for recognized
   semantic scalar, relationship, or mixed updates; carrier-only edits are no-op
   and unknown/high-risk changes block.
+- **Spec sync/apply audit posture.** `haft spec sync --json` and
+  `haft spec apply-change --json` now distinguish the SQL source edition,
+  typed YAML publication projection, carrier bytes, imported semantic mutation,
+  and carrier-only no-op disposition in explicit audit fields without creating
+  approval, rebaseline, evidence, or gate authority.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

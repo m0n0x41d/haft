@@ -23,10 +23,20 @@ type specSyncResult struct {
 }
 
 type specSyncImportedEntry struct {
-	SectionID    string `json:"section_id"`
-	SemanticHash string `json:"semantic_hash"`
-	SourceKind   string `json:"source_kind"`
-	CarrierPath  string `json:"carrier_path,omitempty"`
+	SectionID    string               `json:"section_id"`
+	SemanticHash string               `json:"semantic_hash"`
+	SourceKind   string               `json:"source_kind"`
+	CarrierPath  string               `json:"carrier_path,omitempty"`
+	Audit        specSyncEditionAudit `json:"audit"`
+}
+
+type specSyncEditionAudit struct {
+	SourceEpisteme           string `json:"source_episteme"`
+	PublicationProjection    string `json:"publication_projection"`
+	CarrierBytes             string `json:"carrier_bytes"`
+	ImportedSemanticMutation string `json:"imported_semantic_mutation,omitempty"`
+	CarrierOnlyDisposition   string `json:"carrier_only_disposition,omitempty"`
+	AuthorityBoundary        string `json:"authority_boundary"`
 }
 
 func runSpecSync(cmd *cobra.Command, _ []string) error {
@@ -106,6 +116,13 @@ func syncProjectSpecificationSetToSQL(
 			SemanticHash: edition.SemanticHash,
 			SourceKind:   string(edition.SourceKind),
 			CarrierPath:  edition.CarrierPath,
+			Audit: specSyncEditionAudit{
+				SourceEpisteme:           "sql_spec_section_edition",
+				PublicationProjection:    "typed_yaml_spec_section_projection",
+				CarrierBytes:             edition.CarrierPath,
+				ImportedSemanticMutation: "carrier_import_to_sql_edition",
+				AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+			},
 		})
 	}
 

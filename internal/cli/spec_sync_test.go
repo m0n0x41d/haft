@@ -40,6 +40,15 @@ func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
 	if len(result.Imported) != 2 {
 		t.Fatalf("imported = %#v, want two sections", result.Imported)
 	}
+	if result.Imported[0].Audit.SourceEpisteme != "sql_spec_section_edition" {
+		t.Fatalf("source episteme = %#v", result.Imported[0].Audit)
+	}
+	if result.Imported[0].Audit.PublicationProjection != "typed_yaml_spec_section_projection" {
+		t.Fatalf("publication projection = %#v", result.Imported[0].Audit)
+	}
+	if result.Imported[0].Audit.ImportedSemanticMutation != "carrier_import_to_sql_edition" {
+		t.Fatalf("imported mutation = %#v", result.Imported[0].Audit)
+	}
 
 	database := openSpecSyncDB(t, root)
 	defer database.Close()

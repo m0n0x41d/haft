@@ -39,6 +39,12 @@ func TestRunSpecApplyChangeAppliesRecognizedRelationshipUpdate(t *testing.T) {
 	if result.Change.Kind != project.SpecCarrierChangeRelationshipUpdate {
 		t.Fatalf("change kind = %q", result.Change.Kind)
 	}
+	if result.Audit.SourceEpisteme != "sql_spec_section_edition" {
+		t.Fatalf("source episteme = %#v", result.Audit)
+	}
+	if result.Audit.ImportedSemanticMutation != "relationship_update" {
+		t.Fatalf("imported mutation = %#v", result.Audit)
+	}
 
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
@@ -105,6 +111,9 @@ func TestApplySpecCarrierChangeToSQLCarrierOnlyNoop(t *testing.T) {
 	}
 	if !result.Noop || result.Applied {
 		t.Fatalf("carrier-only result = %+v", result)
+	}
+	if result.Audit.CarrierOnlyDisposition != "carrier_only_no_semantic_edition_created" {
+		t.Fatalf("carrier-only audit = %#v", result.Audit)
 	}
 	if _, getErr := store.GetCurrent("proj-1", "TS.sync.001"); getErr == nil {
 		t.Fatal("carrier-only no-op wrote an edition")

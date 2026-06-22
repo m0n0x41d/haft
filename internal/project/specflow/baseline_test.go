@@ -186,6 +186,54 @@ func TestBaselineStoreRejectsNonSpecApprovalSnapshotKind(t *testing.T) {
 	}
 }
 
+func TestBaselineStoreRejectsNonSpecApprovalRewrite(t *testing.T) {
+	store := NewMemoryBaselineStore()
+	approval := SectionBaseline{
+		Kind:       BaselineKindSpecSectionApproval,
+		ProjectID:  "proj-1",
+		SectionID:  "tgt-env-1",
+		Hash:       "approval-hash",
+		ApprovedBy: "human",
+	}
+	if err := store.Put(approval); err != nil {
+		t.Fatalf("Put approval baseline: %v", err)
+	}
+
+	rewriteAttempts := []SectionBaseline{
+		{
+			Kind:      BaselineKindPreWorkReference,
+			ProjectID: "proj-1",
+			SectionID: "tgt-env-1",
+			Hash:      "planned-hash",
+		},
+		{
+			Kind:      BaselineKindVerifiedState,
+			ProjectID: "proj-1",
+			SectionID: "tgt-env-1",
+			Hash:      "verified-hash",
+		},
+	}
+	for _, attempt := range rewriteAttempts {
+		if err := store.Put(attempt); err == nil {
+			t.Fatalf("Put accepted %s rewrite of spec approval baseline", attempt.Kind)
+		}
+	}
+
+	got, err := store.Get("proj-1", "tgt-env-1")
+	if err != nil {
+		t.Fatalf("Get approval baseline: %v", err)
+	}
+	if got.Hash != approval.Hash {
+		t.Fatalf("hash = %q, want preserved approval hash %q", got.Hash, approval.Hash)
+	}
+	if got.ApprovedBy != approval.ApprovedBy {
+		t.Fatalf("approved_by = %q, want preserved approval actor %q", got.ApprovedBy, approval.ApprovedBy)
+	}
+	if got.Kind != BaselineKindSpecSectionApproval {
+		t.Fatalf("kind = %q, want %q", got.Kind, BaselineKindSpecSectionApproval)
+	}
+}
+
 func TestParseBaselineKindPreservesUnknownLegacyPosture(t *testing.T) {
 	for _, raw := range []string{"", "  ", "legacy", "pre_work_reference"} {
 		if got := ParseBaselineKind(raw); got != BaselineKindUnknownLegacy {

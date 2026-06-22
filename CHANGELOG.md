@@ -13,6 +13,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   docs, skills, templates, and `.haft` carriers as spec approval, pre-work
   reference, verified-state snapshot, comparison, ordinary-language, or legacy
   ambiguous usage while skipping Open-Sleigh and generated dependency noise.
+- **Baseline split rewrite regression.** Added compatibility coverage proving
+  pre-work reference and verified-state snapshots cannot rewrite an existing
+  `SpecSectionApprovalBaseline` row for the same spec section.
 - **Baseline split measurement regression.** Added coverage proving impact
   measurement records evidence without rewriting the decision drift baseline
   hashes, preserving verified-state snapshots as drift references rather than

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first spec read compatibility.** `haft spec review` and
+  `haft spec status` now read current `spec_section_editions` from the SQL
+  project graph before falling back to markdown carriers, while preserving the
+  existing read-only review/lifecycle projections and failing closed when a
+  present SQL edition cannot be projected back into the canonical spec set.
 - **Host authorization receipt fail-closed shape.** Authority receipt
   evaluation now validates future host receipts for explicit source,
   principal, session, action, payload hash, and expiry, but still fails closed

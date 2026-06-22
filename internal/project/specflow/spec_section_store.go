@@ -37,6 +37,31 @@ type SpecSectionEditionStore interface {
 	ListCurrent(projectID string) ([]SpecSectionEdition, error)
 }
 
+func ProjectSpecificationSetFromEditions(editions []SpecSectionEdition) (project.ProjectSpecificationSet, error) {
+	documents := make([]project.SpecDocumentInput, 0, len(editions))
+	for _, edition := range editions {
+		publication, err := RenderSpecSectionEditionMarkdown(edition)
+		if err != nil {
+			return project.ProjectSpecificationSet{}, err
+		}
+
+		documents = append(documents, project.SpecDocumentInput{
+			Path:    publication.CarrierPath,
+			Kind:    specSectionEditionDocumentKind(edition.Section),
+			Content: publication.Markdown,
+		})
+	}
+
+	return project.ProjectSpecificationSetFromDocuments(documents), nil
+}
+
+func specSectionEditionDocumentKind(section project.SpecSection) string {
+	if strings.TrimSpace(section.DocumentKind) != "" {
+		return strings.TrimSpace(section.DocumentKind)
+	}
+	return strings.TrimSpace(section.Spec)
+}
+
 func NewSpecSectionEdition(projectID string, section project.SpecSection, sourceKind SpecSectionSourceKind, updatedAt time.Time) SpecSectionEdition {
 	if updatedAt.IsZero() {
 		updatedAt = time.Now().UTC()

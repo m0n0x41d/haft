@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -45,7 +44,7 @@ func runSpecReview(cmd *cobra.Command, _ []string) error {
 }
 
 func buildSpecReviewPacket(projectRoot string) (specflow.ReviewPacket, error) {
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return specflow.ReviewPacket{}, err
 	}

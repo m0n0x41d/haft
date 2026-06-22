@@ -120,6 +120,33 @@ func TestSpecSectionEditionRejectsMismatchedSectionID(t *testing.T) {
 	}
 }
 
+func TestProjectSpecificationSetFromEditionsPreservesSemanticSections(t *testing.T) {
+	target := NewSpecSectionEdition("proj-1", specSectionEditionTestSection("TS.sync.001"), SpecSectionSourceSQL, time.Time{})
+	enablingSection := specSectionEditionTestSection("ES.sync.001")
+	enablingSection.Spec = "enabling-system"
+	enablingSection.SystemFrame = project.SystemReferenceFrame{ID: "enabling_system", Kind: "enabling_system", Source: "declared"}
+	enablingSection.DocumentKind = "enabling-system"
+	enablingSection.Path = ".haft/specs/enabling-system.md"
+	enabling := NewSpecSectionEdition("proj-1", enablingSection, SpecSectionSourceSQL, time.Time{})
+
+	specSet, err := ProjectSpecificationSetFromEditions([]SpecSectionEdition{target, enabling})
+	if err != nil {
+		t.Fatalf("ProjectSpecificationSetFromEditions: %v", err)
+	}
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %#v, want none", specSet.Findings)
+	}
+	if len(specSet.Sections) != 2 {
+		t.Fatalf("sections = %#v, want two sections", specSet.Sections)
+	}
+	if HashSection(specSet.Sections[0]) != target.SemanticHash {
+		t.Fatalf("target semantic hash changed")
+	}
+	if HashSection(specSet.Sections[1]) != enabling.SemanticHash {
+		t.Fatalf("enabling semantic hash changed")
+	}
+}
+
 func specSectionEditionTestSection(id string) project.SpecSection {
 	return project.SpecSection{
 		ID:            id,

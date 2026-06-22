@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -73,6 +75,37 @@ func TestRunSpecNextJSONReturnsLifecycleProjection(t *testing.T) {
 	}
 	if projection.WorkflowIntent.Phase != specflow.PhaseTargetEnvironmentDraft {
 		t.Fatalf("WorkflowIntent.Phase = %q", projection.WorkflowIntent.Phase)
+	}
+}
+
+func TestBuildSpecLifecycleProjectionReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.status.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	projection, err := buildSpecLifecycleProjection(root)
+	if err != nil {
+		t.Fatalf("buildSpecLifecycleProjection: %v", err)
+	}
+	if projection.SectionID != "TS.sql.status.001" {
+		t.Fatalf("SectionID = %q, want SQL edition section", projection.SectionID)
 	}
 }
 

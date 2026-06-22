@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -106,6 +108,43 @@ func TestRunSpecReviewSummaryNamesAdvisoryBoundary(t *testing.T) {
 	}
 	if !strings.Contains(result, "profile: spec_semantic_review_v2; value_slice=abstain") {
 		t.Fatalf("summary missing profile boundary:\n%s", result)
+	}
+}
+
+func TestBuildSpecReviewPacketReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "acceptance",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	packet, err := buildSpecReviewPacket(root)
+	if err != nil {
+		t.Fatalf("buildSpecReviewPacket: %v", err)
+	}
+	if packet.Summary.CheckedSections != 1 {
+		t.Fatalf("checked_sections = %d, want SQL edition only", packet.Summary.CheckedSections)
+	}
+	if _, ok := findSpecReviewSection(packet, "TS.sql.001"); !ok {
+		t.Fatalf("review packet did not include SQL section: %#v", packet.Sections)
+	}
+	if _, ok := findSpecReviewSection(packet, "TS.sync.001"); ok {
+		t.Fatalf("review packet included carrier section despite SQL editions: %#v", packet.Sections)
 	}
 }
 
@@ -229,15 +268,23 @@ func stubSpecReviewJSON(t *testing.T, value bool) func() {
 
 func specReviewSectionByID(t *testing.T, packet specflow.ReviewPacket, sectionID string) specflow.ReviewSection {
 	t.Helper()
-
-	for _, section := range packet.Sections {
-		if section.SectionID == sectionID {
-			return section
-		}
+	section, ok := findSpecReviewSection(packet, sectionID)
+	if ok {
+		return section
 	}
 
 	t.Fatalf("section %q not found in %#v", sectionID, packet.Sections)
 	return specflow.ReviewSection{}
+}
+
+func findSpecReviewSection(packet specflow.ReviewPacket, sectionID string) (specflow.ReviewSection, bool) {
+	for _, section := range packet.Sections {
+		if section.SectionID == sectionID {
+			return section, true
+		}
+	}
+
+	return specflow.ReviewSection{}, false
 }
 
 func specReviewModelDisposition(profile specflow.ReviewProfile, name string) string {

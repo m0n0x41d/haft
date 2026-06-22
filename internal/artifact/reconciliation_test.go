@@ -137,6 +137,12 @@ func TestDecisionReconciliationGroupsExplicitSubjectAndTargetAsMergeCandidate(t 
 			t.Fatalf("preview proposed status = %#v, want superseded", status)
 		}
 	}
+	if !hasLineageRelation(group.Preview.Proposed.LineageRelations, "mergedFrom", "$successor_ref", "dec-1") {
+		t.Fatalf("preview lineage_relations = %#v, want mergedFrom placeholder", group.Preview.Proposed.LineageRelations)
+	}
+	if !hasLineageRelation(group.Preview.Proposed.LineageRelations, "retiredWithSuccessor", "dec-2", "$successor_ref") {
+		t.Fatalf("preview lineage_relations = %#v, want retiredWithSuccessor placeholder", group.Preview.Proposed.LineageRelations)
+	}
 }
 
 func TestDecisionReconciliationPreviewReportsDownstreamImpact(t *testing.T) {
@@ -409,6 +415,12 @@ func TestApplyDecisionReconciliationMergeThroughSuccessorPreservesLineage(t *tes
 	if len(result.Applied) != 1 {
 		t.Fatalf("applied = %#v", result.Applied)
 	}
+	if !hasLineageRelation(result.Applied[0].LineageRelations, "mergedFrom", "dec-successor", "dec-old-a") {
+		t.Fatalf("lineage_relations = %#v, want mergedFrom actual successor", result.Applied[0].LineageRelations)
+	}
+	if !hasLineageRelation(result.Applied[0].LineageRelations, "retiredWithSuccessor", "dec-old-b", "dec-successor") {
+		t.Fatalf("lineage_relations = %#v, want retiredWithSuccessor actual successor", result.Applied[0].LineageRelations)
+	}
 
 	for _, ref := range []string{"dec-old-a", "dec-old-b"} {
 		decision, err := store.Get(ctx, ref)
@@ -436,7 +448,7 @@ func TestApplyDecisionReconciliationRetireWithoutSuccessor(t *testing.T) {
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-obsolete", StatusActive, "runtime", DecisionFields{}, now)
 
-	_, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
+	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
 		Authority:           "operator_approved_reconciliation_selection",
 		OperatorApprovalRef: "chat:operator-approved-retire",
@@ -449,6 +461,9 @@ func TestApplyDecisionReconciliationRetireWithoutSuccessor(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("ApplyDecisionReconciliationSelections: %v", err)
+	}
+	if len(result.Applied) != 1 || !hasLineageRelation(result.Applied[0].LineageRelations, "retiredWithoutSuccessor", "dec-obsolete", "") {
+		t.Fatalf("lineage_relations = %#v, want retiredWithoutSuccessor", result.Applied)
 	}
 
 	decision, err := store.Get(ctx, "dec-obsolete")
@@ -675,6 +690,27 @@ func hasLink(links []Link, ref string, linkType string) bool {
 		if link.Ref == ref && link.Type == linkType {
 			return true
 		}
+	}
+	return false
+}
+
+func hasLineageRelation(
+	relations []DecisionReconciliationLineageRelation,
+	relation string,
+	sourceRef string,
+	targetRef string,
+) bool {
+	for _, candidate := range relations {
+		if candidate.Relation != relation {
+			continue
+		}
+		if candidate.SourceRef != sourceRef {
+			continue
+		}
+		if candidate.TargetRef != targetRef {
+			continue
+		}
+		return true
 	}
 	return false
 }

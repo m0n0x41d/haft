@@ -33,6 +33,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   invariant binding targets can now attach bounded evaluators from JSON carrier
   objects using structured `id` or `target_ref` fields. Sibling JSON object
   edits remain audit-only; matching object edits become semantic-target drift.
+- **Decision reconciliation lineage labels.** Reconciliation previews and
+  operator-approved apply outcomes now expose explicit `lineage_relations` for
+  `mergedFrom`, `supersedes`, `retiredWithSuccessor`, and
+  `retiredWithoutSuccessor`, keeping authority-frontier cleanup auditable
+  without treating preview text as a binding mutation.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

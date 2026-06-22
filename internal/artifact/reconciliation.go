@@ -117,21 +117,30 @@ type DecisionReconciliationDownstreamEdge struct {
 }
 
 type DecisionReconciliationPreviewState struct {
-	DecisionRefs          []string                              `json:"decision_refs,omitempty"`
-	Statuses              []DecisionReconciliationPreviewStatus `json:"statuses,omitempty"`
-	SubjectRef            string                                `json:"subject_ref,omitempty"`
-	BoundedContext        string                                `json:"bounded_context,omitempty"`
-	GovernanceTargets     []string                              `json:"governance_targets,omitempty"`
-	ScopeRepairHints      []string                              `json:"scope_repair_hints,omitempty"`
-	LineageRefs           []string                              `json:"lineage_refs,omitempty"`
-	Effects               []string                              `json:"effects,omitempty"`
-	RequiredSuccessorRef  bool                                  `json:"required_successor_ref,omitempty"`
-	RequiresProblemReview bool                                  `json:"requires_problem_review,omitempty"`
+	DecisionRefs          []string                                `json:"decision_refs,omitempty"`
+	Statuses              []DecisionReconciliationPreviewStatus   `json:"statuses,omitempty"`
+	SubjectRef            string                                  `json:"subject_ref,omitempty"`
+	BoundedContext        string                                  `json:"bounded_context,omitempty"`
+	GovernanceTargets     []string                                `json:"governance_targets,omitempty"`
+	ScopeRepairHints      []string                                `json:"scope_repair_hints,omitempty"`
+	LineageRefs           []string                                `json:"lineage_refs,omitempty"`
+	LineageRelations      []DecisionReconciliationLineageRelation `json:"lineage_relations,omitempty"`
+	Effects               []string                                `json:"effects,omitempty"`
+	RequiredSuccessorRef  bool                                    `json:"required_successor_ref,omitempty"`
+	RequiresProblemReview bool                                    `json:"requires_problem_review,omitempty"`
 }
 
 type DecisionReconciliationPreviewStatus struct {
 	DecisionRef string `json:"decision_ref"`
 	Status      string `json:"status"`
+}
+
+type DecisionReconciliationLineageRelation struct {
+	Relation             string `json:"relation"`
+	SourceRef            string `json:"source_ref"`
+	TargetRef            string `json:"target_ref,omitempty"`
+	RequiresSuccessorRef bool   `json:"requires_successor_ref,omitempty"`
+	Note                 string `json:"note,omitempty"`
 }
 
 type DecisionReconciliationSelectionDocument struct {
@@ -160,13 +169,14 @@ type DecisionReconciliationApplyResult struct {
 }
 
 type DecisionReconciliationApplyOutcome struct {
-	Operation       string   `json:"operation"`
-	ReviewedGroupID string   `json:"reviewed_group_id,omitempty"`
-	DecisionRefs    []string `json:"decision_refs"`
-	SuccessorRef    string   `json:"successor_ref,omitempty"`
-	ProblemRefs     []string `json:"problem_refs,omitempty"`
-	UpdatedFields   []string `json:"updated_fields,omitempty"`
-	Status          string   `json:"status"`
+	Operation        string                                  `json:"operation"`
+	ReviewedGroupID  string                                  `json:"reviewed_group_id,omitempty"`
+	DecisionRefs     []string                                `json:"decision_refs"`
+	SuccessorRef     string                                  `json:"successor_ref,omitempty"`
+	ProblemRefs      []string                                `json:"problem_refs,omitempty"`
+	UpdatedFields    []string                                `json:"updated_fields,omitempty"`
+	LineageRelations []DecisionReconciliationLineageRelation `json:"lineage_relations,omitempty"`
+	Status           string                                  `json:"status"`
 }
 
 type decisionReconciliationBucket struct {
@@ -421,11 +431,12 @@ func applyDecisionReconciliationSupersede(
 		}
 	}
 	return DecisionReconciliationApplyOutcome{
-		Operation:       strings.TrimSpace(item.Operation),
-		ReviewedGroupID: strings.TrimSpace(item.ReviewedGroupID),
-		DecisionRefs:    refs,
-		SuccessorRef:    strings.TrimSpace(item.SuccessorRef),
-		Status:          "applied",
+		Operation:        strings.TrimSpace(item.Operation),
+		ReviewedGroupID:  strings.TrimSpace(item.ReviewedGroupID),
+		DecisionRefs:     refs,
+		SuccessorRef:     strings.TrimSpace(item.SuccessorRef),
+		LineageRelations: decisionReconciliationLineageRelations(strings.TrimSpace(item.Operation), refs, strings.TrimSpace(item.SuccessorRef)),
+		Status:           "applied",
 	}, nil
 }
 
@@ -442,10 +453,11 @@ func applyDecisionReconciliationRetire(
 		}
 	}
 	return DecisionReconciliationApplyOutcome{
-		Operation:       DecisionReconciliationOperationRetireWithoutSuccessor,
-		ReviewedGroupID: strings.TrimSpace(item.ReviewedGroupID),
-		DecisionRefs:    refs,
-		Status:          "applied",
+		Operation:        DecisionReconciliationOperationRetireWithoutSuccessor,
+		ReviewedGroupID:  strings.TrimSpace(item.ReviewedGroupID),
+		DecisionRefs:     refs,
+		LineageRelations: decisionReconciliationLineageRelations(DecisionReconciliationOperationRetireWithoutSuccessor, refs, ""),
+		Status:           "applied",
 	}, nil
 }
 
@@ -950,6 +962,7 @@ func decisionReconciliationPreviewProposed(
 	switch operation {
 	case DecisionReconciliationOperationMergeThroughSuccessor:
 		state.Statuses = decisionReconciliationPreviewStatuses(items, string(StatusSuperseded))
+		state.LineageRelations = decisionReconciliationLineageRelations(operation, group.DecisionRefs, "$successor_ref")
 		state.Effects = []string{
 			"requires an existing successor DecisionRecord",
 			"selected decisions would become superseded by the successor",
@@ -958,6 +971,7 @@ func decisionReconciliationPreviewProposed(
 		state.RequiredSuccessorRef = true
 	case DecisionReconciliationOperationSupersede:
 		state.Statuses = decisionReconciliationPreviewStatuses(items, string(StatusSuperseded))
+		state.LineageRelations = decisionReconciliationLineageRelations(operation, group.DecisionRefs, "$successor_ref")
 		state.Effects = []string{
 			"requires an existing successor DecisionRecord",
 			"selected decisions would become superseded by the successor",
@@ -965,6 +979,7 @@ func decisionReconciliationPreviewProposed(
 		state.RequiredSuccessorRef = true
 	case DecisionReconciliationOperationRetireWithoutSuccessor:
 		state.Statuses = decisionReconciliationPreviewStatuses(items, string(StatusDeprecated))
+		state.LineageRelations = decisionReconciliationLineageRelations(operation, group.DecisionRefs, "")
 		state.Effects = []string{"selected decisions would be deprecated without a successor"}
 	case DecisionReconciliationOperationReopen:
 		state.Statuses = decisionReconciliationPreviewStatuses(items, string(StatusRefreshDue))
@@ -983,6 +998,65 @@ func decisionReconciliationPreviewProposed(
 		state.Effects = []string{"no mutation proposed by this report"}
 	}
 	return state
+}
+
+func decisionReconciliationLineageRelations(
+	operation string,
+	decisionRefs []string,
+	successorRef string,
+) []DecisionReconciliationLineageRelation {
+	refs := compactSortedStrings(decisionRefs)
+	relations := make([]DecisionReconciliationLineageRelation, 0, len(refs)*2)
+	requiresSuccessor := strings.TrimSpace(successorRef) == "$successor_ref"
+	switch operation {
+	case DecisionReconciliationOperationMergeThroughSuccessor:
+		for _, ref := range refs {
+			relations = append(relations,
+				DecisionReconciliationLineageRelation{
+					Relation:             "mergedFrom",
+					SourceRef:            successorRef,
+					TargetRef:            ref,
+					RequiresSuccessorRef: requiresSuccessor,
+					Note:                 "successor keeps lineage to merged historical decision",
+				},
+				DecisionReconciliationLineageRelation{
+					Relation:             "retiredWithSuccessor",
+					SourceRef:            ref,
+					TargetRef:            successorRef,
+					RequiresSuccessorRef: requiresSuccessor,
+					Note:                 "historical decision authority ends through selected successor",
+				},
+			)
+		}
+	case DecisionReconciliationOperationSupersede:
+		for _, ref := range refs {
+			relations = append(relations,
+				DecisionReconciliationLineageRelation{
+					Relation:             "supersedes",
+					SourceRef:            successorRef,
+					TargetRef:            ref,
+					RequiresSuccessorRef: requiresSuccessor,
+					Note:                 "successor replaces historical decision authority",
+				},
+				DecisionReconciliationLineageRelation{
+					Relation:             "retiredWithSuccessor",
+					SourceRef:            ref,
+					TargetRef:            successorRef,
+					RequiresSuccessorRef: requiresSuccessor,
+					Note:                 "historical decision authority ends through selected successor",
+				},
+			)
+		}
+	case DecisionReconciliationOperationRetireWithoutSuccessor:
+		for _, ref := range refs {
+			relations = append(relations, DecisionReconciliationLineageRelation{
+				Relation:  "retiredWithoutSuccessor",
+				SourceRef: ref,
+				Note:      "historical decision authority ends without replacement",
+			})
+		}
+	}
+	return relations
 }
 
 func decisionReconciliationPreviewStatuses(

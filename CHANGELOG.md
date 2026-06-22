@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit self-surface classification.** `haft baseline audit` now
+  classifies the audit command implementation and its tests as a dedicated
+  audit-tool surface, so classifier vocabulary does not report itself as
+  legacy ambiguous terminology debt.
 - **Baseline audit release-notes carrier classification.** `haft baseline audit`
   now classifies `CHANGELOG.md` baseline mentions as release-notes provenance,
   so release history remains audit-visible without dominating current legacy

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit lifecycle-authority classification.** `haft baseline audit`
+  now separates approve/rebaseline and human-gate wording from legacy ambiguous
+  baseline terminology, keeping authority-boundary text visible without
+  treating it as an untyped baseline object.
 - **Baseline audit typed-model classification.** `haft baseline audit` now
   classifies explicit `BaselineKind`, `SectionBaseline`, `BaselineStore`, and
   baseline-shaped compatibility/projection terminology as typed baseline model

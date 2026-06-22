@@ -25,6 +25,7 @@ const (
 	baselineAuditSupportArchive   = "support_archive_carrier_baseline"
 	baselineAuditSourceSpec       = "source_spec_reference_baseline"
 	baselineAuditTypedModel       = "typed_baseline_model"
+	baselineAuditLifecycleAuth    = "baseline_lifecycle_authority"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -85,6 +86,8 @@ type baselineTermAuditSummary struct {
 	SourceSpecFiles             int `json:"source_spec_reference_files"`
 	TypedBaselineModel          int `json:"typed_baseline_model"`
 	TypedBaselineModelFiles     int `json:"typed_baseline_model_files"`
+	LifecycleAuthority          int `json:"baseline_lifecycle_authority"`
+	LifecycleAuthorityFiles     int `json:"baseline_lifecycle_authority_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -175,6 +178,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	report.Summary.SupportArchiveFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSupportArchive)
 	report.Summary.SourceSpecFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSourceSpec)
 	report.Summary.TypedBaselineModelFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditTypedModel)
+	report.Summary.LifecycleAuthorityFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLifecycleAuth)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -363,6 +367,31 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 	):
 		return baselineAuditLegacyAmbiguous, "explicitly names legacy ambiguous baseline posture"
 	case containsAnyBaselineTerm(value,
+		"approve/rebaseline",
+		"approve or rebaseline",
+		"approval or rebaseline",
+		"approve sections, rebaseline",
+		"approve|rebaseline",
+		"approve`, `rebaseline",
+		"approve`, `reopen",
+		"rebaseline/reopen",
+		"haft_spec_section(action=\"approve\"",
+		"haft_spec_section(approve",
+		"haft spec approve",
+		"haft spec rebaseline",
+		"spec lifecycle commands surface human gates before baseline",
+		"human gates before baseline",
+		"does not approve specs, decisions, commissions, or baseline",
+		"does not approve, rebaseline",
+		"without creating approval, rebaseline",
+		"not_approval_rebaseline",
+		"operator reviews the active specsection and records a baseline",
+		"operator chooses rebaseline",
+		"human principal approves binding choices and baseline",
+		"human review is required for value choices, authority gates, scope expansion, public interface changes, and baseline",
+	):
+		return baselineAuditLifecycleAuth, "names baseline lifecycle or operator-authority boundary, not a baseline object"
+	case containsAnyBaselineTerm(value,
 		"baselinekind",
 		"sectionbaseline",
 		"section baseline",
@@ -537,6 +566,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.SourceSpecReference++
 	case baselineAuditTypedModel:
 		summary.TypedBaselineModel++
+	case baselineAuditLifecycleAuth:
+		summary.LifecycleAuthority++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -551,7 +582,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d lifecycle_authority=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -563,6 +594,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.SupportArchiveCarrier,
 		report.Summary.SourceSpecReference,
 		report.Summary.TypedBaselineModel,
+		report.Summary.LifecycleAuthority,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

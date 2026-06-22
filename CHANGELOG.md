@@ -48,6 +48,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   that names required successor packet fields such as retained/withdrawn claims,
   changed assumptions, evidence, scope, drift watch targets, and `valid_until`
   without creating or approving a successor.
+- **Decision reconciliation claim lifecycle apply.** Operator-approved
+  reconciliation selections now support `claim_lifecycle_update` for explicit
+  claims, allowing partial claim supersede, retire, or reopen without changing
+  the parent DecisionRecord's current authority.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

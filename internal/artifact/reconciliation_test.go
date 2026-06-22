@@ -547,6 +547,86 @@ func TestApplyDecisionReconciliationReopenCreatesProblem(t *testing.T) {
 	}
 }
 
+func TestApplyDecisionReconciliationClaimLifecycleUpdateKeepsDecisionActive(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-claims", StatusActive, "runtime", DecisionFields{
+		Claims: []DecisionClaim{
+			{
+				ID:         "claim-old",
+				Claim:      "Old runtime boundary holds.",
+				Observable: "Boundary evidence exists.",
+				Threshold:  "Evidence is current.",
+			},
+			{
+				ID:         "claim-needs-review",
+				Claim:      "Runtime prompt boundary is still sufficient.",
+				Observable: "Review confirms the prompt boundary.",
+				Threshold:  "No drift.",
+			},
+		},
+	}, now)
+
+	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           "operator_approved_reconciliation_selection",
+		OperatorApprovalRef: "chat:operator-approved-claim-lifecycle",
+		Items: []DecisionReconciliationSelection{{
+			Operation:       DecisionReconciliationOperationClaimLifecycleUpdate,
+			ReviewedGroupID: "decision-reconcile-claims",
+			DecisionRefs:    []string{"dec-claims"},
+			ClaimLifecycleUpdates: []DecisionReconciliationClaimLifecycleUpdate{
+				{
+					DecisionRef:     "dec-claims",
+					ClaimID:         "claim-old",
+					LifecycleStatus: ClaimLifecycleSuperseded,
+					SuccessorRef:    "dec-successor#claim-new",
+					Reason:          "Narrower successor claim replaces this one.",
+				},
+				{
+					DecisionRef:     "dec-claims",
+					ClaimID:         "claim-needs-review",
+					LifecycleStatus: ClaimLifecycleRefreshDue,
+					Reason:          "Evidence window expired.",
+				},
+			},
+			Reason: "Partial claim lifecycle update.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ApplyDecisionReconciliationSelections: %v", err)
+	}
+	if len(result.Applied) != 1 || len(result.Applied[0].ClaimUpdates) != 2 {
+		t.Fatalf("claim lifecycle result = %#v", result)
+	}
+	if !containsString(result.Applied[0].UpdatedFields, "claims[].lifecycle_status") {
+		t.Fatalf("updated fields = %#v", result.Applied[0].UpdatedFields)
+	}
+
+	decision, err := store.Get(ctx, "dec-claims")
+	if err != nil {
+		t.Fatalf("load decision: %v", err)
+	}
+	if decision.Meta.Status != StatusActive {
+		t.Fatalf("decision status = %q, want active", decision.Meta.Status)
+	}
+	fields := decision.UnmarshalDecisionFields()
+	claims := map[string]DecisionClaim{}
+	for _, claim := range fields.Claims {
+		claims[claim.ID] = claim
+	}
+	if claims["claim-old"].LifecycleStatus != ClaimLifecycleSuperseded {
+		t.Fatalf("claim-old lifecycle = %q", claims["claim-old"].LifecycleStatus)
+	}
+	if claims["claim-old"].SuccessorRef != "dec-successor#claim-new" {
+		t.Fatalf("claim-old successor_ref = %q", claims["claim-old"].SuccessorRef)
+	}
+	if claims["claim-needs-review"].LifecycleStatus != ClaimLifecycleRefreshDue {
+		t.Fatalf("claim-needs-review lifecycle = %q", claims["claim-needs-review"].LifecycleStatus)
+	}
+}
+
 func TestApplyDecisionReconciliationEnrichScopeUpdatesOnlyScopeFields(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

@@ -26,6 +26,7 @@ const (
 	DecisionReconciliationOperationRetireWithoutSuccessor = "retire_without_successor"
 	DecisionReconciliationOperationReopen                 = "reopen"
 	DecisionReconciliationOperationEnrichScope            = "enrich_scope"
+	DecisionReconciliationOperationClaimLifecycleUpdate   = "claim_lifecycle_update"
 )
 
 type DecisionReconciliationPlan struct {
@@ -172,15 +173,24 @@ type DecisionReconciliationSelectionDocument struct {
 }
 
 type DecisionReconciliationSelection struct {
-	Operation                 string              `json:"operation"`
-	ReviewedGroupID           string              `json:"reviewed_group_id"`
-	DecisionRefs              []string            `json:"decision_refs"`
-	SuccessorRef              string              `json:"successor_ref,omitempty"`
-	DecisionSubjectRef        string              `json:"decision_subject_ref,omitempty"`
-	GovernanceTargets         []GovernanceTarget  `json:"governance_targets,omitempty"`
-	DriftWatchTargets         []DriftWatchTarget  `json:"drift_watch_targets,omitempty"`
-	ClaimGovernanceTargetRefs map[string][]string `json:"claim_governance_target_refs,omitempty"`
-	Reason                    string              `json:"reason"`
+	Operation                 string                                       `json:"operation"`
+	ReviewedGroupID           string                                       `json:"reviewed_group_id"`
+	DecisionRefs              []string                                     `json:"decision_refs"`
+	SuccessorRef              string                                       `json:"successor_ref,omitempty"`
+	DecisionSubjectRef        string                                       `json:"decision_subject_ref,omitempty"`
+	GovernanceTargets         []GovernanceTarget                           `json:"governance_targets,omitempty"`
+	DriftWatchTargets         []DriftWatchTarget                           `json:"drift_watch_targets,omitempty"`
+	ClaimGovernanceTargetRefs map[string][]string                          `json:"claim_governance_target_refs,omitempty"`
+	ClaimLifecycleUpdates     []DecisionReconciliationClaimLifecycleUpdate `json:"claim_lifecycle_updates,omitempty"`
+	Reason                    string                                       `json:"reason"`
+}
+
+type DecisionReconciliationClaimLifecycleUpdate struct {
+	DecisionRef     string               `json:"decision_ref"`
+	ClaimID         string               `json:"claim_id"`
+	LifecycleStatus ClaimLifecycleStatus `json:"lifecycle_status"`
+	SuccessorRef    string               `json:"successor_ref,omitempty"`
+	Reason          string               `json:"reason"`
 }
 
 type DecisionReconciliationApplyResult struct {
@@ -190,14 +200,15 @@ type DecisionReconciliationApplyResult struct {
 }
 
 type DecisionReconciliationApplyOutcome struct {
-	Operation        string                                  `json:"operation"`
-	ReviewedGroupID  string                                  `json:"reviewed_group_id,omitempty"`
-	DecisionRefs     []string                                `json:"decision_refs"`
-	SuccessorRef     string                                  `json:"successor_ref,omitempty"`
-	ProblemRefs      []string                                `json:"problem_refs,omitempty"`
-	UpdatedFields    []string                                `json:"updated_fields,omitempty"`
-	LineageRelations []DecisionReconciliationLineageRelation `json:"lineage_relations,omitempty"`
-	Status           string                                  `json:"status"`
+	Operation        string                                       `json:"operation"`
+	ReviewedGroupID  string                                       `json:"reviewed_group_id,omitempty"`
+	DecisionRefs     []string                                     `json:"decision_refs"`
+	SuccessorRef     string                                       `json:"successor_ref,omitempty"`
+	ProblemRefs      []string                                     `json:"problem_refs,omitempty"`
+	UpdatedFields    []string                                     `json:"updated_fields,omitempty"`
+	ClaimUpdates     []DecisionReconciliationClaimLifecycleUpdate `json:"claim_lifecycle_updates,omitempty"`
+	LineageRelations []DecisionReconciliationLineageRelation      `json:"lineage_relations,omitempty"`
+	Status           string                                       `json:"status"`
 }
 
 type decisionReconciliationBucket struct {
@@ -286,6 +297,11 @@ func validateDecisionReconciliationSelection(
 	if operation == DecisionReconciliationOperationEnrichScope && len(refs) != 1 {
 		return fmt.Errorf("%s.decision_refs must contain exactly one decision for enrich_scope", prefix)
 	}
+	if operation == DecisionReconciliationOperationClaimLifecycleUpdate {
+		if err := validateDecisionReconciliationClaimLifecycleUpdates(ctx, store, prefix, item, refs); err != nil {
+			return err
+		}
+	}
 	if operation == DecisionReconciliationOperationSupersede || operation == DecisionReconciliationOperationMergeThroughSuccessor {
 		if strings.TrimSpace(item.SuccessorRef) == "" {
 			return fmt.Errorf("%s.successor_ref is required for %s", prefix, operation)
@@ -305,6 +321,9 @@ func validateDecisionReconciliationSelection(
 	if operation != DecisionReconciliationOperationEnrichScope && selectionHasScopeEnrichment(item) {
 		return fmt.Errorf("%s scope enrichment fields are only valid for enrich_scope", prefix)
 	}
+	if operation != DecisionReconciliationOperationClaimLifecycleUpdate && len(item.ClaimLifecycleUpdates) > 0 {
+		return fmt.Errorf("%s claim_lifecycle_updates are only valid for claim_lifecycle_update", prefix)
+	}
 	for _, ref := range refs {
 		if err := validateDecisionReconciliationCurrentDecision(ctx, store, prefix, ref); err != nil {
 			return err
@@ -314,6 +333,86 @@ func validateDecisionReconciliationSelection(
 		}
 	}
 	return nil
+}
+
+func validateDecisionReconciliationClaimLifecycleUpdates(
+	ctx context.Context,
+	store ArtifactStore,
+	prefix string,
+	item DecisionReconciliationSelection,
+	refs []string,
+) error {
+	if strings.TrimSpace(item.SuccessorRef) != "" {
+		return fmt.Errorf("%s.successor_ref must be empty for claim_lifecycle_update; use claim_lifecycle_updates[].successor_ref", prefix)
+	}
+	if len(item.ClaimLifecycleUpdates) == 0 {
+		return fmt.Errorf("%s.claim_lifecycle_updates must contain at least one claim update", prefix)
+	}
+	selectedRefs := stringSet(refs)
+	claimsByDecision, err := decisionReconciliationClaimsByDecision(ctx, store, refs)
+	if err != nil {
+		return err
+	}
+	for updateIndex, update := range item.ClaimLifecycleUpdates {
+		updatePrefix := fmt.Sprintf("%s.claim_lifecycle_updates[%d]", prefix, updateIndex)
+		decisionRef := strings.TrimSpace(update.DecisionRef)
+		claimID := strings.TrimSpace(update.ClaimID)
+		if decisionRef == "" {
+			return fmt.Errorf("%s.decision_ref is required", updatePrefix)
+		}
+		if _, ok := selectedRefs[decisionRef]; !ok {
+			return fmt.Errorf("%s.decision_ref %q must be listed in %s.decision_refs", updatePrefix, decisionRef, prefix)
+		}
+		if claimID == "" {
+			return fmt.Errorf("%s.claim_id is required", updatePrefix)
+		}
+		if _, ok := claimsByDecision[decisionRef][claimID]; !ok {
+			return fmt.Errorf("%s.claim_id %q does not match an explicit claim on %q", updatePrefix, claimID, decisionRef)
+		}
+		status := normalizeClaimLifecycleStatus(update.LifecycleStatus)
+		if status == "" || status == ClaimLifecycleActive {
+			return fmt.Errorf("%s.lifecycle_status must be refresh_due, superseded, or deprecated", updatePrefix)
+		}
+		if status == ClaimLifecycleSuperseded && strings.TrimSpace(update.SuccessorRef) == "" {
+			return fmt.Errorf("%s.successor_ref is required when lifecycle_status is superseded", updatePrefix)
+		}
+		if strings.TrimSpace(update.Reason) == "" {
+			return fmt.Errorf("%s.reason is required", updatePrefix)
+		}
+	}
+	return nil
+}
+
+func decisionReconciliationClaimsByDecision(
+	ctx context.Context,
+	store ArtifactStore,
+	refs []string,
+) (map[string]map[string]struct{}, error) {
+	out := make(map[string]map[string]struct{}, len(refs))
+	for _, ref := range refs {
+		artifact, err := store.Get(ctx, ref)
+		if err != nil {
+			return nil, fmt.Errorf("decision_ref %q not found: %w", ref, err)
+		}
+		fields := artifact.UnmarshalDecisionFields()
+		claims := make(map[string]struct{}, len(fields.Claims))
+		for _, claim := range fields.Claims {
+			claimID := strings.TrimSpace(claim.ID)
+			if claimID != "" {
+				claims[claimID] = struct{}{}
+			}
+		}
+		out[ref] = claims
+	}
+	return out, nil
+}
+
+func stringSet(values []string) map[string]struct{} {
+	out := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		out[value] = struct{}{}
+	}
+	return out
 }
 
 func validateDecisionReconciliationScopeEnrichment(
@@ -434,6 +533,8 @@ func applyDecisionReconciliationSelection(
 		return applyDecisionReconciliationReopen(ctx, store, haftDir, item)
 	case DecisionReconciliationOperationEnrichScope:
 		return applyDecisionReconciliationEnrichScope(ctx, store, item)
+	case DecisionReconciliationOperationClaimLifecycleUpdate:
+		return applyDecisionReconciliationClaimLifecycleUpdate(ctx, store, item)
 	default:
 		return DecisionReconciliationApplyOutcome{}, fmt.Errorf("unsupported operation %q", item.Operation)
 	}
@@ -535,13 +636,107 @@ func applyDecisionReconciliationEnrichScope(
 	}, nil
 }
 
+func applyDecisionReconciliationClaimLifecycleUpdate(
+	ctx context.Context,
+	store ArtifactStore,
+	item DecisionReconciliationSelection,
+) (DecisionReconciliationApplyOutcome, error) {
+	refs := compactSortedStrings(item.DecisionRefs)
+	updatesByDecision := decisionReconciliationClaimUpdatesByDecision(item.ClaimLifecycleUpdates)
+	appliedUpdates := make([]DecisionReconciliationClaimLifecycleUpdate, 0, len(item.ClaimLifecycleUpdates))
+
+	for _, ref := range refs {
+		updates := updatesByDecision[ref]
+		if len(updates) == 0 {
+			continue
+		}
+		decision, err := store.Get(ctx, ref)
+		if err != nil {
+			return DecisionReconciliationApplyOutcome{}, err
+		}
+		fields := decision.UnmarshalDecisionFields()
+		fields.Claims = applyDecisionReconciliationClaimUpdates(fields.Claims, updates)
+		if err := persistDecisionFields(ctx, store, decision, fields); err != nil {
+			return DecisionReconciliationApplyOutcome{}, err
+		}
+		appliedUpdates = append(appliedUpdates, normalizeDecisionReconciliationClaimUpdates(updates)...)
+	}
+
+	return DecisionReconciliationApplyOutcome{
+		Operation:       DecisionReconciliationOperationClaimLifecycleUpdate,
+		ReviewedGroupID: strings.TrimSpace(item.ReviewedGroupID),
+		DecisionRefs:    refs,
+		UpdatedFields: []string{
+			"claims[].lifecycle_status",
+			"claims[].successor_ref",
+			"claims[].retired_reason",
+		},
+		ClaimUpdates: appliedUpdates,
+		Status:       "applied",
+	}, nil
+}
+
+func decisionReconciliationClaimUpdatesByDecision(
+	updates []DecisionReconciliationClaimLifecycleUpdate,
+) map[string][]DecisionReconciliationClaimLifecycleUpdate {
+	out := make(map[string][]DecisionReconciliationClaimLifecycleUpdate, len(updates))
+	for _, update := range updates {
+		decisionRef := strings.TrimSpace(update.DecisionRef)
+		if decisionRef == "" {
+			continue
+		}
+		out[decisionRef] = append(out[decisionRef], update)
+	}
+	return out
+}
+
+func applyDecisionReconciliationClaimUpdates(
+	claims []DecisionClaim,
+	updates []DecisionReconciliationClaimLifecycleUpdate,
+) []DecisionClaim {
+	updatesByClaim := make(map[string]DecisionReconciliationClaimLifecycleUpdate, len(updates))
+	for _, update := range updates {
+		updatesByClaim[strings.TrimSpace(update.ClaimID)] = update
+	}
+	out := make([]DecisionClaim, 0, len(claims))
+	for _, claim := range claims {
+		update, ok := updatesByClaim[claim.ID]
+		if !ok {
+			out = append(out, claim)
+			continue
+		}
+		claim.LifecycleStatus = normalizeClaimLifecycleStatus(update.LifecycleStatus)
+		claim.SuccessorRef = strings.TrimSpace(update.SuccessorRef)
+		claim.RetiredReason = strings.TrimSpace(update.Reason)
+		out = append(out, claim)
+	}
+	return out
+}
+
+func normalizeDecisionReconciliationClaimUpdates(
+	updates []DecisionReconciliationClaimLifecycleUpdate,
+) []DecisionReconciliationClaimLifecycleUpdate {
+	out := make([]DecisionReconciliationClaimLifecycleUpdate, 0, len(updates))
+	for _, update := range updates {
+		out = append(out, DecisionReconciliationClaimLifecycleUpdate{
+			DecisionRef:     strings.TrimSpace(update.DecisionRef),
+			ClaimID:         strings.TrimSpace(update.ClaimID),
+			LifecycleStatus: normalizeClaimLifecycleStatus(update.LifecycleStatus),
+			SuccessorRef:    strings.TrimSpace(update.SuccessorRef),
+			Reason:          strings.TrimSpace(update.Reason),
+		})
+	}
+	return out
+}
+
 func isDecisionReconciliationApplyOperation(operation string) bool {
 	switch strings.TrimSpace(operation) {
 	case DecisionReconciliationOperationSupersede,
 		DecisionReconciliationOperationMergeThroughSuccessor,
 		DecisionReconciliationOperationRetireWithoutSuccessor,
 		DecisionReconciliationOperationReopen,
-		DecisionReconciliationOperationEnrichScope:
+		DecisionReconciliationOperationEnrichScope,
+		DecisionReconciliationOperationClaimLifecycleUpdate:
 		return true
 	default:
 		return false

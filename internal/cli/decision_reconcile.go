@@ -49,8 +49,10 @@ selection document must include authority=operator_approved_reconciliation_selec
 operator_approval_ref, reviewed_group_id, decision_refs, operation, and reason.
 operation=enrich_scope may add explicit decision_subject_ref,
 governance_targets, drift_watch_targets, and claim_governance_target_refs
-without changing decision status or lineage. MCP does not get an auto-apply path
-in this slice.`,
+without changing decision status or lineage. operation=claim_lifecycle_update
+may update explicit claims to refresh_due, superseded, or deprecated while the
+DecisionRecord remains current. MCP does not get an auto-apply path in this
+slice.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runDecisionReconcileApply,
 }

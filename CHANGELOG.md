@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline split measurement regression.** Added coverage proving impact
+  measurement records evidence without rewriting the decision drift baseline
+  hashes, preserving verified-state snapshots as drift references rather than
+  turning measurement into an implicit rebaseline.
 - **Decision drift baseline profiles.** Drift reports and `haft check --json`
   now label stored decision file-hash baselines as
   `verified_state_snapshot` with an authority boundary, making the legacy

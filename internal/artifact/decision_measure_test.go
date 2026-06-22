@@ -79,6 +79,72 @@ func TestMeasure_Success(t *testing.T) {
 	}
 }
 
+func TestMeasureDoesNotRewriteDecisionBaselineHashes(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"before\" }\n")
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep drift baseline stable",
+		WhySelected:   "Measurement evidence must not rewrite the verified-state snapshot used for drift.",
+		WeakestLink:   "A measurement path could accidentally mutate affected file hashes.",
+		PostConditions: []string{
+			"app.go behavior is measured after implementation",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 1 || before[0].Hash == "" {
+		t.Fatalf("baseline files = %+v, want one hashed file", before)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"after\" }\n")
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Implementation was measured after app.go changed.",
+		CriteriaMet: []string{"app.go behavior is measured after implementation"},
+		Verdict:     "accepted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("Measure rewrote baseline hashes:\nbefore=%+v\nafter=%+v", before, after)
+	}
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("drift reports = %+v, want one report from unchanged baseline snapshot", reports)
+	}
+	if reports[0].BaselineKind != BaselineKindVerifiedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want verified-state snapshot", reports[0].BaselineKind)
+	}
+}
+
 func TestMeasure_MissingRequired(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

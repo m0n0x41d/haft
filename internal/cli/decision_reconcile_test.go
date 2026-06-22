@@ -190,6 +190,7 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		ApplyAuthorityRequired: "operator_approved_reconciliation_selection",
 		Summary: artifact.DecisionReconciliationDraftSummary{
 			ScopeEnrichmentCandidates: 1,
+			SelectedCandidates:        1,
 		},
 		Items: []artifact.DecisionReconciliationDraftItem{{
 			DecisionRef:     "dec-fallback",
@@ -210,6 +211,7 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		"operator_approved: false",
 		"apply_authority_required: operator_approved_reconciliation_selection",
 		"scope_enrichment_candidates: 1",
+		"selected_candidates: 1",
 		"dec-fallback",
 	} {
 		if !strings.Contains(text, want) {

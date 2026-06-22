@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Batchable reconciliation selection drafts.** `haft decision reconcile
+  selection-draft` now supports read-only `--limit`, `--group-id`, and
+  `--decision-ref` filters so old-decision scope-enrichment approval packets
+  can be kept small and reviewable without becoming operator approval or
+  applying reconciliation mutations.
 - **Legacy file-scope drift binding fallback.** DriftEvent reports now classify
   legacy whole-file decision bindings as explicit `whole_file_fallback`
   `binding_target_missing` events that require scope enrichment, instead of

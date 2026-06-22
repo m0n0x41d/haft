@@ -186,10 +186,17 @@ type DecisionReconciliationSelectionDraft struct {
 	NextSteps              []string                           `json:"next_steps"`
 }
 
+type DecisionReconciliationSelectionDraftFilter struct {
+	Limit       int    `json:"limit,omitempty"`
+	GroupID     string `json:"group_id,omitempty"`
+	DecisionRef string `json:"decision_ref,omitempty"`
+}
+
 type DecisionReconciliationDraftSummary struct {
 	ReviewedGroups             int `json:"reviewed_groups"`
 	ScopeEnrichmentCandidates  int `json:"scope_enrichment_candidates"`
 	OperatorApprovalCandidates int `json:"operator_approval_candidates"`
+	SelectedCandidates         int `json:"selected_candidates,omitempty"`
 }
 
 type DecisionReconciliationDraftItem struct {
@@ -223,7 +230,15 @@ type DecisionReconciliationSelection struct {
 func BuildDecisionReconciliationSelectionDraft(
 	plan DecisionReconciliationPlan,
 ) DecisionReconciliationSelectionDraft {
-	items := decisionReconciliationDraftItems(plan.Groups)
+	return BuildDecisionReconciliationSelectionDraftFiltered(plan, DecisionReconciliationSelectionDraftFilter{})
+}
+
+func BuildDecisionReconciliationSelectionDraftFiltered(
+	plan DecisionReconciliationPlan,
+	filter DecisionReconciliationSelectionDraftFilter,
+) DecisionReconciliationSelectionDraft {
+	allItems := decisionReconciliationDraftItems(plan.Groups)
+	items := filterDecisionReconciliationDraftItems(allItems, filter)
 	return DecisionReconciliationSelectionDraft{
 		SchemaVersion:          DecisionReconciliationSchemaVersion,
 		Authority:              DecisionReconciliationSelectionDraftAuthority,
@@ -232,8 +247,9 @@ func BuildDecisionReconciliationSelectionDraft(
 		SourcePlanAuthority:    plan.Authority,
 		Summary: DecisionReconciliationDraftSummary{
 			ReviewedGroups:             len(plan.Groups),
-			ScopeEnrichmentCandidates:  len(items),
+			ScopeEnrichmentCandidates:  len(allItems),
 			OperatorApprovalCandidates: len(items),
+			SelectedCandidates:         len(items),
 		},
 		Items: items,
 		MutationBoundary: []string{
@@ -884,6 +900,28 @@ func decisionReconciliationDraftItems(
 		return out[i].DecisionRef < out[j].DecisionRef
 	})
 	return out
+}
+
+func filterDecisionReconciliationDraftItems(
+	items []DecisionReconciliationDraftItem,
+	filter DecisionReconciliationSelectionDraftFilter,
+) []DecisionReconciliationDraftItem {
+	groupID := strings.TrimSpace(filter.GroupID)
+	decisionRef := strings.TrimSpace(filter.DecisionRef)
+	filtered := make([]DecisionReconciliationDraftItem, 0, len(items))
+	for _, item := range items {
+		if groupID != "" && item.ReviewedGroupID != groupID {
+			continue
+		}
+		if decisionRef != "" && item.DecisionRef != decisionRef {
+			continue
+		}
+		filtered = append(filtered, item)
+		if filter.Limit > 0 && len(filtered) >= filter.Limit {
+			break
+		}
+	}
+	return filtered
 }
 
 func decisionReconciliationDraftItem(

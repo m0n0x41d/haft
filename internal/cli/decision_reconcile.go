@@ -18,6 +18,9 @@ var (
 	decisionReconcileApplyJSON     bool
 	decisionReconcileMetricsJSON   bool
 	decisionReconcileDraftJSON     bool
+	decisionReconcileDraftLimit    int
+	decisionReconcileDraftGroupID  string
+	decisionReconcileDraftDecision string
 	decisionGoverningSetJSON       bool
 	decisionGoverningSetQuery      string
 	decisionGoverningSetSubjectRef string
@@ -99,6 +102,9 @@ func init() {
 	decisionReconcileApplyCmd.Flags().BoolVar(&decisionReconcileApplyJSON, "json", false, "print structured JSON output")
 	decisionReconcileMetricsCmd.Flags().BoolVar(&decisionReconcileMetricsJSON, "json", false, "print structured JSON output")
 	decisionReconcileSelectionDraftCmd.Flags().BoolVar(&decisionReconcileDraftJSON, "json", false, "print structured JSON output")
+	decisionReconcileSelectionDraftCmd.Flags().IntVar(&decisionReconcileDraftLimit, "limit", 0, "limit emitted draft candidates without approving or applying them")
+	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftGroupID, "group-id", "", "emit draft candidates only for this reconciliation group id")
+	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftDecision, "decision-ref", "", "emit draft candidates only for this decision ref")
 	decisionGoverningSetCmd.Flags().BoolVar(&decisionGoverningSetJSON, "json", false, "print structured JSON output")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetQuery, "query", "", "filter governing sets by substring across subject, target, decision refs, and repair hints")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetSubjectRef, "subject-ref", "", "filter governing sets by exact subject ref")
@@ -136,6 +142,9 @@ func runDecisionReconcile(cmd *cobra.Command, _ []string) error {
 }
 
 func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
+	if decisionReconcileDraftLimit < 0 {
+		return fmt.Errorf("limit must be >= 0")
+	}
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("not a haft project: %w", err)
@@ -151,7 +160,14 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("build decision reconciliation plan: %w", err)
 	}
-	draft := artifact.BuildDecisionReconciliationSelectionDraft(plan)
+	draft := artifact.BuildDecisionReconciliationSelectionDraftFiltered(
+		plan,
+		artifact.DecisionReconciliationSelectionDraftFilter{
+			Limit:       decisionReconcileDraftLimit,
+			GroupID:     decisionReconcileDraftGroupID,
+			DecisionRef: decisionReconcileDraftDecision,
+		},
+	)
 	if decisionReconcileDraftJSON {
 		return writeJSON(cmd.OutOrStdout(), draft)
 	}
@@ -498,6 +514,9 @@ func writeDecisionReconciliationSelectionDraftSummary(
 		return err
 	}
 	if _, err := fmt.Fprintf(output, "scope_enrichment_candidates: %d\n", draft.Summary.ScopeEnrichmentCandidates); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "selected_candidates: %d\n", draft.Summary.SelectedCandidates); err != nil {
 		return err
 	}
 	if len(draft.Items) == 0 {

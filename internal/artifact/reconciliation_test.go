@@ -117,6 +117,72 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testing.T) {
+	plan := DecisionReconciliationPlan{
+		SchemaVersion: DecisionReconciliationSchemaVersion,
+		Authority:     DecisionReconciliationAuthority,
+		Groups: []DecisionReconciliationGroup{
+			{
+				GroupID: "group-1",
+				Preview: DecisionReconciliationPreview{
+					ApplyOperation: DecisionReconciliationOperationEnrichScope,
+				},
+				Decisions: []DecisionReconciliationItem{
+					{
+						DecisionID:    "dec-1",
+						DecisionTitle: "First",
+						AffectedFiles: []string{"one.go"},
+					},
+					{
+						DecisionID:    "dec-2",
+						DecisionTitle: "Second",
+						AffectedFiles: []string{"two.go"},
+					},
+				},
+			},
+			{
+				GroupID: "group-2",
+				Preview: DecisionReconciliationPreview{
+					ApplyOperation: DecisionReconciliationOperationEnrichScope,
+				},
+				Decisions: []DecisionReconciliationItem{{
+					DecisionID:    "dec-3",
+					DecisionTitle: "Third",
+					AffectedFiles: []string{"three.go"},
+				}},
+			},
+		},
+	}
+
+	draft := BuildDecisionReconciliationSelectionDraftFiltered(
+		plan,
+		DecisionReconciliationSelectionDraftFilter{
+			Limit:   1,
+			GroupID: "group-1",
+		},
+	)
+
+	if draft.Authority != DecisionReconciliationSelectionDraftAuthority {
+		t.Fatalf("authority = %q", draft.Authority)
+	}
+	if draft.OperatorApproved {
+		t.Fatal("filtered draft must not become operator-approved")
+	}
+	if draft.Summary.ScopeEnrichmentCandidates != 3 {
+		t.Fatalf("scope_enrichment_candidates = %d, want full source count 3", draft.Summary.ScopeEnrichmentCandidates)
+	}
+	if draft.Summary.OperatorApprovalCandidates != 1 || draft.Summary.SelectedCandidates != 1 {
+		t.Fatalf("filtered summary = %#v, want one selected candidate", draft.Summary)
+	}
+	if len(draft.Items) != 1 {
+		t.Fatalf("items = %#v, want one filtered candidate", draft.Items)
+	}
+	item := draft.Items[0]
+	if item.ReviewedGroupID != "group-1" || item.DecisionRef != "dec-1" {
+		t.Fatalf("filtered item = %#v, want first candidate from group-1", item)
+	}
+}
+
 func TestDecisionReconciliationGroupsExplicitSubjectAndTargetAsMergeCandidate(t *testing.T) {
 	target := "symbol:internal/store.go:func::Save"
 	items := []DecisionReconciliationItem{

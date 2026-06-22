@@ -183,6 +183,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   round-trip against the source semantic hash and fails closed on lossy
   projections, proving carrier bytes can rebuild an empty SQL edition store
   without creating approval, rebaseline, evidence, or gate authority.
+- **Markdown fenced semantic-target drift evaluator.** Explicit
+  `spec_section`, `api_contract`, and `invariant` binding targets in Markdown
+  can now attach bounded evaluators from fenced semantic YAML blocks carrying
+  `id`, `section_id`, or `target_ref`. Edits to sibling fenced blocks remain
+  audit-only; edits inside the governed fenced section become semantic-target
+  drift instead of whole-file fallback.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

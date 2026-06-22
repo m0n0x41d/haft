@@ -570,6 +570,74 @@ func TestResolveBindingTargetsAttachesSemanticEvaluatorFromMarkdownHeading(t *te
 	}
 }
 
+func TestResolveBindingTargetsAttachesSemanticEvaluatorFromMarkdownFencedTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		kind      string
+		targetRef string
+		fenceInfo string
+		body      string
+	}{
+		{
+			name:      "api contract",
+			kind:      BindingTargetAPIContract,
+			targetRef: "api_contract:haft/status",
+			fenceInfo: "yaml api-contract",
+			body: "target_ref: api_contract:haft/status\n" +
+				"method: haft_query.status\n",
+		},
+		{
+			name:      "invariant",
+			kind:      BindingTargetInvariant,
+			targetRef: "invariant:decision-terminal-status",
+			fenceInfo: "yaml invariant",
+			body: "id: decision-terminal-status\n" +
+				"statement: terminal decisions do not reopen silently\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			writeTestFile(t, projectRoot, "contracts.md",
+				"# Contracts\n\n"+
+					"## Governed target\n\n"+
+					"```"+tc.fenceInfo+"\n"+
+					tc.body+
+					"```\n\n"+
+					"## Other target\n\n"+
+					"```yaml api-contract\n"+
+					"target_ref: api_contract:haft/other\n"+
+					"method: haft_query.other\n"+
+					"```\n")
+
+			resolution, err := ResolveBindingTargets(
+				projectRoot,
+				[]AffectedFile{{Path: "contracts.md"}},
+				BindingResolutionOptions{ExplicitTargets: []BindingTarget{{
+					Kind:      tc.kind,
+					TargetRef: tc.targetRef,
+					FilePath:  "contracts.md",
+				}}},
+			)
+			if err != nil {
+				t.Fatalf("ResolveBindingTargets: %v", err)
+			}
+			if len(resolution.Targets) != 1 {
+				t.Fatalf("targets = %#v, want one", resolution.Targets)
+			}
+			target := resolution.Targets[0]
+			if target.TextHash == "" || target.AnchorHash == "" {
+				t.Fatalf("target did not receive evaluator hashes: %#v", target)
+			}
+			if target.Line != 3 || target.EndLine == 0 {
+				t.Fatalf("target range = %d-%d, want fenced markdown section", target.Line, target.EndLine)
+			}
+			if target.ResolutionSource != BindingResolutionSourceMarkdownSection {
+				t.Fatalf("resolution_source = %q, want %q", target.ResolutionSource, BindingResolutionSourceMarkdownSection)
+			}
+		})
+	}
+}
+
 func TestResolveBindingTargetsAttachesSemanticEvaluatorFromTargetMarker(t *testing.T) {
 	for _, tc := range []struct {
 		name      string
@@ -995,6 +1063,64 @@ func TestMarkdownSemanticTargetHeadingDriftUsesBoundedHash(t *testing.T) {
 	file = reports[0].Files[0]
 	if file.Materiality != DriftMaterialityMaterialSemanticTarget {
 		t.Fatalf("file = %+v, want material semantic target after API contract body changes", file)
+	}
+	if file.ChangedTargetRef != "api_contract:haft/status" || file.TargetKind != BindingTargetAPIContract {
+		t.Fatalf("target = %q/%q, want api_contract target", file.ChangedTargetRef, file.TargetKind)
+	}
+}
+
+func TestMarkdownSemanticTargetFencedDriftUsesBoundedHash(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	initial := "# Contracts\n\n" +
+		"## Status contract\n\n" +
+		"```yaml api-contract\n" +
+		"target_ref: api_contract:haft/status\n" +
+		"method: haft_query.status\n" +
+		"```\n\n" +
+		"## Other contract\n\n" +
+		"```yaml api-contract\n" +
+		"target_ref: api_contract:haft/other\n" +
+		"method: haft_query.other\n" +
+		"```\n"
+	writeTestFile(t, projectRoot, "contracts.md", initial)
+	dec := createTestDecision(t, store, "dec-api-contract-fenced-evaluator", "API contract fenced target")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "contracts.md"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef: dec.Meta.ID,
+		BindingTargets: []BindingTarget{{
+			Kind:      BindingTargetAPIContract,
+			TargetRef: "api_contract:haft/status",
+			FilePath:  "contracts.md",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "contracts.md", strings.Replace(initial, "haft_query.other", "haft_query.other_changed", 1))
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 || len(reports[0].Files) != 1 {
+		t.Fatalf("reports = %+v, want one drift report", reports)
+	}
+	file := reports[0].Files[0]
+	if file.Materiality != DriftMaterialityAdjacentFileChurn || !file.AuditOnly {
+		t.Fatalf("file = %+v, want audit-only drift outside fenced target block", file)
+	}
+
+	writeTestFile(t, projectRoot, "contracts.md", strings.Replace(initial, "haft_query.status", "haft_query.status_changed", 1))
+	reports, err = CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file = reports[0].Files[0]
+	if file.Materiality != DriftMaterialityMaterialSemanticTarget {
+		t.Fatalf("file = %+v, want material semantic target after fenced block changes", file)
 	}
 	if file.ChangedTargetRef != "api_contract:haft/status" || file.TargetKind != BindingTargetAPIContract {
 		t.Fatalf("target = %q/%q, want api_contract target", file.ChangedTargetRef, file.TargetKind)

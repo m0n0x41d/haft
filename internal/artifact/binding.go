@@ -493,7 +493,10 @@ func extractMarkdownTargetRange(projectRoot, relPath, targetRef string) (markdow
 		return markdownTargetRange{}, false
 	}
 	lines := splitBindingTextLines(string(content))
-	start, end, ok := markdownSpecSectionRange(lines, token)
+	start, end, ok := markdownSemanticTargetFenceRange(lines, targetRef, token)
+	if !ok {
+		start, end, ok = markdownSpecSectionRange(lines, token)
+	}
 	if !ok {
 		start, end, ok = markdownHeadingRange(lines, token)
 	}
@@ -511,6 +514,73 @@ func extractMarkdownTargetRange(projectRoot, relPath, targetRef string) (markdow
 		TextHash:   hex.EncodeToString(textHash[:]),
 		Source:     BindingResolutionSourceMarkdownSection,
 	}, true
+}
+
+func markdownSemanticTargetFenceRange(lines []string, targetRef string, token string) (int, int, bool) {
+	for index := 0; index < len(lines); index++ {
+		info, ok := markdownFenceInfo(lines[index])
+		if !ok {
+			continue
+		}
+		if !semanticMarkdownFenceInfo(info) {
+			continue
+		}
+
+		fenceStart := index + 1
+		fenceEnd := len(lines)
+		for closeIndex := index + 1; closeIndex < len(lines); closeIndex++ {
+			if _, ok := markdownFenceInfo(lines[closeIndex]); ok {
+				fenceEnd = closeIndex + 1
+				break
+			}
+		}
+		if !semanticMarkdownFenceContainsTarget(lines[index+1:fenceEnd-1], targetRef, token) {
+			continue
+		}
+		start := precedingMarkdownHeadingLine(lines, fenceStart)
+		if start == 0 {
+			start = fenceStart
+		}
+		end := nextMarkdownHeadingLine(lines, start)
+		if end == 0 {
+			end = len(lines)
+		} else {
+			end--
+		}
+		return start, end, true
+	}
+	return 0, 0, false
+}
+
+func semanticMarkdownFenceInfo(info string) bool {
+	fields := strings.Fields(strings.ToLower(strings.TrimSpace(info)))
+	for _, field := range fields {
+		switch strings.ReplaceAll(field, "-", "_") {
+		case "spec_section", "api_contract", "invariant":
+			return true
+		}
+	}
+	return false
+}
+
+func semanticMarkdownFenceContainsTarget(lines []string, targetRef string, token string) bool {
+	targetRef = normalizeSemanticTargetRef(targetRef)
+	token = normalizeSemanticTargetRef(token)
+	for _, line := range lines {
+		for _, key := range []string{"id", "target_ref", "section_id"} {
+			value := yamlLineScalarValue(line, key)
+			if value == "" {
+				continue
+			}
+			if value == targetRef {
+				return true
+			}
+			if key != "target_ref" && value == token {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func extractMarkedTargetRange(projectRoot, relPath, targetRef string) (markdownTargetRange, bool) {
@@ -807,13 +877,14 @@ func semanticTargetLookupToken(targetRef string) string {
 
 func markdownSpecSectionRange(lines []string, token string) (int, int, bool) {
 	for index := 0; index < len(lines); index++ {
-		if !strings.Contains(lines[index], "```") || !strings.Contains(lines[index], "spec-section") {
+		info, ok := markdownFenceInfo(lines[index])
+		if !ok || !strings.Contains(info, "spec-section") {
 			continue
 		}
 		fenceStart := index + 1
 		fenceEnd := len(lines)
 		for closeIndex := index + 1; closeIndex < len(lines); closeIndex++ {
-			if strings.HasPrefix(strings.TrimSpace(lines[closeIndex]), "```") {
+			if _, ok := markdownFenceInfo(lines[closeIndex]); ok {
 				fenceEnd = closeIndex + 1
 				break
 			}
@@ -834,6 +905,14 @@ func markdownSpecSectionRange(lines []string, token string) (int, int, bool) {
 		return start, end, true
 	}
 	return 0, 0, false
+}
+
+func markdownFenceInfo(line string) (string, bool) {
+	trimmed := strings.TrimSpace(line)
+	if !strings.HasPrefix(trimmed, "```") {
+		return "", false
+	}
+	return strings.TrimSpace(strings.TrimPrefix(trimmed, "```")), true
 }
 
 func specSectionFenceContainsID(lines []string, token string) bool {

@@ -1678,6 +1678,21 @@ func assessMissingFileDrift(projectRoot, relPath string, baseline []AffectedSymb
 			SuppressedReason: fmt.Sprintf("governed symbol %s may have moved from %s to %s with edits; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
 		}
 	}
+	if candidate, ok := findFuzzyEditedMovedSymbolTarget(projectRoot, relPath, targets); ok {
+		return modifiedFileAssessment{
+			Materiality: DriftMaterialityNeedsBindingResolution,
+			ChangedTargetRef: driftEventSymbolTarget(candidate.FilePath, SymbolDriftItem{
+				SymbolName: candidate.SymbolName,
+				SymbolKind: candidate.SymbolKind,
+				Status:     "retarget_candidate",
+			}),
+			TargetKind:       BindingTargetSymbol,
+			TargetStatus:     "retarget_candidate",
+			FallbackKind:     "fuzzy_edited_symbol_move_candidate",
+			FallbackReason:   fmt.Sprintf("governed symbol %s disappeared from %s and exactly one same-name candidate exists in %s, but kind/receiver identity changed; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
+			SuppressedReason: fmt.Sprintf("governed symbol %s may have moved from %s to %s with changed kind/receiver identity; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
+		}
+	}
 	return modifiedFileAssessment{
 		Materiality: missingFileMateriality(baseline, targets),
 	}
@@ -1715,6 +1730,22 @@ func findEditedMovedSymbolTarget(projectRoot, relPath string, targets []BindingT
 	return codebase.SymbolSnapshot{}, false
 }
 
+func findFuzzyEditedMovedSymbolTarget(projectRoot, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+	for _, target := range targets {
+		if target.Kind != BindingTargetSymbol {
+			continue
+		}
+		if strings.TrimSpace(target.SymbolName) == "" {
+			continue
+		}
+		moved, ok := findFuzzyEditedMovedSymbolSnapshot(projectRoot, relPath, target)
+		if ok {
+			return moved, true
+		}
+	}
+	return codebase.SymbolSnapshot{}, false
+}
+
 func findMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarget) (codebase.SymbolSnapshot, bool) {
 	files, err := listScopeFiles(projectRoot, ".")
 	if err != nil {
@@ -1744,6 +1775,19 @@ func findMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarge
 }
 
 func findEditedMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarget) (codebase.SymbolSnapshot, bool) {
+	return findEditedMovedSymbolSnapshotBy(projectRoot, oldRelPath, target, symbolSnapshotSameIdentity)
+}
+
+func findFuzzyEditedMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarget) (codebase.SymbolSnapshot, bool) {
+	return findEditedMovedSymbolSnapshotBy(projectRoot, oldRelPath, target, symbolSnapshotSameNameOnly)
+}
+
+func findEditedMovedSymbolSnapshotBy(
+	projectRoot string,
+	oldRelPath string,
+	target BindingTarget,
+	match func(codebase.SymbolSnapshot, BindingTarget) bool,
+) (codebase.SymbolSnapshot, bool) {
 	files, err := listScopeFiles(projectRoot, ".")
 	if err != nil {
 		return codebase.SymbolSnapshot{}, false
@@ -1763,7 +1807,7 @@ func findEditedMovedSymbolSnapshot(projectRoot, oldRelPath string, target Bindin
 			continue
 		}
 		for _, snapshot := range snapshots {
-			if !symbolSnapshotSameIdentity(snapshot, target) {
+			if !match(snapshot, target) {
 				continue
 			}
 			if strings.TrimSpace(snapshot.Hash) == strings.TrimSpace(target.BodyHash) {
@@ -1796,6 +1840,10 @@ func symbolSnapshotSameIdentity(snapshot codebase.SymbolSnapshot, target Binding
 		return false
 	}
 	return true
+}
+
+func symbolSnapshotSameNameOnly(snapshot codebase.SymbolSnapshot, target BindingTarget) bool {
+	return strings.TrimSpace(snapshot.SymbolName) == strings.TrimSpace(target.SymbolName)
 }
 
 func assessBindingTargetDrift(projectRoot, relPath string, targets []BindingTarget) (modifiedFileAssessment, bool) {

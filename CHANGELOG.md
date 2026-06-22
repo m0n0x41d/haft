@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carrier blocks using `id:` or `target_ref:`. Drift outside the matching YAML
   object remains audit-only; changes inside the object become semantic-target
   drift without falling back to whole-file scope.
+- **Fuzzy edited-symbol retarget candidates.** When an old governed symbol file
+  disappears and exact moved-symbol matching fails, drift detection now surfaces
+  a low-confidence `retarget_candidate` if exactly one same-name symbol exists
+  elsewhere with a changed body. Ambiguous matches stay unretargeted, and fuzzy
+  candidates always require binding resolution rather than moving authority.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

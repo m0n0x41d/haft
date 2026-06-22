@@ -1230,6 +1230,94 @@ func TestEditedMovedSymbolTargetReportsRetargetCandidate(t *testing.T) {
 	}
 }
 
+func TestFuzzyEditedMovedSymbolTargetReportsRetargetCandidate(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	oldBody := "package main\n\ntype OldWorker struct{}\nfunc (w OldWorker) Run() string { return \"old\" }\n"
+	newBody := "package main\n\nfunc Run() string { return \"new\" }\n"
+	writeTestFile(t, projectRoot, "old_worker.go", oldBody)
+	target := bindingTargetForSnapshot(t, projectRoot, "old_worker.go", "Run", "OldWorker")
+	dec := createTestDecision(t, store, "dec-binding-fuzzy-edited-moved-symbol", "Fuzzy edited moved symbol target")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "old_worker.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef:    dec.Meta.ID,
+		BindingTargets: []BindingTarget{target},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(filepath.Join(projectRoot, "old_worker.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, projectRoot, "new_worker.go", newBody)
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("reports = %+v, want one drift report", reports)
+	}
+	file := reports[0].Files[0]
+	if file.Materiality != DriftMaterialityNeedsBindingResolution {
+		t.Fatalf("materiality = %q, want %q", file.Materiality, DriftMaterialityNeedsBindingResolution)
+	}
+	if file.FallbackKind != "fuzzy_edited_symbol_move_candidate" {
+		t.Fatalf("fallback_kind = %q, want fuzzy_edited_symbol_move_candidate", file.FallbackKind)
+	}
+	if file.ChangedTargetRef != "symbol:new_worker.go::func:Run" {
+		t.Fatalf("changed_target_ref = %q, want fuzzy moved symbol target", file.ChangedTargetRef)
+	}
+	if file.TargetStatus != "retarget_candidate" {
+		t.Fatalf("target_status = %q, want retarget_candidate", file.TargetStatus)
+	}
+}
+
+func TestFuzzyEditedMovedSymbolTargetRejectsAmbiguousCandidates(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	oldBody := "package main\n\ntype OldWorker struct{}\nfunc (w OldWorker) Run() string { return \"old\" }\n"
+	writeTestFile(t, projectRoot, "old_worker.go", oldBody)
+	target := bindingTargetForSnapshot(t, projectRoot, "old_worker.go", "Run", "OldWorker")
+	dec := createTestDecision(t, store, "dec-binding-ambiguous-fuzzy-edited-moved-symbol", "Ambiguous fuzzy edited moved symbol target")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "old_worker.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef:    dec.Meta.ID,
+		BindingTargets: []BindingTarget{target},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(filepath.Join(projectRoot, "old_worker.go")); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, projectRoot, "new_worker.go", "package main\n\nfunc Run() string { return \"new\" }\n")
+	writeTestFile(t, projectRoot, "other_worker.go", "package main\n\ntype OtherWorker struct{}\nfunc (w OtherWorker) Run() string { return \"other\" }\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("reports = %+v, want one drift report", reports)
+	}
+	file := reports[0].Files[0]
+	if file.FallbackKind == "fuzzy_edited_symbol_move_candidate" {
+		t.Fatalf("ambiguous candidates must not produce fuzzy retarget: %+v", file)
+	}
+	if file.ChangedTargetRef != "" {
+		t.Fatalf("changed_target_ref = %q, want empty when fuzzy candidates are ambiguous", file.ChangedTargetRef)
+	}
+}
+
 func TestImplementationFootprintOnlyDoesNotCreateDecisionDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

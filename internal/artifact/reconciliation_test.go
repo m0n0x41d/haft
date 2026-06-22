@@ -75,6 +75,48 @@ func TestDecisionReconciliationSurfacesScopeEnrichmentRepairHints(t *testing.T) 
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
+	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
+		DecisionID:               "dec-fallback",
+		DecisionTitle:            "Fallback scope",
+		Status:                   StatusActive,
+		BoundedContext:           "drift",
+		WholeFileFallbackTargets: []string{"whole_file_fallback:internal/shared.go"},
+		AffectedFiles:            []string{"internal/shared.go"},
+	}})
+
+	draft := BuildDecisionReconciliationSelectionDraft(plan)
+
+	if draft.Authority != DecisionReconciliationSelectionDraftAuthority {
+		t.Fatalf("authority = %q", draft.Authority)
+	}
+	if draft.OperatorApproved {
+		t.Fatal("operator_approved = true; draft must stay report-only")
+	}
+	if draft.ApplyAuthorityRequired != "operator_approved_reconciliation_selection" {
+		t.Fatalf("apply authority = %q", draft.ApplyAuthorityRequired)
+	}
+	if draft.Summary.ScopeEnrichmentCandidates != 1 {
+		t.Fatalf("scope_enrichment_candidates = %d, want 1", draft.Summary.ScopeEnrichmentCandidates)
+	}
+	if len(draft.Items) != 1 {
+		t.Fatalf("items = %#v", draft.Items)
+	}
+	item := draft.Items[0]
+	if item.Operation != DecisionReconciliationOperationEnrichScope {
+		t.Fatalf("operation = %q", item.Operation)
+	}
+	if item.DecisionRef != "dec-fallback" {
+		t.Fatalf("decision_ref = %q", item.DecisionRef)
+	}
+	if !strings.Contains(item.SelectionTemplate, "TODO_exact_decision_subject_ref") {
+		t.Fatalf("selection_template lacks subject placeholder: %s", item.SelectionTemplate)
+	}
+	if !strings.Contains(strings.Join(draft.MutationBoundary, "\n"), "not an operator approval") {
+		t.Fatalf("mutation_boundary = %#v", draft.MutationBoundary)
+	}
+}
+
 func TestDecisionReconciliationGroupsExplicitSubjectAndTargetAsMergeCandidate(t *testing.T) {
 	target := "symbol:internal/store.go:func::Save"
 	items := []DecisionReconciliationItem{

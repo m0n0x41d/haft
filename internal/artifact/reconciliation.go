@@ -27,6 +27,8 @@ const (
 	DecisionReconciliationOperationReopen                 = "reopen"
 	DecisionReconciliationOperationEnrichScope            = "enrich_scope"
 	DecisionReconciliationOperationClaimLifecycleUpdate   = "claim_lifecycle_update"
+
+	DecisionReconciliationSelectionDraftAuthority = "report_only_selection_draft_not_operator_approval"
 )
 
 type DecisionReconciliationPlan struct {
@@ -172,6 +174,39 @@ type DecisionReconciliationSelectionDocument struct {
 	Items               []DecisionReconciliationSelection `json:"items"`
 }
 
+type DecisionReconciliationSelectionDraft struct {
+	SchemaVersion          int                                `json:"schema_version"`
+	Authority              string                             `json:"authority"`
+	OperatorApproved       bool                               `json:"operator_approved"`
+	ApplyAuthorityRequired string                             `json:"apply_authority_required"`
+	SourcePlanAuthority    string                             `json:"source_plan_authority"`
+	Summary                DecisionReconciliationDraftSummary `json:"summary"`
+	Items                  []DecisionReconciliationDraftItem  `json:"items,omitempty"`
+	MutationBoundary       []string                           `json:"mutation_boundary"`
+	NextSteps              []string                           `json:"next_steps"`
+}
+
+type DecisionReconciliationDraftSummary struct {
+	ReviewedGroups             int `json:"reviewed_groups"`
+	ScopeEnrichmentCandidates  int `json:"scope_enrichment_candidates"`
+	OperatorApprovalCandidates int `json:"operator_approval_candidates"`
+}
+
+type DecisionReconciliationDraftItem struct {
+	Operation                string   `json:"operation"`
+	ReviewedGroupID          string   `json:"reviewed_group_id"`
+	DecisionRef              string   `json:"decision_ref"`
+	DecisionTitle            string   `json:"decision_title,omitempty"`
+	CurrentSubjectRef        string   `json:"current_subject_ref,omitempty"`
+	CurrentGovernanceTargets []string `json:"current_governance_targets,omitempty"`
+	WholeFileFallbackTargets []string `json:"whole_file_fallback_targets,omitempty"`
+	AffectedFiles            []string `json:"affected_files,omitempty"`
+	ScopeRepairHint          string   `json:"scope_repair_hint,omitempty"`
+	RequiredSelectionFields  []string `json:"required_selection_fields,omitempty"`
+	SelectionTemplate        string   `json:"selection_template"`
+	ReviewNotes              []string `json:"review_notes"`
+}
+
 type DecisionReconciliationSelection struct {
 	Operation                 string                                       `json:"operation"`
 	ReviewedGroupID           string                                       `json:"reviewed_group_id"`
@@ -183,6 +218,39 @@ type DecisionReconciliationSelection struct {
 	ClaimGovernanceTargetRefs map[string][]string                          `json:"claim_governance_target_refs,omitempty"`
 	ClaimLifecycleUpdates     []DecisionReconciliationClaimLifecycleUpdate `json:"claim_lifecycle_updates,omitempty"`
 	Reason                    string                                       `json:"reason"`
+}
+
+func BuildDecisionReconciliationSelectionDraft(
+	plan DecisionReconciliationPlan,
+) DecisionReconciliationSelectionDraft {
+	items := decisionReconciliationDraftItems(plan.Groups)
+	return DecisionReconciliationSelectionDraft{
+		SchemaVersion:          DecisionReconciliationSchemaVersion,
+		Authority:              DecisionReconciliationSelectionDraftAuthority,
+		OperatorApproved:       false,
+		ApplyAuthorityRequired: "operator_approved_reconciliation_selection",
+		SourcePlanAuthority:    plan.Authority,
+		Summary: DecisionReconciliationDraftSummary{
+			ReviewedGroups:             len(plan.Groups),
+			ScopeEnrichmentCandidates:  len(items),
+			OperatorApprovalCandidates: len(items),
+		},
+		Items: items,
+		MutationBoundary: []string{
+			"selection draft is read-only",
+			"draft output is not an operator approval",
+			"draft output is not accepted by apply as authority",
+			"apply still requires an operator-approved selection document",
+			"enrich_scope does not change decision status, lineage, evidence, baselines, or gates",
+		},
+		NextSteps: []string{
+			"review each candidate and replace template placeholders with exact subject and target refs",
+			"remove candidates that are uncertain or too broad",
+			"create a separate selection document with authority=operator_approved_reconciliation_selection only after operator approval",
+			"apply with haft decision reconcile apply SELECTION.json --json",
+			"rerun haft decision reconcile metrics --json before and after apply",
+		},
+	}
 }
 
 type DecisionReconciliationClaimLifecycleUpdate struct {
@@ -795,6 +863,63 @@ func BuildDecisionReconciliationPlanFromItems(
 		Summary:           summary,
 		Groups:            groups,
 	}
+}
+
+func decisionReconciliationDraftItems(
+	groups []DecisionReconciliationGroup,
+) []DecisionReconciliationDraftItem {
+	out := []DecisionReconciliationDraftItem{}
+	for _, group := range groups {
+		if group.Preview.ApplyOperation != DecisionReconciliationOperationEnrichScope {
+			continue
+		}
+		for _, item := range group.Decisions {
+			out = append(out, decisionReconciliationDraftItem(group, item))
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].ReviewedGroupID != out[j].ReviewedGroupID {
+			return out[i].ReviewedGroupID < out[j].ReviewedGroupID
+		}
+		return out[i].DecisionRef < out[j].DecisionRef
+	})
+	return out
+}
+
+func decisionReconciliationDraftItem(
+	group DecisionReconciliationGroup,
+	item DecisionReconciliationItem,
+) DecisionReconciliationDraftItem {
+	return DecisionReconciliationDraftItem{
+		Operation:                DecisionReconciliationOperationEnrichScope,
+		ReviewedGroupID:          group.GroupID,
+		DecisionRef:              item.DecisionID,
+		DecisionTitle:            item.DecisionTitle,
+		CurrentSubjectRef:        item.DecisionSubjectRef,
+		CurrentGovernanceTargets: compactSortedStrings(item.GovernanceTargets),
+		WholeFileFallbackTargets: compactSortedStrings(item.WholeFileFallbackTargets),
+		AffectedFiles:            compactSortedStrings(item.AffectedFiles),
+		ScopeRepairHint:          item.ScopeRepairHint,
+		RequiredSelectionFields:  decisionReconciliationPreviewRequiredFields(DecisionReconciliationOperationEnrichScope),
+		SelectionTemplate:        decisionReconciliationDraftSelectionTemplate(group, item),
+		ReviewNotes: []string{
+			"file overlap is implementation footprint only; select exact governance targets before approval",
+			"use symbol/api_contract/invariant/spec_section targets when possible; whole-file fallback only when no better target exists",
+			"leave the candidate out if subject or target cannot be stated with high confidence",
+		},
+	}
+}
+
+func decisionReconciliationDraftSelectionTemplate(
+	group DecisionReconciliationGroup,
+	item DecisionReconciliationItem,
+) string {
+	return fmt.Sprintf(
+		`{"operation":"%s","reviewed_group_id":"%s","decision_refs":["%s"],"decision_subject_ref":"TODO_exact_decision_subject_ref","governance_targets":[{"kind":"TODO_target_kind","ref":"TODO_exact_target_ref"}],"drift_watch_targets":[{"target_ref":"TODO_exact_target_ref","trigger":"TODO_trigger"}],"reason":"TODO_operator_reviewed_scope_enrichment_reason"}`,
+		DecisionReconciliationOperationEnrichScope,
+		group.GroupID,
+		item.DecisionID,
+	)
 }
 
 func buildDecisionReconciliationItem(

@@ -140,6 +140,43 @@ func TestWriteDecisionReconciliationMetricsSummary(t *testing.T) {
 	}
 }
 
+func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
+	var output bytes.Buffer
+	draft := artifact.DecisionReconciliationSelectionDraft{
+		SchemaVersion:          1,
+		Authority:              artifact.DecisionReconciliationSelectionDraftAuthority,
+		OperatorApproved:       false,
+		ApplyAuthorityRequired: "operator_approved_reconciliation_selection",
+		Summary: artifact.DecisionReconciliationDraftSummary{
+			ScopeEnrichmentCandidates: 1,
+		},
+		Items: []artifact.DecisionReconciliationDraftItem{{
+			DecisionRef:     "dec-fallback",
+			ReviewedGroupID: "decision-reconcile-1",
+			AffectedFiles:   []string{"internal/shared.go"},
+			ScopeRepairHint: "use enrich_scope to add decision_subject_ref",
+		}},
+	}
+
+	if err := writeDecisionReconciliationSelectionDraftSummary(&output, draft); err != nil {
+		t.Fatalf("writeDecisionReconciliationSelectionDraftSummary: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Decision reconciliation selection draft v1",
+		"authority: report_only_selection_draft_not_operator_approval",
+		"operator_approved: false",
+		"apply_authority_required: operator_approved_reconciliation_selection",
+		"scope_enrichment_candidates: 1",
+		"dec-fallback",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestHandleQuintQueryDecisionReconcileReturnsReportOnlyPlan(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")

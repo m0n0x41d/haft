@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Decision reconciliation selection draft.** Added read-only
+  `haft decision reconcile selection-draft` / `--json` to generate
+  operator-reviewable `enrich_scope` candidate skeletons from reconciliation
+  scope-repair groups without creating an operator-approved apply document or
+  mutating decision authority.
 - **Baseline terminology audit.** Added read-only `haft baseline audit`
   / `--json` to classify repository `baseline` wording across code, tests,
   docs, skills, templates, and `.haft` carriers as spec approval, pre-work

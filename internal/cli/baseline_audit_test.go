@@ -16,6 +16,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
 	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
+	writeBaselineAuditFixture(t, root, ".haft/methods/swe-core/refactor.yaml", "baseline and post-change checks make the claim concrete.\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -49,6 +50,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}
 	if report.Summary.HistoricalGovernanceFiles != 1 {
 		t.Fatalf("historical governance files = %d, want 1", report.Summary.HistoricalGovernanceFiles)
+	}
+	if report.Summary.SupportArchiveCarrier != 1 {
+		t.Fatalf("support/archive count = %d, want 1", report.Summary.SupportArchiveCarrier)
+	}
+	if report.Summary.SupportArchiveFiles != 1 {
+		t.Fatalf("support/archive files = %d, want 1", report.Summary.SupportArchiveFiles)
 	}
 	if report.Summary.LegacyAmbiguousBaseline != 1 {
 		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
@@ -96,6 +103,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			MatchedLines:                2,
 			VerifiedStateSnapshot:       1,
 			HistoricalGovernanceCarrier: 1,
+			SupportArchiveCarrier:       1,
 			LegacyAmbiguousBaseline:     1,
 			LegacyAmbiguousFiles:        1,
 		},
@@ -125,6 +133,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"verified_state=1",
 		"historical_governance=1",
+		"support_archive=1",
 		"legacy_ambiguous=1",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

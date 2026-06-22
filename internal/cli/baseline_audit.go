@@ -22,6 +22,7 @@ const (
 	baselineAuditComparison       = "comparison_or_benchmark_baseline"
 	baselineAuditOrdinary         = "ordinary_language_baseline"
 	baselineAuditHistoricalGov    = "historical_governance_carrier_baseline"
+	baselineAuditSupportArchive   = "support_archive_carrier_baseline"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -76,6 +77,8 @@ type baselineTermAuditSummary struct {
 	OrdinaryLanguageBaseline    int `json:"ordinary_language_baseline"`
 	HistoricalGovernanceCarrier int `json:"historical_governance_carrier_baseline"`
 	HistoricalGovernanceFiles   int `json:"historical_governance_carrier_files"`
+	SupportArchiveCarrier       int `json:"support_archive_carrier_baseline"`
+	SupportArchiveFiles         int `json:"support_archive_carrier_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -163,6 +166,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 		report.Summary.add(finding.Category)
 	}
 	report.Summary.HistoricalGovernanceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditHistoricalGov)
+	report.Summary.SupportArchiveFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSupportArchive)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -303,6 +307,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 	switch {
 	case baselineAuditHistoricalGovernanceCarrier(path):
 		return baselineAuditHistoricalGov, "mentions baseline inside a historical governance carrier; audit-visible but not current terminology debt"
+	case baselineAuditSupportArchiveCarrier(path):
+		return baselineAuditSupportArchive, "mentions baseline inside a support or archive carrier; audit-visible but not current terminology debt"
 	case containsAnyBaselineTerm(value,
 		"specsectionbaseline",
 		"specsectionapprovalbaseline",
@@ -368,6 +374,21 @@ func baselineAuditHistoricalGovernanceCarrier(path string) bool {
 		".haft/refresh/",
 		".haft/method-runs/",
 		".haft/overseer/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func baselineAuditSupportArchiveCarrier(path string) bool {
+	path = filepath.ToSlash(path)
+	for _, prefix := range []string{
+		".haft/methods/",
+		".haft/night-runs/",
+		".haft/plans/",
+		".haft/pi/",
 	} {
 		if strings.HasPrefix(path, prefix) {
 			return true
@@ -471,6 +492,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.OrdinaryLanguageBaseline++
 	case baselineAuditHistoricalGov:
 		summary.HistoricalGovernanceCarrier++
+	case baselineAuditSupportArchive:
+		summary.SupportArchiveCarrier++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -485,7 +508,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -494,6 +517,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.ComparisonOrBenchmark,
 		report.Summary.OrdinaryLanguageBaseline,
 		report.Summary.HistoricalGovernanceCarrier,
+		report.Summary.SupportArchiveCarrier,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

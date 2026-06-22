@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit support/archive carrier classification.** `haft baseline
+  audit` now classifies `.haft` MethodPack, night-run, plan, and Pi bundle
+  carriers separately from current legacy-ambiguous baseline terminology debt,
+  keeping those carriers visible without letting archived/support text dominate
+  diagnostics.
 - **Baseline audit historical governance classification.** `haft baseline audit`
   now classifies baseline mentions inside historical `.haft` governance carriers
   separately from current `legacy_ambiguous` terminology debt, and skips nested

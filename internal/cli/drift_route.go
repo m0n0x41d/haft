@@ -219,7 +219,8 @@ func runDriftEventsResolve(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("scan drift: %w", err)
 	}
 	eventReport := artifact.BuildDriftEventReport(reports)
-	if !driftEventReportHasEvent(eventReport, args[0]) {
+	currentEvent, ok := driftEventReportEvent(eventReport, args[0])
+	if !ok {
 		return fmt.Errorf("drift event %q not found in current scan", args[0])
 	}
 
@@ -238,6 +239,7 @@ func runDriftEventsResolve(cmd *cobra.Command, args []string) error {
 		RecordedAt:      now.Format(time.RFC3339),
 		RecordedBy:      strings.TrimSpace(driftEventsRecordedBy),
 	}
+	record = artifact.BindDriftEventResolutionToEvent(record, currentEvent)
 	updated, err := artifact.UpsertDriftEventResolution(ledger, record, now)
 	if err != nil {
 		return err
@@ -318,13 +320,18 @@ func writeDriftEventResolutionLedger(path string, ledger artifact.DriftEventReso
 }
 
 func driftEventReportHasEvent(report artifact.DriftEventReport, eventID string) bool {
+	_, ok := driftEventReportEvent(report, eventID)
+	return ok
+}
+
+func driftEventReportEvent(report artifact.DriftEventReport, eventID string) (artifact.DriftEvent, bool) {
 	eventID = strings.TrimSpace(eventID)
 	for _, event := range report.Events {
 		if event.EventID == eventID {
-			return true
+			return event, true
 		}
 	}
-	return false
+	return artifact.DriftEvent{}, false
 }
 
 func openArtifactStore(projectRoot string) (*artifact.Store, func(), error) {

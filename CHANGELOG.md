@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **DriftEvent resolution target binding.** `haft drift events resolve` now
+  stores the current event target identity (`changed_target_ref`, `target_kind`,
+  `target_status`, and `root_cause`) in the non-binding resolution ledger.
+  Applying the ledger keeps old records visible for audit but no longer lets a
+  resolved/waived overlay close a different target after retargeting, rename,
+  or root-cause changes.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

@@ -110,13 +110,17 @@ type DriftEventResolutionLedger struct {
 }
 
 type DriftEventResolution struct {
-	EventID         string   `json:"event_id"`
-	Status          string   `json:"status"`
-	Reason          string   `json:"reason"`
-	EvidenceRefs    []string `json:"evidence_refs,omitempty"`
-	WaiverExpiresAt string   `json:"waiver_expires_at,omitempty"`
-	RecordedAt      string   `json:"recorded_at,omitempty"`
-	RecordedBy      string   `json:"recorded_by,omitempty"`
+	EventID          string   `json:"event_id"`
+	Status           string   `json:"status"`
+	Reason           string   `json:"reason"`
+	EvidenceRefs     []string `json:"evidence_refs,omitempty"`
+	WaiverExpiresAt  string   `json:"waiver_expires_at,omitempty"`
+	RecordedAt       string   `json:"recorded_at,omitempty"`
+	RecordedBy       string   `json:"recorded_by,omitempty"`
+	ChangedTargetRef string   `json:"changed_target_ref,omitempty"`
+	TargetKind       string   `json:"target_kind,omitempty"`
+	TargetStatus     string   `json:"target_status,omitempty"`
+	RootCause        string   `json:"root_cause,omitempty"`
 }
 
 type driftEventBuilder struct {
@@ -197,7 +201,7 @@ func ApplyDriftEventResolutionLedger(
 			continue
 		}
 		report.Events[index].ResolutionRecord = &record
-		if !driftEventResolutionApplies(record, now) {
+		if !driftEventResolutionApplies(record, event, now) {
 			continue
 		}
 		report.Events[index].ResolutionStatus = record.Status
@@ -336,7 +340,25 @@ func summarizeDriftEvents(events []DriftEvent) DriftEventSummary {
 	return summary
 }
 
-func driftEventResolutionApplies(record DriftEventResolution, now time.Time) bool {
+func BindDriftEventResolutionToEvent(
+	record DriftEventResolution,
+	event DriftEvent,
+) DriftEventResolution {
+	record.ChangedTargetRef = event.ChangedTargetRef
+	record.TargetKind = event.TargetKind
+	record.TargetStatus = event.TargetStatus
+	record.RootCause = event.RootCause
+	return record
+}
+
+func driftEventResolutionApplies(
+	record DriftEventResolution,
+	event DriftEvent,
+	now time.Time,
+) bool {
+	if !driftEventResolutionMatchesEvent(record, event) {
+		return false
+	}
 	switch record.Status {
 	case DriftEventResolutionResolved:
 		return true
@@ -349,6 +371,21 @@ func driftEventResolutionApplies(record DriftEventResolution, now time.Time) boo
 	default:
 		return false
 	}
+}
+
+func driftEventResolutionMatchesEvent(record DriftEventResolution, event DriftEvent) bool {
+	return driftEventResolutionFieldMatches(record.ChangedTargetRef, event.ChangedTargetRef) &&
+		driftEventResolutionFieldMatches(record.TargetKind, event.TargetKind) &&
+		driftEventResolutionFieldMatches(record.TargetStatus, event.TargetStatus) &&
+		driftEventResolutionFieldMatches(record.RootCause, event.RootCause)
+}
+
+func driftEventResolutionFieldMatches(recordValue string, eventValue string) bool {
+	recordValue = strings.TrimSpace(recordValue)
+	if recordValue == "" {
+		return true
+	}
+	return recordValue == strings.TrimSpace(eventValue)
 }
 
 func ParseDriftEventResolutionTime(value string, now time.Time) (time.Time, error) {

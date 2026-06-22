@@ -120,10 +120,14 @@ func TestWriteDriftEventsSummaryNamesFanout(t *testing.T) {
 func TestDriftEventResolutionLedgerRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "drift-event-resolutions.json")
 	ledger := artifact.NewDriftEventResolutionLedger([]artifact.DriftEventResolution{{
-		EventID:      "drift-event-abc",
-		Status:       artifact.DriftEventResolutionResolved,
-		Reason:       "verified additive-only",
-		EvidenceRefs: []string{"go test ./..."},
+		EventID:          "drift-event-abc",
+		Status:           artifact.DriftEventResolutionResolved,
+		Reason:           "verified additive-only",
+		EvidenceRefs:     []string{"go test ./..."},
+		ChangedTargetRef: "symbol:shared.go::func:Run",
+		TargetKind:       artifact.BindingTargetSymbol,
+		TargetStatus:     "modified",
+		RootCause:        artifact.DriftEventRootCauseSemanticTargetChanged,
 	}})
 
 	if err := writeDriftEventResolutionLedger(path, ledger); err != nil {
@@ -139,6 +143,12 @@ func TestDriftEventResolutionLedgerRoundTrip(t *testing.T) {
 	}
 	if len(loaded.Records) != 1 || loaded.Records[0].EventID != "drift-event-abc" {
 		t.Fatalf("records = %#v", loaded.Records)
+	}
+	if loaded.Records[0].ChangedTargetRef != "symbol:shared.go::func:Run" {
+		t.Fatalf("changed_target_ref = %q", loaded.Records[0].ChangedTargetRef)
+	}
+	if loaded.Records[0].RootCause != artifact.DriftEventRootCauseSemanticTargetChanged {
+		t.Fatalf("root_cause = %q", loaded.Records[0].RootCause)
 	}
 }
 

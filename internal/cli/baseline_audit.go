@@ -21,6 +21,7 @@ const (
 	baselineAuditVerifiedState    = "verified_state_snapshot"
 	baselineAuditComparison       = "comparison_or_benchmark_baseline"
 	baselineAuditOrdinary         = "ordinary_language_baseline"
+	baselineAuditHistoricalGov    = "historical_governance_carrier_baseline"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -73,6 +74,8 @@ type baselineTermAuditSummary struct {
 	VerifiedStateSnapshot       int `json:"verified_state_snapshot"`
 	ComparisonOrBenchmark       int `json:"comparison_or_benchmark_baseline"`
 	OrdinaryLanguageBaseline    int `json:"ordinary_language_baseline"`
+	HistoricalGovernanceCarrier int `json:"historical_governance_carrier_baseline"`
+	HistoricalGovernanceFiles   int `json:"historical_governance_carrier_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -159,6 +162,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	for _, finding := range report.Findings {
 		report.Summary.add(finding.Category)
 	}
+	report.Summary.HistoricalGovernanceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditHistoricalGov)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -297,6 +301,8 @@ func scanBaselineAuditFile(root string, path string) ([]baselineTermAuditFinding
 func classifyBaselineTerm(path string, line string) (string, string) {
 	value := strings.ToLower(path + "\n" + line)
 	switch {
+	case baselineAuditHistoricalGovernanceCarrier(path):
+		return baselineAuditHistoricalGov, "mentions baseline inside a historical governance carrier; audit-visible but not current terminology debt"
 	case containsAnyBaselineTerm(value,
 		"specsectionbaseline",
 		"specsectionapprovalbaseline",
@@ -352,6 +358,24 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 	}
 }
 
+func baselineAuditHistoricalGovernanceCarrier(path string) bool {
+	path = filepath.ToSlash(path)
+	for _, prefix := range []string{
+		".haft/decisions/",
+		".haft/problems/",
+		".haft/solutions/",
+		".haft/notes/",
+		".haft/refresh/",
+		".haft/method-runs/",
+		".haft/overseer/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
 func containsAnyBaselineTerm(value string, needles ...string) bool {
 	for _, needle := range needles {
 		if strings.Contains(value, needle) {
@@ -368,6 +392,9 @@ func baselineAuditSkipDir(rel string) bool {
 		return false
 	}
 	if strings.HasPrefix(rel, ".") && !baselineAuditAllowedHiddenDir(rel) {
+		return true
+	}
+	if baselineAuditHasPathSegment(rel, "node_modules") {
 		return true
 	}
 	for _, hint := range baselineAuditExcludedPathHints() {
@@ -392,12 +419,22 @@ func baselineAuditExcludedPathHints() []string {
 		"hidden directories except .agents and .haft",
 		"desktop/frontend/node_modules",
 		"node_modules",
+		"*/node_modules",
 		"open-sleigh",
 		"vendor",
 		"dist",
 		"build",
 		"tmp",
 	}
+}
+
+func baselineAuditHasPathSegment(rel string, segment string) bool {
+	for _, part := range strings.Split(filepath.ToSlash(rel), "/") {
+		if part == segment {
+			return true
+		}
+	}
+	return false
 }
 
 func baselineAuditScannableFile(rel string) bool {
@@ -432,6 +469,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.ComparisonOrBenchmark++
 	case baselineAuditOrdinary:
 		summary.OrdinaryLanguageBaseline++
+	case baselineAuditHistoricalGov:
+		summary.HistoricalGovernanceCarrier++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -446,7 +485,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -454,6 +493,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.VerifiedStateSnapshot,
 		report.Summary.ComparisonOrBenchmark,
 		report.Summary.OrdinaryLanguageBaseline,
+		report.Summary.HistoricalGovernanceCarrier,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

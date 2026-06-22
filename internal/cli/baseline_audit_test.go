@@ -14,10 +14,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "internal/artifact/decision.go", "const baselineProfile = \"verified_state_snapshot\"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
+	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
+	writeBaselineAuditFixture(t, root, "tui/node_modules/pkg/ignored.md", "Run baseline before release.\n")
 
 	report, err := buildBaselineTermAuditReport(root)
 	if err != nil {
@@ -42,6 +44,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.OrdinaryLanguageBaseline != 1 {
 		t.Fatalf("ordinary count = %d, want 1", report.Summary.OrdinaryLanguageBaseline)
 	}
+	if report.Summary.HistoricalGovernanceCarrier != 1 {
+		t.Fatalf("historical governance count = %d, want 1", report.Summary.HistoricalGovernanceCarrier)
+	}
+	if report.Summary.HistoricalGovernanceFiles != 1 {
+		t.Fatalf("historical governance files = %d, want 1", report.Summary.HistoricalGovernanceFiles)
+	}
 	if report.Summary.LegacyAmbiguousBaseline != 1 {
 		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
 	}
@@ -61,7 +69,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if !strings.Contains(diagnostic.NextAction, "typed baseline concept") {
 		t.Fatalf("diagnostic next_action = %q", diagnostic.NextAction)
 	}
-	if len(diagnostic.Examples) != 1 || !strings.Contains(diagnostic.Examples[0], ".haft/decisions/dec.md") {
+	if len(diagnostic.Examples) != 1 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
 		t.Fatalf("diagnostic examples = %#v", diagnostic.Examples)
 	}
 
@@ -84,11 +92,12 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		SchemaVersion: 1,
 		Authority:     baselineAuditAuthority,
 		Summary: baselineTermAuditSummary{
-			FilesScanned:            2,
-			MatchedLines:            2,
-			VerifiedStateSnapshot:   1,
-			LegacyAmbiguousBaseline: 1,
-			LegacyAmbiguousFiles:    1,
+			FilesScanned:                2,
+			MatchedLines:                2,
+			VerifiedStateSnapshot:       1,
+			HistoricalGovernanceCarrier: 1,
+			LegacyAmbiguousBaseline:     1,
+			LegacyAmbiguousFiles:        1,
 		},
 		Diagnostics: []baselineTermAuditDiagnostic{{
 			Level:      "warn",
@@ -115,6 +124,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"verified_state=1",
+		"historical_governance=1",
 		"legacy_ambiguous=1",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

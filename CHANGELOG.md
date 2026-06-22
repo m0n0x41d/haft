@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit historical governance classification.** `haft baseline audit`
+  now classifies baseline mentions inside historical `.haft` governance carriers
+  separately from current `legacy_ambiguous` terminology debt, and skips nested
+  `node_modules` dependency noise regardless of directory depth.
 - **Batchable reconciliation selection drafts.** `haft decision reconcile
   selection-draft` now supports read-only `--limit`, `--group-id`, and
   `--decision-ref` filters so old-decision scope-enrichment approval packets

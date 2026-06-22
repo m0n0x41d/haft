@@ -25,6 +25,7 @@ type BindingAction struct {
 
 type Receipt struct {
 	Kind                    string `json:"kind"`
+	Source                  string `json:"source,omitempty"`
 	PrincipalIdentitySource string `json:"principal_identity_source,omitempty"`
 	HostSessionSource       string `json:"host_session_source,omitempty"`
 	Tool                    string `json:"tool,omitempty"`
@@ -42,22 +43,36 @@ type Evaluation struct {
 }
 
 func EvaluateReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
-	required := ReceiptKindManualCLI
 	if strings.TrimSpace(receipt.Kind) == "" {
 		return Evaluation{
 			Status:       ReceiptStatusMissing,
-			RequiredKind: required,
+			RequiredKind: ReceiptKindManualCLI,
 			Reason:       "no kernel-verifiable authorization receipt was provided",
 		}
 	}
 
-	if receipt.Kind != ReceiptKindManualCLI {
+	switch receipt.Kind {
+	case ReceiptKindManualCLI:
+		return evaluateManualCLIReceipt(now, receipt, action)
+	case ReceiptKindHost:
+		return evaluateHostReceipt(now, receipt, action)
+	case ReceiptKindModel:
 		return Evaluation{
 			Status:       ReceiptStatusUnsupportedFuture,
-			RequiredKind: required,
+			RequiredKind: ReceiptKindManualCLI,
+			Reason:       "model-supplied arguments are not authorization receipts",
+		}
+	default:
+		return Evaluation{
+			Status:       ReceiptStatusUnsupportedFuture,
+			RequiredKind: ReceiptKindManualCLI,
 			Reason:       "only manual CLI receipts are accepted in v1; host receipts need a future verifier",
 		}
 	}
+}
+
+func evaluateManualCLIReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
+	required := ReceiptKindManualCLI
 
 	if strings.TrimSpace(receipt.PrincipalIdentitySource) == "" {
 		return invalid(required, "manual CLI receipt is missing principal identity source")
@@ -85,6 +100,47 @@ func EvaluateReceipt(now time.Time, receipt Receipt, action BindingAction) Evalu
 		Status:       ReceiptStatusValid,
 		RequiredKind: required,
 		Reason:       "manual CLI receipt matches the requested binding action",
+	}
+}
+
+func evaluateHostReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
+	required := ReceiptKindHost
+	if strings.TrimSpace(receipt.Source) == "" {
+		return invalid(required, "host receipt is missing verifier source")
+	}
+	if strings.TrimSpace(receipt.PrincipalIdentitySource) == "" {
+		return invalid(required, "host receipt is missing principal identity source")
+	}
+	if strings.TrimSpace(receipt.HostSessionSource) == "" {
+		return invalid(required, "host receipt is missing host/session source")
+	}
+	if !sameToken(receipt.Tool, action.Tool) || !sameToken(receipt.Action, action.Action) {
+		return invalid(required, "host receipt does not match requested binding action")
+	}
+	if strings.TrimSpace(receipt.PayloadHash) == "" {
+		return invalid(required, "host receipt is missing payload hash")
+	}
+	if strings.TrimSpace(action.PayloadHash) == "" {
+		return invalid(required, "binding action is missing payload hash for host receipt verification")
+	}
+	if receipt.PayloadHash != action.PayloadHash {
+		return invalid(required, "host receipt payload hash does not match requested binding payload")
+	}
+	if strings.TrimSpace(receipt.ExpiresAt) == "" {
+		return invalid(required, "host receipt is missing expiry")
+	}
+	expiresAt, err := time.Parse(time.RFC3339, receipt.ExpiresAt)
+	if err != nil {
+		return invalid(required, "host receipt expiry is not RFC3339")
+	}
+	if !now.Before(expiresAt) {
+		return invalid(required, "host receipt is expired")
+	}
+
+	return Evaluation{
+		Status:       ReceiptStatusUnsupportedFuture,
+		RequiredKind: required,
+		Reason:       "host receipt is structurally complete, but no kernel verifier is registered for source " + strings.TrimSpace(receipt.Source),
 	}
 }
 

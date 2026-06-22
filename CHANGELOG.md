@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Host authorization receipt fail-closed shape.** Authority receipt
+  evaluation now validates future host receipts for explicit source,
+  principal, session, action, payload hash, and expiry, but still fails closed
+  unless a real kernel verifier exists; model-supplied arguments remain
+  non-receipts.
 - **Generated MCP tool carrier guard.** `haft carrier check` now treats MCP
   `tools/list` tool descriptions and input-schema descriptions as generated
   virtual carrier surfaces, so host-facing schema text is checked for forbidden

@@ -619,6 +619,51 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 	}
 }
 
+func TestCockpitStatusResponse_GroupsAuditOnlyDrift(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-healthy", Title: "Healthy decision"}},
+		},
+		Drift: []artifact.DriftReport{
+			{
+				DecisionID:    "dec-audit",
+				DecisionTitle: "Audit-only decision",
+				Files: []artifact.DriftItem{{
+					Path:        "internal/shared.go",
+					Status:      artifact.DriftModified,
+					Materiality: artifact.DriftMaterialityAdjacentFileChurn,
+					AuditOnly:   true,
+				}},
+			},
+			{
+				DecisionID:    "dec-audit-2",
+				DecisionTitle: "Second audit-only decision",
+				Files: []artifact.DriftItem{{
+					Path:        "internal/shared.go",
+					Status:      artifact.DriftModified,
+					Materiality: artifact.DriftMaterialityAdjacentFileChurn,
+					AuditOnly:   true,
+				}},
+			},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	for _, want := range []string{
+		"**Audit-only drift**: 1 trigger path(s), 2 decision(s) checked, 0 material governed-symbol changes",
+		"audit details available",
+		"Drift: 0 material, 2 audit-only",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("cockpit output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "**Drift detected**") {
+		t.Fatalf("audit-only drift should not render as material drift:\n%s", output)
+	}
+}
+
 func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 	data := artifact.StatusData{
 		HealthyDecisions: []*artifact.Artifact{

@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Symbol-aware drift noise budget.** Decision drift now records additive
+  `materiality` and `trigger_kind` fields, distinguishes material governed
+  symbol changes from adjacent file churn, carrier-only edits, generated/local
+  runtime noise, and unknown legacy file-scope baselines, and keeps compact
+  status focused on material drift while grouping audit-only fan-out into one
+  trigger-path summary line.
+- **Overseer drift auto-baseline safety.** Maintenance planning now uses drift
+  materiality and decision health before proposing deterministic rebaseline:
+  only proven non-material churn can auto-resolve, while material symbol drift
+  and unknown legacy file-scope drift remain operator-review work.
+- **Golden E2E module cache reuse.** The golden CLI subprocess test now
+  preserves the host Go module cache before switching `HOME` to a temp project,
+  avoiding false timeouts from cold `modernc.org/sqlite` downloads while still
+  keeping the build cache and project root isolated.
 - **OperationalGate admission posture.** `require_current_source_and_admitted_use`
   now passes only for current-source stronger-use admission; documentary-only
   reading and temporary waiver admission remain admitted/waived for their own
@@ -42,6 +56,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Legacy decision symbol-binding dry-run.** `haft drift bindings` now reports
+  active decisions with broad file baselines and proposes read-only symbol
+  binding candidates, separating high-confidence rebaseline proposals from
+  ambiguous cases that still need operator symbol-boundary selection.
 - **OperationalGate v1 for spec use.** `SpecificationUseRecord` can now include
   an explicit read-only OperationalGate profile and derived gate decision for a
   declared use context. CLI callers pass `haft spec use --gate-file <json>`;

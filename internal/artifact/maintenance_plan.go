@@ -370,19 +370,29 @@ func driftDispositionTasks(ctx context.Context, store ArtifactStore, projectRoot
 	if err != nil {
 		return nil, err
 	}
+	healthBlocked, err := healthBlockedAutoBaseline(ctx, store, projectRoot)
+	if err != nil {
+		return nil, err
+	}
 
 	tasks := make([]MaintenanceTask, 0, len(reports))
 	for _, d := range ClassifyAutoBaseline(driftedOnly(reports)) {
+		action := d.Action
+		reason := d.Reason
+		if action == AutoResolveSilent && healthBlocked[d.Report.DecisionID] {
+			action = SurfaceForReview
+			reason = d.Reason + "; decision has stale/degraded health, so auto-baseline is blocked"
+		}
 		task := MaintenanceTask{
 			DecisionRef:   d.Report.DecisionID,
 			DecisionTitle: d.Report.DecisionTitle,
 			Source:        "drift",
-			Category:      string(d.Action),
-			Reason:        d.Reason,
+			Category:      string(action),
+			Reason:        reason,
 			Rung:          RungJudgment,
 			EstCost:       "judgment",
 		}
-		if d.Action == AutoResolveSilent {
+		if action == AutoResolveSilent {
 			task.Rung = RungDeterministic
 			task.EstCost = "seconds"
 		}
@@ -399,4 +409,19 @@ func driftedOnly(reports []DriftReport) []DriftReport {
 		}
 	}
 	return out
+}
+
+func healthBlockedAutoBaseline(ctx context.Context, store ArtifactStore, projectRoot string) (map[string]bool, error) {
+	items, err := ScanStale(ctx, store, projectRoot)
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, item := range items {
+		switch item.Category {
+		case StaleCategoryREffDegraded, StaleCategoryEvidenceExpired:
+			out[item.ID] = true
+		}
+	}
+	return out, nil
 }

@@ -478,6 +478,21 @@ func mustSetValidUntil(t *testing.T, fixture checkTestProject, artifactID string
 	}
 }
 
+func mustSetArtifactStatus(t *testing.T, fixture checkTestProject, artifactID string, status artifact.Status) {
+	t.Helper()
+
+	ctx := context.Background()
+	item, err := fixture.store.Get(ctx, artifactID)
+	if err != nil {
+		t.Fatalf("load artifact %s: %v", artifactID, err)
+	}
+
+	item.Meta.Status = status
+	if err := fixture.store.Update(ctx, item); err != nil {
+		t.Fatalf("update status for %s: %v", artifactID, err)
+	}
+}
+
 func enterTestProjectRoot(t *testing.T, dir string) func() {
 	t.Helper()
 

@@ -1692,6 +1692,7 @@ func mapMaintenanceDrift(findings []checkDriftFinding) []overseer.MaintenanceDri
 			Paths:         driftReportPaths(disposition.Report),
 			HasBaseline:   disposition.Report.HasBaseline,
 			SymbolVerdict: disposition.Report.SymbolVerdict(),
+			Materiality:   string(disposition.Report.EffectiveMateriality()),
 			Action:        string(disposition.Action),
 			Reason:        disposition.Reason,
 		})

@@ -1400,7 +1400,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		navStrip = present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
+		navStrip = navStripForProjectStatus(ctx, store, contextName, projectRoot)
 		return present.MaintenanceDrainResponse(report, navStrip), nil
 
 	case artifact.RefreshWaive:
@@ -1519,6 +1519,29 @@ func codeContextSymbolsForFile(ctx context.Context, store *artifact.Store, proje
 	return items, refreshed, nil
 }
 
+func statusDataStaleNavItems(items []artifact.StaleItem) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, item.ID+": "+item.Title+" ("+item.Reason+")")
+	}
+	return out
+}
+
+func navStripWithStaleSnapshot(ctx context.Context, store *artifact.Store, contextName string, staleItems []artifact.StaleItem) string {
+	nav := artifact.ComputeNavState(ctx, store, contextName)
+	nav.StaleCount = len(staleItems)
+	nav.StaleItems = statusDataStaleNavItems(staleItems)
+	return present.NavStrip(nav)
+}
+
+func navStripForProjectStatus(ctx context.Context, store *artifact.Store, contextName string, projectRoot string) string {
+	staleItems, err := artifact.ScanStale(ctx, store, projectRoot)
+	if err != nil {
+		return present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
+	}
+	return navStripWithStaleSnapshot(ctx, store, contextName, staleItems)
+}
+
 func codeContextSymbolName(symbol codebase.CodeSymbol) string {
 	if symbol.Receiver == "" {
 		return symbol.Name
@@ -1574,7 +1597,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 				}
 			}
 		}
-		return result + navStrip, nil
+		return result + navStripWithStaleSnapshot(ctx, store, contextName, data.StaleItems), nil
 
 	case "board":
 		boardView, _ := args["view"].(string)

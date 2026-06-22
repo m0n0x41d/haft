@@ -195,7 +195,7 @@ func TestCheckDriftDetectsModifiedFile(t *testing.T) {
 	}
 }
 
-func TestCheckDriftFailsSafeWhenAddedSymbolsAccompanyNonSymbolEdits(t *testing.T) {
+func TestCheckDriftClassifiesAddedSymbolsAsAdjacentChurn(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	projectRoot := t.TempDir()
@@ -242,11 +242,95 @@ func Extra() string {
 	if file.Status != DriftModified {
 		t.Fatalf("status = %s, want %s", file.Status, DriftModified)
 	}
-	if len(file.Symbols) != 0 {
-		t.Fatalf("symbols = %+v, want fail-safe empty evidence", file.Symbols)
+	if file.Materiality != DriftMaterialityAdjacentFileChurn {
+		t.Fatalf("materiality = %s, want %s", file.Materiality, DriftMaterialityAdjacentFileChurn)
 	}
-	if got := reports[0].SymbolVerdict(); got != SymbolVerdictNeedsReview {
-		t.Fatalf("SymbolVerdict() = %q, want %q", got, SymbolVerdictNeedsReview)
+	if !file.AuditOnly {
+		t.Fatal("added-symbol churn should be audit-only in compact status")
+	}
+	if len(file.Symbols) != 1 || file.Symbols[0].Status != "added" || file.Symbols[0].SymbolName != "Extra" {
+		t.Fatalf("symbols = %+v, want one added Extra symbol", file.Symbols)
+	}
+	if got := reports[0].SymbolVerdict(); got != SymbolVerdictAdditiveOnly {
+		t.Fatalf("SymbolVerdict() = %q, want %q", got, SymbolVerdictAdditiveOnly)
+	}
+}
+
+func TestCheckDriftClassifiesUnchangedGovernedSymbolsAsAdjacentChurn(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-test-010c", "App runner")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+var enabled = true
+
+func Run() string {
+	return "run"
+}
+`)
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 drift report, got %d", len(reports))
+	}
+
+	file := reports[0].Files[0]
+	if file.Materiality != DriftMaterialityAdjacentFileChurn {
+		t.Fatalf("materiality = %s, want %s", file.Materiality, DriftMaterialityAdjacentFileChurn)
+	}
+	if !file.AuditOnly {
+		t.Fatal("unchanged-symbol file churn should be audit-only")
+	}
+	if len(file.Symbols) != 0 {
+		t.Fatalf("symbols = %+v, want no changed governed symbols", file.Symbols)
+	}
+	if got := reports[0].SymbolVerdict(); got != SymbolVerdictAdditiveOnly {
+		t.Fatalf("SymbolVerdict() = %q, want %q", got, SymbolVerdictAdditiveOnly)
+	}
+}
+
+func TestAssessModifiedFileDriftClassifiesGeneratedAndCarrierPaths(t *testing.T) {
+	cases := []struct {
+		path string
+		want DriftMateriality
+	}{
+		{path: "internal/cli/fpf.db", want: DriftMaterialityGeneratedOrIgnored},
+		{path: "data/FPF", want: DriftMaterialityGeneratedOrIgnored},
+		{path: "embed-sidecar/target/debug/libhaft_embed.a", want: DriftMaterialityGeneratedOrIgnored},
+		{path: "CHANGELOG.md", want: DriftMaterialityCarrierOnly},
+		{path: ".context/current.plan", want: DriftMaterialityCarrierOnly},
+		{path: "open-sleigh/.haft/project.yaml", want: DriftMaterialityCarrierOnly},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := assessModifiedFileDrift("", tc.path, nil)
+			if got.Materiality != tc.want {
+				t.Fatalf("materiality = %s, want %s", got.Materiality, tc.want)
+			}
+			if !got.AuditOnly {
+				t.Fatal("generated/carrier drift should be audit-only")
+			}
+		})
 	}
 }
 

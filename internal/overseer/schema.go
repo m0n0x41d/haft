@@ -308,6 +308,7 @@ type MaintenanceDriftFinding struct {
 	Paths         []string `json:"paths,omitempty"`
 	HasBaseline   bool     `json:"has_baseline"`
 	SymbolVerdict string   `json:"symbol_verdict,omitempty"`
+	Materiality   string   `json:"materiality,omitempty"`
 	Action        string   `json:"action"`
 	Reason        string   `json:"reason"`
 }

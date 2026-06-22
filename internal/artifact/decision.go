@@ -1226,8 +1226,10 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			anyChanged := false
 			for _, f := range files {
 				report.Files = append(report.Files, DriftItem{
-					Path:   f.Path,
-					Status: DriftNoBaseline,
+					Path:        f.Path,
+					Status:      DriftNoBaseline,
+					Materiality: DriftMaterialityUnknownLegacyFileScope,
+					TriggerKind: DriftTriggerMissingBaseline,
 				})
 				if projectRoot != "" && gitFileModifiedSince(projectRoot, f.Path, d.Meta.CreatedAt) {
 					anyChanged = true
@@ -1244,8 +1246,10 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			if f.Hash == "" {
 				// File was added to affected_files after baseline — treat as no_baseline
 				report.Files = append(report.Files, DriftItem{
-					Path:   f.Path,
-					Status: DriftNoBaseline,
+					Path:        f.Path,
+					Status:      DriftNoBaseline,
+					Materiality: DriftMaterialityUnknownLegacyFileScope,
+					TriggerKind: DriftTriggerMissingBaseline,
 				})
 				continue
 			}
@@ -1255,9 +1259,11 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			if err != nil {
 				// File doesn't exist or can't be read
 				report.Files = append(report.Files, DriftItem{
-					Path:       f.Path,
-					Status:     DriftMissing,
-					Invariants: copyDriftInvariants(decisionFields.Invariants),
+					Path:        f.Path,
+					Status:      DriftMissing,
+					Invariants:  copyDriftInvariants(decisionFields.Invariants),
+					Materiality: missingFileMateriality(baselineSymbolsByFile[f.Path]),
+					TriggerKind: DriftTriggerMissingFile,
 				})
 				hasDrift = true
 				continue
@@ -1265,12 +1271,17 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 
 			if currentHash != f.Hash {
 				lines := gitDiffStat(projectRoot, f.Path)
+				assessment := assessModifiedFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path])
 				report.Files = append(report.Files, DriftItem{
-					Path:         f.Path,
-					Status:       DriftModified,
-					LinesChanged: lines,
-					Invariants:   copyDriftInvariants(decisionFields.Invariants),
-					Symbols:      computeSymbolDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path]),
+					Path:             f.Path,
+					Status:           DriftModified,
+					LinesChanged:     lines,
+					Invariants:       copyDriftInvariants(decisionFields.Invariants),
+					Symbols:          assessment.Symbols,
+					Materiality:      assessment.Materiality,
+					TriggerKind:      DriftTriggerFileHash,
+					AuditOnly:        assessment.AuditOnly,
+					SuppressedReason: assessment.SuppressedReason,
 				})
 				hasDrift = true
 			}
@@ -1282,9 +1293,12 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 		}
 		for _, path := range addedFiles {
 			report.Files = append(report.Files, DriftItem{
-				Path:       path,
-				Status:     DriftAdded,
-				Invariants: copyDriftInvariants(decisionFields.Invariants),
+				Path:        path,
+				Status:      DriftAdded,
+				Invariants:  copyDriftInvariants(decisionFields.Invariants),
+				Materiality: DriftMaterialityAdjacentFileChurn,
+				TriggerKind: DriftTriggerScopeManifest,
+				AuditOnly:   true,
 			})
 			hasDrift = true
 		}
@@ -1314,22 +1328,46 @@ func groupSymbolsByFile(symbols []AffectedSymbol, err error) map[string][]Affect
 	return byFile
 }
 
-// computeSymbolDrift partitions a modified file's change at symbol granularity
-// against its stored baseline. It returns nil — which SymbolVerdict reads as
-// needs-review (fail-safe to the operator) — whenever the file cannot be proven
-// benign: no symbol baseline, an unanalyzable/empty current parse, a change
-// outside any tracked symbol body, or an existing file whose only symbol delta is
-// additions. Without a stored non-symbol baseline, added symbols in a modified
-// file cannot prove imports/package vars/comments stayed unchanged.
-func computeSymbolDrift(projectRoot, relPath string, baseline []AffectedSymbol) []SymbolDriftItem {
+type modifiedFileAssessment struct {
+	Symbols          []SymbolDriftItem
+	Materiality      DriftMateriality
+	AuditOnly        bool
+	SuppressedReason string
+}
+
+// assessModifiedFileDrift partitions a modified file's change at symbol
+// granularity against its stored baseline. File-hash drift is only material
+// when a baselined symbol was modified or removed; unchanged governed symbols
+// turn the file change into audit-only adjacent churn.
+func assessModifiedFileDrift(projectRoot, relPath string, baseline []AffectedSymbol) modifiedFileAssessment {
+	if generatedOrIgnoredPath(relPath) {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityGeneratedOrIgnored,
+			AuditOnly:        true,
+			SuppressedReason: "generated or local runtime path changed; no code-object symbol drift",
+		}
+	}
+	if carrierOnlyPath(relPath) {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityCarrierOnly,
+			AuditOnly:        true,
+			SuppressedReason: "carrier path changed; no code-object symbol drift",
+		}
+	}
 	if len(baseline) == 0 {
-		return nil
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityUnknownLegacyFileScope,
+			SuppressedReason: "no symbol baseline for changed file",
+		}
 	}
 	current, err := codebase.ExtractSymbolSnapshots(projectRoot, relPath)
 	if err != nil || len(current) == 0 {
 		// Unsupported language, oversized file, or no parseable symbols: cannot
 		// classify — fail-safe rather than mislabel every baseline symbol removed.
-		return nil
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityUnknownLegacyFileScope,
+			SuppressedReason: "symbol extraction unavailable for changed file",
+		}
 	}
 	baseSnaps := make([]codebase.SymbolSnapshot, 0, len(baseline))
 	for _, s := range baseline {
@@ -1343,37 +1381,81 @@ func computeSymbolDrift(projectRoot, relPath string, baseline []AffectedSymbol) 
 	}
 	drifts := codebase.CompareSymbolSnapshots(baseSnaps, current)
 	if len(drifts) == 0 {
-		// File hash changed but no tracked symbol did — the change sits outside
-		// symbol bodies (imports, package vars, comments). Not provably benign.
-		return nil
-	}
-	if onlyAddedSymbolDrift(drifts) {
-		// The file hash changed and the only visible symbol deltas are additions.
-		// Because the baseline stores symbol hashes, not the old non-symbol gaps,
-		// this could also include import/package-var/comment edits. Fail safe.
-		return nil
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityAdjacentFileChurn,
+			AuditOnly:        true,
+			SuppressedReason: "baselined symbols unchanged; file hash drift is outside governed symbol bodies",
+		}
 	}
 	items := make([]SymbolDriftItem, 0, len(drifts))
+	material := false
 	for _, d := range drifts {
 		items = append(items, SymbolDriftItem{
 			SymbolName: d.SymbolName,
 			SymbolKind: d.SymbolKind,
 			Status:     d.Status,
 		})
-	}
-	return items
-}
-
-func onlyAddedSymbolDrift(drifts []codebase.SymbolDrift) bool {
-	if len(drifts) == 0 {
-		return false
-	}
-	for _, d := range drifts {
 		if d.Status != "added" {
-			return false
+			material = true
 		}
 	}
-	return true
+	if material {
+		return modifiedFileAssessment{
+			Symbols:     items,
+			Materiality: DriftMaterialityMaterialSymbol,
+		}
+	}
+	return modifiedFileAssessment{
+		Symbols:          items,
+		Materiality:      DriftMaterialityAdjacentFileChurn,
+		AuditOnly:        true,
+		SuppressedReason: "only new symbols were detected; existing governed symbols are unchanged",
+	}
+}
+
+func missingFileMateriality(baseline []AffectedSymbol) DriftMateriality {
+	if len(baseline) == 0 {
+		return DriftMaterialityUnknownLegacyFileScope
+	}
+	return DriftMaterialityMaterialSymbol
+}
+
+func carrierOnlyPath(path string) bool {
+	clean := filepath.ToSlash(strings.TrimSpace(path))
+	if clean == "" {
+		return false
+	}
+	if clean == "CHANGELOG.md" {
+		return true
+	}
+	if strings.HasPrefix(clean, ".context/") {
+		return true
+	}
+	if strings.HasPrefix(clean, "open-sleigh/.haft/") {
+		return true
+	}
+	if strings.HasPrefix(clean, "docs/") {
+		return true
+	}
+	return false
+}
+
+func generatedOrIgnoredPath(path string) bool {
+	clean := filepath.ToSlash(strings.TrimSpace(path))
+	if clean == "" {
+		return false
+	}
+	if clean == "data/FPF" || strings.HasSuffix(clean, ".db") {
+		return true
+	}
+	parts := strings.Split(clean, "/")
+	for _, part := range parts {
+		switch part {
+		case "node_modules", "target", "_build", "deps", "vendor":
+			return true
+		}
+	}
+	return false
 }
 
 func persistDriftManifests(

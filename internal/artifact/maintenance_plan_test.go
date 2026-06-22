@@ -108,6 +108,68 @@ func TestBuildMaintenancePlan_RungClassification(t *testing.T) {
 	}
 }
 
+func TestBuildMaintenancePlan_BlocksAutoBaselineWhenDecisionHealthExpired(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-maint-health-block", "Health blocks drift auto-baseline")
+	dec.Meta.ValidUntil = time.Now().Add(-24 * time.Hour).UTC().Format(time.RFC3339)
+	if err := store.Update(ctx, dec); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+
+func Extra() string {
+	return "extra"
+}
+`)
+
+	plan, err := BuildMaintenancePlan(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var driftTask *MaintenanceTask
+	for i := range plan.Tasks {
+		task := plan.Tasks[i]
+		if task.DecisionRef == dec.Meta.ID && task.Source == "drift" {
+			driftTask = &plan.Tasks[i]
+			break
+		}
+	}
+	if driftTask == nil {
+		t.Fatal("expected drift task")
+	}
+	if driftTask.Category != string(SurfaceForReview) {
+		t.Fatalf("category = %q, want %q", driftTask.Category, SurfaceForReview)
+	}
+	if driftTask.Rung != RungJudgment {
+		t.Fatalf("rung = %d, want %d", driftTask.Rung, RungJudgment)
+	}
+	if !strings.Contains(driftTask.Reason, "auto-baseline is blocked") {
+		t.Fatalf("reason does not explain health block: %q", driftTask.Reason)
+	}
+}
+
 func TestBuildMaintenancePlan_CooldownSkipsClaimWithTodayEvidence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

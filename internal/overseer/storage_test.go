@@ -125,6 +125,38 @@ func TestFormatStatusSignalsSuppressionsOnlyStaysSilent(t *testing.T) {
 	}
 }
 
+func TestFormatStatusSignalsDedupesScopedAndGeneralStale(t *testing.T) {
+	summary := StatusSummary{
+		HasSignals: true,
+		Signals: []StatusSignal{
+			{
+				Severity: "medium",
+				Source:   "scoped_stale",
+				Title:    "Scoped stale governance debt: Same decision",
+				Detail:   "expired 6 day(s) ago",
+				Command:  "haft overseer show old",
+			},
+			{
+				Severity: "high",
+				Source:   "stale",
+				Title:    "Stale governance artifact: Same decision",
+				Detail:   "expired 6 day(s) ago",
+				Command:  "haft_refresh(action=\"scan\")",
+			},
+		},
+	}
+
+	summary.Signals = normalizeStatusSignals(summary.Signals)
+	output := FormatStatusSignals(summary)
+
+	if strings.Count(output, "Same decision") != 1 {
+		t.Fatalf("expected one deduped signal, got:\n%s", output)
+	}
+	if !strings.Contains(output, "**HIGH**") {
+		t.Fatalf("dedupe should preserve highest severity:\n%s", output)
+	}
+}
+
 func TestLoadStatusSummaryCombinesLatestRunAndMaintenance(t *testing.T) {
 	root := t.TempDir()
 	packet, err := BuildPacket(BuildInput{

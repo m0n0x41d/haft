@@ -1062,14 +1062,23 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 
 	const driftCap = 2
 	if len(data.Drift) > 0 {
-		sb.WriteString(fmt.Sprintf("- **Drift detected** (%d decision(s)):\n", len(data.Drift)))
-		for i, report := range data.Drift {
+		materialDrift, auditDrift := partitionCockpitDrift(data.Drift)
+		if len(materialDrift) > 0 {
+			sb.WriteString(fmt.Sprintf("- **Drift detected** (%d decision(s)):\n", len(materialDrift)))
+		}
+		for i, report := range materialDrift {
 			if i >= driftCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_refresh(action=\"scan\", verbose=true)`.\n", len(data.Drift)-driftCap))
+				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_refresh(action=\"scan\", verbose=true)`.\n", len(materialDrift)-driftCap))
 				break
 			}
 			summary := formatDriftFileSummary(report.Files)
 			sb.WriteString(fmt.Sprintf("  - %s — %s\n", formatArtifactLabel(report.DecisionTitle, report.DecisionID), summary))
+		}
+		if len(auditDrift) > 0 {
+			sb.WriteString(fmt.Sprintf(
+				"- **Audit-only drift**: %s; run `haft_refresh(action=\"scan\", verbose=true)` for exact paths.\n",
+				formatAuditOnlyDriftSummary(auditDrift),
+			))
 		}
 	}
 
@@ -1121,13 +1130,26 @@ func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) 
 	}
 
 	sb.WriteString("### Decision Health\n\n")
+	materialDrift, auditDrift := partitionCockpitDrift(data.Drift)
+	if len(auditDrift) > 0 {
+		sb.WriteString(fmt.Sprintf(
+			"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material, %d audit-only.\n\n",
+			len(data.HealthyDecisions),
+			len(data.PendingDecisions),
+			len(data.UnassessedDecisions),
+			len(data.StaleItems),
+			len(materialDrift),
+			len(auditDrift),
+		))
+		return
+	}
 	sb.WriteString(fmt.Sprintf(
 		"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d.\n\n",
 		len(data.HealthyDecisions),
 		len(data.PendingDecisions),
 		len(data.UnassessedDecisions),
 		len(data.StaleItems),
-		len(data.Drift),
+		len(materialDrift),
 	))
 }
 
@@ -1173,6 +1195,38 @@ func formatDriftFileSummary(files []artifact.DriftItem) string {
 	}
 
 	return strings.Join(parts, ", ")
+}
+
+func partitionCockpitDrift(reports []artifact.DriftReport) (material, audit []artifact.DriftReport) {
+	for _, report := range reports {
+		switch report.EffectiveMateriality() {
+		case artifact.DriftMaterialityAdjacentFileChurn,
+			artifact.DriftMaterialityCarrierOnly,
+			artifact.DriftMaterialityGeneratedOrIgnored:
+			audit = append(audit, report)
+		default:
+			material = append(material, report)
+		}
+	}
+	return material, audit
+}
+
+func formatAuditOnlyDriftSummary(reports []artifact.DriftReport) string {
+	triggerPaths := make(map[string]struct{})
+	for _, report := range reports {
+		for _, file := range report.Files {
+			if file.Path == "" {
+				continue
+			}
+			triggerPaths[file.Path] = struct{}{}
+		}
+	}
+
+	return fmt.Sprintf(
+		"%d trigger path(s), %d decision(s) checked, 0 material governed-symbol changes; audit details available",
+		len(triggerPaths),
+		len(reports),
+	)
 }
 
 func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) string {

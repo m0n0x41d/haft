@@ -106,6 +106,37 @@ func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
 	}
 }
 
+func TestHandleQuintRefreshDrainFooterUsesTypedStaleSnapshot(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
+		SelectedTitle:   "Deprecated expired decision",
+		WhySelected:     "Need a terminal decision that raw nav would count as stale.",
+		SelectionPolicy: "Prefer a single decision with no active operator work.",
+		CounterArgument: "Terminal decisions should not surface as current stale debt.",
+		WeakestLink:     "Footer stale count must follow the typed status snapshot.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Active expired decision",
+			Reason:  "Would be legitimate stale debt and would not prove footer filtering.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Deprecated decisions resurface in compact status footers."},
+		},
+	})
+	mustSetValidUntil(t, fixture, decision.Meta.ID, time.Now().Add(-72*time.Hour).Format("2006-01-02"))
+	mustSetArtifactStatus(t, fixture, decision.Meta.ID, artifact.StatusDeprecated)
+
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "drain",
+		"dry_run": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(drain dry-run) returned error: %v", err)
+	}
+	if strings.Contains(result, "Stale: 1 decision(s) need refresh") {
+		t.Fatalf("drain footer used raw stale decision count instead of typed snapshot:\n%s", result)
+	}
+}
+
 func seedStaleRefreshScan(t *testing.T, ctx context.Context, store *artifact.Store) {
 	t.Helper()
 

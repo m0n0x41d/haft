@@ -1093,13 +1093,39 @@ const (
 	DriftNoBaseline DriftStatus = "no_baseline"
 )
 
+// DriftMateriality names the semantic posture of a drift item. It is additive
+// presentation metadata: legacy consumers can ignore it and keep reading status.
+type DriftMateriality string
+
+const (
+	DriftMaterialityMaterialSymbol         DriftMateriality = "material_symbol"
+	DriftMaterialityAdjacentFileChurn      DriftMateriality = "adjacent_file_churn"
+	DriftMaterialityCarrierOnly            DriftMateriality = "carrier_only"
+	DriftMaterialityGeneratedOrIgnored     DriftMateriality = "generated_or_ignored"
+	DriftMaterialityUnknownLegacyFileScope DriftMateriality = "unknown_legacy_file_scope"
+)
+
+// DriftTriggerKind describes the mechanical trigger that made the item appear.
+type DriftTriggerKind string
+
+const (
+	DriftTriggerFileHash        DriftTriggerKind = "file_hash"
+	DriftTriggerMissingFile     DriftTriggerKind = "missing_file"
+	DriftTriggerMissingBaseline DriftTriggerKind = "missing_baseline"
+	DriftTriggerScopeManifest   DriftTriggerKind = "scope_manifest"
+)
+
 // DriftItem describes drift for a single file.
 type DriftItem struct {
-	Path         string            `json:"path"`
-	Status       DriftStatus       `json:"status"`
-	LinesChanged string            `json:"lines_changed,omitempty"` // e.g., "+8 -2"
-	Invariants   []string          `json:"invariants,omitempty"`
-	Symbols      []SymbolDriftItem `json:"symbols,omitempty"` // symbol-level breakdown for a modified file
+	Path             string            `json:"path"`
+	Status           DriftStatus       `json:"status"`
+	LinesChanged     string            `json:"lines_changed,omitempty"` // e.g., "+8 -2"
+	Invariants       []string          `json:"invariants,omitempty"`
+	Symbols          []SymbolDriftItem `json:"symbols,omitempty"` // symbol-level breakdown for a modified file
+	Materiality      DriftMateriality  `json:"materiality,omitempty"`
+	TriggerKind      DriftTriggerKind  `json:"trigger_kind,omitempty"`
+	AuditOnly        bool              `json:"audit_only,omitempty"`
+	SuppressedReason string            `json:"suppressed_reason,omitempty"`
 }
 
 // SymbolDriftItem is the per-symbol change inside a modified governed file.
@@ -1148,10 +1174,25 @@ func (r DriftReport) SymbolVerdict() string {
 	sawAdditive := false
 	needsReview := false
 	for _, f := range r.Files {
+		materiality := f.EffectiveMateriality()
 		switch f.Status {
 		case DriftMissing:
+			if materiality == DriftMaterialityUnknownLegacyFileScope {
+				needsReview = true
+				continue
+			}
 			return SymbolVerdictGovernedModified
 		case DriftModified:
+			switch materiality {
+			case DriftMaterialityMaterialSymbol:
+				return SymbolVerdictGovernedModified
+			case DriftMaterialityAdjacentFileChurn, DriftMaterialityCarrierOnly, DriftMaterialityGeneratedOrIgnored:
+				sawAdditive = true
+				continue
+			case DriftMaterialityUnknownLegacyFileScope:
+				needsReview = true
+				continue
+			}
 			if len(f.Symbols) == 0 {
 				// File changed but no symbol evidence: extraction unavailable
 				// or the change sits outside any tracked symbol body. Cannot
@@ -1166,6 +1207,10 @@ func (r DriftReport) SymbolVerdict() string {
 			}
 			sawAdditive = true
 		case DriftAdded:
+			if materiality == DriftMaterialityUnknownLegacyFileScope {
+				needsReview = true
+				continue
+			}
 			sawAdditive = true
 		case DriftNoBaseline:
 			needsReview = true
@@ -1178,6 +1223,65 @@ func (r DriftReport) SymbolVerdict() string {
 		return SymbolVerdictAdditiveOnly
 	}
 	return SymbolVerdictNeedsReview
+}
+
+func (f DriftItem) EffectiveMateriality() DriftMateriality {
+	if f.Materiality != "" {
+		return f.Materiality
+	}
+	switch f.Status {
+	case DriftMissing:
+		return DriftMaterialityMaterialSymbol
+	case DriftNoBaseline:
+		return DriftMaterialityUnknownLegacyFileScope
+	case DriftAdded:
+		return DriftMaterialityAdjacentFileChurn
+	case DriftModified:
+		if len(f.Symbols) == 0 {
+			return DriftMaterialityUnknownLegacyFileScope
+		}
+		for _, symbol := range f.Symbols {
+			if symbol.Status != "added" {
+				return DriftMaterialityMaterialSymbol
+			}
+		}
+		return DriftMaterialityAdjacentFileChurn
+	default:
+		return ""
+	}
+}
+
+func (r DriftReport) EffectiveMateriality() DriftMateriality {
+	sawUnknown := false
+	sawAdjacent := false
+	sawCarrier := false
+	sawGenerated := false
+	for _, file := range r.Files {
+		switch file.EffectiveMateriality() {
+		case DriftMaterialityMaterialSymbol:
+			return DriftMaterialityMaterialSymbol
+		case DriftMaterialityUnknownLegacyFileScope:
+			sawUnknown = true
+		case DriftMaterialityAdjacentFileChurn:
+			sawAdjacent = true
+		case DriftMaterialityCarrierOnly:
+			sawCarrier = true
+		case DriftMaterialityGeneratedOrIgnored:
+			sawGenerated = true
+		}
+	}
+	switch {
+	case sawUnknown:
+		return DriftMaterialityUnknownLegacyFileScope
+	case sawAdjacent:
+		return DriftMaterialityAdjacentFileChurn
+	case sawCarrier:
+		return DriftMaterialityCarrierOnly
+	case sawGenerated:
+		return DriftMaterialityGeneratedOrIgnored
+	default:
+		return ""
+	}
 }
 
 // ModuleImpact describes a dependent module affected by drift propagation.

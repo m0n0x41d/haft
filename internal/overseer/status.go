@@ -164,7 +164,7 @@ func findingSummarySignals(
 
 func normalizeStatusSignals(signals []StatusSignal) []StatusSignal {
 	out := make([]StatusSignal, 0, len(signals))
-	seen := make(map[string]bool)
+	seen := make(map[string]int)
 	for _, signal := range signals {
 		signal.Severity = normalizeSeverity(signal.Severity)
 		signal.Source = strings.TrimSpace(signal.Source)
@@ -178,18 +178,14 @@ func normalizeStatusSignals(signals []StatusSignal) []StatusSignal {
 		if signal.Title == "" {
 			continue
 		}
-		key := strings.Join([]string{
-			signal.Severity,
-			signal.Source,
-			signal.Title,
-			signal.Detail,
-			signal.ReviewRunID,
-			signal.MaintenanceRunID,
-		}, "\x00")
-		if seen[key] {
+		key := statusSignalDedupeKey(signal)
+		if existing, ok := seen[key]; ok {
+			if severityRank(signal.Severity) < severityRank(out[existing].Severity) {
+				out[existing] = signal
+			}
 			continue
 		}
-		seen[key] = true
+		seen[key] = len(out)
 		out = append(out, signal)
 	}
 
@@ -205,6 +201,31 @@ func normalizeStatusSignals(signals []StatusSignal) []StatusSignal {
 		return out[i].Source < out[j].Source
 	})
 	return out
+}
+
+func statusSignalDedupeKey(signal StatusSignal) string {
+	return strings.Join([]string{
+		normalizeStatusSignalSubject(signal.Title),
+		signal.Detail,
+	}, "\x00")
+}
+
+func normalizeStatusSignalSubject(title string) string {
+	subject := strings.TrimSpace(title)
+	prefixes := []string{
+		"Scoped stale governance debt: ",
+		"Stale governance artifact: ",
+		"Scoped drift detected: ",
+		"Drift detected: ",
+		"Scoped spec health finding: ",
+		"Spec health finding: ",
+		"Scoped coverage gap: ",
+		"Coverage gap: ",
+	}
+	for _, prefix := range prefixes {
+		subject = strings.TrimPrefix(subject, prefix)
+	}
+	return strings.Join(strings.Fields(subject), " ")
 }
 
 func formatStatusSignal(signal StatusSignal) string {

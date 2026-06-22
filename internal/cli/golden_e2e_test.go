@@ -37,6 +37,7 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	restoreCwd := enterTestProjectRoot(t, root)
 	defer restoreCwd()
 
+	preserveGoldenE2EHostGoModCache(t)
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
@@ -418,9 +419,9 @@ func goldenE2ESourceRoot(t *testing.T) string {
 
 // goldenE2ESharedCache lazily creates a single temp directory shared
 // across all runGoldenE2EHaftCLI calls within the same test so that
-// Go build cache and module cache are reused between subprocess
-// invocations. Without sharing, each call compiles haft from scratch
-// (~70s cold), and 3+ calls exceed the default 120s test timeout.
+// Go build cache is reused between subprocess invocations. Without sharing,
+// each call compiles haft from scratch (~70s cold), and 3+ calls exceed the
+// default test timeout.
 var goldenE2ECacheOnce struct {
 	dir string
 }
@@ -433,6 +434,25 @@ func goldenE2ESharedCache(t *testing.T) string {
 	return goldenE2ECacheOnce.dir
 }
 
+func preserveGoldenE2EHostGoModCache(t *testing.T) {
+	t.Helper()
+
+	if os.Getenv("HAFT_GOLDEN_E2E_ISOLATED_MODCACHE") == "1" {
+		return
+	}
+
+	cmd := exec.Command("go", "env", "GOMODCACHE")
+	output, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("resolve host GOMODCACHE: %v", err)
+	}
+	cache := strings.TrimSpace(string(output))
+	if cache == "" {
+		t.Fatal("host GOMODCACHE is empty")
+	}
+	t.Setenv("HAFT_GOLDEN_E2E_HOST_GOMODCACHE", cache)
+}
+
 func runGoldenE2EHaftCLI(t *testing.T, sourceRoot string, root string, args ...string) []byte {
 	t.Helper()
 
@@ -440,13 +460,18 @@ func runGoldenE2EHaftCLI(t *testing.T, sourceRoot string, root string, args ...s
 	cmd := exec.Command("go", commandArgs...)
 	cmd.Dir = sourceRoot
 	cacheRoot := goldenE2ESharedCache(t)
-	cmd.Env = append(
+	cmdEnv := append(
 		os.Environ(),
 		"HAFT_PROJECT_ROOT="+root,
 		"GOCACHE="+filepath.Join(cacheRoot, "go-build"),
-		"GOMODCACHE="+filepath.Join(cacheRoot, "go-mod"),
 		"GOFLAGS=-modcacherw",
 	)
+	if os.Getenv("HAFT_GOLDEN_E2E_ISOLATED_MODCACHE") == "1" {
+		cmdEnv = append(cmdEnv, "GOMODCACHE="+filepath.Join(cacheRoot, "go-mod"))
+	} else if cache := os.Getenv("HAFT_GOLDEN_E2E_HOST_GOMODCACHE"); cache != "" {
+		cmdEnv = append(cmdEnv, "GOMODCACHE="+cache)
+	}
+	cmd.Env = cmdEnv
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

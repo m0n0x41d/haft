@@ -65,6 +65,15 @@ func TestBuildCurrentGoverningSetExcludesTerminalHistory(t *testing.T) {
 	if set.Posture != GoverningSetPostureSingle {
 		t.Fatalf("posture = %q", set.Posture)
 	}
+	if len(set.AnswerPaths) != 1 {
+		t.Fatalf("answer_paths = %#v", set.AnswerPaths)
+	}
+	if set.AnswerPaths[0].TargetKind != "symbol" {
+		t.Fatalf("answer path target_kind = %q", set.AnswerPaths[0].TargetKind)
+	}
+	if !strings.Contains(set.AnswerPaths[0].CLI, "--target-ref") {
+		t.Fatalf("answer path cli = %q", set.AnswerPaths[0].CLI)
+	}
 }
 
 func TestBuildCurrentGoverningSetFlagsExplicitConflict(t *testing.T) {
@@ -249,6 +258,24 @@ func TestFilterCurrentGoverningSetReportByQuery(t *testing.T) {
 	}
 	if len(report.Sets) != 1 || report.Sets[0].TargetRef != "symbol:internal/store.go::Load" {
 		t.Fatalf("sets = %#v", report.Sets)
+	}
+}
+
+func TestCurrentGoverningTargetKindClassifiesExactAnswerTargets(t *testing.T) {
+	cases := map[string]string{
+		"dec-1#claim-a":                     "claim",
+		"claim:dec-1#claim-a":               "claim",
+		"spec-section:system-boundary":      "spec_section",
+		"api_contract:haft_query/status":    "api_contract",
+		"invariant:decision-terminal-state": "invariant",
+		"symbol:internal/store.go::Save":    "symbol",
+		"whole_file_fallback:internal/x.go": "whole_file_fallback",
+		"unscoped:dec-1":                    "unscoped_decision",
+	}
+	for targetRef, want := range cases {
+		if got := currentGoverningTargetKind(targetRef); got != want {
+			t.Fatalf("target kind for %q = %q, want %q", targetRef, got, want)
+		}
 	}
 }
 

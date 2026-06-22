@@ -56,21 +56,31 @@ type CurrentGoverningSetSummary struct {
 }
 
 type CurrentGoverningSet struct {
-	SetID                    string                       `json:"set_id"`
-	SubjectRef               string                       `json:"subject_ref"`
-	SubjectResolution        string                       `json:"subject_resolution"`
-	BoundedContext           string                       `json:"bounded_context"`
-	TargetRef                string                       `json:"target_ref"`
-	TargetResolution         string                       `json:"target_resolution"`
-	WholeFileFallbackTargets []string                     `json:"whole_file_fallback_targets,omitempty"`
-	Posture                  string                       `json:"posture"`
-	CurrentDecisionRefs      []string                     `json:"current_decision_refs"`
-	CurrentDecisions         []DecisionReconciliationItem `json:"current_decisions"`
-	TerminalHistoryRefs      []string                     `json:"terminal_history_refs,omitempty"`
-	OperatorRequired         bool                         `json:"operator_required"`
-	AuthorityBoundary        string                       `json:"authority_boundary"`
-	Basis                    []string                     `json:"basis"`
-	ScopeRepairHints         []string                     `json:"scope_repair_hints,omitempty"`
+	SetID                    string                          `json:"set_id"`
+	SubjectRef               string                          `json:"subject_ref"`
+	SubjectResolution        string                          `json:"subject_resolution"`
+	BoundedContext           string                          `json:"bounded_context"`
+	TargetRef                string                          `json:"target_ref"`
+	AnswerPaths              []CurrentGoverningSetAnswerPath `json:"answer_paths,omitempty"`
+	TargetResolution         string                          `json:"target_resolution"`
+	WholeFileFallbackTargets []string                        `json:"whole_file_fallback_targets,omitempty"`
+	Posture                  string                          `json:"posture"`
+	CurrentDecisionRefs      []string                        `json:"current_decision_refs"`
+	CurrentDecisions         []DecisionReconciliationItem    `json:"current_decisions"`
+	TerminalHistoryRefs      []string                        `json:"terminal_history_refs,omitempty"`
+	OperatorRequired         bool                            `json:"operator_required"`
+	AuthorityBoundary        string                          `json:"authority_boundary"`
+	Basis                    []string                        `json:"basis"`
+	ScopeRepairHints         []string                        `json:"scope_repair_hints,omitempty"`
+}
+
+type CurrentGoverningSetAnswerPath struct {
+	TargetKind        string `json:"target_kind"`
+	TargetRef         string `json:"target_ref"`
+	CLI               string `json:"cli"`
+	MCPCall           string `json:"mcp_call"`
+	ExactRecordNeeded string `json:"exact_record_needed,omitempty"`
+	AuthorityBoundary string `json:"authority_boundary"`
 }
 
 type currentGoverningSetBucket struct {
@@ -205,6 +215,7 @@ func currentGoverningSetFromBucket(bucket *currentGoverningSetBucket) CurrentGov
 		SubjectResolution:        bucket.subjectResolution,
 		BoundedContext:           bucket.boundedContext,
 		TargetRef:                bucket.targetRef,
+		AnswerPaths:              currentGoverningSetAnswerPaths(bucket.targetRef),
 		TargetResolution:         bucket.targetResolution,
 		WholeFileFallbackTargets: currentGoverningWholeFileFallbackTargets(items),
 		Posture:                  posture,
@@ -233,6 +244,63 @@ func currentGoverningTargetResolution(item DecisionReconciliationItem, targetRef
 		return "missing_explicit_target_unique_decision_scope"
 	}
 	return "explicit_governance_or_watch_target"
+}
+
+func currentGoverningSetAnswerPaths(targetRef string) []CurrentGoverningSetAnswerPath {
+	trimmed := strings.TrimSpace(targetRef)
+	if trimmed == "" {
+		return nil
+	}
+	return []CurrentGoverningSetAnswerPath{{
+		TargetKind:        currentGoverningTargetKind(trimmed),
+		TargetRef:         trimmed,
+		CLI:               fmt.Sprintf("haft decision governing-set --target-ref %q --json", trimmed),
+		MCPCall:           fmt.Sprintf("haft_query(action=\"governing_set\", source_refs=[%q])", trimmed),
+		ExactRecordNeeded: currentGoverningExactRecordHint(trimmed),
+		AuthorityBoundary: "answer_path_is_read_only_not_evidence_or_gate_decision",
+	}}
+}
+
+func currentGoverningTargetKind(targetRef string) string {
+	switch {
+	case strings.HasPrefix(targetRef, "claim:"):
+		return "claim"
+	case strings.Contains(targetRef, "#claim"):
+		return "claim"
+	case strings.HasPrefix(targetRef, "spec-section:"):
+		return "spec_section"
+	case strings.HasPrefix(targetRef, "api_contract:"):
+		return "api_contract"
+	case strings.HasPrefix(targetRef, "invariant:"):
+		return "invariant"
+	case strings.HasPrefix(targetRef, "symbol:"):
+		return "symbol"
+	case strings.HasPrefix(targetRef, "whole_file_fallback:"):
+		return "whole_file_fallback"
+	case strings.HasPrefix(targetRef, "unscoped:"):
+		return "unscoped_decision"
+	default:
+		return "governance_target"
+	}
+}
+
+func currentGoverningExactRecordHint(targetRef string) string {
+	switch currentGoverningTargetKind(targetRef) {
+	case "claim":
+		return "claim lifecycle/detail view"
+	case "spec_section":
+		return "haft spec section lifecycle/detail"
+	case "api_contract":
+		return "interface contract or exact API-contract carrier"
+	case "invariant":
+		return "decision invariant or evidence path detail"
+	case "whole_file_fallback":
+		return "scope enrichment selection before stronger use"
+	case "unscoped_decision":
+		return "decision scope enrichment before stronger use"
+	default:
+		return "governing-set filtered JSON"
+	}
 }
 
 func currentGoverningWholeFileFallbackTargets(items []DecisionReconciliationItem) []string {

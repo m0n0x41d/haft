@@ -57,6 +57,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   history policy, filter posture, and generated timestamp so audit views can
   distinguish historical decisions from current authority without relying on
   prose status summaries.
+- **Current governing-set answer paths.** Governing-set JSON entries now expose
+  read-only `answer_paths` for claim, spec-section, API-contract, invariant,
+  symbol, fallback, and unscoped targets, giving agents exact CLI/MCP drill-downs
+  without treating the path itself as evidence or a gate decision.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

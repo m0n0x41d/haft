@@ -6,12 +6,12 @@ when_to_use: |
   Operator typed /h-commission explicitly and an approved DecisionRecord is ready to authorize for bounded autonomous execution. Never auto-fire.
 argument-hint: "[decision-ref to commission from]"
 disable-model-invocation: true
-allowed-tools: mcp__haft__haft_commission mcp__haft__haft_query mcp__haft__haft_refresh
+allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
 # h-commission — Create work commission (manual only, sacred)
 
-You are creating a WorkCommission via `mcp__haft__haft_commission`. Commissions are execution-authority grants — they encode WHAT the operator authorized an autonomous agent (harness) to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS.
+You are creating a WorkCommission through the manual CLI/input-file path. Commissions are execution-authority grants — they encode WHAT the operator authorized an autonomous agent (harness) to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS. Default MCP serve mode rejects WorkCommission creation actions with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. In v1 the only accepted receipt kind is `manual_cli`.
 
 The operator invoked this manually (`disable-model-invocation: true` enforces it structurally). Commissions stay sacred per FPF reasoner critique 2026-05-25.
 
@@ -53,22 +53,7 @@ Ask the operator for:
 
 ## Step 4 — Snapshot autonomy envelope
 
-```
-mcp__haft__haft_commission(
-  action="create_from_decision",
-  decision_ref="<dec-...>",
-  allowed_paths=[...],
-  forbidden_paths=[...],
-  delivery_policy="workspace_patch_manual",  // default; auto only with explicit operator policy
-  autonomy_envelope_snapshot={
-    "max_wall_clock_minutes": <number>,
-    "allowed_tools": [...],
-    "evidence_required": [...]
-  },
-  slice_description="<required when this is the 2nd+ commission from same decision; describes this slice's scope to prevent leak>",
-  task_context="<short context label>"
-)
-```
+Use `haft commission create-from-decision <dec-...>` with explicit scope flags, or `haft commission create --json <input.json>` for a full payload. Preserve the same fields: allowed paths, forbidden paths, delivery policy, autonomy envelope snapshot, slice description, and task context.
 
 The kernel persists the WorkCommission with the snapshotted envelope. Future commission lifecycle events (preflight, run, complete) check against this snapshot.
 

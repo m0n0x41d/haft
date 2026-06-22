@@ -27,6 +27,16 @@ const (
 	ReviewModelDispositionUsed              = "used"
 	ReviewModelDispositionBoundaryPreserved = "boundary_preserved"
 	ReviewModelDispositionAbstain           = "abstain"
+
+	ReviewFindingCategoryStructural          = "structural"
+	ReviewFindingCategoryPrimaryObject       = "primary_object"
+	ReviewFindingCategoryFrame               = "frame"
+	ReviewFindingCategoryPublicationBoundary = "publication_boundary"
+	ReviewFindingCategoryClaimPosture        = "claim_posture"
+	ReviewFindingCategoryAuthorityBoundary   = "authority_boundary"
+	ReviewFindingCategoryUnknownAbstain      = "unknown_abstain"
+	ReviewFindingCategoryDescriptionBoundary = "description_authority_boundary"
+	ReviewFindingCategoryStateReading        = "state_reading"
 )
 
 type ReviewPacket struct {
@@ -99,6 +109,7 @@ type StateReading struct {
 type ReviewFinding struct {
 	SectionID    string     `json:"section_id,omitempty"`
 	RuleID       string     `json:"rule_id"`
+	Category     string     `json:"category"`
 	Severity     string     `json:"severity"`
 	Finding      string     `json:"finding"`
 	WhyItMatters string     `json:"why_it_matters"`
@@ -169,7 +180,7 @@ func semanticReviewProfile() ReviewProfile {
 			{
 				Name:        "system_reference_frame_v1",
 				Disposition: ReviewModelDispositionUsed,
-				Reading:     "declared target/enabling system_frame drives frame diagnostics",
+				Reading:     "declared target/enabling/carrier/sidekick system_frame drives frame diagnostics",
 			},
 			{
 				Name:        "state_readings_v1",
@@ -236,6 +247,7 @@ func structuralReviewFindings(findings []project.SpecCheckFinding) []ReviewFindi
 		reviewFindings = append(reviewFindings, ReviewFinding{
 			SectionID: finding.SectionID,
 			RuleID:    "structural_findings_present",
+			Category:  reviewFindingCategory("structural_findings_present"),
 			Severity:  ReviewSeverityBlockedForStrongerUse,
 			Finding: fmt.Sprintf(
 				"structural spec finding %q must be resolved before stronger semantic use",
@@ -304,10 +316,10 @@ func missingFrameFindings(subject reviewSubject) []ReviewFinding {
 			subject,
 			"missing_system_frame",
 			ReviewSeverityAbstain,
-			"active SpecSection does not declare a target-system or enabling-system frame",
-			"Semantic review must know whether the section describes the target system or the enabling system before it can advise stronger use.",
-			"Target system != enabling system",
-			"Set `system_frame` to target_system or enabling_system, or move the carrier under the matching canonical spec file.",
+			"active SpecSection does not declare a target, enabling, carrier, or sidekick frame",
+			"Semantic review must know whether the section describes the target system, enabling system, publication carrier, or sidekick before it can advise stronger use.",
+			"Target system != enabling system != carrier != sidekick",
+			"Set `system_frame` to target_system, enabling_system, carrier, or sidekick; move target/enabling sections under matching canonical spec files when they claim those frames.",
 			ReviewUseAbstainUntilClarified,
 			"system_frame",
 		),
@@ -467,6 +479,7 @@ func newReviewFinding(
 	return ReviewFinding{
 		SectionID:    subject.section.ID,
 		RuleID:       ruleID,
+		Category:     reviewFindingCategory(ruleID),
 		Severity:     severity,
 		Finding:      finding,
 		WhyItMatters: whyItMatters,
@@ -476,6 +489,29 @@ func newReviewFinding(
 			StrongerUse: strongerUse,
 		},
 		Source: sectionSource(subject.section, fieldPath),
+	}
+}
+
+func reviewFindingCategory(ruleID string) string {
+	switch ruleID {
+	case "structural_findings_present":
+		return ReviewFindingCategoryStructural
+	case "missing_bearer":
+		return ReviewFindingCategoryPrimaryObject
+	case "missing_system_frame", "system_frame_mismatch":
+		return ReviewFindingCategoryFrame
+	case "active_carrier_layer":
+		return ReviewFindingCategoryPublicationBoundary
+	case "mixed_claim_unresolved", "claim_class_unresolved", "declared_claim_without_support", "strong_claim_without_support":
+		return ReviewFindingCategoryClaimPosture
+	case "authority_like_without_evidence_requirement":
+		return ReviewFindingCategoryAuthorityBoundary
+	case "unknown_high_risk_without_explicit_claims":
+		return ReviewFindingCategoryUnknownAbstain
+	case "description_use_confusion":
+		return ReviewFindingCategoryDescriptionBoundary
+	default:
+		return ReviewFindingCategoryStateReading
 	}
 }
 

@@ -319,6 +319,69 @@ func TestDecisionPredictionsFromClaims_PreservesVerifyAfter(t *testing.T) {
 	}
 }
 
+func TestNormalizeDecisionClaims_PreservesClaimLifecycleFields(t *testing.T) {
+	input := []DecisionClaim{
+		{
+			ID:                   " claim-lifecycle ",
+			Claim:                " claim ",
+			Observable:           " observable ",
+			Threshold:            " threshold ",
+			LifecycleStatus:      ClaimLifecycleSuperseded,
+			SuccessorRef:         " dec-new#claim-2 ",
+			RetiredReason:        " narrowed by successor ",
+			GovernanceTargetRefs: []string{" api_contract:haft/status ", "api_contract:haft/status"},
+		},
+		{
+			Claim:           "legacy active claim",
+			LifecycleStatus: "unknown",
+		},
+	}
+
+	got := normalizeDecisionClaims(input)
+	if len(got) != 2 {
+		t.Fatalf("claims = %#v, want two", got)
+	}
+	if got[0].ID != "claim-lifecycle" {
+		t.Fatalf("id = %q", got[0].ID)
+	}
+	if got[0].LifecycleStatus != ClaimLifecycleSuperseded {
+		t.Fatalf("lifecycle_status = %q", got[0].LifecycleStatus)
+	}
+	if got[0].SuccessorRef != "dec-new#claim-2" {
+		t.Fatalf("successor_ref = %q", got[0].SuccessorRef)
+	}
+	if got[0].RetiredReason != "narrowed by successor" {
+		t.Fatalf("retired_reason = %q", got[0].RetiredReason)
+	}
+	if len(got[0].GovernanceTargetRefs) != 1 || got[0].GovernanceTargetRefs[0] != "api_contract:haft/status" {
+		t.Fatalf("governance_target_refs = %#v", got[0].GovernanceTargetRefs)
+	}
+	if got[1].LifecycleStatus != "" {
+		t.Fatalf("legacy/unknown lifecycle should stay empty in storage, got %q", got[1].LifecycleStatus)
+	}
+	if EffectiveClaimLifecycleStatus(got[1]) != ClaimLifecycleActive {
+		t.Fatalf("effective legacy lifecycle = %q, want active", EffectiveClaimLifecycleStatus(got[1]))
+	}
+}
+
+func TestBuildClaimLifecycleSummaryCountsLegacyActiveAndTerminalClaims(t *testing.T) {
+	summary := buildClaimLifecycleSummary([]DecisionClaim{
+		{Claim: "legacy active", GovernanceTargetRefs: []string{"symbol:A"}},
+		{Claim: "refresh", LifecycleStatus: ClaimLifecycleRefreshDue},
+		{Claim: "superseded", LifecycleStatus: ClaimLifecycleSuperseded, GovernanceTargetRefs: []string{"symbol:B"}},
+		{Claim: "deprecated", LifecycleStatus: ClaimLifecycleDeprecated, GovernanceTargetRefs: []string{"symbol:B"}},
+	})
+	if summary == nil {
+		t.Fatal("summary is nil")
+	}
+	if summary.Active != 1 || summary.RefreshDue != 1 || summary.Superseded != 1 || summary.Deprecated != 1 {
+		t.Fatalf("summary counts = %#v", summary)
+	}
+	if len(summary.GovernanceTargetRefs) != 2 {
+		t.Fatalf("governance target refs = %#v, want two unique refs", summary.GovernanceTargetRefs)
+	}
+}
+
 func TestDecisionClaimsFromPredictions_PreservesVerifyAfter(t *testing.T) {
 	predictions := []DecisionPrediction{
 		{

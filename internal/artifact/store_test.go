@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/reff"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -35,6 +37,7 @@ func setupTestDB(t *testing.T) *Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			formality_scale_id TEXT DEFAULT '', formality_bridge TEXT DEFAULT '',
 			claim_refs TEXT DEFAULT '[]',
 			claim_scope TEXT DEFAULT '[]',
 			valid_until TEXT, created_at TEXT NOT NULL)`,
@@ -463,8 +466,20 @@ func TestEvidenceItems(t *testing.T) {
 	if items[0].Content != "Load test: 100k events/sec, p99 < 50ms" {
 		t.Errorf("content mismatch")
 	}
-	if items[0].FormalityLevel != 2 {
-		t.Errorf("formality mismatch: got %d want 2", items[0].FormalityLevel)
+	if items[0].FormalityLevel != 7 {
+		t.Errorf("formality mismatch: got %d want 7", items[0].FormalityLevel)
+	}
+	if items[0].FormalityScale == nil {
+		t.Fatal("formality scale missing")
+	}
+	if items[0].FormalityScale.ScaleID != reff.FormalityScaleCurrent {
+		t.Fatalf("formality scale = %q, want %q", items[0].FormalityScale.ScaleID, reff.FormalityScaleCurrent)
+	}
+	if items[0].FormalityScale.Level != 7 {
+		t.Fatalf("formality scale level = %d, want 7", items[0].FormalityScale.Level)
+	}
+	if items[0].FormalityBridge != nil {
+		t.Fatalf("current formality should not require bridge: %#v", items[0].FormalityBridge)
 	}
 	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
 		t.Errorf("claim scope mismatch: got %q", got)
@@ -493,7 +508,7 @@ func TestGetEvidenceItems_LegacySchemaWithoutClaimScope(t *testing.T) {
 	if _, err := store.DB().ExecContext(ctx, `
 		INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"evid-legacy", "dec-legacy", "measurement", "legacy row", "supports", "carrier-1", 3, 5, "", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		"evid-legacy", "dec-legacy", "measurement", "legacy row", "supports", "carrier-1", 3, 2, "", time.Now().UTC().Format(time.RFC3339)); err != nil {
 		t.Fatalf("insert legacy evidence item: %v", err)
 	}
 
@@ -509,6 +524,18 @@ func TestGetEvidenceItems_LegacySchemaWithoutClaimScope(t *testing.T) {
 	}
 	if len(items[0].ClaimRefs) != 0 {
 		t.Fatalf("expected empty claim refs, got %v", items[0].ClaimRefs)
+	}
+	if items[0].FormalityScale == nil {
+		t.Fatal("legacy formality scale missing")
+	}
+	if items[0].FormalityScale.ScaleID != reff.FormalityScaleLegacy {
+		t.Fatalf("legacy F2 scale = %q, want %q", items[0].FormalityScale.ScaleID, reff.FormalityScaleLegacy)
+	}
+	if items[0].FormalityBridge == nil {
+		t.Fatal("legacy unversioned formality bridge missing")
+	}
+	if items[0].FormalityBridge.Loss != reff.FormalityBridgeLegacyLoss {
+		t.Fatalf("legacy bridge loss = %q", items[0].FormalityBridge.Loss)
 	}
 }
 

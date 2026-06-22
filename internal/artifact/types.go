@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 // Kind identifies the type of artifact.
@@ -445,37 +447,94 @@ type PublicationRecoverability struct {
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	ProblemRefs          []string              `json:"problem_refs,omitempty"`
-	ChoiceResult         *ChoiceResult         `json:"choice_result,omitempty"`
-	TransformationRecord *TransformationRecord `json:"transformation_record,omitempty"`
-	SelectedTitle        string                `json:"selected_title"`
-	WhySelected          string                `json:"why_selected"`
-	SelectionPolicy      string                `json:"selection_policy,omitempty"`
-	CounterArgument      string                `json:"counterargument,omitempty"`
-	WeakestLink          string                `json:"weakest_link,omitempty"`
-	TaskContext          string                `json:"task_context,omitempty"`
-	SectionRefs          []string              `json:"section_refs,omitempty"`
-	WhyNotOthers         []RejectionReason     `json:"why_not_others,omitempty"`
-	Claims               []DecisionClaim       `json:"claims,omitempty"`
-	Predictions          []DecisionPrediction  `json:"predictions,omitempty"`
-	PreConditions        []string              `json:"pre_conditions,omitempty"`
-	RollbackTriggers     []string              `json:"rollback_triggers,omitempty"`
-	RollbackSteps        []string              `json:"rollback_steps,omitempty"`
-	RollbackBlastRadius  string                `json:"rollback_blast_radius,omitempty"`
-	Invariants           []string              `json:"invariants,omitempty"`
-	PostConds            []string              `json:"post_conditions,omitempty"`
-	Admissibility        []string              `json:"admissibility,omitempty"`
-	EvidenceRequirements []string              `json:"evidence_requirements,omitempty"`
-	RefreshTriggers      []string              `json:"refresh_triggers,omitempty"`
-	Skips                []string              `json:"_skips,omitempty"`
-	SkipReason           string                `json:"_skip_reason,omitempty"`
-	FirstModuleCoverage  bool                  `json:"first_module_coverage,omitempty"`
-	DriftManifests       []DriftScopeManifest  `json:"drift_manifests,omitempty"`
+	ProblemRefs             []string                `json:"problem_refs,omitempty"`
+	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
+	ChoiceResult            *ChoiceResult           `json:"choice_result,omitempty"`
+	TransformationRecord    *TransformationRecord   `json:"transformation_record,omitempty"`
+	SelectedTitle           string                  `json:"selected_title"`
+	WhySelected             string                  `json:"why_selected"`
+	SelectionPolicy         string                  `json:"selection_policy,omitempty"`
+	CounterArgument         string                  `json:"counterargument,omitempty"`
+	WeakestLink             string                  `json:"weakest_link,omitempty"`
+	TaskContext             string                  `json:"task_context,omitempty"`
+	SectionRefs             []string                `json:"section_refs,omitempty"`
+	WhyNotOthers            []RejectionReason       `json:"why_not_others,omitempty"`
+	Claims                  []DecisionClaim         `json:"claims,omitempty"`
+	Predictions             []DecisionPrediction    `json:"predictions,omitempty"`
+	PreConditions           []string                `json:"pre_conditions,omitempty"`
+	RollbackTriggers        []string                `json:"rollback_triggers,omitempty"`
+	RollbackSteps           []string                `json:"rollback_steps,omitempty"`
+	RollbackBlastRadius     string                  `json:"rollback_blast_radius,omitempty"`
+	Invariants              []string                `json:"invariants,omitempty"`
+	PostConds               []string                `json:"post_conditions,omitempty"`
+	Admissibility           []string                `json:"admissibility,omitempty"`
+	EvidenceRequirements    []string                `json:"evidence_requirements,omitempty"`
+	RefreshTriggers         []string                `json:"refresh_triggers,omitempty"`
+	Skips                   []string                `json:"_skips,omitempty"`
+	SkipReason              string                  `json:"_skip_reason,omitempty"`
+	FirstModuleCoverage     bool                    `json:"first_module_coverage,omitempty"`
+	ImplementationFootprint ImplementationFootprint `json:"implementation_footprint,omitempty"`
+	GovernanceTargets       []GovernanceTarget      `json:"governance_targets,omitempty"`
+	DriftWatchTargets       []DriftWatchTarget      `json:"drift_watch_targets,omitempty"`
+	DriftManifests          []DriftScopeManifest    `json:"drift_manifests,omitempty"`
+	BindingTargets          []BindingTarget         `json:"binding_targets,omitempty"`
+	BindingDiagnostics      []BindingDiagnostic     `json:"binding_diagnostics,omitempty"`
 	// GovernanceMode declares how affected_files relate to drift detection.
 	// "module" (default, preserves pre-6.2.x behavior): each affected_file
 	// widens to its parent directory; sibling additions count as governed
 	// drift. "exact": only the listed files are governed. See GovernanceMode.
 	GovernanceMode GovernanceMode `json:"governance_mode,omitempty"`
+}
+
+type ImplementationFootprint struct {
+	Files    []string `json:"files,omitempty"`
+	Commits  []string `json:"commits,omitempty"`
+	WorkRefs []string `json:"work_refs,omitempty"`
+}
+
+type GovernanceTarget struct {
+	Kind          string         `json:"kind"`
+	Ref           string         `json:"ref,omitempty"`
+	BindingTarget *BindingTarget `json:"binding_target,omitempty"`
+}
+
+type DriftWatchTarget struct {
+	TargetRef     string         `json:"target_ref"`
+	Trigger       string         `json:"trigger"`
+	BindingTarget *BindingTarget `json:"binding_target,omitempty"`
+}
+
+// BindingTarget is the canonical code-object binding model for decision drift.
+// affected_files and affected_symbols remain backward-compatible projections.
+type BindingTarget struct {
+	Kind             string `json:"kind"`
+	TargetRef        string `json:"target_ref,omitempty"`
+	FilePath         string `json:"file_path,omitempty"`
+	Language         string `json:"language,omitempty"`
+	SymbolName       string `json:"symbol_name,omitempty"`
+	SymbolKind       string `json:"symbol_kind,omitempty"`
+	Receiver         string `json:"receiver,omitempty"`
+	Line             int    `json:"line,omitempty"`
+	EndLine          int    `json:"end_line,omitempty"`
+	BodyHash         string `json:"body_hash,omitempty"`
+	AnchorHash       string `json:"anchor_hash,omitempty"`
+	TextHash         string `json:"text_hash,omitempty"`
+	NearestSymbol    string `json:"nearest_symbol,omitempty"`
+	ModulePath       string `json:"module_path,omitempty"`
+	ModuleHash       string `json:"module_hash,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	WhySymbolFailed  string `json:"why_symbol_failed,omitempty"`
+	WhyRangeFailed   string `json:"why_range_failed,omitempty"`
+	LanguageSupport  string `json:"language_support,omitempty"`
+	Confidence       string `json:"confidence,omitempty"`
+	ResolutionSource string `json:"resolution_source,omitempty"`
+}
+
+type BindingDiagnostic struct {
+	FilePath string `json:"file_path,omitempty"`
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
 }
 
 type decisionFieldsJSON DecisionFields
@@ -788,6 +847,8 @@ type ChoiceResult struct {
 	ProblemRefs     []string       `json:"problem_refs,omitempty"`
 	PortfolioRef    string         `json:"portfolio_ref,omitempty"`
 	Reason          string         `json:"reason,omitempty"`
+	Reversibility   string         `json:"reversibility,omitempty"`
+	ReopenCondition string         `json:"reopen_condition,omitempty"`
 }
 
 const TransformationRecordSchemaVersion = 1
@@ -796,12 +857,17 @@ const TransformationRecordSchemaVersion = 1
 // Method, work authorization, evidence, and publication remain separate
 // record families.
 type TransformationRecord struct {
-	SchemaVersion     int    `json:"schema_version"`
-	TransformedEntity string `json:"transformed_entity"`
-	InitialState      string `json:"initial_state"`
-	PostState         string `json:"post_state"`
-	Relation          string `json:"relation"`
-	Context           string `json:"context"`
+	SchemaVersion     int      `json:"schema_version"`
+	TransformedEntity string   `json:"transformed_entity"`
+	InitialState      string   `json:"initial_state"`
+	PostState         string   `json:"post_state"`
+	Relation          string   `json:"relation"`
+	Context           string   `json:"context"`
+	Window            string   `json:"window,omitempty"`
+	MethodRefs        []string `json:"method_refs,omitempty"`
+	WorkRefs          []string `json:"work_refs,omitempty"`
+	EvidenceRefs      []string `json:"evidence_refs,omitempty"`
+	PublicationRefs   []string `json:"publication_refs,omitempty"`
 }
 
 func NormalizeTransformationRecord(record *TransformationRecord) *TransformationRecord {
@@ -816,6 +882,11 @@ func NormalizeTransformationRecord(record *TransformationRecord) *Transformation
 		PostState:         strings.TrimSpace(record.PostState),
 		Relation:          strings.TrimSpace(record.Relation),
 		Context:           strings.TrimSpace(record.Context),
+		Window:            strings.TrimSpace(record.Window),
+		MethodRefs:        compactStrings(record.MethodRefs),
+		WorkRefs:          compactStrings(record.WorkRefs),
+		EvidenceRefs:      compactStrings(record.EvidenceRefs),
+		PublicationRefs:   compactStrings(record.PublicationRefs),
 	}
 	if normalized.SchemaVersion == 0 {
 		normalized.SchemaVersion = TransformationRecordSchemaVersion
@@ -875,6 +946,8 @@ func NormalizeChoiceResult(choice *ChoiceResult) *ChoiceResult {
 		ProblemRefs:     compactStrings(choice.ProblemRefs),
 		PortfolioRef:    strings.TrimSpace(choice.PortfolioRef),
 		Reason:          strings.TrimSpace(choice.Reason),
+		Reversibility:   strings.TrimSpace(choice.Reversibility),
+		ReopenCondition: strings.TrimSpace(choice.ReopenCondition),
 	}
 
 	return normalized
@@ -912,6 +985,7 @@ type DecisionChoiceResultInput struct {
 	WhySelected     string
 	WhyNotOthers    []RejectionReason
 	SelectionPolicy string
+	ReopenCondition string
 }
 
 // NewDecisionChoiceResult creates the exact choice emitted by explicit h-decide.
@@ -926,6 +1000,7 @@ func NewDecisionChoiceResult(input DecisionChoiceResultInput) *ChoiceResult {
 		ProblemRefs:     compactStrings(input.ProblemRefs),
 		PortfolioRef:    strings.TrimSpace(input.PortfolioRef),
 		Reason:          strings.TrimSpace(input.WhySelected),
+		ReopenCondition: strings.TrimSpace(input.ReopenCondition),
 	}
 
 	return choice
@@ -1001,15 +1076,30 @@ const (
 	ClaimStatusInconclusive ClaimStatus = "inconclusive"
 )
 
+// ClaimLifecycleStatus is the governance lifecycle of a decision claim. Empty
+// legacy values read as active through EffectiveClaimLifecycleStatus.
+type ClaimLifecycleStatus string
+
+const (
+	ClaimLifecycleActive     ClaimLifecycleStatus = "active"
+	ClaimLifecycleRefreshDue ClaimLifecycleStatus = "refresh_due"
+	ClaimLifecycleSuperseded ClaimLifecycleStatus = "superseded"
+	ClaimLifecycleDeprecated ClaimLifecycleStatus = "deprecated"
+)
+
 // DecisionClaim is the canonical stored runtime state for one decision claim.
 type DecisionClaim struct {
-	ID            string               `json:"id"`
-	Claim         string               `json:"claim"`
-	Observable    string               `json:"observable"`
-	Threshold     string               `json:"threshold"`
-	Status        ClaimStatus          `json:"status,omitempty"`
-	VerifyAfter   string               `json:"verify_after,omitempty"`  // RFC3339 or YYYY-MM-DD — when async evidence should be gathered
-	Realizability RealizabilityVerdict `json:"realizability,omitempty"` // C.28 CounterfactualSamplingRealizabilityProfile verdict
+	ID                   string               `json:"id"`
+	Claim                string               `json:"claim"`
+	Observable           string               `json:"observable"`
+	Threshold            string               `json:"threshold"`
+	Status               ClaimStatus          `json:"status,omitempty"`
+	LifecycleStatus      ClaimLifecycleStatus `json:"lifecycle_status,omitempty"`
+	SuccessorRef         string               `json:"successor_ref,omitempty"`
+	RetiredReason        string               `json:"retired_reason,omitempty"`
+	GovernanceTargetRefs []string             `json:"governance_target_refs,omitempty"`
+	VerifyAfter          string               `json:"verify_after,omitempty"`  // RFC3339 or YYYY-MM-DD — when async evidence should be gathered
+	Realizability        RealizabilityVerdict `json:"realizability,omitempty"` // C.28 CounterfactualSamplingRealizabilityProfile verdict
 	// Probability is the optional elicited p(this claim holds) in [0,1], a noisy
 	// forecast captured at /h-decide time. Paired with the verified Status
 	// (supported→1 / refuted→0) it forms a Forecast for decomposed-Brier
@@ -1020,6 +1110,14 @@ type DecisionClaim struct {
 	// loop may execute out-of-band (dec-20260611-overseer-maintenance-executor).
 	// Empty means the observable needs judgment. Additive.
 	Command string `json:"command,omitempty"`
+}
+
+type ClaimLifecycleSummary struct {
+	Active               int      `json:"active"`
+	RefreshDue           int      `json:"refresh_due"`
+	Superseded           int      `json:"superseded"`
+	Deprecated           int      `json:"deprecated"`
+	GovernanceTargetRefs []string `json:"governance_target_refs,omitempty"`
 }
 
 // DecisionPrediction is a compatibility projection of a stored decision claim.
@@ -1042,7 +1140,9 @@ type EvidenceItem struct {
 	Verdict            string                     `json:"verdict,omitempty"` // supports, weakens, refutes
 	CarrierRef         string                     `json:"carrier_ref,omitempty"`
 	CongruenceLevel    int                        `json:"congruence_level,omitempty"` // 0-3
-	FormalityLevel     int                        `json:"formality_level,omitempty"`  // F0-F3 (legacy 0-9 normalized on read)
+	FormalityLevel     int                        `json:"formality_level,omitempty"`  // F0-F9; legacy F0-F3 remains readable
+	FormalityScale     *reff.FormalityScale       `json:"formality_scale,omitempty"`
+	FormalityBridge    *reff.FormalityBridge      `json:"formality_bridge,omitempty"`
 	ClaimRefs          []string                   `json:"claim_refs,omitempty"`
 	ClaimScope         []string                   `json:"claim_scope,omitempty"`
 	ValidUntil         string                     `json:"valid_until,omitempty"`
@@ -1099,10 +1199,12 @@ type DriftMateriality string
 
 const (
 	DriftMaterialityMaterialSymbol         DriftMateriality = "material_symbol"
+	DriftMaterialityMaterialSemanticTarget DriftMateriality = "material_semantic_target"
 	DriftMaterialityAdjacentFileChurn      DriftMateriality = "adjacent_file_churn"
 	DriftMaterialityCarrierOnly            DriftMateriality = "carrier_only"
 	DriftMaterialityGeneratedOrIgnored     DriftMateriality = "generated_or_ignored"
 	DriftMaterialityUnknownLegacyFileScope DriftMateriality = "unknown_legacy_file_scope"
+	DriftMaterialityNeedsBindingResolution DriftMateriality = "needs_binding_resolution"
 )
 
 // DriftTriggerKind describes the mechanical trigger that made the item appear.
@@ -1124,6 +1226,11 @@ type DriftItem struct {
 	Symbols          []SymbolDriftItem `json:"symbols,omitempty"` // symbol-level breakdown for a modified file
 	Materiality      DriftMateriality  `json:"materiality,omitempty"`
 	TriggerKind      DriftTriggerKind  `json:"trigger_kind,omitempty"`
+	ChangedTargetRef string            `json:"changed_target_ref,omitempty"`
+	TargetKind       string            `json:"target_kind,omitempty"`
+	TargetStatus     string            `json:"target_status,omitempty"`
+	FallbackKind     string            `json:"fallback_kind,omitempty"`
+	FallbackReason   string            `json:"fallback_reason,omitempty"`
 	AuditOnly        bool              `json:"audit_only,omitempty"`
 	SuppressedReason string            `json:"suppressed_reason,omitempty"`
 }
@@ -1184,12 +1291,12 @@ func (r DriftReport) SymbolVerdict() string {
 			return SymbolVerdictGovernedModified
 		case DriftModified:
 			switch materiality {
-			case DriftMaterialityMaterialSymbol:
+			case DriftMaterialityMaterialSymbol, DriftMaterialityMaterialSemanticTarget:
 				return SymbolVerdictGovernedModified
 			case DriftMaterialityAdjacentFileChurn, DriftMaterialityCarrierOnly, DriftMaterialityGeneratedOrIgnored:
 				sawAdditive = true
 				continue
-			case DriftMaterialityUnknownLegacyFileScope:
+			case DriftMaterialityUnknownLegacyFileScope, DriftMaterialityNeedsBindingResolution:
 				needsReview = true
 				continue
 			}
@@ -1207,7 +1314,7 @@ func (r DriftReport) SymbolVerdict() string {
 			}
 			sawAdditive = true
 		case DriftAdded:
-			if materiality == DriftMaterialityUnknownLegacyFileScope {
+			if materiality == DriftMaterialityUnknownLegacyFileScope || materiality == DriftMaterialityNeedsBindingResolution {
 				needsReview = true
 				continue
 			}
@@ -1253,15 +1360,18 @@ func (f DriftItem) EffectiveMateriality() DriftMateriality {
 
 func (r DriftReport) EffectiveMateriality() DriftMateriality {
 	sawUnknown := false
+	sawNeedsResolution := false
 	sawAdjacent := false
 	sawCarrier := false
 	sawGenerated := false
 	for _, file := range r.Files {
 		switch file.EffectiveMateriality() {
-		case DriftMaterialityMaterialSymbol:
-			return DriftMaterialityMaterialSymbol
+		case DriftMaterialityMaterialSymbol, DriftMaterialityMaterialSemanticTarget:
+			return file.EffectiveMateriality()
 		case DriftMaterialityUnknownLegacyFileScope:
 			sawUnknown = true
+		case DriftMaterialityNeedsBindingResolution:
+			sawNeedsResolution = true
 		case DriftMaterialityAdjacentFileChurn:
 			sawAdjacent = true
 		case DriftMaterialityCarrierOnly:
@@ -1271,6 +1381,8 @@ func (r DriftReport) EffectiveMateriality() DriftMateriality {
 		}
 	}
 	switch {
+	case sawNeedsResolution:
+		return DriftMaterialityNeedsBindingResolution
 	case sawUnknown:
 		return DriftMaterialityUnknownLegacyFileScope
 	case sawAdjacent:

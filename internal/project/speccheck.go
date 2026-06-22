@@ -911,9 +911,17 @@ func normalizeSystemFrameKind(value string) string {
 		return "target_system"
 	case "enabling_system", "enabling":
 		return "enabling_system"
+	case "carrier", "carrier_system", "publication", "publication_system":
+		return "carrier"
+	case "sidekick", "external_sidekick", "external_system":
+		return "sidekick"
 	default:
 		return ""
 	}
+}
+
+func allowedSystemFrameKindsDescription() string {
+	return "target_system, enabling_system, carrier, or sidekick"
 }
 
 func specClaimStringList(fields map[string]any, field string) []string {
@@ -1126,7 +1134,7 @@ func validateOptionalSpecSystemFrame(path string, line int, sectionID string, fi
 			return nil
 		}
 
-		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "spec-section `system_frame` must be target_system or enabling_system")}
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "spec-section `system_frame` must be "+allowedSystemFrameKindsDescription())}
 	}
 
 	itemFields, ok := raw.(map[string]any)
@@ -1139,14 +1147,14 @@ func validateOptionalSpecSystemFrame(path string, line int, sectionID string, fi
 			return nil
 		}
 
-		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "kind"), "spec_section_invalid_system_frame", "system_frame.kind must be target_system or enabling_system")}
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "kind"), "spec_section_invalid_system_frame", "system_frame.kind must be "+allowedSystemFrameKindsDescription())}
 	}
 	if id, ok := strictString(itemFields["id"]); ok {
 		if normalizeSystemFrameKind(id) != "" {
 			return nil
 		}
 
-		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "id"), "spec_section_invalid_system_frame", "system_frame.id must be target_system or enabling_system")}
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "id"), "spec_section_invalid_system_frame", "system_frame.id must be "+allowedSystemFrameKindsDescription())}
 	}
 
 	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "system_frame mapping must include `kind` or `id`")}
@@ -1892,7 +1900,7 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 	case "spec_section_invalid_terms":
 		return "make `terms` a YAML list of non-empty strings"
 	case "spec_section_invalid_system_frame":
-		return "set `system_frame` to target_system or enabling_system, or remove the field and rely on the carrier compatibility frame"
+		return "set `system_frame` to target_system, enabling_system, carrier, or sidekick; remove the field only when the carrier compatibility frame is sufficient"
 	case "spec_section_invalid_depends_on", "spec_section_invalid_target_refs":
 		return "make the reference field a YAML list of stable spec-section ids"
 	case "spec_section_invalid_evidence_required":

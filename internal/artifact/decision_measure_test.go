@@ -566,8 +566,8 @@ func TestAttachEvidence_Success(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected 1 evidence item, got %d", len(items))
 	}
-	if items[0].FormalityLevel != 2 {
-		t.Errorf("stored formality = %d, want normalized F2", items[0].FormalityLevel)
+	if items[0].FormalityLevel != 7 {
+		t.Errorf("stored formality = %d, want preserved F7", items[0].FormalityLevel)
 	}
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-002" {
 		t.Errorf("stored claim_refs = %q, want claim-002", got)
@@ -1195,8 +1195,8 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	}
 
 	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
-	if wlnk.FEff != 2 {
-		t.Errorf("FEff = %d, want 2", wlnk.FEff)
+	if wlnk.FEff != 7 {
+		t.Errorf("FEff = %d, want 7", wlnk.FEff)
 	}
 	if !wlnk.CoverageKnown {
 		t.Fatal("expected explicit acceptance coverage")
@@ -1207,7 +1207,7 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	if got := strings.Join(wlnk.CoverageGaps, ","); got != "Throughput above 100k events/sec" {
 		t.Errorf("CoverageGaps = %q, want uncovered criterion", got)
 	}
-	if !strings.Contains(wlnk.Summary, "Assurance: F2 (structured-formal)") {
+	if !strings.Contains(wlnk.Summary, "Assurance: F7 (machine-checkable-obligations)") {
 		t.Errorf("summary should show structured assurance: %q", wlnk.Summary)
 	}
 	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {

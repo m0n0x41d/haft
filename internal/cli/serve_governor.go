@@ -25,16 +25,20 @@ func governorStatusResponse(
 	if err != nil {
 		return "", err
 	}
+	driftEvents := governorDriftEvents(data)
 
 	return present.StatusGovernor(present.GovernorData{
-		OverseerLine:    governorOverseerLine(projectRoot),
-		PendingCount:    len(data.PendingDecisions),
-		UnassessedCount: len(data.UnassessedDecisions),
-		StaleCount:      len(data.StaleItems),
-		DriftCount:      len(data.Drift),
-		TopAttention:    governorAttention(data),
-		ActiveProblems:  governorProblems(data),
-		OpenMethodRuns:  governorMethodRuns(ctx, store),
+		OverseerLine:               governorOverseerLine(projectRoot),
+		ReconciliationLine:         present.ReconciliationCueSummary(data.ReconciliationCues),
+		PendingCount:               len(data.PendingDecisions),
+		UnassessedCount:            len(data.UnassessedDecisions),
+		StaleCount:                 len(data.StaleItems),
+		DriftEventCount:            driftEvents.Summary.UniqueEvents,
+		DriftImpactedDecisionCount: driftEvents.Summary.ImpactedDecisions,
+		DriftMaxFanout:             driftEvents.Summary.MaxFanout,
+		TopAttention:               governorAttention(data),
+		ActiveProblems:             governorProblems(data),
+		OpenMethodRuns:             governorMethodRuns(ctx, store),
 	}), nil
 }
 
@@ -63,10 +67,26 @@ func governorAttention(data artifact.StatusData) []string {
 	for _, s := range data.StaleItems {
 		items = append(items, fmt.Sprintf("refresh-due: %s `%s` — %s", s.Title, s.ID, s.Reason))
 	}
-	for _, r := range data.Drift {
-		items = append(items, fmt.Sprintf("drift: %s `%s` — %d file(s)", r.DecisionTitle, r.DecisionID, len(r.Files)))
+	driftEvents := governorDriftEvents(data)
+	if driftEvents.Summary.UniqueEvents > 0 {
+		items = append(items, fmt.Sprintf(
+			"drift-events: %d unique, %d impacted decision(s), max fanout %d — drill down: haft_query(action=\"drift_events\")",
+			driftEvents.Summary.UniqueEvents,
+			driftEvents.Summary.ImpactedDecisions,
+			driftEvents.Summary.MaxFanout,
+		))
 	}
 	return items
+}
+
+func governorDriftEvents(data artifact.StatusData) artifact.DriftEventReport {
+	if len(data.DriftEvents.Events) > 0 || data.DriftEvents.SchemaVersion != 0 {
+		return data.DriftEvents
+	}
+	if len(data.Drift) == 0 {
+		return artifact.DriftEventReport{}
+	}
+	return artifact.BuildDriftEventReport(data.Drift)
 }
 
 func governorProblems(data artifact.StatusData) []string {

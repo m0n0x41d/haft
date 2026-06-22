@@ -13,6 +13,7 @@ type Definition struct {
 	Title            string        `json:"title" yaml:"title"`
 	Summary          string        `json:"summary" yaml:"summary"`
 	Intent           string        `json:"intent" yaml:"intent"`
+	SourcePosture    SourcePosture `json:"source_posture" yaml:"source_posture"`
 	AppliesTo        Applicability `json:"applies_to" yaml:"applies_to"`
 	DoesNotApplyTo   Applicability `json:"does_not_apply_to,omitempty" yaml:"does_not_apply_to,omitempty"`
 	HardGates        []Gate        `json:"hard_gates" yaml:"hard_gates"`
@@ -43,6 +44,13 @@ type Gate struct {
 type WaiverPolicy struct {
 	Allowed        bool `json:"allowed" yaml:"allowed"`
 	RequiresReason bool `json:"requires_reason" yaml:"requires_reason"`
+}
+
+type SourcePosture struct {
+	SourceKind        string `json:"source_kind" yaml:"source_kind"`
+	SourceEdition     string `json:"source_edition" yaml:"source_edition"`
+	Normativity       string `json:"normativity" yaml:"normativity"`
+	AuthorityBoundary string `json:"authority_boundary" yaml:"authority_boundary"`
 }
 
 type RiskSignal struct {
@@ -76,18 +84,19 @@ type ResponseBudget struct {
 }
 
 type MethodCard struct {
-	ID               string       `json:"id"`
-	Version          string       `json:"version"`
-	Title            string       `json:"title"`
-	WhyApplies       string       `json:"why_applies"`
-	Intent           string       `json:"intent"`
-	HardGates        []Gate       `json:"hard_gates,omitempty"`
-	SoftGates        []string     `json:"soft_gates,omitempty"`
-	Procedure        []string     `json:"procedure,omitempty"`
-	AntiPatterns     []string     `json:"anti_patterns,omitempty"`
-	RequiredEvidence []string     `json:"required_evidence,omitempty"`
-	Waiver           WaiverPolicy `json:"waiver"`
-	RequiredCloseout bool         `json:"required_closeout"`
+	ID               string        `json:"id"`
+	Version          string        `json:"version"`
+	Title            string        `json:"title"`
+	WhyApplies       string        `json:"why_applies"`
+	Intent           string        `json:"intent"`
+	SourcePosture    SourcePosture `json:"source_posture"`
+	HardGates        []Gate        `json:"hard_gates,omitempty"`
+	SoftGates        []string      `json:"soft_gates,omitempty"`
+	Procedure        []string      `json:"procedure,omitempty"`
+	AntiPatterns     []string      `json:"anti_patterns,omitempty"`
+	RequiredEvidence []string      `json:"required_evidence,omitempty"`
+	Waiver           WaiverPolicy  `json:"waiver"`
+	RequiredCloseout bool          `json:"required_closeout"`
 }
 
 type MethodRun struct {

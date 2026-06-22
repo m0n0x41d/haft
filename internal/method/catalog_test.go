@@ -32,14 +32,33 @@ func TestBuiltinCatalogContainsExpectedMethods(t *testing.T) {
 	}
 }
 
+func TestBuiltinCatalogMethodsCarrySupportSourcePosture(t *testing.T) {
+	for _, definition := range BuiltinCatalog().Methods {
+		posture := definition.SourcePosture
+		if posture.SourceKind != MethodSourceKind {
+			t.Fatalf("%s source_kind = %q", definition.ID, posture.SourceKind)
+		}
+		if posture.SourceEdition != CatalogID+"@"+CatalogVersion {
+			t.Fatalf("%s source_edition = %q", definition.ID, posture.SourceEdition)
+		}
+		if posture.Normativity != MethodSourceNormativity {
+			t.Fatalf("%s normativity = %q", definition.ID, posture.Normativity)
+		}
+		if !strings.Contains(posture.AuthorityBoundary, "do not define normative FPF source material") {
+			t.Fatalf("%s authority boundary does not block normative masquerade: %q", definition.ID, posture.AuthorityBoundary)
+		}
+	}
+}
+
 func TestValidateCatalogRejectsInvalidDefinitions(t *testing.T) {
 	err := ValidateCatalog(Catalog{
 		ID:      CatalogID,
 		Version: CatalogVersion,
 		Methods: []Definition{{
-			ID:      "empty-gates",
-			Version: CatalogVersion,
-			Title:   "Empty gates",
+			ID:            "empty-gates",
+			Version:       CatalogVersion,
+			Title:         "Empty gates",
+			SourcePosture: testMethodSourcePosture(),
 		}},
 	})
 	if err == nil {
@@ -47,6 +66,58 @@ func TestValidateCatalogRejectsInvalidDefinitions(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "hard gate") {
 		t.Fatalf("error = %v, want hard gate failure", err)
+	}
+}
+
+func TestValidateCatalogRejectsNormativeFPFMethodSourcePosture(t *testing.T) {
+	err := ValidateCatalog(Catalog{
+		ID:      CatalogID,
+		Version: CatalogVersion,
+		Methods: []Definition{{
+			ID:      "normative-masquerade",
+			Version: CatalogVersion,
+			Title:   "Normative masquerade",
+			SourcePosture: SourcePosture{
+				SourceKind:        MethodSourceKind,
+				SourceEdition:     CatalogID + "@" + CatalogVersion,
+				Normativity:       "normative_fpf_source",
+				AuthorityBoundary: MethodAuthorityBoundary,
+			},
+			HardGates: []Gate{{
+				ID:         "gate",
+				Kind:       "test",
+				CheckLevel: "deterministic",
+			}},
+		}},
+	})
+	if err == nil {
+		t.Fatal("ValidateCatalog accepted a MethodPack card as normative FPF source")
+	}
+	if !strings.Contains(err.Error(), "source_posture.normativity") {
+		t.Fatalf("error = %v, want source_posture.normativity failure", err)
+	}
+}
+
+func TestPullCardsCarrySupportSourcePosture(t *testing.T) {
+	run, err := Pull(PullInput{
+		Task:             "Add public behavior",
+		DeclaredTaskKind: "feature",
+		ChangeIntent:     "add_feature",
+		RiskSignals:      []RiskSignal{{ID: "behavior_change"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(run.Methods) == 0 {
+		t.Fatal("expected method cards")
+	}
+	for _, card := range run.Methods {
+		if card.SourcePosture.SourceKind != MethodSourceKind {
+			t.Fatalf("%s source_kind = %q", card.ID, card.SourcePosture.SourceKind)
+		}
+		if card.SourcePosture.Normativity != MethodSourceNormativity {
+			t.Fatalf("%s normativity = %q", card.ID, card.SourcePosture.Normativity)
+		}
 	}
 }
 
@@ -404,5 +475,14 @@ func assertMethodIDs(t *testing.T, run MethodRun, wants []string) {
 		if !got[want] {
 			t.Fatalf("method ids = %#v, missing %q", got, want)
 		}
+	}
+}
+
+func testMethodSourcePosture() SourcePosture {
+	return SourcePosture{
+		SourceKind:        MethodSourceKind,
+		SourceEdition:     CatalogID + "@" + CatalogVersion,
+		Normativity:       MethodSourceNormativity,
+		AuthorityBoundary: MethodAuthorityBoundary,
 	}
 }

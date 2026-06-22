@@ -56,7 +56,20 @@ func TestDecide_FullDRR(t *testing.T) {
 			Steps:       []string{"Feature flag: route events back to DB polling", "Drain NATS queues"},
 			BlastRadius: "All 12 services see temporary dual-delivery",
 		},
-		AffectedFiles: []string{"internal/events/producer.go", "internal/events/consumer.go"},
+		AffectedFiles:      []string{"internal/events/producer.go", "internal/events/consumer.go"},
+		DecisionSubjectRef: "subject:event-infrastructure",
+		ImplementationFootprint: ImplementationFootprint{
+			Files:    []string{"internal/events/producer.go"},
+			WorkRefs: []string{"wc-event-migration"},
+		},
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "api_contract",
+			Ref:  "events/producer-contract",
+		}},
+		DriftWatchTargets: []DriftWatchTarget{{
+			TargetRef: "events/producer-contract",
+			Trigger:   "schema_or_behavior_changed",
+		}},
 	}
 
 	a, filePath, err := Decide(ctx, store, haftDir, input)
@@ -174,6 +187,9 @@ func TestDecide_FullDRR(t *testing.T) {
 	if fields.ChoiceResult.PortfolioRef != portfolio.Meta.ID {
 		t.Fatalf("choice_result.portfolio_ref = %q, want %q", fields.ChoiceResult.PortfolioRef, portfolio.Meta.ID)
 	}
+	if fields.ChoiceResult.ReopenCondition != "reopen choice if rollback triggers occur: Producer error rate > 1% for > 5 minutes" {
+		t.Fatalf("choice_result.reopen_condition = %q", fields.ChoiceResult.ReopenCondition)
+	}
 	if fields.SelectionPolicy == "" {
 		t.Error("expected selection_policy in structured data")
 	}
@@ -194,6 +210,18 @@ func TestDecide_FullDRR(t *testing.T) {
 	}
 	if !reflect.DeepEqual(fields.RefreshTriggers, input.RefreshTriggers) {
 		t.Fatalf("refresh triggers in structured state = %#v, want %#v", fields.RefreshTriggers, input.RefreshTriggers)
+	}
+	if fields.DecisionSubjectRef != input.DecisionSubjectRef {
+		t.Fatalf("decision_subject_ref = %q, want %q", fields.DecisionSubjectRef, input.DecisionSubjectRef)
+	}
+	if !reflect.DeepEqual(fields.ImplementationFootprint.Files, input.ImplementationFootprint.Files) {
+		t.Fatalf("implementation_footprint.files = %#v, want %#v", fields.ImplementationFootprint.Files, input.ImplementationFootprint.Files)
+	}
+	if len(fields.GovernanceTargets) != 1 || fields.GovernanceTargets[0].Ref != "events/producer-contract" {
+		t.Fatalf("governance_targets = %#v", fields.GovernanceTargets)
+	}
+	if len(fields.DriftWatchTargets) != 1 || fields.DriftWatchTargets[0].Trigger != "schema_or_behavior_changed" {
+		t.Fatalf("drift_watch_targets = %#v", fields.DriftWatchTargets)
 	}
 
 	reloaded, err := store.Get(ctx, a.Meta.ID)
@@ -217,11 +245,124 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(reloadedFields.RefreshTriggers, fields.RefreshTriggers) {
 		t.Fatalf("reloaded refresh triggers = %#v, want %#v", reloadedFields.RefreshTriggers, fields.RefreshTriggers)
 	}
+	if !reflect.DeepEqual(reloadedFields.ImplementationFootprint, fields.ImplementationFootprint) {
+		t.Fatalf("reloaded implementation footprint = %#v, want %#v", reloadedFields.ImplementationFootprint, fields.ImplementationFootprint)
+	}
+	if !reflect.DeepEqual(reloadedFields.GovernanceTargets, fields.GovernanceTargets) {
+		t.Fatalf("reloaded governance targets = %#v, want %#v", reloadedFields.GovernanceTargets, fields.GovernanceTargets)
+	}
+	if !reflect.DeepEqual(reloadedFields.DriftWatchTargets, fields.DriftWatchTargets) {
+		t.Fatalf("reloaded drift watch targets = %#v, want %#v", reloadedFields.DriftWatchTargets, fields.DriftWatchTargets)
+	}
 
 	// Check affected files in DB
 	files, _ := store.GetAffectedFiles(ctx, a.Meta.ID)
 	if len(files) != 2 {
 		t.Errorf("expected 2 affected files, got %d", len(files))
+	}
+}
+
+func TestDecideEnrichesAffectedFilesWithPreciseBindingTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", "package main\n\nfunc Run() string { return \"ok\" }\n")
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker Run",
+		WhySelected:   "The worker entry point is the governed code object.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 {
+		t.Fatalf("binding_targets = %+v, want one precise target", fields.BindingTargets)
+	}
+	target := fields.BindingTargets[0]
+	if target.Kind != BindingTargetSymbol || target.SymbolName != "Run" || target.BodyHash == "" {
+		t.Fatalf("binding target = %+v, want Run symbol with body_hash", target)
+	}
+	if target.ResolutionSource != BindingResolutionSourceSingleSymbolFile {
+		t.Fatalf("resolution_source = %q, want %q", target.ResolutionSource, BindingResolutionSourceSingleSymbolFile)
+	}
+
+	symbols, err := store.GetAffectedSymbols(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(symbols) != 0 {
+		t.Fatalf("affected symbols = %+v, want no baseline symbol mutation during Decide", symbols)
+	}
+}
+
+func TestDecideDoesNotInventFallbackForAmbiguousAffectedFile(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker file",
+		WhySelected:   "The decision names the file but not a specific governed symbol.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 0 {
+		t.Fatalf("binding_targets = %+v, want no invented fallback for ambiguous file", fields.BindingTargets)
+	}
+}
+
+func TestDecidePreservesExplicitBindingTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+	explicit := BindingTarget{
+		Kind:             BindingTargetSymbol,
+		FilePath:         "worker.go",
+		SymbolName:       "Stop",
+		SymbolKind:       "func",
+		BodyHash:         "explicit-hash",
+		ResolutionSource: BindingResolutionSourceExplicitTargets,
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle:      "Use explicit Stop",
+		WhySelected:        "The operator selected the exact governed symbol.",
+		AffectedFiles:      []string{"worker.go"},
+		DecisionSubjectRef: "subject:worker-stop",
+		BindingTargets:     []BindingTarget{explicit},
+		BindingHints:       []string{"Start"},
+		BindingScope:       BindingScopeAuto,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 {
+		t.Fatalf("binding_targets = %+v, want explicit target", fields.BindingTargets)
+	}
+	if fields.BindingTargets[0].SymbolName != "Stop" || fields.BindingTargets[0].BodyHash != "explicit-hash" {
+		t.Fatalf("binding target = %+v, want explicit Stop target preserved", fields.BindingTargets[0])
 	}
 }
 
@@ -236,6 +377,23 @@ func TestValidateChoiceResultRejectsUnknownNextMove(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "choose_now") {
 		t.Fatalf("expected valid next_move values in error, got %v", err)
+	}
+}
+
+func TestNormalizeChoiceResultPreservesReversibilityAndReopenCondition(t *testing.T) {
+	choice := NormalizeChoiceResult(&ChoiceResult{
+		SubjectRef:      " operator ",
+		NextMove:        ChoiceNextMoveChooseNow,
+		VariantRef:      " V1 ",
+		Reversibility:   " two-week rollback ",
+		ReopenCondition: " reopen if rollback triggers occur ",
+	})
+
+	if choice.Reversibility != "two-week rollback" {
+		t.Fatalf("reversibility = %q", choice.Reversibility)
+	}
+	if choice.ReopenCondition != "reopen if rollback triggers occur" {
+		t.Fatalf("reopen_condition = %q", choice.ReopenCondition)
 	}
 }
 
@@ -278,6 +436,11 @@ func TestDecide_PersistsExplicitTransformationRecord(t *testing.T) {
 		PostState:         "Problem posture is typed as cue/thin/deep with readiness blockers.",
 		Relation:          "makes explicit",
 		Context:           "semantic-spine ProblemCard slice",
+		Window:            "2026-Q3",
+		MethodRefs:        []string{" mpull-problem-profile ", ""},
+		WorkRefs:          []string{"wc-problem-profile"},
+		EvidenceRefs:      []string{"evid-problem-profile"},
+		PublicationRefs:   []string{"pub-problem-profile"},
 	}
 
 	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
@@ -299,11 +462,37 @@ func TestDecide_PersistsExplicitTransformationRecord(t *testing.T) {
 	if fields.TransformationRecord.TransformedEntity != record.TransformedEntity {
 		t.Fatalf("transformed_entity = %q, want %q", fields.TransformationRecord.TransformedEntity, record.TransformedEntity)
 	}
+	if fields.TransformationRecord.Window != "2026-Q3" {
+		t.Fatalf("window = %q, want 2026-Q3", fields.TransformationRecord.Window)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.MethodRefs, []string{"mpull-problem-profile"}) {
+		t.Fatalf("method_refs = %#v", fields.TransformationRecord.MethodRefs)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.WorkRefs, []string{"wc-problem-profile"}) {
+		t.Fatalf("work_refs = %#v", fields.TransformationRecord.WorkRefs)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.EvidenceRefs, []string{"evid-problem-profile"}) {
+		t.Fatalf("evidence_refs = %#v", fields.TransformationRecord.EvidenceRefs)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.PublicationRefs, []string{"pub-problem-profile"}) {
+		t.Fatalf("publication_refs = %#v", fields.TransformationRecord.PublicationRefs)
+	}
 	if !strings.Contains(decision.Body, "Transformation record") {
 		t.Fatalf("decision body missing transformation section:\n%s", decision.Body)
 	}
 	if !strings.Contains(decision.Body, "not method, work authorization, evidence, or publication") {
 		t.Fatalf("decision body does not preserve separation boundary:\n%s", decision.Body)
+	}
+	for _, want := range []string{
+		"Window: 2026-Q3",
+		"Method refs: mpull-problem-profile",
+		"Work refs: wc-problem-profile",
+		"Evidence refs: evid-problem-profile",
+		"Publication refs: pub-problem-profile",
+	} {
+		if !strings.Contains(decision.Body, want) {
+			t.Fatalf("decision body missing %q:\n%s", want, decision.Body)
+		}
 	}
 
 	reloaded, err := store.Get(ctx, decision.Meta.ID)
@@ -952,6 +1141,68 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 	}
 	if !reflect.DeepEqual(reloadedFields.Predictions, wantPredictions) {
 		t.Fatalf("reloaded predictions = %#v, want %#v", reloadedFields.Predictions, wantPredictions)
+	}
+}
+
+func TestDecide_PersistsExplicitClaimLifecycleState(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	input := completeDecision(DecideInput{
+		SelectedTitle: "Claim lifecycle",
+		WhySelected:   "Explicit claim lifecycle lets one stale claim stop governing without retiring the whole decision.",
+		Claims: []DecisionClaim{
+			{
+				ID:                   "claim-current",
+				Claim:                "Current invariant still holds",
+				Observable:           "invariant check",
+				Threshold:            "passes",
+				GovernanceTargetRefs: []string{"invariant:current"},
+			},
+			{
+				ID:              "claim-old",
+				Claim:           "Old invariant was replaced",
+				Observable:      "replacement decision exists",
+				Threshold:       "successor present",
+				LifecycleStatus: ClaimLifecycleSuperseded,
+				SuccessorRef:    "dec-new#claim-replacement",
+				RetiredReason:   "superseded by narrower invariant",
+			},
+		},
+	})
+
+	decision, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.Claims) != 2 {
+		t.Fatalf("claims = %#v, want two explicit claims", fields.Claims)
+	}
+	if fields.Claims[0].LifecycleStatus != "" {
+		t.Fatalf("legacy-active lifecycle should stay omitted, got %q", fields.Claims[0].LifecycleStatus)
+	}
+	if EffectiveClaimLifecycleStatus(fields.Claims[0]) != ClaimLifecycleActive {
+		t.Fatalf("effective current lifecycle = %q", EffectiveClaimLifecycleStatus(fields.Claims[0]))
+	}
+	if fields.Claims[1].LifecycleStatus != ClaimLifecycleSuperseded {
+		t.Fatalf("claim-old lifecycle = %q", fields.Claims[1].LifecycleStatus)
+	}
+	if fields.Claims[1].SuccessorRef != "dec-new#claim-replacement" {
+		t.Fatalf("successor_ref = %q", fields.Claims[1].SuccessorRef)
+	}
+	if fields.Claims[1].RetiredReason != "superseded by narrower invariant" {
+		t.Fatalf("retired_reason = %q", fields.Claims[1].RetiredReason)
+	}
+	if len(fields.Predictions) != 2 {
+		t.Fatalf("compatibility predictions = %#v, want two", fields.Predictions)
+	}
+	if !strings.Contains(decision.StructuredData, "\"lifecycle_status\":\"superseded\"") {
+		t.Fatalf("structured data missing lifecycle status:\n%s", decision.StructuredData)
+	}
+	if strings.Contains(decision.StructuredData, "\"predictions\"") {
+		t.Fatalf("structured data should keep predictions as compatibility projection only:\n%s", decision.StructuredData)
 	}
 }
 

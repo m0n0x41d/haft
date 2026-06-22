@@ -17,6 +17,7 @@ type Evidence struct {
 	Verdict            string
 	CongruenceLevel    int
 	FormalityLevel     int
+	FormalityScaleID   string
 	HasFormality       bool
 	ValidUntil         string
 	CausalSupportBasis string // C.28; canonical or alias form, empty = not asserted
@@ -72,7 +73,7 @@ func ComputeDecisionAssurance(claimRefs []string, items []Evidence, now time.Tim
 
 	result := DecisionAssurance{
 		Claims: make([]ClaimAssurance, 0, len(normalizedClaims)),
-		FEff:   3,
+		FEff:   9,
 		GEff:   3,
 		REff:   1.0,
 	}
@@ -107,7 +108,7 @@ func ComputeClaimAssurance(claimRef string, items []Evidence, now time.Time) (Cl
 
 	result.EvidenceCount = len(items)
 	result.HasEvidence = true
-	result.FEff = 3
+	result.FEff = 9
 	result.GEff = 3
 	result.REff = 1.0
 
@@ -179,23 +180,6 @@ func DeriveFormality(item Evidence) int {
 	return inferFormalityFromType(item.Type)
 }
 
-// NormalizeFormalityLevel preserves F0-F3 and folds legacy 0-9 values into the
-// same normalized formality scale used by the artifact layer.
-func NormalizeFormalityLevel(level int) int {
-	switch {
-	case level < 0:
-		return 0
-	case level <= 3:
-		return level
-	case level <= 5:
-		return 1
-	case level <= 8:
-		return 2
-	default:
-		return 3
-	}
-}
-
 // GroundednessFromCL preserves CL semantics for view decomposition:
 // CL3=direct, CL2=similar, CL1=indirect, CL0=inadmissible.
 func GroundednessFromCL(cl int) int {
@@ -212,7 +196,7 @@ func inferFormalityFromType(evidenceType string) int {
 
 	switch normalized {
 	case "formal_proof", "proof", "proof_grade":
-		return 3
+		return 9
 	case "test_result", "test", "measurement", "explicit_measure", "partial_measure", "benchmark", "audit":
 		return 2
 	case "anecdote", "obs_no_verify":

@@ -64,6 +64,8 @@ type EvidencePathEvidence struct {
 	CarrierRef         string                     `json:"carrier_ref,omitempty"`
 	CongruenceLevel    int                        `json:"congruence_level,omitempty"`
 	FormalityLevel     int                        `json:"formality_level,omitempty"`
+	FormalityScale     *reff.FormalityScale       `json:"formality_scale,omitempty"`
+	FormalityBridge    *reff.FormalityBridge      `json:"formality_bridge,omitempty"`
 	ClaimRefs          []string                   `json:"claim_refs,omitempty"`
 	ClaimScope         []string                   `json:"claim_scope,omitempty"`
 	ValidUntil         string                     `json:"valid_until,omitempty"`
@@ -156,6 +158,8 @@ func evidencePathEvidence(item EvidenceItem) EvidencePathEvidence {
 		CarrierRef:         strings.TrimSpace(item.CarrierRef),
 		CongruenceLevel:    item.CongruenceLevel,
 		FormalityLevel:     item.FormalityLevel,
+		FormalityScale:     item.FormalityScale,
+		FormalityBridge:    item.FormalityBridge,
 		ClaimRefs:          append([]string(nil), item.ClaimRefs...),
 		ClaimScope:         append([]string(nil), item.ClaimScope...),
 		ValidUntil:         strings.TrimSpace(item.ValidUntil),

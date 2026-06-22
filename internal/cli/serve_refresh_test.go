@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -103,6 +104,15 @@ func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
 		if !strings.Contains(result, want) {
 			t.Fatalf("drain dry-run response missing %q:\n%s", want, result)
 		}
+	}
+
+	staleItems, err := artifact.ScanStale(context.Background(), fixture.store)
+	if err != nil {
+		t.Fatalf("ScanStale returned error: %v", err)
+	}
+	wantFooter := fmt.Sprintf("Stale: %d decision(s) need refresh", len(staleItems))
+	if len(staleItems) > 0 && !strings.Contains(result, wantFooter) {
+		t.Fatalf("drain footer should use typed stale lane %q:\n%s", wantFooter, result)
 	}
 }
 

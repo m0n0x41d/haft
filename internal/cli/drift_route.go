@@ -3,10 +3,13 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -14,13 +17,24 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
+var timeNow = time.Now
+
 var (
-	driftRouteJSON       bool
-	driftRouteBearerRef  string
-	driftRouteUseContext string
-	driftBindingsJSON    bool
-	driftBindingsLimit   int
-	driftBindingsAll     bool
+	driftRouteJSON        bool
+	driftRouteBearerRef   string
+	driftRouteUseContext  string
+	driftBindingsJSON     bool
+	driftBindingsLimit    int
+	driftBindingsAll      bool
+	driftBindingsApply    bool
+	driftBindingsSelect   string
+	driftEventsJSON       bool
+	driftEventsLedger     string
+	driftEventsStatus     string
+	driftEventsReason     string
+	driftEventsExpiresAt  string
+	driftEventsEvidence   []string
+	driftEventsRecordedBy string
 )
 
 var driftCmd = &cobra.Command{
@@ -41,13 +55,39 @@ does not mutate code, carriers, evidence, decisions, baselines, or gates.`,
 
 var driftBindingsCmd = &cobra.Command{
 	Use:   "bindings",
-	Short: "Dry-run legacy decision symbol-binding proposals",
+	Short: "Review and repair legacy decision binding proposals",
 	Long: `Inspect active DecisionRecords with affected_files and report whether their
-symbol-level baselines are missing, broad, already precise, or carrier-only.
+binding targets are missing, broad, already precise, or carrier-only.
 
-This is read-only. It does not mutate affected_symbols, baselines, evidence,
-decisions, or markdown carriers.`,
+Default mode is read-only. --apply-high-confidence mutates only local
+binding_targets and affected_symbols for resolver-proven high-confidence cases;
+--apply-selection mutates only the explicit DecisionRecord binding_targets
+provided in a JSON selection document. Neither mode changes file hashes,
+evidence, approvals, or markdown carriers.`,
 	RunE: runDriftBindings,
+}
+
+var driftEventsCmd = &cobra.Command{
+	Use:   "events",
+	Short: "Group per-decision drift into read-only DriftEvents",
+	Long: `Group existing per-decision drift reports into deterministic DriftEvents.
+
+This is a read-only projection: it does not mutate decisions, baselines,
+evidence, lineage, or carrier files. One changed target can fan out to multiple
+impacted decisions without becoming multiple independent debt events.`,
+	RunE: runDriftEvents,
+}
+
+var driftEventsResolveCmd = &cobra.Command{
+	Use:   "resolve EVENT_ID",
+	Short: "Record non-binding DriftEvent resolution metadata",
+	Long: `Record scoped DriftEvent resolution metadata in a local ledger.
+
+This does not mutate decisions, baselines, evidence, lineage, gates, or carrier
+files. The ledger is an overlay for DriftEvent reports: resolved and unexpired
+waived_until records change the event resolution_status only in the report.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDriftEventsResolve,
 }
 
 func init() {
@@ -57,8 +97,21 @@ func init() {
 	driftBindingsCmd.Flags().BoolVar(&driftBindingsJSON, "json", false, "print structured JSON output")
 	driftBindingsCmd.Flags().IntVar(&driftBindingsLimit, "candidate-limit", 20, "maximum candidate symbols per decision")
 	driftBindingsCmd.Flags().BoolVar(&driftBindingsAll, "all", false, "include already-clean/no-action decisions")
+	driftBindingsCmd.Flags().BoolVar(&driftBindingsApply, "apply-high-confidence", false, "apply resolver-proven high-confidence binding target repairs")
+	driftBindingsCmd.Flags().StringVar(&driftBindingsSelect, "apply-selection", "", "apply explicit binding target selections from a JSON file")
+	driftEventsCmd.Flags().BoolVar(&driftEventsJSON, "json", false, "print structured JSON output")
+	driftEventsCmd.Flags().StringVar(&driftEventsLedger, "resolution-ledger", "", "path to DriftEvent resolution ledger JSON")
+	driftEventsResolveCmd.Flags().BoolVar(&driftEventsJSON, "json", false, "print structured JSON output")
+	driftEventsResolveCmd.Flags().StringVar(&driftEventsLedger, "resolution-ledger", "", "path to DriftEvent resolution ledger JSON")
+	driftEventsResolveCmd.Flags().StringVar(&driftEventsStatus, "status", "", "resolution status: resolved or waived_until")
+	driftEventsResolveCmd.Flags().StringVar(&driftEventsReason, "reason", "", "operator-readable resolution reason")
+	driftEventsResolveCmd.Flags().StringVar(&driftEventsExpiresAt, "waiver-expires-at", "", "expiry for status=waived_until, RFC3339 or YYYY-MM-DD")
+	driftEventsResolveCmd.Flags().StringArrayVar(&driftEventsEvidence, "evidence-ref", nil, "evidence reference supporting the resolution metadata")
+	driftEventsResolveCmd.Flags().StringVar(&driftEventsRecordedBy, "recorded-by", "", "actor or workflow recording the metadata")
+	driftEventsCmd.AddCommand(driftEventsResolveCmd)
 	driftCmd.AddCommand(driftRouteCmd)
 	driftCmd.AddCommand(driftBindingsCmd)
+	driftCmd.AddCommand(driftEventsCmd)
 	rootCmd.AddCommand(driftCmd)
 }
 
@@ -88,10 +141,26 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeFn()
 
-	report, err := artifact.BuildLegacyBindingReport(context.Background(), store, projectRoot, artifact.LegacyBindingOptions{
-		CandidateLimit: driftBindingsLimit,
-		IncludeClean:   driftBindingsAll,
-	})
+	var report artifact.LegacyBindingReport
+	if driftBindingsApply && strings.TrimSpace(driftBindingsSelect) != "" {
+		return fmt.Errorf("--apply-high-confidence and --apply-selection are mutually exclusive")
+	}
+	if strings.TrimSpace(driftBindingsSelect) != "" {
+		selection, err := readLegacyBindingSelectionDocument(driftBindingsSelect)
+		if err != nil {
+			return err
+		}
+		report, err = artifact.ApplyLegacyBindingSelections(context.Background(), store, selection)
+	} else if driftBindingsApply {
+		report, err = artifact.ApplyHighConfidenceLegacyBindingRepairs(context.Background(), store, projectRoot, artifact.LegacyBindingApplyOptions{
+			CandidateLimit: driftBindingsLimit,
+		})
+	} else {
+		report, err = artifact.BuildLegacyBindingReport(context.Background(), store, projectRoot, artifact.LegacyBindingOptions{
+			CandidateLimit: driftBindingsLimit,
+			IncludeClean:   driftBindingsAll,
+		})
+	}
 	if err != nil {
 		return err
 	}
@@ -101,6 +170,161 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 	}
 
 	return writeDriftBindingsSummary(cmd.OutOrStdout(), report)
+}
+
+func runDriftEvents(cmd *cobra.Command, _ []string) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+
+	store, closeFn, err := openArtifactStore(projectRoot)
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+
+	reports, err := artifact.CheckDrift(context.Background(), store, projectRoot)
+	if err != nil {
+		return fmt.Errorf("scan drift: %w", err)
+	}
+	eventReport := artifact.BuildDriftEventReport(reports)
+	ledger, err := readDriftEventResolutionLedger(driftEventResolutionLedgerPath(projectRoot, driftEventsLedger))
+	if err != nil {
+		return err
+	}
+	eventReport = artifact.ApplyDriftEventResolutionLedger(eventReport, ledger, timeNow())
+
+	if driftEventsJSON {
+		return writeJSON(cmd.OutOrStdout(), eventReport)
+	}
+
+	return writeDriftEventsSummary(cmd.OutOrStdout(), eventReport)
+}
+
+func runDriftEventsResolve(cmd *cobra.Command, args []string) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+
+	store, closeFn, err := openArtifactStore(projectRoot)
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+
+	reports, err := artifact.CheckDrift(context.Background(), store, projectRoot)
+	if err != nil {
+		return fmt.Errorf("scan drift: %w", err)
+	}
+	eventReport := artifact.BuildDriftEventReport(reports)
+	if !driftEventReportHasEvent(eventReport, args[0]) {
+		return fmt.Errorf("drift event %q not found in current scan", args[0])
+	}
+
+	ledgerPath := driftEventResolutionLedgerPath(projectRoot, driftEventsLedger)
+	ledger, err := readDriftEventResolutionLedger(ledgerPath)
+	if err != nil {
+		return err
+	}
+	now := timeNow()
+	record := artifact.DriftEventResolution{
+		EventID:         strings.TrimSpace(args[0]),
+		Status:          strings.TrimSpace(driftEventsStatus),
+		Reason:          strings.TrimSpace(driftEventsReason),
+		EvidenceRefs:    append([]string(nil), driftEventsEvidence...),
+		WaiverExpiresAt: strings.TrimSpace(driftEventsExpiresAt),
+		RecordedAt:      now.Format(time.RFC3339),
+		RecordedBy:      strings.TrimSpace(driftEventsRecordedBy),
+	}
+	updated, err := artifact.UpsertDriftEventResolution(ledger, record, now)
+	if err != nil {
+		return err
+	}
+	if err := writeDriftEventResolutionLedger(ledgerPath, updated); err != nil {
+		return err
+	}
+
+	result := artifact.ApplyDriftEventResolutionLedger(eventReport, updated, now)
+	if driftEventsJSON {
+		return writeJSON(cmd.OutOrStdout(), result)
+	}
+	return writeDriftEventsResolutionSummary(cmd.OutOrStdout(), ledgerPath, record)
+}
+
+func readLegacyBindingSelectionDocument(path string) (artifact.LegacyBindingSelectionDocument, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return artifact.LegacyBindingSelectionDocument{}, fmt.Errorf("read binding selection %s: %w", path, err)
+	}
+
+	var document artifact.LegacyBindingSelectionDocument
+	if err := json.Unmarshal(data, &document); err != nil {
+		return artifact.LegacyBindingSelectionDocument{}, fmt.Errorf("parse binding selection %s: %w", path, err)
+	}
+	if len(document.Items) == 0 {
+		return artifact.LegacyBindingSelectionDocument{}, fmt.Errorf("binding selection %s has no items", path)
+	}
+
+	return document, nil
+}
+
+func driftEventResolutionLedgerPath(projectRoot string, explicitPath string) string {
+	if strings.TrimSpace(explicitPath) != "" {
+		return explicitPath
+	}
+	return filepath.Join(projectRoot, ".haft", "drift-event-resolutions.json")
+}
+
+func readDriftEventResolutionLedger(path string) (artifact.DriftEventResolutionLedger, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return artifact.NewDriftEventResolutionLedger(nil), nil
+		}
+		return artifact.DriftEventResolutionLedger{}, fmt.Errorf("read drift event resolution ledger %s: %w", path, err)
+	}
+	if strings.TrimSpace(string(data)) == "" {
+		return artifact.NewDriftEventResolutionLedger(nil), nil
+	}
+
+	var ledger artifact.DriftEventResolutionLedger
+	if err := json.Unmarshal(data, &ledger); err != nil {
+		return artifact.DriftEventResolutionLedger{}, fmt.Errorf("parse drift event resolution ledger %s: %w", path, err)
+	}
+	if ledger.SchemaVersion == 0 {
+		ledger.SchemaVersion = 1
+	}
+	if strings.TrimSpace(ledger.Authority) == "" {
+		ledger.Authority = artifact.DriftEventResolutionLedgerAuthority
+	}
+	return ledger, nil
+}
+
+func writeDriftEventResolutionLedger(path string, ledger artifact.DriftEventResolutionLedger) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create drift event resolution ledger directory %s: %w", filepath.Dir(path), err)
+	}
+	data, err := json.MarshalIndent(ledger, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode drift event resolution ledger: %w", err)
+	}
+	data = append(data, '\n')
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		return fmt.Errorf("write drift event resolution ledger %s: %w", path, err)
+	}
+	return nil
+}
+
+func driftEventReportHasEvent(report artifact.DriftEventReport, eventID string) bool {
+	eventID = strings.TrimSpace(eventID)
+	for _, event := range report.Events {
+		if event.EventID == eventID {
+			return true
+		}
+	}
+	return false
 }
 
 func openArtifactStore(projectRoot string) (*artifact.Store, func(), error) {
@@ -133,13 +357,15 @@ func openArtifactStore(projectRoot string) (*artifact.Store, func(), error) {
 func writeDriftBindingsSummary(w io.Writer, report artifact.LegacyBindingReport) error {
 	builder := strings.Builder{}
 	builder.WriteString(fmt.Sprintf(
-		"haft drift bindings: %s total=%d high_confidence=%d needs_operator=%d ambiguous=%d already_precise=%d\n",
+		"haft drift bindings: %s total=%d high_confidence=%d needs_operator=%d missing_bindings=%d ambiguous=%d already_precise=%d applied=%d\n",
 		report.Authority,
 		report.Summary.TotalDecisions,
 		report.Summary.HighConfidenceProposals,
 		report.Summary.NeedsOperatorSelection,
+		report.Summary.MissingBindingTargets,
 		report.Summary.AmbiguousFileScope,
 		report.Summary.AlreadyPrecise,
+		len(report.Applied),
 	))
 	for _, item := range report.Items {
 		builder.WriteString(fmt.Sprintf(
@@ -190,5 +416,54 @@ func writeDriftRouteSummary(w io.Writer, record artifact.SemanticDriftRoute) err
 
 	_, err := io.WriteString(w, builder.String())
 
+	return err
+}
+
+func writeDriftEventsSummary(w io.Writer, report artifact.DriftEventReport) error {
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf(
+		"haft drift events: unique=%d impacted_decisions=%d material=%d audit_only=%d needs_binding=%d resolved=%d waived=%d max_fanout=%d\n",
+		report.Summary.UniqueEvents,
+		report.Summary.ImpactedDecisions,
+		report.Summary.MaterialEvents,
+		report.Summary.AuditOnlyEvents,
+		report.Summary.NeedsBindingResolutionEvents,
+		report.Summary.ResolvedByLedgerEvents,
+		report.Summary.WaivedByLedgerEvents,
+		report.Summary.MaxFanout,
+	))
+	for _, event := range report.Events {
+		fallback := ""
+		if event.FallbackKind != "" {
+			fallback = fmt.Sprintf(" fallback=%s", event.FallbackKind)
+		}
+		builder.WriteString(fmt.Sprintf(
+			"- %s target=%s fanout=%d materiality=%s%s root_cause=%s resolution=%s\n",
+			event.EventID,
+			event.ChangedTargetRef,
+			event.Fanout,
+			event.Materiality,
+			fallback,
+			event.RootCause,
+			event.ResolutionStatus,
+		))
+	}
+	_, err := io.WriteString(w, builder.String())
+	return err
+}
+
+func writeDriftEventsResolutionSummary(
+	w io.Writer,
+	ledgerPath string,
+	record artifact.DriftEventResolution,
+) error {
+	_, err := fmt.Fprintf(
+		w,
+		"haft drift events resolve: event=%s status=%s ledger=%s authority=%s\n",
+		record.EventID,
+		record.Status,
+		ledgerPath,
+		artifact.DriftEventResolutionLedgerAuthority,
+	)
 	return err
 }

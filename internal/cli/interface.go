@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
+	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/spf13/cobra"
 )
 
@@ -89,6 +93,22 @@ func runInterface(cmd *cobra.Command, args []string) error {
 	}
 
 	capabilityID := strings.TrimSpace(args[0])
+	if isInterfaceContractAuditID(capabilityID) {
+		report := buildInterfaceContractAuditReport(catalog)
+		if interfaceJSON {
+			return writeJSON(output, report)
+		}
+		return writeInterfaceContractAuditText(output, report)
+	}
+
+	if isInterfaceContractGenerationID(capabilityID) {
+		report := buildInterfaceContractGenerationReport(catalog)
+		if interfaceJSON {
+			return writeJSON(output, report)
+		}
+		return writeInterfaceContractGenerationText(output, report)
+	}
+
 	capability, ok := findInterfaceCapability(catalog, capabilityID)
 	if !ok {
 		return fmt.Errorf("unknown capability %q — run `haft interface --json` to list available capabilities", capabilityID)
@@ -315,11 +335,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 		},
 		{
 			ID:      "decision.decide",
-			Purpose: "Create a binding DecisionRecord after explicit operator invocation.",
+			Purpose: "Create a binding DecisionRecord after explicit operator invocation. MCP defaults to cli-only binding mode and returns operator_confirmation_required for decide.",
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_decision",
 				MCPAction:        "decide",
-				MCPCall:          `haft_decision(action="decide", ...)`,
+				MCPCall:          `haft_decision(action="decide", ...) -> operator_confirmation_required in default MCP mode`,
 				CLIStatus:        "input_file_execution_shipped",
 				CLICommand:       "haft artifact create decision.decide --input-file input.json --json",
 				DiscoveryCommand: "haft interface decision.decide --json",
@@ -331,17 +351,42 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"selected_title", "why_selected", "selection_policy", "weakest_link", "counterargument", "why_not_others", "rollback", "predictions", "invariants", "affected_files", "valid_until"},
-				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "transformation_record", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "_skips", "_skip_reason"},
+				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "transformation_record", "decision_subject_ref", "implementation_footprint", "governance_targets", "drift_watch_targets", "claims", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "binding_hints", "binding_scope", "binding_fallback_reason", "binding_targets", "_skips", "_skip_reason"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "choice_result",
-						Shape: `{"subject_ref":"operator","option_set":["V1","V2"],"comparison_basis":["selected V1: ...","rejected V2: ..."],"choice_rule":"declared selection policy","next_move":"choose_now","variant_ref":"V1","reason":"explicit h-decide"}`,
+						Shape: `{"subject_ref":"operator","option_set":["V1","V2"],"comparison_basis":["selected V1: ...","rejected V2: ..."],"choice_rule":"declared selection policy","next_move":"choose_now","variant_ref":"V1","reason":"explicit h-decide","reversibility":"two-week rollback","reopen_condition":"reopen if rollback triggers occur"}`,
 						Note:  "Exact human choice outcome; compare never creates it and DecisionRecord remains a compatibility projection.",
 					},
 					{
 						Field: "transformation_record",
-						Shape: `{"schema_version":1,"transformed_entity":"ProblemCard profile","initial_state":"implicit prose","post_state":"typed profile/readiness object","relation":"makes explicit","context":"semantic-spine slice"}`,
-						Note:  "Describes the target transformation only; method/work/evidence/publication remain separate.",
+						Shape: `{"schema_version":1,"transformed_entity":"ProblemCard profile","initial_state":"implicit prose","post_state":"typed profile/readiness object","relation":"makes explicit","context":"semantic-spine slice","window":"2026-Q3","method_refs":["mpull-..."],"work_refs":["wc-..."],"evidence_refs":["evid-..."],"publication_refs":["pub-..."]}`,
+						Note:  "Describes the target transformation only; method/work/evidence/publication refs remain separate records and are not proof of occurrence, approval, or publication.",
+					},
+					{
+						Field: "binding_targets",
+						Shape: `[{"kind":"symbol","file_path":"internal/artifact/decision.go","symbol_name":"Baseline","symbol_kind":"func","line":1079,"end_line":1178},{"kind":"api_contract|invariant|spec_section","target_ref":"api_contract:haft/status","file_path":"docs/contracts.md","text_hash":"...","anchor_hash":"..."}]`,
+						Note:  "Legacy compatibility projection. Explicit semantic target kinds use target_ref; an exact haft-target: <target_ref> marker, unambiguous markdown heading, or fenced yaml spec-section id can attach file_path + text_hash automatically, otherwise drift evaluation needs concrete carrier/range fields or fails closed as needs binding resolution. New decisions with affected_files auto-enrich binding_targets when a precise target is safely resolvable; ambiguous files remain unenriched. New decisions should prefer governance_targets plus drift_watch_targets; use binding_scope=whole_file only with binding_fallback_reason.",
+					},
+					{
+						Field: "implementation_footprint",
+						Shape: `{"files":["internal/artifact/decision.go"],"commits":["abc123"],"work_refs":["wc-..."]}`,
+						Note:  "Historical provenance of touched files/work. Footprint-only files are not governance drift authority.",
+					},
+					{
+						Field: "governance_targets[]",
+						Shape: `{"kind":"symbol|api_contract|invariant|spec_section","ref":"symbol:internal/artifact/decision.go::Baseline","binding_target":{"kind":"symbol|api_contract|invariant|spec_section","target_ref":"api_contract:haft/status","file_path":"docs/contracts.md","symbol_name":"Baseline","symbol_kind":"func","body_hash":"...","text_hash":"..."}}`,
+						Note:  "What the decision actually regulates: symbol, range, module, API contract, invariant, spec section, or carrier.",
+					},
+					{
+						Field: "drift_watch_targets[]",
+						Shape: `{"target_ref":"symbol:internal/artifact/decision.go::Baseline","trigger":"symbol_body_changed|schema_or_behavior_changed|invariant_changed","binding_target":{"kind":"symbol|api_contract|invariant|spec_section","target_ref":"api_contract:haft/status","file_path":"docs/contracts.md","symbol_name":"Baseline","symbol_kind":"func","body_hash":"...","text_hash":"..."}}`,
+						Note:  "Concrete drift triggers. Drift scan uses these before governance_targets, then legacy binding_targets, then file fallback.",
+					},
+					{
+						Field: "claims[]",
+						Shape: `{"id":"claim-001","claim":"...","observable":"...","threshold":"...","lifecycle_status":"active|refresh_due|superseded|deprecated","successor_ref":"dec-new#claim-002","retired_reason":"...","governance_target_refs":["api_contract:haft/status"]}`,
+						Note:  "Explicit canonical claims. Empty legacy lifecycle reads as active; predictions remain the compatibility projection.",
 					},
 					{
 						Field: "why_not_others[]",
@@ -374,6 +419,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 								"variant_ref":      "Typed contract templates in haft interface",
 								"portfolio_ref":    "sol-...",
 								"reason":           "Agents can see the nested input shape before their first tool call.",
+								"reopen_condition": "reopen if compact discoverability no longer protects context budget",
 							},
 							"transformation_record": map[string]any{
 								"schema_version":     1,
@@ -411,9 +457,55 @@ func haftInterfaceCatalog() []interfaceCapability {
 						},
 					},
 				},
-				Notes: []string{"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason.", "choice_result carries C.11 subject, option_set, comparison_basis, choice_rule, and next_move; DecisionRecord remains the compatibility projection.", "transformation_record is an explicit target-state description, not a MethodRun, WorkCommission, evidence item, or publication unit."},
+				Notes: []string{
+					"MCP schema discovery may show decide fields, but default MCP execution is fail-closed because model-supplied arguments are not kernel-verifiable operator authorization.",
+					"Use the input-file CLI/manual path for the binding act; v1 accepts only manual_cli authorization receipts and marks MCP receipt-backed binding unsupported.",
+					"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason.",
+					"choice_result carries C.11 subject, option_set, comparison_basis, choice_rule, next_move, reversibility, and reopen_condition; DecisionRecord remains the compatibility projection.",
+					"transformation_record is an explicit target-state description, not a MethodRun, WorkCommission, evidence item, or publication unit; refs point outward and do not prove occurrence, approval, evidence truth, or publication.",
+				},
 			},
 			Invariants: append(commonInterfaceInvariants(), "Human binding remains mandatory for DecisionRecord creation."),
+		},
+		{
+			ID:      "decision.reconcile_apply",
+			Purpose: "Apply an operator-approved DecisionReconciliationPlan selection to lineage/status or explicit scope enrichment.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "decision_reconcile",
+				MCPCall:          `haft_query(action="decision_reconcile") for report-only planning; MCP has no apply action in this slice`,
+				CLIStatus:        "input_file_execution_shipped",
+				CLICommand:       "haft decision reconcile apply selection.json --json",
+				DiscoveryCommand: "haft interface decision.reconcile_apply --json",
+				InputFileFlow: []string{
+					"haft_query(action=\"decision_reconcile\") or `haft decision reconcile --json`",
+					"operator approves a reviewed selection document",
+					"haft decision reconcile apply selection.json --json",
+				},
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"schema_version", "authority", "operator_approval_ref", "items"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "selection_document",
+						Shape: `{"schema_version":1,"authority":"operator_approved_reconciliation_selection","operator_approval_ref":"chat:...","items":[{"operation":"merge_through_successor|supersede|retire_without_successor|reopen|enrich_scope","reviewed_group_id":"decision-reconcile-...","decision_refs":["dec-old"],"successor_ref":"dec-new","decision_subject_ref":"subject:ref","governance_targets":[{"kind":"api_contract","ref":"api_contract:..."}],"drift_watch_targets":[{"target_ref":"api_contract:...","trigger":"schema_or_behavior_changed"}],"claim_governance_target_refs":{"claim-id":["api_contract:..."]},"reason":"..."}]}`,
+						Note:  "successor_ref is required for supersede/merge_through_successor, forbidden for retire_without_successor/enrich_scope, and omitted for reopen; enrich_scope requires exactly one decision plus decision_subject_ref and governance_targets or drift_watch_targets; this apply path does not create binding decisions.",
+					},
+				},
+				Notes: []string{
+					"This is an explicit lifecycle mutation path; run the report-only plan first and apply only reviewed selections.",
+					"merge_through_successor requires an already-created successor DecisionRecord; this command does not create binding decisions.",
+					"enrich_scope changes only DecisionRecord scope fields; it does not change status, lineage, evidence, baselines, or gates.",
+					"Validation covers the whole batch before mutation so a later invalid item cannot leave earlier items partially applied.",
+				},
+			},
+			OutputVolume: []string{"default: compact applied operation list", "--json: DecisionReconciliationApplyResult"},
+			Invariants: append(commonInterfaceInvariants(),
+				"MCP has no reconciliation apply action in this slice.",
+				"Operator approval ref is required in the selection document.",
+				"Old decision IDs remain searchable; terminal status changes preserve lineage.",
+				"Scope enrichment is additive: existing subjects cannot be retargeted by enrich_scope.",
+			),
 		},
 		{
 			ID:      "note.record",
@@ -517,6 +609,70 @@ func haftInterfaceCatalog() []interfaceCapability {
 			Invariants:   commonInterfaceInvariants(),
 		},
 		{
+			ID:      "query.contract_audit",
+			Purpose: "Audit kernel-owned interface contracts, mirrored host schemas, validation refs, and legacy transport exceptions.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "contract_audit",
+				MCPCall:          `haft_query(action="contract_audit")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft interface contract-audit --json",
+				DiscoveryCommand: "haft interface query.contract_audit --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":32,"kernel_owned_contracts":32,"mcp_mirrored_actions":20,"cli_available_surfaces":12,"binding_authority_surfaces":4,"legacy_transport_exceptions":18,"schema_covered_surfaces":20,"schema_missing_surfaces":0,"schema_excluded_fields":8,"shape_covered_surfaces":20,"shape_missing_surfaces":0,"shape_generator_targets":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, approve binding actions, or change tool descriptions.",
+					},
+				},
+				Notes: []string{
+					"Use this before Phase F1 schema generation so host/schema drift is visible without inlining tool schemas into status.",
+					"Read-only: schema visibility is not operator authorization and not binding authority.",
+				},
+			},
+			OutputVolume: []string{"default: compact contract-source audit; --json: full surface list; never in default status"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Contract audit is read-only.",
+				"Generated schema work remains a later phase.",
+				"Binding-denied MCP surfaces remain denied even when their schema is visible.",
+			),
+		},
+		{
+			ID:      "query.contract_generation",
+			Purpose: "List remaining kernel-owned contract generator targets for MCP/host schema generation without mutating schemas.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "contract_generation",
+				MCPCall:          `haft_query(action="contract_generation")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft interface contract-generation --json",
+				DiscoveryCommand: "haft interface query.contract_generation --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_generated_schema","source":"kernel_interface_catalog_field_shapes","source_digest":"sha256:...","summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0},"targets":[]}`,
+						Note:  "The manifest is the kernel-owned queue for future generation; it does not generate schemas or authorize binding actions.",
+					},
+				},
+				Notes: []string{
+					"Use this after contract-audit: it lists any remaining generator targets classified by the audit.",
+					"Read-only: schema generation targets are not generated schemas, operator authorization, evidence, or gate passage.",
+				},
+			},
+			OutputVolume: []string{"default: compact generator target manifest; --json: field-level targets; never in default status"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Contract generation manifest is read-only.",
+				"Fields come from kernel interface catalog field_shapes and current MCP schema gaps.",
+				"Schema visibility remains separate from binding authorization.",
+			),
+		},
+		{
 			ID:      "query.status",
 			Purpose: "Show the compact operator cockpit; use full=true for detailed status and complete module coverage.",
 			CurrentExecution: interfaceExecution{
@@ -603,6 +759,104 @@ func haftInterfaceCatalog() []interfaceCapability {
 			Invariants: append(commonInterfaceInvariants(),
 				"No new top-level MCP action; related remains the single-artifact recovery path.",
 				"Compatibility projections must not become authority or evidence by presentation.",
+			),
+		},
+		{
+			ID:      "query.carrier_manifest",
+			Purpose: "Show the read-only carrier authority manifest for current/support/compat/provenance/archive scope classification.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "carrier_manifest",
+				MCPCall:          `haft_query(action="carrier_manifest")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft carrier manifest --json",
+				DiscoveryCommand: "haft interface query.carrier_manifest --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"generated_by":"haft carrier manifest","entries":[{"id":"...","path_pattern":"...","authority_class":"current_authority|support_material|compatibility_carrier|provenance|archive|external_sidekick_out_of_scope","current":true|false,"normativity":"..."}]}`,
+						Note:  "Carrier classifies where wording lives; it is not itself a binding decision or evidence item.",
+					},
+				},
+				Notes: []string{
+					"Use this when carrier/currentness wording is ambiguous; do not add it to default status.",
+					"Open-Sleigh remains external_sidekick_out_of_scope unless explicitly reopened.",
+				},
+			},
+			OutputVolume: []string{"default: JSON manifest drill-down only; never in compact status"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Carrier manifest is read-only.",
+				"Carrier classes are review/discovery metadata, not binding authority by themselves.",
+				"Default status must not inline carrier manifest entries.",
+			),
+		},
+		{
+			ID:      "query.carrier_check",
+			Purpose: "Run the read-only fixed-point semio check over current/support/compat carrier wording.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "carrier_check",
+				MCPCall:          `haft_query(action="carrier_check")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft carrier check --json",
+				DiscoveryCommand: "haft interface query.carrier_check --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"checked_files":["README.md",...],"findings":[{"path":"...","line":1,"term":"desktop|tui|standalone|haft agent","snippet":"...","diagnostic":"..."}]}`,
+						Note:  "Findings mean a dead runtime-surface mention lacks dropped/archive/provenance/support/not-current context.",
+					},
+				},
+				Notes: []string{
+					"The check is deterministic and read-only; it does not mutate carriers or decisions.",
+					"It avoids substring matches in decision slugs, package names, and ordinary words.",
+					"Use it as a focused drill-down before changing current carrier wording.",
+				},
+			},
+			OutputVolume: []string{"default: checked file list plus findings array; never in compact status"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Carrier semio check is read-only.",
+				"Carrier semio findings are review inputs, not evidence, approval, or GateDecision.",
+				"Default status must not inline carrier semio findings.",
+			),
+		},
+		{
+			ID:      "query.spec_review",
+			Purpose: "Build a read-only advisory semantic review packet over typed SpecSections.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "spec_review",
+				MCPCall:          `haft_query(action="spec_review")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft spec review --json",
+				DiscoveryCommand: "haft interface query.spec_review --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"authority":"advisory_only","review_kind":"spec_semantic","profile":{"id":"spec_semantic_review_v2","model_disposition":{...}},"summary":{"checked_sections":10,"explicit_claims":0,"blocked_for_stronger_use_findings":0},"sections":[{"system_frame":{...},"claim_register":{...},"state_reading":{...},"findings":[{"rule_id":"...","category":"claim_posture|publication_boundary|frame|unknown_abstain"}]}]}`,
+						Note:  "Findings are review inputs and never evidence, approval, rebaseline, GateDecision, or SpecUseAdmission.",
+					},
+				},
+				Notes: []string{
+					"Spec semantic review is advisory and read-only.",
+					"It can abstain/block stronger use when the semantic profile lacks enough structure.",
+					"Claim counts are profile/read findings until first-class ClaimRegister exists.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON spec semantic review packet; compact text via `haft spec review`"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Spec review findings are not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission.",
+				"Default status must not inline the review packet.",
+				"Unknown or high-risk semantic posture abstains/blocks stronger use instead of passing.",
 			),
 		},
 		{
@@ -780,6 +1034,120 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "query.drift_events",
+			Purpose: "Group per-decision drift findings into read-only DriftEvents with fanout and impacted current decisions.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "drift_events",
+				MCPCall:          `haft_query(action="drift_events")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft drift events --json; haft drift events resolve EVENT_ID --status resolved|waived_until --reason ...",
+				DiscoveryCommand: "haft interface query.drift_events --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":2,"summary":{"unique_events":1,"impacted_decisions":7,"material_events":1,"audit_only_events":0,"needs_binding_resolution_events":1,"semantic_target_events":1,"file_fallback_events":0,"unknown_high_risk_events":0,"resolved_by_ledger_events":1,"waived_by_ledger_events":0,"max_fanout":7},"events":[{"event_id":"drift-event-...","changed_target_ref":"symbol:...","target_kind":"symbol|spec_section|api_contract|invariant|file|...","target_status":"modified|removed|renamed|retarget_candidate","trigger_kind":"file_hash","materiality":"material_symbol","root_cause":"semantic_target_changed|binding_target_missing|carrier_only_changed|generated_artifact_changed|target_deleted|target_renamed|retarget_candidate|schema_changed|unknown_high_risk","root_cause_detail":"...","fallback_kind":"whole_file_fallback|edited_symbol_move_candidate","fallback_reason":"unsupported language","fanout":7,"impacted_decisions":[...],"source_items":[{"changed_target_ref":"symbol:...","target_kind":"symbol","target_status":"renamed","symbols":[...],"fallback_kind":"whole_file_fallback"}],"resolution_status":"open|needs_scope_enrichment|needs_rebaseline|needs_reconcile|needs_operator_judgment|resolved|waived_until","resolution_record":{"event_id":"drift-event-...","status":"resolved|waived_until","reason":"...","evidence_refs":["..."],"waiver_expires_at":"2026-07-01"},"suggested_next_command":"haft decision reconcile --json|haft_refresh(action=\"review\")|..."}],"compatibility_reports":[...]}`,
+						Note:  "Compatibility reports preserve the old per-decision shape; DriftEvents prefer symbol/semantic changed targets when available, fall back to file targets only when unresolved, keep source symbol details, expose fallback metadata, and can overlay non-binding resolution metadata from a local ledger.",
+					},
+				},
+				Notes: []string{
+					"Use this when a shared changed target creates several per-decision drift findings.",
+					"One DriftEvent can carry many impacted decisions; file overlap alone is not a merge/supersede decision.",
+					"needs_binding_resolution_events means fallback/imprecise binding must be resolved before treating the event as proven material authority drift.",
+					"root_cause, resolution_status, and suggested_next_command are computed review posture, not evidence, approval, or gate passage.",
+					"`haft drift events resolve` writes only DriftEvent resolution metadata with authority=drift_event_resolution_metadata_not_decision_authority.",
+					"Resolution ledgers do not change baseline, evidence, lineage, DecisionRecord status, gate decisions, or carrier authority.",
+				},
+			},
+			OutputVolume: []string{"default: JSON DriftEventReport drill-down; compact status may cue event counts but must not inline compatibility reports"},
+			Invariants: append(commonInterfaceInvariants(),
+				"DriftEvent aggregation is read-only.",
+				"Fanout is not independent debt count.",
+				"Compatibility per-decision drift reports remain available.",
+			),
+		},
+		{
+			ID:      "query.decision_reconcile",
+			Purpose: "Build a read-only DecisionReconciliationPlan over current decisions.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "decision_reconcile",
+				MCPCall:          `haft_query(action="decision_reconcile")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft decision reconcile --json",
+				DiscoveryCommand: "haft interface query.decision_reconcile --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"authority":"report_only_not_binding_authority","summary":{"reviewed_decisions":12,"merge_candidates":1,"conflict_requires_operator":0,"scope_enrichment_candidates":3},"groups":[{"category":"merge_candidate|reopen_candidate|keep|...","subject_ref":"...","bounded_context":"...","governance_targets":[...],"whole_file_fallback_targets":[...],"scope_repair_hints":["use enrich_scope ..."],"decision_refs":[...],"basis":[...],"operator_required":true,"preview":{"authority":"report_only_preview_not_binding_authority","read_only":true,"operation":"merge_through_successor|supersede|retire_without_successor|reopen|enrich_scope|keep|operator_judgment_required","apply_operation":"merge_through_successor|...","current":{"decision_refs":[...],"statuses":[{"decision_ref":"dec-old","status":"active"}]},"proposed":{"statuses":[{"decision_ref":"dec-old","status":"superseded"}],"effects":[...],"required_successor_ref":true},"required_selection_fields":["operator_approval_ref","items[].reviewed_group_id","items[].successor_ref"],"validation_notes":["apply-ready only after an existing successor_ref is selected","preview is advisory and cannot authorize apply"],"downstream_impact":{"internal_edges":1,"external_edges":2,"incoming_edges":1,"outgoing_edges":2,"dependent_refs":["evid-1"],"review_cue":"external dependent refs require review before apply; this report does not relink downstream artifacts"},"mutation_boundary":["preview generation is read-only"]}}]}`,
+						Note:  "Grouping requires explicit decision subject and governance-target overlap; affected_files are footprint hints and never merge evidence by themselves. Scope repair hints and previews are read-only prompts for operator-approved selection documents.",
+					},
+				},
+				Notes: []string{
+					"Use this after DriftEvents show high fanout or old decisions need authority-frontier cleanup.",
+					"Report-only: it does not supersede, merge, retire, reopen, baseline, or mutate evidence.",
+					"scope_enrichment_candidates are repair prompts, not automatic mutations.",
+					"preview shows current/proposed state and required approval fields; it is not an apply operation.",
+					"downstream_impact shows links/backlinks that must be reviewed before apply; it does not relink dependencies.",
+					"Apply/lineage mutation belongs to a separate explicit operator-approved slice.",
+				},
+			},
+			OutputVolume: []string{"default: JSON DecisionReconciliationPlan drill-down; compact status may cue availability but must not inline groups"},
+			Invariants: append(commonInterfaceInvariants(),
+				"DecisionReconciliationPlan is read-only.",
+				"File overlap alone is not a merge/supersede signal.",
+				"Operator approval is required for every non-keep authority mutation candidate.",
+				"Preview generation is read-only and cannot create selection documents or apply mutations.",
+			),
+		},
+		{
+			ID:      "query.governing_set",
+			Purpose: "Build a read-only current governing set projection over active decision authority.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "governing_set",
+				MCPCall:          `haft_query(action="governing_set", query="symbol:...")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft decision governing-set --query symbol:... --json",
+				DiscoveryCommand: "haft interface query.governing_set --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				OptionalFields: []string{"query", "bearer_ref", "source_refs"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "filters",
+						Shape: `{"query":"substring across set id, subject, target, decision refs, history refs, fallback targets, repair hints","bearer_ref":"exact subject_ref","source_refs":["exact target_ref"]}`,
+						Note:  "CLI equivalents are --query, --subject-ref, and --target-ref. Filters are read-only drill-down constraints; they do not change the governing-set model.",
+					},
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","target_resolution":"explicit_governance_or_watch_target|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"operator_required":true,"authority_boundary":"derived_read_only_not_gate_decision"}]}`,
+						Note:  "Terminal decisions are history refs, not current authority; conflicts, overlaps, and fallback scope repair hints are review cues, not automatic lineage mutations.",
+					},
+				},
+				Notes: []string{
+					"Use this after reconciliation planning to ask what currently governs a subject/context/target.",
+					"Use query/source_refs/bearer_ref for focused drill-down instead of expanding default status.",
+					"The projection is derived from active/refresh_due decisions and effective governance/drift targets.",
+					"fallback_target_sets and scope_enrichment_sets point to old decisions that need operator-approved scope enrichment before stronger use.",
+					"Read-only: it does not supersede, merge, retire, reopen, baseline, or create GateDecision records.",
+				},
+			},
+			OutputVolume: []string{"default: compact CurrentGoverningSet summary", "--json: CurrentGoverningSetReport drill-down; compact status should only cue conflicts/overlap"},
+			Invariants: append(commonInterfaceInvariants(),
+				"CurrentGoverningSet is read-only.",
+				"Terminal records remain searchable history, not live authority.",
+				"Conflicting current authority requires operator review or explicit waiver before stronger use.",
+			),
+		},
+		{
 			ID:      "query.blocked_use_attention",
 			Purpose: "Build a read-only object-first attention item for one blocked use with exact source return.",
 			CurrentExecution: interfaceExecution{
@@ -922,6 +1290,746 @@ func commonInterfaceInvariants() []string {
 	}
 }
 
+type interfaceContractAuditReport struct {
+	Kind          string                          `json:"kind"`
+	SchemaVersion int                             `json:"schema_version"`
+	Authority     string                          `json:"authority"`
+	Summary       interfaceContractAuditSummary   `json:"summary"`
+	Surfaces      []interfaceContractAuditSurface `json:"surfaces"`
+	Notes         []string                        `json:"notes"`
+}
+
+type interfaceContractAuditSummary struct {
+	Capabilities               int `json:"capabilities"`
+	KernelOwnedContracts       int `json:"kernel_owned_contracts"`
+	MCPMirroredActions         int `json:"mcp_mirrored_actions"`
+	CLIAvailableSurfaces       int `json:"cli_available_surfaces"`
+	BindingAuthoritySurfaces   int `json:"binding_authority_surfaces"`
+	ReadOnlySurfaces           int `json:"read_only_surfaces"`
+	LegacyTransportExceptions  int `json:"legacy_transport_exceptions"`
+	SchemaCoveredSurfaces      int `json:"schema_covered_surfaces"`
+	SchemaMissingSurfaces      int `json:"schema_missing_surfaces"`
+	SchemaExcludedFields       int `json:"schema_excluded_fields"`
+	ShapeCoveredSurfaces       int `json:"shape_covered_surfaces"`
+	ShapeMissingSurfaces       int `json:"shape_missing_surfaces"`
+	ShapeSkippedFields         int `json:"shape_skipped_fields"`
+	ShapeGeneratorTargets      int `json:"shape_generator_targets"`
+	ShapeGeneratorTargetFields int `json:"shape_generator_target_fields"`
+	ValidatedMCPMirrors        int `json:"validated_mcp_mirrors"`
+	ManualCLIContracts         int `json:"manual_cli_contracts"`
+	UnvalidatedHostFragments   int `json:"unvalidated_host_fragments"`
+}
+
+type interfaceContractAuditSurface struct {
+	CapabilityID          string                               `json:"capability_id"`
+	MCPTool               string                               `json:"mcp_tool"`
+	MCPAction             string                               `json:"mcp_action,omitempty"`
+	CLIStatus             string                               `json:"cli_status"`
+	CLICommand            string                               `json:"cli_command,omitempty"`
+	ContractSources       []string                             `json:"contract_sources"`
+	ContractSourcePosture string                               `json:"contract_source_posture"`
+	HostSchemaPosture     string                               `json:"host_schema_posture"`
+	SchemaPosture         string                               `json:"schema_posture"`
+	AuthorityPosture      string                               `json:"authority_posture"`
+	ValidationRefs        []string                             `json:"validation_refs"`
+	LegacyException       bool                                 `json:"legacy_exception"`
+	Notes                 []string                             `json:"notes,omitempty"`
+	SchemaCoverage        interfaceContractAuditSchemaCoverage `json:"schema_coverage"`
+	ShapeCoverage         interfaceContractAuditShapeCoverage  `json:"shape_coverage"`
+}
+
+type interfaceContractAuditSchemaCoverage struct {
+	Checked        bool     `json:"checked"`
+	Status         string   `json:"status"`
+	MissingFields  []string `json:"missing_fields,omitempty"`
+	ExcludedFields []string `json:"excluded_fields,omitempty"`
+}
+
+type interfaceContractAuditShapeCoverage struct {
+	Checked               bool     `json:"checked"`
+	Status                string   `json:"status"`
+	MissingShapeFields    []string `json:"missing_shape_fields,omitempty"`
+	GeneratorTargetFields []string `json:"generator_target_fields,omitempty"`
+	SkippedFields         []string `json:"skipped_fields,omitempty"`
+}
+
+type interfaceContractGenerationReport struct {
+	Kind          string                              `json:"kind"`
+	SchemaVersion int                                 `json:"schema_version"`
+	Authority     string                              `json:"authority"`
+	Source        string                              `json:"source"`
+	SourceDigest  string                              `json:"source_digest"`
+	Summary       interfaceContractGenerationSummary  `json:"summary"`
+	Targets       []interfaceContractGenerationTarget `json:"targets"`
+	Notes         []string                            `json:"notes"`
+}
+
+type interfaceContractGenerationSummary struct {
+	Capabilities            int `json:"capabilities"`
+	GeneratorTargetSurfaces int `json:"generator_target_surfaces"`
+	GeneratorTargetFields   int `json:"generator_target_fields"`
+}
+
+type interfaceContractGenerationTarget struct {
+	CapabilityID       string   `json:"capability_id"`
+	MCPTool            string   `json:"mcp_tool"`
+	MCPAction          string   `json:"mcp_action"`
+	GenerationMode     string   `json:"generation_mode"`
+	SourceContract     string   `json:"source_contract"`
+	HostSchemaPosture  string   `json:"host_schema_posture"`
+	AuthorityPosture   string   `json:"authority_posture"`
+	AuthorityBoundary  string   `json:"authority_boundary"`
+	Fields             []string `json:"fields"`
+	ValidationRefs     []string `json:"validation_refs"`
+	NextValidationStep string   `json:"next_validation_step"`
+}
+
+func isInterfaceContractAuditID(id string) bool {
+	switch id {
+	case "contract-audit", "contract_audit", "query.contract_audit":
+		return true
+	default:
+		return false
+	}
+}
+
+func isInterfaceContractGenerationID(id string) bool {
+	switch id {
+	case "contract-generation", "contract_generation", "query.contract_generation":
+		return true
+	default:
+		return false
+	}
+}
+
+func buildInterfaceContractGenerationReport(catalog []interfaceCapability) interfaceContractGenerationReport {
+	audit := buildInterfaceContractAuditReport(catalog)
+	targets := make([]interfaceContractGenerationTarget, 0)
+
+	for _, surface := range audit.Surfaces {
+		if len(surface.ShapeCoverage.GeneratorTargetFields) == 0 {
+			continue
+		}
+		target := interfaceContractGenerationTarget{
+			CapabilityID:       surface.CapabilityID,
+			MCPTool:            surface.MCPTool,
+			MCPAction:          surface.MCPAction,
+			GenerationMode:     "nested_mcp_schema_property_generation",
+			SourceContract:     "kernel_interface_catalog_field_shapes",
+			HostSchemaPosture:  surface.HostSchemaPosture,
+			AuthorityPosture:   surface.AuthorityPosture,
+			AuthorityBoundary:  "schema_visibility_not_operator_authorization",
+			Fields:             uniqueSortedStrings(surface.ShapeCoverage.GeneratorTargetFields),
+			ValidationRefs:     uniqueInterfaceContractAuditStrings(surface.ValidationRefs),
+			NextValidationStep: "generate_or_validate_nested_schema_properties_from_kernel_interface_catalog",
+		}
+		targets = append(targets, target)
+	}
+
+	sort.Slice(targets, func(i, j int) bool {
+		return targets[i].CapabilityID < targets[j].CapabilityID
+	})
+
+	summary := interfaceContractGenerationSummary{
+		Capabilities:            audit.Summary.Capabilities,
+		GeneratorTargetSurfaces: len(targets),
+		GeneratorTargetFields:   countInterfaceContractGenerationFields(targets),
+	}
+
+	return interfaceContractGenerationReport{
+		Kind:          "haft_interface_contract_generation_manifest",
+		SchemaVersion: 1,
+		Authority:     "read_only_generation_manifest_not_generated_schema",
+		Source:        "kernel_interface_catalog_field_shapes",
+		SourceDigest:  interfaceContractGenerationDigest(targets),
+		Summary:       summary,
+		Targets:       targets,
+		Notes: []string{
+			"This manifest is derived from contract-audit generator targets; it is not a generated schema.",
+			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
+			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
+		},
+	}
+}
+
+func countInterfaceContractGenerationFields(targets []interfaceContractGenerationTarget) int {
+	total := 0
+	for _, target := range targets {
+		total += len(target.Fields)
+	}
+	return total
+}
+
+func interfaceContractGenerationDigest(targets []interfaceContractGenerationTarget) string {
+	payload, err := json.Marshal(targets)
+	if err != nil {
+		return "sha256:unavailable"
+	}
+	sum := sha256.Sum256(payload)
+	return fmt.Sprintf("sha256:%x", sum)
+}
+
+func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceContractAuditReport {
+	surfaces := make([]interfaceContractAuditSurface, 0, len(catalog))
+	summary := interfaceContractAuditSummary{Capabilities: len(catalog)}
+	toolProperties := interfaceContractAuditToolProperties()
+	exclusions := interfaceContractAuditSchemaFieldExclusions()
+
+	for _, capability := range catalog {
+		surface := buildInterfaceContractAuditSurface(capability, toolProperties, exclusions)
+		surfaces = append(surfaces, surface)
+
+		if interfaceContractAuditContainsString(surface.ContractSources, "kernel_interface_catalog") {
+			summary.KernelOwnedContracts++
+		}
+		if surface.SchemaPosture == "mcp_schema_mirrored" {
+			summary.MCPMirroredActions++
+		}
+		if surface.CLIStatus == "available" || surface.CLIStatus == "input_file_execution_shipped" {
+			summary.CLIAvailableSurfaces++
+		}
+		if interfaceContractAuditBindingSensitive(surface.AuthorityPosture) {
+			summary.BindingAuthoritySurfaces++
+		}
+		if strings.Contains(surface.AuthorityPosture, "read_only") {
+			summary.ReadOnlySurfaces++
+		}
+		if surface.LegacyException {
+			summary.LegacyTransportExceptions++
+		}
+		if surface.SchemaCoverage.Status == "covered" {
+			summary.SchemaCoveredSurfaces++
+		}
+		if surface.SchemaCoverage.Status == "missing_fields" || surface.SchemaCoverage.Status == "missing_mcp_tool_schema" {
+			summary.SchemaMissingSurfaces++
+		}
+		summary.SchemaExcludedFields += len(surface.SchemaCoverage.ExcludedFields)
+		if surface.ShapeCoverage.Status == "covered" || surface.ShapeCoverage.Status == "no_input_shapes" {
+			summary.ShapeCoveredSurfaces++
+		}
+		if surface.ShapeCoverage.Status == "missing_shape_fields" {
+			summary.ShapeMissingSurfaces++
+		}
+		if surface.ShapeCoverage.Status == "generator_targets" {
+			summary.ShapeGeneratorTargets++
+		}
+		summary.ShapeSkippedFields += len(surface.ShapeCoverage.SkippedFields)
+		summary.ShapeGeneratorTargetFields += len(surface.ShapeCoverage.GeneratorTargetFields)
+		switch surface.HostSchemaPosture {
+		case "validated_mcp_mirror", "validated_mcp_mirror_with_generator_targets":
+			summary.ValidatedMCPMirrors++
+		case "manual_cli_contract_not_generated":
+			summary.ManualCLIContracts++
+		default:
+			summary.UnvalidatedHostFragments++
+		}
+	}
+
+	return interfaceContractAuditReport{
+		Kind:          "haft_interface_contract_audit",
+		SchemaVersion: 1,
+		Authority:     "read_only_contract_inventory_not_schema_generation",
+		Summary:       summary,
+		Surfaces:      surfaces,
+		Notes: []string{
+			"Kernel interface catalog is the audited contract source for this report.",
+			"Host schema posture classifies each fragment as a validated mirror, manual CLI contract, or unvalidated host fragment.",
+			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
+			"Generated MCP/host schema work remains a later phase and must validate against this inventory.",
+			"Default status must not inline this report; use haft interface contract-audit --json or haft_query(action=\"contract_audit\").",
+		},
+	}
+}
+
+func buildInterfaceContractAuditSurface(
+	capability interfaceCapability,
+	toolProperties map[string]map[string]interface{},
+	exclusions map[string]map[string]bool,
+) interfaceContractAuditSurface {
+	execution := capability.CurrentExecution
+	surface := interfaceContractAuditSurface{
+		CapabilityID:     capability.ID,
+		MCPTool:          execution.MCPTool,
+		MCPAction:        execution.MCPAction,
+		CLIStatus:        execution.CLIStatus,
+		CLICommand:       execution.CLICommand,
+		ContractSources:  []string{"kernel_interface_catalog"},
+		SchemaPosture:    interfaceContractAuditSchemaPosture(execution),
+		AuthorityPosture: interfaceContractAuditAuthorityPosture(capability),
+		ValidationRefs:   interfaceContractAuditValidationRefs(capability),
+		LegacyException:  interfaceContractAuditLegacyException(execution),
+		SchemaCoverage:   interfaceContractAuditSchemaCoverageFor(capability, toolProperties, exclusions),
+		ShapeCoverage:    interfaceContractAuditShapeCoverageFor(capability, toolProperties, exclusions),
+	}
+	surface.ContractSourcePosture = interfaceContractAuditContractSourcePosture(surface)
+	surface.HostSchemaPosture = interfaceContractAuditHostSchemaPosture(surface)
+
+	if surface.LegacyException {
+		surface.Notes = append(surface.Notes, "old standalone transport differs by documented exception; do not treat it as current host schema truth")
+	}
+	if interfaceContractAuditBindingSensitive(surface.AuthorityPosture) {
+		surface.Notes = append(surface.Notes, "binding-sensitive surface remains governed by explicit operator/manual authorization")
+	}
+	if surface.SchemaPosture == "not_in_mcp_schema" {
+		surface.Notes = append(surface.Notes, "schema is discoverable through CLI/interface only in this slice")
+	}
+
+	return surface
+}
+
+func interfaceContractAuditContractSourcePosture(surface interfaceContractAuditSurface) string {
+	if interfaceContractAuditContainsString(surface.ContractSources, "kernel_interface_catalog") {
+		return "kernel_interface_catalog_source"
+	}
+	return "unclassified_contract_source"
+}
+
+func interfaceContractAuditHostSchemaPosture(surface interfaceContractAuditSurface) string {
+	if surface.MCPTool == "" || surface.MCPAction == "" {
+		return "manual_cli_contract_not_generated"
+	}
+	if surface.SchemaCoverage.Status != "covered" {
+		return "unvalidated_host_schema_fragment"
+	}
+	if surface.ShapeCoverage.Status == "generator_targets" {
+		return "validated_mcp_mirror_with_generator_targets"
+	}
+	return "validated_mcp_mirror"
+}
+
+func interfaceContractAuditShapeCoverageFor(
+	capability interfaceCapability,
+	toolProperties map[string]map[string]interface{},
+	exclusions map[string]map[string]bool,
+) interfaceContractAuditShapeCoverage {
+	execution := capability.CurrentExecution
+	if execution.MCPTool == "" || execution.MCPAction == "" {
+		return interfaceContractAuditShapeCoverage{
+			Checked: false,
+			Status:  "not_mcp_backed",
+		}
+	}
+
+	properties, ok := toolProperties[execution.MCPTool]
+	if !ok {
+		return interfaceContractAuditShapeCoverage{
+			Checked:            true,
+			Status:             "missing_mcp_tool_schema",
+			MissingShapeFields: []string{"action"},
+		}
+	}
+
+	inputFields := topLevelInterfaceContractFieldSet(capability.InputContract)
+	missing := make([]string, 0)
+	skipped := make([]string, 0)
+
+	for _, shape := range capability.InputContract.FieldShapes {
+		topLevel := topLevelInterfaceContractField(shape.Field)
+		if topLevel == "" {
+			continue
+		}
+		if interfaceContractAuditShapeFieldExcluded(capability.ID, shape.Field) {
+			skipped = append(skipped, shape.Field)
+			continue
+		}
+		if !inputFields[topLevel] {
+			skipped = append(skipped, shape.Field)
+			continue
+		}
+		if exclusions[capability.ID][topLevel] {
+			skipped = append(skipped, shape.Field)
+			continue
+		}
+
+		propertySchema, ok := properties[topLevel]
+		if !ok {
+			missing = append(missing, topLevel)
+			continue
+		}
+
+		for _, missingField := range missingNestedShapeFields(topLevel, shape.Shape, propertySchema) {
+			missing = append(missing, missingField)
+		}
+	}
+
+	missing = uniqueSortedStrings(missing)
+	skipped = uniqueSortedStrings(skipped)
+	generatorTargets := make([]string, 0)
+	realMissing := make([]string, 0, len(missing))
+	for _, field := range missing {
+		if interfaceContractAuditShapeGeneratorTarget(capability.ID, field) {
+			generatorTargets = append(generatorTargets, field)
+			continue
+		}
+		realMissing = append(realMissing, field)
+	}
+	generatorTargets = uniqueSortedStrings(generatorTargets)
+	realMissing = uniqueSortedStrings(realMissing)
+
+	status := "covered"
+	if len(realMissing) > 0 {
+		status = "missing_shape_fields"
+	} else if len(generatorTargets) > 0 {
+		status = "generator_targets"
+	} else if len(capability.InputContract.FieldShapes) == len(skipped) {
+		status = "no_input_shapes"
+	}
+
+	return interfaceContractAuditShapeCoverage{
+		Checked:               true,
+		Status:                status,
+		MissingShapeFields:    realMissing,
+		GeneratorTargetFields: generatorTargets,
+		SkippedFields:         skipped,
+	}
+}
+
+func missingNestedShapeFields(root string, shape string, propertySchema interface{}) []string {
+	expected, ok := objectKeysFromShape(shape)
+	if !ok || len(expected) == 0 {
+		return nil
+	}
+
+	properties := nestedSchemaProperties(propertySchema)
+	if len(properties) == 0 {
+		return prefixShapeFields(root, expected)
+	}
+
+	missing := make([]string, 0)
+	for _, field := range expected {
+		if _, ok := properties[field]; !ok {
+			missing = append(missing, root+"."+field)
+		}
+	}
+	return missing
+}
+
+func objectKeysFromShape(shape string) ([]string, bool) {
+	shape = strings.TrimSpace(shape)
+	if !strings.HasPrefix(shape, "{") {
+		return nil, false
+	}
+
+	decoded := map[string]interface{}{}
+	if err := json.Unmarshal([]byte(shape), &decoded); err != nil {
+		return nil, false
+	}
+
+	keys := make([]string, 0, len(decoded))
+	for key := range decoded {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys, true
+}
+
+func nestedSchemaProperties(schema interface{}) map[string]interface{} {
+	schemaMap, ok := schema.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	if properties, ok := schemaMap["properties"].(map[string]interface{}); ok {
+		return properties
+	}
+	items, ok := schemaMap["items"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	properties, _ := items["properties"].(map[string]interface{})
+	return properties
+}
+
+func prefixShapeFields(root string, fields []string) []string {
+	prefixed := make([]string, 0, len(fields))
+	for _, field := range fields {
+		prefixed = append(prefixed, root+"."+field)
+	}
+	return prefixed
+}
+
+func interfaceContractAuditSchemaCoverageFor(
+	capability interfaceCapability,
+	toolProperties map[string]map[string]interface{},
+	exclusions map[string]map[string]bool,
+) interfaceContractAuditSchemaCoverage {
+	execution := capability.CurrentExecution
+	if execution.MCPTool == "" || execution.MCPAction == "" {
+		return interfaceContractAuditSchemaCoverage{
+			Checked: false,
+			Status:  "not_mcp_backed",
+		}
+	}
+
+	properties, ok := toolProperties[execution.MCPTool]
+	if !ok {
+		return interfaceContractAuditSchemaCoverage{
+			Checked:       true,
+			Status:        "missing_mcp_tool_schema",
+			MissingFields: []string{"action"},
+		}
+	}
+
+	missing := make([]string, 0)
+	excluded := make([]string, 0)
+	for _, field := range topLevelInterfaceContractFields(capability.InputContract) {
+		if exclusions[capability.ID][field] {
+			excluded = append(excluded, field)
+			continue
+		}
+		if _, ok := properties[field]; !ok {
+			missing = append(missing, field)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(excluded)
+
+	status := "covered"
+	if len(missing) > 0 {
+		status = "missing_fields"
+	}
+
+	return interfaceContractAuditSchemaCoverage{
+		Checked:        true,
+		Status:         status,
+		MissingFields:  missing,
+		ExcludedFields: excluded,
+	}
+}
+
+func interfaceContractAuditToolProperties() map[string]map[string]interface{} {
+	server := fpf.NewServer()
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+
+	toolProperties := make(map[string]map[string]interface{})
+	for _, tool := range server.ToolCatalog() {
+		inputSchema, ok := tool.InputSchema.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		properties, ok := inputSchema["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		toolProperties[tool.Name] = properties
+	}
+	return toolProperties
+}
+
+func topLevelInterfaceContractFields(contract interfaceContract) []string {
+	seen := topLevelInterfaceContractFieldSet(contract)
+	fields := make([]string, 0, len(contract.RequiredFields)+len(contract.OptionalFields))
+	for field := range seen {
+		fields = append(fields, field)
+	}
+	sort.Strings(fields)
+	return fields
+}
+
+func topLevelInterfaceContractFieldSet(contract interfaceContract) map[string]bool {
+	fields := make(map[string]bool)
+	for _, field := range append(contract.RequiredFields, contract.OptionalFields...) {
+		topLevel := topLevelInterfaceContractField(field)
+		if topLevel == "" {
+			continue
+		}
+		fields[topLevel] = true
+	}
+	return fields
+}
+
+func topLevelInterfaceContractField(field string) string {
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return ""
+	}
+	if idx := strings.Index(field, "."); idx >= 0 {
+		field = field[:idx]
+	}
+	if idx := strings.Index(field, "[]"); idx >= 0 {
+		field = field[:idx]
+	}
+	return strings.TrimSpace(field)
+}
+
+func interfaceContractAuditSchemaFieldExclusions() map[string]map[string]bool {
+	exclude := map[string][]string{
+		"decision.reconcile_apply":    {"schema_version", "authority", "operator_approval_ref", "items"},
+		"note.record":                 {"task_context"},
+		"problem.frame":               {"task_context"},
+		"solution.explore":            {"task_context"},
+		"decision.decide":             {"task_context"},
+		"query.related":               {"ref", "artifact_id"},
+		"query.governing_set":         {"source_refs"},
+		"query.blocked_use_attention": {"label", "finding_kind", "next_actions", "role_ref", "valid_until"},
+	}
+
+	result := make(map[string]map[string]bool, len(exclude))
+	for capabilityID, fields := range exclude {
+		result[capabilityID] = make(map[string]bool, len(fields))
+		for _, field := range fields {
+			result[capabilityID][field] = true
+		}
+	}
+	return result
+}
+
+func interfaceContractAuditShapeFieldExcluded(capabilityID string, field string) bool {
+	exclude := map[string]map[string]bool{
+		"solution.compare": {
+			"scores": true,
+		},
+	}
+	return exclude[capabilityID][field]
+}
+
+func interfaceContractAuditShapeGeneratorTarget(capabilityID string, field string) bool {
+	targets := map[string][]string{
+		"decision.decide": {
+			"claims.claim",
+			"claims.governance_target_refs",
+			"claims.id",
+			"claims.lifecycle_status",
+			"claims.observable",
+			"claims.retired_reason",
+			"claims.successor_ref",
+			"claims.threshold",
+			"drift_watch_targets.binding_target",
+			"drift_watch_targets.target_ref",
+			"drift_watch_targets.trigger",
+			"governance_targets.binding_target",
+			"governance_targets.kind",
+			"governance_targets.ref",
+			"implementation_footprint.commits",
+			"implementation_footprint.files",
+			"implementation_footprint.work_refs",
+		},
+		"query.spec_use": {
+			"operational_gate.bearer_ref",
+			"operational_gate.evidence_refs",
+			"operational_gate.expires_at",
+			"operational_gate.gate_ref",
+			"operational_gate.reopen_condition",
+			"operational_gate.rule",
+			"operational_gate.schema_version",
+			"operational_gate.use_context",
+		},
+	}
+
+	for _, target := range targets[capabilityID] {
+		if field == target {
+			return true
+		}
+	}
+	return false
+}
+
+func interfaceContractAuditSchemaPosture(execution interfaceExecution) string {
+	if execution.MCPTool == "haft_query" && execution.MCPAction != "" {
+		return "mcp_schema_mirrored"
+	}
+	if execution.MCPTool != "" && execution.MCPAction != "" {
+		return "mcp_tool_schema_mirrored"
+	}
+	if execution.CLICommand != "" {
+		return "cli_contract_only"
+	}
+	return "not_in_mcp_schema"
+}
+
+func interfaceContractAuditAuthorityPosture(capability interfaceCapability) string {
+	execution := capability.CurrentExecution
+	if mcpActionRequiresOperatorConfirmation(execution.MCPTool, execution.MCPAction) {
+		return "binding_denied_by_default_mcp"
+	}
+	if capability.ID == "decision.reconcile_apply" {
+		return "cli_operator_approved_binding_apply"
+	}
+	if strings.HasPrefix(capability.ID, "query.") {
+		return "read_only_drill_down"
+	}
+	if strings.HasPrefix(capability.ID, "method.") {
+		return "method_run_workflow_state"
+	}
+	if strings.HasPrefix(capability.ID, "refresh.") && execution.MCPAction == "drain" {
+		return "machine_safe_maintenance_with_explicit_policy"
+	}
+	return "non_binding_or_draft_surface"
+}
+
+func interfaceContractAuditBindingSensitive(posture string) bool {
+	switch posture {
+	case "binding_denied_by_default_mcp", "cli_operator_approved_binding_apply":
+		return true
+	default:
+		return false
+	}
+}
+
+func interfaceContractAuditValidationRefs(capability interfaceCapability) []string {
+	refs := []string{"internal/cli/interface_test.go"}
+
+	if capability.CurrentExecution.MCPTool != "" {
+		refs = append(refs, "internal/fpf/server_test.go")
+	}
+	if capability.CurrentExecution.MCPTool == "haft_query" {
+		refs = append(refs, "internal/cli/serve_parity_test.go")
+	}
+	if strings.Contains(capability.CurrentExecution.CLIStatus, "input_file") {
+		refs = append(refs, "internal/cli/interface_test.go")
+	}
+	if strings.Contains(capability.ID, "carrier") {
+		refs = append(refs, "internal/cli/carrier_manifest_test.go")
+	}
+	if strings.Contains(capability.ID, "decision_reconcile") || strings.Contains(capability.ID, "governing_set") || strings.Contains(capability.ID, "reconcile_apply") {
+		refs = append(refs, "internal/cli/decision_reconcile_test.go")
+	}
+
+	return uniqueInterfaceContractAuditStrings(refs)
+}
+
+func interfaceContractAuditLegacyException(execution interfaceExecution) bool {
+	if execution.MCPTool != "haft_query" {
+		return false
+	}
+
+	switch execution.MCPAction {
+	case "search", "status", "related", "projection", "fpf":
+		return false
+	default:
+		return true
+	}
+}
+
+func interfaceContractAuditContainsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqueInterfaceContractAuditStrings(values []string) []string {
+	seen := make(map[string]bool, len(values))
+	unique := make([]string, 0, len(values))
+	for _, value := range values {
+		if seen[value] {
+			continue
+		}
+		seen[value] = true
+		unique = append(unique, value)
+	}
+	return unique
+}
+
+func uniqueSortedStrings(values []string) []string {
+	unique := uniqueInterfaceContractAuditStrings(values)
+	sort.Strings(unique)
+	return unique
+}
+
 func findInterfaceCapability(catalog []interfaceCapability, id string) (interfaceCapability, bool) {
 	for _, capability := range catalog {
 		if capability.ID == id {
@@ -992,6 +2100,81 @@ func writeInterfaceCapabilityText(output io.Writer, capability interfaceCapabili
 
 	if len(capability.InputContract.OptionalFields) > 0 {
 		if _, err := fmt.Fprintf(output, "Optional: %s\n", strings.Join(capability.InputContract.OptionalFields, ", ")); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeInterfaceContractAuditText(output io.Writer, report interfaceContractAuditReport) error {
+	if _, err := fmt.Fprintf(output, "Haft interface contract audit v%d\n", report.SchemaVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "authority: %s\n", report.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		output,
+		"summary: capabilities=%d kernel_owned=%d mcp_mirrored=%d cli_available=%d binding_sensitive=%d read_only=%d legacy_exceptions=%d schema_coverage=%d covered/%d missing excluded_fields=%d shape_coverage=%d covered/%d missing generator_targets=%d fields=%d skipped_fields=%d host_fragments=%d validated_mcp/%d manual_cli/%d unvalidated\n",
+		report.Summary.Capabilities,
+		report.Summary.KernelOwnedContracts,
+		report.Summary.MCPMirroredActions,
+		report.Summary.CLIAvailableSurfaces,
+		report.Summary.BindingAuthoritySurfaces,
+		report.Summary.ReadOnlySurfaces,
+		report.Summary.LegacyTransportExceptions,
+		report.Summary.SchemaCoveredSurfaces,
+		report.Summary.SchemaMissingSurfaces,
+		report.Summary.SchemaExcludedFields,
+		report.Summary.ShapeCoveredSurfaces,
+		report.Summary.ShapeMissingSurfaces,
+		report.Summary.ShapeGeneratorTargets,
+		report.Summary.ShapeGeneratorTargetFields,
+		report.Summary.ShapeSkippedFields,
+		report.Summary.ValidatedMCPMirrors,
+		report.Summary.ManualCLIContracts,
+		report.Summary.UnvalidatedHostFragments,
+	); err != nil {
+		return err
+	}
+
+	for _, surface := range report.Surfaces {
+		if _, err := fmt.Fprintf(output, "- %s source=%s host_schema=%s schema=%s schema_coverage=%s shape_coverage=%s authority=%s cli=%s\n", surface.CapabilityID, surface.ContractSourcePosture, surface.HostSchemaPosture, surface.SchemaPosture, surface.SchemaCoverage.Status, surface.ShapeCoverage.Status, surface.AuthorityPosture, surface.CLIStatus); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func writeInterfaceContractGenerationText(output io.Writer, report interfaceContractGenerationReport) error {
+	if _, err := fmt.Fprintf(output, "Haft interface contract generation manifest v%d\n", report.SchemaVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "authority: %s\n", report.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "source: %s %s\n", report.Source, report.SourceDigest); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		output,
+		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d\n",
+		report.Summary.Capabilities,
+		report.Summary.GeneratorTargetSurfaces,
+		report.Summary.GeneratorTargetFields,
+	); err != nil {
+		return err
+	}
+
+	for _, target := range report.Targets {
+		if _, err := fmt.Fprintf(output, "- %s mcp=%s/%s mode=%s fields=%d authority=%s\n", target.CapabilityID, target.MCPTool, target.MCPAction, target.GenerationMode, len(target.Fields), target.AuthorityBoundary); err != nil {
+			return err
+		}
+	}
+	if len(report.Targets) == 0 {
+		if _, err := fmt.Fprintln(output, "- no current generator targets"); err != nil {
 			return err
 		}
 	}

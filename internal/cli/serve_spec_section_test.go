@@ -260,6 +260,15 @@ func TestHandleHaftSpecSection_ApproveRecordsBaselineForActiveSection(t *testing
 	if result.Hash == "" {
 		t.Fatalf("hash should be recorded; got empty result: %#v", result)
 	}
+	if result.BaselineKind != specflow.BaselineKindSpecSectionApproval {
+		t.Fatalf("baseline_kind = %q, want %q", result.BaselineKind, specflow.BaselineKindSpecSectionApproval)
+	}
+	if result.BaselineProfile == nil {
+		t.Fatal("baseline_profile missing")
+	}
+	if result.BaselineProfile.Object != "SpecSectionApprovalBaseline" {
+		t.Fatalf("baseline_profile.object = %q", result.BaselineProfile.Object)
+	}
 	if result.ApprovedBy != "human" {
 		t.Fatalf("approved_by = %q, want human", result.ApprovedBy)
 	}
@@ -366,6 +375,12 @@ func TestHandleHaftSpecSection_RebaselineOverwritesAndReportsReason(t *testing.T
 	if result.Reason == "" {
 		t.Fatalf("rebaseline result must echo reason: %#v", result)
 	}
+	if result.BaselineKind != specflow.BaselineKindSpecSectionApproval {
+		t.Fatalf("baseline_kind = %q, want %q", result.BaselineKind, specflow.BaselineKindSpecSectionApproval)
+	}
+	if result.BaselineProfile == nil {
+		t.Fatal("baseline_profile missing")
+	}
 	if result.Hash == "" {
 		t.Fatalf("rebaseline result must include new hash: %#v", result)
 	}
@@ -379,12 +394,15 @@ func TestHandleHaftSpecSection_ReopenDeletesBaselineAndBlocksNextStep(t *testing
 		"section_id":   baselineTestSectionID,
 	})
 
-	_ = callHandleSpecSection(t, haftDir, map[string]any{
+	result := callHandleSpecSection(t, haftDir, map[string]any{
 		"action":       "reopen",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
 		"reason":       "needs review",
 	})
+	if result.BaselineKind != specflow.BaselineKindSpecSectionApproval {
+		t.Fatalf("baseline_kind = %q, want %q", result.BaselineKind, specflow.BaselineKindSpecSectionApproval)
+	}
 
 	intentRaw, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
 		"action":       "next_step",

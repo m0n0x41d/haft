@@ -11,14 +11,17 @@ import (
 // inside a system-prompt budget instead of clipping the full dashboard
 // mid-table on the client side.
 type GovernorData struct {
-	OverseerLine    string
-	PendingCount    int
-	UnassessedCount int
-	StaleCount      int
-	DriftCount      int
-	TopAttention    []string
-	ActiveProblems  []string
-	OpenMethodRuns  []string
+	OverseerLine               string
+	ReconciliationLine         string
+	PendingCount               int
+	UnassessedCount            int
+	StaleCount                 int
+	DriftEventCount            int
+	DriftImpactedDecisionCount int
+	DriftMaxFanout             int
+	TopAttention               []string
+	ActiveProblems             []string
+	OpenMethodRuns             []string
 }
 
 const governorListCap = 3
@@ -32,16 +35,27 @@ func StatusGovernor(d GovernorData) string {
 	if d.OverseerLine != "" {
 		sb.WriteString(fmt.Sprintf("Overseer: %s\n", d.OverseerLine))
 	}
+	if d.ReconciliationLine != "" {
+		sb.WriteString(fmt.Sprintf("Reconciliation: %s\n", d.ReconciliationLine))
+	}
 	sb.WriteString(fmt.Sprintf(
-		"Decisions: %d pending, %d unassessed; %d refresh-due, %d drifted\n",
-		d.PendingCount, d.UnassessedCount, d.StaleCount, d.DriftCount,
+		"Decisions: %d pending, %d unassessed; %d refresh-due\n",
+		d.PendingCount, d.UnassessedCount, d.StaleCount,
 	))
+	if d.DriftEventCount > 0 {
+		sb.WriteString(fmt.Sprintf(
+			"Drift: %d unique event(s), %d impacted decision(s), max fanout %d\n",
+			d.DriftEventCount,
+			d.DriftImpactedDecisionCount,
+			d.DriftMaxFanout,
+		))
+	}
 
 	writeGovernorList(&sb, "Attention", d.TopAttention)
 	writeGovernorList(&sb, "Active problems", d.ActiveProblems)
 	writeGovernorList(&sb, "Open method runs", d.OpenMethodRuns)
 
-	if d.StaleCount > 0 || d.DriftCount > 0 {
+	if d.StaleCount > 0 || d.DriftEventCount > 0 {
 		sb.WriteString("\nStale or drifted decisions above are evidence debt: verify with haft_query/haft_refresh before relying on them.\n")
 	}
 

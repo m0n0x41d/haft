@@ -94,6 +94,11 @@ func TestHandleQuintDecision_DecidePersistsTransformationRecord(t *testing.T) {
 			"post_state":         "transformation has a first-class object-state description",
 			"relation":           "separates",
 			"context":            "semantic-spine TransformationRecord v1",
+			"window":             "2026-Q3",
+			"method_refs":        []any{"mpull-transformation-record"},
+			"work_refs":          []any{"wc-transformation-record"},
+			"evidence_refs":      []any{"evid-transformation-record"},
+			"publication_refs":   []any{"pub-transformation-record"},
 		},
 	})
 	if err != nil {
@@ -114,6 +119,21 @@ func TestHandleQuintDecision_DecidePersistsTransformationRecord(t *testing.T) {
 	}
 	if record.TransformedEntity != "DecisionRecord compatibility projection" {
 		t.Fatalf("transformed_entity = %q", record.TransformedEntity)
+	}
+	if record.Window != "2026-Q3" {
+		t.Fatalf("window = %q", record.Window)
+	}
+	if len(record.MethodRefs) != 1 || record.MethodRefs[0] != "mpull-transformation-record" {
+		t.Fatalf("method_refs = %#v", record.MethodRefs)
+	}
+	if len(record.WorkRefs) != 1 || record.WorkRefs[0] != "wc-transformation-record" {
+		t.Fatalf("work_refs = %#v", record.WorkRefs)
+	}
+	if len(record.EvidenceRefs) != 1 || record.EvidenceRefs[0] != "evid-transformation-record" {
+		t.Fatalf("evidence_refs = %#v", record.EvidenceRefs)
+	}
+	if len(record.PublicationRefs) != 1 || record.PublicationRefs[0] != "pub-transformation-record" {
+		t.Fatalf("publication_refs = %#v", record.PublicationRefs)
 	}
 }
 
@@ -144,6 +164,8 @@ func TestHandleQuintDecision_DecidePersistsC11ChoiceResult(t *testing.T) {
 			"next_move":        string(artifact.ChoiceNextMoveChooseNow),
 			"variant_ref":      "Use exact choice semantics",
 			"reason":           "The operator invoked h-decide.",
+			"reversibility":    "two-week rollback",
+			"reopen_condition": "reopen if rollback triggers occur",
 		},
 	})
 	if err != nil {
@@ -164,6 +186,12 @@ func TestHandleQuintDecision_DecidePersistsC11ChoiceResult(t *testing.T) {
 	}
 	if len(choice.OptionSet) != 2 {
 		t.Fatalf("option_set = %#v, want two options", choice.OptionSet)
+	}
+	if choice.Reversibility != "two-week rollback" {
+		t.Fatalf("reversibility = %q", choice.Reversibility)
+	}
+	if choice.ReopenCondition != "reopen if rollback triggers occur" {
+		t.Fatalf("reopen_condition = %q", choice.ReopenCondition)
 	}
 }
 

@@ -23,6 +23,10 @@ func RenderRunBody(run MethodRun) string {
 		b.WriteString("## Methods\n\n")
 		for _, card := range run.Methods {
 			b.WriteString(fmt.Sprintf("### %s `%s`\n\n", card.Title, card.ID))
+			if posture := RenderSourcePosture(card.SourcePosture); posture != "" {
+				b.WriteString(posture)
+				b.WriteString("\n\n")
+			}
 			if card.WhyApplies != "" {
 				b.WriteString(fmt.Sprintf("Why applies: %s\n\n", card.WhyApplies))
 			}
@@ -73,4 +77,24 @@ func RenderRunBody(run MethodRun) string {
 	}
 
 	return b.String()
+}
+
+func RenderSourcePosture(posture SourcePosture) string {
+	parts := make([]string, 0, 4)
+	if posture.SourceKind != "" {
+		parts = append(parts, "source_kind="+posture.SourceKind)
+	}
+	if posture.SourceEdition != "" {
+		parts = append(parts, "source_edition="+posture.SourceEdition)
+	}
+	if posture.Normativity != "" {
+		parts = append(parts, "normativity="+posture.Normativity)
+	}
+	if posture.AuthorityBoundary != "" {
+		parts = append(parts, "authority_boundary="+posture.AuthorityBoundary)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Source posture: " + strings.Join(parts, " · ")
 }

@@ -58,6 +58,38 @@ func mustListToolProperties(t *testing.T, toolName string) map[string]interface{
 	return properties
 }
 
+func mustSchemaProperties(t *testing.T, raw interface{}, label string) map[string]interface{} {
+	t.Helper()
+
+	schema, ok := raw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s schema missing or wrong type: %#v", label, raw)
+	}
+	properties, ok := schema["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s properties missing or wrong type: %#v", label, schema["properties"])
+	}
+	return properties
+}
+
+func mustArrayItemProperties(t *testing.T, raw interface{}, label string) map[string]interface{} {
+	t.Helper()
+
+	schema, ok := raw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s schema missing or wrong type: %#v", label, raw)
+	}
+	items, ok := schema["items"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s items missing or wrong type: %#v", label, schema["items"])
+	}
+	properties, ok := items["properties"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s item properties missing or wrong type: %#v", label, items["properties"])
+	}
+	return properties
+}
+
 func mustListToolInputSchema(t *testing.T, toolName string) map[string]interface{} {
 	t.Helper()
 
@@ -220,8 +252,30 @@ func TestHandleToolsList_RefreshSchemaIncludesReview(t *testing.T) {
 
 func TestHandleToolsList_QuerySchemaIncludesOperationalGate(t *testing.T) {
 	querySchema := mustListToolProperties(t, "haft_query")
-	if _, ok := querySchema["operational_gate"].(map[string]interface{}); !ok {
-		t.Fatalf("haft_query schema missing operational_gate: %#v", querySchema)
+	properties := mustSchemaProperties(t, querySchema["operational_gate"], "operational_gate")
+	for _, key := range []string{"schema_version", "gate_ref", "bearer_ref", "use_context", "rule", "evidence_refs", "expires_at", "reopen_condition"} {
+		if _, ok := properties[key].(map[string]interface{}); !ok {
+			t.Fatalf("operational_gate.%s schema missing or wrong type: %#v", key, properties[key])
+		}
+	}
+}
+
+func TestHandleToolsList_QuerySchemaIncludesContractAudit(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+
+	action, ok := querySchema["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("haft_query action schema missing: %#v", querySchema["action"])
+	}
+	enum, ok := action["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("haft_query action enum missing: %#v", action["enum"])
+	}
+	if !schemaEnumContains(enum, "contract_audit") {
+		t.Fatalf("haft_query action enum missing contract_audit: %#v", enum)
+	}
+	if !schemaEnumContains(enum, "contract_generation") {
+		t.Fatalf("haft_query action enum missing contract_generation: %#v", enum)
 	}
 }
 
@@ -394,7 +448,7 @@ func TestHandleToolsList_DecisionSchemaMarksValidUntilForEvidence(t *testing.T) 
 	}
 
 	description, _ := validUntil["description"].(string)
-	if description != "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)" {
+	if description != "Expiry date" {
 		t.Fatalf("unexpected valid_until description: %q", description)
 	}
 
@@ -422,7 +476,7 @@ func TestHandleToolsList_DecisionSchemaExposesChoiceResult(t *testing.T) {
 	if !ok {
 		t.Fatalf("choice_result.next_move missing or wrong type: %#v", properties["next_move"])
 	}
-	for _, key := range []string{"subject_ref", "option_set", "comparison_basis", "choice_rule", "variant_ref", "problem_refs", "portfolio_ref", "reason"} {
+	for _, key := range []string{"subject_ref", "option_set", "comparison_basis", "choice_rule", "variant_ref", "problem_refs", "portfolio_ref", "reason", "reversibility", "reopen_condition"} {
 		if _, ok := properties[key].(map[string]interface{}); !ok {
 			t.Fatalf("choice_result.%s missing or wrong type: %#v", key, properties[key])
 		}
@@ -452,12 +506,44 @@ func TestHandleToolsList_DecisionSchemaExposesTransformationRecord(t *testing.T)
 		t.Fatalf("transformation_record properties missing or wrong type: %#v", transformationRecord["properties"])
 	}
 
-	for _, key := range []string{"transformed_entity", "initial_state", "post_state", "relation", "context"} {
+	for _, key := range []string{"transformed_entity", "initial_state", "post_state", "relation", "context", "window", "method_refs", "work_refs", "evidence_refs", "publication_refs"} {
 		if _, ok := properties[key].(map[string]interface{}); !ok {
 			t.Fatalf("transformation_record.%s schema missing or wrong type: %#v", key, properties[key])
 		}
 	}
 
+}
+
+func TestHandleToolsList_DecisionSchemaExposesScopeNestedShapes(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+
+	implementationFootprint := mustSchemaProperties(t, decisionSchema["implementation_footprint"], "implementation_footprint")
+	for _, key := range []string{"files", "commits", "work_refs"} {
+		if _, ok := implementationFootprint[key].(map[string]interface{}); !ok {
+			t.Fatalf("implementation_footprint.%s schema missing or wrong type: %#v", key, implementationFootprint[key])
+		}
+	}
+
+	governanceTarget := mustArrayItemProperties(t, decisionSchema["governance_targets"], "governance_targets")
+	for _, key := range []string{"kind", "ref", "binding_target"} {
+		if _, ok := governanceTarget[key].(map[string]interface{}); !ok {
+			t.Fatalf("governance_targets.%s schema missing or wrong type: %#v", key, governanceTarget[key])
+		}
+	}
+
+	driftWatchTarget := mustArrayItemProperties(t, decisionSchema["drift_watch_targets"], "drift_watch_targets")
+	for _, key := range []string{"target_ref", "trigger", "binding_target"} {
+		if _, ok := driftWatchTarget[key].(map[string]interface{}); !ok {
+			t.Fatalf("drift_watch_targets.%s schema missing or wrong type: %#v", key, driftWatchTarget[key])
+		}
+	}
+
+	claim := mustArrayItemProperties(t, decisionSchema["claims"], "claims")
+	for _, key := range []string{"id", "claim", "observable", "threshold", "lifecycle_status", "successor_ref", "retired_reason", "governance_target_refs"} {
+		if _, ok := claim[key].(map[string]interface{}); !ok {
+			t.Fatalf("claims.%s schema missing or wrong type: %#v", key, claim[key])
+		}
+	}
 }
 
 func TestHaftDecisionSchemaExposesTaskContext(t *testing.T) {
@@ -689,7 +775,7 @@ func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
 	}
 
 	description, _ := mode["description"].(string)
-	if description != "(fpf) Experimental retrieval mode; currently supports tree" {
+	if description != "tree mode" {
 		t.Fatalf("unexpected mode description: %q", description)
 	}
 }
@@ -800,7 +886,7 @@ func TestHandleToolsList_QuerySchemaIncludesProjectionView(t *testing.T) {
 	}
 
 	description, _ := view["description"].(string)
-	if description != "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale" {
+	if description != "projection views" {
 		t.Fatalf("unexpected view description: %q", description)
 	}
 }
@@ -814,7 +900,7 @@ func TestHandleToolsList_QuerySchemaIncludesCodeContextLane(t *testing.T) {
 	}
 
 	description, _ := lane["description"].(string)
-	for _, want := range []string{"Progressive disclosure lane", "Default index", "full=true is audit dump"} {
+	for _, want := range []string{"Progressive disclosure lane", "Default index", "full=true audit"} {
 		if !strings.Contains(description, want) {
 			t.Fatalf("lane description missing %q: %q", want, description)
 		}

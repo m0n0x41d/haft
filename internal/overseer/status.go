@@ -50,9 +50,10 @@ func FormatStatusSignals(summary StatusSummary) string {
 
 	sb.WriteString(formatExecutedDisclosure(summary))
 
-	for i, signal := range summary.Signals {
+	signals := compactStatusSignalsForDefault(summary.Signals)
+	for i, signal := range signals {
 		if i >= statusSignalLimit {
-			sb.WriteString(fmt.Sprintf("- **INFO** %d more overseer signal(s) hidden from compact status.\n", len(summary.Signals)-statusSignalLimit))
+			sb.WriteString(fmt.Sprintf("- **INFO** %d more overseer signal(s) hidden from compact status.\n", len(signals)-statusSignalLimit))
 			break
 		}
 		sb.WriteString(formatStatusSignal(signal))
@@ -67,6 +68,114 @@ func FormatStatusSignals(summary StatusSummary) string {
 
 	sb.WriteString("\n")
 	return sb.String()
+}
+
+func compactStatusSignalsForDefault(signals []StatusSignal) []StatusSignal {
+	driftSignals := make([]StatusSignal, 0)
+	staleSignals := make([]StatusSignal, 0)
+	otherSignals := make([]StatusSignal, 0, len(signals))
+	for _, signal := range signals {
+		if isDefaultStatusDriftSignal(signal) {
+			driftSignals = append(driftSignals, signal)
+			continue
+		}
+		if isDefaultStatusStaleSignal(signal) {
+			staleSignals = append(staleSignals, signal)
+			continue
+		}
+		otherSignals = append(otherSignals, signal)
+	}
+	if len(driftSignals) <= 1 && len(staleSignals) <= 1 {
+		return signals
+	}
+
+	if len(driftSignals) > 1 {
+		otherSignals = append(otherSignals, compactDriftStatusSignal(driftSignals))
+	} else {
+		otherSignals = append(otherSignals, driftSignals...)
+	}
+	if len(staleSignals) > 1 {
+		otherSignals = append(otherSignals, compactStaleStatusSignal(staleSignals))
+	} else {
+		otherSignals = append(otherSignals, staleSignals...)
+	}
+	otherSignals = normalizeStatusSignals(otherSignals)
+	return otherSignals
+}
+
+func isDefaultStatusDriftSignal(signal StatusSignal) bool {
+	switch strings.TrimSpace(signal.Source) {
+	case maintenanceSourceDrift, "scoped_drift":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDefaultStatusStaleSignal(signal StatusSignal) bool {
+	switch strings.TrimSpace(signal.Source) {
+	case maintenanceSourceStale, "scoped_stale":
+		return true
+	default:
+		return false
+	}
+}
+
+func compactDriftStatusSignal(signals []StatusSignal) StatusSignal {
+	severity := "medium"
+	confirmRequired := 0
+	reviewRequired := 0
+	for _, signal := range signals {
+		if severityRank(signal.Severity) < severityRank(severity) {
+			severity = signal.Severity
+		}
+		title := strings.ToLower(signal.Title)
+		if strings.Contains(title, "requires confirmation") {
+			confirmRequired++
+			continue
+		}
+		reviewRequired++
+	}
+
+	title := fmt.Sprintf("Drift grouped for review: %d item(s)", len(signals))
+	if confirmRequired > 0 {
+		title = fmt.Sprintf("Drift requires confirmation: %d item(s) grouped", confirmRequired)
+		if reviewRequired > 0 {
+			title += fmt.Sprintf(", %d more need review", reviewRequired)
+		}
+	}
+
+	return StatusSignal{
+		Severity: severity,
+		Source:   maintenanceSourceDrift,
+		Title:    title,
+		Detail:   "compact status groups per-decision drift; inspect exact items with `haft overseer maintain --json`, `haft overseer judgment --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
+	}
+}
+
+func compactStaleStatusSignal(signals []StatusSignal) StatusSignal {
+	severity := "medium"
+	atRisk := 0
+	for _, signal := range signals {
+		if severityRank(signal.Severity) < severityRank(severity) {
+			severity = signal.Severity
+		}
+		if strings.Contains(strings.ToLower(signal.Detail), "at risk") {
+			atRisk++
+		}
+	}
+
+	title := fmt.Sprintf("Stale governance artifacts: %d item(s) grouped", len(signals))
+	if atRisk > 0 {
+		title += fmt.Sprintf(", %d at risk", atRisk)
+	}
+
+	return StatusSignal{
+		Severity: severity,
+		Source:   maintenanceSourceStale,
+		Title:    title,
+		Detail:   "compact status groups per-decision stale findings; inspect exact items with `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"review\")`, or `haft overseer maintain --json`",
+	}
 }
 
 const executedDisclosureLimit = 5

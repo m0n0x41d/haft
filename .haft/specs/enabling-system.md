@@ -63,7 +63,7 @@ or mutate raw persistence as an alternate authority path.
 - Governor owns freshness scans, drift detection, stale evidence reporting,
   impact propagation, and problem surfacing.
 - Surfaces own operator interaction through CLI, MCP, skills/slash commands,
-  and desktop views. Surfaces present and route kernel results; they do not
+  and operator-facing views. Surfaces present and route kernel results; they do not
   become independent governance authority.
 
 ### Dependency Rule
@@ -118,13 +118,23 @@ intention is not enough to create authority-bearing state.
   weakest links. The close check is kernel creation of a stable `sol-*`
   artifact with variant identities.
 - DecisionRecords are produced only after explicit human invocation of
-  `/h-decide` or an equivalent manual CLI/MCP command. The close check is a
-  stable `dec-*` artifact with invariants, affected files, predictions,
-  rollback, and refresh triggers.
+  `/h-decide` or an equivalent operator-authorized host workflow. MCP may carry
+  that workflow result, but the current transport does not provide a
+  kernel-verifiable authorization receipt. The close check is a stable `dec-*`
+  artifact with invariants, affected files, predictions, rollback, and refresh
+  triggers.
 - WorkCommissions are produced only after explicit human invocation of
-  `/h-commission` or an equivalent manual CLI/MCP command against an admissible
-  DecisionRecord. The close check is a stable `wc-*` artifact with scope,
-  autonomy envelope, delivery policy, and evidence requirements.
+  `/h-commission` or an equivalent operator-authorized host workflow against an
+  admissible DecisionRecord. MCP may carry that workflow result, but the current
+  transport does not provide a kernel-verifiable authorization receipt. The
+  close check is a stable `wc-*` artifact with scope, autonomy envelope,
+  delivery policy, and evidence requirements.
+- Baseline-shaped records are projected through a `BaselineKind` compatibility
+  layer before stronger use. `SpecSectionApprovalBaseline`,
+  `PreWorkReferenceSnapshot`, and `VerifiedStateSnapshot` remain distinct; an
+  unknown legacy baseline remains explicitly unknown rather than being guessed.
+  The close check is typed baseline posture in exact/drill-down views without a
+  new compact status lane.
 - RuntimeRuns are produced by Flow-layer harness execution from an admissible
   WorkCommission. The close check is a terminal run or commission verdict plus
   preserved workspace/result evidence.
@@ -252,10 +262,15 @@ governance surfaces until their runtime contracts are verified.
 ### Human Gates
 
 - DecisionRecords require explicit human invocation of `/h-decide` or an
-  equivalent manual CLI/MCP action.
+  equivalent operator-authorized host workflow.
 - WorkCommissions require explicit human invocation of `/h-commission` or an
-  equivalent manual CLI/MCP action.
-- SpecSection baselines require human review followed by approve or rebaseline.
+  equivalent operator-authorized host workflow.
+- SpecSection baselines require human review followed by approve or rebaseline
+  through an operator-authorized host workflow.
+- Model-supplied MCP arguments or prompt text are not proof of operator
+  authorization.
+- Baseline type details belong in exact/drill-down projections unless the
+  baseline posture blocks a current use; default status remains compact.
 - Product scope, external promises, security/compliance/legal/finance/privacy
   choices, destructive migrations, and public interface changes remain human
   decisions.
@@ -302,7 +317,7 @@ delivery policy. It is not the RuntimeRun and does not execute by itself.
 ### Creation Rules
 
 - WorkCommissions require explicit human invocation of `/h-commission` or an
-  equivalent manual CLI/MCP action.
+  equivalent operator-authorized host workflow.
 - A commission must reference an active DecisionRecord. Stale, superseded,
   deprecated, drifted, or low-evidence decisions require operator review before
   commissioning.
@@ -355,10 +370,10 @@ evidence_required:
 ```
 
 The harness runtime executes WorkCommissions; it does not create product
-authority or decide that work should exist. CLI and desktop/operator surfaces
-own starting, observing, stopping, applying, requeueing, and cancelling runtime
-work. The MCP plugin may expose typed state transitions and projections, but it
-must not become the owner of unattended long-running execution.
+authority or decide that work should exist. CLI and operator-facing surfaces own
+starting, observing, stopping, applying, requeueing, and cancelling runtime work.
+The MCP plugin may expose typed state transitions and projections, but it must
+not become the owner of unattended long-running execution.
 
 ### Lifecycle Rules
 

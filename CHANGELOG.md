@@ -6,6 +6,96 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
+  carries explicit source provenance for source kind, edition/hash,
+  profile-validity, normativity, schema version, and retrieval mode while
+  compact text stays compact. MethodPack definitions/cards now carry
+  `source_posture` metadata and MCP pull/show responses label method cards as
+  non-normative support carriers, so task-local method guidance cannot
+  masquerade as authoritative FPF source material.
+- **Read-only interface contract audit.** Added
+  `haft interface contract-audit --json`, `haft_query(action="contract_audit")`,
+  and `haft interface query.contract_audit` as a Phase F0 audit surface over the
+  kernel-owned `haft interface` catalog. The report classifies contract sources,
+  MCP schema posture, CLI availability, binding-sensitive authority posture,
+  validation refs, and documented legacy transport exceptions without generating
+  schemas or changing binding authority.
+- **MCP schema validation guard.** Exposed the MCP server's compact tool catalog
+  through a pure `ToolCatalog()` method and added a contract test that compares
+  every MCP tool/action declared by `haftInterfaceCatalog()` against the
+  `tools/list` action enums. This is the first Phase F1 validation step: it
+  catches host-schema drift before generated schemas exist and does not change
+  default status or binding authority.
+- **MCP schema property guard.** Added a second contract test that compares
+  top-level required/optional fields declared by `haftInterfaceCatalog()` with
+  the advertised MCP `tools/list` schema properties. The guard caught stale
+  `haft_decision` schema coverage for decision subject, scope, binding target,
+  drift-watch, footprint, and claim fields; those fields are now advertised as
+  compact properties while the tools/list budget test remains green.
+- **Contract audit schema coverage.** `haft interface contract-audit --json`
+  and `haft_query(action="contract_audit")` now include per-surface
+  `schema_coverage` plus summary counts for covered surfaces, missing schema
+  surfaces, and explicit compatibility exclusions. Agents can inspect schema
+  drift posture from a read-only drill-down instead of inferring it from tests
+  or expanding default status.
+- **Contract audit nested shape coverage.** The contract audit drill-down now
+  compares input-like `field_shapes` with nested MCP schema properties and
+  reports `shape_coverage` per surface plus covered/missing/skipped shape
+  counts. Output-only shapes are skipped explicitly; missing nested fields are
+  exposed as generator targets without changing runtime behavior or binding
+  authority.
+- **Contract audit dynamic shape classification.** The nested-shape audit now
+  treats `solution.compare` score variant IDs as an explicit dynamic-shape
+  skip instead of a false missing-schema finding. Real nested generator targets
+  remain visible for decision scope/claim shapes and spec-use operational gate
+  shapes, while the MCP `tools/list` context-budget guard remains green.
+- **Contract audit generator-target classification.** Remaining real nested
+  shape gaps are now classified as explicit `generator_targets` instead of
+  `missing_shape_fields`. The report surfaces generator target fields and
+  summary counts for `decision.decide` scope/claim/footprint shapes and
+  `query.spec_use` operational-gate shapes, keeping schema drift visible
+  without bloating MCP `tools/list` or treating planned generation work as a
+  failing audit.
+- **Contract generation target manifest.** Added the read-only
+  `haft interface contract-generation --json` /
+  `haft_query(action="contract_generation")` manifest. It derives the remaining
+  nested schema generator targets from the kernel interface catalog and
+  contract audit, exposes a stable source digest plus field-level target list,
+  and preserves the boundary that schema visibility is not operator
+  authorization, evidence, or gate passage.
+- **Nested MCP schema coverage for current generator targets.** The current
+  `decision.decide` scope/claim/footprint shapes and `query.spec_use`
+  operational-gate shape now have explicit nested MCP schema properties. The
+  contract audit reports zero remaining generator target surfaces, and the
+  contract generation manifest returns an empty queue while the `tools/list`
+  context-budget guard remains green.
+- **Contract audit host-fragment posture.** The interface contract audit now
+  labels every surface with `contract_source_posture` and `host_schema_posture`
+  so MCP/CLI fragments are mechanically classified as kernel-catalog source,
+  validated MCP mirror, validated MCP mirror with generator targets, or manual
+  CLI contract. The report summarizes validated mirrors, manual contracts, and
+  unvalidated host fragments while staying a read-only drill-down.
+- **Spec review interface discovery.** Added `haft interface
+  query.spec_review --json` as the discoverable contract for the existing
+  advisory `haft_query(action="spec_review")` / `haft spec review --json`
+  surface. The contract names the semantic review v2 profile, advisory-only
+  authority boundary, claim/state-reading cues, and stronger-use abstain/block
+  posture without adding a new MCP action.
+- **DriftEvent resolution metadata ledger.** Added a non-binding DriftEvent
+  resolution overlay with `resolved` and scoped `waived_until` records. The new
+  `haft drift events resolve EVENT_ID --status ... --reason ...` path writes a
+  local resolution ledger, and `haft drift events --resolution-ledger ...`
+  overlays that metadata into the report without changing DecisionRecord
+  status, lineage, baselines, evidence, gates, or carrier authority.
+- **Non-markdown semantic target evaluator markers.** Explicit
+  `api_contract`, `invariant`, and `spec_section` binding targets can now attach
+  bounded evaluator hashes from exact `haft-target: <target_ref>` markers in
+  non-markdown carriers. This keeps semantic drift scoped to the declared target
+  block and preserves fail-closed `needs_binding_resolution` behavior when no
+  marker, markdown heading, fenced spec-section, or explicit hash exists.
+
 ### Fixed
 
 - **Symbol-aware drift noise budget.** Decision drift now records additive
@@ -13,7 +103,156 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   symbol changes from adjacent file churn, carrier-only edits, generated/local
   runtime noise, and unknown legacy file-scope baselines, and keeps compact
   status focused on material drift while grouping audit-only fan-out into one
-  trigger-path summary line.
+  trigger-path summary line. Symbol `binding_targets` now compare their own
+  `body_hash` and receiver identity directly, so receiver methods such as
+  `SQLiteBaselineStore.Get` and `MemoryBaselineStore.Get` no longer collapse
+  through the legacy receiver-less `affected_symbols` projection.
+- **Read-only DriftEvent aggregation.** Added `haft drift events` / `--json`
+  and `haft_query(action="drift_events")` as a read-only projection over
+  existing per-decision drift reports. The projection groups drift by
+  file-level changed target, trigger, and materiality, exposes `fanout` and
+  `impacted_decisions`, preserves the old `DriftReport` shape as
+  `compatibility_reports`, and keeps symbol details inside source items instead
+  of multiplying one file change into dozens of top-level events. Compact
+  `h-status` now renders unique DriftEvents, impacted decision count, and max
+  fanout while leaving full status and refresh scan compatibility reports
+  available as drill-downs. DriftEvent drill-downs now also expose
+  `needs_binding_resolution_events` plus `fallback_kind` / `fallback_reason`
+  when an unresolved whole-file or imprecise binding must be fixed before the
+  event is treated as proved material authority drift. DriftEvent JSON is now
+  schema v2: symbol-level changed targets are used when material symbol evidence
+  exists, file targets remain a labeled fallback, and events carry
+  machine-readable `root_cause`, `root_cause_detail`, summary counts for
+  semantic targets / file fallback / unknown high-risk events, and
+  `resolution_status` values such as `needs_scope_enrichment`,
+  `needs_rebaseline`, `needs_operator_judgment`, and `resolved`. Events now
+  include read-only `suggested_next_command` hints that point to drill-down or
+  review surfaces such as `haft decision reconcile --json` or
+  `haft_refresh(action="review")`; the hint is not evidence, approval, or a
+  mutation. Scope-manifest drift now reports `root_cause=schema_changed` while
+  preserving audit-only/resolved posture for additive schema/scope cues.
+- **Read-only DecisionReconciliationPlan.** Added `haft decision reconcile` /
+  `--json`, `haft_query(action="decision_reconcile")`, and
+  `haft interface query.decision_reconcile` as a deterministic report-only
+  authority-frontier projection. It groups active/refresh_due decisions only
+  when an explicit `decision_subject_ref`, bounded context, and explicit
+  governance-target overlap are present; shared `affected_files` remain
+  implementation-footprint hints and never become merge/supersede evidence by
+  themselves. Reconciliation and current-governing-set drill-downs now expose
+  `scope_enrichment_candidates`, `scope_enrichment_sets`,
+  `fallback_target_sets`, and `scope_repair_hints` so old decisions with
+  missing subjects, missing targets, or whole-file fallback posture point to
+  an operator-approved `enrich_scope` repair path without mutating lineage.
+  Each reconciliation group now also carries a read-only `preview` diff with
+  current/proposed status or scope effects, required selection fields, downstream
+  review cues, and an explicit mutation boundary so agents can show an
+  approveable packet before any `apply` document is used. Preview records now
+  include `validation_notes` that explain apply-readiness, missing successor
+  or scope requirements, and judgment-only conflict cases without creating a
+  selection document or authorizing mutation. Preview records also include
+  read-only `downstream_impact` counts and dependent refs from links/backlinks
+  so successor/retire/merge reviews can see what would need relinking or
+  follow-up before apply; the report itself does not relink anything.
+- **Decision reconciliation apply path.** Added
+  `haft decision reconcile apply SELECTION.json` as an explicit CLI-only
+  lineage mutation path for reviewed selections. Selection documents must carry
+  `authority=operator_approved_reconciliation_selection`,
+  `operator_approval_ref`, `reviewed_group_id`, affected decisions, operation,
+  and reason; successor-based operations require an already-created successor
+  DecisionRecord. The validator checks the whole batch before mutating, and MCP
+  still has only the read-only `decision_reconcile` planning action in this
+  slice.
+- **Decision scope enrichment apply path.** The same operator-approved
+  reconciliation apply document now supports `operation=enrich_scope` for
+  precision enrichment of old DecisionRecords. The operation requires exactly
+  one decision plus `decision_subject_ref` and governance or drift-watch
+  targets, can attach claim governance refs, validates the whole batch before
+  mutation, and updates only scope fields without changing status, lineage,
+  evidence, baselines, or gates. Reconciliation/governing-set projections now
+  read semantic governance/watch target refs even when no concrete code binding
+  target is present yet.
+- **Decision scope split.** DecisionRecords can now carry additive
+  `implementation_footprint`, `governance_targets`, and `drift_watch_targets`
+  alongside legacy `affected_files` / `binding_targets`. Drift detection uses
+  watch targets first, governance targets second, legacy binding targets third,
+  and treats explicit footprint-only files as provenance rather than governance
+  drift authority. Binding targets now expose an explicit resolver strategy
+  order, a supported-language matrix, `target_ref` for explicit semantic
+  targets, and semantic target kinds (`api_contract`, `invariant`,
+  `spec_section`) that do not require a file path. Receiver-qualified symbol
+  targets remain distinct during normalization, and whole-file fallback carries
+  an explicit low-confidence resolution source. Explicit semantic targets with
+  concrete carrier/range hashes now participate in drift evaluation:
+  unchanged normalized carrier text is audit-only, changed semantic target text
+  is `material_semantic_target`, and semantic targets without evaluator hashes
+  fail closed as `needs_binding_resolution`. Explicit semantic targets that
+  point at an unambiguous markdown heading or fenced `yaml spec-section` id now
+  auto-attach bounded line ranges and text hashes, so edits outside the governed
+  section remain audit-only while section body changes are material semantic
+  drift. When an auto-attached semantic target disappears from its carrier,
+  DriftEvent now keys the event by the semantic target and reports
+  `target_status=removed` with `root_cause=target_deleted` instead of treating
+  the change as anonymous file fallback. Unsupported-language fallback now has
+  matrix fixtures proving `.rb`, `.java`, and `.php` changes stay labeled as
+  low-confidence whole-file fallback and drift to `needs_binding_resolution`,
+  not material symbol drift. New DecisionRecords with `affected_files` now
+  auto-enrich `binding_targets` at creation time when the resolver can safely
+  pick a precise target; ambiguous multi-symbol files remain unenriched instead
+  of blocking `decide` or inventing a whole-file fallback. Markdown-heading
+  evaluator fixtures now cover `api_contract` and `invariant` targets as well
+  as fenced spec sections, proving bounded drift classification is available
+  for all explicit semantic target kinds when the carrier exposes an
+  unambiguous heading. Exact moved-symbol continuity now recognizes a governed
+  symbol target whose original file disappears but whose same kind/name/receiver
+  and body hash appears in another source file, producing a target-level
+  DriftEvent with `target_status=renamed` and `root_cause=target_renamed`.
+  Edited same-identity moves now surface as
+  `target_status=retarget_candidate`,
+  `fallback_kind=edited_symbol_move_candidate`,
+  `root_cause=retarget_candidate`, and
+  `resolution_status=needs_operator_judgment` instead of silently preserving
+  authority or retargeting the DecisionRecord.
+  Legacy decisions without the new fields keep their existing drift behavior.
+- **Read-only CurrentGoverningSet.** Added
+  `haft decision governing-set` / `--json`,
+  `haft_query(action="governing_set")`, and
+  `haft interface query.governing_set` as a derived current-authority frontier.
+  It groups active/refresh_due decisions by decision subject, bounded context,
+  and effective governance/drift target; terminal decisions remain searchable
+  history refs instead of live authority, and overlaps or explicit conflicts
+  surface as operator-review cues without lineage, baseline, evidence, or gate
+  mutations. The governing-set drill-down now supports focused read-only
+  filters: CLI `--query`, `--subject-ref`, and `--target-ref`, plus MCP
+  `query`, `bearer_ref`, and `source_refs`, so agents can answer "what
+  currently governs this symbol/contract/spec section?" without expanding
+  default status.
+- **Read-only reconciliation cues in status/governor.** Status data now derives
+  a compact `ReconciliationCueReport` from DriftEvents,
+  DecisionReconciliationPlan, and CurrentGoverningSet. Default cockpit status
+  and prompt-governor status can point to high-fanout drift events,
+  reconciliation candidates, and current-authority conflicts with drill-down
+  commands, while keeping lineage apply, baseline, evidence, and gate mutation
+  paths separate and operator-approved.
+- **Compact governor drift policy.** The prompt-governor status path now reports
+  drift as unique DriftEvents with impacted decision count and max fanout
+  instead of emitting one attention row per drifted DecisionRecord. Governor
+  attention keeps a single drift-events drill-down line, preserving the
+  evidence-debt cue without multiplying shared-file fanout into prompt noise.
+- **Compact overseer status grouping.** `haft overseer status` now keeps the
+  autonomous-maintenance undo disclosure visible while grouping per-decision
+  drift and stale findings into compact category lines with exact drill-down
+  commands. The detailed decision-level items remain available through
+  `haft overseer maintain --json`, `haft overseer judgment --json`,
+  `haft_refresh(action="scan", verbose=true)`, and
+  `haft_refresh(action="review")`.
+- **Claim-level lifecycle v1.** `DecisionClaim` now supports additive
+  `lifecycle_status`, `successor_ref`, `retired_reason`, and
+  `governance_target_refs` fields. Empty legacy lifecycle reads as active
+  without forcing old records to persist `active`; explicit `claims` can be
+  supplied through the decision input-file path, with `predictions` retained as
+  a compatibility projection. Decision reconciliation items include a
+  read-only claim lifecycle summary so partial claim retirement/supersession is
+  visible without retiring the whole DecisionRecord.
 - **Overseer drift auto-baseline safety.** Maintenance planning now uses drift
   materiality and decision health before proposing deterministic rebaseline:
   only proven non-material churn can auto-resolve, while material symbol drift
@@ -22,6 +261,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   preserves the host Go module cache before switching `HOME` to a temp project,
   avoiding false timeouts from cold `modernc.org/sqlite` downloads while still
   keeping the build cache and project root isolated.
+- **BaselineKind compatibility layer.** SpecSection lifecycle and
+  approve/rebaseline/reopen JSON projections now expose
+  `baseline_kind=spec_section_approval_baseline`, while legacy untyped baseline
+  posture has an explicit `unknown_legacy_baseline` parser representation.
+  This starts the baseline split without a storage migration or new compact
+  status lane.
+- **Typed baseline snapshot split.** Spec lifecycle writes now go through
+  `SpecSectionApprovalBaseline`, while `PreWorkReferenceSnapshot` and
+  `VerifiedStateSnapshot` are separate typed objects that cannot be written to
+  `spec_section_baselines` through the normal store boundary. Drill-down
+  lifecycle and mutation JSON include `baseline_profile` so approval baselines,
+  work-reference snapshots, verified-state evidence, and unknown legacy
+  posture remain distinguishable.
+- **Carrier authority manifest.** Added `haft carrier manifest` /
+  `--json` as an explicit drill-down over current authority, support,
+  compatibility, provenance, archive, and sidekick carriers. The manifest keeps
+  `/h-reason` as a current umbrella skill, marks Pi as compatibility packaging,
+  and labels standalone/TUI/desktop/Open-Sleigh surfaces as non-current so they
+  do not re-enter the product model through stale carriers.
+- **Carrier semio guard.** Added `haft carrier check` / `--json` as a focused
+  fixed-point wording check over current/support/compat carrier text. It fails
+  dead standalone/TUI/desktop runtime-surface mentions that are not explicitly
+  labeled dropped, archive, provenance, support, or not-current, while keeping
+  default status free of carrier-manifest noise. MCP parity is available through
+  read-only `haft_query(action="carrier_manifest")` and
+  `haft_query(action="carrier_check")` drill-down actions, and `haft interface`
+  documents both carrier query contracts as read-only, non-status surfaces.
+- **MCP binding authority boundary.** MCP dispatch now fails binding governance
+  acts closed by default with a structured `operator_confirmation_required`
+  response: `haft_decision(action="decide")`, WorkCommission creation actions,
+  `haft_spec_section(approve|rebaseline|reopen)`, and authority-changing
+  `haft_refresh(waive|reopen|supersede|deprecate)` no longer treat
+  model-supplied arguments as proof of operator authorization. Manual CLI/host
+  paths remain the binding path; an additive authorization receipt model now
+  names `manual_cli` as the only v1-valid receipt kind and marks MCP
+  receipt-backed binding unsupported until a future host verifier exists. MCP
+  tool/interface descriptions now state that boundary.
+- **Binding surface inventory guard.** MCP binding-gate enforcement now reads a
+  classified inventory of read-only, draft, evidence-recording, binding,
+  lifecycle, and execution-authority surfaces. Focused tests keep known
+  authority mutations covered by `operator_confirmation_required` and scan the
+  README, target/enabling specs, h-decide/h-commission skills, and tool
+  descriptions for wording that would imply model-supplied prompt text is proof
+  of operator authorization.
+- **Formality F0-F9 preservation.** Evidence formality now preserves the
+  current FPF F0-F9 ordinal directly instead of folding F4-F9 values into the
+  old F0-F3 scale. Legacy F0-F3 records remain readable as lower-scale values,
+  while out-of-range inputs clamp only at the scale endpoints.
+- **Versioned formality scale metadata.** Evidence items now carry explicit
+  `formality_scale` / `formality_bridge` metadata alongside the legacy
+  `formality_level` projection. New evidence writes use
+  `fpf-2026-f0-f9`; legacy unversioned F0-F3 rows are surfaced as
+  `haft-legacy-f0-f3` with a loss-bearing bridge instead of being silently
+  promoted. EvidencePath records expose the scale while preserving the existing
+  `not_approval` / `not_gate_decision` / `not_global_truth` authority boundary.
 - **OperationalGate admission posture.** `require_current_source_and_admitted_use`
   now passes only for current-source stronger-use admission; documentary-only
   reading and temporary waiver admission remain admitted/waived for their own
@@ -56,10 +350,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Symbol-precise decision binding.** Decision baselines now resolve
+  code-governing `affected_files` through an additive `binding_targets` model:
+  supported languages prefer symbol targets, no-symbol source falls back to a
+  stable range target, explicit module/whole-file scope is typed, and
+  whole-file fallback records why narrower binding failed. Drift now separates
+  unresolved whole-file fallback into a compact needs-binding lane instead of
+  treating it as proved material symbol drift.
 - **Legacy decision symbol-binding dry-run.** `haft drift bindings` now reports
   active decisions with broad file baselines and proposes read-only symbol
   binding candidates, separating high-confidence rebaseline proposals from
-  ambiguous cases that still need operator symbol-boundary selection.
+  ambiguous cases that still need explicit symbol-boundary selection.
+  `--apply-high-confidence` persists resolver-proven binding targets when the
+  safe set is non-empty, and `--apply-selection <json>` lets an agent apply a
+  reviewed selection document deterministically without changing evidence,
+  approvals, file hashes, or markdown carriers. Haft's own dogfood batches now
+  bind six historical decisions to explicit symbol targets, reducing unresolved
+  legacy selection cases from 35 to 29.
 - **OperationalGate v1 for spec use.** `SpecificationUseRecord` can now include
   an explicit read-only OperationalGate profile and derived gate decision for a
   declared use context. CLI callers pass `haft spec use --gate-file <json>`;
@@ -140,6 +447,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carrier kind compatibility fallback. `haft spec review --json` reports that
   frame and frame diagnostics now compare declared target/enabling frame against
   the carrier frame instead of inferring authority from TS/ES or kind prefixes.
+  The parser and review profile now also support typed `carrier` and `sidekick`
+  frames, with `publication_system` and `external_system` normalized to those
+  canonical frame kinds.
 - **ProblemCard C.22.2 profile fields.** Problem framing now records
   cue/thin/deep profile level, source posture, why-now, scope, acceptance
   probe, freshness disposition, computed P2W readiness, and blockers. Wish,
@@ -148,17 +458,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   labels without changing compact defaults.
 - **TransformationRecord v1 compatibility payload.** `DecisionRecord`
   structured data may now carry an explicit `transformation_record` describing
-  the transformed entity, initial state, post state, relation, and context.
-  The field is validated and discoverable through `haft_decision` and
-  `haft interface decision.decide --json`, but no record is synthesized from
-  legacy prose, post-conditions, method runs, WorkCommissions, evidence, or
-  publication units.
+  the transformed entity, initial state, post state, relation, context/window,
+  and outward method/work/evidence/publication refs. The field is validated and
+  discoverable through `haft_decision` and `haft interface decision.decide
+  --json`, but no record is synthesized from legacy prose, post-conditions,
+  method runs, WorkCommissions, evidence, or publication units, and refs do not
+  prove occurrence, approval, evidence truth, or publication.
 - **ChoiceRecord C.11 compatibility fields.** The existing `choice_result`
   payload now carries explicit C.11 fields for subject, option set, comparison
-  basis, choice rule, and next move. Fresh h-decide DecisionRecords populate
-  option/basis/rule fields from explicit DRR inputs, while legacy or minimal
-  `choice_result` carriers continue to parse as compatibility projections and
-  no ComparisonResult `selected_ref` is promoted into a bound choice.
+  basis, choice rule, next move, reversibility, and reopen condition. Fresh
+  h-decide DecisionRecords populate option/basis/rule fields from explicit DRR
+  inputs and derive `reopen_condition` from rollback triggers when no explicit
+  `choice_result` is supplied. Explicit `choice_result` carriers persist
+  `reversibility` and `reopen_condition` through CLI/MCP paths; legacy or
+  minimal carriers continue to parse as compatibility projections and no
+  ComparisonResult `selected_ref` is promoted into a bound choice.
 - **StateReadings v1 for spec semantic review.** `haft spec review --json`
   now emits per-section `state_reading` objects that name the reading profile,
   bearer, frame, use, reading, and reopen condition. The compact text summary
@@ -170,7 +484,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   ClaimRegister, SystemReferenceFrame, and StateReadings signals, preserves
   PublicationUnit and TransformationRecord authority boundaries, and blocks
   high-risk licensing/legal/compliance/privacy/security sections from stronger
-  use until explicit L/A/D/E claims and support refs exist.
+  use until explicit L/A/D/E claims and support refs exist. Findings now carry
+  an explicit `category` such as `claim_posture`, `publication_boundary`,
+  `frame`, or `unknown_abstain`, so agents can route review input without
+  treating the finding as evidence, approval, GateDecision, or
+  SpecUseAdmission.
 - **SpecificationUseRecord v1.** `haft spec use SECTION_ID` and
   `haft_query(action="spec_use")` now build a read-only spec-use admission
   record for a declared use context and policy. The payload separates source

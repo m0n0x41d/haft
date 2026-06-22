@@ -3,6 +3,8 @@ package artifact
 import (
 	"testing"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 func TestBuildEvidencePathRecordAllowsOnlyBoundedReliance(t *testing.T) {
@@ -31,6 +33,43 @@ func TestBuildEvidencePathRecordAllowsOnlyBoundedReliance(t *testing.T) {
 	}
 	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("authority_boundary = %+v, want not global truth", record.AuthorityBoundary)
+	}
+}
+
+func TestBuildEvidencePathRecordKeepsFormalitySeparateFromAuthority(t *testing.T) {
+	item := evidencePathItem()
+	scale := reff.CurrentFormalityScale(9)
+	item.FormalityLevel = 9
+	item.FormalityScale = &scale
+
+	record := BuildEvidencePathRecord(
+		EvidencePathInput{
+			ArtifactRef:  "dec-1",
+			EvidenceRef:  "evid-1",
+			ClaimRef:     "claim-1",
+			AttemptedUse: "commission preflight",
+			ProducerRef:  "agent:local",
+			MethodRef:    "mpull-1",
+			WorkRef:      "wc-1",
+		},
+		item,
+		evidencePathNow(),
+	)
+
+	if record.Evidence.FormalityScale == nil {
+		t.Fatal("formality scale missing")
+	}
+	if record.Evidence.FormalityScale.ScaleID != reff.FormalityScaleCurrent {
+		t.Fatalf("scale = %q", record.Evidence.FormalityScale.ScaleID)
+	}
+	if record.AuthorityBoundary.Approval != EvidenceBoundaryNotApproval {
+		t.Fatalf("approval boundary = %q", record.AuthorityBoundary.Approval)
+	}
+	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
+		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
+	}
+	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
+		t.Fatalf("global truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
 	}
 }
 

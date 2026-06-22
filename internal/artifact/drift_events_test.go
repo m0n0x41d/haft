@@ -1,0 +1,329 @@
+package artifact
+
+import (
+	"testing"
+	"time"
+)
+
+func TestBuildDriftEventReportGroupsSharedFileFanout(t *testing.T) {
+	reports := []DriftReport{
+		{
+			DecisionID:    "dec-1",
+			DecisionTitle: "First decision",
+			Files: []DriftItem{{
+				Path:        "shared.go",
+				Status:      DriftModified,
+				TriggerKind: DriftTriggerFileHash,
+				Materiality: DriftMaterialityMaterialSymbol,
+			}},
+		},
+		{
+			DecisionID:    "dec-2",
+			DecisionTitle: "Second decision",
+			Files: []DriftItem{{
+				Path:        "shared.go",
+				Status:      DriftModified,
+				TriggerKind: DriftTriggerFileHash,
+				Materiality: DriftMaterialityMaterialSymbol,
+			}},
+		},
+	}
+
+	report := BuildDriftEventReport(reports)
+
+	if report.SchemaVersion != 2 {
+		t.Fatalf("schema_version = %d, want 2", report.SchemaVersion)
+	}
+	if report.Summary.UniqueEvents != 1 {
+		t.Fatalf("unique_events = %d, want 1", report.Summary.UniqueEvents)
+	}
+	if report.Summary.ImpactedDecisions != 2 {
+		t.Fatalf("impacted_decisions = %d, want 2", report.Summary.ImpactedDecisions)
+	}
+	if len(report.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(report.Events))
+	}
+	event := report.Events[0]
+	if event.Fanout != 2 {
+		t.Fatalf("fanout = %d, want 2", event.Fanout)
+	}
+	if event.ChangedTargetRef != "file:shared.go" {
+		t.Fatalf("changed_target_ref = %q", event.ChangedTargetRef)
+	}
+	if event.ResolutionStatus != DriftEventResolutionNeedsOperatorJudgment {
+		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsOperatorJudgment)
+	}
+	if event.SuggestedNextCommand != `haft_refresh(action="review")` {
+		t.Fatalf("suggested_next_command = %q, want review", event.SuggestedNextCommand)
+	}
+	if len(event.ImpactedDecisions) != 2 {
+		t.Fatalf("impacted decisions = %#v", event.ImpactedDecisions)
+	}
+}
+
+func TestBuildDriftEventReportUsesSymbolTargetWhenMaterialSymbolKnown(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "shared.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerFileHash,
+			Materiality: DriftMaterialityMaterialSymbol,
+			Symbols: []SymbolDriftItem{
+				{SymbolName: "Run", SymbolKind: "func", Status: "modified"},
+				{SymbolName: "Stop", SymbolKind: "func", Status: "removed"},
+			},
+		}},
+	}})
+
+	if report.Summary.UniqueEvents != 2 {
+		t.Fatalf("unique_events = %d, want 2", report.Summary.UniqueEvents)
+	}
+	if report.Summary.SemanticTargetEvents != 2 {
+		t.Fatalf("semantic_target_events = %d, want 2", report.Summary.SemanticTargetEvents)
+	}
+	event := report.Events[0]
+	if event.TargetKind != "symbol" {
+		t.Fatalf("target_kind = %q, want symbol", event.TargetKind)
+	}
+	if event.RootCause != DriftEventRootCauseSemanticTargetChanged && event.RootCause != DriftEventRootCauseTargetDeleted {
+		t.Fatalf("root_cause = %q, want semantic_target_changed or target_deleted", event.RootCause)
+	}
+	if event.ResolutionStatus != DriftEventResolutionNeedsOperatorJudgment {
+		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsOperatorJudgment)
+	}
+	if len(event.SourceItems) != 1 || len(event.SourceItems[0].Symbols) != 2 {
+		t.Fatalf("source items should preserve symbol details: %#v", event.SourceItems)
+	}
+}
+
+func TestBuildDriftEventReportClassifiesAuditOnlyEvents(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:             "README.md",
+			Status:           DriftModified,
+			TriggerKind:      DriftTriggerFileHash,
+			Materiality:      DriftMaterialityCarrierOnly,
+			AuditOnly:        true,
+			SuppressedReason: "carrier path changed; no code-object symbol drift",
+		}},
+	}})
+
+	if report.Summary.AuditOnlyEvents != 1 {
+		t.Fatalf("audit_only_events = %d, want 1", report.Summary.AuditOnlyEvents)
+	}
+	if report.Summary.MaterialEvents != 0 {
+		t.Fatalf("material_events = %d, want 0", report.Summary.MaterialEvents)
+	}
+	if got := report.Events[0].ResolutionStatus; got != DriftEventResolutionResolved {
+		t.Fatalf("resolution_status = %q, want %s", got, DriftEventResolutionResolved)
+	}
+	if got := report.Events[0].RootCause; got != DriftEventRootCauseCarrierOnlyChanged {
+		t.Fatalf("root_cause = %q, want %s", got, DriftEventRootCauseCarrierOnlyChanged)
+	}
+	if !report.Events[0].AuditOnly {
+		t.Fatal("event should be audit_only")
+	}
+}
+
+func TestBuildDriftEventReportClassifiesScopeManifestAsSchemaChanged(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "internal/new_route.go",
+			Status:      DriftAdded,
+			TriggerKind: DriftTriggerScopeManifest,
+			Materiality: DriftMaterialityAdjacentFileChurn,
+			AuditOnly:   true,
+		}},
+	}})
+
+	if report.Summary.AuditOnlyEvents != 1 {
+		t.Fatalf("audit_only_events = %d, want 1", report.Summary.AuditOnlyEvents)
+	}
+	if report.Summary.MaterialEvents != 0 {
+		t.Fatalf("material_events = %d, want 0", report.Summary.MaterialEvents)
+	}
+	event := report.Events[0]
+	if event.RootCause != DriftEventRootCauseSchemaChanged {
+		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseSchemaChanged)
+	}
+	if event.ResolutionStatus != DriftEventResolutionResolved {
+		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionResolved)
+	}
+	if event.SuggestedNextCommand != "" {
+		t.Fatalf("suggested_next_command = %q, want empty for resolved schema cue", event.SuggestedNextCommand)
+	}
+	if event.SourceItems[0].TriggerKind != DriftTriggerScopeManifest {
+		t.Fatalf("source trigger = %q, want scope_manifest", event.SourceItems[0].TriggerKind)
+	}
+}
+
+func TestBuildDriftEventReportExposesBindingFallbackMetadata(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:           "shared.go",
+			Status:         DriftModified,
+			TriggerKind:    DriftTriggerFileHash,
+			Materiality:    DriftMaterialityNeedsBindingResolution,
+			FallbackKind:   BindingTargetWholeFileFallback,
+			FallbackReason: "unsupported language",
+		}},
+	}})
+
+	if report.Summary.NeedsBindingResolutionEvents != 1 {
+		t.Fatalf("needs_binding_resolution_events = %d, want 1", report.Summary.NeedsBindingResolutionEvents)
+	}
+	event := report.Events[0]
+	if event.FallbackKind != BindingTargetWholeFileFallback {
+		t.Fatalf("fallback_kind = %q, want %q", event.FallbackKind, BindingTargetWholeFileFallback)
+	}
+	if event.FallbackReason != "unsupported language" {
+		t.Fatalf("fallback_reason = %q", event.FallbackReason)
+	}
+	if event.ResolutionStatus != DriftEventResolutionNeedsScopeEnrichment {
+		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsScopeEnrichment)
+	}
+	if event.SuggestedNextCommand != "haft decision reconcile --json" {
+		t.Fatalf("suggested_next_command = %q, want reconcile drill-down", event.SuggestedNextCommand)
+	}
+	if event.RootCause != DriftEventRootCauseBindingTargetMissing {
+		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseBindingTargetMissing)
+	}
+	if report.Summary.FileFallbackEvents != 1 {
+		t.Fatalf("file_fallback_events = %d, want 1", report.Summary.FileFallbackEvents)
+	}
+	if len(event.SourceItems) != 1 || event.SourceItems[0].FallbackKind != BindingTargetWholeFileFallback {
+		t.Fatalf("source_items did not preserve fallback metadata: %#v", event.SourceItems)
+	}
+}
+
+func TestBuildDriftEventReportKeepsFileFallbackWhenNoSymbolTargetExists(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "shared.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerFileHash,
+			Materiality: DriftMaterialityUnknownLegacyFileScope,
+		}},
+	}})
+
+	if report.Summary.FileFallbackEvents != 1 {
+		t.Fatalf("file_fallback_events = %d, want 1", report.Summary.FileFallbackEvents)
+	}
+	if report.Summary.UnknownHighRiskEvents != 1 {
+		t.Fatalf("unknown_high_risk_events = %d, want 1", report.Summary.UnknownHighRiskEvents)
+	}
+	event := report.Events[0]
+	if event.TargetKind != "file" {
+		t.Fatalf("target_kind = %q, want file", event.TargetKind)
+	}
+	if event.RootCause != DriftEventRootCauseUnknownHighRisk {
+		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseUnknownHighRisk)
+	}
+	if event.ResolutionStatus != DriftEventResolutionNeedsScopeEnrichment {
+		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsScopeEnrichment)
+	}
+}
+
+func TestApplyDriftEventResolutionLedgerOverlaysResolvedStatus(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "shared.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerFileHash,
+			Materiality: DriftMaterialityMaterialSymbol,
+		}},
+	}})
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	ledger := NewDriftEventResolutionLedger([]DriftEventResolution{{
+		EventID: report.Events[0].EventID,
+		Status:  DriftEventResolutionResolved,
+		Reason:  "verified additive-only in focused review",
+	}})
+
+	overlaid := ApplyDriftEventResolutionLedger(report, ledger, now)
+
+	if overlaid.Events[0].ResolutionStatus != DriftEventResolutionResolved {
+		t.Fatalf("resolution_status = %q, want resolved", overlaid.Events[0].ResolutionStatus)
+	}
+	if overlaid.Events[0].SuggestedNextCommand != "" {
+		t.Fatalf("suggested_next_command = %q, want empty after ledger resolution", overlaid.Events[0].SuggestedNextCommand)
+	}
+	if overlaid.Events[0].ResolutionRecord == nil {
+		t.Fatal("resolution_record should be attached")
+	}
+	if overlaid.Summary.ResolvedByLedgerEvents != 1 {
+		t.Fatalf("resolved_by_ledger_events = %d, want 1", overlaid.Summary.ResolvedByLedgerEvents)
+	}
+	if overlaid.Summary.ImpactedDecisions != 1 {
+		t.Fatalf("impacted_decisions = %d, want 1", overlaid.Summary.ImpactedDecisions)
+	}
+}
+
+func TestApplyDriftEventResolutionLedgerRespectsWaiverExpiry(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "shared.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerFileHash,
+			Materiality: DriftMaterialityMaterialSymbol,
+		}},
+	}})
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	ledger := NewDriftEventResolutionLedger([]DriftEventResolution{{
+		EventID:         report.Events[0].EventID,
+		Status:          DriftEventResolutionWaivedUntil,
+		Reason:          "temporary migration waiver",
+		WaiverExpiresAt: "2026-06-23",
+	}})
+
+	active := ApplyDriftEventResolutionLedger(report, ledger, now)
+	if active.Events[0].ResolutionStatus != DriftEventResolutionWaivedUntil {
+		t.Fatalf("active waiver status = %q, want waived_until", active.Events[0].ResolutionStatus)
+	}
+	if active.Summary.WaivedByLedgerEvents != 1 {
+		t.Fatalf("waived_by_ledger_events = %d, want 1", active.Summary.WaivedByLedgerEvents)
+	}
+
+	expired := ApplyDriftEventResolutionLedger(report, ledger, now.Add(48*time.Hour))
+	if expired.Events[0].ResolutionStatus == DriftEventResolutionWaivedUntil {
+		t.Fatalf("expired waiver should not override resolution: %#v", expired.Events[0])
+	}
+	if expired.Events[0].ResolutionRecord == nil {
+		t.Fatal("expired resolution record should remain visible for audit")
+	}
+}
+
+func TestUpsertDriftEventResolutionValidatesNonBindingMetadata(t *testing.T) {
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	_, err := UpsertDriftEventResolution(NewDriftEventResolutionLedger(nil), DriftEventResolution{
+		EventID: "drift-event-1",
+		Status:  DriftEventResolutionWaivedUntil,
+		Reason:  "missing expiry",
+	}, now)
+	if err == nil {
+		t.Fatal("expected missing waiver expiry to fail")
+	}
+
+	ledger, err := UpsertDriftEventResolution(NewDriftEventResolutionLedger(nil), DriftEventResolution{
+		EventID:      "drift-event-1",
+		Status:       DriftEventResolutionResolved,
+		Reason:       "verified additive-only",
+		EvidenceRefs: []string{"go test ./..."},
+	}, now)
+	if err != nil {
+		t.Fatalf("UpsertDriftEventResolution: %v", err)
+	}
+	if ledger.Authority != DriftEventResolutionLedgerAuthority {
+		t.Fatalf("authority = %q", ledger.Authority)
+	}
+	if len(ledger.Records) != 1 {
+		t.Fatalf("records = %#v", ledger.Records)
+	}
+}

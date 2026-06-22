@@ -580,6 +580,24 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		RecentNotes: []*artifact.Artifact{
 			{Meta: artifact.Meta{ID: "note-hidden", Title: "Hidden note"}},
 		},
+		ReconciliationCues: artifact.ReconciliationCueReport{
+			Summary: artifact.ReconciliationCueSummary{
+				HighFanoutEvents:       1,
+				MaxFanout:              4,
+				ReconciliationGroups:   2,
+				OperatorRequiredGroups: 2,
+				GoverningConflictSets:  1,
+				GoverningOverlapSets:   1,
+			},
+			Cues: []artifact.ReconciliationCue{{
+				Kind: artifact.ReconciliationCueHighFanout,
+			}},
+			Commands: []string{
+				`haft_query(action="drift_events")`,
+				`haft_query(action="decision_reconcile")`,
+				`haft_query(action="governing_set")`,
+			},
+		},
 	}
 
 	output := present.CockpitStatusResponse(data)
@@ -590,12 +608,16 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		"Stale A",
 		"Stale B",
 		"... and 1 more; run `haft_refresh(action=\"scan\", verbose=true)`",
-		"**Drift detected** (1 decision(s))",
-		"Drifted decision",
-		"1 modified, 1 added",
+		"**Drift events** (2 unique; 1 impacted decision(s); max fanout 1)",
+		"file:internal/a.go",
+		"fanout=1 materiality=unknown_legacy_file_scope resolution=needs_scope_enrichment",
+		"**Audit-only drift events**: 1 unique event(s), 1 impacted decision(s)",
+		"**Reconciliation cues**: 1 high-fanout drift event(s), max fanout 4; 2 reconciliation group(s), 2 operator-required; 1 governing conflict set(s), 1 overlap set(s)",
+		`drill down with haft_query(action="drift_events") / haft_query(action="decision_reconcile") / haft_query(action="governing_set")`,
 		"**Progress problem** `prob-progress` → **Progress portfolio** `sol-001`",
 		"Full status: `haft_query(action=\"status\", full=true)`",
 		"Coverage: `haft_query(action=\"coverage\")`",
+		"Drift events: `haft_query(action=\"drift_events\")`; decision reconciliation: `haft_query(action=\"decision_reconcile\")`; governing set: `haft_query(action=\"governing_set\")`.",
 		"Maintenance plan: `haft_refresh(action=\"plan\")`",
 		"Judgment review: `haft_refresh(action=\"review\")`",
 		"Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`",
@@ -651,16 +673,44 @@ func TestCockpitStatusResponse_GroupsAuditOnlyDrift(t *testing.T) {
 	output := present.CockpitStatusResponse(data)
 
 	for _, want := range []string{
-		"**Audit-only drift**: 1 trigger path(s), 2 decision(s) checked, 0 material governed-symbol changes",
+		"**Audit-only drift events**: 1 unique event(s), 2 impacted decision(s), 0 material governed-symbol changes",
 		"audit details available",
-		"Drift: 0 material, 2 audit-only",
+		"Drift: 0 material event(s), 1 audit-only event(s)",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("cockpit output missing %q:\n%s", want, output)
 		}
 	}
-	if strings.Contains(output, "**Drift detected**") {
+	if strings.Contains(output, "**Drift events**") {
 		t.Fatalf("audit-only drift should not render as material drift:\n%s", output)
+	}
+}
+
+func TestCockpitStatusResponse_GroupsBindingResolutionDrift(t *testing.T) {
+	data := artifact.StatusData{
+		Drift: []artifact.DriftReport{{
+			DecisionID:    "dec-needs-binding",
+			DecisionTitle: "Whole-file fallback decision",
+			HasBaseline:   true,
+			Files: []artifact.DriftItem{{
+				Path:        "notes.txt",
+				Status:      artifact.DriftModified,
+				Materiality: artifact.DriftMaterialityNeedsBindingResolution,
+			}},
+		}},
+	}
+
+	output := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Binding resolution needed**",
+		"Drift: 0 material event(s), 0 audit-only event(s), 1 needs-binding event(s)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "**Drift events**") {
+		t.Fatalf("binding-resolution drift should not render as material drift:\n%s", output)
 	}
 }
 

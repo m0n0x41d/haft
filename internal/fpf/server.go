@@ -33,7 +33,7 @@ type RPCError struct {
 
 type Tool struct {
 	Name        string      `json:"name"`
-	Description string      `json:"description"`
+	Description string      `json:"description,omitempty"`
 	InputSchema interface{} `json:"inputSchema"`
 }
 
@@ -60,6 +60,22 @@ type Server struct {
 // lock-step on field shape, types, and missing_data_policy enum values.
 func parityPlanMCPSchema(description string) map[string]interface{} {
 	return artifact.ParityPlanJSONSchema(description)
+}
+
+func stringArrayMCPSchema() map[string]interface{} {
+	return map[string]interface{}{}
+}
+
+func objectMCPSchema(properties map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"properties": properties,
+	}
+}
+
+func objectArrayMCPSchema(properties map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"items": objectMCPSchema(properties),
+	}
 }
 
 func NewServer() *Server {
@@ -181,6 +197,14 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 }
 
 func (s *Server) handleToolsList(req JSONRPCRequest) {
+	tools := s.ToolCatalog()
+
+	s.sendResult(req.ID, map[string]interface{}{
+		"tools": tools,
+	})
+}
+
+func (s *Server) ToolCatalog() []Tool {
 	var tools []Tool
 
 	// v5 tools only
@@ -188,7 +212,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		tools = append(tools,
 			Tool{
 				Name:        "haft_note",
-				Description: "Record a project FACT into the reasoning graph. A note is a fact/observation carrier — NOT a decision (a choice among alternatives goes to /h-decide). Give a title plus at least one atomic observation or a source; rationale is optional. Anchor the fact to decisions/problems/notes via typed edges so it surfaces at them in related/code_context.",
+				Description: "Record a project fact/observation carrier; not a decision.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -240,7 +264,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 			},
 			Tool{
 				Name:        "haft_problem",
-				Description: "Frame, characterize, and manage engineering problems. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems, 'close' marks a problem as addressed. Frame the problem BEFORE exploring solutions.",
+				Description: "Frame, characterize, select, and close engineering problems.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -255,7 +279,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						},
 						"problem_type": map[string]string{
 							"type":        "string",
-							"description": "(frame) Problem type: optimization, diagnosis, search, or synthesis",
+							"description": "optimization",
 						},
 						"problem_profile": map[string]interface{}{
 							"type":        "string",
@@ -312,7 +336,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						},
 						"seed_file": map[string]string{
 							"type":        "string",
-							"description": "(frame) Optional file the framing is about. When set, the response appends the artifacts the fused code+reasoning graph ranks nearest that file — catching a decision governing it that keyword recall would miss.",
+							"description": "(frame) Optional file context",
 						},
 						"reversibility": map[string]string{
 							"type":        "string",
@@ -361,14 +385,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_solution",
-			Description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link and novelty marker), 'compare' runs parity check and identifies the Pareto front, 'similar' searches past solution portfolios.",
+			Description: "Explore solution variants, compare them under parity, or search similar portfolios.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"explore", "compare", "similar"},
-						"description": "explore=create variants portfolio, compare=run parity comparison, similar=search past solutions",
+						"description": "explore=create variants, compare=parity comparison, similar=search",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -399,7 +423,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							},
 							"required": []string{"title", "weakest_link", "novelty_marker"},
 						},
-						"description": "(explore) Solution variants — at least 2, genuinely distinct",
+						"description": "(explore) at least 2 distinct variants",
 					},
 					"no_stepping_stone_rationale": map[string]string{
 						"type":        "string",
@@ -473,15 +497,15 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"parity_plan": parityPlanMCPSchema("(compare) Structured parity plan. REQUIRED for deep mode: baseline_set, window, budget, and missing_data_policy MUST be present. Standard/tactical modes accept any subset and warn on gaps. Per FPF G.9:4.2."),
 					"selected_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) Legacy advisory recommendation variant ID; not a ChoiceResult and not a bound human choice",
+						"description": "(compare) Legacy advisory variant ID",
 					},
 					"legacy_recommendation_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) Preferred alias for selected_ref. Advisory recommendation only; the human still chooses via h-decide.",
+						"description": "Advisory recommendation only",
 					},
 					"recommendation_rationale": map[string]string{
 						"type":        "string",
-						"description": "(compare) Why the advisory recommendation is preferred under the declared policy",
+						"description": "(compare) Why the advisory rec is preferred",
 					},
 					"context": map[string]string{
 						"type":        "string",
@@ -489,7 +513,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"mode": map[string]string{
 						"type":        "string",
-						"description": "(explore/compare) Decision mode: tactical, standard (default), deep. Deep mode requires structured parity_plan.",
+						"description": "(explore/compare) tactical, standard, or deep",
 					},
 				},
 				"required": []string{"action"},
@@ -497,38 +521,32 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "haft_decision",
-			Description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact, 'baseline' snapshots affected files for drift detection.",
+			Description: "Manage decisions; MCP binding creation fails closed.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"decide", "apply", "measure", "evidence", "baseline"},
-						"description": "decide=create DRR, apply=impl brief, measure=record impact, evidence=attach evidence item, baseline=snapshot affected files for drift detection",
+						"description": "decide=DRR creation, apply=brief, measure=impact, evidence=attach, baseline=snapshot files",
 					},
 					"selected_title": map[string]string{
-						"type":        "string",
-						"description": "(decide) Name of the selected variant",
+						"type": "string",
 					},
 					"why_selected": map[string]string{
-						"type":        "string",
-						"description": "(decide) Why this variant was chosen",
+						"type": "string",
 					},
 					"choice_result": map[string]interface{}{
-						"type":        "object",
-						"description": "(decide) Exact human choice outcome. ComparisonResult never creates this; h-decide may carry choose_now/reject_current_set/probe_again/reroute.",
+						"type": "object",
 						"properties": map[string]interface{}{
 							"subject_ref": map[string]string{
-								"type":        "string",
-								"description": "Chooser-bearing human/team/system, not the decision question text",
+								"type": "string",
 							},
 							"option_set": map[string]interface{}{
-								"type":  "array",
-								"items": map[string]string{"type": "string"},
+								"type": "array",
 							},
 							"comparison_basis": map[string]interface{}{
-								"type":  "array",
-								"items": map[string]string{"type": "string"},
+								"type": "array",
 							},
 							"choice_rule": map[string]string{"type": "string"},
 							"next_move": map[string]interface{}{
@@ -537,17 +555,22 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							},
 							"variant_ref": map[string]string{"type": "string"},
 							"problem_refs": map[string]interface{}{
-								"type":  "array",
-								"items": map[string]string{"type": "string"},
+								"type": "array",
 							},
 							"portfolio_ref": map[string]string{"type": "string"},
 							"reason":        map[string]string{"type": "string"},
+							"reversibility": map[string]string{"type": "string"},
+							"reopen_condition": map[string]string{
+								"type": "string",
+							},
 						},
 					},
 					"transformation_record": map[string]interface{}{
-						"type":        "object",
-						"description": "(decide) TransformationRecord v1: target object-state transformation only; not method, work authorization, evidence, or publication.",
+						"type": "object",
 						"properties": map[string]interface{}{
+							"schema_version": map[string]interface{}{
+								"type": "integer",
+							},
 							"transformed_entity": map[string]string{
 								"type": "string",
 							},
@@ -563,15 +586,28 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"context": map[string]string{
 								"type": "string",
 							},
+							"window": map[string]string{
+								"type": "string",
+							},
+							"method_refs": map[string]interface{}{
+								"type": "array",
+							},
+							"work_refs": map[string]interface{}{
+								"type": "array",
+							},
+							"evidence_refs": map[string]interface{}{
+								"type": "array",
+							},
+							"publication_refs": map[string]interface{}{
+								"type": "array",
+							},
 						},
 					},
 					"selection_policy": map[string]string{
-						"type":        "string",
-						"description": "(decide) Explicit policy used to choose the winning variant",
+						"type": "string",
 					},
 					"counterargument": map[string]string{
-						"type":        "string",
-						"description": "(decide) Strongest argument against the chosen option",
+						"type": "string",
 					},
 					"why_not_others": map[string]interface{}{
 						"type": "array",
@@ -631,16 +667,15 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"observable":    map[string]string{"type": "string"},
 								"threshold":     map[string]string{"type": "string"},
 								"verify_after":  map[string]string{"type": "string", "description": "When to check (RFC3339 or YYYY-MM-DD) — for async claims"},
-								"realizability": map[string]string{"type": "string", "description": "C.28 verdict: realizable|nonrealizable|unknown; nonrealizable caps R_eff at 0.5 per CC-B3.9"},
-								"probability":   map[string]string{"type": "number", "description": "Optional elicited p(this claim holds) in [0,1] — a noisy forecast sampled at decide time. Verified outcomes feed decomposed-Brier calibration. Sample 2-3 independent estimates and pass their consensus; never a single authoritative number."},
-								"command":       map[string]string{"type": "string", "description": "Optional machine-checkable form of observable: an allowlist-class command (go test/build/vet, grep, rg) the maintenance loop may run out-of-band. Omit when the observable needs judgment."},
+								"realizability": map[string]string{"type": "string", "description": "C.28 realizable|nonrealizable|unknown"},
+								"probability":   map[string]string{"type": "number", "description": "Optional p(claim holds) in [0,1]."},
+								"command":       map[string]string{"type": "string", "description": "Optional allowlisted verification command."},
 							},
 							"required": []string{"claim", "observable", "threshold"},
 						},
 					},
 					"weakest_link": map[string]string{
-						"type":        "string",
-						"description": "(decide) Selected variant weakest link — what most plausibly breaks this choice",
+						"type": "string",
 					},
 					"problem_ref": map[string]string{
 						"type": "string", "description": "(decide) Single ProblemCard ID. Use problem_refs for multiple.",
@@ -657,11 +692,51 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "string", "description": "(apply) DecisionRecord ID to generate brief from",
 					},
 					"valid_until": map[string]string{
-						"type": "string", "description": "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)",
+						"type": "string", "description": "Expiry date",
 					},
 					"affected_files": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
-						"description": "(decide/baseline) Files affected by this decision. For baseline: optional — if provided, replaces the file list before snapshotting.",
+						"description": "(decide/baseline) Affected files.",
+					},
+					"decision_subject_ref": map[string]string{
+						"type": "string",
+					},
+					"implementation_footprint": objectMCPSchema(map[string]interface{}{
+						"files":     stringArrayMCPSchema(),
+						"commits":   stringArrayMCPSchema(),
+						"work_refs": stringArrayMCPSchema(),
+					}),
+					"governance_targets": objectArrayMCPSchema(map[string]interface{}{
+						"kind":           map[string]interface{}{},
+						"ref":            map[string]interface{}{},
+						"binding_target": map[string]interface{}{},
+					}),
+					"drift_watch_targets": objectArrayMCPSchema(map[string]interface{}{
+						"target_ref":     map[string]interface{}{},
+						"trigger":        map[string]interface{}{},
+						"binding_target": map[string]interface{}{},
+					}),
+					"claims": objectArrayMCPSchema(map[string]interface{}{
+						"id":                     map[string]interface{}{},
+						"claim":                  map[string]interface{}{},
+						"observable":             map[string]interface{}{},
+						"threshold":              map[string]interface{}{},
+						"lifecycle_status":       map[string]interface{}{},
+						"successor_ref":          map[string]interface{}{},
+						"retired_reason":         map[string]interface{}{},
+						"governance_target_refs": stringArrayMCPSchema(),
+					}),
+					"binding_hints": map[string]string{
+						"type": "array",
+					},
+					"binding_scope": map[string]string{
+						"type": "string",
+					},
+					"binding_fallback_reason": map[string]string{
+						"type": "string",
+					},
+					"binding_targets": map[string]string{
+						"type": "array",
 					},
 					"search_keywords": map[string]string{
 						"type":        "string",
@@ -669,7 +744,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"task_context": map[string]string{
 						"type":        "string",
-						"description": "(decide) Optional task/context text sanitized into the DecisionRecord ID filename",
+						"description": "DecisionRecord ID filename",
 					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
@@ -707,6 +782,12 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"congruence_level": map[string]interface{}{
 						"type": "integer", "description": "(evidence) CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed",
 					},
+					"formality_level": map[string]interface{}{
+						"type": "integer", "description": "(evidence) F0-F9",
+					},
+					"formality_scale_id": map[string]string{
+						"type": "string", "description": "(evidence) scale id",
+					},
 					"claim_refs": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
@@ -719,17 +800,17 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"causal_support_basis": map[string]string{
 						"type":        "string",
-						"description": "(evidence) C.28 basis for causal-use claim support. Accepts: observational | interventional | realized_counterfactual | identified_estimate | simulation_only (long FPF forms also accepted). simulation-only caps R_eff at 0.5 per CC-B3.9.",
+						"description": "C.28 simulation_only",
 					},
 					"_skips": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "(decide) Tactical-mode required-field bypass list. Requires _skip_reason.",
+						"description": "_skip_reason",
 					},
 					"_skip": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "(decide) Legacy alias for _skips; prefer _skips. Requires _skip_reason.",
+						"description": "legacy _skip_reason",
 					},
 					"_skip_reason": map[string]string{
 						"type":        "string",
@@ -743,14 +824,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "haft_refresh",
-			Description: "Manage artifact lifecycle — detect stale items, compile maintenance work orders, review judgment-only tasks, drain machine-safe maintenance work, extend validity, archive, replace, or find note-decision overlaps. Works on ALL artifact types. Actions: 'scan' finds expired and evidence-degraded artifacts, 'plan' compiles rung-classified maintenance tasks, 'review' builds a read-only judgment packet for rung-3 tasks, 'drain' explicitly executes only rung-1/rung-2 machine-safe maintenance actions and reports the rest, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant, 'reconcile' finds notes that overlap with decisions.",
+			Description: "Manage artifact lifecycle, stale scans, safe drain, and review packets.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"scan", "plan", "review", "drain", "waive", "reopen", "supersede", "deprecate", "reconcile"},
-						"description": "scan=find stale/degraded, plan=compile typed maintenance work order (rung-classified micro-tasks), review=read-only judgment packet for rung-3 tasks, drain=explicitly execute only machine-safe maintenance actions and report needs_operator, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
+						"description": "scan stale, plan work order, review judgment packet, drain machine-safe actions, waive/reopen/supersede/deprecate/reconcile.",
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",
@@ -799,14 +880,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Search/status/related/projection/list/coverage plus explicit read-only spec review/use drill-downs.",
+			Description: "Read-only search, status, coverage, spec, and semantic drill-downs.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "blocked_use", "value_space", "evidence_path", "resolve_term"},
-						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/spec_review/spec_use/change_case/correspondence_graph/drift_route/blocked_use/value_space/evidence_path/resolve_term.",
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
+						"description": "search/status/related/code_context/code graph/projection/list/coverage/fpf/check/carrier_manifest/carrier_check/contract_audit/contract_generation/spec_review/spec_use/change_case/correspondence_graph/drift_route/drift_events/decision_reconcile/governing_set/blocked_use/value_space/evidence_path/term.",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -814,7 +895,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"term": map[string]string{
 						"type":        "string",
-						"description": "(resolve_term) Umbrella or load-bearing term to ground in the project's bounded context — e.g. 'auth service', 'ready', 'process'. Returned shape: term_map_entries, spec_section_refs, artifact_mentions, resolution (resolved | ambiguous | absent), next_action.",
+						"description": "(resolve_term) Term to ground in project context; returns entries, refs, mentions, resolution, next_action.",
 					},
 					"section_id": map[string]string{
 						"type":        "string",
@@ -834,8 +915,18 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"description": "(spec_use) temporary_waiver expiry.",
 					},
 					"operational_gate": map[string]interface{}{
-						"type":        "object",
-						"description": "(spec_use) Optional OperationalGate v1; shape: `haft interface query.spec_use --json`.",
+						"type": "object",
+						"properties": map[string]interface{}{
+							"schema_version":   map[string]interface{}{},
+							"gate_ref":         map[string]interface{}{},
+							"bearer_ref":       map[string]interface{}{},
+							"use_context":      map[string]interface{}{},
+							"rule":             map[string]interface{}{},
+							"evidence_refs":    stringArrayMCPSchema(),
+							"expires_at":       map[string]interface{}{},
+							"reopen_condition": map[string]interface{}{},
+						},
+						"description": "(spec_use) Optional OperationalGate v1.",
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",
@@ -909,7 +1000,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"lane": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
-						"description": "(code_context) Progressive disclosure lane. Default index gives counts, risks, and exact next calls. Use one typed lane at a time; lane=all restores compact all-lane view; full=true is audit dump.",
+						"description": "Progressive disclosure lane; Default index; full=true audit",
 					},
 					"depth": map[string]interface{}{
 						"type":        "integer",
@@ -926,7 +1017,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"view": map[string]string{
 						"type":        "string",
-						"description": "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale",
+						"description": "projection views",
 					},
 					"limit": map[string]interface{}{
 						"type":        "integer",
@@ -942,7 +1033,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"mode": map[string]interface{}{
 						"type":        "string",
-						"description": "(fpf) Experimental retrieval mode; currently supports tree",
+						"description": "tree mode",
 					},
 				},
 				"required": []string{"action"},
@@ -954,17 +1045,13 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		tools = append(tools, haftSpecSectionTool())
 	}
 
-	tools = compactToolDescriptions(tools)
-
-	s.sendResult(req.ID, map[string]interface{}{
-		"tools": tools,
-	})
+	return compactToolDescriptions(tools)
 }
 
 func compactToolDescriptions(tools []Tool) []Tool {
 	compacted := make([]Tool, 0, len(tools))
 	for _, tool := range tools {
-		tool.Description = "See interface"
+		tool.Description = ""
 		compactSchemaDescriptions(tool.InputSchema, tool.Name)
 		compacted = append(compacted, tool)
 	}
@@ -1000,11 +1087,11 @@ func isLoadBearingSchemaDescription(description string) bool {
 	for _, marker := range []string{
 		"C.28",
 		"DecisionRecord ID filename",
-		"Expiry date (RFC3339 or YYYY-MM-DD)",
+		"Expiry date",
 		"_skip_reason",
-		"currently supports tree",
-		"engineer | manager | audit | compare | delegated-agent | change-rationale",
-		"human still chooses",
+		"tree mode",
+		"projection views",
+		"Advisory recommendation only",
 		"Progressive disclosure lane",
 		"lane=index",
 		"optimization",

@@ -786,7 +786,8 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 }
 
 func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, item *EvidenceItem, artifactRef string) error {
-	formality := normalizeFormalityLevel(item.FormalityLevel)
+	formalityScale := storedEvidenceFormalityScale(item, item.FormalityLevel)
+	formality := formalityScale.Level
 	storedVerdict := canonicalStoredEvidenceVerdict(item.Type, item.Verdict)
 	err := validateEvidenceCongruenceAtIngest(storedVerdict, item.CongruenceLevel)
 	if err != nil {
@@ -801,6 +802,14 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		return err
 	}
 	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	if err != nil {
+		return err
+	}
+	hasFormalityScaleID, err := s.tableHasColumn(ctx, "evidence_items", "formality_scale_id")
+	if err != nil {
+		return err
+	}
+	hasFormalityBridge, err := s.tableHasColumn(ctx, "evidence_items", "formality_bridge")
 	if err != nil {
 		return err
 	}
@@ -821,6 +830,18 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 			return fmt.Errorf("marshal claim_refs: %w", err)
 		}
 		claimRefsJSON = string(data)
+	}
+	formalityBridge := item.FormalityBridge
+	if formalityBridge == nil {
+		formalityBridge = evidenceFormalityBridge(formalityScale)
+	}
+	formalityBridgeJSON := ""
+	if formalityBridge != nil {
+		data, err := json.Marshal(formalityBridge)
+		if err != nil {
+			return fmt.Errorf("marshal formality_bridge: %w", err)
+		}
+		formalityBridgeJSON = string(data)
 	}
 
 	columns := []string{
@@ -849,6 +870,14 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		columns = append(columns, "provenance")
 		args = append(args, normalizeEvidenceProvenance(item.Provenance))
 	}
+	if hasFormalityScaleID {
+		columns = append(columns, "formality_scale_id")
+		args = append(args, formalityScale.ScaleID)
+	}
+	if hasFormalityBridge {
+		columns = append(columns, "formality_bridge")
+		args = append(args, formalityBridgeJSON)
+	}
 
 	columns = append(columns, "valid_until", "created_at")
 	args = append(args, item.ValidUntil, time.Now().UTC().Format(time.RFC3339))
@@ -866,6 +895,9 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 
 	_, err = execer.ExecContext(ctx, query, args...)
 	item.Verdict = storedVerdict
+	item.FormalityLevel = formality
+	item.FormalityScale = &formalityScale
+	item.FormalityBridge = formalityBridge
 	return err
 }
 
@@ -884,6 +916,14 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		return nil, err
 	}
 	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	if err != nil {
+		return nil, err
+	}
+	hasFormalityScaleID, err := s.tableHasColumn(ctx, "evidence_items", "formality_scale_id")
+	if err != nil {
+		return nil, err
+	}
+	hasFormalityBridge, err := s.tableHasColumn(ctx, "evidence_items", "formality_bridge")
 	if err != nil {
 		return nil, err
 	}
@@ -906,6 +946,12 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	if hasProvenance {
 		columns = append(columns, "provenance")
 	}
+	if hasFormalityScaleID {
+		columns = append(columns, "formality_scale_id")
+	}
+	if hasFormalityBridge {
+		columns = append(columns, "formality_bridge")
+	}
 	columns = append(columns, "valid_until")
 
 	query := "SELECT " +
@@ -921,7 +967,8 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	var items []EvidenceItem
 	for rows.Next() {
 		var e EvidenceItem
-		var verdict, carrierRef, claimScope, claimRefs, provenance, validUntil sql.NullString
+		var verdict, carrierRef, claimScope, claimRefs, provenance sql.NullString
+		var formalityScaleID, formalityBridge, validUntil sql.NullString
 		dest := []any{
 			&e.ID,
 			&e.Type,
@@ -940,6 +987,12 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		if hasProvenance {
 			dest = append(dest, &provenance)
 		}
+		if hasFormalityScaleID {
+			dest = append(dest, &formalityScaleID)
+		}
+		if hasFormalityBridge {
+			dest = append(dest, &formalityBridge)
+		}
 		dest = append(dest, &validUntil)
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
@@ -948,6 +1001,8 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		e.Verdict = canonicalStoredEvidenceVerdict(e.Type, verdict.String)
 		e.CarrierRef = carrierRef.String
 		e.FormalityLevel = normalizeFormalityLevel(e.FormalityLevel)
+		e.FormalityScale = readEvidenceFormalityScale(e.FormalityLevel, formalityScaleID.String)
+		e.FormalityBridge = readEvidenceFormalityBridge(e.FormalityLevel, formalityScaleID.String, formalityBridge.String)
 		if claimScope.String != "" {
 			_ = json.Unmarshal([]byte(claimScope.String), &e.ClaimScope)
 			e.ClaimScope = normalizeClaimScope(e.ClaimScope)
@@ -986,6 +1041,51 @@ func validateEvidenceCongruenceAtIngest(storedVerdict string, congruenceLevel in
 	}
 
 	return nil
+}
+
+func storedEvidenceFormalityScale(item *EvidenceItem, level int) reff.FormalityScale {
+	if item.FormalityScale == nil {
+		return reff.CurrentFormalityScale(level)
+	}
+
+	scale := *item.FormalityScale
+	scale.Level = level
+	return reff.NormalizeFormalityScale(scale)
+}
+
+func readEvidenceFormalityScale(level int, scaleID string) *reff.FormalityScale {
+	trimmed := strings.TrimSpace(scaleID)
+	if trimmed != "" {
+		scale := reff.NormalizeFormalityScale(reff.FormalityScale{
+			ScaleID: trimmed,
+			Level:   level,
+		})
+		return &scale
+	}
+
+	scale := reff.UnversionedFormalityScale(level)
+	if level >= 0 && level <= 3 {
+		scale = reff.LegacyFormalityScale(level)
+	}
+
+	return &scale
+}
+
+func readEvidenceFormalityBridge(level int, scaleID string, rawBridge string) *reff.FormalityBridge {
+	trimmedBridge := strings.TrimSpace(rawBridge)
+	if trimmedBridge != "" {
+		var bridge reff.FormalityBridge
+		if err := json.Unmarshal([]byte(trimmedBridge), &bridge); err == nil {
+			return &bridge
+		}
+	}
+
+	scale := readEvidenceFormalityScale(level, scaleID)
+	if scale == nil {
+		return nil
+	}
+
+	return evidenceFormalityBridge(*scale)
 }
 
 // SupersedeEvidenceByType marks all evidence items of the given type on an artifact as superseded.

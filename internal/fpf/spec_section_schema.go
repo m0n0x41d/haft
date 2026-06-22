@@ -14,8 +14,14 @@ func haftSpecSectionTool() Tool {
 			"`approve` records a SpecSectionBaseline so drift detection becomes " +
 			"meaningful; `rebaseline` overwrites a baseline after the operator " +
 			"confirms drift is intentional evolution; `reopen` deletes a baseline " +
-			"so the section returns to the onboarding loop. Surfaces (MCP plugin, " +
-			"Desktop wizard, CLI) all consume the same intent shape.",
+			"so the section returns to the onboarding loop. Approval actions are " +
+			"binding governance acts; MCP fails them closed by default with " +
+			"operator_confirmation_required because model-supplied arguments are " +
+			"not kernel-verifiable manual_cli authorization receipts. " +
+			"Lifecycle and mutation JSON expose baseline_kind/profile so " +
+			"SpecSectionApprovalBaseline stays distinct from other snapshots. " +
+			"Surfaces (MCP plugin, host workflow, CLI) all consume the " +
+			"same intent shape.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -28,7 +34,7 @@ func haftSpecSectionTool() Tool {
 						"rebaseline",
 						"reopen",
 					},
-					"description": "lifecycle=return the typed operator-facing spec lifecycle projection. next_step=return the legacy typed WorkflowIntent. approve=record a baseline for an active section that has none. rebaseline=overwrite an existing baseline after confirming the carrier change is intentional. reopen=delete a baseline so the section re-enters the onboarding loop.",
+					"description": "lifecycle=typed spec lifecycle projection with baseline profile. next_step=legacy WorkflowIntent. approve/rebaseline/reopen are binding mutations and return operator_confirmation_required in default MCP cli-only mode.",
 				},
 				"project_root": map[string]string{
 					"type":        "string",
@@ -40,7 +46,7 @@ func haftSpecSectionTool() Tool {
 				},
 				"approved_by": map[string]string{
 					"type":        "string",
-					"description": "(approve/rebaseline) Identifier of who approved the baseline. Defaults to 'human' when omitted; use 'agent' when the host agent is acting on explicit operator authority.",
+					"description": "(approve/rebaseline) Identifier recorded by manual/authorized paths. In default MCP cli-only mode this is not accepted as proof of human authorship.",
 				},
 				"reason": map[string]string{
 					"type":        "string",

@@ -13,6 +13,13 @@ var validClaimStatuses = map[ClaimStatus]struct{}{
 	ClaimStatusInconclusive: {},
 }
 
+var validClaimLifecycleStatuses = map[ClaimLifecycleStatus]struct{}{
+	ClaimLifecycleActive:     {},
+	ClaimLifecycleRefreshDue: {},
+	ClaimLifecycleSuperseded: {},
+	ClaimLifecycleDeprecated: {},
+}
+
 // PredictionMeasureMatch captures how one measurement run touches one prediction.
 type PredictionMeasureMatch struct {
 	MeasurementRecorded bool
@@ -28,6 +35,25 @@ func normalizeClaimStatus(value ClaimStatus) ClaimStatus {
 	}
 
 	return ClaimStatusUnverified
+}
+
+func normalizeClaimLifecycleStatus(value ClaimLifecycleStatus) ClaimLifecycleStatus {
+	normalized := ClaimLifecycleStatus(strings.TrimSpace(string(value)))
+	if normalized == "" {
+		return ""
+	}
+	if _, ok := validClaimLifecycleStatuses[normalized]; ok {
+		return normalized
+	}
+	return ""
+}
+
+func EffectiveClaimLifecycleStatus(claim DecisionClaim) ClaimLifecycleStatus {
+	normalized := normalizeClaimLifecycleStatus(claim.LifecycleStatus)
+	if normalized == "" {
+		return ClaimLifecycleActive
+	}
+	return normalized
 }
 
 func normalizeClaimRefs(refs []string) []string {
@@ -82,6 +108,14 @@ func newDecisionClaims(inputs []PredictionInput) []DecisionClaim {
 	return normalizeDecisionClaims(claims)
 }
 
+func decisionInputClaims(input DecideInput) []DecisionClaim {
+	claims := normalizeDecisionClaims(input.Claims)
+	if len(claims) > 0 {
+		return claims
+	}
+	return newDecisionClaims(input.Predictions)
+}
+
 func decisionClaimsFromPredictions(values []DecisionPrediction) []DecisionClaim {
 	claims := make([]DecisionClaim, 0, len(values))
 
@@ -114,15 +148,19 @@ func normalizeDecisionClaims(values []DecisionClaim) []DecisionClaim {
 	for _, value := range values {
 		realizability, _ := ParseRealizabilityVerdict(string(value.Realizability))
 		claim := DecisionClaim{
-			ID:            strings.TrimSpace(value.ID),
-			Claim:         strings.TrimSpace(value.Claim),
-			Observable:    strings.TrimSpace(value.Observable),
-			Threshold:     strings.TrimSpace(value.Threshold),
-			Status:        normalizeClaimStatus(value.Status),
-			VerifyAfter:   strings.TrimSpace(value.VerifyAfter),
-			Realizability: realizability,
-			Probability:   value.Probability,
-			Command:       strings.TrimSpace(value.Command),
+			ID:                   strings.TrimSpace(value.ID),
+			Claim:                strings.TrimSpace(value.Claim),
+			Observable:           strings.TrimSpace(value.Observable),
+			Threshold:            strings.TrimSpace(value.Threshold),
+			Status:               normalizeClaimStatus(value.Status),
+			LifecycleStatus:      normalizeClaimLifecycleStatus(value.LifecycleStatus),
+			SuccessorRef:         strings.TrimSpace(value.SuccessorRef),
+			RetiredReason:        strings.TrimSpace(value.RetiredReason),
+			GovernanceTargetRefs: normalizeClaimRefs(value.GovernanceTargetRefs),
+			VerifyAfter:          strings.TrimSpace(value.VerifyAfter),
+			Realizability:        realizability,
+			Probability:          value.Probability,
+			Command:              strings.TrimSpace(value.Command),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -181,6 +219,31 @@ func decisionPredictionsFromClaims(values []DecisionClaim) []DecisionPrediction 
 	}
 
 	return predictions
+}
+
+func buildClaimLifecycleSummary(claims []DecisionClaim) *ClaimLifecycleSummary {
+	normalized := normalizeDecisionClaims(claims)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	summary := ClaimLifecycleSummary{}
+	targetRefs := []string{}
+	for _, claim := range normalized {
+		switch EffectiveClaimLifecycleStatus(claim) {
+		case ClaimLifecycleRefreshDue:
+			summary.RefreshDue++
+		case ClaimLifecycleSuperseded:
+			summary.Superseded++
+		case ClaimLifecycleDeprecated:
+			summary.Deprecated++
+		default:
+			summary.Active++
+		}
+		targetRefs = append(targetRefs, claim.GovernanceTargetRefs...)
+	}
+	summary.GovernanceTargetRefs = normalizeClaimRefs(targetRefs)
+	return &summary
 }
 
 //nolint:unused // exercised by package tests

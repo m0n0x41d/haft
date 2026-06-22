@@ -1,0 +1,313 @@
+package cli
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/spf13/cobra"
+
+	"github.com/m0n0x41d/haft/internal/artifact"
+)
+
+func TestWriteDecisionReconciliationSummary(t *testing.T) {
+	var output bytes.Buffer
+	plan := artifact.BuildDecisionReconciliationPlanFromItems([]artifact.DecisionReconciliationItem{{
+		DecisionID:         "dec-1",
+		Status:             artifact.StatusRefreshDue,
+		BoundedContext:     "status",
+		DecisionSubjectRef: "subject:status-policy",
+		GovernanceTargets:  []string{"api_contract:haft_query/status"},
+	}})
+
+	if err := writeDecisionReconciliationSummary(&output, plan); err != nil {
+		t.Fatalf("writeDecisionReconciliationSummary returned error: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Decision reconciliation plan v1",
+		"authority: report_only_not_binding_authority",
+		"reopen=1",
+		"scope_enrichment_candidates: 0",
+		"top_groups:",
+		"preview=reopen",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestWriteCurrentGoverningSetSummary(t *testing.T) {
+	var output bytes.Buffer
+	report := artifact.CurrentGoverningSetReport{
+		SchemaVersion: 1,
+		Authority:     artifact.CurrentGoverningSetAuthority,
+		Summary: artifact.CurrentGoverningSetSummary{
+			CurrentDecisions:    1,
+			GoverningSets:       1,
+			FallbackTargetSets:  1,
+			ScopeEnrichmentSets: 1,
+			TerminalHistoryRefs: 1,
+		},
+		Sets: []artifact.CurrentGoverningSet{{
+			Posture:             artifact.GoverningSetPostureSingle,
+			SubjectRef:          "subject:store",
+			TargetRef:           "symbol:store.go::Save",
+			CurrentDecisionRefs: []string{"dec-current"},
+		}},
+	}
+
+	if err := writeCurrentGoverningSetSummary(&output, report); err != nil {
+		t.Fatalf("writeCurrentGoverningSetSummary: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Current governing set v1",
+		"authority: read_only_current_authority_frontier",
+		"current_decisions: 1",
+		"fallback_sets=1",
+		"scope_enrichment_sets=1",
+		"top_sets:",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestHandleQuintQueryDecisionReconcileReturnsReportOnlyPlan(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+	seedDecisionReconcileDecision(t, store, "dec-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "decision_reconcile",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery decision_reconcile returned error: %v", err)
+	}
+
+	var plan artifact.DecisionReconciliationPlan
+	if err := json.Unmarshal([]byte(result), &plan); err != nil {
+		t.Fatalf("decode decision reconciliation plan: %v\n%s", err, result)
+	}
+	if plan.Authority != artifact.DecisionReconciliationAuthority {
+		t.Fatalf("authority = %q", plan.Authority)
+	}
+	if plan.Summary.MergeCandidates != 1 {
+		t.Fatalf("merge_candidates = %d, want 1", plan.Summary.MergeCandidates)
+	}
+	if len(plan.Groups) != 1 || plan.Groups[0].Preview.Operation != artifact.DecisionReconciliationOperationMergeThroughSuccessor {
+		t.Fatalf("preview = %#v", plan.Groups)
+	}
+}
+
+func TestHandleQuintQueryGoverningSetReturnsCurrentAuthorityFrontier(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	seedDecisionReconcileDecision(t, store, "dec-current", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "governing_set",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set returned error: %v", err)
+	}
+
+	var report artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode current governing set: %v\n%s", err, result)
+	}
+	if report.Authority != artifact.CurrentGoverningSetAuthority {
+		t.Fatalf("authority = %q", report.Authority)
+	}
+	if report.Summary.CurrentDecisions != 1 {
+		t.Fatalf("current_decisions = %d, want 1", report.Summary.CurrentDecisions)
+	}
+	if len(report.Sets) != 1 || report.Sets[0].Posture != artifact.GoverningSetPostureSingle {
+		t.Fatalf("sets = %#v", report.Sets)
+	}
+}
+
+func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store", "Load")
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "governing_set",
+		"query":  "Load",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set returned error: %v", err)
+	}
+
+	var report artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode current governing set: %v\n%s", err, result)
+	}
+	if report.Filter == nil || report.Filter.Query != "Load" {
+		t.Fatalf("filter = %#v", report.Filter)
+	}
+	if report.Summary.GoverningSets != 1 || report.Summary.CurrentDecisions != 1 {
+		t.Fatalf("summary = %#v", report.Summary)
+	}
+	if len(report.Sets) != 1 || !strings.Contains(report.Sets[0].TargetRef, "Load") {
+		t.Fatalf("sets = %#v", report.Sets)
+	}
+}
+
+func TestDecisionReconcileJSONWriterKeepsReportShape(t *testing.T) {
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+	plan := artifact.BuildDecisionReconciliationPlanFromItems([]artifact.DecisionReconciliationItem{{
+		DecisionID:    "dec-1",
+		Status:        artifact.StatusActive,
+		AffectedFiles: []string{"shared.go"},
+	}})
+
+	if err := writeJSON(cmd.OutOrStdout(), plan); err != nil {
+		t.Fatalf("writeJSON returned error: %v", err)
+	}
+
+	var decoded artifact.DecisionReconciliationPlan
+	if err := json.Unmarshal(output.Bytes(), &decoded); err != nil {
+		t.Fatalf("decode JSON: %v\n%s", err, output.String())
+	}
+	if decoded.Summary.Keep != 1 {
+		t.Fatalf("keep = %d, want 1", decoded.Summary.Keep)
+	}
+	if decoded.Summary.MergeCandidates != 0 {
+		t.Fatalf("merge_candidates = %d, want 0", decoded.Summary.MergeCandidates)
+	}
+	if len(decoded.Groups) != 1 || decoded.Groups[0].Preview.Operation != artifact.DecisionReconciliationOperationEnrichScope {
+		t.Fatalf("preview = %#v", decoded.Groups)
+	}
+	if !decoded.Groups[0].Preview.ReadOnly {
+		t.Fatalf("preview read_only = false")
+	}
+}
+
+func TestReadDecisionReconciliationSelectionDocument(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "selection.json")
+	data := []byte(`{
+  "schema_version": 1,
+  "authority": "operator_approved_reconciliation_selection",
+  "operator_approval_ref": "chat:approved",
+  "items": [
+    {
+      "operation": "enrich_scope",
+      "reviewed_group_id": "decision-reconcile-001",
+      "decision_refs": ["dec-1"],
+      "decision_subject_ref": "runtime:explicit_scope",
+      "governance_targets": [{"kind":"api_contract","ref":"api_contract:haft/runtime"}],
+      "drift_watch_targets": [{"target_ref":"api_contract:haft/runtime","trigger":"schema_or_behavior_changed"}],
+      "claim_governance_target_refs": {"claim-1":["api_contract:haft/runtime"]},
+      "reason": "precision enrichment"
+    }
+  ]
+}`)
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write selection: %v", err)
+	}
+
+	document, err := readDecisionReconciliationSelectionDocument(path)
+	if err != nil {
+		t.Fatalf("readDecisionReconciliationSelectionDocument: %v", err)
+	}
+	if document.OperatorApprovalRef != "chat:approved" {
+		t.Fatalf("operator_approval_ref = %q", document.OperatorApprovalRef)
+	}
+	if len(document.Items) != 1 || document.Items[0].Operation != artifact.DecisionReconciliationOperationEnrichScope {
+		t.Fatalf("items = %#v", document.Items)
+	}
+	if document.Items[0].DecisionSubjectRef != "runtime:explicit_scope" {
+		t.Fatalf("decision_subject_ref = %q", document.Items[0].DecisionSubjectRef)
+	}
+	if len(document.Items[0].GovernanceTargets) != 1 {
+		t.Fatalf("governance_targets = %#v", document.Items[0].GovernanceTargets)
+	}
+}
+
+func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
+	var output bytes.Buffer
+	result := artifact.DecisionReconciliationApplyResult{
+		SchemaVersion: 1,
+		Authority:     "operator_approved_lineage_mutation",
+		Applied: []artifact.DecisionReconciliationApplyOutcome{{
+			Operation:     artifact.DecisionReconciliationOperationMergeThroughSuccessor,
+			DecisionRefs:  []string{"dec-old"},
+			SuccessorRef:  "dec-new",
+			UpdatedFields: []string{"decision_subject_ref"},
+			Status:        "applied",
+		}},
+	}
+
+	if err := writeDecisionReconciliationApplySummary(&output, result); err != nil {
+		t.Fatalf("writeDecisionReconciliationApplySummary: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Decision reconciliation apply v1",
+		"authority: operator_approved_lineage_mutation",
+		"merge_through_successor",
+		"dec-new",
+		"updated=[decision_subject_ref]",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func seedDecisionReconcileDecision(
+	t *testing.T,
+	store *artifact.Store,
+	id string,
+	status artifact.Status,
+	contextName string,
+	subject string,
+	symbol string,
+) {
+	t.Helper()
+
+	fields := artifact.DecisionFields{
+		DecisionSubjectRef: subject,
+		BindingTargets: []artifact.BindingTarget{{
+			Kind:       artifact.BindingTargetSymbol,
+			FilePath:   "internal/store.go",
+			SymbolKind: "func",
+			SymbolName: symbol,
+		}},
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshal fields: %v", err)
+	}
+	now := time.Now().UTC()
+	if err := store.Create(context.Background(), &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:        id,
+			Kind:      artifact.KindDecisionRecord,
+			Version:   1,
+			Status:    status,
+			Context:   contextName,
+			Title:     "Decision " + id,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Body:           "decision body",
+		StructuredData: string(payload),
+	}); err != nil {
+		t.Fatalf("create decision %s: %v", id, err)
+	}
+}

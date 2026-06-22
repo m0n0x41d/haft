@@ -449,4 +449,12 @@ var kernelMigrations = []Migration{
 			"ALTER TABLE evidence_items ADD COLUMN provenance TEXT DEFAULT ''",
 		},
 	},
+	{
+		Version:     31,
+		Description: "Versioned evidence formality scale with legacy bridge diagnostics",
+		Statements: []string{
+			"ALTER TABLE evidence_items ADD COLUMN formality_scale_id TEXT DEFAULT ''",
+			"ALTER TABLE evidence_items ADD COLUMN formality_bridge TEXT DEFAULT ''",
+		},
+	},
 }

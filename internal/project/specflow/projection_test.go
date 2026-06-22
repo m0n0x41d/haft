@@ -48,6 +48,15 @@ func TestProjectLifecycleActiveSectionWithoutBaselineRequiresApprove(t *testing.
 	if projection.Object != "SpecSectionBaseline" {
 		t.Fatalf("Object = %q, want SpecSectionBaseline", projection.Object)
 	}
+	if projection.BaselineKind != BaselineKindSpecSectionApproval {
+		t.Fatalf("BaselineKind = %q, want %q", projection.BaselineKind, BaselineKindSpecSectionApproval)
+	}
+	if projection.BaselineProfile == nil {
+		t.Fatal("BaselineProfile missing")
+	}
+	if projection.BaselineProfile.Object != "SpecSectionApprovalBaseline" {
+		t.Fatalf("BaselineProfile.Object = %q", projection.BaselineProfile.Object)
+	}
 	if !slices.Contains(projection.AllowedCommands, "haft spec approve tgt-env-1") {
 		t.Fatalf("AllowedCommands = %#v, want approve command", projection.AllowedCommands)
 	}
@@ -98,6 +107,9 @@ func TestProjectLifecycleDriftedSectionRequiresTriage(t *testing.T) {
 	}
 	if projection.Action != LifecycleActionTriage {
 		t.Fatalf("Action = %q, want %q", projection.Action, LifecycleActionTriage)
+	}
+	if projection.BaselineKind != BaselineKindSpecSectionApproval {
+		t.Fatalf("BaselineKind = %q, want %q", projection.BaselineKind, BaselineKindSpecSectionApproval)
 	}
 	for _, want := range []string{
 		"haft spec rebaseline tgt-env-1 --reason <reason>",

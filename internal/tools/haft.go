@@ -1112,7 +1112,27 @@ When you present the rationale (rejected alternatives, counterargument, weakest 
 						"required": []string{"claim", "observable", "threshold"},
 					},
 				},
-				"affected_files":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
+				"affected_files":          map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Files affected (decide/baseline)"},
+				"binding_hints":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Symbol/code-object hints used before whole-file fallback (decide/baseline)"},
+				"binding_scope":           map[string]any{"type": "string", "enum": []string{"auto", "module", "whole_file"}, "description": "Binding scope override. whole_file requires binding_fallback_reason (decide/baseline)"},
+				"binding_fallback_reason": map[string]any{"type": "string", "description": "Reason required for binding_scope=whole_file (decide/baseline)"},
+				"binding_targets": map[string]any{
+					"type":        "array",
+					"description": "Explicit BindingTarget objects. Additive precise-binding surface; affected_files remains the compatibility projection.",
+					"items": map[string]any{
+						"type": "object",
+						"properties": map[string]any{
+							"kind":        map[string]any{"type": "string"},
+							"file_path":   map[string]any{"type": "string"},
+							"symbol_name": map[string]any{"type": "string"},
+							"symbol_kind": map[string]any{"type": "string"},
+							"line":        map[string]any{"type": "integer"},
+							"end_line":    map[string]any{"type": "integer"},
+							"body_hash":   map[string]any{"type": "string"},
+							"reason":      map[string]any{"type": "string"},
+						},
+					},
+				},
 				"governance_mode":  map[string]any{"type": "string", "enum": []string{"module", "exact"}, "description": "How affected_files relate to drift detection. 'module' (default): each file widens to its parent dir; sibling additions count as governed drift. 'exact': only listed files governed (decide)"},
 				"valid_until":      map[string]any{"type": "string", "description": "Expiry deadline (RFC3339 or YYYY-MM-DD) (decide/evidence)"},
 				"context":          map[string]any{"type": "string", "description": "Optional context name (decide)"},
@@ -1130,8 +1150,13 @@ When you present the rationale (rejected alternatives, counterargument, weakest 
 				"evidence_verdict": map[string]any{"type": "string", "enum": []string{"supports", "weakens", "refutes"}, "description": "How the evidence bears on the artifact (evidence)"},
 				"carrier_ref":      map[string]any{"type": "string", "description": "File path or URL for the evidence source (evidence)"},
 				"congruence_level": map[string]any{"type": "integer", "description": "CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed (evidence)"},
-				"claim_refs":       map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Exact decision claim IDs this evidence binds to when available (evidence)"},
-				"claim_scope":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Fallback claim scope labels for older artifacts or non-claim evidence (evidence)"},
+				"formality_level":  map[string]any{"type": "integer", "description": "F0-F9 current FPF formality ordinal; legacy F0-F3 remains readable with formality_scale_id (evidence)"},
+				"formality_scale_id": map[string]any{
+					"type":        "string",
+					"description": "Evidence formality scale id: fpf-2026-f0-f9 for current values, haft-legacy-f0-f3 for legacy values (evidence)",
+				},
+				"claim_refs":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Exact decision claim IDs this evidence binds to when available (evidence)"},
+				"claim_scope": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Fallback claim scope labels for older artifacts or non-claim evidence (evidence)"},
 				"causal_support_basis": map[string]any{
 					"type":        "string",
 					"description": "C.28 CausalEvidenceSupportBasis — basis on which this evidence supports a causal-use claim. Accepts: observational | interventional | realized_counterfactual | identified_estimate | simulation_only (long forms also accepted). simulation-only caps R_eff at 0.5 per CC-B3.9 (evidence).",
@@ -1311,6 +1336,16 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		return agent.ToolResult{}, err
 	}
 
+	bindingHints, err := jsonStrictStringArray(args, "binding_hints")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
+	bindingTargets, err := jsonStrictBindingTargets(args, "binding_targets")
+	if err != nil {
+		return agent.ToolResult{}, err
+	}
+
 	whyNotOthers, err := jsonStrictRejectionReasons(args, "why_not_others")
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -1333,33 +1368,37 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 	}
 
 	input := artifact.DecideInput{
-		ProblemRef:      jsonStr(args, "problem_ref"),
-		ProblemRefs:     problemRefs,
-		PortfolioRef:    jsonStr(args, "portfolio_ref"),
-		SelectedTitle:   jsonStr(args, "selected_title"),
-		WhySelected:     jsonStr(args, "why_selected"),
-		SelectionPolicy: jsonStr(args, "selection_policy"),
-		CounterArgument: jsonStr(args, "counterargument"),
-		WeakestLink:     jsonStr(args, "weakest_link"),
-		ValidUntil:      jsonStr(args, "valid_until"),
-		Context:         jsonStr(args, "context"),
-		TaskContext:     jsonStr(args, "task_context"),
-		Mode:            jsonStr(args, "mode"),
-		GovernanceMode:  jsonStr(args, "governance_mode"),
-		Invariants:      invariants,
-		PreConditions:   preConditions,
-		PostConditions:  postConditions,
-		Admissibility:   admissibility,
-		EvidenceReqs:    evidenceReqs,
-		RefreshTriggers: refreshTriggers,
-		SectionRefs:     sectionRefs,
-		AffectedFiles:   affectedFiles,
-		SearchKeywords:  jsonStr(args, "search_keywords"),
-		WhyNotOthers:    whyNotOthers,
-		Rollback:        rollback,
-		Predictions:     predictions,
-		Skips:           skips,
-		SkipReason:      jsonStr(args, "_skip_reason"),
+		ProblemRef:            jsonStr(args, "problem_ref"),
+		ProblemRefs:           problemRefs,
+		PortfolioRef:          jsonStr(args, "portfolio_ref"),
+		SelectedTitle:         jsonStr(args, "selected_title"),
+		WhySelected:           jsonStr(args, "why_selected"),
+		SelectionPolicy:       jsonStr(args, "selection_policy"),
+		CounterArgument:       jsonStr(args, "counterargument"),
+		WeakestLink:           jsonStr(args, "weakest_link"),
+		ValidUntil:            jsonStr(args, "valid_until"),
+		Context:               jsonStr(args, "context"),
+		TaskContext:           jsonStr(args, "task_context"),
+		Mode:                  jsonStr(args, "mode"),
+		GovernanceMode:        jsonStr(args, "governance_mode"),
+		Invariants:            invariants,
+		PreConditions:         preConditions,
+		PostConditions:        postConditions,
+		Admissibility:         admissibility,
+		EvidenceReqs:          evidenceReqs,
+		RefreshTriggers:       refreshTriggers,
+		SectionRefs:           sectionRefs,
+		AffectedFiles:         affectedFiles,
+		BindingTargets:        bindingTargets,
+		BindingHints:          bindingHints,
+		BindingScope:          jsonStr(args, "binding_scope"),
+		BindingFallbackReason: jsonStr(args, "binding_fallback_reason"),
+		SearchKeywords:        jsonStr(args, "search_keywords"),
+		WhyNotOthers:          whyNotOthers,
+		Rollback:              rollback,
+		Predictions:           predictions,
+		Skips:                 skips,
+		SkipReason:            jsonStr(args, "_skip_reason"),
 	}
 
 	gaps := t.coverageGaps(ctx, input.AffectedFiles)
@@ -1467,6 +1506,10 @@ func (t *HaftDecisionTool) evidence(ctx context.Context, args map[string]any) (a
 	if level, ok := args["congruence_level"].(float64); ok {
 		input.CongruenceLevel = int(level)
 	}
+	if level, ok := args["formality_level"].(float64); ok {
+		input.FormalityLevel = int(level)
+	}
+	input.FormalityScaleID = jsonStr(args, "formality_scale_id")
 
 	item, err := artifact.AttachEvidence(ctx, t.store, input)
 	if err != nil {
@@ -1546,8 +1589,12 @@ func (t *HaftDecisionTool) baseline(ctx context.Context, args map[string]any) (a
 		return agent.PlainResult("haft_decision(baseline) requires decision_ref (or artifact_ref) — the DecisionRecord ID to snapshot files for."), nil
 	}
 	files, err := artifact.Baseline(ctx, t.store, t.projectRoot, artifact.BaselineInput{
-		DecisionRef:   decisionRef,
-		AffectedFiles: jsonStrArray(args, "affected_files"),
+		DecisionRef:           decisionRef,
+		AffectedFiles:         jsonStrArray(args, "affected_files"),
+		BindingHints:          jsonStrArray(args, "binding_hints"),
+		BindingTargets:        jsonBindingTargets(args, "binding_targets"),
+		BindingScope:          jsonStr(args, "binding_scope"),
+		BindingFallbackReason: jsonStr(args, "binding_fallback_reason"),
 	})
 	if err != nil {
 		return agent.ToolResult{}, err
@@ -2198,6 +2245,28 @@ func jsonStrictPredictionInputs(args map[string]any, key string) ([]artifact.Pre
 		if claim == "" || observable == "" || threshold == "" {
 			return nil, fmt.Errorf("%s[%d] must include claim, observable, and threshold", key, index)
 		}
+	}
+
+	return values, nil
+}
+
+func jsonBindingTargets(args map[string]any, key string) []artifact.BindingTarget {
+	var values []artifact.BindingTarget
+	if !jsonDecodeArg(args, key, &values) {
+		return nil
+	}
+	return values
+}
+
+func jsonStrictBindingTargets(args map[string]any, key string) ([]artifact.BindingTarget, error) {
+	var values []artifact.BindingTarget
+
+	present, err := jsonDecodeStrictArg(args, key, &values)
+	if err != nil {
+		return nil, fmt.Errorf("%s must be an array of binding target objects: %w", key, err)
+	}
+	if !present {
+		return nil, nil
 	}
 
 	return values, nil

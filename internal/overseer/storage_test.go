@@ -222,6 +222,92 @@ func TestLoadStatusSummaryCombinesLatestRunAndMaintenance(t *testing.T) {
 	}
 }
 
+func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
+	summary := StatusSummary{
+		HasSignals: true,
+		Signals: []StatusSignal{
+			{
+				Severity: "high",
+				Source:   maintenanceSourceDrift,
+				Title:    "Drift requires confirmation: First decision `dec-001`",
+				Detail:   "code drift — 1 modified",
+			},
+			{
+				Severity: "high",
+				Source:   maintenanceSourceDrift,
+				Title:    "Drift requires confirmation: Second decision `dec-002`",
+				Detail:   "code drift — 2 modified",
+			},
+			{
+				Severity: "medium",
+				Source:   "staleness",
+				Title:    "Stale governance artifact: Third decision `dec-003`",
+				Detail:   "expired",
+			},
+		},
+	}
+
+	output := FormatStatusSignals(summary)
+	for _, want := range []string{
+		"Drift requires confirmation: 2 item(s) grouped",
+		"haft overseer maintain --json",
+		"haft_refresh(action=\"scan\", verbose=true)",
+		"Stale governance artifact",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status signal output missing %q:\n%s", want, output)
+		}
+	}
+	for _, absent := range []string{"First decision", "Second decision"} {
+		if strings.Contains(output, absent) {
+			t.Fatalf("status signal output should hide per-decision drift %q:\n%s", absent, output)
+		}
+	}
+}
+
+func TestFormatStatusSignalsGroupsStaleSignals(t *testing.T) {
+	summary := StatusSummary{
+		HasSignals: true,
+		Signals: []StatusSignal{
+			{
+				Severity: "high",
+				Source:   maintenanceSourceStale,
+				Title:    "Stale governance artifact: First decision `dec-001`",
+				Detail:   "AT RISK — evidence degraded",
+			},
+			{
+				Severity: "medium",
+				Source:   "scoped_stale",
+				Title:    "Scoped stale governance debt: Second decision `dec-002`",
+				Detail:   "expired 6 day(s) ago",
+			},
+			{
+				Severity: "medium",
+				Source:   maintenanceSourceSpecHealth,
+				Title:    "Spec health finding: Needs owner",
+				Detail:   "missing owner",
+			},
+		},
+	}
+
+	output := FormatStatusSignals(summary)
+	for _, want := range []string{
+		"Stale governance artifacts: 2 item(s) grouped, 1 at risk",
+		"haft_refresh(action=\"scan\", verbose=true)",
+		"haft_refresh(action=\"review\")",
+		"Spec health finding",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status signal output missing %q:\n%s", want, output)
+		}
+	}
+	for _, absent := range []string{"First decision", "Second decision"} {
+		if strings.Contains(output, absent) {
+			t.Fatalf("status signal output should hide per-decision stale %q:\n%s", absent, output)
+		}
+	}
+}
+
 func TestIngestReviewResultNormalizesAdvisoryFindingsAndDispositionCloses(t *testing.T) {
 	packet, err := BuildPacket(BuildInput{
 		Producer: DefaultProducer("test"),

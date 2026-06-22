@@ -84,14 +84,16 @@ func handleSpecSectionNextStep(projectRoot string) (string, error) {
 // / reopen actions. Surfaces serialize this as JSON; the same shape is
 // reused by the CLI subcommand for parity.
 type SpecSectionBaselineResult struct {
-	Action     string `json:"action"`
-	SectionID  string `json:"section_id"`
-	ProjectID  string `json:"project_id"`
-	Hash       string `json:"hash,omitempty"`
-	CapturedAt string `json:"captured_at,omitempty"`
-	ApprovedBy string `json:"approved_by,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	Message    string `json:"message"`
+	Action          string                        `json:"action"`
+	BaselineKind    specflow.BaselineKind         `json:"baseline_kind,omitempty"`
+	BaselineProfile *specflow.BaselineKindProfile `json:"baseline_profile,omitempty"`
+	SectionID       string                        `json:"section_id"`
+	ProjectID       string                        `json:"project_id"`
+	Hash            string                        `json:"hash,omitempty"`
+	CapturedAt      string                        `json:"captured_at,omitempty"`
+	ApprovedBy      string                        `json:"approved_by,omitempty"`
+	Reason          string                        `json:"reason,omitempty"`
+	Message         string                        `json:"message"`
 }
 
 func handleSpecSectionApprove(projectRoot string, args map[string]any) (string, error) {
@@ -223,13 +225,15 @@ func applyApprove(ctx baselineContext) (SpecSectionBaselineResult, error) {
 	default:
 		if existing.Hash == currentHash {
 			return SpecSectionBaselineResult{
-				Action:     ctx.actionLabel,
-				SectionID:  sectionID,
-				ProjectID:  ctx.projectID,
-				Hash:       existing.Hash,
-				CapturedAt: existing.CapturedAt.UTC().Format(time.RFC3339),
-				ApprovedBy: existing.ApprovedBy,
-				Message:    "baseline already current",
+				Action:          ctx.actionLabel,
+				BaselineKind:    existing.Kind,
+				BaselineProfile: baselineProfile(existing.Kind),
+				SectionID:       sectionID,
+				ProjectID:       ctx.projectID,
+				Hash:            existing.Hash,
+				CapturedAt:      existing.CapturedAt.UTC().Format(time.RFC3339),
+				ApprovedBy:      existing.ApprovedBy,
+				Message:         "baseline already current",
 			}, nil
 		}
 		return SpecSectionBaselineResult{}, fmt.Errorf(
@@ -239,25 +243,21 @@ func applyApprove(ctx baselineContext) (SpecSectionBaselineResult, error) {
 	}
 
 	captured := time.Now().UTC()
-	baseline := specflow.SectionBaseline{
-		ProjectID:  ctx.projectID,
-		SectionID:  sectionID,
-		Hash:       currentHash,
-		CapturedAt: captured,
-		ApprovedBy: approvedBy,
-	}
-	if err := ctx.store.Put(baseline); err != nil {
+	baseline := specflow.NewSpecSectionApprovalBaseline(ctx.projectID, section, approvedBy, captured)
+	if err := ctx.store.PutSpecSectionApproval(baseline); err != nil {
 		return SpecSectionBaselineResult{}, err
 	}
 
 	return SpecSectionBaselineResult{
-		Action:     ctx.actionLabel,
-		SectionID:  sectionID,
-		ProjectID:  ctx.projectID,
-		Hash:       currentHash,
-		CapturedAt: captured.Format(time.RFC3339),
-		ApprovedBy: approvedBy,
-		Message:    "baseline recorded",
+		Action:          ctx.actionLabel,
+		BaselineKind:    specflow.BaselineKindSpecSectionApproval,
+		BaselineProfile: baselineProfile(specflow.BaselineKindSpecSectionApproval),
+		SectionID:       sectionID,
+		ProjectID:       ctx.projectID,
+		Hash:            baseline.Hash,
+		CapturedAt:      captured.Format(time.RFC3339),
+		ApprovedBy:      approvedBy,
+		Message:         "baseline recorded",
 	}, nil
 }
 
@@ -274,29 +274,24 @@ func applyRebaseline(ctx baselineContext) (SpecSectionBaselineResult, error) {
 		)
 	}
 
-	currentHash := specflow.HashSection(section)
 	captured := time.Now().UTC()
 
-	baseline := specflow.SectionBaseline{
-		ProjectID:  ctx.projectID,
-		SectionID:  sectionID,
-		Hash:       currentHash,
-		CapturedAt: captured,
-		ApprovedBy: approvedBy,
-	}
-	if err := ctx.store.Put(baseline); err != nil {
+	baseline := specflow.NewSpecSectionApprovalBaseline(ctx.projectID, section, approvedBy, captured)
+	if err := ctx.store.PutSpecSectionApproval(baseline); err != nil {
 		return SpecSectionBaselineResult{}, err
 	}
 
 	return SpecSectionBaselineResult{
-		Action:     ctx.actionLabel,
-		SectionID:  sectionID,
-		ProjectID:  ctx.projectID,
-		Hash:       currentHash,
-		CapturedAt: captured.Format(time.RFC3339),
-		ApprovedBy: approvedBy,
-		Reason:     reason,
-		Message:    "baseline overwritten with current carrier hash",
+		Action:          ctx.actionLabel,
+		BaselineKind:    specflow.BaselineKindSpecSectionApproval,
+		BaselineProfile: baselineProfile(specflow.BaselineKindSpecSectionApproval),
+		SectionID:       sectionID,
+		ProjectID:       ctx.projectID,
+		Hash:            baseline.Hash,
+		CapturedAt:      captured.Format(time.RFC3339),
+		ApprovedBy:      approvedBy,
+		Reason:          reason,
+		Message:         "baseline overwritten with current carrier hash",
 	}, nil
 }
 
@@ -309,12 +304,19 @@ func applyReopen(ctx baselineContext) (SpecSectionBaselineResult, error) {
 	}
 
 	return SpecSectionBaselineResult{
-		Action:    ctx.actionLabel,
-		SectionID: sectionID,
-		ProjectID: ctx.projectID,
-		Reason:    reason,
-		Message:   "baseline removed; section re-enters the onboarding loop on next NextStep call",
+		Action:          ctx.actionLabel,
+		BaselineKind:    specflow.BaselineKindSpecSectionApproval,
+		BaselineProfile: baselineProfile(specflow.BaselineKindSpecSectionApproval),
+		SectionID:       sectionID,
+		ProjectID:       ctx.projectID,
+		Reason:          reason,
+		Message:         "baseline removed; section re-enters the onboarding loop on next NextStep call",
 	}, nil
+}
+
+func baselineProfile(kind specflow.BaselineKind) *specflow.BaselineKindProfile {
+	profile := specflow.DescribeBaselineKind(kind)
+	return &profile
 }
 
 func approvedByArg(args map[string]any) string {

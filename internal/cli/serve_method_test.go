@@ -39,6 +39,12 @@ func TestHandleHaftMethodPullCreatesMethodRun(t *testing.T) {
 	if !strings.Contains(result, "domain-port-before-adapter") {
 		t.Fatalf("pull response missing domain method:\n%s", result)
 	}
+	if !strings.Contains(result, "source_kind=methodpack_card") {
+		t.Fatalf("pull response missing method source posture:\n%s", result)
+	}
+	if !strings.Contains(result, "normativity=support_carrier_non_normative_fpf") {
+		t.Fatalf("pull response lets MethodPack masquerade as normative FPF:\n%s", result)
+	}
 	if !strings.Contains(result, "haft_method(action=\"close\"") {
 		t.Fatalf("pull response missing close instruction:\n%s", result)
 	}
@@ -54,6 +60,12 @@ func TestHandleHaftMethodPullCreatesMethodRun(t *testing.T) {
 	}
 	if stored.Meta.Kind != artifact.KindMethodRun {
 		t.Fatalf("stored kind = %s, want MethodRun", stored.Meta.Kind)
+	}
+	run := decodeStoredMethodRun(t, ctx, store, ref)
+	for _, card := range run.Methods {
+		if card.SourcePosture.Normativity != methodpkg.MethodSourceNormativity {
+			t.Fatalf("stored card %s normativity = %q", card.ID, card.SourcePosture.Normativity)
+		}
 	}
 
 	path := filepath.Join(haftDir, "method-runs", ref+".md")

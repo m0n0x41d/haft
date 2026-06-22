@@ -6,12 +6,12 @@ when_to_use: |
   Operator typed /h-decide explicitly and is committing to a chosen variant. Never auto-fire.
 argument-hint: "[selected variant title or short choice text]"
 disable-model-invocation: true
-allowed-tools: Bash mcp__haft__haft_decision mcp__haft__haft_query
+allowed-tools: Bash mcp__haft__haft_query
 ---
 
 # h-decide — Record a Decision (manual only, Transformer Mandate)
 
-You are recording a `DecisionRecord` via `mcp__haft__haft_decision(action="decide", ...)`. The operator invoked this manually (`disable-model-invocation: true` enforces that structurally per FPF X-TRANSFORMER).
+You are recording a `DecisionRecord` through the manual CLI/input-file path. The operator invoked this manually (`disable-model-invocation: true` enforces that structurally per FPF X-TRANSFORMER). Default MCP serve mode rejects `haft_decision(action="decide", ...)` with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. In v1 the only accepted receipt kind is `manual_cli`.
 
 This is the binding moment. The DecisionRecord becomes the authoritative
 choice that downstream commissions, runtime runs, and verification cycles
@@ -38,12 +38,14 @@ session. For large payloads prefer the input-file path:
 haft artifact create decision.decide --input-file <input.json> --json
 ```
 
-`mcp__haft__haft_decision(action="decide", ...)` remains the compatible
-fallback when the host cannot write a local input file.
+`mcp__haft__haft_decision(action="decide", ...)` is not the default binding
+path. It returns `operator_confirmation_required` unless a future host provides
+a kernel-verifiable authorization receipt; current receipt-backed MCP binding is
+explicitly unsupported.
 
 ## Required arguments for standard mode (default)
 
-Call `mcp__haft__haft_decision(action="decide", ...)` with at minimum:
+Write an input JSON for `haft artifact create decision.decide --input-file ... --json` with at minimum:
 
 - `problem_ref` (or `problem_refs` for multi-problem) — the ProblemCard(s) this addresses
 - `portfolio_ref` — the SolutionPortfolio whose variants you compared

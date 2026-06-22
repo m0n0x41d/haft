@@ -3,6 +3,7 @@ package specflow
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -36,7 +37,7 @@ func TestHashSectionIsDeterministicForSameLoadBearingFields(t *testing.T) {
 	}
 	b := a
 	b.Path = "different/path/target-system.md" // path is excluded from hash
-	b.Line = 42                                 // line is excluded
+	b.Line = 42                                // line is excluded
 	b.Malformed = false
 
 	if HashSection(a) != HashSection(b) {
@@ -98,11 +99,102 @@ func TestMemoryBaselineStoreRoundTrip(t *testing.T) {
 	if got.Hash != "abc123" {
 		t.Fatalf("hash = %q, want %q", got.Hash, "abc123")
 	}
+	if got.Kind != BaselineKindSpecSectionApproval {
+		t.Fatalf("kind = %q, want %q", got.Kind, BaselineKindSpecSectionApproval)
+	}
 	if got.ApprovedBy != "human" {
 		t.Fatalf("approved_by = %q, want %q", got.ApprovedBy, "human")
 	}
 	if got.CapturedAt.IsZero() {
 		t.Fatalf("captured_at should be set on Put")
+	}
+}
+
+func TestSpecSectionApprovalBaselineConstructorCreatesTypedProjection(t *testing.T) {
+	section := activeEnvironmentSection()
+	captured := time.Date(2026, 6, 22, 10, 0, 0, 0, time.UTC)
+
+	snapshot := NewSpecSectionApprovalBaseline("proj-1", section, "human", captured)
+	projection := snapshot.SectionBaseline()
+
+	if projection.Kind != BaselineKindSpecSectionApproval {
+		t.Fatalf("kind = %q, want %q", projection.Kind, BaselineKindSpecSectionApproval)
+	}
+	if projection.Hash != HashSection(section) {
+		t.Fatalf("hash = %q, want HashSection(section)", projection.Hash)
+	}
+	if projection.CapturedAt != captured {
+		t.Fatalf("captured_at = %s, want %s", projection.CapturedAt, captured)
+	}
+}
+
+func TestBaselineKindProfilesKeepSnapshotMeaningsDistinct(t *testing.T) {
+	cases := []struct {
+		kind      BaselineKind
+		object    string
+		authority string
+	}{
+		{
+			kind:      BaselineKindSpecSectionApproval,
+			object:    "SpecSectionApprovalBaseline",
+			authority: "spec_lifecycle_approval_baseline",
+		},
+		{
+			kind:      BaselineKindPreWorkReference,
+			object:    "PreWorkReferenceSnapshot",
+			authority: "work_reference_only",
+		},
+		{
+			kind:      BaselineKindVerifiedState,
+			object:    "VerifiedStateSnapshot",
+			authority: "evidence_measurement_only",
+		},
+		{
+			kind:      BaselineKindUnknownLegacy,
+			object:    "UnknownLegacyBaseline",
+			authority: "unknown_legacy_do_not_strengthen",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(string(tc.kind), func(t *testing.T) {
+			profile := DescribeBaselineKind(tc.kind)
+			if profile.Object != tc.object {
+				t.Fatalf("object = %q, want %q", profile.Object, tc.object)
+			}
+			if profile.AuthorityBoundary != tc.authority {
+				t.Fatalf("authority = %q, want %q", profile.AuthorityBoundary, tc.authority)
+			}
+		})
+	}
+}
+
+func TestBaselineStoreRejectsNonSpecApprovalSnapshotKind(t *testing.T) {
+	store := NewMemoryBaselineStore()
+
+	err := store.Put(SectionBaseline{
+		Kind:      BaselineKindVerifiedState,
+		ProjectID: "proj-1",
+		SectionID: "tgt-env-1",
+		Hash:      "abc123",
+	})
+	if err == nil {
+		t.Fatal("Put accepted verified_state_snapshot as a spec section approval baseline")
+	}
+	if !strings.Contains(err.Error(), string(BaselineKindSpecSectionApproval)) {
+		t.Fatalf("error = %v, want spec-section approval boundary", err)
+	}
+}
+
+func TestParseBaselineKindPreservesUnknownLegacyPosture(t *testing.T) {
+	for _, raw := range []string{"", "  ", "legacy", "pre_work_reference"} {
+		if got := ParseBaselineKind(raw); got != BaselineKindUnknownLegacy {
+			t.Fatalf("ParseBaselineKind(%q) = %q, want %q", raw, got, BaselineKindUnknownLegacy)
+		}
+	}
+
+	if got := ParseBaselineKind(string(BaselineKindSpecSectionApproval)); got != BaselineKindSpecSectionApproval {
+		t.Fatalf("ParseBaselineKind(spec) = %q", got)
 	}
 }
 
@@ -139,6 +231,9 @@ func TestSQLiteBaselineStoreRoundTripWithMigration(t *testing.T) {
 	}
 	if got.Hash != "deadbeef" {
 		t.Fatalf("hash = %q, want %q", got.Hash, "deadbeef")
+	}
+	if got.Kind != BaselineKindSpecSectionApproval {
+		t.Fatalf("kind = %q, want %q", got.Kind, BaselineKindSpecSectionApproval)
 	}
 	if got.ApprovedBy != "human" {
 		t.Fatalf("approved_by = %q, want human", got.ApprovedBy)

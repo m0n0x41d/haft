@@ -51,6 +51,14 @@ falsifiable predictions, is recorded in
 Upgrading from v7? See [MIGRATION-v8.md](MIGRATION-v8.md) — the upgrade checklist
 plus what was dropped (`haft agent`, TUI, desktop, v7 helper commands).
 
+### Carrier Authority Manifest
+
+Haft distinguishes current authority from support, compatibility, provenance,
+archive, and sidekick carriers. Run `haft carrier manifest --json` for the
+drill-down inventory. Default status stays compact; this manifest exists so
+agents do not treat historical desktop/TUI/standalone surfaces, review packets,
+or Open-Sleigh sidekick files as current Haft authority.
+
 ---
 
 ## Built on First Principles Framework
@@ -184,7 +192,7 @@ Routing reliability is testable: `haft check routing` runs 40 golden prompts
 ### Evidence workflow
 
 Attach evidence with `haft_decision(action="evidence", ...)`. Evidence carries
-formality levels (F0–F3), congruence levels (CL0–CL3), and expiry dates. Trust
+formality levels (F0–F9), congruence levels (CL0–CL3), and expiry dates. Trust
 scores (R_eff) degrade as evidence ages; stale evidence triggers refresh. Use
 `haft_decision(action="measure", ...)` for post-implementation verification.
 
@@ -236,10 +244,13 @@ needs no Elixir/Mix install:
 ~/.haft/runtimes/open-sleigh/current
 ```
 
-The lower-level surface is the `haft_commission` MCP tool and the `haft commission`
-CLI (`create-from-decision`, `create-batch`, `create-from-plan`, `list`, `show`,
-`requeue`, `cancel`, `claim`, ...). Every commission action becomes a typed
-artifact transition, never a free prompt:
+The lower-level surface is the `haft commission` CLI for binding creation
+(`create-from-decision`, `create-batch`, `create-from-plan`, ...) plus the
+`haft_commission` MCP tool for non-creation lifecycle/read actions. MCP creation
+actions fail closed by default with `operator_confirmation_required`; every
+authorized commission action must come through a kernel-accepted `manual_cli`
+authorization receipt and becomes a typed artifact transition. Model-supplied
+MCP arguments or prompt text are not proof of operator authorization:
 
 ```text
 SpecSection(s) → DecisionRecord → WorkCommission → RuntimeRun → Evidence → SpecCoverage

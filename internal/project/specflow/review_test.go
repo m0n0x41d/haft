@@ -193,6 +193,43 @@ func TestReviewSpecificationSet_UsesDeclaredFrameInsteadOfKindPrefix(t *testing.
 	}
 }
 
+func TestReviewSpecificationSet_UsesCarrierAndSidekickFrames(t *testing.T) {
+	carrierSection := reviewSectionFixture(
+		"TS.carrier-frame.001",
+		"target-system",
+		"target.publication_carrier",
+		"Publication carrier view",
+		"explanation",
+		"description",
+		nil,
+	)
+	carrierSection.SystemFrame = project.SystemReferenceFrame{ID: "carrier", Kind: "carrier", Source: "test"}
+
+	sidekickSection := reviewSectionFixture(
+		"ES.sidekick-frame.001",
+		"enabling-system",
+		"enabling.open_sleigh_sidekick",
+		"Open-Sleigh sidekick view",
+		"explanation",
+		"description",
+		nil,
+	)
+	sidekickSection.SystemFrame = project.SystemReferenceFrame{ID: "sidekick", Kind: "sidekick", Source: "test"}
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{carrierSection, sidekickSection},
+	})
+
+	assertNoReviewFinding(t, packet, "system_frame_mismatch")
+	sections := reviewSectionsByID(packet.Sections)
+	if sections["TS.carrier-frame.001"].Frame != "carrier" {
+		t.Fatalf("carrier frame = %q, want carrier", sections["TS.carrier-frame.001"].Frame)
+	}
+	if sections["ES.sidekick-frame.001"].Frame != "sidekick" {
+		t.Fatalf("sidekick frame = %q, want sidekick", sections["ES.sidekick-frame.001"].Frame)
+	}
+}
+
 func TestReviewSpecificationSet_UsesExplicitClaimSupport(t *testing.T) {
 	section := reviewSectionFixture(
 		"ES.gate.001",
@@ -285,6 +322,87 @@ func TestReviewSpecificationSet_FindsExplicitClaimPostureIssues(t *testing.T) {
 	}
 }
 
+func TestReviewSpecificationSet_CategorizesH9Findings(t *testing.T) {
+	missingObject := reviewSectionFixture(
+		"TS.missing-object.001",
+		"target-system",
+		"",
+		"",
+		"definition",
+		"object",
+		nil,
+	)
+	frameMismatch := reviewSectionFixture(
+		"TS.frame.001",
+		"enabling-system",
+		"target.boundary",
+		"Frame mismatch",
+		"definition",
+		"object",
+		nil,
+	)
+	frameMismatch.SystemFrame = project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "test"}
+	carrierLayer := reviewSectionFixture(
+		"TS.carrier.001",
+		"target-system",
+		"target.publication_carrier",
+		"Carrier layer",
+		"explanation",
+		"carrier",
+		nil,
+	)
+	descriptionAuthority := reviewSectionFixture(
+		"ES.description-authority.001",
+		"enabling-system",
+		"enabling.agent_policy",
+		"Description authority",
+		"explanation",
+		"work",
+		nil,
+	)
+	highRiskUnknown := reviewSectionFixture(
+		"ES.licensing.001",
+		"enabling-system",
+		"enabling.licensing_platform",
+		"Licensing platform",
+		"definition",
+		"object",
+		nil,
+	)
+	claimPosture := reviewSectionFixture(
+		"TS.claim.001",
+		"target-system",
+		"target.claim",
+		"Claim posture",
+		"definition",
+		"object",
+		nil,
+	)
+	claimPosture.Claims = []project.SpecClaim{{
+		ID:        "TS.claim.001.mixed",
+		Class:     "A/D",
+		Statement: "One sentence acts as gate and duty.",
+	}}
+
+	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{
+			missingObject,
+			frameMismatch,
+			carrierLayer,
+			descriptionAuthority,
+			highRiskUnknown,
+			claimPosture,
+		},
+	})
+
+	assertReviewFindingCategory(t, packet, "missing_bearer", ReviewFindingCategoryPrimaryObject)
+	assertReviewFindingCategory(t, packet, "system_frame_mismatch", ReviewFindingCategoryFrame)
+	assertReviewFindingCategory(t, packet, "active_carrier_layer", ReviewFindingCategoryPublicationBoundary)
+	assertReviewFindingCategory(t, packet, "description_use_confusion", ReviewFindingCategoryDescriptionBoundary)
+	assertReviewFindingCategory(t, packet, "unknown_high_risk_without_explicit_claims", ReviewFindingCategoryUnknownAbstain)
+	assertReviewFindingCategory(t, packet, "mixed_claim_unresolved", ReviewFindingCategoryClaimPosture)
+}
+
 func reviewSectionFixture(
 	id string,
 	documentKind string,
@@ -316,6 +434,27 @@ func reviewSectionFixture(
 			{Kind: "review", Description: "Human confirms the section still holds."},
 		},
 	}
+}
+
+func assertReviewFindingCategory(
+	t *testing.T,
+	packet ReviewPacket,
+	ruleID string,
+	category string,
+) {
+	t.Helper()
+
+	for _, finding := range packet.Findings {
+		if finding.RuleID != ruleID {
+			continue
+		}
+		if finding.Category != category {
+			t.Fatalf("%s category = %q, want %q", ruleID, finding.Category, category)
+		}
+		return
+	}
+
+	t.Fatalf("finding %q not found in %#v", ruleID, packet.Findings)
 }
 
 func assertReviewFinding(
@@ -351,6 +490,15 @@ func assertNoReviewFinding(
 			t.Fatalf("unexpected finding %q in %#v", ruleID, packet.Findings)
 		}
 	}
+}
+
+func reviewSectionsByID(sections []ReviewSection) map[string]ReviewSection {
+	out := make(map[string]ReviewSection, len(sections))
+	for _, section := range sections {
+		out[section.SectionID] = section
+	}
+
+	return out
 }
 
 func assertReviewProfileInput(

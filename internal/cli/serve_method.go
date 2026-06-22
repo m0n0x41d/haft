@@ -225,6 +225,9 @@ func renderMethodPullResponse(run methodpkg.MethodRun, filePath string) string {
 		b.WriteString("\nMethods:\n")
 		for _, card := range run.Methods {
 			b.WriteString(fmt.Sprintf("- %s `%s` — %s\n", card.Title, card.ID, card.WhyApplies))
+			if posture := methodpkg.RenderSourcePosture(card.SourcePosture); posture != "" {
+				b.WriteString(fmt.Sprintf("  - %s\n", posture))
+			}
 			for _, gate := range card.HardGates {
 				b.WriteString(fmt.Sprintf("  - hard gate `%s`: %s\n", gate.ID, gate.PassCondition))
 			}
@@ -267,6 +270,9 @@ func renderMethodRunSummary(run methodpkg.MethodRun) string {
 	b.WriteString("- Methods:\n")
 	for _, card := range run.Methods {
 		b.WriteString(fmt.Sprintf("  - %s `%s`\n", card.Title, card.ID))
+		if posture := methodpkg.RenderSourcePosture(card.SourcePosture); posture != "" {
+			b.WriteString(fmt.Sprintf("    - %s\n", posture))
+		}
 	}
 	if run.Status == "open" {
 		b.WriteString("\n")

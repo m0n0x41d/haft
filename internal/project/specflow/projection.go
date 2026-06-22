@@ -39,6 +39,8 @@ type SpecLifecycleProjection struct {
 	State            LifecycleState             `json:"state"`
 	Action           LifecycleAction            `json:"action"`
 	Object           string                     `json:"object"`
+	BaselineKind     BaselineKind               `json:"baseline_kind,omitempty"`
+	BaselineProfile  *BaselineKindProfile       `json:"baseline_profile,omitempty"`
 	Phase            PhaseID                    `json:"phase,omitempty"`
 	Audience         Audience                   `json:"audience,omitempty"`
 	DocumentKind     project.SpecDocumentKind   `json:"document_kind,omitempty"`
@@ -64,6 +66,8 @@ func ProjectLifecycle(state SpecState) SpecLifecycleProjection {
 		State:            lifecycleState(action, intent),
 		Action:           action,
 		Object:           lifecycleObject(action),
+		BaselineKind:     lifecycleBaselineKind(action),
+		BaselineProfile:  lifecycleBaselineProfile(action),
 		Phase:            intent.Phase,
 		Audience:         intent.Audience,
 		DocumentKind:     intent.DocumentKind,
@@ -115,7 +119,27 @@ func lifecycleObject(action LifecycleAction) string {
 	if action == LifecycleActionApprove {
 		return "SpecSectionBaseline"
 	}
+	if action == LifecycleActionTriage {
+		return "SpecSectionBaseline"
+	}
 	return "SpecSection"
+}
+
+func lifecycleBaselineKind(action LifecycleAction) BaselineKind {
+	if action == LifecycleActionApprove || action == LifecycleActionTriage {
+		return BaselineKindSpecSectionApproval
+	}
+	return ""
+}
+
+func lifecycleBaselineProfile(action LifecycleAction) *BaselineKindProfile {
+	kind := lifecycleBaselineKind(action)
+	if kind == "" {
+		return nil
+	}
+
+	profile := DescribeBaselineKind(kind)
+	return &profile
 }
 
 func lifecycleWhy(intent WorkflowIntent, section project.SpecSection) string {

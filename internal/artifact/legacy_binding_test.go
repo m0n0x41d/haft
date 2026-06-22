@@ -49,6 +49,207 @@ func Run() string {
 	}
 }
 
+func TestApplyHighConfidenceLegacyBindingRepairsPersistsBindingTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-legacy-bind-apply", "Legacy apply")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ApplyHighConfidenceLegacyBindingRepairs(ctx, store, projectRoot, LegacyBindingApplyOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Applied) != 1 {
+		t.Fatalf("applied = %+v, want one repair", report.Applied)
+	}
+
+	updated, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := updated.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 || fields.BindingTargets[0].SymbolName != "Run" {
+		t.Fatalf("binding targets = %+v, want Run target", fields.BindingTargets)
+	}
+
+	symbols, err := store.GetAffectedSymbols(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(symbols) != 1 || symbols[0].SymbolName != "Run" {
+		t.Fatalf("symbols = %+v, want Run", symbols)
+	}
+}
+
+func TestBuildLegacyBindingReportProjectsSingleStoredSymbol(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string { return "run" }
+func Stop() string { return "stop" }
+`)
+
+	dec := createTestDecision(t, store, "dec-legacy-bind-stored", "Stored single symbol")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedSymbols(ctx, dec.Meta.ID, []AffectedSymbol{{
+		FilePath:   "app.go",
+		SymbolName: "Stop",
+		SymbolKind: "func",
+		Line:       4,
+		EndLine:    4,
+		Hash:       "hash",
+	}}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := BuildLegacyBindingReport(ctx, store, projectRoot, LegacyBindingOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Items) != 1 {
+		t.Fatalf("items = %+v, want one repair", report.Items)
+	}
+	item := report.Items[0]
+	if !item.HighConfidence || item.RecommendedAction != LegacyBindingActionProposeRebaseline {
+		t.Fatalf("item = %+v, want high-confidence repair", item)
+	}
+	if len(item.BindingTargets) != 1 || item.BindingTargets[0].SymbolName != "Stop" {
+		t.Fatalf("binding targets = %+v, want Stop", item.BindingTargets)
+	}
+}
+
+func TestApplyLegacyBindingSelectionsPersistsExplicitTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	dec := createTestDecision(t, store, "dec-legacy-bind-select", "Selected binding")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ApplyLegacyBindingSelections(ctx, store, LegacyBindingSelectionDocument{
+		Items: []LegacyBindingSelection{
+			{
+				DecisionID: dec.Meta.ID,
+				BindingTargets: []BindingTarget{
+					{
+						Kind:             BindingTargetSymbol,
+						FilePath:         "app.go",
+						SymbolName:       "Run",
+						SymbolKind:       "func",
+						Line:             3,
+						EndLine:          5,
+						BodyHash:         "hash",
+						Confidence:       "high",
+						ResolutionSource: "agent_review_selection",
+					},
+				},
+				ReviewRationale: "candidate list matched the decision title",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Applied) != 1 {
+		t.Fatalf("applied = %+v, want one selection", report.Applied)
+	}
+
+	updated, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := updated.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 || fields.BindingTargets[0].SymbolName != "Run" {
+		t.Fatalf("binding targets = %+v, want Run target", fields.BindingTargets)
+	}
+
+	symbols, err := store.GetAffectedSymbols(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(symbols) != 1 || symbols[0].SymbolName != "Run" {
+		t.Fatalf("affected symbols = %+v, want Run projection", symbols)
+	}
+}
+
+func TestBuildLegacyBindingReportTreatsExplicitTargetsAsPrecise(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+	writeTestFile(t, projectRoot, "app_test.go", `package main
+
+func TestRun() {
+	_ = Run()
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-legacy-bind-precise", "Explicit target")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{
+		{Path: "app.go"},
+		{Path: "app_test.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := ApplyLegacyBindingSelections(ctx, store, LegacyBindingSelectionDocument{
+		Items: []LegacyBindingSelection{
+			{
+				DecisionID: dec.Meta.ID,
+				BindingTargets: []BindingTarget{
+					{
+						Kind:             BindingTargetSymbol,
+						FilePath:         "app.go",
+						SymbolName:       "Run",
+						SymbolKind:       "func",
+						Line:             3,
+						EndLine:          5,
+						BodyHash:         "hash",
+						Confidence:       "high",
+						ResolutionSource: "agent_review_selection",
+					},
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := BuildLegacyBindingReport(ctx, store, projectRoot, LegacyBindingOptions{IncludeClean: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.AlreadyPrecise != 1 {
+		t.Fatalf("already precise = %d, want 1; report = %+v", report.Summary.AlreadyPrecise, report)
+	}
+	if report.Summary.AmbiguousFileScope != 0 {
+		t.Fatalf("ambiguous file scope = %d, want 0", report.Summary.AmbiguousFileScope)
+	}
+}
+
 func TestBuildLegacyBindingReportSurfacesAmbiguousSymbolSelection(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

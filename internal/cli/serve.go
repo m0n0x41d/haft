@@ -302,6 +302,10 @@ func makeV5Handler(store *artifact.Store, searcher recall.Searcher, crossHybrid 
 // string when the action does not create a primary artifact (e.g. read-only
 // queries, mutations of existing artifacts).
 func dispatchTool(ctx context.Context, store *artifact.Store, searcher recall.Searcher, haftDir string, name string, args map[string]any) (string, string, error) {
+	if err := rejectMCPBindingAction(name, args); err != nil {
+		return "", "", err
+	}
+
 	switch name {
 	case "haft_note":
 		return handleQuintNote(ctx, store, haftDir, args)
@@ -1047,6 +1051,18 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if input.AffectedFiles, err = parseStrictStringArrayFromArgs(args, "affected_files"); err != nil {
 			return "", "", err
 		}
+		if input.BindingHints, err = parseStrictStringArrayFromArgs(args, "binding_hints"); err != nil {
+			return "", "", err
+		}
+		if v, ok := args["binding_scope"].(string); ok {
+			input.BindingScope = v
+		}
+		if v, ok := args["binding_fallback_reason"].(string); ok {
+			input.BindingFallbackReason = v
+		}
+		if _, err := parseJSONArg(args, "binding_targets", &input.BindingTargets); err != nil {
+			return "", "", err
+		}
 		if v, ok := args["search_keywords"].(string); ok {
 			input.SearchKeywords = v
 		}
@@ -1098,7 +1114,11 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if len(input.AffectedFiles) > 0 {
 			projectRoot := filepath.Dir(haftDir)
 			baselined, blErr := artifact.Baseline(ctx, store, projectRoot, artifact.BaselineInput{
-				DecisionRef: a.Meta.ID,
+				DecisionRef:           a.Meta.ID,
+				BindingTargets:        input.BindingTargets,
+				BindingHints:          input.BindingHints,
+				BindingScope:          input.BindingScope,
+				BindingFallbackReason: input.BindingFallbackReason,
 			})
 			if blErr != nil {
 				baselineNote = fmt.Sprintf("\n\n⚠ Auto-baseline failed: %v\nRun manually: haft_decision(action=\"baseline\", decision_ref=\"%s\")", blErr, a.Meta.ID)
@@ -1230,6 +1250,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if fl, ok := args["formality_level"].(float64); ok {
 			input.FormalityLevel = int(fl)
 		}
+		if v, ok := args["formality_scale_id"].(string); ok {
+			input.FormalityScaleID = v
+		}
 		if input.ClaimRefs, err = parseStrictStringArrayFromArgs(args, "claim_refs"); err != nil {
 			return "", "", err
 		}
@@ -1265,6 +1288,16 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 				present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), "", nil
 		}
 		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
+		input.BindingHints = parseStringArrayFromArgs(args, "binding_hints")
+		if v, ok := args["binding_scope"].(string); ok {
+			input.BindingScope = v
+		}
+		if v, ok := args["binding_fallback_reason"].(string); ok {
+			input.BindingFallbackReason = v
+		}
+		if _, err := parseJSONArg(args, "binding_targets", &input.BindingTargets); err != nil {
+			return "", "", err
+		}
 
 		var baselineWarnings []string
 		if len(input.AffectedFiles) > 0 {
@@ -1400,7 +1433,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		navStrip = navStripForProjectStatus(ctx, store, contextName, projectRoot)
+		navStrip = navStripForStatusStaleLane(ctx, store, contextName)
 		return present.MaintenanceDrainResponse(report, navStrip), nil
 
 	case artifact.RefreshWaive:
@@ -1534,12 +1567,12 @@ func navStripWithStaleSnapshot(ctx context.Context, store *artifact.Store, conte
 	return present.NavStrip(nav)
 }
 
-func navStripForProjectStatus(ctx context.Context, store *artifact.Store, contextName string, projectRoot string) string {
-	staleItems, err := artifact.ScanStale(ctx, store, projectRoot)
+func navStripForStatusStaleLane(ctx context.Context, store *artifact.Store, contextName string) string {
+	data, err := artifact.FetchStatusData(ctx, store, contextName, "")
 	if err != nil {
 		return present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 	}
-	return navStripWithStaleSnapshot(ctx, store, contextName, staleItems)
+	return navStripWithStaleSnapshot(ctx, store, contextName, data.StaleItems)
 }
 
 func codeContextSymbolName(symbol codebase.CodeSymbol) string {
@@ -1901,6 +1934,46 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "carrier_manifest":
+		manifest := project.DefaultCarrierAuthorityManifest()
+		findings := project.ValidateCarrierAuthorityManifest(manifest)
+		if len(findings) > 0 {
+			return "", fmt.Errorf("carrier manifest invalid: %v", findings)
+		}
+		payload, err := project.CarrierAuthorityManifestJSON(manifest)
+		if err != nil {
+			return "", fmt.Errorf("marshal carrier manifest: %w", err)
+		}
+		return string(payload), nil
+
+	case "carrier_check":
+		projectRoot := filepath.Dir(haftDir)
+		result, err := project.CheckCarrierSemio(projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("check carrier semio: %w", err)
+		}
+		payload, err := project.CarrierSemioCheckResultJSON(result)
+		if err != nil {
+			return "", fmt.Errorf("marshal carrier semio check: %w", err)
+		}
+		return string(payload), nil
+
+	case "contract_audit":
+		record := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal interface contract audit: %w", err)
+		}
+		return string(payload), nil
+
+	case "contract_generation":
+		record := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal interface contract generation manifest: %w", err)
+		}
+		return string(payload), nil
+
 	case "spec_review":
 		projectRoot := filepath.Dir(haftDir)
 		packet, err := buildSpecReviewPacket(projectRoot)
@@ -2000,6 +2073,41 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "drift_events":
+		projectRoot := filepath.Dir(haftDir)
+		reports, err := artifact.CheckDrift(ctx, store, projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("scan drift: %w", err)
+		}
+		record := artifact.BuildDriftEventReport(reports)
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal drift event report: %w", err)
+		}
+		return string(payload), nil
+
+	case "decision_reconcile":
+		record, err := artifact.BuildDecisionReconciliationPlan(ctx, store)
+		if err != nil {
+			return "", fmt.Errorf("build decision reconciliation plan: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal decision reconciliation plan: %w", err)
+		}
+		return string(payload), nil
+
+	case "governing_set":
+		record, err := artifact.BuildCurrentGoverningSetReportFiltered(ctx, store, governingSetFilterFromArgs(args))
+		if err != nil {
+			return "", fmt.Errorf("build current governing set: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal current governing set: %w", err)
+		}
+		return string(payload), nil
+
 	case "blocked_use":
 		nextActions := parseStringArrayFromArgs(args, "next_actions")
 		if len(nextActions) == 0 {
@@ -2083,7 +2191,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 
@@ -2278,6 +2386,19 @@ func problemReadinessLabel(fields artifact.ProblemFields) string {
 	}
 
 	return fields.Profile.Readiness
+}
+
+func governingSetFilterFromArgs(args map[string]any) artifact.CurrentGoverningSetFilter {
+	targetRefs := parseStringArrayFromArgs(args, "source_refs")
+	targetRef := ""
+	if len(targetRefs) > 0 {
+		targetRef = targetRefs[0]
+	}
+	return artifact.CurrentGoverningSetFilter{
+		Query:      stringArg(args, "query"),
+		SubjectRef: stringArg(args, "bearer_ref"),
+		TargetRef:  targetRef,
+	}
 }
 
 // parseStringArrayFromArgs handles MCP client serialization differences.

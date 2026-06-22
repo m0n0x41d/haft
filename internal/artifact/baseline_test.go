@@ -318,6 +318,8 @@ func TestAssessModifiedFileDriftClassifiesGeneratedAndCarrierPaths(t *testing.T)
 		{path: "embed-sidecar/target/debug/libhaft_embed.a", want: DriftMaterialityGeneratedOrIgnored},
 		{path: "CHANGELOG.md", want: DriftMaterialityCarrierOnly},
 		{path: ".context/current.plan", want: DriftMaterialityCarrierOnly},
+		{path: ".haft/specs/target-system.md", want: DriftMaterialityCarrierOnly},
+		{path: "internal/cli/skill/h-frame/SKILL.md", want: DriftMaterialityCarrierOnly},
 		{path: "open-sleigh/.haft/project.yaml", want: DriftMaterialityCarrierOnly},
 	}
 
@@ -331,6 +333,14 @@ func TestAssessModifiedFileDriftClassifiesGeneratedAndCarrierPaths(t *testing.T)
 				t.Fatal("generated/carrier drift should be audit-only")
 			}
 		})
+	}
+}
+
+func TestAssessModifiedFileDriftDoesNotTreatEveryTextFileAsCarrier(t *testing.T) {
+	got := assessModifiedFileDrift("", "notes.txt", nil)
+
+	if got.Materiality == DriftMaterialityCarrierOnly {
+		t.Fatal("plain text files should not be globally treated as carrier-only")
 	}
 }
 

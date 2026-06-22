@@ -3,14 +3,14 @@ package fpf
 func haftCommissionTool() Tool {
 	return Tool{
 		Name:        "haft_commission",
-		Description: "Create, list, show, claim, requeue, cancel, and update WorkCommissions. WorkCommissions are bounded execution authorizations between DecisionRecords and RuntimeRuns; external trackers are optional projections, not work authority.",
+		Description: "Create, list, show, claim, requeue, cancel, and update WorkCommissions. Creation actions are binding governance acts; MCP fails them closed by default with operator_confirmation_required because model-supplied arguments are not kernel-verifiable manual_cli authorization receipts. WorkCommissions are bounded execution authorizations between DecisionRecords and RuntimeRuns; external trackers are optional projections, not work authority.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"create", "create_from_decision", "create_batch_from_decisions", "create_from_plan", "list", "list_runnable", "show", "claim_for_preflight", "requeue", "cancel", "record_preflight", "start_after_preflight", "record_run_event", "complete_or_block"},
-					"description": "create=persist a WorkCommission, create_from_decision=derive one from an active DecisionRecord plus explicit repo/scope inputs, create_batch_from_decisions=derive one WorkCommission per active DecisionRecord, create_from_plan=derive WorkCommissions from an ImplementationPlan-lite object, list=return commissions by selector open/stale/terminal/runnable/all with operator hints, list_runnable=return queued/ready non-expired dependency-satisfied commissions, show=return one WorkCommission, claim_for_preflight=atomically move one runnable commission to preflighting, requeue=operator/runtime recovery that clears an active lease and returns allowed states to queued, cancel=operator cancellation that keeps the audit record, other actions append lifecycle facts.",
+					"description": "create/create_from_decision/create_batch_from_decisions/create_from_plan are binding creation actions and return operator_confirmation_required in default MCP cli-only mode. list=return commissions by selector open/stale/terminal/runnable/all with operator hints, list_runnable=return queued/ready non-expired dependency-satisfied commissions, show=return one WorkCommission, claim_for_preflight=atomically move one runnable commission to preflighting, requeue=operator/runtime recovery that clears an active lease and returns allowed states to queued, cancel=operator cancellation that keeps the audit record, other actions append lifecycle facts.",
 				},
 				"commission": map[string]interface{}{
 					"type":        "object",

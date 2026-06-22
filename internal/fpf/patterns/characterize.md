@@ -20,7 +20,7 @@ Follow the pipeline: normalize > indicatorize > score > fold (optional) > compar
 **Trigger:** Comparing rigor levels across different claims or models
 **Spec:** B.3.4.1, C.2.3
 
-Formality is ordinal: F0 (informal prose) > F1 (structured narrative) > F2 (formalizable schema) > F3 (proof-grade formalism). Higher formality caps assurance: if one premise is F0, the whole chain is capped at F0. Never average formality; use min. Monotone: raising F is always safe.
+Formality is ordinal on the current FPF F0-F9 scale. Legacy Haft F0-F3 values remain readable as the lower part of the scale, but F4-F9 must not be silently folded back into F0-F3. Higher formality caps assurance: if one premise is F0, the whole chain is capped at F0. Never average formality; use min. Monotone: raising F is always safe.
 
 ## CHR-04: Assurance Tuple (F-G-R-CL)
 **Trigger:** Reporting confidence in a result; comparing assurance across work streams

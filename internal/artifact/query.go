@@ -119,6 +119,17 @@ type StatusData struct {
 	// projectRoot. Otherwise nil (drift surfacing skipped, kernel computes
 	// nothing). See dec-20260526-9fdd33ed (PRIME of sol-20260526-744c6381).
 	Drift []DriftReport
+
+	// DriftEvents groups Drift by changed target/trigger/materiality so compact
+	// status can show unique events and fanout without multiplying one shared
+	// change across many decisions. Compatibility consumers still read Drift.
+	DriftEvents DriftEventReport
+
+	// ReconciliationCues is a derived read-only attention lane over DriftEvents,
+	// DecisionReconciliationPlan, and CurrentGoverningSet. It only points to
+	// drill-downs; it never performs lineage, evidence, baseline, or gate
+	// mutations.
+	ReconciliationCues ReconciliationCueReport
 }
 
 // FetchStatusData gathers all dashboard data without formatting.
@@ -257,6 +268,8 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 					}
 				}
 			}
+			data.DriftEvents = BuildDriftEventReport(data.Drift)
+			data.ReconciliationCues = BuildStatusReconciliationCueReport(ctx, store, data.DriftEvents)
 		}
 	}
 
@@ -284,6 +297,24 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	}
 
 	return data, nil
+}
+
+func BuildStatusReconciliationCueReport(
+	ctx context.Context,
+	store ArtifactStore,
+	driftEvents DriftEventReport,
+) ReconciliationCueReport {
+	reconciliation := DecisionReconciliationPlan{}
+	if plan, err := BuildDecisionReconciliationPlan(ctx, store); err == nil {
+		reconciliation = plan
+	}
+
+	governing := CurrentGoverningSetReport{}
+	if report, err := BuildCurrentGoverningSetReport(ctx, store); err == nil {
+		governing = report
+	}
+
+	return BuildReconciliationCueReport(driftEvents, reconciliation, governing)
 }
 
 type WorkCommissionStatus struct {

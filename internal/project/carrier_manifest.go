@@ -1,0 +1,402 @@
+package project
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+type CarrierAuthorityClass string
+
+const (
+	CarrierAuthorityCurrent       CarrierAuthorityClass = "current_authority"
+	CarrierAuthoritySupport       CarrierAuthorityClass = "support_material"
+	CarrierAuthorityCompatibility CarrierAuthorityClass = "compatibility_carrier"
+	CarrierAuthorityProvenance    CarrierAuthorityClass = "provenance"
+	CarrierAuthorityArchive       CarrierAuthorityClass = "archive"
+	CarrierAuthoritySidekick      CarrierAuthorityClass = "external_sidekick_out_of_scope"
+)
+
+type CarrierManifestEntry struct {
+	ID                string                `json:"id"`
+	PathPattern       string                `json:"path_pattern"`
+	AuthorityClass    CarrierAuthorityClass `json:"authority_class"`
+	Surface           string                `json:"surface"`
+	Current           bool                  `json:"current"`
+	Normativity       string                `json:"normativity"`
+	DeadSurfacePolicy string                `json:"dead_surface_policy,omitempty"`
+	Notes             string                `json:"notes,omitempty"`
+}
+
+type CarrierAuthorityManifest struct {
+	SchemaVersion int                    `json:"schema_version"`
+	GeneratedBy   string                 `json:"generated_by"`
+	Entries       []CarrierManifestEntry `json:"entries"`
+}
+
+type CarrierSemioCheckResult struct {
+	SchemaVersion int                   `json:"schema_version"`
+	CheckedFiles  []string              `json:"checked_files"`
+	Findings      []CarrierSemioFinding `json:"findings"`
+}
+
+type CarrierSemioFinding struct {
+	Path       string `json:"path"`
+	Line       int    `json:"line"`
+	Term       string `json:"term"`
+	Snippet    string `json:"snippet"`
+	Diagnostic string `json:"diagnostic"`
+}
+
+func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
+	entries := []CarrierManifestEntry{
+		{
+			ID:             "project-spec-carriers",
+			PathPattern:    ".haft/specs/*.md",
+			AuthorityClass: CarrierAuthorityCurrent,
+			Surface:        "spec",
+			Current:        true,
+			Normativity:    "current project specification carrier; SQL graph remains runtime source of truth",
+			Notes:          "target/enabling/term-map carriers are reviewable projections imported through explicit sync/lifecycle commands",
+		},
+		{
+			ID:             "agent-skill-carriers",
+			PathPattern:    "internal/cli/skill/*/SKILL.md",
+			AuthorityClass: CarrierAuthorityCurrent,
+			Surface:        "skill",
+			Current:        true,
+			Normativity:    "method carrier only; kernel validates and persists authority",
+			Notes:          "h-reason remains the current umbrella skill; h-decide and h-commission remain manual-only",
+		},
+		{
+			ID:             "agent-template-carrier",
+			PathPattern:    "internal/cli/claude_md_template.md",
+			AuthorityClass: CarrierAuthorityCurrent,
+			Surface:        "template",
+			Current:        true,
+			Normativity:    "installed project discipline template",
+			Notes:          "mirrored with AGENTS.md haft section; host prompts are carriers, not enforcement",
+		},
+		{
+			ID:             "fpf-route-carriers",
+			PathPattern:    "internal/fpf/patterns/*.md",
+			AuthorityClass: CarrierAuthoritySupport,
+			Surface:        "retrieval",
+			Current:        true,
+			Normativity:    "navigation/support carrier over FPF routes; non-normative unless linked to source section",
+			Notes:          "retrieval provenance must expose source edition/hash and non-normativity",
+		},
+		{
+			ID:             "pi-plugin-bundle",
+			PathPattern:    "packages/haft-pi/**",
+			AuthorityClass: CarrierAuthorityCompatibility,
+			Surface:        "plugin_bundle",
+			Current:        true,
+			Normativity:    "compatibility packaging of kernel tools and skills; not an independent authority",
+			Notes:          "Pi package mirrors kernel contracts and may lag only as a packaging defect",
+		},
+		{
+			ID:                "readme-support-doc",
+			PathPattern:       "README.md",
+			AuthorityClass:    CarrierAuthoritySupport,
+			Surface:           "doc",
+			Current:           true,
+			Normativity:       "operator-facing explanation; not a binding artifact",
+			DeadSurfacePolicy: "standalone agent, TUI, and desktop wrappers may appear only as dropped/archive/provenance surfaces",
+		},
+		{
+			ID:             "changelog-provenance",
+			PathPattern:    "CHANGELOG.md",
+			AuthorityClass: CarrierAuthorityProvenance,
+			Surface:        "release_history",
+			Current:        true,
+			Normativity:    "historical release account; not current product scope by itself",
+		},
+		{
+			ID:             "external-review-packets",
+			PathPattern:    ".context/external-review/**",
+			AuthorityClass: CarrierAuthorityProvenance,
+			Surface:        "review_packet",
+			Current:        false,
+			Normativity:    "external review evidence/provenance; must be adopted through decisions before governing",
+		},
+		{
+			ID:             "context-archive",
+			PathPattern:    ".context/_archived/**",
+			AuthorityClass: CarrierAuthorityArchive,
+			Surface:        "archive",
+			Current:        false,
+			Normativity:    "historical archive; never current authority without explicit successor decision",
+		},
+		{
+			ID:                "desktop-tui-standalone-code",
+			PathPattern:       "desktop/**, internal/ui/**, internal/cli/run_tui.go, internal/cli/board.go",
+			AuthorityClass:    CarrierAuthorityArchive,
+			Surface:           "dead_runtime_surface",
+			Current:           false,
+			Normativity:       "dropped v8 surface; retained only as archive/provenance/support unless explicitly reopened",
+			DeadSurfacePolicy: "do not present standalone agent, TUI, or desktop wrappers as current product surfaces",
+		},
+		{
+			ID:             "open-sleigh-sidekick",
+			PathPattern:    "open-sleigh/**",
+			AuthorityClass: CarrierAuthoritySidekick,
+			Surface:        "sidekick",
+			Current:        false,
+			Normativity:    "execution-adjacent sidekick; out of current Haft semantic authority model",
+		},
+	}
+
+	return CarrierAuthorityManifest{
+		SchemaVersion: 1,
+		GeneratedBy:   "haft carrier manifest",
+		Entries:       sortedCarrierEntries(entries),
+	}
+}
+
+func ValidateCarrierAuthorityManifest(manifest CarrierAuthorityManifest) []string {
+	var findings []string
+	seen := map[string]struct{}{}
+	for _, entry := range manifest.Entries {
+		id := strings.TrimSpace(entry.ID)
+		if id == "" {
+			findings = append(findings, "carrier manifest entry has empty id")
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			findings = append(findings, fmt.Sprintf("duplicate carrier manifest id %q", id))
+		}
+		seen[id] = struct{}{}
+		if strings.TrimSpace(entry.PathPattern) == "" {
+			findings = append(findings, fmt.Sprintf("%s has empty path_pattern", id))
+		}
+		if strings.TrimSpace(string(entry.AuthorityClass)) == "" {
+			findings = append(findings, fmt.Sprintf("%s has empty authority_class", id))
+		}
+		if strings.TrimSpace(entry.Surface) == "" {
+			findings = append(findings, fmt.Sprintf("%s has empty surface", id))
+		}
+		if entry.Current && entry.AuthorityClass == CarrierAuthorityArchive {
+			findings = append(findings, fmt.Sprintf("%s marks archive as current", id))
+		}
+		if entry.Current && entry.AuthorityClass == CarrierAuthoritySidekick {
+			findings = append(findings, fmt.Sprintf("%s marks sidekick as current", id))
+		}
+	}
+
+	return findings
+}
+
+func CarrierAuthorityManifestJSON(manifest CarrierAuthorityManifest) ([]byte, error) {
+	return json.MarshalIndent(manifest, "", "  ")
+}
+
+func CheckCarrierSemio(root string) (CarrierSemioCheckResult, error) {
+	files, err := carrierSemioCheckFiles(root)
+	if err != nil {
+		return CarrierSemioCheckResult{}, err
+	}
+
+	result := CarrierSemioCheckResult{
+		SchemaVersion: 1,
+		CheckedFiles:  files,
+		Findings:      []CarrierSemioFinding{},
+	}
+	for _, relPath := range files {
+		content, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relPath)))
+		if err != nil {
+			return CarrierSemioCheckResult{}, fmt.Errorf("read semio carrier %s: %w", relPath, err)
+		}
+		result.Findings = append(result.Findings, checkCarrierSemioText(relPath, string(content))...)
+	}
+
+	return result, nil
+}
+
+func CarrierSemioCheckResultJSON(result CarrierSemioCheckResult) ([]byte, error) {
+	return json.MarshalIndent(result, "", "  ")
+}
+
+func sortedCarrierEntries(entries []CarrierManifestEntry) []CarrierManifestEntry {
+	result := append([]CarrierManifestEntry(nil), entries...)
+	sort.SliceStable(result, func(i, j int) bool {
+		return result[i].ID < result[j].ID
+	})
+	return result
+}
+
+func carrierSemioCheckFiles(root string) ([]string, error) {
+	var files []string
+	addGlob := func(pattern string) error {
+		matches, err := filepath.Glob(filepath.Join(root, filepath.FromSlash(pattern)))
+		if err != nil {
+			return err
+		}
+		for _, match := range matches {
+			info, err := os.Stat(match)
+			if err != nil || info.IsDir() {
+				continue
+			}
+			rel, err := filepath.Rel(root, match)
+			if err != nil {
+				return err
+			}
+			files = append(files, filepath.ToSlash(rel))
+		}
+		return nil
+	}
+
+	for _, pattern := range []string{
+		"README.md",
+		"AGENTS.md",
+		".haft/specs/*.md",
+		"internal/cli/claude_md_template.md",
+		"internal/cli/skill/*/SKILL.md",
+		"packages/haft-pi/*.md",
+		"packages/haft-pi/prompts/*.md",
+		"packages/haft-pi/skills/*/SKILL.md",
+	} {
+		if err := addGlob(pattern); err != nil {
+			return nil, err
+		}
+	}
+
+	return dedupeSortedStrings(files), nil
+}
+
+func checkCarrierSemioText(path string, content string) []CarrierSemioFinding {
+	lines := strings.Split(content, "\n")
+	var findings []CarrierSemioFinding
+	for index, line := range lines {
+		term, ok := deadSurfaceTerm(line)
+		if !ok {
+			continue
+		}
+		if allowedDeadSurfaceContext(lines, index) {
+			continue
+		}
+		findings = append(findings, CarrierSemioFinding{
+			Path:       path,
+			Line:       index + 1,
+			Term:       term,
+			Snippet:    strings.TrimSpace(line),
+			Diagnostic: "dead runtime surface must be labeled dropped/archive/provenance/support/not-current in current carriers",
+		})
+	}
+	return findings
+}
+
+func deadSurfaceTerm(line string) (string, bool) {
+	normalized := strings.ToLower(line)
+	if strings.Contains(normalized, "haft agent") {
+		return "haft agent", true
+	}
+	for _, term := range []string{"desktop", "tui"} {
+		if containsDelimitedTerm(normalized, term) {
+			return term, true
+		}
+	}
+	if containsDelimitedTerm(normalized, "standalone") {
+		for _, qualifier := range []string{"agent", "interactive", "runtime", "surface", "tool"} {
+			if containsDelimitedTerm(normalized, qualifier) {
+				return "standalone", true
+			}
+		}
+	}
+	return "", false
+}
+
+func containsDelimitedTerm(line string, term string) bool {
+	index := strings.Index(line, term)
+	for index >= 0 {
+		start := index
+		end := index + len(term)
+		if semioTermBoundary(line, start-1) && semioTermBoundary(line, end) {
+			return true
+		}
+		nextStart := index + len(term)
+		nextIndex := strings.Index(line[nextStart:], term)
+		if nextIndex < 0 {
+			return false
+		}
+		index = nextStart + nextIndex
+	}
+	return false
+}
+
+func semioTermBoundary(line string, index int) bool {
+	if index < 0 || index >= len(line) {
+		return true
+	}
+	char := line[index]
+	return !(char >= 'a' && char <= 'z') &&
+		!(char >= '0' && char <= '9') &&
+		char != '_' &&
+		char != '-'
+}
+
+func allowedDeadSurfaceContext(lines []string, index int) bool {
+	window := strings.ToLower(semioContextWindow(lines, index))
+	for _, marker := range []string{
+		"dropped",
+		"archive",
+		"archived",
+		"provenance",
+		"support",
+		"historical",
+		"dead",
+		"not current",
+		"non-current",
+		"no longer",
+		"do not recommend",
+		"out of current",
+		"sidekick",
+		"compatibility",
+		"legacy",
+		"old",
+		"removed",
+		"retained",
+		"unless explicitly reopened",
+		"must not",
+		"should not",
+		"not active",
+	} {
+		if strings.Contains(window, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func semioContextWindow(lines []string, index int) string {
+	start := index - 1
+	if start < 0 {
+		start = 0
+	}
+	end := index + 2
+	if end > len(lines) {
+		end = len(lines)
+	}
+	return strings.Join(lines[start:end], " ")
+}
+
+func dedupeSortedStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, exists := seen[trimmed]; exists {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		result = append(result, trimmed)
+	}
+	sort.Strings(result)
+	return result
+}

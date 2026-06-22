@@ -270,6 +270,53 @@ func TestFrameProblem_WishWithoutBoundaryCannotBeP2WReady(t *testing.T) {
 	}
 }
 
+func TestFrameProblem_SourceKindsRequiringBoundaryCannotMasqueradeAsReady(t *testing.T) {
+	cases := []struct {
+		name       string
+		sourceKind string
+	}{
+		{name: "wish", sourceKind: ProblemSourceWish},
+		{name: "ticket", sourceKind: ProblemSourceTicket},
+		{name: "chosen_method", sourceKind: ProblemSourceChosenMethod},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			store := setupTestDB(t)
+			ctx := context.Background()
+
+			card, _, err := FrameProblem(ctx, store, t.TempDir(), ProblemFrameInput{
+				Title:                "Source posture cannot become ready by label",
+				ProblemProfile:       ProblemProfileDeep,
+				SourceKind:           tc.sourceKind,
+				Signal:               "The source names a request or chosen method without an execution boundary.",
+				WhyNow:               "Semantic-spine admission needs profile posture before work starts.",
+				FreshnessDisposition: "Re-check before admission.",
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			profile := card.UnmarshalProblemFields().Profile
+			if profile == nil {
+				t.Fatal("problem profile missing")
+			}
+			if profile.SourceKind != tc.sourceKind {
+				t.Fatalf("profile.source_kind = %q, want %q", profile.SourceKind, tc.sourceKind)
+			}
+			if profile.Readiness != ProblemReadinessBlocked {
+				t.Fatalf("profile.readiness = %q, want %q", profile.Readiness, ProblemReadinessBlocked)
+			}
+			if profile.BoundaryStatus != ProblemBoundaryMissing {
+				t.Fatalf("profile.boundary_status = %q, want %q", profile.BoundaryStatus, ProblemBoundaryMissing)
+			}
+			if !stringSliceContains(profile.Blockers, "wish/ticket/chosen_method source requires explicit boundary before P2W readiness") {
+				t.Fatalf("profile.blockers missing source boundary blocker: %v", profile.Blockers)
+			}
+		})
+	}
+}
+
 func TestFrameProblem_RejectsInvalidProblemProfile(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

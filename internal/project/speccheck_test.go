@@ -378,6 +378,39 @@ func TestProjectSpecificationSetParsesSystemReferenceFrame(t *testing.T) {
 				"valid_until: 2026-07-24\n" +
 				"```\n",
 		},
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.002 Carrier frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.002\n" +
+				"system_frame: publication_system\n" +
+				"kind: carrier.frame\n" +
+				"title: Carrier frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/enabling-system.md",
+			Kind: "enabling-system",
+			Content: "## ES.frame.002 Sidekick frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: ES.frame.002\n" +
+				"system_frame:\n" +
+				"  id: external_system\n" +
+				"kind: sidekick.frame\n" +
+				"title: Sidekick frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
 	})
 
 	if len(specSet.Findings) != 0 {
@@ -391,6 +424,12 @@ func TestProjectSpecificationSetParsesSystemReferenceFrame(t *testing.T) {
 	}
 	if got := specSet.Sections[1].SystemFrame.Kind; got != "enabling_system" {
 		t.Fatalf("enabling system frame = %q, want enabling_system", got)
+	}
+	if got := specSet.Sections[2].SystemFrame.Kind; got != "carrier" {
+		t.Fatalf("carrier frame = %q, want carrier", got)
+	}
+	if got := specSet.Sections[3].SystemFrame.Kind; got != "sidekick" {
+		t.Fatalf("sidekick frame = %q, want sidekick", got)
 	}
 }
 
@@ -565,6 +604,48 @@ func TestCheckSpecDocumentsValidatesSystemReferenceFrame(t *testing.T) {
 	})
 
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_system_frame", "$.system_frame.kind")
+}
+
+func TestCheckSpecDocumentsAllowsCarrierAndSidekickSystemFrames(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.002\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.002\n" +
+				"kind: carrier.frame\n" +
+				"title: Carrier frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"system_frame: carrier_system\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/enabling-system.md",
+			Kind: "enabling-system",
+			Content: "## ES.frame.002\n\n" +
+				"```yaml spec-section\n" +
+				"id: ES.frame.002\n" +
+				"kind: sidekick.frame\n" +
+				"title: Sidekick frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"system_frame:\n" +
+				"  kind: external_system\n" +
+				"```\n",
+		},
+	})
+
+	if report.HasFindings() {
+		t.Fatalf("report has findings: %+v", report.Findings)
+	}
 }
 
 func TestCheckSpecDocumentsGuardsActiveTargetCarrierClaims(t *testing.T) {

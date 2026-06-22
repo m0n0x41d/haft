@@ -123,13 +123,19 @@ evidence_required:
   - kind: review
     description: Human confirms that the boundary does not assign product, agent, CI, legal, or human-value authority to Haft.
   - kind: runtime
-    description: CLI and MCP surfaces reject missing required governance fields and expose drift, stale evidence, and human gates.
+    description: CLI and MCP surfaces reject missing required governance fields, expose drift, stale evidence, and preserve explicit human-gate language for binding governance acts.
 ```
 
 Haft is in scope as the governance substrate over project-local FPF artifacts:
 spec sections, term maps, problem frames, solution portfolios, DecisionRecords,
 WorkCommissions, baselines, evidence, refresh reports, and the CLI/MCP/skill
 surfaces that create, validate, query, and measure those objects.
+
+Baseline-shaped governance records must carry or project an explicit semantic
+kind before stronger use. The compatibility floor distinguishes
+`SpecSectionApprovalBaseline`, `PreWorkReferenceSnapshot`, and
+`VerifiedStateSnapshot`; unknown legacy posture stays explicit instead of being
+silently coerced into one of those meanings.
 
 Haft is out of scope as a coding agent, CI runner, issue tracker, legal
 authority, product runtime, product manager, or replacement for the human
@@ -144,7 +150,10 @@ product-scope choices, security/compliance judgments, or value trade-offs.
 - Admitted actors and objects: the human principal, host coding agents using
   Haft tools, CLI users, MCP clients, and parseable artifact carriers.
 - Duties: the kernel validates required fields and authority gates; skills route
-  the work method; the human principal approves binding choices and baselines.
+  the work method; the human principal approves binding choices and baselines;
+  MCP carries host-workflow binding results but does not yet provide a
+  kernel-verifiable authorization receipt. Model-supplied MCP arguments or
+  prompt text are not proof of operator authorization.
 - Evidence: `haft spec check`, `haft_query(action="status")`,
   `haft_refresh(action="scan")`, and DecisionRecord evidence/baseline commands
   show whether the boundary is visible and enforced.

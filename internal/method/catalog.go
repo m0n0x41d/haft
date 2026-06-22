@@ -11,6 +11,12 @@ const (
 	TaskFormattingOnly = "formatting_only"
 )
 
+const (
+	MethodSourceKind        = "methodpack_card"
+	MethodSourceNormativity = "support_carrier_non_normative_fpf"
+	MethodAuthorityBoundary = "method_cards_route_work_and_closeout_gates; they do not define normative FPF source material, binding decisions, evidence truth, or gate passage"
+)
+
 type Catalog struct {
 	ID      string
 	Version string
@@ -21,7 +27,7 @@ func BuiltinCatalog() Catalog {
 	return Catalog{
 		ID:      CatalogID,
 		Version: CatalogVersion,
-		Methods: []Definition{
+		Methods: withBuiltinSourcePosture([]Definition{
 			verificationBeforeCompletion(),
 			systematicDebuggingBeforeFix(),
 			behaviorFirstTesting(),
@@ -29,8 +35,23 @@ func BuiltinCatalog() Catalog {
 			domainPortBeforeAdapter(),
 			functionalCoreImperativeShell(),
 			makeIllegalStatesUnrepresentable(),
-		},
+		}),
 	}
+}
+
+func withBuiltinSourcePosture(definitions []Definition) []Definition {
+	posture := SourcePosture{
+		SourceKind:        MethodSourceKind,
+		SourceEdition:     CatalogID + "@" + CatalogVersion,
+		Normativity:       MethodSourceNormativity,
+		AuthorityBoundary: MethodAuthorityBoundary,
+	}
+	enriched := make([]Definition, 0, len(definitions))
+	for _, definition := range definitions {
+		definition.SourcePosture = posture
+		enriched = append(enriched, definition)
+	}
+	return enriched
 }
 
 func ValidateCatalog(catalog Catalog) error {
@@ -46,6 +67,9 @@ func ValidateCatalog(catalog Catalog) error {
 		if strings.TrimSpace(definition.Title) == "" {
 			return fmt.Errorf("method %s title is required", definition.ID)
 		}
+		if err := validateSourcePosture(definition); err != nil {
+			return err
+		}
 		if len(definition.HardGates) == 0 {
 			return fmt.Errorf("method %s needs at least one hard gate", definition.ID)
 		}
@@ -60,6 +84,22 @@ func ValidateCatalog(catalog Catalog) error {
 				return fmt.Errorf("method %s gate %s needs check_level", definition.ID, gate.ID)
 			}
 		}
+	}
+	return nil
+}
+
+func validateSourcePosture(definition Definition) error {
+	if strings.TrimSpace(definition.SourcePosture.SourceKind) != MethodSourceKind {
+		return fmt.Errorf("method %s source_posture.source_kind must be %q", definition.ID, MethodSourceKind)
+	}
+	if strings.TrimSpace(definition.SourcePosture.Normativity) != MethodSourceNormativity {
+		return fmt.Errorf("method %s source_posture.normativity must be %q", definition.ID, MethodSourceNormativity)
+	}
+	if strings.TrimSpace(definition.SourcePosture.SourceEdition) == "" {
+		return fmt.Errorf("method %s source_posture.source_edition is required", definition.ID)
+	}
+	if strings.TrimSpace(definition.SourcePosture.AuthorityBoundary) == "" {
+		return fmt.Errorf("method %s source_posture.authority_boundary is required", definition.ID)
 	}
 	return nil
 }
@@ -251,6 +291,7 @@ func compactCard(definition Definition, why string) MethodCard {
 		Title:            definition.Title,
 		WhyApplies:       why,
 		Intent:           definition.Intent,
+		SourcePosture:    definition.SourcePosture,
 		HardGates:        hardGates,
 		SoftGates:        firstN(definition.SoftGates, 2),
 		Procedure:        procedure,

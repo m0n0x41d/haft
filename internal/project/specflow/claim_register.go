@@ -305,6 +305,7 @@ func newClaimReviewFinding(
 	return ReviewFinding{
 		SectionID:    subject.section.ID,
 		RuleID:       ruleID,
+		Category:     reviewFindingCategory(ruleID),
 		Severity:     severity,
 		Finding:      finding,
 		WhyItMatters: whyItMatters,

@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   Applying the ledger keeps old records visible for audit but no longer lets a
   resolved/waived overlay close a different target after retargeting, rename,
   or root-cause changes.
+- **DriftEvent source claim/evidence refs.** Drift reports now carry
+  `claim_refs` and `evidence_refs` on `source_items` when a DecisionClaim
+  explicitly names the changed governance target and evidence is bound to that
+  exact claim. This is explicit-only metadata: prose is not mined, superseded or
+  deprecated claims are ignored, and drift verdicts do not change.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

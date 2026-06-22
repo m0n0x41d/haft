@@ -1223,6 +1223,8 @@ type DriftItem struct {
 	Status           DriftStatus       `json:"status"`
 	LinesChanged     string            `json:"lines_changed,omitempty"` // e.g., "+8 -2"
 	Invariants       []string          `json:"invariants,omitempty"`
+	ClaimRefs        []string          `json:"claim_refs,omitempty"`
+	EvidenceRefs     []string          `json:"evidence_refs,omitempty"`
 	Symbols          []SymbolDriftItem `json:"symbols,omitempty"` // symbol-level breakdown for a modified file
 	Materiality      DriftMateriality  `json:"materiality,omitempty"`
 	TriggerKind      DriftTriggerKind  `json:"trigger_kind,omitempty"`
@@ -1240,9 +1242,11 @@ type DriftItem struct {
 // a file whose only symbol drift is "added" is structurally additive; any
 // "modified" or "removed" symbol means a governed body changed.
 type SymbolDriftItem struct {
-	SymbolName string `json:"symbol_name"`
-	SymbolKind string `json:"symbol_kind"` // func, type, class, interface, method
-	Status     string `json:"status"`      // "added", "modified", "removed"
+	SymbolName   string   `json:"symbol_name"`
+	SymbolKind   string   `json:"symbol_kind"` // func, type, class, interface, method
+	Status       string   `json:"status"`      // "added", "modified", "removed"
+	ClaimRefs    []string `json:"claim_refs,omitempty"`
+	EvidenceRefs []string `json:"evidence_refs,omitempty"`
 }
 
 // DriftReport describes drift for a single decision.

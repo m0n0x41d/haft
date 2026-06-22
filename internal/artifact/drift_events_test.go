@@ -1,6 +1,7 @@
 package artifact
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -341,6 +342,85 @@ func TestApplyDriftEventResolutionLedgerRespectsWaiverExpiry(t *testing.T) {
 	}
 	if expired.Events[0].ResolutionRecord == nil {
 		t.Fatal("expired resolution record should remain visible for audit")
+	}
+}
+
+func TestAttachDriftClaimEvidenceRefsUsesExactGovernanceTargets(t *testing.T) {
+	item := DriftItem{
+		Path:             "shared.go",
+		Status:           DriftModified,
+		ChangedTargetRef: driftEventFileTarget("shared.go"),
+		Symbols: []SymbolDriftItem{{
+			SymbolName: "Run",
+			SymbolKind: "func",
+			Status:     "modified",
+		}},
+	}
+	claims := []DecisionClaim{
+		{
+			ID:                   "claim-file",
+			GovernanceTargetRefs: []string{driftEventFileTarget("shared.go")},
+		},
+		{
+			ID:                   "claim-symbol",
+			GovernanceTargetRefs: []string{driftEventSymbolTarget("shared.go", item.Symbols[0])},
+		},
+		{
+			ID:                   "claim-old",
+			LifecycleStatus:      ClaimLifecycleSuperseded,
+			GovernanceTargetRefs: []string{driftEventSymbolTarget("shared.go", item.Symbols[0])},
+		},
+	}
+	evidenceItems := []EvidenceItem{
+		{ID: "evid-file", ClaimRefs: []string{"claim-file"}},
+		{ID: "evid-symbol", ClaimRefs: []string{"claim-symbol"}},
+		{ID: "evid-old", ClaimRefs: []string{"claim-old"}},
+	}
+
+	enriched := attachDriftClaimEvidenceRefs(item, claims, evidenceItems)
+
+	if strings.Join(enriched.ClaimRefs, ",") != "claim-file" {
+		t.Fatalf("file claim_refs = %#v", enriched.ClaimRefs)
+	}
+	if strings.Join(enriched.EvidenceRefs, ",") != "evid-file" {
+		t.Fatalf("file evidence_refs = %#v", enriched.EvidenceRefs)
+	}
+	if strings.Join(enriched.Symbols[0].ClaimRefs, ",") != "claim-symbol" {
+		t.Fatalf("symbol claim_refs = %#v", enriched.Symbols[0].ClaimRefs)
+	}
+	if strings.Join(enriched.Symbols[0].EvidenceRefs, ",") != "evid-symbol" {
+		t.Fatalf("symbol evidence_refs = %#v", enriched.Symbols[0].EvidenceRefs)
+	}
+}
+
+func TestBuildDriftEventReportCarriesSourceClaimEvidenceRefs(t *testing.T) {
+	symbol := SymbolDriftItem{
+		SymbolName:   "Run",
+		SymbolKind:   "func",
+		Status:       "modified",
+		ClaimRefs:    []string{"claim-symbol"},
+		EvidenceRefs: []string{"evid-symbol"},
+	}
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "shared.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerFileHash,
+			Materiality: DriftMaterialityMaterialSymbol,
+			Symbols:     []SymbolDriftItem{symbol},
+		}},
+	}})
+
+	if len(report.Events) != 1 {
+		t.Fatalf("events = %d, want 1", len(report.Events))
+	}
+	source := report.Events[0].SourceItems[0]
+	if strings.Join(source.ClaimRefs, ",") != "claim-symbol" {
+		t.Fatalf("source claim_refs = %#v", source.ClaimRefs)
+	}
+	if strings.Join(source.EvidenceRefs, ",") != "evid-symbol" {
+		t.Fatalf("source evidence_refs = %#v", source.EvidenceRefs)
 	}
 }
 

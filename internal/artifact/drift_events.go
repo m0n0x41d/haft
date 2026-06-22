@@ -76,6 +76,8 @@ type DriftEventSourceItem struct {
 	SuppressedReason string            `json:"suppressed_reason,omitempty"`
 	LinesChanged     string            `json:"lines_changed,omitempty"`
 	Invariants       []string          `json:"invariants,omitempty"`
+	ClaimRefs        []string          `json:"claim_refs,omitempty"`
+	EvidenceRefs     []string          `json:"evidence_refs,omitempty"`
 	Symbols          []SymbolDriftItem `json:"symbols,omitempty"`
 }
 
@@ -488,6 +490,7 @@ func driftEventCandidateFromEvent(event DriftEvent) driftEventCandidate {
 }
 
 func driftEventSourceItem(decisionID string, item DriftItem, event DriftEvent) DriftEventSourceItem {
+	claimRefs, evidenceRefs := driftEventSourceItemRefs(item, event)
 	return DriftEventSourceItem{
 		DecisionID:       decisionID,
 		Path:             item.Path,
@@ -503,8 +506,20 @@ func driftEventSourceItem(decisionID string, item DriftItem, event DriftEvent) D
 		SuppressedReason: item.SuppressedReason,
 		LinesChanged:     item.LinesChanged,
 		Invariants:       append([]string(nil), item.Invariants...),
+		ClaimRefs:        claimRefs,
+		EvidenceRefs:     evidenceRefs,
 		Symbols:          append([]SymbolDriftItem(nil), item.Symbols...),
 	}
+}
+
+func driftEventSourceItemRefs(item DriftItem, event DriftEvent) ([]string, []string) {
+	for _, symbol := range item.Symbols {
+		if driftEventSymbolTarget(item.Path, symbol) != event.ChangedTargetRef {
+			continue
+		}
+		return append([]string(nil), symbol.ClaimRefs...), append([]string(nil), symbol.EvidenceRefs...)
+	}
+	return append([]string(nil), item.ClaimRefs...), append([]string(nil), item.EvidenceRefs...)
 }
 
 func driftEventKey(event DriftEvent) string {

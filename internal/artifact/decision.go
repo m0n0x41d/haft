@@ -1303,6 +1303,10 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 		if decisionFields.IsImplementationFootprintOnly() {
 			continue
 		}
+		evidenceItems, err := store.GetEvidenceItems(ctx, d.Meta.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get evidence for decision %s: %w", d.Meta.ID, err)
+		}
 
 		files, err := store.GetAffectedFiles(ctx, d.Meta.ID)
 		if err != nil || len(files) == 0 {
@@ -1368,7 +1372,7 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			if err != nil {
 				// File doesn't exist or can't be read
 				assessment := assessMissingFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path])
-				report.Files = append(report.Files, DriftItem{
+				item := DriftItem{
 					Path:             f.Path,
 					Status:           DriftMissing,
 					Invariants:       copyDriftInvariants(decisionFields.Invariants),
@@ -1381,7 +1385,8 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 					FallbackReason:   assessment.FallbackReason,
 					AuditOnly:        assessment.AuditOnly,
 					SuppressedReason: assessment.SuppressedReason,
-				})
+				}
+				report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
 				hasDrift = true
 				continue
 			}
@@ -1389,7 +1394,7 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			if currentHash != f.Hash {
 				lines := gitDiffStat(projectRoot, f.Path)
 				assessment := assessModifiedFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path])
-				report.Files = append(report.Files, DriftItem{
+				item := DriftItem{
 					Path:             f.Path,
 					Status:           DriftModified,
 					LinesChanged:     lines,
@@ -1404,7 +1409,8 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 					FallbackReason:   assessment.FallbackReason,
 					AuditOnly:        assessment.AuditOnly,
 					SuppressedReason: assessment.SuppressedReason,
-				})
+				}
+				report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
 				hasDrift = true
 			}
 		}
@@ -1414,14 +1420,15 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			return nil, fmt.Errorf("detect added files for %s: %w", d.Meta.ID, err)
 		}
 		for _, path := range addedFiles {
-			report.Files = append(report.Files, DriftItem{
+			item := DriftItem{
 				Path:        path,
 				Status:      DriftAdded,
 				Invariants:  copyDriftInvariants(decisionFields.Invariants),
 				Materiality: DriftMaterialityAdjacentFileChurn,
 				TriggerKind: DriftTriggerScopeManifest,
 				AuditOnly:   true,
-			})
+			}
+			report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
 			hasDrift = true
 		}
 
@@ -1434,6 +1441,81 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	logger.Debug().Int("drift_reports", len(reports)).Msg("drift.check.complete")
 
 	return reports, nil
+}
+
+func attachDriftClaimEvidenceRefs(
+	item DriftItem,
+	claims []DecisionClaim,
+	evidenceItems []EvidenceItem,
+) DriftItem {
+	item.ClaimRefs = driftClaimRefsForTarget(claims, item.ChangedTargetRef)
+	item.EvidenceRefs = driftEvidenceRefsForClaims(evidenceItems, item.ClaimRefs)
+	for index, symbol := range item.Symbols {
+		symbolTarget := driftEventSymbolTarget(item.Path, symbol)
+		item.Symbols[index].ClaimRefs = driftClaimRefsForTarget(claims, symbolTarget)
+		item.Symbols[index].EvidenceRefs = driftEvidenceRefsForClaims(evidenceItems, item.Symbols[index].ClaimRefs)
+	}
+	return item
+}
+
+func driftClaimRefsForTarget(claims []DecisionClaim, targetRef string) []string {
+	targetRef = strings.TrimSpace(targetRef)
+	if targetRef == "" {
+		return nil
+	}
+	var refs []string
+	for _, claim := range claims {
+		lifecycle := EffectiveClaimLifecycleStatus(claim)
+		if lifecycle == ClaimLifecycleSuperseded || lifecycle == ClaimLifecycleDeprecated {
+			continue
+		}
+		if !driftClaimHasTargetRef(claim, targetRef) {
+			continue
+		}
+		refs = append(refs, claim.ID)
+	}
+	sort.Strings(refs)
+	return normalizeClaimRefs(refs)
+}
+
+func driftClaimHasTargetRef(claim DecisionClaim, targetRef string) bool {
+	for _, ref := range claim.GovernanceTargetRefs {
+		if strings.TrimSpace(ref) == targetRef {
+			return true
+		}
+	}
+	return false
+}
+
+func driftEvidenceRefsForClaims(evidenceItems []EvidenceItem, claimRefs []string) []string {
+	claimSet := map[string]struct{}{}
+	for _, ref := range normalizeClaimRefs(claimRefs) {
+		claimSet[ref] = struct{}{}
+	}
+	if len(claimSet) == 0 {
+		return nil
+	}
+	refs := make([]string, 0, len(evidenceItems))
+	for _, item := range evidenceItems {
+		if strings.TrimSpace(item.ID) == "" {
+			continue
+		}
+		if !driftEvidenceItemBindsAnyClaim(item, claimSet) {
+			continue
+		}
+		refs = append(refs, item.ID)
+	}
+	sort.Strings(refs)
+	return compactStrings(refs)
+}
+
+func driftEvidenceItemBindsAnyClaim(item EvidenceItem, claimSet map[string]struct{}) bool {
+	for _, ref := range normalizeClaimRefs(item.ClaimRefs) {
+		if _, ok := claimSet[ref]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // groupSymbolsByFile buckets a decision's stored symbol baseline by file path.

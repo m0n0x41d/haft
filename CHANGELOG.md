@@ -167,6 +167,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `spec_section_editions`. The command refuses carriers with structural findings
   and records only parsed typed sections; it does not approve, rebaseline,
   reopen, create evidence, or promote surrounding Markdown prose to authority.
+- **Reviewed spec carrier change apply.** Added `haft spec apply-change` for
+  explicit before/after SpecSection carrier changes. It reuses the classifier
+  and writes the after-section to `spec_section_editions` only for recognized
+  semantic scalar, relationship, or mixed updates; carrier-only edits are no-op
+  and unknown/high-risk changes block.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

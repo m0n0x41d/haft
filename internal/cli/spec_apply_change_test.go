@@ -1,0 +1,133 @@
+package cli
+
+import (
+	"bytes"
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"github.com/spf13/cobra"
+
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
+)
+
+func TestRunSpecApplyChangeAppliesRecognizedRelationshipUpdate(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	restoreCwd := chdirForTest(t, root)
+	defer restoreCwd()
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	after := writeSpecClassifyChangeFile(t, "target-system-after.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.boundary.001\n"))
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", true)
+	defer restoreFlags()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	if err := runSpecApplyChange(cmd, nil); err != nil {
+		t.Fatalf("runSpecApplyChange: %v\n%s", err, output.String())
+	}
+
+	var result specApplyChangeResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("decode result: %v\n%s", err, output.String())
+	}
+	if !result.Applied || result.Noop {
+		t.Fatalf("apply result = %+v", result)
+	}
+	if result.Change.Kind != project.SpecCarrierChangeRelationshipUpdate {
+		t.Fatalf("change kind = %q", result.Change.Kind)
+	}
+
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	edition, err := store.GetCurrent("qnt_spec_sync_test", "TS.sync.001")
+	if err != nil {
+		t.Fatalf("GetCurrent: %v", err)
+	}
+	if !strings.Contains(strings.Join(edition.Section.DependsOn, ","), "TS.boundary.001") {
+		t.Fatalf("depends_on = %#v", edition.Section.DependsOn)
+	}
+	if edition.SourceKind != specflow.SpecSectionSourceSyncBack {
+		t.Fatalf("source_kind = %q", edition.SourceKind)
+	}
+}
+
+func TestRunSpecApplyChangeBlocksUnknownHighRisk(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	restoreCwd := chdirForTest(t, root)
+	defer restoreCwd()
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	after := writeSpecClassifyChangeFile(t, "enabling-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "", true)
+	defer restoreFlags()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	err := runSpecApplyChange(cmd, nil)
+	if err == nil {
+		t.Fatal("expected high-risk apply to block")
+	}
+	if !strings.Contains(err.Error(), "blocked") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	var result specApplyChangeResult
+	if jsonErr := json.Unmarshal(output.Bytes(), &result); jsonErr != nil {
+		t.Fatalf("decode blocked result: %v\n%s", jsonErr, output.String())
+	}
+	if result.Applied {
+		t.Fatalf("blocked result applied: %+v", result)
+	}
+	if result.Change.Kind != project.SpecCarrierChangeUnknownHighRisk {
+		t.Fatalf("change kind = %q", result.Change.Kind)
+	}
+}
+
+func TestApplySpecCarrierChangeToSQLCarrierOnlyNoop(t *testing.T) {
+	database := newTestCLIDB(t)
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	after := writeSpecClassifyChangeFile(t, "target-system-moved.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+
+	result, err := applySpecCarrierChangeToSQL("proj-1", specCarrierChangeInput{
+		BeforePath: before,
+		AfterPath:  after,
+		SectionID:  "TS.sync.001",
+		Kind:       "target-system",
+	}, store)
+	if err != nil {
+		t.Fatalf("applySpecCarrierChangeToSQL: %v", err)
+	}
+	if !result.Noop || result.Applied {
+		t.Fatalf("carrier-only result = %+v", result)
+	}
+	if _, getErr := store.GetCurrent("proj-1", "TS.sync.001"); getErr == nil {
+		t.Fatal("carrier-only no-op wrote an edition")
+	}
+}
+
+func stubSpecApplyChangeFlags(t *testing.T, before string, after string, section string, kind string, jsonFlag bool) func() {
+	t.Helper()
+	previousBefore := specApplyBefore
+	previousAfter := specApplyAfter
+	previousSection := specApplySection
+	previousKind := specApplyKind
+	previousJSON := specApplyChangeJSON
+	specApplyBefore = before
+	specApplyAfter = after
+	specApplySection = section
+	specApplyKind = kind
+	specApplyChangeJSON = jsonFlag
+	return func() {
+		specApplyBefore = previousBefore
+		specApplyAfter = previousAfter
+		specApplySection = previousSection
+		specApplyKind = previousKind
+		specApplyChangeJSON = previousJSON
+	}
+}

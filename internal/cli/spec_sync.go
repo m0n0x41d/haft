@@ -39,25 +39,17 @@ func runSpecSync(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if cfg == nil {
-		return fmt.Errorf("project not initialized — run 'haft init' first")
-	}
-
-	dbPath, err := cfg.DBPath()
+	projectID, store, closeStore, err := openSpecSectionEditionStore(projectRoot, cfg)
 	if err != nil {
 		return err
 	}
-	database, err := db.NewStore(dbPath)
-	if err != nil {
-		return err
-	}
-	defer database.Close()
+	defer closeStore()
 
 	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
 	if err != nil {
 		return err
 	}
-	result, err := syncProjectSpecificationSetToSQL(cfg.ID, specSet, specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB()))
+	result, err := syncProjectSpecificationSetToSQL(projectID, specSet, store)
 	if err != nil {
 		return err
 	}
@@ -66,6 +58,24 @@ func runSpecSync(cmd *cobra.Command, _ []string) error {
 		return writeSpecSyncJSON(cmd.OutOrStdout(), result)
 	}
 	return writeSpecSyncText(cmd.OutOrStdout(), result)
+}
+
+func openSpecSectionEditionStore(projectRoot string, cfg *project.Config) (string, specflow.SpecSectionEditionStore, func(), error) {
+	if cfg == nil {
+		return "", nil, noopClose, fmt.Errorf("project not initialized — run 'haft init' first")
+	}
+
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		return "", nil, noopClose, err
+	}
+	database, err := db.NewStore(dbPath)
+	if err != nil {
+		return "", nil, noopClose, err
+	}
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	return cfg.ID, store, func() { _ = database.Close() }, nil
 }
 
 func syncProjectSpecificationSetToSQL(

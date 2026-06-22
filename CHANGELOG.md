@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Decision reconciliation preview cues.** Compact
+  `haft decision reconcile` text now surfaces read-only preview cues for top
+  groups, including lineage relation count, downstream dependents, downstream
+  migration requirement, successor workflow posture, and claim lifecycle count,
+  while keeping the full reconciliation record behind `--json`.
 - **SQL-first spec read compatibility.** `haft spec review` and
   `haft spec status` now read current `spec_section_editions` from the SQL
   project graph before falling back to markdown carriers, while preserving the

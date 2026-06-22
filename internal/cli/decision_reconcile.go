@@ -324,12 +324,56 @@ func writeDecisionReconciliationSummary(
 		); err != nil {
 			return err
 		}
+		if _, err := fmt.Fprintf(output, "  preview_cues: %s\n", decisionReconciliationPreviewCueSummary(group)); err != nil {
+			return err
+		}
 	}
 	if len(plan.Groups) > limit {
 		_, err := fmt.Fprintf(output, "... and %d more; run `haft decision reconcile --json`\n", len(plan.Groups)-limit)
 		return err
 	}
 	return nil
+}
+
+func decisionReconciliationPreviewCueSummary(group artifact.DecisionReconciliationGroup) string {
+	preview := group.Preview
+	downstreamDependents := 0
+	downstreamMigrationRequired := false
+	if preview.DownstreamImpact != nil {
+		downstreamDependents = len(preview.DownstreamImpact.DependentRefs)
+	}
+	if preview.DownstreamMigration != nil {
+		downstreamMigrationRequired = preview.DownstreamMigration.RequiredBeforeApply
+	}
+
+	successorWorkflow := "none"
+	if preview.SuccessorWorkflow != nil && preview.SuccessorWorkflow.Required {
+		successorWorkflow = "required_existing_ref"
+	}
+
+	return fmt.Sprintf(
+		"read_only=%t lineage_relations=%d downstream_dependents=%d downstream_migration_required=%t successor_workflow=%s claim_lifecycle=%d",
+		preview.ReadOnly,
+		len(preview.Proposed.LineageRelations),
+		downstreamDependents,
+		downstreamMigrationRequired,
+		successorWorkflow,
+		decisionReconciliationClaimLifecycleCount(group.Decisions),
+	)
+}
+
+func decisionReconciliationClaimLifecycleCount(items []artifact.DecisionReconciliationItem) int {
+	count := 0
+	for _, item := range items {
+		if item.ClaimLifecycle == nil {
+			continue
+		}
+		count += item.ClaimLifecycle.Active
+		count += item.ClaimLifecycle.RefreshDue
+		count += item.ClaimLifecycle.Superseded
+		count += item.ClaimLifecycle.Deprecated
+	}
+	return count
 }
 
 func writeDecisionReconciliationMetricsSummary(

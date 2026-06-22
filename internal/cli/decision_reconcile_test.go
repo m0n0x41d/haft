@@ -37,6 +37,47 @@ func TestWriteDecisionReconciliationSummary(t *testing.T) {
 		"scope_enrichment_candidates: 0",
 		"top_groups:",
 		"preview=reopen",
+		"preview_cues: read_only=true",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestWriteDecisionReconciliationSummaryShowsPreviewCues(t *testing.T) {
+	var output bytes.Buffer
+	target := "symbol:internal/store.go:func::Save"
+	plan := artifact.BuildDecisionReconciliationPlanFromItems([]artifact.DecisionReconciliationItem{
+		{
+			DecisionID:         "dec-1",
+			Status:             artifact.StatusActive,
+			BoundedContext:     "artifact-store",
+			DecisionSubjectRef: "subject:artifact-store-write-path",
+			GovernanceTargets:  []string{target},
+			Links:              []artifact.Link{{Ref: "evid-1", Type: "supported_by"}},
+		},
+		{
+			DecisionID:         "dec-2",
+			Status:             artifact.StatusActive,
+			BoundedContext:     "artifact-store",
+			DecisionSubjectRef: "subject:artifact-store-write-path",
+			GovernanceTargets:  []string{target},
+		},
+	})
+
+	if err := writeDecisionReconciliationSummary(&output, plan); err != nil {
+		t.Fatalf("writeDecisionReconciliationSummary returned error: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"preview=merge_through_successor",
+		"preview_cues: read_only=true",
+		"lineage_relations=",
+		"downstream_dependents=1",
+		"downstream_migration_required=true",
+		"successor_workflow=required_existing_ref",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

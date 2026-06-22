@@ -195,6 +195,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   scope-enrichment batches can record before/after fallback scope, fanout,
   material/audit drift, and current-authority conflict counts without applying
   or authorizing any reconciliation selection.
+- **Overseer reconciliation autonomy guard.** Strengthened maintenance
+  reconciliation tests so overseer/drain proposals are verified as proposal-only
+  outputs and cannot suggest `decision reconcile apply`, operator-approved
+  selection authority, merge/supersede/retire operations, or claim lifecycle
+  mutation.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

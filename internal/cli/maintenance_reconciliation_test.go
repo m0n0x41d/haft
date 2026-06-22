@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/overseer"
 )
 
 func TestReconciliationPlanMaintenanceProposalsAreReadOnly(t *testing.T) {
@@ -39,9 +40,7 @@ func TestReconciliationPlanMaintenanceProposalsAreReadOnly(t *testing.T) {
 		if proposal.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
 			t.Fatalf("proposal authority = %q", proposal.AuthorityBoundary)
 		}
-		if strings.Contains(proposal.SuggestedCommand, " apply") {
-			t.Fatalf("proposal suggested apply command: %#v", proposal)
-		}
+		assertMaintenanceReconciliationProposalIsProposalOnly(t, proposal)
 		if proposal.SuggestedCommand != "haft decision reconcile --json" {
 			t.Fatalf("suggested command = %q", proposal.SuggestedCommand)
 		}
@@ -68,10 +67,34 @@ func TestGoverningSetMaintenanceProposalsAreReadOnly(t *testing.T) {
 	if proposals[0].Kind != "fallback_governing_scope_review" {
 		t.Fatalf("proposal kind = %q", proposals[0].Kind)
 	}
-	if strings.Contains(proposals[0].SuggestedCommand, " apply") {
-		t.Fatalf("proposal suggested apply command: %#v", proposals[0])
-	}
+	assertMaintenanceReconciliationProposalIsProposalOnly(t, proposals[0])
 	if len(proposals[0].FallbackTargets) != 1 {
 		t.Fatalf("fallback targets = %#v", proposals[0].FallbackTargets)
+	}
+}
+
+func assertMaintenanceReconciliationProposalIsProposalOnly(t *testing.T, proposal overseer.MaintenanceReconciliationProposal) {
+	t.Helper()
+
+	text := strings.ToLower(strings.TrimSpace(strings.Join([]string{
+		proposal.SuggestedCommand,
+		proposal.AuthorityBoundary,
+		proposal.Reason,
+		proposal.Kind,
+	}, " ")))
+	for _, forbidden := range []string{
+		" decision reconcile apply ",
+		"operator_approved_reconciliation_selection",
+		"merge_through_successor",
+		"retire_without_successor",
+		"claim_lifecycle_update",
+		"supersede",
+		"retire",
+		"superseded",
+		"deprecated",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("proposal contains binding mutation cue %q: %s", forbidden, text)
+		}
 	}
 }

@@ -75,6 +75,9 @@ func TestRunCarrierCheckText(t *testing.T) {
 	if !strings.Contains(output.String(), "carrier semio check: clean") {
 		t.Fatalf("output = %q", output.String())
 	}
+	if !strings.Contains(output.String(), "generated surface") {
+		t.Fatalf("output should mention generated surface count: %q", output.String())
+	}
 }
 
 func TestRunCarrierCheckJSON(t *testing.T) {
@@ -95,6 +98,9 @@ func TestRunCarrierCheckJSON(t *testing.T) {
 	}
 	if len(result.Findings) > 0 {
 		t.Fatalf("findings = %#v", result.Findings)
+	}
+	if len(result.CheckedGeneratedSurfaces) == 0 {
+		t.Fatal("expected generated interface surfaces to be checked")
 	}
 }
 
@@ -145,8 +151,30 @@ func TestHandleQuintQueryCarrierCheck(t *testing.T) {
 	if len(check.CheckedFiles) != 1 || check.CheckedFiles[0] != "README.md" {
 		t.Fatalf("checked_files = %#v, want README.md only", check.CheckedFiles)
 	}
+	if len(check.CheckedGeneratedSurfaces) == 0 {
+		t.Fatal("expected generated interface surfaces in carrier_check")
+	}
 	if len(check.Findings) > 0 {
 		t.Fatalf("findings = %#v", check.Findings)
+	}
+}
+
+func TestCarrierCheckGeneratedSurfacesIncludeInterfaceCatalog(t *testing.T) {
+	surfaces := carrierCheckGeneratedSurfaces()
+	if len(surfaces) == 0 {
+		t.Fatal("expected generated interface surfaces")
+	}
+	found := false
+	for _, surface := range surfaces {
+		if surface.Path == "generated/interface/query.carrier_check" {
+			found = true
+			if !strings.Contains(surface.Content, "carrier_check") {
+				t.Fatalf("carrier_check generated surface content = %q", surface.Content)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("generated surfaces missing query.carrier_check: %#v", surfaces)
 	}
 }
 

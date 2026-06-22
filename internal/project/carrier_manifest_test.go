@@ -120,6 +120,27 @@ func TestCarrierSemioCheckAllowsExplicitAuthorityDenial(t *testing.T) {
 	}
 }
 
+func TestCarrierSemioCheckScansGeneratedVirtualSurfaces(t *testing.T) {
+	result, err := CheckCarrierSemioWithVirtualTexts(t.TempDir(), []CarrierSemioVirtualText{
+		{
+			Path:    "generated/interface/bad-host-schema",
+			Content: "Host schema visibility authorizes operator approval.\n",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CheckCarrierSemioWithVirtualTexts: %v", err)
+	}
+	if len(result.CheckedGeneratedSurfaces) != 1 {
+		t.Fatalf("checked generated surfaces = %#v", result.CheckedGeneratedSurfaces)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("findings = %#v, want one generated-surface finding", result.Findings)
+	}
+	if result.Findings[0].Path != "generated/interface/bad-host-schema" {
+		t.Fatalf("finding path = %q", result.Findings[0].Path)
+	}
+}
+
 func carrierManifestEntry(t *testing.T, id string) CarrierManifestEntry {
 	t.Helper()
 	for _, entry := range DefaultCarrierAuthorityManifest().Entries {

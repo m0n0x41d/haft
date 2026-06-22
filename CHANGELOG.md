@@ -134,7 +134,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   model-supplied MCP arguments, tool descriptions, or schema visibility create
   operator authorization. Explicit denial wording remains allowed, keeping
   README, specs, generated skills, and Pi bundle carriers lintable without
-  adding noise to default status.
+  adding noise to default status. The check also scans generated interface
+  descriptions as virtual surfaces and reports them through
+  `checked_generated_surfaces`, so host-facing catalog text is covered before it
+  is materialized into tool/schema carriers.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -81,7 +82,7 @@ func runCarrierManifest(cmd *cobra.Command, args []string) error {
 }
 
 func runCarrierCheck(cmd *cobra.Command, args []string) error {
-	result, err := project.CheckCarrierSemio(".")
+	result, err := project.CheckCarrierSemioWithVirtualTexts(".", carrierCheckGeneratedSurfaces())
 	if err != nil {
 		return err
 	}
@@ -97,7 +98,7 @@ func runCarrierCheck(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(result.Findings) == 0 {
-		_, err := fmt.Fprintf(writer, "carrier semio check: clean (%d file(s))\n", len(result.CheckedFiles))
+		_, err := fmt.Fprintf(writer, "carrier semio check: clean (%d file(s), %d generated surface(s))\n", len(result.CheckedFiles), len(result.CheckedGeneratedSurfaces))
 		return err
 	}
 
@@ -117,6 +118,51 @@ func runCarrierCheck(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return fmt.Errorf("carrier semio check found %d issue(s)", len(result.Findings))
+}
+
+func carrierCheckGeneratedSurfaces() []project.CarrierSemioVirtualText {
+	capabilities := haftInterfaceCatalog()
+	surfaces := make([]project.CarrierSemioVirtualText, 0, len(capabilities))
+	for _, capability := range capabilities {
+		surfaces = append(surfaces, project.CarrierSemioVirtualText{
+			Path:    "generated/interface/" + capability.ID,
+			Content: carrierCheckGeneratedSurfaceText(capability),
+		})
+	}
+	return surfaces
+}
+
+func carrierCheckGeneratedSurfaceText(capability interfaceCapability) string {
+	var builder strings.Builder
+	builder.WriteString(capability.ID)
+	builder.WriteByte('\n')
+	builder.WriteString(capability.Purpose)
+	builder.WriteByte('\n')
+	builder.WriteString(capability.CurrentExecution.MCPCall)
+	builder.WriteByte('\n')
+	builder.WriteString(capability.CurrentExecution.CLICommand)
+	builder.WriteByte('\n')
+	for _, shape := range capability.InputContract.FieldShapes {
+		builder.WriteString(shape.Field)
+		builder.WriteByte('\n')
+		builder.WriteString(shape.Shape)
+		builder.WriteByte('\n')
+		builder.WriteString(shape.Note)
+		builder.WriteByte('\n')
+	}
+	for _, note := range capability.InputContract.Notes {
+		builder.WriteString(note)
+		builder.WriteByte('\n')
+	}
+	for _, output := range capability.OutputVolume {
+		builder.WriteString(output)
+		builder.WriteByte('\n')
+	}
+	for _, invariant := range capability.Invariants {
+		builder.WriteString(invariant)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
 }
 
 func writeCarrierManifestEntry(writer io.Writer, entry project.CarrierManifestEntry) error {

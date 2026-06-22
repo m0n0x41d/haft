@@ -38,9 +38,15 @@ type CarrierAuthorityManifest struct {
 }
 
 type CarrierSemioCheckResult struct {
-	SchemaVersion int                   `json:"schema_version"`
-	CheckedFiles  []string              `json:"checked_files"`
-	Findings      []CarrierSemioFinding `json:"findings"`
+	SchemaVersion            int                   `json:"schema_version"`
+	CheckedFiles             []string              `json:"checked_files"`
+	CheckedGeneratedSurfaces []string              `json:"checked_generated_surfaces,omitempty"`
+	Findings                 []CarrierSemioFinding `json:"findings"`
+}
+
+type CarrierSemioVirtualText struct {
+	Path    string
+	Content string
 }
 
 type CarrierSemioFinding struct {
@@ -195,6 +201,10 @@ func CarrierAuthorityManifestJSON(manifest CarrierAuthorityManifest) ([]byte, er
 }
 
 func CheckCarrierSemio(root string) (CarrierSemioCheckResult, error) {
+	return CheckCarrierSemioWithVirtualTexts(root, nil)
+}
+
+func CheckCarrierSemioWithVirtualTexts(root string, virtualTexts []CarrierSemioVirtualText) (CarrierSemioCheckResult, error) {
 	files, err := carrierSemioCheckFiles(root)
 	if err != nil {
 		return CarrierSemioCheckResult{}, err
@@ -211,6 +221,10 @@ func CheckCarrierSemio(root string) (CarrierSemioCheckResult, error) {
 			return CarrierSemioCheckResult{}, fmt.Errorf("read semio carrier %s: %w", relPath, err)
 		}
 		result.Findings = append(result.Findings, checkCarrierSemioText(relPath, string(content))...)
+	}
+	for _, virtualText := range normalizeCarrierSemioVirtualTexts(virtualTexts) {
+		result.CheckedGeneratedSurfaces = append(result.CheckedGeneratedSurfaces, virtualText.Path)
+		result.Findings = append(result.Findings, checkCarrierSemioText(virtualText.Path, virtualText.Content)...)
 	}
 
 	return result, nil
@@ -265,6 +279,29 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 	}
 
 	return dedupeSortedStrings(files), nil
+}
+
+func normalizeCarrierSemioVirtualTexts(texts []CarrierSemioVirtualText) []CarrierSemioVirtualText {
+	out := make([]CarrierSemioVirtualText, 0, len(texts))
+	seen := map[string]struct{}{}
+	for _, text := range texts {
+		path := strings.TrimSpace(text.Path)
+		if path == "" {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		out = append(out, CarrierSemioVirtualText{
+			Path:    path,
+			Content: text.Content,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		return out[i].Path < out[j].Path
+	})
+	return out
 }
 
 func checkCarrierSemioText(path string, content string) []CarrierSemioFinding {
@@ -383,11 +420,12 @@ func allowedDeadSurfaceContext(lines []string, index int) bool {
 }
 
 func authorityBoundaryTerm(lines []string, index int) (string, bool) {
+	line := strings.ToLower(lines[index])
 	window := strings.ToLower(semioContextWindow(lines, index))
-	if !hasCarrierAuthoritySurfaceTerm(window) {
+	if !hasCarrierAuthoritySurfaceTerm(line) {
 		return "", false
 	}
-	if !hasAuthorityGrantTerm(window) {
+	if !hasAuthorityGrantTerm(line) {
 		return "", false
 	}
 	if allowedAuthorityBoundaryContext(window) {
@@ -430,7 +468,11 @@ func hasAuthorityGrantTerm(window string) bool {
 		"binds",
 		"binding",
 		"proof",
-		"evidence",
+		"is evidence",
+		"as evidence",
+		"counts as evidence",
+		"evidence for approval",
+		"evidence for binding",
 		"gate passage",
 	} {
 		if strings.Contains(window, term) {

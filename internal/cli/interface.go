@@ -809,13 +809,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"schema_version":1,"checked_files":["README.md",...],"findings":[{"path":"...","line":1,"term":"desktop|tui|standalone|haft agent","snippet":"...","diagnostic":"..."}]}`,
-						Note:  "Findings mean a dead runtime-surface mention lacks dropped/archive/provenance/support/not-current context.",
+						Shape: `{"schema_version":1,"checked_files":["README.md",...],"checked_generated_surfaces":["generated/interface/query.status",...],"findings":[{"path":"...","line":1,"term":"desktop|tui|standalone|haft agent|operator_authorization_boundary","snippet":"...","diagnostic":"..."}]}`,
+						Note:  "Findings mean a dead runtime-surface mention lacks dropped/archive/provenance/support/not-current context, or generated/host wording implies schema/prompt/model authorization.",
 					},
 				},
 				Notes: []string{
 					"The check is deterministic and read-only; it does not mutate carriers or decisions.",
 					"It avoids substring matches in decision slugs, package names, and ordinary words.",
+					"It also checks generated interface descriptions that are not materialized as carrier files.",
 					"Use it as a focused drill-down before changing current carrier wording.",
 				},
 			},

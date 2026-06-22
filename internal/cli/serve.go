@@ -1948,7 +1948,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 
 	case "carrier_check":
 		projectRoot := filepath.Dir(haftDir)
-		result, err := project.CheckCarrierSemio(projectRoot)
+		result, err := project.CheckCarrierSemioWithVirtualTexts(projectRoot, carrierCheckGeneratedSurfaces())
 		if err != nil {
 			return "", fmt.Errorf("check carrier semio: %w", err)
 		}

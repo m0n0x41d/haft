@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline terminology audit.** Added read-only `haft baseline audit`
+  / `--json` to classify repository `baseline` wording across code, tests,
+  docs, skills, templates, and `.haft` carriers as spec approval, pre-work
+  reference, verified-state snapshot, comparison, ordinary-language, or legacy
+  ambiguous usage while skipping Open-Sleigh and generated dependency noise.
 - **Baseline split measurement regression.** Added coverage proving impact
   measurement records evidence without rewriting the decision drift baseline
   hashes, preserving verified-state snapshots as drift references rather than

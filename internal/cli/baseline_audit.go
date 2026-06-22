@@ -23,6 +23,7 @@ const (
 	baselineAuditOrdinary         = "ordinary_language_baseline"
 	baselineAuditHistoricalGov    = "historical_governance_carrier_baseline"
 	baselineAuditSupportArchive   = "support_archive_carrier_baseline"
+	baselineAuditSourceSpec       = "source_spec_reference_baseline"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -79,6 +80,8 @@ type baselineTermAuditSummary struct {
 	HistoricalGovernanceFiles   int `json:"historical_governance_carrier_files"`
 	SupportArchiveCarrier       int `json:"support_archive_carrier_baseline"`
 	SupportArchiveFiles         int `json:"support_archive_carrier_files"`
+	SourceSpecReference         int `json:"source_spec_reference_baseline"`
+	SourceSpecFiles             int `json:"source_spec_reference_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -167,6 +170,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	}
 	report.Summary.HistoricalGovernanceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditHistoricalGov)
 	report.Summary.SupportArchiveFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSupportArchive)
+	report.Summary.SourceSpecFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSourceSpec)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -309,6 +313,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditHistoricalGov, "mentions baseline inside a historical governance carrier; audit-visible but not current terminology debt"
 	case baselineAuditSupportArchiveCarrier(path):
 		return baselineAuditSupportArchive, "mentions baseline inside a support or archive carrier; audit-visible but not current terminology debt"
+	case baselineAuditSourceSpecCarrier(path):
+		return baselineAuditSourceSpec, "mentions baseline inside an upstream source specification carrier; audit-visible but not current Haft terminology debt"
 	case containsAnyBaselineTerm(value,
 		"specsectionbaseline",
 		"specsectionapprovalbaseline",
@@ -389,6 +395,18 @@ func baselineAuditSupportArchiveCarrier(path string) bool {
 		".haft/night-runs/",
 		".haft/plans/",
 		".haft/pi/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func baselineAuditSourceSpecCarrier(path string) bool {
+	path = filepath.ToSlash(path)
+	for _, prefix := range []string{
+		"data/FPF/",
 	} {
 		if strings.HasPrefix(path, prefix) {
 			return true
@@ -494,6 +512,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.HistoricalGovernanceCarrier++
 	case baselineAuditSupportArchive:
 		summary.SupportArchiveCarrier++
+	case baselineAuditSourceSpec:
+		summary.SourceSpecReference++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -508,7 +528,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -518,6 +538,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.OrdinaryLanguageBaseline,
 		report.Summary.HistoricalGovernanceCarrier,
 		report.Summary.SupportArchiveCarrier,
+		report.Summary.SourceSpecReference,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

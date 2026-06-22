@@ -17,6 +17,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/methods/swe-core/refactor.yaml", "baseline and post-change checks make the claim concrete.\n")
+	writeBaselineAuditFixture(t, root, "data/FPF/FPF-Spec.md", "Baseline is source-spec terminology.\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -56,6 +57,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}
 	if report.Summary.SupportArchiveFiles != 1 {
 		t.Fatalf("support/archive files = %d, want 1", report.Summary.SupportArchiveFiles)
+	}
+	if report.Summary.SourceSpecReference != 1 {
+		t.Fatalf("source spec count = %d, want 1", report.Summary.SourceSpecReference)
+	}
+	if report.Summary.SourceSpecFiles != 1 {
+		t.Fatalf("source spec files = %d, want 1", report.Summary.SourceSpecFiles)
 	}
 	if report.Summary.LegacyAmbiguousBaseline != 1 {
 		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
@@ -104,6 +111,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			VerifiedStateSnapshot:       1,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
+			SourceSpecReference:         1,
 			LegacyAmbiguousBaseline:     1,
 			LegacyAmbiguousFiles:        1,
 		},
@@ -134,6 +142,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"verified_state=1",
 		"historical_governance=1",
 		"support_archive=1",
+		"source_spec=1",
 		"legacy_ambiguous=1",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

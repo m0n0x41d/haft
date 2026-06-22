@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit source-spec classification.** `haft baseline audit` now
+  classifies upstream FPF source specification carriers under
+  `data/FPF/` separately from current legacy-ambiguous baseline terminology
+  debt, preserving source-spec audit visibility without making imported
+  vocabulary look like live Haft rewrite work.
 - **Baseline audit support/archive carrier classification.** `haft baseline
   audit` now classifies `.haft` MethodPack, night-run, plan, and Pi bundle
   carriers separately from current legacy-ambiguous baseline terminology debt,

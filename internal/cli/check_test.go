@@ -72,6 +72,15 @@ func TestBuildCheckReport_FindsGovernanceDebt(t *testing.T) {
 	if !strings.Contains(report.Drifted[0].Summary, "code drift") {
 		t.Fatalf("drift summary = %q, want code drift summary", report.Drifted[0].Summary)
 	}
+	if report.Drifted[0].BaselineKind != artifact.BaselineKindVerifiedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want verified-state snapshot", report.Drifted[0].BaselineKind)
+	}
+	if report.Drifted[0].BaselineProfile == nil {
+		t.Fatal("baseline_profile missing from drift finding")
+	}
+	if report.Drifted[0].BaselineProfile.AuthorityBoundary != "drift_detection_snapshot_not_spec_approval_or_pre_work_reference" {
+		t.Fatalf("baseline_profile = %+v", report.Drifted[0].BaselineProfile)
+	}
 
 	if got := len(report.Unassessed); got != 1 {
 		t.Fatalf("len(Unassessed) = %d, want 1", got)

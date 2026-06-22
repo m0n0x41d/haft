@@ -187,6 +187,15 @@ func TestCheckDriftDetectsModifiedFile(t *testing.T) {
 	if !r.HasBaseline {
 		t.Error("expected HasBaseline=true")
 	}
+	if r.BaselineKind != BaselineKindVerifiedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want verified-state snapshot", r.BaselineKind)
+	}
+	if r.BaselineProfile == nil {
+		t.Fatal("baseline_profile missing")
+	}
+	if r.BaselineProfile.AuthorityBoundary != "drift_detection_snapshot_not_spec_approval_or_pre_work_reference" {
+		t.Fatalf("baseline_profile = %+v", r.BaselineProfile)
+	}
 	if len(r.Files) != 1 {
 		t.Fatalf("expected 1 drifted file, got %d", len(r.Files))
 	}

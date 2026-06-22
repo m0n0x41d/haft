@@ -1251,12 +1251,42 @@ type SymbolDriftItem struct {
 
 // DriftReport describes drift for a single decision.
 type DriftReport struct {
-	DecisionID        string         `json:"decision_id"`
-	DecisionTitle     string         `json:"decision_title"`
-	HasBaseline       bool           `json:"has_baseline"`
-	LikelyImplemented bool           `json:"likely_implemented,omitempty"` // no baseline but files changed in git since decision
-	Files             []DriftItem    `json:"files,omitempty"`
-	ImpactedModules   []ModuleImpact `json:"impacted_modules,omitempty"` // Level C: impact propagation
+	DecisionID        string           `json:"decision_id"`
+	DecisionTitle     string           `json:"decision_title"`
+	HasBaseline       bool             `json:"has_baseline"`
+	BaselineKind      BaselineKind     `json:"baseline_kind,omitempty"`
+	BaselineProfile   *BaselineProfile `json:"baseline_profile,omitempty"`
+	LikelyImplemented bool             `json:"likely_implemented,omitempty"` // no baseline but files changed in git since decision
+	Files             []DriftItem      `json:"files,omitempty"`
+	ImpactedModules   []ModuleImpact   `json:"impacted_modules,omitempty"` // Level C: impact propagation
+}
+
+// BaselineKind names the governance meaning of a baseline-like snapshot.
+// Decision drift hashes are legacy carriers projected as verified-state
+// snapshots; spec approval baselines live in project/specflow.
+type BaselineKind string
+
+const (
+	BaselineKindUnknownLegacy         BaselineKind = "unknown_legacy_baseline"
+	BaselineKindPreWorkReference      BaselineKind = "pre_work_reference_snapshot"
+	BaselineKindSpecSectionApproval   BaselineKind = "spec_section_approval_baseline"
+	BaselineKindVerifiedStateSnapshot BaselineKind = "verified_state_snapshot"
+)
+
+type BaselineProfile struct {
+	Kind              BaselineKind `json:"kind"`
+	Object            string       `json:"object"`
+	AuthorityBoundary string       `json:"authority_boundary"`
+	Diagnostic        string       `json:"diagnostic"`
+}
+
+func VerifiedStateBaselineProfile() BaselineProfile {
+	return BaselineProfile{
+		Kind:              BaselineKindVerifiedStateSnapshot,
+		Object:            "VerifiedStateSnapshot",
+		AuthorityBoundary: "drift_detection_snapshot_not_spec_approval_or_pre_work_reference",
+		Diagnostic:        "legacy affected_files hashes are projected as verified-state snapshots for decision drift detection",
+	}
 }
 
 // Symbol-level triage verdicts for a drift report. These partition session-start

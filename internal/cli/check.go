@@ -42,12 +42,14 @@ type checkStaleFinding struct {
 }
 
 type checkDriftFinding struct {
-	DecisionID        string               `json:"decision_id"`
-	DecisionTitle     string               `json:"decision_title"`
-	HasBaseline       bool                 `json:"has_baseline"`
-	LikelyImplemented bool                 `json:"likely_implemented,omitempty"`
-	Summary           string               `json:"summary"`
-	Files             []artifact.DriftItem `json:"files,omitempty"`
+	DecisionID        string                    `json:"decision_id"`
+	DecisionTitle     string                    `json:"decision_title"`
+	HasBaseline       bool                      `json:"has_baseline"`
+	BaselineKind      artifact.BaselineKind     `json:"baseline_kind,omitempty"`
+	BaselineProfile   *artifact.BaselineProfile `json:"baseline_profile,omitempty"`
+	LikelyImplemented bool                      `json:"likely_implemented,omitempty"`
+	Summary           string                    `json:"summary"`
+	Files             []artifact.DriftItem      `json:"files,omitempty"`
 }
 
 type checkDecisionFinding struct {
@@ -230,6 +232,8 @@ func mapCheckDriftFindings(reports []artifact.DriftReport) []checkDriftFinding {
 			DecisionID:        report.DecisionID,
 			DecisionTitle:     report.DecisionTitle,
 			HasBaseline:       report.HasBaseline,
+			BaselineKind:      report.BaselineKind,
+			BaselineProfile:   report.BaselineProfile,
 			LikelyImplemented: report.LikelyImplemented,
 			Summary:           summarizeCheckDrift(report),
 			Files:             report.Files,

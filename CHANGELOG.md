@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Decision drift baseline profiles.** Drift reports and `haft check --json`
+  now label stored decision file-hash baselines as
+  `verified_state_snapshot` with an authority boundary, making the legacy
+  `affected_files.hash` carrier explicit as a drift-detection snapshot rather
+  than spec approval or a pre-work reference baseline.
 - **EvidencePath current-formality guard.** `haft evidence path` and
   `haft_query(action="evidence_path")` now accept an explicit
   current-formality requirement for stronger attempted uses. When enabled,

@@ -1333,6 +1333,11 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			}
 		}
 		report.HasBaseline = hasAnyHash
+		if hasAnyHash {
+			profile := VerifiedStateBaselineProfile()
+			report.BaselineKind = profile.Kind
+			report.BaselineProfile = &profile
+		}
 
 		if !hasAnyHash {
 			// No baseline set — check git to distinguish "forgot to close loop" from "not started"

@@ -626,6 +626,82 @@ func TestResolveBindingTargetsAttachesSemanticEvaluatorFromTargetMarker(t *testi
 	}
 }
 
+func TestResolveBindingTargetsAttachesSemanticEvaluatorFromYAMLTarget(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		kind      string
+		targetRef string
+		body      string
+		endLine   int
+	}{
+		{
+			name:      "spec section",
+			kind:      BindingTargetSpecSection,
+			targetRef: "spec_section:TS.boundary.001",
+			endLine:   4,
+			body: "sections:\n" +
+				"  - id: TS.boundary.001\n" +
+				"    title: Governance boundary\n" +
+				"    status: active\n" +
+				"  - id: TS.other.001\n" +
+				"    title: Other\n",
+		},
+		{
+			name:      "api contract",
+			kind:      BindingTargetAPIContract,
+			targetRef: "api_contract:haft/status",
+			endLine:   3,
+			body: "contracts:\n" +
+				"  - target_ref: api_contract:haft/status\n" +
+				"    method: haft_query.status\n" +
+				"  - target_ref: api_contract:haft/other\n" +
+				"    method: haft_query.other\n",
+		},
+		{
+			name:      "invariant",
+			kind:      BindingTargetInvariant,
+			targetRef: "invariant:decision-terminal-status",
+			endLine:   3,
+			body: "invariants:\n" +
+				"  - target_ref: invariant:decision-terminal-status\n" +
+				"    statement: terminal decisions do not reopen silently\n" +
+				"  - target_ref: invariant:other\n" +
+				"    statement: other\n",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			projectRoot := t.TempDir()
+			writeTestFile(t, projectRoot, "targets.yaml", tc.body)
+
+			resolution, err := ResolveBindingTargets(
+				projectRoot,
+				[]AffectedFile{{Path: "targets.yaml"}},
+				BindingResolutionOptions{ExplicitTargets: []BindingTarget{{
+					Kind:      tc.kind,
+					TargetRef: tc.targetRef,
+					FilePath:  "targets.yaml",
+				}}},
+			)
+			if err != nil {
+				t.Fatalf("ResolveBindingTargets: %v", err)
+			}
+			if len(resolution.Targets) != 1 {
+				t.Fatalf("targets = %#v, want one", resolution.Targets)
+			}
+			target := resolution.Targets[0]
+			if target.TextHash == "" || target.AnchorHash == "" {
+				t.Fatalf("target did not receive evaluator hashes: %#v", target)
+			}
+			if target.ResolutionSource != BindingResolutionSourceYAMLTarget {
+				t.Fatalf("resolution_source = %q, want %q", target.ResolutionSource, BindingResolutionSourceYAMLTarget)
+			}
+			if target.Line != 2 || target.EndLine != tc.endLine {
+				t.Fatalf("target range = %d-%d, want first yaml object only", target.Line, target.EndLine)
+			}
+		})
+	}
+}
+
 func TestTargetMarkerSemanticTargetDriftUsesBoundedHash(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -676,6 +752,58 @@ func OtherContract() {}
 	file = reports[0].Files[0]
 	if file.Materiality != DriftMaterialityMaterialSemanticTarget {
 		t.Fatalf("file = %+v, want material semantic target after marker block changes", file)
+	}
+	if file.ChangedTargetRef != "api_contract:haft/status" || file.TargetKind != BindingTargetAPIContract {
+		t.Fatalf("target = %q/%q, want api_contract target", file.ChangedTargetRef, file.TargetKind)
+	}
+}
+
+func TestYAMLSemanticTargetDriftUsesBoundedHash(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	initial := "contracts:\n" +
+		"  - target_ref: api_contract:haft/status\n" +
+		"    method: haft_query.status\n" +
+		"  - target_ref: api_contract:haft/other\n" +
+		"    method: haft_query.other\n"
+	writeTestFile(t, projectRoot, "contracts.yaml", initial)
+	dec := createTestDecision(t, store, "dec-api-contract-yaml-evaluator", "API contract yaml target")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "contracts.yaml"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef: dec.Meta.ID,
+		BindingTargets: []BindingTarget{{
+			Kind:      BindingTargetAPIContract,
+			TargetRef: "api_contract:haft/status",
+			FilePath:  "contracts.yaml",
+		}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "contracts.yaml", strings.Replace(initial, "haft_query.other", "haft_query.other_changed", 1))
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 || len(reports[0].Files) != 1 {
+		t.Fatalf("reports = %+v, want one drift report", reports)
+	}
+	file := reports[0].Files[0]
+	if file.Materiality != DriftMaterialityAdjacentFileChurn || !file.AuditOnly {
+		t.Fatalf("file = %+v, want audit-only drift outside yaml target block", file)
+	}
+
+	writeTestFile(t, projectRoot, "contracts.yaml", strings.Replace(initial, "haft_query.status", "haft_query.status_changed", 1))
+	reports, err = CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	file = reports[0].Files[0]
+	if file.Materiality != DriftMaterialityMaterialSemanticTarget {
+		t.Fatalf("file = %+v, want material semantic target after yaml block changes", file)
 	}
 	if file.ChangedTargetRef != "api_contract:haft/status" || file.TargetKind != BindingTargetAPIContract {
 		t.Fatalf("target = %q/%q, want api_contract target", file.ChangedTargetRef, file.TargetKind)

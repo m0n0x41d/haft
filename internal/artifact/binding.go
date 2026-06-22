@@ -38,6 +38,7 @@ const (
 	BindingResolutionSourceUnknownAdapterPosture = "unknown_language_adapter_posture"
 	BindingResolutionSourceMarkdownSection       = "markdown_section_target"
 	BindingResolutionSourceTargetMarker          = "target_marker"
+	BindingResolutionSourceYAMLTarget            = "yaml_target"
 )
 
 type BindingResolutionOptions struct {
@@ -439,11 +440,16 @@ func attachExplicitTargetEvaluator(projectRoot string, target BindingTarget) Bin
 
 	section, ok := extractMarkedTargetRange(projectRoot, target.FilePath, target.TargetRef)
 	if !ok {
-		markdownSection, markdownOK := extractMarkdownTargetRange(projectRoot, target.FilePath, target.TargetRef)
-		if !markdownOK {
-			return target
+		yamlSection, yamlOK := extractYAMLTargetRange(projectRoot, target.FilePath, target.TargetRef)
+		if yamlOK {
+			section = yamlSection
+		} else {
+			markdownSection, markdownOK := extractMarkdownTargetRange(projectRoot, target.FilePath, target.TargetRef)
+			if !markdownOK {
+				return target
+			}
+			section = markdownSection
 		}
-		section = markdownSection
 	}
 	target.Line = section.StartLine
 	target.EndLine = section.EndLine
@@ -545,6 +551,107 @@ func extractMarkedTargetRange(projectRoot, relPath, targetRef string) (markdownT
 		TextHash:   hex.EncodeToString(textHash[:]),
 		Source:     BindingResolutionSourceTargetMarker,
 	}, true
+}
+
+func extractYAMLTargetRange(projectRoot, relPath, targetRef string) (markdownTargetRange, bool) {
+	switch strings.ToLower(filepath.Ext(relPath)) {
+	case ".yaml", ".yml":
+	default:
+		return markdownTargetRange{}, false
+	}
+	targetRef = normalizeSemanticTargetRef(targetRef)
+	if targetRef == "" {
+		return markdownTargetRange{}, false
+	}
+	token := semanticTargetLookupToken(targetRef)
+	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	if err != nil {
+		return markdownTargetRange{}, false
+	}
+	lines := splitBindingTextLines(string(content))
+	start := 0
+	startIndent := 0
+	for index, line := range lines {
+		if !yamlLineMatchesTarget(line, targetRef, token) {
+			continue
+		}
+		start = index + 1
+		startIndent = lineIndent(line)
+		break
+	}
+	if start == 0 {
+		return markdownTargetRange{}, false
+	}
+
+	end := len(lines)
+	for index := start; index < len(lines); index++ {
+		line := lines[index]
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if lineIndent(line) <= startIndent && yamlLineStartsSibling(line) {
+			end = index
+			break
+		}
+	}
+	if end < start {
+		end = start
+	}
+
+	text := strings.Join(lines[start-1:end], "\n")
+	normalized := normalizeBindingRangeText(text)
+	anchorHash := sha256.Sum256([]byte(firstBindingNonEmptyLine(normalized)))
+	textHash := sha256.Sum256([]byte(normalized))
+	return markdownTargetRange{
+		StartLine:  start,
+		EndLine:    end,
+		AnchorHash: hex.EncodeToString(anchorHash[:]),
+		TextHash:   hex.EncodeToString(textHash[:]),
+		Source:     BindingResolutionSourceYAMLTarget,
+	}, true
+}
+
+func yamlLineMatchesTarget(line string, targetRef string, token string) bool {
+	for _, key := range []string{"id", "target_ref"} {
+		value := yamlLineScalarValue(line, key)
+		if value == "" {
+			continue
+		}
+		if value == targetRef {
+			return true
+		}
+		if key == "id" && value == token {
+			return true
+		}
+	}
+	return false
+}
+
+func yamlLineScalarValue(line string, key string) string {
+	trimmed := strings.TrimSpace(line)
+	trimmed = strings.TrimPrefix(trimmed, "-")
+	trimmed = strings.TrimSpace(trimmed)
+	prefix := key + ":"
+	if !strings.HasPrefix(trimmed, prefix) {
+		return ""
+	}
+	value := strings.TrimSpace(strings.TrimPrefix(trimmed, prefix))
+	if index := strings.Index(value, "#"); index >= 0 {
+		value = strings.TrimSpace(value[:index])
+	}
+	return normalizeSemanticTargetRef(strings.Trim(value, `"'`))
+}
+
+func yamlLineStartsSibling(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "- ") {
+		return true
+	}
+	return yamlLineScalarValue(line, "id") != "" || yamlLineScalarValue(line, "target_ref") != ""
+}
+
+func lineIndent(line string) int {
+	return len(line) - len(strings.TrimLeft(line, " \t"))
 }
 
 func markedTargetRef(line string) string {

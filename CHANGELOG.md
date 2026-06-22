@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   explicitly names the changed governance target and evidence is bound to that
   exact claim. This is explicit-only metadata: prose is not mined, superseded or
   deprecated claims are ignored, and drift verdicts do not change.
+- **YAML semantic target evaluator.** Explicit spec-section, API-contract, and
+  invariant binding targets can now attach bounded evaluators from YAML-style
+  carrier blocks using `id:` or `target_ref:`. Drift outside the matching YAML
+  object remains audit-only; changes inside the object become semantic-target
+  drift without falling back to whole-file scope.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

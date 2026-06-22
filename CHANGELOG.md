@@ -144,6 +144,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tools/list, compact CLI output, and future generated descriptions. The policy
   keeps generation targets as explicit drill-down data and requires carrier
   semio authority-boundary checks before host materialization.
+- **Spec carrier change classifier.** Added a pure project-level
+  `SpecSection` carrier change classifier for the future Markdown sync-back
+  path. It distinguishes carrier-only movement, recognized semantic scalar
+  updates, relationship updates, mixed updates, and unknown/high-risk edits that
+  must abstain/block, without mutating SQL or treating arbitrary prose as
+  authority.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

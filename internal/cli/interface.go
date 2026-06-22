@@ -919,8 +919,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"attempted_use":{"requires_current_formality":true},"evidence":{"formality_level":7,"formality_scale":{"scale_id":"fpf-2026-f0-f9","level":7},"formality_bridge":{"loss":"source-scale-not-declared"}},"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
-						Note:  "Reliance is bounded to the declared use; formality scale/bridge are diagnostics and never create approval, gate passage, or global truth.",
+						Shape: `{"attempted_use":{"requires_current_formality":true},"evidence":{"formality_level":7,"formality_scale":{"scale_id":"fpf-2026-f0-f9","level":7},"formality_bridge":{"loss":"source-scale-not-declared"},"formality_diagnostics":["legacy_formality_projection_lossy|unversioned_formality_source_scale_missing|current_f0_f9_formality"]},"claim_binding":{...},"trace_binding":{...},"currentness_window":{...},"reliance_disposition":{"disposition":"bounded_reliance|advisory_only|blocked"},"authority_boundary":{"approval":"not_approval","gate_decision":"not_gate_decision","global_truth":"not_global_truth"}}`,
+						Note:  "Reliance is bounded to the declared use; formality scale/bridge/diagnostics are diagnostics and never create approval, gate passage, or global truth.",
 					},
 				},
 				Notes: []string{

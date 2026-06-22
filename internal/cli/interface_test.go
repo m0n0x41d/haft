@@ -351,6 +351,35 @@ func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
 	}
 }
 
+func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.evidence_path")
+	if !ok {
+		t.Fatal("query.evidence_path capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"formality_diagnostics",
+		"legacy_formality_projection_lossy",
+		"unversioned_formality_source_scale_missing",
+		"current_f0_f9_formality",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.evidence_path shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"blocks bounded reliance",
+		"legacy or undeclared/lossy formality",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.evidence_path notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
 func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_review")
 	if !ok {

@@ -104,6 +104,60 @@ func TestBuildEvidencePathRecordBlocksLegacyFormalityWhenCurrentRequired(t *test
 	if record.RelianceDisposition.Reason != "current_formality_required" {
 		t.Fatalf("reason = %q, want current_formality_required", record.RelianceDisposition.Reason)
 	}
+	if len(record.Evidence.FormalityDiagnostics) != 1 ||
+		record.Evidence.FormalityDiagnostics[0] != EvidenceFormalityDiagnosticLegacyLoss {
+		t.Fatalf("formality diagnostics = %#v", record.Evidence.FormalityDiagnostics)
+	}
+	if record.AuthorityBoundary.Approval != EvidenceBoundaryNotApproval {
+		t.Fatalf("approval boundary = %q", record.AuthorityBoundary.Approval)
+	}
+	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
+		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
+	}
+	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
+		t.Fatalf("global truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+}
+
+func TestBuildEvidencePathRecordBlocksUnversionedFormalityWhenCurrentRequired(t *testing.T) {
+	item := evidencePathItem()
+	item.FormalityScale = nil
+	item.FormalityBridge = nil
+
+	record := BuildEvidencePathRecord(
+		EvidencePathInput{
+			ArtifactRef:              "dec-1",
+			EvidenceRef:              "evid-1",
+			ClaimRef:                 "claim-1",
+			AttemptedUse:             "release gate reliance",
+			RequiresCurrentFormality: true,
+			ProducerRef:              "agent:local",
+			MethodRef:                "mpull-1",
+			WorkRef:                  "wc-1",
+		},
+		item,
+		evidencePathNow(),
+	)
+
+	if record.Evidence.FormalityScale == nil {
+		t.Fatal("formality scale missing")
+	}
+	if record.Evidence.FormalityScale.ScaleID != reff.FormalityScaleUnversioned {
+		t.Fatalf("formality scale = %q", record.Evidence.FormalityScale.ScaleID)
+	}
+	if record.Evidence.FormalityBridge == nil {
+		t.Fatal("formality bridge missing")
+	}
+	if len(record.Evidence.FormalityDiagnostics) != 1 ||
+		record.Evidence.FormalityDiagnostics[0] != EvidenceFormalityDiagnosticUnversioned {
+		t.Fatalf("formality diagnostics = %#v", record.Evidence.FormalityDiagnostics)
+	}
+	if record.RelianceDisposition.Disposition != EvidenceRelianceBlocked {
+		t.Fatalf("reliance = %+v, want blocked", record.RelianceDisposition)
+	}
+	if record.RelianceDisposition.Reason != "current_formality_required" {
+		t.Fatalf("reason = %q, want current_formality_required", record.RelianceDisposition.Reason)
+	}
 	if record.AuthorityBoundary.Approval != EvidenceBoundaryNotApproval {
 		t.Fatalf("approval boundary = %q", record.AuthorityBoundary.Approval)
 	}

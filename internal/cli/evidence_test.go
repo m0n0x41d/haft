@@ -95,3 +95,47 @@ func TestWriteEvidencePathSummaryNamesLegacyFormalityBridge(t *testing.T) {
 		t.Fatalf("summary did not name legacy formality loss:\n%s", out.String())
 	}
 }
+
+func TestWriteEvidencePathSummaryNamesFormalityDiagnostics(t *testing.T) {
+	scale := reff.UnversionedFormalityScale(2)
+	bridge := reff.UnversionedFormalityBridge(2)
+	record := artifact.EvidencePathRecord{
+		RecordKind:  artifact.EvidencePathRecordKind,
+		Authority:   artifact.EvidencePathAuthority,
+		ArtifactRef: "dec-1",
+		Evidence: artifact.EvidencePathEvidence{
+			ID:                   "evid-1",
+			FormalityLevel:       2,
+			FormalityScale:       &scale,
+			FormalityBridge:      &bridge,
+			FormalityDiagnostics: []string{artifact.EvidenceFormalityDiagnosticUnversioned},
+		},
+		RelianceDisposition: artifact.RelianceDisposition{
+			Disposition: artifact.EvidenceRelianceBlocked,
+			Reason:      "current_formality_required",
+		},
+		ClaimBinding: artifact.EvidenceClaimBinding{
+			Status: artifact.EvidenceClaimBindingBound,
+		},
+		TraceBinding: artifact.EvidenceTraceBinding{
+			Status: artifact.EvidenceTraceBindingDeclared,
+		},
+		CurrentnessWindow: artifact.EvidenceCurrentnessWindow{
+			Status: artifact.EvidenceCurrentnessCurrent,
+		},
+		AuthorityBoundary: artifact.EvidenceAuthorityBoundary{
+			Approval:     artifact.EvidenceBoundaryNotApproval,
+			GateDecision: artifact.EvidenceBoundaryNotGateDecision,
+			GlobalTruth:  artifact.EvidenceBoundaryNotGlobalTruth,
+		},
+	}
+
+	var out bytes.Buffer
+	if err := writeEvidencePathSummary(&out, record); err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(out.String(), "formality_diagnostics: unversioned_formality_source_scale_missing") {
+		t.Fatalf("summary did not name formality diagnostics:\n%s", out.String())
+	}
+}

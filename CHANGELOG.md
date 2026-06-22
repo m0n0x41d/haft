@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **EvidencePath formality diagnostics.** `haft evidence path` and
+  `haft_query(action="evidence_path")` now expose explicit
+  `formality_diagnostics` for current F0-F9, legacy lossy, and unversioned
+  formality readings. Stronger uses that require current F0-F9 formality now
+  block unversioned evidence instead of silently treating missing scale metadata
+  as current.
 - **Engineering value simplify/kill criteria.** `haft value space` and
   `haft_query(action="value_space")` now include read-only
   `simplify_kill_criteria` review triggers for scope violations, missing

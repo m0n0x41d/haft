@@ -31,6 +31,11 @@ const (
 	EvidenceBoundaryNotApproval     = "not_approval"
 	EvidenceBoundaryNotGateDecision = "not_gate_decision"
 	EvidenceBoundaryNotGlobalTruth  = "not_global_truth"
+
+	EvidenceFormalityDiagnosticCurrent      = "current_f0_f9_formality"
+	EvidenceFormalityDiagnosticLegacyLoss   = "legacy_formality_projection_lossy"
+	EvidenceFormalityDiagnosticUnversioned  = "unversioned_formality_source_scale_missing"
+	EvidenceFormalityDiagnosticUnknownScale = "unknown_formality_scale_treated_as_unversioned"
 )
 
 type EvidencePathInput struct {
@@ -59,19 +64,20 @@ type EvidencePathRecord struct {
 }
 
 type EvidencePathEvidence struct {
-	ID                 string                     `json:"id"`
-	Type               string                     `json:"type,omitempty"`
-	Verdict            string                     `json:"verdict,omitempty"`
-	CarrierRef         string                     `json:"carrier_ref,omitempty"`
-	CongruenceLevel    int                        `json:"congruence_level,omitempty"`
-	FormalityLevel     int                        `json:"formality_level,omitempty"`
-	FormalityScale     *reff.FormalityScale       `json:"formality_scale,omitempty"`
-	FormalityBridge    *reff.FormalityBridge      `json:"formality_bridge,omitempty"`
-	ClaimRefs          []string                   `json:"claim_refs,omitempty"`
-	ClaimScope         []string                   `json:"claim_scope,omitempty"`
-	ValidUntil         string                     `json:"valid_until,omitempty"`
-	CausalSupportBasis CausalEvidenceSupportBasis `json:"causal_support_basis,omitempty"`
-	Provenance         string                     `json:"provenance,omitempty"`
+	ID                   string                     `json:"id"`
+	Type                 string                     `json:"type,omitempty"`
+	Verdict              string                     `json:"verdict,omitempty"`
+	CarrierRef           string                     `json:"carrier_ref,omitempty"`
+	CongruenceLevel      int                        `json:"congruence_level,omitempty"`
+	FormalityLevel       int                        `json:"formality_level,omitempty"`
+	FormalityScale       *reff.FormalityScale       `json:"formality_scale,omitempty"`
+	FormalityBridge      *reff.FormalityBridge      `json:"formality_bridge,omitempty"`
+	FormalityDiagnostics []string                   `json:"formality_diagnostics,omitempty"`
+	ClaimRefs            []string                   `json:"claim_refs,omitempty"`
+	ClaimScope           []string                   `json:"claim_scope,omitempty"`
+	ValidUntil           string                     `json:"valid_until,omitempty"`
+	CausalSupportBasis   CausalEvidenceSupportBasis `json:"causal_support_basis,omitempty"`
+	Provenance           string                     `json:"provenance,omitempty"`
 }
 
 type EvidenceClaimBinding struct {
@@ -157,21 +163,62 @@ func normalizeEvidencePathInput(input EvidencePathInput) EvidencePathInput {
 }
 
 func evidencePathEvidence(item EvidenceItem) EvidencePathEvidence {
+	scale, bridge, diagnostics := evidenceFormalityProjection(item)
+
 	return EvidencePathEvidence{
-		ID:                 strings.TrimSpace(item.ID),
-		Type:               strings.TrimSpace(item.Type),
-		Verdict:            strings.TrimSpace(item.Verdict),
-		CarrierRef:         strings.TrimSpace(item.CarrierRef),
-		CongruenceLevel:    item.CongruenceLevel,
-		FormalityLevel:     item.FormalityLevel,
-		FormalityScale:     item.FormalityScale,
-		FormalityBridge:    item.FormalityBridge,
-		ClaimRefs:          append([]string(nil), item.ClaimRefs...),
-		ClaimScope:         append([]string(nil), item.ClaimScope...),
-		ValidUntil:         strings.TrimSpace(item.ValidUntil),
-		CausalSupportBasis: item.CausalSupportBasis,
-		Provenance:         strings.TrimSpace(item.Provenance),
+		ID:                   strings.TrimSpace(item.ID),
+		Type:                 strings.TrimSpace(item.Type),
+		Verdict:              strings.TrimSpace(item.Verdict),
+		CarrierRef:           strings.TrimSpace(item.CarrierRef),
+		CongruenceLevel:      item.CongruenceLevel,
+		FormalityLevel:       item.FormalityLevel,
+		FormalityScale:       &scale,
+		FormalityBridge:      bridge,
+		FormalityDiagnostics: diagnostics,
+		ClaimRefs:            append([]string(nil), item.ClaimRefs...),
+		ClaimScope:           append([]string(nil), item.ClaimScope...),
+		ValidUntil:           strings.TrimSpace(item.ValidUntil),
+		CausalSupportBasis:   item.CausalSupportBasis,
+		Provenance:           strings.TrimSpace(item.Provenance),
 	}
+}
+
+func evidenceFormalityProjection(item EvidenceItem) (reff.FormalityScale, *reff.FormalityBridge, []string) {
+	if item.FormalityScale == nil {
+		scale := reff.UnversionedFormalityScale(item.FormalityLevel)
+		bridge := reff.UnversionedFormalityBridge(item.FormalityLevel)
+		return scale, &bridge, []string{EvidenceFormalityDiagnosticUnversioned}
+	}
+
+	scale := reff.NormalizeFormalityScale(*item.FormalityScale)
+	bridge := item.FormalityBridge
+	diagnostics := []string{EvidenceFormalityDiagnosticCurrent}
+	switch scale.ScaleID {
+	case reff.FormalityScaleLegacy:
+		if bridge == nil {
+			next := reff.LegacyFormalityBridge(scale.Level)
+			bridge = &next
+		}
+		diagnostics = []string{EvidenceFormalityDiagnosticLegacyLoss}
+	case reff.FormalityScaleUnversioned:
+		if bridge == nil {
+			next := reff.UnversionedFormalityBridge(scale.Level)
+			bridge = &next
+		}
+		diagnostics = []string{EvidenceFormalityDiagnosticUnversioned}
+	case reff.FormalityScaleCurrent:
+		if bridge == nil {
+			diagnostics = []string{EvidenceFormalityDiagnosticCurrent}
+		}
+	default:
+		if bridge == nil {
+			next := reff.UnversionedFormalityBridge(scale.Level)
+			bridge = &next
+		}
+		diagnostics = []string{EvidenceFormalityDiagnosticUnknownScale}
+	}
+
+	return scale, bridge, diagnostics
 }
 
 func evidenceClaimBinding(claimRef string, item EvidenceItem) EvidenceClaimBinding {
@@ -293,7 +340,7 @@ func evidenceReliance(disposition string, reason string, boundaries []string) Re
 
 func evidenceHasCurrentFormality(item EvidenceItem) bool {
 	if item.FormalityScale == nil {
-		return true
+		return false
 	}
 
 	scale := reff.NormalizeFormalityScale(*item.FormalityScale)

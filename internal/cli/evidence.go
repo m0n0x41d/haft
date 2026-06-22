@@ -153,6 +153,12 @@ func writeEvidencePathSummary(w io.Writer, record artifact.EvidencePathRecord) e
 		"formality: %s\n",
 		evidencePathFormalitySummary(record.Evidence),
 	))
+	if len(record.Evidence.FormalityDiagnostics) > 0 {
+		builder.WriteString(fmt.Sprintf(
+			"formality_diagnostics: %s\n",
+			strings.Join(record.Evidence.FormalityDiagnostics, ","),
+		))
+	}
 	builder.WriteString(fmt.Sprintf(
 		"authority_boundary: approval=%s gate_decision=%s global_truth=%s\n",
 		record.AuthorityBoundary.Approval,

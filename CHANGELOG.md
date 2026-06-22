@@ -43,6 +43,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   before-apply review policy, dependent refs, selection impact, and an explicit
   `auto_relink=false` boundary so successor/retirement selections cannot hide
   downstream dependency work.
+- **Decision reconciliation successor workflow preview.** Merge/supersede
+  previews now include a read-only `consolidated_successor_workflow` contract
+  that names required successor packet fields such as retained/withdrawn claims,
+  changed assumptions, evidence, scope, drift watch targets, and `valid_until`
+  without creating or approving a successor.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

@@ -94,6 +94,7 @@ type DecisionReconciliationPreview struct {
 	ValidationNotes         []string                           `json:"validation_notes,omitempty"`
 	DownstreamImpact        *DecisionReconciliationDownstream  `json:"downstream_impact,omitempty"`
 	DownstreamMigration     *DecisionReconciliationMigration   `json:"downstream_migration_report,omitempty"`
+	SuccessorWorkflow       *DecisionReconciliationSuccessor   `json:"consolidated_successor_workflow,omitempty"`
 	DownstreamReview        []string                           `json:"downstream_review,omitempty"`
 	MutationBoundary        []string                           `json:"mutation_boundary"`
 	ApprovalCue             string                             `json:"approval_cue,omitempty"`
@@ -124,6 +125,16 @@ type DecisionReconciliationMigration struct {
 	DependentRefs       []string `json:"dependent_refs,omitempty"`
 	ReviewSteps         []string `json:"review_steps,omitempty"`
 	SelectionImpact     []string `json:"selection_impact,omitempty"`
+}
+
+type DecisionReconciliationSuccessor struct {
+	Required                     bool     `json:"required"`
+	Authority                    string   `json:"authority"`
+	BindingPath                  string   `json:"binding_path"`
+	ExistingSuccessorRefRequired bool     `json:"existing_successor_ref_required"`
+	RequiredPacketFields         []string `json:"required_packet_fields,omitempty"`
+	ReviewSteps                  []string `json:"review_steps,omitempty"`
+	MutationBoundary             []string `json:"mutation_boundary,omitempty"`
 }
 
 type DecisionReconciliationPreviewState struct {
@@ -907,6 +918,7 @@ func decisionReconciliationPreview(
 		ValidationNotes:         decisionReconciliationPreviewValidationNotes(operation, group, items),
 		DownstreamImpact:        downstreamImpact,
 		DownstreamMigration:     decisionReconciliationPreviewMigration(operation, downstreamImpact),
+		SuccessorWorkflow:       decisionReconciliationPreviewSuccessorWorkflow(operation),
 		DownstreamReview:        decisionReconciliationPreviewDownstreamReview(operation),
 		MutationBoundary:        decisionReconciliationPreviewMutationBoundary(operation),
 		ApprovalCue:             decisionReconciliationPreviewApprovalCue(operation),
@@ -1204,6 +1216,47 @@ func decisionReconciliationMigrationImpact(operation string) []string {
 	case DecisionReconciliationOperationEnrichScope:
 		return []string{
 			"scope enrichment does not relink dependents but may change future drift/current-authority grouping",
+		}
+	default:
+		return nil
+	}
+}
+
+func decisionReconciliationPreviewSuccessorWorkflow(
+	operation string,
+) *DecisionReconciliationSuccessor {
+	switch operation {
+	case DecisionReconciliationOperationMergeThroughSuccessor,
+		DecisionReconciliationOperationSupersede:
+		return &DecisionReconciliationSuccessor{
+			Required:                     true,
+			Authority:                    "review_contract_not_binding_authority",
+			BindingPath:                  "create_or_select_successor_decision_then_apply_operator_approved_selection",
+			ExistingSuccessorRefRequired: true,
+			RequiredPacketFields: []string{
+				"decision_subject_ref",
+				"bounded_context_ref",
+				"merged_from",
+				"retained_claims",
+				"withdrawn_claims",
+				"changed_assumptions",
+				"resolved_conflicts",
+				"remaining_evidence",
+				"governance_scope",
+				"drift_watch_targets",
+				"valid_until",
+			},
+			ReviewSteps: []string{
+				"confirm the successor DecisionRecord is current and covers the same bounded context",
+				"review retained_claims and withdrawn_claims before approving lineage mutation",
+				"confirm remaining_evidence and valid_until are sufficient for the intended use",
+				"confirm governance_scope and drift_watch_targets are narrower than implementation footprint",
+			},
+			MutationBoundary: []string{
+				"this preview does not create the successor",
+				"this preview does not change old decision status",
+				"this preview does not relink downstream dependencies",
+			},
 		}
 	default:
 		return nil

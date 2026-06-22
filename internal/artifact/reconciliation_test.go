@@ -129,6 +129,22 @@ func TestDecisionReconciliationGroupsExplicitSubjectAndTargetAsMergeCandidate(t 
 	if !containsString(group.Preview.ValidationNotes, "apply-ready only after an existing successor_ref is selected") {
 		t.Fatalf("preview validation notes = %#v", group.Preview.ValidationNotes)
 	}
+	workflow := group.Preview.SuccessorWorkflow
+	if workflow == nil {
+		t.Fatal("consolidated successor workflow missing")
+	}
+	if !workflow.Required || !workflow.ExistingSuccessorRefRequired {
+		t.Fatalf("successor workflow = %#v, want required existing successor", workflow)
+	}
+	if !containsString(workflow.RequiredPacketFields, "retained_claims") ||
+		!containsString(workflow.RequiredPacketFields, "withdrawn_claims") ||
+		!containsString(workflow.RequiredPacketFields, "drift_watch_targets") ||
+		!containsString(workflow.RequiredPacketFields, "valid_until") {
+		t.Fatalf("successor required_packet_fields = %#v", workflow.RequiredPacketFields)
+	}
+	if !strings.Contains(strings.Join(workflow.MutationBoundary, "\n"), "does not create the successor") {
+		t.Fatalf("successor mutation_boundary = %#v", workflow.MutationBoundary)
+	}
 	if len(group.Preview.Proposed.Statuses) != 2 {
 		t.Fatalf("preview proposed statuses = %#v", group.Preview.Proposed.Statuses)
 	}

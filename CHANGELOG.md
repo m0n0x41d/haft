@@ -52,6 +52,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reconciliation selections now support `claim_lifecycle_update` for explicit
   claims, allowing partial claim supersede, retire, or reopen without changing
   the parent DecisionRecord's current authority.
+- **Current governing frontier provenance.** Read-only governing-set JSON now
+  carries a `snapshot` envelope with source, projection, status-policy, terminal
+  history policy, filter posture, and generated timestamp so audit views can
+  distinguish historical decisions from current authority without relying on
+  prose status summaries.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

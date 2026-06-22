@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 const (
@@ -18,11 +19,23 @@ const (
 )
 
 type CurrentGoverningSetReport struct {
-	SchemaVersion int                        `json:"schema_version"`
-	Authority     string                     `json:"authority"`
-	Filter        *CurrentGoverningSetFilter `json:"filter,omitempty"`
-	Summary       CurrentGoverningSetSummary `json:"summary"`
-	Sets          []CurrentGoverningSet      `json:"sets"`
+	SchemaVersion int                         `json:"schema_version"`
+	Authority     string                      `json:"authority"`
+	Snapshot      CurrentGoverningSetSnapshot `json:"snapshot"`
+	Filter        *CurrentGoverningSetFilter  `json:"filter,omitempty"`
+	Summary       CurrentGoverningSetSummary  `json:"summary"`
+	Sets          []CurrentGoverningSet       `json:"sets"`
+}
+
+type CurrentGoverningSetSnapshot struct {
+	GeneratedAt           string   `json:"generated_at"`
+	Source                string   `json:"source"`
+	Projection            string   `json:"projection"`
+	AuthorityBoundary     string   `json:"authority_boundary"`
+	CurrentStatusPolicy   []string `json:"current_status_policy"`
+	TerminalStatusPolicy  []string `json:"terminal_status_policy"`
+	TerminalHistoryPolicy string   `json:"terminal_history_policy"`
+	FilterApplied         bool     `json:"filter_applied"`
 }
 
 type CurrentGoverningSetFilter struct {
@@ -137,6 +150,7 @@ func BuildCurrentGoverningSetReportFiltered(
 	report := CurrentGoverningSetReport{
 		SchemaVersion: CurrentGoverningSetSchemaVersion,
 		Authority:     CurrentGoverningSetAuthority,
+		Snapshot:      newCurrentGoverningSetSnapshot(false),
 		Summary:       summary,
 		Sets:          sets,
 	}
@@ -158,9 +172,23 @@ func FilterCurrentGoverningSetReport(
 		}
 	}
 	report.Filter = &normalized
+	report.Snapshot.FilterApplied = true
 	report.Sets = sets
 	report.Summary = currentGoverningSetSummary(sets)
 	return report
+}
+
+func newCurrentGoverningSetSnapshot(filterApplied bool) CurrentGoverningSetSnapshot {
+	return CurrentGoverningSetSnapshot{
+		GeneratedAt:           time.Now().UTC().Format(time.RFC3339),
+		Source:                "artifact_store_decision_records",
+		Projection:            "refreshable_current_governing_frontier",
+		AuthorityBoundary:     "derived_read_only_not_gate_decision",
+		CurrentStatusPolicy:   []string{string(StatusActive), string(StatusRefreshDue)},
+		TerminalStatusPolicy:  []string{string(StatusSuperseded), string(StatusDeprecated)},
+		TerminalHistoryPolicy: "terminal decisions stay searchable history and are excluded from current authority",
+		FilterApplied:         filterApplied,
+	}
 }
 
 func currentGoverningSetFromBucket(bucket *currentGoverningSetBucket) CurrentGoverningSet {

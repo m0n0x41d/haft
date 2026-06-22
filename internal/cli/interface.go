@@ -1132,7 +1132,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "response",
-						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","target_resolution":"explicit_governance_or_watch_target|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"operator_required":true,"authority_boundary":"derived_read_only_not_gate_decision"}]}`,
+						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","snapshot":{"generated_at":"RFC3339","source":"artifact_store_decision_records","projection":"refreshable_current_governing_frontier","authority_boundary":"derived_read_only_not_gate_decision","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority","filter_applied":true},"filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","target_resolution":"explicit_governance_or_watch_target|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"operator_required":true,"authority_boundary":"derived_read_only_not_gate_decision"}]}`,
 						Note:  "Terminal decisions are history refs, not current authority; conflicts, overlaps, and fallback scope repair hints are review cues, not automatic lineage mutations.",
 					},
 				},
@@ -1140,6 +1140,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"Use this after reconciliation planning to ask what currently governs a subject/context/target.",
 					"Use query/source_refs/bearer_ref for focused drill-down instead of expanding default status.",
 					"The projection is derived from active/refresh_due decisions and effective governance/drift targets.",
+					"snapshot is provenance for the refreshable projection, not a persisted authority artifact.",
 					"fallback_target_sets and scope_enrichment_sets point to old decisions that need operator-approved scope enrichment before stronger use.",
 					"Read-only: it does not supersede, merge, retire, reopen, baseline, or create GateDecision records.",
 				},

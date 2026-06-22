@@ -40,6 +40,18 @@ func TestBuildCurrentGoverningSetExcludesTerminalHistory(t *testing.T) {
 	if report.Summary.CurrentDecisions != 1 {
 		t.Fatalf("current_decisions = %d, want 1", report.Summary.CurrentDecisions)
 	}
+	if report.Snapshot.Source != "artifact_store_decision_records" {
+		t.Fatalf("snapshot source = %q", report.Snapshot.Source)
+	}
+	if report.Snapshot.Projection != "refreshable_current_governing_frontier" {
+		t.Fatalf("snapshot projection = %q", report.Snapshot.Projection)
+	}
+	if report.Snapshot.FilterApplied {
+		t.Fatal("snapshot filter_applied = true, want false for unfiltered report")
+	}
+	if !containsString(report.Snapshot.TerminalStatusPolicy, string(StatusSuperseded)) {
+		t.Fatalf("terminal status policy = %#v", report.Snapshot.TerminalStatusPolicy)
+	}
 	if len(report.Sets) != 1 {
 		t.Fatalf("sets = %#v", report.Sets)
 	}
@@ -193,6 +205,9 @@ func TestFilterCurrentGoverningSetReportBySubjectAndTarget(t *testing.T) {
 
 	if report.Filter == nil {
 		t.Fatal("filter missing")
+	}
+	if !report.Snapshot.FilterApplied {
+		t.Fatal("snapshot filter_applied = false, want true for filtered report")
 	}
 	if report.Summary.GoverningSets != 1 || report.Summary.CurrentDecisions != 1 {
 		t.Fatalf("summary = %#v", report.Summary)

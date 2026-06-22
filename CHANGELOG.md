@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Legacy file-scope drift binding fallback.** DriftEvent reports now classify
+  legacy whole-file decision bindings as explicit `whole_file_fallback`
+  `binding_target_missing` events that require scope enrichment, instead of
+  reporting them as undifferentiated `unknown_high_risk`; material drift stays
+  visible and routes to `haft decision reconcile --json`.
 - **Spec carrier-change field registry.** SpecSection carrier-change
   classification now uses a single typed registry for high-risk, semantic
   scalar, relationship, and carrier-only fields. This preserves the current

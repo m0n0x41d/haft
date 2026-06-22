@@ -105,6 +105,8 @@ const (
 
 const DriftEventResolutionLedgerAuthority = "drift_event_resolution_metadata_not_decision_authority"
 
+const legacyFileScopeFallbackReason = "legacy file-scope decision binding has no precise symbol, section, or contract target"
+
 type DriftEventResolutionLedger struct {
 	SchemaVersion int                    `json:"schema_version"`
 	Authority     string                 `json:"authority"`
@@ -314,7 +316,7 @@ func summarizeDriftEvents(events []DriftEvent) DriftEventSummary {
 		} else {
 			summary.MaterialEvents++
 		}
-		if event.Materiality == DriftMaterialityNeedsBindingResolution {
+		if driftEventNeedsBindingResolution(event) {
 			summary.NeedsBindingResolutionEvents++
 		}
 		if event.TargetKind != "file" {
@@ -416,6 +418,7 @@ func driftEventCandidates(report DriftReport, item DriftItem) []driftEventCandid
 	if trigger == "" {
 		trigger = driftEventDefaultTrigger(item.Status)
 	}
+	fallbackKind, fallbackReason := driftEventFallbackMetadata(item, materiality)
 	event := DriftEvent{
 		ChangedTargetRef: driftEventFileTarget(item.Path),
 		TargetKind:       "file",
@@ -423,8 +426,8 @@ func driftEventCandidates(report DriftReport, item DriftItem) []driftEventCandid
 		DriftStatus:      item.Status,
 		TriggerKind:      trigger,
 		Materiality:      materiality,
-		FallbackKind:     strings.TrimSpace(item.FallbackKind),
-		FallbackReason:   strings.TrimSpace(item.FallbackReason),
+		FallbackKind:     fallbackKind,
+		FallbackReason:   fallbackReason,
 		AuditOnly:        item.AuditOnly,
 	}
 	candidates := driftEventSymbolCandidates(event, item)
@@ -491,6 +494,7 @@ func driftEventCandidateFromEvent(event DriftEvent) driftEventCandidate {
 
 func driftEventSourceItem(decisionID string, item DriftItem, event DriftEvent) DriftEventSourceItem {
 	claimRefs, evidenceRefs := driftEventSourceItemRefs(item, event)
+	fallbackKind, fallbackReason := driftEventSourceItemFallbackMetadata(item, event)
 	return DriftEventSourceItem{
 		DecisionID:       decisionID,
 		Path:             item.Path,
@@ -500,8 +504,8 @@ func driftEventSourceItem(decisionID string, item DriftItem, event DriftEvent) D
 		Status:           item.Status,
 		TriggerKind:      item.TriggerKind,
 		Materiality:      item.EffectiveMateriality(),
-		FallbackKind:     item.FallbackKind,
-		FallbackReason:   item.FallbackReason,
+		FallbackKind:     fallbackKind,
+		FallbackReason:   fallbackReason,
 		AuditOnly:        item.AuditOnly,
 		SuppressedReason: item.SuppressedReason,
 		LinesChanged:     item.LinesChanged,
@@ -563,6 +567,27 @@ func driftEventDefaultTrigger(status DriftStatus) DriftTriggerKind {
 	}
 }
 
+func driftEventFallbackMetadata(
+	item DriftItem,
+	materiality DriftMateriality,
+) (string, string) {
+	fallbackKind := strings.TrimSpace(item.FallbackKind)
+	fallbackReason := strings.TrimSpace(item.FallbackReason)
+	if materiality != DriftMaterialityUnknownLegacyFileScope || fallbackKind != "" {
+		return fallbackKind, fallbackReason
+	}
+	return BindingTargetWholeFileFallback, legacyFileScopeFallbackReason
+}
+
+func driftEventSourceItemFallbackMetadata(item DriftItem, event DriftEvent) (string, string) {
+	fallbackKind := strings.TrimSpace(item.FallbackKind)
+	fallbackReason := strings.TrimSpace(item.FallbackReason)
+	if fallbackKind != "" {
+		return fallbackKind, fallbackReason
+	}
+	return event.FallbackKind, event.FallbackReason
+}
+
 func driftEventRootCause(event DriftEvent) string {
 	if event.TargetStatus == "retarget_candidate" {
 		return DriftEventRootCauseRetargetCandidate
@@ -601,6 +626,9 @@ func driftEventRootCause(event DriftEvent) string {
 }
 
 func driftEventRootCauseDetail(event DriftEvent) string {
+	if event.Materiality == DriftMaterialityUnknownLegacyFileScope && event.FallbackKind == BindingTargetWholeFileFallback {
+		return fmt.Sprintf("%s drift on %s via %s; %s", event.Materiality, event.ChangedTargetRef, event.TriggerKind, event.FallbackReason)
+	}
 	return fmt.Sprintf("%s drift on %s via %s", event.Materiality, event.ChangedTargetRef, event.TriggerKind)
 }
 
@@ -641,6 +669,14 @@ func driftEventSuggestedNextCommand(event DriftEvent) string {
 	default:
 		return ""
 	}
+}
+
+func driftEventNeedsBindingResolution(event DriftEvent) bool {
+	if event.Materiality == DriftMaterialityNeedsBindingResolution {
+		return true
+	}
+	return event.Materiality == DriftMaterialityUnknownLegacyFileScope &&
+		event.FallbackKind == BindingTargetWholeFileFallback
 }
 
 func driftEventUsesFileFallback(event DriftEvent) bool {

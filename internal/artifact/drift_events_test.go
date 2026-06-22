@@ -201,7 +201,7 @@ func TestBuildDriftEventReportExposesBindingFallbackMetadata(t *testing.T) {
 	}
 }
 
-func TestBuildDriftEventReportKeepsFileFallbackWhenNoSymbolTargetExists(t *testing.T) {
+func TestBuildDriftEventReportRoutesLegacyFileFallbackToBindingResolution(t *testing.T) {
 	report := BuildDriftEventReport([]DriftReport{{
 		DecisionID: "dec-1",
 		Files: []DriftItem{{
@@ -215,18 +215,36 @@ func TestBuildDriftEventReportKeepsFileFallbackWhenNoSymbolTargetExists(t *testi
 	if report.Summary.FileFallbackEvents != 1 {
 		t.Fatalf("file_fallback_events = %d, want 1", report.Summary.FileFallbackEvents)
 	}
-	if report.Summary.UnknownHighRiskEvents != 1 {
-		t.Fatalf("unknown_high_risk_events = %d, want 1", report.Summary.UnknownHighRiskEvents)
+	if report.Summary.NeedsBindingResolutionEvents != 1 {
+		t.Fatalf("needs_binding_resolution_events = %d, want 1", report.Summary.NeedsBindingResolutionEvents)
+	}
+	if report.Summary.UnknownHighRiskEvents != 0 {
+		t.Fatalf("unknown_high_risk_events = %d, want 0", report.Summary.UnknownHighRiskEvents)
+	}
+	if report.Summary.MaterialEvents != 1 {
+		t.Fatalf("material_events = %d, want 1", report.Summary.MaterialEvents)
 	}
 	event := report.Events[0]
 	if event.TargetKind != "file" {
 		t.Fatalf("target_kind = %q, want file", event.TargetKind)
 	}
-	if event.RootCause != DriftEventRootCauseUnknownHighRisk {
-		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseUnknownHighRisk)
+	if event.RootCause != DriftEventRootCauseBindingTargetMissing {
+		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseBindingTargetMissing)
 	}
 	if event.ResolutionStatus != DriftEventResolutionNeedsScopeEnrichment {
 		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsScopeEnrichment)
+	}
+	if event.FallbackKind != BindingTargetWholeFileFallback {
+		t.Fatalf("fallback_kind = %q, want %q", event.FallbackKind, BindingTargetWholeFileFallback)
+	}
+	if !strings.Contains(event.FallbackReason, "legacy file-scope") {
+		t.Fatalf("fallback_reason = %q, want legacy file-scope explanation", event.FallbackReason)
+	}
+	if event.SuggestedNextCommand != "haft decision reconcile --json" {
+		t.Fatalf("suggested_next_command = %q, want reconcile drill-down", event.SuggestedNextCommand)
+	}
+	if len(event.SourceItems) != 1 || event.SourceItems[0].FallbackKind != BindingTargetWholeFileFallback {
+		t.Fatalf("source_items did not preserve fallback metadata: %#v", event.SourceItems)
 	}
 }
 

@@ -272,10 +272,21 @@ func checkCarrierSemioText(path string, content string) []CarrierSemioFinding {
 	var findings []CarrierSemioFinding
 	for index, line := range lines {
 		term, ok := deadSurfaceTerm(line)
-		if !ok {
-			continue
+		if ok {
+			if allowedDeadSurfaceContext(lines, index) {
+				continue
+			}
+			findings = append(findings, CarrierSemioFinding{
+				Path:       path,
+				Line:       index + 1,
+				Term:       term,
+				Snippet:    strings.TrimSpace(line),
+				Diagnostic: "dead runtime surface must be labeled dropped/archive/provenance/support/not-current in current carriers",
+			})
 		}
-		if allowedDeadSurfaceContext(lines, index) {
+
+		term, ok = authorityBoundaryTerm(lines, index)
+		if !ok {
 			continue
 		}
 		findings = append(findings, CarrierSemioFinding{
@@ -283,7 +294,7 @@ func checkCarrierSemioText(path string, content string) []CarrierSemioFinding {
 			Line:       index + 1,
 			Term:       term,
 			Snippet:    strings.TrimSpace(line),
-			Diagnostic: "dead runtime surface must be labeled dropped/archive/provenance/support/not-current in current carriers",
+			Diagnostic: "carrier/generated-surface wording must not imply prompt text, model args, tool descriptions, or schema visibility are operator authorization",
 		})
 	}
 	return findings
@@ -371,12 +382,101 @@ func allowedDeadSurfaceContext(lines []string, index int) bool {
 	return false
 }
 
+func authorityBoundaryTerm(lines []string, index int) (string, bool) {
+	window := strings.ToLower(semioContextWindow(lines, index))
+	if !hasCarrierAuthoritySurfaceTerm(window) {
+		return "", false
+	}
+	if !hasAuthorityGrantTerm(window) {
+		return "", false
+	}
+	if allowedAuthorityBoundaryContext(window) {
+		return "", false
+	}
+	return "operator_authorization_boundary", true
+}
+
+func hasCarrierAuthoritySurfaceTerm(window string) bool {
+	for _, term := range []string{
+		"prompt text",
+		"model-supplied",
+		"model supplied",
+		"mcp argument",
+		"mcp schema",
+		"schema visibility",
+		"tool description",
+		"tool schema",
+		"generated schema",
+		"host schema",
+		"skill description",
+		"plugin metadata",
+		"pi metadata",
+	} {
+		if strings.Contains(window, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAuthorityGrantTerm(window string) bool {
+	for _, term := range []string{
+		"authorizes",
+		"authorize",
+		"authorization",
+		"approves",
+		"approve",
+		"approval",
+		"binds",
+		"binding",
+		"proof",
+		"evidence",
+		"gate passage",
+	} {
+		if strings.Contains(window, term) {
+			return true
+		}
+	}
+	return false
+}
+
+func allowedAuthorityBoundaryContext(window string) bool {
+	for _, marker := range []string{
+		"not proof",
+		"not operator authorization",
+		"not authorization",
+		"not binding authority",
+		"not binding",
+		"not evidence",
+		"not gate passage",
+		"never",
+		"must not",
+		"do not",
+		"cannot",
+		"fails closed",
+		"fail closed",
+		"fail-closed",
+		"rejected",
+		"requires explicit",
+		"explicit operator",
+		"operator approval required",
+		"authorization receipt",
+		"separate from binding",
+		"separate from operator",
+	} {
+		if strings.Contains(window, marker) {
+			return true
+		}
+	}
+	return false
+}
+
 func semioContextWindow(lines []string, index int) string {
 	start := index - 1
 	if start < 0 {
 		start = 0
 	}
-	end := index + 2
+	end := index + 3
 	if end > len(lines) {
 		end = len(lines)
 	}

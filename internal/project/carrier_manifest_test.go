@@ -95,6 +95,31 @@ func TestCarrierSemioCheckAllowsDroppedDeadSurfaceContext(t *testing.T) {
 	}
 }
 
+func TestCarrierSemioCheckFlagsSchemaVisibilityAsAuthorization(t *testing.T) {
+	findings := checkCarrierSemioText(
+		"packages/haft-pi/README.md",
+		"MCP schema visibility authorizes binding DecisionRecord creation.\n",
+	)
+
+	if len(findings) == 0 {
+		t.Fatal("expected schema visibility authority finding")
+	}
+	if findings[0].Term != "operator_authorization_boundary" {
+		t.Fatalf("finding term = %q", findings[0].Term)
+	}
+}
+
+func TestCarrierSemioCheckAllowsExplicitAuthorityDenial(t *testing.T) {
+	findings := checkCarrierSemioText(
+		"packages/haft-pi/README.md",
+		"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.\n",
+	)
+
+	if len(findings) > 0 {
+		t.Fatalf("explicit denial should be allowed: %#v", findings)
+	}
+}
+
 func carrierManifestEntry(t *testing.T, id string) CarrierManifestEntry {
 	t.Helper()
 	for _, entry := range DefaultCarrierAuthorityManifest().Entries {

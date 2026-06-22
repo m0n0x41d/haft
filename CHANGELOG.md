@@ -71,6 +71,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   contract audit reports zero remaining generator target surfaces, and the
   contract generation manifest returns an empty queue while the `tools/list`
   context-budget guard remains green.
+- **Generated-surface authority wording guard.** `haft carrier check` now
+  flags current/support/compat carrier wording that implies prompt text,
+  model-supplied MCP arguments, tool descriptions, or schema visibility create
+  operator authorization. Explicit denial wording remains allowed, keeping
+  README, specs, generated skills, and Pi bundle carriers lintable without
+  adding noise to default status.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

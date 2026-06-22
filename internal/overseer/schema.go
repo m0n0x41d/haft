@@ -278,27 +278,43 @@ type StatusSummary struct {
 }
 
 type MaintenanceInput struct {
-	CreatedAt    string
-	Stale        []FindingSummary
-	Drift        []MaintenanceDriftFinding
-	SpecHealth   []FindingSummary
-	CoverageGaps []FindingSummary
-	Executed     []MaintenanceAction
+	CreatedAt               string
+	Stale                   []FindingSummary
+	Drift                   []MaintenanceDriftFinding
+	SpecHealth              []FindingSummary
+	CoverageGaps            []FindingSummary
+	Executed                []MaintenanceAction
+	ReconciliationProposals []MaintenanceReconciliationProposal
 }
 
 // MaintenanceAction is one ledger entry of the maintenance execute-phase
 // (dec-20260611-overseer-maintenance-executor). Every autonomous act carries
 // its actor context (the maintenance run), prior state, and a one-step undo.
 type MaintenanceAction struct {
-	ID          string `json:"id"`
-	Kind        string `json:"kind"` // auto_rebaseline | observable_run | revalidate_stale
-	DecisionRef string `json:"decision_ref"`
-	Title       string `json:"title,omitempty"`
-	Rung        int    `json:"rung"`
-	Detail      string `json:"detail,omitempty"`      // command run / what was extended / gate reason
-	Outcome     string `json:"outcome"`               // applied | proposed | evidence_attached | failed
-	PriorState  string `json:"prior_state,omitempty"` // JSON snapshot for undo (baseline files+symbols)
-	Undo        string `json:"undo,omitempty"`        // operator command restoring prior state
+	ID           string   `json:"id"`
+	Kind         string   `json:"kind"` // auto_rebaseline | observable_run | revalidate_stale
+	DecisionRef  string   `json:"decision_ref"`
+	Title        string   `json:"title,omitempty"`
+	Rung         int      `json:"rung"`
+	Detail       string   `json:"detail,omitempty"` // command run / what was extended / gate reason
+	Outcome      string   `json:"outcome"`          // applied | proposed | evidence_attached | failed
+	EvidenceRefs []string `json:"evidence_refs,omitempty"`
+	PriorState   string   `json:"prior_state,omitempty"` // JSON snapshot for undo (baseline files+symbols)
+	Undo         string   `json:"undo,omitempty"`        // operator command restoring prior state
+}
+
+type MaintenanceReconciliationProposal struct {
+	ID                string   `json:"id"`
+	Kind              string   `json:"kind"`
+	GroupID           string   `json:"group_id,omitempty"`
+	Category          string   `json:"category,omitempty"`
+	Reason            string   `json:"reason"`
+	DecisionRefs      []string `json:"decision_refs,omitempty"`
+	Fanout            int      `json:"fanout,omitempty"`
+	FallbackTargets   []string `json:"fallback_targets,omitempty"`
+	ScopeRepairHints  []string `json:"scope_repair_hints,omitempty"`
+	SuggestedCommand  string   `json:"suggested_command"`
+	AuthorityBoundary string   `json:"authority_boundary"`
 }
 
 type MaintenanceDriftFinding struct {
@@ -314,27 +330,48 @@ type MaintenanceDriftFinding struct {
 }
 
 type MaintenanceRun struct {
-	SchemaVersion string                   `json:"schema_version"`
-	MaintenanceID string                   `json:"maintenance_id"`
-	CreatedAt     string                   `json:"created_at,omitempty"`
-	Verdict       string                   `json:"verdict"`
-	Authority     ReviewAuthority          `json:"authority"`
-	Summary       MaintenanceSummary       `json:"summary"`
-	Signals       []StatusSignal           `json:"signals"`
-	Suppressed    []MaintenanceSuppression `json:"suppressed"`
-	Executed      []MaintenanceAction      `json:"executed,omitempty"`
+	SchemaVersion           string                              `json:"schema_version"`
+	MaintenanceID           string                              `json:"maintenance_id"`
+	CreatedAt               string                              `json:"created_at,omitempty"`
+	Verdict                 string                              `json:"verdict"`
+	Authority               ReviewAuthority                     `json:"authority"`
+	Summary                 MaintenanceSummary                  `json:"summary"`
+	Signals                 []StatusSignal                      `json:"signals"`
+	Suppressed              []MaintenanceSuppression            `json:"suppressed"`
+	ReconciliationProposals []MaintenanceReconciliationProposal `json:"reconciliation_proposals,omitempty"`
+	AfterAction             MaintenanceAfterActionReport        `json:"after_action"`
+	Executed                []MaintenanceAction                 `json:"executed,omitempty"`
+}
+
+type MaintenanceAfterActionReport struct {
+	AutoClosedItems           []MaintenanceAfterActionItem `json:"auto_closed_items,omitempty"`
+	EvidenceChecked           []MaintenanceAfterActionItem `json:"evidence_checked,omitempty"`
+	RemainingOperatorJudgment []MaintenanceAfterActionItem `json:"remaining_operator_judgment,omitempty"`
+	UndoCommands              []string                     `json:"undo_commands,omitempty"`
+	AuthorityBoundary         string                       `json:"authority_boundary"`
+}
+
+type MaintenanceAfterActionItem struct {
+	Ref          string   `json:"ref,omitempty"`
+	Title        string   `json:"title,omitempty"`
+	Action       string   `json:"action,omitempty"`
+	Outcome      string   `json:"outcome,omitempty"`
+	Command      string   `json:"command,omitempty"`
+	EvidenceRefs []string `json:"evidence_refs,omitempty"`
+	Reason       string   `json:"reason,omitempty"`
 }
 
 type MaintenanceSummary struct {
-	SignalCount          int `json:"signal_count"`
-	SuppressedCount      int `json:"suppressed_count"`
-	AutoResolvableDrift  int `json:"auto_resolvable_drift"`
-	ConfirmRequiredDrift int `json:"confirm_required_drift"`
-	ReviewRequiredDrift  int `json:"review_required_drift"`
-	StaleCount           int `json:"stale_count"`
-	SpecHealthCount      int `json:"spec_health_count"`
-	CoverageGapCount     int `json:"coverage_gap_count"`
-	ExecutedCount        int `json:"executed_count,omitempty"`
+	SignalCount                 int `json:"signal_count"`
+	SuppressedCount             int `json:"suppressed_count"`
+	AutoResolvableDrift         int `json:"auto_resolvable_drift"`
+	ConfirmRequiredDrift        int `json:"confirm_required_drift"`
+	ReviewRequiredDrift         int `json:"review_required_drift"`
+	StaleCount                  int `json:"stale_count"`
+	SpecHealthCount             int `json:"spec_health_count"`
+	CoverageGapCount            int `json:"coverage_gap_count"`
+	ExecutedCount               int `json:"executed_count,omitempty"`
+	ReconciliationProposalCount int `json:"reconciliation_proposal_count,omitempty"`
 }
 
 type MaintenanceSuppression struct {

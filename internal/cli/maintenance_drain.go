@@ -13,15 +13,17 @@ import (
 const maintenanceDrainSchemaVersion = "maintenance_drain.v1"
 
 type maintenanceDrainReport struct {
-	SchemaVersion      string                              `json:"schema_version"`
-	CreatedAt          string                              `json:"created_at"`
-	DryRun             bool                                `json:"dry_run"`
-	MaintenanceRunID   string                              `json:"maintenance_run_id,omitempty"`
-	AuthorityBoundary  maintenanceDrainAuthority           `json:"authority_boundary"`
-	Summary            maintenanceDrainSummary             `json:"summary"`
-	Executed           []overseer.MaintenanceAction        `json:"executed,omitempty"`
-	NeedsOperator      []artifact.MaintenanceJudgmentGroup `json:"needs_operator,omitempty"`
-	NextOperatorAction []string                            `json:"next_operator_action,omitempty"`
+	SchemaVersion           string                                       `json:"schema_version"`
+	CreatedAt               string                                       `json:"created_at"`
+	DryRun                  bool                                         `json:"dry_run"`
+	MaintenanceRunID        string                                       `json:"maintenance_run_id,omitempty"`
+	AuthorityBoundary       maintenanceDrainAuthority                    `json:"authority_boundary"`
+	Summary                 maintenanceDrainSummary                      `json:"summary"`
+	Executed                []overseer.MaintenanceAction                 `json:"executed,omitempty"`
+	ReconciliationProposals []overseer.MaintenanceReconciliationProposal `json:"reconciliation_proposals,omitempty"`
+	AfterAction             overseer.MaintenanceAfterActionReport        `json:"after_action"`
+	NeedsOperator           []artifact.MaintenanceJudgmentGroup          `json:"needs_operator,omitempty"`
+	NextOperatorAction      []string                                     `json:"next_operator_action,omitempty"`
 }
 
 type maintenanceDrainAuthority struct {
@@ -33,14 +35,15 @@ type maintenanceDrainAuthority struct {
 }
 
 type maintenanceDrainSummary struct {
-	BeforeTasks        int `json:"before_tasks"`
-	BeforeJudgment     int `json:"before_judgment"`
-	ExecutedActions    int `json:"executed_actions"`
-	AppliedActions     int `json:"applied_actions"`
-	EvidenceActions    int `json:"evidence_actions"`
-	ProposedActions    int `json:"proposed_actions"`
-	FailedActions      int `json:"failed_actions"`
-	NeedsOperatorTasks int `json:"needs_operator_tasks"`
+	BeforeTasks                 int `json:"before_tasks"`
+	BeforeJudgment              int `json:"before_judgment"`
+	ExecutedActions             int `json:"executed_actions"`
+	AppliedActions              int `json:"applied_actions"`
+	EvidenceActions             int `json:"evidence_actions"`
+	ProposedActions             int `json:"proposed_actions"`
+	FailedActions               int `json:"failed_actions"`
+	NeedsOperatorTasks          int `json:"needs_operator_tasks"`
+	ReconciliationProposalCount int `json:"reconciliation_proposal_count,omitempty"`
 }
 
 func buildMaintenanceDrainReport(
@@ -74,14 +77,16 @@ func buildMaintenanceDrainReport(
 	review := artifact.BuildMaintenanceJudgmentReview(afterPlan)
 
 	report := maintenanceDrainReport{
-		SchemaVersion:      maintenanceDrainSchemaVersion,
-		CreatedAt:          time.Now().UTC().Format(time.RFC3339),
-		DryRun:             dryRun,
-		AuthorityBoundary:  maintenanceDrainAuthorityFor(dryRun),
-		Summary:            maintenanceDrainSummaryFor(beforePlan, run.Executed, review),
-		Executed:           maintenanceDrainActionsWithUndo(run),
-		NeedsOperator:      review.Groups,
-		NextOperatorAction: maintenanceDrainNextActions(review),
+		SchemaVersion:           maintenanceDrainSchemaVersion,
+		CreatedAt:               time.Now().UTC().Format(time.RFC3339),
+		DryRun:                  dryRun,
+		AuthorityBoundary:       maintenanceDrainAuthorityFor(dryRun),
+		Summary:                 maintenanceDrainSummaryFor(beforePlan, run, review),
+		Executed:                maintenanceDrainActionsWithUndo(run),
+		ReconciliationProposals: run.ReconciliationProposals,
+		AfterAction:             run.AfterAction,
+		NeedsOperator:           review.Groups,
+		NextOperatorAction:      maintenanceDrainNextActions(review),
 	}
 	if !dryRun {
 		report.MaintenanceRunID = run.MaintenanceID
@@ -127,12 +132,13 @@ func buildMaintenanceRunAfterDrain(
 		return overseer.MaintenanceRun{}, err
 	}
 	return overseer.BuildMaintenanceRun(overseer.MaintenanceInput{
-		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
-		Stale:        mapMaintenanceStale(report.Stale),
-		Drift:        mapMaintenanceDrift(report.Drifted),
-		SpecHealth:   mapMaintenanceSpecHealth(report.SpecHealth),
-		CoverageGaps: mapMaintenanceCoverage(report.CoverageGaps),
-		Executed:     executed,
+		CreatedAt:               time.Now().UTC().Format(time.RFC3339),
+		Stale:                   mapMaintenanceStale(report.Stale),
+		Drift:                   mapMaintenanceDrift(report.Drifted),
+		SpecHealth:              mapMaintenanceSpecHealth(report.SpecHealth),
+		CoverageGaps:            mapMaintenanceCoverage(report.CoverageGaps),
+		Executed:                executed,
+		ReconciliationProposals: buildMaintenanceReconciliationProposals(ctx, store),
 	})
 }
 
@@ -154,11 +160,12 @@ func maintenanceDrainAuthorityFor(dryRun bool) maintenanceDrainAuthority {
 
 func maintenanceDrainSummaryFor(
 	beforePlan *artifact.MaintenancePlan,
-	executed []overseer.MaintenanceAction,
+	run overseer.MaintenanceRun,
 	review *artifact.MaintenanceJudgmentReview,
 ) maintenanceDrainSummary {
 	summary := maintenanceDrainSummary{
-		ExecutedActions: len(executed),
+		ExecutedActions:             len(run.Executed),
+		ReconciliationProposalCount: len(run.ReconciliationProposals),
 	}
 	if beforePlan != nil {
 		summary.BeforeTasks = len(beforePlan.Tasks)
@@ -167,7 +174,7 @@ func maintenanceDrainSummaryFor(
 	if review != nil {
 		summary.NeedsOperatorTasks = review.JudgmentTasks
 	}
-	for _, action := range executed {
+	for _, action := range run.Executed {
 		switch action.Outcome {
 		case "applied":
 			summary.AppliedActions++

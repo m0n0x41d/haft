@@ -1274,15 +1274,25 @@ func haftInterfaceCatalog() []interfaceCapability {
 			InputContract: interfaceContract{
 				RequiredFields: []string{},
 				OptionalFields: []string{"dry_run", "context"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":"maintenance_drain.v1","dry_run":true,"summary":{"executed_actions":1,"needs_operator_tasks":3,"reconciliation_proposal_count":2},"executed":[{"kind":"observable_run","evidence_refs":["evid-..."]}],"reconciliation_proposals":[{"kind":"high_fanout_reconciliation_review|fallback_scope_repair_review|fallback_governing_scope_review","suggested_command":"haft decision reconcile --json","authority_boundary":"read_only_reconciliation_proposal_not_binding_authority"}],"after_action":{"auto_closed_items":[...],"evidence_checked":[{"command":"go test ...","evidence_refs":["evid-..."]}],"remaining_operator_judgment":[...],"undo_commands":["haft overseer undo <run-id> <action-id>"],"authority_boundary":"after_action_report_only_not_binding_authority"},"needs_operator":[...]}`,
+						Note:  "Reconciliation proposals and after_action are report-only; they do not supersede, retire, merge, approve, create decisions, or apply reconciliation selections.",
+					},
+				},
 				Notes: []string{
 					"dry_run=true proposes machine-safe actions without mutating; dry_run=false executes only rung-1/rung-2 safe actions.",
 					"Material drift, semantic uncertainty, reopen/supersede choices, and weak waivers are returned as needs_operator.",
+					"reconciliation_proposals are read-only review batches for high-fanout/fallback groups; suggested commands are inspect-only.",
+					"after_action lists auto-closed items, evidence refs, remaining operator judgment, and undo commands for autonomous mutations.",
 				},
 			},
-			OutputVolume: []string{"default: compact drain report", "CLI --json: executed actions plus needs_operator groups"},
+			OutputVolume: []string{"default: compact drain report", "CLI --json: executed actions, reconciliation_proposals, after_action, and needs_operator groups"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Drain is opt-in; default status and refresh.review remain read-only.",
 				"Drain does not create semantic approval, GateDecision, or global truth.",
+				"Drain never applies DecisionReconciliationSelection documents.",
 			),
 		},
 	}

@@ -61,6 +61,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   read-only `answer_paths` for claim, spec-section, API-contract, invariant,
   symbol, fallback, and unscoped targets, giving agents exact CLI/MCP drill-downs
   without treating the path itself as evidence or a gate decision.
+- **Overseer reconciliation proposals and after-action reports.** Maintenance
+  runs and drain JSON now include read-only `reconciliation_proposals` for
+  high-fanout/fallback groups plus an `after_action` report listing auto-closed
+  items, evidence refs, remaining operator judgment, and undo commands, without
+  giving overseer authority to apply reconciliation selections.
 - **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
   carries explicit source provenance for source kind, edition/hash,
   profile-validity, normativity, schema version, and retrieval mode while

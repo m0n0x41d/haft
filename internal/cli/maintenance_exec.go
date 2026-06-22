@@ -188,7 +188,7 @@ func executeObservables(
 
 		content := fmt.Sprintf("Maintenance loop ran `%s` for %s (%s). Exit: %s. Output tail:\n%s",
 			task.Command, task.ClaimID, task.Threshold, exitLabel(runErr), output)
-		_, evidenceErr := artifact.AttachEvidence(ctx, store, artifact.EvidenceInput{
+		evidence, evidenceErr := artifact.AttachEvidence(ctx, store, artifact.EvidenceInput{
 			ArtifactRef:        task.DecisionRef,
 			Content:            content,
 			Type:               "test",
@@ -212,6 +212,9 @@ func executeObservables(
 		default:
 			action.Outcome = "evidence_attached"
 			action.Detail = fmt.Sprintf("%s — green (supports evidence attached)", task.Command)
+		}
+		if evidence != nil && evidence.ID != "" {
+			action.EvidenceRefs = []string{evidence.ID}
 		}
 		actions = append(actions, action)
 	}

@@ -104,6 +104,72 @@ func TestMaintenanceRunSuppressesAutoResolvableDriftAndSurfacesRisk(t *testing.T
 	}
 }
 
+func TestMaintenanceRunCarriesReconciliationProposalsAndAfterAction(t *testing.T) {
+	run, err := BuildMaintenanceRun(MaintenanceInput{
+		CreatedAt: "2026-06-09T00:00:00Z",
+		Drift: []MaintenanceDriftFinding{{
+			ID:      "dec-risk",
+			Title:   "Governed body drift",
+			Summary: "code drift - 1 modified",
+			Action:  "stage_for_confirm",
+			Reason:  "a governed symbol body was modified/removed or a file was deleted",
+		}},
+		Executed: []MaintenanceAction{
+			{
+				ID:          "act-001",
+				Kind:        "auto_rebaseline",
+				DecisionRef: "dec-safe",
+				Title:       "Safe additive drift",
+				Outcome:     "applied",
+				PriorState:  `{"files":[]}`,
+			},
+			{
+				ID:           "act-002",
+				Kind:         "observable_run",
+				DecisionRef:  "dec-machine",
+				Title:        "Machine check",
+				Detail:       "go test ./internal/cli",
+				Outcome:      "evidence_attached",
+				EvidenceRefs: []string{"evid-1"},
+			},
+		},
+		ReconciliationProposals: []MaintenanceReconciliationProposal{{
+			ID:               "reconcile-high-fanout-1",
+			Kind:             "high_fanout_reconciliation_review",
+			GroupID:          "decision-reconcile-1",
+			Reason:           "fanout needs review",
+			DecisionRefs:     []string{"dec-a", "dec-b"},
+			Fanout:           7,
+			SuggestedCommand: "haft decision reconcile --json",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildMaintenanceRun returned error: %v", err)
+	}
+
+	if run.Summary.ReconciliationProposalCount != 1 {
+		t.Fatalf("reconciliation proposal count = %d, want 1", run.Summary.ReconciliationProposalCount)
+	}
+	if len(run.ReconciliationProposals) != 1 {
+		t.Fatalf("reconciliation proposals = %#v", run.ReconciliationProposals)
+	}
+	if run.ReconciliationProposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		t.Fatalf("proposal authority = %q", run.ReconciliationProposals[0].AuthorityBoundary)
+	}
+	if len(run.AfterAction.AutoClosedItems) != 1 {
+		t.Fatalf("auto closed items = %#v", run.AfterAction.AutoClosedItems)
+	}
+	if len(run.AfterAction.EvidenceChecked) != 1 || len(run.AfterAction.EvidenceChecked[0].EvidenceRefs) != 1 {
+		t.Fatalf("evidence checked = %#v", run.AfterAction.EvidenceChecked)
+	}
+	if len(run.AfterAction.RemainingOperatorJudgment) != 1 {
+		t.Fatalf("remaining operator judgment = %#v", run.AfterAction.RemainingOperatorJudgment)
+	}
+	if len(run.AfterAction.UndoCommands) != 1 || !strings.Contains(run.AfterAction.UndoCommands[0], "haft overseer undo "+run.MaintenanceID+" act-001") {
+		t.Fatalf("undo commands = %#v", run.AfterAction.UndoCommands)
+	}
+}
+
 func TestFormatStatusSignalsSuppressionsOnlyStaysSilent(t *testing.T) {
 	run, err := BuildMaintenanceRun(MaintenanceInput{
 		CreatedAt: "2026-06-09T00:00:00Z",

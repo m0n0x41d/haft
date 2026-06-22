@@ -33,9 +33,10 @@ func BuildMaintenanceRun(input MaintenanceInput) (MaintenanceRun, error) {
 	run.Signals = normalizeStatusSignals(run.Signals)
 	run.Suppressed = normalizeSuppressions(run.Suppressed)
 	run.Executed = normalizeExecutedActions(input.Executed)
+	run.ReconciliationProposals = normalizeReconciliationProposals(input.ReconciliationProposals)
 	run.Summary = maintenanceSummary(run, input)
 
-	if len(run.Signals) == 0 && len(run.Suppressed) == 0 && len(run.Executed) == 0 {
+	if len(run.Signals) == 0 && len(run.Suppressed) == 0 && len(run.Executed) == 0 && len(run.ReconciliationProposals) == 0 {
 		run.Verdict = "clean"
 	}
 
@@ -44,6 +45,7 @@ func BuildMaintenanceRun(input MaintenanceInput) (MaintenanceRun, error) {
 		return MaintenanceRun{}, err
 	}
 	run.MaintenanceID = runID
+	run.AfterAction = buildMaintenanceAfterAction(run)
 	return run, nil
 }
 
@@ -122,6 +124,7 @@ func normalizeExecutedActions(actions []MaintenanceAction) []MaintenanceAction {
 		action.Kind = strings.TrimSpace(action.Kind)
 		action.DecisionRef = strings.TrimSpace(action.DecisionRef)
 		action.Outcome = strings.TrimSpace(action.Outcome)
+		action.EvidenceRefs = compactStrings(action.EvidenceRefs)
 		if action.Kind == "" || action.DecisionRef == "" {
 			continue
 		}
@@ -133,14 +136,87 @@ func normalizeExecutedActions(actions []MaintenanceAction) []MaintenanceAction {
 	return out
 }
 
+func normalizeReconciliationProposals(items []MaintenanceReconciliationProposal) []MaintenanceReconciliationProposal {
+	out := make([]MaintenanceReconciliationProposal, 0, len(items))
+	for index, item := range items {
+		item.ID = strings.TrimSpace(item.ID)
+		if item.ID == "" {
+			item.ID = fmt.Sprintf("reconcile-proposal-%03d", index+1)
+		}
+		item.Kind = strings.TrimSpace(item.Kind)
+		item.GroupID = strings.TrimSpace(item.GroupID)
+		item.Category = strings.TrimSpace(item.Category)
+		item.Reason = strings.TrimSpace(item.Reason)
+		item.DecisionRefs = compactStrings(item.DecisionRefs)
+		item.FallbackTargets = compactStrings(item.FallbackTargets)
+		item.ScopeRepairHints = compactStrings(item.ScopeRepairHints)
+		item.SuggestedCommand = strings.TrimSpace(item.SuggestedCommand)
+		item.AuthorityBoundary = strings.TrimSpace(item.AuthorityBoundary)
+		if item.AuthorityBoundary == "" {
+			item.AuthorityBoundary = "read_only_reconciliation_proposal_not_binding_authority"
+		}
+		if item.Kind == "" || item.Reason == "" {
+			continue
+		}
+		out = append(out, item)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind == out[j].Kind {
+			return out[i].ID < out[j].ID
+		}
+		return out[i].Kind < out[j].Kind
+	})
+	return out
+}
+
+func buildMaintenanceAfterAction(run MaintenanceRun) MaintenanceAfterActionReport {
+	report := MaintenanceAfterActionReport{
+		AuthorityBoundary: "after_action_report_only_not_binding_authority",
+	}
+	for _, action := range run.Executed {
+		item := MaintenanceAfterActionItem{
+			Ref:          action.DecisionRef,
+			Title:        action.Title,
+			Action:       action.Kind,
+			Outcome:      action.Outcome,
+			Command:      action.Detail,
+			EvidenceRefs: action.EvidenceRefs,
+			Reason:       action.Detail,
+		}
+		switch action.Kind {
+		case "auto_rebaseline", "revalidate_stale":
+			if action.Outcome == "applied" {
+				report.AutoClosedItems = append(report.AutoClosedItems, item)
+			}
+		case "observable_run":
+			report.EvidenceChecked = append(report.EvidenceChecked, item)
+		}
+		if action.PriorState != "" && action.ID != "" && run.MaintenanceID != "" {
+			report.UndoCommands = append(report.UndoCommands, "haft overseer undo "+run.MaintenanceID+" "+action.ID)
+		}
+	}
+	for _, signal := range run.Signals {
+		report.RemainingOperatorJudgment = append(report.RemainingOperatorJudgment, MaintenanceAfterActionItem{
+			Ref:     signal.FindingID,
+			Title:   signal.Title,
+			Action:  signal.Source,
+			Outcome: "needs_operator",
+			Command: signal.Command,
+			Reason:  signal.Detail,
+		})
+	}
+	return report
+}
+
 func maintenanceSummary(run MaintenanceRun, input MaintenanceInput) MaintenanceSummary {
 	summary := MaintenanceSummary{
-		SignalCount:      len(run.Signals),
-		SuppressedCount:  len(run.Suppressed),
-		StaleCount:       len(input.Stale),
-		SpecHealthCount:  len(input.SpecHealth),
-		CoverageGapCount: len(input.CoverageGaps),
-		ExecutedCount:    len(run.Executed),
+		SignalCount:                 len(run.Signals),
+		SuppressedCount:             len(run.Suppressed),
+		StaleCount:                  len(input.Stale),
+		SpecHealthCount:             len(input.SpecHealth),
+		CoverageGapCount:            len(input.CoverageGaps),
+		ExecutedCount:               len(run.Executed),
+		ReconciliationProposalCount: len(run.ReconciliationProposals),
 	}
 	for _, drift := range input.Drift {
 		switch strings.TrimSpace(drift.Action) {
@@ -158,6 +234,7 @@ func maintenanceSummary(run MaintenanceRun, input MaintenanceInput) MaintenanceS
 func maintenanceRunID(run MaintenanceRun) (string, error) {
 	canonical := run
 	canonical.MaintenanceID = ""
+	canonical.AfterAction.UndoCommands = nil
 	encoded, err := json.Marshal(canonical)
 	if err != nil {
 		return "", fmt.Errorf("marshal maintenance run: %w", err)
@@ -198,6 +275,24 @@ func signalDetail(parts ...string) string {
 		}
 	}
 	return strings.Join(out, "; ")
+}
+
+func compactStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func signalTitle(id string, title string) string {

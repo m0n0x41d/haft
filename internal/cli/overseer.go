@@ -1187,12 +1187,13 @@ func buildAndStoreOverseerMaintenance(
 	}
 
 	run, err := overseer.BuildMaintenanceRun(overseer.MaintenanceInput{
-		CreatedAt:    time.Now().UTC().Format(time.RFC3339),
-		Stale:        mapMaintenanceStale(report.Stale),
-		Drift:        mapMaintenanceDrift(report.Drifted),
-		SpecHealth:   mapMaintenanceSpecHealth(report.SpecHealth),
-		CoverageGaps: mapMaintenanceCoverage(report.CoverageGaps),
-		Executed:     executed,
+		CreatedAt:               time.Now().UTC().Format(time.RFC3339),
+		Stale:                   mapMaintenanceStale(report.Stale),
+		Drift:                   mapMaintenanceDrift(report.Drifted),
+		SpecHealth:              mapMaintenanceSpecHealth(report.SpecHealth),
+		CoverageGaps:            mapMaintenanceCoverage(report.CoverageGaps),
+		Executed:                executed,
+		ReconciliationProposals: buildMaintenanceReconciliationProposals(ctx, store),
 	})
 	if err != nil {
 		return overseer.MaintenanceRun{}, err

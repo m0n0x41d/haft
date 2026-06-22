@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Generated MCP tool carrier guard.** `haft carrier check` now treats MCP
+  `tools/list` tool descriptions and input-schema descriptions as generated
+  virtual carrier surfaces, so host-facing schema text is checked for forbidden
+  operator-authorization wording before materialization.
 - **Decision reconciliation selection draft.** Added read-only
   `haft decision reconcile selection-draft` / `--json` to generate
   operator-reviewable `enrich_scope` candidate skeletons from reconciliation

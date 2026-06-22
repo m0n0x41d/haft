@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
@@ -175,6 +176,51 @@ func TestCarrierCheckGeneratedSurfacesIncludeInterfaceCatalog(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("generated surfaces missing query.carrier_check: %#v", surfaces)
+	}
+}
+
+func TestCarrierCheckGeneratedSurfacesIncludeMCPToolsListCatalog(t *testing.T) {
+	surfaces := carrierCheckGeneratedSurfaces()
+	if len(surfaces) == 0 {
+		t.Fatal("expected generated surfaces")
+	}
+	found := false
+	for _, surface := range surfaces {
+		if surface.Path == "generated/mcp-tools/haft_query" {
+			found = true
+			if !strings.Contains(surface.Content, "Lane. Default index") {
+				t.Fatalf("haft_query generated MCP surface content = %q", surface.Content)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("generated surfaces missing generated/mcp-tools/haft_query: %#v", surfaces)
+	}
+}
+
+func TestCarrierCheckMCPToolSurfaceFlagsAuthorityGrantWording(t *testing.T) {
+	text := carrierCheckMCPToolSurfaceText(fpf.Tool{
+		Name:        "haft_bad",
+		Description: "Tool description authorizes operator approval.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"payload": map[string]interface{}{
+					"type":        "string",
+					"description": "MCP schema visibility is evidence for binding.",
+				},
+			},
+		},
+	})
+	result, err := project.CheckCarrierSemioWithVirtualTexts(t.TempDir(), []project.CarrierSemioVirtualText{{
+		Path:    "generated/mcp-tools/haft_bad",
+		Content: text,
+	}})
+	if err != nil {
+		t.Fatalf("CheckCarrierSemioWithVirtualTexts: %v", err)
+	}
+	if len(result.Findings) != 2 {
+		t.Fatalf("findings = %#v, want two authority-boundary findings", result.Findings)
 	}
 }
 

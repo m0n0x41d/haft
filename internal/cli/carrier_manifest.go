@@ -1,12 +1,16 @@
 package cli
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
@@ -122,14 +126,39 @@ func runCarrierCheck(cmd *cobra.Command, args []string) error {
 
 func carrierCheckGeneratedSurfaces() []project.CarrierSemioVirtualText {
 	capabilities := haftInterfaceCatalog()
-	surfaces := make([]project.CarrierSemioVirtualText, 0, len(capabilities))
+	tools := carrierCheckMCPToolCatalog()
+	surfaces := make([]project.CarrierSemioVirtualText, 0, len(capabilities)+len(tools))
 	for _, capability := range capabilities {
 		surfaces = append(surfaces, project.CarrierSemioVirtualText{
 			Path:    "generated/interface/" + capability.ID,
 			Content: carrierCheckGeneratedSurfaceText(capability),
 		})
 	}
+	for _, tool := range tools {
+		surfaces = append(surfaces, project.CarrierSemioVirtualText{
+			Path:    "generated/mcp-tools/" + tool.Name,
+			Content: carrierCheckMCPToolSurfaceText(tool),
+		})
+	}
 	return surfaces
+}
+
+func carrierCheckMCPToolCatalog() []fpf.Tool {
+	server := fpf.NewServer()
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	return server.ToolCatalog()
+}
+
+func carrierCheckMCPToolSurfaceText(tool fpf.Tool) string {
+	var builder strings.Builder
+	builder.WriteString(tool.Name)
+	builder.WriteByte('\n')
+	builder.WriteString(tool.Description)
+	builder.WriteByte('\n')
+	writeCarrierCheckSchemaDescriptions(&builder, tool.InputSchema)
+	return builder.String()
 }
 
 func carrierCheckGeneratedSurfaceText(capability interfaceCapability) string {
@@ -163,6 +192,56 @@ func carrierCheckGeneratedSurfaceText(capability interfaceCapability) string {
 		builder.WriteByte('\n')
 	}
 	return builder.String()
+}
+
+func writeCarrierCheckSchemaDescriptions(builder *strings.Builder, value any) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		writeCarrierCheckSchemaDescriptionMap(builder, typed)
+	case []interface{}:
+		for _, item := range typed {
+			writeCarrierCheckSchemaDescriptions(builder, item)
+		}
+	case map[string]string:
+		for _, key := range sortedStringMapKeys(typed) {
+			if key == "description" {
+				builder.WriteString(typed[key])
+				builder.WriteByte('\n')
+			}
+		}
+	}
+}
+
+func writeCarrierCheckSchemaDescriptionMap(builder *strings.Builder, values map[string]interface{}) {
+	for _, key := range sortedAnyMapKeys(values) {
+		item := values[key]
+		if key == "description" {
+			if description, ok := item.(string); ok {
+				builder.WriteString(description)
+				builder.WriteByte('\n')
+			}
+			continue
+		}
+		writeCarrierCheckSchemaDescriptions(builder, item)
+	}
+}
+
+func sortedAnyMapKeys(values map[string]interface{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func sortedStringMapKeys(values map[string]string) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func writeCarrierManifestEntry(writer io.Writer, entry project.CarrierManifestEntry) error {

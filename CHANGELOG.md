@@ -177,6 +177,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   typed YAML publication projection, carrier bytes, imported semantic mutation,
   and carrier-only no-op disposition in explicit audit fields without creating
   approval, rebaseline, evidence, or gate authority.
+- **SpecSection edition publication round-trip.** Added a deterministic
+  SQL-edition-to-Markdown renderer for typed `yaml spec-section` publication
+  projections. The renderer validates its own DB -> Markdown -> parser
+  round-trip against the source semantic hash and fails closed on lossy
+  projections, proving carrier bytes can rebuild an empty SQL edition store
+  without creating approval, rebaseline, evidence, or gate authority.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

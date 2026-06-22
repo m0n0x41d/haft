@@ -29,6 +29,7 @@ var (
 	specUsePolicy          string
 	specUseWaiverExpiresAt string
 	specUseGateFile        string
+	specSyncJSON           bool
 	specClassifyChangeJSON bool
 	specClassifyBefore     string
 	specClassifyAfter      string
@@ -100,6 +101,18 @@ affected files, and attached evidence. It does not read or store manual
 coverage status fields, and it does not report coverage percentages as the
 primary truth.`,
 	RunE: runSpecCoverage,
+}
+
+var specSyncCmd = &cobra.Command{
+	Use:   "sync",
+	Short: "Sync typed spec carriers into the project SQL edition store",
+	Long: `Sync parsed .haft/specs/* SpecSection carrier blocks into the project
+SQL edition store.
+
+Only typed fenced yaml spec-section blocks are imported. Surrounding Markdown
+prose remains carrier text, not authority. The command does not approve,
+rebaseline, reopen, or mutate SpecSectionApprovalBaseline rows.`,
+	RunE: runSpecSync,
 }
 
 var specClassifyChangeCmd = &cobra.Command{
@@ -182,6 +195,7 @@ func init() {
 	specUseCmd.Flags().StringVar(&specUsePolicy, "policy", "", "admission policy: documentary_only, stronger_use_requires_current_source, or temporary_waiver")
 	specUseCmd.Flags().StringVar(&specUseWaiverExpiresAt, "waiver-expires-at", "", "expiry for temporary_waiver policy (RFC3339 or YYYY-MM-DD)")
 	specUseCmd.Flags().StringVar(&specUseGateFile, "gate-file", "", "JSON OperationalGate profile for local read-only gate evaluation")
+	specSyncCmd.Flags().BoolVar(&specSyncJSON, "json", false, "print structured JSON output")
 	specClassifyChangeCmd.Flags().BoolVar(&specClassifyChangeJSON, "json", false, "print structured JSON output")
 	specClassifyChangeCmd.Flags().StringVar(&specClassifyBefore, "before", "", "path to the before spec carrier")
 	specClassifyChangeCmd.Flags().StringVar(&specClassifyAfter, "after", "", "path to the after spec carrier")
@@ -208,6 +222,7 @@ func init() {
 	specCmd.AddCommand(specCoverageCmd)
 	specCmd.AddCommand(specReviewCmd)
 	specCmd.AddCommand(specUseCmd)
+	specCmd.AddCommand(specSyncCmd)
 	specCmd.AddCommand(specClassifyChangeCmd)
 	specCmd.AddCommand(specPlanCmd)
 	specCmd.AddCommand(specOnboardCmd)

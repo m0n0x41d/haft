@@ -162,6 +162,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   kind, carrier path, and timestamp for future Markdown sync-back without
   reusing SpecSectionApprovalBaseline hashes or switching existing spec readers
   away from carrier parsing.
+- **Typed spec carrier sync into SQL editions.** Added `haft spec sync` as an
+  explicit import from `.haft/specs/*` fenced `yaml spec-section` blocks into
+  `spec_section_editions`. The command refuses carriers with structural findings
+  and records only parsed typed sections; it does not approve, rebaseline,
+  reopen, create evidence, or promote surrounding Markdown prose to authority.
 - **Contract audit host-fragment posture.** The interface contract audit now
   labels every surface with `contract_source_posture` and `host_schema_posture`
   so MCP/CLI fragments are mechanically classified as kernel-catalog source,

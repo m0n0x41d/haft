@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit release-notes carrier classification.** `haft baseline audit`
+  now classifies `CHANGELOG.md` baseline mentions as release-notes provenance,
+  so release history remains audit-visible without dominating current legacy
+  terminology diagnostics.
 - **Baseline audit lifecycle-authority classification.** `haft baseline audit`
   now separates approve/rebaseline and human-gate wording from legacy ambiguous
   baseline terminology, keeping authority-boundary text visible without

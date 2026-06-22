@@ -20,6 +20,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "data/FPF/FPF-Spec.md", "Baseline is source-spec terminology.\n")
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline_model.go", "type BaselineKind string\n")
 	writeBaselineAuditFixture(t, root, "docs/lifecycle.md", "Operators approve/rebaseline active baseline records.\n")
+	writeBaselineAuditFixture(t, root, "CHANGELOG.md", "Baseline audit release note.\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -78,6 +79,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.LifecycleAuthorityFiles != 1 {
 		t.Fatalf("lifecycle authority files = %d, want 1", report.Summary.LifecycleAuthorityFiles)
 	}
+	if report.Summary.ReleaseNotesCarrier != 1 {
+		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)
+	}
+	if report.Summary.ReleaseNotesFiles != 1 {
+		t.Fatalf("release notes files = %d, want 1", report.Summary.ReleaseNotesFiles)
+	}
 	if report.Summary.LegacyAmbiguousBaseline != 1 {
 		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
 	}
@@ -128,6 +135,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			SourceSpecReference:         1,
 			TypedBaselineModel:          1,
 			LifecycleAuthority:          1,
+			ReleaseNotesCarrier:         1,
 			LegacyAmbiguousBaseline:     1,
 			LegacyAmbiguousFiles:        1,
 		},
@@ -161,6 +169,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"source_spec=1",
 		"typed_model=1",
 		"lifecycle_authority=1",
+		"release_notes=1",
 		"legacy_ambiguous=1",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

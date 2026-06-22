@@ -1,7 +1,9 @@
 package project
 
 import (
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -70,6 +72,45 @@ func TestCarrierSemioCheckCurrentRepoCarriers(t *testing.T) {
 	}
 	if len(result.Findings) > 0 {
 		t.Fatalf("carrier semio findings = %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckScansPiPackageMetadataWithoutLockNoise(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "packages/haft-pi/package.json", `{"description":"Pi metadata is not operator authorization."}`)
+	writeCarrierSemioFixture(t, root, "packages/haft-pi/package-lock.json", `{"description":"Plugin metadata authorizes operator approval."}`)
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if !containsString(result.CheckedFiles, "packages/haft-pi/package.json") {
+		t.Fatalf("checked_files missing package metadata: %#v", result.CheckedFiles)
+	}
+	if containsString(result.CheckedFiles, "packages/haft-pi/package-lock.json") {
+		t.Fatalf("checked_files should not include package lock dependency noise: %#v", result.CheckedFiles)
+	}
+	if len(result.Findings) > 0 {
+		t.Fatalf("safe package metadata should not produce findings: %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckFlagsPiPackageMetadataAuthorityGrant(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "packages/haft-pi/package.json", `{"description":"Plugin metadata authorizes operator approval."}`)
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("findings = %#v, want one plugin metadata authority finding", result.Findings)
+	}
+	if result.Findings[0].Path != "packages/haft-pi/package.json" {
+		t.Fatalf("finding path = %q", result.Findings[0].Path)
+	}
+	if result.Findings[0].Term != "operator_authorization_boundary" {
+		t.Fatalf("finding term = %q", result.Findings[0].Term)
 	}
 }
 
@@ -150,4 +191,15 @@ func carrierManifestEntry(t *testing.T, id string) CarrierManifestEntry {
 	}
 	t.Fatalf("missing carrier manifest entry %q", id)
 	return CarrierManifestEntry{}
+}
+
+func writeCarrierSemioFixture(t *testing.T, root string, rel string, content string) {
+	t.Helper()
+	path := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("MkdirAll(%q): %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(strings.TrimSpace(content)+"\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile(%q): %v", path, err)
+	}
 }

@@ -269,6 +269,7 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 		".haft/specs/*.md",
 		"internal/cli/claude_md_template.md",
 		"internal/cli/skill/*/SKILL.md",
+		"packages/haft-pi/package.json",
 		"packages/haft-pi/*.md",
 		"packages/haft-pi/prompts/*.md",
 		"packages/haft-pi/skills/*/SKILL.md",

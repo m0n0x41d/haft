@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Pi package metadata carrier guard.** `haft carrier check` now includes
+  `packages/haft-pi/package.json` in the semio scan set while still excluding
+  package-lock dependency noise, so plugin/Pi metadata cannot imply operator
+  authorization or evidence authority unchecked.
 - **Baseline audit legacy diagnostics.** `haft baseline audit` now emits
   explicit read-only diagnostics for legacy ambiguous baseline terminology,
   including affected file count, examples, and next-action guidance to classify

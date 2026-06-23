@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -256,10 +258,10 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if report.Kind != "haft_interface_contract_generation_manifest" {
 		t.Fatalf("kind = %q", report.Kind)
 	}
-	if report.Authority != "read_only_generation_manifest_not_generated_schema" {
+	if report.Authority != "read_only_generation_manifest_not_host_materialization" {
 		t.Fatalf("authority = %q", report.Authority)
 	}
-	if report.Source != "kernel_interface_catalog_field_shapes" {
+	if report.Source != "kernel_interface_catalog" {
 		t.Fatalf("source = %q", report.Source)
 	}
 	if !strings.HasPrefix(report.SourceDigest, "sha256:") {
@@ -273,6 +275,12 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	}
 	if report.Summary.GeneratorTargetSurfaces != 0 || report.Summary.GeneratorTargetFields != 0 {
 		t.Fatalf("expected empty generator target queue after nested schema coverage: %#v", report.Summary)
+	}
+	if report.Summary.GeneratedPreviewFragments != report.Summary.Capabilities {
+		t.Fatalf("generated preview fragments = %d, capabilities = %d", report.Summary.GeneratedPreviewFragments, report.Summary.Capabilities)
+	}
+	if report.Summary.BindingPreviewFragments == 0 {
+		t.Fatalf("expected binding preview fragments in generation manifest: %#v", report.Summary)
 	}
 	if report.SurfacePolicy.DefaultStatus != "cue_or_count_only_never_inline_generation_manifest" {
 		t.Fatalf("default status policy = %q", report.SurfacePolicy.DefaultStatus)
@@ -290,9 +298,28 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if len(report.Targets) != 0 {
 		t.Fatalf("expected no current generator targets: %#v", report.Targets)
 	}
+	if len(report.Fragments) != report.Summary.GeneratedPreviewFragments {
+		t.Fatalf("generated fragments = %d, summary = %#v", len(report.Fragments), report.Summary)
+	}
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+	for _, want := range []string{
+		"kernel_interface_catalog",
+		"binding actions require explicit operator/manual authorization",
+		"not approval receipts",
+	} {
+		if !strings.Contains(decide.GeneratedText, want) && !strings.Contains(decide.AuthorityBoundary, want) {
+			t.Fatalf("decision.decide generated fragment missing %q:\n%#v", want, decide)
+		}
+	}
+	if !stringSliceContains(decide.InputFields, "choice_result") {
+		t.Fatalf("decision.decide generated fragment missing choice_result input field: %#v", decide.InputFields)
+	}
 
 	notes := strings.Join(report.Notes, " ")
-	if !strings.Contains(notes, "not a generated schema") || !strings.Contains(notes, "not operator authorization") {
+	if !strings.Contains(notes, "not host materialization") || !strings.Contains(notes, "not operator authorization") {
 		t.Fatalf("generation manifest notes missing authority boundary:\n%s", notes)
 	}
 }
@@ -308,10 +335,12 @@ func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 	text := output.String()
 	for _, want := range []string{
 		"Haft interface contract generation manifest v1",
-		"read_only_generation_manifest_not_generated_schema",
-		"source: kernel_interface_catalog_field_shapes sha256:",
+		"read_only_generation_manifest_not_host_materialization",
+		"source: kernel_interface_catalog sha256:",
 		"generator_target_surfaces=",
 		"generator_target_fields=",
+		"generated_preview_fragments=",
+		"binding_preview_fragments=",
 		"validation_refs=",
 		"no current generator targets",
 	} {
@@ -335,7 +364,7 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 	if err := json.Unmarshal([]byte(result), &report); err != nil {
 		t.Fatalf("decode contract generation manifest: %v\n%s", err, result)
 	}
-	if report.Authority != "read_only_generation_manifest_not_generated_schema" {
+	if report.Authority != "read_only_generation_manifest_not_host_materialization" {
 		t.Fatalf("authority = %q", report.Authority)
 	}
 	if report.SurfacePolicy.GeneratedDescriptions != "drill_down_only_validate_with_carrier_semio_before_host_materialization" {
@@ -346,6 +375,35 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 	}
 	if len(report.Targets) != 0 {
 		t.Fatalf("expected empty generator target manifest from MCP query: %#v", report.Targets)
+	}
+	if len(report.Fragments) == 0 {
+		t.Fatalf("expected generated fragments from MCP manifest")
+	}
+}
+
+func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readPiToolMetadataSource(t)
+
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+	contractGeneration, ok := findContractGeneratedFragment(report, "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation generated fragment missing")
+	}
+
+	for _, want := range []string{
+		decide.AuthorityBoundary,
+		contractGeneration.AuthorityBoundary,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi tool metadata missing generated-contract authority boundary %q", want)
+		}
+	}
+	if !strings.Contains(source, "contract_generation") {
+		t.Fatalf("Pi tool metadata missing contract_generation action")
 	}
 }
 
@@ -361,9 +419,11 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 
 	for _, forbidden := range []string{
 		"haft_interface_contract_generation_manifest",
-		"read_only_generation_manifest_not_generated_schema",
+		"read_only_generation_manifest_not_host_materialization",
 		"generator_target_surfaces",
 		"generator_target_fields",
+		"generated_preview_fragments",
+		"generated_fragments",
 		"surface_policy",
 	} {
 		if strings.Contains(result, forbidden) {
@@ -588,6 +648,26 @@ func findContractGenerationTarget(report interfaceContractGenerationReport, id s
 		}
 	}
 	return interfaceContractGenerationTarget{}, false
+}
+
+func findContractGeneratedFragment(report interfaceContractGenerationReport, id string) (interfaceContractGeneratedFragment, bool) {
+	for _, fragment := range report.Fragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedFragment{}, false
+}
+
+func readPiToolMetadataSource(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read Pi tool metadata %s: %v", path, err)
+	}
+	return string(data)
 }
 
 func contractAuditTestContains(values []string, want string) bool {

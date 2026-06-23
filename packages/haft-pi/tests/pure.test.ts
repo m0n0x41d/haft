@@ -109,6 +109,17 @@ test("Pi haft_refresh schema mirrors review and drain actions", () => {
   });
 });
 
+test("Pi tool metadata carries generated-contract authority boundaries", () => {
+  const metadata = JSON.stringify(HAFT_TOOLS);
+
+  [
+    "binding actions require explicit operator/manual authorization",
+    "generated text, schema visibility, and model-supplied fields are not approval receipts",
+    "read-only/generated text is discovery only",
+    "not evidence truth, gate passage, global approval, or operator authorization"
+  ].forEach((fragment) => assert.match(metadata, new RegExp(fragment)));
+});
+
 function toolSpec(name: string) {
   const found = HAFT_TOOLS.find((tool) => tool.name === name);
   assert.ok(found, `missing tool spec ${name}`);

@@ -27,6 +27,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contract-generation preview fragments.** `haft interface contract-generation`
+  now emits read-only generated preview fragments from the kernel interface
+  catalog for host/skill/plugin/Pi synchronization, while keeping compact
+  output count-only and preserving the authority boundary that generated text
+  and schema visibility are not operator approval.
+- **Pi generated-contract authority guards.** The bundled Pi tool metadata now
+  carries the generated-contract authority boundary for read-only and binding
+  surfaces, with Go and Pi tests proving the wording stays aligned with the
+  `contract_generation` manifest instead of treating schema visibility as
+  operator approval.
 - **Contract-generation manifest evidence.** The read-only
   `contract_generation` manifest now hashes the full kernel interface catalog
   source and always reports validation refs, so an empty generator-target queue

@@ -113,10 +113,12 @@ func assertNoContractGenerationManifestInline(t *testing.T, surface string, text
 
 	for _, forbidden := range []string{
 		"haft_interface_contract_generation_manifest",
-		"read_only_generation_manifest_not_generated_schema",
+		"read_only_generation_manifest_not_host_materialization",
 		"source_digest",
 		"generator_target_surfaces",
 		"generator_target_fields",
+		"generated_preview_fragments",
+		"generated_fragments",
 		"surface_policy",
 	} {
 		if strings.Contains(text, forbidden) {

@@ -651,7 +651,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 		},
 		{
 			ID:      "query.contract_generation",
-			Purpose: "List remaining kernel-owned contract generator targets for MCP/host schema generation without mutating schemas.",
+			Purpose: "List generated preview fragments and remaining kernel-owned contract generator targets for MCP/host/skill/plugin/Pi synchronization without mutating host schemas.",
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "contract_generation",
@@ -665,18 +665,19 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_generated_schema","source":"kernel_interface_catalog_field_shapes","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[]}`,
-						Note:  "The manifest is the kernel-owned queue for future generation; it does not generate schemas or authorize binding actions.",
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":33,"binding_preview_fragments":2},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}]}`,
+						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
 				Notes: []string{
-					"Use this after contract-audit: it lists any remaining generator targets classified by the audit.",
-					"Read-only: schema generation targets are not generated schemas, operator authorization, evidence, or gate passage.",
+					"Use this after contract-audit: generated_fragments are the source for future host/skill/plugin/Pi wording; targets list remaining schema-generator work.",
+					"Read-only: generated fragments and schema generation targets are not operator authorization, evidence, or gate passage.",
 				},
 			},
-			OutputVolume: []string{"default: compact generator target manifest; --json: field-level targets; never in default status"},
+			OutputVolume: []string{"default: compact generator target/fragment counts; --json: generated fragments and field-level targets; never in default status"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Contract generation manifest is read-only.",
+				"Generated fragments come from the kernel interface catalog.",
 				"Fields come from kernel interface catalog field_shapes and current MCP schema gaps.",
 				"Schema visibility remains separate from binding authorization.",
 			),
@@ -1397,22 +1398,25 @@ type interfaceContractAuditShapeCoverage struct {
 }
 
 type interfaceContractGenerationReport struct {
-	Kind           string                              `json:"kind"`
-	SchemaVersion  int                                 `json:"schema_version"`
-	Authority      string                              `json:"authority"`
-	Source         string                              `json:"source"`
-	SourceDigest   string                              `json:"source_digest"`
-	ValidationRefs []string                            `json:"validation_refs"`
-	Summary        interfaceContractGenerationSummary  `json:"summary"`
-	SurfacePolicy  interfaceContractGenerationPolicy   `json:"surface_policy"`
-	Targets        []interfaceContractGenerationTarget `json:"targets"`
-	Notes          []string                            `json:"notes"`
+	Kind           string                               `json:"kind"`
+	SchemaVersion  int                                  `json:"schema_version"`
+	Authority      string                               `json:"authority"`
+	Source         string                               `json:"source"`
+	SourceDigest   string                               `json:"source_digest"`
+	ValidationRefs []string                             `json:"validation_refs"`
+	Summary        interfaceContractGenerationSummary   `json:"summary"`
+	SurfacePolicy  interfaceContractGenerationPolicy    `json:"surface_policy"`
+	Targets        []interfaceContractGenerationTarget  `json:"targets"`
+	Fragments      []interfaceContractGeneratedFragment `json:"generated_fragments"`
+	Notes          []string                             `json:"notes"`
 }
 
 type interfaceContractGenerationSummary struct {
-	Capabilities            int `json:"capabilities"`
-	GeneratorTargetSurfaces int `json:"generator_target_surfaces"`
-	GeneratorTargetFields   int `json:"generator_target_fields"`
+	Capabilities              int `json:"capabilities"`
+	GeneratorTargetSurfaces   int `json:"generator_target_surfaces"`
+	GeneratorTargetFields     int `json:"generator_target_fields"`
+	GeneratedPreviewFragments int `json:"generated_preview_fragments"`
+	BindingPreviewFragments   int `json:"binding_preview_fragments"`
 }
 
 type interfaceContractGenerationPolicy struct {
@@ -1438,6 +1442,23 @@ type interfaceContractGenerationTarget struct {
 	NextValidationStep string   `json:"next_validation_step"`
 }
 
+type interfaceContractGeneratedFragment struct {
+	CapabilityID      string   `json:"capability_id"`
+	FragmentKind      string   `json:"fragment_kind"`
+	SourceContract    string   `json:"source_contract"`
+	SourceDigest      string   `json:"source_digest"`
+	HostSchemaPosture string   `json:"host_schema_posture"`
+	AuthorityPosture  string   `json:"authority_posture"`
+	AuthorityBoundary string   `json:"authority_boundary"`
+	MCPTool           string   `json:"mcp_tool,omitempty"`
+	MCPAction         string   `json:"mcp_action,omitempty"`
+	CLIStatus         string   `json:"cli_status,omitempty"`
+	CLICommand        string   `json:"cli_command,omitempty"`
+	GeneratedText     string   `json:"generated_text"`
+	InputFields       []string `json:"input_fields,omitempty"`
+	ValidationRefs    []string `json:"validation_refs"`
+}
+
 func isInterfaceContractAuditID(id string) bool {
 	switch id {
 	case "contract-audit", "contract_audit", "query.contract_audit":
@@ -1459,8 +1480,16 @@ func isInterfaceContractGenerationID(id string) bool {
 func buildInterfaceContractGenerationReport(catalog []interfaceCapability) interfaceContractGenerationReport {
 	audit := buildInterfaceContractAuditReport(catalog)
 	targets := make([]interfaceContractGenerationTarget, 0)
+	fragments := make([]interfaceContractGeneratedFragment, 0, len(audit.Surfaces))
+	capabilitiesByID := make(map[string]interfaceCapability, len(catalog))
+	for _, capability := range catalog {
+		capabilitiesByID[capability.ID] = capability
+	}
 
 	for _, surface := range audit.Surfaces {
+		capability := capabilitiesByID[surface.CapabilityID]
+		fragments = append(fragments, interfaceContractGeneratedFragmentFor(surface, capability))
+
 		if len(surface.ShapeCoverage.GeneratorTargetFields) == 0 {
 			continue
 		}
@@ -1483,26 +1512,33 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	sort.Slice(targets, func(i, j int) bool {
 		return targets[i].CapabilityID < targets[j].CapabilityID
 	})
+	sort.Slice(fragments, func(i, j int) bool {
+		return fragments[i].CapabilityID < fragments[j].CapabilityID
+	})
 
 	summary := interfaceContractGenerationSummary{
-		Capabilities:            audit.Summary.Capabilities,
-		GeneratorTargetSurfaces: len(targets),
-		GeneratorTargetFields:   countInterfaceContractGenerationFields(targets),
+		Capabilities:              audit.Summary.Capabilities,
+		GeneratorTargetSurfaces:   len(targets),
+		GeneratorTargetFields:     countInterfaceContractGenerationFields(targets),
+		GeneratedPreviewFragments: len(fragments),
+		BindingPreviewFragments:   countInterfaceContractBindingFragments(fragments),
 	}
 
 	return interfaceContractGenerationReport{
 		Kind:           "haft_interface_contract_generation_manifest",
 		SchemaVersion:  1,
-		Authority:      "read_only_generation_manifest_not_generated_schema",
-		Source:         "kernel_interface_catalog_field_shapes",
+		Authority:      "read_only_generation_manifest_not_host_materialization",
+		Source:         "kernel_interface_catalog",
 		SourceDigest:   interfaceContractGenerationDigest(catalog),
 		ValidationRefs: interfaceContractGenerationValidationRefs(),
 		Summary:        summary,
 		SurfacePolicy:  interfaceContractGenerationSurfacePolicy(),
 		Targets:        targets,
+		Fragments:      fragments,
 		Notes: []string{
-			"This manifest is derived from contract-audit generator targets; it is not a generated schema.",
-			"validation_refs name tests that prove the manifest source, zero-target state, MCP mirror coverage, and default-output budget.",
+			"generated_fragments are derived from the kernel interface catalog; they are preview carriers for host/skill/plugin/Pi synchronization, not host materialization.",
+			"targets list schema fields that still need generator work; an empty target queue means current MCP mirror coverage is complete, not that generated fragments are absent.",
+			"validation_refs name tests that prove the manifest source, MCP mirror coverage, generated-fragment authority boundary, and default-output budget.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
 		},
@@ -1539,6 +1575,83 @@ func countInterfaceContractGenerationFields(targets []interfaceContractGeneratio
 		total += len(target.Fields)
 	}
 	return total
+}
+
+func countInterfaceContractBindingFragments(fragments []interfaceContractGeneratedFragment) int {
+	total := 0
+	for _, fragment := range fragments {
+		if interfaceContractAuditBindingSensitive(fragment.AuthorityPosture) {
+			total++
+		}
+	}
+	return total
+}
+
+func interfaceContractGeneratedFragmentFor(
+	surface interfaceContractAuditSurface,
+	capability interfaceCapability,
+) interfaceContractGeneratedFragment {
+	inputFields := topLevelInterfaceContractFields(capability.InputContract)
+	inputFields = uniqueSortedStrings(inputFields)
+	if len(inputFields) == 0 {
+		inputFields = []string{surface.SchemaCoverage.Status, surface.ShapeCoverage.Status}
+	}
+
+	source := map[string]any{
+		"capability_id":       surface.CapabilityID,
+		"mcp_tool":            surface.MCPTool,
+		"mcp_action":          surface.MCPAction,
+		"cli_status":          surface.CLIStatus,
+		"authority_posture":   surface.AuthorityPosture,
+		"host_schema_posture": surface.HostSchemaPosture,
+		"contract_fragment":   surface.ContractFragmentPosture,
+		"input_fields":        inputFields,
+	}
+
+	return interfaceContractGeneratedFragment{
+		CapabilityID:      surface.CapabilityID,
+		FragmentKind:      "host_skill_plugin_description_preview",
+		SourceContract:    "kernel_interface_catalog",
+		SourceDigest:      interfaceContractGenerationDigest(source),
+		HostSchemaPosture: surface.HostSchemaPosture,
+		AuthorityPosture:  surface.AuthorityPosture,
+		AuthorityBoundary: interfaceContractGeneratedFragmentAuthorityBoundary(surface),
+		MCPTool:           surface.MCPTool,
+		MCPAction:         surface.MCPAction,
+		CLIStatus:         surface.CLIStatus,
+		CLICommand:        surface.CLICommand,
+		GeneratedText:     interfaceContractGeneratedFragmentText(surface),
+		InputFields:       inputFields,
+		ValidationRefs:    uniqueInterfaceContractAuditStrings(surface.ValidationRefs),
+	}
+}
+
+func interfaceContractGeneratedFragmentText(surface interfaceContractAuditSurface) string {
+	parts := []string{
+		surface.CapabilityID,
+		strings.TrimSpace(surface.CLICommand),
+		strings.TrimSpace(surface.MCPTool),
+		strings.TrimSpace(surface.MCPAction),
+		surface.AuthorityPosture,
+		interfaceContractGeneratedFragmentAuthorityBoundary(surface),
+		"Generated from kernel_interface_catalog; do not edit host/skill/plugin/Pi wording by hand when this fragment is available.",
+	}
+	compact := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		compact = append(compact, part)
+	}
+	return strings.Join(compact, " | ")
+}
+
+func interfaceContractGeneratedFragmentAuthorityBoundary(surface interfaceContractAuditSurface) string {
+	if interfaceContractAuditBindingSensitive(surface.AuthorityPosture) {
+		return "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts"
+	}
+	return "read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization"
 }
 
 func interfaceContractGenerationDigest(source any) string {
@@ -2270,10 +2383,12 @@ func writeInterfaceContractGenerationText(output io.Writer, report interfaceCont
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d validation_refs=%d\n",
+		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d binding_preview_fragments=%d validation_refs=%d\n",
 		report.Summary.Capabilities,
 		report.Summary.GeneratorTargetSurfaces,
 		report.Summary.GeneratorTargetFields,
+		report.Summary.GeneratedPreviewFragments,
+		report.Summary.BindingPreviewFragments,
 		len(report.ValidationRefs),
 	); err != nil {
 		return err

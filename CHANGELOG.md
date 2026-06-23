@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Formality schema wording boundary.** Decision evidence schema text now names
+  current F0-F9 formality, `formality_scale_id`, legacy/unversioned bridge/loss
+  posture, and the non-authority boundary, while MCP `tools/list` remains under
+  the compact context budget.
 - **MCP DriftEvent compact source-items guard.** Default
   `haft_query(action="drift_events")` JSON now omits serialized
   `source_items` audit detail and reports `omitted_source_items` instead,

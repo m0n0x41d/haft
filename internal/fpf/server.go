@@ -783,10 +783,10 @@ func (s *Server) ToolCatalog() []Tool {
 						"type": "integer", "description": "(evidence) CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed",
 					},
 					"formality_level": map[string]interface{}{
-						"type": "integer", "description": "(evidence) F0-F9",
+						"type": "integer", "description": "(evidence) F0-F9 current FPF; use formality_scale_id; display not approval/gate passage/claim truth/global truth/publication",
 					},
 					"formality_scale_id": map[string]string{
-						"type": "string", "description": "(evidence) scale id",
+						"type": "string", "description": "(evidence) scale: fpf-2026-f0-f9, legacy bridge/loss, or unversioned-formality gap",
 					},
 					"claim_refs": map[string]interface{}{
 						"type":        "array",

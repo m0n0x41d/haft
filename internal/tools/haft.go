@@ -1150,10 +1150,10 @@ When you present the rationale (rejected alternatives, counterargument, weakest 
 				"evidence_verdict": map[string]any{"type": "string", "enum": []string{"supports", "weakens", "refutes"}, "description": "How the evidence bears on the artifact (evidence)"},
 				"carrier_ref":      map[string]any{"type": "string", "description": "File path or URL for the evidence source (evidence)"},
 				"congruence_level": map[string]any{"type": "integer", "description": "CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed (evidence)"},
-				"formality_level":  map[string]any{"type": "integer", "description": "F0-F9 current FPF formality ordinal; legacy F0-F3 remains readable with formality_scale_id (evidence)"},
+				"formality_level":  map[string]any{"type": "integer", "description": "F0-F9 current FPF; use formality_scale_id; display not approval/gate passage/claim truth/global truth/publication (evidence)"},
 				"formality_scale_id": map[string]any{
 					"type":        "string",
-					"description": "Evidence formality scale id: fpf-2026-f0-f9 for current values, haft-legacy-f0-f3 for legacy values (evidence)",
+					"description": "Evidence formality scale: fpf-2026-f0-f9, legacy bridge/loss, or unversioned-formality gap (evidence)",
 				},
 				"claim_refs":  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Exact decision claim IDs this evidence binds to when available (evidence)"},
 				"claim_scope": map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Fallback claim scope labels for older artifacts or non-claim evidence (evidence)"},

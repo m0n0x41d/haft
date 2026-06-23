@@ -1948,6 +1948,46 @@ func TestHaftDecisionTool_SchemaIncludesEvidenceAction(t *testing.T) {
 	}
 }
 
+func TestHaftDecisionTool_SchemaNamesFormalityScaleBridgeAndAuthorityBoundary(t *testing.T) {
+	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
+	schema := tool.Schema()
+
+	properties, ok := schema.Parameters["properties"].(map[string]any)
+	if !ok {
+		t.Fatalf("schema properties = %T, want map[string]any", schema.Parameters["properties"])
+	}
+	level, ok := properties["formality_level"].(map[string]any)
+	if !ok {
+		t.Fatalf("formality_level schema = %T, want map[string]any", properties["formality_level"])
+	}
+	scale, ok := properties["formality_scale_id"].(map[string]any)
+	if !ok {
+		t.Fatalf("formality_scale_id schema = %T, want map[string]any", properties["formality_scale_id"])
+	}
+
+	combined := strings.Join([]string{
+		fmt.Sprint(level["description"]),
+		fmt.Sprint(scale["description"]),
+	}, " ")
+	for _, want := range []string{
+		"F0-F9 current FPF",
+		"formality_scale_id",
+		"legacy",
+		"bridge",
+		"loss",
+		"unversioned-formality",
+		"not approval",
+		"gate passage",
+		"claim truth",
+		"global truth",
+		"publication",
+	} {
+		if !strings.Contains(combined, want) {
+			t.Fatalf("formality schema descriptions missing %q:\n%s", want, combined)
+		}
+	}
+}
+
 func TestHaftDecisionTool_SchemaIncludesAntiSelfDeceptionFields(t *testing.T) {
 	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
 	schema := tool.Schema()

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer status bounded judgment drill-down.** `haft overseer status` now
+  points compact drift-confirmation signals at
+  `haft overseer judgment --json --limit 20` instead of the full audit JSON
+  packet.
 - **Bounded overseer judgment JSON.** `haft overseer judgment --json --limit N`
   now returns a compact read-only review packet with omitted task/proposal
   counts and a `full_audit_command`, and status/interface hints point agents to

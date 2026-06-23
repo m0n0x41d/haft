@@ -525,6 +525,7 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 	for _, want := range []string{
 		"Drift requires confirmation: 2 item(s) grouped",
 		"haft overseer maintain --json",
+		"haft overseer judgment --json --limit 20",
 		"haft_refresh(action=\"scan\", verbose=true)",
 		"Stale governance artifact",
 	} {

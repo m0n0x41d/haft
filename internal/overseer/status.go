@@ -152,7 +152,7 @@ func compactDriftStatusSignal(signals []StatusSignal) StatusSignal {
 		Severity: severity,
 		Source:   maintenanceSourceDrift,
 		Title:    title,
-		Detail:   "compact status groups per-decision drift; inspect exact items with `haft overseer maintain --json`, `haft overseer judgment --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
+		Detail:   "compact status groups per-decision drift; inspect exact items with `haft overseer maintain --json`, `haft overseer judgment --json --limit 20`, or `haft_refresh(action=\"scan\", verbose=true)`",
 	}
 }
 

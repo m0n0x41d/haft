@@ -207,6 +207,18 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"`rebaseline` and `reopen` are mutation commands.",
 		"baseline state should change.",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-onboard/SKILL.md", strings.Join([]string{
+		"approve, rebaseline, or reopen requests should route to h-spec.",
+		"the operator to choose rebaseline, reopen, rollback, deprecate, or supersede.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-reason/SKILL.md", strings.Join([]string{
+		"re-baseline via `haft_decision(action=\"baseline\", ...)` or surface drift inline.",
+		"Use when the operator asks to approve, rebaseline, or reopen specs.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-spec-cover/SKILL.md", strings.Join([]string{
+		"approve / rebaseline / reopen for a spec section",
+		"Recommend `/h-verify` to baseline+measure the existing decisions.",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-verify/SKILL.md", strings.Join([]string{
 		"baseline-vs-measure evidence loop with drift detection.",
 		"## Step 3 — Baseline (if drift detection wanted)",
@@ -276,11 +288,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 22 {
-		t.Fatalf("lifecycle authority count = %d, want 22", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 28 {
+		t.Fatalf("lifecycle authority count = %d, want 28", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 12 {
-		t.Fatalf("lifecycle authority files = %d, want 12", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 15 {
+		t.Fatalf("lifecycle authority files = %d, want 15", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)

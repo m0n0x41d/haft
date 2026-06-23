@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit workflow-skill routing classification.** `haft baseline
+  audit` now classifies `h-onboard`, `h-reason`, and `h-spec-cover` baseline
+  routing text as workflow lifecycle guidance instead of legacy ambiguous debt.
 - **Baseline audit drift-repair routing classification.** `haft baseline audit`
   now classifies drift-event repair, maintenance-review, reconciliation, and
   drift-route rebaseline/no-mutation wording as lifecycle or maintenance

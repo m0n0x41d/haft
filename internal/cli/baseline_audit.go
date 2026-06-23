@@ -397,6 +397,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditInterfaceContract, "mentions baseline inside interface contract catalog examples or authority notes"
 	case baselineAuditSpecSkillLifecycleSurface(path):
 		return baselineAuditLifecycleAuth, "mentions baseline inside the h-spec lifecycle skill authority surface"
+	case baselineAuditWorkflowSkillSurface(path):
+		return baselineAuditLifecycleAuth, "mentions baseline inside workflow skill routing or lifecycle guidance"
 	case baselineAuditVerifySkillSurface(path):
 		return baselineAuditVerifiedState, "mentions baseline inside the h-verify evidence and drift-check workflow surface"
 	case baselineAuditAgentGuardrailSurface(path):
@@ -863,6 +865,17 @@ func baselineAuditInterfaceContractSurface(path string) bool {
 
 func baselineAuditSpecSkillLifecycleSurface(path string) bool {
 	return filepath.ToSlash(path) == "internal/cli/skill/h-spec/SKILL.md"
+}
+
+func baselineAuditWorkflowSkillSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/skill/h-onboard/SKILL.md",
+		"internal/cli/skill/h-reason/SKILL.md",
+		"internal/cli/skill/h-spec-cover/SKILL.md":
+		return true
+	default:
+		return false
+	}
 }
 
 func baselineAuditVerifySkillSurface(path string) bool {

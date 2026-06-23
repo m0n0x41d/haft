@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Pi contract-source digest guard.** The bundled Pi tool metadata now carries
+  the current kernel interface catalog `source_digest`, and regression coverage
+  compares it against the read-only `contract_generation` manifest so Pi
+  descriptions cannot silently drift from kernel-owned interface contracts.
 - **MCP status autonomous-maintenance disclosure guard.** Regression coverage now
   proves `haft_query(action="status")` surfaces latest overseer maintenance
   actions, including the `AUTONOMOUS MAINTENANCE` block and exact

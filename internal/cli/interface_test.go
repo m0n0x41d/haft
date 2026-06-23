@@ -506,9 +506,10 @@ func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T)
 	for _, want := range []string{
 		decide.AuthorityBoundary,
 		contractGeneration.AuthorityBoundary,
+		report.SourceDigest,
 	} {
 		if !strings.Contains(source, want) {
-			t.Fatalf("Pi tool metadata missing generated-contract authority boundary %q", want)
+			t.Fatalf("Pi tool metadata missing generated-contract marker %q", want)
 		}
 	}
 	if !strings.Contains(source, "contract_generation") {

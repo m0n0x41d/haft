@@ -46,6 +46,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   boundaries now explicitly state that evidence/formality diagnostics do not
   create claim truth or publication, in addition to not creating approval,
   gate passage, or global truth.
+- **MCP tools/list output-shape guard.** The MCP `tools/list` context-budget
+  tests now reject rich interface output fragments such as EvidencePath
+  reliance-disposition and authority-boundary values, keeping exact/audit
+  examples behind explicit interface drill-downs.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

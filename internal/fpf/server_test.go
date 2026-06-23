@@ -185,6 +185,20 @@ func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_DoesNotInlineInterfaceOutputShapeFragments(t *testing.T) {
+	body := string(mustToolsListResponseBytes(t))
+	for _, forbidden := range []string{
+		"bounded_reliance|advisory_only|blocked",
+		"legacy_formality_projection_lossy|unversioned_formality_source_scale_missing|current_f0_f9_formality",
+		"not_claim_truth",
+		"not_publication",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("tools/list inlined interface output-shape fragment %q", forbidden)
+		}
+	}
+}
+
 func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 	methodSchema := mustListToolProperties(t, "haft_method")
 

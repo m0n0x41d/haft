@@ -387,6 +387,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditVerifiedState, "mentions symbol-level baseline snapshots used for drift comparison"
 	case baselineAuditRetrievalBenchmarkSurface(path):
 		return baselineAuditComparison, "mentions baseline as a retrieval or projection comparison benchmark"
+	case baselineAuditDriftRepairLifecycleSurface(path):
+		return baselineAuditLifecycleAuth, "mentions drift repair routing or read-only lifecycle boundaries around rebaseline"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -558,6 +560,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditAutonomousMaint, "mentions baseline inside autonomous maintenance execution or undo surface"
 	case baselineAuditOverseerMaintenanceSurface(path):
 		return baselineAuditAutonomousMaint, "mentions baseline inside overseer maintenance, drain, or undo surface"
+	case baselineAuditMaintenanceDrainSurface(path):
+		return baselineAuditAutonomousMaint, "mentions maintenance drain rebaseline mode or review guidance"
 	case baselineAuditMethodPackSurface(path):
 		return baselineAuditMethodPack, "mentions baseline inside built-in MethodPack verification guidance"
 	case containsAnyBaselineTerm(value,
@@ -796,6 +800,18 @@ func baselineAuditRetrievalBenchmarkSurface(path string) bool {
 	}
 }
 
+func baselineAuditDriftRepairLifecycleSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/artifact/drift_events.go",
+		"internal/artifact/maintenance_review.go",
+		"internal/artifact/reconciliation.go",
+		"internal/cli/drift_route.go":
+		return true
+	default:
+		return false
+	}
+}
+
 func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/fpf/server.go",
@@ -878,6 +894,10 @@ func baselineAuditOverseerMaintenanceSurface(path string) bool {
 	default:
 		return false
 	}
+}
+
+func baselineAuditMaintenanceDrainSurface(path string) bool {
+	return filepath.ToSlash(path) == "internal/cli/maintenance_drain.go"
 }
 
 func baselineAuditMethodPackSurface(path string) bool {

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit drift-repair routing classification.** `haft baseline audit`
+  now classifies drift-event repair, maintenance-review, reconciliation, and
+  drift-route rebaseline/no-mutation wording as lifecycle or maintenance
+  routing terminology instead of unresolved baseline debt.
 - **Baseline audit benchmark/presentation test classification.** `haft
   baseline audit` now classifies retrieval/projection benchmark test wording
   as comparison baseline terminology and presentation-output assertions as

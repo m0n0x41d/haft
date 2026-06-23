@@ -103,6 +103,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"t.Fatal(\"auto mode should have re-baselined the additive drift\")",
 		"t.Fatal(\"undo must restore the PRIOR baseline\")",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/maintenance_drain.go", strings.Join([]string{
+		"cfg.MaintenanceRebaseline = overseer.MaintenanceModePropose",
+		"cfg.MaintenanceRebaseline = overseer.MaintenanceModeAuto",
+		"Review needs_operator groups before any baseline, waive, reopen, or supersede.",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/overseer.go", strings.Join([]string{
 		"decides, commissions, rebaselines, or contributes directly to R_eff.",
 		"Restored prior baseline for %s.",
@@ -147,6 +152,22 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "internal/artifact/legacy_binding.go", strings.Join([]string{
 		"LegacyBindingPostureMissingSymbolBaseline = \"missing_symbol_baseline\"",
 		"LegacyBindingActionProposeRebaseline = \"propose_rebaseline_with_binding_targets\"",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/drift_events.go", strings.Join([]string{
+		"DriftEventResolutionNeedsRebaseline = \"needs_rebaseline\"",
+		"return DriftEventResolutionNeedsRebaseline",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/maintenance_review.go", strings.Join([]string{
+		"suggestedAction: \"if benign, approve rebaseline; if material, reopen or supersede the decision\"",
+		"fmt.Sprintf(`haft_decision(action=\"baseline\", decision_ref=\"%s\") # only after operator approves drift as benign`, task.DecisionRef)",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/reconciliation.go", strings.Join([]string{
+		"\"enrich_scope does not change decision status, lineage, evidence, baselines, or gates\"",
+		"\"does not create evidence, baselines, gates, or admissions\"",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/drift_route.go", strings.Join([]string{
+		"does not mutate code, carriers, evidence, decisions, baselines, or gates.",
+		"This is a read-only projection: it does not mutate decisions, baselines,",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/tools/haft.go", strings.Join([]string{
 		"- baseline: Snapshot affected files after implementation and before measurement.",
@@ -255,11 +276,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 14 {
-		t.Fatalf("lifecycle authority count = %d, want 14", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 22 {
+		t.Fatalf("lifecycle authority count = %d, want 22", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 8 {
-		t.Fatalf("lifecycle authority files = %d, want 8", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 12 {
+		t.Fatalf("lifecycle authority files = %d, want 12", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)
@@ -279,11 +300,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TestFixtureSurfaceFiles != 2 {
 		t.Fatalf("test fixture surface files = %d, want 2", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.AutonomousMaintenance != 8 {
-		t.Fatalf("autonomous maintenance count = %d, want 8", report.Summary.AutonomousMaintenance)
+	if report.Summary.AutonomousMaintenance != 11 {
+		t.Fatalf("autonomous maintenance count = %d, want 11", report.Summary.AutonomousMaintenance)
 	}
-	if report.Summary.AutonomousMaintenanceFiles != 4 {
-		t.Fatalf("autonomous maintenance files = %d, want 4", report.Summary.AutonomousMaintenanceFiles)
+	if report.Summary.AutonomousMaintenanceFiles != 5 {
+		t.Fatalf("autonomous maintenance files = %d, want 5", report.Summary.AutonomousMaintenanceFiles)
 	}
 	if report.Summary.MethodPackSurface != 3 {
 		t.Fatalf("method pack count = %d, want 3", report.Summary.MethodPackSurface)

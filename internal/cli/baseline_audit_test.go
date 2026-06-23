@@ -34,6 +34,20 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"Baseline: baseline,",
 		`fmt.Sprintf("Baselined files (%d): %s", len(paths), strings.Join(paths, ", "))`,
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/query.go", strings.Join([]string{
+		"// Drift reports for active decisions whose baselined affected_files",
+		"// have moved since baseline (H1 of V2 — reality-aware decisions).",
+		"// CheckDrift compares baselined affected_files against current state.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/refresh.go", strings.Join([]string{
+		"// If projectRoot is non-empty, also checks for file drift on baselined decisions.",
+		"noBaseline := 0",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/types.go", strings.Join([]string{
+		"// DriftScopeManifest stores the baseline file set for one governed scope.",
+		"// DriftStatus represents the state of a file relative to its baseline.",
+		"BaselineKindUnknownLegacy BaselineKind = \"unknown_legacy_baseline\"",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/run.go", strings.Join([]string{
 		"Short: \"Implement a decision - plan, execute, verify, baseline\",",
 		"ev.Phase(\"Baseline\")",
@@ -159,8 +173,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 11 {
 		t.Fatalf("spec approval count = %d, want 11", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 17 {
-		t.Fatalf("verified state count = %d, want 17", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 24 {
+		t.Fatalf("verified state count = %d, want 24", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 3 {
 		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)
@@ -258,11 +272,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.InterfaceContractFiles != 1 {
 		t.Fatalf("interface contract files = %d, want 1", report.Summary.InterfaceContractFiles)
 	}
-	if report.Summary.LegacyAmbiguousBaseline != 2 {
-		t.Fatalf("legacy ambiguous count = %d, want 2", report.Summary.LegacyAmbiguousBaseline)
+	if report.Summary.LegacyAmbiguousBaseline != 3 {
+		t.Fatalf("legacy ambiguous count = %d, want 3", report.Summary.LegacyAmbiguousBaseline)
 	}
-	if report.Summary.LegacyAmbiguousFiles != 2 {
-		t.Fatalf("legacy ambiguous files = %d, want 2", report.Summary.LegacyAmbiguousFiles)
+	if report.Summary.LegacyAmbiguousFiles != 3 {
+		t.Fatalf("legacy ambiguous files = %d, want 3", report.Summary.LegacyAmbiguousFiles)
 	}
 	if len(report.Diagnostics) != 1 {
 		t.Fatalf("diagnostics = %#v, want one legacy ambiguous diagnostic", report.Diagnostics)
@@ -271,13 +285,13 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if diagnostic.Code != "legacy_ambiguous_baseline_terms" {
 		t.Fatalf("diagnostic code = %q", diagnostic.Code)
 	}
-	if diagnostic.Count != 2 || diagnostic.Files != 2 {
+	if diagnostic.Count != 3 || diagnostic.Files != 3 {
 		t.Fatalf("diagnostic count/files = %#v", diagnostic)
 	}
 	if !strings.Contains(diagnostic.NextAction, "typed baseline concept") {
 		t.Fatalf("diagnostic next_action = %q", diagnostic.NextAction)
 	}
-	if len(diagnostic.Examples) != 2 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
+	if len(diagnostic.Examples) != 3 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
 		t.Fatalf("diagnostic examples = %#v", diagnostic.Examples)
 	}
 

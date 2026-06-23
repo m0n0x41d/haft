@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit artifact drift classification.** `haft baseline audit` now
+  classifies DecisionRecord drift/query/refresh baseline wording as
+  verified-state snapshot terminology without hiding explicit
+  `BaselineKindUnknownLegacy` debt.
 - **Baseline audit SpecSection lifecycle/schema classification.** `haft
   baseline audit` now classifies remaining SpecSection lifecycle, sync,
   missing-baseline check, and schema wording under current SpecSection

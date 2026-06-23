@@ -377,6 +377,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditSpecApproval, "mentions SpecSection baseline freshness enforcement state"
 	case baselineAuditSpecDriftSurface(path):
 		return baselineAuditSpecApproval, "mentions SpecSection approval baseline drift or missing-baseline findings"
+	case baselineAuditArtifactVerifiedStateSurface(path):
+		return baselineAuditVerifiedState, "mentions DecisionRecord drift, query, or refresh baseline state"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -469,9 +471,17 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"baselined files",
 		"baselinedfiles",
 		"baselined symbols",
+		"baselined affected_files",
 		"baseline exists",
 		"baseline for drift detection",
 		"compares current file state against stored baseline",
+		"checkdrift compares baselined affected_files",
+		"against its stored baseline",
+		"can't verify via baseline",
+		"basesnaps := make",
+		"for _, s := range baseline",
+		"state of a file relative to its baseline",
+		"driftscopemanifest stores the baseline file set",
 		"run `haft_decision(action=\"baseline\")` first for cl3 scoring",
 		"run haft_decision(action=\"baseline\") first for cl3 scoring",
 		"recordverificationpass",
@@ -743,6 +753,17 @@ func baselineAuditSpecDriftSurface(path string) bool {
 		"internal/project/specflow/drift_test.go",
 		"internal/cli/spec_baseline.go",
 		"internal/cli/spec_sync_test.go":
+		return true
+	default:
+		return false
+	}
+}
+
+func baselineAuditArtifactVerifiedStateSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/artifact/decision.go",
+		"internal/artifact/query.go",
+		"internal/artifact/refresh.go":
 		return true
 	default:
 		return false

@@ -24,6 +24,7 @@ const (
 	baselineAuditHistoricalGov     = "historical_governance_carrier_baseline"
 	baselineAuditSupportArchive    = "support_archive_carrier_baseline"
 	baselineAuditSourceSpec        = "source_spec_reference_baseline"
+	baselineAuditProjectSpec       = "project_spec_carrier_baseline"
 	baselineAuditTypedModel        = "typed_baseline_model"
 	baselineAuditLifecycleAuth     = "baseline_lifecycle_authority"
 	baselineAuditReleaseNotes      = "release_notes_carrier_baseline"
@@ -93,6 +94,8 @@ type baselineTermAuditSummary struct {
 	SupportArchiveFiles         int `json:"support_archive_carrier_files"`
 	SourceSpecReference         int `json:"source_spec_reference_baseline"`
 	SourceSpecFiles             int `json:"source_spec_reference_files"`
+	ProjectSpecCarrier          int `json:"project_spec_carrier_baseline"`
+	ProjectSpecFiles            int `json:"project_spec_carrier_files"`
 	TypedBaselineModel          int `json:"typed_baseline_model"`
 	TypedBaselineModelFiles     int `json:"typed_baseline_model_files"`
 	LifecycleAuthority          int `json:"baseline_lifecycle_authority"`
@@ -204,6 +207,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	report.Summary.HistoricalGovernanceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditHistoricalGov)
 	report.Summary.SupportArchiveFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSupportArchive)
 	report.Summary.SourceSpecFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSourceSpec)
+	report.Summary.ProjectSpecFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditProjectSpec)
 	report.Summary.TypedBaselineModelFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditTypedModel)
 	report.Summary.LifecycleAuthorityFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLifecycleAuth)
 	report.Summary.ReleaseNotesFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditReleaseNotes)
@@ -359,6 +363,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditSupportArchive, "mentions baseline inside a support or archive carrier; audit-visible but not current terminology debt"
 	case baselineAuditSourceSpecCarrier(path):
 		return baselineAuditSourceSpec, "mentions baseline inside an upstream source specification carrier; audit-visible but not current Haft terminology debt"
+	case baselineAuditProjectSpecCarrier(path):
+		return baselineAuditProjectSpec, "mentions baseline inside a project specification carrier; audit-visible specification terminology, not unresolved legacy debt"
 	case baselineAuditReleaseNotesCarrier(path):
 		return baselineAuditReleaseNotes, "mentions baseline inside release notes; audit-visible provenance, not current terminology debt"
 	case baselineAuditToolSurfaceCarrier(path):
@@ -627,6 +633,19 @@ func baselineAuditSourceSpecCarrier(path string) bool {
 	path = filepath.ToSlash(path)
 	for _, prefix := range []string{
 		"data/FPF/",
+	} {
+		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func baselineAuditProjectSpecCarrier(path string) bool {
+	path = filepath.ToSlash(path)
+	for _, prefix := range []string{
+		".haft/specs/",
+		"spec/target-system/",
 	} {
 		if strings.HasPrefix(path, prefix) {
 			return true
@@ -919,6 +938,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.SupportArchiveCarrier++
 	case baselineAuditSourceSpec:
 		summary.SourceSpecReference++
+	case baselineAuditProjectSpec:
+		summary.ProjectSpecCarrier++
 	case baselineAuditTypedModel:
 		summary.TypedBaselineModel++
 	case baselineAuditLifecycleAuth:
@@ -955,7 +976,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d autonomous_maintenance=%d spec_use_currentness=%d legacy_binding_scope=%d decision_baseline_api=%d baseline_presentation=%d interface_contract=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d project_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d autonomous_maintenance=%d spec_use_currentness=%d legacy_binding_scope=%d decision_baseline_api=%d baseline_presentation=%d interface_contract=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -966,6 +987,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.HistoricalGovernanceCarrier,
 		report.Summary.SupportArchiveCarrier,
 		report.Summary.SourceSpecReference,
+		report.Summary.ProjectSpecCarrier,
 		report.Summary.TypedBaselineModel,
 		report.Summary.LifecycleAuthority,
 		report.Summary.ReleaseNotesCarrier,

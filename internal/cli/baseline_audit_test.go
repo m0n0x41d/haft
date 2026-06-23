@@ -47,6 +47,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/methods/swe-core/refactor.yaml", "baseline and post-change checks make the claim concrete.\n")
 	writeBaselineAuditFixture(t, root, "data/FPF/FPF-Spec.md", "Baseline is source-spec terminology.\n")
+	writeBaselineAuditFixture(t, root, ".haft/specs/target-system.md", "Method: require explicit frames, decisions, scopes, baselines, and evidence.\n")
+	writeBaselineAuditFixture(t, root, "spec/target-system/EXECUTION_CONTRACT.md", "Post-verify pass records a baseline snapshot.\n")
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline_model.go", "type BaselineKind string\n")
 	writeBaselineAuditFixture(t, root, "docs/lifecycle.md", "Operators approve/rebaseline active baseline records.\n")
 	writeBaselineAuditFixture(t, root, "CHANGELOG.md", "Baseline audit release note.\n")
@@ -167,6 +169,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SourceSpecFiles != 1 {
 		t.Fatalf("source spec files = %d, want 1", report.Summary.SourceSpecFiles)
 	}
+	if report.Summary.ProjectSpecCarrier != 2 {
+		t.Fatalf("project spec count = %d, want 2", report.Summary.ProjectSpecCarrier)
+	}
+	if report.Summary.ProjectSpecFiles != 2 {
+		t.Fatalf("project spec files = %d, want 2", report.Summary.ProjectSpecFiles)
+	}
 	if report.Summary.TypedBaselineModel != 1 {
 		t.Fatalf("typed baseline model count = %d, want 1", report.Summary.TypedBaselineModel)
 	}
@@ -283,6 +291,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
+			ProjectSpecCarrier:          2,
 			TypedBaselineModel:          1,
 			LifecycleAuthority:          5,
 			ReleaseNotesCarrier:         1,
@@ -327,6 +336,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"historical_governance=1",
 		"support_archive=1",
 		"source_spec=1",
+		"project_spec=2",
 		"typed_model=1",
 		"lifecycle_authority=5",
 		"release_notes=1",

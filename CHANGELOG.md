@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit project-spec carrier classification.** `haft baseline audit`
+  now separates project specification carriers such as `.haft/specs/*` and
+  `spec/target-system/*` from upstream source-spec references and legacy
+  ambiguous baseline debt.
 - **Baseline audit presentation helper classification.** `haft baseline audit`
   now classifies `noBaselineCount` and safe rebaseline display wording as
   presentation-surface terminology rather than unresolved baseline debt.

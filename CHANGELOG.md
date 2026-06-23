@@ -8,10 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **SQL-first spec coverage reads.** `haft spec coverage` now derives
-  coverage sections from current SQL SpecSection editions when present,
-  matching spec status/review/use while keeping carrier structural checks as
-  the read gate.
+- **SQL-first spec structural checks.** `haft spec check`, `haft check`, and
+  `haft spec coverage` now derive structural SpecSection checks from current
+  SQL SpecSection editions when present, while preserving typed carrier
+  term-map entries as support data.
 - **SQL-first WorkCommission spec snapshots.** `create_from_decision` now
   resolves `spec_section_refs` and revision hashes through current SQL
   SpecSection editions when a `project_root` is supplied, preserving carrier
@@ -36,8 +36,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   preserved for unsynced projects.
 - **SQL-first spec health findings.** `haft check` / `haft_query(action="check")`
   now compute SpecSection drift, missing-baseline, and staleness health against
-  current SQL SpecSection editions while leaving structural carrier checks
-  carrier-based.
+  current SQL SpecSection editions, matching the SQL-first structural
+  SpecSection check path.
 - **SQL-first spec onboarding reads.** Read-only `haft spec onboard` now uses
   current SQL SpecSection editions before Markdown carriers while keeping
   missing-baseline findings as the human approval gate.

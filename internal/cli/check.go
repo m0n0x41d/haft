@@ -176,7 +176,7 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 // spec health. The single helper used here is also used by the MCP
 // haft_query(action="check") handler — JSON parity is a contract test.
 func collectSpecHealthFindings(projectRoot string) []project.SpecCheckFinding {
-	specCheckReport, err := project.CheckSpecificationSet(projectRoot)
+	specCheckReport, err := checkProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return nil
 	}

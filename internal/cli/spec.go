@@ -262,7 +262,7 @@ func runSpecCheck(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
-	report, err := project.CheckSpecificationSet(projectRoot)
+	report, err := checkProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return err
 	}
@@ -429,7 +429,7 @@ func buildSpecCoverageReport(
 	ctx context.Context,
 	projectRoot string,
 ) (project.SpecCoverageReport, error) {
-	specCheck, err := project.CheckSpecificationSet(projectRoot)
+	specCheck, err := checkProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return project.SpecCoverageReport{}, err
 	}

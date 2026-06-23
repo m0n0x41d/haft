@@ -150,6 +150,52 @@ func TestLoadProjectSpecificationSetSQLFirstPreservesCarrierTermMapEntries(t *te
 	t.Fatalf("SQL-first spec set should retain typed term-map document: %#v", specSet.Documents)
 }
 
+func TestCheckProjectSpecificationSetSQLFirstIgnoresStaleSectionCarrierFindings(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.check.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	writeSpecCheckCLIFile(t, filepath.Join(root, ".haft", "specs", "target-system.md"), strings.Join([]string{
+		"```yaml spec-section",
+		"id: TS.carrier.stale.001",
+		"kind: [",
+		"```",
+		"",
+	}, "\n"))
+
+	report, err := checkProjectSpecificationSetSQLFirst(root)
+	if err != nil {
+		t.Fatalf("checkProjectSpecificationSetSQLFirst: %v", err)
+	}
+	if report.HasFindings() {
+		t.Fatalf("SQL-first spec check should ignore stale section carrier findings: %#v", report.Findings)
+	}
+	if report.Summary.SpecSections != 1 || report.Summary.ActiveSpecSections != 1 {
+		t.Fatalf("summary = %#v, want one active SQL section", report.Summary)
+	}
+	if report.Summary.TermMapEntries != 1 {
+		t.Fatalf("term-map entries = %d, want carrier support term-map", report.Summary.TermMapEntries)
+	}
+}
+
 func TestBuildSpecLifecycleProjectionPropagatesBaselineStoreError(t *testing.T) {
 	root, _ := newBaselineTestProject(t)
 	makeBaselineDBUnopenable(t)

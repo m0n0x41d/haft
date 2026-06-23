@@ -26,6 +26,15 @@ func loadProjectSpecificationSetSQLFirst(projectRoot string) (project.ProjectSpe
 	return project.LoadProjectSpecificationSet(projectRoot)
 }
 
+func checkProjectSpecificationSetSQLFirst(projectRoot string) (project.SpecCheckReport, error) {
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+	if err != nil {
+		return project.SpecCheckReport{}, err
+	}
+
+	return project.SpecCheckReportFromSpecificationSet(specSet), nil
+}
+
 func mergeSQLSpecSetWithCarrierSupport(
 	sqlSpecSet project.ProjectSpecificationSet,
 	carrierSpecSet project.ProjectSpecificationSet,

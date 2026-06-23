@@ -1164,6 +1164,61 @@ type BaselineInput struct {
 	BindingFallbackReason string          `json:"binding_fallback_reason,omitempty"`
 }
 
+func baselineBindingResolutionTargets(projectRoot string, input BaselineInput, fields DecisionFields) []BindingTarget {
+	if len(input.BindingTargets) > 0 {
+		return input.BindingTargets
+	}
+	if baselineInputRequestsBindingResolution(input) {
+		return nil
+	}
+	return hydrateBaselineBindingTargets(projectRoot, fields.EffectiveDriftBindingTargets())
+}
+
+func baselineInputRequestsBindingResolution(input BaselineInput) bool {
+	return len(input.BindingHints) > 0 ||
+		strings.TrimSpace(input.BindingScope) != "" ||
+		strings.TrimSpace(input.BindingFallbackReason) != ""
+}
+
+func hydrateBaselineBindingTargets(projectRoot string, targets []BindingTarget) []BindingTarget {
+	out := make([]BindingTarget, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, hydrateBaselineBindingTarget(projectRoot, target))
+	}
+	return normalizeBindingTargets(out)
+}
+
+func hydrateBaselineBindingTarget(projectRoot string, target BindingTarget) BindingTarget {
+	if target.Kind != BindingTargetSymbol {
+		return target
+	}
+	if strings.TrimSpace(target.FilePath) == "" || strings.TrimSpace(target.SymbolName) == "" {
+		return target
+	}
+
+	snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, target.FilePath)
+	if err != nil {
+		return target
+	}
+	for _, snapshot := range snapshots {
+		if !symbolSnapshotSameIdentity(snapshot, target) {
+			continue
+		}
+		source := strings.TrimSpace(target.ResolutionSource)
+		if source == "" {
+			source = BindingResolutionSourceExplicitTargets
+		}
+		language := strings.TrimSpace(target.Language)
+		if language == "" {
+			if detected, ok := codebase.LanguageForPath(target.FilePath); ok {
+				language = detected
+			}
+		}
+		return symbolBindingTarget(snapshot, language, source)
+	}
+	return target
+}
+
 // Baseline snapshots the current state of affected files as the baseline for drift detection.
 // If AffectedFiles is provided, it replaces the existing file list before hashing.
 func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, input BaselineInput) ([]AffectedFile, error) {
@@ -1218,8 +1273,9 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		strings.Join(decisionFields.Invariants, "\n"),
 		strings.Join(decisionFields.PostConds, "\n"),
 	}, "\n")
+	bindingTargets := baselineBindingResolutionTargets(projectRoot, input, decisionFields)
 	resolution, err := ResolveBindingTargets(projectRoot, files, BindingResolutionOptions{
-		ExplicitTargets: input.BindingTargets,
+		ExplicitTargets: bindingTargets,
 		Hints:           input.BindingHints,
 		Scope:           input.BindingScope,
 		FallbackReason:  input.BindingFallbackReason,

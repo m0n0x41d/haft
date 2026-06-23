@@ -553,6 +553,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline target authority reuse.** Re-baselining now reuses existing
+  effective drift binding targets, hydrating symbol hashes and ranges from
+  current source, unless the caller supplies new binding targets, hints, or
+  scope instructions. Historical `affected_files` stay a footprint instead of
+  forcing ambiguous binding re-inference.
 - **Baseline failure atomicity.** `artifact.Baseline` now resolves binding
   targets before persisting affected-file hashes, so a failed ambiguous binding
   resolution records diagnostics without moving the prior drift baseline or

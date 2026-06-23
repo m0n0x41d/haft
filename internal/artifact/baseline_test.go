@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/codebase"
 )
 
 func TestBaselineStoresHashes(t *testing.T) {
@@ -163,7 +165,10 @@ func Stop() string {
 }
 `)
 
-	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef:  dec.Meta.ID,
+		BindingScope: BindingScopeAuto,
+	})
 	if err == nil {
 		t.Fatal("expected ambiguous binding resolution to fail")
 	}
@@ -192,6 +197,86 @@ func Stop() string {
 	}
 	if len(fieldsAfter.BindingDiagnostics) == 0 {
 		t.Fatal("expected binding diagnostics to be persisted")
+	}
+}
+
+func TestBaselineReusesExistingBindingTargetsForFootprintFiles(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+	writeTestFile(t, projectRoot, "support.go", `package main
+
+func Build() string {
+	return "build"
+}
+
+func Stop() string {
+	return "stop"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-test-002c", "Storage choice")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{
+		{Path: "app.go"},
+		{Path: "support.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	artifactBefore, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsBefore := artifactBefore.UnmarshalDecisionFields()
+	fieldsBefore.BindingTargets = []BindingTarget{{
+		Kind:             BindingTargetSymbol,
+		FilePath:         "app.go",
+		Language:         "go",
+		SymbolName:       "Run",
+		SymbolKind:       "func",
+		Line:             99,
+		EndLine:          101,
+		BodyHash:         "stale-hash",
+		Confidence:       "high",
+		ResolutionSource: "existing_binding_target",
+	}}
+	if err := persistDecisionFields(ctx, store, artifactBefore, fieldsBefore); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedRun := findTestSymbolSnapshot(t, projectRoot, "app.go", "Run")
+	result, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("baseline files = %+v, want both footprint files hashed", result)
+	}
+
+	artifactAfter, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsAfter := artifactAfter.UnmarshalDecisionFields()
+	if len(fieldsAfter.BindingDiagnostics) != 0 {
+		t.Fatalf("binding diagnostics = %+v, want none", fieldsAfter.BindingDiagnostics)
+	}
+	if len(fieldsAfter.BindingTargets) != 1 {
+		t.Fatalf("binding targets = %+v, want one reused target", fieldsAfter.BindingTargets)
+	}
+	target := fieldsAfter.BindingTargets[0]
+	if target.SymbolName != "Run" || target.BodyHash != expectedRun.Hash {
+		t.Fatalf("binding target = %+v, want current Run hash %q", target, expectedRun.Hash)
+	}
+	if target.Line != expectedRun.Line || target.EndLine != expectedRun.EndLine {
+		t.Fatalf("binding target lines = %d-%d, want %d-%d", target.Line, target.EndLine, expectedRun.Line, expectedRun.EndLine)
 	}
 }
 
@@ -832,6 +917,21 @@ func hashTestFile(t *testing.T, root, path string) string {
 	}
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+func findTestSymbolSnapshot(t *testing.T, root, path, symbolName string) codebase.SymbolSnapshot {
+	t.Helper()
+	snapshots, err := codebase.ExtractSymbolSnapshots(root, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.SymbolName == symbolName {
+			return snapshot
+		}
+	}
+	t.Fatalf("symbol %s not found in %s: %+v", symbolName, path, snapshots)
+	return codebase.SymbolSnapshot{}
 }
 
 func createTestDecision(t *testing.T, store *Store, id, title string) *Artifact {

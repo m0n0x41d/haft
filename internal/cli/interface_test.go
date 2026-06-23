@@ -383,7 +383,7 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 
 func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
-	source := readPiToolMetadataSource(t)
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
 
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")
 	if !ok {
@@ -404,6 +404,29 @@ func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 	if !strings.Contains(source, "contract_generation") {
 		t.Fatalf("Pi tool metadata missing contract_generation action")
+	}
+}
+
+func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+
+	source := strings.Join([]string{
+		readRepoFile(t, "packages", "haft-pi", "prompts", "h-decide.md"),
+		readRepoFile(t, "packages", "haft-pi", "prompts", "h-commission.md"),
+		readRepoFile(t, "packages", "haft-pi", "prompts", "h-reason.md"),
+	}, "\n")
+
+	for _, want := range []string{
+		decide.AuthorityBoundary,
+		"operator_confirmation_required",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi prompt carriers missing generated-contract authority boundary %q", want)
+		}
 	}
 }
 
@@ -659,13 +682,13 @@ func findContractGeneratedFragment(report interfaceContractGenerationReport, id 
 	return interfaceContractGeneratedFragment{}, false
 }
 
-func readPiToolMetadataSource(t *testing.T) string {
+func readRepoFile(t *testing.T, elem ...string) string {
 	t.Helper()
 
-	path := filepath.Join("..", "..", "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	path := filepath.Join(append([]string{"..", ".."}, elem...)...)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		t.Fatalf("read Pi tool metadata %s: %v", path, err)
+		t.Fatalf("read repo file %s: %v", path, err)
 	}
 	return string(data)
 }

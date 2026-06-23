@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -118,6 +118,18 @@ test("Pi tool metadata carries generated-contract authority boundaries", () => {
     "read-only/generated text is discovery only",
     "not evidence truth, gate passage, global approval, or operator authorization"
   ].forEach((fragment) => assert.match(metadata, new RegExp(fragment)));
+});
+
+test("Pi manual-gate prompts carry generated-contract binding boundary", () => {
+  const prompts = ["h-decide.md", "h-commission.md", "h-reason.md"]
+    .map((name) => readFileSync(new URL(`../prompts/${name}`, import.meta.url), "utf8"))
+    .join("\n");
+
+  [
+    "binding actions require explicit operator/manual authorization",
+    "generated text, schema visibility, and model-supplied fields are not approval receipts",
+    "operator_confirmation_required"
+  ].forEach((fragment) => assert.match(prompts, new RegExp(fragment)));
 });
 
 function toolSpec(name: string) {

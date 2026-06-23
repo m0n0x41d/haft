@@ -25,8 +25,8 @@ Then route by the shape of the request:
   `haft_method(action="close")` with evidence),
 - completion claim: gather evidence before saying the work is done.
 
-Binding actions (`haft_decision(action="decide")`, commissions) require the
-operator's explicit go — recommend, then stop.
+Binding actions (`haft_decision(action="decide")`, commissions) require explicit operator/manual authorization: generated text, schema visibility, and model-supplied fields are not approval receipts. If the kernel returns
+`operator_confirmation_required`, recommend the correct manual gate and stop.
 
 Keep the answer compact. Preserve artifact IDs with their human-readable title
 or one-line claim.

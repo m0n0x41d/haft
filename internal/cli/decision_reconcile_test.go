@@ -411,6 +411,50 @@ func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQueryGoverningSetAnswerPathSourceRefsFilterExactTarget(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store", "Load")
+
+	fullResult, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "governing_set",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set full returned error: %v", err)
+	}
+	var fullReport artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(fullResult), &fullReport); err != nil {
+		t.Fatalf("decode full current governing set: %v\n%s", err, fullResult)
+	}
+	answerPath := governingSetAnswerPathForTarget(t, fullReport, "Load")
+	if !strings.Contains(answerPath.MCPCall, "source_refs") {
+		t.Fatalf("answer path MCP call = %q, want source_refs drill-down", answerPath.MCPCall)
+	}
+
+	filteredResult, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action":      "governing_set",
+		"source_refs": []any{answerPath.TargetRef},
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set source_refs returned error: %v", err)
+	}
+	var filteredReport artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(filteredResult), &filteredReport); err != nil {
+		t.Fatalf("decode filtered current governing set: %v\n%s", err, filteredResult)
+	}
+
+	if filteredReport.Filter == nil || filteredReport.Filter.TargetRef != answerPath.TargetRef {
+		t.Fatalf("filter = %#v, want target_ref %q", filteredReport.Filter, answerPath.TargetRef)
+	}
+	if filteredReport.Summary.GoverningSets != 1 || filteredReport.Summary.CurrentDecisions != 1 {
+		t.Fatalf("summary = %#v, want one exact target set", filteredReport.Summary)
+	}
+	if len(filteredReport.CompactSets) != 1 || filteredReport.CompactSets[0].TargetRef != answerPath.TargetRef {
+		t.Fatalf("compact_sets = %#v, want target_ref %q", filteredReport.CompactSets, answerPath.TargetRef)
+	}
+}
+
 func TestDecisionReconcileJSONWriterKeepsReportShape(t *testing.T) {
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -514,6 +558,26 @@ func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
 			t.Fatalf("summary missing %q:\n%s", want, text)
 		}
 	}
+}
+
+func governingSetAnswerPathForTarget(
+	t *testing.T,
+	report artifact.CurrentGoverningSetReport,
+	targetFragment string,
+) artifact.CurrentGoverningSetAnswerPath {
+	t.Helper()
+
+	for _, set := range report.Sets {
+		if !strings.Contains(set.TargetRef, targetFragment) {
+			continue
+		}
+		if len(set.AnswerPaths) != 1 {
+			t.Fatalf("answer_paths for %s = %#v", set.TargetRef, set.AnswerPaths)
+		}
+		return set.AnswerPaths[0]
+	}
+	t.Fatalf("target fragment %q not found in governing sets: %#v", targetFragment, report.Sets)
+	return artifact.CurrentGoverningSetAnswerPath{}
 }
 
 func seedDecisionReconcileDecision(

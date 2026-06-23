@@ -95,6 +95,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft_query(action="governing_set")` now return compact JSON projections by
   default, preserving summary counts, top rows, omission counters, and
   `full=true` audit commands for complete group/set payloads.
+- **Governing-set answer-path parity guard.** The MCP
+  `haft_query(action="governing_set")` tests now prove that emitted
+  `answer_paths[].mcp_call` / `source_refs` drill-downs filter the current
+  governing frontier to the exact advertised `target_ref`.
 - **Pi extension carrier wording guard.** `haft carrier check` now scans the
   Pi extension runtime/tool source files in addition to package metadata,
   prompts, skills, docs, generated interface fragments, and MCP tool

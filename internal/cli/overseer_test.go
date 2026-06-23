@@ -418,6 +418,7 @@ func TestHandleQuintQueryStatusFullUsesDetailedRenderer(t *testing.T) {
 	if !strings.Contains(defaultResult, "### Operator Cockpit") {
 		t.Fatalf("default status should use cockpit renderer:\n%s", defaultResult)
 	}
+	assertNoContractGenerationManifestInline(t, "default status", defaultResult)
 
 	fullResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
 		"action": "status",

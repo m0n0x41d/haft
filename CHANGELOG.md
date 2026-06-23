@@ -51,6 +51,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now explain when an old `reviewed_group_id` is gone but the same
   `decision_refs` match a current reconciliation group, including the current
   group id and apply operation while keeping the stale packet fail-closed.
+- **Default status contract-generation bloat guard.** Default
+  `haft_query(action="status")` now has regression coverage proving it does not
+  inline generated contract-generation manifests, fragments, schema digests, or
+  runtime schema-audit details.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

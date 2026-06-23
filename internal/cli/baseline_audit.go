@@ -365,6 +365,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditSpecUse, "mentions baseline inside SpecificationUse currentness or admission surface"
 	case baselineAuditSpecStateSurface(path):
 		return baselineAuditSpecApproval, "mentions SpecSection baseline freshness enforcement state"
+	case baselineAuditSpecDriftSurface(path):
+		return baselineAuditSpecApproval, "mentions SpecSection approval baseline drift or missing-baseline findings"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -678,6 +680,15 @@ func baselineAuditSpecUseSurface(path string) bool {
 
 func baselineAuditSpecStateSurface(path string) bool {
 	return filepath.ToSlash(path) == "internal/project/specflow/state.go"
+}
+
+func baselineAuditSpecDriftSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/project/specflow/drift.go", "internal/project/specflow/drift_test.go":
+		return true
+	default:
+		return false
+	}
 }
 
 func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {

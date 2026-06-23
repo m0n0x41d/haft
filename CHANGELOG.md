@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecSection drift classification.** `haft baseline audit`
+  now classifies SpecSection missing-baseline and drift-finding wording under
+  SpecSection approval baseline terminology.
 - **Baseline audit maintenance execution classification.** `haft baseline audit`
   now classifies autonomous maintenance executor, undo, and rebaseline test
   wording as autonomous-maintenance baseline terminology.

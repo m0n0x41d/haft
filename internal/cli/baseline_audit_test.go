@@ -68,6 +68,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"// SpecSectionBaseline freshness is enforced here.",
 		"return DeriveStateWithBaselines(set, baselines, projectID)",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/project/specflow/drift.go", strings.Join([]string{
+		"codeSpecSectionNeedsBaseline = \"spec_section_needs_baseline\"",
+		"NextAction: fmt.Sprintf(\"haft_spec_section(action=\\\"approve\\\", section_id=%q) to record a baseline\", section.ID),",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/legacy_binding.go", strings.Join([]string{
 		"LegacyBindingPostureMissingSymbolBaseline = \"missing_symbol_baseline\"",
 		"LegacyBindingActionProposeRebaseline = \"propose_rebaseline_with_binding_targets\"",
@@ -100,8 +104,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Authority != baselineAuditAuthority {
 		t.Fatalf("unexpected authority: %q", report.Authority)
 	}
-	if report.Summary.SpecSectionApprovalBaseline != 5 {
-		t.Fatalf("spec approval count = %d, want 5", report.Summary.SpecSectionApprovalBaseline)
+	if report.Summary.SpecSectionApprovalBaseline != 7 {
+		t.Fatalf("spec approval count = %d, want 7", report.Summary.SpecSectionApprovalBaseline)
 	}
 	if report.Summary.VerifiedStateSnapshot != 9 {
 		t.Fatalf("verified state count = %d, want 9", report.Summary.VerifiedStateSnapshot)
@@ -234,7 +238,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		Summary: baselineTermAuditSummary{
 			FilesScanned:                2,
 			MatchedLines:                2,
-			SpecSectionApprovalBaseline: 5,
+			SpecSectionApprovalBaseline: 7,
 			VerifiedStateSnapshot:       9,
 			ComparisonOrBenchmark:       3,
 			HistoricalGovernanceCarrier: 1,
@@ -277,7 +281,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	for _, want := range []string{
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
-		"spec_approval=5",
+		"spec_approval=7",
 		"verified_state=9",
 		"comparison=3",
 		"historical_governance=1",

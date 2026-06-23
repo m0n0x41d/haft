@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Pi generated-query contract sync guard.** Pi tool metadata now carries
+  compact generated-fragment hints for contract generation, DriftEvents,
+  decision reconciliation, and governing-set drill-downs, with a regression test
+  tying those hints back to the kernel contract-generation manifest.
 - **Decision reconciliation selection-draft cues.**
   `haft decision reconcile selection-draft` now emits report-only candidate
   posture, confidence, suggested review action, and blocking questions so

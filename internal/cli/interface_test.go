@@ -407,6 +407,52 @@ func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 }
 
+func TestPiToolMetadataCarriesSelectedGeneratedQueryFragments(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+
+	for _, tc := range []struct {
+		capabilityID string
+		action       string
+		carrierHint  string
+	}{
+		{
+			capabilityID: "query.contract_generation",
+			action:       "contract_generation",
+			carrierHint:  "generated fragments are read-only previews",
+		},
+		{
+			capabilityID: "query.drift_events",
+			action:       "drift_events",
+			carrierHint:  "drift fanout",
+		},
+		{
+			capabilityID: "query.decision_reconcile",
+			action:       "decision_reconcile",
+			carrierHint:  "reconciliation",
+		},
+		{
+			capabilityID: "query.governing_set",
+			action:       "governing_set",
+			carrierHint:  "current-authority drill-downs",
+		},
+	} {
+		fragment, ok := findContractGeneratedFragment(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s generated fragment missing", tc.capabilityID)
+		}
+		for _, want := range []string{
+			fragment.AuthorityBoundary,
+			tc.action,
+			tc.carrierHint,
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("Pi tool metadata missing generated-fragment carrier text %q for %s", want, tc.capabilityID)
+			}
+		}
+	}
+}
+
 func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")

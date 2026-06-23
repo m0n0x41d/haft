@@ -330,6 +330,8 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     promptGuidelines: [
       "Use haft_query(action=\"status\") before open-ended Haft, FPF, or governed code work.",
       "Use haft_query(action=\"code_context\") or haft_query(action=\"impact\") before editing governed files.",
+      "Use haft_query(action=\"contract_audit\") / haft_query(action=\"contract_generation\") for generated-contract carrier checks; generated fragments are read-only previews.",
+      "Use haft_query(action=\"drift_events\") / haft_query(action=\"decision_reconcile\") / haft_query(action=\"governing_set\") for drift fanout, reconciliation, and current-authority drill-downs.",
       "Treat haft_query output as project evidence, not as permission to create binding decisions.",
       readOnlyAuthorityBoundary
     ],

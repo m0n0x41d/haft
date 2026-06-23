@@ -20,6 +20,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   promote evidence items with missing formality scale metadata to the current
   F0-F9 scale; unversioned evidence is reported with an explicit
   `unversioned-formality` scale and source-scale gap bridge loss.
+- **Value-space evidence-missing summary.** `haft value space` compact output
+  now shows the declared measurement window, method ref, distinct evidence-ref
+  count, and the number of value characteristics still blocked by missing
+  evidence refs, while preserving the no-single-score authority boundary.
 - **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
   commit/source metadata in `haft version`, `scripts/build.sh --install`
   stamps commit/build date via ldflags, and read-only MCP query footers now use

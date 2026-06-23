@@ -75,6 +75,15 @@ func writeEngineeringValueSpaceSummary(w io.Writer, space artifact.EngineeringVa
 		space.InterpretationRules.FeatureWithoutValueMovement,
 	))
 	builder.WriteString(fmt.Sprintf(
+		"measurement_context: window=%s method_ref=%s evidence_refs=%d evidence_missing_characteristics=%d\n",
+		valueSummaryField(space.Characteristics, func(characteristic artifact.EngineeringValueCharacteristic) string {
+			return characteristic.Window
+		}),
+		valueSummaryMethodRef(space.Characteristics),
+		valueSummaryEvidenceRefCount(space.Characteristics),
+		valueSummaryMissingEvidenceCount(space.Characteristics),
+	))
+	builder.WriteString(fmt.Sprintf(
 		"protected_trade_offs: %s\n",
 		strings.Join(space.ProtectedTradeOffs, ","),
 	))
@@ -95,4 +104,58 @@ func writeEngineeringValueSpaceSummary(w io.Writer, space artifact.EngineeringVa
 	_, err := io.WriteString(w, builder.String())
 
 	return err
+}
+
+func valueSummaryField(
+	characteristics []artifact.EngineeringValueCharacteristic,
+	extract func(artifact.EngineeringValueCharacteristic) string,
+) string {
+	for _, characteristic := range characteristics {
+		value := strings.TrimSpace(extract(characteristic))
+		if value != "" {
+			return value
+		}
+	}
+
+	return "unspecified"
+}
+
+func valueSummaryMethodRef(characteristics []artifact.EngineeringValueCharacteristic) string {
+	value := valueSummaryField(characteristics, func(characteristic artifact.EngineeringValueCharacteristic) string {
+		return characteristic.Method
+	})
+	index := strings.Index(value, ":")
+	if index > 0 {
+		return value[:index]
+	}
+
+	return value
+}
+
+func valueSummaryEvidenceRefCount(characteristics []artifact.EngineeringValueCharacteristic) int {
+	seen := map[string]struct{}{}
+
+	for _, characteristic := range characteristics {
+		for _, ref := range characteristic.EvidenceRefs {
+			trimmed := strings.TrimSpace(ref)
+			if trimmed == "" {
+				continue
+			}
+			seen[trimmed] = struct{}{}
+		}
+	}
+
+	return len(seen)
+}
+
+func valueSummaryMissingEvidenceCount(characteristics []artifact.EngineeringValueCharacteristic) int {
+	count := 0
+
+	for _, characteristic := range characteristics {
+		if strings.TrimSpace(characteristic.Missingness) == "evidence_refs_missing_value_claim_blocked" {
+			count++
+		}
+	}
+
+	return count
 }

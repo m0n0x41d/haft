@@ -60,8 +60,17 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"ev.OK(fmt.Sprintf(\"%d file(s) snapshotted\", len(baselined)))",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
-	writeBaselineAuditFixture(t, root, "internal/fpf/tree_drilldown_test.go", "baselineResults, err := SearchSpecWithOptions(db, query, opts)\n")
+	writeBaselineAuditFixture(t, root, "internal/fpf/tree_drilldown_test.go", strings.Join([]string{
+		"baselineResults, err := SearchSpecWithOptions(db, query, opts)",
+		"func TestSearchSpec_TreeModeGoldenQueriesBeatBaselineOnFullCorpus(t *testing.T) {}",
+		"baseline := goldenRetrievalMetrics{Name: \"deterministic\", Total: len(cases)}",
+		"baseline.Successful++",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/solution.go", "BaselineSet: []string{\"Redis\", \"NATS\"},\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/serve_projection_test.go", strings.Join([]string{
+		"CounterArgument: \"Tooling and local debugging remain weaker than the simpler HTTP baseline.\"",
+		"CounterArgument: \"Tooling and local debugging remain weaker than the simpler HTTP baseline.\"",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
 	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
@@ -167,6 +176,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"noBaselineCount := 0",
 		"return \" — additive only; safe to re-baseline without review\"",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/present/format_test.go", strings.Join([]string{
+		`t.Fatalf("baseline response should pair decision title with ref:\n%s", response)`,
+		`t.Fatalf("baseline response should not expose a bare decision ref:\n%s", response)`,
+		"CounterArgument: \"Tooling and local debugging remain weaker than the simpler HTTP baseline.\"",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-spec/SKILL.md", strings.Join([]string{
 		"Primary spec lifecycle interface for a haft project.",
 		"`rebaseline` and `reopen` are mutation commands.",
@@ -205,8 +219,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.VerifiedStateSnapshot != 28 {
 		t.Fatalf("verified state count = %d, want 28", report.Summary.VerifiedStateSnapshot)
 	}
-	if report.Summary.ComparisonOrBenchmark != 3 {
-		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)
+	if report.Summary.ComparisonOrBenchmark != 8 {
+		t.Fatalf("comparison count = %d, want 8", report.Summary.ComparisonOrBenchmark)
 	}
 	if report.Summary.OrdinaryLanguageBaseline != 1 {
 		t.Fatalf("ordinary count = %d, want 1", report.Summary.OrdinaryLanguageBaseline)
@@ -295,11 +309,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.DecisionBaselineAPIFiles != 4 {
 		t.Fatalf("decision baseline api files = %d, want 4", report.Summary.DecisionBaselineAPIFiles)
 	}
-	if report.Summary.BaselinePresentation != 4 {
-		t.Fatalf("baseline presentation count = %d, want 4", report.Summary.BaselinePresentation)
+	if report.Summary.BaselinePresentation != 7 {
+		t.Fatalf("baseline presentation count = %d, want 7", report.Summary.BaselinePresentation)
 	}
-	if report.Summary.BaselinePresentationFiles != 1 {
-		t.Fatalf("baseline presentation files = %d, want 1", report.Summary.BaselinePresentationFiles)
+	if report.Summary.BaselinePresentationFiles != 2 {
+		t.Fatalf("baseline presentation files = %d, want 2", report.Summary.BaselinePresentationFiles)
 	}
 	if report.Summary.InterfaceContractBaseline != 2 {
 		t.Fatalf("interface contract count = %d, want 2", report.Summary.InterfaceContractBaseline)

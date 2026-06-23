@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit benchmark/presentation test classification.** `haft
+  baseline audit` now classifies retrieval/projection benchmark test wording
+  as comparison baseline terminology and presentation-output assertions as
+  presentation surface terminology.
 - **Baseline audit MCP/tool API classification.** `haft baseline audit` now
   classifies MCP server schema text and haft tool baseline-output tests as
   DecisionRecord baseline API surface terminology.

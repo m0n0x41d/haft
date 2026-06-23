@@ -385,6 +385,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditVerifiedState, "mentions DecisionRecord drift, query, or refresh baseline state"
 	case baselineAuditCodebaseSymbolDriftSurface(path):
 		return baselineAuditVerifiedState, "mentions symbol-level baseline snapshots used for drift comparison"
+	case baselineAuditRetrievalBenchmarkSurface(path):
+		return baselineAuditComparison, "mentions baseline as a retrieval or projection comparison benchmark"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -784,6 +786,16 @@ func baselineAuditCodebaseSymbolDriftSurface(path string) bool {
 	return filepath.ToSlash(path) == "internal/codebase/symhash.go"
 }
 
+func baselineAuditRetrievalBenchmarkSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/fpf/tree_drilldown_test.go",
+		"internal/cli/serve_projection_test.go":
+		return true
+	default:
+		return false
+	}
+}
+
 func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/fpf/server.go",
@@ -820,6 +832,9 @@ func baselineAuditPresentationSurface(path string, value string) bool {
 			"cosmetic (re-baseline)",
 			"safe to re-baseline without review",
 			"incidental (shared file changed by unrelated work",
+			"baseline response should pair decision title with ref",
+			"baseline response should not expose a bare decision ref",
+			"simpler http baseline",
 		)
 	default:
 		return false

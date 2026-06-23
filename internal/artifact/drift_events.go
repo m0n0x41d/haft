@@ -35,31 +35,32 @@ type DriftEventSummary struct {
 }
 
 type DriftEvent struct {
-	EventID                 string                 `json:"event_id"`
-	ChangeRef               string                 `json:"change_ref"`
-	ChangedTargetRef        string                 `json:"changed_target_ref"`
-	TargetKind              string                 `json:"target_kind"`
-	FilePath                string                 `json:"file_path"`
-	SymbolName              string                 `json:"symbol_name,omitempty"`
-	SymbolKind              string                 `json:"symbol_kind,omitempty"`
-	DriftStatus             DriftStatus            `json:"drift_status"`
-	SymbolStatus            string                 `json:"symbol_status,omitempty"`
-	TargetStatus            string                 `json:"target_status,omitempty"`
-	TriggerKind             DriftTriggerKind       `json:"trigger_kind,omitempty"`
-	Materiality             DriftMateriality       `json:"materiality,omitempty"`
-	FallbackKind            string                 `json:"fallback_kind,omitempty"`
-	FallbackReason          string                 `json:"fallback_reason,omitempty"`
-	AuditOnly               bool                   `json:"audit_only"`
-	Fanout                  int                    `json:"fanout"`
-	ImpactedDecisions       []DriftEventDecision   `json:"impacted_decisions"`
-	RootCause               string                 `json:"root_cause"`
-	RootCauseDetail         string                 `json:"root_cause_detail,omitempty"`
-	ResolutionStatus        string                 `json:"resolution_status"`
-	ResolutionRecordPosture string                 `json:"resolution_record_posture,omitempty"`
-	ResolutionRecord        *DriftEventResolution  `json:"resolution_record,omitempty"`
-	SuggestedNextCommand    string                 `json:"suggested_next_command,omitempty"`
-	SourceItems             []DriftEventSourceItem `json:"source_items,omitempty"`
-	OmittedSourceItems      int                    `json:"omitted_source_items,omitempty"`
+	EventID                  string                 `json:"event_id"`
+	ChangeRef                string                 `json:"change_ref"`
+	ChangedTargetRef         string                 `json:"changed_target_ref"`
+	TargetKind               string                 `json:"target_kind"`
+	FilePath                 string                 `json:"file_path"`
+	SymbolName               string                 `json:"symbol_name,omitempty"`
+	SymbolKind               string                 `json:"symbol_kind,omitempty"`
+	DriftStatus              DriftStatus            `json:"drift_status"`
+	SymbolStatus             string                 `json:"symbol_status,omitempty"`
+	TargetStatus             string                 `json:"target_status,omitempty"`
+	TriggerKind              DriftTriggerKind       `json:"trigger_kind,omitempty"`
+	Materiality              DriftMateriality       `json:"materiality,omitempty"`
+	FallbackKind             string                 `json:"fallback_kind,omitempty"`
+	FallbackReason           string                 `json:"fallback_reason,omitempty"`
+	AuditOnly                bool                   `json:"audit_only"`
+	Fanout                   int                    `json:"fanout"`
+	ImpactedDecisions        []DriftEventDecision   `json:"impacted_decisions"`
+	OmittedImpactedDecisions int                    `json:"omitted_impacted_decisions,omitempty"`
+	RootCause                string                 `json:"root_cause"`
+	RootCauseDetail          string                 `json:"root_cause_detail,omitempty"`
+	ResolutionStatus         string                 `json:"resolution_status"`
+	ResolutionRecordPosture  string                 `json:"resolution_record_posture,omitempty"`
+	ResolutionRecord         *DriftEventResolution  `json:"resolution_record,omitempty"`
+	SuggestedNextCommand     string                 `json:"suggested_next_command,omitempty"`
+	SourceItems              []DriftEventSourceItem `json:"source_items,omitempty"`
+	OmittedSourceItems       int                    `json:"omitted_source_items,omitempty"`
 }
 
 type DriftEventDecision struct {
@@ -246,6 +247,10 @@ func CompactDriftEventReport(report DriftEventReport, eventLimit int) DriftEvent
 		events = events[:eventLimit]
 	}
 	for index, event := range events {
+		if eventLimit > 0 && len(event.ImpactedDecisions) > eventLimit {
+			events[index].OmittedImpactedDecisions = len(event.ImpactedDecisions) - eventLimit
+			events[index].ImpactedDecisions = append([]DriftEventDecision(nil), event.ImpactedDecisions[:eventLimit]...)
+		}
 		if len(event.SourceItems) == 0 {
 			continue
 		}

@@ -40,6 +40,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Host-style integer compact limits.** DriftEvents compact-projection tests now
   cover both JSON-decoded numeric limits and host-supplied integer limits, so
   bounded `limit=5` drill-downs stay bounded across MCP client adapters.
+- **Bounded DriftEvent fanout payloads.** Compact DriftEvent reports now cap
+  each event's inlined `impacted_decisions` and expose
+  `omitted_impacted_decisions`, so `haft_query(action="drift_events", limit=5)`
+  stays bounded while `full=true` retains the full audit payload.
 - **Budgeted status drill-down recommendations.** Compact status,
   reconciliation cues, and prompt-governor attention now recommend bounded
   `limit=5` drift/reconciliation/governing-set drill-downs, while keeping

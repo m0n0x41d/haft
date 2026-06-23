@@ -73,6 +73,11 @@ func TestCompactDriftEventReportKeepsSummaryAndOmissions(t *testing.T) {
 			{
 				EventID:          "drift-event-1",
 				ChangedTargetRef: "file:one.go",
+				ImpactedDecisions: []DriftEventDecision{
+					{DecisionID: "dec-1"},
+					{DecisionID: "dec-2"},
+					{DecisionID: "dec-3"},
+				},
 				SourceItems: []DriftEventSourceItem{
 					{DecisionID: "dec-1", Path: "one.go"},
 					{DecisionID: "dec-2", Path: "one.go"},
@@ -113,11 +118,20 @@ func TestCompactDriftEventReportKeepsSummaryAndOmissions(t *testing.T) {
 	if compact.Events[0].OmittedSourceItems != 2 {
 		t.Fatalf("omitted_source_items = %d, want 2", compact.Events[0].OmittedSourceItems)
 	}
+	if len(compact.Events[0].ImpactedDecisions) != 2 {
+		t.Fatalf("compact impacted_decisions = %#v, want capped 2", compact.Events[0].ImpactedDecisions)
+	}
+	if compact.Events[0].OmittedImpactedDecisions != 1 {
+		t.Fatalf("omitted_impacted_decisions = %d, want 1", compact.Events[0].OmittedImpactedDecisions)
+	}
 	if !strings.Contains(compact.FullAuditCommand, `full=true`) {
 		t.Fatalf("full audit command should name full=true: %q", compact.FullAuditCommand)
 	}
 	if len(report.Events[0].SourceItems) != 2 {
 		t.Fatalf("compact projection mutated source report: %#v", report.Events[0].SourceItems)
+	}
+	if len(report.Events[0].ImpactedDecisions) != 3 {
+		t.Fatalf("compact projection mutated source decisions: %#v", report.Events[0].ImpactedDecisions)
 	}
 }
 

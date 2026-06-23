@@ -179,6 +179,7 @@ func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
 		"source_digest",
 		"generator_target_surfaces",
 		"generator_target_fields",
+		"generated_schema_fragments",
 		"surface_policy",
 	} {
 		if strings.Contains(body, forbidden) {

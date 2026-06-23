@@ -665,7 +665,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":33,"binding_preview_fragments":2},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":33,"generated_schema_fragments":30,"binding_preview_fragments":2},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1411,17 +1411,18 @@ type interfaceContractAuditShapeCoverage struct {
 }
 
 type interfaceContractGenerationReport struct {
-	Kind           string                               `json:"kind"`
-	SchemaVersion  int                                  `json:"schema_version"`
-	Authority      string                               `json:"authority"`
-	Source         string                               `json:"source"`
-	SourceDigest   string                               `json:"source_digest"`
-	ValidationRefs []string                             `json:"validation_refs"`
-	Summary        interfaceContractGenerationSummary   `json:"summary"`
-	SurfacePolicy  interfaceContractGenerationPolicy    `json:"surface_policy"`
-	Targets        []interfaceContractGenerationTarget  `json:"targets"`
-	Fragments      []interfaceContractGeneratedFragment `json:"generated_fragments"`
-	Notes          []string                             `json:"notes"`
+	Kind            string                                     `json:"kind"`
+	SchemaVersion   int                                        `json:"schema_version"`
+	Authority       string                                     `json:"authority"`
+	Source          string                                     `json:"source"`
+	SourceDigest    string                                     `json:"source_digest"`
+	ValidationRefs  []string                                   `json:"validation_refs"`
+	Summary         interfaceContractGenerationSummary         `json:"summary"`
+	SurfacePolicy   interfaceContractGenerationPolicy          `json:"surface_policy"`
+	Targets         []interfaceContractGenerationTarget        `json:"targets"`
+	Fragments       []interfaceContractGeneratedFragment       `json:"generated_fragments"`
+	SchemaFragments []interfaceContractGeneratedSchemaFragment `json:"generated_schema_fragments"`
+	Notes           []string                                   `json:"notes"`
 }
 
 type interfaceContractGenerationSummary struct {
@@ -1429,6 +1430,7 @@ type interfaceContractGenerationSummary struct {
 	GeneratorTargetSurfaces   int `json:"generator_target_surfaces"`
 	GeneratorTargetFields     int `json:"generator_target_fields"`
 	GeneratedPreviewFragments int `json:"generated_preview_fragments"`
+	GeneratedSchemaFragments  int `json:"generated_schema_fragments"`
 	BindingPreviewFragments   int `json:"binding_preview_fragments"`
 }
 
@@ -1472,6 +1474,24 @@ type interfaceContractGeneratedFragment struct {
 	ValidationRefs    []string `json:"validation_refs"`
 }
 
+type interfaceContractGeneratedSchemaFragment struct {
+	CapabilityID           string         `json:"capability_id"`
+	FragmentKind           string         `json:"fragment_kind"`
+	SourceContract         string         `json:"source_contract"`
+	SourceDigest           string         `json:"source_digest"`
+	AuthorityBoundary      string         `json:"authority_boundary"`
+	MCPTool                string         `json:"mcp_tool"`
+	MCPAction              string         `json:"mcp_action"`
+	HostSchemaPosture      string         `json:"host_schema_posture"`
+	RequiredFields         []string       `json:"required_fields"`
+	AllowedTopLevelFields  []string       `json:"allowed_top_level_fields"`
+	ActionRequiredFields   []string       `json:"action_required_fields"`
+	HandlerValidatedFields []string       `json:"handler_validated_fields,omitempty"`
+	Schema                 map[string]any `json:"schema"`
+	SchemaDigest           string         `json:"schema_digest"`
+	ValidationRefs         []string       `json:"validation_refs"`
+}
+
 func isInterfaceContractAuditID(id string) bool {
 	switch id {
 	case "contract-audit", "contract_audit", "query.contract_audit":
@@ -1494,6 +1514,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	audit := buildInterfaceContractAuditReport(catalog)
 	targets := make([]interfaceContractGenerationTarget, 0)
 	fragments := make([]interfaceContractGeneratedFragment, 0, len(audit.Surfaces))
+	schemaFragments := make([]interfaceContractGeneratedSchemaFragment, 0, audit.Summary.MCPMirroredActions)
 	capabilitiesByID := make(map[string]interfaceCapability, len(catalog))
 	for _, capability := range catalog {
 		capabilitiesByID[capability.ID] = capability
@@ -1502,6 +1523,9 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	for _, surface := range audit.Surfaces {
 		capability := capabilitiesByID[surface.CapabilityID]
 		fragments = append(fragments, interfaceContractGeneratedFragmentFor(surface, capability))
+		if surface.MCPTool != "" && surface.MCPAction != "" {
+			schemaFragments = append(schemaFragments, interfaceContractGeneratedSchemaFragmentFor(surface, capability))
+		}
 
 		if len(surface.ShapeCoverage.GeneratorTargetFields) == 0 {
 			continue
@@ -1528,28 +1552,34 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	sort.Slice(fragments, func(i, j int) bool {
 		return fragments[i].CapabilityID < fragments[j].CapabilityID
 	})
+	sort.Slice(schemaFragments, func(i, j int) bool {
+		return schemaFragments[i].CapabilityID < schemaFragments[j].CapabilityID
+	})
 
 	summary := interfaceContractGenerationSummary{
 		Capabilities:              audit.Summary.Capabilities,
 		GeneratorTargetSurfaces:   len(targets),
 		GeneratorTargetFields:     countInterfaceContractGenerationFields(targets),
 		GeneratedPreviewFragments: len(fragments),
+		GeneratedSchemaFragments:  len(schemaFragments),
 		BindingPreviewFragments:   countInterfaceContractBindingFragments(fragments),
 	}
 
 	return interfaceContractGenerationReport{
-		Kind:           "haft_interface_contract_generation_manifest",
-		SchemaVersion:  1,
-		Authority:      "read_only_generation_manifest_not_host_materialization",
-		Source:         "kernel_interface_catalog",
-		SourceDigest:   interfaceContractGenerationDigest(catalog),
-		ValidationRefs: interfaceContractGenerationValidationRefs(),
-		Summary:        summary,
-		SurfacePolicy:  interfaceContractGenerationSurfacePolicy(),
-		Targets:        targets,
-		Fragments:      fragments,
+		Kind:            "haft_interface_contract_generation_manifest",
+		SchemaVersion:   1,
+		Authority:       "read_only_generation_manifest_not_host_materialization",
+		Source:          "kernel_interface_catalog",
+		SourceDigest:    interfaceContractGenerationDigest(catalog),
+		ValidationRefs:  interfaceContractGenerationValidationRefs(),
+		Summary:         summary,
+		SurfacePolicy:   interfaceContractGenerationSurfacePolicy(),
+		Targets:         targets,
+		Fragments:       fragments,
+		SchemaFragments: schemaFragments,
 		Notes: []string{
 			"generated_fragments are derived from the kernel interface catalog; they are preview carriers for host/skill/plugin/Pi synchronization, not host materialization.",
+			"generated_schema_fragments are read-only per-action MCP schema fragments for validation and future host materialization; they do not mutate tools/list.",
 			"targets list schema fields that still need generator work; an empty target queue means current MCP mirror coverage is complete, not that generated fragments are absent.",
 			"validation_refs name tests that prove the manifest source, MCP mirror coverage, generated-fragment authority boundary, and default-output budget.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
@@ -1636,6 +1666,83 @@ func interfaceContractGeneratedFragmentFor(
 		GeneratedText:     interfaceContractGeneratedFragmentText(surface),
 		InputFields:       inputFields,
 		ValidationRefs:    uniqueInterfaceContractAuditStrings(surface.ValidationRefs),
+	}
+}
+
+func interfaceContractGeneratedSchemaFragmentFor(
+	surface interfaceContractAuditSurface,
+	capability interfaceCapability,
+) interfaceContractGeneratedSchemaFragment {
+	allowedFields := topLevelInterfaceContractFields(capability.InputContract)
+	requiredFields := interfaceContractAuditExpectedMCPRequiredFields(capability)
+	actionRequiredFields := topLevelInterfaceContractRequiredFields(capability.InputContract)
+	handlerValidated := make([]string, 0, len(actionRequiredFields))
+	requiredSet := make(map[string]bool, len(requiredFields))
+	for _, field := range requiredFields {
+		requiredSet[field] = true
+	}
+	for _, field := range actionRequiredFields {
+		if requiredSet[field] {
+			continue
+		}
+		handlerValidated = append(handlerValidated, field)
+	}
+	handlerValidated = uniqueSortedStrings(handlerValidated)
+
+	schema := interfaceContractGeneratedSchemaFor(surface, allowedFields, requiredFields)
+	source := map[string]any{
+		"capability_id":            surface.CapabilityID,
+		"mcp_tool":                 surface.MCPTool,
+		"mcp_action":               surface.MCPAction,
+		"allowed_top_level_fields": allowedFields,
+		"required_fields":          requiredFields,
+		"action_required_fields":   actionRequiredFields,
+		"handler_validated":        handlerValidated,
+		"schema":                   schema,
+	}
+
+	return interfaceContractGeneratedSchemaFragment{
+		CapabilityID:           surface.CapabilityID,
+		FragmentKind:           "mcp_action_schema_fragment",
+		SourceContract:         "kernel_interface_catalog",
+		SourceDigest:           interfaceContractGenerationDigest(source),
+		AuthorityBoundary:      "schema fragment is read-only validation material, not operator authorization or host materialization",
+		MCPTool:                surface.MCPTool,
+		MCPAction:              surface.MCPAction,
+		HostSchemaPosture:      surface.HostSchemaPosture,
+		RequiredFields:         requiredFields,
+		AllowedTopLevelFields:  allowedFields,
+		ActionRequiredFields:   actionRequiredFields,
+		HandlerValidatedFields: handlerValidated,
+		Schema:                 schema,
+		SchemaDigest:           interfaceContractGenerationDigest(schema),
+		ValidationRefs:         uniqueInterfaceContractAuditStrings(surface.ValidationRefs),
+	}
+}
+
+func interfaceContractGeneratedSchemaFor(
+	surface interfaceContractAuditSurface,
+	allowedFields []string,
+	requiredFields []string,
+) map[string]any {
+	properties := make(map[string]any, len(allowedFields)+1)
+	properties["action"] = map[string]any{
+		"type":  "string",
+		"const": surface.MCPAction,
+	}
+	for _, field := range allowedFields {
+		if field == "action" {
+			continue
+		}
+		properties[field] = map[string]any{
+			"description": "shape validated by MCP schema mirror and kernel handler",
+		}
+	}
+	return map[string]any{
+		"type":                 "object",
+		"additionalProperties": true,
+		"required":             requiredFields,
+		"properties":           properties,
 	}
 }
 
@@ -2494,11 +2601,12 @@ func writeInterfaceContractGenerationText(output io.Writer, report interfaceCont
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d binding_preview_fragments=%d validation_refs=%d\n",
+		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d generated_schema_fragments=%d binding_preview_fragments=%d validation_refs=%d\n",
 		report.Summary.Capabilities,
 		report.Summary.GeneratorTargetSurfaces,
 		report.Summary.GeneratorTargetFields,
 		report.Summary.GeneratedPreviewFragments,
+		report.Summary.GeneratedSchemaFragments,
 		report.Summary.BindingPreviewFragments,
 		len(report.ValidationRefs),
 	); err != nil {

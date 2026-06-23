@@ -118,6 +118,7 @@ func assertNoContractGenerationManifestInline(t *testing.T, surface string, text
 		"generator_target_surfaces",
 		"generator_target_fields",
 		"generated_preview_fragments",
+		"generated_schema_fragments",
 		"generated_fragments",
 		"surface_policy",
 	} {

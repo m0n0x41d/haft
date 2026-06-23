@@ -300,6 +300,9 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if report.Summary.GeneratedPreviewFragments != report.Summary.Capabilities {
 		t.Fatalf("generated preview fragments = %d, capabilities = %d", report.Summary.GeneratedPreviewFragments, report.Summary.Capabilities)
 	}
+	if report.Summary.GeneratedSchemaFragments == 0 {
+		t.Fatalf("expected generated MCP schema fragments in generation manifest: %#v", report.Summary)
+	}
 	if report.Summary.BindingPreviewFragments == 0 {
 		t.Fatalf("expected binding preview fragments in generation manifest: %#v", report.Summary)
 	}
@@ -322,6 +325,9 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if len(report.Fragments) != report.Summary.GeneratedPreviewFragments {
 		t.Fatalf("generated fragments = %d, summary = %#v", len(report.Fragments), report.Summary)
 	}
+	if len(report.SchemaFragments) != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("generated schema fragments = %d, summary = %#v", len(report.SchemaFragments), report.Summary)
+	}
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")
 	if !ok {
 		t.Fatal("decision.decide generated fragment missing")
@@ -338,9 +344,36 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if !stringSliceContains(decide.InputFields, "choice_result") {
 		t.Fatalf("decision.decide generated fragment missing choice_result input field: %#v", decide.InputFields)
 	}
+	decideSchema, ok := findContractGeneratedSchemaFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated schema fragment missing")
+	}
+	if decideSchema.FragmentKind != "mcp_action_schema_fragment" {
+		t.Fatalf("decision.decide schema fragment kind = %#v", decideSchema)
+	}
+	if decideSchema.MCPTool != "haft_decision" || decideSchema.MCPAction != "decide" {
+		t.Fatalf("decision.decide schema fragment MCP target = %#v", decideSchema)
+	}
+	if !stringSliceContains(decideSchema.RequiredFields, "action") {
+		t.Fatalf("decision.decide schema fragment required fields = %#v", decideSchema.RequiredFields)
+	}
+	if !stringSliceContains(decideSchema.ActionRequiredFields, "selected_title") {
+		t.Fatalf("decision.decide schema fragment action required fields = %#v", decideSchema.ActionRequiredFields)
+	}
+	if !stringSliceContains(decideSchema.HandlerValidatedFields, "selected_title") {
+		t.Fatalf("decision.decide schema fragment handler fields = %#v", decideSchema.HandlerValidatedFields)
+	}
+	if !strings.HasPrefix(decideSchema.SchemaDigest, "sha256:") {
+		t.Fatalf("decision.decide schema digest = %q", decideSchema.SchemaDigest)
+	}
+	if !strings.Contains(decideSchema.AuthorityBoundary, "not operator authorization") {
+		t.Fatalf("decision.decide schema fragment authority boundary = %q", decideSchema.AuthorityBoundary)
+	}
 
 	notes := strings.Join(report.Notes, " ")
-	if !strings.Contains(notes, "not host materialization") || !strings.Contains(notes, "not operator authorization") {
+	if !strings.Contains(notes, "not host materialization") ||
+		!strings.Contains(notes, "not operator authorization") ||
+		!strings.Contains(notes, "generated_schema_fragments") {
 		t.Fatalf("generation manifest notes missing authority boundary:\n%s", notes)
 	}
 }
@@ -361,6 +394,7 @@ func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 		"generator_target_surfaces=",
 		"generator_target_fields=",
 		"generated_preview_fragments=",
+		"generated_schema_fragments=",
 		"binding_preview_fragments=",
 		"validation_refs=",
 		"no current generator targets",
@@ -399,6 +433,9 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 	}
 	if len(report.Fragments) == 0 {
 		t.Fatalf("expected generated fragments from MCP manifest")
+	}
+	if len(report.SchemaFragments) == 0 {
+		t.Fatalf("expected generated schema fragments from MCP manifest")
 	}
 }
 
@@ -660,6 +697,7 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 		"generator_target_surfaces",
 		"generator_target_fields",
 		"generated_preview_fragments",
+		"generated_schema_fragments",
 		"generated_fragments",
 		"surface_policy",
 	} {
@@ -917,6 +955,15 @@ func findContractGeneratedFragment(report interfaceContractGenerationReport, id 
 		}
 	}
 	return interfaceContractGeneratedFragment{}, false
+}
+
+func findContractGeneratedSchemaFragment(report interfaceContractGenerationReport, id string) (interfaceContractGeneratedSchemaFragment, bool) {
+	for _, fragment := range report.SchemaFragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedSchemaFragment{}, false
 }
 
 func readRepoFile(t *testing.T, elem ...string) string {

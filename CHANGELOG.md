@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first spec coverage reads.** `haft spec coverage` now derives
+  coverage sections from current SQL SpecSection editions when present,
+  matching spec status/review/use while keeping carrier structural checks as
+  the read gate.
 - **Assurance calculator F0-F9 formality preservation.** The legacy
   `assurance` WLNK calculator now preserves `formality_level` on the current
   FPF F0-F9 ordinal instead of folding F4-F9 into old F0-F3 buckets, and

@@ -437,10 +437,11 @@ func buildSpecCoverageReport(
 		return project.SpecCoverageReport{}, &specCoverageBlockedError{report: specCheck}
 	}
 
-	sections, err := project.LoadSpecSections(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return project.SpecCoverageReport{}, err
 	}
+	sections := specSet.Sections
 
 	store, closeStore, err := openSpecCoverageStore(projectRoot)
 	if err != nil {

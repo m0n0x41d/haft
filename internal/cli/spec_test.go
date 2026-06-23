@@ -8,11 +8,13 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
 func TestRunSpecCheckCommandSmokeCleanProject(t *testing.T) {
@@ -151,6 +153,45 @@ func TestRunSpecCoverageJSONReportsDerivedSectionStates(t *testing.T) {
 	}
 	if strings.Contains(output.String(), "percent") {
 		t.Fatalf("JSON output contains percentage scalar: %s", output.String())
+	}
+}
+
+func TestBuildSpecCoverageReportReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.coverage.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	report, err := buildSpecCoverageReport(context.Background(), root)
+	if err != nil {
+		t.Fatalf("buildSpecCoverageReport: %v", err)
+	}
+
+	if len(report.Sections) != 1 {
+		t.Fatalf("sections = %#v, want exactly the current SQL edition section", report.Sections)
+	}
+	if report.Sections[0].SectionID != "TS.sql.coverage.001" {
+		t.Fatalf("section id = %q, want SQL edition section", report.Sections[0].SectionID)
+	}
+	if report.Sections[0].SectionID == "TS.sync.001" {
+		t.Fatalf("coverage used carrier section instead of SQL edition: %#v", report.Sections)
 	}
 }
 

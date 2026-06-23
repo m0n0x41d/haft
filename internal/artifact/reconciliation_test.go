@@ -117,6 +117,44 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *testing.T) {
+	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
+		DecisionID:        "dec-precise",
+		DecisionTitle:     "Precise scope",
+		Status:            StatusActive,
+		BoundedContext:    "fpf-retrieval",
+		GovernanceTargets: []string{"symbol:internal/fpf/specsearch.go:type:Route"},
+		ScopeRepairHint:   "use enrich_scope to add decision_subject_ref",
+		AffectedFiles:     []string{"internal/fpf/specsearch.go"},
+	}})
+
+	draft := BuildDecisionReconciliationSelectionDraft(plan)
+
+	if len(draft.Items) != 1 {
+		t.Fatalf("items = %#v", draft.Items)
+	}
+	item := draft.Items[0]
+	if strings.Contains(item.SelectionTemplate, "TODO_target_kind") {
+		t.Fatalf("selection_template should reuse current governance target:\n%s", item.SelectionTemplate)
+	}
+	var selection DecisionReconciliationSelection
+	if err := json.Unmarshal([]byte(item.SelectionTemplate), &selection); err != nil {
+		t.Fatalf("decode selection_template: %v\n%s", err, item.SelectionTemplate)
+	}
+	if selection.DecisionSubjectRef != "TODO_exact_decision_subject_ref" {
+		t.Fatalf("decision_subject_ref = %q, want subject placeholder", selection.DecisionSubjectRef)
+	}
+	if len(selection.GovernanceTargets) != 1 {
+		t.Fatalf("governance_targets = %#v, want one prefilled target", selection.GovernanceTargets)
+	}
+	if selection.GovernanceTargets[0].Kind != "symbol" || selection.GovernanceTargets[0].Ref != "symbol:internal/fpf/specsearch.go:type:Route" {
+		t.Fatalf("governance_target = %#v", selection.GovernanceTargets[0])
+	}
+	if len(selection.DriftWatchTargets) != 0 {
+		t.Fatalf("drift_watch_targets = %#v, want none when governance target is already known", selection.DriftWatchTargets)
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testing.T) {
 	plan := DecisionReconciliationPlan{
 		SchemaVersion: DecisionReconciliationSchemaVersion,

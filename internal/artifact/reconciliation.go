@@ -952,12 +952,48 @@ func decisionReconciliationDraftSelectionTemplate(
 	group DecisionReconciliationGroup,
 	item DecisionReconciliationItem,
 ) string {
-	return fmt.Sprintf(
-		`{"operation":"%s","reviewed_group_id":"%s","decision_refs":["%s"],"decision_subject_ref":"TODO_exact_decision_subject_ref","governance_targets":[{"kind":"TODO_target_kind","ref":"TODO_exact_target_ref"}],"drift_watch_targets":[{"target_ref":"TODO_exact_target_ref","trigger":"TODO_trigger"}],"reason":"TODO_operator_reviewed_scope_enrichment_reason"}`,
-		DecisionReconciliationOperationEnrichScope,
-		group.GroupID,
-		item.DecisionID,
-	)
+	selection := DecisionReconciliationSelection{
+		Operation:          DecisionReconciliationOperationEnrichScope,
+		ReviewedGroupID:    group.GroupID,
+		DecisionRefs:       []string{item.DecisionID},
+		DecisionSubjectRef: "TODO_exact_decision_subject_ref",
+		GovernanceTargets:  draftGovernanceTargets(item.GovernanceTargets),
+		Reason:             "TODO_operator_reviewed_scope_enrichment_reason",
+	}
+	if len(selection.GovernanceTargets) == 0 {
+		selection.GovernanceTargets = []GovernanceTarget{{
+			Kind: "TODO_target_kind",
+			Ref:  "TODO_exact_target_ref",
+		}}
+		selection.DriftWatchTargets = []DriftWatchTarget{{
+			TargetRef: "TODO_exact_target_ref",
+			Trigger:   "TODO_trigger",
+		}}
+	}
+	data, err := json.Marshal(selection)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
+func draftGovernanceTargets(refs []string) []GovernanceTarget {
+	out := make([]GovernanceTarget, 0, len(refs))
+	for _, ref := range compactSortedStrings(refs) {
+		out = append(out, GovernanceTarget{
+			Kind: draftGovernanceTargetKind(ref),
+			Ref:  ref,
+		})
+	}
+	return out
+}
+
+func draftGovernanceTargetKind(ref string) string {
+	kind, _, ok := strings.Cut(strings.TrimSpace(ref), ":")
+	if ok && strings.TrimSpace(kind) != "" {
+		return strings.TrimSpace(kind)
+	}
+	return "target_ref"
 }
 
 func buildDecisionReconciliationItem(

@@ -553,6 +553,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Reconciliation selection-draft target prefills.** `haft decision reconcile
+  selection-draft` now reuses already-known governance targets in read-only
+  `selection_template` output instead of forcing `TODO_target_kind` placeholders
+  when a candidate only needs an explicit `decision_subject_ref`.
 - **Baseline target authority reuse.** Re-baselining now reuses existing
   effective drift binding targets, hydrating symbol hashes and ranges from
   current source, unless the caller supplies new binding targets, hints, or

@@ -221,6 +221,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"func runSpecRebaseline(cmd *cobra.Command, args []string) error {",
 		`"action": "rebaseline",`,
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_onboard_test.go", `t.Fatalf("expected missing-baseline finding for SQL edition: %#v", intent)`+"\n")
 	writeBaselineAuditFixture(t, root, "internal/fpf/spec_section_schema.go", strings.Join([]string{
 		"`rebaseline` overwrites a baseline after the operator confirms drift.",
 		"Lifecycle and mutation JSON expose baseline_kind/profile.",
@@ -356,8 +357,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Authority != baselineAuditAuthority {
 		t.Fatalf("unexpected authority: %q", report.Authority)
 	}
-	if report.Summary.SpecSectionApprovalBaseline != 12 {
-		t.Fatalf("spec approval count = %d, want 12", report.Summary.SpecSectionApprovalBaseline)
+	if report.Summary.SpecSectionApprovalBaseline != 13 {
+		t.Fatalf("spec approval count = %d, want 13", report.Summary.SpecSectionApprovalBaseline)
 	}
 	if report.Summary.VerifiedStateSnapshot != 43 {
 		t.Fatalf("verified state count = %d, want 43", report.Summary.VerifiedStateSnapshot)
@@ -392,11 +393,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.ProjectSpecFiles != 2 {
 		t.Fatalf("project spec files = %d, want 2", report.Summary.ProjectSpecFiles)
 	}
-	if report.Summary.TypedBaselineModel != 1 {
-		t.Fatalf("typed baseline model count = %d, want 1", report.Summary.TypedBaselineModel)
+	if report.Summary.TypedBaselineModel != 3 {
+		t.Fatalf("typed baseline model count = %d, want 3", report.Summary.TypedBaselineModel)
 	}
-	if report.Summary.TypedBaselineModelFiles != 1 {
-		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
+	if report.Summary.TypedBaselineModelFiles != 3 {
+		t.Fatalf("typed baseline model files = %d, want 3", report.Summary.TypedBaselineModelFiles)
 	}
 	if report.Summary.LifecycleAuthority != 48 {
 		t.Fatalf("lifecycle authority count = %d, want 48", report.Summary.LifecycleAuthority)
@@ -464,11 +465,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.InterfaceContractFiles != 1 {
 		t.Fatalf("interface contract files = %d, want 1", report.Summary.InterfaceContractFiles)
 	}
-	if report.Summary.LegacyAmbiguousBaseline != 3 {
-		t.Fatalf("legacy ambiguous count = %d, want 3", report.Summary.LegacyAmbiguousBaseline)
+	if report.Summary.LegacyAmbiguousBaseline != 1 {
+		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
 	}
-	if report.Summary.LegacyAmbiguousFiles != 3 {
-		t.Fatalf("legacy ambiguous files = %d, want 3", report.Summary.LegacyAmbiguousFiles)
+	if report.Summary.LegacyAmbiguousFiles != 1 {
+		t.Fatalf("legacy ambiguous files = %d, want 1", report.Summary.LegacyAmbiguousFiles)
 	}
 	if len(report.Diagnostics) != 1 {
 		t.Fatalf("diagnostics = %#v, want one legacy ambiguous diagnostic", report.Diagnostics)
@@ -477,13 +478,13 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if diagnostic.Code != "legacy_ambiguous_baseline_terms" {
 		t.Fatalf("diagnostic code = %q", diagnostic.Code)
 	}
-	if diagnostic.Count != 3 || diagnostic.Files != 3 {
+	if diagnostic.Count != 1 || diagnostic.Files != 1 {
 		t.Fatalf("diagnostic count/files = %#v", diagnostic)
 	}
 	if !strings.Contains(diagnostic.NextAction, "typed baseline concept") {
 		t.Fatalf("diagnostic next_action = %q", diagnostic.NextAction)
 	}
-	if len(diagnostic.Examples) != 3 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
+	if len(diagnostic.Examples) != 1 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
 		t.Fatalf("diagnostic examples = %#v", diagnostic.Examples)
 	}
 

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit typed-legacy precision.** `haft baseline audit` now treats
+  explicit `UnknownLegacyBaseline` compatibility model references as typed
+  baseline model surface and classifies SQL onboarding missing-baseline test
+  wording as SpecSection approval-baseline diagnostics, reducing false
+  `legacy_ambiguous_baseline` noise.
 - **SQL-first SpecSection baseline mutations.** Operator-invoked
   `haft_spec_section` / `haft spec onboard` approve/rebaseline/reopen paths now
   baseline current SQL SpecSection editions when present, with carrier fallback

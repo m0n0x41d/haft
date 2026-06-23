@@ -570,7 +570,7 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"legacy baseline-like record",
 		"legacy/unknown",
 	):
-		return baselineAuditLegacyAmbiguous, "explicitly names legacy ambiguous baseline posture"
+		return baselineAuditTypedModel, "names the typed legacy/unknown baseline compatibility model"
 	case baselineAuditAutonomousMaintenanceTerm(value):
 		return baselineAuditAutonomousMaint, "names autonomous maintenance rebaseline, undo, or baseline snapshot state"
 	case baselineAuditMaintenanceExecutionSurface(path):
@@ -834,6 +834,7 @@ func baselineAuditSpecDriftSurface(path string) bool {
 	case "internal/project/specflow/drift.go",
 		"internal/project/specflow/drift_test.go",
 		"internal/cli/spec_baseline.go",
+		"internal/cli/spec_onboard_test.go",
 		"internal/cli/spec_sync_test.go":
 		return true
 	default:

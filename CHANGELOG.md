@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit parity BaselineSet classification.** `haft baseline audit`
+  now recognizes camel-case `BaselineSet` and parity-plan baseline wording as
+  comparison/benchmark baseline terminology.
 - **Baseline audit SpecState freshness classification.** `haft baseline audit`
   now classifies SpecSection state/freshness enforcement wording under
   SpecSection approval baseline terminology instead of legacy ambiguous debt.

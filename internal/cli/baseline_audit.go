@@ -449,6 +449,7 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditVerifiedState, "names a verified-state snapshot or drift-detection baseline profile"
 	case containsAnyBaselineTerm(value,
 		"baseline_set",
+		"baselineset",
 		"baseline set",
 		"comparison baseline",
 		"benchmark baseline",
@@ -463,6 +464,9 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"topbaseline",
 		"baselinehierarchy",
 		"deterministic golden coverage",
+		"parity plan baseline",
+		"structured parity baseline",
+		"scored variant outside baseline",
 		"baseline search error",
 		"baseline search unexpectedly",
 	):

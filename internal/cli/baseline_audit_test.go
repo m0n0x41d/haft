@@ -28,6 +28,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
 	writeBaselineAuditFixture(t, root, "internal/fpf/tree_drilldown_test.go", "baselineResults, err := SearchSpecWithOptions(db, query, opts)\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/solution.go", "BaselineSet: []string{\"Redis\", \"NATS\"},\n")
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
 	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
@@ -95,8 +96,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.VerifiedStateSnapshot != 5 {
 		t.Fatalf("verified state count = %d, want 5", report.Summary.VerifiedStateSnapshot)
 	}
-	if report.Summary.ComparisonOrBenchmark != 2 {
-		t.Fatalf("comparison count = %d, want 2", report.Summary.ComparisonOrBenchmark)
+	if report.Summary.ComparisonOrBenchmark != 3 {
+		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)
 	}
 	if report.Summary.OrdinaryLanguageBaseline != 1 {
 		t.Fatalf("ordinary count = %d, want 1", report.Summary.OrdinaryLanguageBaseline)
@@ -225,7 +226,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			MatchedLines:                2,
 			SpecSectionApprovalBaseline: 5,
 			VerifiedStateSnapshot:       5,
-			ComparisonOrBenchmark:       2,
+			ComparisonOrBenchmark:       3,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
@@ -268,7 +269,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"spec_approval=5",
 		"verified_state=5",
-		"comparison=2",
+		"comparison=3",
 		"historical_governance=1",
 		"support_archive=1",
 		"source_spec=1",

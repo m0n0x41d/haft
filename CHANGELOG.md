@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit legacy-binding scope vocabulary.** `haft baseline audit` now
+  classifies old-decision symbol-baseline enrichment and binding-target
+  rebaseline terminology separately from legacy ambiguous baseline debt.
 - **Baseline audit SpecUse currentness vocabulary.** `haft baseline audit` now
   classifies SpecificationUse baseline currentness and admission terminology
   separately from legacy ambiguous baseline debt.

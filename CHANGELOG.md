@@ -79,6 +79,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   prompts, skills, docs, generated interface fragments, and MCP tool
   descriptions, so host package tool wording cannot imply binding authority
   outside the checked carrier set.
+- **Pi query schema mirror refresh.** The Pi bundle `haft_query` and
+  `haft_refresh` tool schemas now mirror the current read-only drill-down
+  actions, maintenance review/drain actions, and common optional fields used by
+  spec-use, drift, reconciliation, evidence-path, blocked-use, and value-space
+  surfaces.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

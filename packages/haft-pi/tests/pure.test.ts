@@ -67,6 +67,48 @@ test("Pi tool schemas mirror maintenance, prediction, and problem dimension fiel
   assert.match(JSON.stringify(problem.parameters), /"proxy_for"/);
 });
 
+test("Pi haft_query schema mirrors current read-only drill-down actions", () => {
+  const query = toolSpec("haft_query");
+  const schema = JSON.stringify(query.parameters);
+
+  [
+    "carrier_manifest",
+    "carrier_check",
+    "contract_audit",
+    "contract_generation",
+    "spec_review",
+    "spec_use",
+    "change_case",
+    "correspondence_graph",
+    "drift_route",
+    "drift_events",
+    "decision_reconcile",
+    "governing_set",
+    "blocked_use",
+    "value_space",
+    "evidence_path"
+  ].forEach((action) => assert.match(schema, new RegExp(`"${action}"`)));
+
+  [
+    "section_id",
+    "operational_gate",
+    "source_refs",
+    "requires_current_formality",
+    "bearer_ref",
+    "method_ref",
+    "lane"
+  ].forEach((field) => assert.match(schema, new RegExp(`"${field}"`)));
+});
+
+test("Pi haft_refresh schema mirrors review and drain actions", () => {
+  const refresh = toolSpec("haft_refresh");
+  const schema = JSON.stringify(refresh.parameters);
+
+  ["review", "drain", "dry_run"].forEach((fragment) => {
+    assert.match(schema, new RegExp(`"${fragment}"`));
+  });
+});
+
 function toolSpec(name: string) {
   const found = HAFT_TOOLS.find((tool) => tool.name === name);
   assert.ok(found, `missing tool spec ${name}`);

@@ -30,23 +30,46 @@ const haftQueryParameters = Type.Object({
   action: enumOf(
     "search", "status", "board", "related", "code_context", "callees", "callers",
     "impact", "node", "explore", "ceremony", "projection", "list", "coverage",
-    "fpf", "check", "resolve_term"
+    "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit",
+    "contract_generation", "spec_review", "spec_use", "change_case",
+    "correspondence_graph", "drift_route", "drift_events", "decision_reconcile",
+    "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"
   ),
+  artifact_ref: OptStr(),
+  attempted_use: OptStr(),
+  bearer_ref: OptStr(),
+  blocked_use: OptStr(),
+  claim_ref: OptStr(),
   context: OptStr(),
   depth: OptNum(),
+  drift_kind: OptStr(),
   explain: OptBool(),
+  exact_record_needed: OptStr(),
+  evidence_ref: OptStr(),
   file: OptStr(),
   files: OptStrList(),
   full: OptBool(),
   kind: OptStr(),
+  label: OptStr(),
+  lane: Type.Optional(enumOf("index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all")),
   limit: OptNum(),
   line: OptNum(),
+  method_ref: OptStr(),
   mode: OptStr(),
+  operational_gate: OptObj(),
+  policy: Type.Optional(enumOf("documentary_only", "stronger_use_requires_current_source", "temporary_waiver")),
+  producer_ref: OptStr(),
   query: OptStr(),
+  requires_current_formality: OptBool(),
+  section_id: OptStr(),
+  source_refs: OptStrList(),
   symbol: OptStr(),
   term: OptStr(),
+  use_context: OptStr(),
   verbose: OptBool(),
-  view: OptStr()
+  view: OptStr(),
+  waiver_expires_at: OptStr(),
+  work_ref: OptStr()
 });
 
 const haftProblemParameters = Type.Object({
@@ -196,10 +219,11 @@ const haftNoteParameters = Type.Object({
 });
 
 const haftRefreshParameters = Type.Object({
-  action: enumOf("scan", "plan", "waive", "reopen", "supersede", "deprecate", "reconcile"),
+  action: enumOf("scan", "plan", "review", "drain", "waive", "reopen", "supersede", "deprecate", "reconcile"),
   artifact_ref: OptStr(),
   context: OptStr(),
   decision_ref: OptStr(),
+  dry_run: OptBool(),
   evidence: OptStr(),
   new_artifact_ref: OptStr(),
   new_decision_ref: OptStr(),
@@ -295,7 +319,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
   {
     name: "haft_query",
     label: "Haft Query",
-    description: "Read Haft governance state, code context, coverage, and FPF retrieval from the project kernel. Actions: 'search' (FTS), 'status' (dashboard), 'related' (decisions affecting a file), 'code_context', 'impact', 'projection' (audience views), 'list', 'coverage', 'fpf' (FPF spec retrieval).",
+    description: "Read Haft governance state, code context, coverage, and semantic drill-downs from the project kernel. Includes carrier, contract, spec, drift, reconciliation, governing-set, evidence-path, and value-space query actions.",
     promptSnippet: "Read Haft project governance state and code context through the local Haft kernel.",
     promptGuidelines: [
       "Use haft_query(action=\"status\") before open-ended Haft, FPF, or governed code work.",
@@ -340,7 +364,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
   {
     name: "haft_refresh",
     label: "Haft Refresh",
-    description: "Manage artifact lifecycle — detect stale items, extend validity, archive, replace, or find note-decision overlaps. Actions: 'scan' finds expired and evidence-degraded artifacts, 'waive' extends validity, 'reopen' starts a new problem cycle from a decision, 'supersede' replaces an artifact, 'deprecate' archives it, 'reconcile' finds note-decision overlaps.",
+    description: "Manage artifact lifecycle — scan stale/drift state, plan/review/drain maintenance, extend validity, archive, replace, or find note-decision overlaps.",
     parameters: haftRefreshParameters
   },
   {

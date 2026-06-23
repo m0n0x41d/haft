@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   deterministic JSON carrier for generated host/skill/plugin/Pi description
   fragments with source and carrier digests, so wording sync can be checked as
   generated artifact bytes without treating generated text as approval.
+- **Generated contract carrier drift checks.** `haft interface
+  contract-generation --check-schema-fragments <path>` and
+  `--check-description-fragments <path>` now compare materialized carrier files
+  with the current kernel interface catalog and fail on drift without rewriting
+  the files.
 - **Governing frontier snapshot digest.** `haft decision governing-set --json`
   and `haft_query(action="governing_set")` now include a stable
   `snapshot_digest` in the read-only snapshot metadata, so current-authority

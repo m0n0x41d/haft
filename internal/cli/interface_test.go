@@ -342,7 +342,7 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 		t.Fatalf("generated schema fragments = %d, summary = %#v", len(report.SchemaFragments), report.Summary)
 	}
 	notes := strings.Join(report.Notes, "\n")
-	for _, want := range []string{"--write-schema-fragments", "--write-description-fragments"} {
+	for _, want := range []string{"--write-schema-fragments", "--write-description-fragments", "--check-schema-fragments", "--check-description-fragments"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("contract_generation report notes missing %q:\n%s", want, notes)
 		}
@@ -535,6 +535,20 @@ func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testin
 	if contractGeneration.SchemaDigest == "" || !strings.HasPrefix(contractGeneration.SchemaDigest, "sha256:") {
 		t.Fatalf("contract_generation schema digest = %q", contractGeneration.SchemaDigest)
 	}
+
+	checkResult, err := checkInterfaceContractSchemaFragments(report, path)
+	if err != nil {
+		t.Fatalf("check materialized schema fragments: %v", err)
+	}
+	if !checkResult.Match {
+		t.Fatalf("schema carrier check did not match: %#v", checkResult)
+	}
+	if err := os.WriteFile(path, append(data, []byte("\n{\"drift\":true}\n")...), 0o644); err != nil {
+		t.Fatalf("corrupt materialized schema fragments: %v", err)
+	}
+	if _, err := checkInterfaceContractSchemaFragments(report, path); err == nil {
+		t.Fatalf("expected schema carrier drift check to fail after file corruption")
+	}
 }
 
 func TestInterfaceContractGenerationMaterializesDescriptionFragmentsCarrier(t *testing.T) {
@@ -588,6 +602,14 @@ func TestInterfaceContractGenerationMaterializesDescriptionFragmentsCarrier(t *t
 	}
 	if !strings.Contains(contractGeneration.AuthorityBoundary, "discovery only") {
 		t.Fatalf("contract_generation description authority boundary = %q", contractGeneration.AuthorityBoundary)
+	}
+
+	checkResult, err := checkInterfaceContractDescriptionFragments(report, path)
+	if err != nil {
+		t.Fatalf("check materialized description fragments: %v", err)
+	}
+	if !checkResult.Match {
+		t.Fatalf("description carrier check did not match: %#v", checkResult)
 	}
 }
 

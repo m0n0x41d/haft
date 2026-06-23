@@ -269,7 +269,11 @@ func currentGoverningTargetKind(targetRef string) string {
 		return "claim"
 	case strings.HasPrefix(targetRef, "spec-section:"):
 		return "spec_section"
+	case strings.HasPrefix(targetRef, "spec_section:"):
+		return "spec_section"
 	case strings.HasPrefix(targetRef, "api_contract:"):
+		return "api_contract"
+	case strings.HasPrefix(targetRef, "api-contract:"):
 		return "api_contract"
 	case strings.HasPrefix(targetRef, "invariant:"):
 		return "invariant"
@@ -277,6 +281,10 @@ func currentGoverningTargetKind(targetRef string) string {
 		return "symbol"
 	case strings.HasPrefix(targetRef, "whole_file_fallback:"):
 		return "whole_file_fallback"
+	case strings.HasPrefix(targetRef, "whole-file-fallback:"):
+		return "whole_file_fallback"
+	case strings.HasPrefix(targetRef, "file:"):
+		return "file_fallback"
 	case strings.HasPrefix(targetRef, "unscoped:"):
 		return "unscoped_decision"
 	default:
@@ -294,7 +302,11 @@ func currentGoverningExactRecordHint(targetRef string) string {
 		return "interface contract or exact API-contract carrier"
 	case "invariant":
 		return "decision invariant or evidence path detail"
+	case "symbol":
+		return "haft_query code_context/node for symbol plus governing-set filtered JSON"
 	case "whole_file_fallback":
+		return "scope enrichment selection before stronger use"
+	case "file_fallback":
 		return "scope enrichment selection before stronger use"
 	case "unscoped_decision":
 		return "decision scope enrichment before stronger use"

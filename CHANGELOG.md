@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Governing-set answer-path precision.** `haft decision governing-set --json`
+  now classifies exact answer paths for `spec_section`, API-contract, symbol,
+  fallback, file-fallback, and unscoped targets, with explicit read-only
+  drill-down hints for stronger-use review.
 - **Baseline audit tail-surface classification.** `haft baseline audit` now
   classifies agent lifecycle text, decision/commission skill references,
   parity action lists, legacy-binding tests, SpecSection projection/staleness

@@ -266,15 +266,51 @@ func TestCurrentGoverningTargetKindClassifiesExactAnswerTargets(t *testing.T) {
 		"dec-1#claim-a":                     "claim",
 		"claim:dec-1#claim-a":               "claim",
 		"spec-section:system-boundary":      "spec_section",
+		"spec_section:system-boundary":      "spec_section",
 		"api_contract:haft_query/status":    "api_contract",
+		"api-contract:haft_query/status":    "api_contract",
 		"invariant:decision-terminal-state": "invariant",
 		"symbol:internal/store.go::Save":    "symbol",
 		"whole_file_fallback:internal/x.go": "whole_file_fallback",
+		"whole-file-fallback:internal/x.go": "whole_file_fallback",
+		"file:internal/x.go":                "file_fallback",
 		"unscoped:dec-1":                    "unscoped_decision",
 	}
 	for targetRef, want := range cases {
 		if got := currentGoverningTargetKind(targetRef); got != want {
 			t.Fatalf("target kind for %q = %q, want %q", targetRef, got, want)
+		}
+	}
+}
+
+func TestCurrentGoverningSetAnswerPathsNameExactDrilldowns(t *testing.T) {
+	cases := map[string]string{
+		"claim:dec-1#claim-a":               "claim lifecycle/detail view",
+		"spec_section:system-boundary":      "haft spec section lifecycle/detail",
+		"api_contract:haft_query/status":    "interface contract or exact API-contract carrier",
+		"invariant:decision-terminal-state": "decision invariant or evidence path detail",
+		"symbol:internal/store.go::Save":    "haft_query code_context/node for symbol plus governing-set filtered JSON",
+		"whole_file_fallback:internal/x.go": "scope enrichment selection before stronger use",
+		"file:internal/x.go":                "scope enrichment selection before stronger use",
+		"unscoped:dec-1":                    "decision scope enrichment before stronger use",
+	}
+	for targetRef, want := range cases {
+		paths := currentGoverningSetAnswerPaths(targetRef)
+		if len(paths) != 1 {
+			t.Fatalf("answer paths for %q = %#v", targetRef, paths)
+		}
+		path := paths[0]
+		if path.TargetRef != targetRef {
+			t.Fatalf("answer path target_ref = %q, want %q", path.TargetRef, targetRef)
+		}
+		if !strings.Contains(path.CLI, "--target-ref") {
+			t.Fatalf("answer path cli = %q", path.CLI)
+		}
+		if !strings.Contains(path.MCPCall, "source_refs") {
+			t.Fatalf("answer path mcp_call = %q", path.MCPCall)
+		}
+		if path.ExactRecordNeeded != want {
+			t.Fatalf("answer path exact_record_needed for %q = %q, want %q", targetRef, path.ExactRecordNeeded, want)
 		}
 	}
 }

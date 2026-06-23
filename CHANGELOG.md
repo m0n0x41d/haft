@@ -41,6 +41,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   are now tested against `tools/list` action enums, required fields, and
   top-level properties so `contract_generation` cannot drift into a fantasy
   schema surface.
+- **Generated schema property fidelity.** `contract_generation`
+  `generated_schema_fragments` now copy the actual `tools/list` property schema
+  subsets for generated per-action fragments instead of placeholder field
+  descriptions.
 - **Contract-audit required-field parity.** `haft interface contract-audit` and
   `haft_query(action="contract_audit")` now report MCP `required` coverage for
   transport-level required fields, including missing required schema fields and

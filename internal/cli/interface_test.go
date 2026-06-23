@@ -416,6 +416,15 @@ func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
 		if actionProperty["const"] != fragment.MCPAction {
 			t.Fatalf("%s generated schema action const = %#v, want %q", fragment.CapabilityID, actionProperty["const"], fragment.MCPAction)
 		}
+		if fragment.CapabilityID == "decision.decide" {
+			selectedTitle, ok := schemaProperties["selected_title"].(map[string]any)
+			if !ok {
+				t.Fatalf("decision.decide generated schema selected_title property missing: %#v", schemaProperties)
+			}
+			if selectedTitle["type"] != "string" {
+				t.Fatalf("decision.decide selected_title generated schema = %#v, want tools/list string schema", selectedTitle)
+			}
+		}
 	}
 }
 

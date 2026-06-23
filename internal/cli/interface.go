@@ -1515,6 +1515,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	targets := make([]interfaceContractGenerationTarget, 0)
 	fragments := make([]interfaceContractGeneratedFragment, 0, len(audit.Surfaces))
 	schemaFragments := make([]interfaceContractGeneratedSchemaFragment, 0, audit.Summary.MCPMirroredActions)
+	toolSchemas := interfaceContractAuditToolSchemas()
 	capabilitiesByID := make(map[string]interfaceCapability, len(catalog))
 	for _, capability := range catalog {
 		capabilitiesByID[capability.ID] = capability
@@ -1524,7 +1525,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		capability := capabilitiesByID[surface.CapabilityID]
 		fragments = append(fragments, interfaceContractGeneratedFragmentFor(surface, capability))
 		if surface.MCPTool != "" && surface.MCPAction != "" {
-			schemaFragments = append(schemaFragments, interfaceContractGeneratedSchemaFragmentFor(surface, capability))
+			schemaFragments = append(schemaFragments, interfaceContractGeneratedSchemaFragmentFor(surface, capability, toolSchemas[surface.MCPTool]))
 		}
 
 		if len(surface.ShapeCoverage.GeneratorTargetFields) == 0 {
@@ -1672,6 +1673,7 @@ func interfaceContractGeneratedFragmentFor(
 func interfaceContractGeneratedSchemaFragmentFor(
 	surface interfaceContractAuditSurface,
 	capability interfaceCapability,
+	toolSchema interfaceContractAuditToolSchema,
 ) interfaceContractGeneratedSchemaFragment {
 	allowedFields := topLevelInterfaceContractFields(capability.InputContract)
 	requiredFields := interfaceContractAuditExpectedMCPRequiredFields(capability)
@@ -1689,7 +1691,7 @@ func interfaceContractGeneratedSchemaFragmentFor(
 	}
 	handlerValidated = uniqueSortedStrings(handlerValidated)
 
-	schema := interfaceContractGeneratedSchemaFor(surface, allowedFields, requiredFields)
+	schema := interfaceContractGeneratedSchemaFor(surface, allowedFields, requiredFields, toolSchema)
 	source := map[string]any{
 		"capability_id":            surface.CapabilityID,
 		"mcp_tool":                 surface.MCPTool,
@@ -1724,6 +1726,7 @@ func interfaceContractGeneratedSchemaFor(
 	surface interfaceContractAuditSurface,
 	allowedFields []string,
 	requiredFields []string,
+	toolSchema interfaceContractAuditToolSchema,
 ) map[string]any {
 	properties := make(map[string]any, len(allowedFields)+1)
 	properties["action"] = map[string]any{
@@ -1734,9 +1737,13 @@ func interfaceContractGeneratedSchemaFor(
 		if field == "action" {
 			continue
 		}
-		properties[field] = map[string]any{
-			"description": "shape validated by MCP schema mirror and kernel handler",
+		propertySchema, ok := cloneJSONLikeMap(toolSchema.Properties[field])
+		if !ok {
+			propertySchema = map[string]any{
+				"description": "shape validated by MCP schema mirror and kernel handler",
+			}
 		}
+		properties[field] = propertySchema
 	}
 	return map[string]any{
 		"type":                 "object",
@@ -1744,6 +1751,18 @@ func interfaceContractGeneratedSchemaFor(
 		"required":             requiredFields,
 		"properties":           properties,
 	}
+}
+
+func cloneJSONLikeMap(value any) (map[string]any, bool) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, false
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return nil, false
+	}
+	return decoded, true
 }
 
 func interfaceContractGeneratedFragmentText(surface interfaceContractAuditSurface) string {

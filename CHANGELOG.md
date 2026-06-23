@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contract-generation code-context budget guard.** Default
+  `haft_query(action="code_context")` regression tests now reject hidden
+  contract-generation manifest fragments so generated-schema drill-downs cannot
+  bloat normal code-context traces.
 - **Governing-set answer-path precision.** `haft decision governing-set --json`
   now classifies exact answer paths for `spec_section`, API-contract, symbol,
   fallback, file-fallback, and unscoped targets, with explicit read-only

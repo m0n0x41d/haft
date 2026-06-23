@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Contract-generation runtime schema audit.** `haft interface
+  contract-generation --json` and `haft_query(action="contract_generation")`
+  now include a read-only `runtime_schema_audit` that validates generated MCP
+  schema fragments against the live `ToolCatalog` action enum, required fields,
+  properties, and schema digests, while compact output keeps only mirror/drift
+  counts.
 - **Contract-generation materialized carrier manifest.** `haft interface
   contract-generation --json` and `haft_query(action="contract_generation")`
   now list materialized host/skill/plugin/Pi carrier files with source-contract,

@@ -1496,6 +1496,7 @@ type interfaceContractGenerationReport struct {
 	ValidationRefs  []string                                   `json:"validation_refs"`
 	Summary         interfaceContractGenerationSummary         `json:"summary"`
 	SurfacePolicy   interfaceContractGenerationPolicy          `json:"surface_policy"`
+	RuntimeAudit    interfaceContractRuntimeSchemaAudit        `json:"runtime_schema_audit"`
 	Targets         []interfaceContractGenerationTarget        `json:"targets"`
 	Carriers        []interfaceContractMaterializedCarrier     `json:"materialized_carriers"`
 	Fragments       []interfaceContractGeneratedFragment       `json:"generated_fragments"`
@@ -1583,6 +1584,8 @@ type interfaceContractGenerationSummary struct {
 	GeneratorTargetFields     int `json:"generator_target_fields"`
 	GeneratedPreviewFragments int `json:"generated_preview_fragments"`
 	GeneratedSchemaFragments  int `json:"generated_schema_fragments"`
+	RuntimeSchemaMirrors      int `json:"runtime_schema_mirrors"`
+	RuntimeSchemaDrift        int `json:"runtime_schema_drift"`
 	BindingPreviewFragments   int `json:"binding_preview_fragments"`
 	MaterializedCarriers      int `json:"materialized_carriers"`
 	DigestGuardedCarriers     int `json:"digest_guarded_carriers"`
@@ -1659,6 +1662,23 @@ type interfaceContractGeneratedSchemaFragment struct {
 	Schema                 map[string]any `json:"schema"`
 	SchemaDigest           string         `json:"schema_digest"`
 	ValidationRefs         []string       `json:"validation_refs"`
+}
+
+type interfaceContractRuntimeSchemaAudit struct {
+	Authority                   string   `json:"authority"`
+	Source                      string   `json:"source"`
+	Status                      string   `json:"status"`
+	RuntimeTools                int      `json:"runtime_tools"`
+	GeneratedSchemaFragments    int      `json:"generated_schema_fragments"`
+	RuntimeSchemaMirrors        int      `json:"runtime_schema_mirrors"`
+	RuntimeSchemaDrift          int      `json:"runtime_schema_drift"`
+	MissingRuntimeTools         []string `json:"missing_runtime_tools,omitempty"`
+	MissingRuntimeActionEnums   []string `json:"missing_runtime_action_enums,omitempty"`
+	MissingRuntimeProperties    []string `json:"missing_runtime_properties,omitempty"`
+	MissingRuntimeRequired      []string `json:"missing_runtime_required,omitempty"`
+	SchemaDigestMismatches      []string `json:"schema_digest_mismatches,omitempty"`
+	AdditionalPropertiesPosture string   `json:"additional_properties_posture"`
+	ValidationRefs              []string `json:"validation_refs"`
 }
 
 func isInterfaceContractAuditID(id string) bool {
@@ -1740,7 +1760,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		AuthorityGuardedCarriers:  countInterfaceContractAuthorityGuardedCarriers(carriers),
 	}
 
-	return interfaceContractGenerationReport{
+	report := interfaceContractGenerationReport{
 		Kind:            "haft_interface_contract_generation_manifest",
 		SchemaVersion:   1,
 		Authority:       "read_only_generation_manifest_not_host_materialization",
@@ -1756,6 +1776,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		Notes: []string{
 			"generated_fragments are derived from the kernel interface catalog; they are preview carriers for host/skill/plugin/Pi synchronization, not host materialization.",
 			"generated_schema_fragments are read-only per-action MCP schema fragments for validation and future host materialization; they do not mutate tools/list.",
+			"runtime_schema_audit validates generated_schema_fragments against the live MCP ToolCatalog action enum, required fields, properties, and schema digests.",
 			"targets list schema fields that still need generator work; an empty target queue means current MCP mirror coverage is complete, not that generated fragments are absent.",
 			"materialized_carriers names repo carriers that currently mirror generated contract fragments; sync_posture distinguishes source-digest guards from weaker authority-boundary-only guards.",
 			"use `haft interface contract-generation --write-schema-fragments <path>` to materialize generated_schema_fragments as a deterministic JSON carrier for host/schema sync checks.",
@@ -1766,6 +1787,11 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
 		},
 	}
+	report.RuntimeAudit = interfaceContractRuntimeSchemaAuditFor(report)
+	report.Summary.RuntimeSchemaMirrors = report.RuntimeAudit.RuntimeSchemaMirrors
+	report.Summary.RuntimeSchemaDrift = report.RuntimeAudit.RuntimeSchemaDrift
+
+	return report
 }
 
 func interfaceContractShouldGenerateSchemaFragment(surface interfaceContractAuditSurface) bool {
@@ -2347,6 +2373,149 @@ func interfaceContractGeneratedSchemaFor(
 		"required":             requiredFields,
 		"properties":           properties,
 	}
+}
+
+func interfaceContractRuntimeSchemaAuditFor(
+	report interfaceContractGenerationReport,
+) interfaceContractRuntimeSchemaAudit {
+	toolSchemas := interfaceContractAuditToolSchemas()
+	audit := interfaceContractRuntimeSchemaAudit{
+		Authority:                   "read_only_runtime_schema_validation_not_generation_authority",
+		Source:                      "live_mcp_tools_list_tool_catalog",
+		Status:                      "clean",
+		RuntimeTools:                len(toolSchemas),
+		GeneratedSchemaFragments:    len(report.SchemaFragments),
+		AdditionalPropertiesPosture: "preserved_from_runtime_mcp_schema; generated action fragments remain permissive for host compatibility",
+		ValidationRefs: []string{
+			"internal/cli/interface_test.go:TestInterfaceContractGenerationRuntimeSchemaAuditValidatesLiveToolCatalog",
+			"internal/cli/interface_test.go:TestInterfaceContractGenerationRuntimeSchemaAuditDetectsFragmentDrift",
+		},
+	}
+
+	for _, fragment := range report.SchemaFragments {
+		schema, ok := toolSchemas[fragment.MCPTool]
+		if !ok {
+			audit.MissingRuntimeTools = append(audit.MissingRuntimeTools, fragment.CapabilityID)
+			continue
+		}
+		if !interfaceContractRuntimeSchemaActionContains(schema, fragment.MCPAction) {
+			audit.MissingRuntimeActionEnums = append(audit.MissingRuntimeActionEnums, fragment.CapabilityID)
+		}
+		audit.MissingRuntimeProperties = append(audit.MissingRuntimeProperties, interfaceContractRuntimeMissingProperties(fragment, schema)...)
+		audit.MissingRuntimeRequired = append(audit.MissingRuntimeRequired, interfaceContractRuntimeMissingRequired(fragment, schema)...)
+		if interfaceContractRuntimeSchemaDigest(fragment, schema) != fragment.SchemaDigest {
+			audit.SchemaDigestMismatches = append(audit.SchemaDigestMismatches, fragment.CapabilityID)
+		}
+	}
+
+	audit.MissingRuntimeTools = uniqueSortedStrings(audit.MissingRuntimeTools)
+	audit.MissingRuntimeActionEnums = uniqueSortedStrings(audit.MissingRuntimeActionEnums)
+	audit.MissingRuntimeProperties = uniqueSortedStrings(audit.MissingRuntimeProperties)
+	audit.MissingRuntimeRequired = uniqueSortedStrings(audit.MissingRuntimeRequired)
+	audit.SchemaDigestMismatches = uniqueSortedStrings(audit.SchemaDigestMismatches)
+	audit.RuntimeSchemaDrift = len(audit.MissingRuntimeTools) +
+		len(audit.MissingRuntimeActionEnums) +
+		len(audit.MissingRuntimeProperties) +
+		len(audit.MissingRuntimeRequired) +
+		len(audit.SchemaDigestMismatches)
+	audit.RuntimeSchemaMirrors = audit.GeneratedSchemaFragments - audit.RuntimeSchemaDrift
+	if audit.RuntimeSchemaMirrors < 0 {
+		audit.RuntimeSchemaMirrors = 0
+	}
+	if audit.RuntimeSchemaDrift != 0 {
+		audit.Status = "drift"
+	}
+
+	return audit
+}
+
+func interfaceContractRuntimeMissingProperties(
+	fragment interfaceContractGeneratedSchemaFragment,
+	schema interfaceContractAuditToolSchema,
+) []string {
+	missing := make([]string, 0)
+	for _, field := range fragment.AllowedTopLevelFields {
+		if field == "action" {
+			continue
+		}
+		if _, ok := schema.Properties[field]; ok {
+			continue
+		}
+		missing = append(missing, fragment.CapabilityID+"."+field)
+	}
+	return missing
+}
+
+func interfaceContractRuntimeMissingRequired(
+	fragment interfaceContractGeneratedSchemaFragment,
+	schema interfaceContractAuditToolSchema,
+) []string {
+	missing := make([]string, 0)
+	for _, field := range fragment.RequiredFields {
+		if schema.Required[field] {
+			continue
+		}
+		missing = append(missing, fragment.CapabilityID+"."+field)
+	}
+	return missing
+}
+
+func interfaceContractRuntimeSchemaDigest(
+	fragment interfaceContractGeneratedSchemaFragment,
+	schema interfaceContractAuditToolSchema,
+) string {
+	surface := interfaceContractAuditSurface{
+		MCPAction: fragment.MCPAction,
+	}
+	generated := interfaceContractGeneratedSchemaFor(
+		surface,
+		fragment.AllowedTopLevelFields,
+		fragment.RequiredFields,
+		schema,
+	)
+	return interfaceContractGenerationDigest(generated)
+}
+
+func interfaceContractRuntimeSchemaActionContains(
+	schema interfaceContractAuditToolSchema,
+	action string,
+) bool {
+	actionSchema, ok := schema.Properties["action"]
+	if !ok {
+		return false
+	}
+	values := stringEnumFromSchemaProperty(actionSchema)
+	for _, value := range values {
+		if value == action {
+			return true
+		}
+	}
+	return false
+}
+
+func stringEnumFromSchemaProperty(value interface{}) []string {
+	property, ok := value.(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	rawEnum, ok := property["enum"]
+	if !ok {
+		return nil
+	}
+
+	result := make([]string, 0)
+	switch typed := rawEnum.(type) {
+	case []string:
+		result = append(result, typed...)
+	case []interface{}:
+		for _, item := range typed {
+			text, ok := item.(string)
+			if ok && text != "" {
+				result = append(result, text)
+			}
+		}
+	}
+	return uniqueSortedStrings(result)
 }
 
 func cloneJSONLikeMap(value any) (map[string]any, bool) {
@@ -3220,12 +3389,14 @@ func writeInterfaceContractGenerationText(output io.Writer, report interfaceCont
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d generated_schema_fragments=%d binding_preview_fragments=%d materialized_carriers=%d digest_guarded_carriers=%d authority_boundary_guarded_carriers=%d validation_refs=%d\n",
+		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d generated_schema_fragments=%d runtime_schema_mirrors=%d runtime_schema_drift=%d binding_preview_fragments=%d materialized_carriers=%d digest_guarded_carriers=%d authority_boundary_guarded_carriers=%d validation_refs=%d\n",
 		report.Summary.Capabilities,
 		report.Summary.GeneratorTargetSurfaces,
 		report.Summary.GeneratorTargetFields,
 		report.Summary.GeneratedPreviewFragments,
 		report.Summary.GeneratedSchemaFragments,
+		report.Summary.RuntimeSchemaMirrors,
+		report.Summary.RuntimeSchemaDrift,
 		report.Summary.BindingPreviewFragments,
 		report.Summary.MaterializedCarriers,
 		report.Summary.DigestGuardedCarriers,

@@ -447,6 +447,49 @@ func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
 	}
 }
 
+func TestInterfaceContractGenerationRuntimeSchemaAuditValidatesLiveToolCatalog(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	if report.RuntimeAudit.Authority != "read_only_runtime_schema_validation_not_generation_authority" {
+		t.Fatalf("runtime audit authority = %q", report.RuntimeAudit.Authority)
+	}
+	if report.RuntimeAudit.Status != "clean" {
+		t.Fatalf("runtime audit status = %q, audit = %#v", report.RuntimeAudit.Status, report.RuntimeAudit)
+	}
+	if report.RuntimeAudit.RuntimeSchemaMirrors != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("runtime mirrors = %d, summary = %#v", report.RuntimeAudit.RuntimeSchemaMirrors, report.Summary)
+	}
+	if report.Summary.RuntimeSchemaMirrors != report.RuntimeAudit.RuntimeSchemaMirrors {
+		t.Fatalf("summary runtime mirrors = %d, audit = %d", report.Summary.RuntimeSchemaMirrors, report.RuntimeAudit.RuntimeSchemaMirrors)
+	}
+	if report.Summary.RuntimeSchemaDrift != 0 {
+		t.Fatalf("summary runtime drift = %d, audit = %#v", report.Summary.RuntimeSchemaDrift, report.RuntimeAudit)
+	}
+	if len(report.RuntimeAudit.ValidationRefs) == 0 {
+		t.Fatalf("runtime audit validation refs missing")
+	}
+}
+
+func TestInterfaceContractGenerationRuntimeSchemaAuditDetectsFragmentDrift(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.SchemaFragments) == 0 {
+		t.Fatal("expected generated schema fragments")
+	}
+	report.SchemaFragments[0].SchemaDigest = "sha256:stale"
+
+	audit := interfaceContractRuntimeSchemaAuditFor(report)
+
+	if audit.Status != "drift" {
+		t.Fatalf("runtime audit status = %q, want drift", audit.Status)
+	}
+	if audit.RuntimeSchemaDrift == 0 {
+		t.Fatalf("runtime audit did not count drift: %#v", audit)
+	}
+	if !stringSliceContains(audit.SchemaDigestMismatches, report.SchemaFragments[0].CapabilityID) {
+		t.Fatalf("runtime audit mismatches = %#v, want %q", audit.SchemaDigestMismatches, report.SchemaFragments[0].CapabilityID)
+	}
+}
+
 func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 

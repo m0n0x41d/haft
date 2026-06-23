@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Host receipt verifier boundary.** Authorization receipt evaluation now has
+  an explicit source-keyed host verifier registry: structurally complete host
+  receipts still fail closed unless a kernel verifier is registered, and tests
+  cover verifier success, denial, and malformed verifier results.
 - **Baseline audit typed-legacy precision.** `haft baseline audit` now treats
   explicit `UnknownLegacyBaseline` compatibility model references as typed
   baseline model surface and classifies SQL onboarding missing-baseline test

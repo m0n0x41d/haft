@@ -42,7 +42,37 @@ type Evaluation struct {
 	Reason       string `json:"reason"`
 }
 
+type HostReceiptVerifier interface {
+	VerifyHostReceipt(now time.Time, receipt Receipt, action BindingAction) HostReceiptVerification
+}
+
+type HostReceiptVerifierFunc func(time.Time, Receipt, BindingAction) HostReceiptVerification
+
+func (f HostReceiptVerifierFunc) VerifyHostReceipt(
+	now time.Time,
+	receipt Receipt,
+	action BindingAction,
+) HostReceiptVerification {
+	return f(now, receipt, action)
+}
+
+type HostReceiptVerification struct {
+	Valid  bool
+	Reason string
+}
+
+type HostReceiptVerifierRegistry map[string]HostReceiptVerifier
+
 func EvaluateReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
+	return EvaluateReceiptWithHostVerifiers(now, receipt, action, nil)
+}
+
+func EvaluateReceiptWithHostVerifiers(
+	now time.Time,
+	receipt Receipt,
+	action BindingAction,
+	verifiers HostReceiptVerifierRegistry,
+) Evaluation {
 	if strings.TrimSpace(receipt.Kind) == "" {
 		return Evaluation{
 			Status:       ReceiptStatusMissing,
@@ -55,7 +85,7 @@ func EvaluateReceipt(now time.Time, receipt Receipt, action BindingAction) Evalu
 	case ReceiptKindManualCLI:
 		return evaluateManualCLIReceipt(now, receipt, action)
 	case ReceiptKindHost:
-		return evaluateHostReceipt(now, receipt, action)
+		return evaluateHostReceipt(now, receipt, action, verifiers)
 	case ReceiptKindModel:
 		return Evaluation{
 			Status:       ReceiptStatusUnsupportedFuture,
@@ -103,7 +133,12 @@ func evaluateManualCLIReceipt(now time.Time, receipt Receipt, action BindingActi
 	}
 }
 
-func evaluateHostReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
+func evaluateHostReceipt(
+	now time.Time,
+	receipt Receipt,
+	action BindingAction,
+	verifiers HostReceiptVerifierRegistry,
+) Evaluation {
 	required := ReceiptKindHost
 	if strings.TrimSpace(receipt.Source) == "" {
 		return invalid(required, "host receipt is missing verifier source")
@@ -137,10 +172,28 @@ func evaluateHostReceipt(now time.Time, receipt Receipt, action BindingAction) E
 		return invalid(required, "host receipt is expired")
 	}
 
+	source := strings.TrimSpace(receipt.Source)
+	verifier, ok := verifiers[source]
+	if !ok || verifier == nil {
+		return Evaluation{
+			Status:       ReceiptStatusUnsupportedFuture,
+			RequiredKind: required,
+			Reason:       "host receipt is structurally complete, but no kernel verifier is registered for source " + source,
+		}
+	}
+
+	verification := verifier.VerifyHostReceipt(now, receipt, action)
+	reason := strings.TrimSpace(verification.Reason)
+	if reason == "" {
+		return invalid(required, "host receipt verifier returned no reason")
+	}
+	if !verification.Valid {
+		return invalid(required, reason)
+	}
 	return Evaluation{
-		Status:       ReceiptStatusUnsupportedFuture,
+		Status:       ReceiptStatusValid,
 		RequiredKind: required,
-		Reason:       "host receipt is structurally complete, but no kernel verifier is registered for source " + strings.TrimSpace(receipt.Source),
+		Reason:       reason,
 	}
 }
 

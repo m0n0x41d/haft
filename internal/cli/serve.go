@@ -2094,7 +2094,11 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if err != nil {
 			return "", fmt.Errorf("scan drift: %w", err)
 		}
-		record := artifact.BuildDriftEventReport(reports)
+		ledger, err := readDriftEventResolutionLedger(driftEventResolutionLedgerPath(projectRoot, ""))
+		if err != nil {
+			return "", err
+		}
+		record := buildDriftEventReportWithResolutionLedger(reports, ledger, timeNow())
 		full, _ := args["full"].(bool)
 		if !full {
 			record = artifact.CompactDriftEventReport(record, driftEventsSummaryEventLimit)

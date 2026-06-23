@@ -190,18 +190,26 @@ func runDriftEvents(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("scan drift: %w", err)
 	}
-	eventReport := artifact.BuildDriftEventReport(reports)
 	ledger, err := readDriftEventResolutionLedger(driftEventResolutionLedgerPath(projectRoot, driftEventsLedger))
 	if err != nil {
 		return err
 	}
-	eventReport = artifact.ApplyDriftEventResolutionLedger(eventReport, ledger, timeNow())
+	eventReport := buildDriftEventReportWithResolutionLedger(reports, ledger, timeNow())
 
 	if driftEventsJSON {
 		return writeJSON(cmd.OutOrStdout(), eventReport)
 	}
 
 	return writeDriftEventsSummary(cmd.OutOrStdout(), eventReport)
+}
+
+func buildDriftEventReportWithResolutionLedger(
+	reports []artifact.DriftReport,
+	ledger artifact.DriftEventResolutionLedger,
+	now time.Time,
+) artifact.DriftEventReport {
+	eventReport := artifact.BuildDriftEventReport(reports)
+	return artifact.ApplyDriftEventResolutionLedger(eventReport, ledger, now)
 }
 
 func runDriftEventsResolve(cmd *cobra.Command, args []string) error {

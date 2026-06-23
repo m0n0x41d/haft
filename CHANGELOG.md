@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **MCP DriftEvent resolution ledger parity.** `haft_query(action="drift_events")`
+  now applies the same default `.haft/drift-event-resolutions.json` read-only
+  overlay as `haft drift events`, so resolved or unexpired waived DriftEvents
+  are not reported as open through MCP while remaining non-binding metadata.
 - **DriftEvent scope-manifest root cause.** Scope-manifest adjacent file churn
   now reports `root_cause=implementation_footprint_churn` instead of
   `schema_changed`, while material scope-manifest events keep the

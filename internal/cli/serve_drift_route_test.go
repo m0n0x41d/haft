@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
@@ -119,6 +121,75 @@ func TestHandleQuintQuery_DriftEventsReturnsFanoutProjection(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuery_DriftEventsAppliesDefaultResolutionLedger(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seed := seedGovernanceDebt(t, fixture)
+
+	initialResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "drift_events",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery drift_events initial returned error: %v", err)
+	}
+
+	var initialReport artifact.DriftEventReport
+	if err := json.Unmarshal([]byte(initialResult), &initialReport); err != nil {
+		t.Fatalf("decode initial drift event report: %v\n%s", err, initialResult)
+	}
+	event, ok := serveDriftEventsEventMentioningDecision(initialReport, seed.driftID)
+	if !ok {
+		t.Fatalf("initial drift events do not mention seeded drift decision %s: %#v", seed.driftID, initialReport.Events)
+	}
+
+	now := timeNow()
+	record := artifact.BindDriftEventResolutionToEvent(artifact.DriftEventResolution{
+		EventID:      event.EventID,
+		Status:       artifact.DriftEventResolutionResolved,
+		Reason:       "verified additive-only in focused regression fixture",
+		EvidenceRefs: []string{"test:evidence"},
+		RecordedAt:   now.Format(time.RFC3339),
+		RecordedBy:   "serve_drift_route_test",
+	}, event)
+	ledger, err := artifact.UpsertDriftEventResolution(
+		artifact.NewDriftEventResolutionLedger(nil),
+		record,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("upsert drift event resolution: %v", err)
+	}
+	if err := writeDriftEventResolutionLedger(driftEventResolutionLedgerPath(filepath.Dir(fixture.haftDir), ""), ledger); err != nil {
+		t.Fatalf("write drift event resolution ledger: %v", err)
+	}
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "drift_events",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery drift_events returned error: %v", err)
+	}
+
+	var report artifact.DriftEventReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode drift event report: %v\n%s", err, result)
+	}
+	if report.Summary.ResolvedByLedgerEvents != 1 {
+		t.Fatalf("resolved_by_ledger_events = %d, want 1", report.Summary.ResolvedByLedgerEvents)
+	}
+	resolvedEvent, ok := serveDriftEventsEventMentioningDecision(report, seed.driftID)
+	if !ok {
+		t.Fatalf("resolved drift events do not mention seeded drift decision %s: %#v", seed.driftID, report.Events)
+	}
+	if resolvedEvent.ResolutionStatus != artifact.DriftEventResolutionResolved {
+		t.Fatalf("resolution_status = %q, want resolved", resolvedEvent.ResolutionStatus)
+	}
+	if resolvedEvent.ResolutionRecord == nil {
+		t.Fatal("resolution_record missing")
+	}
+}
+
 func serveDriftRouteHasAction(route artifact.SemanticDriftRoute, action string) bool {
 	for _, candidate := range route.CandidateRepairActions {
 		if candidate == action {
@@ -138,6 +209,20 @@ func serveDriftEventsMentionDecision(report artifact.DriftEventReport, decisionI
 		}
 	}
 	return false
+}
+
+func serveDriftEventsEventMentioningDecision(
+	report artifact.DriftEventReport,
+	decisionID string,
+) (artifact.DriftEvent, bool) {
+	for _, event := range report.Events {
+		for _, decision := range event.ImpactedDecisions {
+			if decision.DecisionID == decisionID {
+				return event, true
+			}
+		}
+	}
+	return artifact.DriftEvent{}, false
 }
 
 func serveDriftEventsHasSourceItems(report artifact.DriftEventReport) bool {

@@ -11,7 +11,10 @@ import (
 func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	root := t.TempDir()
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline.go", "const profile = \"spec_section_approval_baseline\"\n")
-	writeBaselineAuditFixture(t, root, "internal/artifact/decision.go", "const baselineProfile = \"verified_state_snapshot\"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/decision.go", strings.Join([]string{
+		"const baselineProfile = \"verified_state_snapshot\"",
+		"type BaselineInput struct{}",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
 	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
@@ -41,8 +44,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 1 {
 		t.Fatalf("spec approval count = %d, want 1", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 1 {
-		t.Fatalf("verified state count = %d, want 1", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 2 {
+		t.Fatalf("verified state count = %d, want 2", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 1 {
 		t.Fatalf("comparison count = %d, want 1", report.Summary.ComparisonOrBenchmark)
@@ -136,7 +139,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		Summary: baselineTermAuditSummary{
 			FilesScanned:                2,
 			MatchedLines:                2,
-			VerifiedStateSnapshot:       1,
+			VerifiedStateSnapshot:       2,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
@@ -171,7 +174,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	for _, want := range []string{
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
-		"verified_state=1",
+		"verified_state=2",
 		"historical_governance=1",
 		"support_archive=1",
 		"source_spec=1",

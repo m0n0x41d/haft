@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit verified-state vocabulary.** `haft baseline audit` now
+  recognizes decision drift/file-hash baseline vocabulary such as
+  `BaselineInput`, `HasBaseline`, `DriftNoBaseline`, stored baseline hashes,
+  and symbol-level baselines as verified-state snapshot terminology.
 - **Baseline audit self-surface classification.** `haft baseline audit` now
   classifies the audit command implementation and its tests as a dedicated
   audit-tool surface, so classifier vocabulary does not report itself as

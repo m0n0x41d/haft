@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecUse currentness vocabulary.** `haft baseline audit` now
+  classifies SpecificationUse baseline currentness and admission terminology
+  separately from legacy ambiguous baseline debt.
 - **Baseline audit autonomous-maintenance vocabulary.** `haft baseline audit`
   now classifies auto-baseline, auto-rebaseline, maintenance undo, and baseline
   snapshot/restore terminology separately from legacy ambiguous baseline debt.

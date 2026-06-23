@@ -42,6 +42,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"type BaselineSnapshot struct{}",
 		"AutoBaselineCandidates++",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/project/specflow/use.go", strings.Join([]string{
+		"BaselineCurrentness SpecificationUseCurrentness `json:\"baseline_currentness\"`",
+		"status = SpecUseBaselineMissing",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -124,6 +128,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.AutonomousMaintenanceFiles != 1 {
 		t.Fatalf("autonomous maintenance files = %d, want 1", report.Summary.AutonomousMaintenanceFiles)
 	}
+	if report.Summary.SpecUseCurrentness != 2 {
+		t.Fatalf("spec use currentness count = %d, want 2", report.Summary.SpecUseCurrentness)
+	}
+	if report.Summary.SpecUseCurrentnessFiles != 1 {
+		t.Fatalf("spec use currentness files = %d, want 1", report.Summary.SpecUseCurrentnessFiles)
+	}
 	if report.Summary.LegacyAmbiguousBaseline != 2 {
 		t.Fatalf("legacy ambiguous count = %d, want 2", report.Summary.LegacyAmbiguousBaseline)
 	}
@@ -180,6 +190,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			AuditToolSurface:            1,
 			TestFixtureSurface:          1,
 			AutonomousMaintenance:       2,
+			SpecUseCurrentness:          2,
 			LegacyAmbiguousBaseline:     2,
 			LegacyAmbiguousFiles:        2,
 		},
@@ -219,6 +230,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"audit_tool=1",
 		"test_fixture=1",
 		"autonomous_maintenance=2",
+		"spec_use_currentness=2",
 		"legacy_ambiguous=2",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 2 legacy ambiguous baseline line(s) across 2 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

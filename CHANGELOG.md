@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit skill/guardrail surface classification.** `haft baseline
+  audit` now classifies `h-spec`, `h-verify`, and agent guardrail baseline
+  wording as current lifecycle/verification surfaces instead of legacy
+  ambiguous baseline debt.
 - **Baseline audit verification/run snapshot classification.** `haft baseline
   audit` now classifies verification-pass baseline fields and `haft run`
   baseline-phase output as verified-state snapshot terminology.

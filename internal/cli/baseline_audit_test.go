@@ -104,6 +104,21 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"func BaselineResponse(decisionTitle string, decisionRef string, files []artifact.AffectedFile, navStrip string) string {",
 		`sb.WriteString("No drift detected. All baselined decisions match current file state.\n")`,
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-spec/SKILL.md", strings.Join([]string{
+		"Primary spec lifecycle interface for a haft project.",
+		"`rebaseline` and `reopen` are mutation commands.",
+		"baseline state should change.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-verify/SKILL.md", strings.Join([]string{
+		"baseline-vs-measure evidence loop with drift detection.",
+		"## Step 3 — Baseline (if drift detection wanted)",
+		"Do NOT skip baseline if the decision has affected_files.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/agent/guardrails.go", strings.Join([]string{
+		"Guidance: \"This cycle already has a recorded decision. Run baseline/measure on that decision.\"",
+		"// CanBaseline checks if haft_decision(baseline) is allowed.",
+		`Tool: "haft_decision(baseline)",`,
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -123,8 +138,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 7 {
 		t.Fatalf("spec approval count = %d, want 7", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 14 {
-		t.Fatalf("verified state count = %d, want 14", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 17 {
+		t.Fatalf("verified state count = %d, want 17", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 3 {
 		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)
@@ -156,11 +171,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 5 {
-		t.Fatalf("lifecycle authority count = %d, want 5", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 10 {
+		t.Fatalf("lifecycle authority count = %d, want 10", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 4 {
-		t.Fatalf("lifecycle authority files = %d, want 4", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 6 {
+		t.Fatalf("lifecycle authority files = %d, want 6", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)

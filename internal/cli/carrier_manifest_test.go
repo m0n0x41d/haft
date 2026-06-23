@@ -198,6 +198,37 @@ func TestCarrierCheckGeneratedSurfacesIncludeMCPToolsListCatalog(t *testing.T) {
 	}
 }
 
+func TestCarrierCheckGeneratedSurfacesIncludeContractGenerationFragments(t *testing.T) {
+	surfaces := carrierCheckGeneratedSurfaces()
+	previewFound := false
+	schemaFound := false
+
+	for _, surface := range surfaces {
+		switch surface.Path {
+		case "generated/contract-generation/preview/query.contract_generation":
+			previewFound = true
+			if !strings.Contains(surface.Content, "read-only/generated text is discovery only") {
+				t.Fatalf("contract_generation preview surface missing authority boundary: %q", surface.Content)
+			}
+		case "generated/contract-generation/schema/query.contract_generation":
+			schemaFound = true
+			for _, want := range []string{
+				"schema fragment is read-only validation material",
+				"contract_generation",
+				"sha256:",
+			} {
+				if !strings.Contains(surface.Content, want) {
+					t.Fatalf("contract_generation schema surface missing %q: %q", want, surface.Content)
+				}
+			}
+		}
+	}
+
+	if !previewFound || !schemaFound {
+		t.Fatalf("generated contract-generation surfaces missing preview=%v schema=%v: %#v", previewFound, schemaFound, surfaces)
+	}
+}
+
 func TestCarrierCheckMCPToolSurfaceFlagsAuthorityGrantWording(t *testing.T) {
 	text := carrierCheckMCPToolSurfaceText(fpf.Tool{
 		Name:        "haft_bad",

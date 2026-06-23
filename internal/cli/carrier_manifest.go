@@ -127,7 +127,8 @@ func runCarrierCheck(cmd *cobra.Command, args []string) error {
 func carrierCheckGeneratedSurfaces() []project.CarrierSemioVirtualText {
 	capabilities := haftInterfaceCatalog()
 	tools := carrierCheckMCPToolCatalog()
-	surfaces := make([]project.CarrierSemioVirtualText, 0, len(capabilities)+len(tools))
+	generatedContracts := carrierCheckContractGenerationSurfaces(capabilities)
+	surfaces := make([]project.CarrierSemioVirtualText, 0, len(capabilities)+len(tools)+len(generatedContracts))
 	for _, capability := range capabilities {
 		surfaces = append(surfaces, project.CarrierSemioVirtualText{
 			Path:    "generated/interface/" + capability.ID,
@@ -140,6 +141,7 @@ func carrierCheckGeneratedSurfaces() []project.CarrierSemioVirtualText {
 			Content: carrierCheckMCPToolSurfaceText(tool),
 		})
 	}
+	surfaces = append(surfaces, generatedContracts...)
 	return surfaces
 }
 
@@ -158,6 +160,63 @@ func carrierCheckMCPToolSurfaceText(tool fpf.Tool) string {
 	builder.WriteString(tool.Description)
 	builder.WriteByte('\n')
 	writeCarrierCheckSchemaDescriptions(&builder, tool.InputSchema)
+	return builder.String()
+}
+
+func carrierCheckContractGenerationSurfaces(capabilities []interfaceCapability) []project.CarrierSemioVirtualText {
+	report := buildInterfaceContractGenerationReport(capabilities)
+	surfaces := make([]project.CarrierSemioVirtualText, 0, len(report.Fragments)+len(report.SchemaFragments))
+
+	for _, fragment := range report.Fragments {
+		surfaces = append(surfaces, project.CarrierSemioVirtualText{
+			Path:    "generated/contract-generation/preview/" + fragment.CapabilityID,
+			Content: carrierCheckGeneratedFragmentSurfaceText(fragment),
+		})
+	}
+	for _, fragment := range report.SchemaFragments {
+		surfaces = append(surfaces, project.CarrierSemioVirtualText{
+			Path:    "generated/contract-generation/schema/" + fragment.CapabilityID,
+			Content: carrierCheckGeneratedSchemaSurfaceText(fragment),
+		})
+	}
+	return surfaces
+}
+
+func carrierCheckGeneratedFragmentSurfaceText(fragment interfaceContractGeneratedFragment) string {
+	var builder strings.Builder
+	builder.WriteString(fragment.CapabilityID)
+	builder.WriteByte('\n')
+	builder.WriteString(fragment.FragmentKind)
+	builder.WriteByte('\n')
+	builder.WriteString(fragment.AuthorityBoundary)
+	builder.WriteByte('\n')
+	builder.WriteString(fragment.GeneratedText)
+	builder.WriteByte('\n')
+	for _, ref := range fragment.ValidationRefs {
+		builder.WriteString(ref)
+		builder.WriteByte('\n')
+	}
+	return builder.String()
+}
+
+func carrierCheckGeneratedSchemaSurfaceText(fragment interfaceContractGeneratedSchemaFragment) string {
+	var builder strings.Builder
+	builder.WriteString(fragment.CapabilityID)
+	builder.WriteByte('\n')
+	builder.WriteString(fragment.FragmentKind)
+	builder.WriteByte('\n')
+	builder.WriteString(fragment.AuthorityBoundary)
+	builder.WriteByte('\n')
+	builder.WriteString(fragment.SchemaDigest)
+	builder.WriteByte('\n')
+	for _, field := range fragment.AllowedTopLevelFields {
+		builder.WriteString(field)
+		builder.WriteByte('\n')
+	}
+	for _, field := range fragment.ActionRequiredFields {
+		builder.WriteString(field)
+		builder.WriteByte('\n')
+	}
 	return builder.String()
 }
 

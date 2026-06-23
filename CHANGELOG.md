@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit verified-state decision vocabulary.** `haft baseline audit`
+  now recognizes remaining DecisionRecord drift, symbol-baseline, CL3
+  verification-pass, and baseline-test wording as verified-state snapshot
+  terminology.
 - **Baseline audit parity BaselineSet classification.** `haft baseline audit`
   now recognizes camel-case `BaselineSet` and parity-plan baseline wording as
   comparison/benchmark baseline terminology.

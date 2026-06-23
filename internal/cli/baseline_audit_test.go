@@ -25,6 +25,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"logger.Debug().Msg(\"baseline.complete\")",
 		"func noBaselineMateriality() {}",
 		"baselineSymbolsByFile := groupSymbolsByFile(nil)",
+		"baselinedFiles := make(map[string]struct{})",
+		"`Run haft_decision(action=\"baseline\") first for CL3 scoring.`",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/verification.go", strings.Join([]string{
+		"// VerificationPassResult returns the baseline snapshot and linked evidence item.",
+		`fmt.Sprintf("Baselined files (%d): %s", len(paths), strings.Join(paths, ", "))`,
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
 	writeBaselineAuditFixture(t, root, "internal/fpf/tree_drilldown_test.go", "baselineResults, err := SearchSpecWithOptions(db, query, opts)\n")
@@ -93,8 +99,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 5 {
 		t.Fatalf("spec approval count = %d, want 5", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 5 {
-		t.Fatalf("verified state count = %d, want 5", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 9 {
+		t.Fatalf("verified state count = %d, want 9", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 3 {
 		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)
@@ -225,7 +231,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			FilesScanned:                2,
 			MatchedLines:                2,
 			SpecSectionApprovalBaseline: 5,
-			VerifiedStateSnapshot:       5,
+			VerifiedStateSnapshot:       9,
 			ComparisonOrBenchmark:       3,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
@@ -268,7 +274,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"spec_approval=5",
-		"verified_state=5",
+		"verified_state=9",
 		"comparison=3",
 		"historical_governance=1",
 		"support_archive=1",

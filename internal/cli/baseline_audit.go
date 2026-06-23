@@ -426,6 +426,15 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"beat baseline",
 		"against baseline",
 		"simpler baseline",
+		"baseline search",
+		"baseline results",
+		"baselineresults",
+		"baselinehits",
+		"topbaseline",
+		"baselinehierarchy",
+		"deterministic golden coverage",
+		"baseline search error",
+		"baseline search unexpectedly",
 	):
 		return baselineAuditComparison, "uses baseline as a comparison or benchmark reference"
 	case containsAnyBaselineTerm(value,

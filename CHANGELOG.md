@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit retrieval benchmark vocabulary.** `haft baseline audit` now
+  recognizes deterministic retrieval/golden baseline terms such as
+  `baselineResults`, `baselineHits`, `topBaseline`, and baseline search errors
+  as comparison/benchmark terminology.
 - **Baseline audit SpecSection lifecycle handler surface.** `haft baseline
   audit` now classifies remaining `internal/cli/serve_spec_section.go`
   lifecycle helper vocabulary such as `baselineMutation` and `baselineContext`

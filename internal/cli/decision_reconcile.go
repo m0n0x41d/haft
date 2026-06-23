@@ -18,6 +18,7 @@ var (
 	decisionReconcileApplyJSON     bool
 	decisionReconcileMetricsJSON   bool
 	decisionReconcileDraftJSON     bool
+	decisionReconcileReviewJSON    bool
 	decisionReconcileDraftLimit    int
 	decisionReconcileDraftGroupID  string
 	decisionReconcileDraftDecision string
@@ -82,6 +83,16 @@ authority=operator_approved_reconciliation_selection.`,
 	RunE: runDecisionReconcileSelectionDraft,
 }
 
+var decisionReconcileSelectionReviewCmd = &cobra.Command{
+	Use:   "selection-review SELECTION_JSON",
+	Short: "Review a reconciliation selection document without applying it",
+	Long: `Review a reconciliation selection document against the same core validation
+used by apply. This command is read-only: it does not create operator approval
+and does not mutate decisions, links, evidence, baselines, gates, or carriers.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDecisionReconcileSelectionReview,
+}
+
 var decisionGoverningSetCmd = &cobra.Command{
 	Use:   "governing-set",
 	Short: "Build a read-only current governing set projection",
@@ -102,6 +113,7 @@ func init() {
 	decisionReconcileApplyCmd.Flags().BoolVar(&decisionReconcileApplyJSON, "json", false, "print structured JSON output")
 	decisionReconcileMetricsCmd.Flags().BoolVar(&decisionReconcileMetricsJSON, "json", false, "print structured JSON output")
 	decisionReconcileSelectionDraftCmd.Flags().BoolVar(&decisionReconcileDraftJSON, "json", false, "print structured JSON output")
+	decisionReconcileSelectionReviewCmd.Flags().BoolVar(&decisionReconcileReviewJSON, "json", false, "print structured JSON output")
 	decisionReconcileSelectionDraftCmd.Flags().IntVar(&decisionReconcileDraftLimit, "limit", 0, "limit emitted draft candidates without approving or applying them")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftGroupID, "group-id", "", "emit draft candidates only for this reconciliation group id")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftDecision, "decision-ref", "", "emit draft candidates only for this decision ref")
@@ -111,6 +123,7 @@ func init() {
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetTargetRef, "target-ref", "", "filter governing sets by exact target ref")
 	decisionReconcileCmd.AddCommand(decisionReconcileMetricsCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileSelectionDraftCmd)
+	decisionReconcileCmd.AddCommand(decisionReconcileSelectionReviewCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileApplyCmd)
 	decisionCmd.AddCommand(decisionGoverningSetCmd)
 	decisionCmd.AddCommand(decisionReconcileCmd)
@@ -172,6 +185,34 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 		return writeJSON(cmd.OutOrStdout(), draft)
 	}
 	return writeDecisionReconciliationSelectionDraftSummary(cmd.OutOrStdout(), draft)
+}
+
+func runDecisionReconcileSelectionReview(cmd *cobra.Command, args []string) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+
+	store, closeFn, err := openArtifactStore(projectRoot)
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+
+	document, err := readDecisionReconciliationSelectionDocument(args[0])
+	if err != nil {
+		return err
+	}
+	review := artifact.ReviewDecisionReconciliationSelectionDocument(
+		context.Background(),
+		store,
+		document,
+		args[0],
+	)
+	if decisionReconcileReviewJSON {
+		return writeJSON(cmd.OutOrStdout(), review)
+	}
+	return writeDecisionReconciliationSelectionReviewSummary(cmd.OutOrStdout(), review)
 }
 
 func runDecisionGoverningSet(cmd *cobra.Command, _ []string) error {
@@ -544,6 +585,69 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	if len(draft.Items) > limit {
 		_, err := fmt.Fprintf(output, "... and %d more; run `haft decision reconcile selection-draft --json`\n", len(draft.Items)-limit)
 		return err
+	}
+	return nil
+}
+
+func writeDecisionReconciliationSelectionReviewSummary(
+	output io.Writer,
+	review artifact.DecisionReconciliationSelectionReview,
+) error {
+	if _, err := fmt.Fprintf(output, "Decision reconciliation selection review v%d\n", review.SchemaVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "authority: %s\n", review.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "document_authority: %s\n", review.DocumentAuthority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "operator_approved: %t\n", review.OperatorApproved); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "apply_ready: %t\n", review.ApplyReady); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "items: %d\n", review.ItemCount); err != nil {
+		return err
+	}
+	if len(review.ValidationErrors) > 0 {
+		if _, err := fmt.Fprintln(output, "validation_errors:"); err != nil {
+			return err
+		}
+		for _, validationError := range review.ValidationErrors {
+			if _, err := fmt.Fprintf(output, "- %s\n", validationError); err != nil {
+				return err
+			}
+		}
+	}
+	for _, item := range review.Items {
+		if len(item.ValidationErrors) == 0 {
+			continue
+		}
+		if _, err := fmt.Fprintf(output, "item[%d] errors:\n", item.Index); err != nil {
+			return err
+		}
+		for _, validationError := range item.ValidationErrors {
+			if _, err := fmt.Fprintf(output, "- %s\n", validationError); err != nil {
+				return err
+			}
+		}
+	}
+	if review.ApplyCommand != "" {
+		if _, err := fmt.Fprintf(output, "apply_command: %s\n", review.ApplyCommand); err != nil {
+			return err
+		}
+	}
+	if len(review.NextSteps) > 0 {
+		if _, err := fmt.Fprintln(output, "next_steps:"); err != nil {
+			return err
+		}
+		for _, step := range review.NextSteps {
+			if _, err := fmt.Fprintf(output, "- %s\n", step); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

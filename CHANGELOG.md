@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Read-only reconciliation selection review.** `haft decision reconcile
+  selection-review SELECTION.json` now validates a proposed or
+  operator-approved reconciliation selection against the same core rules as
+  `apply`, reports `apply_ready`, item-level errors, and the apply command only
+  when authority is already `operator_approved_reconciliation_selection`,
+  without creating approval or mutating DecisionRecords.
 - **Compact broad code-context invariants.** File-level
   `haft_query(action="code_context")` and `lane="invariants"` now label large
   invariant fanout as broad file context, cap the default candidate list, and

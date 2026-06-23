@@ -220,6 +220,59 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 	}
 }
 
+func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
+	var output bytes.Buffer
+	review := artifact.DecisionReconciliationSelectionReview{
+		SchemaVersion:     1,
+		Authority:         artifact.DecisionReconciliationSelectionReviewAuthority,
+		DocumentAuthority: artifact.DecisionReconciliationSelectionDraftAuthority,
+		RequiredAuthority: artifact.DecisionReconciliationSelectionApplyAuthority,
+		OperatorApproved:  false,
+		ApplyReady:        false,
+		ItemCount:         1,
+		ValidationErrors: []string{
+			"authority must be operator_approved_reconciliation_selection",
+			"operator_approval_ref is required",
+		},
+		Items: []artifact.DecisionReconciliationSelectionReviewItem{{
+			Index:            0,
+			Operation:        artifact.DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:  "decision-reconcile-1",
+			DecisionRefs:     []string{"dec-fallback"},
+			ApplyReady:       false,
+			ValidationErrors: []string{"items[0].governance_targets or drift_watch_targets is required for enrich_scope"},
+		}},
+		NextSteps: []string{
+			"create a separate selection document with authority=operator_approved_reconciliation_selection only after operator approval",
+			"add operator_approval_ref that names the explicit approval event",
+		},
+	}
+
+	if err := writeDecisionReconciliationSelectionReviewSummary(&output, review); err != nil {
+		t.Fatalf("writeDecisionReconciliationSelectionReviewSummary: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Decision reconciliation selection review v1",
+		"authority: read_only_selection_review_not_apply_authority",
+		"document_authority: report_only_selection_draft_not_operator_approval",
+		"operator_approved: false",
+		"apply_ready: false",
+		"validation_errors:",
+		"item[0] errors:",
+		"next_steps:",
+		"operator approval",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "apply_command:") {
+		t.Fatalf("non-ready review should not print apply_command:\n%s", text)
+	}
+}
+
 func TestHandleQuintQueryDecisionReconcileReturnsReportOnlyPlan(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")

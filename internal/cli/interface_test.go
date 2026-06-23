@@ -1138,6 +1138,9 @@ func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile apply") {
 		t.Fatalf("CLI command missing apply path: %#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-review") {
+		t.Fatalf("CLI command missing selection-review preflight: %#v", capability.CurrentExecution)
+	}
 	if !strings.Contains(capability.CurrentExecution.MCPCall, "MCP has no apply action") {
 		t.Fatalf("MCP call must name no-apply boundary: %#v", capability.CurrentExecution)
 	}
@@ -1147,6 +1150,8 @@ func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *
 		"operator_approved_reconciliation_selection",
 		"operator_approval_ref",
 		"merge_through_successor",
+		"read_only_selection_review_not_apply_authority",
+		"review does not create operator approval",
 		"does not create binding decisions",
 	} {
 		if !strings.Contains(contract, want) {
@@ -1157,6 +1162,7 @@ func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *
 	for _, want := range []string{
 		"MCP has no reconciliation apply action",
 		"Operator approval ref is required",
+		"Selection review is read-only",
 		"Old decision IDs remain searchable",
 	} {
 		if !strings.Contains(invariants, want) {

@@ -28,7 +28,9 @@ const (
 	DecisionReconciliationOperationEnrichScope            = "enrich_scope"
 	DecisionReconciliationOperationClaimLifecycleUpdate   = "claim_lifecycle_update"
 
-	DecisionReconciliationSelectionDraftAuthority = "report_only_selection_draft_not_operator_approval"
+	DecisionReconciliationSelectionDraftAuthority  = "report_only_selection_draft_not_operator_approval"
+	DecisionReconciliationSelectionReviewAuthority = "read_only_selection_review_not_apply_authority"
+	DecisionReconciliationSelectionApplyAuthority  = "operator_approved_reconciliation_selection"
 )
 
 type DecisionReconciliationPlan struct {
@@ -186,6 +188,31 @@ type DecisionReconciliationSelectionDraft struct {
 	NextSteps              []string                           `json:"next_steps"`
 }
 
+type DecisionReconciliationSelectionReview struct {
+	SchemaVersion       int                                         `json:"schema_version"`
+	Authority           string                                      `json:"authority"`
+	ApplyReady          bool                                        `json:"apply_ready"`
+	OperatorApproved    bool                                        `json:"operator_approved"`
+	DocumentAuthority   string                                      `json:"document_authority"`
+	OperatorApprovalRef string                                      `json:"operator_approval_ref,omitempty"`
+	RequiredAuthority   string                                      `json:"required_authority"`
+	ItemCount           int                                         `json:"item_count"`
+	ValidationErrors    []string                                    `json:"validation_errors,omitempty"`
+	Items               []DecisionReconciliationSelectionReviewItem `json:"items,omitempty"`
+	ApplyCommand        string                                      `json:"apply_command,omitempty"`
+	MutationBoundary    []string                                    `json:"mutation_boundary"`
+	NextSteps           []string                                    `json:"next_steps"`
+}
+
+type DecisionReconciliationSelectionReviewItem struct {
+	Index            int      `json:"index"`
+	Operation        string   `json:"operation,omitempty"`
+	ReviewedGroupID  string   `json:"reviewed_group_id,omitempty"`
+	DecisionRefs     []string `json:"decision_refs,omitempty"`
+	ApplyReady       bool     `json:"apply_ready"`
+	ValidationErrors []string `json:"validation_errors,omitempty"`
+}
+
 type DecisionReconciliationSelectionDraftFilter struct {
 	Limit       int    `json:"limit,omitempty"`
 	GroupID     string `json:"group_id,omitempty"`
@@ -313,8 +340,8 @@ func ValidateDecisionReconciliationSelectionDocument(
 	if document.SchemaVersion != DecisionReconciliationSchemaVersion {
 		return fmt.Errorf("schema_version must be %d", DecisionReconciliationSchemaVersion)
 	}
-	if strings.TrimSpace(document.Authority) != "operator_approved_reconciliation_selection" {
-		return errors.New("authority must be operator_approved_reconciliation_selection")
+	if strings.TrimSpace(document.Authority) != DecisionReconciliationSelectionApplyAuthority {
+		return fmt.Errorf("authority must be %s", DecisionReconciliationSelectionApplyAuthority)
 	}
 	if strings.TrimSpace(document.OperatorApprovalRef) == "" {
 		return errors.New("operator_approval_ref is required")
@@ -328,6 +355,44 @@ func ValidateDecisionReconciliationSelectionDocument(
 		}
 	}
 	return nil
+}
+
+func ReviewDecisionReconciliationSelectionDocument(
+	ctx context.Context,
+	store ArtifactStore,
+	document DecisionReconciliationSelectionDocument,
+	sourcePath string,
+) DecisionReconciliationSelectionReview {
+	review := DecisionReconciliationSelectionReview{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionReviewAuthority,
+		DocumentAuthority:   strings.TrimSpace(document.Authority),
+		OperatorApprovalRef: strings.TrimSpace(document.OperatorApprovalRef),
+		RequiredAuthority:   DecisionReconciliationSelectionApplyAuthority,
+		ItemCount:           len(document.Items),
+		MutationBoundary: []string{
+			"selection review is read-only",
+			"review does not create operator approval",
+			"review does not apply reconciliation selections",
+			"apply remains a separate operator-approved command",
+		},
+	}
+
+	review.OperatorApproved = review.DocumentAuthority == review.RequiredAuthority &&
+		review.OperatorApprovalRef != ""
+	review.ValidationErrors = decisionReconciliationDocumentReviewErrors(document)
+	review.Items = decisionReconciliationItemReviews(ctx, store, document.Items)
+	review.ValidationErrors = appendMissingString(
+		review.ValidationErrors,
+		decisionReconciliationStrictValidationError(ctx, store, document),
+	)
+	review.ApplyReady = len(review.ValidationErrors) == 0 &&
+		decisionReconciliationReviewItemsReady(review.Items)
+	if review.ApplyReady {
+		review.ApplyCommand = decisionReconciliationApplyCommand(sourcePath)
+	}
+	review.NextSteps = decisionReconciliationReviewNextSteps(review, sourcePath)
+	return review
 }
 
 func ApplyDecisionReconciliationSelections(
@@ -352,6 +417,114 @@ func ApplyDecisionReconciliationSelections(
 		result.Applied = append(result.Applied, outcome)
 	}
 	return result, nil
+}
+
+func decisionReconciliationDocumentReviewErrors(
+	document DecisionReconciliationSelectionDocument,
+) []string {
+	errs := make([]string, 0, 4)
+	if document.SchemaVersion != DecisionReconciliationSchemaVersion {
+		errs = append(errs, fmt.Sprintf("schema_version must be %d", DecisionReconciliationSchemaVersion))
+	}
+	if strings.TrimSpace(document.Authority) != DecisionReconciliationSelectionApplyAuthority {
+		errs = append(errs, fmt.Sprintf("authority must be %s", DecisionReconciliationSelectionApplyAuthority))
+	}
+	if strings.TrimSpace(document.OperatorApprovalRef) == "" {
+		errs = append(errs, "operator_approval_ref is required")
+	}
+	if len(document.Items) == 0 {
+		errs = append(errs, "items must contain at least one selection")
+	}
+	return errs
+}
+
+func decisionReconciliationItemReviews(
+	ctx context.Context,
+	store ArtifactStore,
+	items []DecisionReconciliationSelection,
+) []DecisionReconciliationSelectionReviewItem {
+	reviews := make([]DecisionReconciliationSelectionReviewItem, 0, len(items))
+	for index, item := range items {
+		review := DecisionReconciliationSelectionReviewItem{
+			Index:           index,
+			Operation:       strings.TrimSpace(item.Operation),
+			ReviewedGroupID: strings.TrimSpace(item.ReviewedGroupID),
+			DecisionRefs:    compactSortedStrings(item.DecisionRefs),
+		}
+		if err := validateDecisionReconciliationSelection(ctx, store, index, item); err != nil {
+			review.ValidationErrors = []string{err.Error()}
+		}
+		review.ApplyReady = len(review.ValidationErrors) == 0
+		reviews = append(reviews, review)
+	}
+	return reviews
+}
+
+func decisionReconciliationStrictValidationError(
+	ctx context.Context,
+	store ArtifactStore,
+	document DecisionReconciliationSelectionDocument,
+) string {
+	if err := ValidateDecisionReconciliationSelectionDocument(ctx, store, document); err != nil {
+		return err.Error()
+	}
+	return ""
+}
+
+func decisionReconciliationReviewItemsReady(
+	items []DecisionReconciliationSelectionReviewItem,
+) bool {
+	for _, item := range items {
+		if !item.ApplyReady {
+			return false
+		}
+	}
+	return true
+}
+
+func decisionReconciliationApplyCommand(sourcePath string) string {
+	path := strings.TrimSpace(sourcePath)
+	if path == "" {
+		path = "SELECTION.json"
+	}
+	return "haft decision reconcile apply " + path + " --json"
+}
+
+func decisionReconciliationReviewNextSteps(
+	review DecisionReconciliationSelectionReview,
+	sourcePath string,
+) []string {
+	if review.ApplyReady {
+		return []string{
+			"capture before metrics with haft decision reconcile metrics --json",
+			"apply with " + decisionReconciliationApplyCommand(sourcePath),
+			"capture after metrics with haft decision reconcile metrics --json",
+		}
+	}
+	steps := []string{}
+	if review.DocumentAuthority != review.RequiredAuthority {
+		steps = append(steps, "create a separate selection document with authority="+review.RequiredAuthority+" only after operator approval")
+	}
+	if review.OperatorApprovalRef == "" {
+		steps = append(steps, "add operator_approval_ref that names the explicit approval event")
+	}
+	if !decisionReconciliationReviewItemsReady(review.Items) {
+		steps = append(steps, "fix or remove invalid selection items before apply")
+	}
+	if len(steps) == 0 {
+		steps = append(steps, "fix validation_errors before apply")
+	}
+	return steps
+}
+
+func appendMissingString(values []string, value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return values
+	}
+	if containsString(values, value) {
+		return values
+	}
+	return append(values, value)
 }
 
 func validateDecisionReconciliationSelection(

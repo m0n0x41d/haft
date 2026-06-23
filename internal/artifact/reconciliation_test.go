@@ -566,6 +566,126 @@ func TestValidateDecisionReconciliationSelectionRequiresOperatorApproval(t *test
 	}
 }
 
+func TestReviewDecisionReconciliationSelectionDocumentReportsDraftNotApplyReady(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-scope-review", StatusActive, "runtime", DecisionFields{}, now)
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionDraftAuthority,
+		OperatorApprovalRef: "",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    "decision-reconcile-scope-review",
+			DecisionRefs:       []string{"dec-scope-review"},
+			DecisionSubjectRef: "runtime:review_scope",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/review_scope",
+			}},
+			Reason: "Prepared for operator review.",
+		}},
+	}, "selection.json")
+
+	if review.ApplyReady {
+		t.Fatalf("apply_ready = true for draft review: %#v", review)
+	}
+	if review.OperatorApproved {
+		t.Fatalf("operator_approved = true for draft review: %#v", review)
+	}
+	if !containsString(review.ValidationErrors, "authority must be operator_approved_reconciliation_selection") {
+		t.Fatalf("validation_errors = %#v", review.ValidationErrors)
+	}
+	if !containsString(review.ValidationErrors, "operator_approval_ref is required") {
+		t.Fatalf("validation_errors = %#v", review.ValidationErrors)
+	}
+	if len(review.Items) != 1 || !review.Items[0].ApplyReady {
+		t.Fatalf("valid item should still be reviewed as item-apply-ready: %#v", review.Items)
+	}
+	if review.ApplyCommand != "" {
+		t.Fatalf("apply_command = %q, want empty for draft", review.ApplyCommand)
+	}
+
+	decision, err := store.Get(ctx, "dec-scope-review")
+	if err != nil {
+		t.Fatalf("load decision: %v", err)
+	}
+	fields := decision.UnmarshalDecisionFields()
+	if fields.DecisionSubjectRef != "" {
+		t.Fatalf("review mutated decision_subject_ref = %q", fields.DecisionSubjectRef)
+	}
+}
+
+func TestReviewDecisionReconciliationSelectionDocumentReportsApprovedReady(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-scope-ready", StatusActive, "runtime", DecisionFields{}, now)
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:approved-scope-ready",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    "decision-reconcile-scope-ready",
+			DecisionRefs:       []string{"dec-scope-ready"},
+			DecisionSubjectRef: "runtime:ready_scope",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/ready_scope",
+			}},
+			Reason: "Operator approved precise scope enrichment.",
+		}},
+	}, "ready-selection.json")
+
+	if !review.ApplyReady {
+		t.Fatalf("apply_ready = false: %#v", review)
+	}
+	if !review.OperatorApproved {
+		t.Fatalf("operator_approved = false: %#v", review)
+	}
+	if review.ApplyCommand != "haft decision reconcile apply ready-selection.json --json" {
+		t.Fatalf("apply_command = %q", review.ApplyCommand)
+	}
+	if len(review.ValidationErrors) != 0 {
+		t.Fatalf("validation_errors = %#v", review.ValidationErrors)
+	}
+}
+
+func TestReviewDecisionReconciliationSelectionDocumentReportsInvalidItem(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-scope-invalid-review", StatusActive, "runtime", DecisionFields{}, now)
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:approved-invalid-review",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    "decision-reconcile-invalid-review",
+			DecisionRefs:       []string{"dec-scope-invalid-review"},
+			DecisionSubjectRef: "runtime:invalid_review_scope",
+			Reason:             "Missing concrete target.",
+		}},
+	}, "invalid-selection.json")
+
+	if review.ApplyReady {
+		t.Fatalf("apply_ready = true for invalid item: %#v", review)
+	}
+	if len(review.Items) != 1 || review.Items[0].ApplyReady {
+		t.Fatalf("item review = %#v", review.Items)
+	}
+	if len(review.Items[0].ValidationErrors) != 1 ||
+		!strings.Contains(review.Items[0].ValidationErrors[0], "governance_targets or drift_watch_targets is required") {
+		t.Fatalf("item validation_errors = %#v", review.Items[0].ValidationErrors)
+	}
+}
+
 func TestApplyDecisionReconciliationMergeThroughSuccessorPreservesLineage(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

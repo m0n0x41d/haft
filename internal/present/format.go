@@ -1077,7 +1077,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		}
 		for i, event := range materialEvents {
 			if i >= driftCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s); run `haft_query(action=\"drift_events\")`.\n", len(materialEvents)-driftCap))
+				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s); run `%s`.\n", len(materialEvents)-driftCap, artifact.StatusCompactDriftEventsCommand))
 				break
 			}
 			sb.WriteString(fmt.Sprintf(
@@ -1090,14 +1090,16 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		}
 		if len(auditEvents) > 0 {
 			sb.WriteString(fmt.Sprintf(
-				"- **Audit-only drift events**: %s; run `haft_query(action=\"drift_events\")` for exact paths.\n",
+				"- **Audit-only drift events**: %s; run `%s` for compact paths or `haft_query(action=\"drift_events\", full=true)` for full audit.\n",
 				formatAuditOnlyDriftEventSummary(auditEvents),
+				artifact.StatusCompactDriftEventsCommand,
 			))
 		}
 		if len(unresolvedEvents) > 0 {
 			sb.WriteString(fmt.Sprintf(
-				"- **Binding resolution needed**: %s; run `haft drift bindings --dry-run --json` or `haft_query(action=\"drift_events\")`.\n",
+				"- **Binding resolution needed**: %s; run `haft drift bindings --dry-run --json` or `%s`.\n",
 				formatBindingResolutionDriftEventSummary(unresolvedEvents),
+				artifact.StatusCompactDriftEventsCommand,
 			))
 		}
 	}
@@ -1187,7 +1189,11 @@ func appendCockpitDrillDown(sb *strings.Builder) {
 	sb.WriteString("- Full status: `haft_query(action=\"status\", full=true)`.\n")
 	sb.WriteString("- Coverage: `haft_query(action=\"coverage\")`.\n")
 	sb.WriteString("- Drift/stale detail: `haft_refresh(action=\"scan\", verbose=true)`.\n")
-	sb.WriteString("- Drift events: `haft_query(action=\"drift_events\")`; decision reconciliation: `haft_query(action=\"decision_reconcile\")`; governing set: `haft_query(action=\"governing_set\")`.\n")
+	sb.WriteString(fmt.Sprintf("- Drift events: `%s`; decision reconciliation: `%s`; governing set: `%s`.\n",
+		artifact.StatusCompactDriftEventsCommand,
+		artifact.StatusCompactDecisionReconcileCommand,
+		artifact.StatusCompactGoverningSetCommand,
+	))
 	sb.WriteString("- Maintenance plan: `haft_refresh(action=\"plan\")`.\n")
 	sb.WriteString("- Judgment review: `haft_refresh(action=\"review\")` / `haft overseer judgment --json`.\n")
 	sb.WriteString("- Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`.\n")

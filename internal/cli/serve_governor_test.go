@@ -33,7 +33,7 @@ func TestGovernorAttentionUsesDriftEventsNotPerDecisionDrift(t *testing.T) {
 	if !strings.Contains(joined, "drift-events: 1 unique, 2 impacted decision(s), max fanout 2") {
 		t.Fatalf("drift event summary missing:\n%s", joined)
 	}
-	if !strings.Contains(joined, `haft_query(action="drift_events")`) {
+	if !strings.Contains(joined, artifact.StatusCompactDriftEventsCommand) {
 		t.Fatalf("drill-down command missing:\n%s", joined)
 	}
 	for _, unwanted := range []string{"First noisy decision", "Second noisy decision", "dec-a", "dec-b"} {

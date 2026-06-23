@@ -17,7 +17,7 @@ func TestStatusGovernorCountsAlwaysPresent(t *testing.T) {
 			Cues: []artifact.ReconciliationCue{{
 				Kind: artifact.ReconciliationCueHighFanout,
 			}},
-			Commands: []string{`haft_query(action="drift_events")`},
+			Commands: []string{artifact.StatusCompactDriftEventsCommand},
 		}),
 		PendingCount:               4,
 		UnassessedCount:            3,
@@ -33,7 +33,7 @@ func TestStatusGovernorCountsAlwaysPresent(t *testing.T) {
 	if !strings.Contains(out, "Drift: 28 unique event(s), 31 impacted decision(s), max fanout 7") {
 		t.Fatalf("drift event line missing:\n%s", out)
 	}
-	if !strings.Contains(out, `Reconciliation: 1 high-fanout drift event(s), max fanout 7; drill down with haft_query(action="drift_events")`) {
+	if !strings.Contains(out, `Reconciliation: 1 high-fanout drift event(s), max fanout 7; drill down with haft_query(action="drift_events", limit=5)`) {
 		t.Fatalf("reconciliation line missing:\n%s", out)
 	}
 	if !strings.Contains(out, "evidence debt") {

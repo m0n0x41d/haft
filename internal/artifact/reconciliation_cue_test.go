@@ -39,9 +39,9 @@ func TestBuildReconciliationCueReportSummarizesReadOnlyReviewLanes(t *testing.T)
 		t.Fatalf("governing summary = %#v", report.Summary)
 	}
 	for _, want := range []string{
-		`haft_query(action="drift_events")`,
-		`haft_query(action="decision_reconcile")`,
-		`haft_query(action="governing_set")`,
+		StatusCompactDriftEventsCommand,
+		StatusCompactDecisionReconcileCommand,
+		StatusCompactGoverningSetCommand,
 	} {
 		if !containsString(report.Commands, want) {
 			t.Fatalf("commands missing %q in %#v", want, report.Commands)

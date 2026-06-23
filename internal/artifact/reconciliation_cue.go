@@ -7,6 +7,10 @@ const (
 	ReconciliationCueHighFanout              = "high_fanout_drift_event"
 	ReconciliationCueReconciliationCandidate = "decision_reconciliation_candidate"
 	ReconciliationCueGoverningConflict       = "current_governing_conflict"
+
+	StatusCompactDriftEventsCommand       = `haft_query(action="drift_events", limit=5)`
+	StatusCompactDecisionReconcileCommand = `haft_query(action="decision_reconcile", limit=5)`
+	StatusCompactGoverningSetCommand      = `haft_query(action="governing_set", limit=5)`
 )
 
 type ReconciliationCueReport struct {
@@ -71,7 +75,7 @@ func appendHighFanoutCue(
 		Severity: "medium",
 		Title:    "High-fanout drift events need reconciliation review",
 		Detail:   "one changed target impacts multiple current decisions; treat fanout as one event with many impacts, not independent debt",
-		Command:  `haft_query(action="drift_events")`,
+		Command:  StatusCompactDriftEventsCommand,
 	})
 	return report
 }
@@ -98,7 +102,7 @@ func appendReconciliationCandidateCue(
 		Severity: "medium",
 		Title:    "Decision reconciliation candidates available",
 		Detail:   "review-only grouping found reopen/merge/supersede/retire/conflict candidates; apply still requires explicit operator-approved selection",
-		Command:  `haft_query(action="decision_reconcile")`,
+		Command:  StatusCompactDecisionReconcileCommand,
 	})
 	return report
 }
@@ -122,7 +126,7 @@ func appendGoverningConflictCue(
 		Severity: severity,
 		Title:    "Current governing authority needs operator review",
 		Detail:   "active decisions overlap or explicitly conflict for the same subject/context/target; this is a blocker cue, not a GateDecision",
-		Command:  `haft_query(action="governing_set")`,
+		Command:  StatusCompactGoverningSetCommand,
 	})
 	return report
 }

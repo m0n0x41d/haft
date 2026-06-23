@@ -71,10 +71,11 @@ func governorAttention(data artifact.StatusData) []string {
 	driftEvents := governorDriftEvents(data)
 	if driftEvents.Summary.UniqueEvents > 0 {
 		items = append(items, fmt.Sprintf(
-			"drift-events: %d unique, %d impacted decision(s), max fanout %d — drill down: haft_query(action=\"drift_events\")",
+			"drift-events: %d unique, %d impacted decision(s), max fanout %d — drill down: %s",
 			driftEvents.Summary.UniqueEvents,
 			driftEvents.Summary.ImpactedDecisions,
 			driftEvents.Summary.MaxFanout,
+			artifact.StatusCompactDriftEventsCommand,
 		))
 	}
 	return items

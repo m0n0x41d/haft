@@ -36,6 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Decision reconciliation text audit cues.** Human-readable
+  `haft decision reconcile selection-review` output now prints the read-only
+  mutation boundary, and `haft decision reconcile apply` summaries print
+  lineage relation labels plus claim lifecycle updates, so operator review can
+  see the authority and after-action effects without switching to JSON.
 - **Spec sync-back fail-closed preservation guard.** `haft spec apply-change`
   regression coverage now proves an unknown/high-risk carrier edit cannot
   overwrite an existing current SQL SpecSection edition.

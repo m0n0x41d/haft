@@ -636,6 +636,16 @@ func writeDecisionReconciliationSelectionReviewSummary(
 			}
 		}
 	}
+	if len(review.MutationBoundary) > 0 {
+		if _, err := fmt.Fprintln(output, "mutation_boundary:"); err != nil {
+			return err
+		}
+		for _, boundary := range review.MutationBoundary {
+			if _, err := fmt.Fprintf(output, "- %s\n", boundary); err != nil {
+				return err
+			}
+		}
+	}
 	if review.ApplyCommand != "" {
 		if _, err := fmt.Fprintf(output, "apply_command: %s\n", review.ApplyCommand); err != nil {
 			return err
@@ -678,6 +688,27 @@ func writeDecisionReconciliationApplySummary(
 			item.Status,
 		); err != nil {
 			return err
+		}
+		for _, relation := range item.LineageRelations {
+			if _, err := fmt.Fprintf(output,
+				"  lineage_relation: %s %s -> %s\n",
+				relation.Relation,
+				relation.SourceRef,
+				relation.TargetRef,
+			); err != nil {
+				return err
+			}
+		}
+		for _, update := range item.ClaimUpdates {
+			if _, err := fmt.Fprintf(output,
+				"  claim_update: decision=%s claim=%s lifecycle=%s successor=%s\n",
+				update.DecisionRef,
+				update.ClaimID,
+				update.LifecycleStatus,
+				update.SuccessorRef,
+			); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

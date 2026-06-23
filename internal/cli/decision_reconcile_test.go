@@ -251,6 +251,10 @@ func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
 			"create a separate selection document with authority=operator_approved_reconciliation_selection only after operator approval",
 			"add operator_approval_ref that names the explicit approval event",
 		},
+		MutationBoundary: []string{
+			"selection review is read-only",
+			"review does not apply reconciliation selections",
+		},
 	}
 
 	if err := writeDecisionReconciliationSelectionReviewSummary(&output, review); err != nil {
@@ -266,6 +270,8 @@ func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
 		"apply_ready: false",
 		"validation_errors:",
 		"item[0] errors:",
+		"mutation_boundary:",
+		"review does not apply reconciliation selections",
 		"next_steps:",
 		"operator approval",
 	} {
@@ -543,7 +549,18 @@ func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
 			DecisionRefs:  []string{"dec-old"},
 			SuccessorRef:  "dec-new",
 			UpdatedFields: []string{"decision_subject_ref"},
-			Status:        "applied",
+			LineageRelations: []artifact.DecisionReconciliationLineageRelation{{
+				Relation:  "mergedFrom",
+				SourceRef: "dec-new",
+				TargetRef: "dec-old",
+			}},
+			ClaimUpdates: []artifact.DecisionReconciliationClaimLifecycleUpdate{{
+				DecisionRef:     "dec-old",
+				ClaimID:         "claim-1",
+				LifecycleStatus: artifact.ClaimLifecycleSuperseded,
+				SuccessorRef:    "dec-new#claim-2",
+			}},
+			Status: "applied",
 		}},
 	}
 
@@ -558,6 +575,8 @@ func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
 		"merge_through_successor",
 		"dec-new",
 		"updated=[decision_subject_ref]",
+		"lineage_relation: mergedFrom dec-new -> dec-old",
+		"claim_update: decision=dec-old claim=claim-1 lifecycle=superseded successor=dec-new#claim-2",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

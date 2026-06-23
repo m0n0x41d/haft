@@ -1702,6 +1702,9 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 		!strings.Contains(capability.CurrentExecution.CLICommand, "--query") {
 		t.Fatalf("governing_set CLI command missing governing-set drill-down:\n%#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "--json --limit 5") {
+		t.Fatalf("governing_set CLI command missing compact JSON limit:\n%#v", capability.CurrentExecution)
+	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "--write-snapshot") ||
 		!strings.Contains(capability.CurrentExecution.CLICommand, "--check-snapshot") {
 		t.Fatalf("governing_set CLI command missing snapshot write/check:\n%#v", capability.CurrentExecution)
@@ -2002,6 +2005,9 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile --json") {
 		t.Fatalf("decision_reconcile CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile --json --limit 5") {
+		t.Fatalf("decision_reconcile compact CLI command missing: %#v", capability.CurrentExecution)
 	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile metrics --json") {
 		t.Fatalf("decision_reconcile metrics CLI command missing: %#v", capability.CurrentExecution)

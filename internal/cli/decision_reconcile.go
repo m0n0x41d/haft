@@ -20,12 +20,14 @@ var (
 	decisionReconcileDraftJSON     bool
 	decisionReconcileDraftFull     bool
 	decisionReconcileReviewJSON    bool
+	decisionReconcileLimit         int
 	decisionReconcileDraftLimit    int
 	decisionReconcileDraftGroupID  string
 	decisionReconcileDraftDecision string
 	decisionReconcileDraftWrite    string
 	decisionReconcileDraftReview   string
 	decisionGoverningSetJSON       bool
+	decisionGoverningSetLimit      int
 	decisionGoverningSetQuery      string
 	decisionGoverningSetSubjectRef string
 	decisionGoverningSetTargetRef  string
@@ -115,6 +117,7 @@ this symbol / contract / spec section" without expanding default status.`,
 
 func init() {
 	decisionReconcileCmd.Flags().BoolVar(&decisionReconcileJSON, "json", false, "print structured JSON output")
+	decisionReconcileCmd.Flags().IntVar(&decisionReconcileLimit, "limit", 0, "limit compact JSON groups without approving or applying anything; default 0 emits the full audit JSON")
 	decisionReconcileApplyCmd.Flags().BoolVar(&decisionReconcileApplyJSON, "json", false, "print structured JSON output")
 	decisionReconcileMetricsCmd.Flags().BoolVar(&decisionReconcileMetricsJSON, "json", false, "print structured JSON output")
 	decisionReconcileSelectionDraftCmd.Flags().BoolVar(&decisionReconcileDraftJSON, "json", false, "print structured JSON output")
@@ -126,6 +129,7 @@ func init() {
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftWrite, "write-template", "", "write the bounded selection document template to this JSON path without approving it")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftReview, "write-review-packet", "", "write the bounded report-only selection draft with review hints to this JSON path without approving it")
 	decisionGoverningSetCmd.Flags().BoolVar(&decisionGoverningSetJSON, "json", false, "print structured JSON output")
+	decisionGoverningSetCmd.Flags().IntVar(&decisionGoverningSetLimit, "limit", 0, "limit compact JSON sets without changing governing authority; default 0 emits the full audit JSON")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetQuery, "query", "", "filter governing sets by substring across subject, target, decision refs, and repair hints")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetSubjectRef, "subject-ref", "", "filter governing sets by exact subject ref")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetTargetRef, "target-ref", "", "filter governing sets by exact target ref")
@@ -141,6 +145,9 @@ func init() {
 }
 
 func runDecisionReconcile(cmd *cobra.Command, _ []string) error {
+	if decisionReconcileLimit < 0 {
+		return fmt.Errorf("limit must be >= 0")
+	}
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("not a haft project: %w", err)
@@ -158,10 +165,20 @@ func runDecisionReconcile(cmd *cobra.Command, _ []string) error {
 	}
 
 	if decisionReconcileJSON {
-		return writeJSON(cmd.OutOrStdout(), plan)
+		outputPlan := decisionReconciliationJSONProjection(plan)
+		return writeJSON(cmd.OutOrStdout(), outputPlan)
 	}
 
 	return writeDecisionReconciliationSummary(cmd.OutOrStdout(), plan)
+}
+
+func decisionReconciliationJSONProjection(
+	plan artifact.DecisionReconciliationPlan,
+) artifact.DecisionReconciliationPlan {
+	if decisionReconcileLimit <= 0 {
+		return plan
+	}
+	return artifact.CompactDecisionReconciliationPlan(plan, decisionReconcileLimit)
 }
 
 func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
@@ -263,6 +280,9 @@ func runDecisionReconcileSelectionReview(cmd *cobra.Command, args []string) erro
 }
 
 func runDecisionGoverningSet(cmd *cobra.Command, _ []string) error {
+	if decisionGoverningSetLimit < 0 {
+		return fmt.Errorf("limit must be >= 0")
+	}
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("not a haft project: %w", err)
@@ -305,7 +325,8 @@ func runDecisionGoverningSet(cmd *cobra.Command, _ []string) error {
 		return nil
 	}
 	if decisionGoverningSetJSON {
-		return writeJSON(cmd.OutOrStdout(), report)
+		outputReport := currentGoverningSetJSONProjection(report)
+		return writeJSON(cmd.OutOrStdout(), outputReport)
 	}
 	if decisionGoverningSetWrite != "" {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "governing_set_snapshot_written: %s digest=%s authority=%s\n",
@@ -317,6 +338,15 @@ func runDecisionGoverningSet(cmd *cobra.Command, _ []string) error {
 		}
 	}
 	return writeCurrentGoverningSetSummary(cmd.OutOrStdout(), report)
+}
+
+func currentGoverningSetJSONProjection(
+	report artifact.CurrentGoverningSetReport,
+) artifact.CurrentGoverningSetReport {
+	if decisionGoverningSetLimit <= 0 {
+		return report
+	}
+	return artifact.CompactCurrentGoverningSetReport(report, decisionGoverningSetLimit)
 }
 
 type currentGoverningSetSnapshotCheck struct {

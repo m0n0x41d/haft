@@ -131,6 +131,117 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 	}
 }
 
+func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
+	restore := stubDecisionReconcileReportLimits(t, 2, 0)
+	defer restore()
+
+	plan := artifact.BuildDecisionReconciliationPlanFromItems([]artifact.DecisionReconciliationItem{
+		{
+			DecisionID:         "dec-save",
+			Status:             artifact.StatusActive,
+			BoundedContext:     "artifact",
+			DecisionSubjectRef: "subject:save",
+			GovernanceTargets:  []string{"symbol:store.go::Save"},
+		},
+		{
+			DecisionID:         "dec-load",
+			Status:             artifact.StatusActive,
+			BoundedContext:     "artifact",
+			DecisionSubjectRef: "subject:load",
+			GovernanceTargets:  []string{"symbol:store.go::Load"},
+		},
+		{
+			DecisionID:         "dec-delete",
+			Status:             artifact.StatusActive,
+			BoundedContext:     "artifact",
+			DecisionSubjectRef: "subject:delete",
+			GovernanceTargets:  []string{"symbol:store.go::Delete"},
+		},
+	})
+
+	compact := decisionReconciliationJSONProjection(plan)
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if len(compact.CompactGroups) != 2 {
+		t.Fatalf("compact groups = %d, want 2: %#v", len(compact.CompactGroups), compact.CompactGroups)
+	}
+	if compact.OmittedGroups == 0 {
+		t.Fatalf("omitted_groups = 0, want hidden groups")
+	}
+	if len(compact.Groups) != 0 {
+		t.Fatalf("compact projection leaked audit groups: %#v", compact.Groups)
+	}
+
+	restore()
+	restore = stubDecisionReconcileReportLimits(t, 0, 0)
+	defer restore()
+
+	full := decisionReconciliationJSONProjection(plan)
+	if full.View != "" {
+		t.Fatalf("full view = %q, want empty", full.View)
+	}
+	if len(full.Groups) != len(plan.Groups) {
+		t.Fatalf("full groups = %d, want %d", len(full.Groups), len(plan.Groups))
+	}
+}
+
+func TestCurrentGoverningSetJSONProjectionHonorsLimit(t *testing.T) {
+	restore := stubDecisionReconcileReportLimits(t, 0, 1)
+	defer restore()
+
+	report := artifact.CurrentGoverningSetReport{
+		SchemaVersion: artifact.CurrentGoverningSetSchemaVersion,
+		Authority:     artifact.CurrentGoverningSetAuthority,
+		Summary: artifact.CurrentGoverningSetSummary{
+			CurrentDecisions: 2,
+			GoverningSets:    2,
+		},
+		Sets: []artifact.CurrentGoverningSet{
+			{
+				SetID:               "governing-set-save",
+				SubjectRef:          "subject:save",
+				TargetRef:           "symbol:store.go::Save",
+				Posture:             artifact.GoverningSetPostureSingle,
+				CurrentDecisionRefs: []string{"dec-save"},
+			},
+			{
+				SetID:               "governing-set-load",
+				SubjectRef:          "subject:load",
+				TargetRef:           "symbol:store.go::Load",
+				Posture:             artifact.GoverningSetPostureSingle,
+				CurrentDecisionRefs: []string{"dec-load"},
+			},
+		},
+	}
+
+	compact := currentGoverningSetJSONProjection(report)
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if len(compact.CompactSets) != 1 {
+		t.Fatalf("compact sets = %d, want 1: %#v", len(compact.CompactSets), compact.CompactSets)
+	}
+	if compact.OmittedSets == 0 {
+		t.Fatalf("omitted_sets = 0, want hidden sets")
+	}
+	if len(compact.Sets) != 0 {
+		t.Fatalf("compact projection leaked audit sets: %#v", compact.Sets)
+	}
+
+	restore()
+	restore = stubDecisionReconcileReportLimits(t, 0, 0)
+	defer restore()
+
+	full := currentGoverningSetJSONProjection(report)
+	if full.View != "" {
+		t.Fatalf("full view = %q, want empty", full.View)
+	}
+	if len(full.Sets) != len(report.Sets) {
+		t.Fatalf("full sets = %d, want %d", len(full.Sets), len(report.Sets))
+	}
+}
+
 func TestCurrentGoverningSetSnapshotWriteAndCheck(t *testing.T) {
 	report := artifact.CurrentGoverningSetReport{
 		SchemaVersion: artifact.CurrentGoverningSetSchemaVersion,
@@ -322,6 +433,20 @@ func TestDecisionReconcileSelectionDraftLimitDefaultsToCompactUnlessFull(t *test
 	decisionReconcileDraftFull = true
 	if got := decisionReconcileSelectionDraftLimit(); got != 0 {
 		t.Fatalf("full draft limit = %d, want 0", got)
+	}
+}
+
+func stubDecisionReconcileReportLimits(t *testing.T, reconcileLimit int, governingSetLimit int) func() {
+	t.Helper()
+
+	previousReconcileLimit := decisionReconcileLimit
+	previousGoverningSetLimit := decisionGoverningSetLimit
+	decisionReconcileLimit = reconcileLimit
+	decisionGoverningSetLimit = governingSetLimit
+
+	return func() {
+		decisionReconcileLimit = previousReconcileLimit
+		decisionGoverningSetLimit = previousGoverningSetLimit
 	}
 }
 

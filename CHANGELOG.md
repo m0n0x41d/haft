@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation CLI compact limits.** Read-only
+  `haft decision reconcile --json --limit N` and
+  `haft decision governing-set --json --limit N` now return bounded compact
+  projections matching the MCP drill-down behavior while preserving legacy
+  `--json` full-audit output.
 - **Overseer status bounded judgment drill-down.** `haft overseer status` now
   points compact drift-confirmation signals at
   `haft overseer judgment --json --limit 20` instead of the full audit JSON

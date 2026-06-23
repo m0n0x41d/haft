@@ -9,7 +9,7 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:de392933f1aaab8cf4a0d69c9cfc9d0958abafd3588f829c98c56e248c47ad6c -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:abfa11452c16cee5c27a3e8f29690a7a2ee79a8cd23241fd91fa78494f74c706 -->
 
 # h-decide — Record a Decision (manual only, Transformer Mandate)
 

@@ -701,9 +701,11 @@ func baselineAuditSpecflowBaselineStoreSurface(path string) bool {
 func baselineAuditSpecLifecycleSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/cli/spec.go",
+		"internal/cli/spec_lifecycle.go",
 		"internal/cli/spec_onboard.go",
 		"internal/cli/serve_spec_section.go",
-		"internal/cli/serve_spec_section_test.go":
+		"internal/cli/serve_spec_section_test.go",
+		"internal/fpf/spec_section_schema.go":
 		return true
 	default:
 		return false
@@ -737,7 +739,10 @@ func baselineAuditSpecStateSurface(path string) bool {
 
 func baselineAuditSpecDriftSurface(path string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/project/specflow/drift.go", "internal/project/specflow/drift_test.go":
+	case "internal/project/specflow/drift.go",
+		"internal/project/specflow/drift_test.go",
+		"internal/cli/spec_baseline.go",
+		"internal/cli/spec_sync_test.go":
 		return true
 	default:
 		return false

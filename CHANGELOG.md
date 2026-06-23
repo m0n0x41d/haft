@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecSection lifecycle/schema classification.** `haft
+  baseline audit` now classifies remaining SpecSection lifecycle, sync,
+  missing-baseline check, and schema wording under current SpecSection
+  lifecycle/approval surfaces while preserving explicit unknown-legacy findings.
 - **Baseline audit lockfile exclusion.** `haft baseline audit` now skips
   generated dependency lockfiles such as `package-lock.json` so package names
   like `baseline-browser-mapping` do not appear as semantic baseline debt.

@@ -86,6 +86,22 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"codeSpecSectionNeedsBaseline = \"spec_section_needs_baseline\"",
 		"NextAction: fmt.Sprintf(\"haft_spec_section(action=\\\"approve\\\", section_id=%q) to record a baseline\", section.ID),",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_baseline.go", strings.Join([]string{
+		"// appendSpecHealthFindings runs SpecSection drift / missing-baseline checks.",
+		"func appendSpecBaselineFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_sync_test.go", strings.Join([]string{
+		"func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {}",
+		"t.Fatalf(\"spec sync must not create baselines, got %d\", baselineRows)",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_lifecycle.go", strings.Join([]string{
+		"func runSpecRebaseline(cmd *cobra.Command, args []string) error {",
+		`"action": "rebaseline",`,
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/fpf/spec_section_schema.go", strings.Join([]string{
+		"`rebaseline` overwrites a baseline after the operator confirms drift.",
+		"Lifecycle and mutation JSON expose baseline_kind/profile.",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/legacy_binding.go", strings.Join([]string{
 		"LegacyBindingPostureMissingSymbolBaseline = \"missing_symbol_baseline\"",
 		"LegacyBindingActionProposeRebaseline = \"propose_rebaseline_with_binding_targets\"",
@@ -140,8 +156,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Authority != baselineAuditAuthority {
 		t.Fatalf("unexpected authority: %q", report.Authority)
 	}
-	if report.Summary.SpecSectionApprovalBaseline != 7 {
-		t.Fatalf("spec approval count = %d, want 7", report.Summary.SpecSectionApprovalBaseline)
+	if report.Summary.SpecSectionApprovalBaseline != 11 {
+		t.Fatalf("spec approval count = %d, want 11", report.Summary.SpecSectionApprovalBaseline)
 	}
 	if report.Summary.VerifiedStateSnapshot != 17 {
 		t.Fatalf("verified state count = %d, want 17", report.Summary.VerifiedStateSnapshot)
@@ -182,11 +198,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 10 {
-		t.Fatalf("lifecycle authority count = %d, want 10", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 14 {
+		t.Fatalf("lifecycle authority count = %d, want 14", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 6 {
-		t.Fatalf("lifecycle authority files = %d, want 6", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 8 {
+		t.Fatalf("lifecycle authority files = %d, want 8", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)

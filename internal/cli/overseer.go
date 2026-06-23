@@ -45,6 +45,7 @@ var (
 	overseerRemindJSON        bool
 	overseerMaintainJSON      bool
 	overseerJudgmentJSON      bool
+	overseerJudgmentLimit     int
 	overseerDrainJSON         bool
 	overseerDrainDryRun       bool
 	overseerDaemonJSON        bool
@@ -225,6 +226,7 @@ func init() {
 	overseerRemindCmd.Flags().BoolVar(&overseerRemindJSON, "json", false, "print structured JSON output")
 	overseerMaintainCmd.Flags().BoolVar(&overseerMaintainJSON, "json", false, "print structured JSON output")
 	overseerJudgmentCmd.Flags().BoolVar(&overseerJudgmentJSON, "json", false, "print structured JSON output")
+	overseerJudgmentCmd.Flags().IntVar(&overseerJudgmentLimit, "limit", 0, "cap JSON tasks and reconciliation proposals; 0 prints the full packet")
 	overseerDrainCmd.Flags().BoolVar(&overseerDrainJSON, "json", false, "print structured JSON output")
 	overseerDrainCmd.Flags().BoolVar(&overseerDrainDryRun, "dry-run", false, "propose safe actions without mutating baselines, evidence, or stored maintenance runs")
 	overseerDaemonStartCmd.Flags().BoolVar(&overseerDaemonJSON, "json", false, "print structured JSON output")
@@ -531,6 +533,7 @@ func runOverseerJudgment(cmd *cobra.Command, _ []string) error {
 	review.Reconciliation = buildMaintenanceJudgmentReconciliationReview(ctx, store)
 
 	if overseerJudgmentJSON {
+		review = artifact.CompactMaintenanceJudgmentReview(review, overseerJudgmentLimit)
 		return writeJSON(cmd.OutOrStdout(), review)
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), present.MaintenanceJudgmentReviewResponse(review, ""))

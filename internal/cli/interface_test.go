@@ -1741,12 +1741,12 @@ func TestInterfaceRefreshReviewNamesAuthorityBoundary(t *testing.T) {
 	if capability.CurrentExecution.MCPCall != `haft_refresh(action="review")` {
 		t.Fatalf("refresh.review MCP call = %#v", capability.CurrentExecution)
 	}
-	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft overseer judgment --json") {
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft overseer judgment --json --limit 20") {
 		t.Fatalf("refresh.review CLI command missing judgment path:\n%#v", capability.CurrentExecution)
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"rung-3", "not evidence", "approval", "mutation"} {
+	for _, want := range []string{"rung-3", "--limit", "not evidence", "approval", "mutation"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("refresh.review notes missing %q:\n%s", want, notes)
 		}

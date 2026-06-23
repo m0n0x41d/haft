@@ -1363,7 +1363,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				MCPAction:        "review",
 				MCPCall:          `haft_refresh(action="review")`,
 				CLIStatus:        "available",
-				CLICommand:       "haft overseer judgment --json",
+				CLICommand:       "haft overseer judgment --json --limit 20",
 				DiscoveryCommand: "haft interface refresh.review --json",
 			},
 			InputContract: interfaceContract{
@@ -1371,10 +1371,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 				OptionalFields: []string{"context"},
 				Notes: []string{
 					"Output groups only rung-3 needs-judgment tasks by recommendation, confidence, source, and category.",
+					"CLI --limit returns a bounded JSON projection with omitted counts and a full_audit_command.",
 					"Suggested commands are candidates for explicit operator approval; the packet is not evidence, approval, or mutation.",
 				},
 			},
-			OutputVolume: []string{"default: compact grouped judgment packet", "CLI --json: full task list with source return and suggested commands"},
+			OutputVolume: []string{"default: compact grouped judgment packet", "CLI --json --limit N: bounded JSON with omitted counts", "CLI --json: full task list with source return and suggested commands"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Rung-3 judgment remains outside automated execution.",
 				"Confidence labels are review metadata, not authority.",

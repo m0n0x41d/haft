@@ -197,7 +197,7 @@ func maintenanceDrainNextActions(review *artifact.MaintenanceJudgmentReview) []s
 	}
 	return []string{
 		"Review needs_operator groups before any baseline, waive, reopen, or supersede.",
-		"Use `haft_refresh(action=\"review\")` or `haft overseer judgment --json` for exact task drill-down.",
+		"Use `haft_refresh(action=\"review\")` or `haft overseer judgment --json --limit 20` for bounded task drill-down.",
 	}
 }
 

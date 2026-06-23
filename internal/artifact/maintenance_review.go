@@ -25,9 +25,12 @@ const (
 type MaintenanceJudgmentReview struct {
 	GeneratedAt           string                           `json:"generated_at"`
 	SourcePlanGeneratedAt string                           `json:"source_plan_generated_at,omitempty"`
+	View                  string                           `json:"view,omitempty"`
 	TotalTasks            int                              `json:"total_tasks"`
 	JudgmentTasks         int                              `json:"judgment_tasks"`
 	OmittedNonJudgment    int                              `json:"omitted_non_judgment"`
+	OmittedJudgmentTasks  int                              `json:"omitted_judgment_tasks,omitempty"`
+	FullAuditCommand      string                           `json:"full_audit_command,omitempty"`
 	AuthorityBoundary     MaintenanceReviewAuthority       `json:"authority_boundary"`
 	Counts                MaintenanceJudgmentCounts        `json:"counts"`
 	Groups                []MaintenanceJudgmentGroup       `json:"groups"`
@@ -54,6 +57,7 @@ type MaintenanceJudgmentGroup struct {
 	Source          string                          `json:"source"`
 	Category        string                          `json:"category"`
 	TaskCount       int                             `json:"task_count"`
+	OmittedTasks    int                             `json:"omitted_tasks,omitempty"`
 	EvidenceNeed    string                          `json:"evidence_need"`
 	SuggestedAction string                          `json:"suggested_action"`
 	DrillDown       []string                        `json:"drill_down,omitempty"`
@@ -80,6 +84,7 @@ type MaintenanceJudgmentTaskReview struct {
 type MaintenanceReconciliationReview struct {
 	AuthorityBoundary string                                    `json:"authority_boundary"`
 	ProposalCount     int                                       `json:"proposal_count"`
+	OmittedProposals  int                                       `json:"omitted_proposals,omitempty"`
 	ByKind            map[string]int                            `json:"by_kind"`
 	SuggestedCommands []string                                  `json:"suggested_commands,omitempty"`
 	Proposals         []MaintenanceReconciliationReviewProposal `json:"proposals,omitempty"`
@@ -160,6 +165,47 @@ func BuildMaintenanceJudgmentReview(plan *MaintenancePlan) *MaintenanceJudgmentR
 	return review
 }
 
+func CompactMaintenanceJudgmentReview(
+	review *MaintenanceJudgmentReview,
+	limit int,
+) *MaintenanceJudgmentReview {
+	if review == nil {
+		return nil
+	}
+	if limit <= 0 {
+		return review
+	}
+
+	compact := cloneMaintenanceJudgmentReview(review)
+	compact.View = "compact"
+	compact.FullAuditCommand = "haft overseer judgment --json"
+	remaining := limit
+	for index := range compact.Groups {
+		group := &compact.Groups[index]
+		if len(group.Tasks) <= remaining {
+			remaining -= len(group.Tasks)
+			continue
+		}
+		omitted := len(group.Tasks) - remaining
+		if remaining > 0 {
+			group.Tasks = append([]MaintenanceJudgmentTaskReview(nil), group.Tasks[:remaining]...)
+		} else {
+			group.Tasks = []MaintenanceJudgmentTaskReview{}
+		}
+		group.OmittedTasks = omitted
+		compact.OmittedJudgmentTasks += omitted
+		remaining = 0
+	}
+	if compact.Reconciliation != nil && len(compact.Reconciliation.Proposals) > limit {
+		compact.Reconciliation.OmittedProposals = len(compact.Reconciliation.Proposals) - limit
+		compact.Reconciliation.Proposals = append(
+			[]MaintenanceReconciliationReviewProposal(nil),
+			compact.Reconciliation.Proposals[:limit]...,
+		)
+	}
+	return compact
+}
+
 func BuildMaintenanceReconciliationReview(
 	proposals []MaintenanceReconciliationReviewProposal,
 ) *MaintenanceReconciliationReview {
@@ -184,6 +230,70 @@ func BuildMaintenanceReconciliationReview(
 	}
 	sort.Strings(review.SuggestedCommands)
 	return review
+}
+
+func cloneMaintenanceJudgmentReview(
+	review *MaintenanceJudgmentReview,
+) *MaintenanceJudgmentReview {
+	clone := *review
+	clone.Counts = cloneMaintenanceJudgmentCounts(review.Counts)
+	clone.Groups = make([]MaintenanceJudgmentGroup, len(review.Groups))
+	for index, group := range review.Groups {
+		clone.Groups[index] = cloneMaintenanceJudgmentGroup(group)
+	}
+	if review.Reconciliation != nil {
+		clone.Reconciliation = cloneMaintenanceReconciliationReview(review.Reconciliation)
+	}
+	return &clone
+}
+
+func cloneMaintenanceJudgmentCounts(
+	counts MaintenanceJudgmentCounts,
+) MaintenanceJudgmentCounts {
+	return MaintenanceJudgmentCounts{
+		ByRecommendation: cloneStringIntMap(counts.ByRecommendation),
+		ByConfidence:     cloneStringIntMap(counts.ByConfidence),
+		BySource:         cloneStringIntMap(counts.BySource),
+	}
+}
+
+func cloneStringIntMap(source map[string]int) map[string]int {
+	if source == nil {
+		return nil
+	}
+	clone := make(map[string]int, len(source))
+	for key, value := range source {
+		clone[key] = value
+	}
+	return clone
+}
+
+func cloneMaintenanceJudgmentGroup(
+	group MaintenanceJudgmentGroup,
+) MaintenanceJudgmentGroup {
+	clone := group
+	clone.DrillDown = append([]string(nil), group.DrillDown...)
+	clone.Tasks = append([]MaintenanceJudgmentTaskReview(nil), group.Tasks...)
+	for index := range clone.Tasks {
+		clone.Tasks[index].DrillDown = append([]string(nil), clone.Tasks[index].DrillDown...)
+		clone.Tasks[index].SuggestedCommands = append([]string(nil), clone.Tasks[index].SuggestedCommands...)
+	}
+	return clone
+}
+
+func cloneMaintenanceReconciliationReview(
+	review *MaintenanceReconciliationReview,
+) *MaintenanceReconciliationReview {
+	clone := *review
+	clone.ByKind = cloneStringIntMap(review.ByKind)
+	clone.SuggestedCommands = append([]string(nil), review.SuggestedCommands...)
+	clone.Proposals = append([]MaintenanceReconciliationReviewProposal(nil), review.Proposals...)
+	for index := range clone.Proposals {
+		clone.Proposals[index].DecisionRefs = append([]string(nil), clone.Proposals[index].DecisionRefs...)
+		clone.Proposals[index].FallbackTargets = append([]string(nil), clone.Proposals[index].FallbackTargets...)
+		clone.Proposals[index].ScopeRepairHints = append([]string(nil), clone.Proposals[index].ScopeRepairHints...)
+	}
+	return &clone
 }
 
 func maintenanceReviewAuthority() MaintenanceReviewAuthority {

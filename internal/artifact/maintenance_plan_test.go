@@ -316,6 +316,76 @@ func TestBuildMaintenanceJudgmentReview_GroupsJudgmentTasksAndPreservesAuthority
 	}
 }
 
+func TestCompactMaintenanceJudgmentReviewBoundsTasksAndProposals(t *testing.T) {
+	plan := &MaintenancePlan{
+		GeneratedAt: "2026-06-19T12:00:00Z",
+		Tasks: []MaintenanceTask{
+			{
+				DecisionRef:   "dec-a",
+				DecisionTitle: "A",
+				Source:        "drift",
+				Category:      string(SurfaceForReview),
+				Rung:          RungJudgment,
+				Reason:        "needs review",
+			},
+			{
+				DecisionRef:   "dec-b",
+				DecisionTitle: "B",
+				Source:        "drift",
+				Category:      string(SurfaceForReview),
+				Rung:          RungJudgment,
+				Reason:        "needs review",
+			},
+			{
+				DecisionRef:   "dec-c",
+				DecisionTitle: "C",
+				Source:        "stale",
+				Category:      string(StaleCategoryEvidenceExpired),
+				Rung:          RungJudgment,
+				ClaimID:       "claim-001",
+				Observable:    "go test ./...",
+				Threshold:     "exit 0",
+				Reason:        "expired",
+			},
+		},
+	}
+	review := BuildMaintenanceJudgmentReview(plan)
+	review.Reconciliation = BuildMaintenanceReconciliationReview([]MaintenanceReconciliationReviewProposal{
+		{ID: "proposal-a", Kind: "fallback_scope_repair_review", Reason: "a", SuggestedCommand: "haft decision reconcile --json"},
+		{ID: "proposal-b", Kind: "fallback_scope_repair_review", Reason: "b", SuggestedCommand: "haft decision reconcile --json"},
+	})
+
+	compact := CompactMaintenanceJudgmentReview(review, 1)
+
+	if compact == review {
+		t.Fatal("compact projection should not alias the source review")
+	}
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if compact.FullAuditCommand != "haft overseer judgment --json" {
+		t.Fatalf("full audit command = %q", compact.FullAuditCommand)
+	}
+	if compact.JudgmentTasks != 3 || compact.OmittedJudgmentTasks != 2 {
+		t.Fatalf("judgment counts = total:%d omitted:%d", compact.JudgmentTasks, compact.OmittedJudgmentTasks)
+	}
+	if maintenanceReviewTaskCount(compact) != 1 {
+		t.Fatalf("compact task count = %d, want 1", maintenanceReviewTaskCount(compact))
+	}
+	if maintenanceReviewTaskCount(review) != 3 {
+		t.Fatalf("source review was mutated: %#v", review.Groups)
+	}
+	if compact.Reconciliation == nil || compact.Reconciliation.ProposalCount != 2 {
+		t.Fatalf("compact reconciliation = %#v", compact.Reconciliation)
+	}
+	if compact.Reconciliation.OmittedProposals != 1 || len(compact.Reconciliation.Proposals) != 1 {
+		t.Fatalf("compact proposals = %#v", compact.Reconciliation)
+	}
+	if len(review.Reconciliation.Proposals) != 2 {
+		t.Fatalf("source reconciliation was mutated: %#v", review.Reconciliation)
+	}
+}
+
 func TestBuildMaintenanceReconciliationReviewNormalizesReadOnlyProposals(t *testing.T) {
 	review := BuildMaintenanceReconciliationReview([]MaintenanceReconciliationReviewProposal{
 		{
@@ -368,4 +438,12 @@ func maintenanceReviewTestContains(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func maintenanceReviewTaskCount(review *MaintenanceJudgmentReview) int {
+	count := 0
+	for _, group := range review.Groups {
+		count += len(group.Tasks)
+	}
+	return count
 }

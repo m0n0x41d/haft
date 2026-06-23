@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Bounded overseer judgment JSON.** `haft overseer judgment --json --limit N`
+  now returns a compact read-only review packet with omitted task/proposal
+  counts and a `full_audit_command`, and status/interface hints point agents to
+  the bounded drill-down instead of forcing a full needs-judgment dump.
 - **Default status needs-binding drift count.** The default cockpit Decision
   Health line now classifies legacy whole-file fallback DriftEvents as
   needs-binding resolution work, matching the DriftEvent summary instead of

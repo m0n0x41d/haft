@@ -521,6 +521,54 @@ func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
 	}
 }
 
+func TestRunOverseerJudgmentJSONLimitReturnsCompactPacket(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	restoreFlags := stubOverseerJudgmentFlagsWithLimit(t, true, 1)
+	defer restoreFlags()
+
+	before := countArtifacts(t, fixture)
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	if err := runOverseerJudgment(cmd, nil); err != nil {
+		t.Fatalf("runOverseerJudgment returned error: %v", err)
+	}
+
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("artifact count changed: before=%d after=%d", before, after)
+	}
+
+	review := artifact.MaintenanceJudgmentReview{}
+	if err := json.Unmarshal(output.Bytes(), &review); err != nil {
+		t.Fatalf("unmarshal judgment review: %v\n%s", err, output.String())
+	}
+	if review.View != "compact" {
+		t.Fatalf("view = %q, want compact", review.View)
+	}
+	if review.FullAuditCommand != "haft overseer judgment --json" {
+		t.Fatalf("full audit command = %q", review.FullAuditCommand)
+	}
+	if review.JudgmentTasks == 0 {
+		t.Fatalf("compact review should preserve total tasks: %#v", review)
+	}
+	if review.JudgmentTasks > 1 && review.OmittedJudgmentTasks == 0 {
+		t.Fatalf("compact review should report omitted tasks when total exceeds limit: %#v", review)
+	}
+	if overseerJudgmentReviewTaskCount(review) > 1 {
+		t.Fatalf("compact review inlined too many tasks: %#v", review.Groups)
+	}
+	if review.AuthorityBoundary.Mutation != "not_mutation" || review.AuthorityBoundary.ApplySurface != "operator_approval_required" {
+		t.Fatalf("authority boundary = %#v", review.AuthorityBoundary)
+	}
+}
+
 func TestRunOverseerHookRunsConfiguredReviewer(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	setupOverseerGitRepo(t, fixture.root)
@@ -1000,11 +1048,36 @@ func stubOverseerJudgmentFlags(t *testing.T, jsonFlag bool) func() {
 	t.Helper()
 
 	previousJSON := overseerJudgmentJSON
+	previousLimit := overseerJudgmentLimit
 	overseerJudgmentJSON = jsonFlag
+	overseerJudgmentLimit = 0
 
 	return func() {
 		overseerJudgmentJSON = previousJSON
+		overseerJudgmentLimit = previousLimit
 	}
+}
+
+func stubOverseerJudgmentFlagsWithLimit(t *testing.T, jsonFlag bool, limit int) func() {
+	t.Helper()
+
+	previousJSON := overseerJudgmentJSON
+	previousLimit := overseerJudgmentLimit
+	overseerJudgmentJSON = jsonFlag
+	overseerJudgmentLimit = limit
+
+	return func() {
+		overseerJudgmentJSON = previousJSON
+		overseerJudgmentLimit = previousLimit
+	}
+}
+
+func overseerJudgmentReviewTaskCount(review artifact.MaintenanceJudgmentReview) int {
+	count := 0
+	for _, group := range review.Groups {
+		count += len(group.Tasks)
+	}
+	return count
 }
 
 func stubOverseerHookFlags(t *testing.T, commit string, jsonFlag bool, quiet bool, async bool) func() {

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecState freshness classification.** `haft baseline audit`
+  now classifies SpecSection state/freshness enforcement wording under
+  SpecSection approval baseline terminology instead of legacy ambiguous debt.
 - **Baseline audit presentation-surface classification.** `haft baseline audit`
   now classifies baseline/drift response formatting vocabulary separately from
   legacy ambiguous baseline debt.

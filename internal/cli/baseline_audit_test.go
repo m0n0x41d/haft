@@ -53,6 +53,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"BaselineCurrentness SpecificationUseCurrentness `json:\"baseline_currentness\"`",
 		"status = SpecUseBaselineMissing",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/project/specflow/state.go", strings.Join([]string{
+		"// SpecSectionBaseline freshness is enforced here.",
+		"return DeriveStateWithBaselines(set, baselines, projectID)",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/legacy_binding.go", strings.Join([]string{
 		"LegacyBindingPostureMissingSymbolBaseline = \"missing_symbol_baseline\"",
 		"LegacyBindingActionProposeRebaseline = \"propose_rebaseline_with_binding_targets\"",
@@ -85,8 +89,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Authority != baselineAuditAuthority {
 		t.Fatalf("unexpected authority: %q", report.Authority)
 	}
-	if report.Summary.SpecSectionApprovalBaseline != 3 {
-		t.Fatalf("spec approval count = %d, want 3", report.Summary.SpecSectionApprovalBaseline)
+	if report.Summary.SpecSectionApprovalBaseline != 5 {
+		t.Fatalf("spec approval count = %d, want 5", report.Summary.SpecSectionApprovalBaseline)
 	}
 	if report.Summary.VerifiedStateSnapshot != 5 {
 		t.Fatalf("verified state count = %d, want 5", report.Summary.VerifiedStateSnapshot)
@@ -219,7 +223,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		Summary: baselineTermAuditSummary{
 			FilesScanned:                2,
 			MatchedLines:                2,
-			SpecSectionApprovalBaseline: 3,
+			SpecSectionApprovalBaseline: 5,
 			VerifiedStateSnapshot:       5,
 			ComparisonOrBenchmark:       2,
 			HistoricalGovernanceCarrier: 1,
@@ -262,7 +266,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	for _, want := range []string{
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
-		"spec_approval=3",
+		"spec_approval=5",
 		"verified_state=5",
 		"comparison=2",
 		"historical_governance=1",

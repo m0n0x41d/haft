@@ -363,6 +363,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditLegacyBinding, "mentions baseline inside legacy decision-binding scope enrichment surface"
 	case baselineAuditSpecUseSurface(path):
 		return baselineAuditSpecUse, "mentions baseline inside SpecificationUse currentness or admission surface"
+	case baselineAuditSpecStateSurface(path):
+		return baselineAuditSpecApproval, "mentions SpecSection baseline freshness enforcement state"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -645,6 +647,10 @@ func baselineAuditSpecUseSurface(path string) bool {
 	default:
 		return false
 	}
+}
+
+func baselineAuditSpecStateSurface(path string) bool {
+	return filepath.ToSlash(path) == "internal/project/specflow/state.go"
 }
 
 func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {

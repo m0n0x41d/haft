@@ -149,7 +149,7 @@ func runBaselineMutation(projectRoot string, args map[string]any, mutation basel
 		return "", fmt.Errorf("project has no .haft/project.yaml or DB; run `haft init` first")
 	}
 
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return "", err
 	}
@@ -209,7 +209,7 @@ func applyApprove(ctx baselineContext) (SpecSectionBaselineResult, error) {
 	section, ok := findActiveSection(ctx.specSet, sectionID)
 	if !ok {
 		return SpecSectionBaselineResult{}, fmt.Errorf(
-			"approve requires section %q to exist with status: active in .haft/specs/* before recording a baseline",
+			"approve requires current SpecSection %q to exist with status: active before recording a baseline",
 			sectionID,
 		)
 	}

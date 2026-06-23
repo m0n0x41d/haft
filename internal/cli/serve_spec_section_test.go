@@ -336,6 +336,49 @@ func TestHandleHaftSpecSection_ApproveRecordsBaselineForActiveSection(t *testing
 	}
 }
 
+func TestHandleHaftSpecSection_ApproveReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	haftDir := filepath.Join(root, ".haft")
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.approve.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		Title:         "SQL approve section",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	result := callHandleSpecSection(t, haftDir, map[string]any{
+		"action":       "approve",
+		"project_root": root,
+		"section_id":   "TS.sql.approve.001",
+		"approved_by":  "human",
+	})
+
+	if result.SectionID != "TS.sql.approve.001" {
+		t.Fatalf("section_id = %q, want SQL edition section", result.SectionID)
+	}
+	if result.Hash != specflow.HashSection(section) {
+		t.Fatalf("hash = %q, want SQL section hash %q", result.Hash, specflow.HashSection(section))
+	}
+	if result.BaselineKind != specflow.BaselineKindSpecSectionApproval {
+		t.Fatalf("baseline_kind = %q, want %q", result.BaselineKind, specflow.BaselineKindSpecSectionApproval)
+	}
+}
+
 func TestHandleHaftSpecSection_ApproveRefusesDraftSection(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
 	overwriteSectionStatus(t, root, "draft")

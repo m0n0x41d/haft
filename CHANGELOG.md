@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first SpecSection baseline mutations.** Operator-invoked
+  `haft_spec_section` / `haft spec onboard` approve/rebaseline/reopen paths now
+  baseline current SQL SpecSection editions when present, with carrier fallback
+  preserved for unsynced projects.
 - **SQL-first spec health findings.** `haft check` / `haft_query(action="check")`
   now compute SpecSection drift, missing-baseline, and staleness health against
   current SQL SpecSection editions while leaving structural carrier checks

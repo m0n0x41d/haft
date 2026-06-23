@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -91,6 +92,12 @@ func TestHandleQuintQuery_DriftEventsReturnsFanoutProjection(t *testing.T) {
 	if report.FullAuditCommand == "" {
 		t.Fatal("default drift_events should name full audit command")
 	}
+	if strings.Contains(result, `"source_items"`) {
+		t.Fatalf("default drift_events should omit source_items audit detail:\n%s", result)
+	}
+	if !strings.Contains(result, `"omitted_source_items"`) {
+		t.Fatalf("default drift_events should count omitted source_items:\n%s", result)
+	}
 	if report.Summary.ImpactedDecisions == 0 {
 		t.Fatalf("expected impacted decisions, got %#v", report.Summary)
 	}
@@ -118,6 +125,9 @@ func TestHandleQuintQuery_DriftEventsReturnsFanoutProjection(t *testing.T) {
 	}
 	if !serveDriftEventsHasSourceItems(fullReport) {
 		t.Fatalf("full drift_events should preserve source_items audit detail: %#v", fullReport.Events)
+	}
+	if !strings.Contains(fullResult, `"source_items"`) {
+		t.Fatalf("full drift_events should serialize source_items audit detail:\n%s", fullResult)
 	}
 }
 

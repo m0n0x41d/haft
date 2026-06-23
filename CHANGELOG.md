@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **MCP DriftEvent compact source-items guard.** Default
+  `haft_query(action="drift_events")` JSON now omits serialized
+  `source_items` audit detail and reports `omitted_source_items` instead,
+  preserving `source_items` only for `full=true` audit drill-downs.
 - **Baseline audit authority-boundary classification.** `haft baseline audit`
   now classifies explicit `not_approval_not_rebaseline` spec sync/apply
   authority-boundary tokens as lifecycle-authority wording instead of legacy

@@ -57,7 +57,7 @@ type DriftEvent struct {
 	ResolutionStatus     string                 `json:"resolution_status"`
 	ResolutionRecord     *DriftEventResolution  `json:"resolution_record,omitempty"`
 	SuggestedNextCommand string                 `json:"suggested_next_command,omitempty"`
-	SourceItems          []DriftEventSourceItem `json:"source_items"`
+	SourceItems          []DriftEventSourceItem `json:"source_items,omitempty"`
 	OmittedSourceItems   int                    `json:"omitted_source_items,omitempty"`
 }
 

@@ -111,6 +111,22 @@ func semanticDriftRouteSpec(kind string) (driftRouteSpec, bool) {
 			[]string{"carrier_hash", "publication_projection_hash"},
 			"inspect carrier bytes before semantic repair",
 		),
+		"carrier_only": routeSpec(
+			"carrier",
+			[]string{"no_change", "republish_or_reencode"},
+			[]string{"view", "republish"},
+			"preserve",
+			[]string{"carrier_hash", "publication_projection_hash"},
+			"carrier-only drift does not revise semantic authority by default",
+		),
+		"carrier_only_changed": routeSpec(
+			"carrier",
+			[]string{"no_change", "republish_or_reencode"},
+			[]string{"view", "republish"},
+			"preserve",
+			[]string{"carrier_hash", "publication_projection_hash"},
+			"carrier-only drift does not revise semantic authority by default",
+		),
 		"publication_faithfulness_drift": routeSpec(
 			"publication",
 			[]string{"republish_or_reencode", "repair_coarsening_contract"},

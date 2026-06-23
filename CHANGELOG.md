@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Carrier-only semantic drift routing.** `haft drift route carrier_only` and
+  `haft_query(action="drift_route", drift_kind="carrier_only")` now classify
+  carrier-only changes as recognized carrier-layer drift instead of unknown
+  high-risk drift, preserving semantic authority while keeping the route
+  read-only.
 - **Product-value evidence live rebuild refresh.** The 2026-06-24 product-value
   evidence packet now matches rebuilt live metrics and includes the
   report-only reconciliation review packet slice as evidence without claiming

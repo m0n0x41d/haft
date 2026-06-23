@@ -64,6 +64,37 @@ func TestHandleQuintQuery_DriftRouteUnknownKindFailsClosed(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuery_DriftRouteRecognizesCarrierOnly(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action":      "drift_route",
+		"drift_kind":  "carrier_only",
+		"bearer_ref":  "publication-unit:spec-section:target",
+		"use_context": "stronger spec reliance",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery drift_route returned error: %v", err)
+	}
+
+	var route artifact.SemanticDriftRoute
+	if err := json.Unmarshal([]byte(result), &route); err != nil {
+		t.Fatalf("decode drift route: %v\n%s", err, result)
+	}
+
+	if !route.Recognized {
+		t.Fatalf("carrier-only route should be recognized: %#v", route)
+	}
+	if route.DriftLayer != "carrier" {
+		t.Fatalf("layer = %q", route.DriftLayer)
+	}
+	if serveDriftRouteHasAction(route, "repair_episteme_claim") {
+		t.Fatalf("carrier-only drift must not route to semantic claim repair: %#v", route.CandidateRepairActions)
+	}
+	if route.AuthorityBoundary.Mutation != artifact.DriftRouteBoundaryNotMutation {
+		t.Fatalf("authority boundary = %+v", route.AuthorityBoundary)
+	}
+}
+
 func TestHandleQuintQuery_DriftEventsReturnsFanoutProjection(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seed := seedGovernanceDebt(t, fixture)

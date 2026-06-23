@@ -42,6 +42,36 @@ func TestBuildSemanticDriftRouteAllowsCodeRepairForRealizationDriftOnlyAsCandida
 	}
 }
 
+func TestBuildSemanticDriftRouteRecognizesCarrierOnlyWithoutSemanticRepair(t *testing.T) {
+	route := BuildSemanticDriftRoute(DriftRouteInput{
+		DriftKind:  "carrier_only",
+		BearerRef:  "publication-unit:spec-section:target",
+		UseContext: "stronger spec reliance",
+	})
+
+	if !route.Recognized {
+		t.Fatalf("carrier-only route should be recognized")
+	}
+	if route.DriftLayer != "carrier" {
+		t.Fatalf("layer = %q, want carrier", route.DriftLayer)
+	}
+	if route.EntityOfConcernChangeMode != "preserve" {
+		t.Fatalf("change mode = %q, want preserve", route.EntityOfConcernChangeMode)
+	}
+	if !driftRouteHasAction(route, "no_change") {
+		t.Fatalf("route actions = %#v, want no_change", route.CandidateRepairActions)
+	}
+	if driftRouteHasAction(route, "repair_episteme_claim") {
+		t.Fatalf("carrier-only drift must not route to semantic claim repair: %#v", route.CandidateRepairActions)
+	}
+	if driftRouteHasBlockedUse(route, "stronger_use_until_drift_kind_is_classified") {
+		t.Fatalf("recognized carrier-only drift should not use unknown-kind blocker: %#v", route.BlockedUses)
+	}
+	if !driftRouteHasBlockedUse(route, "stronger spec reliance") {
+		t.Fatalf("use context should stay visible in blocked/review uses: %#v", route.BlockedUses)
+	}
+}
+
 func TestBuildSemanticDriftRouteUnknownKindFailsClosed(t *testing.T) {
 	route := BuildSemanticDriftRoute(DriftRouteInput{
 		DriftKind:  "mystery_drift",

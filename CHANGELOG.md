@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit decision baseline vocabulary.** `haft baseline audit` now
+  recognizes decision baseline API and drift materiality terms such as
+  `BaselineProfile`, `DriftNoBaseline`, `noBaselineMateriality`,
+  `missingFileMateriality`, baseline operation log keys, and binding-target
+  rebaseline prompts as verified-state snapshot terminology.
 - **Baseline audit SpecSection store surface classification.** `haft baseline
   audit` now treats `internal/project/specflow/baseline.go` implementation
   vocabulary as SpecSection approval baseline store terminology after explicit

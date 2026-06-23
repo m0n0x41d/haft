@@ -19,6 +19,9 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "internal/artifact/decision.go", strings.Join([]string{
 		"const baselineProfile = \"verified_state_snapshot\"",
 		"type BaselineInput struct{}",
+		"logger.Debug().Msg(\"baseline.complete\")",
+		"func noBaselineMateriality() {}",
+		"baselineSymbolsByFile := groupSymbolsByFile(nil)",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
@@ -50,8 +53,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 3 {
 		t.Fatalf("spec approval count = %d, want 3", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 2 {
-		t.Fatalf("verified state count = %d, want 2", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 5 {
+		t.Fatalf("verified state count = %d, want 5", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 1 {
 		t.Fatalf("comparison count = %d, want 1", report.Summary.ComparisonOrBenchmark)
@@ -152,7 +155,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			FilesScanned:                2,
 			MatchedLines:                2,
 			SpecSectionApprovalBaseline: 3,
-			VerifiedStateSnapshot:       2,
+			VerifiedStateSnapshot:       5,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
@@ -189,7 +192,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"spec_approval=3",
-		"verified_state=2",
+		"verified_state=5",
 		"historical_governance=1",
 		"support_archive=1",
 		"source_spec=1",

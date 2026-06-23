@@ -1345,28 +1345,31 @@ type interfaceContractAuditReport struct {
 }
 
 type interfaceContractAuditSummary struct {
-	Capabilities               int `json:"capabilities"`
-	KernelOwnedContracts       int `json:"kernel_owned_contracts"`
-	MCPMirroredActions         int `json:"mcp_mirrored_actions"`
-	CLIAvailableSurfaces       int `json:"cli_available_surfaces"`
-	BindingAuthoritySurfaces   int `json:"binding_authority_surfaces"`
-	ReadOnlySurfaces           int `json:"read_only_surfaces"`
-	LegacyTransportExceptions  int `json:"legacy_transport_exceptions"`
-	SchemaCoveredSurfaces      int `json:"schema_covered_surfaces"`
-	SchemaMissingSurfaces      int `json:"schema_missing_surfaces"`
-	SchemaExcludedFields       int `json:"schema_excluded_fields"`
-	ShapeCoveredSurfaces       int `json:"shape_covered_surfaces"`
-	ShapeMissingSurfaces       int `json:"shape_missing_surfaces"`
-	ShapeSkippedFields         int `json:"shape_skipped_fields"`
-	ShapeGeneratorTargets      int `json:"shape_generator_targets"`
-	ShapeGeneratorTargetFields int `json:"shape_generator_target_fields"`
-	ValidatedMCPMirrors        int `json:"validated_mcp_mirrors"`
-	ManualCLIContracts         int `json:"manual_cli_contracts"`
-	UnvalidatedHostFragments   int `json:"unvalidated_host_fragments"`
-	GeneratedTargetFragments   int `json:"generated_target_fragments"`
-	ValidatedFragments         int `json:"validated_fragments"`
-	LegacyFragments            int `json:"legacy_fragments"`
-	UnvalidatedFragments       int `json:"unvalidated_fragments"`
+	Capabilities                int `json:"capabilities"`
+	KernelOwnedContracts        int `json:"kernel_owned_contracts"`
+	MCPMirroredActions          int `json:"mcp_mirrored_actions"`
+	CLIAvailableSurfaces        int `json:"cli_available_surfaces"`
+	BindingAuthoritySurfaces    int `json:"binding_authority_surfaces"`
+	ReadOnlySurfaces            int `json:"read_only_surfaces"`
+	LegacyTransportExceptions   int `json:"legacy_transport_exceptions"`
+	SchemaCoveredSurfaces       int `json:"schema_covered_surfaces"`
+	SchemaMissingSurfaces       int `json:"schema_missing_surfaces"`
+	SchemaExcludedFields        int `json:"schema_excluded_fields"`
+	SchemaRequiredCovered       int `json:"schema_required_covered_surfaces"`
+	SchemaRequiredMissing       int `json:"schema_required_missing_surfaces"`
+	SchemaMissingRequiredFields int `json:"schema_missing_required_fields"`
+	ShapeCoveredSurfaces        int `json:"shape_covered_surfaces"`
+	ShapeMissingSurfaces        int `json:"shape_missing_surfaces"`
+	ShapeSkippedFields          int `json:"shape_skipped_fields"`
+	ShapeGeneratorTargets       int `json:"shape_generator_targets"`
+	ShapeGeneratorTargetFields  int `json:"shape_generator_target_fields"`
+	ValidatedMCPMirrors         int `json:"validated_mcp_mirrors"`
+	ManualCLIContracts          int `json:"manual_cli_contracts"`
+	UnvalidatedHostFragments    int `json:"unvalidated_host_fragments"`
+	GeneratedTargetFragments    int `json:"generated_target_fragments"`
+	ValidatedFragments          int `json:"validated_fragments"`
+	LegacyFragments             int `json:"legacy_fragments"`
+	UnvalidatedFragments        int `json:"unvalidated_fragments"`
 }
 
 type interfaceContractAuditSurface struct {
@@ -1389,10 +1392,14 @@ type interfaceContractAuditSurface struct {
 }
 
 type interfaceContractAuditSchemaCoverage struct {
-	Checked        bool     `json:"checked"`
-	Status         string   `json:"status"`
-	MissingFields  []string `json:"missing_fields,omitempty"`
-	ExcludedFields []string `json:"excluded_fields,omitempty"`
+	Checked               bool     `json:"checked"`
+	Status                string   `json:"status"`
+	MissingFields         []string `json:"missing_fields,omitempty"`
+	ExcludedFields        []string `json:"excluded_fields,omitempty"`
+	MCPRequiredFields     []string `json:"mcp_required_fields,omitempty"`
+	MissingRequiredFields []string `json:"missing_required_fields,omitempty"`
+	ActionRequiredFields  []string `json:"action_required_fields,omitempty"`
+	RequiredPosture       string   `json:"required_posture,omitempty"`
 }
 
 type interfaceContractAuditShapeCoverage struct {
@@ -1672,11 +1679,11 @@ func interfaceContractGenerationDigest(source any) string {
 func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceContractAuditReport {
 	surfaces := make([]interfaceContractAuditSurface, 0, len(catalog))
 	summary := interfaceContractAuditSummary{Capabilities: len(catalog)}
-	toolProperties := interfaceContractAuditToolProperties()
+	toolSchemas := interfaceContractAuditToolSchemas()
 	exclusions := interfaceContractAuditSchemaFieldExclusions()
 
 	for _, capability := range catalog {
-		surface := buildInterfaceContractAuditSurface(capability, toolProperties, exclusions)
+		surface := buildInterfaceContractAuditSurface(capability, toolSchemas, exclusions)
 		surfaces = append(surfaces, surface)
 
 		if interfaceContractAuditContainsString(surface.ContractSources, "kernel_interface_catalog") {
@@ -1700,10 +1707,21 @@ func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceC
 		if surface.SchemaCoverage.Status == "covered" {
 			summary.SchemaCoveredSurfaces++
 		}
-		if surface.SchemaCoverage.Status == "missing_fields" || surface.SchemaCoverage.Status == "missing_mcp_tool_schema" {
+		if surface.SchemaCoverage.Status == "missing_fields" ||
+			surface.SchemaCoverage.Status == "missing_required_fields" ||
+			surface.SchemaCoverage.Status == "missing_mcp_tool_schema" {
 			summary.SchemaMissingSurfaces++
 		}
 		summary.SchemaExcludedFields += len(surface.SchemaCoverage.ExcludedFields)
+		if len(surface.SchemaCoverage.MissingRequiredFields) == 0 &&
+			surface.SchemaCoverage.Checked &&
+			surface.SchemaCoverage.RequiredPosture != "" {
+			summary.SchemaRequiredCovered++
+		}
+		if len(surface.SchemaCoverage.MissingRequiredFields) > 0 {
+			summary.SchemaRequiredMissing++
+		}
+		summary.SchemaMissingRequiredFields += len(surface.SchemaCoverage.MissingRequiredFields)
 		if surface.ShapeCoverage.Status == "covered" || surface.ShapeCoverage.Status == "no_input_shapes" {
 			summary.ShapeCoveredSurfaces++
 		}
@@ -1745,6 +1763,7 @@ func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceC
 			"Kernel interface catalog is the audited contract source for this report.",
 			"Host schema posture classifies each fragment as a validated mirror, manual CLI contract, or unvalidated host fragment.",
 			"Contract fragment posture classifies every fragment as generated target, validated, legacy/manual, or unvalidated.",
+			"MCP required-field coverage checks transport-level required fields such as action; action-specific required fields stay in the kernel contract and handler validation.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Generated MCP/host schema work remains a later phase and must validate against this inventory.",
 			"Default status must not inline this report; use haft interface contract-audit --json or haft_query(action=\"contract_audit\").",
@@ -1754,7 +1773,7 @@ func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceC
 
 func buildInterfaceContractAuditSurface(
 	capability interfaceCapability,
-	toolProperties map[string]map[string]interface{},
+	toolSchemas map[string]interfaceContractAuditToolSchema,
 	exclusions map[string]map[string]bool,
 ) interfaceContractAuditSurface {
 	execution := capability.CurrentExecution
@@ -1769,8 +1788,8 @@ func buildInterfaceContractAuditSurface(
 		AuthorityPosture: interfaceContractAuditAuthorityPosture(capability),
 		ValidationRefs:   interfaceContractAuditValidationRefs(capability),
 		LegacyException:  interfaceContractAuditLegacyException(execution),
-		SchemaCoverage:   interfaceContractAuditSchemaCoverageFor(capability, toolProperties, exclusions),
-		ShapeCoverage:    interfaceContractAuditShapeCoverageFor(capability, toolProperties, exclusions),
+		SchemaCoverage:   interfaceContractAuditSchemaCoverageFor(capability, toolSchemas, exclusions),
+		ShapeCoverage:    interfaceContractAuditShapeCoverageFor(capability, toolSchemas, exclusions),
 	}
 	surface.ContractSourcePosture = interfaceContractAuditContractSourcePosture(surface)
 	surface.HostSchemaPosture = interfaceContractAuditHostSchemaPosture(surface)
@@ -1824,7 +1843,7 @@ func interfaceContractAuditContractFragmentPosture(surface interfaceContractAudi
 
 func interfaceContractAuditShapeCoverageFor(
 	capability interfaceCapability,
-	toolProperties map[string]map[string]interface{},
+	toolSchemas map[string]interfaceContractAuditToolSchema,
 	exclusions map[string]map[string]bool,
 ) interfaceContractAuditShapeCoverage {
 	execution := capability.CurrentExecution
@@ -1835,7 +1854,7 @@ func interfaceContractAuditShapeCoverageFor(
 		}
 	}
 
-	properties, ok := toolProperties[execution.MCPTool]
+	toolSchema, ok := toolSchemas[execution.MCPTool]
 	if !ok {
 		return interfaceContractAuditShapeCoverage{
 			Checked:            true,
@@ -1843,6 +1862,7 @@ func interfaceContractAuditShapeCoverageFor(
 			MissingShapeFields: []string{"action"},
 		}
 	}
+	properties := toolSchema.Properties
 
 	inputFields := topLevelInterfaceContractFieldSet(capability.InputContract)
 	missing := make([]string, 0)
@@ -1974,7 +1994,7 @@ func prefixShapeFields(root string, fields []string) []string {
 
 func interfaceContractAuditSchemaCoverageFor(
 	capability interfaceCapability,
-	toolProperties map[string]map[string]interface{},
+	toolSchemas map[string]interfaceContractAuditToolSchema,
 	exclusions map[string]map[string]bool,
 ) interfaceContractAuditSchemaCoverage {
 	execution := capability.CurrentExecution
@@ -1985,7 +2005,7 @@ func interfaceContractAuditSchemaCoverageFor(
 		}
 	}
 
-	properties, ok := toolProperties[execution.MCPTool]
+	toolSchema, ok := toolSchemas[execution.MCPTool]
 	if !ok {
 		return interfaceContractAuditSchemaCoverage{
 			Checked:       true,
@@ -1993,6 +2013,7 @@ func interfaceContractAuditSchemaCoverageFor(
 			MissingFields: []string{"action"},
 		}
 	}
+	properties := toolSchema.Properties
 
 	missing := make([]string, 0)
 	excluded := make([]string, 0)
@@ -2008,26 +2029,46 @@ func interfaceContractAuditSchemaCoverageFor(
 	sort.Strings(missing)
 	sort.Strings(excluded)
 
+	expectedRequired := interfaceContractAuditExpectedMCPRequiredFields(capability)
+	missingRequired := make([]string, 0)
+	for _, field := range expectedRequired {
+		if !toolSchema.Required[field] {
+			missingRequired = append(missingRequired, field)
+		}
+	}
+	missingRequired = uniqueSortedStrings(missingRequired)
+
 	status := "covered"
 	if len(missing) > 0 {
 		status = "missing_fields"
+	} else if len(missingRequired) > 0 {
+		status = "missing_required_fields"
 	}
 
 	return interfaceContractAuditSchemaCoverage{
-		Checked:        true,
-		Status:         status,
-		MissingFields:  missing,
-		ExcludedFields: excluded,
+		Checked:               true,
+		Status:                status,
+		MissingFields:         missing,
+		ExcludedFields:        excluded,
+		MCPRequiredFields:     sortedStringSetKeys(toolSchema.Required),
+		MissingRequiredFields: missingRequired,
+		ActionRequiredFields:  topLevelInterfaceContractRequiredFields(capability.InputContract),
+		RequiredPosture:       interfaceContractAuditRequiredPosture(expectedRequired, missingRequired),
 	}
 }
 
-func interfaceContractAuditToolProperties() map[string]map[string]interface{} {
+type interfaceContractAuditToolSchema struct {
+	Properties map[string]interface{}
+	Required   map[string]bool
+}
+
+func interfaceContractAuditToolSchemas() map[string]interfaceContractAuditToolSchema {
 	server := fpf.NewServer()
 	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
 		return "", nil
 	})
 
-	toolProperties := make(map[string]map[string]interface{})
+	toolSchemas := make(map[string]interfaceContractAuditToolSchema)
 	for _, tool := range server.ToolCatalog() {
 		inputSchema, ok := tool.InputSchema.(map[string]interface{})
 		if !ok {
@@ -2037,9 +2078,29 @@ func interfaceContractAuditToolProperties() map[string]map[string]interface{} {
 		if !ok {
 			continue
 		}
-		toolProperties[tool.Name] = properties
+		toolSchemas[tool.Name] = interfaceContractAuditToolSchema{
+			Properties: properties,
+			Required:   stringSetFromSchemaRequired(inputSchema["required"]),
+		}
 	}
-	return toolProperties
+	return toolSchemas
+}
+
+func interfaceContractAuditExpectedMCPRequiredFields(capability interfaceCapability) []string {
+	if capability.CurrentExecution.MCPTool == "" || capability.CurrentExecution.MCPAction == "" {
+		return nil
+	}
+	return []string{"action"}
+}
+
+func interfaceContractAuditRequiredPosture(expected []string, missing []string) string {
+	if len(expected) == 0 {
+		return "no_transport_required_fields"
+	}
+	if len(missing) > 0 {
+		return "missing_transport_required_fields"
+	}
+	return "transport_action_required_action_specific_fields_validated_by_handler"
 }
 
 func topLevelInterfaceContractFields(contract interfaceContract) []string {
@@ -2050,6 +2111,18 @@ func topLevelInterfaceContractFields(contract interfaceContract) []string {
 	}
 	sort.Strings(fields)
 	return fields
+}
+
+func topLevelInterfaceContractRequiredFields(contract interfaceContract) []string {
+	fields := make(map[string]bool)
+	for _, field := range contract.RequiredFields {
+		topLevel := topLevelInterfaceContractField(field)
+		if topLevel == "" {
+			continue
+		}
+		fields[topLevel] = true
+	}
+	return sortedStringSetKeys(fields)
 }
 
 func topLevelInterfaceContractFieldSet(contract interfaceContract) map[string]bool {
@@ -2076,6 +2149,35 @@ func topLevelInterfaceContractField(field string) string {
 		field = field[:idx]
 	}
 	return strings.TrimSpace(field)
+}
+
+func stringSetFromSchemaRequired(value interface{}) map[string]bool {
+	result := make(map[string]bool)
+	switch typed := value.(type) {
+	case []string:
+		for _, item := range typed {
+			if item != "" {
+				result[item] = true
+			}
+		}
+	case []interface{}:
+		for _, item := range typed {
+			text, ok := item.(string)
+			if ok && text != "" {
+				result[text] = true
+			}
+		}
+	}
+	return result
+}
+
+func sortedStringSetKeys(values map[string]bool) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func interfaceContractAuditSchemaFieldExclusions() map[string]map[string]bool {
@@ -2341,7 +2443,7 @@ func writeInterfaceContractAuditText(output io.Writer, report interfaceContractA
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d kernel_owned=%d mcp_mirrored=%d cli_available=%d binding_sensitive=%d read_only=%d legacy_exceptions=%d schema_coverage=%d covered/%d missing excluded_fields=%d shape_coverage=%d covered/%d missing generator_targets=%d fields=%d skipped_fields=%d host_fragments=%d validated_mcp/%d manual_cli/%d unvalidated fragment_posture=%d generated_targets/%d validated/%d legacy/%d unvalidated\n",
+		"summary: capabilities=%d kernel_owned=%d mcp_mirrored=%d cli_available=%d binding_sensitive=%d read_only=%d legacy_exceptions=%d schema_coverage=%d covered/%d missing excluded_fields=%d required_coverage=%d covered/%d missing missing_required_fields=%d shape_coverage=%d covered/%d missing generator_targets=%d fields=%d skipped_fields=%d host_fragments=%d validated_mcp/%d manual_cli/%d unvalidated fragment_posture=%d generated_targets/%d validated/%d legacy/%d unvalidated\n",
 		report.Summary.Capabilities,
 		report.Summary.KernelOwnedContracts,
 		report.Summary.MCPMirroredActions,
@@ -2352,6 +2454,9 @@ func writeInterfaceContractAuditText(output io.Writer, report interfaceContractA
 		report.Summary.SchemaCoveredSurfaces,
 		report.Summary.SchemaMissingSurfaces,
 		report.Summary.SchemaExcludedFields,
+		report.Summary.SchemaRequiredCovered,
+		report.Summary.SchemaRequiredMissing,
+		report.Summary.SchemaMissingRequiredFields,
 		report.Summary.ShapeCoveredSurfaces,
 		report.Summary.ShapeMissingSurfaces,
 		report.Summary.ShapeGeneratorTargets,

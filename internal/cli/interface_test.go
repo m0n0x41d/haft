@@ -123,6 +123,18 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	if len(decide.SchemaCoverage.MissingFields) != 0 {
 		t.Fatalf("decision.decide missing schema fields = %#v", decide.SchemaCoverage.MissingFields)
 	}
+	if !contractAuditTestContains(decide.SchemaCoverage.MCPRequiredFields, "action") {
+		t.Fatalf("decision.decide required fields missing action: %#v", decide.SchemaCoverage)
+	}
+	if len(decide.SchemaCoverage.MissingRequiredFields) != 0 {
+		t.Fatalf("decision.decide missing required schema fields = %#v", decide.SchemaCoverage)
+	}
+	if decide.SchemaCoverage.RequiredPosture != "transport_action_required_action_specific_fields_validated_by_handler" {
+		t.Fatalf("decision.decide required posture = %#v", decide.SchemaCoverage)
+	}
+	if !contractAuditTestContains(decide.SchemaCoverage.ActionRequiredFields, "selected_title") {
+		t.Fatalf("decision.decide action required fields missing selected_title: %#v", decide.SchemaCoverage)
+	}
 	if !contractAuditTestContains(decide.SchemaCoverage.ExcludedFields, "task_context") {
 		t.Fatalf("decision.decide schema exclusions missing task_context: %#v", decide.SchemaCoverage)
 	}
@@ -199,6 +211,12 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	if report.Summary.ShapeGeneratorTargets != 0 || report.Summary.ShapeGeneratorTargetFields != 0 {
 		t.Fatalf("contract audit should have no remaining generator targets: %#v", report.Summary)
 	}
+	if report.Summary.SchemaRequiredMissing != 0 || report.Summary.SchemaMissingRequiredFields != 0 {
+		t.Fatalf("contract audit should have no missing required MCP schema fields: %#v", report.Summary)
+	}
+	if report.Summary.SchemaRequiredCovered == 0 {
+		t.Fatalf("contract audit should count required-field coverage: %#v", report.Summary)
+	}
 	specReview, ok := findContractAuditSurface(report, "query.spec_review")
 	if !ok {
 		t.Fatal("query.spec_review missing from contract audit")
@@ -219,6 +237,9 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	}
 	if !strings.Contains(notes, "Contract fragment posture classifies every fragment") {
 		t.Fatalf("audit notes missing contract fragment posture boundary:\n%s", notes)
+	}
+	if !strings.Contains(notes, "MCP required-field coverage checks transport-level required fields") {
+		t.Fatalf("audit notes missing required-field boundary:\n%s", notes)
 	}
 }
 
@@ -798,6 +819,27 @@ func TestInterfaceCatalogMCPFieldsExistInToolsListSchemas(t *testing.T) {
 	}
 }
 
+func TestInterfaceCatalogMCPRequiredFieldsExistInToolsListSchemas(t *testing.T) {
+	toolRequired := fpfToolRequiredFields(t)
+
+	for _, capability := range haftInterfaceCatalog() {
+		toolName := capability.CurrentExecution.MCPTool
+		if toolName == "" || capability.CurrentExecution.MCPAction == "" {
+			continue
+		}
+
+		required, ok := toolRequired[toolName]
+		if !ok {
+			t.Fatalf("%s declares unknown MCP tool %q", capability.ID, toolName)
+		}
+		for _, field := range interfaceContractAuditExpectedMCPRequiredFields(capability) {
+			if !required[field] {
+				t.Fatalf("%s expects %s tools/list schema to require %q; required=%v", capability.ID, toolName, field, sortedStringSetKeys(required))
+			}
+		}
+	}
+}
+
 func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
 	var output bytes.Buffer
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
@@ -812,6 +854,7 @@ func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
 		"read_only_contract_inventory_not_schema_generation",
 		"binding_sensitive=",
 		"schema_coverage=",
+		"required_coverage=",
 		"shape_coverage=",
 		"generator_targets=",
 		"host_fragments=",
@@ -947,6 +990,26 @@ func fpfToolProperties(t *testing.T) map[string]map[string]interface{} {
 	}
 
 	return toolProperties
+}
+
+func fpfToolRequiredFields(t *testing.T) map[string]map[string]bool {
+	t.Helper()
+
+	server := fpf.NewServer()
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+
+	toolRequired := make(map[string]map[string]bool)
+	for _, tool := range server.ToolCatalog() {
+		inputSchema, ok := tool.InputSchema.(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s input schema has wrong type: %#v", tool.Name, tool.InputSchema)
+		}
+		toolRequired[tool.Name] = stringSetFromSchemaRequired(inputSchema["required"])
+	}
+
+	return toolRequired
 }
 
 func sortedMapKeys(values map[string]interface{}) string {

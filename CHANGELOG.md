@@ -32,6 +32,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contract-audit required-field parity.** `haft interface contract-audit` and
+  `haft_query(action="contract_audit")` now report MCP `required` coverage for
+  transport-level required fields, including missing required schema fields and
+  action-specific required fields that remain validated by handlers.
 - **Pi package contract-carrier guard.** The Pi README/package metadata now
   point maintainers at the read-only `contract_generation` fragments before
   editing Pi tool, skill, or prompt wording, with regression coverage preserving

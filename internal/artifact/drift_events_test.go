@@ -413,6 +413,49 @@ func TestApplyDriftEventResolutionLedgerInvalidatesTargetChangedRecord(t *testin
 	}
 }
 
+func TestApplyDriftEventResolutionLedgerInvalidatesMaterialityChangedRecord(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "shared.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerFileHash,
+			Materiality: DriftMaterialityAdjacentFileChurn,
+			AuditOnly:   true,
+		}},
+	}})
+	now := time.Date(2026, 6, 22, 12, 0, 0, 0, time.UTC)
+	record := BindDriftEventResolutionToEvent(DriftEventResolution{
+		EventID: report.Events[0].EventID,
+		Status:  DriftEventResolutionResolved,
+		Reason:  "verified original audit-only posture",
+	}, report.Events[0])
+
+	report.Events[0].AuditOnly = false
+	report.Events[0].Materiality = DriftMaterialityMaterialSymbol
+	report.Events[0].ResolutionStatus = DriftEventResolutionNeedsOperatorJudgment
+	report.Events[0].SuggestedNextCommand = `haft_refresh(action="review")`
+
+	overlaid := ApplyDriftEventResolutionLedger(
+		report,
+		NewDriftEventResolutionLedger([]DriftEventResolution{record}),
+		now,
+	)
+
+	if overlaid.Events[0].ResolutionStatus == DriftEventResolutionResolved {
+		t.Fatalf("materiality-changed record should not resolve event: %#v", overlaid.Events[0])
+	}
+	if overlaid.Events[0].SuggestedNextCommand == "" {
+		t.Fatal("materiality-changed record should not clear suggested next command")
+	}
+	if overlaid.Events[0].ResolutionRecord == nil {
+		t.Fatal("materiality-changed resolution record should remain visible for audit")
+	}
+	if overlaid.Summary.ResolvedByLedgerEvents != 0 {
+		t.Fatalf("resolved_by_ledger_events = %d, want 0", overlaid.Summary.ResolvedByLedgerEvents)
+	}
+}
+
 func TestApplyDriftEventResolutionLedgerRespectsWaiverExpiry(t *testing.T) {
 	report := BuildDriftEventReport([]DriftReport{{
 		DecisionID: "dec-1",

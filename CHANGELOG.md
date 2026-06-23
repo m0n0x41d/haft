@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **DriftEvent resolution posture binding.** DriftEvent resolution ledger
+  records now bind to the event's materiality and audit-only posture, so an old
+  resolved/waived record remains visible for audit but no longer closes the
+  event after the same target becomes materially different.
 - **Value-space simplify/kill dashboard visibility.** `haft value space` now
   prints the read-only simplify/kill review triggers in compact text output
   instead of hiding them behind a count, while preserving the no-score and

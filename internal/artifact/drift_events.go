@@ -130,6 +130,8 @@ type DriftEventResolution struct {
 	ChangedTargetRef string   `json:"changed_target_ref,omitempty"`
 	TargetKind       string   `json:"target_kind,omitempty"`
 	TargetStatus     string   `json:"target_status,omitempty"`
+	Materiality      string   `json:"materiality,omitempty"`
+	AuditOnly        *bool    `json:"audit_only,omitempty"`
 	RootCause        string   `json:"root_cause,omitempty"`
 }
 
@@ -381,6 +383,8 @@ func BindDriftEventResolutionToEvent(
 	record.ChangedTargetRef = event.ChangedTargetRef
 	record.TargetKind = event.TargetKind
 	record.TargetStatus = event.TargetStatus
+	record.Materiality = string(event.Materiality)
+	record.AuditOnly = boolPtr(event.AuditOnly)
 	record.RootCause = event.RootCause
 	return record
 }
@@ -411,6 +415,8 @@ func driftEventResolutionMatchesEvent(record DriftEventResolution, event DriftEv
 	return driftEventResolutionFieldMatches(record.ChangedTargetRef, event.ChangedTargetRef) &&
 		driftEventResolutionFieldMatches(record.TargetKind, event.TargetKind) &&
 		driftEventResolutionFieldMatches(record.TargetStatus, event.TargetStatus) &&
+		driftEventResolutionFieldMatches(record.Materiality, string(event.Materiality)) &&
+		driftEventResolutionBoolMatches(record.AuditOnly, event.AuditOnly) &&
 		driftEventResolutionFieldMatches(record.RootCause, event.RootCause)
 }
 
@@ -420,6 +426,17 @@ func driftEventResolutionFieldMatches(recordValue string, eventValue string) boo
 		return true
 	}
 	return recordValue == strings.TrimSpace(eventValue)
+}
+
+func driftEventResolutionBoolMatches(recordValue *bool, eventValue bool) bool {
+	if recordValue == nil {
+		return true
+	}
+	return *recordValue == eventValue
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
 
 func ParseDriftEventResolutionTime(value string, now time.Time) (time.Time, error) {

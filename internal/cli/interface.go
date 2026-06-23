@@ -664,7 +664,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_generated_schema","source":"kernel_interface_catalog_field_shapes","source_digest":"sha256:...","summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_generated_schema","source":"kernel_interface_catalog_field_shapes","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[]}`,
 						Note:  "The manifest is the kernel-owned queue for future generation; it does not generate schemas or authorize binding actions.",
 					},
 				},
@@ -1396,15 +1396,16 @@ type interfaceContractAuditShapeCoverage struct {
 }
 
 type interfaceContractGenerationReport struct {
-	Kind          string                              `json:"kind"`
-	SchemaVersion int                                 `json:"schema_version"`
-	Authority     string                              `json:"authority"`
-	Source        string                              `json:"source"`
-	SourceDigest  string                              `json:"source_digest"`
-	Summary       interfaceContractGenerationSummary  `json:"summary"`
-	SurfacePolicy interfaceContractGenerationPolicy   `json:"surface_policy"`
-	Targets       []interfaceContractGenerationTarget `json:"targets"`
-	Notes         []string                            `json:"notes"`
+	Kind           string                              `json:"kind"`
+	SchemaVersion  int                                 `json:"schema_version"`
+	Authority      string                              `json:"authority"`
+	Source         string                              `json:"source"`
+	SourceDigest   string                              `json:"source_digest"`
+	ValidationRefs []string                            `json:"validation_refs"`
+	Summary        interfaceContractGenerationSummary  `json:"summary"`
+	SurfacePolicy  interfaceContractGenerationPolicy   `json:"surface_policy"`
+	Targets        []interfaceContractGenerationTarget `json:"targets"`
+	Notes          []string                            `json:"notes"`
 }
 
 type interfaceContractGenerationSummary struct {
@@ -1489,19 +1490,29 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	}
 
 	return interfaceContractGenerationReport{
-		Kind:          "haft_interface_contract_generation_manifest",
-		SchemaVersion: 1,
-		Authority:     "read_only_generation_manifest_not_generated_schema",
-		Source:        "kernel_interface_catalog_field_shapes",
-		SourceDigest:  interfaceContractGenerationDigest(targets),
-		Summary:       summary,
-		SurfacePolicy: interfaceContractGenerationSurfacePolicy(),
-		Targets:       targets,
+		Kind:           "haft_interface_contract_generation_manifest",
+		SchemaVersion:  1,
+		Authority:      "read_only_generation_manifest_not_generated_schema",
+		Source:         "kernel_interface_catalog_field_shapes",
+		SourceDigest:   interfaceContractGenerationDigest(catalog),
+		ValidationRefs: interfaceContractGenerationValidationRefs(),
+		Summary:        summary,
+		SurfacePolicy:  interfaceContractGenerationSurfacePolicy(),
+		Targets:        targets,
 		Notes: []string{
 			"This manifest is derived from contract-audit generator targets; it is not a generated schema.",
+			"validation_refs name tests that prove the manifest source, zero-target state, MCP mirror coverage, and default-output budget.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
 		},
+	}
+}
+
+func interfaceContractGenerationValidationRefs() []string {
+	return []string{
+		"internal/cli/interface_test.go",
+		"internal/cli/serve_parity_test.go",
+		"internal/fpf/server_test.go",
 	}
 }
 
@@ -1529,8 +1540,8 @@ func countInterfaceContractGenerationFields(targets []interfaceContractGeneratio
 	return total
 }
 
-func interfaceContractGenerationDigest(targets []interfaceContractGenerationTarget) string {
-	payload, err := json.Marshal(targets)
+func interfaceContractGenerationDigest(source any) string {
+	payload, err := json.Marshal(source)
 	if err != nil {
 		return "sha256:unavailable"
 	}
@@ -2258,10 +2269,11 @@ func writeInterfaceContractGenerationText(output io.Writer, report interfaceCont
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d\n",
+		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d validation_refs=%d\n",
 		report.Summary.Capabilities,
 		report.Summary.GeneratorTargetSurfaces,
 		report.Summary.GeneratorTargetFields,
+		len(report.ValidationRefs),
 	); err != nil {
 		return err
 	}

@@ -15,6 +15,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Contract-generation manifest evidence.** The read-only
+  `contract_generation` manifest now hashes the full kernel interface catalog
+  source and always reports validation refs, so an empty generator-target queue
+  is an evidenced state instead of a bare `targets: []` projection.
 - **Spec-use current-authority gate input.** `haft spec use` and
   `haft_query(action="spec_use")` now include a read-only
   `current_authority` frontier posture for the SpecSection target, and

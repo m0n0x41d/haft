@@ -265,6 +265,12 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if !strings.HasPrefix(report.SourceDigest, "sha256:") {
 		t.Fatalf("source digest = %q", report.SourceDigest)
 	}
+	if len(report.ValidationRefs) == 0 {
+		t.Fatalf("validation_refs missing from generation manifest")
+	}
+	if !stringSliceContains(report.ValidationRefs, "internal/cli/interface_test.go") {
+		t.Fatalf("validation_refs missing interface test: %#v", report.ValidationRefs)
+	}
 	if report.Summary.GeneratorTargetSurfaces != 0 || report.Summary.GeneratorTargetFields != 0 {
 		t.Fatalf("expected empty generator target queue after nested schema coverage: %#v", report.Summary)
 	}
@@ -306,6 +312,7 @@ func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 		"source: kernel_interface_catalog_field_shapes sha256:",
 		"generator_target_surfaces=",
 		"generator_target_fields=",
+		"validation_refs=",
 		"no current generator targets",
 	} {
 		if !strings.Contains(text, want) {
@@ -333,6 +340,9 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 	}
 	if report.SurfacePolicy.GeneratedDescriptions != "drill_down_only_validate_with_carrier_semio_before_host_materialization" {
 		t.Fatalf("generated description policy = %q", report.SurfacePolicy.GeneratedDescriptions)
+	}
+	if len(report.ValidationRefs) == 0 {
+		t.Fatalf("validation_refs missing from MCP manifest")
 	}
 	if len(report.Targets) != 0 {
 		t.Fatalf("expected empty generator target manifest from MCP query: %#v", report.Targets)
@@ -372,6 +382,9 @@ func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.
 	shape := capability.InputContract.FieldShapes[0].Shape
 	if !strings.Contains(shape, "surface_policy") {
 		t.Fatalf("contract generation discovery fields missing surface_policy: %s", shape)
+	}
+	if !strings.Contains(shape, "validation_refs") {
+		t.Fatalf("contract generation discovery fields missing validation_refs: %s", shape)
 	}
 }
 

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Value-space simplify/kill dashboard visibility.** `haft value space` now
+  prints the read-only simplify/kill review triggers in compact text output
+  instead of hiding them behind a count, while preserving the no-score and
+  not-gate/not-approval authority boundaries.
 - **Compact drift/reconciliation drill-down limits.**
   `haft_query(action="drift_events"|"decision_reconcile"|"governing_set",
   limit=N)` now applies `limit` to compact MCP projections while preserving

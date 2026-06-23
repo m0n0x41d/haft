@@ -28,6 +28,28 @@ func TestWriteEngineeringValueSpaceSummaryShowsMissingEvidence(t *testing.T) {
 	if strings.Contains(got, "total_score") {
 		t.Fatalf("summary must not expose a total score:\n%s", got)
 	}
+	for _, want := range []string{
+		"review_triggers:",
+		"scope_violation_not_blocked_or_surfaced action=stop_or_retire_capability",
+		"ceremony_exceeds_value_movement action=simplify_or_remove_capability",
+		"missing_equal_budget_comparison action=review_before_continuing_investment",
+		"single_proxy_value_claim action=stop_or_retire_capability",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing review trigger %q:\n%s", want, got)
+		}
+	}
+	for _, forbidden := range []string{
+		"automatic_gate_passed",
+		"approval_granted",
+		"gate_passed",
+		"global_truth=true",
+		"global_truth=global_truth",
+	} {
+		if strings.Contains(got, forbidden) {
+			t.Fatalf("summary must keep review triggers non-authoritative, found %q:\n%s", forbidden, got)
+		}
+	}
 }
 
 func TestWriteEngineeringValueSpaceSummaryShowsEvidenceContext(t *testing.T) {

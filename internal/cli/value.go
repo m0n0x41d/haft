@@ -92,6 +92,15 @@ func writeEngineeringValueSpaceSummary(w io.Writer, space artifact.EngineeringVa
 		len(space.SimplifyKillCriteria),
 		artifact.EngineeringValueSimplifyKillAuthority,
 	))
+	builder.WriteString("review_triggers:\n")
+	for _, criterion := range space.SimplifyKillCriteria {
+		builder.WriteString(fmt.Sprintf(
+			"  - %s action=%s trigger=%s\n",
+			criterion.ID,
+			criterion.ReviewAction,
+			criterion.Trigger,
+		))
+	}
 	builder.WriteString(fmt.Sprintf(
 		"authority_boundary: score=%s evidence=%s approval=%s gate_decision=%s global_truth=%s\n",
 		space.AuthorityBoundary.Score,

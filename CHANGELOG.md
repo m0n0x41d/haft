@@ -55,6 +55,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft_query(action="status")` now has regression coverage proving it does not
   inline generated contract-generation manifests, fragments, schema digests, or
   runtime schema-audit details.
+- **Compact contract-generation CLI bloat guard.** Compact
+  `haft interface contract-generation` output now has regression coverage
+  proving it stays at summary counts and does not inline generated fragment,
+  schema, or materialized-carrier detail.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

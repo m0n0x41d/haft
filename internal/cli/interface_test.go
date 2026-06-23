@@ -1063,9 +1063,18 @@ func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t
 		"missing_runtime_tools",
 		"schema_digest_mismatches",
 		"live_mcp_tools_list_tool_catalog",
+		"fragment_kind",
+		"generated_text",
+		"input_fields",
+		"schema_digest",
+		"handler_validated_fields",
+		"carrier_path",
+		"generated_fragment_refs",
+		"generated/contract-generation/preview/",
+		"generated/contract-generation/schema/",
 	} {
 		if strings.Contains(body, forbidden) {
-			t.Fatalf("compact contract generation text inlined runtime audit detail %q:\n%s", forbidden, body)
+			t.Fatalf("compact contract generation text inlined generated detail %q:\n%s", forbidden, body)
 		}
 	}
 }

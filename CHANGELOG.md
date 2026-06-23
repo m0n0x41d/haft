@@ -118,6 +118,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft spec coverage` now derive structural SpecSection checks from current
   SQL SpecSection editions when present, while preserving typed carrier
   term-map entries as support data.
+- **SQL-first spec read-path guard.** CLI runtime spec surfaces now have a
+  regression test that rejects direct carrier parsing unless the file is the
+  SQL-first compatibility helper, the explicit `spec sync` carrier import
+  path, or the read-only `spec classify-change` before/after review path.
 - **SQL-first WorkCommission spec snapshots.** `create_from_decision` now
   resolves `spec_section_refs` and revision hashes through current SQL
   SpecSection editions when a `project_root` is supplied, preserving carrier

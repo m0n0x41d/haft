@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer status read-only drill-down hints.** Compact overseer/status output
+  no longer advertises mutating `haft overseer maintain --json` as an
+  inspection path; it now points drift/stale/suppression review at bounded
+  judgment, dry-run drain, status JSON, or `haft_refresh` read-only drill-downs.
 - **Host discipline carrier semio coverage.** `haft carrier manifest` now
   classifies root `CLAUDE.md` as a current host discipline mirror, and
   `haft carrier check` scans it for prompt/schema/model authority-boundary

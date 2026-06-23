@@ -524,8 +524,8 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 	output := FormatStatusSignals(summary)
 	for _, want := range []string{
 		"Drift requires confirmation: 2 item(s) grouped",
-		"haft overseer maintain --json",
 		"haft overseer judgment --json --limit 20",
+		"haft overseer drain --dry-run --json",
 		"haft_refresh(action=\"scan\", verbose=true)",
 		"Stale governance artifact",
 	} {
@@ -533,7 +533,7 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 			t.Fatalf("status signal output missing %q:\n%s", want, output)
 		}
 	}
-	for _, absent := range []string{"First decision", "Second decision"} {
+	for _, absent := range []string{"First decision", "Second decision", "haft overseer maintain --json"} {
 		if strings.Contains(output, absent) {
 			t.Fatalf("status signal output should hide per-decision drift %q:\n%s", absent, output)
 		}
@@ -570,13 +570,14 @@ func TestFormatStatusSignalsGroupsStaleSignals(t *testing.T) {
 		"Stale governance artifacts: 2 item(s) grouped, 1 at risk",
 		"haft_refresh(action=\"scan\", verbose=true)",
 		"haft_refresh(action=\"review\")",
+		"haft overseer drain --dry-run --json",
 		"Spec health finding",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status signal output missing %q:\n%s", want, output)
 		}
 	}
-	for _, absent := range []string{"First decision", "Second decision"} {
+	for _, absent := range []string{"First decision", "Second decision", "haft overseer maintain --json"} {
 		if strings.Contains(output, absent) {
 			t.Fatalf("status signal output should hide per-decision stale %q:\n%s", absent, output)
 		}

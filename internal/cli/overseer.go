@@ -1235,7 +1235,7 @@ func runOverseerStatus(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if summary.LatestMaintenanceID != "" {
-		_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nLatest maintenance run: %s (details: `haft overseer maintain --json` re-runs; this view is read-only)\n", summary.LatestMaintenanceID)
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "\nLatest maintenance run: %s (details: `haft overseer status --json`; dry-run preview: `haft overseer drain --dry-run --json`)\n", summary.LatestMaintenanceID)
 		return err
 	}
 	return nil

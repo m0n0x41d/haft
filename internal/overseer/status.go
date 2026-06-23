@@ -64,7 +64,7 @@ func FormatStatusSignals(summary StatusSummary) string {
 
 	if summary.SuppressedCount > 0 {
 		sb.WriteString(fmt.Sprintf(
-			"- **INFO** %d low-signal maintenance item(s) suppressed with audit trail (triage, not improvement); inspect `haft overseer maintain --json` for the latest classifier output.\n",
+			"- **INFO** %d low-signal maintenance item(s) suppressed with audit trail (triage, not improvement); inspect `haft overseer drain --dry-run --json` for the latest classifier preview.\n",
 			summary.SuppressedCount,
 		))
 	}
@@ -152,7 +152,7 @@ func compactDriftStatusSignal(signals []StatusSignal) StatusSignal {
 		Severity: severity,
 		Source:   maintenanceSourceDrift,
 		Title:    title,
-		Detail:   "compact status groups per-decision drift; inspect exact items with `haft overseer maintain --json`, `haft overseer judgment --json --limit 20`, or `haft_refresh(action=\"scan\", verbose=true)`",
+		Detail:   "compact status groups per-decision drift; inspect exact items with `haft overseer judgment --json --limit 20`, `haft overseer drain --dry-run --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
 	}
 }
 
@@ -177,7 +177,7 @@ func compactStaleStatusSignal(signals []StatusSignal) StatusSignal {
 		Severity: severity,
 		Source:   maintenanceSourceStale,
 		Title:    title,
-		Detail:   "compact status groups per-decision stale findings; inspect exact items with `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"review\")`, or `haft overseer maintain --json`",
+		Detail:   "compact status groups per-decision stale findings; inspect exact items with `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"review\")`, or `haft overseer drain --dry-run --json`",
 	}
 }
 
@@ -197,7 +197,7 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 		len(summary.ExecutedActions), maintenanceID, maintenanceID)
 	for i, action := range summary.ExecutedActions {
 		if i >= executedDisclosureLimit {
-			fmt.Fprintf(&sb, "  - … and %d more (inspect `haft overseer maintain --json`)\n", len(summary.ExecutedActions)-executedDisclosureLimit)
+			fmt.Fprintf(&sb, "  - … and %d more (inspect `haft overseer status --json`)\n", len(summary.ExecutedActions)-executedDisclosureLimit)
 			break
 		}
 		title := action.Title

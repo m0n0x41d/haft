@@ -223,6 +223,31 @@ func TestCarrierSemioCheckFlagsSchemaVisibilityAsAuthorization(t *testing.T) {
 	}
 }
 
+func TestCarrierSemioCheckFlagsAuthorityReceiptTheater(t *testing.T) {
+	cases := []string{
+		"Prompt text authorizes binding DecisionRecord creation.",
+		"Model-supplied arguments are authorization receipts.",
+		"Model supplied fields approve operator decisions.",
+		"Generated text authorizes operator approval.",
+		"Generated schema visibility counts as evidence for binding.",
+		"Skill description is evidence for approval.",
+		"Plugin metadata binds the operator.",
+		"Pi metadata approves gate passage.",
+	}
+	for _, content := range cases {
+		t.Run(content, func(t *testing.T) {
+			findings := checkCarrierSemioText("generated/authority-boundary", content+"\n")
+
+			if len(findings) == 0 {
+				t.Fatalf("expected authority-boundary finding for %q", content)
+			}
+			if findings[0].Term != "operator_authorization_boundary" {
+				t.Fatalf("finding term = %q", findings[0].Term)
+			}
+		})
+	}
+}
+
 func TestCarrierSemioCheckAllowsExplicitAuthorityDenial(t *testing.T) {
 	findings := checkCarrierSemioText(
 		"packages/haft-pi/README.md",
@@ -231,6 +256,17 @@ func TestCarrierSemioCheckAllowsExplicitAuthorityDenial(t *testing.T) {
 
 	if len(findings) > 0 {
 		t.Fatalf("explicit denial should be allowed: %#v", findings)
+	}
+}
+
+func TestCarrierSemioCheckAllowsHostReceiptVerifierBoundary(t *testing.T) {
+	findings := checkCarrierSemioText(
+		"packages/haft-pi/README.md",
+		"Host authorization receipts require principal, session, action, payload hash, expiry, source, and a registered kernel verifier before they can become a binding path.\n",
+	)
+
+	if len(findings) > 0 {
+		t.Fatalf("host receipt verifier boundary should be allowed: %#v", findings)
 	}
 }
 

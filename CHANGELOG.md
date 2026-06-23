@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Carrier authority receipt wording guard.** Carrier semio checks now flag
+  prompt text, model-supplied arguments, generated text/schema, skill
+  descriptions, plugin metadata, and Pi metadata when they are described as
+  authorization receipts, approval evidence, binding authority, or gate
+  passage, while preserving the valid host receipt verifier boundary.
 - **Contract-generation materialized schema filtering.** Generated MCP schema
   fragments now omit fields explicitly excluded from MCP schema coverage and
   skip CLI/input-file-only apply contracts, preventing read-only discovery

@@ -493,6 +493,7 @@ func hasCarrierAuthoritySurfaceTerm(window string) bool {
 		"schema visibility",
 		"tool description",
 		"tool schema",
+		"generated text",
 		"generated schema",
 		"host schema",
 		"skill description",
@@ -551,7 +552,6 @@ func allowedAuthorityBoundaryContext(window string) bool {
 		"requires explicit",
 		"explicit operator",
 		"operator approval required",
-		"authorization receipt",
 		"separate from binding",
 		"separate from operator",
 	} {

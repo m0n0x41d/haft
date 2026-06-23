@@ -48,6 +48,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"func newBaselineTestProject() {}",
 		`"action": "rebaseline",`,
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/check_test.go", strings.Join([]string{
+		"t.Fatal(\"baseline_profile missing from drift finding\")",
+		"mustBaselineDecision(t, fixture, driftDecision.Meta.ID)",
+		"// Active sections need baselines so SpecSection drift detection works.",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec.go", strings.Join([]string{
 		"Use: \"rebaseline SECTION_ID\",",
 		"approve sections, or rebaseline drift.",
@@ -158,11 +163,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.AuditToolSurfaceFiles != 1 {
 		t.Fatalf("audit tool surface files = %d, want 1", report.Summary.AuditToolSurfaceFiles)
 	}
-	if report.Summary.TestFixtureSurface != 1 {
-		t.Fatalf("test fixture surface count = %d, want 1", report.Summary.TestFixtureSurface)
+	if report.Summary.TestFixtureSurface != 4 {
+		t.Fatalf("test fixture surface count = %d, want 4", report.Summary.TestFixtureSurface)
 	}
-	if report.Summary.TestFixtureSurfaceFiles != 1 {
-		t.Fatalf("test fixture surface files = %d, want 1", report.Summary.TestFixtureSurfaceFiles)
+	if report.Summary.TestFixtureSurfaceFiles != 2 {
+		t.Fatalf("test fixture surface files = %d, want 2", report.Summary.TestFixtureSurfaceFiles)
 	}
 	if report.Summary.AutonomousMaintenance != 4 {
 		t.Fatalf("autonomous maintenance count = %d, want 4", report.Summary.AutonomousMaintenance)
@@ -248,7 +253,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			LifecycleAuthority:          5,
 			ReleaseNotesCarrier:         1,
 			AuditToolSurface:            1,
-			TestFixtureSurface:          1,
+			TestFixtureSurface:          4,
 			AutonomousMaintenance:       4,
 			SpecUseCurrentness:          2,
 			LegacyBindingScope:          2,
@@ -291,7 +296,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"lifecycle_authority=5",
 		"release_notes=1",
 		"audit_tool=1",
-		"test_fixture=1",
+		"test_fixture=4",
 		"autonomous_maintenance=4",
 		"spec_use_currentness=2",
 		"legacy_binding_scope=2",

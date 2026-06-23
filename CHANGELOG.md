@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **DriftEvent scope-manifest root cause.** Scope-manifest adjacent file churn
+  now reports `root_cause=implementation_footprint_churn` instead of
+  `schema_changed`, while material scope-manifest events keep the
+  `schema_changed` root cause.
 - **Read-only query stale footer fallback.** If the typed status stale lane is
   unavailable while rendering MCP query footers, Haft now suppresses raw stale
   debt instead of falling back to `FindStaleDecisions` counts that can disagree

@@ -187,7 +187,7 @@ func TestBuildDriftEventReportClassifiesAuditOnlyEvents(t *testing.T) {
 	}
 }
 
-func TestBuildDriftEventReportClassifiesScopeManifestAsSchemaChanged(t *testing.T) {
+func TestBuildDriftEventReportClassifiesScopeManifestAdjacentChurnAsImplementationFootprint(t *testing.T) {
 	report := BuildDriftEventReport([]DriftReport{{
 		DecisionID: "dec-1",
 		Files: []DriftItem{{
@@ -206,17 +206,43 @@ func TestBuildDriftEventReportClassifiesScopeManifestAsSchemaChanged(t *testing.
 		t.Fatalf("material_events = %d, want 0", report.Summary.MaterialEvents)
 	}
 	event := report.Events[0]
-	if event.RootCause != DriftEventRootCauseSchemaChanged {
-		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseSchemaChanged)
+	if event.RootCause != DriftEventRootCauseImplementationFootprint {
+		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseImplementationFootprint)
 	}
 	if event.ResolutionStatus != DriftEventResolutionResolved {
 		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionResolved)
 	}
 	if event.SuggestedNextCommand != "" {
-		t.Fatalf("suggested_next_command = %q, want empty for resolved schema cue", event.SuggestedNextCommand)
+		t.Fatalf("suggested_next_command = %q, want empty for resolved implementation footprint cue", event.SuggestedNextCommand)
 	}
 	if event.SourceItems[0].TriggerKind != DriftTriggerScopeManifest {
 		t.Fatalf("source trigger = %q, want scope_manifest", event.SourceItems[0].TriggerKind)
+	}
+}
+
+func TestBuildDriftEventReportClassifiesMaterialScopeManifestAsSchemaChanged(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{{
+		DecisionID: "dec-1",
+		Files: []DriftItem{{
+			Path:        "internal/schema.go",
+			Status:      DriftModified,
+			TriggerKind: DriftTriggerScopeManifest,
+			Materiality: DriftMaterialityMaterialSymbol,
+		}},
+	}})
+
+	if report.Summary.AuditOnlyEvents != 0 {
+		t.Fatalf("audit_only_events = %d, want 0", report.Summary.AuditOnlyEvents)
+	}
+	if report.Summary.MaterialEvents != 1 {
+		t.Fatalf("material_events = %d, want 1", report.Summary.MaterialEvents)
+	}
+	event := report.Events[0]
+	if event.RootCause != DriftEventRootCauseSchemaChanged {
+		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseSchemaChanged)
+	}
+	if event.ResolutionStatus != DriftEventResolutionNeedsOperatorJudgment {
+		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsOperatorJudgment)
 	}
 }
 

@@ -94,6 +94,7 @@ const (
 	DriftEventRootCauseTargetDeleted            = "target_deleted"
 	DriftEventRootCauseTargetRenamed            = "target_renamed"
 	DriftEventRootCauseRetargetCandidate        = "retarget_candidate"
+	DriftEventRootCauseImplementationFootprint  = "implementation_footprint_churn"
 	DriftEventRootCauseSchemaChanged            = "schema_changed"
 	DriftEventRootCauseUnknownHighRisk          = "unknown_high_risk"
 )
@@ -630,7 +631,7 @@ func driftEventRootCause(event DriftEvent) string {
 	if event.DriftStatus == DriftMissing || event.SymbolStatus == "removed" || event.TargetStatus == "removed" {
 		return DriftEventRootCauseTargetDeleted
 	}
-	if event.TriggerKind == DriftTriggerScopeManifest {
+	if event.TriggerKind == DriftTriggerScopeManifest && driftEventMaterialityImpliesSchemaChange(event.Materiality) {
 		return DriftEventRootCauseSchemaChanged
 	}
 	switch event.Materiality {
@@ -647,11 +648,20 @@ func driftEventRootCause(event DriftEvent) string {
 		}
 		return DriftEventRootCauseUnknownHighRisk
 	case DriftMaterialityAdjacentFileChurn:
-		return DriftEventRootCauseCarrierOnlyChanged
+		return DriftEventRootCauseImplementationFootprint
 	case DriftMaterialityUnknownLegacyFileScope:
 		return DriftEventRootCauseUnknownHighRisk
 	}
 	return DriftEventRootCauseUnknownHighRisk
+}
+
+func driftEventMaterialityImpliesSchemaChange(materiality DriftMateriality) bool {
+	switch materiality {
+	case DriftMaterialityMaterialSymbol, DriftMaterialityMaterialSemanticTarget, DriftMaterialityUnknownLegacyFileScope:
+		return true
+	default:
+		return false
+	}
 }
 
 func driftEventRootCauseDetail(event DriftEvent) string {

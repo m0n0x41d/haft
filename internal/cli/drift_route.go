@@ -212,6 +212,24 @@ func buildDriftEventReportWithResolutionLedger(
 	return artifact.ApplyDriftEventResolutionLedger(eventReport, ledger, now)
 }
 
+func applyDefaultDriftEventResolutionLedgerToStatusData(
+	ctx context.Context,
+	store artifact.ArtifactStore,
+	projectRoot string,
+	data artifact.StatusData,
+) artifact.StatusData {
+	if strings.TrimSpace(projectRoot) == "" || data.DriftEvents.SchemaVersion == 0 {
+		return data
+	}
+	ledger, err := readDriftEventResolutionLedger(driftEventResolutionLedgerPath(projectRoot, ""))
+	if err != nil {
+		return data
+	}
+	data.DriftEvents = artifact.ApplyDriftEventResolutionLedger(data.DriftEvents, ledger, timeNow())
+	data.ReconciliationCues = artifact.BuildStatusReconciliationCueReport(ctx, store, data.DriftEvents)
+	return data
+}
+
 func runDriftEventsResolve(cmd *cobra.Command, args []string) error {
 	projectRoot, err := findProjectRoot()
 	if err != nil {

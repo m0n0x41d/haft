@@ -1035,9 +1035,9 @@ func CockpitStatusResponse(data artifact.StatusData) string {
 
 func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	driftEvents := cockpitDriftEvents(data)
+	openDriftEvents := cockpitOpenDriftEvents(driftEvents.Events)
 	hasAttention := len(data.StaleItems) > 0 ||
-		len(data.Drift) > 0 ||
-		len(driftEvents.Events) > 0 ||
+		len(openDriftEvents) > 0 ||
 		len(data.ReconciliationCues.Cues) > 0 ||
 		len(data.CommissionAttention) > 0
 
@@ -1064,14 +1064,15 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	}
 
 	const driftCap = 2
-	if len(data.Drift) > 0 || len(driftEvents.Events) > 0 {
-		materialEvents, auditEvents, unresolvedEvents := partitionCockpitDriftEvents(driftEvents.Events)
+	if len(openDriftEvents) > 0 {
+		materialEvents, auditEvents, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
 		if len(materialEvents) > 0 {
+			uniqueEvents, impactedDecisions, maxFanout := summarizeCockpitDriftEvents(openDriftEvents)
 			sb.WriteString(fmt.Sprintf(
 				"- **Drift events** (%d unique; %d impacted decision(s); max fanout %d):\n",
-				driftEvents.Summary.UniqueEvents,
-				driftEvents.Summary.ImpactedDecisions,
-				driftEvents.Summary.MaxFanout,
+				uniqueEvents,
+				impactedDecisions,
+				maxFanout,
 			))
 		}
 		for i, event := range materialEvents {
@@ -1147,16 +1148,17 @@ func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {
 
 func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) {
 	driftEvents := cockpitDriftEvents(data)
+	openDriftEvents := cockpitOpenDriftEvents(driftEvents.Events)
 	totalDecisions := len(data.HealthyDecisions) +
 		len(data.PendingDecisions) +
 		len(data.UnassessedDecisions)
 
-	if totalDecisions == 0 && len(data.StaleItems) == 0 && len(data.Drift) == 0 && len(driftEvents.Events) == 0 {
+	if totalDecisions == 0 && len(data.StaleItems) == 0 && len(openDriftEvents) == 0 {
 		return
 	}
 
 	sb.WriteString("### Decision Health\n\n")
-	materialEvents, auditEvents, unresolvedEvents := partitionCockpitDriftEvents(driftEvents.Events)
+	materialEvents, auditEvents, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
 	if len(auditEvents) > 0 || len(unresolvedEvents) > 0 {
 		sb.WriteString(fmt.Sprintf(
 			"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s), %d audit-only event(s), %d needs-binding event(s).\n\n",
@@ -1265,6 +1267,37 @@ func cockpitDriftEvents(data artifact.StatusData) artifact.DriftEventReport {
 		return artifact.DriftEventReport{}
 	}
 	return artifact.BuildDriftEventReport(data.Drift)
+}
+
+func cockpitOpenDriftEvents(events []artifact.DriftEvent) []artifact.DriftEvent {
+	out := []artifact.DriftEvent{}
+	for _, event := range events {
+		if event.ResolutionRecord == nil {
+			out = append(out, event)
+			continue
+		}
+		switch event.ResolutionStatus {
+		case artifact.DriftEventResolutionResolved, artifact.DriftEventResolutionWaivedUntil:
+			continue
+		default:
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
+func summarizeCockpitDriftEvents(events []artifact.DriftEvent) (int, int, int) {
+	decisions := map[string]struct{}{}
+	maxFanout := 0
+	for _, event := range events {
+		if event.Fanout > maxFanout {
+			maxFanout = event.Fanout
+		}
+		for _, decision := range event.ImpactedDecisions {
+			decisions[decision.DecisionID] = struct{}{}
+		}
+	}
+	return len(events), len(decisions), maxFanout
 }
 
 func partitionCockpitDriftEvents(events []artifact.DriftEvent) (material, audit, unresolved []artifact.DriftEvent) {

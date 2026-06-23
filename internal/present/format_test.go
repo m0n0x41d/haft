@@ -641,6 +641,56 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 	}
 }
 
+func TestCockpitStatusResponse_DoesNotReportResolvedDriftEventsAsAttention(t *testing.T) {
+	data := artifact.StatusData{
+		Drift: []artifact.DriftReport{{
+			DecisionID: "dec-resolved",
+			Files: []artifact.DriftItem{{
+				Path:   "internal/a.go",
+				Status: artifact.DriftModified,
+			}},
+		}},
+		DriftEvents: artifact.DriftEventReport{
+			SchemaVersion: 2,
+			Summary: artifact.DriftEventSummary{
+				UniqueEvents:           1,
+				ImpactedDecisions:      1,
+				MaterialEvents:         1,
+				ResolvedByLedgerEvents: 1,
+				MaxFanout:              1,
+			},
+			Events: []artifact.DriftEvent{{
+				EventID:          "drift-event-resolved",
+				ChangedTargetRef: "symbol:internal/a.go::func:Done",
+				Materiality:      artifact.DriftMaterialityMaterialSymbol,
+				Fanout:           1,
+				ImpactedDecisions: []artifact.DriftEventDecision{{
+					DecisionID: "dec-resolved",
+				}},
+				RootCause:        artifact.DriftEventRootCauseSemanticTargetChanged,
+				ResolutionStatus: artifact.DriftEventResolutionResolved,
+				ResolutionRecord: &artifact.DriftEventResolution{
+					EventID: "drift-event-resolved",
+					Status:  artifact.DriftEventResolutionResolved,
+					Reason:  "verified externally",
+				},
+			}},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	if strings.Contains(output, "**Drift events**") {
+		t.Fatalf("resolved drift event should not appear as active cockpit drift:\n%s", output)
+	}
+	if strings.Contains(output, "Decision Health") {
+		t.Fatalf("resolved-only drift should not create decision health noise:\n%s", output)
+	}
+	if !strings.Contains(output, "No operator-blocking refresh, drift, or commission items") {
+		t.Fatalf("resolved-only drift should leave cockpit calm:\n%s", output)
+	}
+}
+
 func TestCockpitStatusResponse_GroupsAuditOnlyDrift(t *testing.T) {
 	data := artifact.StatusData{
 		HealthyDecisions: []*artifact.Artifact{

@@ -190,6 +190,58 @@ func TestHandleQuintQuery_DriftEventsAppliesDefaultResolutionLedger(t *testing.T
 	}
 }
 
+func TestApplyDefaultDriftEventResolutionLedgerToStatusData(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seed := seedGovernanceDebt(t, fixture)
+	projectRoot := filepath.Dir(fixture.haftDir)
+	reports, err := artifact.CheckDrift(context.Background(), fixture.store, projectRoot)
+	if err != nil {
+		t.Fatalf("check drift: %v", err)
+	}
+	report := artifact.BuildDriftEventReport(reports)
+	event, ok := serveDriftEventsEventMentioningDecision(report, seed.driftID)
+	if !ok {
+		t.Fatalf("drift events do not mention seeded drift decision %s: %#v", seed.driftID, report.Events)
+	}
+
+	now := timeNow()
+	record := artifact.BindDriftEventResolutionToEvent(artifact.DriftEventResolution{
+		EventID:    event.EventID,
+		Status:     artifact.DriftEventResolutionResolved,
+		Reason:     "verified in status helper regression fixture",
+		RecordedAt: now.Format(time.RFC3339),
+		RecordedBy: "serve_drift_route_test",
+	}, event)
+	ledger, err := artifact.UpsertDriftEventResolution(
+		artifact.NewDriftEventResolutionLedger(nil),
+		record,
+		now,
+	)
+	if err != nil {
+		t.Fatalf("upsert drift event resolution: %v", err)
+	}
+	if err := writeDriftEventResolutionLedger(driftEventResolutionLedgerPath(projectRoot, ""), ledger); err != nil {
+		t.Fatalf("write drift event resolution ledger: %v", err)
+	}
+
+	data := applyDefaultDriftEventResolutionLedgerToStatusData(
+		context.Background(),
+		fixture.store,
+		projectRoot,
+		artifact.StatusData{DriftEvents: report},
+	)
+	resolvedEvent, ok := serveDriftEventsEventMentioningDecision(data.DriftEvents, seed.driftID)
+	if !ok {
+		t.Fatalf("status drift events do not mention seeded drift decision %s: %#v", seed.driftID, data.DriftEvents.Events)
+	}
+	if resolvedEvent.ResolutionStatus != artifact.DriftEventResolutionResolved {
+		t.Fatalf("resolution_status = %q, want resolved", resolvedEvent.ResolutionStatus)
+	}
+	if data.DriftEvents.Summary.ResolvedByLedgerEvents != 1 {
+		t.Fatalf("resolved_by_ledger_events = %d, want 1", data.DriftEvents.Summary.ResolvedByLedgerEvents)
+	}
+}
+
 func serveDriftRouteHasAction(route artifact.SemanticDriftRoute, action string) bool {
 	for _, candidate := range route.CandidateRepairActions {
 		if candidate == action {

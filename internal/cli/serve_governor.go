@@ -25,6 +25,7 @@ func governorStatusResponse(
 	if err != nil {
 		return "", err
 	}
+	data = applyDefaultDriftEventResolutionLedgerToStatusData(ctx, store, projectRoot, data)
 	driftEvents := governorDriftEvents(data)
 
 	return present.StatusGovernor(present.GovernorData{

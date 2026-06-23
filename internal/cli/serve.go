@@ -1626,6 +1626,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if err != nil {
 			return "", err
 		}
+		data = applyDefaultDriftEventResolutionLedgerToStatusData(ctx, store, projectRoot, data)
 		statusBody := present.CockpitStatusResponse(data)
 		if full {
 			statusBody = present.StatusResponse(data)

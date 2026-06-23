@@ -2085,6 +2085,10 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			return "", fmt.Errorf("scan drift: %w", err)
 		}
 		record := artifact.BuildDriftEventReport(reports)
+		full, _ := args["full"].(bool)
+		if !full {
+			record = artifact.CompactDriftEventReport(record, driftEventsSummaryEventLimit)
+		}
 		payload, err := json.Marshal(record)
 		if err != nil {
 			return "", fmt.Errorf("marshal drift event report: %w", err)

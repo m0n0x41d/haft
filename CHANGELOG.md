@@ -65,6 +65,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   default text event list and points to `--json` for the full audit payload,
   preserving DriftEvent grouping without dumping every per-event tail into
   normal operator context.
+- **Compact MCP drift-events drill-down.** `haft_query(action="drift_events")`
+  now returns a compact JSON report by default: complete summary counts, capped
+  event rows, omitted counters, and a `full=true` audit command. Passing
+  `full=true` preserves the complete `source_items` and compatibility report.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

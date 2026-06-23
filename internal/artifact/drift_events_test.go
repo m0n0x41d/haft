@@ -62,6 +62,65 @@ func TestBuildDriftEventReportGroupsSharedFileFanout(t *testing.T) {
 	}
 }
 
+func TestCompactDriftEventReportKeepsSummaryAndOmissions(t *testing.T) {
+	report := DriftEventReport{
+		SchemaVersion: 2,
+		Summary: DriftEventSummary{
+			UniqueEvents:      3,
+			ImpactedDecisions: 2,
+		},
+		Events: []DriftEvent{
+			{
+				EventID:          "drift-event-1",
+				ChangedTargetRef: "file:one.go",
+				SourceItems: []DriftEventSourceItem{
+					{DecisionID: "dec-1", Path: "one.go"},
+					{DecisionID: "dec-2", Path: "one.go"},
+				},
+			},
+			{EventID: "drift-event-2", ChangedTargetRef: "file:two.go"},
+			{EventID: "drift-event-3", ChangedTargetRef: "file:three.go"},
+		},
+		Compatibility: []DriftReport{
+			{DecisionID: "dec-1"},
+			{DecisionID: "dec-2"},
+		},
+	}
+
+	compact := CompactDriftEventReport(report, 2)
+
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if compact.Summary.UniqueEvents != 3 {
+		t.Fatalf("summary unique_events = %d, want 3", compact.Summary.UniqueEvents)
+	}
+	if len(compact.Events) != 2 {
+		t.Fatalf("events = %d, want capped 2", len(compact.Events))
+	}
+	if compact.OmittedEvents != 1 {
+		t.Fatalf("omitted_events = %d, want 1", compact.OmittedEvents)
+	}
+	if len(compact.Compatibility) != 0 {
+		t.Fatalf("compact report should omit compatibility reports: %#v", compact.Compatibility)
+	}
+	if compact.OmittedCompatibilityReports != 2 {
+		t.Fatalf("omitted compatibility reports = %d, want 2", compact.OmittedCompatibilityReports)
+	}
+	if len(compact.Events[0].SourceItems) != 0 {
+		t.Fatalf("compact event should omit source_items: %#v", compact.Events[0].SourceItems)
+	}
+	if compact.Events[0].OmittedSourceItems != 2 {
+		t.Fatalf("omitted_source_items = %d, want 2", compact.Events[0].OmittedSourceItems)
+	}
+	if !strings.Contains(compact.FullAuditCommand, `full=true`) {
+		t.Fatalf("full audit command should name full=true: %q", compact.FullAuditCommand)
+	}
+	if len(report.Events[0].SourceItems) != 2 {
+		t.Fatalf("compact projection mutated source report: %#v", report.Events[0].SourceItems)
+	}
+}
+
 func TestBuildDriftEventReportUsesSymbolTargetWhenMaterialSymbolKnown(t *testing.T) {
 	report := BuildDriftEventReport([]DriftReport{{
 		DecisionID: "dec-1",

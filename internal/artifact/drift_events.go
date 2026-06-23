@@ -10,10 +10,14 @@ import (
 )
 
 type DriftEventReport struct {
-	SchemaVersion int               `json:"schema_version"`
-	Summary       DriftEventSummary `json:"summary"`
-	Events        []DriftEvent      `json:"events"`
-	Compatibility []DriftReport     `json:"compatibility_reports,omitempty"`
+	SchemaVersion               int               `json:"schema_version"`
+	View                        string            `json:"view,omitempty"`
+	Summary                     DriftEventSummary `json:"summary"`
+	Events                      []DriftEvent      `json:"events"`
+	OmittedEvents               int               `json:"omitted_events,omitempty"`
+	OmittedCompatibilityReports int               `json:"omitted_compatibility_reports,omitempty"`
+	FullAuditCommand            string            `json:"full_audit_command,omitempty"`
+	Compatibility               []DriftReport     `json:"compatibility_reports,omitempty"`
 }
 
 type DriftEventSummary struct {
@@ -54,6 +58,7 @@ type DriftEvent struct {
 	ResolutionRecord     *DriftEventResolution  `json:"resolution_record,omitempty"`
 	SuggestedNextCommand string                 `json:"suggested_next_command,omitempty"`
 	SourceItems          []DriftEventSourceItem `json:"source_items"`
+	OmittedSourceItems   int                    `json:"omitted_source_items,omitempty"`
 }
 
 type DriftEventDecision struct {
@@ -213,6 +218,30 @@ func ApplyDriftEventResolutionLedger(
 	}
 	report.Summary = summarizeDriftEvents(report.Events)
 	return report
+}
+
+func CompactDriftEventReport(report DriftEventReport, eventLimit int) DriftEventReport {
+	compact := report
+	compact.View = "compact"
+	compact.FullAuditCommand = `haft_query(action="drift_events", full=true)`
+	compact.OmittedCompatibilityReports = len(report.Compatibility)
+	compact.Compatibility = nil
+
+	events := cloneDriftEvents(report.Events)
+	if eventLimit > 0 && len(events) > eventLimit {
+		compact.OmittedEvents = len(events) - eventLimit
+		events = events[:eventLimit]
+	}
+	for index, event := range events {
+		if len(event.SourceItems) == 0 {
+			continue
+		}
+		events[index].OmittedSourceItems = len(event.SourceItems)
+		events[index].SourceItems = nil
+	}
+	compact.Events = events
+
+	return compact
 }
 
 func cloneDriftEvents(events []DriftEvent) []DriftEvent {

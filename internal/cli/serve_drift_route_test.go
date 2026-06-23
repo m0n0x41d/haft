@@ -77,14 +77,45 @@ func TestHandleQuintQuery_DriftEventsReturnsFanoutProjection(t *testing.T) {
 	if report.SchemaVersion != 2 {
 		t.Fatalf("schema_version = %d, want 2", report.SchemaVersion)
 	}
+	if report.View != "compact" {
+		t.Fatalf("default drift_events view = %q, want compact", report.View)
+	}
 	if report.Summary.UniqueEvents == 0 {
 		t.Fatalf("expected drift events, got %#v", report.Summary)
+	}
+	if len(report.Compatibility) != 0 {
+		t.Fatalf("default drift_events should omit compatibility audit reports: %#v", report.Compatibility)
+	}
+	if report.FullAuditCommand == "" {
+		t.Fatal("default drift_events should name full audit command")
 	}
 	if report.Summary.ImpactedDecisions == 0 {
 		t.Fatalf("expected impacted decisions, got %#v", report.Summary)
 	}
 	if !serveDriftEventsMentionDecision(report, seed.driftID) {
 		t.Fatalf("drift events do not mention seeded drift decision %s: %#v", seed.driftID, report.Events)
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "drift_events",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery drift_events full returned error: %v", err)
+	}
+
+	var fullReport artifact.DriftEventReport
+	if err := json.Unmarshal([]byte(fullResult), &fullReport); err != nil {
+		t.Fatalf("decode full drift event report: %v\n%s", err, fullResult)
+	}
+	if fullReport.View != "" {
+		t.Fatalf("full drift_events view = %q, want empty audit view", fullReport.View)
+	}
+	if len(fullReport.Compatibility) == 0 {
+		t.Fatalf("full drift_events should preserve compatibility audit reports")
+	}
+	if !serveDriftEventsHasSourceItems(fullReport) {
+		t.Fatalf("full drift_events should preserve source_items audit detail: %#v", fullReport.Events)
 	}
 }
 
@@ -104,6 +135,15 @@ func serveDriftEventsMentionDecision(report artifact.DriftEventReport, decisionI
 			if decision.DecisionID == decisionID {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+func serveDriftEventsHasSourceItems(report artifact.DriftEventReport) bool {
+	for _, event := range report.Events {
+		if len(event.SourceItems) > 0 {
+			return true
 		}
 	}
 	return false

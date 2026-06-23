@@ -1132,18 +1132,19 @@ func haftInterfaceCatalog() []interfaceCapability {
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "drift_events",
-				MCPCall:          `haft_query(action="drift_events")`,
+				MCPCall:          `haft_query(action="drift_events", limit=5)`,
 				CLIStatus:        "available",
 				CLICommand:       "haft drift events --json; haft drift events resolve EVENT_ID --status resolved|waived_until --reason ...",
 				DiscoveryCommand: "haft interface query.drift_events --json",
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{},
+				OptionalFields: []string{"limit", "full"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
 						Shape: `{"schema_version":2,"view":"compact","summary":{"unique_events":1,"impacted_decisions":7,"material_events":1,"audit_only_events":0,"needs_binding_resolution_events":1,"semantic_target_events":1,"file_fallback_events":0,"unknown_high_risk_events":0,"resolved_by_ledger_events":1,"waived_by_ledger_events":0,"max_fanout":7},"events":[{"event_id":"drift-event-...","changed_target_ref":"symbol:...","target_kind":"symbol|spec_section|api_contract|invariant|file|...","target_status":"modified|removed|renamed|retarget_candidate","trigger_kind":"file_hash","materiality":"material_symbol","root_cause":"semantic_target_changed|binding_target_missing|carrier_only_changed|generated_artifact_changed|target_deleted|target_renamed|retarget_candidate|implementation_footprint_churn|schema_changed|unknown_high_risk","root_cause_detail":"...","fallback_kind":"whole_file_fallback|edited_symbol_move_candidate","fallback_reason":"unsupported language","fanout":7,"impacted_decisions":[...],"omitted_source_items":3,"resolution_status":"open|needs_scope_enrichment|needs_rebaseline|needs_reconcile|needs_operator_judgment|resolved|waived_until","resolution_record":{"event_id":"drift-event-...","status":"resolved|waived_until","reason":"...","evidence_refs":["..."],"waiver_expires_at":"2026-07-01"},"suggested_next_command":"haft decision reconcile --json|haft_refresh(action=\"review\")|..."}],"omitted_events":141,"omitted_compatibility_reports":34,"full_audit_command":"haft_query(action=\"drift_events\", full=true)"}`,
-						Note:  "Default MCP response is compact. full=true restores source_items and compatibility_reports. DriftEvents prefer symbol/semantic changed targets when available, fall back to file targets only when unresolved, keep source symbol details, expose fallback metadata, and can overlay non-binding resolution metadata from a local ledger.",
+						Note:  "Default MCP response is compact. limit caps compact events; status/prompt-governor recommendations use limit=5. full=true restores source_items and compatibility_reports and ignores the compact limit. DriftEvents prefer symbol/semantic changed targets when available, fall back to file targets only when unresolved, keep source symbol details, expose fallback metadata, and can overlay non-binding resolution metadata from a local ledger.",
 					},
 				},
 				Notes: []string{
@@ -1168,18 +1169,19 @@ func haftInterfaceCatalog() []interfaceCapability {
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "decision_reconcile",
-				MCPCall:          `haft_query(action="decision_reconcile")`,
+				MCPCall:          `haft_query(action="decision_reconcile", limit=5)`,
 				CLIStatus:        "available",
 				CLICommand:       "haft decision reconcile --json; haft decision reconcile selection-draft --json; haft decision reconcile metrics --json",
 				DiscoveryCommand: "haft interface query.decision_reconcile --json",
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{},
+				OptionalFields: []string{"limit", "full"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
 						Shape: `{"schema_version":1,"authority":"report_only_not_binding_authority","view":"compact","file_overlap_policy":"affected_files are implementation-footprint hints; file overlap alone is never merge evidence","summary":{"reviewed_decisions":12,"merge_candidates":1,"conflict_requires_operator":0,"scope_enrichment_candidates":3},"compact_groups":[{"group_id":"reconcile-group-...","category":"merge_candidate|reopen_candidate|keep|...","subject_ref":"...","bounded_context":"...","scope_repair_hints":["use enrich_scope ..."],"decision_refs":[...],"fanout":7,"operator_required":true,"preview_operation":"merge_through_successor|supersede|retire_without_successor|reopen|enrich_scope|claim_lifecycle_update|keep|operator_judgment_required","apply_operation":"merge_through_successor|...","downstream_dependents":3,"downstream_migration_required":true,"successor_workflow_required":true}],"omitted_groups":42,"full_audit_command":"haft_query(action=\"decision_reconcile\", full=true)"}`,
-						Note:  "Default MCP response is compact. affected_files are footprint hints, not merge evidence. full=true restores groups[].preview with authority=report_only_preview_not_binding_authority, required_selection_fields including items[].successor_ref, validation_notes, lineage_relations labeled mergedFrom/supersedes/retiredWithSuccessor/retiredWithoutSuccessor, downstream_impact, downstream_migration_report, and consolidated_successor_workflow. preview is advisory and cannot authorize apply; downstream impact does not relink downstream artifacts.",
+						Note:  "Default MCP response is compact. limit caps compact groups; status/prompt-governor recommendations use limit=5. affected_files are footprint hints, not merge evidence. full=true restores groups[].preview with authority=report_only_preview_not_binding_authority, required_selection_fields including items[].successor_ref, validation_notes, lineage_relations labeled mergedFrom/supersedes/retiredWithSuccessor/retiredWithoutSuccessor, downstream_impact, downstream_migration_report, and consolidated_successor_workflow. preview is advisory and cannot authorize apply; downstream impact does not relink downstream artifacts.",
 					},
 					{
 						Field: "metrics_response",
@@ -1221,14 +1223,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "governing_set",
-				MCPCall:          `haft_query(action="governing_set", query="symbol:...")`,
+				MCPCall:          `haft_query(action="governing_set", query="symbol:...", limit=5)`,
 				CLIStatus:        "available",
 				CLICommand:       "haft decision governing-set --query symbol:... --json",
 				DiscoveryCommand: "haft interface query.governing_set --json",
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{},
-				OptionalFields: []string{"query", "bearer_ref", "source_refs"},
+				OptionalFields: []string{"query", "bearer_ref", "source_refs", "limit", "full"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "filters",
@@ -1238,7 +1240,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					{
 						Field: "response",
 						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","view":"compact","snapshot":{"generated_at":"RFC3339","source":"artifact_store_decision_records","projection":"refreshable_current_governing_frontier","authority_boundary":"derived_read_only_not_gate_decision","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority","filter_applied":true},"filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"authority_frontier":{"authority_boundary":"current_decision_refs_are_governing_authority_terminal_history_refs_are_not","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"current_decision_refs":["dec-current"],"terminal_history_refs":["dec-old"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority"},"compact_sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","answer_paths":[{"target_kind":"claim|spec_section|api_contract|invariant|symbol|whole_file_fallback|file_fallback|unscoped_decision","target_ref":"...","cli":"haft decision governing-set --target-ref ... --json","mcp_call":"haft_query(action=\"governing_set\", source_refs=[...])","exact_record_needed":"...","authority_boundary":"answer_path_is_read_only_not_evidence_or_gate_decision"}],"target_resolution":"explicit_governance_or_watch_target|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"current_decision_count":7,"operator_required":true}],"omitted_sets":42,"full_audit_command":"haft_query(action=\"governing_set\", full=true)"}`,
-						Note:  "Default MCP response is compact. full=true restores full sets[].current_decisions and basis. Terminal decisions are history refs, not current authority; conflicts, overlaps, and fallback scope repair hints are review cues, not automatic lineage mutations.",
+						Note:  "Default MCP response is compact. limit caps compact sets; status/prompt-governor recommendations use limit=5. full=true restores full sets[].current_decisions and basis and ignores the compact limit. Terminal decisions are history refs, not current authority; conflicts, overlaps, and fallback scope repair hints are review cues, not automatic lineage mutations.",
 					},
 				},
 				Notes: []string{

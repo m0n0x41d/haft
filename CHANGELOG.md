@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   reconciliation cues, and prompt-governor attention now recommend bounded
   `limit=5` drift/reconciliation/governing-set drill-downs, while keeping
   explicit `full=true` audit routes for untruncated inspection.
+- **Bundled status carrier drill-down sync.** The bundled `/h-status`,
+  `/h-reason`, `/h-verify`, and Pi `h-status` carriers now point agents at the
+  same bounded compact drift/reconciliation/governing-set drill-downs, and the
+  interface catalog documents `limit`/`full` for those MCP actions.
 - **Contract-generation runtime schema audit.** `haft interface
   contract-generation --json` and `haft_query(action="contract_generation")`
   now include a read-only `runtime_schema_audit` that validates generated MCP

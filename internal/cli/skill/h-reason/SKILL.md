@@ -8,7 +8,7 @@ argument-hint: "[reasoning topic — what to think about / what to figure out]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:5109f6b7c9b9786cc36ae5e102c51c0559478cfbe6b83fdaab3353e124e552e1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:a494659e57a5544e5094237ef7937d9e322fe1d1765cf57fb8df4ec30f837371 -->
 
 # h-reason — FPF reasoning umbrella
 
@@ -308,7 +308,7 @@ For full dim-wise parallel scoring use `/h-compare` directly — it spawns one A
 
 Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts. If the kernel returns `operator_confirmation_required`, recommend the correct manual gate and stop.
 
-Generated-contract drill-downs are read-only carriers: use `mcp__haft__haft_query(action="contract_generation")` for generated-fragment host/skill/plugin/Pi sync hints, and use `mcp__haft__haft_query(action="drift_events")`, `mcp__haft__haft_query(action="decision_reconcile")`, and `mcp__haft__haft_query(action="governing_set")` for drift fanout, reconciliation, and current-authority drill-downs.
+Generated-contract drill-downs are read-only carriers: use `mcp__haft__haft_query(action="contract_generation")` for generated-fragment host/skill/plugin/Pi sync hints, and use `mcp__haft__haft_query(action="drift_events", limit=5)`, `mcp__haft__haft_query(action="decision_reconcile", limit=5)`, and `mcp__haft__haft_query(action="governing_set", limit=5)` for compact drift fanout, reconciliation, and current-authority drill-downs. Add `full=true` only when full audit payloads are needed.
 
 When the operator is ready to commit to a chosen variant from a SolutionPortfolio:
 

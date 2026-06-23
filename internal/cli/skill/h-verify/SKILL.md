@@ -8,7 +8,7 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:5109f6b7c9b9786cc36ae5e102c51c0559478cfbe6b83fdaab3353e124e552e1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:a494659e57a5544e5094237ef7937d9e322fe1d1765cf57fb8df4ec30f837371 -->
 
 # h-verify — Verify a decision still holds
 
@@ -20,7 +20,8 @@ If `decision_ref` is given, use it. Otherwise:
 - `mcp__haft__haft_query(action="status")` — surfaces stale/refresh-due decisions
 - `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe maintenance closures and needs_operator groups
 - `mcp__haft__haft_query(action="contract_generation")` — read-only generated-fragment carrier hints for host/skill/plugin/Pi sync
-- `mcp__haft__haft_query(action="drift_events")`, `mcp__haft__haft_query(action="decision_reconcile")`, and `mcp__haft__haft_query(action="governing_set")` — drift fanout, reconciliation, and current-authority drill-downs
+- `mcp__haft__haft_query(action="drift_events", limit=5)`, `mcp__haft__haft_query(action="decision_reconcile", limit=5)`, and `mcp__haft__haft_query(action="governing_set", limit=5)` — compact drift fanout, reconciliation, and current-authority drill-downs
+- add `full=true` to those drill-down calls only when you need the full audit payload
 - `mcp__haft__haft_query(action="list", kind="DecisionRecord")` — full list
 - Ask the operator which decision to verify
 

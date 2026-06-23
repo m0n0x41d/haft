@@ -8,7 +8,7 @@ argument-hint: "[optional: context name to filter]"
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:5109f6b7c9b9786cc36ae5e102c51c0559478cfbe6b83fdaab3353e124e552e1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:a494659e57a5544e5094237ef7937d9e322fe1d1765cf57fb8df4ec30f837371 -->
 
 # h-status — Project FPF state dashboard
 
@@ -28,7 +28,8 @@ Use explicit follow-up calls for detail:
 - `mcp__haft__haft_refresh(action="review")` — read-only needs-judgment packet
 - `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe closures
 - `mcp__haft__haft_query(action="contract_generation")` — read-only generated-fragment carrier hints for host/skill/plugin/Pi sync
-- `mcp__haft__haft_query(action="drift_events")`, `mcp__haft__haft_query(action="decision_reconcile")`, and `mcp__haft__haft_query(action="governing_set")` — drift fanout, reconciliation, and current-authority drill-downs
+- `mcp__haft__haft_query(action="drift_events", limit=5)`, `mcp__haft__haft_query(action="decision_reconcile", limit=5)`, and `mcp__haft__haft_query(action="governing_set", limit=5)` — compact drift fanout, reconciliation, and current-authority drill-downs
+- add `full=true` to those drill-down calls only when you need the full audit payload
 
 read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
 

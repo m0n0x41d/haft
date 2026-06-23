@@ -3,7 +3,7 @@ name: h-status
 description: Inspect the live Haft governance state in Pi before governed work, open-ended FPF reasoning, or completion claims.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:5109f6b7c9b9786cc36ae5e102c51c0559478cfbe6b83fdaab3353e124e552e1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:a494659e57a5544e5094237ef7937d9e322fe1d1765cf57fb8df4ec30f837371 -->
 
 # h-status for Pi
 
@@ -29,9 +29,11 @@ Read the output as project evidence:
 - call `haft_query` with `{ "action": "contract_generation" }` for read-only
   generated-fragment carrier hints before editing Pi tool, skill, or prompt
   wording,
-- call `haft_query` with `{ "action": "drift_events" }`,
-  `{ "action": "decision_reconcile" }`, or `{ "action": "governing_set" }`
-  for drift fanout, reconciliation, and current-authority drill-downs,
+- call `haft_query` with `{ "action": "drift_events", "limit": 5 }`,
+  `{ "action": "decision_reconcile", "limit": 5 }`, or
+  `{ "action": "governing_set", "limit": 5 }` for compact drift fanout,
+  reconciliation, and current-authority drill-downs; add `"full": true` only
+  for full audit payloads,
 - call `haft_query` with `{ "action": "status", "full": true }` when you need
   detailed decision/problem/note status,
 - call `haft_refresh` with `{ "action": "scan", "verbose": true }` for

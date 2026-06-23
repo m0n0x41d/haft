@@ -1686,6 +1686,9 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 	if !strings.Contains(capability.CurrentExecution.MCPCall, `haft_query(action="governing_set"`) {
 		t.Fatalf("governing_set MCP call = %#v", capability.CurrentExecution)
 	}
+	if !containsString(capability.InputContract.OptionalFields, "limit") || !containsString(capability.InputContract.OptionalFields, "full") {
+		t.Fatalf("governing_set optional fields = %#v, want limit and full", capability.InputContract.OptionalFields)
+	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision governing-set") ||
 		!strings.Contains(capability.CurrentExecution.CLICommand, "--query") {
 		t.Fatalf("governing_set CLI command missing governing-set drill-down:\n%#v", capability.CurrentExecution)
@@ -1695,7 +1698,7 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 	for _, shape := range capability.InputContract.FieldShapes {
 		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
 	}
-	for _, want := range []string{"read_only_current_authority_frontier", "authority_frontier", "current_decision_refs_are_governing_authority_terminal_history_refs_are_not", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref"} {
+	for _, want := range []string{"read_only_current_authority_frontier", "authority_frontier", "current_decision_refs_are_governing_authority_terminal_history_refs_are_not", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref", "limit caps compact sets", "limit=5"} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("governing_set field shapes missing %q:\n%s", want, fieldShapes)
 		}
@@ -1949,14 +1952,17 @@ func TestInterfaceDriftEventsDocumentsFanoutBoundary(t *testing.T) {
 		t.Fatal("query.drift_events capability missing")
 	}
 
-	if capability.CurrentExecution.MCPCall != `haft_query(action="drift_events")` {
+	if capability.CurrentExecution.MCPCall != `haft_query(action="drift_events", limit=5)` {
 		t.Fatalf("drift_events MCP call = %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "limit") || !containsString(capability.InputContract.OptionalFields, "full") {
+		t.Fatalf("drift_events optional fields = %#v, want limit and full", capability.InputContract.OptionalFields)
 	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft drift events --json") {
 		t.Fatalf("drift_events CLI command missing: %#v", capability.CurrentExecution)
 	}
 	shapes, _ := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{"schema_version", "unique_events", "impacted_decisions", "needs_binding_resolution_events", "semantic_target_events", "file_fallback_events", "unknown_high_risk_events", "root_cause", "semantic_target_changed", "target_renamed", "retarget_candidate", "implementation_footprint_churn", "schema_changed", "target_status", "modified|removed|renamed|retarget_candidate", "edited_symbol_move_candidate", "needs_scope_enrichment", "suggested_next_command", "haft decision reconcile --json", "haft_refresh(action=", "fallback_kind", "fallback_reason", "max_fanout", "compatibility_reports"} {
+	for _, want := range []string{"schema_version", "unique_events", "impacted_decisions", "needs_binding_resolution_events", "semantic_target_events", "file_fallback_events", "unknown_high_risk_events", "root_cause", "semantic_target_changed", "target_renamed", "retarget_candidate", "implementation_footprint_churn", "schema_changed", "target_status", "modified|removed|renamed|retarget_candidate", "edited_symbol_move_candidate", "needs_scope_enrichment", "suggested_next_command", "haft decision reconcile --json", "haft_refresh(action=", "fallback_kind", "fallback_reason", "max_fanout", "compatibility_reports", "limit caps compact events", "limit=5", "full=true restores source_items"} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.drift_events contract missing %q:\n%s", want, shapes)
 		}
@@ -1975,8 +1981,11 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		t.Fatal("query.decision_reconcile capability missing")
 	}
 
-	if capability.CurrentExecution.MCPCall != `haft_query(action="decision_reconcile")` {
+	if capability.CurrentExecution.MCPCall != `haft_query(action="decision_reconcile", limit=5)` {
 		t.Fatalf("decision_reconcile MCP call = %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "limit") || !containsString(capability.InputContract.OptionalFields, "full") {
+		t.Fatalf("decision_reconcile optional fields = %#v, want limit and full", capability.InputContract.OptionalFields)
 	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile --json") {
 		t.Fatalf("decision_reconcile CLI command missing: %#v", capability.CurrentExecution)
@@ -2016,6 +2025,8 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		"suggested_review_action",
 		"blocking_questions",
 		"Selection drafts are read-only review aids",
+		"limit caps compact groups",
+		"limit=5",
 	} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.decision_reconcile contract missing %q:\n%s", want, shapes)

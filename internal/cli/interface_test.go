@@ -516,29 +516,52 @@ func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 }
 
-func TestPiHaftQuerySchemaMirrorsGeneratedSchemaFragments(t *testing.T) {
+func TestPiToolSchemasMirrorGeneratedSchemaFragments(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
-	piSchema := parsePiTypeObjectSchema(t, source, "haftQueryParameters")
+	piSchemas := make(map[string]piTypeObjectSchemaMirror)
 
 	for _, fragment := range report.SchemaFragments {
-		if fragment.MCPTool != "haft_query" {
-			continue
+		piSchema, ok := piSchemas[fragment.MCPTool]
+		if !ok {
+			piSchema = parsePiToolSchemaMirror(t, source, fragment.MCPTool)
+			piSchemas[fragment.MCPTool] = piSchema
 		}
 		if !piSchema.Actions[fragment.MCPAction] {
-			t.Fatalf("%s generated action %q missing from Pi haft_query action enum", fragment.CapabilityID, fragment.MCPAction)
+			t.Fatalf("%s generated action %q missing from Pi %s action enum", fragment.CapabilityID, fragment.MCPAction, fragment.MCPTool)
 		}
 		for _, field := range fragment.AllowedTopLevelFields {
 			if !piSchema.Fields[field] {
-				t.Fatalf("%s generated field %q missing from Pi haftQueryParameters", fragment.CapabilityID, field)
+				t.Fatalf("%s generated field %q missing from Pi %s parameters", fragment.CapabilityID, field, fragment.MCPTool)
 			}
 		}
 		for _, field := range fragment.RequiredFields {
 			if !piSchema.RequiredFields[field] {
-				t.Fatalf("%s generated required field %q is optional or missing in Pi haftQueryParameters", fragment.CapabilityID, field)
+				t.Fatalf("%s generated required field %q is optional or missing in Pi %s parameters", fragment.CapabilityID, field, fragment.MCPTool)
 			}
 		}
 	}
+}
+
+func parsePiToolSchemaMirror(t *testing.T, source string, tool string) piTypeObjectSchemaMirror {
+	t.Helper()
+
+	constByTool := map[string]string{
+		"haft_query":        "haftQueryParameters",
+		"haft_problem":      "haftProblemParameters",
+		"haft_solution":     "haftSolutionParameters",
+		"haft_decision":     "haftDecisionParameters",
+		"haft_note":         "haftNoteParameters",
+		"haft_refresh":      "haftRefreshParameters",
+		"haft_method":       "haftMethodParameters",
+		"haft_commission":   "haftCommissionParameters",
+		"haft_spec_section": "haftSpecSectionParameters",
+	}
+	constName, ok := constByTool[tool]
+	if !ok {
+		t.Fatalf("no Pi schema const mapping for %s", tool)
+	}
+	return parsePiTypeObjectSchema(t, source, constName)
 }
 
 func TestPiToolMetadataCarriesSelectedGeneratedQueryFragments(t *testing.T) {
@@ -1084,7 +1107,7 @@ func parsePiTypeObjectSchema(t *testing.T, source string, constName string) piTy
 		t.Fatalf("Pi Type.Object schema %s has no fields", constName)
 	}
 
-	actionPattern := regexp.MustCompile(`(?s)action:\s*enumOf\((.*?)\n\s*\),`)
+	actionPattern := regexp.MustCompile(`(?s)action:\s*enumOf\((.*?)\),`)
 	actionMatches := actionPattern.FindStringSubmatch(matches[1])
 	if len(actionMatches) != 2 {
 		t.Fatalf("Pi Type.Object schema %s action enum not found", constName)

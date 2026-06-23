@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Pi generated schema mirror coverage.** Pi TypeBox schema regression coverage
+  now validates every generated MCP schema fragment, not only `haft_query`, and
+  the packaged Pi mirrors now include the missing ProblemCard, ChoiceResult,
+  semantic-spine decision, and binding-target fields from the kernel interface
+  catalog.
 - **Formality schema wording boundary.** Decision evidence schema text now names
   current F0-F9 formality, `formality_scale_id`, legacy/unversioned bridge/loss
   posture, and the non-authority boundary, while MCP `tools/list` remains under

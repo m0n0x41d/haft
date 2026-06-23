@@ -80,6 +80,39 @@ func TestRunInitPiRemovesStaleMaterializedPackageFiles(t *testing.T) {
 	}
 }
 
+func TestRunInitPiMaterializesOnlyRuntimeCarrierFiles(t *testing.T) {
+	projectRoot := t.TempDir()
+
+	runInitPi(projectRoot)
+
+	packageDir := filepath.Join(projectRoot, ".haft", "pi", "haft-pi")
+	for _, relPath := range []string{
+		"node_modules",
+		"tests",
+		"scripts",
+		"package-lock.json",
+		"tsconfig.json",
+	} {
+		path := filepath.Join(packageDir, filepath.FromSlash(relPath))
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("dev-only Pi package path %s should not be materialized; err=%v", relPath, err)
+		}
+	}
+
+	for _, relPath := range []string{
+		"README.md",
+		"package.json",
+		"extensions/haft/tools.ts",
+		"prompts/h-status.md",
+		"skills/h-status/SKILL.md",
+	} {
+		path := filepath.Join(packageDir, filepath.FromSlash(relPath))
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("runtime Pi carrier %s should be materialized: %v", relPath, err)
+		}
+	}
+}
+
 func TestRegisterPiPackageMigratesLegacyEntry(t *testing.T) {
 	projectRoot := t.TempDir()
 	settingsPath := filepath.Join(projectRoot, ".pi", "settings.json")

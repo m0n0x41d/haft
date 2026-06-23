@@ -40,6 +40,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   virtual surfaces for `contract_generation` preview and schema fragments, so
   generated host/plugin/Pi carrier text is authority-boundary checked before
   materialization.
+- **Pi runtime-carrier materialization guard.** `haft init --pi` regression
+  coverage now pins the embedded package boundary: runtime extension, prompt,
+  skill, README, and package metadata are materialized, while tests, scripts,
+  lockfile, tsconfig, and `node_modules` stay out.
 - **Contract-generation schema fragments.** `haft interface contract-generation`
   and `haft_query(action="contract_generation")` now emit read-only generated
   MCP action schema fragments with schema digests, transport required fields,

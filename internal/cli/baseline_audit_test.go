@@ -37,7 +37,14 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "docs/lifecycle.md", "Operators approve/rebaseline active baseline records.\n")
 	writeBaselineAuditFixture(t, root, "CHANGELOG.md", "Baseline audit release note.\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/baseline_audit.go", "const baselineAuditKind = \"haft_baseline_term_audit\"\n")
-	writeBaselineAuditFixture(t, root, "internal/cli/serve_spec_section_test.go", "func newBaselineTestProject() {}\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/serve_spec_section_test.go", strings.Join([]string{
+		"func newBaselineTestProject() {}",
+		`"action": "rebaseline",`,
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec.go", strings.Join([]string{
+		"Use: \"rebaseline SECTION_ID\",",
+		"approve sections, or rebaseline drift.",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/maintenance_plan.go", strings.Join([]string{
 		"type BaselineSnapshot struct{}",
 		"AutoBaselineCandidates++",
@@ -102,11 +109,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 2 {
-		t.Fatalf("lifecycle authority count = %d, want 2", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 5 {
+		t.Fatalf("lifecycle authority count = %d, want 5", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 2 {
-		t.Fatalf("lifecycle authority files = %d, want 2", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 4 {
+		t.Fatalf("lifecycle authority files = %d, want 4", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)
@@ -195,7 +202,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
 			TypedBaselineModel:          1,
-			LifecycleAuthority:          2,
+			LifecycleAuthority:          5,
 			ReleaseNotesCarrier:         1,
 			AuditToolSurface:            1,
 			TestFixtureSurface:          1,
@@ -236,7 +243,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"support_archive=1",
 		"source_spec=1",
 		"typed_model=1",
-		"lifecycle_authority=2",
+		"lifecycle_authority=5",
 		"release_notes=1",
 		"audit_tool=1",
 		"test_fixture=1",

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit spec lifecycle CLI classification.** `haft baseline audit`
+  now classifies spec approval/rebaseline CLI and SpecSection handler test
+  wording as baseline lifecycle-authority terminology.
 - **Baseline audit legacy-binding scope vocabulary.** `haft baseline audit` now
   classifies old-decision symbol-baseline enrichment and binding-target
   rebaseline terminology separately from legacy ambiguous baseline debt.

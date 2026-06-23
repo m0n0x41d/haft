@@ -508,8 +508,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditTypedModel, "names the typed baseline model or compatibility projection"
 	case baselineAuditSpecflowBaselineStoreSurface(path):
 		return baselineAuditSpecApproval, "mentions baseline inside the SpecSection approval baseline store implementation"
-	case baselineAuditSpecSectionLifecycleHandlerSurface(path):
-		return baselineAuditLifecycleAuth, "mentions baseline inside the SpecSection lifecycle handler implementation"
+	case baselineAuditSpecLifecycleSurface(path):
+		return baselineAuditLifecycleAuth, "mentions baseline inside the SpecSection lifecycle CLI or handler surface"
 	case containsAnyBaselineTerm(value,
 		"normalization baseline",
 		"baseline db",
@@ -602,8 +602,16 @@ func baselineAuditSpecflowBaselineStoreSurface(path string) bool {
 	return filepath.ToSlash(path) == "internal/project/specflow/baseline.go"
 }
 
-func baselineAuditSpecSectionLifecycleHandlerSurface(path string) bool {
-	return filepath.ToSlash(path) == "internal/cli/serve_spec_section.go"
+func baselineAuditSpecLifecycleSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/spec.go",
+		"internal/cli/spec_onboard.go",
+		"internal/cli/serve_spec_section.go",
+		"internal/cli/serve_spec_section_test.go":
+		return true
+	default:
+		return false
+	}
 }
 
 func baselineAuditLegacyBindingSurface(path string) bool {

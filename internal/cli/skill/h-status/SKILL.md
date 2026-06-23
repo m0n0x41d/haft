@@ -8,6 +8,8 @@ argument-hint: "[optional: context name to filter]"
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:08ae74b6cbd79d8f0432f8e364f498d4302e1aac15bfe06fa88ce978960b7834 -->
+
 # h-status — Project FPF state dashboard
 
 You are surfacing the current FPF state via `mcp__haft__haft_query(action="status")`. Read-only — no kernel writes (Step 0's scan is a maintenance write, not a state mutation).

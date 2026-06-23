@@ -310,8 +310,8 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if report.Summary.MaterializedCarriers == 0 {
 		t.Fatalf("expected materialized carrier list in generation manifest: %#v", report.Summary)
 	}
-	if report.Summary.DigestGuardedCarriers == 0 {
-		t.Fatalf("expected at least one digest-guarded carrier in generation manifest: %#v", report.Summary)
+	if report.Summary.DigestGuardedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("expected all materialized carriers source-digest guarded: %#v", report.Summary)
 	}
 	if report.Summary.AuthorityGuardedCarriers != report.Summary.MaterializedCarriers {
 		t.Fatalf("expected all materialized carriers authority-guarded: %#v", report.Summary)

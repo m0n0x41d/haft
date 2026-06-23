@@ -8,6 +8,8 @@ argument-hint: "[reasoning topic — what to think about / what to figure out]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:08ae74b6cbd79d8f0432f8e364f498d4302e1aac15bfe06fa88ce978960b7834 -->
+
 # h-reason — FPF reasoning umbrella
 
 You are running the **haft umbrella reasoning workflow**. This skill replaces the old narrow `/h-fpf` (still aliased — same skill) with a complete reasoning palette: framing, exploration, comparison, verification, notes, plus key patterns from the slideument that don't have dedicated skills (Goldilocks problem selection, NQD discipline, BLP, Scaling-Law Lens).

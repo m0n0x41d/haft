@@ -8,6 +8,8 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:08ae74b6cbd79d8f0432f8e364f498d4302e1aac15bfe06fa88ce978960b7834 -->
+
 # h-verify — Verify a decision still holds
 
 You are running the FPF verification loop: baseline → measure → evidence → record. Drift detection compares current state against baselined affected_files; evidence decay reports surface when valid_until passes; measure verdict is recorded for the predictions the decide step declared.

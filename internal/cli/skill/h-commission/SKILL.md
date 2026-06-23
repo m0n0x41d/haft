@@ -9,6 +9,8 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:08ae74b6cbd79d8f0432f8e364f498d4302e1aac15bfe06fa88ce978960b7834 -->
+
 # h-commission — Create work commission (manual only, sacred)
 
 You are creating a WorkCommission through the manual CLI/input-file path. Commissions are execution-authority grants — they encode WHAT the operator authorized an autonomous agent (harness) to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS. Default MCP serve mode rejects WorkCommission creation actions with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. Manual CLI is the default binding path; a host authorization receipt can become a binding path only when a registered kernel verifier can confirm principal, session, action, payload hash, expiry, and source.

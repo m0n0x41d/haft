@@ -11,8 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Contract-generation materialized carrier manifest.** `haft interface
   contract-generation --json` and `haft_query(action="contract_generation")`
   now list materialized host/skill/plugin/Pi carrier files with source-contract,
-  sync posture, required markers, fragment refs, and validation refs, while
-  compact text keeps only counts and default status still omits the manifest.
+  source-digest guarded sync posture, required markers, fragment refs, and
+  validation refs, while compact text keeps only counts and default status still
+  omits the manifest.
 - **Governing frontier snapshot digest.** `haft decision governing-set --json`
   and `haft_query(action="governing_set")` now include a stable
   `snapshot_digest` in the read-only snapshot metadata, so current-authority

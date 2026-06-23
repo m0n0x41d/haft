@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with explicit evidence refs, missing-evidence boundaries, simplify/kill
   criteria, and unmeasured gaps; the evidence ontology and term map now name
   current F0-F9 formality with legacy F0-F3 bridge/loss wording.
+- **Product-value evidence refresh.** The semantic-spine product-value evidence
+  packet now includes the read-only query stale-footer fallback guard as
+  compact-status/noise-control evidence.
 - **Equal-budget product-value comparison protocol.** The product-value
   evidence packet now defines a parity protocol for comparing Haft against an
   AI agent using ADRs plus tests, while explicitly marking the comparison as

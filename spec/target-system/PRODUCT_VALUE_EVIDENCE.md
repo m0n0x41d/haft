@@ -25,7 +25,7 @@ teams, or that host-backed authorization receipts are complete.
 | Window | `2026-06-23` |
 | Method ref | `dogfood-current-goal` |
 | Value surface | `haft value space haft-semantic-spine-rewrite --window 2026-06-23 --method-ref dogfood-current-goal ...` |
-| Value surface output | `single_score=no_single_haft_or_fpf_score`, `evidence_refs=6`, `evidence_missing_characteristics=0` |
+| Value surface output | `single_score=no_single_haft_or_fpf_score`, `evidence_refs=7`, `evidence_missing_characteristics=0` |
 
 Evidence refs:
 
@@ -33,6 +33,7 @@ Evidence refs:
 - `commit:6ecd5cee` — measurement evidence preserves current F0-F9 formality metadata.
 - `commit:8a6e6db2` — unversioned formality stays diagnostic instead of being promoted to current F0-F9.
 - `commit:ce368364` — `haft value space` compact output shows evidence refs and missing evidence characteristics.
+- `commit:6ca19baf` — read-only MCP query footers suppress raw stale debt when the typed status stale lane is unavailable.
 - `test:go-test-internal-scopeauth` — `go test ./internal/scopeauth -count=1` passed on 2026-06-23.
 - `test:go-test-internal-cli-scope-violation` — targeted harness out-of-scope tests in `internal/cli` passed on 2026-06-23.
 
@@ -41,6 +42,9 @@ Evidence refs:
 - Atomic slice discipline is working for this rewrite window: each listed commit
   has focused tests and a full `go test ./...` run in the same session.
 - The value surface does not collapse to a single scalar score.
+- Compact read-only query footers fail closed on stale debt rather than
+  reintroducing raw `FindStaleDecisions` counts that can disagree with the
+  status cockpit.
 - Scope violation handling is present at the code path tested by
   `scopeauth.AuthorizeWorkspaceDiff` and harness apply/result formatting.
 - Missing value evidence is visible on the explicit value-space surface instead

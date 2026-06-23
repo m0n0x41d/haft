@@ -120,6 +120,8 @@ func assertNoContractGenerationManifestInline(t *testing.T, surface string, text
 		"generated_preview_fragments",
 		"generated_schema_fragments",
 		"generated_fragments",
+		"generated/contract-generation/preview/",
+		"generated/contract-generation/schema/",
 		"surface_policy",
 	} {
 		if strings.Contains(text, forbidden) {

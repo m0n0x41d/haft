@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Generated contract no-default-bloat guard.** Compact interface, status, and
+  code-context regression helpers now also reject generated contract virtual
+  carrier paths, keeping generated host/schema surface inventory behind
+  explicit carrier/contract drill-downs.
 - **Spec PublicationUnit round-trip guard.** SpecSection publication regression
   coverage now proves carrier path changes do not change the semantic source
   edition or publication hash, while semantic edits do, keeping SQL truth,

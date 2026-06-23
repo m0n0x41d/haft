@@ -521,6 +521,9 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"baseline with new files",
 		"create decision and baseline",
 		"unbaselined",
+		"baseline \u2192 measure",
+		"takes a baseline snapshot",
+		"baseline file hashes",
 	):
 		return baselineAuditVerifiedState, "names a verified-state snapshot or drift-detection baseline profile"
 	case containsAnyBaselineTerm(value,
@@ -585,6 +588,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"does not approve, rebaseline",
 		"without creating approval, rebaseline",
 		"not_approval_rebaseline",
+		"re-baseline via `haft_decision(action=\"baseline\"",
+		"drift on touched files",
 		"operator reviews the active specsection and records a baseline",
 		"operator chooses rebaseline",
 		"human principal approves binding choices and baseline",
@@ -644,6 +649,9 @@ func baselineAuditHistoricalGovernanceCarrier(path string) bool {
 
 func baselineAuditSupportArchiveCarrier(path string) bool {
 	path = filepath.ToSlash(path)
+	if path == "MIGRATION-v8.md" {
+		return true
+	}
 	for _, prefix := range []string{
 		".haft/methods/",
 		".haft/night-runs/",
@@ -823,8 +831,14 @@ func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 		"internal/cli/serve.go",
 		"internal/cli/serve_decision_test.go",
 		"internal/tools/haft.go",
-		"internal/tools/haft_test.go":
+		"internal/tools/haft_test.go",
+		"spec/integration/MCP_PROTOCOL.md":
 		return true
+	case "README.md":
+		return containsAnyBaselineTerm(value,
+			"haft_decision",
+			"decision contracts",
+		)
 	case "internal/cli/interface.go":
 		return containsAnyBaselineTerm(value,
 			"haft_decision(baseline",
@@ -882,7 +896,13 @@ func baselineAuditWorkflowSkillSurface(path string) bool {
 }
 
 func baselineAuditVerifySkillSurface(path string) bool {
-	return filepath.ToSlash(path) == "internal/cli/skill/h-verify/SKILL.md"
+	switch filepath.ToSlash(path) {
+	case "internal/cli/skill/h-verify/SKILL.md",
+		"packages/haft-pi/prompts/h-verify.md":
+		return true
+	default:
+		return false
+	}
 }
 
 func baselineAuditAgentGuardrailSurface(path string) bool {

@@ -88,6 +88,20 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/fixture.md", "The baseline fixture is local test data.\n")
 	writeBaselineAuditFixture(t, root, "docs/ambiguous.md", "Run baseline before release.\n")
+	writeBaselineAuditFixture(t, root, "README.md", strings.Join([]string{
+		"| `haft_decision` | Decision contracts: invariants, claims, evidence, baseline lifecycle |",
+		"| **h-verify** | auto | Baseline \u2192 measure \u2192 evidence loop with drift detection |",
+		"it takes a baseline snapshot on completion.",
+		"reads decision predictions + valid_until + baseline file hashes",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "AGENTS.md", "Drift on touched files: re-baseline via `haft_decision(action=\"baseline\", ...)`.\n")
+	writeBaselineAuditFixture(t, root, "CLAUDE.md", "Drift on touched files: re-baseline via `haft_decision(action=\"baseline\", ...)`.\n")
+	writeBaselineAuditFixture(t, root, "MIGRATION-v8.md", "Decisions, problems, evidence, baselines, WorkCommissions all still load.\n")
+	writeBaselineAuditFixture(t, root, "packages/haft-pi/prompts/h-verify.md", strings.Join([]string{
+		"6. Drift on touched files: re-baseline via",
+		"`haft_decision(action=\"baseline\")` or surface the drift inline.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "spec/integration/MCP_PROTOCOL.md", "| `haft_decision` | decide, apply, measure, evidence, baseline | Execute, Verify |\n")
 	writeBaselineAuditFixture(t, root, ".haft/decisions/dec.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, ".haft/methods/swe-core/refactor.yaml", "baseline and post-change checks make the claim concrete.\n")
 	writeBaselineAuditFixture(t, root, "data/FPF/FPF-Spec.md", "Baseline is source-spec terminology.\n")
@@ -272,8 +286,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 11 {
 		t.Fatalf("spec approval count = %d, want 11", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 36 {
-		t.Fatalf("verified state count = %d, want 36", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 41 {
+		t.Fatalf("verified state count = %d, want 41", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 8 {
 		t.Fatalf("comparison count = %d, want 8", report.Summary.ComparisonOrBenchmark)
@@ -287,11 +301,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.HistoricalGovernanceFiles != 1 {
 		t.Fatalf("historical governance files = %d, want 1", report.Summary.HistoricalGovernanceFiles)
 	}
-	if report.Summary.SupportArchiveCarrier != 1 {
-		t.Fatalf("support/archive count = %d, want 1", report.Summary.SupportArchiveCarrier)
+	if report.Summary.SupportArchiveCarrier != 2 {
+		t.Fatalf("support/archive count = %d, want 2", report.Summary.SupportArchiveCarrier)
 	}
-	if report.Summary.SupportArchiveFiles != 1 {
-		t.Fatalf("support/archive files = %d, want 1", report.Summary.SupportArchiveFiles)
+	if report.Summary.SupportArchiveFiles != 2 {
+		t.Fatalf("support/archive files = %d, want 2", report.Summary.SupportArchiveFiles)
 	}
 	if report.Summary.SourceSpecReference != 1 {
 		t.Fatalf("source spec count = %d, want 1", report.Summary.SourceSpecReference)
@@ -311,11 +325,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 28 {
-		t.Fatalf("lifecycle authority count = %d, want 28", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 30 {
+		t.Fatalf("lifecycle authority count = %d, want 30", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 15 {
-		t.Fatalf("lifecycle authority files = %d, want 15", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 17 {
+		t.Fatalf("lifecycle authority files = %d, want 17", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)
@@ -359,11 +373,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.LegacyBindingScopeFiles != 1 {
 		t.Fatalf("legacy binding scope files = %d, want 1", report.Summary.LegacyBindingScopeFiles)
 	}
-	if report.Summary.DecisionBaselineAPI != 10 {
-		t.Fatalf("decision baseline api count = %d, want 10", report.Summary.DecisionBaselineAPI)
+	if report.Summary.DecisionBaselineAPI != 12 {
+		t.Fatalf("decision baseline api count = %d, want 12", report.Summary.DecisionBaselineAPI)
 	}
-	if report.Summary.DecisionBaselineAPIFiles != 4 {
-		t.Fatalf("decision baseline api files = %d, want 4", report.Summary.DecisionBaselineAPIFiles)
+	if report.Summary.DecisionBaselineAPIFiles != 6 {
+		t.Fatalf("decision baseline api files = %d, want 6", report.Summary.DecisionBaselineAPIFiles)
 	}
 	if report.Summary.BaselinePresentation != 7 {
 		t.Fatalf("baseline presentation count = %d, want 7", report.Summary.BaselinePresentation)

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit carrier/protocol wording classification.** `haft baseline
+  audit` now classifies current README, AGENTS/CLAUDE guardrails, Pi
+  h-verify prompts, MCP protocol docs, and v8 migration wording as existing
+  carrier, lifecycle, verified-state, or DecisionRecord API surfaces instead of
+  legacy ambiguous baseline debt.
 - **Baseline audit artifact verification/maintenance classification.** `haft
   baseline audit` now classifies artifact verification tests and maintenance
   plan baseline wording as verified-state or autonomous-maintenance surfaces

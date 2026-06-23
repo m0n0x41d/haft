@@ -14,6 +14,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   source-digest guarded sync posture, required markers, fragment refs, and
   validation refs, while compact text keeps only counts and default status still
   omits the manifest.
+- **Generated MCP schema fragment materialization.** `haft interface
+  contract-generation --write-schema-fragments <path>` now writes a
+  deterministic JSON carrier for generated MCP action schema fragments with
+  source and carrier digests, giving host/schema sync checks a real generated
+  artifact without making it runtime schema authority.
 - **Governing frontier snapshot digest.** `haft decision governing-set --json`
   and `haft_query(action="governing_set")` now include a stable
   `snapshot_digest` in the read-only snapshot metadata, so current-authority

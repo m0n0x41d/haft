@@ -477,6 +477,60 @@ func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing
 	}
 }
 
+func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	path := filepath.Join(t.TempDir(), "generated", "mcp-schema-fragments.json")
+
+	result, err := materializeInterfaceContractSchemaFragments(report, path)
+	if err != nil {
+		t.Fatalf("materialize schema fragments: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized schema fragments: %v", err)
+	}
+	if result.Path != path {
+		t.Fatalf("materialized path = %q, want %q", result.Path, path)
+	}
+	if result.SourceDigest != report.SourceDigest {
+		t.Fatalf("materialized source digest = %q, report digest = %q", result.SourceDigest, report.SourceDigest)
+	}
+	if result.CarrierDigest != interfaceContractGenerationDigestBytes(data) {
+		t.Fatalf("carrier digest = %q, bytes digest = %q", result.CarrierDigest, interfaceContractGenerationDigestBytes(data))
+	}
+	if result.SchemaFragments != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("schema fragment count = %d, summary = %#v", result.SchemaFragments, report.Summary)
+	}
+	if strings.Contains(string(data), "generated_at") {
+		t.Fatalf("materialized schema carrier should be deterministic and omit generated_at:\n%s", string(data))
+	}
+
+	var carrier interfaceContractSchemaFragmentsCarrier
+	if err := json.Unmarshal(data, &carrier); err != nil {
+		t.Fatalf("decode materialized schema fragments: %v\n%s", err, string(data))
+	}
+	if carrier.Kind != "haft_interface_generated_mcp_schema_fragments" {
+		t.Fatalf("carrier kind = %q", carrier.Kind)
+	}
+	if carrier.Authority != "generated_validation_carrier_not_runtime_schema_authority" {
+		t.Fatalf("carrier authority = %q", carrier.Authority)
+	}
+	if carrier.SourceDigest != report.SourceDigest {
+		t.Fatalf("carrier source digest = %q, report digest = %q", carrier.SourceDigest, report.SourceDigest)
+	}
+	if len(carrier.SchemaFragments) != len(report.SchemaFragments) {
+		t.Fatalf("carrier schema fragments = %d, report = %d", len(carrier.SchemaFragments), len(report.SchemaFragments))
+	}
+	contractGeneration, ok := findCarrierGeneratedSchemaFragment(carrier, "query.contract_generation")
+	if !ok {
+		t.Fatalf("query.contract_generation schema fragment missing from materialized carrier")
+	}
+	if contractGeneration.SchemaDigest == "" || !strings.HasPrefix(contractGeneration.SchemaDigest, "sha256:") {
+		t.Fatalf("contract_generation schema digest = %q", contractGeneration.SchemaDigest)
+	}
+}
+
 func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 	var output bytes.Buffer
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
@@ -1122,6 +1176,15 @@ func findContractMaterializedCarrier(report interfaceContractGenerationReport, p
 
 func findContractGeneratedSchemaFragment(report interfaceContractGenerationReport, id string) (interfaceContractGeneratedSchemaFragment, bool) {
 	for _, fragment := range report.SchemaFragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedSchemaFragment{}, false
+}
+
+func findCarrierGeneratedSchemaFragment(carrier interfaceContractSchemaFragmentsCarrier, id string) (interfaceContractGeneratedSchemaFragment, bool) {
+	for _, fragment := range carrier.SchemaFragments {
 		if fragment.CapabilityID == id {
 			return fragment, true
 		}

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -14,6 +16,7 @@ import (
 )
 
 var interfaceJSON bool
+var interfaceWriteSchemaFragments string
 
 var interfaceCmd = &cobra.Command{
 	Use:   "interface [capability]",
@@ -78,6 +81,7 @@ type inputTemplate struct {
 
 func init() {
 	interfaceCmd.Flags().BoolVar(&interfaceJSON, "json", false, "print structured JSON output")
+	interfaceCmd.Flags().StringVar(&interfaceWriteSchemaFragments, "write-schema-fragments", "", "write generated MCP action schema fragments to a deterministic JSON carrier file")
 	rootCmd.AddCommand(interfaceCmd)
 }
 
@@ -86,6 +90,9 @@ func runInterface(cmd *cobra.Command, args []string) error {
 	output := cmd.OutOrStdout()
 
 	if len(args) == 0 {
+		if interfaceWriteSchemaFragments != "" {
+			return fmt.Errorf("--write-schema-fragments is only valid with `haft interface contract-generation`")
+		}
 		if interfaceJSON {
 			return writeInterfaceCatalogJSON(output, catalog)
 		}
@@ -93,6 +100,9 @@ func runInterface(cmd *cobra.Command, args []string) error {
 	}
 
 	capabilityID := strings.TrimSpace(args[0])
+	if interfaceWriteSchemaFragments != "" && !isInterfaceContractGenerationID(capabilityID) {
+		return fmt.Errorf("--write-schema-fragments is only valid with `haft interface contract-generation`")
+	}
 	if isInterfaceContractAuditID(capabilityID) {
 		report := buildInterfaceContractAuditReport(catalog)
 		if interfaceJSON {
@@ -103,6 +113,16 @@ func runInterface(cmd *cobra.Command, args []string) error {
 
 	if isInterfaceContractGenerationID(capabilityID) {
 		report := buildInterfaceContractGenerationReport(catalog)
+		if interfaceWriteSchemaFragments != "" {
+			result, err := materializeInterfaceContractSchemaFragments(report, interfaceWriteSchemaFragments)
+			if err != nil {
+				return err
+			}
+			if interfaceJSON {
+				return writeJSON(output, result)
+			}
+			return writeInterfaceContractSchemaMaterializationText(output, result)
+		}
 		if interfaceJSON {
 			return writeJSON(output, report)
 		}
@@ -671,10 +691,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 				},
 				Notes: []string{
 					"Use this after contract-audit: generated_fragments are the source for future host/skill/plugin/Pi wording; targets list remaining schema-generator work.",
+					"Use `haft interface contract-generation --write-schema-fragments <path>` to materialize generated_schema_fragments as deterministic JSON validation carrier bytes.",
 					"Read-only: generated fragments and schema generation targets are not operator authorization, evidence, or gate passage.",
 				},
 			},
-			OutputVolume: []string{"default: compact generator target/fragment counts; --json: generated fragments and field-level targets; never in default status"},
+			OutputVolume: []string{"default: compact generator target/fragment counts", "--json: generated fragments and field-level targets", "--write-schema-fragments: deterministic generated_schema_fragments carrier; never in default status"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Contract generation manifest is read-only.",
 				"Generated fragments come from the kernel interface catalog.",
@@ -1426,6 +1447,37 @@ type interfaceContractGenerationReport struct {
 	Notes           []string                                   `json:"notes"`
 }
 
+type interfaceContractSchemaFragmentsCarrier struct {
+	Kind            string                                     `json:"kind"`
+	SchemaVersion   int                                        `json:"schema_version"`
+	Authority       string                                     `json:"authority"`
+	Source          string                                     `json:"source"`
+	SourceDigest    string                                     `json:"source_digest"`
+	CarrierRole     string                                     `json:"carrier_role"`
+	MaterializedBy  string                                     `json:"materialized_by"`
+	Summary         interfaceContractSchemaCarrierSummary      `json:"summary"`
+	ValidationRefs  []string                                   `json:"validation_refs"`
+	SchemaFragments []interfaceContractGeneratedSchemaFragment `json:"generated_schema_fragments"`
+	Notes           []string                                   `json:"notes"`
+}
+
+type interfaceContractSchemaCarrierSummary struct {
+	GeneratedSchemaFragments int `json:"generated_schema_fragments"`
+	Capabilities             int `json:"capabilities"`
+	BindingPreviewFragments  int `json:"binding_preview_fragments"`
+}
+
+type interfaceContractSchemaMaterializationResult struct {
+	Kind            string `json:"kind"`
+	SchemaVersion   int    `json:"schema_version"`
+	Authority       string `json:"authority"`
+	Path            string `json:"path"`
+	Source          string `json:"source"`
+	SourceDigest    string `json:"source_digest"`
+	CarrierDigest   string `json:"carrier_digest"`
+	SchemaFragments int    `json:"schema_fragments"`
+}
+
 type interfaceContractGenerationSummary struct {
 	Capabilities              int `json:"capabilities"`
 	GeneratorTargetSurfaces   int `json:"generator_target_surfaces"`
@@ -1607,6 +1659,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 			"generated_schema_fragments are read-only per-action MCP schema fragments for validation and future host materialization; they do not mutate tools/list.",
 			"targets list schema fields that still need generator work; an empty target queue means current MCP mirror coverage is complete, not that generated fragments are absent.",
 			"materialized_carriers names repo carriers that currently mirror generated contract fragments; sync_posture distinguishes source-digest guards from weaker authority-boundary-only guards.",
+			"use `haft interface contract-generation --write-schema-fragments <path>` to materialize generated_schema_fragments as a deterministic JSON carrier for host/schema sync checks.",
 			"validation_refs name tests that prove the manifest source, MCP mirror coverage, generated-fragment authority boundary, and default-output budget.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
@@ -1628,6 +1681,63 @@ func interfaceContractShouldGenerateSchemaFragment(surface interfaceContractAudi
 		return false
 	}
 	return true
+}
+
+func interfaceContractSchemaFragmentsCarrierFor(report interfaceContractGenerationReport) interfaceContractSchemaFragmentsCarrier {
+	return interfaceContractSchemaFragmentsCarrier{
+		Kind:           "haft_interface_generated_mcp_schema_fragments",
+		SchemaVersion:  1,
+		Authority:      "generated_validation_carrier_not_runtime_schema_authority",
+		Source:         report.Source,
+		SourceDigest:   report.SourceDigest,
+		CarrierRole:    "materialized_generated_contract_schema_fragments",
+		MaterializedBy: "haft interface contract-generation --write-schema-fragments",
+		Summary: interfaceContractSchemaCarrierSummary{
+			GeneratedSchemaFragments: len(report.SchemaFragments),
+			Capabilities:             report.Summary.Capabilities,
+			BindingPreviewFragments:  report.Summary.BindingPreviewFragments,
+		},
+		ValidationRefs:  report.ValidationRefs,
+		SchemaFragments: report.SchemaFragments,
+		Notes: []string{
+			"This generated carrier is deterministic validation material for host/schema synchronization.",
+			"It is not runtime MCP schema authority, operator authorization, evidence truth, or gate passage.",
+			"Regenerate with `haft interface contract-generation --write-schema-fragments <path>` after kernel interface catalog changes.",
+		},
+	}
+}
+
+func materializeInterfaceContractSchemaFragments(
+	report interfaceContractGenerationReport,
+	path string,
+) (interfaceContractSchemaMaterializationResult, error) {
+	carrier := interfaceContractSchemaFragmentsCarrierFor(report)
+	data, err := json.MarshalIndent(carrier, "", "  ")
+	if err != nil {
+		return interfaceContractSchemaMaterializationResult{}, fmt.Errorf("marshal generated schema fragments carrier: %w", err)
+	}
+	data = append(data, '\n')
+
+	cleanPath := filepath.Clean(path)
+	if dir := filepath.Dir(cleanPath); dir != "." && dir != "" {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return interfaceContractSchemaMaterializationResult{}, fmt.Errorf("create generated schema carrier directory: %w", err)
+		}
+	}
+	if err := os.WriteFile(cleanPath, data, 0o644); err != nil {
+		return interfaceContractSchemaMaterializationResult{}, fmt.Errorf("write generated schema carrier: %w", err)
+	}
+
+	return interfaceContractSchemaMaterializationResult{
+		Kind:            "haft_interface_schema_fragments_materialization_result",
+		SchemaVersion:   1,
+		Authority:       "write_report_not_runtime_schema_authority",
+		Path:            cleanPath,
+		Source:          carrier.Source,
+		SourceDigest:    carrier.SourceDigest,
+		CarrierDigest:   interfaceContractGenerationDigestBytes(data),
+		SchemaFragments: len(carrier.SchemaFragments),
+	}, nil
 }
 
 func interfaceContractAllActionFieldsExcluded(coverage interfaceContractAuditSchemaCoverage) bool {
@@ -2073,6 +2183,10 @@ func interfaceContractGenerationDigest(source any) string {
 	if err != nil {
 		return "sha256:unavailable"
 	}
+	return interfaceContractGenerationDigestBytes(payload)
+}
+
+func interfaceContractGenerationDigestBytes(payload []byte) string {
 	sum := sha256.Sum256(payload)
 	return fmt.Sprintf("sha256:%x", sum)
 }
@@ -2921,5 +3035,30 @@ func writeInterfaceContractGenerationText(output io.Writer, report interfaceCont
 		}
 	}
 
+	return nil
+}
+
+func writeInterfaceContractSchemaMaterializationText(
+	output io.Writer,
+	result interfaceContractSchemaMaterializationResult,
+) error {
+	if _, err := fmt.Fprintf(output, "Haft interface schema fragments materialized v%d\n", result.SchemaVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "authority: %s\n", result.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "path: %s\n", result.Path); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "source: %s %s\n", result.Source, result.SourceDigest); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "carrier_digest: %s\n", result.CarrierDigest); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "schema_fragments: %d\n", result.SchemaFragments); err != nil {
+		return err
+	}
 	return nil
 }

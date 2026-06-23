@@ -13,6 +13,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   stamps commit/build date via ldflags, and read-only MCP query footers now use
   the same typed stale snapshot as `haft_query(action="status")` instead of
   raw terminal-decision stale counts.
+- **Evidence/WLNK authority boundary.** `haft_decision(action="evidence")` and
+  measurement responses now state that evidence and WLNK/formality display are
+  not approval, not gate passage, and not global truth, and route stronger
+  attempted-use reliance through EvidencePath.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

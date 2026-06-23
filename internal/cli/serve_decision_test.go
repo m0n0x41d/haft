@@ -451,6 +451,11 @@ func TestHandleQuintDecision_MeasureAcceptsArtifactRef(t *testing.T) {
 	if !strings.Contains(out, older.Meta.ID) {
 		t.Fatalf("measure response %q does not reference intended target %q", out, older.Meta.ID)
 	}
+	for _, want := range []string{"not approval", "not gate passage", "not global truth", "EvidencePath"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("measure response missing authority boundary %q:\n%s", want, out)
+		}
+	}
 }
 
 func TestHandleQuintDecision_MeasureRejectsMalformedMeasurements(t *testing.T) {

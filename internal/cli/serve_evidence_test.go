@@ -49,6 +49,11 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	if !strings.Contains(result, "Evidence attached:") {
 		t.Fatalf("unexpected response: %s", result)
 	}
+	for _, want := range []string{"not approval", "not gate passage", "not global truth", "EvidencePath"} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("evidence response missing authority boundary %q:\n%s", want, result)
+		}
+	}
 
 	items, err := store.GetEvidenceItems(ctx, decision.Meta.ID)
 	if err != nil {

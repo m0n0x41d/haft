@@ -585,6 +585,10 @@ func truncateMeasure(s string, max int) string {
 	return s[:max-3] + "..."
 }
 
+func evidenceRelianceBoundaryLine() string {
+	return "Authority boundary: evidence/WLNK display is not approval, not gate passage, and not global truth; use EvidencePath for attempted-use reliance.\n"
+}
+
 // --- Tool handlers ---
 
 // parseNoteAnchors decodes the haft_note `anchors` arg ([{type, ref}, ...]) into
@@ -1206,6 +1210,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			extra += measureWarning + "\n"
 		}
 		extra += fmt.Sprintf("WLNK: %s\n", wlnk.Summary)
+		extra += evidenceRelianceBoundaryLine()
 
 		// Lemniscate feedback: failed/partial measurement → suggest reopen
 		if input.Verdict == "failed" || input.Verdict == "partial" {
@@ -1267,7 +1272,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, input.ArtifactRef)
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		extra := fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n", item.ID, item.Type, item.Verdict, wlnk.Summary)
+		extra := fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n%s", item.ID, item.Type, item.Verdict, wlnk.Summary, evidenceRelianceBoundaryLine())
 		if warning := evidenceCausalUseWarning(input, item); warning != "" {
 			extra += "\n" + warning + "\n"
 		}

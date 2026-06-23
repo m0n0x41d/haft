@@ -96,6 +96,15 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 			Notes:          "retrieval provenance must expose source edition/hash and non-normativity",
 		},
 		{
+			ID:             "target-system-support-docs",
+			PathPattern:    "spec/target-system/*.md",
+			AuthorityClass: CarrierAuthoritySupport,
+			Surface:        "target_system_doc",
+			Current:        true,
+			Normativity:    "target-system support documentation; SQL/artifact graph remains runtime source of truth",
+			Notes:          "product-value evidence docs must keep claims bounded to explicit evidence refs",
+		},
+		{
 			ID:             "pi-plugin-bundle",
 			PathPattern:    "packages/haft-pi/**",
 			AuthorityClass: CarrierAuthorityCompatibility,
@@ -267,6 +276,7 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 		"README.md",
 		"AGENTS.md",
 		".haft/specs/*.md",
+		"spec/target-system/*.md",
 		"internal/cli/claude_md_template.md",
 		"internal/cli/skill/*/SKILL.md",
 		"packages/haft-pi/package.json",

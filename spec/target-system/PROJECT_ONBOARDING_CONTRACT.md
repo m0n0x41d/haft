@@ -34,7 +34,7 @@ that readiness.
 | Human principal | Owns value, scope, authority, and trade-offs | Product intent, target-system role, acceptance, autonomy envelope |
 | Onboarding agent | Reads repo/docs/code, asks questions, drafts specs, points out gaps | Nothing irreversible; may propose structured sections |
 | Haft core | Parses specs, validates structure, stores artifacts, computes coverage | Deterministic admissibility only |
-| Desktop Cockpit | Primary human surface for onboarding and readiness | UI does not invent semantics |
+| Operator cockpit | Primary human surface for onboarding and readiness | UI does not invent semantics |
 | MCP host agent | Embedded Claude Code/Codex surface during coding/reasoning | May create drafts/notes/commissions only inside explicit tool contracts |
 | CLI Harness | Operator surface for runtime prepare/run/status/result/apply/cancel | Does not author product meaning |
 | Harness runtime | Executes WorkCommissions | No spec authoring authority |
@@ -44,7 +44,7 @@ that readiness.
 ### Scenario: Add an existing project
 
 ```gherkin
-Scenario: Desktop adds an existing repository
+Scenario: Operator cockpit adds an existing repository
   Given a user selects a repository path
   When Haft adds the project
   Then Haft verifies the path exists
@@ -200,7 +200,7 @@ Scenario: Commission selected decisions
 ```gherkin
 Scenario: Runtime consumes WorkCommissions
   Given WorkCommissions are queued
-  When "haft harness run" or Desktop Runtime starts the harness engine
+  When "haft harness run" or a not-current Desktop Runtime archive starts the harness engine
   Then the runtime polls Haft for runnable commissions
   And does not poll external trackers for authority
   And does not choose new spec work by itself
@@ -278,7 +278,7 @@ The human principal must explicitly approve:
 
 The smallest honest product proof is:
 
-1. Add an existing repo in Desktop.
+1. Add an existing repo in the operator cockpit.
 2. Initialize `.haft` and host-agent MCP config.
 3. Produce parseable target/enabling spec carriers.
 4. Run spec check and see deterministic readiness/gap output.

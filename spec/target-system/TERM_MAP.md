@@ -135,14 +135,14 @@
 | **Advisory recommendation** | The `selected_ref` + `recommendation_rationale` persisted by the compare action. Advisory only — does NOT cross the human choice boundary. | Not "the decision." The decision happens at `/h-decide` after human confirmation. |
 | **Coverage gap** | A claim on a DecisionRecord that has no evidence attached. Surfaced in UI and `/h-verify`. | Not "missing test." Any claim without evidence, regardless of claim type. |
 | **Derived health** | Computed view-state of a DecisionRecord: Maturity (Unassessed / Pending / Shipped) + Freshness (Healthy / Stale / AT RISK). Never stored. | Not "status." Status is stored (`active`, `superseded`, etc.). Phase is derived from status + evidence. |
-| **F_eff (Formality)** | How structured is the evidence? F0 (anecdote) → F3 (formal proof). View concern for evidence decomposition. | Not a separate trust score. Decomposes R_eff inputs. |
+| **F_eff (Formality)** | How structured is the evidence? Current scale is F0-F9; legacy F0-F3 records remain readable only through an explicit/lossy bridge. View concern for evidence decomposition. | Not a separate trust score. Decomposes R_eff inputs. Legacy scale display is not current-formality proof. |
 | **G_eff (Groundedness)** | How close is the evidence to the thing it verifies? Derived from CL. View concern. | Not a separate trust score. Decomposes R_eff inputs. |
 
-## Desktop Surfaces
+## Historical Desktop Surfaces (archived, not current)
 
 | Term | Definition | NOT this |
 |------|-----------|----------|
-| **Dashboard** | The single unified operator page in the desktop app. Shows active decisions, governance findings, automations, and recent activity. | Not "Problem Board." Problems appear as cards within the dashboard. |
+| **Dashboard** | The historical unified operator page in the archived desktop app. Shows active decisions, governance findings, automations, and recent activity. | Not "Problem Board." Problems appear as cards within the dashboard. |
 | **Implement** | Dashboard action on a DecisionRecord: spawns agent in worktree with invariants + rationale + workflow.md. | Not "run task." Implement is decision-anchored — the agent gets full reasoning context. |
 | **Adopt** | Dashboard action on a governance finding (stale/drifted): creates agent task/thread with decision context + drift report for interactive resolution. | Not auto-fix. Human resolves with agent assistance, then re-baselines, reopens, or waives. |
 | **Automation** | A configured trigger that auto-creates ProblemCards: CI fail, dependency update, scheduled, manual. The "problem factory." | Not a workflow engine. Creates problems, doesn't execute solutions. |

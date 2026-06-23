@@ -49,7 +49,7 @@ Everything below is built, tested, and being merged to main.
 - Invariant verification against live dependency graph
 - haft sync: team workflow via git-tracked .haft/*.md → local SQLite
 
-### Desktop App (pre-alpha, functional)
+### Historical Desktop App (archived, not current)
 - Dashboard with governance findings
 - Problem board with drill-in
 - Decision detail with evidence F/G/R decomposition
@@ -61,7 +61,7 @@ Everything below is built, tested, and being merged to main.
 - Search (Cmd+K)
 
 ### Surfaces
-- Desktop Cockpit: primary human surface, Wails/Tauri v2 pre-alpha during transition
+- Historical desktop cockpit: archived human surface, not current runtime
 - MCP Plugin: stable 7-tool embedded agent interface, v7 supported hosts are Claude Code and Codex
 - CLI Harness: first-class operator/runtime surface for init, serve, sync, check, commission, and harness run/status/result/apply/cancel
 
@@ -77,7 +77,7 @@ Everything below is built, tested, and being merged to main.
 Focus: trust and momentum for existing MCP/CLI users. No new surfaces.
 
 - [ ] Fix remaining P2-P4 bugs from code review
-- [ ] Core packages have zero desktop/ dependencies (clean boundary)
+- [ ] Core packages have zero non-current desktop/ dependencies (clean boundary)
 - [ ] Integration tests for knowledge graph on real project data
 - [ ] Evidence decomposition tests (F/G/R computation)
 - [ ] `haft check` CLI command for CI (verify decisions fresh, evidence current)
@@ -144,7 +144,7 @@ autonomous campaigns, perfect semantic validation, function-level coverage, or
 manager dashboards. Optional ExternalProjection design is allowed, but trackers
 remain carriers, not sources of truth.
 
-## v7.1 — Desktop Cockpit for Spec-First Work
+## v7.1 — Historical Desktop Cockpit for Spec-First Work
 
 Focus: make the deep spec workflow operationally usable.
 
@@ -155,7 +155,7 @@ Focus: make the deep spec workflow operationally usable.
 - [ ] Decision planning view: accept/merge/split/discard spec-derived decision drafts
 - [ ] Runtime cockpit: runnable/running/blocked/completed commissions, evidence, apply/cancel/requeue
 - [ ] Long-lived conversations bound to project/spec/decision context, not terminal one-shot tasks
-- [ ] Desktop workflow buttons compile to typed artifact transitions, not opaque prompts
+- [ ] Archived desktop workflow buttons compile to typed artifact transitions, not opaque prompts
 
 ## v7.2 — Spec Enforcement Hardening
 
@@ -229,7 +229,7 @@ Things we know about but explicitly defer:
 | Formal methods spec (Quint/TLA+) | Different from Haft's parseable project specs. Useful later for selected high-risk modules, not the default carrier. |
 | FSRS spaced repetition for reviews | Needs server mode. |
 | Full autonomy budgets (FPF E.16) | Redundant with host agent permissions for now. |
-| Web UI | Desktop app is the visual surface. No browser version. |
+| Web UI | Archived desktop app was the visual surface. No browser version. |
 | Mobile app | Not our market. |
 | Slack/Discord bot | Not our market. Surface sprawl. |
 | Full campaign orchestration | Build journal primitives first (v7), full orchestration later. |

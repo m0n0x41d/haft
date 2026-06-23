@@ -21,7 +21,7 @@
 
 | # | Question | Context | When relevant |
 |---|----------|---------|--------------|
-| Q3 | Multi-project governance views in desktop? | Per-project tabs exist. Cross-project portfolio view doesn't. | When multi-project users request it |
+| Q3 | Multi-project governance views in an operator cockpit? | Historical desktop tabs existed; cross-project portfolio view does not. | When multi-project users request it |
 | Q4 | When to include research-before-code lane? | Some tasks need external knowledge. | Only if deep mode or compliance tasks enter v7 default execution loop |
 | Q5 | Autonomy budget granularity? | Currently binary (on/off). FPF E.16 describes typed budgets. | When host agent permissions prove insufficient |
 | Q6 | How to measure semio-quality? | No benchmark for fanout, authority confusion, gate/evidence mixing. | When L2 language precision ships |

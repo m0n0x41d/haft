@@ -67,13 +67,17 @@ R_eff uses **min**, not average. One weak evidence item on one claim bounds the 
 
 ## F_eff and G_eff (Formality and Groundedness)
 
-R_eff is the aggregate trust score. The desktop UI decomposes it into three dimensions:
+R_eff is the aggregate trust score. Evidence views decompose it into three dimensions:
 
 | Dimension | What it measures | Computed from |
 |-----------|-----------------|---------------|
-| **F_eff (Formality)** | How structured is the evidence? | Evidence type: F0 (anecdote) → F1 (observation) → F2 (repeatable test) → F3 (formal proof) |
+| **F_eff (Formality)** | How structured is the evidence? | Evidence formality scale: current F0-F9, with legacy F0-F3 records readable through a lossy bridge |
 | **G_eff (Groundedness)** | How close to the thing verified? | CL: CL3 = direct, CL2 = similar, CL1 = indirect, CL0 = inadmissible |
 | **R_eff (Reliability)** | Does evidence support the claim? | Verdict + CL penalty + decay (as above) |
+
+Current F_eff is expressed on the FPF F0-F9 ordinal. Older F0-F3 records remain
+audit-readable, but exact/audit views must label their legacy scale and bridge
+loss instead of promoting them to current-formality proof.
 
 F_eff and G_eff are **view concerns** — they decompose R_eff's inputs for diagnosis. They are not separate trust scores.
 

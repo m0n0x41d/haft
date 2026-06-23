@@ -145,7 +145,7 @@ Minimum required sections:
 | `effect-boundaries` | Filesystem, DB, network, agent, tracker, terminal, build/test effects |
 | `test-strategy` | Behavior/interface/spec tests, contract tests, E2E, prohibited test shapes |
 | `agent-policy` | Which agents may act, through which surfaces, with which permissions |
-| `surface-policy` | Desktop, MCP, and CLI responsibilities and non-authority constraints |
+| `surface-policy` | Operator cockpit, MCP, and CLI responsibilities and non-authority constraints |
 | `autonomy-envelope-policy` | Checkpointed default, batch/YOLO approval, budget and one-way-door restrictions |
 | `commission-policy` | Scope, lockset, evidence, projection, and autonomy defaults |
 | `runtime-policy` | Harness runtime install/start/observe/apply/cancel model |

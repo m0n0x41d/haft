@@ -213,7 +213,7 @@ Scenario: Run an approved implementation plan in YOLO mode
     | property        | example                         |
     | max_concurrency | 4                               |
     | allowed_repos   | current project                 |
-    | allowed_paths   | internal/**, desktop/**         |
+    | allowed_paths   | internal/**, cmd/**             |
     | forbidden_paths | release/**, migrations/**       |
     | allowed_actions | edit_files, run_tests, commit   |
     | forbidden_actions | merge_pr, tag_release, delete_data |
@@ -253,7 +253,7 @@ per workspace and per WorkCommission.
 Scenario: Local-only commission
   Given a WorkCommission with projection_policy "local_only"
   When it runs and completes
-  Then Desktop/CLI/.haft status are updated
+  Then CLI and .haft status are updated
   And no external tracker call is required
 ```
 

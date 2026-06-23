@@ -145,11 +145,11 @@ TargetSystemSpec
   -> Evidence
 ```
 
-No surface owns truth. Desktop is the richest human cockpit. MCP is the
+No surface owns truth. The operator cockpit is the human-facing view. MCP is the
 embedded agent-facing authoring surface. CLI is the runtime/operator surface.
 Haft Core owns semantic authority; Open-Sleigh owns execution mechanics.
 
-### Surface A — Desktop App (primary: human)
+### Surface A — Historical Desktop App (archived, not current)
 
 The visual cockpit where the engineer lives during reasoning work.
 
@@ -160,7 +160,7 @@ The visual cockpit where the engineer lives during reasoning work.
 - Govern: dashboard with findings, stale alerts, invariant violations
 
 Technology: Tauri v2 (Rust shell + native WebView + React frontend).
-Local-first. Desktop remains a surface over Haft Core and CLI/RPC contracts.
+Local-first. The archived desktop surface remained over Haft Core and CLI/RPC contracts.
 
 ### Surface B — MCP Plugin (primary: embedded agent)
 
@@ -186,7 +186,7 @@ boundary.
 - `haft commission ...`
 - `haft harness prepare/run/status/watch/tail/result/apply/requeue/cancel`
 - `haft fpf search` (FPF spec lookup)
-- `haft agent` (standalone agent mode — secondary to desktop)
+- `haft agent` (removed standalone agent mode; archived)
 
 The CLI is not a second semantic system. It exposes operator commands for the
 harness runtime and local automation. Runtime preflight must still check
@@ -195,7 +195,7 @@ envelope through Haft Core.
 
 ## Surface transition rule
 
-Desktop workflow buttons, MCP slash/tool calls, and CLI commands must compile
+Archived desktop workflow buttons, MCP slash/tool calls, and CLI commands must compile
 to typed artifact transitions, not free prompts:
 
 ```text
@@ -216,7 +216,7 @@ Examples:
 ### Optional external projections
 
 Haft must work with no Linear, Jira, GitHub Issues, or cloud tracker
-configured. Local state, Desktop status, CLI status, and `.haft/` artifact
+configured. Local state, CLI status, and `.haft/` artifact
 projections are sufficient for a solo/local workflow.
 
 When an external tracker is configured, Haft publishes **ExternalProjections**

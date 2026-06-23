@@ -24,6 +24,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now shows the declared measurement window, method ref, distinct evidence-ref
   count, and the number of value characteristics still blocked by missing
   evidence refs, while preserving the no-single-score authority boundary.
+- **Bounded product-value evidence packet.** Target-system docs now include a
+  current Haft product-value evidence packet for the semantic-spine rewrite,
+  with explicit evidence refs, missing-evidence boundaries, simplify/kill
+  criteria, and unmeasured gaps; the evidence ontology and term map now name
+  current F0-F9 formality with legacy F0-F3 bridge/loss wording.
 - **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
   commit/source metadata in `haft version`, `scripts/build.sh --install`
   stamps commit/build date via ldflags, and read-only MCP query footers now use

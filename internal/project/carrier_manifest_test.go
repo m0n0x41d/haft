@@ -60,6 +60,20 @@ func TestCarrierAuthorityManifestKeepsOpenSleighOutOfScope(t *testing.T) {
 	}
 }
 
+func TestCarrierAuthorityManifestIncludesTargetSystemSupportDocs(t *testing.T) {
+	entry := carrierManifestEntry(t, "target-system-support-docs")
+
+	if !entry.Current {
+		t.Fatal("target-system support docs should be current support carriers")
+	}
+	if entry.AuthorityClass != CarrierAuthoritySupport {
+		t.Fatalf("authority_class = %q, want support", entry.AuthorityClass)
+	}
+	if entry.PathPattern != "spec/target-system/*.md" {
+		t.Fatalf("path_pattern = %q", entry.PathPattern)
+	}
+}
+
 func TestCarrierSemioCheckCurrentRepoCarriers(t *testing.T) {
 	root := filepath.Join("..", "..")
 
@@ -72,6 +86,22 @@ func TestCarrierSemioCheckCurrentRepoCarriers(t *testing.T) {
 	}
 	if len(result.Findings) > 0 {
 		t.Fatalf("carrier semio findings = %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckScansTargetSystemSupportDocs(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "spec/target-system/PRODUCT_VALUE_EVIDENCE.md", "Product evidence is bounded by evidence refs, not a global truth claim.")
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if !containsString(result.CheckedFiles, "spec/target-system/PRODUCT_VALUE_EVIDENCE.md") {
+		t.Fatalf("checked_files missing target-system support doc: %#v", result.CheckedFiles)
+	}
+	if len(result.Findings) > 0 {
+		t.Fatalf("safe target-system support doc should not produce findings: %#v", result.Findings)
 	}
 }
 

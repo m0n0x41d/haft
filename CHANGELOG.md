@@ -84,6 +84,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   actions, maintenance review/drain actions, and common optional fields used by
   spec-use, drift, reconciliation, evidence-path, blocked-use, and value-space
   surfaces.
+- **Pi schema drift guard.** The MCP `ToolCatalog()` tests now compare the
+  kernel `haft_query` and `haft_refresh` action enums against the Pi bundle
+  TypeScript schema mirror, so new kernel actions cannot silently leave the Pi
+  host package stale.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

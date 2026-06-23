@@ -271,6 +271,36 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 		}
 		return nil
 	}
+	addWalk := func(relRoot string, extensions map[string]struct{}) error {
+		absRoot := filepath.Join(root, filepath.FromSlash(relRoot))
+		info, err := os.Stat(absRoot)
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if !info.IsDir() {
+			return nil
+		}
+		return filepath.WalkDir(absRoot, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+			if entry.IsDir() {
+				return nil
+			}
+			if _, ok := extensions[strings.ToLower(filepath.Ext(path))]; !ok {
+				return nil
+			}
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			files = append(files, filepath.ToSlash(rel))
+			return nil
+		})
+	}
 
 	for _, pattern := range []string{
 		"README.md",
@@ -287,6 +317,14 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 		if err := addGlob(pattern); err != nil {
 			return nil, err
 		}
+	}
+	if err := addWalk("packages/haft-pi/extensions", map[string]struct{}{
+		".js":  {},
+		".mjs": {},
+		".ts":  {},
+		".tsx": {},
+	}); err != nil {
+		return nil, err
 	}
 
 	return dedupeSortedStrings(files), nil

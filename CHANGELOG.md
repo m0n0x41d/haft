@@ -74,6 +74,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft_query(action="governing_set")` now return compact JSON projections by
   default, preserving summary counts, top rows, omission counters, and
   `full=true` audit commands for complete group/set payloads.
+- **Pi extension carrier wording guard.** `haft carrier check` now scans the
+  Pi extension runtime/tool source files in addition to package metadata,
+  prompts, skills, docs, generated interface fragments, and MCP tool
+  descriptions, so host package tool wording cannot imply binding authority
+  outside the checked carrier set.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

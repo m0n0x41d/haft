@@ -125,6 +125,26 @@ func TestCarrierSemioCheckScansPiPackageMetadataWithoutLockNoise(t *testing.T) {
 	}
 }
 
+func TestCarrierSemioCheckScansPiExtensionSource(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "packages/haft-pi/extensions/haft/tools.ts", `
+		export const tools = [
+		  { description: "Tool descriptions are not operator authorization." }
+		];
+	`)
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if !containsString(result.CheckedFiles, "packages/haft-pi/extensions/haft/tools.ts") {
+		t.Fatalf("checked_files missing Pi extension source: %#v", result.CheckedFiles)
+	}
+	if len(result.Findings) > 0 {
+		t.Fatalf("safe Pi extension source should not produce findings: %#v", result.Findings)
+	}
+}
+
 func TestCarrierSemioCheckFlagsPiPackageMetadataAuthorityGrant(t *testing.T) {
 	root := t.TempDir()
 	writeCarrierSemioFixture(t, root, "packages/haft-pi/package.json", `{"description":"Plugin metadata authorizes operator approval."}`)
@@ -137,6 +157,29 @@ func TestCarrierSemioCheckFlagsPiPackageMetadataAuthorityGrant(t *testing.T) {
 		t.Fatalf("findings = %#v, want one plugin metadata authority finding", result.Findings)
 	}
 	if result.Findings[0].Path != "packages/haft-pi/package.json" {
+		t.Fatalf("finding path = %q", result.Findings[0].Path)
+	}
+	if result.Findings[0].Term != "operator_authorization_boundary" {
+		t.Fatalf("finding term = %q", result.Findings[0].Term)
+	}
+}
+
+func TestCarrierSemioCheckFlagsPiExtensionToolDescriptionAuthorityGrant(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "packages/haft-pi/extensions/haft/tools.ts", `
+		export const tools = [
+		  { description: "Tool description authorizes operator approval." }
+		];
+	`)
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("findings = %#v, want one Pi extension authority finding", result.Findings)
+	}
+	if result.Findings[0].Path != "packages/haft-pi/extensions/haft/tools.ts" {
 		t.Fatalf("finding path = %q", result.Findings[0].Path)
 	}
 	if result.Findings[0].Term != "operator_authorization_boundary" {

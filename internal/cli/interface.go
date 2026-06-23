@@ -665,7 +665,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":33,"generated_schema_fragments":30,"binding_preview_fragments":2},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":31,"generated_schema_fragments":28,"binding_preview_fragments":2},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1524,7 +1524,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 	for _, surface := range audit.Surfaces {
 		capability := capabilitiesByID[surface.CapabilityID]
 		fragments = append(fragments, interfaceContractGeneratedFragmentFor(surface, capability))
-		if surface.MCPTool != "" && surface.MCPAction != "" {
+		if interfaceContractShouldGenerateSchemaFragment(surface) {
 			schemaFragments = append(schemaFragments, interfaceContractGeneratedSchemaFragmentFor(surface, capability, toolSchemas[surface.MCPTool]))
 		}
 
@@ -1587,6 +1587,38 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
 		},
 	}
+}
+
+func interfaceContractShouldGenerateSchemaFragment(surface interfaceContractAuditSurface) bool {
+	if surface.MCPTool == "" || surface.MCPAction == "" {
+		return false
+	}
+	if surface.SchemaCoverage.Status != "covered" {
+		return false
+	}
+	if interfaceContractAllActionFieldsExcluded(surface.SchemaCoverage) {
+		return false
+	}
+	if surface.HostSchemaPosture != "validated_mcp_mirror" {
+		return false
+	}
+	return true
+}
+
+func interfaceContractAllActionFieldsExcluded(coverage interfaceContractAuditSchemaCoverage) bool {
+	if len(coverage.ActionRequiredFields) == 0 || len(coverage.ExcludedFields) == 0 {
+		return false
+	}
+	excluded := make(map[string]bool, len(coverage.ExcludedFields))
+	for _, field := range coverage.ExcludedFields {
+		excluded[field] = true
+	}
+	for _, field := range coverage.ActionRequiredFields {
+		if !excluded[field] {
+			return false
+		}
+	}
+	return true
 }
 
 func interfaceContractGenerationValidationRefs() []string {
@@ -1676,8 +1708,10 @@ func interfaceContractGeneratedSchemaFragmentFor(
 	toolSchema interfaceContractAuditToolSchema,
 ) interfaceContractGeneratedSchemaFragment {
 	allowedFields := topLevelInterfaceContractFields(capability.InputContract)
+	allowedFields = interfaceContractFilterExcludedSchemaFields(allowedFields, surface.SchemaCoverage.ExcludedFields)
 	requiredFields := interfaceContractAuditExpectedMCPRequiredFields(capability)
 	actionRequiredFields := topLevelInterfaceContractRequiredFields(capability.InputContract)
+	actionRequiredFields = interfaceContractFilterExcludedSchemaFields(actionRequiredFields, surface.SchemaCoverage.ExcludedFields)
 	handlerValidated := make([]string, 0, len(actionRequiredFields))
 	requiredSet := make(map[string]bool, len(requiredFields))
 	for _, field := range requiredFields {
@@ -1720,6 +1754,24 @@ func interfaceContractGeneratedSchemaFragmentFor(
 		SchemaDigest:           interfaceContractGenerationDigest(schema),
 		ValidationRefs:         uniqueInterfaceContractAuditStrings(surface.ValidationRefs),
 	}
+}
+
+func interfaceContractFilterExcludedSchemaFields(fields []string, excludedFields []string) []string {
+	if len(fields) == 0 || len(excludedFields) == 0 {
+		return fields
+	}
+	excluded := make(map[string]bool, len(excludedFields))
+	for _, field := range excludedFields {
+		excluded[field] = true
+	}
+	filtered := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if excluded[field] {
+			continue
+		}
+		filtered = append(filtered, field)
+	}
+	return filtered
 }
 
 func interfaceContractGeneratedSchemaFor(

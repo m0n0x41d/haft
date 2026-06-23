@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Contract-generation materialized schema filtering.** Generated MCP schema
+  fragments now omit fields explicitly excluded from MCP schema coverage and
+  skip CLI/input-file-only apply contracts, preventing read-only discovery
+  actions from masquerading as materialized host schemas.
 - **MCP DriftEvent resolution ledger parity.** `haft_query(action="drift_events")`
   and compact status/governor status now apply the same default
   `.haft/drift-event-resolutions.json` read-only overlay as `haft drift
@@ -45,6 +49,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `generated_schema_fragments` now copy the actual `tools/list` property schema
   subsets for generated per-action fragments instead of placeholder field
   descriptions.
+- **Pi generated schema mirror parity.** The generated MCP schema fragments are
+  now compared against the materialized Pi `haft_query` TypeBox schema, so Pi
+  action, field, and required-field drift is caught before release.
 - **Contract-audit required-field parity.** `haft interface contract-audit` and
   `haft_query(action="contract_audit")` now report MCP `required` coverage for
   transport-level required fields, including missing required schema fields and

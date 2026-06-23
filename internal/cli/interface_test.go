@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"testing"
@@ -512,6 +513,31 @@ func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 	if !strings.Contains(source, "contract_generation") {
 		t.Fatalf("Pi tool metadata missing contract_generation action")
+	}
+}
+
+func TestPiHaftQuerySchemaMirrorsGeneratedSchemaFragments(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	piSchema := parsePiTypeObjectSchema(t, source, "haftQueryParameters")
+
+	for _, fragment := range report.SchemaFragments {
+		if fragment.MCPTool != "haft_query" {
+			continue
+		}
+		if !piSchema.Actions[fragment.MCPAction] {
+			t.Fatalf("%s generated action %q missing from Pi haft_query action enum", fragment.CapabilityID, fragment.MCPAction)
+		}
+		for _, field := range fragment.AllowedTopLevelFields {
+			if !piSchema.Fields[field] {
+				t.Fatalf("%s generated field %q missing from Pi haftQueryParameters", fragment.CapabilityID, field)
+			}
+		}
+		for _, field := range fragment.RequiredFields {
+			if !piSchema.RequiredFields[field] {
+				t.Fatalf("%s generated required field %q is optional or missing in Pi haftQueryParameters", fragment.CapabilityID, field)
+			}
+		}
 	}
 }
 
@@ -1025,6 +1051,58 @@ func readRepoFile(t *testing.T, elem ...string) string {
 		t.Fatalf("read repo file %s: %v", path, err)
 	}
 	return string(data)
+}
+
+type piTypeObjectSchemaMirror struct {
+	Actions        map[string]bool
+	Fields         map[string]bool
+	RequiredFields map[string]bool
+}
+
+func parsePiTypeObjectSchema(t *testing.T, source string, constName string) piTypeObjectSchemaMirror {
+	t.Helper()
+
+	bodyPattern := regexp.MustCompile(`(?s)const\s+` + regexp.QuoteMeta(constName) + `\s*=\s*Type\.Object\(\{(.*?)\n\}\);`)
+	matches := bodyPattern.FindStringSubmatch(source)
+	if len(matches) != 2 {
+		t.Fatalf("Pi Type.Object schema %s not found", constName)
+	}
+
+	fieldPattern := regexp.MustCompile(`(?m)^\s*([A-Za-z_][A-Za-z0-9_]*):\s*([^\n]+)`)
+	fields := map[string]bool{}
+	requiredFields := map[string]bool{}
+	for _, match := range fieldPattern.FindAllStringSubmatch(matches[1], -1) {
+		field := match[1]
+		value := strings.TrimSpace(match[2])
+		fields[field] = true
+		if strings.HasPrefix(value, "Opt") || strings.HasPrefix(value, "Type.Optional") {
+			continue
+		}
+		requiredFields[field] = true
+	}
+	if len(fields) == 0 {
+		t.Fatalf("Pi Type.Object schema %s has no fields", constName)
+	}
+
+	actionPattern := regexp.MustCompile(`(?s)action:\s*enumOf\((.*?)\n\s*\),`)
+	actionMatches := actionPattern.FindStringSubmatch(matches[1])
+	if len(actionMatches) != 2 {
+		t.Fatalf("Pi Type.Object schema %s action enum not found", constName)
+	}
+	actionValuePattern := regexp.MustCompile(`"([^"]+)"`)
+	actions := map[string]bool{}
+	for _, match := range actionValuePattern.FindAllStringSubmatch(actionMatches[1], -1) {
+		actions[match[1]] = true
+	}
+	if len(actions) == 0 {
+		t.Fatalf("Pi Type.Object schema %s action enum is empty", constName)
+	}
+
+	return piTypeObjectSchemaMirror{
+		Actions:        actions,
+		Fields:         fields,
+		RequiredFields: requiredFields,
+	}
 }
 
 func contractAuditTestContains(values []string, want string) bool {

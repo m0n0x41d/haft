@@ -187,6 +187,25 @@ func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_DoesNotInlineContractAuditRequiredCoverage(t *testing.T) {
+	body := string(mustToolsListResponseBytes(t))
+	for _, forbidden := range []string{
+		"haft_interface_contract_audit",
+		"schema_required_covered_surfaces",
+		"schema_required_missing_surfaces",
+		"schema_missing_required_fields",
+		"required_coverage=",
+		"mcp_required_fields",
+		"missing_required_fields",
+		"action_required_fields",
+		"required_posture",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("tools/list inlined contract audit required-coverage fragment %q", forbidden)
+		}
+	}
+}
+
 func TestHandleToolsList_DoesNotInlineInterfaceOutputShapeFragments(t *testing.T) {
 	body := string(mustToolsListResponseBytes(t))
 	for _, forbidden := range []string{

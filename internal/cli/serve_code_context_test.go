@@ -125,7 +125,29 @@ func assertNoContractGenerationManifestInline(t *testing.T, surface string, text
 			t.Fatalf("%s inlined contract generation manifest fragment %q:\n%s", surface, forbidden, text)
 		}
 	}
+	assertNoContractAuditInline(t, surface, text)
 	assertNoInterfaceOutputShapeInline(t, surface, text)
+}
+
+func assertNoContractAuditInline(t *testing.T, surface string, text string) {
+	t.Helper()
+
+	for _, forbidden := range []string{
+		"haft_interface_contract_audit",
+		"read_only_contract_inventory_not_schema_generation",
+		"schema_required_covered_surfaces",
+		"schema_required_missing_surfaces",
+		"schema_missing_required_fields",
+		"required_coverage=",
+		"mcp_required_fields",
+		"missing_required_fields",
+		"action_required_fields",
+		"required_posture",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("%s inlined contract audit fragment %q:\n%s", surface, forbidden, text)
+		}
+	}
 }
 
 func assertNoInterfaceOutputShapeInline(t *testing.T, surface string, text string) {

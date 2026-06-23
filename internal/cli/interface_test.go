@@ -667,6 +667,7 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 			t.Fatalf("default status inlined contract generation manifest fragment %q:\n%s", forbidden, result)
 		}
 	}
+	assertNoContractAuditInline(t, "default status", result)
 	assertNoInterfaceOutputShapeInline(t, "default status", result)
 }
 

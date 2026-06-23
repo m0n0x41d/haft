@@ -217,6 +217,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Reconciliation review packet writer.** `haft decision reconcile
+  selection-draft --write-review-packet review.json` now writes the bounded
+  report-only draft with decision carrier hints, review commands, omitted
+  counts, mutation boundaries, and the non-approved embedded selection template,
+  so R9 scope-enrichment review can be persisted without creating approval or
+  apply authority.
 - **Product-value evidence packet.** `spec/target-system/PRODUCT_VALUE_EVIDENCE.md`
   now records the 2026-06-24 bounded dogfood evidence packet for stale
   reconciliation fail-closed behavior, default-surface bloat guards, and

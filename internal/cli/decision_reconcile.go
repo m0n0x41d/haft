@@ -24,6 +24,7 @@ var (
 	decisionReconcileDraftGroupID  string
 	decisionReconcileDraftDecision string
 	decisionReconcileDraftWrite    string
+	decisionReconcileDraftReview   string
 	decisionGoverningSetJSON       bool
 	decisionGoverningSetQuery      string
 	decisionGoverningSetSubjectRef string
@@ -123,6 +124,7 @@ func init() {
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftGroupID, "group-id", "", "emit draft candidates only for this reconciliation group id")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftDecision, "decision-ref", "", "emit draft candidates only for this decision ref")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftWrite, "write-template", "", "write the bounded selection document template to this JSON path without approving it")
+	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftReview, "write-review-packet", "", "write the bounded report-only selection draft with review hints to this JSON path without approving it")
 	decisionGoverningSetCmd.Flags().BoolVar(&decisionGoverningSetJSON, "json", false, "print structured JSON output")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetQuery, "query", "", "filter governing sets by substring across subject, target, decision refs, and repair hints")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetSubjectRef, "subject-ref", "", "filter governing sets by exact subject ref")
@@ -195,6 +197,11 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 			return err
 		}
 	}
+	if decisionReconcileDraftReview != "" {
+		if err := writeDecisionReconciliationSelectionDraftFile(decisionReconcileDraftReview, draft); err != nil {
+			return err
+		}
+	}
 	if decisionReconcileDraftJSON {
 		return writeJSON(cmd.OutOrStdout(), draft)
 	}
@@ -202,6 +209,14 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "selection_template_written: %s authority=%s operator_approved=false\n",
 			decisionReconcileDraftWrite,
 			artifact.DecisionReconciliationSelectionApplyAuthority,
+		); err != nil {
+			return err
+		}
+	}
+	if decisionReconcileDraftReview != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "selection_review_packet_written: %s authority=%s operator_approved=false\n",
+			decisionReconcileDraftReview,
+			artifact.DecisionReconciliationSelectionDraftAuthority,
 		); err != nil {
 			return err
 		}
@@ -493,6 +508,26 @@ func writeDecisionReconciliationSelectionTemplateFile(
 	}
 	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
 		return fmt.Errorf("write decision reconciliation selection template %s: %w", path, err)
+	}
+	return nil
+}
+
+func writeDecisionReconciliationSelectionDraftFile(
+	path string,
+	draft artifact.DecisionReconciliationSelectionDraft,
+) error {
+	if draft.Authority != artifact.DecisionReconciliationSelectionDraftAuthority {
+		return fmt.Errorf("selection draft authority = %q, want %q", draft.Authority, artifact.DecisionReconciliationSelectionDraftAuthority)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create decision reconciliation selection draft directory %s: %w", filepath.Dir(path), err)
+	}
+	data, err := json.MarshalIndent(draft, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode decision reconciliation selection draft: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write decision reconciliation selection draft %s: %w", path, err)
 	}
 	return nil
 }

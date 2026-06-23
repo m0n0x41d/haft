@@ -848,6 +848,78 @@ func TestWriteDecisionReconciliationSelectionTemplateFileRejectsMissingTemplate(
 	}
 }
 
+func TestWriteDecisionReconciliationSelectionDraftFileKeepsReportOnlyAuthority(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "review", "selection-draft.json")
+	draft := artifact.DecisionReconciliationSelectionDraft{
+		SchemaVersion:          artifact.DecisionReconciliationSchemaVersion,
+		Authority:              artifact.DecisionReconciliationSelectionDraftAuthority,
+		OperatorApproved:       false,
+		ApplyAuthorityRequired: artifact.DecisionReconciliationSelectionApplyAuthority,
+		SourcePlanAuthority:    artifact.DecisionReconciliationAuthority,
+		FullAuditCommand:       "haft decision reconcile selection-draft --json --full",
+		SelectionDocumentTemplate: &artifact.DecisionReconciliationSelectionDocument{
+			SchemaVersion:       artifact.DecisionReconciliationSchemaVersion,
+			Authority:           artifact.DecisionReconciliationSelectionApplyAuthority,
+			OperatorApprovalRef: "",
+			Items: []artifact.DecisionReconciliationSelection{{
+				Operation:          artifact.DecisionReconciliationOperationEnrichScope,
+				ReviewedGroupID:    "decision-reconcile-001",
+				DecisionRefs:       []string{"dec-1"},
+				DecisionSubjectRef: "TODO_exact_decision_subject_ref",
+				Reason:             "TODO_operator_reviewed_scope_enrichment_reason",
+			}},
+		},
+		MutationBoundary: []string{
+			"selection draft is read-only",
+			"draft output is not an operator approval",
+		},
+	}
+
+	if err := writeDecisionReconciliationSelectionDraftFile(path, draft); err != nil {
+		t.Fatalf("writeDecisionReconciliationSelectionDraftFile: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read written draft: %v", err)
+	}
+	var decoded artifact.DecisionReconciliationSelectionDraft
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("decode written draft: %v\n%s", err, string(data))
+	}
+	if decoded.Authority != artifact.DecisionReconciliationSelectionDraftAuthority {
+		t.Fatalf("authority = %q", decoded.Authority)
+	}
+	if decoded.OperatorApproved {
+		t.Fatal("operator_approved = true")
+	}
+	if decoded.SelectionDocumentTemplate == nil {
+		t.Fatal("selection_document_template missing")
+	}
+	if decoded.SelectionDocumentTemplate.OperatorApprovalRef != "" {
+		t.Fatalf("operator_approval_ref = %q", decoded.SelectionDocumentTemplate.OperatorApprovalRef)
+	}
+	if !containsString(decoded.MutationBoundary, "draft output is not an operator approval") {
+		t.Fatalf("mutation_boundary = %#v", decoded.MutationBoundary)
+	}
+}
+
+func TestWriteDecisionReconciliationSelectionDraftFileRejectsApplyAuthorityDocument(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "selection-draft.json")
+
+	err := writeDecisionReconciliationSelectionDraftFile(
+		path,
+		artifact.DecisionReconciliationSelectionDraft{
+			Authority: artifact.DecisionReconciliationSelectionApplyAuthority,
+		},
+	)
+	if err == nil {
+		t.Fatal("expected authority mismatch error")
+	}
+	if !strings.Contains(err.Error(), "report_only_selection_draft_not_operator_approval") {
+		t.Fatalf("error = %v, want report-only authority diagnostic", err)
+	}
+}
+
 func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
 	var output bytes.Buffer
 	result := artifact.DecisionReconciliationApplyResult{

@@ -367,6 +367,45 @@ func TestHandleQuintQueryStatusPrependsOverseerSignals(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQueryStatusSurfacesAutonomousMaintenanceDisclosure(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	maintenance, err := overseer.BuildMaintenanceRun(overseer.MaintenanceInput{
+		CreatedAt: "2026-06-23T00:00:00Z",
+		Executed: []overseer.MaintenanceAction{{
+			ID:          "act-001",
+			Kind:        "auto_rebaseline",
+			DecisionRef: "dec-safe",
+			Title:       "Safe additive drift",
+			Outcome:     "applied",
+			PriorState:  `{"files":[]}`,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildMaintenanceRun returned error: %v", err)
+	}
+	if err := overseer.StoreMaintenanceRun(fixture.root, maintenance); err != nil {
+		t.Fatalf("StoreMaintenanceRun returned error: %v", err)
+	}
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "status",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(status) returned error: %v", err)
+	}
+	for _, want := range []string{
+		"AUTONOMOUS MAINTENANCE",
+		"haft overseer undo " + maintenance.MaintenanceID + " act-001",
+		"auto_rebaseline",
+		"Safe additive drift",
+		"## Haft Status",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("status missing %q:\n%s", want, result)
+		}
+	}
+}
+
 func TestHandleQuintQueryStatusFullUsesDetailedRenderer(t *testing.T) {
 	fixture := newCheckTestProject(t)
 

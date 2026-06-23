@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **MCP status autonomous-maintenance disclosure guard.** Regression coverage now
+  proves `haft_query(action="status")` surfaces latest overseer maintenance
+  actions, including the `AUTONOMOUS MAINTENANCE` block and exact
+  `haft overseer undo <run-id> <action-id>` command, before the normal Haft
+  cockpit.
 - **Projection assurance authority boundary.** Audit/evidence projections now
   state that displayed `R_eff`, `F_eff`, formality scale, and bridge-loss
   diagnostics are not approval, gate passage, claim truth, global truth, or

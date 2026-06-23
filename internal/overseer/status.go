@@ -200,9 +200,24 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 		if title == "" {
 			title = "Untitled decision"
 		}
+		undo := statusActionUndoCommand(summary.LatestMaintenanceID, action)
+		if undo != "" {
+			fmt.Fprintf(&sb, "  - [%s] %s — %s `%s` (%s; undo: `%s`)\n", action.ID, action.Kind, title, action.DecisionRef, action.Outcome, undo)
+			continue
+		}
 		fmt.Fprintf(&sb, "  - [%s] %s — %s `%s` (%s)\n", action.ID, action.Kind, title, action.DecisionRef, action.Outcome)
 	}
 	return sb.String()
+}
+
+func statusActionUndoCommand(maintenanceID string, action MaintenanceAction) string {
+	if maintenanceID == "" || action.ID == "" || action.PriorState == "" {
+		return ""
+	}
+	if action.Undo != "" {
+		return action.Undo
+	}
+	return "haft overseer undo " + maintenanceID + " " + action.ID
 }
 
 func reviewRunSignals(stored StoredRun) []StatusSignal {

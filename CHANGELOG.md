@@ -61,6 +61,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   summarizes very large invariant fanouts by decision/source group by default,
   avoiding hundreds of invariant sentences in normal agent context while
   preserving the complete invariant audit list behind `full=true`.
+- **Compact drift-events CLI summary.** `haft drift events` now caps the
+  default text event list and points to `--json` for the full audit payload,
+  preserving DriftEvent grouping without dumping every per-event tail into
+  normal operator context.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

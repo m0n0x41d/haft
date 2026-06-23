@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -110,6 +111,46 @@ func TestWriteDriftEventsSummaryNamesFanout(t *testing.T) {
 		"fallback=whole_file_fallback",
 		"root_cause=binding_target_missing",
 		"resolution=needs_scope_enrichment",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("summary missing %q:\n%s", want, output)
+		}
+	}
+}
+
+func TestWriteDriftEventsSummaryCapsDefaultEventList(t *testing.T) {
+	events := make([]artifact.DriftEvent, 0, driftEventsSummaryEventLimit+2)
+	for i := 1; i <= driftEventsSummaryEventLimit+2; i++ {
+		events = append(events, artifact.DriftEvent{
+			EventID:          fmt.Sprintf("drift-event-%02d", i),
+			ChangedTargetRef: fmt.Sprintf("symbol:file.go::func:Event%02d", i),
+			Fanout:           i,
+			Materiality:      artifact.DriftMaterialityMaterialSymbol,
+			RootCause:        artifact.DriftEventRootCauseSemanticTargetChanged,
+			ResolutionStatus: artifact.DriftEventResolutionNeedsOperatorJudgment,
+		})
+	}
+	report := artifact.DriftEventReport{
+		Summary: artifact.DriftEventSummary{UniqueEvents: len(events)},
+		Events:  events,
+	}
+
+	var buf bytes.Buffer
+	if err := writeDriftEventsSummary(&buf, report); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "drift-event-20") {
+		t.Fatalf("summary should include the capped prefix:\n%s", output)
+	}
+	if strings.Contains(output, "drift-event-21") {
+		t.Fatalf("summary should omit events beyond the compact cap:\n%s", output)
+	}
+	for _, want := range []string{
+		"... and 2 more DriftEvent(s)",
+		"haft drift events --json",
+		"full audit detail",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("summary missing %q:\n%s", want, output)

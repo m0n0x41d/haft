@@ -19,6 +19,8 @@ import (
 
 var timeNow = time.Now
 
+const driftEventsSummaryEventLimit = 20
+
 var (
 	driftRouteJSON        bool
 	driftRouteBearerRef   string
@@ -439,7 +441,11 @@ func writeDriftEventsSummary(w io.Writer, report artifact.DriftEventReport) erro
 		report.Summary.WaivedByLedgerEvents,
 		report.Summary.MaxFanout,
 	))
-	for _, event := range report.Events {
+	visible := report.Events
+	if len(visible) > driftEventsSummaryEventLimit {
+		visible = visible[:driftEventsSummaryEventLimit]
+	}
+	for _, event := range visible {
 		fallback := ""
 		if event.FallbackKind != "" {
 			fallback = fmt.Sprintf(" fallback=%s", event.FallbackKind)
@@ -453,6 +459,12 @@ func writeDriftEventsSummary(w io.Writer, report artifact.DriftEventReport) erro
 			fallback,
 			event.RootCause,
 			event.ResolutionStatus,
+		))
+	}
+	if omitted := len(report.Events) - len(visible); omitted > 0 {
+		builder.WriteString(fmt.Sprintf(
+			"... and %d more DriftEvent(s); run `haft drift events --json` for full audit detail\n",
+			omitted,
 		))
 	}
 	_, err := io.WriteString(w, builder.String())

@@ -71,9 +71,9 @@ func TestCodeContextResponse_CompactsInvariantsAndFullRestoresThem(t *testing.T)
 
 	compact := CodeContextResponseAll(cc)
 	if !strings.Contains(compact, "Invariant relevance") {
-		t.Fatalf("compact response should explain broad file-level relevance:\n%s", compact)
+		t.Fatalf("compact response should explain file-level relevance:\n%s", compact)
 	}
-	if !strings.Contains(compact, "not proof that every invariant binds every symbol") {
+	if !strings.Contains(compact, "not proof that every invariant binds every symbol in the file") {
 		t.Fatalf("compact response should not present broad file invariants as direct symbol constraints:\n%s", compact)
 	}
 	if !strings.Contains(compact, `lane="symbols"`) || !strings.Contains(compact, "full=true") {
@@ -130,7 +130,7 @@ func TestCodeContextResponse_DefaultIndexOmitsLaneDumps(t *testing.T) {
 	}
 }
 
-func TestCodeContextResponse_DefaultIndexLabelsBroadFileInvariantFanout(t *testing.T) {
+func TestCodeContextResponse_DefaultIndexLabelsFileLevelInvariantCandidates(t *testing.T) {
 	invariants := make([]graph.Invariant, 0, 10)
 	for i := 1; i <= 10; i++ {
 		invariants = append(invariants, graph.Invariant{
@@ -145,9 +145,9 @@ func TestCodeContextResponse_DefaultIndexLabelsBroadFileInvariantFanout(t *testi
 
 	index := CodeContextResponse(cc)
 	for _, want := range []string{
-		"invariants: 10 broad file-level candidates",
-		"narrow by symbol/line",
-		"broad file-level invariant fanout exists",
+		"invariants: 10 file-level candidate(s)",
+		"narrow by symbol",
+		"file-level invariant candidates exist",
 	} {
 		if !strings.Contains(index, want) {
 			t.Fatalf("index response missing %q:\n%s", want, index)
@@ -155,6 +155,71 @@ func TestCodeContextResponse_DefaultIndexLabelsBroadFileInvariantFanout(t *testi
 	}
 	if strings.Contains(index, "invariants: 10 binding") {
 		t.Fatalf("index response should not label broad file-level fanout as binding:\n%s", index)
+	}
+}
+
+func TestCodeContextResponse_FileLevelInvariantDoesNotReadAsBinding(t *testing.T) {
+	cc := contextgraph.CodeContext{
+		Target: contextgraph.Target{File: "internal/x.go"},
+		Invariants: []graph.Invariant{
+			{Text: "single file-level invariant", DecisionTitle: "Context decision"},
+		},
+	}
+
+	index := CodeContextResponse(cc)
+	for _, want := range []string{
+		"invariants: 1 file-level candidate(s)",
+		"file-level invariant candidates exist",
+	} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("index response missing %q:\n%s", want, index)
+		}
+	}
+	if strings.Contains(index, "1 binding") {
+		t.Fatalf("file-level index should not label invariant as binding:\n%s", index)
+	}
+
+	lane := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneInvariants})
+	for _, want := range []string{
+		"### Invariant relevance",
+		"### File-level invariant candidates",
+		"single file-level invariant",
+	} {
+		if !strings.Contains(lane, want) {
+			t.Fatalf("invariants lane missing %q:\n%s", want, lane)
+		}
+	}
+	if strings.Contains(lane, "### Invariants that must hold here") {
+		t.Fatalf("file-level invariants lane must not claim symbol-local authority:\n%s", lane)
+	}
+}
+
+func TestCodeContextResponse_SymbolInvariantStillReadsAsBinding(t *testing.T) {
+	cc := contextgraph.CodeContext{
+		Target: contextgraph.Target{File: "internal/x.go", Symbol: "Run"},
+		Invariants: []graph.Invariant{
+			{Text: "symbol invariant", DecisionTitle: "Symbol decision"},
+		},
+	}
+
+	index := CodeContextResponse(cc)
+	for _, want := range []string{
+		"invariants: 1 binding",
+		"symbol-binding invariants exist",
+	} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("symbol index missing %q:\n%s", want, index)
+		}
+	}
+
+	lane := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneInvariants})
+	for _, want := range []string{
+		"### Invariants that must hold here",
+		"symbol invariant",
+	} {
+		if !strings.Contains(lane, want) {
+			t.Fatalf("symbol invariants lane missing %q:\n%s", want, lane)
+		}
 	}
 }
 

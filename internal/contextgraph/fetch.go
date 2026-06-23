@@ -58,13 +58,14 @@ func FetchCodeContext(ctx context.Context, store *artifact.Store, g *graph.Store
 	return cc, nil
 }
 
-// partitionInvariants splits the file's invariants into those that BIND the
-// target and those that are merely module/file CONTEXT. For a file-level view
-// (no symbol) every invariant binds the file. For a symbol view only invariants
-// whose source decision governs the symbol directly (matched via affected_symbols)
-// bind it; the rest — pulled in by the file's module-level governance — are
-// context, so a roadmap invariant is never asserted as a constraint on a symbol
-// it does not govern. Pure.
+// partitionInvariants splits the file's invariants into those that BIND a
+// symbol target and those that are merely module/file CONTEXT. For a file-level
+// view (no symbol), the legacy payload stays in the primary invariant lane so
+// existing callers keep seeing it, but presentation labels it as file-level
+// relevance candidates. For a symbol view only invariants whose source decision
+// governs the symbol directly (matched via affected_symbols) bind it; the rest
+// are context, so a roadmap invariant is never asserted as a constraint on a
+// symbol it does not govern. Pure.
 func partitionInvariants(invariants []graph.Invariant, symbol string, symbolLinked []*artifact.Artifact) (binding, contextInv []graph.Invariant) {
 	if symbol == "" {
 		return invariants, nil

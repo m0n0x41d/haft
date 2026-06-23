@@ -35,15 +35,16 @@ type CodeContext struct {
 	Problems   []*artifact.Artifact // ProblemCards framed around this code
 	Portfolios []*artifact.Artifact // SolutionPortfolios — the variants explored
 	Notes      []*artifact.Artifact // micro-decisions / rationale captured here
-	Invariants []graph.Invariant    // invariants that bind the TARGET (must hold here)
+	Invariants []graph.Invariant    // invariants linked to this target; file-level views are relevance candidates
 	Module     string               // module the file belongs to ("" if none)
 	Governed   bool                 // module carries ≥1 decision (vs. blind)
 
 	// ContextInvariants are invariants from decisions governing the file's MODULE
 	// that do NOT bind the target symbol directly. Surfaced as context, never as
 	// "must hold here", so module-level (e.g. roadmap) invariants are not asserted
-	// as constraints on a symbol they do not govern. Empty for a file-level view
-	// (where every file invariant binds the target).
+	// as constraints on a symbol they do not govern. File-level views keep their
+	// legacy invariant payload in Invariants for compatibility; presentation must
+	// label that payload as relevance candidates, not symbol-local authority.
 	ContextInvariants []graph.Invariant
 
 	// ModuleDecisions are the decisions governing the file's MODULE — surfaced

@@ -18,12 +18,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   selection review and apply now reject stale or fictional `reviewed_group_id`
   values and require each selected decision to belong to the reviewed current
   `DecisionReconciliationPlan` group before any mutation can run.
-- **Compact broad code-context invariants.** File-level
-  `haft_query(action="code_context")` and `lane="invariants"` now label large
-  invariant fanout as broad file context, cap the default candidate list, and
-  point agents to symbol/line narrowing or `full=true` audit instead of
-  presenting every historical invariant as an equally actionable must-hold
-  constraint.
+- **Code-context invariant authority precision.** File-level
+  `haft_query(action="code_context")` and `lane="invariants"` now label
+  invariants as file-level relevance candidates, cap the default candidate
+  list, and point agents to symbol narrowing or `full=true` audit instead of
+  presenting historical file/module fanout as local must-hold constraints.
 - **SQL-first spec structural checks.** `haft spec check`, `haft check`, and
   `haft spec coverage` now derive structural SpecSection checks from current
   SQL SpecSection editions when present, while preserving typed carrier

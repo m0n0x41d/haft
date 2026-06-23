@@ -19,6 +19,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   deterministic JSON carrier for generated MCP action schema fragments with
   source and carrier digests, giving host/schema sync checks a real generated
   artifact without making it runtime schema authority.
+- **Generated description fragment materialization.** `haft interface
+  contract-generation --write-description-fragments <path>` now writes a
+  deterministic JSON carrier for generated host/skill/plugin/Pi description
+  fragments with source and carrier digests, so wording sync can be checked as
+  generated artifact bytes without treating generated text as approval.
 - **Governing frontier snapshot digest.** `haft decision governing-set --json`
   and `haft_query(action="governing_set")` now include a stable
   `snapshot_digest` in the read-only snapshot metadata, so current-authority

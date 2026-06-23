@@ -341,6 +341,12 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if len(report.SchemaFragments) != report.Summary.GeneratedSchemaFragments {
 		t.Fatalf("generated schema fragments = %d, summary = %#v", len(report.SchemaFragments), report.Summary)
 	}
+	notes := strings.Join(report.Notes, "\n")
+	for _, want := range []string{"--write-schema-fragments", "--write-description-fragments"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("contract_generation report notes missing %q:\n%s", want, notes)
+		}
+	}
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")
 	if !ok {
 		t.Fatal("decision.decide generated fragment missing")
@@ -383,11 +389,11 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 		t.Fatalf("decision.decide schema fragment authority boundary = %q", decideSchema.AuthorityBoundary)
 	}
 
-	notes := strings.Join(report.Notes, " ")
-	if !strings.Contains(notes, "not host materialization") ||
-		!strings.Contains(notes, "not operator authorization") ||
-		!strings.Contains(notes, "generated_schema_fragments") {
-		t.Fatalf("generation manifest notes missing authority boundary:\n%s", notes)
+	authorityNotes := strings.Join(report.Notes, " ")
+	if !strings.Contains(authorityNotes, "not host materialization") ||
+		!strings.Contains(authorityNotes, "not operator authorization") ||
+		!strings.Contains(authorityNotes, "generated_schema_fragments") {
+		t.Fatalf("generation manifest notes missing authority boundary:\n%s", authorityNotes)
 	}
 }
 
@@ -528,6 +534,60 @@ func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testin
 	}
 	if contractGeneration.SchemaDigest == "" || !strings.HasPrefix(contractGeneration.SchemaDigest, "sha256:") {
 		t.Fatalf("contract_generation schema digest = %q", contractGeneration.SchemaDigest)
+	}
+}
+
+func TestInterfaceContractGenerationMaterializesDescriptionFragmentsCarrier(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	path := filepath.Join(t.TempDir(), "generated", "description-fragments.json")
+
+	result, err := materializeInterfaceContractDescriptionFragments(report, path)
+	if err != nil {
+		t.Fatalf("materialize description fragments: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized description fragments: %v", err)
+	}
+	if result.Path != path {
+		t.Fatalf("materialized path = %q, want %q", result.Path, path)
+	}
+	if result.SourceDigest != report.SourceDigest {
+		t.Fatalf("materialized source digest = %q, report digest = %q", result.SourceDigest, report.SourceDigest)
+	}
+	if result.CarrierDigest != interfaceContractGenerationDigestBytes(data) {
+		t.Fatalf("carrier digest = %q, bytes digest = %q", result.CarrierDigest, interfaceContractGenerationDigestBytes(data))
+	}
+	if result.DescriptionFragments != report.Summary.GeneratedPreviewFragments {
+		t.Fatalf("description fragment count = %d, summary = %#v", result.DescriptionFragments, report.Summary)
+	}
+	if strings.Contains(string(data), "generated_at") {
+		t.Fatalf("materialized description carrier should be deterministic and omit generated_at:\n%s", string(data))
+	}
+
+	var carrier interfaceContractDescriptionFragmentsCarrier
+	if err := json.Unmarshal(data, &carrier); err != nil {
+		t.Fatalf("decode materialized description fragments: %v\n%s", err, string(data))
+	}
+	if carrier.Kind != "haft_interface_generated_description_fragments" {
+		t.Fatalf("carrier kind = %q", carrier.Kind)
+	}
+	if carrier.Authority != "generated_text_carrier_not_operator_authorization" {
+		t.Fatalf("carrier authority = %q", carrier.Authority)
+	}
+	if carrier.SourceDigest != report.SourceDigest {
+		t.Fatalf("carrier source digest = %q, report digest = %q", carrier.SourceDigest, report.SourceDigest)
+	}
+	if len(carrier.DescriptionFragments) != len(report.Fragments) {
+		t.Fatalf("carrier description fragments = %d, report = %d", len(carrier.DescriptionFragments), len(report.Fragments))
+	}
+	contractGeneration, ok := findCarrierGeneratedDescriptionFragment(carrier, "query.contract_generation")
+	if !ok {
+		t.Fatalf("query.contract_generation description fragment missing from materialized carrier")
+	}
+	if !strings.Contains(contractGeneration.AuthorityBoundary, "discovery only") {
+		t.Fatalf("contract_generation description authority boundary = %q", contractGeneration.AuthorityBoundary)
 	}
 }
 
@@ -1190,6 +1250,15 @@ func findCarrierGeneratedSchemaFragment(carrier interfaceContractSchemaFragments
 		}
 	}
 	return interfaceContractGeneratedSchemaFragment{}, false
+}
+
+func findCarrierGeneratedDescriptionFragment(carrier interfaceContractDescriptionFragmentsCarrier, id string) (interfaceContractGeneratedFragment, bool) {
+	for _, fragment := range carrier.DescriptionFragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedFragment{}, false
 }
 
 func readRepoFile(t *testing.T, elem ...string) string {

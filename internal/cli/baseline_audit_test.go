@@ -48,6 +48,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"// DriftStatus represents the state of a file relative to its baseline.",
 		"BaselineKindUnknownLegacy BaselineKind = \"unknown_legacy_baseline\"",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/codebase/symhash.go", strings.Join([]string{
+		"// SymbolDrift describes how a single symbol changed between baseline and current.",
+		"// CompareSymbolSnapshots compares baseline snapshots against current state.",
+		"func CompareSymbolSnapshots(baseline []SymbolSnapshot, current []SymbolSnapshot) []SymbolDrift {",
+		"// Check for new symbols not in baseline",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/run.go", strings.Join([]string{
 		"Short: \"Implement a decision - plan, execute, verify, baseline\",",
 		"ev.Phase(\"Baseline\")",
@@ -173,8 +179,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 11 {
 		t.Fatalf("spec approval count = %d, want 11", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 24 {
-		t.Fatalf("verified state count = %d, want 24", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 28 {
+		t.Fatalf("verified state count = %d, want 28", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 3 {
 		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)

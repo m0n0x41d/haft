@@ -379,6 +379,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditSpecApproval, "mentions SpecSection approval baseline drift or missing-baseline findings"
 	case baselineAuditArtifactVerifiedStateSurface(path):
 		return baselineAuditVerifiedState, "mentions DecisionRecord drift, query, or refresh baseline state"
+	case baselineAuditCodebaseSymbolDriftSurface(path):
+		return baselineAuditVerifiedState, "mentions symbol-level baseline snapshots used for drift comparison"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -768,6 +770,10 @@ func baselineAuditArtifactVerifiedStateSurface(path string) bool {
 	default:
 		return false
 	}
+}
+
+func baselineAuditCodebaseSymbolDriftSurface(path string) bool {
+	return filepath.ToSlash(path) == "internal/codebase/symhash.go"
 }
 
 func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit symbol-drift classification.** `haft baseline audit` now
+  classifies `internal/codebase/symhash.go` baseline/current symbol snapshot
+  wording as verified-state drift comparison terminology.
 - **Baseline audit artifact drift classification.** `haft baseline audit` now
   classifies DecisionRecord drift/query/refresh baseline wording as
   verified-state snapshot terminology without hiding explicit

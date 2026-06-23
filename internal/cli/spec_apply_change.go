@@ -2,6 +2,7 @@ package cli
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -21,6 +22,16 @@ type specApplyChangeResult struct {
 	Change            project.SpecCarrierChangeReport `json:"change"`
 	Audit             specSyncEditionAudit            `json:"audit"`
 	Edition           *specSyncImportedEntry          `json:"edition,omitempty"`
+	Conflict          *specApplyChangeConflict        `json:"conflict,omitempty"`
+}
+
+type specApplyChangeConflict struct {
+	Reason              string `json:"reason"`
+	SectionID           string `json:"section_id"`
+	CurrentSemanticHash string `json:"current_semantic_hash"`
+	BeforeSemanticHash  string `json:"before_semantic_hash"`
+	CurrentSourceKind   string `json:"current_source_kind"`
+	Resolution          string `json:"resolution"`
 }
 
 func runSpecApplyChange(cmd *cobra.Command, _ []string) error {
@@ -110,6 +121,9 @@ func applySpecCarrierChangeToSQL(
 		result.Audit.CarrierOnlyDisposition = "carrier_only_no_semantic_edition_created"
 		return result, nil
 	case project.SpecCarrierImportPostureRecognizedUpdate:
+		if err := blockConflictingSpecCarrierSyncBack(projectID, before, store, &result); err != nil {
+			return result, err
+		}
 		edition := specflow.NewSpecSectionEdition(projectID, after, specflow.SpecSectionSourceSyncBack, time.Now().UTC())
 		if err := store.PutCurrent(edition); err != nil {
 			return result, err
@@ -135,6 +149,36 @@ func applySpecCarrierChangeToSQL(
 	}
 }
 
+func blockConflictingSpecCarrierSyncBack(
+	projectID string,
+	before project.SpecSection,
+	store specflow.SpecSectionEditionStore,
+	result *specApplyChangeResult,
+) error {
+	current, err := store.GetCurrent(projectID, before.ID)
+	if errors.Is(err, specflow.ErrSpecSectionEditionNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	beforeHash := specflow.HashSection(before)
+	if current.SemanticHash == beforeHash {
+		return nil
+	}
+
+	result.Conflict = &specApplyChangeConflict{
+		Reason:              "current_sql_edition_differs_from_before_carrier",
+		SectionID:           before.ID,
+		CurrentSemanticHash: current.SemanticHash,
+		BeforeSemanticHash:  beforeHash,
+		CurrentSourceKind:   string(current.SourceKind),
+		Resolution:          "refresh the carrier from current SQL truth, re-review the edit, then rerun apply-change",
+	}
+	return fmt.Errorf("spec apply-change blocked: current SQL edition for %s does not match --before carrier", before.ID)
+}
+
 func writeSpecApplyChangeJSON(writer io.Writer, result specApplyChangeResult) error {
 	encoder := json.NewEncoder(writer)
 	encoder.SetIndent("", "  ")
@@ -150,6 +194,14 @@ func writeSpecApplyChangeText(writer io.Writer, result specApplyChangeResult) er
 	}
 	if _, err := fmt.Fprintf(writer, "noop: %t\n", result.Noop); err != nil {
 		return err
+	}
+	if result.Conflict != nil {
+		if _, err := fmt.Fprintf(writer, "conflict: %s\n", result.Conflict.Reason); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(writer, "resolution: %s\n", result.Conflict.Resolution); err != nil {
+			return err
+		}
 	}
 	_, err := fmt.Fprintf(writer, "authority_boundary: %s\n", result.AuthorityBoundary)
 	return err

@@ -149,6 +149,61 @@ func TestApplySpecCarrierChangeToSQLBlockedHighRiskPreservesCurrentEdition(t *te
 	}
 }
 
+func TestApplySpecCarrierChangeToSQLBlocksStaleBeforeCarrier(t *testing.T) {
+	database := newTestCLIDB(t)
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	after := writeSpecClassifyChangeFile(t, "target-system-after.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.boundary.001\n"))
+	currentSQL := writeSpecClassifyChangeFile(t, "target-system-current.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.current.001\n"))
+	currentSection, loadErr := loadSpecCarrierChangeSection(currentSQL, "target-system", "TS.sync.001")
+	if loadErr != nil {
+		t.Fatalf("load current SQL section: %v", loadErr)
+	}
+	currentEdition := specflow.NewSpecSectionEdition("proj-1", currentSection, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(currentEdition); err != nil {
+		t.Fatalf("seed current SQL edition: %v", err)
+	}
+
+	result, err := applySpecCarrierChangeToSQL("proj-1", specCarrierChangeInput{
+		BeforePath: before,
+		AfterPath:  after,
+		SectionID:  "TS.sync.001",
+		Kind:       "target-system",
+	}, store)
+	if err == nil {
+		t.Fatal("expected stale before carrier to block")
+	}
+	if !strings.Contains(err.Error(), "current SQL edition") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Applied || result.Noop {
+		t.Fatalf("conflict result should not apply or noop: %+v", result)
+	}
+	if result.Conflict == nil {
+		t.Fatalf("conflict missing: %+v", result)
+	}
+	if result.Conflict.Reason != "current_sql_edition_differs_from_before_carrier" {
+		t.Fatalf("conflict reason = %q", result.Conflict.Reason)
+	}
+	if result.Conflict.CurrentSemanticHash != currentEdition.SemanticHash {
+		t.Fatalf("current semantic hash = %q, want %q", result.Conflict.CurrentSemanticHash, currentEdition.SemanticHash)
+	}
+	if result.Conflict.BeforeSemanticHash == currentEdition.SemanticHash {
+		t.Fatalf("before semantic hash unexpectedly matched current: %+v", result.Conflict)
+	}
+
+	current, getErr := store.GetCurrent("proj-1", "TS.sync.001")
+	if getErr != nil {
+		t.Fatalf("GetCurrent after blocked conflict: %v", getErr)
+	}
+	if current.SemanticHash != currentEdition.SemanticHash {
+		t.Fatalf("conflict changed current semantic hash: got %s want %s", current.SemanticHash, currentEdition.SemanticHash)
+	}
+	if !strings.Contains(strings.Join(current.Section.DependsOn, ","), "TS.current.001") {
+		t.Fatalf("current depends_on overwritten: %#v", current.Section.DependsOn)
+	}
+}
+
 func TestApplySpecCarrierChangeToSQLCarrierOnlyNoop(t *testing.T) {
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())

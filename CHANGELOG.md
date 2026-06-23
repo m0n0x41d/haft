@@ -36,6 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec sync-back stale-carrier conflict guard.** `haft spec apply-change`
+  now fails closed when an existing current SQL SpecSection edition has a
+  different semantic hash than the reviewed `--before` carrier, returning a
+  conflict payload and preserving SQL truth instead of overwriting a newer
+  edition.
 - **Decision reconciliation text audit cues.** Human-readable
   `haft decision reconcile selection-review` output now prints the read-only
   mutation boundary, and `haft decision reconcile apply` summaries print

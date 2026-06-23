@@ -33,6 +33,7 @@ const (
 	baselineAuditSpecUse          = "spec_use_currentness_baseline"
 	baselineAuditLegacyBinding    = "legacy_binding_scope_baseline"
 	baselineAuditDecisionAPI      = "decision_baseline_api"
+	baselineAuditPresentation     = "baseline_presentation_surface"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -109,6 +110,8 @@ type baselineTermAuditSummary struct {
 	LegacyBindingScopeFiles     int `json:"legacy_binding_scope_files"`
 	DecisionBaselineAPI         int `json:"decision_baseline_api"`
 	DecisionBaselineAPIFiles    int `json:"decision_baseline_api_files"`
+	BaselinePresentation        int `json:"baseline_presentation_surface"`
+	BaselinePresentationFiles   int `json:"baseline_presentation_surface_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -207,6 +210,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	report.Summary.SpecUseCurrentnessFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSpecUse)
 	report.Summary.LegacyBindingScopeFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyBinding)
 	report.Summary.DecisionBaselineAPIFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditDecisionAPI)
+	report.Summary.BaselinePresentationFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditPresentation)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -361,6 +365,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditSpecUse, "mentions baseline inside SpecificationUse currentness or admission surface"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
+	case baselineAuditPresentationSurface(path, value):
+		return baselineAuditPresentation, "mentions baseline in decision/drift presentation output"
 	case baselineAuditTestFixtureSurface(path, value):
 		return baselineAuditTestFixture, "mentions baseline inside test helper or fixture vocabulary; audit-visible test surface, not product terminology debt"
 	case containsAnyBaselineTerm(value,
@@ -658,6 +664,27 @@ func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 	}
 }
 
+func baselineAuditPresentationSurface(path string, value string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/present/format.go", "internal/present/format_test.go":
+		return containsAnyBaselineTerm(value,
+			"baselineresponse",
+			"baseline set for",
+			"no baseline",
+			"no-baseline decisions",
+			"baselined decisions",
+			"baselined decision",
+			"counts per baselined decision",
+			"hasbaseline",
+			"driftnobaseline",
+			"cosmetic (re-baseline)",
+			"incidental (shared file changed by unrelated work",
+		)
+	default:
+		return false
+	}
+}
+
 func baselineAuditAutonomousMaintenanceTerm(value string) bool {
 	return containsAnyBaselineTerm(value,
 		"autobaseline",
@@ -800,6 +827,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.LegacyBindingScope++
 	case baselineAuditDecisionAPI:
 		summary.DecisionBaselineAPI++
+	case baselineAuditPresentation:
+		summary.BaselinePresentation++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -814,7 +843,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d autonomous_maintenance=%d spec_use_currentness=%d legacy_binding_scope=%d decision_baseline_api=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d autonomous_maintenance=%d spec_use_currentness=%d legacy_binding_scope=%d decision_baseline_api=%d baseline_presentation=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -834,6 +863,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.SpecUseCurrentness,
 		report.Summary.LegacyBindingScope,
 		report.Summary.DecisionBaselineAPI,
+		report.Summary.BaselinePresentation,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

@@ -65,6 +65,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {}",
 		`"action": "baseline",`,
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/present/format.go", strings.Join([]string{
+		"func BaselineResponse(decisionTitle string, decisionRef string, files []artifact.AffectedFile, navStrip string) string {",
+		`sb.WriteString("No drift detected. All baselined decisions match current file state.\n")`,
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -165,6 +169,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.DecisionBaselineAPIFiles != 2 {
 		t.Fatalf("decision baseline api files = %d, want 2", report.Summary.DecisionBaselineAPIFiles)
 	}
+	if report.Summary.BaselinePresentation != 2 {
+		t.Fatalf("baseline presentation count = %d, want 2", report.Summary.BaselinePresentation)
+	}
+	if report.Summary.BaselinePresentationFiles != 1 {
+		t.Fatalf("baseline presentation files = %d, want 1", report.Summary.BaselinePresentationFiles)
+	}
 	if report.Summary.LegacyAmbiguousBaseline != 2 {
 		t.Fatalf("legacy ambiguous count = %d, want 2", report.Summary.LegacyAmbiguousBaseline)
 	}
@@ -224,6 +234,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			SpecUseCurrentness:          2,
 			LegacyBindingScope:          2,
 			DecisionBaselineAPI:         4,
+			BaselinePresentation:        2,
 			LegacyAmbiguousBaseline:     2,
 			LegacyAmbiguousFiles:        2,
 		},
@@ -266,6 +277,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"spec_use_currentness=2",
 		"legacy_binding_scope=2",
 		"decision_baseline_api=4",
+		"baseline_presentation=2",
 		"legacy_ambiguous=2",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 2 legacy ambiguous baseline line(s) across 2 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

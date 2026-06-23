@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit presentation-surface classification.** `haft baseline audit`
+  now classifies baseline/drift response formatting vocabulary separately from
+  legacy ambiguous baseline debt.
 - **Baseline audit decision API classification.** `haft baseline audit` now
   classifies `haft_decision(baseline)`, host-tool schema, and DecisionRecord
   baseline handler/test wording separately from legacy ambiguous baseline debt.

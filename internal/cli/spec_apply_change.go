@@ -203,6 +203,37 @@ func writeSpecApplyChangeText(writer io.Writer, result specApplyChangeResult) er
 			return err
 		}
 	}
+	if _, err := writeSpecApplyChangeAuditText(writer, result.Audit); err != nil {
+		return err
+	}
 	_, err := fmt.Fprintf(writer, "authority_boundary: %s\n", result.AuthorityBoundary)
 	return err
+}
+
+func writeSpecApplyChangeAuditText(writer io.Writer, audit specSyncEditionAudit) (int, error) {
+	written, err := fmt.Fprintln(writer, "audit:")
+	if err != nil {
+		return written, err
+	}
+	lines := []string{
+		"  source_episteme: " + audit.SourceEpisteme,
+		"  publication_projection: " + audit.PublicationProjection,
+		"  carrier_bytes: " + audit.CarrierBytes,
+	}
+	if audit.ImportedSemanticMutation != "" {
+		lines = append(lines, "  imported_semantic_mutation: "+audit.ImportedSemanticMutation)
+	}
+	if audit.CarrierOnlyDisposition != "" {
+		lines = append(lines, "  carrier_only_disposition: "+audit.CarrierOnlyDisposition)
+	}
+	lines = append(lines, "  authority_boundary: "+audit.AuthorityBoundary)
+
+	for _, line := range lines {
+		count, err := fmt.Fprintln(writer, line)
+		written += count
+		if err != nil {
+			return written, err
+		}
+	}
+	return written, nil
 }

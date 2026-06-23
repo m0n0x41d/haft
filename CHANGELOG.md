@@ -36,6 +36,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec apply-change text audit output.** Human-readable
+  `haft spec apply-change` now prints the source episteme, publication
+  projection, carrier bytes, imported semantic mutation, and carrier-only
+  disposition, so SQL truth versus carrier/projection boundaries are visible
+  without switching to JSON.
 - **Overseer after-action authority guard.** Maintenance run regression
   coverage now asserts after-action reports remain report-only and do not carry
   reconciliation apply or binding lifecycle mutation cues while listing

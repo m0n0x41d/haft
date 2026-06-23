@@ -62,6 +62,41 @@ func TestRunSpecApplyChangeAppliesRecognizedRelationshipUpdate(t *testing.T) {
 	}
 }
 
+func TestRunSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	restoreCwd := chdirForTest(t, root)
+	defer restoreCwd()
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	after := writeSpecClassifyChangeFile(t, "target-system-after.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.boundary.001\n"))
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", false)
+	defer restoreFlags()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	if err := runSpecApplyChange(cmd, nil); err != nil {
+		t.Fatalf("runSpecApplyChange: %v\n%s", err, output.String())
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"spec apply-change: relationship_update",
+		"applied: true",
+		"audit:",
+		"source_episteme: sql_spec_section_edition",
+		"publication_projection: typed_yaml_spec_section_projection",
+		"carrier_bytes:",
+		"imported_semantic_mutation: relationship_update",
+		"authority_boundary: not_approval_not_rebaseline_not_evidence",
+		"authority_boundary: sql_edition_update_not_approval_rebaseline_or_prose_authority",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text output missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestRunSpecApplyChangeBlocksUnknownHighRisk(t *testing.T) {
 	root := setupSpecSyncProject(t)
 	restoreCwd := chdirForTest(t, root)
@@ -227,6 +262,84 @@ func TestApplySpecCarrierChangeToSQLCarrierOnlyNoop(t *testing.T) {
 	}
 	if _, getErr := store.GetCurrent("proj-1", "TS.sync.001"); getErr == nil {
 		t.Fatal("carrier-only no-op wrote an edition")
+	}
+}
+
+func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
+	var output bytes.Buffer
+	result := specApplyChangeResult{
+		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		Applied:           true,
+		Change: project.SpecCarrierChangeReport{
+			Kind: project.SpecCarrierChangeRelationshipUpdate,
+		},
+		Audit: specSyncEditionAudit{
+			SourceEpisteme:           "sql_spec_section_edition",
+			PublicationProjection:    "typed_yaml_spec_section_projection",
+			CarrierBytes:             ".haft/specs/target-system.md",
+			ImportedSemanticMutation: "relationship_update",
+			AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+		},
+	}
+
+	if err := writeSpecApplyChangeText(&output, result); err != nil {
+		t.Fatalf("writeSpecApplyChangeText: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"spec apply-change: relationship_update",
+		"audit:",
+		"source_episteme: sql_spec_section_edition",
+		"publication_projection: typed_yaml_spec_section_projection",
+		"carrier_bytes: .haft/specs/target-system.md",
+		"imported_semantic_mutation: relationship_update",
+		"authority_boundary: not_approval_not_rebaseline_not_evidence",
+		"authority_boundary: sql_edition_update_not_approval_rebaseline_or_prose_authority",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text output missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "carrier_only_disposition:") {
+		t.Fatalf("semantic update should not print carrier-only disposition:\n%s", text)
+	}
+}
+
+func TestWriteSpecApplyChangeTextShowsCarrierOnlyDisposition(t *testing.T) {
+	var output bytes.Buffer
+	result := specApplyChangeResult{
+		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		Noop:              true,
+		Change: project.SpecCarrierChangeReport{
+			Kind: project.SpecCarrierChangeCarrierOnly,
+		},
+		Audit: specSyncEditionAudit{
+			SourceEpisteme:         "sql_spec_section_edition",
+			PublicationProjection:  "typed_yaml_spec_section_projection",
+			CarrierBytes:           ".haft/specs/target-system-renamed.md",
+			CarrierOnlyDisposition: "carrier_only_no_semantic_edition_created",
+			AuthorityBoundary:      "not_approval_not_rebaseline_not_evidence",
+		},
+	}
+
+	if err := writeSpecApplyChangeText(&output, result); err != nil {
+		t.Fatalf("writeSpecApplyChangeText: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"noop: true",
+		"audit:",
+		"carrier_bytes: .haft/specs/target-system-renamed.md",
+		"carrier_only_disposition: carrier_only_no_semantic_edition_created",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("text output missing %q:\n%s", want, text)
+		}
+	}
+	if strings.Contains(text, "imported_semantic_mutation:") {
+		t.Fatalf("carrier-only no-op should not print imported mutation:\n%s", text)
 	}
 }
 

@@ -1046,6 +1046,55 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsStaleReviewedGroup(
 	}
 }
 
+func TestReviewDecisionReconciliationSelectionDocumentRejectsStaleEnrichScopeOperation(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	fields := DecisionFields{
+		DecisionSubjectRef: "subject:already-scoped",
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "api_contract",
+			Ref:  "api_contract:haft/already_scoped",
+		}},
+	}
+	createDecisionForReconciliation(t, store, "dec-already-scoped", StatusActive, "runtime", fields, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-already-scoped")
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:approved-stale-enrich",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    groupID,
+			DecisionRefs:       []string{"dec-already-scoped"},
+			DecisionSubjectRef: "subject:already-scoped",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/already_scoped",
+			}},
+			Reason: "Old scope enrichment packet after the current plan no longer needs scope enrichment.",
+		}},
+	}, "stale-enrich-selection.json")
+
+	if review.ApplyReady {
+		t.Fatalf("apply_ready = true for stale enrich_scope selection: %#v", review)
+	}
+	if len(review.Items) != 1 || review.Items[0].ApplyReady {
+		t.Fatalf("item review = %#v, want not apply-ready", review.Items)
+	}
+	if len(review.Items[0].ValidationErrors) != 1 ||
+		!strings.Contains(review.Items[0].ValidationErrors[0], "does not match current reviewed_group_id") {
+		t.Fatalf("item validation_errors = %#v", review.Items[0].ValidationErrors)
+	}
+	if !containsString(review.ValidationErrors, review.Items[0].ValidationErrors[0]) {
+		t.Fatalf("top-level validation_errors = %#v, want mirrored item error", review.ValidationErrors)
+	}
+	if review.ApplyCommand != "" {
+		t.Fatalf("apply_command = %q, want empty for stale enrich_scope selection", review.ApplyCommand)
+	}
+}
+
 func TestApplyDecisionReconciliationMergeThroughSuccessorPreservesLineage(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

@@ -647,7 +647,7 @@ func validateDecisionReconciliationSelection(
 			return err
 		}
 	}
-	if err := validateDecisionReconciliationReviewedGroup(planIndex, prefix, item.ReviewedGroupID, refs); err != nil {
+	if err := validateDecisionReconciliationReviewedGroup(planIndex, prefix, item.ReviewedGroupID, operation, refs); err != nil {
 		return err
 	}
 	if operation == DecisionReconciliationOperationReopen && len(refs) != 1 {
@@ -701,12 +701,18 @@ func validateDecisionReconciliationReviewedGroup(
 	planIndex decisionReconciliationPlanIndex,
 	prefix string,
 	reviewedGroupID string,
+	operation string,
 	decisionRefs []string,
 ) error {
 	groupID := strings.TrimSpace(reviewedGroupID)
 	group, ok := planIndex.groups[groupID]
 	if !ok {
 		return fmt.Errorf("%s.reviewed_group_id %q is not present in the current DecisionReconciliationPlan; rerun `haft decision reconcile --json` and rebuild the selection", prefix, groupID)
+	}
+	applyOperation := strings.TrimSpace(group.Preview.ApplyOperation)
+	if strings.TrimSpace(operation) == DecisionReconciliationOperationEnrichScope &&
+		applyOperation != DecisionReconciliationOperationEnrichScope {
+		return fmt.Errorf("%s.operation %q does not match current reviewed_group_id %q apply_operation %q; rerun `haft decision reconcile selection-draft --json` and rebuild the selection", prefix, operation, groupID, applyOperation)
 	}
 	groupRefs := stringSet(compactSortedStrings(group.DecisionRefs))
 	for _, ref := range decisionRefs {

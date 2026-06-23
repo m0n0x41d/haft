@@ -43,6 +43,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `decision_carrier_hint` and `review_commands` so R9 reviewers can jump back
   to the source DecisionRecord and narrowed draft view without treating carrier
   text as approval or apply authority.
+- **Current-operation reconciliation selection validation.** `selection-review`
+  and `apply` now reject stale `enrich_scope` selections when the current
+  reviewed group no longer advertises `apply_operation=enrich_scope`, forcing
+  agents to rebuild the packet from the current reconciliation plan.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

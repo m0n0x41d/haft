@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/reff"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -273,8 +275,53 @@ func TestCalculateReliability_FormalityNormalization(t *testing.T) {
 		t.Fatalf("CalculateReliability failed: %v", err)
 	}
 
-	if report.FormalityScore != 2 {
-		t.Errorf("Expected normalized formality score 2, got %d", report.FormalityScore)
+	if report.FormalityScore != 7 {
+		t.Errorf("Expected current F0-F9 formality score 7, got %d", report.FormalityScore)
+	}
+	if report.FormalityScaleID != reff.FormalityScaleUnversioned {
+		t.Errorf("Expected unversioned formality scale, got %q", report.FormalityScaleID)
+	}
+	if report.FormalityBridgeLoss != reff.FormalityBridgeUnversionedGap {
+		t.Errorf("Expected unversioned bridge loss, got %q", report.FormalityBridgeLoss)
+	}
+	if len(report.FormalityDiagnostics) != 1 {
+		t.Fatalf("Expected one formality diagnostic, got %#v", report.FormalityDiagnostics)
+	}
+	if report.FormalityDiagnostics[0] != "stored formality_level has no declared scale_id; ordinal is preserved but source semantics are undeclared" {
+		t.Errorf("Unexpected formality diagnostic: %#v", report.FormalityDiagnostics)
+	}
+}
+
+func TestCalculateReliability_FormalityWeakestLinkUsesF0F9(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	_, err := db.Exec(
+		"INSERT INTO evidence (id, holon_id, type, verdict, valid_until, formality_level) VALUES ('e1', 'A', 'internal', 'pass', ?, 8)",
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+	_, err = db.Exec(
+		"INSERT INTO evidence (id, holon_id, type, verdict, valid_until, formality_level) VALUES ('e2', 'A', 'internal', 'pass', ?, 4)",
+		time.Now().Add(24*time.Hour),
+	)
+	if err != nil {
+		t.Fatalf("failed to insert evidence: %v", err)
+	}
+
+	calc := New(db)
+	report, err := calc.CalculateReliability(context.Background(), "A")
+	if err != nil {
+		t.Fatalf("CalculateReliability failed: %v", err)
+	}
+
+	if report.FormalityScore != 4 {
+		t.Errorf("Expected F_eff weakest link F4, got %d", report.FormalityScore)
+	}
+	if len(report.FormalityDiagnostics) != 1 {
+		t.Fatalf("Expected deduplicated formality diagnostic, got %#v", report.FormalityDiagnostics)
 	}
 }
 
@@ -347,5 +394,8 @@ func TestCalculateReliability_AcceptsArtifactVerdicts(t *testing.T) {
 	}
 	if report.FormalityScore != 2 {
 		t.Errorf("Expected formality score 2, got %d", report.FormalityScore)
+	}
+	if report.FormalityScaleID != reff.FormalityScaleUnversioned {
+		t.Errorf("Expected unversioned formality scale, got %q", report.FormalityScaleID)
 	}
 }

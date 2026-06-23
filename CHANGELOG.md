@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Assurance calculator F0-F9 formality preservation.** The legacy
+  `assurance` WLNK calculator now preserves `formality_level` on the current
+  FPF F0-F9 ordinal instead of folding F4-F9 into old F0-F3 buckets, and
+  reports unversioned scale/bridge diagnostics for SQL evidence rows that lack
+  an explicit `formality_scale_id`.
 - **Host receipt verifier boundary.** Authorization receipt evaluation now has
   an explicit source-keyed host verifier registry: structurally complete host
   receipts still fail closed unless a kernel verifier is registered, and tests

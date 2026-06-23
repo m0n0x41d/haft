@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Overseer after-action authority guard.** Maintenance run regression
+  coverage now asserts after-action reports remain report-only and do not carry
+  reconciliation apply or binding lifecycle mutation cues while listing
+  auto-closed, evidence-checked, and remaining operator-judgment items.
 - **Generated contract no-default-bloat guard.** Compact interface, status, and
   code-context regression helpers now also reject generated contract virtual
   carrier paths, keeping generated host/schema surface inventory behind

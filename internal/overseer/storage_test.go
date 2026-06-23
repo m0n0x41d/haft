@@ -168,6 +168,52 @@ func TestMaintenanceRunCarriesReconciliationProposalsAndAfterAction(t *testing.T
 	if len(run.AfterAction.UndoCommands) != 1 || !strings.Contains(run.AfterAction.UndoCommands[0], "haft overseer undo "+run.MaintenanceID+" act-001") {
 		t.Fatalf("undo commands = %#v", run.AfterAction.UndoCommands)
 	}
+	assertMaintenanceAfterActionReportOnly(t, run.AfterAction)
+}
+
+func assertMaintenanceAfterActionReportOnly(t *testing.T, report MaintenanceAfterActionReport) {
+	t.Helper()
+
+	if report.AuthorityBoundary != "after_action_report_only_not_binding_authority" {
+		t.Fatalf("after-action authority = %q", report.AuthorityBoundary)
+	}
+
+	text := strings.ToLower(strings.TrimSpace(strings.Join([]string{
+		maintenanceAfterActionItemsText(report.AutoClosedItems),
+		maintenanceAfterActionItemsText(report.EvidenceChecked),
+		maintenanceAfterActionItemsText(report.RemainingOperatorJudgment),
+		strings.Join(report.UndoCommands, " "),
+		report.AuthorityBoundary,
+	}, " ")))
+	for _, forbidden := range []string{
+		" decision reconcile apply ",
+		"operator_approved_reconciliation_selection",
+		"merge_through_successor",
+		"retire_without_successor",
+		"claim_lifecycle_update",
+		"retiredwithsuccessor",
+		"retiredwithoutsuccessor",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("after-action report contains binding reconciliation cue %q: %s", forbidden, text)
+		}
+	}
+}
+
+func maintenanceAfterActionItemsText(items []MaintenanceAfterActionItem) string {
+	parts := make([]string, 0, len(items)*7)
+	for _, item := range items {
+		parts = append(parts,
+			item.Ref,
+			item.Title,
+			item.Action,
+			item.Outcome,
+			item.Command,
+			strings.Join(item.EvidenceRefs, " "),
+			item.Reason,
+		)
+	}
+	return strings.Join(parts, " ")
 }
 
 func TestFormatStatusSignalsSuppressionsOnlyStaysSilent(t *testing.T) {

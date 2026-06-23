@@ -888,6 +888,7 @@ func baselineAuditExcludedPathHints() []string {
 		"dist",
 		"build",
 		"tmp",
+		"package lockfiles",
 	}
 }
 
@@ -904,11 +905,27 @@ func baselineAuditScannableFile(rel string) bool {
 	if strings.Contains(rel, "/.") && !strings.HasPrefix(rel, ".agents/") && !strings.HasPrefix(rel, ".haft/") {
 		return false
 	}
+	if baselineAuditGeneratedCarrierFile(rel) {
+		return false
+	}
 	switch strings.ToLower(filepath.Ext(rel)) {
 	case ".go", ".md", ".yaml", ".yml", ".json", ".toml", ".txt", ".tmpl", ".tpl", ".sh":
 		return true
 	default:
 		return rel == "AGENTS.md" || rel == "CHANGELOG.md"
+	}
+}
+
+func baselineAuditGeneratedCarrierFile(rel string) bool {
+	switch filepath.Base(filepath.ToSlash(rel)) {
+	case "package-lock.json",
+		"pnpm-lock.yaml",
+		"yarn.lock",
+		"bun.lockb",
+		"Cargo.lock":
+		return true
+	default:
+		return false
 	}
 }
 

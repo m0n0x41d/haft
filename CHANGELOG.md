@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit lockfile exclusion.** `haft baseline audit` now skips
+  generated dependency lockfiles such as `package-lock.json` so package names
+  like `baseline-browser-mapping` do not appear as semantic baseline debt.
 - **Baseline audit project-spec carrier classification.** `haft baseline audit`
   now separates project specification carriers such as `.haft/specs/*` and
   `spec/target-system/*` from upstream source-spec references and legacy

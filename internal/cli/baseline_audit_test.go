@@ -127,6 +127,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "tui/node_modules/pkg/ignored.md", "Run baseline before release.\n")
+	writeBaselineAuditFixture(t, root, "package-lock.json", `"baseline-browser-mapping": "dist/cli.cjs"`)
 
 	report, err := buildBaselineTermAuditReport(root)
 	if err != nil {
@@ -273,6 +274,9 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		}
 		if strings.Contains(finding.Path, ".claude") {
 			t.Fatalf(".claude path was not skipped: %+v", finding)
+		}
+		if strings.Contains(finding.Path, "package-lock.json") {
+			t.Fatalf("package-lock path was not skipped: %+v", finding)
 		}
 	}
 }

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Default status needs-binding drift count.** The default cockpit Decision
+  Health line now classifies legacy whole-file fallback DriftEvents as
+  needs-binding resolution work, matching the DriftEvent summary instead of
+  reporting them as material drift or `0 needs-binding` noise.
 - **SQL-first spec check document summaries.** `haft spec check --json` now
   aggregates repeated SQL-first SpecSection carrier rows by path/kind so the
   `documents` list reports each carrier once while preserving section counts,

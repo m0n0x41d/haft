@@ -1308,18 +1308,28 @@ func summarizeCockpitDriftEvents(events []artifact.DriftEvent) (int, int, int) {
 
 func partitionCockpitDriftEvents(events []artifact.DriftEvent) (material, audit, unresolved []artifact.DriftEvent) {
 	for _, event := range events {
+		if cockpitDriftEventNeedsBindingResolution(event) {
+			unresolved = append(unresolved, event)
+			continue
+		}
 		switch event.Materiality {
 		case artifact.DriftMaterialityAdjacentFileChurn,
 			artifact.DriftMaterialityCarrierOnly,
 			artifact.DriftMaterialityGeneratedOrIgnored:
 			audit = append(audit, event)
-		case artifact.DriftMaterialityNeedsBindingResolution:
-			unresolved = append(unresolved, event)
 		default:
 			material = append(material, event)
 		}
 	}
 	return material, audit, unresolved
+}
+
+func cockpitDriftEventNeedsBindingResolution(event artifact.DriftEvent) bool {
+	if event.Materiality == artifact.DriftMaterialityNeedsBindingResolution {
+		return true
+	}
+	return event.Materiality == artifact.DriftMaterialityUnknownLegacyFileScope &&
+		event.FallbackKind == artifact.BindingTargetWholeFileFallback
 }
 
 func partitionCockpitDrift(reports []artifact.DriftReport) (material, audit, unresolved []artifact.DriftReport) {

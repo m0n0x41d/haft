@@ -608,10 +608,8 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		"Stale A",
 		"Stale B",
 		"... and 1 more; run `haft_refresh(action=\"scan\", verbose=true)`",
-		"**Drift events** (2 unique; 1 impacted decision(s); max fanout 1)",
-		"file:internal/a.go",
-		"fanout=1 materiality=unknown_legacy_file_scope resolution=needs_scope_enrichment",
 		"**Audit-only drift events**: 1 unique event(s), 1 impacted decision(s)",
+		"**Binding resolution needed**: 1 unique event(s), 1 impacted decision(s) need precise binding targets",
 		"**Reconciliation cues**: 1 high-fanout drift event(s), max fanout 4; 2 reconciliation group(s), 2 operator-required; 1 governing conflict set(s), 1 overlap set(s)",
 		`drill down with haft_query(action="drift_events", limit=5) / haft_query(action="decision_reconcile", limit=5) / haft_query(action="governing_set", limit=5)`,
 		"**Progress problem** `prob-progress` → **Progress portfolio** `sol-001`",
@@ -634,6 +632,7 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		"### Recent Notes",
 		"Hidden note",
 		"Stale C",
+		"**Drift events**",
 	} {
 		if strings.Contains(output, unwanted) {
 			t.Fatalf("cockpit output should omit %q:\n%s", unwanted, output)
@@ -761,6 +760,35 @@ func TestCockpitStatusResponse_GroupsBindingResolutionDrift(t *testing.T) {
 	}
 	if strings.Contains(output, "**Drift events**") {
 		t.Fatalf("binding-resolution drift should not render as material drift:\n%s", output)
+	}
+}
+
+func TestCockpitStatusResponse_GroupsLegacyFileFallbackAsBindingResolution(t *testing.T) {
+	data := artifact.StatusData{
+		Drift: []artifact.DriftReport{{
+			DecisionID:    "dec-legacy-file",
+			DecisionTitle: "Legacy whole-file decision",
+			HasBaseline:   true,
+			Files: []artifact.DriftItem{{
+				Path:        "internal/tools/haft.go",
+				Status:      artifact.DriftModified,
+				Materiality: artifact.DriftMaterialityUnknownLegacyFileScope,
+			}},
+		}},
+	}
+
+	output := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Binding resolution needed**",
+		"Drift: 0 material event(s), 0 audit-only event(s), 1 needs-binding event(s)",
+		"haft_query(action=\"decision_reconcile\", limit=5)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "**Drift events**") {
+		t.Fatalf("legacy file fallback should not render as material drift:\n%s", output)
 	}
 }
 

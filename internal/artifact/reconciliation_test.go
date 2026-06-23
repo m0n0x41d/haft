@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -1016,6 +1017,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsStaleReviewedGroup(
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-stale-group", StatusActive, "runtime", DecisionFields{}, now)
+	currentGroupID := reviewedGroupIDForDecisionRefs(t, store, "dec-stale-group")
 
 	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -1043,6 +1045,9 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsStaleReviewedGroup(
 	if len(review.Items[0].ValidationErrors) != 1 ||
 		!strings.Contains(review.Items[0].ValidationErrors[0], "is not present in the current DecisionReconciliationPlan") {
 		t.Fatalf("item validation_errors = %#v", review.Items[0].ValidationErrors)
+	}
+	if !strings.Contains(review.Items[0].ValidationErrors[0], "current decision_refs now match reviewed_group_id "+strconv.Quote(currentGroupID)) {
+		t.Fatalf("item validation_errors = %#v, want current reviewed_group_id hint", review.Items[0].ValidationErrors)
 	}
 }
 

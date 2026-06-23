@@ -47,6 +47,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   and `apply` now reject stale `enrich_scope` selections when the current
   reviewed group no longer advertises `apply_operation=enrich_scope`, forcing
   agents to rebuild the packet from the current reconciliation plan.
+- **Stale reconciliation group diagnostics.** `selection-review` and `apply`
+  now explain when an old `reviewed_group_id` is gone but the same
+  `decision_refs` match a current reconciliation group, including the current
+  group id and apply operation while keeping the stale packet fail-closed.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

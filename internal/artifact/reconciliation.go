@@ -289,7 +289,8 @@ type DecisionReconciliationSelection struct {
 }
 
 type decisionReconciliationPlanIndex struct {
-	groups map[string]DecisionReconciliationGroup
+	groups        map[string]DecisionReconciliationGroup
+	orderedGroups []DecisionReconciliationGroup
 }
 
 func BuildDecisionReconciliationSelectionDraft(
@@ -541,7 +542,10 @@ func buildDecisionReconciliationPlanIndex(
 	for _, group := range plan.Groups {
 		groups[group.GroupID] = group
 	}
-	return decisionReconciliationPlanIndex{groups: groups}, nil
+	return decisionReconciliationPlanIndex{
+		groups:        groups,
+		orderedGroups: plan.Groups,
+	}, nil
 }
 
 func decisionReconciliationStrictValidationError(
@@ -707,6 +711,14 @@ func validateDecisionReconciliationReviewedGroup(
 	groupID := strings.TrimSpace(reviewedGroupID)
 	group, ok := planIndex.groups[groupID]
 	if !ok {
+		currentGroup, found := decisionReconciliationCurrentGroupForDecisionRefs(planIndex, decisionRefs)
+		if found {
+			applyOperation := strings.TrimSpace(currentGroup.Preview.ApplyOperation)
+			if applyOperation == "" {
+				applyOperation = "none"
+			}
+			return fmt.Errorf("%s.reviewed_group_id %q is not present in the current DecisionReconciliationPlan; current decision_refs now match reviewed_group_id %q with apply_operation %q; rerun `haft decision reconcile selection-draft --json` and rebuild the selection", prefix, groupID, currentGroup.GroupID, applyOperation)
+		}
 		return fmt.Errorf("%s.reviewed_group_id %q is not present in the current DecisionReconciliationPlan; rerun `haft decision reconcile --json` and rebuild the selection", prefix, groupID)
 	}
 	applyOperation := strings.TrimSpace(group.Preview.ApplyOperation)
@@ -721,6 +733,32 @@ func validateDecisionReconciliationReviewedGroup(
 		}
 	}
 	return nil
+}
+
+func decisionReconciliationCurrentGroupForDecisionRefs(
+	planIndex decisionReconciliationPlanIndex,
+	decisionRefs []string,
+) (DecisionReconciliationGroup, bool) {
+	refs := compactSortedStrings(decisionRefs)
+	for _, group := range planIndex.orderedGroups {
+		groupRefs := compactSortedStrings(group.DecisionRefs)
+		if decisionReconciliationStringSlicesEqual(refs, groupRefs) {
+			return group, true
+		}
+	}
+	return DecisionReconciliationGroup{}, false
+}
+
+func decisionReconciliationStringSlicesEqual(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index, value := range left {
+		if value != right[index] {
+			return false
+		}
+	}
+	return true
 }
 
 func validateDecisionReconciliationClaimLifecycleUpdates(

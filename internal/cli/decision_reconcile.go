@@ -18,6 +18,7 @@ var (
 	decisionReconcileApplyJSON     bool
 	decisionReconcileMetricsJSON   bool
 	decisionReconcileDraftJSON     bool
+	decisionReconcileDraftFull     bool
 	decisionReconcileReviewJSON    bool
 	decisionReconcileDraftLimit    int
 	decisionReconcileDraftGroupID  string
@@ -113,6 +114,7 @@ func init() {
 	decisionReconcileApplyCmd.Flags().BoolVar(&decisionReconcileApplyJSON, "json", false, "print structured JSON output")
 	decisionReconcileMetricsCmd.Flags().BoolVar(&decisionReconcileMetricsJSON, "json", false, "print structured JSON output")
 	decisionReconcileSelectionDraftCmd.Flags().BoolVar(&decisionReconcileDraftJSON, "json", false, "print structured JSON output")
+	decisionReconcileSelectionDraftCmd.Flags().BoolVar(&decisionReconcileDraftFull, "full", false, "emit every draft candidate; default output is bounded for review")
 	decisionReconcileSelectionReviewCmd.Flags().BoolVar(&decisionReconcileReviewJSON, "json", false, "print structured JSON output")
 	decisionReconcileSelectionDraftCmd.Flags().IntVar(&decisionReconcileDraftLimit, "limit", 0, "limit emitted draft candidates without approving or applying them")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftGroupID, "group-id", "", "emit draft candidates only for this reconciliation group id")
@@ -176,7 +178,8 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 	draft := artifact.BuildDecisionReconciliationSelectionDraftFiltered(
 		plan,
 		artifact.DecisionReconciliationSelectionDraftFilter{
-			Limit:       decisionReconcileDraftLimit,
+			Limit:       decisionReconcileSelectionDraftLimit(),
+			Full:        decisionReconcileDraftFull,
 			GroupID:     decisionReconcileDraftGroupID,
 			DecisionRef: decisionReconcileDraftDecision,
 		},
@@ -185,6 +188,16 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 		return writeJSON(cmd.OutOrStdout(), draft)
 	}
 	return writeDecisionReconciliationSelectionDraftSummary(cmd.OutOrStdout(), draft)
+}
+
+func decisionReconcileSelectionDraftLimit() int {
+	if decisionReconcileDraftFull {
+		return 0
+	}
+	if decisionReconcileDraftLimit > 0 {
+		return decisionReconcileDraftLimit
+	}
+	return 5
 }
 
 func runDecisionReconcileSelectionReview(cmd *cobra.Command, args []string) error {
@@ -567,6 +580,12 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	if _, err := fmt.Fprintf(output, "operator_approval_candidates: %d\n", draft.Summary.OperatorApprovalCandidates); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(output, "emitted_candidates: %d\n", draft.Summary.EmittedCandidates); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "omitted_candidates: %d\n", draft.Summary.OmittedCandidates); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(output, "selected_candidates: %d\n", draft.Summary.SelectedCandidates); err != nil {
 		return err
 	}
@@ -594,8 +613,8 @@ func writeDecisionReconciliationSelectionDraftSummary(
 			return err
 		}
 	}
-	if len(draft.Items) > limit {
-		_, err := fmt.Fprintf(output, "... and %d more; run `haft decision reconcile selection-draft --json`\n", len(draft.Items)-limit)
+	if draft.OmittedItems > 0 {
+		_, err := fmt.Fprintf(output, "... and %d more; run `%s`\n", draft.OmittedItems, draft.FullAuditCommand)
 		return err
 	}
 	return nil

@@ -306,8 +306,20 @@ func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testi
 	if draft.Summary.ScopeEnrichmentCandidates != 3 {
 		t.Fatalf("scope_enrichment_candidates = %d, want full source count 3", draft.Summary.ScopeEnrichmentCandidates)
 	}
-	if draft.Summary.OperatorApprovalCandidates != 1 || draft.Summary.SelectedCandidates != 0 {
-		t.Fatalf("filtered summary = %#v, want one review candidate and zero selected candidates", draft.Summary)
+	if draft.Summary.OperatorApprovalCandidates != 2 {
+		t.Fatalf("operator_approval_candidates = %d, want two matching group-1 candidates", draft.Summary.OperatorApprovalCandidates)
+	}
+	if draft.Summary.EmittedCandidates != 1 || draft.Summary.OmittedCandidates != 1 {
+		t.Fatalf("bounded summary = %#v, want one emitted and one omitted", draft.Summary)
+	}
+	if draft.Summary.SelectedCandidates != 0 {
+		t.Fatalf("selected_candidates = %d, want zero selected candidates", draft.Summary.SelectedCandidates)
+	}
+	if draft.OmittedItems != 1 {
+		t.Fatalf("omitted_items = %d, want 1", draft.OmittedItems)
+	}
+	if !strings.Contains(draft.FullAuditCommand, "--full") {
+		t.Fatalf("full_audit_command = %q", draft.FullAuditCommand)
 	}
 	if len(draft.Items) != 1 {
 		t.Fatalf("items = %#v, want one filtered candidate", draft.Items)
@@ -315,6 +327,21 @@ func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testi
 	item := draft.Items[0]
 	if item.ReviewedGroupID != "group-1" || item.DecisionRef != "dec-1" {
 		t.Fatalf("filtered item = %#v, want first candidate from group-1", item)
+	}
+
+	fullDraft := BuildDecisionReconciliationSelectionDraftFiltered(
+		plan,
+		DecisionReconciliationSelectionDraftFilter{
+			Limit:   1,
+			Full:    true,
+			GroupID: "group-1",
+		},
+	)
+	if fullDraft.Summary.EmittedCandidates != 2 || fullDraft.Summary.OmittedCandidates != 0 {
+		t.Fatalf("full draft summary = %#v, want all matching candidates emitted", fullDraft.Summary)
+	}
+	if len(fullDraft.Items) != 2 {
+		t.Fatalf("full draft items = %#v, want two matching candidates", fullDraft.Items)
 	}
 }
 

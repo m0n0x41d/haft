@@ -204,6 +204,8 @@ type DecisionReconciliationSelectionDraft struct {
 	ApplyAuthorityRequired string                             `json:"apply_authority_required"`
 	SourcePlanAuthority    string                             `json:"source_plan_authority"`
 	Summary                DecisionReconciliationDraftSummary `json:"summary"`
+	OmittedItems           int                                `json:"omitted_items,omitempty"`
+	FullAuditCommand       string                             `json:"full_audit_command,omitempty"`
 	Items                  []DecisionReconciliationDraftItem  `json:"items,omitempty"`
 	MutationBoundary       []string                           `json:"mutation_boundary"`
 	NextSteps              []string                           `json:"next_steps"`
@@ -236,6 +238,7 @@ type DecisionReconciliationSelectionReviewItem struct {
 
 type DecisionReconciliationSelectionDraftFilter struct {
 	Limit       int    `json:"limit,omitempty"`
+	Full        bool   `json:"full,omitempty"`
 	GroupID     string `json:"group_id,omitempty"`
 	DecisionRef string `json:"decision_ref,omitempty"`
 }
@@ -244,6 +247,8 @@ type DecisionReconciliationDraftSummary struct {
 	ReviewedGroups             int `json:"reviewed_groups"`
 	ScopeEnrichmentCandidates  int `json:"scope_enrichment_candidates"`
 	OperatorApprovalCandidates int `json:"operator_approval_candidates"`
+	EmittedCandidates          int `json:"emitted_candidates"`
+	OmittedCandidates          int `json:"omitted_candidates"`
 	SelectedCandidates         int `json:"selected_candidates"`
 }
 
@@ -294,7 +299,9 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 	filter DecisionReconciliationSelectionDraftFilter,
 ) DecisionReconciliationSelectionDraft {
 	allItems := decisionReconciliationDraftItems(plan.Groups)
-	items := filterDecisionReconciliationDraftItems(allItems, filter)
+	filteredItems := filterDecisionReconciliationDraftItems(allItems, filter)
+	items := limitDecisionReconciliationDraftItems(filteredItems, filter)
+	omittedItems := len(filteredItems) - len(items)
 	return DecisionReconciliationSelectionDraft{
 		SchemaVersion:          DecisionReconciliationSchemaVersion,
 		Authority:              DecisionReconciliationSelectionDraftAuthority,
@@ -304,10 +311,14 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 		Summary: DecisionReconciliationDraftSummary{
 			ReviewedGroups:             len(plan.Groups),
 			ScopeEnrichmentCandidates:  len(allItems),
-			OperatorApprovalCandidates: len(items),
-			SelectedCandidates:         countDecisionReconciliationDraftSelectedCandidates(items),
+			OperatorApprovalCandidates: len(filteredItems),
+			EmittedCandidates:          len(items),
+			OmittedCandidates:          omittedItems,
+			SelectedCandidates:         countDecisionReconciliationDraftSelectedCandidates(filteredItems),
 		},
-		Items: items,
+		OmittedItems:     omittedItems,
+		FullAuditCommand: "haft decision reconcile selection-draft --json --full",
+		Items:            items,
 		MutationBoundary: []string{
 			"selection draft is read-only",
 			"draft output is not an operator approval",
@@ -1251,11 +1262,18 @@ func filterDecisionReconciliationDraftItems(
 			continue
 		}
 		filtered = append(filtered, item)
-		if filter.Limit > 0 && len(filtered) >= filter.Limit {
-			break
-		}
 	}
 	return filtered
+}
+
+func limitDecisionReconciliationDraftItems(
+	items []DecisionReconciliationDraftItem,
+	filter DecisionReconciliationSelectionDraftFilter,
+) []DecisionReconciliationDraftItem {
+	if filter.Full || filter.Limit <= 0 || len(items) <= filter.Limit {
+		return append([]DecisionReconciliationDraftItem(nil), items...)
+	}
+	return append([]DecisionReconciliationDraftItem(nil), items[:filter.Limit]...)
 }
 
 func decisionReconciliationDraftItem(

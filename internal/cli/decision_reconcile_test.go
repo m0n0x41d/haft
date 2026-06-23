@@ -198,6 +198,8 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		Summary: artifact.DecisionReconciliationDraftSummary{
 			ScopeEnrichmentCandidates:  1,
 			OperatorApprovalCandidates: 1,
+			EmittedCandidates:          1,
+			OmittedCandidates:          0,
 			SelectedCandidates:         0,
 		},
 		Items: []artifact.DecisionReconciliationDraftItem{{
@@ -223,10 +225,80 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		"apply_authority_required: operator_approved_reconciliation_selection",
 		"scope_enrichment_candidates: 1",
 		"operator_approval_candidates: 1",
+		"emitted_candidates: 1",
+		"omitted_candidates: 0",
 		"selected_candidates: 0",
 		"dec-fallback",
 		"confidence=low",
 		"posture=needs_subject_and_target_review",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("summary missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestDecisionReconcileSelectionDraftLimitDefaultsToCompactUnlessFull(t *testing.T) {
+	previousLimit := decisionReconcileDraftLimit
+	previousFull := decisionReconcileDraftFull
+	defer func() {
+		decisionReconcileDraftLimit = previousLimit
+		decisionReconcileDraftFull = previousFull
+	}()
+
+	decisionReconcileDraftLimit = 0
+	decisionReconcileDraftFull = false
+	if got := decisionReconcileSelectionDraftLimit(); got != 5 {
+		t.Fatalf("default draft limit = %d, want 5", got)
+	}
+
+	decisionReconcileDraftLimit = 2
+	decisionReconcileDraftFull = false
+	if got := decisionReconcileSelectionDraftLimit(); got != 2 {
+		t.Fatalf("explicit draft limit = %d, want 2", got)
+	}
+
+	decisionReconcileDraftLimit = 2
+	decisionReconcileDraftFull = true
+	if got := decisionReconcileSelectionDraftLimit(); got != 0 {
+		t.Fatalf("full draft limit = %d, want 0", got)
+	}
+}
+
+func TestWriteDecisionReconciliationSelectionDraftSummaryShowsOmittedAuditRoute(t *testing.T) {
+	var output bytes.Buffer
+	draft := artifact.DecisionReconciliationSelectionDraft{
+		SchemaVersion:          1,
+		Authority:              artifact.DecisionReconciliationSelectionDraftAuthority,
+		OperatorApproved:       false,
+		ApplyAuthorityRequired: "operator_approved_reconciliation_selection",
+		Summary: artifact.DecisionReconciliationDraftSummary{
+			ScopeEnrichmentCandidates:  3,
+			OperatorApprovalCandidates: 3,
+			EmittedCandidates:          1,
+			OmittedCandidates:          2,
+			SelectedCandidates:         0,
+		},
+		OmittedItems:     2,
+		FullAuditCommand: "haft decision reconcile selection-draft --json --full",
+		Items: []artifact.DecisionReconciliationDraftItem{{
+			DecisionRef:      "dec-1",
+			ReviewedGroupID:  "decision-reconcile-1",
+			CandidatePosture: "needs_subject_and_target_review",
+			Confidence:       "low",
+			ScopeRepairHint:  "use enrich_scope to add decision_subject_ref",
+		}},
+	}
+
+	if err := writeDecisionReconciliationSelectionDraftSummary(&output, draft); err != nil {
+		t.Fatalf("writeDecisionReconciliationSelectionDraftSummary: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"emitted_candidates: 1",
+		"omitted_candidates: 2",
+		"... and 2 more; run `haft decision reconcile selection-draft --json --full`",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

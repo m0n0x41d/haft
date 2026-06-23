@@ -1996,6 +1996,9 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --json") {
 		t.Fatalf("decision_reconcile selection-draft CLI command missing: %#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --json --full") {
+		t.Fatalf("decision_reconcile full selection-draft CLI command missing: %#v", capability.CurrentExecution)
+	}
 
 	shapes, _ := marshalContractFragments(t, capability.InputContract)
 	for _, want := range []string{
@@ -2020,11 +2023,16 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		"fallback_target_sets",
 		"max_fanout",
 		"report_only_selection_draft_not_operator_approval",
+		"emitted_candidates",
+		"omitted_candidates",
+		"full_audit_command",
+		"selection-draft --json --full",
 		"candidate_posture",
 		"confidence",
 		"suggested_review_action",
 		"blocking_questions",
 		"Selection drafts are read-only review aids",
+		"Default output is bounded",
 		"limit caps compact groups",
 		"limit=5",
 	} {

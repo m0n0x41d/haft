@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Bounded reconciliation selection drafts.** `haft decision reconcile
+  selection-draft --json` now emits a compact review slice by default with
+  emitted/omitted candidate counts and an explicit `--full` audit command,
+  preventing R9 scope-enrichment review candidates from flooding agents while
+  preserving the complete report-only draft.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

@@ -31,6 +31,7 @@ const (
 	baselineAuditToolSurface       = "baseline_audit_tool_surface"
 	baselineAuditTestFixture       = "baseline_test_fixture_surface"
 	baselineAuditAutonomousMaint   = "autonomous_maintenance_baseline"
+	baselineAuditMethodPack        = "method_pack_baseline_surface"
 	baselineAuditSpecUse           = "spec_use_currentness_baseline"
 	baselineAuditLegacyBinding     = "legacy_binding_scope_baseline"
 	baselineAuditDecisionAPI       = "decision_baseline_api"
@@ -108,6 +109,8 @@ type baselineTermAuditSummary struct {
 	TestFixtureSurfaceFiles     int `json:"baseline_test_fixture_surface_files"`
 	AutonomousMaintenance       int `json:"autonomous_maintenance_baseline"`
 	AutonomousMaintenanceFiles  int `json:"autonomous_maintenance_files"`
+	MethodPackSurface           int `json:"method_pack_baseline_surface"`
+	MethodPackSurfaceFiles      int `json:"method_pack_baseline_surface_files"`
 	SpecUseCurrentness          int `json:"spec_use_currentness_baseline"`
 	SpecUseCurrentnessFiles     int `json:"spec_use_currentness_files"`
 	LegacyBindingScope          int `json:"legacy_binding_scope_baseline"`
@@ -214,6 +217,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	report.Summary.AuditToolSurfaceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditToolSurface)
 	report.Summary.TestFixtureSurfaceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditTestFixture)
 	report.Summary.AutonomousMaintenanceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditAutonomousMaint)
+	report.Summary.MethodPackSurfaceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditMethodPack)
 	report.Summary.SpecUseCurrentnessFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditSpecUse)
 	report.Summary.LegacyBindingScopeFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyBinding)
 	report.Summary.DecisionBaselineAPIFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditDecisionAPI)
@@ -550,6 +554,10 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditAutonomousMaint, "names autonomous maintenance rebaseline, undo, or baseline snapshot state"
 	case baselineAuditMaintenanceExecutionSurface(path):
 		return baselineAuditAutonomousMaint, "mentions baseline inside autonomous maintenance execution or undo surface"
+	case baselineAuditOverseerMaintenanceSurface(path):
+		return baselineAuditAutonomousMaint, "mentions baseline inside overseer maintenance, drain, or undo surface"
+	case baselineAuditMethodPackSurface(path):
+		return baselineAuditMethodPack, "mentions baseline inside built-in MethodPack verification guidance"
 	case containsAnyBaselineTerm(value,
 		"approve/rebaseline",
 		"approve or rebaseline",
@@ -846,6 +854,19 @@ func baselineAuditMaintenanceExecutionSurface(path string) bool {
 	}
 }
 
+func baselineAuditOverseerMaintenanceSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/overseer.go", "internal/overseer/config.go":
+		return true
+	default:
+		return false
+	}
+}
+
+func baselineAuditMethodPackSurface(path string) bool {
+	return filepath.ToSlash(path) == "internal/method/builtin.go"
+}
+
 func baselineAuditAutonomousMaintenanceTerm(value string) bool {
 	return containsAnyBaselineTerm(value,
 		"autobaseline",
@@ -1001,6 +1022,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.TestFixtureSurface++
 	case baselineAuditAutonomousMaint:
 		summary.AutonomousMaintenance++
+	case baselineAuditMethodPack:
+		summary.MethodPackSurface++
 	case baselineAuditSpecUse:
 		summary.SpecUseCurrentness++
 	case baselineAuditLegacyBinding:
@@ -1025,7 +1048,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d project_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d autonomous_maintenance=%d spec_use_currentness=%d legacy_binding_scope=%d decision_baseline_api=%d baseline_presentation=%d interface_contract=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d project_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d autonomous_maintenance=%d method_pack=%d spec_use_currentness=%d legacy_binding_scope=%d decision_baseline_api=%d baseline_presentation=%d interface_contract=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -1043,6 +1066,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.AuditToolSurface,
 		report.Summary.TestFixtureSurface,
 		report.Summary.AutonomousMaintenance,
+		report.Summary.MethodPackSurface,
 		report.Summary.SpecUseCurrentness,
 		report.Summary.LegacyBindingScope,
 		report.Summary.DecisionBaselineAPI,

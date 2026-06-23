@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit overseer/MethodPack classification.** `haft baseline audit`
+  now classifies overseer maintenance rebaseline wording as autonomous
+  maintenance terminology and built-in MethodPack baseline evidence wording as
+  a separate method-pack surface.
 - **Baseline audit symbol-drift classification.** `haft baseline audit` now
   classifies `internal/codebase/symhash.go` baseline/current symbol snapshot
   wording as verified-state drift comparison terminology.

@@ -94,6 +94,19 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"t.Fatal(\"auto mode should have re-baselined the additive drift\")",
 		"t.Fatal(\"undo must restore the PRIOR baseline\")",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/overseer.go", strings.Join([]string{
+		"decides, commissions, rebaselines, or contributes directly to R_eff.",
+		"Restored prior baseline for %s.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/overseer/config.go", strings.Join([]string{
+		"// MaintenanceRebaseline gates re-baselining decisions whose drift the",
+		"MaintenanceRebaseline string `json:\"maintenance_rebaseline\" yaml:\"maintenance_rebaseline\"`",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/method/builtin.go", strings.Join([]string{
+		"Intent: \"A refactor should preserve public behavior; baseline and post-change checks make that claim concrete.\"",
+		"ID: \"baseline_and_post_refactor_checks_recorded\"",
+		"RequiredEvidence: []string{\"baseline_test_output\", \"post_change_test_output\"},",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/use.go", strings.Join([]string{
 		"BaselineCurrentness SpecificationUseCurrentness `json:\"baseline_currentness\"`",
 		"status = SpecUseBaselineMissing",
@@ -242,11 +255,17 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TestFixtureSurfaceFiles != 2 {
 		t.Fatalf("test fixture surface files = %d, want 2", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.AutonomousMaintenance != 4 {
-		t.Fatalf("autonomous maintenance count = %d, want 4", report.Summary.AutonomousMaintenance)
+	if report.Summary.AutonomousMaintenance != 8 {
+		t.Fatalf("autonomous maintenance count = %d, want 8", report.Summary.AutonomousMaintenance)
 	}
-	if report.Summary.AutonomousMaintenanceFiles != 2 {
-		t.Fatalf("autonomous maintenance files = %d, want 2", report.Summary.AutonomousMaintenanceFiles)
+	if report.Summary.AutonomousMaintenanceFiles != 4 {
+		t.Fatalf("autonomous maintenance files = %d, want 4", report.Summary.AutonomousMaintenanceFiles)
+	}
+	if report.Summary.MethodPackSurface != 3 {
+		t.Fatalf("method pack count = %d, want 3", report.Summary.MethodPackSurface)
+	}
+	if report.Summary.MethodPackSurfaceFiles != 1 {
+		t.Fatalf("method pack files = %d, want 1", report.Summary.MethodPackSurfaceFiles)
 	}
 	if report.Summary.SpecUseCurrentness != 2 {
 		t.Fatalf("spec use currentness count = %d, want 2", report.Summary.SpecUseCurrentness)
@@ -338,6 +357,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			AuditToolSurface:            1,
 			TestFixtureSurface:          4,
 			AutonomousMaintenance:       4,
+			MethodPackSurface:           3,
 			SpecUseCurrentness:          2,
 			LegacyBindingScope:          2,
 			DecisionBaselineAPI:         4,
@@ -383,6 +403,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"audit_tool=1",
 		"test_fixture=4",
 		"autonomous_maintenance=4",
+		"method_pack=3",
 		"spec_use_currentness=2",
 		"legacy_binding_scope=2",
 		"decision_baseline_api=4",

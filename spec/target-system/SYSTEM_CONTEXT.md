@@ -279,10 +279,10 @@ Haft lives inside the software engineering delivery system:
 1. **Local-first.** Works without any server or cloud service.
 2. **Solo-first.** Valuable for one engineer before needing teams.
 3. **Spec-first.** Formal target/enabling specs are the entry point for serious harness work.
-4. **Desktop-first.** Desktop app is the primary human surface (not CLI, not web).
-5. **Plugin-compatible.** MCP plugin is the highest-reach integration channel, with Claude Code and Codex as v7 supported hosts.
+4. **Host-agent-first.** Skills/prompts plus MCP are the primary embedded agent surface; CLI remains the operator/runtime surface.
+5. **Plugin-compatible.** MCP plugin is the highest-reach integration channel, with Claude Code and Codex as supported hosts.
 6. **FPF inside.** Users should not need to study FPF terminology, but the product may explain why formal specs, term maps, and target/enabling split matter.
-7. **Single binary.** One `haft` binary serves desktop, MCP server, CLI, and
+7. **Single binary.** One `haft` binary serves the MCP server and CLI, and
    installs or operates the harness runtime.
 
 ## Enabling system (what builds Haft)

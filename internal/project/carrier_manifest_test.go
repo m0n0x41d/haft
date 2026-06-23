@@ -250,6 +250,21 @@ func TestCarrierSemioCheckFlagsDeadSurfaceAsCurrent(t *testing.T) {
 	}
 }
 
+func TestCarrierSemioCheckDoesNotAllowDeadSurfaceBecauseNeighborSaysSupportedHosts(t *testing.T) {
+	findings := checkCarrierSemioText("spec/target-system/SYSTEM_CONTEXT.md", `
+1. **Spec-first.** Formal target specs are the entry point.
+2. **Desktop-first.** Desktop app is the primary human surface.
+3. **Plugin-compatible.** MCP plugin is the highest-reach integration channel, with Claude Code and Codex as v7 supported hosts.
+`)
+
+	if len(findings) == 0 {
+		t.Fatal("expected current desktop surface wording finding")
+	}
+	if findings[0].Term != "desktop" {
+		t.Fatalf("finding term = %q", findings[0].Term)
+	}
+}
+
 func TestCarrierSemioCheckAllowsDroppedDeadSurfaceContext(t *testing.T) {
 	findings := checkCarrierSemioText(
 		"README.md",

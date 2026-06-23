@@ -129,8 +129,8 @@ Focus: one golden path that proves Haft can make a real project harnessable,
 not merely run an agent task.
 
 Ship exactly one vertical slice:
-- [ ] Add existing project from Desktop and detect readiness (`ready`, `needs_init`, `needs_onboard`, `missing`)
-- [ ] `haft init` / Desktop init creates `.haft/`, workflow policy, and supported Claude Code/Codex host-agent MCP config
+- [ ] Add existing project through CLI/MCP host flow and detect readiness (`ready`, `needs_init`, `needs_onboard`, `missing`)
+- [ ] `haft init` creates `.haft/`, workflow policy, and supported Claude Code/Codex host-agent MCP config
 - [ ] Onboarding agent drafts `TargetSystemSpec` with stable SpecSection ids
 - [ ] Onboarding agent drafts `EnablingSystemSpec` only after target spec passes structural validation
 - [ ] `haft spec check` validates required sections, term map, statement types, and target/enabling split

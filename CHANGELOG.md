@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Dead-surface carrier semio guard.** Carrier semio checks no longer treat a
+  neighboring "supported hosts" phrase as permission to present desktop/TUI/
+  standalone surfaces as current, and target-system support docs now state the
+  v8 current surface as host skills/prompts + MCP + CLI while keeping desktop
+  references archived/provenance-only.
 - **Transport parity guard current query actions.** The transport action parity
   regression now documents the current `haft_query` MCP action surface,
   including code-intelligence, ceremony, check, and term-resolution actions,

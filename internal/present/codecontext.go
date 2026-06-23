@@ -22,7 +22,11 @@ const (
 	CodeContextLaneAll        CodeContextLane = "all"
 )
 
-const codeContextFileLevelInvariantLimit = 8
+const (
+	codeContextFileLevelInvariantLimit      = 8
+	codeContextHighFanoutInvariantThreshold = 40
+	codeContextInvariantSourceGroupLimit    = 12
+)
 
 func ValidCodeContextLaneNames() []string {
 	return []string{
@@ -420,6 +424,11 @@ func renderInvariantSection(b *strings.Builder, heading string, invariants []gra
 		return
 	}
 
+	if !full && len(invariants) > codeContextHighFanoutInvariantThreshold {
+		renderInvariantFanoutSummary(b, heading, invariants)
+		return
+	}
+
 	b.WriteString(heading)
 	b.WriteString("\n")
 
@@ -437,6 +446,74 @@ func renderInvariantSection(b *strings.Builder, heading string, invariants []gra
 	}
 
 	b.WriteString("\n")
+}
+
+type invariantSourceGroup struct {
+	DecisionID    string
+	DecisionTitle string
+	Count         int
+}
+
+func renderInvariantFanoutSummary(b *strings.Builder, heading string, invariants []graph.Invariant) {
+	groups := invariantSourceGroups(invariants)
+
+	b.WriteString(heading)
+	b.WriteString("\n")
+	fmt.Fprintf(b, "- High fanout: %d invariant(s) from %d source group(s). Default lane shows source groups, not every invariant sentence.\n", len(invariants), len(groups))
+	b.WriteString("- Full audit: `haft_query(action=\"code_context\", ..., full=true)`.\n")
+	b.WriteString("\n")
+	b.WriteString("#### Source groups\n")
+
+	visible := groups
+	if len(groups) > codeContextInvariantSourceGroupLimit {
+		visible = groups[:codeContextInvariantSourceGroupLimit]
+	}
+	for _, group := range visible {
+		fmt.Fprintf(b, "- %s: %d invariant(s)\n", invariantSourceGroupLabel(group), group.Count)
+	}
+	if omitted := len(groups) - len(visible); omitted > 0 {
+		fmt.Fprintf(b, "- ... %d more source group(s) omitted; re-run `haft_query(action=\"code_context\", ..., full=true)` for every invariant sentence.\n", omitted)
+	}
+
+	b.WriteString("\n")
+}
+
+func invariantSourceGroups(invariants []graph.Invariant) []invariantSourceGroup {
+	groups := make([]invariantSourceGroup, 0)
+	index := make(map[string]int)
+	for _, invariant := range invariants {
+		key := invariantSourceGroupKey(invariant)
+		if position, ok := index[key]; ok {
+			groups[position].Count++
+			continue
+		}
+		index[key] = len(groups)
+		groups = append(groups, invariantSourceGroup{
+			DecisionID:    strings.TrimSpace(invariant.DecisionID),
+			DecisionTitle: strings.TrimSpace(invariant.DecisionTitle),
+			Count:         1,
+		})
+	}
+	return groups
+}
+
+func invariantSourceGroupKey(invariant graph.Invariant) string {
+	return strings.TrimSpace(invariant.DecisionID) + "\x00" + strings.TrimSpace(invariant.DecisionTitle)
+}
+
+func invariantSourceGroupLabel(group invariantSourceGroup) string {
+	title := strings.TrimSpace(group.DecisionTitle)
+	id := strings.TrimSpace(group.DecisionID)
+	if title != "" && id != "" {
+		return fmt.Sprintf("**%s** `%s`", title, id)
+	}
+	if title != "" {
+		return fmt.Sprintf("**%s**", title)
+	}
+	if id != "" {
+		return fmt.Sprintf("`%s`", id)
+	}
+	return "unknown decision source"
 }
 
 // moduleDecisionList renders the module's governing decisions inline, each ID

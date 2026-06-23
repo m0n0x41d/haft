@@ -98,6 +98,51 @@ func TestCodeContextResponse_CompactsInvariantsAndFullRestoresThem(t *testing.T)
 	}
 }
 
+func TestCodeContextResponse_HighFanoutInvariantLaneSummarizesBySource(t *testing.T) {
+	invariants := make([]graph.Invariant, 0, 55)
+	for i := 1; i <= 55; i++ {
+		sourceID := "dec-alpha"
+		sourceTitle := "Alpha decision"
+		if i > 30 {
+			sourceID = "dec-beta"
+			sourceTitle = "Beta decision"
+		}
+		invariants = append(invariants, graph.Invariant{
+			Text:          fmt.Sprintf("invariant-%02d", i),
+			DecisionID:    sourceID,
+			DecisionTitle: sourceTitle,
+		})
+	}
+	cc := contextgraph.CodeContext{
+		Target:     contextgraph.Target{File: "internal/x.go", Symbol: "Run"},
+		Invariants: invariants,
+	}
+
+	lane := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneInvariants})
+	for _, want := range []string{
+		"High fanout: 55 invariant(s) from 2 source group(s)",
+		"Default lane shows source groups",
+		"**Alpha decision** `dec-alpha`: 30 invariant(s)",
+		"**Beta decision** `dec-beta`: 25 invariant(s)",
+		"full=true",
+	} {
+		if !strings.Contains(lane, want) {
+			t.Fatalf("high-fanout lane missing %q:\n%s", want, lane)
+		}
+	}
+	if strings.Contains(lane, "invariant-42") {
+		t.Fatalf("high-fanout default lane should not inline every invariant sentence:\n%s", lane)
+	}
+
+	full := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneInvariants, Full: true})
+	if !strings.Contains(full, "invariant-55") {
+		t.Fatalf("full invariant lane should restore every invariant sentence:\n%s", full)
+	}
+	if strings.Contains(full, "High fanout") {
+		t.Fatalf("full invariant lane should render the audit list, not the summary:\n%s", full)
+	}
+}
+
 func TestCodeContextResponse_DefaultIndexOmitsLaneDumps(t *testing.T) {
 	cc := contextgraph.CodeContext{
 		Target: contextgraph.Target{File: "internal/x.go"},

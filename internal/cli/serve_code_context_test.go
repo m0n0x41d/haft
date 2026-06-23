@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -137,6 +138,66 @@ func TestHandleQuintQuery_CodeContextTypedLanes(t *testing.T) {
 	}
 	if strings.Contains(notes, "### Decisions governing this code") || strings.Contains(notes, "binding context invariant") {
 		t.Fatalf("notes lane leaked other lanes:\n%s", notes)
+	}
+}
+
+func TestHandleQuintQuery_CodeContextInvariantsLaneSummarizesHighFanout(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+
+	invariants := make([]string, 0, 50)
+	for i := 1; i <= 50; i++ {
+		invariants = append(invariants, fmt.Sprintf("%q", fmt.Sprintf("fanout invariant %02d", i)))
+	}
+	decision := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:        "dec-code-context-fanout",
+			Kind:      artifact.KindDecisionRecord,
+			Status:    artifact.StatusActive,
+			Title:     "Code context fanout decision",
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+		Body:           "decision body",
+		StructuredData: `{"invariants":[` + strings.Join(invariants, ",") + `]}`,
+	}
+	if err := fixture.store.Create(context.Background(), decision); err != nil {
+		t.Fatal(err)
+	}
+	mustExecCodeContextLaneFixture(t, fixture.store, `INSERT INTO affected_files (artifact_id, file_path) VALUES (?, ?)`, decision.Meta.ID, fixture.file)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"file":   fixture.file,
+		"lane":   "invariants",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(code_context invariants) returned error: %v", err)
+	}
+	for _, want := range []string{
+		"High fanout:",
+		"Default lane shows source groups",
+		"Code context fanout decision",
+		"full=true",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("high-fanout invariant lane missing %q:\n%s", want, result)
+		}
+	}
+	if strings.Contains(result, "fanout invariant 49") {
+		t.Fatalf("high-fanout invariant lane should not inline every invariant sentence:\n%s", result)
+	}
+
+	full, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"file":   fixture.file,
+		"lane":   "invariants",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(code_context invariants full) returned error: %v", err)
+	}
+	if !strings.Contains(full, "fanout invariant 49") {
+		t.Fatalf("full invariant lane should restore audit detail:\n%s", full)
 	}
 }
 

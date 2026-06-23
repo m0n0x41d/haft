@@ -57,6 +57,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   invariants as file-level relevance candidates, cap the default candidate
   list, and point agents to symbol narrowing or `full=true` audit instead of
   presenting historical file/module fanout as local must-hold constraints.
+- **Code-context high-fanout invariant summary.** `lane="invariants"` now
+  summarizes very large invariant fanouts by decision/source group by default,
+  avoiding hundreds of invariant sentences in normal agent context while
+  preserving the complete invariant audit list behind `full=true`.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

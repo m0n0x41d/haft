@@ -137,26 +137,36 @@ func TestHandleQuintQuery_DriftEventsHonorsCompactLimit(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seedMultipleDriftEventDecisions(t, fixture, 3)
 
-	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
-		"action": "drift_events",
-		"limit":  float64(2),
-	})
-	if err != nil {
-		t.Fatalf("handleQuintQuery drift_events returned error: %v", err)
-	}
+	for _, tc := range []struct {
+		name  string
+		limit any
+	}{
+		{name: "json_number_float", limit: float64(2)},
+		{name: "host_integer", limit: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+				"action": "drift_events",
+				"limit":  tc.limit,
+			})
+			if err != nil {
+				t.Fatalf("handleQuintQuery drift_events returned error: %v", err)
+			}
 
-	var report artifact.DriftEventReport
-	if err := json.Unmarshal([]byte(result), &report); err != nil {
-		t.Fatalf("decode drift event report: %v\n%s", err, result)
-	}
-	if report.View != "compact" {
-		t.Fatalf("view = %q, want compact", report.View)
-	}
-	if len(report.Events) != 2 {
-		t.Fatalf("compact events = %d, want 2: %#v", len(report.Events), report.Events)
-	}
-	if report.OmittedEvents == 0 {
-		t.Fatalf("omitted_events = 0, want limit to omit at least one event")
+			var report artifact.DriftEventReport
+			if err := json.Unmarshal([]byte(result), &report); err != nil {
+				t.Fatalf("decode drift event report: %v\n%s", err, result)
+			}
+			if report.View != "compact" {
+				t.Fatalf("view = %q, want compact", report.View)
+			}
+			if len(report.Events) != 2 {
+				t.Fatalf("compact events = %d, want 2: %#v", len(report.Events), report.Events)
+			}
+			if report.OmittedEvents == 0 {
+				t.Fatalf("omitted_events = 0, want limit to omit at least one event")
+			}
+		})
 	}
 
 	fullResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -175,8 +185,8 @@ func TestHandleQuintQuery_DriftEventsHonorsCompactLimit(t *testing.T) {
 	if fullReport.View != "" {
 		t.Fatalf("full view = %q, want empty audit view", fullReport.View)
 	}
-	if len(fullReport.Events) <= len(report.Events) {
-		t.Fatalf("full events = %d, compact events = %d; full view should ignore compact limit", len(fullReport.Events), len(report.Events))
+	if len(fullReport.Events) <= 2 {
+		t.Fatalf("full events = %d, compact limit = 2; full view should ignore compact limit", len(fullReport.Events))
 	}
 }
 

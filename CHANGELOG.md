@@ -33,6 +33,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft_query(action="drift_events"|"decision_reconcile"|"governing_set",
   limit=N)` now applies `limit` to compact MCP projections while preserving
   `full=true` audit views untruncated.
+- **Host-style integer compact limits.** DriftEvents compact-projection tests now
+  cover both JSON-decoded numeric limits and host-supplied integer limits, so
+  bounded `limit=5` drill-downs stay bounded across MCP client adapters.
 - **Budgeted status drill-down recommendations.** Compact status,
   reconciliation cues, and prompt-governor attention now recommend bounded
   `limit=5` drift/reconciliation/governing-set drill-downs, while keeping

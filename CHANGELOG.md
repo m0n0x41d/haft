@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   MCP action schema fragments with schema digests, transport required fields,
   action-specific handler-validated fields, and the explicit boundary that
   schema visibility is not operator authorization or host materialization.
+- **Generated schema fragment parity guard.** Generated MCP schema fragments
+  are now tested against `tools/list` action enums, required fields, and
+  top-level properties so `contract_generation` cannot drift into a fantasy
+  schema surface.
 - **Contract-audit required-field parity.** `haft interface contract-audit` and
   `haft_query(action="contract_audit")` now report MCP `required` coverage for
   transport-level required fields, including missing required schema fields and

@@ -378,6 +378,47 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	}
 }
 
+func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	toolActionEnums := fpfToolActionEnums(t)
+	toolProperties := fpfToolProperties(t)
+	toolRequired := fpfToolRequiredFields(t)
+	exclusions := interfaceContractAuditSchemaFieldExclusions()
+
+	if len(report.SchemaFragments) == 0 {
+		t.Fatal("expected generated schema fragments")
+	}
+	for _, fragment := range report.SchemaFragments {
+		if !contractAuditTestContains(toolActionEnums[fragment.MCPTool], fragment.MCPAction) {
+			t.Fatalf("%s generated schema action %q missing from %s enum %v", fragment.CapabilityID, fragment.MCPAction, fragment.MCPTool, toolActionEnums[fragment.MCPTool])
+		}
+		for _, field := range fragment.RequiredFields {
+			if !toolRequired[fragment.MCPTool][field] {
+				t.Fatalf("%s generated schema required field %q missing from %s required %v", fragment.CapabilityID, field, fragment.MCPTool, sortedStringSetKeys(toolRequired[fragment.MCPTool]))
+			}
+		}
+		for _, field := range fragment.AllowedTopLevelFields {
+			if exclusions[fragment.CapabilityID][field] {
+				continue
+			}
+			if _, ok := toolProperties[fragment.MCPTool][field]; !ok {
+				t.Fatalf("%s generated schema field %q missing from %s properties %s", fragment.CapabilityID, field, fragment.MCPTool, sortedMapKeys(toolProperties[fragment.MCPTool]))
+			}
+		}
+		schemaProperties, ok := fragment.Schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s generated schema properties missing: %#v", fragment.CapabilityID, fragment.Schema)
+		}
+		actionProperty, ok := schemaProperties["action"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s generated schema action property missing: %#v", fragment.CapabilityID, schemaProperties)
+		}
+		if actionProperty["const"] != fragment.MCPAction {
+			t.Fatalf("%s generated schema action const = %#v, want %q", fragment.CapabilityID, actionProperty["const"], fragment.MCPAction)
+		}
+	}
+}
+
 func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 	var output bytes.Buffer
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())

@@ -2,6 +2,7 @@ package present
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -50,7 +51,10 @@ func MaintenancePlanResponse(plan *artifact.MaintenancePlan, navStrip string) st
 // read-only review aid. It deliberately names the authority boundary before the
 // tasks so the packet cannot be mistaken for evidence, approval, or execution.
 func MaintenanceJudgmentReviewResponse(review *artifact.MaintenanceJudgmentReview, navStrip string) string {
-	if review == nil || review.JudgmentTasks == 0 {
+	if review == nil {
+		return "Maintenance judgment review unavailable.\n" + navStrip
+	}
+	if review.JudgmentTasks == 0 && review.Reconciliation == nil {
 		return "Maintenance judgment review: nothing needs judgment in the current plan.\n" + navStrip
 	}
 
@@ -63,6 +67,8 @@ func MaintenanceJudgmentReviewResponse(review *artifact.MaintenanceJudgmentRevie
 		review.AuthorityBoundary.Evidence,
 		review.AuthorityBoundary.AgentRole,
 		review.AuthorityBoundary.ApplySurface)
+
+	renderMaintenanceReconciliationReview(&sb, review.Reconciliation)
 
 	for _, group := range review.Groups {
 		fmt.Fprintf(&sb, "### %s (%s confidence, %d task(s))\n", group.Recommendation, group.Confidence, group.TaskCount)
@@ -81,6 +87,55 @@ func MaintenanceJudgmentReviewResponse(review *artifact.MaintenanceJudgmentRevie
 
 	sb.WriteString("Next: gather evidence or exact diffs first; mutate only after explicit operator approval via the suggested commands.\n")
 	return sb.String() + navStrip
+}
+
+func renderMaintenanceReconciliationReview(
+	sb *strings.Builder,
+	reconciliation *artifact.MaintenanceReconciliationReview,
+) {
+	if reconciliation == nil || reconciliation.ProposalCount == 0 {
+		return
+	}
+	fmt.Fprintf(sb, "### Reconciliation proposals (%d read-only)\n", reconciliation.ProposalCount)
+	fmt.Fprintf(sb, "authority: %s\n", reconciliation.AuthorityBoundary)
+	if len(reconciliation.ByKind) > 0 {
+		fmt.Fprintf(sb, "by kind: %s\n", maintenanceReconciliationKindCounts(reconciliation.ByKind))
+	}
+	if len(reconciliation.SuggestedCommands) > 0 {
+		fmt.Fprintf(sb, "inspect: %s\n", strings.Join(reconciliation.SuggestedCommands, " | "))
+	}
+	for index, proposal := range reconciliation.Proposals {
+		if index >= 3 {
+			fmt.Fprintf(sb, "- ... %d more proposal(s); use `haft overseer judgment --json` for the full packet.\n", len(reconciliation.Proposals)-index)
+			break
+		}
+		fmt.Fprintf(sb, "- %s `%s`", proposal.Kind, proposal.ID)
+		if proposal.GroupID != "" {
+			fmt.Fprintf(sb, " group `%s`", proposal.GroupID)
+		}
+		if proposal.Fanout > 0 {
+			fmt.Fprintf(sb, " fanout=%d", proposal.Fanout)
+		}
+		if proposal.Reason != "" {
+			fmt.Fprintf(sb, " — %s", proposal.Reason)
+		}
+		sb.WriteString("\n")
+	}
+	sb.WriteString("\n")
+}
+
+func maintenanceReconciliationKindCounts(counts map[string]int) string {
+	keys := make([]string, 0, len(counts))
+	for key := range counts {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	parts := make([]string, 0, len(keys))
+	for _, key := range keys {
+		parts = append(parts, fmt.Sprintf("%s=%d", key, counts[key]))
+	}
+	return strings.Join(parts, ", ")
 }
 
 // MaintenanceDrainResponse renders the explicit h-verify/overseer drain report.

@@ -73,6 +73,34 @@ func TestGoverningSetMaintenanceProposalsAreReadOnly(t *testing.T) {
 	}
 }
 
+func TestMaintenanceReconciliationReviewFromProposalsPreservesReadOnlyBoundary(t *testing.T) {
+	review := maintenanceReconciliationReviewFromProposals([]overseer.MaintenanceReconciliationProposal{
+		{
+			ID:                "reconcile-a",
+			Kind:              "fallback_scope_repair_review",
+			GroupID:           "decision-reconcile-a",
+			Reason:            "fallback targets need review",
+			DecisionRefs:      []string{"dec-a"},
+			Fanout:            7,
+			SuggestedCommand:  "haft decision reconcile --json",
+			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+		},
+	})
+
+	if review == nil || review.ProposalCount != 1 {
+		t.Fatalf("review = %#v", review)
+	}
+	if review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		t.Fatalf("proposal authority = %q", review.Proposals[0].AuthorityBoundary)
+	}
+	if review.Proposals[0].SuggestedCommand != "haft decision reconcile --json" {
+		t.Fatalf("suggested command = %q", review.Proposals[0].SuggestedCommand)
+	}
+	if strings.Contains(strings.ToLower(review.Proposals[0].SuggestedCommand), "apply") {
+		t.Fatalf("judgment reconciliation command must be inspect-only: %#v", review.Proposals[0])
+	}
+}
+
 func assertMaintenanceReconciliationProposalIsProposalOnly(t *testing.T, proposal overseer.MaintenanceReconciliationProposal) {
 	t.Helper()
 

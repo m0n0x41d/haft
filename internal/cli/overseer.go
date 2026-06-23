@@ -528,6 +528,7 @@ func runOverseerJudgment(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	review := artifact.BuildMaintenanceJudgmentReview(plan)
+	review.Reconciliation = buildMaintenanceJudgmentReconciliationReview(ctx, store)
 
 	if overseerJudgmentJSON {
 		return writeJSON(cmd.OutOrStdout(), review)

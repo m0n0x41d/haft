@@ -31,6 +31,35 @@ func buildMaintenanceReconciliationProposals(
 	return proposals
 }
 
+func buildMaintenanceJudgmentReconciliationReview(
+	ctx context.Context,
+	store *artifact.Store,
+) *artifact.MaintenanceReconciliationReview {
+	return maintenanceReconciliationReviewFromProposals(buildMaintenanceReconciliationProposals(ctx, store))
+}
+
+func maintenanceReconciliationReviewFromProposals(
+	proposals []overseer.MaintenanceReconciliationProposal,
+) *artifact.MaintenanceReconciliationReview {
+	items := make([]artifact.MaintenanceReconciliationReviewProposal, 0, len(proposals))
+	for _, proposal := range proposals {
+		items = append(items, artifact.MaintenanceReconciliationReviewProposal{
+			ID:                proposal.ID,
+			Kind:              proposal.Kind,
+			GroupID:           proposal.GroupID,
+			Category:          proposal.Category,
+			Reason:            proposal.Reason,
+			DecisionRefs:      proposal.DecisionRefs,
+			Fanout:            proposal.Fanout,
+			FallbackTargets:   proposal.FallbackTargets,
+			ScopeRepairHints:  proposal.ScopeRepairHints,
+			SuggestedCommand:  proposal.SuggestedCommand,
+			AuthorityBoundary: proposal.AuthorityBoundary,
+		})
+	}
+	return artifact.BuildMaintenanceReconciliationReview(items)
+}
+
 func reconciliationPlanMaintenanceProposals(
 	plan artifact.DecisionReconciliationPlan,
 ) []overseer.MaintenanceReconciliationProposal {

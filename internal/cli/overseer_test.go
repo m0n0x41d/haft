@@ -469,6 +469,16 @@ func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
 		review.Counts.ByRecommendation[artifact.JudgmentRecommendationTriageStaleDecision] == 0 {
 		t.Fatalf("review did not classify judgment tasks: %#v", review.Counts.ByRecommendation)
 	}
+	if review.Reconciliation != nil {
+		if review.Reconciliation.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+			t.Fatalf("reconciliation authority = %#v", review.Reconciliation)
+		}
+		for _, proposal := range review.Reconciliation.Proposals {
+			if strings.Contains(strings.ToLower(proposal.SuggestedCommand), " apply ") {
+				t.Fatalf("reconciliation proposal should be inspect-only: %#v", proposal)
+			}
+		}
+	}
 }
 
 func TestRunOverseerHookRunsConfiguredReviewer(t *testing.T) {

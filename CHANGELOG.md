@@ -23,6 +23,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   invariants as file-level relevance candidates, cap the default candidate
   list, and point agents to symbol narrowing or `full=true` audit instead of
   presenting historical file/module fanout as local must-hold constraints.
+- **Overseer judgment reconciliation cues.** `haft overseer judgment` and
+  `haft overseer judgment --json` now include read-only reconciliation proposal
+  cues from the existing high-fanout/fallback review pipeline, with proposal
+  counts, kind counts, inspect-only commands, and an explicit
+  `read_only_reconciliation_proposal_not_binding_authority` boundary.
 - **SQL-first spec structural checks.** `haft spec check`, `haft check`, and
   `haft spec coverage` now derive structural SpecSection checks from current
   SQL SpecSection editions when present, while preserving typed carrier

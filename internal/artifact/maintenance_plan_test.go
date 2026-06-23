@@ -316,6 +316,51 @@ func TestBuildMaintenanceJudgmentReview_GroupsJudgmentTasksAndPreservesAuthority
 	}
 }
 
+func TestBuildMaintenanceReconciliationReviewNormalizesReadOnlyProposals(t *testing.T) {
+	review := BuildMaintenanceReconciliationReview([]MaintenanceReconciliationReviewProposal{
+		{
+			ID:               " proposal-b ",
+			Kind:             "fallback_scope_repair_review",
+			Reason:           " fallback targets need enrichment ",
+			DecisionRefs:     []string{"dec-b", "", "dec-a", "dec-a"},
+			SuggestedCommand: " haft decision reconcile --json ",
+		},
+		{
+			ID:                "proposal-a",
+			Kind:              "high_fanout_reconciliation_review",
+			Reason:            "fanout exceeds threshold",
+			SuggestedCommand:  "haft decision reconcile --json",
+			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+		},
+		{
+			Kind:   "",
+			Reason: "missing kind",
+		},
+	})
+
+	if review == nil {
+		t.Fatal("expected reconciliation review")
+	}
+	if review.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		t.Fatalf("authority = %q", review.AuthorityBoundary)
+	}
+	if review.ProposalCount != 2 {
+		t.Fatalf("proposal count = %d, want 2", review.ProposalCount)
+	}
+	if review.ByKind["fallback_scope_repair_review"] != 1 || review.ByKind["high_fanout_reconciliation_review"] != 1 {
+		t.Fatalf("by kind = %#v", review.ByKind)
+	}
+	if len(review.SuggestedCommands) != 1 || review.SuggestedCommands[0] != "haft decision reconcile --json" {
+		t.Fatalf("suggested commands = %#v", review.SuggestedCommands)
+	}
+	if review.Proposals[0].ID != "proposal-b" || review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		t.Fatalf("first proposal = %#v", review.Proposals[0])
+	}
+	if !maintenanceReviewTestContains(review.Proposals[0].DecisionRefs, "dec-a") || !maintenanceReviewTestContains(review.Proposals[0].DecisionRefs, "dec-b") {
+		t.Fatalf("decision refs = %#v", review.Proposals[0].DecisionRefs)
+	}
+}
+
 func maintenanceReviewTestContains(values []string, want string) bool {
 	for _, value := range values {
 		if strings.Contains(value, want) {

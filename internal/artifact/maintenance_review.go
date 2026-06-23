@@ -23,14 +23,15 @@ const (
 )
 
 type MaintenanceJudgmentReview struct {
-	GeneratedAt           string                     `json:"generated_at"`
-	SourcePlanGeneratedAt string                     `json:"source_plan_generated_at,omitempty"`
-	TotalTasks            int                        `json:"total_tasks"`
-	JudgmentTasks         int                        `json:"judgment_tasks"`
-	OmittedNonJudgment    int                        `json:"omitted_non_judgment"`
-	AuthorityBoundary     MaintenanceReviewAuthority `json:"authority_boundary"`
-	Counts                MaintenanceJudgmentCounts  `json:"counts"`
-	Groups                []MaintenanceJudgmentGroup `json:"groups"`
+	GeneratedAt           string                           `json:"generated_at"`
+	SourcePlanGeneratedAt string                           `json:"source_plan_generated_at,omitempty"`
+	TotalTasks            int                              `json:"total_tasks"`
+	JudgmentTasks         int                              `json:"judgment_tasks"`
+	OmittedNonJudgment    int                              `json:"omitted_non_judgment"`
+	AuthorityBoundary     MaintenanceReviewAuthority       `json:"authority_boundary"`
+	Counts                MaintenanceJudgmentCounts        `json:"counts"`
+	Groups                []MaintenanceJudgmentGroup       `json:"groups"`
+	Reconciliation        *MaintenanceReconciliationReview `json:"reconciliation,omitempty"`
 }
 
 type MaintenanceReviewAuthority struct {
@@ -74,6 +75,28 @@ type MaintenanceJudgmentTaskReview struct {
 	SuggestedAction   string   `json:"suggested_action"`
 	DrillDown         []string `json:"drill_down"`
 	SuggestedCommands []string `json:"suggested_commands,omitempty"`
+}
+
+type MaintenanceReconciliationReview struct {
+	AuthorityBoundary string                                    `json:"authority_boundary"`
+	ProposalCount     int                                       `json:"proposal_count"`
+	ByKind            map[string]int                            `json:"by_kind"`
+	SuggestedCommands []string                                  `json:"suggested_commands,omitempty"`
+	Proposals         []MaintenanceReconciliationReviewProposal `json:"proposals,omitempty"`
+}
+
+type MaintenanceReconciliationReviewProposal struct {
+	ID                string   `json:"id"`
+	Kind              string   `json:"kind"`
+	GroupID           string   `json:"group_id,omitempty"`
+	Category          string   `json:"category,omitempty"`
+	Reason            string   `json:"reason"`
+	DecisionRefs      []string `json:"decision_refs,omitempty"`
+	Fanout            int      `json:"fanout,omitempty"`
+	FallbackTargets   []string `json:"fallback_targets,omitempty"`
+	ScopeRepairHints  []string `json:"scope_repair_hints,omitempty"`
+	SuggestedCommand  string   `json:"suggested_command"`
+	AuthorityBoundary string   `json:"authority_boundary"`
 }
 
 type maintenanceJudgmentClass struct {
@@ -137,6 +160,32 @@ func BuildMaintenanceJudgmentReview(plan *MaintenancePlan) *MaintenanceJudgmentR
 	return review
 }
 
+func BuildMaintenanceReconciliationReview(
+	proposals []MaintenanceReconciliationReviewProposal,
+) *MaintenanceReconciliationReview {
+	normalized := normalizeMaintenanceReconciliationReviewProposals(proposals)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	review := &MaintenanceReconciliationReview{
+		AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+		ProposalCount:     len(normalized),
+		ByKind:            map[string]int{},
+		Proposals:         normalized,
+	}
+	commands := map[string]bool{}
+	for _, proposal := range normalized {
+		review.ByKind[proposal.Kind]++
+		if proposal.SuggestedCommand != "" && !commands[proposal.SuggestedCommand] {
+			commands[proposal.SuggestedCommand] = true
+			review.SuggestedCommands = append(review.SuggestedCommands, proposal.SuggestedCommand)
+		}
+	}
+	sort.Strings(review.SuggestedCommands)
+	return review
+}
+
 func maintenanceReviewAuthority() MaintenanceReviewAuthority {
 	return MaintenanceReviewAuthority{
 		Mutation:     "not_mutation",
@@ -145,6 +194,41 @@ func maintenanceReviewAuthority() MaintenanceReviewAuthority {
 		AgentRole:    "first_pass_judgment_review",
 		ApplySurface: "operator_approval_required",
 	}
+}
+
+func normalizeMaintenanceReconciliationReviewProposals(
+	proposals []MaintenanceReconciliationReviewProposal,
+) []MaintenanceReconciliationReviewProposal {
+	out := make([]MaintenanceReconciliationReviewProposal, 0, len(proposals))
+	for index, proposal := range proposals {
+		proposal.ID = strings.TrimSpace(proposal.ID)
+		if proposal.ID == "" {
+			proposal.ID = fmt.Sprintf("reconcile-proposal-%03d", index+1)
+		}
+		proposal.Kind = strings.TrimSpace(proposal.Kind)
+		proposal.GroupID = strings.TrimSpace(proposal.GroupID)
+		proposal.Category = strings.TrimSpace(proposal.Category)
+		proposal.Reason = strings.TrimSpace(proposal.Reason)
+		proposal.DecisionRefs = compactStrings(proposal.DecisionRefs)
+		proposal.FallbackTargets = compactStrings(proposal.FallbackTargets)
+		proposal.ScopeRepairHints = compactStrings(proposal.ScopeRepairHints)
+		proposal.SuggestedCommand = strings.TrimSpace(proposal.SuggestedCommand)
+		proposal.AuthorityBoundary = strings.TrimSpace(proposal.AuthorityBoundary)
+		if proposal.AuthorityBoundary == "" {
+			proposal.AuthorityBoundary = "read_only_reconciliation_proposal_not_binding_authority"
+		}
+		if proposal.Kind == "" || proposal.Reason == "" {
+			continue
+		}
+		out = append(out, proposal)
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
 }
 
 func newMaintenanceJudgmentCounts() MaintenanceJudgmentCounts {

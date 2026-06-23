@@ -1239,12 +1239,30 @@ func decisionReconciliationDraftItems(
 		}
 	}
 	sort.SliceStable(out, func(i, j int) bool {
+		leftScore := decisionReconciliationDraftReviewabilityScore(out[i])
+		rightScore := decisionReconciliationDraftReviewabilityScore(out[j])
+		if leftScore != rightScore {
+			return leftScore > rightScore
+		}
 		if out[i].ReviewedGroupID != out[j].ReviewedGroupID {
 			return out[i].ReviewedGroupID < out[j].ReviewedGroupID
 		}
 		return out[i].DecisionRef < out[j].DecisionRef
 	})
 	return out
+}
+
+func decisionReconciliationDraftReviewabilityScore(item DecisionReconciliationDraftItem) int {
+	switch item.Confidence {
+	case "high":
+		return 3
+	case "medium":
+		return 2
+	case "low":
+		return 1
+	default:
+		return 0
+	}
 }
 
 func filterDecisionReconciliationDraftItems(

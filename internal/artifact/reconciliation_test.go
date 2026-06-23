@@ -252,6 +252,58 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftPrioritizesReviewableCandidates(t *testing.T) {
+	plan := DecisionReconciliationPlan{
+		SchemaVersion: DecisionReconciliationSchemaVersion,
+		Authority:     DecisionReconciliationAuthority,
+		Groups: []DecisionReconciliationGroup{
+			{
+				GroupID: "group-a-low",
+				Preview: DecisionReconciliationPreview{
+					ApplyOperation: DecisionReconciliationOperationEnrichScope,
+				},
+				Decisions: []DecisionReconciliationItem{{
+					DecisionID:    "dec-low",
+					DecisionTitle: "Low confidence broad scope",
+				}},
+			},
+			{
+				GroupID: "group-z-medium",
+				Preview: DecisionReconciliationPreview{
+					ApplyOperation: DecisionReconciliationOperationEnrichScope,
+				},
+				Decisions: []DecisionReconciliationItem{{
+					DecisionID:        "dec-medium",
+					DecisionTitle:     "Medium confidence precise target",
+					GovernanceTargets: []string{"symbol:internal/fpf/specsearch.go:type:Route"},
+				}},
+			},
+		},
+	}
+
+	draft := BuildDecisionReconciliationSelectionDraftFiltered(
+		plan,
+		DecisionReconciliationSelectionDraftFilter{Limit: 1},
+	)
+
+	if draft.Summary.OperatorApprovalCandidates != 2 {
+		t.Fatalf("operator_approval_candidates = %d, want 2", draft.Summary.OperatorApprovalCandidates)
+	}
+	if draft.Summary.EmittedCandidates != 1 || draft.Summary.OmittedCandidates != 1 {
+		t.Fatalf("bounded summary = %#v, want one emitted and one omitted", draft.Summary)
+	}
+	if len(draft.Items) != 1 {
+		t.Fatalf("items = %#v, want one bounded candidate", draft.Items)
+	}
+	item := draft.Items[0]
+	if item.DecisionRef != "dec-medium" {
+		t.Fatalf("first bounded candidate = %#v, want medium-confidence precise-target candidate", item)
+	}
+	if item.Confidence != "medium" {
+		t.Fatalf("confidence = %q, want medium", item.Confidence)
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testing.T) {
 	plan := DecisionReconciliationPlan{
 		SchemaVersion: DecisionReconciliationSchemaVersion,

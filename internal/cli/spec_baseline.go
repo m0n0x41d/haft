@@ -73,7 +73,7 @@ func noopClose() {}
 // single source of truth for spec-health rollups consumed by both
 // `haft spec check` (CLI) and `haft_query(action="check")` (MCP).
 func appendSpecHealthFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {
-	specSet, specErr := project.LoadProjectSpecificationSet(projectRoot)
+	specSet, specErr := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if specErr != nil {
 		return report
 	}

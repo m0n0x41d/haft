@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first spec health findings.** `haft check` / `haft_query(action="check")`
+  now compute SpecSection drift, missing-baseline, and staleness health against
+  current SQL SpecSection editions while leaving structural carrier checks
+  carrier-based.
 - **SQL-first spec onboarding reads.** Read-only `haft spec onboard` now uses
   current SQL SpecSection editions before Markdown carriers while keeping
   missing-baseline findings as the human approval gate.

@@ -110,6 +110,39 @@ func TestBuildCheckReport_FindsGovernanceDebt(t *testing.T) {
 	}
 }
 
+func TestAppendSpecHealthFindingsReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.health.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		Title:         "SQL health section",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	report := appendSpecHealthFindings(project.SpecCheckReport{}, root)
+	for _, finding := range report.Findings {
+		if finding.SectionID == "TS.sql.health.001" && finding.Code == "spec_section_needs_baseline" {
+			return
+		}
+	}
+	t.Fatalf("spec health should use SQL edition section; findings = %#v", report.Findings)
+}
+
 func TestRunCheck_CleanProjectPrintsSummaryAndStaysZero(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	restore := enterTestProjectRoot(t, fixture.root)

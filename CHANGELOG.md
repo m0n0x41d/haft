@@ -39,6 +39,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   report-only `decision_subject_ref_suggestions` derived from decision metadata
   to reduce R9 review friction, while exported apply templates still keep TODO
   placeholders and require explicit reviewed values.
+- **Reconciliation carrier review hints.** Selection drafts now include
+  `decision_carrier_hint` and `review_commands` so R9 reviewers can jump back
+  to the source DecisionRecord and narrowed draft view without treating carrier
+  text as approval or apply authority.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

@@ -258,6 +258,7 @@ type DecisionReconciliationDraftItem struct {
 	ReviewedGroupID               string   `json:"reviewed_group_id"`
 	DecisionRef                   string   `json:"decision_ref"`
 	DecisionTitle                 string   `json:"decision_title,omitempty"`
+	DecisionCarrierHint           string   `json:"decision_carrier_hint,omitempty"`
 	CandidatePosture              string   `json:"candidate_posture,omitempty"`
 	Confidence                    string   `json:"confidence,omitempty"`
 	CurrentSubjectRef             string   `json:"current_subject_ref,omitempty"`
@@ -269,6 +270,7 @@ type DecisionReconciliationDraftItem struct {
 	SuggestedReviewAction         string   `json:"suggested_review_action,omitempty"`
 	BlockingQuestions             []string `json:"blocking_questions,omitempty"`
 	RequiredSelectionFields       []string `json:"required_selection_fields,omitempty"`
+	ReviewCommands                []string `json:"review_commands,omitempty"`
 	SelectionTemplate             string   `json:"selection_template"`
 	ReviewNotes                   []string `json:"review_notes"`
 }
@@ -1399,6 +1401,7 @@ func decisionReconciliationDraftItem(
 		ReviewedGroupID:               group.GroupID,
 		DecisionRef:                   item.DecisionID,
 		DecisionTitle:                 item.DecisionTitle,
+		DecisionCarrierHint:           decisionReconciliationDraftCarrierHint(item.DecisionID),
 		CandidatePosture:              posture,
 		Confidence:                    decisionReconciliationDraftConfidence(posture),
 		CurrentSubjectRef:             item.DecisionSubjectRef,
@@ -1410,12 +1413,34 @@ func decisionReconciliationDraftItem(
 		SuggestedReviewAction:         decisionReconciliationDraftReviewAction(posture),
 		BlockingQuestions:             decisionReconciliationDraftBlockingQuestions(item),
 		RequiredSelectionFields:       decisionReconciliationPreviewRequiredFields(DecisionReconciliationOperationEnrichScope),
+		ReviewCommands:                decisionReconciliationDraftReviewCommands(item.DecisionID),
 		SelectionTemplate:             decisionReconciliationDraftSelectionTemplate(group, item),
 		ReviewNotes: []string{
 			"file overlap is implementation footprint only; select exact governance targets before approval",
 			"use symbol/api_contract/invariant/spec_section targets when possible; whole-file fallback only when no better target exists",
 			"leave the candidate out if subject or target cannot be stated with high confidence",
+			"decision_carrier_hint and review_commands are discovery aids, not authority or apply approval",
 		},
+	}
+}
+
+func decisionReconciliationDraftCarrierHint(decisionRef string) string {
+	ref := strings.TrimSpace(decisionRef)
+	if ref == "" {
+		return ""
+	}
+	return ".haft/" + KindDecisionRecord.Dir() + "/" + ref + ".md"
+}
+
+func decisionReconciliationDraftReviewCommands(decisionRef string) []string {
+	ref := strings.TrimSpace(decisionRef)
+	if ref == "" {
+		return nil
+	}
+	carrier := decisionReconciliationDraftCarrierHint(ref)
+	return []string{
+		"sed -n '1,220p' " + carrier,
+		"haft decision reconcile selection-draft --decision-ref " + ref + " --json",
 	}
 }
 

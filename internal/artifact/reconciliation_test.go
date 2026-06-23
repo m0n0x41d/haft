@@ -234,6 +234,16 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	if item.Confidence != "medium" {
 		t.Fatalf("confidence = %q", item.Confidence)
 	}
+	if item.DecisionCarrierHint != ".haft/decisions/dec-precise.md" {
+		t.Fatalf("decision_carrier_hint = %q", item.DecisionCarrierHint)
+	}
+	if !containsString(item.ReviewCommands, "sed -n '1,220p' .haft/decisions/dec-precise.md") ||
+		!containsString(item.ReviewCommands, "haft decision reconcile selection-draft --decision-ref dec-precise --json") {
+		t.Fatalf("review_commands = %#v", item.ReviewCommands)
+	}
+	if !containsString(item.ReviewNotes, "decision_carrier_hint and review_commands are discovery aids, not authority or apply approval") {
+		t.Fatalf("review_notes = %#v", item.ReviewNotes)
+	}
 	if !containsString(item.DecisionSubjectRefSuggestions, "subject:fpf-retrieval:precise-scope") ||
 		!containsString(item.DecisionSubjectRefSuggestions, "subject:precise-scope") {
 		t.Fatalf("decision_subject_ref_suggestions = %#v", item.DecisionSubjectRefSuggestions)
@@ -244,6 +254,10 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	}
 	if selection.DecisionSubjectRef != "TODO_exact_decision_subject_ref" {
 		t.Fatalf("decision_subject_ref = %q, want subject placeholder", selection.DecisionSubjectRef)
+	}
+	if strings.Contains(item.SelectionTemplate, "decision_carrier_hint") ||
+		strings.Contains(item.SelectionTemplate, "review_commands") {
+		t.Fatalf("selection_template copied review-only hints:\n%s", item.SelectionTemplate)
 	}
 	if len(selection.GovernanceTargets) != 1 {
 		t.Fatalf("governance_targets = %#v, want one prefilled target", selection.GovernanceTargets)

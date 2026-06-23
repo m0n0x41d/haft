@@ -13,6 +13,8 @@ allowed-tools: Bash mcp__haft__haft_query
 
 You are recording a `DecisionRecord` through the manual CLI/input-file path. The operator invoked this manually (`disable-model-invocation: true` enforces that structurally per FPF X-TRANSFORMER). Default MCP serve mode rejects `haft_decision(action="decide", ...)` with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. Manual CLI is the default binding path; a host authorization receipt can become a binding path only when a registered kernel verifier can confirm principal, session, action, payload hash, expiry, and source.
 
+Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts.
+
 This is the binding moment. The DecisionRecord becomes the authoritative
 choice that downstream commissions, runtime runs, and verification cycles
 reference. Take it seriously.

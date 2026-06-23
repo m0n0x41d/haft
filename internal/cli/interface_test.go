@@ -430,6 +430,32 @@ func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 }
 
+func TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+
+	source := strings.Join([]string{
+		readRepoFile(t, "internal", "cli", "skill", "h-decide", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-commission", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-reason", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "claude_md_template.md"),
+		readRepoFile(t, "CLAUDE.md"),
+		readRepoFile(t, "AGENTS.md"),
+	}, "\n")
+
+	for _, want := range []string{
+		decide.AuthorityBoundary,
+		"operator_confirmation_required",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("bundled skill/template carriers missing generated-contract authority boundary %q", want)
+		}
+	}
+}
+
 func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 	fixture := newCheckTestProject(t)
 

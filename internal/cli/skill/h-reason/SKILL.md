@@ -304,6 +304,8 @@ For full dim-wise parallel scoring use `/h-compare` directly — it spawns one A
 
 **You CANNOT auto-fire `/h-decide`.** It is `disable-model-invocation: true` per Transformer Mandate.
 
+Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts. If the kernel returns `operator_confirmation_required`, recommend the correct manual gate and stop.
+
 When the operator is ready to commit to a chosen variant from a SolutionPortfolio:
 
 - Surface the Pareto front summary

@@ -37,6 +37,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   read-only and binding surfaces, with Go and Pi tests proving the wording
   stays aligned with the `contract_generation` manifest instead of treating
   schema visibility as operator approval.
+- **Bundled skill/template authority guards.** Embedded `h-decide`,
+  `h-commission`, `h-reason`, the current `AGENTS.md`/`CLAUDE.md`, and the
+  `haft init` project template now carry the same generated-contract binding
+  boundary, with a regression test tying the carrier wording back to the
+  kernel manifest.
 - **Contract-generation manifest evidence.** The read-only
   `contract_generation` manifest now hashes the full kernel interface catalog
   source and always reports validation refs, so an empty generator-target queue

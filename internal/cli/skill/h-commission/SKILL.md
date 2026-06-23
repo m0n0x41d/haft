@@ -13,6 +13,8 @@ allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 
 You are creating a WorkCommission through the manual CLI/input-file path. Commissions are execution-authority grants — they encode WHAT the operator authorized an autonomous agent (harness) to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS. Default MCP serve mode rejects WorkCommission creation actions with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. Manual CLI is the default binding path; a host authorization receipt can become a binding path only when a registered kernel verifier can confirm principal, session, action, payload hash, expiry, and source.
 
+Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts.
+
 The operator invoked this manually (`disable-model-invocation: true` enforces it structurally). Commissions stay sacred per FPF reasoner critique 2026-05-25.
 
 ## Step 1 — Identify the source decision

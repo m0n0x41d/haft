@@ -489,8 +489,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "selection_document",
-						Shape: `{"schema_version":1,"authority":"operator_approved_reconciliation_selection","operator_approval_ref":"chat:...","items":[{"operation":"merge_through_successor|supersede|retire_without_successor|reopen|enrich_scope","reviewed_group_id":"decision-reconcile-...","decision_refs":["dec-old"],"successor_ref":"dec-new","decision_subject_ref":"subject:ref","governance_targets":[{"kind":"api_contract","ref":"api_contract:..."}],"drift_watch_targets":[{"target_ref":"api_contract:...","trigger":"schema_or_behavior_changed"}],"claim_governance_target_refs":{"claim-id":["api_contract:..."]},"reason":"..."}]}`,
-						Note:  "successor_ref is required for supersede/merge_through_successor, forbidden for retire_without_successor/enrich_scope, and omitted for reopen; enrich_scope requires exactly one decision plus decision_subject_ref and governance_targets or drift_watch_targets; this apply path does not create binding decisions.",
+						Shape: `{"schema_version":1,"authority":"operator_approved_reconciliation_selection","operator_approval_ref":"chat:...","items":[{"operation":"merge_through_successor|supersede|retire_without_successor|reopen|enrich_scope|claim_lifecycle_update","reviewed_group_id":"decision-reconcile-...","decision_refs":["dec-old"],"successor_ref":"dec-new","decision_subject_ref":"subject:ref","governance_targets":[{"kind":"api_contract","ref":"api_contract:..."}],"drift_watch_targets":[{"target_ref":"api_contract:...","trigger":"schema_or_behavior_changed"}],"claim_governance_target_refs":{"claim-id":["api_contract:..."]},"claim_lifecycle_updates":[{"decision_ref":"dec-old","claim_id":"claim-1","lifecycle_status":"active|superseded|deprecated|refresh_due","successor_ref":"dec-new#claim-4","reason":"..."}],"reason":"..."}]}`,
+						Note:  "successor_ref is required for supersede/merge_through_successor, forbidden for retire_without_successor/enrich_scope, and omitted for reopen; enrich_scope requires exactly one decision plus decision_subject_ref and governance_targets or drift_watch_targets; claim_lifecycle_update changes explicit claims only and keeps the parent DecisionRecord current; this apply path does not create binding decisions.",
 					},
 					{
 						Field: "selection_review_response",
@@ -502,6 +502,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"This is an explicit lifecycle mutation path; run the report-only plan first and apply only reviewed selections.",
 					"merge_through_successor requires an already-created successor DecisionRecord; this command does not create binding decisions.",
 					"enrich_scope changes only DecisionRecord scope fields; it does not change status, lineage, evidence, baselines, or gates.",
+					"claim_lifecycle_update can supersede, deprecate, or mark explicit claims refresh_due without changing the parent DecisionRecord status.",
 					"Validation covers the whole batch before mutation so a later invalid item cannot leave earlier items partially applied.",
 					"selection-review is a read-only preflight for the approval packet; it cannot convert a draft into approval.",
 				},
@@ -1100,7 +1101,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					{
 						Field: "response",
 						Shape: `{"schema_version":1,"authority":"report_only_not_binding_authority","view":"compact","file_overlap_policy":"affected_files are implementation-footprint hints; file overlap alone is never merge evidence","summary":{"reviewed_decisions":12,"merge_candidates":1,"conflict_requires_operator":0,"scope_enrichment_candidates":3},"compact_groups":[{"group_id":"reconcile-group-...","category":"merge_candidate|reopen_candidate|keep|...","subject_ref":"...","bounded_context":"...","scope_repair_hints":["use enrich_scope ..."],"decision_refs":[...],"fanout":7,"operator_required":true,"preview_operation":"merge_through_successor|supersede|retire_without_successor|reopen|enrich_scope|claim_lifecycle_update|keep|operator_judgment_required","apply_operation":"merge_through_successor|...","downstream_dependents":3,"downstream_migration_required":true,"successor_workflow_required":true}],"omitted_groups":42,"full_audit_command":"haft_query(action=\"decision_reconcile\", full=true)"}`,
-						Note:  "Default MCP response is compact. affected_files are footprint hints, not merge evidence. full=true restores groups[].preview with authority=report_only_preview_not_binding_authority, required_selection_fields including items[].successor_ref, validation_notes, downstream_impact, downstream_migration_report, and consolidated_successor_workflow. preview is advisory and cannot authorize apply; downstream impact does not relink downstream artifacts.",
+						Note:  "Default MCP response is compact. affected_files are footprint hints, not merge evidence. full=true restores groups[].preview with authority=report_only_preview_not_binding_authority, required_selection_fields including items[].successor_ref, validation_notes, lineage_relations labeled mergedFrom/supersedes/retiredWithSuccessor/retiredWithoutSuccessor, downstream_impact, downstream_migration_report, and consolidated_successor_workflow. preview is advisory and cannot authorize apply; downstream impact does not relink downstream artifacts.",
 					},
 					{
 						Field: "metrics_response",
@@ -1119,7 +1120,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"downstream_migration_report names dependent refs and review policy before apply; it never relinks automatically.",
 					"consolidated_successor_workflow names the successor packet review contract; it never creates or approves a successor.",
 					"claim_lifecycle_update is an operator-approved apply operation for explicit claims; it keeps the parent DecisionRecord current.",
-					"Apply/lineage mutation belongs to a separate explicit operator-approved slice.",
+					"Apply/lineage mutation is available only through an explicit operator-approved selection document.",
 				},
 			},
 			OutputVolume: []string{"default: compact JSON DecisionReconciliationPlan; full=true: complete audit payload with groups[].preview"},

@@ -8,7 +8,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -26,7 +25,7 @@ func runSpecOnboard(cmd *cobra.Command, _ []string) error {
 		return runSpecOnboardMutation(cmd, projectRoot, action, sectionID, args, specOnboardJSON)
 	}
 
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return err
 	}

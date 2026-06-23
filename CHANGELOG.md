@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first spec onboarding reads.** Read-only `haft spec onboard` now uses
+  current SQL SpecSection editions before Markdown carriers while keeping
+  missing-baseline findings as the human approval gate.
 - **SQL-first spec reads preserve term-map carriers.** SQL-backed SpecSection
   reads now keep typed carrier term-map entries as support data, and
   `haft_query(action="resolve_term")` resolves section refs from SQL editions

@@ -74,6 +74,23 @@ func TestCarrierAuthorityManifestIncludesTargetSystemSupportDocs(t *testing.T) {
 	}
 }
 
+func TestCarrierAuthorityManifestIncludesHostDisciplineMirror(t *testing.T) {
+	entry := carrierManifestEntry(t, "host-discipline-mirror")
+
+	if !entry.Current {
+		t.Fatal("host discipline mirror should stay current")
+	}
+	if entry.AuthorityClass != CarrierAuthorityCurrent {
+		t.Fatalf("authority_class = %q, want current", entry.AuthorityClass)
+	}
+	if entry.PathPattern != "CLAUDE.md" {
+		t.Fatalf("path_pattern = %q", entry.PathPattern)
+	}
+	if !strings.Contains(entry.Normativity, "host-facing discipline mirror") {
+		t.Fatalf("normativity should describe host mirror boundary: %q", entry.Normativity)
+	}
+}
+
 func TestCarrierSemioCheckCurrentRepoCarriers(t *testing.T) {
 	root := filepath.Join("..", "..")
 
@@ -86,6 +103,41 @@ func TestCarrierSemioCheckCurrentRepoCarriers(t *testing.T) {
 	}
 	if len(result.Findings) > 0 {
 		t.Fatalf("carrier semio findings = %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckScansHostDisciplineMirror(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "CLAUDE.md", "Host discipline says schema visibility is not operator authorization.")
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if !containsString(result.CheckedFiles, "CLAUDE.md") {
+		t.Fatalf("checked_files missing host discipline mirror: %#v", result.CheckedFiles)
+	}
+	if len(result.Findings) > 0 {
+		t.Fatalf("safe host discipline mirror should not produce findings: %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckFlagsHostDisciplineMirrorAuthorityGrant(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "CLAUDE.md", "Host prompt text authorizes operator approval.")
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if len(result.Findings) != 1 {
+		t.Fatalf("findings = %#v, want one host mirror authority finding", result.Findings)
+	}
+	if result.Findings[0].Path != "CLAUDE.md" {
+		t.Fatalf("finding path = %q", result.Findings[0].Path)
+	}
+	if result.Findings[0].Term != "operator_authorization_boundary" {
+		t.Fatalf("finding term = %q", result.Findings[0].Term)
 	}
 }
 

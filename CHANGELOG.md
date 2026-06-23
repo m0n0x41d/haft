@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Host discipline carrier semio coverage.** `haft carrier manifest` now
+  classifies root `CLAUDE.md` as a current host discipline mirror, and
+  `haft carrier check` scans it for prompt/schema/model authority-boundary
+  violations alongside `AGENTS.md`, README, templates, skills, generated
+  surfaces, and Pi bundle carriers.
 - **WLNK assurance boundary wording.** The older assurance one-liner now labels
   evidence/formality/reliability displays as diagnostic-only, not approval, gate
   passage, claim truth, global truth, or publication.

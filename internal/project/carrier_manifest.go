@@ -87,6 +87,15 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 			Notes:          "mirrored with AGENTS.md haft section; host prompts are carriers, not enforcement",
 		},
 		{
+			ID:             "host-discipline-mirror",
+			PathPattern:    "CLAUDE.md",
+			AuthorityClass: CarrierAuthorityCurrent,
+			Surface:        "host_prompt",
+			Current:        true,
+			Normativity:    "host-facing discipline mirror; kernel validates authority and generated text remains non-binding",
+			Notes:          "mirrored from the installed project discipline template; host prompts are carriers, not enforcement",
+		},
+		{
 			ID:             "fpf-route-carriers",
 			PathPattern:    "internal/fpf/patterns/*.md",
 			AuthorityClass: CarrierAuthoritySupport,
@@ -305,6 +314,7 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 	for _, pattern := range []string{
 		"README.md",
 		"AGENTS.md",
+		"CLAUDE.md",
 		".haft/specs/*.md",
 		"spec/target-system/*.md",
 		"internal/cli/claude_md_template.md",

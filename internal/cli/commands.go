@@ -193,7 +193,7 @@ func installCodexSkills(projectRoot string, local bool) (string, int, error) {
 	}
 
 	cleanupOldCodexSkills(skillsRoot)
-	// Remove deprecated skill dirs (q-reason, h-reason) on every install.
+	// Remove deprecated skill dirs such as q-reason and h-fpf on every install.
 	for _, name := range deprecatedSkillDirs {
 		_ = os.RemoveAll(filepath.Join(skillsRoot, name))
 	}

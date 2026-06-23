@@ -39,6 +39,26 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 	}
 }
 
+func TestInterfaceCatalogTextStaysCompact(t *testing.T) {
+	var output bytes.Buffer
+
+	if err := writeInterfaceCatalogText(&output, haftInterfaceCatalog()); err != nil {
+		t.Fatalf("writeInterfaceCatalogText returned error: %v", err)
+	}
+
+	result := output.String()
+	for _, want := range []string{
+		"Haft interface capabilities:",
+		"query.contract_generation",
+		"Use `haft interface <capability> --json`",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("compact interface catalog missing %q:\n%s", want, result)
+		}
+	}
+	assertNoContractGenerationManifestInline(t, "compact interface catalog", result)
+}
+
 func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 

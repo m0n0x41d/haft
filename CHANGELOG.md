@@ -54,6 +54,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   default `code_context` tests now reject rich interface output fragments,
   preserving drill-down-only exact/audit examples outside normal cockpit and
   agent-context payloads.
+- **Compact interface catalog output-shape guard.** The default `haft interface`
+  catalog test now rejects generated-manifest and rich output-shape fragments,
+  keeping top-level CLI discovery as a capability list plus JSON drill-down
+  pointer.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

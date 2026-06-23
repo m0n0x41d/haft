@@ -17,6 +17,7 @@ You are running the FPF verification loop: baseline → measure → evidence →
 If `decision_ref` is given, use it. Otherwise:
 - `mcp__haft__haft_query(action="status")` — surfaces stale/refresh-due decisions
 - `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe maintenance closures and needs_operator groups
+- `mcp__haft__haft_query(action="drift_events")`, `mcp__haft__haft_query(action="decision_reconcile")`, and `mcp__haft__haft_query(action="governing_set")` — drift fanout, reconciliation, and current-authority drill-downs
 - `mcp__haft__haft_query(action="list", kind="DecisionRecord")` — full list
 - Ask the operator which decision to verify
 

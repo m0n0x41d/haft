@@ -25,6 +25,10 @@ Use explicit follow-up calls for detail:
 - `mcp__haft__haft_refresh(action="plan")` — maintenance work order
 - `mcp__haft__haft_refresh(action="review")` — read-only needs-judgment packet
 - `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe closures
+- `mcp__haft__haft_query(action="contract_generation")` — read-only generated-fragment carrier hints for host/skill/plugin/Pi sync
+- `mcp__haft__haft_query(action="drift_events")`, `mcp__haft__haft_query(action="decision_reconcile")`, and `mcp__haft__haft_query(action="governing_set")` — drift fanout, reconciliation, and current-authority drill-downs
+
+read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
 
 ## Step 0 — Maintenance check (FPF B.3.4 evidence decay)
 

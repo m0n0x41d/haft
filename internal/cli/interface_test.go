@@ -502,6 +502,56 @@ func TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries(t *testin
 	}
 }
 
+func TestBundledSkillCarriersCarrySelectedGeneratedQueryFragments(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := strings.Join([]string{
+		readRepoFile(t, "internal", "cli", "skill", "h-status", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-verify", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-reason", "SKILL.md"),
+	}, "\n")
+
+	for _, tc := range []struct {
+		capabilityID string
+		action       string
+		carrierHint  string
+	}{
+		{
+			capabilityID: "query.contract_generation",
+			action:       "contract_generation",
+			carrierHint:  "generated-fragment",
+		},
+		{
+			capabilityID: "query.drift_events",
+			action:       "drift_events",
+			carrierHint:  "drift fanout",
+		},
+		{
+			capabilityID: "query.decision_reconcile",
+			action:       "decision_reconcile",
+			carrierHint:  "reconciliation",
+		},
+		{
+			capabilityID: "query.governing_set",
+			action:       "governing_set",
+			carrierHint:  "current-authority drill-downs",
+		},
+	} {
+		fragment, ok := findContractGeneratedFragment(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s generated fragment missing", tc.capabilityID)
+		}
+		for _, want := range []string{
+			fragment.AuthorityBoundary,
+			tc.action,
+			tc.carrierHint,
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("bundled skill carriers missing generated-fragment carrier text %q for %s", want, tc.capabilityID)
+			}
+		}
+	}
+}
+
 func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 	fixture := newCheckTestProject(t)
 

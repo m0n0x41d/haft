@@ -17,6 +17,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `lineage_relations` labels restored by full reconciliation preview, so
   agents can discover the existing operator-approved claim lifecycle and
   lineage paths without inferring them from code.
+- **Pi query action mirror guard.** The MCP tool catalog tests now compare the
+  Pi/plugin `haft_query` action enum against the kernel `tools/list` enum, so
+  new read-only query actions fail tests if the bundled Pi schema mirror drifts.
 - **Read-only query stale footer fallback.** If the typed status stale lane is
   unavailable while rendering MCP query footers, Haft now suppresses raw stale
   debt instead of falling back to `FindStaleDecisions` counts that can disagree

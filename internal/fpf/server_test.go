@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -308,6 +310,23 @@ func TestHandleToolsList_QuerySchemaIncludesContractAudit(t *testing.T) {
 	}
 }
 
+func TestPiHaftQueryActionsMirrorMCPEnum(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+	mcpActions := mustStringEnum(t, querySchema["action"], "haft_query.action")
+	piActions := mustPiHaftQueryActions(t)
+
+	for action := range mcpActions {
+		if !piActions[action] {
+			t.Fatalf("Pi haft_query action enum missing MCP action %q", action)
+		}
+	}
+	for action := range piActions {
+		if !mcpActions[action] {
+			t.Fatalf("Pi haft_query action enum has non-MCP action %q", action)
+		}
+	}
+}
+
 func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
 	for _, name := range []string{"haft_method", "haft_commission", "haft_spec_section"} {
 		t.Run(name, func(t *testing.T) {
@@ -467,6 +486,63 @@ func schemaEnumContains(values []interface{}, want string) bool {
 		}
 	}
 	return false
+}
+
+func mustStringEnum(t *testing.T, raw interface{}, label string) map[string]bool {
+	t.Helper()
+
+	schema, ok := raw.(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s schema missing or wrong type: %#v", label, raw)
+	}
+	enum, ok := schema["enum"].([]interface{})
+	if !ok {
+		t.Fatalf("%s enum missing or wrong type: %#v", label, schema["enum"])
+	}
+
+	out := make(map[string]bool, len(enum))
+	for _, rawValue := range enum {
+		value, ok := rawValue.(string)
+		if !ok {
+			t.Fatalf("%s enum contains non-string value %#v", label, rawValue)
+		}
+		out[value] = true
+	}
+	return out
+}
+
+func mustPiHaftQueryActions(t *testing.T) map[string]bool {
+	t.Helper()
+
+	path := filepath.Join("..", "..", "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read Pi tool schema mirror: %v", err)
+	}
+	content := string(raw)
+	parametersIndex := strings.Index(content, "const haftQueryParameters = Type.Object({")
+	if parametersIndex < 0 {
+		t.Fatalf("Pi tool schema mirror missing haftQueryParameters in %s", path)
+	}
+	actionIndex := strings.Index(content[parametersIndex:], "action: enumOf(")
+	if actionIndex < 0 {
+		t.Fatalf("Pi haftQueryParameters missing action enum in %s", path)
+	}
+	actionBody := content[parametersIndex+actionIndex:]
+	endIndex := strings.Index(actionBody, "\n  ),\n  artifact_ref:")
+	if endIndex < 0 {
+		t.Fatalf("Pi haft_query action enum has unexpected shape in %s", path)
+	}
+
+	matches := regexp.MustCompile(`"([^"]+)"`).FindAllStringSubmatch(actionBody[:endIndex], -1)
+	if len(matches) == 0 {
+		t.Fatalf("Pi haft_query action enum has no literals in %s", path)
+	}
+	out := make(map[string]bool, len(matches))
+	for _, match := range matches {
+		out[match[1]] = true
+	}
+	return out
 }
 
 func TestHandleToolsList_ProblemSchemaIncludesProfileFields(t *testing.T) {

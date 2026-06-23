@@ -37,6 +37,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   editing Pi tool, skill, or prompt wording, with regression coverage preserving
   the boundary that generated text and schema visibility are not approval
   receipts.
+- **Pi h-status generated-query carrier guard.** The Pi `h-status` skill now
+  points at `contract_generation`, DriftEvent, decision reconciliation, and
+  governing-set drill-downs, with regression coverage tied to the same
+  generated fragments as the bundled skill carriers.
 - **Pi generated-query contract sync guard.** Pi tool metadata now carries
   compact generated-fragment hints for contract generation, DriftEvents,
   decision reconciliation, and governing-set drill-downs, with a regression test

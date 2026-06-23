@@ -24,11 +24,18 @@ Read the output as project evidence:
 - default status is a compact cockpit, not an audit dump; omitted detail is not evidence of absence,
 - module coverage may appear only as a one-line cue; call `haft_query` with
   `{ "action": "coverage" }` for the full module list,
+- call `haft_query` with `{ "action": "contract_generation" }` for read-only
+  generated-fragment carrier hints before editing Pi tool, skill, or prompt
+  wording,
+- call `haft_query` with `{ "action": "drift_events" }`,
+  `{ "action": "decision_reconcile" }`, or `{ "action": "governing_set" }`
+  for drift fanout, reconciliation, and current-authority drill-downs,
 - call `haft_query` with `{ "action": "status", "full": true }` when you need
   detailed decision/problem/note status,
 - call `haft_refresh` with `{ "action": "scan", "verbose": true }` for
   file-level drift/stale detail,
 - call `haft_refresh` with `{ "action": "plan" }` for the maintenance work order,
 - chat summaries are not durable work unless the relevant Haft artifact exists.
+- read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
 
 Do not create binding decisions or commissions unless the operator explicitly asks for that manual action.

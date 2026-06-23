@@ -30,6 +30,8 @@ var (
 	specUseWaiverExpiresAt string
 	specUseGateFile        string
 	specSyncJSON           bool
+	specExportJSON         bool
+	specExportMarkdown     bool
 	specApplyChangeJSON    bool
 	specApplyBefore        string
 	specApplyAfter         string
@@ -118,6 +120,19 @@ Only typed fenced yaml spec-section blocks are imported. Surrounding Markdown
 prose remains carrier text, not authority. The command does not approve,
 rebaseline, reopen, or mutate SpecSectionApprovalBaseline rows.`,
 	RunE: runSpecSync,
+}
+
+var specExportCmd = &cobra.Command{
+	Use:   "export SECTION_ID",
+	Short: "Render one SQL SpecSection edition as a Markdown carrier projection",
+	Long: `Render one current SQL SpecSection edition as a deterministic Markdown
+carrier projection.
+
+SQL remains the source of truth. The rendered Markdown is a publication
+projection for carrier synchronization only; it is not approval, rebaseline,
+evidence, or prose authority.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runSpecExport,
 }
 
 var specApplyChangeCmd = &cobra.Command{
@@ -214,6 +229,8 @@ func init() {
 	specUseCmd.Flags().StringVar(&specUseWaiverExpiresAt, "waiver-expires-at", "", "expiry for temporary_waiver policy (RFC3339 or YYYY-MM-DD)")
 	specUseCmd.Flags().StringVar(&specUseGateFile, "gate-file", "", "JSON OperationalGate profile for local read-only gate evaluation")
 	specSyncCmd.Flags().BoolVar(&specSyncJSON, "json", false, "print structured JSON output")
+	specExportCmd.Flags().BoolVar(&specExportJSON, "json", false, "print structured JSON output")
+	specExportCmd.Flags().BoolVar(&specExportMarkdown, "markdown", false, "print only the generated Markdown carrier projection")
 	specApplyChangeCmd.Flags().BoolVar(&specApplyChangeJSON, "json", false, "print structured JSON output")
 	specApplyChangeCmd.Flags().StringVar(&specApplyBefore, "before", "", "path to the before spec carrier")
 	specApplyChangeCmd.Flags().StringVar(&specApplyAfter, "after", "", "path to the after spec carrier")
@@ -246,6 +263,7 @@ func init() {
 	specCmd.AddCommand(specReviewCmd)
 	specCmd.AddCommand(specUseCmd)
 	specCmd.AddCommand(specSyncCmd)
+	specCmd.AddCommand(specExportCmd)
 	specCmd.AddCommand(specApplyChangeCmd)
 	specCmd.AddCommand(specClassifyChangeCmd)
 	specCmd.AddCommand(specPlanCmd)

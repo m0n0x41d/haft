@@ -17,7 +17,69 @@ This claim is supported only for the bearer/window below. It does not prove that
 Haft is better than ADRs plus tests, that the overhead is acceptable in all
 teams, or that host-backed authorization receipts are complete.
 
-## Current Evidence Packet
+## Evidence Packet — 2026-06-24
+
+| Field | Value |
+|-------|-------|
+| Bearer | `current-haft-rewrite` |
+| Window | `2026-06-24` |
+| Method ref | `method:slice-train-dogfood` |
+| Value surface | `haft value space current-haft-rewrite --window 2026-06-24 --method-ref method:slice-train-dogfood ...` |
+| Value surface output | `single_score=no_single_haft_or_fpf_score`, `evidence_refs=5`, `evidence_missing_characteristics=0` |
+
+Evidence refs:
+
+- `commit:f45075b8` — stale reconciliation scope selections fail closed before
+  mutation.
+- `commit:d7434f9d` — stale reconciliation group diagnostics name the current
+  matching group and apply operation.
+- `commit:d90fc25f` — default `haft_query(action="status")` is guarded against
+  contract-generation manifest bloat.
+- `commit:45c4466b` — compact `haft interface contract-generation` output stays
+  count-only and does not inline generated fragment/schema detail.
+- `commit:31efcfcc` — baseline term audit classifies autonomous rebaseline
+  wording, leaving `legacy_ambiguous_baseline=0` in the live audit.
+
+Current production-code trace:
+
+- The slice train remained atomic: stale reconciliation guards, status/contract
+  bloat guards, and baseline-audit classification were committed separately
+  after focused tests and `go test ./...`.
+- A deliberate stale-selection apply attempt against
+  `.context/r9-v1-batch-a2-approved-selection-2026-06-23.json` exited with code
+  `1` before mutation because the old `reviewed_group_id` was no longer present
+  in the current reconciliation plan.
+- The current matching reconciliation group was reported as
+  `decision-reconcile-9e5c28b9313a` with `apply_operation="none"`, so recovery
+  path was visible without accepting the stale packet.
+- `haft decision reconcile metrics --json` still reports material authority
+  noise: `230` unique drift events, `34` impacted decisions, `155` material
+  events, `75` audit-only events, and max fanout `28`.
+
+What this supports:
+
+- For this slice train, Haft improved fail-closed behavior and recovery
+  diagnostics around stale reconciliation packets.
+- Default status and compact contract-generation surfaces stayed bounded while
+  exact/audit detail remained available behind explicit commands.
+- The value-space dashboard exposed review triggers without producing a single
+  scalar product-value score.
+
+What this does not support:
+
+- A general claim that Haft improves all AI software work.
+- A claim that Haft beats ADRs plus tests under equal budget.
+- A claim that every scope violation is blocked.
+- A claim that current authority-frontier noise is solved.
+
+Next move:
+
+- Do not strengthen product-value claims until the equal-budget comparison
+  protocol below has been run or explicitly marked out of scope.
+- Rerun the packet after a fresh operator-approved R9 selection is applied, then
+  compare drift-event fanout and missing-subject metrics before and after.
+
+## Evidence Packet — 2026-06-23
 
 | Field | Value |
 |-------|-------|

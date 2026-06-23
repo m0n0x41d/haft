@@ -217,6 +217,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Product-value evidence packet.** `spec/target-system/PRODUCT_VALUE_EVIDENCE.md`
+  now records the 2026-06-24 bounded dogfood evidence packet for stale
+  reconciliation fail-closed behavior, default-surface bloat guards, and
+  baseline-audit cleanup, while explicitly preserving the no-score,
+  not-approval, not-gate, and not-equal-budget-proof boundaries.
 - **Spec SQL-edition export surface.** `haft spec export SECTION_ID` now
   renders one current SQL SpecSection edition as a deterministic Markdown
   carrier projection, with `--json` for exact hashes/audit metadata and

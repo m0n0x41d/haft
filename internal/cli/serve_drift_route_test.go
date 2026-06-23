@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -128,6 +130,53 @@ func TestHandleQuintQuery_DriftEventsReturnsFanoutProjection(t *testing.T) {
 	}
 	if !strings.Contains(fullResult, `"source_items"`) {
 		t.Fatalf("full drift_events should serialize source_items audit detail:\n%s", fullResult)
+	}
+}
+
+func TestHandleQuintQuery_DriftEventsHonorsCompactLimit(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedMultipleDriftEventDecisions(t, fixture, 3)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "drift_events",
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery drift_events returned error: %v", err)
+	}
+
+	var report artifact.DriftEventReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode drift event report: %v\n%s", err, result)
+	}
+	if report.View != "compact" {
+		t.Fatalf("view = %q, want compact", report.View)
+	}
+	if len(report.Events) != 2 {
+		t.Fatalf("compact events = %d, want 2: %#v", len(report.Events), report.Events)
+	}
+	if report.OmittedEvents == 0 {
+		t.Fatalf("omitted_events = 0, want limit to omit at least one event")
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "drift_events",
+		"full":   true,
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery drift_events full returned error: %v", err)
+	}
+
+	var fullReport artifact.DriftEventReport
+	if err := json.Unmarshal([]byte(fullResult), &fullReport); err != nil {
+		t.Fatalf("decode full drift event report: %v\n%s", err, fullResult)
+	}
+	if fullReport.View != "" {
+		t.Fatalf("full view = %q, want empty audit view", fullReport.View)
+	}
+	if len(fullReport.Events) <= len(report.Events) {
+		t.Fatalf("full events = %d, compact events = %d; full view should ignore compact limit", len(fullReport.Events), len(report.Events))
 	}
 }
 
@@ -294,4 +343,37 @@ func serveDriftEventsHasSourceItems(report artifact.DriftEventReport) bool {
 		}
 	}
 	return false
+}
+
+func seedMultipleDriftEventDecisions(t *testing.T, fixture checkTestProject, count int) {
+	t.Helper()
+
+	for index := range count {
+		fileName := fmt.Sprintf("drifted-%d.go", index)
+		filePath := filepath.Join(fixture.root, fileName)
+		if err := os.WriteFile(filePath, []byte("package main\n\nfunc governed() {}\n"), 0o644); err != nil {
+			t.Fatalf("write drift seed file %s: %v", fileName, err)
+		}
+
+		decision := mustCreateDecision(t, fixture, artifact.DecideInput{
+			SelectedTitle:   fmt.Sprintf("Protect drifted file %d", index),
+			WhySelected:     "Need multiple drift events for compact limit regression coverage.",
+			SelectionPolicy: "Prefer deterministic one-file decisions.",
+			CounterArgument: "Synthetic fixtures may not represent real fanout.",
+			WeakestLink:     "Drift detection must preserve separate file events.",
+			WhyNotOthers: []artifact.RejectionReason{{
+				Variant: "Single drift fixture",
+				Reason:  "Would not prove the compact limit is honored.",
+			}},
+			Rollback: &artifact.RollbackSpec{
+				Triggers: []string{"Compact drift_events ignores the requested limit."},
+			},
+			AffectedFiles: []string{fileName},
+		})
+		mustBaselineDecision(t, fixture, decision.Meta.ID)
+
+		if err := os.WriteFile(filePath, []byte("package main\n\nfunc governed() {\n\tprintln(\"drift\")\n}\n"), 0o644); err != nil {
+			t.Fatalf("write drifted file %s: %v", fileName, err)
+		}
+	}
 }

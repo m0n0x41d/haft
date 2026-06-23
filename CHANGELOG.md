@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Compact drift/reconciliation drill-down limits.**
+  `haft_query(action="drift_events"|"decision_reconcile"|"governing_set",
+  limit=N)` now applies `limit` to compact MCP projections while preserving
+  `full=true` audit views untruncated.
 - **Contract-generation runtime schema audit.** `haft interface
   contract-generation --json` and `haft_query(action="contract_generation")`
   now include a read-only `runtime_schema_audit` that validates generated MCP

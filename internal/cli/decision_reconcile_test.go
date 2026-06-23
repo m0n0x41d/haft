@@ -347,6 +347,55 @@ func TestHandleQuintQueryDecisionReconcileDefaultsToCompactReportOnlyPlan(t *tes
 	}
 }
 
+func TestHandleQuintQueryDecisionReconcileHonorsCompactLimit(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	seedDecisionReconcileDecision(t, store, "dec-save-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+	seedDecisionReconcileDecision(t, store, "dec-save-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
+	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store-load", "Load")
+	seedDecisionReconcileDecision(t, store, "dec-delete", artifact.StatusActive, "artifact", "subject:artifact-store-delete", "Delete")
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "decision_reconcile",
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery decision_reconcile returned error: %v", err)
+	}
+
+	var plan artifact.DecisionReconciliationPlan
+	if err := json.Unmarshal([]byte(result), &plan); err != nil {
+		t.Fatalf("decode decision reconciliation plan: %v\n%s", err, result)
+	}
+	if plan.View != "compact" {
+		t.Fatalf("view = %q, want compact", plan.View)
+	}
+	if len(plan.CompactGroups) != 2 {
+		t.Fatalf("compact groups = %d, want 2: %#v", len(plan.CompactGroups), plan.CompactGroups)
+	}
+	if plan.OmittedGroups == 0 {
+		t.Fatalf("omitted_groups = 0, want limit to omit at least one group")
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "decision_reconcile",
+		"full":   true,
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery decision_reconcile full returned error: %v", err)
+	}
+	var fullPlan artifact.DecisionReconciliationPlan
+	if err := json.Unmarshal([]byte(fullResult), &fullPlan); err != nil {
+		t.Fatalf("decode full decision reconciliation plan: %v\n%s", err, fullResult)
+	}
+	if fullPlan.View != "" {
+		t.Fatalf("full view = %q, want empty audit view", fullPlan.View)
+	}
+	if len(fullPlan.Groups) <= len(plan.CompactGroups) {
+		t.Fatalf("full groups = %d, compact groups = %d; full view should ignore compact limit", len(fullPlan.Groups), len(plan.CompactGroups))
+	}
+}
+
 func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-current", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
@@ -397,6 +446,54 @@ func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t
 	}
 	if len(fullReport.Sets) != 1 || fullReport.Sets[0].Posture != artifact.GoverningSetPostureSingle {
 		t.Fatalf("full sets = %#v", fullReport.Sets)
+	}
+}
+
+func TestHandleQuintQueryGoverningSetHonorsCompactLimit(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store-save", "Save")
+	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store-load", "Load")
+	seedDecisionReconcileDecision(t, store, "dec-delete", artifact.StatusActive, "artifact", "subject:artifact-store-delete", "Delete")
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "governing_set",
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set returned error: %v", err)
+	}
+
+	var report artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode current governing set: %v\n%s", err, result)
+	}
+	if report.View != "compact" {
+		t.Fatalf("view = %q, want compact", report.View)
+	}
+	if len(report.CompactSets) != 2 {
+		t.Fatalf("compact sets = %d, want 2: %#v", len(report.CompactSets), report.CompactSets)
+	}
+	if report.OmittedSets == 0 {
+		t.Fatalf("omitted_sets = 0, want limit to omit at least one set")
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "governing_set",
+		"full":   true,
+		"limit":  float64(2),
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set full returned error: %v", err)
+	}
+	var fullReport artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(fullResult), &fullReport); err != nil {
+		t.Fatalf("decode full current governing set: %v\n%s", err, fullResult)
+	}
+	if fullReport.View != "" {
+		t.Fatalf("full view = %q, want empty audit view", fullReport.View)
+	}
+	if len(fullReport.Sets) <= len(report.CompactSets) {
+		t.Fatalf("full sets = %d, compact sets = %d; full view should ignore compact limit", len(fullReport.Sets), len(report.CompactSets))
 	}
 }
 

@@ -1517,6 +1517,17 @@ func codeContextLaneLimit(args map[string]any) (int, bool) {
 	return limit, true
 }
 
+func compactProjectionLimit(args map[string]any) int {
+	limit := intArg(args, "limit", driftEventsSummaryEventLimit)
+	if limit < 1 {
+		return driftEventsSummaryEventLimit
+	}
+	if limit > 100 {
+		return 100
+	}
+	return limit
+}
+
 func codeContextSymbolsForFile(ctx context.Context, store *artifact.Store, projectRoot string, file string) ([]present.CodeContextSymbolItem, bool, error) {
 	symbolStore := codebase.NewSymbolStore(store.DB())
 	if err := symbolStore.EnsureSchema(ctx); err != nil {
@@ -2102,7 +2113,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		record := buildDriftEventReportWithResolutionLedger(reports, ledger, timeNow())
 		full, _ := args["full"].(bool)
 		if !full {
-			record = artifact.CompactDriftEventReport(record, driftEventsSummaryEventLimit)
+			record = artifact.CompactDriftEventReport(record, compactProjectionLimit(args))
 		}
 		payload, err := json.Marshal(record)
 		if err != nil {
@@ -2117,7 +2128,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		full, _ := args["full"].(bool)
 		if !full {
-			record = artifact.CompactDecisionReconciliationPlan(record, driftEventsSummaryEventLimit)
+			record = artifact.CompactDecisionReconciliationPlan(record, compactProjectionLimit(args))
 		}
 		payload, err := json.Marshal(record)
 		if err != nil {
@@ -2132,7 +2143,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		full, _ := args["full"].(bool)
 		if !full {
-			record = artifact.CompactCurrentGoverningSetReport(record, driftEventsSummaryEventLimit)
+			record = artifact.CompactCurrentGoverningSetReport(record, compactProjectionLimit(args))
 		}
 		payload, err := json.Marshal(record)
 		if err != nil {

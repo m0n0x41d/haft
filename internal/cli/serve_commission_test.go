@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
 func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
@@ -1064,6 +1066,92 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 	}
 	if len(listed["commissions"]) != 1 {
 		t.Fatalf("listed commissions = %#v, want created commission runnable", listed["commissions"])
+	}
+}
+
+func TestHandleHaftCommission_CreateFromDecisionReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	projectRoot := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, projectRoot)
+	defer database.Close()
+
+	section := project.SpecSection{
+		ID:            "TS.sql.commission.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	sqlStore := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	if err := sqlStore.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      "SQL commission spec snapshot",
+		Signal:     "Spec sync-back can update the current section before commission creation.",
+		Acceptance: "Commission snapshot resolves against the SQL source of truth.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		ProblemRef:          problem.Meta.ID,
+		SelectedTitle:       "Snapshot SQL spec editions",
+		WhySelected:         "WorkCommission preflight needs the current SpecSection revision, not stale carrier sections.",
+		SelectionPolicy:     "Prefer SQL source of truth when present.",
+		CounterArgument:     "Carrier-only lookup is simpler.",
+		WeakestLink:         "Unsynced projects must still fall back to carriers.",
+		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Carrier-only snapshot", Reason: "It misses current SQL sync-back edits."}},
+		Rollback:            &artifact.RollbackSpec{Triggers: []string{"Commission snapshot ignores SQL sections."}},
+		AffectedFiles:       []string{"internal/cli/serve_commission.go"},
+		SectionRefs:         []string{"TS.sql.commission.001"},
+		ValidUntil:          "2099-01-01T00:00:00Z",
+		FirstModuleCoverage: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":          "create_from_decision",
+		"decision_ref":    decision.Meta.ID,
+		"repo_ref":        "local:haft",
+		"base_sha":        "base-r1",
+		"target_branch":   "dev",
+		"allowed_actions": []any{"edit_files", "run_tests"},
+		"project_root":    projectRoot,
+		"valid_until":     "2099-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+	commission := created["commission"]
+	if !containsAnyString(commission["spec_section_refs"], "TS.sql.commission.001") {
+		t.Fatalf("spec_section_refs = %#v, want SQL edition ref", commission["spec_section_refs"])
+	}
+	revisionHashes, ok := commission["spec_revision_hashes"].(map[string]any)
+	if !ok {
+		t.Fatalf("spec_revision_hashes = %#v, want object", commission["spec_revision_hashes"])
+	}
+	if !hexLike(revisionHashes["TS.sql.commission.001"]) {
+		t.Fatalf("spec revision hash = %#v, want sha256 hex", revisionHashes["TS.sql.commission.001"])
+	}
+	if _, exists := revisionHashes["TS.sync.001"]; exists {
+		t.Fatalf("carrier section leaked into SQL-first snapshot: %#v", revisionHashes)
 	}
 }
 

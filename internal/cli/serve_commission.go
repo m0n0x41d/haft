@@ -1320,12 +1320,12 @@ func commissionSpecSectionsByID(projectRoot string) (map[string]project.SpecSect
 		return sectionsByID, nil
 	}
 
-	sections, err := project.LoadSpecSections(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return nil, fmt.Errorf("load ProjectSpecificationSet sections: %w", err)
 	}
 
-	for _, section := range sections {
+	for _, section := range specSet.Sections {
 		if strings.TrimSpace(section.ID) == "" {
 			continue
 		}

@@ -289,6 +289,7 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		"dec-fallback",
 		"confidence=low",
 		"posture=needs_subject_and_target_review",
+		"subject_suggestions=0",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

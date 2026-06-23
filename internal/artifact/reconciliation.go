@@ -254,22 +254,23 @@ type DecisionReconciliationDraftSummary struct {
 }
 
 type DecisionReconciliationDraftItem struct {
-	Operation                string   `json:"operation"`
-	ReviewedGroupID          string   `json:"reviewed_group_id"`
-	DecisionRef              string   `json:"decision_ref"`
-	DecisionTitle            string   `json:"decision_title,omitempty"`
-	CandidatePosture         string   `json:"candidate_posture,omitempty"`
-	Confidence               string   `json:"confidence,omitempty"`
-	CurrentSubjectRef        string   `json:"current_subject_ref,omitempty"`
-	CurrentGovernanceTargets []string `json:"current_governance_targets,omitempty"`
-	WholeFileFallbackTargets []string `json:"whole_file_fallback_targets,omitempty"`
-	AffectedFiles            []string `json:"affected_files,omitempty"`
-	ScopeRepairHint          string   `json:"scope_repair_hint,omitempty"`
-	SuggestedReviewAction    string   `json:"suggested_review_action,omitempty"`
-	BlockingQuestions        []string `json:"blocking_questions,omitempty"`
-	RequiredSelectionFields  []string `json:"required_selection_fields,omitempty"`
-	SelectionTemplate        string   `json:"selection_template"`
-	ReviewNotes              []string `json:"review_notes"`
+	Operation                     string   `json:"operation"`
+	ReviewedGroupID               string   `json:"reviewed_group_id"`
+	DecisionRef                   string   `json:"decision_ref"`
+	DecisionTitle                 string   `json:"decision_title,omitempty"`
+	CandidatePosture              string   `json:"candidate_posture,omitempty"`
+	Confidence                    string   `json:"confidence,omitempty"`
+	CurrentSubjectRef             string   `json:"current_subject_ref,omitempty"`
+	DecisionSubjectRefSuggestions []string `json:"decision_subject_ref_suggestions,omitempty"`
+	CurrentGovernanceTargets      []string `json:"current_governance_targets,omitempty"`
+	WholeFileFallbackTargets      []string `json:"whole_file_fallback_targets,omitempty"`
+	AffectedFiles                 []string `json:"affected_files,omitempty"`
+	ScopeRepairHint               string   `json:"scope_repair_hint,omitempty"`
+	SuggestedReviewAction         string   `json:"suggested_review_action,omitempty"`
+	BlockingQuestions             []string `json:"blocking_questions,omitempty"`
+	RequiredSelectionFields       []string `json:"required_selection_fields,omitempty"`
+	SelectionTemplate             string   `json:"selection_template"`
+	ReviewNotes                   []string `json:"review_notes"`
 }
 
 type DecisionReconciliationSelection struct {
@@ -1394,27 +1395,46 @@ func decisionReconciliationDraftItem(
 ) DecisionReconciliationDraftItem {
 	posture := decisionReconciliationDraftCandidatePosture(item)
 	return DecisionReconciliationDraftItem{
-		Operation:                DecisionReconciliationOperationEnrichScope,
-		ReviewedGroupID:          group.GroupID,
-		DecisionRef:              item.DecisionID,
-		DecisionTitle:            item.DecisionTitle,
-		CandidatePosture:         posture,
-		Confidence:               decisionReconciliationDraftConfidence(posture),
-		CurrentSubjectRef:        item.DecisionSubjectRef,
-		CurrentGovernanceTargets: compactSortedStrings(item.GovernanceTargets),
-		WholeFileFallbackTargets: compactSortedStrings(item.WholeFileFallbackTargets),
-		AffectedFiles:            compactSortedStrings(item.AffectedFiles),
-		ScopeRepairHint:          item.ScopeRepairHint,
-		SuggestedReviewAction:    decisionReconciliationDraftReviewAction(posture),
-		BlockingQuestions:        decisionReconciliationDraftBlockingQuestions(item),
-		RequiredSelectionFields:  decisionReconciliationPreviewRequiredFields(DecisionReconciliationOperationEnrichScope),
-		SelectionTemplate:        decisionReconciliationDraftSelectionTemplate(group, item),
+		Operation:                     DecisionReconciliationOperationEnrichScope,
+		ReviewedGroupID:               group.GroupID,
+		DecisionRef:                   item.DecisionID,
+		DecisionTitle:                 item.DecisionTitle,
+		CandidatePosture:              posture,
+		Confidence:                    decisionReconciliationDraftConfidence(posture),
+		CurrentSubjectRef:             item.DecisionSubjectRef,
+		DecisionSubjectRefSuggestions: decisionReconciliationDraftSubjectSuggestions(item),
+		CurrentGovernanceTargets:      compactSortedStrings(item.GovernanceTargets),
+		WholeFileFallbackTargets:      compactSortedStrings(item.WholeFileFallbackTargets),
+		AffectedFiles:                 compactSortedStrings(item.AffectedFiles),
+		ScopeRepairHint:               item.ScopeRepairHint,
+		SuggestedReviewAction:         decisionReconciliationDraftReviewAction(posture),
+		BlockingQuestions:             decisionReconciliationDraftBlockingQuestions(item),
+		RequiredSelectionFields:       decisionReconciliationPreviewRequiredFields(DecisionReconciliationOperationEnrichScope),
+		SelectionTemplate:             decisionReconciliationDraftSelectionTemplate(group, item),
 		ReviewNotes: []string{
 			"file overlap is implementation footprint only; select exact governance targets before approval",
 			"use symbol/api_contract/invariant/spec_section targets when possible; whole-file fallback only when no better target exists",
 			"leave the candidate out if subject or target cannot be stated with high confidence",
 		},
 	}
+}
+
+func decisionReconciliationDraftSubjectSuggestions(
+	item DecisionReconciliationItem,
+) []string {
+	suggestions := []string{}
+	if subject := strings.TrimSpace(item.DecisionSubjectRef); subject != "" {
+		suggestions = appendMissingString(suggestions, subject)
+	}
+	titleSlug := sanitizeIDSlug(item.DecisionTitle)
+	contextSlug := sanitizeIDSlug(item.BoundedContext)
+	if titleSlug != "" && contextSlug != "" {
+		suggestions = appendMissingString(suggestions, "subject:"+contextSlug+":"+titleSlug)
+	}
+	if titleSlug != "" {
+		suggestions = appendMissingString(suggestions, "subject:"+titleSlug)
+	}
+	return suggestions
 }
 
 func decisionReconciliationDraftCandidatePosture(item DecisionReconciliationItem) string {

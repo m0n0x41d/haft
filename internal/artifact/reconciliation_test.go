@@ -234,6 +234,10 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	if item.Confidence != "medium" {
 		t.Fatalf("confidence = %q", item.Confidence)
 	}
+	if !containsString(item.DecisionSubjectRefSuggestions, "subject:fpf-retrieval:precise-scope") ||
+		!containsString(item.DecisionSubjectRefSuggestions, "subject:precise-scope") {
+		t.Fatalf("decision_subject_ref_suggestions = %#v", item.DecisionSubjectRefSuggestions)
+	}
 	var selection DecisionReconciliationSelection
 	if err := json.Unmarshal([]byte(item.SelectionTemplate), &selection); err != nil {
 		t.Fatalf("decode selection_template: %v\n%s", err, item.SelectionTemplate)

@@ -59,7 +59,7 @@ func handleSpecSectionLifecycle(projectRoot string) (string, error) {
 }
 
 func handleSpecSectionNextStep(projectRoot string) (string, error) {
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return "", err
 	}

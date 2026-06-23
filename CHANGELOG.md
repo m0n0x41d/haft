@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first SpecSection next-step reads.** `haft_spec_section(action="next_step")`
+  now uses current SQL SpecSection editions before Markdown carriers, matching
+  the existing CLI lifecycle projection while preserving missing-baseline
+  blocking semantics.
 - **Contract-generation code-context budget guard.** Default
   `haft_query(action="code_context")` regression tests now reject hidden
   contract-generation manifest fragments so generated-schema drill-downs cannot

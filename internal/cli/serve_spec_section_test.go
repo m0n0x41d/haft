@@ -7,8 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -215,6 +217,50 @@ func TestHandleHaftSpecSection_DefaultsToServerBoundProjectRoot(t *testing.T) {
 
 	if intent.Phase != specflow.PhaseTargetEnvironmentDraft {
 		t.Fatalf("intent.Phase = %q, want %q", intent.Phase, specflow.PhaseTargetEnvironmentDraft)
+	}
+}
+
+func TestHandleHaftSpecSection_NextStepReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	haftDir := filepath.Join(root, ".haft")
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.next.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	raw, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action":       "next_step",
+		"project_root": root,
+	})
+	if err != nil {
+		t.Fatalf("next_step: %v", err)
+	}
+
+	var intent specflow.WorkflowIntent
+	if err := json.Unmarshal([]byte(raw), &intent); err != nil {
+		t.Fatalf("decode intent: %v\nraw: %s", err, raw)
+	}
+	if len(intent.BlockingFindings) == 0 {
+		t.Fatalf("expected missing-baseline finding for SQL edition: %#v", intent)
+	}
+	if intent.BlockingFindings[0].SectionID != "TS.sql.next.001" {
+		t.Fatalf("next_step read carrier section instead of SQL edition: %#v", intent.BlockingFindings)
 	}
 }
 

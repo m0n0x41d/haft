@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **SQL-first spec check document summaries.** `haft spec check --json` now
+  aggregates repeated SQL-first SpecSection carrier rows by path/kind so the
+  `documents` list reports each carrier once while preserving section counts,
+  active counts, term-map counts, and findings.
 - **Carrier-only semantic drift routing.** `haft drift route carrier_only` and
   `haft_query(action="drift_route", drift_kind="carrier_only")` now classify
   carrier-only changes as recognized carrier-layer drift instead of unknown

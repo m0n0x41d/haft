@@ -41,6 +41,59 @@ func TestCheckSpecDocumentsAcceptsValidSpecSet(t *testing.T) {
 	}
 }
 
+func TestSpecCheckReportAggregatesRepeatedSQLFirstCarrierDocuments(t *testing.T) {
+	specSet := ProjectSpecificationSet{
+		Documents: []SpecDocument{
+			{
+				Path: ".haft/specs/target-system.md",
+				Kind: SpecDocumentKindTargetSystem,
+				Sections: []SpecSection{
+					{ID: "TS.use.001", Status: string(SpecSectionStateActive)},
+				},
+			},
+			{
+				Path: ".haft/specs/target-system.md",
+				Kind: SpecDocumentKindTargetSystem,
+				Sections: []SpecSection{
+					{ID: "TS.use.002", Status: string(SpecSectionStateDraft)},
+				},
+			},
+			{
+				Path: ".haft/specs/term-map.md",
+				Kind: SpecDocumentKindTermMap,
+				TermMapEntries: []TermMapEntry{
+					{Term: "TargetSystem"},
+				},
+			},
+		},
+	}
+
+	report := SpecCheckReportFromSpecificationSet(specSet)
+
+	if len(report.Documents) != 2 {
+		t.Fatalf("documents = %#v, want one target carrier and one term-map carrier", report.Documents)
+	}
+	target := report.Documents[0]
+	if target.Path != ".haft/specs/target-system.md" {
+		t.Fatalf("target document path = %q", target.Path)
+	}
+	if target.SpecSections != 2 {
+		t.Fatalf("target spec_sections = %d, want 2", target.SpecSections)
+	}
+	if target.ActiveSpecSections != 1 {
+		t.Fatalf("target active_spec_sections = %d, want 1", target.ActiveSpecSections)
+	}
+	if report.Summary.SpecSections != 2 {
+		t.Fatalf("summary spec_sections = %d, want 2", report.Summary.SpecSections)
+	}
+	if report.Summary.ActiveSpecSections != 1 {
+		t.Fatalf("summary active_spec_sections = %d, want 1", report.Summary.ActiveSpecSections)
+	}
+	if report.Summary.TermMapEntries != 1 {
+		t.Fatalf("summary term_map_entries = %d, want 1", report.Summary.TermMapEntries)
+	}
+}
+
 func TestCheckSpecDocumentsFindsMissingRequiredSpecSectionField(t *testing.T) {
 	report := CheckSpecDocuments([]SpecDocumentInput{
 		{

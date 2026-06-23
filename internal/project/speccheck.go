@@ -321,9 +321,7 @@ func ProjectSpecificationSetFromDocuments(documents []SpecDocumentInput) Project
 func SpecCheckReportFromSpecificationSet(specSet ProjectSpecificationSet) SpecCheckReport {
 	report := newSpecCheckReport()
 
-	for _, document := range specSet.Documents {
-		report.Documents = append(report.Documents, specCheckDocumentFromSpecDocument(document))
-	}
+	report.Documents = specCheckDocumentsFromSpecDocuments(specSet.Documents)
 	report.Findings = append(report.Findings, specSet.Findings...)
 
 	report.Summary = summarizeSpecCheck(report)
@@ -379,6 +377,39 @@ func specCheckDocumentFromSpecDocument(document SpecDocument) SpecCheckDocument 
 		SpecSections:       len(document.Sections),
 		ActiveSpecSections: countActiveSpecSections(document.Sections),
 		TermMapEntries:     len(document.TermMapEntries),
+	}
+}
+
+func specCheckDocumentsFromSpecDocuments(documents []SpecDocument) []SpecCheckDocument {
+	out := []SpecCheckDocument{}
+	indexByKey := map[string]int{}
+
+	for _, document := range documents {
+		summary := specCheckDocumentFromSpecDocument(document)
+		key := specCheckDocumentKey(summary)
+		index, ok := indexByKey[key]
+		if ok {
+			out[index] = mergeSpecCheckDocument(out[index], summary)
+			continue
+		}
+		indexByKey[key] = len(out)
+		out = append(out, summary)
+	}
+
+	return out
+}
+
+func specCheckDocumentKey(document SpecCheckDocument) string {
+	return document.Path + "\x00" + document.Kind
+}
+
+func mergeSpecCheckDocument(left SpecCheckDocument, right SpecCheckDocument) SpecCheckDocument {
+	return SpecCheckDocument{
+		Path:               left.Path,
+		Kind:               left.Kind,
+		SpecSections:       left.SpecSections + right.SpecSections,
+		ActiveSpecSections: left.ActiveSpecSections + right.ActiveSpecSections,
+		TermMapEntries:     left.TermMapEntries + right.TermMapEntries,
 	}
 }
 

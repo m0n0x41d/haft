@@ -8,7 +8,7 @@
 ```
 ┌─────────────────────────────────────────────┐
 │               SURFACES                       │
-│ Desktop Cockpit │ MCP Plugin │ CLI │ Runtime │
+│ Host Skills │ MCP Server │ CLI │ Runtime │
 └────────────────────┬────────────────────────┘
                      ▼
 ┌─────────────────────────────────────────────┐
@@ -57,7 +57,7 @@
 3. **Reasoning Core depends on Specification Core.** Decisions may reference spec sections; evidence may satisfy spec requirements.
 4. **Flow depends on Reasoning Core.** It runs onboarding, spec planning, commissioning, runtime control, and verification.
 5. **Governor depends on Flow.** It scans specs, artifacts, code, evidence, and runtime state for drift/staleness.
-6. **Surfaces depend on Governor/Flow only.** Desktop/MCP/CLI do not query SQLite or raw files directly.
+6. **Surfaces depend on Governor/Flow only.** Host skills, MCP, and CLI do not query SQLite or raw files directly.
 7. **Side effects only at Flow and above.** Core layers expose pure transformations plus explicit store interfaces.
 
 ## Data Flow: Specify → Think → Run → Govern
@@ -72,7 +72,7 @@ SPECIFY (human + onboarding agent)
   └─ Compute SpecCoverage
        │
        ▼
-THINK (human via desktop, or agent via MCP)
+THINK (human via host skill/CLI, or agent via MCP)
   │
   ├─ Frame problem from spec gap, drift, or human signal
   ├─ Explore variants (3+ genuinely distinct)
@@ -104,7 +104,7 @@ GOVERN (background via Governor layer)
   ├─ Check evidence freshness (valid_until countdown)
   ├─ Compute impact propagation (transitive dependencies)
   ├─ Generate problem candidates for violations
-  └─ Alert via desktop dashboard
+  └─ Alert via h-status / CLI / MCP status
        │
        ▼
   (cycle back to THINK if problems found)
@@ -196,12 +196,12 @@ internal/fpf/                   CORE: FPF spec index and search
 internal/reff/                  CORE: R_eff computation, evidence scoring
 internal/cli/serve.go           MCP: tool dispatch, schema, cross-project recall
 internal/cli/spec.go            CLI: spec check commands
-internal/cli/agent.go           FLOW: standalone agent launcher
+internal/cli/agent.go           ARCHIVE/FLOW: removed standalone agent launcher
 internal/cli/sync.go            FLOW: team sync (.haft/*.md → SQLite)
-internal/agentloop/             FLOW: ReAct coordinator (standalone mode)
+internal/agentloop/             ARCHIVE/FLOW: removed standalone-mode ReAct coordinator
 internal/tools/                 FLOW: tool implementations
 internal/mcp/                   MCP: protocol handler
-desktop-tauri/src/              SURFACE/FLOW: Tauri command shell, task runner, project readiness
-desktop/frontend/src/           SURFACE: React pages, typed workflow UI, and view models
+desktop-tauri/src/              ARCHIVE/SURFACE: historical Tauri command shell and task runner
+desktop/frontend/src/           ARCHIVE/SURFACE: historical React pages and view models
 db/                             PERSISTENCE: SQLite schema, migrations
 ```

@@ -74,6 +74,34 @@ func TestCarrierAuthorityManifestIncludesTargetSystemSupportDocs(t *testing.T) {
 	}
 }
 
+func TestCarrierAuthorityManifestIncludesEnablingSystemSupportDocs(t *testing.T) {
+	entry := carrierManifestEntry(t, "enabling-system-support-docs")
+
+	if !entry.Current {
+		t.Fatal("enabling-system support docs should be current support carriers")
+	}
+	if entry.AuthorityClass != CarrierAuthoritySupport {
+		t.Fatalf("authority_class = %q, want support", entry.AuthorityClass)
+	}
+	if entry.PathPattern != "spec/enabling-system/*.md" {
+		t.Fatalf("path_pattern = %q", entry.PathPattern)
+	}
+}
+
+func TestCarrierAuthorityManifestMarksDesktopLayerContractArchive(t *testing.T) {
+	entry := carrierManifestEntry(t, "archived-desktop-layer-contract")
+
+	if entry.Current {
+		t.Fatal("desktop layer contract should be archive/provenance only")
+	}
+	if entry.AuthorityClass != CarrierAuthorityArchive {
+		t.Fatalf("authority_class = %q, want archive", entry.AuthorityClass)
+	}
+	if entry.DeadSurfacePolicy == "" {
+		t.Fatal("desktop layer contract archive policy must be explicit")
+	}
+}
+
 func TestCarrierAuthorityManifestIncludesHostDisciplineMirror(t *testing.T) {
 	entry := carrierManifestEntry(t, "host-discipline-mirror")
 
@@ -154,6 +182,22 @@ func TestCarrierSemioCheckScansTargetSystemSupportDocs(t *testing.T) {
 	}
 	if len(result.Findings) > 0 {
 		t.Fatalf("safe target-system support doc should not produce findings: %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckScansEnablingSystemSupportDocs(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "spec/enabling-system/ARCHITECTURE.md", "Current surfaces are host skills, MCP, and CLI.")
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if !containsString(result.CheckedFiles, "spec/enabling-system/ARCHITECTURE.md") {
+		t.Fatalf("checked_files missing enabling-system support doc: %#v", result.CheckedFiles)
+	}
+	if len(result.Findings) > 0 {
+		t.Fatalf("safe enabling-system support doc should not produce findings: %#v", result.Findings)
 	}
 }
 
@@ -262,6 +306,29 @@ func TestCarrierSemioCheckDoesNotAllowDeadSurfaceBecauseNeighborSaysSupportedHos
 	}
 	if findings[0].Term != "desktop" {
 		t.Fatalf("finding term = %q", findings[0].Term)
+	}
+}
+
+func TestCarrierSemioCheckFlagsDeadSurfaceInCurrentEnablingDoc(t *testing.T) {
+	findings := checkCarrierSemioText("spec/enabling-system/ARCHITECTURE.md", "Surfaces are Desktop, MCP, and CLI.\n")
+
+	if len(findings) == 0 {
+		t.Fatal("expected current enabling-system desktop wording finding")
+	}
+	if findings[0].Term != "desktop" {
+		t.Fatalf("finding term = %q", findings[0].Term)
+	}
+}
+
+func TestCarrierSemioCheckAllowsArchivedDesktopLayerContract(t *testing.T) {
+	findings := checkCarrierSemioText("spec/enabling-system/DESKTOP_LAYER_CONTRACT.md", `
+# Desktop Layer Contract
+Desktop Cockpit = primary human navigation and approval surface.
+desktop/frontend/src/App.tsx remains a historical implementation note.
+`)
+
+	if len(findings) > 0 {
+		t.Fatalf("archived desktop layer contract should be allowed: %#v", findings)
 	}
 }
 

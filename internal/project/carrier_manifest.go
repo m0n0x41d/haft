@@ -114,6 +114,24 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 			Notes:          "product-value evidence docs must keep claims bounded to explicit evidence refs",
 		},
 		{
+			ID:             "enabling-system-support-docs",
+			PathPattern:    "spec/enabling-system/*.md",
+			AuthorityClass: CarrierAuthoritySupport,
+			Surface:        "enabling_system_doc",
+			Current:        true,
+			Normativity:    "enabling-system support documentation; SQL/artifact graph remains runtime source of truth",
+			Notes:          "current enabling docs must name v8 surfaces; archived desktop docs must stay explicitly archival",
+		},
+		{
+			ID:                "archived-desktop-layer-contract",
+			PathPattern:       "spec/enabling-system/DESKTOP_LAYER_CONTRACT.md",
+			AuthorityClass:    CarrierAuthorityArchive,
+			Surface:           "desktop_archive_doc",
+			Current:           false,
+			Normativity:       "historical desktop layer contract retained for provenance; not current runtime scope",
+			DeadSurfacePolicy: "desktop terms are allowed here only because the whole carrier is archived provenance",
+		},
+		{
 			ID:             "pi-plugin-bundle",
 			PathPattern:    "packages/haft-pi/**",
 			AuthorityClass: CarrierAuthorityCompatibility,
@@ -317,6 +335,7 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 		"CLAUDE.md",
 		".haft/specs/*.md",
 		"spec/target-system/*.md",
+		"spec/enabling-system/*.md",
 		"internal/cli/claude_md_template.md",
 		"internal/cli/skill/*/SKILL.md",
 		"packages/haft-pi/package.json",
@@ -369,7 +388,7 @@ func checkCarrierSemioText(path string, content string) []CarrierSemioFinding {
 	for index, line := range lines {
 		term, ok := deadSurfaceTerm(line)
 		if ok {
-			if allowedDeadSurfaceContext(lines, index) {
+			if archivedDeadSurfaceCarrierPath(path) || allowedDeadSurfaceContext(lines, index) {
 				continue
 			}
 			findings = append(findings, CarrierSemioFinding{
@@ -394,6 +413,18 @@ func checkCarrierSemioText(path string, content string) []CarrierSemioFinding {
 		})
 	}
 	return findings
+}
+
+func archivedDeadSurfaceCarrierPath(path string) bool {
+	cleaned := filepath.ToSlash(strings.TrimSpace(path))
+	for _, archivePath := range []string{
+		"spec/enabling-system/DESKTOP_LAYER_CONTRACT.md",
+	} {
+		if cleaned == archivePath {
+			return true
+		}
+	}
+	return false
 }
 
 func deadSurfaceTerm(line string) (string, bool) {

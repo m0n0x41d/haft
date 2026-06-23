@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Enabling-system carrier semio coverage.** `haft carrier check` now scans
+  `spec/enabling-system/*.md`, treats the desktop layer contract as an explicit
+  archived carrier, and keeps current enabling-system architecture/stack docs
+  aligned to the v8 host-skills + MCP + CLI surface model.
 - **Dead-surface carrier semio guard.** Carrier semio checks no longer treat a
   neighboring "supported hosts" phrase as permission to present desktop/TUI/
   standalone surfaces as current, and target-system support docs now state the

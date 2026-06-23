@@ -55,7 +55,7 @@ func TestTransportActionParity(t *testing.T) {
 		},
 		{
 			toolName:          "haft_query",
-			mcpActions:        []string{"search", "status", "board", "related", "projection", "list", "coverage", "fpf", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path"},
+			mcpActions:        []string{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 			standaloneActions: []string{"search", "status", "related", "projection", "fpf"},
 		},
 	}
@@ -76,8 +76,16 @@ func TestTransportActionParity(t *testing.T) {
 		},
 		"haft_query": {
 			"board":                "MCP-only — dashboard rich-view aggregator for desktop frontend",
+			"code_context":         "MCP-only — fused code graph + governance context; standalone surface is no longer developed",
+			"callees":              "MCP-only — code-intelligence graph traversal; standalone surface is no longer developed",
+			"callers":              "MCP-only — code-intelligence graph traversal; standalone surface is no longer developed",
+			"impact":               "MCP-only — code-intelligence blast-radius traversal; standalone surface is no longer developed",
+			"node":                 "MCP-only — exact symbol source-return with governance fusion; standalone surface is no longer developed",
+			"explore":              "MCP-only — connected code-flow exploration; standalone surface is no longer developed",
+			"ceremony":             "MCP-only — task-local ceremony recommendation; standalone surface is no longer developed",
 			"list":                 "MCP-only — kind enumeration; standalone uses search",
 			"coverage":             "MCP-only — module coverage report; standalone uses status",
+			"check":                "MCP-only — CI-style governance check rollup; standalone has CLI `haft check` instead of the old standalone tool transport",
 			"carrier_manifest":     "MCP-only — explicit read-only carrier authority manifest; standalone has CLI `haft carrier manifest` instead of the old standalone tool transport",
 			"carrier_check":        "MCP-only — explicit read-only carrier semio check; standalone has CLI `haft carrier check` instead of the old standalone tool transport",
 			"contract_audit":       "MCP-only — explicit read-only interface contract-source audit; standalone has CLI `haft interface contract-audit` instead of the old standalone tool transport",
@@ -93,6 +101,7 @@ func TestTransportActionParity(t *testing.T) {
 			"blocked_use":          "MCP-only — explicit read-only blocked-use attention item; standalone has CLI `haft attention blocked` instead of the old standalone tool transport",
 			"value_space":          "MCP-only — explicit read-only engineering-value characteristic space; standalone has CLI `haft value space` instead of the old standalone tool transport",
 			"evidence_path":        "MCP-only — explicit read-only EvidencePath/RelianceDisposition packet; standalone has CLI `haft evidence path` instead of the old standalone tool transport",
+			"resolve_term":         "MCP-only — typed terminology lookup; standalone surface is no longer developed",
 		},
 	}
 

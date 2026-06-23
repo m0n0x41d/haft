@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Transport parity guard current query actions.** The transport action parity
+  regression now documents the current `haft_query` MCP action surface,
+  including code-intelligence, ceremony, check, and term-resolution actions,
+  while keeping the old standalone surface as documented legacy drift instead
+  of silently omitting current actions from the guard.
 - **Product-value evidence post-rebuild packet.** The 2026-06-24 product-value
   evidence now reflects the rebuilt installed CLI, the latest autonomous
   maintenance run/undo command, the read-only overseer drill-down fix, the host

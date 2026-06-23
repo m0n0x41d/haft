@@ -47,6 +47,21 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"// DriftScopeManifest stores the baseline file set for one governed scope.",
 		"// DriftStatus represents the state of a file relative to its baseline.",
 		"BaselineKindUnknownLegacy BaselineKind = \"unknown_legacy_baseline\"",
+		"// additive (new symbols only) — safe to re-baseline without operator review.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/baseline_test.go", strings.Join([]string{
+		"func TestCheckDriftReportsNoBaseline(t *testing.T) {}",
+		"func TestCheckDriftReportsNoBaseline_LikelyImplementedFalseWithoutGit(t *testing.T) {}",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/decision_measure_test.go", strings.Join([]string{
+		"func TestMeasureDoesNotRewriteDecisionBaselineHashes(t *testing.T) {}",
+		"SelectedTitle: \"Keep drift baseline stable\"",
+		"t.Fatalf(\"drift reports = %+v, want one report from unchanged baseline snapshot\", reports)",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/verification_test.go", strings.Join([]string{
+		"if len(result.Baseline) != 2 {",
+		"for _, file := range result.Baseline {",
+		"// Missing files are now skipped gracefully in Baseline.",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/codebase/symhash.go", strings.Join([]string{
 		"// SymbolDrift describes how a single symbol changed between baseline and current.",
@@ -102,6 +117,14 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "internal/cli/maintenance_exec_test.go", strings.Join([]string{
 		"t.Fatal(\"auto mode should have re-baselined the additive drift\")",
 		"t.Fatal(\"undo must restore the PRIOR baseline\")",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/maintenance_plan.go", strings.Join([]string{
+		"// baselines, and config gating live in the shell (internal/cli) — this file",
+		"// re-baseline — the undo payload of the maintenance ledger.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/maintenance_plan_test.go", strings.Join([]string{
+		"if !maintenanceReviewTestContains(materialDrift.SuggestedCommands, `haft_decision(action=\"baseline\"`) {",
+		"t.Fatalf(\"material drift suggested commands missing baseline candidate: %#v\", materialDrift.SuggestedCommands)",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/maintenance_drain.go", strings.Join([]string{
 		"cfg.MaintenanceRebaseline = overseer.MaintenanceModePropose",
@@ -249,8 +272,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 11 {
 		t.Fatalf("spec approval count = %d, want 11", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 28 {
-		t.Fatalf("verified state count = %d, want 28", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 36 {
+		t.Fatalf("verified state count = %d, want 36", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 8 {
 		t.Fatalf("comparison count = %d, want 8", report.Summary.ComparisonOrBenchmark)
@@ -312,11 +335,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TestFixtureSurfaceFiles != 2 {
 		t.Fatalf("test fixture surface files = %d, want 2", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.AutonomousMaintenance != 11 {
-		t.Fatalf("autonomous maintenance count = %d, want 11", report.Summary.AutonomousMaintenance)
+	if report.Summary.AutonomousMaintenance != 14 {
+		t.Fatalf("autonomous maintenance count = %d, want 14", report.Summary.AutonomousMaintenance)
 	}
-	if report.Summary.AutonomousMaintenanceFiles != 5 {
-		t.Fatalf("autonomous maintenance files = %d, want 5", report.Summary.AutonomousMaintenanceFiles)
+	if report.Summary.AutonomousMaintenanceFiles != 7 {
+		t.Fatalf("autonomous maintenance files = %d, want 7", report.Summary.AutonomousMaintenanceFiles)
 	}
 	if report.Summary.MethodPackSurface != 3 {
 		t.Fatalf("method pack count = %d, want 3", report.Summary.MethodPackSurface)

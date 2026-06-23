@@ -781,7 +781,10 @@ func baselineAuditArtifactVerifiedStateSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/artifact/decision.go",
 		"internal/artifact/query.go",
-		"internal/artifact/refresh.go":
+		"internal/artifact/refresh.go",
+		"internal/artifact/baseline_test.go",
+		"internal/artifact/decision_measure_test.go",
+		"internal/artifact/verification_test.go":
 		return true
 	default:
 		return false
@@ -893,7 +896,10 @@ func baselineAuditAgentGuardrailSurface(path string) bool {
 
 func baselineAuditMaintenanceExecutionSurface(path string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/cli/maintenance_exec.go", "internal/cli/maintenance_exec_test.go":
+	case "internal/cli/maintenance_exec.go",
+		"internal/cli/maintenance_exec_test.go",
+		"internal/artifact/maintenance_plan.go",
+		"internal/artifact/maintenance_plan_test.go":
 		return true
 	default:
 		return false
@@ -939,6 +945,7 @@ func baselineAuditAutonomousMaintenanceTerm(value string) bool {
 		"maxrebaselinesperrun",
 		"rung-1 auto-rebaseline",
 		"one-step undo for autonomous re-baselines",
+		"safe to re-baseline without operator review",
 	)
 }
 

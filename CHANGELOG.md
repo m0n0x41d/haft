@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit artifact verification/maintenance classification.** `haft
+  baseline audit` now classifies artifact verification tests and maintenance
+  plan baseline wording as verified-state or autonomous-maintenance surfaces
+  without hiding explicit `BaselineKindUnknownLegacy` diagnostics.
 - **Baseline audit workflow-skill routing classification.** `haft baseline
   audit` now classifies `h-onboard`, `h-reason`, and `h-spec-cover` baseline
   routing text as workflow lifecycle guidance instead of legacy ambiguous debt.

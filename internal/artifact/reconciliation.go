@@ -198,17 +198,18 @@ type DecisionReconciliationSelectionDocument struct {
 }
 
 type DecisionReconciliationSelectionDraft struct {
-	SchemaVersion          int                                `json:"schema_version"`
-	Authority              string                             `json:"authority"`
-	OperatorApproved       bool                               `json:"operator_approved"`
-	ApplyAuthorityRequired string                             `json:"apply_authority_required"`
-	SourcePlanAuthority    string                             `json:"source_plan_authority"`
-	Summary                DecisionReconciliationDraftSummary `json:"summary"`
-	OmittedItems           int                                `json:"omitted_items,omitempty"`
-	FullAuditCommand       string                             `json:"full_audit_command,omitempty"`
-	Items                  []DecisionReconciliationDraftItem  `json:"items,omitempty"`
-	MutationBoundary       []string                           `json:"mutation_boundary"`
-	NextSteps              []string                           `json:"next_steps"`
+	SchemaVersion             int                                      `json:"schema_version"`
+	Authority                 string                                   `json:"authority"`
+	OperatorApproved          bool                                     `json:"operator_approved"`
+	ApplyAuthorityRequired    string                                   `json:"apply_authority_required"`
+	SourcePlanAuthority       string                                   `json:"source_plan_authority"`
+	Summary                   DecisionReconciliationDraftSummary       `json:"summary"`
+	OmittedItems              int                                      `json:"omitted_items,omitempty"`
+	FullAuditCommand          string                                   `json:"full_audit_command,omitempty"`
+	Items                     []DecisionReconciliationDraftItem        `json:"items,omitempty"`
+	SelectionDocumentTemplate *DecisionReconciliationSelectionDocument `json:"selection_document_template,omitempty"`
+	MutationBoundary          []string                                 `json:"mutation_boundary"`
+	NextSteps                 []string                                 `json:"next_steps"`
 }
 
 type DecisionReconciliationSelectionReview struct {
@@ -316,9 +317,10 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 			OmittedCandidates:          omittedItems,
 			SelectedCandidates:         countDecisionReconciliationDraftSelectedCandidates(filteredItems),
 		},
-		OmittedItems:     omittedItems,
-		FullAuditCommand: "haft decision reconcile selection-draft --json --full",
-		Items:            items,
+		OmittedItems:              omittedItems,
+		FullAuditCommand:          "haft decision reconcile selection-draft --json --full",
+		Items:                     items,
+		SelectionDocumentTemplate: decisionReconciliationDraftSelectionDocumentTemplate(items),
 		MutationBoundary: []string{
 			"selection draft is read-only",
 			"draft output is not an operator approval",
@@ -329,7 +331,7 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 		NextSteps: []string{
 			"review each candidate and replace template placeholders with exact subject and target refs",
 			"remove candidates that are uncertain or too broad",
-			"create a separate selection document with authority=operator_approved_reconciliation_selection only after operator approval",
+			"copy selection_document_template only after operator review and fill operator_approval_ref after explicit approval",
 			"apply with haft decision reconcile apply SELECTION.json --json",
 			"rerun haft decision reconcile metrics --json before and after apply",
 		},
@@ -1391,6 +1393,18 @@ func decisionReconciliationDraftSelectionTemplate(
 	group DecisionReconciliationGroup,
 	item DecisionReconciliationItem,
 ) string {
+	selection := decisionReconciliationDraftSelection(group, item)
+	data, err := json.Marshal(selection)
+	if err != nil {
+		return "{}"
+	}
+	return string(data)
+}
+
+func decisionReconciliationDraftSelection(
+	group DecisionReconciliationGroup,
+	item DecisionReconciliationItem,
+) DecisionReconciliationSelection {
 	selection := DecisionReconciliationSelection{
 		Operation:          DecisionReconciliationOperationEnrichScope,
 		ReviewedGroupID:    group.GroupID,
@@ -1409,11 +1423,32 @@ func decisionReconciliationDraftSelectionTemplate(
 			Trigger:   "TODO_trigger",
 		}}
 	}
-	data, err := json.Marshal(selection)
-	if err != nil {
-		return "{}"
+	return selection
+}
+
+func decisionReconciliationDraftSelectionDocumentTemplate(
+	items []DecisionReconciliationDraftItem,
+) *DecisionReconciliationSelectionDocument {
+	if len(items) == 0 {
+		return nil
 	}
-	return string(data)
+	selections := make([]DecisionReconciliationSelection, 0, len(items))
+	for _, item := range items {
+		var selection DecisionReconciliationSelection
+		if err := json.Unmarshal([]byte(item.SelectionTemplate), &selection); err != nil {
+			continue
+		}
+		selections = append(selections, selection)
+	}
+	if len(selections) == 0 {
+		return nil
+	}
+	return &DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "",
+		Items:               selections,
+	}
 }
 
 func draftGovernanceTargets(refs []string) []GovernanceTarget {

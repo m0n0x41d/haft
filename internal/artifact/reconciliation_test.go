@@ -304,6 +304,60 @@ func TestDecisionReconciliationSelectionDraftPrioritizesReviewableCandidates(t *
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftIncludesNonApprovedDocumentTemplate(t *testing.T) {
+	plan := DecisionReconciliationPlan{
+		SchemaVersion: DecisionReconciliationSchemaVersion,
+		Authority:     DecisionReconciliationAuthority,
+		Groups: []DecisionReconciliationGroup{{
+			GroupID: "group-medium",
+			Preview: DecisionReconciliationPreview{
+				ApplyOperation: DecisionReconciliationOperationEnrichScope,
+			},
+			Decisions: []DecisionReconciliationItem{{
+				DecisionID:        "dec-medium",
+				DecisionTitle:     "Medium confidence precise target",
+				GovernanceTargets: []string{"symbol:internal/fpf/specsearch.go:type:Route"},
+			}},
+		}},
+	}
+
+	draft := BuildDecisionReconciliationSelectionDraftFiltered(
+		plan,
+		DecisionReconciliationSelectionDraftFilter{Limit: 1},
+	)
+
+	template := draft.SelectionDocumentTemplate
+	if template == nil {
+		t.Fatal("selection_document_template missing")
+	}
+	if draft.OperatorApproved {
+		t.Fatal("draft must remain not operator approved")
+	}
+	if template.Authority != DecisionReconciliationSelectionApplyAuthority {
+		t.Fatalf("template authority = %q", template.Authority)
+	}
+	if template.OperatorApprovalRef != "" {
+		t.Fatalf("operator_approval_ref = %q, want empty placeholder so apply rejects draft", template.OperatorApprovalRef)
+	}
+	if len(template.Items) != 1 || template.Items[0].DecisionRefs[0] != "dec-medium" {
+		t.Fatalf("template items = %#v", template.Items)
+	}
+
+	store := setupTestDB(t)
+	review := ReviewDecisionReconciliationSelectionDocument(
+		context.Background(),
+		store,
+		*template,
+		"selection-template.json",
+	)
+	if review.ApplyReady {
+		t.Fatalf("template review must not be apply ready without operator approval: %#v", review)
+	}
+	if !containsString(review.ValidationErrors, "operator_approval_ref is required") {
+		t.Fatalf("validation_errors = %#v, want missing operator approval", review.ValidationErrors)
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testing.T) {
 	plan := DecisionReconciliationPlan{
 		SchemaVersion: DecisionReconciliationSchemaVersion,

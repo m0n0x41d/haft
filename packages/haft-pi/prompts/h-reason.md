@@ -1,4 +1,4 @@
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:ca2f674f3fb5cef23d0d7cd0a79af98af80ffa75c90137d5e3a6e7baf0f96513 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:fc6d0b49bfee59c4d7b113c7fe47eac7539c5e44c071d173ee35c1e2bbdacab6 -->
 
 Use Haft/FPF reasoning for this request.
 

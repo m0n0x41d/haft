@@ -28,6 +28,7 @@ const (
 	baselineAuditLifecycleAuth    = "baseline_lifecycle_authority"
 	baselineAuditReleaseNotes     = "release_notes_carrier_baseline"
 	baselineAuditToolSurface      = "baseline_audit_tool_surface"
+	baselineAuditTestFixture      = "baseline_test_fixture_surface"
 	baselineAuditLegacyAmbiguous  = "legacy_ambiguous_baseline"
 )
 
@@ -94,6 +95,8 @@ type baselineTermAuditSummary struct {
 	ReleaseNotesFiles           int `json:"release_notes_carrier_files"`
 	AuditToolSurface            int `json:"baseline_audit_tool_surface"`
 	AuditToolSurfaceFiles       int `json:"baseline_audit_tool_surface_files"`
+	TestFixtureSurface          int `json:"baseline_test_fixture_surface"`
+	TestFixtureSurfaceFiles     int `json:"baseline_test_fixture_surface_files"`
 	LegacyAmbiguousBaseline     int `json:"legacy_ambiguous_baseline"`
 	LegacyAmbiguousFiles        int `json:"legacy_ambiguous_files"`
 }
@@ -187,6 +190,7 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	report.Summary.LifecycleAuthorityFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLifecycleAuth)
 	report.Summary.ReleaseNotesFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditReleaseNotes)
 	report.Summary.AuditToolSurfaceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditToolSurface)
+	report.Summary.TestFixtureSurfaceFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditTestFixture)
 	report.Summary.LegacyAmbiguousFiles = baselineAuditCategoryFiles(report.Findings, baselineAuditLegacyAmbiguous)
 	report.Diagnostics = baselineAuditDiagnostics(report.Findings, report.Summary)
 
@@ -335,6 +339,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditReleaseNotes, "mentions baseline inside release notes; audit-visible provenance, not current terminology debt"
 	case baselineAuditToolSurfaceCarrier(path):
 		return baselineAuditToolSurface, "mentions baseline inside the baseline audit tool implementation; audit-visible self surface, not terminology debt"
+	case baselineAuditTestFixtureSurface(path, value):
+		return baselineAuditTestFixture, "mentions baseline inside test helper or fixture vocabulary; audit-visible test surface, not product terminology debt"
 	case containsAnyBaselineTerm(value,
 		"specsectionbaseline",
 		"specsectionapprovalbaseline",
@@ -521,6 +527,24 @@ func baselineAuditToolSurfaceCarrier(path string) bool {
 	}
 }
 
+func baselineAuditTestFixtureSurface(path string, value string) bool {
+	if !strings.HasSuffix(filepath.ToSlash(path), "_test.go") {
+		return false
+	}
+	return containsAnyBaselineTerm(value,
+		"baselinetest",
+		"testbaseline",
+		"newtestbaselinedb",
+		"newbaselinetestproject",
+		"writebaselinetestsection",
+		"baseline fixture",
+		"baseline test",
+		"decode baseline result",
+		"t.Fatalf(\"baseline",
+		"t.Fatal(\"baseline",
+	)
+}
+
 func containsAnyBaselineTerm(value string, needles ...string) bool {
 	for _, needle := range needles {
 		if strings.Contains(value, needle) {
@@ -628,6 +652,8 @@ func (summary *baselineTermAuditSummary) add(category string) {
 		summary.ReleaseNotesCarrier++
 	case baselineAuditToolSurface:
 		summary.AuditToolSurface++
+	case baselineAuditTestFixture:
+		summary.TestFixtureSurface++
 	case baselineAuditLegacyAmbiguous:
 		summary.LegacyAmbiguousBaseline++
 	}
@@ -642,7 +668,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(
 		w,
-		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d legacy_ambiguous=%d\n",
+		"summary: files=%d matched=%d spec_approval=%d pre_work=%d verified_state=%d comparison=%d ordinary=%d historical_governance=%d support_archive=%d source_spec=%d typed_model=%d lifecycle_authority=%d release_notes=%d audit_tool=%d test_fixture=%d legacy_ambiguous=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.MatchedLines,
 		report.Summary.SpecSectionApprovalBaseline,
@@ -657,6 +683,7 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 		report.Summary.LifecycleAuthority,
 		report.Summary.ReleaseNotesCarrier,
 		report.Summary.AuditToolSurface,
+		report.Summary.TestFixtureSurface,
 		report.Summary.LegacyAmbiguousBaseline,
 	); err != nil {
 		return err

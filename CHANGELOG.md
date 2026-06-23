@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit test-fixture surface classification.** `haft baseline audit`
+  now classifies explicit `_test.go` helper and fixture vocabulary such as
+  `newBaselineTestProject` separately from product terminology debt, while
+  still scanning test files.
 - **Baseline audit SpecSection approval vocabulary.** `haft baseline audit` now
   recognizes SpecSection lifecycle terms such as `spec_lifecycle_approval_baseline`,
   `PutSpecSectionApproval`, `projectBaseline`, `DeriveStateWithBaselines`, and

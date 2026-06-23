@@ -395,6 +395,10 @@ func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
 		"legacy_formality_projection_lossy",
 		"unversioned_formality_source_scale_missing",
 		"current_f0_f9_formality",
+		"claim_truth",
+		"not_claim_truth",
+		"publication",
+		"not_publication",
 	} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.evidence_path shapes missing %q:\n%s", want, shapes)
@@ -405,6 +409,7 @@ func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
 	for _, want := range []string{
 		"blocks bounded reliance",
 		"legacy or undeclared/lossy formality",
+		"publication",
 	} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("query.evidence_path notes missing %q:\n%s", want, notes)

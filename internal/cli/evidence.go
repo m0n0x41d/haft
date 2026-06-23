@@ -160,10 +160,12 @@ func writeEvidencePathSummary(w io.Writer, record artifact.EvidencePathRecord) e
 		))
 	}
 	builder.WriteString(fmt.Sprintf(
-		"authority_boundary: approval=%s gate_decision=%s global_truth=%s\n",
+		"authority_boundary: approval=%s gate_decision=%s claim_truth=%s global_truth=%s publication=%s\n",
 		record.AuthorityBoundary.Approval,
 		record.AuthorityBoundary.GateDecision,
+		record.AuthorityBoundary.ClaimTruth,
 		record.AuthorityBoundary.GlobalTruth,
+		record.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

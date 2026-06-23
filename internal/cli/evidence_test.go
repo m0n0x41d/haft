@@ -36,7 +36,9 @@ func TestWriteEvidencePathSummaryNamesCurrentFormalityScale(t *testing.T) {
 		AuthorityBoundary: artifact.EvidenceAuthorityBoundary{
 			Approval:     artifact.EvidenceBoundaryNotApproval,
 			GateDecision: artifact.EvidenceBoundaryNotGateDecision,
+			ClaimTruth:   artifact.EvidenceBoundaryNotClaimTruth,
 			GlobalTruth:  artifact.EvidenceBoundaryNotGlobalTruth,
+			Publication:  artifact.EvidenceBoundaryNotPublication,
 		},
 	}
 
@@ -47,6 +49,9 @@ func TestWriteEvidencePathSummaryNamesCurrentFormalityScale(t *testing.T) {
 
 	if !strings.Contains(out.String(), "formality: level=F7 scale=fpf-2026-f0-f9 bridge=none loss=none") {
 		t.Fatalf("summary did not name current formality scale:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "authority_boundary: approval=not_approval gate_decision=not_gate_decision claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication") {
+		t.Fatalf("summary did not name full authority boundary:\n%s", out.String())
 	}
 }
 
@@ -79,7 +84,9 @@ func TestWriteEvidencePathSummaryNamesLegacyFormalityBridge(t *testing.T) {
 		AuthorityBoundary: artifact.EvidenceAuthorityBoundary{
 			Approval:     artifact.EvidenceBoundaryNotApproval,
 			GateDecision: artifact.EvidenceBoundaryNotGateDecision,
+			ClaimTruth:   artifact.EvidenceBoundaryNotClaimTruth,
 			GlobalTruth:  artifact.EvidenceBoundaryNotGlobalTruth,
+			Publication:  artifact.EvidenceBoundaryNotPublication,
 		},
 	}
 
@@ -126,7 +133,9 @@ func TestWriteEvidencePathSummaryNamesFormalityDiagnostics(t *testing.T) {
 		AuthorityBoundary: artifact.EvidenceAuthorityBoundary{
 			Approval:     artifact.EvidenceBoundaryNotApproval,
 			GateDecision: artifact.EvidenceBoundaryNotGateDecision,
+			ClaimTruth:   artifact.EvidenceBoundaryNotClaimTruth,
 			GlobalTruth:  artifact.EvidenceBoundaryNotGlobalTruth,
+			Publication:  artifact.EvidenceBoundaryNotPublication,
 		},
 	}
 

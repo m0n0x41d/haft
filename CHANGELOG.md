@@ -42,6 +42,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   measurement responses now state that evidence and WLNK/formality display are
   not approval, not gate passage, and not global truth, and route stronger
   attempted-use reliance through EvidencePath.
+- **EvidencePath claim/publication boundary.** EvidencePath authority
+  boundaries now explicitly state that evidence/formality diagnostics do not
+  create claim truth or publication, in addition to not creating approval,
+  gate passage, or global truth.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

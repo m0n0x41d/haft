@@ -31,8 +31,25 @@ func TestBuildEvidencePathRecordAllowsOnlyBoundedReliance(t *testing.T) {
 	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
 		t.Fatalf("authority_boundary = %+v, want not gate", record.AuthorityBoundary)
 	}
+	if record.AuthorityBoundary.ClaimTruth != EvidenceBoundaryNotClaimTruth {
+		t.Fatalf("authority_boundary = %+v, want not claim truth", record.AuthorityBoundary)
+	}
 	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("authority_boundary = %+v, want not global truth", record.AuthorityBoundary)
+	}
+	if record.AuthorityBoundary.Publication != EvidenceBoundaryNotPublication {
+		t.Fatalf("authority_boundary = %+v, want not publication", record.AuthorityBoundary)
+	}
+	for _, want := range []string{
+		EvidenceBoundaryNotApproval,
+		EvidenceBoundaryNotGateDecision,
+		EvidenceBoundaryNotClaimTruth,
+		EvidenceBoundaryNotGlobalTruth,
+		EvidenceBoundaryNotPublication,
+	} {
+		if !evidencePathBoundaryContains(record.RelianceDisposition.Boundaries, want) {
+			t.Fatalf("reliance boundaries = %#v, want %q", record.RelianceDisposition.Boundaries, want)
+		}
 	}
 }
 
@@ -68,8 +85,14 @@ func TestBuildEvidencePathRecordKeepsFormalitySeparateFromAuthority(t *testing.T
 	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
 		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
 	}
+	if record.AuthorityBoundary.ClaimTruth != EvidenceBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %q", record.AuthorityBoundary.ClaimTruth)
+	}
 	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("global truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+	if record.AuthorityBoundary.Publication != EvidenceBoundaryNotPublication {
+		t.Fatalf("publication boundary = %q", record.AuthorityBoundary.Publication)
 	}
 }
 
@@ -114,8 +137,14 @@ func TestBuildEvidencePathRecordBlocksLegacyFormalityWhenCurrentRequired(t *test
 	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
 		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
 	}
+	if record.AuthorityBoundary.ClaimTruth != EvidenceBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %q", record.AuthorityBoundary.ClaimTruth)
+	}
 	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("global truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+	if record.AuthorityBoundary.Publication != EvidenceBoundaryNotPublication {
+		t.Fatalf("publication boundary = %q", record.AuthorityBoundary.Publication)
 	}
 }
 
@@ -164,8 +193,14 @@ func TestBuildEvidencePathRecordBlocksUnversionedFormalityWhenCurrentRequired(t 
 	if record.AuthorityBoundary.GateDecision != EvidenceBoundaryNotGateDecision {
 		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
 	}
+	if record.AuthorityBoundary.ClaimTruth != EvidenceBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %q", record.AuthorityBoundary.ClaimTruth)
+	}
 	if record.AuthorityBoundary.GlobalTruth != EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("global truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+	if record.AuthorityBoundary.Publication != EvidenceBoundaryNotPublication {
+		t.Fatalf("publication boundary = %q", record.AuthorityBoundary.Publication)
 	}
 }
 
@@ -251,4 +286,14 @@ func evidencePathItem() EvidenceItem {
 
 func evidencePathNow() time.Time {
 	return time.Date(2026, 6, 19, 12, 0, 0, 0, time.UTC)
+}
+
+func evidencePathBoundaryContains(boundaries []string, want string) bool {
+	for _, boundary := range boundaries {
+		if boundary == want {
+			return true
+		}
+	}
+
+	return false
 }

@@ -30,7 +30,9 @@ const (
 
 	EvidenceBoundaryNotApproval     = "not_approval"
 	EvidenceBoundaryNotGateDecision = "not_gate_decision"
+	EvidenceBoundaryNotClaimTruth   = "not_claim_truth"
 	EvidenceBoundaryNotGlobalTruth  = "not_global_truth"
+	EvidenceBoundaryNotPublication  = "not_publication"
 
 	EvidenceFormalityDiagnosticCurrent      = "current_f0_f9_formality"
 	EvidenceFormalityDiagnosticLegacyLoss   = "legacy_formality_projection_lossy"
@@ -112,7 +114,9 @@ type RelianceDisposition struct {
 type EvidenceAuthorityBoundary struct {
 	Approval     string `json:"approval"`
 	GateDecision string `json:"gate_decision"`
+	ClaimTruth   string `json:"claim_truth"`
 	GlobalTruth  string `json:"global_truth"`
+	Publication  string `json:"publication"`
 }
 
 func BuildEvidencePathRecord(
@@ -144,7 +148,9 @@ func BuildEvidencePathRecord(
 		AuthorityBoundary: EvidenceAuthorityBoundary{
 			Approval:     EvidenceBoundaryNotApproval,
 			GateDecision: EvidenceBoundaryNotGateDecision,
+			ClaimTruth:   EvidenceBoundaryNotClaimTruth,
 			GlobalTruth:  EvidenceBoundaryNotGlobalTruth,
+			Publication:  EvidenceBoundaryNotPublication,
 		},
 	}
 }
@@ -300,7 +306,9 @@ func evidenceRelianceDisposition(
 	boundaries := []string{
 		EvidenceBoundaryNotApproval,
 		EvidenceBoundaryNotGateDecision,
+		EvidenceBoundaryNotClaimTruth,
 		EvidenceBoundaryNotGlobalTruth,
+		EvidenceBoundaryNotPublication,
 	}
 	if strings.TrimSpace(attemptedUse.Context) == "" {
 		return evidenceReliance(EvidenceRelianceBlocked, "attempted_use_required", boundaries)

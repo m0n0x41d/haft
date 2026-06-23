@@ -586,7 +586,7 @@ func truncateMeasure(s string, max int) string {
 }
 
 func evidenceRelianceBoundaryLine() string {
-	return "Authority boundary: evidence/WLNK display is not approval, not gate passage, and not global truth; use EvidencePath for attempted-use reliance.\n"
+	return "Authority boundary: evidence/WLNK display is not approval, not gate passage, not claim truth, not global truth, and not publication; use EvidencePath for attempted-use reliance.\n"
 }
 
 // --- Tool handlers ---

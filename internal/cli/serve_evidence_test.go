@@ -49,7 +49,7 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	if !strings.Contains(result, "Evidence attached:") {
 		t.Fatalf("unexpected response: %s", result)
 	}
-	for _, want := range []string{"not approval", "not gate passage", "not global truth", "EvidencePath"} {
+	for _, want := range []string{"not approval", "not gate passage", "not claim truth", "not global truth", "not publication", "EvidencePath"} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("evidence response missing authority boundary %q:\n%s", want, result)
 		}
@@ -154,8 +154,14 @@ func TestHandleQuintQuery_EvidencePathBlocksLegacyFormalityWhenCurrentRequired(t
 	if record.AuthorityBoundary.GateDecision != artifact.EvidenceBoundaryNotGateDecision {
 		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
 	}
+	if record.AuthorityBoundary.ClaimTruth != artifact.EvidenceBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %q", record.AuthorityBoundary.ClaimTruth)
+	}
 	if record.AuthorityBoundary.GlobalTruth != artifact.EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+	if record.AuthorityBoundary.Publication != artifact.EvidenceBoundaryNotPublication {
+		t.Fatalf("publication boundary = %q", record.AuthorityBoundary.Publication)
 	}
 }
 
@@ -310,7 +316,13 @@ func TestHandleQuintQuery_EvidencePathBuildsBoundedReliance(t *testing.T) {
 	if record.AuthorityBoundary.GateDecision != artifact.EvidenceBoundaryNotGateDecision {
 		t.Fatalf("gate boundary = %q", record.AuthorityBoundary.GateDecision)
 	}
+	if record.AuthorityBoundary.ClaimTruth != artifact.EvidenceBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %q", record.AuthorityBoundary.ClaimTruth)
+	}
 	if record.AuthorityBoundary.GlobalTruth != artifact.EvidenceBoundaryNotGlobalTruth {
 		t.Fatalf("truth boundary = %q", record.AuthorityBoundary.GlobalTruth)
+	}
+	if record.AuthorityBoundary.Publication != artifact.EvidenceBoundaryNotPublication {
+		t.Fatalf("publication boundary = %q", record.AuthorityBoundary.Publication)
 	}
 }

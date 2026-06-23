@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation draft selection boundary.** `haft decision reconcile
+  selection-draft` now keeps low/medium-confidence scope-enrichment candidates
+  as review candidates instead of counting them as selected apply candidates;
+  compact text prints both review-candidate and selected-candidate counts.
 - **Pi generated schema mirror coverage.** Pi TypeBox schema regression coverage
   now validates every generated MCP schema fragment, not only `haft_query`, and
   the packaged Pi mirrors now include the missing ProblemCard, ChoiceResult,

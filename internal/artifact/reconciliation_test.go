@@ -169,6 +169,12 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	if draft.Summary.ScopeEnrichmentCandidates != 1 {
 		t.Fatalf("scope_enrichment_candidates = %d, want 1", draft.Summary.ScopeEnrichmentCandidates)
 	}
+	if draft.Summary.OperatorApprovalCandidates != 1 {
+		t.Fatalf("operator_approval_candidates = %d, want 1", draft.Summary.OperatorApprovalCandidates)
+	}
+	if draft.Summary.SelectedCandidates != 0 {
+		t.Fatalf("selected_candidates = %d, want 0 for low-confidence draft item", draft.Summary.SelectedCandidates)
+	}
 	if len(draft.Items) != 1 {
 		t.Fatalf("items = %#v", draft.Items)
 	}
@@ -214,6 +220,9 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 
 	if len(draft.Items) != 1 {
 		t.Fatalf("items = %#v", draft.Items)
+	}
+	if draft.Summary.SelectedCandidates != 0 {
+		t.Fatalf("selected_candidates = %d, want 0 for medium-confidence draft item", draft.Summary.SelectedCandidates)
 	}
 	item := draft.Items[0]
 	if strings.Contains(item.SelectionTemplate, "TODO_target_kind") {
@@ -297,8 +306,8 @@ func TestDecisionReconciliationSelectionDraftFilterKeepsReportOnlyBatch(t *testi
 	if draft.Summary.ScopeEnrichmentCandidates != 3 {
 		t.Fatalf("scope_enrichment_candidates = %d, want full source count 3", draft.Summary.ScopeEnrichmentCandidates)
 	}
-	if draft.Summary.OperatorApprovalCandidates != 1 || draft.Summary.SelectedCandidates != 1 {
-		t.Fatalf("filtered summary = %#v, want one selected candidate", draft.Summary)
+	if draft.Summary.OperatorApprovalCandidates != 1 || draft.Summary.SelectedCandidates != 0 {
+		t.Fatalf("filtered summary = %#v, want one review candidate and zero selected candidates", draft.Summary)
 	}
 	if len(draft.Items) != 1 {
 		t.Fatalf("items = %#v, want one filtered candidate", draft.Items)

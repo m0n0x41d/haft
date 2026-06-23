@@ -557,6 +557,9 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	if _, err := fmt.Fprintf(output, "scope_enrichment_candidates: %d\n", draft.Summary.ScopeEnrichmentCandidates); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(output, "operator_approval_candidates: %d\n", draft.Summary.OperatorApprovalCandidates); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(output, "selected_candidates: %d\n", draft.Summary.SelectedCandidates); err != nil {
 		return err
 	}

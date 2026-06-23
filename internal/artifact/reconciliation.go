@@ -244,7 +244,7 @@ type DecisionReconciliationDraftSummary struct {
 	ReviewedGroups             int `json:"reviewed_groups"`
 	ScopeEnrichmentCandidates  int `json:"scope_enrichment_candidates"`
 	OperatorApprovalCandidates int `json:"operator_approval_candidates"`
-	SelectedCandidates         int `json:"selected_candidates,omitempty"`
+	SelectedCandidates         int `json:"selected_candidates"`
 }
 
 type DecisionReconciliationDraftItem struct {
@@ -305,7 +305,7 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 			ReviewedGroups:             len(plan.Groups),
 			ScopeEnrichmentCandidates:  len(allItems),
 			OperatorApprovalCandidates: len(items),
-			SelectedCandidates:         len(items),
+			SelectedCandidates:         countDecisionReconciliationDraftSelectedCandidates(items),
 		},
 		Items: items,
 		MutationBoundary: []string{
@@ -323,6 +323,16 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 			"rerun haft decision reconcile metrics --json before and after apply",
 		},
 	}
+}
+
+func countDecisionReconciliationDraftSelectedCandidates(items []DecisionReconciliationDraftItem) int {
+	total := 0
+	for _, item := range items {
+		if item.Confidence == "high" {
+			total++
+		}
+	}
+	return total
 }
 
 type DecisionReconciliationClaimLifecycleUpdate struct {

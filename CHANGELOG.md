@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit MCP/tool API classification.** `haft baseline audit` now
+  classifies MCP server schema text and haft tool baseline-output tests as
+  DecisionRecord baseline API surface terminology.
 - **Baseline audit overseer/MethodPack classification.** `haft baseline audit`
   now classifies overseer maintenance rebaseline wording as autonomous
   maintenance terminology and built-in MethodPack baseline evidence wording as

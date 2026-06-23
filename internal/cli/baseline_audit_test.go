@@ -143,6 +143,16 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"- baseline: Snapshot affected files after implementation and before measurement.",
 		`"action": map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}}`,
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/fpf/server.go", strings.Join([]string{
+		`"enum": []interface{}{"decide", "apply", "measure", "evidence", "baseline"},`,
+		`"description": "decide=DRR creation, apply=brief, measure=impact, evidence=attach, baseline=snapshot files",`,
+		`"description": "(decide/baseline) Affected files.",`,
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/tools/haft_test.go", strings.Join([]string{
+		`baselineResult, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{`,
+		`"action": "baseline",`,
+		`t.Fatalf("baseline output should pair decision title with ref:\n%s", baselineResult.DisplayText)`,
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/serve_decision_test.go", strings.Join([]string{
 		"func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {}",
 		`"action": "baseline",`,
@@ -279,11 +289,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.LegacyBindingScopeFiles != 1 {
 		t.Fatalf("legacy binding scope files = %d, want 1", report.Summary.LegacyBindingScopeFiles)
 	}
-	if report.Summary.DecisionBaselineAPI != 4 {
-		t.Fatalf("decision baseline api count = %d, want 4", report.Summary.DecisionBaselineAPI)
+	if report.Summary.DecisionBaselineAPI != 10 {
+		t.Fatalf("decision baseline api count = %d, want 10", report.Summary.DecisionBaselineAPI)
 	}
-	if report.Summary.DecisionBaselineAPIFiles != 2 {
-		t.Fatalf("decision baseline api files = %d, want 2", report.Summary.DecisionBaselineAPIFiles)
+	if report.Summary.DecisionBaselineAPIFiles != 4 {
+		t.Fatalf("decision baseline api files = %d, want 4", report.Summary.DecisionBaselineAPIFiles)
 	}
 	if report.Summary.BaselinePresentation != 4 {
 		t.Fatalf("baseline presentation count = %d, want 4", report.Summary.BaselinePresentation)

@@ -786,9 +786,11 @@ func baselineAuditCodebaseSymbolDriftSurface(path string) bool {
 
 func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/cli/serve.go",
+	case "internal/fpf/server.go",
+		"internal/cli/serve.go",
 		"internal/cli/serve_decision_test.go",
-		"internal/tools/haft.go":
+		"internal/tools/haft.go",
+		"internal/tools/haft_test.go":
 		return true
 	case "internal/cli/interface.go":
 		return containsAnyBaselineTerm(value,

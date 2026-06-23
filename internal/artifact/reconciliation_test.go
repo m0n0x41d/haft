@@ -571,6 +571,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsDraftNotApplyReady(
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-scope-review", StatusActive, "runtime", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-scope-review")
 
 	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -578,7 +579,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsDraftNotApplyReady(
 		OperatorApprovalRef: "",
 		Items: []DecisionReconciliationSelection{{
 			Operation:          DecisionReconciliationOperationEnrichScope,
-			ReviewedGroupID:    "decision-reconcile-scope-review",
+			ReviewedGroupID:    groupID,
 			DecisionRefs:       []string{"dec-scope-review"},
 			DecisionSubjectRef: "runtime:review_scope",
 			GovernanceTargets: []GovernanceTarget{{
@@ -623,6 +624,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsApprovedReady(t *te
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-scope-ready", StatusActive, "runtime", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-scope-ready")
 
 	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -630,7 +632,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsApprovedReady(t *te
 		OperatorApprovalRef: "chat:approved-scope-ready",
 		Items: []DecisionReconciliationSelection{{
 			Operation:          DecisionReconciliationOperationEnrichScope,
-			ReviewedGroupID:    "decision-reconcile-scope-ready",
+			ReviewedGroupID:    groupID,
 			DecisionRefs:       []string{"dec-scope-ready"},
 			DecisionSubjectRef: "runtime:ready_scope",
 			GovernanceTargets: []GovernanceTarget{{
@@ -660,6 +662,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsInvalidItem(t *test
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-scope-invalid-review", StatusActive, "runtime", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-scope-invalid-review")
 
 	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -667,7 +670,7 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsInvalidItem(t *test
 		OperatorApprovalRef: "chat:approved-invalid-review",
 		Items: []DecisionReconciliationSelection{{
 			Operation:          DecisionReconciliationOperationEnrichScope,
-			ReviewedGroupID:    "decision-reconcile-invalid-review",
+			ReviewedGroupID:    groupID,
 			DecisionRefs:       []string{"dec-scope-invalid-review"},
 			DecisionSubjectRef: "runtime:invalid_review_scope",
 			Reason:             "Missing concrete target.",
@@ -686,14 +689,57 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsInvalidItem(t *test
 	}
 }
 
+func TestReviewDecisionReconciliationSelectionDocumentReportsStaleReviewedGroup(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-stale-group", StatusActive, "runtime", DecisionFields{}, now)
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:approved-stale-group",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    "decision-reconcile-stale",
+			DecisionRefs:       []string{"dec-stale-group"},
+			DecisionSubjectRef: "runtime:stale_group",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/stale_group",
+			}},
+			Reason: "Stale group id should not be apply-ready.",
+		}},
+	}, "stale-selection.json")
+
+	if review.ApplyReady {
+		t.Fatalf("apply_ready = true for stale group: %#v", review)
+	}
+	if len(review.Items) != 1 || review.Items[0].ApplyReady {
+		t.Fatalf("item review = %#v", review.Items)
+	}
+	if len(review.Items[0].ValidationErrors) != 1 ||
+		!strings.Contains(review.Items[0].ValidationErrors[0], "is not present in the current DecisionReconciliationPlan") {
+		t.Fatalf("item validation_errors = %#v", review.Items[0].ValidationErrors)
+	}
+}
+
 func TestApplyDecisionReconciliationMergeThroughSuccessorPreservesLineage(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 	now := time.Now().UTC()
-	createDecisionForReconciliation(t, store, "dec-old-a", StatusActive, "artifact", DecisionFields{}, now)
-	createDecisionForReconciliation(t, store, "dec-old-b", StatusActive, "artifact", DecisionFields{}, now)
-	createDecisionForReconciliation(t, store, "dec-successor", StatusActive, "artifact", DecisionFields{}, now)
+	mergeFields := DecisionFields{
+		DecisionSubjectRef: "subject:artifact-merge",
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "api_contract",
+			Ref:  "api_contract:haft/artifact_merge",
+		}},
+	}
+	createDecisionForReconciliation(t, store, "dec-old-a", StatusActive, "artifact", mergeFields, now)
+	createDecisionForReconciliation(t, store, "dec-old-b", StatusActive, "artifact", mergeFields, now)
+	createDecisionForReconciliation(t, store, "dec-successor", StatusActive, "artifact", mergeFields, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-old-a", "dec-old-b")
 
 	result, err := ApplyDecisionReconciliationSelections(ctx, store, haftDir, DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -701,7 +747,7 @@ func TestApplyDecisionReconciliationMergeThroughSuccessorPreservesLineage(t *tes
 		OperatorApprovalRef: "chat:operator-approved-merge",
 		Items: []DecisionReconciliationSelection{{
 			Operation:       DecisionReconciliationOperationMergeThroughSuccessor,
-			ReviewedGroupID: "decision-reconcile-merge",
+			ReviewedGroupID: groupID,
 			DecisionRefs:    []string{"dec-old-a", "dec-old-b"},
 			SuccessorRef:    "dec-successor",
 			Reason:          "Consolidated governing frontier.",
@@ -745,6 +791,7 @@ func TestApplyDecisionReconciliationRetireWithoutSuccessor(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-obsolete", StatusActive, "runtime", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-obsolete")
 
 	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -752,7 +799,7 @@ func TestApplyDecisionReconciliationRetireWithoutSuccessor(t *testing.T) {
 		OperatorApprovalRef: "chat:operator-approved-retire",
 		Items: []DecisionReconciliationSelection{{
 			Operation:       DecisionReconciliationOperationRetireWithoutSuccessor,
-			ReviewedGroupID: "decision-reconcile-retire",
+			ReviewedGroupID: groupID,
 			DecisionRefs:    []string{"dec-obsolete"},
 			Reason:          "Surface removed.",
 		}},
@@ -778,6 +825,7 @@ func TestApplyDecisionReconciliationReopenCreatesProblem(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-stale", StatusActive, "status", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-stale")
 
 	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -785,7 +833,7 @@ func TestApplyDecisionReconciliationReopenCreatesProblem(t *testing.T) {
 		OperatorApprovalRef: "chat:operator-approved-reopen",
 		Items: []DecisionReconciliationSelection{{
 			Operation:       DecisionReconciliationOperationReopen,
-			ReviewedGroupID: "decision-reconcile-reopen",
+			ReviewedGroupID: groupID,
 			DecisionRefs:    []string{"dec-stale"},
 			Reason:          "Assumptions changed.",
 		}},
@@ -833,6 +881,7 @@ func TestApplyDecisionReconciliationClaimLifecycleUpdateKeepsDecisionActive(t *t
 			},
 		},
 	}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-claims")
 
 	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -840,7 +889,7 @@ func TestApplyDecisionReconciliationClaimLifecycleUpdateKeepsDecisionActive(t *t
 		OperatorApprovalRef: "chat:operator-approved-claim-lifecycle",
 		Items: []DecisionReconciliationSelection{{
 			Operation:       DecisionReconciliationOperationClaimLifecycleUpdate,
-			ReviewedGroupID: "decision-reconcile-claims",
+			ReviewedGroupID: groupID,
 			DecisionRefs:    []string{"dec-claims"},
 			ClaimLifecycleUpdates: []DecisionReconciliationClaimLifecycleUpdate{
 				{
@@ -906,6 +955,7 @@ func TestApplyDecisionReconciliationEnrichScopeUpdatesOnlyScopeFields(t *testing
 			Threshold:  "Scope refs exist.",
 		}},
 	}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-scope")
 
 	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -913,7 +963,7 @@ func TestApplyDecisionReconciliationEnrichScopeUpdatesOnlyScopeFields(t *testing
 		OperatorApprovalRef: "chat:operator-approved-scope-enrichment",
 		Items: []DecisionReconciliationSelection{{
 			Operation:          DecisionReconciliationOperationEnrichScope,
-			ReviewedGroupID:    "decision-reconcile-scope",
+			ReviewedGroupID:    groupID,
 			DecisionRefs:       []string{"dec-scope"},
 			DecisionSubjectRef: "runtime:explicit_boundary",
 			GovernanceTargets: []GovernanceTarget{{
@@ -985,6 +1035,8 @@ func TestApplyDecisionReconciliationEnrichScopeValidatesWholeBatchBeforeMutation
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-scope-valid", StatusActive, "runtime", DecisionFields{}, now)
 	createDecisionForReconciliation(t, store, "dec-scope-invalid", StatusActive, "runtime", DecisionFields{}, now)
+	validGroupID := reviewedGroupIDForDecisionRefs(t, store, "dec-scope-valid")
+	invalidGroupID := reviewedGroupIDForDecisionRefs(t, store, "dec-scope-invalid")
 
 	_, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -993,7 +1045,7 @@ func TestApplyDecisionReconciliationEnrichScopeValidatesWholeBatchBeforeMutation
 		Items: []DecisionReconciliationSelection{
 			{
 				Operation:          DecisionReconciliationOperationEnrichScope,
-				ReviewedGroupID:    "decision-reconcile-valid-scope",
+				ReviewedGroupID:    validGroupID,
 				DecisionRefs:       []string{"dec-scope-valid"},
 				DecisionSubjectRef: "runtime:valid_scope",
 				GovernanceTargets: []GovernanceTarget{{
@@ -1004,7 +1056,7 @@ func TestApplyDecisionReconciliationEnrichScopeValidatesWholeBatchBeforeMutation
 			},
 			{
 				Operation:          DecisionReconciliationOperationEnrichScope,
-				ReviewedGroupID:    "decision-reconcile-invalid-scope",
+				ReviewedGroupID:    invalidGroupID,
 				DecisionRefs:       []string{"dec-scope-invalid"},
 				DecisionSubjectRef: "runtime:invalid_scope",
 				Reason:             "Missing governance/drift target.",
@@ -1030,6 +1082,7 @@ func TestApplyDecisionReconciliationValidatesWholeBatchBeforeMutation(t *testing
 	ctx := context.Background()
 	now := time.Now().UTC()
 	createDecisionForReconciliation(t, store, "dec-stays-active", StatusActive, "artifact", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-stays-active")
 
 	_, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
 		SchemaVersion:       DecisionReconciliationSchemaVersion,
@@ -1038,13 +1091,13 @@ func TestApplyDecisionReconciliationValidatesWholeBatchBeforeMutation(t *testing
 		Items: []DecisionReconciliationSelection{
 			{
 				Operation:       DecisionReconciliationOperationRetireWithoutSuccessor,
-				ReviewedGroupID: "decision-reconcile-retire",
+				ReviewedGroupID: groupID,
 				DecisionRefs:    []string{"dec-stays-active"},
 				Reason:          "Would be valid alone.",
 			},
 			{
 				Operation:       DecisionReconciliationOperationSupersede,
-				ReviewedGroupID: "decision-reconcile-invalid",
+				ReviewedGroupID: groupID,
 				DecisionRefs:    []string{"dec-stays-active"},
 				Reason:          "Missing successor.",
 			},
@@ -1061,6 +1114,30 @@ func TestApplyDecisionReconciliationValidatesWholeBatchBeforeMutation(t *testing
 	if decision.Meta.Status != StatusActive {
 		t.Fatalf("status = %q, want active; first item mutated before validation failed", decision.Meta.Status)
 	}
+}
+
+func reviewedGroupIDForDecisionRefs(t *testing.T, store *Store, refs ...string) string {
+	t.Helper()
+
+	plan, err := BuildDecisionReconciliationPlan(context.Background(), store)
+	if err != nil {
+		t.Fatalf("BuildDecisionReconciliationPlan: %v", err)
+	}
+	wanted := stringSet(compactSortedStrings(refs))
+	for _, group := range plan.Groups {
+		groupRefs := stringSet(compactSortedStrings(group.DecisionRefs))
+		matched := 0
+		for ref := range wanted {
+			if _, ok := groupRefs[ref]; ok {
+				matched++
+			}
+		}
+		if matched == len(wanted) {
+			return group.GroupID
+		}
+	}
+	t.Fatalf("no reconciliation group contains decision refs %v in plan %#v", refs, plan.Groups)
+	return ""
 }
 
 func hasLink(links []Link, ref string, linkType string) bool {

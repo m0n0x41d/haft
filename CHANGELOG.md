@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `apply`, reports `apply_ready`, item-level errors, and the apply command only
   when authority is already `operator_approved_reconciliation_selection`,
   without creating approval or mutating DecisionRecords.
+- **Current-plan reconciliation selection validation.** Reconciliation
+  selection review and apply now reject stale or fictional `reviewed_group_id`
+  values and require each selected decision to belong to the reviewed current
+  `DecisionReconciliationPlan` group before any mutation can run.
 - **Compact broad code-context invariants.** File-level
   `haft_query(action="code_context")` and `lane="invariants"` now label large
   invariant fanout as broad file context, cap the default candidate list, and

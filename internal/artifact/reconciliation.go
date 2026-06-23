@@ -254,6 +254,10 @@ type DecisionReconciliationSelection struct {
 	Reason                    string                                       `json:"reason"`
 }
 
+type decisionReconciliationPlanIndex struct {
+	groups map[string]DecisionReconciliationGroup
+}
+
 func BuildDecisionReconciliationSelectionDraft(
 	plan DecisionReconciliationPlan,
 ) DecisionReconciliationSelectionDraft {
@@ -349,8 +353,12 @@ func ValidateDecisionReconciliationSelectionDocument(
 	if len(document.Items) == 0 {
 		return errors.New("items must contain at least one selection")
 	}
+	planIndex, err := buildDecisionReconciliationPlanIndex(ctx, store)
+	if err != nil {
+		return err
+	}
 	for index, item := range document.Items {
-		if err := validateDecisionReconciliationSelection(ctx, store, index, item); err != nil {
+		if err := validateDecisionReconciliationSelection(ctx, store, planIndex, index, item); err != nil {
 			return err
 		}
 	}
@@ -381,7 +389,11 @@ func ReviewDecisionReconciliationSelectionDocument(
 	review.OperatorApproved = review.DocumentAuthority == review.RequiredAuthority &&
 		review.OperatorApprovalRef != ""
 	review.ValidationErrors = decisionReconciliationDocumentReviewErrors(document)
-	review.Items = decisionReconciliationItemReviews(ctx, store, document.Items)
+	planIndex, err := buildDecisionReconciliationPlanIndex(ctx, store)
+	if err != nil {
+		review.ValidationErrors = appendMissingString(review.ValidationErrors, err.Error())
+	}
+	review.Items = decisionReconciliationItemReviews(ctx, store, planIndex, document.Items)
 	review.ValidationErrors = appendMissingString(
 		review.ValidationErrors,
 		decisionReconciliationStrictValidationError(ctx, store, document),
@@ -441,6 +453,7 @@ func decisionReconciliationDocumentReviewErrors(
 func decisionReconciliationItemReviews(
 	ctx context.Context,
 	store ArtifactStore,
+	planIndex decisionReconciliationPlanIndex,
 	items []DecisionReconciliationSelection,
 ) []DecisionReconciliationSelectionReviewItem {
 	reviews := make([]DecisionReconciliationSelectionReviewItem, 0, len(items))
@@ -451,13 +464,28 @@ func decisionReconciliationItemReviews(
 			ReviewedGroupID: strings.TrimSpace(item.ReviewedGroupID),
 			DecisionRefs:    compactSortedStrings(item.DecisionRefs),
 		}
-		if err := validateDecisionReconciliationSelection(ctx, store, index, item); err != nil {
+		if err := validateDecisionReconciliationSelection(ctx, store, planIndex, index, item); err != nil {
 			review.ValidationErrors = []string{err.Error()}
 		}
 		review.ApplyReady = len(review.ValidationErrors) == 0
 		reviews = append(reviews, review)
 	}
 	return reviews
+}
+
+func buildDecisionReconciliationPlanIndex(
+	ctx context.Context,
+	store ArtifactStore,
+) (decisionReconciliationPlanIndex, error) {
+	plan, err := BuildDecisionReconciliationPlan(ctx, store)
+	if err != nil {
+		return decisionReconciliationPlanIndex{}, fmt.Errorf("build current reconciliation plan: %w", err)
+	}
+	groups := make(map[string]DecisionReconciliationGroup, len(plan.Groups))
+	for _, group := range plan.Groups {
+		groups[group.GroupID] = group
+	}
+	return decisionReconciliationPlanIndex{groups: groups}, nil
 }
 
 func decisionReconciliationStrictValidationError(
@@ -530,6 +558,7 @@ func appendMissingString(values []string, value string) []string {
 func validateDecisionReconciliationSelection(
 	ctx context.Context,
 	store ArtifactStore,
+	planIndex decisionReconciliationPlanIndex,
 	index int,
 	item DecisionReconciliationSelection,
 ) error {
@@ -547,6 +576,9 @@ func validateDecisionReconciliationSelection(
 	refs := compactSortedStrings(item.DecisionRefs)
 	if len(refs) == 0 {
 		return fmt.Errorf("%s.decision_refs must contain at least one decision", prefix)
+	}
+	if err := validateDecisionReconciliationReviewedGroup(planIndex, prefix, item.ReviewedGroupID, refs); err != nil {
+		return err
 	}
 	if operation == DecisionReconciliationOperationReopen && len(refs) != 1 {
 		return fmt.Errorf("%s.decision_refs must contain exactly one decision for reopen", prefix)
@@ -587,6 +619,26 @@ func validateDecisionReconciliationSelection(
 		}
 		if ref == strings.TrimSpace(item.SuccessorRef) {
 			return fmt.Errorf("%s.decision_refs must not include successor_ref %q", prefix, ref)
+		}
+	}
+	return nil
+}
+
+func validateDecisionReconciliationReviewedGroup(
+	planIndex decisionReconciliationPlanIndex,
+	prefix string,
+	reviewedGroupID string,
+	decisionRefs []string,
+) error {
+	groupID := strings.TrimSpace(reviewedGroupID)
+	group, ok := planIndex.groups[groupID]
+	if !ok {
+		return fmt.Errorf("%s.reviewed_group_id %q is not present in the current DecisionReconciliationPlan; rerun `haft decision reconcile --json` and rebuild the selection", prefix, groupID)
+	}
+	groupRefs := stringSet(compactSortedStrings(group.DecisionRefs))
+	for _, ref := range decisionRefs {
+		if _, ok := groupRefs[ref]; !ok {
+			return fmt.Errorf("%s.decision_refs contains %q, which is not in reviewed_group_id %q", prefix, ref, groupID)
 		}
 	}
 	return nil

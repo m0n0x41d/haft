@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecSection approval vocabulary.** `haft baseline audit` now
+  recognizes SpecSection lifecycle terms such as `spec_lifecycle_approval_baseline`,
+  `PutSpecSectionApproval`, `projectBaseline`, `DeriveStateWithBaselines`, and
+  baseline recorded/current/overwritten messages as SpecSection approval
+  baseline terminology.
 - **Baseline audit verified-state vocabulary.** `haft baseline audit` now
   recognizes decision drift/file-hash baseline vocabulary such as
   `BaselineInput`, `HasBaseline`, `DriftNoBaseline`, stored baseline hashes,

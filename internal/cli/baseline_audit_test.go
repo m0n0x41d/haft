@@ -57,6 +57,14 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"LegacyBindingPostureMissingSymbolBaseline = \"missing_symbol_baseline\"",
 		"LegacyBindingActionProposeRebaseline = \"propose_rebaseline_with_binding_targets\"",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/tools/haft.go", strings.Join([]string{
+		"- baseline: Snapshot affected files after implementation and before measurement.",
+		`"action": map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}}`,
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/serve_decision_test.go", strings.Join([]string{
+		"func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {}",
+		`"action": "baseline",`,
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
@@ -151,6 +159,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.LegacyBindingScopeFiles != 1 {
 		t.Fatalf("legacy binding scope files = %d, want 1", report.Summary.LegacyBindingScopeFiles)
 	}
+	if report.Summary.DecisionBaselineAPI != 4 {
+		t.Fatalf("decision baseline api count = %d, want 4", report.Summary.DecisionBaselineAPI)
+	}
+	if report.Summary.DecisionBaselineAPIFiles != 2 {
+		t.Fatalf("decision baseline api files = %d, want 2", report.Summary.DecisionBaselineAPIFiles)
+	}
 	if report.Summary.LegacyAmbiguousBaseline != 2 {
 		t.Fatalf("legacy ambiguous count = %d, want 2", report.Summary.LegacyAmbiguousBaseline)
 	}
@@ -209,6 +223,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			AutonomousMaintenance:       2,
 			SpecUseCurrentness:          2,
 			LegacyBindingScope:          2,
+			DecisionBaselineAPI:         4,
 			LegacyAmbiguousBaseline:     2,
 			LegacyAmbiguousFiles:        2,
 		},
@@ -250,6 +265,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"autonomous_maintenance=2",
 		"spec_use_currentness=2",
 		"legacy_binding_scope=2",
+		"decision_baseline_api=4",
 		"legacy_ambiguous=2",
 		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 2 legacy ambiguous baseline line(s) across 2 file(s)",
 		"next_action: rename the usage to a typed baseline concept",

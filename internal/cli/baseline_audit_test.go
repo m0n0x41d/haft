@@ -81,6 +81,14 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"baseline := goldenRetrievalMetrics{Name: \"deterministic\", Total: len(cases)}",
 		"baseline.Successful++",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/parity_schema.go", "Variant IDs that share comparable baseline conditions (e.g., same cohort, same dataset version).\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/value_space.go", strings.Join([]string{
+		"Trigger: \"value_claim_is_made_without_equal_budget_baseline_or_explicit_abstain\"",
+		"EvidenceRule: \"compare against declared baseline under parity or label the value claim unavailable for the window\"",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/solution_test.go", "func TestCompare_ErrorsOnScoredVariantOutsideStructuredBaseline(t *testing.T) {}\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/umbrella_triggers.json", "\"recover_to\": \"better on WHICH dimension, versus what baseline\"\n")
+	writeBaselineAuditFixture(t, root, "internal/fpf/patterns/compare.md", "Parity keeps same budget, same assumptions, same scope, same evidence standards, and same baseline.\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/solution.go", "BaselineSet: []string{\"Redis\", \"NATS\"},\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/serve_projection_test.go", strings.Join([]string{
 		"CounterArgument: \"Tooling and local debugging remain weaker than the simpler HTTP baseline.\"",
@@ -153,6 +161,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"// MaintenanceRebaseline gates re-baselining decisions whose drift the",
 		"MaintenanceRebaseline string `json:\"maintenance_rebaseline\" yaml:\"maintenance_rebaseline\"`",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/overseer/maintenance.go", "Action: \"suppressed_auto_baseline_candidate\"\n")
+	writeBaselineAuditFixture(t, root, "internal/overseer/risk.go", strings.Join([]string{
+		"\"rebaseline\",",
+		"\"rebaseline authority\",",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/overseer/runner.go", "\"Do not approve, merge, deploy, decide, commission, or rebaseline.\"\n")
 	writeBaselineAuditFixture(t, root, "internal/method/builtin.go", strings.Join([]string{
 		"Intent: \"A refactor should preserve public behavior; baseline and post-change checks make that claim concrete.\"",
 		"ID: \"baseline_and_post_refactor_checks_recorded\"",
@@ -169,6 +183,12 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/drift.go", strings.Join([]string{
 		"codeSpecSectionNeedsBaseline = \"spec_section_needs_baseline\"",
 		"NextAction: fmt.Sprintf(\"haft_spec_section(action=\\\"approve\\\", section_id=%q) to record a baseline\", section.ID),",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/contextgraph/fetch.go", "No line-range row covered this line (symbol not symbol-baselined, or unknown).\n")
+	writeBaselineAuditFixture(t, root, "internal/graphrank/graphrank.go", "Dangling mass teleports to s; baseline teleport is restart*s.\n")
+	writeBaselineAuditFixture(t, root, "internal/reff/reff_test.go", strings.Join([]string{
+		"baseline := ScoreTypedEvidence(\"explicit_measure\", \"supports\", 3, validUntil, now)",
+		"t.Fatalf(\"baseline ScoreTypedEvidence = %v, want 0.8\", baseline)",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec_baseline.go", strings.Join([]string{
 		"// appendSpecHealthFindings runs SpecSection drift / missing-baseline checks.",
@@ -190,6 +210,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"LegacyBindingPostureMissingSymbolBaseline = \"missing_symbol_baseline\"",
 		"LegacyBindingActionProposeRebaseline = \"propose_rebaseline_with_binding_targets\"",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/binding_surface_inventory.go", strings.Join([]string{
+		"{Tool: \"haft_decision\", Action: \"baseline\", Class: bindingSurfaceEvidenceRecording}",
+		"Action: \"rebaseline\",",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/binding_surface_inventory_test.go", "{tool: \"haft_spec_section\", action: \"rebaseline\", class: bindingSurfaceLifecycleAuthorityMutation}\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/drift_events.go", strings.Join([]string{
 		"DriftEventResolutionNeedsRebaseline = \"needs_rebaseline\"",
 		"return DriftEventResolutionNeedsRebaseline",
@@ -202,10 +227,21 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"\"enrich_scope does not change decision status, lineage, evidence, baselines, or gates\"",
 		"\"does not create evidence, baselines, gates, or admissions\"",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/artifact/reconciliation_metrics.go", "metrics do not approve, supersede, retire, enrich, waive, or rebaseline decisions\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/drift_route.go", strings.Join([]string{
 		"does not mutate code, carriers, evidence, decisions, baselines, or gates.",
 		"This is a read-only projection: it does not mutate decisions, baselines,",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/decision_reconcile.go", strings.Join([]string{
+		"baselines, or carriers.",
+		"This command does not mutate decisions, links, evidence, baselines, or carriers.",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_review.go", strings.Join([]string{
+		"rebaseline, reopen, create evidence, create decisions, or act as",
+		"authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission",
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_apply_change.go", "AuthorityBoundary: \"not_approval_not_rebaseline_not_evidence\"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_sync.go", "AuthorityBoundary: \"not_approval_not_rebaseline_not_evidence\"\n")
 	writeBaselineAuditFixture(t, root, "internal/tools/haft.go", strings.Join([]string{
 		"- baseline: Snapshot affected files after implementation and before measurement.",
 		`"action": map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}}`,
@@ -286,14 +322,14 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 11 {
 		t.Fatalf("spec approval count = %d, want 11", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 41 {
-		t.Fatalf("verified state count = %d, want 41", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 42 {
+		t.Fatalf("verified state count = %d, want 42", report.Summary.VerifiedStateSnapshot)
 	}
-	if report.Summary.ComparisonOrBenchmark != 8 {
-		t.Fatalf("comparison count = %d, want 8", report.Summary.ComparisonOrBenchmark)
+	if report.Summary.ComparisonOrBenchmark != 14 {
+		t.Fatalf("comparison count = %d, want 14", report.Summary.ComparisonOrBenchmark)
 	}
-	if report.Summary.OrdinaryLanguageBaseline != 1 {
-		t.Fatalf("ordinary count = %d, want 1", report.Summary.OrdinaryLanguageBaseline)
+	if report.Summary.OrdinaryLanguageBaseline != 3 {
+		t.Fatalf("ordinary count = %d, want 3", report.Summary.OrdinaryLanguageBaseline)
 	}
 	if report.Summary.HistoricalGovernanceCarrier != 1 {
 		t.Fatalf("historical governance count = %d, want 1", report.Summary.HistoricalGovernanceCarrier)
@@ -325,11 +361,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 30 {
-		t.Fatalf("lifecycle authority count = %d, want 30", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 40 {
+		t.Fatalf("lifecycle authority count = %d, want 40", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 17 {
-		t.Fatalf("lifecycle authority files = %d, want 17", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 24 {
+		t.Fatalf("lifecycle authority files = %d, want 24", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)
@@ -343,17 +379,17 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.AuditToolSurfaceFiles != 1 {
 		t.Fatalf("audit tool surface files = %d, want 1", report.Summary.AuditToolSurfaceFiles)
 	}
-	if report.Summary.TestFixtureSurface != 4 {
-		t.Fatalf("test fixture surface count = %d, want 4", report.Summary.TestFixtureSurface)
+	if report.Summary.TestFixtureSurface != 5 {
+		t.Fatalf("test fixture surface count = %d, want 5", report.Summary.TestFixtureSurface)
 	}
-	if report.Summary.TestFixtureSurfaceFiles != 2 {
-		t.Fatalf("test fixture surface files = %d, want 2", report.Summary.TestFixtureSurfaceFiles)
+	if report.Summary.TestFixtureSurfaceFiles != 3 {
+		t.Fatalf("test fixture surface files = %d, want 3", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.AutonomousMaintenance != 14 {
-		t.Fatalf("autonomous maintenance count = %d, want 14", report.Summary.AutonomousMaintenance)
+	if report.Summary.AutonomousMaintenance != 18 {
+		t.Fatalf("autonomous maintenance count = %d, want 18", report.Summary.AutonomousMaintenance)
 	}
-	if report.Summary.AutonomousMaintenanceFiles != 7 {
-		t.Fatalf("autonomous maintenance files = %d, want 7", report.Summary.AutonomousMaintenanceFiles)
+	if report.Summary.AutonomousMaintenanceFiles != 10 {
+		t.Fatalf("autonomous maintenance files = %d, want 10", report.Summary.AutonomousMaintenanceFiles)
 	}
 	if report.Summary.MethodPackSurface != 3 {
 		t.Fatalf("method pack count = %d, want 3", report.Summary.MethodPackSurface)

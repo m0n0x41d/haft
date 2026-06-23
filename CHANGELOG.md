@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit code-tail classification.** `haft baseline audit` now
+  classifies binding-surface inventories, spec-review/apply/sync
+  no-authority text, reconciliation metrics, comparison/value parity wording,
+  overseer maintenance guardrails, symbol-drift context, and ordinary
+  score/graph baseline wording while preserving explicit legacy diagnostics.
 - **Baseline audit carrier/protocol wording classification.** `haft baseline
   audit` now classifies current README, AGENTS/CLAUDE guardrails, Pi
   h-verify prompts, MCP protocol docs, and v8 migration wording as existing

@@ -375,6 +375,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditToolSurface, "mentions baseline inside the baseline audit tool implementation; audit-visible self surface, not terminology debt"
 	case baselineAuditLegacyBindingSurface(path):
 		return baselineAuditLegacyBinding, "mentions baseline inside legacy decision-binding scope enrichment surface"
+	case baselineAuditBindingSurfaceInventory(path, value):
+		return baselineAuditLifecycleAuth, "mentions baseline inside binding-surface authority inventory"
 	case baselineAuditSpecUseSurface(path):
 		return baselineAuditSpecUse, "mentions baseline inside SpecificationUse currentness or admission surface"
 	case baselineAuditSpecStateSurface(path):
@@ -389,6 +391,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditComparison, "mentions baseline as a retrieval or projection comparison benchmark"
 	case baselineAuditDriftRepairLifecycleSurface(path):
 		return baselineAuditLifecycleAuth, "mentions drift repair routing or read-only lifecycle boundaries around rebaseline"
+	case baselineAuditSpecReviewNoAuthoritySurface(path):
+		return baselineAuditLifecycleAuth, "mentions read-only spec review or sync/apply boundaries around rebaseline"
 	case baselineAuditDecisionBaselineAPISurface(path, value):
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
@@ -548,6 +552,13 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"scored variant outside baseline",
 		"baseline search error",
 		"baseline search unexpectedly",
+		"comparable baseline conditions",
+		"same cohort",
+		"equal-budget baseline",
+		"declared baseline under parity",
+		"outside structured baseline",
+		"versus what baseline",
+		"same evidence standards",
 	):
 		return baselineAuditComparison, "uses baseline as a comparison or benchmark reference"
 	case containsAnyBaselineTerm(value,
@@ -590,6 +601,10 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"not_approval_rebaseline",
 		"re-baseline via `haft_decision(action=\"baseline\"",
 		"drift on touched files",
+		"does not mutate decisions, links, evidence, baselines",
+		"does not approve, supersede, retire, enrich, waive, or rebaseline",
+		"not evidence, approval, rebaseline",
+		"do not approve, merge, deploy, decide, commission, or rebaseline",
 		"operator reviews the active specsection and records a baseline",
 		"operator chooses rebaseline",
 		"human principal approves binding choices and baseline",
@@ -622,6 +637,10 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"baseline db",
 		"baseline test",
 		"baseline fixture",
+		"baseline := scoretypedevidence",
+		"t.Fatalf(\"baseline",
+		"t.fatalf(\"baseline",
+		"baseline teleport",
 	):
 		return baselineAuditOrdinary, "uses baseline as ordinary test or fixture wording"
 	default:
@@ -720,13 +739,17 @@ func baselineAuditTestFixtureSurface(path string, value string) bool {
 		"mustbaselinedecision",
 		"baseline decision",
 		"baselined decision",
+		"makebaselinedbunopenable",
 		"baseline its active sections",
 		"active sections need baselines",
+		"without baselines",
 		"put baseline",
 		"spec_section_needs_baseline",
 		"decode baseline result",
 		"t.Fatalf(\"baseline",
 		"t.Fatal(\"baseline",
+		"t.fatalf(\"baseline",
+		"t.fatal(\"baseline",
 	)
 }
 
@@ -752,6 +775,20 @@ func baselineAuditLegacyBindingSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/artifact/legacy_binding.go", "internal/artifact/legacy_binding_test.go":
 		return true
+	default:
+		return false
+	}
+}
+
+func baselineAuditBindingSurfaceInventory(path string, value string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/binding_surface_inventory.go",
+		"internal/cli/binding_surface_inventory_test.go":
+		return containsAnyBaselineTerm(value,
+			"haft_decision",
+			"baseline",
+			"rebaseline",
+		)
 	default:
 		return false
 	}
@@ -800,13 +837,25 @@ func baselineAuditArtifactVerifiedStateSurface(path string) bool {
 }
 
 func baselineAuditCodebaseSymbolDriftSurface(path string) bool {
-	return filepath.ToSlash(path) == "internal/codebase/symhash.go"
+	switch filepath.ToSlash(path) {
+	case "internal/codebase/symhash.go",
+		"internal/contextgraph/fetch.go",
+		"internal/artifact/symbol_drift_test.go":
+		return true
+	default:
+		return false
+	}
 }
 
 func baselineAuditRetrievalBenchmarkSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/fpf/tree_drilldown_test.go",
-		"internal/cli/serve_projection_test.go":
+		"internal/cli/serve_projection_test.go",
+		"internal/artifact/parity_schema.go",
+		"internal/artifact/solution_test.go",
+		"internal/artifact/umbrella_triggers.json",
+		"internal/artifact/value_space.go",
+		"internal/fpf/patterns/compare.md":
 		return true
 	default:
 		return false
@@ -819,6 +868,20 @@ func baselineAuditDriftRepairLifecycleSurface(path string) bool {
 		"internal/artifact/maintenance_review.go",
 		"internal/artifact/reconciliation.go",
 		"internal/cli/drift_route.go":
+		return true
+	default:
+		return false
+	}
+}
+
+func baselineAuditSpecReviewNoAuthoritySurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/spec_review.go",
+		"internal/cli/spec_review_test.go",
+		"internal/cli/spec_apply_change.go",
+		"internal/cli/spec_sync.go",
+		"internal/cli/decision_reconcile.go",
+		"internal/artifact/reconciliation_metrics.go":
 		return true
 	default:
 		return false
@@ -928,7 +991,11 @@ func baselineAuditMaintenanceExecutionSurface(path string) bool {
 
 func baselineAuditOverseerMaintenanceSurface(path string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/cli/overseer.go", "internal/overseer/config.go":
+	case "internal/cli/overseer.go",
+		"internal/overseer/config.go",
+		"internal/overseer/maintenance.go",
+		"internal/overseer/risk.go",
+		"internal/overseer/runner.go":
 		return true
 	default:
 		return false

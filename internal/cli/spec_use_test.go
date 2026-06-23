@@ -8,9 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -49,6 +51,53 @@ func TestRunSpecUseJSONReturnsSpecificationUseRecord(t *testing.T) {
 	}
 	if strings.Contains(output.String(), `"status":"ready"`) || strings.Contains(output.String(), `"verdict":"pass"`) {
 		t.Fatalf("spec use JSON must not expose ready/pass authority: %s", output.String())
+	}
+}
+
+func TestBuildSpecUseRecordReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.use.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		Title:         "SQL use section",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	record, err := buildSpecUseRecord(
+		root,
+		"TS.sql.use.001",
+		"agent planning read",
+		specflow.SpecUsePolicyDocumentaryOnly,
+		"",
+		nil,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("buildSpecUseRecord: %v", err)
+	}
+	if record.SourceEdition.SectionID != "TS.sql.use.001" {
+		t.Fatalf("source edition read carrier instead of SQL edition: %+v", record.SourceEdition)
+	}
+	if record.BaselineCurrentness.Status != specflow.SpecUseBaselineMissing {
+		t.Fatalf("baseline currentness = %+v, want missing baseline for SQL edition", record.BaselineCurrentness)
+	}
+	if record.Admission.Disposition != specflow.SpecUseDispositionAdmitted {
+		t.Fatalf("admission = %+v, want documentary admission", record.Admission)
 	}
 }
 

@@ -69,7 +69,7 @@ func buildSpecUseRecord(
 	gate *specflow.OperationalGateProfile,
 	now time.Time,
 ) (specflow.SpecificationUseRecord, error) {
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
 		return specflow.SpecificationUseRecord{}, err
 	}

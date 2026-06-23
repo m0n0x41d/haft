@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first SpecificationUseRecord reads.** `haft spec use` and
+  `haft_query(action="spec_use")` now read current SQL SpecSection editions
+  before Markdown carriers while preserving baseline-currentness and
+  GateDecision authority boundaries.
 - **SQL-first SpecSection next-step reads.** `haft_spec_section(action="next_step")`
   now uses current SQL SpecSection editions before Markdown carriers, matching
   the existing CLI lifecycle projection while preserving missing-baseline

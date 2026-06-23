@@ -43,6 +43,9 @@ func TestBuildCurrentGoverningSetExcludesTerminalHistory(t *testing.T) {
 	if report.Snapshot.Source != "artifact_store_decision_records" {
 		t.Fatalf("snapshot source = %q", report.Snapshot.Source)
 	}
+	if !strings.HasPrefix(report.Snapshot.SnapshotDigest, "sha256:") {
+		t.Fatalf("snapshot digest = %q", report.Snapshot.SnapshotDigest)
+	}
 	if report.Snapshot.Projection != "refreshable_current_governing_frontier" {
 		t.Fatalf("snapshot projection = %q", report.Snapshot.Projection)
 	}
@@ -88,6 +91,12 @@ func TestBuildCurrentGoverningSetExcludesTerminalHistory(t *testing.T) {
 	}
 	if !strings.Contains(set.AnswerPaths[0].CLI, "--target-ref") {
 		t.Fatalf("answer path cli = %q", set.AnswerPaths[0].CLI)
+	}
+
+	mutated := report
+	mutated.Snapshot.GeneratedAt = "2099-01-01T00:00:00Z"
+	if currentGoverningSetSnapshotDigest(mutated) != report.Snapshot.SnapshotDigest {
+		t.Fatal("snapshot digest should ignore generated_at and reflect governing content")
 	}
 }
 
@@ -320,11 +329,22 @@ func TestFilterCurrentGoverningSetReportBySubjectAndTarget(t *testing.T) {
 	if !report.Snapshot.FilterApplied {
 		t.Fatal("snapshot filter_applied = false, want true for filtered report")
 	}
+	if !strings.HasPrefix(report.Snapshot.SnapshotDigest, "sha256:") {
+		t.Fatalf("filtered snapshot digest = %q", report.Snapshot.SnapshotDigest)
+	}
 	if report.Summary.GoverningSets != 1 || report.Summary.CurrentDecisions != 1 {
 		t.Fatalf("summary = %#v", report.Summary)
 	}
 	if len(report.Sets) != 1 || report.Sets[0].CurrentDecisionRefs[0] != "dec-save" {
 		t.Fatalf("sets = %#v", report.Sets)
+	}
+
+	full, err := BuildCurrentGoverningSetReport(ctx, store)
+	if err != nil {
+		t.Fatalf("BuildCurrentGoverningSetReport: %v", err)
+	}
+	if full.Snapshot.SnapshotDigest == report.Snapshot.SnapshotDigest {
+		t.Fatal("filtered snapshot digest should differ from the unfiltered frontier digest")
 	}
 }
 

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Governing frontier snapshot digest.** `haft decision governing-set --json`
+  and `haft_query(action="governing_set")` now include a stable
+  `snapshot_digest` in the read-only snapshot metadata, so current-authority
+  frontier projections can be referenced and compared without relying on
+  status prose or volatile `generated_at` values.
 - **Overseer reconciliation posture summary.** Maintenance-run JSON now includes
   a compact read-only `reconciliation_summary` with proposal counts, kind
   counts, fallback/high-fanout posture, max fanout, suggested commands, and the

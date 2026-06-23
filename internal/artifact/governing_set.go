@@ -3,6 +3,8 @@ package artifact
 import (
 	"context"
 	"crypto/sha1"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
 	"strings"
@@ -34,6 +36,7 @@ type CurrentGoverningSetReport struct {
 
 type CurrentGoverningSetSnapshot struct {
 	GeneratedAt           string   `json:"generated_at"`
+	SnapshotDigest        string   `json:"snapshot_digest"`
 	Source                string   `json:"source"`
 	Projection            string   `json:"projection"`
 	AuthorityBoundary     string   `json:"authority_boundary"`
@@ -196,6 +199,7 @@ func BuildCurrentGoverningSetReportFiltered(
 		AuthorityFrontier: currentGoverningAuthorityFrontier(sets),
 		Sets:              sets,
 	}
+	report = withCurrentGoverningSetSnapshotDigest(report)
 	return FilterCurrentGoverningSetReport(report, filter), nil
 }
 
@@ -218,7 +222,7 @@ func FilterCurrentGoverningSetReport(
 	report.Sets = sets
 	report.Summary = currentGoverningSetSummary(sets)
 	report.AuthorityFrontier = currentGoverningAuthorityFrontier(sets)
-	return report
+	return withCurrentGoverningSetSnapshotDigest(report)
 }
 
 func CompactCurrentGoverningSetReport(
@@ -282,6 +286,75 @@ func newCurrentGoverningSetSnapshot(filterApplied bool) CurrentGoverningSetSnaps
 		TerminalHistoryPolicy: "terminal decisions stay searchable history and are excluded from current authority",
 		FilterApplied:         filterApplied,
 	}
+}
+
+func withCurrentGoverningSetSnapshotDigest(
+	report CurrentGoverningSetReport,
+) CurrentGoverningSetReport {
+	report.Snapshot.SnapshotDigest = currentGoverningSetSnapshotDigest(report)
+	return report
+}
+
+func currentGoverningSetSnapshotDigest(report CurrentGoverningSetReport) string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("schema=%d\n", report.SchemaVersion))
+	sb.WriteString("authority=" + report.Authority + "\n")
+	sb.WriteString("source=" + report.Snapshot.Source + "\n")
+	sb.WriteString("projection=" + report.Snapshot.Projection + "\n")
+	sb.WriteString("authority_boundary=" + report.Snapshot.AuthorityBoundary + "\n")
+	sb.WriteString("current_status_policy=" + strings.Join(report.Snapshot.CurrentStatusPolicy, ",") + "\n")
+	sb.WriteString("terminal_status_policy=" + strings.Join(report.Snapshot.TerminalStatusPolicy, ",") + "\n")
+	sb.WriteString("terminal_history_policy=" + report.Snapshot.TerminalHistoryPolicy + "\n")
+	sb.WriteString(fmt.Sprintf("filter_applied=%t\n", report.Snapshot.FilterApplied))
+	sb.WriteString(currentGoverningSetSummaryDigestLine(report.Summary))
+	sb.WriteString(currentGoverningAuthorityFrontierDigestLine(report.AuthorityFrontier))
+	for _, set := range report.Sets {
+		sb.WriteString(currentGoverningSetDigestLine(set))
+	}
+	sum := sha256.Sum256([]byte(sb.String()))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+func currentGoverningSetSummaryDigestLine(summary CurrentGoverningSetSummary) string {
+	return fmt.Sprintf(
+		"summary=%d,%d,%d,%d,%d,%d,%d,%d\n",
+		summary.CurrentDecisions,
+		summary.GoverningSets,
+		summary.ConflictSets,
+		summary.OverlapReviewSets,
+		summary.MissingExplicitSubject,
+		summary.FallbackTargetSets,
+		summary.ScopeEnrichmentSets,
+		summary.TerminalHistoryRefs,
+	)
+}
+
+func currentGoverningAuthorityFrontierDigestLine(
+	frontier CurrentGoverningAuthorityFrontier,
+) string {
+	return fmt.Sprintf(
+		"frontier=%s|%s|%s|%s|%s\n",
+		frontier.AuthorityBoundary,
+		strings.Join(frontier.CurrentStatusPolicy, ","),
+		strings.Join(frontier.TerminalStatusPolicy, ","),
+		strings.Join(frontier.CurrentDecisionRefs, ","),
+		strings.Join(frontier.TerminalHistoryRefs, ","),
+	)
+}
+
+func currentGoverningSetDigestLine(set CurrentGoverningSet) string {
+	return fmt.Sprintf(
+		"set=%s|%s|%s|%s|%s|%s|%s|%t|%s\n",
+		set.SetID,
+		set.SubjectRef,
+		set.SubjectResolution,
+		set.BoundedContext,
+		set.TargetRef,
+		set.TargetResolution,
+		set.Posture,
+		set.OperatorRequired,
+		strings.Join(set.CurrentDecisionRefs, ",")+"|"+strings.Join(set.TerminalHistoryRefs, ","),
+	)
 }
 
 func currentGoverningSetFromBucket(bucket *currentGoverningSetBucket) CurrentGoverningSet {

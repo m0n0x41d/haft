@@ -715,6 +715,18 @@ func TestResolveBindingTargetsAttachesSemanticEvaluatorFromYAMLTarget(t *testing
 				"    title: Other\n",
 		},
 		{
+			name:      "spec section section_id",
+			kind:      BindingTargetSpecSection,
+			targetRef: "spec_section:TS.boundary.001",
+			endLine:   4,
+			body: "sections:\n" +
+				"  - section_id: TS.boundary.001\n" +
+				"    title: Governance boundary\n" +
+				"    status: active\n" +
+				"  - section_id: TS.other.001\n" +
+				"    title: Other\n",
+		},
+		{
 			name:      "api contract",
 			kind:      BindingTargetAPIContract,
 			targetRef: "api_contract:haft/status",
@@ -790,6 +802,21 @@ func TestResolveBindingTargetsAttachesSemanticEvaluatorFromJSONTarget(t *testing
 				"      \"title\": \"Governance boundary\"\n" +
 				"    },\n" +
 				"    {\"id\": \"TS.other.001\", \"title\": \"Other\"}\n" +
+				"  ]\n" +
+				"}\n",
+		},
+		{
+			name:      "spec section section_id",
+			kind:      BindingTargetSpecSection,
+			targetRef: "spec_section:TS.boundary.001",
+			endLine:   6,
+			body: "{\n" +
+				"  \"sections\": [\n" +
+				"    {\n" +
+				"      \"section_id\": \"TS.boundary.001\",\n" +
+				"      \"title\": \"Governance boundary\"\n" +
+				"    },\n" +
+				"    {\"section_id\": \"TS.other.001\", \"title\": \"Other\"}\n" +
 				"  ]\n" +
 				"}\n",
 		},

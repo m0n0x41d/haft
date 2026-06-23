@@ -763,7 +763,7 @@ func findJSONTargetObjectBody(
 		if !ok {
 			return 0, 0, false
 		}
-		if key == "id" || key == "target_ref" {
+		if key == "id" || key == "target_ref" || key == "section_id" {
 			valueToken, err := decoder.Token()
 			if err != nil {
 				return 0, 0, false
@@ -794,7 +794,7 @@ func jsonTargetValueMatches(key string, value string, targetRef string, token st
 	if value == targetRef {
 		return true
 	}
-	return key == "id" && value == token
+	return (key == "id" || key == "section_id") && value == token
 }
 
 func bindingLineForOffset(content []byte, offset int) int {
@@ -808,7 +808,7 @@ func bindingLineForOffset(content []byte, offset int) int {
 }
 
 func yamlLineMatchesTarget(line string, targetRef string, token string) bool {
-	for _, key := range []string{"id", "target_ref"} {
+	for _, key := range []string{"id", "target_ref", "section_id"} {
 		value := yamlLineScalarValue(line, key)
 		if value == "" {
 			continue
@@ -816,7 +816,7 @@ func yamlLineMatchesTarget(line string, targetRef string, token string) bool {
 		if value == targetRef {
 			return true
 		}
-		if key == "id" && value == token {
+		if (key == "id" || key == "section_id") && value == token {
 			return true
 		}
 	}
@@ -843,7 +843,9 @@ func yamlLineStartsSibling(line string) bool {
 	if strings.HasPrefix(trimmed, "- ") {
 		return true
 	}
-	return yamlLineScalarValue(line, "id") != "" || yamlLineScalarValue(line, "target_ref") != ""
+	return yamlLineScalarValue(line, "id") != "" ||
+		yamlLineScalarValue(line, "target_ref") != "" ||
+		yamlLineScalarValue(line, "section_id") != ""
 }
 
 func lineIndent(line string) int {

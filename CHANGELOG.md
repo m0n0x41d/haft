@@ -136,6 +136,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   carrier projection, with `--json` for exact hashes/audit metadata and
   `--markdown` for carrier bytes, while preserving the boundary that export is
   not approval, rebaseline, evidence, or prose authority.
+- **Spec sync-back field registry guard.** SpecSection carrier change
+  classification now has regression coverage proving every exported
+  `SpecSection` JSON field is explicitly classified as scalar, relationship,
+  carrier-only, or high-risk, so future canonical fields cannot silently bypass
+  SQL sync-back posture.
 - **Spec apply-change text audit output.** Human-readable
   `haft spec apply-change` now prints the source episteme, publication
   projection, carrier bytes, imported semantic mutation, and carrier-only

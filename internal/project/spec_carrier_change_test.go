@@ -1,7 +1,9 @@
 package project
 
 import (
+	"reflect"
 	"slices"
+	"strings"
 	"testing"
 )
 
@@ -159,6 +161,34 @@ func TestSpecCarrierChangeFieldRegistryNamesRecognizedFields(t *testing.T) {
 			t.Fatalf("%s fields = %#v, want %#v", class, byClass[class], fields)
 		}
 	}
+}
+
+func TestSpecCarrierChangeFieldRegistryCoversEverySpecSectionField(t *testing.T) {
+	registered := map[string]bool{}
+	for _, rule := range specCarrierChangeFieldRegistry() {
+		registered[rule.Field] = true
+	}
+
+	for _, field := range specSectionJSONFields() {
+		if registered[field] {
+			continue
+		}
+		t.Fatalf("SpecSection field %q is not classified for sync-back; add an explicit scalar, relationship, carrier-only, or high-risk rule", field)
+	}
+}
+
+func specSectionJSONFields() []string {
+	sectionType := reflect.TypeOf(SpecSection{})
+	fields := make([]string, 0, sectionType.NumField())
+	for index := 0; index < sectionType.NumField(); index++ {
+		field := sectionType.Field(index)
+		name := strings.Split(field.Tag.Get("json"), ",")[0]
+		if name == "" || name == "-" {
+			continue
+		}
+		fields = append(fields, name)
+	}
+	return fields
 }
 
 func specCarrierChangeSection() SpecSection {

@@ -271,7 +271,11 @@ type StatusSummary struct {
 	LatestReviewRunID   string         `json:"latest_review_run_id,omitempty"`
 	LatestPacketID      string         `json:"latest_packet_id,omitempty"`
 	LatestMaintenanceID string         `json:"latest_maintenance_id,omitempty"`
-	SuppressedCount     int            `json:"suppressed_count"`
+	// LatestExecutedMaintenanceID points at the newest maintenance run with
+	// autonomous executed actions. It can differ from LatestMaintenanceID when a
+	// later report-only maintain run has no executed ledger.
+	LatestExecutedMaintenanceID string `json:"latest_executed_maintenance_id,omitempty"`
+	SuppressedCount             int    `json:"suppressed_count"`
 	// ExecutedActions surfaces the autonomous maintenance ledger of the latest
 	// run — session-start disclosure: autonomy is visible, never silent.
 	ExecutedActions []MaintenanceAction `json:"executed_actions,omitempty"`

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer autonomous ledger retention.** Status loading now retains the
+  newest maintenance run with executed autonomous actions even after a later
+  report-only `overseer maintain` run becomes `latest-maintenance`, so the
+  operator still sees the exact undo commands for applied autonomous work.
 - **Pi contract-source digest guard.** The bundled Pi tool metadata now carries
   the current kernel interface catalog `source_digest`, and regression coverage
   compares it against the read-only `contract_generation` manifest so Pi

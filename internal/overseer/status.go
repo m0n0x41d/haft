@@ -33,6 +33,9 @@ func BuildStatusSummary(
 		}
 		summary.SuppressedCount += len(maintenance.Suppressed)
 		summary.ExecutedActions = maintenance.Executed
+		if len(maintenance.Executed) > 0 {
+			summary.LatestExecutedMaintenanceID = maintenance.MaintenanceID
+		}
 	}
 
 	summary.Signals = normalizeStatusSignals(summary.Signals)
@@ -189,8 +192,9 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 	}
 
 	var sb strings.Builder
+	maintenanceID := statusExecutedMaintenanceID(summary)
 	fmt.Fprintf(&sb, "- **AUTONOMOUS MAINTENANCE** %d action(s) in run `%s` (undo: `haft overseer undo %s <action-id>`):\n",
-		len(summary.ExecutedActions), summary.LatestMaintenanceID, summary.LatestMaintenanceID)
+		len(summary.ExecutedActions), maintenanceID, maintenanceID)
 	for i, action := range summary.ExecutedActions {
 		if i >= executedDisclosureLimit {
 			fmt.Fprintf(&sb, "  - … and %d more (inspect `haft overseer maintain --json`)\n", len(summary.ExecutedActions)-executedDisclosureLimit)
@@ -200,7 +204,7 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 		if title == "" {
 			title = "Untitled decision"
 		}
-		undo := statusActionUndoCommand(summary.LatestMaintenanceID, action)
+		undo := statusActionUndoCommand(maintenanceID, action)
 		if undo != "" {
 			fmt.Fprintf(&sb, "  - [%s] %s — %s `%s` (%s; undo: `%s`)\n", action.ID, action.Kind, title, action.DecisionRef, action.Outcome, undo)
 			continue
@@ -208,6 +212,13 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 		fmt.Fprintf(&sb, "  - [%s] %s — %s `%s` (%s)\n", action.ID, action.Kind, title, action.DecisionRef, action.Outcome)
 	}
 	return sb.String()
+}
+
+func statusExecutedMaintenanceID(summary StatusSummary) string {
+	if summary.LatestExecutedMaintenanceID != "" {
+		return summary.LatestExecutedMaintenanceID
+	}
+	return summary.LatestMaintenanceID
 }
 
 func statusActionUndoCommand(maintenanceID string, action MaintenanceAction) string {

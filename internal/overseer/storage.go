@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -161,6 +162,52 @@ func LoadLatestMaintenanceRun(projectRoot string) (MaintenanceRun, error) {
 	return run, nil
 }
 
+func LoadLatestExecutedMaintenanceRun(projectRoot string) (MaintenanceRun, error) {
+	dir := filepath.Join(OverseerDir(projectRoot), "maintenance")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return MaintenanceRun{}, err
+	}
+
+	var latest MaintenanceRun
+	latestKey := ""
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		var run MaintenanceRun
+		path := filepath.Join(dir, entry.Name())
+		if err := readJSONFile(path, &run); err != nil {
+			return MaintenanceRun{}, err
+		}
+		if len(run.Executed) == 0 {
+			continue
+		}
+		key := maintenanceRunChronologyKey(entry, run)
+		if key <= latestKey {
+			continue
+		}
+		latest = run
+		latestKey = key
+	}
+	if latest.MaintenanceID == "" {
+		return MaintenanceRun{}, os.ErrNotExist
+	}
+	return latest, nil
+}
+
+func maintenanceRunChronologyKey(entry os.DirEntry, run MaintenanceRun) string {
+	createdAt := strings.TrimSpace(run.CreatedAt)
+	if createdAt != "" {
+		return createdAt + ":" + run.MaintenanceID
+	}
+	info, err := entry.Info()
+	if err != nil {
+		return "file:" + entry.Name()
+	}
+	return info.ModTime().UTC().Format(time.RFC3339Nano) + ":" + entry.Name()
+}
+
 func LoadStatusSummary(projectRoot string) (StatusSummary, error) {
 	stored, storedErr := LoadLatestRun(projectRoot)
 	hasStored := storedErr == nil
@@ -174,7 +221,21 @@ func LoadStatusSummary(projectRoot string) (StatusSummary, error) {
 		return StatusSummary{}, maintenanceErr
 	}
 
-	return BuildStatusSummary(stored, hasStored, maintenance, hasMaintenance), nil
+	summary := BuildStatusSummary(stored, hasStored, maintenance, hasMaintenance)
+	if len(summary.ExecutedActions) > 0 {
+		return summary, nil
+	}
+
+	executedMaintenance, executedErr := LoadLatestExecutedMaintenanceRun(projectRoot)
+	if executedErr != nil && !os.IsNotExist(executedErr) {
+		return StatusSummary{}, executedErr
+	}
+	if executedErr == nil {
+		summary.LatestExecutedMaintenanceID = executedMaintenance.MaintenanceID
+		summary.ExecutedActions = executedMaintenance.Executed
+		summary.HasSignals = true
+	}
+	return summary, nil
 }
 
 func BuildReminder(stored StoredRun) Reminder {

@@ -334,6 +334,69 @@ func TestLoadStatusSummaryCombinesLatestRunAndMaintenance(t *testing.T) {
 	}
 }
 
+func TestLoadStatusSummaryRetainsLatestExecutedMaintenanceDisclosure(t *testing.T) {
+	root := t.TempDir()
+	executed, err := BuildMaintenanceRun(MaintenanceInput{
+		CreatedAt: "2026-06-23T10:00:00Z",
+		Executed: []MaintenanceAction{{
+			ID:          "act-001",
+			Kind:        "auto_rebaseline",
+			DecisionRef: "dec-auto",
+			Title:       "Autonomous additive rebaseline",
+			Outcome:     "applied",
+			PriorState:  `{"files":[]}`,
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildMaintenanceRun executed returned error: %v", err)
+	}
+	if err := StoreMaintenanceRun(root, executed); err != nil {
+		t.Fatalf("StoreMaintenanceRun executed returned error: %v", err)
+	}
+
+	reportOnly, err := BuildMaintenanceRun(MaintenanceInput{
+		CreatedAt: "2026-06-23T11:00:00Z",
+		Drift: []MaintenanceDriftFinding{{
+			ID:      "dec-review",
+			Title:   "Later report-only drift",
+			Summary: "code drift - 1 modified",
+			Action:  "stage_for_confirm",
+			Reason:  "operator judgment required",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("BuildMaintenanceRun report-only returned error: %v", err)
+	}
+	if err := StoreMaintenanceRun(root, reportOnly); err != nil {
+		t.Fatalf("StoreMaintenanceRun report-only returned error: %v", err)
+	}
+
+	summary, err := LoadStatusSummary(root)
+	if err != nil {
+		t.Fatalf("LoadStatusSummary returned error: %v", err)
+	}
+	if summary.LatestMaintenanceID != reportOnly.MaintenanceID {
+		t.Fatalf("latest maintenance id = %q, want %q", summary.LatestMaintenanceID, reportOnly.MaintenanceID)
+	}
+	if summary.LatestExecutedMaintenanceID != executed.MaintenanceID {
+		t.Fatalf("latest executed maintenance id = %q, want %q", summary.LatestExecutedMaintenanceID, executed.MaintenanceID)
+	}
+	if len(summary.ExecutedActions) != 1 {
+		t.Fatalf("executed actions = %#v", summary.ExecutedActions)
+	}
+
+	output := FormatStatusSignals(summary)
+	for _, want := range []string{
+		"AUTONOMOUS MAINTENANCE",
+		"haft overseer undo " + executed.MaintenanceID + " act-001",
+		"Later report-only drift",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status output missing %q:\n%s", want, output)
+		}
+	}
+}
+
 func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 	summary := StatusSummary{
 		HasSignals: true,

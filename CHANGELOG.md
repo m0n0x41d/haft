@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Maintenance reconciliation proposal drill-downs.** Read-only maintenance
+  reconciliation proposals now suggest bounded
+  `haft decision reconcile --json --limit 5` / governing-set `--limit 5`
+  inspection commands instead of full audit JSON dumps.
 - **Decision reconciliation CLI compact limits.** Read-only
   `haft decision reconcile --json --limit N` and
   `haft decision governing-set --json --limit N` now return bounded compact

@@ -10,6 +10,7 @@ import (
 )
 
 const maintenanceHighFanoutThreshold = 5
+const maintenanceReconciliationInspectCommand = "haft decision reconcile --json --limit 5"
 
 func buildMaintenanceReconciliationProposals(
 	ctx context.Context,
@@ -76,7 +77,7 @@ func reconciliationPlanMaintenanceProposals(
 				DecisionRefs:      group.DecisionRefs,
 				Fanout:            fanout,
 				ScopeRepairHints:  group.ScopeRepairHints,
-				SuggestedCommand:  "haft decision reconcile --json",
+				SuggestedCommand:  maintenanceReconciliationInspectCommand,
 				AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
 			})
 		}
@@ -90,7 +91,7 @@ func reconciliationPlanMaintenanceProposals(
 				DecisionRefs:      group.DecisionRefs,
 				Fanout:            fanout,
 				ScopeRepairHints:  group.ScopeRepairHints,
-				SuggestedCommand:  "haft decision reconcile --json",
+				SuggestedCommand:  maintenanceReconciliationInspectCommand,
 				AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
 			})
 		}
@@ -115,7 +116,7 @@ func governingSetMaintenanceProposals(
 			Fanout:            len(set.CurrentDecisionRefs) + len(set.TerminalHistoryRefs),
 			FallbackTargets:   set.WholeFileFallbackTargets,
 			ScopeRepairHints:  set.ScopeRepairHints,
-			SuggestedCommand:  fmt.Sprintf("haft decision governing-set --target-ref %q --json", set.TargetRef),
+			SuggestedCommand:  fmt.Sprintf("haft decision governing-set --target-ref %q --json --limit 5", set.TargetRef),
 			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
 		})
 	}

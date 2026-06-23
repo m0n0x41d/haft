@@ -41,7 +41,7 @@ func TestReconciliationPlanMaintenanceProposalsAreReadOnly(t *testing.T) {
 			t.Fatalf("proposal authority = %q", proposal.AuthorityBoundary)
 		}
 		assertMaintenanceReconciliationProposalIsProposalOnly(t, proposal)
-		if proposal.SuggestedCommand != "haft decision reconcile --json" {
+		if proposal.SuggestedCommand != maintenanceReconciliationInspectCommand {
 			t.Fatalf("suggested command = %q", proposal.SuggestedCommand)
 		}
 	}
@@ -71,6 +71,9 @@ func TestGoverningSetMaintenanceProposalsAreReadOnly(t *testing.T) {
 	if len(proposals[0].FallbackTargets) != 1 {
 		t.Fatalf("fallback targets = %#v", proposals[0].FallbackTargets)
 	}
+	if proposals[0].SuggestedCommand != `haft decision governing-set --target-ref "unscoped:dec-fallback" --json --limit 5` {
+		t.Fatalf("suggested command = %q", proposals[0].SuggestedCommand)
+	}
 }
 
 func TestMaintenanceReconciliationReviewFromProposalsPreservesReadOnlyBoundary(t *testing.T) {
@@ -82,7 +85,7 @@ func TestMaintenanceReconciliationReviewFromProposalsPreservesReadOnlyBoundary(t
 			Reason:            "fallback targets need review",
 			DecisionRefs:      []string{"dec-a"},
 			Fanout:            7,
-			SuggestedCommand:  "haft decision reconcile --json",
+			SuggestedCommand:  maintenanceReconciliationInspectCommand,
 			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
 		},
 	})
@@ -93,7 +96,7 @@ func TestMaintenanceReconciliationReviewFromProposalsPreservesReadOnlyBoundary(t
 	if review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
 		t.Fatalf("proposal authority = %q", review.Proposals[0].AuthorityBoundary)
 	}
-	if review.Proposals[0].SuggestedCommand != "haft decision reconcile --json" {
+	if review.Proposals[0].SuggestedCommand != maintenanceReconciliationInspectCommand {
 		t.Fatalf("suggested command = %q", review.Proposals[0].SuggestedCommand)
 	}
 	if strings.Contains(strings.ToLower(review.Proposals[0].SuggestedCommand), "apply") {

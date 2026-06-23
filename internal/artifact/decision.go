@@ -3562,7 +3562,12 @@ func formatAssuranceSummary(summary WLNKSummary) string {
 	case len(summary.GEff) > 0:
 		coverage = fmt.Sprintf("G: %d covered (acceptance ids unavailable)", len(summary.GEff))
 	}
-	return fmt.Sprintf("Assurance: %s | %s | R: %.2f", formality, coverage, summary.REff)
+	return fmt.Sprintf(
+		"Assurance: %s | %s | R: %.2f | boundary=diagnostic_not_approval_gate_claim_truth_global_truth_or_publication",
+		formality,
+		coverage,
+		summary.REff,
+	)
 }
 
 func formalityLabel(level int) string {

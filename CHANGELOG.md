@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **WLNK assurance boundary wording.** The older assurance one-liner now labels
+  evidence/formality/reliability displays as diagnostic-only, not approval, gate
+  passage, claim truth, global truth, or publication.
 - **Maintenance reconciliation proposal drill-downs.** Read-only maintenance
   reconciliation proposals now suggest bounded
   `haft decision reconcile --json --limit 5` / governing-set `--limit 5`

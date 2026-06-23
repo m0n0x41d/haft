@@ -1294,6 +1294,9 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {
 		t.Errorf("summary should show coverage ratio: %q", wlnk.Summary)
 	}
+	if !strings.Contains(wlnk.Summary, "boundary=diagnostic_not_approval_gate_claim_truth_global_truth_or_publication") {
+		t.Errorf("summary should show diagnostic-only authority boundary: %q", wlnk.Summary)
+	}
 }
 
 func TestWLNKSummary_NamesLegacyFormalityBridgeLoss(t *testing.T) {

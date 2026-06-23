@@ -1565,17 +1565,24 @@ func statusDataStaleNavItems(items []artifact.StaleItem) []string {
 	return out
 }
 
-func navStripWithStaleSnapshot(ctx context.Context, store *artifact.Store, contextName string, staleItems []artifact.StaleItem) string {
+func navStripWithStaleSnapshot(ctx context.Context, store artifact.ArtifactStore, contextName string, staleItems []artifact.StaleItem) string {
 	nav := artifact.ComputeNavState(ctx, store, contextName)
 	nav.StaleCount = len(staleItems)
 	nav.StaleItems = statusDataStaleNavItems(staleItems)
 	return present.NavStrip(nav)
 }
 
-func navStripForStatusStaleLane(ctx context.Context, store *artifact.Store, contextName string) string {
+func navStripWithoutStaleSnapshot(ctx context.Context, store artifact.ArtifactStore, contextName string) string {
+	nav := artifact.ComputeNavState(ctx, store, contextName)
+	nav.StaleCount = 0
+	nav.StaleItems = nil
+	return present.NavStrip(nav)
+}
+
+func navStripForStatusStaleLane(ctx context.Context, store artifact.ArtifactStore, contextName string) string {
 	data, err := artifact.FetchStatusData(ctx, store, contextName, "")
 	if err != nil {
-		return present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
+		return navStripWithoutStaleSnapshot(ctx, store, contextName)
 	}
 	return navStripWithStaleSnapshot(ctx, store, contextName, data.StaleItems)
 }

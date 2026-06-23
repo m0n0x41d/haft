@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/present"
 )
 
 func TestHandleQuintQuery_CodeContextDefaultsToIndex(t *testing.T) {
@@ -70,6 +71,40 @@ func TestHandleQuintQuery_CodeContextFooterUsesTypedStaleSnapshot(t *testing.T) 
 	}
 	if strings.Contains(result, "Stale: 1 decision(s) need refresh") {
 		t.Fatalf("code_context footer used raw stale decision count instead of typed snapshot:\n%s", result)
+	}
+}
+
+func TestNavStripWithoutStaleSnapshotSuppressesRawStaleDebt(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+	checkFixture := checkTestProject{
+		root:    filepath.Dir(fixture.haftDir),
+		haftDir: fixture.haftDir,
+		store:   fixture.store,
+	}
+	decision := mustCreateDecision(t, checkFixture, artifact.DecideInput{
+		SelectedTitle:   "Expired active decision",
+		WhySelected:     "Need raw nav stale debt for fallback regression coverage.",
+		SelectionPolicy: "Exercise fallback without a typed stale snapshot.",
+		CounterArgument: "Typed status data should be preferred whenever available.",
+		WeakestLink:     "Fallback must not reintroduce raw stale count noise.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Deprecated decision",
+			Reason:  "Terminal stale filtering is covered separately.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Raw stale debt appears in fallback query footers."},
+		},
+	})
+	mustSetValidUntil(t, checkFixture, decision.Meta.ID, time.Now().Add(-72*time.Hour).Format("2006-01-02"))
+
+	raw := present.NavStrip(artifact.ComputeNavState(context.Background(), fixture.store, ""))
+	if !strings.Contains(raw, "Stale:") {
+		t.Fatalf("test setup did not produce raw stale nav debt:\n%s", raw)
+	}
+
+	result := navStripWithoutStaleSnapshot(context.Background(), fixture.store, "")
+	if strings.Contains(result, "Stale:") {
+		t.Fatalf("fallback nav leaked raw stale debt:\n%s", result)
 	}
 }
 

@@ -361,6 +361,9 @@ func TestApplyDriftEventResolutionLedgerOverlaysResolvedStatus(t *testing.T) {
 	if overlaid.Events[0].ResolutionRecord == nil {
 		t.Fatal("resolution_record should be attached")
 	}
+	if overlaid.Events[0].ResolutionRecordPosture != DriftEventResolutionRecordPostureApplied {
+		t.Fatalf("resolution_record_posture = %q, want applied", overlaid.Events[0].ResolutionRecordPosture)
+	}
 	if overlaid.Summary.ResolvedByLedgerEvents != 1 {
 		t.Fatalf("resolved_by_ledger_events = %d, want 1", overlaid.Summary.ResolvedByLedgerEvents)
 	}
@@ -408,6 +411,9 @@ func TestApplyDriftEventResolutionLedgerInvalidatesTargetChangedRecord(t *testin
 	if overlaid.Events[0].ResolutionRecord == nil {
 		t.Fatal("target-changed resolution record should remain visible for audit")
 	}
+	if overlaid.Events[0].ResolutionRecordPosture != DriftEventResolutionRecordPostureStaleEventBinding {
+		t.Fatalf("resolution_record_posture = %q, want stale_event_binding", overlaid.Events[0].ResolutionRecordPosture)
+	}
 	if overlaid.Summary.ResolvedByLedgerEvents != 0 {
 		t.Fatalf("resolved_by_ledger_events = %d, want 0", overlaid.Summary.ResolvedByLedgerEvents)
 	}
@@ -451,6 +457,9 @@ func TestApplyDriftEventResolutionLedgerInvalidatesMaterialityChangedRecord(t *t
 	if overlaid.Events[0].ResolutionRecord == nil {
 		t.Fatal("materiality-changed resolution record should remain visible for audit")
 	}
+	if overlaid.Events[0].ResolutionRecordPosture != DriftEventResolutionRecordPostureStaleEventBinding {
+		t.Fatalf("resolution_record_posture = %q, want stale_event_binding", overlaid.Events[0].ResolutionRecordPosture)
+	}
 	if overlaid.Summary.ResolvedByLedgerEvents != 0 {
 		t.Fatalf("resolved_by_ledger_events = %d, want 0", overlaid.Summary.ResolvedByLedgerEvents)
 	}
@@ -488,6 +497,9 @@ func TestApplyDriftEventResolutionLedgerRespectsWaiverExpiry(t *testing.T) {
 	}
 	if expired.Events[0].ResolutionRecord == nil {
 		t.Fatal("expired resolution record should remain visible for audit")
+	}
+	if expired.Events[0].ResolutionRecordPosture != DriftEventResolutionRecordPostureInactiveWaiver {
+		t.Fatalf("resolution_record_posture = %q, want inactive_waiver", expired.Events[0].ResolutionRecordPosture)
 	}
 }
 

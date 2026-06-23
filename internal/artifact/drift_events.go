@@ -35,30 +35,31 @@ type DriftEventSummary struct {
 }
 
 type DriftEvent struct {
-	EventID              string                 `json:"event_id"`
-	ChangeRef            string                 `json:"change_ref"`
-	ChangedTargetRef     string                 `json:"changed_target_ref"`
-	TargetKind           string                 `json:"target_kind"`
-	FilePath             string                 `json:"file_path"`
-	SymbolName           string                 `json:"symbol_name,omitempty"`
-	SymbolKind           string                 `json:"symbol_kind,omitempty"`
-	DriftStatus          DriftStatus            `json:"drift_status"`
-	SymbolStatus         string                 `json:"symbol_status,omitempty"`
-	TargetStatus         string                 `json:"target_status,omitempty"`
-	TriggerKind          DriftTriggerKind       `json:"trigger_kind,omitempty"`
-	Materiality          DriftMateriality       `json:"materiality,omitempty"`
-	FallbackKind         string                 `json:"fallback_kind,omitempty"`
-	FallbackReason       string                 `json:"fallback_reason,omitempty"`
-	AuditOnly            bool                   `json:"audit_only"`
-	Fanout               int                    `json:"fanout"`
-	ImpactedDecisions    []DriftEventDecision   `json:"impacted_decisions"`
-	RootCause            string                 `json:"root_cause"`
-	RootCauseDetail      string                 `json:"root_cause_detail,omitempty"`
-	ResolutionStatus     string                 `json:"resolution_status"`
-	ResolutionRecord     *DriftEventResolution  `json:"resolution_record,omitempty"`
-	SuggestedNextCommand string                 `json:"suggested_next_command,omitempty"`
-	SourceItems          []DriftEventSourceItem `json:"source_items,omitempty"`
-	OmittedSourceItems   int                    `json:"omitted_source_items,omitempty"`
+	EventID                 string                 `json:"event_id"`
+	ChangeRef               string                 `json:"change_ref"`
+	ChangedTargetRef        string                 `json:"changed_target_ref"`
+	TargetKind              string                 `json:"target_kind"`
+	FilePath                string                 `json:"file_path"`
+	SymbolName              string                 `json:"symbol_name,omitempty"`
+	SymbolKind              string                 `json:"symbol_kind,omitempty"`
+	DriftStatus             DriftStatus            `json:"drift_status"`
+	SymbolStatus            string                 `json:"symbol_status,omitempty"`
+	TargetStatus            string                 `json:"target_status,omitempty"`
+	TriggerKind             DriftTriggerKind       `json:"trigger_kind,omitempty"`
+	Materiality             DriftMateriality       `json:"materiality,omitempty"`
+	FallbackKind            string                 `json:"fallback_kind,omitempty"`
+	FallbackReason          string                 `json:"fallback_reason,omitempty"`
+	AuditOnly               bool                   `json:"audit_only"`
+	Fanout                  int                    `json:"fanout"`
+	ImpactedDecisions       []DriftEventDecision   `json:"impacted_decisions"`
+	RootCause               string                 `json:"root_cause"`
+	RootCauseDetail         string                 `json:"root_cause_detail,omitempty"`
+	ResolutionStatus        string                 `json:"resolution_status"`
+	ResolutionRecordPosture string                 `json:"resolution_record_posture,omitempty"`
+	ResolutionRecord        *DriftEventResolution  `json:"resolution_record,omitempty"`
+	SuggestedNextCommand    string                 `json:"suggested_next_command,omitempty"`
+	SourceItems             []DriftEventSourceItem `json:"source_items,omitempty"`
+	OmittedSourceItems      int                    `json:"omitted_source_items,omitempty"`
 }
 
 type DriftEventDecision struct {
@@ -107,6 +108,13 @@ const (
 	DriftEventResolutionNeedsOperatorJudgment = "needs_operator_judgment"
 	DriftEventResolutionResolved              = "resolved"
 	DriftEventResolutionWaivedUntil           = "waived_until"
+)
+
+const (
+	DriftEventResolutionRecordPostureApplied           = "applied"
+	DriftEventResolutionRecordPostureStaleEventBinding = "stale_event_binding"
+	DriftEventResolutionRecordPostureInactiveWaiver    = "inactive_waiver"
+	DriftEventResolutionRecordPostureUnsupportedStatus = "unsupported_status"
 )
 
 const DriftEventResolutionLedgerAuthority = "drift_event_resolution_metadata_not_decision_authority"
@@ -213,7 +221,9 @@ func ApplyDriftEventResolutionLedger(
 			continue
 		}
 		report.Events[index].ResolutionRecord = &record
-		if !driftEventResolutionApplies(record, event, now) {
+		posture := driftEventResolutionRecordPosture(record, event, now)
+		report.Events[index].ResolutionRecordPosture = posture
+		if posture != DriftEventResolutionRecordPostureApplied {
 			continue
 		}
 		report.Events[index].ResolutionStatus = record.Status
@@ -389,25 +399,28 @@ func BindDriftEventResolutionToEvent(
 	return record
 }
 
-func driftEventResolutionApplies(
+func driftEventResolutionRecordPosture(
 	record DriftEventResolution,
 	event DriftEvent,
 	now time.Time,
-) bool {
+) string {
 	if !driftEventResolutionMatchesEvent(record, event) {
-		return false
+		return DriftEventResolutionRecordPostureStaleEventBinding
 	}
 	switch record.Status {
 	case DriftEventResolutionResolved:
-		return true
+		return DriftEventResolutionRecordPostureApplied
 	case DriftEventResolutionWaivedUntil:
 		expiresAt, err := ParseDriftEventResolutionTime(record.WaiverExpiresAt, now)
 		if err != nil {
-			return false
+			return DriftEventResolutionRecordPostureInactiveWaiver
 		}
-		return !now.After(expiresAt)
+		if now.After(expiresAt) {
+			return DriftEventResolutionRecordPostureInactiveWaiver
+		}
+		return DriftEventResolutionRecordPostureApplied
 	default:
-		return false
+		return DriftEventResolutionRecordPostureUnsupportedStatus
 	}
 }
 

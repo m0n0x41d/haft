@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **DriftEvent resolution record posture.** DriftEvent reports now expose a
+  read-only `resolution_record_posture` so agents can distinguish applied
+  resolution ledger records from stale target bindings, inactive waivers, and
+  unsupported ledger statuses without treating the record as decision authority.
 - **DriftEvent resolution posture binding.** DriftEvent resolution ledger
   records now bind to the event's materiality and audit-only posture, so an old
   resolved/waived record remains visible for audit but no longer closes the

@@ -50,6 +50,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   tests now reject rich interface output fragments such as EvidencePath
   reliance-disposition and authority-boundary values, keeping exact/audit
   examples behind explicit interface drill-downs.
+- **Default status/code-context output-shape guards.** Compact status and
+  default `code_context` tests now reject rich interface output fragments,
+  preserving drill-down-only exact/audit examples outside normal cockpit and
+  agent-context payloads.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

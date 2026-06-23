@@ -88,6 +88,22 @@ func assertNoContractGenerationManifestInline(t *testing.T, surface string, text
 			t.Fatalf("%s inlined contract generation manifest fragment %q:\n%s", surface, forbidden, text)
 		}
 	}
+	assertNoInterfaceOutputShapeInline(t, surface, text)
+}
+
+func assertNoInterfaceOutputShapeInline(t *testing.T, surface string, text string) {
+	t.Helper()
+
+	for _, forbidden := range []string{
+		"bounded_reliance|advisory_only|blocked",
+		"legacy_formality_projection_lossy|unversioned_formality_source_scale_missing|current_f0_f9_formality",
+		"not_claim_truth",
+		"not_publication",
+	} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("%s inlined interface output-shape fragment %q:\n%s", surface, forbidden, text)
+		}
+	}
 }
 
 func TestHandleQuintQuery_CodeContextTypedLanes(t *testing.T) {

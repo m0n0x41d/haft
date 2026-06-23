@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
+  commit/source metadata in `haft version`, `scripts/build.sh --install`
+  stamps commit/build date via ldflags, and read-only MCP query footers now use
+  the same typed stale snapshot as `haft_query(action="status")` instead of
+  raw terminal-decision stale counts.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

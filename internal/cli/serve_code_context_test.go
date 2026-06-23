@@ -36,6 +36,42 @@ func TestHandleQuintQuery_CodeContextDefaultsToIndex(t *testing.T) {
 	assertNoContractGenerationManifestInline(t, "default code_context", result)
 }
 
+func TestHandleQuintQuery_CodeContextFooterUsesTypedStaleSnapshot(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+	checkFixture := checkTestProject{
+		root:    filepath.Dir(fixture.haftDir),
+		haftDir: fixture.haftDir,
+		store:   fixture.store,
+	}
+	decision := mustCreateDecision(t, checkFixture, artifact.DecideInput{
+		SelectedTitle:   "Deprecated expired decision",
+		WhySelected:     "Need a terminal decision that raw nav would count as stale.",
+		SelectionPolicy: "Prefer a single terminal decision with no active operator work.",
+		CounterArgument: "Terminal decisions should not surface as current stale debt.",
+		WeakestLink:     "Read-only query footers must follow the same stale lane as status.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Active expired decision",
+			Reason:  "Would be legitimate stale debt and would not prove footer filtering.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Deprecated decisions resurface in code_context footers."},
+		},
+	})
+	mustSetValidUntil(t, checkFixture, decision.Meta.ID, time.Now().Add(-72*time.Hour).Format("2006-01-02"))
+	mustSetArtifactStatus(t, checkFixture, decision.Meta.ID, artifact.StatusDeprecated)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"file":   fixture.file,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(code_context) returned error: %v", err)
+	}
+	if strings.Contains(result, "Stale: 1 decision(s) need refresh") {
+		t.Fatalf("code_context footer used raw stale decision count instead of typed snapshot:\n%s", result)
+	}
+}
+
 func assertNoContractGenerationManifestInline(t *testing.T, surface string, text string) {
 	t.Helper()
 

@@ -1329,7 +1329,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 	contextName, _ := args["context"].(string)
 	reason, _ := args["reason"].(string)
 	taskContext, _ := args["task_context"].(string)
-	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
+	navStrip := navStripForStatusStaleLane(ctx, store, contextName)
 
 	// Support both artifact_ref (new) and decision_ref (backward compat)
 	artifactRef, _ := args["artifact_ref"].(string)
@@ -1407,7 +1407,7 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 			}
 		}
 
-		return result + navStrip, nil
+		return result + navStripWithStaleSnapshot(ctx, store, contextName, items), nil
 
 	case artifact.RefreshPlan:
 		projectRoot := filepath.Dir(haftDir)
@@ -1585,7 +1585,7 @@ func codeContextSymbolName(symbol codebase.CodeSymbol) string {
 func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recall.Searcher, haftDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
-	navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
+	navStrip := navStripForStatusStaleLane(ctx, store, contextName)
 
 	switch action {
 	case "search":

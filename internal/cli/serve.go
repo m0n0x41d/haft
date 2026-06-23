@@ -2100,6 +2100,10 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if err != nil {
 			return "", fmt.Errorf("build decision reconciliation plan: %w", err)
 		}
+		full, _ := args["full"].(bool)
+		if !full {
+			record = artifact.CompactDecisionReconciliationPlan(record, driftEventsSummaryEventLimit)
+		}
 		payload, err := json.Marshal(record)
 		if err != nil {
 			return "", fmt.Errorf("marshal decision reconciliation plan: %w", err)
@@ -2110,6 +2114,10 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		record, err := artifact.BuildCurrentGoverningSetReportFiltered(ctx, store, governingSetFilterFromArgs(args))
 		if err != nil {
 			return "", fmt.Errorf("build current governing set: %w", err)
+		}
+		full, _ := args["full"].(bool)
+		if !full {
+			record = artifact.CompactCurrentGoverningSetReport(record, driftEventsSummaryEventLimit)
 		}
 		payload, err := json.Marshal(record)
 		if err != nil {

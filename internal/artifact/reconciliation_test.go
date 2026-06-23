@@ -75,6 +75,76 @@ func TestDecisionReconciliationSurfacesScopeEnrichmentRepairHints(t *testing.T) 
 	}
 }
 
+func TestCompactDecisionReconciliationPlanPreservesSummaryAndOmitsAuditGroups(t *testing.T) {
+	plan := DecisionReconciliationPlan{
+		SchemaVersion: DecisionReconciliationSchemaVersion,
+		Authority:     DecisionReconciliationAuthority,
+		Summary: DecisionReconciliationSummary{
+			Groups:            3,
+			ReviewedDecisions: 3,
+		},
+		Groups: []DecisionReconciliationGroup{
+			{
+				GroupID:           "group-1",
+				Category:          DecisionReconciliationMergeCandidate,
+				SubjectRef:        "subject:store",
+				SubjectResolution: "explicit_subject",
+				BoundedContext:    "artifact",
+				DecisionRefs:      []string{"dec-1", "dec-2"},
+				OperatorRequired:  true,
+				Preview: DecisionReconciliationPreview{
+					Operation:      DecisionReconciliationOperationMergeThroughSuccessor,
+					ApplyOperation: DecisionReconciliationOperationMergeThroughSuccessor,
+					DownstreamImpact: &DecisionReconciliationDownstream{
+						DependentRefs: []string{"evid-1"},
+					},
+				},
+			},
+			{
+				GroupID:      "group-2",
+				Category:     DecisionReconciliationKeep,
+				DecisionRefs: []string{"dec-3"},
+			},
+			{
+				GroupID:      "group-3",
+				Category:     DecisionReconciliationKeep,
+				DecisionRefs: []string{"dec-4"},
+			},
+		},
+	}
+
+	compact := CompactDecisionReconciliationPlan(plan, 2)
+
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if compact.Summary.Groups != 3 || compact.Summary.ReviewedDecisions != 3 {
+		t.Fatalf("summary = %#v, want preserved source summary", compact.Summary)
+	}
+	if len(compact.Groups) != 0 {
+		t.Fatalf("compact groups should omit full audit groups: %#v", compact.Groups)
+	}
+	if len(compact.CompactGroups) != 2 || compact.OmittedGroups != 1 {
+		t.Fatalf("compact group count = %d omitted = %d", len(compact.CompactGroups), compact.OmittedGroups)
+	}
+	first := compact.CompactGroups[0]
+	if first.GroupID != "group-1" || first.Fanout != 2 || !first.OperatorRequired {
+		t.Fatalf("compact first group = %#v", first)
+	}
+	if first.PreviewOperation != DecisionReconciliationOperationMergeThroughSuccessor {
+		t.Fatalf("preview_operation = %q", first.PreviewOperation)
+	}
+	if first.DownstreamDependents != 1 {
+		t.Fatalf("downstream_dependents = %d, want 1", first.DownstreamDependents)
+	}
+	if !strings.Contains(compact.FullAuditCommand, "full=true") {
+		t.Fatalf("full audit command = %q", compact.FullAuditCommand)
+	}
+	if len(plan.Groups) != 3 {
+		t.Fatalf("source plan mutated: %#v", plan.Groups)
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
 		DecisionID:               "dec-fallback",

@@ -19,12 +19,16 @@ const (
 )
 
 type CurrentGoverningSetReport struct {
-	SchemaVersion int                         `json:"schema_version"`
-	Authority     string                      `json:"authority"`
-	Snapshot      CurrentGoverningSetSnapshot `json:"snapshot"`
-	Filter        *CurrentGoverningSetFilter  `json:"filter,omitempty"`
-	Summary       CurrentGoverningSetSummary  `json:"summary"`
-	Sets          []CurrentGoverningSet       `json:"sets"`
+	SchemaVersion    int                          `json:"schema_version"`
+	Authority        string                       `json:"authority"`
+	View             string                       `json:"view,omitempty"`
+	Snapshot         CurrentGoverningSetSnapshot  `json:"snapshot"`
+	Filter           *CurrentGoverningSetFilter   `json:"filter,omitempty"`
+	Summary          CurrentGoverningSetSummary   `json:"summary"`
+	CompactSets      []CurrentGoverningSetCompact `json:"compact_sets,omitempty"`
+	OmittedSets      int                          `json:"omitted_sets,omitempty"`
+	FullAuditCommand string                       `json:"full_audit_command,omitempty"`
+	Sets             []CurrentGoverningSet        `json:"sets,omitempty"`
 }
 
 type CurrentGoverningSetSnapshot struct {
@@ -72,6 +76,23 @@ type CurrentGoverningSet struct {
 	AuthorityBoundary        string                          `json:"authority_boundary"`
 	Basis                    []string                        `json:"basis"`
 	ScopeRepairHints         []string                        `json:"scope_repair_hints,omitempty"`
+}
+
+type CurrentGoverningSetCompact struct {
+	SetID                    string                          `json:"set_id"`
+	SubjectRef               string                          `json:"subject_ref"`
+	SubjectResolution        string                          `json:"subject_resolution"`
+	BoundedContext           string                          `json:"bounded_context,omitempty"`
+	TargetRef                string                          `json:"target_ref"`
+	TargetResolution         string                          `json:"target_resolution"`
+	Posture                  string                          `json:"posture"`
+	CurrentDecisionRefs      []string                        `json:"current_decision_refs"`
+	TerminalHistoryRefs      []string                        `json:"terminal_history_refs,omitempty"`
+	CurrentDecisionCount     int                             `json:"current_decision_count"`
+	AnswerPaths              []CurrentGoverningSetAnswerPath `json:"answer_paths,omitempty"`
+	OperatorRequired         bool                            `json:"operator_required"`
+	ScopeRepairHints         []string                        `json:"scope_repair_hints,omitempty"`
+	WholeFileFallbackTargets []string                        `json:"whole_file_fallback_targets,omitempty"`
 }
 
 type CurrentGoverningSetAnswerPath struct {
@@ -186,6 +207,56 @@ func FilterCurrentGoverningSetReport(
 	report.Sets = sets
 	report.Summary = currentGoverningSetSummary(sets)
 	return report
+}
+
+func CompactCurrentGoverningSetReport(
+	report CurrentGoverningSetReport,
+	setLimit int,
+) CurrentGoverningSetReport {
+	compact := report
+	compact.View = "compact"
+	compact.FullAuditCommand = `haft_query(action="governing_set", full=true)`
+
+	sets := report.Sets
+	if setLimit > 0 && len(sets) > setLimit {
+		compact.OmittedSets = len(sets) - setLimit
+		sets = sets[:setLimit]
+	}
+	compact.CompactSets = currentGoverningSetCompactSets(sets)
+	compact.Sets = nil
+
+	return compact
+}
+
+func currentGoverningSetCompactSets(
+	sets []CurrentGoverningSet,
+) []CurrentGoverningSetCompact {
+	out := make([]CurrentGoverningSetCompact, 0, len(sets))
+	for _, set := range sets {
+		out = append(out, currentGoverningSetCompact(set))
+	}
+	return out
+}
+
+func currentGoverningSetCompact(
+	set CurrentGoverningSet,
+) CurrentGoverningSetCompact {
+	return CurrentGoverningSetCompact{
+		SetID:                    set.SetID,
+		SubjectRef:               set.SubjectRef,
+		SubjectResolution:        set.SubjectResolution,
+		BoundedContext:           set.BoundedContext,
+		TargetRef:                set.TargetRef,
+		TargetResolution:         set.TargetResolution,
+		Posture:                  set.Posture,
+		CurrentDecisionRefs:      append([]string(nil), set.CurrentDecisionRefs...),
+		TerminalHistoryRefs:      append([]string(nil), set.TerminalHistoryRefs...),
+		CurrentDecisionCount:     len(set.CurrentDecisionRefs),
+		AnswerPaths:              append([]CurrentGoverningSetAnswerPath(nil), set.AnswerPaths...),
+		OperatorRequired:         set.OperatorRequired,
+		ScopeRepairHints:         append([]string(nil), set.ScopeRepairHints...),
+		WholeFileFallbackTargets: append([]string(nil), set.WholeFileFallbackTargets...),
+	}
 }
 
 func newCurrentGoverningSetSnapshot(filterApplied bool) CurrentGoverningSetSnapshot {

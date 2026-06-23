@@ -273,7 +273,7 @@ func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
 	}
 }
 
-func TestHandleQuintQueryDecisionReconcileReturnsReportOnlyPlan(t *testing.T) {
+func TestHandleQuintQueryDecisionReconcileDefaultsToCompactReportOnlyPlan(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
@@ -295,12 +295,39 @@ func TestHandleQuintQueryDecisionReconcileReturnsReportOnlyPlan(t *testing.T) {
 	if plan.Summary.MergeCandidates != 1 {
 		t.Fatalf("merge_candidates = %d, want 1", plan.Summary.MergeCandidates)
 	}
-	if len(plan.Groups) != 1 || plan.Groups[0].Preview.Operation != artifact.DecisionReconciliationOperationMergeThroughSuccessor {
-		t.Fatalf("preview = %#v", plan.Groups)
+	if plan.View != "compact" {
+		t.Fatalf("default decision_reconcile view = %q, want compact", plan.View)
+	}
+	if len(plan.Groups) != 0 {
+		t.Fatalf("default decision_reconcile should omit full groups: %#v", plan.Groups)
+	}
+	if len(plan.CompactGroups) != 1 || plan.CompactGroups[0].PreviewOperation != artifact.DecisionReconciliationOperationMergeThroughSuccessor {
+		t.Fatalf("compact_groups = %#v", plan.CompactGroups)
+	}
+	if !strings.Contains(plan.FullAuditCommand, "full=true") {
+		t.Fatalf("full audit command = %q", plan.FullAuditCommand)
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "decision_reconcile",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery decision_reconcile full returned error: %v", err)
+	}
+	var fullPlan artifact.DecisionReconciliationPlan
+	if err := json.Unmarshal([]byte(fullResult), &fullPlan); err != nil {
+		t.Fatalf("decode full decision reconciliation plan: %v\n%s", err, fullResult)
+	}
+	if fullPlan.View != "" {
+		t.Fatalf("full decision_reconcile view = %q, want empty audit view", fullPlan.View)
+	}
+	if len(fullPlan.Groups) != 1 || fullPlan.Groups[0].Preview.Operation != artifact.DecisionReconciliationOperationMergeThroughSuccessor {
+		t.Fatalf("full groups = %#v", fullPlan.Groups)
 	}
 }
 
-func TestHandleQuintQueryGoverningSetReturnsCurrentAuthorityFrontier(t *testing.T) {
+func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-current", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 
@@ -321,8 +348,35 @@ func TestHandleQuintQueryGoverningSetReturnsCurrentAuthorityFrontier(t *testing.
 	if report.Summary.CurrentDecisions != 1 {
 		t.Fatalf("current_decisions = %d, want 1", report.Summary.CurrentDecisions)
 	}
-	if len(report.Sets) != 1 || report.Sets[0].Posture != artifact.GoverningSetPostureSingle {
-		t.Fatalf("sets = %#v", report.Sets)
+	if report.View != "compact" {
+		t.Fatalf("default governing_set view = %q, want compact", report.View)
+	}
+	if len(report.Sets) != 0 {
+		t.Fatalf("default governing_set should omit full sets: %#v", report.Sets)
+	}
+	if len(report.CompactSets) != 1 || report.CompactSets[0].Posture != artifact.GoverningSetPostureSingle {
+		t.Fatalf("compact_sets = %#v", report.CompactSets)
+	}
+	if !strings.Contains(report.FullAuditCommand, "full=true") {
+		t.Fatalf("full audit command = %q", report.FullAuditCommand)
+	}
+
+	fullResult, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "governing_set",
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery governing_set full returned error: %v", err)
+	}
+	var fullReport artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal([]byte(fullResult), &fullReport); err != nil {
+		t.Fatalf("decode full current governing set: %v\n%s", err, fullResult)
+	}
+	if fullReport.View != "" {
+		t.Fatalf("full governing_set view = %q, want empty audit view", fullReport.View)
+	}
+	if len(fullReport.Sets) != 1 || fullReport.Sets[0].Posture != artifact.GoverningSetPostureSingle {
+		t.Fatalf("full sets = %#v", fullReport.Sets)
 	}
 }
 
@@ -349,8 +403,11 @@ func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
 	if report.Summary.GoverningSets != 1 || report.Summary.CurrentDecisions != 1 {
 		t.Fatalf("summary = %#v", report.Summary)
 	}
-	if len(report.Sets) != 1 || !strings.Contains(report.Sets[0].TargetRef, "Load") {
-		t.Fatalf("sets = %#v", report.Sets)
+	if report.View != "compact" {
+		t.Fatalf("default filtered governing_set view = %q, want compact", report.View)
+	}
+	if len(report.CompactSets) != 1 || !strings.Contains(report.CompactSets[0].TargetRef, "Load") {
+		t.Fatalf("compact_sets = %#v", report.CompactSets)
 	}
 }
 

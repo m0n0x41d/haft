@@ -34,11 +34,15 @@ const (
 )
 
 type DecisionReconciliationPlan struct {
-	SchemaVersion     int                           `json:"schema_version"`
-	Authority         string                        `json:"authority"`
-	FileOverlapPolicy string                        `json:"file_overlap_policy"`
-	Summary           DecisionReconciliationSummary `json:"summary"`
-	Groups            []DecisionReconciliationGroup `json:"groups"`
+	SchemaVersion     int                                  `json:"schema_version"`
+	Authority         string                               `json:"authority"`
+	View              string                               `json:"view,omitempty"`
+	FileOverlapPolicy string                               `json:"file_overlap_policy"`
+	Summary           DecisionReconciliationSummary        `json:"summary"`
+	CompactGroups     []DecisionReconciliationCompactGroup `json:"compact_groups,omitempty"`
+	OmittedGroups     int                                  `json:"omitted_groups,omitempty"`
+	FullAuditCommand  string                               `json:"full_audit_command,omitempty"`
+	Groups            []DecisionReconciliationGroup        `json:"groups,omitempty"`
 }
 
 type DecisionReconciliationSummary struct {
@@ -70,6 +74,23 @@ type DecisionReconciliationGroup struct {
 	Confidence        string                        `json:"confidence"`
 	OperatorRequired  bool                          `json:"operator_required"`
 	Preview           DecisionReconciliationPreview `json:"preview"`
+}
+
+type DecisionReconciliationCompactGroup struct {
+	GroupID                     string   `json:"group_id"`
+	Category                    string   `json:"category"`
+	SubjectRef                  string   `json:"subject_ref"`
+	SubjectResolution           string   `json:"subject_resolution"`
+	BoundedContext              string   `json:"bounded_context,omitempty"`
+	DecisionRefs                []string `json:"decision_refs"`
+	Fanout                      int      `json:"fanout"`
+	OperatorRequired            bool     `json:"operator_required"`
+	PreviewOperation            string   `json:"preview_operation,omitempty"`
+	ApplyOperation              string   `json:"apply_operation,omitempty"`
+	DownstreamDependents        int      `json:"downstream_dependents,omitempty"`
+	DownstreamMigrationRequired bool     `json:"downstream_migration_required,omitempty"`
+	SuccessorWorkflowRequired   bool     `json:"successor_workflow_required,omitempty"`
+	ScopeRepairHints            []string `json:"scope_repair_hints,omitempty"`
 }
 
 type DecisionReconciliationItem struct {
@@ -1104,6 +1125,80 @@ func BuildDecisionReconciliationPlanFromItems(
 		Summary:           summary,
 		Groups:            groups,
 	}
+}
+
+func CompactDecisionReconciliationPlan(
+	plan DecisionReconciliationPlan,
+	groupLimit int,
+) DecisionReconciliationPlan {
+	compact := plan
+	compact.View = "compact"
+	compact.FullAuditCommand = `haft_query(action="decision_reconcile", full=true)`
+
+	groups := plan.Groups
+	if groupLimit > 0 && len(groups) > groupLimit {
+		compact.OmittedGroups = len(groups) - groupLimit
+		groups = groups[:groupLimit]
+	}
+	compact.CompactGroups = decisionReconciliationCompactGroups(groups)
+	compact.Groups = nil
+
+	return compact
+}
+
+func decisionReconciliationCompactGroups(
+	groups []DecisionReconciliationGroup,
+) []DecisionReconciliationCompactGroup {
+	out := make([]DecisionReconciliationCompactGroup, 0, len(groups))
+	for _, group := range groups {
+		out = append(out, decisionReconciliationCompactGroup(group))
+	}
+	return out
+}
+
+func decisionReconciliationCompactGroup(
+	group DecisionReconciliationGroup,
+) DecisionReconciliationCompactGroup {
+	return DecisionReconciliationCompactGroup{
+		GroupID:                     group.GroupID,
+		Category:                    group.Category,
+		SubjectRef:                  group.SubjectRef,
+		SubjectResolution:           group.SubjectResolution,
+		BoundedContext:              group.BoundedContext,
+		DecisionRefs:                append([]string(nil), group.DecisionRefs...),
+		Fanout:                      len(group.DecisionRefs),
+		OperatorRequired:            group.OperatorRequired,
+		PreviewOperation:            group.Preview.Operation,
+		ApplyOperation:              group.Preview.ApplyOperation,
+		DownstreamDependents:        decisionReconciliationPreviewDependentCount(group.Preview),
+		DownstreamMigrationRequired: decisionReconciliationPreviewMigrationRequired(group.Preview),
+		SuccessorWorkflowRequired:   decisionReconciliationPreviewSuccessorRequired(group.Preview),
+		ScopeRepairHints:            append([]string(nil), group.ScopeRepairHints...),
+	}
+}
+
+func decisionReconciliationPreviewDependentCount(
+	preview DecisionReconciliationPreview,
+) int {
+	if preview.DownstreamImpact != nil {
+		return len(preview.DownstreamImpact.DependentRefs)
+	}
+	if preview.DownstreamMigration != nil {
+		return len(preview.DownstreamMigration.DependentRefs)
+	}
+	return 0
+}
+
+func decisionReconciliationPreviewMigrationRequired(
+	preview DecisionReconciliationPreview,
+) bool {
+	return preview.DownstreamMigration != nil && preview.DownstreamMigration.RequiredBeforeApply
+}
+
+func decisionReconciliationPreviewSuccessorRequired(
+	preview DecisionReconciliationPreview,
+) bool {
+	return preview.SuccessorWorkflow != nil && preview.SuccessorWorkflow.Required
 }
 
 func decisionReconciliationDraftItems(

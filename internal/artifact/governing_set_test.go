@@ -181,6 +181,82 @@ func TestBuildCurrentGoverningSetSurfacesFallbackScopeRepair(t *testing.T) {
 	}
 }
 
+func TestCompactCurrentGoverningSetReportPreservesSummaryAndOmitsAuditSets(t *testing.T) {
+	report := CurrentGoverningSetReport{
+		SchemaVersion: CurrentGoverningSetSchemaVersion,
+		Authority:     CurrentGoverningSetAuthority,
+		Summary: CurrentGoverningSetSummary{
+			CurrentDecisions: 3,
+			GoverningSets:    3,
+		},
+		Sets: []CurrentGoverningSet{
+			{
+				SetID:                    "governing-set-1",
+				SubjectRef:               "subject:store",
+				SubjectResolution:        "explicit_subject",
+				BoundedContext:           "artifact",
+				TargetRef:                "symbol:internal/store.go::Save",
+				TargetResolution:         "explicit_governance_or_watch_target",
+				Posture:                  GoverningSetPostureOverlap,
+				CurrentDecisionRefs:      []string{"dec-1", "dec-2"},
+				CurrentDecisions:         []DecisionReconciliationItem{{DecisionID: "dec-1"}, {DecisionID: "dec-2"}},
+				TerminalHistoryRefs:      []string{"dec-old"},
+				AnswerPaths:              currentGoverningSetAnswerPaths("symbol:internal/store.go::Save"),
+				OperatorRequired:         true,
+				ScopeRepairHints:         []string{"use enrich_scope"},
+				WholeFileFallbackTargets: []string{"whole_file_fallback:internal/store.go"},
+			},
+			{
+				SetID:               "governing-set-2",
+				SubjectRef:          "subject:load",
+				TargetRef:           "symbol:internal/store.go::Load",
+				Posture:             GoverningSetPostureSingle,
+				CurrentDecisionRefs: []string{"dec-3"},
+				CurrentDecisions:    []DecisionReconciliationItem{{DecisionID: "dec-3"}},
+			},
+			{
+				SetID:               "governing-set-3",
+				SubjectRef:          "subject:list",
+				TargetRef:           "symbol:internal/store.go::List",
+				Posture:             GoverningSetPostureSingle,
+				CurrentDecisionRefs: []string{"dec-4"},
+				CurrentDecisions:    []DecisionReconciliationItem{{DecisionID: "dec-4"}},
+			},
+		},
+	}
+
+	compact := CompactCurrentGoverningSetReport(report, 2)
+
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if compact.Summary.GoverningSets != 3 || compact.Summary.CurrentDecisions != 3 {
+		t.Fatalf("summary = %#v, want preserved source summary", compact.Summary)
+	}
+	if len(compact.Sets) != 0 {
+		t.Fatalf("compact report should omit full audit sets: %#v", compact.Sets)
+	}
+	if len(compact.CompactSets) != 2 || compact.OmittedSets != 1 {
+		t.Fatalf("compact set count = %d omitted = %d", len(compact.CompactSets), compact.OmittedSets)
+	}
+	first := compact.CompactSets[0]
+	if first.SetID != "governing-set-1" || first.CurrentDecisionCount != 2 || !first.OperatorRequired {
+		t.Fatalf("compact first set = %#v", first)
+	}
+	if len(first.AnswerPaths) != 1 || first.AnswerPaths[0].TargetKind != "symbol" {
+		t.Fatalf("answer_paths = %#v", first.AnswerPaths)
+	}
+	if len(first.TerminalHistoryRefs) != 1 || first.TerminalHistoryRefs[0] != "dec-old" {
+		t.Fatalf("terminal_history_refs = %#v", first.TerminalHistoryRefs)
+	}
+	if !strings.Contains(compact.FullAuditCommand, "full=true") {
+		t.Fatalf("full audit command = %q", compact.FullAuditCommand)
+	}
+	if len(report.Sets) != 3 {
+		t.Fatalf("source report mutated: %#v", report.Sets)
+	}
+}
+
 func TestFilterCurrentGoverningSetReportBySubjectAndTarget(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

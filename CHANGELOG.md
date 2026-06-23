@@ -69,6 +69,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now returns a compact JSON report by default: complete summary counts, capped
   event rows, omitted counters, and a `full=true` audit command. Passing
   `full=true` preserves the complete `source_items` and compatibility report.
+- **Compact MCP reconciliation drill-downs.**
+  `haft_query(action="decision_reconcile")` and
+  `haft_query(action="governing_set")` now return compact JSON projections by
+  default, preserving summary counts, top rows, omission counters, and
+  `full=true` audit commands for complete group/set payloads.
 - **Overseer judgment reconciliation cues.** `haft overseer judgment` and
   `haft overseer judgment --json` now include read-only reconciliation proposal
   cues from the existing high-fanout/fallback review pipeline, with proposal

@@ -34,6 +34,7 @@ func BuildMaintenanceRun(input MaintenanceInput) (MaintenanceRun, error) {
 	run.Suppressed = normalizeSuppressions(run.Suppressed)
 	run.Executed = normalizeExecutedActions(input.Executed)
 	run.ReconciliationProposals = normalizeReconciliationProposals(input.ReconciliationProposals)
+	run.ReconciliationSummary = buildMaintenanceReconciliationSummary(run.ReconciliationProposals)
 	run.Summary = maintenanceSummary(run, input)
 
 	if len(run.Signals) == 0 && len(run.Suppressed) == 0 && len(run.Executed) == 0 && len(run.ReconciliationProposals) == 0 {
@@ -218,6 +219,50 @@ func buildMaintenanceAfterAction(run MaintenanceRun) MaintenanceAfterActionRepor
 		})
 	}
 	return report
+}
+
+func buildMaintenanceReconciliationSummary(
+	proposals []MaintenanceReconciliationProposal,
+) *MaintenanceReconciliationSummary {
+	if len(proposals) == 0 {
+		return nil
+	}
+
+	summary := MaintenanceReconciliationSummary{
+		AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+		ProposalCount:     len(proposals),
+		ByKind:            map[string]int{},
+	}
+	commands := make([]string, 0)
+	for _, proposal := range proposals {
+		summary.ByKind[proposal.Kind]++
+		if proposal.Fanout > summary.MaxFanout {
+			summary.MaxFanout = proposal.Fanout
+		}
+		if isFallbackMaintenanceReconciliationProposal(proposal) {
+			summary.FallbackProposalCount++
+		}
+		if isHighFanoutMaintenanceReconciliationProposal(proposal) {
+			summary.HighFanoutProposalCount++
+		}
+		commands = append(commands, proposal.SuggestedCommand)
+	}
+	summary.SuggestedCommands = compactStrings(commands)
+	return &summary
+}
+
+func isFallbackMaintenanceReconciliationProposal(proposal MaintenanceReconciliationProposal) bool {
+	if len(proposal.FallbackTargets) > 0 {
+		return true
+	}
+	return strings.Contains(proposal.Kind, "fallback")
+}
+
+func isHighFanoutMaintenanceReconciliationProposal(proposal MaintenanceReconciliationProposal) bool {
+	if proposal.Fanout >= 5 {
+		return true
+	}
+	return strings.Contains(proposal.Kind, "high_fanout")
 }
 
 func maintenanceSummary(run MaintenanceRun, input MaintenanceInput) MaintenanceSummary {

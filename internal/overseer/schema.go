@@ -345,8 +345,19 @@ type MaintenanceRun struct {
 	Signals                 []StatusSignal                      `json:"signals"`
 	Suppressed              []MaintenanceSuppression            `json:"suppressed"`
 	ReconciliationProposals []MaintenanceReconciliationProposal `json:"reconciliation_proposals,omitempty"`
+	ReconciliationSummary   *MaintenanceReconciliationSummary   `json:"reconciliation_summary,omitempty"`
 	AfterAction             MaintenanceAfterActionReport        `json:"after_action"`
 	Executed                []MaintenanceAction                 `json:"executed,omitempty"`
+}
+
+type MaintenanceReconciliationSummary struct {
+	AuthorityBoundary       string         `json:"authority_boundary"`
+	ProposalCount           int            `json:"proposal_count"`
+	ByKind                  map[string]int `json:"by_kind,omitempty"`
+	FallbackProposalCount   int            `json:"fallback_proposal_count"`
+	HighFanoutProposalCount int            `json:"high_fanout_proposal_count"`
+	MaxFanout               int            `json:"max_fanout"`
+	SuggestedCommands       []string       `json:"suggested_commands,omitempty"`
 }
 
 type MaintenanceAfterActionReport struct {

@@ -156,6 +156,18 @@ func TestMaintenanceRunCarriesReconciliationProposalsAndAfterAction(t *testing.T
 	if run.ReconciliationProposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
 		t.Fatalf("proposal authority = %q", run.ReconciliationProposals[0].AuthorityBoundary)
 	}
+	if run.ReconciliationSummary == nil {
+		t.Fatal("reconciliation summary missing")
+	}
+	if run.ReconciliationSummary.ProposalCount != 1 || run.ReconciliationSummary.ByKind["high_fanout_reconciliation_review"] != 1 {
+		t.Fatalf("reconciliation summary = %#v", run.ReconciliationSummary)
+	}
+	if run.ReconciliationSummary.HighFanoutProposalCount != 1 || run.ReconciliationSummary.MaxFanout != 7 {
+		t.Fatalf("reconciliation fanout summary = %#v", run.ReconciliationSummary)
+	}
+	if run.ReconciliationSummary.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		t.Fatalf("reconciliation summary authority = %q", run.ReconciliationSummary.AuthorityBoundary)
+	}
 	if len(run.AfterAction.AutoClosedItems) != 1 {
 		t.Fatalf("auto closed items = %#v", run.AfterAction.AutoClosedItems)
 	}
@@ -227,6 +239,34 @@ func TestMaintenanceRunRejectsBindingLifecycleExecutedActions(t *testing.T) {
 	}
 	if len(run.AfterAction.UndoCommands) != 1 || strings.Contains(strings.Join(run.AfterAction.UndoCommands, " "), "act-002") {
 		t.Fatalf("undo commands include rejected lifecycle actions: %#v", run.AfterAction.UndoCommands)
+	}
+}
+
+func TestMaintenanceReconciliationSummaryCountsFallbackPosture(t *testing.T) {
+	summary := buildMaintenanceReconciliationSummary([]MaintenanceReconciliationProposal{
+		{
+			Kind:             "fallback_scope_repair_review",
+			Fanout:           3,
+			FallbackTargets:  []string{"whole_file_fallback:internal/shared.go"},
+			SuggestedCommand: "haft decision reconcile --json",
+		},
+		{
+			Kind:             "high_fanout_reconciliation_review",
+			Fanout:           8,
+			SuggestedCommand: "haft decision reconcile --json",
+		},
+	})
+	if summary == nil {
+		t.Fatal("summary missing")
+	}
+	if summary.ProposalCount != 2 || summary.FallbackProposalCount != 1 || summary.HighFanoutProposalCount != 1 {
+		t.Fatalf("summary counts = %#v", summary)
+	}
+	if summary.MaxFanout != 8 {
+		t.Fatalf("max fanout = %d, want 8", summary.MaxFanout)
+	}
+	if len(summary.SuggestedCommands) != 1 || summary.SuggestedCommands[0] != "haft decision reconcile --json" {
+		t.Fatalf("suggested commands = %#v", summary.SuggestedCommands)
 	}
 }
 

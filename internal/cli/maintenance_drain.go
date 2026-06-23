@@ -21,6 +21,7 @@ type maintenanceDrainReport struct {
 	Summary                 maintenanceDrainSummary                      `json:"summary"`
 	Executed                []overseer.MaintenanceAction                 `json:"executed,omitempty"`
 	ReconciliationProposals []overseer.MaintenanceReconciliationProposal `json:"reconciliation_proposals,omitempty"`
+	ReconciliationSummary   *overseer.MaintenanceReconciliationSummary   `json:"reconciliation_summary,omitempty"`
 	AfterAction             overseer.MaintenanceAfterActionReport        `json:"after_action"`
 	NeedsOperator           []artifact.MaintenanceJudgmentGroup          `json:"needs_operator,omitempty"`
 	NextOperatorAction      []string                                     `json:"next_operator_action,omitempty"`
@@ -84,6 +85,7 @@ func buildMaintenanceDrainReport(
 		Summary:                 maintenanceDrainSummaryFor(beforePlan, run, review),
 		Executed:                maintenanceDrainActionsWithUndo(run),
 		ReconciliationProposals: run.ReconciliationProposals,
+		ReconciliationSummary:   run.ReconciliationSummary,
 		AfterAction:             run.AfterAction,
 		NeedsOperator:           review.Groups,
 		NextOperatorAction:      maintenanceDrainNextActions(review),

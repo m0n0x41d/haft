@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer reconciliation posture summary.** Maintenance-run JSON now includes
+  a compact read-only `reconciliation_summary` with proposal counts, kind
+  counts, fallback/high-fanout posture, max fanout, suggested commands, and the
+  proposal authority boundary so agents do not need to dump every proposal to
+  see the maintenance posture.
 - **Overseer autonomous action allowlist.** Maintenance-run normalization now
   accepts only maintenance effects (`auto_rebaseline`, `observable_run`,
   `revalidate_stale`) as executed autonomous actions, with regression coverage

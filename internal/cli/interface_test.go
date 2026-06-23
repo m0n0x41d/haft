@@ -1406,7 +1406,7 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 	for _, shape := range capability.InputContract.FieldShapes {
 		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
 	}
-	for _, want := range []string{"read_only_current_authority_frontier", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref"} {
+	for _, want := range []string{"read_only_current_authority_frontier", "authority_frontier", "current_decision_refs_are_governing_authority_terminal_history_refs_are_not", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref"} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("governing_set field shapes missing %q:\n%s", want, fieldShapes)
 		}

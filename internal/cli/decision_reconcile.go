@@ -497,6 +497,13 @@ func writeCurrentGoverningSetSummary(
 	if _, err := fmt.Fprintf(output, "current_decisions: %d\n", report.Summary.CurrentDecisions); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(output, "authority_frontier: current_refs=%d terminal_history_refs=%d boundary=%s\n",
+		len(report.AuthorityFrontier.CurrentDecisionRefs),
+		len(report.AuthorityFrontier.TerminalHistoryRefs),
+		truncateDecisionReconciliationSummaryField(report.AuthorityFrontier.AuthorityBoundary),
+	); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(output, "sets: %d conflicts=%d overlaps=%d terminal_history=%d missing_subject=%d fallback_sets=%d scope_enrichment_sets=%d\n",
 		report.Summary.GoverningSets,
 		report.Summary.ConflictSets,

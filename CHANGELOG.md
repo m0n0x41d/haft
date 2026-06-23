@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Governing frontier history split.** `haft decision governing-set` and
+  `haft_query(action="governing_set")` now expose an explicit
+  `authority_frontier` separating current governing DecisionRecord refs from
+  terminal historical refs, so audit consumers do not infer live authority from
+  superseded/deprecated history.
 - **Decision reconciliation draft selection boundary.** `haft decision reconcile
   selection-draft` now keeps low/medium-confidence scope-enrichment candidates
   as review candidates instead of counting them as selected apply candidates;

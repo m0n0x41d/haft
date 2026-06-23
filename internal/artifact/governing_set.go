@@ -19,16 +19,17 @@ const (
 )
 
 type CurrentGoverningSetReport struct {
-	SchemaVersion    int                          `json:"schema_version"`
-	Authority        string                       `json:"authority"`
-	View             string                       `json:"view,omitempty"`
-	Snapshot         CurrentGoverningSetSnapshot  `json:"snapshot"`
-	Filter           *CurrentGoverningSetFilter   `json:"filter,omitempty"`
-	Summary          CurrentGoverningSetSummary   `json:"summary"`
-	CompactSets      []CurrentGoverningSetCompact `json:"compact_sets,omitempty"`
-	OmittedSets      int                          `json:"omitted_sets,omitempty"`
-	FullAuditCommand string                       `json:"full_audit_command,omitempty"`
-	Sets             []CurrentGoverningSet        `json:"sets,omitempty"`
+	SchemaVersion     int                               `json:"schema_version"`
+	Authority         string                            `json:"authority"`
+	View              string                            `json:"view,omitempty"`
+	Snapshot          CurrentGoverningSetSnapshot       `json:"snapshot"`
+	Filter            *CurrentGoverningSetFilter        `json:"filter,omitempty"`
+	Summary           CurrentGoverningSetSummary        `json:"summary"`
+	AuthorityFrontier CurrentGoverningAuthorityFrontier `json:"authority_frontier"`
+	CompactSets       []CurrentGoverningSetCompact      `json:"compact_sets,omitempty"`
+	OmittedSets       int                               `json:"omitted_sets,omitempty"`
+	FullAuditCommand  string                            `json:"full_audit_command,omitempty"`
+	Sets              []CurrentGoverningSet             `json:"sets,omitempty"`
 }
 
 type CurrentGoverningSetSnapshot struct {
@@ -57,6 +58,15 @@ type CurrentGoverningSetSummary struct {
 	FallbackTargetSets     int `json:"fallback_target_sets"`
 	ScopeEnrichmentSets    int `json:"scope_enrichment_sets"`
 	TerminalHistoryRefs    int `json:"terminal_history_refs"`
+}
+
+type CurrentGoverningAuthorityFrontier struct {
+	AuthorityBoundary     string   `json:"authority_boundary"`
+	CurrentStatusPolicy   []string `json:"current_status_policy"`
+	TerminalStatusPolicy  []string `json:"terminal_status_policy"`
+	CurrentDecisionRefs   []string `json:"current_decision_refs"`
+	TerminalHistoryRefs   []string `json:"terminal_history_refs,omitempty"`
+	TerminalHistoryPolicy string   `json:"terminal_history_policy"`
 }
 
 type CurrentGoverningSet struct {
@@ -179,11 +189,12 @@ func BuildCurrentGoverningSetReportFiltered(
 
 	summary := currentGoverningSetSummary(sets)
 	report := CurrentGoverningSetReport{
-		SchemaVersion: CurrentGoverningSetSchemaVersion,
-		Authority:     CurrentGoverningSetAuthority,
-		Snapshot:      newCurrentGoverningSetSnapshot(false),
-		Summary:       summary,
-		Sets:          sets,
+		SchemaVersion:     CurrentGoverningSetSchemaVersion,
+		Authority:         CurrentGoverningSetAuthority,
+		Snapshot:          newCurrentGoverningSetSnapshot(false),
+		Summary:           summary,
+		AuthorityFrontier: currentGoverningAuthorityFrontier(sets),
+		Sets:              sets,
 	}
 	return FilterCurrentGoverningSetReport(report, filter), nil
 }
@@ -206,6 +217,7 @@ func FilterCurrentGoverningSetReport(
 	report.Snapshot.FilterApplied = true
 	report.Sets = sets
 	report.Summary = currentGoverningSetSummary(sets)
+	report.AuthorityFrontier = currentGoverningAuthorityFrontier(sets)
 	return report
 }
 
@@ -502,6 +514,23 @@ func currentGoverningSetSummary(sets []CurrentGoverningSet) CurrentGoverningSetS
 	summary.CurrentDecisions = len(currentIDs)
 	summary.TerminalHistoryRefs = len(historyIDs)
 	return summary
+}
+
+func currentGoverningAuthorityFrontier(sets []CurrentGoverningSet) CurrentGoverningAuthorityFrontier {
+	currentRefs := []string{}
+	terminalRefs := []string{}
+	for _, set := range sets {
+		currentRefs = append(currentRefs, set.CurrentDecisionRefs...)
+		terminalRefs = append(terminalRefs, set.TerminalHistoryRefs...)
+	}
+	return CurrentGoverningAuthorityFrontier{
+		AuthorityBoundary:     "current_decision_refs_are_governing_authority_terminal_history_refs_are_not",
+		CurrentStatusPolicy:   []string{string(StatusActive), string(StatusRefreshDue)},
+		TerminalStatusPolicy:  []string{string(StatusSuperseded), string(StatusDeprecated)},
+		CurrentDecisionRefs:   compactSortedStrings(currentRefs),
+		TerminalHistoryRefs:   compactSortedStrings(terminalRefs),
+		TerminalHistoryPolicy: "terminal decisions stay searchable history and are excluded from current authority",
+	}
 }
 
 func normalizeCurrentGoverningSetFilter(

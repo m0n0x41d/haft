@@ -52,6 +52,21 @@ func TestBuildCurrentGoverningSetExcludesTerminalHistory(t *testing.T) {
 	if !containsString(report.Snapshot.TerminalStatusPolicy, string(StatusSuperseded)) {
 		t.Fatalf("terminal status policy = %#v", report.Snapshot.TerminalStatusPolicy)
 	}
+	if report.AuthorityFrontier.AuthorityBoundary != "current_decision_refs_are_governing_authority_terminal_history_refs_are_not" {
+		t.Fatalf("authority_frontier boundary = %q", report.AuthorityFrontier.AuthorityBoundary)
+	}
+	if len(report.AuthorityFrontier.CurrentDecisionRefs) != 1 || report.AuthorityFrontier.CurrentDecisionRefs[0] != "dec-current" {
+		t.Fatalf("authority_frontier current refs = %#v", report.AuthorityFrontier.CurrentDecisionRefs)
+	}
+	if len(report.AuthorityFrontier.TerminalHistoryRefs) != 1 || report.AuthorityFrontier.TerminalHistoryRefs[0] != "dec-old" {
+		t.Fatalf("authority_frontier terminal refs = %#v", report.AuthorityFrontier.TerminalHistoryRefs)
+	}
+	if !containsString(report.AuthorityFrontier.CurrentStatusPolicy, string(StatusActive)) {
+		t.Fatalf("authority_frontier current policy = %#v", report.AuthorityFrontier.CurrentStatusPolicy)
+	}
+	if !strings.Contains(report.AuthorityFrontier.TerminalHistoryPolicy, "excluded from current authority") {
+		t.Fatalf("authority_frontier terminal policy = %q", report.AuthorityFrontier.TerminalHistoryPolicy)
+	}
 	if len(report.Sets) != 1 {
 		t.Fatalf("sets = %#v", report.Sets)
 	}
@@ -189,6 +204,11 @@ func TestCompactCurrentGoverningSetReportPreservesSummaryAndOmitsAuditSets(t *te
 			CurrentDecisions: 3,
 			GoverningSets:    3,
 		},
+		AuthorityFrontier: CurrentGoverningAuthorityFrontier{
+			AuthorityBoundary:   "current_decision_refs_are_governing_authority_terminal_history_refs_are_not",
+			CurrentDecisionRefs: []string{"dec-1", "dec-2", "dec-3"},
+			TerminalHistoryRefs: []string{"dec-old"},
+		},
 		Sets: []CurrentGoverningSet{
 			{
 				SetID:                    "governing-set-1",
@@ -238,6 +258,12 @@ func TestCompactCurrentGoverningSetReportPreservesSummaryAndOmitsAuditSets(t *te
 	}
 	if len(compact.CompactSets) != 2 || compact.OmittedSets != 1 {
 		t.Fatalf("compact set count = %d omitted = %d", len(compact.CompactSets), compact.OmittedSets)
+	}
+	if len(compact.AuthorityFrontier.CurrentDecisionRefs) != 3 {
+		t.Fatalf("compact authority frontier current refs = %#v", compact.AuthorityFrontier.CurrentDecisionRefs)
+	}
+	if len(compact.AuthorityFrontier.TerminalHistoryRefs) != 1 || compact.AuthorityFrontier.TerminalHistoryRefs[0] != "dec-old" {
+		t.Fatalf("compact authority frontier terminal refs = %#v", compact.AuthorityFrontier.TerminalHistoryRefs)
 	}
 	first := compact.CompactSets[0]
 	if first.SetID != "governing-set-1" || first.CurrentDecisionCount != 2 || !first.OperatorRequired {

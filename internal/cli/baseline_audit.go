@@ -559,6 +559,7 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"outside structured baseline",
 		"versus what baseline",
 		"same evidence standards",
+		"over baseline 2%",
 	):
 		return baselineAuditComparison, "uses baseline as a comparison or benchmark reference"
 	case containsAnyBaselineTerm(value,
@@ -641,6 +642,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"t.Fatalf(\"baseline",
 		"t.fatalf(\"baseline",
 		"baseline teleport",
+		"slower on m1 baseline",
+		"if baseline !=",
 	):
 		return baselineAuditOrdinary, "uses baseline as ordinary test or fixture wording"
 	default:
@@ -750,11 +753,22 @@ func baselineAuditTestFixtureSurface(path string, value string) bool {
 		"t.Fatal(\"baseline",
 		"t.fatalf(\"baseline",
 		"t.fatal(\"baseline",
+		"store.put(baseline)",
+		"weakestlink: \"baseline and drift detection",
+		"baseline and drift detection must both agree",
+		"baselinekindunknownlegacy",
+		"unknownlegacybaseline",
 	)
 }
 
 func baselineAuditSpecflowBaselineStoreSurface(path string) bool {
-	return filepath.ToSlash(path) == "internal/project/specflow/baseline.go"
+	switch filepath.ToSlash(path) {
+	case "internal/project/specflow/baseline.go",
+		"internal/project/specflow/baseline_test.go":
+		return true
+	default:
+		return false
+	}
 }
 
 func baselineAuditSpecLifecycleSurface(path string) bool {
@@ -764,6 +778,9 @@ func baselineAuditSpecLifecycleSurface(path string) bool {
 		"internal/cli/spec_onboard.go",
 		"internal/cli/serve_spec_section.go",
 		"internal/cli/serve_spec_section_test.go",
+		"internal/project/specflow/projection.go",
+		"internal/project/specflow/projection_test.go",
+		"internal/project/specflow/staleness.go",
 		"internal/fpf/spec_section_schema.go":
 		return true
 	default:
@@ -773,7 +790,9 @@ func baselineAuditSpecLifecycleSurface(path string) bool {
 
 func baselineAuditLegacyBindingSurface(path string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/artifact/legacy_binding.go", "internal/artifact/legacy_binding_test.go":
+	case "internal/artifact/legacy_binding.go",
+		"internal/artifact/legacy_binding_test.go",
+		"internal/cli/drift_bindings_test.go":
 		return true
 	default:
 		return false
@@ -893,8 +912,11 @@ func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 	case "internal/fpf/server.go",
 		"internal/cli/serve.go",
 		"internal/cli/serve_decision_test.go",
+		"internal/cli/serve_parity_test.go",
+		"internal/cli/skill/h-decide/SKILL.md",
 		"internal/tools/haft.go",
 		"internal/tools/haft_test.go",
+		"internal/fpf/fpf-routes.json",
 		"spec/integration/MCP_PROTOCOL.md":
 		return true
 	case "README.md":
@@ -933,6 +955,7 @@ func baselineAuditPresentationSurface(path string, value string) bool {
 			"baseline response should pair decision title with ref",
 			"baseline response should not expose a bare decision ref",
 			"simpler http baseline",
+			"driftresponsesummary_emptyandnobaseline",
 		)
 	default:
 		return false
@@ -951,7 +974,8 @@ func baselineAuditWorkflowSkillSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/cli/skill/h-onboard/SKILL.md",
 		"internal/cli/skill/h-reason/SKILL.md",
-		"internal/cli/skill/h-spec-cover/SKILL.md":
+		"internal/cli/skill/h-spec-cover/SKILL.md",
+		"internal/cli/testdata/routing-prompts.yaml":
 		return true
 	default:
 		return false
@@ -961,6 +985,7 @@ func baselineAuditWorkflowSkillSurface(path string) bool {
 func baselineAuditVerifySkillSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/cli/skill/h-verify/SKILL.md",
+		"internal/cli/skill/h-commission/SKILL.md",
 		"packages/haft-pi/prompts/h-verify.md":
 		return true
 	default:
@@ -970,7 +995,10 @@ func baselineAuditVerifySkillSurface(path string) bool {
 
 func baselineAuditAgentGuardrailSurface(path string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/agent/guardrails.go", "internal/agent/guardrails_test.go":
+	case "internal/agent/guardrails.go",
+		"internal/agent/guardrails_test.go",
+		"internal/agent/cycle.go",
+		"internal/agent/prompt.go":
 		return true
 	default:
 		return false
@@ -992,6 +1020,7 @@ func baselineAuditMaintenanceExecutionSurface(path string) bool {
 func baselineAuditOverseerMaintenanceSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/cli/overseer.go",
+		"internal/cli/codeintel_doctrine.go",
 		"internal/overseer/config.go",
 		"internal/overseer/maintenance.go",
 		"internal/overseer/risk.go",

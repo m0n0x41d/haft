@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit tail-surface classification.** `haft baseline audit` now
+  classifies agent lifecycle text, decision/commission skill references,
+  parity action lists, legacy-binding tests, SpecSection projection/staleness
+  text, and remaining test fixture examples without hiding source-level
+  `UnknownLegacyBaseline` diagnostics.
 - **Baseline audit code-tail classification.** `haft baseline audit` now
   classifies binding-surface inventories, spec-review/apply/sync
   no-authority text, reconciliation metrics, comparison/value parity wording,

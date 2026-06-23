@@ -294,6 +294,8 @@ type MaintenanceInput struct {
 // MaintenanceAction is one ledger entry of the maintenance execute-phase
 // (dec-20260611-overseer-maintenance-executor). Every autonomous act carries
 // its actor context (the maintenance run), prior state, and a one-step undo.
+// Executed actions are allowlisted maintenance effects only: they cannot encode
+// decision lifecycle binding such as supersede, retire, merge, or approval.
 type MaintenanceAction struct {
 	ID           string   `json:"id"`
 	Kind         string   `json:"kind"` // auto_rebaseline | observable_run | revalidate_stale

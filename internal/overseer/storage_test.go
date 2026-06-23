@@ -171,6 +171,65 @@ func TestMaintenanceRunCarriesReconciliationProposalsAndAfterAction(t *testing.T
 	assertMaintenanceAfterActionReportOnly(t, run.AfterAction)
 }
 
+func TestMaintenanceRunRejectsBindingLifecycleExecutedActions(t *testing.T) {
+	run, err := BuildMaintenanceRun(MaintenanceInput{
+		CreatedAt: "2026-06-23T00:00:00Z",
+		Executed: []MaintenanceAction{
+			{
+				ID:          "act-001",
+				Kind:        "auto_rebaseline",
+				DecisionRef: "dec-safe",
+				Outcome:     "applied",
+				PriorState:  `{"files":[]}`,
+			},
+			{
+				ID:          "act-002",
+				Kind:        "supersede",
+				DecisionRef: "dec-old",
+				Outcome:     "applied",
+				PriorState:  `{"status":"active"}`,
+			},
+			{
+				ID:          "act-003",
+				Kind:        "retire_without_successor",
+				DecisionRef: "dec-obsolete",
+				Outcome:     "applied",
+				PriorState:  `{"status":"active"}`,
+			},
+			{
+				ID:          "act-004",
+				Kind:        "merge_through_successor",
+				DecisionRef: "dec-merged",
+				Outcome:     "applied",
+				PriorState:  `{"status":"active"}`,
+			},
+			{
+				ID:          "act-005",
+				Kind:        "approve",
+				DecisionRef: "dec-approval",
+				Outcome:     "applied",
+				PriorState:  `{"status":"pending"}`,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildMaintenanceRun returned error: %v", err)
+	}
+
+	if len(run.Executed) != 1 {
+		t.Fatalf("executed actions = %#v, want only allowed maintenance actions", run.Executed)
+	}
+	if run.Executed[0].Kind != "auto_rebaseline" {
+		t.Fatalf("executed action kind = %q, want auto_rebaseline", run.Executed[0].Kind)
+	}
+	if len(run.AfterAction.AutoClosedItems) != 1 {
+		t.Fatalf("auto-closed items = %#v, want only allowed action", run.AfterAction.AutoClosedItems)
+	}
+	if len(run.AfterAction.UndoCommands) != 1 || strings.Contains(strings.Join(run.AfterAction.UndoCommands, " "), "act-002") {
+		t.Fatalf("undo commands include rejected lifecycle actions: %#v", run.AfterAction.UndoCommands)
+	}
+}
+
 func assertMaintenanceAfterActionReportOnly(t *testing.T, report MaintenanceAfterActionReport) {
 	t.Helper()
 

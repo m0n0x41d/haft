@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer autonomous action allowlist.** Maintenance-run normalization now
+  accepts only maintenance effects (`auto_rebaseline`, `observable_run`,
+  `revalidate_stale`) as executed autonomous actions, with regression coverage
+  rejecting lifecycle/binding kinds such as supersede, retire, merge, and
+  approve.
 - **Overseer autonomous ledger retention.** Status loading now retains the
   newest maintenance run with executed autonomous actions even after a later
   report-only `overseer maintain` run becomes `latest-maintenance`, so the

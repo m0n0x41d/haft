@@ -128,12 +128,24 @@ func normalizeExecutedActions(actions []MaintenanceAction) []MaintenanceAction {
 		if action.Kind == "" || action.DecisionRef == "" {
 			continue
 		}
+		if !isAllowedExecutedMaintenanceActionKind(action.Kind) {
+			continue
+		}
 		if action.ID == "" {
 			action.ID = fmt.Sprintf("act-%03d", i+1)
 		}
 		out = append(out, action)
 	}
 	return out
+}
+
+func isAllowedExecutedMaintenanceActionKind(kind string) bool {
+	switch kind {
+	case "auto_rebaseline", "observable_run", "revalidate_stale":
+		return true
+	default:
+		return false
+	}
 }
 
 func normalizeReconciliationProposals(items []MaintenanceReconciliationProposal) []MaintenanceReconciliationProposal {

@@ -17,9 +17,12 @@ You are running the FPF verification loop: baseline → measure → evidence →
 If `decision_ref` is given, use it. Otherwise:
 - `mcp__haft__haft_query(action="status")` — surfaces stale/refresh-due decisions
 - `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe maintenance closures and needs_operator groups
+- `mcp__haft__haft_query(action="contract_generation")` — read-only generated-fragment carrier hints for host/skill/plugin/Pi sync
 - `mcp__haft__haft_query(action="drift_events")`, `mcp__haft__haft_query(action="decision_reconcile")`, and `mcp__haft__haft_query(action="governing_set")` — drift fanout, reconciliation, and current-authority drill-downs
 - `mcp__haft__haft_query(action="list", kind="DecisionRecord")` — full list
 - Ask the operator which decision to verify
+
+read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
 
 When the operator asks to verify/drain the project maintenance backlog, do not
 stop after status. Use the explicit drain loop:

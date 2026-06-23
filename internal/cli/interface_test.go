@@ -307,6 +307,15 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	if report.Summary.BindingPreviewFragments == 0 {
 		t.Fatalf("expected binding preview fragments in generation manifest: %#v", report.Summary)
 	}
+	if report.Summary.MaterializedCarriers == 0 {
+		t.Fatalf("expected materialized carrier list in generation manifest: %#v", report.Summary)
+	}
+	if report.Summary.DigestGuardedCarriers == 0 {
+		t.Fatalf("expected at least one digest-guarded carrier in generation manifest: %#v", report.Summary)
+	}
+	if report.Summary.AuthorityGuardedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("expected all materialized carriers authority-guarded: %#v", report.Summary)
+	}
 	if report.SurfacePolicy.DefaultStatus != "cue_or_count_only_never_inline_generation_manifest" {
 		t.Fatalf("default status policy = %q", report.SurfacePolicy.DefaultStatus)
 	}
@@ -322,6 +331,9 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 
 	if len(report.Targets) != 0 {
 		t.Fatalf("expected no current generator targets: %#v", report.Targets)
+	}
+	if len(report.Carriers) != report.Summary.MaterializedCarriers {
+		t.Fatalf("materialized carriers = %d, summary = %#v", len(report.Carriers), report.Summary)
 	}
 	if len(report.Fragments) != report.Summary.GeneratedPreviewFragments {
 		t.Fatalf("generated fragments = %d, summary = %#v", len(report.Fragments), report.Summary)
@@ -429,6 +441,42 @@ func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
 	}
 }
 
+func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	toolsCarrier, ok := findContractMaterializedCarrier(report, "packages/haft-pi/extensions/haft/tools.ts")
+	if !ok {
+		t.Fatalf("Pi tool carrier missing from materialized_carriers: %#v", report.Carriers)
+	}
+	if toolsCarrier.ExpectedSourceDigest != report.SourceDigest {
+		t.Fatalf("Pi tool carrier source digest = %q, report digest = %q", toolsCarrier.ExpectedSourceDigest, report.SourceDigest)
+	}
+	if toolsCarrier.SyncPosture != "digest_guarded_by_repo_regression" {
+		t.Fatalf("Pi tool carrier sync posture = %q", toolsCarrier.SyncPosture)
+	}
+	if !stringSliceContains(toolsCarrier.GeneratedFragmentRefs, "query.contract_generation") {
+		t.Fatalf("Pi tool carrier missing contract_generation fragment ref: %#v", toolsCarrier.GeneratedFragmentRefs)
+	}
+
+	for _, carrier := range report.Carriers {
+		source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+		for _, marker := range carrier.RequiredMarkers {
+			if !strings.Contains(source, marker) {
+				t.Fatalf("%s missing required generated-contract marker %q", carrier.CarrierPath, marker)
+			}
+		}
+		if carrier.SourceContract != "kernel_interface_catalog" {
+			t.Fatalf("%s source contract = %q", carrier.CarrierPath, carrier.SourceContract)
+		}
+		if carrier.AuthorityBoundary == "" {
+			t.Fatalf("%s missing authority boundary", carrier.CarrierPath)
+		}
+		if len(carrier.ValidationRefs) == 0 {
+			t.Fatalf("%s missing validation refs", carrier.CarrierPath)
+		}
+	}
+}
+
 func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 	var output bytes.Buffer
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
@@ -447,6 +495,9 @@ func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 		"generated_preview_fragments=",
 		"generated_schema_fragments=",
 		"binding_preview_fragments=",
+		"materialized_carriers=",
+		"digest_guarded_carriers=",
+		"authority_boundary_guarded_carriers=",
 		"validation_refs=",
 		"no current generator targets",
 	} {
@@ -799,6 +850,9 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 		"generated_preview_fragments",
 		"generated_schema_fragments",
 		"generated_fragments",
+		"materialized_carriers",
+		"digest_guarded_carriers",
+		"authority_boundary_guarded_carriers",
 		"surface_policy",
 	} {
 		if strings.Contains(result, forbidden) {
@@ -1055,6 +1109,15 @@ func findContractGeneratedFragment(report interfaceContractGenerationReport, id 
 		}
 	}
 	return interfaceContractGeneratedFragment{}, false
+}
+
+func findContractMaterializedCarrier(report interfaceContractGenerationReport, path string) (interfaceContractMaterializedCarrier, bool) {
+	for _, carrier := range report.Carriers {
+		if carrier.CarrierPath == path {
+			return carrier, true
+		}
+	}
+	return interfaceContractMaterializedCarrier{}, false
 }
 
 func findContractGeneratedSchemaFragment(report interfaceContractGenerationReport, id string) (interfaceContractGeneratedSchemaFragment, bool) {

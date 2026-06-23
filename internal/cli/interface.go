@@ -665,7 +665,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":31,"generated_schema_fragments":28,"binding_preview_fragments":2},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":31,"generated_schema_fragments":28,"binding_preview_fragments":2,"materialized_carriers":12,"digest_guarded_carriers":1,"authority_boundary_guarded_carriers":12},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1420,6 +1420,7 @@ type interfaceContractGenerationReport struct {
 	Summary         interfaceContractGenerationSummary         `json:"summary"`
 	SurfacePolicy   interfaceContractGenerationPolicy          `json:"surface_policy"`
 	Targets         []interfaceContractGenerationTarget        `json:"targets"`
+	Carriers        []interfaceContractMaterializedCarrier     `json:"materialized_carriers"`
 	Fragments       []interfaceContractGeneratedFragment       `json:"generated_fragments"`
 	SchemaFragments []interfaceContractGeneratedSchemaFragment `json:"generated_schema_fragments"`
 	Notes           []string                                   `json:"notes"`
@@ -1432,6 +1433,9 @@ type interfaceContractGenerationSummary struct {
 	GeneratedPreviewFragments int `json:"generated_preview_fragments"`
 	GeneratedSchemaFragments  int `json:"generated_schema_fragments"`
 	BindingPreviewFragments   int `json:"binding_preview_fragments"`
+	MaterializedCarriers      int `json:"materialized_carriers"`
+	DigestGuardedCarriers     int `json:"digest_guarded_carriers"`
+	AuthorityGuardedCarriers  int `json:"authority_boundary_guarded_carriers"`
 }
 
 type interfaceContractGenerationPolicy struct {
@@ -1455,6 +1459,20 @@ type interfaceContractGenerationTarget struct {
 	Fields             []string `json:"fields"`
 	ValidationRefs     []string `json:"validation_refs"`
 	NextValidationStep string   `json:"next_validation_step"`
+}
+
+type interfaceContractMaterializedCarrier struct {
+	CarrierPath           string   `json:"carrier_path"`
+	CarrierKind           string   `json:"carrier_kind"`
+	ContractRole          string   `json:"contract_role"`
+	SourceContract        string   `json:"source_contract"`
+	ExpectedSourceDigest  string   `json:"expected_source_digest,omitempty"`
+	SyncPosture           string   `json:"sync_posture"`
+	GuardPosture          string   `json:"guard_posture"`
+	AuthorityBoundary     string   `json:"authority_boundary"`
+	RequiredMarkers       []string `json:"required_markers"`
+	GeneratedFragmentRefs []string `json:"generated_fragment_refs"`
+	ValidationRefs        []string `json:"validation_refs"`
 }
 
 type interfaceContractGeneratedFragment struct {
@@ -1557,6 +1575,8 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		return schemaFragments[i].CapabilityID < schemaFragments[j].CapabilityID
 	})
 
+	sourceDigest := interfaceContractGenerationDigest(catalog)
+	carriers := interfaceContractMaterializedCarriers(sourceDigest)
 	summary := interfaceContractGenerationSummary{
 		Capabilities:              audit.Summary.Capabilities,
 		GeneratorTargetSurfaces:   len(targets),
@@ -1564,6 +1584,9 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		GeneratedPreviewFragments: len(fragments),
 		GeneratedSchemaFragments:  len(schemaFragments),
 		BindingPreviewFragments:   countInterfaceContractBindingFragments(fragments),
+		MaterializedCarriers:      len(carriers),
+		DigestGuardedCarriers:     countInterfaceContractDigestGuardedCarriers(carriers),
+		AuthorityGuardedCarriers:  countInterfaceContractAuthorityGuardedCarriers(carriers),
 	}
 
 	return interfaceContractGenerationReport{
@@ -1571,17 +1594,19 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 		SchemaVersion:   1,
 		Authority:       "read_only_generation_manifest_not_host_materialization",
 		Source:          "kernel_interface_catalog",
-		SourceDigest:    interfaceContractGenerationDigest(catalog),
+		SourceDigest:    sourceDigest,
 		ValidationRefs:  interfaceContractGenerationValidationRefs(),
 		Summary:         summary,
 		SurfacePolicy:   interfaceContractGenerationSurfacePolicy(),
 		Targets:         targets,
+		Carriers:        carriers,
 		Fragments:       fragments,
 		SchemaFragments: schemaFragments,
 		Notes: []string{
 			"generated_fragments are derived from the kernel interface catalog; they are preview carriers for host/skill/plugin/Pi synchronization, not host materialization.",
 			"generated_schema_fragments are read-only per-action MCP schema fragments for validation and future host materialization; they do not mutate tools/list.",
 			"targets list schema fields that still need generator work; an empty target queue means current MCP mirror coverage is complete, not that generated fragments are absent.",
+			"materialized_carriers names repo carriers that currently mirror generated contract fragments; sync_posture distinguishes source-digest guards from weaker authority-boundary-only guards.",
 			"validation_refs name tests that prove the manifest source, MCP mirror coverage, generated-fragment authority boundary, and default-output budget.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
@@ -1643,6 +1668,180 @@ func interfaceContractGenerationSurfacePolicy() interfaceContractGenerationPolic
 			"code_context_lane_index_default",
 		},
 	}
+}
+
+func interfaceContractMaterializedCarriers(sourceDigest string) []interfaceContractMaterializedCarrier {
+	bindingBoundary := "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts"
+	readOnlyBoundary := "read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization"
+	carriers := []interfaceContractMaterializedCarrier{
+		{
+			CarrierPath:           "packages/haft-pi/extensions/haft/tools.ts",
+			CarrierKind:           "pi_tool_metadata",
+			ContractRole:          "tool_schema_and_description_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			ExpectedSourceDigest:  sourceDigest,
+			SyncPosture:           "digest_guarded_by_repo_regression",
+			GuardPosture:          "source_digest_and_authority_boundary_guarded",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"kernelInterfaceCatalogDigest", sourceDigest, "contract_generation", bindingBoundary},
+			GeneratedFragmentRefs: []string{"query.contract_generation", "query.drift_events", "query.decision_reconcile", "query.governing_set", "decision.decide", "commission.create"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries", "internal/cli/interface_test.go:TestPiToolSchemasMirrorGeneratedSchemaFragments"},
+		},
+		{
+			CarrierPath:           "packages/haft-pi/skills/h-status/SKILL.md",
+			CarrierKind:           "pi_skill",
+			ContractRole:          "status_drill_down_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     readOnlyBoundary,
+			RequiredMarkers:       []string{"contract_generation", "generated-fragment", "drift fanout", "reconciliation", "current-authority drill-downs", readOnlyBoundary},
+			GeneratedFragmentRefs: []string{"query.contract_generation", "query.drift_events", "query.decision_reconcile", "query.governing_set"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestPiSkillCarriersCarrySelectedGeneratedQueryFragments"},
+		},
+		{
+			CarrierPath:           "packages/haft-pi/prompts/h-decide.md",
+			CarrierKind:           "pi_manual_gate_prompt",
+			ContractRole:          "binding_authority_boundary_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", bindingBoundary},
+			GeneratedFragmentRefs: []string{"decision.decide"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+		{
+			CarrierPath:           "packages/haft-pi/prompts/h-commission.md",
+			CarrierKind:           "pi_manual_gate_prompt",
+			ContractRole:          "binding_authority_boundary_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", bindingBoundary},
+			GeneratedFragmentRefs: []string{"commission.create"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+		{
+			CarrierPath:           "packages/haft-pi/prompts/h-reason.md",
+			CarrierKind:           "pi_workflow_prompt",
+			ContractRole:          "binding_denial_routing_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", "generated text, schema visibility, and model-supplied fields are not approval receipts"},
+			GeneratedFragmentRefs: []string{"decision.decide", "commission.create"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+		{
+			CarrierPath:           "internal/cli/skill/h-status/SKILL.md",
+			CarrierKind:           "bundled_skill",
+			ContractRole:          "status_drill_down_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     readOnlyBoundary,
+			RequiredMarkers:       []string{"contract_generation", "generated-fragment", "drift fanout", "reconciliation", "current-authority drill-downs", readOnlyBoundary},
+			GeneratedFragmentRefs: []string{"query.contract_generation", "query.drift_events", "query.decision_reconcile", "query.governing_set"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarrySelectedGeneratedQueryFragments"},
+		},
+		{
+			CarrierPath:           "internal/cli/skill/h-verify/SKILL.md",
+			CarrierKind:           "bundled_skill",
+			ContractRole:          "maintenance_drill_down_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     readOnlyBoundary,
+			RequiredMarkers:       []string{"contract_generation", "generated-fragment", "drift fanout", "reconciliation", "current-authority drill-downs", readOnlyBoundary},
+			GeneratedFragmentRefs: []string{"query.contract_generation", "query.drift_events", "query.decision_reconcile", "query.governing_set"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarrySelectedGeneratedQueryFragments"},
+		},
+		{
+			CarrierPath:           "internal/cli/skill/h-reason/SKILL.md",
+			CarrierKind:           "bundled_skill",
+			ContractRole:          "workflow_routing_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", "contract_generation", "generated-fragment", bindingBoundary},
+			GeneratedFragmentRefs: []string{"query.contract_generation", "query.drift_events", "query.decision_reconcile", "query.governing_set", "decision.decide"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries", "internal/cli/interface_test.go:TestBundledSkillCarriersCarrySelectedGeneratedQueryFragments"},
+		},
+		{
+			CarrierPath:           "internal/cli/skill/h-decide/SKILL.md",
+			CarrierKind:           "bundled_manual_skill",
+			ContractRole:          "binding_authority_boundary_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", bindingBoundary},
+			GeneratedFragmentRefs: []string{"decision.decide"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+		{
+			CarrierPath:           "internal/cli/skill/h-commission/SKILL.md",
+			CarrierKind:           "bundled_manual_skill",
+			ContractRole:          "binding_authority_boundary_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", bindingBoundary},
+			GeneratedFragmentRefs: []string{"commission.create"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+		{
+			CarrierPath:           "internal/cli/claude_md_template.md",
+			CarrierKind:           "host_instruction_template",
+			ContractRole:          "binding_authority_boundary_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", bindingBoundary},
+			GeneratedFragmentRefs: []string{"decision.decide", "commission.create"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+		{
+			CarrierPath:           "AGENTS.md",
+			CarrierKind:           "repo_agent_instruction",
+			ContractRole:          "binding_authority_boundary_materialization",
+			SourceContract:        "kernel_interface_catalog",
+			SyncPosture:           "authority_boundary_guarded_digest_missing",
+			GuardPosture:          "authority_boundary_guarded_source_digest_missing",
+			AuthorityBoundary:     bindingBoundary,
+			RequiredMarkers:       []string{"operator_confirmation_required", bindingBoundary},
+			GeneratedFragmentRefs: []string{"decision.decide", "commission.create"},
+			ValidationRefs:        []string{"internal/cli/interface_test.go:TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries"},
+		},
+	}
+	return carriers
+}
+
+func countInterfaceContractDigestGuardedCarriers(carriers []interfaceContractMaterializedCarrier) int {
+	total := 0
+	for _, carrier := range carriers {
+		if strings.Contains(carrier.GuardPosture, "source_digest") && !strings.Contains(carrier.GuardPosture, "source_digest_missing") {
+			total++
+		}
+	}
+	return total
+}
+
+func countInterfaceContractAuthorityGuardedCarriers(carriers []interfaceContractMaterializedCarrier) int {
+	total := 0
+	for _, carrier := range carriers {
+		if carrier.AuthorityBoundary == "" {
+			continue
+		}
+		total++
+	}
+	return total
 }
 
 func countInterfaceContractGenerationFields(targets []interfaceContractGenerationTarget) int {
@@ -2672,13 +2871,16 @@ func writeInterfaceContractGenerationText(output io.Writer, report interfaceCont
 	}
 	if _, err := fmt.Fprintf(
 		output,
-		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d generated_schema_fragments=%d binding_preview_fragments=%d validation_refs=%d\n",
+		"summary: capabilities=%d generator_target_surfaces=%d generator_target_fields=%d generated_preview_fragments=%d generated_schema_fragments=%d binding_preview_fragments=%d materialized_carriers=%d digest_guarded_carriers=%d authority_boundary_guarded_carriers=%d validation_refs=%d\n",
 		report.Summary.Capabilities,
 		report.Summary.GeneratorTargetSurfaces,
 		report.Summary.GeneratorTargetFields,
 		report.Summary.GeneratedPreviewFragments,
 		report.Summary.GeneratedSchemaFragments,
 		report.Summary.BindingPreviewFragments,
+		report.Summary.MaterializedCarriers,
+		report.Summary.DigestGuardedCarriers,
+		report.Summary.AuthorityGuardedCarriers,
 		len(report.ValidationRefs),
 	); err != nil {
 		return err

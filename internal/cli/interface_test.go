@@ -2000,6 +2000,9 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --json") {
 		t.Fatalf("decision_reconcile selection-draft CLI command missing: %#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --write-template selection.json --json") {
+		t.Fatalf("decision_reconcile selection-draft write-template CLI command missing: %#v", capability.CurrentExecution)
+	}
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --json --full") {
 		t.Fatalf("decision_reconcile full selection-draft CLI command missing: %#v", capability.CurrentExecution)
 	}
@@ -2036,11 +2039,14 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		"suggested_review_action",
 		"blocking_questions",
 		"selection_document_template",
+		"--write-template selection.json",
+		"writes the bounded selection_document_template to a file",
 		"operator_approval_ref",
 		"TODO_operator_reviewed_scope_enrichment_reason",
 		"not apply-ready",
 		"Selection drafts are read-only review aids",
 		"Default output is bounded",
+		"does not create approval",
 		"limit caps compact groups",
 		"limit=5",
 	} {

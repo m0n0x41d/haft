@@ -1171,7 +1171,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				MCPAction:        "decision_reconcile",
 				MCPCall:          `haft_query(action="decision_reconcile", limit=5)`,
 				CLIStatus:        "available",
-				CLICommand:       "haft decision reconcile --json; haft decision reconcile selection-draft --json; haft decision reconcile selection-draft --json --full; haft decision reconcile metrics --json",
+				CLICommand:       "haft decision reconcile --json; haft decision reconcile selection-draft --json; haft decision reconcile selection-draft --write-template selection.json --json; haft decision reconcile selection-draft --json --full; haft decision reconcile metrics --json",
 				DiscoveryCommand: "haft interface query.decision_reconcile --json",
 			},
 			InputContract: interfaceContract{
@@ -1191,7 +1191,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					{
 						Field: "selection_draft_response",
 						Shape: `{"schema_version":1,"authority":"report_only_selection_draft_not_operator_approval","operator_approved":false,"apply_authority_required":"operator_approved_reconciliation_selection","summary":{"reviewed_groups":69,"scope_enrichment_candidates":57,"operator_approval_candidates":57,"emitted_candidates":5,"omitted_candidates":52,"selected_candidates":0},"omitted_items":52,"full_audit_command":"haft decision reconcile selection-draft --json --full","items":[{"operation":"enrich_scope","reviewed_group_id":"decision-reconcile-...","decision_ref":"dec-...","candidate_posture":"precise_target_prefilled_subject_needed|needs_subject_and_target_review|whole_file_fallback_target_repair_needed","confidence":"medium|low|not_applicable","suggested_review_action":"review decision carrier and fill exact decision_subject_ref","blocking_questions":["What exact object does this decision govern now?"],"selection_template":"{...}"}],"selection_document_template":{"schema_version":1,"authority":"operator_approved_reconciliation_selection","operator_approval_ref":"","items":[{"operation":"enrich_scope","reviewed_group_id":"decision-reconcile-...","decision_refs":["dec-..."],"decision_subject_ref":"TODO_exact_decision_subject_ref","governance_targets":[{"kind":"symbol","ref":"symbol:..."}],"reason":"TODO_operator_reviewed_scope_enrichment_reason"}]}}`,
-						Note:  "Selection drafts are read-only review aids. Default output is bounded for review; use --limit N for a smaller compact slice or --full for the complete audit list. selection_document_template removes JSON assembly work but is not apply-ready because operator_approval_ref stays empty until explicit approval; apply still validates authority/current plan.",
+						Note:  "Selection drafts are read-only review aids. Default output is bounded for review; use --limit N for a smaller compact slice or --full for the complete audit list. --write-template selection.json writes the bounded selection_document_template to a file but does not create approval and leaves operator_approval_ref empty. selection_document_template removes JSON assembly work but is not apply-ready because operator_approval_ref stays empty until explicit approval; apply still validates authority/current plan.",
 					},
 				},
 				Notes: []string{
@@ -1199,6 +1199,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"`haft decision reconcile metrics --json` captures fallback scope, DriftEvent fanout, and current-authority conflict counts before and after an operator-approved apply.",
 					"`haft decision reconcile selection-draft --json` is compact by default and reports omitted candidates; `--full` restores the complete review list.",
 					"`haft decision reconcile selection-draft --json` emits report-only candidate posture, confidence, suggested_review_action, and blocking_questions so sparse candidates can be skipped instead of guessed.",
+					"`haft decision reconcile selection-draft --write-template selection.json` writes the bounded selection document template for review but does not create approval.",
 					"`selection_document_template` is a convenience packet, not approval; operator_approval_ref is empty until explicit operator approval.",
 					"Report-only: it does not supersede, merge, retire, reopen, baseline, or mutate evidence.",
 					"scope_enrichment_candidates are repair prompts, not automatic mutations.",

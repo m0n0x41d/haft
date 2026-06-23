@@ -26,6 +26,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `selection_document_template` assembled from the emitted bounded items, with
   an empty `operator_approval_ref` so review/apply still reject it until the
   operator explicitly approves the packet.
+- **Reconciliation selection template export.** `haft decision reconcile
+  selection-draft --write-template selection.json` now writes the bounded
+  `selection_document_template` to a review file while preserving the empty
+  `operator_approval_ref`, so `selection-review` and `apply` remain
+  fail-closed until explicit operator approval exists.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

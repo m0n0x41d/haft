@@ -23,6 +23,7 @@ var (
 	decisionReconcileDraftLimit    int
 	decisionReconcileDraftGroupID  string
 	decisionReconcileDraftDecision string
+	decisionReconcileDraftWrite    string
 	decisionGoverningSetJSON       bool
 	decisionGoverningSetQuery      string
 	decisionGoverningSetSubjectRef string
@@ -121,6 +122,7 @@ func init() {
 	decisionReconcileSelectionDraftCmd.Flags().IntVar(&decisionReconcileDraftLimit, "limit", 0, "limit emitted draft candidates without approving or applying them")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftGroupID, "group-id", "", "emit draft candidates only for this reconciliation group id")
 	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftDecision, "decision-ref", "", "emit draft candidates only for this decision ref")
+	decisionReconcileSelectionDraftCmd.Flags().StringVar(&decisionReconcileDraftWrite, "write-template", "", "write the bounded selection document template to this JSON path without approving it")
 	decisionGoverningSetCmd.Flags().BoolVar(&decisionGoverningSetJSON, "json", false, "print structured JSON output")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetQuery, "query", "", "filter governing sets by substring across subject, target, decision refs, and repair hints")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetSubjectRef, "subject-ref", "", "filter governing sets by exact subject ref")
@@ -188,8 +190,21 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 			DecisionRef: decisionReconcileDraftDecision,
 		},
 	)
+	if decisionReconcileDraftWrite != "" {
+		if err := writeDecisionReconciliationSelectionTemplateFile(decisionReconcileDraftWrite, draft); err != nil {
+			return err
+		}
+	}
 	if decisionReconcileDraftJSON {
 		return writeJSON(cmd.OutOrStdout(), draft)
+	}
+	if decisionReconcileDraftWrite != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "selection_template_written: %s authority=%s operator_approved=false\n",
+			decisionReconcileDraftWrite,
+			artifact.DecisionReconciliationSelectionApplyAuthority,
+		); err != nil {
+			return err
+		}
 	}
 	return writeDecisionReconciliationSelectionDraftSummary(cmd.OutOrStdout(), draft)
 }
@@ -460,6 +475,26 @@ func readDecisionReconciliationSelectionDocument(
 		return artifact.DecisionReconciliationSelectionDocument{}, fmt.Errorf("parse decision reconciliation selection %s: %w", path, err)
 	}
 	return document, nil
+}
+
+func writeDecisionReconciliationSelectionTemplateFile(
+	path string,
+	draft artifact.DecisionReconciliationSelectionDraft,
+) error {
+	if draft.SelectionDocumentTemplate == nil {
+		return fmt.Errorf("selection draft has no selection_document_template to write")
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create decision reconciliation selection template directory %s: %w", filepath.Dir(path), err)
+	}
+	data, err := json.MarshalIndent(draft.SelectionDocumentTemplate, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode decision reconciliation selection template: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write decision reconciliation selection template %s: %w", path, err)
+	}
+	return nil
 }
 
 func writeDecisionReconciliationSummary(

@@ -775,6 +775,77 @@ func TestReadDecisionReconciliationSelectionDocument(t *testing.T) {
 	}
 }
 
+func TestWriteDecisionReconciliationSelectionTemplateFileKeepsApprovalEmpty(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "review", "selection.json")
+	draft := artifact.DecisionReconciliationSelectionDraft{
+		SelectionDocumentTemplate: &artifact.DecisionReconciliationSelectionDocument{
+			SchemaVersion:       artifact.DecisionReconciliationSchemaVersion,
+			Authority:           artifact.DecisionReconciliationSelectionApplyAuthority,
+			OperatorApprovalRef: "",
+			Items: []artifact.DecisionReconciliationSelection{{
+				Operation:          artifact.DecisionReconciliationOperationEnrichScope,
+				ReviewedGroupID:    "decision-reconcile-001",
+				DecisionRefs:       []string{"dec-1"},
+				DecisionSubjectRef: "subject:exact",
+				GovernanceTargets: []artifact.GovernanceTarget{{
+					Kind: "api_contract",
+					Ref:  "api_contract:haft/runtime",
+				}},
+				Reason: "TODO_operator_reviewed_scope_enrichment_reason",
+			}},
+		},
+	}
+
+	if err := writeDecisionReconciliationSelectionTemplateFile(path, draft); err != nil {
+		t.Fatalf("writeDecisionReconciliationSelectionTemplateFile: %v", err)
+	}
+	document, err := readDecisionReconciliationSelectionDocument(path)
+	if err != nil {
+		t.Fatalf("read written selection template: %v", err)
+	}
+	if document.Authority != artifact.DecisionReconciliationSelectionApplyAuthority {
+		t.Fatalf("authority = %q", document.Authority)
+	}
+	if document.OperatorApprovalRef != "" {
+		t.Fatalf("operator_approval_ref = %q, want empty", document.OperatorApprovalRef)
+	}
+	if len(document.Items) != 1 || document.Items[0].Operation != artifact.DecisionReconciliationOperationEnrichScope {
+		t.Fatalf("items = %#v", document.Items)
+	}
+
+	store := setupCLIArtifactStore(t)
+	review := artifact.ReviewDecisionReconciliationSelectionDocument(
+		context.Background(),
+		store,
+		document,
+		path,
+	)
+	if review.ApplyReady {
+		t.Fatalf("review apply_ready = true: %#v", review)
+	}
+	if review.OperatorApproved {
+		t.Fatalf("review operator_approved = true: %#v", review)
+	}
+	if !containsString(review.ValidationErrors, "operator_approval_ref is required") {
+		t.Fatalf("validation_errors = %#v, want missing operator_approval_ref", review.ValidationErrors)
+	}
+}
+
+func TestWriteDecisionReconciliationSelectionTemplateFileRejectsMissingTemplate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "selection.json")
+
+	err := writeDecisionReconciliationSelectionTemplateFile(
+		path,
+		artifact.DecisionReconciliationSelectionDraft{},
+	)
+	if err == nil {
+		t.Fatal("expected missing template error")
+	}
+	if !strings.Contains(err.Error(), "selection_document_template") {
+		t.Fatalf("error = %v, want selection_document_template diagnostic", err)
+	}
+}
+
 func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
 	var output bytes.Buffer
 	result := artifact.DecisionReconciliationApplyResult{

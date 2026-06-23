@@ -398,6 +398,9 @@ func ValidateDecisionReconciliationSelectionDocument(
 	if strings.TrimSpace(document.OperatorApprovalRef) == "" {
 		return errors.New("operator_approval_ref is required")
 	}
+	if err := validateDecisionReconciliationNoPlaceholder("operator_approval_ref", document.OperatorApprovalRef); err != nil {
+		return err
+	}
 	if len(document.Items) == 0 {
 		return errors.New("items must contain at least one selection")
 	}
@@ -491,6 +494,8 @@ func decisionReconciliationDocumentReviewErrors(
 	}
 	if strings.TrimSpace(document.OperatorApprovalRef) == "" {
 		errs = append(errs, "operator_approval_ref is required")
+	} else if err := validateDecisionReconciliationNoPlaceholder("operator_approval_ref", document.OperatorApprovalRef); err != nil {
+		errs = append(errs, err.Error())
 	}
 	if len(document.Items) == 0 {
 		errs = append(errs, "items must contain at least one selection")
@@ -618,12 +623,26 @@ func validateDecisionReconciliationSelection(
 	if strings.TrimSpace(item.ReviewedGroupID) == "" {
 		return fmt.Errorf("%s.reviewed_group_id is required", prefix)
 	}
+	if err := validateDecisionReconciliationNoPlaceholder(prefix+".reviewed_group_id", item.ReviewedGroupID); err != nil {
+		return err
+	}
 	if strings.TrimSpace(item.Reason) == "" {
 		return fmt.Errorf("%s.reason is required", prefix)
+	}
+	if err := validateDecisionReconciliationNoPlaceholder(prefix+".reason", item.Reason); err != nil {
+		return err
 	}
 	refs := compactSortedStrings(item.DecisionRefs)
 	if len(refs) == 0 {
 		return fmt.Errorf("%s.decision_refs must contain at least one decision", prefix)
+	}
+	for refIndex, ref := range refs {
+		if err := validateDecisionReconciliationNoPlaceholder(
+			fmt.Sprintf("%s.decision_refs[%d]", prefix, refIndex),
+			ref,
+		); err != nil {
+			return err
+		}
 	}
 	if err := validateDecisionReconciliationReviewedGroup(planIndex, prefix, item.ReviewedGroupID, refs); err != nil {
 		return err
@@ -642,6 +661,9 @@ func validateDecisionReconciliationSelection(
 	if operation == DecisionReconciliationOperationSupersede || operation == DecisionReconciliationOperationMergeThroughSuccessor {
 		if strings.TrimSpace(item.SuccessorRef) == "" {
 			return fmt.Errorf("%s.successor_ref is required for %s", prefix, operation)
+		}
+		if err := validateDecisionReconciliationNoPlaceholder(prefix+".successor_ref", item.SuccessorRef); err != nil {
+			return err
 		}
 		if err := validateDecisionReconciliationSuccessor(ctx, store, prefix, item.SuccessorRef); err != nil {
 			return err
@@ -717,11 +739,17 @@ func validateDecisionReconciliationClaimLifecycleUpdates(
 		if decisionRef == "" {
 			return fmt.Errorf("%s.decision_ref is required", updatePrefix)
 		}
+		if err := validateDecisionReconciliationNoPlaceholder(updatePrefix+".decision_ref", decisionRef); err != nil {
+			return err
+		}
 		if _, ok := selectedRefs[decisionRef]; !ok {
 			return fmt.Errorf("%s.decision_ref %q must be listed in %s.decision_refs", updatePrefix, decisionRef, prefix)
 		}
 		if claimID == "" {
 			return fmt.Errorf("%s.claim_id is required", updatePrefix)
+		}
+		if err := validateDecisionReconciliationNoPlaceholder(updatePrefix+".claim_id", claimID); err != nil {
+			return err
 		}
 		if _, ok := claimsByDecision[decisionRef][claimID]; !ok {
 			return fmt.Errorf("%s.claim_id %q does not match an explicit claim on %q", updatePrefix, claimID, decisionRef)
@@ -733,8 +761,14 @@ func validateDecisionReconciliationClaimLifecycleUpdates(
 		if status == ClaimLifecycleSuperseded && strings.TrimSpace(update.SuccessorRef) == "" {
 			return fmt.Errorf("%s.successor_ref is required when lifecycle_status is superseded", updatePrefix)
 		}
+		if err := validateDecisionReconciliationNoPlaceholder(updatePrefix+".successor_ref", update.SuccessorRef); err != nil {
+			return err
+		}
 		if strings.TrimSpace(update.Reason) == "" {
 			return fmt.Errorf("%s.reason is required", updatePrefix)
+		}
+		if err := validateDecisionReconciliationNoPlaceholder(updatePrefix+".reason", update.Reason); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -784,11 +818,17 @@ func validateDecisionReconciliationScopeEnrichment(
 	if strings.TrimSpace(item.DecisionSubjectRef) == "" {
 		return fmt.Errorf("%s.decision_subject_ref is required for enrich_scope", prefix)
 	}
+	if err := validateDecisionReconciliationNoPlaceholder(prefix+".decision_subject_ref", item.DecisionSubjectRef); err != nil {
+		return err
+	}
 
 	governanceTargets := normalizeGovernanceTargets(item.GovernanceTargets)
 	driftWatchTargets := normalizeDriftWatchTargets(item.DriftWatchTargets)
 	if len(governanceTargets) == 0 && len(driftWatchTargets) == 0 {
 		return fmt.Errorf("%s.governance_targets or drift_watch_targets is required for enrich_scope", prefix)
+	}
+	if err := validateDecisionReconciliationTargetPlaceholders(prefix, governanceTargets, driftWatchTargets); err != nil {
+		return err
 	}
 
 	ref := compactSortedStrings(item.DecisionRefs)[0]
@@ -813,14 +853,66 @@ func validateDecisionReconciliationScopeEnrichment(
 		claimsByID[claim.ID] = struct{}{}
 	}
 	for claimID, targetRefs := range claimRefs {
+		if err := validateDecisionReconciliationNoPlaceholder(
+			fmt.Sprintf("%s.claim_governance_target_refs[%q]", prefix, claimID),
+			claimID,
+		); err != nil {
+			return err
+		}
 		if _, ok := claimsByID[claimID]; !ok {
 			return fmt.Errorf("%s.claim_governance_target_refs[%q] does not match an explicit claim", prefix, claimID)
 		}
 		if len(targetRefs) == 0 {
 			return fmt.Errorf("%s.claim_governance_target_refs[%q] must contain at least one target ref", prefix, claimID)
 		}
+		for targetIndex, targetRef := range targetRefs {
+			if err := validateDecisionReconciliationNoPlaceholder(
+				fmt.Sprintf("%s.claim_governance_target_refs[%q][%d]", prefix, claimID, targetIndex),
+				targetRef,
+			); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
+}
+
+func validateDecisionReconciliationTargetPlaceholders(
+	prefix string,
+	governanceTargets []GovernanceTarget,
+	driftWatchTargets []DriftWatchTarget,
+) error {
+	for index, target := range governanceTargets {
+		targetPrefix := fmt.Sprintf("%s.governance_targets[%d]", prefix, index)
+		if err := validateDecisionReconciliationNoPlaceholder(targetPrefix+".kind", target.Kind); err != nil {
+			return err
+		}
+		if err := validateDecisionReconciliationNoPlaceholder(targetPrefix+".ref", target.Ref); err != nil {
+			return err
+		}
+	}
+	for index, target := range driftWatchTargets {
+		targetPrefix := fmt.Sprintf("%s.drift_watch_targets[%d]", prefix, index)
+		if err := validateDecisionReconciliationNoPlaceholder(targetPrefix+".target_ref", target.TargetRef); err != nil {
+			return err
+		}
+		if err := validateDecisionReconciliationNoPlaceholder(targetPrefix+".trigger", target.Trigger); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDecisionReconciliationNoPlaceholder(field string, value string) error {
+	if !isDecisionReconciliationPlaceholder(value) {
+		return nil
+	}
+	return fmt.Errorf("%s contains placeholder %q; replace it with an exact reviewed value", field, strings.TrimSpace(value))
+}
+
+func isDecisionReconciliationPlaceholder(value string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(value))
+	return normalized == "TODO" || strings.Contains(normalized, "TODO_")
 }
 
 func selectionHasScopeEnrichment(item DecisionReconciliationSelection) bool {

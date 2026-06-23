@@ -31,6 +31,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `selection_document_template` to a review file while preserving the empty
   `operator_approval_ref`, so `selection-review` and `apply` remain
   fail-closed until explicit operator approval exists.
+- **Reconciliation selection placeholder validation.** `selection-review` and
+  `apply` now reject `TODO_...` placeholder values in reconciliation selection
+  documents, so exported templates cannot become apply-ready by filling only
+  `operator_approval_ref`.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

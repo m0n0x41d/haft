@@ -796,6 +796,38 @@ func TestValidateDecisionReconciliationSelectionRequiresOperatorApproval(t *test
 	}
 }
 
+func TestValidateDecisionReconciliationSelectionRejectsApprovalPlaceholder(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-placeholder-approval", StatusActive, "runtime", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-placeholder-approval")
+
+	err := ValidateDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "TODO_operator_approval_ref",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    groupID,
+			DecisionRefs:       []string{"dec-placeholder-approval"},
+			DecisionSubjectRef: "runtime:placeholder_approval",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/placeholder_approval",
+			}},
+			Reason: "Operator approved precise scope enrichment.",
+		}},
+	})
+
+	if err == nil {
+		t.Fatal("expected placeholder operator approval error")
+	}
+	if !strings.Contains(err.Error(), "operator_approval_ref contains placeholder") {
+		t.Fatalf("error = %v, want operator approval placeholder diagnostic", err)
+	}
+}
+
 func TestReviewDecisionReconciliationSelectionDocumentReportsDraftNotApplyReady(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -846,6 +878,48 @@ func TestReviewDecisionReconciliationSelectionDocumentReportsDraftNotApplyReady(
 	fields := decision.UnmarshalDecisionFields()
 	if fields.DecisionSubjectRef != "" {
 		t.Fatalf("review mutated decision_subject_ref = %q", fields.DecisionSubjectRef)
+	}
+}
+
+func TestReviewDecisionReconciliationSelectionDocumentRejectsTemplatePlaceholders(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-template-placeholder", StatusActive, "runtime", DecisionFields{}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-template-placeholder")
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:approved-template-placeholder",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    groupID,
+			DecisionRefs:       []string{"dec-template-placeholder"},
+			DecisionSubjectRef: "TODO_exact_decision_subject_ref",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/template_placeholder",
+			}},
+			Reason: "TODO_operator_reviewed_scope_enrichment_reason",
+		}},
+	}, "selection-template.json")
+
+	if review.ApplyReady {
+		t.Fatalf("apply_ready = true for placeholder selection: %#v", review)
+	}
+	if !containsString(review.ValidationErrors, "items[0].reason contains placeholder \"TODO_operator_reviewed_scope_enrichment_reason\"; replace it with an exact reviewed value") {
+		t.Fatalf("top-level validation_errors = %#v, want mirrored placeholder failure", review.ValidationErrors)
+	}
+	if len(review.Items) != 1 || review.Items[0].ApplyReady {
+		t.Fatalf("item review = %#v, want not apply-ready", review.Items)
+	}
+	if len(review.Items[0].ValidationErrors) != 1 ||
+		!strings.Contains(review.Items[0].ValidationErrors[0], "reason contains placeholder") {
+		t.Fatalf("item validation_errors = %#v", review.Items[0].ValidationErrors)
+	}
+	if review.ApplyCommand != "" {
+		t.Fatalf("apply_command = %q, want empty for placeholder selection", review.ApplyCommand)
 	}
 }
 

@@ -214,7 +214,11 @@ func renderCodeContextLaneCounts(b *strings.Builder, cc contextgraph.CodeContext
 		b.WriteString("- symbols: request lane=\"symbols\" for a capped file symbol list\n")
 	}
 	fmt.Fprintf(b, "- decisions: %d\n", len(cc.Decisions))
-	fmt.Fprintf(b, "- invariants: %d binding, %d module-context\n", len(cc.Invariants), len(cc.ContextInvariants))
+	if codeContextBroadFileInvariantFanout(cc, options) {
+		fmt.Fprintf(b, "- invariants: %d broad file-level candidates, %d module-context; narrow by symbol/line or inspect lane=\"invariants\"\n", len(cc.Invariants), len(cc.ContextInvariants))
+	} else {
+		fmt.Fprintf(b, "- invariants: %d binding, %d module-context\n", len(cc.Invariants), len(cc.ContextInvariants))
+	}
 	fmt.Fprintf(b, "- notes: %d\n", len(cc.Notes))
 	fmt.Fprintf(b, "- problems: %d\n", len(cc.Problems))
 	fmt.Fprintf(b, "- portfolios: %d\n\n", len(cc.Portfolios))
@@ -252,7 +256,9 @@ func codeContextRiskHints(cc contextgraph.CodeContext) []string {
 	if unverified > 0 {
 		risks = append(risks, fmt.Sprintf("%d prediction(s) remain unverified across governing decisions; inspect lane=\"decisions\"", unverified))
 	}
-	if len(cc.Invariants)+len(cc.ContextInvariants) > 0 {
+	if codeContextBroadFileInvariantFanout(cc, CodeContextRenderOptions{}) {
+		risks = append(risks, "broad file-level invariant fanout exists; narrow code_context by symbol or line before treating constraints as actionable")
+	} else if len(cc.Invariants)+len(cc.ContextInvariants) > 0 {
 		risks = append(risks, "invariants exist for this target/module; inspect lane=\"invariants\" before changing behavior")
 	}
 

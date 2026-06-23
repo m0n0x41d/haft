@@ -130,6 +130,34 @@ func TestCodeContextResponse_DefaultIndexOmitsLaneDumps(t *testing.T) {
 	}
 }
 
+func TestCodeContextResponse_DefaultIndexLabelsBroadFileInvariantFanout(t *testing.T) {
+	invariants := make([]graph.Invariant, 0, 10)
+	for i := 1; i <= 10; i++ {
+		invariants = append(invariants, graph.Invariant{
+			Text:          fmt.Sprintf("invariant-%02d", i),
+			DecisionTitle: "Context decision",
+		})
+	}
+	cc := contextgraph.CodeContext{
+		Target:     contextgraph.Target{File: "internal/x.go"},
+		Invariants: invariants,
+	}
+
+	index := CodeContextResponse(cc)
+	for _, want := range []string{
+		"invariants: 10 broad file-level candidates",
+		"narrow by symbol/line",
+		"broad file-level invariant fanout exists",
+	} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("index response missing %q:\n%s", want, index)
+		}
+	}
+	if strings.Contains(index, "invariants: 10 binding") {
+		t.Fatalf("index response should not label broad file-level fanout as binding:\n%s", index)
+	}
+}
+
 func TestCodeContextResponse_TypedLanesStaySeparate(t *testing.T) {
 	cc := contextgraph.CodeContext{
 		Target: contextgraph.Target{File: "internal/x.go"},

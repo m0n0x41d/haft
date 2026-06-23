@@ -2010,6 +2010,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			gatePtr = &gate
 		}
 		record, err := buildSpecUseRecord(
+			ctx,
 			projectRoot,
 			stringArg(args, "section_id"),
 			stringArg(args, "use_context"),
@@ -2017,6 +2018,8 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			stringArg(args, "waiver_expires_at"),
 			gatePtr,
 			time.Now().UTC(),
+			store,
+			nil,
 		)
 		if err != nil {
 			return "", fmt.Errorf("build spec use record: %w", err)

@@ -34,18 +34,25 @@ const (
 	SpecUseGateDecisionPassed        = "passed"
 	SpecUseGateDecisionBlocked       = "blocked"
 
+	SpecUseCurrentAuthorityUnknown  = "unknown"
+	SpecUseCurrentAuthorityClear    = "clear"
+	SpecUseCurrentAuthorityOverlap  = "overlap_needs_review"
+	SpecUseCurrentAuthorityConflict = "conflict_requires_operator"
+
 	OperationalGateSchemaVersion          = 1
 	OperationalGateRuleCurrentAdmittedUse = "require_current_source_and_admitted_use"
 	OperationalGateBoundaryReadOnly       = "read_only_derived_gate_evaluation"
+	CurrentAuthorityBoundaryReadOnly      = "read_only_current_authority_frontier_not_gate_decision"
 )
 
 type SpecificationUseInput struct {
-	SectionID       string
-	UseContext      string
-	Policy          string
-	WaiverExpiresAt string
-	OperationalGate *OperationalGateProfile
-	Now             time.Time
+	SectionID        string
+	UseContext       string
+	Policy           string
+	WaiverExpiresAt  string
+	OperationalGate  *OperationalGateProfile
+	CurrentAuthority *SpecificationUseCurrentAuthority
+	Now              time.Time
 }
 
 type SpecificationUseBaselineInput struct {
@@ -56,16 +63,17 @@ type SpecificationUseBaselineInput struct {
 }
 
 type SpecificationUseRecord struct {
-	SchemaVersion       int                             `json:"schema_version"`
-	RecordKind          string                          `json:"record_kind"`
-	Authority           string                          `json:"authority"`
-	SectionID           string                          `json:"section_id"`
-	SourceEdition       SpecificationUseSourceEdition   `json:"source_edition"`
-	UseContext          SpecificationUseContext         `json:"use_context"`
-	Policy              SpecificationUsePolicy          `json:"policy"`
-	BaselineCurrentness SpecificationUseCurrentness     `json:"baseline_currentness"`
-	Admission           SpecificationUseAdmission       `json:"admission"`
-	GateDecision        SpecificationUseGateDisposition `json:"gate_decision"`
+	SchemaVersion       int                              `json:"schema_version"`
+	RecordKind          string                           `json:"record_kind"`
+	Authority           string                           `json:"authority"`
+	SectionID           string                           `json:"section_id"`
+	SourceEdition       SpecificationUseSourceEdition    `json:"source_edition"`
+	UseContext          SpecificationUseContext          `json:"use_context"`
+	Policy              SpecificationUsePolicy           `json:"policy"`
+	BaselineCurrentness SpecificationUseCurrentness      `json:"baseline_currentness"`
+	CurrentAuthority    SpecificationUseCurrentAuthority `json:"current_authority"`
+	Admission           SpecificationUseAdmission        `json:"admission"`
+	GateDecision        SpecificationUseGateDisposition  `json:"gate_decision"`
 }
 
 type SpecificationUseSourceEdition struct {
@@ -94,6 +102,17 @@ type SpecificationUseCurrentness struct {
 	CapturedAt   string `json:"captured_at,omitempty"`
 	ApprovedBy   string `json:"approved_by,omitempty"`
 	Error        string `json:"error,omitempty"`
+}
+
+type SpecificationUseCurrentAuthority struct {
+	Status            string   `json:"status"`
+	Reason            string   `json:"reason"`
+	AuthorityBoundary string   `json:"authority_boundary"`
+	Source            string   `json:"source,omitempty"`
+	SetRefs           []string `json:"set_refs,omitempty"`
+	TargetRefs        []string `json:"target_refs,omitempty"`
+	DecisionRefs      []string `json:"decision_refs,omitempty"`
+	Error             string   `json:"error,omitempty"`
 }
 
 type SpecificationUseAdmission struct {
@@ -147,6 +166,7 @@ func BuildSpecificationUseRecord(
 	normalized := normalizeSpecificationUseInput(input)
 	sourceEdition := specificationUseSourceEdition(section)
 	currentness := specificationUseCurrentness(sourceEdition.Hash, baseline)
+	currentAuthority := specificationUseCurrentAuthority(normalized.CurrentAuthority)
 	policy := specificationUsePolicy(normalized)
 	admission := specificationUseAdmission(section, normalized, policy, currentness)
 
@@ -159,6 +179,7 @@ func BuildSpecificationUseRecord(
 		UseContext:          SpecificationUseContext{Name: normalized.UseContext},
 		Policy:              policy,
 		BaselineCurrentness: currentness,
+		CurrentAuthority:    currentAuthority,
 		Admission:           admission,
 		GateDecision:        specificationUseGateDecision(section, normalized, currentness, admission),
 	}
@@ -167,12 +188,13 @@ func BuildSpecificationUseRecord(
 func normalizeSpecificationUseInput(input SpecificationUseInput) SpecificationUseInput {
 	gate := normalizeOperationalGate(input.OperationalGate)
 	return SpecificationUseInput{
-		SectionID:       strings.TrimSpace(input.SectionID),
-		UseContext:      strings.TrimSpace(input.UseContext),
-		Policy:          strings.TrimSpace(input.Policy),
-		WaiverExpiresAt: strings.TrimSpace(input.WaiverExpiresAt),
-		OperationalGate: gate,
-		Now:             input.Now,
+		SectionID:        strings.TrimSpace(input.SectionID),
+		UseContext:       strings.TrimSpace(input.UseContext),
+		Policy:           strings.TrimSpace(input.Policy),
+		WaiverExpiresAt:  strings.TrimSpace(input.WaiverExpiresAt),
+		OperationalGate:  gate,
+		CurrentAuthority: normalizeSpecificationUseCurrentAuthority(input.CurrentAuthority),
+		Now:              input.Now,
 	}
 }
 
@@ -193,6 +215,36 @@ func normalizeOperationalGate(gate *OperationalGateProfile) *OperationalGateProf
 	}
 	if normalized.SchemaVersion == 0 {
 		normalized.SchemaVersion = OperationalGateSchemaVersion
+	}
+
+	return normalized
+}
+
+func normalizeSpecificationUseCurrentAuthority(
+	current *SpecificationUseCurrentAuthority,
+) *SpecificationUseCurrentAuthority {
+	if current == nil {
+		return nil
+	}
+
+	normalized := &SpecificationUseCurrentAuthority{
+		Status:            strings.TrimSpace(current.Status),
+		Reason:            strings.TrimSpace(current.Reason),
+		AuthorityBoundary: strings.TrimSpace(current.AuthorityBoundary),
+		Source:            strings.TrimSpace(current.Source),
+		SetRefs:           trimNonEmptyStrings(current.SetRefs),
+		TargetRefs:        trimNonEmptyStrings(current.TargetRefs),
+		DecisionRefs:      trimNonEmptyStrings(current.DecisionRefs),
+		Error:             strings.TrimSpace(current.Error),
+	}
+	if normalized.AuthorityBoundary == "" {
+		normalized.AuthorityBoundary = CurrentAuthorityBoundaryReadOnly
+	}
+	if normalized.Status == "" {
+		normalized.Status = SpecUseCurrentAuthorityUnknown
+	}
+	if normalized.Reason == "" {
+		normalized.Reason = "current_authority_frontier_not_supplied"
 	}
 
 	return normalized
@@ -256,6 +308,20 @@ func specificationUseCurrentness(
 	}
 
 	return currentness
+}
+
+func specificationUseCurrentAuthority(
+	current *SpecificationUseCurrentAuthority,
+) SpecificationUseCurrentAuthority {
+	if current == nil {
+		return SpecificationUseCurrentAuthority{
+			Status:            SpecUseCurrentAuthorityUnknown,
+			Reason:            "current_authority_frontier_not_supplied",
+			AuthorityBoundary: CurrentAuthorityBoundaryReadOnly,
+		}
+	}
+
+	return *current
 }
 
 func specificationUseAdmission(
@@ -402,6 +468,7 @@ func operationalGateChecks(
 		operationalGateCurrentnessCheck(currentness),
 		operationalGateAdmissionCheck(admission),
 		operationalGateExpiryCheck(gate, input.Now),
+		operationalGateCurrentAuthorityCheck(input.CurrentAuthority),
 	}
 }
 
@@ -482,6 +549,23 @@ func operationalGateExpiryCheck(gate *OperationalGateProfile, now time.Time) str
 	}
 
 	return "operational_gate_expired"
+}
+
+func operationalGateCurrentAuthorityCheck(current *SpecificationUseCurrentAuthority) string {
+	if current == nil {
+		return "current_authority_frontier_unknown"
+	}
+
+	switch current.Status {
+	case SpecUseCurrentAuthorityClear:
+		return ""
+	case SpecUseCurrentAuthorityConflict:
+		return "current_authority_conflict_requires_operator"
+	case SpecUseCurrentAuthorityOverlap:
+		return "current_authority_overlap_requires_review"
+	default:
+		return "current_authority_frontier_unknown"
+	}
 }
 
 func operationalGateBoundary() OperationalGateBoundary {

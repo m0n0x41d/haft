@@ -12,6 +12,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
@@ -79,6 +80,7 @@ func TestBuildSpecUseRecordReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	}
 
 	record, err := buildSpecUseRecord(
+		context.Background(),
 		root,
 		"TS.sql.use.001",
 		"agent planning read",
@@ -86,6 +88,8 @@ func TestBuildSpecUseRecordReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 		"",
 		nil,
 		time.Now().UTC(),
+		nil,
+		nil,
 	)
 	if err != nil {
 		t.Fatalf("buildSpecUseRecord: %v", err)
@@ -231,6 +235,49 @@ func TestHandleQuintQuerySpecUseAcceptsOperationalGateObject(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuerySpecUseOperationalGateBlocksCurrentAuthorityConflict(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedSpecUseGoverningDecision(t, fixture.store, "dec-spec-use-a", "spec_section:TS.environment.001")
+	seedSpecUseGoverningDecision(t, fixture.store, "dec-spec-use-b", "spec_section:TS.environment.001")
+	if err := fixture.store.AddLink(context.Background(), "dec-spec-use-a", "dec-spec-use-b", "contradicts"); err != nil {
+		t.Fatalf("add contradicts link: %v", err)
+	}
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action":      "spec_use",
+		"section_id":  "TS.environment.001",
+		"use_context": "commission preflight",
+		"policy":      specflow.SpecUsePolicyStrongerUseRequiresCurrentSource,
+		"operational_gate": map[string]any{
+			"schema_version":   float64(specflow.OperationalGateSchemaVersion),
+			"gate_ref":         "gate-mcp-1",
+			"bearer_ref":       "TS.environment.001",
+			"use_context":      "commission preflight",
+			"rule":             specflow.OperationalGateRuleCurrentAdmittedUse,
+			"evidence_refs":    []any{"evid-1"},
+			"expires_at":       "2099-01-01T00:00:00Z",
+			"reopen_condition": "section baseline drifts",
+		},
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery spec_use returned error: %v", err)
+	}
+
+	var record specflow.SpecificationUseRecord
+	if err := json.Unmarshal([]byte(result), &record); err != nil {
+		t.Fatalf("decode spec_use packet: %v\n%s", err, result)
+	}
+	if record.CurrentAuthority.Status != specflow.SpecUseCurrentAuthorityConflict {
+		t.Fatalf("current_authority = %+v, want conflict", record.CurrentAuthority)
+	}
+	if record.GateDecision.Status != specflow.SpecUseGateDecisionBlocked {
+		t.Fatalf("gate_decision = %+v, want blocked", record.GateDecision)
+	}
+	if record.GateDecision.Reason != "current_authority_conflict_requires_operator" {
+		t.Fatalf("gate reason = %q", record.GateDecision.Reason)
+	}
+}
+
 func stubSpecUseFlags(
 	t *testing.T,
 	jsonOutput bool,
@@ -276,4 +323,43 @@ func writeSpecUseGateFile(t *testing.T, gate specflow.OperationalGateProfile) st
 	}
 
 	return path
+}
+
+func seedSpecUseGoverningDecision(
+	t *testing.T,
+	store *artifact.Store,
+	id string,
+	targetRef string,
+) {
+	t.Helper()
+
+	fields := artifact.DecisionFields{
+		DecisionSubjectRef: "spec_section:TS.environment.001",
+		GovernanceTargets: []artifact.GovernanceTarget{{
+			Kind: "spec_section",
+			Ref:  targetRef,
+		}},
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshal decision fields: %v", err)
+	}
+	now := time.Now().UTC()
+	err = store.Create(context.Background(), &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:        id,
+			Kind:      artifact.KindDecisionRecord,
+			Version:   1,
+			Status:    artifact.StatusActive,
+			Context:   "spec",
+			Title:     "Spec use governing decision " + id,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Body:           "decision body",
+		StructuredData: string(payload),
+	})
+	if err != nil {
+		t.Fatalf("create decision %s: %v", id, err)
+	}
 }

@@ -1,16 +1,19 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
@@ -34,12 +37,18 @@ func runSpecUse(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
+	authorityStore, closeAuthorityStore, authorityStoreErr := openArtifactStore(projectRoot)
+	if closeAuthorityStore != nil {
+		defer closeAuthorityStore()
+	}
+
 	gate, err := readSpecUseGateFile(specUseGateFile)
 	if err != nil {
 		return err
 	}
 
 	record, err := buildSpecUseRecord(
+		context.Background(),
 		projectRoot,
 		args[0],
 		specUseContext,
@@ -47,6 +56,8 @@ func runSpecUse(cmd *cobra.Command, args []string) error {
 		specUseWaiverExpiresAt,
 		gate,
 		time.Now().UTC(),
+		authorityStore,
+		authorityStoreErr,
 	)
 	if err != nil {
 		return err
@@ -61,6 +72,7 @@ func runSpecUse(cmd *cobra.Command, args []string) error {
 }
 
 func buildSpecUseRecord(
+	ctx context.Context,
 	projectRoot string,
 	sectionID string,
 	useContext string,
@@ -68,6 +80,8 @@ func buildSpecUseRecord(
 	waiverExpiresAt string,
 	gate *specflow.OperationalGateProfile,
 	now time.Time,
+	authorityStore artifact.ArtifactStore,
+	authorityStoreErr error,
 ) (specflow.SpecificationUseRecord, error) {
 	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
 	if err != nil {
@@ -86,10 +100,166 @@ func buildSpecUseRecord(
 		Policy:          policy,
 		WaiverExpiresAt: waiverExpiresAt,
 		OperationalGate: gate,
-		Now:             now,
+		CurrentAuthority: specUseCurrentAuthority(
+			ctx,
+			authorityStore,
+			authorityStoreErr,
+			section,
+		),
+		Now: now,
 	}
 
 	return specflow.BuildSpecificationUseRecord(section, baseline, input), nil
+}
+
+func specUseCurrentAuthority(
+	ctx context.Context,
+	store artifact.ArtifactStore,
+	storeErr error,
+	section project.SpecSection,
+) *specflow.SpecificationUseCurrentAuthority {
+	if storeErr != nil {
+		return specUseUnknownCurrentAuthority(storeErr.Error())
+	}
+	if store == nil {
+		return specUseUnknownCurrentAuthority("artifact_store_unavailable")
+	}
+
+	report, err := artifact.BuildCurrentGoverningSetReport(ctx, store)
+	if err != nil {
+		return specUseUnknownCurrentAuthority(err.Error())
+	}
+
+	sets := specUseCurrentAuthoritySets(report, section)
+	return specUseCurrentAuthorityFromSets(report.Authority, sets)
+}
+
+func specUseUnknownCurrentAuthority(reason string) *specflow.SpecificationUseCurrentAuthority {
+	return &specflow.SpecificationUseCurrentAuthority{
+		Status:            specflow.SpecUseCurrentAuthorityUnknown,
+		Reason:            "current_authority_frontier_unavailable",
+		AuthorityBoundary: specflow.CurrentAuthorityBoundaryReadOnly,
+		Error:             strings.TrimSpace(reason),
+	}
+}
+
+func specUseCurrentAuthoritySets(
+	report artifact.CurrentGoverningSetReport,
+	section project.SpecSection,
+) []artifact.CurrentGoverningSet {
+	targetRefs := specUseCurrentAuthorityTargetRefs(section)
+	sets := make([]artifact.CurrentGoverningSet, 0, len(report.Sets))
+	for _, set := range report.Sets {
+		if _, ok := targetRefs[set.TargetRef]; !ok {
+			continue
+		}
+
+		sets = append(sets, set)
+	}
+
+	return sets
+}
+
+func specUseCurrentAuthorityTargetRefs(
+	section project.SpecSection,
+) map[string]struct{} {
+	sectionID := strings.TrimSpace(section.ID)
+	refs := map[string]struct{}{}
+	for _, ref := range []string{
+		sectionID,
+		"spec_section:" + sectionID,
+		"spec-section:" + sectionID,
+	} {
+		trimmed := strings.TrimSpace(ref)
+		if trimmed == "" {
+			continue
+		}
+
+		refs[trimmed] = struct{}{}
+	}
+
+	return refs
+}
+
+func specUseCurrentAuthorityFromSets(
+	source string,
+	sets []artifact.CurrentGoverningSet,
+) *specflow.SpecificationUseCurrentAuthority {
+	status := specflow.SpecUseCurrentAuthorityClear
+	reason := "no_current_authority_conflict_for_spec_section"
+	for _, set := range sets {
+		if set.Posture == artifact.GoverningSetPostureConflict {
+			status = specflow.SpecUseCurrentAuthorityConflict
+			reason = "current_authority_conflict_requires_operator"
+			break
+		}
+		if set.Posture == artifact.GoverningSetPostureOverlap {
+			status = specflow.SpecUseCurrentAuthorityOverlap
+			reason = "current_authority_overlap_requires_review"
+		}
+	}
+
+	return &specflow.SpecificationUseCurrentAuthority{
+		Status:            status,
+		Reason:            reason,
+		AuthorityBoundary: specflow.CurrentAuthorityBoundaryReadOnly,
+		Source:            strings.TrimSpace(source),
+		SetRefs:           specUseCurrentAuthoritySetRefs(sets),
+		TargetRefs:        specUseCurrentAuthorityTargetRefList(sets),
+		DecisionRefs:      specUseCurrentAuthorityDecisionRefs(sets),
+	}
+}
+
+func specUseCurrentAuthoritySetRefs(
+	sets []artifact.CurrentGoverningSet,
+) []string {
+	refs := make([]string, 0, len(sets))
+	for _, set := range sets {
+		refs = append(refs, set.SetID)
+	}
+
+	return compactSortedStrings(refs)
+}
+
+func specUseCurrentAuthorityTargetRefList(
+	sets []artifact.CurrentGoverningSet,
+) []string {
+	refs := make([]string, 0, len(sets))
+	for _, set := range sets {
+		refs = append(refs, set.TargetRef)
+	}
+
+	return compactSortedStrings(refs)
+}
+
+func specUseCurrentAuthorityDecisionRefs(
+	sets []artifact.CurrentGoverningSet,
+) []string {
+	refs := []string{}
+	for _, set := range sets {
+		refs = append(refs, set.CurrentDecisionRefs...)
+	}
+
+	return compactSortedStrings(refs)
+}
+
+func compactSortedStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	sort.Strings(out)
+	return out
 }
 
 func readSpecUseGateFile(path string) (*specflow.OperationalGateProfile, error) {

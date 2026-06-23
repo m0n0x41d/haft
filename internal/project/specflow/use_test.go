@@ -86,11 +86,12 @@ func TestBuildSpecificationUseRecordOperationalGatePassesCurrentAdmittedUse(t *t
 		section,
 		specUseCurrentBaseline(section),
 		SpecificationUseInput{
-			SectionID:       section.ID,
-			UseContext:      "commission preflight",
-			Policy:          SpecUsePolicyStrongerUseRequiresCurrentSource,
-			OperationalGate: specUseGate(section.ID, "commission preflight"),
-			Now:             specUseNow(),
+			SectionID:        section.ID,
+			UseContext:       "commission preflight",
+			Policy:           SpecUsePolicyStrongerUseRequiresCurrentSource,
+			OperationalGate:  specUseGate(section.ID, "commission preflight"),
+			CurrentAuthority: specUseCurrentAuthority(SpecUseCurrentAuthorityClear),
+			Now:              specUseNow(),
 		},
 	)
 
@@ -105,6 +106,34 @@ func TestBuildSpecificationUseRecordOperationalGatePassesCurrentAdmittedUse(t *t
 	}
 	if record.GateDecision.OperationalGate == nil {
 		t.Fatal("operational gate profile missing from gate decision")
+	}
+}
+
+func TestBuildSpecificationUseRecordOperationalGateBlocksCurrentAuthorityConflict(t *testing.T) {
+	section := specUseActiveSection()
+	for name, currentAuthority := range map[string]*SpecificationUseCurrentAuthority{
+		"conflict": specUseCurrentAuthority(SpecUseCurrentAuthorityConflict),
+		"overlap":  specUseCurrentAuthority(SpecUseCurrentAuthorityOverlap),
+	} {
+		record := BuildSpecificationUseRecord(
+			section,
+			specUseCurrentBaseline(section),
+			SpecificationUseInput{
+				SectionID:        section.ID,
+				UseContext:       "commission preflight",
+				Policy:           SpecUsePolicyStrongerUseRequiresCurrentSource,
+				OperationalGate:  specUseGate(section.ID, "commission preflight"),
+				CurrentAuthority: currentAuthority,
+				Now:              specUseNow(),
+			},
+		)
+
+		if record.GateDecision.Status != SpecUseGateDecisionBlocked {
+			t.Fatalf("%s: gate_decision = %+v, want blocked", name, record.GateDecision)
+		}
+		if record.CurrentAuthority.Status != currentAuthority.Status {
+			t.Fatalf("%s: current_authority = %+v", name, record.CurrentAuthority)
+		}
 	}
 }
 
@@ -323,6 +352,25 @@ func specUseGate(sectionID string, useContext string) *OperationalGateProfile {
 		EvidenceRefs:    []string{"evid-1"},
 		ExpiresAt:       "2099-01-01T00:00:00Z",
 		ReopenCondition: "section baseline drifts or admission policy changes",
+	}
+}
+
+func specUseCurrentAuthority(status string) *SpecificationUseCurrentAuthority {
+	reason := "no_current_authority_conflict_for_spec_section"
+	if status == SpecUseCurrentAuthorityConflict {
+		reason = "current_authority_conflict_requires_operator"
+	}
+	if status == SpecUseCurrentAuthorityOverlap {
+		reason = "current_authority_overlap_requires_review"
+	}
+
+	return &SpecificationUseCurrentAuthority{
+		Status:            status,
+		Reason:            reason,
+		AuthorityBoundary: CurrentAuthorityBoundaryReadOnly,
+		Source:            "test_current_governing_set",
+		DecisionRefs:      []string{"dec-1"},
+		TargetRefs:        []string{"spec_section:TS.use.001"},
 	}
 }
 

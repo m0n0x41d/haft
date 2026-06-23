@@ -1069,7 +1069,7 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 	}
 
 	shapes, _ := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{"operational_gate", "require_current_source_and_admitted_use", "passed|blocked"} {
+	for _, want := range []string{"operational_gate", "current_authority", "require_current_source_and_admitted_use", "current_authority_conflict_requires_operator", "passed|blocked"} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.spec_use contract missing %q:\n%s", want, shapes)
 		}
@@ -1077,6 +1077,9 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 	invariants := strings.Join(capability.Invariants, "\n")
 	if !strings.Contains(invariants, "GateDecision remains a derived reading") {
 		t.Fatalf("query.spec_use invariants missing derived-reading boundary:\n%s", invariants)
+	}
+	if !strings.Contains(invariants, "Current-authority conflict posture") {
+		t.Fatalf("query.spec_use invariants missing current-authority boundary:\n%s", invariants)
 	}
 }
 

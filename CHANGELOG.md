@@ -15,6 +15,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec-use current-authority gate input.** `haft spec use` and
+  `haft_query(action="spec_use")` now include a read-only
+  `current_authority` frontier posture for the SpecSection target, and
+  OperationalGate evaluation fails closed on current-authority conflicts or
+  overlap that requires operator review.
 - **Spec-section `section_id` drift target evaluators.** Semantic binding
   targets now recognize `section_id` in YAML and JSON carriers, so
   spec-section targets can bind to bounded target ranges instead of falling

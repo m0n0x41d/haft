@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline audit authority-boundary classification.** `haft baseline audit`
+  now classifies explicit `not_approval_not_rebaseline` spec sync/apply
+  authority-boundary tokens as lifecycle-authority wording instead of legacy
+  ambiguous baseline debt, eliminating false-positive status/audit noise for
+  those surfaces.
 - **Carrier authority receipt wording guard.** Carrier semio checks now flag
   prompt text, model-supplied arguments, generated text/schema, skill
   descriptions, plugin metadata, and Pi metadata when they are described as

@@ -600,6 +600,7 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"does not approve, rebaseline",
 		"without creating approval, rebaseline",
 		"not_approval_rebaseline",
+		"not_approval_not_rebaseline",
 		"re-baseline via `haft_decision(action=\"baseline\"",
 		"drift on touched files",
 		"does not mutate decisions, links, evidence, baselines",

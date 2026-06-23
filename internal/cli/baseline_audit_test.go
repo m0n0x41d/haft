@@ -588,6 +588,17 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	}
 }
 
+func TestClassifyBaselineTermTreatsNotRebaselineBoundaryAsLifecycleAuthority(t *testing.T) {
+	category, rationale := classifyBaselineTerm(
+		"internal/cli/spec_apply_change_test.go",
+		`AuthorityBoundary: "not_approval_not_rebaseline_not_evidence"`,
+	)
+
+	if category != baselineAuditLifecycleAuth {
+		t.Fatalf("category = %q, want %q (%s)", category, baselineAuditLifecycleAuth, rationale)
+	}
+}
+
 func writeBaselineAuditFixture(t *testing.T, root string, rel string, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

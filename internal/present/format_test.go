@@ -1160,6 +1160,7 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				"inconclusive: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
 				"Coverage gaps: operational-cost",
 				"Assurance: R_eff=0.60 | F_eff=2 scale=haft-legacy-f0-f3 bridge_loss=legacy-scale-has-fewer-buckets | weakest CL=1",
+				"Assurance boundary: evidence/formality are diagnostics, not approval, gate passage, claim truth, global truth, or publication.",
 			},
 		},
 		{

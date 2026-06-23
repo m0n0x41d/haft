@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Projection assurance authority boundary.** Audit/evidence projections now
+  state that displayed `R_eff`, `F_eff`, formality scale, and bridge-loss
+  diagnostics are not approval, gate passage, claim truth, global truth, or
+  publication.
 - **Governing frontier history split.** `haft decision governing-set` and
   `haft_query(action="governing_set")` now expose an explicit
   `authority_frontier` separating current governing DecisionRecord refs from

@@ -309,6 +309,7 @@ func auditProjectionResponse(graph artifact.ProjectionGraph) string {
 				projectionFormalityBridgeLoss(decision.Evidence.WLNK),
 				decision.Evidence.WLNK.WeakestCL,
 			))
+			sb.WriteString("Assurance boundary: evidence/formality are diagnostics, not approval, gate passage, claim truth, global truth, or publication.\n")
 			sb.WriteString("\n")
 		}
 	}

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -91,6 +92,60 @@ func TestRunSpecApplyChangeBlocksUnknownHighRisk(t *testing.T) {
 	}
 	if result.Change.Kind != project.SpecCarrierChangeUnknownHighRisk {
 		t.Fatalf("change kind = %q", result.Change.Kind)
+	}
+}
+
+func TestApplySpecCarrierChangeToSQLBlockedHighRiskPreservesCurrentEdition(t *testing.T) {
+	database := newTestCLIDB(t)
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	seed := project.SpecSection{
+		ID:            "TS.sync.001",
+		Spec:          "target-system",
+		Kind:          "acceptance",
+		Title:         "Current SQL truth",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "human",
+		Status:        "active",
+		ValidUntil:    "2026-08-01",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	seedEdition := specflow.NewSpecSectionEdition("proj-1", seed, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(seedEdition); err != nil {
+		t.Fatalf("seed current SQL edition: %v", err)
+	}
+
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+	after := writeSpecClassifyChangeFile(t, "enabling-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
+
+	result, err := applySpecCarrierChangeToSQL("proj-1", specCarrierChangeInput{
+		BeforePath: before,
+		AfterPath:  after,
+		SectionID:  "TS.sync.001",
+	}, store)
+	if err == nil {
+		t.Fatal("expected high-risk apply to block")
+	}
+	if result.Applied || result.Noop {
+		t.Fatalf("blocked high-risk result should not apply or noop: %+v", result)
+	}
+	if result.Change.Kind != project.SpecCarrierChangeUnknownHighRisk {
+		t.Fatalf("change kind = %q", result.Change.Kind)
+	}
+
+	current, getErr := store.GetCurrent("proj-1", "TS.sync.001")
+	if getErr != nil {
+		t.Fatalf("GetCurrent after blocked apply: %v", getErr)
+	}
+	if current.SemanticHash != seedEdition.SemanticHash {
+		t.Fatalf("blocked apply changed semantic hash: got %s want %s", current.SemanticHash, seedEdition.SemanticHash)
+	}
+	if current.Section.Title != "Current SQL truth" {
+		t.Fatalf("blocked apply changed current section title: %q", current.Section.Title)
+	}
+	if current.SourceKind != specflow.SpecSectionSourceSQL {
+		t.Fatalf("blocked apply changed source kind: %q", current.SourceKind)
 	}
 }
 

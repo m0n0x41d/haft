@@ -36,6 +36,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec sync-back fail-closed preservation guard.** `haft spec apply-change`
+  regression coverage now proves an unknown/high-risk carrier edit cannot
+  overwrite an existing current SQL SpecSection edition.
 - **Generated contract carrier semio guard.** `haft carrier check` now includes
   virtual surfaces for `contract_generation` preview and schema fragments, so
   generated host/plugin/Pi carrier text is authority-boundary checked before

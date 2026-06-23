@@ -755,7 +755,9 @@ func baselineAuditPresentationSurface(path string, value string) bool {
 			"counts per baselined decision",
 			"hasbaseline",
 			"driftnobaseline",
+			"nobaselinecount",
 			"cosmetic (re-baseline)",
+			"safe to re-baseline without review",
 			"incidental (shared file changed by unrelated work",
 		)
 	default:

@@ -103,6 +103,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	writeBaselineAuditFixture(t, root, "internal/present/format.go", strings.Join([]string{
 		"func BaselineResponse(decisionTitle string, decisionRef string, files []artifact.AffectedFile, navStrip string) string {",
 		`sb.WriteString("No drift detected. All baselined decisions match current file state.\n")`,
+		"noBaselineCount := 0",
+		"return \" — additive only; safe to re-baseline without review\"",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/skill/h-spec/SKILL.md", strings.Join([]string{
 		"Primary spec lifecycle interface for a haft project.",
@@ -219,8 +221,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.DecisionBaselineAPIFiles != 2 {
 		t.Fatalf("decision baseline api files = %d, want 2", report.Summary.DecisionBaselineAPIFiles)
 	}
-	if report.Summary.BaselinePresentation != 2 {
-		t.Fatalf("baseline presentation count = %d, want 2", report.Summary.BaselinePresentation)
+	if report.Summary.BaselinePresentation != 4 {
+		t.Fatalf("baseline presentation count = %d, want 4", report.Summary.BaselinePresentation)
 	}
 	if report.Summary.BaselinePresentationFiles != 1 {
 		t.Fatalf("baseline presentation files = %d, want 1", report.Summary.BaselinePresentationFiles)

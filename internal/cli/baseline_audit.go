@@ -503,6 +503,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditLegacyAmbiguous, "explicitly names legacy ambiguous baseline posture"
 	case baselineAuditAutonomousMaintenanceTerm(value):
 		return baselineAuditAutonomousMaint, "names autonomous maintenance rebaseline, undo, or baseline snapshot state"
+	case baselineAuditMaintenanceExecutionSurface(path):
+		return baselineAuditAutonomousMaint, "mentions baseline inside autonomous maintenance execution or undo surface"
 	case containsAnyBaselineTerm(value,
 		"approve/rebaseline",
 		"approve or rebaseline",
@@ -711,6 +713,15 @@ func baselineAuditPresentationSurface(path string, value string) bool {
 			"cosmetic (re-baseline)",
 			"incidental (shared file changed by unrelated work",
 		)
+	default:
+		return false
+	}
+}
+
+func baselineAuditMaintenanceExecutionSurface(path string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/maintenance_exec.go", "internal/cli/maintenance_exec_test.go":
+		return true
 	default:
 		return false
 	}

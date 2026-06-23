@@ -56,6 +56,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"type BaselineSnapshot struct{}",
 		"AutoBaselineCandidates++",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/maintenance_exec_test.go", strings.Join([]string{
+		"t.Fatal(\"auto mode should have re-baselined the additive drift\")",
+		"t.Fatal(\"undo must restore the PRIOR baseline\")",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/use.go", strings.Join([]string{
 		"BaselineCurrentness SpecificationUseCurrentness `json:\"baseline_currentness\"`",
 		"status = SpecUseBaselineMissing",
@@ -156,11 +160,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TestFixtureSurfaceFiles != 1 {
 		t.Fatalf("test fixture surface files = %d, want 1", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.AutonomousMaintenance != 2 {
-		t.Fatalf("autonomous maintenance count = %d, want 2", report.Summary.AutonomousMaintenance)
+	if report.Summary.AutonomousMaintenance != 4 {
+		t.Fatalf("autonomous maintenance count = %d, want 4", report.Summary.AutonomousMaintenance)
 	}
-	if report.Summary.AutonomousMaintenanceFiles != 1 {
-		t.Fatalf("autonomous maintenance files = %d, want 1", report.Summary.AutonomousMaintenanceFiles)
+	if report.Summary.AutonomousMaintenanceFiles != 2 {
+		t.Fatalf("autonomous maintenance files = %d, want 2", report.Summary.AutonomousMaintenanceFiles)
 	}
 	if report.Summary.SpecUseCurrentness != 2 {
 		t.Fatalf("spec use currentness count = %d, want 2", report.Summary.SpecUseCurrentness)
@@ -241,7 +245,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			ReleaseNotesCarrier:         1,
 			AuditToolSurface:            1,
 			TestFixtureSurface:          1,
-			AutonomousMaintenance:       2,
+			AutonomousMaintenance:       4,
 			SpecUseCurrentness:          2,
 			LegacyBindingScope:          2,
 			DecisionBaselineAPI:         4,
@@ -284,7 +288,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"release_notes=1",
 		"audit_tool=1",
 		"test_fixture=1",
-		"autonomous_maintenance=2",
+		"autonomous_maintenance=4",
 		"spec_use_currentness=2",
 		"legacy_binding_scope=2",
 		"decision_baseline_api=4",

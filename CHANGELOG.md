@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit maintenance execution classification.** `haft baseline audit`
+  now classifies autonomous maintenance executor, undo, and rebaseline test
+  wording as autonomous-maintenance baseline terminology.
 - **Baseline audit verified-state decision vocabulary.** `haft baseline audit`
   now recognizes remaining DecisionRecord drift, symbol-baseline, CL3
   verification-pass, and baseline-test wording as verified-state snapshot

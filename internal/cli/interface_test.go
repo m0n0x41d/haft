@@ -713,6 +713,11 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	if !strings.Contains(notes, "refs point outward and do not prove occurrence") {
 		t.Fatalf("decision interface notes missing transformation refs boundary:\n%s", notes)
 	}
+	for _, want := range []string{"host authorization receipts require principal, session, action, payload hash, expiry, source, and a registered kernel verifier", "default MCP cli-only mode"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("decision interface notes missing host receipt boundary %q:\n%s", want, notes)
+		}
+	}
 }
 
 func TestInterfaceProblemFrameExposesProblemProfileAdmissionFields(t *testing.T) {

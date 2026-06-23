@@ -11,16 +11,23 @@ import (
 const mcpBindingModeCLIOnly = "cli-only"
 
 type operatorConfirmationRequired struct {
-	Code            string `json:"code"`
-	Tool            string `json:"tool"`
-	Action          string `json:"action"`
-	BindingMode     string `json:"binding_mode"`
-	Message         string `json:"message"`
-	AllowedPath     string `json:"allowed_path"`
-	CreatesArtifact bool   `json:"creates_artifact"`
-	ReceiptStatus   string `json:"authorization_receipt_status"`
-	RequiredReceipt string `json:"required_authorization_receipt"`
-	ReceiptReason   string `json:"authorization_receipt_reason"`
+	Code              string                           `json:"code"`
+	Tool              string                           `json:"tool"`
+	Action            string                           `json:"action"`
+	BindingMode       string                           `json:"binding_mode"`
+	Message           string                           `json:"message"`
+	AllowedPath       string                           `json:"allowed_path"`
+	CreatesArtifact   bool                             `json:"creates_artifact"`
+	ReceiptStatus     string                           `json:"authorization_receipt_status"`
+	RequiredReceipt   string                           `json:"required_authorization_receipt"`
+	ReceiptReason     string                           `json:"authorization_receipt_reason"`
+	ReceiptCandidates []operatorAuthorizationCandidate `json:"authorization_receipt_candidates,omitempty"`
+}
+
+type operatorAuthorizationCandidate struct {
+	Kind         string   `json:"kind"`
+	Status       string   `json:"status"`
+	Requirements []string `json:"requirements"`
 }
 
 type operatorConfirmationRequiredError struct {
@@ -59,6 +66,34 @@ func rejectMCPBindingAction(name string, args map[string]any) error {
 			ReceiptStatus:   evaluation.Status,
 			RequiredReceipt: evaluation.RequiredKind,
 			ReceiptReason:   evaluation.Reason,
+			ReceiptCandidates: []operatorAuthorizationCandidate{
+				{
+					Kind:   authority.ReceiptKindManualCLI,
+					Status: "accepted_by_manual_cli_binding_path",
+					Requirements: []string{
+						"principal_identity_source",
+						"host_session_source",
+						"tool",
+						"action",
+						"optional_payload_hash",
+						"expires_at_if_present",
+					},
+				},
+				{
+					Kind:   authority.ReceiptKindHost,
+					Status: "requires_registered_kernel_verifier_not_enabled_in_default_mcp_cli_only",
+					Requirements: []string{
+						"source",
+						"principal_identity_source",
+						"host_session_source",
+						"tool",
+						"action",
+						"payload_hash",
+						"expires_at",
+						"registered_kernel_verifier",
+					},
+				},
+			},
 		},
 	}
 }

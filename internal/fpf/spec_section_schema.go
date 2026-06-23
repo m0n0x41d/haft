@@ -17,7 +17,8 @@ func haftSpecSectionTool() Tool {
 			"so the section returns to the onboarding loop. Approval actions are " +
 			"binding governance acts; MCP fails them closed by default with " +
 			"operator_confirmation_required because model-supplied arguments are " +
-			"not kernel-verifiable manual_cli authorization receipts. " +
+			"not kernel-verifiable authorization receipts. Manual CLI remains the " +
+			"default binding path; host receipts require a registered kernel verifier. " +
 			"Lifecycle and mutation JSON expose baseline_kind/profile so " +
 			"SpecSectionApprovalBaseline stays distinct from other snapshots. " +
 			"Surfaces (MCP plugin, host workflow, CLI) all consume the " +
@@ -34,7 +35,7 @@ func haftSpecSectionTool() Tool {
 						"rebaseline",
 						"reopen",
 					},
-					"description": "lifecycle=typed spec lifecycle projection with baseline profile. next_step=legacy WorkflowIntent. approve/rebaseline/reopen are binding mutations and return operator_confirmation_required in default MCP cli-only mode.",
+					"description": "lifecycle=typed spec lifecycle projection with baseline profile. next_step=legacy WorkflowIntent. approve/rebaseline/reopen are binding mutations and return operator_confirmation_required in default MCP cli-only mode; host receipts require a registered kernel verifier.",
 				},
 				"project_root": map[string]string{
 					"type":        "string",

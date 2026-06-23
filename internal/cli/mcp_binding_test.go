@@ -143,10 +143,53 @@ func assertOperatorConfirmationRequired(t *testing.T, err error, tool, action st
 	if payload.ReceiptReason == "" {
 		t.Fatal("authorization_receipt_reason is empty")
 	}
+	assertAuthorizationReceiptCandidate(t, payload, "manual_cli", "accepted_by_manual_cli_binding_path", []string{
+		"principal_identity_source",
+		"host_session_source",
+		"tool",
+		"action",
+	})
+	assertAuthorizationReceiptCandidate(t, payload, "host_authorization_receipt", "requires_registered_kernel_verifier_not_enabled_in_default_mcp_cli_only", []string{
+		"source",
+		"principal_identity_source",
+		"host_session_source",
+		"tool",
+		"action",
+		"payload_hash",
+		"expires_at",
+		"registered_kernel_verifier",
+	})
 	if !strings.Contains(payload.Message, "model-supplied arguments") {
 		t.Fatalf("message does not explain model-supplied args boundary: %q", payload.Message)
 	}
 	if payload.AllowedPath == "" {
 		t.Fatal("allowed_path is empty")
 	}
+}
+
+func assertAuthorizationReceiptCandidate(
+	t *testing.T,
+	payload operatorConfirmationRequired,
+	kind string,
+	status string,
+	requirements []string,
+) {
+	t.Helper()
+
+	for _, candidate := range payload.ReceiptCandidates {
+		if candidate.Kind != kind {
+			continue
+		}
+		if candidate.Status != status {
+			t.Fatalf("%s candidate status = %q, want %q", kind, candidate.Status, status)
+		}
+		for _, requirement := range requirements {
+			if !stringSliceContains(candidate.Requirements, requirement) {
+				t.Fatalf("%s candidate requirements = %#v, missing %q", kind, candidate.Requirements, requirement)
+			}
+		}
+		return
+	}
+
+	t.Fatalf("authorization_receipt_candidates missing %q: %#v", kind, payload.ReceiptCandidates)
 }

@@ -459,7 +459,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				},
 				Notes: []string{
 					"MCP schema discovery may show decide fields, but default MCP execution is fail-closed because model-supplied arguments are not kernel-verifiable operator authorization.",
-					"Use the input-file CLI/manual path for the binding act; v1 accepts only manual_cli authorization receipts and marks MCP receipt-backed binding unsupported.",
+					"Use the input-file CLI/manual path for the binding act in default MCP cli-only mode; host authorization receipts require principal, session, action, payload hash, expiry, source, and a registered kernel verifier before they can become a binding path.",
 					"Manual-only per Transformer Mandate; tactical skips are accepted only in tactical mode and require _skip_reason.",
 					"choice_result carries C.11 subject, option_set, comparison_basis, choice_rule, next_move, reversibility, and reopen_condition; DecisionRecord remains the compatibility projection.",
 					"transformation_record is an explicit target-state description, not a MethodRun, WorkCommission, evidence item, or publication unit; refs point outward and do not prove occurrence, approval, evidence truth, or publication.",

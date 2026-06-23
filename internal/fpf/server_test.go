@@ -318,6 +318,53 @@ func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
 	}
 }
 
+func TestToolCatalog_BindingDescriptionsNameHostReceiptVerifierBoundary(t *testing.T) {
+	body := strings.Join([]string{
+		toolCatalogActionDescription(t, "haft_commission"),
+		toolCatalogActionDescription(t, "haft_spec_section"),
+	}, "\n")
+	for _, want := range []string{
+		"host receipts require a registered kernel verifier",
+		"operator_confirmation_required in default MCP cli-only mode",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("tools/list binding descriptions missing %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "not kernel-verifiable manual_cli authorization receipts") {
+		t.Fatalf("tools/list still says only manual_cli receipts are kernel-verifiable:\n%s", body)
+	}
+}
+
+func toolCatalogActionDescription(t *testing.T, toolName string) string {
+	t.Helper()
+
+	var tool Tool
+	switch toolName {
+	case "haft_commission":
+		tool = haftCommissionTool()
+	case "haft_spec_section":
+		tool = haftSpecSectionTool()
+	default:
+		t.Fatalf("unsupported un-compacted tool source %q", toolName)
+	}
+
+	schema, ok := tool.InputSchema.(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s input schema has wrong type: %#v", toolName, tool.InputSchema)
+	}
+	properties := mustSchemaProperties(t, schema, toolName)
+	action, ok := properties["action"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("%s action schema has wrong type: %#v", toolName, properties["action"])
+	}
+	description, ok := action["description"].(string)
+	if !ok {
+		t.Fatalf("%s action description missing or wrong type: %#v", toolName, action["description"])
+	}
+	return description
+}
+
 func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	compareSchema := mustListToolProperties(t, "haft_solution")
 

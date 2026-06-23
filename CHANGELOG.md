@@ -58,6 +58,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   catalog test now rejects generated-manifest and rich output-shape fragments,
   keeping top-level CLI discovery as a capability list plus JSON drill-down
   pointer.
+- **Binding-denial receipt candidates.** `operator_confirmation_required`
+  payloads now include explicit authorization receipt candidates: manual CLI as
+  the default accepted binding path and host receipts only when a registered
+  kernel verifier can confirm principal, session, action, payload hash, expiry,
+  and source.
 - **Read-only reconciliation selection review.** `haft decision reconcile
   selection-review SELECTION.json` now validates a proposed or
   operator-approved reconciliation selection against the same core rules as

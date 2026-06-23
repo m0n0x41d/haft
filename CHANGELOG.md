@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   targets now recognize `section_id` in YAML and JSON carriers, so
   spec-section targets can bind to bounded target ranges instead of falling
   back to file-level drift when carriers use `section_id` rather than `id`.
+- **Measurement evidence formality posture.** `Measure` now applies the current
+  F0-F9 formality scale metadata to measurement evidence before claim
+  recomputation and persistence, avoiding bare numeric F2 evidence in exact and
+  audit paths.
 - **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
   commit/source metadata in `haft version`, `scripts/build.sh --install`
   stamps commit/build date via ldflags, and read-only MCP query footers now use

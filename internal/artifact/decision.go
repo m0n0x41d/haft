@@ -2636,6 +2636,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		// No affected_files — can't verify via baseline, treat as unverified
 		hasBaseline = false
 	}
+	measureCL := measurementCongruenceLevel(hasBaseline)
 
 	scopeCandidates := measurementScopeCandidates(ctx, store, a)
 	criteriaMetScope := measuredCriteriaScope(input.CriteriaMet, nil, scopeCandidates)
@@ -2676,6 +2677,11 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		*evidenceItem,
 		claimEvidence,
 	)
+	applyMeasurementEvidencePosture(evidenceItem, measureCL)
+	for index := range measurementItems {
+		applyMeasurementEvidencePosture(&measurementItems[index], measureCL)
+	}
+
 	activeEvidence, err := decisionActiveClaimEvidenceAfterMeasurement(
 		ctx,
 		store,
@@ -2726,20 +2732,6 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 
 	a.Body += section.String()
 
-	// Record as evidence item
-	// CL based on verification quality: baseline exists = CL3, no baseline = CL1 (self-evidence, FPF A.12)
-	measureCL := 1 // default: self-evidence (no independent verification)
-	if hasBaseline {
-		measureCL = 3 // baseline exists = independent file-level verification
-	}
-
-	evidenceItem.CongruenceLevel = measureCL
-	evidenceItem.FormalityLevel = 2
-	for index := range measurementItems {
-		measurementItems[index].CongruenceLevel = measureCL
-		measurementItems[index].FormalityLevel = 2
-	}
-
 	if err := store.CommitMeasurement(ctx, a, measurementItems); err != nil {
 		return nil, fmt.Errorf("record measurement: %w", err)
 	}
@@ -2750,6 +2742,24 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		return a, &WriteWarning{Warnings: measureWarnings}
 	}
 	return a, nil
+}
+
+func measurementCongruenceLevel(hasBaseline bool) int {
+	if hasBaseline {
+		return 3
+	}
+	return 1
+}
+
+func applyMeasurementEvidencePosture(item *EvidenceItem, congruenceLevel int) {
+	if item == nil {
+		return
+	}
+	formalityScale := reff.CurrentFormalityScale(defaultEvidenceFormalityLevel("measurement"))
+	item.CongruenceLevel = congruenceLevel
+	item.FormalityLevel = formalityScale.Level
+	item.FormalityScale = &formalityScale
+	item.FormalityBridge = evidenceFormalityBridge(formalityScale)
 }
 
 func decisionActiveClaimEvidenceAfterMeasurement(

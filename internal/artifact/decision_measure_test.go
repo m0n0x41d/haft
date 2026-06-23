@@ -68,6 +68,15 @@ func TestMeasure_Success(t *testing.T) {
 	if items[0].FormalityLevel != 2 {
 		t.Errorf("evidence formality = %d, want 2", items[0].FormalityLevel)
 	}
+	if items[0].FormalityScale == nil {
+		t.Fatal("measurement evidence formality scale missing")
+	}
+	if items[0].FormalityScale.ScaleID != reff.FormalityScaleCurrent {
+		t.Fatalf("measurement evidence formality scale = %q, want current F0-F9", items[0].FormalityScale.ScaleID)
+	}
+	if items[0].FormalityBridge != nil {
+		t.Fatalf("current F0-F9 measurement evidence should not need a bridge: %#v", items[0].FormalityBridge)
+	}
 	if items[0].ValidUntil != "2027-01-01T00:00:00Z" {
 		t.Errorf("evidence valid_until = %q, want propagated decision validity", items[0].ValidUntil)
 	}

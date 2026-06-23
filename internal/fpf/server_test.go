@@ -180,6 +180,8 @@ func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
 		"generator_target_surfaces",
 		"generator_target_fields",
 		"generated_schema_fragments",
+		"runtime_schema_audit",
+		"runtime_schema_drift",
 		"surface_policy",
 	} {
 		if strings.Contains(body, forbidden) {

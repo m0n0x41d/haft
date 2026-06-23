@@ -119,6 +119,8 @@ func assertNoContractGenerationManifestInline(t *testing.T, surface string, text
 		"generator_target_fields",
 		"generated_preview_fragments",
 		"generated_schema_fragments",
+		"runtime_schema_audit",
+		"runtime_schema_drift",
 		"generated_fragments",
 		"generated/contract-generation/preview/",
 		"generated/contract-generation/schema/",

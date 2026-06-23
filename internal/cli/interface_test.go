@@ -1028,6 +1028,8 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 		"generator_target_fields",
 		"generated_preview_fragments",
 		"generated_schema_fragments",
+		"runtime_schema_audit",
+		"runtime_schema_drift",
 		"generated_fragments",
 		"materialized_carriers",
 		"digest_guarded_carriers",
@@ -1040,6 +1042,32 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 	}
 	assertNoContractAuditInline(t, "default status", result)
 	assertNoInterfaceOutputShapeInline(t, "default status", result)
+}
+
+func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	var text strings.Builder
+
+	if err := writeInterfaceContractGenerationText(&text, report); err != nil {
+		t.Fatalf("write contract generation text: %v", err)
+	}
+
+	body := text.String()
+	for _, want := range []string{"runtime_schema_mirrors=", "runtime_schema_drift=0"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("compact contract generation text missing count %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		"runtime_schema_audit",
+		"missing_runtime_tools",
+		"schema_digest_mismatches",
+		"live_mcp_tools_list_tool_catalog",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("compact contract generation text inlined runtime audit detail %q:\n%s", forbidden, body)
+		}
+	}
 }
 
 func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.T) {

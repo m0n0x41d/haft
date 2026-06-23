@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   schema fragments against the live `ToolCatalog` action enum, required fields,
   properties, and schema digests, while compact output keeps only mirror/drift
   counts.
+- **Runtime schema audit no-default-bloat guards.** Default status,
+  `code_context`, MCP `tools/list`, and compact contract-generation text now
+  reject inline `runtime_schema_audit` detail while preserving summary counts
+  behind the explicit contract-generation surface.
 - **Contract-generation materialized carrier manifest.** `haft interface
   contract-generation --json` and `haft_query(action="contract_generation")`
   now list materialized host/skill/plugin/Pi carrier files with source-contract,

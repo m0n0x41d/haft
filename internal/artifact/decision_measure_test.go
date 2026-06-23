@@ -1338,6 +1338,61 @@ func TestWLNKSummary_NamesLegacyFormalityBridgeLoss(t *testing.T) {
 	}
 }
 
+type unversionedEvidenceStore struct {
+	*Store
+	items []EvidenceItem
+}
+
+func (s unversionedEvidenceStore) GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error) {
+	return s.items, nil
+}
+
+func TestWLNKSummary_DoesNotPromoteUnversionedFormalityToCurrent(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep unversioned evidence diagnostic",
+		WhySelected:   "Projection must not make missing scale metadata look current.",
+		WeakestLink:   "unversioned formality source",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wrappedStore := unversionedEvidenceStore{
+		Store: store,
+		items: []EvidenceItem{
+			{
+				ID:              "evid-unversioned",
+				Type:            "test",
+				Content:         "Legacy in-memory evidence item without scale metadata.",
+				Verdict:         "supports",
+				CongruenceLevel: 3,
+				FormalityLevel:  2,
+			},
+		},
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, wrappedStore, dec.Meta.ID)
+	if wlnk.FormalityScaleID != reff.FormalityScaleUnversioned {
+		t.Fatalf("FormalityScaleID = %q, want unversioned", wlnk.FormalityScaleID)
+	}
+	if wlnk.FormalityBridgeLoss != reff.FormalityBridgeUnversionedGap {
+		t.Fatalf("FormalityBridgeLoss = %q, want unversioned gap", wlnk.FormalityBridgeLoss)
+	}
+	if strings.Contains(wlnk.Summary, "scale="+reff.FormalityScaleCurrent) {
+		t.Fatalf("summary should not promote unversioned formality to current:\n%s", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "scale=unversioned-formality") {
+		t.Fatalf("summary should name unversioned formality scale:\n%s", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "bridge_loss=source-scale-not-declared") {
+		t.Fatalf("summary should name unversioned bridge loss:\n%s", wlnk.Summary)
+	}
+}
+
 func TestWLNKSummary_AnnotatedCriteriaStillCountAsCovered(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

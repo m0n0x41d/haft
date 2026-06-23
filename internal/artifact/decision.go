@@ -3184,7 +3184,7 @@ func evidenceItemFormalityScale(item EvidenceItem) reff.FormalityScale {
 		return reff.NormalizeFormalityScale(*item.FormalityScale)
 	}
 
-	return reff.CurrentFormalityScale(item.FormalityLevel)
+	return reff.UnversionedFormalityScale(item.FormalityLevel)
 }
 
 func evidenceItemFormalityBridgeLoss(item EvidenceItem, scale reff.FormalityScale) string {

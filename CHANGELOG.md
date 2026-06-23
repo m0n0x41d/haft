@@ -16,6 +16,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   F0-F9 formality scale metadata to measurement evidence before claim
   recomputation and persistence, avoiding bare numeric F2 evidence in exact and
   audit paths.
+- **WLNK formality projection diagnostics.** Assurance/WLNK summaries no longer
+  promote evidence items with missing formality scale metadata to the current
+  F0-F9 scale; unversioned evidence is reported with an explicit
+  `unversioned-formality` scale and source-scale gap bridge loss.
 - **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
   commit/source metadata in `haft version`, `scripts/build.sh --install`
   stamps commit/build date via ldflags, and read-only MCP query footers now use

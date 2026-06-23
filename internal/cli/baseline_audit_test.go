@@ -30,7 +30,14 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/verification.go", strings.Join([]string{
 		"// VerificationPassResult returns the baseline snapshot and linked evidence item.",
+		"Baseline []AffectedFile `json:\"baseline\"`",
+		"Baseline: baseline,",
 		`fmt.Sprintf("Baselined files (%d): %s", len(paths), strings.Join(paths, ", "))`,
+	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/run.go", strings.Join([]string{
+		"Short: \"Implement a decision - plan, execute, verify, baseline\",",
+		"ev.Phase(\"Baseline\")",
+		"ev.OK(fmt.Sprintf(\"%d file(s) snapshotted\", len(baselined)))",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "docs/compare.md", "The benchmark baseline must stay stable.\n")
 	writeBaselineAuditFixture(t, root, "internal/fpf/tree_drilldown_test.go", "baselineResults, err := SearchSpecWithOptions(db, query, opts)\n")
@@ -116,8 +123,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecSectionApprovalBaseline != 7 {
 		t.Fatalf("spec approval count = %d, want 7", report.Summary.SpecSectionApprovalBaseline)
 	}
-	if report.Summary.VerifiedStateSnapshot != 9 {
-		t.Fatalf("verified state count = %d, want 9", report.Summary.VerifiedStateSnapshot)
+	if report.Summary.VerifiedStateSnapshot != 14 {
+		t.Fatalf("verified state count = %d, want 14", report.Summary.VerifiedStateSnapshot)
 	}
 	if report.Summary.ComparisonOrBenchmark != 3 {
 		t.Fatalf("comparison count = %d, want 3", report.Summary.ComparisonOrBenchmark)
@@ -254,7 +261,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			FilesScanned:                2,
 			MatchedLines:                2,
 			SpecSectionApprovalBaseline: 7,
-			VerifiedStateSnapshot:       9,
+			VerifiedStateSnapshot:       14,
 			ComparisonOrBenchmark:       3,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
@@ -298,7 +305,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
 		"spec_approval=7",
-		"verified_state=9",
+		"verified_state=14",
 		"comparison=3",
 		"historical_governance=1",
 		"support_archive=1",

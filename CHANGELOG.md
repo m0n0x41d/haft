@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit verification/run snapshot classification.** `haft baseline
+  audit` now classifies verification-pass baseline fields and `haft run`
+  baseline-phase output as verified-state snapshot terminology.
 - **Baseline audit interface-contract classification.** `haft baseline audit`
   now classifies baseline wording inside the interface contract catalog as
   contract-surface terminology rather than unresolved baseline semantics.

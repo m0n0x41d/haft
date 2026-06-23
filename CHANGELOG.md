@@ -36,6 +36,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec PublicationUnit round-trip guard.** SpecSection publication regression
+  coverage now proves carrier path changes do not change the semantic source
+  edition or publication hash, while semantic edits do, keeping SQL truth,
+  publication projection, and carrier metadata separated.
 - **Spec sync-back stale-carrier conflict guard.** `haft spec apply-change`
   now fails closed when an existing current SQL SpecSection edition has a
   different semantic hash than the reviewed `--before` carrier, returning a

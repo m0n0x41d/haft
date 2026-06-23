@@ -85,6 +85,53 @@ func TestRenderSpecSectionEditionMarkdownFailsClosedOnLossyProjection(t *testing
 	}
 }
 
+func TestRenderSpecSectionEditionMarkdownSeparatesCarrierPathFromSemanticEdition(t *testing.T) {
+	section := specSectionEditionRoundTripTestSection()
+	section.Path = ".haft/specs/target-system.md"
+	source := NewSpecSectionEdition("proj-1", section, SpecSectionSourceSQL, time.Now().UTC())
+
+	carrierMoved := section
+	carrierMoved.Path = ".haft/specs/target-system-renamed.md"
+	moved := NewSpecSectionEdition("proj-1", carrierMoved, SpecSectionSourceSQL, time.Now().UTC())
+
+	semanticChanged := section
+	semanticChanged.DependsOn = append([]string{}, section.DependsOn...)
+	semanticChanged.DependsOn = append(semanticChanged.DependsOn, "TS.new-semantic-parent.001")
+	changed := NewSpecSectionEdition("proj-1", semanticChanged, SpecSectionSourceSQL, time.Now().UTC())
+
+	sourcePublication, err := RenderSpecSectionEditionMarkdown(source)
+	if err != nil {
+		t.Fatalf("Render source publication: %v", err)
+	}
+	movedPublication, err := RenderSpecSectionEditionMarkdown(moved)
+	if err != nil {
+		t.Fatalf("Render moved publication: %v", err)
+	}
+	changedPublication, err := RenderSpecSectionEditionMarkdown(changed)
+	if err != nil {
+		t.Fatalf("Render changed publication: %v", err)
+	}
+
+	if moved.SemanticHash != source.SemanticHash {
+		t.Fatalf("carrier path move changed semantic hash: got %s want %s", moved.SemanticHash, source.SemanticHash)
+	}
+	if movedPublication.SourceEditionHash != sourcePublication.SourceEditionHash {
+		t.Fatalf("carrier path move changed source edition hash: got %s want %s", movedPublication.SourceEditionHash, sourcePublication.SourceEditionHash)
+	}
+	if movedPublication.PublicationHash != sourcePublication.PublicationHash {
+		t.Fatalf("carrier path move changed publication hash: got %s want %s", movedPublication.PublicationHash, sourcePublication.PublicationHash)
+	}
+	if movedPublication.CarrierPath == sourcePublication.CarrierPath {
+		t.Fatalf("carrier path was not preserved as separate metadata: %q", movedPublication.CarrierPath)
+	}
+	if changedPublication.SourceEditionHash == sourcePublication.SourceEditionHash {
+		t.Fatalf("semantic edit did not change source edition hash")
+	}
+	if changedPublication.PublicationHash == sourcePublication.PublicationHash {
+		t.Fatalf("semantic edit did not change publication hash")
+	}
+}
+
 func specSectionEditionRoundTripTestSection() project.SpecSection {
 	section := specSectionEditionTestSection("TS.roundtrip.001")
 	section.Title = "Round trip identity"

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Current governing frontier snapshot checks.** `haft decision governing-set`
+  now supports `--write-snapshot` and `--check-snapshot` JSON carriers so agents
+  can compare read-only authority-frontier digests across slices without
+  creating approval, evidence truth, gate passage, or reconciliation authority.
 - **Bounded reconciliation selection drafts.** `haft decision reconcile
   selection-draft --json` now emits a compact review slice by default with
   emitted/omitted candidate counts and an explicit `--full` audit command,

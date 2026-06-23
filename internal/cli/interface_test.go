@@ -1693,19 +1693,23 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 		!strings.Contains(capability.CurrentExecution.CLICommand, "--query") {
 		t.Fatalf("governing_set CLI command missing governing-set drill-down:\n%#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "--write-snapshot") ||
+		!strings.Contains(capability.CurrentExecution.CLICommand, "--check-snapshot") {
+		t.Fatalf("governing_set CLI command missing snapshot write/check:\n%#v", capability.CurrentExecution)
+	}
 
 	fieldShapes := ""
 	for _, shape := range capability.InputContract.FieldShapes {
 		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
 	}
-	for _, want := range []string{"read_only_current_authority_frontier", "authority_frontier", "current_decision_refs_are_governing_authority_terminal_history_refs_are_not", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref", "limit caps compact sets", "limit=5"} {
+	for _, want := range []string{"read_only_current_authority_frontier", "authority_frontier", "current_decision_refs_are_governing_authority_terminal_history_refs_are_not", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref", "limit caps compact sets", "limit=5", "read_only_current_governing_frontier_snapshot_check", "snapshot_digest", "Snapshot carriers are comparison aids"} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("governing_set field shapes missing %q:\n%s", want, fieldShapes)
 		}
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"active/refresh_due", "fallback_target_sets", "scope_enrichment_sets", "Read-only", "does not supersede", "focused drill-down"} {
+	for _, want := range []string{"active/refresh_due", "fallback_target_sets", "scope_enrichment_sets", "Read-only", "does not supersede", "focused drill-down", "--write-snapshot", "--check-snapshot"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("governing_set notes missing %q:\n%s", want, notes)
 		}

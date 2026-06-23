@@ -131,6 +131,64 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 	}
 }
 
+func TestCurrentGoverningSetSnapshotWriteAndCheck(t *testing.T) {
+	report := artifact.CurrentGoverningSetReport{
+		SchemaVersion: artifact.CurrentGoverningSetSchemaVersion,
+		Authority:     artifact.CurrentGoverningSetAuthority,
+		Snapshot: artifact.CurrentGoverningSetSnapshot{
+			GeneratedAt:    "2026-06-23T19:00:00Z",
+			SnapshotDigest: "sha256:frontier",
+		},
+	}
+	path := filepath.Join(t.TempDir(), "snapshots", "governing-set.json")
+
+	if err := writeCurrentGoverningSetSnapshotFile(path, report); err != nil {
+		t.Fatalf("writeCurrentGoverningSetSnapshotFile: %v", err)
+	}
+	check, err := checkCurrentGoverningSetSnapshotFile(path, report)
+	if err != nil {
+		t.Fatalf("checkCurrentGoverningSetSnapshotFile: %v", err)
+	}
+	if !check.Match {
+		t.Fatalf("match = false: %#v", check)
+	}
+	if check.Authority != "read_only_current_governing_frontier_snapshot_check" {
+		t.Fatalf("authority = %q", check.Authority)
+	}
+	if !containsString(check.MutationBoundary, "snapshot check is read-only") {
+		t.Fatalf("mutation_boundary = %#v", check.MutationBoundary)
+	}
+
+	mutated := report
+	mutated.Snapshot.SnapshotDigest = "sha256:changed"
+	mismatch, err := checkCurrentGoverningSetSnapshotFile(path, mutated)
+	if err != nil {
+		t.Fatalf("checkCurrentGoverningSetSnapshotFile mismatch: %v", err)
+	}
+	if mismatch.Match {
+		t.Fatalf("mismatch match = true: %#v", mismatch)
+	}
+	if mismatch.CurrentSnapshotDigest != "sha256:changed" || mismatch.RecordedSnapshotDigest != "sha256:frontier" {
+		t.Fatalf("mismatch digests = %#v", mismatch)
+	}
+}
+
+func TestCurrentGoverningSetSnapshotRejectsWrongAuthority(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "governing-set.json")
+	data := []byte(`{"schema_version":1,"authority":"not_the_frontier","snapshot":{"snapshot_digest":"sha256:x"}}`)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		t.Fatalf("write fixture: %v", err)
+	}
+
+	_, err := checkCurrentGoverningSetSnapshotFile(path, artifact.CurrentGoverningSetReport{})
+	if err == nil {
+		t.Fatal("expected wrong authority to fail")
+	}
+	if !strings.Contains(err.Error(), "authority") {
+		t.Fatalf("error = %v, want authority diagnostic", err)
+	}
+}
+
 func TestWriteDecisionReconciliationMetricsSummary(t *testing.T) {
 	var output bytes.Buffer
 	packet := artifact.ReconciliationMetricsPacket{

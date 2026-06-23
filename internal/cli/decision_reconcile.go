@@ -27,6 +27,8 @@ var (
 	decisionGoverningSetQuery      string
 	decisionGoverningSetSubjectRef string
 	decisionGoverningSetTargetRef  string
+	decisionGoverningSetWrite      string
+	decisionGoverningSetCheck      string
 )
 
 var decisionCmd = &cobra.Command{
@@ -123,6 +125,8 @@ func init() {
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetQuery, "query", "", "filter governing sets by substring across subject, target, decision refs, and repair hints")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetSubjectRef, "subject-ref", "", "filter governing sets by exact subject ref")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetTargetRef, "target-ref", "", "filter governing sets by exact target ref")
+	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetWrite, "write-snapshot", "", "write the current governing-set report to a JSON snapshot carrier")
+	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetCheck, "check-snapshot", "", "compare the current governing-set snapshot digest with a JSON snapshot carrier")
 	decisionReconcileCmd.AddCommand(decisionReconcileMetricsCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileSelectionDraftCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileSelectionReviewCmd)
@@ -248,10 +252,131 @@ func runDecisionGoverningSet(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("build current governing set: %w", err)
 	}
+	if decisionGoverningSetWrite != "" {
+		if err := writeCurrentGoverningSetSnapshotFile(decisionGoverningSetWrite, report); err != nil {
+			return err
+		}
+	}
+	if decisionGoverningSetCheck != "" {
+		check, err := checkCurrentGoverningSetSnapshotFile(decisionGoverningSetCheck, report)
+		if err != nil {
+			return err
+		}
+		if decisionGoverningSetJSON {
+			if err := writeJSON(cmd.OutOrStdout(), check); err != nil {
+				return err
+			}
+		} else if err := writeCurrentGoverningSetSnapshotCheckSummary(cmd.OutOrStdout(), check); err != nil {
+			return err
+		}
+		if !check.Match {
+			return fmt.Errorf("current governing-set snapshot digest mismatch: current=%s recorded=%s", check.CurrentSnapshotDigest, check.RecordedSnapshotDigest)
+		}
+		return nil
+	}
 	if decisionGoverningSetJSON {
 		return writeJSON(cmd.OutOrStdout(), report)
 	}
+	if decisionGoverningSetWrite != "" {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "governing_set_snapshot_written: %s digest=%s authority=%s\n",
+			decisionGoverningSetWrite,
+			report.Snapshot.SnapshotDigest,
+			artifact.CurrentGoverningSetAuthority,
+		); err != nil {
+			return err
+		}
+	}
 	return writeCurrentGoverningSetSummary(cmd.OutOrStdout(), report)
+}
+
+type currentGoverningSetSnapshotCheck struct {
+	SchemaVersion          int      `json:"schema_version"`
+	Authority              string   `json:"authority"`
+	SnapshotPath           string   `json:"snapshot_path"`
+	Match                  bool     `json:"match"`
+	CurrentSnapshotDigest  string   `json:"current_snapshot_digest"`
+	RecordedSnapshotDigest string   `json:"recorded_snapshot_digest"`
+	CurrentGeneratedAt     string   `json:"current_generated_at,omitempty"`
+	RecordedGeneratedAt    string   `json:"recorded_generated_at,omitempty"`
+	MutationBoundary       []string `json:"mutation_boundary"`
+}
+
+func writeCurrentGoverningSetSnapshotFile(
+	path string,
+	report artifact.CurrentGoverningSetReport,
+) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create governing-set snapshot directory %s: %w", filepath.Dir(path), err)
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return fmt.Errorf("encode governing-set snapshot: %w", err)
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil {
+		return fmt.Errorf("write governing-set snapshot %s: %w", path, err)
+	}
+	return nil
+}
+
+func checkCurrentGoverningSetSnapshotFile(
+	path string,
+	current artifact.CurrentGoverningSetReport,
+) (currentGoverningSetSnapshotCheck, error) {
+	recorded, err := readCurrentGoverningSetSnapshotFile(path)
+	if err != nil {
+		return currentGoverningSetSnapshotCheck{}, err
+	}
+	currentDigest := current.Snapshot.SnapshotDigest
+	recordedDigest := recorded.Snapshot.SnapshotDigest
+	return currentGoverningSetSnapshotCheck{
+		SchemaVersion:          1,
+		Authority:              "read_only_current_governing_frontier_snapshot_check",
+		SnapshotPath:           path,
+		Match:                  currentDigest == recordedDigest,
+		CurrentSnapshotDigest:  currentDigest,
+		RecordedSnapshotDigest: recordedDigest,
+		CurrentGeneratedAt:     current.Snapshot.GeneratedAt,
+		RecordedGeneratedAt:    recorded.Snapshot.GeneratedAt,
+		MutationBoundary: []string{
+			"snapshot check is read-only",
+			"check does not create approval, evidence truth, gate passage, or decision authority",
+			"mismatch requires operator review; it is not automatic reconciliation",
+		},
+	}, nil
+}
+
+func readCurrentGoverningSetSnapshotFile(path string) (artifact.CurrentGoverningSetReport, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return artifact.CurrentGoverningSetReport{}, fmt.Errorf("read governing-set snapshot %s: %w", path, err)
+	}
+	var report artifact.CurrentGoverningSetReport
+	if err := json.Unmarshal(data, &report); err != nil {
+		return artifact.CurrentGoverningSetReport{}, fmt.Errorf("parse governing-set snapshot %s: %w", path, err)
+	}
+	if report.Authority != artifact.CurrentGoverningSetAuthority {
+		return artifact.CurrentGoverningSetReport{}, fmt.Errorf("governing-set snapshot %s authority = %q, want %q", path, report.Authority, artifact.CurrentGoverningSetAuthority)
+	}
+	if report.Snapshot.SnapshotDigest == "" {
+		return artifact.CurrentGoverningSetReport{}, fmt.Errorf("governing-set snapshot %s missing snapshot.snapshot_digest", path)
+	}
+	return report, nil
+}
+
+func writeCurrentGoverningSetSnapshotCheckSummary(
+	output io.Writer,
+	check currentGoverningSetSnapshotCheck,
+) error {
+	_, err := fmt.Fprintf(
+		output,
+		"governing_set_snapshot_check: match=%t path=%s current=%s recorded=%s authority=%s\n",
+		check.Match,
+		check.SnapshotPath,
+		check.CurrentSnapshotDigest,
+		check.RecordedSnapshotDigest,
+		check.Authority,
+	)
+	return err
 }
 
 func runDecisionReconcileApply(cmd *cobra.Command, args []string) error {

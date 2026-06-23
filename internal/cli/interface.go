@@ -1226,7 +1226,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				MCPAction:        "governing_set",
 				MCPCall:          `haft_query(action="governing_set", query="symbol:...", limit=5)`,
 				CLIStatus:        "available",
-				CLICommand:       "haft decision governing-set --query symbol:... --json",
+				CLICommand:       "haft decision governing-set --query symbol:... --json; haft decision governing-set --write-snapshot .context/governing-set.json --json; haft decision governing-set --check-snapshot .context/governing-set.json --json",
 				DiscoveryCommand: "haft interface query.governing_set --json",
 			},
 			InputContract: interfaceContract{
@@ -1243,12 +1243,18 @@ func haftInterfaceCatalog() []interfaceCapability {
 						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","view":"compact","snapshot":{"generated_at":"RFC3339","source":"artifact_store_decision_records","projection":"refreshable_current_governing_frontier","authority_boundary":"derived_read_only_not_gate_decision","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority","filter_applied":true},"filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"authority_frontier":{"authority_boundary":"current_decision_refs_are_governing_authority_terminal_history_refs_are_not","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"current_decision_refs":["dec-current"],"terminal_history_refs":["dec-old"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority"},"compact_sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","answer_paths":[{"target_kind":"claim|spec_section|api_contract|invariant|symbol|whole_file_fallback|file_fallback|unscoped_decision","target_ref":"...","cli":"haft decision governing-set --target-ref ... --json","mcp_call":"haft_query(action=\"governing_set\", source_refs=[...])","exact_record_needed":"...","authority_boundary":"answer_path_is_read_only_not_evidence_or_gate_decision"}],"target_resolution":"explicit_governance_or_watch_target|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"current_decision_count":7,"operator_required":true}],"omitted_sets":42,"full_audit_command":"haft_query(action=\"governing_set\", full=true)"}`,
 						Note:  "Default MCP response is compact. limit caps compact sets; status/prompt-governor recommendations use limit=5. full=true restores full sets[].current_decisions and basis and ignores the compact limit. Terminal decisions are history refs, not current authority; conflicts, overlaps, and fallback scope repair hints are review cues, not automatic lineage mutations.",
 					},
+					{
+						Field: "snapshot_check_response",
+						Shape: `{"schema_version":1,"authority":"read_only_current_governing_frontier_snapshot_check","snapshot_path":".context/governing-set.json","match":true,"current_snapshot_digest":"sha256:...","recorded_snapshot_digest":"sha256:...","mutation_boundary":["snapshot check is read-only","check does not create approval, evidence truth, gate passage, or decision authority"]}`,
+						Note:  "CLI --write-snapshot writes a JSON CurrentGoverningSetReport carrier; --check-snapshot compares only snapshot_digest and fails on mismatch. Snapshot carriers are comparison aids, not authority artifacts.",
+					},
 				},
 				Notes: []string{
 					"Use this after reconciliation planning to ask what currently governs a subject/context/target.",
 					"Use query/source_refs/bearer_ref for focused drill-down instead of expanding default status.",
 					"The projection is derived from active/refresh_due decisions and effective governance/drift targets.",
-					"snapshot is provenance for the refreshable projection, not a persisted authority artifact.",
+					"snapshot is provenance for the refreshable projection; --write-snapshot persists it as a comparison carrier, not an authority artifact.",
+					"--check-snapshot compares the current frontier digest to a persisted carrier and requires review on mismatch; it does not reconcile automatically.",
 					"answer_paths give exact CLI/MCP drill-downs for claim/spec_section/API-contract/invariant/symbol/fallback/unscoped targets; they are read-only affordances, not evidence.",
 					"fallback_target_sets and scope_enrichment_sets point to old decisions that need operator-approved scope enrichment before stronger use.",
 					"Read-only: it does not supersede, merge, retire, reopen, baseline, or create GateDecision records.",

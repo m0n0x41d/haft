@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Product-value evidence post-rebuild packet.** The 2026-06-24 product-value
+  evidence now reflects the rebuilt installed CLI, the latest autonomous
+  maintenance run/undo command, the read-only overseer drill-down fix, the host
+  discipline carrier guard, and current reconciliation metrics without
+  presenting the packet as approval, gate passage, global truth, or solved
+  authority-frontier noise.
 - **Overseer status read-only drill-down hints.** Compact overseer/status output
   no longer advertises mutating `haft overseer maintain --json` as an
   inspection path; it now points drift/stale/suppression review at bounded

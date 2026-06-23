@@ -25,7 +25,7 @@ teams, or that host-backed authorization receipts are complete.
 | Window | `2026-06-24` |
 | Method ref | `method:slice-train-dogfood` |
 | Value surface | `haft value space current-haft-rewrite --window 2026-06-24 --method-ref method:slice-train-dogfood ...` |
-| Value surface output | `single_score=no_single_haft_or_fpf_score`, `evidence_refs=7`, `evidence_missing_characteristics=0` |
+| Value surface output | `score_policy.single_score=no_single_haft_or_fpf_score`, `characteristics=11`, `evidence_refs_per_characteristic=10` |
 
 Evidence refs:
 
@@ -42,9 +42,16 @@ Evidence refs:
 - `commit:ffd07585` — reconciliation review packets stay report-only; review
   packets are rejected as apply authority and exported templates remain
   non-apply-ready until operator approval plus placeholder replacement.
-- `maintenance:omnt-d6555f132253240f` — machine-safe drain applied one
+- `commit:f88b870e` — compact overseer/status output no longer advertises the
+  mutating `haft overseer maintain --json` path as an inspection drill-down.
+- `commit:d999cda6` — root `CLAUDE.md` is scanned as a current host discipline
+  mirror, so prompt/schema/model authority-boundary wording is covered by the
+  carrier guard set.
+- `maintenance:omnt-da2c52971296e024` — live autonomous maintenance applied one
   additive-only auto-rebaseline for `dec-20260526-f3223c16`; undo remains
-  `haft overseer undo omnt-d6555f132253240f act-001`.
+  `haft overseer undo omnt-da2c52971296e024 act-001`.
+- `test:go-test-all-2026-06-24-post-rebuild` — `go test ./...` passed after
+  the operator rebuilt/restarted the installed Haft binary.
 
 Current production-code trace:
 
@@ -58,9 +65,13 @@ Current production-code trace:
 - The current matching reconciliation group was reported as
   `decision-reconcile-9e5c28b9313a` with `apply_operation="none"`, so recovery
   path was visible without accepting the stale packet.
+- The post-rebuild installed CLI status points drift/stale/suppression review
+  at bounded read-only drill-downs and no longer mentions
+  `haft overseer maintain --json` as an inspection path.
 - `haft decision reconcile metrics --json` still reports material authority
-  noise: `230` unique drift events, `34` impacted decisions, `155` material
-  events, `75` audit-only events, and max fanout `28`.
+  noise: `235` unique drift events, `34` impacted decisions, `160` material
+  events, `75` audit-only events, `36` needs-binding-resolution events, and max
+  fanout `28`.
 
 What this supports:
 
@@ -68,6 +79,8 @@ What this supports:
   diagnostics around stale reconciliation packets.
 - Default status and compact contract-generation surfaces stayed bounded while
   exact/audit detail remained available behind explicit commands.
+- The carrier guard set caught the real host prompt mirror as current surface
+  area without expanding the default status cockpit.
 - The value-space dashboard exposed review triggers without producing a single
   scalar product-value score.
 
@@ -77,6 +90,9 @@ What this does not support:
 - A claim that Haft beats ADRs plus tests under equal budget.
 - A claim that every scope violation is blocked.
 - A claim that current authority-frontier noise is solved.
+- A claim that MCP-hosted status text cannot lag a rebuilt installed CLI; this
+  packet observed that attached MCP status may still show stale wording until
+  the host process reloads the same build.
 
 Next move:
 

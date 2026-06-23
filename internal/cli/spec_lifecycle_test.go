@@ -109,6 +109,47 @@ func TestBuildSpecLifecycleProjectionReadsCurrentSQLEditionsBeforeCarriers(t *te
 	}
 }
 
+func TestLoadProjectSpecificationSetSQLFirstPreservesCarrierTermMapEntries(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.term-map.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	specSet, err := loadProjectSpecificationSetSQLFirst(root)
+	if err != nil {
+		t.Fatalf("loadProjectSpecificationSetSQLFirst: %v", err)
+	}
+	if len(specSet.Sections) != 1 || specSet.Sections[0].ID != "TS.sql.term-map.001" {
+		t.Fatalf("sections should come from SQL editions only: %#v", specSet.Sections)
+	}
+	if len(specSet.TermMapEntries) != 1 || specSet.TermMapEntries[0].Term != "HarnessableProject" {
+		t.Fatalf("term-map entries should be preserved from typed carrier: %#v", specSet.TermMapEntries)
+	}
+	for _, document := range specSet.Documents {
+		if document.Kind == project.SpecDocumentKindTermMap {
+			return
+		}
+	}
+	t.Fatalf("SQL-first spec set should retain typed term-map document: %#v", specSet.Documents)
+}
+
 func TestBuildSpecLifecycleProjectionPropagatesBaselineStoreError(t *testing.T) {
 	root, _ := newBaselineTestProject(t)
 	makeBaselineDBUnopenable(t)

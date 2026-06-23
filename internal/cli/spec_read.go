@@ -3,6 +3,7 @@ package cli
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
@@ -14,10 +15,64 @@ func loadProjectSpecificationSetSQLFirst(projectRoot string) (project.ProjectSpe
 		return project.ProjectSpecificationSet{}, err
 	}
 	if hasSQLSource {
-		return sqlSpecSet, nil
+		carrierSpecSet, carrierErr := project.LoadProjectSpecificationSet(projectRoot)
+		if carrierErr != nil {
+			return sqlSpecSet, nil
+		}
+
+		return mergeSQLSpecSetWithCarrierSupport(sqlSpecSet, carrierSpecSet), nil
 	}
 
 	return project.LoadProjectSpecificationSet(projectRoot)
+}
+
+func mergeSQLSpecSetWithCarrierSupport(
+	sqlSpecSet project.ProjectSpecificationSet,
+	carrierSpecSet project.ProjectSpecificationSet,
+) project.ProjectSpecificationSet {
+	termMapPaths := termMapDocumentPaths(carrierSpecSet.Documents)
+
+	merged := sqlSpecSet
+	merged.Documents = append(append([]project.SpecDocument{}, sqlSpecSet.Documents...), termMapDocuments(carrierSpecSet.Documents)...)
+	merged.TermMapEntries = append([]project.TermMapEntry{}, carrierSpecSet.TermMapEntries...)
+	merged.Findings = append(append([]project.SpecCheckFinding{}, sqlSpecSet.Findings...), termMapFindings(carrierSpecSet.Findings, termMapPaths)...)
+
+	return merged
+}
+
+func termMapDocuments(documents []project.SpecDocument) []project.SpecDocument {
+	out := []project.SpecDocument{}
+	for _, document := range documents {
+		if document.Kind != project.SpecDocumentKindTermMap {
+			continue
+		}
+		out = append(out, document)
+	}
+	return out
+}
+
+func termMapDocumentPaths(documents []project.SpecDocument) map[string]bool {
+	paths := map[string]bool{}
+	for _, document := range termMapDocuments(documents) {
+		path := strings.TrimSpace(document.Path)
+		if path == "" {
+			continue
+		}
+		paths[path] = true
+	}
+	return paths
+}
+
+func termMapFindings(findings []project.SpecCheckFinding, termMapPaths map[string]bool) []project.SpecCheckFinding {
+	out := []project.SpecCheckFinding{}
+	for _, finding := range findings {
+		path := strings.TrimSpace(finding.Path)
+		if path == "" || !termMapPaths[path] {
+			continue
+		}
+		out = append(out, finding)
+	}
+	return out
 }
 
 func loadProjectSpecificationSetFromSQLEditions(projectRoot string) (project.ProjectSpecificationSet, bool, error) {

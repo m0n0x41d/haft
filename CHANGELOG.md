@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **SQL-first spec reads preserve term-map carriers.** SQL-backed SpecSection
+  reads now keep typed carrier term-map entries as support data, and
+  `haft_query(action="resolve_term")` resolves section refs from SQL editions
+  without dropping term-map definitions.
 - **SQL-first SpecificationUseRecord reads.** `haft spec use` and
   `haft_query(action="spec_use")` now read current SQL SpecSection editions
   before Markdown carriers while preserving baseline-currentness and

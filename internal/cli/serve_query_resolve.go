@@ -70,7 +70,7 @@ func handleQuintQueryResolveTerm(ctx context.Context, store *artifact.Store, haf
 		ArtifactMentions: []ResolveTermArtifactMention{},
 	}
 
-	if specSet, err := project.LoadProjectSpecificationSet(projectRoot); err == nil {
+	if specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot); err == nil {
 		result.TermMapEntries = matchingTermMapEntries(specSet, term)
 		result.SpecSectionRefs = matchingSpecSectionRefs(specSet, term)
 	}

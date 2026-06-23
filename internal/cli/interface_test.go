@@ -476,6 +476,31 @@ func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 }
 
+func TestPiPackageDocsCarryGeneratedContractAuthorityBoundary(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	contractGeneration, ok := findContractGeneratedFragment(report, "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation generated fragment missing")
+	}
+
+	readme := readRepoFile(t, "packages", "haft-pi", "README.md")
+	metadata := readRepoFile(t, "packages", "haft-pi", "package.json")
+
+	for _, want := range []string{
+		"haft interface contract-generation --json",
+		"haft_query(action=\"contract_generation\")",
+		contractGeneration.AuthorityBoundary,
+		"provider tool-calling ergonomics, not as a second authority",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("Pi README missing generated-contract boundary %q", want)
+		}
+	}
+	if !strings.Contains(metadata, "kernel-validated prompt guidance") {
+		t.Fatalf("Pi package metadata missing kernel-validated contract hint")
+	}
+}
+
 func TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")

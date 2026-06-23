@@ -32,6 +32,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Pi package contract-carrier guard.** The Pi README/package metadata now
+  point maintainers at the read-only `contract_generation` fragments before
+  editing Pi tool, skill, or prompt wording, with regression coverage preserving
+  the boundary that generated text and schema visibility are not approval
+  receipts.
 - **Pi generated-query contract sync guard.** Pi tool metadata now carries
   compact generated-fragment hints for contract generation, DriftEvents,
   decision reconciliation, and governing-set drill-downs, with a regression test

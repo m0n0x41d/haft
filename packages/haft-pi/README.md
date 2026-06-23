@@ -88,10 +88,14 @@ node --experimental-strip-types scripts/smoke-bridge.ts <haft-project-root>
 ```
 
 Tool parameter schemas in `extensions/haft/tools.ts` mirror the MCP
-contracts served by `haft serve` (`internal/fpf/server.go` and sibling
-`*_schema.go` files). The kernel re-validates every call server-side; the
-mirrors exist for provider tool-calling ergonomics, not as a second
-authority. When kernel schemas change, update the mirrors.
+contracts served by `haft serve` and are checked against the kernel
+contract-generation surfaces. Use `haft interface contract-generation --json`
+or `haft_query(action="contract_generation")` to inspect the generated
+fragments before changing Pi tool, skill, or prompt wording. The kernel
+re-validates every call server-side; generated text, schema visibility, and
+model-supplied fields are not approval receipts. The mirrors exist for
+provider tool-calling ergonomics, not as a second authority.
+Contract fragment: `read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization`.
 
 ## Boundary
 

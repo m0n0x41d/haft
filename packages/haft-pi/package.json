@@ -2,7 +2,7 @@
   "name": "@haft/pi",
   "version": "0.0.0-dev",
   "private": true,
-  "description": "Pi package for Haft FPF governance tools and prompt guidance.",
+  "description": "Pi package for Haft FPF governance tools with kernel-validated prompt guidance.",
   "type": "module",
   "keywords": [
     "pi-package",

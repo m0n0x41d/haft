@@ -1048,6 +1048,8 @@ func baselineAuditAutonomousMaintenanceTerm(value string) bool {
 		"auto baseline",
 		"auto_rebaseline",
 		"auto-rebaseline",
+		"autonomous additive rebaseline",
+		"autonomous rebaseline",
 		"autoresolvesilent",
 		"classifyautobaseline",
 		"autobaselineaction",

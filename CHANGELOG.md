@@ -59,6 +59,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `haft interface contract-generation` output now has regression coverage
   proving it stays at summary counts and does not inline generated fragment,
   schema, or materialized-carrier detail.
+- **Baseline audit autonomous rebaseline classification.** `haft baseline
+  audit` now classifies human-readable autonomous maintenance titles such as
+  "Autonomous additive rebaseline" as autonomous maintenance wording instead
+  of unresolved legacy ambiguous baseline debt.
 - **DriftEvent resolution record posture.** DriftEvent reports now expose a
   read-only `resolution_record_posture` so agents can distinguish applied
   resolution ledger records from stale target bindings, inactive waivers, and

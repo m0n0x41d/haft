@@ -166,6 +166,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"MaintenanceRebaseline string `json:\"maintenance_rebaseline\" yaml:\"maintenance_rebaseline\"`",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/overseer/maintenance.go", "Action: \"suppressed_auto_baseline_candidate\"\n")
+	writeBaselineAuditFixture(t, root, "internal/overseer/storage_test.go", "Title: \"Autonomous additive rebaseline\"\n")
 	writeBaselineAuditFixture(t, root, "internal/overseer/risk.go", strings.Join([]string{
 		"\"rebaseline\",",
 		"\"rebaseline authority\",",
@@ -423,11 +424,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TestFixtureSurfaceFiles != 5 {
 		t.Fatalf("test fixture surface files = %d, want 5", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.AutonomousMaintenance != 19 {
-		t.Fatalf("autonomous maintenance count = %d, want 19", report.Summary.AutonomousMaintenance)
+	if report.Summary.AutonomousMaintenance != 20 {
+		t.Fatalf("autonomous maintenance count = %d, want 20", report.Summary.AutonomousMaintenance)
 	}
-	if report.Summary.AutonomousMaintenanceFiles != 11 {
-		t.Fatalf("autonomous maintenance files = %d, want 11", report.Summary.AutonomousMaintenanceFiles)
+	if report.Summary.AutonomousMaintenanceFiles != 12 {
+		t.Fatalf("autonomous maintenance files = %d, want 12", report.Summary.AutonomousMaintenanceFiles)
 	}
 	if report.Summary.MethodPackSurface != 3 {
 		t.Fatalf("method pack count = %d, want 3", report.Summary.MethodPackSurface)

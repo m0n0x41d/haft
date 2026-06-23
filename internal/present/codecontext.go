@@ -22,6 +22,8 @@ const (
 	CodeContextLaneAll        CodeContextLane = "all"
 )
 
+const codeContextBroadFileInvariantLimit = 8
+
 func ValidCodeContextLaneNames() []string {
 	return []string{
 		string(CodeContextLaneIndex),
@@ -172,7 +174,7 @@ func renderCodeContextAll(cc contextgraph.CodeContext, options CodeContextRender
 	renderContextArtifacts(&b, "Solution variants explored", cc.Portfolios, options.ArtifactLimit, options.Full)
 	renderContextArtifacts(&b, "Notes", cc.Notes, options.ArtifactLimit, options.Full)
 
-	renderInvariantSection(&b, "### Invariants that must hold here", cc.Invariants, options.InvariantLimit, options.Full)
+	renderTargetInvariantSection(&b, cc, options)
 	renderInvariantSection(&b, "### Module context — invariants of module-governing decisions (may not bind this symbol)", cc.ContextInvariants, options.ContextInvariantLimit, options.Full)
 
 	return b.String()
@@ -280,7 +282,7 @@ func renderCodeContextInvariantsLane(cc contextgraph.CodeContext, options CodeCo
 		b.WriteString("No invariants recorded for this target or its module context.\n")
 		return b.String()
 	}
-	renderInvariantSection(&b, "### Invariants that must hold here", cc.Invariants, options.InvariantLimit, options.Full)
+	renderTargetInvariantSection(&b, cc, options)
 	renderInvariantSection(&b, "### Module context — invariants of module-governing decisions (may not bind this symbol)", cc.ContextInvariants, options.ContextInvariantLimit, options.Full)
 	return b.String()
 }
@@ -373,6 +375,43 @@ func CodeContextSymbolsResponse(target contextgraph.Target, symbols []CodeContex
 
 func CodeContextSymbolsUnavailableResponse(target contextgraph.Target, err error) string {
 	return fmt.Sprintf("## Code context symbols — %s\n\nSymbol lane unavailable: %v\n", codeContextTargetLabel(target), err)
+}
+
+func renderTargetInvariantSection(b *strings.Builder, cc contextgraph.CodeContext, options CodeContextRenderOptions) {
+	if len(cc.Invariants) == 0 {
+		return
+	}
+	if codeContextBroadFileInvariantFanout(cc, options) {
+		renderBroadFileInvariantNotice(b, cc)
+		renderInvariantSection(b, "### Broad file-level invariant candidates", cc.Invariants, broadFileInvariantLimit(options.InvariantLimit), false)
+		return
+	}
+
+	renderInvariantSection(b, "### Invariants that must hold here", cc.Invariants, options.InvariantLimit, options.Full)
+}
+
+func codeContextBroadFileInvariantFanout(cc contextgraph.CodeContext, options CodeContextRenderOptions) bool {
+	if options.Full {
+		return false
+	}
+	if cc.Target.Symbol != "" || cc.Target.Line > 0 {
+		return false
+	}
+	return len(cc.Invariants) > codeContextBroadFileInvariantLimit
+}
+
+func broadFileInvariantLimit(limit int) int {
+	if limit <= 0 || limit > codeContextBroadFileInvariantLimit {
+		return codeContextBroadFileInvariantLimit
+	}
+	return limit
+}
+
+func renderBroadFileInvariantNotice(b *strings.Builder, cc contextgraph.CodeContext) {
+	b.WriteString("### Invariant relevance\n")
+	fmt.Fprintf(b, "- File-level view found %d invariant candidate(s). Treat them as broad file context, not proof that every invariant binds every symbol.\n", len(cc.Invariants))
+	fmt.Fprintf(b, "- For actionable constraints, inspect symbols first with `%s`, then rerun code_context with `symbol` or `line`.\n", codeContextQuery(cc.Target, CodeContextLaneSymbols, false))
+	fmt.Fprintf(b, "- Full audit remains available with `%s`.\n\n", codeContextQuery(cc.Target, "", true))
 }
 
 func renderInvariantSection(b *strings.Builder, heading string, invariants []graph.Invariant, limit int, full bool) {

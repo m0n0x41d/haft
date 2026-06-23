@@ -70,13 +70,22 @@ func TestCodeContextResponse_CompactsInvariantsAndFullRestoresThem(t *testing.T)
 	}
 
 	compact := CodeContextResponseAll(cc)
-	if !strings.Contains(compact, "invariant-12") {
+	if !strings.Contains(compact, "Invariant relevance") {
+		t.Fatalf("compact response should explain broad file-level relevance:\n%s", compact)
+	}
+	if !strings.Contains(compact, "not proof that every invariant binds every symbol") {
+		t.Fatalf("compact response should not present broad file invariants as direct symbol constraints:\n%s", compact)
+	}
+	if !strings.Contains(compact, `lane="symbols"`) || !strings.Contains(compact, "full=true") {
+		t.Fatalf("compact response should name symbol narrowing and full audit paths:\n%s", compact)
+	}
+	if !strings.Contains(compact, "invariant-08") {
 		t.Fatalf("compact response should include the capped visible prefix:\n%s", compact)
 	}
-	if strings.Contains(compact, "invariant-13") {
-		t.Fatalf("compact response should omit invariant 13+:\n%s", compact)
+	if strings.Contains(compact, "invariant-09") {
+		t.Fatalf("compact response should omit invariant 09+ for broad file-level fanout:\n%s", compact)
 	}
-	if !strings.Contains(compact, "8 more omitted") {
+	if !strings.Contains(compact, "12 more omitted") {
 		t.Fatalf("compact response should name omitted invariant count:\n%s", compact)
 	}
 

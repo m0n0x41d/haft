@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Compact broad code-context invariants.** File-level
+  `haft_query(action="code_context", lane="invariants")` now labels large
+  invariant fanout as broad file context, caps the default candidate list, and
+  points agents to symbol/line narrowing or `full=true` audit instead of
+  presenting every historical invariant as an equally actionable must-hold
+  constraint.
 - **SQL-first spec structural checks.** `haft spec check`, `haft check`, and
   `haft spec coverage` now derive structural SpecSection checks from current
   SQL SpecSection editions when present, while preserving typed carrier

@@ -29,6 +29,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   with explicit evidence refs, missing-evidence boundaries, simplify/kill
   criteria, and unmeasured gaps; the evidence ontology and term map now name
   current F0-F9 formality with legacy F0-F3 bridge/loss wording.
+- **Equal-budget product-value comparison protocol.** The product-value
+  evidence packet now defines a parity protocol for comparing Haft against an
+  AI agent using ADRs plus tests, while explicitly marking the comparison as
+  designed but not yet run and preserving the no-single-score policy.
 - **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
   commit/source metadata in `haft version`, `scripts/build.sh --install`
   stamps commit/build date via ldflags, and read-only MCP query footers now use

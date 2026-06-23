@@ -48,7 +48,7 @@ Evidence refs:
 
 ## What This Does Not Support Yet
 
-- Equal-budget comparison against an AI agent using ADRs plus tests.
+- Equal-budget comparison results against an AI agent using ADRs plus tests.
 - Quantified ceremony cost for a new team or a short-lived task.
 - Production-user outcome claims.
 - Real host-backed authorization receipts.
@@ -72,10 +72,75 @@ read-only review triggers. The most important current triggers are:
 These criteria do not auto-retire a feature. They force review before stronger
 use.
 
+## Equal-Budget Comparison Design
+
+This protocol is designed but not yet run.
+
+Goal: compare Haft against "AI agent + ADRs + tests" on the same class of
+semantic-governance rewrite task, without optimizing a single score.
+
+Task class:
+
+- medium-size product/governance slice touching code, tests, changelog, and at
+  least one support/spec carrier;
+- non-destructive, no external commitment, no data migration;
+- work must include one deliberate scope-boundary or authority-boundary check.
+
+Parity budget:
+
+- same model family and host;
+- same repository commit at start;
+- same elapsed-time cap;
+- same permission envelope;
+- same acceptance text;
+- same required final artifacts: code/doc diff, tests, changelog, commit, and
+  final operator report.
+
+Comparison arms:
+
+| Arm | Enabling method | Required carriers |
+|-----|-----------------|-------------------|
+| Haft | status + MethodRun + carrier/value/drift surfaces | Decision/method/evidence traces, `haft value space`, carrier check |
+| ADR+tests | normal agent workflow using ADR note plus tests | ADR markdown, test log, changelog, commit |
+
+Measured characteristics:
+
+| Characteristic | Method | Window | Denominator | Evidence |
+|----------------|--------|--------|-------------|----------|
+| Semantic fidelity | Count corrected authority/object/evidence confusions found before commit | one task | all load-bearing findings | review packet + final diff |
+| Ceremony cost | Wall time and number of operator interruptions | one task | accepted green slice | transcript timestamps |
+| Scope control | Whether out-of-scope edit is blocked or surfaced before commit | one task | deliberate scope attempt | scopeauth/harness output or equivalent |
+| Recoverability | Ability to identify exact source record for a claim after commit | one task | sampled claims | `haft_query`/ADR lookup transcript |
+| Drift noise | Unique drift events and max fanout after commit | one task | post-commit status | `haft_query(action="drift_events")` summary |
+| Delivery correctness | Focused tests and `go test ./...` pass | one task | changed surface | test output |
+
+Missingness policy:
+
+- If one arm lacks evidence for a characteristic, that characteristic is
+  `missing`, not zero.
+- No aggregate winner is computed. The result is a Pareto comparison plus
+  protected trade-offs.
+- A value claim may be made only for characteristics with evidence in the same
+  task window.
+
+Protected trade-offs:
+
+- semantic fidelity vs ceremony;
+- early detection vs false positives;
+- durable traceability vs artifact explosion;
+- automation vs principal control;
+- compact views vs exact source recoverability.
+
+Run output:
+
+- `spec/target-system/PRODUCT_VALUE_EVIDENCE.md` gets a new dated packet;
+- `haft value space <bearer> --window <date> --method-ref equal-budget-comparison`
+  gets evidence refs for both arms;
+- changelog records only the evidence packet, not a product-value victory.
+
 ## Next Evidence Needed
 
-1. Run an equal-budget comparison against ADRs plus tests for the same task
-   class and window.
+1. Run the equal-budget comparison protocol above.
 2. Capture ceremony time and interruption cost for at least one short task and
    one long rewrite.
 3. Record a host-backed receipt experiment only when a host can provide

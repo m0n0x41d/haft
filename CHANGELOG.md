@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Product-value evidence live rebuild refresh.** The 2026-06-24 product-value
+  evidence packet now matches rebuilt live metrics and includes the
+  report-only reconciliation review packet slice as evidence without claiming
+  approval, gate passage, global truth, or solved authority-frontier noise.
 - **Current governing frontier snapshot checks.** `haft decision governing-set`
   now supports `--write-snapshot` and `--check-snapshot` JSON carriers so agents
   can compare read-only authority-frontier digests across slices without

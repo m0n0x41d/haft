@@ -25,7 +25,7 @@ teams, or that host-backed authorization receipts are complete.
 | Window | `2026-06-24` |
 | Method ref | `method:slice-train-dogfood` |
 | Value surface | `haft value space current-haft-rewrite --window 2026-06-24 --method-ref method:slice-train-dogfood ...` |
-| Value surface output | `single_score=no_single_haft_or_fpf_score`, `evidence_refs=5`, `evidence_missing_characteristics=0` |
+| Value surface output | `single_score=no_single_haft_or_fpf_score`, `evidence_refs=7`, `evidence_missing_characteristics=0` |
 
 Evidence refs:
 
@@ -39,6 +39,12 @@ Evidence refs:
   count-only and does not inline generated fragment/schema detail.
 - `commit:31efcfcc` — baseline term audit classifies autonomous rebaseline
   wording, leaving `legacy_ambiguous_baseline=0` in the live audit.
+- `commit:ffd07585` — reconciliation review packets stay report-only; review
+  packets are rejected as apply authority and exported templates remain
+  non-apply-ready until operator approval plus placeholder replacement.
+- `maintenance:omnt-d6555f132253240f` — machine-safe drain applied one
+  additive-only auto-rebaseline for `dec-20260526-f3223c16`; undo remains
+  `haft overseer undo omnt-d6555f132253240f act-001`.
 
 Current production-code trace:
 

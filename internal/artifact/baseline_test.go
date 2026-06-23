@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -113,6 +114,84 @@ func TestBaselineWithReplacedFiles(t *testing.T) {
 	}
 	if !paths["new.go"] || !paths["also-new.go"] {
 		t.Error("new files should be present")
+	}
+}
+
+func TestBaselineBindingFailurePreservesPriorBaseline(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-test-002b", "Storage choice")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("baseline files = %+v, want one", result)
+	}
+	priorHash := result[0].Hash
+
+	artifactBefore, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsBefore := artifactBefore.UnmarshalDecisionFields()
+	if len(fieldsBefore.BindingTargets) != 1 || fieldsBefore.BindingTargets[0].SymbolName != "Run" {
+		t.Fatalf("initial binding targets = %+v, want Run", fieldsBefore.BindingTargets)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+
+func Stop() string {
+	return "stop"
+}
+`)
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err == nil {
+		t.Fatal("expected ambiguous binding resolution to fail")
+	}
+	if !strings.Contains(err.Error(), "multiple parseable symbols") {
+		t.Fatalf("error = %q, want multiple parseable symbols", err.Error())
+	}
+
+	storedFiles, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(storedFiles) != 1 {
+		t.Fatalf("stored files = %+v, want one", storedFiles)
+	}
+	if storedFiles[0].Hash != priorHash {
+		t.Fatalf("stored hash = %q, want prior hash %q", storedFiles[0].Hash, priorHash)
+	}
+
+	artifactAfter, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsAfter := artifactAfter.UnmarshalDecisionFields()
+	if len(fieldsAfter.BindingTargets) != 1 || fieldsAfter.BindingTargets[0].SymbolName != "Run" {
+		t.Fatalf("binding targets = %+v, want prior Run target", fieldsAfter.BindingTargets)
+	}
+	if len(fieldsAfter.BindingDiagnostics) == 0 {
+		t.Fatal("expected binding diagnostics to be persisted")
 	}
 }
 

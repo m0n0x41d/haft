@@ -1179,21 +1179,15 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, fmt.Errorf("%s is %s — baseline only works on decisions and notes", input.DecisionRef, a.Meta.Kind)
 	}
 
-	// If new files provided, replace the list
-	if len(input.AffectedFiles) > 0 {
-		var files []AffectedFile
-		for _, f := range input.AffectedFiles {
-			files = append(files, AffectedFile{Path: f})
-		}
-		if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
-			return nil, fmt.Errorf("replace affected files: %w", err)
-		}
-	}
-
-	// Get current affected files
 	files, err := store.GetAffectedFiles(ctx, input.DecisionRef)
 	if err != nil {
 		return nil, fmt.Errorf("get affected files: %w", err)
+	}
+	if len(input.AffectedFiles) > 0 {
+		files = nil
+		for _, f := range input.AffectedFiles {
+			files = append(files, AffectedFile{Path: f})
+		}
 	}
 	if len(files) == 0 {
 		return nil, fmt.Errorf("decision %s has no affected_files — nothing to baseline", input.DecisionRef)
@@ -1214,11 +1208,6 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 	}
 	files = hashableFiles
 
-	// Store updated file hashes
-	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
-		return nil, fmt.Errorf("store baseline hashes: %w", err)
-	}
-
 	decisionFields := a.UnmarshalDecisionFields()
 	decisionText := strings.Join([]string{
 		a.Meta.Title,
@@ -1236,13 +1225,17 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		FallbackReason:  input.BindingFallbackReason,
 		DecisionText:    decisionText,
 	})
-	decisionFields.BindingTargets = resolution.Targets
 	decisionFields.BindingDiagnostics = resolution.Diagnostics
 	if err != nil {
 		if persistErr := persistDecisionFields(ctx, store, a, decisionFields); persistErr != nil {
 			logger.Warn().Str("decision_ref", input.DecisionRef).Err(persistErr).Msg("baseline.binding_diagnostics_failed")
 		}
 		return nil, err
+	}
+	decisionFields.BindingTargets = resolution.Targets
+
+	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
+		return nil, fmt.Errorf("store baseline hashes: %w", err)
 	}
 
 	if len(resolution.Symbols) > 0 {

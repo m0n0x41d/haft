@@ -553,6 +553,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline failure atomicity.** `artifact.Baseline` now resolves binding
+  targets before persisting affected-file hashes, so a failed ambiguous binding
+  resolution records diagnostics without moving the prior drift baseline or
+  replacing existing binding targets.
 - **Symbol-aware drift noise budget.** Decision drift now records additive
   `materiality` and `trigger_kind` fields, distinguishes material governed
   symbol changes from adjacent file churn, carrier-only edits, generated/local

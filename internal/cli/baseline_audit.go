@@ -481,6 +481,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditTypedModel, "names the typed baseline model or compatibility projection"
 	case baselineAuditSpecflowBaselineStoreSurface(path):
 		return baselineAuditSpecApproval, "mentions baseline inside the SpecSection approval baseline store implementation"
+	case baselineAuditSpecSectionLifecycleHandlerSurface(path):
+		return baselineAuditLifecycleAuth, "mentions baseline inside the SpecSection lifecycle handler implementation"
 	case containsAnyBaselineTerm(value,
 		"normalization baseline",
 		"baseline db",
@@ -571,6 +573,10 @@ func baselineAuditTestFixtureSurface(path string, value string) bool {
 
 func baselineAuditSpecflowBaselineStoreSurface(path string) bool {
 	return filepath.ToSlash(path) == "internal/project/specflow/baseline.go"
+}
+
+func baselineAuditSpecSectionLifecycleHandlerSurface(path string) bool {
+	return filepath.ToSlash(path) == "internal/cli/serve_spec_section.go"
 }
 
 func containsAnyBaselineTerm(value string, needles ...string) bool {

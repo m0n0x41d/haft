@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecSection lifecycle handler surface.** `haft baseline
+  audit` now classifies remaining `internal/cli/serve_spec_section.go`
+  lifecycle helper vocabulary such as `baselineMutation` and `baselineContext`
+  as lifecycle-authority surface rather than legacy ambiguous baseline debt.
 - **Baseline audit decision baseline vocabulary.** `haft baseline audit` now
   recognizes decision baseline API and drift materiality terms such as
   `BaselineProfile`, `DriftNoBaseline`, `noBaselineMateriality`,

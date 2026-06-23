@@ -15,7 +15,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"baseline.ProjectID = projectID",
 		"Object: \"UnknownLegacyBaseline\",",
 	}, "\n")+"\n")
-	writeBaselineAuditFixture(t, root, "internal/cli/serve_spec_section.go", "ctx.store.PutSpecSectionApproval(baseline)\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/serve_spec_section.go", strings.Join([]string{
+		"ctx.store.PutSpecSectionApproval(baseline)",
+		"type baselineMutation struct{}",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/decision.go", strings.Join([]string{
 		"const baselineProfile = \"verified_state_snapshot\"",
 		"type BaselineInput struct{}",
@@ -86,11 +89,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 1 {
 		t.Fatalf("typed baseline model files = %d, want 1", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 1 {
-		t.Fatalf("lifecycle authority count = %d, want 1", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 2 {
+		t.Fatalf("lifecycle authority count = %d, want 2", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 1 {
-		t.Fatalf("lifecycle authority files = %d, want 1", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 2 {
+		t.Fatalf("lifecycle authority files = %d, want 2", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)
@@ -160,7 +163,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			SupportArchiveCarrier:       1,
 			SourceSpecReference:         1,
 			TypedBaselineModel:          1,
-			LifecycleAuthority:          1,
+			LifecycleAuthority:          2,
 			ReleaseNotesCarrier:         1,
 			AuditToolSurface:            1,
 			TestFixtureSurface:          1,
@@ -197,7 +200,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"support_archive=1",
 		"source_spec=1",
 		"typed_model=1",
-		"lifecycle_authority=1",
+		"lifecycle_authority=2",
 		"release_notes=1",
 		"audit_tool=1",
 		"test_fixture=1",

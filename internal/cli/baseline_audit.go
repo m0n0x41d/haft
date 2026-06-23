@@ -410,8 +410,10 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditComparison, "uses baseline as a comparison or benchmark reference"
 	case containsAnyBaselineTerm(value,
 		"unknown_legacy_baseline",
+		"unknownlegacybaseline",
 		"baselinekindunknownlegacy",
 		"legacy ambiguous baseline",
+		"legacy baseline-like record",
 		"legacy/unknown",
 	):
 		return baselineAuditLegacyAmbiguous, "explicitly names legacy ambiguous baseline posture"
@@ -457,6 +459,8 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		"baseline type details",
 	):
 		return baselineAuditTypedModel, "names the typed baseline model or compatibility projection"
+	case baselineAuditSpecflowBaselineStoreSurface(path):
+		return baselineAuditSpecApproval, "mentions baseline inside the SpecSection approval baseline store implementation"
 	case containsAnyBaselineTerm(value,
 		"normalization baseline",
 		"baseline db",
@@ -543,6 +547,10 @@ func baselineAuditTestFixtureSurface(path string, value string) bool {
 		"t.Fatalf(\"baseline",
 		"t.Fatal(\"baseline",
 	)
+}
+
+func baselineAuditSpecflowBaselineStoreSurface(path string) bool {
+	return filepath.ToSlash(path) == "internal/project/specflow/baseline.go"
 }
 
 func containsAnyBaselineTerm(value string, needles ...string) bool {

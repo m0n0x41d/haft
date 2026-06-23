@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Baseline audit SpecSection store surface classification.** `haft baseline
+  audit` now treats `internal/project/specflow/baseline.go` implementation
+  vocabulary as SpecSection approval baseline store terminology after explicit
+  unknown-legacy and typed-model checks have had a chance to classify it.
 - **Baseline audit test-fixture surface classification.** `haft baseline audit`
   now classifies explicit `_test.go` helper and fixture vocabulary such as
   `newBaselineTestProject` separately from product terminology debt, while

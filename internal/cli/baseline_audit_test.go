@@ -10,7 +10,11 @@ import (
 
 func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	root := t.TempDir()
-	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline.go", "const profile = \"spec_section_approval_baseline\"\n")
+	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline.go", strings.Join([]string{
+		"const profile = \"spec_section_approval_baseline\"",
+		"baseline.ProjectID = projectID",
+		"Object: \"UnknownLegacyBaseline\",",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/serve_spec_section.go", "ctx.store.PutSpecSectionApproval(baseline)\n")
 	writeBaselineAuditFixture(t, root, "internal/artifact/decision.go", strings.Join([]string{
 		"const baselineProfile = \"verified_state_snapshot\"",
@@ -43,8 +47,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Authority != baselineAuditAuthority {
 		t.Fatalf("unexpected authority: %q", report.Authority)
 	}
-	if report.Summary.SpecSectionApprovalBaseline != 2 {
-		t.Fatalf("spec approval count = %d, want 2", report.Summary.SpecSectionApprovalBaseline)
+	if report.Summary.SpecSectionApprovalBaseline != 3 {
+		t.Fatalf("spec approval count = %d, want 3", report.Summary.SpecSectionApprovalBaseline)
 	}
 	if report.Summary.VerifiedStateSnapshot != 2 {
 		t.Fatalf("verified state count = %d, want 2", report.Summary.VerifiedStateSnapshot)
@@ -103,11 +107,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TestFixtureSurfaceFiles != 1 {
 		t.Fatalf("test fixture surface files = %d, want 1", report.Summary.TestFixtureSurfaceFiles)
 	}
-	if report.Summary.LegacyAmbiguousBaseline != 1 {
-		t.Fatalf("legacy ambiguous count = %d, want 1", report.Summary.LegacyAmbiguousBaseline)
+	if report.Summary.LegacyAmbiguousBaseline != 2 {
+		t.Fatalf("legacy ambiguous count = %d, want 2", report.Summary.LegacyAmbiguousBaseline)
 	}
-	if report.Summary.LegacyAmbiguousFiles != 1 {
-		t.Fatalf("legacy ambiguous files = %d, want 1", report.Summary.LegacyAmbiguousFiles)
+	if report.Summary.LegacyAmbiguousFiles != 2 {
+		t.Fatalf("legacy ambiguous files = %d, want 2", report.Summary.LegacyAmbiguousFiles)
 	}
 	if len(report.Diagnostics) != 1 {
 		t.Fatalf("diagnostics = %#v, want one legacy ambiguous diagnostic", report.Diagnostics)
@@ -116,13 +120,13 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if diagnostic.Code != "legacy_ambiguous_baseline_terms" {
 		t.Fatalf("diagnostic code = %q", diagnostic.Code)
 	}
-	if diagnostic.Count != 1 || diagnostic.Files != 1 {
+	if diagnostic.Count != 2 || diagnostic.Files != 2 {
 		t.Fatalf("diagnostic count/files = %#v", diagnostic)
 	}
 	if !strings.Contains(diagnostic.NextAction, "typed baseline concept") {
 		t.Fatalf("diagnostic next_action = %q", diagnostic.NextAction)
 	}
-	if len(diagnostic.Examples) != 1 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
+	if len(diagnostic.Examples) != 2 || !strings.Contains(diagnostic.Examples[0], "docs/ambiguous.md") {
 		t.Fatalf("diagnostic examples = %#v", diagnostic.Examples)
 	}
 
@@ -147,7 +151,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		Summary: baselineTermAuditSummary{
 			FilesScanned:                2,
 			MatchedLines:                2,
-			SpecSectionApprovalBaseline: 2,
+			SpecSectionApprovalBaseline: 3,
 			VerifiedStateSnapshot:       2,
 			HistoricalGovernanceCarrier: 1,
 			SupportArchiveCarrier:       1,
@@ -157,15 +161,15 @@ func TestWriteBaselineAuditText(t *testing.T) {
 			ReleaseNotesCarrier:         1,
 			AuditToolSurface:            1,
 			TestFixtureSurface:          1,
-			LegacyAmbiguousBaseline:     1,
-			LegacyAmbiguousFiles:        1,
+			LegacyAmbiguousBaseline:     2,
+			LegacyAmbiguousFiles:        2,
 		},
 		Diagnostics: []baselineTermAuditDiagnostic{{
 			Level:      "warn",
 			Code:       "legacy_ambiguous_baseline_terms",
 			Category:   baselineAuditLegacyAmbiguous,
-			Count:      1,
-			Files:      1,
+			Count:      2,
+			Files:      2,
 			NextAction: "rename the usage to a typed baseline concept",
 		}},
 		Findings: []baselineTermAuditFinding{{
@@ -184,7 +188,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	for _, want := range []string{
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
-		"spec_approval=2",
+		"spec_approval=3",
 		"verified_state=2",
 		"historical_governance=1",
 		"support_archive=1",
@@ -194,8 +198,8 @@ func TestWriteBaselineAuditText(t *testing.T) {
 		"release_notes=1",
 		"audit_tool=1",
 		"test_fixture=1",
-		"legacy_ambiguous=1",
-		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 1 legacy ambiguous baseline line(s) across 1 file(s)",
+		"legacy_ambiguous=2",
+		"diagnostic: [warn/legacy_ambiguous_baseline_terms] 2 legacy ambiguous baseline line(s) across 2 file(s)",
 		"next_action: rename the usage to a typed baseline concept",
 		".haft/decisions/dec.md:12 Run baseline before release.",
 	} {

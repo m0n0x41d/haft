@@ -193,10 +193,13 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 			SelectedCandidates:        1,
 		},
 		Items: []artifact.DecisionReconciliationDraftItem{{
-			DecisionRef:     "dec-fallback",
-			ReviewedGroupID: "decision-reconcile-1",
-			AffectedFiles:   []string{"internal/shared.go"},
-			ScopeRepairHint: "use enrich_scope to add decision_subject_ref",
+			DecisionRef:       "dec-fallback",
+			ReviewedGroupID:   "decision-reconcile-1",
+			CandidatePosture:  "needs_subject_and_target_review",
+			Confidence:        "low",
+			AffectedFiles:     []string{"internal/shared.go"},
+			ScopeRepairHint:   "use enrich_scope to add decision_subject_ref",
+			BlockingQuestions: []string{"What exact object does this decision govern now?"},
 		}},
 	}
 
@@ -213,6 +216,8 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		"scope_enrichment_candidates: 1",
 		"selected_candidates: 1",
 		"dec-fallback",
+		"confidence=low",
+		"posture=needs_subject_and_target_review",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("summary missing %q:\n%s", want, text)

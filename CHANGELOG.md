@@ -27,6 +27,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Decision reconciliation selection-draft cues.**
+  `haft decision reconcile selection-draft` now emits report-only candidate
+  posture, confidence, suggested review action, and blocking questions so
+  agents can drop ambiguous scope-enrichment candidates instead of guessing
+  operator-approved selections; compact output includes posture/confidence.
 - **Contract-generation preview fragments.** `haft interface contract-generation`
   now emits read-only generated preview fragments from the kernel interface
   catalog for host/skill/plugin/Pi synchronization, while keeping compact

@@ -1093,7 +1093,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				MCPAction:        "decision_reconcile",
 				MCPCall:          `haft_query(action="decision_reconcile")`,
 				CLIStatus:        "available",
-				CLICommand:       "haft decision reconcile --json; haft decision reconcile metrics --json",
+				CLICommand:       "haft decision reconcile --json; haft decision reconcile selection-draft --json; haft decision reconcile metrics --json",
 				DiscoveryCommand: "haft interface query.decision_reconcile --json",
 			},
 			InputContract: interfaceContract{
@@ -1109,10 +1109,16 @@ func haftInterfaceCatalog() []interfaceCapability {
 						Shape: `{"schema_version":1,"authority":"read_only_reconciliation_metrics_not_binding_authority","capture_policy":"capture_before_and_after_operator_approved_reconciliation_apply","reconciliation":{"reviewed_decisions":68,"whole_file_fallback_only":0,"missing_explicit_subject":68,"scope_enrichment_candidates":68,"conflict_requires_operator":0},"governing_set":{"current_decisions":68,"governing_sets":114,"fallback_target_sets":0,"scope_enrichment_sets":114,"conflict_sets":0,"overlap_review_sets":0,"terminal_history_refs":13},"drift_events":{"unique_events":161,"impacted_decisions":37,"material_events":107,"audit_only_events":54,"needs_binding_resolution_events":0,"semantic_target_events":81,"file_fallback_events":26,"unknown_high_risk_events":26,"max_fanout":28},"before_after_use":{"before_command":"haft decision reconcile metrics --json","apply_command":"haft decision reconcile apply SELECTION.json --json","after_command":"haft decision reconcile metrics --json","required_authority":"operator_approved_reconciliation_selection","mutation_boundary":["metrics capture is read-only","selection apply remains the only mutation step"]}}`,
 						Note:  "Metrics packets are read-only before/after evidence for dogfood scope enrichment; they do not approve or apply a selection.",
 					},
+					{
+						Field: "selection_draft_response",
+						Shape: `{"schema_version":1,"authority":"report_only_selection_draft_not_operator_approval","operator_approved":false,"apply_authority_required":"operator_approved_reconciliation_selection","items":[{"operation":"enrich_scope","reviewed_group_id":"decision-reconcile-...","decision_ref":"dec-...","candidate_posture":"precise_target_prefilled_subject_needed|needs_subject_and_target_review|whole_file_fallback_target_repair_needed","confidence":"medium|low|not_applicable","suggested_review_action":"review decision carrier and fill exact decision_subject_ref","blocking_questions":["What exact object does this decision govern now?"],"selection_template":"{...}"}]}`,
+						Note:  "Selection drafts are read-only review aids. candidate_posture/confidence help agents remove ambiguous candidates before writing an operator-approved selection document; they never create approval.",
+					},
 				},
 				Notes: []string{
 					"Use this after DriftEvents show high fanout or old decisions need authority-frontier cleanup.",
 					"`haft decision reconcile metrics --json` captures fallback scope, DriftEvent fanout, and current-authority conflict counts before and after an operator-approved apply.",
+					"`haft decision reconcile selection-draft --json` emits report-only candidate posture, confidence, suggested_review_action, and blocking_questions so sparse candidates can be skipped instead of guessed.",
 					"Report-only: it does not supersede, merge, retire, reopen, baseline, or mutate evidence.",
 					"scope_enrichment_candidates are repair prompts, not automatic mutations.",
 					"lineage_relations are preview labels, not authority mutations; apply still requires an operator-approved selection document.",

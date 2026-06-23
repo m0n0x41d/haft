@@ -252,11 +252,15 @@ type DecisionReconciliationDraftItem struct {
 	ReviewedGroupID          string   `json:"reviewed_group_id"`
 	DecisionRef              string   `json:"decision_ref"`
 	DecisionTitle            string   `json:"decision_title,omitempty"`
+	CandidatePosture         string   `json:"candidate_posture,omitempty"`
+	Confidence               string   `json:"confidence,omitempty"`
 	CurrentSubjectRef        string   `json:"current_subject_ref,omitempty"`
 	CurrentGovernanceTargets []string `json:"current_governance_targets,omitempty"`
 	WholeFileFallbackTargets []string `json:"whole_file_fallback_targets,omitempty"`
 	AffectedFiles            []string `json:"affected_files,omitempty"`
 	ScopeRepairHint          string   `json:"scope_repair_hint,omitempty"`
+	SuggestedReviewAction    string   `json:"suggested_review_action,omitempty"`
+	BlockingQuestions        []string `json:"blocking_questions,omitempty"`
 	RequiredSelectionFields  []string `json:"required_selection_fields,omitempty"`
 	SelectionTemplate        string   `json:"selection_template"`
 	ReviewNotes              []string `json:"review_notes"`
@@ -1248,16 +1252,21 @@ func decisionReconciliationDraftItem(
 	group DecisionReconciliationGroup,
 	item DecisionReconciliationItem,
 ) DecisionReconciliationDraftItem {
+	posture := decisionReconciliationDraftCandidatePosture(item)
 	return DecisionReconciliationDraftItem{
 		Operation:                DecisionReconciliationOperationEnrichScope,
 		ReviewedGroupID:          group.GroupID,
 		DecisionRef:              item.DecisionID,
 		DecisionTitle:            item.DecisionTitle,
+		CandidatePosture:         posture,
+		Confidence:               decisionReconciliationDraftConfidence(posture),
 		CurrentSubjectRef:        item.DecisionSubjectRef,
 		CurrentGovernanceTargets: compactSortedStrings(item.GovernanceTargets),
 		WholeFileFallbackTargets: compactSortedStrings(item.WholeFileFallbackTargets),
 		AffectedFiles:            compactSortedStrings(item.AffectedFiles),
 		ScopeRepairHint:          item.ScopeRepairHint,
+		SuggestedReviewAction:    decisionReconciliationDraftReviewAction(posture),
+		BlockingQuestions:        decisionReconciliationDraftBlockingQuestions(item),
 		RequiredSelectionFields:  decisionReconciliationPreviewRequiredFields(DecisionReconciliationOperationEnrichScope),
 		SelectionTemplate:        decisionReconciliationDraftSelectionTemplate(group, item),
 		ReviewNotes: []string{
@@ -1266,6 +1275,70 @@ func decisionReconciliationDraftItem(
 			"leave the candidate out if subject or target cannot be stated with high confidence",
 		},
 	}
+}
+
+func decisionReconciliationDraftCandidatePosture(item DecisionReconciliationItem) string {
+	missingSubject := strings.TrimSpace(item.DecisionSubjectRef) == ""
+	missingTargets := len(item.GovernanceTargets) == 0
+	hasWholeFileFallback := len(item.WholeFileFallbackTargets) > 0
+	switch {
+	case missingSubject && missingTargets && hasWholeFileFallback:
+		return "needs_subject_and_fallback_target_repair"
+	case missingSubject && missingTargets:
+		return "needs_subject_and_target_review"
+	case missingSubject:
+		return "precise_target_prefilled_subject_needed"
+	case missingTargets && hasWholeFileFallback:
+		return "whole_file_fallback_target_repair_needed"
+	case missingTargets:
+		return "needs_target_review"
+	case hasWholeFileFallback:
+		return "mixed_precise_and_fallback_target_repair_needed"
+	default:
+		return "scope_enrichment_not_needed"
+	}
+}
+
+func decisionReconciliationDraftConfidence(posture string) string {
+	switch posture {
+	case "precise_target_prefilled_subject_needed":
+		return "medium"
+	case "needs_subject_and_fallback_target_repair", "whole_file_fallback_target_repair_needed", "mixed_precise_and_fallback_target_repair_needed":
+		return "low"
+	case "needs_subject_and_target_review", "needs_target_review":
+		return "low"
+	default:
+		return "not_applicable"
+	}
+}
+
+func decisionReconciliationDraftReviewAction(posture string) string {
+	switch posture {
+	case "precise_target_prefilled_subject_needed":
+		return "review decision carrier and fill exact decision_subject_ref; keep prefilled target only if it is governance scope"
+	case "needs_subject_and_fallback_target_repair", "whole_file_fallback_target_repair_needed", "mixed_precise_and_fallback_target_repair_needed":
+		return "replace whole-file fallback with symbol/api_contract/invariant/spec_section target before approval"
+	case "needs_subject_and_target_review":
+		return "recover decision carrier, identify exact subject and target, or leave candidate out"
+	case "needs_target_review":
+		return "identify exact governance target or leave candidate out"
+	default:
+		return "no selection needed"
+	}
+}
+
+func decisionReconciliationDraftBlockingQuestions(item DecisionReconciliationItem) []string {
+	out := []string{}
+	if strings.TrimSpace(item.DecisionSubjectRef) == "" {
+		out = append(out, "What exact object does this decision govern now?")
+	}
+	if len(item.GovernanceTargets) == 0 {
+		out = append(out, "Which symbol, API contract, invariant, or spec section would falsify or preserve this decision?")
+	}
+	if len(item.WholeFileFallbackTargets) > 0 {
+		out = append(out, "Can the whole-file fallback be narrowed to a semantic target?")
+	}
+	return out
 }
 
 func decisionReconciliationDraftSelectionTemplate(

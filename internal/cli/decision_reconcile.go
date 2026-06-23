@@ -573,9 +573,11 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	}
 	for _, item := range draft.Items[:limit] {
 		if _, err := fmt.Fprintf(output,
-			"- %s group=%s files=%d hint=%s\n",
+			"- %s group=%s confidence=%s posture=%s files=%d hint=%s\n",
 			item.DecisionRef,
 			item.ReviewedGroupID,
+			item.Confidence,
+			item.CandidatePosture,
 			len(item.AffectedFiles),
 			truncateDecisionReconciliationSummaryField(item.ScopeRepairHint),
 		); err != nil {

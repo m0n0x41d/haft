@@ -176,6 +176,18 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	if item.Operation != DecisionReconciliationOperationEnrichScope {
 		t.Fatalf("operation = %q", item.Operation)
 	}
+	if item.CandidatePosture != "needs_subject_and_fallback_target_repair" {
+		t.Fatalf("candidate_posture = %q", item.CandidatePosture)
+	}
+	if item.Confidence != "low" {
+		t.Fatalf("confidence = %q", item.Confidence)
+	}
+	if !containsString(item.BlockingQuestions, "What exact object does this decision govern now?") {
+		t.Fatalf("blocking_questions = %#v", item.BlockingQuestions)
+	}
+	if !strings.Contains(item.SuggestedReviewAction, "replace whole-file fallback") {
+		t.Fatalf("suggested_review_action = %q", item.SuggestedReviewAction)
+	}
 	if item.DecisionRef != "dec-fallback" {
 		t.Fatalf("decision_ref = %q", item.DecisionRef)
 	}
@@ -206,6 +218,12 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	item := draft.Items[0]
 	if strings.Contains(item.SelectionTemplate, "TODO_target_kind") {
 		t.Fatalf("selection_template should reuse current governance target:\n%s", item.SelectionTemplate)
+	}
+	if item.CandidatePosture != "precise_target_prefilled_subject_needed" {
+		t.Fatalf("candidate_posture = %q", item.CandidatePosture)
+	}
+	if item.Confidence != "medium" {
+		t.Fatalf("confidence = %q", item.Confidence)
 	}
 	var selection DecisionReconciliationSelection
 	if err := json.Unmarshal([]byte(item.SelectionTemplate), &selection); err != nil {

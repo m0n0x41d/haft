@@ -254,6 +254,113 @@ func Stop() string { return "stop" }
 	}
 }
 
+func TestBaselineProjectsAffectedFilesFromExplicitDriftTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "legacy.go", `package main
+
+func Legacy() string { return "legacy" }
+`)
+	writeTestFile(t, projectRoot, "store.go", `package main
+
+type SQLiteBaselineStore struct{}
+func (s SQLiteBaselineStore) Get() string { return "sqlite" }
+
+type MemoryBaselineStore struct{}
+func (s MemoryBaselineStore) Get() string { return "memory" }
+`)
+
+	target := bindingTargetForSnapshot(t, projectRoot, "store.go", "Get", "MemoryBaselineStore")
+	dec := createTestDecision(t, store, "dec-baseline-projection", "Baseline projection")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{
+		{Path: "legacy.go"},
+		{Path: "store.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fields := dec.UnmarshalDecisionFields()
+	fields.DriftWatchTargets = []DriftWatchTarget{{
+		TargetRef:     "symbol:store.go::MemoryBaselineStore.Get",
+		Trigger:       "symbol_body_changed",
+		BindingTarget: &target,
+	}}
+	if err := persistDecisionFields(ctx, store, dec, fields); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "store.go" || files[0].Hash == "" {
+		t.Fatalf("baseline files = %+v, want only store.go with hash", files)
+	}
+
+	stored, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 || stored[0].Path != "store.go" {
+		t.Fatalf("stored affected files = %+v, want only store.go", stored)
+	}
+
+	writeTestFile(t, projectRoot, "legacy.go", `package main
+
+func Legacy() string { return "changed" }
+`)
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("reports = %+v, want legacy affected_files excluded from drift", reports)
+	}
+}
+
+func TestBaselineClearsLegacyProjectionForSemanticTargetWithoutCarrier(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "legacy.md", "old implementation footprint\n")
+
+	target := BindingTarget{
+		Kind:      BindingTargetAPIContract,
+		TargetRef: "api_contract:haft/status",
+	}
+	dec := createTestDecision(t, store, "dec-baseline-semantic-no-carrier", "Semantic no-carrier projection")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "legacy.md"}}); err != nil {
+		t.Fatal(err)
+	}
+	fields := dec.UnmarshalDecisionFields()
+	fields.GovernanceTargets = []GovernanceTarget{{
+		Kind:          BindingTargetAPIContract,
+		Ref:           "api_contract:haft/status",
+		BindingTarget: &target,
+	}}
+	if err := persistDecisionFields(ctx, store, dec, fields); err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("baseline files = %+v, want no file projection for target without carrier", files)
+	}
+
+	stored, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 0 {
+		t.Fatalf("stored affected files = %+v, want legacy projection cleared", stored)
+	}
+}
+
 func TestWholeFileFallbackDriftNeedsBindingResolution(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

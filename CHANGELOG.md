@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision baseline target projection.** `haft_decision(action="baseline")`
+  now projects stored `affected_files` from explicit drift/governance binding
+  targets when present, preventing scope-enriched decisions from reintroducing
+  stale whole-file drift via historical implementation-footprint files.
 - **Related evidence formality discovery.** `haft interface query.related
   --json` now documents DecisionRecord audit/evidence WLNK formality scale and
   bridge/loss fields, making exact/audit formality posture discoverable outside

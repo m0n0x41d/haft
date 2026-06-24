@@ -1219,6 +1219,45 @@ func hydrateBaselineBindingTarget(projectRoot string, target BindingTarget) Bind
 	return target
 }
 
+func affectedFilesFromBindingTargets(targets []BindingTarget) []AffectedFile {
+	seen := make(map[string]struct{})
+	files := make([]AffectedFile, 0, len(targets))
+	for _, target := range normalizeBindingTargets(targets) {
+		path := strings.TrimSpace(target.FilePath)
+		if path == "" {
+			continue
+		}
+		path = normalizeProjectPath(path)
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		files = append(files, AffectedFile{Path: path})
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
+	return files
+}
+
+func baselineAffectedFilesProjection(
+	input BaselineInput,
+	files []AffectedFile,
+	resolution BindingResolution,
+	fields DecisionFields,
+) []AffectedFile {
+	if len(input.AffectedFiles) > 0 {
+		return files
+	}
+	hasAuthorityTargets := len(fields.DriftWatchTargets) > 0 ||
+		len(fields.GovernanceTargets) > 0 ||
+		len(input.BindingTargets) > 0
+	if !hasAuthorityTargets {
+		return files
+	}
+	return affectedFilesFromBindingTargets(resolution.Targets)
+}
+
 // Baseline snapshots the current state of affected files as the baseline for drift detection.
 // If AffectedFiles is provided, it replaces the existing file list before hashing.
 func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, input BaselineInput) ([]AffectedFile, error) {
@@ -1234,6 +1273,7 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, fmt.Errorf("%s is %s — baseline only works on decisions and notes", input.DecisionRef, a.Meta.Kind)
 	}
 
+	decisionFields := a.UnmarshalDecisionFields()
 	files, err := store.GetAffectedFiles(ctx, input.DecisionRef)
 	if err != nil {
 		return nil, fmt.Errorf("get affected files: %w", err)
@@ -1244,26 +1284,11 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 			files = append(files, AffectedFile{Path: f})
 		}
 	}
-	if len(files) == 0 {
+	bindingTargets := baselineBindingResolutionTargets(projectRoot, input, decisionFields)
+	if len(files) == 0 && len(bindingTargets) == 0 {
 		return nil, fmt.Errorf("decision %s has no affected_files — nothing to baseline", input.DecisionRef)
 	}
 
-	// Compute SHA-256 for each file (skip directories)
-	var hashableFiles []AffectedFile
-	for i := range files {
-		absPath := filepath.Join(projectRoot, files[i].Path)
-		hash, err := hashFile(absPath)
-		if err != nil {
-			// Skip directories and missing files gracefully
-			logger.Debug().Str("path", files[i].Path).Err(err).Msg("baseline.skip_file")
-			continue
-		}
-		files[i].Hash = hash
-		hashableFiles = append(hashableFiles, files[i])
-	}
-	files = hashableFiles
-
-	decisionFields := a.UnmarshalDecisionFields()
 	decisionText := strings.Join([]string{
 		a.Meta.Title,
 		decisionFields.SelectedTitle,
@@ -1273,7 +1298,6 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		strings.Join(decisionFields.Invariants, "\n"),
 		strings.Join(decisionFields.PostConds, "\n"),
 	}, "\n")
-	bindingTargets := baselineBindingResolutionTargets(projectRoot, input, decisionFields)
 	resolution, err := ResolveBindingTargets(projectRoot, files, BindingResolutionOptions{
 		ExplicitTargets: bindingTargets,
 		Hints:           input.BindingHints,
@@ -1289,6 +1313,22 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, err
 	}
 	decisionFields.BindingTargets = resolution.Targets
+	files = baselineAffectedFilesProjection(input, files, resolution, decisionFields)
+
+	// Compute SHA-256 for each file (skip directories)
+	var hashableFiles []AffectedFile
+	for i := range files {
+		absPath := filepath.Join(projectRoot, files[i].Path)
+		hash, err := hashFile(absPath)
+		if err != nil {
+			// Skip directories and missing files gracefully
+			logger.Debug().Str("path", files[i].Path).Err(err).Msg("baseline.skip_file")
+			continue
+		}
+		files[i].Hash = hash
+		hashableFiles = append(hashableFiles, files[i])
+	}
+	files = hashableFiles
 
 	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
 		return nil, fmt.Errorf("store baseline hashes: %w", err)

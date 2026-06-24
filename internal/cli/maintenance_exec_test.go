@@ -15,6 +15,27 @@ import (
 
 const maintExecAffectedFile = "internal/app/maintflow.go"
 
+func TestOverseerDrainHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(overseerDrainCmd.Long), " "))
+	for _, want := range []string{
+		"opt-in",
+		"machine-safe maintenance",
+		"needs_operator",
+		"never applies",
+		"decisionreconciliationselection",
+		"not semantic approval",
+		"not evidence",
+		"not gatedecision",
+		"not claim truth",
+		"not global truth",
+		"not publication",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("overseer drain help missing %q:\n%s", want, overseerDrainCmd.Long)
+		}
+	}
+}
+
 // TestMaintenanceExecutePhase_GateModesAndUndo is the e2e proof of
 // dec-20260611-overseer-maintenance-executor-b1a7a749: additive-only drift
 // (a NEW file in a module-governed scope — the rebuild/init noise class) →

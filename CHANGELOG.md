@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer drain help boundary.** `haft overseer drain --help` now names drain
+  as opt-in, machine-safe-only, not semantic approval, evidence, GateDecision,
+  claim truth, global truth, publication, or reconciliation apply authority.
 - **Overseer judgment help boundary.** `haft overseer judgment --help` now names
   judgment packets as read-only review metadata that do not mutate, approve, or
   create evidence.

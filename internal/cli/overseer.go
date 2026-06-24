@@ -148,7 +148,14 @@ review metadata, not authority.`,
 var overseerDrainCmd = &cobra.Command{
 	Use:   "drain",
 	Short: "Explicitly drain machine-safe maintenance tasks and report the rest",
-	RunE:  runOverseerDrain,
+	Long: `Explicitly drain machine-safe maintenance tasks and report the rest.
+
+Drain is opt-in. It executes only machine-safe maintenance actions, returns
+semantic uncertainty as needs_operator, and never applies
+DecisionReconciliationSelection documents. Drain reports are not semantic
+approval, not evidence, not GateDecision, not claim truth, not global truth,
+and not publication.`,
+	RunE: runOverseerDrain,
 }
 
 var overseerUndoCmd = &cobra.Command{

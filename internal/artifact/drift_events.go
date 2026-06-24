@@ -731,6 +731,9 @@ func driftEventResolutionStatus(event DriftEvent) string {
 }
 
 func driftEventSuggestedNextCommand(event DriftEvent) string {
+	if driftEventNeedsBindingResolution(event) {
+		return "haft drift bindings --dry-run --json"
+	}
 	switch event.ResolutionStatus {
 	case DriftEventResolutionNeedsScopeEnrichment, DriftEventResolutionNeedsReconcile:
 		return "haft decision reconcile --json"

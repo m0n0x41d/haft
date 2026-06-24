@@ -286,8 +286,8 @@ func TestBuildDriftEventReportExposesBindingFallbackMetadata(t *testing.T) {
 	if event.ResolutionStatus != DriftEventResolutionNeedsScopeEnrichment {
 		t.Fatalf("resolution_status = %q, want %s", event.ResolutionStatus, DriftEventResolutionNeedsScopeEnrichment)
 	}
-	if event.SuggestedNextCommand != "haft decision reconcile --json" {
-		t.Fatalf("suggested_next_command = %q, want reconcile drill-down", event.SuggestedNextCommand)
+	if event.SuggestedNextCommand != "haft drift bindings --dry-run --json" {
+		t.Fatalf("suggested_next_command = %q, want ranked binding review drill-down", event.SuggestedNextCommand)
 	}
 	if event.RootCause != DriftEventRootCauseBindingTargetMissing {
 		t.Fatalf("root_cause = %q, want %s", event.RootCause, DriftEventRootCauseBindingTargetMissing)
@@ -339,8 +339,8 @@ func TestBuildDriftEventReportRoutesLegacyFileFallbackToBindingResolution(t *tes
 	if !strings.Contains(event.FallbackReason, "legacy file-scope") {
 		t.Fatalf("fallback_reason = %q, want legacy file-scope explanation", event.FallbackReason)
 	}
-	if event.SuggestedNextCommand != "haft decision reconcile --json" {
-		t.Fatalf("suggested_next_command = %q, want reconcile drill-down", event.SuggestedNextCommand)
+	if event.SuggestedNextCommand != "haft drift bindings --dry-run --json" {
+		t.Fatalf("suggested_next_command = %q, want ranked binding review drill-down", event.SuggestedNextCommand)
 	}
 	if len(event.SourceItems) != 1 || event.SourceItems[0].FallbackKind != BindingTargetWholeFileFallback {
 		t.Fatalf("source_items did not preserve fallback metadata: %#v", event.SourceItems)

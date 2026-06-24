@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **DriftEvent binding drill-down routing.** DriftEvents with
+  `root_cause=binding_target_missing` now point `suggested_next_command` at
+  ranked `haft drift bindings --dry-run --json` review before reconciliation,
+  instead of sending operators to the broader decision-reconcile report first.
 - **Drift binding candidate review ranking.** Compact
   `haft drift bindings --dry-run --json` items now include review-only
   `ranking_policy`, ranked candidate previews, and file-level

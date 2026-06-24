@@ -654,6 +654,17 @@ func TestClassifyBaselineTermTreatsNotRebaselineBoundaryAsLifecycleAuthority(t *
 	}
 }
 
+func TestClassifyBaselineTermTreatsBaselineAuditInterfaceTestsAsContractSurface(t *testing.T) {
+	category, rationale := classifyBaselineTerm(
+		"internal/cli/interface_test.go",
+		`capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "baseline.audit")`,
+	)
+
+	if category != baselineAuditInterfaceContract {
+		t.Fatalf("category = %q, want %q (%s)", category, baselineAuditInterfaceContract, rationale)
+	}
+}
+
 func writeBaselineAuditFixture(t *testing.T, root string, rel string, content string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(rel))

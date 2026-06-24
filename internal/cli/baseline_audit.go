@@ -447,7 +447,7 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditDecisionAPI, "mentions the DecisionRecord baseline API or host-tool action surface"
 	case baselineAuditPresentationSurface(path, value):
 		return baselineAuditPresentation, "mentions baseline in decision/drift presentation output"
-	case baselineAuditInterfaceContractSurface(path):
+	case baselineAuditInterfaceContractSurface(path, value):
 		return baselineAuditInterfaceContract, "mentions baseline inside interface contract catalog examples or authority notes"
 	case baselineAuditSpecSkillLifecycleSurface(path):
 		return baselineAuditLifecycleAuth, "mentions baseline inside the h-spec lifecycle skill authority surface"
@@ -1024,8 +1024,33 @@ func baselineAuditPresentationSurface(path string, value string) bool {
 	}
 }
 
-func baselineAuditInterfaceContractSurface(path string) bool {
-	return filepath.ToSlash(path) == "internal/cli/interface.go"
+func baselineAuditInterfaceContractSurface(path string, value string) bool {
+	switch filepath.ToSlash(path) {
+	case "internal/cli/interface.go":
+		return true
+	case "internal/cli/interface_test.go":
+		return containsAnyBaselineTerm(value,
+			"baseline.audit",
+			"baselineaudit",
+			"baseline_audit",
+			"baseline_audit_test.go",
+			"baseline audit --json",
+			"baseline audit documents",
+			"baseline audit test",
+			"baseline audit_test.go",
+			"read_only_term_audit",
+			"read_only_term_audit_not_baseline_mutation",
+			"spec_section_approval_baseline",
+			"pre_work_reference_snapshot",
+			"verified_state_snapshot",
+			"comparison_or_benchmark_baseline",
+			"legacy_ambiguous_baseline",
+			"does_not_mutate_baselines_decisions_evidence_or_carriers",
+			"does_not_create_approval_gate_decision_claim_truth_global_truth_or_publication",
+		)
+	default:
+		return false
+	}
 }
 
 func baselineAuditSpecSkillLifecycleSurface(path string) bool {

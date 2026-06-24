@@ -35,7 +35,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "baseline.audit", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -2041,6 +2041,67 @@ func TestInterfaceCarrierSurfacesAreReadOnlyDrillDowns(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestInterfaceBaselineAuditDocumentsTermSplitBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "baseline.audit")
+	if !ok {
+		t.Fatal("baseline.audit capability missing")
+	}
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("baseline.audit should be CLI-only in this slice: %#v", capability.CurrentExecution)
+	}
+	if capability.CurrentExecution.CLICommand != "haft baseline audit --json" {
+		t.Fatalf("baseline.audit CLI command = %#v", capability.CurrentExecution.CLICommand)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"read_only_term_audit_not_baseline_mutation",
+		"spec_section_approval_baseline",
+		"pre_work_reference_snapshot",
+		"verified_state_snapshot",
+		"comparison_or_benchmark_baseline",
+		"legacy_ambiguous_baseline",
+		"does_not_mutate_baselines_decisions_evidence_or_carriers",
+		"does_not_create_approval_gate_decision_claim_truth_global_truth_or_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("baseline.audit contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"which kind", "skips Open-Sleigh", "`--limit` caps emitted findings", "read-only"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("baseline.audit notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "SpecSectionApprovalBaseline", "DecisionRecord baselines", "Default status"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("baseline.audit invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	surface, ok := findInterfaceContractAuditSurface(report, "baseline.audit")
+	if !ok {
+		t.Fatal("baseline.audit audit surface missing")
+	}
+	if surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+		t.Fatalf("host schema posture = %q", surface.HostSchemaPosture)
+	}
+	if surface.AuthorityPosture != "read_only_term_audit" {
+		t.Fatalf("authority posture = %q", surface.AuthorityPosture)
+	}
+	if surface.SchemaCoverage.Status != "not_mcp_backed" {
+		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+	if !stringSliceContains(surface.ValidationRefs, "internal/cli/baseline_audit_test.go") {
+		t.Fatalf("validation refs missing baseline_audit_test.go: %#v", surface.ValidationRefs)
 	}
 }
 

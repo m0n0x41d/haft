@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline audit interface discovery.** `haft interface baseline.audit
+  --json` now exposes the existing read-only baseline term audit as a CLI-only
+  contract, including spec-approval, pre-work, verified-state, comparison, and
+  legacy-ambiguous categories plus non-mutation authority boundaries.
 - **Decision reconciliation selection summary counters.** `haft decision
   reconcile selection-draft` now reports explicit
   `review_required_candidates`, `apply_ready_candidates`, and `template_items`

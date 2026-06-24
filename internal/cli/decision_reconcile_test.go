@@ -1139,6 +1139,10 @@ func TestWriteDecisionReconciliationSelectionDraftFileKeepsReportOnlyAuthority(t
 				Reason:             "TODO_operator_reviewed_scope_enrichment_reason",
 			}},
 		},
+		SelectionDocumentTemplateBoundary: []string{
+			"selection_document_template items are emitted review candidates, not selected candidates",
+			"selection_document_template is not operator approval",
+		},
 		MutationBoundary: []string{
 			"selection draft is read-only",
 			"draft output is not an operator approval",
@@ -1167,6 +1171,12 @@ func TestWriteDecisionReconciliationSelectionDraftFileKeepsReportOnlyAuthority(t
 	}
 	if decoded.SelectionDocumentTemplate.OperatorApprovalRef != "" {
 		t.Fatalf("operator_approval_ref = %q", decoded.SelectionDocumentTemplate.OperatorApprovalRef)
+	}
+	if !containsString(
+		decoded.SelectionDocumentTemplateBoundary,
+		"selection_document_template items are emitted review candidates, not selected candidates",
+	) {
+		t.Fatalf("selection_document_template_boundary = %#v", decoded.SelectionDocumentTemplateBoundary)
 	}
 	if !containsString(decoded.MutationBoundary, "draft output is not an operator approval") {
 		t.Fatalf("mutation_boundary = %#v", decoded.MutationBoundary)

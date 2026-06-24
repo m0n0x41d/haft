@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation selection template boundary.** `haft decision
+  reconcile selection-draft --json` now emits
+  `selection_document_template_boundary`, making explicit that template items
+  are emitted review candidates, not selected or apply-ready candidates.
 - **Decision reconciliation apply help boundary.** `haft decision reconcile
   apply --help` now names apply authority as limited to the selected
   reconciliation mutation, not evidence, GateDecision, claim truth, global

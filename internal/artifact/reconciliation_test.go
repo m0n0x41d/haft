@@ -176,6 +176,18 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	if draft.Summary.SelectedCandidates != 0 {
 		t.Fatalf("selected_candidates = %d, want 0 for low-confidence draft item", draft.Summary.SelectedCandidates)
 	}
+	if draft.SelectionDocumentTemplate == nil {
+		t.Fatal("selection_document_template missing")
+	}
+	if len(draft.SelectionDocumentTemplate.Items) != 1 {
+		t.Fatalf("selection_document_template.items = %#v, want one emitted review candidate", draft.SelectionDocumentTemplate.Items)
+	}
+	if !containsString(
+		draft.SelectionDocumentTemplateBoundary,
+		"selection_document_template items are emitted review candidates, not selected candidates",
+	) {
+		t.Fatalf("selection_document_template_boundary = %#v", draft.SelectionDocumentTemplateBoundary)
+	}
 	if len(draft.Items) != 1 {
 		t.Fatalf("items = %#v", draft.Items)
 	}
@@ -587,6 +599,12 @@ func TestDecisionReconciliationSelectionDraftIncludesNonApprovedDocumentTemplate
 	}
 	if template.OperatorApprovalRef != "" {
 		t.Fatalf("operator_approval_ref = %q, want empty placeholder so apply rejects draft", template.OperatorApprovalRef)
+	}
+	if !containsString(
+		draft.SelectionDocumentTemplateBoundary,
+		"selection_document_template items are emitted review candidates, not selected candidates",
+	) {
+		t.Fatalf("selection_document_template_boundary = %#v", draft.SelectionDocumentTemplateBoundary)
 	}
 	if len(template.Items) != 1 || template.Items[0].DecisionRefs[0] != "dec-medium" {
 		t.Fatalf("template items = %#v", template.Items)

@@ -8,7 +8,7 @@ argument-hint: "[reasoning topic — what to think about / what to figure out]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f22bf7255fd820634bc9b7b2844caa8690fba6ae7e468ae72508cda2b7dc205d -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e9186a0c30f00caecca422dabd6e617ac90339a9f83d4ac7a8b10bcb6f7adfce -->
 
 # h-reason — FPF reasoning umbrella
 

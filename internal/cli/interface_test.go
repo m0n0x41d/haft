@@ -2727,6 +2727,8 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		"top-level whole-file fallback binding_targets",
 		"must confirm",
 		"selection_document_template",
+		"selection_document_template_boundary",
+		"emitted review candidates, not selected candidates",
 		"--write-review-packet review.json",
 		"writes the bounded report-only draft with review hints",
 		"not an approval document",

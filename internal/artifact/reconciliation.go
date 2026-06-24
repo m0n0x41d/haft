@@ -198,19 +198,20 @@ type DecisionReconciliationSelectionDocument struct {
 }
 
 type DecisionReconciliationSelectionDraft struct {
-	SchemaVersion             int                                      `json:"schema_version"`
-	Authority                 string                                   `json:"authority"`
-	OperatorApproved          bool                                     `json:"operator_approved"`
-	ApplyAuthorityRequired    string                                   `json:"apply_authority_required"`
-	SourcePlanAuthority       string                                   `json:"source_plan_authority"`
-	Summary                   DecisionReconciliationDraftSummary       `json:"summary"`
-	OmittedItems              int                                      `json:"omitted_items,omitempty"`
-	FullAuditCommand          string                                   `json:"full_audit_command,omitempty"`
-	CurrentMetrics            *ReconciliationMetricsPacket             `json:"current_metrics,omitempty"`
-	Items                     []DecisionReconciliationDraftItem        `json:"items,omitempty"`
-	SelectionDocumentTemplate *DecisionReconciliationSelectionDocument `json:"selection_document_template,omitempty"`
-	MutationBoundary          []string                                 `json:"mutation_boundary"`
-	NextSteps                 []string                                 `json:"next_steps"`
+	SchemaVersion                     int                                      `json:"schema_version"`
+	Authority                         string                                   `json:"authority"`
+	OperatorApproved                  bool                                     `json:"operator_approved"`
+	ApplyAuthorityRequired            string                                   `json:"apply_authority_required"`
+	SourcePlanAuthority               string                                   `json:"source_plan_authority"`
+	Summary                           DecisionReconciliationDraftSummary       `json:"summary"`
+	OmittedItems                      int                                      `json:"omitted_items,omitempty"`
+	FullAuditCommand                  string                                   `json:"full_audit_command,omitempty"`
+	CurrentMetrics                    *ReconciliationMetricsPacket             `json:"current_metrics,omitempty"`
+	Items                             []DecisionReconciliationDraftItem        `json:"items,omitempty"`
+	SelectionDocumentTemplate         *DecisionReconciliationSelectionDocument `json:"selection_document_template,omitempty"`
+	SelectionDocumentTemplateBoundary []string                                 `json:"selection_document_template_boundary,omitempty"`
+	MutationBoundary                  []string                                 `json:"mutation_boundary"`
+	NextSteps                         []string                                 `json:"next_steps"`
 }
 
 type DecisionReconciliationSelectionReview struct {
@@ -338,12 +339,13 @@ func buildDecisionReconciliationSelectionDraftFiltered(
 	allItems := decisionReconciliationDraftItems(plan.Groups)
 	filteredItems := filterDecisionReconciliationDraftItems(allItems, filter)
 	items := limitDecisionReconciliationDraftItems(filteredItems, filter)
+	template := decisionReconciliationDraftSelectionDocumentTemplate(items)
 	omittedItems := len(filteredItems) - len(items)
 	draft := DecisionReconciliationSelectionDraft{
 		SchemaVersion:          DecisionReconciliationSchemaVersion,
 		Authority:              DecisionReconciliationSelectionDraftAuthority,
 		OperatorApproved:       false,
-		ApplyAuthorityRequired: "operator_approved_reconciliation_selection",
+		ApplyAuthorityRequired: DecisionReconciliationSelectionApplyAuthority,
 		SourcePlanAuthority:    plan.Authority,
 		Summary: DecisionReconciliationDraftSummary{
 			ReviewedGroups:                      len(plan.Groups),
@@ -359,7 +361,10 @@ func buildDecisionReconciliationSelectionDraftFiltered(
 		FullAuditCommand:          "haft decision reconcile selection-draft --json --full",
 		CurrentMetrics:            metrics,
 		Items:                     items,
-		SelectionDocumentTemplate: decisionReconciliationDraftSelectionDocumentTemplate(items),
+		SelectionDocumentTemplate: template,
+		SelectionDocumentTemplateBoundary: decisionReconciliationDraftSelectionDocumentTemplateBoundary(
+			template,
+		),
 		MutationBoundary: []string{
 			"selection draft is read-only",
 			"draft output is not an operator approval",
@@ -1843,6 +1848,21 @@ func decisionReconciliationDraftSelectionDocumentTemplate(
 		Authority:           DecisionReconciliationSelectionApplyAuthority,
 		OperatorApprovalRef: "",
 		Items:               selections,
+	}
+}
+
+func decisionReconciliationDraftSelectionDocumentTemplateBoundary(
+	template *DecisionReconciliationSelectionDocument,
+) []string {
+	if template == nil {
+		return nil
+	}
+	return []string{
+		"selection_document_template items are emitted review candidates, not selected candidates",
+		"selection_document_template is not operator approval",
+		"operator_approval_ref must be filled only after explicit operator approval",
+		"TODO placeholders are rejected by selection-review and apply",
+		"selection-review and apply revalidate against the current reconciliation plan",
 	}
 }
 

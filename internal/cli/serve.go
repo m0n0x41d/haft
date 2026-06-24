@@ -1420,7 +1420,11 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		if err != nil {
 			return "", err
 		}
-		return present.MaintenancePlanResponse(plan, navStrip), nil
+		verbose, _ := args["verbose"].(bool)
+		if verbose {
+			return present.MaintenancePlanResponse(plan, navStrip), nil
+		}
+		return present.CompactMaintenancePlanResponse(plan, navStrip), nil
 
 	case artifact.RefreshReview:
 		projectRoot := filepath.Dir(haftDir)

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Maintenance plan compact default.** `haft_refresh(action="plan")` now
+  keeps deterministic and machine-checkable work visible while sampling the
+  Rung-3 judgment tail by default, with `verbose=true` retaining the full work
+  order. This prevents the MCP maintenance plan from dumping dozens of
+  operator-judgment tasks into agent context.
 - **Baseline audit bounded JSON projection.** `haft baseline audit --json
   --limit N` now keeps full summary/diagnostic counts while truncating the
   emitted findings with explicit `projection.omitted_findings` and a

@@ -8,10 +8,34 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
+const maintenancePlanCompactJudgmentLimit = 3
+
+type maintenancePlanRenderOptions struct {
+	Compact       bool
+	JudgmentLimit int
+}
+
 // MaintenancePlanResponse renders the kernel-compiled work order. Every line
 // carries the decision title, what to do, and how it may be acted on — the
 // presentation floor: no bare IDs without titles and next actions.
 func MaintenancePlanResponse(plan *artifact.MaintenancePlan, navStrip string) string {
+	return maintenancePlanResponse(plan, navStrip, maintenancePlanRenderOptions{})
+}
+
+// CompactMaintenancePlanResponse preserves deterministic and machine-checkable
+// work while sampling rung-3 judgment debt behind explicit drill-downs.
+func CompactMaintenancePlanResponse(plan *artifact.MaintenancePlan, navStrip string) string {
+	return maintenancePlanResponse(plan, navStrip, maintenancePlanRenderOptions{
+		Compact:       true,
+		JudgmentLimit: maintenancePlanCompactJudgmentLimit,
+	})
+}
+
+func maintenancePlanResponse(
+	plan *artifact.MaintenancePlan,
+	navStrip string,
+	options maintenancePlanRenderOptions,
+) string {
 	if plan == nil || len(plan.Tasks) == 0 {
 		return "Maintenance plan: nothing actionable — no ripe claims, no drift dispositions.\n" + navStrip
 	}
@@ -19,6 +43,9 @@ func MaintenancePlanResponse(plan *artifact.MaintenancePlan, navStrip string) st
 	var sb strings.Builder
 	fmt.Fprintf(&sb, "## Maintenance Plan (%d task(s): %d auto-baseline, %d machine-checkable, %d need judgment)\n\n",
 		len(plan.Tasks), plan.AutoBaselineCandidates, plan.MachineCheckable, plan.JudgmentNeeded)
+	if options.Compact {
+		sb.WriteString("_Compact view: deterministic and machine-checkable work stays visible; rung-3 judgment debt is sampled. Use `haft_refresh(action=\"plan\", verbose=true)` for the full work order._\n\n")
+	}
 
 	sections := []struct {
 		rung  int
@@ -35,9 +62,11 @@ func MaintenancePlanResponse(plan *artifact.MaintenancePlan, navStrip string) st
 			continue
 		}
 		fmt.Fprintf(&sb, "### %s\n", section.title)
-		for _, t := range tasks {
+		renderedTasks := maintenancePlanTasksForOutput(tasks, section.rung, options)
+		for _, t := range renderedTasks {
 			sb.WriteString(formatMaintenanceTask(t))
 		}
+		writeMaintenancePlanOmission(&sb, section.rung, len(tasks), len(renderedTasks))
 		fmt.Fprintf(&sb, "→ %s\n\n", section.hint)
 	}
 
@@ -45,6 +74,44 @@ func MaintenancePlanResponse(plan *artifact.MaintenancePlan, navStrip string) st
 		fmt.Fprintf(&sb, "_%d claim(s) skipped: evidence already attached today (flake cooldown)._\n", plan.CooldownSkipped)
 	}
 	return sb.String() + navStrip
+}
+
+func maintenancePlanTasksForOutput(
+	tasks []artifact.MaintenanceTask,
+	rung int,
+	options maintenancePlanRenderOptions,
+) []artifact.MaintenanceTask {
+	if !options.Compact {
+		return tasks
+	}
+	if rung != artifact.RungJudgment {
+		return tasks
+	}
+	if options.JudgmentLimit <= 0 || len(tasks) <= options.JudgmentLimit {
+		return tasks
+	}
+	return tasks[:options.JudgmentLimit]
+}
+
+func writeMaintenancePlanOmission(
+	sb *strings.Builder,
+	rung int,
+	total int,
+	rendered int,
+) {
+	omitted := total - rendered
+	if omitted <= 0 {
+		return
+	}
+	if rung == artifact.RungJudgment {
+		fmt.Fprintf(
+			sb,
+			"- ... %d more judgment task(s); use `haft_refresh(action=\"review\")` for the bounded review packet or `haft_refresh(action=\"plan\", verbose=true)` for the full work order.\n",
+			omitted,
+		)
+		return
+	}
+	fmt.Fprintf(sb, "- ... %d more task(s); use `haft_refresh(action=\"plan\", verbose=true)` for the full work order.\n", omitted)
 }
 
 // MaintenanceJudgmentReviewResponse renders the rung-3 maintenance packet as a

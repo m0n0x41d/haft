@@ -79,6 +79,35 @@ func TestHandleQuintRefreshReviewBuildsReadOnlyJudgmentPacket(t *testing.T) {
 	}
 }
 
+func TestHandleQuintRefreshPlanDefaultsCompactAndVerboseKeepsFullPlan(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	compact, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action": "plan",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(plan) returned error: %v", err)
+	}
+	if !strings.Contains(compact, "Compact view") {
+		t.Fatalf("default plan should be compact:\n%s", compact)
+	}
+
+	verbose, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "plan",
+		"verbose": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(plan verbose) returned error: %v", err)
+	}
+	if strings.Contains(verbose, "Compact view") {
+		t.Fatalf("verbose plan should use full renderer:\n%s", verbose)
+	}
+	if !strings.Contains(verbose, "Maintenance Plan") {
+		t.Fatalf("verbose plan missing title:\n%s", verbose)
+	}
+}
+
 func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seedGovernanceDebt(t, fixture)

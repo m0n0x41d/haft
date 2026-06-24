@@ -47,7 +47,7 @@ Execution plan lives in `.context/v8_haft_governance_substrate_plan.md`.
 <!-- haft:start -->
 # Haft Project Discipline
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:c24d8c552f93d4393510da78f4f968ba858dc91f71219a750017d00ad8dcd8d4 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f67956ba9a12de7fa0a3f7d7aec3b0372df4ec111c60745285d1a8b122083264 -->
 
 This section is installed and maintained by `haft init`. Edits **inside** the
 haft HTML-comment markers (the start/end pair that brackets this section) will

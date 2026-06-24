@@ -1198,18 +1198,18 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "response",
-						Shape: `{"drift_layer":"evidence|publication|episteme|...","candidate_repair_actions":[...],"language_state_move_kinds":[...],"authority_boundary":{"mutation":"not_mutation","gate_decision":"not_gate_decision"}}`,
-						Note:  "Routing is advisory and does not execute repair or create evidence/approval.",
+						Shape: `{"drift_layer":"evidence|publication|episteme|...","candidate_repair_actions":[...],"language_state_move_kinds":[...],"authority_boundary":{"mutation":"not_mutation","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"}}`,
+						Note:  "Routing is advisory and does not execute repair or create evidence, approval, GateDecision, claim truth, global truth, or publication.",
 					},
 				},
 				Notes: []string{
 					"Haft does not route description/evidence/publication drift directly to code repair.",
-					"Use the route as review input; mutation still needs the governing decision/workflow.",
+					"Use the route as review input; mutation, evidence, approval, GateDecision, claim truth, global truth, and publication still need their own governing workflows.",
 				},
 			},
 			OutputVolume: []string{"default: one JSON SemanticDriftRoute"},
 			Invariants: append(commonInterfaceInvariants(),
-				"Repair routing is read-only.",
+				"Repair routing is read-only: candidate repair actions are not mutation, evidence, approval, GateDecision, claim truth, global truth, or publication.",
 				"Candidate repair actions are not performed work.",
 			),
 		},
@@ -1427,8 +1427,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"object":{"bearer_ref":"...","entity_or_subject_label":"..."},"blocked_use":"...","source_return":{"status":"source_return_declared|exact_record_needed|missing_source_return","source_refs":[...]},"next_admissible_actions":[...],"authority_boundary":{"work_plan":"not_work_plan","gate_decision":"not_gate_decision"}}`,
-						Note:  "The item points back to exact source records; action invitations are not WorkPlans.",
+						Shape: `{"object":{"bearer_ref":"...","entity_or_subject_label":"..."},"blocked_use":"...","source_return":{"status":"source_return_declared|exact_record_needed|missing_source_return","source_refs":[...]},"next_admissible_actions":[...],"authority_boundary":{"work_plan":"not_work_plan","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"}}`,
+						Note:  "The item points back to exact source records; action invitations are not WorkPlans, evidence, approval, GateDecision, claim truth, global truth, or publication.",
 					},
 				},
 				Notes: []string{
@@ -1438,7 +1438,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			OutputVolume: []string{"default: one JSON BlockedUseAttentionItem"},
 			Invariants: append(commonInterfaceInvariants(),
-				"Attention items are read-only review inputs, not WorkPlans or evidence.",
+				"Attention items are read-only review inputs, not WorkPlans, evidence, approval, GateDecision, claim truth, global truth, or publication.",
 				"Default status, related, and code_context payloads do not inline attention items.",
 			),
 		},

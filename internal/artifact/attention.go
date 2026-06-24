@@ -15,7 +15,9 @@ const (
 	BlockedUseBoundaryNotApproval     = "not_approval"
 	BlockedUseBoundaryNotEvidence     = "not_evidence"
 	BlockedUseBoundaryNotGateDecision = "not_gate_decision"
+	BlockedUseBoundaryNotClaimTruth   = "not_claim_truth"
 	BlockedUseBoundaryNotGlobalTruth  = "not_global_truth"
+	BlockedUseBoundaryNotPublication  = "not_publication"
 )
 
 type BlockedUseAttentionInput struct {
@@ -60,7 +62,9 @@ type BlockedUseAttentionBoundary struct {
 	Evidence     string `json:"evidence"`
 	Approval     string `json:"approval"`
 	GateDecision string `json:"gate_decision"`
+	ClaimTruth   string `json:"claim_truth"`
 	GlobalTruth  string `json:"global_truth"`
+	Publication  string `json:"publication"`
 }
 
 func BuildBlockedUseAttentionItem(input BlockedUseAttentionInput) BlockedUseAttentionItem {
@@ -85,7 +89,9 @@ func BuildBlockedUseAttentionItem(input BlockedUseAttentionInput) BlockedUseAtte
 			Evidence:     BlockedUseBoundaryNotEvidence,
 			Approval:     BlockedUseBoundaryNotApproval,
 			GateDecision: BlockedUseBoundaryNotGateDecision,
+			ClaimTruth:   BlockedUseBoundaryNotClaimTruth,
 			GlobalTruth:  BlockedUseBoundaryNotGlobalTruth,
+			Publication:  BlockedUseBoundaryNotPublication,
 		},
 	}
 }

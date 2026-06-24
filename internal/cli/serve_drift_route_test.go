@@ -39,6 +39,12 @@ func TestHandleQuintQuery_DriftRouteDoesNotRepairCodeForEvidenceDrift(t *testing
 	if route.AuthorityBoundary.Mutation != artifact.DriftRouteBoundaryNotMutation {
 		t.Fatalf("authority boundary = %+v", route.AuthorityBoundary)
 	}
+	if route.AuthorityBoundary.ClaimTruth != artifact.DriftRouteBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %+v", route.AuthorityBoundary)
+	}
+	if route.AuthorityBoundary.Publication != artifact.DriftRouteBoundaryNotPublication {
+		t.Fatalf("publication boundary = %+v", route.AuthorityBoundary)
+	}
 }
 
 func TestHandleQuintQuery_DriftRouteUnknownKindFailsClosed(t *testing.T) {
@@ -92,6 +98,9 @@ func TestHandleQuintQuery_DriftRouteRecognizesCarrierOnly(t *testing.T) {
 	}
 	if route.AuthorityBoundary.Mutation != artifact.DriftRouteBoundaryNotMutation {
 		t.Fatalf("authority boundary = %+v", route.AuthorityBoundary)
+	}
+	if route.AuthorityBoundary.Publication != artifact.DriftRouteBoundaryNotPublication {
+		t.Fatalf("publication boundary = %+v", route.AuthorityBoundary)
 	}
 }
 

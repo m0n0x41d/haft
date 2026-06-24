@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Read-only route/attention authority boundaries.** `haft drift route`,
+  `haft attention blocked`, and their MCP discovery surfaces now expose
+  advisory route and blocked-use attention boundaries as not evidence,
+  approval, GateDecision, claim truth, global truth, or publication. This keeps
+  repair suggestions and action invitations from looking like performed work,
+  approval, or published truth.
 - **Governing-set authority boundary.** `haft decision governing-set` and
   `haft_query(action="governing_set")` now expose current-authority frontier,
   snapshot, and answer-path boundaries as read-only projections that are not

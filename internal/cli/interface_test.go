@@ -2004,6 +2004,64 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 	}
 }
 
+func TestInterfaceDriftRouteNamesCompleteAuthorityBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.drift_route")
+	if !ok {
+		t.Fatal("query.drift_route capability missing")
+	}
+
+	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"not_mutation",
+		"not_evidence",
+		"not_approval",
+		"not_gate_decision",
+		"not_claim_truth",
+		"not_global_truth",
+		"not_publication",
+	} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("drift_route field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "not mutation", "evidence", "approval", "GateDecision", "claim truth", "global truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("drift_route invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceBlockedUseNamesCompleteAuthorityBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.blocked_use_attention")
+	if !ok {
+		t.Fatal("query.blocked_use_attention capability missing")
+	}
+
+	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"not_work_plan",
+		"not_evidence",
+		"not_approval",
+		"not_gate_decision",
+		"not_claim_truth",
+		"not_global_truth",
+		"not_publication",
+	} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("blocked_use field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "not WorkPlans", "evidence", "approval", "GateDecision", "claim truth", "global truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("blocked_use invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
 func TestInterfaceRefreshReviewNamesAuthorityBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.review")
 	if !ok {

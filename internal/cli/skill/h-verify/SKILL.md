@@ -8,7 +8,7 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:c24d8c552f93d4393510da78f4f968ba858dc91f71219a750017d00ad8dcd8d4 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f67956ba9a12de7fa0a3f7d7aec3b0372df4ec111c60745285d1a8b122083264 -->
 
 # h-verify — Verify a decision still holds
 

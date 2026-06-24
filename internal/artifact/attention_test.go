@@ -67,8 +67,14 @@ func TestBuildBlockedUseAttentionItemCannotMasqueradeAsWorkOrAuthority(t *testin
 	if item.AuthorityBoundary.GateDecision != BlockedUseBoundaryNotGateDecision {
 		t.Fatalf("gate boundary = %+v", item.AuthorityBoundary)
 	}
+	if item.AuthorityBoundary.ClaimTruth != BlockedUseBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %+v", item.AuthorityBoundary)
+	}
 	if item.AuthorityBoundary.GlobalTruth != BlockedUseBoundaryNotGlobalTruth {
 		t.Fatalf("global truth boundary = %+v", item.AuthorityBoundary)
+	}
+	if item.AuthorityBoundary.Publication != BlockedUseBoundaryNotPublication {
+		t.Fatalf("publication boundary = %+v", item.AuthorityBoundary)
 	}
 }
 

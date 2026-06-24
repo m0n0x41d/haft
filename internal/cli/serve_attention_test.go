@@ -38,4 +38,10 @@ func TestHandleQuintQuery_BlockedUseAttentionReturnsExactSourceItem(t *testing.T
 	if item.AuthorityBoundary.WorkPlan != artifact.BlockedUseBoundaryNotWorkPlan {
 		t.Fatalf("authority boundary = %+v", item.AuthorityBoundary)
 	}
+	if item.AuthorityBoundary.ClaimTruth != artifact.BlockedUseBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %+v", item.AuthorityBoundary)
+	}
+	if item.AuthorityBoundary.Publication != artifact.BlockedUseBoundaryNotPublication {
+		t.Fatalf("publication boundary = %+v", item.AuthorityBoundary)
+	}
 }

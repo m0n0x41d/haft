@@ -24,6 +24,12 @@ func TestBuildSemanticDriftRouteKeepsEvidenceDriftOutOfCodeRepair(t *testing.T) 
 	if route.AuthorityBoundary.Mutation != DriftRouteBoundaryNotMutation {
 		t.Fatalf("authority boundary = %+v", route.AuthorityBoundary)
 	}
+	if route.AuthorityBoundary.ClaimTruth != DriftRouteBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %+v", route.AuthorityBoundary)
+	}
+	if route.AuthorityBoundary.Publication != DriftRouteBoundaryNotPublication {
+		t.Fatalf("publication boundary = %+v", route.AuthorityBoundary)
+	}
 }
 
 func TestBuildSemanticDriftRouteAllowsCodeRepairForRealizationDriftOnlyAsCandidate(t *testing.T) {
@@ -39,6 +45,9 @@ func TestBuildSemanticDriftRouteAllowsCodeRepairForRealizationDriftOnlyAsCandida
 	}
 	if route.AuthorityBoundary.Mutation != DriftRouteBoundaryNotMutation {
 		t.Fatalf("route must stay read-only: %+v", route.AuthorityBoundary)
+	}
+	if route.AuthorityBoundary.Publication != DriftRouteBoundaryNotPublication {
+		t.Fatalf("route must not become publication: %+v", route.AuthorityBoundary)
 	}
 }
 

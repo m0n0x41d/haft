@@ -11,7 +11,9 @@ const (
 	DriftRouteBoundaryNotApproval     = "not_approval"
 	DriftRouteBoundaryNotEvidence     = "not_evidence"
 	DriftRouteBoundaryNotGateDecision = "not_gate_decision"
+	DriftRouteBoundaryNotClaimTruth   = "not_claim_truth"
 	DriftRouteBoundaryNotGlobalTruth  = "not_global_truth"
+	DriftRouteBoundaryNotPublication  = "not_publication"
 
 	DriftRouteUnknownKind = "unknown_drift_kind"
 )
@@ -46,7 +48,9 @@ type DriftRouteBoundary struct {
 	Evidence     string `json:"evidence"`
 	Approval     string `json:"approval"`
 	GateDecision string `json:"gate_decision"`
+	ClaimTruth   string `json:"claim_truth"`
 	GlobalTruth  string `json:"global_truth"`
+	Publication  string `json:"publication"`
 }
 
 type driftRouteSpec struct {
@@ -86,7 +90,9 @@ func BuildSemanticDriftRoute(input DriftRouteInput) SemanticDriftRoute {
 			Evidence:     DriftRouteBoundaryNotEvidence,
 			Approval:     DriftRouteBoundaryNotApproval,
 			GateDecision: DriftRouteBoundaryNotGateDecision,
+			ClaimTruth:   DriftRouteBoundaryNotClaimTruth,
 			GlobalTruth:  DriftRouteBoundaryNotGlobalTruth,
+			Publication:  DriftRouteBoundaryNotPublication,
 		},
 		Recognized: recognized,
 		Notes:      append([]string(nil), spec.notes...),

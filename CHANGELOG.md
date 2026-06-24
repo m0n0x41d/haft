@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Product-value scope-violation evidence.** The 2026-06-24 product-value
+  packet now records a deliberate R9 scope/authority violation attempt as a
+  read-only blocked-use attention item with exact source-return requirements,
+  without claiming runtime gate passage, approval, evidence truth, or global
+  product proof.
 - **Contract-generation discovery shape counts.** The
   `query.contract_generation` interface discovery example now matches the live
   manifest counts after `spec.apply_change`, with a regression test comparing

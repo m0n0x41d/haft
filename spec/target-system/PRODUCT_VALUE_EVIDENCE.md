@@ -29,6 +29,23 @@ teams, or that host-backed authorization receipts are complete.
 
 Evidence refs:
 
+- `commit:1bc3cd9b` — `haft spec apply-change --dry-run` previews recognized
+  typed Markdown-to-SQL sync-back without mutating the SQL edition store.
+- `commit:256abbd6` — `haft interface spec.apply_change` exposes the
+  classify / dry-run / apply sync-back contract and its authority boundary.
+- `commit:755ddd8b` — default status, default `code_context`, MCP
+  `tools/list`, and compact contract-generation text are guarded against
+  inlining the long `spec.apply_change` dry-run contract shape.
+- `commit:39237961` — the `query.contract_generation` interface discovery
+  example is regression-tested against the live generated report counts.
+- `blocked-use:scope-violation-attempt-2026-06-24` — deliberate attempt to
+  apply R9 reconciliation/scope-enrichment without a fresh exact
+  `operator_approved_reconciliation_selection` surfaced as a read-only
+  blocked-use attention item with `source_return.status=exact_record_needed`,
+  next actions `recover_exact_source_record` and
+  `request_operator_selection_review`, and authority boundary
+  `not_work_plan`, `not_evidence`, `not_approval`, `not_gate_decision`,
+  `not_global_truth`.
 - `commit:f45075b8` — stale reconciliation scope selections fail closed before
   mutation.
 - `commit:d7434f9d` — stale reconciliation group diagnostics name the current
@@ -55,6 +72,14 @@ Evidence refs:
 
 Current production-code trace:
 
+- Spec sync-back advanced as three small green slices: dry-run preview,
+  discoverable interface contract, and default-surface no-bloat guards.
+- The generated contract discovery shape was corrected after dogfood found
+  stale illustrative counts; the new regression compares example counts to the
+  live report.
+- The deliberate scope/authority violation was not executed. It was surfaced
+  as an object-first blocked-use attention item requiring exact source return
+  to a fresh approved selection before stronger use.
 - The slice train remained atomic: stale reconciliation guards, status/contract
   bloat guards, and baseline-audit classification were committed separately
   after focused tests and `go test ./...`.
@@ -77,6 +102,9 @@ What this supports:
 
 - For this slice train, Haft improved fail-closed behavior and recovery
   diagnostics around stale reconciliation packets.
+- The blocked-use surface can make a deliberate scope/authority violation
+  visible with exact source-return requirements before an agent proceeds to
+  stronger use.
 - Default status and compact contract-generation surfaces stayed bounded while
   exact/audit detail remained available behind explicit commands.
 - The carrier guard set caught the real host prompt mirror as current surface
@@ -89,6 +117,8 @@ What this does not support:
 - A general claim that Haft improves all AI software work.
 - A claim that Haft beats ADRs plus tests under equal budget.
 - A claim that every scope violation is blocked.
+- A claim that blocked-use attention is a runtime OperationalGate or
+  GateDecision.
 - A claim that current authority-frontier noise is solved.
 - A claim that MCP-hosted status text cannot lag a rebuilt installed CLI; this
   packet observed that attached MCP status may still show stale wording until

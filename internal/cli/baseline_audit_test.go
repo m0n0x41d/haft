@@ -270,6 +270,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"rebaseline, reopen, create evidence, create decisions, or act as",
 		"authority: advisory_only; evidence=not_evidence approval=not_approval rebaseline=not_rebaseline gate_decision=not_gate_decision spec_use_admission=not_spec_use_admission claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/project/specflow/review.go", strings.Join([]string{
+		"Rebaseline string `json:\"rebaseline\"`",
+		"Rebaseline: \"not_rebaseline\",",
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec_apply_change.go", "AuthorityBoundary: \"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth\"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec_sync.go", "AuthorityBoundary: \"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth\"\n")
 	writeBaselineAuditFixture(t, root, "internal/tools/haft.go", strings.Join([]string{
@@ -407,11 +411,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.TypedBaselineModelFiles != 3 {
 		t.Fatalf("typed baseline model files = %d, want 3", report.Summary.TypedBaselineModelFiles)
 	}
-	if report.Summary.LifecycleAuthority != 48 {
-		t.Fatalf("lifecycle authority count = %d, want 48", report.Summary.LifecycleAuthority)
+	if report.Summary.LifecycleAuthority != 50 {
+		t.Fatalf("lifecycle authority count = %d, want 50", report.Summary.LifecycleAuthority)
 	}
-	if report.Summary.LifecycleAuthorityFiles != 30 {
-		t.Fatalf("lifecycle authority files = %d, want 30", report.Summary.LifecycleAuthorityFiles)
+	if report.Summary.LifecycleAuthorityFiles != 31 {
+		t.Fatalf("lifecycle authority files = %d, want 31", report.Summary.LifecycleAuthorityFiles)
 	}
 	if report.Summary.ReleaseNotesCarrier != 1 {
 		t.Fatalf("release notes count = %d, want 1", report.Summary.ReleaseNotesCarrier)

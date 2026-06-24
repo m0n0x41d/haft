@@ -957,6 +957,8 @@ func baselineAuditSpecReviewNoAuthoritySurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/cli/spec_review.go",
 		"internal/cli/spec_review_test.go",
+		"internal/project/specflow/review.go",
+		"internal/project/specflow/review_test.go",
 		"internal/cli/spec_apply_change.go",
 		"internal/cli/spec_sync.go",
 		"internal/cli/decision_reconcile.go",

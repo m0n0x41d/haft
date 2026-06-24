@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline audit spec-review classification.** `haft baseline audit` now
+  classifies spec-review `authority_boundary.rebaseline` vocabulary as
+  read-only lifecycle authority instead of legacy ambiguous baseline debt.
 - **Spec review authority boundary.** `haft spec review` and
   `haft_query(action="spec_review")` now expose fielded authority-boundary
   posture for advisory semantic review packets, making findings explicitly not

@@ -76,7 +76,9 @@ var decisionReconcileMetricsCmd = &cobra.Command{
 	Long: `Capture the current read-only metrics packet used to compare old-decision
 scope-enrichment cleanup before and after an operator-approved reconciliation
 apply. This command does not mutate decisions, links, evidence, baselines, or
-carriers.`,
+carriers. Metrics packets are review context, not operator approval, not
+evidence, not GateDecision, not claim truth, not global truth, not publication,
+and not apply authority.`,
 	RunE: runDecisionReconcileMetrics,
 }
 

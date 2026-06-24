@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation metrics help boundary.** `haft decision reconcile
+  metrics --help` now names metrics packets as review context, not operator
+  approval, not evidence, not GateDecision, not claim truth, not global truth,
+  not publication, and not apply authority.
 - **Overseer drain help boundary.** `haft overseer drain --help` now names drain
   as opt-in, machine-safe-only, not semantic approval, evidence, GateDecision,
   claim truth, global truth, publication, or reconciliation apply authority.

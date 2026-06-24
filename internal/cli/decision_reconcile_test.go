@@ -45,6 +45,25 @@ func TestWriteDecisionReconciliationSummary(t *testing.T) {
 	}
 }
 
+func TestDecisionReconcileMetricsHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileMetricsCmd.Long), " "))
+	for _, want := range []string{
+		"read-only metrics packet",
+		"review context",
+		"not operator approval",
+		"not evidence",
+		"gatedecision",
+		"claim truth",
+		"global truth",
+		"publication",
+		"apply authority",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("decision reconcile metrics help missing %q:\n%s", want, decisionReconcileMetricsCmd.Long)
+		}
+	}
+}
+
 func TestWriteDecisionReconciliationSummaryShowsPreviewCues(t *testing.T) {
 	var output bytes.Buffer
 	target := "symbol:internal/store.go:func::Save"

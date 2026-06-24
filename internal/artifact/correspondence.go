@@ -17,7 +17,9 @@ const (
 	CorrespondenceBoundaryNotEvidence     = "not_evidence"
 	CorrespondenceBoundaryNotApproval     = "not_approval"
 	CorrespondenceBoundaryNotGateDecision = "not_gate_decision"
+	CorrespondenceBoundaryNotClaimTruth   = "not_claim_truth"
 	CorrespondenceBoundaryNotGlobalTruth  = "not_global_truth"
+	CorrespondenceBoundaryNotPublication  = "not_publication"
 
 	CorrespondenceGapMissingTransformation = "missing_transformation_record"
 	CorrespondenceGapMissingAffectedFiles  = "missing_code_correspondence_refs"
@@ -71,7 +73,9 @@ type CorrespondenceGraphBoundary struct {
 	Evidence     string `json:"evidence"`
 	Approval     string `json:"approval"`
 	GateDecision string `json:"gate_decision"`
+	ClaimTruth   string `json:"claim_truth"`
 	GlobalTruth  string `json:"global_truth"`
+	Publication  string `json:"publication"`
 }
 
 func BuildQualifiedCorrespondenceGraph(
@@ -116,7 +120,9 @@ func BuildQualifiedCorrespondenceGraph(
 			Evidence:     CorrespondenceBoundaryNotEvidence,
 			Approval:     CorrespondenceBoundaryNotApproval,
 			GateDecision: CorrespondenceBoundaryNotGateDecision,
+			ClaimTruth:   CorrespondenceBoundaryNotClaimTruth,
 			GlobalTruth:  CorrespondenceBoundaryNotGlobalTruth,
+			Publication:  CorrespondenceBoundaryNotPublication,
 		},
 		DerivedAt: correspondenceDerivedAt(now),
 	}, nil

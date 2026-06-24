@@ -26,7 +26,8 @@ var correspondenceGraphCmd = &cobra.Command{
 DecisionRecord.
 
 The projection is read-only. Graph paths are candidate correspondence paths,
-not proof, evidence, approval, gate passage, or global truth.`,
+not proof, evidence, approval, gate passage, claim truth, global truth, or
+publication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runCorrespondenceGraph,
 }
@@ -113,12 +114,14 @@ func writeCorrespondenceGraphSummary(
 		len(record.Gaps),
 	))
 	builder.WriteString(fmt.Sprintf(
-		"authority_boundary: proof=%s evidence=%s approval=%s gate_decision=%s global_truth=%s\n",
+		"authority_boundary: proof=%s evidence=%s approval=%s gate_decision=%s claim_truth=%s global_truth=%s publication=%s\n",
 		record.AuthorityBoundary.Proof,
 		record.AuthorityBoundary.Evidence,
 		record.AuthorityBoundary.Approval,
 		record.AuthorityBoundary.GateDecision,
+		record.AuthorityBoundary.ClaimTruth,
 		record.AuthorityBoundary.GlobalTruth,
+		record.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

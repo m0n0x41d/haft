@@ -25,6 +25,12 @@ func TestBuildQualifiedCorrespondenceGraphKeepsPathNonProof(t *testing.T) {
 	if graph.AuthorityBoundary.Proof != CorrespondenceBoundaryNotProof {
 		t.Fatalf("authority_boundary = %+v", graph.AuthorityBoundary)
 	}
+	if graph.AuthorityBoundary.ClaimTruth != CorrespondenceBoundaryNotClaimTruth {
+		t.Fatalf("authority_boundary = %+v", graph.AuthorityBoundary)
+	}
+	if graph.AuthorityBoundary.Publication != CorrespondenceBoundaryNotPublication {
+		t.Fatalf("authority_boundary = %+v", graph.AuthorityBoundary)
+	}
 	if len(graph.ExpectedRealization) == 0 {
 		t.Fatalf("expected realization is empty")
 	}

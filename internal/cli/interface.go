@@ -1128,18 +1128,19 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"case_ref":"change-case:dec-...","problem_card_refs":[...],"transformation_refs":[...],"choice_result_ref":"...","evidence_item_refs":[...],"evidence_path_refs":[...],"authority_boundary":{"proof":"not_proof","gate_decision":"not_gate_decision","work_occurrence":"not_work_occurrence"}}`,
-						Note:  "The case is derived from existing artifacts; it is not a new root kind, proof, approval, GateDecision, or performed work.",
+						Shape: `{"case_ref":"change-case:dec-...","problem_card_refs":[...],"transformation_refs":[...],"choice_result_ref":"...","evidence_item_refs":[...],"evidence_path_refs":[...],"authority_boundary":{"proof":"not_proof","approval":"not_approval","gate_decision":"not_gate_decision","work_occurrence":"not_work_occurrence","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"}}`,
+						Note:  "The case is derived from existing artifacts; it is not a new root kind, proof, approval, GateDecision, performed work, claim truth, global truth, or publication.",
 					},
 				},
 				Notes: []string{
 					"EvidencePath records are included only when attempted_use is declared.",
 					"Missing referenced ProblemCards remain visible as refs instead of being fabricated.",
+					"EngineeringChangeCase projections do not create approval, gate passage, performed work, claim truth, global truth, or publication.",
 				},
 			},
 			OutputVolume: []string{"default: one JSON EngineeringChangeCase projection"},
 			Invariants: append(commonInterfaceInvariants(),
-				"EngineeringChangeCase is a derived projection, not a mutation or new FPF root kind.",
+				"EngineeringChangeCase is a derived projection, not a mutation, new FPF root kind, approval, gate passage, performed work, claim truth, global truth, or publication.",
 				"Default status, related, and code_context payloads do not inline change cases.",
 			),
 		},
@@ -1159,19 +1160,20 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"path_status":"graph_path_not_proof","expected_realization":[...],"observed_realization":[...],"edges":[{"relation_kind":"...","origin":"declared","path_status":"graph_path_not_proof"}],"gaps":[...],"authority_boundary":{"proof":"not_proof","evidence":"not_evidence"}}`,
-						Note:  "Edges are candidate correspondence paths; they are not evidence, proof, approval, GateDecision, or global truth.",
+						Shape: `{"path_status":"graph_path_not_proof","expected_realization":[...],"observed_realization":[...],"edges":[{"relation_kind":"...","origin":"declared","path_status":"graph_path_not_proof"}],"gaps":[...],"authority_boundary":{"proof":"not_proof","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"}}`,
+						Note:  "Edges are candidate correspondence paths; they are not evidence, proof, approval, GateDecision, claim truth, global truth, or publication.",
 					},
 				},
 				Notes: []string{
 					"Expected nodes come from decision intent, claims, and TransformationRecord when present.",
 					"Observed nodes come from affected_files and evidence items; missing bindings stay as gaps.",
+					"Graph paths do not create evidence, proof, approval, gate passage, claim truth, global truth, or publication.",
 				},
 			},
 			OutputVolume: []string{"default: one JSON QualifiedCorrespondenceGraph"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Graph path is not proof.",
-				"Correspondence edges are qualified by origin and source refs.",
+				"Correspondence edges are qualified by origin and source refs and never create evidence, approval, gate passage, claim truth, global truth, or publication.",
 			),
 		},
 		{

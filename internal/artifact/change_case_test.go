@@ -56,6 +56,12 @@ func TestBuildEngineeringChangeCaseDerivesAggregateWithoutAuthority(t *testing.T
 	if record.AuthorityBoundary.WorkOccurrence != EngineeringChangeCaseBoundaryNotWorkOccurrence {
 		t.Fatalf("authority boundary = %+v", record.AuthorityBoundary)
 	}
+	if record.AuthorityBoundary.ClaimTruth != EngineeringChangeCaseBoundaryNotClaimTruth {
+		t.Fatalf("authority boundary = %+v", record.AuthorityBoundary)
+	}
+	if record.AuthorityBoundary.Publication != EngineeringChangeCaseBoundaryNotPublication {
+		t.Fatalf("authority boundary = %+v", record.AuthorityBoundary)
+	}
 }
 
 func TestBuildEngineeringChangeCaseRequiresAttemptedUseForEvidencePaths(t *testing.T) {

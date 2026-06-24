@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Projection authority boundary completeness.** `haft correspondence graph`,
+  `haft change case`, and their `haft_query(...)`/`haft interface ...`
+  surfaces now explicitly report that these read-only projections are not
+  claim truth and not publication, matching the existing non-proof,
+  non-evidence/non-work, non-approval, non-gate, and non-global-truth
+  boundaries.
 - **Value-space authority boundary completeness.** `haft value space` and
   `haft_query(action="value_space")` now explicitly report that engineering
   value projections are not claim truth and not publication, matching the

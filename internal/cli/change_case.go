@@ -33,7 +33,7 @@ DecisionRecord.
 
 The projection derives problem, transformation, choice, and evidence references
 from existing artifacts. It is not proof, approval, gate passage, work
-occurrence, or global truth.`,
+occurrence, claim truth, global truth, or publication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runChangeCase,
 }
@@ -162,12 +162,14 @@ func writeEngineeringChangeCaseSummary(w io.Writer, record artifact.EngineeringC
 		record.NextAdmissibleMove,
 	))
 	builder.WriteString(fmt.Sprintf(
-		"authority_boundary: proof=%s approval=%s gate_decision=%s work_occurrence=%s global_truth=%s\n",
+		"authority_boundary: proof=%s approval=%s gate_decision=%s work_occurrence=%s claim_truth=%s global_truth=%s publication=%s\n",
 		record.AuthorityBoundary.Proof,
 		record.AuthorityBoundary.Approval,
 		record.AuthorityBoundary.GateDecision,
 		record.AuthorityBoundary.WorkOccurrence,
+		record.AuthorityBoundary.ClaimTruth,
 		record.AuthorityBoundary.GlobalTruth,
+		record.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

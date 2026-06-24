@@ -1,4 +1,4 @@
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:a466fc0a19c06f2b3ce3777cccc51d3f29c7e3fef6b50685d5e22ea349930b18 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:d83987fbecd1782c3704aca635aff1c5e2042e183538f9f037e0f2aa46ed667d -->
 
 MANUAL GATE — record a binding DecisionRecord. This template is for the
 operator's explicit invocation only; never run this flow on your own

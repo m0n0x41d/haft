@@ -1319,6 +1319,91 @@ func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
 	}
 }
 
+func TestInterfaceChangeCaseNamesCompleteAuthorityBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.change_case")
+	if !ok {
+		t.Fatal("query.change_case capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"proof",
+		"not_proof",
+		"approval",
+		"not_approval",
+		"gate_decision",
+		"not_gate_decision",
+		"work_occurrence",
+		"not_work_occurrence",
+		"claim_truth",
+		"not_claim_truth",
+		"global_truth",
+		"not_global_truth",
+		"publication",
+		"not_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.change_case shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"performed work",
+		"claim truth",
+		"global truth",
+		"publication",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.change_case notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceCorrespondenceGraphNamesCompleteAuthorityBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.correspondence_graph")
+	if !ok {
+		t.Fatal("query.correspondence_graph capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"proof",
+		"not_proof",
+		"evidence",
+		"not_evidence",
+		"approval",
+		"not_approval",
+		"gate_decision",
+		"not_gate_decision",
+		"claim_truth",
+		"not_claim_truth",
+		"global_truth",
+		"not_global_truth",
+		"publication",
+		"not_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.correspondence_graph shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"evidence",
+		"proof",
+		"approval",
+		"gate passage",
+		"claim truth",
+		"global truth",
+		"publication",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.correspondence_graph notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
 func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_review")
 	if !ok {

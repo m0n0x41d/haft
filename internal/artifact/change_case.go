@@ -18,7 +18,9 @@ const (
 	EngineeringChangeCaseBoundaryNotApproval       = "not_approval"
 	EngineeringChangeCaseBoundaryNotGateDecision   = "not_gate_decision"
 	EngineeringChangeCaseBoundaryNotWorkOccurrence = "not_work_occurrence"
+	EngineeringChangeCaseBoundaryNotClaimTruth     = "not_claim_truth"
 	EngineeringChangeCaseBoundaryNotGlobalTruth    = "not_global_truth"
+	EngineeringChangeCaseBoundaryNotPublication    = "not_publication"
 )
 
 type EngineeringChangeCaseInput struct {
@@ -70,7 +72,9 @@ type EngineeringChangeCaseBoundary struct {
 	Approval       string `json:"approval"`
 	GateDecision   string `json:"gate_decision"`
 	WorkOccurrence string `json:"work_occurrence"`
+	ClaimTruth     string `json:"claim_truth"`
 	GlobalTruth    string `json:"global_truth"`
+	Publication    string `json:"publication"`
 }
 
 func BuildEngineeringChangeCase(
@@ -124,7 +128,9 @@ func BuildEngineeringChangeCase(
 			Approval:       EngineeringChangeCaseBoundaryNotApproval,
 			GateDecision:   EngineeringChangeCaseBoundaryNotGateDecision,
 			WorkOccurrence: EngineeringChangeCaseBoundaryNotWorkOccurrence,
+			ClaimTruth:     EngineeringChangeCaseBoundaryNotClaimTruth,
 			GlobalTruth:    EngineeringChangeCaseBoundaryNotGlobalTruth,
+			Publication:    EngineeringChangeCaseBoundaryNotPublication,
 		},
 		DerivedAt: engineeringChangeCaseDerivedAt(now),
 	}, nil

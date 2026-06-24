@@ -9,7 +9,7 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:9c03473895d779fcff5e1b0b375f618bc283ec0ab7a2c327914bd02da25f8382 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:4b9603d21b303adc9c98654623029155c2874e99834d604df16773d089546365 -->
 
 # h-commission — Create work commission (manual only, sacred)
 

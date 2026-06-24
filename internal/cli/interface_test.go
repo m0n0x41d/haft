@@ -572,6 +572,59 @@ func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing
 	}
 }
 
+func TestInterfaceContractGenerationChecksMaterializedCarriers(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	result, err := checkInterfaceContractMaterializedCarriers(report)
+	if err != nil {
+		t.Fatalf("check materialized carriers: %v", err)
+	}
+
+	if !result.Summary.Match {
+		t.Fatalf("materialized carrier check did not match: %#v", result.Summary)
+	}
+	if result.Summary.MaterializedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("materialized carrier count = %d, summary = %#v", result.Summary.MaterializedCarriers, report.Summary)
+	}
+	if result.Summary.CheckedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("checked carrier count = %d, summary = %#v", result.Summary.CheckedCarriers, report.Summary)
+	}
+	if result.Summary.MissingCarrierFiles != 0 || result.Summary.MissingMarkers != 0 {
+		t.Fatalf("unexpected missing carrier data: %#v", result.Summary)
+	}
+}
+
+func TestInterfaceContractGenerationMaterializedCarrierCheckDetectsMissingMarkers(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.Carriers) == 0 {
+		t.Fatal("expected materialized carriers")
+	}
+
+	carrier := report.Carriers[0]
+	source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+	source = strings.ReplaceAll(source, carrier.ExpectedSourceDigest, "sha256:stale-generated-contract-digest")
+	path := filepath.Join(t.TempDir(), "tools.ts")
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatalf("write temp carrier: %v", err)
+	}
+	carrier.CarrierPath = path
+	report.Carriers = []interfaceContractMaterializedCarrier{carrier}
+
+	result, err := checkInterfaceContractMaterializedCarriers(report)
+	if err == nil {
+		t.Fatalf("expected materialized carrier check to fail")
+	}
+	if result.Summary.Match {
+		t.Fatalf("drifted carrier unexpectedly matched: %#v", result)
+	}
+	if result.Summary.MissingMarkers == 0 {
+		t.Fatalf("missing marker count not reported: %#v", result)
+	}
+	if !stringSliceContains(result.Carriers[0].MissingMarkers, carrier.ExpectedSourceDigest) {
+		t.Fatalf("missing markers = %#v, want source digest", result.Carriers[0].MissingMarkers)
+	}
+}
+
 func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	path := filepath.Join(t.TempDir(), "generated", "mcp-schema-fragments.json")

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Generated-contract materialized carrier check.** `haft interface
+  contract-generation --check-materialized-carriers` now validates every listed
+  host/skill/plugin/Pi carrier for current source-digest and authority-boundary
+  markers in one compact read-only report, so agents can detect stale
+  generated-contract carriers without manually grepping the repo.
 - **Overseer drain compact JSON projection.** `haft overseer drain --dry-run
   --json` now emits a compact audit projection by default while preserving
   complete summary counts, explicit omitted counters, and

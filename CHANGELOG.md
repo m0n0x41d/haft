@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Governing-set help boundary.** `haft decision governing-set --help` now
+  names evidence, approval, gate, claim-truth, global-truth, publication, and
+  reconciliation-apply authority boundaries.
 - **Value space help boundary.** `haft value space --help` now names evidence,
   approval, gate, claim-truth, global-truth, publication, and product-value
   proof boundaries.

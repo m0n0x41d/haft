@@ -108,7 +108,9 @@ var decisionGoverningSetCmd = &cobra.Command{
 The projection groups active/refresh_due DecisionRecords by explicit subject,
 bounded context, and effective governance/drift target. Superseded/deprecated
 records remain lineage history, not current authority. This command is
-read-only and does not resolve conflicts.
+read-only and does not resolve conflicts. It is not evidence, approval,
+GateDecision, claim truth, global truth, publication, or reconciliation apply
+authority.
 
 Use --query, --subject-ref, or --target-ref to answer "what currently governs
 this symbol / contract / spec section" without expanding default status.`,

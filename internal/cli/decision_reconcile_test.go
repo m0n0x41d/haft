@@ -131,6 +131,24 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 	}
 }
 
+func TestDecisionGoverningSetHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(decisionGoverningSetCmd.Long), " "))
+	for _, want := range []string{
+		"read-only",
+		"not evidence",
+		"approval",
+		"gate",
+		"claim truth",
+		"global truth",
+		"publication",
+		"reconciliation apply authority",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("governing-set help missing %q:\n%s", want, decisionGoverningSetCmd.Long)
+		}
+	}
+}
+
 func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
 	restore := stubDecisionReconcileReportLimits(t, 2, 0)
 	defer restore()

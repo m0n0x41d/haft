@@ -1962,6 +1962,56 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 	}
 }
 
+func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "spec.apply_change")
+	if !ok {
+		t.Fatal("spec.apply_change capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("spec.apply_change should be CLI-only in this slice: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft spec apply-change --dry-run") {
+		t.Fatalf("spec.apply_change CLI command missing dry-run:\n%#v", capability.CurrentExecution)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"planned_edition", "markdown_sync_back", "semantic_field_update", "relationship_update", "unknown_high_risk", "sql_edition_update_not_approval_rebaseline_or_prose_authority"} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("spec.apply_change contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"surrounding Markdown prose is never SQL truth", "Carrier-only changes are no-op", "never approves"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("spec.apply_change notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "Default status must not inline"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec.apply_change invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	audit := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	surface, ok := findInterfaceContractAuditSurface(audit, "spec.apply_change")
+	if !ok {
+		t.Fatal("spec.apply_change audit surface missing")
+	}
+	if surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+		t.Fatalf("host schema posture = %q", surface.HostSchemaPosture)
+	}
+	if surface.AuthorityPosture != "sql_edition_sync_back_mutation_not_approval" {
+		t.Fatalf("authority posture = %q", surface.AuthorityPosture)
+	}
+	if surface.SchemaCoverage.Status != "not_mcp_backed" {
+		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+}
+
 func TestInterfaceDriftEventsDocumentsFanoutBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.drift_events")
 	if !ok {
@@ -2190,4 +2240,13 @@ func marshalContractFragments(t *testing.T, contract interfaceContract) (string,
 	}
 
 	return string(shapes), string(templates)
+}
+
+func findInterfaceContractAuditSurface(report interfaceContractAuditReport, capabilityID string) (interfaceContractAuditSurface, bool) {
+	for _, surface := range report.Surfaces {
+		if surface.CapabilityID == capabilityID {
+			return surface, true
+		}
+	}
+	return interfaceContractAuditSurface{}, false
 }

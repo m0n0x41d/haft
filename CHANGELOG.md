@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec sync-back interface contract.** `haft interface spec.apply_change`
+  now documents the CLI-only Markdown-to-SQL sync-back path, including the
+  required classify/dry-run/apply sequence, authority boundary, `planned_edition`
+  dry-run shape, and the guarantee that sync-back is not approval, rebaseline,
+  evidence, GateDecision, or prose authority.
 - **Root spec carrier semio coverage.** `haft carrier check` now scans
   root-level `spec/*.md` support docs, and the root workflow/agent contracts no
   longer describe removed `haft agent` or desktop surfaces as current runtime

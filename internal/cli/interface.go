@@ -992,6 +992,40 @@ func haftInterfaceCatalog() []interfaceCapability {
 			),
 		},
 		{
+			ID:      "spec.apply_change",
+			Purpose: "Preview or apply one reviewed typed SpecSection carrier change into the SQL edition store.",
+			CurrentExecution: interfaceExecution{
+				CLIStatus:        "available",
+				CLICommand:       "haft spec classify-change --before before.md --after after.md --section TS.x --json; haft spec apply-change --dry-run --before before.md --after after.md --section TS.x --json; haft spec apply-change --before before.md --after after.md --section TS.x --json",
+				DiscoveryCommand: "haft interface spec.apply_change --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"before", "after", "section"},
+				OptionalFields: []string{"kind", "dry_run", "json"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"authority_boundary":"sql_edition_update_not_approval_rebaseline_or_prose_authority","applied":false,"dry_run":true,"would_apply":true,"noop":false,"change":{"kind":"semantic_field_update|relationship_update|mixed_semantic_and_relationship_update|carrier_only|unknown_high_risk","import_posture":"recognized_update|no_semantic_mutation|abstain_block","scalar_fields":["title"],"relationship_fields":["depends_on"],"requires_operator_act":true},"planned_edition":{"source_kind":"markdown_sync_back","semantic_hash":"sha256..."}}`,
+						Note:  "Dry-run runs the same typed parser and SQL freshness/conflict guard as apply but reports planned_edition instead of writing edition.",
+					},
+				},
+				Notes: []string{
+					"Use classify-change first for read-only field classification; use apply-change --dry-run for SQL-conflict-aware preview.",
+					"Only typed fenced yaml spec-section fields participate; surrounding Markdown prose is never SQL truth.",
+					"Recognized scalar, relationship, or mixed updates may write a markdown_sync_back SQL edition only through explicit apply-change.",
+					"Carrier-only changes are no-op; unknown/high-risk changes fail closed.",
+					"The command never approves, rebaselines, reopens, creates evidence, or mutates SpecSectionApprovalBaseline rows.",
+				},
+			},
+			OutputVolume: []string{"default text summary; --json exact result; --dry-run reports planned_edition without edition write"},
+			Invariants: append(commonInterfaceInvariants(),
+				"SQL edition store remains the source of truth.",
+				"Markdown prose is not authority; only typed spec-section fields can sync back.",
+				"Sync-back mutation is not approval, rebaseline, evidence, GateDecision, or global truth.",
+				"Default status must not inline apply-change contract details.",
+			),
+		},
+		{
 			ID:      "query.evidence_path",
 			Purpose: "Build a read-only EvidencePath/RelianceDisposition record for one evidence item and declared attempted use.",
 			CurrentExecution: interfaceExecution{
@@ -3183,6 +3217,9 @@ func interfaceContractAuditAuthorityPosture(capability interfaceCapability) stri
 	if capability.ID == "decision.reconcile_apply" {
 		return "cli_operator_approved_binding_apply"
 	}
+	if capability.ID == "spec.apply_change" {
+		return "sql_edition_sync_back_mutation_not_approval"
+	}
 	if strings.HasPrefix(capability.ID, "query.") {
 		return "read_only_drill_down"
 	}
@@ -3221,6 +3258,9 @@ func interfaceContractAuditValidationRefs(capability interfaceCapability) []stri
 	}
 	if strings.Contains(capability.ID, "decision_reconcile") || strings.Contains(capability.ID, "governing_set") || strings.Contains(capability.ID, "reconcile_apply") {
 		refs = append(refs, "internal/cli/decision_reconcile_test.go")
+	}
+	if capability.ID == "spec.apply_change" {
+		refs = append(refs, "internal/cli/spec_apply_change_test.go")
 	}
 
 	return uniqueInterfaceContractAuditStrings(refs)

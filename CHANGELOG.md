@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Value space help boundary.** `haft value space --help` now names evidence,
+  approval, gate, claim-truth, global-truth, publication, and product-value
+  proof boundaries.
 - **Evidence path help boundary.** `haft evidence path --help` now names claim
   truth and publication alongside evidence, approval, gate, and global-truth
   non-authority boundaries.

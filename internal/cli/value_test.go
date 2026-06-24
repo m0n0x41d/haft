@@ -8,6 +8,15 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
+func TestEngineeringValueSpaceHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(valueSpaceCmd.Long), " "))
+	for _, want := range []string{"no total", "not evidence", "approval", "gate", "claim truth", "global truth", "publication", "product-value proof"} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("value space help missing %q:\n%s", want, valueSpaceCmd.Long)
+		}
+	}
+}
+
 func TestWriteEngineeringValueSpaceSummaryShowsMissingEvidence(t *testing.T) {
 	space := artifact.BuildEngineeringValueSpace(artifact.EngineeringValueSpaceInput{
 		BearerRef: "release-1",

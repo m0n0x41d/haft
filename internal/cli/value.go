@@ -29,7 +29,8 @@ var valueSpaceCmd = &cobra.Command{
 
 The projection contains no total Haft or FPF score. Each characteristic names
 its bearer, method, window, denominator, evidence refs, protected trade-offs,
-and reopen condition.`,
+and reopen condition. It is not evidence, approval, GateDecision, claim truth,
+global truth, publication, or a product-value proof.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runValueSpace,
 }

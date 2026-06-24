@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Evidence path help boundary.** `haft evidence path --help` now names claim
+  truth and publication alongside evidence, approval, gate, and global-truth
+  non-authority boundaries.
 - **Spec lifecycle help boundaries.** `haft spec sync`, `haft spec export`,
   `haft spec apply-change`, and `haft spec classify-change` help now name
   evidence, gate, claim-truth, global-truth, and prose-authority boundaries.

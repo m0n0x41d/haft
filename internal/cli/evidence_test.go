@@ -9,6 +9,15 @@ import (
 	"github.com/m0n0x41d/haft/internal/reff"
 )
 
+func TestEvidencePathHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(evidencePathCmd.Long), " "))
+	for _, want := range []string{"read-only", "does not create evidence", "approve", "gate", "claim truth", "global truth", "publication"} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("evidence path help missing %q:\n%s", want, evidencePathCmd.Long)
+		}
+	}
+}
+
 func TestWriteEvidencePathSummaryNamesCurrentFormalityScale(t *testing.T) {
 	scale := reff.CurrentFormalityScale(7)
 	record := artifact.EvidencePathRecord{

@@ -35,7 +35,8 @@ var evidencePathCmd = &cobra.Command{
 existing evidence item and one declared attempted use.
 
 The record is read-only. It does not create evidence, approve anything, pass a
-gate, or promote the evidence item into global truth.`,
+gate, or promote the evidence item into claim truth, global truth, or
+publication.`,
 	Args: cobra.ExactArgs(2),
 	RunE: runEvidencePath,
 }

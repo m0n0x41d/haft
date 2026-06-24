@@ -25,7 +25,7 @@ teams, or that host-backed authorization receipts are complete.
 | Window | `2026-06-24` |
 | Method ref | `method:slice-train-dogfood` |
 | Value surface | `haft value space current-haft-rewrite --window 2026-06-24 --method-ref method:slice-train-dogfood ...` |
-| Value surface output | `score_policy.single_score=no_single_haft_or_fpf_score`, `characteristics=11`, `evidence_refs_per_characteristic=10` |
+| Value surface output | `score_policy.single_score=no_single_haft_or_fpf_score`, `characteristics=11`, `evidence_refs_per_characteristic=15` |
 
 Evidence refs:
 

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Product-value evidence ref count.** The 2026-06-24 product-value evidence
+  packet now reports the actual public `haft value space` evidence-ref count
+  (`15`) instead of the stale earlier packet count.
 - **Status maintenance-plan drill-down wording.** Default status now labels
   `haft_refresh(action="plan")` as compact and names
   `haft_refresh(action="plan", verbose=true)` as the full work-order route.

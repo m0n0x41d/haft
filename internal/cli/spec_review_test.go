@@ -43,6 +43,12 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if packet.Authority != specflow.ReviewAuthority {
 		t.Fatalf("authority = %q, want %q", packet.Authority, specflow.ReviewAuthority)
 	}
+	if packet.AuthorityBoundary.Publication != "not_publication" {
+		t.Fatalf("authority boundary = %+v", packet.AuthorityBoundary)
+	}
+	if packet.AuthorityBoundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("claim truth boundary = %+v", packet.AuthorityBoundary)
+	}
 	if packet.Profile.ID != specflow.ReviewProfileSemanticV2 {
 		t.Fatalf("profile.id = %q, want %q", packet.Profile.ID, specflow.ReviewProfileSemanticV2)
 	}
@@ -97,7 +103,7 @@ func TestRunSpecReviewSummaryNamesAdvisoryBoundary(t *testing.T) {
 	if !strings.Contains(result, "advisory_only") {
 		t.Fatalf("summary missing advisory boundary:\n%s", result)
 	}
-	if !strings.Contains(result, "not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission") {
+	if !strings.Contains(result, "evidence=not_evidence approval=not_approval rebaseline=not_rebaseline gate_decision=not_gate_decision spec_use_admission=not_spec_use_admission claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication") {
 		t.Fatalf("summary missing authority disclaimer:\n%s", result)
 	}
 	if !strings.Contains(result, "state_readings: per-section profile names bearer, frame, use, and reopen_condition") {

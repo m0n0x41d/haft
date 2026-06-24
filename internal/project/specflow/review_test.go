@@ -51,6 +51,12 @@ func TestReviewSpecificationSet_FindsMissingBearerAndSupport(t *testing.T) {
 func TestReviewSpecificationSet_ReturnsV2ProfileModelBoundaries(t *testing.T) {
 	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{})
 
+	if packet.AuthorityBoundary.Publication != "not_publication" {
+		t.Fatalf("authority boundary = %+v", packet.AuthorityBoundary)
+	}
+	if packet.AuthorityBoundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("claim truth boundary = %+v", packet.AuthorityBoundary)
+	}
 	if packet.Profile.ID != ReviewProfileSemanticV2 {
 		t.Fatalf("profile.id = %q, want %q", packet.Profile.ID, ReviewProfileSemanticV2)
 	}

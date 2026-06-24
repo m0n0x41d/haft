@@ -1491,13 +1491,13 @@ func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
 		t.Fatalf("spec_review CLI command missing: %#v", capability.CurrentExecution)
 	}
 	contract, _ := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{"advisory_only", "spec_semantic_review_v2", "claim_register", "state_reading", "blocked_for_stronger_use_findings", "category", "claim_posture|publication_boundary|frame|unknown_abstain"} {
+	for _, want := range []string{"advisory_only", "authority_boundary", "not_publication", "claim_truth", "spec_semantic_review_v2", "claim_register", "state_reading", "blocked_for_stronger_use_findings", "category", "claim_posture|publication_boundary|frame|unknown_abstain"} {
 		if !strings.Contains(contract, want) {
 			t.Fatalf("spec_review contract missing %q:\n%s", want, contract)
 		}
 	}
 	invariants := strings.Join(capability.Invariants, "\n")
-	for _, want := range []string{"not evidence", "Default status", "abstains/blocks stronger use"} {
+	for _, want := range []string{"not evidence", "claim truth", "global truth", "publication", "Default status", "abstains/blocks stronger use"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("spec_review invariant missing %q:\n%s", want, invariants)
 		}

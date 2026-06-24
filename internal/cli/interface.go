@@ -968,8 +968,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"authority":"advisory_only","review_kind":"spec_semantic","profile":{"id":"spec_semantic_review_v2","model_disposition":{...}},"summary":{"checked_sections":10,"explicit_claims":0,"blocked_for_stronger_use_findings":0},"sections":[{"system_frame":{...},"claim_register":{...},"state_reading":{...},"findings":[{"rule_id":"...","category":"claim_posture|publication_boundary|frame|unknown_abstain"}]}]}`,
-						Note:  "Findings are review inputs and never evidence, approval, rebaseline, GateDecision, or SpecUseAdmission.",
+						Shape: `{"authority":"advisory_only","authority_boundary":{"evidence":"not_evidence","approval":"not_approval","rebaseline":"not_rebaseline","gate_decision":"not_gate_decision","spec_use_admission":"not_spec_use_admission","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"review_kind":"spec_semantic","profile":{"id":"spec_semantic_review_v2","model_disposition":{...}},"summary":{"checked_sections":10,"explicit_claims":0,"blocked_for_stronger_use_findings":0},"sections":[{"system_frame":{...},"claim_register":{...},"state_reading":{...},"findings":[{"rule_id":"...","category":"claim_posture|publication_boundary|frame|unknown_abstain"}]}]}`,
+						Note:  "Findings are review inputs and never evidence, approval, rebaseline, GateDecision, SpecUseAdmission, claim truth, global truth, or publication.",
 					},
 				},
 				Notes: []string{
@@ -980,7 +980,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			OutputVolume: []string{"default: one JSON spec semantic review packet; compact text via `haft spec review`"},
 			Invariants: append(commonInterfaceInvariants(),
-				"Spec review findings are not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission.",
+				"Spec review findings are not evidence, approval, rebaseline, GateDecision, SpecUseAdmission, claim truth, global truth, or publication.",
 				"Default status must not inline the review packet.",
 				"Unknown or high-risk semantic posture abstains/blocks stronger use instead of passing.",
 			),

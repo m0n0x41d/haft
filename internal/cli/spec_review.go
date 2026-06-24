@@ -20,7 +20,8 @@ var specReviewCmd = &cobra.Command{
 
 The review emits advisory findings and FPF hints. It does not approve,
 rebaseline, reopen, create evidence, create decisions, or act as
-SpecUseAdmission / GateDecision.`,
+SpecUseAdmission / GateDecision. It does not create claim truth, global truth,
+or publication authority.`,
 	RunE: runSpecReview,
 }
 
@@ -86,7 +87,17 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 		))
 	}
 	builder.WriteString(formatSpecReviewProfile(packet.Profile))
-	builder.WriteString("authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission\n")
+	builder.WriteString(fmt.Sprintf(
+		"authority: advisory_only; evidence=%s approval=%s rebaseline=%s gate_decision=%s spec_use_admission=%s claim_truth=%s global_truth=%s publication=%s\n",
+		packet.AuthorityBoundary.Evidence,
+		packet.AuthorityBoundary.Approval,
+		packet.AuthorityBoundary.Rebaseline,
+		packet.AuthorityBoundary.GateDecision,
+		packet.AuthorityBoundary.SpecUseAdmission,
+		packet.AuthorityBoundary.ClaimTruth,
+		packet.AuthorityBoundary.GlobalTruth,
+		packet.AuthorityBoundary.Publication,
+	))
 	builder.WriteString("state_readings: per-section profile names bearer, frame, use, and reopen_condition; not global ready/pass/current\n")
 
 	if len(packet.Findings) > 0 {

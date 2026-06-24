@@ -3,7 +3,7 @@ name: h-status
 description: Inspect the live Haft governance state in Pi before governed work, open-ended FPF reasoning, or completion claims.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e0a50ba13a98ef437cf23fd6815806f7fa7eadebd2ef672ed48563938093c9bb -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f22bf7255fd820634bc9b7b2844caa8690fba6ae7e468ae72508cda2b7dc205d -->
 
 # h-status for Pi
 

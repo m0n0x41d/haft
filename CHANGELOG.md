@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec review authority boundary.** `haft spec review` and
+  `haft_query(action="spec_review")` now expose fielded authority-boundary
+  posture for advisory semantic review packets, making findings explicitly not
+  evidence, approval, rebaseline, GateDecision, SpecUseAdmission, claim truth,
+  global truth, or publication.
 - **Spec use publication boundary.** `haft spec use` and
   `haft_query(action="spec_use")` now include publication posture in
   `current_authority` and OperationalGate/no-OperationalGate authority

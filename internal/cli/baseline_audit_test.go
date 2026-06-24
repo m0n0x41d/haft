@@ -268,7 +268,7 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec_review.go", strings.Join([]string{
 		"rebaseline, reopen, create evidence, create decisions, or act as",
-		"authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission",
+		"authority: advisory_only; evidence=not_evidence approval=not_approval rebaseline=not_rebaseline gate_decision=not_gate_decision spec_use_admission=not_spec_use_admission claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec_apply_change.go", "AuthorityBoundary: \"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth\"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/spec_sync.go", "AuthorityBoundary: \"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth\"\n")

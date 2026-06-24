@@ -40,12 +40,24 @@ const (
 )
 
 type ReviewPacket struct {
-	ReviewKind string          `json:"review_kind"`
-	Authority  string          `json:"authority"`
-	Profile    ReviewProfile   `json:"profile"`
-	Summary    ReviewSummary   `json:"summary"`
-	Sections   []ReviewSection `json:"sections"`
-	Findings   []ReviewFinding `json:"findings"`
+	ReviewKind        string                  `json:"review_kind"`
+	Authority         string                  `json:"authority"`
+	AuthorityBoundary ReviewAuthorityBoundary `json:"authority_boundary"`
+	Profile           ReviewProfile           `json:"profile"`
+	Summary           ReviewSummary           `json:"summary"`
+	Sections          []ReviewSection         `json:"sections"`
+	Findings          []ReviewFinding         `json:"findings"`
+}
+
+type ReviewAuthorityBoundary struct {
+	Evidence         string `json:"evidence"`
+	Approval         string `json:"approval"`
+	Rebaseline       string `json:"rebaseline"`
+	GateDecision     string `json:"gate_decision"`
+	SpecUseAdmission string `json:"spec_use_admission"`
+	ClaimTruth       string `json:"claim_truth"`
+	GlobalTruth      string `json:"global_truth"`
+	Publication      string `json:"publication"`
 }
 
 type ReviewProfile struct {
@@ -143,9 +155,10 @@ func ReviewSpecificationSet(set project.ProjectSpecificationSet) ReviewPacket {
 	subjects := reviewSubjects(set)
 
 	packet := ReviewPacket{
-		ReviewKind: ReviewKindSpecSemantic,
-		Authority:  ReviewAuthority,
-		Profile:    semanticReviewProfile(),
+		ReviewKind:        ReviewKindSpecSemantic,
+		Authority:         ReviewAuthority,
+		AuthorityBoundary: semanticReviewAuthorityBoundary(),
+		Profile:           semanticReviewProfile(),
 		Summary: ReviewSummary{
 			TotalSections:   len(set.Sections),
 			ActiveSections:  len(subjects),
@@ -164,6 +177,19 @@ func ReviewSpecificationSet(set project.ProjectSpecificationSet) ReviewPacket {
 	packet.Summary = summarizeReview(packet)
 
 	return packet
+}
+
+func semanticReviewAuthorityBoundary() ReviewAuthorityBoundary {
+	return ReviewAuthorityBoundary{
+		Evidence:         "not_evidence",
+		Approval:         "not_approval",
+		Rebaseline:       "not_rebaseline",
+		GateDecision:     "not_gate_decision",
+		SpecUseAdmission: "not_spec_use_admission",
+		ClaimTruth:       "not_claim_truth",
+		GlobalTruth:      "not_global_truth",
+		Publication:      "not_publication",
+	}
 }
 
 func semanticReviewProfile() ReviewProfile {

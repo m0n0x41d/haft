@@ -742,7 +742,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":35,"kernel_owned_contracts":35,"mcp_mirrored_actions":19,"cli_available_surfaces":27,"binding_authority_surfaces":2,"read_only_surfaces":20,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":25,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":35,"kernel_owned_contracts":35,"mcp_mirrored_actions":19,"cli_available_surfaces":27,"binding_authority_surfaces":2,"read_only_surfaces":20,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":26,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, materialize host descriptions, create evidence, approve binding actions, pass gates, create claim/global truth, publish, or change tool descriptions.",
 					},
 				},
@@ -870,9 +870,15 @@ func haftInterfaceCatalog() []interfaceCapability {
 						Shape: `{"working":{...},"exact":{"source_episteme":{...},"publication_projection":{...},"carrier_bytes":{...}},"audit":{...}}`,
 						Note:  "working is compact; exact/audit split source episteme, publication projection, carrier bytes, and provenance.",
 					},
+					{
+						Field: "decision.evidence.wlnk",
+						Shape: `{"summary":"...","r_eff":0.8,"f_eff":7,"formality_scale_id":"fpf-2026-f0-f9|haft-legacy-f0-f3|unversioned-formality","formality_bridge_loss":"none|legacy-scale-has-fewer-buckets|source-scale-not-declared","weakest_cl":3,"authority_boundary":"evidence/formality diagnostics are not approval, gate passage, claim truth, global truth, or publication"}`,
+						Note:  "DecisionRecord audit/evidence views name formality scale and bridge/loss; WLNK diagnostics do not create approval, GateDecision, claim truth, global truth, or publication.",
+					},
 				},
 				Notes: []string{
 					"For ProblemCard refs, the response preserves legacy keys and adds semantic + views.",
+					"For DecisionRecord refs, the audit/evidence projection names WLNK formality scale and bridge/loss rather than showing a bare F ordinal.",
 					"SQLite remains runtime source of truth; markdown is a carrier imported through explicit sync.",
 					"Audit views must label legacy/degraded semantics instead of fabricating exact provenance.",
 				},
@@ -884,6 +890,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			Invariants: append(commonInterfaceInvariants(),
 				"No new top-level MCP action; related remains the single-artifact recovery path.",
 				"Compatibility projections must not become authority or evidence by presentation.",
+				"DecisionRecord WLNK/formality projection remains diagnostics, not approval, GateDecision, claim truth, global truth, or publication.",
 			),
 		},
 		{

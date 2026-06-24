@@ -1394,6 +1394,44 @@ func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
 	}
 }
 
+func TestInterfaceRelatedDocumentsDecisionEvidenceFormalityAudit(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.related")
+	if !ok {
+		t.Fatal("query.related capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"decision.evidence.wlnk",
+		"formality_scale_id",
+		"formality_bridge_loss",
+		"fpf-2026-f0-f9",
+		"haft-legacy-f0-f3",
+		"unversioned-formality",
+		"not approval",
+		"claim truth",
+		"publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.related shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"DecisionRecord refs", "WLNK formality scale", "bare F ordinal"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.related notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"WLNK/formality", "not approval", "GateDecision", "claim truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.related invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
 func TestInterfaceChangeCaseNamesCompleteAuthorityBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.change_case")
 	if !ok {

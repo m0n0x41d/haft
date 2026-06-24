@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Doctor stale serve diagnostics.** `haft doctor` now reports current-project
+  `haft serve` processes, warning when duplicate or older MCP servers are still
+  running from a different executable than `PATH` resolves, so rebuild/restart
+  drift is visible before agents trust stale status output.
 - **Spec export interface contract.** `haft interface spec.export --json` now
   documents the existing `haft spec export` publication projection surface,
   including SQL source edition, publication hash, carrier bytes, markdown-only

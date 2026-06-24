@@ -75,7 +75,7 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), nil
 	})
 
-	check("TUI runtime", func() (string, error) {
+	check("Host JS runtime", func() (string, error) {
 		if path, err := exec.LookPath("bun"); err == nil {
 			out, _ := exec.Command(path, "--version").Output()
 			return fmt.Sprintf("bun %s (%s)", trimOutput(out), path), nil
@@ -194,6 +194,13 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 				return fmt.Sprintf("%d loaded", len(list)), true
 			}
 			return "none loaded", true // not a failure
+		})
+
+		warn("haft serve processes", func() (string, bool) {
+			return doctorServeProcessStatus(
+				binding.ProjectRoot,
+				collectDoctorServeProcessSnapshot(),
+			)
 		})
 
 		if strings.TrimSpace(doctorMovedFrom) != "" {

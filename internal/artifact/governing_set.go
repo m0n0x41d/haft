@@ -15,6 +15,10 @@ const (
 	CurrentGoverningSetSchemaVersion = 1
 	CurrentGoverningSetAuthority     = "read_only_current_authority_frontier"
 
+	CurrentGoverningSetProjectionBoundary = "derived_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication"
+	CurrentGoverningAuthorityBoundary     = "current_decision_refs_are_governing_authority_terminal_history_refs_are_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication"
+	CurrentGoverningSetAnswerPathBoundary = "answer_path_is_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication"
+
 	GoverningSetPostureSingle   = "single_current_authority"
 	GoverningSetPostureOverlap  = "overlap_needs_review"
 	GoverningSetPostureConflict = "conflict_requires_operator"
@@ -280,7 +284,7 @@ func newCurrentGoverningSetSnapshot(filterApplied bool) CurrentGoverningSetSnaps
 		GeneratedAt:           time.Now().UTC().Format(time.RFC3339),
 		Source:                "artifact_store_decision_records",
 		Projection:            "refreshable_current_governing_frontier",
-		AuthorityBoundary:     "derived_read_only_not_gate_decision",
+		AuthorityBoundary:     CurrentGoverningSetProjectionBoundary,
 		CurrentStatusPolicy:   []string{string(StatusActive), string(StatusRefreshDue)},
 		TerminalStatusPolicy:  []string{string(StatusSuperseded), string(StatusDeprecated)},
 		TerminalHistoryPolicy: "terminal decisions stay searchable history and are excluded from current authority",
@@ -379,7 +383,7 @@ func currentGoverningSetFromBucket(bucket *currentGoverningSetBucket) CurrentGov
 		CurrentDecisions:         items,
 		TerminalHistoryRefs:      historyRefs,
 		OperatorRequired:         posture != GoverningSetPostureSingle,
-		AuthorityBoundary:        "derived_read_only_not_gate_decision",
+		AuthorityBoundary:        CurrentGoverningSetProjectionBoundary,
 		Basis:                    currentGoverningSetBasis(posture),
 		ScopeRepairHints:         currentGoverningScopeRepairHints(items),
 	}
@@ -413,7 +417,7 @@ func currentGoverningSetAnswerPaths(targetRef string) []CurrentGoverningSetAnswe
 		CLI:               fmt.Sprintf("haft decision governing-set --target-ref %q --json", trimmed),
 		MCPCall:           fmt.Sprintf("haft_query(action=\"governing_set\", source_refs=[%q])", trimmed),
 		ExactRecordNeeded: currentGoverningExactRecordHint(trimmed),
-		AuthorityBoundary: "answer_path_is_read_only_not_evidence_or_gate_decision",
+		AuthorityBoundary: CurrentGoverningSetAnswerPathBoundary,
 	}}
 }
 
@@ -597,7 +601,7 @@ func currentGoverningAuthorityFrontier(sets []CurrentGoverningSet) CurrentGovern
 		terminalRefs = append(terminalRefs, set.TerminalHistoryRefs...)
 	}
 	return CurrentGoverningAuthorityFrontier{
-		AuthorityBoundary:     "current_decision_refs_are_governing_authority_terminal_history_refs_are_not",
+		AuthorityBoundary:     CurrentGoverningAuthorityBoundary,
 		CurrentStatusPolicy:   []string{string(StatusActive), string(StatusRefreshDue)},
 		TerminalStatusPolicy:  []string{string(StatusSuperseded), string(StatusDeprecated)},
 		CurrentDecisionRefs:   compactSortedStrings(currentRefs),

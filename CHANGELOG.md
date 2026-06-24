@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Governing-set authority boundary.** `haft decision governing-set` and
+  `haft_query(action="governing_set")` now expose current-authority frontier,
+  snapshot, and answer-path boundaries as read-only projections that are not
+  evidence, approval, GateDecision, claim truth, global truth, or publication.
+  Text summaries now print the full frontier boundary instead of truncating it
+  back into an ambiguous gate-only cue.
 - **Spec use authority boundary.** `haft spec use` and
   `haft_query(action="spec_use")` now expose `current_authority` as a
   read-only frontier that is not evidence, approval, GateDecision, claim truth,

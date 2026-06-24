@@ -55,7 +55,10 @@ func TestBuildCurrentGoverningSetExcludesTerminalHistory(t *testing.T) {
 	if !containsString(report.Snapshot.TerminalStatusPolicy, string(StatusSuperseded)) {
 		t.Fatalf("terminal status policy = %#v", report.Snapshot.TerminalStatusPolicy)
 	}
-	if report.AuthorityFrontier.AuthorityBoundary != "current_decision_refs_are_governing_authority_terminal_history_refs_are_not" {
+	if report.Snapshot.AuthorityBoundary != CurrentGoverningSetProjectionBoundary {
+		t.Fatalf("snapshot authority boundary = %q", report.Snapshot.AuthorityBoundary)
+	}
+	if report.AuthorityFrontier.AuthorityBoundary != CurrentGoverningAuthorityBoundary {
 		t.Fatalf("authority_frontier boundary = %q", report.AuthorityFrontier.AuthorityBoundary)
 	}
 	if len(report.AuthorityFrontier.CurrentDecisionRefs) != 1 || report.AuthorityFrontier.CurrentDecisionRefs[0] != "dec-current" {
@@ -214,7 +217,7 @@ func TestCompactCurrentGoverningSetReportPreservesSummaryAndOmitsAuditSets(t *te
 			GoverningSets:    3,
 		},
 		AuthorityFrontier: CurrentGoverningAuthorityFrontier{
-			AuthorityBoundary:   "current_decision_refs_are_governing_authority_terminal_history_refs_are_not",
+			AuthorityBoundary:   CurrentGoverningAuthorityBoundary,
 			CurrentDecisionRefs: []string{"dec-1", "dec-2", "dec-3"},
 			TerminalHistoryRefs: []string{"dec-old"},
 		},
@@ -430,6 +433,9 @@ func TestCurrentGoverningSetAnswerPathsNameExactDrilldowns(t *testing.T) {
 		}
 		if !strings.Contains(path.MCPCall, "source_refs") {
 			t.Fatalf("answer path mcp_call = %q", path.MCPCall)
+		}
+		if path.AuthorityBoundary != CurrentGoverningSetAnswerPathBoundary {
+			t.Fatalf("answer path authority_boundary = %q", path.AuthorityBoundary)
 		}
 		if path.ExactRecordNeeded != want {
 			t.Fatalf("answer path exact_record_needed for %q = %q, want %q", targetRef, path.ExactRecordNeeded, want)

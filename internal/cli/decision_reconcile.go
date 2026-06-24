@@ -757,7 +757,7 @@ func writeCurrentGoverningSetSummary(
 	if _, err := fmt.Fprintf(output, "authority_frontier: current_refs=%d terminal_history_refs=%d boundary=%s\n",
 		len(report.AuthorityFrontier.CurrentDecisionRefs),
 		len(report.AuthorityFrontier.TerminalHistoryRefs),
-		truncateDecisionReconciliationSummaryField(report.AuthorityFrontier.AuthorityBoundary),
+		report.AuthorityFrontier.AuthorityBoundary,
 	); err != nil {
 		return err
 	}

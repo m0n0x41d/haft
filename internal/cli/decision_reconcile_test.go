@@ -98,7 +98,7 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 			TerminalHistoryRefs: 1,
 		},
 		AuthorityFrontier: artifact.CurrentGoverningAuthorityFrontier{
-			AuthorityBoundary:   "current_decision_refs_are_governing_authority_terminal_history_refs_are_not",
+			AuthorityBoundary:   artifact.CurrentGoverningAuthorityBoundary,
 			CurrentDecisionRefs: []string{"dec-current"},
 			TerminalHistoryRefs: []string{"dec-old"},
 		},
@@ -120,7 +120,7 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 		"authority: read_only_current_authority_frontier",
 		"current_decisions: 1",
 		"authority_frontier: current_refs=1 terminal_history_refs=1",
-		"current_decision_refs_are_governing_authority_terminal_history_refs_are_not",
+		artifact.CurrentGoverningAuthorityBoundary,
 		"fallback_sets=1",
 		"scope_enrichment_sets=1",
 		"top_sets:",

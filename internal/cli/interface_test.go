@@ -1961,21 +1961,43 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 	for _, shape := range capability.InputContract.FieldShapes {
 		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
 	}
-	for _, want := range []string{"read_only_current_authority_frontier", "authority_frontier", "current_decision_refs_are_governing_authority_terminal_history_refs_are_not", "single_current_authority", "conflict_requires_operator", "fallback_target_sets", "scope_enrichment_sets", "whole_file_fallback_requires_scope_enrichment", "scope_repair_hints", "derived_read_only_not_gate_decision", "Terminal decisions are history refs", "bearer_ref", "source_refs", "--subject-ref", "--target-ref", "limit caps compact sets", "limit=5", "read_only_current_governing_frontier_snapshot_check", "snapshot_digest", "Snapshot carriers are comparison aids"} {
+	for _, want := range []string{
+		"read_only_current_authority_frontier",
+		"authority_frontier",
+		"current_decision_refs_are_governing_authority_terminal_history_refs_are_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"answer_path_is_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"derived_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"single_current_authority",
+		"conflict_requires_operator",
+		"fallback_target_sets",
+		"scope_enrichment_sets",
+		"whole_file_fallback_requires_scope_enrichment",
+		"scope_repair_hints",
+		"Terminal decisions are history refs",
+		"bearer_ref",
+		"source_refs",
+		"--subject-ref",
+		"--target-ref",
+		"limit caps compact sets",
+		"limit=5",
+		"read_only_current_governing_frontier_snapshot_check",
+		"snapshot_digest",
+		"Snapshot carriers are comparison aids",
+	} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("governing_set field shapes missing %q:\n%s", want, fieldShapes)
 		}
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"active/refresh_due", "fallback_target_sets", "scope_enrichment_sets", "Read-only", "does not supersede", "focused drill-down", "--write-snapshot", "--check-snapshot"} {
+	for _, want := range []string{"active/refresh_due", "fallback_target_sets", "scope_enrichment_sets", "Read-only", "does not supersede", "create evidence", "approve claims", "publish truth", "focused drill-down", "--write-snapshot", "--check-snapshot"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("governing_set notes missing %q:\n%s", want, notes)
 		}
 	}
 
 	invariants := strings.Join(capability.Invariants, " ")
-	for _, want := range []string{"read-only", "not live authority", "operator review"} {
+	for _, want := range []string{"read-only", "not evidence", "approval", "GateDecision", "claim truth", "global truth", "publication", "not live authority", "operator review"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("governing_set invariant missing %q:\n%s", want, invariants)
 		}

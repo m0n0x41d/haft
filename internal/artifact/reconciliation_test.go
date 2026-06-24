@@ -173,6 +173,12 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	if draft.Summary.OperatorApprovalCandidates != 1 {
 		t.Fatalf("operator_approval_candidates = %d, want 1", draft.Summary.OperatorApprovalCandidates)
 	}
+	if draft.Summary.ReviewRequiredCandidates != 1 {
+		t.Fatalf("review_required_candidates = %d, want 1", draft.Summary.ReviewRequiredCandidates)
+	}
+	if draft.Summary.ApplyReadyCandidates != 0 {
+		t.Fatalf("apply_ready_candidates = %d, want 0", draft.Summary.ApplyReadyCandidates)
+	}
 	if draft.Summary.SelectedCandidates != 0 {
 		t.Fatalf("selected_candidates = %d, want 0 for low-confidence draft item", draft.Summary.SelectedCandidates)
 	}
@@ -181,6 +187,9 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	}
 	if len(draft.SelectionDocumentTemplate.Items) != 1 {
 		t.Fatalf("selection_document_template.items = %#v, want one emitted review candidate", draft.SelectionDocumentTemplate.Items)
+	}
+	if draft.Summary.TemplateItems != 1 {
+		t.Fatalf("template_items = %d, want one emitted review candidate", draft.Summary.TemplateItems)
 	}
 	if !containsString(
 		draft.SelectionDocumentTemplateBoundary,
@@ -599,6 +608,15 @@ func TestDecisionReconciliationSelectionDraftIncludesNonApprovedDocumentTemplate
 	}
 	if template.OperatorApprovalRef != "" {
 		t.Fatalf("operator_approval_ref = %q, want empty placeholder so apply rejects draft", template.OperatorApprovalRef)
+	}
+	if draft.Summary.ReviewRequiredCandidates != 1 {
+		t.Fatalf("review_required_candidates = %d, want 1", draft.Summary.ReviewRequiredCandidates)
+	}
+	if draft.Summary.ApplyReadyCandidates != 0 {
+		t.Fatalf("apply_ready_candidates = %d, want 0", draft.Summary.ApplyReadyCandidates)
+	}
+	if draft.Summary.TemplateItems != 1 {
+		t.Fatalf("template_items = %d, want 1", draft.Summary.TemplateItems)
 	}
 	if !containsString(
 		draft.SelectionDocumentTemplateBoundary,

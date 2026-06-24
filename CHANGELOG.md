@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation selection summary counters.** `haft decision
+  reconcile selection-draft` now reports explicit
+  `review_required_candidates`, `apply_ready_candidates`, and `template_items`
+  counters so operator-review work cannot be mistaken for apply-ready
+  selections.
 - **Decision reconciliation selection template boundary.** `haft decision
   reconcile selection-draft --json` now emits
   `selection_document_template_boundary`, making explicit that template items

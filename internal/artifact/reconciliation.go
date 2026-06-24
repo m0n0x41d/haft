@@ -252,9 +252,12 @@ type DecisionReconciliationDraftSummary struct {
 	ReviewableScopeEnrichmentCandidates int `json:"reviewable_scope_enrichment_candidates"`
 	ScopeEnrichmentCandidates           int `json:"scope_enrichment_candidates"`
 	OperatorApprovalCandidates          int `json:"operator_approval_candidates"`
+	ReviewRequiredCandidates            int `json:"review_required_candidates"`
+	ApplyReadyCandidates                int `json:"apply_ready_candidates"`
 	EmittedCandidates                   int `json:"emitted_candidates"`
 	OmittedCandidates                   int `json:"omitted_candidates"`
 	SelectedCandidates                  int `json:"selected_candidates"`
+	TemplateItems                       int `json:"template_items"`
 }
 
 type DecisionReconciliationDraftItem struct {
@@ -353,9 +356,12 @@ func buildDecisionReconciliationSelectionDraftFiltered(
 			ReviewableScopeEnrichmentCandidates: len(allItems),
 			ScopeEnrichmentCandidates:           len(allItems),
 			OperatorApprovalCandidates:          len(filteredItems),
+			ReviewRequiredCandidates:            countDecisionReconciliationDraftReviewRequiredCandidates(filteredItems),
+			ApplyReadyCandidates:                countDecisionReconciliationDraftApplyReadyCandidates(filteredItems),
 			EmittedCandidates:                   len(items),
 			OmittedCandidates:                   omittedItems,
 			SelectedCandidates:                  countDecisionReconciliationDraftSelectedCandidates(filteredItems),
+			TemplateItems:                       countDecisionReconciliationDraftTemplateItems(template),
 		},
 		OmittedItems:              omittedItems,
 		FullAuditCommand:          "haft decision reconcile selection-draft --json --full",
@@ -395,6 +401,35 @@ func countDecisionReconciliationDraftSelectedCandidates(items []DecisionReconcil
 		}
 	}
 	return total
+}
+
+func countDecisionReconciliationDraftReviewRequiredCandidates(items []DecisionReconciliationDraftItem) int {
+	total := 0
+	for _, item := range items {
+		if !item.ApprovalReadiness.ApplyReady {
+			total++
+		}
+	}
+	return total
+}
+
+func countDecisionReconciliationDraftApplyReadyCandidates(items []DecisionReconciliationDraftItem) int {
+	total := 0
+	for _, item := range items {
+		if item.ApprovalReadiness.ApplyReady {
+			total++
+		}
+	}
+	return total
+}
+
+func countDecisionReconciliationDraftTemplateItems(
+	template *DecisionReconciliationSelectionDocument,
+) int {
+	if template == nil {
+		return 0
+	}
+	return len(template.Items)
 }
 
 type DecisionReconciliationClaimLifecycleUpdate struct {

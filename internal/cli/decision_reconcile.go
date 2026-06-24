@@ -843,6 +843,12 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	if _, err := fmt.Fprintf(output, "operator_approval_candidates: %d\n", draft.Summary.OperatorApprovalCandidates); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(output, "review_required_candidates: %d\n", draft.Summary.ReviewRequiredCandidates); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "apply_ready_candidates: %d\n", draft.Summary.ApplyReadyCandidates); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(output, "emitted_candidates: %d\n", draft.Summary.EmittedCandidates); err != nil {
 		return err
 	}
@@ -850,6 +856,9 @@ func writeDecisionReconciliationSelectionDraftSummary(
 		return err
 	}
 	if _, err := fmt.Fprintf(output, "selected_candidates: %d\n", draft.Summary.SelectedCandidates); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "template_items: %d\n", draft.Summary.TemplateItems); err != nil {
 		return err
 	}
 	if draft.CurrentMetrics != nil {

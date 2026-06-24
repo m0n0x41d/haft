@@ -196,11 +196,16 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeFn()
 
-	plan, err := artifact.BuildDecisionReconciliationPlan(context.Background(), store)
+	ctx := context.Background()
+	plan, err := artifact.BuildDecisionReconciliationPlan(ctx, store)
 	if err != nil {
 		return fmt.Errorf("build decision reconciliation plan: %w", err)
 	}
-	draft := artifact.BuildDecisionReconciliationSelectionDraftFiltered(
+	metrics, err := buildDecisionReconciliationMetricsPacket(ctx, store, projectRoot, plan)
+	if err != nil {
+		return fmt.Errorf("build current reconciliation metrics: %w", err)
+	}
+	draft := artifact.BuildDecisionReconciliationSelectionDraftFilteredWithMetrics(
 		plan,
 		artifact.DecisionReconciliationSelectionDraftFilter{
 			Limit:       decisionReconcileSelectionDraftLimit(),
@@ -208,6 +213,7 @@ func runDecisionReconcileSelectionDraft(cmd *cobra.Command, _ []string) error {
 			GroupID:     decisionReconcileDraftGroupID,
 			DecisionRef: decisionReconcileDraftDecision,
 		},
+		metrics,
 	)
 	if decisionReconcileDraftWrite != "" {
 		if err := writeDecisionReconciliationSelectionTemplateFile(decisionReconcileDraftWrite, draft); err != nil {
@@ -488,24 +494,37 @@ func runDecisionReconcileMetrics(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return fmt.Errorf("build decision reconciliation plan: %w", err)
 	}
+	packet, err := buildDecisionReconciliationMetricsPacket(ctx, store, projectRoot, plan)
+	if err != nil {
+		return err
+	}
+
+	if decisionReconcileMetricsJSON {
+		return writeJSON(cmd.OutOrStdout(), packet)
+	}
+	return writeDecisionReconciliationMetricsSummary(cmd.OutOrStdout(), packet)
+}
+
+func buildDecisionReconciliationMetricsPacket(
+	ctx context.Context,
+	store artifact.ArtifactStore,
+	projectRoot string,
+	plan artifact.DecisionReconciliationPlan,
+) (artifact.ReconciliationMetricsPacket, error) {
 	governing, err := artifact.BuildCurrentGoverningSetReport(ctx, store)
 	if err != nil {
-		return fmt.Errorf("build current governing set: %w", err)
+		return artifact.ReconciliationMetricsPacket{}, fmt.Errorf("build current governing set: %w", err)
 	}
 	driftReports, err := artifact.CheckDrift(ctx, store, projectRoot)
 	if err != nil {
-		return fmt.Errorf("check drift for reconciliation metrics: %w", err)
+		return artifact.ReconciliationMetricsPacket{}, fmt.Errorf("check drift for reconciliation metrics: %w", err)
 	}
 	packet := artifact.BuildReconciliationMetricsPacket(
 		plan,
 		governing,
 		artifact.BuildDriftEventReport(driftReports),
 	)
-
-	if decisionReconcileMetricsJSON {
-		return writeJSON(cmd.OutOrStdout(), packet)
-	}
-	return writeDecisionReconciliationMetricsSummary(cmd.OutOrStdout(), packet)
+	return packet, nil
 }
 
 func readDecisionReconciliationSelectionDocument(
@@ -814,6 +833,11 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	if _, err := fmt.Fprintf(output, "selected_candidates: %d\n", draft.Summary.SelectedCandidates); err != nil {
 		return err
 	}
+	if draft.CurrentMetrics != nil {
+		if err := writeDecisionReconciliationDraftMetricsSummary(output, *draft.CurrentMetrics); err != nil {
+			return err
+		}
+	}
 	if len(draft.Items) == 0 {
 		_, err := fmt.Fprintln(output, "no scope enrichment candidates")
 		return err
@@ -847,6 +871,34 @@ func writeDecisionReconciliationSelectionDraftSummary(
 		return err
 	}
 	return nil
+}
+
+func writeDecisionReconciliationDraftMetricsSummary(
+	output io.Writer,
+	packet artifact.ReconciliationMetricsPacket,
+) error {
+	if _, err := fmt.Fprintf(output, "current_metrics_authority: %s\n", packet.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output,
+		"current_metrics: reviewed=%d groups=%d fallback_sets=%d scope_enrichment_sets=%d conflicts=%d terminal_history=%d unique_drift=%d needs_binding=%d max_fanout=%d\n",
+		packet.Reconciliation.ReviewedDecisions,
+		packet.Reconciliation.Groups,
+		packet.GoverningSet.FallbackTargetSets,
+		packet.GoverningSet.ScopeEnrichmentSets,
+		packet.GoverningSet.ConflictSets,
+		packet.GoverningSet.TerminalHistoryRefs,
+		packet.DriftEvents.UniqueEvents,
+		packet.DriftEvents.NeedsBindingResolutionEvents,
+		packet.DriftEvents.MaxFanout,
+	); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(output,
+		"before_after_required_authority: %s\n",
+		packet.BeforeAfterUse.RequiredAuthority,
+	)
+	return err
 }
 
 func decisionReconciliationDraftReadinessState(

@@ -240,6 +240,73 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftWithMetricsKeepsMetricsReportOnly(t *testing.T) {
+	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
+		DecisionID:        "dec-precise",
+		DecisionTitle:     "Precise scope",
+		Status:            StatusActive,
+		BoundedContext:    "drift",
+		GovernanceTargets: []string{"symbol:internal/drift.go::func:Scan"},
+		AffectedFiles:     []string{"internal/drift.go"},
+	}})
+	metrics := ReconciliationMetricsPacket{
+		SchemaVersion: ReconciliationMetricsSchemaVersion,
+		Authority:     ReconciliationMetricsAuthority,
+		Reconciliation: ReconciliationPlanMetrics{
+			ReviewedDecisions:         3,
+			Groups:                    2,
+			ScopeEnrichmentCandidates: 1,
+		},
+		GoverningSet: ReconciliationGoverningMetrics{
+			CurrentDecisions:    3,
+			GoverningSets:       2,
+			FallbackTargetSets:  1,
+			ScopeEnrichmentSets: 1,
+			TerminalHistoryRefs: 4,
+		},
+		DriftEvents: ReconciliationDriftMetrics{
+			UniqueEvents:                 5,
+			NeedsBindingResolutionEvents: 1,
+			MaxFanout:                    2,
+		},
+		BeforeAfterUse: ReconciliationBeforeAfterUse{
+			RequiredAuthority: DecisionReconciliationSelectionApplyAuthority,
+		},
+	}
+
+	draft := BuildDecisionReconciliationSelectionDraftFilteredWithMetrics(
+		plan,
+		DecisionReconciliationSelectionDraftFilter{Limit: 1},
+		metrics,
+	)
+
+	if draft.CurrentMetrics == nil {
+		t.Fatal("current_metrics missing")
+	}
+	if draft.CurrentMetrics.Authority != ReconciliationMetricsAuthority {
+		t.Fatalf("current_metrics authority = %q", draft.CurrentMetrics.Authority)
+	}
+	if draft.OperatorApproved {
+		t.Fatal("metrics snapshot must not approve draft")
+	}
+	if !containsString(draft.MutationBoundary, "current_metrics is read-only") {
+		t.Fatalf("mutation_boundary = %#v", draft.MutationBoundary)
+	}
+	if draft.SelectionDocumentTemplate == nil {
+		t.Fatal("selection_document_template missing")
+	}
+	data, err := json.Marshal(draft.SelectionDocumentTemplate)
+	if err != nil {
+		t.Fatalf("marshal selection template: %v", err)
+	}
+	if strings.Contains(string(data), "current_metrics") {
+		t.Fatalf("selection_document_template must not carry metrics snapshot: %s", string(data))
+	}
+	if draft.SelectionDocumentTemplate.OperatorApprovalRef != "" {
+		t.Fatalf("operator_approval_ref = %q", draft.SelectionDocumentTemplate.OperatorApprovalRef)
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *testing.T) {
 	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
 		DecisionID:        "dec-precise",

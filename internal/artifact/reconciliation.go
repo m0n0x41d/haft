@@ -206,6 +206,7 @@ type DecisionReconciliationSelectionDraft struct {
 	Summary                   DecisionReconciliationDraftSummary       `json:"summary"`
 	OmittedItems              int                                      `json:"omitted_items,omitempty"`
 	FullAuditCommand          string                                   `json:"full_audit_command,omitempty"`
+	CurrentMetrics            *ReconciliationMetricsPacket             `json:"current_metrics,omitempty"`
 	Items                     []DecisionReconciliationDraftItem        `json:"items,omitempty"`
 	SelectionDocumentTemplate *DecisionReconciliationSelectionDocument `json:"selection_document_template,omitempty"`
 	MutationBoundary          []string                                 `json:"mutation_boundary"`
@@ -316,11 +317,27 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 	plan DecisionReconciliationPlan,
 	filter DecisionReconciliationSelectionDraftFilter,
 ) DecisionReconciliationSelectionDraft {
+	return buildDecisionReconciliationSelectionDraftFiltered(plan, filter, nil)
+}
+
+func BuildDecisionReconciliationSelectionDraftFilteredWithMetrics(
+	plan DecisionReconciliationPlan,
+	filter DecisionReconciliationSelectionDraftFilter,
+	metrics ReconciliationMetricsPacket,
+) DecisionReconciliationSelectionDraft {
+	return buildDecisionReconciliationSelectionDraftFiltered(plan, filter, &metrics)
+}
+
+func buildDecisionReconciliationSelectionDraftFiltered(
+	plan DecisionReconciliationPlan,
+	filter DecisionReconciliationSelectionDraftFilter,
+	metrics *ReconciliationMetricsPacket,
+) DecisionReconciliationSelectionDraft {
 	allItems := decisionReconciliationDraftItems(plan.Groups)
 	filteredItems := filterDecisionReconciliationDraftItems(allItems, filter)
 	items := limitDecisionReconciliationDraftItems(filteredItems, filter)
 	omittedItems := len(filteredItems) - len(items)
-	return DecisionReconciliationSelectionDraft{
+	draft := DecisionReconciliationSelectionDraft{
 		SchemaVersion:          DecisionReconciliationSchemaVersion,
 		Authority:              DecisionReconciliationSelectionDraftAuthority,
 		OperatorApproved:       false,
@@ -336,6 +353,7 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 		},
 		OmittedItems:              omittedItems,
 		FullAuditCommand:          "haft decision reconcile selection-draft --json --full",
+		CurrentMetrics:            metrics,
 		Items:                     items,
 		SelectionDocumentTemplate: decisionReconciliationDraftSelectionDocumentTemplate(items),
 		MutationBoundary: []string{
@@ -353,6 +371,11 @@ func BuildDecisionReconciliationSelectionDraftFiltered(
 			"rerun haft decision reconcile metrics --json before and after apply",
 		},
 	}
+	if metrics != nil {
+		draft.MutationBoundary = appendMissingString(draft.MutationBoundary, "current_metrics is read-only")
+		draft.MutationBoundary = appendMissingString(draft.MutationBoundary, "current_metrics does not approve, apply, supersede, retire, rebaseline, or waive decisions")
+	}
+	return draft
 }
 
 func countDecisionReconciliationDraftSelectedCandidates(items []DecisionReconciliationDraftItem) int {

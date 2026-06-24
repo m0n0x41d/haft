@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation selection draft metrics context.** R9
+  `haft decision reconcile selection-draft --json` now embeds a read-only
+  `current_metrics` snapshot from the reconciliation metrics surface, so
+  operator-reviewed scope-enrichment selections carry visible before/after
+  context without making drafts apply-ready or copying metrics into the
+  operator-approved selection template.
 - **DriftEvent binding drill-down routing.** DriftEvents with
   `root_cause=binding_target_missing` now point `suggested_next_command` at
   ranked `haft drift bindings --dry-run --json` review before reconciliation,

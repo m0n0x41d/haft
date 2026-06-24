@@ -371,6 +371,27 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 			OmittedCandidates:          0,
 			SelectedCandidates:         0,
 		},
+		CurrentMetrics: &artifact.ReconciliationMetricsPacket{
+			Authority: artifact.ReconciliationMetricsAuthority,
+			Reconciliation: artifact.ReconciliationPlanMetrics{
+				ReviewedDecisions: 10,
+				Groups:            6,
+			},
+			GoverningSet: artifact.ReconciliationGoverningMetrics{
+				FallbackTargetSets:  2,
+				ScopeEnrichmentSets: 3,
+				ConflictSets:        1,
+				TerminalHistoryRefs: 8,
+			},
+			DriftEvents: artifact.ReconciliationDriftMetrics{
+				UniqueEvents:                 11,
+				NeedsBindingResolutionEvents: 5,
+				MaxFanout:                    9,
+			},
+			BeforeAfterUse: artifact.ReconciliationBeforeAfterUse{
+				RequiredAuthority: artifact.DecisionReconciliationSelectionApplyAuthority,
+			},
+		},
 		Items: []artifact.DecisionReconciliationDraftItem{{
 			DecisionRef:       "dec-fallback",
 			ReviewedGroupID:   "decision-reconcile-1",
@@ -401,6 +422,9 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		"emitted_candidates: 1",
 		"omitted_candidates: 0",
 		"selected_candidates: 0",
+		"current_metrics_authority: read_only_reconciliation_metrics_not_binding_authority",
+		"current_metrics: reviewed=10 groups=6 fallback_sets=2 scope_enrichment_sets=3 conflicts=1 terminal_history=8 unique_drift=11 needs_binding=5 max_fanout=9",
+		"before_after_required_authority: operator_approved_reconciliation_selection",
 		"dec-fallback",
 		"confidence=low",
 		"readiness=operator_review_required",

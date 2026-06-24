@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Contract-audit authority inventory guard.** Contract-audit regression tests
+  now pin the binding and lifecycle/semantic mutation surfaces
+  (`decision.decide`, `decision.reconcile_apply`, and `spec.apply_change`) so
+  they cannot silently disappear from the read-only surface inventory.
 - **Doctor stale serve diagnostics.** `haft doctor` now reports current-project
   `haft serve` processes, warning when duplicate or older MCP servers are still
   running from a different executable than `PATH` resolves, so rebuild/restart

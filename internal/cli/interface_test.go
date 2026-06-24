@@ -244,6 +244,52 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	}
 }
 
+func TestInterfaceContractAuditInventoriesAuthorityMutationSurfaces(t *testing.T) {
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+
+	for _, tc := range []struct {
+		capabilityID     string
+		authorityPosture string
+		hostPosture      string
+		validationRefs   []string
+	}{
+		{
+			capabilityID:     "decision.decide",
+			authorityPosture: "binding_denied_by_default_mcp",
+			hostPosture:      "validated_mcp_mirror",
+			validationRefs:   []string{"internal/cli/interface_test.go", "internal/fpf/server_test.go"},
+		},
+		{
+			capabilityID:     "decision.reconcile_apply",
+			authorityPosture: "cli_operator_approved_binding_apply",
+			hostPosture:      "validated_mcp_mirror",
+			validationRefs:   []string{"internal/cli/interface_test.go", "internal/fpf/server_test.go", "internal/cli/decision_reconcile_test.go"},
+		},
+		{
+			capabilityID:     "spec.apply_change",
+			authorityPosture: "sql_edition_sync_back_mutation_not_approval",
+			hostPosture:      "manual_cli_contract_not_generated",
+			validationRefs:   []string{"internal/cli/interface_test.go", "internal/cli/spec_apply_change_test.go"},
+		},
+	} {
+		surface, ok := findContractAuditSurface(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s missing from contract audit", tc.capabilityID)
+		}
+		if surface.AuthorityPosture != tc.authorityPosture {
+			t.Fatalf("%s authority posture = %q", tc.capabilityID, surface.AuthorityPosture)
+		}
+		if surface.HostSchemaPosture != tc.hostPosture {
+			t.Fatalf("%s host posture = %q", tc.capabilityID, surface.HostSchemaPosture)
+		}
+		for _, ref := range tc.validationRefs {
+			if !contractAuditTestContains(surface.ValidationRefs, ref) {
+				t.Fatalf("%s validation refs missing %q: %#v", tc.capabilityID, ref, surface.ValidationRefs)
+			}
+		}
+	}
+}
+
 func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 

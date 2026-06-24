@@ -389,7 +389,7 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 		t.Fatalf("generated schema fragments = %d, summary = %#v", len(report.SchemaFragments), report.Summary)
 	}
 	notes := strings.Join(report.Notes, "\n")
-	for _, want := range []string{"--write-schema-fragments", "--write-description-fragments", "--check-schema-fragments", "--check-description-fragments"} {
+	for _, want := range []string{"--write-schema-fragments", "--write-description-fragments", "--check-schema-fragments", "--check-description-fragments", "--check-materialized-carriers", "--sync-materialized-carriers"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("contract_generation report notes missing %q:\n%s", want, notes)
 		}
@@ -623,6 +623,78 @@ func TestInterfaceContractGenerationMaterializedCarrierCheckDetectsMissingMarker
 	}
 	if !stringSliceContains(result.Carriers[0].MissingMarkers, carrier.ExpectedSourceDigest) {
 		t.Fatalf("missing markers = %#v, want source digest", result.Carriers[0].MissingMarkers)
+	}
+}
+
+func TestInterfaceContractGenerationSyncsMaterializedCarrierMarkers(t *testing.T) {
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.Carriers) < 2 {
+		t.Fatalf("expected at least two materialized carriers: %#v", report.Carriers)
+	}
+
+	staleDigest := "sha256:" + strings.Repeat("1", 64)
+	tempReport := report
+	tempReport.Carriers = make([]interfaceContractMaterializedCarrier, 0, 2)
+	tempDir := t.TempDir()
+	for _, carrier := range report.Carriers[:2] {
+		source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+		source = interfaceContractDigestMarkerRE.ReplaceAllString(source, staleDigest)
+		carrier.CarrierPath = filepath.Join(tempDir, strings.ReplaceAll(carrier.CarrierPath, "/", "_"))
+		if err := os.WriteFile(carrier.CarrierPath, []byte(source), 0o644); err != nil {
+			t.Fatalf("write temp carrier: %v", err)
+		}
+		tempReport.Carriers = append(tempReport.Carriers, carrier)
+	}
+
+	result, err := syncInterfaceContractMaterializedCarriers(tempReport)
+	if err != nil {
+		t.Fatalf("sync materialized carriers: %v\n%#v", err, result)
+	}
+
+	if !result.Summary.Match || !result.Check.Match {
+		t.Fatalf("post-sync check did not match: %#v", result)
+	}
+	if result.Summary.SyncedCarriers != len(tempReport.Carriers) {
+		t.Fatalf("synced carriers = %d, want %d: %#v", result.Summary.SyncedCarriers, len(tempReport.Carriers), result)
+	}
+	if result.Summary.UpdatedMarkers != len(tempReport.Carriers) {
+		t.Fatalf("updated markers = %d, want %d: %#v", result.Summary.UpdatedMarkers, len(tempReport.Carriers), result)
+	}
+
+	for _, carrier := range tempReport.Carriers {
+		source, err := os.ReadFile(carrier.CarrierPath)
+		if err != nil {
+			t.Fatalf("read synced carrier: %v", err)
+		}
+		text := string(source)
+		if !strings.Contains(text, report.SourceDigest) {
+			t.Fatalf("%s missing synced source digest", carrier.CarrierPath)
+		}
+		if strings.Contains(text, staleDigest) {
+			t.Fatalf("%s still contains stale digest", carrier.CarrierPath)
+		}
+	}
+}
+
+func TestInterfaceContractGenerationSyncOnlyUpdatesCatalogDigestLine(t *testing.T) {
+	sourceDigest := "sha256:" + strings.Repeat("2", 64)
+	staleDigest := "sha256:" + strings.Repeat("1", 64)
+	otherDigest := "sha256:" + strings.Repeat("3", 64)
+	source := strings.Join([]string{
+		"<!-- haft-contract-source: kernel_interface_catalog source_digest=" + staleDigest + " -->",
+		"unrelated_hash=" + otherDigest,
+		"",
+	}, "\n")
+
+	updated, updatedMarkers := syncInterfaceContractMaterializedCarrierData([]byte(source), sourceDigest)
+	if updatedMarkers != 1 {
+		t.Fatalf("updated markers = %d, want 1: %s", updatedMarkers, string(updated))
+	}
+	if !strings.Contains(string(updated), sourceDigest) {
+		t.Fatalf("updated carrier missing source digest: %s", string(updated))
+	}
+	if !strings.Contains(string(updated), otherDigest) {
+		t.Fatalf("unrelated digest was rewritten: %s", string(updated))
 	}
 }
 

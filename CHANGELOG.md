@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Generated contract carrier sync.** `haft interface contract-generation
+  --sync-materialized-carriers` now rewrites only kernel interface catalog
+  source-digest markers in listed host/skill/plugin/Pi carriers, then verifies
+  them with the existing materialized-carrier check. The sync report is explicit
+  CLI-only and states that it is not host runtime materialization, binding
+  authority, evidence, approval, GateDecision, claim truth, global truth, or
+  publication.
 - **Contract-audit authority boundary.** `haft interface contract-audit` and
   `haft_query(action="contract_audit")` now expose a top-level read-only
   authority boundary stating that the contract inventory is not evidence,

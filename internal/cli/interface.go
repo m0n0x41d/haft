@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -21,6 +22,9 @@ var interfaceWriteDescriptionFragments string
 var interfaceCheckSchemaFragments string
 var interfaceCheckDescriptionFragments string
 var interfaceCheckMaterializedCarriers bool
+var interfaceSyncMaterializedCarriers bool
+
+var interfaceContractDigestMarkerRE = regexp.MustCompile(`sha256:[0-9a-f]{64}`)
 
 var interfaceCmd = &cobra.Command{
 	Use:   "interface [capability]",
@@ -90,6 +94,7 @@ func init() {
 	interfaceCmd.Flags().StringVar(&interfaceCheckSchemaFragments, "check-schema-fragments", "", "check a generated MCP action schema fragments carrier against current contracts without rewriting it")
 	interfaceCmd.Flags().StringVar(&interfaceCheckDescriptionFragments, "check-description-fragments", "", "check a generated host/skill/plugin description fragments carrier against current contracts without rewriting it")
 	interfaceCmd.Flags().BoolVar(&interfaceCheckMaterializedCarriers, "check-materialized-carriers", false, "check all listed host/skill/plugin/Pi materialized carriers for current generated-contract markers")
+	interfaceCmd.Flags().BoolVar(&interfaceSyncMaterializedCarriers, "sync-materialized-carriers", false, "rewrite listed host/skill/plugin/Pi materialized carrier source-digest markers from current generated contracts")
 	rootCmd.AddCommand(interfaceCmd)
 }
 
@@ -174,6 +179,16 @@ func runInterface(cmd *cobra.Command, args []string) error {
 			}
 			return writeInterfaceContractMaterializedCarrierCheckText(output, result)
 		}
+		if interfaceSyncMaterializedCarriers {
+			result, err := syncInterfaceContractMaterializedCarriers(report)
+			if err != nil {
+				return err
+			}
+			if interfaceJSON {
+				return writeJSON(output, result)
+			}
+			return writeInterfaceContractMaterializedCarrierSyncText(output, result)
+		}
 		if interfaceJSON {
 			return writeJSON(output, report)
 		}
@@ -205,6 +220,9 @@ func interfaceContractMaterializationFlagCount() int {
 		}
 	}
 	if interfaceCheckMaterializedCarriers {
+		total++
+	}
+	if interfaceSyncMaterializedCarriers {
 		total++
 	}
 	return total
@@ -767,10 +785,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"Use `haft interface contract-generation --write-description-fragments <path>` to materialize generated_fragments as deterministic JSON wording-sync carrier bytes.",
 					"Use `--check-schema-fragments <path>` or `--check-description-fragments <path>` to fail when a materialized carrier drifted from the current kernel interface catalog.",
 					"Use `--check-materialized-carriers` to validate every listed host/skill/plugin/Pi carrier for current source-digest and authority-boundary markers without rewriting files.",
+					"Use `--sync-materialized-carriers` to rewrite only source-digest markers in listed repo carriers, then verify with the same marker check; it is not host runtime materialization.",
 					"Read-only: generated fragments and schema generation targets are not operator authorization, evidence, or gate passage.",
 				},
 			},
-			OutputVolume: []string{"default: compact generator target/fragment counts", "--json: generated fragments and field-level targets", "--write-schema-fragments/--write-description-fragments: deterministic generated carrier bytes; never in default status", "--check-schema-fragments/--check-description-fragments: compare generated fragment carriers without rewriting", "--check-materialized-carriers: compact repo carrier marker check"},
+			OutputVolume: []string{"default: compact generator target/fragment counts", "--json: generated fragments and field-level targets", "--write-schema-fragments/--write-description-fragments: deterministic generated carrier bytes; never in default status", "--check-schema-fragments/--check-description-fragments: compare generated fragment carriers without rewriting", "--check-materialized-carriers: compact repo carrier marker check", "--sync-materialized-carriers: explicit repo carrier source-digest marker sync plus check"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Contract generation manifest is read-only.",
 				"Generated fragments come from the kernel interface catalog.",
@@ -1777,6 +1796,40 @@ type interfaceContractMaterializedCarrierCheckItem struct {
 	ValidationRefs []string `json:"validation_refs,omitempty"`
 }
 
+type interfaceContractMaterializedCarrierSyncReport struct {
+	Kind          string                                           `json:"kind"`
+	SchemaVersion int                                              `json:"schema_version"`
+	Authority     string                                           `json:"authority"`
+	Source        string                                           `json:"source"`
+	SourceDigest  string                                           `json:"source_digest"`
+	Summary       interfaceContractMaterializedCarrierSyncSummary  `json:"summary"`
+	Carriers      []interfaceContractMaterializedCarrierSyncItem   `json:"carriers,omitempty"`
+	Check         interfaceContractMaterializedCarrierCheckSummary `json:"post_sync_check"`
+}
+
+type interfaceContractMaterializedCarrierSyncSummary struct {
+	MaterializedCarriers int  `json:"materialized_carriers"`
+	SyncedCarriers       int  `json:"synced_carriers"`
+	UnchangedCarriers    int  `json:"unchanged_carriers"`
+	MissingCarrierFiles  int  `json:"missing_carrier_files"`
+	UpdatedMarkers       int  `json:"updated_markers"`
+	Match                bool `json:"match"`
+}
+
+type interfaceContractMaterializedCarrierSyncItem struct {
+	CarrierPath       string   `json:"carrier_path"`
+	ResolvedPath      string   `json:"resolved_path,omitempty"`
+	CarrierKind       string   `json:"carrier_kind"`
+	ContractRole      string   `json:"contract_role"`
+	SyncPosture       string   `json:"sync_posture"`
+	GuardPosture      string   `json:"guard_posture"`
+	Synced            bool     `json:"synced"`
+	MissingFile       bool     `json:"missing_file,omitempty"`
+	UpdatedMarkers    int      `json:"updated_markers,omitempty"`
+	ValidationRefs    []string `json:"validation_refs,omitempty"`
+	AuthorityBoundary string   `json:"authority_boundary"`
+}
+
 type interfaceContractGenerationSummary struct {
 	Capabilities              int `json:"capabilities"`
 	GeneratorTargetSurfaces   int `json:"generator_target_surfaces"`
@@ -1982,6 +2035,7 @@ func buildInterfaceContractGenerationReport(catalog []interfaceCapability) inter
 			"use `haft interface contract-generation --write-description-fragments <path>` to materialize generated_fragments as a deterministic JSON carrier for host/skill/plugin/Pi wording sync checks.",
 			"use `--check-schema-fragments <path>` or `--check-description-fragments <path>` to compare materialized carriers against the current source digest without rewriting them.",
 			"use `--check-materialized-carriers` to validate every listed host/skill/plugin/Pi carrier for current source-digest and authority-boundary markers without rewriting files.",
+			"use `--sync-materialized-carriers` to rewrite only source-digest markers in listed repo carriers, then verify with the same marker check; it is not host runtime materialization.",
 			"validation_refs name tests that prove the manifest source, MCP mirror coverage, generated-fragment authority boundary, and default-output budget.",
 			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
 			"Default status must not inline this report; use haft interface contract-generation --json or haft_query(action=\"contract_generation\").",
@@ -2218,30 +2272,160 @@ func checkInterfaceContractMaterializedCarrier(
 	return item
 }
 
-func readInterfaceContractMaterializedCarrier(path string) ([]byte, error) {
+func syncInterfaceContractMaterializedCarriers(
+	report interfaceContractGenerationReport,
+) (interfaceContractMaterializedCarrierSyncReport, error) {
+	result := interfaceContractMaterializedCarrierSyncReport{
+		Kind:          "haft_interface_materialized_carrier_sync",
+		SchemaVersion: 1,
+		Authority:     "sync_report_not_host_runtime_materialization_binding_authority_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		Source:        report.Source,
+		SourceDigest:  report.SourceDigest,
+		Summary: interfaceContractMaterializedCarrierSyncSummary{
+			MaterializedCarriers: len(report.Carriers),
+			Match:                false,
+		},
+		Carriers: make([]interfaceContractMaterializedCarrierSyncItem, 0, len(report.Carriers)),
+	}
+
+	for _, carrier := range report.Carriers {
+		item := syncInterfaceContractMaterializedCarrier(carrier, report.SourceDigest)
+		result.Carriers = append(result.Carriers, item)
+		result.Summary.UpdatedMarkers += item.UpdatedMarkers
+		if item.MissingFile {
+			result.Summary.MissingCarrierFiles++
+			continue
+		}
+		if item.Synced {
+			result.Summary.SyncedCarriers++
+			continue
+		}
+		result.Summary.UnchangedCarriers++
+	}
+
+	if result.Summary.MissingCarrierFiles != 0 {
+		return result, fmt.Errorf(
+			"generated contract materialized carrier sync failed: missing_files=%d",
+			result.Summary.MissingCarrierFiles,
+		)
+	}
+
+	check, err := checkInterfaceContractMaterializedCarriers(report)
+	result.Check = check.Summary
+	result.Summary.Match = check.Summary.Match
+	if err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func syncInterfaceContractMaterializedCarrier(
+	carrier interfaceContractMaterializedCarrier,
+	sourceDigest string,
+) interfaceContractMaterializedCarrierSyncItem {
+	item := interfaceContractMaterializedCarrierSyncItem{
+		CarrierPath:       carrier.CarrierPath,
+		CarrierKind:       carrier.CarrierKind,
+		ContractRole:      carrier.ContractRole,
+		SyncPosture:       carrier.SyncPosture,
+		GuardPosture:      carrier.GuardPosture,
+		ValidationRefs:    append([]string(nil), carrier.ValidationRefs...),
+		AuthorityBoundary: carrier.AuthorityBoundary,
+	}
+
+	resolvedPath, err := resolveInterfaceContractMaterializedCarrierPath(carrier.CarrierPath)
+	if err != nil {
+		item.MissingFile = true
+		return item
+	}
+	item.ResolvedPath = resolvedPath
+
+	data, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		item.MissingFile = true
+		return item
+	}
+
+	updated, updatedMarkers := syncInterfaceContractMaterializedCarrierData(data, sourceDigest)
+	if updatedMarkers == 0 {
+		return item
+	}
+
+	if err := os.WriteFile(resolvedPath, updated, 0o644); err != nil {
+		item.MissingFile = true
+		return item
+	}
+	item.Synced = true
+	item.UpdatedMarkers = updatedMarkers
+	return item
+}
+
+func syncInterfaceContractMaterializedCarrierData(data []byte, sourceDigest string) ([]byte, int) {
+	lines := strings.SplitAfter(string(data), "\n")
+	updatedMarkers := 0
+	for index, line := range lines {
+		if !interfaceContractMaterializedCarrierDigestLine(index, lines) {
+			continue
+		}
+		lines[index] = interfaceContractDigestMarkerRE.ReplaceAllStringFunc(line, func(marker string) string {
+			if marker == sourceDigest {
+				return marker
+			}
+			updatedMarkers++
+			return sourceDigest
+		})
+	}
+	return []byte(strings.Join(lines, "")), updatedMarkers
+}
+
+func interfaceContractMaterializedCarrierDigestLine(index int, lines []string) bool {
+	line := lines[index]
+	if strings.Contains(line, "kernel_interface_catalog") {
+		return true
+	}
+	if strings.Contains(line, "kernelInterfaceCatalogDigest") {
+		return true
+	}
+	if index == 0 {
+		return false
+	}
+	return strings.Contains(lines[index-1], "kernelInterfaceCatalogDigest")
+}
+
+func resolveInterfaceContractMaterializedCarrierPath(path string) (string, error) {
 	cleanPath := filepath.Clean(path)
 	if filepath.IsAbs(cleanPath) {
-		return os.ReadFile(cleanPath)
+		if _, err := os.Stat(cleanPath); err != nil {
+			return "", err
+		}
+		return cleanPath, nil
 	}
-	data, err := os.ReadFile(cleanPath)
-	if err == nil {
-		return data, nil
+	if _, err := os.Stat(cleanPath); err == nil {
+		return cleanPath, nil
 	}
 	cwd, cwdErr := os.Getwd()
 	if cwdErr != nil {
-		return nil, err
+		return "", cwdErr
 	}
 	for dir := cwd; ; dir = filepath.Dir(dir) {
-		data, readErr := os.ReadFile(filepath.Join(dir, cleanPath))
-		if readErr == nil {
-			return data, nil
+		candidate := filepath.Join(dir, cleanPath)
+		if _, err := os.Stat(candidate); err == nil {
+			return candidate, nil
 		}
 		parent := filepath.Dir(dir)
 		if parent == dir {
 			break
 		}
 	}
-	return nil, err
+	return "", fmt.Errorf("materialized carrier not found: %s", cleanPath)
+}
+
+func readInterfaceContractMaterializedCarrier(path string) ([]byte, error) {
+	resolvedPath, err := resolveInterfaceContractMaterializedCarrierPath(path)
+	if err != nil {
+		return nil, err
+	}
+	return os.ReadFile(resolvedPath)
 }
 
 func marshalInterfaceContractCarrier(carrier any) ([]byte, error) {
@@ -3867,6 +4051,52 @@ func writeInterfaceContractMaterializedCarrierCheckText(
 			continue
 		}
 		if _, err := fmt.Fprintf(output, "- %s missing_file=%t missing_markers=%d\n", carrier.CarrierPath, carrier.MissingFile, len(carrier.MissingMarkers)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeInterfaceContractMaterializedCarrierSyncText(
+	output io.Writer,
+	result interfaceContractMaterializedCarrierSyncReport,
+) error {
+	if _, err := fmt.Fprintf(output, "Haft interface materialized carrier sync v%d\n", result.SchemaVersion); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "authority: %s\n", result.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "source: %s %s\n", result.Source, result.SourceDigest); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		output,
+		"summary: materialized_carriers=%d synced_carriers=%d unchanged_carriers=%d missing_carrier_files=%d updated_markers=%d match=%t\n",
+		result.Summary.MaterializedCarriers,
+		result.Summary.SyncedCarriers,
+		result.Summary.UnchangedCarriers,
+		result.Summary.MissingCarrierFiles,
+		result.Summary.UpdatedMarkers,
+		result.Summary.Match,
+	); err != nil {
+		return err
+	}
+	for _, carrier := range result.Carriers {
+		if !carrier.Synced && !carrier.MissingFile {
+			continue
+		}
+		status := "synced"
+		if carrier.MissingFile {
+			status = "missing"
+		}
+		if _, err := fmt.Fprintf(
+			output,
+			"- %s: %s updated_markers=%d\n",
+			status,
+			carrier.CarrierPath,
+			carrier.UpdatedMarkers,
+		); err != nil {
 			return err
 		}
 	}

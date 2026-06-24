@@ -102,12 +102,14 @@ func writeEngineeringValueSpaceSummary(w io.Writer, space artifact.EngineeringVa
 		))
 	}
 	builder.WriteString(fmt.Sprintf(
-		"authority_boundary: score=%s evidence=%s approval=%s gate_decision=%s global_truth=%s\n",
+		"authority_boundary: score=%s evidence=%s approval=%s gate_decision=%s claim_truth=%s global_truth=%s publication=%s\n",
 		space.AuthorityBoundary.Score,
 		space.AuthorityBoundary.Evidence,
 		space.AuthorityBoundary.Approval,
 		space.AuthorityBoundary.GateDecision,
+		space.AuthorityBoundary.ClaimTruth,
 		space.AuthorityBoundary.GlobalTruth,
+		space.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

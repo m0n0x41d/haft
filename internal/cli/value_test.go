@@ -72,4 +72,7 @@ func TestWriteEngineeringValueSpaceSummaryShowsEvidenceContext(t *testing.T) {
 	if !strings.Contains(got, "evidence_missing_characteristics=0") {
 		t.Fatalf("summary should show zero missing-evidence characteristics:\n%s", got)
 	}
+	if !strings.Contains(got, "authority_boundary: score=not_score evidence=not_evidence approval=not_approval gate_decision=not_gate_decision claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication") {
+		t.Fatalf("summary should name complete authority boundary:\n%s", got)
+	}
 }

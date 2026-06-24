@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Value-space authority boundary completeness.** `haft value space` and
+  `haft_query(action="value_space")` now explicitly report that engineering
+  value projections are not claim truth and not publication, matching the
+  existing not-score/not-evidence/not-approval/not-gate/not-global-truth
+  boundary.
 - **Decision reconciliation fallback target cleanup.** R9
   `enrich_scope` reconciliation selections now support explicit
   `remove_whole_file_fallback_targets` entries for named existing

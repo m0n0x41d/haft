@@ -150,4 +150,10 @@ func TestBuildEngineeringValueSpaceTreatsHealthyReopeningSeparately(t *testing.T
 	if space.AuthorityBoundary.Score != EngineeringValueBoundaryNotScore {
 		t.Fatalf("score boundary = %+v", space.AuthorityBoundary)
 	}
+	if space.AuthorityBoundary.ClaimTruth != EngineeringValueBoundaryNotClaimTruth {
+		t.Fatalf("claim truth boundary = %+v", space.AuthorityBoundary)
+	}
+	if space.AuthorityBoundary.Publication != EngineeringValueBoundaryNotPublication {
+		t.Fatalf("publication boundary = %+v", space.AuthorityBoundary)
+	}
 }

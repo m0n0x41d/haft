@@ -1261,6 +1261,10 @@ func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
 		"simplify_kill_criteria",
 		"read_only_review_trigger_not_automatic_gate",
 		"not automatic gates",
+		"claim_truth",
+		"not_claim_truth",
+		"publication",
+		"not_publication",
 	} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.value_space shapes missing %q:\n%s", want, shapes)
@@ -1271,6 +1275,8 @@ func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
 	for _, want := range []string{
 		"not evidence",
 		"GateDecision",
+		"claim truth",
+		"publication",
 		"product-value proof",
 	} {
 		if !strings.Contains(notes, want) {

@@ -16,7 +16,9 @@ const (
 	EngineeringValueBoundaryNotEvidence     = "not_evidence"
 	EngineeringValueBoundaryNotApproval     = "not_approval"
 	EngineeringValueBoundaryNotGateDecision = "not_gate_decision"
+	EngineeringValueBoundaryNotClaimTruth   = "not_claim_truth"
 	EngineeringValueBoundaryNotGlobalTruth  = "not_global_truth"
+	EngineeringValueBoundaryNotPublication  = "not_publication"
 
 	EngineeringValueSimplifyKillAuthority = "read_only_review_trigger_not_automatic_gate"
 	EngineeringValueSimplifyAction        = "simplify_or_remove_capability"
@@ -94,7 +96,9 @@ type EngineeringValueSpaceAuthorityBoundary struct {
 	Evidence     string `json:"evidence"`
 	Approval     string `json:"approval"`
 	GateDecision string `json:"gate_decision"`
+	ClaimTruth   string `json:"claim_truth"`
 	GlobalTruth  string `json:"global_truth"`
+	Publication  string `json:"publication"`
 }
 
 type engineeringValueCharacteristicTemplate struct {
@@ -136,7 +140,9 @@ func BuildEngineeringValueSpace(input EngineeringValueSpaceInput) EngineeringVal
 			Evidence:     EngineeringValueBoundaryNotEvidence,
 			Approval:     EngineeringValueBoundaryNotApproval,
 			GateDecision: EngineeringValueBoundaryNotGateDecision,
+			ClaimTruth:   EngineeringValueBoundaryNotClaimTruth,
 			GlobalTruth:  EngineeringValueBoundaryNotGlobalTruth,
+			Publication:  EngineeringValueBoundaryNotPublication,
 		},
 	}
 }

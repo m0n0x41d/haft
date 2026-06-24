@@ -16,7 +16,7 @@ edits there flow to every haft user on next `haft init`.
 
 ## Haft Architecture Notes (Maintainer-Only)
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:cb8052a5c0c1bf5e176f4dcfaf65267f829b8fb1c17f594698aeffabddcc380f -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:c239c13de96da2fbd8ff9ddb6d5299b2b7e094a8c3dccb688b2eae3178f5ab4f -->
 
 Haft is a **governance substrate** consumed via three surfaces sharing one
 `.haft/` artifact graph: skills + slash commands in the host AI coding agent

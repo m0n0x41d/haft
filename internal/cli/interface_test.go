@@ -1099,6 +1099,39 @@ func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.
 	}
 }
 
+func TestInterfaceContractGenerationDiscoveryShapeCountsMatchManifest(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation capability missing")
+	}
+
+	var shape struct {
+		Summary struct {
+			Capabilities              int `json:"capabilities"`
+			GeneratedPreviewFragments int `json:"generated_preview_fragments"`
+			GeneratedSchemaFragments  int `json:"generated_schema_fragments"`
+			MaterializedCarriers      int `json:"materialized_carriers"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(capability.InputContract.FieldShapes[0].Shape), &shape); err != nil {
+		t.Fatalf("contract generation discovery shape is not valid JSON: %v", err)
+	}
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if shape.Summary.Capabilities != report.Summary.Capabilities {
+		t.Fatalf("shape capabilities=%d, report=%d", shape.Summary.Capabilities, report.Summary.Capabilities)
+	}
+	if shape.Summary.GeneratedPreviewFragments != report.Summary.GeneratedPreviewFragments {
+		t.Fatalf("shape generated_preview_fragments=%d, report=%d", shape.Summary.GeneratedPreviewFragments, report.Summary.GeneratedPreviewFragments)
+	}
+	if shape.Summary.GeneratedSchemaFragments != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("shape generated_schema_fragments=%d, report=%d", shape.Summary.GeneratedSchemaFragments, report.Summary.GeneratedSchemaFragments)
+	}
+	if shape.Summary.MaterializedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("shape materialized_carriers=%d, report=%d", shape.Summary.MaterializedCarriers, report.Summary.MaterializedCarriers)
+	}
+}
+
 func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.value_space")
 	if !ok {

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Contract-generation discovery shape counts.** The
+  `query.contract_generation` interface discovery example now matches the live
+  manifest counts after `spec.apply_change`, with a regression test comparing
+  the illustrative summary to the generated report.
 - **Spec sync-back no-bloat guards.** Default status, default
   `code_context`, MCP `tools/list`, and compact contract-generation summaries
   now regression-test that the long `spec.apply_change` dry-run contract shape

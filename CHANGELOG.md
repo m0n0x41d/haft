@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec use authority boundary.** `haft spec use` and
+  `haft_query(action="spec_use")` now expose `current_authority` as a
+  read-only frontier that is not evidence, approval, GateDecision, claim truth,
+  or global truth. The no-OperationalGate case now emits an explicit
+  non-authority boundary instead of an empty boundary object, and text
+  summaries print the full gate boundary including WorkCommission and
+  claim-truth posture.
 - **Spec sync/apply top-level authority boundary.** `haft spec sync` and
   `haft spec apply-change` now state that SQL edition mutations are not
   approval, rebaseline, evidence, GateDecision, claim truth, global truth, or

@@ -50,6 +50,9 @@ func TestRunSpecUseJSONReturnsSpecificationUseRecord(t *testing.T) {
 	if record.GateDecision.Status != specflow.SpecUseGateDecisionNotApplicable {
 		t.Fatalf("gate_decision = %+v, want no OperationalGate", record.GateDecision)
 	}
+	if record.GateDecision.AuthorityBoundary.Profile != "no_operational_gate_profile_not_gate_decision" {
+		t.Fatalf("gate authority boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
 	if strings.Contains(output.String(), `"status":"ready"`) || strings.Contains(output.String(), `"verdict":"pass"`) {
 		t.Fatalf("spec use JSON must not expose ready/pass authority: %s", output.String())
 	}
@@ -123,7 +126,15 @@ func TestRunSpecUseSummaryNamesSeparatedFields(t *testing.T) {
 	}
 
 	result := output.String()
-	for _, want := range []string{"admission:", "source_edition:", "baseline_currentness:", "gate_decision: not_applicable_no_operational_gate"} {
+	for _, want := range []string{
+		"admission:",
+		"source_edition:",
+		"baseline_currentness:",
+		"current_authority:",
+		"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_or_global_truth",
+		"gate_decision: not_applicable_no_operational_gate",
+		"not_spec_approval/not_evidence_creation/not_work_commission/not_claim_truth/not_global_truth",
+	} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("summary missing %q:\n%s", want, result)
 		}
@@ -232,6 +243,9 @@ func TestHandleQuintQuerySpecUseAcceptsOperationalGateObject(t *testing.T) {
 	}
 	if record.GateDecision.AuthorityBoundary.WorkCommission != "not_work_commission" {
 		t.Fatalf("authority boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
+	if record.GateDecision.AuthorityBoundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("claim truth boundary = %+v", record.GateDecision.AuthorityBoundary)
 	}
 }
 

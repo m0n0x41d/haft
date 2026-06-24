@@ -1,6 +1,6 @@
 # Haft Project Discipline
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:2446c125bbb60d02b80687334530028d79027a9ce26678d41753fd8e600ab508 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:b479234a90c043249923618c6fef43c8636c9732dafcdaed281d1a8ad3e67f27 -->
 
 This section is installed and maintained by `haft init`. Edits **inside** the
 haft HTML-comment markers (the start/end pair that brackets this section) will

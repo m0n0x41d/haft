@@ -29,6 +29,12 @@ func TestBuildSpecificationUseRecordSeparatesAdmissionFromBaselineCurrentness(t 
 	if record.GateDecision.Status != SpecUseGateDecisionNotApplicable {
 		t.Fatalf("gate_decision = %+v, want no OperationalGate", record.GateDecision)
 	}
+	if record.GateDecision.AuthorityBoundary.Profile != "no_operational_gate_profile_not_gate_decision" {
+		t.Fatalf("no-gate authority boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
+	if record.GateDecision.AuthorityBoundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("no-gate claim truth boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
 }
 
 func TestBuildSpecificationUseRecordBlocksStrongerUseWhenSourceNotCurrent(t *testing.T) {
@@ -103,6 +109,9 @@ func TestBuildSpecificationUseRecordOperationalGatePassesCurrentAdmittedUse(t *t
 	}
 	if record.GateDecision.AuthorityBoundary.Approval != "not_spec_approval" {
 		t.Fatalf("authority boundary = %+v", record.GateDecision.AuthorityBoundary)
+	}
+	if record.GateDecision.AuthorityBoundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("claim truth boundary = %+v", record.GateDecision.AuthorityBoundary)
 	}
 	if record.GateDecision.OperationalGate == nil {
 		t.Fatal("operational gate profile missing from gate decision")

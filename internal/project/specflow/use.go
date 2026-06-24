@@ -42,7 +42,7 @@ const (
 	OperationalGateSchemaVersion          = 1
 	OperationalGateRuleCurrentAdmittedUse = "require_current_source_and_admitted_use"
 	OperationalGateBoundaryReadOnly       = "read_only_derived_gate_evaluation"
-	CurrentAuthorityBoundaryReadOnly      = "read_only_current_authority_frontier_not_gate_decision"
+	CurrentAuthorityBoundaryReadOnly      = "read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_or_global_truth"
 )
 
 type SpecificationUseInput struct {
@@ -155,6 +155,7 @@ type OperationalGateBoundary struct {
 	Approval       string `json:"approval"`
 	Evidence       string `json:"evidence"`
 	WorkCommission string `json:"work_commission"`
+	ClaimTruth     string `json:"claim_truth"`
 	GlobalTruth    string `json:"global_truth"`
 }
 
@@ -399,8 +400,9 @@ func specificationUseGateDecision(
 	gate := input.OperationalGate
 	if gate == nil {
 		return SpecificationUseGateDisposition{
-			Status: SpecUseGateDecisionNotApplicable,
-			Reason: "SpecificationUseRecord is not a GateDecision because no OperationalGate profile is attached.",
+			Status:            SpecUseGateDecisionNotApplicable,
+			Reason:            "SpecificationUseRecord is not a GateDecision because no OperationalGate profile is attached.",
+			AuthorityBoundary: noOperationalGateBoundary(),
 		}
 	}
 
@@ -574,8 +576,15 @@ func operationalGateBoundary() OperationalGateBoundary {
 		Approval:       "not_spec_approval",
 		Evidence:       "not_evidence_creation",
 		WorkCommission: "not_work_commission",
+		ClaimTruth:     "not_claim_truth",
 		GlobalTruth:    "not_global_truth",
 	}
+}
+
+func noOperationalGateBoundary() OperationalGateBoundary {
+	boundary := operationalGateBoundary()
+	boundary.Profile = "no_operational_gate_profile_not_gate_decision"
+	return boundary
 }
 
 func specUseWaiverActive(raw string, now time.Time) bool {

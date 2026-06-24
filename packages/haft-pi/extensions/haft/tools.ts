@@ -21,7 +21,7 @@ const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:2446c125bbb60d02b80687334530028d79027a9ce26678d41753fd8e600ab508";
+  "sha256:b479234a90c043249923618c6fef43c8636c9732dafcdaed281d1a8ad3e67f27";
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),

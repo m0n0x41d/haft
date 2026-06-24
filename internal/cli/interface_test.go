@@ -2195,7 +2195,18 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 	}
 
 	shapes, _ := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{"operational_gate", "current_authority", "require_current_source_and_admitted_use", "current_authority_conflict_requires_operator", "passed|blocked"} {
+	for _, want := range []string{
+		"operational_gate",
+		"current_authority",
+		"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_or_global_truth",
+		"no_operational_gate_profile_not_gate_decision",
+		"claim_truth",
+		"not_claim_truth",
+		"not_work_commission",
+		"require_current_source_and_admitted_use",
+		"current_authority_conflict_requires_operator",
+		"passed|blocked",
+	} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("query.spec_use contract missing %q:\n%s", want, shapes)
 		}
@@ -2204,8 +2215,15 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 	if !strings.Contains(invariants, "GateDecision remains a derived reading") {
 		t.Fatalf("query.spec_use invariants missing derived-reading boundary:\n%s", invariants)
 	}
-	if !strings.Contains(invariants, "Current-authority conflict posture") {
-		t.Fatalf("query.spec_use invariants missing current-authority boundary:\n%s", invariants)
+	for _, want := range []string{
+		"Current-authority conflict posture",
+		"claim truth",
+		"global truth",
+		"WorkCommission",
+	} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.spec_use invariants missing %q:\n%s", want, invariants)
+		}
 	}
 }
 

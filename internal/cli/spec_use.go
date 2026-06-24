@@ -371,10 +371,22 @@ func writeSpecUseSummary(w io.Writer, record specflow.SpecificationUseRecord) er
 		shortSpecUseHash(record.BaselineCurrentness.BaselineHash),
 	))
 	builder.WriteString(fmt.Sprintf(
-		"gate_decision: %s reason=%s gate=%s\n",
+		"current_authority: %s reason=%s boundary=%s\n",
+		record.CurrentAuthority.Status,
+		record.CurrentAuthority.Reason,
+		record.CurrentAuthority.AuthorityBoundary,
+	))
+	builder.WriteString(fmt.Sprintf(
+		"gate_decision: %s reason=%s gate=%s boundary=%s/%s/%s/%s/%s/%s\n",
 		record.GateDecision.Status,
 		record.GateDecision.Reason,
 		record.GateDecision.GateRef,
+		record.GateDecision.AuthorityBoundary.Profile,
+		record.GateDecision.AuthorityBoundary.Approval,
+		record.GateDecision.AuthorityBoundary.Evidence,
+		record.GateDecision.AuthorityBoundary.WorkCommission,
+		record.GateDecision.AuthorityBoundary.ClaimTruth,
+		record.GateDecision.AuthorityBoundary.GlobalTruth,
 	))
 
 	_, err := io.WriteString(w, builder.String())

@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer judgment help boundary.** `haft overseer judgment --help` now names
+  judgment packets as read-only review metadata that do not mutate, approve, or
+  create evidence.
 - **Carrier manifest help boundary.** `haft carrier manifest --help` now names
   carrier classes as review/discovery metadata, not binding authority by
   themselves.

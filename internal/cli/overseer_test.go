@@ -641,6 +641,25 @@ func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
 	}
 }
 
+func TestOverseerJudgmentHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(overseerJudgmentCmd.Long), " "))
+	for _, want := range []string{
+		"read-only judgment packet",
+		"suggested commands",
+		"operator approval",
+		"does not mutate",
+		"approve",
+		"create evidence",
+		"confidence labels",
+		"review metadata",
+		"not authority",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("overseer judgment help missing %q:\n%s", want, overseerJudgmentCmd.Long)
+		}
+	}
+}
+
 func TestRunOverseerJudgmentJSONLimitReturnsCompactPacket(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seedGovernanceDebt(t, fixture)

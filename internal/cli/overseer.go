@@ -136,7 +136,13 @@ var overseerMaintainCmd = &cobra.Command{
 var overseerJudgmentCmd = &cobra.Command{
 	Use:   "judgment",
 	Short: "Build a read-only judgment packet for maintenance tasks that need human judgment",
-	RunE:  runOverseerJudgment,
+	Long: `Build a read-only judgment packet for maintenance tasks that need human judgment.
+
+The packet groups rung-3 tasks by recommendation, confidence, source, and
+category. Suggested commands are candidates for explicit operator approval.
+The packet does not mutate, approve, or create evidence; confidence labels are
+review metadata, not authority.`,
+	RunE: runOverseerJudgment,
 }
 
 var overseerDrainCmd = &cobra.Command{

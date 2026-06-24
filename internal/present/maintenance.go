@@ -223,11 +223,14 @@ func MaintenanceDrainResponse(report MaintenanceDrainRenderable, navStrip string
 	if fields.MaintenanceRunID != "" {
 		fmt.Fprintf(&sb, "Maintenance run: `%s`\n", fields.MaintenanceRunID)
 	}
-	fmt.Fprintf(&sb, "Authority: %s; approval: %s; evidence: %s; gate: %s.\n\n",
+	fmt.Fprintf(&sb, "Authority: %s; approval: %s; evidence: %s; gate: %s; claim_truth: %s; global_truth: %s; publication: %s.\n\n",
 		fields.Mutation,
 		fields.Approval,
 		fields.Evidence,
-		fields.GateDecision)
+		fields.GateDecision,
+		fields.ClaimTruth,
+		fields.GlobalTruth,
+		fields.Publication)
 	fmt.Fprintf(&sb, "Actions: %d total, %d applied, %d evidence-attached, %d proposed, %d failed.\n",
 		fields.ExecutedActions,
 		fields.AppliedActions,
@@ -271,6 +274,9 @@ type MaintenanceDrainFields struct {
 	Approval           string
 	Evidence           string
 	GateDecision       string
+	ClaimTruth         string
+	GlobalTruth        string
+	Publication        string
 	ExecutedActions    int
 	AppliedActions     int
 	EvidenceActions    int

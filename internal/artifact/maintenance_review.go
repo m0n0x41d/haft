@@ -22,6 +22,8 @@ const (
 	JudgmentConfidenceLow    = "low"
 )
 
+const MaintenanceReconciliationProposalAuthorityBoundary = "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication"
+
 type MaintenanceJudgmentReview struct {
 	GeneratedAt           string                           `json:"generated_at"`
 	SourcePlanGeneratedAt string                           `json:"source_plan_generated_at,omitempty"`
@@ -215,7 +217,7 @@ func BuildMaintenanceReconciliationReview(
 	}
 
 	review := &MaintenanceReconciliationReview{
-		AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+		AuthorityBoundary: MaintenanceReconciliationProposalAuthorityBoundary,
 		ProposalCount:     len(normalized),
 		ByKind:            map[string]int{},
 		Proposals:         normalized,
@@ -325,7 +327,7 @@ func normalizeMaintenanceReconciliationReviewProposals(
 		proposal.SuggestedCommand = strings.TrimSpace(proposal.SuggestedCommand)
 		proposal.AuthorityBoundary = strings.TrimSpace(proposal.AuthorityBoundary)
 		if proposal.AuthorityBoundary == "" {
-			proposal.AuthorityBoundary = "read_only_reconciliation_proposal_not_binding_authority"
+			proposal.AuthorityBoundary = MaintenanceReconciliationProposalAuthorityBoundary
 		}
 		if proposal.Kind == "" || proposal.Reason == "" {
 			continue

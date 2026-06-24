@@ -39,6 +39,9 @@ type maintenanceDrainAuthority struct {
 	Approval     string `json:"approval"`
 	Evidence     string `json:"evidence"`
 	GateDecision string `json:"gate_decision"`
+	ClaimTruth   string `json:"claim_truth"`
+	GlobalTruth  string `json:"global_truth"`
+	Publication  string `json:"publication"`
 }
 
 type maintenanceDrainSummary struct {
@@ -222,6 +225,9 @@ func maintenanceDrainAuthorityFor(dryRun bool) maintenanceDrainAuthority {
 		Approval:     "not_semantic_approval",
 		Evidence:     evidence,
 		GateDecision: "not_gate_decision",
+		ClaimTruth:   "not_claim_truth",
+		GlobalTruth:  "not_global_truth",
+		Publication:  "not_publication",
 	}
 }
 
@@ -274,6 +280,9 @@ func (r maintenanceDrainReport) GetMaintenanceDrainFields() present.MaintenanceD
 		Approval:           r.AuthorityBoundary.Approval,
 		Evidence:           r.AuthorityBoundary.Evidence,
 		GateDecision:       r.AuthorityBoundary.GateDecision,
+		ClaimTruth:         r.AuthorityBoundary.ClaimTruth,
+		GlobalTruth:        r.AuthorityBoundary.GlobalTruth,
+		Publication:        r.AuthorityBoundary.Publication,
 		ExecutedActions:    r.Summary.ExecutedActions,
 		AppliedActions:     r.Summary.AppliedActions,
 		EvidenceActions:    r.Summary.EvidenceActions,

@@ -400,7 +400,7 @@ func TestBuildMaintenanceReconciliationReviewNormalizesReadOnlyProposals(t *test
 			Kind:              "high_fanout_reconciliation_review",
 			Reason:            "fanout exceeds threshold",
 			SuggestedCommand:  "haft decision reconcile --json",
-			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
 		},
 		{
 			Kind:   "",
@@ -411,7 +411,7 @@ func TestBuildMaintenanceReconciliationReviewNormalizesReadOnlyProposals(t *test
 	if review == nil {
 		t.Fatal("expected reconciliation review")
 	}
-	if review.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+	if review.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 		t.Fatalf("authority = %q", review.AuthorityBoundary)
 	}
 	if review.ProposalCount != 2 {
@@ -423,7 +423,7 @@ func TestBuildMaintenanceReconciliationReviewNormalizesReadOnlyProposals(t *test
 	if len(review.SuggestedCommands) != 1 || review.SuggestedCommands[0] != "haft decision reconcile --json" {
 		t.Fatalf("suggested commands = %#v", review.SuggestedCommands)
 	}
-	if review.Proposals[0].ID != "proposal-b" || review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+	if review.Proposals[0].ID != "proposal-b" || review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 		t.Fatalf("first proposal = %#v", review.Proposals[0])
 	}
 	if !maintenanceReviewTestContains(review.Proposals[0].DecisionRefs, "dec-a") || !maintenanceReviewTestContains(review.Proposals[0].DecisionRefs, "dec-b") {

@@ -16,6 +16,11 @@ const (
 	maintenanceSourceCoverage   = "spec_coverage"
 )
 
+const (
+	MaintenanceReconciliationProposalAuthorityBoundary = "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication"
+	MaintenanceAfterActionAuthorityBoundary            = "after_action_report_only_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication"
+)
+
 func BuildMaintenanceRun(input MaintenanceInput) (MaintenanceRun, error) {
 	run := MaintenanceRun{
 		SchemaVersion: MaintenanceRunSchemaVersion,
@@ -166,7 +171,7 @@ func normalizeReconciliationProposals(items []MaintenanceReconciliationProposal)
 		item.SuggestedCommand = strings.TrimSpace(item.SuggestedCommand)
 		item.AuthorityBoundary = strings.TrimSpace(item.AuthorityBoundary)
 		if item.AuthorityBoundary == "" {
-			item.AuthorityBoundary = "read_only_reconciliation_proposal_not_binding_authority"
+			item.AuthorityBoundary = MaintenanceReconciliationProposalAuthorityBoundary
 		}
 		if item.Kind == "" || item.Reason == "" {
 			continue
@@ -184,7 +189,7 @@ func normalizeReconciliationProposals(items []MaintenanceReconciliationProposal)
 
 func buildMaintenanceAfterAction(run MaintenanceRun) MaintenanceAfterActionReport {
 	report := MaintenanceAfterActionReport{
-		AuthorityBoundary: "after_action_report_only_not_binding_authority",
+		AuthorityBoundary: MaintenanceAfterActionAuthorityBoundary,
 	}
 	for _, action := range run.Executed {
 		item := MaintenanceAfterActionItem{
@@ -229,7 +234,7 @@ func buildMaintenanceReconciliationSummary(
 	}
 
 	summary := MaintenanceReconciliationSummary{
-		AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+		AuthorityBoundary: MaintenanceReconciliationProposalAuthorityBoundary,
 		ProposalCount:     len(proposals),
 		ByKind:            map[string]int{},
 	}

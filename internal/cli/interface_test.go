@@ -2104,16 +2104,35 @@ func TestInterfaceRefreshDrainNamesSafeClosureBoundary(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"dry_run=true", "rung-1/rung-2", "needs_operator"} {
+	for _, want := range []string{"dry_run=true", "rung-1/rung-2", "needs_operator", "claim truth", "publication"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("refresh.drain notes missing %q:\n%s", want, notes)
 		}
 	}
 
 	invariants := strings.Join(capability.Invariants, " ")
-	for _, want := range []string{"opt-in", "not create semantic approval"} {
+	for _, want := range []string{"opt-in", "not create semantic approval", "claim truth", "publication"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("refresh.drain invariant missing %q:\n%s", want, invariants)
+		}
+	}
+
+	var fieldShapes strings.Builder
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes.WriteString(shape.Shape)
+		fieldShapes.WriteString(" ")
+		fieldShapes.WriteString(shape.Note)
+		fieldShapes.WriteString(" ")
+	}
+	for _, want := range []string{
+		`"claim_truth":"not_claim_truth"`,
+		`"global_truth":"not_global_truth"`,
+		`"publication":"not_publication"`,
+		"read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
+		"after_action_report_only_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
+	} {
+		if !strings.Contains(fieldShapes.String(), want) {
+			t.Fatalf("refresh.drain field shape missing %q:\n%s", want, fieldShapes.String())
 		}
 	}
 }

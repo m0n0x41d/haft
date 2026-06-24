@@ -78,7 +78,7 @@ func reconciliationPlanMaintenanceProposals(
 				Fanout:            fanout,
 				ScopeRepairHints:  group.ScopeRepairHints,
 				SuggestedCommand:  maintenanceReconciliationInspectCommand,
-				AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+				AuthorityBoundary: artifact.MaintenanceReconciliationProposalAuthorityBoundary,
 			})
 		}
 		if len(group.ScopeRepairHints) > 0 {
@@ -92,7 +92,7 @@ func reconciliationPlanMaintenanceProposals(
 				Fanout:            fanout,
 				ScopeRepairHints:  group.ScopeRepairHints,
 				SuggestedCommand:  maintenanceReconciliationInspectCommand,
-				AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+				AuthorityBoundary: artifact.MaintenanceReconciliationProposalAuthorityBoundary,
 			})
 		}
 	}
@@ -117,7 +117,7 @@ func governingSetMaintenanceProposals(
 			FallbackTargets:   set.WholeFileFallbackTargets,
 			ScopeRepairHints:  set.ScopeRepairHints,
 			SuggestedCommand:  fmt.Sprintf("haft decision governing-set --target-ref %q --json --limit 5", set.TargetRef),
-			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+			AuthorityBoundary: artifact.MaintenanceReconciliationProposalAuthorityBoundary,
 		})
 	}
 	return proposals

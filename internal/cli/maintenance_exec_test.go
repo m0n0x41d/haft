@@ -176,6 +176,10 @@ func TestMaintenanceDrainDryRunReportsProposalsAndNeedsOperatorWithoutMutation(t
 	if !report.DryRun {
 		t.Fatal("dry-run report should set dry_run=true")
 	}
+	assertMaintenanceDrainAuthorityBoundary(t, report.AuthorityBoundary)
+	if report.AuthorityBoundary.Mutation != "not_mutation" || report.AuthorityBoundary.Evidence != "not_evidence" {
+		t.Fatalf("dry-run authority boundary = %#v", report.AuthorityBoundary)
+	}
 	if report.Summary.ProposedActions == 0 {
 		t.Fatalf("dry-run should propose safe actions: %+v", report.Summary)
 	}
@@ -222,7 +226,7 @@ func TestCompactMaintenanceDrainReportPreservesSummaryAndOmitsAuditTail(t *testi
 				{Ref: "finding-002"},
 				{Ref: "finding-003"},
 			},
-			AuthorityBoundary: "after_action_report_only_not_binding_authority",
+			AuthorityBoundary: "after_action_report_only_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
 		},
 		NeedsOperator: []artifact.MaintenanceJudgmentGroup{
 			{
@@ -351,6 +355,10 @@ func TestMaintenanceDrainClosesSafeItemsAndReportsNeedsOperator(t *testing.T) {
 	}
 	if report.MaintenanceRunID == "" {
 		t.Fatal("real drain should store a maintenance run for audit/undo")
+	}
+	assertMaintenanceDrainAuthorityBoundary(t, report.AuthorityBoundary)
+	if report.AuthorityBoundary.Mutation != "machine_safe_only" || report.AuthorityBoundary.Evidence != "machine_evidence_only" {
+		t.Fatalf("real drain authority boundary = %#v", report.AuthorityBoundary)
 	}
 	if report.Summary.AppliedActions == 0 || report.Summary.EvidenceActions == 0 {
 		t.Fatalf("real drain should apply safe actions and attach evidence: %+v", report.Summary)
@@ -779,6 +787,28 @@ func assertActionOutcome(t *testing.T, actions []overseer.MaintenanceAction, kin
 	}
 	t.Fatalf("no action kind=%s decision=%s outcome=%s in ledger: %+v", kind, decisionRef, outcome, actions)
 	return overseer.MaintenanceAction{}
+}
+
+func assertMaintenanceDrainAuthorityBoundary(t *testing.T, boundary maintenanceDrainAuthority) {
+	t.Helper()
+	if boundary.Trigger != "explicit_h_verify_or_overseer_drain" {
+		t.Fatalf("drain trigger boundary = %#v", boundary)
+	}
+	if boundary.Approval != "not_semantic_approval" {
+		t.Fatalf("drain approval boundary = %#v", boundary)
+	}
+	if boundary.GateDecision != "not_gate_decision" {
+		t.Fatalf("drain gate boundary = %#v", boundary)
+	}
+	if boundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("drain claim truth boundary = %#v", boundary)
+	}
+	if boundary.GlobalTruth != "not_global_truth" {
+		t.Fatalf("drain global truth boundary = %#v", boundary)
+	}
+	if boundary.Publication != "not_publication" {
+		t.Fatalf("drain publication boundary = %#v", boundary)
+	}
 }
 
 func machineEvidenceCount(t *testing.T, ctx context.Context, store *artifact.Store, decisionID string) int {

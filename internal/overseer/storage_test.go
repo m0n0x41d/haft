@@ -154,7 +154,7 @@ func TestMaintenanceRunCarriesReconciliationProposalsAndAfterAction(t *testing.T
 	if len(run.ReconciliationProposals) != 1 {
 		t.Fatalf("reconciliation proposals = %#v", run.ReconciliationProposals)
 	}
-	if run.ReconciliationProposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+	if run.ReconciliationProposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 		t.Fatalf("proposal authority = %q", run.ReconciliationProposals[0].AuthorityBoundary)
 	}
 	if run.ReconciliationSummary == nil {
@@ -166,7 +166,7 @@ func TestMaintenanceRunCarriesReconciliationProposalsAndAfterAction(t *testing.T
 	if run.ReconciliationSummary.HighFanoutProposalCount != 1 || run.ReconciliationSummary.MaxFanout != 7 {
 		t.Fatalf("reconciliation fanout summary = %#v", run.ReconciliationSummary)
 	}
-	if run.ReconciliationSummary.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+	if run.ReconciliationSummary.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 		t.Fatalf("reconciliation summary authority = %q", run.ReconciliationSummary.AuthorityBoundary)
 	}
 	if len(run.AfterAction.AutoClosedItems) != 1 {
@@ -274,7 +274,7 @@ func TestMaintenanceReconciliationSummaryCountsFallbackPosture(t *testing.T) {
 func assertMaintenanceAfterActionReportOnly(t *testing.T, report MaintenanceAfterActionReport) {
 	t.Helper()
 
-	if report.AuthorityBoundary != "after_action_report_only_not_binding_authority" {
+	if report.AuthorityBoundary != "after_action_report_only_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 		t.Fatalf("after-action authority = %q", report.AuthorityBoundary)
 	}
 

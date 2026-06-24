@@ -37,7 +37,7 @@ func TestReconciliationPlanMaintenanceProposalsAreReadOnly(t *testing.T) {
 		t.Fatalf("proposals = %#v", proposals)
 	}
 	for _, proposal := range proposals {
-		if proposal.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		if proposal.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 			t.Fatalf("proposal authority = %q", proposal.AuthorityBoundary)
 		}
 		assertMaintenanceReconciliationProposalIsProposalOnly(t, proposal)
@@ -86,14 +86,14 @@ func TestMaintenanceReconciliationReviewFromProposalsPreservesReadOnlyBoundary(t
 			DecisionRefs:      []string{"dec-a"},
 			Fanout:            7,
 			SuggestedCommand:  maintenanceReconciliationInspectCommand,
-			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority",
+			AuthorityBoundary: "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
 		},
 	})
 
 	if review == nil || review.ProposalCount != 1 {
 		t.Fatalf("review = %#v", review)
 	}
-	if review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+	if review.Proposals[0].AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 		t.Fatalf("proposal authority = %q", review.Proposals[0].AuthorityBoundary)
 	}
 	if review.Proposals[0].SuggestedCommand != maintenanceReconciliationInspectCommand {

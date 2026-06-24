@@ -1536,8 +1536,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"schema_version":"maintenance_drain.v1","view":"compact","dry_run":true,"summary":{"executed_actions":2,"needs_operator_tasks":72,"reconciliation_proposal_count":71},"executed":[{"kind":"auto_rebaseline","outcome":"proposed"}],"omitted_executed":1,"reconciliation_proposals":[{"kind":"high_fanout_reconciliation_review|fallback_scope_repair_review|fallback_governing_scope_review","suggested_command":"haft decision reconcile --json","authority_boundary":"read_only_reconciliation_proposal_not_binding_authority"}],"omitted_reconciliation_proposals":70,"after_action":{"remaining_operator_judgment":[...],"authority_boundary":"after_action_report_only_not_binding_authority"},"omitted_after_action_remaining_operator_judgment":67,"needs_operator":[...],"omitted_needs_operator_tasks":67,"full_audit_command":"haft overseer drain --dry-run --json --full"}`,
-						Note:  "Default CLI JSON is compact and preserves summary counts while bounding executed, reconciliation_proposals, after_action.remaining_operator_judgment, and nested needs_operator tasks. Use --limit N to adjust compact output and --full for the complete audit payload. Reconciliation proposals and after_action are report-only; they do not supersede, retire, merge, approve, create decisions, or apply reconciliation selections.",
+						Shape: `{"schema_version":"maintenance_drain.v1","view":"compact","dry_run":true,"authority_boundary":{"trigger":"explicit_h_verify_or_overseer_drain","mutation":"not_mutation|machine_safe_only","approval":"not_semantic_approval","evidence":"not_evidence|machine_evidence_only","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"executed_actions":2,"needs_operator_tasks":72,"reconciliation_proposal_count":71},"executed":[{"kind":"auto_rebaseline","outcome":"proposed"}],"omitted_executed":1,"reconciliation_proposals":[{"kind":"high_fanout_reconciliation_review|fallback_scope_repair_review|fallback_governing_scope_review","suggested_command":"haft decision reconcile --json","authority_boundary":"read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication"}],"omitted_reconciliation_proposals":70,"after_action":{"remaining_operator_judgment":[...],"authority_boundary":"after_action_report_only_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication"},"omitted_after_action_remaining_operator_judgment":67,"needs_operator":[...],"omitted_needs_operator_tasks":67,"full_audit_command":"haft overseer drain --dry-run --json --full"}`,
+						Note:  "Default CLI JSON is compact and preserves summary counts while bounding executed, reconciliation_proposals, after_action.remaining_operator_judgment, and nested needs_operator tasks. Use --limit N to adjust compact output and --full for the complete audit payload. Drain reports, reconciliation proposals, and after_action are report-only for semantic authority; they do not supersede, retire, merge, approve, create decisions, create claim truth/global truth, publish, or apply reconciliation selections.",
 					},
 				},
 				Notes: []string{
@@ -1546,12 +1546,13 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"CLI JSON is compact by default; summary counts are complete, omitted_* fields name truncated audit tails, and --full restores the complete report.",
 					"reconciliation_proposals are read-only review batches for high-fanout/fallback groups; suggested commands are inspect-only.",
 					"after_action lists auto-closed items, evidence refs, remaining operator judgment, and undo commands for autonomous mutations.",
+					"Drain reports do not create claim truth, global truth, or publication authority.",
 				},
 			},
 			OutputVolume: []string{"default: compact drain report", "CLI --json: compact executed/proposal/operator samples plus omitted counts", "CLI --json --full: complete audit payload"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Drain is opt-in; default status and refresh.review remain read-only.",
-				"Drain does not create semantic approval, GateDecision, or global truth.",
+				"Drain does not create semantic approval, GateDecision, claim truth, global truth, or publication.",
 				"Drain never applies DecisionReconciliationSelection documents.",
 			),
 		},

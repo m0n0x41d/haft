@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Maintenance drain authority boundary.** `haft overseer drain --json`,
+  `haft_refresh(action="drain")`, and `haft interface refresh.drain` now state
+  that drain reports, reconciliation proposals, and after-action reports are
+  not claim truth, global truth, or publication authority. Compact JSON remains
+  bounded and drain mutation behavior is unchanged.
 - **Read-only route/attention authority boundaries.** `haft drift route`,
   `haft attention blocked`, and their MCP discovery surfaces now expose
   advisory route and blocked-use attention boundaries as not evidence,

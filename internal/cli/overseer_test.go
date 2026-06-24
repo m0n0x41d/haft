@@ -630,7 +630,7 @@ func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
 		t.Fatalf("review did not classify judgment tasks: %#v", review.Counts.ByRecommendation)
 	}
 	if review.Reconciliation != nil {
-		if review.Reconciliation.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority" {
+		if review.Reconciliation.AuthorityBoundary != "read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication" {
 			t.Fatalf("reconciliation authority = %#v", review.Reconciliation)
 		}
 		for _, proposal := range review.Reconciliation.Proposals {

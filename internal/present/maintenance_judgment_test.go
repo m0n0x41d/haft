@@ -38,7 +38,7 @@ func TestMaintenanceJudgmentReviewResponseIncludesReadOnlyReconciliationSummary(
 	response := MaintenanceJudgmentReviewResponse(review, "")
 	for _, want := range []string{
 		"Reconciliation proposals (1 read-only)",
-		"read_only_reconciliation_proposal_not_binding_authority",
+		"read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
 		"fallback_scope_repair_review=1",
 		"haft decision reconcile --json",
 		"reconcile-a",

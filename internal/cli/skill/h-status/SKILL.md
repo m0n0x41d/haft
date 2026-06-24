@@ -8,7 +8,7 @@ argument-hint: "[optional: context name to filter]"
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:c239c13de96da2fbd8ff9ddb6d5299b2b7e094a8c3dccb688b2eae3178f5ab4f -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:25dbaf78611349b03749c268abd414405f6b566cf3e3d13afa7cbe4eb79b6b99 -->
 
 # h-status — Project FPF state dashboard
 

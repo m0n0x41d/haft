@@ -707,7 +707,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":32,"kernel_owned_contracts":32,"mcp_mirrored_actions":20,"cli_available_surfaces":12,"binding_authority_surfaces":4,"legacy_transport_exceptions":18,"schema_covered_surfaces":20,"schema_missing_surfaces":0,"schema_excluded_fields":8,"shape_covered_surfaces":20,"shape_missing_surfaces":0,"shape_generator_targets":0,"generated_target_fragments":0,"validated_fragments":20,"legacy_fragments":12,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":33,"kernel_owned_contracts":33,"mcp_mirrored_actions":19,"cli_available_surfaces":25,"binding_authority_surfaces":2,"read_only_surfaces":19,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":25,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":3,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":3,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, approve binding actions, or change tool descriptions.",
 					},
 				},
@@ -739,7 +739,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":32,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":32,"generated_schema_fragments":28,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":33,"generated_schema_fragments":28,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1023,6 +1023,39 @@ func haftInterfaceCatalog() []interfaceCapability {
 				"Markdown prose is not authority; only typed spec-section fields can sync back.",
 				"Sync-back mutation is not approval, rebaseline, evidence, GateDecision, or global truth.",
 				"Default status must not inline apply-change contract details.",
+			),
+		},
+		{
+			ID:      "spec.export",
+			Purpose: "Render one current SQL SpecSection edition as a deterministic Markdown publication projection.",
+			CurrentExecution: interfaceExecution{
+				CLIStatus:        "available",
+				CLICommand:       "haft spec export TS.x --json; haft spec export TS.x --markdown",
+				DiscoveryCommand: "haft interface spec.export --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"section_id"},
+				OptionalFields: []string{"json", "markdown"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"authority_boundary":"publication_projection_only_not_approval_rebaseline_evidence_or_gate","source_of_truth":"sql_project_graph","edition":{"section_id":"TS.x","semantic_hash":"sha256...","source_kind":"sql|carrier_import|markdown_sync_back","carrier_path":".haft/specs/target-system.md"},"publication":{"source_edition_hash":"sha256...","publication_hash":"sha256...","publication_projection":"typed_yaml_spec_section","carrier_path":".haft/specs/target-system.md","markdown":"yaml spec-section carrier bytes"},"audit":{"source_episteme":"sql_spec_section_edition","publication_projection":"typed_yaml_spec_section","carrier_bytes":".haft/specs/target-system.md","authority_boundary":"not_approval_not_rebaseline_not_evidence"}}`,
+						Note:  "JSON separates source semantic edition, publication projection, and carrier bytes; --markdown prints carrier bytes only.",
+					},
+				},
+				Notes: []string{
+					"Run `haft spec sync` first when no current SQL edition exists.",
+					"Export is read-only and never approves, rebaselines, reopens, creates evidence, or treats Markdown prose as authority.",
+					"The renderer fails closed when the projected typed YAML would lose semantic identity on parse.",
+					"`--markdown` intentionally omits audit fields so carrier bytes do not masquerade as authority metadata.",
+				},
+			},
+			OutputVolume: []string{"default text summary; --json exact source/publication/audit record; --markdown carrier bytes only"},
+			Invariants: append(commonInterfaceInvariants(),
+				"SQL edition store remains the source of truth.",
+				"Publication projection is not approval, rebaseline, evidence, GateDecision, or prose authority.",
+				"Carrier bytes are separated from source semantic edition and publication hash in JSON.",
+				"Default status must not inline spec export publication details.",
 			),
 		},
 		{
@@ -3220,6 +3253,9 @@ func interfaceContractAuditAuthorityPosture(capability interfaceCapability) stri
 	if capability.ID == "spec.apply_change" {
 		return "sql_edition_sync_back_mutation_not_approval"
 	}
+	if capability.ID == "spec.export" {
+		return "read_only_publication_projection"
+	}
 	if strings.HasPrefix(capability.ID, "query.") {
 		return "read_only_drill_down"
 	}
@@ -3261,6 +3297,9 @@ func interfaceContractAuditValidationRefs(capability interfaceCapability) []stri
 	}
 	if capability.ID == "spec.apply_change" {
 		refs = append(refs, "internal/cli/spec_apply_change_test.go")
+	}
+	if capability.ID == "spec.export" {
+		refs = append(refs, "internal/cli/spec_export_test.go")
 	}
 
 	return uniqueInterfaceContractAuditStrings(refs)

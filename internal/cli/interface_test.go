@@ -35,7 +35,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "query.contract_audit", "query.contract_generation", "query.spec_review", "query.drift_events", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -1132,6 +1132,25 @@ func TestInterfaceContractGenerationDiscoveryShapeCountsMatchManifest(t *testing
 	}
 }
 
+func TestInterfaceContractAuditDiscoveryShapeCountsMatchReport(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_audit")
+	if !ok {
+		t.Fatal("query.contract_audit capability missing")
+	}
+
+	var shape struct {
+		Summary interfaceContractAuditSummary `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(capability.InputContract.FieldShapes[0].Shape), &shape); err != nil {
+		t.Fatalf("contract audit discovery shape is not valid JSON: %v", err)
+	}
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	if shape.Summary != report.Summary {
+		t.Fatalf("shape summary=%#v, report=%#v", shape.Summary, report.Summary)
+	}
+}
+
 func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.value_space")
 	if !ok {
@@ -2047,6 +2066,67 @@ func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
 	}
 	if surface.SchemaCoverage.Status != "not_mcp_backed" {
 		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+}
+
+func TestInterfaceSpecExportDocumentsPublicationProjectionBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "spec.export")
+	if !ok {
+		t.Fatal("spec.export capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("spec.export should be CLI-only in this slice: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft spec export TS.x --markdown") {
+		t.Fatalf("spec.export CLI command missing markdown projection:\n%#v", capability.CurrentExecution)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"source_edition_hash",
+		"publication_hash",
+		"publication_projection",
+		"carrier_path",
+		"markdown",
+		"publication_projection_only_not_approval_rebaseline_evidence_or_gate",
+		"not_approval_not_rebaseline_not_evidence",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("spec.export contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"Run `haft spec sync` first", "read-only", "fails closed", "`--markdown` intentionally omits audit fields"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("spec.export notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "Carrier bytes are separated", "Default status must not inline"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec.export invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	audit := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	surface, ok := findInterfaceContractAuditSurface(audit, "spec.export")
+	if !ok {
+		t.Fatal("spec.export audit surface missing")
+	}
+	if surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+		t.Fatalf("host schema posture = %q", surface.HostSchemaPosture)
+	}
+	if surface.AuthorityPosture != "read_only_publication_projection" {
+		t.Fatalf("authority posture = %q", surface.AuthorityPosture)
+	}
+	if surface.SchemaCoverage.Status != "not_mcp_backed" {
+		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+	if !stringSliceContains(surface.ValidationRefs, "internal/cli/spec_export_test.go") {
+		t.Fatalf("validation refs missing spec_export_test.go: %#v", surface.ValidationRefs)
 	}
 }
 

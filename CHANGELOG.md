@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec export interface contract.** `haft interface spec.export --json` now
+  documents the existing `haft spec export` publication projection surface,
+  including SQL source edition, publication hash, carrier bytes, markdown-only
+  output, and the read-only authority boundary.
 - **README product-claim boundary.** The public README now describes Haft as a
   bounded project-local FPF governance substrate for human-authorized AI
   engineering work, not as a complete FPF operating system.

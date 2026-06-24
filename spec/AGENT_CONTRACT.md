@@ -20,7 +20,7 @@ When spec and implementation diverge:
 | Category | Editable by agent? | Notes |
 |----------|-------------------|-------|
 | `internal/` Go code | Yes | Follow architecture rules below |
-| `desktop/` frontend | Yes | Follow existing component patterns |
+| archived `desktop/` frontend | Yes, archive/provenance only | Do not treat as current product surface unless a new decision reopens it |
 | `spec/` documents | Yes, but flag semantic changes | New terms → add to TERM_MAP first |
 | `.haft/specs/*.md` project specs | Yes, only through explicit user/project onboarding work | Treat as project-local spec carriers; keep strict section IDs and YAML blocks intact. |
 | `.haft/*.md` projections | **No** | Derived from database. Never edit directly. |

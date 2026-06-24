@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Root spec carrier semio coverage.** `haft carrier check` now scans
+  root-level `spec/*.md` support docs, and the root workflow/agent contracts no
+  longer describe removed `haft agent` or desktop surfaces as current runtime
+  paths.
 - **Enabling-system carrier semio coverage.** `haft carrier check` now scans
   `spec/enabling-system/*.md`, treats the desktop layer contract as an explicit
   archived carrier, and keeps current enabling-system architecture/stack docs

@@ -50,6 +50,6 @@ Plain markdown prose under `## Exceptions`.
 
 ## Runtime behavior
 
-- `haft agent` prepends `Intent` + `Defaults` to the agent system prompt at startup.
-- `haft serve` exposes the same prompt prefix through MCP initialize instructions.
+- Host-side skills/prompts and `haft serve` expose `Intent` + `Defaults`
+  through MCP initialize instructions and project discipline context.
 - `haft init` creates an example `.haft/workflow.md` when the file does not exist.

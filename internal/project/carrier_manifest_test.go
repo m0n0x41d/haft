@@ -74,6 +74,20 @@ func TestCarrierAuthorityManifestIncludesTargetSystemSupportDocs(t *testing.T) {
 	}
 }
 
+func TestCarrierAuthorityManifestIncludesRootSpecSupportDocs(t *testing.T) {
+	entry := carrierManifestEntry(t, "root-spec-support-docs")
+
+	if !entry.Current {
+		t.Fatal("root spec support docs should be current support carriers")
+	}
+	if entry.AuthorityClass != CarrierAuthoritySupport {
+		t.Fatalf("authority_class = %q, want support", entry.AuthorityClass)
+	}
+	if entry.PathPattern != "spec/*.md" {
+		t.Fatalf("path_pattern = %q", entry.PathPattern)
+	}
+}
+
 func TestCarrierAuthorityManifestIncludesEnablingSystemSupportDocs(t *testing.T) {
 	entry := carrierManifestEntry(t, "enabling-system-support-docs")
 
@@ -182,6 +196,22 @@ func TestCarrierSemioCheckScansTargetSystemSupportDocs(t *testing.T) {
 	}
 	if len(result.Findings) > 0 {
 		t.Fatalf("safe target-system support doc should not produce findings: %#v", result.Findings)
+	}
+}
+
+func TestCarrierSemioCheckScansRootSpecSupportDocs(t *testing.T) {
+	root := t.TempDir()
+	writeCarrierSemioFixture(t, root, "spec/WORKFLOW.md", "Current workflow instructions are consumed through host skills, MCP, and CLI.")
+
+	result, err := CheckCarrierSemio(root)
+	if err != nil {
+		t.Fatalf("CheckCarrierSemio: %v", err)
+	}
+	if !containsString(result.CheckedFiles, "spec/WORKFLOW.md") {
+		t.Fatalf("checked_files missing root spec support doc: %#v", result.CheckedFiles)
+	}
+	if len(result.Findings) > 0 {
+		t.Fatalf("safe root spec support doc should not produce findings: %#v", result.Findings)
 	}
 }
 

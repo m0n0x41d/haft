@@ -114,6 +114,15 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 			Notes:          "product-value evidence docs must keep claims bounded to explicit evidence refs",
 		},
 		{
+			ID:             "root-spec-support-docs",
+			PathPattern:    "spec/*.md",
+			AuthorityClass: CarrierAuthoritySupport,
+			Surface:        "root_spec_doc",
+			Current:        true,
+			Normativity:    "root spec support documentation; SQL/artifact graph remains runtime source of truth",
+			Notes:          "root spec docs must use current v8 surfaces and label removed surfaces as archived/provenance",
+		},
+		{
 			ID:             "enabling-system-support-docs",
 			PathPattern:    "spec/enabling-system/*.md",
 			AuthorityClass: CarrierAuthoritySupport,
@@ -334,6 +343,7 @@ func carrierSemioCheckFiles(root string) ([]string, error) {
 		"AGENTS.md",
 		"CLAUDE.md",
 		".haft/specs/*.md",
+		"spec/*.md",
 		"spec/target-system/*.md",
 		"spec/enabling-system/*.md",
 		"internal/cli/claude_md_template.md",

@@ -2,9 +2,12 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -134,6 +137,56 @@ func TestRunSpecOnboardReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	if intent.BlockingFindings[0].SectionID != "TS.sql.onboard.001" {
 		t.Fatalf("onboard read carrier section instead of SQL edition: %#v", intent.BlockingFindings)
 	}
+}
+
+func TestRunSpecOnboardJSONMatchesMCPNextStepKeys(t *testing.T) {
+	root := t.TempDir()
+	haftDir := filepath.Join(root, ".haft")
+	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	restoreRoot := enterTestProjectRoot(t, root)
+	defer restoreRoot()
+	restoreJSON := stubSpecOnboardJSON(t, true)
+	defer restoreJSON()
+
+	var cliOutput bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&cliOutput)
+	if err := runSpecOnboard(cmd, nil); err != nil {
+		t.Fatalf("runSpecOnboard returned error: %v", err)
+	}
+
+	mcpOutput, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action":       "next_step",
+		"project_root": root,
+	})
+	if err != nil {
+		t.Fatalf("next_step returned error: %v", err)
+	}
+
+	cliKeys := jsonObjectKeys(t, cliOutput.Bytes())
+	mcpKeys := jsonObjectKeys(t, []byte(mcpOutput))
+	if !reflect.DeepEqual(cliKeys, mcpKeys) {
+		t.Fatalf("CLI/MCP WorkflowIntent keys differ:\nCLI=%v\nMCP=%v", cliKeys, mcpKeys)
+	}
+}
+
+func jsonObjectKeys(t *testing.T, raw []byte) []string {
+	t.Helper()
+
+	var object map[string]any
+	if err := json.Unmarshal(raw, &object); err != nil {
+		t.Fatalf("decode JSON object: %v\nraw: %s", err, string(raw))
+	}
+
+	keys := make([]string, 0, len(object))
+	for key := range object {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func stubSpecOnboardJSON(t *testing.T, value bool) func() {

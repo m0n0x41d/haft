@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec health and recall evidence regressions.** Added focused regression
+  coverage for spec drift `section_id` reporting, CLI/MCP spec-onboarding JSON
+  key parity, cross-project recall history injection for paraphrased hits, and
+  the live CrossHybrid recall floor against the current decision corpus.
 - **Generated-contract materialized carrier check.** `haft interface
   contract-generation --check-materialized-carriers` now validates every listed
   host/skill/plugin/Pi carrier for current source-digest and authority-boundary

@@ -143,6 +143,33 @@ func TestAppendSpecHealthFindingsReadsCurrentSQLEditionsBeforeCarriers(t *testin
 	t.Fatalf("spec health should use SQL edition section; findings = %#v", report.Findings)
 }
 
+func TestAppendSpecHealthFindingsReportsSingleDriftedSectionID(t *testing.T) {
+	root, haftDir := newBaselineTestProject(t)
+
+	_ = callHandleSpecSection(t, haftDir, map[string]any{
+		"action":       "approve",
+		"project_root": root,
+		"section_id":   baselineTestSectionID,
+		"approved_by":  "human",
+	})
+	mutateCarrierTitle(t, root)
+
+	report := appendSpecHealthFindings(project.SpecCheckReport{}, root)
+
+	driftFindings := make([]project.SpecCheckFinding, 0)
+	for _, finding := range report.Findings {
+		if finding.Code == "spec_section_drifted" {
+			driftFindings = append(driftFindings, finding)
+		}
+	}
+	if len(driftFindings) != 1 {
+		t.Fatalf("drift findings = %d, want 1; all findings = %#v", len(driftFindings), report.Findings)
+	}
+	if driftFindings[0].SectionID != baselineTestSectionID {
+		t.Fatalf("section_id = %q, want %q", driftFindings[0].SectionID, baselineTestSectionID)
+	}
+}
+
 func TestRunCheck_CleanProjectPrintsSummaryAndStaysZero(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	restore := enterTestProjectRoot(t, fixture.root)

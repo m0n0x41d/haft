@@ -8,6 +8,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation approval-readiness review metadata.** R9
+  `haft decision reconcile selection-draft --json` now includes structured
+  per-candidate `approval_readiness` metadata: why the draft is not
+  apply-ready, which placeholders remain, what operator checks are required,
+  and which selection fields must be confirmed. Compact text shows
+  `readiness` and blocker count while preserving `operator_approved=false`,
+  `selected_candidates=0`, and the separate fail-closed `selection-review` /
+  `apply` boundary.
 - **Decision reconciliation draft structured proposed selection.** R9
   `haft decision reconcile selection-draft --json` now exposes a
   `proposed_selection` object for each review candidate in addition to the

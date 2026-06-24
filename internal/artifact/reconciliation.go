@@ -270,10 +270,21 @@ type DecisionReconciliationDraftItem struct {
 	SuggestedReviewAction         string                           `json:"suggested_review_action,omitempty"`
 	BlockingQuestions             []string                         `json:"blocking_questions,omitempty"`
 	RequiredSelectionFields       []string                         `json:"required_selection_fields,omitempty"`
+	ApprovalReadiness             DecisionReconciliationReadiness  `json:"approval_readiness"`
 	ReviewCommands                []string                         `json:"review_commands,omitempty"`
 	SelectionTemplate             string                           `json:"selection_template"`
 	ProposedSelection             *DecisionReconciliationSelection `json:"proposed_selection,omitempty"`
 	ReviewNotes                   []string                         `json:"review_notes"`
+}
+
+type DecisionReconciliationReadiness struct {
+	State                    string   `json:"state"`
+	ApplyReady               bool     `json:"apply_ready"`
+	NotApplyReadyReasons     []string `json:"not_apply_ready_reasons"`
+	PlaceholderFields        []string `json:"placeholder_fields,omitempty"`
+	RequiredOperatorChecks   []string `json:"required_operator_checks,omitempty"`
+	SelectionFieldsToConfirm []string `json:"selection_fields_to_confirm,omitempty"`
+	AuthorityBoundary        []string `json:"authority_boundary"`
 }
 
 type DecisionReconciliationSelection struct {
@@ -1459,6 +1470,7 @@ func decisionReconciliationDraftItem(
 		SuggestedReviewAction:         decisionReconciliationDraftReviewAction(posture),
 		BlockingQuestions:             decisionReconciliationDraftBlockingQuestions(item),
 		RequiredSelectionFields:       decisionReconciliationPreviewRequiredFields(DecisionReconciliationOperationEnrichScope),
+		ApprovalReadiness:             decisionReconciliationDraftReadiness(item, selection),
 		ReviewCommands:                decisionReconciliationDraftReviewCommands(item.DecisionID),
 		SelectionTemplate:             decisionReconciliationDraftSelectionTemplateFromSelection(selection),
 		ProposedSelection:             &selection,
@@ -1469,6 +1481,109 @@ func decisionReconciliationDraftItem(
 			"decision_carrier_hint and review_commands are discovery aids, not authority or apply approval",
 		},
 	}
+}
+
+func decisionReconciliationDraftReadiness(
+	item DecisionReconciliationItem,
+	selection DecisionReconciliationSelection,
+) DecisionReconciliationReadiness {
+	placeholderFields := decisionReconciliationSelectionPlaceholderFields(selection)
+	operatorChecks := decisionReconciliationDraftOperatorChecks(item)
+	reasons := decisionReconciliationDraftNotApplyReadyReasons(placeholderFields, operatorChecks)
+	return DecisionReconciliationReadiness{
+		State:                    "operator_review_required",
+		ApplyReady:               false,
+		NotApplyReadyReasons:     reasons,
+		PlaceholderFields:        placeholderFields,
+		RequiredOperatorChecks:   operatorChecks,
+		SelectionFieldsToConfirm: decisionReconciliationDraftSelectionFieldsToConfirm(selection),
+		AuthorityBoundary: []string{
+			"approval_readiness is advisory review metadata",
+			"approval_readiness does not create operator approval",
+			"selection-review and apply remain the only validation gates for a filled selection document",
+		},
+	}
+}
+
+func decisionReconciliationSelectionPlaceholderFields(
+	selection DecisionReconciliationSelection,
+) []string {
+	fields := []string{"operator_approval_ref"}
+	if isDecisionReconciliationPlaceholder(selection.DecisionSubjectRef) {
+		fields = append(fields, "items[].decision_subject_ref")
+	}
+	if isDecisionReconciliationPlaceholder(selection.Reason) {
+		fields = append(fields, "items[].reason")
+	}
+	for index, target := range selection.GovernanceTargets {
+		prefix := fmt.Sprintf("items[].governance_targets[%d]", index)
+		if isDecisionReconciliationPlaceholder(target.Kind) {
+			fields = append(fields, prefix+".kind")
+		}
+		if isDecisionReconciliationPlaceholder(target.Ref) {
+			fields = append(fields, prefix+".ref")
+		}
+	}
+	for index, target := range selection.DriftWatchTargets {
+		prefix := fmt.Sprintf("items[].drift_watch_targets[%d]", index)
+		if isDecisionReconciliationPlaceholder(target.TargetRef) {
+			fields = append(fields, prefix+".target_ref")
+		}
+		if isDecisionReconciliationPlaceholder(target.Trigger) {
+			fields = append(fields, prefix+".trigger")
+		}
+	}
+	return compactSortedStrings(fields)
+}
+
+func decisionReconciliationDraftOperatorChecks(
+	item DecisionReconciliationItem,
+) []string {
+	checks := []string{}
+	if strings.TrimSpace(item.DecisionSubjectRef) == "" {
+		checks = append(checks, "confirm the exact decision_subject_ref from the decision carrier and current governing scope")
+	}
+	if len(item.GovernanceTargets) > 0 {
+		checks = append(checks, "confirm each prefilled governance target is a real falsification or preservation boundary, not only an implementation footprint")
+	}
+	if len(item.GovernanceTargets) == 0 {
+		checks = append(checks, "choose at least one exact symbol, API contract, invariant, spec section, or drift-watch target")
+	}
+	if len(item.WholeFileFallbackTargets) > 0 {
+		checks = append(checks, "replace whole-file fallback targets unless no semantic target can be recovered")
+	}
+	return compactSortedStrings(checks)
+}
+
+func decisionReconciliationDraftNotApplyReadyReasons(
+	placeholderFields []string,
+	operatorChecks []string,
+) []string {
+	reasons := []string{}
+	if len(placeholderFields) > 0 {
+		reasons = append(reasons, "selection document still contains missing or placeholder fields")
+	}
+	if len(operatorChecks) > 0 {
+		reasons = append(reasons, "operator checks are required before this review candidate can become an approved selection")
+	}
+	return compactSortedStrings(reasons)
+}
+
+func decisionReconciliationDraftSelectionFieldsToConfirm(
+	selection DecisionReconciliationSelection,
+) []string {
+	fields := []string{
+		"operator_approval_ref",
+		"items[].decision_subject_ref",
+		"items[].reason",
+	}
+	if len(selection.GovernanceTargets) > 0 {
+		fields = append(fields, "items[].governance_targets")
+	}
+	if len(selection.DriftWatchTargets) > 0 {
+		fields = append(fields, "items[].drift_watch_targets")
+	}
+	return compactSortedStrings(fields)
 }
 
 func decisionReconciliationDraftCarrierHint(decisionRef string) string {

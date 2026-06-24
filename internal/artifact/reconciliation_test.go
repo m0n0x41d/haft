@@ -195,6 +195,31 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	if !strings.Contains(item.SuggestedReviewAction, "replace whole-file fallback") {
 		t.Fatalf("suggested_review_action = %q", item.SuggestedReviewAction)
 	}
+	if item.ApprovalReadiness.State != "operator_review_required" {
+		t.Fatalf("approval_readiness.state = %q", item.ApprovalReadiness.State)
+	}
+	if item.ApprovalReadiness.ApplyReady {
+		t.Fatalf("approval_readiness.apply_ready = true; draft item must stay advisory")
+	}
+	for _, want := range []string{
+		"operator_approval_ref",
+		"items[].decision_subject_ref",
+		"items[].governance_targets[0].kind",
+		"items[].governance_targets[0].ref",
+		"items[].drift_watch_targets[0].target_ref",
+		"items[].drift_watch_targets[0].trigger",
+		"items[].reason",
+	} {
+		if !containsString(item.ApprovalReadiness.PlaceholderFields, want) {
+			t.Fatalf("approval_readiness.placeholder_fields missing %q: %#v", want, item.ApprovalReadiness.PlaceholderFields)
+		}
+	}
+	if !containsString(item.ApprovalReadiness.RequiredOperatorChecks, "replace whole-file fallback targets unless no semantic target can be recovered") {
+		t.Fatalf("approval_readiness.required_operator_checks = %#v", item.ApprovalReadiness.RequiredOperatorChecks)
+	}
+	if !containsString(item.ApprovalReadiness.AuthorityBoundary, "approval_readiness does not create operator approval") {
+		t.Fatalf("approval_readiness.authority_boundary = %#v", item.ApprovalReadiness.AuthorityBoundary)
+	}
 	if item.DecisionRef != "dec-fallback" {
 		t.Fatalf("decision_ref = %q", item.DecisionRef)
 	}
@@ -243,6 +268,27 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	}
 	if item.Confidence != "medium" {
 		t.Fatalf("confidence = %q", item.Confidence)
+	}
+	for _, unexpected := range []string{
+		"items[].governance_targets[0].kind",
+		"items[].governance_targets[0].ref",
+		"items[].drift_watch_targets[0].target_ref",
+	} {
+		if containsString(item.ApprovalReadiness.PlaceholderFields, unexpected) {
+			t.Fatalf("approval_readiness.placeholder_fields contains unexpected %q: %#v", unexpected, item.ApprovalReadiness.PlaceholderFields)
+		}
+	}
+	for _, want := range []string{
+		"operator_approval_ref",
+		"items[].decision_subject_ref",
+		"items[].reason",
+	} {
+		if !containsString(item.ApprovalReadiness.PlaceholderFields, want) {
+			t.Fatalf("approval_readiness.placeholder_fields missing %q: %#v", want, item.ApprovalReadiness.PlaceholderFields)
+		}
+	}
+	if !containsString(item.ApprovalReadiness.RequiredOperatorChecks, "confirm each prefilled governance target is a real falsification or preservation boundary, not only an implementation footprint") {
+		t.Fatalf("approval_readiness.required_operator_checks = %#v", item.ApprovalReadiness.RequiredOperatorChecks)
 	}
 	if item.DecisionCarrierHint != ".haft/decisions/dec-precise.md" {
 		t.Fatalf("decision_carrier_hint = %q", item.DecisionCarrierHint)

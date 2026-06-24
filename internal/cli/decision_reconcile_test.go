@@ -379,6 +379,10 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 			AffectedFiles:     []string{"internal/shared.go"},
 			ScopeRepairHint:   "use enrich_scope to add decision_subject_ref",
 			BlockingQuestions: []string{"What exact object does this decision govern now?"},
+			ApprovalReadiness: artifact.DecisionReconciliationReadiness{
+				State:                "operator_review_required",
+				NotApplyReadyReasons: []string{"selection document still contains missing or placeholder fields"},
+			},
 		}},
 	}
 
@@ -399,6 +403,8 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 		"selected_candidates: 0",
 		"dec-fallback",
 		"confidence=low",
+		"readiness=operator_review_required",
+		"blockers=1",
 		"posture=needs_subject_and_target_review",
 		"subject_suggestions=0",
 		"carrier=",

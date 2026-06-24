@@ -827,10 +827,12 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	}
 	for _, item := range draft.Items[:limit] {
 		if _, err := fmt.Fprintf(output,
-			"- %s group=%s confidence=%s posture=%s subject_suggestions=%d carrier=%s files=%d hint=%s\n",
+			"- %s group=%s confidence=%s readiness=%s blockers=%d posture=%s subject_suggestions=%d carrier=%s files=%d hint=%s\n",
 			item.DecisionRef,
 			item.ReviewedGroupID,
 			item.Confidence,
+			decisionReconciliationDraftReadinessState(item),
+			len(item.ApprovalReadiness.NotApplyReadyReasons),
 			item.CandidatePosture,
 			len(item.DecisionSubjectRefSuggestions),
 			item.DecisionCarrierHint,
@@ -845,6 +847,15 @@ func writeDecisionReconciliationSelectionDraftSummary(
 		return err
 	}
 	return nil
+}
+
+func decisionReconciliationDraftReadinessState(
+	item artifact.DecisionReconciliationDraftItem,
+) string {
+	if item.ApprovalReadiness.State == "" {
+		return "unspecified"
+	}
+	return item.ApprovalReadiness.State
 }
 
 func writeDecisionReconciliationSelectionReviewSummary(

@@ -8,8 +8,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/spf13/cobra"
 
@@ -23,6 +25,8 @@ const driftEventsSummaryEventLimit = 20
 const driftBindingsDryRunJSONLimit = 5
 const driftBindingsCompactCandidatePreviewLimit = 5
 const driftBindingsCompactDiagnosticPreviewLimit = 2
+const driftBindingsCompactReviewGroupLimit = 5
+const driftBindingsCompactGroupCandidatePreviewLimit = 3
 
 var (
 	driftRouteJSON              bool
@@ -195,21 +199,46 @@ type driftBindingsProjectedReport struct {
 }
 
 type driftBindingsProjectedItem struct {
-	DecisionID                string                             `json:"decision_id"`
-	DecisionTitle             string                             `json:"decision_title"`
-	AffectedFiles             []string                           `json:"affected_files"`
-	StoredSymbolCount         int                                `json:"stored_symbol_count"`
-	CandidateSymbolCount      int                                `json:"candidate_symbol_count"`
-	Posture                   string                             `json:"posture"`
-	RecommendedAction         string                             `json:"recommended_action"`
-	HighConfidence            bool                               `json:"high_confidence,omitempty"`
-	Reason                    string                             `json:"reason"`
-	CandidateSymbolPreview    []artifact.LegacyBindingCandidate  `json:"candidate_symbol_preview,omitempty"`
-	CandidateSymbolsOmitted   int                                `json:"candidate_symbols_omitted,omitempty"`
-	BindingTargets            []artifact.BindingTarget           `json:"binding_targets,omitempty"`
-	DiagnosticPreview         []driftBindingsProjectedDiagnostic `json:"diagnostic_preview,omitempty"`
-	DiagnosticsOmitted        int                                `json:"diagnostics_omitted,omitempty"`
-	FullCandidateAuditCommand string                             `json:"full_candidate_audit_command,omitempty"`
+	DecisionID                string                              `json:"decision_id"`
+	DecisionTitle             string                              `json:"decision_title"`
+	AffectedFiles             []string                            `json:"affected_files"`
+	StoredSymbolCount         int                                 `json:"stored_symbol_count"`
+	CandidateSymbolCount      int                                 `json:"candidate_symbol_count"`
+	Posture                   string                              `json:"posture"`
+	RecommendedAction         string                              `json:"recommended_action"`
+	HighConfidence            bool                                `json:"high_confidence,omitempty"`
+	Reason                    string                              `json:"reason"`
+	RankingPolicy             string                              `json:"ranking_policy,omitempty"`
+	CandidateSymbolPreview    []driftBindingsRankedCandidate      `json:"candidate_symbol_preview,omitempty"`
+	CandidateSymbolsOmitted   int                                 `json:"candidate_symbols_omitted,omitempty"`
+	CandidateReviewGroups     []driftBindingsCandidateReviewGroup `json:"candidate_review_groups,omitempty"`
+	CandidateReviewGroupsOmit int                                 `json:"candidate_review_groups_omitted,omitempty"`
+	BindingTargets            []artifact.BindingTarget            `json:"binding_targets,omitempty"`
+	DiagnosticPreview         []driftBindingsProjectedDiagnostic  `json:"diagnostic_preview,omitempty"`
+	DiagnosticsOmitted        int                                 `json:"diagnostics_omitted,omitempty"`
+	FullCandidateAuditCommand string                              `json:"full_candidate_audit_command,omitempty"`
+}
+
+type driftBindingsRankedCandidate struct {
+	FilePath       string   `json:"file_path"`
+	SymbolName     string   `json:"symbol_name"`
+	SymbolKind     string   `json:"symbol_kind"`
+	Line           int      `json:"line"`
+	EndLine        int      `json:"end_line"`
+	ReviewRank     int      `json:"review_rank"`
+	ReviewScore    int      `json:"review_score"`
+	MatchedTerms   []string `json:"matched_terms,omitempty"`
+	RankingSignals []string `json:"ranking_signals,omitempty"`
+}
+
+type driftBindingsCandidateReviewGroup struct {
+	FilePath                string                         `json:"file_path"`
+	CandidateCount          int                            `json:"candidate_count"`
+	CandidateSymbolPreview  []driftBindingsRankedCandidate `json:"candidate_symbol_preview,omitempty"`
+	CandidateSymbolsOmitted int                            `json:"candidate_symbols_omitted,omitempty"`
+	BestReviewScore         int                            `json:"best_review_score"`
+	MatchedTerms            []string                       `json:"matched_terms,omitempty"`
+	RankingSignals          []string                       `json:"ranking_signals,omitempty"`
 }
 
 type driftBindingsProjectedDiagnostic struct {
@@ -255,11 +284,19 @@ func driftBindingsProjectedItems(items []artifact.LegacyBindingItem) []driftBind
 }
 
 func driftBindingsProjectedItemFromLegacy(item artifact.LegacyBindingItem) driftBindingsProjectedItem {
-	candidates := item.CandidateSymbols
+	rankedCandidates := driftBindingsRankedCandidates(item)
+	candidates := rankedCandidates
 	candidateOmitted := 0
 	if len(candidates) > driftBindingsCompactCandidatePreviewLimit {
 		candidates = candidates[:driftBindingsCompactCandidatePreviewLimit]
-		candidateOmitted = len(item.CandidateSymbols) - driftBindingsCompactCandidatePreviewLimit
+		candidateOmitted = len(rankedCandidates) - driftBindingsCompactCandidatePreviewLimit
+	}
+
+	groups := driftBindingsCandidateReviewGroups(rankedCandidates)
+	groupsOmitted := 0
+	if len(groups) > driftBindingsCompactReviewGroupLimit {
+		groupsOmitted = len(groups) - driftBindingsCompactReviewGroupLimit
+		groups = groups[:driftBindingsCompactReviewGroupLimit]
 	}
 
 	diagnostics := driftBindingsProjectedDiagnostics(item.Diagnostics)
@@ -279,13 +316,246 @@ func driftBindingsProjectedItemFromLegacy(item artifact.LegacyBindingItem) drift
 		RecommendedAction:         item.RecommendedAction,
 		HighConfidence:            item.HighConfidence,
 		Reason:                    item.Reason,
+		RankingPolicy:             driftBindingsRankingPolicy(item),
 		CandidateSymbolPreview:    candidates,
 		CandidateSymbolsOmitted:   candidateOmitted,
+		CandidateReviewGroups:     groups,
+		CandidateReviewGroupsOmit: groupsOmitted,
 		BindingTargets:            item.BindingTargets,
 		DiagnosticPreview:         diagnostics,
 		DiagnosticsOmitted:        diagnosticsOmitted,
 		FullCandidateAuditCommand: driftBindingsFullCandidateAuditCommand(item),
 	}
+}
+
+func driftBindingsRankingPolicy(item artifact.LegacyBindingItem) string {
+	if len(item.CandidateSymbols) == 0 {
+		return ""
+	}
+	return "review_only_title_file_kind_rank_not_binding_authority"
+}
+
+func driftBindingsRankedCandidates(item artifact.LegacyBindingItem) []driftBindingsRankedCandidate {
+	titleTokens := driftBindingsReviewTokenSet(item.DecisionTitle)
+	ranked := make([]driftBindingsRankedCandidate, 0, len(item.CandidateSymbols))
+	for _, candidate := range item.CandidateSymbols {
+		ranked = append(ranked, driftBindingsRankCandidate(candidate, titleTokens))
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left := ranked[i]
+		right := ranked[j]
+		if left.ReviewScore != right.ReviewScore {
+			return left.ReviewScore > right.ReviewScore
+		}
+		if left.FilePath != right.FilePath {
+			return left.FilePath < right.FilePath
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return left.SymbolName < right.SymbolName
+	})
+
+	for index := range ranked {
+		ranked[index].ReviewRank = index + 1
+	}
+	return ranked
+}
+
+func driftBindingsRankCandidate(
+	candidate artifact.LegacyBindingCandidate,
+	titleTokens map[string]struct{},
+) driftBindingsRankedCandidate {
+	symbolTokens := driftBindingsReviewTokenSet(candidate.SymbolName, candidate.SymbolKind)
+	fileTokens := driftBindingsReviewTokenSet(candidate.FilePath, filepath.Base(candidate.FilePath))
+	symbolMatches := driftBindingsIntersectSorted(titleTokens, symbolTokens)
+	fileMatches := driftBindingsIntersectSorted(titleTokens, fileTokens)
+	matchedTerms := driftBindingsMergeSortedTerms(symbolMatches, fileMatches)
+
+	score := 0
+	signals := []string{}
+	if len(symbolMatches) > 0 {
+		score += len(symbolMatches) * 10
+		signals = append(signals, "symbol_title_match")
+	}
+	if len(fileMatches) > 0 {
+		score += len(fileMatches) * 4
+		signals = append(signals, "file_title_match")
+	}
+	if driftBindingsSourceFile(candidate.FilePath) {
+		score += 2
+		signals = append(signals, "source_file")
+	}
+	if driftBindingsExportedSymbol(candidate.SymbolName) {
+		score++
+		signals = append(signals, "exported_symbol")
+	}
+	switch candidate.SymbolKind {
+	case "type", "func", "method":
+		score++
+		signals = append(signals, "governed_symbol_kind")
+	}
+	if len(signals) == 0 {
+		signals = append(signals, "source_order_tiebreak")
+	}
+
+	return driftBindingsRankedCandidate{
+		FilePath:       candidate.FilePath,
+		SymbolName:     candidate.SymbolName,
+		SymbolKind:     candidate.SymbolKind,
+		Line:           candidate.Line,
+		EndLine:        candidate.EndLine,
+		ReviewScore:    score,
+		MatchedTerms:   matchedTerms,
+		RankingSignals: signals,
+	}
+}
+
+func driftBindingsCandidateReviewGroups(
+	ranked []driftBindingsRankedCandidate,
+) []driftBindingsCandidateReviewGroup {
+	byFile := map[string][]driftBindingsRankedCandidate{}
+	for _, candidate := range ranked {
+		byFile[candidate.FilePath] = append(byFile[candidate.FilePath], candidate)
+	}
+
+	groups := make([]driftBindingsCandidateReviewGroup, 0, len(byFile))
+	for filePath, candidates := range byFile {
+		preview := candidates
+		omitted := 0
+		if len(preview) > driftBindingsCompactGroupCandidatePreviewLimit {
+			omitted = len(candidates) - driftBindingsCompactGroupCandidatePreviewLimit
+			preview = preview[:driftBindingsCompactGroupCandidatePreviewLimit]
+		}
+
+		groups = append(groups, driftBindingsCandidateReviewGroup{
+			FilePath:                filePath,
+			CandidateCount:          len(candidates),
+			CandidateSymbolPreview:  preview,
+			CandidateSymbolsOmitted: omitted,
+			BestReviewScore:         candidates[0].ReviewScore,
+			MatchedTerms:            driftBindingsGroupMatchedTerms(candidates),
+			RankingSignals:          driftBindingsGroupSignals(candidates),
+		})
+	}
+
+	sort.SliceStable(groups, func(i, j int) bool {
+		left := groups[i]
+		right := groups[j]
+		if left.BestReviewScore != right.BestReviewScore {
+			return left.BestReviewScore > right.BestReviewScore
+		}
+		if left.CandidateCount != right.CandidateCount {
+			return left.CandidateCount > right.CandidateCount
+		}
+		return left.FilePath < right.FilePath
+	})
+	return groups
+}
+
+func driftBindingsGroupMatchedTerms(candidates []driftBindingsRankedCandidate) []string {
+	terms := map[string]struct{}{}
+	for _, candidate := range candidates {
+		for _, term := range candidate.MatchedTerms {
+			terms[term] = struct{}{}
+		}
+	}
+	return driftBindingsSortedKeys(terms)
+}
+
+func driftBindingsGroupSignals(candidates []driftBindingsRankedCandidate) []string {
+	signals := map[string]struct{}{}
+	for _, candidate := range candidates {
+		for _, signal := range candidate.RankingSignals {
+			signals[signal] = struct{}{}
+		}
+	}
+	return driftBindingsSortedKeys(signals)
+}
+
+func driftBindingsReviewTokenSet(values ...string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, value := range values {
+		expanded := driftBindingsExpandIdentifier(value)
+		for _, token := range strings.FieldsFunc(expanded, driftBindingsTokenSeparator) {
+			token = strings.ToLower(strings.TrimSpace(token))
+			if len(token) < 3 || driftBindingsReviewStopWord(token) {
+				continue
+			}
+			out[token] = struct{}{}
+		}
+	}
+	return out
+}
+
+func driftBindingsExpandIdentifier(value string) string {
+	var builder strings.Builder
+	var previous rune
+	for _, current := range value {
+		if previous != 0 && unicode.IsLower(previous) && unicode.IsUpper(current) {
+			builder.WriteRune(' ')
+		}
+		builder.WriteRune(current)
+		previous = current
+	}
+	return builder.String()
+}
+
+func driftBindingsTokenSeparator(value rune) bool {
+	return !unicode.IsLetter(value) && !unicode.IsDigit(value)
+}
+
+func driftBindingsReviewStopWord(token string) bool {
+	switch token {
+	case "add", "and", "for", "from", "into", "the", "this", "that", "with":
+		return true
+	default:
+		return false
+	}
+}
+
+func driftBindingsIntersectSorted(
+	left map[string]struct{},
+	right map[string]struct{},
+) []string {
+	out := map[string]struct{}{}
+	for token := range left {
+		if _, ok := right[token]; ok {
+			out[token] = struct{}{}
+		}
+	}
+	return driftBindingsSortedKeys(out)
+}
+
+func driftBindingsMergeSortedTerms(sets ...[]string) []string {
+	out := map[string]struct{}{}
+	for _, set := range sets {
+		for _, value := range set {
+			out[value] = struct{}{}
+		}
+	}
+	return driftBindingsSortedKeys(out)
+}
+
+func driftBindingsSortedKeys(values map[string]struct{}) []string {
+	out := make([]string, 0, len(values))
+	for value := range values {
+		out = append(out, value)
+	}
+	sort.Strings(out)
+	return out
+}
+
+func driftBindingsSourceFile(path string) bool {
+	return !strings.HasSuffix(path, "_test.go") && !strings.Contains(path, "_test.")
+}
+
+func driftBindingsExportedSymbol(symbolName string) bool {
+	for _, char := range symbolName {
+		return unicode.IsUpper(char)
+	}
+	return false
 }
 
 func driftBindingsProjectedDiagnostics(

@@ -163,6 +163,9 @@ func TestDriftBindingsJSONPayloadProjectsBoundedReviewDetails(t *testing.T) {
 	}
 
 	item := payload.Items[0]
+	if item.RankingPolicy != "review_only_title_file_kind_rank_not_binding_authority" {
+		t.Fatalf("ranking policy = %q", item.RankingPolicy)
+	}
 	if len(item.CandidateSymbolPreview) != driftBindingsCompactCandidatePreviewLimit {
 		t.Fatalf("candidate preview = %d, want %d", len(item.CandidateSymbolPreview), driftBindingsCompactCandidatePreviewLimit)
 	}
@@ -191,6 +194,94 @@ func TestDriftBindingsJSONPayloadProjectsBoundedReviewDetails(t *testing.T) {
 		if strings.Contains(string(body), forbidden) {
 			t.Fatalf("compact payload leaked %q:\n%s", forbidden, string(body))
 		}
+	}
+}
+
+func TestDriftBindingsJSONPayloadRanksAndGroupsCandidateReview(t *testing.T) {
+	report := artifact.LegacyBindingReport{
+		SchemaVersion: artifact.LegacyBindingSchemaVersion,
+		Authority:     artifact.LegacyBindingAuthority,
+		Summary:       artifact.LegacyBindingSummary{TotalDecisions: 1},
+		Items: []artifact.LegacyBindingItem{{
+			DecisionID:           "dec-ranked",
+			DecisionTitle:        "Compare variant identifiers",
+			AffectedFiles:        []string{"internal/artifact/solution.go", "internal/artifact/solution_test.go"},
+			CandidateSymbolCount: 4,
+			Posture:              artifact.LegacyBindingPostureMissingSymbolBaseline,
+			RecommendedAction:    artifact.LegacyBindingActionNeedsOperatorSelect,
+			Reason:               "multiple parseable symbols found; operator must choose governed symbol boundary",
+			CandidateSymbols: []artifact.LegacyBindingCandidate{
+				{
+					FilePath:   "internal/agent/prompt.go",
+					SymbolName: "BuildSystemPrompt",
+					SymbolKind: "func",
+					Line:       10,
+					EndLine:    20,
+				},
+				{
+					FilePath:   "internal/artifact/solution_test.go",
+					SymbolName: "TestCompareVariantIdentifiers",
+					SymbolKind: "func",
+					Line:       30,
+					EndLine:    40,
+				},
+				{
+					FilePath:   "internal/artifact/solution.go",
+					SymbolName: "CompareVariantIdentifiers",
+					SymbolKind: "func",
+					Line:       50,
+					EndLine:    60,
+				},
+				{
+					FilePath:   "internal/artifact/solution.go",
+					SymbolName: "ValidateVariantIdentitySet",
+					SymbolKind: "func",
+					Line:       70,
+					EndLine:    80,
+				},
+			},
+		}},
+	}
+
+	payload, ok := driftBindingsJSONPayload(report, true, -1).(driftBindingsProjectedReport)
+	if !ok {
+		t.Fatalf("payload type = %T, want driftBindingsProjectedReport", driftBindingsJSONPayload(report, true, -1))
+	}
+
+	item := payload.Items[0]
+	if len(item.CandidateSymbolPreview) != 4 {
+		t.Fatalf("candidate preview = %#v", item.CandidateSymbolPreview)
+	}
+	top := item.CandidateSymbolPreview[0]
+	if top.SymbolName != "CompareVariantIdentifiers" {
+		t.Fatalf("top candidate = %#v, want CompareVariantIdentifiers", top)
+	}
+	if top.ReviewRank != 1 || top.ReviewScore == 0 {
+		t.Fatalf("top candidate rank/score = %#v", top)
+	}
+	for _, want := range []string{"compare", "variant"} {
+		if !containsString(top.MatchedTerms, want) {
+			t.Fatalf("top candidate matched_terms missing %q: %#v", want, top.MatchedTerms)
+		}
+	}
+	for _, want := range []string{"symbol_title_match", "source_file"} {
+		if !containsString(top.RankingSignals, want) {
+			t.Fatalf("top candidate ranking_signals missing %q: %#v", want, top.RankingSignals)
+		}
+	}
+
+	if len(item.CandidateReviewGroups) == 0 {
+		t.Fatalf("candidate review groups missing: %#v", item)
+	}
+	firstGroup := item.CandidateReviewGroups[0]
+	if firstGroup.FilePath != "internal/artifact/solution.go" {
+		t.Fatalf("first review group = %#v, want solution.go", firstGroup)
+	}
+	if firstGroup.CandidateCount != 2 {
+		t.Fatalf("first review group candidate_count = %d, want 2", firstGroup.CandidateCount)
+	}
+	if !containsString(firstGroup.RankingSignals, "symbol_title_match") {
+		t.Fatalf("first review group signals = %#v", firstGroup.RankingSignals)
 	}
 }
 

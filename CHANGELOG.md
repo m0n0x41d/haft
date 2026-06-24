@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Drift binding candidate review ranking.** Compact
+  `haft drift bindings --dry-run --json` items now include review-only
+  `ranking_policy`, ranked candidate previews, and file-level
+  `candidate_review_groups` so old-decision binding reviews surface the most
+  relevant symbols first without creating binding authority or changing the
+  full audit path.
 - **Drift binding dry-run review load.** `haft drift bindings --dry-run
   --json` now keeps compact review packets token-bounded by projecting
   candidate symbols and diagnostics as previews with omitted counts. Long

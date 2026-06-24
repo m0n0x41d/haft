@@ -34,7 +34,7 @@ var attentionBlockedCmd = &cobra.Command{
 
 The item names the bearer first, returns exact source refs, and lists
 admissible next actions. It is not a WorkPlan, approval, evidence,
-GateDecision, or global truth.`,
+GateDecision, claim truth, global truth, or publication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runAttentionBlocked,
 }
@@ -95,12 +95,14 @@ func writeBlockedUseAttentionSummary(w io.Writer, item artifact.BlockedUseAttent
 		strings.Join(item.NextAdmissibleActions, ","),
 	))
 	builder.WriteString(fmt.Sprintf(
-		"authority_boundary: work_plan=%s evidence=%s approval=%s gate_decision=%s global_truth=%s\n",
+		"authority_boundary: work_plan=%s evidence=%s approval=%s gate_decision=%s claim_truth=%s global_truth=%s publication=%s\n",
 		item.AuthorityBoundary.WorkPlan,
 		item.AuthorityBoundary.Evidence,
 		item.AuthorityBoundary.Approval,
 		item.AuthorityBoundary.GateDecision,
+		item.AuthorityBoundary.ClaimTruth,
 		item.AuthorityBoundary.GlobalTruth,
+		item.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

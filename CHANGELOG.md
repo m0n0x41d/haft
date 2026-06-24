@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Blocked-use attention compact boundary.** `haft attention blocked` text
+  output now names the same `claim_truth` and `publication` non-authority
+  posture already present in JSON.
 - **Baseline audit spec-review classification.** `haft baseline audit` now
   classifies spec-review `authority_boundary.rebaseline` vocabulary as
   read-only lifecycle authority instead of legacy ambiguous baseline debt.

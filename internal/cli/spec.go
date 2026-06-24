@@ -119,7 +119,8 @@ SQL edition store.
 
 Only typed fenced yaml spec-section blocks are imported. Surrounding Markdown
 prose remains carrier text, not authority. The command does not approve,
-rebaseline, reopen, or mutate SpecSectionApprovalBaseline rows.`,
+rebaseline, reopen, create evidence, pass gates, create claim truth or global
+truth, create prose authority, or mutate SpecSectionApprovalBaseline rows.`,
 	RunE: runSpecSync,
 }
 
@@ -131,7 +132,7 @@ carrier projection.
 
 SQL remains the source of truth. The rendered Markdown is a publication
 projection for carrier synchronization only; it is not approval, rebaseline,
-evidence, or prose authority.`,
+evidence, GateDecision, claim truth, global truth, or prose authority.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSpecExport,
 }
@@ -145,7 +146,8 @@ project SQL edition store.
 Only changes classified as recognized semantic scalar, relationship, or mixed
 updates are written. Carrier-only changes are reported as no-op. Unknown or
 high-risk changes block. The command does not approve, rebaseline, reopen, or
-mutate SpecSectionApprovalBaseline rows.
+mutate SpecSectionApprovalBaseline rows, and it does not create evidence, pass
+gates, create claim truth or global truth, or create prose authority.
 
 Use --dry-run to run the same typed carrier parser, SQL conflict check, and
 planned-edition projection without writing the SQL edition store.`,
@@ -162,8 +164,8 @@ reports whether the change is carrier-only, a recognized semantic scalar
 update, a relationship update, mixed, or unknown/high-risk.
 
 This is read-only review input for the future sync-back path. It does not write
-SQLite, approve sections, rebaseline drift, or treat surrounding prose as
-authority.`,
+SQLite, approve sections, rebaseline drift, create evidence, pass gates, create
+claim truth or global truth, or create prose authority.`,
 	RunE: runSpecClassifyChange,
 }
 

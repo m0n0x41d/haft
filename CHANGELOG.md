@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec lifecycle help boundaries.** `haft spec sync`, `haft spec export`,
+  `haft spec apply-change`, and `haft spec classify-change` help now name
+  evidence, gate, claim-truth, global-truth, and prose-authority boundaries.
 - **Drift route compact boundary.** `haft drift route` text output now names
   the same `claim_truth` and `publication` non-authority posture already
   present in JSON.

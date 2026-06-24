@@ -45,6 +45,26 @@ func TestWriteDecisionReconciliationSummary(t *testing.T) {
 	}
 }
 
+func TestDecisionReconcileHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileCmd.Long), " "))
+	for _, want := range []string{
+		"report-only decisionreconciliationplan",
+		"file overlap alone",
+		"review context",
+		"not operator approval",
+		"not evidence",
+		"not gatedecision",
+		"not claim truth",
+		"not global truth",
+		"not publication",
+		"not apply authority",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("decision reconcile help missing %q:\n%s", want, decisionReconcileCmd.Long)
+		}
+	}
+}
+
 func TestDecisionReconcileMetricsHelpNamesAuthorityBoundaries(t *testing.T) {
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileMetricsCmd.Long), " "))
 	for _, want := range []string{

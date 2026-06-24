@@ -48,7 +48,9 @@ var decisionReconcileCmd = &cobra.Command{
 The plan groups current DecisionRecords by explicit decision subject, bounded
 context, and governance-target overlap. File overlap alone is never merge or
 supersede evidence. This command does not mutate decisions, links, evidence,
-baselines, or carriers.`,
+baselines, or carriers. Reconciliation plans are review context, not operator
+approval, not evidence, not GateDecision, not claim truth, not global truth,
+not publication, and not apply authority.`,
 	RunE: runDecisionReconcile,
 }
 

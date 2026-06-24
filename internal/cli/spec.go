@@ -33,6 +33,7 @@ var (
 	specExportJSON         bool
 	specExportMarkdown     bool
 	specApplyChangeJSON    bool
+	specApplyDryRun        bool
 	specApplyBefore        string
 	specApplyAfter         string
 	specApplySection       string
@@ -144,7 +145,10 @@ project SQL edition store.
 Only changes classified as recognized semantic scalar, relationship, or mixed
 updates are written. Carrier-only changes are reported as no-op. Unknown or
 high-risk changes block. The command does not approve, rebaseline, reopen, or
-mutate SpecSectionApprovalBaseline rows.`,
+mutate SpecSectionApprovalBaseline rows.
+
+Use --dry-run to run the same typed carrier parser, SQL conflict check, and
+planned-edition projection without writing the SQL edition store.`,
 	RunE: runSpecApplyChange,
 }
 
@@ -232,6 +236,7 @@ func init() {
 	specExportCmd.Flags().BoolVar(&specExportJSON, "json", false, "print structured JSON output")
 	specExportCmd.Flags().BoolVar(&specExportMarkdown, "markdown", false, "print only the generated Markdown carrier projection")
 	specApplyChangeCmd.Flags().BoolVar(&specApplyChangeJSON, "json", false, "print structured JSON output")
+	specApplyChangeCmd.Flags().BoolVar(&specApplyDryRun, "dry-run", false, "preview the SQL sync-back without writing the edition store")
 	specApplyChangeCmd.Flags().StringVar(&specApplyBefore, "before", "", "path to the before spec carrier")
 	specApplyChangeCmd.Flags().StringVar(&specApplyAfter, "after", "", "path to the after spec carrier")
 	specApplyChangeCmd.Flags().StringVar(&specApplySection, "section", "", "SpecSection id to apply")

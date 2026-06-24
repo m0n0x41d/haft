@@ -19,7 +19,7 @@ func TestRunSpecApplyChangeAppliesRecognizedRelationshipUpdate(t *testing.T) {
 	defer restoreCwd()
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
 	after := writeSpecClassifyChangeFile(t, "target-system-after.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.boundary.001\n"))
-	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", true)
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", true, false)
 	defer restoreFlags()
 
 	var output bytes.Buffer
@@ -36,6 +36,9 @@ func TestRunSpecApplyChangeAppliesRecognizedRelationshipUpdate(t *testing.T) {
 	}
 	if !result.Applied || result.Noop {
 		t.Fatalf("apply result = %+v", result)
+	}
+	if result.DryRun || !result.WouldApply {
+		t.Fatalf("apply dry-run posture = %+v", result)
 	}
 	if result.Change.Kind != project.SpecCarrierChangeRelationshipUpdate {
 		t.Fatalf("change kind = %q", result.Change.Kind)
@@ -68,7 +71,7 @@ func TestRunSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 	defer restoreCwd()
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
 	after := writeSpecClassifyChangeFile(t, "target-system-after.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.boundary.001\n"))
-	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", false)
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", false, false)
 	defer restoreFlags()
 
 	var output bytes.Buffer
@@ -83,6 +86,8 @@ func TestRunSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 	for _, want := range []string{
 		"spec apply-change: relationship_update",
 		"applied: true",
+		"dry_run: false",
+		"would_apply: true",
 		"audit:",
 		"source_episteme: sql_spec_section_edition",
 		"publication_projection: typed_yaml_spec_section_projection",
@@ -103,7 +108,7 @@ func TestRunSpecApplyChangeBlocksUnknownHighRisk(t *testing.T) {
 	defer restoreCwd()
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
 	after := writeSpecClassifyChangeFile(t, "enabling-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
-	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "", true)
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "", true, false)
 	defer restoreFlags()
 
 	var output bytes.Buffer
@@ -265,6 +270,48 @@ func TestApplySpecCarrierChangeToSQLCarrierOnlyNoop(t *testing.T) {
 	}
 }
 
+func TestRunSpecApplyChangeDryRunReportsScalarUpdateWithoutWriting(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	restoreCwd := chdirForTest(t, root)
+	defer restoreCwd()
+	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "title: Before\nvalid_until: 2026-08-01\n"))
+	after := writeSpecClassifyChangeFile(t, "target-system-after.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "title: After\nvalid_until: 2026-09-01\n"))
+	restoreFlags := stubSpecApplyChangeFlags(t, before, after, "TS.sync.001", "target-system", true, true)
+	defer restoreFlags()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	if err := runSpecApplyChange(cmd, nil); err != nil {
+		t.Fatalf("runSpecApplyChange dry-run: %v\n%s", err, output.String())
+	}
+
+	var result specApplyChangeResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("decode dry-run result: %v\n%s", err, output.String())
+	}
+	if result.Applied || !result.DryRun || !result.WouldApply || result.Noop {
+		t.Fatalf("dry-run result = %+v", result)
+	}
+	if result.Change.Kind != project.SpecCarrierChangeSemanticFieldUpdate {
+		t.Fatalf("change kind = %q", result.Change.Kind)
+	}
+	if result.Edition != nil || result.PlannedEdition == nil {
+		t.Fatalf("edition posture = applied:%#v planned:%#v", result.Edition, result.PlannedEdition)
+	}
+	if result.PlannedEdition.SourceKind != string(specflow.SpecSectionSourceSyncBack) {
+		t.Fatalf("planned source_kind = %q", result.PlannedEdition.SourceKind)
+	}
+
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	if _, err := store.GetCurrent("qnt_spec_sync_test", "TS.sync.001"); err == nil {
+		t.Fatal("dry-run wrote a current SQL edition")
+	}
+}
+
 func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 	var output bytes.Buffer
 	result := specApplyChangeResult{
@@ -343,23 +390,26 @@ func TestWriteSpecApplyChangeTextShowsCarrierOnlyDisposition(t *testing.T) {
 	}
 }
 
-func stubSpecApplyChangeFlags(t *testing.T, before string, after string, section string, kind string, jsonFlag bool) func() {
+func stubSpecApplyChangeFlags(t *testing.T, before string, after string, section string, kind string, jsonFlag bool, dryRun bool) func() {
 	t.Helper()
 	previousBefore := specApplyBefore
 	previousAfter := specApplyAfter
 	previousSection := specApplySection
 	previousKind := specApplyKind
 	previousJSON := specApplyChangeJSON
+	previousDryRun := specApplyDryRun
 	specApplyBefore = before
 	specApplyAfter = after
 	specApplySection = section
 	specApplyKind = kind
 	specApplyChangeJSON = jsonFlag
+	specApplyDryRun = dryRun
 	return func() {
 		specApplyBefore = previousBefore
 		specApplyAfter = previousAfter
 		specApplySection = previousSection
 		specApplyKind = previousKind
 		specApplyChangeJSON = previousJSON
+		specApplyDryRun = previousDryRun
 	}
 }

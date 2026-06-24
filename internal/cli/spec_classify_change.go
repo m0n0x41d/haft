@@ -36,6 +36,7 @@ type specCarrierChangeInput struct {
 	AfterPath  string
 	SectionID  string
 	Kind       string
+	DryRun     bool
 }
 
 func specClassifyChangeInputFromFlags() (specCarrierChangeInput, error) {

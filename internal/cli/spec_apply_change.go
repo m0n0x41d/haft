@@ -18,10 +18,13 @@ type specApplyChangeResult struct {
 	SchemaVersion     int                             `json:"schema_version"`
 	AuthorityBoundary string                          `json:"authority_boundary"`
 	Applied           bool                            `json:"applied"`
+	DryRun            bool                            `json:"dry_run"`
+	WouldApply        bool                            `json:"would_apply"`
 	Noop              bool                            `json:"noop"`
 	Change            project.SpecCarrierChangeReport `json:"change"`
 	Audit             specSyncEditionAudit            `json:"audit"`
 	Edition           *specSyncImportedEntry          `json:"edition,omitempty"`
+	PlannedEdition    *specSyncImportedEntry          `json:"planned_edition,omitempty"`
 	Conflict          *specApplyChangeConflict        `json:"conflict,omitempty"`
 }
 
@@ -75,6 +78,7 @@ func specApplyChangeInputFromFlags() (specCarrierChangeInput, error) {
 		AfterPath:  strings.TrimSpace(specApplyAfter),
 		SectionID:  strings.TrimSpace(specApplySection),
 		Kind:       strings.TrimSpace(specApplyKind),
+		DryRun:     specApplyDryRun,
 	}
 	if input.BeforePath == "" {
 		return specCarrierChangeInput{}, fmt.Errorf("spec apply-change requires --before")
@@ -96,6 +100,7 @@ func applySpecCarrierChangeToSQL(
 	result := specApplyChangeResult{
 		SchemaVersion:     1,
 		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		DryRun:            input.DryRun,
 		Audit: specSyncEditionAudit{
 			SourceEpisteme:        "sql_spec_section_edition",
 			PublicationProjection: "typed_yaml_spec_section_projection",
@@ -125,27 +130,41 @@ func applySpecCarrierChangeToSQL(
 			return result, err
 		}
 		edition := specflow.NewSpecSectionEdition(projectID, after, specflow.SpecSectionSourceSyncBack, time.Now().UTC())
+		entry := specApplyChangeEditionEntry(edition, change.Kind)
+		if input.DryRun {
+			result.WouldApply = true
+			result.PlannedEdition = &entry
+			return result, nil
+		}
 		if err := store.PutCurrent(edition); err != nil {
 			return result, err
 		}
 		result.Applied = true
 		result.Audit.ImportedSemanticMutation = string(change.Kind)
-		result.Edition = &specSyncImportedEntry{
-			SectionID:    edition.SectionID,
-			SemanticHash: edition.SemanticHash,
-			SourceKind:   string(edition.SourceKind),
-			CarrierPath:  edition.CarrierPath,
-			Audit: specSyncEditionAudit{
-				SourceEpisteme:           "sql_spec_section_edition",
-				PublicationProjection:    "typed_yaml_spec_section_projection",
-				CarrierBytes:             edition.CarrierPath,
-				ImportedSemanticMutation: string(change.Kind),
-				AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
-			},
-		}
+		result.WouldApply = true
+		result.Edition = &entry
 		return result, nil
 	default:
 		return result, fmt.Errorf("spec apply-change blocked: %s", change.Kind)
+	}
+}
+
+func specApplyChangeEditionEntry(
+	edition specflow.SpecSectionEdition,
+	changeKind project.SpecCarrierChangeKind,
+) specSyncImportedEntry {
+	return specSyncImportedEntry{
+		SectionID:    edition.SectionID,
+		SemanticHash: edition.SemanticHash,
+		SourceKind:   string(edition.SourceKind),
+		CarrierPath:  edition.CarrierPath,
+		Audit: specSyncEditionAudit{
+			SourceEpisteme:           "sql_spec_section_edition",
+			PublicationProjection:    "typed_yaml_spec_section_projection",
+			CarrierBytes:             edition.CarrierPath,
+			ImportedSemanticMutation: string(changeKind),
+			AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+		},
 	}
 }
 
@@ -190,6 +209,12 @@ func writeSpecApplyChangeText(writer io.Writer, result specApplyChangeResult) er
 		return err
 	}
 	if _, err := fmt.Fprintf(writer, "applied: %t\n", result.Applied); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "dry_run: %t\n", result.DryRun); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(writer, "would_apply: %t\n", result.WouldApply); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(writer, "noop: %t\n", result.Noop); err != nil {

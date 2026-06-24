@@ -287,6 +287,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Spec apply-change dry-run preview.** `haft spec apply-change --dry-run`
+  now runs the same typed carrier parser, SQL freshness/conflict guard, and
+  planned-edition projection as a real sync-back without writing the SQL
+  edition store, so scalar/relationship carrier edits can be reviewed before
+  becoming source-truth editions.
 - **Reconciliation review packet writer.** `haft decision reconcile
   selection-draft --write-review-packet review.json` now writes the bounded
   report-only draft with decision carrier hints, review commands, omitted

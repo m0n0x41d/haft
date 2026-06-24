@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Drift binding dry-run review load.** `haft drift bindings --dry-run
+  --json` now keeps compact review packets token-bounded by projecting
+  candidate symbols and diagnostics as previews with omitted counts. Long
+  diagnostic messages and full candidate lists remain available through the
+  explicit full audit path, `haft drift bindings --json`.
 - **Projection authority boundary completeness.** `haft correspondence graph`,
   `haft change case`, and their `haft_query(...)`/`haft interface ...`
   surfaces now explicitly report that these read-only projections are not

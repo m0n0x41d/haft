@@ -2381,6 +2381,12 @@ func TestInterfaceDriftBindingReviewDocumentsDryRunBoundary(t *testing.T) {
 		"missing_symbol_baseline",
 		"needs_operator_symbol_selection",
 		"propose_rebaseline_with_binding_targets",
+		"candidate_symbol_preview",
+		"candidate_symbols_omitted",
+		"diagnostic_preview",
+		"diagnostics_omitted",
+		"full_candidate_audit_command",
+		"long diagnostic messages stay in the full audit path",
 		"--apply-high-confidence",
 		"--apply-selection selection.json",
 		"mutually exclusive with --dry-run",
@@ -2391,7 +2397,7 @@ func TestInterfaceDriftBindingReviewDocumentsDryRunBoundary(t *testing.T) {
 	}
 
 	invariants := strings.Join(capability.Invariants, "\n")
-	for _, want := range []string{"Binding review is not decision authority", "Default dry-run output is compact", "Dry-run cannot be combined with binding mutation flags"} {
+	for _, want := range []string{"Binding review is not decision authority", "bounded candidate/diagnostic previews", "Dry-run cannot be combined with binding mutation flags"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("drift.binding_review invariants missing %q:\n%s", want, invariants)
 		}

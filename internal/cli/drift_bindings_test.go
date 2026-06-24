@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -114,6 +115,85 @@ func TestDriftBindingsJSONPayloadHonorsExplicitLimit(t *testing.T) {
 	}
 }
 
+func TestDriftBindingsJSONPayloadProjectsBoundedReviewDetails(t *testing.T) {
+	report := artifact.LegacyBindingReport{
+		SchemaVersion: artifact.LegacyBindingSchemaVersion,
+		Authority:     artifact.LegacyBindingAuthority,
+		Summary:       artifact.LegacyBindingSummary{TotalDecisions: 1},
+		Items: []artifact.LegacyBindingItem{
+			{
+				DecisionID:           "dec-wide",
+				DecisionTitle:        "Wide decision",
+				AffectedFiles:        []string{"internal/tools/haft.go"},
+				CandidateSymbolCount: 7,
+				Posture:              artifact.LegacyBindingPostureMissingSymbolBaseline,
+				RecommendedAction:    artifact.LegacyBindingActionNeedsOperatorSelect,
+				Reason:               "multiple parseable symbols found; operator must choose governed symbol boundary",
+				CandidateSymbols:     driftBindingsCandidateSymbols(7),
+				Diagnostics: []artifact.BindingDiagnostic{
+					{
+						FilePath: "internal/tools/haft.go",
+						Kind:     "needs_binding_resolution",
+						Severity: "block",
+						Message:  "very long diagnostic message with the entire symbol list",
+					},
+					{
+						FilePath: "internal/cli/serve.go",
+						Kind:     "needs_binding_resolution",
+						Severity: "block",
+						Message:  "another very long diagnostic message",
+					},
+					{
+						FilePath: "internal/fpf/server.go",
+						Kind:     "needs_binding_resolution",
+						Severity: "block",
+						Message:  "third very long diagnostic message",
+					},
+				},
+			},
+		},
+	}
+
+	payload, ok := driftBindingsJSONPayload(report, true, -1).(driftBindingsProjectedReport)
+	if !ok {
+		t.Fatalf("payload type = %T, want driftBindingsProjectedReport", driftBindingsJSONPayload(report, true, -1))
+	}
+	if len(payload.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(payload.Items))
+	}
+
+	item := payload.Items[0]
+	if len(item.CandidateSymbolPreview) != driftBindingsCompactCandidatePreviewLimit {
+		t.Fatalf("candidate preview = %d, want %d", len(item.CandidateSymbolPreview), driftBindingsCompactCandidatePreviewLimit)
+	}
+	if item.CandidateSymbolsOmitted != 2 {
+		t.Fatalf("candidate_symbols_omitted = %d, want 2", item.CandidateSymbolsOmitted)
+	}
+	if len(item.DiagnosticPreview) != driftBindingsCompactDiagnosticPreviewLimit {
+		t.Fatalf("diagnostic preview = %d, want %d", len(item.DiagnosticPreview), driftBindingsCompactDiagnosticPreviewLimit)
+	}
+	if item.DiagnosticsOmitted != 1 {
+		t.Fatalf("diagnostics_omitted = %d, want 1", item.DiagnosticsOmitted)
+	}
+	if item.FullCandidateAuditCommand != "haft drift bindings --json" {
+		t.Fatalf("full candidate audit command = %q", item.FullCandidateAuditCommand)
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, forbidden := range []string{
+		"very long diagnostic message",
+		"candidate_symbols\"",
+		"diagnostics\"",
+	} {
+		if strings.Contains(string(body), forbidden) {
+			t.Fatalf("compact payload leaked %q:\n%s", forbidden, string(body))
+		}
+	}
+}
+
 func driftBindingsReportWithItems(count int) artifact.LegacyBindingReport {
 	report := artifact.LegacyBindingReport{
 		SchemaVersion: artifact.LegacyBindingSchemaVersion,
@@ -128,6 +208,20 @@ func driftBindingsReportWithItems(count int) artifact.LegacyBindingReport {
 		})
 	}
 	return report
+}
+
+func driftBindingsCandidateSymbols(count int) []artifact.LegacyBindingCandidate {
+	out := make([]artifact.LegacyBindingCandidate, 0, count)
+	for i := 0; i < count; i++ {
+		out = append(out, artifact.LegacyBindingCandidate{
+			FilePath:   "internal/tools/haft.go",
+			SymbolName: fmt.Sprintf("Candidate%d", i+1),
+			SymbolKind: "func",
+			Line:       i + 1,
+			EndLine:    i + 1,
+		})
+	}
+	return out
 }
 
 func setDriftBindingsModeForTest(t *testing.T, dryRun bool, apply bool, selection string) func() {

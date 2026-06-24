@@ -21,6 +21,8 @@ var timeNow = time.Now
 
 const driftEventsSummaryEventLimit = 20
 const driftBindingsDryRunJSONLimit = 5
+const driftBindingsCompactCandidatePreviewLimit = 5
+const driftBindingsCompactDiagnosticPreviewLimit = 2
 
 var (
 	driftRouteJSON              bool
@@ -186,10 +188,34 @@ type driftBindingsProjectedReport struct {
 	Authority        string                        `json:"authority"`
 	View             string                        `json:"view"`
 	Summary          artifact.LegacyBindingSummary `json:"summary"`
-	Items            []artifact.LegacyBindingItem  `json:"items"`
+	Items            []driftBindingsProjectedItem  `json:"items"`
 	Applied          []artifact.LegacyBindingApply `json:"applied,omitempty"`
 	OmittedItems     int                           `json:"omitted_items"`
 	FullAuditCommand string                        `json:"full_audit_command"`
+}
+
+type driftBindingsProjectedItem struct {
+	DecisionID                string                             `json:"decision_id"`
+	DecisionTitle             string                             `json:"decision_title"`
+	AffectedFiles             []string                           `json:"affected_files"`
+	StoredSymbolCount         int                                `json:"stored_symbol_count"`
+	CandidateSymbolCount      int                                `json:"candidate_symbol_count"`
+	Posture                   string                             `json:"posture"`
+	RecommendedAction         string                             `json:"recommended_action"`
+	HighConfidence            bool                               `json:"high_confidence,omitempty"`
+	Reason                    string                             `json:"reason"`
+	CandidateSymbolPreview    []artifact.LegacyBindingCandidate  `json:"candidate_symbol_preview,omitempty"`
+	CandidateSymbolsOmitted   int                                `json:"candidate_symbols_omitted,omitempty"`
+	BindingTargets            []artifact.BindingTarget           `json:"binding_targets,omitempty"`
+	DiagnosticPreview         []driftBindingsProjectedDiagnostic `json:"diagnostic_preview,omitempty"`
+	DiagnosticsOmitted        int                                `json:"diagnostics_omitted,omitempty"`
+	FullCandidateAuditCommand string                             `json:"full_candidate_audit_command,omitempty"`
+}
+
+type driftBindingsProjectedDiagnostic struct {
+	FilePath string `json:"file_path"`
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
 }
 
 func driftBindingsJSONPayload(report artifact.LegacyBindingReport, dryRun bool, limit int) any {
@@ -213,11 +239,74 @@ func driftBindingsJSONPayload(report artifact.LegacyBindingReport, dryRun bool, 
 		Authority:        report.Authority,
 		View:             "compact",
 		Summary:          report.Summary,
-		Items:            items,
+		Items:            driftBindingsProjectedItems(items),
 		Applied:          report.Applied,
 		OmittedItems:     omitted,
 		FullAuditCommand: "haft drift bindings --json",
 	}
+}
+
+func driftBindingsProjectedItems(items []artifact.LegacyBindingItem) []driftBindingsProjectedItem {
+	out := make([]driftBindingsProjectedItem, 0, len(items))
+	for _, item := range items {
+		out = append(out, driftBindingsProjectedItemFromLegacy(item))
+	}
+	return out
+}
+
+func driftBindingsProjectedItemFromLegacy(item artifact.LegacyBindingItem) driftBindingsProjectedItem {
+	candidates := item.CandidateSymbols
+	candidateOmitted := 0
+	if len(candidates) > driftBindingsCompactCandidatePreviewLimit {
+		candidates = candidates[:driftBindingsCompactCandidatePreviewLimit]
+		candidateOmitted = len(item.CandidateSymbols) - driftBindingsCompactCandidatePreviewLimit
+	}
+
+	diagnostics := driftBindingsProjectedDiagnostics(item.Diagnostics)
+	diagnosticsOmitted := 0
+	if len(diagnostics) > driftBindingsCompactDiagnosticPreviewLimit {
+		diagnostics = diagnostics[:driftBindingsCompactDiagnosticPreviewLimit]
+		diagnosticsOmitted = len(item.Diagnostics) - driftBindingsCompactDiagnosticPreviewLimit
+	}
+
+	return driftBindingsProjectedItem{
+		DecisionID:                item.DecisionID,
+		DecisionTitle:             item.DecisionTitle,
+		AffectedFiles:             item.AffectedFiles,
+		StoredSymbolCount:         item.StoredSymbolCount,
+		CandidateSymbolCount:      item.CandidateSymbolCount,
+		Posture:                   item.Posture,
+		RecommendedAction:         item.RecommendedAction,
+		HighConfidence:            item.HighConfidence,
+		Reason:                    item.Reason,
+		CandidateSymbolPreview:    candidates,
+		CandidateSymbolsOmitted:   candidateOmitted,
+		BindingTargets:            item.BindingTargets,
+		DiagnosticPreview:         diagnostics,
+		DiagnosticsOmitted:        diagnosticsOmitted,
+		FullCandidateAuditCommand: driftBindingsFullCandidateAuditCommand(item),
+	}
+}
+
+func driftBindingsProjectedDiagnostics(
+	diagnostics []artifact.BindingDiagnostic,
+) []driftBindingsProjectedDiagnostic {
+	out := make([]driftBindingsProjectedDiagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		out = append(out, driftBindingsProjectedDiagnostic{
+			FilePath: diagnostic.FilePath,
+			Kind:     diagnostic.Kind,
+			Severity: diagnostic.Severity,
+		})
+	}
+	return out
+}
+
+func driftBindingsFullCandidateAuditCommand(item artifact.LegacyBindingItem) string {
+	if strings.TrimSpace(item.DecisionID) == "" {
+		return ""
+	}
+	return "haft drift bindings --json"
 }
 
 func validateDriftBindingsMode() error {

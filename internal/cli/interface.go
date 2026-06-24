@@ -1264,8 +1264,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "dry_run_response",
-						Shape: `{"schema_version":"legacy_binding_report.v2","authority":"binding_target_review_proposal","view":"compact","summary":{"total_decisions":40,"already_precise":7,"missing_symbol_baseline":11,"missing_binding_targets":1,"ambiguous_file_scope":17,"high_confidence_proposals":0,"needs_operator_selection":29,"carrier_or_generated_only":4,"no_parseable_symbols":0},"items":[{"decision_id":"dec-...","posture":"ambiguous_file_scope|missing_symbol_baseline|missing_binding_targets|already_symbol_baselined|carrier_or_generated_only|no_parseable_symbols","recommended_action":"needs_operator_symbol_selection|propose_rebaseline_with_binding_targets|keep_legacy_file_scope|no_action","high_confidence":false,"candidate_symbols":[...],"binding_targets":[...]}],"omitted_items":24,"full_audit_command":"haft drift bindings --json"}`,
-						Note:  "Dry-run JSON is compact by default. --limit N changes the compact sample size; the full audit path is explicit and separate.",
+						Shape: `{"schema_version":"legacy_binding_report.v2","authority":"binding_target_review_proposal","view":"compact","summary":{"total_decisions":40,"already_precise":7,"missing_symbol_baseline":11,"missing_binding_targets":1,"ambiguous_file_scope":17,"high_confidence_proposals":0,"needs_operator_selection":29,"carrier_or_generated_only":4,"no_parseable_symbols":0},"items":[{"decision_id":"dec-...","posture":"ambiguous_file_scope|missing_symbol_baseline|missing_binding_targets|already_symbol_baselined|carrier_or_generated_only|no_parseable_symbols","recommended_action":"needs_operator_symbol_selection|propose_rebaseline_with_binding_targets|keep_legacy_file_scope|no_action","high_confidence":false,"candidate_symbol_preview":[...],"candidate_symbols_omitted":15,"diagnostic_preview":[{"file_path":"internal/cli/serve.go","kind":"needs_binding_resolution","severity":"block"}],"diagnostics_omitted":3,"binding_targets":[...],"full_candidate_audit_command":"haft drift bindings --json"}],"omitted_items":24,"full_audit_command":"haft drift bindings --json"}`,
+						Note:  "Dry-run JSON is compact by default: candidate symbols and diagnostics are previewed with omitted counts, and long diagnostic messages stay in the full audit path. --limit N changes the compact sample size; the full audit path is explicit and separate.",
 					},
 					{
 						Field: "full_audit_response",
@@ -1282,13 +1282,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 					"Use this when status reports Binding resolution needed or old decisions still carry ambiguous whole-file scope.",
 					"The report proposes binding_targets; it does not supersede, merge, retire, reopen, baseline, approve, or create evidence.",
 					"`--dry-run` with apply flags fails closed before project DB access.",
+					"Compact dry-run JSON is for token-bounded review and omits full diagnostic messages; use `haft drift bindings --json` for exact candidate and diagnostic audit.",
 					"High-confidence apply only projects already-resolved precise targets; operator-selection apply requires an explicit reviewed selection file.",
 				},
 			},
 			OutputVolume: []string{"--dry-run --json: compact JSON review with omitted count and full_audit_command", "--json without --dry-run: complete LegacyBindingReport audit payload"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Binding review is not decision authority.",
-				"Default dry-run output is compact and names the full audit recovery command.",
+				"Default dry-run output is compact with omitted counts, bounded candidate/diagnostic previews, and a full audit recovery command.",
 				"Dry-run cannot be combined with binding mutation flags.",
 				"Whole-file fallback remains unresolved until a precise binding target is selected or safely projected.",
 			),

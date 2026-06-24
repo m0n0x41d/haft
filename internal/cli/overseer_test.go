@@ -367,6 +367,29 @@ func TestHandleQuintQueryStatusPrependsOverseerSignals(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQueryStatusIncludesRuntimeProvenance(t *testing.T) {
+	fixture := newCheckTestProject(t)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "status",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(status) returned error: %v", err)
+	}
+
+	for _, want := range []string{
+		"### Runtime",
+		"`haft serve`: pid=",
+		"started=",
+		"executable=`",
+		"executable_mtime=",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("status missing runtime provenance %q:\n%s", want, result)
+		}
+	}
+}
+
 func TestHandleQuintQueryStatusSurfacesAutonomousMaintenanceDisclosure(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	maintenance, err := overseer.BuildMaintenanceRun(overseer.MaintenanceInput{

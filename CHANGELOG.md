@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Status runtime provenance.** `haft_query(action="status")` now includes a
+  bounded `haft serve` runtime fingerprint with PID, process start time,
+  executable path, and executable mtime so agents can distinguish stale MCP
+  server processes from freshly rebuilt binaries.
 - **Maintenance plan compact default.** `haft_refresh(action="plan")` now
   keeps deterministic and machine-checkable work visible while sampling the
   Rung-3 judgment tail by default, with `verbose=true` retaining the full work

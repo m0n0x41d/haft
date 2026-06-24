@@ -31,6 +31,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var serveProcessStartedAt = time.Now().UTC()
+
 var serveCmd = &cobra.Command{
 	Use:   "serve",
 	Short: "Start the MCP server",
@@ -142,6 +144,26 @@ func runServe(cmd *cobra.Command, args []string) error {
 	server.SetV5Handler(makeV5Handler(artStore, searcher, crossHybrid, binding.HaftDir, projCfg, indexStore))
 	server.Start()
 	return nil
+}
+
+func haftServeRuntimeStatusLine() string {
+	executable := "unknown"
+	executableMTime := "unknown"
+
+	if path, err := os.Executable(); err == nil {
+		executable = filepath.Clean(path)
+		if info, statErr := os.Stat(path); statErr == nil {
+			executableMTime = info.ModTime().UTC().Format(time.RFC3339)
+		}
+	}
+
+	return fmt.Sprintf(
+		"### Runtime\n\n- `haft serve`: pid=%d started=%s executable=`%s` executable_mtime=%s\n",
+		os.Getpid(),
+		serveProcessStartedAt.Format(time.RFC3339),
+		executable,
+		executableMTime,
+	)
 }
 
 // buildHybridSearcher wires the optional embedding layer over the artifact
@@ -1658,6 +1680,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 				}
 			}
 		}
+		result += "\n" + haftServeRuntimeStatusLine()
 		return result + navStripWithStaleSnapshot(ctx, store, contextName, data.StaleItems), nil
 
 	case "board":

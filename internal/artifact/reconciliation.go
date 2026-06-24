@@ -1714,7 +1714,7 @@ func decisionReconciliationDraftSelection(
 		Operation:          DecisionReconciliationOperationEnrichScope,
 		ReviewedGroupID:    group.GroupID,
 		DecisionRefs:       []string{item.DecisionID},
-		DecisionSubjectRef: "TODO_exact_decision_subject_ref",
+		DecisionSubjectRef: decisionReconciliationDraftSelectionSubjectRef(item),
 		GovernanceTargets:  draftGovernanceTargets(item.GovernanceTargets),
 		Reason:             "TODO_operator_reviewed_scope_enrichment_reason",
 	}
@@ -1729,6 +1729,16 @@ func decisionReconciliationDraftSelection(
 		}}
 	}
 	return selection
+}
+
+func decisionReconciliationDraftSelectionSubjectRef(
+	item DecisionReconciliationItem,
+) string {
+	subjectRef := strings.TrimSpace(item.DecisionSubjectRef)
+	if subjectRef != "" {
+		return subjectRef
+	}
+	return "TODO_exact_decision_subject_ref"
 }
 
 func decisionReconciliationDraftSelectionDocumentTemplate(

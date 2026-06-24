@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation draft subject preservation.** R9
+  `haft decision reconcile selection-draft --json` now preserves an existing
+  `decision_subject_ref` in proposed `enrich_scope` selections instead of
+  replacing it with a TODO placeholder. The draft remains report-only:
+  `operator_approval_ref` and review reasons are still required, and whole-file
+  fallback targets still require operator review before apply.
 - **Drift binding dry-run command parity.** `haft drift bindings --dry-run
   --json` is now accepted as an explicit read-only alias for the default
   binding-target review report, matching the command surfaced by status and

@@ -344,6 +344,51 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftPreservesExistingSubjectRef(t *testing.T) {
+	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
+		DecisionID:                "dec-mixed",
+		DecisionTitle:             "Mixed precise and fallback scope",
+		Status:                    StatusActive,
+		DecisionSubjectRef:        "decision_reconciliation:r9_scope_enrichment",
+		GovernanceTargets:         []string{"api_contract:haft decision reconcile apply operation=enrich_scope"},
+		WholeFileFallbackTargets:  []string{"whole_file_fallback:.haft/solutions/sol-old.md"},
+		AffectedFiles:             []string{"internal/artifact/reconciliation.go"},
+		DecisionSubjectResolution: "explicit_decision_subject_ref",
+	}})
+
+	draft := BuildDecisionReconciliationSelectionDraft(plan)
+
+	if len(draft.Items) != 1 {
+		t.Fatalf("items = %#v", draft.Items)
+	}
+	item := draft.Items[0]
+	if item.CandidatePosture != "mixed_precise_and_fallback_target_repair_needed" {
+		t.Fatalf("candidate_posture = %q", item.CandidatePosture)
+	}
+	if item.Confidence != "low" {
+		t.Fatalf("confidence = %q", item.Confidence)
+	}
+	if item.ProposedSelection == nil {
+		t.Fatal("proposed_selection missing")
+	}
+	if item.ProposedSelection.DecisionSubjectRef != "decision_reconciliation:r9_scope_enrichment" {
+		t.Fatalf("proposed_selection decision_subject_ref = %q", item.ProposedSelection.DecisionSubjectRef)
+	}
+	if containsString(item.ApprovalReadiness.PlaceholderFields, "items[].decision_subject_ref") {
+		t.Fatalf("approval_readiness still asks for subject placeholder: %#v", item.ApprovalReadiness.PlaceholderFields)
+	}
+	if !containsString(item.ApprovalReadiness.PlaceholderFields, "operator_approval_ref") ||
+		!containsString(item.ApprovalReadiness.PlaceholderFields, "items[].reason") {
+		t.Fatalf("approval_readiness missing remaining placeholders: %#v", item.ApprovalReadiness.PlaceholderFields)
+	}
+	if !containsString(item.ApprovalReadiness.RequiredOperatorChecks, "replace whole-file fallback targets unless no semantic target can be recovered") {
+		t.Fatalf("operator checks = %#v", item.ApprovalReadiness.RequiredOperatorChecks)
+	}
+	if item.ApprovalReadiness.ApplyReady {
+		t.Fatal("approval_readiness.apply_ready = true; preserving subject must not create approval")
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftPrioritizesReviewableCandidates(t *testing.T) {
 	plan := DecisionReconciliationPlan{
 		SchemaVersion: DecisionReconciliationSchemaVersion,

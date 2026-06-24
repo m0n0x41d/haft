@@ -25,7 +25,7 @@ teams, or that host-backed authorization receipts are complete.
 | Window | `2026-06-24` |
 | Method ref | `method:slice-train-dogfood` |
 | Value surface | `haft value space current-haft-rewrite --window 2026-06-24 --method-ref method:slice-train-dogfood ...` |
-| Value surface output | `score_policy.single_score=no_single_haft_or_fpf_score`, `characteristics=11`, `evidence_refs_per_characteristic=15` |
+| Value surface output | `score_policy.single_score=no_single_haft_or_fpf_score`, `characteristics=11`, `evidence_refs_per_characteristic=16`, `simplify_kill_criteria=6` |
 
 Evidence refs:
 
@@ -64,6 +64,12 @@ Evidence refs:
 - `commit:d999cda6` — root `CLAUDE.md` is scanned as a current host discipline
   mirror, so prompt/schema/model authority-boundary wording is covered by the
   carrier guard set.
+- `commit:279d0451` — `haft doctor` detects current-project `haft serve`
+  processes that are duplicated, started before their executable was rebuilt,
+  or running from a different executable than `PATH` resolves.
+- `commit:1656e608` — contract-audit regression tests pin the binding and
+  mutation surfaces `decision.decide`, `decision.reconcile_apply`, and
+  `spec.apply_change` in the read-only surface inventory.
 - `maintenance:omnt-da2c52971296e024` — live autonomous maintenance applied one
   additive-only auto-rebaseline for `dec-20260526-f3223c16`; undo remains
   `haft overseer undo omnt-da2c52971296e024 act-001`.
@@ -93,10 +99,16 @@ Current production-code trace:
 - The post-rebuild installed CLI status points drift/stale/suppression review
   at bounded read-only drill-downs and no longer mentions
   `haft overseer maintain --json` as an inspection path.
+- `haft doctor` now identifies the concrete stale-MCP cause in this session:
+  the current-project `haft serve` process PID 348 was started before the
+  rebuilt executable and is still not the same executable path as `PATH` Haft.
+- Contract audit now keeps the binding and semantic-mutation surfaces visible
+  in the read-only inventory, so default-denied binding and CLI-only sync-back
+  paths cannot silently disappear from the host/schema contract review.
 - `haft decision reconcile metrics --json` still reports material authority
-  noise: `235` unique drift events, `34` impacted decisions, `160` material
-  events, `75` audit-only events, `36` needs-binding-resolution events, and max
-  fanout `28`.
+  noise: `240` unique drift events, `36` impacted decisions, `162` material
+  events, `78` audit-only events, `36` needs-binding-resolution events, and max
+  fanout `29`.
 
 What this supports:
 
@@ -109,6 +121,11 @@ What this supports:
   exact/audit detail remained available behind explicit commands.
 - The carrier guard set caught the real host prompt mirror as current surface
   area without expanding the default status cockpit.
+- Stale MCP/server-process drift is now diagnosable through `haft doctor`
+  instead of being mistaken for a source-code regression after rebuild.
+- Binding and semantic-mutation paths are visible in the contract inventory
+  with explicit authority posture, rather than relying on scattered CLI help or
+  skill prose.
 - The value-space dashboard exposed review triggers without producing a single
   scalar product-value score.
 
@@ -122,7 +139,8 @@ What this does not support:
 - A claim that current authority-frontier noise is solved.
 - A claim that MCP-hosted status text cannot lag a rebuilt installed CLI; this
   packet observed that attached MCP status may still show stale wording until
-  the host process reloads the same build.
+  the host process reloads the same build, even though `haft doctor` can now
+  diagnose that condition.
 
 Next move:
 

@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Product-value evidence refresh.** The 2026-06-24 product-value evidence
+  packet now includes the stale `haft serve` diagnostic and contract-audit
+  authority-inventory guard, with updated value-space evidence-ref counts and
+  current drift metrics while preserving the equal-budget comparison gap.
 - **Contract-audit authority inventory guard.** Contract-audit regression tests
   now pin the binding and lifecycle/semantic mutation surfaces
   (`decision.decide`, `decision.reconcile_apply`, and `spec.apply_change`) so

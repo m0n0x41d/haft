@@ -32,6 +32,24 @@ func TestDriftBindingsLimitFlagIsAdvertised(t *testing.T) {
 	}
 }
 
+func TestDriftEventsHelpNamesReviewPostureBoundary(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(driftEventsCmd.Long), " "))
+	for _, want := range []string{
+		"read-only projection",
+		"root_cause",
+		"resolution_status",
+		"suggested_next_command",
+		"review posture",
+		"not evidence",
+		"approval",
+		"gate passage",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("drift events help missing %q:\n%s", want, driftEventsCmd.Long)
+		}
+	}
+}
+
 func TestValidateDriftBindingsModeRejectsDryRunWithMutation(t *testing.T) {
 	restore := setDriftBindingsModeForTest(t, true, true, "")
 	defer restore()

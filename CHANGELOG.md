@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Drift events help boundary.** `haft drift events --help` now names computed
+  `root_cause`, `resolution_status`, and `suggested_next_command` as review
+  posture, not evidence, approval, or gate passage.
 - **Reconciliation selection-draft help boundary.** `haft decision reconcile
   selection-draft --help` now names operator-approval, evidence-truth,
   gate-passage, and apply-authority boundaries for draft/current-metrics review

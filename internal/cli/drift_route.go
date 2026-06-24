@@ -86,7 +86,9 @@ var driftEventsCmd = &cobra.Command{
 
 This is a read-only projection: it does not mutate decisions, baselines,
 evidence, lineage, or carrier files. One changed target can fan out to multiple
-impacted decisions without becoming multiple independent debt events.`,
+impacted decisions without becoming multiple independent debt events.
+root_cause, resolution_status, and suggested_next_command are review posture,
+not evidence, approval, or gate passage.`,
 	RunE: runDriftEvents,
 }
 

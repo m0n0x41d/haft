@@ -374,6 +374,9 @@ func TestDecisionReconciliationSelectionDraftPreservesExistingSubjectRef(t *test
 	if item.ProposedSelection.DecisionSubjectRef != "decision_reconciliation:r9_scope_enrichment" {
 		t.Fatalf("proposed_selection decision_subject_ref = %q", item.ProposedSelection.DecisionSubjectRef)
 	}
+	if !containsString(item.ProposedSelection.RemoveWholeFileFallbacks, "whole_file_fallback:.haft/solutions/sol-old.md") {
+		t.Fatalf("proposed_selection remove_whole_file_fallback_targets = %#v", item.ProposedSelection.RemoveWholeFileFallbacks)
+	}
 	if containsString(item.ApprovalReadiness.PlaceholderFields, "items[].decision_subject_ref") {
 		t.Fatalf("approval_readiness still asks for subject placeholder: %#v", item.ApprovalReadiness.PlaceholderFields)
 	}
@@ -1218,6 +1221,55 @@ func TestReviewDecisionReconciliationSelectionDocumentRejectsStaleEnrichScopeOpe
 	}
 }
 
+func TestReviewDecisionReconciliationSelectionDocumentRejectsUnknownFallbackRemoval(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	fields := DecisionFields{
+		DecisionSubjectRef: "subject:fallback-cleanup",
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "api_contract",
+			Ref:  "api_contract:haft/fallback_cleanup",
+		}},
+		BindingTargets: []BindingTarget{{
+			Kind:     BindingTargetWholeFileFallback,
+			FilePath: "docs/old.md",
+			Reason:   "legacy fallback",
+		}},
+	}
+	createDecisionForReconciliation(t, store, "dec-fallback-cleanup", StatusActive, "runtime", fields, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-fallback-cleanup")
+
+	review := ReviewDecisionReconciliationSelectionDocument(ctx, store, DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:approved-fallback-cleanup",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    groupID,
+			DecisionRefs:       []string{"dec-fallback-cleanup"},
+			DecisionSubjectRef: "subject:fallback-cleanup",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/fallback_cleanup",
+			}},
+			RemoveWholeFileFallbacks: []string{"whole_file_fallback:docs/missing.md"},
+			Reason:                   "Attempt to remove a non-existing fallback should fail closed.",
+		}},
+	}, "unknown-fallback-removal.json")
+
+	if review.ApplyReady {
+		t.Fatalf("apply_ready = true for unknown fallback removal: %#v", review)
+	}
+	if len(review.Items) != 1 || review.Items[0].ApplyReady {
+		t.Fatalf("item review = %#v, want not apply-ready", review.Items)
+	}
+	if len(review.Items[0].ValidationErrors) != 1 ||
+		!strings.Contains(review.Items[0].ValidationErrors[0], "is not an existing whole-file fallback binding_target") {
+		t.Fatalf("item validation_errors = %#v", review.Items[0].ValidationErrors)
+	}
+}
+
 func TestApplyDecisionReconciliationMergeThroughSuccessorPreservesLineage(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -1520,6 +1572,75 @@ func TestApplyDecisionReconciliationEnrichScopeUpdatesOnlyScopeFields(t *testing
 	}
 	if !containsString(plan.Groups[0].GovernanceTargets, "api_contract:haft/runtime_boundary") {
 		t.Fatalf("group targets = %#v", plan.Groups[0].GovernanceTargets)
+	}
+}
+
+func TestApplyDecisionReconciliationEnrichScopeRemovesNamedWholeFileFallback(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-fallback-remove", StatusActive, "runtime", DecisionFields{
+		DecisionSubjectRef: "subject:fallback-remove",
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "api_contract",
+			Ref:  "api_contract:haft/fallback_remove",
+		}},
+		BindingTargets: []BindingTarget{
+			{
+				Kind:       BindingTargetSymbol,
+				FilePath:   "internal/artifact/reconciliation.go",
+				SymbolKind: "func",
+				SymbolName: "ApplyDecisionReconciliationSelections",
+			},
+			{
+				Kind:     BindingTargetWholeFileFallback,
+				FilePath: ".haft/solutions/sol-old.md",
+				Reason:   "legacy fallback",
+			},
+		},
+	}, now)
+	groupID := reviewedGroupIDForDecisionRefs(t, store, "dec-fallback-remove")
+
+	result, err := ApplyDecisionReconciliationSelections(ctx, store, t.TempDir(), DecisionReconciliationSelectionDocument{
+		SchemaVersion:       DecisionReconciliationSchemaVersion,
+		Authority:           DecisionReconciliationSelectionApplyAuthority,
+		OperatorApprovalRef: "chat:operator-approved-fallback-removal",
+		Items: []DecisionReconciliationSelection{{
+			Operation:          DecisionReconciliationOperationEnrichScope,
+			ReviewedGroupID:    groupID,
+			DecisionRefs:       []string{"dec-fallback-remove"},
+			DecisionSubjectRef: "subject:fallback-remove",
+			GovernanceTargets: []GovernanceTarget{{
+				Kind: "api_contract",
+				Ref:  "api_contract:haft/fallback_remove",
+			}},
+			RemoveWholeFileFallbacks: []string{"whole_file_fallback:.haft/solutions/sol-old.md"},
+			Reason:                   "Operator reviewed precise scope and removed the stale whole-file fallback.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ApplyDecisionReconciliationSelections: %v", err)
+	}
+	if len(result.Applied) != 1 {
+		t.Fatalf("applied = %#v", result.Applied)
+	}
+	if !containsString(result.Applied[0].UpdatedFields, "binding_targets") {
+		t.Fatalf("updated fields = %#v", result.Applied[0].UpdatedFields)
+	}
+
+	decision, err := store.Get(ctx, "dec-fallback-remove")
+	if err != nil {
+		t.Fatalf("load enriched decision: %v", err)
+	}
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 {
+		t.Fatalf("binding_targets = %#v, want only the precise symbol target", fields.BindingTargets)
+	}
+	if fields.BindingTargets[0].Kind != BindingTargetSymbol {
+		t.Fatalf("binding_targets = %#v, want symbol target retained", fields.BindingTargets)
+	}
+	if containsString(decisionReconciliationWholeFileTargets(fields.EffectiveDriftBindingTargets()), "whole_file_fallback:.haft/solutions/sol-old.md") {
+		t.Fatalf("whole-file fallback target still present: %#v", fields.BindingTargets)
 	}
 }
 

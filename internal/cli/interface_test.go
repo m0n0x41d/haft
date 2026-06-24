@@ -2380,6 +2380,9 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 		"blocking_questions",
 		"proposed_selection",
 		"structured copy of the per-item template",
+		"remove_whole_file_fallback_targets",
+		"top-level whole-file fallback binding_targets",
+		"must confirm",
 		"selection_document_template",
 		"--write-review-packet review.json",
 		"writes the bounded report-only draft with review hints",
@@ -2439,6 +2442,9 @@ func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *
 		"claim_lifecycle_updates",
 		"lifecycle_status",
 		"keeps the parent DecisionRecord current",
+		"remove_whole_file_fallback_targets",
+		"whole_file_fallback:.haft/solutions/sol-old.md",
+		"existing whole_file_fallback binding_targets",
 		"read_only_selection_review_not_apply_authority",
 		"review does not create operator approval",
 		"does not create binding decisions",
@@ -2453,6 +2459,7 @@ func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *
 		"Operator approval ref is required",
 		"Selection review is read-only",
 		"Old decision IDs remain searchable",
+		"Whole-file fallback removal is explicit",
 	} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("decision.reconcile_apply invariants missing %q:\n%s", want, invariants)

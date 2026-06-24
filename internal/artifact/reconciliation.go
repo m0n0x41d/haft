@@ -295,6 +295,7 @@ type DecisionReconciliationSelection struct {
 	DecisionSubjectRef        string                                       `json:"decision_subject_ref,omitempty"`
 	GovernanceTargets         []GovernanceTarget                           `json:"governance_targets,omitempty"`
 	DriftWatchTargets         []DriftWatchTarget                           `json:"drift_watch_targets,omitempty"`
+	RemoveWholeFileFallbacks  []string                                     `json:"remove_whole_file_fallback_targets,omitempty"`
 	ClaimGovernanceTargetRefs map[string][]string                          `json:"claim_governance_target_refs,omitempty"`
 	ClaimLifecycleUpdates     []DecisionReconciliationClaimLifecycleUpdate `json:"claim_lifecycle_updates,omitempty"`
 	Reason                    string                                       `json:"reason"`
@@ -901,6 +902,9 @@ func validateDecisionReconciliationScopeEnrichment(
 	if existingSubject != "" && existingSubject != nextSubject {
 		return fmt.Errorf("%s.decision_subject_ref would retarget %q from %q to %q", prefix, ref, existingSubject, nextSubject)
 	}
+	if err := validateDecisionReconciliationFallbackRemovals(prefix, item, fields); err != nil {
+		return err
+	}
 
 	claimRefs := normalizeScopeEnrichmentClaimRefs(item.ClaimGovernanceTargetRefs)
 	if len(claimRefs) == 0 {
@@ -962,6 +966,32 @@ func validateDecisionReconciliationTargetPlaceholders(
 	return nil
 }
 
+func validateDecisionReconciliationFallbackRemovals(
+	prefix string,
+	item DecisionReconciliationSelection,
+	fields DecisionFields,
+) error {
+	removals := normalizeWholeFileFallbackRemovalRefs(item.RemoveWholeFileFallbacks)
+	if len(removals) == 0 {
+		return nil
+	}
+
+	existing := stringSet(decisionReconciliationWholeFileTargets(fields.BindingTargets))
+	for index, ref := range removals {
+		refPrefix := fmt.Sprintf("%s.remove_whole_file_fallback_targets[%d]", prefix, index)
+		if err := validateDecisionReconciliationNoPlaceholder(refPrefix, ref); err != nil {
+			return err
+		}
+		if !strings.HasPrefix(ref, BindingTargetWholeFileFallback+":") {
+			return fmt.Errorf("%s must name a whole_file_fallback target, got %q", refPrefix, ref)
+		}
+		if _, ok := existing[ref]; !ok {
+			return fmt.Errorf("%s %q is not an existing whole-file fallback binding_target on this decision", refPrefix, ref)
+		}
+	}
+	return nil
+}
+
 func validateDecisionReconciliationNoPlaceholder(field string, value string) error {
 	if !isDecisionReconciliationPlaceholder(value) {
 		return nil
@@ -982,6 +1012,9 @@ func selectionHasScopeEnrichment(item DecisionReconciliationSelection) bool {
 		return true
 	}
 	if len(normalizeDriftWatchTargets(item.DriftWatchTargets)) > 0 {
+		return true
+	}
+	if len(normalizeWholeFileFallbackRemovalRefs(item.RemoveWholeFileFallbacks)) > 0 {
 		return true
 	}
 	return len(normalizeScopeEnrichmentClaimRefs(item.ClaimGovernanceTargetRefs)) > 0
@@ -1129,6 +1162,10 @@ func applyDecisionReconciliationEnrichScope(
 	fields.DecisionSubjectRef = strings.TrimSpace(item.DecisionSubjectRef)
 	fields.GovernanceTargets = mergeGovernanceTargets(fields.GovernanceTargets, item.GovernanceTargets)
 	fields.DriftWatchTargets = mergeDriftWatchTargets(fields.DriftWatchTargets, item.DriftWatchTargets)
+	fields.BindingTargets = removeWholeFileFallbackBindingTargets(
+		fields.BindingTargets,
+		item.RemoveWholeFileFallbacks,
+	)
 	fields.Claims = applyScopeEnrichmentClaimRefs(fields.Claims, item.ClaimGovernanceTargetRefs)
 
 	if err := persistDecisionFields(ctx, store, decision, fields); err != nil {
@@ -1533,6 +1570,11 @@ func decisionReconciliationSelectionPlaceholderFields(
 			fields = append(fields, prefix+".trigger")
 		}
 	}
+	for index, ref := range selection.RemoveWholeFileFallbacks {
+		if isDecisionReconciliationPlaceholder(ref) {
+			fields = append(fields, fmt.Sprintf("items[].remove_whole_file_fallback_targets[%d]", index))
+		}
+	}
 	return compactSortedStrings(fields)
 }
 
@@ -1582,6 +1624,9 @@ func decisionReconciliationDraftSelectionFieldsToConfirm(
 	}
 	if len(selection.DriftWatchTargets) > 0 {
 		fields = append(fields, "items[].drift_watch_targets")
+	}
+	if len(normalizeWholeFileFallbackRemovalRefs(selection.RemoveWholeFileFallbacks)) > 0 {
+		fields = append(fields, "items[].remove_whole_file_fallback_targets")
 	}
 	return compactSortedStrings(fields)
 }
@@ -1716,7 +1761,11 @@ func decisionReconciliationDraftSelection(
 		DecisionRefs:       []string{item.DecisionID},
 		DecisionSubjectRef: decisionReconciliationDraftSelectionSubjectRef(item),
 		GovernanceTargets:  draftGovernanceTargets(item.GovernanceTargets),
-		Reason:             "TODO_operator_reviewed_scope_enrichment_reason",
+		RemoveWholeFileFallbacks: append(
+			[]string(nil),
+			item.WholeFileFallbackTargets...,
+		),
+		Reason: "TODO_operator_reviewed_scope_enrichment_reason",
 	}
 	if len(selection.GovernanceTargets) == 0 {
 		selection.GovernanceTargets = []GovernanceTarget{{
@@ -1816,7 +1865,7 @@ func buildDecisionReconciliationItem(
 		DecisionSubjectRef:        strings.TrimSpace(fields.DecisionSubjectRef),
 		DecisionSubjectResolution: decisionSubjectResolution(fields.DecisionSubjectRef),
 		GovernanceTargets:         decisionReconciliationGovernanceTargetRefs(fields),
-		WholeFileFallbackTargets:  decisionReconciliationWholeFileTargets(fields.EffectiveDriftBindingTargets()),
+		WholeFileFallbackTargets:  decisionReconciliationWholeFileTargets(fields.BindingTargets),
 		AffectedFiles:             reconciliationAffectedFilePaths(files),
 		Links:                     normalizeLinks(links),
 		Backlinks:                 normalizeLinks(backlinks),
@@ -2810,6 +2859,28 @@ func mergeDriftWatchTargets(
 	return uniqueDriftWatchTargets(merged)
 }
 
+func removeWholeFileFallbackBindingTargets(
+	current []BindingTarget,
+	refs []string,
+) []BindingTarget {
+	removals := stringSet(normalizeWholeFileFallbackRemovalRefs(refs))
+	if len(removals) == 0 {
+		return normalizeBindingTargets(current)
+	}
+
+	out := make([]BindingTarget, 0, len(current))
+	for _, target := range normalizeBindingTargets(current) {
+		if target.Kind == BindingTargetWholeFileFallback {
+			key := decisionReconciliationBindingTargetKey(target)
+			if _, ok := removals[key]; ok {
+				continue
+			}
+		}
+		out = append(out, target)
+	}
+	return normalizeBindingTargets(out)
+}
+
 func uniqueGovernanceTargets(targets []GovernanceTarget) []GovernanceTarget {
 	out := make([]GovernanceTarget, 0, len(targets))
 	seen := map[string]struct{}{}
@@ -2864,6 +2935,10 @@ func normalizeScopeEnrichmentClaimRefs(values map[string][]string) map[string][]
 	return out
 }
 
+func normalizeWholeFileFallbackRemovalRefs(refs []string) []string {
+	return compactSortedStrings(refs)
+}
+
 func applyScopeEnrichmentClaimRefs(
 	claims []DecisionClaim,
 	values map[string][]string,
@@ -2893,6 +2968,9 @@ func decisionScopeEnrichmentUpdatedFields(item DecisionReconciliationSelection) 
 	}
 	if len(normalizeDriftWatchTargets(item.DriftWatchTargets)) > 0 {
 		fields = append(fields, "drift_watch_targets")
+	}
+	if len(normalizeWholeFileFallbackRemovalRefs(item.RemoveWholeFileFallbacks)) > 0 {
+		fields = append(fields, "binding_targets")
 	}
 	if len(normalizeScopeEnrichmentClaimRefs(item.ClaimGovernanceTargetRefs)) > 0 {
 		fields = append(fields, "claim_governance_target_refs")

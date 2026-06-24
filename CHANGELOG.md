@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation fallback target cleanup.** R9
+  `enrich_scope` reconciliation selections now support explicit
+  `remove_whole_file_fallback_targets` entries for named existing
+  whole-file fallback `binding_targets`. Selection drafts surface those
+  removable fallback keys as review hints, `selection-review` rejects unknown
+  or non-fallback removals, and apply removes only the operator-approved
+  fallback targets while preserving precise governance/symbol targets.
 - **Decision reconciliation draft subject preservation.** R9
   `haft decision reconcile selection-draft --json` now preserves an existing
   `decision_subject_ref` in proposed `enrich_scope` selections instead of

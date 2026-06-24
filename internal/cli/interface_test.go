@@ -71,6 +71,7 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	if report.Authority != "read_only_contract_inventory_not_schema_generation" {
 		t.Fatalf("authority = %q", report.Authority)
 	}
+	assertInterfaceContractAuditAuthorityBoundary(t, report.AuthorityBoundary)
 	if report.Summary.KernelOwnedContracts != report.Summary.Capabilities {
 		t.Fatalf("kernel_owned = %d, capabilities = %d", report.Summary.KernelOwnedContracts, report.Summary.Capabilities)
 	}
@@ -1238,13 +1239,15 @@ func TestInterfaceContractAuditDiscoveryShapeCountsMatchReport(t *testing.T) {
 	}
 
 	var shape struct {
-		Summary interfaceContractAuditSummary `json:"summary"`
+		AuthorityBoundary interfaceContractAuditAuthorityBoundary `json:"authority_boundary"`
+		Summary           interfaceContractAuditSummary           `json:"summary"`
 	}
 	if err := json.Unmarshal([]byte(capability.InputContract.FieldShapes[0].Shape), &shape); err != nil {
 		t.Fatalf("contract audit discovery shape is not valid JSON: %v", err)
 	}
 
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	assertInterfaceContractAuditAuthorityBoundary(t, shape.AuthorityBoundary)
 	if shape.Summary != report.Summary {
 		t.Fatalf("shape summary=%#v, report=%#v", shape.Summary, report.Summary)
 	}
@@ -1508,6 +1511,7 @@ func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
 	for _, want := range []string{
 		"Haft interface contract audit v1",
 		"read_only_contract_inventory_not_schema_generation",
+		"authority_boundary: inventory=read_only_contract_inventory schema_generation=not_schema_generation host_materialization=not_host_materialization evidence=not_evidence approval=not_approval gate_decision=not_gate_decision claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication",
 		"binding_sensitive=",
 		"schema_coverage=",
 		"required_coverage=",
@@ -1542,8 +1546,43 @@ func TestHandleQuintQueryContractAuditReturnsReadOnlyReport(t *testing.T) {
 	if report.Authority != "read_only_contract_inventory_not_schema_generation" {
 		t.Fatalf("authority = %q", report.Authority)
 	}
+	assertInterfaceContractAuditAuthorityBoundary(t, report.AuthorityBoundary)
 	if _, ok := findContractAuditSurface(report, "decision.decide"); !ok {
 		t.Fatalf("decision.decide missing from MCP contract audit: %#v", report.Surfaces)
+	}
+}
+
+func assertInterfaceContractAuditAuthorityBoundary(
+	t *testing.T,
+	boundary interfaceContractAuditAuthorityBoundary,
+) {
+	t.Helper()
+	if boundary.Inventory != "read_only_contract_inventory" {
+		t.Fatalf("contract audit inventory boundary = %#v", boundary)
+	}
+	if boundary.SchemaGeneration != "not_schema_generation" {
+		t.Fatalf("contract audit schema generation boundary = %#v", boundary)
+	}
+	if boundary.HostMaterialization != "not_host_materialization" {
+		t.Fatalf("contract audit host materialization boundary = %#v", boundary)
+	}
+	if boundary.Evidence != "not_evidence" {
+		t.Fatalf("contract audit evidence boundary = %#v", boundary)
+	}
+	if boundary.Approval != "not_approval" {
+		t.Fatalf("contract audit approval boundary = %#v", boundary)
+	}
+	if boundary.GateDecision != "not_gate_decision" {
+		t.Fatalf("contract audit gate boundary = %#v", boundary)
+	}
+	if boundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("contract audit claim truth boundary = %#v", boundary)
+	}
+	if boundary.GlobalTruth != "not_global_truth" {
+		t.Fatalf("contract audit global truth boundary = %#v", boundary)
+	}
+	if boundary.Publication != "not_publication" {
+		t.Fatalf("contract audit publication boundary = %#v", boundary)
 	}
 }
 

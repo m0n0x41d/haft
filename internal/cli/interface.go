@@ -724,13 +724,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":34,"kernel_owned_contracts":34,"mcp_mirrored_actions":19,"cli_available_surfaces":26,"binding_authority_surfaces":2,"read_only_surfaces":19,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":25,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":4,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":4,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
-						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, approve binding actions, or change tool descriptions.",
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":34,"kernel_owned_contracts":34,"mcp_mirrored_actions":19,"cli_available_surfaces":26,"binding_authority_surfaces":2,"read_only_surfaces":19,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":25,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":4,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":4,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, materialize host descriptions, create evidence, approve binding actions, pass gates, create claim/global truth, publish, or change tool descriptions.",
 					},
 				},
 				Notes: []string{
 					"Use this before Phase F1 schema generation so host/schema drift is visible without inlining tool schemas into status.",
 					"Read-only: schema visibility is not operator authorization and not binding authority.",
+					"Contract audit is not evidence, approval, GateDecision, claim truth, global truth, publication, schema generation, or host materialization.",
 				},
 			},
 			OutputVolume: []string{"default: compact contract-source audit; --json: full surface list; never in default status"},
@@ -1568,12 +1569,25 @@ func commonInterfaceInvariants() []string {
 }
 
 type interfaceContractAuditReport struct {
-	Kind          string                          `json:"kind"`
-	SchemaVersion int                             `json:"schema_version"`
-	Authority     string                          `json:"authority"`
-	Summary       interfaceContractAuditSummary   `json:"summary"`
-	Surfaces      []interfaceContractAuditSurface `json:"surfaces"`
-	Notes         []string                        `json:"notes"`
+	Kind              string                                  `json:"kind"`
+	SchemaVersion     int                                     `json:"schema_version"`
+	Authority         string                                  `json:"authority"`
+	AuthorityBoundary interfaceContractAuditAuthorityBoundary `json:"authority_boundary"`
+	Summary           interfaceContractAuditSummary           `json:"summary"`
+	Surfaces          []interfaceContractAuditSurface         `json:"surfaces"`
+	Notes             []string                                `json:"notes"`
+}
+
+type interfaceContractAuditAuthorityBoundary struct {
+	Inventory           string `json:"inventory"`
+	SchemaGeneration    string `json:"schema_generation"`
+	HostMaterialization string `json:"host_materialization"`
+	Evidence            string `json:"evidence"`
+	Approval            string `json:"approval"`
+	GateDecision        string `json:"gate_decision"`
+	ClaimTruth          string `json:"claim_truth"`
+	GlobalTruth         string `json:"global_truth"`
+	Publication         string `json:"publication"`
 }
 
 type interfaceContractAuditSummary struct {
@@ -2933,20 +2947,35 @@ func buildInterfaceContractAuditReport(catalog []interfaceCapability) interfaceC
 	}
 
 	return interfaceContractAuditReport{
-		Kind:          "haft_interface_contract_audit",
-		SchemaVersion: 1,
-		Authority:     "read_only_contract_inventory_not_schema_generation",
-		Summary:       summary,
-		Surfaces:      surfaces,
+		Kind:              "haft_interface_contract_audit",
+		SchemaVersion:     1,
+		Authority:         "read_only_contract_inventory_not_schema_generation",
+		AuthorityBoundary: interfaceContractAuditAuthorityBoundaryFor(),
+		Summary:           summary,
+		Surfaces:          surfaces,
 		Notes: []string{
 			"Kernel interface catalog is the audited contract source for this report.",
 			"Host schema posture classifies each fragment as a validated mirror, manual CLI contract, or unvalidated host fragment.",
 			"Contract fragment posture classifies every fragment as generated target, validated, legacy/manual, or unvalidated.",
 			"MCP required-field coverage checks transport-level required fields such as action; action-specific required fields stay in the kernel contract and handler validation.",
-			"Schema visibility is not operator authorization, binding authority, evidence, or gate passage.",
+			"Schema visibility is not operator authorization, binding authority, evidence, gate passage, claim truth, global truth, or publication.",
 			"Generated MCP/host schema work remains a later phase and must validate against this inventory.",
 			"Default status must not inline this report; use haft interface contract-audit --json or haft_query(action=\"contract_audit\").",
 		},
+	}
+}
+
+func interfaceContractAuditAuthorityBoundaryFor() interfaceContractAuditAuthorityBoundary {
+	return interfaceContractAuditAuthorityBoundary{
+		Inventory:           "read_only_contract_inventory",
+		SchemaGeneration:    "not_schema_generation",
+		HostMaterialization: "not_host_materialization",
+		Evidence:            "not_evidence",
+		Approval:            "not_approval",
+		GateDecision:        "not_gate_decision",
+		ClaimTruth:          "not_claim_truth",
+		GlobalTruth:         "not_global_truth",
+		Publication:         "not_publication",
 	}
 }
 
@@ -3630,6 +3659,21 @@ func writeInterfaceContractAuditText(output io.Writer, report interfaceContractA
 		return err
 	}
 	if _, err := fmt.Fprintf(output, "authority: %s\n", report.Authority); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(
+		output,
+		"authority_boundary: inventory=%s schema_generation=%s host_materialization=%s evidence=%s approval=%s gate_decision=%s claim_truth=%s global_truth=%s publication=%s\n",
+		report.AuthorityBoundary.Inventory,
+		report.AuthorityBoundary.SchemaGeneration,
+		report.AuthorityBoundary.HostMaterialization,
+		report.AuthorityBoundary.Evidence,
+		report.AuthorityBoundary.Approval,
+		report.AuthorityBoundary.GateDecision,
+		report.AuthorityBoundary.ClaimTruth,
+		report.AuthorityBoundary.GlobalTruth,
+		report.AuthorityBoundary.Publication,
+	); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(

@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Contract-audit authority boundary.** `haft interface contract-audit` and
+  `haft_query(action="contract_audit")` now expose a top-level read-only
+  authority boundary stating that the contract inventory is not evidence,
+  approval, GateDecision, claim truth, global truth, publication, schema
+  generation, or host materialization.
 - **Maintenance drain authority boundary.** `haft overseer drain --json`,
   `haft_refresh(action="drain")`, and `haft interface refresh.drain` now state
   that drain reports, reconciliation proposals, and after-action reports are

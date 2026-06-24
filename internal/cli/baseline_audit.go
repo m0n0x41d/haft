@@ -40,6 +40,12 @@ const (
 	baselineAuditLegacyAmbiguous   = "legacy_ambiguous_baseline"
 )
 
+var baselineAuditMutationBoundary = []string{
+	"read_only_term_audit",
+	"does_not_mutate_baselines_decisions_evidence_or_carriers",
+	"does_not_create_approval_gate_decision_claim_truth_global_truth_or_publication",
+}
+
 var (
 	baselineAuditJSON  bool
 	baselineAuditLimit int
@@ -70,14 +76,15 @@ func init() {
 }
 
 type baselineTermAuditReport struct {
-	Kind          string                        `json:"kind"`
-	SchemaVersion int                           `json:"schema_version"`
-	Authority     string                        `json:"authority"`
-	ScanPolicy    baselineTermAuditScanPolicy   `json:"scan_policy"`
-	Summary       baselineTermAuditSummary      `json:"summary"`
-	Projection    *baselineTermAuditProjection  `json:"projection,omitempty"`
-	Diagnostics   []baselineTermAuditDiagnostic `json:"diagnostics,omitempty"`
-	Findings      []baselineTermAuditFinding    `json:"findings,omitempty"`
+	Kind             string                        `json:"kind"`
+	SchemaVersion    int                           `json:"schema_version"`
+	Authority        string                        `json:"authority"`
+	MutationBoundary []string                      `json:"mutation_boundary"`
+	ScanPolicy       baselineTermAuditScanPolicy   `json:"scan_policy"`
+	Summary          baselineTermAuditSummary      `json:"summary"`
+	Projection       *baselineTermAuditProjection  `json:"projection,omitempty"`
+	Diagnostics      []baselineTermAuditDiagnostic `json:"diagnostics,omitempty"`
+	Findings         []baselineTermAuditFinding    `json:"findings,omitempty"`
 }
 
 type baselineTermAuditScanPolicy struct {
@@ -211,9 +218,10 @@ func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) 
 	}
 
 	report := baselineTermAuditReport{
-		Kind:          baselineAuditKind,
-		SchemaVersion: 1,
-		Authority:     baselineAuditAuthority,
+		Kind:             baselineAuditKind,
+		SchemaVersion:    1,
+		Authority:        baselineAuditAuthority,
+		MutationBoundary: append([]string(nil), baselineAuditMutationBoundary...),
 		ScanPolicy: baselineTermAuditScanPolicy{
 			Root: normalizedRoot,
 			IncludedClasses: []string{
@@ -415,7 +423,7 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditReleaseNotes, "mentions baseline inside release notes; audit-visible provenance, not current terminology debt"
 	case baselineAuditToolSurfaceCarrier(path):
 		return baselineAuditToolSurface, "mentions baseline inside the baseline audit tool implementation; audit-visible self surface, not terminology debt"
-	case baselineAuditLegacyBindingSurface(path):
+	case baselineAuditLegacyBindingSurface(path, value):
 		return baselineAuditLegacyBinding, "mentions baseline inside legacy decision-binding scope enrichment surface"
 	case baselineAuditBindingSurfaceInventory(path, value):
 		return baselineAuditLifecycleAuth, "mentions baseline inside binding-surface authority inventory"
@@ -831,12 +839,20 @@ func baselineAuditSpecLifecycleSurface(path string) bool {
 	}
 }
 
-func baselineAuditLegacyBindingSurface(path string) bool {
+func baselineAuditLegacyBindingSurface(path string, value string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/artifact/legacy_binding.go",
 		"internal/artifact/legacy_binding_test.go",
 		"internal/cli/drift_bindings_test.go":
 		return true
+	case "internal/cli/interface_test.go":
+		return containsAnyBaselineTerm(value,
+			"ambiguous_file_scope",
+			"missing_symbol_baseline",
+			"propose_rebaseline_with_binding_targets",
+			"legacy_binding_report",
+			"binding_target_review_proposal",
+		)
 	default:
 		return false
 	}
@@ -1264,6 +1280,11 @@ func writeBaselineAuditText(w io.Writer, report baselineTermAuditReport) error {
 	}
 	if _, err := fmt.Fprintf(w, "authority: %s\n", report.Authority); err != nil {
 		return err
+	}
+	if len(report.MutationBoundary) > 0 {
+		if _, err := fmt.Fprintf(w, "mutation_boundary: %s\n", strings.Join(report.MutationBoundary, "; ")); err != nil {
+			return err
+		}
 	}
 	if _, err := fmt.Fprintf(
 		w,

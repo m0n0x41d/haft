@@ -258,6 +258,10 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"does not mutate code, carriers, evidence, decisions, baselines, or gates.",
 		"This is a read-only projection: it does not mutate decisions, baselines,",
 	}, "\n")+"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/interface_test.go", strings.Join([]string{
+		`"missing_symbol_baseline",`,
+		`"propose_rebaseline_with_binding_targets",`,
+	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, "internal/cli/decision_reconcile.go", strings.Join([]string{
 		"baselines, or carriers.",
 		"This command does not mutate decisions, links, evidence, baselines, or carriers.",
@@ -358,6 +362,9 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Authority != baselineAuditAuthority {
 		t.Fatalf("unexpected authority: %q", report.Authority)
 	}
+	if strings.Join(report.MutationBoundary, ";") != strings.Join(baselineAuditMutationBoundary, ";") {
+		t.Fatalf("mutation boundary = %#v", report.MutationBoundary)
+	}
 	if report.Summary.SpecSectionApprovalBaseline != 13 {
 		t.Fatalf("spec approval count = %d, want 13", report.Summary.SpecSectionApprovalBaseline)
 	}
@@ -442,11 +449,11 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	if report.Summary.SpecUseCurrentnessFiles != 1 {
 		t.Fatalf("spec use currentness files = %d, want 1", report.Summary.SpecUseCurrentnessFiles)
 	}
-	if report.Summary.LegacyBindingScope != 5 {
-		t.Fatalf("legacy binding scope count = %d, want 5", report.Summary.LegacyBindingScope)
+	if report.Summary.LegacyBindingScope != 7 {
+		t.Fatalf("legacy binding scope count = %d, want 7", report.Summary.LegacyBindingScope)
 	}
-	if report.Summary.LegacyBindingScopeFiles != 2 {
-		t.Fatalf("legacy binding scope files = %d, want 2", report.Summary.LegacyBindingScopeFiles)
+	if report.Summary.LegacyBindingScopeFiles != 3 {
+		t.Fatalf("legacy binding scope files = %d, want 3", report.Summary.LegacyBindingScopeFiles)
 	}
 	if report.Summary.DecisionBaselineAPI != 16 {
 		t.Fatalf("decision baseline api count = %d, want 16", report.Summary.DecisionBaselineAPI)
@@ -510,6 +517,10 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	report := baselineTermAuditReport{
 		SchemaVersion: 1,
 		Authority:     baselineAuditAuthority,
+		MutationBoundary: []string{
+			"read_only_term_audit",
+			"does_not_mutate_baselines_decisions_evidence_or_carriers",
+		},
 		Summary: baselineTermAuditSummary{
 			FilesScanned:                2,
 			MatchedLines:                2,
@@ -559,6 +570,7 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	for _, want := range []string{
 		"Haft baseline term audit v1",
 		"authority: read_only_term_audit_not_baseline_mutation",
+		"mutation_boundary: read_only_term_audit; does_not_mutate_baselines_decisions_evidence_or_carriers",
 		"spec_approval=7",
 		"verified_state=14",
 		"comparison=3",

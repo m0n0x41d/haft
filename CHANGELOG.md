@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline audit authority boundary.** `haft baseline audit --json` now
+  includes an explicit `mutation_boundary`, and the text summary prints the
+  same read-only boundary. Interface contract test fragments such as
+  `missing_symbol_baseline` and
+  `propose_rebaseline_with_binding_targets` are classified as legacy binding
+  scope vocabulary instead of false-positive ambiguous baseline debt.
 - **Decision reconciliation draft counter clarity.** R9 selection drafts now
   distinguish broad `plan_scope_enrichment_candidates` from draftable
   `reviewable_scope_enrichment_candidates`, while keeping the existing

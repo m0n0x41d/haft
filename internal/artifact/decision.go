@@ -1423,7 +1423,7 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 		}
 		report.HasBaseline = hasAnyHash
 		if hasAnyHash {
-			profile := VerifiedStateBaselineProfile()
+			profile := DecisionBaselineProfile(evidenceItems)
 			report.BaselineKind = profile.Kind
 			report.BaselineProfile = &profile
 		}

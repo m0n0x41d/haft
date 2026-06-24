@@ -47,7 +47,7 @@ Execution plan lives in `.context/v8_haft_governance_substrate_plan.md`.
 <!-- haft:start -->
 # Haft Project Discipline
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:23c5d02d47e502ba76a1d66f3da770613001cef62d5e80581911ee86ce5ac923 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:aee2df7fe90bee66e6a6a5764feb454d4975809a2c4d160ffe6409793a273b51 -->
 
 This section is installed and maintained by `haft init`. Edits **inside** the
 haft HTML-comment markers (the start/end pair that brackets this section) will
@@ -69,9 +69,10 @@ to produce a useful chat response — variants with weakest-links, a Pareto
 front, a comparison table. **Stop.** That visual shape is the **output of a
 haft skill**, not a substitute for invoking it.
 
-If you deliver an analysis without going through the haft kernel, the result is
-**ephemeral**: gone by tomorrow, no ProblemCard, no SolutionPortfolio, nothing
-to `/h-verify` in 2 weeks. The chat answer is **wishlist**, not work.
+Analysis in chat can be useful local reasoning, but if it does not go through
+the haft kernel it is **ephemeral**: gone by tomorrow, no ProblemCard, no
+SolutionPortfolio, nothing to `/h-verify` in 2 weeks. The chat answer is
+unpersisted reasoning, not durable project governance, evidence, or authority.
 
 **Concrete failure patterns to catch in yourself:**
 
@@ -98,9 +99,9 @@ Before sending a long response in this project, run this check internally:
    **analysis with a recommendation**?
 2. Did I call **any `haft_*` tool** in this turn?
 
-If (1) = yes and (2) = no — **stop and reconsider**. You are about to produce a
-wishlist in the chat. Fire the appropriate skill first, then present the
-result.
+If (1) = yes and (2) = no — **stop and reconsider**. You are about to produce
+non-durable reasoning in the chat. Fire the appropriate skill first, then
+present the result.
 
 ## Canonical FPF flow
 
@@ -223,8 +224,11 @@ Keep the returned `pull_id`. If context compacts before close, recover with
 
 Before claiming completion, call `haft_method(action="close", pull_id=...)`
 with changed files, gate results, verification evidence, and any explicit
-waivers. Hard gates require evidence or an explicit waiver reason. Soft gates
-are guidance; they do not require a waiver.
+waivers. Derive changed files, commands, test output, and governed-decision
+intersections from the worktree and traces first; ask the operator only for
+irreducible judgment such as waivers, ambiguous authority, or acceptance of
+residual risk. Hard gates require evidence or an explicit waiver reason. Soft
+gates are guidance; they do not require a waiver.
 
 ## Critical reminders
 

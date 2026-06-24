@@ -1262,13 +1262,15 @@ type DriftReport struct {
 }
 
 // BaselineKind names the governance meaning of a baseline-like snapshot.
-// Decision drift hashes are legacy carriers projected as verified-state
-// snapshots; spec approval baselines live in project/specflow.
+// Decision drift hashes are reference data until supporting evidence makes a
+// verified-state projection honest; spec approval baselines live in
+// project/specflow.
 type BaselineKind string
 
 const (
 	BaselineKindUnknownLegacy         BaselineKind = "unknown_legacy_baseline"
 	BaselineKindPreWorkReference      BaselineKind = "pre_work_reference_snapshot"
+	BaselineKindObservedStateSnapshot BaselineKind = "observed_state_snapshot"
 	BaselineKindSpecSectionApproval   BaselineKind = "spec_section_approval_baseline"
 	BaselineKindVerifiedStateSnapshot BaselineKind = "verified_state_snapshot"
 )
@@ -1280,13 +1282,48 @@ type BaselineProfile struct {
 	Diagnostic        string       `json:"diagnostic"`
 }
 
+func DecisionBaselineProfile(evidenceItems []EvidenceItem) BaselineProfile {
+	if hasVerifiedStateEvidence(evidenceItems) {
+		return VerifiedStateBaselineProfile()
+	}
+	return ObservedStateBaselineProfile()
+}
+
+func ObservedStateBaselineProfile() BaselineProfile {
+	return BaselineProfile{
+		Kind:              BaselineKindObservedStateSnapshot,
+		Object:            "ObservedStateSnapshot",
+		AuthorityBoundary: "drift_detection_reference_not_verification_or_approval",
+		Diagnostic:        "affected_files hashes are observed reference data for drift detection; they do not prove verification without supporting evidence",
+	}
+}
+
 func VerifiedStateBaselineProfile() BaselineProfile {
 	return BaselineProfile{
 		Kind:              BaselineKindVerifiedStateSnapshot,
 		Object:            "VerifiedStateSnapshot",
 		AuthorityBoundary: "drift_detection_snapshot_not_spec_approval_or_pre_work_reference",
-		Diagnostic:        "legacy affected_files hashes are projected as verified-state snapshots for decision drift detection",
+		Diagnostic:        "affected_files hashes have supporting evidence and are projected as verified-state snapshots for decision drift detection",
 	}
+}
+
+func hasVerifiedStateEvidence(items []EvidenceItem) bool {
+	for _, item := range items {
+		verdict := strings.ToLower(strings.TrimSpace(item.Verdict))
+		if verdict != "supports" && verdict != "accepted" {
+			continue
+		}
+		evidenceType := strings.ToLower(strings.TrimSpace(item.Type))
+		switch evidenceType {
+		case "verification", "measurement", "audit", "test", "focused_regression_tests", "focused_tests_and_public_behavior_check":
+			return true
+		}
+		content := strings.ToLower(item.Content)
+		if strings.Contains(content, "verification pass") || strings.Contains(content, "go test") || strings.Contains(content, "passed") {
+			return true
+		}
+	}
+	return false
 }
 
 // Symbol-level triage verdicts for a drift report. These partition session-start

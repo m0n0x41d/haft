@@ -97,11 +97,13 @@ func TestMaintenanceRunSuppressesAutoResolvableDriftAndSurfacesRisk(t *testing.T
 		"## Overseer Signals",
 		"Drift requires confirmation",
 		"Stale governance artifact",
-		"low-signal maintenance item",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status signal output missing %q:\n%s", want, output)
 		}
+	}
+	if strings.Contains(output, "low-signal maintenance item") {
+		t.Fatalf("compact status should keep low-signal suppression in JSON/audit, not default text:\n%s", output)
 	}
 }
 

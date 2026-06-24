@@ -2425,7 +2425,7 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "close_template"} {
+	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "close_template", "Derive changed_files", "irreducible judgment"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("method.close notes missing %q:\n%s", want, notes)
 		}

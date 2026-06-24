@@ -351,13 +351,13 @@ func TestCheckDriftDetectsModifiedFile(t *testing.T) {
 	if !r.HasBaseline {
 		t.Error("expected HasBaseline=true")
 	}
-	if r.BaselineKind != BaselineKindVerifiedStateSnapshot {
-		t.Fatalf("baseline_kind = %q, want verified-state snapshot", r.BaselineKind)
+	if r.BaselineKind != BaselineKindObservedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want observed-state snapshot", r.BaselineKind)
 	}
 	if r.BaselineProfile == nil {
 		t.Fatal("baseline_profile missing")
 	}
-	if r.BaselineProfile.AuthorityBoundary != "drift_detection_snapshot_not_spec_approval_or_pre_work_reference" {
+	if r.BaselineProfile.AuthorityBoundary != "drift_detection_reference_not_verification_or_approval" {
 		t.Fatalf("baseline_profile = %+v", r.BaselineProfile)
 	}
 	if len(r.Files) != 1 {
@@ -365,6 +365,56 @@ func TestCheckDriftDetectsModifiedFile(t *testing.T) {
 	}
 	if r.Files[0].Status != DriftModified {
 		t.Errorf("expected DriftModified, got %s", r.Files[0].Status)
+	}
+}
+
+func TestCheckDriftDoesNotStrengthenFailedMeasurementBaseline(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"before\" }\n")
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep failed measurement scoped",
+		WhySelected:   "Failed verification must not turn a reference snapshot into a verified-state snapshot.",
+		WeakestLink:   "Drift presentation could overstate evidence from a failed measurement.",
+		PostConditions: []string{
+			"app.go behavior is measured after implementation",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef:    dec.Meta.ID,
+		Findings:       "Verification failed after the baseline snapshot.",
+		CriteriaNotMet: []string{"app.go behavior is measured after implementation"},
+		Verdict:        "failed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"after\" }\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("drift reports = %+v, want one report", reports)
+	}
+	if reports[0].BaselineKind != BaselineKindObservedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want observed-state snapshot", reports[0].BaselineKind)
 	}
 }
 

@@ -8,7 +8,7 @@ argument-hint: "[reasoning topic — what to think about / what to figure out]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:23c5d02d47e502ba76a1d66f3da770613001cef62d5e80581911ee86ce5ac923 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:aee2df7fe90bee66e6a6a5764feb454d4975809a2c4d160ffe6409793a273b51 -->
 
 # h-reason — FPF reasoning umbrella
 
@@ -49,7 +49,7 @@ This is the failure mode this umbrella is designed to NOT fall into.
 
 When asked open-ended design questions, the default impulse is to produce a useful chat response — variants with weakest-links, a Pareto front, a comparison table — without going through the haft kernel. **Stop.** The visual shape of FPF output is not a substitute for invoking the kernel.
 
-If you deliver an analysis without calling `mcp__haft__*` tools, the result is **ephemeral**: gone by tomorrow, no ProblemCard, no SolutionPortfolio, nothing to `/h-verify` in two weeks. The chat answer is wishlist, not work.
+Analysis in chat can be useful local reasoning, but without a matching `mcp__haft__*` call it is **ephemeral**: gone by tomorrow, no ProblemCard, no SolutionPortfolio, nothing to `/h-verify` in two weeks. The chat answer is unpersisted reasoning, not durable project governance, evidence, or authority.
 
 **Concrete failure patterns to catch in yourself:**
 
@@ -110,6 +110,9 @@ operational method run before editing:
 - Before claiming completion, call `haft_method(action="close", pull_id=...)`
   with changed files, gate results, verification evidence, and explicit
   waivers for any hard gate not evidenced.
+- Derive changed files, commands, test output, and governed-decision
+  intersections from the worktree and traces before asking the operator;
+  reserve operator input for waivers, ambiguous authority, and residual risk.
 
 Mechanical edits should request low or no ceremony and avoid architecture
 gates.

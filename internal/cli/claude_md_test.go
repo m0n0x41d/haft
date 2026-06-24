@@ -186,6 +186,12 @@ func TestInstructionCarriersPreservePeerEngineeringStyle(t *testing.T) {
 	assertContains(t, "repo AGENTS.md", agentsContent, "Be a peer engineer, not a cheerleader")
 	assertContains(t, "repo AGENTS.md", agentsContent, "Use dry, technical humor when appropriate")
 	assertContains(t, "repo AGENTS.md", agentsContent, "Talk like you're pairing with a staff engineer, not pitching to a VP")
+	assertContains(t, "embedded template", embeddedClaudeMDTemplate, "unpersisted reasoning, not durable project governance, evidence, or authority")
+	assertContains(t, "repo CLAUDE.md", claudeContent, "unpersisted reasoning, not durable project governance, evidence, or authority")
+	assertContains(t, "repo AGENTS.md", agentsContent, "unpersisted reasoning, not durable project governance, evidence, or authority")
+	assertContains(t, "embedded template", embeddedClaudeMDTemplate, "Derive changed files, commands, test output")
+	assertContains(t, "repo CLAUDE.md", claudeContent, "Derive changed files, commands, test output")
+	assertContains(t, "repo AGENTS.md", agentsContent, "Derive changed files, commands, test output")
 }
 
 func assertContains(t *testing.T, carrier string, content string, fragment string) {

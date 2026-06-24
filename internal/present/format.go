@@ -1036,9 +1036,12 @@ func CockpitStatusResponse(data artifact.StatusData) string {
 func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	driftEvents := cockpitDriftEvents(data)
 	openDriftEvents := cockpitOpenDriftEvents(driftEvents.Events)
+	materialEvents, _, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
+	reconciliationNeedsAttention := cockpitReconciliationNeedsOperator(data.ReconciliationCues)
 	hasAttention := len(data.StaleItems) > 0 ||
-		len(openDriftEvents) > 0 ||
-		len(data.ReconciliationCues.Cues) > 0 ||
+		len(materialEvents) > 0 ||
+		len(unresolvedEvents) > 0 ||
+		reconciliationNeedsAttention ||
 		len(data.CommissionAttention) > 0
 
 	if !hasAttention {
@@ -1065,7 +1068,6 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 
 	const driftCap = 2
 	if len(openDriftEvents) > 0 {
-		materialEvents, auditEvents, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
 		if len(materialEvents) > 0 {
 			uniqueEvents, impactedDecisions, maxFanout := summarizeCockpitDriftEvents(openDriftEvents)
 			sb.WriteString(fmt.Sprintf(
@@ -1088,13 +1090,6 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 				event.ResolutionStatus,
 			))
 		}
-		if len(auditEvents) > 0 {
-			sb.WriteString(fmt.Sprintf(
-				"- **Audit-only drift events**: %s; run `%s` for compact paths or `haft_query(action=\"drift_events\", full=true)` for full audit.\n",
-				formatAuditOnlyDriftEventSummary(auditEvents),
-				artifact.StatusCompactDriftEventsCommand,
-			))
-		}
 		if len(unresolvedEvents) > 0 {
 			sb.WriteString(fmt.Sprintf(
 				"- **Binding resolution needed**: %s; run `haft drift bindings --dry-run --json` or `%s`.\n",
@@ -1104,9 +1099,9 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		}
 	}
 
-	if len(data.ReconciliationCues.Cues) > 0 {
-		sb.WriteString("- **Reconciliation cues**: ")
-		sb.WriteString(ReconciliationCueSummary(data.ReconciliationCues))
+	if reconciliationNeedsAttention {
+		sb.WriteString("- **Decision reconciliation needs operator selection**: ")
+		sb.WriteString(cockpitReconciliationActionSummary(data.ReconciliationCues))
 		sb.WriteString("\n")
 	}
 
@@ -1230,6 +1225,44 @@ func ReconciliationCueSummary(report artifact.ReconciliationCueReport) string {
 		return strings.Join(parts, "; ")
 	}
 	return strings.Join(parts, "; ") + "; drill down with " + strings.Join(report.Commands, " / ")
+}
+
+func cockpitReconciliationActionSummary(report artifact.ReconciliationCueReport) string {
+	parts := []string{}
+	if report.Summary.OperatorRequiredGroups > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d operator-required reconciliation group(s)",
+			report.Summary.OperatorRequiredGroups,
+		))
+	}
+	if report.Summary.GoverningConflictSets > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d governing conflict set(s)",
+			report.Summary.GoverningConflictSets,
+		))
+	}
+	if report.Summary.GoverningOverlapSets > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d governing overlap review set(s)",
+			report.Summary.GoverningOverlapSets,
+		))
+	}
+	if len(parts) == 0 {
+		if report.Summary.ReconciliationGroups == 0 && report.Summary.HighFanoutEvents == 0 {
+			return ""
+		}
+		parts = append(parts, "audit-only reconciliation detail available")
+	}
+	if len(report.Commands) == 0 {
+		return strings.Join(parts, "; ")
+	}
+	return strings.Join(parts, "; ") + "; drill down with " + strings.Join(report.Commands, " / ")
+}
+
+func cockpitReconciliationNeedsOperator(report artifact.ReconciliationCueReport) bool {
+	return report.Summary.OperatorRequiredGroups > 0 ||
+		report.Summary.GoverningConflictSets > 0 ||
+		report.Summary.GoverningOverlapSets > 0
 }
 
 func formatDriftFileSummary(files []artifact.DriftItem) string {

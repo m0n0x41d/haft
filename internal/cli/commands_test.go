@@ -309,6 +309,9 @@ func TestHReasonSkill_IsFullUmbrella(t *testing.T) {
 	if !strings.Contains(content, "Description ≠ Work") {
 		t.Fatal("h-reason must carry the Description ≠ Work core rule")
 	}
+	if !strings.Contains(content, "unpersisted reasoning, not durable project governance, evidence, or authority") {
+		t.Fatal("h-reason must distinguish useful chat reasoning from durable governance authority")
+	}
 	// Must cover the slideument patterns that don't have dedicated skills.
 	for _, pat := range []string{"Goldilocks", "NQD", "stepping", "Anti-Goodhart"} {
 		if !strings.Contains(content, pat) {

@@ -8,6 +8,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision baseline semantics.** Decision drift reports now distinguish
+  direct hash captures as `observed_state_snapshot`; `verified_state_snapshot`
+  is reserved for baselines with supporting verification, measurement, audit,
+  or test evidence. Drift hashes and mechanics are unchanged.
+- **Default status noise.** Compact status now keeps audit-only drift and
+  migration-only reconciliation detail out of the default attention lanes while
+  preserving drill-down access through full status, drift events, judgment, and
+  drain previews.
+- **Host discipline wording.** `AGENTS.md`, the embedded init template, and
+  packaged `h-reason` now distinguish useful unpersisted chat reasoning from
+  durable governance, evidence, or authority.
+- **Method close discovery.** `haft interface method.close --json` now tells
+  agents to derive changed files, command traces, test status, and governed
+  decision intersections before asking the operator for waivers or residual
+  judgment.
 - **Decision baseline target projection.** `haft_decision(action="baseline")`
   now projects stored `affected_files` from explicit drift/governance binding
   targets when present, preventing scope-enriched decisions from reintroducing

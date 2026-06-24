@@ -698,6 +698,8 @@ func haftInterfaceCatalog() []interfaceCapability {
 					`gate_results[] shape: {"gate_id":"<hard-gate-id>","status":"satisfied","evidence_refs":["<evidence-ref>"]}`,
 					`waivers[] shape: {"gate_id":"<hard-gate-id>","reason":"<why waived>"}`,
 					`verification shape: {"commands":["<command>"],"result":"<pass|partial|failed>","output_ref":"<optional>"}`,
+					"Derive changed_files, verification.commands, test status, and governed-decision intersections from git diff, terminal traces, and code_context before asking the operator.",
+					"Ask the operator only for irreducible judgment: waivers, ambiguous authority, or acceptance of residual risk.",
 					"Hard gates require either satisfied evidence_refs or an explicit waiver reason.",
 					"After context compaction, call method.status then method.show to recover the pull_id and close_template.",
 				},

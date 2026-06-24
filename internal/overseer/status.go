@@ -82,13 +82,6 @@ func FormatStatusSignals(summary StatusSummary) string {
 		sb.WriteString(formatStatusSignal(signal))
 	}
 
-	if summary.SuppressedCount > 0 {
-		sb.WriteString(fmt.Sprintf(
-			"- **INFO** %d low-signal maintenance item(s) suppressed with audit trail (triage, not improvement); inspect `haft overseer drain --dry-run --json` for the latest classifier preview.\n",
-			summary.SuppressedCount,
-		))
-	}
-
 	sb.WriteString("\n")
 	return sb.String()
 }

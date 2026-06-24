@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation apply help boundary.** `haft decision reconcile
+  apply --help` now names apply authority as limited to the selected
+  reconciliation mutation, not evidence, GateDecision, claim truth, global
+  truth, or publication.
 - **Decision reconciliation selection-review help boundary.** `haft decision
   reconcile selection-review --help` now names validation reports as context,
   not operator approval, not evidence, not GateDecision, not claim truth, not

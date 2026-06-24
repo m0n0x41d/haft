@@ -65,6 +65,25 @@ func TestDecisionReconcileHelpNamesAuthorityBoundaries(t *testing.T) {
 	}
 }
 
+func TestDecisionReconcileApplyHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileApplyCmd.Long), " "))
+	for _, want := range []string{
+		"operator-approved reconciliation selection",
+		"apply authority is limited",
+		"selected reconciliation mutation",
+		"not evidence",
+		"not gatedecision",
+		"not claim truth",
+		"not global truth",
+		"not publication",
+		"mcp does not get an auto-apply path",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("decision reconcile apply help missing %q:\n%s", want, decisionReconcileApplyCmd.Long)
+		}
+	}
+}
+
 func TestDecisionReconcileMetricsHelpNamesAuthorityBoundaries(t *testing.T) {
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileMetricsCmd.Long), " "))
 	for _, want := range []string{

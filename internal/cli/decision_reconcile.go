@@ -66,8 +66,10 @@ operation=enrich_scope may add explicit decision_subject_ref,
 governance_targets, drift_watch_targets, and claim_governance_target_refs
 without changing decision status or lineage. operation=claim_lifecycle_update
 may update explicit claims to refresh_due, superseded, or deprecated while the
-DecisionRecord remains current. MCP does not get an auto-apply path in this
-slice.`,
+DecisionRecord remains current. Apply authority is limited to the selected
+reconciliation mutation; it is not evidence, not GateDecision, not claim truth,
+not global truth, and not publication. MCP does not get an auto-apply path in
+this slice.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runDecisionReconcileApply,
 }

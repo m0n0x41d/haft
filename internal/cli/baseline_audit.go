@@ -40,7 +40,10 @@ const (
 	baselineAuditLegacyAmbiguous   = "legacy_ambiguous_baseline"
 )
 
-var baselineAuditJSON bool
+var (
+	baselineAuditJSON  bool
+	baselineAuditLimit int
+)
 
 var baselineCmd = &cobra.Command{
 	Use:   "baseline",
@@ -61,6 +64,7 @@ planning carriers, node_modules, vendor, and build output.`,
 
 func init() {
 	baselineAuditCmd.Flags().BoolVar(&baselineAuditJSON, "json", false, "print the full audit as JSON")
+	baselineAuditCmd.Flags().IntVar(&baselineAuditLimit, "limit", 0, "limit JSON findings without changing summary counts; default 0 emits the full audit JSON")
 	baselineCmd.AddCommand(baselineAuditCmd)
 	rootCmd.AddCommand(baselineCmd)
 }
@@ -71,6 +75,7 @@ type baselineTermAuditReport struct {
 	Authority     string                        `json:"authority"`
 	ScanPolicy    baselineTermAuditScanPolicy   `json:"scan_policy"`
 	Summary       baselineTermAuditSummary      `json:"summary"`
+	Projection    *baselineTermAuditProjection  `json:"projection,omitempty"`
 	Diagnostics   []baselineTermAuditDiagnostic `json:"diagnostics,omitempty"`
 	Findings      []baselineTermAuditFinding    `json:"findings,omitempty"`
 }
@@ -79,6 +84,13 @@ type baselineTermAuditScanPolicy struct {
 	Root              string   `json:"root"`
 	IncludedClasses   []string `json:"included_classes"`
 	ExcludedPathHints []string `json:"excluded_path_hints"`
+}
+
+type baselineTermAuditProjection struct {
+	View             string `json:"view"`
+	Limit            int    `json:"limit"`
+	OmittedFindings  int    `json:"omitted_findings"`
+	FullAuditCommand string `json:"full_audit_command"`
 }
 
 type baselineTermAuditSummary struct {
@@ -145,6 +157,10 @@ type baselineTermAuditFinding struct {
 }
 
 func runBaselineAudit(cmd *cobra.Command, args []string) error {
+	if baselineAuditLimit < 0 {
+		return fmt.Errorf("limit must be >= 0")
+	}
+
 	root, err := os.Getwd()
 	if err != nil {
 		return err
@@ -155,10 +171,36 @@ func runBaselineAudit(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if baselineAuditJSON {
+		if baselineAuditLimit > 0 {
+			report = limitBaselineTermAuditReport(report, baselineAuditLimit)
+		}
 		return writeJSON(cmd.OutOrStdout(), report)
 	}
 
 	return writeBaselineAuditText(cmd.OutOrStdout(), report)
+}
+
+func limitBaselineTermAuditReport(report baselineTermAuditReport, limit int) baselineTermAuditReport {
+	if limit <= 0 {
+		return report
+	}
+
+	total := len(report.Findings)
+	kept := total
+	if kept > limit {
+		kept = limit
+	}
+
+	limited := report
+	limited.Findings = append([]baselineTermAuditFinding(nil), report.Findings[:kept]...)
+	limited.Projection = &baselineTermAuditProjection{
+		View:             "compact",
+		Limit:            limit,
+		OmittedFindings:  total - kept,
+		FullAuditCommand: "haft baseline audit --json",
+	}
+
+	return limited
 }
 
 func buildBaselineTermAuditReport(root string) (baselineTermAuditReport, error) {

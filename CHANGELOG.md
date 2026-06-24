@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Baseline audit bounded JSON projection.** `haft baseline audit --json
+  --limit N` now keeps full summary/diagnostic counts while truncating the
+  emitted findings with explicit `projection.omitted_findings` and a
+  `full_audit_command`, so agents can check `legacy_ambiguous_baseline`
+  without dumping the full repository audit into context.
 - **Product-value scope-violation evidence.** The 2026-06-24 product-value
   packet now records a deliberate R9 scope/authority violation attempt as a
   read-only blocked-use attention item with exact source-return requirements,

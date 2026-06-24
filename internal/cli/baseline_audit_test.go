@@ -589,6 +589,44 @@ func TestWriteBaselineAuditText(t *testing.T) {
 	}
 }
 
+func TestLimitBaselineTermAuditReportPreservesSummaryAndMarksOmission(t *testing.T) {
+	report := baselineTermAuditReport{
+		Summary: baselineTermAuditSummary{
+			MatchedLines:            3,
+			LegacyAmbiguousBaseline: 3,
+		},
+		Findings: []baselineTermAuditFinding{
+			{Path: "a.md", Line: 1, Category: baselineAuditLegacyAmbiguous},
+			{Path: "b.md", Line: 2, Category: baselineAuditLegacyAmbiguous},
+			{Path: "c.md", Line: 3, Category: baselineAuditLegacyAmbiguous},
+		},
+	}
+
+	limited := limitBaselineTermAuditReport(report, 2)
+
+	if limited.Summary.MatchedLines != 3 {
+		t.Fatalf("matched lines = %d, want full summary count 3", limited.Summary.MatchedLines)
+	}
+	if limited.Summary.LegacyAmbiguousBaseline != 3 {
+		t.Fatalf("legacy ambiguous = %d, want full summary count 3", limited.Summary.LegacyAmbiguousBaseline)
+	}
+	if len(limited.Findings) != 2 {
+		t.Fatalf("limited findings = %d, want 2", len(limited.Findings))
+	}
+	if limited.Projection == nil {
+		t.Fatalf("expected projection metadata")
+	}
+	if limited.Projection.View != "compact" {
+		t.Fatalf("projection view = %q", limited.Projection.View)
+	}
+	if limited.Projection.OmittedFindings != 1 {
+		t.Fatalf("omitted findings = %d, want 1", limited.Projection.OmittedFindings)
+	}
+	if limited.Projection.FullAuditCommand != "haft baseline audit --json" {
+		t.Fatalf("full audit command = %q", limited.Projection.FullAuditCommand)
+	}
+}
+
 func TestClassifyBaselineTermTreatsNotRebaselineBoundaryAsLifecycleAuthority(t *testing.T) {
 	category, rationale := classifyBaselineTerm(
 		"internal/cli/spec_apply_change_test.go",

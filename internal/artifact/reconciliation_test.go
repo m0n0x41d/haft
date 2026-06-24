@@ -307,6 +307,48 @@ func TestDecisionReconciliationSelectionDraftWithMetricsKeepsMetricsReportOnly(t
 	}
 }
 
+func TestDecisionReconciliationSelectionDraftDistinguishesPlanAndReviewableCandidateCounts(t *testing.T) {
+	plan := DecisionReconciliationPlan{
+		SchemaVersion: DecisionReconciliationSchemaVersion,
+		Authority:     DecisionReconciliationAuthority,
+		Summary: DecisionReconciliationSummary{
+			ScopeEnrichmentCandidates: 2,
+		},
+		Groups: []DecisionReconciliationGroup{
+			{
+				GroupID: "group-draftable",
+				Preview: DecisionReconciliationPreview{
+					ApplyOperation: DecisionReconciliationOperationEnrichScope,
+				},
+				Decisions: []DecisionReconciliationItem{{
+					DecisionID: "dec-draftable",
+				}},
+			},
+			{
+				GroupID: "group-reopen",
+				Preview: DecisionReconciliationPreview{
+					ApplyOperation: DecisionReconciliationOperationReopen,
+				},
+				Decisions: []DecisionReconciliationItem{{
+					DecisionID: "dec-reopen",
+				}},
+			},
+		},
+	}
+
+	draft := BuildDecisionReconciliationSelectionDraft(plan)
+
+	if draft.Summary.PlanScopeEnrichmentCandidates != 2 {
+		t.Fatalf("plan_scope_enrichment_candidates = %d, want 2", draft.Summary.PlanScopeEnrichmentCandidates)
+	}
+	if draft.Summary.ReviewableScopeEnrichmentCandidates != 1 {
+		t.Fatalf("reviewable_scope_enrichment_candidates = %d, want 1", draft.Summary.ReviewableScopeEnrichmentCandidates)
+	}
+	if draft.Summary.ScopeEnrichmentCandidates != 1 {
+		t.Fatalf("scope_enrichment_candidates compatibility count = %d, want 1", draft.Summary.ScopeEnrichmentCandidates)
+	}
+}
+
 func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *testing.T) {
 	plan := BuildDecisionReconciliationPlanFromItems([]DecisionReconciliationItem{{
 		DecisionID:        "dec-precise",

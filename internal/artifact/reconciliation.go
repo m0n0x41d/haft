@@ -246,12 +246,14 @@ type DecisionReconciliationSelectionDraftFilter struct {
 }
 
 type DecisionReconciliationDraftSummary struct {
-	ReviewedGroups             int `json:"reviewed_groups"`
-	ScopeEnrichmentCandidates  int `json:"scope_enrichment_candidates"`
-	OperatorApprovalCandidates int `json:"operator_approval_candidates"`
-	EmittedCandidates          int `json:"emitted_candidates"`
-	OmittedCandidates          int `json:"omitted_candidates"`
-	SelectedCandidates         int `json:"selected_candidates"`
+	ReviewedGroups                      int `json:"reviewed_groups"`
+	PlanScopeEnrichmentCandidates       int `json:"plan_scope_enrichment_candidates"`
+	ReviewableScopeEnrichmentCandidates int `json:"reviewable_scope_enrichment_candidates"`
+	ScopeEnrichmentCandidates           int `json:"scope_enrichment_candidates"`
+	OperatorApprovalCandidates          int `json:"operator_approval_candidates"`
+	EmittedCandidates                   int `json:"emitted_candidates"`
+	OmittedCandidates                   int `json:"omitted_candidates"`
+	SelectedCandidates                  int `json:"selected_candidates"`
 }
 
 type DecisionReconciliationDraftItem struct {
@@ -344,12 +346,14 @@ func buildDecisionReconciliationSelectionDraftFiltered(
 		ApplyAuthorityRequired: "operator_approved_reconciliation_selection",
 		SourcePlanAuthority:    plan.Authority,
 		Summary: DecisionReconciliationDraftSummary{
-			ReviewedGroups:             len(plan.Groups),
-			ScopeEnrichmentCandidates:  len(allItems),
-			OperatorApprovalCandidates: len(filteredItems),
-			EmittedCandidates:          len(items),
-			OmittedCandidates:          omittedItems,
-			SelectedCandidates:         countDecisionReconciliationDraftSelectedCandidates(filteredItems),
+			ReviewedGroups:                      len(plan.Groups),
+			PlanScopeEnrichmentCandidates:       plan.Summary.ScopeEnrichmentCandidates,
+			ReviewableScopeEnrichmentCandidates: len(allItems),
+			ScopeEnrichmentCandidates:           len(allItems),
+			OperatorApprovalCandidates:          len(filteredItems),
+			EmittedCandidates:                   len(items),
+			OmittedCandidates:                   omittedItems,
+			SelectedCandidates:                  countDecisionReconciliationDraftSelectedCandidates(filteredItems),
 		},
 		OmittedItems:              omittedItems,
 		FullAuditCommand:          "haft decision reconcile selection-draft --json --full",

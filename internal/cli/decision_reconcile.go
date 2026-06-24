@@ -818,6 +818,12 @@ func writeDecisionReconciliationSelectionDraftSummary(
 	if _, err := fmt.Fprintf(output, "apply_authority_required: %s\n", draft.ApplyAuthorityRequired); err != nil {
 		return err
 	}
+	if _, err := fmt.Fprintf(output, "plan_scope_enrichment_candidates: %d\n", draft.Summary.PlanScopeEnrichmentCandidates); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(output, "reviewable_scope_enrichment_candidates: %d\n", draft.Summary.ReviewableScopeEnrichmentCandidates); err != nil {
+		return err
+	}
 	if _, err := fmt.Fprintf(output, "scope_enrichment_candidates: %d\n", draft.Summary.ScopeEnrichmentCandidates); err != nil {
 		return err
 	}

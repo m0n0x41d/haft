@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation draft counter clarity.** R9 selection drafts now
+  distinguish broad `plan_scope_enrichment_candidates` from draftable
+  `reviewable_scope_enrichment_candidates`, while keeping the existing
+  `scope_enrichment_candidates` field as the draftable compatibility count.
+  This prevents embedded `current_metrics` from appearing to contradict the
+  selection-draft summary when the reconciliation plan also contains non-apply
+  review work.
 - **Decision reconciliation selection draft metrics context.** R9
   `haft decision reconcile selection-draft --json` now embeds a read-only
   `current_metrics` snapshot from the reconciliation metrics surface, so

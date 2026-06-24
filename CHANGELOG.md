@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Carrier manifest help boundary.** `haft carrier manifest --help` now names
+  carrier classes as review/discovery metadata, not binding authority by
+  themselves.
 - **Carrier check help boundary.** `haft carrier check --help` now names semio
   findings as review inputs, not evidence, approval, or GateDecision.
 - **Drift events help boundary.** `haft drift events --help` now names computed

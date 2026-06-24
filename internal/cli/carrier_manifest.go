@@ -28,7 +28,8 @@ var carrierManifestCmd = &cobra.Command{
 	Long: `Show the carrier authority manifest.
 
 The manifest is a drill-down aid for agents and maintainers. It does not mutate
-governance state and it is not included in default status output.`,
+governance state and it is not included in default status output. Carrier
+classes are review/discovery metadata, not binding authority by themselves.`,
 	RunE: runCarrierManifest,
 }
 

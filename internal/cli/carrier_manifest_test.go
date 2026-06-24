@@ -62,6 +62,19 @@ func TestRunCarrierManifestJSON(t *testing.T) {
 	}
 }
 
+func TestCarrierManifestHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(carrierManifestCmd.Long), " "))
+	for _, want := range []string{
+		"review/discovery metadata",
+		"not binding authority",
+		"default status",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("carrier manifest help missing %q:\n%s", want, carrierManifestCmd.Long)
+		}
+	}
+}
+
 func TestRunCarrierCheckText(t *testing.T) {
 	var output bytes.Buffer
 	cmd := &cobra.Command{}

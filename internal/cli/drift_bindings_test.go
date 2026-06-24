@@ -11,6 +11,143 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
+func TestDriftBindingsDryRunFlagIsAdvertised(t *testing.T) {
+	flag := driftBindingsCmd.Flags().Lookup("dry-run")
+	if flag == nil {
+		t.Fatal("drift bindings --dry-run flag is not registered")
+	}
+	if flag.DefValue != "false" {
+		t.Fatalf("dry-run default = %q, want false", flag.DefValue)
+	}
+}
+
+func TestDriftBindingsLimitFlagIsAdvertised(t *testing.T) {
+	flag := driftBindingsCmd.Flags().Lookup("limit")
+	if flag == nil {
+		t.Fatal("drift bindings --limit flag is not registered")
+	}
+	if flag.DefValue != "-1" {
+		t.Fatalf("limit default = %q, want -1", flag.DefValue)
+	}
+}
+
+func TestValidateDriftBindingsModeRejectsDryRunWithMutation(t *testing.T) {
+	restore := setDriftBindingsModeForTest(t, true, true, "")
+	defer restore()
+
+	err := validateDriftBindingsMode()
+	if err == nil {
+		t.Fatal("validateDriftBindingsMode accepted --dry-run with --apply-high-confidence")
+	}
+	if !strings.Contains(err.Error(), "--dry-run is read-only") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateDriftBindingsModeRejectsDryRunWithSelection(t *testing.T) {
+	restore := setDriftBindingsModeForTest(t, true, false, "selection.json")
+	defer restore()
+
+	err := validateDriftBindingsMode()
+	if err == nil {
+		t.Fatal("validateDriftBindingsMode accepted --dry-run with --apply-selection")
+	}
+	if !strings.Contains(err.Error(), "--dry-run is read-only") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateDriftBindingsModeAllowsDryRunPreview(t *testing.T) {
+	restore := setDriftBindingsModeForTest(t, true, false, "")
+	defer restore()
+
+	if err := validateDriftBindingsMode(); err != nil {
+		t.Fatalf("validateDriftBindingsMode rejected read-only dry-run preview: %v", err)
+	}
+}
+
+func TestDriftBindingsJSONPayloadDryRunDefaultsCompact(t *testing.T) {
+	report := driftBindingsReportWithItems(7)
+
+	payload, ok := driftBindingsJSONPayload(report, true, -1).(driftBindingsProjectedReport)
+	if !ok {
+		t.Fatalf("payload type = %T, want driftBindingsProjectedReport", driftBindingsJSONPayload(report, true, -1))
+	}
+	if payload.View != "compact" {
+		t.Fatalf("view = %q, want compact", payload.View)
+	}
+	if len(payload.Items) != driftBindingsDryRunJSONLimit {
+		t.Fatalf("items = %d, want %d", len(payload.Items), driftBindingsDryRunJSONLimit)
+	}
+	if payload.OmittedItems != 2 {
+		t.Fatalf("omitted_items = %d, want 2", payload.OmittedItems)
+	}
+	if payload.FullAuditCommand != "haft drift bindings --json" {
+		t.Fatalf("full_audit_command = %q", payload.FullAuditCommand)
+	}
+}
+
+func TestDriftBindingsJSONPayloadKeepsFullAuditWithoutDryRun(t *testing.T) {
+	report := driftBindingsReportWithItems(7)
+
+	payload, ok := driftBindingsJSONPayload(report, false, -1).(artifact.LegacyBindingReport)
+	if !ok {
+		t.Fatalf("payload type = %T, want artifact.LegacyBindingReport", driftBindingsJSONPayload(report, false, -1))
+	}
+	if len(payload.Items) != 7 {
+		t.Fatalf("items = %d, want full 7", len(payload.Items))
+	}
+}
+
+func TestDriftBindingsJSONPayloadHonorsExplicitLimit(t *testing.T) {
+	report := driftBindingsReportWithItems(3)
+
+	payload, ok := driftBindingsJSONPayload(report, false, 1).(driftBindingsProjectedReport)
+	if !ok {
+		t.Fatalf("payload type = %T, want driftBindingsProjectedReport", driftBindingsJSONPayload(report, false, 1))
+	}
+	if len(payload.Items) != 1 {
+		t.Fatalf("items = %d, want 1", len(payload.Items))
+	}
+	if payload.OmittedItems != 2 {
+		t.Fatalf("omitted_items = %d, want 2", payload.OmittedItems)
+	}
+}
+
+func driftBindingsReportWithItems(count int) artifact.LegacyBindingReport {
+	report := artifact.LegacyBindingReport{
+		SchemaVersion: artifact.LegacyBindingSchemaVersion,
+		Authority:     artifact.LegacyBindingAuthority,
+		Summary:       artifact.LegacyBindingSummary{TotalDecisions: count},
+		Items:         make([]artifact.LegacyBindingItem, 0, count),
+	}
+	for i := 0; i < count; i++ {
+		report.Items = append(report.Items, artifact.LegacyBindingItem{
+			DecisionID:    fmt.Sprintf("dec-%d", i),
+			DecisionTitle: fmt.Sprintf("Decision %d", i),
+		})
+	}
+	return report
+}
+
+func setDriftBindingsModeForTest(t *testing.T, dryRun bool, apply bool, selection string) func() {
+	t.Helper()
+
+	prevDryRun := driftBindingsDryRun
+	prevApply := driftBindingsApply
+	prevSelection := driftBindingsSelect
+
+	driftBindingsDryRun = dryRun
+	driftBindingsApply = apply
+	driftBindingsSelect = selection
+
+	return func() {
+		driftBindingsDryRun = prevDryRun
+		driftBindingsApply = prevApply
+		driftBindingsSelect = prevSelection
+	}
+}
+
 func TestWriteDriftBindingsSummaryNamesActions(t *testing.T) {
 	report := artifact.LegacyBindingReport{
 		Authority: artifact.LegacyBindingAuthority,

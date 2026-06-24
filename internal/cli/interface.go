@@ -722,7 +722,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":33,"kernel_owned_contracts":33,"mcp_mirrored_actions":19,"cli_available_surfaces":25,"binding_authority_surfaces":2,"read_only_surfaces":19,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":25,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":3,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":3,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","summary":{"capabilities":34,"kernel_owned_contracts":34,"mcp_mirrored_actions":19,"cli_available_surfaces":26,"binding_authority_surfaces":2,"read_only_surfaces":19,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":25,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":4,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":4,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, approve binding actions, or change tool descriptions.",
 					},
 				},
@@ -754,7 +754,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":33,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":33,"generated_schema_fragments":28,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":34,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":34,"generated_schema_fragments":28,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1244,6 +1244,49 @@ func haftInterfaceCatalog() []interfaceCapability {
 				"DriftEvent aggregation is read-only.",
 				"Fanout is not independent debt count.",
 				"Compatibility per-decision drift reports remain available.",
+			),
+		},
+		{
+			ID:      "drift.binding_review",
+			Purpose: "Review legacy DecisionRecord file-scope bindings and propose precise binding targets without mutating authority.",
+			CurrentExecution: interfaceExecution{
+				CLIStatus:        "available",
+				CLICommand:       "haft drift bindings --dry-run --json; haft drift bindings --json; haft drift bindings --apply-high-confidence --json; haft drift bindings --apply-selection selection.json --json",
+				DiscoveryCommand: "haft interface drift.binding_review --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				OptionalFields: []string{"dry_run", "json", "limit", "apply_high_confidence", "apply_selection", "include_clean"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "dry_run_response",
+						Shape: `{"schema_version":"legacy_binding_report.v2","authority":"binding_target_review_proposal","view":"compact","summary":{"total_decisions":40,"already_precise":7,"missing_symbol_baseline":11,"missing_binding_targets":1,"ambiguous_file_scope":17,"high_confidence_proposals":0,"needs_operator_selection":29,"carrier_or_generated_only":4,"no_parseable_symbols":0},"items":[{"decision_id":"dec-...","posture":"ambiguous_file_scope|missing_symbol_baseline|missing_binding_targets|already_symbol_baselined|carrier_or_generated_only|no_parseable_symbols","recommended_action":"needs_operator_symbol_selection|propose_rebaseline_with_binding_targets|keep_legacy_file_scope|no_action","high_confidence":false,"candidate_symbols":[...],"binding_targets":[...]}],"omitted_items":24,"full_audit_command":"haft drift bindings --json"}`,
+						Note:  "Dry-run JSON is compact by default. --limit N changes the compact sample size; the full audit path is explicit and separate.",
+					},
+					{
+						Field: "full_audit_response",
+						Shape: `{"schema_version":"legacy_binding_report.v2","authority":"binding_target_review_proposal","summary":{...},"items":[...],"applied":[...]}`,
+						Note:  "`haft drift bindings --json` keeps the complete review payload for audit and operator packet construction.",
+					},
+					{
+						Field: "mutation_flags",
+						Shape: `"--apply-high-confidence" | "--apply-selection selection.json"`,
+						Note:  "Mutation flags are mutually exclusive with --dry-run and remain CLI-only binding-target repair paths.",
+					},
+				},
+				Notes: []string{
+					"Use this when status reports Binding resolution needed or old decisions still carry ambiguous whole-file scope.",
+					"The report proposes binding_targets; it does not supersede, merge, retire, reopen, baseline, approve, or create evidence.",
+					"`--dry-run` with apply flags fails closed before project DB access.",
+					"High-confidence apply only projects already-resolved precise targets; operator-selection apply requires an explicit reviewed selection file.",
+				},
+			},
+			OutputVolume: []string{"--dry-run --json: compact JSON review with omitted count and full_audit_command", "--json without --dry-run: complete LegacyBindingReport audit payload"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Binding review is not decision authority.",
+				"Default dry-run output is compact and names the full audit recovery command.",
+				"Dry-run cannot be combined with binding mutation flags.",
+				"Whole-file fallback remains unresolved until a precise binding target is selected or safely projected.",
 			),
 		},
 		{

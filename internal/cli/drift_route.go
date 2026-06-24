@@ -20,23 +20,26 @@ import (
 var timeNow = time.Now
 
 const driftEventsSummaryEventLimit = 20
+const driftBindingsDryRunJSONLimit = 5
 
 var (
-	driftRouteJSON        bool
-	driftRouteBearerRef   string
-	driftRouteUseContext  string
-	driftBindingsJSON     bool
-	driftBindingsLimit    int
-	driftBindingsAll      bool
-	driftBindingsApply    bool
-	driftBindingsSelect   string
-	driftEventsJSON       bool
-	driftEventsLedger     string
-	driftEventsStatus     string
-	driftEventsReason     string
-	driftEventsExpiresAt  string
-	driftEventsEvidence   []string
-	driftEventsRecordedBy string
+	driftRouteJSON              bool
+	driftRouteBearerRef         string
+	driftRouteUseContext        string
+	driftBindingsJSON           bool
+	driftBindingsDryRun         bool
+	driftBindingsOutputLimit    int
+	driftBindingsCandidateLimit int
+	driftBindingsAll            bool
+	driftBindingsApply          bool
+	driftBindingsSelect         string
+	driftEventsJSON             bool
+	driftEventsLedger           string
+	driftEventsStatus           string
+	driftEventsReason           string
+	driftEventsExpiresAt        string
+	driftEventsEvidence         []string
+	driftEventsRecordedBy       string
 )
 
 var driftCmd = &cobra.Command{
@@ -97,7 +100,9 @@ func init() {
 	driftRouteCmd.Flags().StringVar(&driftRouteBearerRef, "bearer-ref", "", "artifact/object carrying the drift")
 	driftRouteCmd.Flags().StringVar(&driftRouteUseContext, "use-context", "", "use context to block until repair")
 	driftBindingsCmd.Flags().BoolVar(&driftBindingsJSON, "json", false, "print structured JSON output")
-	driftBindingsCmd.Flags().IntVar(&driftBindingsLimit, "candidate-limit", 20, "maximum candidate symbols per decision")
+	driftBindingsCmd.Flags().BoolVar(&driftBindingsDryRun, "dry-run", false, "preview binding repair posture without applying changes (default behavior)")
+	driftBindingsCmd.Flags().IntVar(&driftBindingsOutputLimit, "limit", -1, "maximum binding review items to emit in JSON output; -1 keeps the full audit report")
+	driftBindingsCmd.Flags().IntVar(&driftBindingsCandidateLimit, "candidate-limit", 20, "maximum candidate symbols per decision")
 	driftBindingsCmd.Flags().BoolVar(&driftBindingsAll, "all", false, "include already-clean/no-action decisions")
 	driftBindingsCmd.Flags().BoolVar(&driftBindingsApply, "apply-high-confidence", false, "apply resolver-proven high-confidence binding target repairs")
 	driftBindingsCmd.Flags().StringVar(&driftBindingsSelect, "apply-selection", "", "apply explicit binding target selections from a JSON file")
@@ -132,6 +137,10 @@ func runDriftRoute(cmd *cobra.Command, args []string) error {
 }
 
 func runDriftBindings(cmd *cobra.Command, _ []string) error {
+	if err := validateDriftBindingsMode(); err != nil {
+		return err
+	}
+
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		return fmt.Errorf("not a haft project: %w", err)
@@ -144,9 +153,6 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 	defer closeFn()
 
 	var report artifact.LegacyBindingReport
-	if driftBindingsApply && strings.TrimSpace(driftBindingsSelect) != "" {
-		return fmt.Errorf("--apply-high-confidence and --apply-selection are mutually exclusive")
-	}
 	if strings.TrimSpace(driftBindingsSelect) != "" {
 		selection, err := readLegacyBindingSelectionDocument(driftBindingsSelect)
 		if err != nil {
@@ -155,11 +161,11 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 		report, err = artifact.ApplyLegacyBindingSelections(context.Background(), store, selection)
 	} else if driftBindingsApply {
 		report, err = artifact.ApplyHighConfidenceLegacyBindingRepairs(context.Background(), store, projectRoot, artifact.LegacyBindingApplyOptions{
-			CandidateLimit: driftBindingsLimit,
+			CandidateLimit: driftBindingsCandidateLimit,
 		})
 	} else {
 		report, err = artifact.BuildLegacyBindingReport(context.Background(), store, projectRoot, artifact.LegacyBindingOptions{
-			CandidateLimit: driftBindingsLimit,
+			CandidateLimit: driftBindingsCandidateLimit,
 			IncludeClean:   driftBindingsAll,
 		})
 	}
@@ -168,10 +174,61 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 	}
 
 	if driftBindingsJSON {
-		return writeJSON(cmd.OutOrStdout(), report)
+		payload := driftBindingsJSONPayload(report, driftBindingsDryRun, driftBindingsOutputLimit)
+		return writeJSON(cmd.OutOrStdout(), payload)
 	}
 
 	return writeDriftBindingsSummary(cmd.OutOrStdout(), report)
+}
+
+type driftBindingsProjectedReport struct {
+	SchemaVersion    string                        `json:"schema_version"`
+	Authority        string                        `json:"authority"`
+	View             string                        `json:"view"`
+	Summary          artifact.LegacyBindingSummary `json:"summary"`
+	Items            []artifact.LegacyBindingItem  `json:"items"`
+	Applied          []artifact.LegacyBindingApply `json:"applied,omitempty"`
+	OmittedItems     int                           `json:"omitted_items"`
+	FullAuditCommand string                        `json:"full_audit_command"`
+}
+
+func driftBindingsJSONPayload(report artifact.LegacyBindingReport, dryRun bool, limit int) any {
+	effectiveLimit := limit
+	if dryRun && effectiveLimit < 0 {
+		effectiveLimit = driftBindingsDryRunJSONLimit
+	}
+	if effectiveLimit < 0 {
+		return report
+	}
+
+	items := report.Items
+	omitted := 0
+	if effectiveLimit < len(items) {
+		items = items[:effectiveLimit]
+		omitted = len(report.Items) - effectiveLimit
+	}
+
+	return driftBindingsProjectedReport{
+		SchemaVersion:    report.SchemaVersion,
+		Authority:        report.Authority,
+		View:             "compact",
+		Summary:          report.Summary,
+		Items:            items,
+		Applied:          report.Applied,
+		OmittedItems:     omitted,
+		FullAuditCommand: "haft drift bindings --json",
+	}
+}
+
+func validateDriftBindingsMode() error {
+	selectionPath := strings.TrimSpace(driftBindingsSelect)
+	if driftBindingsApply && selectionPath != "" {
+		return fmt.Errorf("--apply-high-confidence and --apply-selection are mutually exclusive")
+	}
+	if driftBindingsDryRun && (driftBindingsApply || selectionPath != "") {
+		return fmt.Errorf("--dry-run is read-only and cannot be combined with --apply-high-confidence or --apply-selection")
+	}
+	return nil
 }
 
 func runDriftEvents(cmd *cobra.Command, _ []string) error {

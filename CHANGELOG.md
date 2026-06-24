@@ -8,6 +8,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Drift binding dry-run command parity.** `haft drift bindings --dry-run
+  --json` is now accepted as an explicit read-only alias for the default
+  binding-target review report, matching the command surfaced by status and
+  overseer drill-down hints. Its JSON output is compact by default with
+  omitted-item counts and a `full_audit_command`, while plain
+  `haft drift bindings --json` remains the full audit report. Combining
+  `--dry-run` with binding mutation flags now fails closed. `haft interface
+  drift.binding_review --json` now documents the CLI-only review/mutation
+  boundary, and generated-contract carrier digest markers were synced to the
+  updated kernel interface catalog.
 - **Spec health and recall evidence regressions.** Added focused regression
   coverage for spec drift `section_id` reporting, CLI/MCP spec-onboarding JSON
   key parity, cross-project recall history injection for paraphrased hits, and

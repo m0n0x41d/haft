@@ -35,7 +35,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -2254,6 +2254,55 @@ func TestInterfaceDriftEventsDocumentsFanoutBoundary(t *testing.T) {
 	for _, want := range []string{"read-only", "Fanout is not independent debt count", "Compatibility per-decision drift reports remain available"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("query.drift_events invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceDriftBindingReviewDocumentsDryRunBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "drift.binding_review")
+	if !ok {
+		t.Fatal("drift.binding_review capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("drift.binding_review should be CLI-only: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft drift bindings --dry-run --json") {
+		t.Fatalf("drift.binding_review dry-run command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft drift bindings --json") {
+		t.Fatalf("drift.binding_review full audit command missing: %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "dry_run") || !containsString(capability.InputContract.OptionalFields, "limit") {
+		t.Fatalf("drift.binding_review optional fields = %#v, want dry_run and limit", capability.InputContract.OptionalFields)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"binding_target_review_proposal",
+		"view",
+		"compact",
+		"omitted_items",
+		"full_audit_command",
+		"haft drift bindings --json",
+		"legacy_binding_report.v2",
+		"ambiguous_file_scope",
+		"missing_symbol_baseline",
+		"needs_operator_symbol_selection",
+		"propose_rebaseline_with_binding_targets",
+		"--apply-high-confidence",
+		"--apply-selection selection.json",
+		"mutually exclusive with --dry-run",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("drift.binding_review contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"Binding review is not decision authority", "Default dry-run output is compact", "Dry-run cannot be combined with binding mutation flags"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("drift.binding_review invariants missing %q:\n%s", want, invariants)
 		}
 	}
 }

@@ -220,7 +220,7 @@ func TestHandleToolsList_DoesNotInlineInterfaceOutputShapeFragments(t *testing.T
 		"markdown_sync_back",
 		"semantic_field_update",
 		"relationship_update",
-		"sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		"sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("tools/list inlined interface output-shape fragment %q", forbidden)

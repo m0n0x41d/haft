@@ -1023,7 +1023,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"schema_version":1,"authority_boundary":"sql_edition_update_not_approval_rebaseline_or_prose_authority","applied":false,"dry_run":true,"would_apply":true,"noop":false,"change":{"kind":"semantic_field_update|relationship_update|mixed_semantic_and_relationship_update|carrier_only|unknown_high_risk","import_posture":"recognized_update|no_semantic_mutation|abstain_block","scalar_fields":["title"],"relationship_fields":["depends_on"],"requires_operator_act":true},"planned_edition":{"source_kind":"markdown_sync_back","semantic_hash":"sha256..."}}`,
+						Shape: `{"schema_version":1,"authority_boundary":"sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority","applied":false,"dry_run":true,"would_apply":true,"noop":false,"change":{"kind":"semantic_field_update|relationship_update|mixed_semantic_and_relationship_update|carrier_only|unknown_high_risk","import_posture":"recognized_update|no_semantic_mutation|abstain_block","scalar_fields":["title"],"relationship_fields":["depends_on"],"requires_operator_act":true},"planned_edition":{"source_kind":"markdown_sync_back","semantic_hash":"sha256..."}}`,
 						Note:  "Dry-run runs the same typed parser and SQL freshness/conflict guard as apply but reports planned_edition instead of writing edition.",
 					},
 				},
@@ -1039,7 +1039,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			Invariants: append(commonInterfaceInvariants(),
 				"SQL edition store remains the source of truth.",
 				"Markdown prose is not authority; only typed spec-section fields can sync back.",
-				"Sync-back mutation is not approval, rebaseline, evidence, GateDecision, or global truth.",
+				"Sync-back mutation is not approval, rebaseline, evidence, GateDecision, claim truth, global truth, or prose authority.",
 				"Default status must not inline apply-change contract details.",
 			),
 		},

@@ -14,7 +14,10 @@ import (
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
-const specSyncEditionAuditAuthorityBoundary = "source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"
+const (
+	specSyncAuthorityBoundary             = "typed_spec_section_import_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority"
+	specSyncEditionAuditAuthorityBoundary = "source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"
+)
 
 type specSyncResult struct {
 	SchemaVersion     int                        `json:"schema_version"`
@@ -97,7 +100,7 @@ func syncProjectSpecificationSetToSQL(
 ) (specSyncResult, error) {
 	result := specSyncResult{
 		SchemaVersion:     1,
-		AuthorityBoundary: "typed_spec_section_import_not_approval_rebaseline_or_prose_authority",
+		AuthorityBoundary: specSyncAuthorityBoundary,
 		SourceOfTruth:     "sql_project_graph",
 		Imported:          []specSyncImportedEntry{},
 	}

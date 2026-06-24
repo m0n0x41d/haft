@@ -34,8 +34,13 @@ func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("decode result: %v\n%s", err, output.String())
 	}
-	if result.AuthorityBoundary != "typed_spec_section_import_not_approval_rebaseline_or_prose_authority" {
+	if result.AuthorityBoundary != specSyncAuthorityBoundary {
 		t.Fatalf("authority boundary = %q", result.AuthorityBoundary)
+	}
+	for _, want := range []string{"evidence", "gate", "claim_truth", "global_truth", "prose_authority"} {
+		if !strings.Contains(result.AuthorityBoundary, want) {
+			t.Fatalf("authority boundary missing %q: %q", want, result.AuthorityBoundary)
+		}
 	}
 	if len(result.Imported) != 2 {
 		t.Fatalf("imported = %#v, want two sections", result.Imported)

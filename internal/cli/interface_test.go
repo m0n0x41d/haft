@@ -1173,7 +1173,7 @@ func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t
 		"markdown_sync_back",
 		"semantic_field_update",
 		"relationship_update",
-		"sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		"sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority",
 		"generated/contract-generation/preview/",
 		"generated/contract-generation/schema/",
 	} {
@@ -2223,7 +2223,7 @@ func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
 	}
 
 	shapes, _ := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{"planned_edition", "markdown_sync_back", "semantic_field_update", "relationship_update", "unknown_high_risk", "sql_edition_update_not_approval_rebaseline_or_prose_authority"} {
+	for _, want := range []string{"planned_edition", "markdown_sync_back", "semantic_field_update", "relationship_update", "unknown_high_risk", "sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority"} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("spec.apply_change contract missing %q:\n%s", want, shapes)
 		}
@@ -2237,7 +2237,7 @@ func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
 	}
 
 	invariants := strings.Join(capability.Invariants, " ")
-	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "Default status must not inline"} {
+	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "claim truth", "global truth", "Default status must not inline"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("spec.apply_change invariants missing %q:\n%s", want, invariants)
 		}

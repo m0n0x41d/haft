@@ -14,6 +14,8 @@ import (
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
+const specApplyChangeAuthorityBoundary = "sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority"
+
 type specApplyChangeResult struct {
 	SchemaVersion     int                             `json:"schema_version"`
 	AuthorityBoundary string                          `json:"authority_boundary"`
@@ -99,7 +101,7 @@ func applySpecCarrierChangeToSQL(
 ) (specApplyChangeResult, error) {
 	result := specApplyChangeResult{
 		SchemaVersion:     1,
-		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		AuthorityBoundary: specApplyChangeAuthorityBoundary,
 		DryRun:            input.DryRun,
 		Audit: specSyncEditionAudit{
 			SourceEpisteme:        "sql_spec_section_edition",

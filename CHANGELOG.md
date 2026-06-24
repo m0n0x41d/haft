@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec sync/apply top-level authority boundary.** `haft spec sync` and
+  `haft spec apply-change` now state that SQL edition mutations are not
+  approval, rebaseline, evidence, GateDecision, claim truth, global truth, or
+  prose authority. This matches the strengthened source/publication/carrier
+  audit subrecord boundary.
 - **Spec export publication boundary.** SpecSection export/sync exact-audit
   records now distinguish publication projection metadata from approval,
   rebaseline, evidence, GateDecision, claim truth, and global truth. The

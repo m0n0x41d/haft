@@ -167,7 +167,7 @@ func assertNoInterfaceOutputShapeInline(t *testing.T, surface string, text strin
 		"markdown_sync_back",
 		"semantic_field_update",
 		"relationship_update",
-		"sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		"sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority",
 	} {
 		if strings.Contains(text, forbidden) {
 			t.Fatalf("%s inlined interface output-shape fragment %q:\n%s", surface, forbidden, text)

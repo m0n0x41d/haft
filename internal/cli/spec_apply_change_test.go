@@ -94,7 +94,7 @@ func TestRunSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 		"carrier_bytes:",
 		"imported_semantic_mutation: relationship_update",
 		"authority_boundary: source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
-		"authority_boundary: sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		"authority_boundary: sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("text output missing %q:\n%s", want, text)
@@ -315,7 +315,7 @@ func TestRunSpecApplyChangeDryRunReportsScalarUpdateWithoutWriting(t *testing.T)
 func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 	var output bytes.Buffer
 	result := specApplyChangeResult{
-		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		AuthorityBoundary: specApplyChangeAuthorityBoundary,
 		Applied:           true,
 		Change: project.SpecCarrierChangeReport{
 			Kind: project.SpecCarrierChangeRelationshipUpdate,
@@ -342,7 +342,7 @@ func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 		"carrier_bytes: .haft/specs/target-system.md",
 		"imported_semantic_mutation: relationship_update",
 		"authority_boundary: source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
-		"authority_boundary: sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		"authority_boundary: sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority",
 	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("text output missing %q:\n%s", want, text)
@@ -356,7 +356,7 @@ func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 func TestWriteSpecApplyChangeTextShowsCarrierOnlyDisposition(t *testing.T) {
 	var output bytes.Buffer
 	result := specApplyChangeResult{
-		AuthorityBoundary: "sql_edition_update_not_approval_rebaseline_or_prose_authority",
+		AuthorityBoundary: specApplyChangeAuthorityBoundary,
 		Noop:              true,
 		Change: project.SpecCarrierChangeReport{
 			Kind: project.SpecCarrierChangeCarrierOnly,

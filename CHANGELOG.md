@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Decision reconciliation draft structured proposed selection.** R9
+  `haft decision reconcile selection-draft --json` now exposes a
+  `proposed_selection` object for each review candidate in addition to the
+  legacy escaped `selection_template` string, so agents and operators can
+  inspect the exact proposed `enrich_scope` item without parsing JSON text.
+  The field remains report-only, keeps `operator_approved=false`, and does not
+  copy review-only hints or create apply authority.
 - **Overseer status JSON compact projection.** `haft overseer status --json`
   now emits the same grouped drift/stale signal projection as compact text by
   default, with `--full` preserving the raw per-decision signal list for exact

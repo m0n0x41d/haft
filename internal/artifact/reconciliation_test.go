@@ -201,6 +201,15 @@ func TestDecisionReconciliationSelectionDraftIsReportOnly(t *testing.T) {
 	if !strings.Contains(item.SelectionTemplate, "TODO_exact_decision_subject_ref") {
 		t.Fatalf("selection_template lacks subject placeholder: %s", item.SelectionTemplate)
 	}
+	if item.ProposedSelection == nil {
+		t.Fatal("proposed_selection missing")
+	}
+	if item.ProposedSelection.DecisionSubjectRef != "TODO_exact_decision_subject_ref" {
+		t.Fatalf("proposed_selection decision_subject_ref = %q", item.ProposedSelection.DecisionSubjectRef)
+	}
+	if item.ProposedSelection.Reason != "TODO_operator_reviewed_scope_enrichment_reason" {
+		t.Fatalf("proposed_selection reason = %q", item.ProposedSelection.Reason)
+	}
 	if !strings.Contains(strings.Join(draft.MutationBoundary, "\n"), "not an operator approval") {
 		t.Fatalf("mutation_boundary = %#v", draft.MutationBoundary)
 	}
@@ -256,12 +265,30 @@ func TestDecisionReconciliationSelectionDraftPrefillsKnownGovernanceTargets(t *t
 	if selection.DecisionSubjectRef != "TODO_exact_decision_subject_ref" {
 		t.Fatalf("decision_subject_ref = %q, want subject placeholder", selection.DecisionSubjectRef)
 	}
+	if item.ProposedSelection == nil {
+		t.Fatal("proposed_selection missing")
+	}
+	if item.ProposedSelection.DecisionSubjectRef != selection.DecisionSubjectRef {
+		t.Fatalf("proposed_selection subject = %q, selection_template subject = %q", item.ProposedSelection.DecisionSubjectRef, selection.DecisionSubjectRef)
+	}
 	if strings.Contains(item.SelectionTemplate, "decision_carrier_hint") ||
 		strings.Contains(item.SelectionTemplate, "review_commands") {
 		t.Fatalf("selection_template copied review-only hints:\n%s", item.SelectionTemplate)
 	}
+	proposedData, err := json.Marshal(item.ProposedSelection)
+	if err != nil {
+		t.Fatalf("marshal proposed_selection: %v", err)
+	}
+	proposedText := string(proposedData)
+	if strings.Contains(proposedText, "decision_carrier_hint") ||
+		strings.Contains(proposedText, "review_commands") {
+		t.Fatalf("proposed_selection copied review-only hints:\n%s", proposedText)
+	}
 	if len(selection.GovernanceTargets) != 1 {
 		t.Fatalf("governance_targets = %#v, want one prefilled target", selection.GovernanceTargets)
+	}
+	if len(item.ProposedSelection.GovernanceTargets) != 1 {
+		t.Fatalf("proposed_selection governance_targets = %#v, want one prefilled target", item.ProposedSelection.GovernanceTargets)
 	}
 	if selection.GovernanceTargets[0].Kind != "symbol" || selection.GovernanceTargets[0].Ref != "symbol:internal/fpf/specsearch.go:type:Route" {
 		t.Fatalf("governance_target = %#v", selection.GovernanceTargets[0])

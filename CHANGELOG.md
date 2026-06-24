@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **README product-claim boundary.** The public README now describes Haft as a
+  bounded project-local FPF governance substrate for human-authorized AI
+  engineering work, not as a complete FPF operating system.
 - **Product-value evidence ref count.** The 2026-06-24 product-value evidence
   packet now reports the actual public `haft value space` evidence-ref count
   (`15`) instead of the stale earlier packet count.

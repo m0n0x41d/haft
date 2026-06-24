@@ -68,11 +68,13 @@ or Open-Sleigh sidekick files as current Haft authority.
 transdisciplinary architecture for thinking.
 
 The skill set (`h-frame`, `h-explore`, `h-compare`, `h-decide`, `h-verify`, and
-the full catalog below) gives your agent an FPF-native operating system for
-engineering decisions: framing before solutions, characterization before
-comparison, parity enforcement, evidence with congruence penalties,
-weakest-link assurance, and a cycle that reopens itself when evidence ages or a
-measurement fails.
+the full catalog below) gives your agent a project-local FPF governance
+substrate for engineering decisions: framing before solutions,
+characterization before comparison, parity enforcement, evidence with
+congruence penalties, weakest-link assurance, and a cycle that reopens itself
+when evidence ages or a measurement fails. It is a bounded kernel and workflow
+surface for human-authorized AI engineering work, not a claim that Haft is a
+complete FPF operating system.
 
 The framing and comparison skills auto-trigger on operator context. The binding
 step (`h-decide`, `h-commission`) is manual-only per the Transformer Mandate:

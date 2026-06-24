@@ -266,11 +266,12 @@ type StatusSignal struct {
 }
 
 type StatusSummary struct {
-	HasSignals          bool           `json:"has_signals"`
-	Signals             []StatusSignal `json:"signals"`
-	LatestReviewRunID   string         `json:"latest_review_run_id,omitempty"`
-	LatestPacketID      string         `json:"latest_packet_id,omitempty"`
-	LatestMaintenanceID string         `json:"latest_maintenance_id,omitempty"`
+	HasSignals          bool                    `json:"has_signals"`
+	Signals             []StatusSignal          `json:"signals"`
+	SignalProjection    *StatusSignalProjection `json:"signal_projection,omitempty"`
+	LatestReviewRunID   string                  `json:"latest_review_run_id,omitempty"`
+	LatestPacketID      string                  `json:"latest_packet_id,omitempty"`
+	LatestMaintenanceID string                  `json:"latest_maintenance_id,omitempty"`
 	// LatestExecutedMaintenanceID points at the newest maintenance run with
 	// autonomous executed actions. It can differ from LatestMaintenanceID when a
 	// later report-only maintain run has no executed ledger.
@@ -279,6 +280,14 @@ type StatusSummary struct {
 	// ExecutedActions surfaces the autonomous maintenance ledger of the latest
 	// run — session-start disclosure: autonomy is visible, never silent.
 	ExecutedActions []MaintenanceAction `json:"executed_actions,omitempty"`
+}
+
+type StatusSignalProjection struct {
+	Mode               string `json:"mode"`
+	ExactSignalCount   int    `json:"exact_signal_count"`
+	EmittedSignalCount int    `json:"emitted_signal_count"`
+	OmittedSignalCount int    `json:"omitted_signal_count"`
+	ExactCommand       string `json:"exact_command,omitempty"`
 }
 
 type MaintenanceInput struct {

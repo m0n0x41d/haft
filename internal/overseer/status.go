@@ -43,6 +43,26 @@ func BuildStatusSummary(
 	return summary
 }
 
+func CompactStatusSummaryForDefault(summary StatusSummary) StatusSummary {
+	compactSignals := compactStatusSignalsForDefault(summary.Signals)
+	omitted := len(summary.Signals) - len(compactSignals)
+	if omitted < 0 {
+		omitted = 0
+	}
+
+	projected := summary
+	projected.Signals = compactSignals
+	projected.SignalProjection = &StatusSignalProjection{
+		Mode:               "compact_default",
+		ExactSignalCount:   len(summary.Signals),
+		EmittedSignalCount: len(compactSignals),
+		OmittedSignalCount: omitted,
+		ExactCommand:       "haft overseer status --json --full",
+	}
+	projected.HasSignals = len(projected.Signals) > 0 || len(projected.ExecutedActions) > 0
+	return projected
+}
+
 func FormatStatusSignals(summary StatusSummary) string {
 	if !summary.HasSignals {
 		return ""

@@ -151,6 +151,7 @@ var overseerUndoCmd = &cobra.Command{
 }
 
 var overseerStatusJSON bool
+var overseerStatusFull bool
 
 var overseerStatusCmd = &cobra.Command{
 	Use:   "status",
@@ -254,6 +255,7 @@ func init() {
 	overseerCmd.AddCommand(overseerShowCmd)
 	overseerCmd.AddCommand(overseerRemindCmd)
 	overseerStatusCmd.Flags().BoolVar(&overseerStatusJSON, "json", false, "print structured JSON output")
+	overseerStatusCmd.Flags().BoolVar(&overseerStatusFull, "full", false, "include exact ungrouped signals with --json")
 	overseerCmd.AddCommand(overseerMaintainCmd)
 	overseerCmd.AddCommand(overseerJudgmentCmd)
 	overseerCmd.AddCommand(overseerDrainCmd)
@@ -1223,6 +1225,10 @@ func runOverseerStatus(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("load overseer status: %w", err)
 	}
 	if overseerStatusJSON {
+		if overseerStatusFull {
+			return writeJSON(cmd.OutOrStdout(), summary)
+		}
+		summary := overseer.CompactStatusSummaryForDefault(summary)
 		return writeJSON(cmd.OutOrStdout(), summary)
 	}
 

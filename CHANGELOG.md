@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer status JSON compact projection.** `haft overseer status --json`
+  now emits the same grouped drift/stale signal projection as compact text by
+  default, with `--full` preserving the raw per-decision signal list for exact
+  drill-down.
 - **Product-value evidence refresh.** The 2026-06-24 product-value evidence
   packet now includes the stale `haft serve` diagnostic and contract-audit
   authority-inventory guard, with updated value-space evidence-ref counts and

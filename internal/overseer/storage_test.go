@@ -1,6 +1,7 @@
 package overseer
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -580,6 +581,74 @@ func TestFormatStatusSignalsGroupsStaleSignals(t *testing.T) {
 	for _, absent := range []string{"First decision", "Second decision", "haft overseer maintain --json"} {
 		if strings.Contains(output, absent) {
 			t.Fatalf("status signal output should hide per-decision stale %q:\n%s", absent, output)
+		}
+	}
+}
+
+func TestCompactStatusSummaryForDefaultGroupsSignalsForJSON(t *testing.T) {
+	summary := StatusSummary{
+		HasSignals: true,
+		Signals: []StatusSignal{
+			{
+				Severity: "high",
+				Source:   maintenanceSourceDrift,
+				Title:    "Drift requires confirmation: First decision `dec-001`",
+				Detail:   "code drift — 1 modified",
+			},
+			{
+				Severity: "high",
+				Source:   maintenanceSourceDrift,
+				Title:    "Drift requires confirmation: Second decision `dec-002`",
+				Detail:   "code drift — 2 modified",
+			},
+			{
+				Severity: "high",
+				Source:   maintenanceSourceStale,
+				Title:    "Stale governance artifact: Third decision `dec-003`",
+				Detail:   "AT RISK — evidence degraded",
+			},
+			{
+				Severity: "medium",
+				Source:   "scoped_stale",
+				Title:    "Scoped stale governance debt: Fourth decision `dec-004`",
+				Detail:   "expired",
+			},
+		},
+	}
+
+	projected := CompactStatusSummaryForDefault(summary)
+	if len(projected.Signals) != 2 {
+		t.Fatalf("projected signals = %#v, want grouped drift+stale", projected.Signals)
+	}
+	if projected.SignalProjection == nil {
+		t.Fatal("expected signal projection metadata")
+	}
+	if projected.SignalProjection.ExactSignalCount != 4 {
+		t.Fatalf("exact signal count = %d, want 4", projected.SignalProjection.ExactSignalCount)
+	}
+	if projected.SignalProjection.EmittedSignalCount != 2 {
+		t.Fatalf("emitted signal count = %d, want 2", projected.SignalProjection.EmittedSignalCount)
+	}
+	if projected.SignalProjection.OmittedSignalCount != 2 {
+		t.Fatalf("omitted signal count = %d, want 2", projected.SignalProjection.OmittedSignalCount)
+	}
+	if projected.SignalProjection.ExactCommand != "haft overseer status --json --full" {
+		t.Fatalf("exact command = %q", projected.SignalProjection.ExactCommand)
+	}
+
+	payload, err := json.Marshal(projected)
+	if err != nil {
+		t.Fatalf("marshal projected status: %v", err)
+	}
+	text := string(payload)
+	for _, absent := range []string{"First decision", "Second decision", "Third decision", "Fourth decision"} {
+		if strings.Contains(text, absent) {
+			t.Fatalf("compact JSON should hide per-decision signal %q:\n%s", absent, text)
+		}
+	}
+	for _, want := range []string{"compact_default", "Drift requires confirmation: 2 item(s) grouped", "Stale governance artifacts: 2 item(s) grouped"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("compact JSON missing %q:\n%s", want, text)
 		}
 	}
 }

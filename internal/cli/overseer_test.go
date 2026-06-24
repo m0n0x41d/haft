@@ -494,6 +494,103 @@ func TestRunOverseerMaintainStoresMaintenanceRun(t *testing.T) {
 	}
 }
 
+func TestRunOverseerStatusJSONCompactsSignalsByDefault(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	run, err := overseer.BuildMaintenanceRun(overseer.MaintenanceInput{
+		CreatedAt: "2026-06-24T00:00:00Z",
+		Drift: []overseer.MaintenanceDriftFinding{
+			{
+				ID:      "dec-drift-001",
+				Title:   "First decision",
+				Summary: "code drift — 1 modified",
+				Action:  "stage_for_confirm",
+				Reason:  "needs operator judgment",
+			},
+			{
+				ID:      "dec-drift-002",
+				Title:   "Second decision",
+				Summary: "code drift — 2 modified",
+				Action:  "stage_for_confirm",
+				Reason:  "needs operator judgment",
+			},
+		},
+		Stale: []overseer.FindingSummary{
+			{
+				ID:     "dec-stale-001",
+				Title:  "Third decision",
+				Reason: "AT RISK — evidence degraded",
+			},
+			{
+				ID:     "dec-stale-002",
+				Title:  "Fourth decision",
+				Reason: "expired",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildMaintenanceRun returned error: %v", err)
+	}
+	if err := overseer.StoreMaintenanceRun(fixture.root, run); err != nil {
+		t.Fatalf("StoreMaintenanceRun returned error: %v", err)
+	}
+
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	restoreFlags := stubOverseerStatusFlags(t, true, false)
+	defer restoreFlags()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+	if err := runOverseerStatus(cmd, nil); err != nil {
+		t.Fatalf("runOverseerStatus compact returned error: %v", err)
+	}
+
+	var compact overseer.StatusSummary
+	if err := json.Unmarshal(output.Bytes(), &compact); err != nil {
+		t.Fatalf("unmarshal compact status: %v\n%s", err, output.String())
+	}
+	if compact.SignalProjection == nil {
+		t.Fatalf("expected compact signal projection: %#v", compact)
+	}
+	if compact.SignalProjection.ExactSignalCount != 4 || compact.SignalProjection.EmittedSignalCount != 2 {
+		t.Fatalf("projection = %#v", compact.SignalProjection)
+	}
+	if len(compact.Signals) != 2 {
+		t.Fatalf("compact signal count = %d, want 2: %#v", len(compact.Signals), compact.Signals)
+	}
+	compactPayload := output.String()
+	for _, absent := range []string{"First decision", "Second decision", "Third decision", "Fourth decision"} {
+		if strings.Contains(compactPayload, absent) {
+			t.Fatalf("compact status should hide exact signal %q:\n%s", absent, compactPayload)
+		}
+	}
+
+	restoreFlags()
+	restoreFlags = stubOverseerStatusFlags(t, true, true)
+	defer restoreFlags()
+
+	output.Reset()
+	if err := runOverseerStatus(cmd, nil); err != nil {
+		t.Fatalf("runOverseerStatus full returned error: %v", err)
+	}
+
+	var full overseer.StatusSummary
+	if err := json.Unmarshal(output.Bytes(), &full); err != nil {
+		t.Fatalf("unmarshal full status: %v\n%s", err, output.String())
+	}
+	if full.SignalProjection != nil {
+		t.Fatalf("full status should not carry compact projection: %#v", full.SignalProjection)
+	}
+	if len(full.Signals) != 4 {
+		t.Fatalf("full signal count = %d, want 4", len(full.Signals))
+	}
+	if !strings.Contains(output.String(), "First decision") {
+		t.Fatalf("full status should include exact signal title:\n%s", output.String())
+	}
+}
+
 func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seedGovernanceDebt(t, fixture)
@@ -1064,6 +1161,20 @@ func stubOverseerMaintainFlags(t *testing.T, jsonFlag bool) func() {
 
 	return func() {
 		overseerMaintainJSON = previousJSON
+	}
+}
+
+func stubOverseerStatusFlags(t *testing.T, jsonFlag bool, fullFlag bool) func() {
+	t.Helper()
+
+	previousJSON := overseerStatusJSON
+	previousFull := overseerStatusFull
+	overseerStatusJSON = jsonFlag
+	overseerStatusFull = fullFlag
+
+	return func() {
+		overseerStatusJSON = previousJSON
+		overseerStatusFull = previousFull
 	}
 }
 

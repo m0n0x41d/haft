@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
 func TestRunSpecExportJSONRendersCurrentSQLEditionMarkdown(t *testing.T) {
@@ -32,8 +34,13 @@ func TestRunSpecExportJSONRendersCurrentSQLEditionMarkdown(t *testing.T) {
 	if result.SourceOfTruth != "sql_project_graph" {
 		t.Fatalf("source_of_truth = %q", result.SourceOfTruth)
 	}
-	if result.AuthorityBoundary != "publication_projection_only_not_approval_rebaseline_evidence_or_gate" {
+	if result.AuthorityBoundary != specflow.SpecSectionPublicationProjectionAuthorityBoundary {
 		t.Fatalf("authority boundary = %q", result.AuthorityBoundary)
+	}
+	for _, want := range []string{"claim_truth", "global_truth"} {
+		if !strings.Contains(result.AuthorityBoundary, want) {
+			t.Fatalf("authority boundary missing %q: %q", want, result.AuthorityBoundary)
+		}
 	}
 	if result.Edition.SectionID != "TS.sync.001" {
 		t.Fatalf("section id = %q", result.Edition.SectionID)
@@ -49,6 +56,9 @@ func TestRunSpecExportJSONRendersCurrentSQLEditionMarkdown(t *testing.T) {
 	}
 	if result.Audit.SourceEpisteme != "sql_spec_section_edition" {
 		t.Fatalf("audit source episteme = %#v", result.Audit)
+	}
+	if result.Audit.AuthorityBoundary != specSyncEditionAuditAuthorityBoundary {
+		t.Fatalf("audit authority boundary = %#v", result.Audit)
 	}
 }
 

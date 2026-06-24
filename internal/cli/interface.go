@@ -1057,7 +1057,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"schema_version":1,"authority_boundary":"publication_projection_only_not_approval_rebaseline_evidence_or_gate","source_of_truth":"sql_project_graph","edition":{"section_id":"TS.x","semantic_hash":"sha256...","source_kind":"sql|carrier_import|markdown_sync_back","carrier_path":".haft/specs/target-system.md"},"publication":{"source_edition_hash":"sha256...","publication_hash":"sha256...","publication_projection":"typed_yaml_spec_section","carrier_path":".haft/specs/target-system.md","markdown":"yaml spec-section carrier bytes"},"audit":{"source_episteme":"sql_spec_section_edition","publication_projection":"typed_yaml_spec_section","carrier_bytes":".haft/specs/target-system.md","authority_boundary":"not_approval_not_rebaseline_not_evidence"}}`,
+						Shape: `{"schema_version":1,"authority_boundary":"publication_projection_only_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth","source_of_truth":"sql_project_graph","edition":{"section_id":"TS.x","semantic_hash":"sha256...","source_kind":"sql|carrier_import|markdown_sync_back","carrier_path":".haft/specs/target-system.md"},"publication":{"source_edition_hash":"sha256...","publication_hash":"sha256...","publication_projection":"typed_yaml_spec_section","carrier_path":".haft/specs/target-system.md","markdown":"yaml spec-section carrier bytes"},"audit":{"source_episteme":"sql_spec_section_edition","publication_projection":"typed_yaml_spec_section","carrier_bytes":".haft/specs/target-system.md","authority_boundary":"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"}}`,
 						Note:  "JSON separates source semantic edition, publication projection, and carrier bytes; --markdown prints carrier bytes only.",
 					},
 				},
@@ -1071,7 +1071,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			OutputVolume: []string{"default text summary; --json exact source/publication/audit record; --markdown carrier bytes only"},
 			Invariants: append(commonInterfaceInvariants(),
 				"SQL edition store remains the source of truth.",
-				"Publication projection is not approval, rebaseline, evidence, GateDecision, or prose authority.",
+				"Publication projection is not approval, rebaseline, evidence, GateDecision, claim truth, global truth, or prose authority.",
 				"Carrier bytes are separated from source semantic edition and publication hash in JSON.",
 				"Default status must not inline spec export publication details.",
 			),

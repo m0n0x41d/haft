@@ -2279,8 +2279,8 @@ func TestInterfaceSpecExportDocumentsPublicationProjectionBoundary(t *testing.T)
 		"publication_projection",
 		"carrier_path",
 		"markdown",
-		"publication_projection_only_not_approval_rebaseline_evidence_or_gate",
-		"not_approval_not_rebaseline_not_evidence",
+		"publication_projection_only_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
+		"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
 	} {
 		if !strings.Contains(shapes, want) {
 			t.Fatalf("spec.export contract missing %q:\n%s", want, shapes)
@@ -2295,7 +2295,7 @@ func TestInterfaceSpecExportDocumentsPublicationProjectionBoundary(t *testing.T)
 	}
 
 	invariants := strings.Join(capability.Invariants, " ")
-	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "Carrier bytes are separated", "Default status must not inline"} {
+	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "claim truth", "global truth", "Carrier bytes are separated", "Default status must not inline"} {
 		if !strings.Contains(invariants, want) {
 			t.Fatalf("spec.export invariants missing %q:\n%s", want, invariants)
 		}

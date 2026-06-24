@@ -105,7 +105,7 @@ func applySpecCarrierChangeToSQL(
 			SourceEpisteme:        "sql_spec_section_edition",
 			PublicationProjection: "typed_yaml_spec_section_projection",
 			CarrierBytes:          input.AfterPath,
-			AuthorityBoundary:     "not_approval_not_rebaseline_not_evidence",
+			AuthorityBoundary:     specSyncEditionAuditAuthorityBoundary,
 		},
 	}
 
@@ -163,7 +163,7 @@ func specApplyChangeEditionEntry(
 			PublicationProjection:    "typed_yaml_spec_section_projection",
 			CarrierBytes:             edition.CarrierPath,
 			ImportedSemanticMutation: string(changeKind),
-			AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+			AuthorityBoundary:        specSyncEditionAuditAuthorityBoundary,
 		},
 	}
 }

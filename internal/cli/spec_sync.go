@@ -14,6 +14,8 @@ import (
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
+const specSyncEditionAuditAuthorityBoundary = "source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"
+
 type specSyncResult struct {
 	SchemaVersion     int                        `json:"schema_version"`
 	AuthorityBoundary string                     `json:"authority_boundary"`
@@ -121,7 +123,7 @@ func syncProjectSpecificationSetToSQL(
 				PublicationProjection:    "typed_yaml_spec_section_projection",
 				CarrierBytes:             edition.CarrierPath,
 				ImportedSemanticMutation: "carrier_import_to_sql_edition",
-				AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+				AuthorityBoundary:        specSyncEditionAuditAuthorityBoundary,
 			},
 		})
 	}

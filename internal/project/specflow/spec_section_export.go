@@ -11,6 +11,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const SpecSectionPublicationProjectionAuthorityBoundary = "publication_projection_only_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"
+
 type SpecSectionEditionPublication struct {
 	Markdown              string `json:"markdown"`
 	SourceEditionHash     string `json:"source_edition_hash"`
@@ -60,7 +62,7 @@ func RenderSpecSectionEditionMarkdown(edition SpecSectionEdition) (SpecSectionEd
 		PublicationHash:       hashSpecSectionPublication(markdown),
 		PublicationProjection: "typed_yaml_spec_section",
 		CarrierPath:           specSectionPublicationCarrierPath(normalized, documentKind),
-		AuthorityBoundary:     "publication_projection_only_not_approval_rebaseline_evidence_or_gate",
+		AuthorityBoundary:     SpecSectionPublicationProjectionAuthorityBoundary,
 	}, nil
 }
 

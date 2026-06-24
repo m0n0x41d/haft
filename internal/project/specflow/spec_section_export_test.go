@@ -30,8 +30,13 @@ func TestRenderSpecSectionEditionMarkdownRoundTripsThroughEmptyStore(t *testing.
 	if publication.SourceEditionHash != storedSource.SemanticHash {
 		t.Fatalf("source edition hash = %q, want %q", publication.SourceEditionHash, storedSource.SemanticHash)
 	}
-	if publication.AuthorityBoundary != "publication_projection_only_not_approval_rebaseline_evidence_or_gate" {
+	if publication.AuthorityBoundary != SpecSectionPublicationProjectionAuthorityBoundary {
 		t.Fatalf("authority boundary = %q", publication.AuthorityBoundary)
+	}
+	for _, want := range []string{"claim_truth", "global_truth"} {
+		if !strings.Contains(publication.AuthorityBoundary, want) {
+			t.Fatalf("authority boundary missing %q: %q", want, publication.AuthorityBoundary)
+		}
 	}
 	if !strings.Contains(publication.Markdown, "```yaml spec-section") {
 		t.Fatalf("publication markdown did not contain spec-section fence:\n%s", publication.Markdown)

@@ -93,7 +93,7 @@ func TestRunSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 		"publication_projection: typed_yaml_spec_section_projection",
 		"carrier_bytes:",
 		"imported_semantic_mutation: relationship_update",
-		"authority_boundary: not_approval_not_rebaseline_not_evidence",
+		"authority_boundary: source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
 		"authority_boundary: sql_edition_update_not_approval_rebaseline_or_prose_authority",
 	} {
 		if !strings.Contains(text, want) {
@@ -325,7 +325,7 @@ func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 			PublicationProjection:    "typed_yaml_spec_section_projection",
 			CarrierBytes:             ".haft/specs/target-system.md",
 			ImportedSemanticMutation: "relationship_update",
-			AuthorityBoundary:        "not_approval_not_rebaseline_not_evidence",
+			AuthorityBoundary:        specSyncEditionAuditAuthorityBoundary,
 		},
 	}
 
@@ -341,7 +341,7 @@ func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 		"publication_projection: typed_yaml_spec_section_projection",
 		"carrier_bytes: .haft/specs/target-system.md",
 		"imported_semantic_mutation: relationship_update",
-		"authority_boundary: not_approval_not_rebaseline_not_evidence",
+		"authority_boundary: source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
 		"authority_boundary: sql_edition_update_not_approval_rebaseline_or_prose_authority",
 	} {
 		if !strings.Contains(text, want) {
@@ -366,7 +366,7 @@ func TestWriteSpecApplyChangeTextShowsCarrierOnlyDisposition(t *testing.T) {
 			PublicationProjection:  "typed_yaml_spec_section_projection",
 			CarrierBytes:           ".haft/specs/target-system-renamed.md",
 			CarrierOnlyDisposition: "carrier_only_no_semantic_edition_created",
-			AuthorityBoundary:      "not_approval_not_rebaseline_not_evidence",
+			AuthorityBoundary:      specSyncEditionAuditAuthorityBoundary,
 		},
 	}
 

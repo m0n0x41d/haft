@@ -270,8 +270,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"rebaseline, reopen, create evidence, create decisions, or act as",
 		"authority: advisory_only; not evidence, approval, rebaseline, GateDecision, or SpecUseAdmission",
 	}, "\n")+"\n")
-	writeBaselineAuditFixture(t, root, "internal/cli/spec_apply_change.go", "AuthorityBoundary: \"not_approval_not_rebaseline_not_evidence\"\n")
-	writeBaselineAuditFixture(t, root, "internal/cli/spec_sync.go", "AuthorityBoundary: \"not_approval_not_rebaseline_not_evidence\"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_apply_change.go", "AuthorityBoundary: \"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth\"\n")
+	writeBaselineAuditFixture(t, root, "internal/cli/spec_sync.go", "AuthorityBoundary: \"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth\"\n")
 	writeBaselineAuditFixture(t, root, "internal/tools/haft.go", strings.Join([]string{
 		"- baseline: Snapshot affected files after implementation and before measurement.",
 		`"action": map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}}`,
@@ -642,7 +642,7 @@ func TestLimitBaselineTermAuditReportPreservesSummaryAndMarksOmission(t *testing
 func TestClassifyBaselineTermTreatsNotRebaselineBoundaryAsLifecycleAuthority(t *testing.T) {
 	category, rationale := classifyBaselineTerm(
 		"internal/cli/spec_apply_change_test.go",
-		`AuthorityBoundary: "not_approval_not_rebaseline_not_evidence"`,
+		`AuthorityBoundary: "source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"`,
 	)
 
 	if category != baselineAuditLifecycleAuth {

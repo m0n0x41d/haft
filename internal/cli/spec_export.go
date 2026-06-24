@@ -80,7 +80,7 @@ func buildSpecExportResult(sectionID string) (specExportResult, error) {
 
 	return specExportResult{
 		SchemaVersion:     1,
-		AuthorityBoundary: "publication_projection_only_not_approval_rebaseline_evidence_or_gate",
+		AuthorityBoundary: specflow.SpecSectionPublicationProjectionAuthorityBoundary,
 		SourceOfTruth:     "sql_project_graph",
 		Edition: specExportEdition{
 			ProjectID:    edition.ProjectID,
@@ -94,7 +94,7 @@ func buildSpecExportResult(sectionID string) (specExportResult, error) {
 			SourceEpisteme:        "sql_spec_section_edition",
 			PublicationProjection: publication.PublicationProjection,
 			CarrierBytes:          publication.CarrierPath,
-			AuthorityBoundary:     "not_approval_not_rebaseline_not_evidence",
+			AuthorityBoundary:     specSyncEditionAuditAuthorityBoundary,
 		},
 	}, nil
 }

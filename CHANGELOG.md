@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec export publication boundary.** SpecSection export/sync exact-audit
+  records now distinguish publication projection metadata from approval,
+  rebaseline, evidence, GateDecision, claim truth, and global truth. The
+  `--markdown` carrier projection still omits audit metadata, while JSON/text
+  views expose the stronger authority boundary.
 - **Baseline audit authority boundary.** `haft baseline audit --json` now
   includes an explicit `mutation_boundary`, and the text summary prints the
   same read-only boundary. Interface contract test fragments such as

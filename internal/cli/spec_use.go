@@ -377,7 +377,7 @@ func writeSpecUseSummary(w io.Writer, record specflow.SpecificationUseRecord) er
 		record.CurrentAuthority.AuthorityBoundary,
 	))
 	builder.WriteString(fmt.Sprintf(
-		"gate_decision: %s reason=%s gate=%s boundary=%s/%s/%s/%s/%s/%s\n",
+		"gate_decision: %s reason=%s gate=%s boundary=%s/%s/%s/%s/%s/%s/%s\n",
 		record.GateDecision.Status,
 		record.GateDecision.Reason,
 		record.GateDecision.GateRef,
@@ -387,6 +387,7 @@ func writeSpecUseSummary(w io.Writer, record specflow.SpecificationUseRecord) er
 		record.GateDecision.AuthorityBoundary.WorkCommission,
 		record.GateDecision.AuthorityBoundary.ClaimTruth,
 		record.GateDecision.AuthorityBoundary.GlobalTruth,
+		record.GateDecision.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

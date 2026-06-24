@@ -2408,8 +2408,10 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 	for _, want := range []string{
 		"operational_gate",
 		"current_authority",
-		"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_or_global_truth",
+		"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
 		"no_operational_gate_profile_not_gate_decision",
+		"publication",
+		"not_publication",
 		"claim_truth",
 		"not_claim_truth",
 		"not_work_commission",
@@ -2429,6 +2431,7 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 		"Current-authority conflict posture",
 		"claim truth",
 		"global truth",
+		"publication",
 		"WorkCommission",
 	} {
 		if !strings.Contains(invariants, want) {

@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Spec use publication boundary.** `haft spec use` and
+  `haft_query(action="spec_use")` now include publication posture in
+  `current_authority` and OperationalGate/no-OperationalGate authority
+  boundaries, keeping SpecificationUseRecord exact/audit output aligned with
+  other read-only projection surfaces that are not evidence, approval,
+  GateDecision, claim truth, global truth, or publication.
 - **Generated contract carrier sync.** `haft interface contract-generation
   --sync-materialized-carriers` now rewrites only kernel interface catalog
   source-digest markers in listed host/skill/plugin/Pi carriers, then verifies

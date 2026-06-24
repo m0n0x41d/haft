@@ -42,7 +42,7 @@ const (
 	OperationalGateSchemaVersion          = 1
 	OperationalGateRuleCurrentAdmittedUse = "require_current_source_and_admitted_use"
 	OperationalGateBoundaryReadOnly       = "read_only_derived_gate_evaluation"
-	CurrentAuthorityBoundaryReadOnly      = "read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_or_global_truth"
+	CurrentAuthorityBoundaryReadOnly      = "read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication"
 )
 
 type SpecificationUseInput struct {
@@ -157,6 +157,7 @@ type OperationalGateBoundary struct {
 	WorkCommission string `json:"work_commission"`
 	ClaimTruth     string `json:"claim_truth"`
 	GlobalTruth    string `json:"global_truth"`
+	Publication    string `json:"publication"`
 }
 
 func BuildSpecificationUseRecord(
@@ -578,6 +579,7 @@ func operationalGateBoundary() OperationalGateBoundary {
 		WorkCommission: "not_work_commission",
 		ClaimTruth:     "not_claim_truth",
 		GlobalTruth:    "not_global_truth",
+		Publication:    "not_publication",
 	}
 }
 

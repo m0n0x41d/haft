@@ -1011,7 +1011,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "response",
-						Shape: `{"source_edition":{...},"baseline_currentness":{...},"current_authority":{"status":"clear|overlap_needs_review|conflict_requires_operator|unknown","authority_boundary":"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_or_global_truth","decision_refs":[...],"target_refs":[...]},"admission":{...},"gate_decision":{"status":"not_applicable_no_operational_gate|passed|blocked","reason":"operational_gate_passed_for_declared_use|current_authority_conflict_requires_operator|...","authority_boundary":{"profile":"no_operational_gate_profile_not_gate_decision|read_only_derived_gate_evaluation","approval":"not_spec_approval","evidence":"not_evidence_creation","work_commission":"not_work_commission","claim_truth":"not_claim_truth","global_truth":"not_global_truth"}}}`,
+						Shape: `{"source_edition":{...},"baseline_currentness":{...},"current_authority":{"status":"clear|overlap_needs_review|conflict_requires_operator|unknown","authority_boundary":"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication","decision_refs":[...],"target_refs":[...]},"admission":{...},"gate_decision":{"status":"not_applicable_no_operational_gate|passed|blocked","reason":"operational_gate_passed_for_declared_use|current_authority_conflict_requires_operator|...","authority_boundary":{"profile":"no_operational_gate_profile_not_gate_decision|read_only_derived_gate_evaluation","approval":"not_spec_approval","evidence":"not_evidence_creation","work_commission":"not_work_commission","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"}}}`,
 						Note:  "Currentness, current-authority posture, admission, waiver expiry, and gate status are separate fields.",
 					},
 				},
@@ -1024,9 +1024,9 @@ func haftInterfaceCatalog() []interfaceCapability {
 			OutputVolume: []string{"default: one JSON SpecificationUseRecord"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Baseline currentness is not admission; admission policy is a distinct field.",
-				"Current-authority conflict posture is not evidence, approval, GateDecision, claim truth, or global truth; it is a fail-closed gate input when an OperationalGate is present.",
+				"Current-authority conflict posture is not evidence, approval, GateDecision, claim truth, global truth, or publication; it is a fail-closed gate input when an OperationalGate is present.",
 				"GateDecision passed/blocked is emitted only from an explicit OperationalGate profile.",
-				"GateDecision remains a derived reading, not spec approval, evidence creation, WorkCommission, claim truth, global truth, or execution authority.",
+				"GateDecision remains a derived reading, not spec approval, evidence creation, WorkCommission, claim truth, global truth, publication, or execution authority.",
 			),
 		},
 		{

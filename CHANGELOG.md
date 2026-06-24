@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Status maintenance-plan drill-down wording.** Default status now labels
+  `haft_refresh(action="plan")` as compact and names
+  `haft_refresh(action="plan", verbose=true)` as the full work-order route.
 - **Status runtime provenance.** `haft_query(action="status")` now includes a
   bounded `haft serve` runtime fingerprint with PID, process start time,
   executable path, and executable mtime so agents can distinguish stale MCP

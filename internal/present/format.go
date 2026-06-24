@@ -1194,7 +1194,7 @@ func appendCockpitDrillDown(sb *strings.Builder) {
 		artifact.StatusCompactDecisionReconcileCommand,
 		artifact.StatusCompactGoverningSetCommand,
 	))
-	sb.WriteString("- Maintenance plan: `haft_refresh(action=\"plan\")`.\n")
+	sb.WriteString("- Maintenance plan: `haft_refresh(action=\"plan\")` (compact); full work order: `haft_refresh(action=\"plan\", verbose=true)`.\n")
 	sb.WriteString("- Judgment review: `haft_refresh(action=\"review\")` / `haft overseer judgment --json --limit 20`.\n")
 	sb.WriteString("- Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`.\n")
 	sb.WriteString("\nDefault status omits shipped/pending decision lists, full module coverage, recent notes, and full drift/stale tails.\n")

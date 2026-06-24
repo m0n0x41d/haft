@@ -616,7 +616,7 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 		"Full status: `haft_query(action=\"status\", full=true)`",
 		"Coverage: `haft_query(action=\"coverage\")`",
 		"Drift events: `haft_query(action=\"drift_events\", limit=5)`; decision reconciliation: `haft_query(action=\"decision_reconcile\", limit=5)`; governing set: `haft_query(action=\"governing_set\", limit=5)`.",
-		"Maintenance plan: `haft_refresh(action=\"plan\")`",
+		"Maintenance plan: `haft_refresh(action=\"plan\")` (compact); full work order: `haft_refresh(action=\"plan\", verbose=true)`",
 		"Judgment review: `haft_refresh(action=\"review\")` / `haft overseer judgment --json --limit 20`",
 		"Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`",
 		"Default status omits shipped/pending decision lists",

@@ -86,7 +86,9 @@ var decisionReconcileSelectionDraftCmd = &cobra.Command{
 	Long: `Build a read-only operator-review draft from reconciliation scope-enrichment
 candidates. The draft is not an approval document and cannot be applied as-is;
 apply still requires a separate selection with
-authority=operator_approved_reconciliation_selection.`,
+authority=operator_approved_reconciliation_selection. Drafts and embedded
+current_metrics are review aids, not operator approval, evidence truth, gate
+passage, or apply authority.`,
 	RunE: runDecisionReconcileSelectionDraft,
 }
 

@@ -149,6 +149,22 @@ func TestDecisionGoverningSetHelpNamesAuthorityBoundaries(t *testing.T) {
 	}
 }
 
+func TestDecisionReconcileSelectionDraftHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileSelectionDraftCmd.Long), " "))
+	for _, want := range []string{
+		"read-only",
+		"not an approval",
+		"operator approval",
+		"evidence truth",
+		"gate passage",
+		"apply authority",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("selection-draft help missing %q:\n%s", want, decisionReconcileSelectionDraftCmd.Long)
+		}
+	}
+}
+
 func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
 	restore := stubDecisionReconcileReportLimits(t, 2, 0)
 	defer restore()

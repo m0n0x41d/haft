@@ -101,7 +101,10 @@ var decisionReconcileSelectionReviewCmd = &cobra.Command{
 	Short: "Review a reconciliation selection document without applying it",
 	Long: `Review a reconciliation selection document against the same core validation
 used by apply. This command is read-only: it does not create operator approval
-and does not mutate decisions, links, evidence, baselines, gates, or carriers.`,
+and does not mutate decisions, links, evidence, baselines, gates, or carriers.
+Review reports are validation context, not operator approval, not evidence, not
+GateDecision, not claim truth, not global truth, not publication, and not apply
+authority.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runDecisionReconcileSelectionReview,
 }

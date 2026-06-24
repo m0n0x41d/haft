@@ -204,6 +204,25 @@ func TestDecisionReconcileSelectionDraftHelpNamesAuthorityBoundaries(t *testing.
 	}
 }
 
+func TestDecisionReconcileSelectionReviewHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileSelectionReviewCmd.Long), " "))
+	for _, want := range []string{
+		"read-only",
+		"validation context",
+		"not operator approval",
+		"not evidence",
+		"not gatedecision",
+		"not claim truth",
+		"not global truth",
+		"not publication",
+		"not apply authority",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("selection-review help missing %q:\n%s", want, decisionReconcileSelectionReviewCmd.Long)
+		}
+	}
+}
+
 func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
 	restore := stubDecisionReconcileReportLimits(t, 2, 0)
 	defer restore()

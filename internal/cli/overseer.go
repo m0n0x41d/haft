@@ -48,6 +48,8 @@ var (
 	overseerJudgmentLimit     int
 	overseerDrainJSON         bool
 	overseerDrainDryRun       bool
+	overseerDrainFull         bool
+	overseerDrainLimit        int
 	overseerDaemonJSON        bool
 	overseerDaemonIdleTimeout = 300
 	overseerDaemonPollSeconds = 2
@@ -230,6 +232,8 @@ func init() {
 	overseerJudgmentCmd.Flags().IntVar(&overseerJudgmentLimit, "limit", 0, "cap JSON tasks and reconciliation proposals; 0 prints the full packet")
 	overseerDrainCmd.Flags().BoolVar(&overseerDrainJSON, "json", false, "print structured JSON output")
 	overseerDrainCmd.Flags().BoolVar(&overseerDrainDryRun, "dry-run", false, "propose safe actions without mutating baselines, evidence, or stored maintenance runs")
+	overseerDrainCmd.Flags().BoolVar(&overseerDrainFull, "full", false, "emit the full JSON audit payload instead of the compact drain projection")
+	overseerDrainCmd.Flags().IntVar(&overseerDrainLimit, "limit", 5, "cap compact JSON action/proposal/operator lists; use --full for the complete audit payload")
 	overseerDaemonStartCmd.Flags().BoolVar(&overseerDaemonJSON, "json", false, "print structured JSON output")
 	overseerDaemonRunCmd.Flags().IntVar(&overseerDaemonIdleTimeout, "idle-timeout", 300, "exit after this many idle seconds; 0 waits forever")
 	overseerDaemonRunCmd.Flags().IntVar(&overseerDaemonPollSeconds, "poll-interval", 2, "queue poll interval in seconds")
@@ -543,6 +547,9 @@ func runOverseerJudgment(cmd *cobra.Command, _ []string) error {
 }
 
 func runOverseerDrain(cmd *cobra.Command, _ []string) error {
+	if overseerDrainLimit < 0 {
+		return fmt.Errorf("limit must be >= 0")
+	}
 	ctx := context.Background()
 	projectRoot, store, closeStore, err := openOverseerProjectStore()
 	if err != nil {
@@ -555,6 +562,9 @@ func runOverseerDrain(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if overseerDrainJSON {
+		if !overseerDrainFull {
+			report = compactMaintenanceDrainReport(report, overseerDrainLimit)
+		}
 		return writeJSON(cmd.OutOrStdout(), report)
 	}
 	_, err = fmt.Fprint(cmd.OutOrStdout(), present.MaintenanceDrainResponse(report, ""))

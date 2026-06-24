@@ -197,6 +197,104 @@ func TestMaintenanceDrainDryRunReportsProposalsAndNeedsOperatorWithoutMutation(t
 	})
 }
 
+func TestCompactMaintenanceDrainReportPreservesSummaryAndOmitsAuditTail(t *testing.T) {
+	report := maintenanceDrainReport{
+		SchemaVersion: maintenanceDrainSchemaVersion,
+		DryRun:        true,
+		Summary: maintenanceDrainSummary{
+			ExecutedActions:             3,
+			NeedsOperatorTasks:          4,
+			ReconciliationProposalCount: 3,
+		},
+		Executed: []overseer.MaintenanceAction{
+			{ID: "act-001"},
+			{ID: "act-002"},
+			{ID: "act-003"},
+		},
+		ReconciliationProposals: []overseer.MaintenanceReconciliationProposal{
+			{ID: "proposal-001"},
+			{ID: "proposal-002"},
+			{ID: "proposal-003"},
+		},
+		AfterAction: overseer.MaintenanceAfterActionReport{
+			RemainingOperatorJudgment: []overseer.MaintenanceAfterActionItem{
+				{Ref: "finding-001"},
+				{Ref: "finding-002"},
+				{Ref: "finding-003"},
+			},
+			AuthorityBoundary: "after_action_report_only_not_binding_authority",
+		},
+		NeedsOperator: []artifact.MaintenanceJudgmentGroup{
+			{
+				Recommendation: "review",
+				Tasks: []artifact.MaintenanceJudgmentTaskReview{
+					{DecisionRef: "dec-review-001"},
+					{DecisionRef: "dec-review-002"},
+				},
+			},
+			{
+				Recommendation: "verify",
+				Tasks: []artifact.MaintenanceJudgmentTaskReview{
+					{DecisionRef: "dec-verify-001"},
+				},
+			},
+			{
+				Recommendation: "reopen",
+				Tasks: []artifact.MaintenanceJudgmentTaskReview{
+					{DecisionRef: "dec-reopen-001"},
+				},
+			},
+		},
+	}
+
+	compact := compactMaintenanceDrainReport(report, 1)
+
+	if compact.View != "compact" {
+		t.Fatalf("view = %q, want compact", compact.View)
+	}
+	if compact.Summary != report.Summary {
+		t.Fatalf("summary changed: got %#v want %#v", compact.Summary, report.Summary)
+	}
+	if len(compact.Executed) != 1 || compact.OmittedExecuted != 2 {
+		t.Fatalf("executed projection = len %d omitted %d", len(compact.Executed), compact.OmittedExecuted)
+	}
+	if len(compact.ReconciliationProposals) != 1 || compact.OmittedReconciliation != 2 {
+		t.Fatalf("reconciliation projection = len %d omitted %d", len(compact.ReconciliationProposals), compact.OmittedReconciliation)
+	}
+	if len(compact.AfterAction.RemainingOperatorJudgment) != 1 || compact.OmittedAfterAction != 2 {
+		t.Fatalf("after_action projection = len %d omitted %d", len(compact.AfterAction.RemainingOperatorJudgment), compact.OmittedAfterAction)
+	}
+	if len(compact.NeedsOperator) != 3 || compact.OmittedNeedsOperatorTasks != 3 {
+		t.Fatalf("needs_operator projection = len %d omitted tasks %d", len(compact.NeedsOperator), compact.OmittedNeedsOperatorTasks)
+	}
+	if len(compact.NeedsOperator[0].Tasks) != 1 || compact.NeedsOperator[0].OmittedTasks != 1 {
+		t.Fatalf("needs_operator nested projection = %#v", compact.NeedsOperator[0])
+	}
+	if compact.FullAuditCommand != "haft overseer drain --dry-run --json --full" {
+		t.Fatalf("full_audit_command = %q", compact.FullAuditCommand)
+	}
+	if len(report.Executed) != 3 || len(report.ReconciliationProposals) != 3 || len(report.NeedsOperator) != 3 {
+		t.Fatalf("source report mutated: %#v", report)
+	}
+
+	zero := compactMaintenanceDrainReport(report, 0)
+	if len(zero.Executed) != 0 || zero.OmittedExecuted != 3 {
+		t.Fatalf("zero-limit executed projection = len %d omitted %d", len(zero.Executed), zero.OmittedExecuted)
+	}
+	if len(zero.ReconciliationProposals) != 0 || zero.OmittedReconciliation != 3 {
+		t.Fatalf("zero-limit reconciliation projection = len %d omitted %d", len(zero.ReconciliationProposals), zero.OmittedReconciliation)
+	}
+	if len(zero.AfterAction.RemainingOperatorJudgment) != 0 || zero.OmittedAfterAction != 3 {
+		t.Fatalf("zero-limit after_action projection = len %d omitted %d", len(zero.AfterAction.RemainingOperatorJudgment), zero.OmittedAfterAction)
+	}
+	if len(zero.NeedsOperator) != 3 || zero.OmittedNeedsOperatorTasks != 4 {
+		t.Fatalf("zero-limit needs_operator projection = len %d omitted tasks %d", len(zero.NeedsOperator), zero.OmittedNeedsOperatorTasks)
+	}
+	if len(zero.NeedsOperator[0].Tasks) != 0 || zero.NeedsOperator[0].OmittedTasks != 2 {
+		t.Fatalf("zero-limit nested projection = %#v", zero.NeedsOperator[0])
+	}
+}
+
 func TestMaintenanceDrainActionLinesRenderDecisionTitleBeforeRef(t *testing.T) {
 	lines := maintenanceDrainActionLines([]overseer.MaintenanceAction{{
 		Kind:        maintenanceActionObservable,

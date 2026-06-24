@@ -1458,7 +1458,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				MCPAction:        "drain",
 				MCPCall:          `haft_refresh(action="drain", dry_run=true)`,
 				CLIStatus:        "available",
-				CLICommand:       "haft overseer drain --dry-run --json",
+				CLICommand:       "haft overseer drain --dry-run --json; haft overseer drain --dry-run --json --full",
 				DiscoveryCommand: "haft interface refresh.drain --json",
 			},
 			InputContract: interfaceContract{
@@ -1467,18 +1467,19 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"schema_version":"maintenance_drain.v1","dry_run":true,"summary":{"executed_actions":1,"needs_operator_tasks":3,"reconciliation_proposal_count":2},"executed":[{"kind":"observable_run","evidence_refs":["evid-..."]}],"reconciliation_proposals":[{"kind":"high_fanout_reconciliation_review|fallback_scope_repair_review|fallback_governing_scope_review","suggested_command":"haft decision reconcile --json","authority_boundary":"read_only_reconciliation_proposal_not_binding_authority"}],"after_action":{"auto_closed_items":[...],"evidence_checked":[{"command":"go test ...","evidence_refs":["evid-..."]}],"remaining_operator_judgment":[...],"undo_commands":["haft overseer undo <run-id> <action-id>"],"authority_boundary":"after_action_report_only_not_binding_authority"},"needs_operator":[...]}`,
-						Note:  "Reconciliation proposals and after_action are report-only; they do not supersede, retire, merge, approve, create decisions, or apply reconciliation selections.",
+						Shape: `{"schema_version":"maintenance_drain.v1","view":"compact","dry_run":true,"summary":{"executed_actions":2,"needs_operator_tasks":72,"reconciliation_proposal_count":71},"executed":[{"kind":"auto_rebaseline","outcome":"proposed"}],"omitted_executed":1,"reconciliation_proposals":[{"kind":"high_fanout_reconciliation_review|fallback_scope_repair_review|fallback_governing_scope_review","suggested_command":"haft decision reconcile --json","authority_boundary":"read_only_reconciliation_proposal_not_binding_authority"}],"omitted_reconciliation_proposals":70,"after_action":{"remaining_operator_judgment":[...],"authority_boundary":"after_action_report_only_not_binding_authority"},"omitted_after_action_remaining_operator_judgment":67,"needs_operator":[...],"omitted_needs_operator_tasks":67,"full_audit_command":"haft overseer drain --dry-run --json --full"}`,
+						Note:  "Default CLI JSON is compact and preserves summary counts while bounding executed, reconciliation_proposals, after_action.remaining_operator_judgment, and nested needs_operator tasks. Use --limit N to adjust compact output and --full for the complete audit payload. Reconciliation proposals and after_action are report-only; they do not supersede, retire, merge, approve, create decisions, or apply reconciliation selections.",
 					},
 				},
 				Notes: []string{
 					"dry_run=true proposes machine-safe actions without mutating; dry_run=false executes only rung-1/rung-2 safe actions.",
 					"Material drift, semantic uncertainty, reopen/supersede choices, and weak waivers are returned as needs_operator.",
+					"CLI JSON is compact by default; summary counts are complete, omitted_* fields name truncated audit tails, and --full restores the complete report.",
 					"reconciliation_proposals are read-only review batches for high-fanout/fallback groups; suggested commands are inspect-only.",
 					"after_action lists auto-closed items, evidence refs, remaining operator judgment, and undo commands for autonomous mutations.",
 				},
 			},
-			OutputVolume: []string{"default: compact drain report", "CLI --json: executed actions, reconciliation_proposals, after_action, and needs_operator groups"},
+			OutputVolume: []string{"default: compact drain report", "CLI --json: compact executed/proposal/operator samples plus omitted counts", "CLI --json --full: complete audit payload"},
 			Invariants: append(commonInterfaceInvariants(),
 				"Drain is opt-in; default status and refresh.review remain read-only.",
 				"Drain does not create semantic approval, GateDecision, or global truth.",

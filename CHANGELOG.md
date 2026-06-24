@@ -8,6 +8,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Overseer drain compact JSON projection.** `haft overseer drain --dry-run
+  --json` now emits a compact audit projection by default while preserving
+  complete summary counts, explicit omitted counters, and
+  `full_audit_command`. Use `--json --full` for the full audit payload and
+  `--limit N` to tune the compact sample size.
 - **Decision reconciliation approval-readiness review metadata.** R9
   `haft decision reconcile selection-draft --json` now includes structured
   per-candidate `approval_readiness` metadata: why the draft is not

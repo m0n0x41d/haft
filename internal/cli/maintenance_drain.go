@@ -13,18 +13,24 @@ import (
 const maintenanceDrainSchemaVersion = "maintenance_drain.v1"
 
 type maintenanceDrainReport struct {
-	SchemaVersion           string                                       `json:"schema_version"`
-	CreatedAt               string                                       `json:"created_at"`
-	DryRun                  bool                                         `json:"dry_run"`
-	MaintenanceRunID        string                                       `json:"maintenance_run_id,omitempty"`
-	AuthorityBoundary       maintenanceDrainAuthority                    `json:"authority_boundary"`
-	Summary                 maintenanceDrainSummary                      `json:"summary"`
-	Executed                []overseer.MaintenanceAction                 `json:"executed,omitempty"`
-	ReconciliationProposals []overseer.MaintenanceReconciliationProposal `json:"reconciliation_proposals,omitempty"`
-	ReconciliationSummary   *overseer.MaintenanceReconciliationSummary   `json:"reconciliation_summary,omitempty"`
-	AfterAction             overseer.MaintenanceAfterActionReport        `json:"after_action"`
-	NeedsOperator           []artifact.MaintenanceJudgmentGroup          `json:"needs_operator,omitempty"`
-	NextOperatorAction      []string                                     `json:"next_operator_action,omitempty"`
+	SchemaVersion             string                                       `json:"schema_version"`
+	View                      string                                       `json:"view,omitempty"`
+	CreatedAt                 string                                       `json:"created_at"`
+	DryRun                    bool                                         `json:"dry_run"`
+	MaintenanceRunID          string                                       `json:"maintenance_run_id,omitempty"`
+	AuthorityBoundary         maintenanceDrainAuthority                    `json:"authority_boundary"`
+	Summary                   maintenanceDrainSummary                      `json:"summary"`
+	Executed                  []overseer.MaintenanceAction                 `json:"executed,omitempty"`
+	OmittedExecuted           int                                          `json:"omitted_executed,omitempty"`
+	ReconciliationProposals   []overseer.MaintenanceReconciliationProposal `json:"reconciliation_proposals,omitempty"`
+	OmittedReconciliation     int                                          `json:"omitted_reconciliation_proposals,omitempty"`
+	ReconciliationSummary     *overseer.MaintenanceReconciliationSummary   `json:"reconciliation_summary,omitempty"`
+	AfterAction               overseer.MaintenanceAfterActionReport        `json:"after_action"`
+	OmittedAfterAction        int                                          `json:"omitted_after_action_remaining_operator_judgment,omitempty"`
+	NeedsOperator             []artifact.MaintenanceJudgmentGroup          `json:"needs_operator,omitempty"`
+	OmittedNeedsOperatorTasks int                                          `json:"omitted_needs_operator_tasks,omitempty"`
+	NextOperatorAction        []string                                     `json:"next_operator_action,omitempty"`
+	FullAuditCommand          string                                       `json:"full_audit_command,omitempty"`
 }
 
 type maintenanceDrainAuthority struct {
@@ -94,6 +100,65 @@ func buildMaintenanceDrainReport(
 		report.MaintenanceRunID = run.MaintenanceID
 	}
 	return report, nil
+}
+
+func compactMaintenanceDrainReport(
+	report maintenanceDrainReport,
+	limit int,
+) maintenanceDrainReport {
+	compact := report
+	compact.View = "compact"
+	compact.FullAuditCommand = "haft overseer drain --dry-run --json --full"
+	if !compact.DryRun {
+		compact.FullAuditCommand = "haft overseer drain --json --full"
+	}
+	compact.Executed, compact.OmittedExecuted = limitMaintenanceDrainSlice(compact.Executed, limit)
+	compact.ReconciliationProposals, compact.OmittedReconciliation = limitMaintenanceDrainSlice(compact.ReconciliationProposals, limit)
+	compact.NeedsOperator, compact.OmittedNeedsOperatorTasks = compactMaintenanceDrainNeedsOperator(compact.NeedsOperator, limit)
+	compact.AfterAction.RemainingOperatorJudgment, compact.OmittedAfterAction = limitMaintenanceDrainSlice(
+		compact.AfterAction.RemainingOperatorJudgment,
+		limit,
+	)
+	return compact
+}
+
+func compactMaintenanceDrainNeedsOperator(
+	groups []artifact.MaintenanceJudgmentGroup,
+	limit int,
+) ([]artifact.MaintenanceJudgmentGroup, int) {
+	if limit <= 0 {
+		compact := append([]artifact.MaintenanceJudgmentGroup(nil), groups...)
+		omittedTasks := 0
+		for index := range compact {
+			group := &compact[index]
+			group.OmittedTasks += len(group.Tasks)
+			omittedTasks += group.OmittedTasks
+			group.Tasks = []artifact.MaintenanceJudgmentTaskReview{}
+		}
+		return compact, omittedTasks
+	}
+
+	review := artifact.CompactMaintenanceJudgmentReview(
+		&artifact.MaintenanceJudgmentReview{Groups: groups},
+		limit,
+	)
+	if review == nil {
+		return nil, 0
+	}
+	return review.Groups, review.OmittedJudgmentTasks
+}
+
+func limitMaintenanceDrainSlice[T any](
+	items []T,
+	limit int,
+) ([]T, int) {
+	if limit < 0 {
+		limit = 0
+	}
+	if len(items) <= limit {
+		return append([]T(nil), items...), 0
+	}
+	return append([]T(nil), items[:limit]...), len(items) - limit
 }
 
 func maintenanceDrainActionsWithUndo(run overseer.MaintenanceRun) []overseer.MaintenanceAction {

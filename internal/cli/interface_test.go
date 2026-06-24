@@ -1070,6 +1070,11 @@ func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t
 		"handler_validated_fields",
 		"carrier_path",
 		"generated_fragment_refs",
+		"planned_edition",
+		"markdown_sync_back",
+		"semantic_field_update",
+		"relationship_update",
+		"sql_edition_update_not_approval_rebaseline_or_prose_authority",
 		"generated/contract-generation/preview/",
 		"generated/contract-generation/schema/",
 	} {

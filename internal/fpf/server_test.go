@@ -216,6 +216,11 @@ func TestHandleToolsList_DoesNotInlineInterfaceOutputShapeFragments(t *testing.T
 		"legacy_formality_projection_lossy|unversioned_formality_source_scale_missing|current_f0_f9_formality",
 		"not_claim_truth",
 		"not_publication",
+		"planned_edition",
+		"markdown_sync_back",
+		"semantic_field_update",
+		"relationship_update",
+		"sql_edition_update_not_approval_rebaseline_or_prose_authority",
 	} {
 		if strings.Contains(body, forbidden) {
 			t.Fatalf("tools/list inlined interface output-shape fragment %q", forbidden)

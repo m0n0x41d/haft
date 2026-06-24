@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Carrier check help boundary.** `haft carrier check --help` now names semio
+  findings as review inputs, not evidence, approval, or GateDecision.
 - **Drift events help boundary.** `haft drift events --help` now names computed
   `root_cause`, `resolution_status`, and `suggested_next_command` as review
   posture, not evidence, approval, or gate passage.

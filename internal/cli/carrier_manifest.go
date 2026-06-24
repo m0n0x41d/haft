@@ -39,7 +39,8 @@ var carrierCheckCmd = &cobra.Command{
 
 The check fails when dead runtime surfaces such as standalone agent, TUI, or
 desktop wrappers are mentioned as current authority instead of being labeled as
-dropped, archive, provenance, support, or not-current.`,
+dropped, archive, provenance, support, or not-current. Findings are review
+inputs, not evidence, approval, or GateDecision.`,
 	RunE: runCarrierCheck,
 }
 

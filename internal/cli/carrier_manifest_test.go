@@ -81,6 +81,20 @@ func TestRunCarrierCheckText(t *testing.T) {
 	}
 }
 
+func TestCarrierCheckHelpNamesAuthorityBoundaries(t *testing.T) {
+	normalized := strings.ToLower(strings.Join(strings.Fields(carrierCheckCmd.Long), " "))
+	for _, want := range []string{
+		"review inputs",
+		"not evidence",
+		"approval",
+		"gate",
+	} {
+		if !strings.Contains(normalized, want) {
+			t.Fatalf("carrier check help missing %q:\n%s", want, carrierCheckCmd.Long)
+		}
+	}
+}
+
 func TestRunCarrierCheckJSON(t *testing.T) {
 	var output bytes.Buffer
 	cmd := &cobra.Command{}

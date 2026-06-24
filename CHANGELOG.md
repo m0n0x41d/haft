@@ -8,6 +8,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Drift route compact boundary.** `haft drift route` text output now names
+  the same `claim_truth` and `publication` non-authority posture already
+  present in JSON.
 - **Blocked-use attention compact boundary.** `haft attention blocked` text
   output now names the same `claim_truth` and `publication` non-authority
   posture already present in JSON.

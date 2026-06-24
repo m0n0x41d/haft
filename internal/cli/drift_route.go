@@ -59,7 +59,8 @@ var driftRouteCmd = &cobra.Command{
 	Long: `Build a deterministic read-only semantic drift route.
 
 The route classifies the drift layer and lists candidate repair actions. It
-does not mutate code, carriers, evidence, decisions, baselines, or gates.`,
+does not mutate code, carriers, evidence, decisions, baselines, or gates, and
+does not create approval, claim truth, global truth, or publication.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runDriftRoute,
 }
@@ -857,12 +858,14 @@ func writeDriftRouteSummary(w io.Writer, record artifact.SemanticDriftRoute) err
 		record.NextAdmissibleMove,
 	))
 	builder.WriteString(fmt.Sprintf(
-		"authority_boundary: mutation=%s evidence=%s approval=%s gate_decision=%s global_truth=%s\n",
+		"authority_boundary: mutation=%s evidence=%s approval=%s gate_decision=%s claim_truth=%s global_truth=%s publication=%s\n",
 		record.AuthorityBoundary.Mutation,
 		record.AuthorityBoundary.Evidence,
 		record.AuthorityBoundary.Approval,
 		record.AuthorityBoundary.GateDecision,
+		record.AuthorityBoundary.ClaimTruth,
 		record.AuthorityBoundary.GlobalTruth,
+		record.AuthorityBoundary.Publication,
 	))
 
 	_, err := io.WriteString(w, builder.String())

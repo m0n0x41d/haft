@@ -55,6 +55,22 @@ differ.
 Project-scoped configs (`.mcp.json`, `.codex/config.toml`) use portable
 project-root paths, so they are safe to commit for shared repositories.
 
+### Local footprint
+
+Haft is local-first, but it is not a zero-footprint prompt pack. `haft init`
+creates markdown carriers in `.haft/` and a project SQLite database under
+`~/.haft/projects/<id>/`. Those databases are where Haft keeps the structured
+artifact graph, baselines, indexes, and runtime state that agents query through
+CLI/MCP.
+
+Semantic recall can also use the Rust `haft-embed` sidecar. When available,
+Haft may start a shared local EmbeddingGemma process and cache models under
+`~/.haft/`; a warm sidecar can reasonably take around 1-2 GB of RAM depending
+on platform, model, and workload. If the sidecar is absent or disabled, core
+governance still works and semantic recall degrades to keyword/graph recall.
+Set `embedding.provider: none` in `~/.haft/config.yaml` if you want to keep that
+path off deliberately.
+
 ---
 
 ## How to Start

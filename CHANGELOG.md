@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **README public surface sync.** README now matches the live `haft init`
+  install set and routing check output: nine MCP tools, 16 installed skills,
+  `h-spec` in the public skill table, and `haft check routing` at 34/44
+  golden prompts (77.3%).
 - **Decision baseline semantics.** Decision drift reports now distinguish
   direct hash captures as `observed_state_snapshot`; `verified_state_snapshot`
   is reserved for baselines with supporting verification, measurement, audit,

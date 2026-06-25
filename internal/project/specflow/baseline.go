@@ -218,9 +218,12 @@ func HashSection(section project.SpecSection) string {
 
 func canonicalSectionString(section project.SpecSection) string {
 	var b strings.Builder
+	frameID, frameKind := canonicalSectionSystemFrame(section)
 
 	writeField(&b, "id", section.ID)
 	writeField(&b, "spec", section.Spec)
+	writeField(&b, "system_frame.id", frameID)
+	writeField(&b, "system_frame.kind", frameKind)
 	writeField(&b, "kind", section.Kind)
 	writeField(&b, "title", section.Title)
 	writeField(&b, "statement_type", section.StatementType)
@@ -237,8 +240,64 @@ func canonicalSectionString(section project.SpecSection) string {
 		writeField(&b, fmt.Sprintf("evidence_required[%d].kind", index), requirement.Kind)
 		writeField(&b, fmt.Sprintf("evidence_required[%d].description", index), requirement.Description)
 	}
+	for index, claim := range section.Claims {
+		writeField(&b, fmt.Sprintf("claims[%d].id", index), claim.ID)
+		writeField(&b, fmt.Sprintf("claims[%d].class", index), claim.Class)
+		writeField(&b, fmt.Sprintf("claims[%d].statement", index), claim.Statement)
+		writeListField(&b, fmt.Sprintf("claims[%d].scope", index), claim.Scope)
+		writeListField(&b, fmt.Sprintf("claims[%d].support_refs", index), claim.SupportRefs)
+		writeListField(&b, fmt.Sprintf("claims[%d].evidence_refs", index), claim.EvidenceRefs)
+		writeField(&b, fmt.Sprintf("claims[%d].valid_until", index), claim.ValidUntil)
+		writeListField(&b, fmt.Sprintf("claims[%d].governing_pattern_refs", index), claim.GoverningPatternRefs)
+	}
 
 	return b.String()
+}
+
+func canonicalSectionSystemFrame(section project.SpecSection) (string, string) {
+	frameID := strings.TrimSpace(section.SystemFrame.ID)
+	frameKind := strings.TrimSpace(section.SystemFrame.Kind)
+	if frameID != "" || frameKind != "" {
+		if normalized := normalizeSectionSystemFrameKind(firstNonEmptyString(frameKind, frameID)); normalized != "" {
+			return normalized, normalized
+		}
+		return frameID, frameKind
+	}
+
+	if normalized := normalizeSectionSystemFrameKind(section.Spec); normalized != "" {
+		return normalized, normalized
+	}
+	if normalized := normalizeSectionSystemFrameKind(section.DocumentKind); normalized != "" {
+		return normalized, normalized
+	}
+	return "", ""
+}
+
+func normalizeSectionSystemFrameKind(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+
+	switch normalized {
+	case "target_system", "target":
+		return "target_system"
+	case "enabling_system", "enabling":
+		return "enabling_system"
+	case "carrier", "carrier_system", "publication", "publication_system":
+		return "carrier"
+	case "sidekick", "external_sidekick", "external_system":
+		return "sidekick"
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func writeField(b *strings.Builder, key, value string) {

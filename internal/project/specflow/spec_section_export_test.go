@@ -137,6 +137,53 @@ func TestRenderSpecSectionEditionMarkdownSeparatesCarrierPathFromSemanticEdition
 	}
 }
 
+func TestRenderSpecSectionEditionMarkdownPreservesStringEvidenceRequirements(t *testing.T) {
+	sourceStore := NewSQLiteSpecSectionEditionStore(newTestBaselineDB(t).GetRawDB())
+	emptyStore := NewSQLiteSpecSectionEditionStore(newTestBaselineDB(t).GetRawDB())
+	sourceSection := specSectionEditionRoundTripTestSection()
+	sourceSection.EvidenceRequired = []project.SpecEvidenceRequirement{{
+		Description: "Runtime evidence links to this section.",
+	}}
+	sourceEdition := NewSpecSectionEdition("proj-1", sourceSection, SpecSectionSourceSQL, time.Now().UTC())
+
+	if err := sourceStore.PutCurrent(sourceEdition); err != nil {
+		t.Fatalf("PutCurrent source: %v", err)
+	}
+
+	storedSource, err := sourceStore.GetCurrent("proj-1", sourceSection.ID)
+	if err != nil {
+		t.Fatalf("GetCurrent source: %v", err)
+	}
+	publication, err := RenderSpecSectionEditionMarkdown(storedSource)
+	if err != nil {
+		t.Fatalf("RenderSpecSectionEditionMarkdown: %v", err)
+	}
+	if !strings.Contains(publication.Markdown, "- Runtime evidence links to this section.") {
+		t.Fatalf("publication did not preserve string evidence requirement:\n%s", publication.Markdown)
+	}
+
+	document := project.SpecDocumentInput{
+		Path:    publication.CarrierPath,
+		Kind:    sourceSection.DocumentKind,
+		Content: publication.Markdown,
+	}
+	sections := project.SpecSectionsFromDocuments([]project.SpecDocumentInput{document})
+	if len(sections) != 1 {
+		t.Fatalf("parsed sections = %d, want 1", len(sections))
+	}
+	importedEdition := NewSpecSectionEdition("proj-1", sections[0], SpecSectionSourceCarrierImport, time.Now().UTC())
+	if err := emptyStore.PutCurrent(importedEdition); err != nil {
+		t.Fatalf("PutCurrent imported: %v", err)
+	}
+	storedImport, err := emptyStore.GetCurrent("proj-1", sourceSection.ID)
+	if err != nil {
+		t.Fatalf("GetCurrent imported: %v", err)
+	}
+	if storedImport.SemanticHash != storedSource.SemanticHash {
+		t.Fatalf("imported semantic hash = %q, want %q", storedImport.SemanticHash, storedSource.SemanticHash)
+	}
+}
+
 func specSectionEditionRoundTripTestSection() project.SpecSection {
 	section := specSectionEditionTestSection("TS.roundtrip.001")
 	section.Title = "Round trip identity"

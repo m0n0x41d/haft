@@ -80,7 +80,7 @@ type specSectionYAMLProjection struct {
 	Terms            []string                    `yaml:"terms,omitempty"`
 	DependsOn        []string                    `yaml:"depends_on,omitempty"`
 	TargetRefs       []string                    `yaml:"target_refs,omitempty"`
-	EvidenceRequired []specSectionEvidenceYAML   `yaml:"evidence_required,omitempty"`
+	EvidenceRequired []any                       `yaml:"evidence_required,omitempty"`
 	Claims           []specSectionClaimYAML      `yaml:"claims,omitempty"`
 }
 
@@ -138,13 +138,17 @@ func specSectionSystemFrameYAMLFromSection(frame project.SystemReferenceFrame) *
 	}
 }
 
-func specSectionEvidenceYAMLFromSection(requirements []project.SpecEvidenceRequirement) []specSectionEvidenceYAML {
+func specSectionEvidenceYAMLFromSection(requirements []project.SpecEvidenceRequirement) []any {
 	if len(requirements) == 0 {
 		return nil
 	}
 
-	projected := make([]specSectionEvidenceYAML, 0, len(requirements))
+	projected := make([]any, 0, len(requirements))
 	for _, requirement := range requirements {
+		if strings.TrimSpace(requirement.Kind) == "" && strings.TrimSpace(requirement.Description) != "" {
+			projected = append(projected, requirement.Description)
+			continue
+		}
 		projected = append(projected, specSectionEvidenceYAML{
 			Kind:        requirement.Kind,
 			Description: requirement.Description,

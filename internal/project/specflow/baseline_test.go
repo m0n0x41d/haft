@@ -61,6 +61,39 @@ func TestHashSectionChangesWhenLoadBearingFieldChanges(t *testing.T) {
 	}
 }
 
+func TestHashSectionChangesWhenSystemFrameChanges(t *testing.T) {
+	a := project.SpecSection{ID: "tgt-env-1"}
+	b := a
+	b.SystemFrame = project.SystemReferenceFrame{
+		ID:     "target_system",
+		Kind:   "target_system",
+		Source: "system_frame",
+	}
+
+	if HashSection(a) == HashSection(b) {
+		t.Fatalf("hash unchanged when system_frame changed: %s", HashSection(a))
+	}
+}
+
+func TestHashSectionChangesWhenClaimChanges(t *testing.T) {
+	a := project.SpecSection{ID: "tgt-env-1"}
+	b := a
+	b.Claims = []project.SpecClaim{{
+		ID:                   "claim-1",
+		Class:                "A",
+		Statement:            "Claim-scoped authority is load-bearing.",
+		Scope:                []string{"tgt-env-1"},
+		SupportRefs:          []string{"dec-1"},
+		EvidenceRefs:         []string{"ev-1"},
+		ValidUntil:           "2026-08-01",
+		GoverningPatternRefs: []string{"A.7"},
+	}}
+
+	if HashSection(a) == HashSection(b) {
+		t.Fatalf("hash unchanged when claims changed: %s", HashSection(a))
+	}
+}
+
 func TestHashSectionTreatsTrimmedWhitespaceAsEqual(t *testing.T) {
 	a := project.SpecSection{ID: "tgt-1", Status: "active"}
 	b := project.SpecSection{ID: " tgt-1 ", Status: "active "}

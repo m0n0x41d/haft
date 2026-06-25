@@ -145,6 +145,43 @@ func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
 	}
 }
 
+func TestHandleQuintRefreshDrainDefaultsToDryRunPreview(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	before := countArtifacts(t, fixture)
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action": "drain",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(drain default) returned error: %v", err)
+	}
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("default drain artifact count changed: before=%d after=%d", before, after)
+	}
+	if !strings.Contains(result, "Maintenance Drain (dry-run)") {
+		t.Fatalf("default drain should be a dry-run preview:\n%s", result)
+	}
+}
+
+func TestHandleQuintRefreshDrainRejectsNonDryRunMCPCall(t *testing.T) {
+	fixture := newCheckTestProject(t)
+
+	_, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "drain",
+		"dry_run": false,
+	})
+	if err == nil {
+		t.Fatal("expected non-dry MCP drain to be rejected")
+	}
+	for _, want := range []string{"dry_run=true", "haft overseer drain"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
 func TestHandleQuintRefreshDrainFooterUsesTypedStaleSnapshot(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	decision := mustCreateDecision(t, fixture, artifact.DecideInput{

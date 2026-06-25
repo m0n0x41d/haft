@@ -1459,7 +1459,17 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 
 	case artifact.RefreshDrain:
 		projectRoot := filepath.Dir(haftDir)
-		dryRun, _ := args["dry_run"].(bool)
+		dryRun := true
+		if rawDryRun, ok := args["dry_run"]; ok {
+			var dryRunOK bool
+			dryRun, dryRunOK = rawDryRun.(bool)
+			if !dryRunOK {
+				return "", fmt.Errorf("dry_run must be a boolean for refresh drain")
+			}
+		}
+		if !dryRun {
+			return "", fmt.Errorf("haft_refresh(action=\"drain\") is MCP-safe preview only; use dry_run=true here and `haft overseer drain` for explicit non-dry maintenance")
+		}
 		report, err := buildMaintenanceDrainReport(ctx, store, projectRoot, dryRun)
 		if err != nil {
 			return "", err

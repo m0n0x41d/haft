@@ -69,12 +69,13 @@ func ClassifyCommand(command string) (string, bool) {
 		return "", false
 	}
 	fields := strings.Fields(command)
-	allowedSubs, ok := commandAllowlist[fields[0]]
+	commandName := fields[0]
+	allowedSubs, ok := commandAllowlist[commandName]
 	if !ok {
 		return "", false
 	}
 	if allowedSubs == nil {
-		if !grepLikeCommandConfined(fields[1:]) {
+		if !grepLikeCommandConfined(commandName, fields[1:]) {
 			return "", false
 		}
 		return fields[0], true
@@ -107,6 +108,9 @@ func goCommandConfined(args []string) bool {
 		}
 		if strings.HasPrefix(arg, "-") {
 			flagName, flagValue, hasValue := splitGoFlag(arg)
+			if goFlagRejected(flagName) {
+				return false
+			}
 			if goPackageListFlag(flagName) {
 				if hasValue {
 					if !goPackageListConfined(flagValue) {
@@ -137,7 +141,15 @@ func splitGoFlag(arg string) (string, string, bool) {
 
 func goFlagConsumesValue(name string) bool {
 	switch name {
-	case "-run", "-bench", "-count", "-timeout", "-tags", "-covermode", "-coverprofile", "-exec":
+	case "-run", "-bench", "-count", "-timeout", "-tags", "-covermode", "-coverprofile":
+		return true
+	}
+	return false
+}
+
+func goFlagRejected(name string) bool {
+	switch name {
+	case "-exec":
 		return true
 	}
 	return false
@@ -171,14 +183,26 @@ func goPackageArgConfined(arg string) bool {
 	return strings.HasSuffix(arg, ".go")
 }
 
-func grepLikeCommandConfined(args []string) bool {
+func grepLikeCommandConfined(commandName string, args []string) bool {
 	for _, arg := range args {
+		if commandName == "rg" && rgFlagRunsPreprocessor(arg) {
+			return false
+		}
 		if commandArgEscapesProject(arg) {
 			return false
 		}
 	}
 
 	return true
+}
+
+func rgFlagRunsPreprocessor(arg string) bool {
+	flagName, _, _ := splitGoFlag(arg)
+	switch flagName {
+	case "--pre", "--pre-glob":
+		return true
+	}
+	return false
 }
 
 func commandArgEscapesProject(arg string) bool {

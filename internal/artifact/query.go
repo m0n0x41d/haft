@@ -108,6 +108,7 @@ type StatusData struct {
 	InProgressBy        map[string]string // problem ID -> portfolio ID
 	PortfolioTitles     map[string]string // portfolio ID -> title
 	BacklogProblems     []*Artifact
+	ProblemHygiene      []ProblemHygieneItem
 	AddressedProblems   []*Artifact
 	AddressedBy         map[string]string // problem ID -> decision ID
 	DecisionTitles      map[string]string // decision ID -> title
@@ -130,6 +131,12 @@ type StatusData struct {
 	// drill-downs; it never performs lineage, evidence, baseline, or gate
 	// mutations.
 	ReconciliationCues ReconciliationCueReport
+}
+
+type ProblemHygieneItem struct {
+	Problem *Artifact
+	Reason  string
+	Action  string
 }
 
 // FetchStatusData gathers all dashboard data without formatting.
@@ -241,6 +248,9 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 			data.InProgressProblems = append(data.InProgressProblems, p)
 		} else {
 			data.BacklogProblems = append(data.BacklogProblems, p)
+			if item, ok := problemClosureHygieneItem(ctx, store, p); ok {
+				data.ProblemHygiene = append(data.ProblemHygiene, item)
+			}
 		}
 	}
 
@@ -297,6 +307,36 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	}
 
 	return data, nil
+}
+
+func problemClosureHygieneItem(ctx context.Context, store ArtifactStore, problem *Artifact) (ProblemHygieneItem, bool) {
+	if problem == nil || problem.Meta.Kind != KindProblemCard || problem.Meta.Status != StatusActive {
+		return ProblemHygieneItem{}, false
+	}
+
+	evidence, err := store.GetEvidenceItems(ctx, problem.Meta.ID)
+	if err != nil {
+		return ProblemHygieneItem{}, false
+	}
+	if !hasSupportingEvidence(evidence) {
+		return ProblemHygieneItem{}, false
+	}
+
+	return ProblemHygieneItem{
+		Problem: problem,
+		Reason:  "supporting evidence exists but no based_on SolutionPortfolio or DecisionRecord links this active problem",
+		Action:  "link an existing portfolio/decision, attach the missing evidence to that artifact, or explicitly deprecate/supersede/waive with operator rationale",
+	}, true
+}
+
+func hasSupportingEvidence(items []EvidenceItem) bool {
+	for _, item := range items {
+		switch strings.TrimSpace(strings.ToLower(item.Verdict)) {
+		case "supports", "accepted":
+			return true
+		}
+	}
+	return false
 }
 
 func BuildStatusReconciliationCueReport(

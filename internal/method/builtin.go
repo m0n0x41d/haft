@@ -38,6 +38,42 @@ func verificationBeforeCompletion() Definition {
 	}
 }
 
+func problemClosureHygiene() Definition {
+	return Definition{
+		ID:      "problem-closure-hygiene",
+		Version: CatalogVersion,
+		Title:   "Problem closure hygiene",
+		Summary: "Completed work must leave linked or deliberately suspended problems.",
+		Intent:  "Do not claim implementation work is done while a linked ProblemCard remains active/backlog with no SolutionPortfolio, DecisionRecord, or supporting evidence path.",
+		AppliesTo: Applicability{
+			RiskSignals: []string{"problem_closure_hygiene", "governed_workflow_change"},
+		},
+		DoesNotApplyTo: Applicability{
+			TaskKinds: []string{TaskMechanicalEdit, TaskFormattingOnly},
+		},
+		HardGates: []Gate{{
+			ID:               "problem_graph_closure_hygiene_recorded",
+			Kind:             "graph_hygiene",
+			CheckLevel:       "deterministic",
+			PassCondition:    "Each linked active ProblemCard has a SolutionPortfolio, DecisionRecord, or supporting evidence path, or an explicit waiver records why it remains open.",
+			RequiredEvidence: []string{"problem_ref", "linked_artifact_ref_or_evidence_ref", "status_or_query_ref"},
+			Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+		}},
+		Procedure: []string{
+			"List ProblemCards linked to the MethodRun before close.",
+			"Confirm each has a graph path to a SolutionPortfolio, DecisionRecord, or supporting evidence.",
+			"Waive only when the operator deliberately leaves the problem open, with a reason.",
+		},
+		AntiPatterns: []string{
+			"Closing implementation work while the related ProblemCard still looks like untouched backlog.",
+			"Treating tests or changelog text as graph closure without a link/evidence path.",
+		},
+		RequiredEvidence: []string{"problem_ref", "linked_artifact_ref_or_evidence_ref", "status_or_query_ref"},
+		Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+		Priority:         4,
+	}
+}
+
 func graphPreflightBeforeGovernedEdit() Definition {
 	return Definition{
 		ID:      "graph-preflight-before-governed-edit",

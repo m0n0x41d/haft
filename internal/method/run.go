@@ -74,6 +74,9 @@ func CloseRun(ctx context.Context, store artifact.ArtifactStore, haftDir string,
 	if err := ValidateClose(run, input); err != nil {
 		return nil, "", MethodRun{}, err
 	}
+	if err := ValidateProblemClosureHygiene(ctx, store, a, run, input); err != nil {
+		return nil, "", MethodRun{}, err
+	}
 
 	now := time.Now().UTC()
 	closeout := Closeout{
@@ -179,6 +182,128 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 		return fmt.Errorf("method close incomplete: %s; %s", strings.Join(missing, "; "), CloseInputShapeHint())
 	}
 	return nil
+}
+
+const problemClosureHygieneGateID = "problem_graph_closure_hygiene_recorded"
+
+func ValidateProblemClosureHygiene(ctx context.Context, store artifact.ArtifactStore, runArtifact *artifact.Artifact, run MethodRun, input CloseInput) error {
+	if !runHasGate(run, problemClosureHygieneGateID) {
+		return nil
+	}
+	if closeInputHasWaiver(input, problemClosureHygieneGateID) {
+		return nil
+	}
+
+	problemRefs := linkedProblemRefs(runArtifact)
+	if len(problemRefs) == 0 {
+		return nil
+	}
+
+	var missing []string
+	for _, ref := range problemRefs {
+		if problemHasClosurePath(ctx, store, ref) {
+			continue
+		}
+		missing = append(missing, ref)
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	return fmt.Errorf(
+		"method close incomplete: linked ProblemCard(s) lack graph closure path: %s; link each problem to a SolutionPortfolio or DecisionRecord with based_on, attach supporting evidence, deprecate/supersede it, or waive gate %q with an operator reason",
+		strings.Join(missing, ", "),
+		problemClosureHygieneGateID,
+	)
+}
+
+func runHasGate(run MethodRun, gateID string) bool {
+	for _, card := range run.Methods {
+		for _, gate := range card.HardGates {
+			if gate.ID == gateID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func closeInputHasWaiver(input CloseInput, gateID string) bool {
+	for _, result := range input.GateResults {
+		if strings.TrimSpace(result.GateID) != gateID {
+			continue
+		}
+		if normalizeCloseStatus(result.Status) == "waived" || strings.TrimSpace(result.WaiverReason) != "" {
+			return true
+		}
+	}
+	for _, waiver := range input.Waivers {
+		if strings.TrimSpace(waiver.GateID) == gateID && strings.TrimSpace(waiver.Reason) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func linkedProblemRefs(a *artifact.Artifact) []string {
+	if a == nil {
+		return nil
+	}
+	var refs []string
+	for _, link := range a.Meta.Links {
+		if link.Type != "relates_to" && link.Type != "based_on" {
+			continue
+		}
+		if !strings.HasPrefix(link.Ref, artifact.KindProblemCard.IDPrefix()+"-") {
+			continue
+		}
+		refs = append(refs, link.Ref)
+	}
+	return dedupeStrings(refs)
+}
+
+func problemHasClosurePath(ctx context.Context, store artifact.ArtifactStore, problemRef string) bool {
+	problem, err := store.Get(ctx, problemRef)
+	if err != nil {
+		return false
+	}
+	if problem.Meta.Kind != artifact.KindProblemCard {
+		return false
+	}
+	if problem.Meta.Status != artifact.StatusActive {
+		return true
+	}
+
+	backlinks, _ := store.GetBacklinks(ctx, problemRef)
+	for _, backlink := range backlinks {
+		if backlink.Type != "based_on" {
+			continue
+		}
+		linked, err := store.Get(ctx, backlink.Ref)
+		if err != nil {
+			continue
+		}
+		if linked.Meta.Kind == artifact.KindSolutionPortfolio || linked.Meta.Kind == artifact.KindDecisionRecord {
+			return true
+		}
+	}
+
+	evidence, _ := store.GetEvidenceItems(ctx, problemRef)
+	for _, item := range evidence {
+		if evidenceSupportsClosure(item.Verdict) {
+			return true
+		}
+	}
+	return false
+}
+
+func evidenceSupportsClosure(verdict string) bool {
+	switch strings.TrimSpace(strings.ToLower(verdict)) {
+	case "supports", "accepted":
+		return true
+	default:
+		return false
+	}
 }
 
 func OpenRuns(ctx context.Context, store artifact.ArtifactStore, limit int) ([]MethodRun, error) {

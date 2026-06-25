@@ -28,6 +28,7 @@ func BuiltinCatalog() Catalog {
 		ID:      CatalogID,
 		Version: CatalogVersion,
 		Methods: withBuiltinSourcePosture([]Definition{
+			problemClosureHygiene(),
 			graphPreflightBeforeGovernedEdit(),
 			verificationBeforeCompletion(),
 			systematicDebuggingBeforeFix(),
@@ -247,6 +248,9 @@ func methodExcluded(definition Definition, input PullInput) bool {
 }
 
 func methodApplies(definition Definition, input PullInput) bool {
+	if definition.ID == "problem-closure-hygiene" && strings.TrimSpace(input.ArtifactRefs.ProblemRef) != "" {
+		return true
+	}
 	return applicabilityMatches(definition.AppliesTo, input)
 }
 

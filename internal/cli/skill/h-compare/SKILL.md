@@ -136,6 +136,10 @@ Spawn M of these in one message. After all return, assemble scores per variant.
 
 ## Step 6 — Call kernel with scores + Pareto computation
 
+`dimensions` is required in the compare payload even if Step 2 already
+persisted characterization on the ProblemCard. Do not rely on hidden state:
+compare calls must stay explicit and replayable.
+
 ```
 mcp__haft__haft_solution(
   action="compare",

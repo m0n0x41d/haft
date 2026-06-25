@@ -381,6 +381,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 				OptionalFields: []string{"non_dominated_set", "incomparable", "dominated_variants", "pareto_tradeoffs", "policy_applied", "recommendation_rationale", "legacy_recommendation_ref", "selected_ref"},
 				FieldShapes: []fieldShape{
 					{
+						Field: "dimensions",
+						Shape: `["latency","cost"]`,
+						Note:  "Required on every compare call. Characterization records candidate dimensions, but compare remains explicit and replayable; do not omit this field after characterize.",
+					},
+					{
 						Field: "scores",
 						Shape: `{"V1":{"latency":"10ms","cost":"$5"},"V2":{"latency":"25ms","cost":"$1"}}`,
 						Note:  "Canonical nesting: outer key variant_id, inner key dimension_name, value string score. Do not send dimension-first scores.",
@@ -434,6 +439,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				},
 				Notes: []string{
 					"Declare parity before scoring; preserve incomparable variants instead of forcing a scalar winner.",
+					"Always include top-level dimensions in the compare payload, even when the ProblemCard was already characterized.",
 					"legacy_recommendation_ref is advisory and is the preferred alias for legacy selected_ref; it is not ChoiceResult.",
 					"CLI input-file still accepts legacy results{...}, but agents should use the flat fields shown in flat_compare.",
 				},

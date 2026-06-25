@@ -8,7 +8,7 @@ argument-hint: "[reasoning topic — what to think about / what to figure out]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:aee2df7fe90bee66e6a6a5764feb454d4975809a2c4d160ffe6409793a273b51 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:1041f72ec09b836ec8d47d29a9fb5170fad86afa80fb6a9781e8cfe90f672329 -->
 
 # h-reason — FPF reasoning umbrella
 
@@ -113,6 +113,10 @@ operational method run before editing:
 - Derive changed files, commands, test output, and governed-decision
   intersections from the worktree and traces before asking the operator;
   reserve operator input for waivers, ambiguous authority, and residual risk.
+- If the work is linked to a ProblemCard, completion also needs graph closure:
+  a SolutionPortfolio/DecisionRecord/evidence path, or an explicit
+  operator-rationale waiver/suspension. Tests or changelog text alone are not
+  graph closure.
 
 Mechanical edits should request low or no ceremony and avoid architecture
 gates.
@@ -296,9 +300,13 @@ Use when: SolutionPortfolio exists with 2+ variants, operator wants to evaluate.
      portfolio_ref="<sol-...>",
      parity_plan={...},
      selection_policy={...},
-     results={"dimensions": [...], "scores": {...}}
+     dimensions=["latency_p95", "ops_complexity"],
+     scores={"V1": {"latency_p95": "...", "ops_complexity": "..."}, "V2": {...}}
    )
    ```
+   `dimensions` is still required here even after `haft_problem(action="characterize")`.
+   Characterization records the comparison contract; compare payloads remain
+   explicit and replayable.
 7. **Decision is manual.** See next section.
 
 For full dim-wise parallel scoring use `/h-compare` directly — it spawns one Agent per dimension.

@@ -978,6 +978,24 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("\n")
 	}
 
+	if len(data.ProblemHygiene) > 0 {
+		sb.WriteString(fmt.Sprintf("### Problem Closure Hygiene (%d)\n\n", len(data.ProblemHygiene)))
+		cap := 5
+		for i, item := range data.ProblemHygiene {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.ProblemHygiene)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf(
+				"- %s — %s. Action: %s.\n",
+				formatProblemListEntry(item.Problem),
+				item.Reason,
+				item.Action,
+			))
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(data.AddressedProblems) > 0 {
 		sb.WriteString(fmt.Sprintf("### Addressed (%d)\n\n", len(data.AddressedProblems)))
 		cap := 3
@@ -1008,6 +1026,7 @@ func StatusResponse(data artifact.StatusData) string {
 		len(data.CommissionAttention) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||
+		len(data.ProblemHygiene) > 0 ||
 		len(data.AddressedProblems) > 0 ||
 		len(data.RecentNotes) > 0
 	if !hasAny {
@@ -1039,6 +1058,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	materialEvents, _, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
 	reconciliationNeedsAttention := cockpitReconciliationNeedsOperator(data.ReconciliationCues)
 	hasAttention := len(data.StaleItems) > 0 ||
+		len(data.ProblemHygiene) > 0 ||
 		len(materialEvents) > 0 ||
 		len(unresolvedEvents) > 0 ||
 		reconciliationNeedsAttention ||
@@ -1103,6 +1123,22 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		sb.WriteString("- **Decision reconciliation needs operator selection**: ")
 		sb.WriteString(cockpitReconciliationActionSummary(data.ReconciliationCues))
 		sb.WriteString("\n")
+	}
+
+	const hygieneCap = 2
+	if len(data.ProblemHygiene) > 0 {
+		sb.WriteString(fmt.Sprintf("- **Problem closure hygiene** (%d):\n", len(data.ProblemHygiene)))
+		for i, item := range data.ProblemHygiene {
+			if i >= hygieneCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_query(action=\"status\", full=true)`.\n", len(data.ProblemHygiene)-hygieneCap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf(
+				"  - %s — %s.\n",
+				formatProblemListEntry(item.Problem),
+				item.Reason,
+			))
+		}
 	}
 
 	const commissionCap = 2

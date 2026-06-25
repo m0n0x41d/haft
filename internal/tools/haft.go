@@ -263,7 +263,7 @@ func (t *HaftSolutionTool) Schema() agent.ToolSchema {
 Actions:
 - explore: Generate 2+ genuinely distinct approaches with strengths, weakest link, and risks.
   Each variant must differ in KIND, not degree. This is creative abduction.
-- compare: Fair comparison of variants on explicit dimensions. Identify the Pareto front.
+- compare: Fair comparison of variants on explicit dimensions. Identify the Pareto front. Always pass dimensions explicitly in the compare payload, even after haft_problem(characterize).
 - similar: Search past solution portfolios for patterns matching a query. Reuse proven approaches.
 
 When you present the variants' rationale to the operator, curate by exception: flag arguments you are NOT confident are correct/load-bearing under an "uncertain — scrutinize" bucket and lead with them; never down-rank or hide a low-confidence point to look tidy (false tidiness makes the operator curate less carefully than a flat list).`,
@@ -298,7 +298,7 @@ When you present the variants' rationale to the operator, curate by exception: f
 					},
 				},
 				"no_stepping_stone_rationale": map[string]any{"type": "string", "description": "Required when no variant is a stepping stone"},
-				"dimensions":                  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Comparison dimensions (compare)"},
+				"dimensions":                  map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Required comparison dimensions (compare). Do not rely on prior characterization to fill this field; send the explicit list every time."},
 				"scores":                      map[string]any{"type": "object", "description": "Scores per variant per dimension (compare)"},
 				"non_dominated_set":           map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Advisory Pareto-front claim (compare). Runtime computes and stores the front from scores."},
 				"incomparable":                map[string]any{"type": "array", "items": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}, "description": "Pairs that are intentionally incomparable (compare)"},

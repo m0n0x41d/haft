@@ -794,6 +794,44 @@ func TestCockpitStatusResponse_GroupsLegacyFileFallbackAsBindingResolution(t *te
 	}
 }
 
+func TestStatusResponses_SurfaceProblemClosureHygieneReadOnly(t *testing.T) {
+	data := artifact.StatusData{
+		ProblemHygiene: []artifact.ProblemHygieneItem{{
+			Problem: &artifact.Artifact{
+				Meta: artifact.Meta{
+					ID:    "prob-unlinked",
+					Kind:  artifact.KindProblemCard,
+					Title: "Done but unlinked",
+				},
+			},
+			Reason: "supporting evidence exists but no based_on SolutionPortfolio or DecisionRecord links this active problem",
+			Action: "link an existing portfolio/decision, attach the missing evidence to that artifact, or explicitly deprecate/supersede/waive with operator rationale",
+		}},
+	}
+
+	cockpit := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Problem closure hygiene** (1)",
+		"**Done but unlinked** `prob-unlinked`",
+		"supporting evidence exists",
+		`haft_query(action="status", full=true)`,
+	} {
+		if !strings.Contains(cockpit, want) {
+			t.Fatalf("cockpit missing %q:\n%s", want, cockpit)
+		}
+	}
+
+	full := present.StatusResponse(data)
+	for _, want := range []string{
+		"### Problem Closure Hygiene (1)",
+		"Action: link an existing portfolio/decision",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full status missing %q:\n%s", want, full)
+		}
+	}
+}
+
 func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 	data := artifact.StatusData{
 		HealthyDecisions: []*artifact.Artifact{

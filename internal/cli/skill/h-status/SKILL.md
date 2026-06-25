@@ -8,7 +8,7 @@ argument-hint: "[optional: context name to filter]"
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:aee2df7fe90bee66e6a6a5764feb454d4975809a2c4d160ffe6409793a273b51 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:1041f72ec09b836ec8d47d29a9fb5170fad86afa80fb6a9781e8cfe90f672329 -->
 
 # h-status — Project FPF state dashboard
 
@@ -72,6 +72,9 @@ The default status payload is a compact cockpit. Read it as:
 
 - **Operator Cockpit** — refresh, drift, and commission items that may block or redirect work
 - **Active Work** — the most relevant in-progress problems and backlog count
+- **Problem closure hygiene** — read-only warnings for active/backlog problems
+  that already have supporting evidence but no `based_on`
+  SolutionPortfolio/DecisionRecord graph path
 - **Decision Health** — counts for healthy, pending, unassessed, refresh-due, and drifted decisions
 - **Coverage Cue** — one-line module coverage orientation when modules were scanned
 - **Drill-down** — exact calls for the omitted detailed status, coverage, drift/stale, maintenance plan, read-only judgment packet, and safe drain preview
@@ -112,6 +115,10 @@ Surface the response as-is — the kernel formats it already. Highlight items th
 - Epistemic debt budget exceeded → recommend running `/h-verify` on the highest-debt decisions
 - Coverage cue with blind modules → call `mcp__haft__haft_query(action="coverage")`
   before recommending `/h-frame` for upcoming work in a specific module
+- Problem closure hygiene → do not close from status; route to the proper
+  graph action: link the existing portfolio/decision, attach evidence to the
+  right artifact, or explicitly deprecate/supersede/waive with operator
+  rationale
 - Stale decisions → recommend `/h-refresh` action=waive (with new evidence) or `action=supersede` (with replacement decision)
 - Spec lifecycle action → recommend `/h-spec` with the surfaced action and carrier
 

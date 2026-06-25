@@ -174,6 +174,84 @@ func TestHandleHaftMethodCloseRequiresEvidenceOrExplicitWaiver(t *testing.T) {
 	}
 }
 
+func TestHandleHaftMethodCloseRequiresProblemGraphClosure(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      "Completed work can stay backlog",
+		Signal:     "Implementation shipped but the ProblemCard stayed unlinked.",
+		Acceptance: "Method close detects the missing graph closure.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, ref, err := handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action":             "pull",
+		"task":               "Implement closure hygiene",
+		"declared_task_kind": "feature",
+		"change_intent":      "add_feature",
+		"artifact_refs": map[string]any{
+			"problem_ref": problem.Meta.ID,
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	run := decodeStoredMethodRun(t, ctx, store, ref)
+	gateResults := methodGateResultsWithEvidence(run, "test:evidence")
+	if !methodRunHasGate(run, "problem_graph_closure_hygiene_recorded") {
+		t.Fatalf("method run missing problem closure hygiene gate: %#v", run.Methods)
+	}
+
+	_, _, err = handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action":        "close",
+		"pull_id":       ref,
+		"changed_files": []any{"internal/present/format.go"},
+		"gate_results":  gateResults,
+		"verification": map[string]any{
+			"result": "pass",
+		},
+	})
+	if err == nil {
+		t.Fatal("close accepted linked active problem with no graph closure path")
+	}
+	for _, want := range []string{problem.Meta.ID, "lack graph closure path", "based_on", "supporting evidence"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("close error missing %q: %v", want, err)
+		}
+	}
+
+	if _, err := artifact.AttachEvidence(ctx, store, artifact.EvidenceInput{
+		ArtifactRef:     problem.Meta.ID,
+		Type:            "test",
+		Content:         "Regression evidence that implementation is linked to this problem.",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, _, err := handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action":        "close",
+		"pull_id":       ref,
+		"changed_files": []any{"internal/present/format.go"},
+		"gate_results":  gateResults,
+		"verification": map[string]any{
+			"result": "pass",
+		},
+	})
+	if err != nil {
+		t.Fatalf("close rejected linked problem after supporting evidence: %v", err)
+	}
+	if !strings.Contains(result, "Method run closed") {
+		t.Fatalf("close response = %q, want closed response", result)
+	}
+}
+
 func decodeStoredMethodRun(t *testing.T, ctx context.Context, store *artifact.Store, ref string) methodpkg.MethodRun {
 	t.Helper()
 
@@ -186,6 +264,31 @@ func decodeStoredMethodRun(t *testing.T, ctx context.Context, store *artifact.St
 		t.Fatal(err)
 	}
 	return run
+}
+
+func methodRunHasGate(run methodpkg.MethodRun, gateID string) bool {
+	for _, card := range run.Methods {
+		for _, gate := range card.HardGates {
+			if gate.ID == gateID {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func methodGateResultsWithEvidence(run methodpkg.MethodRun, evidenceRef string) []any {
+	var results []any
+	for _, card := range run.Methods {
+		for _, gate := range card.HardGates {
+			results = append(results, map[string]any{
+				"gate_id":       gate.ID,
+				"status":        "satisfied",
+				"evidence_refs": []any{evidenceRef},
+			})
+		}
+	}
+	return results
 }
 
 func methodGateResultsWithoutEvidence(run methodpkg.MethodRun) []any {

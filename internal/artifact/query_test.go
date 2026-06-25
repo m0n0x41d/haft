@@ -132,6 +132,64 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	}
 }
 
+func TestFetchStatusData_FlagsBacklogProblemWithSupportingEvidence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Done but unlinked",
+		Signal:     "Implementation evidence exists but graph closure is missing.",
+		Acceptance: "Status flags the hygiene issue.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     problem.Meta.ID,
+		Type:            "test",
+		Content:         "Implementation evidence exists.",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := FetchStatusData(ctx, store, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.ProblemHygiene) != 1 {
+		t.Fatalf("problem hygiene count = %d, want 1", len(data.ProblemHygiene))
+	}
+	if data.ProblemHygiene[0].Problem.Meta.ID != problem.Meta.ID {
+		t.Fatalf("problem hygiene ref = %s, want %s", data.ProblemHygiene[0].Problem.Meta.ID, problem.Meta.ID)
+	}
+
+	if err := store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:     "sol-linked",
+			Kind:   KindSolutionPortfolio,
+			Status: StatusActive,
+			Title:  "Linked portfolio",
+		},
+		Body: "# Linked portfolio",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddLink(ctx, "sol-linked", problem.Meta.ID, "based_on"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err = FetchStatusData(ctx, store, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.ProblemHygiene) != 0 {
+		t.Fatalf("problem hygiene after backlink = %d, want 0", len(data.ProblemHygiene))
+	}
+}
+
 func TestFetchStatusData_CommissionAttentionCoversBlockedRunningAndExpired(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

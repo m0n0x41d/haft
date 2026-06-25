@@ -624,11 +624,11 @@ func TestRunOverseerStatusJSONCompactsSignalsByDefault(t *testing.T) {
 	if compact.SignalProjection == nil {
 		t.Fatalf("expected compact signal projection: %#v", compact)
 	}
-	if compact.SignalProjection.ExactSignalCount != 4 || compact.SignalProjection.EmittedSignalCount != 2 {
+	if compact.SignalProjection.ExactSignalCount != 2 || compact.SignalProjection.EmittedSignalCount != 1 {
 		t.Fatalf("projection = %#v", compact.SignalProjection)
 	}
-	if len(compact.Signals) != 2 {
-		t.Fatalf("compact signal count = %d, want 2: %#v", len(compact.Signals), compact.Signals)
+	if len(compact.Signals) != 1 {
+		t.Fatalf("compact signal count = %d, want 1: %#v", len(compact.Signals), compact.Signals)
 	}
 	compactPayload := output.String()
 	for _, absent := range []string{"First decision", "Second decision", "Third decision", "Fourth decision"} {

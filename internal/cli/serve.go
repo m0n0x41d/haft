@@ -1678,7 +1678,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if full {
 			statusBody = present.StatusResponse(data)
 		}
-		result := overseerStatusPrefix(projectRoot) + statusBody
+		result := overseerStatusPrefix(ctx, store, projectRoot) + statusBody
 		// Append module coverage if modules are scanned
 		scanner := codebase.NewScanner(store.DB())
 		if !scanner.ModulesLastScanned(ctx).IsZero() {

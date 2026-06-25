@@ -153,19 +153,18 @@ func compactDriftStatusSignal(signals []StatusSignal) StatusSignal {
 		reviewRequired++
 	}
 
-	title := fmt.Sprintf("Drift grouped for review: %d item(s)", len(signals))
-	if confirmRequired > 0 {
-		title = fmt.Sprintf("Drift requires confirmation: %d item(s) grouped", confirmRequired)
-		if reviewRequired > 0 {
-			title += fmt.Sprintf(", %d more need review", reviewRequired)
-		}
+	title := fmt.Sprintf("Drift review needed: %d item(s)", len(signals))
+	if confirmRequired > 0 && reviewRequired > 0 {
+		title = fmt.Sprintf("Material drift needs operator review: %d confirmation item(s), %d review item(s)", confirmRequired, reviewRequired)
+	} else if confirmRequired > 0 {
+		title = fmt.Sprintf("Material drift requires confirmation: %d item(s)", confirmRequired)
 	}
 
 	return StatusSignal{
 		Severity: severity,
 		Source:   maintenanceSourceDrift,
 		Title:    title,
-		Detail:   "compact status groups per-decision drift; inspect exact items with `haft overseer judgment --json --limit 20`, `haft overseer drain --dry-run --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
+		Detail:   "compact status groups operator-actionable drift; audit-only/resolved drift belongs in drill-downs. Inspect exact items with `haft overseer judgment --json --limit 20`, `haft overseer drain --dry-run --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
 	}
 }
 

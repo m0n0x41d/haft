@@ -320,8 +320,8 @@ func TestBuildDriftEventReportRoutesLegacyFileFallbackToBindingResolution(t *tes
 	if report.Summary.UnknownHighRiskEvents != 0 {
 		t.Fatalf("unknown_high_risk_events = %d, want 0", report.Summary.UnknownHighRiskEvents)
 	}
-	if report.Summary.MaterialEvents != 1 {
-		t.Fatalf("material_events = %d, want 1", report.Summary.MaterialEvents)
+	if report.Summary.MaterialEvents != 0 {
+		t.Fatalf("material_events = %d, want 0", report.Summary.MaterialEvents)
 	}
 	event := report.Events[0]
 	if event.TargetKind != "file" {
@@ -344,6 +344,60 @@ func TestBuildDriftEventReportRoutesLegacyFileFallbackToBindingResolution(t *tes
 	}
 	if len(event.SourceItems) != 1 || event.SourceItems[0].FallbackKind != BindingTargetWholeFileFallback {
 		t.Fatalf("source_items did not preserve fallback metadata: %#v", event.SourceItems)
+	}
+}
+
+func TestBuildDriftEventReportSeparatesMaterialFromBindingResolution(t *testing.T) {
+	report := BuildDriftEventReport([]DriftReport{
+		{
+			DecisionID: "dec-material",
+			Files: []DriftItem{{
+				Path:        "internal/service.go",
+				Status:      DriftModified,
+				Materiality: DriftMaterialityMaterialSymbol,
+				Symbols: []SymbolDriftItem{{
+					SymbolName: "Run",
+					SymbolKind: "func",
+					Status:     "modified",
+				}},
+			}},
+		},
+		{
+			DecisionID: "dec-binding",
+			Files: []DriftItem{{
+				Path:           "internal/legacy.txt",
+				Status:         DriftModified,
+				Materiality:    DriftMaterialityNeedsBindingResolution,
+				FallbackKind:   BindingTargetWholeFileFallback,
+				FallbackReason: "unsupported language",
+			}},
+		},
+		{
+			DecisionID: "dec-audit",
+			Files: []DriftItem{{
+				Path:        "CHANGELOG.md",
+				Status:      DriftModified,
+				Materiality: DriftMaterialityCarrierOnly,
+				AuditOnly:   true,
+			}},
+		},
+	})
+
+	if report.Summary.UniqueEvents != 3 {
+		t.Fatalf("unique_events = %d, want 3", report.Summary.UniqueEvents)
+	}
+	if report.Summary.MaterialEvents != 1 {
+		t.Fatalf("material_events = %d, want 1", report.Summary.MaterialEvents)
+	}
+	if report.Summary.NeedsBindingResolutionEvents != 1 {
+		t.Fatalf("needs_binding_resolution_events = %d, want 1", report.Summary.NeedsBindingResolutionEvents)
+	}
+	if report.Summary.AuditOnlyEvents != 1 {
+		t.Fatalf("audit_only_events = %d, want 1", report.Summary.AuditOnlyEvents)
+	}
+	partitions := PartitionDriftEvents(OpenDriftEvents(report.Events))
+	if len(partitions.Material) != 1 || len(partitions.NeedsBindingResolution) != 1 || len(partitions.AuditOnly) != 1 {
+		t.Fatalf("partitions = %#v", partitions)
 	}
 }
 

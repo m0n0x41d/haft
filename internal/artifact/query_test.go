@@ -132,6 +132,45 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	}
 }
 
+func TestFetchStatusData_DriftEventsIncludeNoBaselineBindingResolution(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	dec := createTestDecision(t, store, "dec-status-binding", "Needs binding scope")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "legacy.txt"}}); err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := artifact.UnmarshalDecisionFields()
+	fields.BindingTargets = []BindingTarget{{
+		Kind:             BindingTargetWholeFileFallback,
+		FilePath:         "legacy.txt",
+		ResolutionSource: BindingResolutionSourceWholeFileFallback,
+	}}
+	if err := persistDecisionFields(ctx, store, artifact, fields); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := FetchStatusData(ctx, store, "", projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Drift) != 0 {
+		t.Fatalf("legacy Drift = %#v, want baselined-only compatibility surface", data.Drift)
+	}
+	if data.DriftEvents.Summary.NeedsBindingResolutionEvents != 1 {
+		t.Fatalf("needs_binding_resolution_events = %d, want 1", data.DriftEvents.Summary.NeedsBindingResolutionEvents)
+	}
+	if data.DriftEvents.Summary.MaterialEvents != 0 {
+		t.Fatalf("material_events = %d, want 0", data.DriftEvents.Summary.MaterialEvents)
+	}
+}
+
 func TestFetchStatusData_FlagsBacklogProblemWithSupportingEvidence(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

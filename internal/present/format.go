@@ -1054,13 +1054,13 @@ func CockpitStatusResponse(data artifact.StatusData) string {
 
 func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	driftEvents := cockpitDriftEvents(data)
-	openDriftEvents := cockpitOpenDriftEvents(driftEvents.Events)
-	materialEvents, _, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
+	openDriftEvents := artifact.OpenDriftEvents(driftEvents.Events)
+	driftPartitions := artifact.PartitionDriftEvents(openDriftEvents)
 	reconciliationNeedsAttention := cockpitReconciliationNeedsOperator(data.ReconciliationCues)
 	hasAttention := len(data.StaleItems) > 0 ||
 		len(data.ProblemHygiene) > 0 ||
-		len(materialEvents) > 0 ||
-		len(unresolvedEvents) > 0 ||
+		len(driftPartitions.Material) > 0 ||
+		len(driftPartitions.NeedsBindingResolution) > 0 ||
 		reconciliationNeedsAttention ||
 		len(data.CommissionAttention) > 0
 
@@ -1088,18 +1088,23 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 
 	const driftCap = 2
 	if len(openDriftEvents) > 0 {
-		if len(materialEvents) > 0 {
-			uniqueEvents, impactedDecisions, maxFanout := summarizeCockpitDriftEvents(openDriftEvents)
+		if len(driftPartitions.Material) > 0 {
+			materialSummary := artifact.SummarizeDriftEventGroup(driftPartitions.Material)
+			auditSuffix := ""
+			if len(driftPartitions.AuditOnly) > 0 {
+				auditSuffix = fmt.Sprintf("; %d audit-only in drill-down", len(driftPartitions.AuditOnly))
+			}
 			sb.WriteString(fmt.Sprintf(
-				"- **Drift events** (%d unique; %d impacted decision(s); max fanout %d):\n",
-				uniqueEvents,
-				impactedDecisions,
-				maxFanout,
+				"- **Drift events** (%d material; %d impacted decision(s); max fanout %d%s):\n",
+				materialSummary.UniqueEvents,
+				materialSummary.ImpactedDecisions,
+				materialSummary.MaxFanout,
+				auditSuffix,
 			))
 		}
-		for i, event := range materialEvents {
+		for i, event := range driftPartitions.Material {
 			if i >= driftCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s); run `%s`.\n", len(materialEvents)-driftCap, artifact.StatusCompactDriftEventsCommand))
+				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s); run `%s`.\n", len(driftPartitions.Material)-driftCap, artifact.StatusCompactDriftEventsCommand))
 				break
 			}
 			sb.WriteString(fmt.Sprintf(
@@ -1110,10 +1115,10 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 				event.ResolutionStatus,
 			))
 		}
-		if len(unresolvedEvents) > 0 {
+		if len(driftPartitions.NeedsBindingResolution) > 0 {
 			sb.WriteString(fmt.Sprintf(
 				"- **Binding resolution needed**: %s; run `haft drift bindings --dry-run --json` or `%s`.\n",
-				formatBindingResolutionDriftEventSummary(unresolvedEvents),
+				formatBindingResolutionDriftEventSummary(driftPartitions.NeedsBindingResolution),
 				artifact.StatusCompactDriftEventsCommand,
 			))
 		}
@@ -1181,7 +1186,7 @@ func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {
 
 func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) {
 	driftEvents := cockpitDriftEvents(data)
-	openDriftEvents := cockpitOpenDriftEvents(driftEvents.Events)
+	openDriftEvents := artifact.OpenDriftEvents(driftEvents.Events)
 	totalDecisions := len(data.HealthyDecisions) +
 		len(data.PendingDecisions) +
 		len(data.UnassessedDecisions)
@@ -1191,17 +1196,17 @@ func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) 
 	}
 
 	sb.WriteString("### Decision Health\n\n")
-	materialEvents, auditEvents, unresolvedEvents := partitionCockpitDriftEvents(openDriftEvents)
-	if len(auditEvents) > 0 || len(unresolvedEvents) > 0 {
+	driftPartitions := artifact.PartitionDriftEvents(openDriftEvents)
+	if len(driftPartitions.AuditOnly) > 0 || len(driftPartitions.NeedsBindingResolution) > 0 {
 		sb.WriteString(fmt.Sprintf(
 			"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s), %d audit-only event(s), %d needs-binding event(s).\n\n",
 			len(data.HealthyDecisions),
 			len(data.PendingDecisions),
 			len(data.UnassessedDecisions),
 			len(data.StaleItems),
-			len(materialEvents),
-			len(auditEvents),
-			len(unresolvedEvents),
+			len(driftPartitions.Material),
+			len(driftPartitions.AuditOnly),
+			len(driftPartitions.NeedsBindingResolution),
 		))
 		return
 	}
@@ -1211,7 +1216,7 @@ func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) 
 		len(data.PendingDecisions),
 		len(data.UnassessedDecisions),
 		len(data.StaleItems),
-		len(materialEvents),
+		len(driftPartitions.Material),
 	))
 }
 
@@ -1309,63 +1314,6 @@ func cockpitDriftEvents(data artifact.StatusData) artifact.DriftEventReport {
 		return artifact.DriftEventReport{}
 	}
 	return artifact.BuildDriftEventReport(data.Drift)
-}
-
-func cockpitOpenDriftEvents(events []artifact.DriftEvent) []artifact.DriftEvent {
-	out := []artifact.DriftEvent{}
-	for _, event := range events {
-		if event.ResolutionRecord == nil {
-			out = append(out, event)
-			continue
-		}
-		switch event.ResolutionStatus {
-		case artifact.DriftEventResolutionResolved, artifact.DriftEventResolutionWaivedUntil:
-			continue
-		default:
-			out = append(out, event)
-		}
-	}
-	return out
-}
-
-func summarizeCockpitDriftEvents(events []artifact.DriftEvent) (int, int, int) {
-	decisions := map[string]struct{}{}
-	maxFanout := 0
-	for _, event := range events {
-		if event.Fanout > maxFanout {
-			maxFanout = event.Fanout
-		}
-		for _, decision := range event.ImpactedDecisions {
-			decisions[decision.DecisionID] = struct{}{}
-		}
-	}
-	return len(events), len(decisions), maxFanout
-}
-
-func partitionCockpitDriftEvents(events []artifact.DriftEvent) (material, audit, unresolved []artifact.DriftEvent) {
-	for _, event := range events {
-		if cockpitDriftEventNeedsBindingResolution(event) {
-			unresolved = append(unresolved, event)
-			continue
-		}
-		switch event.Materiality {
-		case artifact.DriftMaterialityAdjacentFileChurn,
-			artifact.DriftMaterialityCarrierOnly,
-			artifact.DriftMaterialityGeneratedOrIgnored:
-			audit = append(audit, event)
-		default:
-			material = append(material, event)
-		}
-	}
-	return material, audit, unresolved
-}
-
-func cockpitDriftEventNeedsBindingResolution(event artifact.DriftEvent) bool {
-	if event.Materiality == artifact.DriftMaterialityNeedsBindingResolution {
-		return true
-	}
-	return event.Materiality == artifact.DriftMaterialityUnknownLegacyFileScope &&
-		event.FallbackKind == artifact.BindingTargetWholeFileFallback
 }
 
 func formatBindingResolutionDriftEventSummary(events []artifact.DriftEvent) string {

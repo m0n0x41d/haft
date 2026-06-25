@@ -34,6 +34,18 @@ type DriftEventSummary struct {
 	MaxFanout                    int `json:"max_fanout"`
 }
 
+type DriftEventGroupSummary struct {
+	UniqueEvents      int
+	ImpactedDecisions int
+	MaxFanout         int
+}
+
+type DriftEventPartitions struct {
+	Material               []DriftEvent
+	AuditOnly              []DriftEvent
+	NeedsBindingResolution []DriftEvent
+}
+
 type DriftEvent struct {
 	EventID                  string                 `json:"event_id"`
 	ChangeRef                string                 `json:"change_ref"`
@@ -354,17 +366,13 @@ func BuildDriftEventReport(reports []DriftReport) DriftEventReport {
 func summarizeDriftEvents(events []DriftEvent) DriftEventSummary {
 	impacted := map[string]struct{}{}
 	summary := DriftEventSummary{UniqueEvents: len(events)}
+	openPartitions := PartitionDriftEvents(OpenDriftEvents(events))
+	summary.MaterialEvents = len(openPartitions.Material)
+	summary.AuditOnlyEvents = len(openPartitions.AuditOnly)
+	summary.NeedsBindingResolutionEvents = len(openPartitions.NeedsBindingResolution)
 	for _, event := range events {
 		for _, decision := range event.ImpactedDecisions {
 			impacted[decision.DecisionID] = struct{}{}
-		}
-		if event.AuditOnly {
-			summary.AuditOnlyEvents++
-		} else {
-			summary.MaterialEvents++
-		}
-		if driftEventNeedsBindingResolution(event) {
-			summary.NeedsBindingResolutionEvents++
 		}
 		if event.TargetKind != "file" {
 			summary.SemanticTargetEvents++
@@ -389,6 +397,75 @@ func summarizeDriftEvents(events []DriftEvent) DriftEventSummary {
 	}
 	summary.ImpactedDecisions = len(impacted)
 	return summary
+}
+
+func OpenDriftEvents(events []DriftEvent) []DriftEvent {
+	out := []DriftEvent{}
+	for _, event := range events {
+		if event.ResolutionRecord == nil {
+			out = append(out, event)
+			continue
+		}
+		switch event.ResolutionStatus {
+		case DriftEventResolutionResolved, DriftEventResolutionWaivedUntil:
+			continue
+		default:
+			out = append(out, event)
+		}
+	}
+	return out
+}
+
+func PartitionDriftEvents(events []DriftEvent) DriftEventPartitions {
+	partitions := DriftEventPartitions{}
+	for _, event := range events {
+		if DriftEventNeedsBindingResolution(event) {
+			partitions.NeedsBindingResolution = append(partitions.NeedsBindingResolution, event)
+			continue
+		}
+		if DriftEventIsAuditOnly(event) {
+			partitions.AuditOnly = append(partitions.AuditOnly, event)
+			continue
+		}
+		partitions.Material = append(partitions.Material, event)
+	}
+	return partitions
+}
+
+func SummarizeDriftEventGroup(events []DriftEvent) DriftEventGroupSummary {
+	decisions := map[string]struct{}{}
+	summary := DriftEventGroupSummary{UniqueEvents: len(events)}
+	for _, event := range events {
+		if event.Fanout > summary.MaxFanout {
+			summary.MaxFanout = event.Fanout
+		}
+		for _, decision := range event.ImpactedDecisions {
+			if decision.DecisionID == "" {
+				continue
+			}
+			decisions[decision.DecisionID] = struct{}{}
+		}
+	}
+	summary.ImpactedDecisions = len(decisions)
+	return summary
+}
+
+func DriftEventIsAuditOnly(event DriftEvent) bool {
+	if event.AuditOnly {
+		return true
+	}
+	switch event.Materiality {
+	case DriftMaterialityAdjacentFileChurn,
+		DriftMaterialityCarrierOnly,
+		DriftMaterialityGeneratedOrIgnored:
+		return true
+	default:
+		return false
+	}
+}
+
+func DriftEventNeedsBindingResolution(event DriftEvent) bool {
+	return driftEventNeedsBindingResolution(event)
 }
 
 func BindDriftEventResolutionToEvent(

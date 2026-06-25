@@ -121,9 +121,10 @@ type StatusData struct {
 	// nothing). See dec-20260526-9fdd33ed (PRIME of sol-20260526-744c6381).
 	Drift []DriftReport
 
-	// DriftEvents groups Drift by changed target/trigger/materiality so compact
-	// status can show unique events and fanout without multiplying one shared
-	// change across many decisions. Compatibility consumers still read Drift.
+	// DriftEvents groups the full current drift report by changed
+	// target/trigger/materiality so compact status can show unique events and
+	// fanout without multiplying one shared change across many decisions.
+	// Compatibility consumers still read Drift, which remains baselined-only.
 	DriftEvents DriftEventReport
 
 	// ReconciliationCues is a derived read-only attention lane over DriftEvents,
@@ -261,24 +262,32 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	// fails (drift is informational, not gating).
 	if strings.TrimSpace(projectRoot) != "" {
 		if reports, err := CheckDrift(ctx, store, projectRoot); err == nil {
+			eventReports := make([]DriftReport, 0, len(reports))
 			if contextFilter == "" {
 				for _, r := range reports {
-					if r.HasBaseline && len(r.Files) > 0 {
+					if len(r.Files) == 0 {
+						continue
+					}
+					eventReports = append(eventReports, r)
+					if r.HasBaseline {
 						data.Drift = append(data.Drift, r)
 					}
 				}
 			} else {
 				// Filter to decisions in the matching context
 				for _, r := range reports {
-					if !r.HasBaseline || len(r.Files) == 0 {
+					if len(r.Files) == 0 {
 						continue
 					}
 					if a, err := store.Get(ctx, r.DecisionID); err == nil && a.Meta.Context == contextFilter {
-						data.Drift = append(data.Drift, r)
+						eventReports = append(eventReports, r)
+						if r.HasBaseline {
+							data.Drift = append(data.Drift, r)
+						}
 					}
 				}
 			}
-			data.DriftEvents = BuildDriftEventReport(data.Drift)
+			data.DriftEvents = BuildDriftEventReport(eventReports)
 			data.ReconciliationCues = BuildStatusReconciliationCueReport(ctx, store, data.DriftEvents)
 		}
 	}

@@ -526,7 +526,7 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 
 	output := FormatStatusSignals(summary)
 	for _, want := range []string{
-		"Drift requires confirmation: 2 item(s) grouped",
+		"Material drift requires confirmation: 2 item(s)",
 		"haft overseer judgment --json --limit 20",
 		"haft overseer drain --dry-run --json",
 		"haft_refresh(action=\"scan\", verbose=true)",
@@ -539,6 +539,42 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 	for _, absent := range []string{"First decision", "Second decision", "haft overseer maintain --json"} {
 		if strings.Contains(output, absent) {
 			t.Fatalf("status signal output should hide per-decision drift %q:\n%s", absent, output)
+		}
+	}
+}
+
+func TestFormatStatusSignalsGroupsMixedDriftSignalsAsOperatorReview(t *testing.T) {
+	summary := StatusSummary{
+		HasSignals: true,
+		Signals: []StatusSignal{
+			{
+				Severity: "high",
+				Source:   maintenanceSourceDrift,
+				Title:    "Drift requires confirmation: Material decision `dec-material`",
+				Detail:   "code drift — a governed symbol body was modified",
+			},
+			{
+				Severity: "medium",
+				Source:   maintenanceSourceDrift,
+				Title:    "Drift needs review: Unproven decision `dec-review`",
+				Detail:   "benignity could not be proven",
+			},
+		},
+	}
+
+	output := FormatStatusSignals(summary)
+	for _, want := range []string{
+		"Material drift needs operator review: 1 confirmation item(s), 1 review item(s)",
+		"audit-only/resolved drift belongs in drill-downs",
+		"haft overseer judgment --json --limit 20",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("status signal output missing %q:\n%s", want, output)
+		}
+	}
+	for _, absent := range []string{"Material decision", "Unproven decision"} {
+		if strings.Contains(output, absent) {
+			t.Fatalf("compact mixed drift signal should hide per-decision title %q:\n%s", absent, output)
 		}
 	}
 }
@@ -648,7 +684,7 @@ func TestCompactStatusSummaryForDefaultGroupsSignalsForJSON(t *testing.T) {
 			t.Fatalf("compact JSON should hide per-decision signal %q:\n%s", absent, text)
 		}
 	}
-	for _, want := range []string{"compact_default", "Drift requires confirmation: 2 item(s) grouped", "Stale governance artifacts: 2 item(s) grouped"} {
+	for _, want := range []string{"compact_default", "Material drift requires confirmation: 2 item(s)", "Stale governance artifacts: 2 item(s) grouped"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("compact JSON missing %q:\n%s", want, text)
 		}

@@ -804,11 +804,12 @@ func readReviewResultInput(path string) (overseer.ReviewResultInput, error) {
 	return input, nil
 }
 
-func overseerStatusPrefix(projectRoot string) string {
+func overseerStatusPrefix(ctx context.Context, store *artifact.Store, projectRoot string) string {
 	summary, err := overseer.LoadStatusSummary(projectRoot)
 	if err != nil {
 		return ""
 	}
+	summary = overlayLiveDriftStatusSignal(ctx, store, projectRoot, summary)
 	return overseer.FormatStatusSignals(summary)
 }
 
@@ -1237,7 +1238,7 @@ func buildAndStoreOverseerMaintenance(
 // autonomous-maintenance ledger, WITHOUT re-running the loop (viewing must
 // never mutate — `haft overseer maintain` is the act, this is the look).
 func runOverseerStatus(cmd *cobra.Command, _ []string) error {
-	projectRoot, _, closeStore, err := openOverseerProjectStore()
+	projectRoot, store, closeStore, err := openOverseerProjectStore()
 	if err != nil {
 		return err
 	}
@@ -1251,10 +1252,12 @@ func runOverseerStatus(cmd *cobra.Command, _ []string) error {
 		if overseerStatusFull {
 			return writeJSON(cmd.OutOrStdout(), summary)
 		}
+		summary = overlayLiveDriftStatusSignal(context.Background(), store, projectRoot, summary)
 		summary := overseer.CompactStatusSummaryForDefault(summary)
 		return writeJSON(cmd.OutOrStdout(), summary)
 	}
 
+	summary = overlayLiveDriftStatusSignal(context.Background(), store, projectRoot, summary)
 	rendered := overseer.FormatStatusSignals(summary)
 	if strings.TrimSpace(rendered) == "" {
 		_, err := fmt.Fprintln(cmd.OutOrStdout(), "No overseer signals recorded yet — run `haft overseer maintain` or make a commit (post-commit hook).")

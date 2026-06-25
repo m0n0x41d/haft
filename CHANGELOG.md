@@ -20,6 +20,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   migration-only reconciliation detail out of the default attention lanes while
   preserving drill-down access through full status, drift events, judgment, and
   drain previews.
+- **Mixed drift status headlines.** Default status now summarizes compact drift
+  attention from material/actionable events only, keeping audit-only fanout in
+  drill-downs, and overseer compact drift signals now name material operator
+  review instead of presenting grouped drift as an undifferentiated pile.
+- **Drift counter consistency.** DriftEvent summaries now keep material,
+  audit-only, and binding-resolution buckets non-overlapping, and default
+  overseer status replaces stale stored drift groups with a live current
+  DriftEvent signal while preserving full JSON access to historical run detail.
+  The default status body now also builds `DriftEvents` from the full current
+  drift report, so binding-resolution events are not dropped by the legacy
+  baselined-only `Drift` lane.
 - **Host discipline wording.** `AGENTS.md`, the embedded init template, and
   packaged `h-reason` now distinguish useful unpersisted chat reasoning from
   durable governance, evidence, or authority.

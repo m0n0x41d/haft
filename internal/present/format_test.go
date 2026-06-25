@@ -737,6 +737,98 @@ func TestCockpitStatusResponse_GroupsAuditOnlyDrift(t *testing.T) {
 	}
 }
 
+func TestCockpitStatusResponse_MixedMaterialAndAuditDriftUsesMaterialHeadline(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-healthy", Title: "Healthy decision"}},
+		},
+		DriftEvents: artifact.DriftEventReport{
+			SchemaVersion: 2,
+			Summary: artifact.DriftEventSummary{
+				UniqueEvents:      5,
+				ImpactedDecisions: 5,
+				MaterialEvents:    2,
+				AuditOnlyEvents:   3,
+				MaxFanout:         20,
+			},
+			Events: []artifact.DriftEvent{
+				{
+					EventID:          "drift-event-material-a",
+					ChangedTargetRef: "symbol:internal/a.go::func:ChangedA",
+					Materiality:      artifact.DriftMaterialityMaterialSymbol,
+					Fanout:           2,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-material-a"},
+						{DecisionID: "dec-material-b"},
+					},
+				},
+				{
+					EventID:          "drift-event-material-b",
+					ChangedTargetRef: "symbol:internal/b.go::func:ChangedB",
+					Materiality:      artifact.DriftMaterialityMaterialSymbol,
+					Fanout:           1,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-material-a"},
+					},
+				},
+				{
+					EventID:          "drift-event-audit-a",
+					ChangedTargetRef: "file:internal/shared.go",
+					Materiality:      artifact.DriftMaterialityAdjacentFileChurn,
+					AuditOnly:        true,
+					Fanout:           20,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-audit-a"},
+					},
+				},
+				{
+					EventID:          "drift-event-audit-b",
+					ChangedTargetRef: "file:README.md",
+					Materiality:      artifact.DriftMaterialityCarrierOnly,
+					AuditOnly:        true,
+					Fanout:           10,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-audit-b"},
+					},
+				},
+				{
+					EventID:          "drift-event-audit-c",
+					ChangedTargetRef: "file:generated.db",
+					Materiality:      artifact.DriftMaterialityGeneratedOrIgnored,
+					AuditOnly:        true,
+					Fanout:           7,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-audit-c"},
+					},
+				},
+			},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	for _, want := range []string{
+		"**Drift events** (2 material; 2 impacted decision(s); max fanout 2; 3 audit-only in drill-down)",
+		"symbol:internal/a.go::func:ChangedA",
+		"symbol:internal/b.go::func:ChangedB",
+		"Drift: 2 material event(s), 3 audit-only event(s), 0 needs-binding event(s).",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("cockpit output missing %q:\n%s", want, output)
+		}
+	}
+	for _, unwanted := range []string{
+		"5 unique",
+		"max fanout 20",
+		"file:README.md — fanout=10",
+		"file:generated.db — fanout=7",
+	} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("cockpit output should not expose mixed audit fanout %q:\n%s", unwanted, output)
+		}
+	}
+}
+
 func TestCockpitStatusResponse_GroupsBindingResolutionDrift(t *testing.T) {
 	data := artifact.StatusData{
 		Drift: []artifact.DriftReport{{

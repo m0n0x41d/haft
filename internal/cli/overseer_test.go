@@ -130,6 +130,44 @@ func TestBuildOverseerPacket_IncludesRefreshDueGovernedDecision(t *testing.T) {
 	}
 }
 
+func TestBuildOverseerPacket_MarksChangedSpecCarrierSections(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	setupOverseerGitRepo(t, fixture.root)
+
+	specPath := filepath.Join(fixture.root, ".haft", "specs", "target-system.md")
+	writeFile(t, specPath, validCLISpecSectionCarrier("TS.packet.001", "acceptance"))
+	git(t, fixture.root, "add", ".haft/specs/target-system.md")
+	git(t, fixture.root, "commit", "-m", "base spec carrier")
+
+	writeFile(t, specPath, validCLISpecSectionCarrier("TS.packet.001", "acceptance")+"\n<!-- changed -->\n")
+	git(t, fixture.root, "add", ".haft/specs/target-system.md")
+	git(t, fixture.root, "commit", "-m", "change spec carrier")
+
+	packet, err := buildOverseerPacket(context.Background(), fixture.store, fixture.root, "HEAD", "test")
+	if err != nil {
+		t.Fatalf("buildOverseerPacket returned error: %v", err)
+	}
+
+	var changedSpec overseer.ChangedFile
+	for _, file := range packet.ChangedFiles {
+		if file.Path == ".haft/specs/target-system.md" {
+			changedSpec = file
+		}
+	}
+	if changedSpec.Path == "" {
+		t.Fatalf("packet missing changed spec carrier: %+v", packet.ChangedFiles)
+	}
+	if changedSpec.Governance.ModuleState != "covered" {
+		t.Fatalf("module state = %q, want covered", changedSpec.Governance.ModuleState)
+	}
+	if !containsString(changedSpec.Governance.AffectedSpecSections, "TS.packet.001") {
+		t.Fatalf("affected spec sections = %+v, want TS.packet.001", changedSpec.Governance.AffectedSpecSections)
+	}
+	if !containsString(packet.ReviewRequest.Modes, "spec_conformance") {
+		t.Fatalf("review modes = %v, want spec_conformance", packet.ReviewRequest.Modes)
+	}
+}
+
 func TestMapOverseerGovernanceScopesSpecHealthToAffectedSections(t *testing.T) {
 	report := checkReport{
 		SpecHealth: []project.SpecCheckFinding{
@@ -161,6 +199,38 @@ func TestMapOverseerGovernanceScopesSpecHealthToAffectedSections(t *testing.T) {
 	}
 	if governance.SpecHealth[0].ID != "TS.scope.001" {
 		t.Fatalf("scoped spec health ID = %q, want TS.scope.001", governance.SpecHealth[0].ID)
+	}
+	if governance.Suppressed.UnrelatedSpecHealth != 1 {
+		t.Fatalf("unrelated spec health count = %d, want 1", governance.Suppressed.UnrelatedSpecHealth)
+	}
+}
+
+func TestMapOverseerGovernanceScopesChangedSpecHealthByPath(t *testing.T) {
+	report := checkReport{
+		SpecHealth: []project.SpecCheckFinding{
+			{
+				Code:    "spec_section_invalid_yaml",
+				Path:    ".haft/specs/target-system.md",
+				Message: "invalid spec carrier",
+			},
+			{
+				Code:    "spec_section_invalid_yaml",
+				Path:    ".haft/specs/enabling-system.md",
+				Message: "unrelated spec carrier",
+			},
+		},
+	}
+	changedFiles := []overseer.ChangedFile{{
+		Path: ".haft/specs/target-system.md",
+	}}
+
+	governance := mapOverseerGovernance(report, changedFiles, map[string]bool{})
+
+	if len(governance.SpecHealth) != 1 {
+		t.Fatalf("spec health findings = %+v, want one path-scoped finding", governance.SpecHealth)
+	}
+	if governance.SpecHealth[0].ID != ".haft/specs/target-system.md" {
+		t.Fatalf("scoped spec health ID = %q, want changed carrier path", governance.SpecHealth[0].ID)
 	}
 	if governance.Suppressed.UnrelatedSpecHealth != 1 {
 		t.Fatalf("unrelated spec health count = %d, want 1", governance.Suppressed.UnrelatedSpecHealth)

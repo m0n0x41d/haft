@@ -110,12 +110,19 @@ func syncProjectSpecificationSetToSQL(
 		return result, fmt.Errorf("spec sync blocked by %d carrier finding(s)", len(specSet.Findings))
 	}
 
+	currentEditions, err := store.ListCurrent(projectID)
+	if err != nil {
+		return result, err
+	}
+
 	now := time.Now().UTC()
+	currentSectionIDs := make(map[string]bool, len(specSet.Sections))
 	for _, section := range specSet.Sections {
 		edition := specflow.NewSpecSectionEdition(projectID, section, specflow.SpecSectionSourceCarrierImport, now)
 		if err := store.PutCurrent(edition); err != nil {
 			return result, err
 		}
+		currentSectionIDs[edition.SectionID] = true
 		result.Imported = append(result.Imported, specSyncImportedEntry{
 			SectionID:    edition.SectionID,
 			SemanticHash: edition.SemanticHash,
@@ -129,6 +136,15 @@ func syncProjectSpecificationSetToSQL(
 				AuthorityBoundary:        specSyncEditionAuditAuthorityBoundary,
 			},
 		})
+	}
+
+	for _, edition := range currentEditions {
+		if currentSectionIDs[edition.SectionID] {
+			continue
+		}
+		if err := store.DeleteCurrent(projectID, edition.SectionID); err != nil {
+			return result, err
+		}
 	}
 
 	return result, nil

@@ -161,6 +161,15 @@ func riskRulesForFile(changedFile ChangedFile) []RiskRule {
 		})
 	}
 
+	if isSpecCarrierPath(path) {
+		rules = append(rules, RiskRule{
+			RuleID:           "spec_carrier_changed",
+			Source:           "path_heuristic",
+			Basis:            path,
+			ReviewModesAdded: []string{reviewModeSpec, reviewModeTestGap},
+		})
+	}
+
 	if isSecuritySensitivePath(path) {
 		rules = append(rules, RiskRule{
 			RuleID:           "security_sensitive_surface_changed",
@@ -196,6 +205,8 @@ func riskScore(rules []RiskRule, changedFiles []ChangedFile) int {
 			score += 7
 		case "active_decision_linked_code_changed":
 			score += 4
+		case "spec_carrier_changed":
+			score += 3
 		case "spec_section_linked_code_changed":
 			score += 3
 		case "workflow_path_policy_touched":
@@ -301,6 +312,16 @@ func isSecuritySensitivePath(path string) bool {
 	default:
 		return false
 	}
+}
+
+func isSpecCarrierPath(path string) bool {
+	switch normalizePath(path) {
+	case ".haft/specs/target-system.md",
+		".haft/specs/enabling-system.md",
+		".haft/specs/term-map.md":
+		return true
+	}
+	return false
 }
 
 func isDocsOrTestOnly(path string) bool {

@@ -224,7 +224,7 @@ func engineeringValueSimplifyKillCriteria() []EngineeringValueSimplifyKillCriter
 func normalizeEngineeringValueSpaceInput(input EngineeringValueSpaceInput) EngineeringValueSpaceInput {
 	bearerRef := strings.TrimSpace(input.BearerRef)
 	if bearerRef == "" {
-		bearerRef = "haft_release_or_configuration"
+		bearerRef = "haft_release_or_configuration" // #nosec G101 -- taxonomy label, not a credential.
 	}
 
 	window := strings.TrimSpace(input.Window)

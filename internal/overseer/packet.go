@@ -20,10 +20,11 @@ func BuildPacket(input BuildInput) (Packet, error) {
 		DeterministicFindings: normalizeDeterministicFindings(input.Governance),
 		ContextBudget:         normalizeBudget(input.Budget),
 	}
+	riskChangedFiles := append([]ChangedFile(nil), packet.ChangedFiles...)
 
 	packet = applyBudget(packet)
 	packet.Subject.ArtifactSnapshotHash = artifactSnapshotHash(packet)
-	packet.Risk = AssessRisk(packet.ChangedFiles)
+	packet.Risk = AssessRisk(riskChangedFiles)
 	packet.ReviewRequest = ReviewRequestForRisk(packet.Risk)
 	packet = enforceByteBudget(packet)
 

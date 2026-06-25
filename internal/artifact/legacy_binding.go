@@ -367,12 +367,12 @@ func missingLegacySymbolBaseline(item LegacyBindingItem) LegacyBindingItem {
 		item.Reason = "resolver produced one precise binding target; safe to apply binding_targets"
 		return item
 	}
-	switch {
-	case item.CandidateSymbolCount == 0:
+	switch item.CandidateSymbolCount {
+	case 0:
 		item.Posture = LegacyBindingPostureNoParseableSymbols
 		item.RecommendedAction = LegacyBindingActionKeepLegacyFileScope
 		item.Reason = "affected files expose no parseable symbols; keep explicit legacy file scope"
-	case item.CandidateSymbolCount == 1:
+	case 1:
 		item.Posture = LegacyBindingPostureMissingSymbolBaseline
 		item.RecommendedAction = LegacyBindingActionProposeRebaseline
 		item.HighConfidence = true

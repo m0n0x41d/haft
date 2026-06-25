@@ -35,6 +35,7 @@ type SpecSectionEditionStore interface {
 	PutCurrent(section SpecSectionEdition) error
 	GetCurrent(projectID string, sectionID string) (SpecSectionEdition, error)
 	ListCurrent(projectID string) ([]SpecSectionEdition, error)
+	DeleteCurrent(projectID string, sectionID string) error
 }
 
 func ProjectSpecificationSetFromEditions(editions []SpecSectionEdition) (project.ProjectSpecificationSet, error) {
@@ -166,6 +167,19 @@ func (s *SQLiteSpecSectionEditionStore) ListCurrent(projectID string) ([]SpecSec
 		return nil, fmt.Errorf("iterate spec section editions: %w", err)
 	}
 	return editions, nil
+}
+
+func (s *SQLiteSpecSectionEditionStore) DeleteCurrent(projectID string, sectionID string) error {
+	_, err := s.db.Exec(
+		`DELETE FROM spec_section_editions
+		  WHERE project_id = ? AND section_id = ?`,
+		strings.TrimSpace(projectID),
+		strings.TrimSpace(sectionID),
+	)
+	if err != nil {
+		return fmt.Errorf("delete spec section edition: %w", err)
+	}
+	return nil
 }
 
 func scanSpecSectionEdition(scan func(dest ...any) error) (SpecSectionEdition, error) {

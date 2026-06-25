@@ -3,10 +3,12 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -100,6 +102,47 @@ func TestSyncProjectSpecificationSetToSQLBlocksCarrierFindings(t *testing.T) {
 	}
 	if _, getErr := store.GetCurrent("proj-1", "TS.bad.001"); getErr == nil {
 		t.Fatal("blocked sync wrote a spec section edition")
+	}
+}
+
+func TestSyncProjectSpecificationSetToSQLDeletesMissingCarrierSections(t *testing.T) {
+	database := newTestCLIDB(t)
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+
+	kept := project.SpecSection{
+		ID:           "TS.kept.001",
+		Spec:         "target-system",
+		DocumentKind: string(project.SpecDocumentKindTargetSystem),
+		Status:       "active",
+		Path:         ".haft/specs/target-system.md",
+	}
+	removed := project.SpecSection{
+		ID:           "TS.removed.001",
+		Spec:         "target-system",
+		DocumentKind: string(project.SpecDocumentKindTargetSystem),
+		Status:       "active",
+		Path:         ".haft/specs/target-system.md",
+	}
+	if err := store.PutCurrent(specflow.NewSpecSectionEdition("proj-1", kept, specflow.SpecSectionSourceCarrierImport, time.Time{})); err != nil {
+		t.Fatalf("seed kept edition: %v", err)
+	}
+	if err := store.PutCurrent(specflow.NewSpecSectionEdition("proj-1", removed, specflow.SpecSectionSourceCarrierImport, time.Time{})); err != nil {
+		t.Fatalf("seed removed edition: %v", err)
+	}
+
+	_, err := syncProjectSpecificationSetToSQL("proj-1", project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{kept},
+	}, store)
+	if err != nil {
+		t.Fatalf("syncProjectSpecificationSetToSQL: %v", err)
+	}
+
+	if _, err := store.GetCurrent("proj-1", "TS.kept.001"); err != nil {
+		t.Fatalf("kept edition missing: %v", err)
+	}
+	_, err = store.GetCurrent("proj-1", "TS.removed.001")
+	if !errors.Is(err, specflow.ErrSpecSectionEditionNotFound) {
+		t.Fatalf("removed edition err = %v, want ErrSpecSectionEditionNotFound", err)
 	}
 }
 

@@ -1197,6 +1197,55 @@ func TestCompareSolutions_RejectsConflictingRecommendationAliases(t *testing.T) 
 	}
 }
 
+func TestCompareSolutions_AllowsEquivalentRecommendationAliases(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("A", "x", "Keep the runtime surface small"),
+			testVariant("B", "y", "Bias toward operational elasticity"),
+		},
+		NoSteppingStoneRationale: "Both options are direct candidates.",
+	})
+
+	comparison, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"cost"},
+			Scores: map[string]map[string]string{
+				"A": {"cost": "high"},
+				"B": {"cost": "low"},
+			},
+			NonDominatedSet: []string{"B"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "A",
+					DominatedBy: []string{"B"},
+					Summary:     "Higher cost with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "B", Summary: "Lowest cost option in the current comparison set."},
+			},
+			LegacyRecommendationRef: "B",
+			SelectedRef:             "V2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompareSolutions returned error: %v", err)
+	}
+
+	fields := comparison.UnmarshalPortfolioFields()
+	if fields.Comparison.SelectedRef != "V2" {
+		t.Fatalf("selected_ref = %q, want V2", fields.Comparison.SelectedRef)
+	}
+	if fields.Comparison.LegacyRecommendationRef != "V2" {
+		t.Fatalf("legacy_recommendation_ref = %q, want V2", fields.Comparison.LegacyRecommendationRef)
+	}
+}
+
 func TestFindActivePortfolio(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

@@ -18,6 +18,7 @@ func TestBuiltinCatalogContainsExpectedMethods(t *testing.T) {
 	}
 
 	for _, want := range []string{
+		"graph-preflight-before-governed-edit",
 		"verification-before-completion",
 		"systematic-debugging-before-fix",
 		"behavior-first-testing",
@@ -235,6 +236,61 @@ func TestPullLowCeremonyRequestDoesNotBypassRiskGates(t *testing.T) {
 		t.Fatal("risk-gated non-mechanical work returned no method cards")
 	}
 	assertMethodIDs(t, run, []string{"behavior-first-testing"})
+}
+
+func TestPullGovernedCodeReturnsGraphPreflightMethod(t *testing.T) {
+	run, err := Pull(PullInput{
+		Task:             "Patch governed CLI behavior",
+		DeclaredTaskKind: "feature",
+		ChangeIntent:     "change_behavior",
+		IntendedFiles:    []string{"internal/cli/interface.go"},
+		RiskSignals: []RiskSignal{
+			{ID: "governed_file", Source: "test"},
+			{ID: "behavior_change", Source: "test"},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertMethodIDs(t, run, []string{
+		"graph-preflight-before-governed-edit",
+		"behavior-first-testing",
+		"verification-before-completion",
+	})
+}
+
+func TestValidateCloseRequiresGraphPreflightEvidence(t *testing.T) {
+	run, err := Pull(PullInput{
+		Task:        "Patch governed method behavior",
+		RiskSignals: []RiskSignal{{ID: "governed_file", Source: "test"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	err = ValidateClose(run, CloseInput{
+		GateResults: []GateResult{{
+			GateID: "graph_preflight_recorded_before_governed_edit",
+			Status: "satisfied",
+		}},
+	})
+	if err == nil {
+		t.Fatal("ValidateClose accepted graph preflight without evidence")
+	}
+	if !strings.Contains(err.Error(), "graph_preflight_recorded_before_governed_edit needs evidence_refs") {
+		t.Fatalf("error = %v, want graph preflight evidence failure", err)
+	}
+
+	waivers := []Waiver{{
+		GateID: "graph_preflight_recorded_before_governed_edit",
+		Reason: "Fixture covers waived graph gate behavior.",
+	}, {
+		GateID: "fresh_verification_before_completion",
+		Reason: "Fixture covers waived verification behavior.",
+	}}
+	if err := ValidateClose(run, CloseInput{Waivers: waivers}); err != nil {
+		t.Fatalf("ValidateClose rejected explicit graph gate waiver: %v", err)
+	}
 }
 
 func TestPullUnmatchedMediumWorkFallsBackToVerification(t *testing.T) {

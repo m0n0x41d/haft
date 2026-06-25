@@ -1265,39 +1265,6 @@ func cockpitReconciliationNeedsOperator(report artifact.ReconciliationCueReport)
 		report.Summary.GoverningOverlapSets > 0
 }
 
-func formatDriftFileSummary(files []artifact.DriftItem) string {
-	modified := 0
-	added := 0
-	missing := 0
-
-	for _, file := range files {
-		switch file.Status {
-		case artifact.DriftModified:
-			modified++
-		case artifact.DriftAdded:
-			added++
-		case artifact.DriftMissing:
-			missing++
-		}
-	}
-
-	parts := []string{}
-	if modified > 0 {
-		parts = append(parts, fmt.Sprintf("%d modified", modified))
-	}
-	if added > 0 {
-		parts = append(parts, fmt.Sprintf("%d added", added))
-	}
-	if missing > 0 {
-		parts = append(parts, fmt.Sprintf("%d missing", missing))
-	}
-	if len(parts) == 0 {
-		return "no file changes"
-	}
-
-	return strings.Join(parts, ", ")
-}
-
 func cockpitDriftEvents(data artifact.StatusData) artifact.DriftEventReport {
 	if len(data.DriftEvents.Events) > 0 || data.DriftEvents.SchemaVersion != 0 {
 		return data.DriftEvents
@@ -1365,48 +1332,6 @@ func cockpitDriftEventNeedsBindingResolution(event artifact.DriftEvent) bool {
 		event.FallbackKind == artifact.BindingTargetWholeFileFallback
 }
 
-func partitionCockpitDrift(reports []artifact.DriftReport) (material, audit, unresolved []artifact.DriftReport) {
-	for _, report := range reports {
-		switch report.EffectiveMateriality() {
-		case artifact.DriftMaterialityAdjacentFileChurn,
-			artifact.DriftMaterialityCarrierOnly,
-			artifact.DriftMaterialityGeneratedOrIgnored:
-			audit = append(audit, report)
-		case artifact.DriftMaterialityNeedsBindingResolution:
-			unresolved = append(unresolved, report)
-		default:
-			material = append(material, report)
-		}
-	}
-	return material, audit, unresolved
-}
-
-func formatAuditOnlyDriftEventSummary(events []artifact.DriftEvent) string {
-	return fmt.Sprintf(
-		"%d unique event(s), %d impacted decision(s), 0 material governed-symbol changes; audit details available",
-		len(events),
-		countDriftEventImpactedDecisions(events),
-	)
-}
-
-func formatAuditOnlyDriftSummary(reports []artifact.DriftReport) string {
-	triggerPaths := make(map[string]struct{})
-	for _, report := range reports {
-		for _, file := range report.Files {
-			if file.Path == "" {
-				continue
-			}
-			triggerPaths[file.Path] = struct{}{}
-		}
-	}
-
-	return fmt.Sprintf(
-		"%d trigger path(s), %d decision(s) checked, 0 material governed-symbol changes; audit details available",
-		len(triggerPaths),
-		len(reports),
-	)
-}
-
 func formatBindingResolutionDriftEventSummary(events []artifact.DriftEvent) string {
 	return fmt.Sprintf(
 		"%d unique event(s), %d impacted decision(s) need precise binding targets",
@@ -1426,24 +1351,6 @@ func countDriftEventImpactedDecisions(events []artifact.DriftEvent) int {
 		}
 	}
 	return len(seen)
-}
-
-func formatBindingResolutionDriftSummary(reports []artifact.DriftReport) string {
-	triggerPaths := make(map[string]struct{})
-	for _, report := range reports {
-		for _, file := range report.Files {
-			if file.Path == "" {
-				continue
-			}
-			triggerPaths[file.Path] = struct{}{}
-		}
-	}
-
-	return fmt.Sprintf(
-		"%d trigger path(s), %d decision(s) need precise binding targets",
-		len(triggerPaths),
-		len(reports),
-	)
 }
 
 func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) string {

@@ -38,6 +38,44 @@ func verificationBeforeCompletion() Definition {
 	}
 }
 
+func graphPreflightBeforeGovernedEdit() Definition {
+	return Definition{
+		ID:      "graph-preflight-before-governed-edit",
+		Version: CatalogVersion,
+		Title:   "Graph preflight before governed edit",
+		Summary: "Governed code work needs Haft graph evidence before edits.",
+		Intent:  "Use the fused code/reasoning graph before editing governed files or symbols, then record how that evidence affected the plan.",
+		AppliesTo: Applicability{
+			RiskSignals: []string{"governed_file", "governed_symbol", "decision_governed_code"},
+		},
+		DoesNotApplyTo: Applicability{
+			TaskKinds: []string{TaskMechanicalEdit, TaskFormattingOnly},
+		},
+		HardGates: []Gate{{
+			ID:               "graph_preflight_recorded_before_governed_edit",
+			Kind:             "graph_evidence",
+			CheckLevel:       "human_review",
+			PassCondition:    "The closeout cites pre-edit code_context plus impact/explore/node/callers/callees evidence and states how it changed file choice, blast-radius assessment, or the implementation plan.",
+			RequiredEvidence: []string{"code_context_ref", "impact_or_explore_or_node_ref", "plan_influence_note"},
+			Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+		}},
+		SoftGates: []string{"Status-only does not satisfy graph preflight; use code_context and a task-specific traversal."},
+		Procedure: []string{
+			"Call code_context for the intended governed file or symbol before editing.",
+			"Narrow with impact, explore, node, callers, or callees for the symbol flow or blast radius.",
+			"Record the graph calls and the resulting plan or risk change in method closeout.",
+		},
+		AntiPatterns: []string{
+			"Calling only status or search and treating it as graph preflight.",
+			"Running graph queries after editing just to satisfy the checklist.",
+			"Recording graph evidence without saying how it affected the plan.",
+		},
+		RequiredEvidence: []string{"code_context_ref", "impact_or_explore_or_node_ref", "plan_influence_note"},
+		Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+		Priority:         5,
+	}
+}
+
 func systematicDebuggingBeforeFix() Definition {
 	return Definition{
 		ID:      "systematic-debugging-before-fix",

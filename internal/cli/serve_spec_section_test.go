@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,6 +99,36 @@ func overwriteSectionStatus(t *testing.T, root, status string) {
 		t.Fatal(err)
 	}
 	updated := strings.Replace(string(data), "status: active", "status: "+status, 1)
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func overwriteSectionClaimLayer(t *testing.T, root, claimLayer string) {
+	t.Helper()
+
+	path := filepath.Join(root, ".haft", "specs", "target-system.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	updated := strings.Replace(content, "claim_layer: object", "claim_layer: "+claimLayer, 1)
+	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func removeTermMapDomain(t *testing.T, root string) {
+	t.Helper()
+
+	path := filepath.Join(root, ".haft", "specs", "term-map.md")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content := string(data)
+	updated := strings.Replace(content, "    domain: target\n", "", 1)
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -390,6 +421,60 @@ func TestHandleHaftSpecSection_ApproveRefusesDraftSection(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatalf("approve should refuse a draft section")
+	}
+}
+
+func TestHandleHaftSpecSection_ApproveRefusesSpecCheckFindings(t *testing.T) {
+	root, haftDir := newBaselineTestProject(t)
+	overwriteSectionClaimLayer(t, root, "carrier")
+
+	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action":       "approve",
+		"project_root": root,
+		"section_id":   baselineTestSectionID,
+	})
+	if err == nil {
+		t.Fatalf("approve should refuse when spec check has findings")
+	}
+	if !strings.Contains(err.Error(), "spec_section_mixed_authority") {
+		t.Fatalf("approve error = %v, want spec_section_mixed_authority", err)
+	}
+
+	store, projectID, closeFn, err := projectBaseline(root)
+	defer closeFn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Get(projectID, baselineTestSectionID)
+	if !errors.Is(err, specflow.ErrBaselineNotFound) {
+		t.Fatalf("baseline lookup err = %v, want ErrBaselineNotFound", err)
+	}
+}
+
+func TestHandleHaftSpecSection_ApproveRefusesTermMapFindings(t *testing.T) {
+	root, haftDir := newBaselineTestProject(t)
+	removeTermMapDomain(t, root)
+
+	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+		"action":       "approve",
+		"project_root": root,
+		"section_id":   baselineTestSectionID,
+	})
+	if err == nil {
+		t.Fatalf("approve should refuse when term-map check has findings")
+	}
+	if !strings.Contains(err.Error(), "term_map_missing_domain") {
+		t.Fatalf("approve error = %v, want term_map_missing_domain", err)
+	}
+
+	store, projectID, closeFn, err := projectBaseline(root)
+	defer closeFn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = store.Get(projectID, baselineTestSectionID)
+	if !errors.Is(err, specflow.ErrBaselineNotFound) {
+		t.Fatalf("baseline lookup err = %v, want ErrBaselineNotFound", err)
 	}
 }
 

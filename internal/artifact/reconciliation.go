@@ -2,7 +2,7 @@ package artifact
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- deterministic reconciliation IDs, not cryptographic trust.
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1800,14 +1800,6 @@ func decisionReconciliationDraftBlockingQuestions(item DecisionReconciliationIte
 	return out
 }
 
-func decisionReconciliationDraftSelectionTemplate(
-	group DecisionReconciliationGroup,
-	item DecisionReconciliationItem,
-) string {
-	selection := decisionReconciliationDraftSelection(group, item)
-	return decisionReconciliationDraftSelectionTemplateFromSelection(selection)
-}
-
 func decisionReconciliationDraftSelectionTemplateFromSelection(
 	selection DecisionReconciliationSelection,
 ) string {
@@ -3035,7 +3027,9 @@ func applyScopeEnrichmentClaimRefs(
 	for _, claim := range normalizedClaims {
 		targetRefs := refsByClaim[claim.ID]
 		if len(targetRefs) > 0 {
-			mergedRefs := append(claim.GovernanceTargetRefs, targetRefs...)
+			mergedRefs := make([]string, 0, len(claim.GovernanceTargetRefs)+len(targetRefs))
+			mergedRefs = append(mergedRefs, claim.GovernanceTargetRefs...)
+			mergedRefs = append(mergedRefs, targetRefs...)
 			claim.GovernanceTargetRefs = normalizeClaimRefs(mergedRefs)
 		}
 		out = append(out, claim)
@@ -3178,7 +3172,7 @@ func orderedPairKey(left string, right string) string {
 }
 
 func decisionReconciliationGroupID(key string) string {
-	sum := sha1.Sum([]byte(key))
+	sum := sha1.Sum([]byte(key)) // #nosec G401 -- deterministic reconciliation IDs, not cryptographic trust.
 	return fmt.Sprintf("decision-reconcile-%x", sum[:6])
 }
 

@@ -28,6 +28,7 @@ func BuiltinCatalog() Catalog {
 		ID:      CatalogID,
 		Version: CatalogVersion,
 		Methods: withBuiltinSourcePosture([]Definition{
+			graphPreflightBeforeGovernedEdit(),
 			verificationBeforeCompletion(),
 			systematicDebuggingBeforeFix(),
 			behaviorFirstTesting(),

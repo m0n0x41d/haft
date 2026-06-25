@@ -25,6 +25,7 @@ const (
 	crossCandidateFactor  = 4
 	crossMinCandidatePool = 24
 	crossMinSimilarity    = 0.15 // cosine floor — below this a doc is a non-match
+	crossEmbeddingBatch   = 16   // bound sidecar activation memory during cross-project warm
 )
 
 // crossVectorCache persists cross-project decision embeddings in
@@ -340,6 +341,24 @@ func (h *CrossHybrid) embedMisses(ctx context.Context, embedder embedding.Embedd
 	if len(misses) == 0 {
 		return nil
 	}
+	for start := 0; start < len(misses); start += crossEmbeddingBatch {
+		end := min(start+crossEmbeddingBatch, len(misses))
+		err := h.embedMissBatch(
+			ctx,
+			embedder,
+			d,
+			misses[start:end],
+			hashes[start:end],
+			vectors,
+		)
+		if err != nil {
+			return fmt.Errorf("embed cross-project misses [%d:%d]: %w", start, end, err)
+		}
+	}
+	return nil
+}
+
+func (h *CrossHybrid) embedMissBatch(ctx context.Context, embedder embedding.Embedder, d embedding.Descriptor, misses []IndexEntry, hashes []string, vectors map[string][]float32) error {
 	texts := make([]string, len(misses))
 	for i, entry := range misses {
 		texts[i] = corpusText(entry)

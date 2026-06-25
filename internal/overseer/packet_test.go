@@ -139,6 +139,74 @@ func TestBuildPacket_BudgetTruncatesChangedFiles(t *testing.T) {
 	}
 }
 
+func TestBuildPacket_AssessesRiskBeforeChangedFileTruncation(t *testing.T) {
+	files := []ChangedFile{
+		{Path: "a.md", Status: "modified"},
+		{Path: "internal/cli/init.go", Status: "modified"},
+	}
+
+	packet, err := BuildPacket(BuildInput{
+		Producer: DefaultProducer("test"),
+		Subject: Subject{
+			Kind:     "commit",
+			Ref:      "HEAD",
+			SHA:      "abc123",
+			DiffHash: "sha256:diff",
+		},
+		RepoState:    RepoState{GitRoot: ".", Branch: "main"},
+		ChangedFiles: files,
+		Budget: ContextBudget{
+			MaxPacketBytes:        24000,
+			MaxChangedFilesListed: 1,
+			MaxInlineDiffBytes:    12000,
+			MaxArtifactRefs:       12,
+			FullSourcePolicy:      "fetch_on_demand",
+			OmissionPolicy:        "summarize_and_handle",
+		},
+	})
+	if err != nil {
+		t.Fatalf("BuildPacket returned error: %v", err)
+	}
+
+	if got := len(packet.ChangedFiles); got != 1 {
+		t.Fatalf("changed files = %d, want truncated packet context", got)
+	}
+	if packet.Risk.LLMReview != "eligible" {
+		t.Fatalf("risk should include truncated governed init surface, got %+v", packet.Risk)
+	}
+	if !contains(packet.ReviewRequest.Modes, "invariant_conformance") {
+		t.Fatalf("review modes = %v, want invariant_conformance", packet.ReviewRequest.Modes)
+	}
+}
+
+func TestBuildPacket_SpecCarrierChangeIsReviewEligible(t *testing.T) {
+	packet, err := BuildPacket(BuildInput{
+		Producer: DefaultProducer("test"),
+		Subject: Subject{
+			Kind:     "commit",
+			Ref:      "HEAD",
+			SHA:      "abc123",
+			DiffHash: "sha256:diff",
+		},
+		RepoState: RepoState{GitRoot: ".", Branch: "main"},
+		ChangedFiles: []ChangedFile{{
+			Path:   ".haft/specs/target-system.md",
+			Status: "modified",
+		}},
+		Budget: DefaultContextBudget(),
+	})
+	if err != nil {
+		t.Fatalf("BuildPacket returned error: %v", err)
+	}
+
+	if packet.Risk.LLMReview != "eligible" {
+		t.Fatalf("spec carrier risk = %+v, want review eligible", packet.Risk)
+	}
+	if !contains(packet.ReviewRequest.Modes, "spec_conformance") {
+		t.Fatalf("review modes = %v, want spec_conformance", packet.ReviewRequest.Modes)
+	}
+}
+
 func contains(values []string, needle string) bool {
 	for _, value := range values {
 		if value == needle {

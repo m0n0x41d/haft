@@ -214,6 +214,10 @@ func applyApprove(ctx baselineContext) (SpecSectionBaselineResult, error) {
 		)
 	}
 
+	if err := requireCleanSpecCheckForApprove(ctx.specSet, section); err != nil {
+		return SpecSectionBaselineResult{}, err
+	}
+
 	currentHash := specflow.HashSection(section)
 
 	existing, err := ctx.store.Get(ctx.projectID, sectionID)
@@ -259,6 +263,52 @@ func applyApprove(ctx baselineContext) (SpecSectionBaselineResult, error) {
 		ApprovedBy:      approvedBy,
 		Message:         "baseline recorded",
 	}, nil
+}
+
+func requireCleanSpecCheckForApprove(specSet project.ProjectSpecificationSet, section project.SpecSection) error {
+	report := project.SpecCheckReportFromSpecificationSet(specSet)
+	findings := approveBlockingFindings(report, section)
+	if len(findings) == 0 {
+		return nil
+	}
+
+	lines := make([]string, 0, len(findings))
+	for _, finding := range findings {
+		line := formatSpecCheckFinding(finding)
+		line = strings.TrimSpace(line)
+		lines = append(lines, line)
+	}
+
+	message := strings.Join(lines, "\n")
+	return fmt.Errorf(
+		"approve blocked by spec check findings; run `haft spec check --json` and fix before recording a baseline:\n%s",
+		message,
+	)
+}
+
+func approveBlockingFindings(report project.SpecCheckReport, section project.SpecSection) []project.SpecCheckFinding {
+	sectionPath := strings.TrimSpace(section.Path)
+	sectionPath = filepath.ToSlash(sectionPath)
+
+	termMapPath := filepath.Join(".haft", "specs", "term-map.md")
+	termMapPath = filepath.ToSlash(termMapPath)
+
+	findings := make([]project.SpecCheckFinding, 0, len(report.Findings))
+	for _, finding := range report.Findings {
+		findingPath := strings.TrimSpace(finding.Path)
+		findingPath = filepath.ToSlash(findingPath)
+
+		switch {
+		case finding.SectionID == section.ID:
+			findings = append(findings, finding)
+		case findingPath == sectionPath:
+			findings = append(findings, finding)
+		case findingPath == termMapPath:
+			findings = append(findings, finding)
+		}
+	}
+
+	return findings
 }
 
 func applyRebaseline(ctx baselineContext) (SpecSectionBaselineResult, error) {

@@ -119,7 +119,8 @@ func TestIndexStoreORFallback(t *testing.T) {
 // fakeEmbedderProj maps text topics to fixed orthogonal unit vectors so the test
 // controls cosine ranking exactly. Mutex-guarded like the real sidecar adapter.
 type fakeEmbedderProj struct {
-	mu sync.Mutex
+	mu         sync.Mutex
+	batchSizes []int
 }
 
 func (f *fakeEmbedderProj) Descriptor() embedding.Descriptor {
@@ -129,6 +130,7 @@ func (f *fakeEmbedderProj) Descriptor() embedding.Descriptor {
 func (f *fakeEmbedderProj) Embed(_ context.Context, _ embedding.Role, texts []string) ([][]float32, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.batchSizes = append(f.batchSizes, len(texts))
 	out := make([][]float32, len(texts))
 	for i, text := range texts {
 		out[i] = projTopicVector(text)
@@ -137,6 +139,12 @@ func (f *fakeEmbedderProj) Embed(_ context.Context, _ embedding.Role, texts []st
 }
 
 func (f *fakeEmbedderProj) Close() error { return nil }
+
+func (f *fakeEmbedderProj) batches() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]int(nil), f.batchSizes...)
+}
 
 func blockingCrossFactory(embedder embedding.Embedder) (func() (embedding.Embedder, error), <-chan struct{}, func()) {
 	started := make(chan struct{})
@@ -212,6 +220,34 @@ func TestCrossHybridFusesSemanticHit(t *testing.T) {
 	}
 	if len(results) == 0 || results[0].ProjectName+"|"+results[0].DecisionID != "haft|dec-b" {
 		t.Fatalf("expected dec-b promoted by semantic fusion, got %v", recallIDs(results))
+	}
+}
+
+func TestCrossHybridWarmBatchesCorpusMisses(t *testing.T) {
+	ctx := context.Background()
+	store := newTempIndexStore(t)
+	for i := range crossEmbeddingBatch*2 + 3 {
+		seedDecision(
+			t,
+			ctx,
+			store,
+			"haft",
+			fmt.Sprintf("dec-%02d", i),
+			fmt.Sprintf("Rust fastembed gemma sidecar %02d", i),
+			"local embeddings",
+			"augment keyword search",
+		)
+	}
+
+	embedder := &fakeEmbedderProj{}
+	hybrid := NewCrossHybrid(store, func() (embedding.Embedder, error) { return embedder, nil })
+	if err := hybrid.Warm(ctx); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+
+	want := []int{crossEmbeddingBatch, crossEmbeddingBatch, 3}
+	if got := embedder.batches(); !reflect.DeepEqual(want, got) {
+		t.Fatalf("cross-project warm embed batch sizes = %v, want %v", got, want)
 	}
 }
 

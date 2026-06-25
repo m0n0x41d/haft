@@ -67,7 +67,7 @@ func runCarrierManifest(cmd *cobra.Command, args []string) error {
 			return err
 		}
 		_, err = fmt.Fprintln(writer, string(data))
-		return nil
+		return err
 	}
 
 	printf := func(format string, args ...any) error {

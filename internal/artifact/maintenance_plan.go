@@ -89,13 +89,86 @@ func ClassifyCommand(command string) (string, bool) {
 }
 
 func goCommandConfined(args []string) bool {
+	pendingValueKind := ""
 	for _, arg := range args {
 		if commandArgEscapesProject(arg) {
 			return false
 		}
+		if pendingValueKind == "package" {
+			if !goPackageListConfined(arg) {
+				return false
+			}
+			pendingValueKind = ""
+			continue
+		}
+		if pendingValueKind != "" {
+			pendingValueKind = ""
+			continue
+		}
+		if strings.HasPrefix(arg, "-") {
+			flagName, flagValue, hasValue := splitGoFlag(arg)
+			if goPackageListFlag(flagName) {
+				if hasValue {
+					if !goPackageListConfined(flagValue) {
+						return false
+					}
+					continue
+				}
+				pendingValueKind = "package"
+				continue
+			}
+			if goFlagConsumesValue(flagName) && !hasValue {
+				pendingValueKind = "value"
+			}
+			continue
+		}
+		if !goPackageArgConfined(arg) {
+			return false
+		}
 	}
 
+	return pendingValueKind == ""
+}
+
+func splitGoFlag(arg string) (string, string, bool) {
+	name, value, ok := strings.Cut(arg, "=")
+	return name, value, ok
+}
+
+func goFlagConsumesValue(name string) bool {
+	switch name {
+	case "-run", "-bench", "-count", "-timeout", "-tags", "-covermode", "-coverprofile", "-exec":
+		return true
+	}
+	return false
+}
+
+func goPackageListFlag(name string) bool {
+	switch name {
+	case "-coverpkg":
+		return true
+	}
+	return false
+}
+
+func goPackageListConfined(value string) bool {
+	for _, item := range strings.Split(value, ",") {
+		if !goPackageArgConfined(item) {
+			return false
+		}
+	}
 	return true
+}
+
+func goPackageArgConfined(arg string) bool {
+	arg = strings.TrimSpace(arg)
+	if arg == "" {
+		return false
+	}
+	if arg == "." || strings.HasPrefix(arg, "./") {
+		return true
+	}
+	return strings.HasSuffix(arg, ".go")
 }
 
 func grepLikeCommandConfined(args []string) bool {

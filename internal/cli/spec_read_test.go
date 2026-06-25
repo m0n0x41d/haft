@@ -21,6 +21,9 @@ func TestSpecRuntimeReadPathsDoNotBypassSQLEditionSource(t *testing.T) {
 		"internal/cli/spec_classify_change.go": {
 			"project.SpecSectionsFromDocuments(": "spec classify-change parses explicit before/after carrier files as read-only review input",
 		},
+		"internal/cli/overseer.go": {
+			"project.SpecSectionsFromDocuments(": "overseer parses the changed carrier file as review-scoping input, not as the runtime spec source of truth",
+		},
 	}
 	tokens := []string{
 		"project.LoadProjectSpecificationSet(",
@@ -70,6 +73,23 @@ func TestSpecRuntimeReadPathsDoNotBypassSQLEditionSource(t *testing.T) {
 				t.Fatalf("stale SQL-first read-path allowlist: %s no longer contains %q", relPath, token)
 			}
 		}
+	}
+}
+
+func TestLoadProjectSpecificationSetFromSQLEditionsPropagatesStoreOpenFailure(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	homeFile := filepath.Join(t.TempDir(), "home-file")
+	if err := os.WriteFile(homeFile, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("write home file: %v", err)
+	}
+	t.Setenv("HOME", homeFile)
+
+	_, _, err := loadProjectSpecificationSetFromSQLEditions(root)
+	if err == nil {
+		t.Fatal("expected SQL edition store open failure")
+	}
+	if !strings.Contains(err.Error(), "create project DB dir") {
+		t.Fatalf("error = %v, want DB dir failure", err)
 	}
 }
 

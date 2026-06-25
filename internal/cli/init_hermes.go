@@ -121,10 +121,10 @@ func cleanHermesProfile(profileInput string) (string, error) {
 		return "", nil
 	}
 	if filepath.Base(profile) != profile {
-		return "", fmt.Errorf("Hermes profile must be a name, got %q", profileInput)
+		return "", fmt.Errorf("hermes profile must be a name, got %q", profileInput)
 	}
 	if profile == "." || profile == ".." {
-		return "", fmt.Errorf("Hermes profile must be a name, got %q", profileInput)
+		return "", fmt.Errorf("hermes profile must be a name, got %q", profileInput)
 	}
 	return profile, nil
 }

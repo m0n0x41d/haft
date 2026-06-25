@@ -1175,30 +1175,6 @@ func extractPortfolioVariantRefs(body string) []portfolioVariantRef {
 	return refs
 }
 
-func portfolioVariantDisplayLabels(body string) map[string]string {
-	labels := make(map[string]string)
-	for _, ref := range extractPortfolioVariantRefs(body) {
-		key := strings.TrimSpace(ref.ID)
-		if key == "" {
-			key = strings.TrimSpace(ref.Title)
-		}
-		if key == "" {
-			continue
-		}
-
-		label := strings.TrimSpace(ref.Title)
-		if label == "" {
-			label = key
-		}
-
-		labels[key] = label
-		if strings.TrimSpace(ref.Title) != "" {
-			labels[strings.TrimSpace(ref.Title)] = label
-		}
-	}
-	return labels
-}
-
 func portfolioVariantComparisonLabels(body string) map[string]string {
 	labels := make(map[string]string)
 	for _, ref := range extractPortfolioVariantRefs(body) {
@@ -1726,9 +1702,9 @@ func normalizeComparisonRecommendationAlias(result ComparisonResult) ComparisonR
 	return result
 }
 
-func normalizeComparisonRecommendationAliasStrict(result ComparisonResult) (ComparisonResult, error) {
-	selectedRef := strings.TrimSpace(result.SelectedRef)
-	legacyRecommendationRef := strings.TrimSpace(result.LegacyRecommendationRef)
+func normalizeComparisonRecommendationAliasStrict(result ComparisonResult, aliasMap map[string]string) (ComparisonResult, error) {
+	selectedRef := normalizeVariantReference(result.SelectedRef, aliasMap)
+	legacyRecommendationRef := normalizeVariantReference(result.LegacyRecommendationRef, aliasMap)
 
 	if selectedRef != "" && legacyRecommendationRef != "" && selectedRef != legacyRecommendationRef {
 		return ComparisonResult{}, fmt.Errorf(
@@ -1738,6 +1714,8 @@ func normalizeComparisonRecommendationAliasStrict(result ComparisonResult) (Comp
 		)
 	}
 
+	result.SelectedRef = selectedRef
+	result.LegacyRecommendationRef = legacyRecommendationRef
 	return normalizeComparisonRecommendationAlias(result), nil
 }
 
@@ -1788,12 +1766,12 @@ func normalizeParetoTradeoffNotes(notes []ParetoTradeoffNote, aliasMap map[strin
 }
 
 func normalizeComparisonVariantReferences(result ComparisonResult, identities []portfolioVariantIdentity) (ComparisonResult, error) {
-	result, err := normalizeComparisonRecommendationAliasStrict(result)
+	aliasMap := portfolioVariantAliasMap(identities)
+	result, err := normalizeComparisonRecommendationAliasStrict(result, aliasMap)
 	if err != nil {
 		return ComparisonResult{}, err
 	}
 
-	aliasMap := portfolioVariantAliasMap(identities)
 	normalized := ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
 		Incomparable:            make([][]string, 0, len(result.Incomparable)),

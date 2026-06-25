@@ -480,8 +480,8 @@ func semioTermBoundary(line string, index int) bool {
 		return true
 	}
 	char := line[index]
-	return !(char >= 'a' && char <= 'z') &&
-		!(char >= '0' && char <= '9') &&
+	return (char < 'a' || char > 'z') &&
+		(char < '0' || char > '9') &&
 		char != '_' &&
 		char != '-'
 }

@@ -1,7 +1,7 @@
 package artifact
 
 import (
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- deterministic event IDs, not cryptographic trust.
 	"errors"
 	"fmt"
 	"sort"
@@ -605,7 +605,7 @@ func driftEventKey(event DriftEvent) string {
 }
 
 func driftEventID(key string) string {
-	sum := sha1.Sum([]byte(key))
+	sum := sha1.Sum([]byte(key)) // #nosec G401 -- deterministic event IDs, not cryptographic trust.
 	return fmt.Sprintf("drift-event-%x", sum[:6])
 }
 

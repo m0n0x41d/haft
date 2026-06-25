@@ -2708,16 +2708,6 @@ func parseDimensions(raw any) []artifact.ComparisonDimension {
 
 const nestedStringMapShapeHint = `{"V1":{"latency":"10ms","cost":"$5"}} (variant_id -> dimension_name -> string score)`
 
-// parseNestedStringMapFromArgs handles MCP client serialization of map[string]map[string]string.
-// Some clients send JSON objects as parsed map[string]any, others as raw JSON strings.
-func parseNestedStringMapFromArgs(args map[string]any, key string) map[string]map[string]string {
-	result, _, err := parseNestedStringMapArg(args, key)
-	if err != nil {
-		return nil
-	}
-	return result
-}
-
 func parseNestedStringMapArg(args map[string]any, key string) (map[string]map[string]string, bool, error) {
 	value, present := args[key]
 	if !present {

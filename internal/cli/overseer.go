@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/present"
@@ -347,13 +347,13 @@ func runOverseerPacket(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("get DB path: %w", err)
 	}
 
-	sqlDB, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)")
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return fmt.Errorf("open DB: %w", err)
 	}
-	defer sqlDB.Close()
+	defer database.Close()
 
-	store := artifact.NewStore(sqlDB)
+	store := artifact.NewStore(database.GetRawDB())
 	packet, err := buildOverseerPacket(ctx, store, projectRoot, overseerPacketCommit, Version)
 	if err != nil {
 		return err
@@ -1329,15 +1329,15 @@ func openOverseerProjectStore() (string, *artifact.Store, func(), error) {
 		return "", nil, func() {}, fmt.Errorf("get DB path: %w", err)
 	}
 
-	sqlDB, err := sql.Open("sqlite", dbPath+"?_pragma=journal_mode(WAL)&_pragma=busy_timeout(3000)")
+	database, err := db.NewStore(dbPath)
 	if err != nil {
 		return "", nil, func() {}, fmt.Errorf("open DB: %w", err)
 	}
 
 	closeStore := func() {
-		_ = sqlDB.Close()
+		_ = database.Close()
 	}
-	return projectRoot, artifact.NewStore(sqlDB), closeStore, nil
+	return projectRoot, artifact.NewStore(database.GetRawDB()), closeStore, nil
 }
 
 func buildOverseerPacket(
@@ -1366,6 +1366,7 @@ func buildOverseerPacket(
 		ctx,
 		store,
 		workflow,
+		projectRoot,
 		gitContext.ChangedFiles,
 	)
 	if err != nil {
@@ -1388,6 +1389,7 @@ func enrichOverseerChangedFiles(
 	ctx context.Context,
 	store *artifact.Store,
 	workflow *project.Workflow,
+	projectRoot string,
 	changedFiles []overseer.ChangedFile,
 ) ([]overseer.ChangedFile, map[string]bool, error) {
 	allAffectedFiles, err := store.AllAffectedFiles(ctx)
@@ -1413,7 +1415,13 @@ func enrichOverseerChangedFiles(
 			PathPolicies:         overseer.MatchPathPolicies(changedFile.Path, policies),
 		}
 
-		if len(decisions) > 0 {
+		specSectionIDs, err := specSectionIDsForChangedPath(projectRoot, changedFile.Path)
+		if err != nil {
+			return nil, nil, err
+		}
+		governance.AffectedSpecSections = append(governance.AffectedSpecSections, specSectionIDs...)
+
+		if len(decisions) > 0 || len(specSectionIDs) > 0 {
 			governance.ModuleState = "covered"
 		}
 
@@ -1433,6 +1441,7 @@ func enrichOverseerChangedFiles(
 				})
 			}
 		}
+		governance.AffectedSpecSections = compactSortedStrings(governance.AffectedSpecSections)
 
 		changedFile.Governance = governance
 		enriched = append(enriched, changedFile)
@@ -1498,6 +1507,43 @@ func decisionsForChangedPath(
 	return decisions, nil
 }
 
+func specSectionIDsForChangedPath(projectRoot string, changedPath string) ([]string, error) {
+	documentKind, ok := specCarrierDocumentKind(changedPath)
+	if !ok {
+		return nil, nil
+	}
+
+	absolutePath := filepath.Join(projectRoot, filepath.FromSlash(changedPath))
+	data, err := os.ReadFile(absolutePath)
+	if err != nil {
+		return nil, fmt.Errorf("read changed spec carrier %s: %w", changedPath, err)
+	}
+
+	document := project.SpecDocumentInput{
+		Path:    filepath.ToSlash(changedPath),
+		Kind:    documentKind,
+		Content: string(data),
+	}
+	sections := project.SpecSectionsFromDocuments([]project.SpecDocumentInput{document})
+	sectionIDs := make([]string, 0, len(sections))
+	for _, section := range sections {
+		sectionIDs = append(sectionIDs, section.ID)
+	}
+	return compactSortedStrings(sectionIDs), nil
+}
+
+func specCarrierDocumentKind(changedPath string) (string, bool) {
+	switch filepath.ToSlash(strings.TrimSpace(changedPath)) {
+	case ".haft/specs/target-system.md":
+		return string(project.SpecDocumentKindTargetSystem), true
+	case ".haft/specs/enabling-system.md":
+		return string(project.SpecDocumentKindEnablingSystem), true
+	case ".haft/specs/term-map.md":
+		return string(project.SpecDocumentKindTermMap), true
+	}
+	return "", false
+}
+
 func loadScopedDecision(ctx context.Context, store *artifact.Store, id string) (*artifact.Artifact, error) {
 	item, err := store.Get(ctx, id)
 	if err != nil {
@@ -1557,7 +1603,7 @@ func mapOverseerGovernance(
 
 	stale, unrelatedStale := mapScopedStale(report.Stale, affectedDecisionIDs)
 	drift, unrelatedDrift := mapScopedDrift(report.Drifted, changedPathSet, affectedDecisionIDs)
-	specHealth, unrelatedSpecHealth := mapScopedSpecHealth(report.SpecHealth, affectedSpecSectionIDs)
+	specHealth, unrelatedSpecHealth := mapScopedSpecHealth(report.SpecHealth, affectedSpecSectionIDs, changedPathSet)
 	coverage, unrelatedCoverage := mapScopedCoverage(report.CoverageGaps, affectedDecisionIDs)
 
 	return overseer.GovernanceInput{
@@ -1629,15 +1675,22 @@ func mapScopedDrift(
 func mapScopedSpecHealth(
 	findings []project.SpecCheckFinding,
 	affectedSpecSectionIDs map[string]bool,
+	changedPathSet map[string]bool,
 ) ([]overseer.FindingSummary, int) {
 	out := make([]overseer.FindingSummary, 0, len(findings))
 	suppressed := 0
 
 	for _, finding := range findings {
 		sectionID := strings.TrimSpace(finding.SectionID)
-		if sectionID == "" || !affectedSpecSectionIDs[sectionID] {
+		path := filepath.ToSlash(strings.TrimSpace(finding.Path))
+		sectionMatches := sectionID != "" && affectedSpecSectionIDs[sectionID]
+		pathMatches := path != "" && changedPathSet[path]
+		if !sectionMatches && !pathMatches {
 			suppressed++
 			continue
+		}
+		if sectionID == "" {
+			sectionID = path
 		}
 
 		out = append(out, overseer.FindingSummary{
@@ -1645,7 +1698,7 @@ func mapScopedSpecHealth(
 			Kind:     "SpecSection",
 			Category: finding.Code,
 			Reason:   finding.Message,
-			Paths:    []string{finding.Path},
+			Paths:    []string{path},
 		})
 	}
 

@@ -161,23 +161,7 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeFn()
 
-	var report artifact.LegacyBindingReport
-	if strings.TrimSpace(driftBindingsSelect) != "" {
-		selection, err := readLegacyBindingSelectionDocument(driftBindingsSelect)
-		if err != nil {
-			return err
-		}
-		report, err = artifact.ApplyLegacyBindingSelections(context.Background(), store, selection)
-	} else if driftBindingsApply {
-		report, err = artifact.ApplyHighConfidenceLegacyBindingRepairs(context.Background(), store, projectRoot, artifact.LegacyBindingApplyOptions{
-			CandidateLimit: driftBindingsCandidateLimit,
-		})
-	} else {
-		report, err = artifact.BuildLegacyBindingReport(context.Background(), store, projectRoot, artifact.LegacyBindingOptions{
-			CandidateLimit: driftBindingsCandidateLimit,
-			IncludeClean:   driftBindingsAll,
-		})
-	}
+	report, err := buildDriftBindingsReport(context.Background(), store, projectRoot)
 	if err != nil {
 		return err
 	}
@@ -188,6 +172,25 @@ func runDriftBindings(cmd *cobra.Command, _ []string) error {
 	}
 
 	return writeDriftBindingsSummary(cmd.OutOrStdout(), report)
+}
+
+func buildDriftBindingsReport(ctx context.Context, store *artifact.Store, projectRoot string) (artifact.LegacyBindingReport, error) {
+	if strings.TrimSpace(driftBindingsSelect) != "" {
+		selection, err := readLegacyBindingSelectionDocument(driftBindingsSelect)
+		if err != nil {
+			return artifact.LegacyBindingReport{}, err
+		}
+		return artifact.ApplyLegacyBindingSelections(ctx, store, selection)
+	}
+	if driftBindingsApply {
+		return artifact.ApplyHighConfidenceLegacyBindingRepairs(ctx, store, projectRoot, artifact.LegacyBindingApplyOptions{
+			CandidateLimit: driftBindingsCandidateLimit,
+		})
+	}
+	return artifact.BuildLegacyBindingReport(ctx, store, projectRoot, artifact.LegacyBindingOptions{
+		CandidateLimit: driftBindingsCandidateLimit,
+		IncludeClean:   driftBindingsAll,
+	})
 }
 
 type driftBindingsProjectedReport struct {
@@ -764,11 +767,6 @@ func writeDriftEventResolutionLedger(path string, ledger artifact.DriftEventReso
 		return fmt.Errorf("write drift event resolution ledger %s: %w", path, err)
 	}
 	return nil
-}
-
-func driftEventReportHasEvent(report artifact.DriftEventReport, eventID string) bool {
-	_, ok := driftEventReportEvent(report, eventID)
-	return ok
 }
 
 func driftEventReportEvent(report artifact.DriftEventReport, eventID string) (artifact.DriftEvent, bool) {

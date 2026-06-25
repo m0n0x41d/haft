@@ -243,12 +243,15 @@ func TestParseNestedStringMapFromArgs(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := parseNestedStringMapFromArgs(tt.args, tt.key)
+			got, present, err := parseNestedStringMapArg(tt.args, tt.key)
 			if tt.wantNil {
-				if got != nil {
-					t.Fatalf("want nil, got %v", got)
+				if err == nil && present && got != nil {
+					t.Fatalf("want nil or shape error, got %v", got)
 				}
 				return
+			}
+			if err != nil {
+				t.Fatalf("parseNestedStringMapArg: %v", err)
 			}
 			if got == nil {
 				t.Fatal("got nil, want non-nil")
@@ -271,7 +274,13 @@ func TestParseNestedStringMapFromArgs_ValuesPreserved(t *testing.T) {
 	args := map[string]interface{}{
 		"scores": `{"V1":{"latency":"10ms","throughput":"100k/s"}}`,
 	}
-	got := parseNestedStringMapFromArgs(args, "scores")
+	got, present, err := parseNestedStringMapArg(args, "scores")
+	if err != nil {
+		t.Fatalf("parseNestedStringMapArg: %v", err)
+	}
+	if !present {
+		t.Fatal("present = false")
+	}
 	if got == nil {
 		t.Fatal("got nil")
 	}

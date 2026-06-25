@@ -95,7 +95,7 @@ func loadProjectSpecificationSetFromSQLEditions(projectRoot string) (project.Pro
 
 	projectID, store, closeStore, err := openSpecSectionEditionStore(projectRoot, cfg)
 	if err != nil {
-		return project.ProjectSpecificationSet{}, false, nil
+		return project.ProjectSpecificationSet{}, false, err
 	}
 	defer closeStore()
 

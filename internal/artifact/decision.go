@@ -1986,8 +1986,6 @@ func assessBindingTargetDrift(projectRoot, relPath string, targets []BindingTarg
 		case BindingTargetModule:
 			hasPreciseTarget = true
 		case BindingTargetSpecSection, BindingTargetAPIContract, BindingTargetInvariant:
-			hasPreciseTarget = true
-			hasInspectablePreciseTarget = true
 			return assessSemanticBindingTargetDrift(projectRoot, relPath, target), true
 		}
 	}

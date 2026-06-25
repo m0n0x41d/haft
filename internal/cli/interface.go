@@ -3326,9 +3326,7 @@ func interfaceContractAuditShapeCoverageFor(
 			continue
 		}
 
-		for _, missingField := range missingNestedShapeFields(topLevel, shape.Shape, propertySchema) {
-			missing = append(missing, missingField)
-		}
+		missing = append(missing, missingNestedShapeFields(topLevel, shape.Shape, propertySchema)...)
 	}
 
 	missing = uniqueSortedStrings(missing)

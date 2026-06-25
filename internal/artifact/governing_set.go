@@ -2,7 +2,7 @@ package artifact
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- deterministic governing-set IDs, not cryptographic trust.
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -674,7 +674,7 @@ func stringSliceContainsFold(values []string, query string) bool {
 }
 
 func currentGoverningSetID(subjectRef, boundedContext, targetRef string) string {
-	sum := sha1.Sum([]byte(subjectRef + "|" + boundedContext + "|" + targetRef))
+	sum := sha1.Sum([]byte(subjectRef + "|" + boundedContext + "|" + targetRef)) // #nosec G401 -- deterministic governing-set IDs, not cryptographic trust.
 	return fmt.Sprintf("governing-set-%x", sum[:6])
 }
 

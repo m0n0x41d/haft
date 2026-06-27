@@ -418,7 +418,8 @@ func methodRunSearchKeywords(run MethodRun) string {
 		parts = append(parts, signal.ID)
 	}
 	for _, item := range run.CarryThrough {
-		parts = append(parts, item.SourceRef, item.SourceItemRef, item.AcceptanceRef)
+		item = NormalizeCarryThroughItem(item)
+		parts = append(parts, item.SourceRef, item.SourceItemRef, item.AcceptanceRef, item.AcceptanceRefKind, item.AcceptanceRefStatus)
 	}
 	for _, checkpoint := range run.Checkpoints {
 		parts = append(parts,

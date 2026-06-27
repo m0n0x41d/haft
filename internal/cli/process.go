@@ -35,6 +35,14 @@ const (
 	processCheckStatusNotApplicable = "not_applicable"
 )
 
+const (
+	maxDefaultStatusBytes             = 20000
+	targetDefaultStatusActionLines    = 8
+	maxDefaultStatusActionLines       = 20
+	maxInterfaceCatalogBytes          = 30000
+	processValueSliceDefaultInputName = "value-slice input"
+)
+
 var processTelemetryMutationBoundary = []string{
 	"read_only_process_baseline",
 	"does_not_mutate_method_runs_decisions_evidence_or_carriers",
@@ -389,10 +397,12 @@ func buildProcessCheckReport(
 
 	results := []ProcessCheckResult{
 		processCheckMethodRunHardGates(ctx, store, observedAt, validUntil),
+		processCheckCarryThroughAcceptancePosture(ctx, store, observedAt, validUntil),
 		processCheckGeneratedContractRuntime(observedAt, validUntil),
 		processCheckBindingActionsFailClosed(observedAt, validUntil),
 		processCheckDefaultStatusCompact(ctx, store, projectRoot, observedAt, validUntil),
 		processCheckInterfaceDiscoveryCompact(observedAt, validUntil),
+		processCheckMethodPackCarriers(projectRoot, observedAt, validUntil),
 	}
 	report.Results = results
 	report.Summary = summarizeProcessCheckResults(results)
@@ -515,6 +525,116 @@ func processMethodRunHardGateIssues(
 		}
 	}
 	return checked, issues, nil
+}
+
+func processCheckCarryThroughAcceptancePosture(
+	ctx context.Context,
+	store *artifact.Store,
+	observedAt string,
+	validUntil string,
+) ProcessCheckResult {
+	checked, verified, external, invalid, samples, err := processCarryThroughAcceptancePosture(ctx, store)
+	if err != nil {
+		return processCheckResult(
+			"carry_through_acceptance_ref_posture",
+			"MethodRun.carry_through",
+			"project_method_runs",
+			processCheckStatusUnknown,
+			"medium",
+			observedAt,
+			validUntil,
+			"Could not inspect carry-through acceptance_ref posture: "+err.Error(),
+			nil,
+			"Fix artifact store access, then rerun haft process check.",
+		)
+	}
+	if invalid > 0 {
+		return processCheckResult(
+			"carry_through_acceptance_ref_posture",
+			"MethodRun.carry_through",
+			"project_method_runs",
+			processCheckStatusFail,
+			"high",
+			observedAt,
+			validUntil,
+			fmt.Sprintf("%d carry-through acceptance_ref item(s) are missing or malformed.", invalid),
+			processSampleStrings(samples, 8),
+			"Repair malformed acceptance_ref values or add an explicit carry_through_disposition_recorded waiver before relying on those MethodRuns.",
+		)
+	}
+	if external > 0 {
+		return processCheckResult(
+			"carry_through_acceptance_ref_posture",
+			"MethodRun.carry_through",
+			"project_method_runs",
+			processCheckStatusDegraded,
+			"medium",
+			observedAt,
+			validUntil,
+			fmt.Sprintf("%d carry-through acceptance_ref item(s) are externally asserted; %d verified local receipt(s), %d checked.", external, verified, checked),
+			processSampleStrings(samples, 8),
+			"Prefer operator_message:, review_disposition:, decision:, dec-, or manual_cli: receipt refs when local verification exists; keep external assertions labeled as weaker posture.",
+		)
+	}
+	return processCheckResult(
+		"carry_through_acceptance_ref_posture",
+		"MethodRun.carry_through",
+		"project_method_runs",
+		processCheckStatusPass,
+		"low",
+		observedAt,
+		validUntil,
+		fmt.Sprintf("%d carry-through acceptance_ref item(s) have verified local posture or no carry-through items need review.", checked),
+		[]string{fmt.Sprintf("checked=%d", checked), fmt.Sprintf("verified=%d", verified)},
+		"No action.",
+	)
+}
+
+func processCarryThroughAcceptancePosture(
+	ctx context.Context,
+	store *artifact.Store,
+) (int, int, int, int, []string, error) {
+	heads, err := store.ListByKind(ctx, artifact.KindMethodRun, 0)
+	if err != nil {
+		return 0, 0, 0, 0, nil, err
+	}
+	var checked int
+	var verified int
+	var external int
+	var invalid int
+	var samples []string
+	for _, head := range heads {
+		full, err := store.Get(ctx, head.Meta.ID)
+		if err != nil {
+			continue
+		}
+		run, err := methodpkg.DecodeRun(full)
+		if err != nil {
+			continue
+		}
+		items := append([]methodpkg.CarryThroughItem{}, run.CarryThrough...)
+		if run.Closeout != nil {
+			items = append(items, run.Closeout.CarryThrough...)
+		}
+		for _, item := range items {
+			checked++
+			item = methodpkg.NormalizeCarryThroughItem(item)
+			switch item.AcceptanceRefStatus {
+			case methodpkg.CarryAcceptanceStatusVerified:
+				verified++
+			case methodpkg.CarryAcceptanceStatusExternallyAsserted:
+				external++
+				samples = append(samples, fmt.Sprintf("%s:%s#%s=%s/%s", run.ID, item.SourceRef, item.SourceItemRef, item.AcceptanceRefKind, item.AcceptanceRefStatus))
+			case methodpkg.CarryAcceptanceStatusMissing, methodpkg.CarryAcceptanceStatusMalformed:
+				invalid++
+				samples = append(samples, fmt.Sprintf("%s:%s#%s=%s/%s", run.ID, item.SourceRef, item.SourceItemRef, item.AcceptanceRefKind, item.AcceptanceRefStatus))
+			default:
+				invalid++
+				samples = append(samples, fmt.Sprintf("%s:%s#%s=unsupported/%s", run.ID, item.SourceRef, item.SourceItemRef, item.AcceptanceRefStatus))
+			}
+		}
+	}
+	return checked, verified, external, invalid, samples, nil
 }
 
 func processCheckGeneratedContractRuntime(
@@ -646,8 +766,6 @@ func processCheckDefaultStatusCompact(
 			"Fix status rendering before treating compactness as proven.",
 		)
 	}
-	const maxDefaultStatusBytes = 20000
-	const maxDefaultStatusActionLines = 20
 	forbidden := processForbiddenStatusFragments(status)
 	actionLines := processDefaultStatusActionLines(status)
 	if len(status) > maxDefaultStatusBytes || len(forbidden) > 0 || len(actionLines) > maxDefaultStatusActionLines {
@@ -667,6 +785,24 @@ func processCheckDefaultStatusCompact(
 			"Move detailed process/contract data behind drill-down commands and keep default status as cockpit cues only.",
 		)
 	}
+	if len(actionLines) > targetDefaultStatusActionLines {
+		return processCheckResult(
+			"default_status_compact",
+			"haft_query.status",
+			"default_operator_cockpit",
+			processCheckStatusDegraded,
+			"medium",
+			observedAt,
+			validUntil,
+			fmt.Sprintf("Default status stays under the hard guard but misses the product action-line target: bytes=%d action_lines=%d target=%d hard_limit=%d.", len(status), len(actionLines), targetDefaultStatusActionLines, maxDefaultStatusActionLines),
+			[]string{
+				fmt.Sprintf("bytes=%d <= %d", len(status), maxDefaultStatusBytes),
+				fmt.Sprintf("action_lines=%d > target %d", len(actionLines), targetDefaultStatusActionLines),
+				fmt.Sprintf("action_lines=%d <= hard_limit %d", len(actionLines), maxDefaultStatusActionLines),
+			},
+			"Reduce non-essential default drill-down/action lines without hiding material drift or stale-governance signals.",
+		)
+	}
 	return processCheckResult(
 		"default_status_compact",
 		"haft_query.status",
@@ -676,7 +812,7 @@ func processCheckDefaultStatusCompact(
 		observedAt,
 		validUntil,
 		fmt.Sprintf("Default status is compact and does not inline process or generated-contract reports: bytes=%d action_lines=%d.", len(status), len(actionLines)),
-		[]string{fmt.Sprintf("bytes=%d <= %d", len(status), maxDefaultStatusBytes), fmt.Sprintf("action_lines=%d <= %d", len(actionLines), maxDefaultStatusActionLines)},
+		[]string{fmt.Sprintf("bytes=%d <= %d", len(status), maxDefaultStatusBytes), fmt.Sprintf("action_lines=%d <= target %d", len(actionLines), targetDefaultStatusActionLines), fmt.Sprintf("hard_limit=%d", maxDefaultStatusActionLines)},
 		"No action.",
 	)
 }
@@ -764,7 +900,6 @@ func processCheckInterfaceDiscoveryCompact(
 			"Fix interface catalog rendering before treating compact discovery as proven.",
 		)
 	}
-	const maxInterfaceCatalogBytes = 30000
 	forbidden := processForbiddenInterfaceCatalogFragments(output.String())
 	if output.Len() > maxInterfaceCatalogBytes || len(forbidden) > 0 {
 		return processCheckResult(

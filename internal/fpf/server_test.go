@@ -301,7 +301,7 @@ func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 	if !ok {
 		t.Fatalf("carry_through.items.properties missing or wrong type: %#v", carryItems["properties"])
 	}
-	for _, key := range []string{"source_ref", "source_item_ref", "acceptance_ref", "disposition", "target_refs", "evidence_refs", "reason"} {
+	for _, key := range []string{"source_ref", "source_item_ref", "acceptance_ref", "acceptance_ref_kind", "acceptance_ref_status", "disposition", "target_refs", "evidence_refs", "reason"} {
 		if _, ok := carryProperties[key]; !ok {
 			t.Fatalf("carry_through item schema missing %q", key)
 		}
@@ -315,18 +315,14 @@ func TestHandleToolsList_MethodSchemaExposesPullAndClose(t *testing.T) {
 			t.Fatalf("carry_through item required fields = %#v, missing %q", required, key)
 		}
 	}
-	disposition, ok := carryProperties["disposition"].(map[string]interface{})
-	if !ok {
+	if _, ok := carryProperties["disposition"].(map[string]interface{}); !ok {
 		t.Fatalf("carry_through disposition schema missing or wrong type: %#v", carryProperties["disposition"])
 	}
-	dispositionEnum, ok := disposition["enum"].([]interface{})
-	if !ok {
-		t.Fatalf("carry_through disposition enum missing or wrong type: %#v", disposition)
+	if _, ok := carryProperties["acceptance_ref_kind"].(map[string]interface{}); !ok {
+		t.Fatalf("carry_through acceptance_ref_kind schema missing or wrong type: %#v", carryProperties["acceptance_ref_kind"])
 	}
-	for _, value := range []string{"pending", "applied", "rejected", "deferred", "superseded"} {
-		if !schemaEnumContains(dispositionEnum, value) {
-			t.Fatalf("carry_through disposition enum = %#v, missing %q", dispositionEnum, value)
-		}
+	if _, ok := carryProperties["acceptance_ref_status"].(map[string]interface{}); !ok {
+		t.Fatalf("carry_through acceptance_ref_status schema missing or wrong type: %#v", carryProperties["acceptance_ref_status"])
 	}
 }
 

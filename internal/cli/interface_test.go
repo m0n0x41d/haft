@@ -2416,6 +2416,9 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 	if !strings.Contains(required, "pull_id") {
 		t.Fatalf("method.close required fields = %q, want pull_id", required)
 	}
+	if !strings.Contains(capability.Purpose, "accepted-basis carry-through dispositions") {
+		t.Fatalf("method.close purpose does not name carry-through dispositions:\n%s", capability.Purpose)
+	}
 
 	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
 	for _, want := range []string{"gate_results", "verification", "waivers", "carry_through"} {
@@ -2425,7 +2428,7 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "carry_through[] shape", "close_template", "Derive changed_files", "irreducible judgment", "carry_through_disposition_recorded"} {
+	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "carry_through[] shape", "acceptance_ref_kind", "acceptance_ref_status", "externally_asserted", "close_template", "Derive changed_files", "irreducible judgment", "carry_through_disposition_recorded"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("method.close notes missing %q:\n%s", want, notes)
 		}
@@ -2449,14 +2452,14 @@ func TestInterfaceMethodPullNamesCarryThroughContract(t *testing.T) {
 	}
 
 	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
-	for _, want := range []string{"carry_through[]", "source_ref", "source_item_ref", "acceptance_ref", "operator:accepted"} {
+	for _, want := range []string{"carry_through[]", "source_ref", "source_item_ref", "acceptance_ref", "acceptance_ref_kind", "acceptance_ref_status", "operator:accepted", "externally_asserted"} {
 		if !strings.Contains(fieldShapes, want) {
 			t.Fatalf("method.pull field shapes missing %q:\n%s", want, fieldShapes)
 		}
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"pending accepted-basis inventory", "apply/reject/defer/supersede"} {
+	for _, want := range []string{"pending accepted-basis inventory", "apply/reject/defer/supersede", "acceptance_ref_kind/status"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("method.pull notes missing %q:\n%s", want, notes)
 		}
@@ -2470,6 +2473,8 @@ func TestPiMethodSchemaMirrorsCarryThroughItemShape(t *testing.T) {
 		"source_ref: Type.String()",
 		"source_item_ref: Type.String()",
 		"acceptance_ref: Type.String()",
+		`acceptance_ref_kind: Type.Optional(enumOf("operator_message", "review_disposition", "decision_record", "manual_cli_receipt", "external_unverified", "unknown"))`,
+		`acceptance_ref_status: Type.Optional(enumOf("verified", "externally_asserted", "missing", "malformed"))`,
 		`disposition: Type.Optional(enumOf("pending", "applied", "rejected", "deferred", "superseded"))`,
 		"target_refs: OptStrList()",
 		"evidence_refs: OptStrList()",

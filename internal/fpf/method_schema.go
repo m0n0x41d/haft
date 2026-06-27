@@ -3,31 +3,31 @@ package fpf
 func haftMethodTool() Tool {
 	return Tool{
 		Name:        "haft_method",
-		Description: "MethodRun pull/close/read/catalog.",
+		Description: "MethodRun lifecycle.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type":        "string",
 					"enum":        []interface{}{"pull", "close", "show", "detail", "status", "catalog"},
-					"description": "pull, close, show, detail, status, catalog.",
+					"description": "method action.",
 				},
 				"task": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Task.",
+					"description": "task.",
 				},
 				"declared_task_kind": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Task kind.",
+					"description": "kind.",
 				},
 				"change_intent": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Change intent.",
+					"description": "intent.",
 				},
 				"intended_files": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
-					"description": "(pull) Expected files.",
+					"description": "files.",
 				},
 				"risk_signals": map[string]interface{}{
 					"type": "array",
@@ -39,42 +39,42 @@ func haftMethodTool() Tool {
 							"evidence": map[string]interface{}{},
 						},
 					},
-					"description": "(pull) Risk ids.",
+					"description": "risks.",
 				},
 				"user_scope_constraints": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
-					"description": "(pull) Scope limits.",
+					"description": "scope.",
 				},
 				"artifact_refs": map[string]interface{}{
 					"type":        "object",
-					"description": "(pull) Artifact refs.",
+					"description": "refs.",
 				},
 				"ceremony_request": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) none|low|medium|deep.",
+					"description": "ceremony.",
 				},
 				"response_budget": map[string]interface{}{
 					"type":        "object",
-					"description": "(pull) Response budget.",
+					"description": "budget.",
 				},
 				"context": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Context.",
+					"description": "context.",
 				},
 				"carry_through": map[string]interface{}{
 					"type":        "array",
 					"items":       methodCarryThroughItemSchema(),
-					"description": "(pull/close) Accepted items to dispose.",
+					"description": "accepted items.",
 				},
 				"pull_id": map[string]interface{}{
 					"type":        "string",
-					"description": "(close/show) mpull id.",
+					"description": "mpull id.",
 				},
 				"changed_files": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
-					"description": "(close) Changed files.",
+					"description": "changed files.",
 				},
 				"gate_results": map[string]interface{}{
 					"type": "array",
@@ -87,12 +87,12 @@ func haftMethodTool() Tool {
 							"waiver_reason": map[string]interface{}{},
 						},
 					},
-					"description": "(close) Gate results.",
+					"description": "gate results.",
 				},
 				"verification": map[string]interface{}{
 					"type":        "object",
 					"properties":  map[string]interface{}{"commands": map[string]interface{}{}, "result": map[string]interface{}{}, "output_ref": map[string]interface{}{}},
-					"description": "(close) Verification.",
+					"description": "verification.",
 				},
 				"waivers": map[string]interface{}{
 					"type": "array",
@@ -100,17 +100,17 @@ func haftMethodTool() Tool {
 						"type":       "object",
 						"properties": map[string]interface{}{"gate_id": map[string]interface{}{}, "reason": map[string]interface{}{}},
 					},
-					"description": "(close) Waivers.",
+					"description": "waivers.",
 				},
 				"method_ref": map[string]interface{}{
 					"type":        "string",
-					"description": "(detail) Method id.",
+					"description": "method id.",
 				},
 				"method_status": map[string]interface{}{
-					"description": "(catalog) current | experimental | superseded | deprecated | all.",
+					"description": "lifecycle filter.",
 				},
 				"limit": map[string]interface{}{
-					"description": "(status) Max open runs, default 10.",
+					"description": "limit.",
 				},
 			},
 			"required": []string{"action"},
@@ -122,13 +122,15 @@ func methodCarryThroughItemSchema() map[string]interface{} {
 	return map[string]interface{}{
 		"type": "object",
 		"properties": map[string]interface{}{
-			"source_ref":      map[string]interface{}{},
-			"source_item_ref": map[string]interface{}{},
-			"acceptance_ref":  map[string]interface{}{},
-			"disposition":     map[string]interface{}{"enum": []interface{}{"pending", "applied", "rejected", "deferred", "superseded"}},
-			"target_refs":     map[string]interface{}{},
-			"evidence_refs":   map[string]interface{}{},
-			"reason":          map[string]interface{}{},
+			"source_ref":            map[string]interface{}{},
+			"source_item_ref":       map[string]interface{}{},
+			"acceptance_ref":        map[string]interface{}{},
+			"acceptance_ref_kind":   map[string]interface{}{},
+			"acceptance_ref_status": map[string]interface{}{},
+			"disposition":           map[string]interface{}{},
+			"target_refs":           map[string]interface{}{},
+			"evidence_refs":         map[string]interface{}{},
+			"reason":                map[string]interface{}{},
 		},
 		"required": []string{"source_ref", "source_item_ref", "acceptance_ref"},
 	}

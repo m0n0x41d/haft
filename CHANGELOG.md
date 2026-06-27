@@ -22,12 +22,33 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   counts, repeated-close repair rounds, carry-through item counts, and pending
   carry-through counts. These are labeled as process proxies, not product-value
   proof or a scalar maturity score.
+- **Process value-slice report.** Added `haft process value-slice --input FILE
+  --json` as a read-only equal-budget observation report for comparing
+  `haft_methodpack` and `baseline_agent` AI SWE task outcomes. The report
+  preserves the observed vector (unresolved accepted findings, review findings,
+  rework, operator corrections, status action lines, escaped drift, and
+  tokens/calls/wallclock), returns `continue` / `simplify` /
+  `pause_checkpoint` / `insufficient_data` policy labels, and explicitly does
+  not create product-value proof, evidence truth, approval, gate passage,
+  global truth, publication, or a scalar TPF maturity score.
 - **Process check results.** Added `haft process check --json --profile core`
   with stable read-only `ProcessCheckResult` records for MethodRun hard-gate
-  closeouts, generated contract/runtime schema sync, binding-action fail-closed
-  behavior, default status compactness, and interface discovery compactness.
+  closeouts, carry-through acceptance posture, generated contract/runtime
+  schema sync, binding-action fail-closed behavior, default status compactness,
+  interface discovery compactness, and MethodPack carrier currentness.
   Results include explicit authority boundaries and actionable `next_action`
   text without adding a default-status or MCP `tools/list` payload.
+- **Carry-through acceptance posture.** `haft_method` carry-through items now
+  carry normalized `acceptance_ref_kind` and `acceptance_ref_status` posture so
+  strings such as `operator:accepted` remain allowed but are labeled
+  `externally_asserted`, while local receipt-shaped refs can be labeled
+  `verified`. Missing or malformed acceptance refs fail validation unless the
+  carry-through disposition gate is explicitly waived.
+- **MethodPack carrier currentness check.** `haft process check --profile core`
+  now includes a read-only `methodpack_carrier_currentness` result that hashes
+  MethodPack carrier refs and reports missing or stale materialized method
+  carriers as degraded advisory findings. Carrier findings do not create method
+  authority, evidence truth, approval, or gate passage.
 - **MethodPack lifecycle catalog.** Added lifecycle/discovery metadata to
   MethodPack definitions and exposed it through `haft method catalog --status
   current --json`, `haft interface method.catalog --json`, and
@@ -121,6 +142,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   lines as well as byte size and forbidden process fragments. This protects
   human scan cost without moving process authority, reconciliation, checkpoint,
   or generated-contract details into the default cockpit.
+- **Default status product target.** The process check now separates the hard
+  status action-line ceiling from an ergonomic product target: `<=8` action
+  lines passes, `9..20` degrades with an explicit finding, and `>20` fails.
+  The degraded band keeps real drift/stale governance signals visible instead
+  of hiding them to satisfy a token budget.
+- **Method close purpose sync.** `method.close` interface/help wording now
+  names accepted-basis carry-through dispositions alongside changed files,
+  hard-gate results, verification evidence, and explicit waivers, matching the
+  actual close contract without implying approval or evidence truth.
+- **Generated contract carrier sync.** Materialized `AGENTS.md`, `CLAUDE.md`,
+  bundled skill, and Pi prompt/tool carriers now carry the current
+  `kernel_interface_catalog` source digest after contract-generation sync.
 - **Checkpoint close-token persistence.** New MethodRun checkpoint records now
   persist `close_token_hash` instead of raw `close_token`; the raw token is
   returned only in the open response. Close still accepts legacy raw-token

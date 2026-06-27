@@ -175,14 +175,16 @@ type Waiver struct {
 }
 
 type CarryThroughItem struct {
-	SourceRef     string   `json:"source_ref"`
-	SourceItemRef string   `json:"source_item_ref"`
-	AcceptanceRef string   `json:"acceptance_ref"`
-	Disposition   string   `json:"disposition"`
-	TargetRefs    []string `json:"target_refs,omitempty"`
-	Reason        string   `json:"reason,omitempty"`
-	EvidenceRefs  []string `json:"evidence_refs,omitempty"`
-	UpdatedAt     string   `json:"updated_at,omitempty"`
+	SourceRef           string   `json:"source_ref"`
+	SourceItemRef       string   `json:"source_item_ref"`
+	AcceptanceRef       string   `json:"acceptance_ref"`
+	AcceptanceRefKind   string   `json:"acceptance_ref_kind,omitempty"`
+	AcceptanceRefStatus string   `json:"acceptance_ref_status,omitempty"`
+	Disposition         string   `json:"disposition"`
+	TargetRefs          []string `json:"target_refs,omitempty"`
+	Reason              string   `json:"reason,omitempty"`
+	EvidenceRefs        []string `json:"evidence_refs,omitempty"`
+	UpdatedAt           string   `json:"updated_at,omitempty"`
 }
 
 type CheckpointRecord struct {

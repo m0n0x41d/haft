@@ -21,7 +21,7 @@ const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:6ff5e2ae7c293403d7ff49c6d896ad1137283953e929c15e95f0f979a758cfa9";
+  "sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398";
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),
@@ -39,6 +39,8 @@ const carryThroughItemSchema = Type.Object({
   source_ref: Type.String(),
   source_item_ref: Type.String(),
   acceptance_ref: Type.String(),
+  acceptance_ref_kind: Type.Optional(enumOf("operator_message", "review_disposition", "decision_record", "manual_cli_receipt", "external_unverified", "unknown")),
+  acceptance_ref_status: Type.Optional(enumOf("verified", "externally_asserted", "missing", "malformed")),
   disposition: Type.Optional(enumOf("pending", "applied", "rejected", "deferred", "superseded")),
   target_refs: OptStrList(),
   evidence_refs: OptStrList(),

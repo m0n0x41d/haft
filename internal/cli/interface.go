@@ -670,11 +670,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "carry_through[]",
-						Shape: `{"source_ref":"review:external","source_item_ref":"finding-1","acceptance_ref":"operator:accepted"}`,
-						Note:  "Use only for accepted review/instruction items that must be disposed before close; model text alone is not acceptance.",
+						Shape: `{"source_ref":"review:external","source_item_ref":"finding-1","acceptance_ref":"operator:accepted","acceptance_ref_kind":"operator_message","acceptance_ref_status":"externally_asserted"}`,
+						Note:  "Use only for accepted review/instruction items that must be disposed before close; model text alone is not acceptance, and externally_asserted refs are weaker than verified local receipts.",
 					},
 				},
-				Notes: []string{"Use for feature, bugfix/debug, refactor, external integration, governed files, cross-module edits, behavior changes, or failing tests.", "Mechanical edits should request low/none ceremony.", "carry_through starts as pending accepted-basis inventory; close must apply/reject/defer/supersede or waive it."},
+				Notes: []string{"Use for feature, bugfix/debug, refactor, external integration, governed files, cross-module edits, behavior changes, or failing tests.", "Mechanical edits should request low/none ceremony.", "carry_through starts as pending accepted-basis inventory; close must apply/reject/defer/supersede or waive it.", "acceptance_ref_kind/status classify the acceptance receipt posture; external assertions are allowed but not evidence truth or approval by themselves."},
 			},
 			OutputVolume: []string{"default: max 3 method cards, max 3 hard gates per card, plus close_template JSON", "detail action: full definition for one method"},
 			Invariants: append(commonInterfaceInvariants(),
@@ -684,7 +684,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 		},
 		{
 			ID:      "method.close",
-			Purpose: "Close an existing MethodRun by pull_id with changed files, hard-gate results, verification evidence, and explicit waivers.",
+			Purpose: "Close an existing MethodRun by pull_id with changed files, hard-gate results, verification evidence, accepted-basis carry-through dispositions, and explicit waivers.",
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_method",
 				MCPAction:        "close",
@@ -708,19 +708,20 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "carry_through[]",
-						Shape: `{"source_ref":"review:external","source_item_ref":"finding-1","acceptance_ref":"operator:accepted","disposition":"applied","target_refs":["internal/method/run.go::ValidateClose"],"evidence_refs":["go test ./internal/method"]}`,
-						Note:  "applied requires target_refs; rejected/deferred/superseded require reason; pending blocks close unless waiver carry_through_disposition_recorded is explicit.",
+						Shape: `{"source_ref":"review:external","source_item_ref":"finding-1","acceptance_ref":"operator:accepted","acceptance_ref_kind":"operator_message","acceptance_ref_status":"externally_asserted","disposition":"applied","target_refs":["internal/method/run.go::ValidateClose"],"evidence_refs":["go test ./internal/method"]}`,
+						Note:  "applied requires target_refs; rejected/deferred/superseded require reason; pending blocks close unless waiver carry_through_disposition_recorded is explicit; missing/malformed acceptance_ref posture is a validation issue.",
 					},
 				},
 				Notes: []string{
 					`gate_results[] shape: {"gate_id":"<hard-gate-id>","status":"satisfied","evidence_refs":["<evidence-ref>"]}`,
 					`waivers[] shape: {"gate_id":"<hard-gate-id>","reason":"<why waived>"}`,
 					`verification shape: {"commands":["<command>"],"result":"<pass|partial|failed>","output_ref":"<optional>"}`,
-					`carry_through[] shape: {"source_ref":"<source>","source_item_ref":"<item>","acceptance_ref":"<operator-or-review-acceptance>","disposition":"applied|rejected|deferred|superseded","target_refs":["<changed-target>"],"reason":"<why>"}`,
+					`carry_through[] shape: {"source_ref":"<source>","source_item_ref":"<item>","acceptance_ref":"<operator-or-review-acceptance>","acceptance_ref_kind":"operator_message|review_disposition|decision_record|manual_cli_receipt|external_unverified|unknown","acceptance_ref_status":"verified|externally_asserted|missing|malformed","disposition":"applied|rejected|deferred|superseded","target_refs":["<changed-target>"],"reason":"<why>"}`,
 					"Derive changed_files, verification.commands, test status, and governed-decision intersections from git diff, terminal traces, and code_context before asking the operator.",
 					"Ask the operator only for irreducible judgment: waivers, ambiguous authority, or acceptance of residual risk.",
 					"Hard gates require either satisfied evidence_refs or an explicit waiver reason.",
 					"Accepted carry-through items must be disposed before close; unresolved items require waiver gate carry_through_disposition_recorded with an operator reason.",
+					"acceptance_ref_kind/status classify receipt posture; externally_asserted refs can be carried through but do not become approval, evidence truth, or gate passage.",
 					"After context compaction, call method.status then method.show to recover the pull_id and close_template.",
 				},
 			},

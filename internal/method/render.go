@@ -51,11 +51,14 @@ func RenderRunBody(run MethodRun) string {
 	if len(run.CarryThrough) > 0 {
 		b.WriteString("## Carry-through\n\n")
 		for _, item := range run.CarryThrough {
-			b.WriteString(fmt.Sprintf("- `%s#%s`: %s accepted by %s\n",
+			item = NormalizeCarryThroughItem(item)
+			b.WriteString(fmt.Sprintf("- `%s#%s`: %s accepted by %s (%s/%s)\n",
 				item.SourceRef,
 				item.SourceItemRef,
 				item.Disposition,
 				item.AcceptanceRef,
+				item.AcceptanceRefKind,
+				item.AcceptanceRefStatus,
 			))
 		}
 		b.WriteString("\n")
@@ -112,10 +115,13 @@ func RenderRunBody(run MethodRun) string {
 		if len(run.Closeout.CarryThrough) > 0 {
 			b.WriteString("Carry-through dispositions:\n")
 			for _, item := range run.Closeout.CarryThrough {
-				b.WriteString(fmt.Sprintf("- `%s#%s`: %s\n",
+				item = NormalizeCarryThroughItem(item)
+				b.WriteString(fmt.Sprintf("- `%s#%s`: %s (%s/%s)\n",
 					item.SourceRef,
 					item.SourceItemRef,
 					item.Disposition,
+					item.AcceptanceRefKind,
+					item.AcceptanceRefStatus,
 				))
 			}
 			b.WriteString("\n")

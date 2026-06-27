@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -209,6 +210,7 @@ func TestRunProcessTelemetryJSON(t *testing.T) {
 
 func TestBuildProcessCheckReportCoreReturnsStableResults(t *testing.T) {
 	fixture := newCheckTestProject(t)
+	writeProcessMethodPackCarrierFixtures(t, fixture)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	seedProcessMethodRun(t, fixture, validProcessMethodRunFixture(now))
 
@@ -225,11 +227,11 @@ func TestBuildProcessCheckReportCoreReturnsStableResults(t *testing.T) {
 	if report.Authority != processCheckAuthority {
 		t.Fatalf("authority = %q", report.Authority)
 	}
-	if len(report.Results) != 5 {
-		t.Fatalf("results = %d, want 5: %#v", len(report.Results), report.Results)
+	if len(report.Results) != 7 {
+		t.Fatalf("results = %d, want 7: %#v", len(report.Results), report.Results)
 	}
-	if report.Summary.Total != 5 {
-		t.Fatalf("summary total = %d, want 5", report.Summary.Total)
+	if report.Summary.Total != 7 {
+		t.Fatalf("summary total = %d, want 7", report.Summary.Total)
 	}
 	for _, result := range report.Results {
 		if result.CheckID == "" || result.CheckVersion != "v0" {
@@ -245,10 +247,12 @@ func TestBuildProcessCheckReportCoreReturnsStableResults(t *testing.T) {
 	}
 	for _, want := range []string{
 		"method_run_hard_gates",
+		"carry_through_acceptance_ref_posture",
 		"generated_contract_runtime_schema",
 		"binding_actions_fail_closed",
 		"default_status_compact",
 		"interface_discovery_compact",
+		"methodpack_carrier_currentness",
 	} {
 		if !processCheckTestHasResult(report.Results, want) {
 			t.Fatalf("missing check %q in %#v", want, report.Results)
@@ -260,6 +264,35 @@ func TestBuildProcessCheckReportCoreReturnsStableResults(t *testing.T) {
 		if !strings.Contains(statusEvidence, want) {
 			t.Fatalf("default status compact evidence missing %q: %#v", want, statusResult)
 		}
+	}
+}
+
+func TestBuildProcessCheckReportDegradesExternalCarryThroughAcceptanceRef(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	run := validProcessMethodRunFixture(now)
+	run.ID = "mpull-external-acceptance-ref"
+	run.CarryThrough = []methodpkg.CarryThroughItem{{
+		SourceRef:     "review:external",
+		SourceItemRef: "finding-1",
+		AcceptanceRef: "operator:accepted",
+		Disposition:   methodpkg.CarryDispositionPending,
+	}}
+	seedProcessMethodRun(t, fixture, run)
+
+	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+		Profile: "core",
+		Now:     now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := processCheckTestResult(t, report.Results, "carry_through_acceptance_ref_posture")
+	if result.Status != processCheckStatusDegraded {
+		t.Fatalf("status = %q, want degraded: %#v", result.Status, result)
+	}
+	if !strings.Contains(result.Finding, "externally asserted") {
+		t.Fatalf("finding should name externally asserted posture: %#v", result)
 	}
 }
 
@@ -416,6 +449,7 @@ func TestProcessCheckClosureDisciplineCarryThroughEndToEnd(t *testing.T) {
 
 func TestRunProcessCheckJSON(t *testing.T) {
 	fixture := newCheckTestProject(t)
+	writeProcessMethodPackCarrierFixtures(t, fixture)
 	seedProcessMethodRun(t, fixture, validProcessMethodRunFixture(time.Now().UTC()))
 	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
@@ -444,11 +478,32 @@ func TestRunProcessCheckJSON(t *testing.T) {
 	if report.Kind != processCheckKind {
 		t.Fatalf("kind = %q", report.Kind)
 	}
-	if len(report.Results) != 5 {
-		t.Fatalf("results = %d, want 5", len(report.Results))
+	if len(report.Results) != 7 {
+		t.Fatalf("results = %d, want 7", len(report.Results))
 	}
 	if strings.Contains(output.String(), "generated_schema_fragments") {
 		t.Fatalf("process check should not inline generated schema fragments:\n%s", output.String())
+	}
+}
+
+func TestBuildProcessCheckReportDegradesMissingMethodPackCarriers(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
+	seedProcessMethodRun(t, fixture, validProcessMethodRunFixture(now))
+
+	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+		Profile: "core",
+		Now:     now,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := processCheckTestResult(t, report.Results, "methodpack_carrier_currentness")
+	if result.Status != processCheckStatusDegraded {
+		t.Fatalf("status = %q, want degraded: %#v", result.Status, result)
+	}
+	if !strings.Contains(result.Finding, "missing") {
+		t.Fatalf("finding should name missing carriers: %#v", result)
 	}
 }
 
@@ -523,6 +578,95 @@ func TestSummarizeProcessCheckResultsClassifiesStatuses(t *testing.T) {
 	}
 }
 
+func TestBuildProcessValueSliceReportReturnsContinuePolicy(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "title": "baseline task",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 0,
+      "tokens_calls_wallclock": {"tokens": 1000, "calls": 10, "wallclock": 30}
+    },
+    {
+      "task_id": "task-1",
+      "title": "haft task",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6,
+      "tokens_calls_wallclock": {"tokens": 1100, "calls": 11, "wallclock": 31}
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("fixture.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Kind != processValueSliceKind {
+		t.Fatalf("kind = %q", report.Kind)
+	}
+	if report.Summary.EqualBudgetGroups != 1 {
+		t.Fatalf("equal budget groups = %d, want 1", report.Summary.EqualBudgetGroups)
+	}
+	if report.Policy.Label != "continue" {
+		t.Fatalf("policy = %#v, want continue", report.Policy)
+	}
+	if strings.Contains(strings.Join(report.Notes, " "), "maturity score") && !strings.Contains(report.Authority, "not_product_value_proof") {
+		t.Fatalf("value-slice authority boundary weak: %#v", report)
+	}
+}
+
+func TestRunProcessValueSliceJSON(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	path := filepath.Join(fixture.root, "value-slice.json")
+	if err := os.WriteFile(path, []byte(`[{"task_id":"task-1","condition":"baseline_agent"},{"task_id":"task-1","condition":"haft_methodpack"}]`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	oldJSON := processValueSliceJSON
+	oldInput := processValueSliceInput
+	t.Cleanup(func() {
+		processValueSliceJSON = oldJSON
+		processValueSliceInput = oldInput
+	})
+
+	processValueSliceJSON = true
+	processValueSliceInput = path
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+	if err := runProcessValueSlice(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	report := processValueSliceReport{}
+	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+		t.Fatalf("decode value-slice report: %v\n%s", err, output.String())
+	}
+	if report.Kind != processValueSliceKind {
+		t.Fatalf("kind = %q", report.Kind)
+	}
+	if !strings.Contains(report.Authority, "not_product_value_proof") {
+		t.Fatalf("authority = %q", report.Authority)
+	}
+}
+
 func writeProcessTelemetrySessionFixture(t *testing.T, root string) string {
 	t.Helper()
 
@@ -567,6 +711,20 @@ func seedProcessMethodRun(t *testing.T, fixture checkTestProject, run methodpkg.
 	}
 	if err := fixture.store.Create(context.Background(), item); err != nil {
 		t.Fatalf("create method run fixture: %v", err)
+	}
+}
+
+func writeProcessMethodPackCarrierFixtures(t *testing.T, fixture checkTestProject) {
+	t.Helper()
+	sourceDir := filepath.Join(fixture.root, "internal", "method")
+	if err := os.MkdirAll(sourceDir, 0o755); err != nil {
+		t.Fatalf("create method source dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceDir, "builtin.go"), []byte("package method\n"), 0o644); err != nil {
+		t.Fatalf("write method source carrier: %v", err)
+	}
+	if err := methodpkg.InstallDefaultCatalog(fixture.haftDir); err != nil {
+		t.Fatalf("install MethodPack carriers: %v", err)
 	}
 }
 

@@ -595,6 +595,48 @@ func TestPullStoresCarryThroughItemsAsPending(t *testing.T) {
 	if item.Disposition != CarryDispositionPending {
 		t.Fatalf("disposition = %q, want pending", item.Disposition)
 	}
+	if item.AcceptanceRefKind != CarryAcceptanceKindOperatorMessage ||
+		item.AcceptanceRefStatus != CarryAcceptanceStatusExternallyAsserted {
+		t.Fatalf("acceptance posture = %s/%s, want operator_message/externally_asserted", item.AcceptanceRefKind, item.AcceptanceRefStatus)
+	}
+}
+
+func TestPullRejectsMalformedCarryThroughAcceptanceRef(t *testing.T) {
+	_, err := Pull(PullInput{
+		Task: "Apply accepted review finding",
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "accepted",
+		}},
+	})
+	if err == nil {
+		t.Fatal("Pull accepted malformed carry-through acceptance_ref")
+	}
+	if !strings.Contains(err.Error(), "malformed acceptance_ref") {
+		t.Fatalf("error = %v, want malformed acceptance_ref", err)
+	}
+}
+
+func TestCarryThroughAcceptancePostureRecognizesVerifiedRefs(t *testing.T) {
+	cases := []struct {
+		ref        string
+		wantKind   string
+		wantStatus string
+	}{
+		{ref: "operator_message:msg-1", wantKind: CarryAcceptanceKindOperatorMessage, wantStatus: CarryAcceptanceStatusVerified},
+		{ref: "review_disposition:review-1", wantKind: CarryAcceptanceKindReviewDisposition, wantStatus: CarryAcceptanceStatusVerified},
+		{ref: "dec-20260627-example", wantKind: CarryAcceptanceKindDecisionRecord, wantStatus: CarryAcceptanceStatusVerified},
+		{ref: "manual_cli:receipt-1", wantKind: CarryAcceptanceKindManualCLIReceipt, wantStatus: CarryAcceptanceStatusVerified},
+		{ref: "external:ticket-1", wantKind: CarryAcceptanceKindExternalUnverified, wantStatus: CarryAcceptanceStatusExternallyAsserted},
+	}
+
+	for _, tc := range cases {
+		got := InferCarryThroughAcceptancePosture(tc.ref)
+		if got.Kind != tc.wantKind || got.Status != tc.wantStatus {
+			t.Fatalf("%s posture = %s/%s, want %s/%s", tc.ref, got.Kind, got.Status, tc.wantKind, tc.wantStatus)
+		}
+	}
 }
 
 func TestValidateCloseRequiresCarryThroughDisposition(t *testing.T) {
@@ -731,6 +773,10 @@ func TestBuildCloseTemplateNamesRequiredGateFields(t *testing.T) {
 	carry := template.CarryThrough[0]
 	if carry.Disposition != CarryDispositionApplied || len(carry.TargetRefs) == 0 {
 		t.Fatalf("template carry-through missing applied target hint: %+v", carry)
+	}
+	if carry.AcceptanceRefKind != CarryAcceptanceKindOperatorMessage ||
+		carry.AcceptanceRefStatus != CarryAcceptanceStatusExternallyAsserted {
+		t.Fatalf("template carry-through missing acceptance posture: %+v", carry)
 	}
 }
 

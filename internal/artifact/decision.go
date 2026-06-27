@@ -1120,6 +1120,9 @@ func projectRootFromHaftDir(haftDir string) string {
 
 func enrichDecisionInputBindingTargets(projectRoot string, input DecideInput) DecideInput {
 	if projectRoot == "" || len(input.AffectedFiles) == 0 || len(input.BindingTargets) > 0 {
+		if shouldProjectAffectedFilesAsImplementationFootprint(input) {
+			input = projectAffectedFilesAsImplementationFootprint(input)
+		}
 		return input
 	}
 
@@ -1134,11 +1137,84 @@ func enrichDecisionInputBindingTargets(projectRoot string, input DecideInput) De
 		DecisionText:   decisionBindingResolutionText(input),
 	})
 	if err != nil || len(resolution.Targets) == 0 {
+		if shouldProjectAffectedFilesAsImplementationFootprint(input) {
+			input = projectAffectedFilesAsImplementationFootprint(input)
+		}
 		return input
 	}
 
-	input.BindingTargets = resolution.Targets
+	targets := decisionAutoBindingAuthorityTargets(input, resolution.Targets)
+	if len(targets) == 0 {
+		if shouldProjectAffectedFilesAsImplementationFootprint(input) {
+			input = projectAffectedFilesAsImplementationFootprint(input)
+		}
+		return input
+	}
+
+	input.BindingTargets = targets
 	return input
+}
+
+func shouldProjectAffectedFilesAsImplementationFootprint(input DecideInput) bool {
+	return len(input.AffectedFiles) > 0 &&
+		len(input.GovernanceTargets) == 0 &&
+		len(input.DriftWatchTargets) == 0 &&
+		len(input.BindingTargets) == 0 &&
+		!decisionInputRequestsExplicitBindingAuthority(input)
+}
+
+func projectAffectedFilesAsImplementationFootprint(input DecideInput) DecideInput {
+	input.ImplementationFootprint.Files = appendUniqueCompactStrings(
+		input.ImplementationFootprint.Files,
+		input.AffectedFiles,
+	)
+	return input
+}
+
+func decisionInputRequestsExplicitBindingAuthority(input DecideInput) bool {
+	return len(input.BindingHints) > 0 ||
+		strings.TrimSpace(input.BindingScope) != "" ||
+		strings.TrimSpace(input.BindingFallbackReason) != ""
+}
+
+func decisionAutoBindingAuthorityTargets(input DecideInput, targets []BindingTarget) []BindingTarget {
+	if decisionInputRequestsExplicitBindingAuthority(input) {
+		return normalizeBindingTargets(targets)
+	}
+
+	out := make([]BindingTarget, 0, len(targets))
+	for _, target := range normalizeBindingTargets(targets) {
+		if autoResolvedTargetIsDriftAuthority(target) {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
+func autoResolvedTargetIsDriftAuthority(target BindingTarget) bool {
+	switch target.Kind {
+	case BindingTargetSymbol, BindingTargetRange, BindingTargetModule,
+		BindingTargetSpecSection, BindingTargetAPIContract, BindingTargetInvariant:
+		return true
+	default:
+		return false
+	}
+}
+
+func appendUniqueCompactStrings(existing []string, additions []string) []string {
+	out := compactStrings(existing)
+	seen := make(map[string]struct{}, len(out))
+	for _, value := range out {
+		seen[value] = struct{}{}
+	}
+	for _, value := range compactStrings(additions) {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		out = append(out, value)
+		seen[value] = struct{}{}
+	}
+	return out
 }
 
 func decisionBindingResolutionText(input DecideInput) string {
@@ -1283,6 +1359,12 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		for _, f := range input.AffectedFiles {
 			files = append(files, AffectedFile{Path: f})
 		}
+	}
+	if decisionFields.IsImplementationFootprintOnly() && !baselineInputRequestsBindingResolution(input) && len(input.BindingTargets) == 0 {
+		return nil, fmt.Errorf(
+			"decision %s records affected_files as implementation_footprint only; no drift baseline is created without explicit binding_targets, governance_targets/drift_watch_targets, binding_hints, or binding_scope=whole_file with binding_fallback_reason",
+			input.DecisionRef,
+		)
 	}
 	bindingTargets := baselineBindingResolutionTargets(projectRoot, input, decisionFields)
 	if len(files) == 0 && len(bindingTargets) == 0 {

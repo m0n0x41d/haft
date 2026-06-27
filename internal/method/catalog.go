@@ -17,17 +17,66 @@ const (
 	MethodAuthorityBoundary = "method_cards_route_work_and_closeout_gates; they do not define normative FPF source material, binding decisions, evidence truth, or gate passage"
 )
 
+const (
+	LifecycleExperimental = "experimental"
+	LifecycleCurrent      = "current"
+	LifecycleSuperseded   = "superseded"
+	LifecycleDeprecated   = "deprecated"
+)
+
+const (
+	CatalogReportKind          = "haft_method_catalog"
+	CatalogReportSchemaVersion = 1
+	MethodCatalogAuthority     = "read_only_method_catalog_not_processpattern_not_enforcement_authority"
+)
+
 type Catalog struct {
 	ID      string
 	Version string
 	Methods []Definition
 }
 
+type CatalogReport struct {
+	Kind              string         `json:"kind"`
+	SchemaVersion     int            `json:"schema_version"`
+	CatalogID         string         `json:"catalog_id"`
+	CatalogVersion    string         `json:"catalog_version"`
+	FilterStatus      string         `json:"filter_status"`
+	AuthorityBoundary string         `json:"authority_boundary"`
+	Summary           CatalogSummary `json:"summary"`
+	Methods           []CatalogEntry `json:"methods"`
+	Notes             []string       `json:"notes,omitempty"`
+}
+
+type CatalogSummary struct {
+	Total        int            `json:"total"`
+	Returned     int            `json:"returned"`
+	ByLifecycle  map[string]int `json:"by_lifecycle"`
+	Current      int            `json:"current"`
+	Experimental int            `json:"experimental"`
+	Superseded   int            `json:"superseded"`
+	Deprecated   int            `json:"deprecated"`
+}
+
+type CatalogEntry struct {
+	ID                  string        `json:"id"`
+	Version             string        `json:"version"`
+	Title               string        `json:"title"`
+	Summary             string        `json:"summary"`
+	ProblemContext      string        `json:"problem_context,omitempty"`
+	FirstUsefulMove     string        `json:"first_useful_move,omitempty"`
+	ExpectedOutputKinds []string      `json:"expected_output_kinds,omitempty"`
+	FitFunctionRefs     []string      `json:"fit_function_refs,omitempty"`
+	CarrierRefs         []string      `json:"carrier_refs,omitempty"`
+	Lifecycle           Lifecycle     `json:"lifecycle"`
+	SourcePosture       SourcePosture `json:"source_posture"`
+}
+
 func BuiltinCatalog() Catalog {
 	return Catalog{
 		ID:      CatalogID,
 		Version: CatalogVersion,
-		Methods: withBuiltinSourcePosture([]Definition{
+		Methods: withBuiltinCatalogMetadata([]Definition{
 			problemClosureHygiene(),
 			graphPreflightBeforeGovernedEdit(),
 			verificationBeforeCompletion(),
@@ -41,19 +90,48 @@ func BuiltinCatalog() Catalog {
 	}
 }
 
-func withBuiltinSourcePosture(definitions []Definition) []Definition {
-	posture := SourcePosture{
+func withBuiltinCatalogMetadata(definitions []Definition) []Definition {
+	enriched := make([]Definition, 0, len(definitions))
+	for _, definition := range definitions {
+		enriched = append(enriched, withDefinitionCatalogMetadata(definition))
+	}
+	return enriched
+}
+
+func withDefinitionCatalogMetadata(definition Definition) Definition {
+	definition.SourcePosture = SourcePosture{
 		SourceKind:        MethodSourceKind,
 		SourceEdition:     CatalogID + "@" + CatalogVersion,
 		Normativity:       MethodSourceNormativity,
 		AuthorityBoundary: MethodAuthorityBoundary,
 	}
-	enriched := make([]Definition, 0, len(definitions))
-	for _, definition := range definitions {
-		definition.SourcePosture = posture
-		enriched = append(enriched, definition)
+
+	if strings.TrimSpace(definition.Lifecycle.Status) == "" {
+		definition.Lifecycle.Status = LifecycleCurrent
 	}
-	return enriched
+	if strings.TrimSpace(definition.Lifecycle.ValidFrom) == "" {
+		definition.Lifecycle.ValidFrom = "2026-06-25"
+	}
+	if strings.TrimSpace(definition.ProblemContext) == "" {
+		definition.ProblemContext = "Non-trivial software engineering work where a task-local MethodPack card can reduce omissions."
+	}
+	if strings.TrimSpace(definition.FirstUsefulMove) == "" && len(definition.Procedure) > 0 {
+		definition.FirstUsefulMove = definition.Procedure[0]
+	}
+	if len(definition.ExpectedOutputKinds) == 0 {
+		definition.ExpectedOutputKinds = []string{"method_run_closeout", "verification_evidence"}
+	}
+	if len(definition.FitFunctionRefs) == 0 {
+		definition.FitFunctionRefs = []string{"process_check:method_run_hard_gates"}
+	}
+	if len(definition.CarrierRefs) == 0 {
+		definition.CarrierRefs = []string{
+			"internal/method/builtin.go",
+			".haft/methods/" + CatalogID + "/" + definition.ID + ".yaml",
+		}
+	}
+
+	return definition
 }
 
 func ValidateCatalog(catalog Catalog) error {
@@ -86,6 +164,9 @@ func ValidateCatalog(catalog Catalog) error {
 				return fmt.Errorf("method %s gate %s needs check_level", definition.ID, gate.ID)
 			}
 		}
+		if err := validateLifecycle(definition); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -106,6 +187,25 @@ func validateSourcePosture(definition Definition) error {
 	return nil
 }
 
+func validateLifecycle(definition Definition) error {
+	status := normalizeToken(definition.Lifecycle.Status)
+	switch status {
+	case LifecycleExperimental, LifecycleCurrent, LifecycleSuperseded, LifecycleDeprecated:
+	default:
+		return fmt.Errorf("method %s lifecycle.status must be experimental, current, superseded, or deprecated", definition.ID)
+	}
+	if status == LifecycleCurrent && strings.TrimSpace(definition.Lifecycle.RetirementReason) != "" {
+		return fmt.Errorf("method %s current lifecycle cannot carry retirement_reason", definition.ID)
+	}
+	if status == LifecycleSuperseded && len(definition.Lifecycle.SuccessorRefs) == 0 {
+		return fmt.Errorf("method %s superseded lifecycle needs successor_refs", definition.ID)
+	}
+	if status == LifecycleDeprecated && strings.TrimSpace(definition.Lifecycle.RetirementReason) == "" {
+		return fmt.Errorf("method %s deprecated lifecycle needs retirement_reason", definition.ID)
+	}
+	return nil
+}
+
 func Pull(input PullInput) (MethodRun, error) {
 	catalog := BuiltinCatalog()
 	if err := ValidateCatalog(catalog); err != nil {
@@ -113,6 +213,9 @@ func Pull(input PullInput) (MethodRun, error) {
 	}
 
 	normalized := normalizePullInput(input)
+	if err := validatePullCarryThrough(normalized.CarryThrough); err != nil {
+		return MethodRun{}, err
+	}
 	ceremony, reason := ceremonyFor(normalized)
 	if ceremony == "low" || ceremony == "none" {
 		return MethodRun{
@@ -130,6 +233,7 @@ func Pull(input PullInput) (MethodRun, error) {
 				CeremonyReason:       reason,
 			},
 			DeterministicContext: ContextSnapshot{},
+			CarryThrough:         normalized.CarryThrough,
 		}, nil
 	}
 
@@ -160,7 +264,8 @@ func Pull(input PullInput) (MethodRun, error) {
 		DeterministicContext: ContextSnapshot{
 			PathPolicyMatches: pathPolicyMatches(normalized.IntendedFiles),
 		},
-		Methods: cards,
+		Methods:      cards,
+		CarryThrough: normalized.CarryThrough,
 	}, nil
 }
 
@@ -173,6 +278,41 @@ func Detail(methodID string) (Definition, error) {
 	return Definition{}, fmt.Errorf("unknown method %q", methodID)
 }
 
+func DiscoverCatalog(status string) (CatalogReport, error) {
+	catalog := BuiltinCatalog()
+	if err := ValidateCatalog(catalog); err != nil {
+		return CatalogReport{}, err
+	}
+
+	filterStatus := normalizeCatalogStatus(status)
+	if !catalogStatusSupported(filterStatus) {
+		return CatalogReport{}, fmt.Errorf("unsupported method catalog status %q; supported: current, experimental, superseded, deprecated, all", status)
+	}
+
+	entries := make([]CatalogEntry, 0, len(catalog.Methods))
+	for _, definition := range catalog.Methods {
+		if !catalogStatusMatches(definition, filterStatus) {
+			continue
+		}
+		entries = append(entries, catalogEntry(definition))
+	}
+
+	return CatalogReport{
+		Kind:              CatalogReportKind,
+		SchemaVersion:     CatalogReportSchemaVersion,
+		CatalogID:         catalog.ID,
+		CatalogVersion:    catalog.Version,
+		FilterStatus:      filterStatus,
+		AuthorityBoundary: MethodCatalogAuthority,
+		Summary:           catalogSummary(catalog.Methods, len(entries)),
+		Methods:           entries,
+		Notes: []string{
+			"MethodPack catalog discovery is read-only and does not create ProcessPattern authority.",
+			"Current methods are eligible for pull matching; superseded/deprecated methods are history and detail-only.",
+		},
+	}, nil
+}
+
 func normalizePullInput(input PullInput) PullInput {
 	input.DeclaredTaskKind = normalizeToken(input.DeclaredTaskKind)
 	input.ChangeIntent = normalizeToken(input.ChangeIntent)
@@ -180,6 +320,7 @@ func normalizePullInput(input PullInput) PullInput {
 	input.IntendedFiles = dedupeStrings(input.IntendedFiles)
 	input.UserScopeConstraints = dedupeStrings(input.UserScopeConstraints)
 	input.RiskSignals = normalizeRiskSignals(input.RiskSignals)
+	input.CarryThrough = normalizeCarryThroughItems(input.CarryThrough, true)
 	return input
 }
 
@@ -213,6 +354,9 @@ func isMechanicalPull(input PullInput) bool {
 func matchCards(definitions []Definition, input PullInput) []MethodCard {
 	var selected []Definition
 	for _, definition := range definitions {
+		if !methodSelectable(definition) {
+			continue
+		}
 		if methodExcluded(definition, input) {
 			continue
 		}
@@ -237,10 +381,14 @@ func withFallbackVerificationCard(cards []MethodCard) []MethodCard {
 		return cards
 	}
 	card := compactCard(
-		verificationBeforeCompletion(),
+		withDefinitionCatalogMetadata(verificationBeforeCompletion()),
 		"fallback for unmatched non-trivial code work",
 	)
 	return append(cards, card)
+}
+
+func methodSelectable(definition Definition) bool {
+	return normalizeToken(definition.Lifecycle.Status) == LifecycleCurrent
 }
 
 func methodExcluded(definition Definition, input PullInput) bool {
@@ -296,6 +444,7 @@ func compactCard(definition Definition, why string) MethodCard {
 		Title:            definition.Title,
 		WhyApplies:       why,
 		Intent:           definition.Intent,
+		Lifecycle:        definition.Lifecycle,
 		SourcePosture:    definition.SourcePosture,
 		HardGates:        hardGates,
 		SoftGates:        firstN(definition.SoftGates, 2),
@@ -331,6 +480,68 @@ func whyApplies(definition Definition, input PullInput) string {
 		return "matched declared work shape"
 	}
 	return strings.Join(dedupeStrings(reasons), " + ")
+}
+
+func normalizeCatalogStatus(status string) string {
+	status = normalizeToken(status)
+	if status == "" {
+		return LifecycleCurrent
+	}
+	return status
+}
+
+func catalogStatusSupported(status string) bool {
+	switch status {
+	case LifecycleCurrent, LifecycleExperimental, LifecycleSuperseded, LifecycleDeprecated, "all":
+		return true
+	default:
+		return false
+	}
+}
+
+func catalogStatusMatches(definition Definition, status string) bool {
+	if status == "all" {
+		return true
+	}
+	return normalizeToken(definition.Lifecycle.Status) == status
+}
+
+func catalogEntry(definition Definition) CatalogEntry {
+	return CatalogEntry{
+		ID:                  definition.ID,
+		Version:             definition.Version,
+		Title:               definition.Title,
+		Summary:             definition.Summary,
+		ProblemContext:      definition.ProblemContext,
+		FirstUsefulMove:     definition.FirstUsefulMove,
+		ExpectedOutputKinds: append([]string(nil), definition.ExpectedOutputKinds...),
+		FitFunctionRefs:     append([]string(nil), definition.FitFunctionRefs...),
+		CarrierRefs:         append([]string(nil), definition.CarrierRefs...),
+		Lifecycle:           definition.Lifecycle,
+		SourcePosture:       definition.SourcePosture,
+	}
+}
+
+func catalogSummary(definitions []Definition, returned int) CatalogSummary {
+	counts := map[string]int{
+		LifecycleExperimental: 0,
+		LifecycleCurrent:      0,
+		LifecycleSuperseded:   0,
+		LifecycleDeprecated:   0,
+	}
+	for _, definition := range definitions {
+		status := normalizeCatalogStatus(definition.Lifecycle.Status)
+		counts[status]++
+	}
+	return CatalogSummary{
+		Total:        len(definitions),
+		Returned:     returned,
+		ByLifecycle:  counts,
+		Current:      counts[LifecycleCurrent],
+		Experimental: counts[LifecycleExperimental],
+		Superseded:   counts[LifecycleSuperseded],
+		Deprecated:   counts[LifecycleDeprecated],
+	}
 }
 
 func pathPolicyMatches(files []string) []string {

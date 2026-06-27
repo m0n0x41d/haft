@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -71,6 +72,45 @@ func TestHandleHaftMethodPullCreatesMethodRun(t *testing.T) {
 	path := filepath.Join(haftDir, "method-runs", ref+".md")
 	if _, err := os.Stat(path); err != nil {
 		t.Fatalf("method run carrier missing at %s: %v", path, err)
+	}
+}
+
+func TestHandleHaftMethodCatalogReturnsCurrentLifecycleReport(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+
+	result, _, err := handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action":        "catalog",
+		"method_status": "current",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var report methodpkg.CatalogReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode catalog report: %v\n%s", err, result)
+	}
+	if report.Kind != methodpkg.CatalogReportKind {
+		t.Fatalf("kind = %q", report.Kind)
+	}
+	if report.FilterStatus != methodpkg.LifecycleCurrent {
+		t.Fatalf("filter = %q", report.FilterStatus)
+	}
+	if report.Summary.Returned == 0 {
+		t.Fatalf("catalog returned no methods: %+v", report.Summary)
+	}
+	if !strings.Contains(report.AuthorityBoundary, "not_processpattern") {
+		t.Fatalf("authority boundary = %q, want not_processpattern", report.AuthorityBoundary)
+	}
+	for _, entry := range report.Methods {
+		if entry.Lifecycle.Status != methodpkg.LifecycleCurrent {
+			t.Fatalf("current catalog included non-current entry: %+v", entry)
+		}
+		if entry.SourcePosture.Normativity != methodpkg.MethodSourceNormativity {
+			t.Fatalf("entry %s normativity = %q", entry.ID, entry.SourcePosture.Normativity)
+		}
 	}
 }
 
@@ -171,6 +211,74 @@ func TestHandleHaftMethodCloseRequiresEvidenceOrExplicitWaiver(t *testing.T) {
 	closed := decodeStoredMethodRun(t, ctx, store, ref)
 	if closed.Status != "closed" {
 		t.Fatalf("run status = %q, want closed", closed.Status)
+	}
+}
+
+func TestHandleHaftMethodCloseRequiresCarryThroughDisposition(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+
+	pullResult, ref, err := handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action": "pull",
+		"task":   "Apply accepted external review finding",
+		"carry_through": []any{map[string]any{
+			"source_ref":      "review:external",
+			"source_item_ref": "finding-1",
+			"acceptance_ref":  "operator:accepted",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(pullResult, `"carry_through"`) {
+		t.Fatalf("pull response close template missing carry_through:\n%s", pullResult)
+	}
+
+	run := decodeStoredMethodRun(t, ctx, store, ref)
+	gateResults := methodGateResultsWithEvidence(run, "test:evidence")
+	_, _, err = handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action":        "close",
+		"pull_id":       ref,
+		"gate_results":  gateResults,
+		"verification":  map[string]any{"result": "pass"},
+		"changed_files": []any{"internal/method/run.go"},
+	})
+	if err == nil {
+		t.Fatal("close accepted missing carry-through disposition")
+	}
+	if !strings.Contains(err.Error(), "carry_through close disposition") {
+		t.Fatalf("error = %v, want carry_through disposition failure", err)
+	}
+
+	result, _, err := handleHaftMethod(ctx, store, haftDir, map[string]any{
+		"action":        "close",
+		"pull_id":       ref,
+		"gate_results":  gateResults,
+		"verification":  map[string]any{"result": "pass"},
+		"changed_files": []any{"internal/method/run.go"},
+		"carry_through": []any{map[string]any{
+			"source_ref":      "review:external",
+			"source_item_ref": "finding-1",
+			"acceptance_ref":  "operator:accepted",
+			"disposition":     "applied",
+			"target_refs":     []any{"internal/method/run.go::ValidateClose"},
+			"evidence_refs":   []any{"go test ./internal/method"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("close rejected applied carry-through disposition: %v", err)
+	}
+	if !strings.Contains(result, "Method run closed") {
+		t.Fatalf("close result = %q", result)
+	}
+
+	closed := decodeStoredMethodRun(t, ctx, store, ref)
+	if closed.Closeout == nil || len(closed.Closeout.CarryThrough) != 1 {
+		t.Fatalf("closed run missing carry-through closeout: %#v", closed.Closeout)
+	}
+	if closed.Closeout.CarryThrough[0].Disposition != methodpkg.CarryDispositionApplied {
+		t.Fatalf("closeout disposition = %#v", closed.Closeout.CarryThrough[0])
 	}
 }
 

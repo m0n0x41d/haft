@@ -6,6 +6,58 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **Process telemetry baseline.** Added `haft process telemetry --json` as a
+  read-only MethodPack/MethodRun baseline surface. It reports project
+  MethodRun counts, long-open runs, waiver and missing-verification signals,
+  optional Codex/Claude session JSONL MethodPack invocation lanes/anomalies,
+  and broad `affected_files` decisions that lack explicit governance,
+  drift-watch, or binding targets. The report is observation-only and does not
+  create process authority, evidence truth, gate passage, or operator
+  authorization.
+- **Operator-burden telemetry proxies.** `haft process telemetry --json` now
+  includes bounded `operator_burden_proxies` derived only from MethodRun
+  structured data and structured `haft_method` session arguments: waiver item
+  counts, repeated-close repair rounds, carry-through item counts, and pending
+  carry-through counts. These are labeled as process proxies, not product-value
+  proof or a scalar maturity score.
+- **Process check results.** Added `haft process check --json --profile core`
+  with stable read-only `ProcessCheckResult` records for MethodRun hard-gate
+  closeouts, generated contract/runtime schema sync, binding-action fail-closed
+  behavior, default status compactness, and interface discovery compactness.
+  Results include explicit authority boundaries and actionable `next_action`
+  text without adding a default-status or MCP `tools/list` payload.
+- **MethodPack lifecycle catalog.** Added lifecycle/discovery metadata to
+  MethodPack definitions and exposed it through `haft method catalog --status
+  current --json`, `haft interface method.catalog --json`, and
+  `haft_method(action="catalog", method_status="current")`. The catalog is
+  read-only, keeps superseded/deprecated methods discoverable as history, and
+  does not create `ProcessPattern`, enforcement authority, approval, or gate
+  passage.
+- **Process authority index.** Added `haft process authority --json` as a
+  read-only derived `ProcessAuthorityEntry` view over current MethodPack
+  definitions and kernel interface contracts. The index exposes method steps,
+  hard gates, authority boundaries, and interface contracts for explicit
+  drill-down without becoming a source of truth, `ProcessPattern`,
+  enforcement authority, approval, evidence truth, or gate passage.
+- **MethodRun carry-through closeout.** Added optional `carry_through` items to
+  `haft_method` pull/close payloads so agents can carry explicit source review
+  items through a MethodRun and close them with `applied`, `rejected`,
+  `deferred`, or `superseded` dispositions. `applied` items must name target
+  refs, non-applied dispositions must give a reason, and the
+  `carry_through_disposition_recorded` gate can only be waived explicitly.
+- **Process reconciliation report.** Added `haft process reconcile --json` as a
+  read-only reconciliation report over derived process-authority entries. It
+  flags duplicate current authority, non-current history, and missing carrier
+  refs without creating a `ProcessPattern`, mutating MethodPack definitions, or
+  authorizing apply actions.
+- **MethodRun checkpoint pilot.** Added CLI-only `haft method checkpoint
+  open|close|trace` as append-only attention telemetry for long or high-risk
+  MethodRuns. Checkpoint close tokens expire, close is by token, trace reports
+  derived open/closed/expired state, and the records explicitly do not create
+  evidence truth, gate passage, correctness proof, or work authorization.
+
 ### Fixed
 
 - **README public surface sync.** README now matches the live `haft init`
@@ -42,6 +94,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   now projects stored `affected_files` from explicit drift/governance binding
   targets when present, preventing scope-enriched decisions from reintroducing
   stale whole-file drift via historical implementation-footprint files.
+- **Decision footprint drift authority.** New decisions with `affected_files`
+  but no precise governance, drift-watch, binding target, or explicit binding
+  request now record those files as `implementation_footprint` and skip
+  auto-baseline drift authority. Explicit `binding_targets`, binding hints, or
+  `binding_scope` can still opt into drift baselines with a repairable audit
+  trail.
+- **MethodRun structured-data preservation.** MethodRun update paths now merge
+  known fields over existing structured JSON while preserving unknown
+  top-level extension fields. This keeps new carrier fields such as checkpoint
+  telemetry from being dropped by later close/update operations in the same
+  binary line, and adds a regression test for forward-compatible MethodRun
+  updates.
+- **Process check carry-through replay.** `haft process check` now replays
+  closed MethodRuns with `Closeout.CarryThrough`, preventing valid applied
+  carry-through dispositions from being reported as hard-gate closeout gaps.
+  Regression fixtures cover both the replay false-positive path and the
+  end-to-end `haft_method` pull/close/default-status closure discipline path
+  while preserving the missing-gate failure case.
+- **Method carry-through schema parity.** The `haft_method` MCP schema,
+  interface catalog, Pi tool mirror, close template, and handler tests now
+  all expose the same typed `carry_through` item shape so accepted review
+  items cannot disappear because one advertised surface omitted the field.
+- **Default status action-line budget.** `haft process check --profile core`
+  now guards default `haft_query(status)` by operator-facing action/drill-down
+  lines as well as byte size and forbidden process fragments. This protects
+  human scan cost without moving process authority, reconciliation, checkpoint,
+  or generated-contract details into the default cockpit.
+- **Checkpoint close-token persistence.** New MethodRun checkpoint records now
+  persist `close_token_hash` instead of raw `close_token`; the raw token is
+  returned only in the open response. Close still accepts legacy raw-token
+  records, while trace output sanitizes raw tokens and exposes hash posture for
+  audit/debug use.
 - **Related evidence formality discovery.** `haft interface query.related
   --json` now documents DecisionRecord audit/evidence WLNK formality scale and
   bridge/loss fields, making exact/audit formality posture discoverable outside

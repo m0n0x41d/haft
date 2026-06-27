@@ -51,6 +51,29 @@ func TestBuiltinCatalogMethodsCarrySupportSourcePosture(t *testing.T) {
 	}
 }
 
+func TestBuiltinCatalogMethodsCarryLifecycleDiscoveryMetadata(t *testing.T) {
+	for _, definition := range BuiltinCatalog().Methods {
+		if definition.Lifecycle.Status != LifecycleCurrent {
+			t.Fatalf("%s lifecycle.status = %q, want current", definition.ID, definition.Lifecycle.Status)
+		}
+		if definition.Lifecycle.ValidFrom == "" {
+			t.Fatalf("%s lifecycle.valid_from missing", definition.ID)
+		}
+		if definition.FirstUsefulMove == "" {
+			t.Fatalf("%s first_useful_move missing", definition.ID)
+		}
+		if len(definition.ExpectedOutputKinds) == 0 {
+			t.Fatalf("%s expected_output_kinds missing", definition.ID)
+		}
+		if len(definition.FitFunctionRefs) == 0 {
+			t.Fatalf("%s fit_function_refs missing", definition.ID)
+		}
+		if len(definition.CarrierRefs) == 0 {
+			t.Fatalf("%s carrier_refs missing", definition.ID)
+		}
+	}
+}
+
 func TestValidateCatalogRejectsInvalidDefinitions(t *testing.T) {
 	err := ValidateCatalog(Catalog{
 		ID:      CatalogID,
@@ -96,6 +119,91 @@ func TestValidateCatalogRejectsNormativeFPFMethodSourcePosture(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "source_posture.normativity") {
 		t.Fatalf("error = %v, want source_posture.normativity failure", err)
+	}
+}
+
+func TestValidateCatalogRejectsInvalidLifecycle(t *testing.T) {
+	definition := validCatalogTestDefinition("bad-lifecycle")
+	definition.Lifecycle.Status = "retired"
+
+	err := ValidateCatalog(Catalog{
+		ID:      CatalogID,
+		Version: CatalogVersion,
+		Methods: []Definition{
+			definition,
+		},
+	})
+	if err == nil {
+		t.Fatal("ValidateCatalog accepted invalid lifecycle status")
+	}
+	if !strings.Contains(err.Error(), "lifecycle.status") {
+		t.Fatalf("error = %v, want lifecycle.status failure", err)
+	}
+}
+
+func TestDiscoverCatalogFiltersByLifecycle(t *testing.T) {
+	report, err := DiscoverCatalog(LifecycleCurrent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Kind != CatalogReportKind {
+		t.Fatalf("kind = %q", report.Kind)
+	}
+	if report.FilterStatus != LifecycleCurrent {
+		t.Fatalf("filter = %q, want current", report.FilterStatus)
+	}
+	if report.Summary.Returned != report.Summary.Current || report.Summary.Returned == 0 {
+		t.Fatalf("summary = %+v, want returned current methods", report.Summary)
+	}
+	for _, entry := range report.Methods {
+		if entry.Lifecycle.Status != LifecycleCurrent {
+			t.Fatalf("current report included %s lifecycle=%s", entry.ID, entry.Lifecycle.Status)
+		}
+		if !strings.Contains(entry.SourcePosture.Normativity, "support_carrier_non_normative_fpf") {
+			t.Fatalf("entry %s missing support source posture: %+v", entry.ID, entry.SourcePosture)
+		}
+	}
+}
+
+func TestDiscoverCatalogRejectsUnsupportedStatus(t *testing.T) {
+	_, err := DiscoverCatalog("governing")
+	if err == nil {
+		t.Fatal("DiscoverCatalog accepted unsupported lifecycle status")
+	}
+	if !strings.Contains(err.Error(), "unsupported method catalog status") {
+		t.Fatalf("error = %v, want unsupported status failure", err)
+	}
+}
+
+func TestPullIgnoresNonCurrentMethods(t *testing.T) {
+	current := validCatalogTestDefinition("current-method")
+	current.AppliesTo = Applicability{TaskKinds: []string{"feature"}}
+	current.Priority = 50
+	superseded := validCatalogTestDefinition("superseded-method")
+	superseded.AppliesTo = Applicability{TaskKinds: []string{"feature"}}
+	superseded.Lifecycle = Lifecycle{
+		Status:        LifecycleSuperseded,
+		ValidFrom:     "2026-06-25",
+		SuccessorRefs: []string{"current-method"},
+	}
+	superseded.Priority = 1
+	deprecated := validCatalogTestDefinition("deprecated-method")
+	deprecated.AppliesTo = Applicability{TaskKinds: []string{"feature"}}
+	deprecated.Lifecycle = Lifecycle{
+		Status:           LifecycleDeprecated,
+		ValidFrom:        "2026-06-25",
+		RetirementReason: "No longer matches current work shape.",
+	}
+	deprecated.Priority = 2
+
+	cards := matchCards([]Definition{current, superseded, deprecated}, PullInput{
+		DeclaredTaskKind: "feature",
+	})
+	if len(cards) != 1 {
+		t.Fatalf("cards = %#v, want only current method", cards)
+	}
+	if cards[0].ID != "current-method" {
+		t.Fatalf("card = %s, want current-method", cards[0].ID)
 	}
 }
 
@@ -468,6 +576,99 @@ func TestValidateCloseRequiresHardGateEvidenceOrWaiver(t *testing.T) {
 	}
 }
 
+func TestPullStoresCarryThroughItemsAsPending(t *testing.T) {
+	run, err := Pull(PullInput{
+		Task: "Apply accepted review finding",
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "operator:accepted",
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(run.CarryThrough) != 1 {
+		t.Fatalf("carry through items = %#v", run.CarryThrough)
+	}
+	item := run.CarryThrough[0]
+	if item.Disposition != CarryDispositionPending {
+		t.Fatalf("disposition = %q, want pending", item.Disposition)
+	}
+}
+
+func TestValidateCloseRequiresCarryThroughDisposition(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "operator:accepted",
+			Disposition:   CarryDispositionPending,
+		}},
+	}
+
+	err := ValidateClose(run, CloseInput{})
+	if err == nil {
+		t.Fatal("ValidateClose accepted undisposed carry-through item")
+	}
+	for _, want := range []string{"review:external#finding-1", "carry_through close disposition"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+
+	err = ValidateClose(run, CloseInput{
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "operator:accepted",
+			Disposition:   CarryDispositionApplied,
+		}},
+	})
+	if err == nil {
+		t.Fatal("ValidateClose accepted applied carry-through without target_refs")
+	}
+	if !strings.Contains(err.Error(), "applied disposition needs target_refs") {
+		t.Fatalf("error = %v, want target_refs failure", err)
+	}
+
+	err = ValidateClose(run, CloseInput{
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "operator:accepted",
+			Disposition:   CarryDispositionApplied,
+			TargetRefs:    []string{"internal/method/run.go::ValidateClose"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ValidateClose rejected applied carry-through with target refs: %v", err)
+	}
+}
+
+func TestValidateCloseAllowsCarryThroughWaiver(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "operator:accepted",
+			Disposition:   CarryDispositionPending,
+		}},
+	}
+
+	err := ValidateClose(run, CloseInput{
+		Waivers: []Waiver{{
+			GateID: CarryThroughGateID,
+			Reason: "Operator accepted leaving this item pending for a later slice.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ValidateClose rejected carry-through waiver: %v", err)
+	}
+}
+
 func TestValidateCloseReportsExpectedGateResultShape(t *testing.T) {
 	run := MethodRun{
 		Status: "open",
@@ -505,6 +706,12 @@ func TestBuildCloseTemplateNamesRequiredGateFields(t *testing.T) {
 				RequiredEvidence: []string{"command_output"},
 			}},
 		}},
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "review:external",
+			SourceItemRef: "finding-1",
+			AcceptanceRef: "operator:accepted",
+			Disposition:   CarryDispositionPending,
+		}},
 	}
 
 	template := BuildCloseTemplate(run)
@@ -517,6 +724,13 @@ func TestBuildCloseTemplateNamesRequiredGateFields(t *testing.T) {
 	result := template.GateResults[0]
 	if result.GateID != "gate-with-evidence" || result.Status != "satisfied" || len(result.EvidenceRefs) != 1 {
 		t.Fatalf("template gate result missing required close fields: %+v", result)
+	}
+	if len(template.CarryThrough) != 1 {
+		t.Fatalf("template carry_through = %#v, want one item", template.CarryThrough)
+	}
+	carry := template.CarryThrough[0]
+	if carry.Disposition != CarryDispositionApplied || len(carry.TargetRefs) == 0 {
+		t.Fatalf("template carry-through missing applied target hint: %+v", carry)
 	}
 }
 
@@ -540,5 +754,24 @@ func testMethodSourcePosture() SourcePosture {
 		SourceEdition:     CatalogID + "@" + CatalogVersion,
 		Normativity:       MethodSourceNormativity,
 		AuthorityBoundary: MethodAuthorityBoundary,
+	}
+}
+
+func validCatalogTestDefinition(id string) Definition {
+	return Definition{
+		ID:            id,
+		Version:       CatalogVersion,
+		Title:         "Valid " + id,
+		SourcePosture: testMethodSourcePosture(),
+		Lifecycle: Lifecycle{
+			Status:    LifecycleCurrent,
+			ValidFrom: "2026-06-25",
+		},
+		HardGates: []Gate{{
+			ID:         "gate",
+			Kind:       "test",
+			CheckLevel: "deterministic",
+		}},
+		Waiver: WaiverPolicy{Allowed: true, RequiresReason: true},
 	}
 }

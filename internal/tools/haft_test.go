@@ -815,8 +815,10 @@ func TestHaftDecisionToolResponsePairsTitleWithRef(t *testing.T) {
 	}
 
 	baselineResult, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
-		"action":       "baseline",
-		"decision_ref": decision.Meta.ID,
+		"action":                  "baseline",
+		"decision_ref":            decision.Meta.ID,
+		"binding_scope":           artifact.BindingScopeWholeFile,
+		"binding_fallback_reason": "fixture explicitly requests whole-file baseline to test label rendering",
 	}))
 	if err != nil {
 		t.Fatal(err)

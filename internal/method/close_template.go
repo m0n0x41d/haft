@@ -7,6 +7,7 @@ type CloseTemplate struct {
 	GateResults  []CloseTemplateGateResult `json:"gate_results"`
 	Verification CloseTemplateVerification `json:"verification"`
 	Waivers      []Waiver                  `json:"waivers"`
+	CarryThrough []CarryThroughItem        `json:"carry_through,omitempty"`
 }
 
 type CloseTemplateGateResult struct {
@@ -32,7 +33,8 @@ func BuildCloseTemplate(run MethodRun) CloseTemplate {
 			Result:    "<pass|partial|failed>",
 			OutputRef: "<optional-output-ref>",
 		},
-		Waivers: []Waiver{},
+		Waivers:      []Waiver{},
+		CarryThrough: closeTemplateCarryThrough(run),
 	}
 }
 
@@ -58,5 +60,20 @@ func closeTemplateEvidenceRefs(gate Gate) []string {
 }
 
 func CloseInputShapeHint() string {
-	return `expected gate_results[] shape: {"gate_id":"<hard-gate-id>","status":"satisfied","evidence_refs":["<evidence-ref>"]}; waiver shape: {"gate_id":"<hard-gate-id>","reason":"<why waived>"}`
+	return `expected gate_results[] shape: {"gate_id":"<hard-gate-id>","status":"satisfied","evidence_refs":["<evidence-ref>"]}; waiver shape: {"gate_id":"<hard-gate-id>","reason":"<why waived>"}; carry_through[] shape: {"source_ref":"<source>","source_item_ref":"<item>","acceptance_ref":"<operator-or-review-acceptance>","disposition":"applied|rejected|deferred|superseded","target_refs":["<changed-target>"],"reason":"<why>"}`
+}
+
+func closeTemplateCarryThrough(run MethodRun) []CarryThroughItem {
+	items := make([]CarryThroughItem, 0, len(run.CarryThrough))
+	for _, item := range run.CarryThrough {
+		items = append(items, CarryThroughItem{
+			SourceRef:     item.SourceRef,
+			SourceItemRef: item.SourceItemRef,
+			AcceptanceRef: item.AcceptanceRef,
+			Disposition:   CarryDispositionApplied,
+			TargetRefs:    []string{"<target-ref>"},
+			EvidenceRefs:  []string{"<evidence-ref>"},
+		})
+	}
+	return items
 }

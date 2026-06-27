@@ -109,8 +109,10 @@ func TestBaseline_ExactModeSkipsModuleScopeManifests(t *testing.T) {
 		Rollback: &RollbackSpec{
 			Triggers: []string{"if scope creep makes file-level tracking infeasible"},
 		},
-		AffectedFiles:  []string{"pkg/auth/login.go"},
-		GovernanceMode: string(GovernanceModeExact),
+		AffectedFiles:         []string{"pkg/auth/login.go"},
+		GovernanceMode:        string(GovernanceModeExact),
+		BindingScope:          BindingScopeWholeFile,
+		BindingFallbackReason: "operator explicitly chose file-level governance for this exact-mode fixture",
 	})
 	if err != nil {
 		t.Fatalf("Decide failed: %v", err)
@@ -135,9 +137,9 @@ func TestBaseline_ExactModeSkipsModuleScopeManifests(t *testing.T) {
 	}
 }
 
-// TestBaseline_ModuleModeBuildsScopeManifests verifies that module mode (the
-// default) preserves the pre-6.2.x behavior of capturing sibling files as
-// governed scope. Required to keep backward compatibility intact.
+// TestBaseline_ModuleModeBuildsScopeManifests verifies that module mode captures
+// sibling files as governed scope after the decision explicitly asks for module
+// binding authority.
 func TestBaseline_ModuleModeBuildsScopeManifests(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -165,7 +167,8 @@ func TestBaseline_ModuleModeBuildsScopeManifests(t *testing.T) {
 			Triggers: []string{"module split makes single-scope tracking misleading"},
 		},
 		AffectedFiles: []string{"pkg/billing/invoice.go"},
-		// GovernanceMode unset → defaults to module
+		BindingScope:  BindingScopeModule,
+		// GovernanceMode unset -> defaults to module
 	})
 	if err != nil {
 		t.Fatalf("Decide failed: %v", err)

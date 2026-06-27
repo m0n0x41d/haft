@@ -49,6 +49,7 @@ func bindingSurfaceInventory() []bindingSurfaceInventoryEntry {
 		{Tool: "haft_method", Action: "show", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_method", Action: "detail", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_method", Action: "status", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
+		{Tool: "haft_method", Action: "catalog", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{
 			Tool:        "haft_commission",
 			Action:      "create",

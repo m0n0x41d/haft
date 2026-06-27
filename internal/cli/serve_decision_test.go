@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -296,6 +297,67 @@ func TestHandleQuintDecision_DecideReturnsArtifactID(t *testing.T) {
 		if a.Meta.Kind != artifact.KindDecisionRecord {
 			t.Fatalf("createdRef %q resolved to %s, want DecisionRecord", ref, a.Meta.Kind)
 		}
+	}
+}
+
+func TestHandleQuintDecision_DecideTreatsUnresolvedAffectedFilesAsFootprintOnly(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	if err := os.WriteFile(filepath.Join(projectRoot, "worker.go"), []byte(`package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+		"action":           "decide",
+		"selected_title":   "Use worker file",
+		"why_selected":     "The affected file is an implementation footprint until a precise governed target is named.",
+		"selection_policy": "Prefer recording the footprint without creating drift authority.",
+		"counterargument":  "A later baseline may still be needed after target selection.",
+		"weakest_link":     "Agents may mistake file footprint for governance authority.",
+		"why_not_others": []map[string]any{{
+			"variant": "Auto whole-file baseline",
+			"reason":  "It creates broad needs-binding drift noise.",
+		}},
+		"rollback": map[string]any{
+			"triggers": []string{"status noise increases"},
+		},
+		"affected_files": []any{"worker.go"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "implementation footprint only") || !strings.Contains(out, "no drift baseline created") {
+		t.Fatalf("response missing footprint-only baseline note:\n%s", out)
+	}
+
+	decision, err := store.Get(ctx, ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := decision.UnmarshalDecisionFields()
+	if !fields.IsImplementationFootprintOnly() {
+		t.Fatalf("decision fields = %+v, want implementation-footprint only", fields)
+	}
+
+	if err := os.WriteFile(filepath.Join(projectRoot, "worker.go"), []byte(`package main
+
+func Start() string { return "changed" }
+func Stop() string { return "stop" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	reports, err := artifact.CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("drift reports = %+v, want footprint-only decision skipped", reports)
 	}
 }
 

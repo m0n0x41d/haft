@@ -48,6 +48,41 @@ func RenderRunBody(run MethodRun) string {
 		}
 	}
 
+	if len(run.CarryThrough) > 0 {
+		b.WriteString("## Carry-through\n\n")
+		for _, item := range run.CarryThrough {
+			b.WriteString(fmt.Sprintf("- `%s#%s`: %s accepted by %s\n",
+				item.SourceRef,
+				item.SourceItemRef,
+				item.Disposition,
+				item.AcceptanceRef,
+			))
+		}
+		b.WriteString("\n")
+	}
+
+	if len(run.Checkpoints) > 0 {
+		b.WriteString("## Checkpoints\n\n")
+		for _, record := range run.Checkpoints {
+			switch record.RecordKind {
+			case CheckpointRecordOpen:
+				b.WriteString(fmt.Sprintf("- open `%s`: target=%s check=%s expires=%s\n",
+					record.CheckpointID,
+					record.TargetRef,
+					record.CheckRef,
+					record.ExpiresAt,
+				))
+			case CheckpointRecordClose:
+				b.WriteString(fmt.Sprintf("- close `%s`: outcome=%s closed=%s\n",
+					record.CheckpointID,
+					record.Outcome,
+					record.ClosedAt,
+				))
+			}
+		}
+		b.WriteString("\n")
+	}
+
 	if run.Closeout != nil {
 		b.WriteString("## Closeout\n\n")
 		if len(run.Closeout.ChangedFiles) > 0 {
@@ -71,6 +106,17 @@ func RenderRunBody(run MethodRun) string {
 			b.WriteString("Waivers:\n")
 			for _, waiver := range run.Closeout.Waivers {
 				b.WriteString(fmt.Sprintf("- `%s`: %s\n", waiver.GateID, waiver.Reason))
+			}
+			b.WriteString("\n")
+		}
+		if len(run.Closeout.CarryThrough) > 0 {
+			b.WriteString("Carry-through dispositions:\n")
+			for _, item := range run.Closeout.CarryThrough {
+				b.WriteString(fmt.Sprintf("- `%s#%s`: %s\n",
+					item.SourceRef,
+					item.SourceItemRef,
+					item.Disposition,
+				))
 			}
 			b.WriteString("\n")
 		}

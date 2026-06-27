@@ -27,8 +27,11 @@ func handleHaftMethod(ctx context.Context, store *artifact.Store, haftDir string
 	case "detail":
 		result, err := handleHaftMethodDetail(args)
 		return result, "", err
+	case "catalog":
+		result, err := handleHaftMethodCatalog(args)
+		return result, "", err
 	default:
-		return "", "", fmt.Errorf("haft_method action must be pull, close, show, status, or detail")
+		return "", "", fmt.Errorf("haft_method action must be pull, close, show, status, detail, or catalog")
 	}
 }
 
@@ -119,6 +122,19 @@ func handleHaftMethodDetail(args map[string]any) (string, error) {
 	return string(data), nil
 }
 
+func handleHaftMethodCatalog(args map[string]any) (string, error) {
+	status, _ := args["method_status"].(string)
+	report, err := methodpkg.DiscoverCatalog(status)
+	if err != nil {
+		return "", err
+	}
+	data, err := json.MarshalIndent(report, "", "  ")
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
 func parseMethodPullInput(args map[string]any) (methodpkg.PullInput, error) {
 	input := methodpkg.PullInput{}
 	input.Task, _ = args["task"].(string)
@@ -140,6 +156,12 @@ func parseMethodPullInput(args map[string]any) (methodpkg.PullInput, error) {
 		return input, fmt.Errorf("artifact_refs must be an object")
 	} else if present {
 		input.ArtifactRefs = refs
+	}
+
+	if present, err := decodeStrictArgFromArgs(args, "carry_through", &input.CarryThrough); err != nil {
+		return input, fmt.Errorf("carry_through must be an array of carry-through item objects")
+	} else if !present {
+		input.CarryThrough = nil
 	}
 
 	var budget methodpkg.ResponseBudget
@@ -170,6 +192,11 @@ func parseMethodCloseInput(args map[string]any) (methodpkg.CloseInput, error) {
 		return input, fmt.Errorf("waivers must be an array of waiver objects")
 	} else if !present {
 		input.Waivers = nil
+	}
+	if present, err := decodeStrictArgFromArgs(args, "carry_through", &input.CarryThrough); err != nil {
+		return input, fmt.Errorf("carry_through must be an array of carry-through item objects")
+	} else if !present {
+		input.CarryThrough = nil
 	}
 	return input, nil
 }

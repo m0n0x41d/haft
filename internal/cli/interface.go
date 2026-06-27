@@ -666,8 +666,15 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"task"},
-				OptionalFields: []string{"declared_task_kind", "change_intent", "intended_files", "risk_signals", "user_scope_constraints", "artifact_refs", "ceremony_request", "response_budget", "context"},
-				Notes:          []string{"Use for feature, bugfix/debug, refactor, external integration, governed files, cross-module edits, behavior changes, or failing tests.", "Mechanical edits should request low/none ceremony."},
+				OptionalFields: []string{"declared_task_kind", "change_intent", "intended_files", "risk_signals", "user_scope_constraints", "artifact_refs", "carry_through", "ceremony_request", "response_budget", "context"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "carry_through[]",
+						Shape: `{"source_ref":"review:external","source_item_ref":"finding-1","acceptance_ref":"operator:accepted"}`,
+						Note:  "Use only for accepted review/instruction items that must be disposed before close; model text alone is not acceptance.",
+					},
+				},
+				Notes: []string{"Use for feature, bugfix/debug, refactor, external integration, governed files, cross-module edits, behavior changes, or failing tests.", "Mechanical edits should request low/none ceremony.", "carry_through starts as pending accepted-basis inventory; close must apply/reject/defer/supersede or waive it."},
 			},
 			OutputVolume: []string{"default: max 3 method cards, max 3 hard gates per card, plus close_template JSON", "detail action: full definition for one method"},
 			Invariants: append(commonInterfaceInvariants(),
@@ -687,7 +694,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"pull_id"},
-				OptionalFields: []string{"changed_files", "gate_results", "verification", "waivers"},
+				OptionalFields: []string{"changed_files", "gate_results", "verification", "waivers", "carry_through"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "gate_results[]",
@@ -699,14 +706,21 @@ func haftInterfaceCatalog() []interfaceCapability {
 						Shape: `{"commands":["go test ./..."],"result":"pass","output_ref":"local terminal"}`,
 						Note:  "Verification is an object with command evidence.",
 					},
+					{
+						Field: "carry_through[]",
+						Shape: `{"source_ref":"review:external","source_item_ref":"finding-1","acceptance_ref":"operator:accepted","disposition":"applied","target_refs":["internal/method/run.go::ValidateClose"],"evidence_refs":["go test ./internal/method"]}`,
+						Note:  "applied requires target_refs; rejected/deferred/superseded require reason; pending blocks close unless waiver carry_through_disposition_recorded is explicit.",
+					},
 				},
 				Notes: []string{
 					`gate_results[] shape: {"gate_id":"<hard-gate-id>","status":"satisfied","evidence_refs":["<evidence-ref>"]}`,
 					`waivers[] shape: {"gate_id":"<hard-gate-id>","reason":"<why waived>"}`,
 					`verification shape: {"commands":["<command>"],"result":"<pass|partial|failed>","output_ref":"<optional>"}`,
+					`carry_through[] shape: {"source_ref":"<source>","source_item_ref":"<item>","acceptance_ref":"<operator-or-review-acceptance>","disposition":"applied|rejected|deferred|superseded","target_refs":["<changed-target>"],"reason":"<why>"}`,
 					"Derive changed_files, verification.commands, test status, and governed-decision intersections from git diff, terminal traces, and code_context before asking the operator.",
 					"Ask the operator only for irreducible judgment: waivers, ambiguous authority, or acceptance of residual risk.",
 					"Hard gates require either satisfied evidence_refs or an explicit waiver reason.",
+					"Accepted carry-through items must be disposed before close; unresolved items require waiver gate carry_through_disposition_recorded with an operator reason.",
 					"After context compaction, call method.status then method.show to recover the pull_id and close_template.",
 				},
 			},
@@ -735,6 +749,44 @@ func haftInterfaceCatalog() []interfaceCapability {
 			Invariants:   commonInterfaceInvariants(),
 		},
 		{
+			ID:      "method.catalog",
+			Purpose: "Read the MethodPack lifecycle/discovery catalog without creating process authority.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_method",
+				MCPAction:        "catalog",
+				MCPCall:          `haft_method(action="catalog", method_status="current")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft method catalog --status current --json",
+				DiscoveryCommand: "haft interface method.catalog --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				OptionalFields: []string{"method_status"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "method_status",
+						Shape: `"current" | "experimental" | "superseded" | "deprecated" | "all"`,
+						Note:  "Default current. Superseded/deprecated methods remain discoverable history but are not eligible for normal pull matching.",
+					},
+					{
+						Field: "response",
+						Shape: `{"kind":"haft_method_catalog","schema_version":1,"filter_status":"current","authority_boundary":"read_only_method_catalog_not_processpattern_not_enforcement_authority","methods":[{"id":"verification-before-completion","lifecycle":{"status":"current"},"carrier_refs":["internal/method/builtin.go",".haft/methods/swe-core/verification-before-completion.yaml"]}]}`,
+						Note:  "Catalog discovery is read-only; it does not introduce ProcessPattern, approve work, pass gates, or make skill carriers enforcement authority.",
+					},
+				},
+				Notes: []string{
+					"Use this when an agent needs the current process-method catalog or successor/deprecation lineage.",
+					"Do not inline this catalog into default status; query it explicitly.",
+				},
+			},
+			OutputVolume: []string{"default MCP: JSON MethodPack catalog report", "CLI text: compact method list", "CLI --json: full report"},
+			Invariants: append(commonInterfaceInvariants(),
+				"MethodPack remains the process-governance substrate; this does not create a ProcessPattern artifact kind.",
+				"Only lifecycle current methods are eligible for normal pull matching.",
+				"Skills may point to carrier_refs but do not become enforcement authority.",
+			),
+		},
+		{
 			ID:      "query.contract_audit",
 			Purpose: "Audit kernel-owned interface contracts, mirrored host schemas, validation refs, and legacy transport exceptions.",
 			CurrentExecution: interfaceExecution{
@@ -750,7 +802,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":35,"kernel_owned_contracts":35,"mcp_mirrored_actions":19,"cli_available_surfaces":27,"binding_authority_surfaces":2,"read_only_surfaces":20,"legacy_transport_exceptions":17,"schema_covered_surfaces":30,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":30,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":30,"shape_missing_surfaces":0,"shape_skipped_fields":26,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":30,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":30,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":36,"kernel_owned_contracts":36,"mcp_mirrored_actions":19,"cli_available_surfaces":28,"binding_authority_surfaces":2,"read_only_surfaces":20,"legacy_transport_exceptions":17,"schema_covered_surfaces":31,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":31,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":31,"shape_missing_surfaces":0,"shape_skipped_fields":29,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":31,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":31,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, materialize host descriptions, create evidence, approve binding actions, pass gates, create claim/global truth, publish, or change tool descriptions.",
 					},
 				},
@@ -783,7 +835,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":35,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":35,"generated_schema_fragments":28,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":36,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":36,"generated_schema_fragments":29,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -3642,6 +3694,12 @@ func interfaceContractAuditSchemaFieldExclusions() map[string]map[string]bool {
 
 func interfaceContractAuditShapeFieldExcluded(capabilityID string, field string) bool {
 	exclude := map[string]map[string]bool{
+		"method.pull": {
+			"carry_through[]": true,
+		},
+		"method.close": {
+			"carry_through[]": true,
+		},
 		"solution.compare": {
 			"scores": true,
 		},

@@ -21,7 +21,7 @@ const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:1041f72ec09b836ec8d47d29a9fb5170fad86afa80fb6a9781e8cfe90f672329";
+  "sha256:6ff5e2ae7c293403d7ff49c6d896ad1137283953e929c15e95f0f979a758cfa9";
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),
@@ -34,6 +34,16 @@ const parityPlanSchema = Type.Optional(Type.Object({
   pinned_conditions: OptStrList(),
   window: OptStr()
 }));
+
+const carryThroughItemSchema = Type.Object({
+  source_ref: Type.String(),
+  source_item_ref: Type.String(),
+  acceptance_ref: Type.String(),
+  disposition: Type.Optional(enumOf("pending", "applied", "rejected", "deferred", "superseded")),
+  target_refs: OptStrList(),
+  evidence_refs: OptStrList(),
+  reason: OptStr()
+}, { additionalProperties: true });
 
 const haftQueryParameters = Type.Object({
   action: enumOf(
@@ -261,8 +271,9 @@ const haftRefreshParameters = Type.Object({
 });
 
 const haftMethodParameters = Type.Object({
-  action: enumOf("pull", "close", "show", "detail", "status"),
+  action: enumOf("pull", "close", "show", "detail", "status", "catalog"),
   artifact_refs: OptObj(),
+  carry_through: Type.Optional(Type.Array(carryThroughItemSchema)),
   ceremony_request: OptStr(),
   change_intent: OptStr(),
   changed_files: OptStrList(),
@@ -273,6 +284,7 @@ const haftMethodParameters = Type.Object({
   limit: OptInt(),
   method_id: OptStr(),
   method_ref: OptStr(),
+  method_status: OptStr(),
   pull_id: OptStr(),
   response_budget: OptObj(),
   risk_signals: Type.Optional(Type.Array(Type.Object({
@@ -403,10 +415,11 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
   {
     name: "haft_method",
     label: "Haft Method",
-    description: "Pull compact task-local SWE method cards before non-trivial code work; close the same MethodRun with evidence or explicit waivers before claiming completion.",
+    description: "Pull compact task-local SWE method cards before non-trivial code work; close the same MethodRun with evidence or explicit waivers before claiming completion; read explicit MethodPack lifecycle catalog with action=catalog.",
     promptGuidelines: [
       "Call haft_method(action=\"pull\") before non-trivial code edits and keep the returned pull_id.",
-      "Before claiming completion, close the run: haft_method(action=\"close\", pull_id=...) with gate results and verification evidence."
+      "Before claiming completion, close the run: haft_method(action=\"close\", pull_id=...) with gate results and verification evidence.",
+      "Use haft_method(action=\"catalog\", method_status=\"current\") only for explicit MethodPack discovery; it is read-only and not ProcessPattern authority."
     ],
     parameters: haftMethodParameters
   },

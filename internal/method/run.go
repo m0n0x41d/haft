@@ -86,11 +86,12 @@ func CloseRun(ctx context.Context, store artifact.ArtifactStore, haftDir string,
 		Waivers:      input.Waivers,
 		ClosedAt:     nowRFC3339(now),
 	}
+	closeout.CarryThrough = closeoutCarryThroughItems(input.CarryThrough, closeout.ClosedAt)
 	run.Status = "closed"
 	run.ClosedAt = closeout.ClosedAt
 	run.Closeout = &closeout
 
-	encoded, err := json.Marshal(run)
+	encoded, err := encodeRunForUpdate(a.StructuredData, run)
 	if err != nil {
 		return nil, "", MethodRun{}, fmt.Errorf("encode method run: %w", err)
 	}
@@ -121,6 +122,53 @@ func DecodeRun(a *artifact.Artifact) (MethodRun, error) {
 		return MethodRun{}, fmt.Errorf("decode method run %s: %w", a.Meta.ID, err)
 	}
 	return run, nil
+}
+
+var methodRunStructuredKeys = []string{
+	"id",
+	"catalog_id",
+	"catalog_version",
+	"status",
+	"task_signature",
+	"deterministic_context",
+	"methods",
+	"carry_through",
+	"checkpoints",
+	"opened_at",
+	"closed_at",
+	"closeout",
+}
+
+func encodeRunForUpdate(previous string, run MethodRun) (string, error) {
+	encoded, err := json.Marshal(run)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(previous) == "" {
+		return string(encoded), nil
+	}
+
+	previousFields := map[string]json.RawMessage{}
+	if err := json.Unmarshal([]byte(previous), &previousFields); err != nil {
+		return string(encoded), nil
+	}
+
+	updatedFields := map[string]json.RawMessage{}
+	if err := json.Unmarshal(encoded, &updatedFields); err != nil {
+		return "", err
+	}
+	for _, key := range methodRunStructuredKeys {
+		delete(previousFields, key)
+	}
+	for key, value := range updatedFields {
+		previousFields[key] = value
+	}
+
+	merged, err := json.Marshal(previousFields)
+	if err != nil {
+		return "", err
+	}
+	return string(merged), nil
 }
 
 func ValidateClose(run MethodRun, input CloseInput) error {
@@ -178,6 +226,7 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 			}
 		}
 	}
+	missing = append(missing, validateCloseCarryThrough(run, input)...)
 	if len(missing) > 0 {
 		return fmt.Errorf("method close incomplete: %s; %s", strings.Join(missing, "; "), CloseInputShapeHint())
 	}
@@ -367,6 +416,18 @@ func methodRunSearchKeywords(run MethodRun) string {
 	}
 	for _, signal := range run.TaskSignature.RiskSignals {
 		parts = append(parts, signal.ID)
+	}
+	for _, item := range run.CarryThrough {
+		parts = append(parts, item.SourceRef, item.SourceItemRef, item.AcceptanceRef)
+	}
+	for _, checkpoint := range run.Checkpoints {
+		parts = append(parts,
+			checkpoint.RecordKind,
+			checkpoint.CheckpointID,
+			checkpoint.TargetRef,
+			checkpoint.CheckRef,
+			checkpoint.NextTargetRef,
+		)
 	}
 	return strings.Join(dedupeStrings(parts), " ")
 }

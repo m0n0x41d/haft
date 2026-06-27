@@ -35,7 +35,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "baseline.audit", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "method.catalog", "query.status", "query.related", "query.carrier_manifest", "query.carrier_check", "baseline.audit", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -2418,14 +2418,14 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 	}
 
 	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
-	for _, want := range []string{"gate_results", "verification", "waivers"} {
+	for _, want := range []string{"gate_results", "verification", "waivers", "carry_through"} {
 		if !strings.Contains(optionals, want) {
 			t.Fatalf("method.close optional fields = %q, missing %q", optionals, want)
 		}
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "close_template", "Derive changed_files", "irreducible judgment"} {
+	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "carry_through[] shape", "close_template", "Derive changed_files", "irreducible judgment", "carry_through_disposition_recorded"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("method.close notes missing %q:\n%s", want, notes)
 		}
@@ -2434,6 +2434,81 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 	outputVolume := strings.Join(capability.OutputVolume, " ")
 	if !strings.Contains(outputVolume, "close_template") {
 		t.Fatalf("method.close should name show close_template recovery:\n%s", outputVolume)
+	}
+}
+
+func TestInterfaceMethodPullNamesCarryThroughContract(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.pull")
+	if !ok {
+		t.Fatal("method.pull capability missing")
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	if !strings.Contains(optionals, "carry_through") {
+		t.Fatalf("method.pull optional fields = %q, want carry_through", optionals)
+	}
+
+	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"carry_through[]", "source_ref", "source_item_ref", "acceptance_ref", "operator:accepted"} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("method.pull field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"pending accepted-basis inventory", "apply/reject/defer/supersede"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("method.pull notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestPiMethodSchemaMirrorsCarryThroughItemShape(t *testing.T) {
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	for _, want := range []string{
+		"const carryThroughItemSchema = Type.Object({",
+		"source_ref: Type.String()",
+		"source_item_ref: Type.String()",
+		"acceptance_ref: Type.String()",
+		`disposition: Type.Optional(enumOf("pending", "applied", "rejected", "deferred", "superseded"))`,
+		"target_refs: OptStrList()",
+		"evidence_refs: OptStrList()",
+		"carry_through: Type.Optional(Type.Array(carryThroughItemSchema))",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi method schema mirror missing %q", want)
+		}
+	}
+}
+
+func TestInterfaceMethodCatalogNamesLifecycleDiscoveryContract(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.catalog")
+	if !ok {
+		t.Fatal("method.catalog capability missing")
+	}
+
+	if capability.CurrentExecution.MCPAction != "catalog" {
+		t.Fatalf("method.catalog MCP action = %q", capability.CurrentExecution.MCPAction)
+	}
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	if !strings.Contains(optionals, "method_status") {
+		t.Fatalf("method.catalog optional fields = %q, want method_status", optionals)
+	}
+
+	contractText := capability.Purpose + " " +
+		strings.Join(capability.InputContract.Notes, " ") + " " +
+		strings.Join(capability.OutputVolume, " ") + " " +
+		strings.Join(capability.Invariants, " ")
+	for _, want := range []string{
+		"MethodPack",
+		"ProcessPattern",
+		"current methods",
+		"pull matching",
+		"Skills may point to carrier_refs but do not become enforcement authority",
+	} {
+		if !strings.Contains(contractText, want) {
+			t.Fatalf("method.catalog contract missing %q:\n%s", want, contractText)
+		}
 	}
 }
 

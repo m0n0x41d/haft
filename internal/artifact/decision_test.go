@@ -323,6 +323,84 @@ func Stop() string { return "stop" }
 	if len(fields.BindingTargets) != 0 {
 		t.Fatalf("binding_targets = %+v, want no invented fallback for ambiguous file", fields.BindingTargets)
 	}
+	if !reflect.DeepEqual(fields.ImplementationFootprint.Files, []string{"worker.go"}) {
+		t.Fatalf("implementation_footprint.files = %+v, want worker.go", fields.ImplementationFootprint.Files)
+	}
+
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "changed" }
+func Stop() string { return "stop" }
+`)
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("drift reports = %+v, want footprint-only decision skipped", reports)
+	}
+}
+
+func TestBaselineRejectsFootprintOnlyDecisionWithoutExplicitAuthority(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker file",
+		WhySelected:   "The decision names the implementation footprint but not a governed symbol.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: decision.Meta.ID})
+	if err == nil {
+		t.Fatal("expected footprint-only baseline without explicit authority to fail closed")
+	}
+	if !strings.Contains(err.Error(), "implementation_footprint only") {
+		t.Fatalf("error = %q, want implementation_footprint repair hint", err.Error())
+	}
+}
+
+func TestBaselineAllowsExplicitWholeFileAuthorityForFootprintOnlyDecision(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker file",
+		WhySelected:   "The decision starts as implementation footprint until explicit authority is supplied.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef:           decision.Meta.ID,
+		BindingScope:          BindingScopeWholeFile,
+		BindingFallbackReason: "operator explicitly chose whole-file governance for this legacy file",
+	})
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "worker.go" || files[0].Hash == "" {
+		t.Fatalf("baseline files = %+v, want worker.go hash", files)
+	}
 }
 
 func TestDecidePreservesExplicitBindingTargets(t *testing.T) {

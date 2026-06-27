@@ -1139,17 +1139,22 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		var baselineNote string
 		if len(input.AffectedFiles) > 0 {
 			projectRoot := filepath.Dir(haftDir)
-			baselined, blErr := artifact.Baseline(ctx, store, projectRoot, artifact.BaselineInput{
-				DecisionRef:           a.Meta.ID,
-				BindingTargets:        input.BindingTargets,
-				BindingHints:          input.BindingHints,
-				BindingScope:          input.BindingScope,
-				BindingFallbackReason: input.BindingFallbackReason,
-			})
-			if blErr != nil {
-				baselineNote = fmt.Sprintf("\n\n⚠ Auto-baseline failed: %v\nRun manually: haft_decision(action=\"baseline\", decision_ref=\"%s\")", blErr, a.Meta.ID)
+			fields := a.UnmarshalDecisionFields()
+			if fields.IsImplementationFootprintOnly() && !decideInputRequestsExplicitBaselineAuthority(input) {
+				baselineNote = "\n\nAffected files recorded as implementation footprint only; no drift baseline created. Add governance_targets, drift_watch_targets, binding_targets, or binding_scope with binding_fallback_reason if this decision should govern drift."
 			} else {
-				baselineNote = fmt.Sprintf("\n\nBaseline established for %d file(s).", len(baselined))
+				baselined, blErr := artifact.Baseline(ctx, store, projectRoot, artifact.BaselineInput{
+					DecisionRef:           a.Meta.ID,
+					BindingTargets:        input.BindingTargets,
+					BindingHints:          input.BindingHints,
+					BindingScope:          input.BindingScope,
+					BindingFallbackReason: input.BindingFallbackReason,
+				})
+				if blErr != nil {
+					baselineNote = fmt.Sprintf("\n\n⚠ Auto-baseline failed: %v\nRun manually: haft_decision(action=\"baseline\", decision_ref=\"%s\")", blErr, a.Meta.ID)
+				} else {
+					baselineNote = fmt.Sprintf("\n\nBaseline established for %d file(s).", len(baselined))
+				}
 			}
 		}
 
@@ -2517,6 +2522,13 @@ func parseStrictStringArrayFromArgs(args map[string]any, key string) ([]string, 
 	}
 
 	return values, nil
+}
+
+func decideInputRequestsExplicitBaselineAuthority(input artifact.DecideInput) bool {
+	return len(input.BindingTargets) > 0 ||
+		len(input.BindingHints) > 0 ||
+		strings.TrimSpace(input.BindingScope) != "" ||
+		strings.TrimSpace(input.BindingFallbackReason) != ""
 }
 
 func parseStrictRejectionReasonsFromArgs(args map[string]any, key string) ([]artifact.RejectionReason, error) {

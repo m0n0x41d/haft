@@ -3,117 +3,133 @@ package fpf
 func haftMethodTool() Tool {
 	return Tool{
 		Name:        "haft_method",
-		Description: "Pull compact task-local SWE method cards before non-trivial code work; close the same MethodRun with evidence or explicit waivers before claiming completion. No internal LLM classification.",
+		Description: "MethodRun pull/close/read/catalog.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type":        "string",
-					"enum":        []interface{}{"pull", "close", "show", "detail", "status"},
-					"description": "pull=create an open MethodRun and return compact cards; close=validate hard gates by pull_id; show=read one run; detail=full catalog method; status=list open runs.",
+					"enum":        []interface{}{"pull", "close", "show", "detail", "status", "catalog"},
+					"description": "pull, close, show, detail, status, catalog.",
 				},
 				"task": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Operator task in one sentence.",
+					"description": "(pull) Task.",
 				},
 				"declared_task_kind": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) feature | bugfix | debug | refactor | external_integration | mechanical_edit | formatting_only | architecture.",
+					"description": "(pull) Task kind.",
 				},
 				"change_intent": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) add_feature | fix_bug | refactor | change_behavior | mechanical_edit | formatting_only.",
+					"description": "(pull) Change intent.",
 				},
 				"intended_files": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
-					"description": "(pull) Files or path fragments the agent expects to touch.",
+					"description": "(pull) Expected files.",
 				},
 				"risk_signals": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
-							"id":       map[string]interface{}{"type": "string"},
-							"source":   map[string]interface{}{"type": "string"},
-							"evidence": map[string]interface{}{"type": "string"},
+							"id":       map[string]interface{}{},
+							"source":   map[string]interface{}{},
+							"evidence": map[string]interface{}{},
 						},
-						"required": []string{"id"},
 					},
-					"description": "(pull) Deterministic/agent-declared risk ids, e.g. external_io, domain_boundary, failing_test, governed_file.",
+					"description": "(pull) Risk ids.",
 				},
 				"user_scope_constraints": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
-					"description": "(pull) Human limits such as allowed files, no public API change, no DB migration.",
+					"description": "(pull) Scope limits.",
 				},
 				"artifact_refs": map[string]interface{}{
 					"type":        "object",
-					"description": "(pull) Optional problem_ref, decision_ref, commission_ref links.",
+					"description": "(pull) Artifact refs.",
 				},
 				"ceremony_request": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Optional none | low | medium | deep. Mechanical edits should use low/none.",
+					"description": "(pull) none|low|medium|deep.",
 				},
 				"response_budget": map[string]interface{}{
 					"type":        "object",
-					"description": "(pull) Optional max_methods<=3 and detail=compact.",
+					"description": "(pull) Response budget.",
 				},
 				"context": map[string]interface{}{
 					"type":        "string",
-					"description": "(pull) Optional context saved on the MethodRun artifact.",
+					"description": "(pull) Context.",
+				},
+				"carry_through": map[string]interface{}{
+					"type":        "array",
+					"items":       methodCarryThroughItemSchema(),
+					"description": "(pull/close) Accepted items to dispose.",
 				},
 				"pull_id": map[string]interface{}{
 					"type":        "string",
-					"description": "(close/show) MethodRun id returned by pull, e.g. mpull-...",
+					"description": "(close/show) mpull id.",
 				},
 				"changed_files": map[string]interface{}{
 					"type":        "array",
 					"items":       map[string]interface{}{"type": "string"},
-					"description": "(close) Files actually changed.",
+					"description": "(close) Changed files.",
 				},
 				"gate_results": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
-							"gate_id":       map[string]interface{}{"type": "string"},
-							"status":        map[string]interface{}{"type": "string", "enum": []interface{}{"satisfied", "waived"}},
-							"evidence_refs": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}},
-							"waiver_reason": map[string]interface{}{"type": "string"},
+							"gate_id":       map[string]interface{}{},
+							"status":        map[string]interface{}{"enum": []interface{}{"satisfied", "waived"}},
+							"evidence_refs": map[string]interface{}{},
+							"waiver_reason": map[string]interface{}{},
 						},
-						"required": []string{"gate_id", "status"},
 					},
-					"description": "(close) Gate result objects with gate_id, status=satisfied, and evidence_refs when required.",
+					"description": "(close) Gate results.",
 				},
 				"verification": map[string]interface{}{
 					"type":        "object",
-					"properties":  map[string]interface{}{"commands": map[string]interface{}{"type": "array", "items": map[string]interface{}{"type": "string"}}, "result": map[string]interface{}{"type": "string"}, "output_ref": map[string]interface{}{"type": "string"}},
-					"description": "(close) commands/result/output_ref for verification evidence.",
+					"properties":  map[string]interface{}{"commands": map[string]interface{}{}, "result": map[string]interface{}{}, "output_ref": map[string]interface{}{}},
+					"description": "(close) Verification.",
 				},
 				"waivers": map[string]interface{}{
 					"type": "array",
 					"items": map[string]interface{}{
 						"type":       "object",
-						"properties": map[string]interface{}{"gate_id": map[string]interface{}{"type": "string"}, "reason": map[string]interface{}{"type": "string"}},
-						"required":   []string{"gate_id", "reason"},
+						"properties": map[string]interface{}{"gate_id": map[string]interface{}{}, "reason": map[string]interface{}{}},
 					},
-					"description": "(close) Explicit waiver objects with gate_id and reason.",
+					"description": "(close) Waivers.",
 				},
 				"method_ref": map[string]interface{}{
 					"type":        "string",
-					"description": "(detail) Built-in method id.",
+					"description": "(detail) Method id.",
 				},
-				"method_id": map[string]interface{}{
-					"type":        "string",
-					"description": "(detail) Alias for method_ref.",
+				"method_status": map[string]interface{}{
+					"description": "(catalog) current | experimental | superseded | deprecated | all.",
 				},
 				"limit": map[string]interface{}{
-					"type":        "integer",
 					"description": "(status) Max open runs, default 10.",
 				},
 			},
 			"required": []string{"action"},
 		},
+	}
+}
+
+func methodCarryThroughItemSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"source_ref":      map[string]interface{}{},
+			"source_item_ref": map[string]interface{}{},
+			"acceptance_ref":  map[string]interface{}{},
+			"disposition":     map[string]interface{}{"enum": []interface{}{"pending", "applied", "rejected", "deferred", "superseded"}},
+			"target_refs":     map[string]interface{}{},
+			"evidence_refs":   map[string]interface{}{},
+			"reason":          map[string]interface{}{},
+		},
+		"required": []string{"source_ref", "source_item_ref", "acceptance_ref"},
 	}
 }

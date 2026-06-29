@@ -267,7 +267,7 @@ func persistRun(ctx context.Context, store artifact.ArtifactStore, haftDir strin
 		return fmt.Errorf("encode method run: %w", err)
 	}
 	runArtifact.Body = RenderRunBody(run)
-	runArtifact.StructuredData = string(encoded)
+	runArtifact.StructuredData = encoded
 	runArtifact.SearchKeywords = methodRunSearchKeywords(run)
 	if err := store.Update(ctx, runArtifact); err != nil {
 		return fmt.Errorf("update method run: %w", err)

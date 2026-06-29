@@ -97,7 +97,7 @@ func CloseRun(ctx context.Context, store artifact.ArtifactStore, haftDir string,
 	}
 	a.Meta.Status = artifact.StatusAddressed
 	a.Body = RenderRunBody(run)
-	a.StructuredData = string(encoded)
+	a.StructuredData = encoded
 	a.SearchKeywords = methodRunSearchKeywords(run)
 
 	if err := store.Update(ctx, a); err != nil {

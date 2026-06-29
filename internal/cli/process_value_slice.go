@@ -59,6 +59,7 @@ type processValueSliceCase struct {
 	EscapedGovernedDrift            int                            `json:"escaped_governed_drift,omitempty"`
 	TokensCallsWallclock            processValueSliceRuntimeVector `json:"tokens_calls_wallclock,omitempty"`
 	CheckpointHeavy                 bool                           `json:"checkpoint_heavy,omitempty"`
+	ObservedFields                  []string                       `json:"observed_fields,omitempty"`
 }
 
 type processValueSliceRuntimeVector struct {
@@ -68,17 +69,19 @@ type processValueSliceRuntimeVector struct {
 }
 
 type processValueSliceReport struct {
-	Kind             string                             `json:"kind"`
-	SchemaVersion    int                                `json:"schema_version"`
-	Authority        string                             `json:"authority"`
-	MutationBoundary []string                           `json:"mutation_boundary"`
-	InputRef         string                             `json:"input_ref"`
-	Summary          processValueSliceSummary           `json:"summary"`
-	BudgetParity     []processValueSliceBudgetGroup     `json:"budget_parity"`
-	Conditions       []processValueSliceCondition       `json:"conditions"`
-	Policy           processValueSlicePolicy            `json:"policy"`
-	Cases            []processValueSliceCaseObservation `json:"cases,omitempty"`
-	Notes            []string                           `json:"notes,omitempty"`
+	Kind             string                              `json:"kind"`
+	SchemaVersion    int                                 `json:"schema_version"`
+	Authority        string                              `json:"authority"`
+	MutationBoundary []string                            `json:"mutation_boundary"`
+	InputRef         string                              `json:"input_ref"`
+	Summary          processValueSliceSummary            `json:"summary"`
+	BudgetParity     []processValueSliceBudgetGroup      `json:"budget_parity"`
+	PolicyInput      processValueSlicePolicyInput        `json:"policy_input"`
+	Missingness      processValueSliceMissingnessSummary `json:"missingness"`
+	Conditions       []processValueSliceCondition        `json:"conditions"`
+	Policy           processValueSlicePolicy             `json:"policy"`
+	Cases            []processValueSliceCaseObservation  `json:"cases,omitempty"`
+	Notes            []string                            `json:"notes,omitempty"`
 }
 
 type processValueSliceSummary struct {
@@ -97,6 +100,14 @@ type processValueSliceBudgetGroup struct {
 	TimeWindow      string         `json:"time_window,omitempty"`
 	ByCondition     map[string]int `json:"by_condition"`
 	EqualBudgetPair bool           `json:"equal_budget_pair"`
+}
+
+type processValueSlicePolicyInput struct {
+	PairedCases         int `json:"paired_cases"`
+	UnpairedCases       int `json:"unpaired_cases"`
+	EqualBudgetGroups   int `json:"equal_budget_groups"`
+	PairedHaftCases     int `json:"paired_haft_methodpack_cases"`
+	PairedBaselineCases int `json:"paired_baseline_agent_cases"`
 }
 
 type processValueSliceCondition struct {
@@ -129,7 +140,69 @@ type processValueSliceCaseObservation struct {
 	Title          string                  `json:"title,omitempty"`
 	Condition      string                  `json:"condition"`
 	BudgetKey      string                  `json:"budget_key"`
+	ObservedFields []string                `json:"observed_fields,omitempty"`
+	MissingFields  []string                `json:"missing_fields,omitempty"`
 	ObservedVector processValueSliceVector `json:"observed_vector"`
+}
+
+type processValueSliceMissingnessSummary struct {
+	RequiredFieldsForPolicy        []string       `json:"required_fields_for_policy"`
+	PairedCasesChecked             int            `json:"paired_cases_checked"`
+	CasesWithMissingRequiredFields int            `json:"cases_with_missing_required_fields"`
+	MissingByField                 map[string]int `json:"missing_by_field,omitempty"`
+}
+
+var (
+	processValueSliceObservableFields = map[string]struct{}{
+		"accepted_findings_at_start":            {},
+		"missed_acceptance_criteria_count":      {},
+		"unresolved_accepted_findings_at_close": {},
+		"review_findings_after_done":            {},
+		"rework_cycles":                         {},
+		"operator_corrections":                  {},
+		"close_rejections_before_valid_close":   {},
+		"default_status_action_lines":           {},
+		"escaped_governed_drift":                {},
+		"tokens_calls_wallclock":                {},
+		"checkpoint_heavy":                      {},
+	}
+	processValueSliceRequiredPolicyFields = []string{
+		"accepted_findings_at_start",
+		"missed_acceptance_criteria_count",
+		"unresolved_accepted_findings_at_close",
+		"review_findings_after_done",
+		"rework_cycles",
+		"operator_corrections",
+		"default_status_action_lines",
+	}
+)
+
+func (item *processValueSliceCase) UnmarshalJSON(data []byte) error {
+	type caseAlias processValueSliceCase
+	decoded := caseAlias{}
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	raw := map[string]json.RawMessage{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	observed := map[string]struct{}{}
+	for key := range raw {
+		field := processValueSliceNormalizeFieldName(key)
+		if _, ok := processValueSliceObservableFields[field]; ok {
+			observed[field] = struct{}{}
+		}
+	}
+	for _, field := range decoded.ObservedFields {
+		normalized := processValueSliceNormalizeFieldName(field)
+		if _, ok := processValueSliceObservableFields[normalized]; ok {
+			observed[normalized] = struct{}{}
+		}
+	}
+	decoded.ObservedFields = processValueSliceSortedKeys(observed)
+	*item = processValueSliceCase(decoded)
+	return nil
 }
 
 func init() {
@@ -162,6 +235,8 @@ func buildProcessValueSliceReport(inputRef string, data []byte) (processValueSli
 	if err != nil {
 		return processValueSliceReport{}, err
 	}
+	budgetGroups := processValueSliceBudgetGroups(cases)
+	pairedCases := processValueSlicePairedCases(cases, budgetGroups)
 	report := processValueSliceReport{
 		Kind:          processValueSliceKind,
 		SchemaVersion: 1,
@@ -173,17 +248,20 @@ func buildProcessValueSliceReport(inputRef string, data []byte) (processValueSli
 			"does_not_create_evidence_truth_approval_gate_passage_global_truth_or_publication",
 		},
 		InputRef:     valueSliceInputRef(inputRef),
-		BudgetParity: processValueSliceBudgetGroups(cases),
+		BudgetParity: budgetGroups,
+		PolicyInput:  processValueSlicePolicyInputFrom(pairedCases, cases, budgetGroups),
+		Missingness:  processValueSliceMissingnessFrom(pairedCases),
 		Conditions:   processValueSliceConditions(cases),
 		Cases:        processValueSliceCaseObservations(cases),
 		Notes: []string{
 			"Value-slice reports are evidence input only, not product-value proof.",
-			"Compare conditions only under equal model, host, tool/call budget, and time window.",
+			"Policy labels are computed only from equal-budget paired haft_methodpack/baseline_agent groups.",
+			"Missing observed_fields prevent continue/simplify/pause policy labels instead of being treated as zero.",
 			"No natural-language classifier or scalar TPF maturity score is used.",
 		},
 	}
 	report.Summary = processValueSliceSummaryFrom(report, cases)
-	report.Policy = processValueSlicePolicyFrom(report.Conditions)
+	report.Policy = processValueSlicePolicyFrom(processValueSliceConditions(pairedCases), report.Missingness)
 	return report, nil
 }
 
@@ -222,6 +300,7 @@ func normalizeProcessValueSliceCases(cases []processValueSliceCase) []processVal
 		item.TaskID = strings.TrimSpace(item.TaskID)
 		item.Title = strings.TrimSpace(item.Title)
 		item.TaskText = strings.TrimSpace(item.TaskText)
+		item.ObservedFields = processValueSliceNormalizeObservedFields(item.ObservedFields)
 		normalized = append(normalized, item)
 	}
 	return normalized
@@ -256,6 +335,26 @@ func processValueSliceBudgetGroups(cases []processValueSliceCase) []processValue
 		groups = append(groups, byKey[key])
 	}
 	return groups
+}
+
+func processValueSlicePairedCases(cases []processValueSliceCase, groups []processValueSliceBudgetGroup) []processValueSliceCase {
+	pairedKeys := map[string]struct{}{}
+	for _, group := range groups {
+		if group.EqualBudgetPair {
+			pairedKeys[group.BudgetKey] = struct{}{}
+		}
+	}
+	paired := make([]processValueSliceCase, 0, len(cases))
+	for _, item := range cases {
+		if _, ok := pairedKeys[processValueSliceBudgetKey(item)]; !ok {
+			continue
+		}
+		if item.Condition != "haft_methodpack" && item.Condition != "baseline_agent" {
+			continue
+		}
+		paired = append(paired, item)
+	}
+	return paired
 }
 
 func processValueSliceConditions(cases []processValueSliceCase) []processValueSliceCondition {
@@ -295,6 +394,8 @@ func processValueSliceCaseObservations(cases []processValueSliceCase) []processV
 			Title:          item.Title,
 			Condition:      condition,
 			BudgetKey:      processValueSliceBudgetKey(item),
+			ObservedFields: item.ObservedFields,
+			MissingFields:  processValueSliceMissingRequiredFields(item),
 			ObservedVector: processValueSliceVectorFromCase(item),
 		})
 	}
@@ -339,6 +440,63 @@ func processValueSliceVectorAdd(left processValueSliceVector, right processValue
 	return left
 }
 
+func processValueSlicePolicyInputFrom(pairedCases []processValueSliceCase, allCases []processValueSliceCase, groups []processValueSliceBudgetGroup) processValueSlicePolicyInput {
+	input := processValueSlicePolicyInput{
+		PairedCases:   len(pairedCases),
+		UnpairedCases: len(allCases) - len(pairedCases),
+	}
+	for _, group := range groups {
+		if group.EqualBudgetPair {
+			input.EqualBudgetGroups++
+		}
+	}
+	for _, item := range pairedCases {
+		switch item.Condition {
+		case "haft_methodpack":
+			input.PairedHaftCases++
+		case "baseline_agent":
+			input.PairedBaselineCases++
+		}
+	}
+	return input
+}
+
+func processValueSliceMissingnessFrom(cases []processValueSliceCase) processValueSliceMissingnessSummary {
+	missing := processValueSliceMissingnessSummary{
+		RequiredFieldsForPolicy: append([]string{}, processValueSliceRequiredPolicyFields...),
+		PairedCasesChecked:      len(cases),
+		MissingByField:          map[string]int{},
+	}
+	for _, item := range cases {
+		fields := processValueSliceMissingRequiredFields(item)
+		if len(fields) == 0 {
+			continue
+		}
+		missing.CasesWithMissingRequiredFields++
+		for _, field := range fields {
+			missing.MissingByField[field]++
+		}
+	}
+	if len(missing.MissingByField) == 0 {
+		missing.MissingByField = nil
+	}
+	return missing
+}
+
+func processValueSliceMissingRequiredFields(item processValueSliceCase) []string {
+	observed := map[string]struct{}{}
+	for _, field := range item.ObservedFields {
+		observed[field] = struct{}{}
+	}
+	missing := make([]string, 0, len(processValueSliceRequiredPolicyFields))
+	for _, field := range processValueSliceRequiredPolicyFields {
+		if _, ok := observed[field]; !ok {
+			missing = append(missing, field)
+		}
+	}
+	return missing
+}
+
 func processValueSliceSummaryFrom(report processValueSliceReport, cases []processValueSliceCase) processValueSliceSummary {
 	summary := processValueSliceSummary{Cases: len(cases)}
 	for _, item := range cases {
@@ -359,13 +517,22 @@ func processValueSliceSummaryFrom(report processValueSliceReport, cases []proces
 	return summary
 }
 
-func processValueSlicePolicyFrom(conditions []processValueSliceCondition) processValueSlicePolicy {
+func processValueSlicePolicyFrom(conditions []processValueSliceCondition, missingness processValueSliceMissingnessSummary) processValueSlicePolicy {
 	haft, hasHaft := processValueSliceConditionByName(conditions, "haft_methodpack")
 	baseline, hasBaseline := processValueSliceConditionByName(conditions, "baseline_agent")
 	if !hasHaft || !hasBaseline {
 		return processValueSlicePolicy{
 			Label:     "insufficient_data",
 			Rationale: []string{"need both haft_methodpack and baseline_agent conditions under equal-budget groups before making a product-value policy call"},
+		}
+	}
+	if missingness.CasesWithMissingRequiredFields > 0 {
+		return processValueSlicePolicy{
+			Label: "insufficient_data",
+			Rationale: []string{
+				fmt.Sprintf("%d paired case(s) are missing required observed fields", missingness.CasesWithMissingRequiredFields),
+				"absent value-slice metrics are not treated as observed zero",
+			},
 		}
 	}
 	hv := haft.ObservedVector
@@ -411,6 +578,30 @@ func processValueSlicePolicyFrom(conditions []processValueSliceCondition) proces
 		Label:     "observe_more",
 		Rationale: []string{"observed vector is mixed; gather more equal-budget cases before changing product direction"},
 	}
+}
+
+func processValueSliceNormalizeObservedFields(fields []string) []string {
+	observed := map[string]struct{}{}
+	for _, field := range fields {
+		normalized := processValueSliceNormalizeFieldName(field)
+		if _, ok := processValueSliceObservableFields[normalized]; ok {
+			observed[normalized] = struct{}{}
+		}
+	}
+	return processValueSliceSortedKeys(observed)
+}
+
+func processValueSliceNormalizeFieldName(field string) string {
+	return processNormalizeStatus(strings.TrimSpace(field))
+}
+
+func processValueSliceSortedKeys(values map[string]struct{}) []string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func processValueSliceConditionByName(conditions []processValueSliceCondition, name string) (processValueSliceCondition, bool) {

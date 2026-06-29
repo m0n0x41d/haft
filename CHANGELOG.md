@@ -154,6 +154,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Generated contract carrier sync.** Materialized `AGENTS.md`, `CLAUDE.md`,
   bundled skill, and Pi prompt/tool carriers now carry the current
   `kernel_interface_catalog` source digest after contract-generation sync.
+- **Value-slice evidence integrity.** `haft process value-slice` policy labels
+  are now computed only from equal-budget paired `haft_methodpack` /
+  `baseline_agent` groups. Unpaired favorable cases can no longer produce
+  `continue`, and missing required observed metrics now return
+  `insufficient_data` instead of being treated as zero.
 - **Checkpoint close-token persistence.** New MethodRun checkpoint records now
   persist `close_token_hash` instead of raw `close_token`; the raw token is
   returned only in the open response. Close still accepts legacy raw-token

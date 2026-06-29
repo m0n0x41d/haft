@@ -590,6 +590,7 @@ func TestBuildProcessValueSliceReportReturnsContinuePolicy(t *testing.T) {
       "time_window": "2h",
       "condition": "baseline_agent",
       "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
       "unresolved_accepted_findings_at_close": 2,
       "review_findings_after_done": 1,
       "rework_cycles": 1,
@@ -606,6 +607,7 @@ func TestBuildProcessValueSliceReportReturnsContinuePolicy(t *testing.T) {
       "time_window": "2h",
       "condition": "haft_methodpack",
       "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
       "unresolved_accepted_findings_at_close": 0,
       "review_findings_after_done": 1,
       "rework_cycles": 1,
@@ -628,8 +630,222 @@ func TestBuildProcessValueSliceReportReturnsContinuePolicy(t *testing.T) {
 	if report.Policy.Label != "continue" {
 		t.Fatalf("policy = %#v, want continue", report.Policy)
 	}
+	if report.Missingness.CasesWithMissingRequiredFields != 0 {
+		t.Fatalf("missingness = %#v, want no missing required fields", report.Missingness)
+	}
+	if report.PolicyInput.PairedCases != 2 || report.PolicyInput.UnpairedCases != 0 {
+		t.Fatalf("policy input = %#v, want only paired cases", report.PolicyInput)
+	}
 	if strings.Contains(strings.Join(report.Notes, " "), "maturity score") && !strings.Contains(report.Authority, "not_product_value_proof") {
 		t.Fatalf("value-slice authority boundary weak: %#v", report)
+	}
+}
+
+func TestBuildProcessValueSliceReportRequiresEqualBudgetPairsForPolicy(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "80-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("mixed-budget.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.EqualBudgetGroups != 0 {
+		t.Fatalf("equal budget groups = %d, want 0", report.Summary.EqualBudgetGroups)
+	}
+	if report.Policy.Label != "insufficient_data" {
+		t.Fatalf("policy = %#v, want insufficient_data", report.Policy)
+	}
+	if report.PolicyInput.PairedCases != 0 || report.PolicyInput.UnpairedCases != 2 {
+		t.Fatalf("policy input = %#v, want all cases unpaired", report.PolicyInput)
+	}
+}
+
+func TestBuildProcessValueSliceReportIgnoresUnpairedFavorableHaftCases(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "paired-baseline",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 1,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "paired-haft",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "unpaired-haft-win",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "500-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 10,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("unpaired-favorable.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "simplify" {
+		t.Fatalf("policy = %#v, want simplify from paired group only", report.Policy)
+	}
+	if report.PolicyInput.PairedCases != 2 || report.PolicyInput.UnpairedCases != 1 {
+		t.Fatalf("policy input = %#v, want one unpaired ignored case", report.PolicyInput)
+	}
+}
+
+func TestBuildProcessValueSliceReportMissingMetricsPreventContinue(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("missing-review.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "insufficient_data" {
+		t.Fatalf("policy = %#v, want insufficient_data", report.Policy)
+	}
+	if report.Missingness.MissingByField["review_findings_after_done"] != 1 {
+		t.Fatalf("missingness = %#v, want missing review_findings_after_done", report.Missingness)
+	}
+	if len(report.Cases) != 2 || !containsString(report.Cases[1].MissingFields, "review_findings_after_done") {
+		t.Fatalf("case observations missing fields = %#v", report.Cases)
+	}
+}
+
+func TestBuildProcessValueSliceReportPauseCheckpointOnPairedRuntimeBurden(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 1,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6,
+      "tokens_calls_wallclock": {"tokens": 1000, "calls": 10, "wallclock": 30}
+    },
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 1,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6,
+      "tokens_calls_wallclock": {"tokens": 2000, "calls": 12, "wallclock": 40},
+      "checkpoint_heavy": true
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("checkpoint-heavy.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "pause_checkpoint" {
+		t.Fatalf("policy = %#v, want pause_checkpoint", report.Policy)
 	}
 }
 

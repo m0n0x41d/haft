@@ -43,6 +43,7 @@ type processValueSliceCase struct {
 	TaskID                          string                         `json:"task_id,omitempty"`
 	Title                           string                         `json:"title,omitempty"`
 	TaskText                        string                         `json:"task_text,omitempty"`
+	TaskTextDigest                  string                         `json:"task_text_digest,omitempty"`
 	ComparisonGroupRef              string                         `json:"comparison_group_ref,omitempty"`
 	Model                           string                         `json:"model,omitempty"`
 	Host                            string                         `json:"host,omitempty"`
@@ -277,7 +278,7 @@ func buildProcessValueSliceReport(inputRef string, data []byte) (processValueSli
 		Cases:        processValueSliceCaseObservations(cases),
 		Notes: []string{
 			"Value-slice reports are evidence input only, not product-value proof.",
-			"Policy labels are computed only from task/comparison-paired and budget-complete haft_methodpack/baseline_agent groups.",
+			"Policy labels are computed only from comparison_group_ref/task_id/task_text_digest/task_text-paired and budget-complete haft_methodpack/baseline_agent groups.",
 			"Required policy metrics must be present as numeric non-null values; observed_fields cannot invent missing numbers.",
 			"No natural-language classifier or scalar TPF maturity score is used.",
 		},
@@ -322,6 +323,7 @@ func normalizeProcessValueSliceCases(cases []processValueSliceCase) []processVal
 		item.TaskID = strings.TrimSpace(item.TaskID)
 		item.Title = strings.TrimSpace(item.Title)
 		item.TaskText = strings.TrimSpace(item.TaskText)
+		item.TaskTextDigest = strings.TrimSpace(item.TaskTextDigest)
 		item.ComparisonGroupRef = strings.TrimSpace(item.ComparisonGroupRef)
 		item.ObservedFields = processValueSliceNormalizeObservedFields(item.ObservedFields)
 		item.PolicyObservedFields = processValueSliceNormalizeObservedFields(item.PolicyObservedFields)
@@ -701,6 +703,9 @@ func processValueSliceComparisonKey(item processValueSliceCase) string {
 	if item.TaskID != "" {
 		return "task_id=" + item.TaskID
 	}
+	if item.TaskTextDigest != "" {
+		return "task_text_digest=" + item.TaskTextDigest
+	}
 	digest := processValueSliceTaskTextDigest(item)
 	if digest != "" {
 		return "task_text_digest=" + digest
@@ -709,6 +714,9 @@ func processValueSliceComparisonKey(item processValueSliceCase) string {
 }
 
 func processValueSliceTaskTextDigest(item processValueSliceCase) string {
+	if item.TaskTextDigest != "" {
+		return item.TaskTextDigest
+	}
 	text := strings.TrimSpace(item.TaskText)
 	if text == "" {
 		return ""
@@ -727,6 +735,7 @@ func processValueSliceBudgetComplete(item processValueSliceCase) bool {
 func processValueSliceComparisonComplete(item processValueSliceCase) bool {
 	return item.ComparisonGroupRef != "" ||
 		item.TaskID != "" ||
+		item.TaskTextDigest != "" ||
 		strings.TrimSpace(item.TaskText) != ""
 }
 

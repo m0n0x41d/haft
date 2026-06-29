@@ -81,6 +81,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Value-slice task digest contract.** `haft process value-slice` now accepts
+  `task_text_digest` as an explicit input identity route, after
+  `comparison_group_ref` and `task_id` and before deriving a digest from
+  `task_text`, so release-facing pairing docs and behavior match.
 - **README public surface sync.** README now matches the live `haft init`
   install set and routing check output: nine MCP tools, 16 installed skills,
   `h-spec` in the public skill table, and `haft check routing` at 34/44

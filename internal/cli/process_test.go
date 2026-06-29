@@ -847,6 +847,56 @@ func TestBuildProcessValueSliceReportAllowsComparisonGroupRefPair(t *testing.T) 
 	}
 }
 
+func TestBuildProcessValueSliceReportAllowsTaskTextDigestPair(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_text_digest": "sha256:paired-digest",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_text_digest": "sha256:paired-digest",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("task-text-digest.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "continue" {
+		t.Fatalf("policy = %#v, want continue", report.Policy)
+	}
+	if report.Summary.EqualBudgetGroups != 1 || report.PolicyInput.PairedCases != 2 {
+		t.Fatalf("pairing = summary %#v policy_input %#v, want one pair", report.Summary, report.PolicyInput)
+	}
+	if len(report.BudgetParity) != 1 || report.BudgetParity[0].TaskTextDigest != "sha256:paired-digest" {
+		t.Fatalf("budget parity = %#v, want explicit task_text_digest preserved", report.BudgetParity)
+	}
+}
+
 func TestBuildProcessValueSliceReportRejectsIncompleteBudgetPair(t *testing.T) {
 	input := []byte(`{
   "cases": [

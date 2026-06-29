@@ -10,6 +10,8 @@ enabling system is implicit, term maps are missing, and runtime evidence is
 detached from the spec. Haft makes the project harnessable before it scales
 execution.
 
+Silly stupid edit to show that issue is not related to diff size. 
+
 ---
 
 ## What is Haft?

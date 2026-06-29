@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -42,6 +43,7 @@ type processValueSliceCase struct {
 	TaskID                          string                         `json:"task_id,omitempty"`
 	Title                           string                         `json:"title,omitempty"`
 	TaskText                        string                         `json:"task_text,omitempty"`
+	ComparisonGroupRef              string                         `json:"comparison_group_ref,omitempty"`
 	Model                           string                         `json:"model,omitempty"`
 	Host                            string                         `json:"host,omitempty"`
 	ToolBudget                      string                         `json:"tool_budget,omitempty"`
@@ -60,6 +62,7 @@ type processValueSliceCase struct {
 	TokensCallsWallclock            processValueSliceRuntimeVector `json:"tokens_calls_wallclock,omitempty"`
 	CheckpointHeavy                 bool                           `json:"checkpoint_heavy,omitempty"`
 	ObservedFields                  []string                       `json:"observed_fields,omitempty"`
+	PolicyObservedFields            []string                       `json:"-"`
 }
 
 type processValueSliceRuntimeVector struct {
@@ -93,21 +96,29 @@ type processValueSliceSummary struct {
 }
 
 type processValueSliceBudgetGroup struct {
-	BudgetKey       string         `json:"budget_key"`
-	Model           string         `json:"model,omitempty"`
-	Host            string         `json:"host,omitempty"`
-	ToolBudget      string         `json:"tool_budget,omitempty"`
-	TimeWindow      string         `json:"time_window,omitempty"`
-	ByCondition     map[string]int `json:"by_condition"`
-	EqualBudgetPair bool           `json:"equal_budget_pair"`
+	BudgetKey          string         `json:"budget_key"`
+	ComparisonKey      string         `json:"comparison_key,omitempty"`
+	ComparisonGroupRef string         `json:"comparison_group_ref,omitempty"`
+	TaskID             string         `json:"task_id,omitempty"`
+	TaskTextDigest     string         `json:"task_text_digest,omitempty"`
+	Model              string         `json:"model,omitempty"`
+	Host               string         `json:"host,omitempty"`
+	ToolBudget         string         `json:"tool_budget,omitempty"`
+	TimeWindow         string         `json:"time_window,omitempty"`
+	BudgetComplete     bool           `json:"budget_complete"`
+	ComparisonComplete bool           `json:"comparison_complete"`
+	ByCondition        map[string]int `json:"by_condition"`
+	EqualBudgetPair    bool           `json:"equal_budget_pair"`
 }
 
 type processValueSlicePolicyInput struct {
-	PairedCases         int `json:"paired_cases"`
-	UnpairedCases       int `json:"unpaired_cases"`
-	EqualBudgetGroups   int `json:"equal_budget_groups"`
-	PairedHaftCases     int `json:"paired_haft_methodpack_cases"`
-	PairedBaselineCases int `json:"paired_baseline_agent_cases"`
+	PairedCases                int `json:"paired_cases"`
+	UnpairedCases              int `json:"unpaired_cases"`
+	EqualBudgetGroups          int `json:"equal_budget_groups"`
+	PairedHaftCases            int `json:"paired_haft_methodpack_cases"`
+	PairedBaselineCases        int `json:"paired_baseline_agent_cases"`
+	IncompleteBudgetGroups     int `json:"incomplete_budget_groups"`
+	IncompleteComparisonGroups int `json:"incomplete_comparison_groups"`
 }
 
 type processValueSliceCondition struct {
@@ -136,13 +147,15 @@ type processValueSlicePolicy struct {
 }
 
 type processValueSliceCaseObservation struct {
-	TaskID         string                  `json:"task_id,omitempty"`
-	Title          string                  `json:"title,omitempty"`
-	Condition      string                  `json:"condition"`
-	BudgetKey      string                  `json:"budget_key"`
-	ObservedFields []string                `json:"observed_fields,omitempty"`
-	MissingFields  []string                `json:"missing_fields,omitempty"`
-	ObservedVector processValueSliceVector `json:"observed_vector"`
+	TaskID             string                  `json:"task_id,omitempty"`
+	Title              string                  `json:"title,omitempty"`
+	ComparisonGroupRef string                  `json:"comparison_group_ref,omitempty"`
+	Condition          string                  `json:"condition"`
+	BudgetKey          string                  `json:"budget_key"`
+	ComparisonKey      string                  `json:"comparison_key,omitempty"`
+	ObservedFields     []string                `json:"observed_fields,omitempty"`
+	MissingFields      []string                `json:"missing_fields,omitempty"`
+	ObservedVector     processValueSliceVector `json:"observed_vector"`
 }
 
 type processValueSliceMissingnessSummary struct {
@@ -188,10 +201,18 @@ func (item *processValueSliceCase) UnmarshalJSON(data []byte) error {
 		return err
 	}
 	observed := map[string]struct{}{}
+	policyObserved := map[string]struct{}{}
 	for key := range raw {
 		field := processValueSliceNormalizeFieldName(key)
 		if _, ok := processValueSliceObservableFields[field]; ok {
-			observed[field] = struct{}{}
+			if processValueSliceRawFieldObserved(field, raw[key]) {
+				observed[field] = struct{}{}
+			}
+		}
+		if _, ok := processValueSliceRequiredPolicyFieldSet()[field]; ok {
+			if processValueSliceRawNumericObserved(raw[key]) {
+				policyObserved[field] = struct{}{}
+			}
 		}
 	}
 	for _, field := range decoded.ObservedFields {
@@ -201,6 +222,7 @@ func (item *processValueSliceCase) UnmarshalJSON(data []byte) error {
 		}
 	}
 	decoded.ObservedFields = processValueSliceSortedKeys(observed)
+	decoded.PolicyObservedFields = processValueSliceSortedKeys(policyObserved)
 	*item = processValueSliceCase(decoded)
 	return nil
 }
@@ -255,8 +277,8 @@ func buildProcessValueSliceReport(inputRef string, data []byte) (processValueSli
 		Cases:        processValueSliceCaseObservations(cases),
 		Notes: []string{
 			"Value-slice reports are evidence input only, not product-value proof.",
-			"Policy labels are computed only from equal-budget paired haft_methodpack/baseline_agent groups.",
-			"Missing observed_fields prevent continue/simplify/pause policy labels instead of being treated as zero.",
+			"Policy labels are computed only from task/comparison-paired and budget-complete haft_methodpack/baseline_agent groups.",
+			"Required policy metrics must be present as numeric non-null values; observed_fields cannot invent missing numbers.",
 			"No natural-language classifier or scalar TPF maturity score is used.",
 		},
 	}
@@ -300,7 +322,9 @@ func normalizeProcessValueSliceCases(cases []processValueSliceCase) []processVal
 		item.TaskID = strings.TrimSpace(item.TaskID)
 		item.Title = strings.TrimSpace(item.Title)
 		item.TaskText = strings.TrimSpace(item.TaskText)
+		item.ComparisonGroupRef = strings.TrimSpace(item.ComparisonGroupRef)
 		item.ObservedFields = processValueSliceNormalizeObservedFields(item.ObservedFields)
+		item.PolicyObservedFields = processValueSliceNormalizeObservedFields(item.PolicyObservedFields)
 		normalized = append(normalized, item)
 	}
 	return normalized
@@ -313,16 +337,25 @@ func processValueSliceBudgetGroups(cases []processValueSliceCase) []processValue
 		group := byKey[key]
 		if group.BudgetKey == "" {
 			group = processValueSliceBudgetGroup{
-				BudgetKey:   key,
-				Model:       item.Model,
-				Host:        item.Host,
-				ToolBudget:  item.ToolBudget,
-				TimeWindow:  item.TimeWindow,
-				ByCondition: map[string]int{},
+				BudgetKey:          key,
+				ComparisonKey:      processValueSliceComparisonKey(item),
+				ComparisonGroupRef: item.ComparisonGroupRef,
+				TaskID:             item.TaskID,
+				TaskTextDigest:     processValueSliceTaskTextDigest(item),
+				Model:              item.Model,
+				Host:               item.Host,
+				ToolBudget:         item.ToolBudget,
+				TimeWindow:         item.TimeWindow,
+				BudgetComplete:     processValueSliceBudgetComplete(item),
+				ComparisonComplete: processValueSliceComparisonComplete(item),
+				ByCondition:        map[string]int{},
 			}
 		}
 		group.ByCondition[item.Condition]++
-		group.EqualBudgetPair = group.ByCondition["haft_methodpack"] > 0 && group.ByCondition["baseline_agent"] > 0
+		group.EqualBudgetPair = group.BudgetComplete &&
+			group.ComparisonComplete &&
+			group.ByCondition["haft_methodpack"] > 0 &&
+			group.ByCondition["baseline_agent"] > 0
 		byKey[key] = group
 	}
 	keys := make([]string, 0, len(byKey))
@@ -390,13 +423,15 @@ func processValueSliceCaseObservations(cases []processValueSliceCase) []processV
 			condition = "unknown"
 		}
 		observations = append(observations, processValueSliceCaseObservation{
-			TaskID:         item.TaskID,
-			Title:          item.Title,
-			Condition:      condition,
-			BudgetKey:      processValueSliceBudgetKey(item),
-			ObservedFields: item.ObservedFields,
-			MissingFields:  processValueSliceMissingRequiredFields(item),
-			ObservedVector: processValueSliceVectorFromCase(item),
+			TaskID:             item.TaskID,
+			Title:              item.Title,
+			ComparisonGroupRef: item.ComparisonGroupRef,
+			Condition:          condition,
+			BudgetKey:          processValueSliceBudgetKey(item),
+			ComparisonKey:      processValueSliceComparisonKey(item),
+			ObservedFields:     item.ObservedFields,
+			MissingFields:      processValueSliceMissingRequiredFields(item),
+			ObservedVector:     processValueSliceVectorFromCase(item),
 		})
 	}
 	return observations
@@ -449,6 +484,12 @@ func processValueSlicePolicyInputFrom(pairedCases []processValueSliceCase, allCa
 		if group.EqualBudgetPair {
 			input.EqualBudgetGroups++
 		}
+		if !group.BudgetComplete {
+			input.IncompleteBudgetGroups++
+		}
+		if !group.ComparisonComplete {
+			input.IncompleteComparisonGroups++
+		}
 	}
 	for _, item := range pairedCases {
 		switch item.Condition {
@@ -485,7 +526,7 @@ func processValueSliceMissingnessFrom(cases []processValueSliceCase) processValu
 
 func processValueSliceMissingRequiredFields(item processValueSliceCase) []string {
 	observed := map[string]struct{}{}
-	for _, field := range item.ObservedFields {
+	for _, field := range item.PolicyObservedFields {
 		observed[field] = struct{}{}
 	}
 	missing := make([]string, 0, len(processValueSliceRequiredPolicyFields))
@@ -591,6 +632,31 @@ func processValueSliceNormalizeObservedFields(fields []string) []string {
 	return processValueSliceSortedKeys(observed)
 }
 
+func processValueSliceRequiredPolicyFieldSet() map[string]struct{} {
+	required := map[string]struct{}{}
+	for _, field := range processValueSliceRequiredPolicyFields {
+		required[field] = struct{}{}
+	}
+	return required
+}
+
+func processValueSliceRawFieldObserved(field string, raw json.RawMessage) bool {
+	if _, ok := processValueSliceRequiredPolicyFieldSet()[field]; ok {
+		return processValueSliceRawNumericObserved(raw)
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	return trimmed != "" && trimmed != "null"
+}
+
+func processValueSliceRawNumericObserved(raw json.RawMessage) bool {
+	trimmed := strings.TrimSpace(string(raw))
+	if trimmed == "" || trimmed == "null" {
+		return false
+	}
+	var number float64
+	return json.Unmarshal(raw, &number) == nil
+}
+
 func processValueSliceNormalizeFieldName(field string) string {
 	return processNormalizeStatus(strings.TrimSpace(field))
 }
@@ -619,12 +685,49 @@ func processValueSliceRuntimeGreater(left processValueSliceRuntimeVector, right 
 
 func processValueSliceBudgetKey(item processValueSliceCase) string {
 	parts := []string{
+		"comparison=" + processValueSliceComparisonKey(item),
 		"model=" + item.Model,
 		"host=" + item.Host,
 		"tool_budget=" + item.ToolBudget,
 		"time_window=" + item.TimeWindow,
 	}
 	return strings.Join(parts, "|")
+}
+
+func processValueSliceComparisonKey(item processValueSliceCase) string {
+	if item.ComparisonGroupRef != "" {
+		return "comparison_group_ref=" + item.ComparisonGroupRef
+	}
+	if item.TaskID != "" {
+		return "task_id=" + item.TaskID
+	}
+	digest := processValueSliceTaskTextDigest(item)
+	if digest != "" {
+		return "task_text_digest=" + digest
+	}
+	return "comparison=missing"
+}
+
+func processValueSliceTaskTextDigest(item processValueSliceCase) string {
+	text := strings.TrimSpace(item.TaskText)
+	if text == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(text))
+	return fmt.Sprintf("sha256:%x", sum[:8])
+}
+
+func processValueSliceBudgetComplete(item processValueSliceCase) bool {
+	return item.Model != "" &&
+		item.Host != "" &&
+		item.ToolBudget != "" &&
+		item.TimeWindow != ""
+}
+
+func processValueSliceComparisonComplete(item processValueSliceCase) bool {
+	return item.ComparisonGroupRef != "" ||
+		item.TaskID != "" ||
+		strings.TrimSpace(item.TaskText) != ""
 }
 
 func valueSliceInputRef(inputRef string) string {
@@ -647,11 +750,13 @@ func writeProcessValueSliceText(output io.Writer, report processValueSliceReport
 		return err
 	}
 	if err := printf(
-		"summary: cases=%d haft_methodpack=%d baseline_agent=%d equal_budget_groups=%d policy=%s\n",
+		"summary: cases=%d haft_methodpack=%d baseline_agent=%d equal_budget_groups=%d paired_cases=%d unpaired_cases=%d policy=%s\n",
 		report.Summary.Cases,
 		report.Summary.HaftMethodPack,
 		report.Summary.BaselineAgent,
 		report.Summary.EqualBudgetGroups,
+		report.PolicyInput.PairedCases,
+		report.PolicyInput.UnpairedCases,
 		report.Policy.Label,
 	); err != nil {
 		return err

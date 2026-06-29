@@ -159,6 +159,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `baseline_agent` groups. Unpaired favorable cases can no longer produce
   `continue`, and missing required observed metrics now return
   `insufficient_data` instead of being treated as zero.
+- **Value-slice release-readiness pairing.** Value-slice policy groups now
+  require a comparable task or `comparison_group_ref` plus complete model,
+  host, tool budget, and time window fields before they can become
+  `equal_budget_pair=true`. Required policy metrics must be numeric and
+  non-null in the input; `observed_fields` can document source posture but can
+  no longer invent a metric value.
 - **Checkpoint close-token persistence.** New MethodRun checkpoint records now
   persist `close_token_hash` instead of raw `close_token`; the raw token is
   returned only in the open response. Close still accepts legacy raw-token

@@ -695,7 +695,7 @@ func TestBuildProcessValueSliceReportIgnoresUnpairedFavorableHaftCases(t *testin
 	input := []byte(`{
   "cases": [
     {
-      "task_id": "paired-baseline",
+      "task_id": "paired-task",
       "model": "gpt-x",
       "host": "codex",
       "tool_budget": "50-calls",
@@ -710,7 +710,7 @@ func TestBuildProcessValueSliceReportIgnoresUnpairedFavorableHaftCases(t *testin
       "default_status_action_lines": 6
     },
     {
-      "task_id": "paired-haft",
+      "task_id": "paired-task",
       "model": "gpt-x",
       "host": "codex",
       "tool_budget": "50-calls",
@@ -750,6 +750,142 @@ func TestBuildProcessValueSliceReportIgnoresUnpairedFavorableHaftCases(t *testin
 	}
 	if report.PolicyInput.PairedCases != 2 || report.PolicyInput.UnpairedCases != 1 {
 		t.Fatalf("policy input = %#v, want one unpaired ignored case", report.PolicyInput)
+	}
+}
+
+func TestBuildProcessValueSliceReportRequiresSameTaskPair(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "easy-task",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "hard-task",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("different-task.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "insufficient_data" {
+		t.Fatalf("policy = %#v, want insufficient_data", report.Policy)
+	}
+	if report.Summary.EqualBudgetGroups != 0 || report.PolicyInput.PairedCases != 0 {
+		t.Fatalf("pairing = summary %#v policy_input %#v, want no comparable pair", report.Summary, report.PolicyInput)
+	}
+}
+
+func TestBuildProcessValueSliceReportAllowsComparisonGroupRefPair(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "comparison_group_ref": "pair-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "comparison_group_ref": "pair-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("comparison-group.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "continue" {
+		t.Fatalf("policy = %#v, want continue", report.Policy)
+	}
+	if report.Summary.EqualBudgetGroups != 1 || report.PolicyInput.PairedCases != 2 {
+		t.Fatalf("pairing = summary %#v policy_input %#v, want one pair", report.Summary, report.PolicyInput)
+	}
+}
+
+func TestBuildProcessValueSliceReportRejectsIncompleteBudgetPair(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "task-1",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("incomplete-budget.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "insufficient_data" {
+		t.Fatalf("policy = %#v, want insufficient_data", report.Policy)
+	}
+	if report.Summary.EqualBudgetGroups != 0 || report.PolicyInput.IncompleteBudgetGroups != 1 {
+		t.Fatalf("pairing = summary %#v policy_input %#v, want incomplete budget group", report.Summary, report.PolicyInput)
+	}
+	if len(report.BudgetParity) != 1 || report.BudgetParity[0].BudgetComplete {
+		t.Fatalf("budget parity = %#v, want incomplete group", report.BudgetParity)
 	}
 }
 
@@ -799,6 +935,150 @@ func TestBuildProcessValueSliceReportMissingMetricsPreventContinue(t *testing.T)
 	}
 	if len(report.Cases) != 2 || !containsString(report.Cases[1].MissingFields, "review_findings_after_done") {
 		t.Fatalf("case observations missing fields = %#v", report.Cases)
+	}
+}
+
+func TestBuildProcessValueSliceReportObservedFieldsCannotInventMetric(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "observed_fields": ["review_findings_after_done"],
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("observed-field-no-value.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "insufficient_data" {
+		t.Fatalf("policy = %#v, want insufficient_data", report.Policy)
+	}
+	if !containsString(report.Cases[1].ObservedFields, "review_findings_after_done") {
+		t.Fatalf("observed fields = %#v, want annotated observed field visible", report.Cases[1].ObservedFields)
+	}
+	if !containsString(report.Cases[1].MissingFields, "review_findings_after_done") {
+		t.Fatalf("missing fields = %#v, want policy metric still missing", report.Cases[1].MissingFields)
+	}
+}
+
+func TestBuildProcessValueSliceReportNullMetricIsMissing(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 2,
+      "review_findings_after_done": 1,
+      "rework_cycles": 1,
+      "operator_corrections": 1,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": null,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("null-metric.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Policy.Label != "insufficient_data" {
+		t.Fatalf("policy = %#v, want insufficient_data", report.Policy)
+	}
+	if !containsString(report.Cases[1].MissingFields, "review_findings_after_done") {
+		t.Fatalf("missing fields = %#v, want null metric missing", report.Cases[1].MissingFields)
+	}
+}
+
+func TestBuildProcessValueSliceReportExplicitZeroIsObserved(t *testing.T) {
+	input := []byte(`{
+  "cases": [
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "baseline_agent",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 1,
+      "unresolved_accepted_findings_at_close": 1,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    },
+    {
+      "task_id": "task-1",
+      "model": "gpt-x",
+      "host": "codex",
+      "tool_budget": "50-calls",
+      "time_window": "2h",
+      "condition": "haft_methodpack",
+      "accepted_findings_at_start": 2,
+      "missed_acceptance_criteria_count": 0,
+      "unresolved_accepted_findings_at_close": 0,
+      "review_findings_after_done": 0,
+      "rework_cycles": 0,
+      "operator_corrections": 0,
+      "default_status_action_lines": 6
+    }
+  ]
+}`)
+	report, err := buildProcessValueSliceReport("explicit-zero.json", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Missingness.CasesWithMissingRequiredFields != 0 {
+		t.Fatalf("missingness = %#v, want explicit zero metrics observed", report.Missingness)
+	}
+	if report.Policy.Label != "continue" {
+		t.Fatalf("policy = %#v, want continue", report.Policy)
 	}
 }
 

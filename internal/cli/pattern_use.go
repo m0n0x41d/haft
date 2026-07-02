@@ -303,27 +303,38 @@ func recommendPatternUseWithEmbeddedFallback(
 		}
 	}
 
-	if !shouldAttemptPatternUseRetrievalAfterIntent(request.Query, intentMatch, intentMatched) {
+	if !fpf.ShouldAttemptPatternUseSemanticRouting(request.Query) {
 		return seed, nil
 	}
 
-	retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
-		Query: request.Query,
-		Limit: fpf.PatternUseRetrievedCandidateLimit * 3,
-	})
+	candidates, err := retrievePatternUseCandidatesForFallback(request.Query)
 	if err != nil {
-		return fpf.PatternUseRecommendation{}, fmt.Errorf("retrieve FPF pattern-use candidates: %w", err)
+		return fpf.PatternUseRecommendation{}, err
 	}
-	candidates := fpf.PatternUseRetrievedCandidatesFromSpecResults(
-		retrieval.Results,
-		fpf.PatternUseRetrievedCandidateLimit,
-	)
+	if !shouldAcceptPatternUseRetrievalFallback(request.Query, intentMatch, intentMatched, candidates) {
+		return seed, nil
+	}
+
 	candidates = hydratePatternUseRetrievedCandidatesWithEmbeddedAtlas(candidates)
 	record := fpf.RecommendPatternUseWithRetrievedCandidates(request, candidates)
 	if intentMatched {
 		record = fpf.WithPatternUseIntentMatch(record, intentMatch)
 	}
 	return record, nil
+}
+
+func retrievePatternUseCandidatesForFallback(query string) ([]fpf.PatternUseRetrievedCandidate, error) {
+	retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
+		Query: query,
+		Limit: fpf.PatternUseRetrievedCandidateLimit * 3,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("retrieve FPF pattern-use candidates: %w", err)
+	}
+	return fpf.PatternUseRetrievedCandidatesFromSpecResults(
+		retrieval.Results,
+		fpf.PatternUseRetrievedCandidateLimit,
+	), nil
 }
 
 func shouldAttemptPatternUseRetrievalAfterIntent(
@@ -335,6 +346,18 @@ func shouldAttemptPatternUseRetrievalAfterIntent(
 		return fpf.PatternUseIntentLanePermitsRetrieval(intentMatch.Lane)
 	}
 	return fpf.ShouldAttemptPatternUseRetrieval(query)
+}
+
+func shouldAcceptPatternUseRetrievalFallback(
+	query string,
+	intentMatch fpf.PatternUseIntentLaneMatch,
+	intentMatched bool,
+	candidates []fpf.PatternUseRetrievedCandidate,
+) bool {
+	if shouldAttemptPatternUseRetrievalAfterIntent(query, intentMatch, intentMatched) {
+		return true
+	}
+	return fpf.PatternUseRetrievedCandidatesHaveLexicalRecallSignal(query, candidates)
 }
 
 func hydratePatternUseRetrievedCandidatesWithEmbeddedAtlas(

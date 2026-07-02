@@ -9,9 +9,11 @@ import (
 const (
 	PatternUseRetrievedFallbackRouteID = "fpf_retrieval_fallback"
 	PatternUseRetrievedCandidateLimit  = 5
+	PatternUseSourceCardIndexedSection = "indexed_pattern_section"
 )
 
 type PatternUseRetrievedCandidate struct {
+	SectionID     int                   `json:"section_id,omitempty"`
 	PatternRef    string                `json:"pattern_ref"`
 	Title         string                `json:"title"`
 	Summary       string                `json:"summary,omitempty"`
@@ -57,6 +59,7 @@ func PatternUseRetrievedCandidatesFromSpecResults(
 		}
 		seen[patternRef] = struct{}{}
 		candidates = append(candidates, PatternUseRetrievedCandidate{
+			SectionID:     result.SectionID,
 			PatternRef:    patternRef,
 			Title:         firstNonEmptyPatternUseString(result.Heading, patternRef),
 			Summary:       strings.TrimSpace(result.Summary),
@@ -120,8 +123,36 @@ func ShouldAttemptPatternUseRetrieval(query string) bool {
 	if isPatternUseMechanicalLookup(normalized) {
 		return false
 	}
+	if len(ExtractPatternUseRefs(query).PatternRefs) > 0 {
+		return true
+	}
 	for _, cue := range patternUseRetrievalGateCues() {
 		if strings.Contains(normalized, cue) {
+			return true
+		}
+	}
+	return false
+}
+
+func PatternUseRetrievedCandidatesHaveLexicalRecallSignal(
+	query string,
+	retrieved []PatternUseRetrievedCandidate,
+) bool {
+	normalized := normalizePatternUseQuery(query)
+	if normalized == "" || isPatternUseMechanicalLookup(normalized) {
+		return false
+	}
+
+	queryTokens := patternUseLexicalTokenSet(normalized)
+	candidates := normalizePatternUseRetrievedCandidates(retrieved, PatternUseRetrievedCandidateLimit)
+	for _, candidate := range candidates {
+		if !patternUseCandidateHasLexicalRetrievalTier(candidate) {
+			continue
+		}
+		if patternUseCandidateRefAppearsInQuery(normalized, candidate) {
+			return true
+		}
+		if patternUseCandidateTitleMatchesQuery(queryTokens, candidate.Title) {
 			return true
 		}
 	}
@@ -156,6 +187,7 @@ func normalizePatternUseRetrievedCandidates(
 		}
 		seen[patternRef] = struct{}{}
 		out = append(out, PatternUseRetrievedCandidate{
+			SectionID:     candidate.SectionID,
 			PatternRef:    patternRef,
 			Title:         firstNonEmptyPatternUseString(candidate.Title, patternRef),
 			Summary:       strings.TrimSpace(candidate.Summary),
@@ -175,6 +207,74 @@ func normalizePatternUseRetrievedCandidates(
 	return out
 }
 
+func patternUseCandidateHasLexicalRetrievalTier(candidate PatternUseRetrievedCandidate) bool {
+	tier := strings.ToLower(strings.TrimSpace(candidate.SourceTier))
+	reason := strings.ToLower(strings.TrimSpace(candidate.SourceReason))
+	mode := strings.ToLower(strings.TrimSpace(candidate.RetrievalMode))
+	return tier == SpecSearchTierFTS ||
+		tier == SpecSearchTierPattern ||
+		mode == SpecRetrievalModeFTS ||
+		strings.Contains(reason, "keyword")
+}
+
+func patternUseCandidateRefAppearsInQuery(
+	normalizedQuery string,
+	candidate PatternUseRetrievedCandidate,
+) bool {
+	refs := []string{candidate.PatternRef}
+	refs = append(refs, extractPatternIDs(candidate.Title)...)
+	refs = append(refs, extractPatternIDs(candidate.Summary)...)
+	for _, ref := range dedupePatternUseStrings(refs) {
+		normalizedRef := normalizePatternUseQuery(ref)
+		if normalizedRef != "" && strings.Contains(normalizedQuery, normalizedRef) {
+			return true
+		}
+	}
+	return false
+}
+
+func patternUseCandidateTitleMatchesQuery(
+	queryTokens map[string]struct{},
+	title string,
+) bool {
+	titleTokens := patternUseLexicalTokens(title)
+	overlap := 0
+	for _, token := range titleTokens {
+		if _, ok := queryTokens[token]; !ok {
+			continue
+		}
+		overlap++
+		if overlap >= 2 {
+			return true
+		}
+		if len(token) >= 8 {
+			return true
+		}
+	}
+	return false
+}
+
+func patternUseLexicalTokenSet(text string) map[string]struct{} {
+	out := map[string]struct{}{}
+	for _, token := range patternUseLexicalTokens(text) {
+		out[token] = struct{}{}
+	}
+	return out
+}
+
+func patternUseLexicalTokens(text string) []string {
+	normalized := normalizePatternUseQuery(text)
+	fields := strings.Fields(normalized)
+	out := make([]string, 0, len(fields))
+	for _, field := range fields {
+		if len(field) <= 2 {
+			continue
+		}
+		out = append(out, field)
+	}
+	return dedupePatternUseStrings(out)
+}
+
 func HydratePatternUseRetrievedCandidatesWithAtlas(
 	db *sql.DB,
 	retrieved []PatternUseRetrievedCandidate,
@@ -190,6 +290,11 @@ func HydratePatternUseRetrievedCandidatesWithAtlas(
 		}
 		card, ok := firstPatternUseAtlasCard(db, candidate)
 		if !ok {
+			sourceCard, ok := patternUseSourceCardFromIndexedPatternSection(db, candidate)
+			if !ok {
+				continue
+			}
+			candidates[index].SourceCard = sourceCard
 			continue
 		}
 		candidates[index].Title = firstNonEmptyPatternUseString(candidate.Title, card.Title)
@@ -250,6 +355,53 @@ func patternUseIndexedPatternBody(db *sql.DB, patternRef string) (string, bool) 
 		return "", false
 	}
 	return body, strings.TrimSpace(body) != ""
+}
+
+func patternUseSourceCardFromIndexedPatternSection(
+	db *sql.DB,
+	candidate PatternUseRetrievedCandidate,
+) (*PatternUseSourceCard, bool) {
+	if db == nil || candidate.SectionID < PatternChunkIDBase {
+		return nil, false
+	}
+	if !isPatternUseGeneratedPatternSectionRef(candidate.PatternRef) {
+		return nil, false
+	}
+
+	var patternRef string
+	var body string
+	err := db.QueryRow(`
+		SELECT pattern_id, body
+		FROM sections
+		WHERE id = ?
+		LIMIT 1`, candidate.SectionID).Scan(&patternRef, &body)
+	if err != nil {
+		return nil, false
+	}
+	if strings.TrimSpace(patternRef) == "" || strings.TrimSpace(body) == "" {
+		return nil, false
+	}
+
+	info, _ := GetSpecIndexInfo(db)
+	return &PatternUseSourceCard{
+		BodyKind:    PatternUseSourceCardIndexedSection,
+		SourceRef:   firstNonEmptyPatternUseString(info.SpecPath, candidate.SourceRef),
+		FPFCommit:   strings.TrimSpace(info.Commit),
+		RootNodeID:  "section:" + strconv.Itoa(candidate.SectionID),
+		ContentHash: patternAtlasHash(body),
+		NodeCount:   1,
+		Body:        strings.TrimSpace(body),
+	}, true
+}
+
+func isPatternUseGeneratedPatternSectionRef(patternRef string) bool {
+	normalized := strings.ToUpper(strings.TrimSpace(patternRef))
+	for _, prefix := range []string{"CHR-", "FRAME-", "EXP-", "DEC-", "VER-", "X-"} {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func recommendationFromRetrievedPatternUseCandidates(

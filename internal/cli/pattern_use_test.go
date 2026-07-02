@@ -416,6 +416,46 @@ func TestRunPatternUseRecommendUsesEmbeddedRetrievalFallback(t *testing.T) {
 	}
 }
 
+func TestRunPatternUseRecommendUsesLexicalRecallFallbackForNamedCard(t *testing.T) {
+	dbPath := buildPatternUseNamedFallbackTestDB(t)
+	restoreOpen := stubOpenFPFDB(t, dbPath)
+	defer restoreOpen()
+	restoreFlags := stubPatternUseRecommendFlags(true, string(fpf.PatternUseFullMode))
+	defer restoreFlags()
+
+	cmd := &cobra.Command{}
+	var output bytes.Buffer
+	cmd.SetOut(&output)
+
+	err := runPatternUseRecommend(
+		cmd,
+		[]string{"Use", "Null", "Question", "Detection", "to", "find", "the", "missing", "question"},
+	)
+	if err != nil {
+		t.Fatalf("pattern-use recommend returned error: %v\n%s", err, output.String())
+	}
+
+	var record fpf.PatternUseRecommendation
+	if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+		t.Fatalf("json.Unmarshal output: %v\n%s", err, output.String())
+	}
+	if record.SupportLevel != fpf.PatternUseSupportRetrievedUncompiled {
+		t.Fatalf("support = %q", record.SupportLevel)
+	}
+	if record.RecommendedPatternUse.PatternRef != "EXP-08" {
+		t.Fatalf("pattern = %q", record.RecommendedPatternUse.PatternRef)
+	}
+	if record.CandidatePatternUseSet[0].SourceCard == nil {
+		t.Fatalf("source card missing: %#v", record.CandidatePatternUseSet[0])
+	}
+	if record.CandidatePatternUseSet[0].SourceCard.BodyKind != fpf.PatternUseSourceCardIndexedSection {
+		t.Fatalf("source body kind = %#v", record.CandidatePatternUseSet[0].SourceCard)
+	}
+	if !strings.Contains(record.CandidatePatternUseSet[0].SourceCard.Body, "Null Question Detection") {
+		t.Fatalf("source body = %#v", record.CandidatePatternUseSet[0].SourceCard)
+	}
+}
+
 func TestRunPatternUseRecommendAtlasHydrationDoesNotChangeFallbackRouteBehavior(t *testing.T) {
 	withAtlas := patternUseRecommendationForFallbackDB(t, buildPatternUseFallbackTestDB(t))
 	withoutAtlas := patternUseRecommendationForFallbackDB(t, buildPatternUseFallbackTestDBWithoutAtlas(t))
@@ -644,6 +684,91 @@ func TestRunPatternUseRecommendUsesSemanticRouteForRussianRegressionPrompts(t *t
 	}
 }
 
+func TestRunPatternUseRecommendUsesSemanticRouteForC1RuntimeExpansionPrompts(t *testing.T) {
+	dbPath := buildPatternUseSemanticTestDB(t)
+	restore := stubPatternUseSemanticDB(t, dbPath)
+	defer restore()
+	restoreFlags := stubPatternUseRecommendFlags(true, string(fpf.PatternUseCompactMode))
+	defer restoreFlags()
+
+	cases := []struct {
+		name      string
+		prompt    string
+		wantRef   string
+		wantRoute string
+	}{
+		{
+			name:      "work_plan",
+			prompt:    "Ты сделал работу или только описал план?",
+			wantRef:   "A.15 plus E.18/E.18.1 plus A.7",
+			wantRoute: "a15_work_plan_performed_work_boundary",
+		},
+		{
+			name:      "agent_action",
+			prompt:    "Plan the AI agent tool-call sequence for this risky change.",
+			wantRef:   "E.16 plus A.15 plus A.10",
+			wantRoute: "e16_agent_action_admissibility",
+		},
+		{
+			name:      "spec_lifecycle",
+			prompt:    "Approve or rebaseline this SpecSection.",
+			wantRef:   "SpecSection lifecycle plus A.7 plus E.9 plus A.15",
+			wantRoute: "spec_lifecycle_authority",
+		},
+		{
+			name:      "layer_boundary",
+			prompt:    "Should PatternUse become MethodPack?",
+			wantRef:   "E.4 plus A.15 plus E.11",
+			wantRoute: "e4_layer_boundary",
+		},
+		{
+			name:      "all_cards_layer_boundary",
+			prompt:    "Do we need all FPF cards as route cards?",
+			wantRef:   "E.4 plus A.15 plus E.11",
+			wantRoute: "e4_layer_boundary",
+		},
+		{
+			name:      "h_reason_layer_boundary",
+			prompt:    "[$h-reason] Разбери границу между FPF source cards, DPF source pack, PatternUseGateway и MethodPack. Не делай коммитов, нужен reasoning carrier.",
+			wantRef:   "E.4 plus A.15 plus E.11",
+			wantRoute: "e4_layer_boundary",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cmd := &cobra.Command{}
+			var output bytes.Buffer
+			cmd.SetOut(&output)
+
+			err := runPatternUseRecommend(cmd, []string{tc.prompt})
+			if err != nil {
+				t.Fatalf("runPatternUseRecommend returned error: %v", err)
+			}
+
+			var record fpf.PatternUseCompactRecommendation
+			if err := json.Unmarshal(output.Bytes(), &record); err != nil {
+				t.Fatalf("json.Unmarshal output: %v\n%s", err, output.String())
+			}
+			if err := record.Validate(); err != nil {
+				t.Fatalf("Validate returned error: %v", err)
+			}
+			if record.RecommendedPatternUse.PatternRef != tc.wantRef {
+				t.Fatalf("pattern = %q; record=%#v", record.RecommendedPatternUse.PatternRef, record)
+			}
+			if record.MatchedRouteID != tc.wantRoute {
+				t.Fatalf("route = %q; record=%#v", record.MatchedRouteID, record)
+			}
+			if record.RouteMatchStrategy != fpf.PatternUseRouteMatchStrategySemanticCompiledRoute {
+				t.Fatalf("strategy = %q", record.RouteMatchStrategy)
+			}
+			if record.SupportLevel != fpf.PatternUseSupportImplementedSubstrate {
+				t.Fatalf("support = %q", record.SupportLevel)
+			}
+		})
+	}
+}
+
 func TestRunPatternUseRecommendDoesNotRouteMechanicalTermNearMiss(t *testing.T) {
 	dbPath := buildPatternUseSemanticTestDB(t)
 	restore := stubPatternUseSemanticDB(t, dbPath)
@@ -691,6 +816,36 @@ func buildPatternUseFallbackTestDBWithoutAtlas(t *testing.T) string {
 	t.Helper()
 
 	return buildPatternUseFallbackTestDBWithAtlas(t, false)
+}
+
+func buildPatternUseNamedFallbackTestDB(t *testing.T) string {
+	t.Helper()
+
+	dbPath := filepath.Join(t.TempDir(), "pattern-use-named-fallback.db")
+	chunks := []fpf.SpecChunk{
+		{
+			ID:        0,
+			Heading:   "A.0 - Onboarding Glossary",
+			Level:     2,
+			Body:      "General glossary prose.",
+			PatternID: "A.0",
+			Summary:   "Glossary.",
+		},
+		{
+			ID:        fpf.PatternChunkIDBase + 8,
+			Heading:   "EXP-08 - New-Question Detection (NQD)",
+			Level:     2,
+			Body:      "Null Question Detection finds the silently missing question before applying a solution pattern.",
+			PatternID: "EXP-08",
+			Summary:   "Find missing questions before answering.",
+			Keywords:  []string{"null", "question", "detection", "nqd", "missing"},
+			Queries:   []string{"Use Null Question Detection to find the missing question."},
+		},
+	}
+	if err := fpf.BuildSpecIndex(dbPath, chunks, nil); err != nil {
+		t.Fatalf("BuildSpecIndex failed: %v", err)
+	}
+	return dbPath
 }
 
 func buildPatternUseFallbackTestDBWithAtlas(t *testing.T, withAtlas bool) string {
@@ -908,7 +1063,15 @@ func patternUseTestVector(text string) []float32 {
 	normalized := strings.ToLower(text)
 	vector := make([]float32, specEmbeddingDim)
 	switch {
-	case patternUseTestTextContainsAny(normalized, "250 fpf", "fpf карточ", "route cards", "pattern cards", "模式卡", "路由卡"):
+	case patternUseTestTextContainsAny(normalized, "actual work", "performed work", "only describe", "только описал план", "выполненная работа"):
+		vector[17] = 1
+	case patternUseTestTextContainsAny(normalized, "tool-call sequence", "risky change", "what tools may the agent", "агенту самому", "代理可以调用"):
+		vector[18] = 1
+	case patternUseTestTextContainsAny(normalized, "write this into specs", "specsection", "rebaseline", "spec lifecycle", "ребейзлайн", "规格"):
+		vector[19] = 1
+	case patternUseTestTextContainsAny(normalized, "patternuse become methodpack", "patternusegateway", "methodpack become swe-dpf", "all fpf cards as route cards", "fpf, dpf, lpf", "граница fpf", "границу между fpf", "250 fpf карточек", "模式卡都编译成路由卡"):
+		vector[20] = 1
+	case patternUseTestTextContainsAny(normalized, "250 fpf", "fpf карточ", "pattern cards", "模式卡", "路由卡"):
 		vector[12] = 1
 	case patternUseTestTextContainsAny(normalized, "what time is it", "term in this equation", "сколько сейчас времени"):
 		vector[13] = 1

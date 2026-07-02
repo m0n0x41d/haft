@@ -22,6 +22,10 @@ func TestRecommendPatternUseWithoutSemanticEvidenceDoesNotSelectCompiledRoutes(t
 		{name: "strict distinction", query: "Clarify what is the object, description, carrier, and evidence here."},
 		{name: "public api", query: "Plan a public API change."},
 		{name: "product commitment", query: "Should we commit to this product direction?"},
+		{name: "work plan", query: "Did you do the work or only describe the plan?"},
+		{name: "agent action", query: "Plan the AI agent tool-call sequence for this risky change."},
+		{name: "spec lifecycle", query: "Approve or rebaseline this SpecSection."},
+		{name: "layer boundary", query: "Should PatternUse become MethodPack?"},
 	}
 
 	for _, tc := range cases {
@@ -68,6 +72,10 @@ func TestRecommendPatternUseWithSemanticRouteMatchCanonicalRoutes(t *testing.T) 
 		{name: "strict distinction", query: "Clarify what is the object, description, carrier, and evidence here.", routeID: "a7_strict_distinction", wantRef: "A.7", wantShape: "strict distinction table"},
 		{name: "public api", query: "Plan a public API change.", routeID: "api_boundary_decision", wantRef: "A.6 plus E.9 plus A.15", wantShape: "API boundary note"},
 		{name: "commitment", query: "Should we commit to this product direction?", routeID: "e9_commitment_human_gate", wantRef: "E.9 plus compare/evidence gate", wantShape: "DecisionRecord candidate"},
+		{name: "work plan", query: "Did you do the work or only describe the plan?", routeID: "a15_work_plan_performed_work_boundary", wantRef: "A.15 plus E.18/E.18.1 plus A.7", wantShape: "work_plan_evidence_distinction_card"},
+		{name: "agent action", query: "Plan the AI agent tool-call sequence for this risky change.", routeID: "e16_agent_action_admissibility", wantRef: "E.16 plus A.15 plus A.10", wantShape: "admissible_agent_action_plan"},
+		{name: "spec lifecycle", query: "Approve or rebaseline this SpecSection.", routeID: "spec_lifecycle_authority", wantRef: "SpecSection lifecycle plus A.7 plus E.9 plus A.15", wantShape: "spec_lifecycle_routing_card"},
+		{name: "layer boundary", query: "Should PatternUse become MethodPack?", routeID: "e4_layer_boundary", wantRef: "E.4 plus A.15 plus E.11", wantShape: "framework_layer_boundary_card"},
 	}
 
 	for _, tc := range cases {
@@ -239,6 +247,26 @@ func TestPatternUseRouteEmbeddingDocumentsIncludePlaygroundRegressionPrompts(t *
 			routeID: "a10_b3_a7_evidence_proof",
 			prompt:  "В документе написано, что механизм работает. Значит ли это, что мы доказали его работоспособность?",
 		},
+		{
+			routeID: "a15_work_plan_performed_work_boundary",
+			prompt:  "Ты сделал работу или только описал план?",
+		},
+		{
+			routeID: "e16_agent_action_admissibility",
+			prompt:  "Plan the AI agent tool-call sequence for this risky change.",
+		},
+		{
+			routeID: "spec_lifecycle_authority",
+			prompt:  "Approve or rebaseline this SpecSection.",
+		},
+		{
+			routeID: "e4_layer_boundary",
+			prompt:  "Should PatternUse become MethodPack?",
+		},
+		{
+			routeID: "e4_layer_boundary",
+			prompt:  "[$h-reason] Разбери границу между FPF source cards, DPF source pack, PatternUseGateway и MethodPack. Не делай коммитов, нужен reasoning carrier.",
+		},
 	}
 
 	for _, tc := range cases {
@@ -259,6 +287,11 @@ func TestPatternUseIntentEmbeddingDocumentsIncludeAuditApplyPrompts(t *testing.T
 		"Clarify what is the object, description, carrier, and evidence here.",
 		"The spec says it, so can we rely on it?",
 		"This review is positive; should we approve the direction?",
+		"Ты сделал работу или только описал план?",
+		"Plan the AI agent tool-call sequence for this risky change.",
+		"Approve or rebaseline this SpecSection.",
+		"Should PatternUse become MethodPack?",
+		"[$h-reason] Разбери границу между FPF source cards, DPF source pack, PatternUseGateway и MethodPack. Не делай коммитов, нужен reasoning carrier.",
 	}
 
 	for _, prompt := range prompts {
@@ -367,6 +400,95 @@ func TestRecommendPatternUseCarriesAdvisoryMethodPackBridge(t *testing.T) {
 	}
 	if !patternUseStringsContain(compact.AuthorityBoundary, "not_gate_passage") {
 		t.Fatalf("compact authority boundary missing gate passage guard: %#v", compact.AuthorityBoundary)
+	}
+}
+
+func TestC1RoutesCarrySourceRefsAndAdvisoryMethodPackBridge(t *testing.T) {
+	cases := []struct {
+		name          string
+		query         string
+		routeID       string
+		wantPattern   string
+		wantMethodRef string
+	}{
+		{
+			name:          "work plan distinction",
+			query:         "Ты сделал работу или только описал план?",
+			routeID:       "a15_work_plan_performed_work_boundary",
+			wantPattern:   "A.15",
+			wantMethodRef: "verification-before-completion",
+		},
+		{
+			name:          "agent action",
+			query:         "Plan the AI agent tool-call sequence for this risky change.",
+			routeID:       "e16_agent_action_admissibility",
+			wantPattern:   "E.16",
+			wantMethodRef: "graph-preflight-before-governed-edit",
+		},
+		{
+			name:        "spec lifecycle",
+			query:       "Approve or rebaseline this SpecSection.",
+			routeID:     "spec_lifecycle_authority",
+			wantPattern: "SpecSection lifecycle",
+		},
+		{
+			name:        "layer boundary",
+			query:       "Should PatternUse become MethodPack?",
+			routeID:     "e4_layer_boundary",
+			wantPattern: "E.4",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			record := RecommendPatternUseWithSemanticRouteAndIntentMatch(
+				PatternUseRequest{Query: tc.query},
+				PatternUseRouteMatch{
+					RouteID:  tc.routeID,
+					Strategy: PatternUseRouteMatchStrategySemanticCompiledRoute,
+					Score:    0.71,
+					Margin:   0.11,
+					Contract: "local/embeddinggemma-300m/256",
+				},
+				PatternUseIntentLaneMatch{
+					Lane:     PatternUseIntentApplyPattern,
+					Strategy: PatternUseIntentMatchStrategySemanticLane,
+					Score:    0.70,
+					Margin:   0.10,
+					Contract: "local/embeddinggemma-300m/256",
+				},
+			)
+
+			if err := record.Validate(); err != nil {
+				t.Fatalf("Validate returned error: %v", err)
+			}
+			if record.MatchedRouteID != tc.routeID {
+				t.Fatalf("route = %q, want %q", record.MatchedRouteID, tc.routeID)
+			}
+			if !patternUseStringsContain(record.PatternUseRefs.PatternRefs, tc.wantPattern) {
+				t.Fatalf("pattern refs = %#v, want %q", record.PatternUseRefs.PatternRefs, tc.wantPattern)
+			}
+			if !patternUseStringsContain(record.PatternUseRefs.RouteRefs, tc.routeID) {
+				t.Fatalf("route refs = %#v, want %q", record.PatternUseRefs.RouteRefs, tc.routeID)
+			}
+			if tc.wantMethodRef != "" && !patternUseStringsContain(record.SuggestedMethodRefs, tc.wantMethodRef) {
+				t.Fatalf("method refs = %#v, want %q", record.SuggestedMethodRefs, tc.wantMethodRef)
+			}
+			if record.HasAuthorityViolation() {
+				t.Fatalf("C1 route must stay advisory: %#v", record)
+			}
+
+			compact := CompactPatternUseRecommendation(record)
+			if err := compact.Validate(); err != nil {
+				t.Fatalf("compact Validate returned error: %v", err)
+			}
+			if !patternUseStringsContain(compact.PatternUseRefs.PatternRefs, tc.wantPattern) {
+				t.Fatalf("compact pattern refs = %#v, want %q", compact.PatternUseRefs.PatternRefs, tc.wantPattern)
+			}
+			if tc.wantMethodRef != "" && !patternUseStringsContain(compact.SuggestedMethodRefs, tc.wantMethodRef) {
+				t.Fatalf("compact method refs = %#v, want %q", compact.SuggestedMethodRefs, tc.wantMethodRef)
+			}
+		})
 	}
 }
 
@@ -639,6 +761,71 @@ func TestHydratePatternUseRetrievedCandidatesWithAtlasDegradesWithoutAtlasRows(t
 	}
 	if candidates[0].SourceCard != nil {
 		t.Fatalf("source card should be absent without atlas rows: %#v", candidates[0])
+	}
+}
+
+func TestHydratePatternUseRetrievedCandidatesWithAtlasFallsBackToGeneratedSection(t *testing.T) {
+	dbPath := buildPatternUseAtlasHydrationTestDB(t, false)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	candidates := HydratePatternUseRetrievedCandidatesWithAtlas(
+		db,
+		[]PatternUseRetrievedCandidate{
+			{
+				SectionID:  PatternChunkIDBase + 1,
+				PatternRef: "CHR-10",
+				Title:      "Boundary Norm Square (L / A / D / E)",
+			},
+		},
+	)
+
+	if len(candidates) != 1 {
+		t.Fatalf("candidates = %#v", candidates)
+	}
+	if candidates[0].SourceCard == nil {
+		t.Fatalf("generated section source card missing: %#v", candidates[0])
+	}
+	if candidates[0].SourceCard.BodyKind != PatternUseSourceCardIndexedSection {
+		t.Fatalf("body kind = %#v", candidates[0].SourceCard)
+	}
+	if !strings.Contains(candidates[0].SourceCard.Body, "Local adaptation body") {
+		t.Fatalf("body = %q", candidates[0].SourceCard.Body)
+	}
+	if candidates[0].SourceCard.RootNodeID != "section:90001" {
+		t.Fatalf("root node = %q", candidates[0].SourceCard.RootNodeID)
+	}
+}
+
+func TestPatternUseRetrievedCandidatesHaveLexicalRecallSignal(t *testing.T) {
+	query := "Use Null Question Detection to find what question is silently missing in this request"
+	candidate := PatternUseRetrievedCandidate{
+		SectionID:     PatternChunkIDBase + 8,
+		PatternRef:    "EXP-08",
+		Title:         "New-Question Detection (NQD)",
+		SourceTier:    SpecSearchTierFTS,
+		SourceReason:  "keyword match",
+		RetrievalMode: SpecRetrievalModeSemantic,
+	}
+
+	if !PatternUseRetrievedCandidatesHaveLexicalRecallSignal(query, []PatternUseRetrievedCandidate{candidate}) {
+		t.Fatal("expected lexical recall signal for named FPF card")
+	}
+
+	candidate.SourceTier = SpecSearchTierRelated
+	candidate.SourceReason = "semantic match"
+	if PatternUseRetrievedCandidatesHaveLexicalRecallSignal(query, []PatternUseRetrievedCandidate{candidate}) {
+		t.Fatal("semantic-only candidate should not be enough for lexical recall fallback")
+	}
+
+	mechanical := "what time is it"
+	candidate.SourceTier = SpecSearchTierFTS
+	candidate.SourceReason = "keyword match"
+	if PatternUseRetrievedCandidatesHaveLexicalRecallSignal(mechanical, []PatternUseRetrievedCandidate{candidate}) {
+		t.Fatal("mechanical lookup should not trigger lexical recall fallback")
 	}
 }
 

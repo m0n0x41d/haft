@@ -505,6 +505,10 @@ func seedPatternUseRouteCards() []PatternUseRouteCard {
 		evidenceProofPatternUseRouteCard(),
 		publicAPIChangePatternUseRouteCard(),
 		commitmentPatternUseRouteCard(),
+		workPlanPerformedWorkPatternUseRouteCard(),
+		agentActionAdmissibilityPatternUseRouteCard(),
+		specLifecycleAuthorityPatternUseRouteCard(),
+		layerBoundaryPatternUseRouteCard(),
 		fallbackPatternUseRouteCard(),
 	}
 }
@@ -743,7 +747,7 @@ func recommendationFromPatternUseRoute(
 		Authority:                         PatternUseAuthority,
 		ProjectConcernRef:                 concern,
 		UseContext:                        useContext,
-		PatternUseRefs:                    ExtractPatternUseRefs(request.Query),
+		PatternUseRefs:                    patternUseRefsForRoute(request.Query, score.route),
 		CandidatePatternUseSet:            cloneCandidatePatternUses(score.route.CandidatePatternUseSet),
 		ApplicablePatternUseSet:           cloneApplicablePatternUses(score.route.ApplicablePatternUseSet),
 		RecommendedPatternUse:             score.route.RecommendedPatternUse,
@@ -765,6 +769,28 @@ func recommendationFromPatternUseRoute(
 		RouteMatchContract:                strings.TrimSpace(score.match.Contract),
 		AuthorityBoundary:                 append([]string(nil), patternUseAuthorityBoundary...),
 	}
+}
+
+func patternUseRefsForRoute(query string, route PatternUseRouteCard) PatternUseReferenceSet {
+	refs := ExtractPatternUseRefs(query)
+	if route.ID != "" && route.ID != "e11_patternuse_fallback" {
+		refs.RouteRefs = append(refs.RouteRefs, route.ID)
+	}
+	refs.PatternRefs = append(refs.PatternRefs, patternUseRoutePatternRefs(route)...)
+	return refs.withValidatedShape()
+}
+
+func patternUseRoutePatternRefs(route PatternUseRouteCard) []string {
+	refs := []string{}
+	for _, candidate := range route.CandidatePatternUseSet {
+		refs = append(refs, candidate.PatternRef)
+	}
+	for _, applicable := range route.ApplicablePatternUseSet {
+		refs = append(refs, applicable.PatternRef)
+	}
+	refs = append(refs, route.RecommendedPatternUse.PatternRef)
+	refs = append(refs, route.NextGoverningPatternRefs...)
+	return dedupePatternUseStrings(refs)
 }
 
 func patternUseConcernAndContext(request PatternUseRequest, sourceRefs []string) (string, PatternUseContext) {
@@ -876,6 +902,14 @@ func suggestedHaftSurfaceForPatternUseRoute(routeID string) string {
 		return "h-frame"
 	case "e9_commitment_human_gate":
 		return "h-compare"
+	case "a15_work_plan_performed_work_boundary":
+		return "h-reason"
+	case "e16_agent_action_admissibility":
+		return "h-reason"
+	case "spec_lifecycle_authority":
+		return "h-spec"
+	case "e4_layer_boundary":
+		return "h-reason"
 	default:
 		return PatternUseSuggestedSurfaceNil
 	}
@@ -1696,6 +1730,243 @@ func commitmentPatternUseRouteCard() PatternUseRouteCard {
 		},
 		SupportLevel:             PatternUseSupportImplementedSubstrate,
 		NextGoverningPatternRefs: []string{"A.15", "A.10"},
+	}
+}
+
+func workPlanPerformedWorkPatternUseRouteCard() PatternUseRouteCard {
+	return PatternUseRouteCard{
+		ID: "a15_work_plan_performed_work_boundary",
+		RecognitionCues: []string{
+			"plan actual work",
+			"performed work",
+			"description work",
+			"only described",
+			"just a plan",
+		},
+		SemanticTrigger: "Separate described plan, method description, carrier text, evidence, and actually performed work before claiming progress or done work.",
+		PositiveExamples: []string{
+			"Is this plan actual work or just a plan?",
+			"Did you do the work or only describe the plan?",
+			"Ты сделал работу или только описал план?",
+			"это выполненная работа или только описание намерений?",
+			"这是已经完成的工作，还是只是计划说明？",
+		},
+		NegativeExamples: []string{
+			"run the exact test command now",
+			"open the MethodRun file",
+			"show me the current plan document",
+		},
+		CandidatePatternUseSet: []CandidatePatternUse{
+			candidate("A.15", "role/method/work distinction", "The concern asks whether a role, method, plan, carrier, or performed work is being confused."),
+			candidate("E.18", "principle-to-work carry-through", "The concern needs carry-through from principle or plan into actual work and evidence."),
+			candidate("A.7", "strict distinction", "Plan text, carrier, work, and evidence must be separated."),
+		},
+		ApplicablePatternUseSet: []ApplicablePatternUse{
+			applicable("A.15", "role/method/work distinction"),
+			applicable("E.18", "principle-to-work carry-through"),
+			applicable("A.7", "strict distinction"),
+		},
+		RecommendedPatternUse:   recommended("A.15 plus E.18/E.18.1 plus A.7", "work/plan/evidence distinction"),
+		ReasonForRecommendation: "The task asks whether description, plan, method, and performed work are being collapsed, so the output must separate them before any progress claim.",
+		WrongPatternBoundary: []WrongPatternBoundary{
+			{TemptingPatternOrMove: "treat a plan as performed work", WhyWrongNow: "A plan can guide work but does not change the target system or create evidence by itself."},
+			{TemptingPatternOrMove: "treat a test list as verification", WhyWrongNow: "A test list is a carrier for intended checks, not evidence that the checks ran."},
+		},
+		RequiredOutputShape: RequiredOutputShape{
+			CarrierKind:      "work_plan_evidence_distinction_card",
+			RequiredSections: []string{"claimed_progress", "plan_or_description", "performed_work", "carrier", "evidence", "blocked_stronger_use", "next_verification"},
+		},
+		RequiredEvidenceOrSoTA: []RequiredEvidenceOrSoTA{
+			{Requirement: "Name the observable work evidence separately from the plan or description carrier.", FreshnessOrSourceRule: "Use current files, command output, runtime state, or MethodRun closeout; otherwise label the claim design-time only."},
+		},
+		BlockedStrongerUse: []BlockedStrongerUse{
+			{BlockedUse: "Description is not work; plan is not evidence.", UnblockCondition: "Show the actual changed object or current same-context evidence before claiming delivery."},
+		},
+		CloseoutOrVerificationExpectation: []CloseoutOrVerificationExpectation{
+			{Expectation: "Close with one sentence for what was only planned, one for what actually changed, and the evidence ref."},
+		},
+		SupportLevel:             PatternUseSupportImplementedSubstrate,
+		SuggestedMethodRefs:      []string{"verification-before-completion", "problem-closure-hygiene"},
+		NextGoverningPatternRefs: []string{"A.15", "E.18", "E.18.1", "A.7", "A.10"},
+	}
+}
+
+func agentActionAdmissibilityPatternUseRouteCard() PatternUseRouteCard {
+	return PatternUseRouteCard{
+		ID: "e16_agent_action_admissibility",
+		RecognitionCues: []string{
+			"agent tool-call",
+			"tool-call sequence",
+			"risky change",
+			"may the agent",
+			"allowed actions",
+		},
+		SemanticTrigger: "Plan admissible AI-agent actions for a risky change by separating available tools, allowed actions, required gates, evidence, and forbidden authority moves.",
+		PositiveExamples: []string{
+			"Plan the AI agent tool-call sequence for this risky change.",
+			"What tools may the agent call before editing?",
+			"Can the agent do this without asking?",
+			"Можно ли агенту самому вызвать эти инструменты и править файлы?",
+			"为这个有风险的修改规划代理可以调用哪些工具",
+		},
+		NegativeExamples: []string{
+			"what tools are installed?",
+			"run a harmless lookup",
+			"list available MCP tools",
+		},
+		CandidatePatternUseSet: []CandidatePatternUse{
+			candidate("E.16", "agent autonomy/admissibility", "The task asks what the agent may do and what needs a gate."),
+			candidate("A.15", "role/method/work distinction", "A tool plan, role, and performed work must stay distinct."),
+			candidate("A.10", "evidence boundary", "Authority and evidence must be separated from tool availability."),
+		},
+		ApplicablePatternUseSet: []ApplicablePatternUse{
+			applicable("E.16", "agent autonomy/admissibility"),
+			applicable("A.15", "role/method/work distinction"),
+			applicable("A.10", "evidence boundary"),
+		},
+		RecommendedPatternUse:   recommended("E.16 plus A.15 plus A.10", "admissible agent action plan"),
+		ReasonForRecommendation: "The concern is not which tool exists, but which action is admissible under authority, evidence, and work-method boundaries.",
+		WrongPatternBoundary: []WrongPatternBoundary{
+			{TemptingPatternOrMove: "tool availability as permission", WhyWrongNow: "A callable tool only proves capability, not authorization, budget, or safety."},
+			{TemptingPatternOrMove: "PatternUse as MethodPack gate", WhyWrongNow: "PatternUse can suggest a method handoff but cannot open or close MethodRuns."},
+		},
+		RequiredOutputShape: RequiredOutputShape{
+			CarrierKind:      "admissible_agent_action_plan",
+			RequiredSections: []string{"operator_goal", "allowed_read_actions", "edit_preconditions", "forbidden_authority_moves", "methodpack_handoff_condition", "evidence_needed", "stop_condition"},
+		},
+		RequiredEvidenceOrSoTA: []RequiredEvidenceOrSoTA{
+			{Requirement: "Name the authority source for any mutating action and the evidence needed before closeout.", FreshnessOrSourceRule: "Use current operator instruction, MethodRun, WorkCommission, or explicit gate; otherwise block stronger use."},
+		},
+		BlockedStrongerUse: []BlockedStrongerUse{
+			{BlockedUse: "Tool plan is not permission to mutate.", UnblockCondition: "Open the relevant MethodRun or get explicit operator authority before non-reversible mutation."},
+		},
+		CloseoutOrVerificationExpectation: []CloseoutOrVerificationExpectation{
+			{Expectation: "Close with allowed actions, blocked actions, and the MethodPack/verification handoff if implementation starts."},
+		},
+		SupportLevel:             PatternUseSupportImplementedSubstrate,
+		SuggestedMethodRefs:      []string{"graph-preflight-before-governed-edit", "verification-before-completion"},
+		NextGoverningPatternRefs: []string{"E.16", "A.15", "A.10", "E.9"},
+	}
+}
+
+func specLifecycleAuthorityPatternUseRouteCard() PatternUseRouteCard {
+	return PatternUseRouteCard{
+		ID: "spec_lifecycle_authority",
+		RecognitionCues: []string{
+			"write this into specs",
+			"approve spec",
+			"rebaseline spec",
+			"specsection",
+			"spec lifecycle",
+		},
+		SemanticTrigger: "Route spec draft, carrier edit, approval, rebaseline, reopen, and binding-preflight concerns without confusing carrier edits with authority.",
+		PositiveExamples: []string{
+			"Write this into specs.",
+			"Approve or rebaseline this SpecSection.",
+			"Should we approve this spec section or keep it draft?",
+			"Нужно ребейзлайнить эту секцию спеки?",
+			"把这个写进规格，但不要把草稿当成批准",
+		},
+		NegativeExamples: []string{
+			"explain what a spec is",
+			"edit unrelated docs",
+			"does this document prove the claim?",
+		},
+		CandidatePatternUseSet: []CandidatePatternUse{
+			candidate("SpecSection lifecycle", "spec draft/approve/rebaseline/reopen lifecycle", "The concern asks for spec lifecycle routing or authority."),
+			candidate("A.7", "strict distinction", "Spec carrier, section state, approval, and evidence must stay distinct."),
+			candidate("E.9", "DecisionRecord boundary", "Approval and binding changes may require explicit human gate."),
+		},
+		ApplicablePatternUseSet: []ApplicablePatternUse{
+			applicable("SpecSection lifecycle", "spec draft/approve/rebaseline/reopen lifecycle"),
+			applicable("A.7", "strict distinction"),
+			applicable("E.9", "DecisionRecord boundary"),
+			applicable("A.15", "role/method/work distinction"),
+		},
+		RecommendedPatternUse:   recommended("SpecSection lifecycle plus A.7 plus E.9 plus A.15", "spec lifecycle routing card"),
+		ReasonForRecommendation: "The task concerns spec lifecycle authority; a carrier edit, draft, approval, rebaseline, and evidence relation must be routed separately.",
+		WrongPatternBoundary: []WrongPatternBoundary{
+			{TemptingPatternOrMove: "carrier edit as approval", WhyWrongNow: "Writing text into a spec carrier does not approve or rebaseline the SpecSection."},
+			{TemptingPatternOrMove: "rebaseline without human gate", WhyWrongNow: "Rebaseline changes authority/currentness and must use the lifecycle gate."},
+		},
+		RequiredOutputShape: RequiredOutputShape{
+			CarrierKind:      "spec_lifecycle_routing_card",
+			RequiredSections: []string{"requested_change", "carrier_edit", "approval_gate", "rebaseline_gate", "evidence_relation", "blocked_stronger_use", "next_h_spec_action"},
+		},
+		RequiredEvidenceOrSoTA: []RequiredEvidenceOrSoTA{
+			{Requirement: "Name current SpecSection state and required lifecycle action before changing authority.", FreshnessOrSourceRule: "Use current spec lifecycle data or mark the action as draft-only."},
+		},
+		BlockedStrongerUse: []BlockedStrongerUse{
+			{BlockedUse: "Spec carrier edit is not approval or rebaseline.", UnblockCondition: "Use h-spec lifecycle action with explicit operator gate for approval/rebaseline."},
+		},
+		CloseoutOrVerificationExpectation: []CloseoutOrVerificationExpectation{
+			{Expectation: "Close with the h-spec action to call next and the authority move that remains blocked."},
+		},
+		SupportLevel:             PatternUseSupportImplementedSubstrate,
+		NextGoverningPatternRefs: []string{"SpecSection", "A.7", "E.9", "A.15"},
+	}
+}
+
+func layerBoundaryPatternUseRouteCard() PatternUseRouteCard {
+	return PatternUseRouteCard{
+		ID: "e4_layer_boundary",
+		RecognitionCues: []string{
+			"patternuse methodpack",
+			"methodpack dpf",
+			"fpf dpf lpf",
+			"route cards for all",
+			"all fpf cards",
+		},
+		SemanticTrigger: "Separate FPF source, DPF source pack, LPF local practice, TPF/workflow mechanics, PatternAtlas, PatternUse, and MethodPack when product architecture terms are being collapsed.",
+		PositiveExamples: []string{
+			"Should PatternUse become MethodPack?",
+			"Should MethodPack become SWE-DPF?",
+			"Do we need all FPF cards as route cards?",
+			"[$h-reason] Разбери границу между FPF source cards, DPF source pack, PatternUseGateway и MethodPack. Не делай коммитов, нужен reasoning carrier.",
+			"Разбери границу между FPF source cards, DPF source pack, PatternUseGateway и MethodPack.",
+			"Separate FPF source cards, DPF source packs, PatternUseGateway, and MethodPack before changing the router.",
+			"Где граница FPF, DPF, LPF, TPF и MethodPack?",
+			"Надо ли компилировать все 250 FPF карточек в route cards?",
+			"需要把所有 FPF 模式卡都编译成路由卡吗",
+		},
+		NegativeExamples: []string{
+			"use the existing MethodPack gate",
+			"read this local AGENTS rule",
+			"how many route cards are currently in the index?",
+		},
+		CandidatePatternUseSet: []CandidatePatternUse{
+			candidate("E.4", "framework layer boundary", "The concern asks how FPF, DPF, local practice, and work mechanics relate."),
+			candidate("A.15", "role/method/work distinction", "Framework source, method, role, and work harness must not collapse."),
+			candidate("E.11", "PatternUse boundary", "PatternUse selects pattern-use shape without becoming the source catalog or work harness."),
+		},
+		ApplicablePatternUseSet: []ApplicablePatternUse{
+			applicable("E.4", "framework layer boundary"),
+			applicable("E.4.FPF", "FPF source framework"),
+			applicable("E.4.DPF", "domain pattern framework"),
+			applicable("A.15", "role/method/work distinction"),
+			applicable("E.11", "PatternUse boundary"),
+		},
+		RecommendedPatternUse:   recommended("E.4 plus A.15 plus E.11", "framework layer boundary card"),
+		ReasonForRecommendation: "The task is a layer-boundary question; the answer must separate source frameworks, local practice, route selection, and work/evidence harnesses.",
+		WrongPatternBoundary: []WrongPatternBoundary{
+			{TemptingPatternOrMove: "compiled route catalog as ontology authority", WhyWrongNow: "Route cards support recurring task behavior; they do not define the FPF/DPF source ontology."},
+			{TemptingPatternOrMove: "MethodPack as FPF or DPF source", WhyWrongNow: "MethodPack is a work/evidence harness and may cite source refs, but it is not the source framework."},
+		},
+		RequiredOutputShape: RequiredOutputShape{
+			CarrierKind:      "framework_layer_boundary_card",
+			RequiredSections: []string{"concern", "fpf_source", "dpf_source_pack", "lpf_context", "patternatlas_source_index", "patternuse_gateway", "methodpack_harness", "blocked_collapse", "next_slice"},
+		},
+		RequiredEvidenceOrSoTA: []RequiredEvidenceOrSoTA{
+			{Requirement: "Name which artifact is source, route selector, local carrier, or work harness before recommending product changes.", FreshnessOrSourceRule: "Use current repo surfaces and C0 term sheet; mark unresolved product choices as design-time."},
+		},
+		BlockedStrongerUse: []BlockedStrongerUse{
+			{BlockedUse: "Do not turn FPF catalog coverage into compiled route support or MethodPack authority.", UnblockCondition: "Promote behavior families only with route/audit evidence and keep source packs separate."},
+		},
+		CloseoutOrVerificationExpectation: []CloseoutOrVerificationExpectation{
+			{Expectation: "Close with a layer table and the one runtime slice, if any, that should change next."},
+		},
+		SupportLevel:             PatternUseSupportImplementedSubstrate,
+		NextGoverningPatternRefs: []string{"E.4", "E.4.FPF", "E.4.DPF", "A.15", "E.11"},
 	}
 }
 

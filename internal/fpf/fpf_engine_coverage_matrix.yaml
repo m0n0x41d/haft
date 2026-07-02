@@ -1,0 +1,443 @@
+schema_version: 1
+matrix_kind: fpf_engine_boundary_c0_coverage_matrix
+authority: inventory_only_not_support_proof_not_runtime_route_authority
+rows:
+  - cluster_id: PU.NAMING
+    human_name: Naming / lexical repair
+    description: Choose or repair names while preserving object-description-carrier distinctions.
+    primary_refs: [F.18, E.10, F.19, A.6.P]
+    owner_surface: [PatternUseGateway, h-semio-review, inline]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route f18_naming_namecard
+    output_carrier_kind: NameCard
+    authority_boundary: Advisory naming shape only; not authority to rename code, public terms, or project commitments.
+    wrong_boundary_examples:
+      - Treating brainstorming as a naming protocol.
+      - Routing mechanical local-variable renames as F.18 naming work.
+    positive_trigger_examples: ["Choose a good name for this system.", "именуй нормально"]
+    negative_trigger_examples: ["What does nameCard mean?", "Rename this local variable mechanically."]
+    promotion_criteria: ["Keep only while mechanical/meta false positives remain low."]
+    demotion_criteria: ["Demote if card/catalog meta prompts route to naming."]
+    required_tests: [route_positive_multilingual, object_kind_adversarial_control]
+    methodpack_relation: none
+
+  - cluster_id: PU.ARCH
+    human_name: Architecture / selected structure / ADR
+    description: Select structure and boundaries before architecture claims or ADR preparation.
+    primary_refs: [C.30, A.22, C.32, E.17]
+    owner_surface: [PatternUseGateway, h-frame, h-explore, h-compare]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route c30_architecture_structures
+    output_carrier_kind: ArchitectureQuestionNote
+    authority_boundary: Advisory structure-selection route only; diagrams or ADR text are not implementation proof.
+    wrong_boundary_examples:
+      - Treating a diagram as architecture evidence.
+      - Treating an ADR draft as a completed implementation.
+    positive_trigger_examples: ["Propose an architecture for this system.", "Предложи архитектуру механизма выбора паттерна."]
+    negative_trigger_examples: ["Draw a pretty diagram.", "Summarize this ADR title."]
+    promotion_criteria: ["Keep if output names structures, boundaries, and alternatives."]
+    demotion_criteria: ["Demote if it produces marketing or single-option architecture claims."]
+    required_tests: [compiled_route_positive, adr_boundary_control]
+    methodpack_relation: may suggest MethodPack only after implementation work begins
+
+  - cluster_id: PU.NEXT_MOVE
+    human_name: Next move / problem intake / P2W
+    description: Recover the next useful pattern or governed value when the operator asks what to do next.
+    primary_refs: [E.11.PUR, E.10.MOVE, E.18.1, B.4.1, C.22]
+    owner_surface: [PatternUseGateway, h-reason, h-frame]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route e11_e10_next_move
+    output_carrier_kind: NextMoveNote
+    authority_boundary: Recommendation is not a WorkCommission, performed work, or binding priority decision.
+    wrong_boundary_examples:
+      - Treating a recommendation as authorized work.
+      - Treating a next-move label as the root value instead of recovering the governed object.
+    positive_trigger_examples: ["What should I do next?", "Что делать дальше?"]
+    negative_trigger_examples: ["List all possible FPF moves.", "Execute the plan without permission."]
+    promotion_criteria: ["Keep if it changes first action and records blocked stronger use."]
+    demotion_criteria: ["Demote if it becomes generic advice without output shape."]
+    required_tests: [next_move_route_positive, work_authority_negative]
+    methodpack_relation: can suggest MethodPack when the next move is code work
+
+  - cluster_id: PU.SOTA
+    human_name: SoTA / evidence survey / current practice
+    description: Route requests that need current practice, source tiers, and freshness discipline.
+    primary_refs: [G, E.8, A.10, B.3.4]
+    owner_surface: [PatternUseGateway, h-explore, h-compare, inline]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route e8_sota_evidence_pack
+    output_carrier_kind: SoTAReviewPlan
+    authority_boundary: SoTA review is evidence-seeking; old BoK or retrieval snippets are not current proof.
+    wrong_boundary_examples:
+      - Treating old framework text as current SoTA.
+      - Treating top search results as evidence without source-tier checks.
+    positive_trigger_examples: ["Survey SoTA for solving this problem.", "Найди современную практику для этого подхода."]
+    negative_trigger_examples: ["Explain this old note.", "Use whatever source is first."]
+    promotion_criteria: ["Keep if freshness/source-tier rule is explicit."]
+    demotion_criteria: ["Demote if no currentness or source-tier rule appears."]
+    required_tests: [sota_positive, stale_source_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.DIAG
+    human_name: Diagnosis / rival hypotheses
+    description: Diagnose unclear failures through rival hypotheses before patching.
+    primary_refs: [B.4.1, B.5.2, C.18]
+    owner_surface: [h-diagnose]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: existing compiled route suggests h-diagnose
+    output_carrier_kind: DiagnosticHypothesisPortfolio
+    authority_boundary: Diagnosis route does not authorize a fix before evidence selects or weakens hypotheses.
+    wrong_boundary_examples:
+      - Applying the first plausible fix without reproduction.
+      - Hiding losing rival hypotheses after selecting a favorite.
+    positive_trigger_examples: ["Debug this unclear failure.", "Не понимаю почему тест падает."]
+    negative_trigger_examples: ["Apply this known one-line fix.", "Format the failing file."]
+    promotion_criteria: ["Keep if rival hypotheses stay visible."]
+    demotion_criteria: ["Demote if route collapses to one guessed cause."]
+    required_tests: [diagnose_route_positive, single_cause_bias_negative]
+    methodpack_relation: systematic-debugging-before-fix may govern code fixes
+
+  - cluster_id: PU.COMPARE
+    human_name: Comparison / characterization / choice
+    description: Compare alternatives with declared dimensions, parity, and Pareto discipline.
+    primary_refs: [C.16, A.17, A.18, A.19, G.5, C.11]
+    owner_surface: [h-compare]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: existing compiled route characterize_compare_parity
+    output_carrier_kind: ComparisonNote
+    authority_boundary: Comparison output is advisory; a human-gated decision is still required for binding commitments.
+    wrong_boundary_examples:
+      - Producing one scalar winner without declared characteristics.
+      - Choosing after scoring dimensions that were picked post hoc.
+    positive_trigger_examples: ["Compare these two implementation options.", "Что лучше: A или B?"]
+    negative_trigger_examples: ["List options without choosing.", "Approve option A."]
+    promotion_criteria: ["Keep if scale/unit/polarity/parity appear before scoring."]
+    demotion_criteria: ["Demote if comparisons anchor on one favorite."]
+    required_tests: [compare_route_positive, scalar_winner_negative]
+    methodpack_relation: none until implementation begins
+
+  - cluster_id: PU.EVIDENCE
+    human_name: Evidence / proof / assurance / gate boundary
+    description: Distinguish evidence, proof, claims, carriers, and gate passage.
+    primary_refs: [A.10, B.3, A.21, C.16, A.7]
+    owner_surface: [PatternUseGateway, h-verify]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route a10_b3_a7_evidence_proof
+    output_carrier_kind: EvidenceGapNote
+    authority_boundary: Evidence discussion is not approval, gate passage, or proof of implementation correctness.
+    wrong_boundary_examples:
+      - Treating a document as proof that runtime behavior works.
+      - Treating source citation as permission to pass a gate.
+    positive_trigger_examples: ["Does this document prove the claim?", "Документ говорит что работает; это доказательство?"]
+    negative_trigger_examples: ["Run the test now.", "Approve this decision."]
+    promotion_criteria: ["Keep if carrier/evidence/proof/gate are separated."]
+    demotion_criteria: ["Demote if it sounds like approval."]
+    required_tests: [proof_boundary_positive, gate_passage_negative]
+    methodpack_relation: source refs cannot satisfy MethodPack gates
+
+  - cluster_id: PU.SEMIO
+    human_name: Strict distinction / semio cleanup
+    description: Repair overloaded labels and object-description-carrier confusion.
+    primary_refs: [A.7, A.6.P, E.10, F.18, E.17]
+    owner_surface: [PatternUseGateway, h-semio-review, inline]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route a7_strict_distinction
+    output_carrier_kind: DistinctionRepairFinding
+    authority_boundary: Semio repair identifies distinctions; it does not authorize global rename or schema migration.
+    wrong_boundary_examples:
+      - Assuming same label means same object.
+      - Doing global string replacement as semio repair.
+    positive_trigger_examples: ["Clarify object, description, carrier, and evidence.", "Разбери дребезг терминов."]
+    negative_trigger_examples: ["Replace every occurrence mechanically.", "What is the dictionary meaning?"]
+    promotion_criteria: ["Keep if it checks object/description/carrier/surface."]
+    demotion_criteria: ["Demote if it becomes a thesaurus."]
+    required_tests: [semio_route_positive, global_replace_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.API_BOUNDARY
+    human_name: Public API / promise / contract boundary
+    description: Separate interface, promise, compatibility, and implementation when public API changes are planned.
+    primary_refs: [A.6.B, A.6.C, A.6.8, A.2.3, A.2.8, E.9]
+    owner_surface: [PatternUseGateway, h-frame, h-compare]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: existing compiled route api_boundary_decision
+    output_carrier_kind: BoundaryDecisionNote
+    authority_boundary: API boundary note is not public commitment, implementation proof, or release approval.
+    wrong_boundary_examples:
+      - Treating interface description as a public promise.
+      - Treating an API change plan as approved compatibility breakage.
+    positive_trigger_examples: ["Plan a public API change.", "Меняем публичный контракт, где границы?"]
+    negative_trigger_examples: ["Rename a private helper.", "Publish this now."]
+    promotion_criteria: ["Keep with promise/commitment/work/evidence separation."]
+    demotion_criteria: ["Demote if it authorizes public change."]
+    required_tests: [api_boundary_positive, private_helper_negative]
+    methodpack_relation: MethodPack may govern implementation after human scope choice
+
+  - cluster_id: PU.DECISION_AUTH
+    human_name: Commitment / decision / human gate
+    description: Keep recommendation, comparison, decision, and human authorization separate.
+    primary_refs: [E.9, A.2.8, A.2.9, A.21, B.3]
+    owner_surface: [h-decide, h-commission, h-compare]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: existing compiled route e9_commitment_human_gate
+    output_carrier_kind: DecisionReadinessNote
+    authority_boundary: Agents can recommend and prepare; humans bind decisions and commissions.
+    wrong_boundary_examples:
+      - Treating recommendation text as a DecisionRecord.
+      - Treating approval-looking prompt text as gate passage.
+    positive_trigger_examples: ["Should we commit to this direction?", "Можно ли зафиксировать решение?"]
+    negative_trigger_examples: ["Summarize the decision format.", "Show old decision status."]
+    promotion_criteria: ["Must stay human-gated."]
+    demotion_criteria: ["Demote if any binding action is implied."]
+    required_tests: [decision_gate_positive, auto_decide_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.WORK_PLAN
+    human_name: Role / method / work / plan boundary
+    description: Distinguish method description, plan, role, and performed work before work shaping.
+    primary_refs: [A.15, A.3, E.18]
+    owner_surface: [h-reason, MethodPack]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: C1 compiled route a15_work_plan_performed_work_boundary
+    output_carrier_kind: work_plan_evidence_distinction_card
+    authority_boundary: Matrix row does not create a work plan or MethodRun.
+    wrong_boundary_examples:
+      - Treating a plan as performed work.
+      - Treating MethodDescription as a completed method application.
+    positive_trigger_examples: ["Is this plan already work?", "Какая тут роль метода?"]
+    negative_trigger_examples: ["Run the exact test command.", "Open MethodRun now."]
+    promotion_criteria: ["Already C1-promoted; keep only if audit preserves description-is-not-work boundary."]
+    demotion_criteria: ["Demote if it duplicates PU.AGENT_ACTION or lets plan text satisfy evidence."]
+    required_tests: [plan_vs_work_fixture, methodpack_gate_negative, mechanical_control]
+    methodpack_relation: MethodPack is the executable work harness, not the source pattern
+
+  - cluster_id: PU.AGENT_ACTION
+    human_name: Admissible agent action / autonomy boundary
+    description: Clarify what an agent may do, what needs human approval, and what tool availability does not authorize.
+    primary_refs: [A.13, A.15, A.2.2, A.2.8, E.16]
+    owner_surface: [h-reason, h-commission]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: C1 compiled route e16_agent_action_admissibility
+    output_carrier_kind: admissible_agent_action_plan
+    authority_boundary: Tool capability is not permission, approval, or budget.
+    wrong_boundary_examples:
+      - Treating available tools as authorization.
+      - Letting the agent bind decisions because it can write artifacts.
+    positive_trigger_examples: ["Can the agent do this without asking?", "Можно ли агенту самому это закоммитить?"]
+    negative_trigger_examples: ["What tools are installed?", "Run a harmless lookup."]
+    promotion_criteria: ["Already C1-promoted; keep only if it preserves explicit authority gates."]
+    demotion_criteria: ["Do not promote if it increases false approvals."]
+    required_tests: [autonomy_boundary_fixture, human_gate_negative, methodpack_gate_negative]
+    methodpack_relation: h-commission, not MethodPack pull, grants execution authority
+
+  - cluster_id: PU.SPEC_LIFECYCLE
+    human_name: Spec lifecycle / approval / rebaseline
+    description: Route spec draft, approval, rebaseline, reopen, and binding preflight concerns.
+    primary_refs: [A.6.B, A.15, A.21, E.17]
+    owner_surface: [h-spec]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: C1 compiled route spec_lifecycle_authority suggesting h-spec
+    output_carrier_kind: spec_lifecycle_routing_card
+    authority_boundary: Probe, draft, and carrier edit are not spec approval or baseline.
+    wrong_boundary_examples:
+      - Treating spec_fit_probe as approval.
+      - Treating draft text as rebaselined authority.
+    positive_trigger_examples: ["Write this into specs.", "Нужно ребейзлайнить секцию?"]
+    negative_trigger_examples: ["Explain what a spec is.", "Edit unrelated docs."]
+    promotion_criteria: ["Already C1-promoted; keep only if it never bypasses h-spec gates."]
+    demotion_criteria: ["Demote if it bypasses h-spec human gates."]
+    required_tests: [spec_lifecycle_fixture, draft_not_approval_negative, evidence_route_misroute_negative]
+    methodpack_relation: MethodPack can govern implementation, not spec approval
+
+  - cluster_id: PU.LAYERS
+    human_name: FPF / DPF / LPF / TPF / MethodPack layer boundary
+    description: Keep source frameworks, domain packs, local practice, and workflow mechanics distinct.
+    primary_refs: [A.5, A.8, A.11, E.24, E.4.DPF]
+    owner_surface: [h-reason, PatternAtlas, docs, CI lint]
+    routing_class: compiled_patternuse_route
+    user_facing_allowed: "true"
+    current_runtime_status: C1 compiled route e4_layer_boundary
+    output_carrier_kind: framework_layer_boundary_card
+    authority_boundary: A layer label is not source authority, work authority, or evidence.
+    wrong_boundary_examples:
+      - Treating a MethodPack card as DPF source.
+      - Treating a local repo rule as a universal FPF principle.
+    positive_trigger_examples: ["Is MethodPack a DPF?", "Где граница FPF/DPF/LPF/TPF?"]
+    negative_trigger_examples: ["Use the existing MethodPack gate.", "Read this local AGENTS rule."]
+    promotion_criteria: ["Already C1-promoted for framework/product boundary prompts only."]
+    demotion_criteria: ["Demote if it becomes vocabulary theater."]
+    required_tests: [layer_lint_fixture, methodpack_source_negative, catalog_count_control]
+    methodpack_relation: MethodPack belongs to workflow mechanics, not source packs
+
+  - cluster_id: PU.MEASURE
+    human_name: Measurement / metric admissibility
+    description: Check whether metrics, scales, and indicators are valid for comparison or verification.
+    primary_refs: [A.17, A.18, A.19, C.16, C.28, G.0]
+    owner_surface: [h-compare, h-verify]
+    routing_class: routing_affordance_candidate
+    user_facing_allowed: "false"
+    current_runtime_status: internal candidate
+    none_reason: C0 does not expose a compiled measurement route.
+    authority_boundary: A metric proxy is not the goal, truth, or proof.
+    wrong_boundary_examples:
+      - Treating dashboard score as truth.
+      - Averaging ordinal values as if they were ratio measures.
+    positive_trigger_examples: ["Is this metric admissible?", "Можно ли этим KPI мерить успех?"]
+    negative_trigger_examples: ["Print current metric value.", "Compare two already-scaled numbers."]
+    promotion_criteria: ["Promote only with scale/unit/polarity tests."]
+    demotion_criteria: ["Keep workflow-owned if it duplicates h-compare."]
+    required_tests: [metric_admissibility_fixture, goodhart_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.PUBLICATION
+    human_name: Publication / view / carrier transformation
+    description: Separate source, projection, summary, publication, and handoff carrier transformations.
+    primary_refs: [E.17, E.17.EFP, A.6.3.CR, A.6.3.RT, A.6.3.CSC, F.9]
+    owner_surface: [h-semio-review, h-verify]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: workflow only
+    output_carrier_kind: PublicationBoundaryNote
+    authority_boundary: Publication carrier is not source object, performed work, or evidence truth.
+    wrong_boundary_examples:
+      - Treating a summary as the source.
+      - Treating a file carrier as the object it describes.
+    positive_trigger_examples: ["Can we publish this summary?", "Это carrier или объект?"]
+    negative_trigger_examples: ["Render the file.", "Copy this text."]
+    promotion_criteria: ["Promote if fanout/handoff misses recur."]
+    demotion_criteria: ["Keep as workflow if rare."]
+    required_tests: [publication_boundary_fixture, summary_as_source_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.LANGSTATE
+    human_name: Weak signal / early articulation / cue routing
+    description: Stabilize vague operator signals before framing, diagnosis, or route selection.
+    primary_refs: [A.16, B.4.1, C.2.2a, B.5.2.0]
+    owner_surface: [h-frame, h-abduct]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: skill/workflow owned
+    output_carrier_kind: CuePack
+    authority_boundary: Felt signal or cue is not claim, decision, or evidence.
+    wrong_boundary_examples:
+      - Treating a vague concern as a validated claim.
+      - Treating draft cue routing as a decision.
+    positive_trigger_examples: ["Something feels wrong but I cannot name it.", "Сигнал мутный, помоги распаковать."]
+    negative_trigger_examples: ["The failure is known; fix X.", "List all cues."]
+    promotion_criteria: ["Keep workflow-owned until output shape stabilizes."]
+    demotion_criteria: ["Demote if it adds ceremony to clear tasks."]
+    required_tests: [weak_signal_fixture, clear_task_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.CAUSAL_EVAL
+    human_name: Causal / model-output / benchmark / eval use
+    description: Keep causal claims, evals, model outputs, and benchmarks from masquerading as proof.
+    primary_refs: [C.28, C.26, C.16, B.3, A.10]
+    owner_surface: [h-verify, h-compare]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: workflow owned
+    output_carrier_kind: EvalUseNote
+    authority_boundary: Model output or benchmark score is not authorization, proof, or global truth.
+    wrong_boundary_examples:
+      - Treating model output as permission to act.
+      - Treating a benchmark as proof for a different context.
+    positive_trigger_examples: ["Does this eval prove the model works?", "Можно ли верить этому benchmark?"]
+    negative_trigger_examples: ["Run the benchmark command.", "Show latest score only."]
+    promotion_criteria: ["Promote only with adversarial eval false-positive tests."]
+    demotion_criteria: ["Demote if it over-warns on routine tests."]
+    required_tests: [eval_boundary_fixture, benchmark_transfer_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.TIME_FRESH
+    human_name: Timing / freshness / lifecycle / drift
+    description: Route stale source, evidence decay, lifecycle, and temporal validity concerns.
+    primary_refs: [A.4, B.3.4, C.27, E.19, E.23]
+    owner_surface: [h-status, h-verify, h-spec]
+    routing_class: routing_affordance_candidate
+    user_facing_allowed: "false"
+    current_runtime_status: internal candidate
+    none_reason: Existing status/verify/spec workflows own this in C0.
+    authority_boundary: Old source or expired evidence is not current truth.
+    wrong_boundary_examples:
+      - Treating old source as current SoTA.
+      - Treating plan validity window as runtime evidence.
+    positive_trigger_examples: ["Is this evidence stale?", "Нужно ли обновить решение?"]
+    negative_trigger_examples: ["What time is it?", "Show current status only."]
+    promotion_criteria: ["Promote if stale-source failures repeat."]
+    demotion_criteria: ["Keep workflow-owned if status handles it."]
+    required_tests: [freshness_fixture, time_lookup_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.METHODPACK_BRIDGE
+    human_name: MethodPack bridge / work-method selection
+    description: Represent the advisory boundary between PatternUse recommendations and MethodPack work gates.
+    primary_refs: [A.15, E.18, B.1.5]
+    owner_surface: [MethodPack, h-method]
+    routing_class: methodpack_bridge_only
+    user_facing_allowed: true_only_as_suggested_method_refs
+    current_runtime_status: suggested_method_refs only
+    output_carrier_kind: MethodRunPullHint
+    authority_boundary: PatternUse may suggest MethodPack refs but cannot open, close, or satisfy MethodRuns.
+    wrong_boundary_examples:
+      - PatternUse opens or closes a MethodRun.
+      - Matrix row satisfies a MethodPack gate.
+    positive_trigger_examples: ["Which work method should govern implementation?", "Нужен ли тут MethodPack?"]
+    negative_trigger_examples: ["Close this MethodRun.", "Use source refs as evidence."]
+    promotion_criteria: ["Keep bridge-only."]
+    demotion_criteria: ["Demote if PatternUse begins acting as MethodPack."]
+    required_tests: [methodpack_bridge_fixture, gate_evidence_negative]
+    methodpack_relation: MethodPack is the executable owner; PatternUse is advisory only
+
+  - cluster_id: PU.SOURCEPACK
+    human_name: Source pack / framework edition / relation records
+    description: Track source-pack edition, hashes, source refs, and relation records.
+    primary_refs: [A.19.SOURCE-SET, A.19.DECLARED, E.17, F.9, E.19]
+    owner_surface: [PatternAtlas]
+    routing_class: kernel_substrate
+    user_facing_allowed: "false"
+    current_runtime_status: PatternAtlas substrate
+    none_reason: Source-pack metadata is substrate, not compact PatternUse route.
+    authority_boundary: Source pack row is not route support, proof, or evidence.
+    wrong_boundary_examples:
+      - Treating source-pack presence as pattern support.
+      - Treating edition metadata as proof of correctness.
+    positive_trigger_examples: ["Which FPF edition is indexed?", "Где source hash карточки?"]
+    negative_trigger_examples: ["Apply this pattern now.", "Recommend a method."]
+    promotion_criteria: ["Never promote to compact route; substrate only."]
+    demotion_criteria: ["Keep substrate-only."]
+    required_tests: [atlas_hash_fixture, sourcepack_not_route_negative]
+    methodpack_relation: none
+
+  - cluster_id: PU.PATTERN_QUALITY
+    human_name: Route-card / framework quality / refresh
+    description: Audit route-card quality, observed misses, refresh due, and pattern-card quality without adding routes by taste.
+    primary_refs: [E.8, E.19, F.15, F.18, F.19]
+    owner_surface: [PatternUseAudit, CI]
+    routing_class: dedicated_skill_or_workflow
+    user_facing_allowed: true_as_suggested_surface
+    current_runtime_status: audit workflow only
+    output_carrier_kind: RouteCardQualityFinding
+    authority_boundary: Route count and examples are not value proof; quality requires observed misses and held-out tests.
+    wrong_boundary_examples:
+      - Adding route examples because they sound plausible.
+      - Treating route count as support coverage.
+    positive_trigger_examples: ["Should we add this route example?", "Качество роутера просело?"]
+    negative_trigger_examples: ["Use this one pattern now.", "List all route cards."]
+    promotion_criteria: ["Keep audit-only until quality workflow stabilizes."]
+    demotion_criteria: ["Demote if it encourages route-count vanity."]
+    required_tests: [route_quality_fixture, route_count_vanity_negative]
+    methodpack_relation: none

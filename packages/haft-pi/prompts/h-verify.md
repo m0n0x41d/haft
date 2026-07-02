@@ -1,5 +1,22 @@
 Reality-check a recorded decision against the current code and runtime.
 
+Before substantive verification reasoning, call `haft_query`:
+
+```json
+{
+  "action": "pattern_use",
+  "mode": "compact",
+  "query": "<operator concern>"
+}
+```
+
+Skip only mechanical/status/exact-lookup requests where no FPF pattern choice is
+material. If `should_use_pattern=true` and verification needs output-shape
+detail, ask for `mode="full"` before applying the returned pattern. PatternUse
+is advisory/read-only: not approval, not evidence, not a DecisionRecord, not a
+WorkCommission, not MethodPack, and not a gate. Do not inline the FPF catalog
+or route list in this prompt.
+
 1. Locate the DecisionRecord: `haft_query(action="status")` or
    `haft_query(action="search", query=...)`.
 2. Read its predictions: what was supposed to be true by now, with which

@@ -299,7 +299,7 @@ func FormatCoverageCockpitSummary(report *CoverageReport) string {
 	var sb strings.Builder
 	sb.WriteString("## Coverage Cue\n\n")
 	sb.WriteString(fmt.Sprintf(
-		"- %d module(s), %d%% governed; %d blind, %d degraded. Details: `haft_query(action=\"coverage\")`; full status: `haft_query(action=\"status\", full=true)`.\n",
+		"- %d module(s), %d%% governed; %d blind, %d degraded. Detailed coverage stays behind the Drill-down commands.\n",
 		report.TotalModules,
 		pct,
 		report.BlindCount,

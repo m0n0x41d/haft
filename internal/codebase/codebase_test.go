@@ -806,8 +806,7 @@ func TestFormatCoverageCockpitSummary_UsesOneCueLine(t *testing.T) {
 	for _, want := range []string{
 		"## Coverage Cue",
 		"8 module(s), 50% governed; 4 blind, 1 degraded",
-		"`haft_query(action=\"coverage\")`",
-		"`haft_query(action=\"status\", full=true)`",
+		"Detailed coverage stays behind the Drill-down commands",
 	} {
 		if !strings.Contains(summary, want) {
 			t.Fatalf("cockpit coverage summary missing %q:\n%s", want, summary)

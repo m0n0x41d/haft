@@ -1036,6 +1036,50 @@ func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T)
 	}
 }
 
+func TestPiReasoningPromptCarriersCarryCatalogFreePatternUseGateway(t *testing.T) {
+	carriers := map[string]string{
+		"h-frame":   readRepoFile(t, "packages", "haft-pi", "prompts", "h-frame.md"),
+		"h-explore": readRepoFile(t, "packages", "haft-pi", "prompts", "h-explore.md"),
+		"h-compare": readRepoFile(t, "packages", "haft-pi", "prompts", "h-compare.md"),
+		"h-verify":  readRepoFile(t, "packages", "haft-pi", "prompts", "h-verify.md"),
+		"h-reason":  readRepoFile(t, "packages", "haft-pi", "prompts", "h-reason.md"),
+	}
+
+	for name, source := range carriers {
+		t.Run(name, func(t *testing.T) {
+			for _, want := range []string{
+				"pattern_use",
+				"compact",
+				"should_use_pattern",
+				"mode=\"full\"",
+				"advisory/read-only",
+				"not approval",
+				"not MethodPack",
+				"Do not inline the FPF catalog",
+				"route list",
+			} {
+				if !strings.Contains(source, want) {
+					t.Fatalf("%s missing PatternUse gateway fragment %q", name, want)
+				}
+			}
+			compactModeMentions := strings.Count(source, `"mode": "compact"`) +
+				strings.Count(source, `mode="compact"`)
+			if compactModeMentions != 1 {
+				t.Fatalf("%s should carry exactly one compact PatternUse gateway instruction, got %d", name, compactModeMentions)
+			}
+			for _, banned := range []string{
+				"Naming/terminology requests should route",
+				"Architecture requests should route",
+				"SoTA/current-practice requests should route",
+			} {
+				if strings.Contains(source, banned) {
+					t.Fatalf("%s inlines route category prose %q", name, banned)
+				}
+			}
+		})
+	}
+}
+
 func TestPiPackageDocsCarryGeneratedContractAuthorityBoundary(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	contractGeneration, ok := findContractGeneratedFragment(report, "query.contract_generation")
@@ -2553,6 +2597,8 @@ func TestInterfaceMethodCatalogNamesLifecycleDiscoveryContract(t *testing.T) {
 		"ProcessPattern",
 		"current methods",
 		"pull matching",
+		"source_pattern_refs",
+		"never satisfy hard gates or evidence requirements",
 		"Skills may point to carrier_refs but do not become enforcement authority",
 	} {
 		if !strings.Contains(contractText, want) {

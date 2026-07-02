@@ -33,7 +33,7 @@ func TestStatusGovernorCountsAlwaysPresent(t *testing.T) {
 	if !strings.Contains(out, "Drift: 28 unique event(s), 31 impacted decision(s), max fanout 7") {
 		t.Fatalf("drift event line missing:\n%s", out)
 	}
-	if !strings.Contains(out, `Reconciliation: 1 high-fanout drift event(s), max fanout 7; drill down with haft_query(action="drift_events", limit=5)`) {
+	if !strings.Contains(out, `Reconciliation: 1 high-fanout drift event(s), max fanout 7; detail commands are in Drill-down`) {
 		t.Fatalf("reconciliation line missing:\n%s", out)
 	}
 	if !strings.Contains(out, "evidence debt") {

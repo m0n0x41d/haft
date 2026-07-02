@@ -1093,7 +1093,6 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		sb.WriteString(fmt.Sprintf("- **Refresh due** (%d):\n", len(data.StaleItems)))
 		for i, stale := range data.StaleItems {
 			if i >= staleCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_refresh(action=\"scan\", verbose=true)`.\n", len(data.StaleItems)-staleCap))
 				break
 			}
 			line := "  - " + formatArtifactLabel(stale.Title, stale.ID)
@@ -1102,6 +1101,9 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 			}
 			line += fmt.Sprintf(" — %s", stale.Reason)
 			sb.WriteString(line + "\n")
+		}
+		if len(data.StaleItems) > staleCap {
+			sb.WriteString(fmt.Sprintf("  - ... and %d more.\n", len(data.StaleItems)-staleCap))
 		}
 	}
 
@@ -1123,7 +1125,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		}
 		for i, event := range driftPartitions.Material {
 			if i >= driftCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s); run `%s`.\n", len(driftPartitions.Material)-driftCap, artifact.StatusCompactDriftEventsCommand))
+				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s).\n", len(driftPartitions.Material)-driftCap))
 				break
 			}
 			sb.WriteString(fmt.Sprintf(
@@ -1136,9 +1138,8 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		}
 		if len(driftPartitions.NeedsBindingResolution) > 0 {
 			sb.WriteString(fmt.Sprintf(
-				"- **Binding resolution needed**: %s; run `haft drift bindings --dry-run --json` or `%s`.\n",
+				"- **Binding resolution needed**: %s.\n",
 				formatBindingResolutionDriftEventSummary(driftPartitions.NeedsBindingResolution),
-				artifact.StatusCompactDriftEventsCommand,
 			))
 		}
 	}
@@ -1152,7 +1153,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	if data.SpecBindingDebt.Summary.Total() > 0 {
 		summary := data.SpecBindingDebt.Summary
 		sb.WriteString(fmt.Sprintf(
-			"- **Spec binding debt**: missing=%d invalid_refs=%d draft_section_needed=%d out_of_spec=%d; run `haft_query(action=\"status\", full=true)`.\n",
+			"- **Spec binding debt**: missing=%d invalid_refs=%d draft_section_needed=%d out_of_spec=%d.\n",
 			summary.DecisionsMissingSpecBinding,
 			summary.DecisionsWithInvalidSpecRefs,
 			summary.DraftSectionNeededDebt,
@@ -1165,7 +1166,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		sb.WriteString(fmt.Sprintf("- **Problem closure hygiene** (%d):\n", len(data.ProblemHygiene)))
 		for i, item := range data.ProblemHygiene {
 			if i >= hygieneCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_query(action=\"status\", full=true)`.\n", len(data.ProblemHygiene)-hygieneCap))
+				sb.WriteString(fmt.Sprintf("  - ... and %d more.\n", len(data.ProblemHygiene)-hygieneCap))
 				break
 			}
 			sb.WriteString(fmt.Sprintf(
@@ -1181,7 +1182,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		sb.WriteString(fmt.Sprintf("- **WorkCommissions need attention** (%d):\n", len(data.CommissionAttention)))
 		for i, commission := range data.CommissionAttention {
 			if i >= commissionCap {
-				sb.WriteString(fmt.Sprintf("  - ... and %d more; run `haft_commission(action=\"list\", state=\"open\")`.\n", len(data.CommissionAttention)-commissionCap))
+				sb.WriteString(fmt.Sprintf("  - ... and %d more.\n", len(data.CommissionAttention)-commissionCap))
 				break
 			}
 			sb.WriteString("  " + formatCommissionStatusEntry(commission) + "\n")
@@ -1201,14 +1202,14 @@ func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {
 	const progressCap = 3
 	for i, problem := range data.InProgressProblems {
 		if i >= progressCap {
-			sb.WriteString(fmt.Sprintf("- ... and %d more in progress; run `haft_query(action=\"status\", full=true)`.\n", len(data.InProgressProblems)-progressCap))
+			sb.WriteString(fmt.Sprintf("- ... and %d more in progress.\n", len(data.InProgressProblems)-progressCap))
 			break
 		}
 		sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(problem), statusPortfolioLabel(data, problem.Meta.ID)))
 	}
 
 	if len(data.BacklogProblems) > 0 {
-		sb.WriteString(fmt.Sprintf("- Backlog: %d problem(s); run `haft_query(action=\"status\", full=true)` for the list.\n", len(data.BacklogProblems)))
+		sb.WriteString(fmt.Sprintf("- Backlog: %d problem(s).\n", len(data.BacklogProblems)))
 	}
 
 	sb.WriteString("\n")
@@ -1252,17 +1253,12 @@ func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) 
 
 func appendCockpitDrillDown(sb *strings.Builder) {
 	sb.WriteString("### Drill-down\n\n")
-	sb.WriteString("- Full status: `haft_query(action=\"status\", full=true)`.\n")
-	sb.WriteString("- Coverage: `haft_query(action=\"coverage\")`.\n")
-	sb.WriteString("- Drift/stale detail: `haft_refresh(action=\"scan\", verbose=true)`.\n")
-	sb.WriteString(fmt.Sprintf("- Drift events: `%s`; decision reconciliation: `%s`; governing set: `%s`.\n",
+	sb.WriteString("- Core details: `haft_query(action=\"status\", full=true)`, `haft_query(action=\"coverage\")`, `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"plan\", verbose=true)`.\n")
+	sb.WriteString(fmt.Sprintf("- Governance details: `%s`, `%s`, `%s`, `haft_refresh(action=\"review\")`, `haft overseer judgment --json --limit 20`, `haft_refresh(action=\"drain\", dry_run=true)`.\n",
 		artifact.StatusCompactDriftEventsCommand,
 		artifact.StatusCompactDecisionReconcileCommand,
 		artifact.StatusCompactGoverningSetCommand,
 	))
-	sb.WriteString("- Maintenance plan: `haft_refresh(action=\"plan\")` (compact); full work order: `haft_refresh(action=\"plan\", verbose=true)`.\n")
-	sb.WriteString("- Judgment review: `haft_refresh(action=\"review\")` / `haft overseer judgment --json --limit 20`.\n")
-	sb.WriteString("- Safe drain preview: `haft_refresh(action=\"drain\", dry_run=true)`.\n")
 	sb.WriteString("\nDefault status omits shipped/pending decision lists, full module coverage, recent notes, and full drift/stale tails.\n")
 }
 
@@ -1295,7 +1291,7 @@ func ReconciliationCueSummary(report artifact.ReconciliationCueReport) string {
 	if len(report.Commands) == 0 {
 		return strings.Join(parts, "; ")
 	}
-	return strings.Join(parts, "; ") + "; drill down with " + strings.Join(report.Commands, " / ")
+	return strings.Join(parts, "; ") + "; detail commands are in Drill-down"
 }
 
 func cockpitReconciliationActionSummary(report artifact.ReconciliationCueReport) string {
@@ -1327,7 +1323,7 @@ func cockpitReconciliationActionSummary(report artifact.ReconciliationCueReport)
 	if len(report.Commands) == 0 {
 		return strings.Join(parts, "; ")
 	}
-	return strings.Join(parts, "; ") + "; drill down with " + strings.Join(report.Commands, " / ")
+	return strings.Join(parts, "; ") + "; detail commands are in Drill-down"
 }
 
 func cockpitReconciliationNeedsOperator(report artifact.ReconciliationCueReport) bool {

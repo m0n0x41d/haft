@@ -776,13 +776,14 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_method_catalog","schema_version":1,"filter_status":"current","authority_boundary":"read_only_method_catalog_not_processpattern_not_enforcement_authority","methods":[{"id":"verification-before-completion","lifecycle":{"status":"current"},"carrier_refs":["internal/method/builtin.go",".haft/methods/swe-core/verification-before-completion.yaml"]}]}`,
-						Note:  "Catalog discovery is read-only; it does not introduce ProcessPattern, approve work, pass gates, or make skill carriers enforcement authority.",
+						Shape: `{"kind":"haft_method_catalog","schema_version":1,"filter_status":"current","authority_boundary":"read_only_method_catalog_not_processpattern_not_enforcement_authority","methods":[{"id":"verification-before-completion","lifecycle":{"status":"current"},"carrier_refs":["internal/method/builtin.go",".haft/methods/swe-core/verification-before-completion.yaml"],"source_pattern_refs":["fpf:A.10","fpf:B.3","fpf:A.15"]}]}`,
+						Note:  "Catalog discovery is read-only; source_pattern_refs are documentary context only, not evidence, approval, gate passage, or FPF/DPF source authority.",
 					},
 				},
 				Notes: []string{
 					"Use this when an agent needs the current process-method catalog or successor/deprecation lineage.",
 					"Do not inline this catalog into default status; query it explicitly.",
+					"source_pattern_refs cite source-pattern context for the method; they never satisfy hard gates or evidence requirements.",
 				},
 			},
 			OutputVolume: []string{"default MCP: JSON MethodPack catalog report", "CLI text: compact method list", "CLI --json: full report"},
@@ -912,7 +913,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "index_response",
-						Shape: `{"schema_version":1,"record_kind":"pattern_use_index","authority":"read_only_pattern_use_index_not_normative_fpf_source","coverage":"seed_route_cards_not_full_fpf_catalog","full_fpf_catalog_covered":false,"compiled_route_card_count":11,"retrievable_pattern_card_count":66,"coverage_notes":["retrievable FPF pattern cards are recall candidates only"],"route_cards":[{"id":"f18_naming_namecard","recommended_pattern_use":{"pattern_ref":"F.18","title":"nameCard"}}]}`,
+						Shape: `{"schema_version":1,"record_kind":"pattern_use_index","authority":"read_only_pattern_use_index_not_normative_fpf_source","coverage":"seed_route_cards_not_full_fpf_catalog","full_fpf_catalog_covered":false,"compiled_route_card_count":15,"retrievable_pattern_card_count":66,"coverage_notes":["retrievable FPF pattern cards are recall candidates only"],"route_cards":[{"id":"f18_naming_namecard","recommended_pattern_use":{"pattern_ref":"F.18","title":"nameCard"}}]}`,
 						Note:  "The V1 index has seed compiled route cards plus FPF-wide retrieval candidates; retrieval coverage is not a claim that all FPF cards have compiled route cards.",
 					},
 				},

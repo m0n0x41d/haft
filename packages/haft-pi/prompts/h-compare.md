@@ -1,6 +1,23 @@
 Compare portfolio variants fairly and return a Pareto front, not a scalar
 winner.
 
+Before substantive comparison, call `haft_query`:
+
+```json
+{
+  "action": "pattern_use",
+  "mode": "compact",
+  "query": "<operator concern>"
+}
+```
+
+Skip only mechanical/status/exact-lookup requests where no FPF pattern choice is
+material. If `should_use_pattern=true` and comparison needs output-shape
+detail, ask for `mode="full"` before applying the returned pattern. PatternUse
+is advisory/read-only: not approval, not evidence, not a DecisionRecord, not a
+WorkCommission, not MethodPack, and not a gate. Do not inline the FPF catalog
+or route list in this prompt.
+
 1. Characterize FIRST — declare dimensions before any scoring, via the
    native `haft_problem` tool:
 

@@ -8,6 +8,46 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **FPF engine C1 runtime route expansion.** Promoted four PatternUse
+  scenario families into compiled semantic routes: performed-work vs plan
+  boundary, admissible agent action planning, spec lifecycle authority, and
+  FPF/DPF/MethodPack layer-boundary separation. The embedded PatternUse index
+  now reports 15 compiled route cards with baked route/intent vectors while
+  preserving the same advisory-only authority boundary and FPF-wide
+  `retrieved_uncompiled` fallback.
+- **PatternUse direct-skill layer-boundary routing fix.** Direct `$h-reason`
+  prompts asking to separate FPF source cards, DPF source packs,
+  PatternUseGateway, and MethodPack now route through the compiled
+  `e4_layer_boundary` route and `apply_pattern` intent instead of falling back
+  to uncompiled source-restoration recall. Mechanical controls such as
+  `what time is it` still abstain.
+- **PatternUse FPF-wide recall quality checks.** Named non-seed FPF card
+  requests such as NQD, Bitter Lesson, and Goldilocks can now enter the
+  `retrieved_uncompiled` fallback through lexical FTS recall without broad
+  route cues or semantic-only overclaiming. Full fallback records hydrate
+  generated pattern chunks as `indexed_pattern_section` source cards, compact
+  records still omit source-card bodies, and mechanical controls remain
+  `missing` / `none`.
+- **FPF engine C0 boundary inventory.** Added a canonical FPF engine term
+  sheet, a validated 22-cluster coverage matrix using `routing_class`, and
+  terminology/authority lints for PatternAtlas, PatternUse, PatternRecall, and
+  MethodPack boundaries. `PatternPull` is deprecated as a formal runtime/API
+  term. C0 adds no new PatternUse runtime routes.
+- **MethodPack source-pattern bridge.** MethodPack definitions now carry
+  optional documentary `source_pattern_refs` such as `fpf:A.10`; these refs are
+  exposed through method pull/catalog surfaces and materialized carriers, but
+  cannot satisfy hard gates, evidence requirements, approval, or FPF/DPF source
+  authority. The `swe-core` manifest now matches all nine current builtin
+  method cards.
+- **PatternUse/MethodPack bridge audit.** Session audit now reports
+  `method_pull_before_pattern_use` when non-mechanical `haft_method pull`
+  happens before the compact PatternUse gateway, while explicit mechanical
+  pulls remain no-pattern-required. Method close validation rejects PatternUse
+  recommendations and `retrieved_uncompiled` refs as hard-gate evidence, but
+  still allows PatternUse refs as carry-through context.
+- **FPF engine C0 sandbox.** Added `.context/fpf-engine-c0-sandbox` with local
+  matrix/lint/manifest/session-audit fixtures and a runner for checking C0
+  behavior with either `go run ./cmd/haft` or an installed `haft` binary.
 - **PatternUse gateway and baked semantic route index.** Added a read-only
   `pattern-use` CLI/MCP gateway that returns compact or full
   `PatternUseRecommendation` records before substantive reasoning. Compiled

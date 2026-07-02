@@ -224,6 +224,7 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 			if len(gate.RequiredEvidence) > 0 && len(result.EvidenceRefs) == 0 {
 				missing = append(missing, gate.ID+" needs evidence_refs")
 			}
+			missing = append(missing, validateGateEvidenceRefs(gate.ID, result.EvidenceRefs)...)
 		}
 	}
 	missing = append(missing, validateCloseCarryThrough(run, input)...)
@@ -231,6 +232,82 @@ func ValidateClose(run MethodRun, input CloseInput) error {
 		return fmt.Errorf("method close incomplete: %s; %s", strings.Join(missing, "; "), CloseInputShapeHint())
 	}
 	return nil
+}
+
+func validateGateEvidenceRefs(gateID string, evidenceRefs []string) []string {
+	var problems []string
+	for _, ref := range evidenceRefs {
+		if !gateEvidenceRefIsPatternUseRecommendation(ref) {
+			continue
+		}
+		problems = append(problems, gateID+" evidence_refs must cite work or evidence artifacts, not PatternUse recommendations")
+	}
+	return problems
+}
+
+func gateEvidenceRefIsPatternUseRecommendation(ref string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(ref))
+	normalized = strings.ReplaceAll(normalized, `\"`, `"`)
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	if gateEvidenceRefRecordsWorkObservation(normalized) {
+		return false
+	}
+	switch {
+	case strings.HasPrefix(normalized, "pattern_use:"):
+		return true
+	case strings.HasPrefix(normalized, "patternuse:"):
+		return true
+	case strings.Contains(normalized, `haft_query(action="pattern_use"`):
+		return true
+	case strings.Contains(normalized, `"action":"pattern_use"`):
+		return true
+	case strings.Contains(normalized, `"action": "pattern_use"`):
+		return true
+	case normalized == "patternuserecommendation":
+		return true
+	case strings.HasPrefix(normalized, "patternuserecommendation:"):
+		return true
+	case normalized == "retrieved_uncompiled":
+		return true
+	case strings.HasPrefix(normalized, "support_level=retrieved_uncompiled"):
+		return true
+	}
+	return false
+}
+
+func gateEvidenceRefRecordsWorkObservation(normalized string) bool {
+	observationPrefixes := []string{
+		"go test ",
+		"go run ",
+		"task ",
+		"pattern_use audit:",
+		"pattern_use compact:",
+		"pattern_use full:",
+		"cli ",
+		"mcp ",
+		"installed cli/mcp smoke:",
+	}
+	for _, prefix := range observationPrefixes {
+		if strings.HasPrefix(normalized, prefix) {
+			return true
+		}
+	}
+	observationMarkers := []string{
+		" -> ",
+		" => ",
+		": pass",
+		" passed",
+		" returned ",
+		" reports ",
+		" records ",
+		" flags ",
+	}
+	for _, marker := range observationMarkers {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 const problemClosureHygieneGateID = "problem_graph_closure_hygiene_recorded"

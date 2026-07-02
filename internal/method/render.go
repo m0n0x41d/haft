@@ -27,6 +27,9 @@ func RenderRunBody(run MethodRun) string {
 				b.WriteString(posture)
 				b.WriteString("\n\n")
 			}
+			if len(card.SourcePatternRefs) > 0 {
+				b.WriteString(fmt.Sprintf("Source pattern refs: %s\n\n", strings.Join(card.SourcePatternRefs, ", ")))
+			}
 			if card.WhyApplies != "" {
 				b.WriteString(fmt.Sprintf("Why applies: %s\n\n", card.WhyApplies))
 			}

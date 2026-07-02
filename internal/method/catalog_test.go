@@ -1,8 +1,12 @@
 package method
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestBuiltinCatalogValidates(t *testing.T) {
@@ -74,6 +78,110 @@ func TestBuiltinCatalogMethodsCarryLifecycleDiscoveryMetadata(t *testing.T) {
 	}
 }
 
+func TestBuiltinCatalogMethodsCarryDocumentarySourcePatternRefs(t *testing.T) {
+	for _, definition := range BuiltinCatalog().Methods {
+		if len(definition.SourcePatternRefs) == 0 {
+			t.Fatalf("%s source_pattern_refs missing", definition.ID)
+		}
+		for _, ref := range definition.SourcePatternRefs {
+			if !validSourcePatternRefPrefix(ref) {
+				t.Fatalf("%s invalid source_pattern_ref %q", definition.ID, ref)
+			}
+		}
+	}
+}
+
+func TestInstallDefaultCatalogMaterializesManifestMatchingBuiltinCatalog(t *testing.T) {
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+	if err := InstallDefaultCatalog(haftDir); err != nil {
+		t.Fatalf("InstallDefaultCatalog: %v", err)
+	}
+	methodDir := filepath.Join(haftDir, "methods", CatalogID)
+
+	data, err := os.ReadFile(filepath.Join(methodDir, "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("read materialized manifest: %v", err)
+	}
+	var manifest Manifest
+	if err := yaml.Unmarshal(data, &manifest); err != nil {
+		t.Fatalf("parse materialized manifest: %v", err)
+	}
+
+	want := map[string]bool{}
+	for _, definition := range BuiltinCatalog().Methods {
+		want[definition.ID] = true
+	}
+	got := map[string]bool{}
+	for _, id := range manifest.Methods {
+		got[id] = true
+	}
+
+	for id := range want {
+		if !got[id] {
+			t.Fatalf("manifest missing builtin method %q", id)
+		}
+	}
+	for id := range got {
+		if !want[id] {
+			t.Fatalf("manifest contains unknown method %q", id)
+		}
+	}
+
+	entries, err := os.ReadDir(methodDir)
+	if err != nil {
+		t.Fatalf("read materialized method dir: %v", err)
+	}
+	yamlMethods := map[string]bool{}
+	for _, entry := range entries {
+		name := entry.Name()
+		if entry.IsDir() || name == "manifest.yaml" || !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		id := strings.TrimSuffix(name, ".yaml")
+		yamlMethods[id] = true
+	}
+	for id := range want {
+		if !yamlMethods[id] {
+			t.Fatalf("materialized method YAML missing %q", id)
+		}
+	}
+	for id := range yamlMethods {
+		if !want[id] {
+			t.Fatalf("materialized method YAML contains unknown method %q", id)
+		}
+	}
+}
+
+func TestInstallDefaultCatalogMaterializesCurrentCarrierMetadata(t *testing.T) {
+	haftDir := filepath.Join(t.TempDir(), ".haft")
+	if err := InstallDefaultCatalog(haftDir); err != nil {
+		t.Fatalf("InstallDefaultCatalog: %v", err)
+	}
+	for _, definition := range BuiltinCatalog().Methods {
+		path := filepath.Join(haftDir, "methods", CatalogID, definition.ID+".yaml")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		var carrier Definition
+		if err := yaml.Unmarshal(data, &carrier); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+		if carrier.ID != definition.ID {
+			t.Fatalf("%s id = %q, want %q", path, carrier.ID, definition.ID)
+		}
+		if carrier.SourcePosture != definition.SourcePosture {
+			t.Fatalf("%s source posture = %+v, want %+v", path, carrier.SourcePosture, definition.SourcePosture)
+		}
+		if carrier.Lifecycle.Status != definition.Lifecycle.Status {
+			t.Fatalf("%s lifecycle.status = %q, want %q", path, carrier.Lifecycle.Status, definition.Lifecycle.Status)
+		}
+		if !sameStringSet(carrier.SourcePatternRefs, definition.SourcePatternRefs) {
+			t.Fatalf("%s source_pattern_refs = %#v, want %#v", path, carrier.SourcePatternRefs, definition.SourcePatternRefs)
+		}
+	}
+}
+
 func TestValidateCatalogRejectsInvalidDefinitions(t *testing.T) {
 	err := ValidateCatalog(Catalog{
 		ID:      CatalogID,
@@ -122,6 +230,25 @@ func TestValidateCatalogRejectsNormativeFPFMethodSourcePosture(t *testing.T) {
 	}
 }
 
+func TestValidateCatalogRejectsInvalidSourcePatternRefPrefix(t *testing.T) {
+	definition := validCatalogTestDefinition("bad-source-ref")
+	definition.SourcePatternRefs = []string{"docs:A.10"}
+
+	err := ValidateCatalog(Catalog{
+		ID:      CatalogID,
+		Version: CatalogVersion,
+		Methods: []Definition{
+			definition,
+		},
+	})
+	if err == nil {
+		t.Fatal("ValidateCatalog accepted invalid source_pattern_refs prefix")
+	}
+	if !strings.Contains(err.Error(), "source_pattern_refs") {
+		t.Fatalf("error = %v, want source_pattern_refs failure", err)
+	}
+}
+
 func TestValidateCatalogRejectsInvalidLifecycle(t *testing.T) {
 	definition := validCatalogTestDefinition("bad-lifecycle")
 	definition.Lifecycle.Status = "retired"
@@ -161,6 +288,9 @@ func TestDiscoverCatalogFiltersByLifecycle(t *testing.T) {
 		}
 		if !strings.Contains(entry.SourcePosture.Normativity, "support_carrier_non_normative_fpf") {
 			t.Fatalf("entry %s missing support source posture: %+v", entry.ID, entry.SourcePosture)
+		}
+		if len(entry.SourcePatternRefs) == 0 {
+			t.Fatalf("entry %s missing source_pattern_refs", entry.ID)
 		}
 	}
 }
@@ -227,6 +357,119 @@ func TestPullCardsCarrySupportSourcePosture(t *testing.T) {
 		if card.SourcePosture.Normativity != MethodSourceNormativity {
 			t.Fatalf("%s normativity = %q", card.ID, card.SourcePosture.Normativity)
 		}
+		if len(card.SourcePatternRefs) == 0 {
+			t.Fatalf("%s source_pattern_refs missing", card.ID)
+		}
+	}
+}
+
+func TestSourcePatternRefsDoNotSatisfyHardGateEvidence(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		Methods: []MethodCard{{
+			ID:                "test-method",
+			SourcePatternRefs: []string{"fpf:A.10"},
+			HardGates: []Gate{{
+				ID:               "gate-with-evidence",
+				Kind:             "test_evidence",
+				CheckLevel:       "deterministic",
+				RequiredEvidence: []string{"command_output"},
+				Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+			}},
+		}},
+	}
+
+	err := ValidateClose(run, CloseInput{
+		GateResults: []GateResult{{
+			GateID: "gate-with-evidence",
+			Status: "satisfied",
+		}},
+	})
+	if err == nil {
+		t.Fatal("ValidateClose accepted source_pattern_refs as gate evidence")
+	}
+	if !strings.Contains(err.Error(), "needs evidence_refs") {
+		t.Fatalf("error = %v, want missing evidence_refs", err)
+	}
+}
+
+func TestPatternUseRecommendationRefsDoNotSatisfyHardGateEvidence(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		Methods: []MethodCard{{
+			ID: "test-method",
+			HardGates: []Gate{{
+				ID:               "gate-with-evidence",
+				Kind:             "test_evidence",
+				CheckLevel:       "deterministic",
+				RequiredEvidence: []string{"command_output"},
+				Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+			}},
+		}},
+	}
+	cases := []string{
+		"pattern_use:F.18",
+		"retrieved_uncompiled",
+		"support_level=retrieved_uncompiled",
+		"PatternUseRecommendation:F.18",
+		`haft_query(action="pattern_use", mode="compact", query="именуй нормально")`,
+		`{"action":"pattern_use","support_level":"retrieved_uncompiled"}`,
+	}
+
+	for _, evidenceRef := range cases {
+		t.Run(evidenceRef, func(t *testing.T) {
+			err := ValidateClose(run, CloseInput{
+				GateResults: []GateResult{{
+					GateID:       "gate-with-evidence",
+					Status:       "satisfied",
+					EvidenceRefs: []string{evidenceRef},
+				}},
+			})
+			if err == nil {
+				t.Fatal("ValidateClose accepted PatternUse recommendation as gate evidence")
+			}
+			if !strings.Contains(err.Error(), "not PatternUse recommendations") {
+				t.Fatalf("error = %v, want PatternUse evidence boundary", err)
+			}
+		})
+	}
+}
+
+func TestPatternUseRuntimeObservationsCanSatisfyHardGateEvidence(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		Methods: []MethodCard{{
+			ID: "test-method",
+			HardGates: []Gate{{
+				ID:               "gate-with-evidence",
+				Kind:             "test_evidence",
+				CheckLevel:       "deterministic",
+				RequiredEvidence: []string{"command_output"},
+				Waiver:           WaiverPolicy{Allowed: true, RequiresReason: true},
+			}},
+		}},
+	}
+	cases := []string{
+		`go run ./cmd/haft pattern-use recommend "build PatternUseIndex compiler from FPF routes/search substrate" --mode compact --json => retrieved_uncompiled with candidate_pattern_use_set`,
+		`pattern-use audit: 29 prompts, rows_passing=29, authority_violations=0; RU 250-card prompt retrieved_uncompiled not F.18.`,
+		`go test ./internal/method -run 'Test(PatternUseRecommendationRefsDoNotSatisfyHardGateEvidence|ValidateCloseAllowsPatternUseCarryThroughContext)'`,
+		`MCP haft_query(action="pattern_use", mode="compact", ...) for all C1 target prompts -> expected route IDs and controls`,
+		`retrieved-uncompiled progressive-disclosure fixture audit flags compact-only application as fail/progressive_disclosure_bypass`,
+	}
+
+	for _, evidenceRef := range cases {
+		t.Run(evidenceRef, func(t *testing.T) {
+			err := ValidateClose(run, CloseInput{
+				GateResults: []GateResult{{
+					GateID:       "gate-with-evidence",
+					Status:       "satisfied",
+					EvidenceRefs: []string{evidenceRef},
+				}},
+			})
+			if err != nil {
+				t.Fatalf("ValidateClose rejected runtime observation evidence: %v", err)
+			}
+		})
 	}
 }
 
@@ -689,6 +932,32 @@ func TestValidateCloseRequiresCarryThroughDisposition(t *testing.T) {
 	}
 }
 
+func TestValidateCloseAllowsPatternUseCarryThroughContext(t *testing.T) {
+	run := MethodRun{
+		Status: "open",
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "pattern_use:compact",
+			SourceItemRef: "query:именуй-нормально",
+			AcceptanceRef: "operator_message:msg-1",
+			Disposition:   CarryDispositionPending,
+		}},
+	}
+
+	err := ValidateClose(run, CloseInput{
+		CarryThrough: []CarryThroughItem{{
+			SourceRef:     "pattern_use:compact",
+			SourceItemRef: "query:именуй-нормально",
+			AcceptanceRef: "operator_message:msg-1",
+			Disposition:   CarryDispositionApplied,
+			TargetRefs:    []string{"internal/fpf/patternuse.go"},
+			Reason:        "PatternUse recommendation carried context only; tests remain the gate evidence.",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ValidateClose rejected PatternUse carry-through context: %v", err)
+	}
+}
+
 func TestValidateCloseAllowsCarryThroughWaiver(t *testing.T) {
 	run := MethodRun{
 		Status: "open",
@@ -820,4 +1089,21 @@ func validCatalogTestDefinition(id string) Definition {
 		}},
 		Waiver: WaiverPolicy{Allowed: true, RequiresReason: true},
 	}
+}
+
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, value := range left {
+		counts[value]++
+	}
+	for _, value := range right {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
 }

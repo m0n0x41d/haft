@@ -95,6 +95,7 @@ type sessionGraphAuditSummary struct {
 	EditToolCalls                   int `json:"edit_tool_calls"`
 	StatusBeforeFirstEdit           int `json:"status_before_first_edit"`
 	MethodPullBeforeFirstEdit       int `json:"method_pull_before_first_edit"`
+	MethodPullBeforePatternUse      int `json:"method_pull_before_pattern_use"`
 	GraphBeforeFirstEdit            int `json:"graph_before_first_edit"`
 	RichGraphBeforeFirstEdit        int `json:"rich_graph_before_first_edit"`
 	PatternUseBeforeSubstantive     int `json:"pattern_use_before_substantive"`
@@ -138,6 +139,7 @@ type sessionGraphAuditSessionFile struct {
 	FirstSubstantiveOrdinal            int      `json:"first_substantive_ordinal,omitempty"`
 	StatusBeforeFirstEdit              bool     `json:"status_before_first_edit"`
 	MethodPullBeforeFirstEdit          bool     `json:"method_pull_before_first_edit"`
+	MethodPullBeforePatternUse         bool     `json:"method_pull_before_pattern_use"`
 	GraphBeforeFirstEdit               bool     `json:"graph_before_first_edit"`
 	RichGraphBeforeFirstEdit           bool     `json:"rich_graph_before_first_edit"`
 	PatternUseBeforeSubstantive        bool     `json:"pattern_use_before_substantive"`
@@ -220,6 +222,7 @@ func buildSessionGraphAuditReport(inputPath string, expectation sessionAuditExpe
 				"tool_use_and_assistant_text_events_counted",
 				"session_metadata_and_system_prompts_ignored",
 				"non_edit_substantive_reasoning_requires_pattern_use_gateway",
+				"non_mechanical_method_pull_requires_prior_pattern_use_gateway",
 				"plan_influence_requires_method_closeout_hint_or_human_review",
 			},
 		},
@@ -609,6 +612,7 @@ func summarizeSessionGraphAudit(
 	beforeEdit := sessionAuditBeforeOrdinal(events, limit)
 	session.StatusBeforeFirstEdit = sessionAuditHasHaftQueryAction(beforeEdit, "status")
 	session.MethodPullBeforeFirstEdit = sessionAuditHasHaftMethodAction(beforeEdit, "pull")
+	session.MethodPullBeforePatternUse = sessionAuditMethodPullBeforePatternUse(events)
 	session.GraphActionsBeforeFirstEdit = sessionAuditGraphActions(beforeEdit)
 	session.RichGraphActionsBeforeFirstEdit = sessionAuditRichGraphActions(beforeEdit)
 	session.GraphBeforeFirstEdit = len(session.GraphActionsBeforeFirstEdit) > 0
@@ -646,6 +650,9 @@ func addSessionGraphAuditSummary(
 	}
 	if session.MethodPullBeforeFirstEdit {
 		summary.MethodPullBeforeFirstEdit++
+	}
+	if session.MethodPullBeforePatternUse {
+		summary.MethodPullBeforePatternUse++
 	}
 	if session.GraphBeforeFirstEdit {
 		summary.GraphBeforeFirstEdit++
@@ -741,6 +748,17 @@ func sessionAuditDiagnostics(report sessionGraphAuditReport) []sessionGraphAudit
 		})
 	}
 
+	if summary.MethodPullBeforePatternUse > 0 {
+		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
+			Level:      "high",
+			Code:       "method_pull_before_pattern_use",
+			Count:      summary.MethodPullBeforePatternUse,
+			Message:    "session(s) called haft_method(action=\"pull\") for non-mechanical work before calling haft_query(action=\"pattern_use\")",
+			NextAction: "Call the compact PatternUse gateway before MethodPack pull when the task shapes reasoning or work.",
+			Examples:   sessionAuditMethodPullBeforePatternUseExamples(report.Sessions, 3),
+		})
+	}
+
 	if summary.ProgressiveDisclosureBypasses > 0 {
 		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
 			Level:      "high",
@@ -817,6 +835,23 @@ func sessionAuditProgressiveDisclosureBypassExamples(
 	return examples
 }
 
+func sessionAuditMethodPullBeforePatternUseExamples(
+	sessions []sessionGraphAuditSessionFile,
+	limit int,
+) []string {
+	var examples []string
+	for _, session := range sessions {
+		if !session.MethodPullBeforePatternUse {
+			continue
+		}
+		examples = append(examples, session.Path)
+		if len(examples) >= limit {
+			return examples
+		}
+	}
+	return examples
+}
+
 func limitSessionGraphAuditReport(
 	report sessionGraphAuditReport,
 	limit int,
@@ -862,7 +897,7 @@ func writeSessionGraphAuditText(
 		return err
 	}
 	if err := printf(
-		"summary: files=%d sessions_with_edits=%d substantive_moves=%d pass=%d needs_review=%d fail=%d no_edit=%d graph_before_edit=%d rich_graph_before_edit=%d method_pull_before_edit=%d pattern_use_before_substantive=%d pattern_use_bypass=%d pattern_use_observed=%d progressive_disclosure_bypass=%d scenario_pass=%d scenario_fail=%d closeout_influence_hints=%d\n",
+		"summary: files=%d sessions_with_edits=%d substantive_moves=%d pass=%d needs_review=%d fail=%d no_edit=%d graph_before_edit=%d rich_graph_before_edit=%d method_pull_before_edit=%d method_pull_before_pattern_use=%d pattern_use_before_substantive=%d pattern_use_bypass=%d pattern_use_observed=%d progressive_disclosure_bypass=%d scenario_pass=%d scenario_fail=%d closeout_influence_hints=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.SessionsWithEdits,
 		report.Summary.SessionsWithSubstantiveMoves,
@@ -873,6 +908,7 @@ func writeSessionGraphAuditText(
 		report.Summary.GraphBeforeFirstEdit,
 		report.Summary.RichGraphBeforeFirstEdit,
 		report.Summary.MethodPullBeforeFirstEdit,
+		report.Summary.MethodPullBeforePatternUse,
 		report.Summary.PatternUseBeforeSubstantive,
 		report.Summary.PatternUseBypasses,
 		report.Summary.PatternUseObserved,
@@ -921,13 +957,14 @@ func writeSessionGraphAuditText(
 		}
 		for _, session := range report.Sessions {
 			if err := printf(
-				"- %s verdict=%s first_edit=%d first_substantive=%d status=%t method_pull=%t graph=%t rich_graph=%t pattern_use=%t bypass=%t compact_pattern_use=%t retrieved_uncompiled=%t full_pattern_use=%t source_card=%t full_before_application=%t progressive_bypass=%t expected_pattern=%s expected_strategy=%s observed_patterns=%s observed_support=%s observed_strategy=%s scenario_pass=%s failure_reason=%s close=%t influence_hint=%t actions=%s substantive_before_pattern=%s\n",
+				"- %s verdict=%s first_edit=%d first_substantive=%d status=%t method_pull=%t method_pull_before_pattern_use=%t graph=%t rich_graph=%t pattern_use=%t bypass=%t compact_pattern_use=%t retrieved_uncompiled=%t full_pattern_use=%t source_card=%t full_before_application=%t progressive_bypass=%t expected_pattern=%s expected_strategy=%s observed_patterns=%s observed_support=%s observed_strategy=%s scenario_pass=%s failure_reason=%s close=%t influence_hint=%t actions=%s substantive_before_pattern=%s\n",
 				session.Path,
 				session.Verdict,
 				session.FirstEditOrdinal,
 				session.FirstSubstantiveOrdinal,
 				session.StatusBeforeFirstEdit,
 				session.MethodPullBeforeFirstEdit,
+				session.MethodPullBeforePatternUse,
 				session.GraphBeforeFirstEdit,
 				session.RichGraphBeforeFirstEdit,
 				session.PatternUseBeforeSubstantive,
@@ -1057,6 +1094,37 @@ func sessionAuditHasHaftMethodAction(
 	return false
 }
 
+func sessionAuditMethodPullBeforePatternUse(events []sessionAuditToolEvent) bool {
+	firstPatternUse := sessionAuditFirstPatternUseOrdinal(events)
+	limit := firstPatternUse
+	if limit == 0 {
+		limit = len(events) + 1
+	}
+
+	beforePatternUse := sessionAuditBeforeOrdinal(events, limit)
+	for _, event := range beforePatternUse {
+		if !sessionAuditIsHaftMethod(event) || event.Action != "pull" {
+			continue
+		}
+		if sessionAuditMethodPullLooksMechanical(event) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func sessionAuditMethodPullLooksMechanical(event sessionAuditToolEvent) bool {
+	for _, field := range []string{"declared_task_kind", "change_intent"} {
+		for _, value := range []string{"mechanical", "mechanical_edit", "formatting_only"} {
+			if sessionAuditPayloadHasJSONField(event.Payload, field, value) {
+				return true
+			}
+		}
+	}
+	return sessionAuditPayloadHasJSONField(event.Payload, "ceremony_request", "none")
+}
+
 func sessionAuditSubstantiveActionsBeforePatternUse(events []sessionAuditToolEvent) []string {
 	firstPatternUse := sessionAuditFirstPatternUseOrdinal(events)
 	limit := firstPatternUse
@@ -1134,7 +1202,7 @@ func sessionAuditIsSubstantivePatternUseBoundary(event sessionAuditToolEvent) bo
 		return true
 	}
 	if sessionAuditIsHaftMethod(event) && event.Action == "pull" {
-		return true
+		return !sessionAuditMethodPullLooksMechanical(event)
 	}
 	return false
 }
@@ -1441,6 +1509,12 @@ func sessionAuditGraphPlanInfluenceCloseoutHint(events []sessionAuditToolEvent) 
 }
 
 func sessionAuditVerdict(session sessionGraphAuditSessionFile) (string, string) {
+	if session.ProgressiveDisclosureBypass {
+		return "fail", "Compact retrieved_uncompiled PatternUse output was applied before full source-card disclosure."
+	}
+	if session.MethodPullBeforePatternUse {
+		return "fail", "MethodPack pull for non-mechanical work happened before detectable PatternUse gateway use."
+	}
 	if session.FirstEditOrdinal == 0 {
 		if session.FirstSubstantiveOrdinal > 0 && session.PatternUseBypass {
 			return "fail", "Substantive non-edit reasoning happened before detectable PatternUse gateway use."

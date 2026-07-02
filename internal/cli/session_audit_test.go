@@ -14,6 +14,7 @@ func TestBuildSessionGraphAuditReportPassesCodexGraphPreflight(t *testing.T) {
 	writeSessionAuditFixture(t, path, []string{
 		`{"timestamp":"2026-06-25T00:00:00Z","type":"session_meta","payload":{"base_instructions":{"text":"haft_query(action=\"status\") appears here but must not count"}}}`,
 		`{"timestamp":"2026-06-25T00:00:01Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
+		`{"timestamp":"2026-06-25T00:00:015Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Governed edit preflight\"}"}}`,
 		`{"timestamp":"2026-06-25T00:00:02Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\"}"}}`,
 		`{"timestamp":"2026-06-25T00:00:03Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/interface.go\"}"}}`,
 		`{"timestamp":"2026-06-25T00:00:04Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"symbol\":\"BuiltinCatalog\"}"}}`,
@@ -70,6 +71,7 @@ func TestBuildSessionGraphAuditReportReadsClaudeToolUse(t *testing.T) {
 	path := filepath.Join(root, "claude.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_query","input":{"action":"status"}}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_query","input":{"action":"pattern_use","mode":"compact","query":"Read Claude tool-use fixture"}}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_method","input":{"action":"pull"}}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_query","input":{"action":"node","symbol":"Pull"}}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/tmp/out.txt","content":"x"}}]}}`,
@@ -144,6 +146,59 @@ func TestBuildSessionGraphAuditReportAcceptsPatternUseBeforeSubstantiveMove(t *t
 	}
 }
 
+func TestBuildSessionGraphAuditReportFlagsMethodPullBeforePatternUse(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "method-pull-before-pattern-use.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"feature\",\"task\":\"Implement PatternUse bridge\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Implement PatternUse bridge\"}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.MethodPullBeforePatternUse != 1 {
+		t.Fatalf("method pull before pattern use = %d, want 1; report=%#v", report.Summary.MethodPullBeforePatternUse, report)
+	}
+	if report.Summary.Fail != 1 {
+		t.Fatalf("fail = %d, want 1; report=%#v", report.Summary.Fail, report)
+	}
+	session := report.Sessions[0]
+	if !session.MethodPullBeforePatternUse {
+		t.Fatalf("session should flag method pull before PatternUse: %#v", session)
+	}
+	if session.Verdict != "fail" {
+		t.Fatalf("verdict = %q, want fail", session.Verdict)
+	}
+	if !sessionAuditDiagnosticsContain(report.Diagnostics, "method_pull_before_pattern_use") {
+		t.Fatalf("diagnostics missing method_pull_before_pattern_use: %#v", report.Diagnostics)
+	}
+}
+
+func TestBuildSessionGraphAuditReportDoesNotFlagMechanicalMethodPullBeforePatternUse(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "mechanical-method-pull.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"mechanical_edit\",\"change_intent\":\"mechanical_edit\",\"ceremony_request\":\"none\",\"task\":\"Fix typo\"}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.MethodPullBeforePatternUse != 0 {
+		t.Fatalf("method pull before pattern use = %d, want 0; report=%#v", report.Summary.MethodPullBeforePatternUse, report)
+	}
+	if report.Summary.PatternUseBypasses != 0 {
+		t.Fatalf("pattern use bypasses = %d, want 0; report=%#v", report.Summary.PatternUseBypasses, report)
+	}
+	if report.Summary.NoEdit != 1 {
+		t.Fatalf("no_edit = %d, want 1; report=%#v", report.Summary.NoEdit, report)
+	}
+}
+
 func TestBuildSessionGraphAuditReportFlagsProgressiveDisclosureBypass(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "retrieval-compact-bypass.jsonl")
@@ -160,8 +215,14 @@ func TestBuildSessionGraphAuditReportFlagsProgressiveDisclosureBypass(t *testing
 	if report.Summary.ProgressiveDisclosureBypasses != 1 {
 		t.Fatalf("progressive disclosure bypasses = %d, want 1; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
 	}
+	if report.Summary.Fail != 1 {
+		t.Fatalf("fail = %d, want 1; report=%#v", report.Summary.Fail, report)
+	}
 	if !report.Sessions[0].ProgressiveDisclosureBypass {
 		t.Fatalf("session should flag progressive disclosure bypass: %#v", report.Sessions[0])
+	}
+	if report.Sessions[0].Verdict != "fail" {
+		t.Fatalf("verdict = %q, want fail", report.Sessions[0].Verdict)
 	}
 	if !sessionAuditDiagnosticsContain(report.Diagnostics, "progressive_disclosure_bypass") {
 		t.Fatalf("diagnostics missing progressive_disclosure_bypass: %#v", report.Diagnostics)

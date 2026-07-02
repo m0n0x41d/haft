@@ -30,6 +30,18 @@ const (
 	MethodCatalogAuthority     = "read_only_method_catalog_not_processpattern_not_enforcement_authority"
 )
 
+var builtinMethodSourcePatternRefs = map[string][]string{
+	"verification-before-completion":       {"fpf:A.10", "fpf:B.3", "fpf:A.15"},
+	"graph-preflight-before-governed-edit": {"fpf:A.10", "fpf:A.15"},
+	"problem-closure-hygiene":              {"fpf:E.9", "fpf:A.10", "fpf:A.15"},
+	"refactor-only-under-tests":            {"fpf:A.10", "fpf:B.3"},
+	"systematic-debugging-before-fix":      {"fpf:B.5.2", "fpf:A.10"},
+	"behavior-first-testing":               {"fpf:A.10", "fpf:B.3"},
+	"domain-port-before-adapter":           {"fpf:A.6", "fpf:A.15"},
+	"functional-core-imperative-shell":     {"fpf:A.15"},
+	"make-illegal-states-unrepresentable":  {"fpf:A.6", "fpf:A.17"},
+}
+
 type Catalog struct {
 	ID      string
 	Version string
@@ -68,6 +80,7 @@ type CatalogEntry struct {
 	ExpectedOutputKinds []string      `json:"expected_output_kinds,omitempty"`
 	FitFunctionRefs     []string      `json:"fit_function_refs,omitempty"`
 	CarrierRefs         []string      `json:"carrier_refs,omitempty"`
+	SourcePatternRefs   []string      `json:"source_pattern_refs,omitempty"`
 	Lifecycle           Lifecycle     `json:"lifecycle"`
 	SourcePosture       SourcePosture `json:"source_posture"`
 }
@@ -130,8 +143,15 @@ func withDefinitionCatalogMetadata(definition Definition) Definition {
 			".haft/methods/" + CatalogID + "/" + definition.ID + ".yaml",
 		}
 	}
+	if len(definition.SourcePatternRefs) == 0 {
+		definition.SourcePatternRefs = sourcePatternRefsForMethod(definition.ID)
+	}
 
 	return definition
+}
+
+func sourcePatternRefsForMethod(methodID string) []string {
+	return append([]string(nil), builtinMethodSourcePatternRefs[methodID]...)
 }
 
 func ValidateCatalog(catalog Catalog) error {
@@ -148,6 +168,9 @@ func ValidateCatalog(catalog Catalog) error {
 			return fmt.Errorf("method %s title is required", definition.ID)
 		}
 		if err := validateSourcePosture(definition); err != nil {
+			return err
+		}
+		if err := validateSourcePatternRefs(definition); err != nil {
 			return err
 		}
 		if len(definition.HardGates) == 0 {
@@ -169,6 +192,25 @@ func ValidateCatalog(catalog Catalog) error {
 		}
 	}
 	return nil
+}
+
+func validateSourcePatternRefs(definition Definition) error {
+	for _, ref := range definition.SourcePatternRefs {
+		ref = strings.TrimSpace(ref)
+		if ref == "" {
+			return fmt.Errorf("method %s has empty source_pattern_refs item", definition.ID)
+		}
+		if !validSourcePatternRefPrefix(ref) {
+			return fmt.Errorf("method %s source_pattern_refs item %q must start with fpf:, swe-dpf:, or methodpack:", definition.ID, ref)
+		}
+	}
+	return nil
+}
+
+func validSourcePatternRefPrefix(ref string) bool {
+	return strings.HasPrefix(ref, "fpf:") ||
+		strings.HasPrefix(ref, "swe-dpf:") ||
+		strings.HasPrefix(ref, "methodpack:")
 }
 
 func validateSourcePosture(definition Definition) error {
@@ -439,20 +481,21 @@ func compactCard(definition Definition, why string) MethodCard {
 	}
 
 	return MethodCard{
-		ID:               definition.ID,
-		Version:          definition.Version,
-		Title:            definition.Title,
-		WhyApplies:       why,
-		Intent:           definition.Intent,
-		Lifecycle:        definition.Lifecycle,
-		SourcePosture:    definition.SourcePosture,
-		HardGates:        hardGates,
-		SoftGates:        firstN(definition.SoftGates, 2),
-		Procedure:        procedure,
-		AntiPatterns:     firstN(definition.AntiPatterns, 3),
-		RequiredEvidence: requiredEvidence,
-		Waiver:           definition.Waiver,
-		RequiredCloseout: true,
+		ID:                definition.ID,
+		Version:           definition.Version,
+		Title:             definition.Title,
+		WhyApplies:        why,
+		Intent:            definition.Intent,
+		Lifecycle:         definition.Lifecycle,
+		SourcePosture:     definition.SourcePosture,
+		SourcePatternRefs: append([]string(nil), definition.SourcePatternRefs...),
+		HardGates:         hardGates,
+		SoftGates:         firstN(definition.SoftGates, 2),
+		Procedure:         procedure,
+		AntiPatterns:      firstN(definition.AntiPatterns, 3),
+		RequiredEvidence:  requiredEvidence,
+		Waiver:            definition.Waiver,
+		RequiredCloseout:  true,
 	}
 }
 
@@ -517,6 +560,7 @@ func catalogEntry(definition Definition) CatalogEntry {
 		ExpectedOutputKinds: append([]string(nil), definition.ExpectedOutputKinds...),
 		FitFunctionRefs:     append([]string(nil), definition.FitFunctionRefs...),
 		CarrierRefs:         append([]string(nil), definition.CarrierRefs...),
+		SourcePatternRefs:   append([]string(nil), definition.SourcePatternRefs...),
 		Lifecycle:           definition.Lifecycle,
 		SourcePosture:       definition.SourcePosture,
 	}

@@ -44,6 +44,9 @@ func TestRunMethodCatalogJSON(t *testing.T) {
 	if report.Summary.Returned == 0 {
 		t.Fatalf("returned = %d, want current methods", report.Summary.Returned)
 	}
+	if len(report.Methods[0].SourcePatternRefs) == 0 {
+		t.Fatalf("first catalog method missing source_pattern_refs: %+v", report.Methods[0])
+	}
 	if !strings.Contains(report.AuthorityBoundary, "not_processpattern") {
 		t.Fatalf("authority boundary = %q, want not_processpattern", report.AuthorityBoundary)
 	}
@@ -68,7 +71,7 @@ func TestRunMethodCatalogTextStaysCompact(t *testing.T) {
 	}
 
 	text := output.String()
-	for _, want := range []string{"Haft MethodPack catalog", "status=current", "lifecycle=current"} {
+	for _, want := range []string{"Haft MethodPack catalog", "status=current", "lifecycle=current", "source_pattern_refs", "documentary context only"} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("catalog text missing %q:\n%s", want, text)
 		}

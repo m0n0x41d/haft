@@ -114,9 +114,10 @@ func processMethodPackCarrierObservationFor(
 	if carrier.ID != definition.ID ||
 		carrier.Version != definition.Version ||
 		carrier.SourcePosture.SourceEdition != definition.SourcePosture.SourceEdition ||
-		carrier.Lifecycle.Status != definition.Lifecycle.Status {
+		carrier.Lifecycle.Status != definition.Lifecycle.Status ||
+		!sameStringSet(carrier.SourcePatternRefs, definition.SourcePatternRefs) {
 		observation.Status = "stale"
-		observation.Reason = "method carrier YAML does not match current builtin MethodPack identity, lifecycle, or source posture"
+		observation.Reason = "method carrier YAML does not match current builtin MethodPack identity, lifecycle, source posture, or source pattern refs"
 		return observation
 	}
 	observation.Status = "present"
@@ -131,6 +132,23 @@ func processCarrierRefExternal(ref string) bool {
 func processSHA256(data []byte) string {
 	sum := sha256.Sum256(data)
 	return "sha256:" + fmt.Sprintf("%x", sum[:])
+}
+
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, value := range left {
+		counts[value]++
+	}
+	for _, value := range right {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func processMethodPackCarrierSample(observation processMethodPackCarrierObservation) string {

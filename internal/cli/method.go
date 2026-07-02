@@ -63,6 +63,11 @@ func writeMethodCatalogText(w io.Writer, report methodpkg.CatalogReport) error {
 				return err
 			}
 		}
+		if len(entry.SourcePatternRefs) > 0 {
+			if _, err := fmt.Fprintf(w, "  source_pattern_refs: %v (documentary context only, not gate evidence)\n", entry.SourcePatternRefs); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }

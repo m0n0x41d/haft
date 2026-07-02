@@ -18,6 +18,7 @@ type Definition struct {
 	ExpectedOutputKinds []string      `json:"expected_output_kinds,omitempty" yaml:"expected_output_kinds,omitempty"`
 	FitFunctionRefs     []string      `json:"fit_function_refs,omitempty" yaml:"fit_function_refs,omitempty"`
 	CarrierRefs         []string      `json:"carrier_refs,omitempty" yaml:"carrier_refs,omitempty"`
+	SourcePatternRefs   []string      `json:"source_pattern_refs,omitempty" yaml:"source_pattern_refs,omitempty"`
 	Lifecycle           Lifecycle     `json:"lifecycle" yaml:"lifecycle"`
 	SourcePosture       SourcePosture `json:"source_posture" yaml:"source_posture"`
 	AppliesTo           Applicability `json:"applies_to" yaml:"applies_to"`
@@ -100,20 +101,21 @@ type ResponseBudget struct {
 }
 
 type MethodCard struct {
-	ID               string        `json:"id"`
-	Version          string        `json:"version"`
-	Title            string        `json:"title"`
-	WhyApplies       string        `json:"why_applies"`
-	Intent           string        `json:"intent"`
-	Lifecycle        Lifecycle     `json:"lifecycle"`
-	SourcePosture    SourcePosture `json:"source_posture"`
-	HardGates        []Gate        `json:"hard_gates,omitempty"`
-	SoftGates        []string      `json:"soft_gates,omitempty"`
-	Procedure        []string      `json:"procedure,omitempty"`
-	AntiPatterns     []string      `json:"anti_patterns,omitempty"`
-	RequiredEvidence []string      `json:"required_evidence,omitempty"`
-	Waiver           WaiverPolicy  `json:"waiver"`
-	RequiredCloseout bool          `json:"required_closeout"`
+	ID                string        `json:"id"`
+	Version           string        `json:"version"`
+	Title             string        `json:"title"`
+	WhyApplies        string        `json:"why_applies"`
+	Intent            string        `json:"intent"`
+	Lifecycle         Lifecycle     `json:"lifecycle"`
+	SourcePosture     SourcePosture `json:"source_posture"`
+	SourcePatternRefs []string      `json:"source_pattern_refs,omitempty"`
+	HardGates         []Gate        `json:"hard_gates,omitempty"`
+	SoftGates         []string      `json:"soft_gates,omitempty"`
+	Procedure         []string      `json:"procedure,omitempty"`
+	AntiPatterns      []string      `json:"anti_patterns,omitempty"`
+	RequiredEvidence  []string      `json:"required_evidence,omitempty"`
+	Waiver            WaiverPolicy  `json:"waiver"`
+	RequiredCloseout  bool          `json:"required_closeout"`
 }
 
 type MethodRun struct {

@@ -143,6 +143,7 @@ func createArtifactFromInput(
 		if err := decodeArtifactInput(inputBytes, &input); err != nil {
 			return artifactCreateResult{}, err
 		}
+		input = applyProblemSpecFit(ctx, store, haftDir, input)
 		created, filePath, err := artifact.FrameProblem(ctx, store, haftDir, input)
 		return artifactResult(capability, created, filePath), err
 	case "solution.explore":
@@ -150,6 +151,7 @@ func createArtifactFromInput(
 		if err := decodeArtifactInput(inputBytes, &input); err != nil {
 			return artifactCreateResult{}, err
 		}
+		input = applyExploreSpecFit(ctx, store, haftDir, input)
 		created, filePath, err := artifact.ExploreSolutions(ctx, store, haftDir, input)
 		return artifactResult(capability, created, filePath), err
 	case "solution.compare":
@@ -157,11 +159,17 @@ func createArtifactFromInput(
 		if err := decodeArtifactInput(inputBytes, &input); err != nil {
 			return artifactCreateResult{}, err
 		}
-		created, filePath, err := artifact.CompareSolutions(ctx, store, haftDir, input.toCompareInput())
+		compareInput := applyCompareSpecFit(ctx, store, haftDir, input.toCompareInput())
+		created, filePath, err := artifact.CompareSolutions(ctx, store, haftDir, compareInput)
 		return artifactResult(capability, created, filePath), err
 	case "decision.decide":
 		var input artifact.DecideInput
 		if err := decodeArtifactInput(inputBytes, &input); err != nil {
+			return artifactCreateResult{}, err
+		}
+		var err error
+		input, err = applyDecisionSpecBindingPreflight(ctx, store, haftDir, input)
+		if err != nil {
 			return artifactCreateResult{}, err
 		}
 		created, filePath, err := artifact.Decide(ctx, store, haftDir, input)

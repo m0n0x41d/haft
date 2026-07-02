@@ -16,7 +16,7 @@ edits there flow to every haft user on next `haft init`.
 
 ## Haft Architecture Notes (Maintainer-Only)
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f48fba5f6dec5ef3789af6ed90983ac11d5d27db978fd44b91ebd7beea8a74ce -->
 
 Haft is a **governance substrate** consumed via three surfaces sharing one
 `.haft/` artifact graph: skills + slash commands in the host AI coding agent
@@ -138,6 +138,20 @@ Authority boundary for manual gates: binding actions require explicit operator/m
 
 `h-abduct`, `h-boundary-unpack`, `h-semio-review` are **internal subroutines** —
 invoked from other skills, not user-facing. Do not select them directly.
+
+## PatternUse Gateway
+
+Before substantive reasoning or work-shaping, call
+`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
+Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
+material. If `should_use_pattern=true` and the next step needs detail, request
+`mode="full"` and carry the returned output shape, boundary, evidence need, and
+blocked stronger use.
+
+Do not inline the FPF catalog in host or skill carriers. The kernel/index owns
+pattern retrieval. PatternUse is advisory and read-only: it is not approval,
+not evidence, not a DecisionRecord, not a WorkCommission, not MethodPack, and
+not a gate.
 
 ## Quick Decision Framework (inline, for small reversible choices)
 

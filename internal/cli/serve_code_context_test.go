@@ -226,6 +226,46 @@ func TestHandleQuintQuery_CodeContextTypedLanes(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuery_CodeContextShowsSpecSectionLinkedDecision(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+	decision := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:        "dec-code-context-section-ref",
+			Kind:      artifact.KindDecisionRecord,
+			Status:    artifact.StatusActive,
+			Title:     "Spec section linked code decision",
+			CreatedAt: time.Now().UTC(),
+			UpdatedAt: time.Now().UTC(),
+		},
+		Body:           "decision body",
+		StructuredData: `{"section_refs":["TS.environment.001"]}`,
+	}
+	if err := fixture.store.Create(context.Background(), decision); err != nil {
+		t.Fatal(err)
+	}
+	mustExecCodeContextLaneFixture(t, fixture.store, `INSERT INTO affected_files (artifact_id, file_path) VALUES (?, ?)`, decision.Meta.ID, fixture.file)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"file":   fixture.file,
+		"lane":   "decisions",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery(code_context decisions) returned error: %v", err)
+	}
+
+	for _, want := range []string{
+		"### Decisions governing this code",
+		"Spec section linked code decision",
+		"dec-code-context-section-ref",
+		"SpecSections: `TS.environment.001`",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("code_context decisions lane missing %q:\n%s", want, result)
+		}
+	}
+}
+
 func TestHandleQuintQuery_CodeContextInvariantsLaneSummarizesHighFanout(t *testing.T) {
 	fixture := setupCodeContextLaneFixture(t)
 

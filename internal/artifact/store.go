@@ -433,7 +433,7 @@ func matchArtifactKinds(raw []string) []Kind {
 // SearchByAffectedFile finds artifacts linked to a specific file path.
 func (s *Store) SearchByAffectedFile(ctx context.Context, filePath string) ([]*Artifact, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
+		SELECT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at, a.structured_data
 		FROM artifacts a
 		JOIN affected_files af ON a.id = af.artifact_id
 		WHERE af.file_path = ?
@@ -455,7 +455,7 @@ func (s *Store) SearchByAffectedFile(ctx context.Context, filePath string) ([]*A
 // in different files don't collide.
 func (s *Store) SearchByAffectedSymbol(ctx context.Context, symbolName, filePath string) ([]*Artifact, error) {
 	query := `
-		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
+		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at, a.structured_data
 		FROM artifacts a
 		JOIN affected_symbols asym ON a.id = asym.artifact_id
 		WHERE asym.symbol_name = ?`
@@ -485,7 +485,7 @@ func (s *Store) SearchByAffectedSymbol(ctx context.Context, symbolName, filePath
 // file+name granularity rather than presenting false per-symbol precision.
 func (s *Store) SearchByAffectedSymbolAt(ctx context.Context, symbolName, filePath string, line int) ([]*Artifact, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
+		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at, a.structured_data
 		FROM artifacts a
 		JOIN affected_symbols asym ON a.id = asym.artifact_id
 		WHERE asym.symbol_name = ?
@@ -1328,14 +1328,36 @@ func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string
 }
 
 func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
 	var result []*Artifact
 	for rows.Next() {
 		var a Artifact
 		var kind, status, mode, validUntil, ctx, createdAt, updatedAt string
-		if err := rows.Scan(
-			&a.Meta.ID, &kind, &a.Meta.Version, &status, &ctx, &mode,
-			&a.Meta.Title, &a.Body, &validUntil, &createdAt, &updatedAt,
-		); err != nil {
+		var structuredData sql.NullString
+		destinations := []any{
+			&a.Meta.ID,
+			&kind,
+			&a.Meta.Version,
+			&status,
+			&ctx,
+			&mode,
+			&a.Meta.Title,
+			&a.Body,
+			&validUntil,
+			&createdAt,
+			&updatedAt,
+		}
+		if len(columns) == len(destinations)+1 && columns[len(columns)-1] == "structured_data" {
+			destinations = append(destinations, &structuredData)
+		}
+		if len(columns) != len(destinations) {
+			return nil, fmt.Errorf("scan artifacts: unexpected column count %d", len(columns))
+		}
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
 		a.Meta.Kind, _ = ParseKind(kind)
@@ -1345,6 +1367,9 @@ func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
 		a.Meta.ValidUntil = validUntil
 		a.Meta.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		a.Meta.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		if structuredData.Valid {
+			a.StructuredData = structuredData.String
+		}
 		result = append(result, &a)
 	}
 	return result, rows.Err()

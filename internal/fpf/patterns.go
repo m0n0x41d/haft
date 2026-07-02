@@ -160,10 +160,19 @@ type patternSection struct {
 
 func (p *patternSection) toChunk(idCounter *int) SpecChunk {
 	*idCounter++
-	bodyText := strings.Join(p.body, " ")
+	bodyParts := make([]string, 0, len(p.body)+1)
+	if strings.TrimSpace(p.specRef) != "" {
+		bodyParts = append(bodyParts, "Source: "+strings.TrimSpace(p.specRef))
+	}
+	bodyParts = append(bodyParts, p.body...)
+	bodyText := strings.Join(bodyParts, " ")
 
-	// Extract keywords from trigger
-	triggerWords := extractKeywords(p.trigger)
+	keywordText := strings.Join([]string{p.trigger, p.specRef}, " ")
+	triggerWords := extractKeywords(keywordText)
+	queries := []string{p.trigger}
+	if strings.TrimSpace(p.specRef) != "" {
+		queries = append(queries, strings.TrimSpace(p.specRef))
+	}
 
 	return SpecChunk{
 		ID:        *idCounter,
@@ -173,7 +182,7 @@ func (p *patternSection) toChunk(idCounter *int) SpecChunk {
 		Summary:   p.trigger,
 		PatternID: p.patternID,
 		Keywords:  triggerWords,
-		Queries:   []string{p.trigger},
+		Queries:   queries,
 	}
 }
 

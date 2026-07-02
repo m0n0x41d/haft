@@ -54,10 +54,12 @@ type Route struct {
 }
 
 // SpecIndexSchemaVersion identifies the current SQLite index layout contract.
-// v4 adds explicit fpf_fts.section_id so FTS rows join through the canonical
-// section key. Empty fpf_embeddings is valid for sidecar-less builds; the runtime
-// treats schema_version mismatch or zero matching vectors as FTS-only.
-const SpecIndexSchemaVersion = "4"
+// v7 adds baked PatternUse semantic intent-lane embeddings.
+// v6 adds the deterministic PatternAtlas structural card/range substrate.
+// v5 adds baked PatternUse route-card embeddings alongside FPF section vectors.
+// Empty fpf_embeddings is valid for sidecar-less builds; the runtime treats
+// schema_version mismatch or zero matching vectors as FTS-only.
+const SpecIndexSchemaVersion = "7"
 
 // SpecIndexInfo exposes inspectable build provenance for the embedded index.
 type SpecIndexInfo struct {
@@ -167,6 +169,62 @@ func BuildSpecIndex(dbPath string, chunks []SpecChunk, routes []Route) error {
 			vector BLOB NOT NULL,
 			PRIMARY KEY (section_id, provider, model, dim),
 			FOREIGN KEY (section_id) REFERENCES sections(id)
+		)`,
+		`CREATE TABLE pattern_use_route_embeddings (
+			route_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			document_kind TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			dim INTEGER NOT NULL,
+			content_hash TEXT NOT NULL,
+			vector BLOB NOT NULL,
+			PRIMARY KEY (route_id, document_id, provider, model, dim)
+		)`,
+		`CREATE TABLE pattern_use_intent_embeddings (
+			lane_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			document_kind TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			dim INTEGER NOT NULL,
+			content_hash TEXT NOT NULL,
+			vector BLOB NOT NULL,
+			PRIMARY KEY (lane_id, document_id, provider, model, dim)
+		)`,
+		`CREATE TABLE pattern_atlas_nodes (
+			node_id TEXT PRIMARY KEY,
+			pattern_id TEXT,
+			heading TEXT NOT NULL,
+			level INTEGER NOT NULL,
+			start_line INTEGER NOT NULL,
+			end_line INTEGER NOT NULL,
+			own_end_line INTEGER NOT NULL,
+			parent_node_id TEXT,
+			path TEXT NOT NULL,
+			body TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			source_ref TEXT NOT NULL,
+			fpf_commit TEXT NOT NULL
+		)`,
+		`CREATE TABLE pattern_atlas_cards (
+			pattern_id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			card_start_line INTEGER NOT NULL,
+			card_end_line INTEGER NOT NULL,
+			root_node_id TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			source_ref TEXT NOT NULL,
+			fpf_commit TEXT NOT NULL,
+			FOREIGN KEY (root_node_id) REFERENCES pattern_atlas_nodes(node_id)
+		)`,
+		`CREATE TABLE pattern_atlas_lints (
+			line_number INTEGER NOT NULL,
+			lint_kind TEXT NOT NULL,
+			message TEXT NOT NULL,
+			raw_line TEXT NOT NULL,
+			source_ref TEXT NOT NULL,
+			fpf_commit TEXT NOT NULL
 		)`,
 	}
 	for _, s := range stmts {

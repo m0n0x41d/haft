@@ -10,24 +10,25 @@ import (
 
 // ProblemFrameInput is the input for framing a problem.
 type ProblemFrameInput struct {
-	Title                 string   `json:"title"`
-	TaskContext           string   `json:"task_context,omitempty"`
-	ProblemType           string   `json:"problem_type,omitempty"`
-	ProblemProfile        string   `json:"problem_profile,omitempty"`
-	SourceKind            string   `json:"source_kind,omitempty"`
-	Signal                string   `json:"signal"`
-	WhyNow                string   `json:"why_now,omitempty"`
-	Scope                 string   `json:"scope,omitempty"`
-	AcceptanceProbe       string   `json:"acceptance_probe,omitempty"`
-	FreshnessDisposition  string   `json:"freshness_disposition,omitempty"`
-	Constraints           []string `json:"constraints,omitempty"`
-	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
-	ObservationIndicators []string `json:"observation_indicators,omitempty"`
-	Acceptance            string   `json:"acceptance,omitempty"`
-	BlastRadius           string   `json:"blast_radius,omitempty"`
-	Reversibility         string   `json:"reversibility,omitempty"`
-	Context               string   `json:"context,omitempty"`
-	Mode                  string   `json:"mode,omitempty"`
+	Title                 string         `json:"title"`
+	TaskContext           string         `json:"task_context,omitempty"`
+	ProblemType           string         `json:"problem_type,omitempty"`
+	ProblemProfile        string         `json:"problem_profile,omitempty"`
+	SourceKind            string         `json:"source_kind,omitempty"`
+	Signal                string         `json:"signal"`
+	WhyNow                string         `json:"why_now,omitempty"`
+	Scope                 string         `json:"scope,omitempty"`
+	AcceptanceProbe       string         `json:"acceptance_probe,omitempty"`
+	FreshnessDisposition  string         `json:"freshness_disposition,omitempty"`
+	Constraints           []string       `json:"constraints,omitempty"`
+	OptimizationTargets   []string       `json:"optimization_targets,omitempty"`
+	ObservationIndicators []string       `json:"observation_indicators,omitempty"`
+	Acceptance            string         `json:"acceptance,omitempty"`
+	BlastRadius           string         `json:"blast_radius,omitempty"`
+	Reversibility         string         `json:"reversibility,omitempty"`
+	Context               string         `json:"context,omitempty"`
+	Mode                  string         `json:"mode,omitempty"`
+	SpecFit               *SpecFitRecord `json:"spec_fit,omitempty"`
 }
 
 const (
@@ -138,6 +139,8 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		body.WriteString(fmt.Sprintf("\n## Reversibility\n\n%s\n", input.Reversibility))
 	}
 
+	appendSpecFitSection(&body, input.SpecFit)
+
 	a := &Artifact{
 		Meta: Meta{
 			ID:        id,
@@ -162,6 +165,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		ProblemType:           problemType,
 		Signal:                input.Signal,
 		Profile:               profilePtr(profile),
+		SpecFit:               cloneSpecFitRecord(input.SpecFit),
 		Constraints:           input.Constraints,
 		OptimizationTargets:   input.OptimizationTargets,
 		ObservationIndicators: input.ObservationIndicators,

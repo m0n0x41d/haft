@@ -1,4 +1,4 @@
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f48fba5f6dec5ef3789af6ed90983ac11d5d27db978fd44b91ebd7beea8a74ce -->
 
 MANUAL GATE — create a WorkCommission (bounded execution authority). For
 the operator's explicit invocation only; never run this flow on your own

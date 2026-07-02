@@ -208,6 +208,74 @@ func TestBuildCurrentGoverningSetSurfacesFallbackScopeRepair(t *testing.T) {
 	}
 }
 
+func TestBuildCurrentGoverningSetDerivesSpecSectionTargetsFromSectionRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-section", StatusActive, "spec", DecisionFields{
+		DecisionSubjectRef: "spec_section:TS.boundary.001",
+		SectionRefs:        []string{"TS.boundary.001"},
+	}, now)
+
+	report, err := BuildCurrentGoverningSetReport(ctx, store)
+	if err != nil {
+		t.Fatalf("BuildCurrentGoverningSetReport: %v", err)
+	}
+
+	if report.Summary.GoverningSets != 1 {
+		t.Fatalf("governing_sets = %d, want 1", report.Summary.GoverningSets)
+	}
+	if len(report.Sets) != 1 {
+		t.Fatalf("sets = %#v", report.Sets)
+	}
+	set := report.Sets[0]
+	if set.TargetRef != "spec_section:TS.boundary.001" {
+		t.Fatalf("target_ref = %q", set.TargetRef)
+	}
+	if set.TargetResolution != CurrentGoverningTargetResolutionDerivedSectionRefs {
+		t.Fatalf("target_resolution = %q", set.TargetResolution)
+	}
+	if len(set.CurrentDecisionRefs) != 1 || set.CurrentDecisionRefs[0] != "dec-section" {
+		t.Fatalf("current_decision_refs = %#v", set.CurrentDecisionRefs)
+	}
+	if len(set.CurrentDecisions) != 1 || !containsString(set.CurrentDecisions[0].SectionRefs, "TS.boundary.001") {
+		t.Fatalf("current_decisions section_refs = %#v", set.CurrentDecisions)
+	}
+	if len(set.AnswerPaths) != 1 || set.AnswerPaths[0].TargetKind != "spec_section" {
+		t.Fatalf("answer_paths = %#v", set.AnswerPaths)
+	}
+}
+
+func TestBuildCurrentGoverningSetKeepsExplicitTargetResolutionWhenSectionRefAlsoMatches(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	createDecisionForReconciliation(t, store, "dec-explicit-section", StatusActive, "spec", DecisionFields{
+		DecisionSubjectRef: "spec_section:TS.boundary.002",
+		SectionRefs:        []string{"TS.boundary.002"},
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "spec_section",
+			Ref:  "spec_section:TS.boundary.002",
+		}},
+	}, now)
+
+	report, err := BuildCurrentGoverningSetReport(ctx, store)
+	if err != nil {
+		t.Fatalf("BuildCurrentGoverningSetReport: %v", err)
+	}
+
+	if len(report.Sets) != 1 {
+		t.Fatalf("sets = %#v", report.Sets)
+	}
+	set := report.Sets[0]
+	if set.TargetRef != "spec_section:TS.boundary.002" {
+		t.Fatalf("target_ref = %q", set.TargetRef)
+	}
+	if set.TargetResolution != CurrentGoverningTargetResolutionExplicit {
+		t.Fatalf("target_resolution = %q", set.TargetResolution)
+	}
+}
+
 func TestCompactCurrentGoverningSetReportPreservesSummaryAndOmitsAuditSets(t *testing.T) {
 	report := CurrentGoverningSetReport{
 		SchemaVersion: CurrentGoverningSetSchemaVersion,

@@ -924,6 +924,50 @@ func TestStatusResponses_SurfaceProblemClosureHygieneReadOnly(t *testing.T) {
 	}
 }
 
+func TestStatusResponses_SurfaceSpecBindingDebtReadOnly(t *testing.T) {
+	data := artifact.StatusData{
+		SpecBindingDebt: artifact.SpecBindingDebtReport{
+			SchemaVersion: 1,
+			Authority:     "read_only_spec_binding_debt_attention",
+			Summary: artifact.SpecBindingDebtSummary{
+				DecisionsMissingSpecBinding:  1,
+				DecisionsWithInvalidSpecRefs: 1,
+				DraftSectionNeededDebt:       1,
+				OutOfSpecDecisionDebt:        1,
+			},
+			Items: []artifact.SpecBindingDebtItem{{
+				DecisionRef: "dec-invalid",
+				Title:       "Invalid spec refs",
+				Kind:        "decisions_with_invalid_spec_refs",
+				SectionRefs: []string{"TS.missing.999"},
+				Message:     "section_refs do not resolve to active SpecSections",
+			}},
+		},
+	}
+
+	cockpit := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Spec binding debt**: missing=1 invalid_refs=1 draft_section_needed=1 out_of_spec=1",
+		`haft_query(action="status", full=true)`,
+	} {
+		if !strings.Contains(cockpit, want) {
+			t.Fatalf("cockpit missing %q:\n%s", want, cockpit)
+		}
+	}
+
+	full := present.StatusResponse(data)
+	for _, want := range []string{
+		"### Spec Binding Debt (4)",
+		"**Invalid spec refs** `dec-invalid`",
+		"decisions_with_invalid_spec_refs",
+		"TS.missing.999",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full status missing %q:\n%s", want, full)
+		}
+	}
+}
+
 func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 	data := artifact.StatusData{
 		HealthyDecisions: []*artifact.Artifact{

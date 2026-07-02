@@ -36,6 +36,7 @@ type SpecRetrievalResult struct {
 // SpecRetrievedSection is a presentation-ready FPF section hit with either
 // snippet-sized content or the full section body.
 type SpecRetrievedSection struct {
+	SectionID  int                     `json:"section_id,omitempty"`
 	PatternID  string                  `json:"pattern_id"`
 	Heading    string                  `json:"heading"`
 	Tier       string                  `json:"tier"`
@@ -173,6 +174,7 @@ func hydrateRetrievedSection(db *sql.DB, searchResult SpecSearchResult, full boo
 	}
 
 	return SpecRetrievedSection{
+		SectionID:  searchResult.SectionID,
 		PatternID:  searchResult.PatternID,
 		Heading:    searchResult.Heading,
 		Tier:       searchResult.Tier,

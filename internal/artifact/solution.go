@@ -16,18 +16,20 @@ import (
 
 // ExploreInput is the input for creating a SolutionPortfolio with variants.
 type ExploreInput struct {
-	ProblemRef               string    `json:"problem_ref,omitempty"`
-	TaskContext              string    `json:"task_context,omitempty"`
-	Variants                 []Variant `json:"variants"`
-	Context                  string    `json:"context,omitempty"`
-	Mode                     string    `json:"mode,omitempty"`
-	NoSteppingStoneRationale string    `json:"no_stepping_stone_rationale,omitempty"`
+	ProblemRef               string         `json:"problem_ref,omitempty"`
+	TaskContext              string         `json:"task_context,omitempty"`
+	Variants                 []Variant      `json:"variants"`
+	Context                  string         `json:"context,omitempty"`
+	Mode                     string         `json:"mode,omitempty"`
+	NoSteppingStoneRationale string         `json:"no_stepping_stone_rationale,omitempty"`
+	SpecFit                  *SpecFitRecord `json:"spec_fit,omitempty"`
 }
 
 // CompareInput is the input for running a parity comparison.
 type CompareInput struct {
 	PortfolioRef string           `json:"portfolio_ref,omitempty"`
 	Results      ComparisonResult `json:"results"`
+	SpecFit      *SpecFitRecord   `json:"spec_fit,omitempty"`
 }
 
 // ExploreSolutions creates a SolutionPortfolio artifact with variants.
@@ -205,6 +207,8 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		body.WriteString(fmt.Sprintf("**Stepping-stone assessment:** none identified yet — %s\n\n", input.NoSteppingStoneRationale))
 	}
 
+	appendSpecFitSection(&body, input.SpecFit)
+
 	a := &Artifact{
 		Meta: Meta{
 			ID:        ectx.ID,
@@ -224,6 +228,7 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 	sd, _ := json.Marshal(PortfolioFields{
 		ProblemRef:               input.ProblemRef,
 		Variants:                 cloneVariants(materializedVariants),
+		SpecFit:                  cloneSpecFitRecord(input.SpecFit),
 		NoSteppingStoneRationale: input.NoSteppingStoneRationale,
 	})
 	a.StructuredData = string(sd)
@@ -395,6 +400,10 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 		validatedResults.NonDominatedSet = append([]string(nil), validation.ComputedParetoFront...)
 	}
 	validatedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
+	validatedResults.VariantSpecFit = cloneSpecFitVariantRecords(input.Results.VariantSpecFit)
+	if len(validatedResults.VariantSpecFit) == 0 && input.SpecFit != nil {
+		validatedResults.VariantSpecFit = cloneSpecFitVariantRecords(input.SpecFit.VariantSpecFit)
+	}
 
 	// Merge constraint-eliminated variants into the dominated_variants list so the UI
 	// can display them with a clear reason even though they never entered dominance comparison.
@@ -780,6 +789,8 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 		}
 		section.WriteString("\n")
 	}
+
+	appendVariantSpecFitSection(&section, results.VariantSpecFit)
 
 	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Computed Pareto front:** %s\n\n",
 		strings.Join(displayVariantLabels(results.NonDominatedSet, displayLabels), ", ")))
@@ -1662,6 +1673,7 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	cloned := &ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
 		NonDominatedSet:         append([]string(nil), result.NonDominatedSet...),
+		VariantSpecFit:          cloneSpecFitVariantRecords(result.VariantSpecFit),
 		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
 		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
 		PolicyApplied:           result.PolicyApplied,
@@ -1861,6 +1873,7 @@ func normalizeComparisonResult(result ComparisonResult, comparedVariants []strin
 	normalized := ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
 		NonDominatedSet:         append([]string(nil), result.NonDominatedSet...),
+		VariantSpecFit:          cloneSpecFitVariantRecords(result.VariantSpecFit),
 		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
 		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
 		PolicyApplied:           result.PolicyApplied,

@@ -332,7 +332,11 @@ func TestAffectedFiles(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	store.Create(ctx, &Artifact{Meta: Meta{ID: "dec-001", Kind: KindDecisionRecord, Title: "D"}, Body: "d"})
+	store.Create(ctx, &Artifact{
+		Meta:           Meta{ID: "dec-001", Kind: KindDecisionRecord, Title: "D"},
+		Body:           "d",
+		StructuredData: `{"section_refs":["TS.environment.001"]}`,
+	})
 
 	files := []AffectedFile{
 		{Path: "internal/events/producer.go", Hash: "abc123"},
@@ -349,6 +353,12 @@ func TestAffectedFiles(t *testing.T) {
 	results, _ := store.SearchByAffectedFile(ctx, "internal/events/producer.go")
 	if len(results) != 1 || results[0].Meta.ID != "dec-001" {
 		t.Errorf("expected dec-001 for file search")
+	}
+	if results[0].StructuredData == "" {
+		t.Errorf("expected file search to preserve structured data")
+	}
+	if got := results[0].UnmarshalDecisionFields().SectionRefs; len(got) != 1 || got[0] != "TS.environment.001" {
+		t.Errorf("expected section refs from file search, got %#v", got)
 	}
 }
 

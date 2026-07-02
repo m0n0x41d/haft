@@ -101,6 +101,7 @@ type DecisionReconciliationItem struct {
 	DecisionSubjectRef        string                 `json:"decision_subject_ref,omitempty"`
 	DecisionSubjectResolution string                 `json:"decision_subject_resolution"`
 	GovernanceTargets         []string               `json:"governance_targets,omitempty"`
+	SectionRefs               []string               `json:"section_refs,omitempty"`
 	WholeFileFallbackTargets  []string               `json:"whole_file_fallback_targets,omitempty"`
 	ScopeRepairHint           string                 `json:"scope_repair_hint,omitempty"`
 	AffectedFiles             []string               `json:"affected_files,omitempty"`
@@ -1939,6 +1940,7 @@ func buildDecisionReconciliationItem(
 		DecisionSubjectRef:        strings.TrimSpace(fields.DecisionSubjectRef),
 		DecisionSubjectResolution: decisionSubjectResolution(fields.DecisionSubjectRef),
 		GovernanceTargets:         decisionReconciliationGovernanceTargetRefs(fields),
+		SectionRefs:               compactSortedStrings(fields.SectionRefs),
 		WholeFileFallbackTargets:  decisionReconciliationWholeFileTargets(fields.BindingTargets),
 		AffectedFiles:             reconciliationAffectedFilePaths(files),
 		Links:                     normalizeLinks(links),
@@ -1968,6 +1970,7 @@ func normalizeDecisionReconciliationItems(
 		normalized.DecisionSubjectRef = strings.TrimSpace(item.DecisionSubjectRef)
 		normalized.DecisionSubjectResolution = decisionSubjectResolution(normalized.DecisionSubjectRef)
 		normalized.GovernanceTargets = compactSortedStrings(item.GovernanceTargets)
+		normalized.SectionRefs = compactSortedStrings(item.SectionRefs)
 		normalized.WholeFileFallbackTargets = compactSortedStrings(item.WholeFileFallbackTargets)
 		normalized.ScopeRepairHint = decisionReconciliationScopeRepairHint(normalized)
 		normalized.AffectedFiles = compactSortedStrings(item.AffectedFiles)

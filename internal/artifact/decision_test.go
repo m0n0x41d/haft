@@ -726,6 +726,116 @@ func TestDecide_PersistsSpecSectionRefsAsStructuredStateAndLinks(t *testing.T) {
 	}
 }
 
+func TestDecide_SpecBindingPreflightSuppliesSectionRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Bind through preflight",
+		WhySelected:   "Spec binding preflight selected the governing section.",
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State:               SpecBindingStateBoundExisting,
+			SelectedSectionRefs: []string{"TS.checkout.001"},
+		},
+		SpecBindingRequired: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(fields.SectionRefs, []string{"TS.checkout.001"}) {
+		t.Fatalf("section_refs = %#v, want preflight-selected section", fields.SectionRefs)
+	}
+	if fields.SpecBindingPreflight == nil || fields.SpecBindingPreflight.State != SpecBindingStateBoundExisting {
+		t.Fatalf("spec_binding_preflight = %#v, want persisted bound_existing receipt", fields.SpecBindingPreflight)
+	}
+	if !strings.Contains(decision.Body, "TS.checkout.001") {
+		t.Fatalf("decision body missing preflight-supplied section refs:\n%s", decision.Body)
+	}
+}
+
+func TestDecide_SpecBindingPreflightBlocksInvalidStates(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	for _, state := range []string{
+		SpecBindingStateInvalidRefs,
+		SpecBindingStateConflict,
+		SpecBindingStateAmbiguous,
+		SpecBindingStateDraftNeeded,
+	} {
+		_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+			SelectedTitle: "Blocked spec binding",
+			WhySelected:   "The preflight state should block this DecisionRecord.",
+			SpecBindingPreflight: &SpecBindingPreflight{
+				State:                  state,
+				OperatorActionRequired: "choose_section",
+			},
+		}))
+		if err == nil {
+			t.Fatalf("state %s: expected decision creation to fail", state)
+		}
+		if !strings.Contains(err.Error(), "spec_binding_preflight blocks decision creation") {
+			t.Fatalf("state %s: error = %v", state, err)
+		}
+	}
+}
+
+func TestDecide_SpecBindingPreflightAllowsNoSpecs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "No specs tactical compatibility",
+		WhySelected:   "Haft must allow ordinary decisions in projects without specs.",
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State: SpecBindingStateNoSpecs,
+		},
+		SpecBindingRequired: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDecide_SpecBindingPreflightAllowsTacticalOutOfSpecOnly(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "Standard out of spec",
+		WhySelected:   "Standard decisions cannot silently sit outside the active spec.",
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State: SpecBindingStateOutOfSpec,
+			StatusDebt: SpecBindingStatusDebt{
+				Severity: "high",
+				Message:  "out of spec",
+			},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected standard out-of-spec decision to fail")
+	}
+
+	_, _, err = Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "Tactical out of spec",
+		WhySelected:   "Tactical decisions can carry explicit out-of-spec debt.",
+		Mode:          string(ModeTactical),
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State: SpecBindingStateOutOfSpec,
+			StatusDebt: SpecBindingStatusDebt{
+				Severity: "high",
+				Message:  "out of spec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestNormalizePredictionInputs_PreservesVerifyAfter(t *testing.T) {
 	input := []PredictionInput{
 		{

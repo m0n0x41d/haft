@@ -340,6 +340,7 @@ type ProblemFields struct {
 	ProblemType           ProblemType                `json:"problem_type,omitempty"`
 	Signal                string                     `json:"signal"`
 	Profile               *ProblemCardProfile        `json:"profile,omitempty"`
+	SpecFit               *SpecFitRecord             `json:"spec_fit,omitempty"`
 	Constraints           []string                   `json:"constraints,omitempty"`
 	OptimizationTargets   []string                   `json:"optimization_targets,omitempty"`
 	ObservationIndicators []string                   `json:"observation_indicators,omitempty"`
@@ -348,6 +349,27 @@ type ProblemFields struct {
 	Reversibility         string                     `json:"reversibility,omitempty"`
 	Characterizations     []CharacterizationSnapshot `json:"characterizations,omitempty"`
 	Semantic              *SemanticEnvelope          `json:"semantic,omitempty"`
+}
+
+type SpecFitRecord struct {
+	SchemaVersion        int                    `json:"schema_version"`
+	RecordKind           string                 `json:"record_kind"`
+	Authority            string                 `json:"authority"`
+	AuthorityBoundary    string                 `json:"authority_boundary"`
+	State                string                 `json:"state"`
+	CandidateSectionRefs []string               `json:"candidate_section_refs,omitempty"`
+	ConflictRefs         []string               `json:"conflict_refs,omitempty"`
+	NextExpectedAction   string                 `json:"next_expected_action,omitempty"`
+	VariantSpecFit       []SpecFitVariantRecord `json:"variant_spec_fit,omitempty"`
+}
+
+type SpecFitVariantRecord struct {
+	VariantRef     string   `json:"variant_ref,omitempty"`
+	State          string   `json:"state"`
+	SectionRefs    []string `json:"section_refs,omitempty"`
+	ConflictRefs   []string `json:"conflict_refs,omitempty"`
+	ProposedDelta  string   `json:"proposed_delta,omitempty"`
+	ExpectedAction string   `json:"expected_action,omitempty"`
 }
 
 type ProblemCardProfile struct {
@@ -458,6 +480,8 @@ type DecisionFields struct {
 	WeakestLink             string                  `json:"weakest_link,omitempty"`
 	TaskContext             string                  `json:"task_context,omitempty"`
 	SectionRefs             []string                `json:"section_refs,omitempty"`
+	SpecBindingPreflight    *SpecBindingPreflight   `json:"spec_binding_preflight,omitempty"`
+	SpecBindingRequired     bool                    `json:"spec_binding_preflight_required,omitempty"`
 	WhyNotOthers            []RejectionReason       `json:"why_not_others,omitempty"`
 	Claims                  []DecisionClaim         `json:"claims,omitempty"`
 	Predictions             []DecisionPrediction    `json:"predictions,omitempty"`
@@ -800,6 +824,7 @@ type CharacterizationSnapshot struct {
 type PortfolioFields struct {
 	ProblemRef               string            `json:"problem_ref,omitempty"`
 	Variants                 []Variant         `json:"variants,omitempty"`
+	SpecFit                  *SpecFitRecord    `json:"spec_fit,omitempty"`
 	Comparison               *ComparisonResult `json:"comparison,omitempty"`
 	NoSteppingStoneRationale string            `json:"no_stepping_stone_rationale,omitempty"`
 }
@@ -1055,6 +1080,7 @@ type ComparisonResult struct {
 	Dimensions              []string                      `json:"dimensions"`
 	Scores                  map[string]map[string]string  `json:"scores"` // variant_id -> dimension -> value
 	NonDominatedSet         []string                      `json:"non_dominated_set"`
+	VariantSpecFit          []SpecFitVariantRecord        `json:"variant_spec_fit,omitempty"`
 	Incomparable            [][]string                    `json:"incomparable,omitempty"`
 	DominatedVariants       []DominatedVariantExplanation `json:"dominated_variants,omitempty"`
 	ParetoTradeoffs         []ParetoTradeoffNote          `json:"pareto_tradeoffs,omitempty"`

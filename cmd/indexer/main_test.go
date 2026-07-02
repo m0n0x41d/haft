@@ -91,6 +91,7 @@ func TestVerifyIndexRejectsSchemaVersionMismatch(t *testing.T) {
 		schemaVersion:   "3",
 		indexedSections: 1,
 		rows:            rowsForContract(shippedFPFEmbeddingContract, 1),
+		routeRows:       routeRowsForContract(shippedFPFEmbeddingContract),
 	})
 
 	err := verifyIndex([]string{dbPath, expectedCommit})
@@ -112,6 +113,7 @@ func TestVerifyIndexAcceptsShippedEmbeddingContract(t *testing.T) {
 		schemaVersion:   fpf.SpecIndexSchemaVersion,
 		indexedSections: 2,
 		rows:            rowsForContract(shippedFPFEmbeddingContract, 1, 2),
+		routeRows:       routeRowsForContract(shippedFPFEmbeddingContract),
 	})
 
 	err := verifyIndex([]string{dbPath, expectedCommit})
@@ -162,6 +164,7 @@ func TestVerifyIndexRejectsWrongEmbeddingContract(t *testing.T) {
 				schemaVersion:   fpf.SpecIndexSchemaVersion,
 				indexedSections: 2,
 				rows:            rowsForContract(tt.contract, 1, 2),
+				routeRows:       routeRowsForContract(shippedFPFEmbeddingContract),
 			})
 
 			err := verifyIndex([]string{dbPath, expectedCommit})
@@ -188,6 +191,7 @@ func TestVerifyIndexRejectsPartialEmbeddingBake(t *testing.T) {
 		schemaVersion:   fpf.SpecIndexSchemaVersion,
 		indexedSections: 2,
 		rows:            rowsForContract(shippedFPFEmbeddingContract, 1),
+		routeRows:       routeRowsForContract(shippedFPFEmbeddingContract),
 	})
 
 	err := verifyIndex([]string{dbPath, expectedCommit})
@@ -214,6 +218,107 @@ func TestBuildIndexRejectsVectorlessBake(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "no section vectors baked") {
 		t.Fatalf("expected no-vectors error, got %v", err)
+	}
+}
+
+func TestVerifyIndexRejectsMissingPatternUseRouteEmbeddings(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fpf.db")
+	expectedCommit := "expected-sha"
+
+	writeVerifyIndexFixture(t, dbPath, verifyIndexFixture{
+		commit:          expectedCommit,
+		schemaVersion:   fpf.SpecIndexSchemaVersion,
+		indexedSections: 1,
+		rows:            rowsForContract(shippedFPFEmbeddingContract, 1),
+	})
+
+	err := verifyIndex([]string{dbPath, expectedCommit})
+	if err == nil {
+		t.Fatal("expected missing PatternUse route vectors error")
+	}
+	if !strings.Contains(err.Error(), "PatternUse route vector contract mismatch") {
+		t.Fatalf("expected PatternUse route vector error, got %v", err)
+	}
+}
+
+func TestVerifyIndexRejectsStalePatternUseRouteEmbeddingHash(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fpf.db")
+	expectedCommit := "expected-sha"
+
+	routeRows := routeRowsForContract(shippedFPFEmbeddingContract)
+	routeRows[0].contentHash = "stale"
+	writeVerifyIndexFixture(t, dbPath, verifyIndexFixture{
+		commit:          expectedCommit,
+		schemaVersion:   fpf.SpecIndexSchemaVersion,
+		indexedSections: 1,
+		rows:            rowsForContract(shippedFPFEmbeddingContract, 1),
+		routeRows:       routeRows,
+	})
+
+	err := verifyIndex([]string{dbPath, expectedCommit})
+	if err == nil {
+		t.Fatal("expected stale PatternUse route vector hash error")
+	}
+	if !strings.Contains(err.Error(), "PatternUse route vectors are STALE") {
+		t.Fatalf("expected stale PatternUse route hash error, got %v", err)
+	}
+}
+
+func TestVerifyIndexRejectsMissingPatternAtlasRows(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fpf.db")
+	expectedCommit := "expected-sha"
+
+	writeVerifyIndexFixture(t, dbPath, verifyIndexFixture{
+		commit:          expectedCommit,
+		schemaVersion:   fpf.SpecIndexSchemaVersion,
+		indexedSections: 1,
+		rows:            rowsForContract(shippedFPFEmbeddingContract, 1),
+		routeRows:       routeRowsForContract(shippedFPFEmbeddingContract),
+		omitAtlasRows:   true,
+	})
+
+	err := verifyIndex([]string{dbPath, expectedCommit})
+	if err == nil {
+		t.Fatal("expected missing PatternAtlas rows error")
+	}
+	if !strings.Contains(err.Error(), "PatternAtlas contract mismatch") {
+		t.Fatalf("expected PatternAtlas contract error, got %v", err)
+	}
+}
+
+func TestVerifyIndexRejectsStalePatternAtlasHash(t *testing.T) {
+	tempDir := t.TempDir()
+	dbPath := filepath.Join(tempDir, "fpf.db")
+	expectedCommit := "expected-sha"
+
+	writeVerifyIndexFixture(t, dbPath, verifyIndexFixture{
+		commit:          expectedCommit,
+		schemaVersion:   fpf.SpecIndexSchemaVersion,
+		indexedSections: 1,
+		rows:            rowsForContract(shippedFPFEmbeddingContract, 1),
+		routeRows:       routeRowsForContract(shippedFPFEmbeddingContract),
+	})
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	if _, err := db.Exec(`UPDATE pattern_atlas_cards SET content_hash='stale' WHERE pattern_id='F.18'`); err != nil {
+		t.Fatalf("stale atlas card hash: %v", err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatalf("close db: %v", err)
+	}
+
+	err = verifyIndex([]string{dbPath, expectedCommit})
+	if err == nil {
+		t.Fatal("expected stale PatternAtlas hash error")
+	}
+	if !strings.Contains(err.Error(), "PatternAtlas hash integrity failed") {
+		t.Fatalf("expected PatternAtlas hash error, got %v", err)
 	}
 }
 
@@ -262,6 +367,7 @@ func TestBuildIndex_PreservesHeadingOnlyRootPatternShells(t *testing.T) {
 
 	writeIndexerFixture(t, specPath, routePath)
 	stubBakeSpecEmbeddings(t, 1, nil)
+	stubBakePatternUseRouteEmbeddings(t, 1, nil)
 
 	if err := buildIndex(specPath, dbPath, "", routePath); err != nil {
 		t.Fatalf("buildIndex() error: %v", err)
@@ -323,16 +429,47 @@ func stubBakeSpecEmbeddings(t *testing.T, baked int, err error) {
 	})
 }
 
+func stubBakePatternUseRouteEmbeddings(t *testing.T, baked int, err error) {
+	t.Helper()
+
+	original := bakePatternUseRouteEmbeddingsFunc
+	bakePatternUseRouteEmbeddingsFunc = func(string) (int, error) {
+		return baked, err
+	}
+	t.Cleanup(func() {
+		bakePatternUseRouteEmbeddingsFunc = original
+	})
+}
+
 type verifyIndexFixture struct {
 	commit          string
 	schemaVersion   string
 	indexedSections int
 	rows            []verifyEmbeddingRow
+	routeRows       []verifyRouteEmbeddingRow
+	intentRows      []verifyIntentEmbeddingRow
+	omitAtlasRows   bool
 }
 
 type verifyEmbeddingRow struct {
 	sectionID int
 	contract  specEmbeddingContract
+}
+
+type verifyRouteEmbeddingRow struct {
+	routeID      string
+	documentID   string
+	documentKind string
+	contentHash  string
+	contract     specEmbeddingContract
+}
+
+type verifyIntentEmbeddingRow struct {
+	laneID       fpf.PatternUseIntentLane
+	documentID   string
+	documentKind string
+	contentHash  string
+	contract     specEmbeddingContract
 }
 
 func rowsForContract(contract specEmbeddingContract, sectionIDs ...int) []verifyEmbeddingRow {
@@ -343,8 +480,41 @@ func rowsForContract(contract specEmbeddingContract, sectionIDs ...int) []verify
 	return rows
 }
 
+func routeRowsForContract(contract specEmbeddingContract) []verifyRouteEmbeddingRow {
+	documents := fpf.PatternUseRouteEmbeddingDocuments(fpf.DefaultPatternUseRouteCards())
+	rows := make([]verifyRouteEmbeddingRow, 0, len(documents))
+	for _, document := range documents {
+		rows = append(rows, verifyRouteEmbeddingRow{
+			routeID:      document.RouteID,
+			documentID:   document.DocumentID,
+			documentKind: document.DocumentKind,
+			contentHash:  document.ContentHash,
+			contract:     contract,
+		})
+	}
+	return rows
+}
+
+func intentRowsForContract(contract specEmbeddingContract) []verifyIntentEmbeddingRow {
+	documents := fpf.PatternUseIntentEmbeddingDocuments(fpf.DefaultPatternUseIntentLaneCards())
+	rows := make([]verifyIntentEmbeddingRow, 0, len(documents))
+	for _, document := range documents {
+		rows = append(rows, verifyIntentEmbeddingRow{
+			laneID:       document.LaneID,
+			documentID:   document.DocumentID,
+			documentKind: document.DocumentKind,
+			contentHash:  document.ContentHash,
+			contract:     contract,
+		})
+	}
+	return rows
+}
+
 func writeVerifyIndexFixture(t *testing.T, dbPath string, fixture verifyIndexFixture) {
 	t.Helper()
+	if fixture.schemaVersion == fpf.SpecIndexSchemaVersion && fixture.intentRows == nil {
+		fixture.intentRows = intentRowsForContract(shippedFPFEmbeddingContract)
+	}
 
 	db, err := sql.Open("sqlite", dbPath)
 	if err != nil {
@@ -362,6 +532,61 @@ func writeVerifyIndexFixture(t *testing.T, dbPath string, fixture verifyIndexFix
 			content_hash TEXT NOT NULL,
 			vector BLOB NOT NULL,
 			PRIMARY KEY (section_id, provider, model, dim)
+		)`,
+		`CREATE TABLE pattern_use_route_embeddings (
+			route_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			document_kind TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			dim INTEGER NOT NULL,
+			content_hash TEXT NOT NULL,
+			vector BLOB NOT NULL,
+			PRIMARY KEY (route_id, document_id, provider, model, dim)
+		)`,
+		`CREATE TABLE pattern_use_intent_embeddings (
+			lane_id TEXT NOT NULL,
+			document_id TEXT NOT NULL,
+			document_kind TEXT NOT NULL,
+			provider TEXT NOT NULL,
+			model TEXT NOT NULL,
+			dim INTEGER NOT NULL,
+			content_hash TEXT NOT NULL,
+			vector BLOB NOT NULL,
+			PRIMARY KEY (lane_id, document_id, provider, model, dim)
+		)`,
+		`CREATE TABLE pattern_atlas_nodes (
+			node_id TEXT PRIMARY KEY,
+			pattern_id TEXT,
+			heading TEXT NOT NULL,
+			level INTEGER NOT NULL,
+			start_line INTEGER NOT NULL,
+			end_line INTEGER NOT NULL,
+			own_end_line INTEGER NOT NULL,
+			parent_node_id TEXT,
+			path TEXT NOT NULL,
+			body TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			source_ref TEXT NOT NULL,
+			fpf_commit TEXT NOT NULL
+		)`,
+		`CREATE TABLE pattern_atlas_cards (
+			pattern_id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			card_start_line INTEGER NOT NULL,
+			card_end_line INTEGER NOT NULL,
+			root_node_id TEXT NOT NULL,
+			content_hash TEXT NOT NULL,
+			source_ref TEXT NOT NULL,
+			fpf_commit TEXT NOT NULL
+		)`,
+		`CREATE TABLE pattern_atlas_lints (
+			line_number INTEGER NOT NULL,
+			lint_kind TEXT NOT NULL,
+			message TEXT NOT NULL,
+			raw_line TEXT NOT NULL,
+			source_ref TEXT NOT NULL,
+			fpf_commit TEXT NOT NULL
 		)`,
 	}
 	for _, stmt := range stmts {
@@ -396,4 +621,83 @@ func writeVerifyIndexFixture(t *testing.T, dbPath string, fixture verifyIndexFix
 			t.Fatalf("insert embedding row %+v: %v", row, err)
 		}
 	}
+
+	for _, row := range fixture.routeRows {
+		_, err := db.Exec(
+			`INSERT INTO pattern_use_route_embeddings (route_id, document_id, document_kind, provider, model, dim, content_hash, vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			row.routeID,
+			row.documentID,
+			row.documentKind,
+			row.contract.provider,
+			row.contract.model,
+			row.contract.dim,
+			row.contentHash,
+			[]byte{0, 1, 2, 3},
+		)
+		if err != nil {
+			t.Fatalf("insert route embedding row %+v: %v", row, err)
+		}
+	}
+
+	for _, row := range fixture.intentRows {
+		_, err := db.Exec(
+			`INSERT INTO pattern_use_intent_embeddings (lane_id, document_id, document_kind, provider, model, dim, content_hash, vector) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+			row.laneID,
+			row.documentID,
+			row.documentKind,
+			row.contract.provider,
+			row.contract.model,
+			row.contract.dim,
+			row.contentHash,
+			[]byte{0, 1, 2, 3},
+		)
+		if err != nil {
+			t.Fatalf("insert intent embedding row %+v: %v", row, err)
+		}
+	}
+
+	if !fixture.omitAtlasRows {
+		atlas, err := fpf.BuildPatternAtlas([]byte(verifyIndexAtlasMarkdown()), "fixture.md", fixture.commit)
+		if err != nil {
+			t.Fatalf("build atlas fixture: %v", err)
+		}
+		if err := fpf.StorePatternAtlasDB(db, atlas); err != nil {
+			t.Fatalf("store atlas fixture: %v", err)
+		}
+	}
+}
+
+func verifyIndexAtlasMarkdown() string {
+	return `# Fixture
+
+## F.18 - Local-First Unification Naming Protocol
+Intro.
+
+### F.18:1 - Context
+NameCard:
+
+## C.30 - Grounded Architecture and Selected-Structure Adequacy
+Intro.
+
+### C.30:1 - Problem frame
+ArchitectureQuestionCard:
+
+## A.10 - Evidence Graph Referring: Claim-Bound Evidence and Provenance Graph
+Intro.
+
+### A.10:1 - Evidence relation
+EvidenceRelation:
+
+## A.7 - Strict Distinction (Clarity Lattice)
+Intro.
+
+### A.7:1 - Strict table
+ObjectDescriptionCarrierEvidence:
+
+## B.3 - Evidence Congruence and Decay
+Intro.
+
+### B.3:1 - Congruence
+CongruenceLevel:
+`
 }

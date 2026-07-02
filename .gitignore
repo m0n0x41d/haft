@@ -32,6 +32,7 @@ src/mcp/quint-mcp
 TODO.md
 /skills/
 /haft
+/bin/haft
 
 .DS_Store
 .task/

@@ -131,6 +131,13 @@ func syncOneFile(ctx context.Context, store *artifact.Store, filePath string) (s
 	if err == nil && existing != nil {
 		// Exists — check if markdown is newer
 		if !art.Meta.UpdatedAt.After(existing.Meta.UpdatedAt) {
+			added, err := syncArtifactCarrierLinks(ctx, store, art)
+			if err != nil {
+				return "", err
+			}
+			if added > 0 {
+				return "updated", nil
+			}
 			return "unchanged", nil
 		}
 	}
@@ -160,5 +167,43 @@ func syncOneFile(ctx context.Context, store *artifact.Store, filePath string) (s
 	if err != nil {
 		return "", err
 	}
+	if _, err := syncArtifactCarrierLinks(ctx, store, art); err != nil {
+		return "", err
+	}
 	return "updated", nil
+}
+
+func syncArtifactCarrierLinks(ctx context.Context, store *artifact.Store, art *artifact.Artifact) (int, error) {
+	if art == nil || len(art.Meta.Links) == 0 {
+		return 0, nil
+	}
+
+	existing, err := store.GetLinks(ctx, art.Meta.ID)
+	if err != nil {
+		return 0, err
+	}
+
+	existingSet := make(map[string]struct{}, len(existing))
+	for _, link := range existing {
+		existingSet[artifactCarrierLinkKey(link)] = struct{}{}
+	}
+
+	added := 0
+	for _, link := range art.Meta.Links {
+		key := artifactCarrierLinkKey(link)
+		if _, ok := existingSet[key]; ok {
+			continue
+		}
+		if err := store.AddLink(ctx, art.Meta.ID, link.Ref, link.Type); err != nil {
+			return added, err
+		}
+		existingSet[key] = struct{}{}
+		added++
+	}
+
+	return added, nil
+}
+
+func artifactCarrierLinkKey(link artifact.Link) string {
+	return link.Ref + "\x00" + link.Type
 }

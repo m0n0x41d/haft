@@ -31,6 +31,17 @@ func codeContextArtifact(id string, kind artifact.Kind, title string) *artifact.
 	}
 }
 
+func codeContextDecisionWithSections(t *testing.T, id string, title string, sectionRefs []string) *artifact.Artifact {
+	t.Helper()
+	item := codeContextArtifact(id, artifact.KindDecisionRecord, title)
+	data, err := json.Marshal(artifact.DecisionFields{SectionRefs: sectionRefs})
+	if err != nil {
+		t.Fatal(err)
+	}
+	item.StructuredData = string(data)
+	return item
+}
+
 // TestDecisionVerificationTag is the trust-decay signal: a governing decision
 // surfaces how many of its predictions remain unverified, so unchecked rationale
 // does not read as authoritative.
@@ -147,7 +158,7 @@ func TestCodeContextResponse_DefaultIndexOmitsLaneDumps(t *testing.T) {
 	cc := contextgraph.CodeContext{
 		Target: contextgraph.Target{File: "internal/x.go"},
 		Decisions: []*artifact.Artifact{
-			codeContextArtifact("dec-1", artifact.KindDecisionRecord, "Decision title"),
+			codeContextDecisionWithSections(t, "dec-1", "Decision title", []string{"TS.environment.001"}),
 		},
 		Notes: []*artifact.Artifact{
 			codeContextArtifact("note-1", artifact.KindNote, "Note title"),
@@ -272,7 +283,7 @@ func TestCodeContextResponse_TypedLanesStaySeparate(t *testing.T) {
 	cc := contextgraph.CodeContext{
 		Target: contextgraph.Target{File: "internal/x.go"},
 		Decisions: []*artifact.Artifact{
-			codeContextArtifact("dec-1", artifact.KindDecisionRecord, "Decision title"),
+			codeContextDecisionWithSections(t, "dec-1", "Decision title", []string{"TS.environment.001"}),
 		},
 		Problems: []*artifact.Artifact{
 			codeContextArtifact("prob-1", artifact.KindProblemCard, "Problem title"),
@@ -291,6 +302,9 @@ func TestCodeContextResponse_TypedLanesStaySeparate(t *testing.T) {
 	decisions := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneDecisions})
 	if !strings.Contains(decisions, "Decision title") {
 		t.Fatalf("decisions lane missing decision:\n%s", decisions)
+	}
+	if !strings.Contains(decisions, "SpecSections: `TS.environment.001`") {
+		t.Fatalf("decisions lane missing decision section refs:\n%s", decisions)
 	}
 	for _, notWant := range []string{"Note title", "Problem title", "Portfolio title", "binding invariant"} {
 		if strings.Contains(decisions, notWant) {

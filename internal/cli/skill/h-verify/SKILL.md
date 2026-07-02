@@ -8,11 +8,22 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f48fba5f6dec5ef3789af6ed90983ac11d5d27db978fd44b91ebd7beea8a74ce -->
 
 # h-verify — Verify a decision still holds
 
 You are running the FPF verification loop: baseline → measure → evidence → record. Drift detection compares current state against baselined affected_files; evidence decay reports surface when valid_until passes; measure verdict is recorded for the predictions the decide step declared.
+
+## PatternUse Gateway
+
+Before substantive reasoning or work-shaping, call
+`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
+Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
+material. If `should_use_pattern=true` and this skill needs detail, request
+`mode="full"` and carry the returned output shape, boundary, evidence need, and
+blocked stronger use. Do not inline the FPF catalog in this skill. PatternUse
+is not approval, not evidence, not a DecisionRecord, not MethodPack, and not a
+gate.
 
 ## Step 1 — Identify the decision
 

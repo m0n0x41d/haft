@@ -18,46 +18,48 @@ import (
 )
 
 var (
-	specCheckJSON          bool
-	specCoverageJSON       bool
-	specPlanJSON           bool
-	specPlanAcceptID       string
-	specStatusJSON         bool
-	specNextJSON           bool
-	specUseJSON            bool
-	specUseContext         string
-	specUsePolicy          string
-	specUseWaiverExpiresAt string
-	specUseGateFile        string
-	specSyncJSON           bool
-	specExportJSON         bool
-	specExportMarkdown     bool
-	specApplyChangeJSON    bool
-	specApplyDryRun        bool
-	specApplyBefore        string
-	specApplyAfter         string
-	specApplySection       string
-	specApplyKind          string
-	specClassifyChangeJSON bool
-	specClassifyBefore     string
-	specClassifyAfter      string
-	specClassifySection    string
-	specClassifyKind       string
-	specOnboardJSON        bool
-	specOnboardApproveID   string
-	specOnboardReopenID    string
-	specOnboardRebaseline  string
-	specOnboardReason      string
-	specOnboardApprovedBy  string
-	specApproveJSON        bool
-	specApproveApprovedBy  string
-	specRebaselineJSON     bool
-	specRebaselineReason   string
-	specRebaselineBy       string
-	specReopenJSON         bool
-	specReopenReason       string
-	specCheckExit          = os.Exit
-	specCoverageExit       = os.Exit
+	specCheckJSON           bool
+	specCoverageJSON        bool
+	specPlanJSON            bool
+	specPlanAcceptID        string
+	specStatusJSON          bool
+	specNextJSON            bool
+	specUseJSON             bool
+	specUseContext          string
+	specUsePolicy           string
+	specUseWaiverExpiresAt  string
+	specUseGateFile         string
+	specSyncJSON            bool
+	specRepairEditionsJSON  bool
+	specRepairEditionsApply bool
+	specExportJSON          bool
+	specExportMarkdown      bool
+	specApplyChangeJSON     bool
+	specApplyDryRun         bool
+	specApplyBefore         string
+	specApplyAfter          string
+	specApplySection        string
+	specApplyKind           string
+	specClassifyChangeJSON  bool
+	specClassifyBefore      string
+	specClassifyAfter       string
+	specClassifySection     string
+	specClassifyKind        string
+	specOnboardJSON         bool
+	specOnboardApproveID    string
+	specOnboardReopenID     string
+	specOnboardRebaseline   string
+	specOnboardReason       string
+	specOnboardApprovedBy   string
+	specApproveJSON         bool
+	specApproveApprovedBy   string
+	specRebaselineJSON      bool
+	specRebaselineReason    string
+	specRebaselineBy        string
+	specReopenJSON          bool
+	specReopenReason        string
+	specCheckExit           = os.Exit
+	specCoverageExit        = os.Exit
 )
 
 var specCmd = &cobra.Command{
@@ -122,6 +124,20 @@ prose remains carrier text, not authority. The command does not approve,
 rebaseline, reopen, create evidence, pass gates, create claim truth or global
 truth, create prose authority, or mutate SpecSectionApprovalBaseline rows.`,
 	RunE: runSpecSync,
+}
+
+var specRepairEditionsCmd = &cobra.Command{
+	Use:   "repair-editions",
+	Short: "Repair stale SQL SpecSection edition semantic hashes",
+	Long: `Repair stale semantic_hash cache values in the SQL SpecSection edition
+store.
+
+By default this command is a dry-run and only reports rows where the stored
+semantic_hash differs from HashSection(section_json). Use --apply to update
+only the semantic_hash cache column. The command does not approve, rebaseline,
+reopen, create evidence, pass gates, create claim truth or global truth, or
+create prose authority.`,
+	RunE: runSpecRepairEditions,
 }
 
 var specExportCmd = &cobra.Command{
@@ -235,6 +251,8 @@ func init() {
 	specUseCmd.Flags().StringVar(&specUseWaiverExpiresAt, "waiver-expires-at", "", "expiry for temporary_waiver policy (RFC3339 or YYYY-MM-DD)")
 	specUseCmd.Flags().StringVar(&specUseGateFile, "gate-file", "", "JSON OperationalGate profile for local read-only gate evaluation")
 	specSyncCmd.Flags().BoolVar(&specSyncJSON, "json", false, "print structured JSON output")
+	specRepairEditionsCmd.Flags().BoolVar(&specRepairEditionsJSON, "json", false, "print structured JSON output")
+	specRepairEditionsCmd.Flags().BoolVar(&specRepairEditionsApply, "apply", false, "write repaired semantic_hash cache values instead of dry-run")
 	specExportCmd.Flags().BoolVar(&specExportJSON, "json", false, "print structured JSON output")
 	specExportCmd.Flags().BoolVar(&specExportMarkdown, "markdown", false, "print only the generated Markdown carrier projection")
 	specApplyChangeCmd.Flags().BoolVar(&specApplyChangeJSON, "json", false, "print structured JSON output")
@@ -270,6 +288,7 @@ func init() {
 	specCmd.AddCommand(specReviewCmd)
 	specCmd.AddCommand(specUseCmd)
 	specCmd.AddCommand(specSyncCmd)
+	specCmd.AddCommand(specRepairEditionsCmd)
 	specCmd.AddCommand(specExportCmd)
 	specCmd.AddCommand(specApplyChangeCmd)
 	specCmd.AddCommand(specClassifyChangeCmd)

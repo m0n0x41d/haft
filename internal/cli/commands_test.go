@@ -304,6 +304,23 @@ func TestHReasonSkill_IsFullUmbrella(t *testing.T) {
 	if !strings.Contains(content, `haft_query(action="fpf"`) {
 		t.Fatal("h-reason must point at haft_query(action=\"fpf\", ...) for spec lookups")
 	}
+	if !strings.Contains(content, `action="pattern_use"`) {
+		t.Fatal("h-reason must consult haft_query(action=\"pattern_use\", ...) before generic triage")
+	}
+	for _, want := range []string{
+		"PatternUse Gateway",
+		`mode="compact"`,
+		`mode="full"`,
+		"should_use_pattern",
+		"suggested_haft_surface",
+		"Do not inline the FPF catalog",
+		"not a DecisionRecord",
+		"not MethodPack",
+	} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("h-reason PatternUse routing instructions missing %q", want)
+		}
+	}
 	// Must carry the "Description != Work" rule — the core anti-pattern
 	// that this umbrella is designed to NOT fall into.
 	if !strings.Contains(content, "Description ≠ Work") {
@@ -317,5 +334,42 @@ func TestHReasonSkill_IsFullUmbrella(t *testing.T) {
 		if !strings.Contains(content, pat) {
 			t.Fatalf("h-reason must cover slideument pattern %q", pat)
 		}
+	}
+}
+
+func TestSubstantiveSkillsCarryCatalogFreePatternUseGateway(t *testing.T) {
+	skills := map[string][]byte{
+		"h-frame":    embeddedHFrameSkill,
+		"h-diagnose": embeddedHDiagnoseSkill,
+		"h-explore":  embeddedHExploreSkill,
+		"h-compare":  embeddedHCompareSkill,
+		"h-verify":   embeddedHVerifySkill,
+	}
+
+	for name, contentBytes := range skills {
+		t.Run(name, func(t *testing.T) {
+			content := string(contentBytes)
+			for _, want := range []string{
+				"PatternUse Gateway",
+				`action="pattern_use"`,
+				`mode="compact"`,
+				`mode="full"`,
+				"Do not inline the FPF catalog",
+				"not MethodPack",
+			} {
+				if !strings.Contains(content, want) {
+					t.Fatalf("%s missing PatternUse gateway fragment %q", name, want)
+				}
+			}
+			for _, banned := range []string{
+				"Naming/terminology requests should route",
+				"Architecture requests should route",
+				"SoTA/current-practice requests should route",
+			} {
+				if strings.Contains(content, banned) {
+					t.Fatalf("%s inlines route category prose %q", name, banned)
+				}
+			}
+		})
 	}
 }

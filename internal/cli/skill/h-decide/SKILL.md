@@ -9,7 +9,7 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f48fba5f6dec5ef3789af6ed90983ac11d5d27db978fd44b91ebd7beea8a74ce -->
 
 # h-decide — Record a Decision (manual only, Transformer Mandate)
 
@@ -66,6 +66,39 @@ Write an input JSON for `haft artifact create decision.decide --input-file ... -
 - `valid_until` — RFC3339 date when this decision should be re-evaluated
 
 For deep mode (`mode: "deep"`), also provide rich `evidence_requirements` and `refresh_triggers`.
+
+## Spec-binding preflight before binding
+
+Before creating the DecisionRecord, run the read-only preflight with the same
+draft payload:
+
+```bash
+haft_query(action="spec_binding_preflight", decision_draft={...})
+```
+
+This is not approval, not evidence, not a SpecSection baseline, and not a
+DecisionRecord. It only classifies the draft's relation to the current
+ProjectSpecificationSet.
+
+Required behavior:
+
+- `provided_refs_valid` / `bound_existing`: proceed with the selected active
+  `section_refs`.
+- `no_specs` / `no_active_sections`: proceed only as explicitly unbound to
+  active specs; do not invent refs.
+- `invalid_refs`: stop and correct the refs.
+- `ambiguous`: stop and ask the operator to choose the intended SpecSection.
+- `draft_section_needed`: hand off to `/h-spec` for a draft/spec delta, or
+  record an explicit tactical/out-of-spec rationale if that is the operator's
+  intent.
+- `out_of_spec`: proceed only in tactical/out-of-spec posture with explicit
+  rationale and debt visibility.
+- `conflict`: do not create a normal standard/deep decision; reopen the problem,
+  explore a spec-changing path, or supersede/rebaseline through the proper
+  human gate.
+
+Do not make `section_refs` globally required. The contract is relation required
+for spec-enabled load-bearing decisions, raw field optional.
 
 ## Tactical mode — explicit skip mechanism
 

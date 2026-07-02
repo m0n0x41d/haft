@@ -1,6 +1,8 @@
 package specflow
 
 import (
+	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -120,6 +122,77 @@ func TestSpecSectionEditionRejectsMismatchedSectionID(t *testing.T) {
 	}
 }
 
+func TestSpecSectionEditionRejectsMismatchedSemanticHashOnWrite(t *testing.T) {
+	store := NewSQLiteSpecSectionEditionStore(newTestBaselineDB(t).GetRawDB())
+	section := specSectionEditionTestSection("TS.sync.001")
+	edition := NewSpecSectionEdition("proj-1", section, SpecSectionSourceCarrierImport, time.Time{})
+	edition.SemanticHash = "stale-hash"
+
+	err := store.PutCurrent(edition)
+	var mismatch *SpecSectionEditionHashMismatch
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("err = %v, want SpecSectionEditionHashMismatch", err)
+	}
+	if mismatch.StoredHash != "stale-hash" || mismatch.ComputedHash != HashSection(section) {
+		t.Fatalf("mismatch = %#v", mismatch)
+	}
+	if !errors.Is(err, ErrSpecSectionEditionSemanticHashMismatch) {
+		t.Fatalf("err = %v, want ErrSpecSectionEditionSemanticHashMismatch", err)
+	}
+}
+
+func TestSQLiteSpecSectionEditionStoreDetectsSemanticHashMismatchOnRead(t *testing.T) {
+	dbStore := newTestBaselineDB(t)
+	store := NewSQLiteSpecSectionEditionStore(dbStore.GetRawDB())
+	section := specSectionEditionTestSection("TS.sync.001")
+	putRawSpecSectionEdition(t, dbStore.GetRawDB(), "proj-1", "stale-hash", section)
+
+	_, err := store.GetCurrent("proj-1", "TS.sync.001")
+	var mismatch *SpecSectionEditionHashMismatch
+	if !errors.As(err, &mismatch) {
+		t.Fatalf("err = %v, want SpecSectionEditionHashMismatch", err)
+	}
+	if mismatch.SectionID != "TS.sync.001" {
+		t.Fatalf("section id = %q", mismatch.SectionID)
+	}
+	if mismatch.ComputedHash != HashSection(section) {
+		t.Fatalf("computed hash = %q, want HashSection", mismatch.ComputedHash)
+	}
+}
+
+func TestSQLiteSpecSectionEditionStoreRepairsSemanticHashMismatches(t *testing.T) {
+	dbStore := newTestBaselineDB(t)
+	store := NewSQLiteSpecSectionEditionStore(dbStore.GetRawDB())
+	section := specSectionEditionTestSection("TS.sync.001")
+	putRawSpecSectionEdition(t, dbStore.GetRawDB(), "proj-1", "stale-hash", section)
+
+	plan, err := store.ListSemanticHashMismatches("proj-1")
+	if err != nil {
+		t.Fatalf("ListSemanticHashMismatches: %v", err)
+	}
+	if len(plan.Mismatches) != 1 {
+		t.Fatalf("mismatches = %#v, want one", plan.Mismatches)
+	}
+	if len(plan.Repaired) != 0 {
+		t.Fatalf("dry-run plan repaired = %#v, want none", plan.Repaired)
+	}
+
+	applied, err := store.RepairSemanticHashMismatches("proj-1")
+	if err != nil {
+		t.Fatalf("RepairSemanticHashMismatches: %v", err)
+	}
+	if len(applied.Repaired) != 1 {
+		t.Fatalf("repaired = %#v, want one", applied.Repaired)
+	}
+	got, err := store.GetCurrent("proj-1", "TS.sync.001")
+	if err != nil {
+		t.Fatalf("GetCurrent after repair: %v", err)
+	}
+	if got.SemanticHash != HashSection(section) {
+		t.Fatalf("semantic_hash = %q, want HashSection", got.SemanticHash)
+	}
+}
+
 func TestProjectSpecificationSetFromEditionsPreservesSemanticSections(t *testing.T) {
 	target := NewSpecSectionEdition("proj-1", specSectionEditionTestSection("TS.sync.001"), SpecSectionSourceSQL, time.Time{})
 	enablingSection := specSectionEditionTestSection("ES.sync.001")
@@ -144,6 +217,36 @@ func TestProjectSpecificationSetFromEditionsPreservesSemanticSections(t *testing
 	}
 	if HashSection(specSet.Sections[1]) != enabling.SemanticHash {
 		t.Fatalf("enabling semantic hash changed")
+	}
+}
+
+func putRawSpecSectionEdition(
+	t *testing.T,
+	database *sql.DB,
+	projectID string,
+	semanticHash string,
+	section project.SpecSection,
+) {
+	t.Helper()
+
+	sectionJSON, err := json.Marshal(section)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = database.Exec(
+		`INSERT INTO spec_section_editions
+		   (project_id, section_id, semantic_hash, section_json, source_kind, carrier_path, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		projectID,
+		section.ID,
+		semanticHash,
+		string(sectionJSON),
+		string(SpecSectionSourceSQL),
+		section.Path,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		t.Fatalf("insert raw spec section edition: %v", err)
 	}
 }
 

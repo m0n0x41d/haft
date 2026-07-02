@@ -2052,6 +2052,49 @@ func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
 	}
 }
 
+func TestInterfacePatternUseDocumentsAdvisoryBoundary(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.pattern_use")
+	if !ok {
+		t.Fatal("query.pattern_use capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "haft_query" {
+		t.Fatalf("MCP tool = %q", capability.CurrentExecution.MCPTool)
+	}
+	if capability.CurrentExecution.MCPAction != "pattern_use" {
+		t.Fatalf("MCP action = %q", capability.CurrentExecution.MCPAction)
+	}
+	for _, want := range []string{"query", "source_refs"} {
+		fields := strings.Join(append(capability.InputContract.RequiredFields, capability.InputContract.OptionalFields...), " ")
+		if !strings.Contains(fields, want) {
+			t.Fatalf("pattern_use contract fields missing %q:\n%s", want, fields)
+		}
+	}
+
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"pattern_use_recommendation",
+		"advisory_pattern_use_record",
+		"wrong_pattern_boundary",
+		"required_output_shape",
+		"required_evidence_or_sota",
+		"blocked_stronger_use",
+		"not create a DecisionRecord",
+		"claim truth",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("pattern_use contract missing %q:\n%s", want, contract)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"advisory", "read-only", "not MethodPack", "not a binding authority"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("pattern_use invariant missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
 func TestInterfaceCarrierSurfacesAreReadOnlyDrillDowns(t *testing.T) {
 	for _, capabilityID := range []string{"query.carrier_manifest", "query.carrier_check"} {
 		t.Run(capabilityID, func(t *testing.T) {
@@ -2181,6 +2224,7 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 		"conflict_requires_operator",
 		"fallback_target_sets",
 		"scope_enrichment_sets",
+		"derived_from_section_refs",
 		"whole_file_fallback_requires_scope_enrichment",
 		"scope_repair_hints",
 		"Terminal decisions are history refs",

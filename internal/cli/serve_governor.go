@@ -25,6 +25,7 @@ func governorStatusResponse(
 	if err != nil {
 		return "", err
 	}
+	data.SpecBindingDebt = specBindingDebtReportForStatus(ctx, store, projectRoot)
 	data = applyDefaultDriftEventResolutionLedgerToStatusData(ctx, store, projectRoot, data)
 	driftEvents := governorDriftEvents(data)
 
@@ -76,6 +77,16 @@ func governorAttention(data artifact.StatusData) []string {
 			driftEvents.Summary.ImpactedDecisions,
 			driftEvents.Summary.MaxFanout,
 			artifact.StatusCompactDriftEventsCommand,
+		))
+	}
+	if data.SpecBindingDebt.Summary.Total() > 0 {
+		summary := data.SpecBindingDebt.Summary
+		items = append(items, fmt.Sprintf(
+			"spec-binding-debt: missing=%d invalid_refs=%d draft_section_needed=%d out_of_spec=%d — drill down: haft_query(action=\"status\", full=true)",
+			summary.DecisionsMissingSpecBinding,
+			summary.DecisionsWithInvalidSpecRefs,
+			summary.DraftSectionNeededDebt,
+			summary.OutOfSpecDecisionDebt,
 		))
 	}
 	return items

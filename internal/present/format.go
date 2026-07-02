@@ -886,6 +886,24 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("\n")
 	}
 
+	if data.SpecBindingDebt.Summary.Total() > 0 {
+		sb.WriteString(fmt.Sprintf("### Spec Binding Debt (%d)\n\n", data.SpecBindingDebt.Summary.Total()))
+		cap := 8
+		for i, item := range data.SpecBindingDebt.Items {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.SpecBindingDebt.Items)-cap))
+				break
+			}
+			line := "- " + formatArtifactLabel(item.Title, item.DecisionRef)
+			line += fmt.Sprintf(" — %s: %s", item.Kind, item.Message)
+			if len(item.SectionRefs) > 0 {
+				line += fmt.Sprintf(" (%s)", strings.Join(item.SectionRefs, ", "))
+			}
+			sb.WriteString(line + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
 	// Drift section (H1 of V2 — dec-20260526-9fdd33ed). Summary-mode
 	// against noise overload per the DRR weakest_link mitigation:
 	// top-3 drifted decisions with counts; full detail via /h-refresh
@@ -1059,6 +1077,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	reconciliationNeedsAttention := cockpitReconciliationNeedsOperator(data.ReconciliationCues)
 	hasAttention := len(data.StaleItems) > 0 ||
 		len(data.ProblemHygiene) > 0 ||
+		data.SpecBindingDebt.Summary.Total() > 0 ||
 		len(driftPartitions.Material) > 0 ||
 		len(driftPartitions.NeedsBindingResolution) > 0 ||
 		reconciliationNeedsAttention ||
@@ -1128,6 +1147,17 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		sb.WriteString("- **Decision reconciliation needs operator selection**: ")
 		sb.WriteString(cockpitReconciliationActionSummary(data.ReconciliationCues))
 		sb.WriteString("\n")
+	}
+
+	if data.SpecBindingDebt.Summary.Total() > 0 {
+		summary := data.SpecBindingDebt.Summary
+		sb.WriteString(fmt.Sprintf(
+			"- **Spec binding debt**: missing=%d invalid_refs=%d draft_section_needed=%d out_of_spec=%d; run `haft_query(action=\"status\", full=true)`.\n",
+			summary.DecisionsMissingSpecBinding,
+			summary.DecisionsWithInvalidSpecRefs,
+			summary.DraftSectionNeededDebt,
+			summary.OutOfSpecDecisionDebt,
+		))
 	}
 
 	const hygieneCap = 2

@@ -132,12 +132,47 @@ type StatusData struct {
 	// drill-downs; it never performs lineage, evidence, baseline, or gate
 	// mutations.
 	ReconciliationCues ReconciliationCueReport
+
+	// SpecBindingDebt is a read-only attention lane over DecisionRecords whose
+	// relation to active SpecSections is missing, invalid, unresolved, or
+	// explicitly out-of-spec. It is populated by project-aware shells that can
+	// read the current ProjectSpecificationSet.
+	SpecBindingDebt SpecBindingDebtReport
 }
 
 type ProblemHygieneItem struct {
 	Problem *Artifact
 	Reason  string
 	Action  string
+}
+
+type SpecBindingDebtReport struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Authority     string                 `json:"authority"`
+	Summary       SpecBindingDebtSummary `json:"summary"`
+	Items         []SpecBindingDebtItem  `json:"items,omitempty"`
+}
+
+type SpecBindingDebtSummary struct {
+	DecisionsMissingSpecBinding  int `json:"decisions_missing_spec_binding"`
+	DecisionsWithInvalidSpecRefs int `json:"decisions_with_invalid_spec_refs"`
+	DraftSectionNeededDebt       int `json:"draft_section_needed_debt"`
+	OutOfSpecDecisionDebt        int `json:"out_of_spec_decision_debt"`
+}
+
+type SpecBindingDebtItem struct {
+	DecisionRef string   `json:"decision_ref"`
+	Title       string   `json:"title"`
+	Kind        string   `json:"kind"`
+	SectionRefs []string `json:"section_refs,omitempty"`
+	Message     string   `json:"message"`
+}
+
+func (summary SpecBindingDebtSummary) Total() int {
+	return summary.DecisionsMissingSpecBinding +
+		summary.DecisionsWithInvalidSpecRefs +
+		summary.DraftSectionNeededDebt +
+		summary.OutOfSpecDecisionDebt
 }
 
 // FetchStatusData gathers all dashboard data without formatting.

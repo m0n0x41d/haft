@@ -8,7 +8,7 @@ argument-hint: "[reasoning topic — what to think about / what to figure out]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f48fba5f6dec5ef3789af6ed90983ac11d5d27db978fd44b91ebd7beea8a74ce -->
 
 # h-reason — FPF reasoning umbrella
 
@@ -34,7 +34,8 @@ haft interface <capability> --json
 
 Useful capabilities: `problem.frame`, `solution.explore`,
 `solution.compare`, `decision.decide`, `note.record`, `query.status`,
-`query.code_context`, `refresh.scan`.
+`query.pattern_use`, `query.spec_fit_probe`, `query.code_context`,
+`refresh.scan`.
 
 Use the command as discovery. When the contract exposes a shipped
 `haft artifact create <capability> --input-file ... --json` path, prefer that
@@ -98,6 +99,47 @@ agent's job. See CLAUDE.md Critical Reminders.
 
 ---
 
+## PatternUse Gateway - before generic triage
+
+After the status/refresh check and before the generic phase table below, ask
+the kernel for a compact PatternUse gateway:
+
+```
+mcp__haft__haft_query(
+  action="pattern_use",
+  mode="compact",
+  query="<operator signal / task>",
+  source_refs=["<optional file/artifact refs already in the request>"]
+)
+```
+
+Use this as a read-only routing projection. It is not performed work, not a DecisionRecord,
+not approval, not evidence, not MethodPack, and not a gate result.
+
+If `should_use_pattern=true`, either follow `suggested_haft_surface` or ask for
+the full record:
+
+```
+mcp__haft__haft_query(action="pattern_use", mode="full", query="<operator signal / task>")
+```
+
+Carry full-mode output shape, wrong-boundary, evidence need, blocked stronger
+use, and closeout expectation only when they are needed for the next action.
+Do not inline the FPF catalog in this skill. The catalog belongs in the
+kernel/index.
+
+If a sharper dedicated skill already applies (`h-frame`, `h-diagnose`,
+`h-explore`, `h-compare`, `h-verify`, `h-status`, `h-spec`, etc.), do not let
+the gateway weaken that route. Use PatternUse to add the concrete FPF
+reasoning shape, then invoke the dedicated skill if it is the stronger
+procedure.
+
+If the gateway returns `abstain`, low support, or missing support, ask for the
+missing boundary or fall back to the generic triage below. Do not fabricate a
+confident pattern.
+
+---
+
 ## Code work handoff — MethodPack
 
 If reasoning turns into non-trivial code edits, switch from advice to an
@@ -120,6 +162,39 @@ operational method run before editing:
 
 Mechanical edits should request low or no ceremony and avoid architecture
 gates.
+
+---
+
+## Spec-fit checkpoint
+
+When this umbrella routes into framing, exploration, or comparison in a project
+with active SpecSections, run an advisory spec-fit probe before recording the
+ProblemCard, SolutionPortfolio, or compare result if the topic may change
+project behavior, duties, boundaries, evidence requirements, or governed code:
+
+```
+mcp__haft__haft_query(
+  action="spec_fit_probe",
+  probe={
+    "problem_signal": "<stabilized signal>",
+    "scope": "<candidate scope>",
+    "affected_files": ["<if known>"],
+    "target_refs": ["<if known>"]
+  },
+  variants=[{"id": "V1", "title": "...", "description": "..."}]
+)
+```
+
+Use the result only as routing context:
+
+- `relates_existing` — carry candidate section refs into the artifact context.
+- `spec_gap` — surface that h-spec or draft-section work may be needed.
+- `conflict` / `outside_current_spec` — treat this as a possible spec delta,
+  not routine implementation cleanup.
+- `no_signal` — proceed without claiming spec coverage.
+
+This is not approval, baseline, evidence, a gate, or decision-time binding. It
+does not replace `spec_binding_preflight` before manual `/h-decide`.
 
 ---
 
@@ -188,7 +263,9 @@ Use when: a solution is proposed before the problem is stated, or scope/acceptan
    - `synthesis` — building something new
 3. **Umbrella-word repair** — if the signal uses overloaded terms ("service", "quality", "scalable", "готово"), unpack to specifics. Refuse to record a ProblemCard built on umbrella words.
 4. **Acceptance criterion** — one observable condition that signals "minimum viable success". Without this, the problem can't be verified later.
-5. **Record:**
+5. **Run the spec-fit checkpoint** if active specs may apply. Carry any
+   candidate section refs or spec-delta warning into the frame context.
+6. **Record:**
    ```
    mcp__haft__haft_problem(
      action="frame",
@@ -202,7 +279,7 @@ Use when: a solution is proposed before the problem is stated, or scope/acceptan
      mode="<tactical|standard|deep>"
    )
    ```
-6. Surface the ProblemCard ID to the operator. They can edit, supersede, or move on.
+7. Surface the ProblemCard ID to the operator. They can edit, supersede, or move on.
 
 **Common mistakes:**
 - Framing during code-grinding sessions (h-reason isn't for every task — code work doesn't need a ProblemCard)
@@ -253,7 +330,10 @@ Use when: problem is framed, operator wants 3-5 distinct candidate solutions.
    - `weakest_link` — what bounds quality if pursued (NOT title repeated)
    - `stepping_stone: true|false` (+ basis if true)
    - `risks` + `strengths`
-4. **Record:**
+4. **Run the spec-fit checkpoint** with the candidate variants when active
+   specs may apply. Carry `variant_spec_fit` into variant notes rather than
+   treating it as authority.
+5. **Record:**
    ```
    mcp__haft__haft_solution(
      action="explore",
@@ -262,8 +342,8 @@ Use when: problem is framed, operator wants 3-5 distinct candidate solutions.
      no_stepping_stone_rationale="<if all stepping_stone=false>"
    )
    ```
-5. Kernel returns SolutionPortfolio ID + may emit soft warnings about disguised duplicates, missing parity_rules, or weakest_links that just repeat titles. Read and self-correct.
-6. Recommend next step (usually `/h-compare` if 3+ variants).
+6. Kernel returns SolutionPortfolio ID + may emit soft warnings about disguised duplicates, missing parity_rules, or weakest_links that just repeat titles. Read and self-correct.
+7. Recommend next step (usually `/h-compare` if 3+ variants).
 
 For full parallel-subagent generation use `/h-explore` directly — it spawns one Agent per direction in parallel.
 
@@ -290,10 +370,14 @@ Use when: SolutionPortfolio exists with 2+ variants, operator wants to evaluate.
    )
    ```
 2. **Tag each dimension's indicator role:** `constraint` (hard limit), `target` (optimize), or `observation` (Anti-Goodhart — watch but don't optimize).
-3. **Declare parity plan + selection policy BEFORE scoring.** Equal budgets/windows for all variants. State the dominance rule (Pareto front, not scalar winner).
-4. **Score dim-wise** — one evaluator per dimension applies one scale to all variants. Prevents anchoring bias.
-5. **Compute non-dominated set.** Return Pareto front (NOT a scalar winner).
-6. **Record:**
+3. **Run the spec-fit checkpoint** for compared variants when active specs may
+   apply. If it reports conflict or spec gap, add `spec_compatibility` or
+   `spec_delta_burden` as a constraint/target/observation dimension before
+   scoring.
+4. **Declare parity plan + selection policy BEFORE scoring.** Equal budgets/windows for all variants. State the dominance rule (Pareto front, not scalar winner).
+5. **Score dim-wise** — one evaluator per dimension applies one scale to all variants. Prevents anchoring bias.
+6. **Compute non-dominated set.** Return Pareto front (NOT a scalar winner).
+7. **Record:**
    ```
    mcp__haft__haft_solution(
      action="compare",
@@ -307,7 +391,7 @@ Use when: SolutionPortfolio exists with 2+ variants, operator wants to evaluate.
    `dimensions` is still required here even after `haft_problem(action="characterize")`.
    Characterization records the comparison contract; compare payloads remain
    explicit and replayable.
-7. **Decision is manual.** See next section.
+8. **Decision is manual.** See next section.
 
 For full dim-wise parallel scoring use `/h-compare` directly — it spawns one Agent per dimension.
 

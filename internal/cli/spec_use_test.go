@@ -218,6 +218,38 @@ func TestHandleQuintQuerySpecUseReturnsCurrentnessRecord(t *testing.T) {
 	}
 }
 
+func TestHandleQuintQuerySpecUseReadsCurrentAuthorityFromSectionRefs(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedSpecUseSectionRefDecision(t, fixture.store, "dec-spec-section-ref", "TS.environment.001")
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action":      "spec_use",
+		"section_id":  "TS.environment.001",
+		"use_context": "commission preflight",
+		"policy":      specflow.SpecUsePolicyStrongerUseRequiresCurrentSource,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery spec_use returned error: %v", err)
+	}
+
+	var record specflow.SpecificationUseRecord
+	if err := json.Unmarshal([]byte(result), &record); err != nil {
+		t.Fatalf("decode spec_use packet: %v\n%s", err, result)
+	}
+	if record.CurrentAuthority.Status != specflow.SpecUseCurrentAuthorityClear {
+		t.Fatalf("current_authority = %+v, want clear", record.CurrentAuthority)
+	}
+	if !containsString(record.CurrentAuthority.DecisionRefs, "dec-spec-section-ref") {
+		t.Fatalf("current_authority decision_refs = %#v", record.CurrentAuthority.DecisionRefs)
+	}
+	if !containsString(record.CurrentAuthority.TargetRefs, "spec_section:TS.environment.001") {
+		t.Fatalf("current_authority target_refs = %#v", record.CurrentAuthority.TargetRefs)
+	}
+	if record.CurrentAuthority.AuthorityBoundary != specflow.CurrentAuthorityBoundaryReadOnly {
+		t.Fatalf("current_authority boundary = %q", record.CurrentAuthority.AuthorityBoundary)
+	}
+}
+
 func TestHandleQuintQuerySpecUseAcceptsOperationalGateObject(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -373,6 +405,42 @@ func seedSpecUseGoverningDecision(
 			Status:    artifact.StatusActive,
 			Context:   "spec",
 			Title:     "Spec use governing decision " + id,
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Body:           "decision body",
+		StructuredData: string(payload),
+	})
+	if err != nil {
+		t.Fatalf("create decision %s: %v", id, err)
+	}
+}
+
+func seedSpecUseSectionRefDecision(
+	t *testing.T,
+	store *artifact.Store,
+	id string,
+	sectionRef string,
+) {
+	t.Helper()
+
+	fields := artifact.DecisionFields{
+		DecisionSubjectRef: "spec_section:" + sectionRef,
+		SectionRefs:        []string{sectionRef},
+	}
+	payload, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("marshal decision fields: %v", err)
+	}
+	now := time.Now().UTC()
+	err = store.Create(context.Background(), &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:        id,
+			Kind:      artifact.KindDecisionRecord,
+			Version:   1,
+			Status:    artifact.StatusActive,
+			Context:   "spec",
+			Title:     "Spec use section ref decision " + id,
 			CreatedAt: now,
 			UpdatedAt: now,
 		},

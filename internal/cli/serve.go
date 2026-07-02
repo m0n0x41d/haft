@@ -803,6 +803,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		input.Constraints = parseStringArrayFromArgs(args, "constraints")
 		input.OptimizationTargets = parseStringArrayFromArgs(args, "optimization_targets")
 		input.ObservationIndicators = parseStringArrayFromArgs(args, "observation_indicators")
+		input = applyProblemSpecFit(ctx, store, haftDir, input)
 
 		a, filePath, err := artifact.FrameProblem(ctx, store, haftDir, input)
 		if err != nil {
@@ -914,6 +915,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 				input.ProblemRef = prob.Meta.ID
 			}
 		}
+		input = applyExploreSpecFit(ctx, store, haftDir, input)
 
 		a, filePath, err := artifact.ExploreSolutions(ctx, store, haftDir, input)
 		if err != nil {
@@ -971,6 +973,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
 			}
 		}
+		input = applyCompareSpecFit(ctx, store, haftDir, input)
 
 		a, filePath, err := artifact.CompareSolutions(ctx, store, haftDir, input)
 		if err != nil {
@@ -1074,6 +1077,12 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if input.SectionRefs, err = parseStrictStringArrayFromArgs(args, "section_refs"); err != nil {
 			return "", "", err
 		}
+		if _, err := parseJSONArg(args, "spec_binding_preflight", &input.SpecBindingPreflight); err != nil {
+			return "", "", err
+		}
+		if v, ok := args["spec_binding_preflight_required"].(bool); ok {
+			input.SpecBindingRequired = v
+		}
 		if input.AffectedFiles, err = parseStrictStringArrayFromArgs(args, "affected_files"); err != nil {
 			return "", "", err
 		}
@@ -1128,6 +1137,11 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 					}
 				}
 			}
+		}
+
+		input, err = applyDecisionSpecBindingPreflight(ctx, store, haftDir, input)
+		if err != nil {
+			return "", "", err
 		}
 
 		a, filePath, err := artifact.Decide(ctx, store, haftDir, input)
@@ -1678,6 +1692,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if err != nil {
 			return "", err
 		}
+		data.SpecBindingDebt = specBindingDebtReportForStatus(ctx, store, projectRoot)
 		data = applyDefaultDriftEventResolutionLedgerToStatusData(ctx, store, projectRoot, data)
 		statusBody := present.CockpitStatusResponse(data)
 		if full {
@@ -1987,6 +2002,45 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 
 		return formatMCPFPFSearchWithExplain(presentFPFRetrieval(retrieval.Results), explain) + navStrip, nil
 
+	case "pattern_use":
+		request := fpf.PatternUseRequest{
+			Query:             stringArg(args, "query"),
+			Mode:              stringArg(args, "mode"),
+			ProjectRef:        stringArg(args, "project_ref"),
+			BoundedContextRef: stringArg(args, "bounded_context_ref"),
+			SourceRefs:        parseStringArrayFromArgs(args, "source_refs"),
+		}
+		mode, err := fpf.NormalizePatternUseMode(request.Mode)
+		if err != nil {
+			return "", err
+		}
+		if mode == fpf.PatternUseFullMode {
+			record, err := recommendPatternUseWithEmbeddedFallback(request)
+			if err != nil {
+				return "", err
+			}
+			if err := record.Validate(); err != nil {
+				return "", fmt.Errorf("build pattern-use recommendation: %w", err)
+			}
+			payload, err := json.Marshal(record)
+			if err != nil {
+				return "", fmt.Errorf("marshal pattern-use recommendation: %w", err)
+			}
+			return string(payload), nil
+		}
+		record, err := recommendPatternUseCompactWithEmbeddedFallback(request)
+		if err != nil {
+			return "", err
+		}
+		if err := record.Validate(); err != nil {
+			return "", fmt.Errorf("build compact pattern-use recommendation: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal pattern-use recommendation: %w", err)
+		}
+		return string(payload), nil
+
 	case "check":
 		projectRoot := filepath.Dir(haftDir)
 		report, err := buildCheckReport(ctx, store, projectRoot)
@@ -2083,6 +2137,23 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			return "", fmt.Errorf("marshal spec use record: %w", err)
 		}
 		return string(payload), nil
+
+	case "spec_trace":
+		record, err := buildSpecTraceRecord(ctx, filepath.Dir(haftDir), store, stringArg(args, "section_id"))
+		if err != nil {
+			return "", fmt.Errorf("build spec trace record: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal spec trace record: %w", err)
+		}
+		return string(payload), nil
+
+	case "spec_binding_preflight":
+		return handleQuintQuerySpecBindingPreflight(ctx, store, haftDir, args)
+
+	case "spec_fit_probe":
+		return handleQuintQuerySpecFitProbe(haftDir, args)
 
 	case "change_case":
 		decisionRef := stringArg(args, "artifact_ref")
@@ -2278,8 +2349,173 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'pattern_use', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
+}
+
+func handleQuintQuerySpecFitProbe(
+	haftDir string,
+	args map[string]any,
+) (string, error) {
+	projectRoot := filepath.Dir(haftDir)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+	if err != nil {
+		return "", fmt.Errorf("load ProjectSpecificationSet for spec_fit_probe: %w", err)
+	}
+
+	input, err := specFitProbeInputFromArgs(args)
+	if err != nil {
+		return "", err
+	}
+	result := specflow.BuildSpecFitProbe(specSet, input)
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal spec_fit_probe result: %w", err)
+	}
+	return string(payload), nil
+}
+
+func specFitProbeInputFromArgs(args map[string]any) (specflow.SpecFitProbeInput, error) {
+	var input specflow.SpecFitProbeInput
+	if _, err := parseJSONArg(args, "probe", &input); err != nil {
+		return specflow.SpecFitProbeInput{}, err
+	}
+	if input.ProblemSignal == "" {
+		input.ProblemSignal = stringArg(args, "problem_signal")
+	}
+	if input.Scope == "" {
+		input.Scope = stringArg(args, "scope")
+	}
+	if input.Mode == "" {
+		input.Mode = stringArg(args, "mode")
+	}
+	if input.DeclaredRelation == "" {
+		input.DeclaredRelation = stringArg(args, "declared_relation")
+	}
+	if len(input.SectionRefs) == 0 {
+		input.SectionRefs = parseStringArrayFromArgs(args, "section_refs")
+	}
+	if len(input.AffectedFiles) == 0 {
+		input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
+	}
+	if len(input.TargetRefs) == 0 {
+		input.TargetRefs = parseStringArrayFromArgs(args, "target_refs")
+	}
+	if len(input.ConflictRefs) == 0 {
+		input.ConflictRefs = parseStringArrayFromArgs(args, "conflict_refs")
+	}
+	if len(input.Variants) == 0 {
+		if _, err := parseJSONArg(args, "variants", &input.Variants); err != nil {
+			return specflow.SpecFitProbeInput{}, err
+		}
+	}
+	return input, nil
+}
+
+func handleQuintQuerySpecBindingPreflight(
+	ctx context.Context,
+	store *artifact.Store,
+	haftDir string,
+	args map[string]any,
+) (string, error) {
+	projectRoot := filepath.Dir(haftDir)
+	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+	if err != nil {
+		return "", fmt.Errorf("load ProjectSpecificationSet for spec_binding_preflight: %w", err)
+	}
+
+	input, err := specBindingPreflightInputFromArgs(args)
+	if err != nil {
+		return "", err
+	}
+	input.DecisionDraft = enrichSpecBindingDecisionDraft(ctx, store, input.DecisionDraft)
+	result := specflow.BuildSpecBindingPreflight(specSet, input)
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return "", fmt.Errorf("marshal spec_binding_preflight result: %w", err)
+	}
+	return string(payload), nil
+}
+
+func specBindingPreflightInputFromArgs(
+	args map[string]any,
+) (specflow.SpecBindingPreflightInput, error) {
+	var draft specflow.SpecBindingDecisionDraft
+	if _, err := parseJSONArg(args, "decision_draft", &draft); err != nil {
+		return specflow.SpecBindingPreflightInput{}, err
+	}
+
+	if draft.SelectedTitle == "" {
+		draft.SelectedTitle = stringArg(args, "selected_title")
+	}
+	if draft.WhySelected == "" {
+		draft.WhySelected = stringArg(args, "why_selected")
+	}
+	if draft.CounterArgument == "" {
+		draft.CounterArgument = stringArg(args, "counterargument")
+	}
+	if draft.WeakestLink == "" {
+		draft.WeakestLink = stringArg(args, "weakest_link")
+	}
+	if draft.Mode == "" {
+		draft.Mode = stringArg(args, "mode")
+	}
+	if draft.LoadBearingLevel == "" {
+		draft.LoadBearingLevel = stringArg(args, "load_bearing_level")
+	}
+	if draft.DecisionSubjectRef == "" {
+		draft.DecisionSubjectRef = stringArg(args, "decision_subject_ref")
+	}
+	if draft.PortfolioRef == "" {
+		draft.PortfolioRef = stringArg(args, "portfolio_ref")
+	}
+	if len(draft.ProblemRefs) == 0 {
+		if problemRef := stringArg(args, "problem_ref"); problemRef != "" {
+			draft.ProblemRefs = append(draft.ProblemRefs, problemRef)
+		}
+		draft.ProblemRefs = append(draft.ProblemRefs, parseStringArrayFromArgs(args, "problem_refs")...)
+	}
+	if len(draft.ActiveDecisionRefs) == 0 {
+		draft.ActiveDecisionRefs = parseStringArrayFromArgs(args, "active_decision_refs")
+	}
+	if draft.SearchKeywords == "" {
+		draft.SearchKeywords = stringArg(args, "search_keywords")
+	}
+	if draft.BindingScope == "" {
+		draft.BindingScope = stringArg(args, "binding_scope")
+	}
+	if draft.BindingFallbackReason == "" {
+		draft.BindingFallbackReason = stringArg(args, "binding_fallback_reason")
+	}
+	if draft.DeclaredRelation == "" {
+		draft.DeclaredRelation = stringArg(args, "declared_relation")
+	}
+	if len(draft.SectionRefs) == 0 {
+		draft.SectionRefs = parseStringArrayFromArgs(args, "section_refs")
+	}
+	if len(draft.LinkedSectionRefs) == 0 {
+		draft.LinkedSectionRefs = parseStringArrayFromArgs(args, "linked_section_refs")
+	}
+	if len(draft.LineageSectionRefs) == 0 {
+		draft.LineageSectionRefs = parseStringArrayFromArgs(args, "active_decision_lineage_section_refs")
+	}
+	if len(draft.AffectedFiles) == 0 {
+		draft.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
+	}
+	if len(draft.BindingHints) == 0 {
+		draft.BindingHints = parseStringArrayFromArgs(args, "binding_hints")
+	}
+	if len(draft.BindingTargetRefs) == 0 {
+		draft.BindingTargetRefs = parseStringArrayFromArgs(args, "binding_target_refs")
+	}
+	if len(draft.GovernanceTargetRefs) == 0 {
+		draft.GovernanceTargetRefs = parseStringArrayFromArgs(args, "governance_target_refs")
+	}
+	if len(draft.ConflictRefs) == 0 {
+		draft.ConflictRefs = parseStringArrayFromArgs(args, "conflict_refs")
+	}
+
+	return specflow.SpecBindingPreflightInput{DecisionDraft: draft}, nil
 }
 
 // nodeLang derives the markdown code-fence language for a node view from the

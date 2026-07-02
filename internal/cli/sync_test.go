@@ -202,6 +202,76 @@ Old markdown has no structured data carrier block.
 	}
 }
 
+func TestSyncOneFile_AddsCarrierLinksEvenWhenArtifactRowIsUnchanged(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+
+	target := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:     "prob-sync-link-target",
+			Kind:   artifact.KindProblemCard,
+			Status: artifact.StatusActive,
+			Title:  "Sync link target",
+		},
+		Body: "# Sync link target",
+	}
+	if err := store.Create(ctx, target); err != nil {
+		t.Fatal(err)
+	}
+
+	source := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:     "sol-sync-link-source",
+			Kind:   artifact.KindSolutionPortfolio,
+			Status: artifact.StatusActive,
+			Title:  "Sync link source",
+		},
+		Body: "# Sync link source",
+	}
+	if err := store.Create(ctx, source); err != nil {
+		t.Fatal(err)
+	}
+
+	filePath := filepath.Join(t.TempDir(), "sol-sync-link-source.md")
+	stale := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
+	content := `---
+id: sol-sync-link-source
+kind: SolutionPortfolio
+version: 1
+status: active
+title: Sync link source
+created_at: ` + stale + `
+updated_at: ` + stale + `
+links:
+  - ref: prob-sync-link-target
+    type: based_on
+---
+
+# Sync link source
+`
+	if err := os.WriteFile(filePath, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := syncOneFile(ctx, store, filePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result != "updated" {
+		t.Fatalf("sync result = %q, want updated", result)
+	}
+
+	backlinks, err := store.GetBacklinks(ctx, target.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.ContainsFunc(backlinks, func(link artifact.Link) bool {
+		return link.Ref == source.Meta.ID && link.Type == "based_on"
+	}) {
+		t.Fatalf("missing synced backlink: %#v", backlinks)
+	}
+}
+
 func TestSyncOneFile_RejectsUnknownProblemSemanticSchema(t *testing.T) {
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)

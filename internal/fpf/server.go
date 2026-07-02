@@ -537,70 +537,36 @@ func (s *Server) ToolCatalog() []Tool {
 						"type": "string",
 					},
 					"choice_result": map[string]interface{}{
-						"type": "object",
 						"properties": map[string]interface{}{
-							"subject_ref": map[string]string{
-								"type": "string",
-							},
-							"option_set": map[string]interface{}{
-								"type": "array",
-							},
-							"comparison_basis": map[string]interface{}{
-								"type": "array",
-							},
-							"choice_rule": map[string]string{"type": "string"},
+							"subject_ref":      map[string]interface{}{},
+							"option_set":       map[string]interface{}{},
+							"comparison_basis": map[string]interface{}{},
+							"choice_rule":      map[string]interface{}{},
 							"next_move": map[string]interface{}{
 								"type": "string",
 								"enum": []interface{}{"choose_now", "reject_current_set", "probe_again", "reroute"},
 							},
-							"variant_ref": map[string]string{"type": "string"},
-							"problem_refs": map[string]interface{}{
-								"type": "array",
-							},
-							"portfolio_ref": map[string]string{"type": "string"},
-							"reason":        map[string]string{"type": "string"},
-							"reversibility": map[string]string{"type": "string"},
-							"reopen_condition": map[string]string{
-								"type": "string",
-							},
+							"variant_ref":      map[string]interface{}{},
+							"problem_refs":     map[string]interface{}{},
+							"portfolio_ref":    map[string]interface{}{},
+							"reason":           map[string]interface{}{},
+							"reversibility":    map[string]interface{}{},
+							"reopen_condition": map[string]interface{}{},
 						},
 					},
 					"transformation_record": map[string]interface{}{
-						"type": "object",
 						"properties": map[string]interface{}{
-							"schema_version": map[string]interface{}{
-								"type": "integer",
-							},
-							"transformed_entity": map[string]string{
-								"type": "string",
-							},
-							"initial_state": map[string]string{
-								"type": "string",
-							},
-							"post_state": map[string]string{
-								"type": "string",
-							},
-							"relation": map[string]string{
-								"type": "string",
-							},
-							"context": map[string]string{
-								"type": "string",
-							},
-							"window": map[string]string{
-								"type": "string",
-							},
-							"method_refs": map[string]interface{}{
-								"type": "array",
-							},
-							"work_refs": map[string]interface{}{
-								"type": "array",
-							},
-							"evidence_refs": map[string]interface{}{
-								"type": "array",
-							},
-							"publication_refs": map[string]interface{}{
-								"type": "array",
-							},
+							"schema_version":     map[string]interface{}{},
+							"transformed_entity": map[string]interface{}{},
+							"initial_state":      map[string]interface{}{},
+							"post_state":         map[string]interface{}{},
+							"relation":           map[string]interface{}{},
+							"context":            map[string]interface{}{},
+							"window":             map[string]interface{}{},
+							"method_refs":        map[string]interface{}{},
+							"work_refs":          map[string]interface{}{},
+							"evidence_refs":      map[string]interface{}{},
+							"publication_refs":   map[string]interface{}{},
 						},
 					},
 					"selection_policy": map[string]string{
@@ -656,6 +622,20 @@ func (s *Server) ToolCatalog() []Tool {
 					"section_refs": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide) SpecSection IDs governed by this DecisionRecord",
+					},
+					"spec_binding_preflight": map[string]interface{}{
+						"properties": map[string]interface{}{
+							"schema_version":        map[string]interface{}{},
+							"record_kind":           map[string]interface{}{},
+							"state":                 map[string]interface{}{},
+							"selected_section_refs": map[string]interface{}{},
+							"status_debt":           map[string]interface{}{},
+						},
+						"description": "(decide) spec_binding_preflight receipt; incompatible states fail closed.",
+					},
+					"spec_binding_preflight_required": map[string]interface{}{
+						"type":        "boolean",
+						"description": "(decide) Require compatible spec_binding_preflight without globally requiring section_refs.",
 					},
 					"predictions": map[string]interface{}{
 						"type":        "array",
@@ -886,34 +866,57 @@ func (s *Server) ToolCatalog() []Tool {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "pattern_use", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 						"description": "Read-only query/drill-down action.",
 					},
-					"query": map[string]string{
-						"type":        "string",
-						"description": "(search, fpf) Search terms",
+					"query":          map[string]interface{}{},
+					"term":           map[string]interface{}{},
+					"section_id":     map[string]interface{}{},
+					"decision_draft": map[string]interface{}{},
+					"probe": map[string]interface{}{
+						"type":        "object",
+						"description": "(spec_fit_probe) Problem/scope/variant draft.",
+						"properties": map[string]interface{}{
+							"problem_signal":    map[string]interface{}{},
+							"scope":             map[string]interface{}{},
+							"mode":              map[string]interface{}{},
+							"section_refs":      map[string]interface{}{},
+							"affected_files":    map[string]interface{}{},
+							"target_refs":       map[string]interface{}{},
+							"conflict_refs":     map[string]interface{}{},
+							"declared_relation": map[string]interface{}{},
+						},
 					},
-					"term": map[string]string{
-						"type":        "string",
-						"description": "(resolve_term) Term to ground in project context; returns entries, refs, mentions, resolution, next_action.",
+					"problem_signal":    map[string]interface{}{},
+					"scope":             map[string]interface{}{},
+					"section_refs":      map[string]interface{}{},
+					"affected_files":    map[string]interface{}{},
+					"target_refs":       map[string]interface{}{},
+					"conflict_refs":     map[string]interface{}{},
+					"declared_relation": map[string]interface{}{},
+					"variants": map[string]interface{}{
+						"type":        "array",
+						"description": "(spec_fit_probe) Candidate variants to classify against active SpecSections.",
+						"items": map[string]interface{}{
+							"properties": map[string]interface{}{
+								"id":                map[string]interface{}{},
+								"title":             map[string]interface{}{},
+								"description":       map[string]interface{}{},
+								"section_refs":      map[string]interface{}{},
+								"affected_files":    map[string]interface{}{},
+								"target_refs":       map[string]interface{}{},
+								"conflict_refs":     map[string]interface{}{},
+								"declared_relation": map[string]interface{}{},
+							},
+						},
 					},
-					"section_id": map[string]string{
-						"type":        "string",
-						"description": "(spec_use) SpecSection id.",
-					},
-					"use_context": map[string]string{
-						"type":        "string",
-						"description": "(spec_use/drift_route) Declared use context.",
-					},
+					"use_context": map[string]interface{}{},
 					"policy": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"documentary_only", "stronger_use_requires_current_source", "temporary_waiver"},
 						"description": "(spec_use) Admission policy; currentness/waiver/gate stay separate.",
 					},
-					"waiver_expires_at": map[string]string{
-						"type":        "string",
-						"description": "(spec_use) temporary_waiver expiry.",
-					},
+					"waiver_expires_at": map[string]interface{}{},
 					"operational_gate": map[string]interface{}{
 						"type": "object",
 						"properties": map[string]interface{}{
@@ -928,113 +931,39 @@ func (s *Server) ToolCatalog() []Tool {
 						},
 						"description": "(spec_use) Optional OperationalGate v1.",
 					},
-					"artifact_ref": map[string]string{
-						"type":        "string",
-						"description": "(change_case/correspondence_graph/evidence_path) Artifact id; for change/correspondence this is the DecisionRecord id.",
-					},
-					"evidence_ref": map[string]string{
-						"type":        "string",
-						"description": "(evidence_path) Evidence id.",
-					},
-					"claim_ref": map[string]string{
-						"type":        "string",
-						"description": "(evidence_path) Claim id/ref for the attempted use.",
-					},
-					"attempted_use": map[string]string{
-						"type":        "string",
-						"description": "(evidence_path) Bounded use.",
-					},
-					"requires_current_formality": map[string]interface{}{
-						"type":        "boolean",
-						"description": "Require current F0-F9.",
-					},
-					"producer_ref": map[string]string{
-						"type":        "string",
-						"description": "(evidence_path) Producer trace ref.",
-					},
-					"method_ref": map[string]string{
-						"type":        "string",
-						"description": "(evidence_path) Method trace ref.",
-					},
-					"work_ref": map[string]string{
-						"type":        "string",
-						"description": "(evidence_path) Work trace ref.",
-					},
-					"drift_kind": map[string]string{
-						"type":        "string",
-						"description": "(drift_route) Semantic drift kind.",
-					},
-					"bearer_ref": map[string]string{
-						"type":        "string",
-						"description": "(drift_route/blocked_use/value_space) Artifact/object carrying drift, blocked use, or value measurement.",
-					},
-					"label": map[string]string{
-						"type":        "string",
-						"description": "(blocked_use) Human-readable bearer label.",
-					},
-					"blocked_use": map[string]string{
-						"type":        "string",
-						"description": "(blocked_use) Use blocked until source return or repair.",
-					},
-					"source_refs": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "(blocked_use/value_space) Exact source refs or evidence refs.",
-					},
-					"exact_record_needed": map[string]string{
-						"type":        "string",
-						"description": "(blocked_use) Exact record needed before stronger use.",
-					},
-					"kind": map[string]string{
-						"type":        "string",
-						"description": "(list) Artifact kind: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport",
-					},
-					"file": map[string]string{
-						"type":        "string",
-						"description": "(related, code_context, callees/callers/impact, node) File path — for code-graph actions it scopes/disambiguates an overloaded symbol name to one definition",
-					},
-					"symbol": map[string]string{
-						"type":        "string",
-						"description": "(code_context) symbol to narrow context to; (callees/callers/impact) REQUIRED — the symbol to traverse from, returns candidates if ambiguous; (node) REQUIRED — the symbol to show, node shows ALL overloads; (explore) REQUIRED — the seed symbol to explore the flow from",
-					},
-					"line": map[string]interface{}{
-						"type":        "integer",
-						"description": "(code_context, callees/callers/impact, node) Optional 1-based line of the symbol — disambiguates overloaded same-name symbols so the right one is selected",
-					},
+					"artifact_ref":               map[string]interface{}{},
+					"evidence_ref":               map[string]interface{}{},
+					"claim_ref":                  map[string]interface{}{},
+					"attempted_use":              map[string]interface{}{},
+					"requires_current_formality": map[string]interface{}{},
+					"producer_ref":               map[string]interface{}{},
+					"method_ref":                 map[string]interface{}{},
+					"work_ref":                   map[string]interface{}{},
+					"drift_kind":                 map[string]interface{}{},
+					"bearer_ref":                 map[string]interface{}{},
+					"label":                      map[string]interface{}{},
+					"blocked_use":                map[string]interface{}{},
+					"source_refs":                map[string]interface{}{},
+					"exact_record_needed":        map[string]interface{}{},
+					"kind":                       map[string]interface{}{},
+					"file":                       map[string]interface{}{},
+					"symbol":                     map[string]interface{}{},
+					"line":                       map[string]interface{}{},
 					"lane": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
 						"description": "Lane. Default index; full=true audit",
 					},
-					"depth": map[string]interface{}{
-						"type":        "integer",
-						"description": "(callees/callers/impact) Traversal depth, default 2, capped at 10 — how many call hops to follow from the seed",
-					},
-					"files": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "(ceremony) The files the change will touch — the floor classifies their risk. May also pass a space/comma-separated list via `file`.",
-					},
-					"context": map[string]string{
-						"type":        "string",
-						"description": "Optional context filter",
-					},
+					"depth":   map[string]interface{}{},
+					"files":   map[string]interface{}{},
+					"context": map[string]interface{}{},
 					"view": map[string]string{
 						"type":        "string",
 						"description": "projection views",
 					},
-					"limit": map[string]interface{}{
-						"type":        "integer",
-						"description": fmt.Sprintf("(search/code_context lanes) Max results, default 20; (fpf) max results, default %d", DefaultSpecSearchLimit),
-					},
-					"full": map[string]interface{}{
-						"type":        "boolean",
-						"description": "(status/code_context/fpf) Show full audit detail instead of compact defaults/snippets. For code_context, prefer lane before full=true.",
-					},
-					"explain": map[string]interface{}{
-						"type":        "boolean",
-						"description": "(fpf) Show why each result matched",
-					},
+					"limit":   map[string]interface{}{},
+					"full":    map[string]interface{}{},
+					"explain": map[string]interface{}{},
 					"mode": map[string]interface{}{
 						"type":        "string",
 						"description": "tree mode",

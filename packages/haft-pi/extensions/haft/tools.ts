@@ -21,7 +21,7 @@ const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:afec1a92a6ca2e01af1603b04f368e746c79fe0b60e850887cdb4f2eecb34398";
+  "sha256:f48fba5f6dec5ef3789af6ed90983ac11d5d27db978fd44b91ebd7beea8a74ce";
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),
@@ -47,12 +47,34 @@ const carryThroughItemSchema = Type.Object({
   reason: OptStr()
 }, { additionalProperties: true });
 
+const specFitProbeSchema = Type.Object({
+  problem_signal: OptStr(),
+  scope: OptStr(),
+  mode: OptStr(),
+  section_refs: OptStrList(),
+  affected_files: OptStrList(),
+  target_refs: OptStrList(),
+  conflict_refs: OptStrList(),
+  declared_relation: OptStr()
+}, { additionalProperties: true });
+
+const specFitVariantSchema = Type.Object({
+  id: OptStr(),
+  title: OptStr(),
+  description: OptStr(),
+  section_refs: OptStrList(),
+  affected_files: OptStrList(),
+  target_refs: OptStrList(),
+  conflict_refs: OptStrList(),
+  declared_relation: OptStr()
+}, { additionalProperties: true });
+
 const haftQueryParameters = Type.Object({
   action: enumOf(
     "search", "status", "board", "related", "code_context", "callees", "callers",
     "impact", "node", "explore", "ceremony", "projection", "list", "coverage",
-    "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit",
-    "contract_generation", "spec_review", "spec_use", "change_case",
+    "fpf", "pattern_use", "check", "carrier_manifest", "carrier_check", "contract_audit",
+    "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case",
     "correspondence_graph", "drift_route", "drift_events", "decision_reconcile",
     "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"
   ),
@@ -63,6 +85,7 @@ const haftQueryParameters = Type.Object({
   claim_ref: OptStr(),
   context: OptStr(),
   depth: OptNum(),
+  decision_draft: OptObj(),
   drift_kind: OptStr(),
   explain: OptBool(),
   exact_record_needed: OptStr(),
@@ -80,12 +103,14 @@ const haftQueryParameters = Type.Object({
   operational_gate: OptObj(),
   policy: Type.Optional(enumOf("documentary_only", "stronger_use_requires_current_source", "temporary_waiver")),
   producer_ref: OptStr(),
+  probe: Type.Optional(specFitProbeSchema),
   query: OptStr(),
   requires_current_formality: OptBool(),
   section_id: OptStr(),
   source_refs: OptStrList(),
   symbol: OptStr(),
   term: OptStr(),
+  variants: Type.Optional(Type.Array(specFitVariantSchema)),
   use_context: OptStr(),
   verbose: OptBool(),
   view: OptStr(),
@@ -230,6 +255,8 @@ const haftDecisionParameters = Type.Object({
   })),
   search_keywords: OptStr(),
   section_refs: OptStrList(),
+  spec_binding_preflight: OptObj(),
+  spec_binding_preflight_required: OptBool(),
   selected_title: OptStr(),
   selection_policy: OptStr(),
   task_context: OptStr(),

@@ -46,6 +46,8 @@ type DecideInput struct {
 	TaskContext             string                  `json:"task_context,omitempty"`
 	Mode                    string                  `json:"mode,omitempty"`
 	SectionRefs             []string                `json:"section_refs,omitempty"`
+	SpecBindingPreflight    *SpecBindingPreflight   `json:"spec_binding_preflight,omitempty"`
+	SpecBindingRequired     bool                    `json:"spec_binding_preflight_required,omitempty"`
 	AffectedFiles           []string                `json:"affected_files,omitempty"`
 	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
 	ImplementationFootprint ImplementationFootprint `json:"implementation_footprint,omitempty"`
@@ -78,6 +80,38 @@ type DecideInput struct {
 	Skips      []string `json:"_skips,omitempty"`
 	SkipReason string   `json:"_skip_reason,omitempty"`
 }
+
+type SpecBindingPreflight struct {
+	SchemaVersion          int                   `json:"schema_version,omitempty"`
+	RecordKind             string                `json:"record_kind,omitempty"`
+	ProjectSpecState       string                `json:"project_spec_state,omitempty"`
+	DecisionMode           string                `json:"decision_mode,omitempty"`
+	LoadBearingLevel       string                `json:"load_bearing_level,omitempty"`
+	State                  string                `json:"state"`
+	SelectedSectionRefs    []string              `json:"selected_section_refs,omitempty"`
+	ConflictRefs           []string              `json:"conflict_refs,omitempty"`
+	OperatorActionRequired string                `json:"operator_action_required,omitempty"`
+	StatusDebt             SpecBindingStatusDebt `json:"status_debt,omitempty"`
+	AuthorityBoundary      string                `json:"authority_boundary,omitempty"`
+	DecisionDraftDigest    string                `json:"decision_draft_digest,omitempty"`
+}
+
+type SpecBindingStatusDebt struct {
+	Severity string `json:"severity,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+const (
+	SpecBindingStateNoSpecs           = "no_specs"
+	SpecBindingStateNoActiveSections  = "no_active_sections"
+	SpecBindingStateProvidedRefsValid = "provided_refs_valid"
+	SpecBindingStateInvalidRefs       = "invalid_refs"
+	SpecBindingStateBoundExisting     = "bound_existing"
+	SpecBindingStateAmbiguous         = "ambiguous"
+	SpecBindingStateDraftNeeded       = "draft_section_needed"
+	SpecBindingStateOutOfSpec         = "out_of_spec"
+	SpecBindingStateConflict          = "conflict"
+)
 
 // validRequiredFieldSkips is the canonical set of fields a tactical
 // decision may explicitly skip. Names outside this set are rejected to
@@ -260,6 +294,10 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.EvidenceReqs = compactStrings(input.EvidenceReqs)
 	input.RefreshTriggers = compactStrings(input.RefreshTriggers)
 	input.SectionRefs = compactStrings(input.SectionRefs)
+	input.SpecBindingPreflight = normalizeSpecBindingPreflight(input.SpecBindingPreflight)
+	if len(input.SectionRefs) == 0 && specBindingPreflightCanSupplySectionRefs(input.SpecBindingPreflight) {
+		input.SectionRefs = cloneStringSlice(input.SpecBindingPreflight.SelectedSectionRefs)
+	}
 	input.AffectedFiles = compactStrings(input.AffectedFiles)
 	input.BindingTargets = normalizeBindingTargets(input.BindingTargets)
 	input.BindingHints = compactStrings(input.BindingHints)
@@ -272,7 +310,100 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	return input
 }
 
+func normalizeSpecBindingPreflight(preflight *SpecBindingPreflight) *SpecBindingPreflight {
+	if preflight == nil {
+		return nil
+	}
+	normalized := *preflight
+	normalized.RecordKind = strings.TrimSpace(normalized.RecordKind)
+	normalized.ProjectSpecState = strings.TrimSpace(normalized.ProjectSpecState)
+	normalized.DecisionMode = strings.TrimSpace(normalized.DecisionMode)
+	normalized.LoadBearingLevel = strings.TrimSpace(normalized.LoadBearingLevel)
+	normalized.State = strings.TrimSpace(normalized.State)
+	normalized.SelectedSectionRefs = compactStrings(normalized.SelectedSectionRefs)
+	normalized.ConflictRefs = compactStrings(normalized.ConflictRefs)
+	normalized.OperatorActionRequired = strings.TrimSpace(normalized.OperatorActionRequired)
+	normalized.StatusDebt.Severity = strings.TrimSpace(normalized.StatusDebt.Severity)
+	normalized.StatusDebt.Message = strings.TrimSpace(normalized.StatusDebt.Message)
+	normalized.AuthorityBoundary = strings.TrimSpace(normalized.AuthorityBoundary)
+	normalized.DecisionDraftDigest = strings.TrimSpace(normalized.DecisionDraftDigest)
+	return &normalized
+}
+
+func specBindingPreflightCanSupplySectionRefs(preflight *SpecBindingPreflight) bool {
+	if preflight == nil || len(preflight.SelectedSectionRefs) == 0 {
+		return false
+	}
+	switch preflight.State {
+	case SpecBindingStateProvidedRefsValid, SpecBindingStateBoundExisting:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateDecisionSpecBindingPreflight(input DecideInput) error {
+	preflight := normalizeSpecBindingPreflight(input.SpecBindingPreflight)
+	if input.SpecBindingRequired && preflight == nil {
+		return fmt.Errorf("spec_binding_preflight_required: provide haft_query(action=\"spec_binding_preflight\", decision_draft=...) result or explicitly mark this as no_specs/no_active_sections/out_of_spec via preflight")
+	}
+	if preflight == nil {
+		return nil
+	}
+
+	switch preflight.State {
+	case SpecBindingStateProvidedRefsValid, SpecBindingStateBoundExisting:
+		if len(preflight.SelectedSectionRefs) == 0 && len(input.SectionRefs) == 0 {
+			return fmt.Errorf("spec_binding_preflight state %q requires selected_section_refs or explicit section_refs", preflight.State)
+		}
+		if len(preflight.SelectedSectionRefs) > 0 && len(input.SectionRefs) > 0 && !sameCompactStringSet(preflight.SelectedSectionRefs, input.SectionRefs) {
+			return fmt.Errorf("spec_binding_preflight selected_section_refs do not match decision section_refs: preflight=%s decision=%s", strings.Join(preflight.SelectedSectionRefs, ","), strings.Join(input.SectionRefs, ","))
+		}
+		return nil
+	case SpecBindingStateNoSpecs, SpecBindingStateNoActiveSections:
+		return nil
+	case SpecBindingStateOutOfSpec:
+		mode := strings.TrimSpace(input.Mode)
+		if mode == "" {
+			mode = string(ModeStandard)
+		}
+		if mode != string(ModeTactical) && mode != string(ModeNote) {
+			return fmt.Errorf("spec_binding_preflight state out_of_spec is allowed only for tactical/note decisions with explicit rationale, got mode=%q", mode)
+		}
+		if strings.TrimSpace(preflight.StatusDebt.Message) == "" && strings.TrimSpace(input.BindingFallbackReason) == "" {
+			return fmt.Errorf("spec_binding_preflight state out_of_spec requires status_debt.message or binding_fallback_reason")
+		}
+		return nil
+	case SpecBindingStateInvalidRefs, SpecBindingStateConflict, SpecBindingStateAmbiguous, SpecBindingStateDraftNeeded:
+		return fmt.Errorf("spec_binding_preflight blocks decision creation: state=%s operator_action_required=%s", preflight.State, preflight.OperatorActionRequired)
+	default:
+		return fmt.Errorf("spec_binding_preflight has unsupported state %q", preflight.State)
+	}
+}
+
+func sameCompactStringSet(left []string, right []string) bool {
+	left = compactStrings(left)
+	right = compactStrings(right)
+	if len(left) != len(right) {
+		return false
+	}
+	seen := make(map[string]struct{}, len(left))
+	for _, value := range left {
+		seen[value] = struct{}{}
+	}
+	for _, value := range right {
+		if _, ok := seen[value]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 func validateDecisionInput(input DecideInput) error {
+	if err := validateDecisionSpecBindingPreflight(input); err != nil {
+		return err
+	}
+
 	// Build skip set + validate skip names + reject skips outside tactical mode.
 	skipSet, skipErr := buildSkipSet(input)
 	if skipErr != nil {
@@ -621,6 +752,8 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		WeakestLink:             input.WeakestLink,
 		TaskContext:             sanitizeIDSlug(input.TaskContext),
 		SectionRefs:             input.SectionRefs,
+		SpecBindingPreflight:    normalizeSpecBindingPreflight(input.SpecBindingPreflight),
+		SpecBindingRequired:     input.SpecBindingRequired,
 		WhyNotOthers:            input.WhyNotOthers,
 		Claims:                  decisionInputClaims(input),
 		PreConditions:           input.PreConditions,

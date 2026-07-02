@@ -24,6 +24,17 @@ haft artifact create solution.explore --input-file <input.json> --json
 
 `mcp__haft__haft_solution(action="explore", ...)` remains the compatible fallback.
 
+## PatternUse Gateway
+
+Before substantive reasoning or work-shaping, call
+`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
+Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
+material. If `should_use_pattern=true` and this skill needs detail, request
+`mode="full"` and carry the returned output shape, boundary, evidence need, and
+blocked stronger use. Do not inline the FPF catalog in this skill. PatternUse
+is not approval, not evidence, not a DecisionRecord, not MethodPack, and not a
+gate.
+
 ## Step 1 — Ensure the problem is framed (agent infers first, asks only on real ambiguity)
 
 If no `problem_ref` is in the operator's request:
@@ -80,7 +91,38 @@ For lightweight exploration (tactical mode, <5 minute task) you can generate var
 - Each variant has novelty_marker (kernel rejects empty)
 - Variants differ in KIND, not degree (your judgment; kernel emits soft warning if titles look similar)
 
-## Step 4 — Call kernel
+## Step 4 — Early spec-fit probe before recording variants
+
+If the project has active SpecSections and any variant may change project
+behavior, duties, boundaries, evidence requirements, or governed code, run a
+read-only probe before calling `haft_solution(action="explore")`:
+
+```
+mcp__haft__haft_query(
+  action="spec_fit_probe",
+  probe={
+    "problem_signal": "<ProblemCard signal>",
+    "scope": "<portfolio scope>",
+    "variants": [
+      {"id":"V1","title":"<title>","description":"<description>"},
+      {"id":"V2","title":"<title>","description":"<description>"}
+    ]
+  }
+)
+```
+
+Use `variant_spec_fit` to annotate risks before recording:
+
+- `relates_existing` — variant likely fits existing active SpecSections.
+- `spec_gap` — variant probably needs an h-spec draft section/spec delta.
+- `conflict` / `outside_current_spec` — keep it visible as a spec-changing
+  variant; do not hide that burden until h-decide.
+- `no_signal` — do not claim spec coverage.
+
+This is advisory and read-only. It does not approve specs and does not replace
+decision-time `spec_binding_preflight`.
+
+## Step 5 — Call kernel
 
 ```
 mcp__haft__haft_solution(
@@ -105,7 +147,7 @@ mcp__haft__haft_solution(
 
 The kernel returns the SolutionPortfolio ID. Soft warnings may flag disguised duplicates (titles too similar), missing parity_rules for 3+ variants, or weakest_links that just repeat titles — read and self-correct if needed.
 
-## Step 5 — Present to operator
+## Step 6 — Present to operator
 
 Surface:
 - Each variant with its weakest_link and novelty_marker

@@ -24,6 +24,17 @@ haft artifact create problem.frame --input-file <input.json> --json
 
 `mcp__haft__haft_problem(action="frame", ...)` remains the compatible fallback.
 
+## PatternUse Gateway
+
+Before substantive reasoning or work-shaping, call
+`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
+Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
+material. If `should_use_pattern=true` and this skill needs detail, request
+`mode="full"` and carry the returned output shape, boundary, evidence need, and
+blocked stronger use. Do not inline the FPF catalog in this skill. PatternUse
+is not approval, not evidence, not a DecisionRecord, not MethodPack, and not a
+gate.
+
 ## Procedure
 
 ### Step 0 — Maintenance check (FPF B.3.4 evidence decay)
@@ -43,6 +54,35 @@ proceed with the new frame anyway. Do not silently re-frame around
 obsolete artifacts.
 
 See CLAUDE.md Critical Reminders — maintenance discipline.
+
+### Step 0.5 — Early spec-fit probe when specs may apply
+
+If the project has active SpecSections and the problem may change project
+behavior, duties, boundaries, evidence requirements, or governed code, run:
+
+```
+mcp__haft__haft_query(
+  action="spec_fit_probe",
+  probe={
+    "problem_signal": "<stabilized signal>",
+    "scope": "<candidate scope>",
+    "affected_files": ["<if known>"],
+    "target_refs": ["<if known>"]
+  }
+)
+```
+
+Use the result as advisory routing:
+
+- `relates_existing` — carry candidate section refs into the frame context.
+- `spec_gap` — note that h-spec/draft-section work may be needed before a
+  load-bearing decision.
+- `conflict` / `outside_current_spec` — frame the problem as a possible spec
+  delta, not ordinary implementation cleanup.
+- `no_signal` — proceed, but do not claim spec coverage.
+
+This probe is not approval, baseline, evidence, or decision-time binding. It
+does not replace `spec_binding_preflight` before h-decide.
 
 ### Step 1 — Stabilize the signal (FPF B.4.1)
 

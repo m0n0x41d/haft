@@ -63,7 +63,93 @@ func verifyIndex(args []string) error {
 			indexedSections, shippedFPFEmbeddingContract, count, describeDominantSpecEmbeddingContract(db))
 	}
 
-	fmt.Printf("fpf.db OK: commit %s, %d baked section vectors for %s\n", commit[:min(8, len(commit))], count, shippedFPFEmbeddingContract)
+	routeDocuments := fpf.PatternUseRouteEmbeddingDocuments(fpf.DefaultPatternUseRouteCards())
+	routeCount, err := fpf.CountPatternUseRouteEmbeddingsForContract(
+		db,
+		shippedFPFEmbeddingContract.provider,
+		shippedFPFEmbeddingContract.model,
+		shippedFPFEmbeddingContract.dim,
+	)
+	if err != nil {
+		return fmt.Errorf("read pattern-use route embedding contract: %w", err)
+	}
+	if routeCount != len(routeDocuments) {
+		return fmt.Errorf("fpf.db PatternUse route vector contract mismatch: expected %d route document vectors for %s, found %d (%s) — run `task fpf-index` without HAFT_FPF_BAKE_SCOPE/HAFT_FPF_BAKE_DIM/HAFT_EMBED_MODEL overrides and commit the result",
+			len(routeDocuments), shippedFPFEmbeddingContract, routeCount, describeDominantPatternUseRouteEmbeddingContract(db))
+	}
+
+	missingRouteDocuments, err := fpf.MissingPatternUseRouteEmbeddingDocuments(
+		db,
+		shippedFPFEmbeddingContract.provider,
+		shippedFPFEmbeddingContract.model,
+		shippedFPFEmbeddingContract.dim,
+		routeDocuments,
+	)
+	if err != nil {
+		return fmt.Errorf("verify pattern-use route embedding hashes: %w", err)
+	}
+	if len(missingRouteDocuments) > 0 {
+		return fmt.Errorf("fpf.db PatternUse route vectors are STALE: %d current route document hash(es) missing for %s (first missing: %s) — run `task fpf-index` and commit the result",
+			len(missingRouteDocuments), shippedFPFEmbeddingContract, missingRouteDocuments[0])
+	}
+
+	intentDocuments := fpf.PatternUseIntentEmbeddingDocuments(fpf.DefaultPatternUseIntentLaneCards())
+	intentCount, err := fpf.CountPatternUseIntentEmbeddingsForContract(
+		db,
+		shippedFPFEmbeddingContract.provider,
+		shippedFPFEmbeddingContract.model,
+		shippedFPFEmbeddingContract.dim,
+	)
+	if err != nil {
+		return fmt.Errorf("read pattern-use intent embedding contract: %w", err)
+	}
+	if intentCount != len(intentDocuments) {
+		return fmt.Errorf("fpf.db PatternUse intent vector contract mismatch: expected %d intent document vectors for %s, found %d (%s) — run `task fpf-index` without HAFT_FPF_BAKE_SCOPE/HAFT_FPF_BAKE_DIM/HAFT_EMBED_MODEL overrides and commit the result",
+			len(intentDocuments), shippedFPFEmbeddingContract, intentCount, describeDominantPatternUseIntentEmbeddingContract(db))
+	}
+
+	missingIntentDocuments, err := fpf.MissingPatternUseIntentEmbeddingDocuments(
+		db,
+		shippedFPFEmbeddingContract.provider,
+		shippedFPFEmbeddingContract.model,
+		shippedFPFEmbeddingContract.dim,
+		intentDocuments,
+	)
+	if err != nil {
+		return fmt.Errorf("verify pattern-use intent embedding hashes: %w", err)
+	}
+	if len(missingIntentDocuments) > 0 {
+		return fmt.Errorf("fpf.db PatternUse intent vectors are STALE: %d current intent document hash(es) missing for %s (first missing: %s) — run `task fpf-index` and commit the result",
+			len(missingIntentDocuments), shippedFPFEmbeddingContract, missingIntentDocuments[0])
+	}
+
+	atlasNodes, atlasCards, atlasLints, err := fpf.PatternAtlasCounts(db)
+	if err != nil {
+		return fmt.Errorf("read PatternAtlas contract: %w", err)
+	}
+	if atlasNodes == 0 || atlasCards == 0 {
+		return fmt.Errorf("fpf.db PatternAtlas contract mismatch: expected baked atlas nodes/cards, found %d nodes and %d cards — run `task fpf-index` and commit the result", atlasNodes, atlasCards)
+	}
+	if err := verifyPatternAtlasCommit(db, expectedSHA); err != nil {
+		return err
+	}
+	if err := verifyPatternAtlasRequiredCards(db); err != nil {
+		return err
+	}
+	if err := verifyPatternAtlasIntegrity(db); err != nil {
+		return err
+	}
+
+	fmt.Printf("fpf.db OK: commit %s, %d baked section vectors, %d PatternUse route vectors, %d PatternUse intent vectors, %d PatternAtlas nodes, %d PatternAtlas cards, %d PatternAtlas lints for %s\n",
+		commit[:min(8, len(commit))],
+		count,
+		routeCount,
+		intentCount,
+		atlasNodes,
+		atlasCards,
+		atlasLints,
+		shippedFPFEmbeddingContract,
+	)
 	return nil
 }
 
@@ -125,6 +211,81 @@ func describeDominantSpecEmbeddingContract(db *sql.DB) string {
 	return fmt.Sprintf("dominant contract %s/%s/%d has %d vectors", provider, model, dim, count)
 }
 
+func describeDominantPatternUseRouteEmbeddingContract(db *sql.DB) string {
+	provider, model, dim, count, err := fpf.PatternUseRouteEmbeddingContract(db)
+	if err != nil {
+		return fmt.Sprintf("dominant contract unavailable: %v", err)
+	}
+	if count == 0 {
+		return "no baked PatternUse route vectors"
+	}
+	return fmt.Sprintf("dominant contract %s/%s/%d has %d vectors", provider, model, dim, count)
+}
+
+func describeDominantPatternUseIntentEmbeddingContract(db *sql.DB) string {
+	provider, model, dim, count, err := fpf.PatternUseIntentEmbeddingContract(db)
+	if err != nil {
+		return fmt.Sprintf("dominant contract unavailable: %v", err)
+	}
+	if count == 0 {
+		return "no baked PatternUse intent vectors"
+	}
+	return fmt.Sprintf("dominant contract %s/%s/%d has %d vectors", provider, model, dim, count)
+}
+
+var requiredPatternAtlasCards = []string{"F.18", "C.30", "A.10", "A.7", "B.3"}
+
+func verifyPatternAtlasCommit(db *sql.DB, expectedSHA string) error {
+	var mismatches int
+	err := db.QueryRow(`
+		SELECT COUNT(*)
+		FROM (
+			SELECT fpf_commit FROM pattern_atlas_nodes
+			UNION ALL
+			SELECT fpf_commit FROM pattern_atlas_cards
+			UNION ALL
+			SELECT fpf_commit FROM pattern_atlas_lints
+		)
+		WHERE fpf_commit <> ?`, expectedSHA).Scan(&mismatches)
+	if err != nil {
+		return fmt.Errorf("read PatternAtlas commit contract: %w", err)
+	}
+	if mismatches > 0 {
+		return fmt.Errorf("fpf.db PatternAtlas is STALE: %d atlas row(s) do not match submodule HEAD %q — run `task fpf-index` and commit the result", mismatches, expectedSHA)
+	}
+	return nil
+}
+
+func verifyPatternAtlasRequiredCards(db *sql.DB) error {
+	missing, err := fpf.MissingPatternAtlasCards(db, requiredPatternAtlasCards)
+	if err != nil {
+		return fmt.Errorf("verify PatternAtlas required cards: %w", err)
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("fpf.db PatternAtlas missing full card(s): %s — run `task fpf-index` and inspect markdown heading extraction", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+func verifyPatternAtlasIntegrity(db *sql.DB) error {
+	rangeErrors, err := fpf.PatternAtlasRangeIntegrityErrors(db)
+	if err != nil {
+		return fmt.Errorf("verify PatternAtlas ranges: %w", err)
+	}
+	if len(rangeErrors) > 0 {
+		return fmt.Errorf("fpf.db PatternAtlas range integrity failed: %s", rangeErrors[0])
+	}
+
+	hashErrors, err := fpf.PatternAtlasHashIntegrityErrors(db)
+	if err != nil {
+		return fmt.Errorf("verify PatternAtlas hashes: %w", err)
+	}
+	if len(hashErrors) > 0 {
+		return fmt.Errorf("fpf.db PatternAtlas hash integrity failed: %s", hashErrors[0])
+	}
+	return nil
+}
+
 const routeArtifactPath = "internal/fpf/fpf-routes.json"
 const patternsDir = "internal/fpf/patterns"
 
@@ -157,6 +318,7 @@ func run() error {
 }
 
 func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
+	resolvedCommit := resolveSpecCommit(commitSHA, specPath)
 	corpus, err := fpf.LoadSpecIndexCorpus(specPath)
 	if err != nil {
 		return fmt.Errorf("load production spec corpus: %w", err)
@@ -181,11 +343,19 @@ func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
 		return fmt.Errorf("building index: %w", err)
 	}
 
+	atlas, err := fpf.LoadPatternAtlas(specPath, resolvedCommit)
+	if err != nil {
+		return fmt.Errorf("build PatternAtlas: %w", err)
+	}
+	if err := fpf.StorePatternAtlas(dbPath, atlas); err != nil {
+		return fmt.Errorf("store PatternAtlas: %w", err)
+	}
+
 	// build_time is the FPF spec COMMIT's date, not wall-clock time, so the
 	// index is byte-reproducible: a given submodule SHA always yields the same
 	// fpf.db (committed == rebuild; every release-matrix platform ships identical
 	// bytes). Wall-clock time.Now() would drift every build.
-	metadata := buildSpecIndexMetadata(specPath, len(allChunks), commitSHA, resolveSpecBuildTime(commitSHA, specPath))
+	metadata := buildSpecIndexMetadata(specPath, len(allChunks), resolvedCommit, resolveSpecBuildTime(resolvedCommit, specPath))
 	if err := fpf.SetSpecMetaEntries(dbPath, metadata); err != nil {
 		return fmt.Errorf("setting meta: %w", err)
 	}
@@ -198,12 +368,30 @@ func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
 		return fmt.Errorf("bake embeddings: no section vectors baked — install/build haft-embed before running indexer")
 	}
 
-	fmt.Printf("Indexed %d chunks (%d spec + %d patterns) into %s; baked %d section vectors\n",
-		len(allChunks), len(corpus.Indexed), len(patternChunks), dbPath, baked)
+	routeBaked, err := bakePatternUseRouteEmbeddingsFunc(dbPath)
+	if err != nil {
+		return fmt.Errorf("bake PatternUse route embeddings: %w", err)
+	}
+	if routeBaked == 0 {
+		return fmt.Errorf("bake PatternUse route embeddings: no route document vectors baked")
+	}
+
+	intentBaked, err := bakePatternUseIntentEmbeddingsFunc(dbPath)
+	if err != nil {
+		return fmt.Errorf("bake PatternUse intent embeddings: %w", err)
+	}
+	if intentBaked == 0 {
+		return fmt.Errorf("bake PatternUse intent embeddings: no intent document vectors baked")
+	}
+
+	fmt.Printf("Indexed %d chunks (%d spec + %d patterns) and %d PatternAtlas cards into %s; baked %d section vectors, %d PatternUse route vectors, and %d PatternUse intent vectors\n",
+		len(allChunks), len(corpus.Indexed), len(patternChunks), len(atlas.Cards), dbPath, baked, routeBaked, intentBaked)
 	return nil
 }
 
 var bakeSpecEmbeddingsFunc = bakeSpecEmbeddings
+var bakePatternUseRouteEmbeddingsFunc = bakePatternUseRouteEmbeddings
+var bakePatternUseIntentEmbeddingsFunc = bakePatternUseIntentEmbeddings
 
 // bakeSpecEmbeddings embeds every section into fpf_embeddings via the local
 // sidecar (MRL-256). Index refresh is allowed to degrade at runtime, but the
@@ -220,6 +408,36 @@ func bakeSpecEmbeddings(dbPath string) (int, error) {
 
 	ctx := context.Background()
 	return fpf.BakeSpecEmbeddings(ctx, dbPath, indexEmbedderAdapter{embedder: emb}, bakeScopeFromEnv())
+}
+
+func bakePatternUseRouteEmbeddings(dbPath string) (int, error) {
+	emb, err := embedding.New(embedding.Config{Provider: embedding.ProviderLocal, Model: os.Getenv("HAFT_EMBED_MODEL"), Dim: specEmbeddingBakeDim()})
+	if err != nil {
+		if embedding.Degraded(err) {
+			return 0, fmt.Errorf("haft-embed unavailable; cannot build committed PatternUse route index without baked vectors: %w", err)
+		}
+		return 0, fmt.Errorf("start embedder: %w", err)
+	}
+	defer func() { _ = emb.Close() }()
+
+	ctx := context.Background()
+	routes := fpf.DefaultPatternUseRouteCards()
+	return fpf.BakePatternUseRouteEmbeddings(ctx, dbPath, indexEmbedderAdapter{embedder: emb}, routes)
+}
+
+func bakePatternUseIntentEmbeddings(dbPath string) (int, error) {
+	emb, err := embedding.New(embedding.Config{Provider: embedding.ProviderLocal, Model: os.Getenv("HAFT_EMBED_MODEL"), Dim: specEmbeddingBakeDim()})
+	if err != nil {
+		if embedding.Degraded(err) {
+			return 0, fmt.Errorf("haft-embed unavailable; cannot build committed PatternUse intent index without baked vectors: %w", err)
+		}
+		return 0, fmt.Errorf("start embedder: %w", err)
+	}
+	defer func() { _ = emb.Close() }()
+
+	ctx := context.Background()
+	cards := fpf.DefaultPatternUseIntentLaneCards()
+	return fpf.BakePatternUseIntentEmbeddings(ctx, dbPath, indexEmbedderAdapter{embedder: emb}, cards)
 }
 
 // specEmbeddingBakeDim is the MRL truncation target for the bake. Default 256

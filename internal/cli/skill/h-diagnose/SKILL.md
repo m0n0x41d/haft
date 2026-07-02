@@ -12,6 +12,17 @@ allowed-tools: Bash Read Grep Glob Agent mcp__haft__haft_problem mcp__haft__haft
 
 You are running the FPF diagnosis workflow: B.4.1 stabilize → B.5.2 abductive four-step → ranked verdict with rivals visible. Parallel subagents test distinct hypotheses in isolated contexts to prevent anchoring bias.
 
+## PatternUse Gateway
+
+Before substantive reasoning or work-shaping, call
+`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
+Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
+material. If `should_use_pattern=true` and this skill needs detail, request
+`mode="full"` and carry the returned output shape, boundary, evidence need, and
+blocked stronger use. Do not inline the FPF catalog in this skill. PatternUse
+is not approval, not evidence, not a DecisionRecord, not MethodPack, and not a
+gate.
+
 ## Step 1 — Stabilize the signal (B.4.1)
 
 Read the symptom carefully. Do not jump to causes. Compress to one sentence:

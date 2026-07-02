@@ -464,7 +464,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			InputContract: interfaceContract{
 				RequiredFields: []string{"selected_title", "why_selected", "selection_policy", "weakest_link", "counterargument", "why_not_others", "rollback", "predictions", "invariants", "affected_files", "valid_until"},
-				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "transformation_record", "decision_subject_ref", "implementation_footprint", "governance_targets", "drift_watch_targets", "claims", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "search_keywords", "binding_hints", "binding_scope", "binding_fallback_reason", "binding_targets", "_skips", "_skip_reason"},
+				OptionalFields: []string{"problem_ref", "problem_refs", "portfolio_ref", "choice_result", "transformation_record", "decision_subject_ref", "implementation_footprint", "governance_targets", "drift_watch_targets", "claims", "evidence_requirements", "refresh_triggers", "context", "mode", "task_context", "section_refs", "spec_binding_preflight", "spec_binding_preflight_required", "search_keywords", "binding_hints", "binding_scope", "binding_fallback_reason", "binding_targets", "_skips", "_skip_reason"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "choice_result",
@@ -475,6 +475,11 @@ func haftInterfaceCatalog() []interfaceCapability {
 						Field: "transformation_record",
 						Shape: `{"schema_version":1,"transformed_entity":"ProblemCard profile","initial_state":"implicit prose","post_state":"typed profile/readiness object","relation":"makes explicit","context":"semantic-spine slice","window":"2026-Q3","method_refs":["mpull-..."],"work_refs":["wc-..."],"evidence_refs":["evid-..."],"publication_refs":["pub-..."]}`,
 						Note:  "Describes the target transformation only; method/work/evidence/publication refs remain separate records and are not proof of occurrence, approval, or publication.",
+					},
+					{
+						Field: "spec_binding_preflight",
+						Shape: `{"schema_version":1,"record_kind":"spec_binding_preflight","state":"provided_refs_valid|bound_existing|no_specs|no_active_sections|out_of_spec","selected_section_refs":["TS.boundary.001"],"status_debt":{"severity":"none|low|high","message":"..."}}`,
+						Note:  "Receipt from query.spec_binding_preflight; invalid_refs, conflict, ambiguous, and draft_section_needed block DecisionRecord creation.",
 					},
 					{
 						Field: "binding_targets",
@@ -803,7 +808,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":36,"kernel_owned_contracts":36,"mcp_mirrored_actions":19,"cli_available_surfaces":28,"binding_authority_surfaces":2,"read_only_surfaces":20,"legacy_transport_exceptions":17,"schema_covered_surfaces":31,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":31,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":31,"shape_missing_surfaces":0,"shape_skipped_fields":29,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":31,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":31,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":40,"kernel_owned_contracts":40,"mcp_mirrored_actions":23,"cli_available_surfaces":29,"binding_authority_surfaces":2,"read_only_surfaces":24,"legacy_transport_exceptions":21,"schema_covered_surfaces":35,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":35,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":35,"shape_missing_surfaces":0,"shape_skipped_fields":35,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":35,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":35,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, materialize host descriptions, create evidence, approve binding actions, pass gates, create claim/global truth, publish, or change tool descriptions.",
 					},
 				},
@@ -836,7 +841,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":36,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":36,"generated_schema_fragments":29,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":40,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":40,"generated_schema_fragments":33,"runtime_schema_mirrors":33,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -879,6 +884,52 @@ func haftInterfaceCatalog() []interfaceCapability {
 			},
 			OutputVolume: []string{"default: compact cockpit plus one-line coverage cue", "full=true: detailed status plus complete coverage projection"},
 			Invariants:   commonInterfaceInvariants(),
+		},
+		{
+			ID:      "query.pattern_use",
+			Purpose: "Return a read-only PatternUse gateway recommendation for one operator task before substantive reasoning or work-shaping.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "pattern_use",
+				MCPCall:          `haft_query(action="pattern_use", mode="compact", query="Choose a name for this project/system/process.")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft pattern-use recommend \"Choose a name for this project/system/process.\" --mode compact --json",
+				DiscoveryCommand: "haft interface query.pattern_use --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"query"},
+				OptionalFields: []string{"mode", "source_refs"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "compact_response",
+						Shape: `{"schema_version":1,"record_kind":"pattern_use_gateway","authority":"advisory_pattern_use_record","should_use_pattern":"true|false|abstain","candidate_pattern_use_set":[{"pattern_ref":"A.6.B","title":"Boundary Norm Square","source_tier":"fts","source_reason":"..."}],"recommended_pattern_use":{"pattern_ref":"F.18","title":"nameCard"},"suggested_haft_surface":"inline","suggested_method_refs":["systematic-debugging-before-fix"],"support_level":"implemented_substrate|retrieved_uncompiled|missing|abstain","one_line_reason":"...","one_line_boundary":"No naming authority without EntityOfConcern and collision checks.","full_recommendation_command":"haft_query(action=\"pattern_use\", mode=\"full\", query=\"...\")"}`,
+						Note:  "Compact mode is the default gateway: it decides whether to pull a full PatternUseRecommendation without inlining the FPF catalog in skill carriers.",
+					},
+					{
+						Field: "full_response",
+						Shape: `{"schema_version":1,"record_kind":"pattern_use_recommendation","authority":"advisory_pattern_use_record","candidate_pattern_use_set":[{"pattern_ref":"A.6.B","title":"Boundary Norm Square","summary":"...","snippet":"...","source_tier":"fts","source_reason":"..."}],"recommended_pattern_use":{"pattern_ref":"F.18","title":"nameCard"},"wrong_pattern_boundary":[{"tempting_pattern_or_move":"brainstorm names directly","why_wrong_now":"..."}],"required_output_shape":{"carrier_kind":"nameCard|retrieved_pattern_applicability_card","required_sections":["EntityOfConcern","candidate_name","collision_checks"]},"required_evidence_or_sota":[{"requirement":"...","freshness_or_source_rule":"..."}],"blocked_stronger_use":[{"blocked_use":"No naming authority without EntityOfConcern and collision checks.","unblock_condition":"..."}],"closeout_or_verification_expectation":[{"expectation":"..."}],"support_level":"implemented_substrate|retrieved_uncompiled"}`,
+						Note:  "Top-k FPF search is not enough; a valid record includes pattern, wrong-boundary, output shape, evidence/SoTA, blocked stronger use, and closeout expectation; it must not create a DecisionRecord, claim truth, or global truth.",
+					},
+					{
+						Field: "index_response",
+						Shape: `{"schema_version":1,"record_kind":"pattern_use_index","authority":"read_only_pattern_use_index_not_normative_fpf_source","coverage":"seed_route_cards_not_full_fpf_catalog","full_fpf_catalog_covered":false,"compiled_route_card_count":11,"retrievable_pattern_card_count":66,"coverage_notes":["retrievable FPF pattern cards are recall candidates only"],"route_cards":[{"id":"f18_naming_namecard","recommended_pattern_use":{"pattern_ref":"F.18","title":"nameCard"}}]}`,
+						Note:  "The V1 index has seed compiled route cards plus FPF-wide retrieval candidates; retrieval coverage is not a claim that all FPF cards have compiled route cards.",
+					},
+				},
+				Notes: []string{
+					"Read-only: this recommends a pattern-use move; it does not create a DecisionRecord, WorkCommission, MethodRun gate result, evidence, approval, claim truth, global truth, or publication.",
+					"Use compact mode before substantive reasoning or work-shaping; ask for full mode only when should_use_pattern=true and the skill needs the output shape, evidence requirement, wrong-boundary, or blocked stronger use.",
+					"Skill carriers must not inline pattern category lists or route cards; the catalog belongs in the kernel/index.",
+					"Suggested MethodPack refs are read-only bridge hints; PatternUse does not open or close MethodRuns.",
+					"Support level distinguishes implemented substrate, retrieved uncompiled candidates, missing support, and abstain; low support should ask for missing context rather than fabricate a precise pattern.",
+				},
+			},
+			OutputVolume: []string{"default MCP/CLI JSON: compact PatternUse gateway projection", "mode=full: complete PatternUseRecommendation", "index: haft pattern-use index --json shows seed route count plus retrievable FPF pattern-card count", "audit: haft pattern-use audit --input FILE --json; never in compact status"},
+			Invariants: append(commonInterfaceInvariants(),
+				"PatternUseRecommendation is advisory and read-only.",
+				"PatternUseRecommendation is not MethodPack, not a ProcessPattern artifact kind, and not a binding authority surface.",
+				"Default status must not inline PatternUse route cards or audit rows.",
+			),
 		},
 		{
 			ID:      "query.code_context",
@@ -1127,6 +1178,120 @@ func haftInterfaceCatalog() []interfaceCapability {
 				"Current-authority conflict posture is not evidence, approval, GateDecision, claim truth, global truth, or publication; it is a fail-closed gate input when an OperationalGate is present.",
 				"GateDecision passed/blocked is emitted only from an explicit OperationalGate profile.",
 				"GateDecision remains a derived reading, not spec approval, evidence creation, WorkCommission, claim truth, global truth, publication, or execution authority.",
+			),
+		},
+		{
+			ID:      "query.spec_binding_preflight",
+			Purpose: "Classify the relationship between a DecisionRecord draft and the current ProjectSpecificationSet before binding.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "spec_binding_preflight",
+				MCPCall:          `haft_query(action="spec_binding_preflight", decision_draft={"selected_title":"...","section_refs":["TS.role.001"],"affected_files":["internal/x.go"]})`,
+				CLIStatus:        "MCP/read-only query only",
+				DiscoveryCommand: "haft interface query.spec_binding_preflight --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"decision_draft"},
+				OptionalFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "decision_draft",
+						Shape: `object: selected_title, mode, load_bearing_level, section_refs, affected_files, decision_subject_ref, binding_fallback_reason, declared_relation, and related draft context fields`,
+						Note:  "Raw section_refs stay optional; the preflight classifies the relation instead of making the JSON field globally required.",
+					},
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"record_kind":"spec_binding_preflight","authority":"read_only_spec_binding_preflight","project_spec_state":"ready|partial|no_specs|no_active_sections","decision_mode":"tactical|standard|deep","load_bearing_level":"low|normal|load_bearing","state":"no_specs|no_active_sections|provided_refs_valid|invalid_refs|bound_existing|ambiguous|draft_section_needed|out_of_spec|conflict","selected_section_refs":["TS.boundary.001"],"candidate_section_refs":[{"section_ref":"TS.boundary.001","relation":"governs|context_only","confidence":"high|medium|low","basis":["matched target_refs"]}],"operator_action_required":"none|choose_section|draft_section|record_rationale|reopen_problem","status_debt":{"severity":"none|low|high","message":"..."}}`,
+						Note:  "The response is admission/check metadata only; it is not approval, baseline, evidence, GateDecision, claim truth, global truth, or publication.",
+					},
+				},
+				Notes: []string{
+					"Use before manual h-decide in spec-enabled projects; if it was not run earlier, h-decide should treat the result as a late preflight.",
+					"Provided refs fail closed when unknown, inactive, superseded, or draft-only.",
+					"no_specs and no_active_sections allow ordinary decisions with explicit unbound status; they do not make specs required globally.",
+					"bound_existing may auto-fill only for a single high-confidence existing active section match.",
+					"ambiguous requires operator choice; conflict requires reopening/spec-changing path; out_of_spec requires explicit rationale and retained debt.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON SpecBindingPreflightResult"},
+			Invariants: append(commonInterfaceInvariants(),
+				"SpecBindingPreflight is read-only and cannot approve/rebaseline specs or create a DecisionRecord.",
+				"Relation is required for spec-enabled load-bearing decisions; section_refs remains optional at raw schema level.",
+				"Draft SpecSections may be proposed by follow-up workflows but never counted as active section_refs.",
+				"Default status must not inline preflight candidates; status/overseer should surface unresolved binding debt compactly.",
+			),
+		},
+		{
+			ID:      "query.spec_trace",
+			Purpose: "Trace one SpecSection through current decisions and code drill-down commands.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "spec_trace",
+				MCPCall:          `haft_query(action="spec_trace", section_id="TS.boundary.001")`,
+				CLIStatus:        "MCP/read-only query only",
+				DiscoveryCommand: "haft interface query.spec_trace --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"section_id"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"record_kind":"spec_trace","authority":"read_only_spec_trace_diagnostic","section_id":"TS.boundary.001","section":{"id":"TS.boundary.001","status":"active"},"baseline_currentness":{"status":"current|drifted|missing"},"current_authority":{"status":"clear|overlap_needs_review|conflict_requires_operator","explicit_decision_refs":[],"derived_from_section_refs":["dec-..."]},"code_bindings":[{"decision_ref":"dec-...","affected_files":["internal/x.go"],"code_context_drilldown":["haft_query(action=\"code_context\", file=\"internal/x.go\", lane=\"decisions\")"]}],"missing_links":[]}`,
+						Note:  "Diagnostic trace only; it composes spec_use/governing_set/code_context pointers and does not create authority, evidence, approval, gate passage, claim truth, global truth, or publication.",
+					},
+				},
+				Notes: []string{
+					"Use when the operator asks whether SpecSection -> DecisionRecord -> code_context linking works end to end.",
+					"Explicit governance targets and derived section_refs are separated in current_authority.",
+					"Missing links are diagnostics, not proof that no dynamic/reflection/callback code relation exists.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON SpecTrace record"},
+			Invariants: append(commonInterfaceInvariants(),
+				"SpecTrace is read-only and diagnostic.",
+				"SpecTrace is not the authority mechanism; current-authority semantics remain in governing_set/spec_use.",
+			),
+		},
+		{
+			ID:      "query.spec_fit_probe",
+			Purpose: "Classify problem or variant compatibility with active SpecSections before frame/explore/compare.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "spec_fit_probe",
+				MCPCall:          `haft_query(action="spec_fit_probe", probe={"problem_signal":"...","scope":"...","variants":[{"id":"V1","title":"..."}]})`,
+				CLIStatus:        "MCP/read-only query only",
+				DiscoveryCommand: "haft interface query.spec_fit_probe --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"probe"},
+				OptionalFields: []string{"variants"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "probe",
+						Shape: `{"problem_signal":"...","scope":"...","section_refs":["TS.boundary.001"],"affected_files":["internal/x.go"],"target_refs":["symbol:internal/x.go::Run"],"conflict_refs":[],"declared_relation":"relates_existing"}`,
+						Note:  "Read-only early compatibility probe; it does not create ProblemCards or SolutionPortfolios.",
+					},
+					{
+						Field: "variants[]",
+						Shape: `{"id":"V1","title":"fits existing","description":"...","section_refs":["TS.boundary.001"],"affected_files":["internal/x.go"],"target_refs":["symbol:internal/x.go::Run"],"conflict_refs":[],"declared_relation":"conflict"}`,
+						Note:  "Optional candidate variants to classify before h-explore/h-compare; advisory only.",
+					},
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"record_kind":"spec_fit_probe","authority":"read_only_spec_fit_probe","state":"relates_existing|spec_gap|conflict|outside_current_spec|no_signal","candidate_section_refs":["TS.boundary.001"],"conflict_refs":[],"next_expected_action":"ordinary_explore|draft_section|explore_spec_delta","variant_spec_fit":[{"variant_ref":"V1","state":"relates_existing","section_refs":["TS.boundary.001"],"expected_action":"ordinary_explore"}]}`,
+						Note:  "This is an advisory early-warning surface; it is not approval, baseline, evidence, GateDecision, claim truth, global truth, or publication.",
+					},
+				},
+				Notes: []string{
+					"Use before h-frame/h-explore/h-compare when a project has active specs and the work may be spec-bearing.",
+					"spec_gap points to h-spec/draft-section work before a decision is bound.",
+					"conflict and outside_current_spec should become comparison dimensions or explicit spec-delta variants, not hidden late h-decide surprises.",
+				},
+			},
+			OutputVolume: []string{"default: one JSON SpecFitProbeResult"},
+			Invariants: append(commonInterfaceInvariants(),
+				"SpecFitProbe is advisory and read-only; it cannot approve specs, create artifacts, or bind decisions.",
+				"Early probe results may inform frame/explore/compare but do not satisfy decision-time spec_binding_preflight by themselves.",
 			),
 		},
 		{
@@ -1504,7 +1669,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 					{
 						Field: "response",
-						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","view":"compact","snapshot":{"generated_at":"RFC3339","source":"artifact_store_decision_records","projection":"refreshable_current_governing_frontier","authority_boundary":"derived_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority","filter_applied":true},"filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"authority_frontier":{"authority_boundary":"current_decision_refs_are_governing_authority_terminal_history_refs_are_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"current_decision_refs":["dec-current"],"terminal_history_refs":["dec-old"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority"},"compact_sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","answer_paths":[{"target_kind":"claim|spec_section|api_contract|invariant|symbol|whole_file_fallback|file_fallback|unscoped_decision","target_ref":"...","cli":"haft decision governing-set --target-ref ... --json","mcp_call":"haft_query(action=\"governing_set\", source_refs=[...])","exact_record_needed":"...","authority_boundary":"answer_path_is_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication"}],"target_resolution":"explicit_governance_or_watch_target|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"current_decision_count":7,"operator_required":true}],"omitted_sets":42,"full_audit_command":"haft_query(action=\"governing_set\", full=true)"}`,
+						Shape: `{"schema_version":1,"authority":"read_only_current_authority_frontier","view":"compact","snapshot":{"generated_at":"RFC3339","source":"artifact_store_decision_records","projection":"refreshable_current_governing_frontier","authority_boundary":"derived_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority","filter_applied":true},"filter":{"query":"symbol:...","subject_ref":"subject:...","target_ref":"symbol:..."},"summary":{"current_decisions":7,"governing_sets":5,"conflict_sets":1,"overlap_review_sets":1,"fallback_target_sets":1,"scope_enrichment_sets":2,"terminal_history_refs":3},"authority_frontier":{"authority_boundary":"current_decision_refs_are_governing_authority_terminal_history_refs_are_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication","current_status_policy":["active","refresh_due"],"terminal_status_policy":["superseded","deprecated"],"current_decision_refs":["dec-current"],"terminal_history_refs":["dec-old"],"terminal_history_policy":"terminal decisions stay searchable history and are excluded from current authority"},"compact_sets":[{"set_id":"governing-set-...","subject_ref":"...","bounded_context":"...","target_ref":"...","answer_paths":[{"target_kind":"claim|spec_section|api_contract|invariant|symbol|whole_file_fallback|file_fallback|unscoped_decision","target_ref":"...","cli":"haft decision governing-set --target-ref ... --json","mcp_call":"haft_query(action=\"governing_set\", source_refs=[...])","exact_record_needed":"...","authority_boundary":"answer_path_is_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication"}],"target_resolution":"explicit_governance_or_watch_target|derived_from_section_refs|whole_file_fallback_requires_scope_enrichment","whole_file_fallback_targets":[...],"scope_repair_hints":["replace whole-file fallback ..."],"posture":"single_current_authority|overlap_needs_review|conflict_requires_operator","current_decision_refs":[...],"terminal_history_refs":[...],"current_decision_count":7,"operator_required":true}],"omitted_sets":42,"full_audit_command":"haft_query(action=\"governing_set\", full=true)"}`,
 						Note:  "Default MCP response is compact. limit caps compact sets; status/prompt-governor recommendations use limit=5. CLI `--json --limit N` returns the same compact projection; CLI `--json` without limit remains full audit JSON for backward compatibility. full=true restores full sets[].current_decisions and basis and ignores the compact limit. Terminal decisions are history refs, not current authority; conflicts, overlaps, and fallback scope repair hints are review cues, not automatic lineage mutations.",
 					},
 					{
@@ -1516,7 +1681,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				Notes: []string{
 					"Use this after reconciliation planning to ask what currently governs a subject/context/target.",
 					"Use query/source_refs/bearer_ref for focused drill-down instead of expanding default status.",
-					"The projection is derived from active/refresh_due decisions and effective governance/drift targets.",
+					"The projection is derived from active/refresh_due decisions, effective governance/drift targets, and canonical spec_section:<id> targets from section_refs.",
 					"snapshot is provenance for the refreshable projection; --write-snapshot persists it as a comparison carrier, not an authority artifact.",
 					"--check-snapshot compares the current frontier digest to a persisted carrier and requires review on mismatch; it does not reconcile automatically.",
 					"answer_paths give exact CLI/MCP drill-downs for claim/spec_section/API-contract/invariant/symbol/fallback/unscoped targets; they are read-only affordances, not evidence.",

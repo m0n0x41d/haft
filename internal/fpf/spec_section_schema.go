@@ -2,27 +2,8 @@ package fpf
 
 func haftSpecSectionTool() Tool {
 	return Tool{
-		Name: "haft_spec_section",
-		Description: "Drive the Haft v7 spec lifecycle method one step at a time. " +
-			"`lifecycle` returns the typed UX projection: the next admissible " +
-			"operator action, carrier, section identity, findings, and the " +
-			"underlying WorkflowIntent. " +
-			"`next_step` returns a typed WorkflowIntent (which onboarding phase is " +
-			"next, what the human should decide, what context the host agent needs " +
-			"to draft the section, which YAML fields the section must carry, " +
-			"which structural Checks the resulting section must satisfy). " +
-			"`approve` records a SpecSectionBaseline so drift detection becomes " +
-			"meaningful; `rebaseline` overwrites a baseline after the operator " +
-			"confirms drift is intentional evolution; `reopen` deletes a baseline " +
-			"so the section returns to the onboarding loop. Approval actions are " +
-			"binding governance acts; MCP fails them closed by default with " +
-			"operator_confirmation_required because model-supplied arguments are " +
-			"not kernel-verifiable authorization receipts. Manual CLI remains the " +
-			"default binding path; host receipts require a registered kernel verifier. " +
-			"Lifecycle and mutation JSON expose baseline_kind/profile so " +
-			"SpecSectionApprovalBaseline stays distinct from other snapshots. " +
-			"Surfaces (MCP plugin, host workflow, CLI) all consume the " +
-			"same intent shape.",
+		Name:        "haft_spec_section",
+		Description: "Spec lifecycle projection and binding mutations. Approval actions fail closed by default; host receipts require a registered kernel verifier.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -35,7 +16,7 @@ func haftSpecSectionTool() Tool {
 						"rebaseline",
 						"reopen",
 					},
-					"description": "lifecycle=typed spec lifecycle projection with baseline profile. next_step=legacy WorkflowIntent. approve/rebaseline/reopen are binding mutations and return operator_confirmation_required in default MCP cli-only mode; host receipts require a registered kernel verifier.",
+					"description": "lifecycle=typed projection. next_step=WorkflowIntent. approve/rebaseline/reopen return operator_confirmation_required in default MCP cli-only mode; host receipts require a registered kernel verifier.",
 				},
 				"project_root": map[string]string{
 					"type":        "string",

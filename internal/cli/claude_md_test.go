@@ -194,6 +194,51 @@ func TestInstructionCarriersPreservePeerEngineeringStyle(t *testing.T) {
 	assertContains(t, "repo AGENTS.md", agentsContent, "Derive changed files, commands, test output")
 }
 
+func TestInstructionCarriersExposePatternUseGatewayWithoutCatalog(t *testing.T) {
+	repoRoot, err := findRepoRoot()
+	if err != nil {
+		t.Skipf("skipping sync check outside repo: %v", err)
+	}
+
+	claudeData, err := os.ReadFile(filepath.Join(repoRoot, "CLAUDE.md"))
+	if err != nil {
+		t.Fatalf("read repo CLAUDE.md: %v", err)
+	}
+	agentsData, err := os.ReadFile(filepath.Join(repoRoot, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read repo AGENTS.md: %v", err)
+	}
+
+	for carrier, content := range map[string]string{
+		"embedded template": embeddedClaudeMDTemplate,
+		"repo CLAUDE.md":    string(claudeData),
+		"repo AGENTS.md":    string(agentsData),
+	} {
+		for _, want := range []string{
+			"PatternUse Gateway",
+			`action="pattern_use"`,
+			`mode="compact"`,
+			`mode="full"`,
+			"should_use_pattern",
+			"Do not inline the FPF catalog",
+			"PatternUse is advisory and read-only",
+			"not approval",
+			"not MethodPack",
+		} {
+			assertContains(t, carrier, content, want)
+		}
+		for _, banned := range []string{
+			"Naming/terminology requests should route",
+			"Architecture requests should route",
+			"SoTA/current-practice requests should route",
+		} {
+			if strings.Contains(content, banned) {
+				t.Fatalf("%s inlines stale PatternUse catalog cue %q", carrier, banned)
+			}
+		}
+	}
+}
+
 func assertContains(t *testing.T, carrier string, content string, fragment string) {
 	t.Helper()
 	if !strings.Contains(content, fragment) {

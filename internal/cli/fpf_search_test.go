@@ -754,8 +754,14 @@ func stubOpenFPFDB(t *testing.T, dbPath string) func() {
 	original := openFPFDBFunc
 	originalHybrid := fpfHybrid
 	originalBuilder := buildFPFHybridFunc
+	originalPatternUseHybrid := patternUseHybrid
+	originalPatternUseBuilder := buildPatternUseHybridFunc
 	fpfHybrid = nil
 	buildFPFHybridFunc = func() *FpfHybrid {
+		return nil
+	}
+	patternUseHybrid = nil
+	buildPatternUseHybridFunc = func() *PatternUseHybrid {
 		return nil
 	}
 	openFPFDBFunc = func() (*sql.DB, func(), error) {
@@ -773,6 +779,8 @@ func stubOpenFPFDB(t *testing.T, dbPath string) func() {
 		openFPFDBFunc = original
 		fpfHybrid = originalHybrid
 		buildFPFHybridFunc = originalBuilder
+		patternUseHybrid = originalPatternUseHybrid
+		buildPatternUseHybridFunc = originalPatternUseBuilder
 	}
 }
 

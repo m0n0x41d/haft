@@ -543,10 +543,29 @@ func renderGoverningDecisions(b *strings.Builder, items []*artifact.Artifact, li
 		if a.Meta.Status != artifact.StatusActive {
 			suffix = fmt.Sprintf(" [%s]", a.Meta.Status)
 		}
-		fmt.Fprintf(b, "- **%s** `%s`%s%s\n", a.Meta.Title, a.Meta.ID, suffix, decisionVerificationTag(a))
+		fmt.Fprintf(b, "- **%s** `%s`%s%s%s\n", a.Meta.Title, a.Meta.ID, suffix, decisionSpecSectionRefsTag(a), decisionVerificationTag(a))
 	}
 	renderArtifactOmission(b, len(items), len(visible))
 	b.WriteString("\n")
+}
+
+func decisionSpecSectionRefsTag(a *artifact.Artifact) string {
+	df := a.UnmarshalDecisionFields()
+	if len(df.SectionRefs) == 0 {
+		return ""
+	}
+	refs := make([]string, 0, len(df.SectionRefs))
+	for _, ref := range df.SectionRefs {
+		trimmed := strings.TrimSpace(ref)
+		if trimmed == "" {
+			continue
+		}
+		refs = append(refs, fmt.Sprintf("`%s`", trimmed))
+	}
+	if len(refs) == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · SpecSections: %s", strings.Join(refs, ", "))
 }
 
 // decisionVerificationTag reports how many of a decision's predictions remain

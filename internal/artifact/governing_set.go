@@ -22,6 +22,11 @@ const (
 	GoverningSetPostureSingle   = "single_current_authority"
 	GoverningSetPostureOverlap  = "overlap_needs_review"
 	GoverningSetPostureConflict = "conflict_requires_operator"
+
+	CurrentGoverningTargetResolutionExplicit           = "explicit_governance_or_watch_target"
+	CurrentGoverningTargetResolutionDerivedSectionRefs = "derived_from_section_refs"
+	CurrentGoverningTargetResolutionWholeFileFallback  = "whole_file_fallback_requires_scope_enrichment"
+	CurrentGoverningTargetResolutionMissingExplicit    = "missing_explicit_target_unique_decision_scope"
 )
 
 type CurrentGoverningSetReport struct {
@@ -390,20 +395,52 @@ func currentGoverningSetFromBucket(bucket *currentGoverningSetBucket) CurrentGov
 }
 
 func currentGoverningTargetRefs(item DecisionReconciliationItem) []string {
-	if len(item.GovernanceTargets) > 0 {
-		return compactSortedStrings(item.GovernanceTargets)
+	refs := append([]string(nil), item.GovernanceTargets...)
+	refs = append(refs, currentGoverningSectionTargetRefs(item.SectionRefs)...)
+	refs = compactSortedStrings(refs)
+	if len(refs) > 0 {
+		return refs
 	}
+
 	return []string{"unscoped:" + item.DecisionID}
 }
 
 func currentGoverningTargetResolution(item DecisionReconciliationItem, targetRef string) string {
 	if strings.HasPrefix(targetRef, "unscoped:") {
 		if len(item.WholeFileFallbackTargets) > 0 {
-			return "whole_file_fallback_requires_scope_enrichment"
+			return CurrentGoverningTargetResolutionWholeFileFallback
 		}
-		return "missing_explicit_target_unique_decision_scope"
+		return CurrentGoverningTargetResolutionMissingExplicit
 	}
-	return "explicit_governance_or_watch_target"
+	if containsString(item.GovernanceTargets, targetRef) {
+		return CurrentGoverningTargetResolutionExplicit
+	}
+	if containsString(currentGoverningSectionTargetRefs(item.SectionRefs), targetRef) {
+		return CurrentGoverningTargetResolutionDerivedSectionRefs
+	}
+	return CurrentGoverningTargetResolutionExplicit
+}
+
+func currentGoverningSectionTargetRefs(sectionRefs []string) []string {
+	refs := []string{}
+	for _, ref := range sectionRefs {
+		refs = append(refs, currentGoverningCanonicalSpecSectionTargetRef(ref))
+	}
+	return compactSortedStrings(refs)
+}
+
+func currentGoverningCanonicalSpecSectionTargetRef(ref string) string {
+	trimmed := strings.TrimSpace(ref)
+	if trimmed == "" {
+		return ""
+	}
+	if strings.HasPrefix(trimmed, "spec_section:") {
+		return trimmed
+	}
+	if strings.HasPrefix(trimmed, "spec-section:") {
+		return "spec_section:" + strings.TrimSpace(strings.TrimPrefix(trimmed, "spec-section:"))
+	}
+	return "spec_section:" + trimmed
 }
 
 func currentGoverningSetAnswerPaths(targetRef string) []CurrentGoverningSetAnswerPath {

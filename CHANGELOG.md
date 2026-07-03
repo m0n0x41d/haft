@@ -1219,6 +1219,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **`h-verify` safe drain autonomy.** The bundled `h-verify` skill now treats an
+  operator request to verify stale/refresh-due backlog as sufficient authority
+  to apply kernel-classified machine-safe closures: rung-1 deterministic
+  auto-baselines and rung-2 allowlisted machine evidence/revalidation. Material
+  drift, semantic uncertainty, reopen/supersede choices, weak waivers, and
+  public/authority/security-sensitive cases remain operator-facing, with
+  applied automatic closures reported alongside undo commands.
 - **README onboarding flow.** README now leads with the practical Haft
   installation/onboarding path, a shorter FPF explanation, explicit `h-reason`
   and host-agent guidance, updated host tables, and a leaner roadmap section

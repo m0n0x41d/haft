@@ -39,17 +39,25 @@ If `decision_ref` is given, use it. Otherwise:
 read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
 
 When the operator asks to verify/drain the project maintenance backlog, do not
-stop after status. Use the explicit drain loop:
+stop after status and do not ask for extra approval to apply closures that the
+kernel has already classified as machine-safe. The operator's request to run
+`h-verify` on stale/refresh-due status is sufficient authority for rung-1
+deterministic auto-baselines and rung-2 allowlisted machine evidence/revalidation.
+Use the explicit drain loop:
 
 1. `mcp__haft__haft_refresh(action="drain", dry_run=true)` to preview closed /
    failed / needs_operator classes.
-2. If the operator's request already authorizes safe closure (for example:
-   "h-verify and close what you can"), call
+2. If the preview contains only kernel-classified machine-safe closures for an
+   item, apply them by default with
    `mcp__haft__haft_refresh(action="drain", dry_run=false)`.
-3. Report every automatic closure and every needs_operator item. The drain may
+   If MCP times out on a large backlog, use the equivalent CLI drain command and
+   save the JSON evidence in `.context`.
+3. Report every applied automatic closure, including undo commands when present,
+   and every needs_operator item. The drain may
    close only rung-1 deterministic drift and rung-2 allowlisted machine
    evidence/revalidation. Material drift, semantic uncertainty, reopen/supersede
-   choices, and weak waivers stay operator-facing.
+   choices, public/authority/security-sensitive cases, and weak waivers stay
+   operator-facing.
 
 ## Step 2 — Read the decision's predictions
 

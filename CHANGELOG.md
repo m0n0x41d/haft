@@ -8,6 +8,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **PatternRecall source-card recall surface.** Added `haft pattern recall` and
+  `haft_query(action="pattern_recall")` as a read-only compact/full surface for
+  FPF source-card recall over the embedded PatternAtlas and FPF retrieval
+  substrate. Compact mode is body-free; full mode returns source-card body,
+  source path, source commit, line range, root node, and body hash. Explicit
+  pattern refs such as `F.18`, `C.30`, or `A.6.B` are pulled from PatternAtlas
+  ahead of retrieval ranking, while mechanical/router-meta controls honestly
+  return `missing`. Session audit now catches compact source-card recall being
+  used for substantive application before full source-card disclosure.
+- **TermMap category field with legacy domain compatibility.** Term-map
+  carriers now use canonical `category` instead of `domain`, while legacy
+  `domain` still parses as a compatibility alias and is mirrored in API output
+  until older carriers and consumers migrate. Conflicting `category`/`domain`
+  values are reported as explicit spec-check findings.
 - **FPF engine C1 runtime route expansion.** Promoted four PatternUse
   scenario families into compiled semantic routes: performed-work vs plan
   boundary, admissible agent action planning, spec lifecycle authority, and

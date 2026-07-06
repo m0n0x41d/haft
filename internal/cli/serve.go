@@ -2041,6 +2041,26 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		return string(payload), nil
 
+	case "pattern_recall":
+		request := fpf.PatternRecallRequest{
+			Query:      stringArg(args, "query"),
+			Mode:       stringArg(args, "mode"),
+			Limit:      intArg(args, "limit", fpf.PatternRecallDefaultLimit),
+			SourceRefs: parseStringArrayFromArgs(args, "source_refs"),
+		}
+		record, err := patternRecallWithEmbeddedSourceCards(request)
+		if err != nil {
+			return "", err
+		}
+		if err := record.Validate(); err != nil {
+			return "", fmt.Errorf("build pattern-recall record: %w", err)
+		}
+		payload, err := json.Marshal(record)
+		if err != nil {
+			return "", fmt.Errorf("marshal pattern-recall record: %w", err)
+		}
+		return string(payload), nil
+
 	case "check":
 		projectRoot := filepath.Dir(haftDir)
 		report, err := buildCheckReport(ctx, store, projectRoot)
@@ -2349,7 +2369,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'pattern_use', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'pattern_use', 'pattern_recall', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 

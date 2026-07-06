@@ -809,7 +809,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":40,"kernel_owned_contracts":40,"mcp_mirrored_actions":23,"cli_available_surfaces":29,"binding_authority_surfaces":2,"read_only_surfaces":24,"legacy_transport_exceptions":21,"schema_covered_surfaces":35,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":35,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":35,"shape_missing_surfaces":0,"shape_skipped_fields":35,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":35,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":35,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":41,"kernel_owned_contracts":41,"mcp_mirrored_actions":24,"cli_available_surfaces":30,"binding_authority_surfaces":2,"read_only_surfaces":25,"legacy_transport_exceptions":22,"schema_covered_surfaces":36,"schema_missing_surfaces":0,"schema_excluded_fields":15,"schema_required_covered_surfaces":36,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":36,"shape_missing_surfaces":0,"shape_skipped_fields":37,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":36,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":36,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered","excluded_fields":["task_context"]},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, materialize host descriptions, create evidence, approve binding actions, pass gates, create claim/global truth, publish, or change tool descriptions.",
 					},
 				},
@@ -842,7 +842,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":40,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":40,"generated_schema_fragments":33,"runtime_schema_mirrors":33,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":41,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":41,"generated_schema_fragments":34,"runtime_schema_mirrors":34,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -930,6 +930,46 @@ func haftInterfaceCatalog() []interfaceCapability {
 				"PatternUseRecommendation is advisory and read-only.",
 				"PatternUseRecommendation is not MethodPack, not a ProcessPattern artifact kind, and not a binding authority surface.",
 				"Default status must not inline PatternUse route cards or audit rows.",
+			),
+		},
+		{
+			ID:      "query.pattern_recall",
+			Purpose: "Return read-only FPF source-card recall candidates for a query, with compact body-free default and full source-card drilldown.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "pattern_recall",
+				MCPCall:          `haft_query(action="pattern_recall", mode="compact", query="Use Boundary Norm Square")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft pattern recall \"Use Boundary Norm Square\" --mode compact --json",
+				DiscoveryCommand: "haft interface query.pattern_recall --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{"query"},
+				OptionalFields: []string{"mode", "limit", "source_refs"},
+				FieldShapes: []fieldShape{
+					{
+						Field: "compact_response",
+						Shape: `{"schema_version":1,"record_kind":"pattern_recall","authority":"read_only_pattern_recall_source_card_retrieval_not_pattern_application","mode":"compact","support_level":"source_card_retrieved|missing","candidate_source_cards":[{"pattern_id":"A.6.B","title":"Boundary Norm Square","summary":"...","snippet":"...","source_tier":"fpf_core","source_ref_short":"...","support_level":"source_card_retrieved"}],"one_line_boundary":"PatternRecall returns read-only source-card candidates; applying a pattern still requires the agent's reasoning and evidence boundary.","full_recall_command":"haft_query(action=\"pattern_recall\", mode=\"full\", query=\"...\")"}`,
+						Note:  "Compact mode never carries full source_card body; it is for deciding whether to drill down.",
+					},
+					{
+						Field: "full_response",
+						Shape: `{"schema_version":1,"record_kind":"pattern_recall","authority":"read_only_pattern_recall_source_card_retrieval_not_pattern_application","mode":"full","support_level":"source_card_retrieved","candidate_source_cards":[{"pattern_id":"A.6.B","title":"Boundary Norm Square","source_card":{"body_kind":"full_card_range","source_path":"data/FPF/...","source_commit":"...","line_start":10,"line_end":20,"root_node_id":"...","body_hash":"sha256:...","body":"..."}}],"authority_boundary":["read_only_source_card_recall","not_pattern_application","not_evidence","not_decision_record","not_work_commission","not_methodpack_gate","not_approval"]}`,
+						Note:  "Full mode exposes source-card body and provenance; it still must not claim applicability, evidence, approval, or gate passage.",
+					},
+				},
+				Notes: []string{
+					"Read-only: PatternRecall retrieves source cards; it does not select a compiled PatternUse route and does not apply a pattern.",
+					"Use PatternUse compact before substantive reasoning; use PatternRecall full when a retrieved/uncompiled card needs source disclosure.",
+					"Compact PatternRecall output is insufficient for applying a retrieved card in session audit; full source-card disclosure is expected before substantive application.",
+					"PatternRecall is not MethodPack and must not open/close MethodRuns.",
+				},
+			},
+			OutputVolume: []string{"default MCP/CLI JSON: compact source-card candidates without body", "mode=full: source-card body, line range, body hash, source path, and commit", "audit: haft pattern recall audit --input FILE --json; never in compact status"},
+			Invariants: append(commonInterfaceInvariants(),
+				"PatternRecall is read-only source-card recall.",
+				"PatternRecall is not PatternUse route selection, not evidence, not approval, and not a gate.",
+				"Compact mode must not inline full source-card bodies.",
 			),
 		},
 		{

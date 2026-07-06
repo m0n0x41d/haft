@@ -866,7 +866,7 @@ func (s *Server) ToolCatalog() []Tool {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "pattern_use", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
+						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "pattern_use", "pattern_recall", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 						"description": "Read-only query/drill-down action.",
 					},
 					"query":          map[string]interface{}{},

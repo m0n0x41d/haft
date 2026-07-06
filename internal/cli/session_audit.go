@@ -22,6 +22,7 @@ const (
 
 var (
 	sessionAuditRecommendedPatternRE = regexp.MustCompile(`"?recommended_pattern_use"?\s*:\s*\{[^}]*"?pattern_ref"?\s*:\s*"([^"]+)"`)
+	sessionAuditCandidatePatternIDRE = regexp.MustCompile(`"?pattern_id"?\s*:\s*"([^"]+)"`)
 	sessionAuditSupportLevelRE       = regexp.MustCompile(`"?support_level"?\s*:\s*"([^"]+)"`)
 	sessionAuditRouteStrategyRE      = regexp.MustCompile(`"?route_match_strategy"?\s*:\s*"([^"]+)"`)
 )
@@ -145,8 +146,11 @@ type sessionGraphAuditSessionFile struct {
 	PatternUseBeforeSubstantive        bool     `json:"pattern_use_before_substantive"`
 	PatternUseBypass                   bool     `json:"pattern_use_bypass"`
 	CompactPatternUseSeen              bool     `json:"compact_pattern_use_seen"`
+	CompactPatternRecallSeen           bool     `json:"compact_pattern_recall_seen"`
 	RetrievedUncompiledSeen            bool     `json:"retrieved_uncompiled_seen"`
+	SourceCardRetrievedSeen            bool     `json:"source_card_retrieved_seen"`
 	FullPatternUseSeen                 bool     `json:"full_pattern_use_seen"`
+	FullPatternRecallSeen              bool     `json:"full_pattern_recall_seen"`
 	SourceCardSeen                     bool     `json:"source_card_seen"`
 	FullBeforePatternApplication       bool     `json:"full_before_pattern_application"`
 	ProgressiveDisclosureBypass        bool     `json:"progressive_disclosure_bypass"`
@@ -600,8 +604,11 @@ func summarizeSessionGraphAudit(
 	session.MethodCloseRecorded = sessionAuditMethodCloseRecorded(events)
 	session.GraphPlanInfluenceCloseoutHint = sessionAuditGraphPlanInfluenceCloseoutHint(events)
 	session.CompactPatternUseSeen = sessionAuditHasPatternUseMode(events, "compact")
+	session.CompactPatternRecallSeen = sessionAuditHasPatternRecallMode(events, "compact")
 	session.RetrievedUncompiledSeen = sessionAuditHasObservedValue(events, sessionAuditSupportLevelRE, "retrieved_uncompiled")
+	session.SourceCardRetrievedSeen = sessionAuditHasObservedValue(events, sessionAuditSupportLevelRE, "source_card_retrieved")
 	session.FullPatternUseSeen = sessionAuditHasPatternUseMode(events, "full")
+	session.FullPatternRecallSeen = sessionAuditHasPatternRecallMode(events, "full")
 	session.SourceCardSeen = sessionAuditHasToolResultMarker(events, "source_card")
 
 	limit := session.FirstEditOrdinal
@@ -764,8 +771,8 @@ func sessionAuditDiagnostics(report sessionGraphAuditReport) []sessionGraphAudit
 			Level:      "high",
 			Code:       "progressive_disclosure_bypass",
 			Count:      summary.ProgressiveDisclosureBypasses,
-			Message:    "session(s) used compact retrieved_uncompiled PatternUse output for substantive application before a full recommendation with source_card",
-			NextAction: "After compact retrieved_uncompiled, call haft_query(action=\"pattern_use\", mode=\"full\", ...) and inspect the source_card before applying the candidate.",
+			Message:    "session(s) used compact retrieved_uncompiled/source_card_retrieved output for substantive application before full source_card disclosure",
+			NextAction: "After compact retrieved_uncompiled or source_card_retrieved, call haft_query(action=\"pattern_use\" or \"pattern_recall\", mode=\"full\", ...) and inspect the source_card before applying the candidate.",
 			Examples:   sessionAuditProgressiveDisclosureBypassExamples(report.Sessions, 3),
 		})
 	}
@@ -957,7 +964,7 @@ func writeSessionGraphAuditText(
 		}
 		for _, session := range report.Sessions {
 			if err := printf(
-				"- %s verdict=%s first_edit=%d first_substantive=%d status=%t method_pull=%t method_pull_before_pattern_use=%t graph=%t rich_graph=%t pattern_use=%t bypass=%t compact_pattern_use=%t retrieved_uncompiled=%t full_pattern_use=%t source_card=%t full_before_application=%t progressive_bypass=%t expected_pattern=%s expected_strategy=%s observed_patterns=%s observed_support=%s observed_strategy=%s scenario_pass=%s failure_reason=%s close=%t influence_hint=%t actions=%s substantive_before_pattern=%s\n",
+				"- %s verdict=%s first_edit=%d first_substantive=%d status=%t method_pull=%t method_pull_before_pattern_use=%t graph=%t rich_graph=%t pattern_use=%t bypass=%t compact_pattern_use=%t compact_pattern_recall=%t retrieved_uncompiled=%t source_card_retrieved=%t full_pattern_use=%t full_pattern_recall=%t source_card=%t full_before_application=%t progressive_bypass=%t expected_pattern=%s expected_strategy=%s observed_patterns=%s observed_support=%s observed_strategy=%s scenario_pass=%s failure_reason=%s close=%t influence_hint=%t actions=%s substantive_before_pattern=%s\n",
 				session.Path,
 				session.Verdict,
 				session.FirstEditOrdinal,
@@ -970,8 +977,11 @@ func writeSessionGraphAuditText(
 				session.PatternUseBeforeSubstantive,
 				session.PatternUseBypass,
 				session.CompactPatternUseSeen,
+				session.CompactPatternRecallSeen,
 				session.RetrievedUncompiledSeen,
+				session.SourceCardRetrievedSeen,
 				session.FullPatternUseSeen,
+				session.FullPatternRecallSeen,
 				session.SourceCardSeen,
 				session.FullBeforePatternApplication,
 				session.ProgressiveDisclosureBypass,
@@ -1054,6 +1064,19 @@ func sessionAuditHasPatternUseAction(events []sessionAuditToolEvent) bool {
 func sessionAuditHasPatternUseMode(events []sessionAuditToolEvent, mode string) bool {
 	for _, event := range events {
 		if !sessionAuditIsHaftQuery(event) || event.Action != "pattern_use" {
+			continue
+		}
+		if !sessionAuditPayloadHasJSONField(event.Payload, "mode", mode) {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func sessionAuditHasPatternRecallMode(events []sessionAuditToolEvent, mode string) bool {
+	for _, event := range events {
+		if !sessionAuditIsHaftQuery(event) || event.Action != "pattern_recall" {
 			continue
 		}
 		if !sessionAuditPayloadHasJSONField(event.Payload, "mode", mode) {
@@ -1382,7 +1405,9 @@ func sessionAuditContainsExpectedValue(values []string, expected string) bool {
 }
 
 func sessionAuditObservedPatternRefs(events []sessionAuditToolEvent) []string {
-	return sessionAuditObservedValues(events, sessionAuditRecommendedPatternRE)
+	values := sessionAuditObservedValues(events, sessionAuditRecommendedPatternRE)
+	values = append(values, sessionAuditObservedValues(events, sessionAuditCandidatePatternIDRE)...)
+	return sessionAuditDedupeStrings(values)
 }
 
 func sessionAuditObservedSupportLevels(events []sessionAuditToolEvent) []string {
@@ -1447,18 +1472,24 @@ func sessionAuditFullPatternUseWithSourceCardBefore(
 		return false
 	}
 	before := sessionAuditBeforeOrdinal(events, ordinal)
-	return sessionAuditHasPatternUseMode(before, "full") &&
+	return sessionAuditHasFullPatternDisclosure(before) &&
 		sessionAuditHasToolResultMarker(before, "source_card")
+}
+
+func sessionAuditHasFullPatternDisclosure(events []sessionAuditToolEvent) bool {
+	return sessionAuditHasPatternUseMode(events, "full") ||
+		sessionAuditHasPatternRecallMode(events, "full")
 }
 
 func sessionAuditProgressiveDisclosureBypass(session sessionGraphAuditSessionFile) bool {
 	if session.FirstSubstantiveOrdinal == 0 {
 		return false
 	}
-	if !session.CompactPatternUseSeen {
-		return false
-	}
-	if !session.RetrievedUncompiledSeen {
+	compactPatternUseNeedsFull := session.CompactPatternUseSeen &&
+		session.RetrievedUncompiledSeen
+	compactPatternRecallNeedsFull := session.CompactPatternRecallSeen &&
+		session.SourceCardRetrievedSeen
+	if !compactPatternUseNeedsFull && !compactPatternRecallNeedsFull {
 		return false
 	}
 	return !session.FullBeforePatternApplication
@@ -1510,7 +1541,7 @@ func sessionAuditGraphPlanInfluenceCloseoutHint(events []sessionAuditToolEvent) 
 
 func sessionAuditVerdict(session sessionGraphAuditSessionFile) (string, string) {
 	if session.ProgressiveDisclosureBypass {
-		return "fail", "Compact retrieved_uncompiled PatternUse output was applied before full source-card disclosure."
+		return "fail", "Compact retrieved_uncompiled/source_card_retrieved output was applied before full source-card disclosure."
 	}
 	if session.MethodPullBeforePatternUse {
 		return "fail", "MethodPack pull for non-mechanical work happened before detectable PatternUse gateway use."

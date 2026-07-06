@@ -21,7 +21,7 @@ const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:c818636162588d53b768ba0e376bd644d86c6d3156f33f95487f00c53cae6c0c";
+  "sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890";
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),
@@ -73,7 +73,7 @@ const haftQueryParameters = Type.Object({
   action: enumOf(
     "search", "status", "board", "related", "code_context", "callees", "callers",
     "impact", "node", "explore", "ceremony", "projection", "list", "coverage",
-    "fpf", "pattern_use", "check", "carrier_manifest", "carrier_check", "contract_audit",
+    "fpf", "pattern_use", "pattern_recall", "check", "carrier_manifest", "carrier_check", "contract_audit",
     "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case",
     "correspondence_graph", "drift_route", "drift_events", "decision_reconcile",
     "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"

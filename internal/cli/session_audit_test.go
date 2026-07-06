@@ -256,6 +256,68 @@ func TestBuildSessionGraphAuditReportAcceptsFullPatternUseBeforeRetrievedApplica
 	}
 }
 
+func TestBuildSessionGraphAuditReportFlagsCompactPatternRecallApplication(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "pattern-recall-compact-bypass.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_recall\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"record_kind\":\"pattern_recall\",\"support_level\":\"source_card_retrieved\",\"candidate_source_cards\":[{\"pattern_id\":\"A.6.B\",\"title\":\"Boundary Norm Square\"}]}"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Boundary Application\n\n- Candidate pattern: A.6.B Boundary Norm Square.\n- Apply it directly to the current source, claim, use, and authority relation.\n- Evidence relation: the compact source-card recall is treated as enough to shape the work.\n- Verification plan: record the allowed use and blocked stronger use after applying the card.\n\nThis is substantive boundary reasoning based on compact PatternRecall only, before reading the full source_card body and checking the source boundary."}]}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.ProgressiveDisclosureBypasses != 1 {
+		t.Fatalf("progressive disclosure bypasses = %d, want 1; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
+	}
+	session := report.Sessions[0]
+	if !session.CompactPatternRecallSeen {
+		t.Fatalf("compact pattern recall not observed: %#v", session)
+	}
+	if !session.SourceCardRetrievedSeen {
+		t.Fatalf("source_card_retrieved not observed: %#v", session)
+	}
+	if !session.ProgressiveDisclosureBypass {
+		t.Fatalf("session should flag progressive disclosure bypass: %#v", session)
+	}
+}
+
+func TestBuildSessionGraphAuditReportAcceptsFullPatternRecallBeforeApplication(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "pattern-recall-full-ok.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_recall\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"record_kind\":\"pattern_recall\",\"support_level\":\"source_card_retrieved\",\"candidate_source_cards\":[{\"pattern_id\":\"A.6.B\",\"title\":\"Boundary Norm Square\"}]}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_recall\",\"mode\":\"full\",\"query\":\"Use boundary norm square\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"record_kind\":\"pattern_recall\",\"support_level\":\"source_card_retrieved\",\"candidate_source_cards\":[{\"pattern_id\":\"A.6.B\",\"title\":\"Boundary Norm Square\",\"source_card\":{\"source_path\":\"fixture.md\",\"body_hash\":\"sha256-fixture\",\"body\":\"Full card body\"}}]}"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Boundary Application\n\n- Candidate pattern: A.6.B Boundary Norm Square.\n- Apply it after reading the full source_card body and checking applicability.\n- Evidence relation: the retrieved source-card is still source_card_retrieved and cannot become authority.\n- Verification plan: record allowed use and blocked stronger use separately.\n\nThis is substantive boundary reasoning after full PatternRecall disclosure."}]}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Summary.ProgressiveDisclosureBypasses != 0 {
+		t.Fatalf("progressive disclosure bypasses = %d, want 0; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
+	}
+	session := report.Sessions[0]
+	if !session.FullPatternRecallSeen {
+		t.Fatalf("full pattern recall not observed: %#v", session)
+	}
+	if !session.FullBeforePatternApplication {
+		t.Fatalf("expected full disclosure before application: %#v", session)
+	}
+	if session.ProgressiveDisclosureBypass {
+		t.Fatalf("session should not flag bypass: %#v", session)
+	}
+}
+
 func TestBuildSessionGraphAuditReportFlagsNonEditTextReasoningBypass(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "architecture-text-bypass.jsonl")

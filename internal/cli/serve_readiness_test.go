@@ -165,7 +165,7 @@ func writeReadinessReadyFixture(t *testing.T, haftDir string) {
 		filepath.Join(specsDir, "term-map.md"): "```yaml term-map\n" +
 			"entries:\n" +
 			"  - term: TestProject\n" +
-			"    domain: target\n" +
+			"    category: target\n" +
 			"    definition: A project under readiness test fixture.\n" +
 			"```\n",
 	}

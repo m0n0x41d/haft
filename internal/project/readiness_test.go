@@ -122,7 +122,7 @@ func TestInspectReadinessClassifiesMinimumSpecSetAsReady(t *testing.T) {
 	writeFixture(t, filepath.Join(haftDir, "workflow.md"), "# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n")
 	writeFixture(t, filepath.Join(specDir, "target-system.md"), readinessSpecSection("TS.use.001", "environment-change"))
 	writeFixture(t, filepath.Join(specDir, "enabling-system.md"), readinessSpecSection("ES.creator.001", "creator-role"))
-	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ndomain: enabling\ndefinition: A project with active specs.\n```\n")
+	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ncategory: enabling\ndefinition: A project with active specs.\n```\n")
 
 	facts, err := InspectReadiness(root)
 	if err != nil {
@@ -148,7 +148,7 @@ func TestInspectReadinessClassifiesMalformedActiveSpecAsNeedsOnboard(t *testing.
 	writeFixture(t, filepath.Join(haftDir, "workflow.md"), "# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n")
 	writeFixture(t, filepath.Join(specDir, "target-system.md"), malformedActiveReadinessSpecSection("TS.use.001", "environment-change"))
 	writeFixture(t, filepath.Join(specDir, "enabling-system.md"), readinessSpecSection("ES.creator.001", "creator-role"))
-	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ndomain: enabling\ndefinition: A project with active specs.\n```\n")
+	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ncategory: enabling\ndefinition: A project with active specs.\n```\n")
 
 	facts, err := InspectReadiness(root)
 	if err != nil {

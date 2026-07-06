@@ -665,7 +665,7 @@ func validCLITermMapCarrier() string {
 	return "```yaml term-map\n" +
 		"entries:\n" +
 		"  - term: HarnessableProject\n" +
-		"    domain: enabling\n" +
+		"    category: enabling\n" +
 		"    definition: A project with active specs.\n" +
 		"```\n"
 }
@@ -673,7 +673,7 @@ func validCLITermMapCarrier() string {
 func invalidCLITermMapCarrier() string {
 	return "```yaml term-map\n" +
 		"entries:\n" +
-		"  - domain: enabling\n" +
+		"  - category: enabling\n" +
 		"    definition: A project with active specs.\n" +
 		"```\n"
 }

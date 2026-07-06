@@ -4,7 +4,7 @@
 status: active
 entries:
   - term: Target system
-    domain: fpf-boundary
+    category: fpf-boundary
     definition: The project capability or repository state that Haft is meant to change and govern.
     aliases:
       - target-system
@@ -14,7 +14,7 @@ entries:
     owners:
       - human
   - term: Enabling system
-    domain: fpf-boundary
+    category: fpf-boundary
     definition: The people, workflow, architecture, tools, and runtime paths that make the target system possible.
     aliases:
       - enabling-system
@@ -23,7 +23,7 @@ entries:
     owners:
       - human
   - term: Governance substrate
-    domain: haft-role
+    category: haft-role
     definition: Haft's role as the typed artifact graph, validation layer, and query surface that make work admissible.
     aliases:
       - substrate
@@ -34,7 +34,7 @@ entries:
     owners:
       - human
   - term: Carrier
-    domain: authority
+    category: authority
     definition: A file or surface representation that stores a description until the kernel parses and validates it.
     aliases:
       - markdown carrier
@@ -43,7 +43,7 @@ entries:
     owners:
       - human
   - term: SpecSection
-    domain: specification
+    category: specification
     definition: A typed target-system or enabling-system claim parsed from a spec carrier and governed by lifecycle checks.
     aliases:
       - spec section
@@ -52,7 +52,7 @@ entries:
     owners:
       - human
   - term: Baseline
-    domain: specification
+    category: specification
     definition: A recorded approved hash of an active SpecSection that lets future drift be detected.
     aliases:
       - SpecSectionBaseline
@@ -61,7 +61,7 @@ entries:
     owners:
       - human
   - term: DecisionRecord
-    domain: reasoning
+    category: reasoning
     definition: A human-gated binding artifact that records the chosen contract, rationale, consequences, evidence, and refresh triggers.
     aliases:
       - DRR
@@ -71,7 +71,7 @@ entries:
     owners:
       - human
   - term: WorkCommission
-    domain: execution
+    category: execution
     definition: A bounded authorization to attempt work under an explicit scope, delivery policy, evidence requirement, and autonomy envelope.
     aliases:
       - commission
@@ -81,7 +81,7 @@ entries:
     owners:
       - human
   - term: RuntimeRun
-    domain: execution
+    category: execution
     definition: A concrete harness execution of an admissible WorkCommission in an isolated workspace or worktree.
     aliases:
       - runtime run
@@ -90,7 +90,7 @@ entries:
     owners:
       - human
   - term: Evidence
-    domain: verification
+    category: verification
     definition: An inspectable observation attached to an artifact with verdict, congruence level, and freshness boundary.
     aliases:
       - evidence record
@@ -99,7 +99,7 @@ entries:
     owners:
       - human
   - term: R_eff
-    domain: verification
+    category: verification
     definition: Effective reliability of a claim computed by the weakest supported evidence link, not by averaging.
     aliases:
       - effective reliability

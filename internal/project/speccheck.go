@@ -122,8 +122,11 @@ type SpecEvidenceRequirement struct {
 }
 
 type TermMapEntry struct {
-	Term         string   `json:"term"`
-	Domain       string   `json:"domain"`
+	Term     string `json:"term"`
+	Category string `json:"category"`
+	// Deprecated: Domain is a compatibility mirror for Category while older
+	// term-map carriers and API consumers migrate away from `domain`.
+	Domain       string   `json:"domain,omitempty"`
 	Definition   string   `json:"definition"`
 	Not          []string `json:"not,omitempty"`
 	Aliases      []string `json:"aliases,omitempty"`
@@ -1057,21 +1060,22 @@ func validateTermMapEntry(path string, line int, entryPath string, fields map[st
 	}
 
 	term, termFindings := requiredTermMapStringField(path, line, entryPath, fields, "term", "term_map_missing_term")
-	domain, domainFindings := requiredTermMapStringField(path, line, entryPath, fields, "domain", "term_map_missing_domain")
+	category, categoryFindings := termMapCategoryField(path, line, entryPath, fields)
 	definition, definitionFindings := requiredTermMapStringField(path, line, entryPath, fields, "definition", "term_map_missing_definition")
 	notFindings := validateOptionalStringList(path, line, entryPath, fields, "not", "term_map_invalid_not")
 	aliases, aliasFindings := extractTermMapAliases(path, line, entryPath, fields, term)
 	ownersFindings := validateOptionalStringList(path, line, entryPath, fields, "owners", "term_map_invalid_owners")
 
 	findings = append(findings, termFindings...)
-	findings = append(findings, domainFindings...)
+	findings = append(findings, categoryFindings...)
 	findings = append(findings, definitionFindings...)
 	findings = append(findings, notFindings...)
 	findings = append(findings, aliasFindings...)
 	findings = append(findings, ownersFindings...)
 
 	entry.Term = term
-	entry.Domain = domain
+	entry.Category = category
+	entry.Domain = category
 	entry.Definition = definition
 	entry.Not = termMapStringList(fields, "not")
 	entry.Aliases = termMapAliasValues(aliases)
@@ -1466,6 +1470,37 @@ func validateCarrierClaimAllowance(path string, line int, documentKind string, f
 	}}
 }
 
+func termMapCategoryField(path string, line int, entryPath string, fields map[string]any) (string, []SpecCheckFinding) {
+	category, categoryOK, categoryFindings := optionalTermMapStringField(path, line, entryPath, fields, "category")
+	domain, domainOK, domainFindings := optionalTermMapStringField(path, line, entryPath, fields, "domain")
+
+	findings := make([]SpecCheckFinding, 0)
+	findings = append(findings, categoryFindings...)
+	findings = append(findings, domainFindings...)
+
+	if categoryOK && domainOK && category != domain {
+		findings = append(findings, termMapCategoryDomainConflictFinding(path, line, entryPath))
+		return category, findings
+	}
+
+	if categoryOK {
+		return category, findings
+	}
+
+	if domainOK {
+		return domain, findings
+	}
+
+	if len(findings) > 0 {
+		return "", findings
+	}
+
+	fieldPath := joinFieldPath(entryPath, "category")
+	findings = append(findings, missingTermMapFieldFinding(path, line, fieldPath, "category", "term_map_missing_category"))
+
+	return "", findings
+}
+
 func requiredTermMapStringField(path string, line int, entryPath string, fields map[string]any, field string, missingCode string) (string, []SpecCheckFinding) {
 	raw, exists := fields[field]
 	fieldPath := joinFieldPath(entryPath, field)
@@ -1483,6 +1518,28 @@ func requiredTermMapStringField(path string, line int, entryPath string, fields 
 	}
 
 	return "", []SpecCheckFinding{{
+		Level:     "L1.5",
+		Code:      "term_map_invalid_field",
+		Path:      filepath.ToSlash(path),
+		FieldPath: fieldPath,
+		Line:      line,
+		Message:   fmt.Sprintf("term-map field `%s` must be a non-empty string", field),
+	}}
+}
+
+func optionalTermMapStringField(path string, line int, entryPath string, fields map[string]any, field string) (string, bool, []SpecCheckFinding) {
+	raw, exists := fields[field]
+	if !exists || raw == nil {
+		return "", false, nil
+	}
+
+	value, ok := strictString(raw)
+	if ok {
+		return value, true, nil
+	}
+
+	fieldPath := joinFieldPath(entryPath, field)
+	return "", false, []SpecCheckFinding{{
 		Level:     "L1.5",
 		Code:      "term_map_invalid_field",
 		Path:      filepath.ToSlash(path),
@@ -1614,6 +1671,17 @@ func missingTermMapFieldFinding(path string, line int, fieldPath string, field s
 		FieldPath: fieldPath,
 		Line:      line,
 		Message:   fmt.Sprintf("term-map entry missing required field `%s`", field),
+	}
+}
+
+func termMapCategoryDomainConflictFinding(path string, line int, entryPath string) SpecCheckFinding {
+	return SpecCheckFinding{
+		Level:     "L1.5",
+		Code:      "term_map_category_domain_conflict",
+		Path:      filepath.ToSlash(path),
+		FieldPath: joinFieldPath(entryPath, "domain"),
+		Line:      line,
+		Message:   "term-map entry has both canonical `category` and legacy `domain` with different values",
 	}
 }
 
@@ -1943,15 +2011,17 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 	case "spec_section_mixed_authority":
 		return "change active target claims to claim_layer object/description/evidence, or explicitly mark a carrier-only section with carrier_claim_allowed"
 	case "term_map_missing_term":
-		return "add at least one term-map entry with term, domain, and definition before treating the spec set as ready"
-	case "term_map_missing_domain", "term_map_missing_definition":
-		return "complete the term-map entry with term, domain, and definition"
+		return "add at least one term-map entry with term, category, and definition before treating the spec set as ready"
+	case "term_map_missing_category", "term_map_missing_domain", "term_map_missing_definition":
+		return "complete the term-map entry with term, category, and definition; legacy domain is accepted only for compatibility"
+	case "term_map_category_domain_conflict":
+		return "keep one classification value: prefer `category`, or make legacy `domain` match before removing it"
 	case "term_map_invalid_entries":
 		return "make `entries` a YAML list of term-map entry objects"
 	case "term_map_invalid_not", "term_map_invalid_aliases", "term_map_invalid_owners":
 		return "make the term-map field a YAML list of non-empty strings"
 	case "term_map_duplicate_term":
-		return "merge or domain-qualify duplicate term definitions"
+		return "merge or category-qualify duplicate term definitions"
 	case "term_map_duplicate_alias":
 		return "remove the duplicate alias or attach it to one canonical term"
 	case "spec_section_duplicate_id":

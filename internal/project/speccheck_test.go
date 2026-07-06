@@ -121,7 +121,7 @@ func TestCheckSpecDocumentsFindsTermMapEntryMissingTerm(t *testing.T) {
 			Kind: "term-map",
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
-				"  - domain: enabling\n" +
+				"  - category: enabling\n" +
 				"    definition: A project with parseable specs.\n" +
 				"```\n",
 		},
@@ -139,7 +139,7 @@ func TestCheckSpecDocumentsAcceptsPlainYamlTermMapEntry(t *testing.T) {
 			Kind: "term-map",
 			Content: "```yaml\n" +
 				"term: HarnessableProject\n" +
-				"domain: enabling\n" +
+				"category: enabling\n" +
 				"definition: A project with active specs.\n" +
 				"```\n",
 		},
@@ -151,6 +151,54 @@ func TestCheckSpecDocumentsAcceptsPlainYamlTermMapEntry(t *testing.T) {
 	if report.Summary.TermMapEntries != 1 {
 		t.Fatalf("term_map_entries = %d, want 1", report.Summary.TermMapEntries)
 	}
+}
+
+func TestCheckSpecDocumentsAcceptsLegacyDomainTermMapEntry(t *testing.T) {
+	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/term-map.md",
+			Kind: "term-map",
+			Content: "```yaml term-map\n" +
+				"entries:\n" +
+				"  - term: HarnessableProject\n" +
+				"    domain: enabling\n" +
+				"    definition: A project with active specs.\n" +
+				"```\n",
+		},
+	})
+
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none for legacy domain alias", specSet.Findings)
+	}
+	if len(specSet.TermMapEntries) != 1 {
+		t.Fatalf("term map entries = %#v, want one", specSet.TermMapEntries)
+	}
+
+	entry := specSet.TermMapEntries[0]
+	if entry.Category != "enabling" {
+		t.Fatalf("category = %q, want enabling", entry.Category)
+	}
+	if entry.Domain != "enabling" {
+		t.Fatalf("legacy domain mirror = %q, want enabling", entry.Domain)
+	}
+}
+
+func TestCheckSpecDocumentsRejectsConflictingTermMapCategoryAndDomain(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/term-map.md",
+			Kind: "term-map",
+			Content: "```yaml term-map\n" +
+				"entries:\n" +
+				"  - term: HarnessableProject\n" +
+				"    category: enabling\n" +
+				"    domain: target\n" +
+				"    definition: A project with active specs.\n" +
+				"```\n",
+		},
+	})
+
+	assertSpecCheckFindingAt(t, report, "term_map_category_domain_conflict", "$.entries[0].domain")
 }
 
 func TestCheckSpecDocumentsAcceptsValidL15Shapes(t *testing.T) {
@@ -182,7 +230,7 @@ func TestCheckSpecDocumentsAcceptsValidL15Shapes(t *testing.T) {
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
 				"  - term: HarnessableProject\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: A project with active specs.\n" +
 				"    not:\n" +
 				"      - repo with only README\n" +
@@ -234,7 +282,7 @@ func TestProjectSpecificationSetParsesCanonicalSectionFields(t *testing.T) {
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
 				"  - term: WorkCommission\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: Human-authorized bounded permission to execute a DecisionRecord.\n" +
 				"    not:\n" +
 				"      - DecisionRecord\n" +
@@ -307,8 +355,11 @@ func TestProjectSpecificationSetParsesCanonicalSectionFields(t *testing.T) {
 	if term.Term != "WorkCommission" {
 		t.Fatalf("term = %q, want WorkCommission", term.Term)
 	}
+	if term.Category != "enabling" {
+		t.Fatalf("category = %q, want enabling", term.Category)
+	}
 	if term.Domain != "enabling" {
-		t.Fatalf("domain = %q, want enabling", term.Domain)
+		t.Fatalf("legacy domain mirror = %q, want enabling", term.Domain)
 	}
 	if term.Definition == "" {
 		t.Fatalf("definition = %q, want non-empty definition", term.Definition)
@@ -548,14 +599,14 @@ func TestCheckSpecDocumentsValidatesTermMapShapeAndDuplicateAliases(t *testing.T
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
 				"  - term: HarnessableProject\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: A project with active specs.\n" +
 				"    not: tracker ticket\n" +
 				"    aliases:\n" +
 				"      - spec set\n" +
 				"      - spec set\n" +
 				"  - term: ProjectSpecificationSet\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: Project-local specs and workflow policy.\n" +
 				"    aliases:\n" +
 				"      - spec set\n" +
@@ -567,7 +618,7 @@ func TestCheckSpecDocumentsValidatesTermMapShapeAndDuplicateAliases(t *testing.T
 	assertSpecCheckFindingAt(t, report, "term_map_invalid_not", "$.entries[0].not")
 	assertSpecCheckFindingAt(t, report, "term_map_duplicate_alias", "$.entries[0].aliases[1]")
 	assertSpecCheckFindingAt(t, report, "term_map_duplicate_alias", "$.entries[1].aliases[0]")
-	assertSpecCheckFindingAt(t, report, "term_map_missing_domain", "$.entries[2].domain")
+	assertSpecCheckFindingAt(t, report, "term_map_missing_category", "$.entries[2].category")
 	assertSpecCheckFindingAt(t, report, "term_map_missing_definition", "$.entries[2].definition")
 }
 
@@ -901,7 +952,7 @@ func validTermMapCarrier() string {
 	return "```yaml term-map\n" +
 		"entries:\n" +
 		"  - term: HarnessableProject\n" +
-		"    domain: enabling\n" +
+		"    category: enabling\n" +
 		"    definition: A project with active specs.\n" +
 		"```\n"
 }

@@ -236,7 +236,7 @@ Canonical entry:
 
 ```yaml
 term: WorkCommission
-domain: enabling
+category: enabling
 definition: Human-authorized bounded permission to execute a DecisionRecord in a declared Scope.
 not:
   - DecisionRecord
@@ -250,9 +250,11 @@ owners:
 
 Rules:
 
-- A term must have exactly one definition in one domain.
-- If the same word is needed in target and enabling domains with different
-  meanings, create domain-qualified terms.
+- A term must have exactly one definition in one category.
+- If the same word is needed in target and enabling categories with different
+  meanings, create category-qualified terms.
+- Legacy term maps that still use `domain` parse as a compatibility alias for
+  `category`; new carriers should use `category`.
 - Ambiguous terms such as service, process, component, quality, simple,
   scalable, done, and validated require explicit disambiguation before they may
   appear in load-bearing sections.

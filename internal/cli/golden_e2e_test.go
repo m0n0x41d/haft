@@ -208,7 +208,7 @@ func writeGoldenE2ESpecs(t *testing.T, root string) {
 			"```yaml term-map",
 			"entries:",
 			"  - term: HarnessableProject",
-			"    domain: enabling",
+			"    category: enabling",
 			"    definition: A project with active target and enabling specs, a term map, and a local workflow policy.",
 			"    not:",
 			"      - tracker ticket",

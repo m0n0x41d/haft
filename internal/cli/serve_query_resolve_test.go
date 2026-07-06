@@ -49,7 +49,7 @@ func TestHandleQuintQueryResolveTerm_AbsentWhenNoMatches(t *testing.T) {
 
 func TestHandleQuintQueryResolveTerm_ResolvedWhenSingleTermMapEntry(t *testing.T) {
 	root := newResolveTermProject(t)
-	writeResolveTermMap(t, root, "Harnessability\n    domain: target\n    definition: Project ready for harness engineering.")
+	writeResolveTermMap(t, root, "Harnessability\n    category: target\n    definition: Project ready for harness engineering.")
 	haftDir := filepath.Join(root, ".haft")
 
 	raw, err := handleQuintQueryResolveTerm(context.Background(), nil, haftDir, map[string]any{
@@ -73,13 +73,19 @@ func TestHandleQuintQueryResolveTerm_ResolvedWhenSingleTermMapEntry(t *testing.T
 	if result.TermMapEntries[0].Term != "Harnessability" {
 		t.Fatalf("term = %q, want Harnessability", result.TermMapEntries[0].Term)
 	}
+	if result.TermMapEntries[0].Category != "target" {
+		t.Fatalf("category = %q, want target", result.TermMapEntries[0].Category)
+	}
+	if result.TermMapEntries[0].Domain != "target" {
+		t.Fatalf("legacy domain mirror = %q, want target", result.TermMapEntries[0].Domain)
+	}
 }
 
 func TestHandleQuintQueryResolveTerm_AmbiguousWithMultipleSpecSections(t *testing.T) {
 	root := newResolveTermProject(t)
 	// One term-map entry + two sections that mention the term — agent must
 	// surface both candidates instead of guessing.
-	writeResolveTermMap(t, root, "Harnessability\n    domain: target\n    definition: Defined.")
+	writeResolveTermMap(t, root, "Harnessability\n    category: target\n    definition: Defined.")
 	writeResolveTermSections(t, root)
 
 	haftDir := filepath.Join(root, ".haft")
@@ -108,7 +114,7 @@ func TestHandleQuintQueryResolveTerm_AmbiguousWithMultipleSpecSections(t *testin
 
 func TestHandleQuintQueryResolveTerm_CaseInsensitiveTermMap(t *testing.T) {
 	root := newResolveTermProject(t)
-	writeResolveTermMap(t, root, "HarnessableProject\n    domain: target\n    definition: Foo.")
+	writeResolveTermMap(t, root, "HarnessableProject\n    category: target\n    definition: Foo.")
 	haftDir := filepath.Join(root, ".haft")
 
 	raw, err := handleQuintQueryResolveTerm(context.Background(), nil, haftDir, map[string]any{

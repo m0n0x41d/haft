@@ -50,7 +50,7 @@ func newBaselineTestProject(t *testing.T) (string, string) {
 
 	writeBaselineTestSection(t, root, "Initial environment statement")
 
-	termMap := "```yaml term-map\nentries:\n  - term: HarnessableProject\n    domain: target\n    definition: A repository ready for harness engineering.\n```\n"
+	termMap := "```yaml term-map\nentries:\n  - term: HarnessableProject\n    category: target\n    definition: A repository ready for harness engineering.\n```\n"
 	if err := os.WriteFile(filepath.Join(specsDir, "term-map.md"), []byte(termMap), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +119,7 @@ func overwriteSectionClaimLayer(t *testing.T, root, claimLayer string) {
 	}
 }
 
-func removeTermMapDomain(t *testing.T, root string) {
+func removeTermMapCategory(t *testing.T, root string) {
 	t.Helper()
 
 	path := filepath.Join(root, ".haft", "specs", "term-map.md")
@@ -128,7 +128,7 @@ func removeTermMapDomain(t *testing.T, root string) {
 		t.Fatal(err)
 	}
 	content := string(data)
-	updated := strings.Replace(content, "    domain: target\n", "", 1)
+	updated := strings.Replace(content, "    category: target\n", "", 1)
 	if err := os.WriteFile(path, []byte(updated), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,7 @@ func TestHandleHaftSpecSection_ApproveRefusesSpecCheckFindings(t *testing.T) {
 
 func TestHandleHaftSpecSection_ApproveRefusesTermMapFindings(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
-	removeTermMapDomain(t, root)
+	removeTermMapCategory(t, root)
 
 	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
 		"action":       "approve",
@@ -463,8 +463,8 @@ func TestHandleHaftSpecSection_ApproveRefusesTermMapFindings(t *testing.T) {
 	if err == nil {
 		t.Fatalf("approve should refuse when term-map check has findings")
 	}
-	if !strings.Contains(err.Error(), "term_map_missing_domain") {
-		t.Fatalf("approve error = %v, want term_map_missing_domain", err)
+	if !strings.Contains(err.Error(), "term_map_missing_category") {
+		t.Fatalf("approve error = %v, want term_map_missing_category", err)
 	}
 
 	store, projectID, closeFn, err := projectBaseline(root)

@@ -667,7 +667,7 @@ func writeCheckTestSpecCarriers(t *testing.T, fixture checkTestProject) {
 	termMap := "```yaml term-map\n" +
 		"entries:\n" +
 		"  - term: TestProject\n" +
-		"    domain: target\n" +
+		"    category: target\n" +
 		"    definition: A project under check_test fixture.\n" +
 		"```\n"
 	if err := os.WriteFile(filepath.Join(specsDir, "term-map.md"), []byte(termMap), 0o644); err != nil {

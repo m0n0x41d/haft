@@ -1043,6 +1043,68 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 	}
 }
 
+func TestStatusResponsesExplainEvidenceAndClaimVerificationSeparately(t *testing.T) {
+	data := artifact.StatusData{
+		UnassessedDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-no-evidence", Title: "No evidence"}},
+			{Meta: artifact.Meta{ID: "dec-unavailable", Title: "Evidence unavailable"}},
+		},
+		DecisionHealth: map[string]artifact.DecisionHealth{
+			"dec-no-evidence": {
+				Maturity:      artifact.DecisionMaturityUnassessed,
+				EvidenceState: artifact.DecisionEvidenceNoActiveEvidence,
+			},
+			"dec-unavailable": {
+				Maturity:      artifact.DecisionMaturityUnassessed,
+				EvidenceState: artifact.DecisionEvidenceUnavailable,
+			},
+		},
+		DecisionVerification: map[string]artifact.DecisionVerificationSummary{
+			"dec-no-evidence": {
+				ActiveClaims:       7,
+				UnverifiedClaims:   5,
+				NextScheduledCheck: "2026-08-01",
+			},
+			"dec-unavailable": {},
+		},
+	}
+
+	full := present.StatusResponse(data)
+	for _, want := range []string{
+		"claims: 7 active, 5 unverified; next scheduled check: 2026-08-01; no active evidence",
+		"claims: 0 active, 0 unverified; evidence unavailable",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full status missing %q:\n%s", want, full)
+		}
+	}
+	if strings.Contains(full, "deadline") || strings.Contains(full, "scheduled gate") {
+		t.Fatalf("status mislabels verify_after semantics:\n%s", full)
+	}
+
+	compact := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"Claims: 7 active, 5 unverified; next scheduled check: 2026-08-01",
+		"Unassessed reasons: 1 no active evidence, 1 evidence unavailable",
+	} {
+		if !strings.Contains(compact, want) {
+			t.Fatalf("compact status missing %q:\n%s", want, compact)
+		}
+	}
+}
+
+func TestDecisionListUsesRecordedContextLabel(t *testing.T) {
+	output := present.ListResponse(artifact.ListData{
+		Kind: artifact.KindDecisionRecord,
+		Artifacts: []*artifact.Artifact{{
+			Meta: artifact.Meta{ID: "dec-20260711-context", Title: "Context decision", Context: "licensing"},
+		}},
+	})
+	if !strings.Contains(output, "recorded context: licensing") || strings.Contains(output, " ctx:licensing") {
+		t.Fatalf("decision list context label is ambiguous:\n%s", output)
+	}
+}
+
 func TestStatusResponse_ShowsProblemTypeInListings(t *testing.T) {
 	backlogFields, err := json.Marshal(artifact.ProblemFields{ProblemType: artifact.ProblemTypeSearch})
 	if err != nil {

@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -129,6 +130,54 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	}
 	if !containsString(data.CommissionAttention[0].SuggestedActions, "requeue") {
 		t.Fatalf("commission actions = %#v, want requeue", data.CommissionAttention[0].SuggestedActions)
+	}
+}
+
+func TestFetchStatusData_AccountsForAllDecisionsAndDerivesClaimSummary(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	for index := 0; index < 12; index++ {
+		fields := DecisionFields{}
+		if index == 0 {
+			fields.Claims = []DecisionClaim{
+				{ID: "claim-active", Claim: "Active claim", Observable: "active observable", Threshold: "active threshold", Status: ClaimStatusUnverified, VerifyAfter: "2026-08-02"},
+				{ID: "claim-refresh", Claim: "Refresh claim", Observable: "refresh observable", Threshold: "refresh threshold", Status: ClaimStatusUnverified, LifecycleStatus: ClaimLifecycleRefreshDue, VerifyAfter: "2026-08-01"},
+				{ID: "claim-supported", Claim: "Supported claim", Observable: "supported observable", Threshold: "supported threshold", Status: ClaimStatusSupported},
+				{ID: "claim-old", Claim: "Old claim", Observable: "old observable", Threshold: "old threshold", Status: ClaimStatusUnverified, LifecycleStatus: ClaimLifecycleSuperseded, VerifyAfter: "2026-07-01"},
+			}
+		}
+		structured, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		item := &Artifact{
+			Meta: Meta{
+				ID:    fmt.Sprintf("dec-20260711-%02d", index),
+				Kind:  KindDecisionRecord,
+				Title: fmt.Sprintf("Decision %02d", index),
+			},
+			StructuredData: string(structured),
+		}
+		if err := store.Create(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	data, err := FetchStatusData(ctx, store, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.UnassessedDecisions) != 12 {
+		t.Fatalf("unassessed decisions = %d, want 12", len(data.UnassessedDecisions))
+	}
+
+	summary := data.DecisionVerification["dec-20260711-00"]
+	if summary.ActiveClaims != 3 || summary.UnverifiedClaims != 2 {
+		t.Fatalf("verification summary = %#v, want 3 active and 2 unverified", summary)
+	}
+	if summary.NextScheduledCheck != "2026-08-01" {
+		t.Fatalf("next scheduled check = %q, want 2026-08-01", summary.NextScheduledCheck)
 	}
 }
 

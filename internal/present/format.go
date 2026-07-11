@@ -846,6 +846,11 @@ func StatusResponse(data artifact.StatusData) string {
 				}
 				line += fmt.Sprintf(" (valid until %s)", vu)
 			}
+			verification := data.DecisionVerification[d.Meta.ID]
+			line += " — " + formatDecisionVerificationSummary(verification)
+			if health, ok := data.DecisionHealth[d.Meta.ID]; ok && health.Maturity == artifact.DecisionMaturityUnassessed {
+				line += "; " + formatUnassessedReason(health.EvidenceState)
+			}
 			sb.WriteString(line + "\n")
 		}
 	}
@@ -1227,10 +1232,25 @@ func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) 
 	}
 
 	sb.WriteString("### Decision Health\n\n")
+	noEvidence, evidenceUnavailable := unassessedReasonCounts(data)
+	verification := aggregateDecisionVerification(data.DecisionVerification)
+	verificationSuffix := fmt.Sprintf(
+		" Claims: %d active, %d unverified",
+		verification.ActiveClaims,
+		verification.UnverifiedClaims,
+	)
+	if verification.NextScheduledCheck != "" {
+		verificationSuffix += "; next scheduled check: " + verification.NextScheduledCheck
+	}
+	verificationSuffix += fmt.Sprintf(
+		". Unassessed reasons: %d no active evidence, %d evidence unavailable.",
+		noEvidence,
+		evidenceUnavailable,
+	)
 	driftPartitions := artifact.PartitionDriftEvents(openDriftEvents)
 	if len(driftPartitions.AuditOnly) > 0 || len(driftPartitions.NeedsBindingResolution) > 0 {
 		sb.WriteString(fmt.Sprintf(
-			"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s), %d audit-only event(s), %d needs-binding event(s).\n\n",
+			"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s), %d audit-only event(s), %d needs-binding event(s).%s\n\n",
 			len(data.HealthyDecisions),
 			len(data.PendingDecisions),
 			len(data.UnassessedDecisions),
@@ -1238,17 +1258,63 @@ func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) 
 			len(driftPartitions.Material),
 			len(driftPartitions.AuditOnly),
 			len(driftPartitions.NeedsBindingResolution),
+			verificationSuffix,
 		))
 		return
 	}
 	sb.WriteString(fmt.Sprintf(
-		"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s).\n\n",
+		"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s).%s\n\n",
 		len(data.HealthyDecisions),
 		len(data.PendingDecisions),
 		len(data.UnassessedDecisions),
 		len(data.StaleItems),
 		len(driftPartitions.Material),
+		verificationSuffix,
 	))
+}
+
+func formatDecisionVerificationSummary(summary artifact.DecisionVerificationSummary) string {
+	label := fmt.Sprintf("claims: %d active, %d unverified", summary.ActiveClaims, summary.UnverifiedClaims)
+	if summary.NextScheduledCheck != "" {
+		label += "; next scheduled check: " + summary.NextScheduledCheck
+	}
+	return label
+}
+
+func formatUnassessedReason(state artifact.DecisionEvidenceState) string {
+	if state == artifact.DecisionEvidenceUnavailable {
+		return "evidence unavailable"
+	}
+	return "no active evidence"
+}
+
+func unassessedReasonCounts(data artifact.StatusData) (int, int) {
+	noEvidence := 0
+	evidenceUnavailable := 0
+	for _, decision := range data.UnassessedDecisions {
+		health := data.DecisionHealth[decision.Meta.ID]
+		if health.EvidenceState == artifact.DecisionEvidenceUnavailable {
+			evidenceUnavailable++
+			continue
+		}
+		noEvidence++
+	}
+	return noEvidence, evidenceUnavailable
+}
+
+func aggregateDecisionVerification(summaries map[string]artifact.DecisionVerificationSummary) artifact.DecisionVerificationSummary {
+	aggregate := artifact.DecisionVerificationSummary{}
+	for _, summary := range summaries {
+		aggregate.ActiveClaims += summary.ActiveClaims
+		aggregate.UnverifiedClaims += summary.UnverifiedClaims
+		if summary.NextScheduledCheck == "" {
+			continue
+		}
+		if aggregate.NextScheduledCheck == "" || summary.NextScheduledCheck < aggregate.NextScheduledCheck {
+			aggregate.NextScheduledCheck = summary.NextScheduledCheck
+		}
+	}
+	return aggregate
 }
 
 func appendCockpitDrillDown(sb *strings.Builder) {
@@ -1414,7 +1480,11 @@ func ListResponse(data artifact.ListData) string {
 			line += fmt.Sprintf(" (valid until %s)", vu)
 		}
 		if a.Meta.Context != "" {
-			line += fmt.Sprintf(" ctx:%s", a.Meta.Context)
+			if data.Kind == artifact.KindDecisionRecord {
+				line += fmt.Sprintf(" recorded context: %s", a.Meta.Context)
+			} else {
+				line += fmt.Sprintf(" ctx:%s", a.Meta.Context)
+			}
 		}
 		sb.WriteString(line + "\n")
 	}

@@ -1,6 +1,12 @@
 package artifact
 
-import "context"
+import (
+	"context"
+	"strings"
+	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
+)
 
 // DecisionMaturity is the derived maturity axis for active decisions.
 type DecisionMaturity string
@@ -9,6 +15,15 @@ const (
 	DecisionMaturityUnassessed DecisionMaturity = "Unassessed"
 	DecisionMaturityPending    DecisionMaturity = "Pending"
 	DecisionMaturityShipped    DecisionMaturity = "Shipped"
+)
+
+// DecisionEvidenceState explains why a decision is or is not assessable.
+type DecisionEvidenceState string
+
+const (
+	DecisionEvidenceNoActiveEvidence DecisionEvidenceState = "no_active_evidence"
+	DecisionEvidenceUnavailable      DecisionEvidenceState = "evidence_unavailable"
+	DecisionEvidenceActive           DecisionEvidenceState = "active_evidence"
 )
 
 // DecisionFreshness is the derived freshness axis for shipped decisions.
@@ -22,8 +37,18 @@ const (
 
 // DecisionHealth is the derived, never-stored decision health view.
 type DecisionHealth struct {
-	Maturity  DecisionMaturity
-	Freshness DecisionFreshness
+	Maturity      DecisionMaturity
+	Freshness     DecisionFreshness
+	EvidenceState DecisionEvidenceState
+}
+
+// DecisionVerificationSummary is the derived claim-verification view shown by
+// status. verify_after is a planned evidence-check date, never a deadline or
+// gate.
+type DecisionVerificationSummary struct {
+	ActiveClaims       int
+	UnverifiedClaims   int
+	NextScheduledCheck string
 }
 
 func (health DecisionHealth) Label() string {
@@ -43,19 +68,31 @@ func (health DecisionHealth) Label() string {
 func DeriveDecisionHealth(ctx context.Context, store ArtifactStore, decisionID string) DecisionHealth {
 	items, err := store.GetEvidenceItems(ctx, decisionID)
 	if err != nil {
-		return DecisionHealth{Maturity: DecisionMaturityUnassessed}
+		return DecisionHealth{
+			Maturity:      DecisionMaturityUnassessed,
+			EvidenceState: DecisionEvidenceUnavailable,
+		}
 	}
 
 	activeItems := activeEvidenceItems(items)
 	if len(activeItems) == 0 {
-		return DecisionHealth{Maturity: DecisionMaturityUnassessed}
+		return DecisionHealth{
+			Maturity:      DecisionMaturityUnassessed,
+			EvidenceState: DecisionEvidenceNoActiveEvidence,
+		}
 	}
 
 	if !hasAcceptedMeasurementEvidence(activeItems) {
-		return DecisionHealth{Maturity: DecisionMaturityPending}
+		return DecisionHealth{
+			Maturity:      DecisionMaturityPending,
+			EvidenceState: DecisionEvidenceActive,
+		}
 	}
 
-	health := DecisionHealth{Maturity: DecisionMaturityShipped}
+	health := DecisionHealth{
+		Maturity:      DecisionMaturityShipped,
+		EvidenceState: DecisionEvidenceActive,
+	}
 	reliability := ComputeWLNKSummary(ctx, store, decisionID).REff
 
 	if reliability < 0.3 {
@@ -70,6 +107,40 @@ func DeriveDecisionHealth(ctx context.Context, store ArtifactStore, decisionID s
 
 	health.Freshness = DecisionFreshnessHealthy
 	return health
+}
+
+// DeriveDecisionVerificationSummary projects active claim verification state
+// from the canonical DecisionRecord structured payload.
+func DeriveDecisionVerificationSummary(decision *Artifact) DecisionVerificationSummary {
+	summary := DecisionVerificationSummary{}
+	if decision == nil {
+		return summary
+	}
+
+	var next time.Time
+	for _, claim := range decision.UnmarshalDecisionFields().Claims {
+		lifecycle := EffectiveClaimLifecycleStatus(claim)
+		if lifecycle != ClaimLifecycleActive && lifecycle != ClaimLifecycleRefreshDue {
+			continue
+		}
+
+		summary.ActiveClaims++
+		if normalizeClaimStatus(claim.Status) != ClaimStatusUnverified {
+			continue
+		}
+
+		summary.UnverifiedClaims++
+		verifyAt, ok := reff.ParseValidUntil(strings.TrimSpace(claim.VerifyAfter))
+		if !ok || (!next.IsZero() && !verifyAt.Before(next)) {
+			continue
+		}
+		next = verifyAt
+	}
+
+	if !next.IsZero() {
+		summary.NextScheduledCheck = next.Format("2006-01-02")
+	}
+	return summary
 }
 
 func activeEvidenceItems(items []EvidenceItem) []EvidenceItem {

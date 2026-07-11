@@ -97,22 +97,23 @@ func decisionCandidatesForAdoption(
 
 // StatusData holds all data needed to render the status dashboard.
 type StatusData struct {
-	HealthyDecisions    []*Artifact
-	PendingDecisions    []*Artifact
-	UnassessedDecisions []*Artifact
-	DecisionHealth      map[string]DecisionHealth // decision ID -> derived maturity/freshness
-	StaleItems          []StaleItem
-	OpenCommissions     []WorkCommissionStatus
-	CommissionAttention []WorkCommissionStatus
-	InProgressProblems  []*Artifact
-	InProgressBy        map[string]string // problem ID -> portfolio ID
-	PortfolioTitles     map[string]string // portfolio ID -> title
-	BacklogProblems     []*Artifact
-	ProblemHygiene      []ProblemHygieneItem
-	AddressedProblems   []*Artifact
-	AddressedBy         map[string]string // problem ID -> decision ID
-	DecisionTitles      map[string]string // decision ID -> title
-	RecentNotes         []*Artifact
+	HealthyDecisions     []*Artifact
+	PendingDecisions     []*Artifact
+	UnassessedDecisions  []*Artifact
+	DecisionHealth       map[string]DecisionHealth              // decision ID -> derived maturity/freshness
+	DecisionVerification map[string]DecisionVerificationSummary // decision ID -> active claim verification summary
+	StaleItems           []StaleItem
+	OpenCommissions      []WorkCommissionStatus
+	CommissionAttention  []WorkCommissionStatus
+	InProgressProblems   []*Artifact
+	InProgressBy         map[string]string // problem ID -> portfolio ID
+	PortfolioTitles      map[string]string // portfolio ID -> title
+	BacklogProblems      []*Artifact
+	ProblemHygiene       []ProblemHygieneItem
+	AddressedProblems    []*Artifact
+	AddressedBy          map[string]string // problem ID -> decision ID
+	DecisionTitles       map[string]string // decision ID -> title
+	RecentNotes          []*Artifact
 
 	// Drift reports for active decisions whose baselined affected_files
 	// have moved since baseline (H1 of V2 — reality-aware decisions).
@@ -189,6 +190,7 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	data.PortfolioTitles = make(map[string]string)
 	data.DecisionTitles = make(map[string]string)
 	data.DecisionHealth = make(map[string]DecisionHealth)
+	data.DecisionVerification = make(map[string]DecisionVerificationSummary)
 
 	// Active decisions
 	var decisions []*Artifact
@@ -200,12 +202,17 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 			}
 		}
 	} else {
-		decisions, _ = store.ListByKind(ctx, KindDecisionRecord, 10)
+		decisions, _ = store.ListByKind(ctx, KindDecisionRecord, 0)
 	}
 	activeDecisions := filterActive(decisions)
-	for _, d := range activeDecisions {
+	for _, listedDecision := range activeDecisions {
+		d := listedDecision
+		if fullDecision, err := store.Get(ctx, listedDecision.Meta.ID); err == nil {
+			d = fullDecision
+		}
 		health := DeriveDecisionHealth(ctx, store, d.Meta.ID)
 		data.DecisionHealth[d.Meta.ID] = health
+		data.DecisionVerification[d.Meta.ID] = DeriveDecisionVerificationSummary(d)
 
 		if health.Maturity == DecisionMaturityUnassessed {
 			data.UnassessedDecisions = append(data.UnassessedDecisions, d)

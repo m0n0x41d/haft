@@ -268,6 +268,9 @@ func invalidateRecall(searcher recall.Searcher, createdRef string) {
 // searchArtifacts routes a query through the hybrid searcher when one is wired,
 // and falls back to the store's FTS ranking otherwise. Same contract either way.
 func searchArtifacts(ctx context.Context, store *artifact.Store, searcher recall.Searcher, query string, limit int) ([]*artifact.Artifact, error) {
+	if artifact.IsArtifactID(query) {
+		return store.Search(ctx, query, 1)
+	}
 	if searcher == nil {
 		return artifact.FetchSearchResults(ctx, store, query, limit)
 	}
@@ -640,17 +643,7 @@ func parseNoteAnchors(raw any) []artifact.NoteAnchor {
 // prefix + '-' + a date digit, e.g. dec-20260604-…) as opposed to a code-symbol
 // name. Symbol names have no such shape.
 func isArtifactRef(ref string) bool {
-	ref = strings.TrimSpace(ref)
-	dash := strings.IndexByte(ref, '-')
-	if dash <= 0 || dash+1 >= len(ref) {
-		return false
-	}
-	for i := 0; i < dash; i++ {
-		if c := ref[i]; c < 'a' || c > 'z' {
-			return false
-		}
-	}
-	return ref[dash+1] >= '0' && ref[dash+1] <= '9'
+	return artifact.IsArtifactID(ref)
 }
 
 // resolveSymbolAnchor resolves a symbol-anchor ref ("Name" or "Name@file") to a
@@ -1668,6 +1661,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 	switch action {
 	case "search":
 		query, _ := args["query"].(string)
+		full, _ := args["full"].(bool)
+		if full && !artifact.IsArtifactID(query) {
+			return "", fmt.Errorf("full artifact search requires an exact artifact ID; run haft_query(action=\"search\", query=\"<terms>\") first, then haft_query(action=\"related\", artifact_ref=\"<ref>\")")
+		}
+		if full {
+			return artifactQueryContractResponse(ctx, store, strings.TrimSpace(query))
+		}
 		limit := 20
 		if l, ok := args["limit"].(float64); ok {
 			limit = int(l)
@@ -1675,6 +1675,9 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		results, err := searchArtifacts(ctx, store, searcher, query, limit)
 		if err != nil {
 			return "", err
+		}
+		if artifact.IsArtifactID(query) && len(results) == 0 {
+			return "", exactArtifactMissError(strings.TrimSpace(query))
 		}
 		return present.SearchResponse(results, query) + navStrip, nil
 
@@ -1735,7 +1738,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 
 	case "related":
-		artifactRef := firstNonEmptyQueryArg(args, "artifact_id", "ref")
+		artifactRef := firstNonEmptyQueryArg(args, "artifact_ref", "ref", "artifact_id")
 		if artifactRef != "" {
 			return artifactQueryContractResponse(ctx, store, artifactRef)
 		}
@@ -2606,6 +2609,9 @@ func firstNonEmptyQueryArg(args map[string]any, keys ...string) string {
 
 func artifactQueryContractResponse(ctx context.Context, store *artifact.Store, artifactRef string) (string, error) {
 	item, err := store.Get(ctx, artifactRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", exactArtifactMissError(artifactRef)
+	}
 	if err != nil {
 		return "", err
 	}
@@ -2623,6 +2629,10 @@ func artifactQueryContractResponse(ctx context.Context, store *artifact.Store, a
 	}
 
 	return string(encoded), nil
+}
+
+func exactArtifactMissError(artifactRef string) error {
+	return fmt.Errorf("artifact_not_found: %s (exact lookup; semantic fallback was not used)", artifactRef)
 }
 
 func artifactQueryContractPayload(item *artifact.Artifact) map[string]any {

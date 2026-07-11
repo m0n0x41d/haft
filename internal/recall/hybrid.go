@@ -121,6 +121,9 @@ func (h *Hybrid) Search(ctx context.Context, query string, limit int) ([]*artifa
 	if limit <= 0 {
 		limit = 20
 	}
+	if artifact.IsArtifactID(query) {
+		return h.source.Search(ctx, query, 1)
+	}
 	if h.newEmbedder == nil {
 		return h.source.Search(ctx, query, limit)
 	}

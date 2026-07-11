@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -262,31 +262,22 @@ func (s *Store) ListActive(ctx context.Context, limit int) ([]*Artifact, error) 
 	return scanArtifacts(rows)
 }
 
-// Search performs FTS5 full-text search across artifacts.
-// artifactIDPattern matches the leading prefix-date shape shared by every haft
-// artifact ID (prob-/dec-/sol-/note-/evid-/wc-/rr- followed by a date).
-var artifactIDPattern = regexp.MustCompile(`(?i)^[a-z]+-\d{6,}`)
-
-// isArtifactIDQuery reports whether the whole query is a single artifact-ID
-// token — searched as one precise token, never split into fragments.
-func isArtifactIDQuery(query string) bool {
-	return !strings.ContainsAny(query, " \t\n") && artifactIDPattern.MatchString(query)
-}
-
-// compactAlnum lower-cases s and drops every non-alphanumeric rune.
-func compactAlnum(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
+// Search performs exact lookup for artifact IDs and FTS5 full-text search for
+// discovery queries.
 func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifact, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+	exactID := strings.TrimSpace(query)
+	if IsArtifactID(exactID) {
+		item, err := s.Get(ctx, exactID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return []*Artifact{item}, nil
 	}
 
 	// Phase-1 term prep (dec-20260604-3aaad199): split compound identifiers
@@ -297,20 +288,11 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifac
 	// safe (no manual special-char stripping needed). A `kind:` qualifier narrows
 	// the reasoning lane to one or more artifact kinds.
 	//
-	// EXCEPTION: a bare artifact-ID query (prob-YYYYMMDD-<hash>) is kept as one
-	// compacted token. Splitting an ID into prefix/date/hash fragments would
-	// cross-match every sibling artifact sharing that date or prefix — precisely
-	// the noise an ID lookup must avoid (IDs resolve via links / GetByID, not FTS).
 	var ftsTerms []string
-	var kindFilter []Kind
-	if id := strings.TrimSpace(query); isArtifactIDQuery(id) {
-		ftsTerms = []string{fmt.Sprintf(`"%s"*`, compactAlnum(id))}
-	} else {
-		pq := textsearch.ParseQuery(query)
-		kindFilter = matchArtifactKinds(pq.Kinds)
-		for _, t := range textsearch.Terms(pq.Text, textsearch.Options{Stems: false}) {
-			ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, t))
-		}
+	pq := textsearch.ParseQuery(query)
+	kindFilter := matchArtifactKinds(pq.Kinds)
+	for _, term := range textsearch.Terms(pq.Text, textsearch.Options{Stems: false}) {
+		ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, term))
 	}
 
 	// A kind-only query ("kind:DecisionRecord", no free text) has no FTS terms —

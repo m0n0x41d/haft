@@ -130,6 +130,32 @@ type fakeSource struct {
 	ftsOrder []*artifact.Artifact
 }
 
+type exactAwareSource struct {
+	target    *artifact.Artifact
+	neighbors []*artifact.Artifact
+}
+
+func (s exactAwareSource) Search(_ context.Context, query string, limit int) ([]*artifact.Artifact, error) {
+	if query == s.target.Meta.ID {
+		return []*artifact.Artifact{s.target}, nil
+	}
+	if artifact.IsArtifactID(query) {
+		return nil, nil
+	}
+	return truncate(s.neighbors, limit), nil
+}
+
+func (s exactAwareSource) ListByKind(_ context.Context, kind artifact.Kind, _ int) ([]*artifact.Artifact, error) {
+	items := append([]*artifact.Artifact{s.target}, s.neighbors...)
+	result := make([]*artifact.Artifact, 0, len(items))
+	for _, item := range items {
+		if item.Meta.Kind == kind {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
 func (s fakeSource) Search(_ context.Context, _ string, limit int) ([]*artifact.Artifact, error) {
 	return truncate(s.ftsOrder, limit), nil
 }
@@ -235,6 +261,36 @@ func TestHybridPromotesSemanticHit(t *testing.T) {
 	}
 	if len(results) == 0 || results[0].Meta.ID != "dec-2" {
 		t.Fatalf("expected dec-2 (semantic match) promoted to top, got %s", orderIDs(results))
+	}
+}
+
+func TestHybridExactArtifactIDReturnsOnlyExactBeforeAndAfterWarm(t *testing.T) {
+	target := decisionArtifact("dec-20260711-exact", "Exact embedding decision", "embedding vector target")
+	neighbor := decisionArtifact("dec-20260711-neighbor", "Semantic neighbor", "embedding vector neighbor")
+	source := exactAwareSource{target: target, neighbors: []*artifact.Artifact{neighbor}}
+	hybrid := NewHybrid(source, staticFactory(&fakeEmbedder{}), testDB(t))
+
+	assertExact := func(phase string) {
+		results, err := hybrid.Search(context.Background(), target.Meta.ID, 20)
+		if err != nil {
+			t.Fatalf("%s exact search: %v", phase, err)
+		}
+		if len(results) != 1 || results[0].Meta.ID != target.Meta.ID {
+			t.Fatalf("%s exact search = %s, want only %s", phase, orderIDs(results), target.Meta.ID)
+		}
+	}
+
+	assertExact("cold")
+	if err := hybrid.Warm(context.Background()); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	assertExact("warm")
+	missing, err := hybrid.Search(context.Background(), "dec-20260711-missing", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("warm exact miss = %s, want no semantic fallback", orderIDs(missing))
 	}
 }
 

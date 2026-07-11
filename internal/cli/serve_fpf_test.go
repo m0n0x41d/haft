@@ -212,6 +212,108 @@ func TestHandleQuintQuery_RelatedArtifactIDReturnsProblemCardJSON(t *testing.T) 
 	}
 }
 
+func TestHandleQuintQuery_ExactSearchAndCanonicalRelatedContract(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+	target := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "dec-20260711-exact",
+			Kind:  artifact.KindDecisionRecord,
+			Title: "Exact decision",
+		},
+		Body:           "Full decision body.",
+		StructuredData: `{"claims":[{"id":"claim-1","observable":"go test ./...","threshold":"passes"}]}`,
+	}
+	neighbor := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "dec-20260711-neighbor",
+			Kind:  artifact.KindDecisionRecord,
+			Title: "Neighbor decision",
+		},
+		Body: "Full decision body with similar terms.",
+	}
+	for _, item := range []*artifact.Artifact{target, neighbor} {
+		if err := store.Create(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	compact, err := handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action": "search",
+		"query":  target.Meta.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(compact, target.Meta.ID) || strings.Contains(compact, neighbor.Meta.ID) {
+		t.Fatalf("compact exact search returned wrong set:\n%s", compact)
+	}
+
+	fullSearch, err := handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action": "search",
+		"query":  target.Meta.ID,
+		"full":   true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonical, err := handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action":       "related",
+		"artifact_ref": target.Meta.ID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fullSearch != canonical {
+		t.Fatalf("full exact search and canonical related differ:\nsearch=%s\nrelated=%s", fullSearch, canonical)
+	}
+	if !strings.Contains(canonical, target.Body) || !strings.Contains(canonical, "structured_data") || !strings.Contains(canonical, "claim-1") {
+		t.Fatalf("full exact payload missing body or structured data: %s", canonical)
+	}
+
+	_, err = handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action": "search",
+		"query":  "decision body",
+		"full":   true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "run haft_query(action=\"search\"") {
+		t.Fatalf("non-exact full search error = %v", err)
+	}
+
+	_, err = handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action": "search",
+		"query":  "dec-20260711-missing",
+	})
+	if err == nil || !strings.Contains(err.Error(), "semantic fallback was not used") {
+		t.Fatalf("exact miss error = %v", err)
+	}
+}
+
+func TestHandleQuintQuery_RelatedFileModeRemainsAvailable(t *testing.T) {
+	ctx := context.Background()
+	store := setupCLIArtifactStore(t)
+	decision := &artifact.Artifact{
+		Meta: artifact.Meta{ID: "dec-20260711-file", Kind: artifact.KindDecisionRecord, Title: "File decision"},
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(ctx, decision.Meta.ID, []artifact.AffectedFile{{Path: "internal/example.go"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
+		"action": "related",
+		"file":   "internal/example.go",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, decision.Meta.ID) {
+		t.Fatalf("file-related result missing decision: %s", result)
+	}
+}
+
 func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *testing.T) {
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)

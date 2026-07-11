@@ -119,6 +119,40 @@ func TestCreateAndGet(t *testing.T) {
 	}
 }
 
+func TestSearchExactArtifactIDUsesDirectLookup(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	target := &Artifact{
+		Meta: Meta{ID: "dec-20260711-exact", Kind: KindDecisionRecord, Title: "Exact target"},
+		Body: "shared words that also occur in a semantic neighbor",
+	}
+	neighbor := &Artifact{
+		Meta: Meta{ID: "dec-20260711-neighbor", Kind: KindDecisionRecord, Title: "Neighbor"},
+		Body: "shared words that also occur in the exact target",
+	}
+	for _, item := range []*Artifact{target, neighbor} {
+		if err := store.Create(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results, err := store.Search(ctx, target.Meta.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Meta.ID != target.Meta.ID {
+		t.Fatalf("exact search = %#v, want only %s", results, target.Meta.ID)
+	}
+
+	missing, err := store.Search(ctx, "dec-20260711-missing", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("exact miss = %#v, want no fallback results", missing)
+	}
+}
+
 func TestSearchSplitsCompoundQuery(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()

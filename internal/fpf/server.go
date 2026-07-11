@@ -869,7 +869,9 @@ func (s *Server) ToolCatalog() []Tool {
 						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "pattern_use", "pattern_recall", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 						"description": "Read-only query/drill-down action.",
 					},
-					"query":          map[string]interface{}{},
+					"query": map[string]interface{}{
+						"description": "(search) Compact discovery text, or one exact artifact ID. Search hit/miss does not establish claim or prediction presence.",
+					},
 					"term":           map[string]interface{}{},
 					"section_id":     map[string]interface{}{},
 					"decision_draft": map[string]interface{}{},
@@ -931,7 +933,15 @@ func (s *Server) ToolCatalog() []Tool {
 						},
 						"description": "(spec_use) Optional OperationalGate v1.",
 					},
-					"artifact_ref":               map[string]interface{}{},
+					"artifact_ref": map[string]interface{}{
+						"description": "(related) Canonical exact artifact ID for full single-artifact recovery.",
+					},
+					"ref": map[string]interface{}{
+						"description": "(related) Backward-compatible alias for artifact_ref.",
+					},
+					"artifact_id": map[string]interface{}{
+						"description": "(related) Backward-compatible alias for artifact_ref.",
+					},
 					"evidence_ref":               map[string]interface{}{},
 					"claim_ref":                  map[string]interface{}{},
 					"attempted_use":              map[string]interface{}{},
@@ -961,8 +971,10 @@ func (s *Server) ToolCatalog() []Tool {
 						"type":        "string",
 						"description": "projection views",
 					},
-					"limit":   map[string]interface{}{},
-					"full":    map[string]interface{}{},
+					"limit": map[string]interface{}{},
+					"full": map[string]interface{}{
+						"description": "(search) Full payload is accepted only for an exact artifact ID; ordinary discovery queries must remain compact.",
+					},
 					"explain": map[string]interface{}{},
 					"mode": map[string]interface{}{
 						"type":        "string",

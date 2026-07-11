@@ -2477,6 +2477,15 @@ func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
 	if !strings.Contains(capability.CurrentExecution.MCPCall, `action="related"`) {
 		t.Fatalf("related interface should name related action:\n%#v", capability.CurrentExecution)
 	}
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `artifact_ref="prob-..."`) {
+		t.Fatalf("related interface should name canonical artifact_ref:\n%#v", capability.CurrentExecution)
+	}
+	optionalFields := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{"artifact_ref", "ref", "artifact_id", "file"} {
+		if !strings.Contains(optionalFields, want) {
+			t.Fatalf("related optional fields missing %q: %s", want, optionalFields)
+		}
+	}
 
 	fieldShapes := ""
 	for _, shape := range capability.InputContract.FieldShapes {
@@ -2489,8 +2498,15 @@ func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	if !strings.Contains(notes, "SQLite remains runtime source of truth") {
-		t.Fatalf("related notes should document source-of-truth policy:\n%s", notes)
+	for _, want := range []string{
+		"artifact_ref is canonical",
+		"related(file=",
+		"binding-time receipt",
+		"SQLite remains runtime source of truth",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("related notes missing %q:\n%s", want, notes)
+		}
 	}
 }
 

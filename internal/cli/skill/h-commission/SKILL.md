@@ -9,7 +9,7 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
 
 # h-commission — Create work commission (manual only, sacred)
 
@@ -24,8 +24,13 @@ The operator invoked this manually (`disable-model-invocation: true` enforces it
 `decision_ref` must be an existing active DecisionRecord. Verify:
 
 ```
-mcp__haft__haft_query(action="search", query="<decision_ref>")
+mcp__haft__haft_query(action="related", artifact_ref="<decision_ref>")
 ```
+
+Inspect the full exact payload: `status`, `valid_until`, `structured_data`
+claims/predictions, and the decision's persisted affected-file footprint.
+`search` is discovery only; its hit/miss is not a validity or prediction check.
+Do not read raw SQLite while kernel exact recovery is available.
 
 If not found or stale or superseded or deprecated → STOP. Report to operator and recommend:
 - `/h-decide` to record the decision first
@@ -95,6 +100,7 @@ All these are read-only or state-transition; none execute. Execution is harness 
 - DO NOT run the harness from this skill — execution is a separate operator decision.
 - DO NOT silently inherit envelope from a previous commission. Snapshot freshly so envelope drift is visible.
 - DO NOT skip slice_description on second+ commissions from same decision — without it the harness leaks scope between slices (see `.context/multi-commission-anti-pattern-retrospective.md`).
+- DO NOT use raw SQLite as a fallback for DecisionRecord recovery while `related(artifact_ref=...)` is available from the kernel.
 
 ## FPF spec references
 

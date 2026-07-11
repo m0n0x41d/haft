@@ -842,7 +842,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":41,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":41,"generated_schema_fragments":34,"runtime_schema_mirrors":34,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":41,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":41,"generated_schema_fragments":35,"runtime_schema_mirrors":35,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":13,"digest_guarded_carriers":13,"authority_boundary_guarded_carriers":13},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_source_digest":"sha256:...","sync_posture":"digest_guarded_by_repo_regression","guard_posture":"source_digest_and_authority_boundary_guarded"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1001,17 +1001,17 @@ func haftInterfaceCatalog() []interfaceCapability {
 		},
 		{
 			ID:      "query.related",
-			Purpose: "Recover one artifact carrier by ref, including explicit ProblemCard semantic views when available.",
+			Purpose: "Recover one full artifact carrier by exact ref, including explicit ProblemCard semantic views when available.",
 			CurrentExecution: interfaceExecution{
 				MCPTool:          "haft_query",
 				MCPAction:        "related",
-				MCPCall:          `haft_query(action="related", ref="prob-...")`,
+				MCPCall:          `haft_query(action="related", artifact_ref="prob-...")`,
 				CLIStatus:        "mcp_projection",
 				DiscoveryCommand: "haft interface query.related --json",
 			},
 			InputContract: interfaceContract{
-				RequiredFields: []string{"ref"},
-				OptionalFields: []string{"artifact_id"},
+				RequiredFields: []string{},
+				OptionalFields: []string{"artifact_ref", "ref", "artifact_id", "file"},
 				FieldShapes: []fieldShape{
 					{
 						Field: "problem_card.semantic",
@@ -1030,8 +1030,12 @@ func haftInterfaceCatalog() []interfaceCapability {
 					},
 				},
 				Notes: []string{
+					"Provide artifact_ref (preferred), ref/artifact_id (aliases), or file; exact-artifact and file-related modes are distinct read-only projections.",
+					"artifact_ref is canonical for exact single-artifact recovery; ref and artifact_id remain backward-compatible aliases.",
+					"related(file=\"...\") remains the file-to-artifact discovery mode.",
 					"For ProblemCard refs, the response preserves legacy keys and adds semantic + views.",
 					"For DecisionRecord refs, the audit/evidence projection names WLNK formality scale and bridge/loss rather than showing a bare F ordinal.",
+					"Persisted spec_binding_preflight is a binding-time receipt, not a current spec-health evaluation.",
 					"SQLite remains runtime source of truth; markdown is a carrier imported through explicit sync.",
 					"Audit views must label legacy/degraded semantics instead of fabricating exact provenance.",
 				},

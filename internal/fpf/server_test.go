@@ -376,6 +376,27 @@ func TestHandleToolsList_QuerySchemaIncludesContractAudit(t *testing.T) {
 	}
 }
 
+func TestHandleToolsList_QuerySchemaIncludesExactArtifactAliases(t *testing.T) {
+	querySchema := mustListToolProperties(t, "haft_query")
+	for _, field := range []string{"artifact_ref", "ref", "artifact_id"} {
+		if _, ok := querySchema[field].(map[string]interface{}); !ok {
+			t.Fatalf("haft_query schema missing %s: %#v", field, querySchema[field])
+		}
+	}
+
+	piPath := filepath.Join("..", "..", "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	piBytes, err := os.ReadFile(piPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	piSchema := string(piBytes)
+	for _, field := range []string{"artifact_ref: OptStr()", "ref: OptStr()", "artifact_id: OptStr()"} {
+		if !strings.Contains(piSchema, field) {
+			t.Fatalf("Pi haft_query schema missing %q", field)
+		}
+	}
+}
+
 func TestPiHaftQueryActionsMirrorMCPEnum(t *testing.T) {
 	querySchema := mustListToolProperties(t, "haft_query")
 	mcpActions := mustStringEnum(t, querySchema["action"], "haft_query.action")

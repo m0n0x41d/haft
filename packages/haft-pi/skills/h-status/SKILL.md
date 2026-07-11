@@ -3,7 +3,7 @@ name: h-status
 description: Inspect the live Haft governance state in Pi before governed work, open-ended FPF reasoning, or completion claims.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
 
 # h-status for Pi
 
@@ -24,6 +24,8 @@ Read the output as project evidence:
 - overseer drift or stale decisions change what is safe to claim,
 - `UNDERFRAMED` means the next step is problem framing, not implementation certainty,
 - default status is a compact cockpit, not an audit dump; omitted detail is not evidence of absence,
+- `Unassessed` describes evidence maturity (no active evidence or unavailable evidence lookup), not missing predictions; claim counts are separate,
+- `verify_after` is a planned evidence-check date, not a deadline or gate; zero-claim tactical decisions have no scheduled check,
 - module coverage may appear only as a one-line cue; call `haft_query` with
   `{ "action": "coverage" }` for the full module list,
 - call `haft_query` with `{ "action": "contract_generation" }` for read-only

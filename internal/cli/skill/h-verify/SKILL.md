@@ -8,7 +8,7 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
 
 # h-verify — Verify a decision still holds
 
@@ -59,13 +59,25 @@ Use the explicit drain loop:
    choices, public/authority/security-sensitive cases, and weak waivers stay
    operator-facing.
 
-## Step 2 — Read the decision's predictions
+## Step 2 — Read the decision's claims and predictions
 
-`mcp__haft__haft_query(action="search", query="<decision_ref>")` returns the DecisionRecord including its `predictions` field. Each prediction has:
+Recover the selected DecisionRecord through the exact artifact surface:
+
+```
+mcp__haft__haft_query(action="related", artifact_ref="<decision_ref>")
+```
+
+Read the full payload, especially `status`, `valid_until`, `body`, and
+`structured_data`. The canonical structured payload exposes `claims` (and
+legacy-compatible `predictions`) with:
 - `claim` — the falsifiable statement
 - `observable` — what to measure
 - `threshold` — pass/fail boundary
 - `verify_after` — when async evidence should be available (if any)
+
+`search` is discovery only. A compact search hit or miss does not establish
+whether claims, predictions, observables, or thresholds exist. Do not read the
+project SQLite database directly while kernel exact recovery is available.
 
 If predictions are empty (the decision was recorded tactical with `_skips: ["predictions"]`), there's nothing to measure — report that to operator and recommend either:
 - `/h-refresh` action=reopen to add predictions and re-decide properly
@@ -213,6 +225,7 @@ CLAUDE.md Critical Reminders for the project-wide rule.
 - Do NOT skip baseline if the decision has affected_files and drift matters — without baseline, drift is invisible.
 - Do NOT silently change a decision's verify_after to "kick the can". Use `action="waive"` with `evidence` parameter so the extension is auditable.
 - Do NOT mark verdict=accepted when predictions were skipped — verify what was declared, not what was hoped.
+- Do NOT use raw SQLite as a fallback for DecisionRecord recovery while `related(artifact_ref=...)` is available from the kernel.
 
 ## FPF spec references
 

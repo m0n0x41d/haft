@@ -17,10 +17,14 @@ is advisory/read-only: not approval, not evidence, not a DecisionRecord, not a
 WorkCommission, not MethodPack, and not a gate. Do not inline the FPF catalog
 or route list in this prompt.
 
-1. Locate the DecisionRecord: `haft_query(action="status")` or
-   `haft_query(action="search", query=...)`.
-2. Read its predictions: what was supposed to be true by now, with which
-   observable and threshold?
+1. Locate the DecisionRecord with `haft_query(action="status")` or compact
+   `haft_query(action="search", query=...)` discovery.
+2. Recover the selected full record with
+   `haft_query(action="related", artifact_ref="<dec-...>")`. Read its
+   `structured_data` claims/predictions: what was supposed to be true by now,
+   with which observable, threshold, and planned `verify_after` evidence check?
+   Search hit/miss is not evidence that predictions exist or are absent. Do not
+   use raw SQLite while kernel exact recovery is available.
 3. Gather evidence — run tests, measure, inspect code. Design-time claims
    are not run-time evidence; label which is which.
 4. Attach evidence via the native `haft_decision` tool:

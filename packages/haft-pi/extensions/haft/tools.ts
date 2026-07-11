@@ -21,7 +21,7 @@ const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890";
+  "sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1";
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),
@@ -79,6 +79,8 @@ const haftQueryParameters = Type.Object({
     "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"
   ),
   artifact_ref: OptStr(),
+  ref: OptStr(),
+  artifact_id: OptStr(),
   attempted_use: OptStr(),
   bearer_ref: OptStr(),
   blocked_use: OptStr(),

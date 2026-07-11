@@ -1,4 +1,4 @@
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
 
 MANUAL GATE — create a WorkCommission (bounded execution authority). For
 the operator's explicit invocation only; never run this flow on your own
@@ -16,6 +16,11 @@ Preconditions:
 
 - an active DecisionRecord to commission from (`haft_query(action="status")`);
 - the operator has stated the slice to execute and its bounds.
+
+Before create, recover the exact full DecisionRecord with
+`haft_query(action="related", artifact_ref="<dec-...>")` and inspect status,
+validity, affected files, and structured claims/predictions. Search is discovery
+only. Do not use raw SQLite while kernel exact recovery is available.
 
 Then call the native `haft_commission` tool:
 

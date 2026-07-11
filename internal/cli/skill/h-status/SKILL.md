@@ -8,7 +8,7 @@ argument-hint: "[optional: context name to filter]"
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:07d9fe1f13415f179013bb32d3d533055611071ef38188707ce354576a08c890 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
 
 # h-status — Project FPF state dashboard
 
@@ -75,7 +75,7 @@ The default status payload is a compact cockpit. Read it as:
 - **Problem closure hygiene** — read-only warnings for active/backlog problems
   that already have supporting evidence but no `based_on`
   SolutionPortfolio/DecisionRecord graph path
-- **Decision Health** — counts for healthy, pending, unassessed, refresh-due, and drifted decisions
+- **Decision Health** — counts for healthy, pending, unassessed, refresh-due, and drifted decisions, plus active/unverified claims and the nearest planned evidence-check date
 - **Coverage Cue** — one-line module coverage orientation when modules were scanned
 - **Drill-down** — exact calls for the omitted detailed status, coverage, drift/stale, maintenance plan, read-only judgment packet, and safe drain preview
 
@@ -83,6 +83,11 @@ The default status payload is a compact cockpit. Read it as:
 decision lists, addressed problems, recent notes, and full module coverage when
 available. The response also includes a navigation strip with available next
 actions (e.g., `/h-refresh`).
+
+`Unassessed` is evidence maturity, not a claim/prediction count. Read its
+reason: either no active evidence exists or evidence lookup was unavailable.
+The claim summary is separate. `verify_after` is a planned evidence-check date,
+not a deadline or gate. A zero-claim tactical decision has no scheduled check.
 
 ## Step 3 — Include spec lifecycle when relevant
 

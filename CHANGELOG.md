@@ -8,6 +8,51 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- **Native TypeScript/JavaScript/Vue code graph with durable symbol anchors.**
+  Added a dependency-free tree-sitter index for project-aware symbols, calls,
+  references, type relations, re-exports, aliases, callbacks, receiver flows,
+  and Vue template use. Incremental refresh publishes atomic SQLite epochs and
+  preserves the previous complete graph on degradation. Stable `SymbolAnchor`
+  identities now connect exact declarations to decisions, specs, drift checks,
+  `code_context`, node, explore, callers/callees, and typed impact traversal.
+  The frozen parity corpus resolves 31/31 required relations with no admitted
+  forbidden edges, compared with 24/31 and one false positive in the pinned
+  CodeGraph 1.3.1 reference; no Node, tsserver, or CodeGraph runtime dependency
+  was added to Haft.
+- **SoftwareSystemSpec and guarded development-spec migration.** Replaced the
+  overloaded EnablingSystemSpec onboarding spine with a SoftwareSystemSpec for
+  software role, responsibility allocation, functional/procedural behavior,
+  interfaces, constraints, and selected structure. `haft spec migrate --to
+  software-system` now previews legacy carrier mappings, preserves stable
+  section IDs for safe architecture migrations, and blocks apply while agent,
+  commission, runtime, evidence, or mixed effect-boundary policy remains
+  unresolved. New projects create `.haft/specs/software-system.md`; legacy
+  carriers remain readable as development-version migration input.
+- **PatternUse cue-authority removal and candidate-only fallback contract.**
+  Removed legacy `RecognitionCues` / `matched_recognition_cues` from
+  production PatternUse route cards and public recommendation JSON. Compiled
+  route support now surfaces an explicit `candidate_state`,
+  `required_next_action`, `must_expand_before_application`, and
+  `compiled_output_shape_available` contract, so `retrieved_uncompiled`
+  fallback records are visibly source-candidate-only while semantic compiled
+  routes expose ready compiled output shapes.
+- **Zed init support.** Added `haft init --zed`, which merges a `Haft`
+  context server into global Zed settings at `~/.config/zed/settings.json`.
+  Because Zed settings are global but context servers may start outside the
+  workspace cwd, the entry writes `HAFT_PROJECT_ROOT` and
+  `HAFT_EXPECTED_PROJECT_ID` for the project where init was run. Zed's JSONC
+  settings files (comments and trailing commas) are accepted during merge.
+- **Google Antigravity init support.** Added `haft init --agy`, which merges
+  `mcpServers.haft` into Antigravity's shared MCP config at
+  `~/.gemini/config/mcp_config.json`. The generated entry starts
+  `haft serve --project-root <root> --expected-project-id <id>` so global
+  Antigravity MCP startup is bound to the initialized Haft project without
+  relying on cwd or env propagation. Antigravity skills are installed under
+  `~/.gemini/skills/`, or under workspace `.agents/skills/` when `--local` is
+  used, with MCP tool references adapted to Antigravity's bare `haft_*` names.
+- **Explicit project binding flags for `haft serve`.** Added
+  `--project-root` and `--expected-project-id` as host-level MCP startup inputs
+  that feed the existing ProjectBinding resolver and expected-project guard.
 - **PatternRecall source-card recall surface.** Added `haft pattern recall` and
   `haft_query(action="pattern_recall")` as a read-only compact/full surface for
   FPF source-card recall over the embedded PatternAtlas and FPF retrieval

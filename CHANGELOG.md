@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
+- MiniMax model registry entries and configurable OpenAI-compatible and
+  Anthropic-compatible regional endpoints.
 - **Native TypeScript/JavaScript/Vue code graph with durable symbol anchors.**
   Added a dependency-free tree-sitter index for project-aware symbols, calls,
   references, type relations, re-exports, aliases, callbacks, receiver flows,

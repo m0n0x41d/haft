@@ -35,22 +35,36 @@ import (
 
 // ModelInfo describes a single LLM model's capabilities and constraints.
 type ModelInfo struct {
-	ID             string  `json:"id"`
-	Name           string  `json:"name,omitempty"`
-	ContextWindow  int     `json:"context_window"`
-	DefaultMaxOut  int     `json:"default_max_tokens"`
-	CanReason      bool    `json:"can_reason,omitempty"`
-	SupportsImages bool    `json:"supports_images,omitempty"`
-	CostPer1MIn    float64 `json:"cost_per_1m_in,omitempty"`
-	CostPer1MOut   float64 `json:"cost_per_1m_out,omitempty"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name,omitempty"`
+	ContextWindow       int      `json:"context_window"`
+	DefaultMaxOut       int      `json:"default_max_tokens"`
+	CanReason           bool     `json:"can_reason,omitempty"`
+	SupportsImages      bool     `json:"supports_images,omitempty"`
+	SupportsVideo       bool     `json:"supports_video,omitempty"`
+	ThinkingModes       []string `json:"thinking_modes,omitempty"`
+	CostPer1MIn         float64  `json:"cost_per_1m_in,omitempty"`
+	CostPer1MOut        float64  `json:"cost_per_1m_out,omitempty"`
+	CostPer1MCacheRead  float64  `json:"cost_per_1m_cache_read,omitempty"`
+	CostPer1MCacheWrite float64  `json:"cost_per_1m_cache_write,omitempty"`
+}
+
+// ProviderEndpoint describes protocol endpoints for one provider region.
+type ProviderEndpoint struct {
+	Region           string `json:"region"`
+	OpenAIBaseURL    string `json:"openai_base_url,omitempty"`
+	AnthropicBaseURL string `json:"anthropic_base_url,omitempty"`
+	DocsURL          string `json:"docs_url,omitempty"`
 }
 
 // ProviderInfo describes an LLM provider and its available models.
 type ProviderInfo struct {
-	ID      string      `json:"id"`
-	Name    string      `json:"name"`
-	APIType string      `json:"type,omitempty"` // "openai", "anthropic", "google"
-	Models  []ModelInfo `json:"models"`
+	ID        string             `json:"id"`
+	Name      string             `json:"name"`
+	APIType   string             `json:"type,omitempty"` // default protocol: "openai", "anthropic", "google"
+	Protocols []string           `json:"protocols,omitempty"`
+	Endpoints []ProviderEndpoint `json:"endpoints,omitempty"`
+	Models    []ModelInfo        `json:"models"`
 }
 
 // ---------------------------------------------------------------------------
@@ -125,22 +139,37 @@ func (r *Registry) Providers() []ProviderInfo {
 func MergeProviders(remote, embedded []ProviderInfo) []ProviderInfo {
 	// Build embedded index: provider → model ID → ModelInfo
 	embeddedModels := make(map[string]map[string]ModelInfo)
+	embeddedProviders := make(map[string]ProviderInfo, len(embedded))
 	for _, p := range embedded {
 		m := make(map[string]ModelInfo, len(p.Models))
 		for _, model := range p.Models {
 			m[model.ID] = model
 		}
 		embeddedModels[p.ID] = m
+		embeddedProviders[p.ID] = p
 	}
 
 	// Start with remote, merge embedded corrections
 	byID := make(map[string]ProviderInfo, len(remote)+len(embedded))
 	for _, p := range remote {
 		if emb, ok := embeddedModels[p.ID]; ok {
-			// Merge models: keep higher context window
+			p = mergeProviderMetadata(p, embeddedProviders[p.ID])
+			// Merge models: keep higher context window and retain embedded-only models.
 			for i, rm := range p.Models {
 				if em, exists := emb[rm.ID]; exists && em.ContextWindow > rm.ContextWindow {
 					p.Models[i].ContextWindow = em.ContextWindow
+				}
+			}
+			for modelID, em := range emb {
+				found := false
+				for _, rm := range p.Models {
+					if rm.ID == modelID {
+						found = true
+						break
+					}
+				}
+				if !found {
+					p.Models = append(p.Models, em)
 				}
 			}
 		}
@@ -158,6 +187,49 @@ func MergeProviders(remote, embedded []ProviderInfo) []ProviderInfo {
 		result = append(result, p)
 	}
 	return result
+}
+
+func mergeProviderMetadata(remote, embedded ProviderInfo) ProviderInfo {
+	if remote.APIType == "" {
+		remote.APIType = embedded.APIType
+	}
+	for _, protocol := range embedded.Protocols {
+		if !containsString(remote.Protocols, protocol) {
+			remote.Protocols = append(remote.Protocols, protocol)
+		}
+	}
+	for _, embeddedEndpoint := range embedded.Endpoints {
+		found := false
+		for i, remoteEndpoint := range remote.Endpoints {
+			if remoteEndpoint.Region != embeddedEndpoint.Region {
+				continue
+			}
+			found = true
+			if remoteEndpoint.OpenAIBaseURL == "" {
+				remote.Endpoints[i].OpenAIBaseURL = embeddedEndpoint.OpenAIBaseURL
+			}
+			if remoteEndpoint.AnthropicBaseURL == "" {
+				remote.Endpoints[i].AnthropicBaseURL = embeddedEndpoint.AnthropicBaseURL
+			}
+			if remoteEndpoint.DocsURL == "" {
+				remote.Endpoints[i].DocsURL = embeddedEndpoint.DocsURL
+			}
+			break
+		}
+		if !found {
+			remote.Endpoints = append(remote.Endpoints, embeddedEndpoint)
+		}
+	}
+	return remote
+}
+
+func containsString(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
 }
 
 // ---------------------------------------------------------------------------
@@ -232,14 +304,18 @@ type catwalkProvider struct {
 }
 
 type catwalkModel struct {
-	ID               string  `json:"id"`
-	Name             string  `json:"name"`
-	ContextWindow    int     `json:"context_window"`
-	DefaultMaxTokens int     `json:"default_max_tokens"`
-	CanReason        bool    `json:"can_reason"`
-	SupportsImages   bool    `json:"supports_images"`
-	CostPer1MIn      float64 `json:"cost_per_1m_in"`
-	CostPer1MOut     float64 `json:"cost_per_1m_out"`
+	ID                  string   `json:"id"`
+	Name                string   `json:"name"`
+	ContextWindow       int      `json:"context_window"`
+	DefaultMaxTokens    int      `json:"default_max_tokens"`
+	CanReason           bool     `json:"can_reason"`
+	SupportsImages      bool     `json:"supports_images"`
+	SupportsVideo       bool     `json:"supports_video"`
+	ThinkingModes       []string `json:"thinking_modes"`
+	CostPer1MIn         float64  `json:"cost_per_1m_in"`
+	CostPer1MOut        float64  `json:"cost_per_1m_out"`
+	CostPer1MCacheRead  float64  `json:"cost_per_1m_cache_read"`
+	CostPer1MCacheWrite float64  `json:"cost_per_1m_cache_write"`
 }
 
 func convertCatwalkResponse(raw []catwalkProvider) []ProviderInfo {
@@ -252,14 +328,18 @@ func convertCatwalkResponse(raw []catwalkProvider) []ProviderInfo {
 		}
 		for _, rm := range rp.Models {
 			p.Models = append(p.Models, ModelInfo{
-				ID:             rm.ID,
-				Name:           rm.Name,
-				ContextWindow:  rm.ContextWindow,
-				DefaultMaxOut:  rm.DefaultMaxTokens,
-				CanReason:      rm.CanReason,
-				SupportsImages: rm.SupportsImages,
-				CostPer1MIn:    rm.CostPer1MIn,
-				CostPer1MOut:   rm.CostPer1MOut,
+				ID:                  rm.ID,
+				Name:                rm.Name,
+				ContextWindow:       rm.ContextWindow,
+				DefaultMaxOut:       rm.DefaultMaxTokens,
+				CanReason:           rm.CanReason,
+				SupportsImages:      rm.SupportsImages,
+				SupportsVideo:       rm.SupportsVideo,
+				ThinkingModes:       rm.ThinkingModes,
+				CostPer1MIn:         rm.CostPer1MIn,
+				CostPer1MOut:        rm.CostPer1MOut,
+				CostPer1MCacheRead:  rm.CostPer1MCacheRead,
+				CostPer1MCacheWrite: rm.CostPer1MCacheWrite,
 			})
 		}
 		providers = append(providers, p)
@@ -392,6 +472,49 @@ func EmbeddedProviders() []ProviderInfo {
 			},
 		},
 		{
+			ID: "minimax", Name: "MiniMax", APIType: "openai",
+			Protocols: []string{"openai", "anthropic"},
+			Endpoints: []ProviderEndpoint{
+				{
+					Region:           "global_en",
+					OpenAIBaseURL:    "https://api.minimax.io/v1",
+					AnthropicBaseURL: "https://api.minimax.io/anthropic",
+					DocsURL:          "https://platform.minimax.io/docs/api-reference/api-overview",
+				},
+				{
+					Region:           "cn_zh",
+					OpenAIBaseURL:    "https://api.minimaxi.com/v1",
+					AnthropicBaseURL: "https://api.minimaxi.com/anthropic",
+					DocsURL:          "https://platform.minimaxi.com/docs/api-reference/api-overview",
+				},
+			},
+			Models: []ModelInfo{
+				{
+					ID:                 "MiniMax-M3",
+					Name:               "MiniMax M3",
+					ContextWindow:      1_000_000,
+					CanReason:          true,
+					SupportsImages:     true,
+					SupportsVideo:      true,
+					ThinkingModes:      []string{"adaptive", "disabled"},
+					CostPer1MIn:        0.3,
+					CostPer1MOut:       1.2,
+					CostPer1MCacheRead: 0.06,
+				},
+				{
+					ID:                  "MiniMax-M2.7",
+					Name:                "MiniMax M2.7",
+					ContextWindow:       204_800,
+					CanReason:           true,
+					ThinkingModes:       []string{"always_on"},
+					CostPer1MIn:         0.3,
+					CostPer1MOut:        1.2,
+					CostPer1MCacheRead:  0.06,
+					CostPer1MCacheWrite: 0.375,
+				},
+			},
+		},
+		{
 			ID: "google", Name: "Google", APIType: "google",
 			Models: []ModelInfo{
 				{ID: "gemini-2.5-pro", Name: "Gemini 2.5 Pro", ContextWindow: 1_000_000, DefaultMaxOut: 65_536, CanReason: true, SupportsImages: true, CostPer1MIn: 1.25, CostPer1MOut: 10.0},
@@ -413,6 +536,25 @@ func EmbeddedProviders() []ProviderInfo {
 			},
 		},
 	}
+}
+
+// MiniMaxEndpoint returns the configured endpoint pair for a MiniMax region.
+// The empty region selects the global English endpoint.
+func MiniMaxEndpoint(region string) (ProviderEndpoint, bool) {
+	if region == "" {
+		region = "global_en"
+	}
+	for _, provider := range EmbeddedProviders() {
+		if provider.ID != "minimax" {
+			continue
+		}
+		for _, endpoint := range provider.Endpoints {
+			if endpoint.Region == region {
+				return endpoint, true
+			}
+		}
+	}
+	return ProviderEndpoint{}, false
 }
 
 // FormatModelList renders the registry as a human-readable model list.

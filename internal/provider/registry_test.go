@@ -99,3 +99,73 @@ func TestFormatModelList(t *testing.T) {
 		t.Error("FormatModelList should return non-empty for gpt-5.4 filter")
 	}
 }
+
+func TestMiniMaxRegistry(t *testing.T) {
+	r := NewRegistry(EmbeddedProviders())
+
+	cases := []struct {
+		id      string
+		context int
+		cacheW  float64
+		video   bool
+	}{
+		{id: "MiniMax-M3", context: 1_000_000, video: true},
+		{id: "MiniMax-M2.7", context: 204_800, cacheW: 0.375},
+	}
+	for _, tc := range cases {
+		m, ok := r.Lookup(tc.id)
+		if !ok {
+			t.Fatalf("%s not found in registry", tc.id)
+		}
+		if m.ContextWindow != tc.context {
+			t.Errorf("%s context window: got %d, want %d", tc.id, m.ContextWindow, tc.context)
+		}
+		if m.CostPer1MCacheWrite != tc.cacheW {
+			t.Errorf("%s cache-write price: got %v, want %v", tc.id, m.CostPer1MCacheWrite, tc.cacheW)
+		}
+		if m.CanReason == false {
+			t.Errorf("%s should support reasoning", tc.id)
+		}
+		if m.SupportsVideo != tc.video {
+			t.Errorf("%s video support: got %t, want %t", tc.id, m.SupportsVideo, tc.video)
+		}
+	}
+
+	provider, ok := findProvider(EmbeddedProviders(), "minimax")
+	if !ok {
+		t.Fatal("MiniMax provider not found")
+	}
+	if provider.APIType != "openai" {
+		t.Errorf("MiniMax default API type: got %q, want openai", provider.APIType)
+	}
+	if len(provider.Protocols) != 2 || provider.Protocols[0] != "openai" || provider.Protocols[1] != "anthropic" {
+		t.Errorf("MiniMax protocols: got %#v", provider.Protocols)
+	}
+	if len(provider.Endpoints) != 2 {
+		t.Fatalf("MiniMax endpoints: got %d, want 2", len(provider.Endpoints))
+	}
+	if endpoint, ok := MiniMaxEndpoint("cn_zh"); !ok || endpoint.OpenAIBaseURL != "https://api.minimaxi.com/v1" || endpoint.AnthropicBaseURL != "https://api.minimaxi.com/anthropic" {
+		t.Errorf("China endpoint: got %#v, ok=%t", endpoint, ok)
+	}
+
+	merged := MergeProviders(
+		[]ProviderInfo{{ID: "minimax", Models: []ModelInfo{{ID: "MiniMax-M3"}}}},
+		EmbeddedProviders(),
+	)
+	mergedProvider, ok := findProvider(merged, "minimax")
+	if !ok || len(mergedProvider.Endpoints) != 2 {
+		t.Fatalf("merged MiniMax metadata: provider=%#v, ok=%t", mergedProvider, ok)
+	}
+	if _, ok := NewRegistry(merged).Lookup("MiniMax-M2.7"); !ok {
+		t.Fatal("embedded MiniMax model should survive remote registry merge")
+	}
+}
+
+func findProvider(providers []ProviderInfo, id string) (ProviderInfo, bool) {
+	for _, provider := range providers {
+		if provider.ID == id {
+			return provider, true
+		}
+	}
+	return ProviderInfo{}, false
+}

@@ -26,6 +26,16 @@ var _ LLMProvider = (*AnthropicProvider)(nil)
 // NewAnthropic creates an Anthropic provider.
 // Resolves API key from: explicit param → ANTHROPIC_API_KEY env.
 func NewAnthropic(model, apiKey string) (*AnthropicProvider, error) {
+	return NewAnthropicWithBaseURL(model, apiKey, "")
+}
+
+// NewAnthropicWithBaseURL creates an Anthropic-compatible provider with an
+// optional base URL. The SDK appends /v1/messages to the configured base URL.
+func NewAnthropicWithBaseURL(model, apiKey, baseURL string) (*AnthropicProvider, error) {
+	return newAnthropicProvider(model, apiKey, baseURL)
+}
+
+func newAnthropicProvider(model, apiKey, baseURL string, extra ...option.RequestOption) (*AnthropicProvider, error) {
 	if apiKey == "" {
 		apiKey = os.Getenv("ANTHROPIC_API_KEY")
 	}
@@ -33,9 +43,12 @@ func NewAnthropic(model, apiKey string) (*AnthropicProvider, error) {
 		return nil, fmt.Errorf("no Anthropic API key: set ANTHROPIC_API_KEY or run 'haft setup'")
 	}
 
-	client := anthropic.NewClient(
-		option.WithAPIKey(apiKey),
-	)
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
+	opts = append(opts, extra...)
+	client := anthropic.NewClient(opts...)
 
 	return &AnthropicProvider{
 		client: client,

@@ -1,3 +1,5 @@
+[![MCP Toplist](https://mcptoplist.com/badge/glama%2Fm0n0x41d%2Fhaft.svg)](https://mcptoplist.com/server/glama%2Fm0n0x41d%2Fhaft)
+
 <img src="assets/banner.svg" alt="Haft" width="600">
 
 *formerly [quint-code](https://github.com/m0n0x41d/quint-code)*

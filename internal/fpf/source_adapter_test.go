@@ -81,14 +81,14 @@ func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 	if productionBody.UnitID == "" {
 		t.Fatal("exact A.15.PROD pattern body must be structurally resolvable")
 	}
-	missingProcessWording := findSourceRelation(
+	processRecoveryRelation := findSourceRelation(
 		t,
 		productionBody.Relations,
 		SourceRelationKindCoordinatesWith,
 		"A.15.6",
 	)
-	if missingProcessWording.TargetClass != SourceRelationTargetClassUnresolvedAuthored {
-		t.Fatalf("A.15.PROD -> A.15.6 target class = %q; want explicit unresolved authored source gap", missingProcessWording.TargetClass)
+	if processRecoveryRelation.TargetClass != SourceRelationTargetClassLocalPattern {
+		t.Fatalf("A.15.PROD -> A.15.6 target class = %q; want current local pattern", processRecoveryRelation.TargetClass)
 	}
 	if !containsSourceString(formalityTOC.DirectRefs, "C.2") || containsSourceString(formalityTOC.DirectRefs, "F.0") {
 		t.Fatalf("C.2.3 direct refs = %#v, want C.2 and no F0 scale false positive", formalityTOC.DirectRefs)

@@ -43,9 +43,17 @@ func TestCurrentCandidateBuildsAllFiveExactReferenceSchemeRegistries(
 ) {
 	t.Parallel()
 	base := loadCurrentBaseArtifact(t)
-	target, err := Build(base, typedmemorycandidates.SourceV1_3())
+	target, err := Build(base, typedmemorycandidates.SourceV1_4())
 	if err != nil {
 		t.Fatalf("Build(current candidate) error = %v", err)
+	}
+	const wantExtension = "typeenv-extension:haft.typed-memory@sha256:3f44de24a60ac10c5975ec11cb28507e32ffc42efec1506ca903d0afa7378118"
+	if got := target.Extension().Ref().String(); got != wantExtension {
+		t.Fatalf("current candidate E = %s, want %s", got, wantExtension)
+	}
+	const wantComposite = "typeenv:sha256:e56fdd13bc8b73035ed25ddb46dd05d87f66931f156f63815ca073b73d995e9a"
+	if got := target.Composite().Ref().String(); got != wantComposite {
+		t.Fatalf("current candidate C = %s, want %s", got, wantComposite)
 	}
 	contracts := map[projecttypeenv.RuntimeMechanismInvocationContract]int{}
 	for _, requirement := range target.Requirements().Requirements() {

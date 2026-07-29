@@ -50,7 +50,7 @@ func TestCurrentKindClassificationCompilesLinksLowersAndDiscoversOnlyCriterionRu
 		t,
 		base,
 		"current-kind-classification.signature",
-		"1.3.0",
+		"1.4.0",
 		"Haft",
 		nil,
 	))

@@ -29,12 +29,12 @@ const (
 	embeddedTokenGateEncodingAssetHash = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
 	embeddedTokenGateCalibrationTokens = 21
 	embeddedTokenGateMinimumReduction  = 0.30
-	embeddedTokenGateDatabaseDigest    = "6794aa7fb613a2a3013057a7e9aa5edaebc738fe7711fc664beda2e391f4b954"
-	embeddedTokenGateCorpusDigest      = "4e6eedff7c26fdb3940d55aa5cc52ca739dc4a3f441873d544e571b4145e3171"
+	embeddedTokenGateDatabaseDigest    = "2df40bb9d4e754ee8e9d47ced1eb4926fbb941ac42880dc0a365c60fa4b04bc4"
+	embeddedTokenGateCorpusDigest      = "9983c5f594bc2dbab503d4f3a6fce29157a50105eee64568274ff4211db19952"
 	embeddedTokenGateIndexSchema       = "11"
-	embeddedTokenGateSourceRevision    = "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4"
+	embeddedTokenGateSourceRevision    = "2ada413629b846ef308222d16489a82cb5b40a71"
 	embeddedTokenGateReadmeDigest      = "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd"
-	embeddedTokenGateSpecDigest        = "sha256:1093a25640c61a2674f56443bffb8e27f33ac2cdf95f09af2c0cf67c68913eac"
+	embeddedTokenGateSpecDigest        = "sha256:00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af"
 )
 
 var embeddedTokenGateDefaultBudget = fpf.ResponseBudget{
@@ -167,19 +167,26 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 			CaseID:                 "relation-occurrence-assertion",
 			Request:                fpf.ConcernQuery{Text: "relation occurrence assertion distinction"},
 			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 7,
+			ExpectedCandidateCount: 6,
 			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:wording",
 				"readme:practical_use_card:system-in-context",
-				"spec:toc_row:a-6-rel",
-				"spec:toc_row:c-22-pfr",
+				"spec:toc_row:a-6-rsir",
 				"spec:toc_row:c-3-1",
 				"spec:toc_row:c-3-3",
-				"spec:toc_row:a-15-1",
+				"spec:toc_row:a-15-2",
+				"spec:toc_row:a-3",
 			},
-			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    5,
-			ExpectedTruncationBasis:   []string{"response_budget"},
+			ExpectedCandidateSourceIDs: []string{
+				"SYSTEM-IN-CONTEXT",
+				"",
+				"",
+				"",
+				"",
+				"",
+			},
+			ExpectedTruncationApplied: false,
+			ExpectedOmittedAtLeast:    0,
+			ExpectedTruncationBasis:   nil,
 		},
 		{
 			CaseID:                 "pattern-use-working-situation",
@@ -192,6 +199,15 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 				"spec:toc_row:e-11-pua",
 				"spec:toc_row:e-8-ecspf",
 			},
+			ExpectedCandidateSourceIDs: []string{
+				"WORKING-DOCUMENTS",
+				"ARCHITECTURE",
+				"",
+				"",
+			},
+			ExpectedTruncationApplied: false,
+			ExpectedOmittedAtLeast:    0,
+			ExpectedTruncationBasis:   nil,
 		},
 		{
 			CaseID:                 "evidence-decay-decision-verification",
@@ -203,6 +219,14 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 				"readme:practical_use_card:time",
 				"spec:toc_row:b-3-4",
 			},
+			ExpectedCandidateSourceIDs: []string{
+				"COSTLY-ACTION",
+				"TIME",
+				"",
+			},
+			ExpectedTruncationApplied: false,
+			ExpectedOmittedAtLeast:    0,
+			ExpectedTruncationBasis:   nil,
 		},
 		{
 			CaseID:                 "work-plan-performed-work-evidence",
@@ -213,14 +237,24 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 				"readme:practical_use_card:system-in-context",
 				"readme:practical_use_card:costly-action",
 				"readme:practical_use_card:working-documents",
+				"spec:toc_row:f-6",
 				"spec:toc_row:a-15",
-				"spec:toc_row:a-15-1",
 				"spec:toc_row:a-15-5",
-				"spec:toc_row:a-3-4-p",
-				"spec:toc_row:d-1",
+				"spec:toc_row:a-15-1",
+				"spec:toc_row:a-2-9",
+			},
+			ExpectedCandidateSourceIDs: []string{
+				"SYSTEM-IN-CONTEXT",
+				"COSTLY-ACTION",
+				"WORKING-DOCUMENTS",
+				"",
+				"",
+				"",
+				"",
+				"",
 			},
 			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    2,
+			ExpectedOmittedAtLeast:    4,
 			ExpectedTruncationBasis:   []string{"response_budget"},
 		},
 		{
@@ -230,7 +264,7 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 			ExpectedCandidateCount: 10,
 			ExpectedCandidateIDs: []string{
 				"readme:practical_use_card:system-in-context",
-				"readme:practical_use_card:wording",
+				"readme:practical_use_card:problem-shaping",
 				"readme:practical_use_card:dpf-authoring",
 				"readme:practical_use_card:naming",
 				"readme:practical_use_card:description-use",
@@ -240,8 +274,20 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 				"spec:toc_row:a-6-4",
 				"spec:toc_row:e-10-d2",
 			},
+			ExpectedCandidateSourceIDs: []string{
+				"SYSTEM-IN-CONTEXT",
+				"PROBLEM-SHAPING",
+				"DPF-AUTHORING",
+				"NAMING",
+				"DESCRIPTION-USE",
+				"",
+				"",
+				"",
+				"",
+				"",
+			},
 			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    8,
+			ExpectedOmittedAtLeast:    7,
 			ExpectedTruncationBasis:   []string{"response_budget"},
 		},
 		{
@@ -250,11 +296,18 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 			ExpectedKind:           fpf.QueryResultKindCandidateSet,
 			ExpectedCandidateCount: 5,
 			ExpectedCandidateIDs: []string{
-				"spec:toc_row:a-10",
 				"spec:toc_row:a-2-9",
-				"spec:toc_row:e-16",
+				"spec:toc_row:a-10",
 				"spec:toc_row:a-6-c",
-				"spec:toc_row:e-10",
+				"spec:toc_row:e-16",
+				"spec:toc_row:e-17-efp",
+			},
+			ExpectedCandidateSourceIDs: []string{
+				"",
+				"",
+				"",
+				"",
+				"",
 			},
 			ExpectedTruncationApplied: true,
 			ExpectedOmittedAtLeast:    1,
@@ -274,11 +327,11 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 				"readme:practical_use_card:system-in-context",
 				"readme:practical_use_card:costly-action",
 				"readme:practical_use_card:working-documents",
+				"spec:toc_row:f-6",
 				"spec:toc_row:a-15",
-				"spec:toc_row:a-15-1",
 				"spec:toc_row:a-15-5",
-				"spec:toc_row:a-3-4-p",
-				"spec:toc_row:d-1",
+				"spec:toc_row:a-15-1",
+				"spec:toc_row:a-2-9",
 			},
 			ExpectedCandidateSourceIDs: []string{
 				"SYSTEM-IN-CONTEXT",
@@ -291,7 +344,7 @@ func embeddedTokenGateCorpus() []embeddedTokenGateCase {
 				"",
 			},
 			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    40,
+			ExpectedOmittedAtLeast:    46,
 			ExpectedTruncationBasis: []string{
 				"role_local_fts_producer_limit",
 				"role_local_fts:toc_row",
@@ -718,5 +771,5 @@ func TestEmbeddedTokenGatePinnedDatabaseDigestFormat(t *testing.T) {
 func Example_embeddedTokenGateIdentity() {
 	fmt.Printf("db=sha256:%s source=%s\n", embeddedTokenGateDatabaseDigest, embeddedTokenGateSourceRevision)
 	// Output:
-	// db=sha256:6794aa7fb613a2a3013057a7e9aa5edaebc738fe7711fc664beda2e391f4b954 source=0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4
+	// db=sha256:2df40bb9d4e754ee8e9d47ced1eb4926fbb941ac42880dc0a365c60fa4b04bc4 source=2ada413629b846ef308222d16489a82cb5b40a71
 }

@@ -8,35 +8,61 @@ import (
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
-func TestHistoricalV3ArtifactIsExactAndPrivatelyDecoded(t *testing.T) {
+func TestHistoricalArtifactsAreExactAndPrivatelyDecoded(t *testing.T) {
 	t.Parallel()
-	ref := mustArchivedRef(t, HistoricalV3Ref)
-	first, err := LoadExact(ref)
-	if err != nil {
-		t.Fatalf("LoadExact(first) error = %v", err)
+	tests := []struct {
+		name           string
+		ref            string
+		compilerSchema string
+		sourceRevision string
+		canonicalSize  int
+	}{
+		{
+			name:           "v3",
+			ref:            HistoricalV3Ref,
+			compilerSchema: typeenv.BaseTypeEnvCompilerSchemaV3,
+			sourceRevision: historicalV3SourceRevision,
+			canonicalSize:  112193,
+		},
+		{
+			name:           "v4",
+			ref:            HistoricalV4Ref,
+			compilerSchema: typeenv.BaseTypeEnvCompilerSchemaV4,
+			sourceRevision: historicalV4SourceRevision,
+			canonicalSize:  139574,
+		},
 	}
-	if first.CompilerSchemaVersion().String() != typeenv.BaseTypeEnvCompilerSchemaV3 {
-		t.Fatalf(
-			"compiler schema = %q, want %q",
-			first.CompilerSchemaVersion().String(),
-			typeenv.BaseTypeEnvCompilerSchemaV3,
-		)
-	}
-	if first.SourceRevision().String() != historicalV3SourceRevision {
-		t.Fatalf(
-			"source revision = %q, want %q",
-			first.SourceRevision().String(),
-			historicalV3SourceRevision,
-		)
-	}
-	mutated := first.CanonicalBytes()
-	mutated[0] ^= 0xff
-	second, err := LoadExact(ref)
-	if err != nil {
-		t.Fatalf("LoadExact(second) error = %v", err)
-	}
-	if second.CanonicalBytes()[0] == mutated[0] {
-		t.Fatal("caller mutation changed the embedded historical artifact")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			ref := mustArchivedRef(t, test.ref)
+			first := mustLoadExact(t, ref)
+			assertExactMetadata(
+				t,
+				first,
+				test.ref,
+				test.compilerSchema,
+				test.sourceRevision,
+				test.canonicalSize,
+			)
+
+			mutated := first.CanonicalBytes()
+			mutated[0] ^= 0xff
+
+			second := mustLoadExact(t, ref)
+			assertExactMetadata(
+				t,
+				second,
+				test.ref,
+				test.compilerSchema,
+				test.sourceRevision,
+				test.canonicalSize,
+			)
+			secondCanonical := second.CanonicalBytes()
+			if secondCanonical[0] == mutated[0] {
+				t.Fatal("caller mutation changed the embedded historical artifact")
+			}
+		})
 	}
 }
 
@@ -44,11 +70,79 @@ func TestHistoricalArchiveHasNoFallback(t *testing.T) {
 	t.Parallel()
 	unknown := mustArchivedRef(
 		t,
-		"typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6",
+		"typeenv:sha256:0000000000000000000000000000000000000000000000000000000000000000",
 	)
 	_, err := LoadExact(unknown)
 	if !errors.Is(err, ErrExactArtifactNotFound) {
 		t.Fatalf("LoadExact(unknown) error = %v, want exact not found", err)
+	}
+}
+
+func mustLoadExact(
+	t *testing.T,
+	ref typedmemory.TypeEnvRef,
+) typeenv.BaseTypeEnvArtifact {
+	t.Helper()
+	artifact, err := LoadExact(ref)
+	if err != nil {
+		reference := ref.String()
+		t.Fatalf("LoadExact(%s) error = %v", reference, err)
+	}
+	return artifact
+}
+
+func assertExactMetadata(
+	t *testing.T,
+	artifact typeenv.BaseTypeEnvArtifact,
+	wantRef string,
+	wantCompilerSchema string,
+	wantSourceRevision string,
+	wantCanonicalSize int,
+) {
+	t.Helper()
+	ref, present := artifact.TypeEnvRef()
+	reference := ref.String()
+	if !present || reference != wantRef {
+		t.Fatalf(
+			"TypeEnvRef = %q, present = %t, want %q",
+			reference,
+			present,
+			wantRef,
+		)
+	}
+	wantDigest := "sha256:" + wantRef[len("typeenv:sha256:"):]
+	digest := artifact.Digest().String()
+	if digest != wantDigest {
+		t.Fatalf(
+			"artifact digest = %q, want %q",
+			digest,
+			wantDigest,
+		)
+	}
+	compilerSchema := artifact.CompilerSchemaVersion().String()
+	if compilerSchema != wantCompilerSchema {
+		t.Fatalf(
+			"compiler schema = %q, want %q",
+			compilerSchema,
+			wantCompilerSchema,
+		)
+	}
+	sourceRevision := artifact.SourceRevision().String()
+	if sourceRevision != wantSourceRevision {
+		t.Fatalf(
+			"source revision = %q, want %q",
+			sourceRevision,
+			wantSourceRevision,
+		)
+	}
+	canonical := artifact.CanonicalBytes()
+	canonicalSize := len(canonical)
+	if canonicalSize != wantCanonicalSize {
+		t.Fatalf(
+			"canonical size = %d, want %d",
+			canonicalSize,
+			wantCanonicalSize,
+		)
 	}
 }
 

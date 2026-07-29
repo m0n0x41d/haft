@@ -31,7 +31,7 @@ func TestProductionUnchangedSuccessorKeepsInstalledProfilesCompatible(
 		context.Background(),
 		database,
 	))
-	priorSource := typedmemorycandidates.SourceV1_3()
+	priorSource := typedmemorycandidates.SourceV1_4()
 	currentSource := successorProductionSource(t, priorSource)
 	prior := mustProductionProfileTest(localpracticeruntime.Build(base, priorSource))
 	current := mustProductionProfileTest(localpracticeruntime.Build(base, currentSource))
@@ -87,8 +87,8 @@ func successorProductionSource(t *testing.T, prior []byte) []byte {
 	t.Helper()
 	successor := append([]byte(nil), prior...)
 	replacements := [][2]string{
-		{"  edition: 1.3.0\n", "  edition: 1.3.1\n"},
-		{"  version: 1.3.0\n", "  version: 1.3.1\n"},
+		{"  edition: 1.4.0\n", "  edition: 1.4.1\n"},
+		{"  version: 1.4.0\n", "  version: 1.4.1\n"},
 	}
 	for _, replacement := range replacements {
 		before := []byte(replacement[0])

@@ -2080,7 +2080,7 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/fpf/typeenv::TestPinnedPublicationCompilesArtifactAndRuntimeTypeEnv",
 				"github.com/m0n0x41d/haft/internal/fpf/localpractice::TestDigestCommitsToExactCarrierBytesRatherThanOnlyTheAST",
 				"github.com/m0n0x41d/haft/internal/fpf/localpractice::TestParseCurrentKindClassificationSignatureHasNoEntitySetOrMemberOfFields",
-				"github.com/m0n0x41d/haft/internal/fpf/localpractice::TestCurrentCandidateCarrierV1_3RemainsByteStableAndUsesKindClassification",
+				"github.com/m0n0x41d/haft/internal/fpf/localpractice::TestCurrentCandidateCarrierV1_4RemainsByteStableAndUsesKindClassification",
 				"github.com/m0n0x41d/haft/internal/fpf/projecttypeenv::TestResolveManifestGraphRejectsMissingSelfAndCyclicImports",
 				"github.com/m0n0x41d/haft/internal/fpf/projecttypeenv::TestPrepareProjectTypeEnvCompositeLowersEverySourceFamilyAtC",
 				"github.com/m0n0x41d/haft/internal/fpf/projecttypeenv::TestCurrentKindClassificationCompilesLinksLowersAndDiscoversOnlyCriterionRuntime",

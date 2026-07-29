@@ -120,6 +120,17 @@ func currentBaseV4GenesisTrustedStageEditionCatalog() TrustedStageEditionCatalog
 	)
 }
 
+func currentBaseV5GenesisTrustedStageEditionCatalog() TrustedStageEditionCatalog {
+	return newTrustedStageEditionCatalog(
+		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV4,
+		projecttypeenvselection.StageCompilerEditionV4(),
+		typeenv.BaseTypeEnvCompilerSchemaV5,
+		projecttypeenvselection.StageProducerEditionV4(),
+		projecttypeenvselection.StageRevalidatorEditionV4(),
+		projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
+	)
+}
+
 func currentTransitionTrustedStageEditionCatalog() TrustedStageEditionCatalog {
 	return newTrustedStageEditionCatalog(
 		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
@@ -136,6 +147,17 @@ func currentBaseV4TransitionTrustedStageEditionCatalog() TrustedStageEditionCata
 		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
 		projecttypeenvselection.StageCompilerEditionV5(),
 		typeenv.BaseTypeEnvCompilerSchemaV4,
+		projecttypeenvselection.StageProducerEditionV5(),
+		projecttypeenvselection.StageRevalidatorEditionV5(),
+		projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
+	)
+}
+
+func currentBaseV5TransitionTrustedStageEditionCatalog() TrustedStageEditionCatalog {
+	return newTrustedStageEditionCatalog(
+		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
+		projecttypeenvselection.StageCompilerEditionV5(),
+		typeenv.BaseTypeEnvCompilerSchemaV5,
 		projecttypeenvselection.StageProducerEditionV5(),
 		projecttypeenvselection.StageRevalidatorEditionV5(),
 		projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
@@ -369,11 +391,27 @@ func trustedStageEditionCatalogForStage(
 	stage projecttypeenvselection.ProjectTypeEnvStage,
 	observation staticStageEditionObservation,
 ) TrustedStageEditionCatalog {
-	if _, transition := stage.Predecessor().(projecttypeenvselection.TransitionStagePredecessor); transition {
+	return trustedStageEditionCatalogForPredecessor(
+		stage.Predecessor(),
+		observation,
+	)
+}
+
+func trustedStageEditionCatalogForPredecessor(
+	predecessor projecttypeenvselection.ProjectTypeEnvStagePredecessor,
+	observation staticStageEditionObservation,
+) TrustedStageEditionCatalog {
+	if _, transition := predecessor.(projecttypeenvselection.TransitionStagePredecessor); transition {
+		if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV5 {
+			return currentBaseV5TransitionTrustedStageEditionCatalog()
+		}
 		if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV4 {
 			return currentBaseV4TransitionTrustedStageEditionCatalog()
 		}
 		return currentTransitionTrustedStageEditionCatalog()
+	}
+	if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV5 {
+		return currentBaseV5GenesisTrustedStageEditionCatalog()
 	}
 	if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV4 {
 		return currentBaseV4GenesisTrustedStageEditionCatalog()

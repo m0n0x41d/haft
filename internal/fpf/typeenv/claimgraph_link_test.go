@@ -67,7 +67,7 @@ func TestPinnedCompilerMaterializesClaimGraphShapeBindingAndCodec(t *testing.T) 
 	claimGraphSource := resolveGrammarSourceID(t, snapshot, "C.2.1:4.2.1")
 	assertCompilerDerivedClaimGraphProvenance(t, shape.Provenance(), claimGraphSource)
 	assertCompilerDerivedClaimGraphProvenance(t, binding.Provenance(), claimGraphSource)
-	assertLinkedClaimGraphDeclarations(t, artifact)
+	assertLinkedClaimGraphDeclarations(t, artifact, claimGraphSource)
 	assertClaimGraphCodecRoundTrip(t, environment, registry)
 
 	ref, _ := artifact.TypeEnvRef()
@@ -328,8 +328,13 @@ func assertCompilerDerivedClaimGraphProvenance(
 func assertLinkedClaimGraphDeclarations(
 	t *testing.T,
 	artifact BaseTypeEnvArtifact,
+	source fpf.SourceUnit,
 ) {
 	t.Helper()
+	want, err := sourceLocation(source)
+	if err != nil {
+		t.Fatalf("sourceLocation(%s): %v", source.SourceID, err)
+	}
 	for _, symbol := range []typedmemory.SchemaSymbolRef{
 		claimGraphTestShapeSymbol(t),
 		claimGraphTestCodecSymbol(t),
@@ -342,8 +347,15 @@ func assertLinkedClaimGraphDeclarations(
 			t.Fatalf("%s basis = %v, want compiler-derived", symbol.String(), declaration.Basis().Kind())
 		}
 		locations := declaration.Basis().SourceLocations()
-		if len(locations) != 1 || locations[0].UnitID().String() != "spec:pattern_section:c-2-1:3164" {
+		if len(locations) != 1 {
 			t.Fatalf("%s exact sources = %#v", symbol.String(), locations)
+		}
+		location := locations[0]
+		if location.UnitID() != want.UnitID() ||
+			location.Revision() != want.Revision() ||
+			location.ContentHash() != want.ContentHash() ||
+			location.LineRange() != want.LineRange() {
+			t.Fatalf("%s exact source = %#v, want SourceID %s provenance %#v", symbol.String(), location, source.SourceID, want)
 		}
 	}
 }

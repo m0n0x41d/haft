@@ -24,11 +24,21 @@ var storeSourceUnitsFunc = fpf.StoreSourceUnits
 var compileBaseTypeEnvFunc = typeenv.CompileBaseTypeEnv
 var storeTypeEnvEnvelopeFunc = storeTypeEnvEnvelope
 var verifyBuiltIndexFunc = verifyBuiltIndex
+var afterPreviousTypeEnvCompilerProbeFunc = func(string) error { return nil }
+var closePreviousTypeEnvSnapshotFunc = func(database *sql.DB) error {
+	return database.Close()
+}
+
+type previousTypeEnvSnapshot struct {
+	database    *sql.DB
+	transaction *sql.Tx
+}
 
 const (
 	legacyBaseTypeEnvCompilerSchemaV1   = "fpf-base-typeenv.cov2.v1"
 	previousBaseTypeEnvCompilerSchemaV2 = typeenv.BaseTypeEnvCompilerSchemaV2
 	previousBaseTypeEnvCompilerSchemaV3 = typeenv.BaseTypeEnvCompilerSchemaV3
+	previousBaseTypeEnvCompilerSchemaV4 = typeenv.BaseTypeEnvCompilerSchemaV4
 )
 
 // verifyIndex is the CI guard for the committed, source-derived FPF index.
@@ -291,12 +301,39 @@ func comparePreviousTypeEnv(
 	dbPath string,
 	current typeenv.BaseTypeEnvArtifact,
 ) (typeenv.CompatibilityAssessment, error) {
-	previousCompiler, hasPreviousCompiler, err := loadPreviousTypeEnvCompilerSchema(dbPath)
+	snapshot, hasPreviousSnapshot, err := openPreviousTypeEnvSnapshot(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	if !hasPreviousSnapshot {
+		return typeenv.NewInitialCompatibilityAssessment(), nil
+	}
+	assessment, compareErr := comparePreviousTypeEnvSnapshot(
+		dbPath,
+		snapshot.transaction,
+		current,
+	)
+	if err := finishPreviousTypeEnvSnapshot(snapshot, compareErr); err != nil {
+		return nil, err
+	}
+	return assessment, nil
+}
+
+func comparePreviousTypeEnvSnapshot(
+	dbPath string,
+	transaction *sql.Tx,
+	current typeenv.BaseTypeEnvArtifact,
+) (typeenv.CompatibilityAssessment, error) {
+	previousCompiler, hasPreviousCompiler, err :=
+		loadPreviousTypeEnvCompilerSchemaSnapshot(transaction)
 	if err != nil {
 		return nil, err
 	}
 	if !hasPreviousCompiler {
 		return typeenv.NewInitialCompatibilityAssessment(), nil
+	}
+	if err := afterPreviousTypeEnvCompilerProbeFunc(filepath.Clean(dbPath)); err != nil {
+		return nil, fmt.Errorf("after previous FPF TypeEnv compiler probe: %w", err)
 	}
 	if previousCompiler == legacyBaseTypeEnvCompilerSchemaV1 {
 		return typeenv.NewInitialCompatibilityAssessment(), nil
@@ -304,22 +341,39 @@ func comparePreviousTypeEnv(
 	currentCompiler := current.CompilerSchemaVersion().String()
 	if previousCompiler != currentCompiler &&
 		previousCompiler != previousBaseTypeEnvCompilerSchemaV2 &&
-		previousCompiler != previousBaseTypeEnvCompilerSchemaV3 {
+		previousCompiler != previousBaseTypeEnvCompilerSchemaV3 &&
+		previousCompiler != previousBaseTypeEnvCompilerSchemaV4 {
 		return nil, fmt.Errorf(
-			"previous FPF TypeEnv compiler schema %q is neither current %q nor a known predecessor (%q, %q, %q)",
+			"previous FPF TypeEnv compiler schema %q is neither current %q nor a known predecessor (%q, %q, %q, %q)",
 			previousCompiler,
 			currentCompiler,
 			legacyBaseTypeEnvCompilerSchemaV1,
 			previousBaseTypeEnvCompilerSchemaV2,
 			previousBaseTypeEnvCompilerSchemaV3,
+			previousBaseTypeEnvCompilerSchemaV4,
 		)
 	}
-	previous, exists, err := loadPreviousTypeEnv(dbPath)
+	previousEnvelope, exists, err := loadPreviousTypeEnvEnvelopeSnapshot(transaction)
 	if err != nil {
 		return nil, err
 	}
 	if !exists {
 		return typeenv.NewInitialCompatibilityAssessment(), nil
+	}
+	previous := previousEnvelope.Artifact()
+	if previous.Digest() == current.Digest() {
+		compatibility := previousEnvelope.Compatibility()
+		compared, comparedAssessment := compatibility.(typeenv.ComparedCompatibilityAssessment)
+		currentRef, hasCurrentRef := current.TypeEnvRef()
+		if comparedAssessment &&
+			hasCurrentRef &&
+			compared.Diff().Base() == currentRef {
+			return nil, fmt.Errorf(
+				"previous FPF TypeEnv compatibility assessment compares unchanged artifact %s against itself",
+				currentRef.String(),
+			)
+		}
+		return compatibility, nil
 	}
 	assessment, err := typeenv.CompareBaseTypeEnvArtifacts(previous, current)
 	if err != nil {
@@ -328,77 +382,96 @@ func comparePreviousTypeEnv(
 	return assessment, nil
 }
 
-func loadPreviousTypeEnvCompilerSchema(
+func openPreviousTypeEnvSnapshot(
 	dbPath string,
-) (string, bool, error) {
+) (*previousTypeEnvSnapshot, bool, error) {
 	cleanPath := filepath.Clean(dbPath)
 	_, err := os.Stat(cleanPath)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("inspect previous FPF index: %w", err)
+		return nil, false, fmt.Errorf("inspect previous FPF index: %w", err)
 	}
 	database, err := openSQLiteReadOnly(cleanPath)
 	if err != nil {
-		return "", false, err
+		return nil, false, err
 	}
+	transaction, err := database.BeginTx(
+		context.Background(),
+		&sql.TxOptions{ReadOnly: true},
+	)
+	if err != nil {
+		beginErr := fmt.Errorf("begin previous FPF index read-only snapshot: %w", err)
+		closeErr := database.Close()
+		if closeErr != nil {
+			return nil, false, errors.Join(
+				beginErr,
+				fmt.Errorf("close previous FPF index after snapshot failure: %w", closeErr),
+			)
+		}
+		return nil, false, beginErr
+	}
+	return &previousTypeEnvSnapshot{
+		database:    database,
+		transaction: transaction,
+	}, true, nil
+}
+
+func finishPreviousTypeEnvSnapshot(
+	snapshot *previousTypeEnvSnapshot,
+	operationErr error,
+) error {
+	errs := []error{operationErr}
+	if rollbackErr := snapshot.transaction.Rollback(); rollbackErr != nil &&
+		!errors.Is(rollbackErr, sql.ErrTxDone) {
+		errs = append(
+			errs,
+			fmt.Errorf("end previous FPF index read-only snapshot: %w", rollbackErr),
+		)
+	}
+	if closeErr := closePreviousTypeEnvSnapshotFunc(snapshot.database); closeErr != nil {
+		errs = append(errs, fmt.Errorf("close previous FPF index: %w", closeErr))
+	}
+	return errors.Join(errs...)
+}
+
+func loadPreviousTypeEnvCompilerSchemaSnapshot(
+	transaction *sql.Tx,
+) (string, bool, error) {
 	var compiler string
-	loadErr := database.QueryRowContext(
+	err := transaction.QueryRowContext(
 		context.Background(),
 		`SELECT compiler_schema_version
 		 FROM fpf_typeenv_artifact
 		 WHERE singleton = 1`,
 	).Scan(&compiler)
-	closeErr := database.Close()
-	if errors.Is(loadErr, sql.ErrNoRows) {
-		if closeErr != nil {
-			return "", false, fmt.Errorf("close previous FPF index: %w", closeErr)
-		}
+	if errors.Is(err, sql.ErrNoRows) {
 		return "", false, nil
 	}
-	if loadErr != nil {
+	if err != nil {
 		return "", false, fmt.Errorf(
 			"load previous FPF TypeEnv compiler schema read-only: %w",
-			loadErr,
+			err,
 		)
-	}
-	if closeErr != nil {
-		return "", false, fmt.Errorf("close previous FPF index: %w", closeErr)
 	}
 	return compiler, true, nil
 }
 
-func loadPreviousTypeEnv(
-	dbPath string,
-) (typeenv.BaseTypeEnvArtifact, bool, error) {
-	cleanPath := filepath.Clean(dbPath)
-	_, err := os.Stat(cleanPath)
-	if errors.Is(err, os.ErrNotExist) {
-		return typeenv.BaseTypeEnvArtifact{}, false, nil
+func loadPreviousTypeEnvEnvelopeSnapshot(
+	transaction *sql.Tx,
+) (typeenv.CompilationEnvelope, bool, error) {
+	envelope, err := typeenvsql.LoadEnvelopeTx(context.Background(), transaction)
+	if errors.Is(err, sql.ErrNoRows) {
+		return typeenv.CompilationEnvelope{}, false, nil
 	}
 	if err != nil {
-		return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("inspect previous FPF index: %w", err)
+		return typeenv.CompilationEnvelope{}, false, fmt.Errorf(
+			"load previous FPF TypeEnv envelope read-only: %w",
+			err,
+		)
 	}
-	database, err := openSQLiteReadOnly(cleanPath)
-	if err != nil {
-		return typeenv.BaseTypeEnvArtifact{}, false, err
-	}
-	artifact, loadErr := typeenvsql.LoadArtifactReadOnlyDB(context.Background(), database)
-	closeErr := database.Close()
-	if errors.Is(loadErr, sql.ErrNoRows) {
-		if closeErr != nil {
-			return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("close previous FPF index: %w", closeErr)
-		}
-		return typeenv.BaseTypeEnvArtifact{}, false, nil
-	}
-	if loadErr != nil {
-		return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("load previous FPF TypeEnv read-only: %w", loadErr)
-	}
-	if closeErr != nil {
-		return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("close previous FPF index: %w", closeErr)
-	}
-	return artifact, true, nil
+	return envelope, true, nil
 }
 
 func openSQLiteReadOnly(dbPath string) (*sql.DB, error) {

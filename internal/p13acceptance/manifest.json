@@ -507,7 +507,7 @@
         {"package": "github.com/m0n0x41d/haft/internal/fpf/typeenv", "test": "TestPinnedPublicationCompilesArtifactAndRuntimeTypeEnv"},
         {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestDigestCommitsToExactCarrierBytesRatherThanOnlyTheAST"},
         {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestParseCurrentKindClassificationSignatureHasNoEntitySetOrMemberOfFields"},
-        {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestCurrentCandidateCarrierV1_3RemainsByteStableAndUsesKindClassification"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestCurrentCandidateCarrierV1_4RemainsByteStableAndUsesKindClassification"},
         {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestResolveManifestGraphRejectsMissingSelfAndCyclicImports"},
         {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestPrepareProjectTypeEnvCompositeLowersEverySourceFamilyAtC"},
         {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestCurrentKindClassificationCompilesLinksLowersAndDiscoversOnlyCriterionRuntime"},

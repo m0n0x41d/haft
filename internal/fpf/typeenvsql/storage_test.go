@@ -67,14 +67,18 @@ func TestEnvelopeRoundTripKeepsCompatibilityOutsideArtifactIdentity(t *testing.T
 	}
 }
 
-func TestLoadArtifactReadOnlyDBDoesNotMutateOlderIndex(t *testing.T) {
+func TestLoadEnvelopeAndArtifactReadOnlyDBDoNotMutateOlderIndex(t *testing.T) {
 	database := openFixtureDatabase(t)
 	before := countTypeEnvTables(t, database)
 	if before != 0 {
 		t.Fatalf("fresh older-index fixture has %d TypeEnv tables", before)
 	}
 
-	_, err := LoadArtifactReadOnlyDB(context.Background(), database)
+	_, err := LoadEnvelopeReadOnlyDB(context.Background(), database)
+	if !IsMissingArtifact(err) {
+		t.Fatalf("LoadEnvelopeReadOnlyDB() error = %v, want missing artifact", err)
+	}
+	_, err = LoadArtifactReadOnlyDB(context.Background(), database)
 	if !IsMissingArtifact(err) {
 		t.Fatalf("LoadArtifactReadOnlyDB() error = %v, want missing artifact", err)
 	}
@@ -94,6 +98,23 @@ func TestLoadArtifactReadOnlyDBDoesNotMutateOlderIndex(t *testing.T) {
 	}
 	if err := ReplaceEnvelopeDB(context.Background(), database, envelope); err != nil {
 		t.Fatalf("ReplaceEnvelopeDB() error = %v", err)
+	}
+	loadedEnvelope, err := LoadEnvelopeReadOnlyDB(context.Background(), database)
+	if err != nil {
+		t.Fatalf("LoadEnvelopeReadOnlyDB(populated) error = %v", err)
+	}
+	if loadedEnvelope.Artifact().Digest() != fixture.artifact.Digest() {
+		t.Fatalf(
+			"read-only envelope digest = %s, want %s",
+			loadedEnvelope.Artifact().Digest().String(),
+			fixture.artifact.Digest().String(),
+		)
+	}
+	if _, ok := loadedEnvelope.Compatibility().(typeenv.InitialCompatibilityAssessment); !ok {
+		t.Fatalf(
+			"read-only envelope compatibility = %T, want InitialCompatibilityAssessment",
+			loadedEnvelope.Compatibility(),
+		)
 	}
 	loaded, err := LoadArtifactReadOnlyDB(context.Background(), database)
 	if err != nil {

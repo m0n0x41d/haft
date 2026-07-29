@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -56,6 +57,14 @@ func TestBuildIndex_ContentOnlySourceChangeRebuildsWithoutRoutesOrVectors(t *tes
 	}
 	if !strings.Contains(directPattern.Body, "Solution") {
 		t.Fatal("exact PatternID did not hydrate the full source pattern body")
+	}
+
+	initialDigest := fileDigest(t, dbPath)
+	if err := buildIndex(specPath, dbPath, "revision-one"); err != nil {
+		t.Fatalf("exact initial rebuild error: %v", err)
+	}
+	if rebuiltDigest := fileDigest(t, dbPath); rebuiltDigest != initialDigest {
+		t.Fatal("exact initial rebuild changed the source-index bytes")
 	}
 
 	specPath = writeSourceFixture(t, dir, "second authored phrase")
@@ -157,13 +166,14 @@ func TestBuildIndex_KnownLegacyTypeEnvStartsFreshCompatibility(t *testing.T) {
 	}
 }
 
-func TestBuildIndex_KnownCompilerPredecessorsGetComparedIntoV4(t *testing.T) {
+func TestBuildIndex_KnownCompilerPredecessorsGetComparedIntoV5(t *testing.T) {
 	tests := []struct {
 		name     string
 		compiler string
 	}{
 		{name: "v2", compiler: previousBaseTypeEnvCompilerSchemaV2},
 		{name: "v3", compiler: previousBaseTypeEnvCompilerSchemaV3},
+		{name: "v4", compiler: previousBaseTypeEnvCompilerSchemaV4},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -183,10 +193,11 @@ func assertCompilerPredecessorComparedIntoCurrent(
 	if err := buildIndex(specPath, dbPath, "predecessor-source-revision"); err != nil {
 		t.Fatalf("initial buildIndex() error: %v", err)
 	}
-	current, exists, err := loadPreviousTypeEnv(dbPath)
+	currentEnvelope, exists, err := loadPreviousTypeEnvEnvelope(dbPath)
 	if err != nil || !exists {
 		t.Fatalf("load current TypeEnv: exists=%v err=%v", exists, err)
 	}
+	current := currentEnvelope.Artifact()
 	predecessorVersion, err := typedmemory.NewCompilerSchemaVersion(predecessorCompiler)
 	if err != nil {
 		t.Fatalf("NewCompilerSchemaVersion(%s): %v", predecessorCompiler, err)
@@ -220,11 +231,10 @@ func assertCompilerPredecessorComparedIntoCurrent(
 		t.Fatal("compiler predecessor has no TypeEnvRef")
 	}
 
-	if err := buildIndex(specPath, dbPath, "v4-source-revision"); err != nil {
-		t.Fatalf("buildIndex() across compiler %s -> v4: %v", predecessorCompiler, err)
+	if err := buildIndex(specPath, dbPath, "v5-source-revision"); err != nil {
+		t.Fatalf("buildIndex() across compiler %s -> v5: %v", predecessorCompiler, err)
 	}
 	database := openTestDB(t, dbPath)
-	defer func() { _ = database.Close() }()
 	var compiler string
 	var assessment string
 	var base string
@@ -238,18 +248,74 @@ func assertCompilerPredecessorComparedIntoCurrent(
 		WHERE artifact.singleton = 1
 	`).Scan(&compiler, &assessment, &base)
 	if err != nil {
-		t.Fatalf("read v4 compatibility: %v", err)
+		t.Fatalf("read v5 compatibility: %v", err)
 	}
 	if compiler == predecessorCompiler {
 		t.Fatalf("compiler remained on predecessor %q", predecessorCompiler)
 	}
 	if assessment != "compared" || base != predecessorRef.String() {
 		t.Fatalf(
-			"v4 compatibility = %q against %q, want compared against %q",
+			"v5 compatibility = %q against %q, want compared against %q",
 			assessment,
 			base,
 			predecessorRef.String(),
 		)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close compared V5 index: %v", err)
+	}
+
+	beforeExactRebuild := fileDigest(t, dbPath)
+	if err := buildIndex(specPath, dbPath, "v5-source-revision"); err != nil {
+		t.Fatalf("exact rebuild across compiler %s -> v5: %v", predecessorCompiler, err)
+	}
+	if afterExactRebuild := fileDigest(t, dbPath); afterExactRebuild != beforeExactRebuild {
+		t.Fatalf(
+			"exact rebuild changed compiler %s -> v5 compatibility bytes",
+			predecessorCompiler,
+		)
+	}
+}
+
+func TestBuildIndex_ExactRebuildRejectsStoredSelfComparison(t *testing.T) {
+	dir := t.TempDir()
+	specPath := writeSourceFixture(t, dir, "self-comparison guard")
+	dbPath := filepath.Join(dir, "fpf.db")
+	if err := buildIndex(specPath, dbPath, "self-comparison-revision"); err != nil {
+		t.Fatalf("initial buildIndex() error: %v", err)
+	}
+	envelope, exists, err := loadPreviousTypeEnvEnvelope(dbPath)
+	if err != nil || !exists {
+		t.Fatalf("load current TypeEnv: exists=%v err=%v", exists, err)
+	}
+	artifact := envelope.Artifact()
+	currentRef, hasCurrentRef := artifact.TypeEnvRef()
+	if !hasCurrentRef {
+		t.Fatal("current TypeEnv has no reference")
+	}
+	selfDiff, err := typedmemory.NewTypeEnvCompatibilityDiff(currentRef, nil)
+	if err != nil {
+		t.Fatalf("NewTypeEnvCompatibilityDiff(self): %v", err)
+	}
+	selfAssessment, err := typeenv.NewComparedCompatibilityAssessment(selfDiff)
+	if err != nil {
+		t.Fatalf("NewComparedCompatibilityAssessment(self): %v", err)
+	}
+	selfEnvelope, err := typeenv.NewCompilationEnvelope(artifact, selfAssessment)
+	if err != nil {
+		t.Fatalf("NewCompilationEnvelope(self): %v", err)
+	}
+	if err := storeTypeEnvEnvelope(dbPath, selfEnvelope); err != nil {
+		t.Fatalf("store self-comparison envelope: %v", err)
+	}
+	before := fileDigest(t, dbPath)
+
+	err = buildIndex(specPath, dbPath, "self-comparison-revision")
+	if err == nil || !strings.Contains(err.Error(), "compares unchanged artifact") {
+		t.Fatalf("self-comparison rebuild error = %v, want fail-closed diagnostic", err)
+	}
+	if after := fileDigest(t, dbPath); after != before {
+		t.Fatal("rejected self-comparison rebuild changed the existing database")
 	}
 }
 
@@ -350,12 +416,149 @@ func TestBuildIndex_CurrentCompilerCorruptionFailsClosed(t *testing.T) {
 	before := fileDigest(t, dbPath)
 
 	err = buildIndex(specPath, dbPath, "replacement-source-revision")
-	if err == nil || !strings.Contains(err.Error(), "load previous FPF TypeEnv read-only") {
+	if err == nil || !strings.Contains(err.Error(), "load previous FPF TypeEnv envelope read-only") {
 		t.Fatalf("expected current compiler corruption failure, got %v", err)
 	}
 	after := fileDigest(t, dbPath)
 	if before != after {
 		t.Fatal("current compiler corruption failure changed the database")
+	}
+}
+
+func TestComparePreviousTypeEnv_PathReplacementKeepsOneOpenedSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	current, currentDBPath := buildCurrentTypeEnvArtifact(t, dir)
+	dbPath := filepath.Join(dir, "predecessor.db")
+	replacementPath := filepath.Join(dir, "replacement.db")
+	archivedPath := filepath.Join(dir, "opened-predecessor.db")
+	knownPredecessor := storeTypeEnvCompilerVariant(
+		t,
+		dbPath,
+		currentDBPath,
+		current,
+		previousBaseTypeEnvCompilerSchemaV4,
+	)
+	unknownPredecessor := storeTypeEnvCompilerVariant(
+		t,
+		replacementPath,
+		currentDBPath,
+		current,
+		"fpf-base-typeenv.cov2.unknown",
+	)
+
+	originalHook := afterPreviousTypeEnvCompilerProbeFunc
+	hookCalls := 0
+	afterPreviousTypeEnvCompilerProbeFunc = func(probedPath string) error {
+		hookCalls++
+		if probedPath != dbPath {
+			return fmt.Errorf("compiler probe path = %q, want %q", probedPath, dbPath)
+		}
+		return replaceDatabasePath(dbPath, replacementPath, archivedPath)
+	}
+	t.Cleanup(func() {
+		afterPreviousTypeEnvCompilerProbeFunc = originalHook
+	})
+
+	assessment, err := comparePreviousTypeEnv(dbPath, current)
+	if err != nil {
+		t.Fatalf("compare predecessor across path replacement: %v", err)
+	}
+	if hookCalls != 1 {
+		t.Fatalf("compiler-probe replacement seam called %d times, want once", hookCalls)
+	}
+	compared, ok := assessment.(typeenv.ComparedCompatibilityAssessment)
+	if !ok {
+		t.Fatalf("compatibility = %T, want compared assessment from opened predecessor", assessment)
+	}
+	knownRef, hasKnownRef := knownPredecessor.TypeEnvRef()
+	if !hasKnownRef {
+		t.Fatal("known predecessor has no TypeEnvRef")
+	}
+	unknownRef, hasUnknownRef := unknownPredecessor.TypeEnvRef()
+	if !hasUnknownRef {
+		t.Fatal("unknown predecessor has no TypeEnvRef")
+	}
+	if base := compared.Diff().Base(); base != knownRef {
+		t.Fatalf(
+			"comparison base = %q, want opened predecessor %q (replacement was %q)",
+			base.String(),
+			knownRef.String(),
+			unknownRef.String(),
+		)
+	}
+}
+
+func TestComparePreviousTypeEnv_PathReplacementCannotHideUnknownCompiler(t *testing.T) {
+	dir := t.TempDir()
+	current, currentDBPath := buildCurrentTypeEnvArtifact(t, dir)
+	dbPath := filepath.Join(dir, "predecessor.db")
+	replacementPath := filepath.Join(dir, "replacement.db")
+	archivedPath := filepath.Join(dir, "opened-predecessor.db")
+	storeTypeEnvCompilerVariant(
+		t,
+		dbPath,
+		currentDBPath,
+		current,
+		"fpf-base-typeenv.cov2.unknown",
+	)
+	storeTypeEnvCompilerVariant(
+		t,
+		replacementPath,
+		currentDBPath,
+		current,
+		previousBaseTypeEnvCompilerSchemaV4,
+	)
+
+	originalHook := afterPreviousTypeEnvCompilerProbeFunc
+	hookCalls := 0
+	afterPreviousTypeEnvCompilerProbeFunc = func(string) error {
+		hookCalls++
+		return replaceDatabasePath(dbPath, replacementPath, archivedPath)
+	}
+	t.Cleanup(func() {
+		afterPreviousTypeEnvCompilerProbeFunc = originalHook
+	})
+
+	_, err := comparePreviousTypeEnv(dbPath, current)
+	if err == nil || !strings.Contains(err.Error(), "neither current") {
+		t.Fatalf("unknown compiler comparison error = %v, want fail-closed diagnostic", err)
+	}
+	if hookCalls != 1 {
+		t.Fatalf("compiler-probe replacement seam called %d times, want once", hookCalls)
+	}
+}
+
+func TestComparePreviousTypeEnv_ClosesSnapshotOnceAndKeepsCloseError(t *testing.T) {
+	dir := t.TempDir()
+	current, currentDBPath := buildCurrentTypeEnvArtifact(t, dir)
+	dbPath := filepath.Join(dir, "predecessor.db")
+	storeTypeEnvCompilerVariant(
+		t,
+		dbPath,
+		currentDBPath,
+		current,
+		"fpf-base-typeenv.cov2.unknown",
+	)
+
+	originalClose := closePreviousTypeEnvSnapshotFunc
+	closeCalls := 0
+	injectedCloseErr := errors.New("injected predecessor snapshot close failure")
+	closePreviousTypeEnvSnapshotFunc = func(database *sql.DB) error {
+		closeCalls++
+		return errors.Join(database.Close(), injectedCloseErr)
+	}
+	t.Cleanup(func() {
+		closePreviousTypeEnvSnapshotFunc = originalClose
+	})
+
+	_, err := comparePreviousTypeEnv(dbPath, current)
+	if err == nil ||
+		!strings.Contains(err.Error(), "neither current") ||
+		!strings.Contains(err.Error(), injectedCloseErr.Error()) {
+		t.Fatalf("comparison error = %v, want compiler and close diagnostics", err)
+	}
+	if closeCalls != 1 {
+		t.Fatalf("predecessor snapshot closed %d times, want exactly once", closeCalls)
 	}
 }
 
@@ -812,13 +1015,14 @@ func TestLoadPreviousTypeEnvIsReadOnly(t *testing.T) {
 		t.Fatalf("buildIndex() error: %v", err)
 	}
 	before := fileDigest(t, dbPath)
-	artifact, exists, err := loadPreviousTypeEnv(dbPath)
+	envelope, exists, err := loadPreviousTypeEnvEnvelope(dbPath)
 	if err != nil {
-		t.Fatalf("loadPreviousTypeEnv() error: %v", err)
+		t.Fatalf("loadPreviousTypeEnvEnvelope() error: %v", err)
 	}
 	if !exists {
 		t.Fatal("read-only prior probe did not find TypeEnv")
 	}
+	artifact := envelope.Artifact()
 	if _, hasReference := artifact.TypeEnvRef(); !hasReference {
 		t.Fatal("read-only prior probe returned artifact without TypeEnvRef")
 	}
@@ -1064,12 +1268,12 @@ Applying the shared declaration rule in 4.2.1, ` + "`EpistemeEmpiricalGroundingR
 
 | SlotKind | Relation-participant meaning | ValueKind | refMode |
 | --- | --- | --- | --- |
-| ` + "`GroundedEpistemeSlot`" + ` | episteme whose claims are grounded | ` + "`U.Episteme`" + ` | ` + "`U.EpistemeRef`" + ` |
-| ` + "`GroundingHolonSlot`" + ` | exact grounding holon | ` + "`U.Holon`" + ` | ` + "`U.HolonRef`" + ` |
+| ` + "`GroundedEpistemeSlot`" + ` | episteme containing the exact covered claim subgraph | ` + "`U.Episteme`" + ` | ` + "`U.EpistemeRef`" + ` |
+| ` + "`GroundingHolonSlot`" + ` | exact holon involved in mapped observation, intervention, measurement, or test relations | ` + "`U.Holon`" + ` | ` + "`U.HolonRef`" + ` |
 
-` + "`EpistemeEmpiricalGroundingRelation(E,H)`" + ` obtains exactly while direct observation, intervention, measurement, or evaluation relations make E inspectable through H.
+` + "`EpistemeEmpiricalGroundingRelation`" + ` over participants ` + "`(E,H)`" + `, with ` + "`covered=C`" + `, obtains exactly while every empirical claim in the exact covered claim subgraph has a current claim-to-world mapping.
 
-One occurrence is identified by the episteme, grounding holon, and maximal continuous grounding interval.
+One occurrence is identified by ` + "`<episteme, exact covered claim subgraph, grounding holon, maximal continuous interval during which the complete coverage predicate is true>`" + `.
 
 #### C.2.1:4.5 - Relate distinct episteme editions explicitly
 
@@ -1217,6 +1421,97 @@ func openTestDB(t *testing.T, dbPath string) *sql.DB {
 		t.Fatalf("open %s: %v", dbPath, err)
 	}
 	return db
+}
+
+func loadPreviousTypeEnvEnvelope(
+	dbPath string,
+) (typeenv.CompilationEnvelope, bool, error) {
+	snapshot, hasPreviousSnapshot, err := openPreviousTypeEnvSnapshot(dbPath)
+	if err != nil {
+		return typeenv.CompilationEnvelope{}, false, err
+	}
+	if !hasPreviousSnapshot {
+		return typeenv.CompilationEnvelope{}, false, nil
+	}
+	envelope, exists, loadErr :=
+		loadPreviousTypeEnvEnvelopeSnapshot(snapshot.transaction)
+	if err := finishPreviousTypeEnvSnapshot(snapshot, loadErr); err != nil {
+		return typeenv.CompilationEnvelope{}, false, err
+	}
+	return envelope, exists, nil
+}
+
+func buildCurrentTypeEnvArtifact(
+	t *testing.T,
+	dir string,
+) (typeenv.BaseTypeEnvArtifact, string) {
+	t.Helper()
+	specPath := writeSourceFixture(t, dir, "snapshot replacement fixture")
+	dbPath := filepath.Join(dir, "current.db")
+	if err := buildIndex(specPath, dbPath, "snapshot-replacement-revision"); err != nil {
+		t.Fatalf("build current TypeEnv fixture: %v", err)
+	}
+	envelope, exists, err := loadPreviousTypeEnvEnvelope(dbPath)
+	if err != nil || !exists {
+		t.Fatalf("load current TypeEnv fixture: exists=%v err=%v", exists, err)
+	}
+	return envelope.Artifact(), dbPath
+}
+
+func storeTypeEnvCompilerVariant(
+	t *testing.T,
+	dbPath string,
+	sourceDBPath string,
+	current typeenv.BaseTypeEnvArtifact,
+	compiler string,
+) typeenv.BaseTypeEnvArtifact {
+	t.Helper()
+	version, err := typedmemory.NewCompilerSchemaVersion(compiler)
+	if err != nil {
+		t.Fatalf("NewCompilerSchemaVersion(%s): %v", compiler, err)
+	}
+	compiled, err := typeenv.NewCompiledLinkedTypeEnvIR(
+		current.SourceRevision(),
+		version,
+		current.CoverageManifest(),
+		current.Declarations(),
+	)
+	if err != nil {
+		t.Fatalf("NewCompiledLinkedTypeEnvIR(%s): %v", compiler, err)
+	}
+	artifact, err := typeenv.SealBaseTypeEnv(compiled)
+	if err != nil {
+		t.Fatalf("SealBaseTypeEnv(%s): %v", compiler, err)
+	}
+	envelope, err := typeenv.NewCompilationEnvelope(
+		artifact,
+		typeenv.NewInitialCompatibilityAssessment(),
+	)
+	if err != nil {
+		t.Fatalf("NewCompilationEnvelope(%s): %v", compiler, err)
+	}
+	sourceBytes, err := os.ReadFile(sourceDBPath)
+	if err != nil {
+		t.Fatalf("read complete source-index fixture: %v", err)
+	}
+	if err := os.WriteFile(dbPath, sourceBytes, 0o600); err != nil {
+		t.Fatalf("clone complete source-index fixture: %v", err)
+	}
+	if err := storeTypeEnvEnvelope(dbPath, envelope); err != nil {
+		t.Fatalf("store TypeEnv compiler variant %s: %v", compiler, err)
+	}
+	return artifact
+}
+
+func replaceDatabasePath(activePath, replacementPath, archivedPath string) error {
+	if err := os.Rename(activePath, archivedPath); err != nil {
+		return fmt.Errorf("archive opened predecessor: %w", err)
+	}
+	if err := os.Rename(replacementPath, activePath); err != nil {
+		_ = os.Rename(archivedPath, activePath)
+		return fmt.Errorf("install predecessor replacement: %w", err)
+	}
+	return nil
 }
 
 func writeMinimalMetadataDatabase(

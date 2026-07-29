@@ -132,6 +132,89 @@ func TestPinnedC21RelationsRemainThreeIndependentSymbolicAssemblies(t *testing.T
 	}
 }
 
+func TestPinnedEmpiricalGroundingSemanticsKeepCoverageOutsideTwoParticipants(t *testing.T) {
+	snapshot := loadPinnedGrammarSnapshot(t)
+	unit := resolveGrammarSourceID(t, snapshot, "C.2.1:4.3")
+	outcome := ParseStructuralUnit(unit)
+	parsed, ok := outcome.(GrammarParsed)
+	if !ok {
+		t.Fatalf("ParseStructuralUnit(C.2.1:4.3) = %T, want GrammarParsed", outcome)
+	}
+	declarations := parsed.Declarations()
+	signature := findSymbolicSignature(t, declarations)
+	if len(signature.Slots()) != 2 {
+		t.Fatalf("empirical-grounding participant slots = %d, want 2", len(signature.Slots()))
+	}
+	for _, slot := range signature.Slots() {
+		if strings.Contains(slot.SlotKind(), "Covered") {
+			t.Fatalf("covered claim subgraph leaked into participant SlotKind %q", slot.SlotKind())
+		}
+	}
+	assertGrammarDeclarationType(
+		t,
+		declarations,
+		SymbolicRelationSemanticsDeclaration{},
+	)
+}
+
+func TestPinnedEmpiricalGroundingSemanticsRejectMissingCurrentWitness(t *testing.T) {
+	tests := []struct {
+		name        string
+		witness     string
+		replacement string
+	}{
+		{
+			name:        "exact participants",
+			witness:     "`EpistemeEmpiricalGroundingRelation` over participants `(E,H)`",
+			replacement: "`EpistemeEmpiricalGroundingRelation(E,H)`",
+		},
+		{
+			name:        "covered predicate content",
+			witness:     "with `covered=C`",
+			replacement: "with designated coverage",
+		},
+		{
+			name:        "direct obtaining",
+			witness:     "obtains exactly while every empirical claim",
+			replacement: "is described while every empirical claim",
+		},
+		{
+			name:        "covered identity discriminator",
+			witness:     "One occurrence is identified by `<episteme, exact covered claim subgraph, grounding holon,",
+			replacement: "One occurrence is identified by `<episteme, grounding holon,",
+		},
+		{
+			name:        "continuous coverage interval",
+			witness:     "maximal continuous interval during which the complete coverage predicate is true>`",
+			replacement: "maximal continuous grounding interval>`",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			snapshot := loadPinnedGrammarSnapshot(t)
+			unit := resolveGrammarSourceID(t, snapshot, "C.2.1:4.3")
+			if strings.Count(unit.Body, test.witness) != 1 {
+				t.Fatalf(
+					"source contains %d copies of witness %q, want 1",
+					strings.Count(unit.Body, test.witness),
+					test.witness,
+				)
+			}
+			unit.Body = strings.Replace(unit.Body, test.witness, test.replacement, 1)
+			outcome := ParseStructuralUnit(unit)
+			malformed, ok := outcome.(GrammarMalformed)
+			if !ok {
+				t.Fatalf("mutated empirical-grounding semantics = %T, want GrammarMalformed", outcome)
+			}
+			diagnostics := malformed.Diagnostics()
+			if len(diagnostics) != 1 ||
+				diagnostics[0].Code() != "relation_semantics_source_malformed" {
+				t.Fatalf("mutated diagnostics = %#v", diagnostics)
+			}
+		})
+	}
+}
+
 func TestPinnedClaimGraphSlotIsByValueWithoutInventedCardinality(t *testing.T) {
 	snapshot := loadPinnedGrammarSnapshot(t)
 	unit := resolveGrammarSourceID(t, snapshot, "C.2.1:4.2.1")

@@ -15,7 +15,7 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-const typedMemoryCandidateCarrierPath = "../../../data/haft/local-practice/typed-memory/candidates/1.3.0.yaml"
+const typedMemoryCandidateCarrierPath = "../../../data/haft/local-practice/typed-memory/candidates/1.4.0.yaml"
 
 func TestTypedMemoryCandidateCarrierParsesCompilesAndSeals(t *testing.T) {
 	source := readTypedMemoryCandidateCarrier(t)
@@ -60,7 +60,7 @@ func TestTypedMemoryCandidateCarrierParsesCompilesAndSeals(t *testing.T) {
 	if err := artifact.Verify(); err != nil {
 		t.Fatalf("verify candidate E artifact: %v", err)
 	}
-	if artifact.ManifestCoordinate().String() != "haft.typed-memory@1.3.0" {
+	if artifact.ManifestCoordinate().String() != "haft.typed-memory@1.4.0" {
 		t.Fatalf("candidate E coordinate = %q", artifact.ManifestCoordinate().String())
 	}
 	if artifact.IR().BaseTypeEnvRef() != baseRef {

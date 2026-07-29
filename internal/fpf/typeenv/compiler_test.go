@@ -19,11 +19,11 @@ func TestPinnedPublicationCompilesArtifactAndRuntimeTypeEnv(t *testing.T) {
 	if !ok {
 		t.Fatalf("CompileBaseTypeEnv() = %T, diagnostics = %v", result, result.Diagnostics())
 	}
-	if result.CompilerSchemaVersion().String() != BaseTypeEnvCompilerSchemaV4 {
-		t.Fatalf("compiler schema = %q, want v4", result.CompilerSchemaVersion().String())
+	if result.CompilerSchemaVersion().String() != BaseTypeEnvCompilerSchemaV5 {
+		t.Fatalf("compiler schema = %q, want v5", result.CompilerSchemaVersion().String())
 	}
-	if BaseTypeEnvCompilerSchemaV3 == BaseTypeEnvCompilerSchemaV4 {
-		t.Fatal("v4 compiler silently relabelled the historical v3 edition")
+	if BaseTypeEnvCompilerSchemaV4 == BaseTypeEnvCompilerSchemaV5 {
+		t.Fatal("v5 compiler silently relabelled the historical v4 edition")
 	}
 	artifact, exists := accepted.Artifact()
 	if !exists {
@@ -234,19 +234,19 @@ func TestPinnedPublicationQuarantinesConflictingRelationOntology(t *testing.T) {
 	if !exists {
 		t.Fatalf("CompileBaseTypeEnv() rejected: %v", result.Diagnostics())
 	}
-	wantReasons := map[string]bool{
-		"source_conflict_with_direct_governor:retired_relation_ontology":  false,
-		"source_conflict_with_direct_governor:role_assignment_slot_model": false,
-	}
+	const retiredRelationOntology = "source_conflict_with_direct_governor:retired_relation_ontology"
+	const resolvedRoleAssignmentSlotModel = "source_conflict_with_direct_governor:role_assignment_slot_model"
+	retiredRelationOntologyFound := false
 	for _, entry := range artifact.CoverageManifest().Entries() {
-		if _, tracked := wantReasons[entry.Rationale()]; tracked {
-			wantReasons[entry.Rationale()] = true
+		if entry.Rationale() == resolvedRoleAssignmentSlotModel {
+			t.Fatalf("coverage retains resolved source-only conflict %s", resolvedRoleAssignmentSlotModel)
+		}
+		if entry.Rationale() == retiredRelationOntology {
+			retiredRelationOntologyFound = true
 		}
 	}
-	for reason, found := range wantReasons {
-		if !found {
-			t.Fatalf("coverage has no exact source-only conflict for %s", reason)
-		}
+	if !retiredRelationOntologyFound {
+		t.Fatalf("coverage has no exact source-only conflict for %s", retiredRelationOntology)
 	}
 }
 

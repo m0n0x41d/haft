@@ -9,7 +9,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
-const baseTypeEnvCompilerSchema = "fpf-base-typeenv.cov2.v4"
+const baseTypeEnvCompilerSchema = "fpf-base-typeenv.cov2.v5"
 
 // BaseTypeEnvCompilation is the closed result family for source compilation.
 // Source rejection is a normal result; implementation/invariant failures are

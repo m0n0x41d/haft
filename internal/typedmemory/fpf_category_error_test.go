@@ -1,7 +1,6 @@
 package typedmemory
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"os"
@@ -16,8 +15,8 @@ import (
 // TypeEnv. The exact source snapshot is pinned so a changed FPF publication
 // forces a fresh semantic review instead of silently preserving these rules.
 const (
-	sourceConformanceFPFRevision   = "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4"
-	sourceConformanceFPFSpecDigest = "sha256:1093a25640c61a2674f56443bffb8e27f33ac2cdf95f09af2c0cf67c68913eac"
+	sourceConformanceFPFRevision   = "2ada413629b846ef308222d16489a82cb5b40a71"
+	sourceConformanceFPFSpecDigest = "sha256:00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af"
 )
 
 type sourceConformanceSourceRange struct {
@@ -27,45 +26,59 @@ type sourceConformanceSourceRange struct {
 	digest  string
 }
 
+// sourceConformanceNetworkSelection is an oracle-only value for E.18.NET's
+// four A.22 identity discriminators. It is deliberately not a RelationSpec:
+// direct-member lists create no membership occurrence, and every selected
+// cross-flow relation remains owned by its direct governing pattern.
+type sourceConformanceNetworkSelection struct {
+	directMembers              []ByReferenceCandidate
+	selectedCrossFlowRelations []ByReferenceCandidate
+	selectedNetworkConstraints []ByReferenceCandidate
+	useFrame                   ByReferenceCandidate
+	returnCondition            ByReferenceCandidate
+}
+
 var sourceConformanceSourceRanges = []sourceConformanceSourceRange{
-	{pattern: "A.1", start: 1391, end: 1727, digest: "sha256:372a78135a7efb6ef2a0c397881545b5a8e63f7d301c56bad8ccbc1e95a2e6ee"},
-	{pattern: "A.2.1", start: 2346, end: 2703, digest: "sha256:0b8086ff95e8b6560a597114f513a99dba29fa6be76eb7d059e48298e428f0cb"},
-	{pattern: "A.2.8", start: 5442, end: 5785, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
-	{pattern: "A.2.8.PER", start: 5786, end: 6045, digest: "sha256:3fb7dcc90e81c2756ae0d256f092a55cb57588943abf3db4c7ad48e3ac3f9e05"},
-	{pattern: "A.3.1", start: 6588, end: 7007, digest: "sha256:1fa9cec5c56e61d6fb16c89021b20e5c287b860792e38894288f411af5ff9776"},
-	{pattern: "A.3.2", start: 7008, end: 7318, digest: "sha256:a2275f0ac6ea54b2ab31ed77fc47b1b194ec8662737bba83635b941bbb9cd6a3"},
-	{pattern: "A.3.4", start: 7627, end: 8024, digest: "sha256:1f73773c977127851e8a28a6b20b4416787ab70f6590fa8b57efeae600564d3c"},
-	{pattern: "A.6.REL", start: 10446, end: 10833, digest: "sha256:87a8a572392a7126621e5459d1aade4ac03428d6f93a30ebfaa7fc4e4654d455"},
-	{pattern: "A.6.0", start: 10834, end: 11205, digest: "sha256:95ef3dcf54808f42a5cd8da4d0b0933e2377a62bb0197540b24e0e6f59426717"},
-	{pattern: "A.6.1", start: 11206, end: 11669, digest: "sha256:fcf8531b2c8bd64543d95c8b5aca57807bb4f33bc2d1afa844777097e6d926bc"},
-	{pattern: "A.6.P.WMR", start: 15627, end: 16099, digest: "sha256:ab4a5268a5d03d2d1ee0d1e065e53e00af361b7f6f2437f5f8976cc3f66a0951"},
-	{pattern: "A.6.5", start: 18154, end: 18501, digest: "sha256:6791973456722788a062c4b3145a30feae77ebfe3d261c15c422ab68edb741cb"},
-	{pattern: "A.10", start: 22499, end: 22912, digest: "sha256:36524f54c2b51a9b621bd92cf74b38e383b3274aee2be109cdc7eb4af12da0ca"},
-	{pattern: "A.14", start: 23485, end: 23774, digest: "sha256:419df68483cd6c15b5e3b476b605710e276a1c75e72f62026773eb2d025e2151"},
-	{pattern: "A.15.1", start: 24239, end: 24740, digest: "sha256:35c6ae620f6f8d62fbd001eae20639b1af1bf2941452a19458240e58e3312f89"},
-	{pattern: "A.15.2", start: 24741, end: 25021, digest: "sha256:cc1d500bf088e23201af157327778d7e0abfc77bd4899395dac3a7225bfa070c"},
-	{pattern: "A.15.3", start: 25022, end: 25304, digest: "sha256:39434c5d103adf07d5396432f0973af9efff29c7225c04647a4cd1e2f34d78dd"},
-	{pattern: "A.15.PROD", start: 25922, end: 26308, digest: "sha256:787514f4bb7b9dcc07949f6c2ec17ce50f0b32493e0a91a259f90eb10c6794b5"},
-	{pattern: "A.18", start: 27572, end: 27723, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
-	{pattern: "A.19.UNM", start: 30720, end: 31141, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
-	{pattern: "A.19.UINDM", start: 31142, end: 31430, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
-	{pattern: "A.19.USCM", start: 31431, end: 31758, digest: "sha256:11915662fc97720f6ad4b5f6d285f02a5e36528254de4bee51431c651f908bc0"},
-	{pattern: "A.19.ULSAM", start: 31759, end: 32053, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
-	{pattern: "A.19.CPM", start: 32054, end: 32388, digest: "sha256:2c93d996964d5c4f1ac5c0992d27c13770da41238569a2ccad5c8086b0d19514"},
-	{pattern: "A.19.SelectorMechanism", start: 32389, end: 32752, digest: "sha256:95c9465f83bb10d6914d3469c3498ea2ae46a46127c76fb89fe639d70dd4d961"},
-	{pattern: "C.2.1", start: 40259, end: 40765, digest: "sha256:632f8d07295aec4c8ab54b957c5a696b213fff11b8afc0b33a15139886cf9b11"},
-	{pattern: "C.11", start: 45233, end: 45948, digest: "sha256:c5653ceefc92d44398f76dad117eb0630b77e99d5b01c4ccc513ef9ab62f233f"},
-	{pattern: "C.16", start: 46176, end: 46629, digest: "sha256:8f5b8e3fcfba3ed338023c3309ed1690acd4ab443ae6f12a188a31dbbfd51f8b"},
-	{pattern: "C.18", start: 48377, end: 48601, digest: "sha256:31bdfdcdf2df6b5353308e9b0dd8308a79b60805bee50dcd3ac1b12d21d41f12"},
-	{pattern: "C.22", start: 49826, end: 50198, digest: "sha256:b023ed72759281302918505b32a5df1244bd75665816f5eb27d13becb10dcf62"},
-	{pattern: "C.22.2", start: 50631, end: 51285, digest: "sha256:3cc758e6003daf15950e27a6a9e67395c5ba676b4364595df8a70b59e09c43fc"},
-	{pattern: "C.28", start: 56063, end: 56929, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
-	{pattern: "C.30", start: 58292, end: 58883, digest: "sha256:6bc92805ff97431ae5124e93200965023904c64d26db0c54cb637ab3c95dfc37"},
-	{pattern: "E.11.PUR", start: 75313, end: 75584, digest: "sha256:2bf7d9e99873a6204c770c5957021641a37e9c9b66539a8f74d04d749a3a167b"},
-	{pattern: "E.17", start: 77827, end: 78431, digest: "sha256:2ac39fded54d84c54c659dd542cb869e644fe11cd40f9c770667b4d237f6c3bc"},
-	{pattern: "E.18", start: 80639, end: 81224, digest: "sha256:14cce7f67c1c557f5c53bf806e5f95143b9b7fc7d8f5e92ca131590be2d124e4"},
-	{pattern: "E.24.PUB", start: 85403, end: 85648, digest: "sha256:6c26ccd5f5441bf2490008c38f9b166cae1b66d3be3ea1f00c8dfc31abccad49"},
-	{pattern: "E.24.UK", start: 85649, end: 86037, digest: "sha256:b92668404065d717c16d09c59627ade1450fb17cb09604d415d7c27fcbf4ca5a"},
+	{pattern: "A.1", start: 1420, end: 1769, digest: "sha256:bf8825b3253010367c12259830f55a62db6276dee1bdd467f611b91396773a7c"},
+	{pattern: "A.2.1", start: 2543, end: 2858, digest: "sha256:46339a090e017792ca4f3fd5fec9975389c926b4182a867ee2a65976b11d0c7a"},
+	{pattern: "A.2.8", start: 5651, end: 5994, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
+	{pattern: "A.2.8.PER", start: 5995, end: 6289, digest: "sha256:e684e2cbc8af12d64a914b0ea9588e0f1bebce72e9a3c7778c28cff788932ea7"},
+	{pattern: "A.3.1", start: 6883, end: 7317, digest: "sha256:f72c4b6ac6a1f5af3b0a46466dbbee5508ea008c41a7d649ffe142eac3901c43"},
+	{pattern: "A.3.2", start: 7318, end: 7644, digest: "sha256:cf47f9b9b208f775785b7298f97cbf2c887248ef93b735deb1521baa67087ebb"},
+	{pattern: "A.3.4", start: 7953, end: 8345, digest: "sha256:ffc48e1f415ff674ed51b6c2d384a3dcae71527b837159d54a955f7233e3816a"},
+	{pattern: "A.6.REL", start: 10845, end: 11237, digest: "sha256:3cb3082cd874089268c64fbb4b814fe4a15adbcc3174247f7969feddb3c1ad01"},
+	{pattern: "A.6.0", start: 11238, end: 11642, digest: "sha256:6be5122b7698a5dbb9d2f2ab33693c5bc38b9eadc0f13a9ed67ff85ff7f27505"},
+	{pattern: "A.6.1", start: 11643, end: 12165, digest: "sha256:946668db562ee4447896a8ff7a3e92105413d66e1f34f488ba7402aacd4ac591"},
+	{pattern: "A.6.P.WMR", start: 15778, end: 16209, digest: "sha256:4e1b7532551ed390ce9120a32a3956cdf47a92b9f77470647ee973b08c2a9fae"},
+	{pattern: "A.6.5", start: 18352, end: 18716, digest: "sha256:e98c56aa0e8cf17f4ffb31f44ab7f1639e4793eb0f6a614b6a16a0cbce53bc04"},
+	{pattern: "A.10", start: 22631, end: 23044, digest: "sha256:36524f54c2b51a9b621bd92cf74b38e383b3274aee2be109cdc7eb4af12da0ca"},
+	{pattern: "A.14", start: 23617, end: 23908, digest: "sha256:227edc79b41e830d228923b83efbdf96233f9dacd3b39d0da56cf29fbbfff9a4"},
+	{pattern: "A.15.1", start: 24373, end: 24917, digest: "sha256:874a4fc8c1f99a6c05b8c38ff526d8db5c63a5b1018b95260bfa7be1711027d2"},
+	{pattern: "A.15.2", start: 24918, end: 25215, digest: "sha256:b801fd269fe447cddf3f22098d79e5c2595a2f8fd2e8d047d8833c740792583e"},
+	{pattern: "A.15.3", start: 25216, end: 25534, digest: "sha256:855b07fd09219bbff05c56721b2a65877e073ded18bb4713289201f37ec4e46e"},
+	{pattern: "A.15.PROD", start: 26546, end: 26960, digest: "sha256:743bd9dea2ed22003518749f03f6137e57173d99f6132d52c0e7e5eeb42854a5"},
+	{pattern: "A.18", start: 28224, end: 28375, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
+	{pattern: "A.19.UNM", start: 31372, end: 31793, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
+	{pattern: "A.19.UINDM", start: 31794, end: 32082, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
+	{pattern: "A.19.USCM", start: 32083, end: 32410, digest: "sha256:11915662fc97720f6ad4b5f6d285f02a5e36528254de4bee51431c651f908bc0"},
+	{pattern: "A.19.ULSAM", start: 32411, end: 32705, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
+	{pattern: "A.19.CPM", start: 32706, end: 33040, digest: "sha256:2c93d996964d5c4f1ac5c0992d27c13770da41238569a2ccad5c8086b0d19514"},
+	{pattern: "A.19.SelectorMechanism", start: 33041, end: 33404, digest: "sha256:95c9465f83bb10d6914d3469c3498ea2ae46a46127c76fb89fe639d70dd4d961"},
+	{pattern: "C.2.1", start: 41132, end: 41666, digest: "sha256:cecf2e397e1920a01e788aa6f4cade027ec254ce8d1661cadaebd08edd3f36ed"},
+	{pattern: "C.11", start: 46167, end: 46882, digest: "sha256:c5653ceefc92d44398f76dad117eb0630b77e99d5b01c4ccc513ef9ab62f233f"},
+	{pattern: "C.16", start: 47134, end: 47587, digest: "sha256:8f5b8e3fcfba3ed338023c3309ed1690acd4ab443ae6f12a188a31dbbfd51f8b"},
+	{pattern: "C.18", start: 49335, end: 49559, digest: "sha256:31bdfdcdf2df6b5353308e9b0dd8308a79b60805bee50dcd3ac1b12d21d41f12"},
+	{pattern: "C.22", start: 50784, end: 51156, digest: "sha256:b023ed72759281302918505b32a5df1244bd75665816f5eb27d13becb10dcf62"},
+	{pattern: "C.22.2", start: 51626, end: 52280, digest: "sha256:3cc758e6003daf15950e27a6a9e67395c5ba676b4364595df8a70b59e09c43fc"},
+	{pattern: "C.28", start: 57058, end: 57924, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
+	{pattern: "C.30", start: 59289, end: 59880, digest: "sha256:6bc92805ff97431ae5124e93200965023904c64d26db0c54cb637ab3c95dfc37"},
+	{pattern: "E.11.PUR", start: 76626, end: 76897, digest: "sha256:2bf7d9e99873a6204c770c5957021641a37e9c9b66539a8f74d04d749a3a167b"},
+	{pattern: "E.17", start: 79140, end: 79744, digest: "sha256:2ac39fded54d84c54c659dd542cb869e644fe11cd40f9c770667b4d237f6c3bc"},
+	{pattern: "E.18", start: 81952, end: 82584, digest: "sha256:4f9685512c14e100afc3d577ebf562c332ac804d9b7fbf269f2b1f9a92df528b"},
+	{pattern: "E.18.NET", start: 83692, end: 84077, digest: "sha256:a5e0976b4d3a9492c00d3231453af2e0a8acec66c93ed8e429eaacdb33a68d1d"},
+	{pattern: "E.24.PUB", start: 87296, end: 87541, digest: "sha256:6c26ccd5f5441bf2490008c38f9b166cae1b66d3be3ea1f00c8dfc31abccad49"},
+	{pattern: "E.24.UK", start: 87542, end: 88012, digest: "sha256:544d4ea89b5637b1165819bc932ee79356e0f1907204cdeb1afd79bc0efe0bdf"},
+	{pattern: "F.6", start: 89895, end: 90208, digest: "sha256:df4bf77abf80ee635672f8e8e6bd2a6f7269fbd825c40955530388998af147ff"},
 }
 
 type sourceConformanceSource struct {
@@ -108,10 +121,10 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	},
 	{
 		key:     "role_assignment",
-		pattern: "A.6.5",
-		// The current A.6.5 compatible RelationSignature and E.24.UK
-		// settlement use four world-side participants. AssignmentInterval
-		// belongs to assertion or occurrence-description content, not here.
+		pattern: "A.2.1",
+		// A.2.1 owns the four world-side participants; A.6.5 supplies the
+		// signature discipline and E.24.UK settles the dependent relation kind.
+		// AssignmentInterval is assertion or occurrence-description content.
 		slots: []sourceConformanceSlotSpec{
 			{name: "HolderSystemSlot", kind: "U.System"},
 			{name: "RoleValueSlot", kind: "U.Role"},
@@ -120,8 +133,8 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 		},
 	},
 	{
-		key:     "work_performed_by",
-		pattern: "A.2.1",
+		key:     "work_performed_under_assignment",
+		pattern: "F.6",
 		slots: []sourceConformanceSlotSpec{
 			{name: "WorkOccurrenceSlot", kind: "U.Work"},
 			{name: "RoleAssignmentSlot", kind: "U.RoleAssignment"},
@@ -130,6 +143,9 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "episteme_empirical_grounding",
 		pattern: "C.2.1",
+		// covered=C, its claim-to-world mappings, and the maximal interval are
+		// predicate and occurrence-identity content. They are not a third
+		// world-side participant and therefore are not another SlotSpec here.
 		slots: []sourceConformanceSlotSpec{
 			{name: "GroundedEpistemeSlot", kind: "U.Episteme"},
 			{name: "GroundingHolonSlot", kind: "U.Holon"},
@@ -138,24 +154,32 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "target_effect_evidence",
 		pattern: "A.10",
+		// This oracle-local tuple checks only the minimum categories used by the
+		// case. It is not A.10's complete evidence path and type admission does
+		// not establish evidence use, provenance, currentness, or obtaining.
 		slots: []sourceConformanceSlotSpec{
 			{name: "TargetEffectSlot", kind: "U.Entity"},
 			{name: "EvidenceProducingWorkSlot", kind: "U.Work"},
 			{name: "EvidenceEpistemeSlot", kind: "U.Episteme"},
-			{name: "CriterionSignatureSlot", kind: "U.Signature"},
 		},
 	},
 	{
 		key:     "governed_work_order",
 		pattern: "A.15.2",
+		// This oracle-local predicate category stands for the exact local
+		// PlanItem dependency predicate or condition carried in plan content.
+		// A MethodDescription, display order, row order, and graph edge do not
+		// establish that ordering.
 		slots: []sourceConformanceSlotSpec{
-			{name: "OrderDescriptionSlot", kind: "U.MethodDescription"},
+			{name: "OrderPredicateSlot", kind: "G3.PlanItemOrderingPredicate"},
 			{name: "WorkPlanSlot", kind: "U.WorkPlan"},
 		},
 	},
 	{
 		key:     "relation_occurrence_designation",
 		pattern: "A.6.REL",
+		// Oracle-local unary category boundary only. A designation is a value or
+		// reference in a receiving episteme, not a source-declared unary relation.
 		slots: []sourceConformanceSlotSpec{
 			{name: "OccurrenceSlot", kind: "U.Relation"},
 		},
@@ -163,18 +187,11 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "typed_relation_assertion",
 		pattern: "A.6.REL",
+		// Oracle-local comparison tuple. A relational assertion is episteme
+		// content, not a source-declared binary world-side relation.
 		slots: []sourceConformanceSlotSpec{
 			{name: "AssertionEpistemeSlot", kind: "U.Episteme"},
 			{name: "RelationKindSlot", kind: "U.Entity"},
-		},
-	},
-	{
-		key:     "work_discriminated_occurrence",
-		pattern: "A.15.1",
-		slots: []sourceConformanceSlotSpec{
-			{name: "LeftParticipantSlot", kind: "U.Entity"},
-			{name: "RightParticipantSlot", kind: "U.Entity"},
-			{name: "ConstitutingWorkSlot", kind: "U.Work"},
 		},
 	},
 	{
@@ -199,61 +216,60 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "flow_structure_valuation",
 		pattern: "E.18",
+		// This oracle-local boundary keeps the two categories distinct. Type
+		// admission alone does not prove that the valuation resolves to this
+		// exact TFS or only to its internal U.Transfer occurrences.
 		slots: []sourceConformanceSlotSpec{
 			{name: "TransformationFlowStructureSlot", kind: "G3.TransformationFlowStructure"},
 			{name: "FlowValuationSlot", kind: "G3.FlowValuation"},
 		},
 	},
 	{
-		key:     "flow_network_positions",
-		pattern: "E.18",
-		// FlowNode admits an independently identified nested network or a leaf
-		// position. Slot names are intentionally neutral: representation order
-		// must not fabricate source/target, before/after, or workflow semantics.
-		slots: []sourceConformanceSlotSpec{
-			{name: "NetworkSlot", kind: "G3.FlowNetwork"},
-			{name: "PositionOneSlot", kind: "G3.FlowNode"},
-			{name: "PositionTwoSlot", kind: "G3.FlowNode"},
-			{name: "PositionThreeSlot", kind: "G3.FlowNode"},
-		},
-	},
-	{
-		key:     "comparison_basis",
+		key:     "comparison_comparator_boundary",
 		pattern: "A.19.CPM",
+		// This only checks the explicit ComparatorSpec category boundary.
+		// Complete comparison admissibility also needs CN/CG specs, context,
+		// evidence pins when required, and the direct A.19.CPM predicate.
 		slots: []sourceConformanceSlotSpec{
 			{name: "ComparisonSlot", kind: "G3.Comparison"},
-			{name: "ComparisonBasisSlot", kind: "G3.ComparisonBasis"},
+			{name: "ComparatorSpecSlot", kind: "G3.ComparatorSpec"},
 		},
 	},
 	{
 		key:     "architecture_of_boundary",
 		pattern: "C.30",
+		// Oracle-local minimum record-category boundary for the branch that
+		// selects one structure ref. The bounded context is carried by
+		// RelationInstantiation.ContextSlice. This is not membership-complete:
+		// structure-kind refs and use fields remain outside this case, while
+		// ArchitectureDescription is a separate conditional bridge.
 		slots: []sourceConformanceSlotSpec{
 			{name: "DescribedHolonSlot", kind: "U.Holon"},
 			{name: "SelectedStructureSlot", kind: "G3.SelectedStructure"},
 			{name: "ArchitectureOfClaimSlot", kind: "G3.ArchitectureOfClaim"},
-			{name: "ArchitectureDescriptionSlot", kind: "G3.ArchitectureDescription"},
 		},
 	},
 	{
 		key:     "architecture_candidate_basis",
 		pattern: "C.30",
-		// Context is carried by the exact ContextSlice of RelationInstantiation.
-		// This oracle-local readiness boundary is not C.32 candidate lowering and
-		// cannot admit, select, decide, commission, or authorize anything.
+		// This oracle-local tuple mirrors the required C.30
+		// ArchitectureCandidateMove content used by this case. It is not a
+		// source relation, C.32 candidate lowering, choice, or authorization.
 		slots: []sourceConformanceSlotSpec{
-			{name: "CandidateCueSlot", kind: "G3.ArchitectureCandidateCue"},
-			{name: "EntityOfConcernSlot", kind: "U.Entity"},
+			{name: "CandidateSetOrArchiveSlot", kind: "G3.ArchitectureCandidateSetOrArchive"},
+			{name: "ArchitectureOfClaimSlot", kind: "G3.ArchitectureOfClaim"},
 			{name: "SelectedStructureSlot", kind: "G3.SelectedStructure"},
-			{name: "ExpectedGainSlot", kind: "G3.ExpectedGain"},
-			{name: "KnownLossSlot", kind: "G3.KnownLoss"},
-			{name: "MissingBasisSlot", kind: "G3.MissingBasis"},
-			{name: "IntendedUseSlot", kind: "G3.IntendedUse"},
+			{name: "AffectedCharacteristicSlot", kind: "G3.Characteristic"},
+			{name: "CandidateMoveClaimSlot", kind: "G3.ArchitectureCandidateMoveClaim"},
+			{name: "StopConditionSlot", kind: "G3.ArchitectureCandidateStopCondition"},
 		},
 	},
 	{
 		key:     "permission_exercise_boundary",
 		pattern: "A.2.8.PER",
+		// G3.PermissionGrant is an oracle-local narrowing of the source's literal
+		// U.Relation slot to an occurrence that resolves to the exact grant kind.
+		// Type admission remains weaker than the direct permission predicate.
 		slots: []sourceConformanceSlotSpec{
 			{name: "ExercisingWorkSlot", kind: "U.Work"},
 			{name: "GrantedPermissionOccurrenceSlot", kind: "G3.PermissionGrant"},
@@ -262,6 +278,9 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "wmr_recovery_boundary",
 		pattern: "A.6.P.WMR",
+		// Oracle-local method-output comparison tuple. WMR mints no U-kind,
+		// world-side relation, or result record; admission here only checks that
+		// overloaded cues and the four recovery-result categories stay distinct.
 		slots: []sourceConformanceSlotSpec{
 			{name: "ExactSubjectSlot", kind: "U.Entity"},
 			{name: "ExactRelatedObjectSlot", kind: "U.Entity"},
@@ -274,21 +293,25 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "work_occurrence_basis",
 		pattern: "A.15.1",
-		// This oracle-local boundary collects only the identity-bearing facts
-		// current in this case. It does not make their descriptions or fields
-		// obtaining relations and does not absorb optional resource/binding facts.
+		// This oracle-local admission boundary exposes the minimum current facts
+		// used by this case. It does not turn them into fields of Work, make the
+		// relations obtain, or absorb optional work-to-referent, resource-use,
+		// and declaration-local binding facts.
 		slots: []sourceConformanceSlotSpec{
 			{name: "WorkOccurrenceSlot", kind: "U.Work"},
-			{name: "PerformerAssignmentSlot", kind: "U.RoleAssignment"},
+			{name: "ActualPerformerSystemSlot", kind: "U.System"},
+			{name: "CoveringRoleAssignmentSlot", kind: "U.RoleAssignment"},
 			{name: "EnactedMethodSlot", kind: "U.Method"},
 			{name: "TemporalExtentSlot", kind: "G3.TemporalExtent"},
 			{name: "ContainingSystemSlot", kind: "U.System"},
-			{name: "AffectedReferentSlot", kind: "U.Entity"},
 		},
 	},
 	{
 		key:     "workplan_intention_boundary",
 		pattern: "A.15.2",
+		// Oracle-local distinction tuple, not a membership-complete WorkPlan
+		// record: reference scheme, horizon, and full PlanItem content remain
+		// outside this bounded category-error case.
 		slots: []sourceConformanceSlotSpec{
 			{name: "WorkPlanSlot", kind: "U.WorkPlan"},
 			{name: "PresentEntityOfConcernSlot", kind: "G3.IdentifiedPresentEoC"},
@@ -308,8 +331,10 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 		},
 	},
 	{
-		key:     "mechanism_constitution",
+		key:     "mechanism_recognition_basis",
 		pattern: "A.6.1",
+		// Oracle-local recognition-input tuple. A.6.1's content outline is not a
+		// mandatory record, direct relation, or set of SlotKinds.
 		slots: []sourceConformanceSlotSpec{
 			{name: "MechanismEpistemeSlot", kind: "U.Mechanism"},
 			{name: "ClaimGraphSlot", kind: "U.ClaimGraph"},
@@ -324,8 +349,9 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "system_recognition_basis",
 		pattern: "A.1",
-		// A type-level admission of these inputs is not a positive U.System
-		// classification. The world-side criterion and evaluation remain separate.
+		// Oracle-local evaluator-input tuple. A type-level admission of these
+		// inputs is not a positive U.System classification or world-side relation;
+		// the kind-specific criterion and evaluation remain separate.
 		slots: []sourceConformanceSlotSpec{
 			{name: "ExactCandidateSlot", kind: "U.Entity"},
 			{name: "ExactConstituentsSlot", kind: "G3.ConstituentSet"},
@@ -340,6 +366,8 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "planned_filling_boundary",
 		pattern: "A.15.3",
+		// Oracle-local comparison tuple over WorkPlan ClaimGraph content.
+		// SlotFillingsPlanItem is not a U-kind, world-side relation, or record.
 		slots: []sourceConformanceSlotSpec{
 			{name: "WorkPlanSlot", kind: "U.WorkPlan"},
 			{name: "IntendedPerformanceDesignatorSlot", kind: "G3.FuturePerformanceDesignator"},
@@ -350,11 +378,12 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "actual_operation_binding_boundary",
 		pattern: "A.6.1",
+		// The direct declaration-local binding participants are the exact
+		// application occurrence and the exact bound value. The declaration
+		// member governs the predicate; the binding is the occurrence itself.
 		slots: []sourceConformanceSlotSpec{
 			{name: "ActualApplicationSlot", kind: "G3.ActualOperationApplication"},
-			{name: "DeclarationMemberSlot", kind: "G3.PlannedDeclarationMember"},
 			{name: "ActualBoundValueSlot", kind: "G3.ActualBoundValue"},
-			{name: "ActualBindingSlot", kind: "G3.ActualOperationBinding"},
 		},
 	},
 }
@@ -457,14 +486,14 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		work := fixture.reference(t, snapshot, "case3-work", "U.Work")
 		assignment := fixture.reference(t, snapshot, "case3-role-assignment", "U.RoleAssignment")
 
-		invalid := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+		invalid := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: plan},
 			{slot: "RoleAssignmentSlot", filler: assignment},
 		})
 		assertSourceConformanceRejected(t, invalid, ValidationInvalid, DiagnosticEntityKindMismatch)
 		assertSourceConformanceTypeAdmission(
 			t,
-			fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+			fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 				{slot: "WorkOccurrenceSlot", filler: work},
 				{slot: "RoleAssignmentSlot", filler: assignment},
 			}),
@@ -526,7 +555,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"problem-card":   problem,
 		} {
 			t.Run(label, func(t *testing.T) {
-				performed := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+				performed := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 					{slot: "WorkOccurrenceSlot", filler: candidate},
 					{slot: "RoleAssignmentSlot", filler: assignment},
 				})
@@ -560,7 +589,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 	t.Run("successful command or closed run is not target-effect evidence by itself", func(t *testing.T) {
 		snapshot := fixture.snapshot()
 		targetEffect := fixture.reference(t, snapshot, "case7-target-effect", "U.Entity")
-		criterion := fixture.reference(t, snapshot, "case7-evidence-criterion", "U.Signature")
 		evidence := fixture.reference(t, snapshot, "case7-evidence-episteme", "U.Episteme")
 		workOnlyCandidates := []struct {
 			label     string
@@ -581,24 +609,15 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 					{slot: "TargetEffectSlot", filler: targetEffect},
 					{slot: "EvidenceProducingWorkSlot", filler: candidate.candidate},
 					{slot: "EvidenceEpistemeSlot", filler: candidate.candidate},
-					{slot: "CriterionSignatureSlot", filler: criterion},
 				})
 				assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 			})
 		}
 
-		missingCriterion := fixture.validate(t, snapshot, "target_effect_evidence", []sourceConformanceBinding{
-			{slot: "TargetEffectSlot", filler: targetEffect},
-			{slot: "EvidenceProducingWorkSlot", filler: workOnlyCandidates[0].candidate},
-			{slot: "EvidenceEpistemeSlot", filler: evidence},
-		})
-		assertSourceConformanceRejected(t, missingCriterion, ValidationInvalid, DiagnosticMissingSlot)
-
 		explicitEvidenceRelation := fixture.validate(t, snapshot, "target_effect_evidence", []sourceConformanceBinding{
 			{slot: "TargetEffectSlot", filler: targetEffect},
 			{slot: "EvidenceProducingWorkSlot", filler: workOnlyCandidates[0].candidate},
 			{slot: "EvidenceEpistemeSlot", filler: evidence},
-			{slot: "CriterionSignatureSlot", filler: criterion},
 		})
 		assertSourceConformanceTypeAdmission(t, explicitEvidenceRelation)
 	})
@@ -619,19 +638,19 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			t.Run(cue.label, func(t *testing.T) {
 				candidate := fixture.reference(t, snapshot, "case8-"+cue.label, cue.kind)
 				verdict := fixture.validate(t, snapshot, "governed_work_order", []sourceConformanceBinding{
-					{slot: "OrderDescriptionSlot", filler: candidate},
+					{slot: "OrderPredicateSlot", filler: candidate},
 					{slot: "WorkPlanSlot", filler: plan},
 				})
 				assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 			})
 		}
 
-		methodDescription := fixture.reference(t, snapshot, "case8-method-description", "U.MethodDescription")
-		explicitOrderDescription := fixture.validate(t, snapshot, "governed_work_order", []sourceConformanceBinding{
-			{slot: "OrderDescriptionSlot", filler: methodDescription},
+		orderPredicate := fixture.reference(t, snapshot, "case8-order-predicate", "G3.PlanItemOrderingPredicate")
+		explicitOrderPredicate := fixture.validate(t, snapshot, "governed_work_order", []sourceConformanceBinding{
+			{slot: "OrderPredicateSlot", filler: orderPredicate},
 			{slot: "WorkPlanSlot", filler: plan},
 		})
-		assertSourceConformanceTypeAdmission(t, explicitOrderDescription)
+		assertSourceConformanceTypeAdmission(t, explicitOrderPredicate)
 	})
 
 	t.Run("assertion and representation objects are not obtaining occurrences", func(t *testing.T) {
@@ -664,26 +683,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{slot: "RelationKindSlot", filler: relationKind},
 		})
 		assertSourceConformanceTypeAdmission(t, typedAssertion)
-	})
-
-	t.Run("same participants do not erase a constituting-work discriminator", func(t *testing.T) {
-		snapshot := fixture.snapshot()
-		left := fixture.reference(t, snapshot, "case10-left-participant", "U.Entity")
-		right := fixture.reference(t, snapshot, "case10-right-participant", "U.Entity")
-		work := fixture.reference(t, snapshot, "case10-constituting-work", "U.Work")
-
-		withoutDiscriminator := fixture.validate(t, snapshot, "work_discriminated_occurrence", []sourceConformanceBinding{
-			{slot: "LeftParticipantSlot", filler: left},
-			{slot: "RightParticipantSlot", filler: right},
-		})
-		assertSourceConformanceRejected(t, withoutDiscriminator, ValidationInvalid, DiagnosticMissingSlot)
-
-		withDiscriminator := fixture.validate(t, snapshot, "work_discriminated_occurrence", []sourceConformanceBinding{
-			{slot: "LeftParticipantSlot", filler: left},
-			{slot: "RightParticipantSlot", filler: right},
-			{slot: "ConstitutingWorkSlot", filler: work},
-		})
-		assertSourceConformanceTypeAdmission(t, withDiscriminator)
 	})
 
 	t.Run("slot carrier field and designation stay distinct from the participant", func(t *testing.T) {
@@ -926,9 +925,9 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			label string
 			kind  string
 		}{
-			{label: "program-description", kind: "G3.ProgramDescription"},
+			{label: "claim-bearing-program-description", kind: "G3.ClaimBearingProgramDescriptionEpisteme"},
 			{label: "code-carrier", kind: "G3.CodeCarrier"},
-			{label: "model", kind: "G3.Model"},
+			{label: "claim-bearing-model", kind: "G3.ClaimBearingModelEpisteme"},
 			{label: "repository-carrier", kind: "G3.RepositoryCarrier"},
 		}
 		for _, cue := range nonSystemCues {
@@ -1019,13 +1018,14 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		assertSourceConformanceTypeAdmission(t, constitution)
 	})
 
-	t.Run("flow structure valuation subflow network publications work and plans stay distinct", func(t *testing.T) {
+	t.Run("one flow structure valuation references network publications work and plans stay distinct", func(t *testing.T) {
 		assertSourceConformanceDistinctKinds(t, fixture, []string{
 			"G3.TransformationFlowStructure",
 			"G3.FlowValuation",
-			"G3.Subflow",
-			"G3.IndependentFlow",
-			"G3.FlowNetwork",
+			"G3.FlowPositionRef",
+			"G3.SubflowRef",
+			"G3.TransformationFlowStructureNetwork",
+			"G3.ExposedFlowPositionRef",
 			"G3.GraphProjection",
 			"G3.TableProjection",
 			"U.Work",
@@ -1036,9 +1036,10 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		valuation := fixture.reference(t, snapshot, "case17-valuation", "G3.FlowValuation")
 		wrongStructureKinds := []string{
 			"G3.FlowValuation",
-			"G3.Subflow",
-			"G3.IndependentFlow",
-			"G3.FlowNetwork",
+			"G3.FlowPositionRef",
+			"G3.SubflowRef",
+			"G3.TransformationFlowStructureNetwork",
+			"G3.ExposedFlowPositionRef",
 			"G3.GraphProjection",
 			"G3.TableProjection",
 			"U.Work",
@@ -1055,9 +1056,10 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 
 		wrongValuationKinds := []string{
 			"G3.TransformationFlowStructure",
-			"G3.Subflow",
-			"G3.IndependentFlow",
-			"G3.FlowNetwork",
+			"G3.FlowPositionRef",
+			"G3.SubflowRef",
+			"G3.TransformationFlowStructureNetwork",
+			"G3.ExposedFlowPositionRef",
 			"G3.GraphProjection",
 			"G3.TableProjection",
 			"U.Work",
@@ -1086,41 +1088,40 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"G3.MeasuredValue",
 			"G3.Indicator",
 			"G3.Score",
-			"G3.Comparator",
+			"G3.ComparatorSpec",
 			"G3.Normalization",
 			"G3.Fold",
 			"G3.Comparison",
 			"G3.Selection",
-			"G3.ComparisonBasis",
 			"G3.ArchiveFront",
 		}
 		assertSourceConformanceDistinctKinds(t, fixture, categoryKinds)
 		snapshot := fixture.snapshot()
 		comparison := fixture.reference(t, snapshot, "case18-comparison", "G3.Comparison")
-		basis := fixture.reference(t, snapshot, "case18-basis", "G3.ComparisonBasis")
+		comparatorSpec := fixture.reference(t, snapshot, "case18-comparator-spec", "G3.ComparatorSpec")
 		for _, kind := range categoryKinds {
 			if kind == "G3.Comparison" {
 				continue
 			}
 			candidate := fixture.reference(t, snapshot, "case18-comparison-as-"+kind, kind)
-			verdict := fixture.validate(t, snapshot, "comparison_basis", []sourceConformanceBinding{
+			verdict := fixture.validate(t, snapshot, "comparison_comparator_boundary", []sourceConformanceBinding{
 				{slot: "ComparisonSlot", filler: candidate},
-				{slot: "ComparisonBasisSlot", filler: basis},
+				{slot: "ComparatorSpecSlot", filler: comparatorSpec},
 			})
 			assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 		}
 
-		typedComparison := fixture.validate(t, snapshot, "comparison_basis", []sourceConformanceBinding{
+		typedComparison := fixture.validate(t, snapshot, "comparison_comparator_boundary", []sourceConformanceBinding{
 			{slot: "ComparisonSlot", filler: comparison},
-			{slot: "ComparisonBasisSlot", filler: basis},
+			{slot: "ComparatorSpecSlot", filler: comparatorSpec},
 		})
 		assertSourceConformanceTypeAdmission(t, typedComparison)
 
-		changedBasis := fixture.reference(t, snapshot, "case18-changed-basis", "G3.ComparisonBasis")
-		originalCoordinate := sourceConformanceComparisonCoordinate(comparison, basis)
-		changedCoordinate := sourceConformanceComparisonCoordinate(comparison, changedBasis)
+		changedComparator := fixture.reference(t, snapshot, "case18-changed-comparator", "G3.ComparatorSpec")
+		originalCoordinate := sourceConformanceComparisonCoordinate(comparison, comparatorSpec)
+		changedCoordinate := sourceConformanceComparisonCoordinate(comparison, changedComparator)
 		if originalCoordinate == changedCoordinate {
-			t.Fatal("changed comparison basis preserved the old comparison coordinate")
+			t.Fatal("changed ComparatorSpec preserved the old comparison coordinate")
 		}
 	})
 
@@ -1132,7 +1133,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"G3.Recommendation",
 			"G3.Choice",
 			"G3.DecisionRecord",
-			"G3.WorkCommission",
 			"U.Work",
 			"G3.TargetEffect",
 		}
@@ -1144,7 +1144,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 				continue
 			}
 			candidate := fixture.reference(t, snapshot, "case19-work-as-"+kind, kind)
-			verdict := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+			verdict := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 				{slot: "WorkOccurrenceSlot", filler: candidate},
 				{slot: "RoleAssignmentSlot", filler: assignment},
 			})
@@ -1152,20 +1152,21 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 
 		work := fixture.reference(t, snapshot, "case19-performed-work", "U.Work")
-		typedWork := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+		typedWork := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: work},
 			{slot: "RoleAssignmentSlot", filler: assignment},
 		})
 		assertSourceConformanceTypeAdmission(t, typedWork)
 	})
 
-	t.Run("selected structure architecture claim description candidate decision ADR and observations stay distinct", func(t *testing.T) {
+	t.Run("selected structure architecture claim candidate record ADR and observations stay distinct", func(t *testing.T) {
 		architectureKinds := []string{
 			"G3.SelectedStructure",
 			"G3.ArchitectureOfClaim",
 			"G3.ArchitectureDescription",
-			"G3.ArchitectureCandidateCue",
-			"G3.ArchitectureDecisionCue",
+			"G3.ArchitectureCandidateSetOrArchive",
+			"G3.ArchitectureCandidateMoveClaim",
+			"G3.ArchitectureCandidateStopCondition",
 			"G3.ADRCarrier",
 			"G3.ExpectedStructureClaim",
 			"G3.ObservedStructureClaim",
@@ -1190,7 +1191,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		holon := fixture.reference(t, snapshot, "case20-described-holon", "U.System")
 		selected := fixture.reference(t, snapshot, "case20-selected-structure", "G3.SelectedStructure")
 		claim := fixture.reference(t, snapshot, "case20-architecture-claim", "G3.ArchitectureOfClaim")
-		description := fixture.reference(t, snapshot, "case20-description", "G3.ArchitectureDescription")
 		for _, kind := range architectureKinds {
 			if kind == "G3.SelectedStructure" {
 				continue
@@ -1200,7 +1200,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 				{slot: "DescribedHolonSlot", filler: holon},
 				{slot: "SelectedStructureSlot", filler: candidate},
 				{slot: "ArchitectureOfClaimSlot", filler: claim},
-				{slot: "ArchitectureDescriptionSlot", filler: description},
 			})
 			assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 		}
@@ -1210,7 +1209,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{slot: "DescribedHolonSlot", filler: holon},
 			{slot: "SelectedStructureSlot", filler: unknownStructure},
 			{slot: "ArchitectureOfClaimSlot", filler: claim},
-			{slot: "ArchitectureDescriptionSlot", filler: description},
 		})
 		assertSourceConformanceRejected(t, unknownVerdict, ValidationUnderdetermined, DiagnosticTypeRuleUnavailable)
 
@@ -1218,7 +1216,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{slot: "DescribedHolonSlot", filler: holon},
 			{slot: "SelectedStructureSlot", filler: selected},
 			{slot: "ArchitectureOfClaimSlot", filler: claim},
-			{slot: "ArchitectureDescriptionSlot", filler: description},
 		})
 		assertSourceConformanceTypeAdmission(t, typedArchitecture)
 	})
@@ -1232,7 +1229,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"U.Transformation",
 			"G3.Viewpoint",
 			"G3.View",
-			"G3.Model",
+			"G3.ClaimBearingModelEpisteme",
 			"G3.PublicationOccurrence",
 			"U.PresentationCarrier",
 			"U.Episteme",
@@ -1245,7 +1242,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 				continue
 			}
 			candidate := fixture.reference(t, snapshot, "case21-work-as-"+kind, kind)
-			verdict := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+			verdict := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 				{slot: "WorkOccurrenceSlot", filler: candidate},
 				{slot: "RoleAssignmentSlot", filler: assignment},
 			})
@@ -1253,10 +1250,10 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 
 		work := fixture.reference(t, snapshot, "case21-work", "U.Work")
-		methodDescription := fixture.reference(t, snapshot, "case21-method-description", "U.MethodDescription")
+		orderPredicate := fixture.reference(t, snapshot, "case21-order-predicate", "G3.PlanItemOrderingPredicate")
 		plan := fixture.reference(t, snapshot, "case21-plan", "U.WorkPlan")
 		orderedPlan := fixture.validate(t, snapshot, "governed_work_order", []sourceConformanceBinding{
-			{slot: "OrderDescriptionSlot", filler: methodDescription},
+			{slot: "OrderPredicateSlot", filler: orderPredicate},
 			{slot: "WorkPlanSlot", filler: plan},
 		})
 		assertSourceConformanceTypeAdmission(t, orderedPlan)
@@ -1267,15 +1264,14 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		})
 		assertSourceConformanceTypeAdmission(t, publicationOccurrence)
 
-		model := fixture.reference(t, snapshot, "case21-model", "G3.Model")
-		transformation := fixture.reference(t, snapshot, "case21-transformation", "U.Transformation")
+		model := fixture.reference(t, snapshot, "case21-model", "G3.ClaimBearingModelEpisteme")
 		modelGrounding := fixture.validate(t, snapshot, "episteme_empirical_grounding", []sourceConformanceBinding{
 			{slot: "GroundedEpistemeSlot", filler: model},
-			{slot: "GroundingHolonSlot", filler: transformation},
+			{slot: "GroundingHolonSlot", filler: work},
 		})
 		assertSourceConformanceTypeAdmission(t, modelGrounding)
 
-		performed := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+		performed := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: work},
 			{slot: "RoleAssignmentSlot", filler: assignment},
 		})
@@ -1284,46 +1280,56 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 
 	t.Run("AI suggestion does not become an architecture candidate without exact basis", func(t *testing.T) {
 		snapshot := fixture.snapshot()
-		entityOfConcern := fixture.reference(t, snapshot, "case22-eoc", "U.System")
+		candidateSet := fixture.reference(
+			t,
+			snapshot,
+			"case22-candidate-set",
+			"G3.ArchitectureCandidateSetOrArchive",
+		)
+		architectureClaim := fixture.reference(t, snapshot, "case22-architecture-claim", "G3.ArchitectureOfClaim")
 		selected := fixture.reference(t, snapshot, "case22-selected-structure", "G3.SelectedStructure")
-		expectedGain := fixture.reference(t, snapshot, "case22-expected-gain", "G3.ExpectedGain")
-		knownLoss := fixture.reference(t, snapshot, "case22-known-loss", "G3.KnownLoss")
-		missingBasis := fixture.reference(t, snapshot, "case22-missing-basis", "G3.MissingBasis")
-		intendedUse := fixture.reference(t, snapshot, "case22-intended-use", "G3.IntendedUse")
+		characteristic := fixture.reference(t, snapshot, "case22-characteristic", "G3.Characteristic")
+		stopCondition := fixture.reference(
+			t,
+			snapshot,
+			"case22-stop-condition",
+			"G3.ArchitectureCandidateStopCondition",
+		)
 		unknownSuggestion := fixture.reference(t, snapshot, "case22-ai-suggestion", "")
 		unknownCandidate := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
-			{slot: "CandidateCueSlot", filler: unknownSuggestion},
-			{slot: "EntityOfConcernSlot", filler: entityOfConcern},
+			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
+			{slot: "ArchitectureOfClaimSlot", filler: architectureClaim},
 			{slot: "SelectedStructureSlot", filler: selected},
-			{slot: "ExpectedGainSlot", filler: expectedGain},
-			{slot: "KnownLossSlot", filler: knownLoss},
-			{slot: "MissingBasisSlot", filler: missingBasis},
-			{slot: "IntendedUseSlot", filler: intendedUse},
+			{slot: "AffectedCharacteristicSlot", filler: characteristic},
+			{slot: "CandidateMoveClaimSlot", filler: unknownSuggestion},
+			{slot: "StopConditionSlot", filler: stopCondition},
 		})
 		assertSourceConformanceRejected(t, unknownCandidate, ValidationUnderdetermined, DiagnosticTypeRuleUnavailable)
 
-		candidate := fixture.reference(t, snapshot, "case22-candidate-cue", "G3.ArchitectureCandidateCue")
+		candidate := fixture.reference(
+			t,
+			snapshot,
+			"case22-candidate-move-claim",
+			"G3.ArchitectureCandidateMoveClaim",
+		)
 		incompleteCandidate := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
-			{slot: "CandidateCueSlot", filler: candidate},
-			{slot: "EntityOfConcernSlot", filler: entityOfConcern},
+			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
+			{slot: "ArchitectureOfClaimSlot", filler: architectureClaim},
 			{slot: "SelectedStructureSlot", filler: selected},
-			{slot: "ExpectedGainSlot", filler: expectedGain},
-			{slot: "MissingBasisSlot", filler: missingBasis},
-			{slot: "IntendedUseSlot", filler: intendedUse},
+			{slot: "AffectedCharacteristicSlot", filler: characteristic},
+			{slot: "CandidateMoveClaimSlot", filler: candidate},
 		})
 		assertSourceConformanceRejected(t, incompleteCandidate, ValidationInvalid, DiagnosticMissingSlot)
 
-		typedReadiness := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
-			{slot: "CandidateCueSlot", filler: candidate},
-			{slot: "EntityOfConcernSlot", filler: entityOfConcern},
+		typedCandidateMove := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
+			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
+			{slot: "ArchitectureOfClaimSlot", filler: architectureClaim},
 			{slot: "SelectedStructureSlot", filler: selected},
-			{slot: "ExpectedGainSlot", filler: expectedGain},
-			{slot: "KnownLossSlot", filler: knownLoss},
-			{slot: "MissingBasisSlot", filler: missingBasis},
-			{slot: "IntendedUseSlot", filler: intendedUse},
+			{slot: "AffectedCharacteristicSlot", filler: characteristic},
+			{slot: "CandidateMoveClaimSlot", filler: candidate},
+			{slot: "StopConditionSlot", filler: stopCondition},
 		})
-		assertSourceConformanceTypeAdmission(t, typedReadiness)
-		assertSourceConformanceSingleExplicitRelation(t, fixture, typedReadiness, "architecture_candidate_basis")
+		assertSourceConformanceTypeAdmission(t, typedCandidateMove)
 	})
 
 	t.Run("applicability admission permission gate exercise and work remain distinct", func(t *testing.T) {
@@ -1407,73 +1413,80 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 	})
 
-	t.Run("recursive n-ary flow network survives graph and table projection order without inference", func(t *testing.T) {
+	t.Run("network selection identity uses four discriminators and ignores rendering order", func(t *testing.T) {
 		snapshot := fixture.snapshot()
-		parentNetwork := fixture.reference(t, snapshot, "case25-parent-network", "G3.FlowNetwork")
-		nestedNetwork := fixture.reference(t, snapshot, "case25-nested-network", "G3.FlowNetwork")
-		positionOne := fixture.reference(t, snapshot, "case25-position-one", "G3.FlowPosition")
-		positionTwo := fixture.reference(t, snapshot, "case25-position-two", "G3.FlowPosition")
-		graphProjectionBindings := []sourceConformanceBinding{
-			{slot: "PositionTwoSlot", filler: nestedNetwork},
-			{slot: "NetworkSlot", filler: parentNetwork},
-			{slot: "PositionThreeSlot", filler: positionTwo},
-			{slot: "PositionOneSlot", filler: positionOne},
-		}
-		tableProjectionBindings := []sourceConformanceBinding{
-			{slot: "NetworkSlot", filler: parentNetwork},
-			{slot: "PositionOneSlot", filler: positionOne},
-			{slot: "PositionTwoSlot", filler: nestedNetwork},
-			{slot: "PositionThreeSlot", filler: positionTwo},
-		}
-		graphCandidate := fixture.candidateRelation(
+		memberOne := fixture.reference(t, snapshot, "case25-member-one", "G3.TransformationFlowStructure")
+		memberTwo := fixture.reference(t, snapshot, "case25-member-two", "G3.TransformationFlowStructure")
+		nestedNetwork := fixture.reference(
 			t,
-			"flow_network_positions",
-			"case25-round-trip",
-			graphProjectionBindings,
+			snapshot,
+			"case25-nested-network",
+			"G3.TransformationFlowStructureNetwork",
 		)
-		tableCandidate := fixture.candidateRelation(
-			t,
-			"flow_network_positions",
-			"case25-round-trip",
-			tableProjectionBindings,
-		)
-		graphCanonical, graphErr := canonicalRelationInstantiation(graphCandidate)
-		if graphErr != nil {
-			t.Fatalf("canonical graph projection: %v", graphErr)
+		crossFlowRelation := fixture.reference(t, snapshot, "case25-cross-flow-relation", "U.Relation")
+		constraintOne := fixture.reference(t, snapshot, "case25-constraint-one", "G3.SelectedNetworkConstraint")
+		constraintTwo := fixture.reference(t, snapshot, "case25-constraint-two", "G3.SelectedNetworkConstraint")
+		useFrame := fixture.reference(t, snapshot, "case25-use-frame", "G3.NetworkUseFrame")
+		returnCondition := fixture.reference(t, snapshot, "case25-return-condition", "U.Entity")
+		graphOrder := sourceConformanceNetworkSelection{
+			directMembers:              []ByReferenceCandidate{nestedNetwork, memberTwo, memberOne},
+			selectedCrossFlowRelations: []ByReferenceCandidate{crossFlowRelation},
+			selectedNetworkConstraints: []ByReferenceCandidate{constraintTwo, constraintOne},
+			useFrame:                   useFrame,
+			returnCondition:            returnCondition,
 		}
-		tableCanonical, tableErr := canonicalRelationInstantiation(tableCandidate)
-		if tableErr != nil {
-			t.Fatalf("canonical table projection: %v", tableErr)
+		tableOrder := sourceConformanceNetworkSelection{
+			directMembers:              []ByReferenceCandidate{memberOne, nestedNetwork, memberTwo},
+			selectedCrossFlowRelations: []ByReferenceCandidate{crossFlowRelation},
+			selectedNetworkConstraints: []ByReferenceCandidate{constraintOne, constraintTwo},
+			useFrame:                   useFrame,
+			returnCondition:            returnCondition,
 		}
-		if !bytes.Equal(graphCanonical, tableCanonical) {
-			t.Fatal("graph and table projection order changed the exact flow-network identity")
+		graphIdentity := sourceConformanceNetworkSelectionIdentity(t, graphOrder)
+		tableIdentity := sourceConformanceNetworkSelectionIdentity(t, tableOrder)
+		if graphIdentity != tableIdentity {
+			t.Fatal("rendering order changed the four-discriminator network identity")
 		}
 
-		otherNestedNetwork := fixture.reference(t, snapshot, "case25-other-nested-network", "G3.FlowNetwork")
-		changedIdentityBindings := []sourceConformanceBinding{
-			{slot: "NetworkSlot", filler: parentNetwork},
-			{slot: "PositionOneSlot", filler: positionOne},
-			{slot: "PositionTwoSlot", filler: otherNestedNetwork},
-			{slot: "PositionThreeSlot", filler: positionTwo},
-		}
-		changedIdentity := fixture.candidateRelation(
+		otherNestedNetwork := fixture.reference(
 			t,
-			"flow_network_positions",
-			"case25-round-trip",
-			changedIdentityBindings,
+			snapshot,
+			"case25-other-nested-network",
+			"G3.TransformationFlowStructureNetwork",
 		)
-		changedCanonical, changedErr := canonicalRelationInstantiation(changedIdentity)
-		if changedErr != nil {
-			t.Fatalf("canonical changed flow projection: %v", changedErr)
-		}
-		if bytes.Equal(graphCanonical, changedCanonical) {
-			t.Fatal("changed nested-network identity disappeared during projection round-trip")
+		changedMember := tableOrder
+		changedMember.directMembers = []ByReferenceCandidate{memberOne, otherNestedNetwork, memberTwo}
+		if graphIdentity == sourceConformanceNetworkSelectionIdentity(t, changedMember) {
+			t.Fatal("changed direct member preserved the old network identity")
 		}
 
-		typedNetwork := fixture.validate(t, snapshot, "flow_network_positions", graphProjectionBindings)
-		assertSourceConformanceTypeAdmission(t, typedNetwork)
-		relation := assertSourceConformanceSingleExplicitRelation(t, fixture, typedNetwork, "flow_network_positions")
-		assertSourceConformanceNeutralFlowPositions(t, relation)
+		changedRelationRef := fixture.reference(t, snapshot, "case25-other-cross-flow-relation", "U.Relation")
+		changedRelation := tableOrder
+		changedRelation.selectedCrossFlowRelations = []ByReferenceCandidate{changedRelationRef}
+		if graphIdentity == sourceConformanceNetworkSelectionIdentity(t, changedRelation) {
+			t.Fatal("changed selected relation occurrence preserved the old network identity")
+		}
+
+		otherConstraint := fixture.reference(t, snapshot, "case25-other-constraint", "G3.SelectedNetworkConstraint")
+		changedConstraint := tableOrder
+		changedConstraint.selectedNetworkConstraints = []ByReferenceCandidate{constraintOne, otherConstraint}
+		if graphIdentity == sourceConformanceNetworkSelectionIdentity(t, changedConstraint) {
+			t.Fatal("changed applied network constraint preserved the old network identity")
+		}
+
+		otherUseFrame := fixture.reference(t, snapshot, "case25-other-use-frame", "G3.NetworkUseFrame")
+		changedUseFrame := tableOrder
+		changedUseFrame.useFrame = otherUseFrame
+		if graphIdentity == sourceConformanceNetworkSelectionIdentity(t, changedUseFrame) {
+			t.Fatal("changed network use frame preserved the old network identity")
+		}
+
+		otherReturnCondition := fixture.reference(t, snapshot, "case25-other-return-condition", "U.Entity")
+		changedReturnCondition := tableOrder
+		changedReturnCondition.returnCondition = otherReturnCondition
+		if graphIdentity != sourceConformanceNetworkSelectionIdentity(t, changedReturnCondition) {
+			t.Fatal("return condition incorrectly became a fifth network identity discriminator")
+		}
 	})
 
 	t.Run("overloaded boundary words do not create a governor or erase recovery reasons", func(t *testing.T) {
@@ -1571,11 +1584,11 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 
 	t.Run("work records logs field bundles and successful commands are not work occurrences", func(t *testing.T) {
 		snapshot := fixture.snapshot()
-		performer := fixture.reference(t, snapshot, "case28-performer", "U.RoleAssignment")
+		actualPerformer := fixture.reference(t, snapshot, "case28-actual-performer", "U.System")
+		assignment := fixture.reference(t, snapshot, "case28-covering-assignment", "U.RoleAssignment")
 		method := fixture.reference(t, snapshot, "case28-method", "U.Method")
 		extent := fixture.reference(t, snapshot, "case28-temporal-extent", "G3.TemporalExtent")
 		system := fixture.reference(t, snapshot, "case28-containing-system", "U.System")
-		affected := fixture.reference(t, snapshot, "case28-affected-referent", "U.Entity")
 		wrongOccurrences := []struct {
 			label string
 			kind  string
@@ -1590,11 +1603,11 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 				candidate := fixture.reference(t, snapshot, "case28-"+wrong.label, wrong.kind)
 				verdict := fixture.validate(t, snapshot, "work_occurrence_basis", []sourceConformanceBinding{
 					{slot: "WorkOccurrenceSlot", filler: candidate},
-					{slot: "PerformerAssignmentSlot", filler: performer},
+					{slot: "ActualPerformerSystemSlot", filler: actualPerformer},
+					{slot: "CoveringRoleAssignmentSlot", filler: assignment},
 					{slot: "EnactedMethodSlot", filler: method},
 					{slot: "TemporalExtentSlot", filler: extent},
 					{slot: "ContainingSystemSlot", filler: system},
-					{slot: "AffectedReferentSlot", filler: affected},
 				})
 				assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 			})
@@ -1603,25 +1616,24 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		unknownWork := fixture.reference(t, snapshot, "case28-unknown-work", "")
 		unknown := fixture.validate(t, snapshot, "work_occurrence_basis", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: unknownWork},
-			{slot: "PerformerAssignmentSlot", filler: performer},
+			{slot: "ActualPerformerSystemSlot", filler: actualPerformer},
+			{slot: "CoveringRoleAssignmentSlot", filler: assignment},
 			{slot: "EnactedMethodSlot", filler: method},
 			{slot: "TemporalExtentSlot", filler: extent},
 			{slot: "ContainingSystemSlot", filler: system},
-			{slot: "AffectedReferentSlot", filler: affected},
 		})
 		assertSourceConformanceRejected(t, unknown, ValidationUnderdetermined, DiagnosticTypeRuleUnavailable)
 
 		work := fixture.reference(t, snapshot, "case28-work", "U.Work")
 		identified := fixture.validate(t, snapshot, "work_occurrence_basis", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: work},
-			{slot: "PerformerAssignmentSlot", filler: performer},
+			{slot: "ActualPerformerSystemSlot", filler: actualPerformer},
+			{slot: "CoveringRoleAssignmentSlot", filler: assignment},
 			{slot: "EnactedMethodSlot", filler: method},
 			{slot: "TemporalExtentSlot", filler: extent},
 			{slot: "ContainingSystemSlot", filler: system},
-			{slot: "AffectedReferentSlot", filler: affected},
 		})
 		assertSourceConformanceTypeAdmission(t, identified)
-		assertSourceConformanceSingleExplicitRelation(t, fixture, identified, "work_occurrence_basis")
 	})
 
 	t.Run("workplan present entity of concern is not its future performance or plan item", func(t *testing.T) {
@@ -1646,7 +1658,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 
 		assignment := fixture.reference(t, snapshot, "case29-role-assignment", "U.RoleAssignment")
-		futureAsWork := fixture.validate(t, snapshot, "work_performed_by", []sourceConformanceBinding{
+		futureAsWork := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: future},
 			{slot: "RoleAssignmentSlot", filler: assignment},
 		})
@@ -1659,7 +1671,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{slot: "PlanItemContentSlot", filler: planItem},
 		})
 		assertSourceConformanceTypeAdmission(t, boundary)
-		assertSourceConformanceSingleExplicitRelation(t, fixture, boundary, "workplan_intention_boundary")
 	})
 
 	t.Run("production work inception completion and neighboring outcomes remain separate", func(t *testing.T) {
@@ -1713,7 +1724,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{slot: "ProductionCompletionClaimSlot", filler: completion},
 		})
 		assertSourceConformanceTypeAdmission(t, separateBranches)
-		assertSourceConformanceSingleExplicitRelation(t, fixture, separateBranches, "production_claim_boundaries")
 	})
 
 	t.Run("runtime artifacts registries functions arguments and invocations are not U Mechanism", func(t *testing.T) {
@@ -1739,7 +1749,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		for _, wrong := range wrongMechanisms {
 			t.Run(wrong.label+"-as-mechanism", func(t *testing.T) {
 				candidate := fixture.reference(t, snapshot, "case31-"+wrong.label, wrong.kind)
-				verdict := fixture.validate(t, snapshot, "mechanism_constitution", []sourceConformanceBinding{
+				verdict := fixture.validate(t, snapshot, "mechanism_recognition_basis", []sourceConformanceBinding{
 					{slot: "MechanismEpistemeSlot", filler: candidate},
 					{slot: "ClaimGraphSlot", filler: claimGraph},
 					{slot: "EntityOfConcernSlot", filler: entityOfConcern},
@@ -1754,7 +1764,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 
 		mechanism := fixture.reference(t, snapshot, "case31-mechanism", "U.Mechanism")
-		constitution := fixture.validate(t, snapshot, "mechanism_constitution", []sourceConformanceBinding{
+		constitution := fixture.validate(t, snapshot, "mechanism_recognition_basis", []sourceConformanceBinding{
 			{slot: "MechanismEpistemeSlot", filler: mechanism},
 			{slot: "ClaimGraphSlot", filler: claimGraph},
 			{slot: "EntityOfConcernSlot", filler: entityOfConcern},
@@ -1765,7 +1775,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{slot: "ApplicabilitySlot", filler: applicability},
 		})
 		assertSourceConformanceTypeAdmission(t, constitution)
-		assertSourceConformanceSingleExplicitRelation(t, fixture, constitution, "mechanism_constitution")
 	})
 
 	t.Run("repository profile labels roles capabilities components and host references do not establish U System", func(t *testing.T) {
@@ -1814,7 +1823,6 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 		recognitionInputs := fixture.validate(t, snapshot, "system_recognition_basis", completeBasis)
 		assertSourceConformanceTypeAdmission(t, recognitionInputs)
-		assertSourceConformanceSingleExplicitRelation(t, fixture, recognitionInputs, "system_recognition_basis")
 
 		missingCompatibility := append([]sourceConformanceBinding(nil), completeBasis[:len(completeBasis)-2]...)
 		missingCompatibility = append(missingCompatibility, completeBasis[len(completeBasis)-1])
@@ -1878,31 +1886,22 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 
 		application := fixture.reference(t, snapshot, "case33-actual-application", "G3.ActualOperationApplication")
-		member := fixture.reference(t, snapshot, "case33-actual-member", "G3.OperationArgumentDeclaration")
 		actualValue := fixture.reference(t, snapshot, "case33-actual-value", "G3.ActualBoundValue")
-		actualBinding := fixture.reference(t, snapshot, "case33-actual-binding", "G3.ActualOperationBinding")
 		plannedRow := fixture.reference(t, snapshot, "case33-planned-row", "G3.PlannedFillingRow")
-		rowAsBinding := fixture.validate(t, snapshot, "actual_operation_binding_boundary", []sourceConformanceBinding{
-			{slot: "ActualApplicationSlot", filler: application},
-			{slot: "DeclarationMemberSlot", filler: member},
-			{slot: "ActualBoundValueSlot", filler: actualValue},
-			{slot: "ActualBindingSlot", filler: plannedRow},
+		assertSourceConformanceDistinctKinds(t, fixture, []string{
+			"G3.PlannedFillingRow",
+			"G3.ActualOperationBinding",
 		})
-		assertSourceConformanceRejected(t, rowAsBinding, ValidationInvalid, DiagnosticEntityKindMismatch)
 
 		rowAsValue := fixture.validate(t, snapshot, "actual_operation_binding_boundary", []sourceConformanceBinding{
 			{slot: "ActualApplicationSlot", filler: application},
-			{slot: "DeclarationMemberSlot", filler: member},
 			{slot: "ActualBoundValueSlot", filler: plannedRow},
-			{slot: "ActualBindingSlot", filler: actualBinding},
 		})
 		assertSourceConformanceRejected(t, rowAsValue, ValidationInvalid, DiagnosticEntityKindMismatch)
 
 		actual := fixture.validate(t, snapshot, "actual_operation_binding_boundary", []sourceConformanceBinding{
 			{slot: "ActualApplicationSlot", filler: application},
-			{slot: "DeclarationMemberSlot", filler: member},
 			{slot: "ActualBoundValueSlot", filler: actualValue},
-			{slot: "ActualBindingSlot", filler: actualBinding},
 		})
 		assertSourceConformanceTypeAdmission(t, actual)
 		assertSourceConformanceSingleExplicitRelation(t, fixture, actual, "actual_operation_binding_boundary")
@@ -1930,6 +1929,7 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{kind: "U.Entity", pattern: "A.1"},
 		{kind: "U.Holon", pattern: "A.1"},
 		{kind: "U.System", pattern: "A.1"},
+		{kind: "U.Structure", pattern: "E.18.NET"},
 		{kind: "U.Episteme", pattern: "C.2.1"},
 		{kind: "U.Relation", pattern: "A.6.REL"},
 		{kind: "U.Signature", pattern: "A.6.0"},
@@ -1974,19 +1974,20 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		// Cases 15-22 and 25 use oracle-local category IDs. They preserve
 		// source distinctions without claiming new FPF root kinds, production
 		// compiler lowering, public schemas, or authority-bearing records.
-		{kind: "G3.ProgramDescription", pattern: "A.3.2"},
+		{kind: "G3.ClaimBearingProgramDescriptionEpisteme", pattern: "A.3.2"},
 		{kind: "G3.CodeCarrier", pattern: "E.24.PUB"},
-		{kind: "G3.Model", pattern: "C.2.1"},
+		{kind: "G3.ClaimBearingModelEpisteme", pattern: "C.2.1"},
 		{kind: "G3.RepositoryCarrier", pattern: "E.24.PUB"},
 		{kind: "G3.TargetSystemLabel", pattern: "E.24.PUB"},
 		{kind: "G3.SystemOfInterestLabel", pattern: "E.24.PUB"},
-		{kind: "G3.FlowNode", pattern: "E.18"},
 		{kind: "G3.TransformationFlowStructure", pattern: "E.18"},
 		{kind: "G3.FlowValuation", pattern: "E.18"},
-		{kind: "G3.Subflow", pattern: "E.18"},
-		{kind: "G3.IndependentFlow", pattern: "E.18"},
-		{kind: "G3.FlowNetwork", pattern: "E.18"},
-		{kind: "G3.FlowPosition", pattern: "E.18"},
+		{kind: "G3.FlowPositionRef", pattern: "E.18"},
+		{kind: "G3.SubflowRef", pattern: "E.18"},
+		{kind: "G3.TransformationFlowStructureNetwork", pattern: "E.18.NET"},
+		{kind: "G3.ExposedFlowPositionRef", pattern: "E.18.NET"},
+		{kind: "G3.SelectedNetworkConstraint", pattern: "E.18.NET"},
+		{kind: "G3.NetworkUseFrame", pattern: "E.18.NET"},
 		{kind: "G3.GraphProjection", pattern: "E.17"},
 		{kind: "G3.TableProjection", pattern: "E.17"},
 		{kind: "G3.Characteristic", pattern: "A.18"},
@@ -1994,32 +1995,27 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{kind: "G3.MeasuredValue", pattern: "C.16"},
 		{kind: "G3.Indicator", pattern: "A.19.UINDM"},
 		{kind: "G3.Score", pattern: "A.19.USCM"},
-		{kind: "G3.Comparator", pattern: "A.19.CPM"},
+		{kind: "G3.ComparatorSpec", pattern: "A.19.CPM"},
 		{kind: "G3.Normalization", pattern: "A.19.UNM"},
 		{kind: "G3.Fold", pattern: "A.19.ULSAM"},
 		{kind: "G3.Comparison", pattern: "A.19.CPM"},
 		{kind: "G3.Selection", pattern: "A.19.SelectorMechanism"},
-		{kind: "G3.ComparisonBasis", pattern: "A.19.CPM"},
 		{kind: "G3.CandidatePalette", pattern: "C.18"},
 		{kind: "G3.ArchiveFront", pattern: "C.18"},
 		{kind: "G3.EvaluationResult", pattern: "C.16"},
 		{kind: "G3.Recommendation", pattern: "E.11.PUR"},
 		{kind: "G3.Choice", pattern: "C.11"},
 		{kind: "G3.DecisionRecord", pattern: "C.11"},
-		{kind: "G3.WorkCommission", pattern: "A.15.2"},
 		{kind: "G3.TargetEffect", pattern: "A.10"},
 		{kind: "G3.SelectedStructure", pattern: "C.30"},
 		{kind: "G3.ArchitectureOfClaim", pattern: "C.30"},
 		{kind: "G3.ArchitectureDescription", pattern: "C.30"},
-		{kind: "G3.ArchitectureCandidateCue", pattern: "C.30"},
-		{kind: "G3.ArchitectureDecisionCue", pattern: "C.30"},
+		{kind: "G3.ArchitectureCandidateSetOrArchive", pattern: "C.30"},
+		{kind: "G3.ArchitectureCandidateMoveClaim", pattern: "C.30"},
+		{kind: "G3.ArchitectureCandidateStopCondition", pattern: "C.30"},
 		{kind: "G3.ADRCarrier", pattern: "E.24.PUB"},
 		{kind: "G3.ExpectedStructureClaim", pattern: "C.30"},
 		{kind: "G3.ObservedStructureClaim", pattern: "C.30"},
-		{kind: "G3.ExpectedGain", pattern: "C.30"},
-		{kind: "G3.KnownLoss", pattern: "C.30"},
-		{kind: "G3.MissingBasis", pattern: "C.30"},
-		{kind: "G3.IntendedUse", pattern: "C.30"},
 		{kind: "G3.Viewpoint", pattern: "E.17"},
 		{kind: "G3.View", pattern: "E.17"},
 		{kind: "G3.PublicationOccurrence", pattern: "E.24.PUB"},
@@ -2061,6 +2057,7 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{kind: "G3.IdentifiedPresentEoC", pattern: "A.15.2"},
 		{kind: "G3.FuturePerformanceDesignator", pattern: "A.15.2"},
 		{kind: "G3.PlanItemContent", pattern: "A.15.2"},
+		{kind: "G3.PlanItemOrderingPredicate", pattern: "A.15.2"},
 		{kind: "G3.ProductionWorkClaim", pattern: "A.15.PROD"},
 		{kind: "G3.EntityInceptionClaim", pattern: "A.15.PROD"},
 		{kind: "G3.ProductionCompletionClaim", pattern: "A.15.PROD"},
@@ -2127,6 +2124,7 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 	}{
 		{subkind: "U.Holon", superkind: "U.Entity", pattern: "A.1"},
 		{subkind: "U.System", superkind: "U.Holon", pattern: "A.1"},
+		{subkind: "U.Structure", superkind: "U.Entity", pattern: "E.18.NET"},
 		{subkind: "U.Episteme", superkind: "U.Holon", pattern: "C.2.1"},
 		{subkind: "U.Relation", superkind: "U.Entity", pattern: "A.6.REL"},
 		{subkind: "U.Signature", superkind: "U.Episteme", pattern: "A.6.0"},
@@ -2135,7 +2133,6 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "U.ReferenceScheme", superkind: "U.Entity", pattern: "C.2.1"},
 		{subkind: "U.Method", superkind: "U.Holon", pattern: "A.3.1"},
 		{subkind: "U.MethodDescription", superkind: "U.Episteme", pattern: "A.3.2"},
-		{subkind: "U.Transformation", superkind: "U.Holon", pattern: "A.3.4"},
 		{subkind: "U.Work", superkind: "U.Holon", pattern: "A.15.1"},
 		{subkind: "U.WorkPlan", superkind: "U.Episteme", pattern: "A.15.2"},
 		{subkind: "U.PresentationCarrier", superkind: "U.Entity", pattern: "E.17"},
@@ -2159,19 +2156,20 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "G3.SourcePin", superkind: "U.Entity", pattern: "C.2.1"},
 		{subkind: "G3.RevisionOrder", superkind: "U.Entity", pattern: "C.2.1"},
 		{subkind: "G3.ContentSimilarity", superkind: "U.Entity", pattern: "C.2.1"},
-		{subkind: "G3.ProgramDescription", superkind: "U.Episteme", pattern: "A.3.2"},
+		{subkind: "G3.ClaimBearingProgramDescriptionEpisteme", superkind: "U.Episteme", pattern: "A.3.2"},
 		{subkind: "G3.CodeCarrier", superkind: "U.PresentationCarrier", pattern: "E.24.PUB"},
-		{subkind: "G3.Model", superkind: "U.Episteme", pattern: "C.2.1"},
+		{subkind: "G3.ClaimBearingModelEpisteme", superkind: "U.Episteme", pattern: "C.2.1"},
 		{subkind: "G3.RepositoryCarrier", superkind: "U.PresentationCarrier", pattern: "E.24.PUB"},
 		{subkind: "G3.TargetSystemLabel", superkind: "U.Entity", pattern: "E.24.PUB"},
 		{subkind: "G3.SystemOfInterestLabel", superkind: "U.Entity", pattern: "E.24.PUB"},
-		{subkind: "G3.FlowNode", superkind: "U.Entity", pattern: "E.18"},
 		{subkind: "G3.TransformationFlowStructure", superkind: "U.Entity", pattern: "E.18"},
 		{subkind: "G3.FlowValuation", superkind: "U.Entity", pattern: "E.18"},
-		{subkind: "G3.Subflow", superkind: "U.Entity", pattern: "E.18"},
-		{subkind: "G3.IndependentFlow", superkind: "U.Entity", pattern: "E.18"},
-		{subkind: "G3.FlowNetwork", superkind: "G3.FlowNode", pattern: "E.18"},
-		{subkind: "G3.FlowPosition", superkind: "G3.FlowNode", pattern: "E.18"},
+		{subkind: "G3.FlowPositionRef", superkind: "U.Entity", pattern: "E.18"},
+		{subkind: "G3.SubflowRef", superkind: "U.Entity", pattern: "E.18"},
+		{subkind: "G3.TransformationFlowStructureNetwork", superkind: "U.Structure", pattern: "E.18.NET"},
+		{subkind: "G3.ExposedFlowPositionRef", superkind: "U.Entity", pattern: "E.18.NET"},
+		{subkind: "G3.SelectedNetworkConstraint", superkind: "U.Entity", pattern: "E.18.NET"},
+		{subkind: "G3.NetworkUseFrame", superkind: "U.Entity", pattern: "E.18.NET"},
 		{subkind: "G3.GraphProjection", superkind: "U.PresentationCarrier", pattern: "E.17"},
 		{subkind: "G3.TableProjection", superkind: "U.PresentationCarrier", pattern: "E.17"},
 		{subkind: "G3.Characteristic", superkind: "U.Entity", pattern: "A.18"},
@@ -2179,32 +2177,27 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "G3.MeasuredValue", superkind: "U.Entity", pattern: "C.16"},
 		{subkind: "G3.Indicator", superkind: "U.Entity", pattern: "A.19.UINDM"},
 		{subkind: "G3.Score", superkind: "U.Entity", pattern: "A.19.USCM"},
-		{subkind: "G3.Comparator", superkind: "U.Entity", pattern: "A.19.CPM"},
+		{subkind: "G3.ComparatorSpec", superkind: "U.Episteme", pattern: "A.19.CPM"},
 		{subkind: "G3.Normalization", superkind: "U.Entity", pattern: "A.19.UNM"},
 		{subkind: "G3.Fold", superkind: "U.Entity", pattern: "A.19.ULSAM"},
 		{subkind: "G3.Comparison", superkind: "U.Entity", pattern: "A.19.CPM"},
 		{subkind: "G3.Selection", superkind: "U.Entity", pattern: "A.19.SelectorMechanism"},
-		{subkind: "G3.ComparisonBasis", superkind: "U.Entity", pattern: "A.19.CPM"},
 		{subkind: "G3.CandidatePalette", superkind: "U.Episteme", pattern: "C.18"},
 		{subkind: "G3.ArchiveFront", superkind: "U.Episteme", pattern: "C.18"},
 		{subkind: "G3.EvaluationResult", superkind: "U.Episteme", pattern: "C.16"},
 		{subkind: "G3.Recommendation", superkind: "U.Episteme", pattern: "E.11.PUR"},
 		{subkind: "G3.Choice", superkind: "U.Episteme", pattern: "C.11"},
 		{subkind: "G3.DecisionRecord", superkind: "U.Episteme", pattern: "C.11"},
-		{subkind: "G3.WorkCommission", superkind: "U.Episteme", pattern: "A.15.2"},
 		{subkind: "G3.TargetEffect", superkind: "U.Entity", pattern: "A.10"},
 		{subkind: "G3.SelectedStructure", superkind: "U.Entity", pattern: "C.30"},
 		{subkind: "G3.ArchitectureOfClaim", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.ArchitectureDescription", superkind: "U.Episteme", pattern: "C.30"},
-		{subkind: "G3.ArchitectureCandidateCue", superkind: "U.Episteme", pattern: "C.30"},
-		{subkind: "G3.ArchitectureDecisionCue", superkind: "U.Episteme", pattern: "C.30"},
+		{subkind: "G3.ArchitectureCandidateSetOrArchive", superkind: "U.Episteme", pattern: "C.30"},
+		{subkind: "G3.ArchitectureCandidateMoveClaim", superkind: "U.Episteme", pattern: "C.30"},
+		{subkind: "G3.ArchitectureCandidateStopCondition", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.ADRCarrier", superkind: "U.PresentationCarrier", pattern: "E.24.PUB"},
 		{subkind: "G3.ExpectedStructureClaim", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.ObservedStructureClaim", superkind: "U.Episteme", pattern: "C.30"},
-		{subkind: "G3.ExpectedGain", superkind: "U.Episteme", pattern: "C.30"},
-		{subkind: "G3.KnownLoss", superkind: "U.Episteme", pattern: "C.30"},
-		{subkind: "G3.MissingBasis", superkind: "U.Episteme", pattern: "C.30"},
-		{subkind: "G3.IntendedUse", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.Viewpoint", superkind: "U.Episteme", pattern: "E.17"},
 		{subkind: "G3.View", superkind: "U.Episteme", pattern: "E.17"},
 		{subkind: "G3.PublicationOccurrence", superkind: "U.Relation", pattern: "E.24.PUB"},
@@ -2243,6 +2236,7 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "G3.IdentifiedPresentEoC", superkind: "U.Entity", pattern: "A.15.2"},
 		{subkind: "G3.FuturePerformanceDesignator", superkind: "U.Entity", pattern: "A.15.2"},
 		{subkind: "G3.PlanItemContent", superkind: "U.Entity", pattern: "A.15.2"},
+		{subkind: "G3.PlanItemOrderingPredicate", superkind: "U.Entity", pattern: "A.15.2"},
 		{subkind: "G3.ProductionWorkClaim", superkind: "U.Episteme", pattern: "A.15.PROD"},
 		{subkind: "G3.EntityInceptionClaim", superkind: "U.Episteme", pattern: "A.15.PROD"},
 		{subkind: "G3.ProductionCompletionClaim", superkind: "U.Episteme", pattern: "A.15.PROD"},
@@ -2250,7 +2244,7 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "G3.AcceptanceClaim", superkind: "U.Episteme", pattern: "A.15.PROD"},
 		{subkind: "G3.ReleaseClaim", superkind: "U.Episteme", pattern: "A.15.PROD"},
 		{subkind: "G3.AvailabilityClaim", superkind: "U.Episteme", pattern: "A.15.PROD"},
-		{subkind: "U.Mechanism", superkind: "U.Signature", pattern: "A.6.1"},
+		{subkind: "U.Mechanism", superkind: "U.Episteme", pattern: "A.6.1"},
 		{subkind: "G3.OperationAlgebra", superkind: "U.Entity", pattern: "A.6.1"},
 		{subkind: "G3.LawSet", superkind: "U.Entity", pattern: "A.6.1"},
 		{subkind: "G3.AdmissibilityConditions", superkind: "U.Entity", pattern: "A.6.1"},
@@ -2524,6 +2518,12 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 	addNotMember("G3.Timestamp", "U.MethodDescription", "C.28")
 	addNotMember("G3.RetrievalRank", "U.MethodDescription", "C.28")
 	addNotMember("G3.PresentationOrder", "U.MethodDescription", "C.28")
+	addNotMembers([]string{
+		"G3.GraphDirection",
+		"G3.Timestamp",
+		"G3.RetrievalRank",
+		"G3.PresentationOrder",
+	}, "G3.PlanItemOrderingPredicate", "A.15.2")
 	addNotMember("G3.RelationalAssertion", "U.Relation", "A.6.REL")
 	addNotMember("G3.RepresentationRow", "U.Relation", "C.2.1")
 	addNotMember("G3.GraphEdge", "U.Relation", "C.2.1")
@@ -2541,9 +2541,9 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 	addNotMember("G3.RevisionOrder", "U.Episteme", "C.2.1")
 	addNotMember("G3.ContentSimilarity", "U.Episteme", "C.2.1")
 	addNotMembers([]string{
-		"G3.ProgramDescription",
+		"G3.ClaimBearingProgramDescriptionEpisteme",
 		"G3.CodeCarrier",
-		"G3.Model",
+		"G3.ClaimBearingModelEpisteme",
 		"G3.RepositoryCarrier",
 		"G3.TargetSystemLabel",
 		"G3.SystemOfInterestLabel",
@@ -2552,9 +2552,10 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 	}, "U.System", "A.1")
 	addNotMembers([]string{
 		"G3.FlowValuation",
-		"G3.Subflow",
-		"G3.IndependentFlow",
-		"G3.FlowNetwork",
+		"G3.FlowPositionRef",
+		"G3.SubflowRef",
+		"G3.TransformationFlowStructureNetwork",
+		"G3.ExposedFlowPositionRef",
 		"G3.GraphProjection",
 		"G3.TableProjection",
 		"U.Work",
@@ -2562,9 +2563,10 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 	}, "G3.TransformationFlowStructure", "E.18")
 	addNotMembers([]string{
 		"G3.TransformationFlowStructure",
-		"G3.Subflow",
-		"G3.IndependentFlow",
-		"G3.FlowNetwork",
+		"G3.FlowPositionRef",
+		"G3.SubflowRef",
+		"G3.TransformationFlowStructureNetwork",
+		"G3.ExposedFlowPositionRef",
 		"G3.GraphProjection",
 		"G3.TableProjection",
 		"U.Work",
@@ -2576,11 +2578,10 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		"G3.MeasuredValue",
 		"G3.Indicator",
 		"G3.Score",
-		"G3.Comparator",
+		"G3.ComparatorSpec",
 		"G3.Normalization",
 		"G3.Fold",
 		"G3.Selection",
-		"G3.ComparisonBasis",
 		"G3.ArchiveFront",
 	}, "G3.Comparison", "A.19.CPM")
 	addNotMembers([]string{
@@ -2590,14 +2591,14 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		"G3.Recommendation",
 		"G3.Choice",
 		"G3.DecisionRecord",
-		"G3.WorkCommission",
 		"G3.TargetEffect",
 	}, "U.Work", "A.15.1")
 	addNotMembers([]string{
 		"G3.ArchitectureOfClaim",
 		"G3.ArchitectureDescription",
-		"G3.ArchitectureCandidateCue",
-		"G3.ArchitectureDecisionCue",
+		"G3.ArchitectureCandidateSetOrArchive",
+		"G3.ArchitectureCandidateMoveClaim",
+		"G3.ArchitectureCandidateStopCondition",
 		"G3.ADRCarrier",
 		"G3.ExpectedStructureClaim",
 		"G3.ObservedStructureClaim",
@@ -2609,7 +2610,7 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		"U.Transformation",
 		"G3.Viewpoint",
 		"G3.View",
-		"G3.Model",
+		"G3.ClaimBearingModelEpisteme",
 		"G3.PublicationOccurrence",
 		"U.PresentationCarrier",
 		"U.Episteme",
@@ -2772,20 +2773,6 @@ func (fixture sourceConformanceFixture) validate(
 	)
 }
 
-func (fixture sourceConformanceFixture) candidateRelation(
-	t *testing.T,
-	signatureKey string,
-	assertionLabel string,
-	bindings []sourceConformanceBinding,
-) RelationInstantiation {
-	t.Helper()
-	assertion, err := NewAssertionID("assertion:g3:" + assertionLabel)
-	if err != nil {
-		t.Fatalf("NewAssertionID(%s): %v", assertionLabel, err)
-	}
-	return fixture.relationWithAssertion(t, assertion, signatureKey, bindings)
-}
-
 func (fixture sourceConformanceFixture) relationWithAssertion(
 	t *testing.T,
 	assertion AssertionID,
@@ -2917,6 +2904,60 @@ func assertSourceConformanceDistinctKinds(
 	}
 }
 
+func sourceConformanceNetworkSelectionIdentity(
+	t *testing.T,
+	selection sourceConformanceNetworkSelection,
+) string {
+	t.Helper()
+	members := sourceConformanceCanonicalReferenceSet(t, "direct members", selection.directMembers, 2)
+	relations := sourceConformanceCanonicalReferenceSet(
+		t,
+		"selected cross-flow relations",
+		selection.selectedCrossFlowRelations,
+		1,
+	)
+	constraints := sourceConformanceCanonicalReferenceSet(
+		t,
+		"selected network constraints",
+		selection.selectedNetworkConstraints,
+		1,
+	)
+	useFrame := selection.useFrame.Reference().ReferenceKey()
+	if useFrame == "" {
+		t.Fatal("network use frame has an empty exact reference")
+	}
+	// E.18.NET explicitly keeps returnCondition outside StructureIdentity.
+	_ = selection.returnCondition
+	return strings.Join([]string{members, relations, constraints, useFrame}, "\x00")
+}
+
+func sourceConformanceCanonicalReferenceSet(
+	t *testing.T,
+	label string,
+	values []ByReferenceCandidate,
+	minimum int,
+) string {
+	t.Helper()
+	if len(values) < minimum {
+		t.Fatalf("%s = %d; want at least %d", label, len(values), minimum)
+	}
+	keys := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		key := value.Reference().ReferenceKey()
+		if key == "" {
+			t.Fatalf("%s contains an empty exact reference", label)
+		}
+		if _, duplicate := seen[key]; duplicate {
+			t.Fatalf("%s contains duplicate exact reference %s", label, key)
+		}
+		seen[key] = struct{}{}
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, "\x1f")
+}
+
 func sourceConformanceCoordinate(
 	claimGraph ByReferenceCandidate,
 	entityOfConcern ByReferenceCandidate,
@@ -3004,55 +3045,6 @@ func assertSourceConformanceSingleExplicitRelation(
 		t.Fatalf("relation signature = %s; want %s", relation.Signature().String(), wantSignature.String())
 	}
 	return relation
-}
-
-func assertSourceConformanceNeutralFlowPositions(t *testing.T, relation RelationInstance) {
-	t.Helper()
-	wantSlots := map[string]struct{}{
-		"NetworkSlot":       {},
-		"PositionOneSlot":   {},
-		"PositionTwoSlot":   {},
-		"PositionThreeSlot": {},
-	}
-	bindings := relation.Bindings()
-	if len(bindings) != len(wantSlots) {
-		t.Fatalf("flow-network bindings = %d; want %d exact exposed positions", len(bindings), len(wantSlots))
-	}
-	forbiddenSemantics := []string{
-		"source",
-		"target",
-		"before",
-		"after",
-		"cause",
-		"direction",
-		"partof",
-		"workorder",
-		"workflow",
-	}
-	seen := map[string]struct{}{}
-	for _, binding := range bindings {
-		name := binding.Name().String()
-		if _, expected := wantSlots[name]; !expected {
-			t.Fatalf("unexpected flow-network position %s", name)
-		}
-		if _, duplicate := seen[name]; duplicate {
-			t.Fatalf("duplicate flow-network position %s", name)
-		}
-		seen[name] = struct{}{}
-		lowerName := strings.ToLower(name)
-		for _, forbidden := range forbiddenSemantics {
-			if strings.Contains(lowerName, forbidden) {
-				t.Fatalf("neutral flow position %s fabricated %s semantics", name, forbidden)
-			}
-		}
-		fillers := binding.Fillers()
-		if len(fillers) != 1 {
-			t.Fatalf("flow position %s fillers = %d; want one exact participant", name, len(fillers))
-		}
-		if _, reference := fillers[0].(ReferenceFiller); !reference {
-			t.Fatalf("flow position %s filler = %T; want exact reference", name, fillers[0])
-		}
-	}
 }
 
 func assertSourceConformanceRejected(

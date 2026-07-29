@@ -262,6 +262,31 @@ func TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject(t *testing.T) {
 			}
 		})
 	}
+	t.Run("target-system concern keeps stronger phrase navigation", func(t *testing.T) {
+		request := fpf.ConcernQuery{Text: "What is the target system here?"}
+		published, err := publishEmbeddedFPFQuery(request, publicationRequest)
+		if err != nil {
+			t.Fatalf("embedded target-system query: %v", err)
+		}
+		encoded, err := fpf.EncodePublishedQuery(published, fpf.PublishedQueryJSONCompact)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, required := range []string{
+			`"unit_id":"readme:practical_use_card:system-in-context"`,
+			`"pattern_id":"C.26"`,
+			`"pattern_id":"C.32.PAD"`,
+			`"pattern_id":"E.18.NET"`,
+		} {
+			if !bytes.Contains(encoded, []byte(required)) {
+				t.Fatalf(
+					"embedded target-system query omits %s: %s",
+					required,
+					encoded,
+				)
+			}
+		}
+	})
 	entries, err := os.ReadDir(downstream)
 	if err != nil {
 		t.Fatal(err)

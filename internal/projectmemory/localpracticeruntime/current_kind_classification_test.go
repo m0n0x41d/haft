@@ -150,7 +150,7 @@ func TestCurrentClassificationAdaptsSealedHistoricalRecordDeliveryWithoutUsingMe
 func TestCurrentKindClassificationCandidateBuildsNoMemberOfRuntime(t *testing.T) {
 	t.Parallel()
 	base := loadCurrentBaseArtifact(t)
-	target, err := Build(base, typedmemorycandidates.SourceV1_3())
+	target, err := Build(base, typedmemorycandidates.SourceV1_4())
 	if err != nil {
 		t.Fatalf("Build(current KindClassification candidate) error = %v", err)
 	}
@@ -535,7 +535,7 @@ func currentCarrierFamilyClassificationPayload(
 func buildCurrentKindClassificationCandidate(t *testing.T) Target {
 	t.Helper()
 	base := loadCurrentBaseArtifact(t)
-	target, err := Build(base, typedmemorycandidates.SourceV1_3())
+	target, err := Build(base, typedmemorycandidates.SourceV1_4())
 	if err != nil {
 		t.Fatalf("Build(current KindClassification candidate) error = %v", err)
 	}

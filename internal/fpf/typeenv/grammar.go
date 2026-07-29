@@ -3,6 +3,7 @@ package typeenv
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
@@ -539,8 +540,7 @@ type currentRelationGrammarSpec struct {
 	relationName      string
 	signatureName     string
 	slots             []currentRelationSlotSpec
-	predicateCue      string
-	identityCue       string
+	semanticWitnesses []string
 }
 
 type currentRelationSlotSpec struct {
@@ -561,8 +561,10 @@ func currentRelationGrammarSpecs() []currentRelationGrammarSpec {
 				{slotKind: "EntityOfConcernSlot", valueKind: "U.Entity", refMode: "U.EntityRef"},
 				{slotKind: "ReferenceSchemeSlot", valueKind: "U.ReferenceScheme", refMode: "ByValue"},
 			},
-			predicateCue: "`EpistemeConstitutionRelation` obtains exactly when",
-			identityCue:  "relation occurrence is participant-determined",
+			semanticWitnesses: []string{
+				"`EpistemeConstitutionRelation` obtains exactly when",
+				"relation occurrence is participant-determined",
+			},
 		},
 		{
 			signatureSourceID: "C.2.1:4.3",
@@ -573,8 +575,13 @@ func currentRelationGrammarSpecs() []currentRelationGrammarSpec {
 				{slotKind: "GroundedEpistemeSlot", valueKind: "U.Episteme", refMode: "U.EpistemeRef"},
 				{slotKind: "GroundingHolonSlot", valueKind: "U.Holon", refMode: "U.HolonRef"},
 			},
-			predicateCue: "`EpistemeEmpiricalGroundingRelation(E,H)` obtains exactly while",
-			identityCue:  "One occurrence is identified by",
+			semanticWitnesses: []string{
+				"`EpistemeEmpiricalGroundingRelation` over participants `(E,H)`",
+				"with `covered=C`",
+				"obtains exactly while every empirical claim",
+				"One occurrence is identified by `<episteme, exact covered claim subgraph, grounding holon,",
+				"maximal continuous interval during which the complete coverage predicate is true>`",
+			},
 		},
 		{
 			signatureSourceID: "C.2.1:4.5",
@@ -585,8 +592,10 @@ func currentRelationGrammarSpecs() []currentRelationGrammarSpec {
 				{slotKind: "EarlierEpistemeSlot", valueKind: "U.Episteme", refMode: "U.EpistemeRef"},
 				{slotKind: "LaterEpistemeSlot", valueKind: "U.Episteme", refMode: "U.EpistemeRef"},
 			},
-			predicateCue: "The relation obtains when",
-			identityCue:  "One occurrence is participant-determined",
+			semanticWitnesses: []string{
+				"The relation obtains when",
+				"One occurrence is participant-determined",
+			},
 		},
 	}
 }
@@ -699,8 +708,13 @@ func parseCurrentRelationSemantics(unit fpf.SourceUnit) GrammarOutcome {
 		if unit.SourceID != spec.semanticsSourceID {
 			continue
 		}
-		if !strings.Contains(unit.Body, spec.predicateCue) ||
-			!strings.Contains(unit.Body, spec.identityCue) {
+		missingWitness := slices.ContainsFunc(
+			spec.semanticWitnesses,
+			func(witness string) bool {
+				return !strings.Contains(unit.Body, witness)
+			},
+		)
+		if missingWitness {
 			return malformedGrammar(
 				unit,
 				"relation_semantics_source_malformed",

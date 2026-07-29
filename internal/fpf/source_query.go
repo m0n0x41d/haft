@@ -234,7 +234,14 @@ func (request LookupQuery) execute(index QueryIndex, optionalProducers []Candida
 	if err != nil {
 		return nil, err
 	}
-	return queryCandidatesForNormalizedRoles(index, optionalProducers, probe, candidateRoles, request.ResponseBudget)
+	result, _, err := queryCandidatesForNormalizedRoles(
+		index,
+		optionalProducers,
+		probe,
+		candidateRoles,
+		request.ResponseBudget,
+	)
+	return result, err
 }
 
 type InspectQuery struct {
@@ -301,6 +308,8 @@ const (
 	RetrievalTierAuthoredPhrase RetrievalTier = "authored_phrase"
 	RetrievalTierHeadingKeyword RetrievalTier = "heading_keyword"
 	RetrievalTierRoleLocalFTS   RetrievalTier = "role_local_fts"
+
+	retrievalTierOptionalCandidate RetrievalTier = "optional_candidate"
 )
 
 const sourceFieldExactIdentifierOrTitle = "exact_source_identifier_or_title"
@@ -658,11 +667,35 @@ func queryCandidates(index QueryIndex, optionalProducers []CandidateProducer, pr
 		SourceUnitRolePracticalUseCard,
 		SourceUnitRoleTOCRow,
 	}
-	primary, err := queryCandidatesForNormalizedRoles(index, optionalProducers, probe, primaryRoles, requestedBudget)
+	primary, optionalBatches, err := queryCandidatesForNormalizedRoles(
+		index,
+		optionalProducers,
+		probe,
+		primaryRoles,
+		requestedBudget,
+	)
 	if err != nil {
 		return nil, err
 	}
 	if primary.ResultKind() != QueryResultKindAbstained {
+		candidates := primary.(CandidateSet)
+		if candidateSetHasExactOrPhraseGround(candidates) {
+			return primary, nil
+		}
+		navigation, err := queryNavigationFromPatternBodyPhraseEvidence(
+			index,
+			probe,
+			requestedBudget,
+			optionalBatches,
+			"primary_candidates_have_only_token_union_grounds",
+			[]string{"an exact source anchor, authored phrase, or contiguous source phrase"},
+		)
+		if err != nil {
+			return nil, err
+		}
+		if navigation.ResultKind() != QueryResultKindAbstained {
+			return navigation, nil
+		}
 		return primary, nil
 	}
 	primaryAbstention := primary.(Abstained)
@@ -670,49 +703,69 @@ func queryCandidates(index QueryIndex, optionalProducers []CandidateProducer, pr
 		index,
 		probe,
 		requestedBudget,
+		optionalBatches,
 		primaryAbstention.Reason,
 		primaryAbstention.MissingBasis,
 	)
 }
 
-func queryCandidatesForNormalizedRoles(index QueryIndex, optionalProducers []CandidateProducer, probe CandidateProbe, roles []SourceUnitRole, requestedBudget ResponseBudget) (QueryResult, error) {
+func candidateSetHasExactOrPhraseGround(candidates CandidateSet) bool {
+	for _, group := range candidates.Groups {
+		for _, candidate := range group.Candidates {
+			for _, ground := range candidate.MatchGrounds {
+				if matchGroundHasExactOrPhraseSourceGround(ground) {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
+func queryCandidatesForNormalizedRoles(
+	index QueryIndex,
+	optionalProducers []CandidateProducer,
+	probe CandidateProbe,
+	roles []SourceUnitRole,
+	requestedBudget ResponseBudget,
+) (QueryResult, []CandidateBatch, error) {
 	probe = normalizeCandidateProbe(probe)
 	if probe.Text == "" {
-		return nil, fmt.Errorf("concern text is required")
+		return nil, nil, fmt.Errorf("concern text is required")
 	}
 	if err := validateResponseBudget(requestedBudget); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	exact, err := exactSourceCandidateBatch(index, probe, roles)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	derivedPhrases := derivedSourcePhrases(probe)
 	derived, err := index.SearchSourceProbePhrases(derivedPhrases, roles)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	authored, err := index.SearchAuthoredPhrases(probe, roles)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	headings, err := index.SearchHeadingsAndKeywords(probe, roles)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	fts, err := index.SearchRoleLocalFTS(probe, roles)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	frequencies, err := index.SourceLexemeFrequencies(nonScaffoldProbeLexemes(probe), roles)
 	if err != nil {
-		return nil, fmt.Errorf("load source lexeme frequencies: %w", err)
+		return nil, nil, fmt.Errorf("load source lexeme frequencies: %w", err)
 	}
 	if frequencies.TotalSourceUnits <= 0 {
-		return nil, fmt.Errorf("source lexeme frequency corpus is empty for requested roles")
+		return nil, nil, fmt.Errorf("source lexeme frequency corpus is empty for requested roles")
 	}
 	rawSourceCandidateCount := len(exact.Candidates) + len(derived.Candidates) + len(authored.Candidates) + len(headings.Candidates) + len(fts.Candidates)
 	grounding := newSourceGroundingEvaluator(probe, frequencies)
@@ -723,21 +776,23 @@ func queryCandidatesForNormalizedRoles(index QueryIndex, optionalProducers []Can
 		grounding.filter(headings),
 		grounding.filter(fts),
 	}
+	optionalBatchStart := len(batches)
 	for _, producer := range optionalProducers {
 		batch, err := producer.ProduceCandidates(probe, append([]SourceUnitRole(nil), roles...))
 		if err != nil {
-			return nil, fmt.Errorf("optional candidate producer %s: %w", producer.ProducerID(), err)
+			return nil, nil, fmt.Errorf("optional candidate producer %s: %w", producer.ProducerID(), err)
 		}
 		batch, err = hydrateOptionalCandidateBatch(index, producer.ProducerID(), batch, roles)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		batches = append(batches, batch)
 	}
 	batches, err = attachCandidateRelationProjections(index, batches)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
+	optionalBatches := append([]CandidateBatch(nil), batches[optionalBatchStart:]...)
 
 	budget := normalizeResponseBudget(requestedBudget)
 	groups, truncation := assembleCandidateGroups(roles, budget, batches...)
@@ -754,7 +809,7 @@ func queryCandidatesForNormalizedRoles(index QueryIndex, optionalProducers []Can
 			probe.Text,
 			reason,
 			missingBasis,
-		), nil
+		), optionalBatches, nil
 	}
 
 	return CandidateSet{
@@ -762,10 +817,17 @@ func queryCandidatesForNormalizedRoles(index QueryIndex, optionalProducers []Can
 		Concern:    probe.Text,
 		Groups:     groups,
 		Truncation: truncation,
-	}, nil
+	}, optionalBatches, nil
 }
 
-func queryNavigationFromPatternBodyPhraseEvidence(index QueryIndex, probe CandidateProbe, requestedBudget ResponseBudget, primaryReason string, primaryMissingBasis []string) (QueryResult, error) {
+func queryNavigationFromPatternBodyPhraseEvidence(
+	index QueryIndex,
+	probe CandidateProbe,
+	requestedBudget ResponseBudget,
+	optionalBatches []CandidateBatch,
+	primaryReason string,
+	primaryMissingBasis []string,
+) (QueryResult, error) {
 	probe = normalizeCandidateProbe(probe)
 	if err := validateResponseBudget(requestedBudget); err != nil {
 		return nil, err
@@ -812,6 +874,7 @@ func queryNavigationFromPatternBodyPhraseEvidence(index QueryIndex, probe Candid
 	if err != nil {
 		return nil, err
 	}
+	batches = append(batches, optionalBatches...)
 	budget := normalizeResponseBudget(requestedBudget)
 	groups, truncation := assembleCandidateGroups(roles, budget, batches...)
 	if len(groups) == 0 {
@@ -1063,6 +1126,13 @@ const minimumPatternBodyPhraseWitnesses = 2
 const sourceFieldDerivedPhrase = "title_body_source_phrase"
 const sourceFieldPatternBodyDerivedPhrase = "pattern_body_source_phrase"
 const sourceFieldTitleBodyToken = "title_body_token"
+const sourceFieldOptionalCandidateMatch = "optional_candidate_match"
+
+func matchGroundHasExactOrPhraseSourceGround(ground MatchGround) bool {
+	return ground.Tier == RetrievalTierExactSource ||
+		ground.Tier == RetrievalTierAuthoredPhrase ||
+		ground.SourceField == sourceFieldDerivedPhrase
+}
 
 var genericQuestionScaffoldLexemes = map[string]struct{}{
 	"how": {}, "what": {}, "when": {}, "where": {}, "why": {}, "who": {}, "which": {},
@@ -1454,6 +1524,16 @@ func canonicalizeOptionalMatchGrounds(
 				candidateUnitID,
 				RetrievalTierExactSource,
 			)
+		}
+		// Authored-phrase tiers and contiguous title/body phrase fields are
+		// source-native witnesses when emitted by the core index. Optional
+		// producers may keep their candidate and match diagnostic, but cannot
+		// use either discriminator to suppress source-body fallback.
+		if ground.Tier == RetrievalTierAuthoredPhrase {
+			ground.Tier = retrievalTierOptionalCandidate
+		}
+		if ground.SourceField == sourceFieldDerivedPhrase {
+			ground.SourceField = sourceFieldOptionalCandidateMatch
 		}
 		evidence, err := canonicalizeOptionalMatchGroundEvidence(
 			index,

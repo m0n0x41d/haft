@@ -280,11 +280,27 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 		"C.30",
 		"A.15.2",
 		"A.15.1",
+		"F.6",
 		"A.15.PROD",
 	})
-	for _, patternID := range []string{"C.26", "C.32.PAD"} {
+	for _, patternID := range []string{"C.26", "C.32.PAD", "E.18.NET"} {
 		candidate := findSourceCandidateByPatternID(t, targetSet, patternID)
 		assertProjectedPatternBodyPhraseGround(t, candidate, "target system", patternID)
+	}
+
+	vignetteResult, err := Query(index, ConcernQuery{
+		Text: "What is the system vignette here?",
+	})
+	if err != nil {
+		t.Fatalf("system-vignette concern query error: %v", err)
+	}
+	vignetteSet := vignetteResult.(CandidateSet)
+	assertDefaultConcernRoles(t, vignetteSet)
+	vignetteCard := findSourceCandidateByUnitID(t, vignetteSet, "readme:practical_use_card:system-in-context")
+	assertNavigationExpansionGround(t, vignetteCard, "system")
+	for _, patternID := range []string{"A.6.H", "A.21"} {
+		candidate := findSourceCandidateByPatternID(t, vignetteSet, patternID)
+		assertProjectedPatternBodyPhraseGround(t, candidate, "system vignette", patternID)
 	}
 
 	changeResult, err := Query(index, ConcernQuery{Text: "How should I change this system?"})

@@ -257,24 +257,35 @@ func LoadArtifactReadOnlyDB(
 	ctx context.Context,
 	database *sql.DB,
 ) (typeenv.BaseTypeEnvArtifact, error) {
-	if database == nil {
-		return typeenv.BaseTypeEnvArtifact{}, fmt.Errorf("TypeEnv database is required")
-	}
-	exists, err := artifactTableExists(ctx, database)
-	if err != nil {
-		return typeenv.BaseTypeEnvArtifact{}, err
-	}
-	if !exists {
-		return typeenv.BaseTypeEnvArtifact{}, fmt.Errorf(
-			"source-derived TypeEnv artifact is not present: %w",
-			sql.ErrNoRows,
-		)
-	}
-	envelope, err := loadAndVerifyEnvelope(ctx, database)
+	envelope, err := LoadEnvelopeReadOnlyDB(ctx, database)
 	if err != nil {
 		return typeenv.BaseTypeEnvArtifact{}, err
 	}
 	return envelope.Artifact(), nil
+}
+
+// LoadEnvelopeReadOnlyDB probes an already-built index without creating or
+// migrating any table. Unlike LoadEnvelopeDB, it is safe at the prior-target
+// boundary of an atomic rebuild and retains the run-relative compatibility
+// assessment needed to make an unchanged rebuild idempotent.
+func LoadEnvelopeReadOnlyDB(
+	ctx context.Context,
+	database *sql.DB,
+) (typeenv.CompilationEnvelope, error) {
+	if database == nil {
+		return typeenv.CompilationEnvelope{}, fmt.Errorf("TypeEnv database is required")
+	}
+	exists, err := artifactTableExists(ctx, database)
+	if err != nil {
+		return typeenv.CompilationEnvelope{}, err
+	}
+	if !exists {
+		return typeenv.CompilationEnvelope{}, fmt.Errorf(
+			"source-derived TypeEnv artifact is not present: %w",
+			sql.ErrNoRows,
+		)
+	}
+	return loadAndVerifyEnvelope(ctx, database)
 }
 
 func LoadArtifactTx(

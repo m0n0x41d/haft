@@ -45,7 +45,7 @@ func TestTaskMemoryAdapterSourceModeRecognizesCurrentClassificationRuntime(t *te
 	}
 	target, err := localpracticeruntime.Build(
 		base.Artifact(),
-		typedmemorycandidates.SourceV1_3(),
+		typedmemorycandidates.SourceV1_4(),
 	)
 	if err != nil {
 		t.Fatalf("localpracticeruntime.Build() error = %v", err)

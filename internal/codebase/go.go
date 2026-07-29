@@ -18,7 +18,7 @@ func (g *GoLang) Extensions() []string { return []string{".go"} }
 // DetectModules discovers Go packages by walking directories for .go files.
 // Each directory containing .go files (excluding _test.go-only dirs) is a module.
 func (g *GoLang) DetectModules(projectRoot string) ([]Module, error) {
-	// Find all go.mod files — supports both root-level and nested (e.g., src/mcp/go.mod)
+	// Find all go.mod files — supports both root-level and nested modules.
 	var goModRoots []string
 	_ = filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, err error) error {
 		if err != nil {

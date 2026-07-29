@@ -108,7 +108,7 @@ phase/gate/adapter harness.
 **Target reality (MVP-1R):** it claims Haft WorkCommissions, preflights the
 linked DecisionRecord and Scope, spawns agents per commission, routes them
 through phase-gated roles, records each phase as an evidenced work-product via
-[Haft](https://github.com/m0n0x41d/quint-code), and only advances across
+[Haft](https://github.com/m0n0x41d/haft), and only advances across
 one-way doors when gates are green and a human principal or approved autonomy
 envelope allows it.
 

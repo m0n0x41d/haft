@@ -67,18 +67,6 @@ linters:
       - linters:
           - errcheck
         source: "defer .*(Close|Rollback)\\(\\)"
-      - path: internal/provider/openai.go
-        linters:
-          - gosec
-        text: "G117:"
-      - path: internal/cli/login.go
-        linters:
-          - gosec
-        text: "G117:"
-      - path: internal/cli/term_echo_linux.go
-        linters:
-          - gosec
-        text: "G115:"
       - path: cmd/indexer/main.go
         linters:
           - gosec

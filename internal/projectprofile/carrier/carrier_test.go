@@ -179,7 +179,7 @@ func TestDecodeFailsClosedForMalformedUnknownOrAmbiguousCarrier(t *testing.T) {
 		"relative project root": replaceFixture(
 			t,
 			"declared-software.yaml",
-			"/Users/ivanzakutnii/Repos/active_projects/fpf/haft",
+			"/workspace/haft",
 			"relative/project",
 		),
 		"candidate provenance": replaceFixture(

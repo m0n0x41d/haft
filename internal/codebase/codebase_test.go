@@ -1219,8 +1219,8 @@ func findRepoRoot(t *testing.T, repoName string) string {
 	if projectRoot == "" {
 		return ""
 	}
-	// Go up from src/mcp to repo root
-	repoRoot := filepath.Join(projectRoot, "..", "..", ".context", "repos", repoName)
+	// Reference repositories live in the project-local .context directory.
+	repoRoot := filepath.Join(projectRoot, ".context", "repos", repoName)
 	if _, err := os.Stat(repoRoot); err != nil {
 		return ""
 	}

@@ -35,8 +35,6 @@
 .context-review-input/
 .mcp.json
 quint-mcp.json
-src/mcp/quint-code
-src/mcp/quint-mcp
 TODO.md
 /skills/
 /haft
@@ -67,8 +65,6 @@ coverage.out
 .opencode/
 opencode.json
 desktop/desktop
-.zenflow/
-.zenflow/**
 DESIGN.md
 .playwright-mcp/
 /desktop-tauri/target/

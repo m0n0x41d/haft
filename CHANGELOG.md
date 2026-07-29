@@ -6,10 +6,62 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+The last published release is
+[v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
+The v8.2.0 candidate was never published; entries previously grouped under
+that heading remain unreleased and are part of the v9 candidate lineage.
+
+### Changed
+
+- **Explicit and interactive `haft init` contract.** Bare `haft init` now opens
+  a zero-preselection host multi-select only when stdin and stdout are
+  terminals. Bare non-interactive/CI invocation fails before writes. Each
+  stable `--claude` or `--codex` flag performs that host's full MCP,
+  transformed-skill, and managed-instruction integration; experimental host
+  adapters retain their explicitly documented surfaces. `--mcp-only` is an
+  explicit compatibility modifier for host config only; `--core-only`
+  initializes or migrates the project core without publishing host files.
+- **Explicit `.agents/skills` publication modes.** Full `haft init --codex`
+  publishes Codex-transformed skills under `.agents/skills`, while `--agents`
+  remains an independent skills-only target that may compose with host flags.
+  Combining `--codex --agents` coalesces the identical skill projection into
+  one publication rather than creating competing writes.
+  `--all` means exactly the full Claude and Codex integrations and does not add
+  a second independent `--agents` target. Project-local Antigravity skills stay
+  under `.gemini/skills`.
+- **Safe host projection replacement.** Re-init replaces recognized legacy
+  Haft skills and refreshes only the managed Haft sections of `AGENTS.md` and
+  `CLAUDE.md`. Foreign skill-path collisions fail before writes; project text
+  outside Haft markers is preserved.
+- **V9 CONTRACT — source-native FPF delivery.** The v9 contract
+  treats versioned FPF source and provenance as the reasoning input. PatternUse
+  and PatternRecall are no longer v9 product concepts or required routing
+  layers; any remaining implementation surfaces are compatibility/migration
+  work, not semantic authority.
+- **Retained embedding compatibility is outside v9 acceptance.** The optional
+  `haft-embed` implementation and runtime remain available for older
+  semantic-recall compatibility paths. They are outside the v9 contract and
+  P14 acceptance basis; their presence carries no v9 PatternRecall,
+  route-vector, or retrieval-quality claim.
+- **V9 CONTRACT — reliance-bearing typed project memory.** Durable Haft
+  artifacts connect to named receiving uses such as handoff, replay, authority,
+  automation, evidence, and later verification.
+- **EXACT-CANDIDATE EVIDENCE and release authority remain separate.** Source,
+  schema, skill, or local-test presence is not installed-runtime proof.
+  Readiness claims require current P14 evidence tied to one exact candidate;
+  that evidence does not itself grant RC or release status, which additionally
+  requires release authority.
+- **Relation-first semantics with separate planning.** Text, card, skill, and
+  graph order no longer imply causal, temporal, method, planning, or
+  performed-work order. Explicit causal claims, method descriptions,
+  ImplementationPlans, WorkCommissions, and work relations carry those orders.
+  `TargetSystemSpec` and `SoftwareSystemSpec` are now stated as Haft
+  local-practice carriers for Agentic SWE, not normative FPF A.1 kinds.
+
 ### Added
 
 - **Native TypeScript/JavaScript/Vue code graph with durable symbol anchors.**
-  Added a dependency-free tree-sitter index for project-aware symbols, calls,
+  Added a Go-native tree-sitter index for project-aware symbols, calls,
   references, type relations, re-exports, aliases, callbacks, receiver flows,
   and Vue template use. Incremental refresh publishes atomic SQLite epochs and
   preserves the previous complete graph on degradation. Stable `SymbolAnchor`
@@ -22,20 +74,57 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **SoftwareSystemSpec and guarded development-spec migration.** Replaced the
   overloaded EnablingSystemSpec onboarding spine with a SoftwareSystemSpec for
   software role, responsibility allocation, functional/procedural behavior,
-  interfaces, constraints, and selected structure. `haft spec migrate --to
-  software-system` now previews legacy carrier mappings, preserves stable
+  interfaces, constraints, and selected structure. The state-driven
+  `haft spec migrate` command now resolves its exact internal candidate,
+  previews legacy carrier mappings, preserves stable
   section IDs for safe architecture migrations, and blocks apply while agent,
   commission, runtime, evidence, or mixed effect-boundary policy remains
-  unresolved. New projects create `.haft/specs/software-system.md`; legacy
-  carriers remain readable as development-version migration input.
-- **PatternUse cue-authority removal and candidate-only fallback contract.**
-  Removed legacy `RecognitionCues` / `matched_recognition_cues` from
-  production PatternUse route cards and public recommendation JSON. Compiled
-  route support now surfaces an explicit `candidate_state`,
-  `required_next_action`, `must_expand_before_application`, and
-  `compiled_output_shape_available` contract, so `retrieved_uncompiled`
-  fallback records are visibly source-candidate-only while semantic compiled
-  routes expose ready compiled output shapes.
+  unresolved. Packet paths, hashes, targets, apply switches, and recovery
+  switches are not part of the human interface. Haft materializes
+  `.haft/specs/software-system.md` only when the admitted software scope marks
+  that carrier required; fresh no-basis init remains core-only until onboarding
+  establishes the project basis. Legacy carriers remain readable as
+  development-version migration input.
+- **Typed project-memory core and exact project TypeEnv.** Added closed
+  algebraic types for entities, aliases, relational assertions, retractions,
+  provenance, context slices, by-reference and registered-codec by-value
+  fillers, plus project-local TypeEnv selection and compatibility checks.
+  Validation and admission are separate operations: validation is read-only;
+  admission is non-binding, idempotent, transactionally persisted, and cannot
+  mint schema, bind decisions, approve specifications, or create evidence
+  truth. SQLite migrations preserve replay, compare-and-swap head selection,
+  failure-before-commit behavior, ambiguous-commit recovery, and exact
+  project-basis diagnostics across process restarts.
+- **Task-level onboarding and entity establishment.** Added always-advertised
+  `haft_onboard` and `haft_entity` MCP capabilities so agents can inspect
+  setup, prepare review carriers, apply an explicitly reviewed project profile,
+  enable or defer structured memory through the correct human gate, and
+  establish the first `U.EntityRef` without assembling raw TypeEnv or
+  MemoryChangeSet payloads. Entity-plus-alias admission is atomic; collisions,
+  stale bases, missing onboarding, restart requirements, replays, rejected
+  requests, and unknown commit outcomes are typed results rather than guessed
+  success.
+- **Scoped project-memory reads.** Added exact entity resolution, bounded
+  neighborhood projection, and scoped recall under `haft.memory.v1`.
+  Project-current and exact-project bases expose graph revision and TypeEnv
+  identity; projection profiles and read budgets bound facets, excerpts,
+  relation paths, and provenance depth. Results distinguish complete, partial,
+  stale, unavailable, not-applicable, known-absent, retry-required, and
+  abstained posture without turning retrieval rank into identity selection,
+  recommendation, authority, or permission to persist.
+- **Source-native FPF Query.** Added concern retrieval, exact lookup, and exact
+  inspect modes over the versioned FPF source with source snapshot identity,
+  PatternID/name anchoring, full source ranges, provenance, replay checks, and
+  explicit abstention. The public query returns source candidates rather than a
+  hidden routing decision. A pinned token gate verifies bounded concern
+  retrieval against full-source context. Dense/hybrid superiority remains
+  deferred.
+- **Compact twelve-tool MCP contract.** The v9 server advertises exactly twelve
+  public capabilities: note, problem, solution, decision, refresh, query,
+  method, commission, spec section, onboarding, entity establishment, and raw
+  typed-memory validation/admission. Nested request variants are closed
+  schemas; Codex, Claude, Pi compatibility carriers, generated interface
+  fragments, and tests share the same catalog digest and authority wording.
 - **Zed init support.** Added `haft init --zed`, which merges a `Haft`
   context server into global Zed settings at `~/.config/zed/settings.json`.
   Because Zed settings are global but context servers may start outside the
@@ -53,78 +142,45 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Explicit project binding flags for `haft serve`.** Added
   `--project-root` and `--expected-project-id` as host-level MCP startup inputs
   that feed the existing ProjectBinding resolver and expected-project guard.
-- **PatternRecall source-card recall surface.** Added `haft pattern recall` and
-  `haft_query(action="pattern_recall")` as a read-only compact/full surface for
-  FPF source-card recall over the embedded PatternAtlas and FPF retrieval
-  substrate. Compact mode is body-free; full mode returns source-card body,
-  source path, source commit, line range, root node, and body hash. Explicit
-  pattern refs such as `F.18`, `C.30`, or `A.6.B` are pulled from PatternAtlas
-  ahead of retrieval ranking, while mechanical/router-meta controls honestly
-  return `missing`. Session audit now catches compact source-card recall being
-  used for substantive application before full source-card disclosure.
 - **TermMap category field with legacy domain compatibility.** Term-map
   carriers now use canonical `category` instead of `domain`, while legacy
   `domain` still parses as a compatibility alias and is mirrored in API output
   until older carriers and consumers migrate. Conflicting `category`/`domain`
   values are reported as explicit spec-check findings.
-- **FPF engine C1 runtime route expansion.** Promoted four PatternUse
-  scenario families into compiled semantic routes: performed-work vs plan
-  boundary, admissible agent action planning, spec lifecycle authority, and
-  FPF/DPF/MethodPack layer-boundary separation. The embedded PatternUse index
-  now reports 15 compiled route cards with baked route/intent vectors while
-  preserving the same advisory-only authority boundary and FPF-wide
-  `retrieved_uncompiled` fallback.
-- **PatternUse direct-skill layer-boundary routing fix.** Direct `$h-reason`
-  prompts asking to separate FPF source cards, DPF source packs,
-  PatternUseGateway, and MethodPack now route through the compiled
-  `e4_layer_boundary` route and `apply_pattern` intent instead of falling back
-  to uncompiled source-restoration recall. Mechanical controls such as
-  `what time is it` still abstain.
-- **PatternUse FPF-wide recall quality checks.** Named non-seed FPF card
-  requests such as NQD, Bitter Lesson, and Goldilocks can now enter the
-  `retrieved_uncompiled` fallback through lexical FTS recall without broad
-  route cues or semantic-only overclaiming. Full fallback records hydrate
-  generated pattern chunks as `indexed_pattern_section` source cards, compact
-  records still omit source-card bodies, and mechanical controls remain
-  `missing` / `none`.
-- **FPF engine C0 boundary inventory.** Added a canonical FPF engine term
-  sheet, a validated 22-cluster coverage matrix using `routing_class`, and
-  terminology/authority lints for PatternAtlas, PatternUse, PatternRecall, and
-  MethodPack boundaries. `PatternPull` is deprecated as a formal runtime/API
-  term. C0 adds no new PatternUse runtime routes.
 - **MethodPack source-pattern bridge.** MethodPack definitions now carry
   optional documentary `source_pattern_refs` such as `fpf:A.10`; these refs are
   exposed through method pull/catalog surfaces and materialized carriers, but
   cannot satisfy hard gates, evidence requirements, approval, or FPF/DPF source
   authority. The `swe-core` manifest now matches all nine current builtin
   method cards.
-- **PatternUse/MethodPack bridge audit.** Session audit now reports
-  `method_pull_before_pattern_use` when non-mechanical `haft_method pull`
-  happens before the compact PatternUse gateway, while explicit mechanical
-  pulls remain no-pattern-required. Method close validation rejects PatternUse
-  recommendations and `retrieved_uncompiled` refs as hard-gate evidence, but
-  still allows PatternUse refs as carry-through context.
-- **FPF engine C0 sandbox.** Added `.context/fpf-engine-c0-sandbox` with local
-  matrix/lint/manifest/session-audit fixtures and a runner for checking C0
-  behavior with either `go run ./cmd/haft` or an installed `haft` binary.
-- **PatternUse gateway and baked semantic route index.** Added a read-only
-  `pattern-use` CLI/MCP gateway that returns compact or full
-  `PatternUseRecommendation` records before substantive reasoning. Compiled
-  route cards stay small and high-precision, semantic route/intent documents
-  are baked into the embedded `fpf.db`, and runtime routing degrades to
-  `retrieved_uncompiled` FPF-wide recall or honest abstain instead of claiming
-  compiled support for the full FPF catalog.
 - **PatternAtlas source-card substrate.** Added a deterministic structural
-  PatternAtlas over the FPF Markdown corpus and stores full pattern-card ranges
-  in `fpf.db`, including source commit, source line ranges, content hashes,
-  root node IDs, and lints. PatternAtlas is a retrieval/source-card substrate
-  only: it does not create evidence, approval, gate passage, or PatternUse
-  authority.
-- **PatternUse audit and transcript behavior checks.** Added PatternUse audit
-  fixtures plus session-audit checks for PatternUse-before-substantive moves,
-  observed pattern refs/support levels, retrieved-uncompiled progressive
-  disclosure, scenario expected-pattern pass/fail, and mechanical/status
-  controls. These reports stay read-only and do not enforce agent behavior.
+  PatternAtlas over the FPF Markdown corpus. The index stores full pattern-card
+  ranges in `fpf.db`, including source commit, source line ranges, content
+  hashes, root node IDs, and lints. PatternAtlas is a retrieval/source-card
+  substrate only: it does not create evidence, approval, gate passage,
+  applicability, selection, or recommendation.
+- **Deterministic P13 source acceptance.** Added a separate consolidated
+  source-acceptance harness with frozen source identity, eleven suites,
+  sequential bounded race packages, lint/build/test/toolchain checks, no-clobber
+  evidence carriers, and an independent freshness verifier. Ordinary
+  `go test ./...` deliberately does not masquerade as a P13 run.
+- **Installed-candidate P14 matrix.** Added a digest-bound installed-runtime
+  harness spanning CLI, live MCP, host restart/resume, initialization,
+  project-path, code-graph, typed-memory, v8.1 upgrade/restore, and failure
+  recovery. The source contract contains 26 top-level scenarios;
+  `fresh_initialization` retains six nested host/init subcases. Prepared
+  requests and source tests are not recorded as live installed evidence.
+- **Goal-free exact-task restart support.** Added `haft-restart-checkpoint` and
+  `haft-restart-supervisor` binaries plus predecessor-checkpoint compatibility.
+  Restart requests bind an exact task, repository, candidate, intent digest,
+  process generation, and one durable resume lease; preflight fails before any
+  process signal, the default path is graceful-only, and host transition
+  remains a separate human gate.
+- **Release and v8.1 upgrade harness.** Added deterministic archive smoke
+  checks, installer exercise, checksum and tag-validation separation,
+  source/submodule identity guards, and backup → migrate → read/write/retry →
+  restore coverage from the actually published v8.1.0 predecessor. These
+  carriers validate a candidate; they do not publish a tag or GitHub Release.
 - **Spec fit and binding preflight records.** Problem framing, exploration,
   comparison, and decision paths now carry advisory spec-fit/spec-binding
   records when active SpecSections exist. `spec_fit_probe` surfaces
@@ -211,10 +267,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   active ProblemCards that already have supporting evidence but lack a graph
   path through a SolutionPortfolio, DecisionRecord, or explicit waiver. Method
   close can now require the problem closure path before work is claimed done.
-- **Embed sidecar status command.** Added `haft embed status` with `--json`
+- **RETAINED COMPATIBILITY/MIGRATION — embed sidecar status command.** Added
+  `haft embed status` with `--json`
   and optional `--footprint` as a read-only local-footprint diagnostic for
   shared embedding sidecar processes, sockets, locks, cache dirs, stale or
   process-only entries, and macOS memory footprint without starting the model.
+  This diagnostic is outside the v9 contract and P14 acceptance basis.
 - **Spec apply-change dry-run preview.** `haft spec apply-change --dry-run`
   now runs the same typed carrier parser, SQL freshness/conflict guard, and
   planned-edition projection as a real sync-back without writing the SQL
@@ -539,7 +597,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   plan baseline wording as verified-state or autonomous-maintenance surfaces
   without hiding explicit `BaselineKindUnknownLegacy` diagnostics.
 - **Baseline audit workflow-skill routing classification.** `haft baseline
-  audit` now classifies `h-onboard`, `h-reason`, and `h-spec-cover` baseline
+  audit` now classifies `h-onboard`, `h-reason`, and `h-spec` baseline
   routing text as workflow lifecycle guidance instead of legacy ambiguous debt.
 - **Baseline audit drift-repair routing classification.** `haft baseline audit`
   now classifies drift-event repair, maintenance-review, reconciliation, and
@@ -1206,30 +1264,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   exposing mutation-capable tools. `haft doctor` now reports the resolved root,
   project id, expected id, DB path/state, and artifact count so moved checkouts
   can distinguish "wrong cwd" from "wrong project identity".
-- **`@haft/pi`: a Pi-native behavior package (first carrier slice).** New
-  `packages/haft-pi` ships a Pi extension that owns a small NDJSON MCP bridge
-  to `haft serve` and registers the full typed tool suite natively
-  (`haft_query`, `haft_problem`, `haft_solution`, `haft_decision`,
-  `haft_note`, `haft_refresh`, `haft_method`, `haft_commission`,
-  `haft_spec_section`). The package carries `/h-*` prompt templates
-  (including manual-gate `/h-decide` and `/h-commission`), Agent Skills for
-  the MethodPack loop (`h-method`) and the FPF knowledge layer
-  (`fpf-development`, `fpf-semiotics`), a `before_agent_start` prompt
-  governor fed by the kernel's governor projection, and cockpit surfaces
-  (session widget with overseer/decision counts and the open method run,
-  footer status per tool call). The bridge handles concurrent starts, spawn
-  failures with retry, and reports tools missing from older `haft` binaries
-  with an explicit upgrade message. Out of scope for this slice:
-  npm publish metadata, custom TUI renderers, active-tool lanes, and
-  provider-payload interception.
+- **Experimental `@haft/pi` compatibility package.** `packages/haft-pi` ships
+  a Pi extension with a small NDJSON MCP bridge to `haft serve` and mirrors the
+  twelve current kernel tools: `haft_note`, `haft_problem`, `haft_solution`,
+  `haft_decision`, `haft_refresh`, `haft_query`, `haft_method`,
+  `haft_commission`, `haft_spec_section`, `haft_onboard`, `haft_entity`, and
+  expert-only raw `haft_memory`. It carries the same twelve public prompts and
+  skills (`h-reason`, `h-frame`, `h-diagnose`, `h-explore`, `h-compare`,
+  manual `h-decide`, manual `h-commission`, `h-verify`, `h-status`, `h-spec`,
+  `h-onboard`, and `h-note`), a `before_agent_start` governor fed by the
+  kernel's compact projection, and cockpit surfaces. The bridge handles
+  concurrent starts, spawn failures with retry, and tools absent from older
+  binaries. Pi remains experimental compatibility, not stable-host parity or
+  installed-runtime evidence for Claude/Codex acceptance.
 - **`haft init --pi`.** The `@haft/pi` package is embedded into the haft
   binary; `haft init --pi` materializes it under `.haft/pi/haft-pi` and
   idempotently registers the local-path entry in `.pi/settings.json`
   (project-local, loads after Pi project trust). The entry is written as
   `../.haft/pi/haft-pi` because pi resolves project-scope local package
   paths relative to the `.pi` directory itself; a broken root-relative
-  entry from earlier builds is migrated in place. `--pi` counts as a host
-  selection, so it does not drag in the default Claude config. No npm step:
+  entry from earlier builds is migrated in place. `--pi` explicitly selects
+  only the Pi adapter; it does not implicitly select Claude or Codex. No npm step:
   the extension's only runtime import (`typebox`) is a Pi-bundled core
   package resolved via `peerDependencies`.
 - **Kernel governor projection: `haft_query(action="status",
@@ -1335,10 +1390,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `task_text_digest` as an explicit input identity route, after
   `comparison_group_ref` and `task_id` and before deriving a digest from
   `task_text`, so release-facing pairing docs and behavior match.
-- **README public surface sync.** README now matches the live `haft init`
-  install set and routing check output: nine MCP tools, 16 installed skills,
-  `h-spec` in the public skill table, and `haft check routing` at 34/44
-  golden prompts (77.3%).
+- **README public surface sync.** README now matches the v9 public catalog:
+  twelve MCP tools and twelve independent public skills, including task-level
+  `haft_onboard` / `haft_entity` and expert-only raw `haft_memory`.
 - **Maintenance and spec safety gates.** Maintenance drain through MCP is now
   preview-only unless explicitly dry-run, allowlisted `go`/`rg` commands reject
   unsafe execution/preprocessor flags, SpecSection baselines include system
@@ -1355,10 +1409,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   findings, overseer review edge cases, lifecycle revalidation, and Pi proxy
   metadata now preserve explicit proposal/review boundaries instead of
   surfacing ambiguous apply, approval, or stale metadata cues.
-- **Shared sidecar launch hygiene.** Shared `haft-embed` startup now avoids
+- **RETAINED COMPATIBILITY/MIGRATION — shared sidecar launch hygiene.** Shared
+  `haft-embed` startup now avoids
   inherited stdio traps, resolves the sidecar binary path for shared daemons,
   and degrades optional recall paths instead of hanging when the resolved
-  sidecar cannot serve the requested protocol.
+  sidecar cannot serve the requested protocol. This retained runtime is
+  outside the v9 contract and P14 acceptance basis.
 - **Decision baseline semantics.** Decision drift reports now distinguish
   direct hash captures as `observed_state_snapshot`; `verified_state_snapshot`
   is reserved for baselines with supporting verification, measurement, audit,
@@ -1527,13 +1583,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   boundaries, keeping SpecificationUseRecord exact/audit output aligned with
   other read-only projection surfaces that are not evidence, approval,
   GateDecision, claim truth, global truth, or publication.
-- **Generated contract carrier sync.** `haft interface contract-generation
-  --sync-materialized-carriers` now rewrites only kernel interface catalog
-  source-digest markers in listed host/skill/plugin/Pi carriers, then verifies
-  them with the existing materialized-carrier check. The sync report is explicit
-  CLI-only and states that it is not host runtime materialization, binding
-  authority, evidence, approval, GateDecision, claim truth, global truth, or
-  publication.
+- **Generated contract marker refresh.** The compatibility flag `haft interface
+  contract-generation --sync-materialized-carriers` rewrites only kernel
+  interface catalog source-digest marker lines in listed repo carriers. Its v2
+  report is explicitly a marker refresh: it does not render, synchronize,
+  compare, or verify semantic carrier bytes and cannot claim semantic
+  currentness. The report also remains outside host runtime materialization,
+  binding authority, evidence, approval, GateDecision, claim truth, global
+  truth, and publication.
 - **Contract-audit authority boundary.** `haft interface contract-audit` and
   `haft_query(action="contract_audit")` now expose a top-level read-only
   authority boundary stating that the contract inventory is not evidence,
@@ -1641,15 +1698,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   drift.binding_review --json` now documents the CLI-only review/mutation
   boundary, and generated-contract carrier digest markers were synced to the
   updated kernel interface catalog.
-- **Spec health and recall evidence regressions.** Added focused regression
+- **Spec health plus retained-recall compatibility regressions.** Added focused
+  regression
   coverage for spec drift `section_id` reporting, CLI/MCP spec-onboarding JSON
   key parity, cross-project recall history injection for paraphrased hits, and
-  the live CrossHybrid recall floor against the current decision corpus.
-- **Generated-contract materialized carrier check.** `haft interface
-  contract-generation --check-materialized-carriers` now validates every listed
-  host/skill/plugin/Pi carrier for current source-digest and authority-boundary
-  markers in one compact read-only report, so agents can detect stale
-  generated-contract carriers without manually grepping the repo.
+  the live CrossHybrid recall floor against the current decision corpus. The
+  CrossHybrid check is compatibility coverage outside the v9 contract and P14
+  acceptance basis; it is not v9 retrieval-quality or release evidence.
+- **Generated-contract materialized carrier marker check.** `haft interface
+  contract-generation --check-materialized-carriers` checks only whether every
+  listed host/skill/plugin/Pi repo carrier contains the required source-digest
+  and authority-boundary marker strings. The compact read-only result explicitly
+  reports `semantic_bytes_verified=false`; marker presence is not semantic
+  currentness.
 - **Overseer drain compact JSON projection.** `haft overseer drain --dry-run
   --json` now emits a compact audit projection by default while preserving
   complete summary counts, explicit omitted counters, and
@@ -2273,14 +2334,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   style from the original `CLAUDE.md`: dry technical humor is allowed when it
   helps, and agents are told to sound like pairing engineers rather than
   executive-presenting bots. Fixes [#92](https://github.com/m0n0x41d/haft/issues/92).
-- Shared `haft-embed` daemons no longer inherit the first client project's
+- **RETAINED COMPATIBILITY/MIGRATION.** Shared `haft-embed` daemons no longer
+  inherit the first client project's
   working directory; the launcher now starts them from the private socket
-  directory and resolves configured cache paths to absolute paths before launch.
-- Shared `haft-embed` daemons no longer retain multi-gigabyte allocator arenas
-  indefinitely after cold corpus warms: hybrid recall batches corpus embedding
-  misses, the Rust sidecar disables the ORT CPU memory arena by default
-  (`--cpu-arena` restores the old allocator mode), and socket daemon idle
-  timeout now tracks active embedding requests rather than open idle clients.
+  directory and resolves configured cache paths to absolute paths before
+  launch. This retained runtime is outside the v9 contract and P14 acceptance
+  basis.
+- **RETAINED COMPATIBILITY/MIGRATION.** Shared `haft-embed` daemons no longer
+  retain multi-gigabyte allocator arenas indefinitely after cold corpus warms:
+  hybrid recall batches corpus embedding misses, the Rust sidecar disables the
+  ORT CPU memory arena by default (`--cpu-arena` restores the old allocator
+  mode), and socket daemon idle timeout now tracks active embedding requests
+  rather than open idle clients. This retained runtime is outside the v9
+  contract and P14 acceptance basis and carries no v9 retrieval-quality claim.
+
+### Removed
+
+- **PatternUse and PatternRecall product surfaces.** Removed the transient
+  route-card, route-vector, hybrid gateway, `pattern-use`, `pattern_recall`,
+  compiled recommendation, behavior-corpus, and shadow pattern-description
+  stacks from the final v9 product. FPF use now starts from exact source-native
+  concern/lookup/inspect retrieval; source candidates do not select a method or
+  establish applicability. Dense/hybrid superiority remains deferred.
+- **Universal public workflow phases.** Removed the redundant public
+  MethodPack phase entry, abductive, boundary-unpacking, semantic-review, and
+  standalone spec-coverage entrypoints plus the Pi FPF development and
+  semiotics skills. The internal SWE MethodPack remains task-local engineering
+  guidance, while abductive, boundary, semantic-fanout, and spec-coverage
+  routines stay inside the independent public capability that owns the current
+  question.
+- **Remaining standalone-agent implementation.** Removed legacy prompt-cycle,
+  phase, permission, safety, compaction, title, and TUI-adjacent packages left
+  after the v8 governance-substrate pivot. Haft v9 is consumed through host
+  skills, CLI, and MCP over one project artifact graph.
+- **EnablingSystemSpec as the software implementation carrier.** Removed the
+  overloaded `.haft/specs/enabling-system.md` software carrier from current
+  onboarding. `SoftwareSystemSpec` now carries the software-system boundary;
+  historical enabling-system carriers remain migration input rather than
+  current v9 authority.
 
 ## [8.1.0] — 2026-06-06 — shared embedding runtime
 
@@ -2659,7 +2750,7 @@ plugged into Claude Code / Codex / OpenCode / Cursor over their native skill
   and the umbrella entry point was missed by users with v6/v7 muscle
   memory. The new `/h-reason` carries the full reasoning palette in one
   place — framing, exploration, comparison, verification, notes, plus
-  the slideument patterns that don't have dedicated skills (Goldilocks
+	  the source-derived patterns that don't have dedicated skills (Goldilocks
   problem selection, NQD discipline, Bitter-Lesson Preference,
   Scaling-Law Lens, stepping stones, Anti-Goodhart indicator roles).
   Description is broad enough to also fire as fallback on ambiguous
@@ -2979,10 +3070,10 @@ This is a major release. v6 artifacts (decisions, problems, notes, evidence, com
 
 - **Desktop frontend migrated from Wails v2 to Tauri v2** — Rust shell + React 19 + TypeScript; faster launch, smaller binary, native per-platform packaging. `haft desktop` launcher finds the installed app or falls back to `desktop-tauri/target/release/bundle/` in dev.
 - **`parity_plan` JSON Schema unified** — both transports now share a single `artifact.ParityPlanJSONSchema` helper instead of two parallel maps in `tools/haft.go` and `fpf/server.go`.
-- **Pattern attribution cleaned up** — patterns sourced from Levenchuk material (slideument + semiotics slideument) relabeled from generic "Haft operational pattern" to specific source references (FRAME-06/07, CHR-02/06/07/08, CMP-07, EXP-07, VER-09, X-TERM-QUALITY, X-GLOSSARY, X-BITTER-LESSON).
-- **FRAME-07 Goldilocks** — fabricated "10-20% beyond current capability" replaced with zone-of-proximal-development framing per slideument slide 7.
+- **Pattern attribution cleaned up** — source-derived patterns relabeled from generic "Haft operational pattern" to specific source references (FRAME-06/07, CHR-02/06/07/08, CMP-07, EXP-07, VER-09, X-TERM-QUALITY, X-GLOSSARY, X-BITTER-LESSON).
+- **FRAME-07 Goldilocks** — fabricated "10-20% beyond current capability" replaced with source-backed zone-of-proximal-development framing.
 - **FRAME-08 unified with X-STATEMENT-TYPE** — question 3 of the Reading Checklist delegates to the X-STATEMENT-TYPE taxonomy (rule/promise/explanation/gate/evidence) instead of duplicating a parallel list.
-- **CHR-11 source clarity** — explicit note distinguishing the slideument slide 35 didactic 5-step compression from the canonical FPF-Spec A.6.P:4 four-layer structure (Stable lens → Kind-explicit relation tokens → Slot-explicit qualified relation records → Change-class lexicon → Lexical guardrails). Each didactic step carries a canonical A.6.P:4.x reference.
+- **CHR-11 source clarity** — explicit note distinguishing an earlier didactic five-step compression from the canonical FPF-Spec A.6.P:4 four-layer structure (Stable lens → Kind-explicit relation tokens → Slot-explicit qualified relation records → Change-class lexicon → Lexical guardrails). Each didactic step carries a canonical A.6.P:4.x reference.
 - **h-reason SKILL.md trimmed** — 400 → 359 lines. Removed Concept Index (duplicated routes matchers), merged RAG search reference into FPF spec lookup, compacted Feature Maturity table into a status-keyed list. Micro-patterns preserved as direct-response floor.
 - **Removed "Mandatory FPF retrieval (MUST execute before reasoning)" section** from h-reason SKILL.md — contradicted the interaction-mode protocol and doubled the auto-hint cost.
 - **Hint query keywords dynamized** — per-phase example retrieval keywords now derived from the first N matchers of the corresponding `phase-*` route in `fpf-routes.json` instead of a hardcoded Go map. Matcher rename propagates to hint automatically.
@@ -2995,7 +3086,7 @@ This is a major release. v6 artifacts (decisions, problems, notes, evidence, com
 - **`haft run` — full implementation pipeline from CLI** — reads a DecisionRecord, plans tasks via an agent, executes each with build verification, runs final invariant review, baselines on success. One command: `haft run dec-001`. Two modes: interactive (pauses between tasks) and `--auto` (full pipeline). `-c` for extra context files, `-p` for extra instructions. Task plan persisted as `.haft/plans/{ref}.md`, human-editable before execution. Per-task `go build` verification; on failure, a fix agent is spawned automatically. Final review runs invariants + build + tests; on failure, a fix agent is spawned and review re-runs.
 - **Haft Design System (desktop Tauri frontend)** — lifted the design-system kit from the `haft-design-system` bundle into production: eight typed primitives (`Eyebrow`, `Button`, `Badge`, `Card`, `Input`, `StatCard`, `MonoId`, `Pill`) under `desktop/frontend/src/components/primitives/` consuming the existing Tailwind `@theme` tokens; shell components (`RailBtn`, `SidebarTask`, `StatusDot`) extracted from `App.tsx` into `components/shell/`; `ComparisonTable` component (border-first Pareto-front grid with accent highlighting and recommendation banner) replaces the legacy inline `<table>`. Dashboard, Decisions (with new `DecayWindow` progress bar computed from `created_at` + `valid_until`), Jobs, and Portfolios pages migrated to primitives.
 - **`governance_mode` field on DecisionRecord** — declares whether `affected_files` are governed at the file level (`exact`) or widened to module-level scope (`module`, default — preserves pre-6.2.x behavior). Exact mode skips the silent directory inflation in baseline / drift detection. Honors FPF X-SCOPE: every claim has explicit where + under what + when.
-- **FPF semiotic patterns** — 7 new patterns distilled from Levenchuk's semiotics slideument: FRAME-08 Reading Checklist (6 pre-reasoning questions), FRAME-09 Strict Distinction Quad (Role/Capability/Method/Work), CHR-10 Boundary Norm Square (L/A/D/E), CHR-11 Relational Precision Restoration Pipeline (A.6.P), CHR-12 Umbrella-word Family (quality / action / service / sameness / wholeness specializations), X-STATEMENT-TYPE (classify every load-bearing sentence), X-FANOUT-AUDIT (sweep all carriers on concept rename).
+- **FPF semiotic patterns** — 7 patterns distilled from source-backed semiotic-engineering guidance: FRAME-08 Reading Checklist (6 pre-reasoning questions), FRAME-09 Strict Distinction Quad (Role/Capability/Method/Work), CHR-10 Boundary Norm Square (L/A/D/E), CHR-11 Relational Precision Restoration Pipeline (A.6.P), CHR-12 Umbrella-word Family (quality / action / service / sameness / wholeness specializations), X-STATEMENT-TYPE (classify every load-bearing sentence), X-FANOUT-AUDIT (sweep all carriers on concept rename).
 - **Compiled FPF pattern index** — 65 pattern chunks indexed alongside 4625 FPF spec chunks. Phase-keyed routes (frame / characterize / explore / compare / decide / verify / cross-cutting) in `fpf-routes.json`. 7 pattern files under `internal/fpf/patterns/`.
 - **Auto-injected FPF hints in reasoning tool responses** — `haft_problem`, `haft_solution`, `haft_decision` responses include compact pattern ID citations for the current phase with retrieval guidance. Hints derive from embedded pattern files at runtime via `//go:embed` — renaming a pattern heading propagates automatically.
 - **Core pattern markers** — `**Core:** true | <phase>` frontmatter in pattern markdown selectively surfaces top patterns per phase in auto-injected hints. Supports cross-phase citation (e.g. CHR-01 core in both frame and characterize).

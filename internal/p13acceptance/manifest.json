@@ -1,0 +1,770 @@
+{
+  "schema": "haft.p13.acceptance-manifest/v3",
+  "status": "frozen_for_execution",
+  "plan_ref": ".context/haft-v9-deterministic-closeout.plan.md",
+  "p13_plan_span": "heading:### D2 — freeze and run one P13",
+  "acceptance_matrix_span": "manifest:gates",
+  "release_blocker_ref": ".context/current-plan-issue-report.md",
+  "release_blocker_span": "document:full",
+  "release_claim": false,
+  "result_semantics": "A passing frozen run is evidence that the mapped P13 gates passed on one unchanged recorded identity. Normal Go tests cover the full non-desktop closure; race evidence covers only the explicit concurrency-critical package and exact test-name cases under the recorded resource policy, while full-repository race remains separate CI evidence. This is not P14 installed-runtime evidence, a release claim, a waiver, or release authority.",
+  "single_command": "HAFT_P13_RUN_CONSOLIDATED=1 go test -count=1 -timeout=12h -v ./internal/p13acceptance -run '^TestP13ConsolidatedAcceptance$'",
+  "waivers": [],
+  "identity": {
+    "required_schema_version": 54,
+    "required_writer_generation": 54,
+    "required_fpf": {
+      "revision": "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4",
+      "spec_digest": "sha256:1093a25640c61a2674f56443bffb8e27f33ac2cdf95f09af2c0cf67c68913eac",
+      "readme_digest": "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",
+      "base_type_env_ref": "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6",
+      "base_type_env_digest": "sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6",
+      "compiler_schema": "fpf-base-typeenv.cov2.v4"
+    },
+    "required_predecessor": {
+      "head_revision": 1,
+      "composite_ref": "typeenv:sha256:d6097b7231aee200a0b998bd4146496b796222917e1e16505ac897079b7f29c2",
+      "base_type_env_ref": "typeenv:sha256:aa1eec077868e611108810f1e4bc187d55eb38e3bc705cc149a098008b58cd1a",
+      "base_type_env_digest": "sha256:aa1eec077868e611108810f1e4bc187d55eb38e3bc705cc149a098008b58cd1a",
+      "fpf_revision": "44dd88188a07646ef23aca32627a3f670525853f",
+      "compiler_schema": "fpf-base-typeenv.cov2.v2",
+      "executable_snapshot_digest": "sha256:a38f3d1ab0eb3674a0153b5c38e705c69d68f5afed98bb928fa88019d527b6b5",
+      "lowered_environment_digest": "sha256:a553e9edd919475393819b8eae6fed2129313ce9c5ee70f2fc4e23d1d8e73d73"
+    },
+    "required_excluded_go_packages": [],
+    "source_roots": [
+      ".agents/skills",
+      ".github",
+      ".haft/specs",
+      "assurance",
+      "cmd",
+      "data/FPF",
+      "data/haft",
+      "db",
+      "docs/src",
+      "internal",
+      "logger",
+      "open-sleigh",
+      "packages/haft-pi",
+      "scripts",
+      "skills",
+      "spec"
+    ],
+    "source_files": [
+      ".context/current-plan-issue-report.md",
+      ".context/haft-v9-deterministic-closeout.plan.md",
+      ".haft/config.yaml",
+      ".haft/project-profile.yaml",
+      ".haft/project.yaml",
+      "AGENTS.md",
+      "CHANGELOG.md",
+      "CLAUDE.md",
+      "MIGRATION-v8.md",
+      "README.md",
+      "Taskfile.yaml",
+      "go.mod",
+      "go.sum",
+      "internal/cli/fpf.db",
+      "open-sleigh/mix.exs",
+      "open-sleigh/mix.lock",
+      "package-lock.json",
+      "package.json"
+    ],
+    "include_all_files": true,
+    "include_go_build_inputs": true,
+    "excluded_directories": [
+      ".git",
+      "_build",
+      "build",
+      "deps",
+      "dist",
+      "node_modules",
+      "target",
+      "tmp"
+    ],
+    "dependency_roots": [
+      "open-sleigh/deps",
+      "packages/haft-pi/node_modules"
+    ]
+  },
+  "freeze_input": {
+    "posture": "selected_and_frozen",
+    "profile_generation": "v1",
+    "profile_ledger_revision": 1,
+    "profile_payload_digest": "sha256:032781b1b8470232ffa8f8c7669e171d4605287efe6aec7b57781bd67728b24d",
+    "profile_admission_ref": "profile-admission.2e3ee2f1546d9d4366065bf6a9e0495203780b7cf196f5f03880d27cb37852a1",
+    "profile_admission_digest": "sha256:c2a21c7f036e906b4c2bab2d640ee0d65f0eb25eb8a0fcba5122493cab15ce69",
+    "profile_projection_digest": "sha256:220761af781c00d95a6a47ac122217c1b9f7b0e8e9434ac416b77c898f82e298",
+    "profile_projection_schema": "haft.project-profile-projection/v1",
+    "profile_projection_ledger_head": 1,
+    "profile_basis_ref": "project-profile-basis:sha256:e52120a7def54ba6cb746b904a75d7a4b78b8de219ba7f9ae65ecad1d4518aaf",
+    "profile_basis_digest": "sha256:e52120a7def54ba6cb746b904a75d7a4b78b8de219ba7f9ae65ecad1d4518aaf",
+    "profile_ledger_digest": "sha256:a3bb6f0a530831c5127a4e22afe6009410a509dbd22f896e014c15b4e2af44b6",
+    "profile_support_dag_digest": "sha256:caa2e3a2bba61c9278ddd685910ca8001720c932116f9708e58aec0b298c38c4",
+    "head_ref": "project-typeenv-head:qnt_e3149c17",
+    "head_revision": 2,
+    "selected_composite_ref": "typeenv:sha256:6dc594a9d5470701b583a6e0893cf75d89629a27673d7aecd34b0993979c6aaf",
+    "head_state_digest": "sha256:618266ae5536f056c32afaf852a496fac37adea596a36e74bd7de492b96af8e1",
+    "selection_closure_ref": "project-typeenv-head-selection-closure:sha256:ae94e02302c162f6024fc29b22df44f06a31c46fd2f76326815f7ca4972c82ec",
+    "selection_closure_digest": "sha256:ae94e02302c162f6024fc29b22df44f06a31c46fd2f76326815f7ca4972c82ec",
+    "selection_request_schema": "haft.project-typeenv.head-selection-request.v2",
+    "selection_request_ref": "project-typeenv-head-selection-request:sha256:c455e91e56f53971c89480811654d4fdcf5c63a38c4adc3bd6dfcb84d17582ab",
+    "selection_request_digest": "sha256:c455e91e56f53971c89480811654d4fdcf5c63a38c4adc3bd6dfcb84d17582ab",
+    "selection_stage_ref": "project-typeenv-stage:sha256:dbb9dcd1bde548da965a94336703541a43ee4a7e80df54021da514dc461cb19c",
+    "selection_stage_digest": "sha256:dbb9dcd1bde548da965a94336703541a43ee4a7e80df54021da514dc461cb19c",
+    "selection_ready_closure_digest": "sha256:550dc0f9d4e64c453c139553e18f355dbffd8d658ff8448737c477102719a06f",
+    "selection_predecessor_kind": "transition",
+    "prior_head_ref": "project-typeenv-head:qnt_e3149c17",
+    "prior_head_revision": 1,
+    "prior_selected_composite_ref": "typeenv:sha256:d6097b7231aee200a0b998bd4146496b796222917e1e16505ac897079b7f29c2",
+    "prior_head_state_digest": "sha256:9767f5d63a267bad04b753aa25ada07ff3a89c389494346932692c16a31e579e",
+    "prior_composite_digest": "sha256:d6097b7231aee200a0b998bd4146496b796222917e1e16505ac897079b7f29c2",
+    "prior_base_ref": "typeenv:sha256:aa1eec077868e611108810f1e4bc187d55eb38e3bc705cc149a098008b58cd1a",
+    "prior_base_digest": "sha256:aa1eec077868e611108810f1e4bc187d55eb38e3bc705cc149a098008b58cd1a",
+    "prior_fpf_revision": "44dd88188a07646ef23aca32627a3f670525853f",
+    "prior_compiler_schema": "fpf-base-typeenv.cov2.v2",
+    "prior_executable_snapshot_digest": "sha256:a38f3d1ab0eb3674a0153b5c38e705c69d68f5afed98bb928fa88019d527b6b5",
+    "prior_lowered_environment_digest": "sha256:a553e9edd919475393819b8eae6fed2129313ce9c5ee70f2fc4e23d1d8e73d73",
+    "target_base_ref": "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6",
+    "target_ordered_extensions_digest": "sha256:527e16e9a8babc26509ae0f4ee98c832a87d258019a815ecddd2d1189d466bcd",
+    "target_runtime_basis_ref": "runtime-evaluation-basis:sha256:5a05d28ff4073d13004c8def273b53be8df2683b793f4e4ce57831a323b7b97e",
+    "target_composite_ref": "typeenv:sha256:6dc594a9d5470701b583a6e0893cf75d89629a27673d7aecd34b0993979c6aaf",
+    "selection_receipt_ref": "project-typeenv-head-selection-receipt:sha256:0ebdf22f6476cd751d096a714eaf2b2e9f98924b30d7bb78438c95586bac6fa6",
+    "selection_receipt_digest": "sha256:0ebdf22f6476cd751d096a714eaf2b2e9f98924b30d7bb78438c95586bac6fa6",
+    "selection_authority_use_ref": "project-typeenv-head-selection-authority-use:sha256:335e0b30ea6e43ec312d8ad32e1d4b776643919f38f1d5a5ade142d351533071",
+    "selection_authority_use_digest": "sha256:42d5ddd8f6880a99f308a3f108c81d174f806c78734e990ea8c1f4225b349492",
+    "selection_graph_revision": 4,
+    "selection_graph_event_ref": "typed-memory-event:2501f67784d860e0a9c93235a58b65081021ab82923af2199af320b9ff4fe5d3",
+    "selection_graph_commit_ref": "typed-memory-commit:7bd610beeea432cedae6652ceb68e1e8b947b3712de0ee3150868096ea4575f1",
+    "stage_schema_edition": "haft.project-typeenv.stage-schema/v5",
+    "stage_profile_ledger_revision": 1,
+    "stage_profile_ledger_digest": "sha256:a3bb6f0a530831c5127a4e22afe6009410a509dbd22f896e014c15b4e2af44b6",
+    "stage_profile_fit_ref": "project-typeenv-profile-fit:sha256:046f6ade1c35058057d5e7c61fa7d2b9eab56748530b84b9cc6532e40bdc4c44",
+    "stage_profile_fit_digest": "sha256:046f6ade1c35058057d5e7c61fa7d2b9eab56748530b84b9cc6532e40bdc4c44",
+    "stage_profile_fit_rule_edition": "haft.project-typeenv.profile-fit-rules/v1",
+    "stage_profile_fit_posture": "compatible",
+    "transition_profiles_ref": "transition-projection-profile-compatibility-set:sha256:9e92a87c375960eeda51f301a0ee85df510cfe1d3748c95223a02b20782b217e",
+    "transition_profiles_digest": "sha256:9e92a87c375960eeda51f301a0ee85df510cfe1d3748c95223a02b20782b217e",
+    "transition_profile_set_digest": "sha256:9b3aa33c5750f666b00640114fd96a354c479e163ef7239645ef13f0883011c2",
+    "transition_profile_count": 6,
+    "transition_postures_digest": "sha256:4787f607e4b0293109efa79f67ab2c41c478eeeb8875dbe1380f334b28081ac9",
+    "graph_revision": 8,
+    "graph_active_type_env_ref": "typeenv:sha256:6dc594a9d5470701b583a6e0893cf75d89629a27673d7aecd34b0993979c6aaf",
+    "graph_snapshot_basis_ref": "project-graph-snapshot-basis:sha256:5d07e7bed89e6482fead70ec90d710ff8901f68d329b12617819e0171631ead4",
+    "graph_snapshot_basis_digest": "sha256:5d07e7bed89e6482fead70ec90d710ff8901f68d329b12617819e0171631ead4",
+    "graph_last_event_ref": "typed-memory-event:b30f7403c51f56e440ebbe938a9ecfe1c3369afbf98bc57e90bc6a767d07afec",
+    "graph_last_commit_ref": "typed-memory-commit:11a68bcbf1b17a058f78ff0bb7477d761106e3e4cf89a307e51d3a67ce1ba1d5",
+    "graph_materialization_digest": "sha256:b5ede779c15c0d129506b2c226673fa84d89fdfb3e70f5370902c1118688f3b0"
+  },
+  "planned_graph_contracts": [
+    {
+      "id": "hg1_hg2_typed_traversal",
+      "owner_work_package": "R3",
+      "detailed_items": ["HG1", "HG2"],
+      "activation_gate": "G7",
+      "claim": "seed and traversal outcomes remain typed, deterministic, and honest under faults and budgets",
+      "intended_anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestHGTraversalOutcomeCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestExploreBagDirection_MixedOutcomes"}
+      ],
+      "status": "implemented_anchored",
+      "evidence_ref": ".context/v9-remaining-evidence/r7-p13/graph-anchor-closure.md"
+    },
+    {
+      "id": "hg3_hg4_honest_index",
+      "owner_work_package": "R3",
+      "detailed_items": ["HG3", "HG4"],
+      "activation_gate": "G7",
+      "claim": "source admission, file disposition, coverage, and epoch publication cannot turn incomplete roots into absence",
+      "intended_anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestSourceAdmissionPureCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestIndexPublicationFailureRollsBackCandidateAndBasis"}
+      ],
+      "status": "implemented_anchored",
+      "evidence_ref": ".context/v9-remaining-evidence/r7-p13/graph-anchor-closure.md"
+    },
+    {
+      "id": "hg5_hg6_concern_discovery",
+      "owner_work_package": "R4",
+      "detailed_items": ["HG5", "HG6"],
+      "activation_gate": "G7R",
+      "claim": "concern discovery is deterministic, coverage-aware, fused with exact reasoning context, and allowed to abstain",
+      "intended_anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestConcernDiscoveryMeetsFrozenCodeNativeCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestConcernFusionMeetsFrozenReasoningToCodeCorpus"}
+      ],
+      "status": "implemented_anchored",
+      "evidence_ref": ".context/v9-remaining-evidence/r7-p13/graph-anchor-closure.md"
+    },
+    {
+      "id": "hg7_projection_and_agent_use",
+      "owner_work_package": "R5",
+      "detailed_items": ["HG7", "HG8a"],
+      "activation_gate": "G7",
+      "claim": "one Explore envelope feeds bounded working, trace, and diagnostic projections with CLI, MCP, and carrier parity",
+      "intended_anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestPublishedExploreTraceIsDeterministicAndDiagnosticIsExplicit"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestHandleQuintQueryExploreConcernReturnsEvidenceBearingCandidates"},
+        {"package": "github.com/m0n0x41d/haft/internal/initplanning", "test": "TestSkillComponentRendererDerivesHostCarriersFromOneBundle"}
+      ],
+      "status": "implemented_anchored",
+      "evidence_ref": ".context/v9-remaining-evidence/r7-p13/graph-anchor-closure.md"
+    },
+    {
+      "id": "hg8_adversarial_acceptance",
+      "owner_work_package": "R7",
+      "detailed_items": ["HG8b"],
+      "activation_gate": "G8",
+      "claim": "the frozen graph corpus, fault matrix, determinism, and performance budgets pass on one source identity",
+      "intended_anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestHGAdversarialAcceptance"}
+      ],
+      "status": "implemented_anchored",
+      "evidence_ref": ".context/v9-remaining-evidence/r7-p13/hg8b.md"
+    }
+  ],
+  "suites": [
+    {
+      "id": "fpf_index_exact",
+      "kind": "fpf_index_verify",
+      "timeout_seconds": 900
+    },
+    {
+      "id": "query_token_gate",
+      "kind": "exec",
+      "program": "bash",
+      "args": ["scripts/fpf_query_token_gate.sh"],
+      "working_directory": ".",
+      "timeout_seconds": 1800
+    },
+    {
+      "id": "go_normal",
+      "kind": "go_test_all_non_desktop",
+      "timeout_seconds": 7200
+    },
+    {
+      "id": "go_race",
+      "kind": "go_test_race_critical",
+      "go_race_cases": [
+        {
+          "package": "github.com/m0n0x41d/haft/db",
+          "tests": [
+            "TestAuthorityProfileReconciliationConvergesAcrossConcurrentConnections",
+            "TestForeignKeyTableRebuildMigrationConcurrentRecheckAppliesOnce"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/codebase",
+          "tests": [
+            "TestConcurrentReaderObservesOnlyWholeEpochBasis",
+            "TestIndexPublicationFailureRollsBackCandidateAndBasis",
+            "TestRootAdmissionBudgetRetainsPriorEpoch"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/codeintel",
+          "tests": [
+            "TestDiscoverConcernRetriesAcrossConcurrentPublication",
+            "TestPublishedExploreReplayMismatchNamesChangedBasis"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/initfs",
+          "tests": [
+            "TestHostPublisherConcurrentSameBindingReturnsBusyWithoutInterleaving",
+            "TestHostPublisherRecoveryPreservesPostPartialLocalModification",
+            "TestManifestStoreConcurrentFirstPersistPublishesExactlyOneManifest",
+            "TestManifestStoreLeaseSerializesAWholePublicationWindow",
+            "TestPublicationCoordinatorSerializesSharedRootAcrossProcesses"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/projectledger",
+          "tests": [
+            "TestConcurrentProjectLedgerBindingAdmitsExactlyOnePhysicalRoot",
+            "TestProjectLedgerBindingReportsCommittedOutcomeWhenPathSwapsBeforePostCheck",
+            "TestProjectLedgerBindingRollsBackWhenTopologyChangesBeforeCommit",
+            "TestProjectLedgerPreservesSidecarGenerationAcrossIndependentWriterClose"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/projectmemory",
+          "tests": [
+            "TestAdmissionRuntimeClosesCommitUnknownAndSameKeyReplayWithoutSecondEffect",
+            "TestCurrentReadRuntimeRejectsStaleProcessAcrossTypeEnvTransitionAndReusesRollbackSnapshot"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation",
+          "tests": [
+            "TestReviewedIdentityConcurrentCASHasOneWinnerAndNoPartialLoser",
+            "TestReviewedIdentityMergeCommitsReplaysResolvesAndLoadsCurrentSnapshot"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/projectmemory/neighborhoodcache",
+          "tests": [
+            "TestAtomicStoreConcurrentReadsRemainDeterministic",
+            "TestCacheKeyInvalidatesEveryExactProjectionCoordinate",
+            "TestReadThroughCacheHitAndMissAreByteIdentical",
+            "TestTypeEnvTransitionMissesWhileRollbackCanReuseExactOldSnapshot"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/projecttypeenvheadstore",
+          "tests": [
+            "TestHeadCASIsCallerOwnedAtomicAndTransitionExact",
+            "TestHeadCASRejectsReadTransactionAndDoesNotFinishIt"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite",
+          "tests": [
+            "TestGenesisServiceConcurrentSameKeyCommitsOnceAndReplaysExactly",
+            "TestGenesisServiceMapsPriorHeadBeforeConcurrentGraphDrift",
+            "TestTransitionServiceCommitsExactSuccessorAndReplays",
+            "TestTransitionServiceRollbackSelectsPriorImmutableCWithoutDeletingAssertions"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/sqlitetransaction",
+          "tests": [
+            "TestFailedCommitCleansUpBeforeConnectionReuse",
+            "TestImmediateTransactionOwnsEffectAndLifecycle",
+            "TestReadTransactionRejectsMutationAndRollbackFinishes"
+          ]
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/typedmemorystore",
+          "tests": [
+            "TestCommitDeclareEntityRecoversAfterPhysicalCommitReportsFailure",
+            "TestSQLiteAdapterTwoConnectionsCASOneExpectedRevisionZeroCommit",
+            "TestSQLiteProjectGraphInitializerConcurrentExactCallsConverge"
+          ]
+        }
+      ],
+      "go_package_parallelism": 1,
+      "go_test_procs": 2,
+      "timeout_seconds": 10800
+    },
+    {
+      "id": "go_vet",
+      "kind": "go_vet_all_non_desktop",
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "pi_test",
+      "kind": "exec",
+      "program": "pnpm",
+      "args": ["test"],
+      "working_directory": "packages/haft-pi",
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "pi_typecheck",
+      "kind": "exec",
+      "program": "pnpm",
+      "args": ["typecheck"],
+      "working_directory": "packages/haft-pi",
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "open_sleigh_format",
+      "kind": "exec",
+      "program": "mix",
+      "args": ["format", "--check-formatted"],
+      "working_directory": "open-sleigh",
+      "timeout_seconds": 1200
+    },
+    {
+      "id": "open_sleigh_test",
+      "kind": "exec",
+      "program": "mix",
+      "args": ["test"],
+      "working_directory": "open-sleigh",
+      "timeout_seconds": 3600
+    },
+    {
+      "id": "gofmt_check",
+      "kind": "gofmt_check",
+      "timeout_seconds": 900
+    },
+    {
+      "id": "git_diff_check",
+      "kind": "exec",
+      "program": "git",
+      "args": ["diff", "--check"],
+      "working_directory": ".",
+      "timeout_seconds": 900
+    }
+  ],
+  "gates": [
+    {
+      "id": "G0",
+      "title": "Authority and specification",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "migration-v2 remains source-digest-pinned, tri-state, lossless, collision-safe, and authority-gated",
+        "software specification claims preserve L/A/D/E and product-versus-enabling-system boundaries",
+        "profile, semantic review, decision, TypeEnv selection, and release authority cannot be cross-bound",
+        "explicit_h_decide and strict_cli_speech_act retain their distinct evidence and failure contracts"
+      ],
+      "suite_ids": ["go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_test"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/specmigrationv2", "test": "TestMigrationEffectSagaArchivesExactBytesWritesReceiptAndReplays"},
+        {"package": "github.com/m0n0x41d/haft/internal/specmigrationv2", "test": "TestAuditPacketCandidateVerifiesExactEightSectionPartition"},
+        {"package": "github.com/m0n0x41d/haft/internal/authority", "test": "TestEvaluateReceiptRejectsModelSuppliedArguments"},
+        {"package": "github.com/m0n0x41d/haft/internal/decisionbinding", "test": "TestDecisionBindingServicePersistsExactTwoPhaseClosure"},
+        {"package": "github.com/m0n0x41d/haft/internal/decisionbinding", "test": "TestDecisionContextPolicyRejectsProfileAndMigrationCrossBinding"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestArtifactCreateCLIUnknownDecisionBindingModeWritesNothing"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestDispatchToolRejectsMCPBindingDecisionWithoutCreatingArtifact"}
+      ]
+    },
+    {
+      "id": "G0P",
+      "title": "Project-profile and applicability",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "only a canonical admitted profile can establish scoped applicability",
+        "v3 profile declaration is atomic, replay-safe, restart-safe, and projection debt cannot become Auto",
+        "software, non-software, mixed, helper-code, Markdown-only, and ambiguous fixtures retain distinct policy results",
+        "missing target-system relation is Underdetermined with admitted_target_system_relation, not NotApplicable",
+        "the selected Transition Stage v5 is bound to the exact current profile basis, compatible ProfileFit, and unblocked installed projection-profile set"
+      ],
+      "suite_ids": ["go_normal", "go_vet", "pi_test", "pi_typecheck"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/profileonboarding", "test": "TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart"},
+        {"package": "github.com/m0n0x41d/haft/internal/profileadmission/sqlite", "test": "TestResolveCurrentWithinRehashesV3AuthorityUseInsideCallerSnapshot"},
+        {"package": "github.com/m0n0x41d/haft/internal/profileadmission/sqlite", "test": "TestCapabilityApplicabilityMatrixResolverIsUnderdeterminedWithoutAdmission"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectprofile", "test": "TestAdmittedScopeEntityRelationMakesTargetSystemSpecApplicable"},
+        {"package": "github.com/m0n0x41d/haft/internal/profileprojection", "test": "TestHistoricalV2OpenDebtResolvesThroughV3TaggedEvent"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestCanonicalProjectSpecificationApplicabilityIsUnderdeterminedWithoutAdmission"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestCanonicalProjectReadinessKeepsNonSoftwareHarnessFreeOfSWEGate"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestProfileDeclarationFreshReviewedCandidateReplaysAfterLedgerRestart"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestStageProfileBindingRejectsPostStageProfileDrift"}
+      ]
+    },
+    {
+      "id": "G0I",
+      "title": "Core initialization and host-adapter publication",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "core migration is host-neutral, exact-schema-bound, and performs no host publication when its plan or receipt fails",
+        "one immutable InitPlan produces the exact reviewed preview; changed, blocked, cancel, EOF, and explicit core-only paths cannot enter an unintended host effect",
+        "one canonical source bundle, complete component-applicability registry, and declared Pi coarsening feed deterministic host projections without an independent semantic catalog",
+        "seven ownership states, exact legacy evidence, modified-file preservation, partial-effect recovery, and content-addressed manifests remain distinct",
+        "shared user-home coordination serializes cross-process publication while core-only execution creates no host coordination carrier",
+        "read-only status evaluates every registered coherent face without mutation and the current Codex downstream first install plus repeat apply is manifest-current and byte-idempotent",
+        "public TTY and non-TTY lowering, selected compatibility aliases, and repository command E2E remain required before this pending manifest can freeze"
+      ],
+      "suite_ids": ["go_normal", "go_race", "go_vet", "pi_test", "pi_typecheck"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestProjectMigrateCommandExposesNoHostSelectionFlags"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectledgermigration", "test": "TestApplyExactRejectsStaleSchemaPlanBeforeMigration"},
+        {"package": "github.com/m0n0x41d/haft/internal/initplanning", "test": "TestCompileInitPlanSeparatesCoreAndHostEffectsAndProjectsExactPreview"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestInitSelectionTUIMapsCancelAndEOFToDistinctNoWriteOutcomes"},
+        {"package": "github.com/m0n0x41d/haft/internal/initexecution", "test": "TestPreparedCoreOnlyInitOperationCreatesNoHostPublicationCarrier"},
+        {"package": "github.com/m0n0x41d/haft/internal/initexecution", "test": "TestPreparedHostInitOperationAppliesOnlyItsExactReviewedPreview"},
+        {"package": "github.com/m0n0x41d/haft/internal/initexecution", "test": "TestExecutorCoreFailureLeavesEveryHostEffectUnperformed"},
+        {"package": "github.com/m0n0x41d/haft/internal/initexecution", "test": "TestExecutorReturnsExactPartialBoundaryAfterCoreAndHostDrift"},
+        {"package": "github.com/m0n0x41d/haft/internal/initplanning", "test": "TestSkillSourceBundleIsCanonicalContentAddressedAndStrict"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestCurrentCoherentHostApplicabilityIsCompleteAndHookFree"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestCurrentPiCondensedParityDeclaresExactSourceAndLossBoundary"},
+        {"package": "github.com/m0n0x41d/haft/internal/initplanning", "test": "TestClassifyInstallationCurrentnessProducesSevenExactOwnershipStates"},
+        {"package": "github.com/m0n0x41d/haft/internal/initfs", "test": "TestHostPublisherRecoveryPreservesPostPartialLocalModification"},
+        {"package": "github.com/m0n0x41d/haft/internal/initfs", "test": "TestPublicationCoordinatorSerializesSharedRootAcrossProcesses"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestHostStatusCommandEvaluatesEveryRegisteredCoherentProjection"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestCurrentCodexProjectionRunsThroughExactPreviewAndIdempotentApply"}
+      ]
+    },
+    {
+      "id": "G1",
+      "title": "Source compiler and FPF upgrades",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "only explicit normative source declarations compile with exact provenance",
+        "source-native index and last-known-good rebuild remain content-addressed and fail closed",
+        "Local-Practice extensions, imports, codecs, composite linking, Genesis, and Transition remain distinct",
+        "current C.3 compilation separates KindSignature, four-input classification, optional KindExtension, SubkindOf, bridge, and RoleMask declarations while excluding MemberOf and EntitySet from current output",
+        "the accepted Transition must advance the exact project-selected 44dd predecessor composite and executable snapshot rather than any historical or second-transition substitute",
+        "published working Query views exclude internal retrieval carriers while diagnostic and trace views retain their distinct bounded contracts",
+        "Query replay, canonical provenance, working-view budgets, and the embedded o200k token ceiling fail closed under drift"
+      ],
+      "suite_ids": ["fpf_index_exact", "query_token_gate", "go_normal", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestRebuildSourceQueryIndexAtomic_PreservesPreviousFileOnFailure"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestWorkingProjectionRecursivelyExcludesInternalQueryFields"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestWorkingExactProjectionKeepsInspectBodyAndSeparatesLookupIdentity"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestTraceProjectionDeduplicatesAndReconstructsCanonicalProvenance"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestDiagnosticProjectionAloneExposesRetrievalInternals"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestCanonicalProvenanceValidationPrecedesProjection"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestPublishedEncoderRejectsForgedWorkingLabelsOnInternalCarriers"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestTraceReplayFailsClosedBeforeRetrievalOnSnapshotOrRequestDrift"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestTraceReplayDetectsCanonicalResultDriftAfterPreflight"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestWorkingPayloadDoesNotGrowWithConcernOrRawGroundCount"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf", "test": "TestWorkingExactLookupBudgetsCuesRelationsAndReferencesButInspectDoesNot"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/typeenv", "test": "TestPinnedPublicationCompilesArtifactAndRuntimeTypeEnv"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestDigestCommitsToExactCarrierBytesRatherThanOnlyTheAST"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestParseCurrentKindClassificationSignatureHasNoEntitySetOrMemberOfFields"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/localpractice", "test": "TestCurrentCandidateCarrierV1_3RemainsByteStableAndUsesKindClassification"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestResolveManifestGraphRejectsMissingSelfAndCyclicImports"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestPrepareProjectTypeEnvCompositeLowersEverySourceFamilyAtC"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestCurrentKindClassificationCompilesLinksLowersAndDiscoversOnlyCriterionRuntime"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvcompatibility", "test": "TestSuccessorDiffClosedTaxonomy"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvstage", "test": "TestLoadExecutableSnapshotTxRestoresExactImmutableCWithoutStageLookup"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvstage", "test": "TestStoreLoadSelectionReadyFailsClosedOnPersistedCorruption"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestRequiredTransitionPredecessorRejectsArbitraryAndSecondTransition"}
+      ]
+    },
+    {
+      "id": "G2",
+      "title": "Algebraic typed core",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "entity, context, n-ary relation, named-slot, provenance, and TypeEnv concepts have closed canonical forms",
+        "MemoryChangeSet cannot carry schema declarations and arbitrary JSON is inexpressible",
+        "verified values and ClaimGraph bytes are codec-bound, canonical, and integrity checked",
+        "Invalid, Underdetermined, Valid, and inspect-only historical values retain non-truth and non-authority boundaries",
+        "current kind classification has four exact inputs and true, false, and unknown results while Evidence, guard disposition, optional extension, SubkindOf, bridge, and RoleMask remain separately typed"
+      ],
+      "suite_ids": ["go_normal", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestTypeEnvRetainsA65SlotKindValueKindAndRefKind"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestExternalCodeCannotPutSchemaChangeInMemoryChangeSet"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestValueShapeAlgebraContainsOnlyClosedVariants"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestVerifyTypedValueRequiresBindingAndCodecThenSealsCanonicalValue"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestClaimGraphCodecV1GoldenCanonicalBytes"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestDiagnosticSeparatesContradictionFromMissingBasis"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestKindIdentifierDoesNotUseEntityOfConcernWordBan"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestKindClassificationRequestHasFourExactInputsAndNoEntitySet"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestKindClassificationKeepsTrueFalseUnknownEvidenceAndGuardSeparate"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestKindExtensionIsNamedOptionalProjectionOfTrueJudgementsOnly"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestCurrentSubkindOrderUsesObtainingFactsAndSeparateAssertion"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestKindBridgeCreatesFreshTargetRequestWithoutSourceTruth"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestRoleMaskKeepsFeatureJudgementAndScopeExpectationSeparate"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestClassificationAdmissionBasisCarriesOnlyDirectCurrentJudgements"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime", "test": "TestCurrentCandidateBuildsAllFiveExactReferenceSchemeRegistries"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvruntime", "test": "TestObserveCurrentTargetRuntimeMatchesAllReferenceSchemeCallables"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemoryconstitution", "test": "TestEachC21DiscriminatorChangesEpistemeCoordinate"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemoryconstitution", "test": "TestEpistemeCoordinateExcludesGroundingTimeTypeEnvAndResolutionBasis"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemoryconstitution", "test": "TestEvaluateKeepsMissingRuntimeBasisUnderdetermined"}
+      ]
+    },
+    {
+      "id": "G3",
+      "title": "FPF source category-error corpus",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "the source-pinned FPF category errors and their repair postures pass through the public typed core",
+        "invalid or underdetermined category-error candidates cannot be admitted",
+        "the oracle remains source-conformance evidence rather than a universal production-lowering claim",
+        "the internal architecture and P2S read model keeps records, performed Work, actual change, production branches, structure, evidence, and target effect in distinct positions without changing public memory bytes",
+        "shipped product carriers use source-neutral names and do not expose private source-format provenance"
+      ],
+      "suite_ids": ["go_normal", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestSourceConformanceCategoryErrorCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestSourceConformanceCategoryErrorSourceSnapshotIsCurrent"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/architecturep2s", "test": "TestComposePreservesDistinctPositionsAndIsPermutationStable"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/architecturep2s", "test": "TestRecursiveNaryFlowRoundTripsWithoutDirectionalPromotion"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestProductionGoldenConcernBundleRecoversExactHaftSoftwareSystemMemory"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestProductCarriersUseSourceNeutralNames"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestTrackedCarriersUseSourceNeutralNames"}
+      ]
+    },
+    {
+      "id": "G4",
+      "title": "MCP validation and admission",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "strict wire decoding and stable closed schemas remain separate from semantic result unions",
+        "validate is read-only and admit revalidates the exact selected runtime inside its transaction",
+        "current four-input KindClassification prerequisites and RuleRef dispatch are exact and fail closed without using historical MemberOf judgement",
+        "the generic kernel has two independent consumers and no exact Haft product dependency",
+        "generic admission cannot bind authority or mint TypeEnv/schema declarations",
+        "source-native FPF Query crosses the installed CLI and MCP kernel surfaces from the embedded publication without a shadow route"
+      ],
+      "suite_ids": ["go_normal", "go_vet", "pi_test", "pi_typecheck"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestGenericKernelHasNoHaftProductCarrierDependency"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestIndependentProductAdaptersConsumeGenericKernelPublicTypes"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestGenericityGuardTargetsExactProductVocabulary"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemory", "test": "TestValidateMemoryChangeSetUsesCurrentClassificationWithoutMemberOf"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime", "test": "TestCurrentKindClassificationRuntimeCoversAllCarrierFamilies"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestMemoryValidationCLIAndMCPShareStableReadOnlyPresentation"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestSealedProjectMemorySplitSurfaceImplementsEveryAdvertisedAction"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestProjectMemoryCommitUnknownHasCLIAndMCPDeliveryParity"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestSourceNativeFPFQueryIntegration"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject"}
+      ]
+    },
+    {
+      "id": "G5",
+      "title": "Transactional durability",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "semantic rows, events, provenance, head CAS, and idempotency commit atomically",
+        "snapshot and transaction revalidation use exact observable inputs and reject substitute materialization",
+        "canonical by-value bytes, append-only history, projection debt, and TypeEnv transitions preserve replay identity",
+        "two-connection races and commit-outcome ambiguity have typed replay-safe outcomes"
+      ],
+      "suite_ids": ["go_normal", "go_race", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestSQLiteAdapterCommitDeclareEntityPersistsExactClosureAndReopens"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestSQLiteAdapterTwoConnectionsCASOneExpectedRevisionZeroCommit"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestGenericCommitFailureRollsBackWholeMixedBatch"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestCommitDeclareEntityRecoversAfterPhysicalCommitReportsFailure"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestTransitionServiceCommitsExactSuccessorAndReplays"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestTransitionServiceRollbackSelectsPriorImmutableCWithoutDeletingAssertions"},
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestTypedMemoryRelationalAssertionMigration53PreservesV52HistoryByteExactly"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestFreshV2AdmissionsUseWriter53AcrossConsecutiveCommitsAndSnapshotRead"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestV2RelationalAssertionSemanticFootprintMatchesSchemaV53View"},
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestTypedMemoryKindClassificationMigration54PreservesV53HistoryByteExactly"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestCurrentKindClassificationCommitPersistsExactV54ClosureAndReplay"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestCurrentKindClassificationSourceCatalogRoundTripsAfterRestart"}
+      ]
+    },
+    {
+      "id": "G6",
+      "title": "Legacy migration",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "schema upgrades are additive and preserve exact legacy readability",
+        "legacy import guesses no semantic identity or relation and reports ambiguity or loss",
+        "dual-read avoids duplicate identity and typed rollback never degrades to lossy edges",
+        "historical MemberOf, EntitySet, classification-source, executable-snapshot, and lowerer bytes replay only through sealed tagged adapters and cannot become current classification truth or writes",
+        "existing-record projection preserves the source carrier and explicit ChoiceResult while reporting independent legacy duplicate fields without repairing or inventing their semantics"
+      ],
+      "suite_ids": ["go_normal", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestReleasedV6AndV8DatabasesUpgradeAdditivelyToCurrentSchema"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/legacyimport", "test": "TestImportPlanDoesNotFabricateTypedSemanticsOrAuthority"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/legacyimportsqlite", "test": "TestCoreSnapshotDryRunReadsWithoutWritingAndDoesNotGuessRelations"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/legacydualread", "test": "TestCoalesceExposesIdentityCollisionWithoutChoosingWinner"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/legacyimporteffect", "test": "TestApplyPersistsOneAtomicOpaqueBatchAndReplaysWithoutCurrentHead"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime", "test": "TestCurrentClassificationAdaptsSealedHistoricalRecordDeliveryWithoutUsingMembershipJudgement"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestSealedHistoricalClassificationSourcesRemainEphemeralAndDeduplicated"},
+        {"package": "github.com/m0n0x41d/haft/internal/fpf/projecttypeenv", "test": "TestHistoricalV1ExecutableSnapshotReplaysWithoutCurrentClassificationField"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvstore", "test": "TestPrepareArtifactClosurePreservesSealedHistoricalLowererRecipe"},
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestSchema50DatabaseCopyUpgradesToCurrentSchemaWithoutInventingState"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselection", "test": "TestFrozenHistoricalV3GenesisStageDecodesAndReencodesExactly"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselection", "test": "TestFrozenReconstructedV2GenesisStageDecodesAndReencodesExactly"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselection", "test": "TestFrozenRealTransitionStageV5DecodesAndReencodesExactly"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestCurrentProjectGraphObservationPreservesLegacyAndV3AssertionCarriers"},
+        {"package": "github.com/m0n0x41d/haft/internal/typedmemorystore", "test": "TestHistoricalWriter46V1ExactReplaySurvivesRestart"},
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestProfileAuthorityUnionMigration51UpgradesHistoryWithoutBackfill"},
+        {"package": "github.com/m0n0x41d/haft/internal/authority", "test": "TestAuthorityBasisWriterStoresLoadsAndReplaysExactGraph"},
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestProfileAuthorityAdmissionV2Migration44InstallsExactAdditiveContract"},
+        {"package": "github.com/m0n0x41d/haft/internal/authority", "test": "TestResolveHistoricalProfileAdmissionAuthorityV1ExactAndReadOnly"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/decisionrecordadapter", "test": "TestLoadExistingDecisionChoiceSourcePreservesIndependentLegacyChoiceFields"}
+      ]
+    },
+    {
+      "id": "G7",
+      "title": "Graph, specification, and code projection",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "one production EntityOfConcern neighborhood crosses project memory, specification, evidence/work, and explicit code relations",
+        "the 18-item GoldenConcernBundle is adapter-built, admitted, reread, and byte-stable",
+        "identity merge and split require reviewed reconciliation, preserve historical refs, and leave projection debt explicit",
+        "graph and Markdown remain projections and affordances never become NextAction",
+        "one canonical Explore envelope projects deterministic working, trace, and diagnostic views; working excludes trace provenance while replay mismatch fails closed",
+        "session audit independently classifies code-graph and typed-memory orientation as not_applicable, used, unavailable, or incorrectly_skipped without turning unavailable memory into a global gate"
+      ],
+      "suite_ids": ["go_normal", "go_race", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestProductionGoldenConcernBundleRecoversExactHaftSoftwareSystemMemory"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestProductionCodeAnchorAdapterAdmitsExplicitClaimLinkWithoutInference"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestProductionEvidenceWorkAdapterAdmitsClaimBoundLocalRelations"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestReviewedIdentityMergeCommitsReplaysResolvesAndLoadsCurrentSnapshot"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestReviewedIdentitySplitReturnsCandidatesAndProjectionDebtDoesNotMutateGraph"},
+        {"package": "github.com/m0n0x41d/haft/db", "test": "TestTypedMemoryIdentityReconciliationMigration52FootprintIsImmutable"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestCurrentPublicResolutionConsumesOnlyExactCommittedMergeState"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestCurrentPublicResolutionPreservesReviewedSplitAsUnsettledCandidates"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestCurrentPublicResolutionPreservesMergeToSplitHistoryChain"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestHGTraversalOutcomeCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestHGOutcomeSerializationDeterministic"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestExploreBagDirection_MixedOutcomes"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestSourceAdmissionPureCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestSourceAdmissionRootBudgetsAreTyped"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestRefreshIncrementalDoesNotFollowSymlinkCycle"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestRootAdmissionBudgetRetainsPriorEpoch"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestIndexPublicationFailureRollsBackCandidateAndBasis"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestIndexBasisSurvivesProcessReopen"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestConcurrentReaderObservesOnlyWholeEpochBasis"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestCodeGraphTypeScriptParityQualificationCarrierIsCurrent"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestPublishedExploreWorkingConcernIsBoundedAndScoreFree"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestPublishedExploreWorkingHostileConcernIsEscapedDeterministicAndBounded"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestPublishedExploreTraceIsDeterministicAndDiagnosticIsExplicit"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestPublishedExploreReplayMismatchNamesChangedBasis"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestHandleQuintQueryExploreConcernReturnsEvidenceBearingCandidates"},
+        {"package": "github.com/m0n0x41d/haft/internal/initplanning", "test": "TestSkillComponentRendererDerivesHostCarriersFromOneBundle"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestSessionAuditSeparatesTypedMemoryHydrationFromGraphPreflight"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestSessionAuditTreatsUnavailableTypedMemoryBasisAsNonBlocking"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestSessionAuditFlagsContextHeavyWorkWithoutTypedMemoryOrientation"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestSessionAuditClassifiesMechanicalEditAsGraphNotApplicable"}
+      ]
+    },
+    {
+      "id": "G7R",
+      "title": "EntityOfConcern recall",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "resolve, exact neighborhood, and scoped recall keep separate closed result unions on one pinned snapshot/profile",
+        "exact identity and context filter before ranking and unknown identity never exposes current project relations",
+        "projection basis, witnesses, postures, facet coverage, budgets, cursors, interpretation, retry, and abstention are typed and replayable",
+        "reads preserve EntityOfConcern, bounded context, no-hop evidence currentness, and non-authorizing affordances",
+        "cache, profile, graph, TypeEnv, carrier, and embedding invalidation cannot change semantic posture",
+        "the public existing-record backfill is source-owned and explicit: dry-run writes zero rows, apply reuses task adapters and AdmissionService, replay is idempotent, and unresolved or deferred meanings remain visible"
+      ],
+      "suite_ids": ["go_normal", "go_race", "go_vet"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/memoryresolve", "test": "TestExactIdentifierAndContextResolveBeforeRanking"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/memoryresolve", "test": "TestExactAliasConflictFailsUnsettled"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/scopedrecall", "test": "TestLexicalRecallScopesBeforeRankingAcrossRussianText"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/neighborhood", "test": "TestFacetCoverageKeepsFivePosturesDistinct"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/neighborhood", "test": "TestExactInterpretationIsDerivedFromIndependentItemPostures"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/neighborhoodcache", "test": "TestReadThroughCacheHitAndMissAreByteIdentical"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory", "test": "TestCurrentReadRuntimeRejectsStaleProcessAcrossTypeEnvTransitionAndReusesRollbackSnapshot"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory", "test": "TestMemoryReadOutputContractNamesClosedRuntimeFamilies"},
+        {"package": "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite", "test": "TestProductionGoldenConcernBundleRecoversExactHaftSoftwareSystemMemory"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestCurrentPublicResolutionConsumesOnlyExactCommittedMergeState"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestCurrentPublicResolutionPreservesReviewedSplitAsUnsettledCandidates"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation", "test": "TestCurrentPublicResolutionPreservesMergeToSplitHistoryChain"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory", "test": "TestCurrentNeighborhoodClassifiesNoteAtConcernRecordExactly"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestProjectMemoryFullSurfaceIsInstalledOnlyAfterExactReadiness"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestConcernDiscoveryMeetsFrozenCodeNativeCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codebase", "test": "TestConcernDiscoveryNeverSelectsFrozenNegativeCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/codeintel", "test": "TestConcernFusionMeetsFrozenReasoningToCodeCorpus"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/existingrecordprojection", "test": "TestBuildOrdersSupportedRoutesByDependency"},
+        {"package": "github.com/m0n0x41d/haft/internal/projectmemory/existingrecordprojection", "test": "TestBuildKeepsUnsupportedCarrierMeaningsExplicit"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestMemoryBackfillDryRunThenApplyUsesSourceOwnedProjection"}
+      ]
+    },
+    {
+      "id": "G8",
+      "title": "Stream and release truth",
+      "plan_span": "heading:### D2 — freeze and run one P13",
+      "claims": [
+        "current-facing carriers use exactly CURRENT PRODUCT, WORKING V9 DEV, V9 DESIGN DRAFT, or DEFERRED RESEARCH",
+        "no unsupported retrieval-superiority, release, or acausal-ontology claim is present",
+        "all mapped suites run between identical source, FPF, profile, TypeEnv, graph, and schema captures with zero waivers",
+        "h-reason and every installed host carrier preserve the independent source-first Query contract",
+        "acceptance identity changes for untracked Go build inputs, installed dependency bytes, and every invoked executable closure"
+      ],
+      "suite_ids": ["fpf_index_exact", "query_token_gate", "go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_format", "open_sleigh_test", "gofmt_check", "git_diff_check"],
+      "anchors": [
+        {"package": "github.com/m0n0x41d/haft/internal/streamtruth", "test": "TestREADMEDeclaresExactlyTheFourStreamTruthLabels"},
+        {"package": "github.com/m0n0x41d/haft/internal/streamtruth", "test": "TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim"},
+        {"package": "github.com/m0n0x41d/haft/internal/streamtruth", "test": "TestCurrentFacingCarriersMakeNoRetrievalSuperiorityClaim"},
+        {"package": "github.com/m0n0x41d/haft/internal/streamtruth", "test": "TestAgentDisciplineTemplateKeepsOneTruthContract"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestHReasonSkill_IsSourceFirstUmbrella"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestRelevantByteIdentityIncludesUntrackedRootGoBuildInput"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestDependencyIdentityBindsInstalledTreeBytes"},
+        {"package": "github.com/m0n0x41d/haft/internal/p13acceptance", "test": "TestHGAdversarialAcceptance"}
+      ]
+    }
+  ]
+}

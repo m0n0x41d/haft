@@ -1,0 +1,238 @@
+{
+  "schema": "haft.p14.historical-mismatch-evidence/v1",
+  "source": {
+    "capture_path": ".context/p14/p14-installed-cli-capture-02a4f191d939db7d.json",
+    "capture_file_digest": "sha256:f52cffa214028615226ef7b9cc7ba5664837d2a92a6611f2db7f337b7149fe39",
+    "declared_capture_digest": "sha256:02a4f191d939db7d0160a865c23d9b09c5ebffd672f40bbce317a35ffcdda168",
+    "prepared_path": ".context/p14/p14-prepared-request-oracle-c07b643deb49c27f.json",
+    "prepared_file_digest": "sha256:97f196f615637e71b9c7d7a4b78d07547ce9360161fb750b7a7e4aa38a041ff2",
+    "preparation_digest": "sha256:c07b643deb49c27f9147519af0970657e053b5541bd5f2ee05dc25acf64b4822",
+    "memory_fixture_declared_path": ".context/p14/fixtures/golden_memory_fixture.json",
+    "memory_fixture_archive_path": ".context/p14/history/pre-a2c9a05b984550df/golden_memory_fixture.json",
+    "memory_fixture_digest": "sha256:3ce6be2e50921e60858ba760bb163c9735014736cc146d67a2c0fa75c5f3f066",
+    "candidate_digest": "sha256:e20d19a5818c2677720a4cdb4fee87c337d20f6c055cce988e3db276bdae8719",
+    "known_entity": {
+      "reference_id": "entity:haft-v9-typed-memory",
+      "bounded_context_ref": "haft-project"
+    }
+  },
+  "families": [
+    {
+      "scenario_id": "positive_typed_write",
+      "disposition": "stale",
+      "semantic_request_digest": "sha256:e86b6343f68f75d9824a2d9ed35a3b15751694f3a2d6652ebba643c7f0dbc0e2",
+      "request_payload_digest": "sha256:6600efe87d7c80fd33fb6f2543a854efd1c64a68e862a66d21bd67d7f07b9e0a",
+      "observation_digest": "sha256:c6d50c2a7aa6faf81364771694c670fdb7ee1dce64c628a3afa26c6e31c0043d",
+      "old_outcome": "oracle_mismatch",
+      "old_failure_code": "normalization_failed",
+      "regression": "normalize applied to committed while retaining replay as replay",
+      "projection": {
+        "expected": {
+          "admission_result": "committed_then_exact_replay",
+          "commit_count": 1,
+          "graph_revision_delta": 1,
+          "authority_granted": false
+        },
+        "observed": {
+          "admit": {
+            "result": "committed",
+            "disposition": "applied",
+            "authority_granted": false,
+            "receipt": {
+              "event_ref": "typed-memory-event:952be728fbeafb70ee4ee235282406cee2d57ea322f693d70581028d6aad64ae",
+              "commit_ref": "typed-memory-commit:d4d2cd80b0b7e76ba8f71d0d2e7676d5ec7983e9d6973b8ec6645ef5a2842a72",
+              "graph_revision": 9,
+              "result_digest": "sha256:f1e9556429047c474987bb9db91e42dbec3706aefc2241bd6f5d45f24a555ad2"
+            }
+          },
+          "replay": {
+            "result": "committed",
+            "disposition": "replay",
+            "authority_granted": false,
+            "receipt": {
+              "event_ref": "typed-memory-event:952be728fbeafb70ee4ee235282406cee2d57ea322f693d70581028d6aad64ae",
+              "commit_ref": "typed-memory-commit:d4d2cd80b0b7e76ba8f71d0d2e7676d5ec7983e9d6973b8ec6645ef5a2842a72",
+              "graph_revision": 9,
+              "result_digest": "sha256:f1e9556429047c474987bb9db91e42dbec3706aefc2241bd6f5d45f24a555ad2"
+            }
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "invalid",
+      "disposition": "oracle",
+      "semantic_request_digest": "sha256:3543241e787797ed863a11b19cf41edb9b5da9e0554b2cd26b56c49bdba59c3c",
+      "request_payload_digest": "sha256:704156e145217499ceb09eb6db83e19e9ad7fb0439abfba5f002f0bd10360b98",
+      "observation_digest": "sha256:b1b6e2949fa9fc32eeffe1c53ed354c627777bec160f6fe16b434ef92c14489d",
+      "old_outcome": "oracle_mismatch",
+      "old_failure_code": "normalization_failed",
+      "regression": "declare the already-known exact EntityRef with contradictory identity metadata",
+      "projection": {
+        "request": {
+          "kind": "declare_entity",
+          "entity_id": "entity:invalid-contradiction",
+          "context": "haft-project"
+        },
+        "expected": {
+          "verdict": "invalid",
+          "commit_count": 0,
+          "graph_revision_delta": 0,
+          "authority_granted": false
+        },
+        "observed": {
+          "verdict": "valid",
+          "resolution_kind": "resolved_project_basis",
+          "rows_written": 0,
+          "authority_granted": false
+        }
+      }
+    },
+    {
+      "scenario_id": "underdetermined",
+      "disposition": "oracle",
+      "semantic_request_digest": "sha256:8ad3d7f73dbd02ac20b0726c763fc421c648323b53e25b3b9026a493fe7a9e6e",
+      "request_payload_digest": "sha256:0de22d0a08b5c507c43005c874bd24c1e2ded205858780fd872ba14736136f30",
+      "observation_digest": "sha256:144283868b5133b26742051aeb178e116066bc22a28ed9fda320e73da0792ad0",
+      "old_outcome": "oracle_mismatch",
+      "old_failure_code": "normalization_failed",
+      "regression": "declare an entity in a bounded context absent from the selected TypeEnv",
+      "projection": {
+        "request": {
+          "kind": "declare_entity",
+          "entity_id": "entity:missing-basis",
+          "context": "haft-project"
+        },
+        "expected": {
+          "verdict": "underdetermined",
+          "commit_count": 0,
+          "graph_revision_delta": 0,
+          "authority_granted": false
+        },
+        "observed": {
+          "verdict": "valid",
+          "resolution_kind": "resolved_project_basis",
+          "rows_written": 0,
+          "authority_granted": false
+        }
+      }
+    },
+    {
+      "scenario_id": "concurrency_idempotency",
+      "disposition": "stale",
+      "semantic_request_digest": "sha256:bae34c51e078238a29fe8fd0e0ba85956c25bda773266d7580e69b54936ced0f",
+      "request_payload_digest": "sha256:0a9f683da57d758f0089882956ae5279f7bafec171ad79c781ddd143f0b8083b",
+      "observation_digest": "sha256:9007bbf1454b5e3b1dcb116ef54d65ec67f9830f6397cbfa695c3c17c18d1e34",
+      "old_outcome": "oracle_mismatch",
+      "old_failure_code": "normalization_failed",
+      "regression": "normalize applied to committed before counting one commit and exact replays",
+      "projection": {
+        "expected": {
+          "admission_result": "one_commit_and_exact_replays",
+          "conflict_result": "idempotency_conflict",
+          "commit_count": 1,
+          "graph_revision_delta": 1,
+          "authority_granted": false
+        },
+        "observed": {
+          "writer_a": {
+            "result": "committed",
+            "disposition": "replay",
+            "receipt": {
+              "event_ref": "typed-memory-event:9ea7b08d79046a1cbda8f9435db7433d10c34a3908fc0c04535eeb88cd7bd0f3",
+              "commit_ref": "typed-memory-commit:f5c751acf55f482625ceab4b7d3f0eab75653df0e22f74111c6ec2eabd14c119",
+              "graph_revision": 9,
+              "result_digest": "sha256:9948c8d689736993ab1bf000ef53f4d4080e11fb35b60618f00c16ccd5832b52"
+            }
+          },
+          "writer_b": {
+            "result": "committed",
+            "disposition": "applied",
+            "receipt": {
+              "event_ref": "typed-memory-event:9ea7b08d79046a1cbda8f9435db7433d10c34a3908fc0c04535eeb88cd7bd0f3",
+              "commit_ref": "typed-memory-commit:f5c751acf55f482625ceab4b7d3f0eab75653df0e22f74111c6ec2eabd14c119",
+              "graph_revision": 9,
+              "result_digest": "sha256:9948c8d689736993ab1bf000ef53f4d4080e11fb35b60618f00c16ccd5832b52"
+            }
+          },
+          "replay": {
+            "result": "committed",
+            "disposition": "replay",
+            "receipt": {
+              "event_ref": "typed-memory-event:9ea7b08d79046a1cbda8f9435db7433d10c34a3908fc0c04535eeb88cd7bd0f3",
+              "commit_ref": "typed-memory-commit:f5c751acf55f482625ceab4b7d3f0eab75653df0e22f74111c6ec2eabd14c119",
+              "graph_revision": 9,
+              "result_digest": "sha256:9948c8d689736993ab1bf000ef53f4d4080e11fb35b60618f00c16ccd5832b52"
+            }
+          },
+          "conflict": {
+            "exit_code": 1,
+            "stdout_digest": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stderr_digest": "sha256:b5047b08a69ebc0e506ea9701d1c3991821b0a75fc024ef67aadeb038169fc83"
+          }
+        }
+      }
+    },
+    {
+      "scenario_id": "existing_record_backfill",
+      "disposition": "oracle",
+      "semantic_request_digest": "sha256:3c230d70b99ea73cff54685b4825c31a21b775d1730c36e55bce658ef7a07be2",
+      "request_payload_digest": "sha256:a3fddbdafaab19f2070cdfea6d257a1e9738e678a3b962ca94daaa3dc77aeb25",
+      "observation_digest": "sha256:8564ddbfc6fdbd9842b8309ba3edf1000a6ce64a4d00f7a3a898725221a922ff",
+      "old_outcome": "oracle_mismatch",
+      "old_failure_code": "normalization_failed",
+      "regression": "use a whitespace-tolerant single-document parser for backfill only",
+      "projection": {
+        "expected": [
+          {
+            "id": "dry_run",
+            "result": "validated_only",
+            "graph_revision_delta": 0,
+            "durable_change_count": 0
+          },
+          {
+            "id": "apply",
+            "result": "committed",
+            "graph_revision_delta": 1,
+            "durable_change_count": 2
+          },
+          {
+            "id": "replay",
+            "result": "already_projected",
+            "graph_revision_delta": 0,
+            "durable_change_count": 0
+          }
+        ],
+        "observed": [
+          {
+            "id": "dry_run",
+            "exit_code": 0,
+            "stdout_digest": "sha256:00016c7743299b1ecb978aac609148b0ea7c0cd82556405c5ca124316b05b21d",
+            "pretty_json_prefix": true,
+            "result": "validated_only",
+            "graph_revision_delta": 0,
+            "durable_change_count": 0
+          },
+          {
+            "id": "apply",
+            "exit_code": 0,
+            "stdout_digest": "sha256:ec540acdd7f406303499e805701b663818d923a4c005fbd5b2cf33aa58795bcd",
+            "pretty_json_prefix": true,
+            "result": "committed",
+            "graph_revision_delta": 1,
+            "durable_change_count": 2
+          },
+          {
+            "id": "replay",
+            "exit_code": 0,
+            "stdout_digest": "sha256:0e20e08dd72750edabd291b9d034d72c8e0a07d6836ebba9c1ce95e180ad37fe",
+            "pretty_json_prefix": true,
+            "result": "already_projected",
+            "graph_revision_delta": 0,
+            "durable_change_count": 0
+          }
+        ]
+      }
+    }
+  ]
+}

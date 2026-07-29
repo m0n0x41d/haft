@@ -5,6 +5,17 @@ on:
     branches: [main, dev]
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_p13:
+        description: Run consolidated P13 on an explicitly provisioned frozen basis
+        required: true
+        default: false
+        type: boolean
+      p13_basis_run_id:
+        description: Workflow run containing the p13-frozen-basis artifact
+        required: false
+        type: string
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -24,6 +35,12 @@ jobs:
           go-version: '1.25'
           cache-dependency-path: go.sum
 
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
+
       - name: Prepare desktop embed placeholder
         run: |
           mkdir -p desktop/frontend/dist
@@ -40,11 +57,19 @@ jobs:
 
           while IFS= read -r pkg; do
             echo "::group::go test -race $pkg"
-            go test -v -race "$pkg"
+            go test -v -race -count=1 -timeout=20m \
+              -skip '^TestP13ConsolidatedAcceptance$' \
+              "$pkg"
             echo "::endgroup::"
           done <<EOF
           $packages
           EOF
+
+      - name: Verify committed FPF Query and TypeEnv index
+        run: go run ./cmd/indexer -verify internal/cli/fpf.db data/FPF/FPF-Spec.md "$(git -C data/FPF rev-parse HEAD)"
+
+      - name: Verify FPF Query working-view token gate
+        run: bash scripts/fpf_query_token_gate.sh
 
       - name: Collect coverage
         run: |
@@ -61,7 +86,10 @@ jobs:
               continue
             fi
 
-            go test -v -coverprofile="$tmp_profile" "$pkg"
+            go test -v \
+              -skip '^TestP13ConsolidatedAcceptance$' \
+              -coverprofile="$tmp_profile" \
+              "$pkg"
             tail -n +2 "$tmp_profile" >> "$profile"
             found_test_package=true
           done <<EOF
@@ -78,7 +106,7 @@ jobs:
 
       - name: Smoke test — binary starts and responds to MCP initialize
         run: |
-          RESPONSE=$(echo '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./haft serve 2>/dev/null || true)
+          RESPONSE=$(printf '%s\n' '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' | timeout 5 ./haft serve 2>/dev/null)
           if echo "$RESPONSE" | grep -q '"protocolVersion"'; then
             echo "Smoke test passed: MCP server responds correctly"
           else
@@ -86,13 +114,32 @@ jobs:
             echo "Response was: $RESPONSE"
             exit 1
           fi
+          printf '%s\n' "$RESPONSE" | grep -F '"serverInfo":{"name":"haft","version":"dev"}'
 
       - name: Upload coverage
         uses: codecov/codecov-action@v5
         with:
-          file: coverage.out
+          files: coverage.out
           fail_ci_if_error: false
         continue-on-error: true
+
+  open-sleigh:
+    name: OpenSleigh
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18.3'
+
+      - name: Check format and run tests
+        working-directory: open-sleigh
+        run: |
+          mix deps.get
+          mix format --check-formatted
+          mix test
 
   lint:
     name: Lint
@@ -116,3 +163,182 @@ jobs:
         with:
           version: v2.11.4
           args: --timeout=5m
+
+  p13:
+    name: P13 consolidated acceptance
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_p13 }}
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
+
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18.3'
+
+      - name: Require an explicit frozen-basis artifact
+        env:
+          P13_BASIS_RUN_ID: ${{ inputs.p13_basis_run_id }}
+        run: |
+          test -n "$P13_BASIS_RUN_ID"
+          case "$P13_BASIS_RUN_ID" in
+            *[!0-9]*)
+              echo "p13_basis_run_id must contain only decimal digits" >&2
+              exit 1
+              ;;
+          esac
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p13-frozen-basis
+          path: ${{ runner.temp }}/p13-frozen-basis
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.p13_basis_run_id }}
+
+      - name: Verify and provision the frozen basis
+        env:
+          BASIS_ROOT: ${{ runner.temp }}/p13-frozen-basis
+        run: |
+          basis_manifest="$BASIS_ROOT/basis.json"
+          repository_tree="$BASIS_ROOT/repository"
+          basis_home="$BASIS_ROOT/home"
+
+          test -f "$basis_manifest"
+          test -d "$repository_tree/.context"
+          test -d "$basis_home/.haft/projects"
+
+          jq -e \
+            --arg sha "$GITHUB_SHA" \
+            '.schema == "haft.p13.remote-frozen-basis/v1" and .candidate_sha == $sha' \
+            "$basis_manifest" >/dev/null
+
+          freeze_candidate=$(jq -er '.freeze_candidate_path' "$basis_manifest")
+          case "$freeze_candidate" in
+            .context/p13/*.json) ;;
+            *)
+              echo "freeze_candidate_path must be one .context/p13 JSON carrier" >&2
+              exit 1
+              ;;
+          esac
+
+          test -f "$repository_tree/$freeze_candidate"
+          test -f "$repository_tree/.context/current-plan-issue-report.md"
+          test -f "$repository_tree/.context/haft-v9-deterministic-closeout.plan.md"
+          test -d "$repository_tree/.agents/skills"
+          test -f "$repository_tree/.haft/config.yaml"
+          test -f "$repository_tree/.haft/project-profile.yaml"
+          test -f "$repository_tree/.haft/project.yaml"
+
+          project_id=$(
+            awk '$1 == "id:" { print $2; exit }' \
+              "$repository_tree/.haft/project.yaml"
+          )
+          printf '%s\n' "$project_id" | grep -Eq '^qnt_[0-9a-f]{8}$'
+          test -f "$basis_home/.haft/projects/$project_id/haft.db"
+
+          mkdir -p .context
+          mkdir -p .agents
+          mkdir -p .haft
+          cp -R "$repository_tree/.context/." .context/
+          cp -R "$repository_tree/.agents/skills" .agents/
+          cp "$repository_tree/.haft/config.yaml" .haft/config.yaml
+          cp "$repository_tree/.haft/project-profile.yaml" .haft/project-profile.yaml
+          cp "$repository_tree/.haft/project.yaml" .haft/project.yaml
+
+          printf 'P13_REMOTE_HOME=%s\n' "$basis_home" >> "$GITHUB_ENV"
+          printf 'P13_FREEZE_CANDIDATE=%s\n' "$freeze_candidate" >> "$GITHUB_ENV"
+
+      - name: Restore frozen dependency inputs
+        run: |
+          npm ci --prefix packages/haft-pi
+          cd open-sleigh
+          mix deps.get
+
+      - name: Verify frozen-basis currentness
+        run: |
+          HOME="$P13_REMOTE_HOME" \
+          HAFT_P13_VERIFY_FREEZE_INPUT="$P13_FREEZE_CANDIDATE" \
+            go test -count=1 -timeout=5m -v ./internal/p13acceptance \
+            -run '^TestP13VerifyFreezeInputCandidate$'
+          HOME="$P13_REMOTE_HOME" \
+            go test -count=1 -timeout=5m -v ./internal/p13acceptance \
+            -run '^TestP13ManifestStructureAndAnchors$'
+
+      - name: Run consolidated P13 on one frozen identity
+        run: |
+          before="$RUNNER_TEMP/p13-evidence-before"
+          after="$RUNNER_TEMP/p13-evidence-after"
+          created="$RUNNER_TEMP/p13-evidence-created"
+
+          find .context/p13 \
+            -maxdepth 1 \
+            -type f \
+            -name 'p13-acceptance-*.json' \
+            -print |
+            sort > "$before"
+
+          HOME="$P13_REMOTE_HOME" \
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
+          HAFT_P13_RUN_CONSOLIDATED=1 \
+            go test -count=1 -timeout=50m -v ./internal/p13acceptance \
+            -run '^TestP13ConsolidatedAcceptance$'
+
+          find .context/p13 \
+            -maxdepth 1 \
+            -type f \
+            -name 'p13-acceptance-*.json' \
+            -print |
+            sort > "$after"
+          comm -13 "$before" "$after" > "$created"
+          test "$(wc -l < "$created" | tr -d ' ')" = "1"
+
+          evidence_path=$(sed -n '1p' "$created")
+          evidence_digest="sha256:$(sha256sum "$evidence_path" | awk '{print $1}')"
+          jq -e \
+            '.schema == "haft.p13.acceptance-evidence/v3" and
+             .status == "passed" and
+             .identity_unchanged == true and
+             .release_claim == false' \
+            "$evidence_path" >/dev/null
+
+          printf 'P13_ACCEPTANCE_CARRIER=%s\n' "$evidence_path" >> "$GITHUB_ENV"
+          printf 'P13_ACCEPTANCE_DIGEST=%s\n' "$evidence_digest" >> "$GITHUB_ENV"
+
+      - name: Verify fresh P13 evidence against the unchanged candidate
+        run: |
+          HOME="$P13_REMOTE_HOME" \
+          HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE="$P13_ACCEPTANCE_CARRIER" \
+          HAFT_P13_VERIFY_ACCEPTANCE_DIGEST="$P13_ACCEPTANCE_DIGEST" \
+            go test -count=1 -timeout=5m -v ./internal/p13acceptance \
+            -run '^TestP13VerifyAcceptanceEvidenceFresh$'
+
+      - name: Preserve non-publishing P13 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: p13-acceptance-${{ github.sha }}
+          path: ${{ env.P13_ACCEPTANCE_CARRIER }}
+          if-no-files-found: error
+          retention-days: 14

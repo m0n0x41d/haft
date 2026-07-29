@@ -5,12 +5,22 @@ on:
     paths:
       - 'install.sh'
       - '.goreleaser.yaml'
+      - '.github/workflows/install-test.yml'
   workflow_dispatch:
 
 jobs:
-  install-linux:
-    name: Install (Linux)
-    runs-on: ubuntu-latest
+  install:
+    name: Install (${{ matrix.name }})
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Linux
+            runner: ubuntu-latest
+          - name: macOS
+            runner: macos-latest
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v6
 
@@ -18,26 +28,89 @@ jobs:
         with:
           go-version: '1.25'
 
-      - name: Build haft
-        run: go build -o haft -trimpath ./cmd/haft/
+      - name: Check installer syntax
+        run: bash -n install.sh
 
-      - name: Verify binary works
+      - name: Reject a missing candidate archive
         run: |
-          ./haft version || echo "Binary runs"
+          missing_home="$RUNNER_TEMP/haft-missing-archive-home"
+          missing_log="$RUNNER_TEMP/haft-missing-archive.log"
 
-  install-macos:
-    name: Install (macOS)
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v6
+          if HOME="$missing_home" \
+            HAFT_INSTALL_ARCHIVE="$RUNNER_TEMP/absent-haft-candidate.tar.gz" \
+              bash install.sh >"$missing_log" 2>&1; then
+            echo "missing HAFT_INSTALL_ARCHIVE unexpectedly succeeded" >&2
+            exit 1
+          fi
+          grep -F 'HAFT_INSTALL_ARCHIVE is not a regular file' "$missing_log"
 
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-
-      - name: Build haft
-        run: go build -o haft -trimpath ./cmd/haft/
-
-      - name: Verify binary works
+      - name: Exercise current candidate archive
         run: |
-          ./haft version || echo "Binary runs"
+          candidate_version=9.0.0
+          candidate_sha=$(git rev-parse --short HEAD)
+          archive_root="$RUNNER_TEMP/haft-candidate-archive"
+          archive_path="$RUNNER_TEMP/haft-candidate.tar.gz"
+          candidate_home="$RUNNER_TEMP/haft-candidate-home"
+          install_bin="$candidate_home/.local/bin/haft"
+
+          mkdir -p "$archive_root/runtimes/open-sleigh/bin"
+          mkdir -p "$archive_root/runtimes/haft-embed/bin"
+          mkdir -p "$candidate_home/.local/bin"
+
+          go build -trimpath \
+            -ldflags "-s -w \
+              -X github.com/m0n0x41d/haft/internal/cli.Version=$candidate_version \
+              -X github.com/m0n0x41d/haft/internal/cli.Commit=$candidate_sha \
+              -X github.com/m0n0x41d/haft/internal/cli.BuildDate=1970-01-01T00:00:00Z" \
+            -o "$archive_root/haft" \
+            ./cmd/haft/
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'printf "%s\n" candidate-open-sleigh' \
+            > "$archive_root/runtimes/open-sleigh/bin/open_sleigh"
+          printf '%s\n' \
+            '#!/usr/bin/env bash' \
+            'printf "%s\n" candidate-haft-embed' \
+            > "$archive_root/runtimes/haft-embed/bin/haft-embed"
+          chmod +x "$archive_root/runtimes/open-sleigh/bin/open_sleigh"
+          chmod +x "$archive_root/runtimes/haft-embed/bin/haft-embed"
+          tar -czf "$archive_path" -C "$archive_root" .
+
+          HOME="$candidate_home" \
+          HAFT_INSTALL_ARCHIVE="$archive_path" \
+            bash install.sh
+
+          test -x "$install_bin"
+          "$install_bin" version | grep -F "haft $candidate_version"
+          "$install_bin" version | grep -F "commit:  $candidate_sha"
+
+          response=$(printf '%s\n' \
+            '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' |
+            HOME="$candidate_home" "$install_bin" serve 2>/dev/null)
+          printf '%s\n' "$response" | grep -F '"protocolVersion"'
+          printf '%s\n' "$response" |
+            grep -F '"serverInfo":{"name":"haft","version":"9.0.0"}'
+
+          "$candidate_home/.haft/runtimes/open-sleigh/current/bin/open_sleigh" |
+            grep -F 'candidate-open-sleigh'
+          "$candidate_home/.haft/runtimes/haft-embed/current/bin/haft-embed" |
+            grep -F 'candidate-haft-embed'
+
+      - name: Exercise latest published network install
+        run: |
+          published_home="$RUNNER_TEMP/haft-published-home"
+          install_bin="$published_home/.local/bin/haft"
+
+          mkdir -p "$published_home/.local/bin"
+          HOME="$published_home" bash install.sh
+
+          test -x "$install_bin"
+          "$install_bin" version | grep -E '^haft (v)?[0-9]+\.[0-9]+\.[0-9]+'
+
+          response=$(printf '%s\n' \
+            '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' |
+            HOME="$published_home" "$install_bin" serve 2>/dev/null)
+          printf '%s\n' "$response" | grep -F '"protocolVersion"'
+          printf '%s\n' "$response" | grep -F '"serverInfo":{"name":"haft"'
+          test -x \
+            "$published_home/.haft/runtimes/open-sleigh/current/bin/open_sleigh"

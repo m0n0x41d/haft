@@ -3,13 +3,86 @@ name: Release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: Validate current main, or publish artifacts from one successful tag-validation run
+        required: true
+        default: validate
+        type: choice
+        options:
+          - validate
+          - publish
+      version:
+        description: Semver to embed in dry-run artifacts, without the v prefix
+        required: true
+        default: '9.0.0'
+        type: string
+      tag:
+        description: Existing annotated v9 tag to publish
+        required: false
+        type: string
+      validation_run_id:
+        description: Successful tag-validation workflow run whose artifacts will be published
+        required: false
+        type: string
 
 permissions:
-  contents: write
+  actions: read
+  contents: read
 
 jobs:
+  guard:
+    name: Validate release candidate
+    if: ${{ github.event_name == 'push' || inputs.operation == 'validate' }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.candidate.outputs.version }}
+      sha: ${{ steps.candidate.outputs.sha }}
+      short_sha: ${{ steps.candidate.outputs.short_sha }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Require exact main SHA and semver
+        id: candidate
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          git fetch origin main --no-tags
+
+          candidate_sha=$(git rev-parse HEAD)
+          main_sha=$(git rev-parse origin/main)
+          short_sha=$(git rev-parse --short HEAD)
+          version="${GITHUB_REF_NAME#v}"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+          fi
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            test "$(git cat-file -t "$GITHUB_REF")" = "tag"
+          fi
+
+          scripts/release/validate-candidate.sh "$version" "$candidate_sha" "$main_sha"
+
+          if [ "$EVENT_NAME" = "push" ]; then
+            version_pattern=${version//./\\.}
+            test -f ".github/release-notes/${version}.md"
+            grep -Eq \
+              "^## \\[${version_pattern}\\]([[:space:]]|$)" \
+              CHANGELOG.md
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
+          echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
+
   test:
     name: Pre-release tests
+    needs: [guard]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -20,17 +93,64 @@ jobs:
         with:
           go-version: '1.25'
           cache-dependency-path: go.sum
-      - name: Run tests
-        run: go test -race ./...
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18.3'
 
-      # The FPF index is baked locally (CPU inference too heavy for runners) and
-      # committed. CI only VERIFIES it is fresh + vector-baked — never re-bakes.
-      - name: Verify committed FPF index (fresh + vector-baked)
-        run: go run ./cmd/indexer -verify internal/cli/fpf.db "$(git -C data/FPF rev-parse HEAD)"
+      - name: Run Go race tests
+        run: |
+          go test -race -count=1 -timeout=20m \
+            -skip '^TestP13ConsolidatedAcceptance$' \
+            ./...
+
+      - name: Run OpenSleigh tests
+        working-directory: open-sleigh
+        run: |
+          mix deps.get
+          mix format --check-formatted
+          mix test
+
+      # The source-derived FPF index is built locally and committed. CI verifies
+      # source revision, provenance, grammar, identity, and FTS integrity.
+      - name: Verify committed source-derived FPF index
+        run: go run ./cmd/indexer -verify internal/cli/fpf.db data/FPF/FPF-Spec.md "$(git -C data/FPF rev-parse HEAD)"
+
+      - name: Verify FPF Query working-view token gate
+        run: bash scripts/fpf_query_token_gate.sh
+
+  lint:
+    name: Exact release lint
+    needs: [guard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - name: Prepare desktop embed placeholder
+        run: |
+          mkdir -p desktop/frontend/dist
+          printf 'release placeholder\n' > desktop/frontend/dist/.release-placeholder
+
+      - uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.4
+          args: --timeout=5m
 
   build:
     name: Build CLI ${{ matrix.goos }}-${{ matrix.goarch }}
-    needs: [test]
+    needs: [guard, test, lint]
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -52,7 +172,19 @@ jobs:
         with:
           go-version: '1.25'
           cache-dependency-path: go.sum
-      - uses: erlef/setup-beam@v1
+      - name: Set up Erlang/Elixir
+        if: matrix.runner != 'ubuntu-24.04-arm'
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: '27'
+          elixir-version: '1.18.3'
+
+      - name: Set up Erlang/Elixir (linux arm64)
+        if: matrix.runner == 'ubuntu-24.04-arm'
+        uses: erlef/setup-beam@v1
+        env:
+          # setup-beam does not recognize GitHub's ubuntu24-arm64 ImageOS.
+          ImageOS: ubuntu24
         with:
           otp-version: '27'
           elixir-version: '1.18.3'
@@ -69,10 +201,6 @@ jobs:
             embed-sidecar/target
           key: ${{ runner.os }}-${{ matrix.goarch }}-embed-cargo-${{ hashFiles('embed-sidecar/Cargo.lock') }}
 
-      - name: Extract version from tag
-        id: version
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
@@ -81,7 +209,7 @@ jobs:
         run: |
           go build -trimpath \
             -ldflags "-s -w \
-              -X github.com/m0n0x41d/haft/internal/cli.Version=${{ steps.version.outputs.version }} \
+              -X github.com/m0n0x41d/haft/internal/cli.Version=${{ needs.guard.outputs.version }} \
               -X github.com/m0n0x41d/haft/internal/cli.Commit=$(git rev-parse --short HEAD) \
               -X github.com/m0n0x41d/haft/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o haft ./cmd/haft/
@@ -121,31 +249,161 @@ jobs:
           tar czf _dist/haft-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz \
             haft runtimes README.md LICENSE CHANGELOG.md
 
+      - name: Smoke packaged archive
+        run: |
+          scripts/release/smoke-archive.sh \
+            "_dist/haft-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
+            "${{ needs.guard.outputs.version }}" \
+            "${{ needs.guard.outputs.short_sha }}"
+
       - uses: actions/upload-artifact@v4
         with:
           name: haft-${{ matrix.goos }}-${{ matrix.goarch }}
           path: _dist/*.tar.gz
+          if-no-files-found: error
+          overwrite: true
 
-  release:
-    name: Create Release
-    needs: [build]
+  bundle:
+    name: Seal validated release artifacts
+    if: ${{ github.event_name == 'push' || inputs.operation == 'validate' }}
+    needs: [guard, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
-
       - uses: actions/download-artifact@v4
         with:
           path: _artifacts
           merge-multiple: true
 
       - name: Generate checksums
-        run: cd _artifacts && sha256sum *.tar.gz > checksums.txt
+        run: |
+          cd _artifacts
+          expected_archives=(
+            haft-linux-amd64.tar.gz
+            haft-linux-arm64.tar.gz
+            haft-darwin-arm64.tar.gz
+          )
 
-      - name: Create GitHub Release
+          test "$(find . -maxdepth 1 -name 'haft-*.tar.gz' | wc -l | tr -d ' ')" = "${#expected_archives[@]}"
+          for archive in "${expected_archives[@]}"; do
+            test -f "$archive"
+          done
+
+          sha256sum "${expected_archives[@]}" > checksums.txt
+          sha256sum -c checksums.txt
+
+      - name: Upload sealed release bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-bundle
+          path: |
+            _artifacts/checksums.txt
+            _artifacts/haft-linux-amd64.tar.gz
+            _artifacts/haft-linux-arm64.tar.gz
+            _artifacts/haft-darwin-arm64.tar.gz
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  publish:
+    name: Publish validated GitHub Release
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'publish' }}
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Verify tag and validation-run lineage
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          VALIDATION_RUN_ID: ${{ inputs.validation_run_id }}
         run: |
-          gh release create "${{ github.ref_name }}" \
-            --title "Haft ${{ github.ref_name }}" \
-            --generate-notes \
-            _artifacts/*
+          test -n "$TAG"
+          test -n "$VALIDATION_RUN_ID"
+          case "$TAG" in
+            v*) ;;
+            *)
+              echo "tag must be exact semver with a v prefix" >&2
+              exit 1
+              ;;
+          esac
+          case "$VALIDATION_RUN_ID" in
+            *[!0-9]*)
+              echo "validation_run_id must contain only decimal digits" >&2
+              exit 1
+              ;;
+          esac
+
+          git fetch origin main --tags
+          tag_ref="refs/tags/$TAG"
+          test "$(git cat-file -t "$tag_ref")" = "tag"
+
+          tag_sha=$(git rev-parse "$tag_ref^{commit}")
+          main_sha=$(git rev-parse origin/main)
+          version="${TAG#v}"
+          scripts/release/validate-candidate.sh "$version" "$tag_sha" "$main_sha"
+
+          run_json="$RUNNER_TEMP/validation-run.json"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${VALIDATION_RUN_ID}" \
+            > "$run_json"
+          jq -e \
+            --arg sha "$tag_sha" \
+            --arg tag "$TAG" \
+            '.event == "push" and
+             .conclusion == "success" and
+             .head_sha == $sha and
+             .head_branch == $tag and
+             .path == ".github/workflows/release.yml"' \
+            "$run_json" >/dev/null
+
+          notes_file=".github/release-notes/${version}.md"
+          test -f "$notes_file"
+          version_pattern=${version//./\\.}
+          grep -Eq \
+            "^## \\[${version_pattern}\\]([[:space:]]|$)" \
+            CHANGELOG.md
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "GitHub Release $TAG already exists" >&2
+            exit 1
+          fi
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-bundle
+          path: _artifacts
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.validation_run_id }}
+
+      - name: Verify and publish the sealed bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          cd _artifacts
+          expected_archives=(
+            haft-linux-amd64.tar.gz
+            haft-linux-arm64.tar.gz
+            haft-darwin-arm64.tar.gz
+          )
+
+          sha256sum -c checksums.txt
+          test "$(find . -maxdepth 1 -name 'haft-*.tar.gz' | wc -l | tr -d ' ')" = "${#expected_archives[@]}"
+          for archive in "${expected_archives[@]}"; do
+            test -f "$archive"
+          done
+
+          version="${TAG#v}"
+          gh release create "$TAG" \
+            --verify-tag \
+            --title "Haft $TAG" \
+            --notes-file "../.github/release-notes/${version}.md" \
+            checksums.txt \
+            "${expected_archives[@]}"

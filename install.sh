@@ -23,6 +23,9 @@ BIN_NAME="haft"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
 OPEN_SLEIGH_INSTALL_DIR="$HOME/.haft/runtimes/open-sleigh/current"
 HAFT_EMBED_INSTALL_DIR="$HOME/.haft/runtimes/haft-embed/current"
+# Internal validation seam: install one already-built local release archive
+# without consulting GitHub. Normal user installs leave this unset.
+INSTALL_ARCHIVE_OVERRIDE="${HAFT_INSTALL_ARCHIVE:-}"
 
 print_logo() {
     local ORANGE='\033[38;5;208m'
@@ -239,6 +242,20 @@ install_from_release_archive() {
     fi
 }
 
+install_extracted_release() {
+    local archive_root="$1"
+    local bin_dir="$2"
+
+    install_from_release_archive "$archive_root" "$bin_dir"
+
+    # macOS: re-sign binary locally to bypass Gatekeeper. Downloaded binaries
+    # with foreign ad-hoc signatures can otherwise be killed on launch.
+    if [[ "$(uname -s)" == "Darwin" ]]; then
+        codesign --remove-signature "$bin_dir/$BIN_NAME" 2>/dev/null || true
+        codesign -s - "$bin_dir/$BIN_NAME" 2>/dev/null || true
+    fi
+}
+
 install_from_source_checkout() {
     local repo_dir="$1"
     local bin_dir="$2"
@@ -271,39 +288,42 @@ main() {
     bin_dir=$(find_bin_dir)
     os_arch=$(get_os_arch)
 
-    # Try downloading release
-    local api_url="https://api.github.com/repos/${REPO}/releases/latest"
-    local download_url
-    # Anchor on `/haft-${os_arch}.tar.gz` so the platform-specific CLI archive
-    # is selected precisely from the GitHub API response.
-    download_url=$(curl -s "$api_url" \
-        | grep -E "\"browser_download_url\":[[:space:]]*\".*/haft-${os_arch}\.tar\.gz\"" \
-        | sed -E 's/.*"([^"]+)".*/\1/' \
-        | head -1)
-
-    if [[ -n "$download_url" ]]; then
-        (
-            cd "$tmp_dir"
-            curl -sL "$download_url" -o release.tar.gz
-            tar -xzf release.tar.gz
-        ) &
-        spinner $! "Downloading release ($os_arch)"
-        install_from_release_archive "$tmp_dir" "$bin_dir"
-
-        # macOS: re-sign binary locally to bypass Gatekeeper
-        # Downloaded binaries with foreign ad-hoc signatures get killed
-        if [[ "$(uname -s)" == "Darwin" ]]; then
-            codesign --remove-signature "$bin_dir/$BIN_NAME" 2>/dev/null || true
-            codesign -s - "$bin_dir/$BIN_NAME" 2>/dev/null || true
+    if [[ -n "$INSTALL_ARCHIVE_OVERRIDE" ]]; then
+        if [[ ! -f "$INSTALL_ARCHIVE_OVERRIDE" ]]; then
+            printf "${RED}   ✗ HAFT_INSTALL_ARCHIVE is not a regular file: %s${RESET}\n" "$INSTALL_ARCHIVE_OVERRIDE"
+            exit 1
         fi
+        mkdir -p "$tmp_dir/candidate-release"
+        tar -xzf "$INSTALL_ARCHIVE_OVERRIDE" -C "$tmp_dir/candidate-release"
+        install_extracted_release "$tmp_dir/candidate-release" "$bin_dir"
     else
-        printf "${YELLOW}   ⚠ No release found, building from source...${RESET}\n"
-        require_source_build_toolchain
+        # Try downloading the latest published release.
+        local api_url="https://api.github.com/repos/${REPO}/releases/latest"
+        local download_url
+        # Anchor on `/haft-${os_arch}.tar.gz` so the platform-specific CLI
+        # archive is selected precisely from the GitHub API response.
+        download_url=$(curl -s "$api_url" \
+            | grep -E "\"browser_download_url\":[[:space:]]*\".*/haft-${os_arch}\.tar\.gz\"" \
+            | sed -E 's/.*"([^"]+)".*/\1/' \
+            | head -1)
 
-        git clone --depth 1 "https://github.com/$REPO.git" "$tmp_dir/repo" 2>/dev/null &
-        spinner $! "Cloning repository"
+        if [[ -n "$download_url" ]]; then
+            mkdir -p "$tmp_dir/published-release"
+            (
+                curl -sL "$download_url" -o "$tmp_dir/release.tar.gz"
+                tar -xzf "$tmp_dir/release.tar.gz" -C "$tmp_dir/published-release"
+            ) &
+            spinner $! "Downloading release ($os_arch)"
+            install_extracted_release "$tmp_dir/published-release" "$bin_dir"
+        else
+            printf "${YELLOW}   ⚠ No release found, building from source...${RESET}\n"
+            require_source_build_toolchain
 
-        install_from_source_checkout "$tmp_dir/repo" "$bin_dir"
+            git clone --depth 1 "https://github.com/$REPO.git" "$tmp_dir/repo" 2>/dev/null &
+            spinner $! "Cloning repository"
+
+            install_from_source_checkout "$tmp_dir/repo" "$bin_dir"
+        fi
     fi
 
     printf "   ${GREEN}✓${RESET} Installed to ${WHITE}$bin_dir/$BIN_NAME${RESET}\n"

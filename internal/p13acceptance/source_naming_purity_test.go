@@ -77,6 +77,9 @@ func TestTrackedCarriersUseSourceNeutralNames(t *testing.T) {
 		if relative == "" {
 			continue
 		}
+		if sourceNamingExcludedTrackedPath(relative) {
+			continue
+		}
 		assertSourceNeutralText(t, relative, relative, labels)
 		path := filepath.Join(root, relative)
 		info, statErr := os.Stat(path)
@@ -94,6 +97,58 @@ func TestTrackedCarriersUseSourceNeutralNames(t *testing.T) {
 			t.Fatalf("read tracked carrier %s: %v", relative, readErr)
 		}
 		assertSourceNeutralText(t, relative, string(content), labels)
+	}
+}
+
+func TestSourceNamingExcludedTrackedPathsMatchDirectoryPolicy(t *testing.T) {
+	tests := []struct {
+		name     string
+		path     string
+		excluded bool
+	}{
+		{
+			name:     "historical decision carrier",
+			path:     ".haft/decisions/dec-example.md",
+			excluded: true,
+		},
+		{
+			name:     "method run carrier",
+			path:     ".haft/method-runs/mpull-example.md",
+			excluded: true,
+		},
+		{
+			name:     "product spec carrier",
+			path:     ".haft/specs/software-system.md",
+			excluded: false,
+		},
+		{
+			name:     "product source",
+			path:     "internal/p13acceptance/source_naming_purity_test.go",
+			excluded: false,
+		},
+		{
+			name:     "bundled FPF source",
+			path:     "data/FPF/FPF-Spec.md",
+			excluded: true,
+		},
+		{
+			name:     "nested dependency",
+			path:     "web/node_modules/dependency/index.js",
+			excluded: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			actual := sourceNamingExcludedTrackedPath(test.path)
+			if actual != test.excluded {
+				t.Fatalf(
+					"sourceNamingExcludedTrackedPath(%q) = %t, want %t",
+					test.path,
+					actual,
+					test.excluded,
+				)
+			}
+		})
 	}
 }
 
@@ -198,6 +253,22 @@ func sourceNamingExcludedDirectory(relative string, name string) bool {
 	}
 	_, found := excluded[name]
 	return found
+}
+
+func sourceNamingExcludedTrackedPath(relative string) bool {
+	directory := filepath.Dir(filepath.Clean(relative))
+	for directory != "." {
+		name := filepath.Base(directory)
+		if sourceNamingExcludedDirectory(directory, name) {
+			return true
+		}
+		parent := filepath.Dir(directory)
+		if parent == directory {
+			return false
+		}
+		directory = parent
+	}
+	return false
 }
 
 func sourceNamingTextCarrier(path string) bool {

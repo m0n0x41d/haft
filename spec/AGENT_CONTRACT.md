@@ -38,7 +38,10 @@ When spec and implementation diverge:
 
 ## Architecture rules
 
-- **Core** (`internal/artifact`, `internal/graph`, `internal/fpf`, `internal/reff`, `internal/codebase`, `internal/spec` when added) must NOT import `desktop/`, `internal/cli/`, or `internal/agentloop/`
+- **Core** (`internal/artifact`, `internal/graph`, `internal/fpf`,
+  `internal/reff`, `internal/codebase`) must NOT import current surface or
+  packages (`internal/cli`, `internal/present`, `internal/ui`, `cmd/haft`) or
+  the archived `desktop/` wrapper.
 - **Flow** may import Core. **Governor** may import Core + Flow. **Surfaces** may import anything below.
 - Side effects only at Flow layer and above. Core is pure queries + mutations through Store interface.
 

@@ -38,10 +38,11 @@ var carrierCheckCmd = &cobra.Command{
 	Short: "Run fixed-point semio checks over current carrier wording",
 	Long: `Run deterministic semio checks over current/support/compat carrier wording.
 
-The check fails when dead runtime surfaces such as standalone agent, TUI, or
-desktop wrappers are mentioned as current authority instead of being labeled as
-dropped, archive, provenance, support, or not-current. Findings are review
-inputs, not evidence, approval, or GateDecision.`,
+The check fails when dead runtime surfaces such as the standalone agent, its
+coding-agent TUI, or desktop wrappers are mentioned as current authority
+instead of being labeled as dropped, archive, provenance, support, or
+not-current. Findings are review inputs, not evidence, approval, or
+GateDecision.`,
 	RunE: runCarrierCheck,
 }
 

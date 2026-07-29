@@ -43,6 +43,24 @@ func TestRetiredDeterministicRoutingCheckIsNotPublic(t *testing.T) {
 	}
 }
 
+func TestRootHelpDistinguishesDroppedAgentTUIFromCurrentCLIPresentation(
+	t *testing.T,
+) {
+	if strings.Contains(rootCmd.Long, "TUI surfaces were dropped") {
+		t.Fatal("root help still drops current CLI presentation with the retired agent TUI")
+	}
+	for _, required := range []string{
+		"coding-agent TUI",
+		"haft board",
+		"haft run",
+		"remains supported",
+	} {
+		if !strings.Contains(rootCmd.Long, required) {
+			t.Fatalf("root help is missing current presentation boundary %q", required)
+		}
+	}
+}
+
 func TestREADMEAdvertisesCurrentSkillOnlySurface(t *testing.T) {
 	readme := readRepoFile(t, "README.md")
 	for _, want := range []string{"12 skills", "### Twelve skills installed by `haft init`"} {

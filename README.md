@@ -334,10 +334,11 @@ typed-memory orientation are separate; neither substitutes for the other.
 
 ### What changed in v8
 
-v8 dropped the standalone interactive agent (`haft agent`), the TUI, and the
-desktop wrappers. Haft no longer competes with general coding agents on the
-runtime surface — it adds governance discipline on top of whichever agent you
-already use.
+v8 dropped the standalone interactive agent (`haft agent`), its coding-agent
+TUI, and the desktop wrappers. The terminal presentation used by current
+`haft board` and `haft run` commands remains supported. Haft no longer competes
+with general coding agents on the runtime surface — it adds governance
+discipline on top of whichever agent you already use.
 
 Upgrading from the published v8.1.0 release, or still migrating a v7 project?
 See [MIGRATION-v8.md](MIGRATION-v8.md) for backup, forward-upgrade, host

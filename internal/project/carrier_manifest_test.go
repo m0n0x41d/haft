@@ -71,16 +71,30 @@ func TestCarrierAuthorityManifestUsesUpstreamFPFSourcesAndDerivedIndex(t *testin
 }
 
 func TestCarrierAuthorityManifestMarksDeadSurfacesArchive(t *testing.T) {
-	entry := carrierManifestEntry(t, "desktop-tui-standalone-code")
+	entry := carrierManifestEntry(t, "desktop-standalone-code")
 
 	if entry.Current {
-		t.Fatal("dead desktop/TUI/standalone surface must not be current")
+		t.Fatal("dead desktop/standalone surface must not be current")
 	}
 	if entry.AuthorityClass != CarrierAuthorityArchive {
 		t.Fatalf("authority_class = %q, want archive", entry.AuthorityClass)
 	}
 	if entry.DeadSurfacePolicy == "" {
 		t.Fatal("dead surface policy must be explicit")
+	}
+}
+
+func TestCarrierAuthorityManifestKeepsCLIPresentationCurrent(t *testing.T) {
+	entry := carrierManifestEntry(t, "cli-interactive-presentation-code")
+
+	if !entry.Current {
+		t.Fatal("current CLI presentation must not be archived with desktop wrappers")
+	}
+	if entry.AuthorityClass != CarrierAuthoritySupport {
+		t.Fatalf("authority_class = %q, want support", entry.AuthorityClass)
+	}
+	if entry.PathPattern != "internal/ui/**, internal/cli/run_tui.go, internal/cli/board.go" {
+		t.Fatalf("path_pattern = %q", entry.PathPattern)
 	}
 }
 

@@ -31,7 +31,8 @@ func TestRunCarrierManifestText(t *testing.T) {
 	for _, want := range []string{
 		"Carrier Authority Manifest v1",
 		"agent-skill-carriers",
-		"desktop-tui-standalone-code",
+		"desktop-standalone-code",
+		"cli-interactive-presentation-code",
 		"open-sleigh-sidekick",
 		"dead_surface_policy:",
 	} {

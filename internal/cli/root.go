@@ -28,9 +28,11 @@ Haft is consumed via three surfaces sharing one artifact graph:
   - This CLI for direct manual access without an LLM
   - MCP server for programmatic access from any LLM agent
 
-Standalone interactive agent and TUI surfaces were dropped in v8.0 per
-the governance substrate pivot — operate haft through your existing
-coding agent (recommended) or via subcommands below.
+The standalone interactive agent, its coding-agent TUI, and desktop wrappers
+were dropped in v8.0 per the governance substrate pivot. Terminal presentation
+for current CLI commands such as haft board and haft run remains supported.
+Operate haft through your existing coding agent (recommended) or via
+subcommands below.
 
 Examples:
   haft init                         # interactive host selection in a terminal

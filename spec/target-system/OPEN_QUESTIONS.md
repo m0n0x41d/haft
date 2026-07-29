@@ -7,7 +7,7 @@
 | # | Question | Decision | Rationale |
 |---|----------|----------|-----------|
 | Q1 | Workflow DSL shape | **`.haft/workflow.md` as hybrid markdown + structured YAML block.** Human-readable prose + parseable defaults + path policies. Not a workflow engine. | Pure markdown = too hard to validate. Pure YAML = config fatigue. FPF flow card = too heavy for solo dev. Hybrid gives reviewable prose + parseable structure + low implementation burden. Ships in v6.1. |
-| Q2 | Fate of `haft agent` | **Archived historical v7 stance; superseded by the v8 pivot.** Standalone interactive agent, TUI, and desktop wrappers are dropped current surfaces. MCP + host skills/prompts + CLI are current. | Kept for provenance only; no current feature-parity promise for the archived surfaces. |
+| Q2 | Fate of `haft agent` | **Archived historical v7 stance; superseded by the v8 pivot.** The standalone interactive agent, its coding-agent TUI, and desktop wrappers are dropped current surfaces. MCP + host skills/prompts + CLI remain current, including terminal presentation for `haft board` and `haft run`. | Kept for provenance only; no current feature-parity promise for the archived surfaces. |
 | Q10 | L2 enforcement scope | **Both JSON Schema + Go validators, but narrow: parity minimums + subjective dimension operationalization only.** No broad A.6 universalization before v7. | Schema alone can't catch semantic hollowness. Go validators without schema = brittle text heuristics. Narrow scope = feasible for solo dev. Ships in v6.1. |
 
 ## Resolved (No Longer Open)

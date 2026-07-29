@@ -175,16 +175,12 @@ cmd/haft/main.go               CLI entry point
 internal/artifact/              CORE: artifact store, types, refresh, drift
 internal/graph/                 CORE: knowledge graph queries, impact, verify
 internal/codebase/              CORE: module detection, imports, symbols, coverage
-internal/spec/                  CORE: spec parser/checker, term map, spec coverage (planned)
 internal/fpf/                   CORE: FPF spec index and search
 internal/reff/                  CORE: R_eff computation, evidence scoring
 internal/cli/serve.go           MCP: tool dispatch, schema, cross-project recall
 internal/cli/spec.go            CLI: spec check commands
-internal/cli/agent.go           ARCHIVE/FLOW: removed standalone agent launcher
 internal/cli/sync.go            FLOW: team sync (.haft/*.md → SQLite)
-internal/agentloop/             ARCHIVE/FLOW: removed standalone-mode ReAct coordinator
-internal/tools/                 FLOW: tool implementations
-internal/mcp/                   MCP: protocol handler
+internal/embedding/             FLOW: embedding adapters, direct-key compatibility, and retained local sidecar
 desktop-tauri/src/              ARCHIVE/SURFACE: historical Tauri command shell and task runner
 desktop/frontend/src/           ARCHIVE/SURFACE: historical React pages and view models
 db/                             PERSISTENCE: SQLite schema, migrations

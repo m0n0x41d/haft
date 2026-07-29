@@ -1404,6 +1404,14 @@ The v8.2.0 candidate was never published; work previously described as an
   project identity commit atomically before later additive migrations.
   Read-only planning remains non-mutating, and a missing binding at schema 37
   or newer still fails closed instead of being silently repaired.
+- **Shared user-scope skills across multiple Haft projects.** Default
+  `haft init --codex` and other user-scope, skills-only host publications now
+  reuse and refresh the existing global installation binding without
+  transferring its owner to each newly initialized project. Project-scoped
+  MCP, instructions, and skills remain project-bound, and `haft host status`
+  evaluates the shared skills installation from every consuming project while
+  checking each split project binding against its own installed component
+  selection.
 - **Fail-closed predecessor snapshots and optional FPF retrieval.** Predecessor
   compiler probing and envelope loading now share one opened read-only SQLite
   snapshot, so path replacement cannot mix compiler and artifact identities

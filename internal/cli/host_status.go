@@ -411,6 +411,27 @@ func inspectHostManifests(
 				continue
 			}
 			manifest := read.Manifest()
+			if manifest.Host() != host || manifest.Scope() != scope {
+				statuses = append(statuses, hostManifestStatus{
+					Path:           store.Path(),
+					ReadPosture:    "valid_manifest",
+					Host:           manifest.Host(),
+					Scope:          manifest.Scope(),
+					ManifestRef:    manifest.Ref(),
+					ManifestDigest: manifest.Digest(),
+					BindingPosture: "manifest_location_mismatch",
+					Reasons: []string{
+						fmt.Sprintf(
+							"manifest declares host %s scope %s at the %s %s manifest location",
+							manifest.Host(),
+							manifest.Scope(),
+							host,
+							scope,
+						),
+					},
+				})
+				continue
+			}
 			status := inspectOneHostManifest(
 				store,
 				manifest,
@@ -462,8 +483,11 @@ func inspectOneHostManifest(
 		ManifestDigest: manifest.Digest(),
 		BindingPosture: "not_evaluated",
 	}
-	if manifest.ProjectRoot() != projectRoot ||
-		manifest.ProjectID() != projectID {
+	sharedUserSkills := manifest.Scope() == initplanning.ScopeUser &&
+		onlySkillsComponent(manifest.Components())
+	sameProject := manifest.ProjectRoot() == projectRoot &&
+		manifest.ProjectID() == projectID
+	if !sameProject && !sharedUserSkills {
 		result.BindingPosture = "other_project_binding"
 		result.Reasons = []string{
 			fmt.Sprintf(
@@ -473,6 +497,10 @@ func inspectOneHostManifest(
 			),
 		}
 		return result
+	}
+	if sharedUserSkills {
+		projectRoot = manifest.ProjectRoot()
+		projectID = manifest.ProjectID()
 	}
 	if onlySkillsComponent(manifest.Components()) {
 		return inspectStandardSkillManifest(
@@ -486,11 +514,20 @@ func inspectOneHostManifest(
 			inspector,
 		)
 	}
-	projection, err := buildCurrentCoherentHostProjection(
+	components, err := parseCurrentCoherentComponents(
+		manifest.Components(),
+	)
+	if err != nil {
+		result.BindingPosture = "desired_projection_unavailable"
+		result.Reasons = []string{err.Error()}
+		return result
+	}
+	projection, err := buildSelectedCurrentCoherentHostProjection(
 		projectRoot,
 		projectID,
 		manifest.Host(),
 		manifest.Scope(),
+		components,
 		candidates,
 		bundle,
 		publication,

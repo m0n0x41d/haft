@@ -191,6 +191,248 @@ func TestCompileInitPlanKeysAdaptersByHostAndScope(
 	}
 }
 
+func TestCompileInitPlanSharesOnlyUserScopedSkillOwnershipAcrossProjects(
+	t *testing.T,
+) {
+	projectRoot := canonicalTempRoot(t)
+	ownerRoot := canonicalTempRoot(t)
+	targetRoot := canonicalTempRoot(t)
+	core := mustCorePlan(
+		t,
+		projectRoot,
+		CoreVerifyCurrent,
+		54,
+		54,
+	)
+	buildPlan := func(
+		scope InstallScope,
+		components ComponentSet,
+	) HostAdapterInstallPlan {
+		component := components.Values()[0]
+		path := filepath.Join(
+			targetRoot,
+			string(scope)+"-"+string(component),
+		)
+		output := mustOutput(
+			t,
+			path,
+			component,
+			[]byte("shared host projection\n"),
+		)
+		expectation, err := ExpectMissing(path)
+		if err != nil {
+			t.Fatalf("ExpectMissing: %v", err)
+		}
+		builder := NewHostAdapterInstallPlanBuilder(HostCodex)
+		builder = builder.AtEdition("codex.v1")
+		builder = builder.PublishedFrom(
+			mustPublicationIdentity(t, projectRoot),
+		)
+		builder = builder.ForProject(ownerRoot, "qnt_34f7b96f")
+		builder = builder.WithSelection(scope, components)
+		builder = builder.AddTargetRoot(targetRoot)
+		builder = builder.AddOutput(expectation, output)
+		builder = builder.RecoverWith(mustRecovery(t, HostCodex))
+		plan, err := builder.Build()
+		if err != nil {
+			t.Fatalf("build cross-project adapter plan: %v", err)
+		}
+		return plan
+	}
+
+	skills := mustComponents(t, ComponentSkills)
+	skillIntent := mustIntent(t, projectRoot, []WeakHostSelection{{
+		Host:       string(HostCodex),
+		Scope:      string(ScopeUser),
+		Components: []string{string(ComponentSkills)},
+	}})
+	skillCatalog := mustCatalog(
+		t,
+		HostCodex,
+		"codex.v1",
+		ScopeUser,
+		skills,
+	)
+	if _, err := CompileInitPlan(
+		skillIntent,
+		core,
+		[]HostAdapterInstallPlan{
+			buildPlan(ScopeUser, skills),
+		},
+		skillCatalog,
+	); err != nil {
+		t.Fatalf(
+			"shared user skill owner was rejected: %v",
+			err,
+		)
+	}
+
+	mcp := mustComponents(t, ComponentMCP)
+	mcpIntent := mustIntent(t, projectRoot, []WeakHostSelection{{
+		Host:       string(HostCodex),
+		Scope:      string(ScopeUser),
+		Components: []string{string(ComponentMCP)},
+	}})
+	mcpCatalog := mustCatalog(
+		t,
+		HostCodex,
+		"codex.v1",
+		ScopeUser,
+		mcp,
+	)
+	if _, err := CompileInitPlan(
+		mcpIntent,
+		core,
+		[]HostAdapterInstallPlan{
+			buildPlan(ScopeUser, mcp),
+		},
+		mcpCatalog,
+	); err == nil || !strings.Contains(
+		err.Error(),
+		"belongs to another project",
+	) {
+		t.Fatalf(
+			"cross-project user MCP owner was accepted: %v",
+			err,
+		)
+	}
+
+	projectSkillIntent := mustIntent(
+		t,
+		projectRoot,
+		[]WeakHostSelection{{
+			Host:       string(HostCodex),
+			Scope:      string(ScopeProject),
+			Components: []string{string(ComponentSkills)},
+		}},
+	)
+	projectSkillCatalog := mustCatalog(
+		t,
+		HostCodex,
+		"codex.v1",
+		ScopeProject,
+		skills,
+	)
+	if _, err := CompileInitPlan(
+		projectSkillIntent,
+		core,
+		[]HostAdapterInstallPlan{
+			buildPlan(ScopeProject, skills),
+		},
+		projectSkillCatalog,
+	); err == nil || !strings.Contains(
+		err.Error(),
+		"belongs to another project",
+	) {
+		t.Fatalf(
+			"cross-project project skill owner was accepted: %v",
+			err,
+		)
+	}
+
+	for _, test := range []struct {
+		name       string
+		components ComponentSet
+	}{
+		{
+			name: "skills_and_mcp",
+			components: mustComponents(
+				t,
+				ComponentSkills,
+				ComponentMCP,
+			),
+		},
+		{
+			name: "skills_and_instructions",
+			components: mustComponents(
+				t,
+				ComponentSkills,
+				ComponentInstructions,
+			),
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			values := test.components.Values()
+			raw := make([]string, len(values))
+			for index, component := range values {
+				raw[index] = string(component)
+			}
+			intent := mustIntent(
+				t,
+				projectRoot,
+				[]WeakHostSelection{{
+					Host:       string(HostCodex),
+					Scope:      string(ScopeUser),
+					Components: raw,
+				}},
+			)
+			catalog := mustCatalog(
+				t,
+				HostCodex,
+				"codex.v1",
+				ScopeUser,
+				test.components,
+			)
+			if _, err := CompileInitPlan(
+				intent,
+				core,
+				[]HostAdapterInstallPlan{
+					buildPlan(ScopeUser, test.components),
+				},
+				catalog,
+			); err == nil || !strings.Contains(
+				err.Error(),
+				"belongs to another project",
+			) {
+				t.Fatalf(
+					"cross-project mixed user owner was accepted: %v",
+					err,
+				)
+			}
+		})
+	}
+
+	wrongHostIntent := mustIntent(
+		t,
+		projectRoot,
+		[]WeakHostSelection{{
+			Host:       string(HostClaude),
+			Scope:      string(ScopeUser),
+			Components: []string{string(ComponentSkills)},
+		}},
+	)
+	wrongHostCatalog := mustCatalog(
+		t,
+		HostClaude,
+		"claude.v1",
+		ScopeUser,
+		skills,
+	)
+	if _, err := CompileInitPlan(
+		wrongHostIntent,
+		core,
+		[]HostAdapterInstallPlan{
+			buildPlan(ScopeUser, skills),
+		},
+		wrongHostCatalog,
+	); err == nil || !strings.Contains(
+		err.Error(),
+		"has no adapter plan",
+	) {
+		t.Fatalf(
+			"cross-project plan from another host was accepted: %v",
+			err,
+		)
+	}
+
+	if _, err := ParseComponentSet([]string{
+		string(ComponentSkills),
+		"unknown-component",
+	}); err == nil {
+		t.Fatal("malformed shared component set was accepted")
+	}
+}
+
 func TestCompileInitPlanRejectsUnsupportedScopeComponentAndEdition(t *testing.T) {
 	root := canonicalTempRoot(t)
 	mcp := mustComponents(t, ComponentMCP)

@@ -117,7 +117,10 @@ func validateAdapterPlanMatch(
 			edition,
 		)
 	}
-	if plan.projectRoot != intent.projectRoot || plan.projectID != intent.projectID {
+	sameProject := plan.projectRoot == intent.projectRoot &&
+		plan.projectID == intent.projectID
+	if !sameProject &&
+		!isSharedUserSkillSelection(selection) {
 		return fmt.Errorf("host %s adapter plan belongs to another project", selection.host)
 	}
 	for index, expectation := range plan.expectations {
@@ -138,6 +141,15 @@ func validateAdapterPlanMatch(
 		}
 	}
 	return nil
+}
+
+func isSharedUserSkillSelection(
+	selection HostSelection,
+) bool {
+	component, singleton := selection.components.single()
+	return selection.scope == ScopeUser &&
+		singleton &&
+		component == ComponentSkills
 }
 
 func rejectCrossAdapterPathOverlap(plans []HostAdapterInstallPlan) error {

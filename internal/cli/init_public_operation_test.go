@@ -168,6 +168,303 @@ func TestTypedPublicCodexOperationInitializesFullCodexIntegration(
 	}
 }
 
+func TestTypedPublicCodexOperationSharesUserSkillsAcrossProjects(
+	t *testing.T,
+) {
+	homeRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve home root: %v", err)
+	}
+	parent, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve project parent: %v", err)
+	}
+	t.Setenv("HOME", homeRoot)
+	runtime, err := currentHostPublicationRuntimeFromProcess()
+	if err != nil {
+		t.Fatalf("currentHostPublicationRuntimeFromProcess: %v", err)
+	}
+	runtime.userHomeRoot = homeRoot
+
+	projectRoots := []string{
+		filepath.Join(parent, "left"),
+		filepath.Join(parent, "right"),
+	}
+	projectIDs := []string{
+		"qnt_e3149c17",
+		"qnt_34f7b96f",
+	}
+	refreshedExecutable := filepath.Join(parent, "haft-v9-next")
+	for index, projectRoot := range projectRoots {
+		if index == 1 {
+			if err := os.WriteFile(
+				refreshedExecutable,
+				[]byte("next exact Haft candidate\n"),
+				0o755,
+			); err != nil {
+				t.Fatalf("write refreshed executable fixture: %v", err)
+			}
+			runtime.haftVersion = "v9.next"
+			runtime.executablePath = refreshedExecutable
+		}
+		if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+			t.Fatalf("create project root: %v", err)
+		}
+		request, err := compilePublicInitRequest(
+			weakPublicInitRequest{
+				invocation:  initplanning.InvocationExplicit,
+				projectRoot: projectRoot,
+				projectID:   projectIDs[index],
+				hosts:       initHostOptions{codex: true},
+				overseer:    publicOverseerWeakDisabled(),
+			},
+		)
+		if err != nil {
+			t.Fatalf("compile project %d request: %v", index, err)
+		}
+		prepared, err := prepareTypedPublicInitOperation(
+			context.Background(),
+			request,
+			runtime,
+			io.Discard,
+			1<<20,
+		)
+		if err != nil {
+			t.Fatalf("prepare project %d operation: %v", index, err)
+		}
+		preview, err := prepared.Preview()
+		if err != nil {
+			t.Fatalf("preview project %d operation: %v", index, err)
+		}
+		confirmed, err := prepared.ConfirmPreview(preview)
+		if err != nil {
+			t.Fatalf("confirm project %d operation: %v", index, err)
+		}
+		executor, err := newTypedPublicInitExecutor(
+			request,
+			io.Discard,
+			1<<20,
+		)
+		if err != nil {
+			t.Fatalf("build project %d executor: %v", index, err)
+		}
+		outcome, err := confirmed.Apply(
+			context.Background(),
+			executor,
+		)
+		if err != nil {
+			t.Fatalf("apply project %d operation: %v", index, err)
+		}
+		if outcome.Kind() != publicInitApplied {
+			t.Fatalf(
+				"project %d outcome = %#v",
+				index,
+				outcome,
+			)
+		}
+	}
+
+	manifestPath := filepath.Join(
+		homeRoot,
+		".haft",
+		"host-installations",
+		"codex.user.json",
+	)
+	raw, err := os.ReadFile(manifestPath)
+	if err != nil {
+		t.Fatalf("read shared user manifest: %v", err)
+	}
+	manifest, err := initplanning.ParseInstallationManifest(raw)
+	if err != nil {
+		t.Fatalf("parse shared user manifest: %v", err)
+	}
+	if manifest.ProjectRoot() != projectRoots[0] ||
+		manifest.ProjectID() != projectIDs[0] {
+		t.Fatalf(
+			"shared user binding owner changed: %s at %s",
+			manifest.ProjectID(),
+			manifest.ProjectRoot(),
+		)
+	}
+	if manifest.HaftVersion() != runtime.haftVersion ||
+		manifest.ExecutablePath() != refreshedExecutable {
+		t.Fatalf(
+			"shared user binding did not refresh publication: version=%s executable=%s",
+			manifest.HaftVersion(),
+			manifest.ExecutablePath(),
+		)
+	}
+	t.Setenv(envProjectRoot, projectRoots[1])
+	t.Setenv(envExpectedProjectID, projectIDs[1])
+	status := runHostStatusJSONForTest(t)
+	sharedStatus := findHostManifestStatus(
+		t,
+		status.Manifests,
+		manifestPath,
+	)
+	if sharedStatus.BindingPosture != "evaluated" ||
+		sharedStatus.Currentness == nil {
+		t.Fatalf(
+			"shared user skill status from second project = %#v",
+			sharedStatus,
+		)
+	}
+	projectManifestPath := filepath.Join(
+		projectRoots[1],
+		".haft",
+		"host-installations",
+		"codex.project.json",
+	)
+	projectStatus := findHostManifestStatus(
+		t,
+		status.Manifests,
+		projectManifestPath,
+	)
+	if projectStatus.BindingPosture != "evaluated" ||
+		projectStatus.Currentness == nil {
+		t.Fatalf(
+			"split project Codex status = %#v",
+			projectStatus,
+		)
+	}
+	if !slices.Equal(
+		projectStatus.Currentness.InstalledComponents,
+		projectStatus.Currentness.DesiredComponents,
+	) ||
+		slices.Contains(
+			projectStatus.Currentness.Reasons,
+			"component_selection_changed",
+		) ||
+		slices.Contains(
+			projectStatus.Currentness.Reasons,
+			"target_roots_changed",
+		) ||
+		slices.Contains(
+			projectStatus.Currentness.Reasons,
+			"vacant_desired_path",
+		) {
+		t.Fatalf(
+			"split project Codex status invented missing project skills: %#v",
+			projectStatus.Currentness,
+		)
+	}
+	for _, projectRoot := range projectRoots {
+		if _, err := os.Stat(
+			filepath.Join(projectRoot, ".codex", "config.toml"),
+		); err != nil {
+			t.Fatalf(
+				"project-scoped Codex config missing for %s: %v",
+				projectRoot,
+				err,
+			)
+		}
+	}
+}
+
+func TestResolvePublicHostBindingOwnerHandlesMissingAndInvalidSharedManifest(
+	t *testing.T,
+) {
+	homeRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve home root: %v", err)
+	}
+	projectRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve project root: %v", err)
+	}
+	projectID := "qnt_4217b96f"
+	request, err := compilePublicInitRequest(
+		weakPublicInitRequest{
+			invocation:  initplanning.InvocationExplicit,
+			projectRoot: projectRoot,
+			projectID:   projectID,
+			hosts:       initHostOptions{codex: true},
+			overseer:    publicOverseerWeakDisabled(),
+		},
+	)
+	if err != nil {
+		t.Fatalf("compilePublicInitRequest: %v", err)
+	}
+	var shared publicHostBinding
+	found := false
+	for _, binding := range request.hostBindings {
+		if isSharedPublicUserSkillBinding(binding) {
+			shared = binding
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("compiled Codex request lacks its user skill binding")
+	}
+	layout, err := initplanning.NewPublicationLayout(
+		initplanning.PublicationLayoutInput{
+			ProjectRoot:  projectRoot,
+			ProjectID:    projectID,
+			UserHomeRoot: homeRoot,
+		},
+	)
+	if err != nil {
+		t.Fatalf("NewPublicationLayout: %v", err)
+	}
+	location, err := layout.ManifestLocation(
+		shared.host,
+		shared.scope,
+	)
+	if err != nil {
+		t.Fatalf("ManifestLocation: %v", err)
+	}
+	store, err := initfs.NewManifestStore(
+		location.Root(),
+		location.Path(),
+		publicInitMaxCarrierBytes,
+	)
+	if err != nil {
+		t.Fatalf("NewManifestStore: %v", err)
+	}
+
+	resolvedRoot, resolvedID, err := resolvePublicHostBindingOwner(
+		request,
+		shared,
+		store,
+	)
+	if err != nil {
+		t.Fatalf("resolve missing shared manifest: %v", err)
+	}
+	if resolvedRoot != projectRoot || resolvedID != projectID {
+		t.Fatalf(
+			"missing shared manifest owner = %s at %s",
+			resolvedID,
+			resolvedRoot,
+		)
+	}
+
+	if err := os.MkdirAll(
+		filepath.Dir(location.Path()),
+		0o755,
+	); err != nil {
+		t.Fatalf("create shared manifest root: %v", err)
+	}
+	invalid := []byte("{not a valid installation manifest}\n")
+	if err := os.WriteFile(location.Path(), invalid, 0o600); err != nil {
+		t.Fatalf("write invalid shared manifest: %v", err)
+	}
+	if _, _, err := resolvePublicHostBindingOwner(
+		request,
+		shared,
+		store,
+	); err == nil {
+		t.Fatal("invalid shared manifest was accepted")
+	}
+	preserved, err := os.ReadFile(location.Path())
+	if err != nil {
+		t.Fatalf("read invalid shared manifest: %v", err)
+	}
+	if !slices.Equal(preserved, invalid) {
+		t.Fatal("owner resolution changed an invalid shared manifest")
+	}
+}
+
 func TestTypedPublicOperationAppliesEveryExplicitHostFlag(
 	t *testing.T,
 ) {

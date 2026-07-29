@@ -833,17 +833,6 @@ func compilePublicHostInitPlan(
 		len(request.hostBindings),
 	)
 	for _, binding := range request.hostBindings {
-		projection, projectionErr := buildPublicHostProjection(
-			request,
-			binding,
-			candidates,
-			bundle,
-			publication,
-			runtime,
-		)
-		if projectionErr != nil {
-			return initplanning.InitPlan{}, projectionErr
-		}
 		location, locationErr := layout.ManifestLocation(
 			binding.host,
 			binding.scope,
@@ -858,6 +847,27 @@ func compilePublicHostInitPlan(
 		)
 		if storeErr != nil {
 			return initplanning.InitPlan{}, storeErr
+		}
+		bindingRoot, bindingID, bindingErr :=
+			resolvePublicHostBindingOwner(
+				request,
+				binding,
+				store,
+			)
+		if bindingErr != nil {
+			return initplanning.InitPlan{}, bindingErr
+		}
+		projection, projectionErr := buildPublicHostProjection(
+			bindingRoot,
+			bindingID,
+			binding,
+			candidates,
+			bundle,
+			publication,
+			runtime,
+		)
+		if projectionErr != nil {
+			return initplanning.InitPlan{}, projectionErr
 		}
 		legacy, managedLegacy, legacyErr :=
 			currentPublicTakeoverRegistries(projection)
@@ -912,6 +922,42 @@ func compilePublicHostInitPlan(
 	)
 }
 
+func resolvePublicHostBindingOwner(
+	request publicInitRequest,
+	binding publicHostBinding,
+	store initfs.ManifestStore,
+) (string, string, error) {
+	projectRoot := request.projectRoot
+	projectID := request.projectID
+	if !isSharedPublicUserSkillBinding(binding) {
+		return projectRoot, projectID, nil
+	}
+	read, err := store.Read()
+	if err != nil {
+		return "", "", err
+	}
+	if read.Kind() == initfs.ManifestReadMissing {
+		return projectRoot, projectID, nil
+	}
+	manifest := read.Manifest()
+	sameSharedBinding := manifest.Host() == binding.host
+	sameSharedBinding = sameSharedBinding &&
+		manifest.Scope() == initplanning.ScopeUser
+	sameSharedBinding = sameSharedBinding &&
+		onlySkillsComponent(manifest.Components())
+	if !sameSharedBinding {
+		return projectRoot, projectID, nil
+	}
+	return manifest.ProjectRoot(), manifest.ProjectID(), nil
+}
+
+func isSharedPublicUserSkillBinding(
+	binding publicHostBinding,
+) bool {
+	return binding.scope == initplanning.ScopeUser &&
+		onlySkillsComponent(binding.components.Values())
+}
+
 func compilePublicHostBindingPlan(
 	inspector initfs.HostStatusInspector,
 	store initfs.ManifestStore,
@@ -947,7 +993,8 @@ func compilePublicHostBindingPlan(
 }
 
 func buildPublicHostProjection(
-	request publicInitRequest,
+	projectRoot string,
+	projectID string,
 	binding publicHostBinding,
 	candidates []currentStandardSkillCandidate,
 	bundle initplanning.SkillSourceBundle,
@@ -971,15 +1018,15 @@ func buildPublicHostProjection(
 			)
 		}
 		return buildCurrentStandardSkillHostProjection(
-			request.projectRoot,
-			request.projectID,
+			projectRoot,
+			projectID,
 			candidate,
 			publication,
 		)
 	}
 	return buildSelectedCurrentCoherentHostProjection(
-		request.projectRoot,
-		request.projectID,
+		projectRoot,
+		projectID,
 		binding.host,
 		binding.scope,
 		binding.components,

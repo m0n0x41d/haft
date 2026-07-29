@@ -171,6 +171,393 @@ func TestHostStatusCommandReadsManifestCurrentnessAndDuplicateRootsWithoutMutati
 	}
 }
 
+func TestHostStatusCommandTreatsSharedUserSkillsAndProjectComponentsIndependently(
+	t *testing.T,
+) {
+	secondRoot := filepath.Join(t.TempDir(), "second-project")
+	harness := profileadmissionfixture.New(t, secondRoot)
+	secondRoot = harness.Root().String()
+	secondID := harness.ProjectID()
+	t.Setenv(envProjectRoot, secondRoot)
+	t.Setenv(envExpectedProjectID, secondID)
+
+	runtime, err := currentHostPublicationRuntimeFromProcess()
+	if err != nil {
+		t.Fatalf("currentHostPublicationRuntimeFromProcess: %v", err)
+	}
+	bundle, err := currentSkillSourceBundle()
+	if err != nil {
+		t.Fatalf("currentSkillSourceBundle: %v", err)
+	}
+	publication, err := currentHostPublicationIdentity(runtime, bundle)
+	if err != nil {
+		t.Fatalf("currentHostPublicationIdentity: %v", err)
+	}
+
+	firstRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve first project root: %v", err)
+	}
+	firstID := "qnt_a3149c17"
+	firstCandidates, err := currentStandardSkillCandidates(
+		firstRoot,
+		bundle,
+		runtime,
+	)
+	if err != nil {
+		t.Fatalf("first currentStandardSkillCandidates: %v", err)
+	}
+	userSkills, found := findCurrentStandardSkillCandidate(
+		firstCandidates,
+		initplanning.HostCodex,
+		initplanning.ScopeUser,
+	)
+	if !found {
+		t.Fatal("current Codex user skill candidate is missing")
+	}
+	sharedProjection, err := buildCurrentStandardSkillHostProjection(
+		firstRoot,
+		firstID,
+		userSkills,
+		publication,
+	)
+	if err != nil {
+		t.Fatalf("build shared Codex skill projection: %v", err)
+	}
+	sharedManifestPath := publishHostStatusFixture(
+		t,
+		sharedProjection,
+		runtime.userHomeRoot,
+	)
+
+	secondCandidates, err := currentStandardSkillCandidates(
+		secondRoot,
+		bundle,
+		runtime,
+	)
+	if err != nil {
+		t.Fatalf("second currentStandardSkillCandidates: %v", err)
+	}
+	projectComponents, err := initplanning.ParseComponentSet([]string{
+		string(initplanning.ComponentInstructions),
+		string(initplanning.ComponentMCP),
+	})
+	if err != nil {
+		t.Fatalf("parse project components: %v", err)
+	}
+	projectProjection, err := buildSelectedCurrentCoherentHostProjection(
+		secondRoot,
+		secondID,
+		initplanning.HostCodex,
+		initplanning.ScopeProject,
+		projectComponents,
+		secondCandidates,
+		bundle,
+		publication,
+		runtime,
+	)
+	if err != nil {
+		t.Fatalf("build project Codex projection: %v", err)
+	}
+	projectManifestPath := publishCoherentHostStatusFixture(
+		t,
+		projectProjection,
+		runtime.userHomeRoot,
+	)
+	if err := harness.Close(); err != nil {
+		t.Fatalf("close second project ledger before status: %v", err)
+	}
+
+	extraPaths := []string{
+		sharedManifestPath,
+		projectManifestPath,
+	}
+	for _, fragment := range projectProjection.ManagedFragments() {
+		extraPaths = append(
+			extraPaths,
+			fragment.Coordinate().CarrierPath(),
+		)
+	}
+	allOutputs := append(
+		slices.Clone(sharedProjection.Outputs()),
+		projectProjection.Outputs()...,
+	)
+	before := snapshotHostStatusFixture(t, extraPaths, allOutputs)
+	report := runHostStatusJSONForTest(t)
+	after := snapshotHostStatusFixture(t, extraPaths, allOutputs)
+	if !slices.Equal(before, after) || report.MutationsPerformed {
+		t.Fatal("host status changed shared or project-scoped Codex carriers")
+	}
+
+	shared := findHostManifestStatus(
+		t,
+		report.Manifests,
+		sharedManifestPath,
+	)
+	wantSharedComponents := []initplanning.Component{
+		initplanning.ComponentSkills,
+	}
+	if shared.BindingPosture != "evaluated" ||
+		shared.Currentness == nil ||
+		shared.Currentness.Posture !=
+			initplanning.HostInstallationCurrent ||
+		shared.Currentness.ProjectRoot != firstRoot ||
+		shared.Currentness.ProjectID != firstID ||
+		!slices.Equal(
+			shared.Currentness.InstalledComponents,
+			wantSharedComponents,
+		) ||
+		!slices.Equal(
+			shared.Currentness.DesiredComponents,
+			wantSharedComponents,
+		) {
+		t.Fatalf("shared user skill status = %#v", shared)
+	}
+
+	project := findHostManifestStatus(
+		t,
+		report.Manifests,
+		projectManifestPath,
+	)
+	wantProjectComponents := projectComponents.Values()
+	if project.BindingPosture != "evaluated" ||
+		project.Currentness == nil ||
+		project.Currentness.Posture !=
+			initplanning.HostInstallationCurrent ||
+		project.Currentness.ProjectRoot != secondRoot ||
+		project.Currentness.ProjectID != secondID ||
+		!slices.Equal(
+			project.Currentness.InstalledComponents,
+			wantProjectComponents,
+		) ||
+		!slices.Equal(
+			project.Currentness.DesiredComponents,
+			wantProjectComponents,
+		) {
+		t.Fatalf("project component status = %#v", project)
+	}
+
+	sharedBytes, err := os.ReadFile(sharedManifestPath)
+	if err != nil {
+		t.Fatalf("read shared manifest after status: %v", err)
+	}
+	sharedManifest, err := initplanning.ParseInstallationManifest(
+		sharedBytes,
+	)
+	if err != nil {
+		t.Fatalf("parse shared manifest after status: %v", err)
+	}
+	if sharedManifest.ProjectRoot() != firstRoot ||
+		sharedManifest.ProjectID() != firstID {
+		t.Fatalf(
+			"shared owner transferred to %s at %s",
+			sharedManifest.ProjectID(),
+			sharedManifest.ProjectRoot(),
+		)
+	}
+}
+
+func TestHostStatusCommandRejectsManifestDeclaredForAnotherLocation(
+	t *testing.T,
+) {
+	root := filepath.Join(t.TempDir(), "project")
+	harness := profileadmissionfixture.New(t, root)
+	projectRoot := harness.Root().String()
+	projectID := harness.ProjectID()
+	t.Setenv(envProjectRoot, projectRoot)
+	t.Setenv(envExpectedProjectID, projectID)
+
+	runtime, err := currentHostPublicationRuntimeFromProcess()
+	if err != nil {
+		t.Fatalf("currentHostPublicationRuntimeFromProcess: %v", err)
+	}
+	bundle, err := currentSkillSourceBundle()
+	if err != nil {
+		t.Fatalf("currentSkillSourceBundle: %v", err)
+	}
+	publication, err := currentHostPublicationIdentity(runtime, bundle)
+	if err != nil {
+		t.Fatalf("currentHostPublicationIdentity: %v", err)
+	}
+	candidates, err := currentStandardSkillCandidates(
+		projectRoot,
+		bundle,
+		runtime,
+	)
+	if err != nil {
+		t.Fatalf("currentStandardSkillCandidates: %v", err)
+	}
+	claudeSkills, found := findCurrentStandardSkillCandidate(
+		candidates,
+		initplanning.HostClaude,
+		initplanning.ScopeUser,
+	)
+	if !found {
+		t.Fatal("current Claude user skill candidate is missing")
+	}
+	projection, err := buildCurrentStandardSkillHostProjection(
+		projectRoot,
+		projectID,
+		claudeSkills,
+		publication,
+	)
+	if err != nil {
+		t.Fatalf("build Claude user skill projection: %v", err)
+	}
+	claudeManifestPath := publishHostStatusFixture(
+		t,
+		projection,
+		runtime.userHomeRoot,
+	)
+	layout, err := initplanning.NewPublicationLayout(
+		initplanning.PublicationLayoutInput{
+			ProjectRoot:  projectRoot,
+			ProjectID:    projectID,
+			UserHomeRoot: runtime.userHomeRoot,
+		},
+	)
+	if err != nil {
+		t.Fatalf("build publication layout: %v", err)
+	}
+	codexLocation, err := layout.ManifestLocation(
+		initplanning.HostCodex,
+		initplanning.ScopeUser,
+	)
+	if err != nil {
+		t.Fatalf("resolve Codex user manifest location: %v", err)
+	}
+	if err := os.MkdirAll(codexLocation.Root(), 0o755); err != nil {
+		t.Fatalf("create Codex user manifest root: %v", err)
+	}
+	if err := os.Rename(
+		claudeManifestPath,
+		codexLocation.Path(),
+	); err != nil {
+		t.Fatalf("move Claude manifest to Codex location: %v", err)
+	}
+	if err := harness.Close(); err != nil {
+		t.Fatalf("close fixture ledger before status: %v", err)
+	}
+
+	report := runHostStatusJSONForTest(t)
+	status := findHostManifestStatus(
+		t,
+		report.Manifests,
+		codexLocation.Path(),
+	)
+	if status.BindingPosture != "manifest_location_mismatch" ||
+		status.Currentness != nil ||
+		len(status.Reasons) != 1 ||
+		!strings.Contains(
+			status.Reasons[0],
+			"manifest declares host claude scope user",
+		) {
+		t.Fatalf("wrong-location manifest status = %#v", status)
+	}
+}
+
+func TestHostStatusCommandRejectsManifestDeclaredForAnotherScope(
+	t *testing.T,
+) {
+	root := filepath.Join(t.TempDir(), "project")
+	harness := profileadmissionfixture.New(t, root)
+	projectRoot := harness.Root().String()
+	projectID := harness.ProjectID()
+	t.Setenv(envProjectRoot, projectRoot)
+	t.Setenv(envExpectedProjectID, projectID)
+
+	runtime, err := currentHostPublicationRuntimeFromProcess()
+	if err != nil {
+		t.Fatalf("currentHostPublicationRuntimeFromProcess: %v", err)
+	}
+	bundle, err := currentSkillSourceBundle()
+	if err != nil {
+		t.Fatalf("currentSkillSourceBundle: %v", err)
+	}
+	publication, err := currentHostPublicationIdentity(runtime, bundle)
+	if err != nil {
+		t.Fatalf("currentHostPublicationIdentity: %v", err)
+	}
+	candidates, err := currentStandardSkillCandidates(
+		projectRoot,
+		bundle,
+		runtime,
+	)
+	if err != nil {
+		t.Fatalf("currentStandardSkillCandidates: %v", err)
+	}
+	codexSkills, found := findCurrentStandardSkillCandidate(
+		candidates,
+		initplanning.HostCodex,
+		initplanning.ScopeProject,
+	)
+	if !found {
+		t.Fatal("current Codex project skill candidate is missing")
+	}
+	projection, err := buildCurrentStandardSkillHostProjection(
+		projectRoot,
+		projectID,
+		codexSkills,
+		publication,
+	)
+	if err != nil {
+		t.Fatalf("build Codex project skill projection: %v", err)
+	}
+	projectManifestPath := publishHostStatusFixture(
+		t,
+		projection,
+		runtime.userHomeRoot,
+	)
+	layout, err := initplanning.NewPublicationLayout(
+		initplanning.PublicationLayoutInput{
+			ProjectRoot:  projectRoot,
+			ProjectID:    projectID,
+			UserHomeRoot: runtime.userHomeRoot,
+		},
+	)
+	if err != nil {
+		t.Fatalf("build publication layout: %v", err)
+	}
+	codexUserLocation, err := layout.ManifestLocation(
+		initplanning.HostCodex,
+		initplanning.ScopeUser,
+	)
+	if err != nil {
+		t.Fatalf("resolve Codex user manifest location: %v", err)
+	}
+	if err := os.MkdirAll(
+		filepath.Dir(codexUserLocation.Path()),
+		0o755,
+	); err != nil {
+		t.Fatalf("create Codex user manifest root: %v", err)
+	}
+	if err := os.Rename(
+		projectManifestPath,
+		codexUserLocation.Path(),
+	); err != nil {
+		t.Fatalf("move project manifest to user location: %v", err)
+	}
+	if err := harness.Close(); err != nil {
+		t.Fatalf("close fixture ledger before status: %v", err)
+	}
+
+	report := runHostStatusJSONForTest(t)
+	status := findHostManifestStatus(
+		t,
+		report.Manifests,
+		codexUserLocation.Path(),
+	)
+	if status.BindingPosture != "manifest_location_mismatch" ||
+		status.Currentness != nil ||
+		len(status.Reasons) != 1 ||
+		!strings.Contains(
+			status.Reasons[0],
+			"manifest declares host codex scope project",
+		) {
+		t.Fatalf("wrong-scope manifest status = %#v", status)
+	}
+}
+
 func TestHostStatusCommandEvaluatesCoherentManagedFragmentWithoutClaimingCarrier(
 	t *testing.T,
 ) {

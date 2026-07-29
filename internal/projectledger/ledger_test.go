@@ -2,6 +2,7 @@ package projectledger
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -118,6 +119,100 @@ func TestProjectLedgerOpenRequiresExplicitInitBinding(t *testing.T) {
 	_, err := OpenExisting(context.Background(), fixture.root, ReadOnly)
 	if !errorsIs(err, ErrBindingMissing) {
 		t.Fatalf("unbound OpenExisting error = %v", err)
+	}
+}
+
+func TestExplicitMigrationOpenRetainsTopologyChecksWithoutRequiringBinding(
+	t *testing.T,
+) {
+	fixture := newProjectLedgerFixture(t, "qnt_d6f3b2c1")
+	handle, err := OpenForExplicitMigration(
+		context.Background(),
+		fixture.root,
+		ReadOnly,
+	)
+	if err != nil {
+		t.Fatalf("OpenForExplicitMigration: %v", err)
+	}
+	defer handle.Close()
+	if handle.ProjectID().String() != fixture.id {
+		t.Fatalf(
+			"migration handle project = %s, want %s",
+			handle.ProjectID().String(),
+			fixture.id,
+		)
+	}
+	if handle.DatabasePath() != fixture.dbPath {
+		t.Fatalf(
+			"migration handle database = %s, want %s",
+			handle.DatabasePath(),
+			fixture.dbPath,
+		)
+	}
+	if err := handle.RequireAttachedIdentity(
+		context.Background(),
+	); !errorsIs(err, ErrBindingMissing) {
+		t.Fatalf("unbound migration handle identity error = %v", err)
+	}
+	directory := filepath.Dir(fixture.dbPath)
+	moved := directory + ".moved"
+	if err := os.Rename(directory, moved); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(directory, "haft.db"),
+		[]byte("replacement"),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := handle.RequireAttachedIdentity(
+		context.Background(),
+	); err == nil || !strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf(
+			"unbound migration handle accepted a topology swap: %v",
+			err,
+		)
+	}
+}
+
+func TestMigrationBindingRejectsOrdinaryTransactionAtCurrentSchema(
+	t *testing.T,
+) {
+	fixture := newProjectLedgerFixture(t, "qnt_d5f3b2c1")
+	handle, err := OpenForExplicitMigration(
+		context.Background(),
+		fixture.root,
+		ReadWrite,
+	)
+	if err != nil {
+		t.Fatalf("OpenForExplicitMigration: %v", err)
+	}
+	defer handle.Close()
+	transaction, err := handle.Database().Begin()
+	if err != nil {
+		t.Fatalf("begin ordinary transaction: %v", err)
+	}
+	err = handle.BindDuringFirstDurableSchemaMigration(
+		context.Background(),
+		transaction,
+		time.Now().UTC(),
+	)
+	rollbackErr := transaction.Rollback()
+	if err == nil ||
+		!strings.Contains(err.Error(), "exact contiguous schema-36 predecessor") {
+		t.Fatalf("current-schema migration bind error = %v", err)
+	}
+	if rollbackErr != nil {
+		t.Fatalf("roll back ordinary transaction: %v", rollbackErr)
+	}
+	if err := handle.RequireAttachedIdentity(
+		context.Background(),
+	); !errors.Is(err, ErrBindingMissing) {
+		t.Fatalf("ordinary transaction repaired current ledger: %v", err)
 	}
 }
 
@@ -533,6 +628,91 @@ func TestProjectLedgerBindingRollsBackWhenTopologyChangesBeforeCommit(t *testing
 	err = requireAttachedIdentity(context.Background(), handle.Database(), identity)
 	if !errors.Is(err, ErrBindingMissing) {
 		t.Fatalf("pre-commit topology drift did not roll binding back: %v", err)
+	}
+}
+
+func TestMigrationBindingRollsBackVersionAndIdentityWhenTopologyChanges(
+	t *testing.T,
+) {
+	if db.ProjectLedgerBindingSchemaVersion !=
+		firstDurableBindingPredecessorSchema+1 {
+		t.Fatalf(
+			"binding schema boundary = %d, want predecessor %d plus one",
+			db.ProjectLedgerBindingSchemaVersion,
+			firstDurableBindingPredecessorSchema,
+		)
+	}
+	fixture := newProjectLedgerFixture(t, "qnt_38f3b2c1")
+	database, err := sql.Open("sqlite", fixture.dbPath)
+	if err != nil {
+		t.Fatalf("open project ledger fixture: %v", err)
+	}
+	if _, err := database.Exec(
+		`DELETE FROM schema_version WHERE version > ?`,
+		firstDurableBindingPredecessorSchema,
+	); err != nil {
+		_ = database.Close()
+		t.Fatalf("rewind migration frontier fixture: %v", err)
+	}
+	if err := database.Close(); err != nil {
+		t.Fatalf("close rewound migration fixture: %v", err)
+	}
+	handle, err := OpenForExplicitMigration(
+		context.Background(),
+		fixture.root,
+		ReadWrite,
+	)
+	if err != nil {
+		t.Fatalf("OpenForExplicitMigration: %v", err)
+	}
+	defer handle.Close()
+	directory := filepath.Dir(fixture.dbPath)
+	moved := directory + ".moved"
+	err = db.RunMigrationsThroughProjectLedgerBinding(
+		handle.Database(),
+		func(transaction db.MigrationTransaction) error {
+			return handle.bindDuringFirstDurableSchemaMigration(
+				context.Background(),
+				transaction,
+				time.Now().UTC(),
+				func() error {
+					if err := os.Rename(directory, moved); err != nil {
+						return err
+					}
+					if err := os.Mkdir(directory, 0o755); err != nil {
+						return err
+					}
+					return os.WriteFile(
+						filepath.Join(directory, "haft.db"),
+						[]byte("replacement"),
+						0o644,
+					)
+				},
+			)
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "identity changed") {
+		t.Fatalf("binding migration topology swap error = %v", err)
+	}
+	if errors.Is(err, ErrBindingCommittedTopologyChanged) {
+		t.Fatalf("rolled-back binding reported committed outcome: %v", err)
+	}
+	var versionCount int
+	if err := handle.Database().QueryRow(
+		"SELECT COUNT(*) FROM schema_version WHERE version = ?",
+		db.ProjectLedgerBindingSchemaVersion,
+	).Scan(&versionCount); err != nil {
+		t.Fatalf("inspect rolled-back binding version: %v", err)
+	}
+	if versionCount != 0 {
+		t.Fatalf("rolled-back binding version count = %d, want 0", versionCount)
+	}
+	if err := requireAttachedIdentity(
+		context.Background(),
+		handle.Database(),
+		handle.identity,
+	); !errors.Is(err, ErrBindingMissing) {
+		t.Fatalf("rolled-back migration retained a binding: %v", err)
 	}
 }
 

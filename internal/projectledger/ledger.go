@@ -24,6 +24,7 @@ import (
 )
 
 const bindingSchemaV1 = "haft.project-ledger-binding/v1"
+const firstDurableBindingPredecessorSchema = 36
 
 var ErrBindingMissing = errors.New("project ledger has no durable project identity binding; run haft init from the canonical project root")
 var ErrBindingCommittedTopologyChanged = errors.New("project ledger binding committed to the anchored database, but project topology changed before post-commit verification")
@@ -122,6 +123,34 @@ func OpenExisting(
 	return handle, nil
 }
 
+// OpenForExplicitMigration opens the exact anchored ledger topology without
+// requiring a durable project identity binding. It exists only for the
+// explicit init/migration path that must inspect ledgers from before the
+// binding schema existed. Callers must require an existing binding for every
+// schema that already includes one, or bind the exact identity after upgrading
+// a genuine predecessor.
+func OpenForExplicitMigration(
+	ctx context.Context,
+	root string,
+	access Access,
+) (*Handle, error) {
+	identity, identityAnchors, err := loadIdentityAnchored(root)
+	if err != nil {
+		return nil, err
+	}
+	handle, err := openTopology(ctx, identity, identityAnchors, access)
+	if err != nil {
+		return nil, errors.Join(
+			err,
+			closeAnchors(identityAnchors),
+		)
+	}
+	if err := handle.revalidateTopology(ctx); err != nil {
+		return nil, errors.Join(err, handle.Close())
+	}
+	return handle, nil
+}
+
 // BindInitialized is called only by an explicit core initialization effect
 // after all database migrations have completed. Ordinary runtime opens never
 // create or repair this immutable identity binding.
@@ -144,6 +173,83 @@ func BindInitialized(
 		return err
 	}
 	return handle.Revalidate(ctx)
+}
+
+// BindDuringFirstDurableSchemaMigration binds the exact anchored project
+// identity inside the caller-owned transaction that creates the first durable
+// binding schema. It admits only the exact contiguous schema-36 predecessor
+// before version 37 is recorded; current or hybrid recorded schemas fail
+// closed.
+func (handle *Handle) BindDuringFirstDurableSchemaMigration(
+	ctx context.Context,
+	transaction BindingMigrationTransaction,
+	at time.Time,
+) error {
+	return handle.bindDuringFirstDurableSchemaMigration(
+		ctx,
+		transaction,
+		at,
+		nil,
+	)
+}
+
+type bindingMigrationHook func() error
+
+func (handle *Handle) bindDuringFirstDurableSchemaMigration(
+	ctx context.Context,
+	transaction BindingMigrationTransaction,
+	at time.Time,
+	hook bindingMigrationHook,
+) error {
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if at.IsZero() {
+		return fmt.Errorf("project ledger binding time is required")
+	}
+	record, err := newLedgerBindingRecord(handle.identity, at)
+	if err != nil {
+		return err
+	}
+	if transaction == nil {
+		return fmt.Errorf(
+			"project ledger binding migration transaction is required",
+		)
+	}
+	adapted := migrationBindingTransaction{
+		transaction: transaction,
+	}
+	if err := handle.requirePendingFirstDurableBindingMigration(
+		ctx,
+		adapted,
+	); err != nil {
+		return err
+	}
+	if err := handle.revalidateMigrationBindingTransaction(
+		ctx,
+		adapted,
+	); err != nil {
+		return err
+	}
+	if err := handle.bindInitializedInTransaction(
+		ctx,
+		adapted,
+		record,
+	); err != nil {
+		return err
+	}
+	if hook != nil {
+		if err := hook(); err != nil {
+			return fmt.Errorf(
+				"run project ledger binding migration hook: %w",
+				err,
+			)
+		}
+	}
+	return handle.revalidateMigrationBindingTransaction(
+		ctx,
+		adapted,
+	)
 }
 
 func (handle *Handle) Database() *sql.DB {
@@ -209,6 +315,48 @@ func (handle *Handle) Revalidate(ctx context.Context) error {
 	}
 	if err := verifyAnchoredTopology(handle.anchors); err != nil {
 		return fmt.Errorf("revalidate project ledger topology after identity read: %w", err)
+	}
+	return nil
+}
+
+func (handle *Handle) revalidateTopology(ctx context.Context) error {
+	if handle == nil || handle.database == nil || len(handle.anchors) == 0 || handle.databaseAnchor.file == nil {
+		return fmt.Errorf("project ledger handle is closed")
+	}
+	if err := validateContext(ctx); err != nil {
+		return err
+	}
+	if err := verifyAnchoredTopology(handle.anchors); err != nil {
+		return err
+	}
+	if err := handle.sidecarGeneration.Revalidate(); err != nil {
+		return err
+	}
+	connection, err := handle.database.Conn(ctx)
+	if err != nil {
+		if generationErr := handle.sidecarGeneration.Revalidate(); generationErr != nil {
+			return generationErr
+		}
+		return fmt.Errorf("reserve checked project ledger connection: %w", err)
+	}
+	defer connection.Close()
+	if err := connection.PingContext(ctx); err != nil {
+		if generationErr := handle.sidecarGeneration.Revalidate(); generationErr != nil {
+			return generationErr
+		}
+		return fmt.Errorf("ping checked project ledger: %w", err)
+	}
+	if err := verifySQLiteMainDatabaseIdentity(ctx, connection, handle.databaseAnchor); err != nil {
+		if generationErr := handle.sidecarGeneration.Revalidate(); generationErr != nil {
+			return generationErr
+		}
+		return err
+	}
+	if err := handle.sidecarGeneration.Revalidate(); err != nil {
+		return err
+	}
+	if err := verifyAnchoredTopology(handle.anchors); err != nil {
+		return fmt.Errorf("revalidate project ledger topology after database read: %w", err)
 	}
 	return nil
 }
@@ -501,17 +649,171 @@ func (handle *Handle) bindInitializedWithHook(
 		}
 		return nil
 	}
-	existingErr := requireAttachedIdentity(ctx, connection, handle.identity)
+	if err := handle.bindInitializedInTransaction(
+		ctx,
+		connection,
+		record,
+	); err != nil {
+		return err
+	}
+	return commitAndVerify()
+}
+
+type bindingTransaction interface {
+	queryRows
+	queryRow
+	ExecContext(context.Context, string, ...any) (sql.Result, error)
+}
+
+// BindingMigrationTransaction is the narrow active-transaction capability
+// accepted by the first durable binding migration. db.MigrationTransaction
+// satisfies it structurally without reversing the package dependency.
+type BindingMigrationTransaction interface {
+	Exec(string, ...any) (sql.Result, error)
+	Query(string, ...any) (*sql.Rows, error)
+	QueryRow(string, ...any) *sql.Row
+}
+
+type migrationBindingTransaction struct {
+	transaction BindingMigrationTransaction
+}
+
+func (transaction migrationBindingTransaction) ExecContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (sql.Result, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	return transaction.transaction.Exec(query, args...)
+}
+
+func (transaction migrationBindingTransaction) QueryContext(
+	ctx context.Context,
+	query string,
+	args ...any,
+) (*sql.Rows, error) {
+	if err := validateContext(ctx); err != nil {
+		return nil, err
+	}
+	return transaction.transaction.Query(query, args...)
+}
+
+func (transaction migrationBindingTransaction) QueryRowContext(
+	_ context.Context,
+	query string,
+	args ...any,
+) *sql.Row {
+	return transaction.transaction.QueryRow(query, args...)
+}
+
+func (handle *Handle) revalidateMigrationBindingTransaction(
+	ctx context.Context,
+	transaction bindingTransaction,
+) error {
+	if err := verifyAnchoredTopology(handle.anchors); err != nil {
+		return fmt.Errorf(
+			"revalidate project ledger topology during binding migration: %w",
+			err,
+		)
+	}
+	if err := handle.sidecarGeneration.Revalidate(); err != nil {
+		return err
+	}
+	if err := verifySQLiteMainDatabaseIdentity(
+		ctx,
+		transaction,
+		handle.databaseAnchor,
+	); err != nil {
+		return fmt.Errorf(
+			"revalidate project ledger database identity during binding migration: %w",
+			err,
+		)
+	}
+	if err := handle.sidecarGeneration.Revalidate(); err != nil {
+		return err
+	}
+	if err := verifyAnchoredTopology(handle.anchors); err != nil {
+		return fmt.Errorf(
+			"revalidate project ledger topology after binding migration read: %w",
+			err,
+		)
+	}
+	return nil
+}
+
+func (handle *Handle) requirePendingFirstDurableBindingMigration(
+	ctx context.Context,
+	transaction bindingTransaction,
+) error {
+	var minimum int
+	var maximum int
+	var count int
+	if err := transaction.QueryRowContext(
+		ctx,
+		`SELECT
+			COALESCE(MIN(version), 0),
+			COALESCE(MAX(version), 0),
+			COUNT(*)
+		 FROM schema_version`,
+	).Scan(&minimum, &maximum, &count); err != nil {
+		return fmt.Errorf(
+			"inspect project ledger binding migration frontier: %w",
+			err,
+		)
+	}
+	if minimum != 1 ||
+		maximum != firstDurableBindingPredecessorSchema ||
+		count != firstDurableBindingPredecessorSchema {
+		return fmt.Errorf(
+			"project ledger binding requires the exact contiguous schema-%d predecessor; found minimum=%d maximum=%d count=%d",
+			firstDurableBindingPredecessorSchema,
+			minimum,
+			maximum,
+			count,
+		)
+	}
+	existingErr := requireAttachedIdentity(
+		ctx,
+		transaction,
+		handle.identity,
+	)
 	if existingErr == nil {
-		return commitAndVerify()
+		return fmt.Errorf(
+			"project ledger already has a durable identity binding before its first binding migration",
+		)
 	}
 	if !errors.Is(existingErr, ErrBindingMissing) {
 		return existingErr
 	}
-	if err := rejectConflictingDurableRoots(ctx, connection, handle.identity.root); err != nil {
+	return nil
+}
+
+func (handle *Handle) bindInitializedInTransaction(
+	ctx context.Context,
+	transaction bindingTransaction,
+	record ledgerBindingRecord,
+) error {
+	existingErr := requireAttachedIdentity(
+		ctx,
+		transaction,
+		handle.identity,
+	)
+	if existingErr == nil {
+		return nil
+	}
+	if !errors.Is(existingErr, ErrBindingMissing) {
+		return existingErr
+	}
+	if err := rejectConflictingDurableRoots(
+		ctx,
+		transaction,
+		handle.identity.root,
+	); err != nil {
 		return err
 	}
-	_, err = connection.ExecContext(
+	_, err := transaction.ExecContext(
 		ctx,
 		`INSERT INTO project_ledger_binding (
 			binding_slot, project_id, project_root, binding_digest, binding_json, bound_at
@@ -525,10 +827,14 @@ func (handle *Handle) bindInitializedWithHook(
 	if err != nil {
 		return fmt.Errorf("bind initialized project ledger: %w", err)
 	}
-	if err := requireAttachedIdentity(ctx, connection, handle.identity); err != nil {
+	if err := requireAttachedIdentity(
+		ctx,
+		transaction,
+		handle.identity,
+	); err != nil {
 		return fmt.Errorf("recheck initialized project ledger binding: %w", err)
 	}
-	return commitAndVerify()
+	return nil
 }
 
 type queryRows interface {

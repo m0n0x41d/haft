@@ -20,6 +20,8 @@ import (
 	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
+const bundledPrebindingSchema35Digest = "sha256:e50a51b40d266a62678129820116eb1f55cd92b3f8f6cae073c1c5fa78b35cd7"
+
 func TestApplyIsIdempotentAndHasNoHostCarrierEffects(t *testing.T) {
 	fixture := newCurrentProjectFixture(t)
 	hostPaths := writeHostSentinels(t, fixture.root)
@@ -97,6 +99,142 @@ func TestObserveReportsExactSchemaWithoutMutation(t *testing.T) {
 	after := digestFileForTest(t, databasePath)
 	if after != before {
 		t.Fatal("read-only schema observation changed the project ledger")
+	}
+}
+
+func TestObserveAdmitsPreBindingSchemaWithoutMutation(t *testing.T) {
+	for _, frontier := range []int{35, 36} {
+		t.Run(fmt.Sprintf("schema_%d", frontier), func(t *testing.T) {
+			fixture := newUnboundSchemaFrontierFixture(t, frontier)
+			request, err := NewRequest(
+				fixture.root,
+				fixture.config.ID,
+			)
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			databasePath, err := fixture.config.DBPath()
+			if err != nil {
+				t.Fatalf("DBPath: %v", err)
+			}
+			before := digestFileForTest(t, databasePath)
+
+			observation, err := Observe(
+				context.Background(),
+				request,
+			)
+			if err != nil {
+				t.Fatalf(
+					"Observe schema %d: %v",
+					frontier,
+					err,
+				)
+			}
+			current, err := db.CurrentSchemaVersion()
+			if err != nil {
+				t.Fatalf("CurrentSchemaVersion: %v", err)
+			}
+			if observation.ProjectRoot != fixture.root ||
+				observation.ProjectID != fixture.config.ID ||
+				observation.DatabasePath != databasePath ||
+				observation.ObservedSchema != frontier ||
+				observation.CompiledSchema != current {
+				t.Fatalf("observation = %#v", observation)
+			}
+			after := digestFileForTest(t, databasePath)
+			if after != before {
+				t.Fatal(
+					"pre-binding schema observation changed the project ledger",
+				)
+			}
+		})
+	}
+}
+
+func TestObserveRejectsMissingBindingAtBindingAwareSchema(t *testing.T) {
+	fixture := newUnboundSchemaFrontierFixture(
+		t,
+		db.ProjectLedgerBindingSchemaVersion,
+	)
+	request, err := NewRequest(fixture.root, fixture.config.ID)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+
+	_, err = Observe(context.Background(), request)
+	if err == nil ||
+		!strings.Contains(err.Error(), "requires a durable project identity binding") {
+		t.Fatalf("Observe unbound schema 37 error = %v", err)
+	}
+}
+
+func TestObserveRejectsGappedPreBindingSchemaPrefixWithoutMutation(
+	t *testing.T,
+) {
+	fixture := newUnboundSchemaFrontierFixture(t, 35)
+	request, err := NewRequest(fixture.root, fixture.config.ID)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	databasePath, err := fixture.config.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("open gapped project ledger: %v", err)
+	}
+	_, deleteErr := database.Exec(
+		"DELETE FROM schema_version WHERE version = 17",
+	)
+	closeErr := database.Close()
+	if deleteErr != nil || closeErr != nil {
+		t.Fatalf(
+			"gap project ledger prefix: delete=%v close=%v",
+			deleteErr,
+			closeErr,
+		)
+	}
+	before := digestFileForTest(t, databasePath)
+
+	_, err = Observe(context.Background(), request)
+	if err == nil || !strings.Contains(
+		err.Error(),
+		"not an exact prefix through version 35",
+	) {
+		t.Fatalf("Observe gapped schema prefix error = %v", err)
+	}
+	after := digestFileForTest(t, databasePath)
+	if after != before {
+		t.Fatal("gapped schema observation changed the project ledger")
+	}
+}
+
+func TestApplyRejectsMissingBindingAtBindingAwareSchemaBeforeMigration(
+	t *testing.T,
+) {
+	fixture := newUnboundSchemaFrontierFixture(
+		t,
+		db.ProjectLedgerBindingSchemaVersion,
+	)
+	request, err := NewRequest(fixture.root, fixture.config.ID)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	databasePath, err := fixture.config.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+	before := digestFileForTest(t, databasePath)
+
+	_, err = Apply(context.Background(), request)
+	if err == nil ||
+		!strings.Contains(err.Error(), "requires a durable project identity binding") {
+		t.Fatalf("Apply unbound schema 37 error = %v", err)
+	}
+	after := digestFileForTest(t, databasePath)
+	if after != before {
+		t.Fatal("rejected unbound schema-37 migration changed the ledger")
 	}
 }
 
@@ -257,9 +395,460 @@ func TestApplyMigratesConfiguredDetachedLedgerCopyWithoutHostEffects(t *testing.
 	)
 }
 
+func TestApplyMigratesConfiguredPreBindingLedgerCopy(t *testing.T) {
+	sourceDB := strings.TrimSpace(
+		os.Getenv("HAFT_PREBINDING_COPY_SOURCE_DB"),
+	)
+	projectRoot := strings.TrimSpace(
+		os.Getenv("HAFT_PREBINDING_PROJECT_ROOT"),
+	)
+	projectID := strings.TrimSpace(
+		os.Getenv("HAFT_PREBINDING_PROJECT_ID"),
+	)
+	configuredInputs := 0
+	for _, value := range []string{sourceDB, projectRoot, projectID} {
+		if value != "" {
+			configuredInputs++
+		}
+	}
+	if configuredInputs != 0 && configuredInputs != 3 {
+		t.Fatal(
+			"HAFT_PREBINDING_COPY_SOURCE_DB, HAFT_PREBINDING_PROJECT_ROOT, and HAFT_PREBINDING_PROJECT_ID must be configured together",
+		)
+	}
+	bundledFixture := configuredInputs == 0
+	if bundledFixture {
+		sourceDB = filepath.Join("testdata", "schema35.db")
+		projectRoot = canonicalTempDir(t)
+		haftDir := filepath.Join(projectRoot, ".haft")
+		if err := os.MkdirAll(haftDir, 0o755); err != nil {
+			t.Fatalf("create fixture project .haft: %v", err)
+		}
+		config, err := project.Create(haftDir, projectRoot)
+		if err != nil {
+			t.Fatalf("create fixture project identity: %v", err)
+		}
+		projectID = config.ID
+	}
+	wal := sourceDB + "-wal"
+	walInfo, err := os.Stat(wal)
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatalf("inspect source WAL: %v", err)
+	}
+	if err == nil && walInfo.Size() != 0 {
+		t.Fatalf(
+			"source WAL contains %d bytes; checkpoint before copy rehearsal",
+			walInfo.Size(),
+		)
+	}
+	beforeLiveSchema := readSchemaFrontierForTest(t, sourceDB)
+	if beforeLiveSchema != 35 {
+		t.Fatalf(
+			"source schema = %d, want exact pre-binding predecessor 35",
+			beforeLiveSchema,
+		)
+	}
+	sourceDigestBefore := digestFileForTest(t, sourceDB)
+	if bundledFixture &&
+		sourceDigestBefore != bundledPrebindingSchema35Digest {
+		t.Fatalf(
+			"bundled schema-35 fixture digest = %s, want %s; regenerate it with %s=1 go test ./db -run '^TestGeneratePrebindingSchema35Fixture$'",
+			sourceDigestBefore,
+			bundledPrebindingSchema35Digest,
+			"HAFT_GENERATE_PREBINDING_SCHEMA35_FIXTURE",
+		)
+	}
+	hostBefore := snapshotHostCarriers(t, projectRoot)
+
+	temporaryHome := canonicalTempDir(t)
+	t.Setenv("HOME", temporaryHome)
+	destinationDB := filepath.Join(
+		temporaryHome,
+		".haft",
+		"projects",
+		projectID,
+		"haft.db",
+	)
+	copyFileForTest(t, sourceDB, destinationDB)
+	ledgerBefore := discoverHistoricalLedgerSnapshot(t, destinationDB)
+	request, err := NewRequest(projectRoot, projectID)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	observation, err := Observe(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Observe detached pre-binding copy: %v", err)
+	}
+	current, err := db.CurrentSchemaVersion()
+	if err != nil {
+		t.Fatalf("CurrentSchemaVersion: %v", err)
+	}
+	if observation.ObservedSchema != 35 ||
+		observation.CompiledSchema != current {
+		t.Fatalf(
+			"pre-binding observation = %+v, want 35 -> %d",
+			observation,
+			current,
+		)
+	}
+	transition, err := NewExactTransition(35, current)
+	if err != nil {
+		t.Fatalf("NewExactTransition: %v", err)
+	}
+	result, err := ApplyExact(
+		context.Background(),
+		request,
+		transition,
+	)
+	if err != nil {
+		t.Fatalf("ApplyExact detached pre-binding copy: %v", err)
+	}
+	if result.Outcome != OutcomeApplied ||
+		result.BeforeSchema != 35 ||
+		result.AfterSchema != current ||
+		result.ProjectRoot != projectRoot ||
+		result.ProjectID != projectID ||
+		result.DatabasePath != destinationDB {
+		t.Fatalf(
+			"detached result = %+v, want applied 35 -> %d",
+			result,
+			current,
+		)
+	}
+	handle, err := projectledger.OpenExisting(
+		context.Background(),
+		projectRoot,
+		projectledger.ReadOnly,
+	)
+	if err != nil {
+		t.Fatalf("OpenExisting migrated pre-binding copy: %v", err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatalf("close migrated pre-binding copy: %v", err)
+	}
+	ledgerAfter := repeatHistoricalLedgerSnapshot(
+		t,
+		destinationDB,
+		ledgerBefore,
+	)
+	assertHistoricalLedgerPreserved(t, ledgerBefore, ledgerAfter)
+	second, err := Apply(context.Background(), request)
+	if err != nil {
+		t.Fatalf("Apply detached pre-binding copy retry: %v", err)
+	}
+	if second.Outcome != OutcomeAlreadyCurrent ||
+		second.BeforeSchema != current ||
+		second.AfterSchema != current {
+		t.Fatalf(
+			"detached retry result = %+v, want already_current %d -> %d",
+			second,
+			current,
+			current,
+		)
+	}
+	if liveSchema := readSchemaFrontierForTest(t, sourceDB); liveSchema != 35 {
+		t.Fatalf("live source schema changed from 35 to %d", liveSchema)
+	}
+	sourceDigestAfter := digestFileForTest(t, sourceDB)
+	if sourceDigestAfter != sourceDigestBefore {
+		t.Fatalf(
+			"live source digest changed from %s to %s",
+			sourceDigestBefore,
+			sourceDigestAfter,
+		)
+	}
+	hostAfter := snapshotHostCarriers(t, projectRoot)
+	if !reflect.DeepEqual(hostAfter, hostBefore) {
+		t.Fatalf(
+			"project host carriers changed\nbefore: %v\nafter:  %v",
+			hostBefore,
+			hostAfter,
+		)
+	}
+	t.Logf(
+		"migrated detached schema-35 copy to %d, bound exact identity, and preserved %d historical tables",
+		current,
+		len(ledgerBefore.tables),
+	)
+}
+
+func TestApplyRollsBackBindingMigrationWhenCanonicalBinderRejects(
+	t *testing.T,
+) {
+	fixture := newBundledPrebindingCopyFixture(t)
+	database, err := sql.Open("sqlite", fixture.databasePath)
+	if err != nil {
+		t.Fatalf("open pre-binding copy: %v", err)
+	}
+	_, insertErr := database.Exec(
+		`CREATE TABLE future_rooted_extension (
+			entry_id TEXT PRIMARY KEY,
+			project_root TEXT NOT NULL
+		) WITHOUT ROWID;
+		INSERT INTO future_rooted_extension (
+			entry_id,
+			project_root
+		) VALUES ('future:foreign', '/tmp/foreign-root')`,
+	)
+	closeErr := database.Close()
+	if insertErr != nil || closeErr != nil {
+		t.Fatalf(
+			"seed conflicting project root: insert=%v close=%v",
+			insertErr,
+			closeErr,
+		)
+	}
+	request, err := NewRequest(fixture.root, fixture.projectID)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	current, err := db.CurrentSchemaVersion()
+	if err != nil {
+		t.Fatalf("CurrentSchemaVersion: %v", err)
+	}
+	transition, err := NewExactTransition(35, current)
+	if err != nil {
+		t.Fatalf("NewExactTransition: %v", err)
+	}
+	_, err = ApplyExact(context.Background(), request, transition)
+	if err == nil || !strings.Contains(err.Error(), "future_rooted_extension") {
+		t.Fatalf("canonical binder conflict error = %v", err)
+	}
+	if frontier := readSchemaFrontierForTest(
+		t,
+		fixture.databasePath,
+	); frontier != db.ProjectLedgerBindingSchemaVersion-1 {
+		t.Fatalf(
+			"frontier after rejected binding = %d, want %d",
+			frontier,
+			db.ProjectLedgerBindingSchemaVersion-1,
+		)
+	}
+	assertSQLiteObjectCountForTest(
+		t,
+		fixture.databasePath,
+		"table",
+		"project_ledger_binding",
+		0,
+	)
+
+	database, err = sql.Open("sqlite", fixture.databasePath)
+	if err != nil {
+		t.Fatalf("reopen rejected binding copy: %v", err)
+	}
+	_, deleteErr := database.Exec("DROP TABLE future_rooted_extension")
+	closeErr = database.Close()
+	if deleteErr != nil || closeErr != nil {
+		t.Fatalf(
+			"remove conflicting project root: delete=%v close=%v",
+			deleteErr,
+			closeErr,
+		)
+	}
+	result, err := Apply(context.Background(), request)
+	if err != nil {
+		t.Fatalf("retry after canonical binder rejection: %v", err)
+	}
+	if result.Outcome != OutcomeApplied ||
+		result.BeforeSchema != db.ProjectLedgerBindingSchemaVersion-1 ||
+		result.AfterSchema != current {
+		t.Fatalf(
+			"retry result = %+v, want %d -> %d",
+			result,
+			db.ProjectLedgerBindingSchemaVersion-1,
+			current,
+		)
+	}
+}
+
+func TestApplyKeepsBindingWhenLaterMigrationFailsAndRetries(
+	t *testing.T,
+) {
+	fixture := newBundledPrebindingCopyFixture(t)
+	database, err := sql.Open("sqlite", fixture.databasePath)
+	if err != nil {
+		t.Fatalf("open pre-binding copy: %v", err)
+	}
+	_, triggerErr := database.Exec(
+		`CREATE TRIGGER reject_schema_version_38
+		 BEFORE INSERT ON schema_version
+		 WHEN NEW.version = 38 BEGIN
+			SELECT RAISE(ABORT, 'injected post-binding migration failure');
+		 END`,
+	)
+	closeErr := database.Close()
+	if triggerErr != nil || closeErr != nil {
+		t.Fatalf(
+			"install post-binding failure: create=%v close=%v",
+			triggerErr,
+			closeErr,
+		)
+	}
+	request, err := NewRequest(fixture.root, fixture.projectID)
+	if err != nil {
+		t.Fatalf("NewRequest: %v", err)
+	}
+	current, err := db.CurrentSchemaVersion()
+	if err != nil {
+		t.Fatalf("CurrentSchemaVersion: %v", err)
+	}
+	transition, err := NewExactTransition(35, current)
+	if err != nil {
+		t.Fatalf("NewExactTransition: %v", err)
+	}
+	_, err = ApplyExact(context.Background(), request, transition)
+	if err == nil ||
+		!strings.Contains(err.Error(), "injected post-binding migration failure") {
+		t.Fatalf("post-binding migration failure = %v", err)
+	}
+	if frontier := readSchemaFrontierForTest(
+		t,
+		fixture.databasePath,
+	); frontier != db.ProjectLedgerBindingSchemaVersion {
+		t.Fatalf(
+			"frontier after later failure = %d, want %d",
+			frontier,
+			db.ProjectLedgerBindingSchemaVersion,
+		)
+	}
+	handle, err := projectledger.OpenExisting(
+		context.Background(),
+		fixture.root,
+		projectledger.ReadWrite,
+	)
+	if err != nil {
+		t.Fatalf("open bound ledger after later migration failure: %v", err)
+	}
+	_, dropErr := handle.Database().Exec(
+		"DROP TRIGGER reject_schema_version_38",
+	)
+	closeErr = handle.Close()
+	if dropErr != nil || closeErr != nil {
+		t.Fatalf(
+			"remove post-binding failure: drop=%v close=%v",
+			dropErr,
+			closeErr,
+		)
+	}
+	result, err := Apply(context.Background(), request)
+	if err != nil {
+		t.Fatalf("retry after later migration failure: %v", err)
+	}
+	if result.Outcome != OutcomeApplied ||
+		result.BeforeSchema != db.ProjectLedgerBindingSchemaVersion ||
+		result.AfterSchema != current {
+		t.Fatalf(
+			"retry result = %+v, want %d -> %d",
+			result,
+			db.ProjectLedgerBindingSchemaVersion,
+			current,
+		)
+	}
+}
+
 type currentProjectFixture struct {
 	root   string
 	config *project.Config
+}
+
+type bundledPrebindingCopyFixture struct {
+	root         string
+	projectID    string
+	databasePath string
+}
+
+func newBundledPrebindingCopyFixture(
+	t *testing.T,
+) bundledPrebindingCopyFixture {
+	t.Helper()
+	source := filepath.Join("testdata", "schema35.db")
+	if digest := digestFileForTest(t, source); digest != bundledPrebindingSchema35Digest {
+		t.Fatalf(
+			"bundled schema-35 fixture digest = %s, want %s",
+			digest,
+			bundledPrebindingSchema35Digest,
+		)
+	}
+	root := canonicalTempDir(t)
+	haftDir := filepath.Join(root, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatalf("create fixture project .haft: %v", err)
+	}
+	config, err := project.Create(haftDir, root)
+	if err != nil {
+		t.Fatalf("create fixture project identity: %v", err)
+	}
+	home := canonicalTempDir(t)
+	t.Setenv("HOME", home)
+	databasePath := filepath.Join(
+		home,
+		".haft",
+		"projects",
+		config.ID,
+		"haft.db",
+	)
+	copyFileForTest(t, source, databasePath)
+	return bundledPrebindingCopyFixture{
+		root:         root,
+		projectID:    config.ID,
+		databasePath: databasePath,
+	}
+}
+
+func newUnboundSchemaFrontierFixture(
+	t *testing.T,
+	frontier int,
+) currentProjectFixture {
+	t.Helper()
+	home := canonicalTempDir(t)
+	root := canonicalTempDir(t)
+	t.Setenv("HOME", home)
+	haftDir := filepath.Join(root, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatalf("create .haft: %v", err)
+	}
+	config, err := project.Create(haftDir, root)
+	if err != nil {
+		t.Fatalf("project.Create: %v", err)
+	}
+	databasePath, err := config.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(databasePath), 0o755); err != nil {
+		t.Fatalf("create project ledger directory: %v", err)
+	}
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("open project ledger: %v", err)
+	}
+	_, createErr := database.Exec(
+		`CREATE TABLE schema_version (
+			version INTEGER PRIMARY KEY,
+			applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		WITH RECURSIVE versions(version) AS (
+			SELECT 1
+			UNION ALL
+			SELECT version + 1 FROM versions WHERE version < ?
+		)
+		INSERT INTO schema_version(version)
+		SELECT version FROM versions`,
+		frontier,
+	)
+	closeErr := database.Close()
+	if createErr != nil || closeErr != nil {
+		t.Fatalf(
+			"create schema-%d project ledger: create=%v close=%v",
+			frontier,
+			createErr,
+			closeErr,
+		)
+	}
+	return currentProjectFixture{
+		root:   root,
+		config: config,
+	}
 }
 
 func newCurrentProjectFixture(t *testing.T) currentProjectFixture {
@@ -388,6 +977,35 @@ func readSchemaFrontierForTest(t *testing.T, path string) int {
 		t.Fatalf("read schema frontier: %v", err)
 	}
 	return frontier
+}
+
+func assertSQLiteObjectCountForTest(
+	t *testing.T,
+	path string,
+	kind string,
+	name string,
+	expected int,
+) {
+	t.Helper()
+	database := openLedgerReadOnlyForTest(t, path)
+	defer database.Close()
+	var observed int
+	if err := database.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_schema WHERE type = ? AND name = ?`,
+		kind,
+		name,
+	).Scan(&observed); err != nil {
+		t.Fatalf("count SQLite %s %s: %v", kind, name, err)
+	}
+	if observed != expected {
+		t.Fatalf(
+			"SQLite %s %s count = %d, want %d",
+			kind,
+			name,
+			observed,
+			expected,
+		)
+	}
 }
 
 type logicalTableSnapshot struct {

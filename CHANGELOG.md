@@ -1398,6 +1398,12 @@ The v8.2.0 candidate was never published; work previously described as an
 
 ### Fixed
 
+- **Pre-binding project-ledger migration during explicit init.** `haft init`
+  can now inspect and migrate a genuine schema-35 project ledger that predates
+  `project_ledger_binding`. The schema-37 binding table and exact configured
+  project identity commit atomically before later additive migrations.
+  Read-only planning remains non-mutating, and a missing binding at schema 37
+  or newer still fails closed instead of being silently repaired.
 - **Fail-closed predecessor snapshots and optional FPF retrieval.** Predecessor
   compiler probing and envelope loading now share one opened read-only SQLite
   snapshot, so path replacement cannot mix compiler and artifact identities

@@ -2,13 +2,16 @@ package cli
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/initplanning"
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 func TestCompilePublicHostInitPlanUsesExactRequestBindings(
@@ -153,5 +156,101 @@ func TestCompilePublicCorePlanIsPureForGreenfieldProject(
 	}
 	if _, err := os.Stat(filepath.Dir(wantDB)); !os.IsNotExist(err) {
 		t.Fatalf("core planning created database storage: %v", err)
+	}
+}
+
+func TestCompilePublicCorePlanSelectsMigrationForPreBindingLedger(
+	t *testing.T,
+) {
+	userHomeRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve user home: %v", err)
+	}
+	projectRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve project root: %v", err)
+	}
+	t.Setenv("HOME", userHomeRoot)
+	haftDir := filepath.Join(projectRoot, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatalf("create .haft: %v", err)
+	}
+	config, err := project.Create(haftDir, projectRoot)
+	if err != nil {
+		t.Fatalf("project.Create: %v", err)
+	}
+	databasePath, err := config.DBPath()
+	if err != nil {
+		t.Fatalf("DBPath: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(databasePath), 0o755); err != nil {
+		t.Fatalf("create project ledger directory: %v", err)
+	}
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatalf("open project ledger: %v", err)
+	}
+	_, createErr := database.Exec(
+		`CREATE TABLE schema_version (
+			version INTEGER PRIMARY KEY,
+			applied_at TEXT DEFAULT CURRENT_TIMESTAMP
+		);
+		WITH RECURSIVE versions(version) AS (
+			SELECT 1
+			UNION ALL
+			SELECT version + 1 FROM versions WHERE version < 35
+		)
+		INSERT INTO schema_version(version)
+		SELECT version FROM versions`,
+	)
+	closeErr := database.Close()
+	if createErr != nil || closeErr != nil {
+		t.Fatalf(
+			"create schema-35 project ledger: create=%v close=%v",
+			createErr,
+			closeErr,
+		)
+	}
+	beforeDigest, err := digestRegularFile(databasePath)
+	if err != nil {
+		t.Fatalf("digest schema-35 ledger: %v", err)
+	}
+	request, err := compilePublicInitRequest(
+		weakPublicInitRequest{
+			invocation:  initplanning.InvocationExplicit,
+			projectRoot: projectRoot,
+			projectID:   config.ID,
+			coreOnly:    true,
+			overseer:    publicOverseerWeakDisabled(),
+		},
+	)
+	if err != nil {
+		t.Fatalf("compilePublicInitRequest: %v", err)
+	}
+
+	core, err := compilePublicCorePlan(
+		context.Background(),
+		request,
+		userHomeRoot,
+	)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	current, err := db.CurrentSchemaVersion()
+	if err != nil {
+		t.Fatalf("CurrentSchemaVersion: %v", err)
+	}
+	if core.Effect() != initplanning.CoreMigrate ||
+		core.BeforeSchema() != 35 ||
+		core.AfterSchema() != current ||
+		core.Basis().Kind() != initplanning.BasisUnavailable {
+		t.Fatalf("core = %#v", core)
+	}
+	afterDigest, err := digestRegularFile(databasePath)
+	if err != nil {
+		t.Fatalf("redigest schema-35 ledger: %v", err)
+	}
+	if afterDigest != beforeDigest {
+		t.Fatal("pre-binding core planning changed the project ledger")
 	}
 }

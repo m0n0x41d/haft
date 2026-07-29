@@ -120,6 +120,55 @@ func TestRequireCurrentSchemaReadOnlyDoesNotCreateVersionTable(
 	}
 }
 
+func TestRequireSchemaPrefixReadOnlyRequiresExactContiguousPrefix(
+	t *testing.T,
+) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "prefix.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+	database := store.GetRawDB()
+	if _, err := database.Exec(
+		"DELETE FROM schema_version WHERE version > 35",
+	); err != nil {
+		t.Fatal(err)
+	}
+	before := currentSchemaTestVersions(t, database)
+	if err := RequireSchemaPrefixReadOnly(
+		context.Background(),
+		database,
+		35,
+	); err != nil {
+		t.Fatalf("RequireSchemaPrefixReadOnly() error = %v", err)
+	}
+
+	if _, err := database.Exec(
+		"DELETE FROM schema_version WHERE version = 17",
+	); err != nil {
+		t.Fatal(err)
+	}
+	err = RequireSchemaPrefixReadOnly(
+		context.Background(),
+		database,
+		35,
+	)
+	if err == nil || !strings.Contains(
+		err.Error(),
+		"not an exact prefix through version 35",
+	) {
+		t.Fatalf("gapped schema prefix error = %v", err)
+	}
+	after := currentSchemaTestVersions(t, database)
+	if len(after) != len(before)-1 {
+		t.Fatalf(
+			"failed prefix check changed schema versions from %v to %v",
+			before,
+			after,
+		)
+	}
+}
+
 func currentSchemaTestVersions(
 	t *testing.T,
 	database *sql.DB,

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectledger"
@@ -95,7 +96,7 @@ func Observe(
 			request.project.String(),
 		)
 	}
-	handle, err := projectledger.OpenExisting(
+	handle, err := projectledger.OpenForExplicitMigration(
 		ctx,
 		request.root.String(),
 		projectledger.ReadOnly,
@@ -108,9 +109,31 @@ func Observe(
 		ctx,
 		handle.Database(),
 	)
+	var prefixErr error
+	var bindingErr error
+	if observeErr == nil {
+		prefixErr = db.RequireSchemaPrefixReadOnly(
+			ctx,
+			handle.Database(),
+			observed,
+		)
+		if prefixErr == nil {
+			bindingErr = requireBindingForObservedSchema(
+				ctx,
+				handle,
+				observed,
+			)
+		}
+	}
 	compiled, compiledErr := db.CurrentSchemaVersion()
 	closeErr := handle.Close()
-	if err := errors.Join(observeErr, compiledErr, closeErr); err != nil {
+	if err := errors.Join(
+		observeErr,
+		prefixErr,
+		bindingErr,
+		compiledErr,
+		closeErr,
+	); err != nil {
 		return SchemaObservation{}, err
 	}
 	return SchemaObservation{
@@ -208,7 +231,7 @@ func apply(
 			request.project.String(),
 		)
 	}
-	handle, err := projectledger.OpenExisting(
+	handle, err := projectledger.OpenForExplicitMigration(
 		ctx,
 		request.root.String(),
 		projectledger.ReadWrite,
@@ -260,6 +283,55 @@ func applyToHandle(
 	); err != nil {
 		return Result{}, err
 	}
+	if err := db.RequireSchemaPrefixReadOnly(
+		ctx,
+		handle.Database(),
+		before,
+	); err != nil {
+		return Result{}, err
+	}
+	if err := requireBindingForObservedSchema(
+		ctx,
+		handle,
+		before,
+	); err != nil {
+		return Result{}, err
+	}
+	if before < db.ProjectLedgerBindingSchemaVersion {
+		bindingAt := time.Now().UTC()
+		bindingTransitionRan := false
+		if err := db.RunMigrationsThroughProjectLedgerBinding(
+			handle.Database(),
+			func(transaction db.MigrationTransaction) error {
+				if err := handle.BindDuringFirstDurableSchemaMigration(
+					ctx,
+					transaction,
+					bindingAt,
+				); err != nil {
+					return err
+				}
+				bindingTransitionRan = true
+				return nil
+			},
+		); err != nil {
+			return Result{}, fmt.Errorf(
+				"apply migrations through project binding: %w",
+				err,
+			)
+		}
+		if err := handle.Revalidate(ctx); err != nil {
+			if bindingTransitionRan {
+				return Result{}, errors.Join(
+					projectledger.ErrBindingCommittedTopologyChanged,
+					err,
+				)
+			}
+			return Result{}, fmt.Errorf(
+				"verify concurrently migrated project identity: %w",
+				err,
+			)
+		}
+	}
 	if err := db.RunMigrations(handle.Database()); err != nil {
 		return Result{}, fmt.Errorf("apply additive project migrations: %w", err)
 	}
@@ -283,6 +355,24 @@ func applyToHandle(
 		after,
 		current,
 	)
+}
+
+func requireBindingForObservedSchema(
+	ctx context.Context,
+	handle *projectledger.Handle,
+	observedSchema int,
+) error {
+	if observedSchema < db.ProjectLedgerBindingSchemaVersion {
+		return nil
+	}
+	if err := handle.RequireAttachedIdentity(ctx); err != nil {
+		return fmt.Errorf(
+			"schema %d requires a durable project identity binding: %w",
+			observedSchema,
+			err,
+		)
+	}
+	return nil
 }
 
 func requireTransitionExpectation(

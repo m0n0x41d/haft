@@ -12,8 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/config"
-	"github.com/m0n0x41d/haft/internal/hooks"
-	"github.com/m0n0x41d/haft/internal/skills"
+	"github.com/m0n0x41d/haft/internal/embedding"
 )
 
 var (
@@ -24,7 +23,7 @@ var (
 var doctorCmd = &cobra.Command{
 	Use:   "doctor",
 	Short: "Check haft installation health",
-	Long:  "Verify configuration, auth, runtime dependencies, and project setup.",
+	Long:  "Verify the current CLI, project binding, database, and MCP process setup.",
 	RunE:  runDoctor,
 }
 
@@ -75,18 +74,6 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		return fmt.Sprintf("%s/%s", runtime.GOOS, runtime.GOARCH), nil
 	})
 
-	check("Host JS runtime", func() (string, error) {
-		if path, err := exec.LookPath("bun"); err == nil {
-			out, _ := exec.Command(path, "--version").Output()
-			return fmt.Sprintf("bun %s (%s)", trimOutput(out), path), nil
-		}
-		if path, err := exec.LookPath("node"); err == nil {
-			out, _ := exec.Command(path, "--version").Output()
-			return fmt.Sprintf("node %s (%s)", trimOutput(out), path), nil
-		}
-		return "", fmt.Errorf("bun or node not found in PATH")
-	})
-
 	check("Git", func() (string, error) {
 		path, err := exec.LookPath("git")
 		if err != nil {
@@ -97,56 +84,8 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 	})
 
 	fmt.Println()
-
-	// --- Config ---
 	fmt.Println("Configuration:")
-	check("Config file", func() (string, error) {
-		cfg, err := config.Load()
-		if err != nil {
-			return "", fmt.Errorf("cannot load: %v", err)
-		}
-		return fmt.Sprintf("model=%s", cfg.Model), nil
-	})
-
-	// --- Auth ---
-	fmt.Println()
-	fmt.Println("Authentication:")
-	warn("OpenAI API key", func() (string, bool) {
-		if key := os.Getenv("OPENAI_API_KEY"); key != "" {
-			return "set via OPENAI_API_KEY", true
-		}
-		return "not set (use OPENAI_API_KEY or 'haft login')", false
-	})
-
-	warn("Codex OAuth", func() (string, bool) {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			return "cannot determine home dir", false
-		}
-		// Check haft auth
-		if _, err := os.Stat(filepath.Join(home, ".config", "haft", "auth.json")); err == nil {
-			return "~/.config/haft/auth.json found", true
-		}
-		// Check codex CLI auth
-		if _, err := os.Stat(filepath.Join(home, ".codex", "auth.json")); err == nil {
-			return "~/.codex/auth.json found (Codex CLI)", true
-		}
-		return "no OAuth tokens (run 'haft login')", false
-	})
-
-	warn("Anthropic API key", func() (string, bool) {
-		if key := os.Getenv("ANTHROPIC_API_KEY"); key != "" {
-			return "set via ANTHROPIC_API_KEY", true
-		}
-		return "not set", false
-	})
-
-	warn("Brave Search key", func() (string, bool) {
-		if key := os.Getenv("BRAVE_SEARCH_API_KEY"); key != "" {
-			return "set via BRAVE_SEARCH_API_KEY", true
-		}
-		return "not set (web_search disabled)", false
-	})
+	check("Embedding config", doctorEmbeddingConfigStatus)
 
 	// --- Project ---
 	fmt.Println()
@@ -177,23 +116,6 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 				return "", err
 			}
 			return fmt.Sprintf("%s (%s, artifacts=%d)", binding.DBPath, binding.DBState, binding.ArtifactCount), nil
-		})
-
-		warn("Hooks", func() (string, bool) {
-			exec := hooks.NewExecutor(binding.ProjectRoot)
-			if exec.HasHooks() {
-				return "configured", true
-			}
-			return "none configured", true // not a failure
-		})
-
-		warn("Skills", func() (string, bool) {
-			loader := skills.NewLoader(binding.ProjectRoot)
-			list := loader.List()
-			if len(list) > 0 {
-				return fmt.Sprintf("%d loaded", len(list)), true
-			}
-			return "none loaded", true // not a failure
 		})
 
 		warn("haft serve processes", func() (string, bool) {
@@ -246,6 +168,33 @@ func runDoctor(_ *cobra.Command, _ []string) error {
 		return fmt.Errorf("%d checks failed", failed)
 	}
 	return nil
+}
+
+func doctorEmbeddingConfigStatus() (string, error) {
+	cfg, err := config.Load()
+	if err != nil {
+		return "", fmt.Errorf("load global config: %w", err)
+	}
+
+	provider := strings.TrimSpace(cfg.Embedding.Provider)
+	if err := embedding.ValidateProvider(provider); err != nil {
+		return "", err
+	}
+	if provider == "" {
+		provider = "local (default)"
+	}
+
+	model := strings.TrimSpace(cfg.Embedding.Model)
+	if model == "" {
+		model = "default"
+	}
+
+	return fmt.Sprintf(
+		"provider=%s model=%s dim=%d",
+		provider,
+		model,
+		cfg.Embedding.Dim,
+	), nil
 }
 
 func runDoctorProjectPathCarrierCheck(binding ProjectBinding) ([]projectPathCarrierResult, error) {

@@ -3260,7 +3260,6 @@ func interfaceContractAllActionFieldsExcluded(coverage interfaceContractAuditSch
 func interfaceContractGenerationValidationRefs() []string {
 	return []string{
 		"internal/cli/interface_test.go",
-		"internal/cli/serve_parity_test.go",
 		"internal/fpf/server_test.go",
 	}
 }
@@ -5024,9 +5023,6 @@ func interfaceContractAuditValidationRefs(capability interfaceCapability) []stri
 			"internal/cli/memory_full_server_test.go",
 			"internal/cli/memory_read_server_test.go",
 		)
-	}
-	if capability.CurrentExecution.MCPTool == "haft_query" {
-		refs = append(refs, "internal/cli/serve_parity_test.go")
 	}
 	if strings.Contains(capability.CurrentExecution.CLIStatus, "input_file") {
 		refs = append(refs, "internal/cli/interface_test.go")

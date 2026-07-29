@@ -68,9 +68,8 @@ type Server struct {
 	version           string
 }
 
-// parityPlanMCPSchema delegates to the shared artifact.ParityPlanJSONSchema
-// so the MCP-advertised schema and the standalone tool surface stay in
-// lock-step on field shape, types, and missing_data_policy enum values.
+// parityPlanMCPSchema delegates to the canonical artifact schema so all MCP
+// tools use one field shape, type set, and missing_data_policy vocabulary.
 func parityPlanMCPSchema(description string) map[string]interface{} {
 	return artifact.ParityPlanJSONSchema(description)
 }

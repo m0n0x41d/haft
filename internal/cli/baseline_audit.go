@@ -455,8 +455,6 @@ func classifyBaselineTerm(path string, line string) (string, string) {
 		return baselineAuditLifecycleAuth, "mentions baseline inside workflow skill routing or lifecycle guidance"
 	case baselineAuditVerifySkillSurface(path):
 		return baselineAuditVerifiedState, "mentions baseline inside the h-verify evidence and drift-check workflow surface"
-	case baselineAuditAgentGuardrailSurface(path):
-		return baselineAuditLifecycleAuth, "mentions baseline inside agent guardrails for lifecycle ordering"
 	case baselineAuditTestFixtureSurface(path, value):
 		return baselineAuditTestFixture, "mentions baseline inside test helper or fixture vocabulary; audit-visible test surface, not product terminology debt"
 	case containsAnyBaselineTerm(value,
@@ -972,10 +970,7 @@ func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 	case "internal/fpf/server.go",
 		"internal/cli/serve.go",
 		"internal/cli/serve_decision_test.go",
-		"internal/cli/serve_parity_test.go",
 		"internal/cli/skill/h-decide/SKILL.md",
-		"internal/tools/haft.go",
-		"internal/tools/haft_test.go",
 		"spec/integration/MCP_PROTOCOL.md":
 		return true
 	case "README.md":
@@ -1070,18 +1065,6 @@ func baselineAuditVerifySkillSurface(path string) bool {
 	case "internal/cli/skill/h-verify/SKILL.md",
 		"internal/cli/skill/h-commission/SKILL.md",
 		"packages/haft-pi/prompts/h-verify.md":
-		return true
-	default:
-		return false
-	}
-}
-
-func baselineAuditAgentGuardrailSurface(path string) bool {
-	switch filepath.ToSlash(path) {
-	case "internal/agent/guardrails.go",
-		"internal/agent/guardrails_test.go",
-		"internal/agent/cycle.go",
-		"internal/agent/prompt.go":
 		return true
 	default:
 		return false

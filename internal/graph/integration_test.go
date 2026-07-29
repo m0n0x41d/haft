@@ -62,7 +62,6 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 		{ID: "mod-fpf", Path: "internal/fpf", Name: "fpf"},
 		{ID: "mod-present", Path: "internal/present", Name: "present"},
 		{ID: "mod-cli", Path: "internal/cli", Name: "cli"},
-		{ID: "mod-tools", Path: "internal/tools", Name: "tools"},
 		{ID: "mod-workcommission", Path: "internal/workcommission", Name: "workcommission"},
 		{ID: "mod-implementationplan", Path: "internal/implementationplan", Name: "implementationplan"},
 		{ID: "mod-cmd-haft", Path: "cmd/haft", Name: "cmd-haft"},
@@ -80,9 +79,6 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 		{"mod-cli", "mod-codebase"},
 		{"mod-cli", "mod-fpf"},
 		{"mod-cli", "mod-present"},
-		{"mod-tools", "mod-artifact"},
-		{"mod-tools", "mod-codebase"},
-		{"mod-tools", "mod-present"},
 		{"mod-workcommission", "mod-artifact"},
 		{"mod-implementationplan", "mod-artifact"},
 		{"mod-implementationplan", "mod-workcommission"},
@@ -182,17 +178,6 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 			},
 		},
 		{
-			id:    "dec-tools-thin-handlers",
-			title: "Tool handlers remain thin",
-			invariants: []string{
-				"Tool handlers stay thin over artifact and codebase services",
-			},
-			files: []string{
-				"internal/tools/haft.go",
-				"internal/tools/readfile.go",
-			},
-		},
-		{
 			id:    "dec-workcommission-commit-discipline",
 			title: "Work commissions reference active decisions only",
 			invariants: []string{
@@ -232,7 +217,6 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 			},
 			files: []string{
 				"internal/cli/serve.go",
-				"internal/tools/haft.go",
 			},
 		},
 	}
@@ -427,7 +411,6 @@ func TestComputeImpactSet_SeededProjectData(t *testing.T) {
 		"dec-cmd-thin-entrypoint",
 		"dec-mcp-server-stays-thin",
 		"dec-present-derived-views",
-		"dec-tools-thin-handlers",
 	}
 
 	if len(impactByDecision) != len(expectedDecisionIDs) {

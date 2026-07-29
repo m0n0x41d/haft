@@ -431,6 +431,29 @@ func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
 	}
 }
 
+func TestInterfaceContractValidationRefsExist(t *testing.T) {
+	catalog := haftInterfaceCatalog()
+	generation := buildInterfaceContractGenerationReport(catalog)
+	audit := buildInterfaceContractAuditReport(catalog)
+	refs := append([]string(nil), generation.ValidationRefs...)
+	for _, surface := range audit.Surfaces {
+		refs = append(refs, surface.ValidationRefs...)
+	}
+	refs = uniqueInterfaceContractAuditStrings(refs)
+
+	root := testProjectRoot(t)
+	for _, ref := range refs {
+		path := filepath.Join(root, filepath.FromSlash(ref))
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("validation ref %q is not readable: %v", ref, err)
+		}
+		if info.IsDir() {
+			t.Fatalf("validation ref %q resolves to a directory", ref)
+		}
+	}
+}
+
 func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) {
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 

@@ -151,6 +151,30 @@ defmodule OpenSleigh.Agent.ToolRuntimeTest do
     refute File.exists?(target)
   end
 
+  test "bash rejects commission lifecycle mutation before command execution", ctx do
+    commission =
+      ["**/*"]
+      |> scoped_commission!([], MapSet.new([:run_tests]))
+
+    session =
+      ctx.workspace
+      |> adapter_session(commission, MapSet.new([:bash]))
+
+    target = Path.join(ctx.workspace, "should-not-exist.txt")
+
+    assert {:error, :no_commission_mutation} =
+             ToolRuntime.execute(
+               "bash",
+               %{
+                 "command" =>
+                   "haft commission complete-external wc-tool-runtime --runner codex; touch should-not-exist.txt"
+               },
+               session
+             )
+
+    refute File.exists?(target)
+  end
+
   test "bash path mutation is terminal-diff checked because shell text is opaque", ctx do
     commission =
       ["allowed.txt"]

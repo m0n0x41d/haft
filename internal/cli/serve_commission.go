@@ -3352,9 +3352,10 @@ func ensureWorkCommissionTransition(
 func ensureWorkCommissionLifecycleTransition(commission map[string]any, args map[string]any) error {
 	action := stringArg(args, "action")
 	state := stringField(commission, "state")
+	verdict := stringArg(args, "verdict")
 	allowedStates := workCommissionLifecycleAllowedStatesByAction[action]
 
-	if workCommissionStateAllowed(allowedStates, state) {
+	if workCommissionLifecycleStateAllowed(action, state, verdict, allowedStates) {
 		return nil
 	}
 
@@ -3364,6 +3365,28 @@ func ensureWorkCommissionLifecycleTransition(commission map[string]any, args map
 		state,
 		strings.Join(allowedStates, ","),
 	)
+}
+
+func workCommissionLifecycleStateAllowed(
+	action string,
+	state string,
+	verdict string,
+	allowedStates []string,
+) bool {
+	if workCommissionStateAllowed(allowedStates, state) {
+		return true
+	}
+
+	// Preflight pass markers are intentionally idempotent once a commission has
+	// advanced to running. Open-Sleigh may replay a local preflight ticket after a
+	// runtime restart or worker stall while Haft already records the
+	// WorkCommission as running. Rejecting that replay traps the harness in a
+	// preflight retry loop: record_run_event is accepted in running, then
+	// record_preflight/start_after_preflight is rejected, then the orchestrator
+	// retries preflight again. Only pass verdicts get this replay tolerance; a
+	// stale preflight must not be able to retroactively block a running commission.
+	return state == "running" && verdict == "pass" &&
+		(action == "record_preflight" || action == "start_after_preflight")
 }
 
 func workCommissionFreshnessReport(

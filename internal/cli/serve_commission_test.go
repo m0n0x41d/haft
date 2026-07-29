@@ -857,6 +857,114 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	}
 }
 
+func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision := createCommissionDecisionFixture(t, ctx, store, haftDir, "Replay preflight", "internal/cli/serve_commission.go")
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":        "create_from_decision",
+		"decision_ref":  decision.Meta.ID,
+		"repo_ref":      "local:haft",
+		"base_sha":      "base-r1",
+		"target_branch": "dev",
+		"valid_until":   "2099-01-01T00:00:00Z",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "unit test fixture without project spec carriers",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+	commissionID := created["commission"]["id"].(string)
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "claim_for_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "start_after_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+		"event":         "preflight_passed",
+		"verdict":       "pass",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "record_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+		"event":         "preflight_checked",
+		"verdict":       "pass",
+	})
+	if err != nil {
+		t.Fatalf("record_preflight replay on running commission failed: %v", err)
+	}
+
+	result, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "start_after_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+		"event":         "preflight_passed",
+		"verdict":       "pass",
+	})
+	if err != nil {
+		t.Fatalf("start_after_preflight replay on running commission failed: %v", err)
+	}
+
+	shown := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &shown); err != nil {
+		t.Fatal(err)
+	}
+	commission := shown["commission"]
+	if commission["state"] != "running" {
+		t.Fatalf("state = %#v, want running", commission["state"])
+	}
+
+	events, ok := commission["events"].([]any)
+	if !ok || len(events) != 3 {
+		t.Fatalf("events = %#v, want three lifecycle events", commission["events"])
+	}
+
+	last, ok := events[len(events)-1].(map[string]any)
+	if !ok {
+		t.Fatalf("last event = %#v, want object", events[len(events)-1])
+	}
+	if last["action"] != "start_after_preflight" || last["verdict"] != "pass" {
+		t.Fatalf("last event = %#v, want replayed start_after_preflight/pass", last)
+	}
+
+	_, err = handleHaftCommission(ctx, store, map[string]any{
+		"action":        "record_preflight",
+		"commission_id": commissionID,
+		"runner_id":     "open-sleigh:test",
+		"event":         "preflight_checked",
+		"verdict":       "blocked",
+		"reason":        "late stale replay",
+	})
+	if err == nil || !strings.Contains(err.Error(), "commission_lifecycle_forbidden") {
+		t.Fatalf("blocked preflight replay error = %v, want commission_lifecycle_forbidden", err)
+	}
+}
+
 func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()

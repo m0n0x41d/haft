@@ -277,6 +277,7 @@ defmodule OpenSleigh.RuntimeStatusWriter do
   defp serialise(boolean) when is_boolean(boolean), do: boolean
   defp serialise(%DateTime{} = datetime), do: DateTime.to_iso8601(datetime)
   defp serialise(%MapSet{} = set), do: set |> MapSet.to_list() |> serialise()
+  defp serialise(%_{} = struct), do: struct |> Map.from_struct() |> serialise()
 
   defp serialise(%{} = map) do
     map

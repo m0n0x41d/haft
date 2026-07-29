@@ -1104,6 +1104,16 @@ func currentPublicTakeoverRegistries(
 	if present {
 		records = append(records, legacyCodex.Record())
 	}
+	legacyPortableCodex, present, err :=
+		currentPublicLegacyPortableCodexHaftRecord(projection)
+	if err != nil {
+		return initplanning.LegacyRegistrySelection{},
+			initplanning.ManagedFragmentLegacyRegistry{},
+			err
+	}
+	if present {
+		records = append(records, legacyPortableCodex)
+	}
 	legacyPi, err := currentPublicLegacyPiFragments(projection)
 	if err != nil {
 		return initplanning.LegacyRegistrySelection{},
@@ -1264,6 +1274,59 @@ func currentPublicLegacyCodexQuintFragment(
 		return initplanning.ManagedFragment{}, false, err
 	}
 	return fragment, true, nil
+}
+
+func currentPublicLegacyPortableCodexHaftRecord(
+	projection initplanning.HostAdapterProjection,
+) (initplanning.ManagedFragmentRecord, bool, error) {
+	if (projection.Host() != initplanning.HostCodex &&
+		projection.Host() != initplanning.HostAir) ||
+		projection.Scope() != initplanning.ScopeProject {
+		return initplanning.ManagedFragmentRecord{}, false, nil
+	}
+	var desired initplanning.ManagedFragment
+	found := false
+	for _, fragment := range projection.ManagedFragments() {
+		coordinate := fragment.Coordinate()
+		if coordinate.Kind() != initplanning.ManagedTOMLTableSet ||
+			coordinate.Selector() != "mcp_servers.haft" {
+			continue
+		}
+		if found {
+			return initplanning.ManagedFragmentRecord{}, false,
+				fmt.Errorf(
+					"codex projection repeats its Haft MCP table set",
+				)
+		}
+		desired = fragment
+		found = true
+	}
+	if !found {
+		return initplanning.ManagedFragmentRecord{}, false,
+			fmt.Errorf(
+				"codex projection lacks its Haft MCP table set",
+			)
+	}
+	record, err := initplanning.NewKnownLegacyManagedFragmentRecord(
+		desired,
+		publicLegacyPortableCodexHaftContent(),
+	)
+	if err != nil {
+		return initplanning.ManagedFragmentRecord{}, false, err
+	}
+	return record, true, nil
+}
+
+func publicLegacyPortableCodexHaftContent() []byte {
+	return []byte(`[mcp_servers.haft]
+command = "haft"
+args = ["serve"]
+cwd = ".."
+env = { HAFT_PROJECT_ROOT = "." }
+startup_timeout_sec = 15
+tool_timeout_sec = 120
+default_tools_approval_mode = "prompt"
+`)
 }
 
 func publicLegacyCodexQuintContent(

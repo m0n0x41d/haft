@@ -138,6 +138,62 @@ func TestManagedFragmentMatchingBytesWithoutReceiptRemainForeign(
 	}
 }
 
+func TestKnownLegacyManagedFragmentRecordUsesExactObservedDigest(
+	t *testing.T,
+) {
+	template := mustTOMLTableSetFragment(
+		t,
+		t.TempDir()+"/config.toml",
+		"mcp_servers.haft",
+		[]string{"mcp_servers.haft", "mcp_servers.haft.env"},
+		`[mcp_servers.haft]
+command = "haft"
+
+[mcp_servers.haft.env]
+HAFT_PROJECT_ROOT = "."
+`,
+	)
+	legacy := []byte(`[mcp_servers.haft]
+command = "haft"
+env = { HAFT_PROJECT_ROOT = "." }
+`)
+	record, err := NewKnownLegacyManagedFragmentRecord(
+		template,
+		legacy,
+	)
+	if err != nil {
+		t.Fatalf("NewKnownLegacyManagedFragmentRecord: %v", err)
+	}
+	if !reflect.DeepEqual(record.Coordinate(), template.Coordinate()) {
+		t.Fatalf(
+			"legacy coordinate = %+v, want %+v",
+			record.Coordinate(),
+			template.Coordinate(),
+		)
+	}
+	if record.Component() != template.Component() {
+		t.Fatalf(
+			"legacy component = %s, want %s",
+			record.Component(),
+			template.Component(),
+		)
+	}
+	if record.Digest() != managedFragmentDigest(legacy) ||
+		record.Digest() == template.Digest() {
+		t.Fatalf(
+			"legacy digest = %s, template = %s",
+			record.Digest(),
+			template.Digest(),
+		)
+	}
+	if _, err := NewKnownLegacyManagedFragmentRecord(
+		template,
+		nil,
+	); err == nil {
+		t.Fatal("empty known-legacy content was accepted")
+	}
+}
+
 func TestManagedFragmentManifestScopesCurrentnessToFragment(
 	t *testing.T,
 ) {
@@ -386,7 +442,7 @@ approval_mode = "approve"
 		!strings.Contains(output, `command = "haft-v2"`) {
 		t.Fatalf("managed exact tables were not updated:\n%s", output)
 	}
-	if !strings.Contains(output, strings.TrimSpace(userOwned)) {
+	if !strings.HasSuffix(output, userOwned) {
 		t.Fatalf("user-owned descendant tables changed:\n%s", output)
 	}
 

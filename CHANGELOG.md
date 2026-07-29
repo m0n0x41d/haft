@@ -1412,6 +1412,11 @@ The v8.2.0 candidate was never published; work previously described as an
   evaluates the shared skills installation from every consuming project while
   checking each split project binding against its own installed component
   selection.
+- **Portable Codex MCP migration.** `haft init --codex` now recognizes the
+  exact earlier portable `[mcp_servers.haft]` block, replaces it with the
+  current project-bound Haft MCP tables, and preserves unrelated Codex
+  settings and MCP servers. Near-miss or operator-customized Haft blocks remain
+  foreign and fail before any write.
 - **Fail-closed predecessor snapshots and optional FPF retrieval.** Predecessor
   compiler probing and envelope loading now share one opened read-only SQLite
   snapshot, so path replacement cannot mix compiler and artifact identities

@@ -614,6 +614,38 @@ func (fragment ManagedFragment) Record() ManagedFragmentRecord {
 	}
 }
 
+// NewKnownLegacyManagedFragmentRecord pairs one desired coordinate with a
+// caller-supplied, observer-normalized historical shape and hashes those bytes
+// verbatim. The record carries no ownership by itself; only an explicit
+// known-legacy registry may use it as adoption evidence.
+func NewKnownLegacyManagedFragmentRecord(
+	template ManagedFragment,
+	observedContent []byte,
+) (ManagedFragmentRecord, error) {
+	if !template.coordinate.valid() ||
+		!template.Record().valid() {
+		return ManagedFragmentRecord{}, fmt.Errorf(
+			"known legacy managed fragment template is invalid",
+		)
+	}
+	if len(observedContent) == 0 {
+		return ManagedFragmentRecord{}, fmt.Errorf(
+			"known legacy managed fragment content is empty",
+		)
+	}
+	record := ManagedFragmentRecord{
+		coordinate: template.Coordinate(),
+		component:  template.component,
+		digest:     managedFragmentDigest(observedContent),
+	}
+	if !record.valid() {
+		return ManagedFragmentRecord{}, fmt.Errorf(
+			"known legacy managed fragment record is invalid",
+		)
+	}
+	return record, nil
+}
+
 func cloneManagedFragmentRecord(
 	record ManagedFragmentRecord,
 ) ManagedFragmentRecord {
@@ -3488,6 +3520,12 @@ func removeTOMLTableFamily(
 		cursor = section.end
 	}
 	output.Write(raw[cursor:])
+	if cursor < len(raw) {
+		// Bytes after the removed table family are outside the managed span.
+		// Preserve that complete operator-owned suffix, including end-of-file
+		// whitespace.
+		return output.Bytes()
+	}
 	return []byte(strings.TrimRight(output.String(), " \t\r\n"))
 }
 
@@ -3531,6 +3569,12 @@ func replaceTOMLTableSet(
 		cursor = section.end
 	}
 	output.Write(raw[cursor:])
+	if cursor < len(raw) {
+		// Bytes after the replaced table set are outside the managed span.
+		// Preserve that complete operator-owned suffix, including end-of-file
+		// whitespace.
+		return output.Bytes()
+	}
 	return []byte(strings.TrimRight(output.String(), " \t\r\n"))
 }
 

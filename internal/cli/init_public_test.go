@@ -984,6 +984,159 @@ func TestPublicInitCodexReplacesKnownQuintMCPAndPreservesForeignTOML(
 	}
 }
 
+func TestPublicInitCodexReplacesKnownPortableHaftMCPAndPreservesForeignTOML(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	homeRoot := t.TempDir()
+	restoreDirectory := changeInitTestDirectory(t, projectRoot)
+	defer restoreDirectory()
+	restoreFlags := captureInitHostFlagState()
+	defer restoreFlags.apply()
+	clearInitHostFlags()
+	initCodex = true
+	t.Setenv("HOME", homeRoot)
+
+	configPath := filepath.Join(
+		projectRoot,
+		".codex",
+		"config.toml",
+	)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("create Codex config root: %v", err)
+	}
+	operatorPrefix := []byte(
+		"approval_policy = \"never\"\n" +
+			"sandbox_mode = \"danger-full-access\"\n\n",
+	)
+	legacy := publicLegacyPortableCodexHaftContent()
+	operatorSuffix := []byte(
+		"\n[mcp_servers.haft.tools.haft_query]\n" +
+			"approval_mode = \"approve\"\n\n" +
+			"[mcp_servers.haft.tools.haft_method]\n" +
+			"approval_mode = \"approve\"\n\n" +
+			"[mcp_servers.private]\n" +
+			"command = \"private-server\"\n" +
+			"env = { PRIVATE_MODE = \"fixture\" }\n \t\n\t ",
+	)
+	fixture := append([]byte{}, operatorPrefix...)
+	fixture = append(fixture, legacy...)
+	fixture = append(fixture, operatorSuffix...)
+	if err := os.WriteFile(configPath, fixture, 0o640); err != nil {
+		t.Fatalf("write known portable Haft config: %v", err)
+	}
+
+	cmd := newPublicInitTestCommand()
+	var codex bool
+	cmd.Flags().BoolVar(&codex, "codex", false, "")
+	if err := cmd.Flags().Set("codex", "true"); err != nil {
+		t.Fatalf("set Codex flag: %v", err)
+	}
+	if err := runPublicInit(cmd, nil); err != nil {
+		t.Fatalf("replace known portable Haft config: %v", err)
+	}
+	applied, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read applied Codex config: %v", err)
+	}
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("stat applied Codex config: %v", err)
+	}
+	config, err := currentPublicProjectConfig(projectRoot)
+	if err != nil {
+		t.Fatalf("read applied project identity: %v", err)
+	}
+	expectedManaged, err := currentCodexTOMLFragmentContent(
+		currentCoherentHostContext{
+			projectRoot: projectRoot,
+			projectID:   config.ID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("render expected Codex Haft tables: %v", err)
+	}
+	expected := append([]byte{}, operatorPrefix...)
+	expected = append(expected, expectedManaged...)
+	expected = append(expected, operatorSuffix...)
+	if !bytes.Equal(applied, expected) ||
+		info.Mode().Perm() != 0o640 {
+		t.Fatalf(
+			"known portable Haft replacement mode=%o\n"+
+				"want bytes:\n%q\n"+
+				"got bytes:\n%q",
+			info.Mode().Perm(),
+			expected,
+			applied,
+		)
+	}
+}
+
+func TestPublicInitCodexRejectsNearMissPortableHaftMCPBeforeAnyWrite(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	homeRoot := t.TempDir()
+	restoreDirectory := changeInitTestDirectory(t, projectRoot)
+	defer restoreDirectory()
+	restoreFlags := captureInitHostFlagState()
+	defer restoreFlags.apply()
+	clearInitHostFlags()
+	initCodex = true
+	t.Setenv("HOME", homeRoot)
+
+	configPath := filepath.Join(
+		projectRoot,
+		".codex",
+		"config.toml",
+	)
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("create Codex config root: %v", err)
+	}
+	foreign := bytes.Replace(
+		publicLegacyPortableCodexHaftContent(),
+		[]byte(`command = "haft"`),
+		[]byte(`command = "operator-wrapper"`),
+		1,
+	)
+	if err := os.WriteFile(configPath, foreign, 0o644); err != nil {
+		t.Fatalf("write near-miss portable Haft config: %v", err)
+	}
+
+	cmd := newPublicInitTestCommand()
+	var codex bool
+	cmd.Flags().BoolVar(&codex, "codex", false, "")
+	if err := cmd.Flags().Set("codex", "true"); err != nil {
+		t.Fatalf("set Codex flag: %v", err)
+	}
+	err := runPublicInit(cmd, nil)
+	if err == nil ||
+		!strings.Contains(err.Error(), "cannot safely update") {
+		t.Fatalf("near-miss portable Haft error = %v", err)
+	}
+	preserved, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read preserved near-miss config: %v", err)
+	}
+	if !bytes.Equal(preserved, foreign) {
+		t.Fatalf("near-miss portable Haft config changed:\n%s", preserved)
+	}
+	for _, path := range []string{
+		filepath.Join(projectRoot, ".haft"),
+		filepath.Join(projectRoot, "AGENTS.md"),
+		filepath.Join(homeRoot, ".agents"),
+		filepath.Join(homeRoot, ".haft"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf(
+				"blocked near-miss portable Haft init wrote %s: %v",
+				path,
+				err,
+			)
+		}
+	}
+}
+
 func TestPublicInitCodexRejectsForeignQuintMCPBeforeAnyWrite(
 	t *testing.T,
 ) {

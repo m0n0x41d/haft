@@ -43,27 +43,46 @@ func NewOpenAI(model string) (*OpenAIProvider, error) {
 	if resolved.key == "" {
 		return nil, fmt.Errorf("no OpenAI auth found: run 'haft login' or set OPENAI_API_KEY")
 	}
+	return newOpenAIProvider(model, resolved.key, resolved.authType, resolved.accountID, "")
+}
 
-	opts := []option.RequestOption{option.WithAPIKey(resolved.key)}
+// NewOpenAICompatible creates an OpenAI-compatible provider with an explicit
+// API key and base URL.
+func NewOpenAICompatible(model, apiKey, baseURL string) (*OpenAIProvider, error) {
+	if apiKey == "" {
+		return nil, fmt.Errorf("no API key configured for OpenAI-compatible provider")
+	}
+	if baseURL == "" {
+		return nil, fmt.Errorf("no base URL configured for OpenAI-compatible provider")
+	}
+	return newOpenAIProvider(model, apiKey, "api_key", "", baseURL)
+}
+
+func newOpenAIProvider(model, apiKey, authType, accountID, baseURL string, extra ...option.RequestOption) (*OpenAIProvider, error) {
+	opts := []option.RequestOption{option.WithAPIKey(apiKey)}
+	if baseURL != "" {
+		opts = append(opts, option.WithBaseURL(baseURL))
+	}
 
 	// ChatGPT/Codex auth uses the ChatGPT backend and requires workspace scoping.
-	if resolved.authType == "codex" || resolved.authType == "codex_cli" {
+	if authType == "codex" || authType == "codex_cli" {
 		opts = append(opts,
 			option.WithBaseURL(codexAPIEndpoint),
 			option.WithHeader("originator", codexOriginator),
 		)
-		if resolved.accountID != "" {
-			opts = append(opts, option.WithHeader("chatgpt-account-id", resolved.accountID))
+		if accountID != "" {
+			opts = append(opts, option.WithHeader("chatgpt-account-id", accountID))
 		}
 	}
+	opts = append(opts, extra...)
 
 	client := openai.NewClient(opts...)
 
 	return &OpenAIProvider{
 		client:    client,
 		model:     model,
-		accountID: resolved.accountID,
-		authType:  resolved.authType,
+		accountID: accountID,
+		authType:  authType,
 	}, nil
 }
 

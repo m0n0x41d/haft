@@ -37,6 +37,15 @@ import (
 //	    api_key: sk-ant-...
 //	  deepseek:
 //	    api_key: sk-...
+//	  minimax:
+//	    api_key: ...
+//	    api_type: openai
+//	    openai_base_url: https://api.minimax.io/v1
+//	    anthropic_base_url: https://api.minimax.io/anthropic
+//
+// MiniMax's China endpoints are https://api.minimaxi.com/v1 and
+// https://api.minimaxi.com/anthropic. Anthropic-compatible base URLs end at
+// /anthropic; the SDK appends /v1/messages.
 type Config struct {
 	Model     string                  `yaml:"model" json:"model"`         // default model ID
 	Providers map[string]ProviderAuth `yaml:"providers" json:"providers"` // provider ID → auth
@@ -55,12 +64,15 @@ type EmbeddingConfig struct {
 
 // ProviderAuth stores credentials for one provider.
 type ProviderAuth struct {
-	AuthType     string `yaml:"auth_type,omitempty" json:"auth_type,omitempty"` // "api_key", "codex_oauth"
-	APIKey       string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
-	AccessToken  string `yaml:"access_token,omitempty" json:"access_token,omitempty"`
-	RefreshToken string `yaml:"refresh_token,omitempty" json:"refresh_token,omitempty"`
-	ExpiresAt    int64  `yaml:"expires_at,omitempty" json:"expires_at,omitempty"`
-	AccountID    string `yaml:"account_id,omitempty" json:"account_id,omitempty"`
+	AuthType         string `yaml:"auth_type,omitempty" json:"auth_type,omitempty"` // "api_key", "codex_oauth"
+	APIType          string `yaml:"api_type,omitempty" json:"api_type,omitempty"`   // "openai", "anthropic"
+	APIKey           string `yaml:"api_key,omitempty" json:"api_key,omitempty"`
+	OpenAIBaseURL    string `yaml:"openai_base_url,omitempty" json:"openai_base_url,omitempty"`
+	AnthropicBaseURL string `yaml:"anthropic_base_url,omitempty" json:"anthropic_base_url,omitempty"`
+	AccessToken      string `yaml:"access_token,omitempty" json:"access_token,omitempty"`
+	RefreshToken     string `yaml:"refresh_token,omitempty" json:"refresh_token,omitempty"`
+	ExpiresAt        int64  `yaml:"expires_at,omitempty" json:"expires_at,omitempty"`
+	AccountID        string `yaml:"account_id,omitempty" json:"account_id,omitempty"`
 }
 
 // ---------------------------------------------------------------------------

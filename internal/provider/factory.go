@@ -2,24 +2,56 @@ package provider
 
 import "fmt"
 
+// ProviderOptions configures a provider adapter without changing the legacy
+// NewProvider call shape.
+type ProviderOptions struct {
+	APIType          string
+	Region           string
+	OpenAIBaseURL    string
+	AnthropicBaseURL string
+}
+
 // NewProvider creates an LLM provider based on provider ID.
 // Routes to the appropriate implementation:
 //   - "openai": OpenAI Responses API (also handles Codex/ChatGPT auth)
 //   - "anthropic": Anthropic Messages API
-//   - Others: treated as OpenAI-compatible (DeepSeek, Groq, Mistral, etc.)
+//   - "minimax": OpenAI-compatible by default, or Anthropic-compatible with options
 //
 // For OpenAI, apiKey can be empty — it resolves from env/config/codex.
 // For Anthropic, apiKey is required (from env or config).
 func NewProvider(providerID, model, apiKey string) (LLMProvider, error) {
+	return NewProviderWithOptions(providerID, model, apiKey, ProviderOptions{})
+}
+
+// NewProviderWithOptions creates a provider with protocol and endpoint
+// selection for compatible providers.
+func NewProviderWithOptions(providerID, model, apiKey string, options ProviderOptions) (LLMProvider, error) {
 	switch providerID {
 	case "openai":
 		return NewOpenAI(model)
 	case "anthropic":
 		return NewAnthropic(model, apiKey)
+	case "minimax":
+		endpoint, ok := MiniMaxEndpoint(options.Region)
+		if !ok {
+			return nil, fmt.Errorf("unknown MiniMax region %q", options.Region)
+		}
+		if options.APIType == "anthropic" {
+			baseURL := options.AnthropicBaseURL
+			if baseURL == "" {
+				baseURL = endpoint.AnthropicBaseURL
+			}
+			return NewAnthropicWithBaseURL(model, apiKey, baseURL)
+		}
+		if options.APIType != "" && options.APIType != "openai" {
+			return nil, fmt.Errorf("unsupported MiniMax API type %q", options.APIType)
+		}
+		baseURL := options.OpenAIBaseURL
+		if baseURL == "" {
+			baseURL = endpoint.OpenAIBaseURL
+		}
+		return NewOpenAICompatible(model, apiKey, baseURL)
 	default:
-		// OpenAI-compatible providers (DeepSeek, Groq, etc.)
-		// For now, route through OpenAI — they use the same API format.
-		// TODO: support custom base URLs for non-OpenAI providers.
 		return nil, fmt.Errorf("provider %q not yet supported — use openai or anthropic", providerID)
 	}
 }
@@ -54,6 +86,7 @@ func guessProviderFromPrefix(model string) string {
 		"gemini-":   "google",
 		"deepseek-": "deepseek",
 		"llama-":    "groq",
+		"MiniMax-":  "minimax",
 	}
 	for prefix, provider := range prefixes {
 		if len(model) >= len(prefix) && model[:len(prefix)] == prefix {

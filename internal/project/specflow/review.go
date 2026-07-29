@@ -342,10 +342,10 @@ func missingFrameFindings(subject reviewSubject) []ReviewFinding {
 			subject,
 			"missing_system_frame",
 			ReviewSeverityAbstain,
-			"active SpecSection does not declare a target, enabling, carrier, or sidekick frame",
-			"Semantic review must know whether the section describes the target system, enabling system, publication carrier, or sidekick before it can advise stronger use.",
-			"Target system != enabling system != carrier != sidekick",
-			"Set `system_frame` to target_system, enabling_system, carrier, or sidekick; move target/enabling sections under matching canonical spec files when they claim those frames.",
+			"active SpecSection does not declare a target, software, carrier, or sidekick frame",
+			"Semantic review must know whether the section describes the target system, software system, publication carrier, or sidekick before it can advise stronger use.",
+			"Target system != software system != carrier != sidekick",
+			"Set `system_frame` to target_system, software_system, carrier, or sidekick; move target/software sections under matching canonical spec files when they claim those frames.",
 			ReviewUseAbstainUntilClarified,
 			"system_frame",
 		),
@@ -364,9 +364,9 @@ func frameMismatchFindings(subject reviewSubject) []ReviewFinding {
 			"system_frame_mismatch",
 			ReviewSeverityBlockedForStrongerUse,
 			mismatch,
-			"Cross-frame carriers can make target-system claims look like enabling-system policy or the reverse.",
-			"Target system != enabling system",
-			"Align `system_frame` with its carrier frame, or split the views into separate target and enabling sections.",
+			"Cross-frame carriers can make target-system claims look like software-system contracts or the reverse.",
+			"Target system != software system",
+			"Align `system_frame` with its carrier frame, or split the views into separate target and software sections.",
 			ReviewUseBlockedForStrongerUse,
 			"system_frame",
 		),
@@ -705,7 +705,7 @@ func frameMismatch(section project.SpecSection) string {
 	if frame == "target_system" && documentKind != string(project.SpecDocumentKindTargetSystem) {
 		return fmt.Sprintf("declared system_frame %q conflicts with carrier frame %q", frame, documentKind)
 	}
-	if frame == "enabling_system" && documentKind != string(project.SpecDocumentKindEnablingSystem) {
+	if frame == "software_system" && documentKind != string(project.SpecDocumentKindSoftwareSystem) {
 		return fmt.Sprintf("declared system_frame %q conflicts with carrier frame %q", frame, documentKind)
 	}
 

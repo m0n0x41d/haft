@@ -6,7 +6,7 @@
 ## Authority hierarchy
 
 1. **This contract** — operating rules, always followed
-2. **spec/** — intended semantics of Haft's target and enabling systems
+2. **spec/** — intended semantics of Haft's target, software, and enabling systems
 3. **Implementation** — current runtime behavior
 
 When spec and implementation diverge:
@@ -42,14 +42,30 @@ When spec and implementation diverge:
 - **Flow** may import Core. **Governor** may import Core + Flow. **Surfaces** may import anything below.
 - Side effects only at Flow layer and above. Core is pure queries + mutations through Store interface.
 
-## Decision boundary
+## Relation and authority boundary
 
-- Agent may frame, explore, compare, and recommend when delegated
-- Agent must **stop at Choose → Execute boundary** and wait for human confirmation
+- Agent may retrieve and apply relevant FPF source when delegated; framing,
+  exploration, comparison, and verification are available methods, not a
+  mandatory sequence.
+- Text order, graph order, and skill order do not establish causal, temporal,
+  method, planning, or performed-work order. An explicit causal claim,
+  `U.MethodDescription`, ImplementationPlan, WorkCommission, or work relation must
+  carry that order.
+- Ordinary local and reversible reasoning may remain conversational. Persist a
+  project record when handoff, replay, authority, automation, evidence, or
+  another named receiving use will rely on it.
+- Planning remains separate from reasoning and memory. Only an explicit
+  ImplementationPlan or WorkCommission establishes execution dependencies.
+- Agent must **stop at the binding-choice or work-authorization boundary** and
+  wait for human confirmation.
 - `selected_ref` from compare is advisory — not the decision
 - Exception: autonomous mode explicitly enabled for the session
 - Even in autonomous mode: one-way-door decisions require confirmation
-- Agents may draft TargetSystemSpec and EnablingSystemSpec sections, but the human principal approves load-bearing target-system role, boundary, acceptance, and autonomy statements.
+- `TargetSystemSpec` and `SoftwareSystemSpec` are Haft local-practice carriers
+  for Agentic SWE, not normative FPF A.1 kinds. Agents may draft them, but the
+  human principal approves load-bearing target-system role, boundary, and
+  acceptance statements, plus software responsibility allocation, interfaces,
+  constraints, and selected structure.
 
 ## Verdict vocabulary
 

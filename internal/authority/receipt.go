@@ -63,10 +63,26 @@ type HostReceiptVerification struct {
 
 type HostReceiptVerifierRegistry map[string]HostReceiptVerifier
 
+type receiptEvaluator func(
+	time.Time,
+	Receipt,
+	BindingAction,
+	HostReceiptVerifierRegistry,
+) Evaluation
+
+var receiptEvaluators = map[string]receiptEvaluator{
+	ReceiptKindManualCLI: evaluateManualCLIReceipt,
+	ReceiptKindHost:      evaluateHostReceipt,
+	ReceiptKindModel:     evaluateModelSuppliedReceipt,
+}
+
 func EvaluateReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
 	return EvaluateReceiptWithHostVerifiers(now, receipt, action, nil)
 }
 
+// EvaluateReceiptWithHostVerifiers is a legacy diagnostic helper. Even a
+// ReceiptStatusValid Evaluation is not a canonical permission and has no
+// conversion path to KernelGate's package-private admitted-use snapshot.
 func EvaluateReceiptWithHostVerifiers(
 	now time.Time,
 	receipt Receipt,
@@ -81,27 +97,19 @@ func EvaluateReceiptWithHostVerifiers(
 		}
 	}
 
-	switch receipt.Kind {
-	case ReceiptKindManualCLI:
-		return evaluateManualCLIReceipt(now, receipt, action)
-	case ReceiptKindHost:
-		return evaluateHostReceipt(now, receipt, action, verifiers)
-	case ReceiptKindModel:
-		return Evaluation{
-			Status:       ReceiptStatusUnsupportedFuture,
-			RequiredKind: ReceiptKindManualCLI,
-			Reason:       "model-supplied arguments are not authorization receipts",
-		}
-	default:
-		return Evaluation{
-			Status:       ReceiptStatusUnsupportedFuture,
-			RequiredKind: ReceiptKindManualCLI,
-			Reason:       "only manual CLI receipts are accepted in v1; host receipts need a future verifier",
-		}
+	evaluator, ok := receiptEvaluators[receipt.Kind]
+	if !ok {
+		return unsupportedReceiptKind()
 	}
+	return evaluator(now, receipt, action, verifiers)
 }
 
-func evaluateManualCLIReceipt(now time.Time, receipt Receipt, action BindingAction) Evaluation {
+func evaluateManualCLIReceipt(
+	now time.Time,
+	receipt Receipt,
+	action BindingAction,
+	_ HostReceiptVerifierRegistry,
+) Evaluation {
 	required := ReceiptKindManualCLI
 
 	if strings.TrimSpace(receipt.PrincipalIdentitySource) == "" {
@@ -130,6 +138,27 @@ func evaluateManualCLIReceipt(now time.Time, receipt Receipt, action BindingActi
 		Status:       ReceiptStatusValid,
 		RequiredKind: required,
 		Reason:       "manual CLI receipt matches the requested binding action",
+	}
+}
+
+func evaluateModelSuppliedReceipt(
+	_ time.Time,
+	_ Receipt,
+	_ BindingAction,
+	_ HostReceiptVerifierRegistry,
+) Evaluation {
+	return Evaluation{
+		Status:       ReceiptStatusUnsupportedFuture,
+		RequiredKind: ReceiptKindManualCLI,
+		Reason:       "model-supplied arguments are not authorization receipts",
+	}
+}
+
+func unsupportedReceiptKind() Evaluation {
+	return Evaluation{
+		Status:       ReceiptStatusUnsupportedFuture,
+		RequiredKind: ReceiptKindManualCLI,
+		Reason:       "only manual CLI receipts are accepted in v1; host receipts need a future verifier",
 	}
 }
 

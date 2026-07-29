@@ -155,7 +155,7 @@ func TestHandleQuintQueryResolveTermReadsSQLSectionsAndCarrierTermMap(t *testing
 		Path:          ".haft/specs/target-system.md",
 		Terms:         []string{"HarnessableProject"},
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}

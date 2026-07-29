@@ -17,9 +17,10 @@ func TestDecide_TacticalSkipMechanism_BypassRequiredFields(t *testing.T) {
 	// Tactical decision skipping all anti-self-deception fields with an
 	// explicit operator-acknowledged reason.
 	_, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle: "Use sync.Map",
-		WhySelected:   "Concurrent reads dominate; sync.Map is idiomatic.",
-		Mode:          string(ModeTactical),
+		ProblemStatement: "The current map implementation does not provide safe concurrent access.",
+		SelectedTitle:    "Use sync.Map",
+		WhySelected:      "Concurrent reads dominate; sync.Map is idiomatic.",
+		Mode:             string(ModeTactical),
 		Skips: []string{
 			"selection_policy",
 			"counterargument",
@@ -47,11 +48,12 @@ func TestDecide_TacticalSkipMechanism_PersistsAcknowledgement(t *testing.T) {
 	reason := "Tactical 5-line change, reversible by file revert; full DRR ceremony overhead exceeds decision blast radius"
 
 	decision, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle: "Use sync.Map",
-		WhySelected:   "Concurrent reads dominate; sync.Map is idiomatic.",
-		Mode:          string(ModeTactical),
-		Skips:         skips,
-		SkipReason:    reason,
+		ProblemStatement: "The current map implementation does not provide safe concurrent access.",
+		SelectedTitle:    "Use sync.Map",
+		WhySelected:      "Concurrent reads dominate; sync.Map is idiomatic.",
+		Mode:             string(ModeTactical),
+		Skips:            skips,
+		SkipReason:       reason,
 	})
 	if err != nil {
 		t.Fatalf("tactical-mode decision with explicit skips should accept; got error: %v", err)

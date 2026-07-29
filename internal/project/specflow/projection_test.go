@@ -29,6 +29,28 @@ func TestProjectLifecycleEmptyProjectDraftsFirstSection(t *testing.T) {
 	}
 }
 
+func TestProjectLifecycleBlocksOnLegacySpecMigration(t *testing.T) {
+	finding := project.SpecCheckFinding{
+		Level:   "error",
+		Code:    project.SpecMigrationRequiredFindingCode,
+		Path:    ".haft/specs/enabling-system.md",
+		Message: "legacy spec requires migration",
+	}
+	state := DeriveState(project.ProjectSpecificationSet{Findings: []project.SpecCheckFinding{finding}})
+
+	projection := ProjectLifecycle(state)
+
+	if projection.Action != LifecycleActionClarify || projection.State != LifecycleStateNeedsAction {
+		t.Fatalf("projection = %#v", projection)
+	}
+	if projection.Object != "ProjectSpecificationSet" || projection.Carrier != finding.Path {
+		t.Fatalf("projection = %#v", projection)
+	}
+	if !slices.Contains(projection.AllowedCommands, "haft spec migrate") {
+		t.Fatalf("AllowedCommands = %#v", projection.AllowedCommands)
+	}
+}
+
 func TestProjectLifecycleActiveSectionWithoutBaselineRequiresApprove(t *testing.T) {
 	store := NewMemoryBaselineStore()
 	state := DeriveStateWithBaselines(
@@ -126,13 +148,13 @@ func TestProjectLifecycleTerminalIsReady(t *testing.T) {
 		activeEnvironmentSection(),
 		activeRoleSection(),
 		activeBoundarySection(),
-		activeEnablingSection("enabling.architecture", "ES.arch.001"),
-		activeEnablingSection("enabling.work_methods", "ES.work.001"),
-		activeEnablingEffectBoundarySection(),
-		activeEnablingSection("enabling.agent_policy", "ES.agent.001"),
-		activeEnablingSection("enabling.commission_policy", "ES.commission.001"),
-		activeEnablingSection("enabling.runtime_policy", "ES.runtime.001"),
-		activeEnablingEvidencePolicySection(),
+		activeSoftwareSection("software.role", "SS.role.001"),
+		activeSoftwareSection("software.responsibility_allocation", "SS.allocation.001"),
+		activeSoftwareSection("software.functional_behavior", "SS.functional.001"),
+		activeSoftwareSection("software.procedural_behavior", "SS.procedural.001"),
+		activeSoftwareSection("software.interfaces", "SS.interfaces.001"),
+		activeSoftwareSection("software.constraints", "SS.constraints.001"),
+		activeSoftwareSection("software.selected_structure", "SS.structure.001"),
 	}
 	state := DeriveState(project.ProjectSpecificationSet{Sections: sections})
 

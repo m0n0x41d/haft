@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,9 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/present"
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
 func TestHandleQuintQuery_CodeContextDefaultsToIndex(t *testing.T) {
@@ -30,12 +34,68 @@ func TestHandleQuintQuery_CodeContextDefaultsToIndex(t *testing.T) {
 			t.Fatalf("default code_context missing %q:\n%s", want, result)
 		}
 	}
-	for _, notWant := range []string{"### Decisions governing this code", "### Notes", "binding context invariant"} {
+	for _, notWant := range []string{"### `exact_binding`", "### Notes", "binding context invariant"} {
 		if strings.Contains(result, notWant) {
 			t.Fatalf("default code_context leaked full lane content %q:\n%s", notWant, result)
 		}
 	}
 	assertNoContractGenerationManifestInline(t, "default code_context", result)
+}
+
+func TestHandleQuintQuery_CodeContextBatchesFilesWithBoundedTypedLane(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+	second := "internal/second.go"
+	root := filepath.Dir(fixture.haftDir)
+	if err := os.WriteFile(filepath.Join(root, second), []byte("package internal\nfunc Second() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"files":  []any{fixture.file, second, fixture.file},
+		"lane":   "decisions",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"Code context batch 1/2",
+		"Code context batch 2/2",
+		fixture.file,
+		second,
+		"Code context lane decision",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("batch code_context missing %q:\n%s", want, result)
+		}
+	}
+	if strings.Count(result, "── Haft") != 1 {
+		t.Fatalf("batch must append one navigation strip, got:\n%s", result)
+	}
+}
+
+func TestHandleQuintQuery_CodeContextBatchRejectsUnboundedOrAmbiguousInputs(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+	files := make([]any, codeContextBatchLimit+1)
+	for index := range files {
+		files[index] = fmt.Sprintf("src/file-%d.go", index)
+	}
+	_, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"files":  files,
+	})
+	if err == nil || !strings.Contains(err.Error(), "at most 8") {
+		t.Fatalf("unbounded batch error = %v", err)
+	}
+
+	_, err = handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "code_context",
+		"files":  []any{fixture.file, "internal/second.go"},
+		"symbol": "Alpha",
+	})
+	if err == nil || !strings.Contains(err.Error(), "single-target fields") {
+		t.Fatalf("ambiguous batch error = %v", err)
+	}
 }
 
 func TestHandleQuintQuery_CodeContextFooterUsesTypedStaleSnapshot(t *testing.T) {
@@ -69,7 +129,7 @@ func TestHandleQuintQuery_CodeContextFooterUsesTypedStaleSnapshot(t *testing.T) 
 	if err != nil {
 		t.Fatalf("handleQuintQuery(code_context) returned error: %v", err)
 	}
-	if strings.Contains(result, "Stale: 1 decision(s) need refresh") {
+	if strings.Contains(result, "Evidence pressure: 1 decision(s) need refresh") {
 		t.Fatalf("code_context footer used raw stale decision count instead of typed snapshot:\n%s", result)
 	}
 }
@@ -98,12 +158,12 @@ func TestNavStripWithoutStaleSnapshotSuppressesRawStaleDebt(t *testing.T) {
 	mustSetValidUntil(t, checkFixture, decision.Meta.ID, time.Now().Add(-72*time.Hour).Format("2006-01-02"))
 
 	raw := present.NavStrip(artifact.ComputeNavState(context.Background(), fixture.store, ""))
-	if !strings.Contains(raw, "Stale:") {
+	if !strings.Contains(raw, "Evidence pressure:") {
 		t.Fatalf("test setup did not produce raw stale nav debt:\n%s", raw)
 	}
 
 	result := navStripWithoutStaleSnapshot(context.Background(), fixture.store, "")
-	if strings.Contains(result, "Stale:") {
+	if strings.Contains(result, "Evidence pressure:") {
 		t.Fatalf("fallback nav leaked raw stale debt:\n%s", result)
 	}
 }
@@ -221,13 +281,74 @@ func TestHandleQuintQuery_CodeContextTypedLanes(t *testing.T) {
 	if !strings.Contains(notes, "Code context lane note") {
 		t.Fatalf("notes lane missing note:\n%s", notes)
 	}
-	if strings.Contains(notes, "### Decisions governing this code") || strings.Contains(notes, "binding context invariant") {
+	if strings.Contains(notes, "### `exact_binding`") || strings.Contains(notes, "binding context invariant") {
 		t.Fatalf("notes lane leaked other lanes:\n%s", notes)
 	}
 }
 
 func TestHandleQuintQuery_CodeContextShowsSpecSectionLinkedDecision(t *testing.T) {
 	fixture := setupCodeContextLaneFixture(t)
+	mustExecCodeContextLaneFixture(t, fixture.store, `CREATE TABLE IF NOT EXISTS spec_section_editions (
+		project_id TEXT NOT NULL,
+		section_id TEXT NOT NULL,
+		semantic_hash TEXT NOT NULL,
+		section_json TEXT NOT NULL,
+		source_kind TEXT NOT NULL DEFAULT '',
+		carrier_path TEXT NOT NULL DEFAULT '',
+		updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		PRIMARY KEY (project_id, section_id)
+	)`)
+	mustExecCodeContextLaneFixture(t, fixture.store, `CREATE TABLE IF NOT EXISTS spec_section_baselines (
+		project_id TEXT NOT NULL,
+		section_id TEXT NOT NULL,
+		hash TEXT NOT NULL,
+		captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		approved_by TEXT NOT NULL DEFAULT '',
+		PRIMARY KEY (project_id, section_id)
+	)`)
+	section := project.SpecSection{
+		ID:            "TS.environment.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		Title:         "Harnessable repository environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "human",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	sectionJSON, err := json.Marshal(section)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sectionHash := specflow.HashSection(section)
+	mustExecCodeContextLaneFixture(
+		t,
+		fixture.store,
+		`INSERT INTO spec_section_editions
+		 (project_id, section_id, semantic_hash, section_json, source_kind, carrier_path, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		"project-cli",
+		section.ID,
+		sectionHash,
+		string(sectionJSON),
+		"carrier_import",
+		section.Path,
+		time.Now().UTC(),
+	)
+	mustExecCodeContextLaneFixture(
+		t,
+		fixture.store,
+		`INSERT INTO spec_section_baselines (project_id, section_id, hash, captured_at, approved_by)
+		 VALUES (?, ?, ?, ?, ?)`,
+		"project-cli",
+		section.ID,
+		sectionHash,
+		time.Now().UTC(),
+		"operator",
+	)
 	decision := &artifact.Artifact{
 		Meta: artifact.Meta{
 			ID:        "dec-code-context-section-ref",
@@ -240,6 +361,7 @@ func TestHandleQuintQuery_CodeContextShowsSpecSectionLinkedDecision(t *testing.T
 		Body:           "decision body",
 		StructuredData: `{"section_refs":["TS.environment.001"]}`,
 	}
+	addExactFileBindingToCodeContextFixture(t, decision, fixture.file)
 	if err := fixture.store.Create(context.Background(), decision); err != nil {
 		t.Fatal(err)
 	}
@@ -255,10 +377,15 @@ func TestHandleQuintQuery_CodeContextShowsSpecSectionLinkedDecision(t *testing.T
 	}
 
 	for _, want := range []string{
-		"### Decisions governing this code",
+		"### `exact_binding` — authority-bearing target/anchor bindings",
 		"Spec section linked code decision",
 		"dec-code-context-section-ref",
 		"SpecSections: `TS.environment.001`",
+		"### Referenced SpecSections",
+		"Harnessable repository environment",
+		"resolution=resolved",
+		"baseline=current",
+		"lifecycle=active",
 	} {
 		if !strings.Contains(result, want) {
 			t.Fatalf("code_context decisions lane missing %q:\n%s", want, result)
@@ -285,6 +412,7 @@ func TestHandleQuintQuery_CodeContextInvariantsLaneSummarizesHighFanout(t *testi
 		Body:           "decision body",
 		StructuredData: `{"invariants":[` + strings.Join(invariants, ",") + `]}`,
 	}
+	addExactFileBindingToCodeContextFixture(t, decision, fixture.file)
 	if err := fixture.store.Create(context.Background(), decision); err != nil {
 		t.Fatal(err)
 	}
@@ -346,6 +474,47 @@ func TestHandleQuintQuery_CodeContextSymbolsLaneCapsByLimit(t *testing.T) {
 	}
 	if strings.Contains(result, "Gamma") {
 		t.Fatalf("symbols lane ignored limit:\n%s", result)
+	}
+}
+
+func TestHandleQuintQuery_CodeContextExcludedSourceIsUnavailable(t *testing.T) {
+	fixture := setupCodeContextLaneFixture(t)
+	root := filepath.Dir(fixture.haftDir)
+	absoluteFile := filepath.Join(root, fixture.file)
+	if err := os.WriteFile(
+		absoluteFile,
+		[]byte("package internal\n"+strings.Repeat(" ", 500_001)),
+		0o644,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleQuintQuery(
+		context.Background(),
+		fixture.store,
+		nil,
+		fixture.haftDir,
+		map[string]any{
+			"action": "code_context",
+			"file":   fixture.file,
+			"lane":   "symbols",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"coverage: bounded_with_exclusions",
+		"Index exclusions:",
+		"oversized",
+		"Symbol lane unavailable",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("excluded code_context missing %q:\n%s", want, result)
+		}
+	}
+	if strings.Contains(result, "No symbols indexed for this file") {
+		t.Fatalf("excluded source masqueraded as indexed absence:\n%s", result)
 	}
 }
 
@@ -450,7 +619,7 @@ func TestCodeContextNormalTrace_StaysUnderBudget(t *testing.T) {
 	if err != nil {
 		t.Fatalf("full recovery failed: %v", err)
 	}
-	for _, want := range []string{"### Decisions governing this code", "### Notes", "binding context invariant"} {
+	for _, want := range []string{"### `exact_binding` — authority-bearing target/anchor bindings", "### Notes", "binding context invariant"} {
 		if !strings.Contains(full, want) {
 			t.Fatalf("full=true should preserve audit detail %q:\nindex=%d full=%d\n%s", want, len(index), len(full), full)
 		}
@@ -465,6 +634,131 @@ func TestCodeContextNormalTrace_StaysUnderBudget(t *testing.T) {
 	}
 }
 
+func TestCoverageReadsCurrentFileGapIndexWithoutMutatingIt(t *testing.T) {
+	fixture := setupAffectedPathCodeContextLaneFixture(t)
+	ctx := context.Background()
+	root := filepath.Dir(fixture.haftDir)
+	const profileSuffix = "coverage-file-gaps"
+	profileHarness := profileadmissionfixture.New(t, root)
+	profileHarness.AdmitSoftwareRevision(t, profileSuffix)
+	scopeID := "software-" + profileSuffix
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/coverage\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	unlinkedFile := filepath.Join(filepath.Dir(fixture.file), "unlinked.go")
+	unlinkedAbs := filepath.Join(root, unlinkedFile)
+	if err := os.WriteFile(unlinkedAbs, []byte("package internal\n\nfunc Unlinked() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := handleQuintRefresh(ctx, fixture.store, fixture.haftDir, map[string]any{
+		"action":  "scan",
+		"verbose": false,
+	}); err != nil {
+		t.Fatalf("explicit refresh failed: %v", err)
+	}
+
+	before := coverageDerivedStateSnapshot(t, fixture.store)
+	result, err := handleQuintQuery(ctx, fixture.store, nil, fixture.haftDir, map[string]any{
+		"action":   "coverage",
+		"limit":    float64(1),
+		"scope_id": scopeID,
+	})
+	if err != nil {
+		t.Fatalf("read-only coverage failed: %v", err)
+	}
+	for _, want := range []string{
+		"Exact File Decision-Link Gaps",
+		"Current code index epoch",
+		unlinkedFile,
+		"not proof that a file is undocumented",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("coverage response missing %q:\n%s", want, result)
+		}
+	}
+	after := coverageDerivedStateSnapshot(t, fixture.store)
+	if after != before {
+		t.Fatalf("read-only coverage mutated derived index:\nbefore=%s\nafter=%s", before, after)
+	}
+
+	if err := os.WriteFile(unlinkedAbs, []byte("package internal\n\nfunc UnlinkedChanged() {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	staleBefore := coverageDerivedStateSnapshot(t, fixture.store)
+	stale, err := handleQuintQuery(ctx, fixture.store, nil, fixture.haftDir, map[string]any{
+		"action":   "coverage",
+		"scope_id": scopeID,
+	})
+	if err != nil {
+		t.Fatalf("stale read-only coverage failed: %v", err)
+	}
+	for _, want := range []string{
+		"derived code index is `stale`",
+		"not an empty or clean result",
+		`haft_refresh(action="scan")`,
+	} {
+		if !strings.Contains(stale, want) {
+			t.Fatalf("stale coverage response missing %q:\n%s", want, stale)
+		}
+	}
+	if strings.Contains(stale, unlinkedFile) {
+		t.Fatalf("stale coverage emitted a file-gap claim:\n%s", stale)
+	}
+	staleAfter := coverageDerivedStateSnapshot(t, fixture.store)
+	if staleAfter != staleBefore {
+		t.Fatalf("stale coverage mutated derived index:\nbefore=%s\nafter=%s", staleBefore, staleAfter)
+	}
+}
+
+func coverageDerivedStateSnapshot(t *testing.T, store *artifact.Store) string {
+	t.Helper()
+	queries := []string{
+		`SELECT module_id, path, name, lang, file_count, last_scanned FROM codebase_modules ORDER BY module_id`,
+		`SELECT source_module, target_module, dep_type, file_path, last_scanned FROM module_dependencies ORDER BY source_module, target_module, dep_type`,
+		`SELECT file_path, content_hash, language, parse_status, index_epoch, updated_at FROM code_files ORDER BY file_path`,
+		`SELECT id, fingerprint, current_epoch, config_hash, schema_version, degraded, degraded_reason FROM code_index_meta ORDER BY id`,
+	}
+
+	var snapshot strings.Builder
+	for _, query := range queries {
+		rows, err := store.DB().QueryContext(context.Background(), query)
+		if err != nil {
+			t.Fatalf("snapshot derived state: %v\n%s", err, query)
+		}
+		columns, err := rows.Columns()
+		if err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		for rows.Next() {
+			values := make([]any, len(columns))
+			targets := make([]any, len(columns))
+			for index := range values {
+				targets[index] = &values[index]
+			}
+			if err := rows.Scan(targets...); err != nil {
+				_ = rows.Close()
+				t.Fatal(err)
+			}
+			for _, value := range values {
+				if bytes, ok := value.([]byte); ok {
+					value = string(bytes)
+				}
+				fmt.Fprintf(&snapshot, "%v\x00", value)
+			}
+			snapshot.WriteByte('\n')
+		}
+		if err := rows.Err(); err != nil {
+			_ = rows.Close()
+			t.Fatal(err)
+		}
+		_ = rows.Close()
+		snapshot.WriteString("---\n")
+	}
+	return snapshot.String()
+}
+
 type codeContextLaneFixture struct {
 	store   *artifact.Store
 	haftDir string
@@ -472,6 +766,19 @@ type codeContextLaneFixture struct {
 }
 
 func setupCodeContextLaneFixture(t *testing.T) codeContextLaneFixture {
+	t.Helper()
+	return setupCodeContextLaneFixtureWithExactBinding(t, true)
+}
+
+func setupAffectedPathCodeContextLaneFixture(t *testing.T) codeContextLaneFixture {
+	t.Helper()
+	return setupCodeContextLaneFixtureWithExactBinding(t, false)
+}
+
+func setupCodeContextLaneFixtureWithExactBinding(
+	t *testing.T,
+	exactBinding bool,
+) codeContextLaneFixture {
 	t.Helper()
 
 	ctx := context.Background()
@@ -522,6 +829,9 @@ func Gamma() {}
 		Body:           "decision body",
 		StructuredData: `{"invariants":["binding context invariant"]}`,
 	}
+	if exactBinding {
+		addExactFileBindingToCodeContextFixture(t, decision, file)
+	}
 	note := &artifact.Artifact{
 		Meta: artifact.Meta{
 			ID:        "note-code-context-lane",
@@ -545,6 +855,27 @@ func Gamma() {}
 		haftDir: filepath.Join(root, ".haft"),
 		file:    file,
 	}
+}
+
+func addExactFileBindingToCodeContextFixture(
+	t *testing.T,
+	item *artifact.Artifact,
+	file string,
+) {
+	t.Helper()
+	fields := map[string]any{}
+	if err := json.Unmarshal([]byte(item.StructuredData), &fields); err != nil {
+		t.Fatalf("decode fixture decision fields: %v", err)
+	}
+	fields["binding_targets"] = []artifact.BindingTarget{{
+		Kind:     artifact.BindingTargetWholeFileFallback,
+		FilePath: file,
+	}}
+	encoded, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatalf("encode fixture decision fields: %v", err)
+	}
+	item.StructuredData = string(encoded)
 }
 
 func mustExecCodeContextLaneFixture(t *testing.T, store *artifact.Store, query string, args ...any) {

@@ -15,6 +15,8 @@
 package specflow
 
 import (
+	"fmt"
+
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
@@ -36,6 +38,7 @@ const (
 // registry, never by branching on PhaseID at call sites.
 type Phase struct {
 	ID              PhaseID
+	Required        bool
 	DependsOn       []PhaseID
 	DocumentKind    project.SpecDocumentKind
 	SectionKind     string
@@ -73,6 +76,7 @@ type WorkflowIntent struct {
 	BlockingFindings []project.SpecCheckFinding `json:"blocking_findings,omitempty"`
 	Terminal         bool                       `json:"terminal"`
 	Reason           string                     `json:"reason,omitempty"`
+	ApplicabilityCue *PhaseApplicabilityCue     `json:"applicability_cue,omitempty"`
 }
 
 // terminalIntent is the intent NextStep returns when no further phase
@@ -95,7 +99,71 @@ func terminalIntent(reason string) WorkflowIntent {
 //
 // Same input produces the same intent. No I/O, no LLM, no global state.
 func NextStep(state SpecState) WorkflowIntent {
-	for _, phase := range PhaseRegistry() {
+	return nextStepFromPhases(state, PhaseRegistry())
+}
+
+// NextStepForPhaseSet applies the same pure method to a scope-local phase set.
+// It never turns a NotApplicable member into a phase, and it preserves an
+// underdetermined member as one neutral non-terminal cue after all currently
+// runnable required phases are satisfied.
+func NextStepForPhaseSet(
+	state SpecState,
+	phaseSet ApplicablePhaseSet,
+) (WorkflowIntent, error) {
+	if !phaseSet.Valid() {
+		return WorkflowIntent{}, fmt.Errorf("applicable phase set is invalid")
+	}
+	intent := nextStepFromApplicablePhaseSet(state, phaseSet)
+	if !intent.Terminal {
+		return intent, nil
+	}
+	cue, found := phaseSet.ApplicabilityCue()
+	if !found {
+		return intent, nil
+	}
+	return WorkflowIntent{
+		Audience:         AudienceAgent,
+		Reason:           "specification applicability is underdetermined; recover the named basis before treating the scope as ready",
+		ApplicabilityCue: &cue,
+	}, nil
+}
+
+func nextStepFromPhases(
+	state SpecState,
+	phases []Phase,
+) WorkflowIntent {
+	return nextStepFromPhaseCandidates(
+		state,
+		phases,
+		func(PhaseID) bool {
+			return false
+		},
+	)
+}
+
+func nextStepFromApplicablePhaseSet(
+	state SpecState,
+	phaseSet ApplicablePhaseSet,
+) WorkflowIntent {
+	return nextStepFromPhaseCandidates(
+		state,
+		phaseSet.Phases(),
+		phaseSet.phaseBlockedByApplicability,
+	)
+}
+
+func nextStepFromPhaseCandidates(
+	state SpecState,
+	phases []Phase,
+	blocked func(PhaseID) bool,
+) WorkflowIntent {
+	for _, phase := range phases {
+		if !phase.Required {
+			continue
+		}
+		if blocked(phase.ID) {
+			continue
+		}
 		if !state.DependenciesSatisfied(phase) {
 			continue
 		}
@@ -125,5 +193,5 @@ func NextStep(state SpecState) WorkflowIntent {
 		return intent
 	}
 
-	return terminalIntent("all registered phases satisfied")
+	return terminalIntent("all required phases satisfied")
 }

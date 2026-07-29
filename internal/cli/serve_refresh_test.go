@@ -139,7 +139,7 @@ func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ScanStale returned error: %v", err)
 	}
-	wantFooter := fmt.Sprintf("Stale: %d decision(s) need refresh", len(staleItems))
+	wantFooter := fmt.Sprintf("Evidence pressure: %d decision(s) need refresh", len(staleItems))
 	if len(staleItems) > 0 && !strings.Contains(result, wantFooter) {
 		t.Fatalf("drain footer should use typed stale lane %q:\n%s", wantFooter, result)
 	}
@@ -208,7 +208,7 @@ func TestHandleQuintRefreshDrainFooterUsesTypedStaleSnapshot(t *testing.T) {
 	if err != nil {
 		t.Fatalf("handleQuintRefresh(drain dry-run) returned error: %v", err)
 	}
-	if strings.Contains(result, "Stale: 1 decision(s) need refresh") {
+	if strings.Contains(result, "Evidence pressure: 1 decision(s) need refresh") {
 		t.Fatalf("drain footer used raw stale decision count instead of typed snapshot:\n%s", result)
 	}
 }

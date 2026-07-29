@@ -8,21 +8,31 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
-func specBindingDebtReportForStatus(
+func specBindingDebtReportForCanonicalStatus(
 	ctx context.Context,
 	store *artifact.Store,
-	projectRoot string,
+	readiness canonicalProjectReadiness,
 ) artifact.SpecBindingDebtReport {
-	report := artifact.SpecBindingDebtReport{
-		SchemaVersion: 1,
-		Authority:     "read_only_spec_binding_debt_attention",
+	applicability, resolved := readiness.resolvedApplicability()
+	if !resolved {
+		return emptySpecBindingDebtReport()
 	}
-
-	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+	specSet, err := loadProjectSpecificationSetSQLFirstForScope(
+		readiness.resolution.ProjectRoot().String(),
+		applicability,
+	)
 	if err != nil {
-		return report
+		return emptySpecBindingDebtReport()
 	}
+	return specBindingDebtReportFromSpecificationSet(ctx, store, specSet)
+}
 
+func specBindingDebtReportFromSpecificationSet(
+	ctx context.Context,
+	store *artifact.Store,
+	specSet project.ProjectSpecificationSet,
+) artifact.SpecBindingDebtReport {
+	report := emptySpecBindingDebtReport()
 	activeSectionRefs := activeSpecSectionRefSet(specSet)
 	if len(activeSectionRefs) == 0 {
 		return report
@@ -45,6 +55,13 @@ func specBindingDebtReportForStatus(
 	}
 
 	return report
+}
+
+func emptySpecBindingDebtReport() artifact.SpecBindingDebtReport {
+	return artifact.SpecBindingDebtReport{
+		SchemaVersion: 1,
+		Authority:     "read_only_spec_binding_debt_attention",
+	}
 }
 
 func activeSpecSectionRefSet(specSet project.ProjectSpecificationSet) map[string]struct{} {

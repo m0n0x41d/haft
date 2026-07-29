@@ -1245,22 +1245,6 @@ func harnessWorkspaceApplyAuthorization(
 	)
 }
 
-//nolint:unused // exercised by package tests
-func canApplyAuthorizedHarnessWorkspaceDiff(
-	commission map[string]any,
-	workspaceSummary harnessWorkspaceGitSummary,
-	authorization scopeauth.Summary,
-) bool {
-	if !isHarnessApplyResultState(stringField(commission, "state")) {
-		return false
-	}
-	if workspaceSummary.State != harnessWorkspaceDiffChanged {
-		return false
-	}
-
-	return authorization.CanApply()
-}
-
 func isHarnessApplyResultState(state string) bool {
 	return workcommission.IsCompletionState(state)
 }
@@ -2703,26 +2687,42 @@ func presentOrUnknown(value string) string {
 	return value
 }
 
-func inspectHarnessRunReadiness() (string, project.ReadinessFacts, error) {
+func inspectHarnessRunReadiness(
+	ctx context.Context,
+) (string, canonicalProjectReadiness, error) {
+	request, err := projectSpecificationScopeRequestFromFlag(
+		commissionScopeID,
+	)
+	if err != nil {
+		return "", canonicalProjectReadiness{}, err
+	}
 	projectRoot, err := findProjectRoot()
 	if err != nil {
 		cwd, cwdErr := os.Getwd()
 		if cwdErr != nil {
-			return "", project.ReadinessFacts{}, cwdErr
+			return "", canonicalProjectReadiness{}, cwdErr
 		}
 
-		facts, readinessErr := project.InspectReadiness(cwd)
+		readiness, readinessErr := inspectCanonicalProjectReadiness(
+			ctx,
+			cwd,
+			request,
+		)
 		if readinessErr != nil {
-			return "", project.ReadinessFacts{}, readinessErr
+			return "", canonicalProjectReadiness{}, readinessErr
 		}
-		return cwd, facts, nil
+		return cwd, readiness, nil
 	}
 
-	facts, err := project.InspectReadiness(projectRoot)
+	readiness, err := inspectCanonicalProjectReadiness(
+		ctx,
+		projectRoot,
+		request,
+	)
 	if err != nil {
-		return "", project.ReadinessFacts{}, err
+		return "", canonicalProjectReadiness{}, err
 	}
-	return projectRoot, facts, nil
+	return projectRoot, readiness, nil
 }
 
 func harnessRunReadinessGateFor(
@@ -2754,6 +2754,37 @@ func harnessRunReadinessGateFor(
 	}
 }
 
+func harnessRunReadinessGateForCanonicalProfile(
+	readiness canonicalProjectReadiness,
+	tacticalReason string,
+) harnessRunReadinessGate {
+	if !readiness.profileEvaluated {
+		return harnessRunReadinessGateFor(
+			readiness.facts,
+			tacticalReason,
+		)
+	}
+	applicability, resolved := readiness.resolvedApplicability()
+	if !resolved {
+		return harnessRunReadinessGate{
+			Kind:          harnessRunReadinessBlocked,
+			ProjectStatus: readiness.facts.Status,
+			BlockReason: "haft harness run blocked: " +
+				readiness.profileCue(),
+		}
+	}
+	if len(requiredCommissionAuthorityDocumentKinds(applicability)) == 0 {
+		return harnessRunReadinessGate{
+			Kind:          harnessRunReadinessAdmissible,
+			ProjectStatus: readiness.facts.Status,
+		}
+	}
+	return harnessRunReadinessGateFor(
+		readiness.facts,
+		tacticalReason,
+	)
+}
+
 func harnessRunReadinessBlockReason(facts project.ReadinessFacts) string {
 	switch facts.Status {
 	case project.ReadinessReady:
@@ -2774,12 +2805,15 @@ func runHarnessRun(cmd *cobra.Command, decisionRefs []string) error {
 		return fmt.Errorf("use either decision selectors or --plan, not both")
 	}
 
-	_, readiness, err := inspectHarnessRunReadiness()
+	_, readiness, err := inspectHarnessRunReadiness(commandContext(cmd))
 	if err != nil {
 		return err
 	}
 
-	readinessGate := harnessRunReadinessGateFor(readiness, harnessRunTacticalReason)
+	readinessGate := harnessRunReadinessGateForCanonicalProfile(
+		readiness,
+		harnessRunTacticalReason,
+	)
 	if readinessGate.Kind == harnessRunReadinessBlocked {
 		return fmt.Errorf("%s", readinessGate.BlockReason)
 	}
@@ -4642,7 +4676,7 @@ func ensureHarnessCommissions(
 	}
 	args = withHarnessRunSpecReadinessOverride(args, readinessGate)
 
-	result, err := handleHaftCommission(ctx, store, args)
+	result, err := handleHaftCommissionForProject(ctx, store, args)
 	if err != nil {
 		return false, "", err
 	}

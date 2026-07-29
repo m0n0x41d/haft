@@ -1,7 +1,7 @@
 package cli
 
 import (
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -17,16 +17,34 @@ func runSpecStatus(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
-	projection, err := buildSpecLifecycleProjection(projectRoot)
+	request, err := projectSpecificationScopeRequestFromFlag(specStatusScopeID)
+	if err != nil {
+		return err
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := buildPublicSpecLifecycle(ctx, projectRoot, request)
 	if err != nil {
 		return err
 	}
 
 	if specStatusJSON {
-		return writeSpecLifecycleJSON(cmd.OutOrStdout(), projection)
+		return writePublicSpecLifecycleJSON(cmd.OutOrStdout(), result)
 	}
 
-	return writeSpecLifecycleSummary(cmd.OutOrStdout(), projection)
+	if result.SpecLifecycleProjection != nil {
+		return writeSpecLifecycleSummary(
+			cmd.OutOrStdout(),
+			*result.SpecLifecycleProjection,
+		)
+	}
+	return writeProjectSpecificationApplicabilityCue(
+		cmd.OutOrStdout(),
+		"haft spec status",
+		result.ProfileApplicability,
+	)
 }
 
 func runSpecNext(cmd *cobra.Command, _ []string) error {
@@ -35,16 +53,33 @@ func runSpecNext(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
-	projection, err := buildSpecLifecycleProjection(projectRoot)
+	request, err := projectSpecificationScopeRequestFromFlag(specNextScopeID)
+	if err != nil {
+		return err
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	result, err := buildPublicSpecLifecycle(ctx, projectRoot, request)
 	if err != nil {
 		return err
 	}
 
 	if specNextJSON {
-		return writeSpecLifecycleJSON(cmd.OutOrStdout(), projection)
+		return writePublicSpecLifecycleJSON(cmd.OutOrStdout(), result)
 	}
-
-	return writeSpecLifecycleSummary(cmd.OutOrStdout(), projection)
+	if result.SpecLifecycleProjection != nil {
+		return writeSpecLifecycleSummary(
+			cmd.OutOrStdout(),
+			*result.SpecLifecycleProjection,
+		)
+	}
+	return writeProjectSpecificationApplicabilityCue(
+		cmd.OutOrStdout(),
+		"haft spec next",
+		result.ProfileApplicability,
+	)
 }
 
 func runSpecApprove(cmd *cobra.Command, args []string) error {
@@ -94,28 +129,6 @@ func runSpecReopen(cmd *cobra.Command, args []string) error {
 	}
 
 	return runSpecOnboardMutation(cmd, projectRoot, "reopen", sectionID, mutationArgs, specReopenJSON)
-}
-
-func buildSpecLifecycleProjection(projectRoot string) (specflow.SpecLifecycleProjection, error) {
-	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
-	if err != nil {
-		return specflow.SpecLifecycleProjection{}, err
-	}
-
-	store, projectID, closeFn, err := projectBaseline(projectRoot)
-	defer closeFn()
-	if err != nil {
-		return specflow.SpecLifecycleProjection{}, err
-	}
-
-	state := specflow.DeriveStateWithBaselines(specSet, store, projectID)
-	return specflow.ProjectLifecycle(state), nil
-}
-
-func writeSpecLifecycleJSON(w io.Writer, projection specflow.SpecLifecycleProjection) error {
-	encoder := json.NewEncoder(w)
-	encoder.SetIndent("", "  ")
-	return encoder.Encode(projection)
 }
 
 func writeSpecLifecycleSummary(w io.Writer, projection specflow.SpecLifecycleProjection) error {

@@ -1,42 +1,30 @@
-Compare portfolio variants fairly and return a Pareto front, not a scalar
-winner.
+Compare two or more existing candidates fairly.
 
-Before substantive comparison, call `haft_query`:
+Retrieve current FPF source first. Use
+`haft_query(action="fpf", mode="inspect", identifier="...")` for a known
+SourceID or UnitID; otherwise call `haft_query(action="fpf",
+mode="concern", query="<comparison question>")`, then inspect the direct
+pattern body. Query does not select a governing pattern, rank the options, or
+provide comparison evidence.
 
-```json
-{
-  "action": "pattern_use",
-  "mode": "compact",
-  "query": "<operator concern>"
-}
-```
+1. Declare the characteristic space, indicator roles, parity basis,
+   missing-data policy, and selection policy before scoring.
+2. Treat constraints as gates, targets as the few optimized dimensions, and
+   observations as watched but not optimized.
+3. Apply one scale and evidence window to every candidate per dimension.
+4. Show dominated candidates, the non-dominated set, trade-offs, uncertainty,
+   weakest links, and what new evidence could change the result.
 
-Skip only mechanical/status/exact-lookup requests where no FPF pattern choice is
-material. If `should_use_pattern=true` and comparison needs output-shape
-detail, ask for `mode="full"` before applying the returned pattern. PatternUse
-is advisory/read-only: not approval, not evidence, not a DecisionRecord, not a
-WorkCommission, not MethodPack, and not a gate. Do not inline the FPF catalog
-or route list in this prompt.
+Do not collapse the comparison into one magic score. Work from inline
+candidates or a portfolio; `h-frame` and `h-explore` are not prerequisites.
+Persist characterization/comparison only on explicit save intent or when a
+named receiving use needs replay. For typed persistence, use the exact
+`U.EntityRef`, bounded context, projected portfolio, and returned
+`Haft.ProjectRecordRef` values for every compared option. Never derive record
+references from artifact IDs. Preserve the comparison `record_reference`
+returned by the kernel.
 
-1. Characterize FIRST — declare dimensions before any scoring, via the
-   native `haft_problem` tool:
-
-```json
-{
-  "action": "characterize",
-  "problem_ref": "<prob-...>",
-  "dimensions": [{ "name": "...", "scale_type": "ordinal", "unit": "1-5", "polarity": "higher_better", "role": "target", "how_to_measure": "...", "valid_until": "<ISO date>" }]
-}
-```
-
-   Tag each dimension's role: constraint (hard limit) | target (optimize,
-   1-3 max) | observation (watch, never optimize — anti-Goodhart).
-2. Declare the parity plan and selection policy BEFORE scoring: same
-   evidence set, same budgets/windows for every variant, explicit
-   missing-data policy.
-3. Score dimension-wise: one scale applied across ALL variants per
-   dimension (prevents anchoring on a favorite variant).
-4. Persist via `haft_solution(action="compare", portfolio_ref=..., parity_plan=..., scores=...)`.
-5. Present the Pareto front with trade-offs. Never collapse to one number.
-6. Binding choice is manual: recommend a variant with rationale, then tell
-   the operator it needs their explicit /h-decide. Stop there.
+Do not send the legacy `selected_ref` for an ordinary typed comparison. The
+typed `Haft.PortfolioComparison` excludes it: a non-dominated set is not a
+winner, recommendation, ChoiceResult, or binding choice. Only explicit manual
+`h-decide` may record a binding choice.

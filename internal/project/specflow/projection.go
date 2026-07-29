@@ -13,10 +13,11 @@ import (
 type LifecycleState string
 
 const (
-	LifecycleStateReady          LifecycleState = "ready"
-	LifecycleStateNeedsAction    LifecycleState = "needs_action"
-	LifecycleStateNeedsHumanGate LifecycleState = "needs_human_gate"
-	LifecycleStateNeedsTriage    LifecycleState = "needs_triage"
+	LifecycleStateReady           LifecycleState = "ready"
+	LifecycleStateNeedsAction     LifecycleState = "needs_action"
+	LifecycleStateNeedsHumanGate  LifecycleState = "needs_human_gate"
+	LifecycleStateNeedsTriage     LifecycleState = "needs_triage"
+	LifecycleStateUnderdetermined LifecycleState = "underdetermined"
 )
 
 // LifecycleAction is the next lifecycle projection action surfaced by
@@ -25,11 +26,12 @@ const (
 type LifecycleAction string
 
 const (
-	LifecycleActionNone    LifecycleAction = "none"
-	LifecycleActionDraft   LifecycleAction = "draft"
-	LifecycleActionClarify LifecycleAction = "clarify"
-	LifecycleActionApprove LifecycleAction = "approve"
-	LifecycleActionTriage  LifecycleAction = "triage"
+	LifecycleActionNone                 LifecycleAction = "none"
+	LifecycleActionDraft                LifecycleAction = "draft"
+	LifecycleActionClarify              LifecycleAction = "clarify"
+	LifecycleActionApprove              LifecycleAction = "approve"
+	LifecycleActionTriage               LifecycleAction = "triage"
+	LifecycleActionInspectApplicability LifecycleAction = "inspect_applicability"
 )
 
 // SpecLifecycleProjection is the typed UX contract surfaces render. It
@@ -58,7 +60,44 @@ type SpecLifecycleProjection struct {
 // ProjectLifecycle derives the next operator-facing lifecycle action.
 // It performs no I/O and mutates nothing.
 func ProjectLifecycle(state SpecState) SpecLifecycleProjection {
+	if finding, ok := migrationRequiredFinding(state.Set.Findings); ok {
+		return migrationRequiredLifecycle(finding)
+	}
+
 	intent := NextStep(state)
+	return projectLifecycleFromIntent(state, intent)
+}
+
+// ProjectLifecycleForPhaseSet is the profile-aware projection. The supplied
+// phase set must already come from the canonical scope-local applicability
+// matrix; this function performs no profile IO or selection.
+func ProjectLifecycleForPhaseSet(
+	state SpecState,
+	phaseSet ApplicablePhaseSet,
+) (SpecLifecycleProjection, error) {
+	if finding, ok := migrationRequiredFinding(state.Set.Findings); ok {
+		return migrationRequiredLifecycle(finding), nil
+	}
+	intent, err := NextStepForPhaseSet(state, phaseSet)
+	if err != nil {
+		return SpecLifecycleProjection{}, err
+	}
+	return projectLifecycleFromIntent(state, intent), nil
+}
+
+func projectLifecycleFromIntent(
+	state SpecState,
+	intent WorkflowIntent,
+) SpecLifecycleProjection {
+	if intent.ApplicabilityCue != nil {
+		return SpecLifecycleProjection{
+			State:          LifecycleStateUnderdetermined,
+			Action:         LifecycleActionInspectApplicability,
+			Object:         "ProjectSpecificationSetApplicability",
+			Why:            intent.Reason,
+			WorkflowIntent: intent,
+		}
+	}
 	section := projectionSection(state, intent)
 	action := lifecycleAction(intent)
 
@@ -79,6 +118,37 @@ func ProjectLifecycle(state SpecState) SpecLifecycleProjection {
 		AllowedCommands:  lifecycleAllowedCommands(action, intent, section),
 		BlockedCommands:  lifecycleBlockedCommands(action, section),
 		BlockingFindings: intent.BlockingFindings,
+		WorkflowIntent:   intent,
+	}
+}
+
+func migrationRequiredFinding(findings []project.SpecCheckFinding) (project.SpecCheckFinding, bool) {
+	for _, finding := range findings {
+		if finding.Code == project.SpecMigrationRequiredFindingCode {
+			return finding, true
+		}
+	}
+	return project.SpecCheckFinding{}, false
+}
+
+func migrationRequiredLifecycle(finding project.SpecCheckFinding) SpecLifecycleProjection {
+	intent := WorkflowIntent{
+		Audience:         AudienceHuman,
+		DocumentKind:     project.SpecDocumentKindSoftwareSystem,
+		BlockingFindings: []project.SpecCheckFinding{finding},
+		Reason:           finding.Message,
+	}
+
+	return SpecLifecycleProjection{
+		State:            LifecycleStateNeedsAction,
+		Action:           LifecycleActionClarify,
+		Object:           "ProjectSpecificationSet",
+		Audience:         AudienceHuman,
+		DocumentKind:     project.SpecDocumentKindSoftwareSystem,
+		Carrier:          finding.Path,
+		Why:              finding.Message,
+		AllowedCommands:  []string{"haft spec migrate", "haft spec migrate --json", "haft spec sync"},
+		BlockingFindings: []project.SpecCheckFinding{finding},
 		WorkflowIntent:   intent,
 	}
 }
@@ -214,8 +284,8 @@ func lifecycleCarrier(kind project.SpecDocumentKind, section project.SpecSection
 	switch kind {
 	case project.SpecDocumentKindTargetSystem:
 		return ".haft/specs/target-system.md"
-	case project.SpecDocumentKindEnablingSystem:
-		return ".haft/specs/enabling-system.md"
+	case project.SpecDocumentKindSoftwareSystem:
+		return ".haft/specs/software-system.md"
 	case project.SpecDocumentKindTermMap:
 		return ".haft/specs/term-map.md"
 	default:

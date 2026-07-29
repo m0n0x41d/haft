@@ -8,22 +8,36 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
 
 # h-verify — Verify a decision still holds
 
 You are running the FPF verification loop: baseline → measure → evidence → record. Drift detection compares current state against baselined affected_files; evidence decay reports surface when valid_until passes; measure verdict is recorded for the predictions the decide step declared.
 
-## PatternUse Gateway
+Verification already has a selected object and a named evidence use. Do not run
+a generic pattern router first. When an unfamiliar evidence, causal-use, or
+temporal distinction becomes material, query the exact concern with
+`mcp__haft__haft_query(action="fpf", mode="concern", query="...")` and inspect the full direct
+pattern body before applying it.
 
-Before substantive reasoning or work-shaping, call
-`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
-Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
-material. If `should_use_pattern=true` and this skill needs detail, request
-`mode="full"` and carry the returned output shape, boundary, evidence need, and
-blocked stronger use. Do not inline the FPF catalog in this skill. PatternUse
-is not approval, not evidence, not a DecisionRecord, not MethodPack, and not a
-gate.
+## Conditional project-memory orientation
+
+When verification is context-heavy, multi-session, or otherwise
+reliance-bearing and the exact EntityOfConcern is not already current, resolve
+its identity with `haft_query(action="memory",
+memory_request={"mode":"resolve","contract_version":"haft.memory.v1",
+"basis":{"kind":"project_current"},"query":"...","max_candidates":5})`. Select
+the exact candidate by the current use rather than rank, then use the closed
+`memory_request` neighborhood branch advertised by the tool schema with
+`projection_profile_ref="agent_orientation.v2"`.
+
+Inspect `result_kind` before relying on content. `project_basis_unavailable`,
+known absence, or explicit abstention is visible but non-blocking: continue
+with the exact artifact/evidence surfaces available to this verification and
+do not invent a profile, entity, artifact, or human gate. This read does not
+replace code-graph preflight before a later code edit. Never persist typed
+memory merely because a read failed; persistence requires an explicit operator
+save request or a named receiving use with request provenance.
 
 ## Step 1 — Identify the decision
 
@@ -80,7 +94,9 @@ whether claims, predictions, observables, or thresholds exist. Do not read the
 project SQLite database directly while kernel exact recovery is available.
 
 If predictions are empty (the decision was recorded tactical with `_skips: ["predictions"]`), there's nothing to measure — report that to operator and recommend either:
-- `/h-refresh` action=reopen to add predictions and re-decide properly
+- record a replacement with testable claims through explicit manual
+  `/h-decide`, then supersede the old record with
+  `haft decision supersede <old-dec-...> --new <new-dec-...> --reason "..."`
 - Just attach evidence directly via `haft_decision(action="evidence", ...)`
 
 ## Step 3 — Baseline (if drift detection wanted)
@@ -236,4 +252,4 @@ CLAUDE.md Critical Reminders for the project-wide rule.
 - VER-01 (evidence graph), VER-02 (decay), VER-03 (R_eff), VER-07 (refresh triggers)
 - C.27 — Temporal Claim Adequacy (state reading vs trend vs intervention claim)
 
-Look up via `mcp__haft__haft_query(action="fpf", query="B.3")`.
+Inspect via `mcp__haft__haft_query(action="fpf", mode="inspect", identifier="B.3")`.

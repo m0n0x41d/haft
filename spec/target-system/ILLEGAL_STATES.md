@@ -8,7 +8,7 @@
 
 | # | Illegal state | Why | Enforcement |
 |---|--------------|-----|-------------|
-| 1 | DecisionRecord without problem_ref or portfolio_ref | Decisions must trace to a framed problem. Orphan decisions have no framing context. | `Decide()` auto-resolves active problem/portfolio. Tactical mode allows implicit link. |
+| 1 | DecisionRecord without any problem basis: no resolvable `problem_ref`/`problem_refs`/`portfolio_ref` and no non-empty `problem_statement` | A decision needs an explicit problem frame, but it does not require manufactured predecessor artifacts or a universal prior phase. | `Decide()` requires `problem_statement` when no supplied provenance resolves. It does not auto-link an unrelated active problem. |
 | 2 | SolutionPortfolio with <2 variants | Comparison requires alternatives. One variant = no comparison. | `Explore()` validates variant count. |
 | 3 | SolutionPortfolio with variants that have >50% word overlap | Disguised copies are not genuine alternatives. | Diversity check warns at >50%. Not hard-blocked (user may override). |
 | 4 | Comparison without parity declaration | Comparison without same-conditions statement is invalid. | Skill instructions require parity. L2 enforcement planned. |
@@ -22,16 +22,16 @@
 
 | # | Illegal state | Why | Enforcement |
 |---|--------------|-----|-------------|
-| S1 | EnablingSystemSpec marked ready while TargetSystemSpec has not passed structural validation | The enabling system exists to produce the target system. If the target role/boundary is not admissible, enabling mechanics will silently define product intent. | `spec check` blocks enabling readiness until required target sections pass deterministic L0/L1/L1.5 validation. |
+| S1 | SoftwareSystemSpec marked ready while TargetSystemSpec has not passed structural validation | The software system must realize an admissible target role. Otherwise software behavior and structure will silently define product intent. | `spec check` blocks software readiness until required target sections pass deterministic L0/L1/L1.5 validation. |
 | S2 | SpecSection without stable id, kind, statement_type, owner, or status | The section cannot participate in coverage, staleness, authority, or evidence checks. | Strict markdown parser rejects the section. |
 | S3 | One SpecSection mixes definition, admissibility, duty, evidence, and explanation claims | Mixed statement types hide authority and evidence boundaries. | `spec check` flags mixed load-bearing language and requires split sections. |
 | S4 | Load-bearing term used in an active SpecSection without a TermMap entry | Agents and humans may use the same word differently while believing they agree. | `spec check` flags unknown terms; active readiness requires definitions for load-bearing terms. |
-| S5 | Same term defined differently in target and enabling specs without category qualification | Target/enabling semantic drift becomes invisible. | TermMap validator requires one definition or explicit category-qualified terms. |
+| S5 | Same term defined differently in target and software specs without category qualification | Target/software semantic drift becomes invisible. | TermMap validator requires one definition or explicit category-qualified terms. |
 | S6 | DecisionRecord created from spec planning without SpecSection refs when a ProjectSpecificationSet is active | The decision cannot be traced back to the formal harness. | `spec plan` and decision tools require section refs unless user explicitly creates an out-of-spec exploratory decision. |
 | S7 | WorkCommission generated from a spec-linked DecisionRecord without carrying spec section refs in its snapshot | Runtime evidence would not update SpecCoverage. | Commission builder copies section refs into CommissionSnapshot and rejects missing refs for spec-linked decisions. |
 | S8 | RuntimeRun evidence accepted as satisfying a SpecSection without naming the exact section and claim | Evidence becomes generic reassurance, not coverage. | Evidence ingest requires artifact_ref + claim/section ref for spec coverage. |
 | S9 | SpecCoverage stored as a manually edited status | Coverage is derived from links and evidence. Manual status will drift. | SpecCoverage states are query-time projections only. |
-| S10 | OnboardingAgent rewrites target-system role, boundary, or acceptance without human approval | The agent would become product authority. | Load-bearing target sections require human approval before becoming active. |
+| S10 | OnboardingAgent rewrites target-system role, boundary, acceptance, or load-bearing software responsibility/constraint/structure without human approval | The agent would become product or architecture authority. | Load-bearing target and software sections require human approval before becoming active. |
 | S11 | Harness runtime starts commissioned work in a project marked `needs_onboard` for the relevant scope | Execution would proceed without the semantic architecture needed to judge correctness. | Preflight checks ProjectSpecificationSet readiness for spec-required work. Tactical explicit override records an out-of-spec commission. |
 
 ## Evidence & Trust
@@ -56,7 +56,7 @@
 
 | # | Illegal state | Why | Enforcement |
 |---|--------------|-----|-------------|
-| 18 | Agent auto-executing Execute mode without human confirmation | Transformer Mandate: human decides at Choose→Execute boundary. | Skill instructions enforce pause. Exception: autonomous mode explicitly enabled. |
+| 18 | Agent creates a binding DecisionRecord or WorkCommission without verifiable explicit operator/manual authority | Transformer Mandate: a capability catalog, recommendation, generated payload, or autonomous continuation policy cannot authorize a binding choice or execution scope. | Default MCP binding fails closed with `operator_confirmation_required`; manual `h-decide` and `h-commission` are the binding paths. |
 | 19 | Comparison with subjective dimensions not operationalized | "Maintainable" means nothing until decomposed into measurables. | Language precision triggers in skill (L1). L2 enforcement planned. |
 | 20 | Constraint dimension scored instead of eliminating | Constraints are hard limits. Violating variants must be removed, not penalized. | `computeParetoFront()` eliminates constraint violations before dominance. |
 
@@ -73,8 +73,8 @@
 | # | Illegal state | Why | Enforcement |
 |---|--------------|-----|-------------|
 | 24 | SQLite and `.haft/*.md` projection disagree on artifact content | Dual-truth corrupts team workflow. SQLite is runtime authority; projections are exchange format. | `WriteFile()` regenerates projection on every create/update. `haft sync` is explicit reconcile, fails closed on schema mismatch. |
-| 25 | Derived phase (Pending/Shipped/Stale) stored in database | Phases are computed from status + evidence state. Storing them creates stale-view bugs. | Phases computed at query time only. Never written to artifacts table. |
-| 26 | Advisory recommendation (`selected_ref`) treated as human choice in delegated reasoning | Violates Transformer Mandate. Agent recommends; human confirms before `/h-decide`. | Skill instructions enforce pause at Choose→Execute boundary. NavStrip shows "Available: /h-decide" not "Executing: /h-decide". |
+| 25 | Derived project-state facet (`pending`, `shipped`, evidence pressure) stored as a universal phase or next action | Facets are computed from artifact status and evidence state. Persisting one as project order creates stale-view and false-precedence bugs. | Facets are computed independently at query time and are never written as a global phase or `NextAction`. |
+| 26 | Advisory recommendation (`selected_ref`) treated as human choice | Violates Transformer Mandate. Agent recommendations, retrieval rank, and prior capability use are not authorization. | Manual `h-decide` records the operator's exact `ChoiceResult`; ordinary capabilities never advance implicitly into binding. |
 
 ## Work Execution & External Projection (vNext)
 

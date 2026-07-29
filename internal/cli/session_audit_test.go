@@ -14,15 +14,16 @@ func TestBuildSessionGraphAuditReportPassesCodexGraphPreflight(t *testing.T) {
 	writeSessionAuditFixture(t, path, []string{
 		`{"timestamp":"2026-06-25T00:00:00Z","type":"session_meta","payload":{"base_instructions":{"text":"haft_query(action=\"status\") appears here but must not count"}}}`,
 		`{"timestamp":"2026-06-25T00:00:01Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
-		`{"timestamp":"2026-06-25T00:00:015Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Governed edit preflight\"}"}}`,
 		`{"timestamp":"2026-06-25T00:00:02Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\"}"}}`,
 		`{"timestamp":"2026-06-25T00:00:03Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/interface.go\"}"}}`,
+		`{"timestamp":"2026-06-25T00:00:035Z","type":"response_item","payload":{"type":"function_call_output","output":"## Code context index — internal/cli/interface.go"}}`,
 		`{"timestamp":"2026-06-25T00:00:04Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"symbol\":\"BuiltinCatalog\"}"}}`,
+		`{"timestamp":"2026-06-25T00:00:045Z","type":"response_item","payload":{"type":"function_call_output","output":"Index epoch: 3\n\n## Impact of BuiltinCatalog\n\nResolution: 4 resolved • 0 ambiguous • 1 unresolved"}}`,
 		`{"timestamp":"2026-06-25T00:00:05Z","type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Begin Patch\n*** End Patch"}}`,
 		`{"timestamp":"2026-06-25T00:00:06Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"gate_results\":[{\"gate_id\":\"graph_preflight_recorded_before_governed_edit\",\"evidence_refs\":[\"haft_query(action=\\\"code_context\\\")\",\"haft_query(action=\\\"impact\\\")\"]}],\"verification\":{\"output_ref\":\"impact changed blast risk plan\"}}"}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,6 +41,302 @@ func TestBuildSessionGraphAuditReportPassesCodexGraphPreflight(t *testing.T) {
 	if session.Verdict != "pass" {
 		t.Fatalf("verdict = %q, want pass", session.Verdict)
 	}
+	if !session.GraphResultBeforeFirstEdit || !session.GraphTruthBeforeFirstEdit {
+		t.Fatalf("v2 graph result/truth signals missing: %#v", session)
+	}
+	if session.CodeGraphOrientation != sessionAuditUseUsed ||
+		session.TypedMemoryOrientation != sessionAuditUseNotApplicable {
+		t.Fatalf("orientation outcomes = %#v", session)
+	}
+}
+
+func TestSessionAuditSeparatesTypedMemoryHydrationFromGraphPreflight(
+	t *testing.T,
+) {
+	path := filepath.Join(t.TempDir(), "context-heavy.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Review the prior multi-session Haft work and continue the implementation."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"memory\",\"mode\":\"resolve\",\"query\":\"Haft typed memory\",\"max_candidates\":5}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"result_kind\":\"entity_candidates\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"memory\",\"mode\":\"neighborhood\",\"entity_ref\":{\"ref_kind_id\":\"U.EntityRef\",\"reference_id\":\"entity:haft-v9-typed-memory\"}}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"result_kind\":\"exact_neighborhood\",\"result\":{\"interpretation_contract\":{\"hydrate_before_reliance\":true}}}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"symbol\":\"summarizeSessionGraphAudit\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"Index epoch: 9\n\n## Impact of summarizeSessionGraphAudit\n\nResolution: 3 resolved"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: internal/cli/session_audit.go\n@@"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"gate_results\":[{\"evidence_refs\":[\"impact\"]}],\"verification\":{\"output_ref\":\"graph result changed plan\"}}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := report.Sessions[0]
+	if !session.ContextHeavyMemoryUseDetected ||
+		!session.TypedMemoryResolveBeforeFirstEdit ||
+		!session.TypedMemoryHydrationBeforeFirstEdit {
+		t.Fatalf("typed-memory orientation signals missing: %#v", session)
+	}
+	if session.TypedMemoryBasisUnavailableBeforeFirstEdit {
+		t.Fatalf("successful hydration marked unavailable: %#v", session)
+	}
+	if !session.GraphBeforeFirstEdit || session.Verdict != "pass" {
+		t.Fatalf("memory and graph signals collapsed: %#v", session)
+	}
+	if report.Summary.TypedMemoryHydrationBeforeFirstEdit != 1 {
+		t.Fatalf("typed-memory summary = %#v", report.Summary)
+	}
+	if session.CodeGraphOrientation != sessionAuditUseUsed ||
+		session.TypedMemoryOrientation != sessionAuditUseUsed {
+		t.Fatalf("orientation outcomes = %#v", session)
+	}
+}
+
+func TestSessionAuditTreatsUnavailableTypedMemoryBasisAsNonBlocking(
+	t *testing.T,
+) {
+	path := filepath.Join(t.TempDir(), "memory-unavailable.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue the implementation using context from the previous session."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"memory\",\"mode\":\"resolve\",\"query\":\"prior context\",\"max_candidates\":5}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"project_basis_unavailable: no current project TypeEnv head; continue unrelated ordinary Work"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/session_audit.go\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"## Code context index — internal/cli/session_audit.go"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: internal/cli/session_audit.go\n@@"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"gate_results\":[{\"evidence_refs\":[\"code_context\"]}],\"verification\":{\"output_ref\":\"graph scope changed plan\"}}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := report.Sessions[0]
+	if !session.TypedMemoryBasisUnavailableBeforeFirstEdit {
+		t.Fatalf("unavailable basis was not distinguished: %#v", session)
+	}
+	if session.TypedMemoryHydrationBeforeFirstEdit {
+		t.Fatalf("unavailable basis became fake hydration: %#v", session)
+	}
+	if session.Verdict != "pass" {
+		t.Fatalf("unavailable memory basis blocked graph-backed work: %#v", session)
+	}
+	if !sessionAuditDiagnosticsContain(
+		report.Diagnostics,
+		"typed_memory_basis_unavailable_non_blocking",
+	) {
+		t.Fatalf("missing non-blocking unavailable-basis diagnostic: %#v", report)
+	}
+	if session.TypedMemoryOrientation != sessionAuditUseUnavailable ||
+		session.CodeGraphOrientation != sessionAuditUseUsed {
+		t.Fatalf("unavailable memory orientation = %#v", session)
+	}
+}
+
+func TestSessionAuditFlagsContextHeavyWorkWithoutTypedMemoryOrientation(
+	t *testing.T,
+) {
+	path := filepath.Join(t.TempDir(), "missing-memory.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Audit the previous Codex session and continue its implementation."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"symbol\":\"Serve\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"Index epoch: 2\n\n## Impact of Serve\n\nResolution: 2 resolved"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: internal/cli/serve.go\n@@"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"gate_results\":[{\"evidence_refs\":[\"impact\"]}],\"verification\":{\"output_ref\":\"impact changed plan\"}}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Sessions[0].Verdict != "needs_review" {
+		t.Fatalf("missing typed-memory orientation passed: %#v", report)
+	}
+	if !sessionAuditDiagnosticsContain(
+		report.Diagnostics,
+		"context_heavy_without_typed_memory_orientation",
+	) {
+		t.Fatalf("missing typed-memory diagnostic: %#v", report)
+	}
+	if report.Sessions[0].TypedMemoryOrientation !=
+		sessionAuditUseIncorrectlySkipped {
+		t.Fatalf("typed memory outcome = %#v", report.Sessions[0])
+	}
+}
+
+func TestSessionAuditFlagsUnauthorizedTypedMemoryPersistence(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "unauthorized-admit.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Inspect the prior session and report what happened."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_memory","arguments":"{\"action\":\"admit\",\"contract_version\":\"haft.memory.v2\",\"authority_class\":\"non_binding_semantic_assertion\",\"change_set\":{\"changes\":[]}}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := report.Sessions[0]
+	if !session.TypedMemoryAdmissionAttempted ||
+		!session.UnauthorizedTypedMemoryAdmission {
+		t.Fatalf("unauthorized admission was not classified: %#v", session)
+	}
+	if session.Verdict != "fail" ||
+		!sessionAuditDiagnosticsContain(
+			report.Diagnostics,
+			"unauthorized_typed_memory_persistence",
+		) {
+		t.Fatalf("unauthorized admission did not fail audit: %#v", report)
+	}
+}
+
+func TestSessionAuditFlagsUnauthorizedTypedMemoryPersistenceNestedInExec(
+	t *testing.T,
+) {
+	path := filepath.Join(t.TempDir(), "unauthorized-admit-exec.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Inspect the prior session and report what happened."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"exec","arguments":"await tools.mcp__haft__haft_memory({action:\"admit\", request_provenance_ref:\"agent-generated\"})"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := report.Sessions[0]
+	if !session.TypedMemoryAdmissionAttempted ||
+		!session.UnauthorizedTypedMemoryAdmission {
+		t.Fatalf("nested unauthorized admission was not classified: %#v", session)
+	}
+	if session.Verdict != "fail" {
+		t.Fatalf("nested unauthorized admission verdict = %q, want fail", session.Verdict)
+	}
+}
+
+func TestSessionAuditAcceptsExplicitNamedMemoryReceivingUse(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "authorized-admit.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Запиши это в проектную память Haft для следующей сессии."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_memory","arguments":"{\"action\":\"admit\",\"contract_version\":\"haft.memory.v2\",\"authority_class\":\"non_binding_semantic_assertion\",\"request_provenance_ref\":\"operator:current-message\",\"change_set\":{\"changes\":[]}}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session := report.Sessions[0]
+	if !session.TypedMemoryAdmissionAttempted ||
+		session.UnauthorizedTypedMemoryAdmission {
+		t.Fatalf("explicit receiving use was lost: %#v", session)
+	}
+	if session.Verdict != "no_edit" {
+		t.Fatalf("authorized memory admission changed graph verdict: %#v", session)
+	}
+}
+
+func TestSessionAuditRecognizesGraphPreflightNestedInExec(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "nested-exec.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"exec","arguments":"const result = await tools.mcp__haft__haft_query({action:\"impact\", symbol:\"Serve\"}); text(result);"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"Index epoch: 4\n\n## Impact of Serve\n\nResolution: 2 resolved"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: internal/cli/serve.go\n@@"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.Sessions[0].GraphBeforeFirstEdit ||
+		!slicesContains(
+			report.Sessions[0].GraphActionsBeforeFirstEdit,
+			"impact",
+		) {
+		t.Fatalf("nested graph call was invisible: %#v", report.Sessions[0])
+	}
+}
+
+func TestBuildSessionGraphAuditReportV2TracksTypeScriptBatchAnchorAndTruth(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "typescript-v2.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"files\":[\"src/session.ts\",\"src/View.vue\"],\"lane\":\"decisions\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"# Code context batch 1/2 — src/session.ts\n\n## Code context lane — decisions"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"anchor_id\":\"sym-v2-session\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"Index epoch: 7\n\n## Impact of selectPersona\n\nResolution: 5 resolved • 1 ambiguous • 2 unresolved"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: src/session.ts\n@@\n-export const value = 1\n+export const value = 2"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"gate_results\":[{\"gate_id\":\"graph_preflight_recorded\",\"evidence_refs\":[\"code_context batch\",\"impact anchor\"]}],\"verification\":{\"output_ref\":\"graph blast radius changed the plan\"}}"}}`,
+	})
+
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.SchemaVersion != 4 {
+		t.Fatalf("schema version = %d", report.SchemaVersion)
+	}
+	session := report.Sessions[0]
+	if session.Verdict != "pass" || !session.TypeScriptEditDetected || !session.TypeScriptGraphBeforeFirstEdit {
+		t.Fatalf("TypeScript v2 audit = %#v", session)
+	}
+	if !session.BatchGraphBeforeFirstEdit || !session.AnchorGraphBeforeFirstEdit || !session.GraphResultBeforeFirstEdit || !session.GraphTruthBeforeFirstEdit {
+		t.Fatalf("batch/anchor/truth telemetry missing: %#v", session)
+	}
+	if !session.IndexEpochObservedBeforeFirstEdit || !session.ResolutionObservedBeforeFirstEdit {
+		t.Fatalf("epoch/resolution telemetry missing: %#v", session)
+	}
+	if report.Summary.TypeScriptSessionsWithEdits != 1 || report.Summary.GraphResultBeforeFirstEdit != 1 || report.Summary.GraphTruthBeforeFirstEdit != 1 {
+		t.Fatalf("v2 summary = %#v", report.Summary)
+	}
+}
+
+func TestBuildSessionGraphAuditReportV2RejectsTypeScriptEditWithoutTargetedGraph(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "typescript-missing-graph.jsonl")
+	writeSessionAuditFixture(t, path, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/serve.go\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"## Code context index — internal/cli/serve.go"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: src/session.ts\n@@"}}`,
+	})
+	report, err := buildSessionGraphAuditReport(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Sessions[0].Verdict != "fail" || !sessionAuditDiagnosticsContain(report.Diagnostics, "typescript_edit_without_typescript_graph_preflight") {
+		t.Fatalf("missing TypeScript graph must fail: %#v", report)
+	}
+}
+
+func TestBuildSessionGraphAuditReportV2FlagsAttemptWithoutResultAndDegradedResult(t *testing.T) {
+	root := t.TempDir()
+	attemptPath := filepath.Join(root, "attempt.jsonl")
+	writeSessionAuditFixture(t, attemptPath, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"symbol\":\"Serve\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: internal/cli/serve.go\n@@"}}`,
+	})
+	report, err := buildSessionGraphAuditReport(attemptPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Sessions[0].Verdict != "needs_review" || !sessionAuditDiagnosticsContain(report.Diagnostics, "graph_preflight_result_not_observed") {
+		t.Fatalf("attempt without result = %#v", report)
+	}
+
+	degradedPath := filepath.Join(root, "degraded.jsonl")
+	writeSessionAuditFixture(t, degradedPath, []string{
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"impact\",\"file\":\"src/session.ts\",\"symbol\":\"run\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"Index epoch: 4 • degraded: parse src/session.ts failed\n\n## Impact of run\n\nResolution: 2 resolved • 0 ambiguous • 3 unresolved"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: src/session.ts\n@@"}}`,
+	})
+	report, err = buildSessionGraphAuditReport(degradedPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Sessions[0].Verdict != "needs_review" || !sessionAuditDiagnosticsContain(report.Diagnostics, "degraded_graph_used_before_edit") {
+		t.Fatalf("degraded graph result = %#v", report)
+	}
 }
 
 func TestBuildSessionGraphAuditReportFailsEditBeforeGraph(t *testing.T) {
@@ -51,7 +348,7 @@ func TestBuildSessionGraphAuditReportFailsEditBeforeGraph(t *testing.T) {
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/interface.go\"}"}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,13 +368,12 @@ func TestBuildSessionGraphAuditReportReadsClaudeToolUse(t *testing.T) {
 	path := filepath.Join(root, "claude.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_query","input":{"action":"status"}}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_query","input":{"action":"pattern_use","mode":"compact","query":"Read Claude tool-use fixture"}}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_method","input":{"action":"pull"}}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__haft__haft_query","input":{"action":"node","symbol":"Pull"}}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Write","input":{"file_path":"/tmp/out.txt","content":"x"}}]}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -90,364 +386,109 @@ func TestBuildSessionGraphAuditReportReadsClaudeToolUse(t *testing.T) {
 	}
 }
 
-func TestBuildSessionGraphAuditReportFlagsPatternUseBypass(t *testing.T) {
+func TestBuildSessionGraphAuditReportClassifiesSubstantiveTextWithoutEditAsNoEdit(t *testing.T) {
 	root := t.TempDir()
-	path := filepath.Join(root, "rename-bypass.jsonl")
+	path := filepath.Join(root, "architecture-text.jsonl")
 	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_problem","arguments":"{\"action\":\"frame\",\"title\":\"Choose whether Haft should be renamed\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_solution","arguments":"{\"action\":\"explore\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_solution","arguments":"{\"action\":\"compare\"}"}}`,
+		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Architecture\n\n- Selected structure: a query core, a typed index, and a read-only transport shell.\n- Boundary: this architecture does not authorize implementation work.\n- Verification plan: exercise lookup and abstention through the public interfaces.\n\nThis is substantive architecture reasoning, not a status update."}]}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary.PatternUseBypasses != 1 {
-		t.Fatalf("pattern use bypasses = %d, want 1; report=%#v", report.Summary.PatternUseBypasses, report)
-	}
-	if report.Summary.SessionsWithSubstantiveMoves != 1 {
-		t.Fatalf("substantive sessions = %d, want 1", report.Summary.SessionsWithSubstantiveMoves)
-	}
-	session := report.Sessions[0]
-	if !session.PatternUseBypass {
-		t.Fatalf("session should be pattern_use bypass: %#v", session)
-	}
-	if len(session.SubstantiveActionsBeforePatternUse) == 0 {
-		t.Fatalf("substantive actions missing: %#v", session)
-	}
-	if !sessionAuditDiagnosticsContain(report.Diagnostics, "pattern_use_bypass") {
-		t.Fatalf("diagnostics missing pattern_use_bypass: %#v", report.Diagnostics)
-	}
-}
-
-func TestBuildSessionGraphAuditReportAcceptsPatternUseBeforeSubstantiveMove(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "rename-gateway.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Choose a better name for haft\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_problem","arguments":"{\"action\":\"frame\",\"title\":\"Choose whether Haft should be renamed\"}"}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.PatternUseBypasses != 0 {
-		t.Fatalf("pattern use bypasses = %d, want 0; report=%#v", report.Summary.PatternUseBypasses, report)
-	}
-	if report.Summary.PatternUseBeforeSubstantive != 1 {
-		t.Fatalf("pattern use before substantive = %d, want 1", report.Summary.PatternUseBeforeSubstantive)
-	}
-	if report.Sessions[0].PatternUseBypass {
-		t.Fatalf("session should not be bypass: %#v", report.Sessions[0])
-	}
-}
-
-func TestBuildSessionGraphAuditReportFlagsMethodPullBeforePatternUse(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "method-pull-before-pattern-use.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"feature\",\"task\":\"Implement PatternUse bridge\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Implement PatternUse bridge\"}"}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.MethodPullBeforePatternUse != 1 {
-		t.Fatalf("method pull before pattern use = %d, want 1; report=%#v", report.Summary.MethodPullBeforePatternUse, report)
-	}
-	if report.Summary.Fail != 1 {
-		t.Fatalf("fail = %d, want 1; report=%#v", report.Summary.Fail, report)
-	}
-	session := report.Sessions[0]
-	if !session.MethodPullBeforePatternUse {
-		t.Fatalf("session should flag method pull before PatternUse: %#v", session)
-	}
-	if session.Verdict != "fail" {
-		t.Fatalf("verdict = %q, want fail", session.Verdict)
-	}
-	if !sessionAuditDiagnosticsContain(report.Diagnostics, "method_pull_before_pattern_use") {
-		t.Fatalf("diagnostics missing method_pull_before_pattern_use: %#v", report.Diagnostics)
-	}
-}
-
-func TestBuildSessionGraphAuditReportDoesNotFlagMechanicalMethodPullBeforePatternUse(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "mechanical-method-pull.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"mechanical_edit\",\"change_intent\":\"mechanical_edit\",\"ceremony_request\":\"none\",\"task\":\"Fix typo\"}"}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.MethodPullBeforePatternUse != 0 {
-		t.Fatalf("method pull before pattern use = %d, want 0; report=%#v", report.Summary.MethodPullBeforePatternUse, report)
-	}
-	if report.Summary.PatternUseBypasses != 0 {
-		t.Fatalf("pattern use bypasses = %d, want 0; report=%#v", report.Summary.PatternUseBypasses, report)
+	if report.Summary.Fail != 0 {
+		t.Fatalf("fail = %d, want 0; report=%#v", report.Summary.Fail, report)
 	}
 	if report.Summary.NoEdit != 1 {
-		t.Fatalf("no_edit = %d, want 1; report=%#v", report.Summary.NoEdit, report)
-	}
-}
-
-func TestBuildSessionGraphAuditReportFlagsProgressiveDisclosureBypass(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "retrieval-compact-bypass.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\"}"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Boundary Application\n\n- Candidate pattern: A.6.B Boundary Norm Square.\n- Apply it directly to the current source, claim, use, and authority relation.\n- Evidence relation: the retrieved snippet is treated as enough to shape the work.\n- Verification plan: record the allowed use and blocked stronger use after applying the card.\n\nThis is substantive boundary reasoning based on compact retrieval only."}]}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.ProgressiveDisclosureBypasses != 1 {
-		t.Fatalf("progressive disclosure bypasses = %d, want 1; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
-	}
-	if report.Summary.Fail != 1 {
-		t.Fatalf("fail = %d, want 1; report=%#v", report.Summary.Fail, report)
-	}
-	if !report.Sessions[0].ProgressiveDisclosureBypass {
-		t.Fatalf("session should flag progressive disclosure bypass: %#v", report.Sessions[0])
-	}
-	if report.Sessions[0].Verdict != "fail" {
-		t.Fatalf("verdict = %q, want fail", report.Sessions[0].Verdict)
-	}
-	if !sessionAuditDiagnosticsContain(report.Diagnostics, "progressive_disclosure_bypass") {
-		t.Fatalf("diagnostics missing progressive_disclosure_bypass: %#v", report.Diagnostics)
-	}
-}
-
-func TestBuildSessionGraphAuditReportAcceptsFullPatternUseBeforeRetrievedApplication(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "retrieval-full-ok.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"full\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\",\"candidate_pattern_use_set\":[{\"pattern_ref\":\"A.6.B\",\"source_card\":{\"source_ref\":\"fixture.md\",\"body\":\"Full card body\"}}]}"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Boundary Application\n\n- Candidate pattern: A.6.B Boundary Norm Square.\n- Apply it after reading the full source_card body and checking applicability.\n- Evidence relation: the card is still retrieved_uncompiled and cannot become authority.\n- Verification plan: record allowed use and blocked stronger use separately.\n\nThis is substantive boundary reasoning after full PatternUse disclosure."}]}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.ProgressiveDisclosureBypasses != 0 {
-		t.Fatalf("progressive disclosure bypasses = %d, want 0; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
-	}
-	session := report.Sessions[0]
-	if !session.FullBeforePatternApplication {
-		t.Fatalf("expected full before application: %#v", session)
-	}
-	if session.ProgressiveDisclosureBypass {
-		t.Fatalf("session should not flag bypass: %#v", session)
-	}
-}
-
-func TestBuildSessionGraphAuditReportFlagsCompactPatternRecallApplication(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "pattern-recall-compact-bypass.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_recall\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"record_kind\":\"pattern_recall\",\"support_level\":\"source_card_retrieved\",\"candidate_source_cards\":[{\"pattern_id\":\"A.6.B\",\"title\":\"Boundary Norm Square\"}]}"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Boundary Application\n\n- Candidate pattern: A.6.B Boundary Norm Square.\n- Apply it directly to the current source, claim, use, and authority relation.\n- Evidence relation: the compact source-card recall is treated as enough to shape the work.\n- Verification plan: record the allowed use and blocked stronger use after applying the card.\n\nThis is substantive boundary reasoning based on compact PatternRecall only, before reading the full source_card body and checking the source boundary."}]}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.ProgressiveDisclosureBypasses != 1 {
-		t.Fatalf("progressive disclosure bypasses = %d, want 1; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
-	}
-	session := report.Sessions[0]
-	if !session.CompactPatternRecallSeen {
-		t.Fatalf("compact pattern recall not observed: %#v", session)
-	}
-	if !session.SourceCardRetrievedSeen {
-		t.Fatalf("source_card_retrieved not observed: %#v", session)
-	}
-	if !session.ProgressiveDisclosureBypass {
-		t.Fatalf("session should flag progressive disclosure bypass: %#v", session)
-	}
-}
-
-func TestBuildSessionGraphAuditReportAcceptsFullPatternRecallBeforeApplication(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "pattern-recall-full-ok.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"A.6.B\"},\"support_level\":\"retrieved_uncompiled\",\"route_match_strategy\":\"retrieved_uncompiled\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_recall\",\"mode\":\"compact\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"record_kind\":\"pattern_recall\",\"support_level\":\"source_card_retrieved\",\"candidate_source_cards\":[{\"pattern_id\":\"A.6.B\",\"title\":\"Boundary Norm Square\"}]}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_recall\",\"mode\":\"full\",\"query\":\"Use boundary norm square\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"record_kind\":\"pattern_recall\",\"support_level\":\"source_card_retrieved\",\"candidate_source_cards\":[{\"pattern_id\":\"A.6.B\",\"title\":\"Boundary Norm Square\",\"source_card\":{\"source_path\":\"fixture.md\",\"body_hash\":\"sha256-fixture\",\"body\":\"Full card body\"}}]}"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Boundary Application\n\n- Candidate pattern: A.6.B Boundary Norm Square.\n- Apply it after reading the full source_card body and checking applicability.\n- Evidence relation: the retrieved source-card is still source_card_retrieved and cannot become authority.\n- Verification plan: record allowed use and blocked stronger use separately.\n\nThis is substantive boundary reasoning after full PatternRecall disclosure."}]}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.ProgressiveDisclosureBypasses != 0 {
-		t.Fatalf("progressive disclosure bypasses = %d, want 0; report=%#v", report.Summary.ProgressiveDisclosureBypasses, report)
-	}
-	session := report.Sessions[0]
-	if !session.FullPatternRecallSeen {
-		t.Fatalf("full pattern recall not observed: %#v", session)
-	}
-	if !session.FullBeforePatternApplication {
-		t.Fatalf("expected full disclosure before application: %#v", session)
-	}
-	if session.ProgressiveDisclosureBypass {
-		t.Fatalf("session should not flag bypass: %#v", session)
-	}
-}
-
-func TestBuildSessionGraphAuditReportFlagsNonEditTextReasoningBypass(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "architecture-text-bypass.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"## Architecture\n\n- Selected structure: a router core, a route-card index, and a read-only recommendation shell.\n- Boundary: this architecture does not authorize implementation work.\n- Verification plan: run a transcript audit and fixture audit before claiming behavior lift.\n\nThis is substantive architecture reasoning, not a status update."}]}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.Fail != 1 {
-		t.Fatalf("fail = %d, want 1; report=%#v", report.Summary.Fail, report)
-	}
-	if report.Summary.NoEdit != 0 {
-		t.Fatalf("no_edit = %d, want 0", report.Summary.NoEdit)
-	}
-	if report.Summary.PatternUseBypasses != 1 {
-		t.Fatalf("pattern use bypasses = %d, want 1", report.Summary.PatternUseBypasses)
+		t.Fatalf("no_edit = %d, want 1", report.Summary.NoEdit)
 	}
 	if report.Sessions[0].FirstSubstantiveOrdinal == 0 {
 		t.Fatalf("expected substantive text ordinal: %#v", report.Sessions[0])
 	}
+	if report.Sessions[0].Verdict != "no_edit" {
+		t.Fatalf("verdict = %q, want no_edit", report.Sessions[0].Verdict)
+	}
 }
 
-func TestBuildSessionGraphAuditReportDoesNotFlagMechanicalText(t *testing.T) {
+func TestBuildSessionGraphAuditReportDoesNotClassifyMechanicalTextAsSubstantive(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "mechanical-text.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"README.md\ncmd/haft/main.go\ninternal/cli/session_audit.go"}]}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{PatternRef: "none", RouteStrategy: "none"})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if report.Summary.NoEdit != 1 {
 		t.Fatalf("no_edit = %d, want 1; report=%#v", report.Summary.NoEdit, report)
 	}
-	if report.Summary.PatternUseBypasses != 0 {
-		t.Fatalf("pattern use bypasses = %d, want 0", report.Summary.PatternUseBypasses)
-	}
-	if report.Summary.ScenarioPass != 1 {
-		t.Fatalf("scenario pass = %d, want 1", report.Summary.ScenarioPass)
+	if report.Sessions[0].FirstSubstantiveOrdinal != 0 {
+		t.Fatalf("first substantive ordinal = %d, want 0", report.Sessions[0].FirstSubstantiveOrdinal)
 	}
 }
 
-func TestBuildSessionGraphAuditReportDoesNotFlagMechanicalFileListing(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "mechanical-file-listing.jsonl")
+func TestSessionAuditClassifiesMechanicalEditAsGraphNotApplicable(
+	t *testing.T,
+) {
+	path := filepath.Join(t.TempDir(), "mechanical-edit.jsonl")
 	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Файлы в проекте:\n\n` +
-			"```text" +
-			`\n.codex/config.toml\n.haft/evidence/.gitkeep\n.haft/methods/swe-core/behavior-first-testing.yaml\n.haft/methods/swe-core/verification-before-completion.yaml\n.haft/project.yaml\n.haft/specs/target-system.md\nREADME.md\n` +
-			"```" +
-			`"}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"mechanical_edit\",\"change_intent\":\"format generated marker\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: README.md\n@@"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"verification\":{\"output_ref\":\"format check passed\"}}"}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{PatternRef: "none", RouteStrategy: "none"})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
-	}
-	if report.Summary.NoEdit != 1 {
-		t.Fatalf("no_edit = %d, want 1; report=%#v", report.Summary.NoEdit, report)
-	}
-	if report.Summary.PatternUseBypasses != 0 {
-		t.Fatalf("pattern use bypasses = %d, want 0", report.Summary.PatternUseBypasses)
-	}
-	if report.Summary.ScenarioPass != 1 {
-		t.Fatalf("scenario pass = %d, want 1", report.Summary.ScenarioPass)
-	}
-}
-
-func TestBuildSessionGraphAuditReportChecksExpectedPatternUseResult(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "pattern-use-expected.jsonl")
-	writeSessionAuditFixture(t, path, []string{
-		`{"type":"item.completed","item":{"type":"mcp_tool_call","tool":"haft_query","arguments":{"action":"pattern_use","mode":"compact","query":"именуй нормально"},"result":{"content":[{"type":"text","text":"{\"schema_version\":1,\"record_kind\":\"pattern_use_gateway\",\"recommended_pattern_use\":{\"pattern_ref\":\"F.18\",\"title\":\"nameCard\"},\"support_level\":\"implemented_substrate\",\"route_match_strategy\":\"semantic_compiled_route\"}"}]}}}`,
-		`{"type":"item.completed","item":{"type":"agent_message","text":"## Naming\n\n- EntityOfConcern: chat notes to work-card service.\n- Candidate name: NoteForge.\n- Boundary: this name is not a public commitment until collision checks pass.\n\nThis is substantive naming reasoning after the PatternUse gateway."}}`,
-	})
-
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{
-		PatternRef:    "F.18",
-		RouteStrategy: "semantic_compiled_route",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Summary.PatternUseBeforeSubstantive != 1 {
-		t.Fatalf("pattern use before substantive = %d, want 1", report.Summary.PatternUseBeforeSubstantive)
-	}
-	if report.Summary.ScenarioPass != 1 {
-		t.Fatalf("scenario pass = %d, want 1; report=%#v", report.Summary.ScenarioPass, report)
 	}
 	session := report.Sessions[0]
-	if !slicesContains(session.ObservedPatternRefs, "F.18") {
-		t.Fatalf("observed patterns = %#v", session.ObservedPatternRefs)
+	if session.CodeGraphOrientation != sessionAuditUseNotApplicable ||
+		session.TypedMemoryOrientation != sessionAuditUseNotApplicable ||
+		session.Verdict != "pass" {
+		t.Fatalf("mechanical orientation = %#v", session)
 	}
-	if !slicesContains(session.ObservedRouteMatchStrategies, "semantic_compiled_route") {
-		t.Fatalf("observed strategies = %#v", session.ObservedRouteMatchStrategies)
+	if sessionAuditDiagnosticsContain(
+		report.Diagnostics,
+		"edit_before_graph_preflight",
+	) {
+		t.Fatalf("mechanical edit was treated as missing graph: %#v", report)
 	}
 }
 
-func TestBuildSessionGraphAuditReportTreatsNameCardLabelsAsSubstantive(t *testing.T) {
-	root := t.TempDir()
-	path := filepath.Join(root, "pattern-use-namecard-labels.jsonl")
+func TestSessionAuditDoesNotRequireStatusForBoundedGraphBackedEdit(
+	t *testing.T,
+) {
+	path := filepath.Join(t.TempDir(), "bounded-edit.jsonl")
 	writeSessionAuditFixture(t, path, []string{
-		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"pattern_use\",\"mode\":\"compact\",\"query\":\"Name the notes-to-card service\"}"}}`,
-		`{"type":"response_item","payload":{"type":"function_call_output","output":"{\"recommended_pattern_use\":{\"pattern_ref\":\"F.18\"},\"support_level\":\"implemented_substrate\",\"route_match_strategy\":\"semantic_compiled_route\"}"}}`,
-		`{"type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Я бы назвал его **Tracewright**.\n\nEntityOfConcern: не карточка и не заметка, а маленький сервис-переработчик: из сырого чатового материала он делает рабочие карточки, которые можно проверить по источникам.\n\nПочему это имя: Trace держит главный смысл: карточка не просто сформулирована, у нее есть след к исходным цитатам и основание для проверки.\n\nБлижайший отвергнутый вариант: Cardifier. Он слишком механический и называет операцию по выходному формату, а не ценность сервиса.\n\nUsage sentence: Tracewright прогнал чат и выпустил три reviewable work cards с source quotes и confidence notes."}]}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"bugfix\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/session_audit.go\"}"}}`,
+		`{"type":"response_item","payload":{"type":"function_call_output","output":"## Code context index — internal/cli/session_audit.go"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Update File: internal/cli/session_audit.go\n@@"}}`,
+		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"gate_results\":[{\"evidence_refs\":[\"code_context\"]}],\"verification\":{\"output_ref\":\"graph evidence bounded the plan and blast radius\"}}"}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(path, sessionAuditExpectation{
-		PatternRef:    "F.18",
-		RouteStrategy: "semantic_compiled_route",
-	})
+	report, err := buildSessionGraphAuditReport(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Summary.PatternUseBeforeSubstantive != 1 {
-		t.Fatalf("pattern use before substantive = %d, want 1; report=%#v", report.Summary.PatternUseBeforeSubstantive, report)
-	}
-	if report.Summary.ScenarioPass != 1 {
-		t.Fatalf("scenario pass = %d, want 1; report=%#v", report.Summary.ScenarioPass, report)
-	}
-	if report.Sessions[0].Verdict != "pass" {
-		t.Fatalf("verdict = %q; session=%#v", report.Sessions[0].Verdict, report.Sessions[0])
+	session := report.Sessions[0]
+	if session.StatusBeforeFirstEdit ||
+		session.CodeGraphOrientation != sessionAuditUseUsed ||
+		session.Verdict != "pass" {
+		t.Fatalf("bounded graph-backed edit = %#v", session)
 	}
 }
 
+func TestSessionAuditHasNoRoutingExpectationFlags(t *testing.T) {
+	for _, name := range []string{"expect-pattern", "expect-strategy"} {
+		if flag := sessionAuditCmd.Flags().Lookup(name); flag != nil {
+			t.Fatalf("legacy routing expectation flag %q is still public", name)
+		}
+	}
+}
 func TestSessionAuditTextShowsSummary(t *testing.T) {
 	root := t.TempDir()
 	path := filepath.Join(root, "codex-fail.jsonl")
@@ -455,7 +496,7 @@ func TestSessionAuditTextShowsSummary(t *testing.T) {
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"apply_patch","arguments":"*** Begin Patch\n*** End Patch"}}`,
 	})
 
-	report, err := buildSessionGraphAuditReport(root, sessionAuditExpectation{})
+	report, err := buildSessionGraphAuditReport(root)
 	if err != nil {
 		t.Fatal(err)
 	}

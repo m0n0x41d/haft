@@ -1,0 +1,67 @@
+schema_version: haft.local-practice/v1
+carrier:
+  id: haft.reference-constraints
+  edition: 1.0.0
+base_type_env_ref: typeenv:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bounded_context_ref: haft-project
+compiler_version: haft.local-practice.compiler/v1
+signature_manifest:
+  id: haft.reference-constraints
+  version: 1.0.0
+  imports: []
+  provides:
+    - Haft.ReferencePartition
+    - Haft.Constraint.SelectedSubset
+    - Haft.Constraint.WholePartition
+signature:
+  subject_block:
+    subject_kind: U.Entity
+    ranged_value_kind: U.Entity
+    slice_set: ContextSliceSet
+    extent_rule: haft.reference-constraints.extent/v1
+  vocabulary:
+    declarations:
+      - kind: relation_signature
+        symbol: Haft.ReferencePartition
+        slots:
+          - slot_kind: WholeSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: SelectedSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: RejectedSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+      - kind: constraint
+        symbol: Haft.Constraint.SelectedSubset
+        rule:
+          kind: reference_slot_subset
+          relation: Haft.ReferencePartition
+          subset: SelectedSlot
+          superset: WholeSlot
+      - kind: constraint
+        symbol: Haft.Constraint.WholePartition
+        rule:
+          kind: reference_slot_partition
+          relation: Haft.ReferencePartition
+          whole: WholeSlot
+          parts:
+            - SelectedSlot
+            - RejectedSlot
+  laws:
+    constraint_refs:
+      - Haft.Constraint.SelectedSubset
+      - Haft.Constraint.WholePartition
+    invariants:
+      - Reference constraints compare resolved stable EntityIDs.
+  applicability:
+    bounded_context_ref: haft-project
+    assumptions:
+      - Reference resolution is available before relation validation.

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -9,22 +10,61 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 const (
 	specSyncAuthorityBoundary             = "typed_spec_section_import_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority"
 	specSyncEditionAuditAuthorityBoundary = "source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"
+	specSyncScopeFullProject              = "full_project"
+	specSyncScopeExactSection             = "exact_section"
 )
 
 type specSyncResult struct {
 	SchemaVersion     int                        `json:"schema_version"`
 	AuthorityBoundary string                     `json:"authority_boundary"`
 	SourceOfTruth     string                     `json:"source_of_truth"`
+	Scope             string                     `json:"scope"`
+	RequestedSection  string                     `json:"requested_section,omitempty"`
 	Imported          []specSyncImportedEntry    `json:"imported"`
 	BlockedFindings   []project.SpecCheckFinding `json:"blocked_findings,omitempty"`
+}
+
+type specSyncScope struct {
+	kind      string
+	sectionID string
+}
+
+func newSpecSyncScope(rawSectionID string) (specSyncScope, error) {
+	sectionID := strings.TrimSpace(rawSectionID)
+	if sectionID == "" {
+		return specSyncScope{kind: specSyncScopeFullProject}, nil
+	}
+	if strings.ContainsAny(sectionID, " \t\r\n") {
+		return specSyncScope{}, fmt.Errorf(
+			"spec sync --section must be one exact SpecSection id",
+		)
+	}
+	return specSyncScope{
+		kind:      specSyncScopeExactSection,
+		sectionID: sectionID,
+	}, nil
+}
+
+func (scope specSyncScope) valid() bool {
+	if scope.kind == specSyncScopeFullProject {
+		return scope.sectionID == ""
+	}
+	if scope.kind == specSyncScopeExactSection {
+		return scope.sectionID != ""
+	}
+	return false
+}
+
+func (scope specSyncScope) deletesMissingEditions() bool {
+	return scope.kind == specSyncScopeFullProject
 }
 
 type specSyncImportedEntry struct {
@@ -64,7 +104,16 @@ func runSpecSync(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	result, err := syncProjectSpecificationSetToSQL(projectID, specSet, store)
+	scope, err := newSpecSyncScope(specSyncSection)
+	if err != nil {
+		return err
+	}
+	result, err := syncProjectSpecificationSetToSQLWithScope(
+		projectID,
+		specSet,
+		store,
+		scope,
+	)
 	if err != nil {
 		return err
 	}
@@ -76,33 +125,70 @@ func runSpecSync(cmd *cobra.Command, _ []string) error {
 }
 
 func openSpecSectionEditionStore(projectRoot string, cfg *project.Config) (string, specflow.SpecSectionEditionStore, func(), error) {
+	return openSpecSectionEditionStoreWithAccess(
+		context.Background(),
+		projectRoot,
+		cfg,
+		projectledger.ReadWrite,
+		"SpecSection edition write",
+	)
+}
+
+func openSpecSectionEditionReadStore(
+	ctx context.Context,
+	projectRoot string,
+	cfg *project.Config,
+) (string, specflow.SpecSectionEditionStore, func(), error) {
+	return openSpecSectionEditionStoreWithAccess(
+		ctx,
+		projectRoot,
+		cfg,
+		projectledger.ReadOnly,
+		"SpecSection edition read",
+	)
+}
+
+func openSpecSectionEditionStoreWithAccess(
+	ctx context.Context,
+	projectRoot string,
+	cfg *project.Config,
+	access projectledger.Access,
+	operation string,
+) (string, specflow.SpecSectionEditionStore, func(), error) {
 	if cfg == nil {
 		return "", nil, noopClose, fmt.Errorf("project not initialized — run 'haft init' first")
 	}
 
-	dbPath, err := cfg.DBPath()
-	if err != nil {
-		return "", nil, noopClose, err
-	}
-	database, err := db.NewStore(dbPath)
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		projectRoot,
+		access,
+		operation,
+	)
 	if err != nil {
 		return "", nil, noopClose, err
 	}
 
-	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
-	return cfg.ID, store, func() { _ = database.Close() }, nil
+	store := specflow.NewSQLiteSpecSectionEditionStore(ledger.Database())
+	return ledger.ProjectID().String(), store, func() { _ = ledger.Close() }, nil
 }
 
-func syncProjectSpecificationSetToSQL(
+func syncProjectSpecificationSetToSQLWithScope(
 	projectID string,
 	specSet project.ProjectSpecificationSet,
 	store specflow.SpecSectionEditionStore,
+	scope specSyncScope,
 ) (specSyncResult, error) {
 	result := specSyncResult{
 		SchemaVersion:     1,
 		AuthorityBoundary: specSyncAuthorityBoundary,
 		SourceOfTruth:     "sql_project_graph",
+		Scope:             scope.kind,
+		RequestedSection:  scope.sectionID,
 		Imported:          []specSyncImportedEntry{},
+	}
+	if !scope.valid() {
+		return result, fmt.Errorf("spec sync scope is invalid")
 	}
 
 	if len(specSet.Findings) > 0 {
@@ -110,14 +196,14 @@ func syncProjectSpecificationSetToSQL(
 		return result, fmt.Errorf("spec sync blocked by %d carrier finding(s)", len(specSet.Findings))
 	}
 
-	currentEditions, err := store.ListCurrent(projectID)
+	selectedSections, err := selectSpecSyncSections(specSet.Sections, scope)
 	if err != nil {
 		return result, err
 	}
 
 	now := time.Now().UTC()
-	currentSectionIDs := make(map[string]bool, len(specSet.Sections))
-	for _, section := range specSet.Sections {
+	currentSectionIDs := make(map[string]bool, len(selectedSections))
+	for _, section := range selectedSections {
 		edition := specflow.NewSpecSectionEdition(projectID, section, specflow.SpecSectionSourceCarrierImport, now)
 		if err := store.PutCurrent(edition); err != nil {
 			return result, err
@@ -138,6 +224,13 @@ func syncProjectSpecificationSetToSQL(
 		})
 	}
 
+	if !scope.deletesMissingEditions() {
+		return result, nil
+	}
+	currentEditions, err := store.ListCurrent(projectID)
+	if err != nil {
+		return result, err
+	}
 	for _, edition := range currentEditions {
 		if currentSectionIDs[edition.SectionID] {
 			continue
@@ -148,6 +241,24 @@ func syncProjectSpecificationSetToSQL(
 	}
 
 	return result, nil
+}
+
+func selectSpecSyncSections(
+	sections []project.SpecSection,
+	scope specSyncScope,
+) ([]project.SpecSection, error) {
+	if scope.kind == specSyncScopeFullProject {
+		return append([]project.SpecSection{}, sections...), nil
+	}
+	for _, section := range sections {
+		if section.ID == scope.sectionID {
+			return []project.SpecSection{section}, nil
+		}
+	}
+	return nil, fmt.Errorf(
+		"spec sync section %s is not present in typed carriers",
+		scope.sectionID,
+	)
 }
 
 func writeSpecSyncJSON(writer io.Writer, result specSyncResult) error {

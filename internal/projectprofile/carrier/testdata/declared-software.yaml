@@ -1,0 +1,20 @@
+schema_version: haft.project-profile/v1
+profile:
+  kind: declared
+  scopes:
+    - kind: software
+      scope_id: haft-software
+      entity_ref: entity:haft
+  declaration_record:
+    kind: onboarding_agent_declared_record
+    declaration_authority_basis_ref: authority-basis:onboard:1
+    candidate_provenance_digest: sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+    admission_event_ref: admission:event:profile:1
+    project_root: /Users/ivanzakutnii/Repos/active_projects/fpf/haft
+    scope_payload_digest: sha256:08ebcb83ec7a12118f7d3d193989c4f2a7e0c05bc0c0c22a55a2b2bb45d3a7c6
+    observed_basis_digest: sha256:92f69c62cabc683fd04bd7a54bc4101a140c724f07bb45ad1fc55f71657fcae6
+    observation_window:
+      execution_context_ref: codex:thread:019f
+      from: "2026-07-14T11:50:00+04:00"
+      until: "2026-07-14T12:10:00+04:00"
+    carrier_revision: 1

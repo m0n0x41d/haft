@@ -95,15 +95,19 @@ func TestMaintenanceRunSuppressesAutoResolvableDriftAndSurfacesRisk(t *testing.T
 	output := FormatStatusSignals(summary)
 	for _, want := range []string{
 		"## Overseer Signals",
-		"Drift requires confirmation",
+		"Scoped material-drift attention: 1 binding-sensitive item(s)",
+		"not a project-wide Work gate",
+		"operator selection is required only for an affected use",
 		"Stale governance artifact",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status signal output missing %q:\n%s", want, output)
 		}
 	}
-	if strings.Contains(output, "low-signal maintenance item") {
-		t.Fatalf("compact status should keep low-signal suppression in JSON/audit, not default text:\n%s", output)
+	for _, absent := range []string{"Drift requires confirmation", "low-signal maintenance item"} {
+		if strings.Contains(output, absent) {
+			t.Fatalf("compact status should hide global or suppressed wording %q:\n%s", absent, output)
+		}
 	}
 }
 
@@ -483,19 +487,31 @@ func TestLoadStatusSummaryRetainsLatestExecutedMaintenanceDisclosure(t *testing.
 	if summary.LatestExecutedMaintenanceID != executed.MaintenanceID {
 		t.Fatalf("latest executed maintenance id = %q, want %q", summary.LatestExecutedMaintenanceID, executed.MaintenanceID)
 	}
+	if summary.LatestExecutedMaintenanceCreatedAt != executed.CreatedAt {
+		t.Fatalf(
+			"latest executed maintenance created_at = %q, want %q",
+			summary.LatestExecutedMaintenanceCreatedAt,
+			executed.CreatedAt,
+		)
+	}
 	if len(summary.ExecutedActions) != 1 {
 		t.Fatalf("executed actions = %#v", summary.ExecutedActions)
 	}
 
 	output := FormatStatusSignals(summary)
 	for _, want := range []string{
-		"AUTONOMOUS MAINTENANCE",
+		"HISTORICAL AUTONOMOUS MAINTENANCE",
+		executed.CreatedAt,
 		"haft overseer undo " + executed.MaintenanceID + " act-001",
-		"Later report-only drift",
+		"Scoped material-drift attention: 1 binding-sensitive item(s)",
+		"not a project-wide Work gate",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)
 		}
+	}
+	if strings.Contains(output, "Later report-only drift") {
+		t.Fatalf("compact status should not expose the raw globally blocking drift title:\n%s", output)
 	}
 }
 
@@ -526,7 +542,10 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 
 	output := FormatStatusSignals(summary)
 	for _, want := range []string{
-		"Material drift requires confirmation: 2 item(s)",
+		"Scoped material-drift attention: 2 binding-sensitive item(s)",
+		"not a project-wide Work gate",
+		"unrelated already-authorized Work continues",
+		"operator selection is required only for an affected use",
 		"haft overseer judgment --json --limit 20",
 		"haft overseer drain --dry-run --json",
 		"haft_refresh(action=\"scan\", verbose=true)",
@@ -536,14 +555,20 @@ func TestFormatStatusSignalsGroupsDriftSignals(t *testing.T) {
 			t.Fatalf("status signal output missing %q:\n%s", want, output)
 		}
 	}
-	for _, absent := range []string{"First decision", "Second decision", "haft overseer maintain --json"} {
+	for _, absent := range []string{
+		"First decision",
+		"Second decision",
+		"haft overseer maintain --json",
+		"needs operator review",
+		"requires confirmation",
+	} {
 		if strings.Contains(output, absent) {
 			t.Fatalf("status signal output should hide per-decision drift %q:\n%s", absent, output)
 		}
 	}
 }
 
-func TestFormatStatusSignalsGroupsMixedDriftSignalsAsOperatorReview(t *testing.T) {
+func TestFormatStatusSignalsGroupsMixedDriftSignalsAsScopedAttention(t *testing.T) {
 	summary := StatusSummary{
 		HasSignals: true,
 		Signals: []StatusSignal{
@@ -564,15 +589,22 @@ func TestFormatStatusSignalsGroupsMixedDriftSignalsAsOperatorReview(t *testing.T
 
 	output := FormatStatusSignals(summary)
 	for _, want := range []string{
-		"Material drift needs operator review: 1 confirmation item(s), 1 review item(s)",
-		"audit-only/resolved drift belongs in drill-downs",
+		"Scoped material-drift attention: 1 binding-sensitive item(s), 1 inspection item(s)",
+		"not a project-wide Work gate",
+		"operator selection is required only for an affected use",
+		"Audit-only/resolved drift belongs in drill-downs",
 		"haft overseer judgment --json --limit 20",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status signal output missing %q:\n%s", want, output)
 		}
 	}
-	for _, absent := range []string{"Material decision", "Unproven decision"} {
+	for _, absent := range []string{
+		"Material decision",
+		"Unproven decision",
+		"needs operator review",
+		"requires confirmation",
+	} {
 		if strings.Contains(output, absent) {
 			t.Fatalf("compact mixed drift signal should hide per-decision title %q:\n%s", absent, output)
 		}
@@ -684,9 +716,18 @@ func TestCompactStatusSummaryForDefaultGroupsSignalsForJSON(t *testing.T) {
 			t.Fatalf("compact JSON should hide per-decision signal %q:\n%s", absent, text)
 		}
 	}
-	for _, want := range []string{"compact_default", "Material drift requires confirmation: 2 item(s)", "Stale governance artifacts: 2 item(s) grouped"} {
+	for _, want := range []string{
+		"compact_default",
+		"Scoped material-drift attention: 2 binding-sensitive item(s)",
+		"Stale governance artifacts: 2 item(s) grouped",
+	} {
 		if !strings.Contains(text, want) {
 			t.Fatalf("compact JSON missing %q:\n%s", want, text)
+		}
+	}
+	for _, absent := range []string{"needs operator review", "requires confirmation", "project-wide operator gate"} {
+		if strings.Contains(text, absent) {
+			t.Fatalf("compact JSON contains global interruption wording %q:\n%s", absent, text)
 		}
 	}
 }

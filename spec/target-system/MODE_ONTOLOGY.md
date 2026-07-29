@@ -1,6 +1,22 @@
-# Mode Ontology
+# Mode Ontology (historical, superseded)
 
-> Reading order: 4 of N. Read after SCOPE_FREEZE.
+> **Status:** historical pre-v9 design record. This document is retained for
+> archaeology only and is not an active product or workflow contract.
+>
+> The active v9 source-native query contract is
+> [Source-native FPF Query with independent skills and reliance-gated memory](../../.haft/decisions/dec-20260716-318cdec5.md).
+> The separate active
+> [typed EntityOfConcern project-memory contract](../../.haft/decisions/dec-20260716-11f33e36.md)
+> governs typed memory. These are projected through the current `h-reason` and
+> manual `h-decide`/`h-commission` carriers. Haft capabilities are independent
+> entries selected by the current condition; their list, presentation order,
+> graph relations, and prior use do not prescribe a project work sequence. A
+> concrete MethodDescription or WorkPlan may state local order. Binding
+> DecisionRecords and WorkCommissions still require explicit operator/manual
+> authority.
+>
+> Everything below describes the retired global five-mode model and must not be
+> used to infer prerequisites, a current phase, or a next action.
 
 ## The 5 Engineering Modes
 

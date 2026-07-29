@@ -1,0 +1,5 @@
+{
+  "name": "@haft/typescript-parity-fixture",
+  "private": true,
+  "type": "module"
+}

@@ -35,6 +35,7 @@ func BuildStatusSummary(
 		summary.ExecutedActions = maintenance.Executed
 		if len(maintenance.Executed) > 0 {
 			summary.LatestExecutedMaintenanceID = maintenance.MaintenanceID
+			summary.LatestExecutedMaintenanceCreatedAt = maintenance.CreatedAt
 		}
 	}
 
@@ -101,14 +102,12 @@ func compactStatusSignalsForDefault(signals []StatusSignal) []StatusSignal {
 		}
 		otherSignals = append(otherSignals, signal)
 	}
-	if len(driftSignals) <= 1 && len(staleSignals) <= 1 {
+	if len(driftSignals) == 0 && len(staleSignals) <= 1 {
 		return signals
 	}
 
-	if len(driftSignals) > 1 {
+	if len(driftSignals) > 0 {
 		otherSignals = append(otherSignals, compactDriftStatusSignal(driftSignals))
-	} else {
-		otherSignals = append(otherSignals, driftSignals...)
 	}
 	if len(staleSignals) > 1 {
 		otherSignals = append(otherSignals, compactStaleStatusSignal(staleSignals))
@@ -153,18 +152,22 @@ func compactDriftStatusSignal(signals []StatusSignal) StatusSignal {
 		reviewRequired++
 	}
 
-	title := fmt.Sprintf("Drift review needed: %d item(s)", len(signals))
+	title := fmt.Sprintf("Scoped drift attention: %d item(s)", len(signals))
 	if confirmRequired > 0 && reviewRequired > 0 {
-		title = fmt.Sprintf("Material drift needs operator review: %d confirmation item(s), %d review item(s)", confirmRequired, reviewRequired)
+		title = fmt.Sprintf(
+			"Scoped material-drift attention: %d binding-sensitive item(s), %d inspection item(s)",
+			confirmRequired,
+			reviewRequired,
+		)
 	} else if confirmRequired > 0 {
-		title = fmt.Sprintf("Material drift requires confirmation: %d item(s)", confirmRequired)
+		title = fmt.Sprintf("Scoped material-drift attention: %d binding-sensitive item(s)", confirmRequired)
 	}
 
 	return StatusSignal{
 		Severity: severity,
 		Source:   maintenanceSourceDrift,
 		Title:    title,
-		Detail:   "compact status groups operator-actionable drift; audit-only/resolved drift belongs in drill-downs. Inspect exact items with `haft overseer judgment --json --limit 20`, `haft overseer drain --dry-run --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
+		Detail:   "compact status groups scoped drift attention; it is not a project-wide Work gate, and unrelated already-authorized Work continues. An operator selection is required only for an affected use that would mutate or rely on unresolved binding or authority. Audit-only/resolved drift belongs in drill-downs. Inspect exact items with `haft overseer judgment --json --limit 20`, `haft overseer drain --dry-run --json`, or `haft_refresh(action=\"scan\", verbose=true)`",
 	}
 }
 
@@ -205,8 +208,15 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 
 	var sb strings.Builder
 	maintenanceID := statusExecutedMaintenanceID(summary)
-	fmt.Fprintf(&sb, "- **AUTONOMOUS MAINTENANCE** %d action(s) in run `%s` (undo: `haft overseer undo %s <action-id>`):\n",
-		len(summary.ExecutedActions), maintenanceID, maintenanceID)
+	executedAt := statusExecutedMaintenanceCreatedAt(summary)
+	fmt.Fprintf(
+		&sb,
+		"- **HISTORICAL AUTONOMOUS MAINTENANCE** latest recorded executed run `%s`: %d action(s), recorded at `%s` (undo: `haft overseer undo %s <action-id>`):\n",
+		maintenanceID,
+		len(summary.ExecutedActions),
+		executedAt,
+		maintenanceID,
+	)
 	for i, action := range summary.ExecutedActions {
 		if i >= executedDisclosureLimit {
 			fmt.Fprintf(&sb, "  - … and %d more (inspect `haft overseer status --json`)\n", len(summary.ExecutedActions)-executedDisclosureLimit)
@@ -224,6 +234,14 @@ func formatExecutedDisclosure(summary StatusSummary) string {
 		fmt.Fprintf(&sb, "  - [%s] %s — %s `%s` (%s)\n", action.ID, action.Kind, title, action.DecisionRef, action.Outcome)
 	}
 	return sb.String()
+}
+
+func statusExecutedMaintenanceCreatedAt(summary StatusSummary) string {
+	createdAt := strings.TrimSpace(summary.LatestExecutedMaintenanceCreatedAt)
+	if createdAt != "" {
+		return createdAt
+	}
+	return "time unavailable"
 }
 
 func statusExecutedMaintenanceID(summary StatusSummary) string {

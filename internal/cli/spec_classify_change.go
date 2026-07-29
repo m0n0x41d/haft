@@ -98,6 +98,8 @@ func specCarrierChangeKind(path string, override string) string {
 	switch filepath.Base(path) {
 	case "target-system.md":
 		return "target-system"
+	case "software-system.md":
+		return "software-system"
 	case "enabling-system.md":
 		return "enabling-system"
 	case "term-map.md":

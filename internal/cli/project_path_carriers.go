@@ -65,6 +65,11 @@ func projectPathCarrierCandidates(homeDir string, projectRoot string) []projectP
 			Strategy: projectPathRepairLiteral,
 		},
 		{
+			Label:    "Grok project MCP",
+			Path:     filepath.Join(projectRoot, ".grok", "config.toml"),
+			Strategy: projectPathRepairLiteral,
+		},
+		{
 			Label:    "OpenCode project config",
 			Path:     filepath.Join(projectRoot, "opencode.json"),
 			Strategy: projectPathRepairLiteral,

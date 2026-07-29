@@ -2,11 +2,68 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 )
+
+func TestNewStoreAppliesConnectionPolicyToEveryPooledConnection(t *testing.T) {
+	store, err := NewStore(filepath.Join(t.TempDir(), "connection-policy.db"))
+	if err != nil {
+		t.Fatalf("NewStore: %v", err)
+	}
+	defer store.Close()
+
+	database := store.GetRawDB()
+	database.SetMaxOpenConns(3)
+	ctx := context.Background()
+	first := acquireSQLiteConnection(t, ctx, database, 1)
+	defer first.Close()
+	second := acquireSQLiteConnection(t, ctx, database, 2)
+	defer second.Close()
+	third := acquireSQLiteConnection(t, ctx, database, 3)
+	defer third.Close()
+}
+
+func acquireSQLiteConnection(
+	t *testing.T,
+	ctx context.Context,
+	database *sql.DB,
+	index int,
+) *sql.Conn {
+	t.Helper()
+	connection, err := database.Conn(ctx)
+	if err != nil {
+		t.Fatalf("acquire pooled connection %d: %v", index, err)
+	}
+	assertSQLiteConnectionPolicy(t, ctx, connection, index)
+	return connection
+}
+
+func assertSQLiteConnectionPolicy(
+	t *testing.T,
+	ctx context.Context,
+	connection *sql.Conn,
+	index int,
+) {
+	t.Helper()
+	var foreignKeys int
+	if err := connection.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&foreignKeys); err != nil {
+		t.Fatalf("read foreign_keys on connection %d: %v", index, err)
+	}
+	if foreignKeys != 1 {
+		t.Fatalf("connection %d foreign_keys = %d, want 1", index, foreignKeys)
+	}
+	var busyTimeout int
+	if err := connection.QueryRowContext(ctx, "PRAGMA busy_timeout").Scan(&busyTimeout); err != nil {
+		t.Fatalf("read busy_timeout on connection %d: %v", index, err)
+	}
+	if busyTimeout != 5000 {
+		t.Fatalf("connection %d busy_timeout = %d, want 5000", index, busyTimeout)
+	}
+}
 
 func TestStore_HolonCRUD(t *testing.T) {
 	tempDir := t.TempDir()

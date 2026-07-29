@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 )
 
 // TypeEmbed is a Go type and one type it embeds — an anonymous struct field or
@@ -19,8 +18,22 @@ type TypeEmbed struct {
 // (an anonymous field, or an embedded interface) as a (Type, Embedded) pair.
 // Shell (read + parse); pure data out. Unparseable files yield nothing.
 func ExtractGoEmbeds(projectRoot, relPath string) []TypeEmbed {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil
+	}
+	return ExtractGoEmbedsFromSource(source)
+}
+
+// ExtractGoEmbedsFromSource derives Go embedding relations from admitted bytes.
+func ExtractGoEmbedsFromSource(source AdmittedSource) []TypeEmbed {
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, filepath.Join(projectRoot, relPath), nil, 0)
+	af, err := parser.ParseFile(
+		fset,
+		source.Path().String(),
+		source.bytes(),
+		0,
+	)
 	if err != nil {
 		return nil
 	}

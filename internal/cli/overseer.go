@@ -20,9 +20,12 @@ import (
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/governance"
+	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectpath"
 	"github.com/m0n0x41d/haft/logger"
 )
 
@@ -804,12 +807,22 @@ func readReviewResultInput(path string) (overseer.ReviewResultInput, error) {
 	return input, nil
 }
 
-func overseerStatusPrefix(ctx context.Context, store *artifact.Store, projectRoot string) string {
+func overseerStatusPrefix(
+	ctx context.Context,
+	store *artifact.Store,
+	projectRoot string,
+	readiness canonicalProjectReadiness,
+) string {
 	summary, err := overseer.LoadStatusSummary(projectRoot)
 	if err != nil {
 		return ""
 	}
 	summary = overlayLiveDriftStatusSignal(ctx, store, projectRoot, summary)
+	summary = overlayLiveProfileSpecHealthStatusSignals(
+		ctx,
+		readiness,
+		summary,
+	)
 	return overseer.FormatStatusSignals(summary)
 }
 
@@ -1395,17 +1408,18 @@ func enrichOverseerChangedFiles(
 	projectRoot string,
 	changedFiles []overseer.ChangedFile,
 ) ([]overseer.ChangedFile, map[string]bool, error) {
-	allAffectedFiles, err := store.AllAffectedFiles(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("list affected files: %w", err)
-	}
-
 	policies := overseerPathPolicies(workflow)
+	graphStore := graph.NewStore(store.DB())
 	affectedDecisionIDs := make(map[string]bool)
 	enriched := make([]overseer.ChangedFile, 0, len(changedFiles))
 
 	for _, changedFile := range changedFiles {
-		decisions, err := decisionsForChangedPath(ctx, store, allAffectedFiles, changedFile.Path)
+		decisions, err := decisionsForChangedPath(
+			ctx,
+			store,
+			graphStore,
+			changedFile.Path,
+		)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1456,43 +1470,63 @@ func enrichOverseerChangedFiles(
 func decisionsForChangedPath(
 	ctx context.Context,
 	store *artifact.Store,
-	allAffectedFiles []artifact.AffectedFileRef,
+	graphStore *graph.Store,
 	changedPath string,
 ) ([]*artifact.Artifact, error) {
 	byID := make(map[string]*artifact.Artifact)
-
-	exactMatches, err := store.SearchByAffectedFile(ctx, changedPath)
+	canonical, err := projectpath.Parse(changedPath)
 	if err != nil {
-		return nil, fmt.Errorf("search affected file %s: %w", changedPath, err)
+		return nil, fmt.Errorf(
+			"classify changed path %q: %w",
+			changedPath,
+			err,
+		)
+	}
+	changedPath = canonical.String()
+
+	decisionHeads, err := store.ListByKind(
+		ctx,
+		artifact.KindDecisionRecord,
+		0,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list decisions for %s: %w", changedPath, err)
 	}
 
-	for _, match := range exactMatches {
-		decision, err := loadScopedDecision(ctx, store, match.Meta.ID)
-		if err != nil {
-			return nil, err
-		}
-		if decision != nil {
-			byID[decision.Meta.ID] = decision
-		}
-	}
-
-	for _, ref := range allAffectedFiles {
-		if ref.FilePath == changedPath {
-			continue
-		}
-
-		decision, err := loadScopedDecision(ctx, store, ref.ArtifactID)
+	for _, head := range decisionHeads {
+		decision, err := loadScopedDecision(ctx, store, head.Meta.ID)
 		if err != nil {
 			return nil, err
 		}
 		if decision == nil {
 			continue
 		}
-		fields := decodeDecisionFields(decision)
-		if fields.EffectiveGovernanceMode() != artifact.GovernanceModeModule {
+		policy, err := governance.ParseDecisionPathPolicy(
+			decision.StructuredData,
+		)
+		if err != nil || !policy.HasBindingInFile(canonical) {
 			continue
 		}
-		if !sameGovernedModule(ref.FilePath, changedPath) {
+		byID[decision.Meta.ID] = decision
+	}
+
+	moduleDecisions, err := graphStore.FindModuleDecisionsForFile(
+		ctx,
+		changedPath,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"resolve module context for %s: %w",
+			changedPath,
+			err,
+		)
+	}
+	for _, ref := range moduleDecisions {
+		decision, err := loadScopedDecision(ctx, store, ref.ID)
+		if err != nil {
+			return nil, err
+		}
+		if decision == nil {
 			continue
 		}
 		byID[decision.Meta.ID] = decision
@@ -1568,20 +1602,6 @@ func decodeDecisionFields(decision *artifact.Artifact) artifact.DecisionFields {
 	}
 	_ = json.Unmarshal([]byte(decision.StructuredData), &fields)
 	return fields
-}
-
-func sameGovernedModule(affectedPath string, changedPath string) bool {
-	affected := strings.Trim(affectedPath, "/")
-	changed := strings.Trim(changedPath, "/")
-	if affected == changed {
-		return true
-	}
-
-	dir := filepath.Dir(affected)
-	if dir == "." || dir == "" {
-		return false
-	}
-	return strings.HasPrefix(changed, dir+"/")
 }
 
 func overseerPathPolicies(workflow *project.Workflow) []overseer.PathPolicy {

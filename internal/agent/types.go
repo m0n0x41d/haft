@@ -205,8 +205,8 @@ type Session struct {
 	ParentID      string      `json:"parent_id,omitempty"` // non-empty = subagent child session
 	Title         string      `json:"title"`
 	Model         string      `json:"model"`
-	CurrentPhase  Phase       `json:"current_phase,omitempty"` // lemniscate phase state
-	Depth         Depth       `json:"depth,omitempty"`         // which phases to include
+	CurrentPhase  Phase       `json:"current_phase,omitempty"` // Deprecated: legacy wire field; never inferred or used for routing.
+	Depth         Depth       `json:"depth,omitempty"`         // Deprecated: legacy wire field; never selects capabilities.
 	Interaction   Interaction `json:"interaction,omitempty"`   // canonical execution mode; kept as interaction during migration
 	Yolo          bool        `json:"yolo,omitempty"`
 	ActiveCycleID string      `json:"active_cycle_id,omitempty"`
@@ -226,34 +226,35 @@ type ToolSchema struct {
 }
 
 // ---------------------------------------------------------------------------
-// Phase — lemniscate phase identity
+// Phase is a legacy wire value retained for decoding persisted sessions and
+// cycles created before v9.
 // ---------------------------------------------------------------------------
 
-// Phase identifies a lemniscate phase.
+// Deprecated: capability availability, artifact relations, and work order must
+// not be inferred from Phase.
 type Phase string
 
 const (
-	PhaseReady    Phase = ""         // resting state: cycle complete or awaiting first task
-	PhaseFramer   Phase = "framer"   // left cycle: characterize + frame the problem
-	PhaseExplorer Phase = "explorer" // right cycle: generate distinct variants
-	PhaseDecider  Phase = "decider"  // right cycle: compare + select with rationale
-	PhaseWorker   Phase = "worker"   // right cycle: implement the chosen approach
-	PhaseMeasure  Phase = "measure"  // right cycle: validate against acceptance
+	PhaseReady    Phase = ""
+	PhaseFramer   Phase = "framer"
+	PhaseExplorer Phase = "explorer"
+	PhaseDecider  Phase = "decider"
+	PhaseWorker   Phase = "worker"
+	PhaseMeasure  Phase = "measure"
 )
 
 // ---------------------------------------------------------------------------
-// Depth × Interaction — orthogonal session controls.
-// Depth determines WHICH phases to include. Interaction determines WHETHER
-// to pause between phases. These were previously conflated in LemniscateMode.
+// Legacy Depth and current interaction controls.
 // ---------------------------------------------------------------------------
 
-// Depth controls ceremony density within phases (all phases are always mandatory).
-// FPF B.5.2: explorer phase cannot be skipped. Ceremony varies in CONTENT, not STRUCTURE.
+// Depth is retained only to decode persisted pre-v9 sessions and cycles.
+//
+// Deprecated: it does not include, skip, or order capabilities.
 type Depth string
 
 const (
-	DepthStandard Depth = "standard" // all phases: frame → explore → decide → work → measure
-	DepthDeep     Depth = "deep"     // standard + parity enforcement, rich evidence reqs
+	DepthStandard Depth = "standard"
+	DepthDeep     Depth = "deep"
 )
 
 // ExecutionMode is the canonical session/runtime execution vocabulary.
@@ -262,7 +263,7 @@ type ExecutionMode string
 
 const (
 	ExecutionModeCheckpointed ExecutionMode = "checkpointed" // pause at checkpoints for user input
-	ExecutionModeAutonomous   ExecutionMode = "autonomous"   // auto-chain phases, no pauses
+	ExecutionModeAutonomous   ExecutionMode = "autonomous"   // perform delegated actions without checkpoints
 )
 
 const (
@@ -321,33 +322,6 @@ func (s *Session) SetExecutionMode(mode ExecutionMode) {
 }
 
 // ---------------------------------------------------------------------------
-// NavStatus — artifact completeness state for transition validation.
-// Values mirror artifact.DerivedStatus. Coordinator maps between them.
-// Defined here so phase.go stays pure L2 (no artifact import).
-// ---------------------------------------------------------------------------
-
-// NavStatus represents what artifacts exist, used by the transition gate.
-type NavStatus string
-
-const (
-	NavUnderframed NavStatus = "UNDERFRAMED"
-	NavFramed      NavStatus = "FRAMED"
-	NavExploring   NavStatus = "EXPLORING"
-	NavCompared    NavStatus = "COMPARED"
-	NavDecided     NavStatus = "DECIDED"
-	NavRefreshDue  NavStatus = "REFRESH_DUE"
-)
-
-// AgentDef defines an agent's behavior.
-// v2: single unified prompt, no phase pipeline. FPF enforced by tool guardrails.
-type AgentDef struct {
-	Name         string // agent name (e.g., "haft", "code")
-	Lemniscate   bool   // enables FPF cycle tracking (artifact binding, guardrails)
-	SystemPrompt string // unified agent prompt (replaces per-phase prompts)
-	MaxToolCalls int    // per-turn budget (0 = default 200)
-}
-
-// ---------------------------------------------------------------------------
 // Permission
 // ---------------------------------------------------------------------------
 
@@ -377,7 +351,8 @@ type ToolResult struct {
 }
 
 // ArtifactMeta carries structured artifact identity from tool execution.
-// The coordinator uses this to bind cycle refs — no string parsing.
+// Legacy cycle fields remain available to old hosts, but refs do not imply a
+// causal, temporal, or work-order relation.
 type ArtifactMeta struct {
 	Kind        string          // "problem" | "solution" | "decision" | "note" | "evidence"
 	ArtifactRef string          // "prob-20260329-004"
@@ -393,7 +368,9 @@ type ArtifactMeta struct {
 	MeasureVerdict string // "accepted" | "partial" | "failed"
 }
 
-// GovernanceMeta carries the framer's ceremony recommendation.
+// GovernanceMeta is retained for decoding pre-v9 tool results.
+//
+// Deprecated: no capability routing is derived from RecommendedDepth.
 type GovernanceMeta struct {
 	RecommendedDepth Depth
 	Rationale        string
@@ -406,10 +383,10 @@ func PlainResult(text string) ToolResult {
 }
 
 // ---------------------------------------------------------------------------
-// Cycle — first-class reasoning cycle entity (L0)
+// Cycle — legacy persisted compatibility entity
 // ---------------------------------------------------------------------------
 
-// CycleStatus tracks the lifecycle of a reasoning cycle.
+// CycleStatus is retained for persisted pre-v9 cycles.
 type CycleStatus string
 
 const (
@@ -418,9 +395,10 @@ const (
 	CycleAbandoned CycleStatus = "abandoned"
 )
 
-// Cycle is a single reasoning cycle within a session.
-// Binds artifact refs as they're created, tracks governance decisions,
-// and carries assurance metrics. Session.ActiveCycleID points here.
+// Cycle is retained for decoding and updating persisted pre-v9 cycle records.
+// This compatibility type must not be used to infer a mandatory project
+// workflow from refs, Phase, Depth, Status, or their storage order. Each ref
+// names only its stated artifact relation.
 type Cycle struct {
 	ID                   string         `json:"id"`
 	SessionID            string         `json:"session_id"`
@@ -430,8 +408,8 @@ type Cycle struct {
 	SelectedPortfolioRef string         `json:"selected_portfolio_ref,omitempty"`
 	SelectedVariantRef   string         `json:"selected_variant_ref,omitempty"`
 	DecisionRef          string         `json:"decision_ref,omitempty"`
-	Phase                Phase          `json:"phase"`
-	Depth                Depth          `json:"depth"`
+	Phase                Phase          `json:"phase"` // Deprecated: legacy wire field; not inferred.
+	Depth                Depth          `json:"depth"` // Deprecated: legacy wire field; not used for routing.
 	Status               CycleStatus    `json:"status"`
 	LineageRef           string         `json:"lineage_ref,omitempty"` // previous cycle (reframe after measure fail)
 	WeakestLink          string         `json:"weakest_link,omitempty"`
@@ -446,8 +424,9 @@ type Cycle struct {
 	SkipLog    []SkipEntry       `json:"skip_log,omitempty"`
 }
 
-// GovernanceEntry records a ceremony-level decision.
-// Who recommended what, who chose what, and what was skipped.
+// GovernanceEntry is a legacy persisted compatibility record.
+//
+// Deprecated: it must not be used to infer a current capability or work order.
 type GovernanceEntry struct {
 	Recommended   Depth       `json:"recommended"`
 	Chosen        Depth       `json:"chosen"`
@@ -457,31 +436,13 @@ type GovernanceEntry struct {
 	Timestamp     time.Time   `json:"timestamp"`
 }
 
-// SkipEntry records why a phase was skipped (FPF B.5.1 CC-B5.1.2).
+// SkipEntry is a legacy persisted compatibility record.
+//
+// Deprecated: v9 has no mandatory project phases to skip.
 type SkipEntry struct {
 	Phase            Phase  `json:"phase"`
 	Reason           string `json:"reason"`
 	AcceptedRisk     string `json:"accepted_risk"`
 	ResidualEvidence string `json:"residual_evidence"` // what evidence is still required
 	ReopenTrigger    string `json:"reopen_trigger"`    // what would trigger reopening
-}
-
-// Prediction is a testable claim emitted by the Decider.
-// Stored on the Decision artifact. Measure checks each one.
-type Prediction struct {
-	Claim      string `json:"claim"`
-	Observable string `json:"observable"`
-	Threshold  string `json:"threshold"`
-	Verdict    string `json:"verdict,omitempty"` // "" | "supported" | "refuted" | "inconclusive"
-}
-
-// PhaseSpec maps a runtime phase to FPF spec concepts.
-type PhaseSpec struct {
-	Phase            Phase    `json:"phase"`
-	FPFStage         string   `json:"fpf_stage"` // "Explore" | "Shape" | "Evidence" | "Operate"
-	ADIRole          string   `json:"adi_role"`  // "abduction" | "deduction" | "induction"
-	AllowedCreate    []string `json:"allowed_create"`
-	AllowedUpdate    []string `json:"allowed_update"`
-	CompletionSignal string   `json:"completion_signal"`
-	SkipDepths       []Depth  `json:"skip_depths"` // which depths allow skipping
 }

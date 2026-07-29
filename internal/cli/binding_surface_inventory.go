@@ -28,7 +28,13 @@ func bindingSurfaceInventory() []bindingSurfaceInventoryEntry {
 		{Tool: "haft_problem", Action: "frame", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_problem", Action: "characterize", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_problem", Action: "select", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
-		{Tool: "haft_problem", Action: "close", Class: bindingSurfaceLifecycleAuthorityMutation, Enforcement: bindingEnforcementMCPAllowedExistingArtifact},
+		{
+			Tool:        "haft_problem",
+			Action:      "close",
+			Class:       bindingSurfaceLifecycleAuthorityMutation,
+			Enforcement: bindingEnforcementMCPOperatorConfirmationRequired,
+			AllowedPath: "No MCP close path is available; use an operator-authorized problem lifecycle workflow.",
+		},
 		{Tool: "haft_solution", Action: "explore", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_solution", Action: "compare", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_solution", Action: "similar", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
@@ -90,6 +96,7 @@ func bindingSurfaceInventory() []bindingSurfaceInventoryEntry {
 		{Tool: "haft_commission", Action: "cancel", Class: bindingSurfaceLifecycleAuthorityMutation, Enforcement: bindingEnforcementMCPAllowedExistingArtifact},
 		{Tool: "haft_spec_section", Action: "lifecycle", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_spec_section", Action: "next_step", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
+		{Tool: "haft_spec_section", Action: "project", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{
 			Tool:        "haft_spec_section",
 			Action:      "approve",

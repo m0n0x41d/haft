@@ -1264,7 +1264,9 @@ defmodule OpenSleigh.Orchestrator do
   defp external_required_terminal_pass?(_entry, _verdict), do: false
 
   @spec entry_projection_policy(map()) :: WorkCommission.projection_policy()
-  defp entry_projection_policy(%{session: %{commission: %WorkCommission{projection_policy: policy}}}) do
+  defp entry_projection_policy(%{
+         session: %{commission: %WorkCommission{projection_policy: policy}}
+       }) do
     policy
   end
 

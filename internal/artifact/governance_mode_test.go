@@ -98,11 +98,12 @@ func TestBaseline_ExactModeSkipsModuleScopeManifests(t *testing.T) {
 
 	// Decide with GovernanceMode=exact.
 	a, _, err := Decide(ctx, store, haftDir, DecideInput{
-		SelectedTitle:   "Track login.go only",
-		WhySelected:     "this decision is specifically about login.go, not the whole auth package",
-		SelectionPolicy: "narrow scope; sibling files are not governed",
-		CounterArgument: "scope might widen later; force re-decide if so",
-		WeakestLink:     "future contributors may add files assuming module-level governance",
+		ProblemStatement: "The login-specific decision must not silently govern unrelated auth package files.",
+		SelectedTitle:    "Track login.go only",
+		WhySelected:      "this decision is specifically about login.go, not the whole auth package",
+		SelectionPolicy:  "narrow scope; sibling files are not governed",
+		CounterArgument:  "scope might widen later; force re-decide if so",
+		WeakestLink:      "future contributors may add files assuming module-level governance",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Module-level governance", Reason: "would silently capture sibling files as governed drift"},
 		},
@@ -155,11 +156,12 @@ func TestBaseline_ModuleModeBuildsScopeManifests(t *testing.T) {
 	}
 
 	a, _, err := Decide(ctx, store, haftDir, DecideInput{
-		SelectedTitle:   "Track billing module",
-		WhySelected:     "billing module is governed as a unit",
-		SelectionPolicy: "module-level governance preferred for cohesive subsystems",
-		CounterArgument: "may capture unrelated sibling additions as governed drift",
-		WeakestLink:     "module boundary is implicit, not declared",
+		ProblemStatement: "The billing decision must detect sibling files that join the governed module.",
+		SelectedTitle:    "Track billing module",
+		WhySelected:      "billing module is governed as a unit",
+		SelectionPolicy:  "module-level governance preferred for cohesive subsystems",
+		CounterArgument:  "may capture unrelated sibling additions as governed drift",
+		WeakestLink:      "module boundary is implicit, not declared",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Exact file tracking", Reason: "would miss new files that join the module"},
 		},

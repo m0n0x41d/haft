@@ -22,7 +22,7 @@ func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.
 		t.Fatal(err)
 	}
 
-	_, err = handleQuintProblem(ctx, store, haftDir, map[string]any{
+	_, _, err = handleQuintProblemWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":      "characterize",
 		"problem_ref": problem.Meta.ID,
 		"dimensions": []any{
@@ -56,7 +56,7 @@ func TestHandleQuintProblem_FramePersistsProblemType(t *testing.T) {
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	result, err := handleQuintProblem(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintProblemWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":       "frame",
 		"title":        "Search for a transport",
 		"problem_type": "search",
@@ -92,7 +92,7 @@ func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.
 	haftDir := t.TempDir()
 	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
 
-	result, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":        "compare",
 		"portfolio_ref": portfolio.Meta.ID,
 		"dimensions":    []any{"latency"},
@@ -129,7 +129,7 @@ func TestHandleQuintSolution_CompareAcceptsLegacyRecommendationRef(t *testing.T)
 	haftDir := t.TempDir()
 	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
 
-	_, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+	_, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":        "compare",
 		"portfolio_ref": portfolio.Meta.ID,
 		"dimensions":    []any{"latency"},
@@ -176,7 +176,7 @@ func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *tes
 	haftDir := t.TempDir()
 	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "deep")
 
-	result, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":        "compare",
 		"portfolio_ref": portfolio.Meta.ID,
 		"dimensions":    []any{"latency"},
@@ -214,7 +214,7 @@ func TestHandleQuintSolution_CompareRejectsDimensionFirstScoresWithShapeHint(t *
 	haftDir := t.TempDir()
 	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
 
-	_, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+	_, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":        "compare",
 		"portfolio_ref": portfolio.Meta.ID,
 		"dimensions":    []any{"latency"},

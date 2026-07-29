@@ -1,41 +1,27 @@
-Generate a solution portfolio for a framed problem.
+Generate 3-5 genuinely distinct candidates for the current question.
 
-Before substantive exploration, call `haft_query`:
+Retrieve current FPF source first. Inspect a known SourceID or UnitID with
+`haft_query(action="fpf", mode="inspect", identifier="...")`; otherwise use
+`mode="concern"` with the exploration question, then inspect the direct pattern
+body. Retrieval does not choose or rank a candidate.
 
-```json
-{
-  "action": "pattern_use",
-  "mode": "compact",
-  "query": "<operator concern>"
-}
-```
+- Work from an inline question, cue, accepted problem, or ProblemCard; do not
+  invent a ProblemCard merely to satisfy a sequence.
+- Make variants differ in kind, not only degree.
+- Give every variant a novelty marker, strengths, risks, and an explicit
+  weakest link. Keep a stepping stone only when it opens later search space.
+- Keep unresolved alternatives and return conditions visible.
 
-Skip only mechanical/status/exact-lookup requests where no FPF pattern choice is
-material. If `should_use_pattern=true` and exploration needs output-shape
-detail, ask for `mode="full"` before applying the returned pattern. PatternUse
-is advisory/read-only: not approval, not evidence, not a DecisionRecord, not a
-WorkCommission, not MethodPack, and not a gate. Do not inline the FPF catalog
-or route list in this prompt.
+Return candidates conversationally by default. Persist with
+`haft_solution(action="explore")` only on explicit save intent or when a named
+receiving use needs a durable portfolio. If the kernel needs a ProblemCard for
+that durable call and none exists, ask whether to materialize one; do not
+fabricate it.
 
-1. Confirm a ProblemCard exists (frame first via /h-frame if not).
-2. Generate 3-5 variants that differ in KIND, not degree. Directions to
-   force diversity: data-flow restructure, algorithmic alternative,
-   infrastructure swap, caching/batching, architectural extraction, workflow
-   restructure, stepping-stone.
-3. Each variant carries: title, description, novelty_marker, weakest_link
-   (what bounds quality — not the title repeated), stepping_stone flag with
-   basis, risks, strengths.
-4. Keep 1-2 stepping stones (weak on quality now, unlock future search
-   space) or state no_stepping_stone_rationale.
-5. Persist via the native `haft_solution` tool:
-
-```json
-{
-  "action": "explore",
-  "problem_ref": "<prob-...>",
-  "variants": [{ "title": "...", "weakest_link": "...", "novelty_marker": "...", "description": "...", "risks": ["..."], "strengths": ["..."], "stepping_stone": false }]
-}
-```
-
-6. Read kernel warnings (disguised duplicates, weak weakest-links) and
-   self-correct. Recommend /h-compare next if 2+ variants stand.
+For a typed portfolio, first save one non-binding candidate-description Note
+per option under the same exact `entity_ref` and `bounded_context_ref`. Pass
+each returned exact `Haft.ProjectRecordRef` as that variant's
+`project_record_ref`. Never derive a record ID from an artifact ID. If exact
+option records are unavailable, retain the legacy portfolio but report typed
+projection as underdetermined. Do not prescribe comparison as the next project
+phase.

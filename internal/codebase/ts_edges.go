@@ -2,12 +2,12 @@ package codebase
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 	"strings"
 
 	sitter "github.com/smacker/go-tree-sitter"
 	"github.com/smacker/go-tree-sitter/javascript"
+	"github.com/smacker/go-tree-sitter/typescript/tsx"
 	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
@@ -20,13 +20,16 @@ type heritageRel struct {
 	extends  bool
 }
 
-// tsGrammarForExt picks the tree-sitter grammar: TypeScript for .ts/.tsx/.mts,
-// JavaScript for .js/.jsx/.mjs. nil for anything else.
+// tsGrammarForExt picks the exact tree-sitter grammar for each JS/TS extension.
+// TSX must not use the plain TypeScript grammar: JSX syntax changes the tree and
+// silently loses declarations/calls when parsed with the wrong grammar.
 func tsGrammarForExt(ext string) *sitter.Language {
 	switch strings.ToLower(ext) {
-	case ".ts", ".tsx", ".mts":
+	case ".ts", ".mts", ".cts":
 		return typescript.GetLanguage()
-	case ".js", ".jsx", ".mjs":
+	case ".tsx":
+		return tsx.GetLanguage()
+	case ".js", ".jsx", ".mjs", ".cjs":
 		return javascript.GetLanguage()
 	}
 	return nil
@@ -125,23 +128,119 @@ func identChildren(clause *sitter.Node, content []byte) []string {
 // ResolveFileEdges makes JSTSLang an EdgeResolver. It emits two edge families:
 //   - `extends` / `implements` edges from the explicit JS/TS heritage clauses,
 //     resolved directory-locally (heuristic provenance — no import analysis);
-//   - `call` edges, resolved through relative-import analysis (file-local defs,
-//     named imports `{Foo}`, and namespaced `ns.foo()` calls) with the same
+//   - `call` edges, resolved through the project module/export model (file-local
+//     defs, default/named/namespace imports, barrels, aliases, and workspaces)
+//     with the same
 //     exactly-1-or-drop discipline (static provenance).
 //
-// A base or call that does not resolve to exactly one symbol is dropped, never
-// guessed. Default imports and instance-method calls (`obj.method()`) are left
-// unresolved — their target cannot be named soundly from the AST alone.
+// A base or call that does not resolve to exactly one symbol is retained as an
+// ambiguous/unresolved diagnostic, never guessed. Instance-method calls remain
+// unresolved until receiver facts prove their target.
 func (j *JSTSLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath string, symbols SymbolView) ([]CodeEdge, error) {
+	outcomes, err := j.ResolveFileEdgeOutcomes(ctx, projectRoot, relPath, symbols)
+	if err != nil {
+		return nil, err
+	}
+	edges, _ := PartitionEdgeResolutions(outcomes)
+	return edges, nil
+}
+
+const tsResolverVersion = "typescript-v2"
+
+// ResolveFileEdgeOutcomes is the authority-bearing TypeScript resolver path.
+// Resolved relations become edges; ambiguous and unresolved call sites remain
+// diagnostics. The legacy ResolveFileEdges method is only its edge projection.
+func (j *JSTSLang) ResolveFileEdgeOutcomes(ctx context.Context, projectRoot, relPath string, symbols SymbolView) ([]EdgeResolution, error) {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return j.ResolveAdmittedFileEdgeOutcomes(
+		ctx,
+		projectRoot,
+		source,
+		symbols,
+	)
+}
+
+func (j *JSTSLang) ResolveFileEdgeOutcomesWithProjectSnapshot(
+	ctx context.Context,
+	projectRoot string,
+	relPath string,
+	symbols SymbolView,
+	snapshot *projectIndexSnapshot,
+) ([]EdgeResolution, error) {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return j.ResolveAdmittedFileEdgeOutcomesWithProjectSnapshot(
+		ctx,
+		projectRoot,
+		source,
+		symbols,
+		snapshot,
+	)
+}
+
+func (j *JSTSLang) ResolveAdmittedFileEdgeOutcomes(
+	ctx context.Context,
+	projectRoot string,
+	source AdmittedSource,
+	symbols SymbolView,
+) ([]EdgeResolution, error) {
+	return j.resolveAdmittedFileEdgeOutcomes(
+		ctx,
+		projectRoot,
+		source,
+		symbols,
+		nil,
+	)
+}
+
+func (j *JSTSLang) ResolveAdmittedFileEdgeOutcomesWithProjectSnapshot(
+	ctx context.Context,
+	projectRoot string,
+	source AdmittedSource,
+	symbols SymbolView,
+	snapshot *projectIndexSnapshot,
+) ([]EdgeResolution, error) {
+	return j.resolveAdmittedFileEdgeOutcomes(
+		ctx,
+		projectRoot,
+		source,
+		symbols,
+		snapshot.typescript,
+	)
+}
+
+func (j *JSTSLang) resolveAdmittedFileEdgeOutcomes(
+	ctx context.Context,
+	projectRoot string,
+	source AdmittedSource,
+	symbols SymbolView,
+	snapshot *tsProjectSnapshot,
+) ([]EdgeResolution, error) {
+	relPath := source.Path().String()
 	lang := tsGrammarForExt(filepath.Ext(relPath))
 	if lang == nil {
 		return nil, nil
 	}
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
-	if err != nil {
-		return nil, nil
-	}
+	content := source.bytes()
+	sourceHash := "sha256:" + source.Digest()
+	return resolveTSContentEdgeOutcomes(ctx, projectRoot, relPath, content, sourceHash, lang, symbols, snapshot)
+}
 
+func resolveTSContentEdgeOutcomes(
+	ctx context.Context,
+	projectRoot string,
+	relPath string,
+	content []byte,
+	sourceHash string,
+	lang *sitter.Language,
+	symbols SymbolView,
+	snapshot *tsProjectSnapshot,
+) ([]EdgeResolution, error) {
 	// Parse the file ONCE; every extractor reads the shared tree.
 	parser := sitter.NewParser()
 	parser.SetLanguage(lang)
@@ -165,20 +264,93 @@ func (j *JSTSLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath st
 		s, _ := symbols.GetByName(ctx, name)
 		return s
 	}
-	imports := extractTSImports(root, content, filepath.Dir(relPath), loadTSProjectResolution(projectRoot))
+	projectResolution := loadTSProjectResolution(projectRoot)
+	var projectModel *tsProjectModel
+	if snapshot != nil {
+		projectResolution = snapshot.resolution
+		projectModel = snapshot.model
+	}
+	if projectModel == nil {
+		projectModel, err = loadTSProjectModel(
+			projectRoot,
+			projectResolution,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+	imports := extractTSImports(root, content, filepath.Dir(relPath), projectResolution)
+	imports.model = projectModel
 
-	var edges []CodeEdge
-	edges = append(edges, tsHeritageEdges(root, content, relPath, fileSyms, imports, lookup)...)
+	var outcomes []EdgeResolution
+	heritage := tsHeritageEdges(root, content, relPath, fileSyms, imports, lookup)
+	outcomes = append(outcomes, resolvedTSOutcomes(heritage, sourceHash, EdgeOriginHeritage)...)
 
-	calls, callbacks := extractTSCallsAndCallbacks(root, content, lang)
-	callEdges := resolveTSCallEdges(relPath, fileSyms, pkgSyms, calls, callbacks, imports, lookup)
-	edges = append(edges, callEdges...)
+	callAnalysis := extractTSCallAnalysis(root, content, lang)
+	callOutcomes := resolveTSCallOutcomes(
+		relPath,
+		fileSyms,
+		pkgSyms,
+		callAnalysis.calls,
+		callAnalysis.callbacks,
+		callAnalysis.receiverTypes,
+		imports,
+		lookup,
+		sourceHash,
+	)
+	callEdges, _ := PartitionEdgeResolutions(callOutcomes)
+	outcomes = append(outcomes, callOutcomes...)
+	referenceSites := extractTSRelationSites(root, content)
+	outcomes = append(outcomes, resolveTSReferenceOutcomes(relPath, fileSyms, referenceSites, imports, lookup, sourceHash)...)
 
 	// Intra-file EventEmitter dispatch: pair .on("e", h) with .emit("e").
-	regs, dispatches := extractTSEmitterSites(root, content, lang)
-	edges = append(edges, synthesizeEmitterEdges(relPath, fileSyms, regs, dispatches, edgePairs(callEdges))...)
+	emitter := synthesizeEmitterEdges(
+		relPath,
+		fileSyms,
+		callAnalysis.emitterRegisters,
+		callAnalysis.emitterDispatches,
+		edgePairs(callEdges),
+	)
+	outcomes = append(outcomes, resolvedTSOutcomes(emitter, sourceHash, EdgeOriginEmitterPair)...)
 
-	return dedupeEdges(edges), nil
+	return dedupeEdgeOutcomes(outcomes), nil
+}
+
+func resolvedTSOutcomes(edges []CodeEdge, sourceHash string, origin EdgeOrigin) []EdgeResolution {
+	outcomes := make([]EdgeResolution, 0, len(edges))
+	for _, edge := range edges {
+		edge.Origin = origin
+		edge.ResolverVersion = tsResolverVersion
+		edge.SourceSnapshotHash = sourceHash
+		if edge.Provenance == ProvenanceHeuristic {
+			edge.ResolutionMethod = ResolutionMethodHeuristic
+			edge.Confidence = ConfidenceLow
+		} else {
+			edge.ResolutionMethod = ResolutionMethodExactSymbol
+			edge.Confidence = ConfidenceHigh
+		}
+		outcomes = append(outcomes, ResolvedEdge{Edge: edge})
+	}
+	return outcomes
+}
+
+func dedupeEdgeOutcomes(outcomes []EdgeResolution) []EdgeResolution {
+	seenEdges := map[string]bool{}
+	deduped := make([]EdgeResolution, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		resolved, ok := outcome.(ResolvedEdge)
+		if !ok {
+			deduped = append(deduped, outcome)
+			continue
+		}
+		key := resolved.Edge.SrcID + "\x00" + resolved.Edge.DstID + "\x00" + string(resolved.Edge.Kind)
+		if seenEdges[key] {
+			continue
+		}
+		seenEdges[key] = true
+		deduped = append(deduped, outcome)
+	}
+	return deduped
 }
 
 // tsHeritageEdges resolves `extends` / `implements` edges from explicit heritage
@@ -237,11 +409,22 @@ func resolveTSBaseType(b string, fileByName map[string]CodeSymbol, imports tsImp
 	}
 	if imported {
 		var cands []CodeSymbol
-		for _, s := range lookup(bind.orig) {
-			if (s.Kind == "class" || s.Kind == "interface") && tsFileMatchesBase(s.FilePath, bind.base) {
-				cands = append(cands, s)
+		targets := make([]tsExportTarget, 0)
+		for _, base := range bind.bases {
+			if imports.model == nil {
+				targets = append(targets, tsExportTarget{fileBase: base, symbolName: bind.orig})
+				continue
+			}
+			targets = append(targets, imports.model.ResolveExport(base, bind.orig)...)
+		}
+		for _, target := range targets {
+			for _, symbol := range lookup(target.symbolName) {
+				if (symbol.Kind == "class" || symbol.Kind == "interface") && tsFileMatchesBase(symbol.FilePath, target.fileBase) {
+					cands = append(cands, symbol)
+				}
 			}
 		}
+		cands = dedupeCodeSymbols(cands)
 		if len(cands) != 1 {
 			return nil
 		}

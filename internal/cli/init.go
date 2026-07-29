@@ -1,8 +1,7 @@
 package cli
 
 import (
-	"database/sql"
-	"encoding/json"
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -10,12 +9,9 @@ import (
 	"strings"
 
 	"github.com/m0n0x41d/haft/db"
-	"github.com/m0n0x41d/haft/internal/method"
 	"github.com/m0n0x41d/haft/internal/overseer"
-	"github.com/m0n0x41d/haft/internal/project"
 
 	"github.com/spf13/cobra"
-	_ "modernc.org/sqlite"
 )
 
 var (
@@ -23,12 +19,19 @@ var (
 	initCursor                  bool
 	initGemini                  bool
 	initCodex                   bool
+	initAgents                  bool
+	initMCPOnly                 bool
 	initAir                     bool
 	initOpencode                bool
 	initHermes                  bool
+	initZed                     bool
+	initAgy                     bool
+	initGrok                    bool
 	initAll                     bool
+	initCoreOnly                bool
 	initLocal                   bool
 	initNoFileInstructions      bool
+	initScopeID                 string
 	initOverseer                bool
 	initOverseerReviewer        string
 	initOverseerReviewerCommand string
@@ -44,49 +47,88 @@ type initHostOptions struct {
 	air      bool
 	opencode bool
 	hermes   bool
+	zed      bool
+	agy      bool
 	pi       bool
+	grok     bool
 	all      bool
+}
+
+type initSyntaxError struct {
+	cause error
+}
+
+func (failure initSyntaxError) Error() string {
+	return failure.cause.Error() +
+		"\nRun 'haft init --help' for help."
+}
+
+func (failure initSyntaxError) Unwrap() error {
+	return failure.cause
 }
 
 var initCmd = &cobra.Command{
 	Use:   "init",
 	Short: "Initialize FPF project structure and MCP configuration",
+	Args:  validateInitPositionalArgs,
 	Long: `Initialize a new Haft project in the current directory.
 
+With no flags in an interactive terminal, this command opens a host
+multi-select. No host is preselected. With any explicit flag, the menu is
+skipped and the requested non-interactive initialization runs directly.
+Bare non-interactive invocation fails before writing anything.
+
 This command creates:
-  - .haft/ directory structure (knowledge base, evidence, decisions)
+  - Core .haft/ structure, project identity, config, and database
+  - Spec carriers and SWE MethodPack only when the admitted scope marks them Required
   - MCP configuration for selected host agents
-  - Slash commands / prompts / skills (global by default, or local with --local)
+  - Host-specific skills when the selected host owns them
+  - Independent .agents/skills publication when --agents is explicit
+  - Cleanup of legacy Haft slash commands and prompt files
   - Experimental legacy host configs when explicitly requested
 
 Examples:
-  haft init              # Claude, global commands (~/.claude/commands/)
-  haft init --local      # Claude, local commands (.claude/commands/)
-  haft init --codex      # Codex MCP + skills
+  haft init              # Interactive host multi-select (TTY only)
+  haft init --core-only  # Initialize/migrate only the project core
+  haft init --claude     # Claude MCP + global skills + CLAUDE.md instructions
+  haft init --claude --local # Claude MCP + project skills + CLAUDE.md
+  haft init --codex      # Codex MCP + global skills + AGENTS.md instructions
+  haft init --codex --mcp-only # Codex MCP configuration only
+  haft init --agents     # Global .agents/skills only
+  haft init --codex --agents # Codex full integration + .agents/skills
+  haft init --scope-id software # Select one exact admitted scope in a mixed project
   haft init --overseer   # Enable soft local overseer post-commit packet loop
   haft init --codex --overseer
   haft overseer init     # Enable overseer later, auto-detecting the project agent
-  haft init --opencode   # OpenCode MCP + commands (sst/opencode)
+  haft init --opencode   # OpenCode MCP + skills (sst/opencode)
   haft init --hermes     # Hermes MCP + external skills directory
+  haft init --zed        # Zed global MCP context server
+  haft init --agy        # Google Antigravity shared MCP config
   haft init --pi         # Pi — bundled @haft/pi package + .pi/settings.json entry
-  haft init --all        # Claude + Codex, global commands
+  haft init --grok       # Grok CLI project .grok/config.toml MCP + skills
+  haft init --all        # Full Claude + Codex integrations
   haft init --cursor     # Experimental Cursor config
   haft init --gemini     # Experimental Gemini CLI config
   haft init --air        # Experimental Air skill + Codex-compatible prompts/MCP`,
-	RunE: runInit,
+	RunE: runPublicInit,
 }
 
 func init() {
-	initCmd.Flags().BoolVar(&initClaude, "claude", false, "Configure for Claude Code")
+	initCmd.SetFlagErrorFunc(renderInitFlagSyntaxError)
+	initCmd.Flags().BoolVar(&initClaude, "claude", false, "Configure stable Claude Code integration")
 	initCmd.Flags().BoolVar(&initCursor, "cursor", false, "Configure experimental Cursor MCP")
 	initCmd.Flags().BoolVar(&initGemini, "gemini", false, "Configure experimental Gemini CLI MCP")
-	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure for Codex CLI")
-	initCmd.Flags().BoolVar(&initOpencode, "opencode", false, "Configure for OpenCode (sst/opencode) — writes opencode.json with the haft MCP server, installs slash commands under .opencode/commands/")
+	initCmd.Flags().BoolVar(&initCodex, "codex", false, "Configure stable Codex CLI integration")
+	initCmd.Flags().BoolVar(&initAgents, "agents", false, "Install the Haft skill bundle under .agents/skills")
+	initCmd.Flags().BoolVar(&initMCPOnly, "mcp-only", false, "Configure only MCP for explicitly selected hosts (compatibility mode)")
+	initCmd.Flags().BoolVar(&initOpencode, "opencode", false, "Configure for OpenCode (sst/opencode) — writes opencode.json with the Haft MCP server and installs skills")
 	initCmd.Flags().BoolVar(&initAir, "air", false, "Configure experimental JetBrains Air integration")
-	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure all supported host agents")
-	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install commands in project directory instead of global")
+	initCmd.Flags().BoolVar(&initAll, "all", false, "Configure all stable hosts (Claude + Codex)")
+	initCmd.Flags().BoolVar(&initCoreOnly, "core-only", false, "Initialize or migrate the Haft project core without host files")
+	initCmd.Flags().BoolVar(&initLocal, "local", false, "Install skills in the project directory instead of globally")
 	initCmd.Flags().BoolVar(&initNoFileInstructions, "no-file-instructions", false, "Skip installing/updating project instruction files")
 	initCmd.Flags().BoolVar(&initNoFileInstructions, "no-claude-md", false, "Deprecated alias for --no-file-instructions")
+	initCmd.Flags().StringVar(&initScopeID, "scope-id", "", "Exact admitted ScopeID when the canonical project profile has multiple scopes")
 	initCmd.Flags().BoolVar(&initOverseer, "overseer", false, "Install opt-in soft overseer post-commit hook and config")
 	initCmd.Flags().StringVar(&initOverseerReviewer, "overseer-reviewer", overseer.ReviewerAuto, "Overseer reviewer preset: auto, manual, command, codex, or claude")
 	initCmd.Flags().StringVar(&initOverseerReviewerCommand, "overseer-reviewer-command", "", "Override command used by overseer reviewer; receives HAFT_OVERSEER_* env vars")
@@ -97,310 +139,59 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 }
 
-func normalizeInitHostOptions(options initHostOptions) initHostOptions {
-	normalized := options
-	if normalized.all {
-		normalized.claude = true
-		normalized.codex = true
+func validateInitPositionalArgs(
+	_ *cobra.Command,
+	args []string,
+) error {
+	if len(args) == 0 {
+		return nil
 	}
-
-	hasHost := normalized.claude ||
-		normalized.cursor ||
-		normalized.gemini ||
-		normalized.codex ||
-		normalized.air ||
-		normalized.opencode ||
-		normalized.hermes ||
-		normalized.pi
-	if !hasHost {
-		normalized.claude = true
-	}
-
-	return normalized
+	received := strings.Join(args, " ")
+	cause := fmt.Errorf(
+		"haft init accepts no positional arguments: %q",
+		received,
+	)
+	return renderInitSyntaxError(cause)
 }
 
-func runInit(cmd *cobra.Command, args []string) error {
-	// Ensure global ~/.haft/ exists (migrates from ~/.quint-code/ if needed)
-	_ = project.EnsureDir()
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	haftDir := filepath.Join(cwd, ".haft")
-	oldQuintDir := filepath.Join(cwd, ".quint")
-
-	// Migration: rename .quint/ → .haft/ if old directory exists
-	if _, err := os.Stat(oldQuintDir); err == nil {
-		if _, err := os.Stat(haftDir); os.IsNotExist(err) {
-			if renameErr := os.Rename(oldQuintDir, haftDir); renameErr == nil {
-				fmt.Println("  ✓ Migrated .quint/ → .haft/")
-			}
-		}
-	}
-
-	_, haftExists := os.Stat(haftDir)
-
-	fmt.Println("Initializing Haft project...")
-
-	if err := createDirectoryStructure(haftDir); err != nil {
-		return fmt.Errorf("failed to create directory structure: %w", err)
-	}
-	if os.IsNotExist(haftExists) {
-		fmt.Println("  ✓ Created .haft/ directory structure")
-	} else {
-		fmt.Println("  ✓ .haft/ directory structure OK")
-	}
-
-	// Create or load project identity
-	projCfg, err := project.Create(haftDir, cwd)
-	if err != nil {
-		return fmt.Errorf("failed to create project identity: %w", err)
-	}
-	fmt.Printf("  ✓ Project ID: %s (%s)\n", projCfg.ID, projCfg.Name)
-
-	// Determine DB path — unified storage in ~/.haft/projects/{id}/
-	unifiedDBPath, err := projCfg.DBPath()
-	if err != nil {
-		return fmt.Errorf("failed to determine DB path: %w", err)
-	}
-
-	// Find the best existing DB: check local paths (old naming conventions)
-	var localDB string
-	for _, candidate := range []string{
-		filepath.Join(haftDir, "haft.db"),
-		filepath.Join(haftDir, "quint.db"),
-		filepath.Join(cwd, ".quint", "quint.db"),
-	} {
-		if info, err := os.Stat(candidate); err == nil && info.Size() > 4096 {
-			localDB = candidate
-			break
-		}
-	}
-
-	unifiedInfo, _ := os.Stat(unifiedDBPath)
-	unifiedEmpty := unifiedInfo == nil || isDBEmpty(unifiedDBPath)
-
-	if localDB != "" && localDB != unifiedDBPath && unifiedEmpty {
-		// Migrate local DB to unified storage
-		if err := copyFile(localDB, unifiedDBPath); err != nil {
-			return fmt.Errorf("failed to migrate database: %w", err)
-		}
-		fmt.Printf("  ✓ Migrated database from %s\n", filepath.Base(localDB))
-		addToGitignore(haftDir, "haft.db")
-		addToGitignore(haftDir, "quint.db")
-	} else if unifiedInfo == nil {
-		// Fresh init — create DB at unified location
-		if err := initializeDatabase(unifiedDBPath); err != nil {
-			return fmt.Errorf("failed to initialize database: %w", err)
-		}
-		fmt.Println("  ✓ Initialized database")
-	} else {
-		// DB already exists at unified location — run migrations
-		if err := initializeDatabase(unifiedDBPath); err != nil {
-			return fmt.Errorf("failed to update database: %w", err)
-		}
-		fmt.Println("  ✓ Database OK")
-	}
-
-	hosts := normalizeInitHostOptions(initHostOptions{
-		claude:   initClaude,
-		cursor:   initCursor,
-		gemini:   initGemini,
-		codex:    initCodex,
-		air:      initAir,
-		opencode: initOpencode,
-		hermes:   initHermes,
-		pi:       initPi,
-		all:      initAll,
-	})
-
-	// Always use bare "haft" — let PATH resolve.
-	// Never hardcode absolute path (breaks when binary moves or is rebuilt).
-	binaryPath := "haft"
-
-	if initOverseer || initOverseerWantsConfig() {
-		factory := func() (overseer.Config, error) {
-			return buildOverseerConfigForProject(cwd, overseerSetupOptions{
-				reviewer:     initOverseerReviewer,
-				command:      initOverseerReviewerCommand,
-				reviewOnHook: initOverseerReviewOnHook,
-				timeout:      initOverseerReviewTimeout,
-				hosts:        hosts,
-			})
-		}
-		if result, err := configureOverseer(cwd, binaryPath, factory); err != nil {
-			fmt.Printf("  ⚠ Failed to configure overseer: %v\n", err)
-		} else {
-			fmt.Println("  ✓ Wrote overseer config (.haft/overseer/config.yaml)")
-			if result.Skipped {
-				fmt.Printf("  ⚠ Skipped overseer post-commit hook: %s\n", result.Reason)
-			} else if result.Updated {
-				fmt.Println("  ✓ Updated overseer post-commit hook (.git/hooks/post-commit)")
-			} else {
-				fmt.Println("  ✓ Installed overseer post-commit hook (.git/hooks/post-commit)")
-			}
-		}
-	}
-
-	if hosts.claude {
-		if err := configureMCPClaude(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure Claude Code MCP: %v\n", err)
-		} else {
-			fmt.Println("  ✓ Configured MCP for Claude Code (.mcp.json)")
-		}
-		if destPath, removed := cleanupLegacySlashCommands(cwd, "claude", initLocal); removed > 0 {
-			fmt.Printf("  ✓ Removed %d legacy slash commands (%s)\n", removed, destPath)
-		}
-		if skillPath, count, err := installSkill("claude", initLocal, cwd); err != nil {
-			fmt.Printf("  ⚠ Failed to install skills: %v\n", err)
-		} else if skillPath != "" {
-			fmt.Printf("  ✓ Installed %d skills (%s)\n", count, skillPath)
-		}
-	}
-
-	if hosts.cursor {
-		if err := configureMCPCursor(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure Cursor MCP: %v\n", err)
-		} else {
-			fmt.Println("  ✓ Configured MCP for Cursor (.cursor/mcp.json)")
-			fmt.Println("    Note: Make sure haft MCP is enabled in Cursor settings")
-		}
-		if destPath, removed := cleanupLegacySlashCommands(cwd, "cursor", initLocal); removed > 0 {
-			fmt.Printf("  ✓ Removed %d legacy slash commands (%s)\n", removed, destPath)
-		}
-		if skillPath, count, err := installSkill("cursor", initLocal, cwd); err != nil {
-			fmt.Printf("  ⚠ Failed to install skills: %v\n", err)
-		} else if skillPath != "" {
-			fmt.Printf("  ✓ Installed %d skills (%s)\n", count, skillPath)
-		}
-	}
-
-	if hosts.gemini {
-		if err := configureMCPGemini(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure Gemini CLI MCP: %v\n", err)
-		} else {
-			fmt.Printf("  ✓ Configured MCP for Gemini CLI (project: %s)\n", cwd)
-		}
-	}
-
-	if hosts.codex || hosts.air {
-		targetName := "Codex CLI"
-		switch {
-		case hosts.codex && hosts.air:
-			targetName = "Codex CLI / Air"
-		case hosts.air:
-			targetName = "Air"
-		}
-
-		if err := configureMCPCodex(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure %s MCP: %v\n", targetName, err)
-		} else {
-			fmt.Printf("  ✓ Configured MCP for %s (project: %s)\n", targetName, cwd)
-		}
-
-		if hosts.codex {
-			if !hosts.air {
-				if promptPath, removed, err := cleanupCodexPromptCommands(); err != nil {
-					fmt.Printf("  ⚠ Failed to remove deprecated Codex prompts: %v\n", err)
-				} else if removed > 0 {
-					fmt.Printf("  ✓ Removed %d deprecated Codex prompts (%s)\n", removed, promptPath)
-				}
-			}
-			if skillPath, count, err := installCodexSkills(cwd, initLocal); err != nil {
-				fmt.Printf("  ⚠ Failed to install Codex skills: %v\n", err)
-			} else {
-				fmt.Printf("  ✓ Installed %d Codex skills (%s)\n", count, skillPath)
-				fmt.Println("    Note: $h-frame/$h-diagnose/$h-explore/$h-compare/$h-verify auto-trigger; $h-decide and $h-commission are explicit-only")
-			}
-		}
-		if hosts.air {
-			// Air currently uses the same Codex prompt/MCP bootstrap.
-			if destPath, removed := cleanupLegacySlashCommands(cwd, "codex", false); removed > 0 {
-				fmt.Printf("  ✓ Removed %d legacy Air prompts (%s)\n", removed, destPath)
-			}
-			if skillPath, count, err := installSkill("air", true, cwd); err != nil {
-				fmt.Printf("  ⚠ Failed to install Air skills: %v\n", err)
-			} else if skillPath != "" {
-				fmt.Printf("  ✓ Installed %d Air skills (%s)\n", count, skillPath)
-			}
-		}
-	}
-
-	if hosts.opencode {
-		if err := configureMCPOpencode(cwd, binaryPath); err != nil {
-			fmt.Printf("  ⚠ Failed to configure OpenCode MCP: %v\n", err)
-		} else {
-			fmt.Printf("  ✓ Configured MCP for OpenCode (opencode.json, project: %s)\n", cwd)
-		}
-		if destPath, removed := cleanupLegacySlashCommands(cwd, "opencode", initLocal); removed > 0 {
-			fmt.Printf("  ✓ Removed %d legacy OpenCode commands (%s)\n", removed, destPath)
-		}
-		if skillPath, count, err := installSkill("opencode", initLocal, cwd); err != nil {
-			fmt.Printf("  ⚠ Failed to install skills: %v\n", err)
-		} else if skillPath != "" {
-			fmt.Printf("  ✓ Installed %d skills (%s)\n", count, skillPath)
-		}
-	}
-
-	if hosts.hermes {
-		runInitHermes(cwd, binaryPath)
-	}
-
-	if hosts.pi {
-		runInitPi(cwd)
-	}
-
-	if !initNoFileInstructions && hosts.claude {
-		if path, action, err := installClaudeMD(cwd); err != nil {
-			fmt.Printf("  ⚠ Failed to install CLAUDE.md haft section: %v\n", err)
-		} else {
-			relPath := path
-			if rel, relErr := filepath.Rel(cwd, path); relErr == nil {
-				relPath = rel
-			}
-			switch action {
-			case claudeMDCreated:
-				fmt.Printf("  ✓ Created CLAUDE.md with haft section (%s)\n", relPath)
-			case claudeMDUpdated:
-				fmt.Printf("  ✓ Updated CLAUDE.md haft section (%s)\n", relPath)
-			case claudeMDAppended:
-				fmt.Printf("  ✓ Appended haft section to existing CLAUDE.md (%s)\n", relPath)
-			case claudeMDUnchanged:
-				fmt.Printf("  ✓ CLAUDE.md haft section OK (%s)\n", relPath)
-			}
-		}
-	}
-
-	fmt.Println("\nInitialization complete!")
-
-	// Check if project already has artifacts
-	hasArtifacts := false
-	if database, err := db.NewStore(unifiedDBPath); err == nil {
-		var count int
-		if err := database.GetRawDB().QueryRow("SELECT COUNT(*) FROM artifacts").Scan(&count); err == nil && count > 0 {
-			hasArtifacts = true
-		}
-		_ = database.Close()
-	}
-
-	if hasArtifacts {
-		fmt.Println("Use /h-status to see active decisions and problems.")
-	} else if detectBrownfield(cwd) {
-		fmt.Println("\nThis looks like an existing project. Run /h-spec to follow")
-		fmt.Println("the typed spec lifecycle. /h-onboard remains a bootstrap alias.")
-	} else {
-		fmt.Println("Use /h-note for micro-decisions, /h-frame to start framing a problem.")
-	}
-	return nil
+func renderInitFlagSyntaxError(
+	_ *cobra.Command,
+	cause error,
+) error {
+	return renderInitSyntaxError(cause)
 }
 
-func initOverseerWantsConfig() bool {
-	reviewer := strings.TrimSpace(initOverseerReviewer)
-	return strings.TrimSpace(initOverseerReviewerCommand) != "" ||
-		reviewer != "" && reviewer != overseer.ReviewerManual && reviewer != overseer.ReviewerAuto ||
-		initOverseerReviewOnHook
+func renderInitSyntaxError(cause error) error {
+	return initSyntaxError{cause: cause}
+}
+
+func hasInitHost(options initHostOptions) bool {
+	return options.claude ||
+		options.cursor ||
+		options.gemini ||
+		options.codex ||
+		options.air ||
+		options.opencode ||
+		options.hermes ||
+		options.zed ||
+		options.agy ||
+		options.pi ||
+		options.grok ||
+		options.all
+}
+
+func initCommandContext(cmd *cobra.Command) context.Context {
+	if cmd == nil || cmd.Context() == nil {
+		return context.Background()
+	}
+	return cmd.Context()
+}
+
+func initOutputWriter(cmd *cobra.Command) io.Writer {
+	if cmd == nil {
+		return os.Stdout
+	}
+	return cmd.OutOrStdout()
 }
 
 type overseerSetupOptions struct {
@@ -448,15 +239,6 @@ func pathExists(path string) bool {
 	return err == nil
 }
 
-func configureOverseer(
-	projectRoot string,
-	binaryPath string,
-	configFactory func() (overseer.Config, error),
-) (overseer.HookInstallResult, error) {
-	_, result, err := configureOverseerWithConfig(projectRoot, binaryPath, configFactory)
-	return result, err
-}
-
 func configureOverseerWithConfig(
 	projectRoot string,
 	binaryPath string,
@@ -473,134 +255,6 @@ func configureOverseerWithConfig(
 	return config, result, err
 }
 
-// isDBEmpty checks if a SQLite DB has zero artifacts.
-func isDBEmpty(dbPath string) bool {
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		return true
-	}
-	defer db.Close()
-	var count int
-	if err := db.QueryRow("SELECT COUNT(*) FROM artifacts").Scan(&count); err != nil {
-		return true // table doesn't exist = empty
-	}
-	return count == 0
-}
-
-func copyFile(src, dst string) error {
-	in, err := os.Open(src)
-	if err != nil {
-		return err
-	}
-	defer in.Close()
-
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return err
-	}
-	defer out.Close()
-
-	if _, err := io.Copy(out, in); err != nil {
-		return err
-	}
-	return out.Sync()
-}
-
-func addToGitignore(haftDir, entry string) {
-	gitignorePath := filepath.Join(haftDir, ".gitignore")
-	content, _ := os.ReadFile(gitignorePath)
-
-	// Check if already present
-	if strings.Contains(string(content), entry) {
-		return
-	}
-
-	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
-	if err != nil {
-		return
-	}
-	defer f.Close()
-
-	if len(content) > 0 && content[len(content)-1] != '\n' {
-		_, _ = f.WriteString("\n")
-	}
-	_, _ = f.WriteString(entry + "\n")
-}
-
-func detectBrownfield(projectRoot string) bool {
-	// Check for git history with meaningful commits
-	gitDir := filepath.Join(projectRoot, ".git")
-	if _, err := os.Stat(gitDir); os.IsNotExist(err) {
-		return false
-	}
-
-	// Check for code indicators
-	codeIndicators := []string{
-		"go.mod", "package.json", "pyproject.toml", "Cargo.toml",
-		"pom.xml", "build.gradle", "Makefile", "CMakeLists.txt",
-	}
-	for _, f := range codeIndicators {
-		if _, err := os.Stat(filepath.Join(projectRoot, f)); err == nil {
-			return true
-		}
-	}
-
-	// Check for docs that suggest existing knowledge
-	docIndicators := []string{
-		"README.md", "docs", "adr", "ARCHITECTURE.md",
-	}
-	for _, f := range docIndicators {
-		if _, err := os.Stat(filepath.Join(projectRoot, f)); err == nil {
-			return true
-		}
-	}
-
-	return false
-}
-
-func createDirectoryStructure(haftDir string) error {
-	// v5 artifact directories — created minimal, expanded on demand
-	dirs := []string{
-		"notes",
-		"problems",
-		"solutions",
-		"decisions",
-		"evidence",
-		"refresh",
-	}
-
-	for _, d := range dirs {
-		path := filepath.Join(haftDir, d)
-		if err := os.MkdirAll(path, 0755); err != nil {
-			return err
-		}
-		gitkeep := filepath.Join(path, ".gitkeep")
-		if err := os.WriteFile(gitkeep, []byte(""), 0644); err != nil {
-			return err
-		}
-	}
-
-	if err := project.EnsureSpecCarriers(haftDir); err != nil {
-		return err
-	}
-	if err := method.InstallDefaultCatalog(haftDir); err != nil {
-		return err
-	}
-
-	workflowPath := project.WorkflowPath(haftDir)
-	if _, err := os.Stat(workflowPath); os.IsNotExist(err) {
-		if err := os.WriteFile(workflowPath, []byte(project.ExampleWorkflowMarkdown()), 0o644); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func initializeDatabase(dbPath string) error {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		return err
@@ -613,206 +267,8 @@ func initializeDatabase(dbPath string) error {
 	return nil
 }
 
-type MCPConfig struct {
-	MCPServers map[string]MCPServer `json:"mcpServers"`
-}
-
-type MCPServer struct {
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Cwd     string            `json:"cwd,omitempty"`
-	Env     map[string]string `json:"env,omitempty"`
-	Timeout int               `json:"timeout,omitempty"`
-}
-
 const (
 	claudeProjectRootEnv = "${PWD:-.}"
 	cursorProjectRootEnv = "${workspaceFolder}"
 	codexProjectRootEnv  = "."
 )
-
-func mergeMCPConfig(configPath, binaryPath, _ string, extraFields map[string]interface{}) error {
-	var config MCPConfig
-
-	if data, err := os.ReadFile(configPath); err == nil {
-		if err := json.Unmarshal(data, &config); err != nil {
-			return fmt.Errorf("existing config at %s is not valid JSON: %w", configPath, err)
-		}
-	}
-
-	if config.MCPServers == nil {
-		config.MCPServers = make(map[string]MCPServer)
-	}
-
-	server := MCPServer{
-		Command: binaryPath,
-		Args:    []string{"serve"},
-	}
-
-	if timeout, ok := extraFields["timeout"].(int); ok {
-		server.Timeout = timeout
-	}
-	if env, ok := extraFields["env"].(map[string]string); ok {
-		server.Env = env
-	}
-	if cwd, ok := extraFields["cwd"].(string); ok {
-		server.Cwd = cwd
-	}
-
-	// Remove old quint-code key if it exists (migration)
-	delete(config.MCPServers, "quint-code")
-
-	config.MCPServers["haft"] = server
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(configPath, data, 0644)
-}
-
-func configureMCPClaude(projectRoot, binaryPath string) error {
-	configPath := filepath.Join(projectRoot, ".mcp.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
-		"env": projectEnvForRoot(projectRoot, claudeProjectRootEnv),
-	})
-}
-
-func configureMCPCursor(projectRoot, binaryPath string) error {
-	configPath := filepath.Join(projectRoot, ".cursor", "mcp.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
-		"env": projectEnvForRoot(projectRoot, cursorProjectRootEnv),
-	})
-}
-
-func configureMCPGemini(projectRoot, binaryPath string) error {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return err
-	}
-	configPath := filepath.Join(homeDir, ".gemini", "settings.json")
-	return mergeMCPConfig(configPath, binaryPath, projectRoot, map[string]interface{}{
-		"timeout": 30000,
-		"cwd":     projectRoot,
-		"env":     projectEnvForRoot(projectRoot, projectRoot),
-	})
-}
-
-func configureMCPCodex(projectRoot, binaryPath string) error {
-	configPath := filepath.Join(projectRoot, ".codex", "config.toml")
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
-		return err
-	}
-
-	existing := ""
-	if data, err := os.ReadFile(configPath); err == nil {
-		existing = string(data)
-	}
-
-	envLines := []string{
-		fmt.Sprintf(`HAFT_PROJECT_ROOT = "%s"`, codexProjectRootEnv),
-	}
-	if expectedProjectID := expectedProjectIDForRoot(projectRoot); expectedProjectID != "" {
-		envLines = append(envLines, fmt.Sprintf(`HAFT_EXPECTED_PROJECT_ID = "%s"`, expectedProjectID))
-	}
-
-	tomlSection := fmt.Sprintf(`[mcp_servers.haft]
-command = "%s"
-args = ["serve"]
-startup_timeout_sec = 10
-tool_timeout_sec = 60
-
-[mcp_servers.haft.env]
-%s
-`, binaryPath, strings.Join(envLines, "\n"))
-
-	// Strip all existing haft and quint-code MCP sections
-	existing = removeTomlSections(existing, "mcp_servers.quint-code")
-	existing = removeTomlSections(existing, "mcp_servers.haft")
-
-	trimmed := strings.TrimRight(existing, " \t\n")
-	if trimmed == "" {
-		return os.WriteFile(configPath, []byte(tomlSection), 0644)
-	}
-
-	return os.WriteFile(configPath, []byte(trimmed+"\n\n"+tomlSection), 0644)
-}
-
-// configureMCPOpencode merges a `mcp.haft` block into opencode.json at the
-// project root. OpenCode's MCP schema is JSON-based and uses
-// `{type, command, environment, enabled}` fields per server (per
-// https://opencode.ai/docs/mcp-servers). Existing keys outside `mcp.haft`
-// are preserved; the legacy `mcp.quint-code` key is removed if present.
-func configureMCPOpencode(projectRoot, binaryPath string) error {
-	configPath := filepath.Join(projectRoot, "opencode.json")
-
-	config := map[string]any{}
-	if data, err := os.ReadFile(configPath); err == nil {
-		if jsonErr := json.Unmarshal(data, &config); jsonErr != nil {
-			// Existing file is malformed JSON — refuse to clobber it
-			// silently. Operator must hand-resolve.
-			return fmt.Errorf("opencode.json exists but is not valid JSON; refusing to overwrite: %w", jsonErr)
-		}
-	} else if !os.IsNotExist(err) {
-		return err
-	}
-
-	if _, ok := config["$schema"]; !ok {
-		config["$schema"] = "https://opencode.ai/config.json"
-	}
-
-	mcpRaw, _ := config["mcp"].(map[string]any)
-	if mcpRaw == nil {
-		mcpRaw = map[string]any{}
-	}
-	delete(mcpRaw, "quint-code")
-
-	mcpRaw["haft"] = map[string]any{
-		"type":        "local",
-		"command":     []string{binaryPath, "serve"},
-		"environment": projectEnvForRoot(projectRoot, projectRoot),
-		"enabled":     true,
-	}
-	config["mcp"] = mcpRaw
-
-	data, err := json.MarshalIndent(config, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(configPath, append(data, '\n'), 0644)
-}
-
-// removeTomlSections removes all TOML sections whose header starts with the
-// given prefix (e.g. "mcp_servers.haft" matches both [mcp_servers.haft] and
-// [mcp_servers.haft.env]). Each section spans from its header to the next
-// section header or EOF.
-func removeTomlSections(content, prefix string) string {
-	lines := strings.Split(content, "\n")
-	var result []string
-	skipping := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "[") && strings.Contains(trimmed, "]") {
-			// Extract section name between first [ and first ]
-			name := trimmed[1:strings.Index(trimmed, "]")]
-			if name == prefix || strings.HasPrefix(name, prefix+".") {
-				skipping = true
-				continue
-			}
-			skipping = false
-		}
-		if !skipping {
-			result = append(result, line)
-		}
-	}
-
-	return strings.Join(result, "\n")
-}

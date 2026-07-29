@@ -262,6 +262,196 @@ func TestDecide_FullDRR(t *testing.T) {
 	}
 }
 
+func TestDecide_DirectProblemStatementRendersWithoutProblemRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	problemStatement := "The compiled PatternUse router hides source provenance and imposes a project order that FPF does not prescribe."
+
+	input := completeDecision(DecideInput{
+		ProblemStatement: problemStatement,
+		SelectedTitle:    "Use source-native FPF Query",
+		WhySelected:      "The agent can inspect author-owned navigation layers without a shadow ontology.",
+		SelectionPolicy:  "Prefer source provenance and no hidden pattern selection.",
+		WhyNotOthers: []RejectionReason{{
+			Variant: "Keep compiled PatternUse",
+			Reason:  "Its authored routes can drift from the FPF source.",
+		}},
+		ChoiceResult: &ChoiceResult{
+			SubjectRef: "operator",
+			OptionSet:  []string{"Use source-native FPF Query", "Keep compiled PatternUse"},
+			ChoiceRule: "Prefer source provenance and no hidden pattern selection.",
+			NextMove:   ChoiceNextMoveChooseNow,
+			VariantRef: "Use source-native FPF Query",
+			Reason:     "The agent can inspect author-owned navigation layers without a shadow ontology.",
+		},
+	})
+
+	decision, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(decision.Body, "**Problem statement:** "+problemStatement) {
+		t.Fatalf("direct decision did not render its inline Problem Frame:\n%s", decision.Body)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.ProblemStatement != problemStatement {
+		t.Fatalf("problem_statement = %q, want %q", fields.ProblemStatement, problemStatement)
+	}
+	if len(fields.ProblemRefs) != 0 {
+		t.Fatalf("direct decision invented problem refs: %#v", fields.ProblemRefs)
+	}
+	if fields.ChoiceResult == nil || !reflect.DeepEqual(fields.ChoiceResult.OptionSet, input.ChoiceResult.OptionSet) {
+		t.Fatalf("choice_result.option_set = %#v, want %#v", fields.ChoiceResult, input.ChoiceResult.OptionSet)
+	}
+}
+
+func TestDecide_RejectsMissingProblemBasis(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	input := completeDecision(DecideInput{
+		SelectedTitle: "Use source-native FPF Query",
+		WhySelected:   "The source-native path removes the shadow router.",
+	})
+	input.ProblemStatement = ""
+
+	_, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err == nil {
+		t.Fatal("expected a decision without problem refs or problem_statement to fail")
+	}
+	if !strings.Contains(err.Error(), "problem_statement") {
+		t.Fatalf("missing direct problem-basis guidance in error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "problem_ref/problem_refs") {
+		t.Fatalf("error does not explain the linked ProblemCard alternative: %v", err)
+	}
+}
+
+func TestDecide_RejectsChoiceCorrelationDriftBeforePersistence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	input := completeDecision(DecideInput{
+		ProblemStatement: "Duplicated decision fields can disagree before projection.",
+		SelectedTitle:    "Keep one canonical choice",
+		WhySelected:      "The persisted decision and its choice projection must agree.",
+		SelectionPolicy:  "Prefer one canonical decision representation.",
+		CounterArgument:  "Correlation checks add validation work at the boundary.",
+		WeakestLink:      "A new duplicated field could escape the correlation set.",
+		WhyNotOthers:     []RejectionReason{{Variant: "Permit drift", Reason: "Late projection failure leaves partial state."}},
+		Rollback:         &RollbackSpec{Triggers: []string{"Canonical projection no longer round-trips."}},
+		ChoiceResult: &ChoiceResult{
+			SubjectRef: "operator",
+			OptionSet: []string{
+				"Keep one canonical choice",
+				"Permit drift",
+			},
+			ChoiceRule: "A contradictory rule that must be rejected.",
+			NextMove:   ChoiceNextMoveChooseNow,
+			VariantRef: "Keep one canonical choice",
+			Reason:     "The persisted decision and its choice projection must agree.",
+		},
+	})
+
+	decision, filePath, err := Decide(ctx, store, haftDir, input)
+	if err == nil {
+		t.Fatal("expected contradictory choice fields to fail")
+	}
+	if decision != nil || filePath != "" {
+		t.Fatalf("failed decision returned artifact=%#v file=%q", decision, filePath)
+	}
+	if !strings.Contains(
+		err.Error(),
+		"choice_result.choice_rule must equal selection_policy",
+	) {
+		t.Fatalf("error = %v, want choice correlation diagnostic", err)
+	}
+
+	decisions, listErr := store.ListByKind(
+		ctx,
+		KindDecisionRecord,
+		10,
+	)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(decisions) != 0 {
+		t.Fatalf(
+			"invalid decision persisted %d DecisionRecord(s)",
+			len(decisions),
+		)
+	}
+}
+
+func TestDecide_LinkedProblemCardRemainsValidWithoutInlineStatement(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Source provenance is hidden",
+		Signal:     "Compiled routes cannot show the exact author source that justified a candidate.",
+		Acceptance: "A decision can still bind directly to a persisted ProblemCard.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		SelectedTitle: "Use source-native FPF Query",
+		WhySelected:   "The source-native path preserves author provenance.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(decision.Body, "Compiled routes cannot show the exact author source") {
+		t.Fatalf("linked ProblemCard no longer renders in the Problem Frame:\n%s", decision.Body)
+	}
+	if fields := decision.UnmarshalDecisionFields(); fields.ProblemStatement != "" {
+		t.Fatalf("linked legacy-style decision invented problem_statement %q", fields.ProblemStatement)
+	}
+}
+
+func TestDecide_PortfolioResolvedProblemCardSuppliesProblemBasis(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Compiled routes drift",
+		Signal: "The route catalog can disagree with the author-owned FPF source.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("Source-native query", "publication grammar changes", "Keeps provenance on every candidate"),
+			testVariant("Compiled routes", "semantic drift", "Keeps the existing interface"),
+		},
+		NoSteppingStoneRationale: "Both variants are complete replacement choices.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		PortfolioRef:  portfolio.Meta.ID,
+		SelectedTitle: "Source-native query",
+		WhySelected:   "Every retrieval candidate retains its author source.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(decision.Body, "The route catalog can disagree with the author-owned FPF source") {
+		t.Fatalf("portfolio-derived ProblemCard was not rendered:\n%s", decision.Body)
+	}
+	if strings.Contains(decision.Body, "**Problem statement:** \n") {
+		t.Fatalf("portfolio-derived decision rendered an empty inline Problem Frame:\n%s", decision.Body)
+	}
+}
+
 func TestDecideEnrichesAffectedFilesWithPreciseBindingTargets(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -629,6 +819,9 @@ func TestArtifact_UnmarshalDecisionFields_DoesNotInventTransformationRecord(t *t
 	if fields.TransformationRecord != nil {
 		t.Fatalf("legacy decision invented transformation_record: %#v", fields.TransformationRecord)
 	}
+	if fields.ProblemStatement != "" {
+		t.Fatalf("legacy decision invented problem_statement: %q", fields.ProblemStatement)
+	}
 }
 
 func TestDecide_TaskContextSlugInIDAndFilename(t *testing.T) {
@@ -680,7 +873,7 @@ func TestDecide_ContextDoesNotChangeDefaultIDFormat(t *testing.T) {
 	}
 }
 
-func TestDecide_PersistsSpecSectionRefsAsStructuredStateAndLinks(t *testing.T) {
+func TestDecide_PersistsSpecSectionRefsWithoutInvalidArtifactLinks(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -708,21 +901,10 @@ func TestDecide_PersistsSpecSectionRefsAsStructuredStateAndLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seen := map[string]bool{}
 	for _, link := range links {
-		if link.Type != "governs" {
-			continue
+		if link.Type == "governs" {
+			t.Fatalf("DecisionRecord projected cross-carrier SpecSection ref as artifact link: %#v", link)
 		}
-
-		seen[link.Ref] = true
-	}
-
-	for _, ref := range sectionRefs {
-		if seen[ref] {
-			continue
-		}
-
-		t.Fatalf("decision links = %#v, want governs link to %s", links, ref)
 	}
 }
 
@@ -861,10 +1043,11 @@ func TestDecide_Tactical(t *testing.T) {
 	ctx := context.Background()
 
 	a, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:   "x/time/rate for rate limiting",
-		WhySelected:     "Zero deps, per-IP tracking testable in Go",
-		SelectionPolicy: "Prefer the least operationally complex limiter that still keeps per-IP enforcement local to the service.",
-		CounterArgument: "An in-process limiter could fragment enforcement if traffic shifts toward multi-instance bursts.",
+		ProblemStatement: "The service needs per-IP rate limiting without adding an external coordination dependency.",
+		SelectedTitle:    "x/time/rate for rate limiting",
+		WhySelected:      "Zero deps, per-IP tracking testable in Go",
+		SelectionPolicy:  "Prefer the least operationally complex limiter that still keeps per-IP enforcement local to the service.",
+		CounterArgument:  "An in-process limiter could fragment enforcement if traffic shifts toward multi-instance bursts.",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Redis-backed limiter", Reason: "Cross-process coordination was unnecessary at current traffic levels."},
 		},
@@ -897,10 +1080,11 @@ func TestDecide_EscapesRejectedAlternativeTableCells(t *testing.T) {
 	ctx := context.Background()
 
 	a, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:   "gRPC | v2",
-		WhySelected:     "Line 1\nLine 2 | more",
-		SelectionPolicy: "Prefer the transport that stays within the latency budget with the fewest avoidable moving parts.",
-		CounterArgument: "Migration friction could outweigh the latency gain if the rollout path is rougher than expected.",
+		ProblemStatement: "The current transport no longer stays within the latency budget.",
+		SelectedTitle:    "gRPC | v2",
+		WhySelected:      "Line 1\nLine 2 | more",
+		SelectionPolicy:  "Prefer the transport that stays within the latency budget with the fewest avoidable moving parts.",
+		CounterArgument:  "Migration friction could outweigh the latency gain if the rollout path is rougher than expected.",
 		WhyNotOthers: []RejectionReason{
 			{
 				Variant: "REST | v1\nlegacy",
@@ -1196,10 +1380,11 @@ func TestApply_ReturnsBody(t *testing.T) {
 	ctx := context.Background()
 
 	dec, _, _ := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:   "NATS JetStream",
-		WhySelected:     "Ops simplicity",
-		SelectionPolicy: "Prefer the messaging option that reduces operator load without sacrificing delivery guarantees.",
-		CounterArgument: "Operational simplicity could hide capacity limits that only appear under real production traffic.",
+		ProblemStatement: "The current event transport imposes more operational load than the team can sustain.",
+		SelectedTitle:    "NATS JetStream",
+		WhySelected:      "Ops simplicity",
+		SelectionPolicy:  "Prefer the messaging option that reduces operator load without sacrificing delivery guarantees.",
+		CounterArgument:  "Operational simplicity could hide capacity limits that only appear under real production traffic.",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Kafka", Reason: "The extra operating surface was not justified at the current scale."},
 		},
@@ -1294,7 +1479,7 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 
 	fields := decision.UnmarshalDecisionFields()
 	wantClaims := newDecisionClaims(input.Predictions)
-	wantPredictions := newDecisionPredictions(input.Predictions)
+	wantPredictions := decisionPredictionsFromClaims(newDecisionClaims(input.Predictions))
 	if !reflect.DeepEqual(fields.Claims, wantClaims) {
 		t.Fatalf("claims in structured state = %#v, want %#v", fields.Claims, wantClaims)
 	}

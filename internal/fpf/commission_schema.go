@@ -40,9 +40,9 @@ func haftCommissionTool() Tool {
 					"type":        "string",
 					"description": "(create_from_decision) Active DecisionRecord id to commission.",
 				},
-				"project_root": map[string]string{
+				"scope_id": map[string]string{
 					"type":        "string",
-					"description": "(create_from_decision/create_from_plan) Project root used to snapshot SpecSection revision hashes when available.",
+					"description": "(create/create_from_decision/create_batch_from_decisions/create_from_plan) Exact admitted ScopeID. Required when the canonical project profile contains multiple realization scopes. The server supplies project_root independently.",
 				},
 				"spec_section_refs": map[string]interface{}{
 					"type":        "array",

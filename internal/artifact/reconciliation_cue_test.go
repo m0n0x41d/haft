@@ -1,6 +1,9 @@
 package artifact
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBuildReconciliationCueReportSummarizesReadOnlyReviewLanes(t *testing.T) {
 	report := BuildReconciliationCueReport(
@@ -49,6 +52,31 @@ func TestBuildReconciliationCueReportSummarizesReadOnlyReviewLanes(t *testing.T)
 	}
 	if len(report.Cues) != 3 {
 		t.Fatalf("cues = %#v, want three review cues", report.Cues)
+	}
+	var governingConflict ReconciliationCue
+	for _, cue := range report.Cues {
+		if cue.Kind == ReconciliationCueGoverningConflict {
+			governingConflict = cue
+			break
+		}
+	}
+	for _, want := range []string{
+		"Scoped governing-authority conflict",
+		"operator selection for affected use",
+		"limits only a use that relies on the unresolved authority",
+		"not unrelated already-authorized Work",
+		"not a GateDecision or project-wide Work gate",
+	} {
+		got := governingConflict.Title + " " + governingConflict.Detail
+		if !strings.Contains(got, want) {
+			t.Fatalf("governing-conflict cue missing %q: %#v", want, governingConflict)
+		}
+	}
+	for _, absent := range []string{"needs operator review", "blocker cue"} {
+		got := governingConflict.Title + " " + governingConflict.Detail
+		if strings.Contains(got, absent) {
+			t.Fatalf("governing-conflict cue contains global interruption wording %q: %#v", absent, governingConflict)
+		}
 	}
 }
 

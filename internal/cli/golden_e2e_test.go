@@ -14,18 +14,24 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 	"github.com/spf13/cobra"
 )
 
 const (
-	goldenE2ETargetSection  = "TS.environment-change.001"
-	goldenE2EEnableSection  = "ES.creator-role.001"
-	goldenE2EAffectedFile   = "internal/app/flow.go"
-	goldenE2EEvidence       = "test -f internal/app/flow.go"
-	goldenE2EPlanID         = "plan-golden-e2e"
-	goldenE2EPlanRevision   = "p1"
-	goldenE2EStatusFileName = "status.json"
-	goldenE2ELogFileName    = "runtime.jsonl"
+	goldenE2ETargetEnvironmentSection  = "TS.environment.001"
+	goldenE2ETargetRoleSection         = "TS.role.001"
+	goldenE2ETargetBoundarySection     = "TS.boundary.001"
+	goldenE2ESoftwareRoleSection       = "SS.role.001"
+	goldenE2ESoftwareFunctionSection   = "SS.functional.001"
+	goldenE2ESoftwareInterfaceSection  = "SS.interfaces.001"
+	goldenE2ESoftwareConstraintSection = "SS.constraints.001"
+	goldenE2EAffectedFile              = "internal/app/flow.go"
+	goldenE2EEvidence                  = "test -f internal/app/flow.go"
+	goldenE2EPlanID                    = "plan-golden-e2e"
+	goldenE2EPlanRevision              = "p1"
+	goldenE2EStatusFileName            = "status.json"
+	goldenE2ELogFileName               = "runtime.jsonl"
 )
 
 func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
@@ -41,24 +47,66 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	initialReadiness := goldenE2EReadiness(t, root)
 	if initialReadiness.Status != project.ReadinessNeedsOnboard {
 		t.Fatalf("initial readiness = %+v, want needs_onboard", initialReadiness)
 	}
-
-	err := runHarnessRun(&cobra.Command{}, nil)
-	if err == nil {
-		t.Fatal("harness run before onboarding succeeded, want needs_onboard block")
+	initialApplicability, err := resolveCanonicalProjectSpecificationApplicability(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
+	if err != nil {
+		t.Fatalf("resolve initial profile applicability: %v", err)
 	}
-	if !strings.Contains(err.Error(), "needs_onboard") {
-		t.Fatalf("harness block = %q, want needs_onboard", err.Error())
+	if initialApplicability.Kind() != projectSpecificationProfileUnderdetermined {
+		t.Fatalf(
+			"initial profile applicability = %q, want profile_underdetermined",
+			initialApplicability.Kind(),
+		)
+	}
+
+	err = runHarnessRun(&cobra.Command{}, nil)
+	if err == nil {
+		t.Fatal("harness run before onboarding succeeded, want profile-underdetermined block")
+	}
+	harnessBlock := err.Error()
+	for _, fragment := range []string{
+		"profile is underdetermined",
+		"missing_basis=current_canonical_profile_admission",
+		"no software applicability was inferred",
+	} {
+		if strings.Contains(harnessBlock, fragment) {
+			continue
+		}
+		t.Fatalf("harness block = %q, want fragment %q", harnessBlock, fragment)
+	}
+	for _, forbidden := range []string{
+		"SoftwareSystemSpec",
+		"--force-skip-specs",
+	} {
+		if !strings.Contains(harnessBlock, forbidden) {
+			continue
+		}
+		t.Fatalf("profile-underdetermined harness block gained %q: %s", forbidden, harnessBlock)
+	}
+
+	profileHarness := profileadmissionfixture.OpenExisting(t, root)
+	profileHarness.AdmitSoftwareRevisionWithTargetEntity(
+		t,
+		"golden-e2e-software",
+		"entity:golden-e2e-target",
+	)
+	if err := profileHarness.Close(); err != nil {
+		t.Fatalf("close profile-admission fixture: %v", err)
 	}
 
 	writeGoldenE2ESpecs(t, root)
+	if err := runSpecSync(&cobra.Command{}, nil); err != nil {
+		t.Fatalf("sync golden software-system editions: %v", err)
+	}
 	baselineGoldenE2ESpecSections(t, root)
 	runGoldenE2ESpecCheck(t, sourceRoot, root)
 	uncoveredCoverage := runGoldenE2ESpecCoverage(t, sourceRoot, root)
@@ -174,7 +222,11 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 func newGoldenE2ERepo(t *testing.T) string {
 	t.Helper()
 
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve golden E2E physical root: %v", err)
+	}
+	root = filepath.Clean(root)
 	writeGoldenE2EFile(t, filepath.Join(root, "README.md"), "# Golden E2E fixture\n")
 	runGoldenE2EGit(t, root, "init")
 	runGoldenE2EGit(t, root, "config", "user.email", "test@example.com")
@@ -189,15 +241,17 @@ func writeGoldenE2ESpecs(t *testing.T, root string) {
 	t.Helper()
 
 	specDir := filepath.Join(root, ".haft", "specs")
+	targetCarrier := goldenE2ETargetSpec()
 	writeGoldenE2EFile(
 		t,
 		filepath.Join(specDir, "target-system.md"),
-		goldenE2ESpecSection(goldenE2ETargetSection, "environment-change", "Golden target loop"),
+		targetCarrier,
 	)
+	softwareCarrier := goldenE2ESoftwareSpec()
 	writeGoldenE2EFile(
 		t,
-		filepath.Join(specDir, "enabling-system.md"),
-		goldenE2ESpecSection(goldenE2EEnableSection, "creator-role", "Golden enabling loop"),
+		filepath.Join(specDir, "software-system.md"),
+		softwareCarrier,
 	)
 	writeGoldenE2EFile(
 		t,
@@ -209,7 +263,7 @@ func writeGoldenE2ESpecs(t *testing.T, root string) {
 			"entries:",
 			"  - term: HarnessableProject",
 			"    category: enabling",
-			"    definition: A project with active target and enabling specs, a term map, and a local workflow policy.",
+			"    definition: A project with active target and software specs, a term map, and a local workflow policy.",
 			"    not:",
 			"      - tracker ticket",
 			"      - README-only project",
@@ -221,6 +275,27 @@ func writeGoldenE2ESpecs(t *testing.T, root string) {
 			"",
 		}, "\n"),
 	)
+}
+
+func goldenE2ETargetSpec() string {
+	sections := []string{
+		goldenE2ESpecSection(goldenE2ETargetEnvironmentSection, "target.environment", "Golden target environment"),
+		goldenE2ESpecSection(goldenE2ETargetRoleSection, "target.role", "Golden target role"),
+		goldenE2ESpecSection(goldenE2ETargetBoundarySection, "target.boundary", "Golden target boundary"),
+	}
+
+	return strings.Join(sections, "")
+}
+
+func goldenE2ESoftwareSpec() string {
+	sections := []string{
+		goldenE2ESpecSection(goldenE2ESoftwareRoleSection, "software.role", "Golden software role"),
+		goldenE2ESpecSection(goldenE2ESoftwareFunctionSection, "software.functional_behavior", "Golden software behavior"),
+		goldenE2ESpecSection(goldenE2ESoftwareInterfaceSection, "software.interfaces", "Golden software interfaces"),
+		goldenE2ESpecSection(goldenE2ESoftwareConstraintSection, "software.constraints", "Golden software constraints"),
+	}
+
+	return strings.Join(sections, "")
 }
 
 func goldenE2ESpecSection(id string, kind string, title string) string {
@@ -289,9 +364,6 @@ func createGoldenE2EDecision(t *testing.T, root string) string {
 	if err != nil {
 		t.Fatalf("frame problem: %v", err)
 	}
-	if err := store.AddLink(ctx, problem.Meta.ID, goldenE2ETargetSection, "describes"); err != nil {
-		t.Fatalf("link problem to target section: %v", err)
-	}
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
 		ProblemRef:      problem.Meta.ID,
@@ -315,21 +387,12 @@ func createGoldenE2EDecision(t *testing.T, root string) string {
 		AffectedFiles: []string{
 			goldenE2EAffectedFile,
 		},
-		SectionRefs: []string{
-			goldenE2ETargetSection,
-			goldenE2EEnableSection,
-		},
+		SectionRefs:    goldenE2ESectionIDs(),
 		ValidUntil:     "2099-01-01T00:00:00Z",
 		GovernanceMode: "exact",
 	})
 	if err != nil {
 		t.Fatalf("decide: %v", err)
-	}
-
-	for _, sectionID := range []string{goldenE2ETargetSection, goldenE2EEnableSection} {
-		if err := store.AddLink(ctx, decision.Meta.ID, sectionID, "governs"); err != nil {
-			t.Fatalf("link decision to spec section %s: %v", sectionID, err)
-		}
 	}
 
 	return decision.Meta.ID
@@ -456,13 +519,18 @@ func preserveGoldenE2EHostGoModCache(t *testing.T) {
 func runGoldenE2EHaftCLI(t *testing.T, sourceRoot string, root string, args ...string) []byte {
 	t.Helper()
 
+	physicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatalf("resolve golden E2E physical project root: %v", err)
+	}
+	physicalRoot = filepath.Clean(physicalRoot)
 	commandArgs := append([]string{"run", "./cmd/haft"}, args...)
 	cmd := exec.Command("go", commandArgs...)
 	cmd.Dir = sourceRoot
 	cacheRoot := goldenE2ESharedCache(t)
 	cmdEnv := append(
 		os.Environ(),
-		"HAFT_PROJECT_ROOT="+root,
+		"HAFT_PROJECT_ROOT="+physicalRoot,
 		"GOCACHE="+filepath.Join(cacheRoot, "go-build"),
 		"GOFLAGS=-modcacherw",
 	)
@@ -518,12 +586,19 @@ func runGoldenE2ESpecPlan(t *testing.T, sourceRoot string, root string) project.
 func goldenE2ESpecCoverageFromCore(t *testing.T, root string) project.SpecCoverageReport {
 	t.Helper()
 
-	report, err := buildSpecCoverageReport(context.Background(), root)
+	result, err := buildPublicSpecCoverage(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
 	if err != nil {
 		t.Fatalf("build spec coverage: %v", err)
 	}
+	if result.SpecCoverageReport == nil {
+		t.Fatalf("resolved golden profile omitted spec coverage: %#v", result.ProfileApplicability)
+	}
 
-	return report
+	return *result.SpecCoverageReport
 }
 
 func assertGoldenE2ESectionStates(
@@ -654,6 +729,8 @@ func attachGoldenE2ERuntimeEvidence(
 	database, store := openGoldenE2EStore(t, root)
 	defer database.Close()
 
+	claimScope := goldenE2ESectionIDs()
+	claimScope = append(claimScope, goldenE2EAffectedFile, "internal/cli/golden_e2e_test.go")
 	evidence, err := artifact.AttachEvidence(context.Background(), store, artifact.EvidenceInput{
 		ArtifactRef:     commissionID,
 		Content:         "Golden E2E mock runtime completed the required local evidence command: " + goldenE2EEvidence,
@@ -662,13 +739,8 @@ func attachGoldenE2ERuntimeEvidence(
 		CarrierRef:      runtimeRunID,
 		CongruenceLevel: 3,
 		FormalityLevel:  2,
-		ClaimScope: []string{
-			goldenE2ETargetSection,
-			goldenE2EEnableSection,
-			goldenE2EAffectedFile,
-			"internal/cli/golden_e2e_test.go",
-		},
-		ValidUntil: "2099-01-01T00:00:00Z",
+		ClaimScope:      claimScope,
+		ValidUntil:      "2099-01-01T00:00:00Z",
 	})
 	if err != nil {
 		t.Fatalf("attach runtime evidence: %v", err)
@@ -728,8 +800,13 @@ func goldenE2EEdgeExists(
 
 func goldenE2ESectionIDs() []string {
 	return []string{
-		goldenE2ETargetSection,
-		goldenE2EEnableSection,
+		goldenE2ETargetEnvironmentSection,
+		goldenE2ETargetRoleSection,
+		goldenE2ETargetBoundarySection,
+		goldenE2ESoftwareRoleSection,
+		goldenE2ESoftwareFunctionSection,
+		goldenE2ESoftwareInterfaceSection,
+		goldenE2ESoftwareConstraintSection,
 	}
 }
 
@@ -864,6 +941,8 @@ func overrideGoldenE2EFlags(t *testing.T) func() {
 	oldInitGemini := initGemini
 	oldInitCodex := initCodex
 	oldInitAir := initAir
+	oldInitZed := initZed
+	oldInitAgy := initAgy
 	oldInitAll := initAll
 	oldInitLocal := initLocal
 
@@ -888,6 +967,8 @@ func overrideGoldenE2EFlags(t *testing.T) func() {
 	initGemini = false
 	initCodex = false
 	initAir = false
+	initZed = false
+	initAgy = false
 	initAll = false
 	initLocal = false
 
@@ -915,6 +996,8 @@ func overrideGoldenE2EFlags(t *testing.T) func() {
 		initGemini = oldInitGemini
 		initCodex = oldInitCodex
 		initAir = oldInitAir
+		initZed = oldInitZed
+		initAgy = oldInitAgy
 		initAll = oldInitAll
 		initLocal = oldInitLocal
 

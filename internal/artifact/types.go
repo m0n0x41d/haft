@@ -226,18 +226,82 @@ func ParseMode(s string) (Mode, error) {
 	return m, nil
 }
 
-// DerivedStatus is computed from artifact completeness, never stored.
-type DerivedStatus string
+// ProjectArtifactState is a read-only projection of one current governance
+// artifact. It deliberately carries no position in a project-wide phase
+// sequence: several artifact kinds can be current at the same time.
+type ProjectArtifactState struct {
+	ID     string
+	Title  string
+	Status Status
+	Mode   Mode
+}
 
-const (
-	DerivedUnderframed DerivedStatus = "UNDERFRAMED"
-	DerivedFramed      DerivedStatus = "FRAMED"
-	DerivedExploring   DerivedStatus = "EXPLORING"
-	DerivedCompared    DerivedStatus = "COMPARED"
-	DerivedDecided     DerivedStatus = "DECIDED"
-	DerivedApplied     DerivedStatus = "APPLIED"
-	DerivedRefreshDue  DerivedStatus = "REFRESH_DUE"
-)
+// ProjectOptionSetState adds the local lifecycle fact that a particular
+// option set has a recorded comparison. ComparisonRecorded is not a project
+// phase and does not prescribe what the project must do next.
+type ProjectOptionSetState struct {
+	Artifact           ProjectArtifactState
+	ComparisonRecorded bool
+}
+
+// ProjectProblemFacet reports current open problem descriptions.
+type ProjectProblemFacet struct {
+	Known bool
+	Open  []ProjectArtifactState
+}
+
+// ProjectOptionFacet reports current option sets, compared and uncompared.
+type ProjectOptionFacet struct {
+	Known bool
+	Sets  []ProjectOptionSetState
+}
+
+// ProjectDecisionFacet reports current decisions independently of problems,
+// option sets, work, and evidence pressure.
+type ProjectDecisionFacet struct {
+	Known  bool
+	Active []ProjectArtifactState
+}
+
+// ProjectWorkFacet reports non-terminal commissions. SuggestedActions remain
+// local to each WorkCommission lifecycle; they are not a global next action.
+type ProjectWorkFacet struct {
+	Known  bool
+	Active []WorkCommissionStatus
+}
+
+// ProjectPressureFacet reports evidence refresh and drift pressure without
+// turning either into a project phase. StaleCount and StaleItems remain
+// promoted compatibility fields for callers that replace the status snapshot.
+type ProjectPressureFacet struct {
+	EvidenceKnown bool
+	StaleCount    int
+	StaleItems    []string
+	DriftKnown    bool
+	DriftCount    int
+	DriftItems    []string
+}
+
+// ProjectSpecHealthFacet is populated only by callers that actually possess
+// specification-health evidence. Unknown and healthy are intentionally
+// distinct states.
+type ProjectSpecHealthFacet struct {
+	Known        bool
+	FindingCount int
+	Findings     []string
+}
+
+// ProjectStateView is a read-only coexistence view over project governance.
+// It has no terminal phase and no single global next action.
+type ProjectStateView struct {
+	Context   string
+	Problems  ProjectProblemFacet
+	Options   ProjectOptionFacet
+	Decisions ProjectDecisionFacet
+	Work      ProjectWorkFacet
+	ProjectPressureFacet
+	SpecHealth ProjectSpecHealthFacet
+}
 
 // Link represents a relationship between two artifacts.
 type Link struct {
@@ -470,6 +534,7 @@ type PublicationRecoverability struct {
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
 	ProblemRefs             []string                `json:"problem_refs,omitempty"`
+	ProblemStatement        string                  `json:"problem_statement,omitempty"`
 	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
 	ChoiceResult            *ChoiceResult           `json:"choice_result,omitempty"`
 	TransformationRecord    *TransformationRecord   `json:"transformation_record,omitempty"`
@@ -533,11 +598,15 @@ type DriftWatchTarget struct {
 type BindingTarget struct {
 	Kind             string `json:"kind"`
 	TargetRef        string `json:"target_ref,omitempty"`
+	AnchorID         string `json:"anchor_id,omitempty"`
+	AnchorVersion    int    `json:"anchor_version,omitempty"`
 	FilePath         string `json:"file_path,omitempty"`
 	Language         string `json:"language,omitempty"`
 	SymbolName       string `json:"symbol_name,omitempty"`
 	SymbolKind       string `json:"symbol_kind,omitempty"`
 	Receiver         string `json:"receiver,omitempty"`
+	QualifiedName    string `json:"qualified_name,omitempty"`
+	SignatureHash    string `json:"signature_hash,omitempty"`
 	Line             int    `json:"line,omitempty"`
 	EndLine          int    `json:"end_line,omitempty"`
 	BodyHash         string `json:"body_hash,omitempty"`
@@ -768,19 +837,28 @@ func randomIDSuffix() string {
 
 // Variant represents a solution option in a SolutionPortfolio.
 type Variant struct {
-	ID                 string   `json:"id"`
-	Title              string   `json:"title"`
-	Description        string   `json:"description"`
-	Strengths          []string `json:"strengths,omitempty"`
-	WeakestLink        string   `json:"weakest_link"`
-	NoveltyMarker      string   `json:"novelty_marker,omitempty"`
-	Risks              []string `json:"risks,omitempty"`
-	SteppingStone      bool     `json:"stepping_stone,omitempty"`
-	SteppingStoneBasis string   `json:"stepping_stone_basis,omitempty"`
-	DiversityRole      string   `json:"diversity_role,omitempty"`
-	AssumptionNotes    string   `json:"assumption_notes,omitempty"`
-	RollbackNotes      string   `json:"rollback_notes,omitempty"`
-	EvidenceRefs       []string `json:"evidence_refs,omitempty"`
+	ID                 string                   `json:"id"`
+	Title              string                   `json:"title"`
+	Description        string                   `json:"description"`
+	Strengths          []string                 `json:"strengths,omitempty"`
+	WeakestLink        string                   `json:"weakest_link"`
+	NoveltyMarker      string                   `json:"novelty_marker,omitempty"`
+	Risks              []string                 `json:"risks,omitempty"`
+	SteppingStone      bool                     `json:"stepping_stone,omitempty"`
+	SteppingStoneBasis string                   `json:"stepping_stone_basis,omitempty"`
+	DiversityRole      string                   `json:"diversity_role,omitempty"`
+	AssumptionNotes    string                   `json:"assumption_notes,omitempty"`
+	RollbackNotes      string                   `json:"rollback_notes,omitempty"`
+	EvidenceRefs       []string                 `json:"evidence_refs,omitempty"`
+	ProjectRecordRef   *VariantProjectRecordRef `json:"project_record_ref,omitempty"`
+}
+
+// VariantProjectRecordRef names the independently addressable typed-memory
+// record that carries one solution option. The option text embedded in a
+// legacy portfolio is not silently promoted into a graph entity.
+type VariantProjectRecordRef struct {
+	RefKindID   string `json:"ref_kind_id"`
+	ReferenceID string `json:"reference_id"`
 }
 
 const (
@@ -1200,12 +1278,52 @@ type AffectedFile struct {
 // AffectedSymbol captures a symbol-level baseline snapshot.
 // Used for tree-sitter powered drift detection at function/type granularity.
 type AffectedSymbol struct {
-	FilePath   string `json:"file_path"`
-	SymbolName string `json:"symbol_name"`
-	SymbolKind string `json:"symbol_kind"` // func, type, class, interface, method
-	Line       int    `json:"line"`
-	EndLine    int    `json:"end_line"`
-	Hash       string `json:"hash"` // SHA256 of symbol source
+	AnchorID      string `json:"anchor_id,omitempty"`
+	AnchorVersion int    `json:"anchor_version,omitempty"`
+	FilePath      string `json:"file_path"`
+	Language      string `json:"language,omitempty"`
+	SymbolName    string `json:"symbol_name"`
+	SymbolKind    string `json:"symbol_kind"` // func, type, class, interface, method
+	Receiver      string `json:"receiver,omitempty"`
+	QualifiedName string `json:"qualified_name,omitempty"`
+	SignatureHash string `json:"signature_hash,omitempty"`
+	Line          int    `json:"line"`
+	EndLine       int    `json:"end_line"`
+	Hash          string `json:"hash"` // SHA256 of symbol source
+}
+
+const (
+	SymbolBindingActive                 = "active"
+	SymbolBindingNeedsBindingResolution = "needs_binding_resolution"
+)
+
+// SymbolBinding is the authority-bearing governance link to a durable code
+// declaration. affected_symbols remains its backward-compatible projection.
+type SymbolBinding struct {
+	ArtifactID       string `json:"artifact_id"`
+	AnchorID         string `json:"anchor_id"`
+	AnchorVersion    int    `json:"anchor_version"`
+	FilePath         string `json:"file_path"`
+	Language         string `json:"language"`
+	SymbolName       string `json:"symbol_name"`
+	SymbolKind       string `json:"symbol_kind"`
+	Receiver         string `json:"receiver,omitempty"`
+	QualifiedName    string `json:"qualified_name"`
+	SignatureHash    string `json:"signature_hash"`
+	Line             int    `json:"line"`
+	EndLine          int    `json:"end_line"`
+	BodyHash         string `json:"body_hash"`
+	Status           string `json:"status"`
+	ResolutionSource string `json:"resolution_source,omitempty"`
+}
+
+// SymbolRebind records an anchor transition without overwriting its history.
+type SymbolRebind struct {
+	ArtifactID       string `json:"artifact_id"`
+	PreviousAnchorID string `json:"previous_anchor_id"`
+	CurrentAnchorID  string `json:"current_anchor_id"`
+	Reason           string `json:"reason"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // DriftStatus represents the state of a file relative to its baseline.

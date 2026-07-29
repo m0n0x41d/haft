@@ -8,6 +8,8 @@ import (
 	"strings"
 
 	methodpkg "github.com/m0n0x41d/haft/internal/method"
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"gopkg.in/yaml.v3"
 )
 
@@ -66,6 +68,200 @@ func processCheckMethodPackCarriers(
 		processMethodPackCarrierDigestEvidence(observations),
 		"No action.",
 	)
+}
+
+func processCheckMethodPackCarriersForApplicability(
+	projectRoot string,
+	observedAt string,
+	validUntil string,
+	applicability project.ProjectSpecificationSetApplicability,
+) (ProcessCheckResult, error) {
+	processApplicability, err := applicability.ScopedCapabilityApplicability(
+		projectprofile.ProcessChecksCapability,
+	)
+	if err != nil {
+		return ProcessCheckResult{}, err
+	}
+	methodPackApplicability, err := applicability.ScopedCapabilityApplicability(
+		projectprofile.SWEMethodPackCapability,
+	)
+	if err != nil {
+		return ProcessCheckResult{}, err
+	}
+	applicabilities := []projectprofile.ScopedCapabilityApplicability{
+		processApplicability,
+		methodPackApplicability,
+	}
+	if scopedCapabilitiesContain(
+		applicabilities,
+		projectprofile.CapabilityUnderdetermined,
+	) {
+		return processCheckMethodPackApplicabilityUnderdetermined(
+			observedAt,
+			validUntil,
+			applicabilities,
+		), nil
+	}
+	if scopedCapabilitiesContain(
+		applicabilities,
+		projectprofile.CapabilityNotApplicable,
+	) {
+		return processCheckMethodPackNotApplicable(
+			observedAt,
+			validUntil,
+			applicabilities,
+		), nil
+	}
+	result := processCheckMethodPackCarriers(projectRoot, observedAt, validUntil)
+	result.EvidenceRefs = append(
+		result.EvidenceRefs,
+		scopedCapabilityApplicabilityEvidence(applicabilities)...,
+	)
+	return result, nil
+}
+
+func processCheckMethodPackForProfileResolution(
+	projectRoot string,
+	observedAt string,
+	validUntil string,
+	resolution projectSpecificationApplicabilityResolution,
+) (ProcessCheckResult, error) {
+	applicability, _, resolved := resolution.Resolved()
+	if resolved {
+		return processCheckMethodPackCarriersForApplicability(
+			projectRoot,
+			observedAt,
+			validUntil,
+			applicability,
+		)
+	}
+	readiness := canonicalProjectReadiness{
+		facts:            project.ReadinessFacts{},
+		profileEvaluated: true,
+		resolution:       resolution,
+	}
+	return processCheckMethodPackProfileCue(
+		observedAt,
+		validUntil,
+		readiness.profileCue(),
+	), nil
+}
+
+func processCheckMethodPackProfileUnavailable(
+	observedAt string,
+	validUntil string,
+) ProcessCheckResult {
+	readiness := canonicalProjectReadiness{
+		facts:              project.ReadinessFacts{},
+		profileEvaluated:   true,
+		profileUnavailable: true,
+	}
+	return processCheckMethodPackProfileCue(
+		observedAt,
+		validUntil,
+		readiness.profileCue(),
+	)
+}
+
+func processCheckMethodPackProfileCue(
+	observedAt string,
+	validUntil string,
+	cue string,
+) ProcessCheckResult {
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusUnknown,
+		"info",
+		observedAt,
+		validUntil,
+		cue+" SWE MethodPack carriers were not scanned.",
+		nil,
+		"No SWE carrier action; establish canonical profile applicability only when this capability is current.",
+	)
+}
+
+func scopedCapabilitiesContain(
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+	kind projectprofile.CapabilityApplicabilityKind,
+) bool {
+	for _, applicability := range applicabilities {
+		if applicability.Kind() == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func processCheckMethodPackNotApplicable(
+	observedAt string,
+	validUntil string,
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+) ProcessCheckResult {
+	scopeID := applicabilities[0].ScopeID().String()
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusNotApplicable,
+		"info",
+		observedAt,
+		validUntil,
+		fmt.Sprintf(
+			"SWE MethodPack carrier currentness is not applicable in exact project-profile scope %q.",
+			scopeID,
+		),
+		scopedCapabilityApplicabilityEvidence(applicabilities),
+		"No action; NotApplicable is normal for this scope and does not require SWE carriers or a waiver.",
+	)
+}
+
+func processCheckMethodPackApplicabilityUnderdetermined(
+	observedAt string,
+	validUntil string,
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+) ProcessCheckResult {
+	scopeID := applicabilities[0].ScopeID().String()
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusUnknown,
+		"info",
+		observedAt,
+		validUntil,
+		fmt.Sprintf(
+			"SWE MethodPack carrier applicability is underdetermined in exact project-profile scope %q; carriers were not scanned.",
+			scopeID,
+		),
+		scopedCapabilityApplicabilityEvidence(applicabilities),
+		"No SWE carrier action; establish the named missing basis only when this capability is current.",
+	)
+}
+
+func scopedCapabilityApplicabilityEvidence(
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+) []string {
+	if len(applicabilities) == 0 {
+		return nil
+	}
+	evidence := []string{
+		"profile_scope_id=" + applicabilities[0].ScopeID().String(),
+		"profile_payload_digest=" + applicabilities[0].ProfilePayloadDigest().String(),
+	}
+	for _, applicability := range applicabilities {
+		item := fmt.Sprintf(
+			"capability:%s=%s",
+			applicability.Capability(),
+			applicability.Kind(),
+		)
+		if missingBasis, present := applicability.MissingBasis(); present {
+			item += " missing_basis=" + string(missingBasis)
+		}
+		evidence = append(evidence, item)
+	}
+	return evidence
 }
 
 func processMethodPackCarrierObservations(projectRoot string) []processMethodPackCarrierObservation {

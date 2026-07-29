@@ -571,9 +571,9 @@ func TestCheckSpecDocumentsReportsDraftCarrierReadinessGaps(t *testing.T) {
 			Content: targetSystemSpecCarrierContent(),
 		},
 		{
-			Path:    ".haft/specs/enabling-system.md",
-			Kind:    "enabling-system",
-			Content: enablingSystemSpecCarrierContent(),
+			Path:    ".haft/specs/software-system.md",
+			Kind:    "software-system",
+			Content: softwareSystemSpecCarrierContent(),
 		},
 		{
 			Path:    ".haft/specs/term-map.md",
@@ -812,6 +812,27 @@ func TestCheckSpecificationSetFindsMissingTermMapFile(t *testing.T) {
 	if !hasSpecCheckFinding(report, "term_map_missing_file") {
 		t.Fatalf("report findings = %+v, want missing term-map file finding", report.Findings)
 	}
+}
+
+func TestCheckSpecificationSetLegacyCarrierRequiresSoftwareMigration(t *testing.T) {
+	root := t.TempDir()
+	specDir := filepath.Join(root, ".haft", "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeSpecCheckFixture(t, filepath.Join(specDir, "target-system.md"), validSpecSectionCarrier("TS.use.001", "environment-change", "active"))
+	writeSpecCheckFixture(t, filepath.Join(specDir, "enabling-system.md"), validSpecSectionCarrier("ES.architecture.001", "enabling.architecture", "active"))
+	writeSpecCheckFixture(t, filepath.Join(specDir, "term-map.md"), validTermMapCarrier())
+
+	report, err := CheckSpecificationSet(root)
+	if err != nil {
+		t.Fatalf("CheckSpecificationSet: %v", err)
+	}
+	if !hasSpecCheckFinding(report, SpecMigrationRequiredFindingCode) {
+		t.Fatalf("report findings = %+v, want migration-required finding", report.Findings)
+	}
+	assertAllSpecCheckFindingsHaveNextAction(t, report)
 }
 
 func TestCheckSpecificationSetReportsIgnoredSpecCarriers(t *testing.T) {

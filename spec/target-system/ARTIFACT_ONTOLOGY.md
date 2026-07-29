@@ -6,15 +6,18 @@
 
 | Kind | Created by | Purpose | Lifecycle |
 |------|-----------|---------|-----------|
-| **ProjectSpecificationSet** | Onboarding flow + human principal | Governing parseable spec set for target/enabling systems, term map, workflow policy, and coverage | Draft → Active → Stale → Superseded/Deprecated |
-| **SpecSection** | Onboarding flow, spec edit, or sync | Stable-id unit inside TargetSystemSpec or EnablingSystemSpec | Draft → Active → Stale → Superseded/Deprecated |
+| **ProjectSpecificationSet** | Onboarding flow + human principal | Governing parseable set of TargetSystemSpec, SoftwareSystemSpec, and TermMap | Draft → Active → Stale → Superseded/Deprecated |
+| **SpecSection** | Onboarding flow, spec edit, or sync | Stable-id unit inside TargetSystemSpec or SoftwareSystemSpec | Draft → Active → Stale → Superseded/Deprecated |
 | **SpecCoverageEdge** | Spec parser, decision tools, commission tools, evidence tools | Link from spec sections to reasoning artifacts, code, tests, runtime, and evidence | Active → Stale/Superseded |
-| **ProblemCard** | Understand mode | Frames what's broken: signal, constraints, acceptance | Backlog → In Progress → Addressed |
-| **SolutionPortfolio** | Explore mode | Contains 2+ variants + optional characterization + comparison | Active → Superseded/Deprecated |
-| **DecisionRecord** | Execute mode | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
-| **EvidencePack** | Verify mode | Measurement data with verdict, CL, valid_until | Active → Superseded (when new measurement replaces) |
+| **ProblemCard** | Explicit problem-frame persistence | Frames what's broken: signal, constraints, acceptance | Backlog → In Progress → Addressed |
+| **SolutionPortfolio** | Explicit solution-portfolio persistence | Contains 2+ variants + optional characterization + comparison | Active → Superseded/Deprecated |
+| **DecisionRecord** | Explicit manual `h-decide` binding | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
+| **EvidencePack** | Explicit verification or measurement persistence | Measurement data with verdict, CL, valid_until | Active → Superseded (when new measurement replaces) |
 | **Note** | Note fast path | Micro-decision with rationale | Active → (auto-expires 90 days) → Deprecated |
-| **RefreshReport** | Verify mode | Documents lifecycle action (waive, reopen, etc.) | Active (immutable log) |
+| **RefreshReport** | Explicit lifecycle action | Documents lifecycle action (waive, reopen, etc.) | Active (immutable log) |
+
+Artifact kinds are independent carriers with distinct receiving uses. Their
+table order does not define a lifecycle or execution sequence.
 
 ## Execution Records (vNext Model)
 
@@ -92,13 +95,13 @@ ProjectSpecificationSet
     ├──→ TargetSystemSpec
     │         └──→ SpecSection*
     │
-    ├──→ EnablingSystemSpec
+    ├──→ SoftwareSystemSpec
     │         └──→ SpecSection*
     │
-    ├──→ TermMap
-    │
+    └──→ TermMap
+
+SpecSection
     └──→ SpecCoverageEdge*
-              │
               ├──→ ProblemCard
               ├──→ DecisionRecord
               ├──→ WorkCommission

@@ -198,7 +198,9 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     artifacts = HaftMock.artifacts(ctx.haft)
 
     assert wait_result == :ok,
-           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts},
+             pretty: true
+           )
 
     actions =
       ctx.haft
@@ -231,11 +233,19 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
 
   test "external_required terminal pass leaves external carrier open", ctx do
     {:ok, tracker} = TrackerMock.start()
-    commission = commission_fixture!("wc-external-required-carrier-open", %{projection_policy: :external_required})
+
+    commission =
+      commission_fixture!("wc-external-required-carrier-open", %{
+        projection_policy: :external_required
+      })
+
     :ok = TrackerMock.seed(tracker, [ticket_attrs(commission)])
 
-    orchestrator_name = :"commission_lifecycle_projection_debt_orch_#{System.unique_integer([:positive])}"
-    store_name = :"commission_lifecycle_projection_debt_store_#{System.unique_integer([:positive])}"
+    orchestrator_name =
+      :"commission_lifecycle_projection_debt_orch_#{System.unique_integer([:positive])}"
+
+    store_name =
+      :"commission_lifecycle_projection_debt_store_#{System.unique_integer([:positive])}"
 
     {:ok, _store} =
       WorkflowStore.start_link(
@@ -270,7 +280,9 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     artifacts = HaftMock.artifacts(ctx.haft)
 
     assert wait_result == :ok,
-           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts},
+             pretty: true
+           )
 
     terminal =
       ctx.haft
@@ -328,7 +340,9 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     artifacts = HaftMock.artifacts(ctx.haft)
 
     assert wait_result == :ok,
-           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts},
+             pretty: true
+           )
 
     actions =
       ctx.haft
@@ -360,6 +374,7 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
 
   test "terminal diff validation failure also closes WorkCommission lifecycle", ctx do
     {:ok, tracker} = TrackerMock.start()
+
     commission =
       "wc-orchestrator-scope-block"
       |> commission_fixture!(%{
@@ -373,7 +388,9 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
 
     :ok = TrackerMock.seed(tracker, [ticket_attrs(commission)])
 
-    orchestrator_name = :"commission_lifecycle_scope_block_orch_#{System.unique_integer([:positive])}"
+    orchestrator_name =
+      :"commission_lifecycle_scope_block_orch_#{System.unique_integer([:positive])}"
+
     store_name = :"commission_lifecycle_scope_block_store_#{System.unique_integer([:positive])}"
 
     {:ok, _store} =
@@ -420,7 +437,9 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
     artifacts = HaftMock.artifacts(ctx.haft)
 
     assert wait_result == :ok,
-           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts}, pretty: true)
+           inspect(%{wait_result: wait_result, status: status, artifacts: artifacts},
+             pretty: true
+           )
 
     blocked =
       ctx.haft
@@ -429,7 +448,9 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
       |> then(fn _ ->
         ctx.haft
         |> HaftMock.artifacts()
-        |> Enum.filter(&(get_in(&1, ["arguments", "commission_id"]) == "wc-orchestrator-scope-block"))
+        |> Enum.filter(
+          &(get_in(&1, ["arguments", "commission_id"]) == "wc-orchestrator-scope-block")
+        )
         |> Enum.find(&(get_in(&1, ["arguments", "action"]) == "complete_or_block"))
       end)
 
@@ -631,18 +652,19 @@ defmodule OpenSleigh.OrchestratorCommissionLifecycleTest do
   end
 
   defp scope_fixture!(overrides \\ %{}) do
-    attrs = %{
-      repo_ref: "local:haft",
-      base_sha: "base-r1",
-      target_branch: "feature/open-sleigh-commission-lifecycle",
-      allowed_paths: ["**/*"],
-      forbidden_paths: [],
-      allowed_actions: MapSet.new([:edit_files, :run_tests]),
-      affected_files: ["**/*"],
-      allowed_modules: [],
-      lockset: ["**/*"]
-    }
-    |> Map.merge(overrides)
+    attrs =
+      %{
+        repo_ref: "local:haft",
+        base_sha: "base-r1",
+        target_branch: "feature/open-sleigh-commission-lifecycle",
+        allowed_paths: ["**/*"],
+        forbidden_paths: [],
+        allowed_actions: MapSet.new([:edit_files, :run_tests]),
+        affected_files: ["**/*"],
+        allowed_modules: [],
+        lockset: ["**/*"]
+      }
+      |> Map.merge(overrides)
 
     {:ok, hash} = Scope.canonical_hash(attrs)
 

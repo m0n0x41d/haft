@@ -50,6 +50,43 @@ func TestResolveBindingTargetsUsesSymbolsForSupportedLanguages(t *testing.T) {
 	}
 }
 
+func TestResolveLegacyAffectedSymbolAnchorNeverGuessesAmbiguousReceiver(t *testing.T) {
+	root := t.TempDir()
+	path := filepath.Join(root, "sample.go")
+	source := `package sample
+
+type A struct{}
+type B struct{}
+
+func (A) Run() {}
+func (B) Run() {}
+`
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	legacy := AffectedSymbol{
+		FilePath:   "sample.go",
+		SymbolName: "Run",
+		SymbolKind: "method",
+	}
+	unresolved, diagnostic := ResolveLegacyAffectedSymbolAnchor(root, legacy)
+	if diagnostic == nil || diagnostic.Kind != SymbolBindingNeedsBindingResolution {
+		t.Fatalf("ambiguous legacy binding = %+v / %+v", unresolved, diagnostic)
+	}
+	if unresolved.AnchorID != "" {
+		t.Fatalf("ambiguous legacy binding was guessed: %+v", unresolved)
+	}
+
+	legacy.Receiver = "A"
+	resolved, diagnostic := ResolveLegacyAffectedSymbolAnchor(root, legacy)
+	if diagnostic != nil {
+		t.Fatalf("receiver-qualified legacy binding diagnostic = %+v", diagnostic)
+	}
+	if resolved.AnchorID == "" || resolved.QualifiedName != "A.Run" {
+		t.Fatalf("resolved legacy binding = %+v", resolved)
+	}
+}
+
 func TestResolveBindingTargetsBlocksAmbiguousMultiSymbolFileWithoutHint(t *testing.T) {
 	projectRoot := t.TempDir()
 	writeTestFile(t, projectRoot, "app.go", `package main

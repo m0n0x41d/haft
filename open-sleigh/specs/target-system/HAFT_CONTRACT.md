@@ -65,7 +65,7 @@ Hard rules:
 
 - Open-Sleigh cannot create, approve, or refresh a WorkCommission on its own.
 - Open-Sleigh cannot create, approve, or revise TargetSystemSpec,
-  EnablingSystemSpec, TermMap, or SpecCoverage objects. It may read the
+  SoftwareSystemSpec, TermMap, or SpecCoverage objects. It may read the
   spec-linked context carried by a WorkCommission and may write RuntimeRun /
   PhaseOutcome / Evidence records back to Haft.
 - `claim_for_preflight` grants only Preflight. Execute requires

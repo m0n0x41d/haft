@@ -11,18 +11,27 @@ import (
 	"github.com/spf13/cobra"
 
 	methodpkg "github.com/m0n0x41d/haft/internal/method"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
 func TestRunMethodCatalogJSON(t *testing.T) {
 	oldJSON := methodCatalogJSON
 	oldStatus := methodCatalogStatus
+	oldScopeID := methodCatalogScopeID
 	t.Cleanup(func() {
 		methodCatalogJSON = oldJSON
 		methodCatalogStatus = oldStatus
+		methodCatalogScopeID = oldScopeID
 	})
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevision(t, "method-catalog-json")
+	restore := enterTestProjectRoot(t, root)
+	defer restore()
 
 	methodCatalogJSON = true
 	methodCatalogStatus = methodpkg.LifecycleCurrent
+	methodCatalogScopeID = ""
 
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -55,13 +64,21 @@ func TestRunMethodCatalogJSON(t *testing.T) {
 func TestRunMethodCatalogTextStaysCompact(t *testing.T) {
 	oldJSON := methodCatalogJSON
 	oldStatus := methodCatalogStatus
+	oldScopeID := methodCatalogScopeID
 	t.Cleanup(func() {
 		methodCatalogJSON = oldJSON
 		methodCatalogStatus = oldStatus
+		methodCatalogScopeID = oldScopeID
 	})
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevision(t, "method-catalog-text")
+	restore := enterTestProjectRoot(t, root)
+	defer restore()
 
 	methodCatalogJSON = false
 	methodCatalogStatus = methodpkg.LifecycleCurrent
+	methodCatalogScopeID = ""
 
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -78,6 +95,45 @@ func TestRunMethodCatalogTextStaysCompact(t *testing.T) {
 	}
 	if strings.Contains(text, `"hard_gates"`) || strings.Contains(text, `"procedure"`) {
 		t.Fatalf("catalog text inlined full method definitions:\n%s", text)
+	}
+}
+
+func TestRunMethodCatalogOmitsSWEForNonSoftware(t *testing.T) {
+	oldJSON := methodCatalogJSON
+	oldStatus := methodCatalogStatus
+	oldScopeID := methodCatalogScopeID
+	t.Cleanup(func() {
+		methodCatalogJSON = oldJSON
+		methodCatalogStatus = oldStatus
+		methodCatalogScopeID = oldScopeID
+	})
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitNonSoftwareRevision(t, "method-catalog-nonsoftware")
+	restore := enterTestProjectRoot(t, root)
+	defer restore()
+
+	methodCatalogJSON = true
+	methodCatalogStatus = methodpkg.LifecycleCurrent
+	methodCatalogScopeID = ""
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+	if err := runMethodCatalog(cmd, nil); err != nil {
+		t.Fatal(err)
+	}
+	response := methodProfileApplicabilityResponse{}
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf(
+			"decode profile-aware catalog response: %v\n%s",
+			err,
+			output.String(),
+		)
+	}
+	if response.Applicability != "not_applicable" ||
+		response.ArtifactCreated {
+		t.Fatalf("non-software catalog response = %#v", response)
 	}
 }
 

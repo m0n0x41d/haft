@@ -17,9 +17,12 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"net/url"
+	"path/filepath"
 	"strings"
 	"time"
 
+	_ "github.com/m0n0x41d/haft/internal/sqlitepolicy"
 	_ "modernc.org/sqlite"
 )
 
@@ -172,28 +175,57 @@ type Store struct {
 }
 
 func NewStore(dbPath string) (*Store, error) {
-	conn, err := sql.Open("sqlite", dbPath)
+	dsn, err := sqliteConnectionDSN(dbPath)
 	if err != nil {
 		return nil, err
 	}
+	conn, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		return nil, err
+	}
+	closeOnFailure := func(err error) (*Store, error) {
+		_ = conn.Close()
+		return nil, err
+	}
 
-	// WAL mode + busy timeout: prevent SQLITE_BUSY when multiple goroutines
-	// (governance scanner, dashboard, task store) access the same DB concurrently.
-	_, _ = conn.Exec("PRAGMA journal_mode=WAL")
-	_, _ = conn.Exec("PRAGMA busy_timeout=5000")
+	if err := conn.Ping(); err != nil {
+		return closeOnFailure(fmt.Errorf("open SQLite database: %w", err))
+	}
+	if _, err := conn.Exec("PRAGMA journal_mode=WAL"); err != nil {
+		return closeOnFailure(fmt.Errorf("enable SQLite WAL mode: %w", err))
+	}
 
 	if _, err := conn.Exec(schema); err != nil {
-		return nil, fmt.Errorf("failed to init schema: %v", err)
+		return closeOnFailure(fmt.Errorf("failed to init schema: %v", err))
 	}
 
 	if err := RunMigrations(conn); err != nil {
-		return nil, fmt.Errorf("failed to run migrations: %v", err)
+		return closeOnFailure(fmt.Errorf("failed to run migrations: %v", err))
 	}
 
 	return &Store{
 		conn: conn,
 		q:    New(),
 	}, nil
+}
+
+func sqliteConnectionDSN(dbPath string) (string, error) {
+	if dbPath == "" || strings.TrimSpace(dbPath) != dbPath {
+		return "", fmt.Errorf("SQLite path must be non-empty canonical text")
+	}
+	absolutePath, err := filepath.Abs(dbPath)
+	if err != nil {
+		return "", fmt.Errorf("resolve SQLite path: %w", err)
+	}
+	query := url.Values{}
+	query.Add("_pragma", "busy_timeout(5000)")
+	query.Add("_pragma", "foreign_keys(1)")
+	dsn := url.URL{
+		Scheme:   "file",
+		Path:     filepath.Clean(absolutePath),
+		RawQuery: query.Encode(),
+	}
+	return dsn.String(), nil
 }
 
 func (s *Store) GetRawDB() *sql.DB {

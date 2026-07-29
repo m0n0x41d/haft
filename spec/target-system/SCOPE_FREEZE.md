@@ -1,8 +1,14 @@
-# Scope Freeze
+# Historical Scope Freeze (v6-v8 planning archive)
+
+> **Historical document.** This file records superseded v6-v8 release planning.
+> It is not a current product contract, implementation order, routing model, or
+> release gate. Current behavior comes from the active `.haft/specs/` carriers,
+> the v9 interface contract, and verified runtime behavior.
 
 > Reading order: 3 of N. Read after TERM_MAP. 10 minutes.
 >
-> Rule: if it's not in v6, don't model it in detail. Don't build it. Don't test it.
+> Historical rule (no longer operative): if it was not in v6, do not model,
+> build, or test it.
 
 ## Strategic Product Pivot
 
@@ -16,7 +22,7 @@ ready for rigorous AI-assisted engineering:
 Add project
   -> Init .haft and host-agent MCP config
   -> Onboard TargetSystemSpec
-  -> Onboard EnablingSystemSpec
+  -> Onboard SoftwareSystemSpec
   -> Validate TermMap and SpecCoverage
   -> Create Decisions from spec sections
   -> Create WorkCommissions from decisions
@@ -28,7 +34,7 @@ Large formal specs are not deferred research. They are the primary harness
 material. The implementation must be staged, but the target product model is
 spec-first.
 
-## v6.0 — Ship (current release)
+## v6.0 — Historical ship snapshot
 
 Everything below is built, tested, and being merged to main.
 
@@ -132,8 +138,8 @@ Ship exactly one vertical slice:
 - [ ] Add existing project through CLI/MCP host flow and detect readiness (`ready`, `needs_init`, `needs_onboard`, `missing`)
 - [ ] `haft init` creates `.haft/`, workflow policy, and supported Claude Code/Codex host-agent MCP config
 - [ ] Onboarding agent drafts `TargetSystemSpec` with stable SpecSection ids
-- [ ] Onboarding agent drafts `EnablingSystemSpec` only after target spec passes structural validation
-- [ ] `haft spec check` validates required sections, term map, statement types, and target/enabling split
+- [ ] Onboarding agent drafts `SoftwareSystemSpec` only after target spec passes structural validation
+- [ ] `haft spec check` validates required sections, term map, statement types, and target/software/enabling boundaries
 - [ ] `haft spec plan` proposes DecisionRecord drafts linked to spec sections
 - [ ] Create one WorkCommission from a spec-linked decision
 - [ ] Harness runtime executes that commission and writes evidence
@@ -150,7 +156,7 @@ Focus: make the deep spec workflow operationally usable.
 
 - [ ] Project readiness panel: init/spec/coverage/runtime state
 - [ ] Target spec workspace: section tree, missing required sections, term gaps
-- [ ] Enabling spec workspace: repo architecture, tests, agent policy, runtime policy
+- [ ] Software spec workspace: software role, responsibility allocation, behavior, interfaces, constraints, selected structure
 - [ ] Spec coverage view: uncovered/reasoned/commissioned/verified/stale
 - [ ] Decision planning view: accept/merge/split/discard spec-derived decision drafts
 - [ ] Runtime cockpit: runnable/running/blocked/completed commissions, evidence, apply/cancel/requeue

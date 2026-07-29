@@ -1,119 +1,145 @@
 ---
 name: h-onboard
 description: |
-  Compatibility/bootstrap entrypoint for first-time haft spec setup. Use when the repository has no `.haft/` directory, `.haft/` exists but has no active SpecSections, or the operator says "set up haft here", "onboard this project", "initialize FPF", "first time using haft in this repo", "let's add haft to this project", or "scaffold haft for this codebase". In projects with haft already installed, this skill immediately routes through h-spec and `mcp__haft__haft_spec_section(action="lifecycle")`; it does not maintain a separate onboarding template. For ongoing spec updates use h-spec directly.
+  Bootstrap Haft through one readable onboarding surface, prepare project-profile or structured-memory reviews, and orient applicable specification carriers. Use for first-time setup or when haft_onboard reports that setup is incomplete. Status and repository detection are read-only; preparation may materialize or reuse only a non-binding review carrier. Profile application, structured-memory enablement, and specification lifecycle gates remain explicit human acts.
 when_to_use: |
-  Repo has no `.haft/` directory, OR `.haft/` exists but spec lifecycle is not ready. Existing haft projects with spec-update, "запиши в спеки", approve, rebaseline, or stale-section requests should use h-spec directly.
-argument-hint: "[optional: short project description]"
-allowed-tools: Bash Read Grep Glob Write Edit mcp__haft__haft_problem mcp__haft__haft_query mcp__haft__haft_spec_section
+  The repository has no Haft state or its initial spec lifecycle is not ready.
+argument-hint: "[optional project description]"
+allowed-tools: Bash Read Grep Glob Write Edit mcp__haft__haft_onboard mcp__haft__haft_query mcp__haft__haft_spec_section
 ---
 
-# h-onboard — Bootstrap route into h-spec
+# h-onboard — Bootstrap Haft through one readable setup contract
 
-This skill is the old operator entrypoint name. It is now a compatibility
-wrapper around the typed spec lifecycle.
+Contract truth: project-profile onboarding and structured-memory setup are
+**V9 CONTRACT** capabilities. Source, schema, skill, and local-test presence is
+not installed-runtime proof. A current readiness claim requires
+**EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact candidate; RC or release
+status additionally requires release authority. Do not infer
+**CURRENT PRODUCT** status from contract inclusion or evidence alone.
 
-Do **not** use the old three-prose-file onboarding method. The current method
-is driven by `SpecSection` phases, `WorkflowIntent`, and `SpecSectionBaseline`
-human gates. The primary ongoing interface is `/h-spec`.
+## 1. Read one onboarding status
 
-## Step 1 — Check whether haft is initialized
+If `.haft/` is absent, run the explicitly requested `haft init`; do not
+hand-roll its state directories. Then call:
 
-If `.haft/` is missing, tell the operator that project setup starts with:
-
-```
-haft init
-```
-
-`haft init` installs the project graph, MCP config, and skills. Do not hand-roll
-`.haft/specs/` directories or local markdown carriers before initialization.
-
-If `.haft/` exists, continue.
-
-## Step 2 — Ask the lifecycle projection
-
-Call:
-
-```
-mcp__haft__haft_spec_section(action="lifecycle")
+```text
+mcp__haft__haft_onboard(action="status")
 ```
 
-If the installed haft binary is older and does not support `lifecycle`, call:
+Interpret only its closed result kind:
 
-```
-mcp__haft__haft_spec_section(action="next_step")
-```
+- `needs_init` — initialize, reconnect when instructed, and repeat `status`;
+- `needs_profile` — prepare a profile review;
+- `profile_review_ready` — present the readable review and its exact next act;
+- `needs_memory` — prepare the structured-memory review;
+- `memory_review_ready` — present the enable/defer choice and route a selected
+  enablement through manual `h-decide`;
+- `memory_deferred` — setup is intentionally usable without structured memory;
+- `ready` — continue with the current project question.
 
-and use:
+Do not expose or ask the operator to choose internal schema composites,
+revision heads, staging records, or implementation letters. `status` is a
+readable setup projection, not authority and not performed setup Work.
 
-```
-haft spec status
-haft spec next --json
-```
+## 2. Prepare a project-profile review
 
-as the CLI fallback when shell access is available.
+When status returns `needs_profile`, call:
 
-## Step 3 — Route by lifecycle state
-
-- `ready` / `action=none`: onboarding is already complete. Stop and suggest
-  `/h-status` for the dashboard or `/h-spec` for ongoing spec edits.
-- `needs_action` with `action=draft` or `action=clarify`: follow the h-spec
-  drafting procedure. Read `workflow_intent.context_for_agent`,
-  `expected_fields`, `checks`, and `carrier`; draft or fix the fenced
-  `yaml spec-section` block; run `haft spec check`; call lifecycle again.
-- `needs_human_gate` with `action=approve`: present the active section and ask
-  for explicit approval. Only then call `haft_spec_section(action="approve")`.
-- `needs_triage` with `action=triage`: surface drift/staleness findings and ask
-  the operator to choose rebaseline, reopen, rollback, deprecate, or supersede.
-
-## Step 4 — Discover before drafting
-
-For draft/clarify actions, read enough project evidence to avoid invention:
-
-- README and top-level docs
-- build/test config (`go.mod`, `package.json`, `pyproject.toml`, `Cargo.toml`,
-  Makefile, CI files, etc.)
-- source entry points (`cmd/`, `src/`, `internal/`, `lib/`, or equivalent)
-- existing `.haft/specs/` carriers
-- ADRs, docs, and previous decision artifacts when present
-
-Ask at most 1-3 questions only when this evidence cannot determine a required
-field. The agent drafts from evidence; the operator corrects and approves.
-
-## Step 5 — Optional bootstrap ProblemCard
-
-If this is the first spec bootstrap and there is no existing onboarding
-ProblemCard, record one tactical ProblemCard:
-
-```
-mcp__haft__haft_problem(
-  action="frame",
-  problem_type="synthesis",
-  title="Project onboarding: <repo name>",
-  signal="Project lacks ready SpecSection lifecycle; agent is drafting initial typed spec carriers for operator review",
-  acceptance="Spec lifecycle returns ready after operator-reviewed active SpecSections have baselines",
-  blast_radius="<project scope>",
-  reversibility="high",
-  mode="tactical"
-)
+```text
+mcp__haft__haft_onboard(action="profile_prepare")
 ```
 
-Do not duplicate this card on every run. Search first when unsure.
+Omitting `scopes` uses repository detection. If the basis is insufficient, the
+tool returns `needs_scope_review` without writing canonical profile state. When
+the operator supplies a scope, use only the readable shape:
 
-## What NOT to do
+```json
+{
+  "action": "profile_prepare",
+  "basis": "<readable reason for these explicit scopes>",
+  "scopes": [
+    {
+      "scope_id": "<stable readable id>",
+      "label": "<what this repository scope is>",
+      "realization_kind": "software",
+      "evidence_paths": ["<path supporting the classification>"]
+    }
+  ]
+}
+```
 
-- DO NOT maintain separate h-onboard templates. Use lifecycle
-  `workflow_intent` as the typed contract.
-- DO NOT ask the operator to author blank specs from scratch.
-- DO NOT auto-approve, auto-rebaseline, or auto-reopen.
-- DO NOT bind DecisionRecords during onboarding. Use manual `/h-decide`.
-- DO NOT recommend `haft agent` or `haft desktop`; v8 is skills + CLI + MCP.
+`basis` is top-level on the `profile_prepare` request, alongside `scopes`; it is
+required when repository detection cannot establish the scope. Evidence paths
+may be empty for an empty repository when that readable basis is explicit.
+`realization_kind` is `software` or `non_software`. A
+`profile_review_prepared` or `profile_review_reused` result writes only the
+review carrier; `canonical_profile_changed` remains false.
 
-## FPF references
+Automatic `h-onboard` may inspect and prepare, but it must not apply. Only an
+explicit operator invocation of `h-onboard`, after the readable review and
+engineering assessment are current, authorizes:
 
-- A.1 — Holonic Foundation: target system vs enabling system
-- A.7 — Object / Description / Carrier
-- F.17 — Unified Term Sheet
-- E.14 — Human-Centric Working-Model
+```bash
+haft onboard profile apply
+```
 
-Look up via `mcp__haft__haft_query(action="fpf", query="A.1")`.
+Do not ask for a second confirmation after that valid explicit invocation.
+Report the readable scope and applicability result, not internal profile
+machinery.
+
+## 3. Prepare the structured-memory choice
+
+When status returns `needs_memory`, call:
+
+```text
+mcp__haft__haft_onboard(action="memory_prepare")
+```
+
+This may materialize or reuse only a non-binding review carrier. It returns
+`memory_review_prepared`, `memory_review_reused`, or `blocked`, plus a readable
+brief and opaque `review_ref`. Present both real choices:
+
+- **Enable structured memory** is a separate binding effect. Route an
+  explicitly selected enablement through manual `h-decide`, which runs
+  `haft onboard memory enable`. Do not substitute a DecisionRecord for this
+  effect.
+- **Not now** is a non-binding disposition. Only after the operator actually
+  selects it, run `haft onboard memory defer`. A successful result is
+  `memory_deferred`; it grants no authority, creates no DecisionRecord, and
+  does not pretend structured memory is enabled.
+
+To reconsider a current `memory_deferred` disposition, call
+`mcp__haft__haft_onboard(action="memory_prepare")`. This safely reopens the
+same review route; it does not enable memory by itself.
+
+If enablement returns `restart_required`, reconnect the MCP client and repeat
+`haft_onboard(action="status")`. Structured-memory readiness is established
+only when that fresh status returns `ready`. Deferral instead remains readable
+as `memory_deferred`.
+
+Missing setup, known absence, or explicit abstention does not block unrelated
+already-authorized Work. Never establish an EntityOfConcern or persist typed
+memory merely because a read could not resolve it.
+
+## 4. Continue to applicable specifications
+
+Only after exact project applicability is readable, call
+`mcp__haft__haft_spec_section(action="lifecycle")` for carriers applicable to
+the selected concern. Do not draft a `SoftwareSystemSpec` for a non-software
+scope or an unresolved profile. For draft or clarify, follow
+`workflow_intent`, ground edits in repository evidence, run `haft spec check`,
+and inspect lifecycle again. Approve, rebaseline, and reopen remain explicit
+human lifecycle gates.
+
+Read README, build/test configuration, source entry points, existing specs,
+and relevant decisions before drafting. Ask only for facts that cannot be
+recovered without invention.
+
+Do not create an onboarding ProblemCard by default. The sequence above is the
+local onboarding method, not the project's general reasoning order.
+
+`TargetSystemSpec` and `SoftwareSystemSpec` are Haft local-practice carriers,
+not FPF Core kinds by label. A project-profile declaration alone does not
+establish the separate target-system relation required by TargetSystemSpec.
+Preserve object/description/carrier, suggestion/declaration, and plan/Work
+boundaries; use `h-spec` for detailed lifecycle rules.

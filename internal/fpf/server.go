@@ -2,9 +2,11 @@ package fpf
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -50,9 +52,20 @@ type ContentItem struct {
 // V5ToolHandler handles a v5 MCP tool call and returns the result text.
 type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMessage) (string, error)
 
+// MemoryToolHandler handles the strict typed-memory wire contract. It receives
+// the original tools/call arguments bytes so duplicate fields and other JSON
+// boundary violations remain observable to the dedicated decoder.
+type MemoryToolHandler func(ctx context.Context, arguments json.RawMessage) (string, error)
+
 type Server struct {
-	v5Handler    V5ToolHandler
-	instructions string
+	v5Handler         V5ToolHandler
+	onboardHandler    MemoryToolHandler
+	entityHandler     MemoryToolHandler
+	memoryHandler     MemoryToolHandler
+	memorySurface     memorySurfaceMode
+	memoryReadHandler MemoryToolHandler
+	instructions      string
+	version           string
 }
 
 // parityPlanMCPSchema delegates to the shared artifact.ParityPlanJSONSchema
@@ -63,28 +76,122 @@ func parityPlanMCPSchema(description string) map[string]interface{} {
 }
 
 func stringArrayMCPSchema() map[string]interface{} {
-	return map[string]interface{}{}
+	return map[string]interface{}{
+		"type":  "array",
+		"items": map[string]interface{}{"type": "string"},
+	}
 }
 
 func objectMCPSchema(properties map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
+		"type":       "object",
 		"properties": properties,
 	}
 }
 
 func objectArrayMCPSchema(properties map[string]interface{}) map[string]interface{} {
 	return map[string]interface{}{
+		"type":  "array",
 		"items": objectMCPSchema(properties),
 	}
 }
 
-func NewServer() *Server {
-	return &Server{}
+func bindingTargetArrayMCPSchema() map[string]interface{} {
+	stringField := func() map[string]interface{} {
+		return map[string]interface{}{"type": "string"}
+	}
+	integerField := func() map[string]interface{} {
+		return map[string]interface{}{"type": "integer"}
+	}
+	return map[string]interface{}{
+		"type": "array",
+		"items": map[string]interface{}{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]interface{}{
+				"kind":              stringField(),
+				"target_ref":        stringField(),
+				"anchor_id":         stringField(),
+				"anchor_version":    integerField(),
+				"file_path":         stringField(),
+				"language":          stringField(),
+				"symbol_name":       stringField(),
+				"symbol_kind":       stringField(),
+				"receiver":          stringField(),
+				"qualified_name":    stringField(),
+				"signature_hash":    stringField(),
+				"line":              integerField(),
+				"end_line":          integerField(),
+				"body_hash":         stringField(),
+				"anchor_hash":       stringField(),
+				"text_hash":         stringField(),
+				"nearest_symbol":    stringField(),
+				"module_path":       stringField(),
+				"module_hash":       stringField(),
+				"reason":            stringField(),
+				"why_symbol_failed": stringField(),
+				"why_range_failed":  stringField(),
+				"language_support":  stringField(),
+				"confidence":        stringField(),
+				"resolution_source": stringField(),
+			},
+		},
+	}
+}
+
+func NewServer(version string) *Server {
+	return &Server{version: version}
 }
 
 // SetV5Handler registers the handler for v5 tools (haft_note, haft_problem, etc).
 func (s *Server) SetV5Handler(h V5ToolHandler) {
 	s.v5Handler = h
+}
+
+// SetOnboardHandler registers the readable task-level setup boundary.
+// Detection is read-only; preparation can only materialize a non-binding
+// review carrier and cannot apply a profile or enable project memory.
+func (s *Server) SetOnboardHandler(h MemoryToolHandler) {
+	s.onboardHandler = h
+}
+
+// SetEntityHandler registers the task-level EntityOfConcern establishment
+// boundary. The handler derives all project-memory coordinates internally.
+func (s *Server) SetEntityHandler(h MemoryToolHandler) {
+	s.entityHandler = h
+}
+
+// SetMemoryHandler registers the dedicated validate-only typed-memory boundary.
+// It is deliberately separate from the v5 handler, whose project hooks include
+// audit and recall effects that are not part of haft_memory(validate).
+func (s *Server) SetMemoryHandler(h MemoryToolHandler) {
+	s.setMemorySurface(memorySurfaceValidateOnly, h)
+}
+
+// SetMemoryReadHandler registers the closed selected-project read variants
+// behind haft_query(action="memory"). It does not widen the dedicated
+// haft_memory(validate|admit) mutation boundary.
+func (s *Server) SetMemoryReadHandler(h MemoryToolHandler) {
+	s.memoryReadHandler = h
+}
+
+// SetMemoryFullHandler registers validate plus the non-binding exact-snapshot
+// admission action. Project-memory reads remain a separate query capability.
+func (s *Server) SetMemoryFullHandler(h MemoryToolHandler) {
+	s.setMemorySurface(memorySurfaceFull, h)
+}
+
+func (s *Server) setMemorySurface(
+	mode memorySurfaceMode,
+	handler MemoryToolHandler,
+) {
+	if handler == nil {
+		s.memoryHandler = nil
+		s.memorySurface = memorySurfaceUnavailable
+		return
+	}
+	s.memoryHandler = handler
+	s.memorySurface = mode
 }
 
 func (s *Server) SetInstructions(instructions string) {
@@ -185,7 +292,7 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 		},
 		"serverInfo": map[string]string{
 			"name":    "haft",
-			"version": "5.0.0",
+			"version": s.version,
 		},
 	}
 
@@ -197,10 +304,12 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 }
 
 func (s *Server) handleToolsList(req JSONRPCRequest) {
-	tools := s.ToolCatalog()
-
+	// Several real MCP hosts register only the first tools/list response and do
+	// not follow nextCursor. The catalog is therefore intentionally atomic: one
+	// response advertises every currently available tool. Client-specific params
+	// are ignored because they must never make part of the catalog undiscoverable.
 	s.sendResult(req.ID, map[string]interface{}{
-		"tools": tools,
+		"tools": s.ToolCatalog(),
 	})
 }
 
@@ -257,6 +366,11 @@ func (s *Server) ToolCatalog() []Tool {
 						"context": map[string]string{
 							"type":        "string",
 							"description": "Optional context name for grouping (e.g., 'auth', 'payments')",
+						},
+						"entity_ref": memoryEntityReferenceSchema(),
+						"bounded_context_ref": map[string]interface{}{
+							"type":        "string",
+							"description": "Exact typed-memory bounded context paired with entity_ref. Legacy context is only a grouping label and is never inferred as this coordinate.",
 						},
 					},
 					"required": []string{"title"},
@@ -373,6 +487,11 @@ func (s *Server) ToolCatalog() []Tool {
 							"type":        "string",
 							"description": "Optional context name for grouping",
 						},
+						"entity_ref": memoryEntityReferenceSchema(),
+						"bounded_context_ref": map[string]interface{}{
+							"type":        "string",
+							"description": "(frame) Exact typed-memory bounded context paired with entity_ref. Legacy context remains only a grouping label.",
+						},
 						"mode": map[string]string{
 							"type":        "string",
 							"description": "(frame) Decision mode: tactical, standard (default), deep",
@@ -385,7 +504,7 @@ func (s *Server) ToolCatalog() []Tool {
 
 		tools = append(tools, Tool{
 			Name:        "haft_solution",
-			Description: "Explore solution variants, compare them under parity, or search similar portfolios.",
+			Description: "Explore or compare solution variants. With exact EntityOfConcern coordinates and already-addressable option records, the task result is also projected into typed project memory without selecting a winner.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -420,10 +539,16 @@ func (s *Server) ToolCatalog() []Tool {
 								"assumption_notes":     map[string]string{"type": "string", "description": "Key assumptions this variant depends on"},
 								"rollback_notes":       map[string]string{"type": "string"},
 								"evidence_refs":        map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}, "description": "References to supporting evidence"},
+								"project_record_ref":   memoryProjectRecordReferenceSchema(),
 							},
 							"required": []string{"title", "weakest_link", "novelty_marker"},
 						},
 						"description": "(explore) at least 2 distinct variants",
+					},
+					"entity_ref": memoryEntityReferenceSchema(),
+					"bounded_context_ref": map[string]interface{}{
+						"type":        "string",
+						"description": "(explore/compare) Exact typed-memory bounded context paired with entity_ref. Legacy context remains only a grouping label.",
 					},
 					"no_stepping_stone_rationale": map[string]string{
 						"type":        "string",
@@ -431,7 +556,7 @@ func (s *Server) ToolCatalog() []Tool {
 					},
 					"portfolio_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) SolutionPortfolio ID to add comparison results to. Auto-detected if only one active.",
+						"description": "(compare) SolutionPortfolio ID to add comparison results to. Its typed portfolio record and option records must already resolve for typed PortfolioComparison projection; otherwise the legacy comparison remains durable but typed projection abstains.",
 					},
 					"dimensions": map[string]interface{}{
 						"type":        "array",
@@ -497,11 +622,11 @@ func (s *Server) ToolCatalog() []Tool {
 					"parity_plan": parityPlanMCPSchema("(compare) Structured parity plan. REQUIRED for deep mode: baseline_set, window, budget, and missing_data_policy MUST be present. Standard/tactical modes accept any subset and warn on gaps. Per FPF G.9:4.2."),
 					"selected_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) Legacy advisory variant ID",
+						"description": "(compare) Legacy advisory variant ID. Excluded from typed PortfolioComparison; never a winner, ChoiceResult, or DecisionRecord.",
 					},
 					"legacy_recommendation_ref": map[string]string{
 						"type":        "string",
-						"description": "Advisory recommendation only",
+						"description": "Advisory recommendation only; excluded from typed PortfolioComparison.",
 					},
 					"recommendation_rationale": map[string]string{
 						"type":        "string",
@@ -528,7 +653,7 @@ func (s *Server) ToolCatalog() []Tool {
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"decide", "apply", "measure", "evidence", "baseline"},
-						"description": "decide=DRR creation, apply=brief, measure=impact, evidence=attach, baseline=snapshot files",
+						"description": "Decision lifecycle action",
 					},
 					"selected_title": map[string]string{
 						"type": "string",
@@ -647,7 +772,7 @@ func (s *Server) ToolCatalog() []Tool {
 								"observable":    map[string]string{"type": "string"},
 								"threshold":     map[string]string{"type": "string"},
 								"verify_after":  map[string]string{"type": "string", "description": "When to check (RFC3339 or YYYY-MM-DD) — for async claims"},
-								"realizability": map[string]string{"type": "string", "description": "C.28 realizable|nonrealizable|unknown"},
+								"realizability": map[string]string{"type": "string"},
 								"probability":   map[string]string{"type": "number", "description": "Optional p(claim holds) in [0,1]."},
 								"command":       map[string]string{"type": "string", "description": "Optional allowlisted verification command."},
 							},
@@ -660,6 +785,7 @@ func (s *Server) ToolCatalog() []Tool {
 					"problem_ref": map[string]string{
 						"type": "string", "description": "(decide) Single ProblemCard ID. Use problem_refs for multiple.",
 					},
+					"problem_statement": map[string]interface{}{},
 					"problem_refs": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
@@ -706,18 +832,14 @@ func (s *Server) ToolCatalog() []Tool {
 						"retired_reason":         map[string]interface{}{},
 						"governance_target_refs": stringArrayMCPSchema(),
 					}),
-					"binding_hints": map[string]string{
-						"type": "array",
-					},
+					"binding_hints": stringArrayMCPSchema(),
 					"binding_scope": map[string]string{
 						"type": "string",
 					},
 					"binding_fallback_reason": map[string]string{
 						"type": "string",
 					},
-					"binding_targets": map[string]string{
-						"type": "array",
-					},
+					"binding_targets": bindingTargetArrayMCPSchema(),
 					"search_keywords": map[string]string{
 						"type":        "string",
 						"description": "(decide) Space-separated synonyms and related terms for search enrichment",
@@ -790,11 +912,11 @@ func (s *Server) ToolCatalog() []Tool {
 					"_skip": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "legacy _skip_reason",
+						"description": "_skip_reason",
 					},
 					"_skip_reason": map[string]string{
 						"type":        "string",
-						"description": "(decide) Operator rationale required when _skips/_skip is non-empty.",
+						"description": "_skip_reason!",
 					},
 					"context": map[string]string{"type": "string", "description": "Optional context name"},
 					"mode":    map[string]string{"type": "string", "description": "(decide) tactical, standard (default), deep"},
@@ -860,17 +982,45 @@ func (s *Server) ToolCatalog() []Tool {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Read-only search, status, coverage, spec, and semantic drill-downs.",
+			Description: "Read project state.",
 			InputSchema: map[string]interface{}{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
-						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "pattern_use", "pattern_recall", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
-						"description": "Read-only query/drill-down action.",
+						"type": "string",
+						"enum": []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 					},
-					"query": map[string]interface{}{
-						"description": "(search) Compact discovery text, or one exact artifact ID. Search hit/miss does not establish claim or prediction presence.",
+					"query": map[string]interface{}{"type": "string"},
+					"identifier": map[string]interface{}{
+						"type":        "string",
+						"description": "FPF source identifier only for action=fpf mode=lookup or mode=inspect. A Haft artifact ID or code symbol is a wrong_identifier_namespace; use artifact_ref with action=related or symbol with action=node.",
+					},
+					"entity_of_concern": map[string]interface{}{"type": "string"},
+					"scope_id": map[string]interface{}{
+						"type":        "string",
+						"description": "(status, coverage) Exact canonical project ScopeID. Required when the admitted profile has several scopes.",
+					},
+					"known_context": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
+					},
+					"intended_use": map[string]interface{}{"type": "string"},
+					"roles": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "string",
+						},
+					},
+					"max_candidates_per_role":     map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_total_candidates":        map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_excerpt_characters":      map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_relations_per_candidate": map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_candidates": map[string]interface{}{
+						"type":        "integer",
+						"minimum":     1,
+						"maximum":     50,
+						"description": "For action=explore with query, bounded canonical candidate retrieval before the working projection caps visible candidates at five.",
 					},
 					"term":           map[string]interface{}{},
 					"section_id":     map[string]interface{}{},
@@ -897,8 +1047,7 @@ func (s *Server) ToolCatalog() []Tool {
 					"conflict_refs":     map[string]interface{}{},
 					"declared_relation": map[string]interface{}{},
 					"variants": map[string]interface{}{
-						"type":        "array",
-						"description": "(spec_fit_probe) Candidate variants to classify against active SpecSections.",
+						"type": "array",
 						"items": map[string]interface{}{
 							"properties": map[string]interface{}{
 								"id":                map[string]interface{}{},
@@ -934,7 +1083,8 @@ func (s *Server) ToolCatalog() []Tool {
 						"description": "(spec_use) Optional OperationalGate v1.",
 					},
 					"artifact_ref": map[string]interface{}{
-						"description": "(related) Canonical exact artifact ID for full single-artifact recovery.",
+						"type":        "string",
+						"description": "Canonical Haft artifact ID for action=related exact recovery. Code symbols use symbol; FPF source IDs use identifier. A wrong_identifier_namespace response supplies the exact recovery_call.",
 					},
 					"ref": map[string]interface{}{
 						"description": "(related) Backward-compatible alias for artifact_ref.",
@@ -957,28 +1107,35 @@ func (s *Server) ToolCatalog() []Tool {
 					"exact_record_needed":        map[string]interface{}{},
 					"kind":                       map[string]interface{}{},
 					"file":                       map[string]interface{}{},
-					"symbol":                     map[string]interface{}{},
-					"line":                       map[string]interface{}{},
-					"lane": map[string]interface{}{
+					"symbol": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
-						"description": "Lane. Default index; full=true audit",
+						"description": "For action=node, a code symbol only. A canonical Haft artifact ID returns wrong_identifier_namespace; recover it with haft_query(action=related, artifact_ref=<id>), not another node call.",
+					},
+					"anchor_id": map[string]interface{}{},
+					"line":      map[string]interface{}{},
+					"lane": map[string]interface{}{
+						"type": "string",
+						"enum": []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
 					},
 					"depth":   map[string]interface{}{},
-					"files":   map[string]interface{}{},
+					"profile": map[string]interface{}{},
+					"files":   stringArrayMCPSchema(),
 					"context": map[string]interface{}{},
-					"view": map[string]string{
+					"view": map[string]interface{}{
 						"type":        "string",
-						"description": "projection views",
+						"description": "For action=fpf and action=explore, publication projection views are working (default), trace, or diagnostic. Other haft_query actions retain their own view contracts, so this shared field is not a global enum.",
+					},
+					"trace_ref": map[string]interface{}{
+						"type":        "string",
+						"description": "For action=fpf or action=explore with view=trace or view=diagnostic, trace_ref is the opaque replay reference from an earlier response. FPF source-snapshot or typed-request drift returns replay_mismatch before retrieval; Explore index/request/result drift returns replay_mismatch. working view rejects trace_ref.",
 					},
 					"limit": map[string]interface{}{},
 					"full": map[string]interface{}{
-						"description": "(search) Full payload is accepted only for an exact artifact ID; ordinary discovery queries must remain compact.",
+						"description": "(search) Exact artifact payload only.",
 					},
-					"explain": map[string]interface{}{},
 					"mode": map[string]interface{}{
-						"type":        "string",
-						"description": "tree mode",
+						"type": "string",
+						"enum": []interface{}{"concern", "lookup", "inspect", "tactical", "standard", "deep"},
 					},
 				},
 				"required": []string{"action"},
@@ -989,6 +1146,17 @@ func (s *Server) ToolCatalog() []Tool {
 		tools = append(tools, haftCommissionTool())
 		tools = append(tools, haftSpecSectionTool())
 	}
+	// These task-level and typed-memory contracts are stable discovery
+	// surfaces. They remain advertised before project onboarding or memory
+	// enablement; the configured handlers return a closed recovery result
+	// instead of making the tools disappear from tools/list.
+	tools = installMemoryQuerySchema(tools)
+	tools = append(
+		tools,
+		haftOnboardTool(),
+		haftEntityTool(),
+		haftMemoryFullTool(),
+	)
 
 	return compactToolDescriptions(tools)
 }
@@ -996,15 +1164,42 @@ func (s *Server) ToolCatalog() []Tool {
 func compactToolDescriptions(tools []Tool) []Tool {
 	compacted := make([]Tool, 0, len(tools))
 	for _, tool := range tools {
-		tool.Description = ""
-		compactSchemaDescriptions(tool.InputSchema, tool.Name)
+		tool.Description = compactToolDescription(tool.Name, tool.Description)
+		if tool.Name != "haft_onboard" &&
+			tool.Name != "haft_entity" {
+			compactSchemaDescriptions(tool.InputSchema)
+		}
 		compacted = append(compacted, tool)
 	}
 
 	return compacted
 }
 
-func compactSchemaDescriptions(value interface{}, toolName string) {
+func compactToolDescription(toolName, fallback string) string {
+	if toolName == "haft_memory" {
+		return strings.TrimSpace(fallback)
+	}
+	descriptions := map[string]string{
+		"haft_note":         "Record a non-binding project fact.",
+		"haft_problem":      "Frame or update an engineering problem.",
+		"haft_solution":     "Explore or compare solution variants.",
+		"haft_decision":     "Manage decisions; human-gated binding needs a full choice brief.",
+		"haft_refresh":      "Inspect or update artifact lifecycle.",
+		"haft_query":        "Read project state or FPF source; expand human gates into briefs.",
+		"haft_onboard":      "Inspect setup or prepare a non-binding onboarding review.",
+		"haft_entity":       "Establish one non-binding EntityOfConcern with atomic aliases.",
+		"haft_method":       "Pull, inspect, or close a SWE MethodRun.",
+		"haft_commission":   "Manage commissions; human-gated authority needs a full scope brief.",
+		"haft_spec_section": "Spec lifecycle; FPF source fit is separate; human-gated acts need briefs",
+	}
+	description, ok := descriptions[toolName]
+	if ok {
+		return description
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func compactSchemaDescriptions(value interface{}) {
 	switch typed := value.(type) {
 	case map[string]interface{}:
 		if description, ok := typed["description"].(string); ok {
@@ -1013,7 +1208,7 @@ func compactSchemaDescriptions(value interface{}, toolName string) {
 			}
 		}
 		for _, child := range typed {
-			compactSchemaDescriptions(child, toolName)
+			compactSchemaDescriptions(child)
 		}
 	case map[string]string:
 		if description, ok := typed["description"]; ok {
@@ -1023,7 +1218,7 @@ func compactSchemaDescriptions(value interface{}, toolName string) {
 		}
 	case []interface{}:
 		for _, child := range typed {
-			compactSchemaDescriptions(child, toolName)
+			compactSchemaDescriptions(child)
 		}
 	}
 }
@@ -1037,10 +1232,16 @@ func isLoadBearingSchemaDescription(description string) bool {
 		"tree mode",
 		"projection views",
 		"Advisory recommendation only",
+		"Excluded from typed PortfolioComparison",
+		"explore/compare",
 		"Lane. Default index",
 		"lane=index",
 		"optimization",
 		"simulation_only",
+		"strict typed-memory decoder",
+		"wrong_identifier_namespace",
+		"publication projection views",
+		"trace_ref",
 	} {
 		if strings.Contains(description, marker) {
 			return true
@@ -1059,6 +1260,125 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		s.sendError(req.ID, -32700, "Invalid params")
+		return
+	}
+
+	if params.Name == "haft_onboard" {
+		s.handleDedicatedToolCall(
+			req.ID,
+			ctx,
+			params.Arguments,
+			s.onboardHandler,
+			"Haft onboarding is unavailable",
+		)
+		return
+	}
+
+	if params.Name == "haft_entity" {
+		s.handleDedicatedToolCall(
+			req.ID,
+			ctx,
+			params.Arguments,
+			s.entityHandler,
+			"Haft EntityOfConcern establishment is unavailable",
+		)
+		return
+	}
+
+	if params.Name == "haft_query" {
+		action, err := decodeMemoryToolAction(params.Arguments)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_query request: " + err.Error(),
+				}},
+				IsError: true,
+			})
+			return
+		}
+		if action == memoryQueryAction {
+			if s.memoryReadHandler == nil {
+				s.sendResult(req.ID, CallToolResult{
+					Content: []ContentItem{{
+						Type: "text",
+						Text: "Haft project-memory reads are unavailable",
+					}},
+					IsError: true,
+				})
+				return
+			}
+			output, err := s.memoryReadHandler(ctx, params.Arguments)
+			if err != nil {
+				s.sendResult(req.ID, CallToolResult{
+					Content: []ContentItem{{Type: "text", Text: err.Error()}},
+					IsError: true,
+				})
+				return
+			}
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{Type: "text", Text: output}},
+			})
+			return
+		}
+	}
+
+	if params.Name == "haft_memory" {
+		if s.memoryHandler == nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{Type: "text", Text: "Haft memory validation is unavailable"}},
+				IsError: true,
+			})
+			return
+		}
+
+		memoryRequest, err := unwrapMemoryToolRequest(params.Arguments)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_memory request: " + err.Error(),
+				}},
+				IsError: true,
+			})
+			return
+		}
+		action, err := decodeMemoryToolAction(memoryRequest)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_memory request: " + err.Error(),
+				}},
+				IsError: true,
+			})
+			return
+		}
+		if !s.memorySurface.allowsAction(action) {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf(
+						"Haft memory action %q is unavailable on the configured surface",
+						action,
+					),
+				}},
+				IsError: true,
+			})
+			return
+		}
+
+		output, err := s.memoryHandler(ctx, memoryRequest)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{Type: "text", Text: err.Error()}},
+				IsError: true,
+			})
+			return
+		}
+		s.sendResult(req.ID, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: output}},
+		})
 		return
 	}
 
@@ -1082,4 +1402,130 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			Content: []ContentItem{{Type: "text", Text: output}},
 		})
 	}
+}
+
+func (s *Server) handleDedicatedToolCall(
+	id interface{},
+	ctx context.Context,
+	arguments json.RawMessage,
+	handler MemoryToolHandler,
+	unavailable string,
+) {
+	if handler == nil {
+		s.sendResult(id, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: unavailable}},
+			IsError: true,
+		})
+		return
+	}
+	output, err := handler(ctx, arguments)
+	if err != nil {
+		s.sendResult(id, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: err.Error()}},
+			IsError: true,
+		})
+		return
+	}
+	s.sendResult(id, CallToolResult{
+		Content: []ContentItem{{Type: "text", Text: output}},
+	})
+}
+
+func unwrapMemoryToolRequest(
+	arguments json.RawMessage,
+) (json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(arguments))
+	start, err := decoder.Token()
+	if err != nil || start != json.Delim('{') {
+		return nil, fmt.Errorf("arguments must be a JSON object")
+	}
+
+	request := json.RawMessage(nil)
+	requestPresent := false
+	for decoder.More() {
+		rawName, nameErr := decoder.Token()
+		if nameErr != nil {
+			return nil, fmt.Errorf("arguments are malformed")
+		}
+		name, nameOK := rawName.(string)
+		if !nameOK {
+			return nil, fmt.Errorf("arguments contain a non-string field name")
+		}
+		rawValue := json.RawMessage(nil)
+		if decodeErr := decoder.Decode(&rawValue); decodeErr != nil {
+			return nil, fmt.Errorf("arguments field %q is malformed", name)
+		}
+		if name != "request" {
+			return nil, fmt.Errorf("arguments field %q is not allowed", name)
+		}
+		if requestPresent {
+			return nil, fmt.Errorf("request field is duplicated")
+		}
+		request = append(json.RawMessage(nil), rawValue...)
+		requestPresent = true
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return nil, fmt.Errorf("arguments are malformed")
+	}
+	trailing := json.RawMessage(nil)
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("arguments contain trailing data")
+	}
+	if !requestPresent {
+		return nil, fmt.Errorf("request is required")
+	}
+	return request, nil
+}
+
+func decodeMemoryToolAction(
+	arguments json.RawMessage,
+) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(arguments))
+	start, err := decoder.Token()
+	if err != nil {
+		return "", fmt.Errorf("arguments must be a JSON object")
+	}
+	if start != json.Delim('{') {
+		return "", fmt.Errorf("arguments must be a JSON object")
+	}
+
+	action := ""
+	actionPresent := false
+	for decoder.More() {
+		rawName, nameErr := decoder.Token()
+		if nameErr != nil {
+			return "", fmt.Errorf("arguments are malformed")
+		}
+		name, nameOK := rawName.(string)
+		if !nameOK {
+			return "", fmt.Errorf("arguments contain a non-string field name")
+		}
+		rawValue := json.RawMessage(nil)
+		if decodeErr := decoder.Decode(&rawValue); decodeErr != nil {
+			return "", fmt.Errorf("arguments field %q is malformed", name)
+		}
+		if name != "action" {
+			continue
+		}
+		if actionPresent {
+			return "", fmt.Errorf("action field is duplicated")
+		}
+		if decodeErr := json.Unmarshal(rawValue, &action); decodeErr != nil {
+			return "", fmt.Errorf("action must be a string")
+		}
+		actionPresent = true
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return "", fmt.Errorf("arguments are malformed")
+	}
+	trailing := json.RawMessage(nil)
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "", fmt.Errorf("arguments contain trailing data")
+	}
+	if !actionPresent || action == "" {
+		return "", fmt.Errorf("action is required")
+	}
+	return action, nil
 }

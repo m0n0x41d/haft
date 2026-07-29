@@ -75,20 +75,31 @@ func TestBindingSurfaceInventoryCoversKnownAuthorityMutations(t *testing.T) {
 
 func TestAuthorityBoundaryCarrierWording(t *testing.T) {
 	projectRoot := testProjectRoot(t)
-	requiredBoundaryFiles := []string{
-		"README.md",
-		".haft/specs/target-system.md",
-		".haft/specs/enabling-system.md",
-		"internal/cli/skill/h-decide/SKILL.md",
-		"internal/cli/skill/h-commission/SKILL.md",
+	requiredBoundaryPhrases := map[string][]string{
+		"README.md": {
+			"model-supplied",
+			"not proof of operator authorization",
+		},
+		".haft/specs/target-system.md": {
+			"model-supplied",
+			"satisfy neither predicate",
+		},
+		".haft/specs/software-system.md": {
+			"model-supplied",
+			"as substitutes for",
+		},
+		"internal/cli/skill/h-decide/SKILL.md": {
+			"model-supplied",
+			"not proof of operator authorization",
+		},
+		"internal/cli/skill/h-commission/SKILL.md": {
+			"model-supplied",
+			"not proof of operator authorization",
+		},
 	}
-	requiredBoundaryPhrases := []string{
-		"model-supplied",
-		"not proof of operator authorization",
-	}
-	for _, path := range requiredBoundaryFiles {
+	for path, phrases := range requiredBoundaryPhrases {
 		text := normalizedCarrierText(readProjectFile(t, projectRoot, path))
-		for _, phrase := range requiredBoundaryPhrases {
+		for _, phrase := range phrases {
 			if !strings.Contains(text, phrase) {
 				t.Fatalf("%s missing authority-boundary phrase %q", path, phrase)
 			}
@@ -105,7 +116,7 @@ func TestAuthorityBoundaryCarrierWording(t *testing.T) {
 	for _, path := range []string{
 		"README.md",
 		".haft/specs/target-system.md",
-		".haft/specs/enabling-system.md",
+		".haft/specs/software-system.md",
 		"internal/cli/skill/h-decide/SKILL.md",
 		"internal/cli/skill/h-commission/SKILL.md",
 		"internal/fpf/server.go",

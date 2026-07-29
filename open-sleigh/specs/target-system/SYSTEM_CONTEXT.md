@@ -64,7 +64,7 @@ supervision is repetitive toil.
   onboarding + `/h-reason`) enter Open-Sleigh as a linked `WorkCommission`.
   Open-Sleigh **verifies** the commission, its SpecSection refs (when present),
   ProblemCard, and DecisionRecord are present, fresh, and not self-authored by
-  Open-Sleigh; it does not author target/enabling specs, re-derive framing, or
+  Open-Sleigh; it does not author target/software specs, re-derive framing, or
   decide that stale work is still admissible. A commission without a valid
   upstream spec/frame/decision fail-fasts at Preflight/Frame and never enters
   Execute.

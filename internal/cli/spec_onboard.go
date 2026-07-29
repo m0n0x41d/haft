@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,25 +26,35 @@ func runSpecOnboard(cmd *cobra.Command, _ []string) error {
 		return runSpecOnboardMutation(cmd, projectRoot, action, sectionID, args, specOnboardJSON)
 	}
 
-	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+	request, err := projectSpecificationScopeRequestFromFlag(specOnboardScopeID)
 	if err != nil {
 		return err
 	}
-
-	store, projectID, closeFn, err := projectBaseline(projectRoot)
-	defer closeFn()
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lifecycle, err := buildPublicSpecLifecycle(
+		ctx,
+		projectRoot,
+		request,
+	)
 	if err != nil {
 		return err
 	}
-
-	intent := specflow.NextStep(specflow.DeriveStateWithBaselines(specSet, store, projectID))
-
+	result := publicSpecNextStepFromLifecycle(lifecycle)
 	output := cmd.OutOrStdout()
 	if specOnboardJSON {
-		return writeSpecOnboardJSON(output, intent)
+		return writeSpecOnboardJSON(output, result)
 	}
-
-	return writeSpecOnboardSummary(output, intent)
+	if result.WorkflowIntent != nil {
+		return writeSpecOnboardSummary(output, *result.WorkflowIntent)
+	}
+	return writeProjectSpecificationApplicabilityCue(
+		output,
+		"haft spec onboard",
+		result.ProfileApplicability,
+	)
 }
 
 func mutationFlagCount() int {
@@ -139,10 +150,13 @@ func writeSpecOnboardBaselineSummary(w io.Writer, result SpecSectionBaselineResu
 	return err
 }
 
-func writeSpecOnboardJSON(w io.Writer, intent specflow.WorkflowIntent) error {
+func writeSpecOnboardJSON(
+	w io.Writer,
+	result publicSpecNextStepResult,
+) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(intent)
+	return encoder.Encode(result)
 }
 
 func writeSpecOnboardSummary(w io.Writer, intent specflow.WorkflowIntent) error {

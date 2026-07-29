@@ -142,10 +142,9 @@ func ConfigPath(projectRoot string) string {
 }
 
 func SaveConfig(projectRoot string, config Config) error {
-	config = normalizeConfig(config)
-	data, err := yaml.Marshal(config)
+	data, err := RenderConfig(config)
 	if err != nil {
-		return fmt.Errorf("marshal overseer config: %w", err)
+		return err
 	}
 
 	path := ConfigPath(projectRoot)
@@ -156,6 +155,15 @@ func SaveConfig(projectRoot string, config Config) error {
 		return fmt.Errorf("write overseer config: %w", err)
 	}
 	return nil
+}
+
+func RenderConfig(config Config) ([]byte, error) {
+	normalized := normalizeConfig(config)
+	data, err := yaml.Marshal(normalized)
+	if err != nil {
+		return nil, fmt.Errorf("marshal overseer config: %w", err)
+	}
+	return data, nil
 }
 
 func LoadConfig(projectRoot string) (Config, error) {

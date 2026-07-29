@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/agenthostrestart"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/ceremony"
 	"github.com/m0n0x41d/haft/internal/codebase"
@@ -24,6 +25,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/recall"
 	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
@@ -31,7 +33,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var serveProcessStartedAt = time.Now().UTC()
+var (
+	serveProcessStartedAt  = time.Now().UTC()
+	serveProjectRoot       string
+	serveExpectedProjectID string
+	serveScopeID           string
+)
 
 var serveCmd = &cobra.Command{
 	Use:   "serve",
@@ -39,17 +46,21 @@ var serveCmd = &cobra.Command{
 	Long: `Start the Model Context Protocol (MCP) server for AI tool integration.
 
 The server communicates via stdio and provides Haft tools to embedded host
-agents. v7 product support targets Claude Code and Codex; other MCP clients
-may remain protocol-compatible experimental integrations.
+agents. Product support targets Claude Code and Codex; other MCP clients may
+remain protocol-compatible experimental integrations.
 
 The project root is determined by:
-  1. HAFT_PROJECT_ROOT environment variable (if set)
-  2. QUINT_PROJECT_ROOT legacy environment variable (if set)
-  3. Current working directory (default)`,
+  1. --project-root flag (if set)
+  2. HAFT_PROJECT_ROOT environment variable (if set)
+  3. QUINT_PROJECT_ROOT legacy environment variable (if set)
+  4. Current working directory (default)`,
 	RunE: runServe,
 }
 
 func init() {
+	serveCmd.Flags().StringVar(&serveProjectRoot, "project-root", "", "Explicit Haft project root for host-level MCP configs")
+	serveCmd.Flags().StringVar(&serveExpectedProjectID, "expected-project-id", "", "Expected Haft project_id guard for explicit host-level MCP configs")
+	serveCmd.Flags().StringVar(&serveScopeID, "scope-id", "", "Exact canonical project ScopeID for a mixed admitted profile")
 	rootCmd.AddCommand(serveCmd)
 }
 
@@ -57,7 +68,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 	// Ensure global ~/.haft/ exists (migrates from ~/.quint-code/ if needed)
 	_ = project.EnsureDir()
 
-	rootInput, err := projectRootInputFromEnv()
+	rootInput, err := projectRootInputFromExplicitOrEnv(serveProjectRoot)
 	if err != nil {
 		return fmt.Errorf("resolve project root input: %w", err)
 	}
@@ -73,10 +84,32 @@ func runServe(cmd *cobra.Command, args []string) error {
 		logger.Info().Str("origin", serverOrigin).Msg("HAFT_SERVER_ORIGIN set to remote — not implemented yet, using local storage")
 	}
 
-	server := fpf.NewServer()
-	binding, bindingErr := resolveProjectBindingFromInput(rootInput, strings.TrimSpace(os.Getenv(envExpectedProjectID)))
+	server := fpf.NewServer(Version)
+	if err := configureMemoryValidation(cmd.Context(), server); err != nil {
+		return fmt.Errorf("configure read-only typed-memory validation: %w", err)
+	}
+	onboardFallback, err := newOnboardingRequiredMCPHandler()
+	if err != nil {
+		return fmt.Errorf(
+			"configure pre-initialization onboarding recovery: %w",
+			err,
+		)
+	}
+	server.SetOnboardHandler(onboardFallback)
+	entityFallback, err := newEntityOnboardingRequiredMCPHandler(
+		"Haft is not initialized for this MCP process; no entity was written. Run haft init, complete readable onboarding, and reconnect the host.",
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"configure pre-onboarding EntityOfConcern recovery: %w",
+			err,
+		)
+	}
+	server.SetEntityHandler(entityFallback)
+	binding, bindingErr := resolveProjectBindingFromInput(rootInput, serveExpectedProjectIDForRun())
 	if bindingErr != nil {
-		server.SetInstructions(composeServerInstructions(nil))
+		instructions := composeServerInstructionParts(nil, nil)
+		server.SetInstructions(instructions)
 		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 			return "", projectBindingError(binding, bindingErr)
 		})
@@ -95,10 +128,8 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if workflowErr != nil {
 		logger.Warn().Err(workflowErr).Msg("failed to load workflow policy")
 	}
-	// Always emit server instructions: the workflow policy (when present) plus
-	// the always-on code-graph doctrine, so every session's system prompt tells
-	// the agent the fused code graph exists and to consult it before editing.
-	server.SetInstructions(composeServerInstructions(workflow))
+	instructions := composeServerInstructionParts(workflow, nil)
+	server.SetInstructions(instructions)
 
 	if _, err := os.Stat(binding.DBPath); err != nil {
 		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
@@ -108,23 +139,105 @@ func runServe(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	database, err := db.NewStore(binding.DBPath)
+	onboardSurface, onboardSurfaceErr := openServeProjectOnboardSurface(
+		cmd.Context(),
+		binding,
+	)
+	if onboardSurfaceErr != nil {
+		logger.Warn().
+			Err(onboardSurfaceErr).
+			Msg("project onboarding surface remains in initialization recovery")
+	} else {
+		server.SetOnboardHandler(onboardSurface.Handler())
+		defer func() {
+			if closeErr := onboardSurface.Close(); closeErr != nil {
+				logger.Warn().
+					Err(closeErr).
+					Msg("failed to close project onboarding surface")
+			}
+		}()
+	}
+
+	entitySurface, entitySurfaceErr := openServeProjectEntitySurface(
+		cmd.Context(),
+		binding,
+	)
+	if entitySurfaceErr != nil {
+		logger.Warn().
+			Err(entitySurfaceErr).
+			Msg("task-level EntityOfConcern establishment remains in onboarding recovery")
+	} else {
+		server.SetEntityHandler(entitySurface.Handler())
+		defer func() {
+			if closeErr := entitySurface.Close(); closeErr != nil {
+				logger.Warn().
+					Err(closeErr).
+					Msg("failed to close task-level EntityOfConcern surface")
+			}
+		}()
+	}
+
+	scopeRequest, err := projectSpecificationScopeRequestFromFlag(serveScopeID)
+	if err != nil {
+		return err
+	}
+	profileResolution, profileErr := resolveCanonicalProjectSpecificationApplicability(
+		cmd.Context(),
+		binding.ProjectRoot,
+		scopeRequest,
+	)
+	if profileErr != nil {
+		logger.Warn().
+			Err(profileErr).
+			Msg("canonical profile applicability unavailable; SWE host doctrines omitted")
+		instructions = composeServerInstructionsForUnavailableProfile(workflow)
+	}
+	if profileErr == nil {
+		instructions, err = composeServerInstructionsForProfileResolution(
+			workflow,
+			profileResolution,
+		)
+		if err != nil {
+			return fmt.Errorf(
+				"compose profile-aware server instructions: %w",
+				err,
+			)
+		}
+	}
+	server.SetInstructions(instructions)
+
+	ledger, err := openServeProjectLedger(cmd.Context(), binding)
 	if err != nil {
 		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
-			return "", fmt.Errorf("failed to open haft project database: %w; %s", err, formatProjectBindingDiagnostic(binding))
+			return "", serveProjectLedgerError(binding, err)
 		})
 		server.Start()
 		return nil
 	}
+	defer ledger.Close()
 
-	artStore := artifact.NewStore(database.GetRawDB())
+	rawDatabase := ledger.Database()
+	artStore := artifact.NewStore(rawDatabase)
+
+	memorySurface, memorySurfaceErr := configureServeProjectMemoryFullSurface(
+		cmd.Context(),
+		server,
+		binding,
+	)
+	if memorySurfaceErr != nil {
+		logger.Warn().
+			Err(memorySurfaceErr).
+			Msg("typed project-memory surface remains unavailable; validate-only surface retained")
+	} else {
+		defer memorySurface.Close()
+	}
 
 	indexStore, indexErr := project.OpenIndex()
 	if indexErr != nil {
 		logger.Warn().Err(indexErr).Msg("failed to open cross-project index")
 	}
 
-	_ = project.PopulateContextFacts(context.Background(), database.GetRawDB(), binding.ProjectName)
+	_ = project.PopulateContextFacts(context.Background(), rawDatabase, binding.ProjectName)
 
 	go func() {
 		if built, err := codeintel.NewService(artStore).EnsureIndex(context.Background(), binding.ProjectRoot); err != nil {
@@ -134,16 +247,148 @@ func runServe(cmd *cobra.Command, args []string) error {
 		}
 	}()
 
-	searcher := buildHybridSearcher(artStore, database.GetRawDB())
+	searcher := buildHybridSearcher(artStore, rawDatabase)
 	crossHybrid := buildCrossProjectHybrid(indexStore)
 	projCfg := &project.Config{
 		ID:   binding.ProjectID,
 		Name: binding.ProjectName,
 	}
 
-	server.SetV5Handler(makeV5Handler(artStore, searcher, crossHybrid, binding.HaftDir, projCfg, indexStore))
+	taskProjector, taskProjectionErr := newTaskMemoryProjectionRuntime(
+		cmd.Context(),
+		ledger.ProjectID(),
+		rawDatabase,
+		artStore,
+	)
+	var taskMemorySurface taskMemoryProjector = taskProjector
+	if taskProjectionErr != nil {
+		logger.Warn().
+			Err(taskProjectionErr).
+			Msg("task-memory projection remains unavailable; legacy carriers remain writable with explicit unsettled posture")
+		taskMemorySurface = newUnavailableTaskMemoryProjector(
+			taskProjectionErr,
+		)
+	}
+
+	v5Handler := makeV5HandlerWithTaskMemoryProjection(
+		artStore,
+		searcher,
+		crossHybrid,
+		binding.HaftDir,
+		projCfg,
+		indexStore,
+		taskMemorySurface,
+	)
+	server.SetV5Handler(makeRevalidatedServeV5Handler(
+		binding,
+		ledger,
+		v5Handler,
+	))
 	server.Start()
 	return nil
+}
+
+func openServeProjectLedger(
+	ctx context.Context,
+	binding ProjectBinding,
+) (*projectledger.Handle, error) {
+	ledger, err := projectledger.OpenExisting(
+		ctx,
+		binding.ProjectRoot,
+		projectledger.ReadWrite,
+	)
+	if err != nil {
+		return nil, err
+	}
+	closeOnFailure := func(cause error) (*projectledger.Handle, error) {
+		return nil, errors.Join(cause, ledger.Close())
+	}
+	if ledger.ProjectID().String() != binding.ProjectID {
+		return closeOnFailure(fmt.Errorf(
+			"checked project ledger id %q does not match resolved project id %q",
+			ledger.ProjectID().String(),
+			binding.ProjectID,
+		))
+	}
+	if err := db.RequireCurrentSchemaReadOnly(ctx, ledger.Database()); err != nil {
+		return closeOnFailure(err)
+	}
+	return ledger, nil
+}
+
+func serveProjectLedgerError(binding ProjectBinding, cause error) error {
+	if errors.Is(
+		cause,
+		projectledger.ErrSQLiteSidecarGenerationChanged,
+	) {
+		return fmt.Errorf(
+			"haft project database connection is stale: %w; restart the long-lived Haft MCP process so it reopens the current SQLite WAL/SHM generation; do not run `haft project migrate` for this condition; no migration or repair was attempted; %s",
+			cause,
+			formatProjectBindingDiagnostic(binding),
+		)
+	}
+	migrationCommand := fmt.Sprintf(
+		"haft project migrate --project-root %q --project-id %s",
+		binding.ProjectRoot,
+		binding.ProjectID,
+	)
+	return fmt.Errorf(
+		"haft project database is not ready for this Haft binary: %w; run `%s` to apply the explicit host-free database upgrade, then restart the MCP server; no startup migration was attempted; %s",
+		cause,
+		migrationCommand,
+		formatProjectBindingDiagnostic(binding),
+	)
+}
+
+type serveProjectLedgerRevalidator interface {
+	Revalidate(context.Context) error
+}
+
+func makeRevalidatedServeV5Handler(
+	binding ProjectBinding,
+	ledger serveProjectLedgerRevalidator,
+	next fpf.V5ToolHandler,
+) fpf.V5ToolHandler {
+	return func(
+		ctx context.Context,
+		toolName string,
+		rawParams json.RawMessage,
+	) (string, error) {
+		if ledger == nil || next == nil {
+			return "", fmt.Errorf(
+				"checked Haft MCP handler dependencies are incomplete",
+			)
+		}
+		if err := ledger.Revalidate(ctx); err != nil {
+			cause := fmt.Errorf(
+				"revalidate checked project ledger before MCP tool %q: %w",
+				toolName,
+				err,
+			)
+			return "", serveProjectLedgerError(binding, cause)
+		}
+		result, operationErr := next(ctx, toolName, rawParams)
+		revalidationErr := ledger.Revalidate(ctx)
+		if revalidationErr == nil {
+			return result, operationErr
+		}
+		cause := fmt.Errorf(
+			"revalidate checked project ledger after MCP tool %q; discard any untrusted read result and treat a mutation outcome as unknown until idempotent replay: %w",
+			toolName,
+			revalidationErr,
+		)
+		presented := serveProjectLedgerError(binding, cause)
+		return result, errors.Join(operationErr, presented)
+	}
+}
+
+func serveExpectedProjectIDForRun() string {
+	flagValue := strings.TrimSpace(serveExpectedProjectID)
+	if flagValue != "" {
+		return flagValue
+	}
+
+	return strings.TrimSpace(os.Getenv(envExpectedProjectID))
 }
 
 func haftServeRuntimeStatusLine() string {
@@ -283,7 +528,15 @@ func searchArtifacts(ctx context.Context, store *artifact.Store, searcher recall
 	return searcher.Search(ctx, query, limit)
 }
 
-func makeV5Handler(store *artifact.Store, searcher recall.Searcher, crossHybrid *project.CrossHybrid, haftDir string, projCfg *project.Config, indexStore *project.IndexStore) fpf.V5ToolHandler {
+func makeV5HandlerWithTaskMemoryProjection(
+	store *artifact.Store,
+	searcher recall.Searcher,
+	crossHybrid *project.CrossHybrid,
+	haftDir string,
+	projCfg *project.Config,
+	indexStore *project.IndexStore,
+	taskProjector taskMemoryProjector,
+) fpf.V5ToolHandler {
 	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 		var params struct {
 			Name      string         `json:"name"`
@@ -304,6 +557,18 @@ func makeV5Handler(store *artifact.Store, searcher recall.Searcher, crossHybrid 
 		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
 
 		if toolErr == nil {
+			result = applyTaskMemoryProjection(
+				ctx,
+				result,
+				taskMemoryProjectionRequest{
+					ToolName:    params.Name,
+					Action:      action,
+					ArtifactRef: createdRef,
+					Arguments:   params.Arguments,
+					Mode:        taskMemoryProjectionApply,
+				},
+				taskProjector,
+			)
 			result = applyCrossProjectRecall(ctx, result, params.Name, action, params.Arguments, store, projCfg, indexStore, crossHybrid)
 			result = applyGraphSeededRecall(ctx, result, params.Name, action, params.Arguments, store, haftDir)
 			applyCrossProjectIndex(ctx, params.Name, action, params.Arguments, createdRef, store, projCfg, indexStore, crossHybrid)
@@ -314,7 +579,13 @@ func makeV5Handler(store *artifact.Store, searcher recall.Searcher, crossHybrid 
 
 		if toolErr == nil {
 			result = applyRefreshReminder(ctx, result, params.Name, store)
-			result = applyReadinessReminder(result, params.Name, haftDir)
+			result = applyProfileAwareReadinessReminder(
+				ctx,
+				result,
+				params.Name,
+				haftDir,
+				params.Arguments,
+			)
 		}
 
 		return result, toolErr
@@ -335,11 +606,19 @@ func dispatchTool(ctx context.Context, store *artifact.Store, searcher recall.Se
 	case "haft_note":
 		return handleQuintNote(ctx, store, haftDir, args)
 	case "haft_problem":
-		result, err := handleQuintProblem(ctx, store, haftDir, args)
-		return result, "", err
+		return handleQuintProblemWithCreatedRef(
+			ctx,
+			store,
+			haftDir,
+			args,
+		)
 	case "haft_solution":
-		result, err := handleQuintSolution(ctx, store, haftDir, args)
-		return result, "", err
+		return handleQuintSolutionWithCreatedRef(
+			ctx,
+			store,
+			haftDir,
+			args,
+		)
 	case "haft_decision":
 		return handleQuintDecision(ctx, store, haftDir, args)
 	case "haft_refresh":
@@ -350,28 +629,32 @@ func dispatchTool(ctx context.Context, store *artifact.Store, searcher recall.Se
 		return result, "", err
 	case "haft_commission":
 		args = commissionArgsWithProjectRoot(args, filepath.Dir(haftDir))
-		result, err := handleHaftCommission(ctx, store, args)
+		result, err := handleHaftCommissionForProject(ctx, store, args)
 		return result, "", err
 	case "haft_method":
-		return handleHaftMethod(ctx, store, haftDir, args)
+		return handleHaftMethodForProject(
+			ctx,
+			store,
+			haftDir,
+			args,
+		)
 	case "haft_spec_section":
-		result, err := handleHaftSpecSection(ctx, store, haftDir, args)
-		return result, "", err
+		return handleHaftSpecSectionWithProjectionRef(
+			ctx,
+			haftDir,
+			args,
+		)
 	default:
 		return "", "", fmt.Errorf("unknown tool: %s", name)
 	}
 }
 
 func commissionArgsWithProjectRoot(args map[string]any, projectRoot string) map[string]any {
-	if stringArg(args, "project_root") != "" {
-		return args
-	}
-	if strings.TrimSpace(projectRoot) == "" {
-		return args
-	}
-
 	next := copyStringAnyMap(args)
-	next["project_root"] = projectRoot
+	delete(next, "project_root")
+	if strings.TrimSpace(projectRoot) != "" {
+		next["project_root"] = projectRoot
+	}
 	return next
 }
 
@@ -441,12 +724,12 @@ func applyGraphSeededRecall(ctx context.Context, result, name, action string, ar
 		return result
 	}
 	projectRoot := filepath.Dir(haftDir)
-	ranked, err := codeintel.NewService(store).RelatedToFile(ctx, projectRoot, seedFile, 6)
-	if err != nil || len(ranked) == 0 {
+	view, err := codeintel.NewService(store).RelatedView(ctx, projectRoot, seedFile, 6)
+	if err != nil || len(view.Results) == 0 {
 		return result
 	}
-	lines := make([]string, 0, len(ranked))
-	for _, r := range ranked {
+	lines := make([]string, 0, len(view.Results))
+	for _, r := range view.Results {
 		if r.Kind != codeintel.RelatedArtifact {
 			continue // symbols are not recall — only governing/related artifacts
 		}
@@ -744,7 +1027,12 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, haftDir string,
 	return present.NoteResponse(a, filePath, validation, navStrip), a.Meta.ID, nil
 }
 
-func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir string, args map[string]any) (string, error) {
+func handleQuintProblemWithCreatedRef(
+	ctx context.Context,
+	store *artifact.Store,
+	haftDir string,
+	args map[string]any,
+) (string, string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
@@ -800,14 +1088,14 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 
 		a, filePath, err := artifact.FrameProblem(ctx, store, haftDir, input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		resp := present.ProblemResponse("frame", a, filePath, navStrip) + present.FPFPhaseHint("frame")
+		resp := present.ProblemResponse("frame", a, filePath, navStrip)
 		if warn := artifact.UmbrellaWarning(input.Title, input.Signal, input.Acceptance); warn != "" {
 			resp += "\n" + warn
 		}
-		return resp, nil
+		return resp, a.Meta.ID, nil
 
 	case "characterize":
 		input := artifact.CharacterizeInput{}
@@ -819,7 +1107,7 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 		}
 		parityPlan, err := parseStrictParityPlanFromArgs(args, "parity_plan")
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		input.ParityPlan = parityPlan
 		// Log all args keys and types for debugging
@@ -831,58 +1119,66 @@ func handleQuintProblem(ctx context.Context, store *artifact.Store, haftDir stri
 			prob, err := artifact.FindActiveProblem(ctx, store, contextName)
 			if err != nil || prob == nil {
 				return "No active problem found.\nUse /h-frame to create one first.\n" +
-					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), "", nil
 			}
 			input.ProblemRef = prob.Meta.ID
 		}
 
 		a, filePath, err := artifact.CharacterizeProblem(ctx, store, haftDir, input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		resp := present.ProblemResponse("characterize", a, filePath, navStrip) + present.FPFPhaseHint("characterize")
+		resp := present.ProblemResponse("characterize", a, filePath, navStrip)
 		if warn := artifact.ValueBeforeProxyWarning(input.Dimensions); warn != "" {
 			resp += "\n" + warn + "\n"
 		}
-		return resp, nil
+		return resp, "", nil
 
 	case "select":
 		problems, err := artifact.SelectProblems(ctx, store, contextName, 20)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
 		items := artifact.EnrichProblemsForList(ctx, store, problems)
-		return present.ProblemsListResponse(items, navStrip), nil
+		return present.ProblemsListResponse(items, navStrip), "", nil
 
 	case "close":
 		problemRef, _ := args["problem_ref"].(string)
 		if problemRef == "" {
-			return "", fmt.Errorf("problem_ref is required for close action")
+			return "", "", fmt.Errorf("problem_ref is required for close action")
 		}
 		a, err := store.Get(ctx, problemRef)
 		if err != nil {
-			return "", fmt.Errorf("problem %s not found: %w", problemRef, err)
+			return "", "", fmt.Errorf("problem %s not found: %w", problemRef, err)
 		}
 		if a.Meta.Kind != artifact.KindProblemCard {
-			return "", fmt.Errorf("%s is %s, not a ProblemCard", problemRef, a.Meta.Kind)
+			return "", "", fmt.Errorf("%s is %s, not a ProblemCard", problemRef, a.Meta.Kind)
 		}
 		a.Meta.Status = artifact.StatusAddressed
 		if err := store.Update(ctx, a); err != nil {
-			return "", fmt.Errorf("update problem status: %w", err)
+			return "", "", fmt.Errorf("update problem status: %w", err)
 		}
 		if _, err := artifact.WriteFile(haftDir, a); err != nil {
 			logger.Warn().Err(err).Str("problem_ref", problemRef).Msg("problem.close.file_write_failed")
 		}
-		return fmt.Sprintf("Problem %s marked as addressed.\n", problemRef), nil
+		return fmt.Sprintf("Problem %s marked as addressed.\n", problemRef), "", nil
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', 'select', or 'close'", action)
+		return "", "", fmt.Errorf("unknown action %q — use 'frame', 'characterize', 'select', or 'close'", action)
 	}
 }
 
-func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir string, args map[string]any) (string, error) {
+// handleQuintSolutionWithCreatedRef returns the exact persisted portfolio
+// carrier touched by explore or compare. The post-dispatch shell uses this
+// source coordinate for indexing and typed project-memory projection.
+func handleQuintSolutionWithCreatedRef(
+	ctx context.Context,
+	store *artifact.Store,
+	haftDir string,
+	args map[string]any,
+) (string, string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 
@@ -912,10 +1208,12 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 
 		a, filePath, err := artifact.ExploreSolutions(ctx, store, haftDir, input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.SolutionResponse("explore", a, filePath, navStrip) + present.FPFPhaseHint("explore"), nil
+		return present.SolutionResponse("explore", a, filePath, navStrip),
+			a.Meta.ID,
+			nil
 
 	case "compare":
 		input := artifact.CompareInput{}
@@ -925,7 +1223,7 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 		input.Results.Dimensions = parseStringArrayFromArgs(args, "dimensions")
 		scores, _, err := parseNestedStringMapArg(args, "scores")
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		if scores != nil {
 			input.Results.Scores = scores
@@ -944,17 +1242,17 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			input.Results.RecommendationRationale = v
 		}
 		if _, err := parseJSONArg(args, "dominated_variants", &input.Results.DominatedVariants); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if _, err := parseJSONArg(args, "pareto_tradeoffs", &input.Results.ParetoTradeoffs); err != nil {
-			return "", err
+			return "", "", err
 		}
 		if _, err := parseJSONArg(args, "incomparable", &input.Results.Incomparable); err != nil {
-			return "", err
+			return "", "", err
 		}
 		parityPlan, err := parseStrictParityPlanFromArgs(args, "parity_plan")
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		input.Results.ParityPlan = parityPlan
 		if input.PortfolioRef == "" {
@@ -963,26 +1261,26 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 				input.PortfolioRef = p.Meta.ID
 			} else {
 				return "No active solution portfolio found.\nUse /h-explore to create variants first.\n" +
-					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), nil
+					present.NavStrip(artifact.ComputeNavState(ctx, store, contextName)), "", nil
 			}
 		}
 		input = applyCompareSpecFit(ctx, store, haftDir, input)
 
 		a, filePath, err := artifact.CompareSolutions(ctx, store, haftDir, input)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return compareToolResponse(a, filePath, navStrip), nil
+		return compareToolResponse(a, filePath, navStrip), a.Meta.ID, nil
 
 	case "similar":
 		query, _ := args["query"].(string)
 		if query == "" {
-			return "", fmt.Errorf("query required for similar search")
+			return "", "", fmt.Errorf("query required for similar search")
 		}
 		results, err := artifact.FetchSearchResults(ctx, store, query, 10)
 		if err != nil {
-			return "", err
+			return "", "", err
 		}
 		var matches []string
 		for _, r := range results {
@@ -992,13 +1290,16 @@ func handleQuintSolution(ctx context.Context, store *artifact.Store, haftDir str
 			}
 		}
 		if len(matches) == 0 {
-			return "No similar past solutions found. This is a novel problem.", nil
+			return "No similar past solutions found. This is a novel problem.", "", nil
 		}
 		return fmt.Sprintf("Past solution portfolios matching \"%s\":\n%s\n\nUse haft_query(search) for details on any portfolio.",
-			query, strings.Join(matches, "\n")), nil
+			query, strings.Join(matches, "\n")), "", nil
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'explore', 'compare', or 'similar'", action)
+		return "", "", fmt.Errorf(
+			"unknown action %q — use 'explore', 'compare', or 'similar'",
+			action,
+		)
 	}
 }
 
@@ -1011,6 +1312,15 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 
 	switch action {
 	case "decide":
+		// MCP arguments are proposal content, never operator authorization.
+		// The default explicit_h_decide policy trusts an external skill invocation
+		// that this handler cannot observe; strict_cli_speech_act is the only mode
+		// that records a durable controlling-terminal SpeechAct. MCP therefore
+		// fails closed in both modes.
+		if err := rejectNonManualDecisionBinding(); err != nil {
+			return "", "", err
+		}
+
 		input := artifact.DecideInput{Context: contextName}
 		var err error
 		if v, ok := args["selected_title"].(string); ok {
@@ -1030,6 +1340,9 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 		if v, ok := args["problem_ref"].(string); ok {
 			input.ProblemRef = v
+		}
+		if v, ok := args["problem_statement"].(string); ok {
+			input.ProblemStatement = v
 		}
 		if input.ProblemRefs, err = parseStrictStringArrayFromArgs(args, "problem_refs"); err != nil {
 			return "", "", err
@@ -1109,7 +1422,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		if _, err := parseJSONArg(args, "transformation_record", &input.TransformationRecord); err != nil {
 			return "", "", err
 		}
-		if input.ProblemRef == "" {
+		if input.ProblemRef == "" && len(input.ProblemRefs) == 0 && strings.TrimSpace(input.ProblemStatement) == "" {
 			p, _ := artifact.FindActiveProblem(ctx, store, contextName)
 			if p != nil {
 				input.ProblemRef = p.Meta.ID
@@ -1137,7 +1450,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 
-		a, filePath, err := artifact.Decide(ctx, store, haftDir, input)
+		a, filePath, err := (*artifact.Artifact)(nil), "", rejectNonManualDecisionBinding()
 		if err != nil {
 			return "", "", err
 		}
@@ -1166,7 +1479,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		resp := present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote + present.FPFPhaseHint("decide")
+		resp := present.DecisionResponse("decide", a, filePath, "", navStrip) + baselineNote
 		if warn := artifact.ReputationWarning(input.WhySelected, input.SelectionPolicy, input.CounterArgument, input.WeakestLink); warn != "" {
 			resp += "\n" + warn
 		}
@@ -1254,7 +1567,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 		}
 
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		return present.DecisionResponse("measure", a, "", extra, navStrip) + present.FPFPhaseHint("verify"), "", nil
+		return present.DecisionResponse("measure", a, "", extra, navStrip), "", nil
 
 	case "evidence":
 		input := artifact.EvidenceInput{
@@ -1387,6 +1700,9 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 		}
 		if _, err := scanner.ScanDependencies(ctx, projectRoot); err != nil {
 			_ = err // non-fatal
+		}
+		if _, err := scanner.RefreshIncremental(ctx, projectRoot); err != nil {
+			logger.Warn().Err(err).Msg("refresh: code index refresh failed (non-fatal)")
 		}
 
 		items, err := artifact.ScanStale(ctx, store, projectRoot)
@@ -1551,6 +1867,277 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 	}
 }
 
+const codeContextBatchLimit = 8
+
+func handleCodeContextQuery(
+	ctx context.Context,
+	store *artifact.Store,
+	haftDir string,
+	args map[string]any,
+	navStrip string,
+) (string, error) {
+	projectRoot := filepath.Dir(haftDir)
+	files := codeContextFiles(args)
+	anchorID, _ := args["anchor_id"].(string)
+	symbol, _ := args["symbol"].(string)
+	line := intArg(args, "line", 0)
+	if anchorID != "" && len(files) == 0 {
+		resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+		if err != nil {
+			return "", err
+		}
+		files = []string{resolved.FilePath}
+		symbol = resolved.Name
+		line = resolved.StartLine
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf("file or files is required for code_context action")
+	}
+	if len(files) > codeContextBatchLimit {
+		return "", fmt.Errorf("code_context files accepts at most %d unique paths, got %d", codeContextBatchLimit, len(files))
+	}
+	if len(files) > 1 && (anchorID != "" || symbol != "" || line > 0) {
+		return "", fmt.Errorf("symbol, anchor_id, and line are single-target fields; use them only with one code_context file")
+	}
+	full, _ := args["full"].(bool)
+	if len(files) > 1 && full {
+		return "", fmt.Errorf("full=true is single-target only; use a typed lane for bounded code_context batches")
+	}
+	lane, err := codeContextLane(args)
+	if err != nil {
+		return "", err
+	}
+	limit, hasLimit := codeContextLaneLimit(args)
+	if len(files) > 1 && !hasLimit {
+		limit = 5
+	}
+	usesCodeIndex := !full &&
+		(lane == present.CodeContextLaneIndex ||
+			lane == present.CodeContextLaneSymbols)
+	attemptLimit := 1
+	if usesCodeIndex {
+		attemptLimit = 2
+	}
+	service := codeintel.NewService(store)
+	var lastErr error
+	for range attemptLimit {
+		refreshed := false
+		var indexState codebase.IndexState
+		if usesCodeIndex {
+			refreshed, err = service.EnsureIndex(ctx, projectRoot)
+			if err != nil {
+				return "", err
+			}
+			indexState, err = service.CurrentIndexState(ctx)
+			if err != nil {
+				return "", err
+			}
+		}
+		parts, err := renderCodeContextTargets(
+			ctx,
+			store,
+			files,
+			symbol,
+			anchorID,
+			line,
+			lane,
+			limit,
+			hasLimit,
+			full,
+			refreshed,
+			indexState,
+		)
+		if err != nil {
+			return "", err
+		}
+		if !usesCodeIndex {
+			return strings.Join(parts, "\n---\n\n") + navStrip, nil
+		}
+		if err := service.ConfirmIndexState(ctx, indexState); err != nil {
+			var changed *codeintel.IndexBasisChangedError
+			if !errors.As(err, &changed) {
+				return "", err
+			}
+			lastErr = err
+			continue
+		}
+		response := present.IndexStateResponse(indexState)
+		response += strings.Join(parts, "\n---\n\n")
+		return response + navStrip, nil
+	}
+	return "", lastErr
+}
+
+func renderCodeContextTargets(
+	ctx context.Context,
+	store *artifact.Store,
+	files []string,
+	symbol string,
+	anchorID string,
+	line int,
+	lane present.CodeContextLane,
+	limit int,
+	hasLimit bool,
+	full bool,
+	refreshed bool,
+	indexState codebase.IndexState,
+) ([]string, error) {
+	parts := make([]string, 0, len(files))
+	for index, file := range files {
+		target := contextgraph.Target{
+			File:     file,
+			Symbol:   symbol,
+			AnchorID: anchorID,
+			Line:     line,
+		}
+		body, err := renderCodeContextTarget(
+			ctx,
+			store,
+			target,
+			lane,
+			limit,
+			hasLimit,
+			full,
+			refreshed,
+			indexState,
+		)
+		if err != nil {
+			return nil, err
+		}
+		if len(files) > 1 {
+			body = fmt.Sprintf(
+				"# Code context batch %d/%d — `%s`\n\n%s",
+				index+1,
+				len(files),
+				file,
+				body,
+			)
+		}
+		parts = append(parts, body)
+	}
+	return parts, nil
+}
+
+func codeContextFiles(args map[string]any) []string {
+	values := make([]string, 0)
+	if file, _ := args["file"].(string); strings.TrimSpace(file) != "" {
+		values = append(values, file)
+	}
+	switch files := args["files"].(type) {
+	case []string:
+		values = append(values, files...)
+	case []any:
+		for _, value := range files {
+			if file, ok := value.(string); ok {
+				values = append(values, file)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		file := filepath.ToSlash(strings.TrimSpace(value))
+		if file == "" || seen[file] {
+			continue
+		}
+		seen[file] = true
+		out = append(out, file)
+	}
+	return out
+}
+
+func codeContextLane(args map[string]any) (present.CodeContextLane, error) {
+	rawLane, _ := args["lane"].(string)
+	if strings.TrimSpace(rawLane) == "" {
+		return present.CodeContextLaneIndex, nil
+	}
+	lane, valid := present.ParseCodeContextLane(rawLane)
+	if !valid {
+		return "", fmt.Errorf("unknown code_context lane %q — valid lanes: %s", rawLane, strings.Join(present.ValidCodeContextLaneNames(), ", "))
+	}
+	return lane, nil
+}
+
+func renderCodeContextTarget(
+	ctx context.Context,
+	store *artifact.Store,
+	target contextgraph.Target,
+	lane present.CodeContextLane,
+	limit int,
+	hasLimit bool,
+	full bool,
+	refreshed bool,
+	indexState codebase.IndexState,
+) (string, error) {
+	exclusion, excluded := codeContextIndexExclusion(
+		indexState,
+		target.File,
+	)
+	if !full && lane == present.CodeContextLaneSymbols {
+		if excluded {
+			return present.CodeContextSymbolsUnavailableResponse(
+				target,
+				fmt.Errorf(
+					"source excluded from epoch %d: %s",
+					indexState.Epoch,
+					exclusion.Reason,
+				),
+			), nil
+		}
+		symbols, err := codeContextSymbolsForFile(ctx, store, target.File)
+		if err != nil {
+			return present.CodeContextSymbolsUnavailableResponse(target, err), nil
+		}
+		return present.CodeContextSymbolsResponse(target, symbols, limit, refreshed), nil
+	}
+	cc, err := contextgraph.FetchCodeContext(ctx, store, graph.NewStore(store.DB()), target)
+	if err != nil {
+		return "", err
+	}
+	if full {
+		return present.CodeContextResponseFull(cc), nil
+	}
+	options := present.CodeContextRenderOptions{Lane: lane, ArtifactLimit: limit}
+	if hasLimit {
+		options.InvariantLimit = limit
+		options.ContextInvariantLimit = limit
+	}
+	if lane == present.CodeContextLaneIndex {
+		if excluded {
+			options.SymbolUnavailable = fmt.Sprintf(
+				"source excluded from epoch %d: %s",
+				indexState.Epoch,
+				exclusion.Reason,
+			)
+		} else {
+			symbols, err := codeContextSymbolsForFile(
+				ctx,
+				store,
+				target.File,
+			)
+			options.SymbolCountKnown = err == nil
+			options.SymbolCount = len(symbols)
+			if err != nil {
+				options.SymbolUnavailable = err.Error()
+			}
+		}
+	}
+	return present.CodeContextResponseWithOptions(cc, options), nil
+}
+
+func codeContextIndexExclusion(
+	state codebase.IndexState,
+	file string,
+) (codebase.IndexExclusionSnapshot, bool) {
+	canonical := filepath.ToSlash(filepath.Clean(file))
+	for _, exclusion := range state.Basis.Exclusions {
+		if exclusion.Path == canonical {
+			return exclusion, true
+		}
+	}
+	return codebase.IndexExclusionSnapshot{}, false
+}
+
 func codeContextLaneLimit(args map[string]any) (int, bool) {
 	if _, ok := args["limit"]; !ok {
 		return 20, false
@@ -1576,28 +2163,11 @@ func compactProjectionLimit(args map[string]any) int {
 	return limit
 }
 
-func codeContextSymbolsForFile(ctx context.Context, store *artifact.Store, projectRoot string, file string) ([]present.CodeContextSymbolItem, bool, error) {
+func codeContextSymbolsForFile(ctx context.Context, store *artifact.Store, file string) ([]present.CodeContextSymbolItem, error) {
 	symbolStore := codebase.NewSymbolStore(store.DB())
-	if err := symbolStore.EnsureSchema(ctx); err != nil {
-		return nil, false, err
-	}
-
-	stale, err := symbolStore.FileSymbolsStale(ctx, projectRoot, file)
-	if err != nil {
-		return nil, false, err
-	}
-
-	refreshed := false
-	if stale {
-		if err := symbolStore.IndexFileSymbols(ctx, projectRoot, file); err != nil {
-			return nil, false, err
-		}
-		refreshed = true
-	}
-
 	symbols, err := symbolStore.GetByFile(ctx, file)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
 	items := make([]present.CodeContextSymbolItem, 0, len(symbols))
@@ -1613,7 +2183,7 @@ func codeContextSymbolsForFile(ctx context.Context, store *artifact.Store, proje
 			EndLine:   endLine,
 		})
 	}
-	return items, refreshed, nil
+	return items, nil
 }
 
 func statusDataStaleNavItems(items []artifact.StaleItem) []string {
@@ -1655,6 +2225,9 @@ func codeContextSymbolName(symbol codebase.CodeSymbol) string {
 
 func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recall.Searcher, haftDir string, args map[string]any) (string, error) {
 	action, _ := args["action"].(string)
+	if err := rejectWrongIdentifierNamespaceForQueryAction(ctx, store, action, args); err != nil {
+		return "", err
+	}
 	contextName, _ := args["context"].(string)
 	navStrip := navStripForStatusStaleLane(ctx, store, contextName)
 
@@ -1679,42 +2252,101 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if artifact.IsArtifactID(query) && len(results) == 0 {
 			return "", exactArtifactMissError(strings.TrimSpace(query))
 		}
-		return present.SearchResponse(results, query) + navStrip, nil
+		response := present.SearchResponse(results, query)
+		if artifact.IsArtifactID(query) {
+			return response, nil
+		}
+		return response + navStrip, nil
 
 	case "status":
 		// H1 (dec-20260526-9fdd33ed): pass projectRoot so /h-status
 		// surfaces drift via FetchStatusData → CheckDrift → StatusData.Drift.
 		projectRoot := filepath.Dir(haftDir)
+		scopeRequest, err := projectSpecificationScopeRequestFromFlag(
+			stringArg(args, "scope_id"),
+		)
+		if err != nil {
+			return "", err
+		}
+		readiness, err := inspectCanonicalProjectReadiness(
+			ctx,
+			projectRoot,
+			scopeRequest,
+		)
+		if err != nil {
+			return "", err
+		}
 		if view, _ := args["view"].(string); view == "governor" {
 			// Prompt-budgeted projection for host-side prompt governors;
 			// deliberately skips coverage and the navigation strip.
-			return governorStatusResponse(ctx, store, contextName, projectRoot)
+			response, responseErr := governorStatusResponse(
+				ctx,
+				store,
+				contextName,
+				projectRoot,
+				readiness,
+			)
+			if responseErr != nil {
+				return "", responseErr
+			}
+			return statusWithLiveMCPReceipt(projectRoot, response)
+		}
+		profileInspection, err := inspectStatusProjectProfile(
+			ctx,
+			projectRoot,
+			readiness,
+		)
+		if err != nil {
+			return "", err
 		}
 		full, _ := args["full"].(bool)
 		data, err := artifact.FetchStatusData(ctx, store, contextName, projectRoot)
 		if err != nil {
 			return "", err
 		}
-		data.SpecBindingDebt = specBindingDebtReportForStatus(ctx, store, projectRoot)
+		data.SpecBindingDebt = specBindingDebtReportForCanonicalStatus(
+			ctx,
+			store,
+			readiness,
+		)
 		data = applyDefaultDriftEventResolutionLedgerToStatusData(ctx, store, projectRoot, data)
 		statusBody := present.CockpitStatusResponse(data)
 		if full {
 			statusBody = present.StatusResponse(data)
 		}
-		result := overseerStatusPrefix(ctx, store, projectRoot) + statusBody
-		// Append module coverage if modules are scanned
-		scanner := codebase.NewScanner(store.DB())
-		if !scanner.ModulesLastScanned(ctx).IsZero() {
-			if report, err := codebase.ComputeCoverage(ctx, store.DB()); err == nil && report.TotalModules > 0 {
-				if full {
-					result += "\n" + codebase.FormatCoverageResponse(report)
-				} else {
-					result += "\n" + codebase.FormatCoverageCockpitSummary(report)
+		result := overseerStatusPrefix(
+			ctx,
+			store,
+			projectRoot,
+			readiness,
+		) +
+			statusProjectProfilePrefix(
+				readiness,
+				profileInspection,
+				full,
+			) +
+			statusBody
+		coverageRequired, err := profileCodeCoverageRequired(readiness)
+		if err != nil {
+			return "", err
+		}
+		if coverageRequired {
+			scanner := codebase.NewScanner(store.DB())
+			if !scanner.ModulesLastScanned(ctx).IsZero() {
+				if report, err := codebase.ComputeCoverage(ctx, store.DB()); err == nil && report.TotalModules > 0 {
+					if full {
+						result += "\n" + codebase.FormatCoverageResponse(report)
+					} else {
+						result += "\n" + codebase.FormatCoverageCockpitSummary(report)
+					}
 				}
 			}
 		}
 		result += "\n" + haftServeRuntimeStatusLine()
-		return result + navStripWithStaleSnapshot(ctx, store, contextName, data.StaleItems), nil
+		return statusWithLiveMCPReceipt(
+			projectRoot,
+			result+navStripWithStaleSnapshot(ctx, store, contextName, data.StaleItems),
+		)
 
 	case "board":
 		boardView, _ := args["view"].(string)
@@ -1755,15 +2387,15 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			// Phase-2 graph-proximity recall (dec-20260604-3aaad199): FTS5-seeded
 			// PPR over the fused graph, additive to the exact affected-file list.
 			// Best-effort — a failure never breaks the related response.
-			if ranked, perr := svc.RelatedToFile(ctx, projectRoot, file, 12); perr == nil && len(ranked) > 0 {
+			if view, perr := svc.RelatedView(ctx, projectRoot, file, 12); perr == nil && len(view.Results) > 0 {
 				// Dedup: drop anything already shown in the exact affected-file
 				// section, so a decision is not listed twice.
 				shown := make(map[string]bool, len(results))
 				for _, a := range results {
 					shown[a.Meta.ID] = true
 				}
-				items := make([]present.RelatedProximityItem, 0, len(ranked))
-				for _, r := range ranked {
+				items := make([]present.RelatedProximityItem, 0, len(view.Results))
+				for _, r := range view.Results {
 					if shown[r.ID] {
 						continue
 					}
@@ -1773,83 +2405,44 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 					}
 					items = append(items, present.RelatedProximityItem{Title: r.Title, Label: label, Ref: r.ID})
 				}
+				resp += present.IndexStateResponse(view.Index)
 				resp += present.RelatedProximityResponse(items)
 			}
 			// Structural test-coverage lane (dec-20260604-ef966a11): which tests
 			// exercise this file's symbols — 'exercised by', never 'verified'.
-			if cov, cerr := svc.TestedBy(ctx, projectRoot, file); cerr == nil && len(cov) > 0 {
-				items := make([]present.TestedByItem, 0, len(cov))
-				for _, c := range cov {
+			if view, cerr := svc.TestCoverageView(ctx, projectRoot, file); cerr == nil && len(view.Symbols) > 0 {
+				items := make([]present.TestedByItem, 0, len(view.Symbols))
+				for _, c := range view.Symbols {
 					items = append(items, present.TestedByItem{Symbol: c.Symbol, Exported: c.Exported, TestedBy: c.TestedBy})
 				}
+				resp += present.IndexStateResponse(view.Index)
 				resp += present.TestedByResponse(items)
 			}
 		}
 		return resp + navStrip, nil
 
 	case "code_context":
-		file, _ := args["file"].(string)
-		if file == "" {
-			return "", fmt.Errorf("file is required for code_context action")
-		}
-		symbol, _ := args["symbol"].(string)
-		line := 0
-		if l, ok := args["line"].(float64); ok {
-			line = int(l)
-		}
-		target := contextgraph.Target{File: file, Symbol: symbol, Line: line}
-		lane := present.CodeContextLaneIndex
-		if rawLane, ok := args["lane"].(string); ok && strings.TrimSpace(rawLane) != "" {
-			parsed, valid := present.ParseCodeContextLane(rawLane)
-			if !valid {
-				return "", fmt.Errorf("unknown code_context lane %q — valid lanes: %s", rawLane, strings.Join(present.ValidCodeContextLaneNames(), ", "))
-			}
-			lane = parsed
-		}
-		limit, hasLimit := codeContextLaneLimit(args)
-		projectRoot := filepath.Dir(haftDir)
-		full, _ := args["full"].(bool)
-		if !full && lane == present.CodeContextLaneSymbols {
-			symbols, refreshed, err := codeContextSymbolsForFile(ctx, store, projectRoot, file)
-			if err != nil {
-				return present.CodeContextSymbolsUnavailableResponse(target, err) + navStrip, nil
-			}
-			return present.CodeContextSymbolsResponse(target, symbols, limit, refreshed) + navStrip, nil
-		}
-		cc, err := contextgraph.FetchCodeContext(ctx, store, graph.NewStore(store.DB()), target)
-		if err != nil {
-			return "", err
-		}
-		if full {
-			return present.CodeContextResponseFull(cc) + navStrip, nil
-		}
-		options := present.CodeContextRenderOptions{
-			Lane:          lane,
-			ArtifactLimit: limit,
-		}
-		if hasLimit {
-			options.InvariantLimit = limit
-			options.ContextInvariantLimit = limit
-		}
-		if lane == present.CodeContextLaneIndex {
-			symbols, _, err := codeContextSymbolsForFile(ctx, store, projectRoot, file)
-			options.SymbolCountKnown = err == nil
-			options.SymbolCount = len(symbols)
-			if err != nil {
-				options.SymbolUnavailable = err.Error()
-			}
-		}
-		return present.CodeContextResponseWithOptions(cc, options) + navStrip, nil
+		return handleCodeContextQuery(ctx, store, haftDir, args, navStrip)
 
 	case "callees", "callers", "impact":
 		name := firstNonEmptyQueryArg(args, "symbol", "name")
-		if name == "" {
-			return "", fmt.Errorf("symbol is required for %s action", action)
-		}
 		file, _ := args["file"].(string)
 		line := 0
 		if l, ok := args["line"].(float64); ok {
 			line = int(l)
+		}
+		projectRoot := filepath.Dir(haftDir)
+		if anchorID, _ := args["anchor_id"].(string); anchorID != "" && name == "" {
+			resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+			if err != nil {
+				return "", err
+			}
+			name = resolved.Name
+			file = resolved.FilePath
+			line = resolved.StartLine
+		}
+		if name == "" {
+			return "", fmt.Errorf("symbol is required for %s action", action)
 		}
 		depth := 0
 		if d, ok := args["depth"].(float64); ok {
@@ -1859,8 +2452,12 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if action != "callees" {
 			dir = codeintel.Callers // callers + impact both walk inbound edges
 		}
-		projectRoot := filepath.Dir(haftDir)
-		res, err := codeintel.NewService(store).Flow(ctx, projectRoot, name, file, line, depth, dir)
+		profileRaw, _ := args["profile"].(string)
+		profile, validProfile := codeintel.ParseTraversalProfile(profileRaw)
+		if !validProfile {
+			return "", fmt.Errorf("unknown traversal profile %q; valid profiles: call_flow, type_impact, reference_impact, all_code", profileRaw)
+		}
+		res, err := codeintel.NewService(store).FlowWithProfile(ctx, projectRoot, name, file, line, depth, dir, profile)
 		if err != nil {
 			return "", err
 		}
@@ -1868,15 +2465,24 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 
 	case "node":
 		name := firstNonEmptyQueryArg(args, "symbol", "name")
-		if name == "" {
-			return "", fmt.Errorf("symbol is required for node action")
-		}
 		file, _ := args["file"].(string)
 		line := 0
 		if l, ok := args["line"].(float64); ok {
 			line = int(l)
 		}
 		projectRoot := filepath.Dir(haftDir)
+		if anchorID, _ := args["anchor_id"].(string); anchorID != "" && name == "" {
+			resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+			if err != nil {
+				return "", err
+			}
+			name = resolved.Name
+			file = resolved.FilePath
+			line = resolved.StartLine
+		}
+		if name == "" {
+			return "", fmt.Errorf("symbol is required for node action")
+		}
 		view, err := codeintel.NewService(store).Node(ctx, projectRoot, name, file, line)
 		if err != nil {
 			return "", err
@@ -1884,31 +2490,55 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return present.NodeResponse(view, nodeLang(file, view)) + navStrip, nil
 
 	case "explore":
+		concern, _ := args["query"].(string)
 		name := firstNonEmptyQueryArg(args, "symbol", "name")
-		if name == "" {
-			return "", fmt.Errorf("symbol is required for explore action")
-		}
 		file, _ := args["file"].(string)
 		line := 0
 		if l, ok := args["line"].(float64); ok {
 			line = int(l)
 		}
 		projectRoot := filepath.Dir(haftDir)
-		svc := codeintel.NewService(store)
-		// A bag of >=2 names (space/comma-separated) → multi-seed: connect them.
-		// A single name → the single-seed flow. Same arg, no new tool.
-		if seeds := splitSeedBag(name); len(seeds) >= 2 {
-			res, err := svc.ExploreBag(ctx, projectRoot, seeds)
+		if anchorID, _ := args["anchor_id"].(string); anchorID != "" && name == "" {
+			if strings.TrimSpace(concern) != "" {
+				return "", fmt.Errorf(
+					"explore accepts a concern query or anchor_id, not both",
+				)
+			}
+			resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
 			if err != nil {
 				return "", err
 			}
-			return present.ExploreBagResponse(res) + navStrip, nil
+			name = resolved.Name
+			file = resolved.FilePath
+			line = resolved.StartLine
 		}
-		res, err := svc.Explore(ctx, projectRoot, name, file, line)
+		maxCandidates := codeintel.DefaultConcernCandidateBudget
+		if _, present := args["max_candidates"]; present {
+			parsedCandidates, budgetErr := nonNegativeIntArg(
+				args,
+				"max_candidates",
+			)
+			if budgetErr != nil {
+				return "", budgetErr
+			}
+			maxCandidates = parsedCandidates
+		}
+		wire, err := publishCodeExplore(
+			ctx,
+			store,
+			projectRoot,
+			name,
+			file,
+			line,
+			concern,
+			maxCandidates,
+			stringExploreView(args),
+			stringExploreTraceRef(args),
+		)
 		if err != nil {
 			return "", err
 		}
-		return present.ExploreResponse(res, name, exploreLang(file, res)) + navStrip, nil
+		return string(wire), nil
 
 	case "ceremony":
 		files := ceremonyFiles(args)
@@ -1962,105 +2592,48 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 
 	case "coverage":
 		projectRoot := filepath.Dir(haftDir)
-		scanner := codebase.NewScanner(store.DB())
-
-		// Always rescan — module detection is fast (<100ms)
-		if _, err := scanner.ScanModules(ctx, projectRoot); err != nil {
-			return "", fmt.Errorf("module scan: %w", err)
-		}
-		if _, err := scanner.ScanDependencies(ctx, projectRoot); err != nil {
-			_ = err // non-fatal
-		}
-
-		report, err := codebase.ComputeCoverage(ctx, store.DB())
+		scopeRequest, err := projectSpecificationScopeRequestFromFlag(
+			stringArg(args, "scope_id"),
+		)
 		if err != nil {
-			return "", fmt.Errorf("compute coverage: %w", err)
+			return "", err
 		}
-		return codebase.FormatCoverageResponse(report) + navStrip, nil
+		readiness, err := inspectCanonicalProjectReadiness(
+			ctx,
+			projectRoot,
+			scopeRequest,
+		)
+		if err != nil {
+			return "", err
+		}
+		response, err := profileAwareCoverageResponse(
+			ctx,
+			store,
+			projectRoot,
+			readiness,
+			intArg(args, "limit", 0),
+		)
+		if err != nil {
+			return "", err
+		}
+		return response + navStrip, nil
 
 	case "fpf":
-		query, _ := args["query"].(string)
-		if query == "" {
-			return "", fmt.Errorf("query is required for fpf search")
-		}
-		limit := fpf.DefaultSpecSearchLimit
-		if l, ok := args["limit"].(float64); ok {
-			limit = int(l)
-		}
-		full, _ := args["full"].(bool)
-		explain, _ := args["explain"].(bool)
-		mode, _ := args["mode"].(string)
-		retrieval, err := retrieveEmbeddedFPF(fpf.SpecRetrievalRequest{
-			Query: query,
-			Limit: limit,
-			Full:  full,
-			Mode:  mode,
-		})
-		if err != nil {
-			return "", fmt.Errorf("fpf search: %w", err)
-		}
-		if len(retrieval.Results) == 0 {
-			return formatMCPFPFSearchWithExplain(nil, explain) + navStrip, nil
-		}
-
-		return formatMCPFPFSearchWithExplain(presentFPFRetrieval(retrieval.Results), explain) + navStrip, nil
-
-	case "pattern_use":
-		request := fpf.PatternUseRequest{
-			Query:             stringArg(args, "query"),
-			Mode:              stringArg(args, "mode"),
-			ProjectRef:        stringArg(args, "project_ref"),
-			BoundedContextRef: stringArg(args, "bounded_context_ref"),
-			SourceRefs:        parseStringArrayFromArgs(args, "source_refs"),
-		}
-		mode, err := fpf.NormalizePatternUseMode(request.Mode)
+		request, err := fpfQueryRequestFromArgs(args)
 		if err != nil {
 			return "", err
 		}
-		if mode == fpf.PatternUseFullMode {
-			record, err := recommendPatternUseWithEmbeddedFallback(request)
-			if err != nil {
-				return "", err
-			}
-			if err := record.Validate(); err != nil {
-				return "", fmt.Errorf("build pattern-use recommendation: %w", err)
-			}
-			payload, err := json.Marshal(record)
-			if err != nil {
-				return "", fmt.Errorf("marshal pattern-use recommendation: %w", err)
-			}
-			return string(payload), nil
-		}
-		record, err := recommendPatternUseCompactWithEmbeddedFallback(request)
+		publicationRequest, err := fpfQueryPublicationRequestFromArgs(args)
 		if err != nil {
 			return "", err
 		}
-		if err := record.Validate(); err != nil {
-			return "", fmt.Errorf("build compact pattern-use recommendation: %w", err)
-		}
-		payload, err := json.Marshal(record)
+		payload, err := encodeEmbeddedFPFQuery(
+			request,
+			publicationRequest,
+			fpf.PublishedQueryJSONCompact,
+		)
 		if err != nil {
-			return "", fmt.Errorf("marshal pattern-use recommendation: %w", err)
-		}
-		return string(payload), nil
-
-	case "pattern_recall":
-		request := fpf.PatternRecallRequest{
-			Query:      stringArg(args, "query"),
-			Mode:       stringArg(args, "mode"),
-			Limit:      intArg(args, "limit", fpf.PatternRecallDefaultLimit),
-			SourceRefs: parseStringArrayFromArgs(args, "source_refs"),
-		}
-		record, err := patternRecallWithEmbeddedSourceCards(request)
-		if err != nil {
-			return "", err
-		}
-		if err := record.Validate(); err != nil {
-			return "", fmt.Errorf("build pattern-recall record: %w", err)
-		}
-		payload, err := json.Marshal(record)
-		if err != nil {
-			return "", fmt.Errorf("marshal pattern-recall record: %w", err)
+			return "", fmt.Errorf("FPF query: %w", err)
 		}
 		return string(payload), nil
 
@@ -2372,8 +2945,19 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'pattern_use', 'pattern_recall', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
+}
+
+func statusWithLiveMCPReceipt(projectRoot string, response string) (string, error) {
+	posture, err := agenthostrestart.FulfillLiveMCPChallengeForStatus(projectRoot)
+	if err != nil {
+		return "", fmt.Errorf("fulfill live MCP restart challenge: %w", err)
+	}
+	if posture == agenthostrestart.LiveMCPStatusPredecessorIgnored {
+		response += "\nRestart acceptance: stale goal-coupled checkpoint ignored; it grants no current restart authority."
+	}
+	return response, nil
 }
 
 func handleQuintQuerySpecFitProbe(
@@ -2587,14 +3171,59 @@ func splitSeedBag(s string) []string {
 	return out
 }
 
-// exploreLang derives the code-fence language for an explore view from the file
-// argument, falling back to the seed's file extension.
-func exploreLang(file string, res codeintel.ExploreResult) string {
-	ext := filepath.Ext(file)
-	if ext == "" {
-		ext = filepath.Ext(res.Seed.FilePath)
+func resolveCurrentSymbolAnchor(
+	ctx context.Context,
+	store *artifact.Store,
+	projectRoot string,
+	anchorID string,
+) (codebase.CodeSymbol, error) {
+	service := codeintel.NewService(store)
+	var lastErr error
+	for range 2 {
+		if _, err := service.EnsureIndex(ctx, projectRoot); err != nil {
+			return codebase.CodeSymbol{}, fmt.Errorf(
+				"refresh code index for anchor lookup: %w",
+				err,
+			)
+		}
+		indexState, err := service.CurrentIndexState(ctx)
+		if err != nil {
+			return codebase.CodeSymbol{}, err
+		}
+		resolved, ok, err := codebase.NewSymbolStore(
+			store.DB(),
+		).GetByID(ctx, anchorID)
+		if err != nil {
+			return codebase.CodeSymbol{}, fmt.Errorf(
+				"resolve symbol anchor: %w",
+				err,
+			)
+		}
+		if err := service.ConfirmIndexState(ctx, indexState); err != nil {
+			var changed *codeintel.IndexBasisChangedError
+			if !errors.As(err, &changed) {
+				return codebase.CodeSymbol{}, err
+			}
+			lastErr = err
+			continue
+		}
+		if ok {
+			return resolved, nil
+		}
+		if !indexState.SupportsKnownAbsence() {
+			return codebase.CodeSymbol{}, fmt.Errorf(
+				"symbol_anchor_unavailable: %q was not resolved under incomplete index basis %s",
+				anchorID,
+				indexState.Basis.CoverageRef(),
+			)
+		}
+		return codebase.CodeSymbol{}, fmt.Errorf(
+			"symbol anchor %q not found in the current code index basis %s",
+			anchorID,
+			indexState.Basis.CoverageRef(),
+		)
 	}
-	return strings.TrimPrefix(ext, ".")
+	return codebase.CodeSymbol{}, lastErr
 }
 
 func firstNonEmptyQueryArg(args map[string]any, keys ...string) string {
@@ -2788,6 +3417,154 @@ func parseStrictStringArrayFromArgs(args map[string]any, key string) ([]string, 
 	}
 
 	return values, nil
+}
+
+func fpfQueryRequestFromArgs(args map[string]any) (fpf.QueryRequest, error) {
+	mode := strings.TrimSpace(stringArg(args, "mode"))
+	if mode == "" {
+		return nil, fmt.Errorf("mode is required for FPF query; expected concern, lookup, or inspect")
+	}
+
+	switch fpf.QueryMode(mode) {
+	case fpf.QueryModeConcern:
+		if _, hasRoles := args["roles"]; hasRoles {
+			return nil, fmt.Errorf("roles are not accepted for concern mode; use lookup or inspect to hydrate a selected source role")
+		}
+		knownContext, err := parseStrictStringArrayFromArgs(args, "known_context")
+		if err != nil {
+			return nil, err
+		}
+		budget, err := fpfResponseBudgetFromArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		return fpf.ConcernQuery{
+			Text:            stringArg(args, "query"),
+			EntityOfConcern: stringArg(args, "entity_of_concern"),
+			KnownContext:    knownContext,
+			IntendedUse:     stringArg(args, "intended_use"),
+			ResponseBudget:  budget,
+		}, nil
+
+	case fpf.QueryModeLookup:
+		roleValues, err := parseStrictStringArrayFromArgs(args, "roles")
+		if err != nil {
+			return nil, err
+		}
+		budget, err := fpfResponseBudgetFromArgs(args)
+		if err != nil {
+			return nil, err
+		}
+		return fpf.LookupQuery{
+			Identifier:     stringArg(args, "identifier"),
+			Roles:          sourceUnitRoles(roleValues),
+			ResponseBudget: budget,
+		}, nil
+
+	case fpf.QueryModeInspect:
+		roleValues, err := parseStrictStringArrayFromArgs(args, "roles")
+		if err != nil {
+			return nil, err
+		}
+		return fpf.InspectQuery{
+			Identifier: stringArg(args, "identifier"),
+			Roles:      sourceUnitRoles(roleValues),
+		}, nil
+
+	default:
+		return nil, fmt.Errorf("unsupported FPF query mode %q; expected concern, lookup, or inspect", mode)
+	}
+}
+
+func fpfQueryPublicationRequestFromArgs(
+	args map[string]any,
+) (fpf.QueryPublicationRequest, error) {
+	view, _, err := strictPresentStringArg(args, "view")
+	if err != nil {
+		return fpf.QueryPublicationRequest{}, err
+	}
+	traceRef, _, err := strictPresentStringArg(args, "trace_ref")
+	if err != nil {
+		return fpf.QueryPublicationRequest{}, err
+	}
+	return fpf.NewQueryPublicationRequest(
+		view,
+		traceRef,
+	)
+}
+
+func strictPresentStringArg(
+	args map[string]any,
+	key string,
+) (string, bool, error) {
+	raw, present := args[key]
+	if !present {
+		return "", false, nil
+	}
+	value, valid := raw.(string)
+	if !valid {
+		return "", true, fmt.Errorf("%s must be a string", key)
+	}
+	return strings.TrimSpace(value), true, nil
+}
+
+func fpfResponseBudgetFromArgs(args map[string]any) (fpf.ResponseBudget, error) {
+	perRole, err := nonNegativeIntArg(args, "max_candidates_per_role")
+	if err != nil {
+		return fpf.ResponseBudget{}, err
+	}
+	total, err := nonNegativeIntArg(args, "max_total_candidates")
+	if err != nil {
+		return fpf.ResponseBudget{}, err
+	}
+	excerpt, err := nonNegativeIntArg(args, "max_excerpt_characters")
+	if err != nil {
+		return fpf.ResponseBudget{}, err
+	}
+	relations, err := nonNegativeIntArg(args, "max_relations_per_candidate")
+	if err != nil {
+		return fpf.ResponseBudget{}, err
+	}
+	return fpf.ResponseBudget{
+		MaxCandidatesPerRole:     perRole,
+		MaxTotalCandidates:       total,
+		MaxExcerptCharacters:     excerpt,
+		MaxRelationsPerCandidate: relations,
+	}, nil
+}
+
+func nonNegativeIntArg(args map[string]any, key string) (int, error) {
+	raw, ok := args[key]
+	if !ok {
+		return 0, nil
+	}
+
+	var value int64
+	switch typed := raw.(type) {
+	case int:
+		value = int64(typed)
+	case int64:
+		value = typed
+	case float64:
+		value = int64(typed)
+		if float64(value) != typed {
+			return 0, fmt.Errorf("%s must be a non-negative integer", key)
+		}
+	case json.Number:
+		parsed, err := typed.Int64()
+		if err != nil {
+			return 0, fmt.Errorf("%s must be a non-negative integer", key)
+		}
+		value = parsed
+	default:
+		return 0, fmt.Errorf("%s must be a non-negative integer", key)
+	}
+
+	converted := int(value)
+	if value < 0 || int64(converted) != value {
+		return 0, fmt.Errorf("%s must be a non-negative integer", key)
+	}
+	return converted, nil
 }
 
 func decideInputRequestsExplicitBaselineAuthority(input artifact.DecideInput) bool {
@@ -3066,7 +3843,7 @@ func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string)
 	response := present.SolutionResponse("compare", a, filePath, "")
 	warnings := artifact.ExtractComparisonWarnings(a.Body)
 	if len(warnings) == 0 {
-		return response + navStrip + present.FPFPhaseHint("compare")
+		return response + navStrip
 	}
 
 	var builder strings.Builder
@@ -3078,7 +3855,6 @@ func compareToolResponse(a *artifact.Artifact, filePath string, navStrip string)
 		builder.WriteString("\n")
 	}
 	builder.WriteString(navStrip)
-	builder.WriteString(present.FPFPhaseHint("compare"))
 
 	return builder.String()
 }
@@ -3166,7 +3942,30 @@ func parseVariants(args map[string]any) []artifact.Variant {
 				}
 			}
 		}
+		if reference, ok := parseVariantProjectRecordRef(
+			vm["project_record_ref"],
+		); ok {
+			v.ProjectRecordRef = &reference
+		}
 		variants = append(variants, v)
 	}
 	return variants
+}
+
+func parseVariantProjectRecordRef(
+	raw any,
+) (artifact.VariantProjectRecordRef, bool) {
+	value, ok := raw.(map[string]any)
+	if !ok {
+		return artifact.VariantProjectRecordRef{}, false
+	}
+	refKindID, refKindPresent := value["ref_kind_id"].(string)
+	referenceID, referencePresent := value["reference_id"].(string)
+	if !refKindPresent || !referencePresent {
+		return artifact.VariantProjectRecordRef{}, false
+	}
+	return artifact.VariantProjectRecordRef{
+		RefKindID:   refKindID,
+		ReferenceID: referenceID,
+	}, true
 }

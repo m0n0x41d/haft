@@ -18,33 +18,79 @@ const TrailLimit = 5
 // fused onto exactly it (per-overload, line-precise), its immediate call trail,
 // and — for container types — its member outline.
 type NodeOverload struct {
-	Symbol    codebase.CodeSymbol
-	Body      string
-	BodyOK    bool // slice verified byte-exact against the on-disk hash
-	Reindexed bool // the file was stale and was re-indexed to get fresh offsets
-	Context   contextgraph.CodeContext
-	Callers   []FusedHop
-	Callees   []FusedHop
-	Members   []codebase.CodeSymbol // container kinds only (methods on this type)
+	Symbol     codebase.CodeSymbol
+	Body       string
+	BodyOK     bool // slice verified byte-exact against the on-disk hash
+	Reindexed  bool // the file was stale and was re-indexed to get fresh offsets
+	Context    contextgraph.CodeContext
+	Callers    []FusedHop
+	Callees    []FusedHop
+	Members    []codebase.CodeSymbol // container kinds only (methods on this type)
+	Resolution codebase.ResolutionCounts
 }
 
 // NodeView is the full haft_node response: every overload of a name, each
 // self-contained. Unlike a Flow seed, a node is never "ambiguous" — it shows
 // ALL overloads rather than asking the caller to pick.
 type NodeView struct {
-	Name       string
-	Found      bool
-	Overloads  []NodeOverload
-	Candidates []codebase.CodeSymbol // fuzzy matches when no exact name resolved and >1 hit
-	Fuzzy      bool                  // the shown definitions / candidates came from the fuzzy fallback
-	ColdBuilt  bool
+	Name           string
+	Found          bool
+	NameResolution SeedResolution
+	Overloads      []NodeOverload
+	Candidates     []codebase.CodeSymbol // fuzzy matches when no exact name resolved and >1 hit
+	Fuzzy          bool                  // the shown definitions / candidates came from the fuzzy fallback
+	ColdBuilt      bool
+	Index          codebase.IndexState
 }
 
 // Node assembles the detail view for a symbol name: all overloads (or the one
 // covering file+line), each with a freshness-revalidated body, per-overload
 // fusion, and an immediate caller/callee trail.
 func (s *Service) Node(ctx context.Context, projectRoot, name, file string, line int) (NodeView, error) {
+	return retryIndexQuery(func() (NodeView, error) {
+		return s.nodeOnce(ctx, projectRoot, name, file, line)
+	})
+}
+
+func (s *Service) nodeOnce(
+	ctx context.Context,
+	projectRoot string,
+	name string,
+	file string,
+	line int,
+) (result NodeView, resultErr error) {
 	cold, err := s.EnsureIndex(ctx, projectRoot)
+	if err != nil {
+		return NodeView{}, err
+	}
+	indexMu.RLock()
+	defer indexMu.RUnlock()
+	indexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return NodeView{}, err
+	}
+	defer func() {
+		if resultErr != nil {
+			return
+		}
+		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+			result = NodeView{}
+			resultErr = err
+		}
+	}()
+	if indexState.Epoch == 0 {
+		resolution, err := unavailableSeedForIndex(name, indexState)
+		if err != nil {
+			return NodeView{}, err
+		}
+		return NodeView{
+			Name:           name,
+			NameResolution: resolution,
+			ColdBuilt:      cold,
+			Index:          indexState,
+		}, nil
+	}
+	scope, err := traversalScopeForIndex(indexState)
 	if err != nil {
 		return NodeView{}, err
 	}
@@ -52,7 +98,7 @@ func (s *Service) Node(ctx context.Context, projectRoot, name, file string, line
 	if err != nil {
 		return NodeView{}, err
 	}
-	view := NodeView{Name: name, ColdBuilt: cold, Fuzzy: fuzzy, Candidates: candidates}
+	view := NodeView{Name: name, ColdBuilt: cold, Fuzzy: fuzzy, Candidates: candidates, Index: indexState}
 	for _, sym := range overloads {
 		ol, err := s.buildOverload(ctx, projectRoot, sym)
 		if err != nil {
@@ -61,6 +107,23 @@ func (s *Service) Node(ctx context.Context, projectRoot, name, file string, line
 		view.Overloads = append(view.Overloads, ol)
 	}
 	view.Found = len(view.Overloads) > 0
+	if view.Found {
+		return view, nil
+	}
+	seedResolution, displayCandidates, err := classifySeedResolution(
+		name,
+		file,
+		line,
+		codebase.CodeSymbol{},
+		candidates,
+		fuzzy,
+		scope,
+	)
+	if err != nil {
+		return NodeView{}, err
+	}
+	view.NameResolution = seedResolution
+	view.Candidates = displayCandidates
 	return view, nil
 }
 
@@ -82,20 +145,23 @@ func (s *Service) resolveOverloads(ctx context.Context, name, file string, line 
 			return []codebase.CodeSymbol{sym}, nil, false, nil
 		}
 	}
-	exact, err := s.symbols.GetByName(ctx, name)
+	bareName, receiver := splitQualifiedSymbolName(name)
+	exact, err := s.symbols.GetByName(ctx, bareName)
 	if err != nil {
 		return nil, nil, false, err
 	}
+	exact = filterByReceiver(exact, receiver)
 	if file != "" {
 		exact = filterByFile(exact, file)
 	}
 	if len(exact) > 0 {
 		return exact, nil, false, nil
 	}
-	fuzzyHits, err := s.symbols.SearchSymbols(ctx, name, 12)
+	fuzzyHits, err := s.symbols.SearchSymbols(ctx, bareName, 12)
 	if err != nil {
 		return nil, nil, false, err
 	}
+	fuzzyHits = filterByReceiver(fuzzyHits, receiver)
 	if file != "" {
 		fuzzyHits = filterByFile(fuzzyHits, file)
 	}
@@ -124,14 +190,19 @@ func (s *Service) buildOverload(ctx context.Context, projectRoot string, sym cod
 	}
 
 	cc, err := contextgraph.FetchCodeContext(ctx, s.art, s.graph, contextgraph.Target{
-		File:   freshSym.FilePath,
-		Symbol: freshSym.Name,
-		Line:   freshSym.StartLine,
+		File:     freshSym.FilePath,
+		Symbol:   freshSym.Name,
+		AnchorID: freshSym.AnchorID,
+		Line:     freshSym.StartLine,
 	})
 	if err != nil {
 		return NodeOverload{}, err
 	}
 	ol.Context = cc
+	ol.Resolution, err = s.edges.ResolutionCountsForSource(ctx, freshSym.ID)
+	if err != nil {
+		return NodeOverload{}, err
+	}
 
 	callers, err := s.trail(ctx, freshSym.ID, Callers)
 	if err != nil {
@@ -188,50 +259,10 @@ func (s *Service) freshBody(ctx context.Context, projectRoot string, sym codebas
 		return b, true, false, sym, nil
 	}
 
-	// Stale: stored offsets/hash no longer match disk. Re-index this file so the
-	// stored offsets match the current bytes, then re-resolve the same symbol.
-	if err := s.symbols.IndexFileSymbols(ctx, projectRoot, sym.FilePath); err != nil {
-		return nil, false, true, sym, nil
-	}
-	content2, err := os.ReadFile(abs)
-	if err != nil {
-		return nil, false, true, sym, nil
-	}
-	refreshed, err := s.symbols.GetByFile(ctx, sym.FilePath)
-	if err != nil {
-		return nil, false, true, sym, nil
-	}
-	matched, ok := matchSymbol(refreshed, sym)
-	if !ok {
-		return nil, false, true, sym, nil // symbol removed by the edit — honest "gone"
-	}
-	b, verified := codebase.VerifyBody(content2, matched)
-	return b, verified, true, matched, nil
-}
-
-// matchSymbol re-locates a symbol after a re-index by (name, receiver), choosing
-// the candidate whose start line is closest to the original — so an edit that
-// shifts a symbol's line still re-binds to the same definition. Pure.
-func matchSymbol(syms []codebase.CodeSymbol, orig codebase.CodeSymbol) (codebase.CodeSymbol, bool) {
-	best := codebase.CodeSymbol{}
-	found := false
-	for _, sym := range syms {
-		if sym.Name != orig.Name || sym.Receiver != orig.Receiver {
-			continue
-		}
-		if !found || lineDistance(sym.StartLine, orig.StartLine) < lineDistance(best.StartLine, orig.StartLine) {
-			best = sym
-			found = true
-		}
-	}
-	return best, found
-}
-
-func lineDistance(a, b int) int {
-	if a > b {
-		return a - b
-	}
-	return b - a
+	// The file changed after the atomic refresh but before source slicing. Do not
+	// perform a private per-file write that would bypass the epoch transaction.
+	// Return an honest unverified body; the next query refreshes the closure.
+	return nil, false, false, sym, nil
 }
 
 // methodsOf returns the symbols whose receiver is the given type name — the
@@ -250,7 +281,7 @@ func methodsOf(syms []codebase.CodeSymbol, typeName string) []codebase.CodeSymbo
 // (struct / interface / class) rather than a callable.
 func isContainerKind(kind string) bool {
 	switch kind {
-	case "type", "interface", "class", "struct":
+	case "type", "type_alias", "interface", "class", "struct", "enum":
 		return true
 	default:
 		return false

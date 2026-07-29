@@ -50,6 +50,8 @@ Plain markdown prose under `## Exceptions`.
 
 ## Runtime behavior
 
-- Host-side skills/prompts and `haft serve` expose `Intent` + `Defaults`
-  through MCP initialize instructions and project discipline context.
+- Host-side skills/prompts expose `Intent` + `Defaults` through project
+  discipline context. `haft serve` initialize instructions contain only global
+  invariants; project/profile applicability is resolved through task-tool
+  responses rather than injected into MCP initialize.
 - `haft init` creates an example `.haft/workflow.md` when the file does not exist.

@@ -333,6 +333,87 @@ func TestCodeContextResponse_TypedLanesStaySeparate(t *testing.T) {
 	}
 }
 
+func TestCodeContextResponse_RendersTypedSpecLifecycleWithRecovery(t *testing.T) {
+	claims := []contextgraph.SpecClaimContext{
+		{ID: "claim-1", Class: "requirement", Statement: "first claim"},
+		{ID: "claim-2", Class: "requirement", Statement: "second claim"},
+		{ID: "claim-3", Class: "requirement", Statement: "third claim"},
+		{ID: "claim-4", Class: "requirement", Statement: "fourth claim"},
+	}
+	cc := contextgraph.CodeContext{
+		Target: contextgraph.Target{File: "internal/x.go"},
+		Decisions: []*artifact.Artifact{
+			codeContextDecisionWithSections(t, "dec-1", "Decision title", []string{"TS.current.001", "TS.missing.001"}),
+		},
+		Notes: []*artifact.Artifact{
+			codeContextArtifact("note-1", artifact.KindNote, "Note title"),
+		},
+		Specs: []contextgraph.SpecSectionContext{
+			{
+				ID:                 "TS.current.001",
+				Title:              "Current target behavior",
+				LifecycleState:     "active",
+				ValidUntil:         "2026-12-31",
+				Claims:             claims,
+				DecisionRefs:       []string{"dec-1"},
+				Resolution:         contextgraph.SpecResolutionResolved,
+				SourceKind:         "carrier_import",
+				CarrierPath:        ".haft/specs/target-system.md",
+				BaselineState:      contextgraph.SpecBaselineCurrent,
+				BaselineApprovedBy: "operator",
+			},
+			{
+				ID:               "TS.missing.001",
+				DecisionRefs:     []string{"dec-1"},
+				Resolution:       contextgraph.SpecResolutionMissing,
+				ResolutionDetail: "no current edition",
+				BaselineState:    contextgraph.SpecBaselineMissing,
+			},
+		},
+	}
+
+	index := CodeContextResponse(cc)
+	for _, want := range []string{
+		"specs: 2 referenced; 1 resolved, 1 unresolved",
+		"1 referenced SpecSection(s) are non-current or unresolved",
+		`lane="decisions"`,
+	} {
+		if !strings.Contains(index, want) {
+			t.Fatalf("spec index missing %q:\n%s", want, index)
+		}
+	}
+
+	decisions := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneDecisions})
+	for _, want := range []string{
+		"### Referenced SpecSections",
+		"**Current target behavior** `TS.current.001`",
+		"resolution=resolved",
+		"baseline=current",
+		"lifecycle=active",
+		"**Unresolved SpecSection** `TS.missing.001`",
+		"resolution=missing",
+		"resolution_detail=no current edition",
+		"1 more claim(s) omitted",
+	} {
+		if !strings.Contains(decisions, want) {
+			t.Fatalf("spec decisions lane missing %q:\n%s", want, decisions)
+		}
+	}
+	if strings.Contains(decisions, "fourth claim") {
+		t.Fatalf("compact decisions lane should cap claims:\n%s", decisions)
+	}
+
+	full := CodeContextResponseFull(cc)
+	if !strings.Contains(full, "fourth claim") || strings.Contains(full, "more claim(s) omitted") {
+		t.Fatalf("full response must restore all SpecSection claims:\n%s", full)
+	}
+
+	notes := CodeContextResponseWithOptions(cc, CodeContextRenderOptions{Lane: CodeContextLaneNotes})
+	if strings.Contains(notes, "Referenced SpecSections") || strings.Contains(notes, "Current target behavior") {
+		t.Fatalf("typed specs leaked into notes lane:\n%s", notes)
+	}
+}
+
 func TestCodeContextSymbolsResponse_CapsByLimit(t *testing.T) {
 	target := contextgraph.Target{File: "internal/x.go"}
 	symbols := []CodeContextSymbolItem{

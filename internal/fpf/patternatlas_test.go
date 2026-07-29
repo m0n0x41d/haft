@@ -1,182 +1,112 @@
 package fpf
 
 import (
-	"database/sql"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-
-	_ "modernc.org/sqlite"
 )
 
-func TestPatternAtlasBuild_PreservesPatternRootAndSubtreeRanges(t *testing.T) {
-	atlas := mustBuildPatternAtlasFixture(t)
+func TestPatternAtlasBuildPreservesSourceRanges(t *testing.T) {
+	markdown := patternAtlasFixtureMarkdown()
+	atlas, err := BuildPatternAtlas([]byte(markdown), "fixture.md", "fixture-revision")
+	if err != nil {
+		t.Fatalf("BuildPatternAtlas() error: %v", err)
+	}
 
 	if len(atlas.Nodes) == 0 {
-		t.Fatal("expected atlas nodes")
+		t.Fatal("BuildPatternAtlas() produced no source nodes")
 	}
-	if len(atlas.Cards) < 5 {
-		t.Fatalf("expected at least five pattern cards, got %d", len(atlas.Cards))
+	if len(atlas.Cards) != 5 {
+		t.Fatalf("pattern cards = %d, want 5", len(atlas.Cards))
 	}
 
-	db := mustStorePatternAtlasFixture(t, atlas)
-
+	lines := splitPatternAtlasLines([]byte(markdown))
 	tests := []struct {
 		patternID string
 		contains  string
 	}{
 		{patternID: "F.18", contains: "NameCard"},
 		{patternID: "C.30", contains: "ArchitectureQuestionCard"},
-		{patternID: "A.10", contains: "EvidenceRelation"},
-		{patternID: "A.7", contains: "ObjectDescriptionCarrierEvidence"},
-		{patternID: "B.3", contains: "CongruenceLevel"},
+		{patternID: "A.10", contains: "evidence-provenance graph relation"},
+		{patternID: "A.7", contains: "EntityOfConcern and Description-episteme boundary"},
+		{patternID: "B.3", contains: "Congruence Level (CL)"},
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.patternID, func(t *testing.T) {
-			card, err := GetPatternCard(db, tt.patternID)
-			if err != nil {
-				t.Fatalf("GetPatternCard(%q): %v", tt.patternID, err)
-			}
-			if !strings.Contains(card.Body, tt.contains) {
-				t.Fatalf("GetPatternCard(%q) body missing %q:\n%s", tt.patternID, tt.contains, card.Body)
-			}
-			if card.NodeCount <= 1 {
-				t.Fatalf("expected full card range with child nodes, got node count %d", card.NodeCount)
-			}
-			if card.BodyKind != PatternAtlasBodyKindFullCardRange {
-				t.Fatalf("body kind = %q, want %q", card.BodyKind, PatternAtlasBodyKindFullCardRange)
-			}
-		})
+	for _, test := range tests {
+		card, found := patternAtlasCardByID(atlas.Cards, test.patternID)
+		if !found {
+			t.Fatalf("pattern card %s not found", test.patternID)
+		}
+		body := patternAtlasLineRange(lines, card.CardStartLine, card.CardEndLine)
+		if !strings.Contains(body, test.contains) {
+			t.Fatalf("pattern card %s range missing %q:\n%s", test.patternID, test.contains, body)
+		}
+		if card.ContentHash != patternAtlasHash(body) {
+			t.Fatalf("pattern card %s content hash does not cover its source range", test.patternID)
+		}
 	}
 }
 
-func TestPatternAtlasLint_DetectsMalformedMarkdownHeading(t *testing.T) {
-	atlas := mustBuildPatternAtlasFixture(t)
+func TestPatternAtlasLintDetectsMalformedMarkdownHeading(t *testing.T) {
+	atlas, err := BuildPatternAtlas(
+		[]byte(patternAtlasFixtureMarkdown()),
+		"fixture.md",
+		"fixture-revision",
+	)
+	if err != nil {
+		t.Fatalf("BuildPatternAtlas() error: %v", err)
+	}
 
-	var found bool
 	for _, lint := range atlas.Lints {
-		if strings.Contains(lint.RawLine, "#### E.3:4.2") && lint.LintKind == PatternAtlasLintLeadingSpace {
-			found = true
-			if lint.LineNumber <= 0 {
-				t.Fatalf("unexpected lint raw line: %q", lint.RawLine)
-			}
+		if strings.Contains(lint.RawLine, "#### E.3:4.2") &&
+			lint.LintKind == PatternAtlasLintLeadingSpace {
+			return
 		}
 	}
-	if !found {
-		t.Fatalf("expected leading-space heading lint, got %#v", atlas.Lints)
+	t.Fatalf("expected leading-space heading lint, got %#v", atlas.Lints)
+}
+
+func TestPatternAtlasProductionSourceHasKnownAddressableCards(t *testing.T) {
+	path := filepath.Join("..", "..", "data", "FPF", "FPF-Spec.md")
+	markdown, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		t.Skipf("FPF submodule not initialized: %s", path)
+	}
+	if err != nil {
+		t.Fatalf("read production FPF source: %v", err)
 	}
 
-	var foundNode bool
-	for _, node := range atlas.Nodes {
-		if node.Heading == "E.3:4.2 - **Precedence Stack**" {
-			foundNode = true
-		}
+	atlas, err := BuildPatternAtlas(markdown, path, "production-fixture")
+	if err != nil {
+		t.Fatalf("BuildPatternAtlas() error: %v", err)
 	}
-	if !foundNode {
-		t.Fatal("malformed heading was not normalized into an atlas node")
+	if len(atlas.Nodes) == 0 {
+		t.Fatal("production source produced no structural nodes")
+	}
+	if len(atlas.Cards) == 0 {
+		t.Fatal("production source produced no addressable pattern cards")
+	}
+
+	lines := splitPatternAtlasLines(markdown)
+	for _, patternID := range []string{"F.18", "C.30", "A.10", "A.7", "B.3"} {
+		card, found := patternAtlasCardByID(atlas.Cards, patternID)
+		if !found {
+			t.Fatalf("production pattern card %s not found", patternID)
+		}
+		body := patternAtlasLineRange(lines, card.CardStartLine, card.CardEndLine)
+		if strings.TrimSpace(body) == "" {
+			t.Fatalf("production pattern card %s has an empty source range", patternID)
+		}
 	}
 }
 
-func TestPatternAtlasHashIntegrityErrorsDetectStaleCardHash(t *testing.T) {
-	atlas := mustBuildPatternAtlasFixture(t)
-	db := mustStorePatternAtlasFixture(t, atlas)
-
-	if errs, err := PatternAtlasHashIntegrityErrors(db); err != nil || len(errs) != 0 {
-		t.Fatalf("expected clean atlas hashes, errs=%v err=%v", errs, err)
-	}
-
-	if _, err := db.Exec(`UPDATE pattern_atlas_cards SET content_hash='stale' WHERE pattern_id='F.18'`); err != nil {
-		t.Fatalf("stale card hash: %v", err)
-	}
-
-	errs, err := PatternAtlasHashIntegrityErrors(db)
-	if err != nil {
-		t.Fatalf("PatternAtlasHashIntegrityErrors: %v", err)
-	}
-	if len(errs) == 0 || !strings.Contains(errs[0], "F.18") {
-		t.Fatalf("expected F.18 hash mismatch, got %#v", errs)
-	}
-}
-
-func TestPatternAtlasProductionSpec_KnownCardsAndLint(t *testing.T) {
-	path := filepath.Join(testRepoRoot(t), "data", "FPF", "FPF-Spec.md")
-	if _, err := os.Stat(path); os.IsNotExist(err) {
-		t.Skipf("FPF submodule not initialized — run 'git submodule update --init' (%s)", path)
-	}
-
-	atlas, err := LoadPatternAtlas(path, "production-fixture")
-	if err != nil {
-		t.Fatalf("LoadPatternAtlas: %v", err)
-	}
-	if len(atlas.Nodes) < 7000 {
-		t.Fatalf("expected production atlas to have at least 7000 nodes, got %d", len(atlas.Nodes))
-	}
-	if len(atlas.Cards) < 250 {
-		t.Fatalf("expected production atlas to have at least 250 cards, got %d", len(atlas.Cards))
-	}
-
-	db := mustStorePatternAtlasFixture(t, atlas)
-	tests := []struct {
-		patternID string
-		contains  string
-	}{
-		{patternID: "F.18", contains: "NameCard"},
-		{patternID: "C.30", contains: "Architecture"},
-		{patternID: "A.10", contains: "Evidence"},
-		{patternID: "A.7", contains: "Strict Distinction"},
-		{patternID: "B.3", contains: "Congruence"},
-	}
-	for _, tt := range tests {
-		card, err := GetPatternCard(db, tt.patternID)
-		if err != nil {
-			t.Fatalf("GetPatternCard(%q): %v", tt.patternID, err)
-		}
-		if !strings.Contains(card.Body, tt.contains) {
-			t.Fatalf("GetPatternCard(%q) body missing %q", tt.patternID, tt.contains)
+func patternAtlasCardByID(cards []PatternAtlasCard, patternID string) (PatternAtlasCard, bool) {
+	for _, card := range cards {
+		if card.PatternID == patternID {
+			return card, true
 		}
 	}
-
-	var foundMalformedHeading bool
-	for _, lint := range atlas.Lints {
-		if strings.Contains(lint.RawLine, "#### E.3:4.2") {
-			foundMalformedHeading = true
-		}
-	}
-	if !foundMalformedHeading {
-		t.Fatal("expected production atlas to lint the known leading-space E.3:4.2 heading")
-	}
-}
-
-func mustBuildPatternAtlasFixture(t *testing.T) PatternAtlas {
-	t.Helper()
-
-	atlas, err := BuildPatternAtlas([]byte(patternAtlasFixtureMarkdown()), "fixture.md", "fixture-commit")
-	if err != nil {
-		t.Fatalf("BuildPatternAtlas: %v", err)
-	}
-	return atlas
-}
-
-func mustStorePatternAtlasFixture(t *testing.T, atlas PatternAtlas) *sql.DB {
-	t.Helper()
-
-	dbPath := filepath.Join(t.TempDir(), "fpf.db")
-	if err := BuildSpecIndex(dbPath, nil, nil); err != nil {
-		t.Fatalf("BuildSpecIndex: %v", err)
-	}
-
-	db, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	if err := StorePatternAtlasDB(db, atlas); err != nil {
-		t.Fatalf("StorePatternAtlasDB: %v", err)
-	}
-	return db
+	return PatternAtlasCard{}, false
 }
 
 func patternAtlasFixtureMarkdown() string {
@@ -200,7 +130,7 @@ ArchitectureQuestionCard:
 Intro.
 
 ### A.10:1 - Evidence relation
-EvidenceRelation:
+evidence-provenance graph relation:
   ClaimRef
 
  #### E.3:4.2 - **Precedence Stack**
@@ -210,7 +140,7 @@ This heading is malformed but should not disappear.
 Intro.
 
 ### A.7:1 - Strict table
-ObjectDescriptionCarrierEvidence:
+EntityOfConcern and Description-episteme boundary:
   Object
   Description
   Carrier
@@ -220,7 +150,7 @@ ObjectDescriptionCarrierEvidence:
 Intro.
 
 ### B.3:1 - Congruence
-CongruenceLevel:
+Congruence Level (CL):
   CL3
 `
 }

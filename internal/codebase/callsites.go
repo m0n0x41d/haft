@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -19,24 +18,32 @@ type CallSite struct {
 	Callee    string
 	Qualifier string // "" = unqualified (intra-package candidate); non-"" = qualified (P1b)
 	Line      int    // 1-based
+	Shadowed  bool   // lexical binding hides an imported/global name at this call site
 }
 
 // ExtractCallSites walks a Go file's call expressions. Go only for P1a — other
 // languages return nil (node extraction still works for them; edges don't yet).
 // Pure relative to the file content; no DB.
 func ExtractCallSites(projectRoot, relPath string) ([]CallSite, error) {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return ExtractCallSitesFromSource(source)
+}
+
+// ExtractCallSitesFromSource is the tree-sitter core. It cannot receive raw
+// filesystem bytes or silently apply its own resource policy.
+func ExtractCallSitesFromSource(
+	source AdmittedSource,
+) ([]CallSite, error) {
+	relPath := source.Path().String()
 	ext := filepath.Ext(relPath)
 	langInfo, ok := languages[ext]
 	if !ok || langInfo.name != "go" {
 		return nil, nil
 	}
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", relPath, err)
-	}
-	if len(content) > 500_000 {
-		return nil, nil
-	}
+	content := source.bytes()
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(langInfo.lang)
@@ -236,9 +243,28 @@ type GoImport struct {
 // follow dir==package, so this resolves correctly; a mismatch simply fails to
 // resolve — an honest miss, not a wrong edge). External imports get LocalDir "".
 func ExtractGoImports(projectRoot, relPath string) ([]GoImport, error) {
-	absPath := filepath.Join(projectRoot, relPath)
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return ExtractGoImportsFromSource(projectRoot, source)
+}
+
+// ExtractGoImportsFromSource parses imports from the exact admitted bytes while
+// retaining project-root metadata only for local-module path resolution.
+func ExtractGoImportsFromSource(
+	projectRoot string,
+	source AdmittedSource,
+) ([]GoImport, error) {
+	relPath := source.Path().String()
+	absPath := filepath.Join(projectRoot, filepath.FromSlash(relPath))
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, absPath, nil, parser.ImportsOnly)
+	f, err := parser.ParseFile(
+		fset,
+		relPath,
+		source.bytes(),
+		parser.ImportsOnly,
+	)
 	if err != nil {
 		return nil, nil // skip unparseable
 	}

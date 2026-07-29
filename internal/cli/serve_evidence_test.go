@@ -17,10 +17,11 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Keep attached evidence inspectable",
-		WhySelected:     "Need a decision artifact for the evidence handler",
-		SelectionPolicy: "Prefer the smallest decision artifact that still exercises the CLI evidence path against a real decision.",
-		CounterArgument: "A synthetic decision record can miss coupling that appears in a real compare-driven decision.",
+		SelectedTitle:    "Keep attached evidence inspectable",
+		ProblemStatement: "Attached evidence needs a durable decision target with an explicit validity horizon.",
+		WhySelected:      "Need a decision artifact for the evidence handler",
+		SelectionPolicy:  "Prefer the smallest decision artifact that still exercises the CLI evidence path against a real decision.",
+		CounterArgument:  "A synthetic decision record can miss coupling that appears in a real compare-driven decision.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Attach evidence to a note",
 			Reason:  "This handler test explicitly needs a decision artifact target.",
@@ -73,10 +74,11 @@ func TestHandleQuintQuery_EvidencePathBlocksLegacyFormalityWhenCurrentRequired(t
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Require current-formality evidence",
-		WhySelected:     "Need a decision artifact with claim-scoped legacy evidence.",
-		SelectionPolicy: "Use the smallest decision that exercises stronger evidence-path reliance.",
-		CounterArgument: "A synthetic decision only validates the projection contract.",
+		SelectedTitle:    "Require current-formality evidence",
+		ProblemStatement: "Claim-scoped evidence needs an explicit current-formality reliance rule.",
+		WhySelected:      "Need a decision artifact with claim-scoped legacy evidence.",
+		SelectionPolicy:  "Use the smallest decision that exercises stronger evidence-path reliance.",
+		CounterArgument:  "A synthetic decision only validates the projection contract.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Use unbound evidence",
 			Reason:  "The test needs claim binding so only formality can block bounded reliance.",
@@ -171,10 +173,11 @@ func TestHandleQuintDecision_EvidencePersistsClaimBinding(t *testing.T) {
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Attach claim-scoped evidence",
-		WhySelected:     "Need a decision artifact for validating claim_refs and claim_scope on the serve path.",
-		SelectionPolicy: "Prefer the smallest realistic decision record that still exercises claim binding.",
-		CounterArgument: "A synthetic decision can miss the coupling of a compare-driven decision lifecycle.",
+		SelectedTitle:    "Attach claim-scoped evidence",
+		ProblemStatement: "Evidence attachment needs to preserve explicit claim bindings on the serve path.",
+		WhySelected:      "Need a decision artifact for validating claim_refs and claim_scope on the serve path.",
+		SelectionPolicy:  "Prefer the smallest realistic decision record that still exercises claim binding.",
+		CounterArgument:  "A synthetic decision can miss the coupling of a compare-driven decision lifecycle.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Attach evidence to a note",
 			Reason:  "This serve-path test needs decision-scoped claim metadata.",
@@ -237,10 +240,11 @@ func TestHandleQuintQuery_EvidencePathBuildsBoundedReliance(t *testing.T) {
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Bind evidence reliance to one claim",
-		WhySelected:     "Need a decision artifact with an explicit claim for EvidencePath projection.",
-		SelectionPolicy: "Prefer the smallest realistic decision record that still carries an explicit claim.",
-		CounterArgument: "A synthetic decision can miss lifecycle coupling from a real compared choice.",
+		SelectedTitle:    "Bind evidence reliance to one claim",
+		ProblemStatement: "Evidence reliance needs a bounded path to one explicit decision claim.",
+		WhySelected:      "Need a decision artifact with an explicit claim for EvidencePath projection.",
+		SelectionPolicy:  "Prefer the smallest realistic decision record that still carries an explicit claim.",
+		CounterArgument:  "A synthetic decision can miss lifecycle coupling from a real compared choice.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Use a raw evidence row",
 			Reason:  "EvidencePath must prove claim binding against an artifact-scoped evidence item.",

@@ -128,7 +128,7 @@ required at L1.
 
 ### MVP-2 phase graph (full lemniscate)
 
-Canonical names from `development_for_the_developed.md` Slide 12:
+Canonical Open-Sleigh local phase names:
 
 ```
 Problem Factory:

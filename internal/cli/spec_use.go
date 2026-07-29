@@ -298,7 +298,10 @@ func specUseSectionByID(
 }
 
 func specUseBaselineInput(projectRoot string, section project.SpecSection) specflow.SpecificationUseBaselineInput {
-	store, projectID, closeFn, err := projectBaseline(projectRoot)
+	store, projectID, closeFn, err := projectBaselineReadOnly(
+		context.Background(),
+		projectRoot,
+	)
 	defer closeFn()
 	if err != nil {
 		return specflow.SpecificationUseBaselineInput{

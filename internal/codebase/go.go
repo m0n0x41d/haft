@@ -95,14 +95,26 @@ func (g *GoLang) DetectModules(projectRoot string) ([]Module, error) {
 }
 
 // ParseImports extracts import edges from a Go source file using go/parser.
-func (g *GoLang) ParseImports(filePath string, projectRoot string) ([]ImportEdge, error) {
+func (g *GoLang) ParseImports(
+	source AdmittedSource,
+	projectRoot string,
+) ([]ImportEdge, error) {
+	relFile := source.Path().String()
+	filePath := filepath.Join(
+		projectRoot,
+		filepath.FromSlash(relFile),
+	)
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, filePath, nil, parser.ImportsOnly)
+	f, err := parser.ParseFile(
+		fset,
+		relFile,
+		source.bytes(),
+		parser.ImportsOnly,
+	)
 	if err != nil {
 		return nil, nil // skip unparseable files
 	}
 
-	relFile, _ := filepath.Rel(projectRoot, filePath)
 	sourceDir := filepath.Dir(relFile)
 
 	// Find go.mod by walking up from the file's directory

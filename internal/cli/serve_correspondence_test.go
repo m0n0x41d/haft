@@ -15,11 +15,12 @@ func TestHandleQuintQuery_CorrespondenceGraphKeepsPathNonProof(t *testing.T) {
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Expose qualified correspondence",
-		WhySelected:     "Need expected-vs-observed graph paths without proof authority.",
-		SelectionPolicy: "Prefer read-only projection over canonical relation mutation.",
-		CounterArgument: "A stored typed graph would support richer repair routing later.",
-		WeakestLink:     "Declared file refs can be stale or incomplete.",
+		SelectedTitle:    "Expose qualified correspondence",
+		ProblemStatement: "Expected-vs-observed graph paths need a non-proof projection boundary.",
+		WhySelected:      "Need expected-vs-observed graph paths without proof authority.",
+		SelectionPolicy:  "Prefer read-only projection over canonical relation mutation.",
+		CounterArgument:  "A stored typed graph would support richer repair routing later.",
+		WeakestLink:      "Declared file refs can be stale or incomplete.",
 		TransformationRecord: &artifact.TransformationRecord{
 			SchemaVersion:     artifact.TransformationRecordSchemaVersion,
 			TransformedEntity: "correspondence surface",

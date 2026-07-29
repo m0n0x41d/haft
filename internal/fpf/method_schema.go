@@ -62,6 +62,10 @@ func haftMethodTool() Tool {
 					"type":        "string",
 					"description": "context.",
 				},
+				"scope_id": map[string]interface{}{
+					"type":        "string",
+					"description": "Exact canonical project ScopeID for pull/catalog when the admitted profile has several scopes.",
+				},
 				"carry_through": map[string]interface{}{
 					"type":        "array",
 					"items":       methodCarryThroughItemSchema(),

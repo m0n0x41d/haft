@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +19,7 @@ const (
 	projectRootSourceCWD   = "cwd"
 	projectRootSourceEnv   = envProjectRoot
 	projectRootSourceQuint = envLegacyProjectRoot
+	projectRootSourceFlag  = "--project-root"
 )
 
 var (
@@ -68,6 +70,15 @@ func projectRootInputFromEnv() (projectRootInput, error) {
 	}
 
 	return absProjectRootInput(cwd, projectRootSourceCWD)
+}
+
+func projectRootInputFromExplicitOrEnv(projectRoot string) (projectRootInput, error) {
+	explicitRoot := strings.TrimSpace(projectRoot)
+	if explicitRoot != "" {
+		return absProjectRootInput(explicitRoot, projectRootSourceFlag)
+	}
+
+	return projectRootInputFromEnv()
 }
 
 func absProjectRootInput(path string, source string) (projectRootInput, error) {
@@ -147,19 +158,6 @@ func expectedProjectIDForRoot(projectRoot string) string {
 	return cfg.ID
 }
 
-func projectEnvForRoot(projectRoot string, projectRootValue string) map[string]string {
-	env := map[string]string{
-		envProjectRoot: projectRootValue,
-	}
-
-	expectedProjectID := expectedProjectIDForRoot(projectRoot)
-	if expectedProjectID != "" {
-		env[envExpectedProjectID] = expectedProjectID
-	}
-
-	return env
-}
-
 func inspectProjectDB(dbPath string) (string, int) {
 	if _, err := os.Stat(dbPath); err != nil {
 		if os.IsNotExist(err) {
@@ -168,7 +166,14 @@ func inspectProjectDB(dbPath string) (string, int) {
 		return "unreadable", 0
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	query := url.Values{}
+	query.Set("mode", "ro")
+	dsn := url.URL{
+		Scheme:   "file",
+		Path:     dbPath,
+		RawQuery: query.Encode(),
+	}
+	db, err := sql.Open("sqlite", dsn.String())
 	if err != nil {
 		return "unreadable", 0
 	}

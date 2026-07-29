@@ -286,8 +286,8 @@ func TestOverseerInitFlagExistsAndIsOptIn(t *testing.T) {
 		t.Fatalf("expected overseer init command to be registered")
 	}
 	haftDir := filepath.Join(t.TempDir(), ".haft")
-	if err := createDirectoryStructure(haftDir); err != nil {
-		t.Fatalf("createDirectoryStructure returned error: %v", err)
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatalf("create .haft: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(haftDir, "overseer")); !os.IsNotExist(err) {
 		t.Fatalf("overseer directory should not exist without opt-in; err=%v", err)

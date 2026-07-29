@@ -5,7 +5,10 @@
 .haft/workflow.md
 .haft/agent-store/
 .haft/commissions/
-.haft/decisions/
+!.haft/decisions/
+.haft/decisions/*
+!.haft/decisions/dec-20260716-318cdec5.md
+!.haft/decisions/dec-20260716-11f33e36.md
 .haft/evidence/
 .haft/method-runs/
 .haft/methods/
@@ -25,6 +28,11 @@
 .context
 .context/
 .context/**
+!.context/
+.context/*
+!.context/haft-v9-deterministic-closeout.plan.md
+!.context/haft-v9-scope-freeze-inventory-20260728.md
+.context-review-input/
 .mcp.json
 quint-mcp.json
 src/mcp/quint-code
@@ -33,22 +41,27 @@ TODO.md
 /skills/
 /haft
 /bin/haft
+/tui/
 
 .DS_Store
 .task/
 tmp/
 __pycache__/
 node_modules/
+.pnpm-store/
 dist/
 build/
 .cache/
 *.log
+*.prof
+*.test
 coverage.out
 
 .claude/
 .codex/
 .crush/
 .cursor/
+.grok/
 .zenflow/
 .agents/
 .opencode/

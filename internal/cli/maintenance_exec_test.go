@@ -52,9 +52,7 @@ func TestMaintenanceExecutePhase_GateModesAndUndo(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	decisionID := createMaintExecDecision(t, root)
@@ -174,9 +172,7 @@ func TestMaintenanceDrainDryRunReportsProposalsAndNeedsOperatorWithoutMutation(t
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	safeDecisionID := createMaintExecDecision(t, root)
@@ -351,9 +347,7 @@ func TestMaintenanceDrainClosesSafeItemsAndReportsNeedsOperator(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	safeDecisionID := createMaintExecDecision(t, root)
@@ -416,9 +410,7 @@ func TestMaintenanceExecutePhaseDisabledConfigSkipsMutations(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	decisionID := createMaintExecDecision(t, root)
@@ -472,9 +464,7 @@ func TestMaintenanceExecutePhase_RevalidateStale(t *testing.T) {
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	writeGoldenE2EFile(t, filepath.Join(root, maintExecAffectedFile),
@@ -484,14 +474,15 @@ func TestMaintenanceExecutePhase_RevalidateStale(t *testing.T) {
 	haftDir := filepath.Join(root, ".haft")
 	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Stale revalidation fixture decision",
-		WhySelected:     "E2E fixture for evidence-backed revalidation.",
-		SelectionPolicy: "Fixture.",
-		CounterArgument: "Fixture.",
-		WeakestLink:     "Fixture.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
-		Invariants:      []string{"Flow stays present"},
+		SelectedTitle:    "Stale revalidation fixture decision",
+		ProblemStatement: "A stale governed decision needs evidence-backed revalidation.",
+		WhySelected:      "E2E fixture for evidence-backed revalidation.",
+		SelectionPolicy:  "Fixture.",
+		CounterArgument:  "Fixture.",
+		WeakestLink:      "Fixture.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:       []string{"Flow stays present"},
 		Predictions: []artifact.PredictionInput{{
 			Claim:      "Flow function stays present",
 			Observable: "grep for func in the governed file",
@@ -549,9 +540,7 @@ func TestMaintenanceExecutePhase_JudgmentStaleClaimBlocksRevalidation(t *testing
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	writeGoldenE2EFile(t, filepath.Join(root, maintExecAffectedFile),
@@ -561,14 +550,15 @@ func TestMaintenanceExecutePhase_JudgmentStaleClaimBlocksRevalidation(t *testing
 	haftDir := filepath.Join(root, ".haft")
 	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Mixed stale claims fixture decision",
-		WhySelected:     "E2E fixture for the all-stale-tasks revalidation gate.",
-		SelectionPolicy: "Fixture.",
-		CounterArgument: "Fixture.",
-		WeakestLink:     "Fixture.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
-		Invariants:      []string{"Flow stays present"},
+		SelectedTitle:    "Mixed stale claims fixture decision",
+		ProblemStatement: "Mixed machine and judgment claims need a bounded revalidation gate.",
+		WhySelected:      "E2E fixture for the all-stale-tasks revalidation gate.",
+		SelectionPolicy:  "Fixture.",
+		CounterArgument:  "Fixture.",
+		WeakestLink:      "Fixture.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:       []string{"Flow stays present"},
 		Predictions: []artifact.PredictionInput{
 			{
 				Claim:      "Flow function stays present",
@@ -626,9 +616,7 @@ func TestMaintenanceExecutePhase_CappedObservablesPreventRevalidation(t *testing
 	t.Setenv("HOME", filepath.Join(root, ".test-home"))
 
 	initLocal = true
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	ctx := context.Background()
 	writeGoldenE2EFile(t, filepath.Join(root, maintExecAffectedFile),
@@ -648,18 +636,19 @@ func TestMaintenanceExecutePhase_CappedObservablesPreventRevalidation(t *testing
 	haftDir := filepath.Join(root, ".haft")
 	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Capped observable fixture decision",
-		WhySelected:     "E2E fixture for partial machine evidence.",
-		SelectionPolicy: "Fixture.",
-		CounterArgument: "Fixture.",
-		WeakestLink:     "Fixture.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
-		Invariants:      []string{"Flow stays present"},
-		Predictions:     predictions,
-		AffectedFiles:   []string{maintExecAffectedFile},
-		ValidUntil:      stale,
-		GovernanceMode:  "exact",
+		SelectedTitle:    "Capped observable fixture decision",
+		ProblemStatement: "A capped evidence run must not overstate partial machine verification.",
+		WhySelected:      "E2E fixture for partial machine evidence.",
+		SelectionPolicy:  "Fixture.",
+		CounterArgument:  "Fixture.",
+		WeakestLink:      "Fixture.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:       []string{"Flow stays present"},
+		Predictions:      predictions,
+		AffectedFiles:    []string{maintExecAffectedFile},
+		ValidUntil:       stale,
+		GovernanceMode:   "exact",
 	})
 	if err != nil {
 		t.Fatalf("decide: %v", err)
@@ -711,14 +700,15 @@ func createMaintExecDecision(t *testing.T, root string) string {
 	ripe := time.Now().Add(-48 * time.Hour).Format("2006-01-02")
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Maintenance executor fixture decision",
-		WhySelected:     "E2E fixture for the maintenance execute-phase.",
-		SelectionPolicy: "Fixture.",
-		CounterArgument: "Fixture.",
-		WeakestLink:     "Fixture.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
-		Invariants:      []string{"Flow stays present"},
+		SelectedTitle:    "Maintenance executor fixture decision",
+		ProblemStatement: "The governed flow needs a machine-checkable maintenance path.",
+		WhySelected:      "E2E fixture for the maintenance execute-phase.",
+		SelectionPolicy:  "Fixture.",
+		CounterArgument:  "Fixture.",
+		WeakestLink:      "Fixture.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:       []string{"Flow stays present"},
 		Predictions: []artifact.PredictionInput{{
 			Claim:       "Flow function stays present",
 			Observable:  "grep for func in the governed file",
@@ -755,14 +745,15 @@ func createDrainJudgmentDecision(t *testing.T, root string) string {
 	stale := time.Now().Add(-48 * time.Hour).Format(time.RFC3339)
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Drain needs operator fixture decision",
-		WhySelected:     "E2E fixture for operator-only maintenance tasks.",
-		SelectionPolicy: "Fixture.",
-		CounterArgument: "Fixture.",
-		WeakestLink:     "Fixture.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"fixture"}},
-		Invariants:      []string{"Judgment remains operator-reviewed"},
+		SelectedTitle:    "Drain needs operator fixture decision",
+		ProblemStatement: "Judgment-only maintenance must remain an explicit operator task.",
+		WhySelected:      "E2E fixture for operator-only maintenance tasks.",
+		SelectionPolicy:  "Fixture.",
+		CounterArgument:  "Fixture.",
+		WeakestLink:      "Fixture.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "none", Reason: "fixture"}},
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"fixture"}},
+		Invariants:       []string{"Judgment remains operator-reviewed"},
 		Predictions: []artifact.PredictionInput{{
 			Claim:       "Operator confidence remains high",
 			Observable:  "operator interview",

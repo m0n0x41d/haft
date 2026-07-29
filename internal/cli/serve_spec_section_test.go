@@ -13,20 +13,28 @@ import (
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
 const (
 	baselineTestSectionID = "TS.environment-change.001"
-	baselineTestProjectID = "qnt_baseline_test"
+	baselineTestProjectID = "qnt_ba5e1e55"
 )
 
 func newBaselineTestProject(t *testing.T) (string, string) {
 	t.Helper()
 
-	homeDir := t.TempDir()
+	homeDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", homeDir)
 
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	haftDir := filepath.Join(root, ".haft")
 	specsDir := filepath.Join(haftDir, "specs")
 	if err := os.MkdirAll(specsDir, 0o755); err != nil {
@@ -46,7 +54,16 @@ func newBaselineTestProject(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	store.Close()
+	if err := store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectledger.BindInitialized(
+		context.Background(),
+		root,
+		time.Date(2026, time.July, 22, 0, 0, 0, 0, time.UTC),
+	); err != nil {
+		t.Fatalf("bind initialized baseline fixture: %v", err)
+	}
 
 	writeBaselineTestSection(t, root, "Initial environment statement")
 
@@ -142,9 +159,9 @@ func mutateCarrierTitle(t *testing.T, root string) {
 func callHandleSpecSection(t *testing.T, haftDir string, args map[string]any) SpecSectionBaselineResult {
 	t.Helper()
 
-	raw, err := handleHaftSpecSection(context.Background(), nil, haftDir, args)
+	raw, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, args)
 	if err != nil {
-		t.Fatalf("handleHaftSpecSection: %v", err)
+		t.Fatalf("handleHaftSpecSectionWithProjectionRef: %v", err)
 	}
 
 	var result SpecSectionBaselineResult
@@ -154,33 +171,34 @@ func callHandleSpecSection(t *testing.T, haftDir string, args map[string]any) Sp
 	return result
 }
 
-func TestHandleHaftSpecSection_NextStepReturnsFirstPhaseOnEmptyProject(t *testing.T) {
-	root := t.TempDir()
-	haftDir := filepath.Join(root, ".haft")
-	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+func TestHandleHaftSpecSection_NextStepReturnsOneNeutralCueWithoutProfile(
+	t *testing.T,
+) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	haftDir := filepath.Join(fixture.root, ".haft")
 
 	args := map[string]any{
 		"action":       "next_step",
-		"project_root": root,
+		"project_root": fixture.root,
 	}
 
-	result, err := handleHaftSpecSection(context.Background(), nil, haftDir, args)
+	result, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, args)
 	if err != nil {
-		t.Fatalf("handleHaftSpecSection returned error: %v", err)
+		t.Fatalf("handleHaftSpecSectionWithProjectionRef returned error: %v", err)
 	}
 
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal([]byte(result), &intent); err != nil {
-		t.Fatalf("decode intent: %v\nraw: %s", err, result)
+	var next publicSpecNextStepResult
+	if err := json.Unmarshal([]byte(result), &next); err != nil {
+		t.Fatalf("decode next step: %v\nraw: %s", err, result)
 	}
 
-	if intent.Terminal {
-		t.Fatalf("intent.Terminal = true; want first phase")
+	if next.WorkflowIntent != nil {
+		t.Fatalf("underdetermined profile fabricated next step: %#v", next)
 	}
-	if intent.Phase != specflow.PhaseTargetEnvironmentDraft {
-		t.Fatalf("intent.Phase = %q, want %q", intent.Phase, specflow.PhaseTargetEnvironmentDraft)
+	if next.ProfileApplicability.Kind !=
+		string(projectSpecificationProfileUnderdetermined) ||
+		next.ProfileApplicability.Cue == nil {
+		t.Fatalf("profile applicability = %#v", next.ProfileApplicability)
 	}
 }
 
@@ -188,7 +206,7 @@ func TestHandleHaftSpecSection_NextStepPropagatesBaselineStoreError(t *testing.T
 	_, haftDir := newBaselineTestProject(t)
 	makeBaselineDBUnopenable(t)
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action": "next_step",
 	})
 	if err == nil {
@@ -196,102 +214,172 @@ func TestHandleHaftSpecSection_NextStepPropagatesBaselineStoreError(t *testing.T
 	}
 }
 
-func TestHandleHaftSpecSection_LifecycleReturnsProjection(t *testing.T) {
+func TestHandleHaftSpecSection_ProjectLifecycleRejectsExactSectionID(
+	t *testing.T,
+) {
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
-	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
-		t.Fatal(err)
+	for _, action := range []string{"lifecycle", "next_step"} {
+		t.Run(action, func(t *testing.T) {
+			_, _, err := handleHaftSpecSectionWithProjectionRef(
+				context.Background(),
+				haftDir,
+				map[string]any{
+					"action":     action,
+					"section_id": "SS.interfaces.code-graph.001",
+				},
+			)
+			if err == nil {
+				t.Fatalf("%s silently ignored section_id", action)
+			}
+			for _, required := range []string{
+				"section_id_not_applicable",
+				"project/scope-level",
+				`haft_query(action="spec_trace"`,
+				`haft_query(action="spec_use"`,
+				"SS.interfaces.code-graph.001",
+			} {
+				if !strings.Contains(err.Error(), required) {
+					t.Fatalf(
+						"%s error lacks %q: %v",
+						action,
+						required,
+						err,
+					)
+				}
+			}
+		})
 	}
+}
 
-	result, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+func TestHandleHaftSpecSection_LifecycleReturnsOneNeutralCueWithoutProfile(
+	t *testing.T,
+) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	haftDir := filepath.Join(fixture.root, ".haft")
+
+	result, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "lifecycle",
-		"project_root": root,
+		"project_root": fixture.root,
 	})
 	if err != nil {
-		t.Fatalf("handleHaftSpecSection returned error: %v", err)
+		t.Fatalf("handleHaftSpecSectionWithProjectionRef returned error: %v", err)
 	}
 
-	var projection specflow.SpecLifecycleProjection
-	if err := json.Unmarshal([]byte(result), &projection); err != nil {
-		t.Fatalf("decode projection: %v\nraw: %s", err, result)
+	var lifecycle publicSpecLifecycleResult
+	if err := json.Unmarshal([]byte(result), &lifecycle); err != nil {
+		t.Fatalf("decode lifecycle: %v\nraw: %s", err, result)
 	}
 
-	if projection.Action != specflow.LifecycleActionDraft {
-		t.Fatalf("projection.Action = %q, want %q", projection.Action, specflow.LifecycleActionDraft)
+	if lifecycle.SpecLifecycleProjection != nil {
+		t.Fatalf("underdetermined profile fabricated lifecycle: %#v", lifecycle)
 	}
-	if projection.WorkflowIntent.Phase != specflow.PhaseTargetEnvironmentDraft {
-		t.Fatalf("projection.WorkflowIntent.Phase = %q", projection.WorkflowIntent.Phase)
+	if lifecycle.ProfileApplicability.Kind !=
+		string(projectSpecificationProfileUnderdetermined) ||
+		lifecycle.ProfileApplicability.Cue == nil {
+		t.Fatalf("profile applicability = %#v", lifecycle.ProfileApplicability)
 	}
 }
 
 func TestHandleHaftSpecSection_DefaultsToServerBoundProjectRoot(t *testing.T) {
-	root := t.TempDir()
-	haftDir := filepath.Join(root, ".haft")
-	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	haftDir := filepath.Join(fixture.root, ".haft")
 
 	// project_root not provided — handler should derive from haftDir parent.
 	args := map[string]any{
 		"action": "next_step",
 	}
 
-	result, err := handleHaftSpecSection(context.Background(), nil, haftDir, args)
+	result, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, args)
 	if err != nil {
-		t.Fatalf("handleHaftSpecSection returned error: %v", err)
+		t.Fatalf("handleHaftSpecSectionWithProjectionRef returned error: %v", err)
 	}
 
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal([]byte(result), &intent); err != nil {
-		t.Fatalf("decode intent: %v", err)
+	var next publicSpecNextStepResult
+	if err := json.Unmarshal([]byte(result), &next); err != nil {
+		t.Fatalf("decode next step: %v", err)
 	}
 
-	if intent.Phase != specflow.PhaseTargetEnvironmentDraft {
-		t.Fatalf("intent.Phase = %q, want %q", intent.Phase, specflow.PhaseTargetEnvironmentDraft)
+	if next.ProfileApplicability.ProjectRoot != fixture.root {
+		t.Fatalf(
+			"project root = %q, want server-bound %q",
+			next.ProfileApplicability.ProjectRoot,
+			fixture.root,
+		)
 	}
 }
 
-func TestHandleHaftSpecSection_NextStepReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
-	root := setupSpecSyncProject(t)
+func TestHandleHaftSpecSection_NextStepReturnsScopeLocalApplicabilityCue(
+	t *testing.T,
+) {
+	root := mustCLIProfileOnboardPhysicalPath(t, t.TempDir())
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevision(t, "spec-next")
 	haftDir := filepath.Join(root, ".haft")
-	database := openSpecSyncDB(t, root)
-	defer database.Close()
-
-	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
-	section := project.SpecSection{
-		ID:            "TS.sql.next.001",
-		Spec:          "target-system",
-		Kind:          "target.environment",
-		StatementType: "definition",
-		ClaimLayer:    "object",
-		Owner:         "haft",
-		Status:        "active",
-		ValidUntil:    "2026-12-31",
-		DocumentKind:  "target-system",
-		Path:          ".haft/specs/target-system.md",
-	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
-	if err := store.PutCurrent(edition); err != nil {
-		t.Fatalf("seed SQL spec section edition: %v", err)
+	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
+		t.Fatal(err)
 	}
 
-	raw, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	raw, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "next_step",
 		"project_root": root,
 	})
 	if err != nil {
 		t.Fatalf("next_step: %v", err)
 	}
+	var next publicSpecNextStepResult
+	if err := json.Unmarshal([]byte(raw), &next); err != nil {
+		t.Fatalf("decode next step: %v\nraw: %s", err, raw)
+	}
+	if next.WorkflowIntent == nil {
+		t.Fatalf("resolved applicability omitted next-step projection: %#v", next)
+	}
+	if next.WorkflowIntent.Phase != "" ||
+		next.WorkflowIntent.ApplicabilityCue == nil {
+		t.Fatalf(
+			"next step fabricated a phase instead of the scope-local cue: %#v; raw = %s",
+			next,
+			raw,
+		)
+	}
+	cue := next.WorkflowIntent.ApplicabilityCue
+	if cue.ScopeID != "software-spec-next" ||
+		len(cue.Issues) != 1 ||
+		cue.Issues[0].DocumentKind != project.SpecDocumentKindTargetSystem ||
+		len(cue.BlockedDependencies) != 1 ||
+		cue.BlockedDependencies[0].BlockedPhase != specflow.PhaseSoftwareRoleDraft {
+		t.Fatalf("scope-local applicability cue = %#v", cue)
+	}
+	if next.ProfileApplicability.ScopeID != "software-spec-next" {
+		t.Fatalf(
+			"scope_id = %q, want software-spec-next",
+			next.ProfileApplicability.ScopeID,
+		)
+	}
+}
 
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal([]byte(raw), &intent); err != nil {
-		t.Fatalf("decode intent: %v\nraw: %s", err, raw)
+func TestProjectSpecificationScopeRequestFromSpecSectionArgs(t *testing.T) {
+	automatic, err := projectSpecificationScopeRequestFromSpecSectionArgs(
+		map[string]any{},
+	)
+	if err != nil || automatic.kind != projectSpecificationScopeAutomatic {
+		t.Fatalf("automatic request = %#v, err = %v", automatic, err)
 	}
-	if len(intent.BlockingFindings) == 0 {
-		t.Fatalf("expected missing-baseline finding for SQL edition: %#v", intent)
+	exact, err := projectSpecificationScopeRequestFromSpecSectionArgs(
+		map[string]any{"scope_id": "documents"},
+	)
+	if err != nil ||
+		exact.kind != projectSpecificationScopeExact ||
+		exact.scopeID.String() != "documents" {
+		t.Fatalf("exact request = %#v, err = %v", exact, err)
 	}
-	if intent.BlockingFindings[0].SectionID != "TS.sql.next.001" {
-		t.Fatalf("next_step read carrier section instead of SQL edition: %#v", intent.BlockingFindings)
+	for _, args := range []map[string]any{
+		{"scope_id": " documents "},
+		{"scope_id": 17},
+	} {
+		if _, err := projectSpecificationScopeRequestFromSpecSectionArgs(args); err == nil {
+			t.Fatalf("invalid scope request accepted: %#v", args)
+		}
 	}
 }
 
@@ -302,9 +390,9 @@ func TestHandleHaftSpecSection_RejectsMissingAction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{})
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{})
 	if err == nil {
-		t.Fatalf("handleHaftSpecSection should reject missing action")
+		t.Fatalf("handleHaftSpecSectionWithProjectionRef should reject missing action")
 	}
 }
 
@@ -315,14 +403,15 @@ func TestHandleHaftSpecSection_RejectsUnknownAction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{"action": "vibe-check"})
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{"action": "vibe-check"})
 	if err == nil {
-		t.Fatalf("handleHaftSpecSection should reject unknown action")
+		t.Fatalf("handleHaftSpecSectionWithProjectionRef should reject unknown action")
 	}
 }
 
 func TestHandleHaftSpecSection_ApproveRecordsBaselineForActiveSection(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
+	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-section-approve-lifecycle")
 
 	result := callHandleSpecSection(t, haftDir, map[string]any{
 		"action":       "approve",
@@ -351,17 +440,8 @@ func TestHandleHaftSpecSection_ApproveRecordsBaselineForActiveSection(t *testing
 	}
 
 	// next_step should now advance past the environment phase.
-	intentRaw, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
-		"action":       "next_step",
-		"project_root": root,
-	})
-	if err != nil {
-		t.Fatalf("next_step: %v", err)
-	}
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal([]byte(intentRaw), &intent); err != nil {
-		t.Fatalf("decode intent: %v", err)
-	}
+	projection := buildAutomaticPublicSpecLifecycleProjectionForTest(t, root)
+	intent := projection.WorkflowIntent
 	if intent.Phase == specflow.PhaseTargetEnvironmentDraft && intent.Audience == "human" {
 		t.Fatalf("environment phase still blocking after approve: %#v", intent)
 	}
@@ -387,7 +467,7 @@ func TestHandleHaftSpecSection_ApproveReadsCurrentSQLEditionsBeforeCarriers(t *t
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -414,7 +494,7 @@ func TestHandleHaftSpecSection_ApproveRefusesDraftSection(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
 	overwriteSectionStatus(t, root, "draft")
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "approve",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
@@ -428,7 +508,7 @@ func TestHandleHaftSpecSection_ApproveRefusesSpecCheckFindings(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
 	overwriteSectionClaimLayer(t, root, "carrier")
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "approve",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
@@ -455,7 +535,7 @@ func TestHandleHaftSpecSection_ApproveRefusesTermMapFindings(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
 	removeTermMapCategory(t, root)
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "approve",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
@@ -491,7 +571,7 @@ func TestHandleHaftSpecSection_ApproveRefusesWhenBaselineDiffersAndNoRebaseline(
 	// Mutate the carrier so the hash diverges.
 	mutateCarrierTitle(t, root)
 
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "approve",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
@@ -503,7 +583,7 @@ func TestHandleHaftSpecSection_ApproveRefusesWhenBaselineDiffersAndNoRebaseline(
 
 func TestHandleHaftSpecSection_RebaselineRequiresReason(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "rebaseline",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
@@ -515,7 +595,7 @@ func TestHandleHaftSpecSection_RebaselineRequiresReason(t *testing.T) {
 
 func TestHandleHaftSpecSection_ReopenRequiresReason(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
-	_, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	_, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "reopen",
 		"project_root": root,
 		"section_id":   baselineTestSectionID,
@@ -562,6 +642,7 @@ func TestHandleHaftSpecSection_RebaselineOverwritesAndReportsReason(t *testing.T
 
 func TestHandleHaftSpecSection_ReopenDeletesBaselineAndBlocksNextStep(t *testing.T) {
 	root, haftDir := newBaselineTestProject(t)
+	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-section-reopen-lifecycle")
 	_ = callHandleSpecSection(t, haftDir, map[string]any{
 		"action":       "approve",
 		"project_root": root,
@@ -578,17 +659,8 @@ func TestHandleHaftSpecSection_ReopenDeletesBaselineAndBlocksNextStep(t *testing
 		t.Fatalf("baseline_kind = %q, want %q", result.BaselineKind, specflow.BaselineKindSpecSectionApproval)
 	}
 
-	intentRaw, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
-		"action":       "next_step",
-		"project_root": root,
-	})
-	if err != nil {
-		t.Fatalf("next_step: %v", err)
-	}
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal([]byte(intentRaw), &intent); err != nil {
-		t.Fatalf("decode intent: %v", err)
-	}
+	projection := buildAutomaticPublicSpecLifecycleProjectionForTest(t, root)
+	intent := projection.WorkflowIntent
 	if intent.Phase != specflow.PhaseTargetEnvironmentDraft || intent.Audience != "human" {
 		t.Fatalf("expected environment phase to block after reopen; got %#v", intent)
 	}

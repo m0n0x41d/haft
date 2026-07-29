@@ -111,22 +111,41 @@ func parseNoDependencyRule(text string) (from, to string, ok bool) {
 // any module matching `to` in the dependency graph.
 func checkNoDependency(ctx context.Context, db *sql.DB, from, to string) (violated bool, reason string) {
 	rows, err := db.QueryContext(ctx, `
-		SELECT md.source_module, md.target_module, sm.path, tm.path
+		SELECT md.source_module, md.target_module,
+		       sm.path, tm.path, sm.name, tm.name
 		FROM module_dependencies md
 		JOIN codebase_modules sm ON sm.module_id = md.source_module
 		JOIN codebase_modules tm ON tm.module_id = md.target_module
-		WHERE (sm.path LIKE '%' || ? || '%' OR sm.name LIKE '%' || ? || '%')
-		  AND (tm.path LIKE '%' || ? || '%' OR tm.name LIKE '%' || ? || '%')
-	`, from, from, to, to)
+	`)
 	if err != nil {
 		return false, "Could not query dependency graph: " + err.Error()
 	}
 	defer rows.Close()
 
 	var violations []string
+	from = strings.ToLower(from)
+	to = strings.ToLower(to)
 	for rows.Next() {
-		var srcMod, tgtMod, srcPath, tgtPath string
-		if err := rows.Scan(&srcMod, &tgtMod, &srcPath, &tgtPath); err != nil {
+		var srcMod, tgtMod, srcPath, tgtPath, srcName, tgtName string
+		if err := rows.Scan(
+			&srcMod,
+			&tgtMod,
+			&srcPath,
+			&tgtPath,
+			&srcName,
+			&tgtName,
+		); err != nil {
+			continue
+		}
+		sourceMatches := strings.Contains(
+			strings.ToLower(srcPath),
+			from,
+		) || strings.Contains(strings.ToLower(srcName), from)
+		targetMatches := strings.Contains(
+			strings.ToLower(tgtPath),
+			to,
+		) || strings.Contains(strings.ToLower(tgtName), to)
+		if !sourceMatches || !targetMatches {
 			continue
 		}
 		violations = append(violations, srcPath+" → "+tgtPath)

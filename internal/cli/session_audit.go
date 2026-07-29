@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -18,13 +17,11 @@ import (
 const (
 	sessionAuditKind      = "haft_session_graph_use_audit"
 	sessionAuditAuthority = "read_only_session_audit_not_enforcement_gate"
-)
 
-var (
-	sessionAuditRecommendedPatternRE = regexp.MustCompile(`"?recommended_pattern_use"?\s*:\s*\{[^}]*"?pattern_ref"?\s*:\s*"([^"]+)"`)
-	sessionAuditCandidatePatternIDRE = regexp.MustCompile(`"?pattern_id"?\s*:\s*"([^"]+)"`)
-	sessionAuditSupportLevelRE       = regexp.MustCompile(`"?support_level"?\s*:\s*"([^"]+)"`)
-	sessionAuditRouteStrategyRE      = regexp.MustCompile(`"?route_match_strategy"?\s*:\s*"([^"]+)"`)
+	sessionAuditUseNotApplicable      = "not_applicable"
+	sessionAuditUseUsed               = "used"
+	sessionAuditUseUnavailable        = "unavailable"
+	sessionAuditUseIncorrectlySkipped = "incorrectly_skipped"
 )
 
 var sessionAuditMutationBoundary = []string{
@@ -34,10 +31,8 @@ var sessionAuditMutationBoundary = []string{
 }
 
 var (
-	sessionAuditJSON             bool
-	sessionAuditLimit            int
-	sessionAuditExpectedPattern  string
-	sessionAuditExpectedStrategy string
+	sessionAuditJSON  bool
+	sessionAuditLimit int
 )
 
 var sessionCmd = &cobra.Command{
@@ -48,11 +43,12 @@ var sessionCmd = &cobra.Command{
 var sessionAuditCmd = &cobra.Command{
 	Use:   "audit PATH",
 	Short: "Audit Haft graph-use behavior in Codex or Claude JSONL sessions",
-	Long: `Audit Codex or Claude session JSONL for Haft graph-use behavior.
+	Long: `Audit Codex or Claude session JSONL for conditional Haft context use.
 
-The audit is read-only. It checks ordering signals such as status before edit,
-MethodPack pull before edit, code graph preflight before edit, richer graph
-actions before edit, MethodPack close, and closeout text that ties graph
+The audit is read-only. It classifies code-graph and typed-memory orientation
+separately as not_applicable, used, unavailable, or incorrectly_skipped. It
+also checks MethodPack ordering for non-mechanical work, unauthorized
+typed-memory persistence, MethodPack close, and closeout text that ties graph
 evidence to plan/risk/blast-radius changes.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runSessionAudit,
@@ -61,8 +57,6 @@ evidence to plan/risk/blast-radius changes.`,
 func init() {
 	sessionAuditCmd.Flags().BoolVar(&sessionAuditJSON, "json", false, "print the full audit as JSON")
 	sessionAuditCmd.Flags().IntVar(&sessionAuditLimit, "limit", 20, "limit rendered sessions; set 0 for all")
-	sessionAuditCmd.Flags().StringVar(&sessionAuditExpectedPattern, "expect-pattern", "", "optional expected PatternUse pattern_ref for scenario audit; use none for mechanical controls")
-	sessionAuditCmd.Flags().StringVar(&sessionAuditExpectedStrategy, "expect-strategy", "", "optional expected PatternUse route_match_strategy or support_level for scenario audit; use none for mechanical controls")
 	sessionCmd.AddCommand(sessionAuditCmd)
 	rootCmd.AddCommand(sessionCmd)
 }
@@ -80,38 +74,50 @@ type sessionGraphAuditReport struct {
 }
 
 type sessionGraphAuditScanPolicy struct {
-	Input                 string   `json:"input"`
-	Files                 []string `json:"files"`
-	ExpectedPatternRef    string   `json:"expected_pattern_ref,omitempty"`
-	ExpectedRouteStrategy string   `json:"expected_route_strategy,omitempty"`
-	EventPolicy           []string `json:"event_policy"`
+	Input       string   `json:"input"`
+	Files       []string `json:"files"`
+	EventPolicy []string `json:"event_policy"`
 }
 
 type sessionGraphAuditSummary struct {
-	FilesScanned                    int `json:"files_scanned"`
-	SessionsWithEdits               int `json:"sessions_with_edits"`
-	SessionsWithSubstantiveMoves    int `json:"sessions_with_substantive_moves"`
-	EventsScanned                   int `json:"events_scanned"`
-	ToolCalls                       int `json:"tool_calls"`
-	EditToolCalls                   int `json:"edit_tool_calls"`
-	StatusBeforeFirstEdit           int `json:"status_before_first_edit"`
-	MethodPullBeforeFirstEdit       int `json:"method_pull_before_first_edit"`
-	MethodPullBeforePatternUse      int `json:"method_pull_before_pattern_use"`
-	GraphBeforeFirstEdit            int `json:"graph_before_first_edit"`
-	RichGraphBeforeFirstEdit        int `json:"rich_graph_before_first_edit"`
-	PatternUseBeforeSubstantive     int `json:"pattern_use_before_substantive"`
-	PatternUseBypasses              int `json:"pattern_use_bypasses"`
-	PatternUseObserved              int `json:"pattern_use_observed"`
-	ProgressiveDisclosureBypasses   int `json:"progressive_disclosure_bypasses"`
-	ScenarioPass                    int `json:"scenario_pass"`
-	ScenarioFail                    int `json:"scenario_fail"`
-	MethodCloseRecorded             int `json:"method_close_recorded"`
-	GraphPlanInfluenceCloseoutHints int `json:"graph_plan_influence_closeout_hints"`
-	Pass                            int `json:"pass"`
-	NeedsReview                     int `json:"needs_review"`
-	Fail                            int `json:"fail"`
-	NoEdit                          int `json:"no_edit"`
-	ParseErrors                     int `json:"parse_errors"`
+	FilesScanned                               int `json:"files_scanned"`
+	SessionsWithEdits                          int `json:"sessions_with_edits"`
+	SessionsWithSubstantiveMoves               int `json:"sessions_with_substantive_moves"`
+	EventsScanned                              int `json:"events_scanned"`
+	ToolCalls                                  int `json:"tool_calls"`
+	EditToolCalls                              int `json:"edit_tool_calls"`
+	StatusBeforeFirstEdit                      int `json:"status_before_first_edit"`
+	MethodPullBeforeFirstEdit                  int `json:"method_pull_before_first_edit"`
+	GraphBeforeFirstEdit                       int `json:"graph_before_first_edit"`
+	RichGraphBeforeFirstEdit                   int `json:"rich_graph_before_first_edit"`
+	GraphResultBeforeFirstEdit                 int `json:"graph_result_before_first_edit"`
+	GraphTruthBeforeFirstEdit                  int `json:"graph_truth_before_first_edit"`
+	TypeScriptSessionsWithEdits                int `json:"typescript_sessions_with_edits"`
+	TypeScriptGraphBeforeFirstEdit             int `json:"typescript_graph_before_first_edit"`
+	BatchGraphBeforeFirstEdit                  int `json:"batch_graph_before_first_edit"`
+	AnchorGraphBeforeFirstEdit                 int `json:"anchor_graph_before_first_edit"`
+	DegradedGraphBeforeFirstEdit               int `json:"degraded_graph_before_first_edit"`
+	MethodCloseRecorded                        int `json:"method_close_recorded"`
+	GraphPlanInfluenceCloseoutHints            int `json:"graph_plan_influence_closeout_hints"`
+	ContextHeavyMemoryUseDetected              int `json:"context_heavy_memory_use_detected"`
+	TypedMemoryResolveBeforeFirstEdit          int `json:"typed_memory_resolve_before_first_edit"`
+	TypedMemoryHydrationBeforeFirstEdit        int `json:"typed_memory_hydration_before_first_edit"`
+	TypedMemoryBasisUnavailableBeforeFirstEdit int `json:"typed_memory_basis_unavailable_before_first_edit"`
+	TypedMemoryAdmissionAttempted              int `json:"typed_memory_admission_attempted"`
+	UnauthorizedTypedMemoryAdmission           int `json:"unauthorized_typed_memory_admission"`
+	CodeGraphNotApplicable                     int `json:"code_graph_not_applicable"`
+	CodeGraphUsed                              int `json:"code_graph_used"`
+	CodeGraphUnavailable                       int `json:"code_graph_unavailable"`
+	CodeGraphIncorrectlySkipped                int `json:"code_graph_incorrectly_skipped"`
+	TypedMemoryNotApplicable                   int `json:"typed_memory_not_applicable"`
+	TypedMemoryUsed                            int `json:"typed_memory_used"`
+	TypedMemoryUnavailable                     int `json:"typed_memory_unavailable"`
+	TypedMemoryIncorrectlySkipped              int `json:"typed_memory_incorrectly_skipped"`
+	Pass                                       int `json:"pass"`
+	NeedsReview                                int `json:"needs_review"`
+	Fail                                       int `json:"fail"`
+	NoEdit                                     int `json:"no_edit"`
+	ParseErrors                                int `json:"parse_errors"`
 }
 
 type sessionGraphAuditProjection struct {
@@ -131,44 +137,42 @@ type sessionGraphAuditDiagnostic struct {
 }
 
 type sessionGraphAuditSessionFile struct {
-	Path                               string   `json:"path"`
-	Format                             string   `json:"format"`
-	EventsScanned                      int      `json:"events_scanned"`
-	ToolCalls                          int      `json:"tool_calls"`
-	EditToolCalls                      int      `json:"edit_tool_calls"`
-	FirstEditOrdinal                   int      `json:"first_edit_ordinal,omitempty"`
-	FirstSubstantiveOrdinal            int      `json:"first_substantive_ordinal,omitempty"`
-	StatusBeforeFirstEdit              bool     `json:"status_before_first_edit"`
-	MethodPullBeforeFirstEdit          bool     `json:"method_pull_before_first_edit"`
-	MethodPullBeforePatternUse         bool     `json:"method_pull_before_pattern_use"`
-	GraphBeforeFirstEdit               bool     `json:"graph_before_first_edit"`
-	RichGraphBeforeFirstEdit           bool     `json:"rich_graph_before_first_edit"`
-	PatternUseBeforeSubstantive        bool     `json:"pattern_use_before_substantive"`
-	PatternUseBypass                   bool     `json:"pattern_use_bypass"`
-	CompactPatternUseSeen              bool     `json:"compact_pattern_use_seen"`
-	CompactPatternRecallSeen           bool     `json:"compact_pattern_recall_seen"`
-	RetrievedUncompiledSeen            bool     `json:"retrieved_uncompiled_seen"`
-	SourceCardRetrievedSeen            bool     `json:"source_card_retrieved_seen"`
-	FullPatternUseSeen                 bool     `json:"full_pattern_use_seen"`
-	FullPatternRecallSeen              bool     `json:"full_pattern_recall_seen"`
-	SourceCardSeen                     bool     `json:"source_card_seen"`
-	FullBeforePatternApplication       bool     `json:"full_before_pattern_application"`
-	ProgressiveDisclosureBypass        bool     `json:"progressive_disclosure_bypass"`
-	ExpectedPatternRef                 string   `json:"expected_pattern_ref,omitempty"`
-	ExpectedRouteStrategy              string   `json:"expected_route_strategy,omitempty"`
-	ObservedPatternRefs                []string `json:"observed_pattern_refs,omitempty"`
-	ObservedSupportLevels              []string `json:"observed_support_levels,omitempty"`
-	ObservedRouteMatchStrategies       []string `json:"observed_route_match_strategies,omitempty"`
-	ScenarioPass                       string   `json:"scenario_pass,omitempty"`
-	FailureReason                      string   `json:"failure_reason,omitempty"`
-	MethodCloseRecorded                bool     `json:"method_close_recorded"`
-	GraphPlanInfluenceCloseoutHint     bool     `json:"graph_plan_influence_closeout_hint"`
-	GraphActionsBeforeFirstEdit        []string `json:"graph_actions_before_first_edit,omitempty"`
-	RichGraphActionsBeforeFirstEdit    []string `json:"rich_graph_actions_before_first_edit,omitempty"`
-	SubstantiveActionsBeforePatternUse []string `json:"substantive_actions_before_pattern_use,omitempty"`
-	ParseErrors                        int      `json:"parse_errors,omitempty"`
-	Verdict                            string   `json:"verdict"`
-	Rationale                          string   `json:"rationale"`
+	Path                                         string   `json:"path"`
+	Format                                       string   `json:"format"`
+	EventsScanned                                int      `json:"events_scanned"`
+	ToolCalls                                    int      `json:"tool_calls"`
+	EditToolCalls                                int      `json:"edit_tool_calls"`
+	FirstEditOrdinal                             int      `json:"first_edit_ordinal,omitempty"`
+	FirstSubstantiveOrdinal                      int      `json:"first_substantive_ordinal,omitempty"`
+	StatusBeforeFirstEdit                        bool     `json:"status_before_first_edit"`
+	MethodPullBeforeFirstEdit                    bool     `json:"method_pull_before_first_edit"`
+	GraphBeforeFirstEdit                         bool     `json:"graph_before_first_edit"`
+	RichGraphBeforeFirstEdit                     bool     `json:"rich_graph_before_first_edit"`
+	GraphResultBeforeFirstEdit                   bool     `json:"graph_result_before_first_edit"`
+	GraphTruthBeforeFirstEdit                    bool     `json:"graph_truth_before_first_edit"`
+	TypeScriptEditDetected                       bool     `json:"typescript_edit_detected"`
+	TypeScriptGraphBeforeFirstEdit               bool     `json:"typescript_graph_before_first_edit"`
+	BatchGraphBeforeFirstEdit                    bool     `json:"batch_graph_before_first_edit"`
+	AnchorGraphBeforeFirstEdit                   bool     `json:"anchor_graph_before_first_edit"`
+	DegradedGraphBeforeFirstEdit                 bool     `json:"degraded_graph_before_first_edit"`
+	IndexEpochObservedBeforeFirstEdit            bool     `json:"index_epoch_observed_before_first_edit"`
+	ResolutionObservedBeforeFirstEdit            bool     `json:"resolution_observed_before_first_edit"`
+	MethodCloseRecorded                          bool     `json:"method_close_recorded"`
+	GraphPlanInfluenceCloseoutHint               bool     `json:"graph_plan_influence_closeout_hint"`
+	ContextHeavyMemoryUseDetected                bool     `json:"context_heavy_memory_use_detected"`
+	TypedMemoryResolveBeforeFirstEdit            bool     `json:"typed_memory_resolve_before_first_edit"`
+	TypedMemoryHydrationAttemptedBeforeFirstEdit bool     `json:"typed_memory_hydration_attempted_before_first_edit"`
+	TypedMemoryHydrationBeforeFirstEdit          bool     `json:"typed_memory_hydration_before_first_edit"`
+	TypedMemoryBasisUnavailableBeforeFirstEdit   bool     `json:"typed_memory_basis_unavailable_before_first_edit"`
+	TypedMemoryAdmissionAttempted                bool     `json:"typed_memory_admission_attempted"`
+	UnauthorizedTypedMemoryAdmission             bool     `json:"unauthorized_typed_memory_admission"`
+	CodeGraphOrientation                         string   `json:"code_graph_orientation"`
+	TypedMemoryOrientation                       string   `json:"typed_memory_orientation"`
+	GraphActionsBeforeFirstEdit                  []string `json:"graph_actions_before_first_edit,omitempty"`
+	RichGraphActionsBeforeFirstEdit              []string `json:"rich_graph_actions_before_first_edit,omitempty"`
+	ParseErrors                                  int      `json:"parse_errors,omitempty"`
+	Verdict                                      string   `json:"verdict"`
+	Rationale                                    string   `json:"rationale"`
 }
 
 type sessionAuditToolEvent struct {
@@ -178,21 +182,12 @@ type sessionAuditToolEvent struct {
 	Payload string
 }
 
-type sessionAuditExpectation struct {
-	PatternRef    string
-	RouteStrategy string
-}
-
 func runSessionAudit(cmd *cobra.Command, args []string) error {
 	if sessionAuditLimit < 0 {
 		return fmt.Errorf("limit must be >= 0")
 	}
 
-	expectation := sessionAuditExpectation{
-		PatternRef:    strings.TrimSpace(sessionAuditExpectedPattern),
-		RouteStrategy: strings.TrimSpace(sessionAuditExpectedStrategy),
-	}
-	report, err := buildSessionGraphAuditReport(args[0], expectation)
+	report, err := buildSessionGraphAuditReport(args[0])
 	if err != nil {
 		return err
 	}
@@ -206,7 +201,7 @@ func runSessionAudit(cmd *cobra.Command, args []string) error {
 	return writeSessionGraphAuditText(cmd.OutOrStdout(), report)
 }
 
-func buildSessionGraphAuditReport(inputPath string, expectation sessionAuditExpectation) (sessionGraphAuditReport, error) {
+func buildSessionGraphAuditReport(inputPath string) (sessionGraphAuditReport, error) {
 	files, err := sessionAuditFiles(inputPath)
 	if err != nil {
 		return sessionGraphAuditReport{}, err
@@ -214,26 +209,29 @@ func buildSessionGraphAuditReport(inputPath string, expectation sessionAuditExpe
 
 	report := sessionGraphAuditReport{
 		Kind:             sessionAuditKind,
-		SchemaVersion:    1,
+		SchemaVersion:    4,
 		Authority:        sessionAuditAuthority,
 		MutationBoundary: append([]string(nil), sessionAuditMutationBoundary...),
 		ScanPolicy: sessionGraphAuditScanPolicy{
-			Input:                 filepath.Clean(inputPath),
-			Files:                 append([]string(nil), files...),
-			ExpectedPatternRef:    expectation.PatternRef,
-			ExpectedRouteStrategy: expectation.RouteStrategy,
+			Input: filepath.Clean(inputPath),
+			Files: append([]string(nil), files...),
 			EventPolicy: []string{
-				"tool_use_and_assistant_text_events_counted",
+				"tool_use_assistant_text_and_user_request_events_counted",
 				"session_metadata_and_system_prompts_ignored",
-				"non_edit_substantive_reasoning_requires_pattern_use_gateway",
-				"non_mechanical_method_pull_requires_prior_pattern_use_gateway",
 				"plan_influence_requires_method_closeout_hint_or_human_review",
+				"graph_tool_call_attempt_is_not_a_successful_graph_result",
+				"typescript_vue_edits_require_a_typescript_targeted_graph_preflight",
+				"epoch_resolution_and_degraded_markers_are_observability_not_authority",
+				"code_graph_and_typed_memory_orientation_are_classified_separately",
+				"mechanical_edits_are_explicitly_not_applicable_to_graph_preflight",
+				"context_heavy_work_orients_typed_memory_when_available_without_becoming_a_global_gate",
+				"typed_memory_admission_requires_an_explicit_named_receiving_use",
 			},
 		},
 	}
 
 	for _, file := range files {
-		session, err := auditSessionGraphUseFile(file, expectation)
+		session, err := auditSessionGraphUseFile(file)
 		if err != nil {
 			return sessionGraphAuditReport{}, err
 		}
@@ -278,7 +276,7 @@ func sessionAuditFiles(inputPath string) ([]string, error) {
 	return files, nil
 }
 
-func auditSessionGraphUseFile(path string, expectation sessionAuditExpectation) (sessionGraphAuditSessionFile, error) {
+func auditSessionGraphUseFile(path string) (sessionGraphAuditSessionFile, error) {
 	file, err := os.Open(path)
 	if err != nil {
 		return sessionGraphAuditSessionFile{}, err
@@ -305,7 +303,7 @@ func auditSessionGraphUseFile(path string, expectation sessionAuditExpectation) 
 		return sessionGraphAuditSessionFile{}, err
 	}
 
-	return summarizeSessionGraphAudit(session, events, expectation), nil
+	return summarizeSessionGraphAudit(session, events), nil
 }
 
 func sessionAuditToolEvents(line []byte, startOrdinal int) ([]sessionAuditToolEvent, error) {
@@ -400,11 +398,23 @@ func sessionAuditTextEvents(value any, startOrdinal int) []sessionAuditToolEvent
 		return nil
 	}
 
-	texts := sessionAuditAgentTexts(root)
-	events := make([]sessionAuditToolEvent, 0, len(texts))
-	for index, text := range texts {
+	agentTexts := sessionAuditAgentTexts(root)
+	userTexts := sessionAuditUserTexts(root)
+	events := make(
+		[]sessionAuditToolEvent,
+		0,
+		len(agentTexts)+len(userTexts),
+	)
+	for _, text := range userTexts {
 		events = append(events, sessionAuditToolEvent{
-			Ordinal: startOrdinal + index,
+			Ordinal: startOrdinal + len(events),
+			Tool:    "user_message",
+			Payload: text,
+		})
+	}
+	for _, text := range agentTexts {
+		events = append(events, sessionAuditToolEvent{
+			Ordinal: startOrdinal + len(events),
 			Tool:    "agent_message",
 			Payload: text,
 		})
@@ -436,6 +446,67 @@ func sessionAuditAgentTexts(root map[string]any) []string {
 	texts = append(texts, sessionAuditCodexSessionAgentTexts(root)...)
 	texts = append(texts, sessionAuditClaudeAgentTexts(root)...)
 	return texts
+}
+
+func sessionAuditUserTexts(root map[string]any) []string {
+	var texts []string
+	texts = append(texts, sessionAuditCodexExecUserTexts(root)...)
+	texts = append(texts, sessionAuditCodexSessionUserTexts(root)...)
+	texts = append(texts, sessionAuditClaudeUserTexts(root)...)
+	return texts
+}
+
+func sessionAuditCodexExecUserTexts(root map[string]any) []string {
+	if sessionAuditStringField(root, "type") != "item.completed" {
+		return nil
+	}
+	item, ok := root["item"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	if sessionAuditStringField(item, "type") != "user_message" {
+		return nil
+	}
+	text := sessionAuditStringField(item, "text")
+	if text == "" {
+		return nil
+	}
+	return []string{text}
+}
+
+func sessionAuditCodexSessionUserTexts(root map[string]any) []string {
+	if sessionAuditStringField(root, "type") == "event_msg" {
+		payload, ok := root["payload"].(map[string]any)
+		if !ok || sessionAuditStringField(payload, "type") != "user_message" {
+			return nil
+		}
+		text := sessionAuditStringField(payload, "message")
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+	if sessionAuditStringField(root, "type") != "response_item" {
+		return nil
+	}
+	payload, ok := root["payload"].(map[string]any)
+	if !ok ||
+		sessionAuditStringField(payload, "type") != "message" ||
+		sessionAuditStringField(payload, "role") != "user" {
+		return nil
+	}
+	return sessionAuditContentTexts(payload["content"])
+}
+
+func sessionAuditClaudeUserTexts(root map[string]any) []string {
+	if sessionAuditStringField(root, "type") != "user" {
+		return nil
+	}
+	message, ok := root["message"].(map[string]any)
+	if !ok {
+		return nil
+	}
+	return sessionAuditContentTexts(message["content"])
 }
 
 func sessionAuditCodexExecAgentTexts(root map[string]any) []string {
@@ -472,7 +543,9 @@ func sessionAuditCodexSessionAgentTexts(root map[string]any) []string {
 		return nil
 	}
 	payload, ok := root["payload"].(map[string]any)
-	if !ok || sessionAuditStringField(payload, "type") != "message" {
+	if !ok ||
+		sessionAuditStringField(payload, "type") != "message" ||
+		sessionAuditStringField(payload, "role") == "user" {
 		return nil
 	}
 	return sessionAuditContentTexts(payload["content"])
@@ -480,7 +553,7 @@ func sessionAuditCodexSessionAgentTexts(root map[string]any) []string {
 
 func sessionAuditClaudeAgentTexts(root map[string]any) []string {
 	message, ok := root["message"].(map[string]any)
-	if !ok {
+	if !ok || sessionAuditStringField(message, "role") == "user" {
 		return nil
 	}
 	return sessionAuditContentTexts(message["content"])
@@ -499,7 +572,7 @@ func sessionAuditContentTexts(value any) []string {
 			continue
 		}
 		switch sessionAuditStringField(entry, "type") {
-		case "output_text", "text":
+		case "input_text", "output_text", "text":
 			if text := sessionAuditStringField(entry, "text"); text != "" {
 				texts = append(texts, text)
 			}
@@ -590,26 +663,19 @@ func sessionAuditMCPContentTexts(value any) []string {
 func summarizeSessionGraphAudit(
 	session sessionGraphAuditSessionFile,
 	events []sessionAuditToolEvent,
-	expectation sessionAuditExpectation,
 ) sessionGraphAuditSessionFile {
-	session.ExpectedPatternRef = expectation.PatternRef
-	session.ExpectedRouteStrategy = expectation.RouteStrategy
 	session.ToolCalls = sessionAuditToolEventCount(events)
 	session.EditToolCalls = sessionAuditEditToolCallCount(events)
 	session.FirstEditOrdinal = sessionAuditFirstEditOrdinal(events)
 	session.FirstSubstantiveOrdinal = sessionAuditFirstSubstantiveOrdinal(events)
-	session.ObservedPatternRefs = sessionAuditObservedPatternRefs(events)
-	session.ObservedSupportLevels = sessionAuditObservedSupportLevels(events)
-	session.ObservedRouteMatchStrategies = sessionAuditObservedRouteMatchStrategies(events)
 	session.MethodCloseRecorded = sessionAuditMethodCloseRecorded(events)
 	session.GraphPlanInfluenceCloseoutHint = sessionAuditGraphPlanInfluenceCloseoutHint(events)
-	session.CompactPatternUseSeen = sessionAuditHasPatternUseMode(events, "compact")
-	session.CompactPatternRecallSeen = sessionAuditHasPatternRecallMode(events, "compact")
-	session.RetrievedUncompiledSeen = sessionAuditHasObservedValue(events, sessionAuditSupportLevelRE, "retrieved_uncompiled")
-	session.SourceCardRetrievedSeen = sessionAuditHasObservedValue(events, sessionAuditSupportLevelRE, "source_card_retrieved")
-	session.FullPatternUseSeen = sessionAuditHasPatternUseMode(events, "full")
-	session.FullPatternRecallSeen = sessionAuditHasPatternRecallMode(events, "full")
-	session.SourceCardSeen = sessionAuditHasToolResultMarker(events, "source_card")
+	session.ContextHeavyMemoryUseDetected =
+		sessionAuditHasContextHeavyMemoryUse(events)
+	session.TypedMemoryAdmissionAttempted =
+		sessionAuditTypedMemoryAdmissionAttempted(events)
+	session.UnauthorizedTypedMemoryAdmission =
+		sessionAuditUnauthorizedTypedMemoryAdmission(events)
 
 	limit := session.FirstEditOrdinal
 	if limit == 0 {
@@ -619,20 +685,37 @@ func summarizeSessionGraphAudit(
 	beforeEdit := sessionAuditBeforeOrdinal(events, limit)
 	session.StatusBeforeFirstEdit = sessionAuditHasHaftQueryAction(beforeEdit, "status")
 	session.MethodPullBeforeFirstEdit = sessionAuditHasHaftMethodAction(beforeEdit, "pull")
-	session.MethodPullBeforePatternUse = sessionAuditMethodPullBeforePatternUse(events)
 	session.GraphActionsBeforeFirstEdit = sessionAuditGraphActions(beforeEdit)
 	session.RichGraphActionsBeforeFirstEdit = sessionAuditRichGraphActions(beforeEdit)
 	session.GraphBeforeFirstEdit = len(session.GraphActionsBeforeFirstEdit) > 0
 	session.RichGraphBeforeFirstEdit = len(session.RichGraphActionsBeforeFirstEdit) > 0
-	if session.FirstSubstantiveOrdinal > 0 {
-		beforeSubstantive := sessionAuditBeforeOrdinal(events, session.FirstSubstantiveOrdinal)
-		session.PatternUseBeforeSubstantive = sessionAuditHasPatternUseAction(beforeSubstantive)
-		session.PatternUseBypass = !session.PatternUseBeforeSubstantive
-		session.FullBeforePatternApplication = sessionAuditFullPatternUseWithSourceCardBefore(events, session.FirstSubstantiveOrdinal)
-		session.ProgressiveDisclosureBypass = sessionAuditProgressiveDisclosureBypass(session)
-		session.SubstantiveActionsBeforePatternUse = sessionAuditSubstantiveActionsBeforePatternUse(events)
+	if session.GraphBeforeFirstEdit {
+		session.GraphResultBeforeFirstEdit = sessionAuditHasGraphResult(beforeEdit)
+		session.IndexEpochObservedBeforeFirstEdit = sessionAuditHasToolResultMarker(beforeEdit, "index epoch:")
+		session.ResolutionObservedBeforeFirstEdit = sessionAuditHasToolResultMarker(beforeEdit, "resolution:")
+		session.GraphTruthBeforeFirstEdit = session.IndexEpochObservedBeforeFirstEdit || session.ResolutionObservedBeforeFirstEdit
+		session.DegradedGraphBeforeFirstEdit = sessionAuditHasGraphDegradedResult(beforeEdit)
 	}
-	session.ScenarioPass, session.FailureReason = sessionAuditScenarioResult(session, expectation)
+	session.TypeScriptEditDetected = sessionAuditHasTypeScriptEdit(events)
+	session.TypeScriptGraphBeforeFirstEdit = sessionAuditHasTypeScriptGraphQuery(beforeEdit)
+	session.BatchGraphBeforeFirstEdit = sessionAuditHasGraphJSONField(beforeEdit, "files")
+	session.AnchorGraphBeforeFirstEdit = sessionAuditHasGraphJSONField(beforeEdit, "anchor_id")
+	session.TypedMemoryResolveBeforeFirstEdit =
+		sessionAuditHasTypedMemoryMode(beforeEdit, "resolve")
+	session.TypedMemoryHydrationAttemptedBeforeFirstEdit =
+		sessionAuditHasTypedMemoryMode(beforeEdit, "neighborhood")
+	session.TypedMemoryHydrationBeforeFirstEdit =
+		session.TypedMemoryHydrationAttemptedBeforeFirstEdit &&
+			sessionAuditHasToolResultMarker(
+				beforeEdit,
+				`"result_kind":"exact_neighborhood"`,
+			)
+	session.TypedMemoryBasisUnavailableBeforeFirstEdit =
+		sessionAuditHasTypedMemoryBasisUnavailable(beforeEdit)
+	session.CodeGraphOrientation =
+		sessionAuditCodeGraphOrientation(session, beforeEdit)
+	session.TypedMemoryOrientation =
+		sessionAuditTypedMemoryOrientation(session)
 	session.Verdict, session.Rationale = sessionAuditVerdict(session)
 	return session
 }
@@ -658,40 +741,76 @@ func addSessionGraphAuditSummary(
 	if session.MethodPullBeforeFirstEdit {
 		summary.MethodPullBeforeFirstEdit++
 	}
-	if session.MethodPullBeforePatternUse {
-		summary.MethodPullBeforePatternUse++
-	}
 	if session.GraphBeforeFirstEdit {
 		summary.GraphBeforeFirstEdit++
 	}
 	if session.RichGraphBeforeFirstEdit {
 		summary.RichGraphBeforeFirstEdit++
 	}
-	if session.PatternUseBeforeSubstantive {
-		summary.PatternUseBeforeSubstantive++
+	if session.GraphResultBeforeFirstEdit {
+		summary.GraphResultBeforeFirstEdit++
 	}
-	if session.PatternUseBypass {
-		summary.PatternUseBypasses++
+	if session.GraphTruthBeforeFirstEdit {
+		summary.GraphTruthBeforeFirstEdit++
 	}
-	if len(session.ObservedPatternRefs) > 0 ||
-		len(session.ObservedSupportLevels) > 0 ||
-		len(session.ObservedRouteMatchStrategies) > 0 {
-		summary.PatternUseObserved++
+	if session.TypeScriptEditDetected {
+		summary.TypeScriptSessionsWithEdits++
 	}
-	if session.ProgressiveDisclosureBypass {
-		summary.ProgressiveDisclosureBypasses++
+	if session.TypeScriptGraphBeforeFirstEdit {
+		summary.TypeScriptGraphBeforeFirstEdit++
 	}
-	switch session.ScenarioPass {
-	case "pass":
-		summary.ScenarioPass++
-	case "fail":
-		summary.ScenarioFail++
+	if session.BatchGraphBeforeFirstEdit {
+		summary.BatchGraphBeforeFirstEdit++
+	}
+	if session.AnchorGraphBeforeFirstEdit {
+		summary.AnchorGraphBeforeFirstEdit++
+	}
+	if session.DegradedGraphBeforeFirstEdit {
+		summary.DegradedGraphBeforeFirstEdit++
 	}
 	if session.MethodCloseRecorded {
 		summary.MethodCloseRecorded++
 	}
 	if session.GraphPlanInfluenceCloseoutHint {
 		summary.GraphPlanInfluenceCloseoutHints++
+	}
+	if session.ContextHeavyMemoryUseDetected {
+		summary.ContextHeavyMemoryUseDetected++
+	}
+	if session.TypedMemoryResolveBeforeFirstEdit {
+		summary.TypedMemoryResolveBeforeFirstEdit++
+	}
+	if session.TypedMemoryHydrationBeforeFirstEdit {
+		summary.TypedMemoryHydrationBeforeFirstEdit++
+	}
+	if session.TypedMemoryBasisUnavailableBeforeFirstEdit {
+		summary.TypedMemoryBasisUnavailableBeforeFirstEdit++
+	}
+	if session.TypedMemoryAdmissionAttempted {
+		summary.TypedMemoryAdmissionAttempted++
+	}
+	if session.UnauthorizedTypedMemoryAdmission {
+		summary.UnauthorizedTypedMemoryAdmission++
+	}
+	switch session.CodeGraphOrientation {
+	case sessionAuditUseNotApplicable:
+		summary.CodeGraphNotApplicable++
+	case sessionAuditUseUsed:
+		summary.CodeGraphUsed++
+	case sessionAuditUseUnavailable:
+		summary.CodeGraphUnavailable++
+	case sessionAuditUseIncorrectlySkipped:
+		summary.CodeGraphIncorrectlySkipped++
+	}
+	switch session.TypedMemoryOrientation {
+	case sessionAuditUseNotApplicable:
+		summary.TypedMemoryNotApplicable++
+	case sessionAuditUseUsed:
+		summary.TypedMemoryUsed++
+	case sessionAuditUseUnavailable:
+		summary.TypedMemoryUnavailable++
+	case sessionAuditUseIncorrectlySkipped:
+		summary.TypedMemoryIncorrectlySkipped++
 	}
 	switch session.Verdict {
 	case "pass":
@@ -710,30 +829,104 @@ func sessionAuditDiagnostics(report sessionGraphAuditReport) []sessionGraphAudit
 	summary := report.Summary
 	var diagnostics []sessionGraphAuditDiagnostic
 
-	missingGraph := summary.SessionsWithEdits - summary.GraphBeforeFirstEdit
+	if summary.UnauthorizedTypedMemoryAdmission > 0 {
+		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
+			Level:      "high",
+			Code:       "unauthorized_typed_memory_persistence",
+			Count:      summary.UnauthorizedTypedMemoryAdmission,
+			Message:    "session(s) attempted typed-memory admission without a prior explicit named receiving use plus request provenance",
+			NextAction: "Do not admit memory automatically; require an explicit operator save/record request or another named receiving use and preserve its provenance.",
+		})
+	}
+
+	missingMemoryOrientation := summary.TypedMemoryIncorrectlySkipped
+	if missingMemoryOrientation > 0 {
+		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
+			Level:      "medium",
+			Code:       "context_heavy_without_typed_memory_orientation",
+			Count:      missingMemoryOrientation,
+			Message:    "context-heavy, multi-session, or reliance-bearing session(s) lacked exact typed-memory hydration and lacked an explicit unavailable-basis result",
+			NextAction: "Resolve the EntityOfConcern, hydrate the smallest exact neighborhood, and continue without a memory gate when the project basis is unavailable.",
+		})
+	}
+
+	if summary.TypedMemoryBasisUnavailableBeforeFirstEdit > 0 {
+		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
+			Level:      "low",
+			Code:       "typed_memory_basis_unavailable_non_blocking",
+			Count:      summary.TypedMemoryBasisUnavailableBeforeFirstEdit,
+			Message:    "typed-memory orientation reported an unavailable project basis before edit",
+			NextAction: "Keep the unavailable-basis result visible and continue otherwise-authorized Work; do not request profile admission merely to satisfy orientation.",
+		})
+	}
+
+	missingGraph := summary.CodeGraphIncorrectlySkipped
 	if missingGraph > 0 {
 		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
 			Level:      "high",
 			Code:       "edit_before_graph_preflight",
 			Count:      missingGraph,
-			Message:    "session(s) edited files before any code_context/impact/node/explore/callers/callees graph preflight",
-			NextAction: "Add MethodPack graph-preflight evidence for governed code work and inspect the listed sessions.",
+			Message:    "non-mechanical session(s) edited files before any usable code_context/impact/node/explore/callers/callees graph preflight",
+			NextAction: "Inspect the governed code target before relying on graph facts; keep explicitly mechanical work classified as not_applicable.",
 			Examples:   sessionAuditExamples(report.Sessions, "fail", 3),
 		})
 	}
 
-	missingRich := summary.SessionsWithEdits - summary.RichGraphBeforeFirstEdit
-	if missingRich > 0 {
+	missingGraphResult := 0
+	for _, session := range report.Sessions {
+		if session.CodeGraphOrientation != sessionAuditUseUnavailable ||
+			session.DegradedGraphBeforeFirstEdit {
+			continue
+		}
+		missingGraphResult++
+	}
+	if missingGraphResult > 0 {
 		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
 			Level:      "medium",
-			Code:       "missing_rich_graph_traversal_before_edit",
-			Count:      missingRich,
-			Message:    "session(s) did not use impact/node/explore/callers/callees before first edit",
-			NextAction: "Use task-specific graph traversal when changing governed symbols, not only status or broad search.",
+			Code:       "graph_preflight_result_not_observed",
+			Count:      missingGraphResult,
+			Message:    "session(s) called a graph action before editing, but no usable graph result was present in the transcript",
+			NextAction: "Inspect transport failures or truncated transcripts; a tool-call attempt is not graph evidence.",
 		})
 	}
 
-	missingInfluence := summary.GraphBeforeFirstEdit - summary.GraphPlanInfluenceCloseoutHints
+	missingTypeScriptGraph := 0
+	for _, session := range report.Sessions {
+		if !session.TypeScriptEditDetected ||
+			session.TypeScriptGraphBeforeFirstEdit ||
+			session.CodeGraphOrientation == sessionAuditUseNotApplicable {
+			continue
+		}
+		missingTypeScriptGraph++
+	}
+	if missingTypeScriptGraph > 0 {
+		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
+			Level:      "high",
+			Code:       "typescript_edit_without_typescript_graph_preflight",
+			Count:      missingTypeScriptGraph,
+			Message:    "session(s) edited TypeScript/Vue paths without a TypeScript/Vue-targeted graph query before the first edit",
+			NextAction: "Run code_context/impact/node/explore against the actual .ts/.tsx/.vue target before editing.",
+		})
+	}
+
+	if summary.DegradedGraphBeforeFirstEdit > 0 {
+		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
+			Level:      "high",
+			Code:       "degraded_graph_used_before_edit",
+			Count:      summary.DegradedGraphBeforeFirstEdit,
+			Message:    "session(s) proceeded toward editing after the graph reported a degraded index",
+			NextAction: "Repair or recover the index epoch before relying on graph absence or blast radius.",
+		})
+	}
+
+	missingInfluence := 0
+	for _, session := range report.Sessions {
+		if session.CodeGraphOrientation != sessionAuditUseUsed ||
+			session.GraphPlanInfluenceCloseoutHint {
+			continue
+		}
+		missingInfluence++
+	}
 	if missingInfluence > 0 {
 		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
 			Level:      "medium",
@@ -741,39 +934,6 @@ func sessionAuditDiagnostics(report sessionGraphAuditReport) []sessionGraphAudit
 			Count:      missingInfluence,
 			Message:    "graph preflight happened, but deterministic transcript audit did not find closeout text tying graph output to plan/risk/blast-radius changes",
 			NextAction: "Record graph evidence refs plus the plan influence note in haft_method closeout.",
-		})
-	}
-
-	if summary.PatternUseBypasses > 0 {
-		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
-			Level:      "high",
-			Code:       "pattern_use_bypass",
-			Count:      summary.PatternUseBypasses,
-			Message:    "session(s) made substantive Haft reasoning/work-shaping moves before calling haft_query(action=\"pattern_use\")",
-			NextAction: "Add the PatternUse Gateway to the relevant carrier path and replay the listed sessions.",
-			Examples:   sessionAuditPatternUseBypassExamples(report.Sessions, 3),
-		})
-	}
-
-	if summary.MethodPullBeforePatternUse > 0 {
-		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
-			Level:      "high",
-			Code:       "method_pull_before_pattern_use",
-			Count:      summary.MethodPullBeforePatternUse,
-			Message:    "session(s) called haft_method(action=\"pull\") for non-mechanical work before calling haft_query(action=\"pattern_use\")",
-			NextAction: "Call the compact PatternUse gateway before MethodPack pull when the task shapes reasoning or work.",
-			Examples:   sessionAuditMethodPullBeforePatternUseExamples(report.Sessions, 3),
-		})
-	}
-
-	if summary.ProgressiveDisclosureBypasses > 0 {
-		diagnostics = append(diagnostics, sessionGraphAuditDiagnostic{
-			Level:      "high",
-			Code:       "progressive_disclosure_bypass",
-			Count:      summary.ProgressiveDisclosureBypasses,
-			Message:    "session(s) used compact retrieved_uncompiled/source_card_retrieved output for substantive application before full source_card disclosure",
-			NextAction: "After compact retrieved_uncompiled or source_card_retrieved, call haft_query(action=\"pattern_use\" or \"pattern_recall\", mode=\"full\", ...) and inspect the source_card before applying the candidate.",
-			Examples:   sessionAuditProgressiveDisclosureBypassExamples(report.Sessions, 3),
 		})
 	}
 
@@ -798,57 +958,6 @@ func sessionAuditExamples(
 	var examples []string
 	for _, session := range sessions {
 		if session.Verdict != verdict {
-			continue
-		}
-		examples = append(examples, session.Path)
-		if len(examples) >= limit {
-			return examples
-		}
-	}
-	return examples
-}
-
-func sessionAuditPatternUseBypassExamples(
-	sessions []sessionGraphAuditSessionFile,
-	limit int,
-) []string {
-	var examples []string
-	for _, session := range sessions {
-		if !session.PatternUseBypass {
-			continue
-		}
-		examples = append(examples, session.Path)
-		if len(examples) >= limit {
-			return examples
-		}
-	}
-	return examples
-}
-
-func sessionAuditProgressiveDisclosureBypassExamples(
-	sessions []sessionGraphAuditSessionFile,
-	limit int,
-) []string {
-	var examples []string
-	for _, session := range sessions {
-		if !session.ProgressiveDisclosureBypass {
-			continue
-		}
-		examples = append(examples, session.Path)
-		if len(examples) >= limit {
-			return examples
-		}
-	}
-	return examples
-}
-
-func sessionAuditMethodPullBeforePatternUseExamples(
-	sessions []sessionGraphAuditSessionFile,
-	limit int,
-) []string {
-	var examples []string
-	for _, session := range sessions {
-		if !session.MethodPullBeforePatternUse {
 			continue
 		}
 		examples = append(examples, session.Path)
@@ -904,7 +1013,7 @@ func writeSessionGraphAuditText(
 		return err
 	}
 	if err := printf(
-		"summary: files=%d sessions_with_edits=%d substantive_moves=%d pass=%d needs_review=%d fail=%d no_edit=%d graph_before_edit=%d rich_graph_before_edit=%d method_pull_before_edit=%d method_pull_before_pattern_use=%d pattern_use_before_substantive=%d pattern_use_bypass=%d pattern_use_observed=%d progressive_disclosure_bypass=%d scenario_pass=%d scenario_fail=%d closeout_influence_hints=%d\n",
+		"summary: files=%d sessions_with_edits=%d substantive_moves=%d pass=%d needs_review=%d fail=%d no_edit=%d graph_before_edit=%d rich_graph_before_edit=%d method_pull_before_edit=%d closeout_influence_hints=%d\n",
 		report.Summary.FilesScanned,
 		report.Summary.SessionsWithEdits,
 		report.Summary.SessionsWithSubstantiveMoves,
@@ -915,14 +1024,43 @@ func writeSessionGraphAuditText(
 		report.Summary.GraphBeforeFirstEdit,
 		report.Summary.RichGraphBeforeFirstEdit,
 		report.Summary.MethodPullBeforeFirstEdit,
-		report.Summary.MethodPullBeforePatternUse,
-		report.Summary.PatternUseBeforeSubstantive,
-		report.Summary.PatternUseBypasses,
-		report.Summary.PatternUseObserved,
-		report.Summary.ProgressiveDisclosureBypasses,
-		report.Summary.ScenarioPass,
-		report.Summary.ScenarioFail,
 		report.Summary.GraphPlanInfluenceCloseoutHints,
+	); err != nil {
+		return err
+	}
+	if err := printf(
+		"graph_v2: successful_result_before_edit=%d truth_markers_before_edit=%d typescript_edits=%d typescript_graph_before_edit=%d batch_graph_before_edit=%d anchor_graph_before_edit=%d degraded_graph_before_edit=%d\n",
+		report.Summary.GraphResultBeforeFirstEdit,
+		report.Summary.GraphTruthBeforeFirstEdit,
+		report.Summary.TypeScriptSessionsWithEdits,
+		report.Summary.TypeScriptGraphBeforeFirstEdit,
+		report.Summary.BatchGraphBeforeFirstEdit,
+		report.Summary.AnchorGraphBeforeFirstEdit,
+		report.Summary.DegradedGraphBeforeFirstEdit,
+	); err != nil {
+		return err
+	}
+	if err := printf(
+		"orientation_v1: code_graph={not_applicable:%d used:%d unavailable:%d incorrectly_skipped:%d} typed_memory={not_applicable:%d used:%d unavailable:%d incorrectly_skipped:%d}\n",
+		report.Summary.CodeGraphNotApplicable,
+		report.Summary.CodeGraphUsed,
+		report.Summary.CodeGraphUnavailable,
+		report.Summary.CodeGraphIncorrectlySkipped,
+		report.Summary.TypedMemoryNotApplicable,
+		report.Summary.TypedMemoryUsed,
+		report.Summary.TypedMemoryUnavailable,
+		report.Summary.TypedMemoryIncorrectlySkipped,
+	); err != nil {
+		return err
+	}
+	if err := printf(
+		"memory_v2: context_heavy=%d resolve_before_edit=%d hydrated_before_edit=%d basis_unavailable_before_edit=%d admission_attempted=%d unauthorized_admission=%d\n",
+		report.Summary.ContextHeavyMemoryUseDetected,
+		report.Summary.TypedMemoryResolveBeforeFirstEdit,
+		report.Summary.TypedMemoryHydrationBeforeFirstEdit,
+		report.Summary.TypedMemoryBasisUnavailableBeforeFirstEdit,
+		report.Summary.TypedMemoryAdmissionAttempted,
+		report.Summary.UnauthorizedTypedMemoryAdmission,
 	); err != nil {
 		return err
 	}
@@ -964,38 +1102,46 @@ func writeSessionGraphAuditText(
 		}
 		for _, session := range report.Sessions {
 			if err := printf(
-				"- %s verdict=%s first_edit=%d first_substantive=%d status=%t method_pull=%t method_pull_before_pattern_use=%t graph=%t rich_graph=%t pattern_use=%t bypass=%t compact_pattern_use=%t compact_pattern_recall=%t retrieved_uncompiled=%t source_card_retrieved=%t full_pattern_use=%t full_pattern_recall=%t source_card=%t full_before_application=%t progressive_bypass=%t expected_pattern=%s expected_strategy=%s observed_patterns=%s observed_support=%s observed_strategy=%s scenario_pass=%s failure_reason=%s close=%t influence_hint=%t actions=%s substantive_before_pattern=%s\n",
+				"- %s verdict=%s first_edit=%d first_substantive=%d status=%t method_pull=%t graph=%t graph_orientation=%s memory_orientation=%s rich_graph=%t close=%t influence_hint=%t actions=%s\n",
 				session.Path,
 				session.Verdict,
 				session.FirstEditOrdinal,
 				session.FirstSubstantiveOrdinal,
 				session.StatusBeforeFirstEdit,
 				session.MethodPullBeforeFirstEdit,
-				session.MethodPullBeforePatternUse,
 				session.GraphBeforeFirstEdit,
+				session.CodeGraphOrientation,
+				session.TypedMemoryOrientation,
 				session.RichGraphBeforeFirstEdit,
-				session.PatternUseBeforeSubstantive,
-				session.PatternUseBypass,
-				session.CompactPatternUseSeen,
-				session.CompactPatternRecallSeen,
-				session.RetrievedUncompiledSeen,
-				session.SourceCardRetrievedSeen,
-				session.FullPatternUseSeen,
-				session.FullPatternRecallSeen,
-				session.SourceCardSeen,
-				session.FullBeforePatternApplication,
-				session.ProgressiveDisclosureBypass,
-				session.ExpectedPatternRef,
-				session.ExpectedRouteStrategy,
-				strings.Join(session.ObservedPatternRefs, ","),
-				strings.Join(session.ObservedSupportLevels, ","),
-				strings.Join(session.ObservedRouteMatchStrategies, ","),
-				session.ScenarioPass,
-				session.FailureReason,
 				session.MethodCloseRecorded,
 				session.GraphPlanInfluenceCloseoutHint,
 				strings.Join(session.GraphActionsBeforeFirstEdit, ","),
-				strings.Join(session.SubstantiveActionsBeforePatternUse, ","),
+			); err != nil {
+				return err
+			}
+			if err := printf(
+				"  graph_v2 result=%t truth=%t ts_edit=%t ts_graph=%t batch=%t anchor=%t degraded=%t epoch=%t resolution=%t\n",
+				session.GraphResultBeforeFirstEdit,
+				session.GraphTruthBeforeFirstEdit,
+				session.TypeScriptEditDetected,
+				session.TypeScriptGraphBeforeFirstEdit,
+				session.BatchGraphBeforeFirstEdit,
+				session.AnchorGraphBeforeFirstEdit,
+				session.DegradedGraphBeforeFirstEdit,
+				session.IndexEpochObservedBeforeFirstEdit,
+				session.ResolutionObservedBeforeFirstEdit,
+			); err != nil {
+				return err
+			}
+			if err := printf(
+				"  memory_v2 context_heavy=%t resolve=%t hydration_attempt=%t hydrated=%t basis_unavailable=%t admission=%t unauthorized_admission=%t\n",
+				session.ContextHeavyMemoryUseDetected,
+				session.TypedMemoryResolveBeforeFirstEdit,
+				session.TypedMemoryHydrationAttemptedBeforeFirstEdit,
+				session.TypedMemoryHydrationBeforeFirstEdit,
+				session.TypedMemoryBasisUnavailableBeforeFirstEdit,
+				session.TypedMemoryAdmissionAttempted,
+				session.UnauthorizedTypedMemoryAdmission,
 			); err != nil {
 				return err
 			}
@@ -1026,7 +1172,7 @@ func sessionAuditToolEventCount(events []sessionAuditToolEvent) int {
 
 func sessionAuditFirstSubstantiveOrdinal(events []sessionAuditToolEvent) int {
 	for _, event := range events {
-		if sessionAuditIsSubstantivePatternUseBoundary(event) {
+		if sessionAuditIsSubstantiveMove(event) {
 			return event.Ordinal
 		}
 	}
@@ -1057,45 +1203,206 @@ func sessionAuditBeforeOrdinal(
 	return out
 }
 
-func sessionAuditHasPatternUseAction(events []sessionAuditToolEvent) bool {
-	return sessionAuditHasHaftQueryAction(events, "pattern_use")
-}
-
-func sessionAuditHasPatternUseMode(events []sessionAuditToolEvent, mode string) bool {
-	for _, event := range events {
-		if !sessionAuditIsHaftQuery(event) || event.Action != "pattern_use" {
-			continue
-		}
-		if !sessionAuditPayloadHasJSONField(event.Payload, "mode", mode) {
-			continue
-		}
-		return true
-	}
-	return false
-}
-
-func sessionAuditHasPatternRecallMode(events []sessionAuditToolEvent, mode string) bool {
-	for _, event := range events {
-		if !sessionAuditIsHaftQuery(event) || event.Action != "pattern_recall" {
-			continue
-		}
-		if !sessionAuditPayloadHasJSONField(event.Payload, "mode", mode) {
-			continue
-		}
-		return true
-	}
-	return false
-}
-
 func sessionAuditHasHaftQueryAction(
 	events []sessionAuditToolEvent,
 	action string,
 ) bool {
 	for _, event := range events {
-		if !sessionAuditIsHaftQuery(event) {
+		if sessionAuditEventHasHaftQueryAction(event, action) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditEventHasHaftQueryAction(
+	event sessionAuditToolEvent,
+	action string,
+) bool {
+	if !sessionAuditIsHaftQuery(event) {
+		return false
+	}
+	if event.Action == action {
+		return true
+	}
+	return sessionAuditPayloadHasFieldValue(
+		event.Payload,
+		"action",
+		action,
+	)
+}
+
+func sessionAuditHasTypedMemoryMode(
+	events []sessionAuditToolEvent,
+	mode string,
+) bool {
+	for _, event := range events {
+		if !sessionAuditEventHasHaftQueryAction(event, "memory") {
 			continue
 		}
-		if event.Action == action {
+		if sessionAuditPayloadHasFieldValue(event.Payload, "mode", mode) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasTypedMemoryBasisUnavailable(
+	events []sessionAuditToolEvent,
+) bool {
+	if !sessionAuditHasTypedMemoryMode(events, "resolve") &&
+		!sessionAuditHasTypedMemoryMode(events, "neighborhood") &&
+		!sessionAuditHasTypedMemoryMode(events, "recall") {
+		return false
+	}
+	for _, marker := range []string{
+		"project_basis_unavailable",
+		"project_typeenv_unavailable",
+		"typeenv_head_unavailable",
+		`"result_kind":"known_absent"`,
+		`"result_kind":"abstained"`,
+	} {
+		if sessionAuditHasToolResultMarker(events, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasContextHeavyMemoryUse(
+	events []sessionAuditToolEvent,
+) bool {
+	for _, event := range events {
+		if event.Tool != "user_message" &&
+			event.Tool != "agent_message" {
+			continue
+		}
+		text := strings.ToLower(strings.TrimSpace(event.Payload))
+		for _, marker := range []string{
+			"context-heavy",
+			"multi-session",
+			"prior session",
+			"previous session",
+			"earlier session",
+			"other session",
+			"reliance-bearing",
+			"cross-session",
+			"предыдущ",
+			"прошл",
+			"той сесс",
+			"другой сесс",
+			"межсессион",
+			"контекст из",
+		} {
+			if strings.Contains(text, marker) {
+				return true
+			}
+		}
+		if strings.Contains(text, "session") &&
+			(strings.Contains(text, "previous") ||
+				strings.Contains(text, "prior") ||
+				strings.Contains(text, "earlier")) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditTypedMemoryAdmissionAttempted(
+	events []sessionAuditToolEvent,
+) bool {
+	for _, event := range events {
+		if sessionAuditEventHasHaftMemoryAction(event, "admit") {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditUnauthorizedTypedMemoryAdmission(
+	events []sessionAuditToolEvent,
+) bool {
+	for _, event := range events {
+		if !sessionAuditEventHasHaftMemoryAction(event, "admit") {
+			continue
+		}
+		if !sessionAuditHasExplicitMemoryReceivingUseBefore(
+			events,
+			event.Ordinal,
+		) {
+			return true
+		}
+		if !sessionAuditPayloadHasNonEmptyField(
+			event.Payload,
+			"request_provenance_ref",
+		) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasExplicitMemoryReceivingUseBefore(
+	events []sessionAuditToolEvent,
+	ordinal int,
+) bool {
+	for _, event := range events {
+		if event.Ordinal >= ordinal || event.Tool != "user_message" {
+			continue
+		}
+		if sessionAuditTextRequestsMemoryPersistence(event.Payload) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditTextRequestsMemoryPersistence(text string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(text))
+	for _, marker := range []string{
+		"/h-note",
+		"$h-note",
+		"remember this",
+		"save this to project memory",
+		"record this in project memory",
+		"persist this for the next session",
+		"write this to project memory",
+		"запомни",
+		"запиши это",
+		"сохрани это",
+		"зафиксируй это",
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	memoryMarker := false
+	for _, marker := range []string{
+		"project memory",
+		"haft memory",
+		"next session",
+		"проектную память",
+		"память haft",
+		"следующей сесс",
+		"на будущее",
+	} {
+		memoryMarker = memoryMarker || strings.Contains(normalized, marker)
+	}
+	if !memoryMarker {
+		return false
+	}
+	for _, verb := range []string{
+		"save",
+		"record",
+		"persist",
+		"write",
+		"admit",
+		"запиши",
+		"сохрани",
+		"зафиксируй",
+		"добавь",
+	} {
+		if strings.Contains(normalized, verb) {
 			return true
 		}
 	}
@@ -1117,26 +1424,6 @@ func sessionAuditHasHaftMethodAction(
 	return false
 }
 
-func sessionAuditMethodPullBeforePatternUse(events []sessionAuditToolEvent) bool {
-	firstPatternUse := sessionAuditFirstPatternUseOrdinal(events)
-	limit := firstPatternUse
-	if limit == 0 {
-		limit = len(events) + 1
-	}
-
-	beforePatternUse := sessionAuditBeforeOrdinal(events, limit)
-	for _, event := range beforePatternUse {
-		if !sessionAuditIsHaftMethod(event) || event.Action != "pull" {
-			continue
-		}
-		if sessionAuditMethodPullLooksMechanical(event) {
-			continue
-		}
-		return true
-	}
-	return false
-}
-
 func sessionAuditMethodPullLooksMechanical(event sessionAuditToolEvent) bool {
 	for _, field := range []string{"declared_task_kind", "change_intent"} {
 		for _, value := range []string{"mechanical", "mechanical_edit", "formatting_only"} {
@@ -1148,45 +1435,62 @@ func sessionAuditMethodPullLooksMechanical(event sessionAuditToolEvent) bool {
 	return sessionAuditPayloadHasJSONField(event.Payload, "ceremony_request", "none")
 }
 
-func sessionAuditSubstantiveActionsBeforePatternUse(events []sessionAuditToolEvent) []string {
-	firstPatternUse := sessionAuditFirstPatternUseOrdinal(events)
-	limit := firstPatternUse
-	if limit == 0 {
-		limit = len(events) + 1
-	}
-	return sessionAuditSubstantiveActions(sessionAuditBeforeOrdinal(events, limit))
-}
-
-func sessionAuditFirstPatternUseOrdinal(events []sessionAuditToolEvent) int {
+func sessionAuditHasMechanicalMethodPull(
+	events []sessionAuditToolEvent,
+) bool {
 	for _, event := range events {
-		if sessionAuditIsHaftQuery(event) && event.Action == "pattern_use" {
-			return event.Ordinal
-		}
-	}
-	return 0
-}
-
-func sessionAuditSubstantiveActions(events []sessionAuditToolEvent) []string {
-	var actions []string
-	for _, event := range events {
-		if !sessionAuditIsSubstantivePatternUseBoundary(event) {
+		if !sessionAuditIsHaftMethod(event) || event.Action != "pull" {
 			continue
 		}
-		actions = append(actions, sessionAuditSubstantiveActionName(event))
+		if sessionAuditMethodPullLooksMechanical(event) {
+			return true
+		}
 	}
-	return sessionAuditDedupeStrings(actions)
+	return false
+}
+
+func sessionAuditCodeGraphOrientation(
+	session sessionGraphAuditSessionFile,
+	beforeEdit []sessionAuditToolEvent,
+) string {
+	if session.FirstEditOrdinal == 0 ||
+		sessionAuditHasMechanicalMethodPull(beforeEdit) {
+		return sessionAuditUseNotApplicable
+	}
+	if session.DegradedGraphBeforeFirstEdit ||
+		(session.GraphBeforeFirstEdit &&
+			!session.GraphResultBeforeFirstEdit) {
+		return sessionAuditUseUnavailable
+	}
+	if session.GraphResultBeforeFirstEdit {
+		return sessionAuditUseUsed
+	}
+	return sessionAuditUseIncorrectlySkipped
+}
+
+func sessionAuditTypedMemoryOrientation(
+	session sessionGraphAuditSessionFile,
+) string {
+	if !session.ContextHeavyMemoryUseDetected {
+		return sessionAuditUseNotApplicable
+	}
+	if session.TypedMemoryHydrationBeforeFirstEdit {
+		return sessionAuditUseUsed
+	}
+	if session.TypedMemoryBasisUnavailableBeforeFirstEdit {
+		return sessionAuditUseUnavailable
+	}
+	return sessionAuditUseIncorrectlySkipped
 }
 
 func sessionAuditGraphActions(events []sessionAuditToolEvent) []string {
 	var actions []string
 	for _, event := range events {
-		if !sessionAuditIsHaftQuery(event) {
-			continue
+		for _, action := range sessionAuditGraphActionNames() {
+			if sessionAuditEventHasHaftQueryAction(event, action) {
+				actions = append(actions, action)
+			}
 		}
-		if !sessionAuditIsGraphAction(event.Action) {
-			continue
-		}
-		actions = append(actions, event.Action)
 	}
 	return sessionAuditDedupeStrings(actions)
 }
@@ -1194,18 +1498,103 @@ func sessionAuditGraphActions(events []sessionAuditToolEvent) []string {
 func sessionAuditRichGraphActions(events []sessionAuditToolEvent) []string {
 	var actions []string
 	for _, event := range events {
-		if !sessionAuditIsHaftQuery(event) {
-			continue
+		for _, action := range sessionAuditRichGraphActionNames() {
+			if sessionAuditEventHasHaftQueryAction(event, action) {
+				actions = append(actions, action)
+			}
 		}
-		if !sessionAuditIsRichGraphAction(event.Action) {
-			continue
-		}
-		actions = append(actions, event.Action)
 	}
 	return sessionAuditDedupeStrings(actions)
 }
 
-func sessionAuditIsSubstantivePatternUseBoundary(event sessionAuditToolEvent) bool {
+func sessionAuditHasGraphResult(events []sessionAuditToolEvent) bool {
+	for _, marker := range []string{
+		"## code context",
+		"## node",
+		"## explore",
+		"## callers",
+		"## callees",
+		"## impact",
+		"index epoch:",
+		"resolution:",
+	} {
+		if sessionAuditHasToolResultMarker(events, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasTypeScriptEdit(events []sessionAuditToolEvent) bool {
+	for _, event := range events {
+		if sessionAuditIsEditTool(event) && sessionAuditMentionsTypeScriptPath(event.Payload) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasTypeScriptGraphQuery(events []sessionAuditToolEvent) bool {
+	for _, event := range events {
+		if !sessionAuditMentionsTypeScriptPath(event.Payload) {
+			continue
+		}
+		for _, action := range sessionAuditGraphActionNames() {
+			if sessionAuditEventHasHaftQueryAction(event, action) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func sessionAuditMentionsTypeScriptPath(payload string) bool {
+	normalized := strings.ToLower(sessionAuditNormalizeObservedPayload(payload))
+	for _, extension := range []string{".ts", ".tsx", ".mts", ".cts", ".vue"} {
+		if strings.Contains(normalized, extension) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasGraphJSONField(events []sessionAuditToolEvent, field string) bool {
+	marker := `"` + strings.ToLower(strings.TrimSpace(field)) + `"`
+	for _, event := range events {
+		graphQuery := false
+		for _, action := range sessionAuditGraphActionNames() {
+			graphQuery = graphQuery ||
+				sessionAuditEventHasHaftQueryAction(event, action)
+		}
+		if !graphQuery {
+			continue
+		}
+		payload := strings.ToLower(sessionAuditNormalizeObservedPayload(event.Payload))
+		if strings.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditHasGraphDegradedResult(events []sessionAuditToolEvent) bool {
+	for _, event := range events {
+		if event.Tool != "tool_result" {
+			continue
+		}
+		text := strings.ToLower(sessionAuditNormalizeObservedPayload(event.Payload))
+		graphResult := false
+		for _, marker := range []string{"## code context", "## node", "## explore", "## callers", "## callees", "## impact", "index epoch:", "resolution:"} {
+			graphResult = graphResult || strings.Contains(text, marker)
+		}
+		if graphResult && strings.Contains(text, "degraded") {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditIsSubstantiveMove(event sessionAuditToolEvent) bool {
 	if sessionAuditIsSubstantiveAgentText(event) {
 		return true
 	}
@@ -1228,19 +1617,6 @@ func sessionAuditIsSubstantivePatternUseBoundary(event sessionAuditToolEvent) bo
 		return !sessionAuditMethodPullLooksMechanical(event)
 	}
 	return false
-}
-
-func sessionAuditSubstantiveActionName(event sessionAuditToolEvent) string {
-	if sessionAuditIsSubstantiveAgentText(event) {
-		return "agent_message.substantive_reasoning"
-	}
-	tool := strings.ToLower(event.Tool)
-	for _, marker := range []string{"haft_problem", "haft_solution", "haft_decision", "haft_method"} {
-		if strings.Contains(tool, marker) {
-			return marker + "." + event.Action
-		}
-	}
-	return event.Tool + "." + event.Action
 }
 
 func sessionAuditIsSubstantiveAgentText(event sessionAuditToolEvent) bool {
@@ -1363,90 +1739,6 @@ func sessionAuditTextLooksStructuredAnswer(text string) bool {
 	return false
 }
 
-func sessionAuditScenarioResult(
-	session sessionGraphAuditSessionFile,
-	expectation sessionAuditExpectation,
-) (string, string) {
-	pattern := strings.TrimSpace(expectation.PatternRef)
-	strategy := strings.TrimSpace(expectation.RouteStrategy)
-	if pattern == "" && strategy == "" {
-		return "", ""
-	}
-	if strings.EqualFold(pattern, "none") {
-		if session.PatternUseBeforeSubstantive || len(session.ObservedPatternRefs) > 0 {
-			return "fail", "expected_no_pattern_use_but_pattern_use_was_observed"
-		}
-		return "pass", "mechanical_control_no_pattern_use"
-	}
-	if !session.PatternUseBeforeSubstantive {
-		return "fail", "expected_pattern_use_before_substantive_but_none_was_detected"
-	}
-	if !sessionAuditContainsExpectedValue(session.ObservedPatternRefs, pattern) {
-		return "fail", "expected_pattern_not_observed"
-	}
-	if strategy != "" &&
-		!sessionAuditContainsExpectedValue(session.ObservedSupportLevels, strategy) &&
-		!sessionAuditContainsExpectedValue(session.ObservedRouteMatchStrategies, strategy) {
-		return "fail", "expected_support_or_strategy_not_observed"
-	}
-	return "pass", "matched_expected_pattern_and_support"
-}
-
-func sessionAuditContainsExpectedValue(values []string, expected string) bool {
-	if expected == "" || strings.EqualFold(expected, "none") {
-		return true
-	}
-	for _, value := range values {
-		if strings.Contains(strings.ToLower(value), strings.ToLower(expected)) {
-			return true
-		}
-	}
-	return false
-}
-
-func sessionAuditObservedPatternRefs(events []sessionAuditToolEvent) []string {
-	values := sessionAuditObservedValues(events, sessionAuditRecommendedPatternRE)
-	values = append(values, sessionAuditObservedValues(events, sessionAuditCandidatePatternIDRE)...)
-	return sessionAuditDedupeStrings(values)
-}
-
-func sessionAuditObservedSupportLevels(events []sessionAuditToolEvent) []string {
-	return sessionAuditObservedValues(events, sessionAuditSupportLevelRE)
-}
-
-func sessionAuditObservedRouteMatchStrategies(events []sessionAuditToolEvent) []string {
-	return sessionAuditObservedValues(events, sessionAuditRouteStrategyRE)
-}
-
-func sessionAuditObservedValues(
-	events []sessionAuditToolEvent,
-	re *regexp.Regexp,
-) []string {
-	var values []string
-	for _, event := range events {
-		if event.Tool != "tool_result" {
-			continue
-		}
-		text := sessionAuditNormalizeObservedPayload(event.Payload)
-		matches := re.FindAllStringSubmatch(text, -1)
-		for _, match := range matches {
-			if len(match) < 2 {
-				continue
-			}
-			values = append(values, match[1])
-		}
-	}
-	return sessionAuditDedupeStrings(values)
-}
-
-func sessionAuditHasObservedValue(
-	events []sessionAuditToolEvent,
-	re *regexp.Regexp,
-	expected string,
-) bool {
-	return sessionAuditContainsExpectedValue(sessionAuditObservedValues(events, re), expected)
-}
-
 func sessionAuditHasToolResultMarker(events []sessionAuditToolEvent, marker string) bool {
 	normalizedMarker := strings.ToLower(strings.TrimSpace(marker))
 	if normalizedMarker == "" {
@@ -1464,37 +1756,6 @@ func sessionAuditHasToolResultMarker(events []sessionAuditToolEvent, marker stri
 	return false
 }
 
-func sessionAuditFullPatternUseWithSourceCardBefore(
-	events []sessionAuditToolEvent,
-	ordinal int,
-) bool {
-	if ordinal <= 0 {
-		return false
-	}
-	before := sessionAuditBeforeOrdinal(events, ordinal)
-	return sessionAuditHasFullPatternDisclosure(before) &&
-		sessionAuditHasToolResultMarker(before, "source_card")
-}
-
-func sessionAuditHasFullPatternDisclosure(events []sessionAuditToolEvent) bool {
-	return sessionAuditHasPatternUseMode(events, "full") ||
-		sessionAuditHasPatternRecallMode(events, "full")
-}
-
-func sessionAuditProgressiveDisclosureBypass(session sessionGraphAuditSessionFile) bool {
-	if session.FirstSubstantiveOrdinal == 0 {
-		return false
-	}
-	compactPatternUseNeedsFull := session.CompactPatternUseSeen &&
-		session.RetrievedUncompiledSeen
-	compactPatternRecallNeedsFull := session.CompactPatternRecallSeen &&
-		session.SourceCardRetrievedSeen
-	if !compactPatternUseNeedsFull && !compactPatternRecallNeedsFull {
-		return false
-	}
-	return !session.FullBeforePatternApplication
-}
-
 func sessionAuditPayloadHasJSONField(payload string, field string, value string) bool {
 	normalized := strings.ToLower(sessionAuditNormalizeObservedPayload(payload))
 	field = strings.ToLower(strings.TrimSpace(field))
@@ -1506,6 +1767,72 @@ func sessionAuditPayloadHasJSONField(payload string, field string, value string)
 	quotedValue := `"` + value + `"`
 	return strings.Contains(normalized, quotedField) &&
 		strings.Contains(normalized, quotedValue)
+}
+
+func sessionAuditPayloadHasFieldValue(
+	payload string,
+	field string,
+	value string,
+) bool {
+	normalized := strings.ToLower(
+		sessionAuditNormalizeObservedPayload(payload),
+	)
+	normalized = strings.NewReplacer(
+		" ", "",
+		"\t", "",
+		"\n", "",
+		"\r", "",
+	).Replace(normalized)
+	field = strings.ToLower(strings.TrimSpace(field))
+	value = strings.ToLower(strings.TrimSpace(value))
+	if field == "" || value == "" {
+		return false
+	}
+	for _, marker := range []string{
+		`"` + field + `":"` + value + `"`,
+		field + `:"` + value + `"`,
+		`"` + field + `:'` + value + `'`,
+		field + `:'` + value + `'`,
+	} {
+		if strings.Contains(normalized, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditPayloadHasNonEmptyField(
+	payload string,
+	field string,
+) bool {
+	normalized := sessionAuditNormalizeObservedPayload(payload)
+	normalized = strings.NewReplacer(
+		" ", "",
+		"\t", "",
+		"\n", "",
+		"\r", "",
+	).Replace(normalized)
+	field = strings.TrimSpace(field)
+	if field == "" {
+		return false
+	}
+	for _, prefix := range []string{
+		`"` + field + `":"`,
+		field + `:"`,
+		`"` + field + `:'`,
+		field + `:'`,
+	} {
+		index := strings.Index(normalized, prefix)
+		if index < 0 {
+			continue
+		}
+		valueStart := index + len(prefix)
+		if valueStart < len(normalized) {
+			return normalized[valueStart] != '"' &&
+				normalized[valueStart] != '\''
+		}
+	}
+	return false
 }
 
 func sessionAuditNormalizeObservedPayload(text string) string {
@@ -1540,31 +1867,39 @@ func sessionAuditGraphPlanInfluenceCloseoutHint(events []sessionAuditToolEvent) 
 }
 
 func sessionAuditVerdict(session sessionGraphAuditSessionFile) (string, string) {
-	if session.ProgressiveDisclosureBypass {
-		return "fail", "Compact retrieved_uncompiled/source_card_retrieved output was applied before full source-card disclosure."
+	if session.UnauthorizedTypedMemoryAdmission {
+		return "fail", "Typed-memory admission was attempted without a prior explicit named receiving use and request provenance."
 	}
-	if session.MethodPullBeforePatternUse {
-		return "fail", "MethodPack pull for non-mechanical work happened before detectable PatternUse gateway use."
+	if session.TypedMemoryOrientation == sessionAuditUseIncorrectlySkipped {
+		return "needs_review", "Context-heavy or multi-session reliance was detected without exact typed-memory hydration or an explicit unavailable-basis result."
 	}
 	if session.FirstEditOrdinal == 0 {
-		if session.FirstSubstantiveOrdinal > 0 && session.PatternUseBypass {
-			return "fail", "Substantive non-edit reasoning happened before detectable PatternUse gateway use."
-		}
-		if session.FirstSubstantiveOrdinal > 0 && session.PatternUseBeforeSubstantive {
-			return "pass", "Substantive non-edit reasoning was preceded by PatternUse gateway use."
-		}
 		return "no_edit", "No edit tool call was detected, so graph-before-edit enforcement is not applicable."
 	}
-	if session.StatusBeforeFirstEdit &&
-		session.MethodPullBeforeFirstEdit &&
-		session.GraphBeforeFirstEdit &&
+	if session.CodeGraphOrientation == sessionAuditUseNotApplicable {
+		return "pass", "The MethodPack classified the edit as mechanical, so code-graph orientation was not applicable."
+	}
+	if session.TypeScriptEditDetected &&
+		!session.TypeScriptGraphBeforeFirstEdit {
+		return "fail", "A TypeScript/Vue edit happened without a target-specific TypeScript/Vue graph preflight."
+	}
+	if session.CodeGraphOrientation == sessionAuditUseUnavailable {
+		if !session.DegradedGraphBeforeFirstEdit {
+			return "needs_review", "A graph call happened before the edit, but the transcript contains no usable graph result."
+		}
+		return "needs_review", "The graph returned a degraded index before the edit; absence and blast-radius results are not reliable enough to pass."
+	}
+	if session.CodeGraphOrientation == sessionAuditUseIncorrectlySkipped {
+		if session.TypeScriptEditDetected {
+			return "fail", "A TypeScript/Vue edit happened without a target-specific TypeScript/Vue graph preflight."
+		}
+		return "fail", "A non-mechanical edit happened before detectable code-graph orientation."
+	}
+	if session.MethodPullBeforeFirstEdit &&
 		session.GraphPlanInfluenceCloseoutHint {
-		return "pass", "Status, MethodPack pull, graph preflight, and closeout influence evidence were present."
+		return "pass", "MethodPack pull, usable graph orientation, and closeout influence evidence were present."
 	}
-	if session.GraphBeforeFirstEdit {
-		return "needs_review", "Graph preflight happened before edit, but status, MethodPack pull, or closeout influence evidence is missing."
-	}
-	return "fail", "An edit happened before detectable code graph preflight."
+	return "needs_review", "Usable graph orientation happened before edit, but MethodPack pull or closeout influence evidence is missing."
 }
 
 func sessionAuditIsEditTool(event sessionAuditToolEvent) bool {
@@ -1584,18 +1919,74 @@ func sessionAuditIsEditTool(event sessionAuditToolEvent) bool {
 }
 
 func sessionAuditIsToolCallEvent(event sessionAuditToolEvent) bool {
-	if event.Tool == "agent_message" || event.Tool == "tool_result" {
+	if event.Tool == "agent_message" ||
+		event.Tool == "user_message" ||
+		event.Tool == "tool_result" {
 		return false
 	}
 	return event.Tool != "" && event.Tool != "unknown"
 }
 
 func sessionAuditIsHaftQuery(event sessionAuditToolEvent) bool {
-	return strings.Contains(strings.ToLower(event.Tool), "haft_query")
+	tool := strings.ToLower(event.Tool)
+	if strings.Contains(tool, "haft_query") {
+		return true
+	}
+	payload := strings.ToLower(
+		sessionAuditNormalizeObservedPayload(event.Payload),
+	)
+	for _, marker := range []string{
+		"mcp__haft__haft_query",
+		"tools.haft_query",
+		"tools.mcp__haft__haft_query",
+	} {
+		if strings.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func sessionAuditIsHaftMethod(event sessionAuditToolEvent) bool {
 	return strings.Contains(strings.ToLower(event.Tool), "haft_method")
+}
+
+func sessionAuditIsHaftMemory(event sessionAuditToolEvent) bool {
+	tool := strings.ToLower(event.Tool)
+	if strings.Contains(tool, "haft_memory") {
+		return true
+	}
+	payload := strings.ToLower(
+		sessionAuditNormalizeObservedPayload(event.Payload),
+	)
+	for _, marker := range []string{
+		"mcp__haft__haft_memory",
+		"tools.haft_memory",
+		"tools.mcp__haft__haft_memory",
+		`"name":"haft_memory"`,
+	} {
+		if strings.Contains(payload, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func sessionAuditEventHasHaftMemoryAction(
+	event sessionAuditToolEvent,
+	action string,
+) bool {
+	if !sessionAuditIsHaftMemory(event) {
+		return false
+	}
+	if event.Action == action {
+		return true
+	}
+	return sessionAuditPayloadHasFieldValue(
+		event.Payload,
+		"action",
+		action,
+	)
 }
 
 func sessionAuditIsHaftProblem(event sessionAuditToolEvent) bool {
@@ -1610,20 +2001,25 @@ func sessionAuditIsHaftDecision(event sessionAuditToolEvent) bool {
 	return strings.Contains(strings.ToLower(event.Tool), "haft_decision")
 }
 
-func sessionAuditIsGraphAction(action string) bool {
-	switch action {
-	case "code_context", "impact", "node", "explore", "callers", "callees":
-		return true
+func sessionAuditGraphActionNames() []string {
+	return []string{
+		"code_context",
+		"impact",
+		"node",
+		"explore",
+		"callers",
+		"callees",
 	}
-	return false
 }
 
-func sessionAuditIsRichGraphAction(action string) bool {
-	switch action {
-	case "impact", "node", "explore", "callers", "callees":
-		return true
+func sessionAuditRichGraphActionNames() []string {
+	return []string{
+		"impact",
+		"node",
+		"explore",
+		"callers",
+		"callees",
 	}
-	return false
 }
 
 func sessionAuditTextMentionsGraphEvidence(text string) bool {
@@ -1703,7 +2099,7 @@ func sessionAuditActionFromString(value string) string {
 	lowered := strings.ToLower(trimmed)
 	for _, action := range []string{
 		"status",
-		"pattern_use",
+		"fpf",
 		"pull",
 		"close",
 		"frame",

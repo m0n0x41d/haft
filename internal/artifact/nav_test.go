@@ -2,436 +2,336 @@ package artifact
 
 import (
 	"context"
-	"strings"
+	"encoding/json"
+	"reflect"
 	"testing"
+	"time"
 )
 
-// --- State tests: one per DerivedStatus ---
-
-func TestComputeNavState_Underframed(t *testing.T) {
+func TestComputeProjectStateView_EmptyProjectHasNoImpliedPhase(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	state := ComputeNavState(ctx, store, "test-ctx")
+	state := ComputeProjectStateView(ctx, store, "test-ctx")
 
-	if state.DerivedStatus != DerivedUnderframed {
-		t.Errorf("status = %q, want UNDERFRAMED", state.DerivedStatus)
+	if !state.Problems.Known || !state.Options.Known || !state.Decisions.Known {
+		t.Fatalf("artifact facets should be known: %#v", state)
 	}
-	if !strings.Contains(state.NextAction, "/h-frame") {
-		t.Errorf("NextAction = %q, want /h-frame", state.NextAction)
+	if len(state.Problems.Open) != 0 {
+		t.Fatalf("open problems = %#v, want none", state.Problems.Open)
+	}
+	if len(state.Options.Sets) != 0 {
+		t.Fatalf("option sets = %#v, want none", state.Options.Sets)
+	}
+	if len(state.Decisions.Active) != 0 {
+		t.Fatalf("active decisions = %#v, want none", state.Decisions.Active)
 	}
 }
 
-func TestComputeNavState_FramedTactical(t *testing.T) {
+func TestComputeProjectStateView_FacetsCoexist(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
-	haftDir := t.TempDir()
+	contextName := "coexisting-facets"
 
-	_, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	state := ComputeNavState(ctx, store, "test-ctx")
-
-	if state.DerivedStatus != DerivedFramed {
-		t.Errorf("status = %q, want FRAMED", state.DerivedStatus)
-	}
-	// After framing, the next action is always /h-explore (characterization
-	// is now folded into /h-compare via kernel action, not a separate skill).
-	if !strings.Contains(state.NextAction, "/h-explore") {
-		t.Errorf("NextAction should contain /h-explore, got %q", state.NextAction)
-	}
-}
-
-func TestComputeNavState_FramedStandard_NoChar(t *testing.T) {
-	store := setupTestDB(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	_, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	state := ComputeNavState(ctx, store, "test-ctx")
-
-	if state.DerivedStatus != DerivedFramed {
-		t.Errorf("status = %q, want FRAMED", state.DerivedStatus)
-	}
-	if state.Mode != ModeStandard {
-		t.Errorf("mode = %q, want standard", state.Mode)
-	}
-	// Standard mode without characterization still routes to /h-explore;
-	// characterization gets declared inside /h-compare on demand.
-	if !strings.Contains(state.NextAction, "/h-explore") {
-		t.Errorf("NextAction should contain /h-explore, got %q", state.NextAction)
-	}
-}
-
-func TestComputeNavState_FramedStandard_WithChar(t *testing.T) {
-	store := setupTestDB(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// Add characterization
-	_, _, err = CharacterizeProblem(ctx, store, haftDir, CharacterizeInput{
-		ProblemRef: prob.Meta.ID,
-		Dimensions: []ComparisonDimension{
-			{Name: "latency", ScaleType: "ratio", Unit: "ms", Polarity: "lower_better"},
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:      "prob-coexisting",
+			Kind:    KindProblemCard,
+			Status:  StatusActive,
+			Context: contextName,
+			Mode:    ModeStandard,
+			Title:   "Keep the question open",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:      "sol-coexisting",
+			Kind:    KindSolutionPortfolio,
+			Status:  StatusActive,
+			Context: contextName,
+			Mode:    ModeStandard,
+			Title:   "Current options",
+		},
+		Body: "## Comparison\n\nThe options were compared.",
+	})
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:      "sol-open-comparison",
+			Kind:    KindSolutionPortfolio,
+			Status:  StatusActive,
+			Context: contextName,
+			Mode:    ModeTactical,
+			Title:   "Options not yet compared",
+		},
+	})
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:      "dec-coexisting",
+			Kind:    KindDecisionRecord,
+			Status:  StatusActive,
+			Context: contextName,
+			Mode:    ModeTactical,
+			Title:   "A current decision",
+		},
+	})
+	createProjectStateCommission(t, ctx, store, contextName, map[string]any{
+		"id":           "wc-coexisting",
+		"decision_ref": "dec-coexisting",
+		"state":        "queued",
+		"valid_until":  "2026-07-20T00:00:00Z",
+	})
 
-	state := ComputeNavState(ctx, store, "test-ctx")
+	state := ComputeProjectStateView(ctx, store, contextName)
 
-	if state.DerivedStatus != DerivedFramed {
-		t.Errorf("status = %q, want FRAMED", state.DerivedStatus)
+	if len(state.Problems.Open) != 1 {
+		t.Fatalf("open problems = %#v, want one", state.Problems.Open)
 	}
-	if !strings.Contains(state.NextAction, "/h-explore") {
-		t.Errorf("NextAction should contain /h-explore, got %q", state.NextAction)
+	if len(state.Options.Sets) != 2 {
+		t.Fatalf("option sets = %#v, want two", state.Options.Sets)
+	}
+	if !state.Options.Sets[0].ComparisonRecorded {
+		t.Fatalf("option set should retain its local comparison fact: %#v", state.Options.Sets[0])
+	}
+	if state.Options.Sets[1].ComparisonRecorded {
+		t.Fatalf("uncompared option set should remain visible: %#v", state.Options.Sets[1])
+	}
+	if len(state.Decisions.Active) != 1 {
+		t.Fatalf("active decisions = %#v, want one", state.Decisions.Active)
+	}
+	if len(state.Work.Active) != 1 || state.Work.Active[0].ID != "wc-coexisting" {
+		t.Fatalf("active work = %#v, want wc-coexisting", state.Work.Active)
 	}
 }
 
-func TestComputeNavState_ExploringTactical(t *testing.T) {
+func TestComputeProjectStateView_EvidencePressureDoesNotReplaceOtherFacets(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
-	haftDir := t.TempDir()
+	contextName := "stale-and-current"
 
-	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob.Meta.ID,
-		Variants: []Variant{
-			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
-			testVariant("Option B", "performance", "Optimize for throughput headroom"),
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:      "prob-stale-and-current",
+			Kind:    KindProblemCard,
+			Status:  StatusActive,
+			Context: contextName,
+			Title:   "An open question remains visible",
 		},
-		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:         "dec-stale-other-context",
+			Kind:       KindDecisionRecord,
+			Status:     StatusRefreshDue,
+			Context:    "other-context",
+			Title:      "Unrelated stale decision",
+			ValidUntil: "2026-07-01",
+		},
+	})
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:         "dec-stale-and-current",
+			Kind:       KindDecisionRecord,
+			Status:     StatusRefreshDue,
+			Context:    contextName,
+			Title:      "Decision needing new evidence",
+			ValidUntil: "2026-07-01",
+		},
+	})
 
-	state := ComputeNavState(ctx, store, "test-ctx")
+	state := ComputeProjectStateView(ctx, store, contextName)
 
-	if state.DerivedStatus != DerivedExploring {
-		t.Errorf("status = %q, want EXPLORING", state.DerivedStatus)
+	if len(state.Problems.Open) != 1 || len(state.Decisions.Active) != 1 {
+		t.Fatalf("current facets were collapsed by evidence pressure: %#v", state)
 	}
-	// After exploring, should offer compare or decide
-	if !strings.Contains(state.NextAction, "/h-compare") && !strings.Contains(state.NextAction, "/h-decide") {
-		t.Errorf("NextAction should contain /h-compare or /h-decide, got %q", state.NextAction)
+	if state.StaleCount != 1 || len(state.StaleItems) != 1 {
+		t.Fatalf("evidence pressure = %d %#v, want one item", state.StaleCount, state.StaleItems)
 	}
 }
 
-func TestComputeNavState_ExploringStandard(t *testing.T) {
+func TestComputeProjectStateView_WorkFacetKeepsOnlyNonTerminalCommissions(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
-	haftDir := t.TempDir()
+	contextName := "commission-context"
 
-	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob.Meta.ID,
-		Variants: []Variant{
-			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
-			testVariant("Option B", "performance", "Optimize for throughput headroom"),
+	createProjectStateArtifact(t, ctx, store, &Artifact{
+		Meta: Meta{
+			ID:      "dec-commission-context",
+			Kind:    KindDecisionRecord,
+			Status:  StatusActive,
+			Context: contextName,
+			Title:   "Decision commissioning work",
 		},
-		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
 	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	createProjectStateCommission(t, ctx, store, contextName, map[string]any{
+		"id":           "wc-current",
+		"decision_ref": "dec-commission-context",
+		"state":        "queued",
+		"valid_until":  "2026-07-20T00:00:00Z",
+	})
+	createProjectStateCommission(t, ctx, store, contextName, map[string]any{
+		"id":           "wc-completed",
+		"decision_ref": "dec-commission-context",
+		"state":        "completed",
+		"valid_until":  "2026-07-20T00:00:00Z",
+	})
 
-	state := ComputeNavState(ctx, store, "test-ctx")
+	state := ComputeProjectStateView(ctx, store, contextName)
 
-	if state.DerivedStatus != DerivedExploring {
-		t.Errorf("status = %q, want EXPLORING", state.DerivedStatus)
+	if !state.Work.Known {
+		t.Fatal("work facet should be known")
 	}
-	if !strings.Contains(state.NextAction, "/h-compare") {
-		t.Errorf("NextAction should contain /h-compare for standard EXPLORING, got %q", state.NextAction)
+	if len(state.Work.Active) != 1 || state.Work.Active[0].ID != "wc-current" {
+		t.Fatalf("active work = %#v, want only wc-current", state.Work.Active)
 	}
-	if strings.Contains(state.NextAction, "/h-decide") {
-		t.Errorf("NextAction should NOT contain /h-decide for standard EXPLORING, got %q", state.NextAction)
+	if len(state.Work.Active[0].SuggestedActions) == 0 {
+		t.Fatalf("local WorkCommission actions should be retained: %#v", state.Work.Active[0])
 	}
 }
 
-func TestComputeNavState_Compared(t *testing.T) {
+func TestDeriveProjectStateView_IsInvariantToArtifactOrder(t *testing.T) {
+	problem := &Artifact{Meta: Meta{
+		ID: "prob-order", Kind: KindProblemCard, Status: StatusActive, Title: "Problem",
+	}}
+	portfolio := &Artifact{Meta: Meta{
+		ID: "sol-order", Kind: KindSolutionPortfolio, Status: StatusActive, Title: "Options",
+	}}
+	decision := &Artifact{Meta: Meta{
+		ID: "dec-order", Kind: KindDecisionRecord, Status: StatusActive, Title: "Decision",
+	}}
+	now := time.Date(2026, time.July, 13, 12, 0, 0, 0, time.UTC)
+
+	left := deriveProjectStateView(projectStateInput{
+		Artifacts:      []*Artifact{problem, portfolio, decision},
+		ArtifactsKnown: true,
+		EvidenceKnown:  true,
+		WorkKnown:      true,
+		Now:            now,
+	})
+	right := deriveProjectStateView(projectStateInput{
+		Artifacts:      []*Artifact{decision, problem, portfolio},
+		ArtifactsKnown: true,
+		EvidenceKnown:  true,
+		WorkKnown:      true,
+		Now:            now,
+	})
+
+	if !reflect.DeepEqual(left, right) {
+		t.Fatalf("artifact order changed the project state view:\nleft=%#v\nright=%#v", left, right)
+	}
+}
+
+func TestDeriveProjectStateView_UnknownIsDistinctFromKnownEmpty(t *testing.T) {
+	now := time.Date(2026, time.July, 13, 12, 0, 0, 0, time.UTC)
+	unknown := deriveProjectStateView(projectStateInput{Now: now})
+	knownEmpty := deriveProjectStateView(projectStateInput{
+		ArtifactsKnown: true,
+		EvidenceKnown:  true,
+		WorkKnown:      true,
+		Now:            now,
+	})
+
+	if unknown.Problems.Known || unknown.Options.Known || unknown.Decisions.Known {
+		t.Fatalf("unavailable artifact input was reported as known: %#v", unknown)
+	}
+	if unknown.Work.Known || unknown.EvidenceKnown {
+		t.Fatalf("unavailable work/evidence input was reported as known: %#v", unknown)
+	}
+	if !knownEmpty.Problems.Known || !knownEmpty.Options.Known || !knownEmpty.Decisions.Known {
+		t.Fatalf("known-empty artifact input lost availability: %#v", knownEmpty)
+	}
+	if !knownEmpty.Work.Known || !knownEmpty.EvidenceKnown {
+		t.Fatalf("known-empty work/evidence input lost availability: %#v", knownEmpty)
+	}
+}
+
+func TestProjectStateView_HasNoGlobalPhaseOrNextActionFields(t *testing.T) {
+	viewType := reflect.TypeOf(ProjectStateView{})
+	for _, fieldName := range []string{"DerivedStatus", "NextAction", "Mode"} {
+		if _, found := viewType.FieldByName(fieldName); found {
+			t.Fatalf("ProjectStateView must not expose global field %q", fieldName)
+		}
+	}
+}
+
+func TestComputeProjectStateView_ReadsLegacyArtifactsWithoutMigration(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	sol, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob.Meta.ID,
-		Variants: []Variant{
-			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
-			testVariant("Option B", "performance", "Optimize for throughput headroom"),
+	legacy := &Artifact{
+		Meta: Meta{
+			ID:      "prob-legacy-carrier",
+			Kind:    KindProblemCard,
+			Status:  StatusActive,
+			Context: "legacy-context",
+			Title:   "Legacy problem carrier",
 		},
-		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
-	})
+		Body: "Legacy markdown body without ProjectStateView fields.",
+	}
+	createProjectStateArtifact(t, ctx, store, legacy)
+
+	state := ComputeProjectStateView(ctx, store, "legacy-context")
+	loaded, err := store.Get(ctx, legacy.Meta.ID)
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("load legacy artifact: %v", err)
 	}
 
-	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
-		PortfolioRef: sol.Meta.ID,
-		Results: ComparisonResult{
-			Dimensions:      []string{"speed", "cost"},
-			Scores:          map[string]map[string]string{"Option A": {"speed": "fast", "cost": "high"}, "Option B": {"speed": "slow", "cost": "low"}},
-			NonDominatedSet: []string{"Option A", "Option B"},
-			ParetoTradeoffs: []ParetoTradeoffNote{
-				{Variant: "Option A", Summary: "Higher speed, but higher cost."},
-				{Variant: "Option B", Summary: "Lower cost, but lower speed."},
-			},
-			PolicyApplied: "optimize speed",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+	if len(state.Problems.Open) != 1 || state.Problems.Open[0].ID != legacy.Meta.ID {
+		t.Fatalf("legacy artifact missing from state view: %#v", state.Problems.Open)
 	}
-
-	state := ComputeNavState(ctx, store, "test-ctx")
-
-	if state.DerivedStatus != DerivedCompared {
-		t.Errorf("status = %q, want COMPARED", state.DerivedStatus)
-	}
-	if !strings.Contains(state.NextAction, "/h-decide") {
-		t.Errorf("NextAction should contain /h-decide, got %q", state.NextAction)
-	}
-	if !strings.Contains(state.NextAction, "human's chosen variant") {
-		t.Errorf("NextAction should make the human decision boundary explicit, got %q", state.NextAction)
+	if loaded.Body != legacy.Body || loaded.Meta.Status != StatusActive {
+		t.Fatalf("state projection mutated legacy carrier: %#v", loaded)
 	}
 }
 
-func TestComputeNavState_Decided(t *testing.T) {
+func TestComputeNavState_CompatibilityEntrypointReturnsProjectStateView(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
-	haftDir := t.TempDir()
 
-	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Test problem", Signal: "something broke", Context: "test-ctx", Mode: "tactical",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	legacyEntrypoint := ComputeNavState(ctx, store, "compatibility")
+	canonicalEntrypoint := ComputeProjectStateView(ctx, store, "compatibility")
 
-	sol, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob.Meta.ID,
-		Variants: []Variant{
-			testVariant("Option A", "complexity", "Optimize for implementation simplicity"),
-			testVariant("Option B", "performance", "Optimize for throughput headroom"),
-		},
-		NoSteppingStoneRationale: "Both options are direct implementation candidates.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
-		PortfolioRef:  sol.Meta.ID,
-		SelectedTitle: "Option A",
-		WhySelected:   "faster",
-		Context:       "test-ctx",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	state := ComputeNavState(ctx, store, "test-ctx")
-
-	if state.DerivedStatus != DerivedDecided {
-		t.Errorf("status = %q, want DECIDED", state.DerivedStatus)
-	}
-	if state.NextAction != "" {
-		t.Errorf("DECIDED should have no NextAction, got %q", state.NextAction)
+	if !reflect.DeepEqual(legacyEntrypoint, canonicalEntrypoint) {
+		t.Fatalf("compatibility entrypoint diverged:\nlegacy=%#v\ncanonical=%#v", legacyEntrypoint, canonicalEntrypoint)
 	}
 }
 
-// FormatNavStrip tests moved to internal/present/format_test.go
-
-// --- Contract tests: invariants that must hold across ALL states ---
-
-// buildNavStates creates NavStates for every reachable DerivedStatus.
-// Returns a map[DerivedStatus]NavState for contract assertions.
-func buildNavStates(t *testing.T) map[DerivedStatus]NavState {
+func createProjectStateArtifact(
+	t *testing.T,
+	ctx context.Context,
+	store ArtifactStore,
+	item *Artifact,
+) {
 	t.Helper()
-	store := setupTestDB(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	states := make(map[DerivedStatus]NavState)
-
-	// UNDERFRAMED
-	states[DerivedUnderframed] = ComputeNavState(ctx, store, "c-under")
-
-	// FRAMED tactical
-	_, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Tactical", Signal: "sig", Context: "c-tac", Mode: "tactical",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	states[DerivedFramed] = ComputeNavState(ctx, store, "c-tac")
-
-	// FRAMED standard (separate context)
-	_, _, err = FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Standard", Signal: "sig", Context: "c-std", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	// EXPLORING
-	prob, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Exploring", Signal: "sig", Context: "c-expl", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob.Meta.ID,
-		Variants: []Variant{
-			testVariant("A", "w", "Optimize for minimal moving parts"),
-			testVariant("B", "w", "Optimize for future scaling margin"),
-		},
-		NoSteppingStoneRationale: "Both options are evaluated as production-ready endpoints.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	states[DerivedExploring] = ComputeNavState(ctx, store, "c-expl")
-
-	// COMPARED
-	prob2, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Compared", Signal: "sig", Context: "c-comp", Mode: "standard",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sol, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob2.Meta.ID,
-		Variants: []Variant{
-			testVariant("X", "w", "Keep the integration surface small"),
-			testVariant("Y", "w", "Bias toward operational elasticity"),
-		},
-		NoSteppingStoneRationale: "The compared options are both end-state candidates.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = CompareSolutions(ctx, store, haftDir, CompareInput{
-		PortfolioRef: sol.Meta.ID,
-		Results: ComparisonResult{
-			Dimensions:      []string{"speed"},
-			NonDominatedSet: []string{"X"},
-			Scores:          map[string]map[string]string{"X": {"speed": "fast"}, "Y": {"speed": "slow"}},
-			DominatedVariants: []DominatedVariantExplanation{
-				{
-					Variant:     "Y",
-					DominatedBy: []string{"X"},
-					Summary:     "Worse on the only compared dimension.",
-				},
-			},
-			ParetoTradeoffs: []ParetoTradeoffNote{
-				{Variant: "X", Summary: "Best value on the compared dimension."},
-			},
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	states[DerivedCompared] = ComputeNavState(ctx, store, "c-comp")
-
-	// DECIDED
-	prob3, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
-		Title: "Decided", Signal: "sig", Context: "c-dec", Mode: "tactical",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	sol2, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
-		ProblemRef: prob3.Meta.ID,
-		Variants: []Variant{
-			testVariant("P", "w", "Prioritize delivery speed"),
-			testVariant("Q", "w", "Prioritize runtime efficiency"),
-		},
-		NoSteppingStoneRationale: "Both tactical choices are direct endpoints.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, _, err = Decide(ctx, store, haftDir, completeDecision(DecideInput{
-		PortfolioRef: sol2.Meta.ID, SelectedTitle: "P", WhySelected: "reason", Context: "c-dec",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	states[DerivedDecided] = ComputeNavState(ctx, store, "c-dec")
-
-	return states
-}
-
-// Contract: NextAction never contains tool call syntax (quint_*).
-// All actions must use slash commands (/h-*).
-func TestContract_NoToolCallSyntax(t *testing.T) {
-	for status, state := range buildNavStates(t) {
-		if state.NextAction == "" {
-			continue
-		}
-		if strings.Contains(state.NextAction, "quint_") {
-			t.Errorf("[%s] NextAction uses tool call syntax: %q", status, state.NextAction)
-		}
-		if !strings.Contains(state.NextAction, "/h-") {
-			t.Errorf("[%s] NextAction should use slash commands (/h-*): %q", status, state.NextAction)
-		}
+	if err := store.Create(ctx, item); err != nil {
+		t.Fatalf("create %s: %v", item.Meta.ID, err)
 	}
 }
 
-// Contract: NextAction is set iff state warrants available actions.
-func TestContract_NextActionConsistency(t *testing.T) {
-	for status, state := range buildNavStates(t) {
-		hasAction := state.NextAction != ""
-		if hasAction && !strings.Contains(state.NextAction, "/h-") {
-			t.Errorf("[%s] NextAction should use slash commands (/h-*): %q", status, state.NextAction)
-		}
-	}
-}
+func createProjectStateCommission(
+	t *testing.T,
+	ctx context.Context,
+	store ArtifactStore,
+	contextName string,
+	payload map[string]any,
+) {
+	t.Helper()
 
-// Contract: DECIDED is terminal — no available actions.
-func TestContract_DecidedIsTerminal(t *testing.T) {
-	states := buildNavStates(t)
-	decided := states[DerivedDecided]
-
-	if decided.NextAction != "" {
-		t.Errorf("DECIDED should be terminal, got NextAction = %q", decided.NextAction)
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		t.Fatalf("encode WorkCommission: %v", err)
 	}
+
+	id := payload["id"].(string)
+	validUntil := payload["valid_until"].(string)
+	item := &Artifact{
+		Meta: Meta{
+			ID:         id,
+			Kind:       KindWorkCommission,
+			Status:     StatusActive,
+			Context:    contextName,
+			Title:      "WorkCommission " + id,
+			ValidUntil: validUntil,
+		},
+		StructuredData: string(encoded),
+	}
+	createProjectStateArtifact(t, ctx, store, item)
 }

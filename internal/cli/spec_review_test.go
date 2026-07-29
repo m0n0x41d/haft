@@ -12,8 +12,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
@@ -134,7 +137,7 @@ func TestBuildSpecReviewPacketReadsCurrentSQLEditionsBeforeCarriers(t *testing.T
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -155,7 +158,7 @@ func TestBuildSpecReviewPacketReadsCurrentSQLEditionsBeforeCarriers(t *testing.T
 }
 
 func TestHandleQuintQuerySpecReviewReturnsPacket(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newBoundSpecQueryTestProject(t)
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
 		"action": "spec_review",
 	})
@@ -173,6 +176,52 @@ func TestHandleQuintQuerySpecReviewReturnsPacket(t *testing.T) {
 	if packet.Summary.CheckedSections == 0 {
 		t.Fatalf("checked_sections = 0, want active sections")
 	}
+}
+
+func newBoundSpecQueryTestProject(t *testing.T) checkTestProject {
+	t.Helper()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve physical test home: %v", err)
+	}
+	t.Setenv("HOME", home)
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve physical project root: %v", err)
+	}
+	haftDir := filepath.Join(root, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatalf("create .haft directory: %v", err)
+	}
+	config, err := project.Create(haftDir, root)
+	if err != nil {
+		t.Fatalf("create project config: %v", err)
+	}
+	databasePath, err := config.DBPath()
+	if err != nil {
+		t.Fatalf("resolve project database path: %v", err)
+	}
+	database, err := db.NewStore(databasePath)
+	if err != nil {
+		t.Fatalf("create current project database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	if err := projectledger.BindInitialized(
+		context.Background(),
+		root,
+		time.Date(2026, time.July, 22, 0, 0, 0, 0, time.UTC),
+	); err != nil {
+		t.Fatalf("bind initialized spec query fixture: %v", err)
+	}
+	rawDatabase := database.GetRawDB()
+	fixture := checkTestProject{
+		root:    root,
+		haftDir: haftDir,
+		store:   artifact.NewStore(rawDatabase),
+		db:      rawDatabase,
+	}
+	writeCheckTestSpecCarriers(t, fixture)
+	return fixture
 }
 
 func newSpecReviewCLIProject(t *testing.T) string {

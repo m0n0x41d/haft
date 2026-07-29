@@ -928,13 +928,11 @@ func baselineAuditCodebaseSymbolDriftSurface(path string) bool {
 
 func baselineAuditRetrievalBenchmarkSurface(path string) bool {
 	switch filepath.ToSlash(path) {
-	case "internal/fpf/tree_drilldown_test.go",
-		"internal/cli/serve_projection_test.go",
+	case "internal/cli/serve_projection_test.go",
 		"internal/artifact/parity_schema.go",
 		"internal/artifact/solution_test.go",
 		"internal/artifact/umbrella_triggers.json",
-		"internal/artifact/value_space.go",
-		"internal/fpf/patterns/compare.md":
+		"internal/artifact/value_space.go":
 		return true
 	default:
 		return false
@@ -978,7 +976,6 @@ func baselineAuditDecisionBaselineAPISurface(path string, value string) bool {
 		"internal/cli/skill/h-decide/SKILL.md",
 		"internal/tools/haft.go",
 		"internal/tools/haft_test.go",
-		"internal/fpf/fpf-routes.json",
 		"spec/integration/MCP_PROTOCOL.md":
 		return true
 	case "README.md":
@@ -1061,8 +1058,7 @@ func baselineAuditWorkflowSkillSurface(path string) bool {
 	switch filepath.ToSlash(path) {
 	case "internal/cli/skill/h-onboard/SKILL.md",
 		"internal/cli/skill/h-reason/SKILL.md",
-		"internal/cli/skill/h-spec-cover/SKILL.md",
-		"internal/cli/testdata/routing-prompts.yaml":
+		"internal/cli/skill/h-status/SKILL.md":
 		return true
 	default:
 		return false

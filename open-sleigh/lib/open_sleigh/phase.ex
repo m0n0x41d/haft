@@ -28,9 +28,8 @@ defmodule OpenSleigh.Phase do
           | :execute
           | :measure
           | :terminal
-          # MVP-2 alphabet (per `specs/target-system/PHASE_ONTOLOGY.md
-          # §MVP-2 phase graph` + `.context/development_for_the_developed.md`
-          # Slide 12). Declared but not yet routed by Workflow.mvp1/0.
+          # MVP-2 alphabet (per `specs/target-system/PHASE_ONTOLOGY.md`
+          # §MVP-2 phase graph). Declared but not yet routed by Workflow.mvp1/0.
           | :characterize_situation
           | :measure_situation
           | :problematize

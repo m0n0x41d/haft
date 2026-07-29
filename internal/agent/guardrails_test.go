@@ -5,114 +5,61 @@ import (
 	"testing"
 )
 
-func TestCheckREff_WarnsOnUnsubstantiatedClosure(t *testing.T) {
-	err := CheckREff(0.82, 0)
-	if err == nil {
-		t.Fatal("expected F0 closure warning")
+func TestCompatibilityGuardrailsDoNotImposePredecessors(t *testing.T) {
+	checks := map[string]func(*Cycle) error{
+		"explore":  CanExplore,
+		"compare":  CanCompare,
+		"baseline": CanBaseline,
+		"measure":  CanMeasure,
 	}
-	if !strings.Contains(err.Error(), "F_eff=F0") {
-		t.Fatalf("warning = %q, want F_eff=F0 guidance", err.Error())
-	}
-}
 
-func TestCanDecide_RequiresCompareForActivePortfolio(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, PortfolioRef: "port-1"}
-
-	err := CanDecide(cycle, true)
-	if err == nil {
-		t.Fatal("expected compare guardrail")
-	}
-	if !strings.Contains(err.Error(), "completed comparison for the active portfolio") {
-		t.Fatalf("error = %q", err.Error())
-	}
-}
-
-func TestCanDecide_RejectsStaleComparedPortfolio(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, PortfolioRef: "port-2", ComparedPortfolioRef: "port-1"}
-
-	err := CanDecide(cycle, true)
-	if err == nil {
-		t.Fatal("expected stale compare guardrail")
-	}
-	if !strings.Contains(err.Error(), "completed comparison for the active portfolio") {
-		t.Fatalf("error = %q", err.Error())
+	for name, check := range checks {
+		t.Run(name+" without cycle", func(t *testing.T) {
+			if err := check(nil); err != nil {
+				t.Fatalf("compatibility guardrail imposed a predecessor: %v", err)
+			}
+		})
+		t.Run(name+" with legacy terminal state", func(t *testing.T) {
+			cycle := &Cycle{Status: CycleComplete, DecisionRef: "dec-legacy"}
+			if err := check(cycle); err != nil {
+				t.Fatalf("compatibility guardrail imposed a phase constraint: %v", err)
+			}
+		})
 	}
 }
 
-func TestCanCompare_AllowsActivePortfolioBeforeUserSelection(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, PortfolioRef: "port-1"}
-
-	if err := CanCompare(cycle); err != nil {
-		t.Fatalf("CanCompare: %v", err)
-	}
-}
-
-func TestCanExplore_RejectsDecidedCycle(t *testing.T) {
+func TestCanDecide_AllowsNoComparedPortfolioContext(t *testing.T) {
 	cycle := &Cycle{
-		Status:      CycleActive,
-		ProblemRef:  "prob-1",
-		DecisionRef: "dec-1",
+		Status:      CycleComplete,
+		DecisionRef: "dec-legacy",
 	}
 
-	err := CanExplore(cycle)
-	if err == nil {
-		t.Fatal("expected decided-cycle guardrail")
-	}
-	if !strings.Contains(err.Error(), "already has a recorded decision") {
-		t.Fatalf("error = %q", err.Error())
+	if err := CanDecide(cycle, false); err != nil {
+		t.Fatalf("CanDecide imposed a predecessor without compared-portfolio context: %v", err)
 	}
 }
 
-func TestCanCompare_RejectsDecidedCycle(t *testing.T) {
-	cycle := &Cycle{
-		Status:       CycleActive,
-		PortfolioRef: "port-1",
-		DecisionRef:  "dec-1",
-	}
-
-	err := CanCompare(cycle)
-	if err == nil {
-		t.Fatal("expected decided-cycle guardrail")
-	}
-	if !strings.Contains(err.Error(), "already has a recorded decision") {
-		t.Fatalf("error = %q", err.Error())
-	}
-}
-
-func TestCanDecide_RequiresUserSelectionAfterCompare(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, PortfolioRef: "port-1", ComparedPortfolioRef: "port-1"}
+func TestCanDecide_RequiresHumanSelectionForComparedPortfolioContext(t *testing.T) {
+	cycle := &Cycle{ComparedPortfolioRef: "port-1"}
 
 	err := CanDecide(cycle, false)
 	if err == nil {
-		t.Fatal("expected decision boundary guardrail")
+		t.Fatal("expected human-selection authority guardrail")
 	}
-	if !strings.Contains(err.Error(), "compare -> decide boundary") {
-		t.Fatalf("error = %q", err.Error())
+	if !strings.Contains(err.Error(), "user selection") {
+		t.Fatalf("error = %q, want human-selection guidance", err.Error())
 	}
 }
 
-func TestCanDecide_AllowsComparedActivePortfolio(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, PortfolioRef: "port-1", ComparedPortfolioRef: "port-1"}
+func TestCanDecide_AllowsHumanSelectionForComparedPortfolioContext(t *testing.T) {
+	cycle := &Cycle{
+		PortfolioRef:         "port-current",
+		ComparedPortfolioRef: "port-legacy",
+		DecisionRef:          "dec-legacy",
+	}
 
 	if err := CanDecide(cycle, true); err != nil {
 		t.Fatalf("CanDecide: %v", err)
-	}
-}
-
-func TestCanBaseline_RequiresDecision(t *testing.T) {
-	err := CanBaseline(&Cycle{Status: CycleActive})
-	if err == nil {
-		t.Fatal("expected baseline guardrail")
-	}
-	if !strings.Contains(err.Error(), "decision record") {
-		t.Fatalf("error = %q", err.Error())
-	}
-}
-
-func TestCanBaseline_AllowsActiveDecision(t *testing.T) {
-	cycle := &Cycle{Status: CycleActive, DecisionRef: "dec-1"}
-	if err := CanBaseline(cycle); err != nil {
-		t.Fatalf("CanBaseline: %v", err)
 	}
 }
 
@@ -137,5 +84,15 @@ func TestHasDecisionSelection_AllowsActiveSelection(t *testing.T) {
 
 	if !HasDecisionSelection(cycle) {
 		t.Fatal("expected active selection to satisfy the boundary")
+	}
+}
+
+func TestCheckREff_WarnsOnUnsubstantiatedClosure(t *testing.T) {
+	err := CheckREff(0.82, 0)
+	if err == nil {
+		t.Fatal("expected F0 closure warning")
+	}
+	if !strings.Contains(err.Error(), "F_eff=F0") {
+		t.Fatalf("warning = %q, want F_eff=F0 guidance", err.Error())
 	}
 }

@@ -18,6 +18,17 @@ func TestDefaultCarrierAuthorityManifestValidates(t *testing.T) {
 	}
 }
 
+func TestCarrierAuthorityManifestUsesSoftwareSpecCarrierOntology(t *testing.T) {
+	entry := carrierManifestEntry(t, "project-spec-carriers")
+
+	if !strings.Contains(entry.Notes, "target/software/term-map") {
+		t.Fatalf("project spec carrier notes must name target/software/term-map ontology: %q", entry.Notes)
+	}
+	if strings.Contains(entry.Notes, "target/enabling/term-map") {
+		t.Fatalf("project spec carrier notes must not retain enabling spec ontology: %q", entry.Notes)
+	}
+}
+
 func TestCarrierAuthorityManifestPreservesCurrentHReason(t *testing.T) {
 	entry := carrierManifestEntry(t, "agent-skill-carriers")
 
@@ -32,6 +43,30 @@ func TestCarrierAuthorityManifestPreservesCurrentHReason(t *testing.T) {
 	}
 	if entry.Notes == "" {
 		t.Fatal("agent skill carrier notes must name h-reason/h-decide/h-commission policy")
+	}
+}
+
+func TestCarrierAuthorityManifestUsesUpstreamFPFSourcesAndDerivedIndex(t *testing.T) {
+	readme := carrierManifestEntry(t, "fpf-readme-source")
+	spec := carrierManifestEntry(t, "fpf-spec-source")
+	index := carrierManifestEntry(t, "fpf-query-index")
+
+	if readme.PathPattern != "data/FPF/Readme.md" || spec.PathPattern != "data/FPF/FPF-Spec.md" {
+		t.Fatalf("FPF source carriers = %q, %q", readme.PathPattern, spec.PathPattern)
+	}
+	if readme.AuthorityClass != CarrierAuthorityCurrent || spec.AuthorityClass != CarrierAuthorityCurrent {
+		t.Fatalf("FPF source authority = %q, %q; want current", readme.AuthorityClass, spec.AuthorityClass)
+	}
+	if index.PathPattern != "internal/cli/fpf.db" || index.AuthorityClass != CarrierAuthoritySupport {
+		t.Fatalf("FPF query index = %#v; want derived support carrier", index)
+	}
+	if !strings.Contains(index.Normativity, "non-normative") {
+		t.Fatalf("FPF query index must deny source authority: %q", index.Normativity)
+	}
+	for _, entry := range DefaultCarrierAuthorityManifest().Entries {
+		if strings.Contains(entry.PathPattern, "internal/fpf/patterns") {
+			t.Fatalf("retired shadow FPF carrier remains active: %#v", entry)
+		}
 	}
 }
 
@@ -99,6 +134,9 @@ func TestCarrierAuthorityManifestIncludesEnablingSystemSupportDocs(t *testing.T)
 	}
 	if entry.PathPattern != "spec/enabling-system/*.md" {
 		t.Fatalf("path_pattern = %q", entry.PathPattern)
+	}
+	if !strings.Contains(entry.Notes, "not ProjectSpecificationSet members") {
+		t.Fatalf("enabling-system support docs must be distinguished from project specs: %q", entry.Notes)
 	}
 }
 

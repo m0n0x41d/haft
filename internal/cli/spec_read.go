@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -8,6 +9,37 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
+
+func loadProjectSpecificationSetSQLFirstFromCanonicalProfile(
+	ctx context.Context,
+	projectRoot string,
+	request projectSpecificationScopeRequest,
+) (
+	project.ProjectSpecificationSet,
+	projectSpecificationApplicabilityResolution,
+	error,
+) {
+	resolution, err := resolveCanonicalProjectSpecificationApplicability(
+		ctx,
+		projectRoot,
+		request,
+	)
+	if err != nil {
+		return project.ProjectSpecificationSet{},
+			projectSpecificationApplicabilityResolution{},
+			err
+	}
+	applicability, _, resolved := resolution.Resolved()
+	if !resolved {
+		return project.ProjectSpecificationSet{}, resolution, nil
+	}
+	canonicalRoot := resolution.ProjectRoot().String()
+	specSet, err := loadProjectSpecificationSetSQLFirstForScope(
+		canonicalRoot,
+		applicability,
+	)
+	return specSet, resolution, err
+}
 
 func loadProjectSpecificationSetSQLFirst(projectRoot string) (project.ProjectSpecificationSet, error) {
 	sqlSpecSet, hasSQLSource, err := loadProjectSpecificationSetFromSQLEditions(projectRoot)
@@ -26,13 +58,33 @@ func loadProjectSpecificationSetSQLFirst(projectRoot string) (project.ProjectSpe
 	return project.LoadProjectSpecificationSet(projectRoot)
 }
 
-func checkProjectSpecificationSetSQLFirst(projectRoot string) (project.SpecCheckReport, error) {
-	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+func loadProjectSpecificationSetSQLFirstForScope(
+	projectRoot string,
+	applicability project.ProjectSpecificationSetApplicability,
+) (project.ProjectSpecificationSet, error) {
+	sqlSpecSet, hasSQLSource, err := loadProjectSpecificationSetFromSQLEditionsForScope(
+		projectRoot,
+		applicability,
+	)
 	if err != nil {
-		return project.SpecCheckReport{}, err
+		return project.ProjectSpecificationSet{}, err
+	}
+	if hasSQLSource {
+		carrierSpecSet, carrierErr := project.LoadProjectSpecificationSetForScope(
+			projectRoot,
+			applicability,
+		)
+		if carrierErr != nil {
+			return sqlSpecSet, nil
+		}
+
+		return mergeSQLSpecSetWithCarrierSupport(sqlSpecSet, carrierSpecSet), nil
 	}
 
-	return project.SpecCheckReportFromSpecificationSet(specSet), nil
+	return project.LoadProjectSpecificationSetForScope(
+		projectRoot,
+		applicability,
+	)
 }
 
 func mergeSQLSpecSetWithCarrierSupport(
@@ -45,8 +97,20 @@ func mergeSQLSpecSetWithCarrierSupport(
 	merged.Documents = append(append([]project.SpecDocument{}, sqlSpecSet.Documents...), termMapDocuments(carrierSpecSet.Documents)...)
 	merged.TermMapEntries = append([]project.TermMapEntry{}, carrierSpecSet.TermMapEntries...)
 	merged.Findings = append(append([]project.SpecCheckFinding{}, sqlSpecSet.Findings...), termMapFindings(carrierSpecSet.Findings, termMapPaths)...)
+	merged.Findings = append(merged.Findings, specMigrationRequiredFindings(carrierSpecSet.Findings)...)
 
 	return merged
+}
+
+func specMigrationRequiredFindings(findings []project.SpecCheckFinding) []project.SpecCheckFinding {
+	out := []project.SpecCheckFinding{}
+	for _, finding := range findings {
+		if finding.Code != project.SpecMigrationRequiredFindingCode {
+			continue
+		}
+		out = append(out, finding)
+	}
+	return out
 }
 
 func termMapDocuments(documents []project.SpecDocument) []project.SpecDocument {
@@ -85,6 +149,34 @@ func termMapFindings(findings []project.SpecCheckFinding, termMapPaths map[strin
 }
 
 func loadProjectSpecificationSetFromSQLEditions(projectRoot string) (project.ProjectSpecificationSet, bool, error) {
+	return loadProjectSpecificationSetFromSQLEditionsWith(
+		projectRoot,
+		specflow.ProjectSpecificationSetFromEditions,
+	)
+}
+
+func loadProjectSpecificationSetFromSQLEditionsForScope(
+	projectRoot string,
+	applicability project.ProjectSpecificationSetApplicability,
+) (project.ProjectSpecificationSet, bool, error) {
+	projector := func(
+		editions []specflow.SpecSectionEdition,
+	) (project.ProjectSpecificationSet, error) {
+		return specflow.ProjectSpecificationSetFromEditionsForScope(
+			editions,
+			applicability,
+		)
+	}
+	return loadProjectSpecificationSetFromSQLEditionsWith(
+		projectRoot,
+		projector,
+	)
+}
+
+func loadProjectSpecificationSetFromSQLEditionsWith(
+	projectRoot string,
+	projector func([]specflow.SpecSectionEdition) (project.ProjectSpecificationSet, error),
+) (project.ProjectSpecificationSet, bool, error) {
 	cfg, err := project.Load(haftDirFor(projectRoot))
 	if err != nil {
 		return project.ProjectSpecificationSet{}, false, err
@@ -93,7 +185,11 @@ func loadProjectSpecificationSetFromSQLEditions(projectRoot string) (project.Pro
 		return project.ProjectSpecificationSet{}, false, nil
 	}
 
-	projectID, store, closeStore, err := openSpecSectionEditionStore(projectRoot, cfg)
+	projectID, store, closeStore, err := openSpecSectionEditionReadStore(
+		context.Background(),
+		projectRoot,
+		cfg,
+	)
 	if err != nil {
 		return project.ProjectSpecificationSet{}, false, err
 	}
@@ -110,7 +206,7 @@ func loadProjectSpecificationSetFromSQLEditions(projectRoot string) (project.Pro
 		return project.ProjectSpecificationSet{}, false, nil
 	}
 
-	specSet, err := specflow.ProjectSpecificationSetFromEditions(editions)
+	specSet, err := projector(editions)
 	if err != nil {
 		return project.ProjectSpecificationSet{}, true, fmt.Errorf("project specification SQL edition projection: %w", err)
 	}

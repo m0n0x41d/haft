@@ -63,7 +63,7 @@ defmodule OpenSleigh.WorkflowTest do
       assert wf.entry_phase == :characterize_situation
     end
 
-    test "full lemniscate advance chain (Slide 12)" do
+    test "full declared lemniscate advance chain" do
       wf = Workflow.mvp2()
 
       assert :measure_situation = Workflow.advance_from(wf, :characterize_situation)

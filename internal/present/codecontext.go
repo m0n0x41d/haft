@@ -26,6 +26,8 @@ const (
 	codeContextFileLevelInvariantLimit      = 8
 	codeContextHighFanoutInvariantThreshold = 40
 	codeContextInvariantSourceGroupLimit    = 12
+	codeContextSpecSectionLimit             = 8
+	codeContextSpecClaimLimit               = 3
 )
 
 func ValidCodeContextLaneNames() []string {
@@ -173,7 +175,8 @@ func renderCodeContextAll(cc contextgraph.CodeContext, options CodeContextRender
 		return b.String()
 	}
 
-	renderGoverningDecisions(&b, cc.Decisions, options.ArtifactLimit, options.Full)
+	renderCodeContextDecisionLanes(&b, cc, options)
+	renderSpecSections(&b, cc.Specs, options.Full)
 	renderContextArtifacts(&b, "Problems framed around it", cc.Problems, options.ArtifactLimit, options.Full)
 	renderContextArtifacts(&b, "Solution variants explored", cc.Portfolios, options.ArtifactLimit, options.Full)
 	renderContextArtifacts(&b, "Notes", cc.Notes, options.ArtifactLimit, options.Full)
@@ -217,7 +220,14 @@ func renderCodeContextLaneCounts(b *strings.Builder, cc contextgraph.CodeContext
 	} else {
 		b.WriteString("- symbols: request lane=\"symbols\" for a capped file symbol list\n")
 	}
-	fmt.Fprintf(b, "- decisions: %d\n", len(cc.Decisions))
+	fmt.Fprintf(
+		b,
+		"- decisions: %d exact_binding, %d affected_path_context (not authority), %d module_context\n",
+		len(cc.Decisions),
+		len(cc.AffectedPathContextDecisions),
+		len(cc.ModuleDecisions),
+	)
+	renderSpecSectionCounts(b, cc.Specs)
 	if codeContextFileLevelInvariantCandidates(cc) {
 		fmt.Fprintf(b, "- invariants: %d file-level candidate(s), %d module-context; narrow by symbol before treating as actionable\n", len(cc.Invariants), len(cc.ContextInvariants))
 	} else {
@@ -241,9 +251,12 @@ func renderCodeContextRiskHints(b *strings.Builder, cc contextgraph.CodeContext)
 }
 
 func codeContextRiskHints(cc contextgraph.CodeContext) []string {
-	risks := make([]string, 0, 3)
+	risks := make([]string, 0, 4)
 	if cc.Module != "" && !cc.Governed && len(cc.ModuleDecisions) == 0 {
 		risks = append(risks, "module is blind: no module-governing decision is recorded")
+	}
+	if issues := specSectionIssueCount(cc.Specs); issues > 0 {
+		risks = append(risks, fmt.Sprintf("%d referenced SpecSection(s) are non-current or unresolved; inspect lane=\"decisions\"", issues))
 	}
 
 	inactive := 0
@@ -278,11 +291,14 @@ func renderCodeContextDecisionsLane(cc contextgraph.CodeContext, options CodeCon
 	var b strings.Builder
 
 	renderCodeContextHeader(&b, "Code context decisions", cc, false)
-	if len(cc.Decisions) == 0 {
-		b.WriteString("No governing decisions recorded for this target.\n")
+	if len(cc.Decisions)+
+		len(cc.AffectedPathContextDecisions)+
+		len(cc.ModuleDecisions) == 0 {
+		b.WriteString("No exact binding, affected-path context, or module context recorded for this target.\n")
 		return b.String()
 	}
-	renderGoverningDecisions(&b, cc.Decisions, options.ArtifactLimit, options.Full)
+	renderCodeContextDecisionLanes(&b, cc, options)
+	renderSpecSections(&b, cc.Specs, options.Full)
 	return b.String()
 }
 
@@ -327,7 +343,7 @@ func renderCodeContextHeader(b *strings.Builder, title string, cc contextgraph.C
 	}
 
 	if cc.Target.Symbol != "" && cc.SymbolGranularity != "" {
-		fmt.Fprintf(b, "Symbol governance granularity: %s\n\n", cc.SymbolGranularity)
+		fmt.Fprintf(b, "Symbol match granularity: %s\n\n", cc.SymbolGranularity)
 	}
 }
 
@@ -527,16 +543,54 @@ func moduleDecisionList(decisions []graph.Node) string {
 	return strings.Join(parts, ", ")
 }
 
-// renderGoverningDecisions lists the decisions governing this code, each tagged
-// with how much it can still be trusted: its non-active status (refresh-due /
-// superseded) and how many of its predictions remain unverified. So a decision
-// whose claims were never checked does not read as fully authoritative — the
-// trust-decay signal surfaces exactly where the agent reads the rationale.
-func renderGoverningDecisions(b *strings.Builder, items []*artifact.Artifact, limit int, full bool) {
+func renderCodeContextDecisionLanes(
+	b *strings.Builder,
+	cc contextgraph.CodeContext,
+	options CodeContextRenderOptions,
+) {
+	renderDecisionArtifacts(
+		b,
+		"### `exact_binding` — authority-bearing target/anchor bindings",
+		cc.Decisions,
+		options.ArtifactLimit,
+		options.Full,
+	)
+	renderDecisionArtifacts(
+		b,
+		"### `affected_path_context` — exact backlinks only, not binding authority",
+		cc.AffectedPathContextDecisions,
+		options.ArtifactLimit,
+		options.Full,
+	)
+	if len(cc.ModuleDecisions) == 0 {
+		return
+	}
+	b.WriteString("### `module_context` — exact most-specific module\n")
+	for _, decision := range cc.ModuleDecisions {
+		fmt.Fprintf(
+			b,
+			"- **%s** `%s`\n",
+			decision.Name,
+			decision.ID,
+		)
+	}
+	b.WriteString("\n")
+}
+
+// renderDecisionArtifacts lists one explicitly classified decision lane, each
+// tagged with status and verification cues.
+func renderDecisionArtifacts(
+	b *strings.Builder,
+	heading string,
+	items []*artifact.Artifact,
+	limit int,
+	full bool,
+) {
 	if len(items) == 0 {
 		return
 	}
-	b.WriteString("### Decisions governing this code\n")
+	b.WriteString(heading)
+	b.WriteString("\n")
 	visible := limitArtifacts(items, limit, full)
 	for _, a := range visible {
 		suffix := ""
@@ -566,6 +620,167 @@ func decisionSpecSectionRefsTag(a *artifact.Artifact) string {
 		return ""
 	}
 	return fmt.Sprintf(" · SpecSections: %s", strings.Join(refs, ", "))
+}
+
+type specSectionCounts struct {
+	resolved            int
+	unresolved          int
+	baselineCurrent     int
+	baselineDrifted     int
+	baselineMissing     int
+	baselineUnavailable int
+}
+
+func renderSpecSectionCounts(b *strings.Builder, sections []contextgraph.SpecSectionContext) {
+	if len(sections) == 0 {
+		b.WriteString("- specs: 0 referenced\n")
+		return
+	}
+	counts := countSpecSections(sections)
+	fmt.Fprintf(
+		b,
+		"- specs: %d referenced; %d resolved, %d unresolved; baselines current=%d drifted=%d missing=%d unavailable=%d\n",
+		len(sections),
+		counts.resolved,
+		counts.unresolved,
+		counts.baselineCurrent,
+		counts.baselineDrifted,
+		counts.baselineMissing,
+		counts.baselineUnavailable,
+	)
+}
+
+func countSpecSections(sections []contextgraph.SpecSectionContext) specSectionCounts {
+	counts := specSectionCounts{}
+	for _, section := range sections {
+		if section.Resolution == contextgraph.SpecResolutionResolved {
+			counts.resolved++
+		} else {
+			counts.unresolved++
+		}
+		switch section.BaselineState {
+		case contextgraph.SpecBaselineCurrent:
+			counts.baselineCurrent++
+		case contextgraph.SpecBaselineDrifted:
+			counts.baselineDrifted++
+		case contextgraph.SpecBaselineMissing:
+			counts.baselineMissing++
+		case contextgraph.SpecBaselineUnavailable:
+			counts.baselineUnavailable++
+		}
+	}
+	return counts
+}
+
+func specSectionIssueCount(sections []contextgraph.SpecSectionContext) int {
+	issues := 0
+	for _, section := range sections {
+		resolved := section.Resolution == contextgraph.SpecResolutionResolved
+		current := section.BaselineState == contextgraph.SpecBaselineCurrent
+		active := string(section.LifecycleState) == "active"
+		if !resolved || !current || !active {
+			issues++
+		}
+	}
+	return issues
+}
+
+func renderSpecSections(b *strings.Builder, sections []contextgraph.SpecSectionContext, full bool) {
+	if len(sections) == 0 {
+		return
+	}
+	b.WriteString("### Referenced SpecSections\n")
+	visible := sections
+	if !full && len(visible) > codeContextSpecSectionLimit {
+		visible = visible[:codeContextSpecSectionLimit]
+	}
+	for _, section := range visible {
+		renderSpecSection(b, section, full)
+	}
+	if omitted := len(sections) - len(visible); omitted > 0 {
+		fmt.Fprintf(b, "- ... %d more SpecSection(s) omitted; re-run `haft_query(action=\"code_context\", ..., full=true)` for all sections and claims.\n", omitted)
+	}
+	b.WriteString("\n")
+}
+
+func renderSpecSection(b *strings.Builder, section contextgraph.SpecSectionContext, full bool) {
+	title := strings.TrimSpace(section.Title)
+	if title == "" {
+		title = "Unresolved SpecSection"
+	}
+	parts := []string{
+		fmt.Sprintf("resolution=%s", nonEmptyString(string(section.Resolution), "unknown")),
+		fmt.Sprintf("baseline=%s", nonEmptyString(string(section.BaselineState), "unknown")),
+	}
+	if section.LifecycleState != "" {
+		parts = append(parts, fmt.Sprintf("lifecycle=%s", section.LifecycleState))
+	}
+	if section.ValidUntil != "" {
+		parts = append(parts, "valid_until="+section.ValidUntil)
+	}
+	if section.SourceKind != "" {
+		parts = append(parts, "source="+section.SourceKind)
+	}
+	carrier := strings.TrimSpace(section.CarrierPath)
+	if carrier == "" {
+		carrier = strings.TrimSpace(section.Path)
+	}
+	if carrier != "" {
+		parts = append(parts, "carrier="+carrier)
+	}
+	if len(section.DecisionRefs) > 0 {
+		parts = append(parts, "decisions="+strings.Join(section.DecisionRefs, ","))
+	}
+	if section.ResolutionDetail != "" {
+		parts = append(parts, "resolution_detail="+compactContextDetail(section.ResolutionDetail))
+	}
+	if section.BaselineDetail != "" {
+		parts = append(parts, "baseline_detail="+compactContextDetail(section.BaselineDetail))
+	}
+	fmt.Fprintf(b, "- **%s** `%s` · %s\n", title, section.ID, strings.Join(parts, " · "))
+	renderSpecClaims(b, section.Claims, full)
+}
+
+func renderSpecClaims(b *strings.Builder, claims []contextgraph.SpecClaimContext, full bool) {
+	if len(claims) == 0 {
+		return
+	}
+	visible := claims
+	if !full && len(visible) > codeContextSpecClaimLimit {
+		visible = visible[:codeContextSpecClaimLimit]
+	}
+	for _, claim := range visible {
+		label := strings.TrimSpace(claim.ID)
+		if label == "" {
+			label = "unnamed-claim"
+		}
+		class := strings.TrimSpace(claim.Class)
+		if class == "" {
+			class = "unclassified"
+		}
+		statement := compactContextDetail(claim.Statement)
+		fmt.Fprintf(b, "  - claim `%s` [%s]: %s", label, class, statement)
+		if claim.ValidUntil != "" {
+			fmt.Fprintf(b, " (valid_until=%s)", claim.ValidUntil)
+		}
+		b.WriteString("\n")
+	}
+	if omitted := len(claims) - len(visible); omitted > 0 {
+		fmt.Fprintf(b, "  - ... %d more claim(s) omitted; re-run with `full=true`.\n", omitted)
+	}
+}
+
+func compactContextDetail(value string) string {
+	fields := strings.Fields(value)
+	return strings.Join(fields, " ")
+}
+
+func nonEmptyString(value, fallback string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 // decisionVerificationTag reports how many of a decision's predictions remain

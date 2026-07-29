@@ -14,7 +14,25 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	methodpkg "github.com/m0n0x41d/haft/internal/method"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
+
+func newProfileAwareProcessCheckTestProject(t *testing.T) checkTestProject {
+	t.Helper()
+
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevision(t, "process-check")
+	root = harness.Root().String()
+	fixture := checkTestProject{
+		root:    root,
+		haftDir: filepath.Join(root, ".haft"),
+		store:   artifact.NewStore(harness.Database()),
+		db:      harness.Database(),
+	}
+	writeCheckTestSpecCarriers(t, fixture)
+	return fixture
+}
 
 func TestBuildProcessTelemetryReportCoversMethodRunsSessionsAndBindingRisk(t *testing.T) {
 	fixture := newCheckTestProject(t)
@@ -208,13 +226,13 @@ func TestRunProcessTelemetryJSON(t *testing.T) {
 	}
 }
 
-func TestBuildProcessCheckReportCoreReturnsStableResults(t *testing.T) {
-	fixture := newCheckTestProject(t)
+func TestBuildProfileAwareProcessCheckReportCoreReturnsStableResults(t *testing.T) {
+	fixture := newProfileAwareProcessCheckTestProject(t)
 	writeProcessMethodPackCarrierFixtures(t, fixture)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	seedProcessMethodRun(t, fixture, validProcessMethodRunFixture(now))
 
-	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
 		Profile: "core",
 		Now:     now,
 	})
@@ -267,8 +285,8 @@ func TestBuildProcessCheckReportCoreReturnsStableResults(t *testing.T) {
 	}
 }
 
-func TestBuildProcessCheckReportDegradesExternalCarryThroughAcceptanceRef(t *testing.T) {
-	fixture := newCheckTestProject(t)
+func TestBuildProfileAwareProcessCheckReportDegradesExternalCarryThroughAcceptanceRef(t *testing.T) {
+	fixture := newProfileAwareProcessCheckTestProject(t)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	run := validProcessMethodRunFixture(now)
 	run.ID = "mpull-external-acceptance-ref"
@@ -280,7 +298,7 @@ func TestBuildProcessCheckReportDegradesExternalCarryThroughAcceptanceRef(t *tes
 	}}
 	seedProcessMethodRun(t, fixture, run)
 
-	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
 		Profile: "core",
 		Now:     now,
 	})
@@ -296,15 +314,15 @@ func TestBuildProcessCheckReportDegradesExternalCarryThroughAcceptanceRef(t *tes
 	}
 }
 
-func TestBuildProcessCheckReportDetectsMethodRunHardGateGap(t *testing.T) {
-	fixture := newCheckTestProject(t)
+func TestBuildProfileAwareProcessCheckReportDetectsMethodRunHardGateGap(t *testing.T) {
+	fixture := newProfileAwareProcessCheckTestProject(t)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	run := validProcessMethodRunFixture(now)
 	run.ID = "mpull-missing-gate-evidence"
 	run.Closeout.GateResults = nil
 	seedProcessMethodRun(t, fixture, run)
 
-	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
 		Profile: "core",
 		Now:     now,
 	})
@@ -323,8 +341,8 @@ func TestBuildProcessCheckReportDetectsMethodRunHardGateGap(t *testing.T) {
 	}
 }
 
-func TestBuildProcessCheckReportReplaysCarryThroughCloseout(t *testing.T) {
-	fixture := newCheckTestProject(t)
+func TestBuildProfileAwareProcessCheckReportReplaysCarryThroughCloseout(t *testing.T) {
+	fixture := newProfileAwareProcessCheckTestProject(t)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	run := validProcessMethodRunFixture(now)
 	run.ID = "mpull-applied-carry-through"
@@ -345,7 +363,7 @@ func TestBuildProcessCheckReportReplaysCarryThroughCloseout(t *testing.T) {
 	}}
 	seedProcessMethodRun(t, fixture, run)
 
-	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
 		Profile: "core",
 		Now:     now,
 	})
@@ -362,7 +380,7 @@ func TestBuildProcessCheckReportReplaysCarryThroughCloseout(t *testing.T) {
 }
 
 func TestProcessCheckClosureDisciplineCarryThroughEndToEnd(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newProfileAwareProcessCheckTestProject(t)
 	ctx := context.Background()
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 
@@ -416,7 +434,7 @@ func TestProcessCheckClosureDisciplineCarryThroughEndToEnd(t *testing.T) {
 		t.Fatalf("close rejected applied carry-through disposition: %v", err)
 	}
 
-	report, err := buildProcessCheckReport(ctx, fixture.store, fixture.root, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(ctx, fixture.store, fixture.root, processCheckOptions{
 		Profile: "core",
 		Now:     now,
 	})
@@ -486,12 +504,12 @@ func TestRunProcessCheckJSON(t *testing.T) {
 	}
 }
 
-func TestBuildProcessCheckReportDegradesMissingMethodPackCarriers(t *testing.T) {
-	fixture := newCheckTestProject(t)
+func TestBuildProfileAwareProcessCheckReportDegradesMissingMethodPackCarriers(t *testing.T) {
+	fixture := newProfileAwareProcessCheckTestProject(t)
 	now := time.Date(2026, 6, 25, 12, 0, 0, 0, time.UTC)
 	seedProcessMethodRun(t, fixture, validProcessMethodRunFixture(now))
 
-	report, err := buildProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(context.Background(), fixture.store, fixture.root, processCheckOptions{
 		Profile: "core",
 		Now:     now,
 	})
@@ -533,7 +551,7 @@ func TestProcessCheckDoesNotInlineIntoDefaultStatus(t *testing.T) {
 func TestProcessDefaultStatusActionLinesCountsOperatorDrilldowns(t *testing.T) {
 	status := strings.Join([]string{
 		"## Haft Status",
-		"- **HIGH** Current drift needs operator review: inspect exact items with `haft_query(action=\"drift_events\")`",
+		"- **HIGH** Current drift needs scoped inspection: inspect exact items with `haft_query(action=\"drift_events\")`",
 		"- **Refresh due**: run `haft_refresh(action=\"scan\", verbose=true)`.",
 		"### Drill-down",
 		"- Full status: `haft_query(action=\"status\", full=true)`.",

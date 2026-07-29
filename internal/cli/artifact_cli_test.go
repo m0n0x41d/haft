@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -13,7 +14,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
-	_ "modernc.org/sqlite"
+	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
 func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
@@ -50,7 +51,8 @@ func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
 			},
 		},
 	})
-
+	strictSession := &fakeManualDecisionBindingSession{}
+	stubManualDecisionBindingSession(t, strictSession)
 	decision := runArtifactCreateForTest(t, root, "decision.decide", artifact.DecideInput{
 		ProblemRef:      problem.ID,
 		PortfolioRef:    portfolio.ID,
@@ -83,6 +85,187 @@ func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
 	if !strings.Contains(decision.File, ".haft/decisions/") {
 		t.Fatalf("decision file should be a decision projection path, got %q", decision.File)
 	}
+	if strictSession.bindInput.SelectedTitle != "" {
+		t.Fatalf(
+			"default explicit_h_decide unexpectedly invoked strict SpeechAct binding with %q",
+			strictSession.bindInput.SelectedTitle,
+		)
+	}
+}
+
+func TestArtifactCreateCLIProjectsTypedTaskRecordsAtExactConcern(t *testing.T) {
+	fixture := newTaskMemoryProjectionTestFixture(t)
+	problem := runArtifactCreateForTest(
+		t,
+		fixture.root,
+		"problem.frame",
+		map[string]any{
+			"title":            "Authorization ownership is unresolved",
+			"signal":           "Refresh-token ownership differs across callers.",
+			"scope":            "Authorization service token lifecycle.",
+			"acceptance_probe": "Every token transition has one named owner.",
+			"entity_ref": map[string]any{
+				"ref_kind_id":  "U.EntityRef",
+				"reference_id": taskMemoryTestConcern,
+			},
+			"bounded_context_ref": taskMemoryTestContext,
+		},
+	)
+	assertArtifactCLITaskProjection(
+		t,
+		problem,
+		"Haft.ProblemCardAtConcern",
+	)
+	first := runArtifactCreateForTest(
+		t,
+		fixture.root,
+		"note.record",
+		map[string]any{
+			"title":        "Central token ownership",
+			"observations": []string{"The authorization service owns refresh tokens."},
+			"entity_ref": map[string]any{
+				"ref_kind_id":  "U.EntityRef",
+				"reference_id": taskMemoryTestConcern,
+			},
+			"bounded_context_ref": taskMemoryTestContext,
+		},
+	)
+	second := runArtifactCreateForTest(
+		t,
+		fixture.root,
+		"note.record",
+		map[string]any{
+			"title":        "Caller token ownership",
+			"observations": []string{"Caller sessions own refresh tokens."},
+			"entity_ref": map[string]any{
+				"ref_kind_id":  "U.EntityRef",
+				"reference_id": taskMemoryTestConcern,
+			},
+			"bounded_context_ref": taskMemoryTestContext,
+		},
+	)
+	assertArtifactCLITaskProjection(t, first, "Haft.NoteAtConcern")
+	assertArtifactCLITaskProjection(t, second, "Haft.NoteAtConcern")
+	portfolioArgs := taskMemorySolutionArgs(
+		first.TaskMemoryProjection.RecordReference.ReferenceID,
+		second.TaskMemoryProjection.RecordReference.ReferenceID,
+	)
+	portfolioArgs["problem_ref"] = problem.ID
+	portfolio := runArtifactCreateForTest(
+		t,
+		fixture.root,
+		"solution.explore",
+		portfolioArgs,
+	)
+	assertArtifactCLITaskProjection(
+		t,
+		portfolio,
+		"Haft.SolutionPortfolioAtConcern",
+	)
+	comparison := runArtifactCreateForTest(
+		t,
+		fixture.root,
+		"solution.compare",
+		taskMemoryComparisonArgs(portfolio.ID),
+	)
+	assertArtifactCLITaskProjection(
+		t,
+		comparison,
+		"Haft.PortfolioComparison",
+	)
+}
+
+func assertArtifactCLITaskProjection(
+	t *testing.T,
+	result artifactCreateResult,
+	relationSignatureID string,
+) {
+	t.Helper()
+	projection := result.TaskMemoryProjection
+	if projection == nil ||
+		projection.AdapterResult != "valid" ||
+		projection.AdmissionResult != "committed" ||
+		projection.RelationDeclarationFragmentID != relationSignatureID ||
+		projection.RelationDeclarationPosture !=
+			typedmemory.RelationDeclarationTypedFragment.String() ||
+		projection.RelationSignatureID != relationSignatureID ||
+		projection.RecordReference == nil {
+		t.Fatalf(
+			"artifact CLI typed projection = %#v, want committed %s",
+			projection,
+			relationSignatureID,
+		)
+	}
+}
+
+func TestArtifactCreateCLIStrictModeUsesSpeechActBindingService(t *testing.T) {
+	root := newArtifactCLITestProject(t)
+	writeDecisionBindingModeForTest(
+		t,
+		root,
+		project.DecisionBindingModeStrictCLISpeechAct,
+	)
+	session := &fakeManualDecisionBindingSession{
+		bindResult: manualDecisionBindingOutcome{
+			DecisionRef: "dec-20260716-strict-cli-a1b2c3d4",
+			Title:       "Strict CLI SpeechAct",
+			FilePath:    filepath.Join(root, ".haft", "decisions", "strict-cli.md"),
+		},
+	}
+	stubManualDecisionBindingSession(t, session)
+
+	result := runArtifactCreateForTest(t, root, "decision.decide", artifact.DecideInput{
+		ProblemStatement: "Strict projects require a second controlling-terminal act.",
+		SelectedTitle:    "Strict CLI SpeechAct",
+		WhySelected:      "The project explicitly opted into the stronger local gate.",
+	})
+
+	if session.bindInput.SelectedTitle != "Strict CLI SpeechAct" {
+		t.Fatalf("strict binding input title = %q", session.bindInput.SelectedTitle)
+	}
+	if result.ID != "dec-20260716-strict-cli-a1b2c3d4" {
+		t.Fatalf("strict decision ID = %q", result.ID)
+	}
+}
+
+func TestArtifactCreateCLIUnknownDecisionBindingModeWritesNothing(t *testing.T) {
+	root := newArtifactCLITestProject(t)
+	before := countDecisionRecordsForTest(t, root)
+	configPath := filepath.Join(root, ".haft", "config.yaml")
+	invalidConfig := strings.Join([]string{
+		"schema_version: 1",
+		"authority:",
+		"  decision_binding_mode: typo_that_must_not_fallback",
+		"",
+	}, "\n")
+	if err := os.WriteFile(configPath, []byte(invalidConfig), 0o644); err != nil {
+		t.Fatalf("write invalid project config: %v", err)
+	}
+
+	inputPath := filepath.Join(root, "invalid-mode-decision.json")
+	if err := os.WriteFile(inputPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatalf("write decision input: %v", err)
+	}
+	previousInputFile := artifactCreateInputFile
+	previousJSON := artifactCreateJSON
+	artifactCreateInputFile = inputPath
+	artifactCreateJSON = true
+	t.Cleanup(func() {
+		artifactCreateInputFile = previousInputFile
+		artifactCreateJSON = previousJSON
+	})
+
+	err := runArtifactCreate(&cobra.Command{}, []string{"decision.decide"})
+	if err == nil {
+		t.Fatal("unknown decision binding mode was accepted")
+	}
+	if !strings.Contains(err.Error(), "typo_that_must_not_fallback") {
+		t.Fatalf("config error omitted invalid mode: %v", err)
+	}
+	after := countDecisionRecordsForTest(t, root)
+	if after != before {
+		t.Fatalf("DecisionRecord count changed after config rejection: before=%d after=%d", before, after)
+	}
 }
 
 func TestArtifactCreateCLI_CreatesNote(t *testing.T) {
@@ -103,80 +286,83 @@ func TestArtifactCreateCLI_CreatesNote(t *testing.T) {
 	}
 }
 
-func TestArtifactCreateCLI_MigratesLegacyProjectDB(t *testing.T) {
-	projectRoot := t.TempDir()
-	home := filepath.Join(t.TempDir(), "home")
-	t.Setenv("HOME", home)
-
-	haftDir := filepath.Join(projectRoot, ".haft")
-	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+func TestArtifactCreateCLI_RejectsLegacyProjectDBWithoutMigration(
+	t *testing.T,
+) {
+	fixture := newReadOnlyProjectValidationFixture(t, "qnt_7fac7fac")
+	executeReadOnlyProjectValidationFixtureSQL(
+		t,
+		fixture.database,
+		"DELETE FROM schema_version WHERE version = (SELECT MAX(version) FROM schema_version)",
+	)
+	beforeSchema := readOnlyProjectValidationSchema(t, fixture.database)
+	beforeFiles := readOnlyProjectValidationFiles(
+		t,
+		fixture.databaseDirectory,
+	)
+	aliasParent := canonicalReadOnlyProjectValidationDirectory(t, t.TempDir())
+	projectAlias := filepath.Join(aliasParent, "project-alias")
+	if err := os.Symlink(fixture.binding.ProjectRoot, projectAlias); err != nil {
 		t.Fatal(err)
 	}
-	cfg, err := project.Create(haftDir, projectRoot)
-	if err != nil {
-		t.Fatalf("create project config: %v", err)
-	}
-	dbPath, err := cfg.DBPath()
-	if err != nil {
-		t.Fatalf("resolve DB path: %v", err)
-	}
-	writeLegacyArtifactDB(t, dbPath)
 
-	restore := enterTestProjectRoot(t, projectRoot)
+	restore := enterTestProjectRoot(t, projectAlias)
 	defer restore()
-
-	note := runArtifactCreateForTest(t, projectRoot, "note.record", artifact.NoteInput{
-		Title:        "Migrated artifact create",
-		Observations: []string{"Artifact CLI opens the migrating project store."},
+	inputBytes, err := json.Marshal(artifact.NoteInput{
+		Title:        "Legacy artifact create",
+		Observations: []string{"Artifact CLI must not migrate the project store."},
 		Context:      "artifact-migration-test",
 		TaskContext:  "artifact-migration-test",
 	})
-
-	database, err := sql.Open("sqlite", dbPath)
 	if err != nil {
-		t.Fatalf("open migrated db: %v", err)
-	}
-	defer database.Close()
-
-	row := database.QueryRow(
-		`SELECT search_keywords, structured_data FROM artifacts WHERE id = ?`,
-		note.ID,
-	)
-	var searchKeywords string
-	var structuredData string
-	if err := row.Scan(&searchKeywords, &structuredData); err != nil {
-		t.Fatalf("artifact create did not run migrations before write: %v", err)
-	}
-}
-
-func writeLegacyArtifactDB(t *testing.T, dbPath string) {
-	t.Helper()
-
-	if err := os.MkdirAll(filepath.Dir(dbPath), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	database, err := sql.Open("sqlite", dbPath)
-	if err != nil {
-		t.Fatalf("open legacy db: %v", err)
+	inputPath := filepath.Join(
+		fixture.binding.ProjectRoot,
+		"legacy-note.json",
+	)
+	if err := os.WriteFile(inputPath, inputBytes, 0o644); err != nil {
+		t.Fatal(err)
 	}
-	defer database.Close()
+	previousInputFile := artifactCreateInputFile
+	previousJSON := artifactCreateJSON
+	artifactCreateInputFile = inputPath
+	artifactCreateJSON = true
+	t.Cleanup(func() {
+		artifactCreateInputFile = previousInputFile
+		artifactCreateJSON = previousJSON
+	})
 
-	_, err = database.Exec(`CREATE TABLE artifacts (
-		id TEXT PRIMARY KEY,
-		kind TEXT NOT NULL,
-		version INTEGER NOT NULL DEFAULT 1,
-		status TEXT NOT NULL DEFAULT 'active',
-		context TEXT,
-		mode TEXT,
-		title TEXT NOT NULL,
-		content TEXT NOT NULL,
-		file_path TEXT,
-		valid_until TEXT,
-		created_at TEXT NOT NULL,
-		updated_at TEXT NOT NULL
-	)`)
-	if err != nil {
-		t.Fatalf("create legacy artifacts table: %v", err)
+	command := &cobra.Command{}
+	command.SetOut(&bytes.Buffer{})
+	err = runArtifactCreate(command, []string{"note.record"})
+	if err == nil {
+		t.Fatal("artifact create accepted a legacy kernel schema")
+	}
+	for _, fragment := range []string{
+		"kernel schema is not current",
+		"haft project migrate",
+		"no migration was attempted",
+	} {
+		if !strings.Contains(err.Error(), fragment) {
+			t.Fatalf(
+				"artifact create error %q does not contain %q",
+				err,
+				fragment,
+			)
+		}
+	}
+
+	afterSchema := readOnlyProjectValidationSchema(t, fixture.database)
+	afterFiles := readOnlyProjectValidationFiles(
+		t,
+		fixture.databaseDirectory,
+	)
+	if !reflect.DeepEqual(afterSchema, beforeSchema) {
+		t.Fatal("failed artifact create changed the legacy SQLite schema")
+	}
+	if !reflect.DeepEqual(afterFiles, beforeFiles) {
+		t.Fatal("failed artifact create changed legacy project-ledger files")
 	}
 }
 
@@ -194,6 +380,8 @@ func newArtifactCLITestProject(t *testing.T) string {
 	oldInitCodex := initCodex
 	oldInitAir := initAir
 	oldInitOpencode := initOpencode
+	oldInitZed := initZed
+	oldInitAgy := initAgy
 	oldInitAll := initAll
 	oldInitLocal := initLocal
 	oldInitNoFileInstructions := initNoFileInstructions
@@ -205,6 +393,8 @@ func newArtifactCLITestProject(t *testing.T) string {
 		initCodex = oldInitCodex
 		initAir = oldInitAir
 		initOpencode = oldInitOpencode
+		initZed = oldInitZed
+		initAgy = oldInitAgy
 		initAll = oldInitAll
 		initLocal = oldInitLocal
 		initNoFileInstructions = oldInitNoFileInstructions
@@ -223,13 +413,13 @@ func newArtifactCLITestProject(t *testing.T) string {
 	initCodex = false
 	initAir = false
 	initOpencode = false
+	initZed = false
+	initAgy = false
 	initAll = false
 	initLocal = true
 	initNoFileInstructions = true
 
-	if err := runInit(&cobra.Command{}, nil); err != nil {
-		t.Fatalf("run init: %v", err)
-	}
+	runTypedCoreInitForTest(t)
 
 	return root
 }
@@ -275,4 +465,44 @@ func runArtifactCreateForTest(t *testing.T, root string, capability string, inpu
 	}
 
 	return result
+}
+
+func writeDecisionBindingModeForTest(
+	t *testing.T,
+	projectRoot string,
+	mode project.DecisionBindingMode,
+) {
+	t.Helper()
+	content := "schema_version: 1\nauthority:\n  decision_binding_mode: " + string(mode) + "\n"
+	path := filepath.Join(projectRoot, ".haft", "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write project config: %v", err)
+	}
+}
+
+func countDecisionRecordsForTest(t *testing.T, projectRoot string) int {
+	t.Helper()
+	cfg, err := project.Load(filepath.Join(projectRoot, ".haft"))
+	if err != nil {
+		t.Fatalf("load project identity: %v", err)
+	}
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		t.Fatalf("resolve project database: %v", err)
+	}
+	database, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open project database: %v", err)
+	}
+	defer database.Close()
+
+	row := database.QueryRow(
+		`SELECT COUNT(*) FROM artifacts WHERE kind = ?`,
+		string(artifact.KindDecisionRecord),
+	)
+	count := 0
+	if err := row.Scan(&count); err != nil {
+		t.Fatalf("count DecisionRecords: %v", err)
+	}
+	return count
 }

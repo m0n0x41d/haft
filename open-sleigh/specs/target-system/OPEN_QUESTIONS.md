@@ -36,8 +36,8 @@ routes through the full alphabet. No `{:m2, atom()}` open-tagged variant.
 
 **Rationale.** Partiality of `PhaseMachine.next/2` over an unknown atom
 space is a worse failure mode than committing to names ahead of evidence.
-Canonical names come from `development_for_the_developed.md` Slide 12 — a
-published source, not speculation. `ILLEGAL_STATES.md` TR5 ("dynamic phase
+Canonical names are bound by the reviewed local phase ontology, not inferred
+at runtime. `ILLEGAL_STATES.md` TR5 ("dynamic phase
 outside workflow alphabet") now maps to **type-level** enforcement via sum
 closure + pattern-match exhaustiveness, not constructor-discipline.
 

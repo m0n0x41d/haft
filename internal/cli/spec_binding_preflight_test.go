@@ -22,7 +22,7 @@ func TestHandleQuintQuerySpecBindingPreflightReturnsBoundExisting(t *testing.T) 
 		"TS.sql.preflight.001",
 		[]string{"symbol:internal/cli/spec.go::runSpecUse"},
 	)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestHandleQuintQuerySpecBindingPreflightValidatesDecisionDraftObject(t *tes
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	section := specBindingPreflightCLISection("TS.sql.preflight.002", nil)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -96,12 +96,25 @@ func TestHandleQuintQuerySpecBindingPreflightMatchesLinkedDecisionSectionRefs(t 
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	section := specBindingPreflightCLISection("TS.sql.linked.001", nil)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
 
 	artifactStore := artifact.NewStore(database.GetRawDB())
+	if err := artifactStore.Create(context.Background(), &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:     "prob-linked-section",
+			Kind:   artifact.KindProblemCard,
+			Status: artifact.StatusActive,
+			Mode:   artifact.ModeStandard,
+			Title:  "Problem with a linked section decision",
+		},
+		Body:           "The preflight must recover section refs from a decision linked to this problem.",
+		StructuredData: `{}`,
+	}); err != nil {
+		t.Fatalf("seed linked problem: %v", err)
+	}
 	linkedDecisionFields, err := json.Marshal(artifact.DecisionFields{
 		SectionRefs: []string{"TS.sql.linked.001"},
 	})
@@ -143,7 +156,7 @@ func TestHandleQuintQuerySpecBindingPreflightMatchesLinkedDecisionSectionRefs(t 
 	}
 }
 
-func TestArtifactCreateDecisionRunsSpecBindingPreflight(t *testing.T) {
+func TestManualDecisionBindingInputRunsSpecBindingPreflight(t *testing.T) {
 	root := setupSpecSyncProject(t)
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
@@ -153,7 +166,7 @@ func TestArtifactCreateDecisionRunsSpecBindingPreflight(t *testing.T) {
 		"TS.sql.decide.001",
 		[]string{"symbol:internal/cli/spec.go::runSpecUse"},
 	)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -163,25 +176,40 @@ func TestArtifactCreateDecisionRunsSpecBindingPreflight(t *testing.T) {
 	input.SelectedTitle = "Spec use preflight"
 	input.DecisionSubjectRef = "symbol:internal/cli/spec.go::runSpecUse"
 
-	payload, err := json.Marshal(input)
+	prepared, err := applyDecisionSpecBindingPreflight(
+		context.Background(),
+		artifactStore,
+		haftDirFor(root),
+		input,
+	)
+	if err != nil {
+		t.Fatalf("prepare decision with auto preflight: %v", err)
+	}
+	if prepared.SpecBindingPreflight == nil || prepared.SpecBindingPreflight.State != artifact.SpecBindingStateBoundExisting {
+		t.Fatalf("spec_binding_preflight = %#v, want bound_existing", prepared.SpecBindingPreflight)
+	}
+	reservation, err := artifact.NewDecisionReservation(
+		"dec-20260715-spec-preflight-a1b2c3d4",
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	result, err := createArtifactFromInput(context.Background(), artifactStore, haftDirFor(root), "decision.decide", payload)
+	decision, err := artifact.PrepareDecision(
+		context.Background(),
+		artifactStore,
+		haftDirFor(root),
+		reservation,
+		prepared,
+	)
 	if err != nil {
-		t.Fatalf("create decision with auto preflight: %v", err)
+		t.Fatalf("prepare exact decision snapshot: %v", err)
 	}
-
-	decision, err := artifactStore.Get(context.Background(), result.ID)
-	if err != nil {
-		t.Fatal(err)
+	resolved, ok := decision.ResolvedInput()
+	if !ok {
+		t.Fatal("prepared decision omitted resolved input")
 	}
-	fields := decision.UnmarshalDecisionFields()
-	if len(fields.SectionRefs) != 1 || fields.SectionRefs[0] != "TS.sql.decide.001" {
-		t.Fatalf("section_refs = %#v, want preflight-selected section", fields.SectionRefs)
-	}
-	if fields.SpecBindingPreflight == nil || fields.SpecBindingPreflight.State != artifact.SpecBindingStateBoundExisting {
-		t.Fatalf("spec_binding_preflight = %#v, want bound_existing", fields.SpecBindingPreflight)
+	if len(resolved.SectionRefs) != 1 || resolved.SectionRefs[0] != "TS.sql.decide.001" {
+		t.Fatalf("section_refs = %#v, want preflight-selected section", resolved.SectionRefs)
 	}
 }
 
@@ -192,7 +220,7 @@ func TestArtifactCreateProblemExploreComparePersistSpecFit(t *testing.T) {
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	section := specBindingPreflightCLISection("TS.sql.autofit.001", nil)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -278,14 +306,14 @@ func TestArtifactCreateProblemExploreComparePersistSpecFit(t *testing.T) {
 	}
 }
 
-func TestArtifactCreateDecisionBlocksInvalidSpecRefs(t *testing.T) {
+func TestManualDecisionBindingInputBlocksInvalidSpecRefs(t *testing.T) {
 	root := setupSpecSyncProject(t)
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	section := specBindingPreflightCLISection("TS.sql.decide.002", nil)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -294,13 +322,29 @@ func TestArtifactCreateDecisionBlocksInvalidSpecRefs(t *testing.T) {
 	input := specBindingPreflightDecisionInput()
 	input.SectionRefs = []string{"TS.missing.999"}
 
-	payload, err := json.Marshal(input)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = createArtifactFromInput(context.Background(), artifactStore, haftDirFor(root), "decision.decide", payload)
+	prepared, err := applyDecisionSpecBindingPreflight(
+		context.Background(),
+		artifactStore,
+		haftDirFor(root),
+		input,
+	)
 	if err == nil {
-		t.Fatal("expected invalid spec section refs to block decision creation")
+		reservation, reservationErr := artifact.NewDecisionReservation(
+			"dec-20260715-invalid-spec-a1b2c3d4",
+		)
+		if reservationErr != nil {
+			t.Fatal(reservationErr)
+		}
+		_, err = artifact.PrepareDecision(
+			context.Background(),
+			artifactStore,
+			haftDirFor(root),
+			reservation,
+			prepared,
+		)
+	}
+	if err == nil {
+		t.Fatal("expected invalid spec section refs to block decision preparation")
 	}
 	if !strings.Contains(err.Error(), "spec_binding_preflight blocks decision creation") {
 		t.Fatalf("error = %v", err)
@@ -314,7 +358,7 @@ func TestHandleQuintQuerySpecTraceReturnsDecisionAndCodeDrilldown(t *testing.T) 
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	section := specBindingPreflightCLISection("TS.sql.trace.001", nil)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -378,7 +422,7 @@ func TestHandleQuintQuerySpecFitProbeReturnsVariantFit(t *testing.T) {
 		"TS.sql.fit.001",
 		[]string{"symbol:internal/cli/spec.go::runSpecUse"},
 	)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -408,14 +452,14 @@ func TestHandleQuintQuerySpecFitProbeReturnsVariantFit(t *testing.T) {
 	}
 }
 
-func TestSpecBindingDebtReportForStatusBucketsDecisionDebt(t *testing.T) {
+func TestSpecBindingDebtReportFromSpecificationSetBucketsDecisionDebt(t *testing.T) {
 	root := setupSpecSyncProject(t)
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	section := specBindingPreflightCLISection("TS.sql.status.001", nil)
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -437,7 +481,15 @@ func TestSpecBindingDebtReportForStatusBucketsDecisionDebt(t *testing.T) {
 		},
 	})
 
-	report := specBindingDebtReportForStatus(context.Background(), artifactStore, root)
+	specificationSet, err := loadProjectSpecificationSetSQLFirst(root)
+	if err != nil {
+		t.Fatalf("load SQL-first specification set: %v", err)
+	}
+	report := specBindingDebtReportFromSpecificationSet(
+		context.Background(),
+		artifactStore,
+		specificationSet,
+	)
 	if report.Summary.DecisionsMissingSpecBinding != 1 {
 		t.Fatalf("missing = %d, want 1", report.Summary.DecisionsMissingSpecBinding)
 	}
@@ -480,11 +532,12 @@ func createSpecBindingDebtDecision(
 
 func specBindingPreflightDecisionInput() artifact.DecideInput {
 	return artifact.DecideInput{
-		SelectedTitle:   "Spec-bound decision",
-		WhySelected:     "The selected option is governed by the current ProjectSpecificationSet.",
-		SelectionPolicy: "Prefer the option that satisfies the active spec section.",
-		WeakestLink:     "Spec binding could be stale if the ProjectSpecificationSet changes.",
-		CounterArgument: "The work might belong to a different section.",
+		SelectedTitle:    "Spec-bound decision",
+		ProblemStatement: "A load-bearing decision needs an explicit relation to the active ProjectSpecificationSet.",
+		WhySelected:      "The selected option is governed by the current ProjectSpecificationSet.",
+		SelectionPolicy:  "Prefer the option that satisfies the active spec section.",
+		WeakestLink:      "Spec binding could be stale if the ProjectSpecificationSet changes.",
+		CounterArgument:  "The work might belong to a different section.",
 		WhyNotOthers: []artifact.RejectionReason{
 			{Variant: "Leave unbound", Reason: "Load-bearing spec-enabled decisions need an explicit relation."},
 		},

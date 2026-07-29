@@ -56,6 +56,7 @@ var (
 	processTelemetryLongOpenHours int
 	processCheckJSON              bool
 	processCheckProfile           string
+	processCheckScopeID           string
 )
 
 var processCmd = &cobra.Command{
@@ -92,6 +93,7 @@ type processTelemetryOptions struct {
 
 type processCheckOptions struct {
 	Profile string
+	ScopeID string
 	Now     time.Time
 }
 
@@ -319,6 +321,7 @@ func init() {
 	processTelemetryCmd.Flags().IntVar(&processTelemetryLongOpenHours, "long-open-hours", 12, "open MethodRun age threshold in hours")
 	processCheckCmd.Flags().BoolVar(&processCheckJSON, "json", false, "print structured JSON output")
 	processCheckCmd.Flags().StringVar(&processCheckProfile, "profile", "core", "check profile to run; currently only core")
+	processCheckCmd.Flags().StringVar(&processCheckScopeID, "scope-id", "", "Exact canonical project ScopeID for a mixed admitted profile")
 	processCmd.AddCommand(processTelemetryCmd)
 	processCmd.AddCommand(processCheckCmd)
 	rootCmd.AddCommand(processCmd)
@@ -357,8 +360,9 @@ func runProcessCheck(cmd *cobra.Command, _ []string) error {
 	}
 	defer closeStore()
 
-	report, err := buildProcessCheckReport(context.Background(), store, projectRoot, processCheckOptions{
+	report, err := buildProfileAwareProcessCheckReport(commandContext(cmd), store, projectRoot, processCheckOptions{
 		Profile: processCheckProfile,
+		ScopeID: processCheckScopeID,
 		Now:     time.Now().UTC(),
 	})
 	if err != nil {
@@ -370,18 +374,16 @@ func runProcessCheck(cmd *cobra.Command, _ []string) error {
 	return writeProcessCheckText(cmd.OutOrStdout(), report)
 }
 
-func buildProcessCheckReport(
+func buildProcessCheckReportWithScopedMethodResults(
 	ctx context.Context,
 	store *artifact.Store,
 	projectRoot string,
 	options processCheckOptions,
-) (processCheckReport, error) {
-	options = normalizeProcessCheckOptions(options)
-	if options.Profile != "core" {
-		return processCheckReport{}, fmt.Errorf("unsupported process check profile %q; supported profiles: core", options.Profile)
-	}
-	observedAt := options.Now.UTC().Format(time.RFC3339)
-	validUntil := options.Now.UTC().Add(24 * time.Hour).Format(time.RFC3339)
+	observedAt string,
+	validUntil string,
+	methodResults processCheckProjectMethodResultSet,
+	methodPackResult ProcessCheckResult,
+) processCheckReport {
 	report := processCheckReport{
 		Kind:             processCheckKind,
 		SchemaVersion:    1,
@@ -396,17 +398,95 @@ func buildProcessCheckReport(
 	}
 
 	results := []ProcessCheckResult{
-		processCheckMethodRunHardGates(ctx, store, observedAt, validUntil),
-		processCheckCarryThroughAcceptancePosture(ctx, store, observedAt, validUntil),
+		methodResults.HardGates,
+		methodResults.CarryThrough,
 		processCheckGeneratedContractRuntime(observedAt, validUntil),
 		processCheckBindingActionsFailClosed(observedAt, validUntil),
 		processCheckDefaultStatusCompact(ctx, store, projectRoot, observedAt, validUntil),
 		processCheckInterfaceDiscoveryCompact(observedAt, validUntil),
-		processCheckMethodPackCarriers(projectRoot, observedAt, validUntil),
+		methodPackResult,
 	}
 	report.Results = results
 	report.Summary = summarizeProcessCheckResults(results)
+	return report
+}
+
+func buildProfileAwareProcessCheckReport(
+	ctx context.Context,
+	store *artifact.Store,
+	projectRoot string,
+	options processCheckOptions,
+) (processCheckReport, error) {
+	options = normalizeProcessCheckOptions(options)
+	if err := validateProcessCheckOptions(options); err != nil {
+		return processCheckReport{}, err
+	}
+	request, err := projectSpecificationScopeRequestFromFlag(options.ScopeID)
+	if err != nil {
+		return processCheckReport{}, err
+	}
+	resolution, profileErr := resolveCanonicalProjectSpecificationApplicability(
+		ctx,
+		projectRoot,
+		request,
+	)
+	observedAt := options.Now.
+		UTC().
+		Format(time.RFC3339)
+	validUntil := options.Now.
+		UTC().
+		Add(24 * time.Hour).
+		Format(time.RFC3339)
+	methodPackResult := processCheckMethodPackProfileUnavailable(
+		observedAt,
+		validUntil,
+	)
+	methodResults := processCheckProjectMethodProfileUnavailable(
+		observedAt,
+		validUntil,
+	)
+	if profileErr == nil {
+		methodPackResult, err = processCheckMethodPackForProfileResolution(
+			projectRoot,
+			observedAt,
+			validUntil,
+			resolution,
+		)
+		if err != nil {
+			return processCheckReport{}, err
+		}
+		methodResults, err = processCheckProjectMethodResultsForProfileResolution(
+			ctx,
+			store,
+			observedAt,
+			validUntil,
+			resolution,
+		)
+		if err != nil {
+			return processCheckReport{}, err
+		}
+	}
+	report := buildProcessCheckReportWithScopedMethodResults(
+		ctx,
+		store,
+		projectRoot,
+		options,
+		observedAt,
+		validUntil,
+		methodResults,
+		methodPackResult,
+	)
 	return report, nil
+}
+
+func validateProcessCheckOptions(options processCheckOptions) error {
+	if options.Profile != "core" {
+		return fmt.Errorf(
+			"unsupported process check profile %q; supported profiles: core",
+			options.Profile,
+		)
+	}
+	return nil
 }
 
 func normalizeProcessCheckOptions(options processCheckOptions) processCheckOptions {

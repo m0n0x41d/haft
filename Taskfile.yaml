@@ -6,6 +6,7 @@ vars:
   OPEN_SLEIGH_RELEASE_DIR: open-sleigh/_build/prod/rel/open_sleigh
   OPEN_SLEIGH_INSTALL_DIR: ~/.haft/runtimes/open-sleigh/current
   FPF_SPEC: data/FPF/FPF-Spec.md
+  FPF_README: data/FPF/Readme.md
   FPF_DB: internal/cli/fpf.db
 
 tasks:
@@ -34,13 +35,36 @@ tasks:
     desc: Rebuild embedded SQLite index from current FPF checkout
     cmds:
       - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}} "$(git -C data/FPF rev-parse HEAD 2>/dev/null || true)"
-    sources:
-      - '{{.FPF_SPEC}}'
-      - internal/fpf/fpf-routes.json
-      - cmd/indexer/**/*.go
-      - internal/fpf/**/*.go
-    generates:
-      - '{{.FPF_DB}}'
+      - task fpf-verify
+
+  fpf-verify:
+    desc: Read-only verification of the committed FPF Query and TypeEnv index against the current checkout
+    cmds:
+      - go run ./cmd/indexer -verify {{.FPF_DB}} {{.FPF_SPEC}} "$(git -C data/FPF rev-parse HEAD)"
+
+  fpf-query-token-gate:
+    desc: Verify the pinned embedded 1d5 concern corpus saves at least 30% o200k_base tokens; also run the separate synthetic calculus check
+    cmds:
+      - bash scripts/fpf_query_token_gate.sh
+
+  fpf-query-token-lock:
+    desc: Regenerate the universal binary-only tokenizer dependency lock at the frozen cutoff
+    cmds:
+      - >-
+        uvx --from 'uv==0.11.30'
+        uv pip compile
+        scripts/fpf_query_token_count.requirements.in
+        --universal
+        --python-version 3.10
+        --only-binary :all:
+        --emit-build-options
+        --exclude-newer '2026-07-22T00:00:00Z'
+        --generate-hashes
+        --no-annotate
+        --no-sources
+        --default-index 'https://pypi.org/simple'
+        --custom-compile-command 'task fpf-query-token-lock'
+        --output-file scripts/fpf_query_token_count.requirements.txt
 
   fpf-refresh:
     desc: Pull FPF submodule to latest upstream and rebuild embedded SQLite index
@@ -49,11 +73,11 @@ tasks:
       - task fpf-index
 
   # build/install/dev use the COMMITTED internal/cli/fpf.db (go:embed'd into the
-  # binary), the same source of truth CI verifies but never rebakes. Rebaking
-  # needs a live haft-embed and is the explicit maintainer step `task fpf-refresh`
-  # — run it after an FPF spec bump, then commit the regenerated fpf.db.
+  # binary), the same source of truth CI verifies but never rebuilds. Rebuilding
+  # is the explicit maintainer step `task fpf-refresh` — run it after an FPF
+  # source revision bump, then commit the regenerated source-native fpf.db.
   build:
-    desc: Build Go binary (uses the committed FPF index; run `task fpf-refresh` to rebake)
+    desc: Build Go binary (uses the committed FPF index; run `task fpf-refresh` to rebuild)
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:

@@ -578,7 +578,8 @@ defmodule Mix.Tasks.OpenSleigh.Start do
       read_timeout_ms: positive_integer(value_at(codex, :read_timeout_ms), 5_000),
       turn_timeout_ms: positive_integer(value_at(codex, :turn_timeout_ms), 3_600_000),
       stall_timeout_ms: non_negative_integer(value_at(codex, :stall_timeout_ms), 300_000),
-      dynamic_tool_timeout_ms: positive_integer(value_at(codex, :dynamic_tool_timeout_ms), 60_000),
+      dynamic_tool_timeout_ms:
+        positive_integer(value_at(codex, :dynamic_tool_timeout_ms), 60_000),
       approval_policy: config_string(value_at(codex, :approval_policy, "never")),
       thread_sandbox: config_string(value_at(codex, :thread_sandbox, "workspace-write")),
       turn_sandbox_policy: value_at(codex, :turn_sandbox_policy, %{"type" => "workspaceWrite"})

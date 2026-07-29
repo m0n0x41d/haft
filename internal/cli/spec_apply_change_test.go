@@ -53,7 +53,7 @@ func TestRunSpecApplyChangeAppliesRecognizedRelationshipUpdate(t *testing.T) {
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
-	edition, err := store.GetCurrent("qnt_spec_sync_test", "TS.sync.001")
+	edition, err := store.GetCurrent("qnt_5eec5eec", "TS.sync.001")
 	if err != nil {
 		t.Fatalf("GetCurrent: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestRunSpecApplyChangeDryRunReportsScalarUpdateWithoutWriting(t *testing.T)
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
-	if _, err := store.GetCurrent("qnt_spec_sync_test", "TS.sync.001"); err == nil {
+	if _, err := store.GetCurrent("qnt_5eec5eec", "TS.sync.001"); err == nil {
 		t.Fatal("dry-run wrote a current SQL edition")
 	}
 }

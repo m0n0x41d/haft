@@ -182,17 +182,22 @@ defmodule OpenSleigh.OrchestratorRetryTest do
   end
 
   test "abnormal worker exit schedules retry", ctx do
-    orchestrator = start_orchestrator!(ctx, CrashAgent)
+    orchestrator = start_orchestrator!(ctx, CrashAgent, base_retry_backoff_ms: 1_000)
 
     submit_retry_ticket(ctx.tracker, orchestrator)
 
-    assert :ok = wait_until(fn -> retry_attempt(orchestrator, "OCT-RETRY") == 1 end, 500)
-    retry = Orchestrator.status(orchestrator).retries["OCT-RETRY"]
-    assert match?({:worker_down, _reason}, retry.error)
-  end
+    assert :ok =
+             wait_until(
+               fn ->
+                 status = Orchestrator.status(orchestrator)
 
-  defp start_orchestrator!(ctx, agent_adapter) do
-    start_orchestrator!(ctx, agent_adapter, [])
+                 match?(
+                   %{attempt: 1, error: {:worker_down, _reason}},
+                   status.retries["OCT-RETRY"]
+                 )
+               end,
+               500
+             )
   end
 
   defp start_orchestrator!(ctx, agent_adapter, retry_opts) do

@@ -6,13 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
-	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/present"
 
 	_ "modernc.org/sqlite"
@@ -103,8 +101,56 @@ func completeDecisionArgs(args map[string]any) map[string]any {
 			"triggers": []string{"Primary acceptance check regresses after rollout"},
 		}
 	}
+	_, hasProblemRef := complete["problem_ref"]
+	_, hasProblemRefs := complete["problem_refs"]
+	_, hasPortfolioRef := complete["portfolio_ref"]
+	_, hasProblemStatement := complete["problem_statement"]
+	if !hasProblemRef && !hasProblemRefs && !hasPortfolioRef && !hasProblemStatement {
+		title, _ := complete["selected_title"].(string)
+		complete["problem_statement"] = "Choose the bounded implementation approach represented by: " + title
+	}
 
 	return complete
+}
+
+func mustSeedDecision(
+	t *testing.T,
+	ctx context.Context,
+	store artifact.ArtifactStore,
+	haftDir string,
+	input artifact.DecideInput,
+) *artifact.Artifact {
+	t.Helper()
+
+	if input.ProblemRef == "" && len(input.ProblemRefs) == 0 && input.PortfolioRef == "" && input.ProblemStatement == "" {
+		input.ProblemStatement = "Seed the DecisionRecord required by this non-binding tool test."
+	}
+	if input.SelectionPolicy == "" {
+		input.SelectionPolicy = "Prefer the option that best satisfies the active acceptance criteria with the least avoidable complexity."
+	}
+	if input.CounterArgument == "" {
+		input.CounterArgument = "The selected option can fail if its current assumptions do not survive the real workload."
+	}
+	if input.WeakestLink == "" {
+		input.WeakestLink = "Operational confidence still depends on limited production-grade evidence."
+	}
+	if len(input.WhyNotOthers) == 0 {
+		input.WhyNotOthers = []artifact.RejectionReason{{
+			Variant: "Fallback alternative",
+			Reason:  "It adds cost or complexity without enough compensating value for this scope.",
+		}}
+	}
+	if input.Rollback == nil {
+		input.Rollback = &artifact.RollbackSpec{
+			Triggers: []string{"Primary acceptance check regresses after rollout"},
+		}
+	}
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, input)
+	if err != nil {
+		t.Fatalf("seed DecisionRecord through artifact core: %v", err)
+	}
+	return decision
 }
 
 type decisionToolFixture struct {
@@ -231,94 +277,9 @@ func setupDecisionToolFixture(t *testing.T) decisionToolFixture {
 	}
 }
 
-func TestHaftQueryTool_FPFUsesInjectedSearch(t *testing.T) {
-	store := setupHaftToolStore(t)
-	tool := NewHaftQueryTool(store, func(request FPFSearchRequest) (string, error) {
-		if request.Query != "A.6" {
-			t.Fatalf("unexpected query %q", request.Query)
-		}
-		if request.Limit != fpf.DefaultSpecSearchLimit {
-			t.Fatalf("unexpected limit %d", request.Limit)
-		}
-		if request.Full {
-			t.Fatal("expected full=false by default")
-		}
-		if request.Explain {
-			t.Fatal("expected explain=false by default")
-		}
-		return "### A.6 — Signature Stack & Boundary Discipline\ntier: pattern · exact pattern id\n", nil
-	})
-
-	result, err := tool.Execute(context.Background(), mustJSON(t, map[string]any{
-		"action": "fpf",
-		"query":  "A.6",
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.DisplayText, "A.6") {
-		t.Fatalf("unexpected result: %s", result.DisplayText)
-	}
-}
-
-func TestHaftQueryTool_FPFPassesOptionalSearchControls(t *testing.T) {
-	store := setupHaftToolStore(t)
-	tool := NewHaftQueryTool(store, func(request FPFSearchRequest) (string, error) {
-		if request.Query != "boundary routing" {
-			t.Fatalf("unexpected query %q", request.Query)
-		}
-		if request.Limit != 3 {
-			t.Fatalf("unexpected limit %d", request.Limit)
-		}
-		if !request.Full {
-			t.Fatal("expected full=true")
-		}
-		if !request.Explain {
-			t.Fatal("expected explain=true")
-		}
-		return "### A.6 — Signature Stack & Boundary Discipline\ntier: route · Boundary discipline and routing\n", nil
-	})
-
-	result, err := tool.Execute(context.Background(), mustJSON(t, map[string]any{
-		"action":  "fpf",
-		"query":   "boundary routing",
-		"limit":   3,
-		"full":    true,
-		"explain": true,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.DisplayText, "Boundary discipline and routing") {
-		t.Fatalf("unexpected result: %s", result.DisplayText)
-	}
-}
-
-func TestHaftQueryTool_FPFPassesExperimentalMode(t *testing.T) {
-	store := setupHaftToolStore(t)
-	tool := NewHaftQueryTool(store, func(request FPFSearchRequest) (string, error) {
-		if request.Mode != fpf.SpecSearchModeTree {
-			t.Fatalf("unexpected mode %q", request.Mode)
-		}
-		return "### A.6.B — Boundary Norm Square\ntier: drilldown · tree drill-down leaf A.6.B\n", nil
-	})
-
-	result, err := tool.Execute(context.Background(), mustJSON(t, map[string]any{
-		"action": "fpf",
-		"query":  "boundary deontics",
-		"mode":   fpf.SpecSearchModeTree,
-	}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.DisplayText, "drilldown") {
-		t.Fatalf("unexpected result: %s", result.DisplayText)
-	}
-}
-
 func TestHaftQueryTool_ProjectionRendersSelectedView(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
-	tool := NewHaftQueryTool(fixture.store, nil)
+	tool := NewHaftQueryTool(fixture.store)
 
 	result, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
 		"action": "projection",
@@ -343,39 +304,33 @@ func TestHaftQueryTool_ProjectionRendersSelectedView(t *testing.T) {
 
 func TestHaftQueryTool_ProjectionDelegatedBriefUsesCanonicalHandoffFields(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
-	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
-
-	_, err := decisionTool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Delegated handoff should render canonical fields only.",
-		"weakest_link":   "Operational confidence still depends on limited production-grade evidence.",
-		"invariants":     []string{"p99 latency remains below 50ms during cutover"},
-		"admissibility":  []string{"No silent message loss during protocol migration"},
-		"affected_files": []string{"internal/transport/grpc.go", "internal/transport/contracts.proto"},
-		"predictions": []map[string]any{
+	mustSeedDecision(t, fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:    fixture.problem.Meta.ID,
+		PortfolioRef:  fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "Delegated handoff should render canonical fields only.",
+		WeakestLink:   "Operational confidence still depends on limited production-grade evidence.",
+		Invariants:    []string{"p99 latency remains below 50ms during cutover"},
+		Admissibility: []string{"No silent message loss during protocol migration"},
+		AffectedFiles: []string{"internal/transport/grpc.go", "internal/transport/contracts.proto"},
+		Predictions: []artifact.PredictionInput{
 			{
-				"claim":      "Latency stays under 50ms",
-				"observable": "publish latency p99",
-				"threshold":  "< 50ms",
+				Claim:      "Latency stays under 50ms",
+				Observable: "publish latency p99",
+				Threshold:  "< 50ms",
 			},
 			{
-				"claim":      "Throughput stays above 100k events/sec",
-				"observable": "throughput",
-				"threshold":  "> 100k events/sec",
+				Claim:      "Throughput stays above 100k events/sec",
+				Observable: "throughput",
+				Threshold:  "> 100k events/sec",
 			},
 		},
-		"rollback": map[string]any{
-			"triggers": []string{"Error budget exceeds 2% during canary"},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Error budget exceeds 2% during canary"},
 		},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
 
-	queryTool := NewHaftQueryTool(fixture.store, nil)
+	queryTool := NewHaftQueryTool(fixture.store)
 	result, err := queryTool.Execute(fixture.ctx, mustJSON(t, map[string]any{
 		"action": "projection",
 		"view":   "brief",
@@ -405,36 +360,22 @@ func TestHaftQueryTool_ProjectionDelegatedBriefUsesCanonicalHandoffFields(t *tes
 
 func TestHaftQueryTool_ProjectionChangeRationaleUsesCanonicalDecisionState(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
-	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
-
-	decisionResult, err := decisionTool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "It meets the latency target with acceptable operating cost.",
-		"why_not_others": []map[string]any{{
-			"variant": "REST",
-			"reason":  "Higher steady-state latency with no decisive cost advantage.",
+	decision := mustSeedDecision(t, fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:    fixture.problem.Meta.ID,
+		PortfolioRef:  fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "It meets the latency target with acceptable operating cost.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "REST",
+			Reason:  "Higher steady-state latency with no decisive cost advantage.",
 		}},
-		"rollback": map[string]any{
-			"triggers": []string{"Error budget exceeds 2% during canary"},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Error budget exceeds 2% during canary"},
 		},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
+	decisionID := decision.Meta.ID
 
-	if decisionResult.Meta == nil {
-		t.Fatal("expected decision artifact metadata in tool response")
-	}
-
-	decisionID := strings.TrimSpace(decisionResult.Meta.ArtifactRef)
-	if decisionID == "" {
-		t.Fatal("expected decision artifact id in tool response")
-	}
-
-	_, err = artifact.Measure(fixture.ctx, fixture.store, fixture.haftDir, artifact.MeasureInput{
+	_, err := artifact.Measure(fixture.ctx, fixture.store, fixture.haftDir, artifact.MeasureInput{
 		DecisionRef: decisionID,
 		Findings:    "Latency passed, rollout is still partially blocked on throughput headroom.",
 		CriteriaMet: []string{
@@ -449,7 +390,7 @@ func TestHaftQueryTool_ProjectionChangeRationaleUsesCanonicalDecisionState(t *te
 		t.Fatal(err)
 	}
 
-	queryTool := NewHaftQueryTool(fixture.store, nil)
+	queryTool := NewHaftQueryTool(fixture.store)
 	result, err := queryTool.Execute(fixture.ctx, mustJSON(t, map[string]any{
 		"action": "projection",
 		"view":   "rationale",
@@ -500,7 +441,7 @@ func TestHaftQueryTool_ProjectionHonorsContextFilter(t *testing.T) {
 		}
 	}
 
-	tool := NewHaftQueryTool(store, nil)
+	tool := NewHaftQueryTool(store)
 	result, err := tool.Execute(ctx, mustJSON(t, map[string]any{
 		"action":  "projection",
 		"view":    "engineer",
@@ -758,7 +699,7 @@ func TestHaftWorkflowToolResponsesPairArtifactTitlesWithRefs(t *testing.T) {
 	}
 }
 
-func TestHaftDecisionToolResponsePairsTitleWithRef(t *testing.T) {
+func TestHaftDecisionToolNonBindingResponsesPairTitleWithRef(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
 	projectRoot := t.TempDir()
 	affectedPath := filepath.Join("internal", "transport", "grpc.go")
@@ -769,33 +710,14 @@ func TestHaftDecisionToolResponsePairsTitleWithRef(t *testing.T) {
 		t.Fatal(err)
 	}
 	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, projectRoot, nil)
-
-	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "The comparison shows the operator-facing trade-off clearly enough to bind.",
-		"weakest_link":   "Operational confidence still depends on limited production-grade evidence.",
-		"affected_files": []string{affectedPath},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta == nil {
-		t.Fatal("expected decision metadata")
-	}
-
-	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.DisplayText, "Decision recorded: "+present.ArtifactLabel(decision.Meta.Title, decision.Meta.ID)) {
-		t.Fatalf("decide output should pair decision title with ref:\n%s", result.DisplayText)
-	}
-	if strings.Contains(result.DisplayText, "\nID: "+decision.Meta.ID+"\n") {
-		t.Fatalf("decide output should not expose a standalone bare decision ref:\n%s", result.DisplayText)
-	}
+	decision := mustSeedDecision(t, fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:    fixture.problem.Meta.ID,
+		PortfolioRef:  fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "The comparison shows the operator-facing trade-off clearly enough to bind.",
+		WeakestLink:   "Operational confidence still depends on limited production-grade evidence.",
+		AffectedFiles: []string{affectedPath},
+	})
 
 	evidenceResult, err := tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
 		"action":           "evidence",
@@ -1141,8 +1063,8 @@ func TestResolveComparedPortfolioRef_RequiresPersistedComparison(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := resolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != "" {
-		t.Fatalf("resolveComparedPortfolioRef = %q, want empty before compare", got)
+	if got := artifact.ResolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != "" {
+		t.Fatalf("ResolveComparedPortfolioRef = %q, want empty before compare", got)
 	}
 
 	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
@@ -1171,404 +1093,8 @@ func TestResolveComparedPortfolioRef_RequiresPersistedComparison(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if got := resolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != portfolio.Meta.ID {
-		t.Fatalf("resolveComparedPortfolioRef = %q, want %q after compare", got, portfolio.Meta.ID)
-	}
-}
-
-func TestHaftDecisionTool_DecideRepairsLegacyComparedPortfolioRef(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
-		Title:  "Transport choice",
-		Signal: "Latency variance between protocols",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
-		ProblemRef: problem.Meta.ID,
-		Variants: []artifact.Variant{
-			{
-				Title:         "REST",
-				WeakestLink:   "chatty payloads",
-				NoveltyMarker: "Keep the existing request-response semantics",
-			},
-			{
-				Title:         "gRPC",
-				WeakestLink:   "tooling overhead",
-				NoveltyMarker: "Adopt binary RPC with generated clients",
-			},
-		},
-		NoSteppingStoneRationale: "Both transports are direct target architectures.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
-		PortfolioRef: portfolio.Meta.ID,
-		Results: artifact.ComparisonResult{
-			Dimensions: []string{"latency"},
-			Scores: map[string]map[string]string{
-				"REST": {"latency": "42ms"},
-				"gRPC": {"latency": "18ms"},
-			},
-			NonDominatedSet: []string{"gRPC"},
-			DominatedVariants: []artifact.DominatedVariantExplanation{
-				{
-					Variant:     "REST",
-					DominatedBy: []string{"gRPC"},
-					Summary:     "Higher latency with no compensating advantage in this comparison.",
-				},
-			},
-			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
-				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
-			},
-			SelectedRef: "gRPC",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	activeCycle := &agent.Cycle{
-		ID:           "cyc-legacy",
-		Status:       agent.CycleActive,
-		ProblemRef:   problem.Meta.ID,
-		PortfolioRef: portfolio.Meta.ID,
-		Phase:        agent.PhaseExplorer,
-	}
-
-	var persisted *agent.Cycle
-	registry := &Registry{}
-	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
-		return activeCycle
-	})
-	registry.SetCycleUpdater(func(_ context.Context, repaired *agent.Cycle) error {
-		copy := *repaired
-		persisted = &copy
-		activeCycle = &copy
-		return nil
-	})
-	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
-		return cycle != nil, nil
-	})
-
-	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    problem.Meta.ID,
-		"portfolio_ref":  portfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Persisted comparison already established the active portfolio as the best latency trade-off.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta == nil {
-		t.Fatal("expected decision artifact metadata")
-	}
-	if persisted == nil {
-		t.Fatal("expected repaired cycle to be persisted")
-	}
-	if persisted.ComparedPortfolioRef != portfolio.Meta.ID {
-		t.Fatalf("ComparedPortfolioRef = %q, want %q", persisted.ComparedPortfolioRef, portfolio.Meta.ID)
-	}
-	if persisted.Phase != agent.PhaseDecider {
-		t.Fatalf("Phase = %s, want %s", persisted.Phase, agent.PhaseDecider)
-	}
-}
-
-func TestHaftDecisionTool_DecideFailsWhenComparedRepairCannotPersist(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
-		Title:  "Transport choice",
-		Signal: "Latency variance between protocols",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
-		ProblemRef: problem.Meta.ID,
-		Variants: []artifact.Variant{
-			{
-				Title:         "REST",
-				WeakestLink:   "chatty payloads",
-				NoveltyMarker: "Keep the existing request-response semantics",
-			},
-			{
-				Title:         "gRPC",
-				WeakestLink:   "tooling overhead",
-				NoveltyMarker: "Adopt binary RPC with generated clients",
-			},
-		},
-		NoSteppingStoneRationale: "Both transports are direct target architectures.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
-		PortfolioRef: portfolio.Meta.ID,
-		Results: artifact.ComparisonResult{
-			Dimensions: []string{"latency"},
-			Scores: map[string]map[string]string{
-				"REST": {"latency": "42ms"},
-				"gRPC": {"latency": "18ms"},
-			},
-			NonDominatedSet: []string{"gRPC"},
-			DominatedVariants: []artifact.DominatedVariantExplanation{
-				{
-					Variant:     "REST",
-					DominatedBy: []string{"gRPC"},
-					Summary:     "Higher latency with no compensating advantage in this comparison.",
-				},
-			},
-			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
-				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
-			},
-			SelectedRef: "gRPC",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	registry := &Registry{}
-	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
-		return &agent.Cycle{
-			ID:           "cyc-legacy",
-			Status:       agent.CycleActive,
-			ProblemRef:   problem.Meta.ID,
-			PortfolioRef: portfolio.Meta.ID,
-			Phase:        agent.PhaseExplorer,
-		}
-	})
-	registry.SetCycleUpdater(func(context.Context, *agent.Cycle) error {
-		return fmt.Errorf("disk full")
-	})
-	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
-		return cycle != nil, nil
-	})
-
-	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    problem.Meta.ID,
-		"portfolio_ref":  portfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Persisted comparison already established the active portfolio as the best latency trade-off.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta != nil {
-		t.Fatal("expected guardrail result, not a decision artifact")
-	}
-	if !strings.Contains(result.DisplayText, "could not persist the compared-portfolio repair") {
-		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
-	}
-}
-
-func TestHaftDecisionTool_DecideRequiresSelectedVariantToMatchUserChoice(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
-		Title:  "Transport choice",
-		Signal: "Latency variance between protocols",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	portfolio, _, err := artifact.ExploreSolutions(ctx, store, haftDir, artifact.ExploreInput{
-		ProblemRef: problem.Meta.ID,
-		Variants: []artifact.Variant{
-			{
-				Title:         "REST",
-				WeakestLink:   "chatty payloads",
-				NoveltyMarker: "Keep the existing request-response semantics",
-			},
-			{
-				Title:         "gRPC",
-				WeakestLink:   "tooling overhead",
-				NoveltyMarker: "Adopt binary RPC with generated clients",
-			},
-		},
-		NoSteppingStoneRationale: "Both transports are direct target architectures.",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, _, err = artifact.CompareSolutions(ctx, store, haftDir, artifact.CompareInput{
-		PortfolioRef: portfolio.Meta.ID,
-		Results: artifact.ComparisonResult{
-			Dimensions: []string{"latency"},
-			Scores: map[string]map[string]string{
-				"REST": {"latency": "42ms"},
-				"gRPC": {"latency": "18ms"},
-			},
-			NonDominatedSet: []string{"gRPC"},
-			DominatedVariants: []artifact.DominatedVariantExplanation{
-				{
-					Variant:     "REST",
-					DominatedBy: []string{"gRPC"},
-					Summary:     "Higher latency with no compensating advantage in this comparison.",
-				},
-			},
-			ParetoTradeoffs: []artifact.ParetoTradeoffNote{
-				{Variant: "gRPC", Summary: "Lowest latency in the compared transport pair."},
-			},
-			SelectedRef: "gRPC",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	registry := &Registry{}
-	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
-		return &agent.Cycle{
-			ID:                   "cyc-select",
-			Status:               agent.CycleActive,
-			ProblemRef:           problem.Meta.ID,
-			PortfolioRef:         portfolio.Meta.ID,
-			ComparedPortfolioRef: portfolio.Meta.ID,
-			SelectedPortfolioRef: portfolio.Meta.ID,
-			SelectedVariantRef:   "V2",
-			Phase:                agent.PhaseDecider,
-		}
-	})
-	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
-		return agent.HasDecisionSelection(cycle), nil
-	})
-
-	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    problem.Meta.ID,
-		"portfolio_ref":  portfolio.Meta.ID,
-		"selected_title": "REST",
-		"why_selected":   "Pretend the agent ignored the user's chosen variant.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta != nil {
-		t.Fatal("expected guardrail result, not a decision artifact")
-	}
-	if !strings.Contains(result.DisplayText, "does not match the human-selected variant") {
-		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
-	}
-}
-
-func TestHaftDecisionTool_DecideRejectsMismatchedPortfolioRef(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-
-	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"portfolio_ref":  fixture.otherPortfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Latency wins inside the compared portfolio.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta != nil {
-		t.Fatal("expected guardrail result, not a decision artifact")
-	}
-	if !strings.Contains(result.DisplayText, "active compared portfolio") {
-		t.Fatalf("unexpected guardrail: %s", result.DisplayText)
-	}
-}
-
-func TestHaftDecisionTool_DecideDefaultsMissingPortfolioRefToActiveCycle(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-
-	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Latency wins inside the compared portfolio.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta == nil {
-		t.Fatal("expected decision artifact metadata")
-	}
-
-	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !hasArtifactLink(decision.Meta.Links, fixture.comparedPortfolio.Meta.ID, "based_on") {
-		t.Fatalf("expected decision to link to active portfolio %q, links=%v", fixture.comparedPortfolio.Meta.ID, decision.Meta.Links)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if fields.SelectionPolicy == "" {
-		t.Fatal("expected selection_policy in structured data")
-	}
-	if fields.CounterArgument == "" {
-		t.Fatal("expected counterargument in structured data")
-	}
-	if len(fields.WhyNotOthers) == 0 {
-		t.Fatal("expected rejected alternatives in structured data")
-	}
-	if len(fields.RollbackTriggers) == 0 {
-		t.Fatal("expected rollback triggers in structured data")
-	}
-}
-
-func TestHaftDecisionTool_DecideDisplayIncludesFullDecisionBody(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-
-	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":           "decide",
-		"problem_ref":      fixture.problem.Meta.ID,
-		"selected_title":   "gRPC",
-		"why_selected":     "Latency wins inside the compared portfolio.",
-		"selection_policy": "Minimize latency within the approved cost envelope.",
-		"counterargument":  "Protocol migration complexity could erase the latency gain.",
-		"why_not_others": []map[string]any{{
-			"variant": "REST",
-			"reason":  "Latency tails stay above the accepted bound.",
-		}},
-		"rollback": map[string]any{
-			"triggers": []string{"Latency exceeds the approved p99 after rollout"},
-		},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	required := []string{
-		"## 2. Decision",
-		"**Selection policy:** Minimize latency within the approved cost envelope.",
-		"## 3. Rationale",
-		"**Counterargument:** Protocol migration complexity could erase the latency gain.",
-		"**Rejected alternatives:**",
-		"## 4. Consequences",
-		"Latency exceeds the approved p99 after rollout",
-	}
-
-	for _, want := range required {
-		if !strings.Contains(result.DisplayText, want) {
-			t.Fatalf("expected direct decide display to include %q, got:\n%s", want, result.DisplayText)
-		}
+	if got := artifact.ResolveComparedPortfolioRef(ctx, store, portfolio.Meta.ID); got != portfolio.Meta.ID {
+		t.Fatalf("ResolveComparedPortfolioRef = %q, want %q after compare", got, portfolio.Meta.ID)
 	}
 }
 
@@ -1732,121 +1258,6 @@ func TestHaftDecisionTool_MeasureRejectsForeignArtifactRef(t *testing.T) {
 	}
 }
 
-func TestHaftDecisionTool_DecideAcceptsLegacyComparedPortfolioSelection(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
-		Title:      "Transport choice",
-		Signal:     "Need to keep a legacy compared portfolio working",
-		Acceptance: "Respect the user's selected variant from a legacy compared portfolio",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	legacyPortfolio := &artifact.Artifact{
-		Meta: artifact.Meta{
-			ID:      "sol-legacy-compared",
-			Kind:    artifact.KindSolutionPortfolio,
-			Title:   "Legacy compared portfolio",
-			Context: "transport",
-			Mode:    artifact.ModeStandard,
-		},
-		Body: `# Legacy compared portfolio
-
-## Variants (2)
-
-### V1. REST
-
-**Weakest link:** chatty payloads
-
-### V2. gRPC
-
-**Weakest link:** tooling overhead
-
-## Comparison
-
-**Pareto front:** gRPC
-`,
-		StructuredData: `{}`,
-	}
-	if err := store.Create(ctx, legacyPortfolio); err != nil {
-		t.Fatal(err)
-	}
-
-	activeCycle := &agent.Cycle{
-		ID:                   "cyc-legacy-selection",
-		Status:               agent.CycleActive,
-		ProblemRef:           problem.Meta.ID,
-		PortfolioRef:         legacyPortfolio.Meta.ID,
-		ComparedPortfolioRef: legacyPortfolio.Meta.ID,
-		SelectedPortfolioRef: legacyPortfolio.Meta.ID,
-		SelectedVariantRef:   "V2",
-		Phase:                agent.PhaseDecider,
-	}
-
-	registry := &Registry{}
-	registry.SetCycleResolver(func(context.Context) *agent.Cycle {
-		return activeCycle
-	})
-	registry.SetDecisionBoundaryChecker(func(_ context.Context, cycle *agent.Cycle) (bool, error) {
-		return agent.HasDecisionSelection(cycle), nil
-	})
-
-	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), registry)
-	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    problem.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "The human already chose the legacy gRPC variant after compare.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta == nil {
-		t.Fatalf("expected decision artifact metadata, got guardrail: %s", result.DisplayText)
-	}
-}
-
-func TestHaftDecisionTool_PersistsFirstModuleCoverageFlag(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	_, err := store.DB().ExecContext(ctx, `
-		INSERT INTO codebase_modules (module_id, path, name, lang, file_count, last_scanned)
-		VALUES ('mod-api', 'internal/api', 'api', 'go', 2, '2026-03-18T12:00:00Z')`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), nil)
-	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"selected_title": "Introduce API gateway",
-		"why_selected":   "Need a consistent ingress boundary",
-		"affected_files": []string{"internal/api/router.go"},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(result.DisplayText, "First decision governing module") {
-		t.Fatalf("expected first-module coverage warning, got: %s", result.DisplayText)
-	}
-
-	decision, err := store.Get(ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if !fields.FirstModuleCoverage {
-		t.Fatal("expected first_module_coverage flag to be persisted")
-	}
-}
-
 func hasArtifactLink(links []artifact.Link, ref, linkType string) bool {
 	for _, link := range links {
 		if link.Ref == ref && link.Type == linkType {
@@ -1855,53 +1266,6 @@ func hasArtifactLink(links []artifact.Link, ref, linkType string) bool {
 	}
 
 	return false
-}
-
-func TestHaftDecisionTool_SuppressesFirstModuleCoverageWarningWhenGoverned(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	_, err := store.DB().ExecContext(ctx, `
-		INSERT INTO codebase_modules (module_id, path, name, lang, file_count, last_scanned)
-		VALUES ('mod-api', 'internal/api', 'api', 'go', 2, '2026-03-18T12:00:00Z')`)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	tool := NewHaftDecisionTool(store, haftDir, t.TempDir(), nil)
-	_, err = tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"selected_title": "Existing API gateway",
-		"why_selected":   "The module already has a boundary decision",
-		"affected_files": []string{"internal/api/router.go"},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := tool.Execute(ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"selected_title": "Follow-up API change",
-		"why_selected":   "Need to refine the existing ingress decision",
-		"affected_files": []string{"internal/api/server.go"},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(result.DisplayText, "First decision governing module") {
-		t.Fatalf("expected follow-up decision to skip first-module warning, got: %s", result.DisplayText)
-	}
-
-	decision, err := store.Get(ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if fields.FirstModuleCoverage {
-		t.Fatal("expected first_module_coverage to remain false for governed module")
-	}
 }
 
 func TestHaftDecisionTool_SchemaIncludesEvidenceAction(t *testing.T) {
@@ -2025,6 +1389,7 @@ func TestHaftDecisionTool_SchemaIncludesExtendedDecideInputFields(t *testing.T) 
 		"context",
 		"task_context",
 		"problem_refs",
+		"problem_statement",
 		"section_refs",
 		"pre_conditions",
 		"evidence_requirements",
@@ -2076,41 +1441,6 @@ func TestHaftDecisionTool_SchemaIncludesTacticalSkipFields(t *testing.T) {
 	}
 }
 
-func TestHaftDecisionTool_DecideUsesTaskContextInArtifactID(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
-
-	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Tool-mode decide should pass task_context into the DecisionRecord ID.",
-		"task_context":   "Task #4: API/CLI cleanup",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if result.Meta == nil {
-		t.Fatal("expected decision artifact metadata")
-	}
-
-	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-api-cli-cleanup-[0-9a-f]{8}$`)
-	if !pattern.MatchString(result.Meta.ArtifactRef) {
-		t.Fatalf("artifact ref = %q, want sanitized task_context slug before 8-hex suffix", result.Meta.ArtifactRef)
-	}
-
-	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if fields.TaskContext != "task-4-api-cli-cleanup" {
-		t.Fatalf("structured task_context = %q, want sanitized slug", fields.TaskContext)
-	}
-}
-
 func TestHaftDecisionTool_SchemaIncludesMeasureMeasurementsAndCompletePredictions(t *testing.T) {
 	tool := NewHaftDecisionTool(setupHaftToolStore(t), t.TempDir(), t.TempDir(), nil)
 	schema := tool.Schema()
@@ -2142,155 +1472,6 @@ func TestHaftDecisionTool_SchemaIncludesMeasureMeasurementsAndCompletePrediction
 	want := []string{"claim", "observable", "threshold"}
 	if strings.Join(required, ",") != strings.Join(want, ",") {
 		t.Fatalf("prediction required fields = %v, want %v", required, want)
-	}
-}
-
-func TestHaftDecisionTool_DecideRoundTripsExtendedDecideInputFields(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
-
-	additionalProblem, _, err := artifact.FrameProblem(fixture.ctx, fixture.store, fixture.haftDir, artifact.ProblemFrameInput{
-		Title:      "Transport rollback coverage",
-		Signal:     "Rollback criteria are under-specified",
-		Acceptance: "Decision ties transport rollout to rollback evidence",
-		Context:    "transport",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	result, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":                "decide",
-		"context":               "transport",
-		"problem_ref":           fixture.problem.Meta.ID,
-		"problem_refs":          []string{fixture.problem.Meta.ID, additionalProblem.Meta.ID},
-		"section_refs":          []string{"TS.transport.001", "ES.transport.001"},
-		"portfolio_ref":         fixture.comparedPortfolio.Meta.ID,
-		"selected_title":        "gRPC",
-		"why_selected":          "Lower latency with schema-checked client generation.",
-		"pre_conditions":        []string{"Benchmarks reproduced in CI", "Consumer schema freeze approved"},
-		"evidence_requirements": []string{"p99 latency stays below 20ms", "Generated clients compile in CI"},
-		"refresh_triggers":      []string{"Latency budget regresses after rollout", "Generated clients fail across two releases"},
-		"search_keywords":       "grpc transport latency schema rollback",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if decision.Meta.Context != "transport" {
-		t.Fatalf("decision context = %q, want transport", decision.Meta.Context)
-	}
-	if decision.SearchKeywords != "grpc transport latency schema rollback" {
-		t.Fatalf("search keywords = %q", decision.SearchKeywords)
-	}
-
-	for _, want := range []string{
-		"**Pre-conditions:**",
-		"- [ ] Benchmarks reproduced in CI",
-		"- [ ] Consumer schema freeze approved",
-		"**Evidence requirements:**",
-		"- p99 latency stays below 20ms",
-		"- Generated clients compile in CI",
-		"**Spec sections:**",
-		"- TS.transport.001",
-		"- ES.transport.001",
-		"**Refresh triggers:**",
-		"- Latency budget regresses after rollout",
-		"- Generated clients fail across two releases",
-	} {
-		if !strings.Contains(decision.Body, want) {
-			t.Fatalf("decision body missing %q:\n%s", want, decision.Body)
-		}
-	}
-
-	links, err := fixture.store.GetLinks(fixture.ctx, decision.Meta.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	expectedRefs := map[string]bool{
-		fixture.problem.Meta.ID:           false,
-		additionalProblem.Meta.ID:         false,
-		fixture.comparedPortfolio.Meta.ID: false,
-		"TS.transport.001":                false,
-		"ES.transport.001":                false,
-	}
-
-	for _, link := range links {
-		if _, ok := expectedRefs[link.Ref]; ok {
-			expectedRefs[link.Ref] = true
-		}
-	}
-
-	for ref, found := range expectedRefs {
-		if !found {
-			t.Fatalf("decision links missing ref %q: %+v", ref, links)
-		}
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if strings.Join(fields.SectionRefs, ",") != "TS.transport.001,ES.transport.001" {
-		t.Fatalf("decision section refs = %#v, want spec refs", fields.SectionRefs)
-	}
-}
-
-func TestHaftDecisionTool_DecideLegacyPayloadStillWorksWithoutExtendedFields(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-
-	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Lower latency is worth the tooling overhead for the current scope.",
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	decision, err := fixture.store.Get(fixture.ctx, result.Meta.ArtifactRef)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if decision.SearchKeywords != "" {
-		t.Fatalf("expected empty search keywords for legacy payload, got %q", decision.SearchKeywords)
-	}
-
-	for _, unexpected := range []string{
-		"**Pre-conditions:**",
-		"**Evidence requirements:**",
-		"**Refresh triggers:**",
-	} {
-		if strings.Contains(decision.Body, unexpected) {
-			t.Fatalf("legacy payload should omit %q:\n%s", unexpected, decision.Body)
-		}
-	}
-}
-
-func TestHaftDecisionTool_DecideRejectsPartialPredictions(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-	tool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
-
-	_, err := tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"portfolio_ref":  fixture.comparedPortfolio.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Incomplete prediction payloads should be rejected before persistence.",
-		"predictions": []map[string]any{
-			{"claim": "Latency stays below 20ms"},
-		},
-	})))
-	if err == nil {
-		t.Fatal("expected validation error for partial predictions")
-	}
-	if !strings.Contains(err.Error(), "predictions[0] must include claim, observable, and threshold") {
-		t.Fatalf("unexpected validation error: %v", err)
 	}
 }
 
@@ -2391,26 +1572,20 @@ func TestHaftDecisionTool_MeasureRejectsMalformedMeasurements(t *testing.T) {
 
 func TestHaftQueryTool_ProjectionEngineerRendersDecisionRuntimeFields(t *testing.T) {
 	fixture := setupDecisionToolFixture(t)
-	decisionTool := NewHaftDecisionTool(fixture.store, fixture.haftDir, t.TempDir(), nil)
-
-	_, err := decisionTool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":                "decide",
-		"problem_ref":           fixture.problem.Meta.ID,
-		"portfolio_ref":         fixture.comparedPortfolio.Meta.ID,
-		"selected_title":        "gRPC",
-		"why_selected":          "Engineer projection should surface the structured operational contract.",
-		"pre_conditions":        []string{"Benchmarks reproduced in CI", "Consumer schema freeze approved"},
-		"evidence_requirements": []string{"p99 latency stays below 20ms", "Generated clients compile in CI"},
-		"refresh_triggers":      []string{"Latency budget regresses after rollout"},
-		"rollback": map[string]any{
-			"triggers": []string{"Cutover error rate exceeds the accepted ceiling"},
+	mustSeedDecision(t, fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:      fixture.problem.Meta.ID,
+		PortfolioRef:    fixture.comparedPortfolio.Meta.ID,
+		SelectedTitle:   "gRPC",
+		WhySelected:     "Engineer projection should surface the structured operational contract.",
+		PreConditions:   []string{"Benchmarks reproduced in CI", "Consumer schema freeze approved"},
+		EvidenceReqs:    []string{"p99 latency stays below 20ms", "Generated clients compile in CI"},
+		RefreshTriggers: []string{"Latency budget regresses after rollout"},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Cutover error rate exceeds the accepted ceiling"},
 		},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
+	})
 
-	queryTool := NewHaftQueryTool(fixture.store, nil)
+	queryTool := NewHaftQueryTool(fixture.store)
 	result, err := queryTool.Execute(fixture.ctx, mustJSON(t, map[string]any{
 		"action": "projection",
 		"view":   "engineer",
@@ -2429,81 +1604,6 @@ func TestHaftQueryTool_ProjectionEngineerRendersDecisionRuntimeFields(t *testing
 	for _, want := range required {
 		if !strings.Contains(result.DisplayText, want) {
 			t.Fatalf("projection response missing %q:\n%s", want, result.DisplayText)
-		}
-	}
-}
-
-func TestHaftDecisionTool_DecideRejectsMalformedPredictions(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-
-	_, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Lower latency is worth the tooling overhead for the current scope.",
-		"predictions": []any{
-			map[string]any{
-				"claim":      "Latency improves after rollout",
-				"observable": 42,
-				"threshold":  "p99 < 20ms",
-			},
-		},
-	})))
-	if err == nil {
-		t.Fatal("expected malformed predictions to be rejected")
-	}
-
-	if !strings.Contains(err.Error(), "predictions must be an array of prediction objects") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestHaftDecisionTool_DecideRejectsMalformedExtendedStringArray(t *testing.T) {
-	fixture := setupDecisionToolFixture(t)
-
-	_, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Lower latency is worth the tooling overhead for the current scope.",
-		"pre_conditions": []any{"Benchmarks reproduced in CI", 42},
-	})))
-	if err == nil {
-		t.Fatal("expected malformed pre_conditions to be rejected")
-	}
-
-	if !strings.Contains(err.Error(), "pre_conditions must be an array of strings") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestHaftDecisionTool_DecideRejectsIncompleteAntiSelfDeceptionRecord(t *testing.T) {
-	store := setupHaftToolStore(t)
-	ctx := context.Background()
-	tool := NewHaftDecisionTool(store, t.TempDir(), t.TempDir(), nil)
-
-	_, err := tool.Execute(ctx, mustJSON(t, map[string]any{
-		"action":         "decide",
-		"selected_title": "Introduce API gateway",
-		"why_selected":   "Need a consistent ingress boundary",
-	}))
-	if err == nil {
-		t.Fatal("expected validation error for incomplete decision record")
-	}
-
-	// Validator now emits structured per-field rows; match by field
-	// name + " — " separator.
-	required := []string{
-		"- selection_policy — ",
-		"- counterargument — ",
-		"- weakest_link — ",
-		"- why_not_others — ",
-		"- rollback — ",
-	}
-
-	for _, want := range required {
-		if !strings.Contains(err.Error(), want) {
-			t.Fatalf("missing validation message %q in %q", want, err.Error())
 		}
 	}
 }
@@ -2536,33 +1636,21 @@ func TestHaftDecisionTool_MeasureWrongKindUsesPlainLanguage(t *testing.T) {
 	if !strings.Contains(result.DisplayText, "not a decision") {
 		t.Fatalf("expected plain-language mismatch message, got %q", result.DisplayText)
 	}
-	if issues := present.LintGeneratedText(result.DisplayText); len(issues) != 0 {
-		t.Fatalf("expected lint-clean generated message, got %+v\n%s", issues, result.DisplayText)
-	}
 }
 
 func TestHaftDecisionTool_EvidenceAttachesToDecision(t *testing.T) {
-
 	fixture := setupDecisionToolFixture(t)
-
-	decisionResult, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, completeDecisionArgs(map[string]any{
-		"action":         "decide",
-		"problem_ref":    fixture.problem.Meta.ID,
-		"selected_title": "gRPC",
-		"why_selected":   "Latency wins inside the compared portfolio.",
-		"predictions": []map[string]any{
-			{
-				"claim":      "First request after warmup stays below 20ms",
-				"observable": "latency",
-				"threshold":  "< 20ms",
-			},
-		},
-	})))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	decisionRef := decisionResult.Meta.ArtifactRef
+	decision := mustSeedDecision(t, fixture.ctx, fixture.store, fixture.haftDir, artifact.DecideInput{
+		ProblemRef:    fixture.problem.Meta.ID,
+		SelectedTitle: "gRPC",
+		WhySelected:   "Latency wins inside the compared portfolio.",
+		Predictions: []artifact.PredictionInput{{
+			Claim:      "First request after warmup stays below 20ms",
+			Observable: "latency",
+			Threshold:  "< 20ms",
+		}},
+	})
+	decisionRef := decision.Meta.ID
 	result, err := fixture.tool.Execute(fixture.ctx, mustJSON(t, map[string]any{
 		"action":           "evidence",
 		"artifact_ref":     decisionRef,

@@ -1,21 +1,9 @@
-Reality-check a recorded decision against the current code and runtime.
-
-Before substantive verification reasoning, call `haft_query`:
-
-```json
-{
-  "action": "pattern_use",
-  "mode": "compact",
-  "query": "<operator concern>"
-}
-```
-
-Skip only mechanical/status/exact-lookup requests where no FPF pattern choice is
-material. If `should_use_pattern=true` and verification needs output-shape
-detail, ask for `mode="full"` before applying the returned pattern. PatternUse
-is advisory/read-only: not approval, not evidence, not a DecisionRecord, not a
-WorkCommission, not MethodPack, and not a gate. Do not inline the FPF catalog
-or route list in this prompt.
+Reality-check a recorded decision against current code and runtime. When its
+evidence or validity semantics are current, inspect a known FPF SourceID or
+UnitID with `haft_query(action="fpf", mode="inspect", identifier="...")`, or
+use `mode="concern"` with the exact evidence question and inspect the direct
+pattern body. Query is retrieval, not evidence or a verdict; do not route
+through a shadow pattern catalog.
 
 1. Locate the DecisionRecord with `haft_query(action="status")` or compact
    `haft_query(action="search", query=...)` discovery.

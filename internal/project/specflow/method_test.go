@@ -89,13 +89,13 @@ func TestNextStepAdvancesPastTargetSpineWhenSatisfied(t *testing.T) {
 	intent := NextStep(state)
 
 	// Target spine is fully satisfied — the registry advances into the
-	// enabling spine. Full-spine terminal coverage lives in
-	// enabling_phases_test.go (TestNextStepReachesTerminalAfterFullSpine).
+	// software-system spine. Full-spine terminal coverage lives in
+	// software_phases_test.go.
 	if intent.Terminal {
-		t.Fatalf("intent.Terminal = true; want enabling spine to take over after target satisfied")
+		t.Fatalf("intent.Terminal = true; want software spine to take over after target satisfied")
 	}
-	if intent.DocumentKind != project.SpecDocumentKindEnablingSystem {
-		t.Fatalf("intent.DocumentKind = %q, want enabling-system", intent.DocumentKind)
+	if intent.DocumentKind != project.SpecDocumentKindSoftwareSystem {
+		t.Fatalf("intent.DocumentKind = %q, want software-system", intent.DocumentKind)
 	}
 	_ = intent.Reason
 }

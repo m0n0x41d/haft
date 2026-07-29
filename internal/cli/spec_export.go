@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -59,7 +60,11 @@ func buildSpecExportResult(sectionID string) (specExportResult, error) {
 	if err != nil {
 		return specExportResult{}, err
 	}
-	projectID, store, closeStore, err := openSpecSectionEditionStore(projectRoot, cfg)
+	projectID, store, closeStore, err := openSpecSectionEditionReadStore(
+		context.Background(),
+		projectRoot,
+		cfg,
+	)
 	if err != nil {
 		return specExportResult{}, err
 	}

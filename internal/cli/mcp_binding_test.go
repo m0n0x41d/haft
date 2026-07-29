@@ -75,6 +75,15 @@ func TestDispatchToolRejectsMCPBindingActionsBeforeHandlers(t *testing.T) {
 				"artifact_ref": "dec-example",
 			},
 		},
+		{
+			name:   "problem close",
+			tool:   "haft_problem",
+			action: "close",
+			args: map[string]any{
+				"action":      "close",
+				"problem_ref": "prob-example",
+			},
+		},
 	}
 
 	for _, tc := range cases {

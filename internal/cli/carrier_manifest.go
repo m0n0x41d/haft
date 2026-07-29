@@ -148,7 +148,7 @@ func carrierCheckGeneratedSurfaces() []project.CarrierSemioVirtualText {
 }
 
 func carrierCheckMCPToolCatalog() []fpf.Tool {
-	server := fpf.NewServer()
+	server := fpf.NewServer(Version)
 	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
 		return "", nil
 	})

@@ -11,49 +11,97 @@ import (
 	"github.com/m0n0x41d/haft/internal/present"
 )
 
-func TestNavStrip_AvailableGuardLine(t *testing.T) {
-	state := artifact.NavState{
-		DerivedStatus: artifact.DerivedFramed,
-		Mode:          artifact.ModeTactical,
-		NextAction:    `/h-explore (generate variants) | /h-decide (decide directly)`,
+func TestProjectStateStrip_DoesNotRenderPhaseOrGlobalNextAction(t *testing.T) {
+	state := artifact.ProjectStateView{
+		Problems: artifact.ProjectProblemFacet{
+			Known: true,
+			Open: []artifact.ProjectArtifactState{
+				{ID: "prob-routing", Title: "Choose a delivery shape", Status: artifact.StatusActive},
+			},
+		},
 	}
 
-	output := present.NavStrip(state)
+	output := present.ProjectStateStrip(state)
 
-	if !strings.Contains(output, "Available:") {
-		t.Errorf("should contain 'Available:', got:\n%s", output)
-	}
-	if !strings.Contains(output, "do not auto-execute") {
-		t.Errorf("should contain guard line, got:\n%s", output)
-	}
-}
-
-func TestNavStrip_NoGuardWhenDecided(t *testing.T) {
-	state := artifact.NavState{
-		DerivedStatus: artifact.DerivedDecided,
-		DecisionInfo:  "Use Redis",
-	}
-
-	output := present.NavStrip(state)
-
-	if strings.Contains(output, "Available:") {
-		t.Errorf("DECIDED state should NOT show Available, got:\n%s", output)
+	for _, forbidden := range []string{"Status:", "Available:", "Next action", "/h-explore", "do not auto-execute"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("project state should not render global navigation %q:\n%s", forbidden, output)
+		}
 	}
 }
 
-func TestNavStrip_AllFieldsRendered(t *testing.T) {
-	state := artifact.NavState{
-		Context:       "payments",
-		Mode:          artifact.ModeStandard,
-		DerivedStatus: artifact.DerivedExploring,
-		PortfolioInfo: "API redesign",
-		StaleCount:    2,
-		NextAction:    "/h-compare (compare variants)",
+func TestProjectStateStrip_EmptyViewIsNotUnderframed(t *testing.T) {
+	state := artifact.ProjectStateView{
+		Problems:  artifact.ProjectProblemFacet{Known: true},
+		Options:   artifact.ProjectOptionFacet{Known: true},
+		Decisions: artifact.ProjectDecisionFacet{Known: true},
+		Work:      artifact.ProjectWorkFacet{Known: true},
+	}
+
+	output := present.ProjectStateStrip(state)
+
+	if !strings.Contains(output, "Current facets: none recorded") {
+		t.Fatalf("empty view should report absence without inventing a phase:\n%s", output)
+	}
+	if strings.Contains(output, "UNDERFRAMED") {
+		t.Fatalf("empty view must not be classified as UNDERFRAMED:\n%s", output)
+	}
+}
+
+func TestProjectStateStrip_CoexistingFacetsRendered(t *testing.T) {
+	state := artifact.ProjectStateView{
+		Context: "payments",
+		Problems: artifact.ProjectProblemFacet{
+			Known: true,
+			Open: []artifact.ProjectArtifactState{
+				{ID: "prob-payments", Title: "Payment retries", Status: artifact.StatusActive},
+			},
+		},
+		Options: artifact.ProjectOptionFacet{
+			Known: true,
+			Sets: []artifact.ProjectOptionSetState{
+				{
+					Artifact: artifact.ProjectArtifactState{
+						ID: "sol-payments", Title: "Retry options", Status: artifact.StatusActive,
+					},
+					ComparisonRecorded: true,
+				},
+			},
+		},
+		Decisions: artifact.ProjectDecisionFacet{
+			Known: true,
+			Active: []artifact.ProjectArtifactState{
+				{ID: "dec-payments", Title: "Use bounded retries", Status: artifact.StatusActive},
+			},
+		},
+		Work: artifact.ProjectWorkFacet{
+			Known: true,
+			Active: []artifact.WorkCommissionStatus{
+				{ID: "wc-payments", Title: "Implement retry cap", State: "queued"},
+			},
+		},
+		ProjectPressureFacet: artifact.ProjectPressureFacet{
+			EvidenceKnown: true,
+			StaleCount:    2,
+		},
+		SpecHealth: artifact.ProjectSpecHealthFacet{
+			Known:        true,
+			FindingCount: 1,
+		},
 	}
 
 	output := present.NavStrip(state)
 
-	for _, want := range []string{"Context: payments", "Mode: standard", "Status: EXPLORING", "Portfolio: API redesign", "Stale: 2", "Available:", "/h-compare"} {
+	for _, want := range []string{
+		"Context: payments",
+		"Open problems: 1",
+		"Option sets: 1",
+		"comparison recorded",
+		"Active decisions: 1",
+		"Active work: 1",
+		"Evidence pressure: 2",
+		"Spec health: 1",
+	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("output missing %q:\n%s", want, output)
 		}
@@ -604,12 +652,15 @@ func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
 
 	for _, want := range []string{
 		"### Operator Cockpit",
+		"**Interruption boundary**: attention below is not a project-wide gate",
+		"Continue unrelated already-authorized Work",
+		"current use that relies on unresolved contradictory binding content",
 		"**Refresh due** (3)",
 		"Stale A",
 		"Stale B",
 		"... and 1 more.",
 		"**Binding resolution needed**: 1 unique event(s), 1 impacted decision(s) need precise binding targets",
-		"**Decision reconciliation needs operator selection**: 2 operator-required reconciliation group(s); 1 governing conflict set(s); 1 governing overlap review set(s)",
+		"**Scoped decision reconciliation contains an operator-required selection**: 2 operator-required reconciliation group(s); 1 governing conflict set(s); 1 governing overlap review set(s)",
 		"detail commands are in Drill-down",
 		"**Progress problem** `prob-progress` → **Progress portfolio** `sol-001`",
 		"Core details: `haft_query(action=\"status\", full=true)`, `haft_query(action=\"coverage\")`, `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"plan\", verbose=true)`",
@@ -682,7 +733,7 @@ func TestCockpitStatusResponse_DoesNotReportResolvedDriftEventsAsAttention(t *te
 	if strings.Contains(output, "Decision Health") {
 		t.Fatalf("resolved-only drift should not create decision health noise:\n%s", output)
 	}
-	if !strings.Contains(output, "No operator-blocking refresh, drift, or commission items") {
+	if !strings.Contains(output, "No active refresh, drift, binding, reconciliation, or commission attention items") {
 		t.Fatalf("resolved-only drift should leave cockpit calm:\n%s", output)
 	}
 }
@@ -719,7 +770,7 @@ func TestCockpitStatusResponse_GroupsAuditOnlyDrift(t *testing.T) {
 	output := present.CockpitStatusResponse(data)
 
 	for _, want := range []string{
-		"No operator-blocking refresh, drift, or commission items",
+		"No active refresh, drift, binding, reconciliation, or commission attention items",
 		"Drift: 0 material event(s), 1 audit-only event(s)",
 	} {
 		if !strings.Contains(output, want) {

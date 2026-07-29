@@ -1,7 +1,6 @@
 package codebase
 
 import (
-	gocontext "context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,16 +11,14 @@ import (
 	"github.com/smacker/go-tree-sitter/c"
 	"github.com/smacker/go-tree-sitter/cpp"
 	"github.com/smacker/go-tree-sitter/golang"
-	"github.com/smacker/go-tree-sitter/javascript"
 	"github.com/smacker/go-tree-sitter/python"
 	"github.com/smacker/go-tree-sitter/rust"
-	typescript "github.com/smacker/go-tree-sitter/typescript/typescript"
 )
 
 // Symbol represents an extracted code symbol (function, type, class, etc.)
 type Symbol struct {
 	Name     string // symbol name
-	Kind     string // "func", "type", "interface", "class", "method", "const"
+	Kind     string // canonical kind: func, method, class, interface, type_alias, enum, constant, variable, property
 	Line     int    // 1-based line number
 	Exported bool   // starts with uppercase (Go) or is exported
 }
@@ -42,110 +39,38 @@ type RepoMap struct {
 	TotalSyms  int
 }
 
-// languageInfo maps file extensions to tree-sitter languages and query patterns.
+// languageInfo is the transitional metadata for languages still using the
+// legacy symbol-body queries in symhash.go. JS/TS lives exclusively behind the
+// registered SymbolAdapter, so it has no duplicate entry here.
 type languageInfo struct {
-	name    string
-	lang    *sitter.Language
-	queries []queryPattern
-}
-
-type queryPattern struct {
-	pattern string
-	kind    string
+	name string
+	lang *sitter.Language
 }
 
 var languages = map[string]*languageInfo{
 	".go": {
 		name: "go",
 		lang: golang.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_declaration name: (identifier) @name)", "func"},
-			{"(method_declaration name: (field_identifier) @name)", "method"},
-			{"(type_declaration (type_spec name: (type_identifier) @name))", "type"},
-		},
 	},
 	".py": {
 		name: "python",
 		lang: python.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_definition name: (identifier) @name)", "func"},
-			{"(class_definition name: (identifier) @name)", "class"},
-		},
-	},
-	".js": {
-		name: "javascript",
-		lang: javascript.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_declaration name: (identifier) @name)", "func"},
-			{"(class_declaration name: (identifier) @name)", "class"},
-			{"(method_definition name: (property_identifier) @name)", "method"},
-			{"(export_statement declaration: (function_declaration name: (identifier) @name))", "func"},
-		},
-	},
-	".jsx": {
-		name: "javascript",
-		lang: javascript.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_declaration name: (identifier) @name)", "func"},
-			{"(class_declaration name: (identifier) @name)", "class"},
-		},
-	},
-	".ts": {
-		name: "typescript",
-		lang: typescript.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_declaration name: (identifier) @name)", "func"},
-			{"(class_declaration name: (type_identifier) @name)", "class"},
-			{"(interface_declaration name: (type_identifier) @name)", "interface"},
-			{"(method_definition name: (property_identifier) @name)", "method"},
-		},
-	},
-	".tsx": {
-		name: "typescript",
-		lang: typescript.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_declaration name: (identifier) @name)", "func"},
-			{"(class_declaration name: (type_identifier) @name)", "class"},
-			{"(interface_declaration name: (type_identifier) @name)", "interface"},
-		},
 	},
 	".rs": {
 		name: "rust",
 		lang: rust.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_item name: (identifier) @name)", "func"},
-			{"(struct_item name: (type_identifier) @name)", "type"},
-			{"(enum_item name: (type_identifier) @name)", "type"},
-			{"(trait_item name: (type_identifier) @name)", "interface"},
-			{"(impl_item type: (type_identifier) @name)", "type"},
-		},
 	},
 	".c": {
 		name: "c",
 		lang: c.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_definition declarator: (function_declarator declarator: (identifier) @name))", "func"},
-			{"(struct_specifier name: (type_identifier) @name)", "type"},
-			{"(enum_specifier name: (type_identifier) @name)", "type"},
-		},
 	},
 	".h": {
 		name: "c",
 		lang: c.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_definition declarator: (function_declarator declarator: (identifier) @name))", "func"},
-			{"(declaration declarator: (function_declarator declarator: (identifier) @name))", "func"},
-			{"(struct_specifier name: (type_identifier) @name)", "type"},
-		},
 	},
 	".cpp": {
 		name: "cpp",
 		lang: cpp.GetLanguage(),
-		queries: []queryPattern{
-			{"(function_definition declarator: (function_declarator declarator: (identifier) @name))", "func"},
-			{"(class_specifier name: (type_identifier) @name)", "class"},
-			{"(struct_specifier name: (type_identifier) @name)", "type"},
-		},
 	},
 }
 
@@ -154,38 +79,72 @@ func BuildRepoMap(projectRoot string, maxFiles int) (*RepoMap, error) {
 	if maxFiles <= 0 {
 		maxFiles = 500
 	}
-
-	var files []FileSymbols
-	parser := sitter.NewParser()
-
-	err := filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
+	registry := NewRegistry()
+	defaultBudget := DefaultIndexBudget()
+	fileLimit, err := NewFileCount(int64(maxFiles))
+	if err != nil {
+		return nil, err
+	}
+	budget, err := NewIndexBudget(IndexBudgetSpec{
+		MaxFileBytes:     defaultBudget.MaxFileBytes(),
+		MaxFiles:         fileLimit,
+		MaxObservedBytes: defaultBudget.MaxObservedBytes(),
+		MaxParseWorkers:  defaultBudget.MaxParseWorkers(),
+		GeneratedSources: defaultBudget.GeneratedSources(),
+	})
+	if err != nil {
+		return nil, err
+	}
+	files := make([]FileSymbols, 0)
+	usage := EmptyAdmissionUsage()
+	err = walkProjectFiles(projectRoot, func(
+		path string,
+		relPath string,
+		_ os.DirEntry,
+	) error {
+		if !registry.SupportsSymbols(path) {
+			return nil // unsupported language
 		}
-		if d.IsDir() {
-			if IsExcludedDir(d.Name()) {
-				return filepath.SkipDir
+		admission, nextUsage, err := registry.ReadSourceAdmission(
+			projectRoot,
+			relPath,
+			budget,
+			usage,
+		)
+		if err != nil {
+			return err
+		}
+		usage = nextUsage
+		if admission.Kind().String() == "source_skipped" {
+			info, err := SkippedSourceInfo(admission)
+			if err != nil {
+				return err
+			}
+			if info.Reason == "root_file_budget" {
+				return filepath.SkipAll
+			}
+			if info.RequiresRetry() {
+				return fmt.Errorf(
+					"observe repository-map source %s: %s",
+					relPath,
+					info.Detail,
+				)
 			}
 			return nil
 		}
-		if len(files) >= maxFiles {
-			return filepath.SkipAll
-		}
-
-		ext := filepath.Ext(d.Name())
-		langInfo, ok := languages[ext]
-		if !ok {
-			return nil // unsupported language
-		}
-
-		relPath, _ := filepath.Rel(projectRoot, path)
-		fs, err := extractFileSymbols(parser, path, relPath, langInfo)
+		source, err := AdmittedSourceFrom(admission)
 		if err != nil {
-			return nil // skip unparseable files
+			return err
 		}
-		if fs != nil {
-			files = append(files, *fs)
+		fileSymbols, err := extractRepoMapFile(
+			registry,
+			path,
+			source,
+		)
+		if err != nil {
+			return err
 		}
+		files = append(files, fileSymbols)
 		return nil
 	})
 	if err != nil {
@@ -209,67 +168,29 @@ func BuildRepoMap(projectRoot string, maxFiles int) (*RepoMap, error) {
 	}, nil
 }
 
-// extractFileSymbols parses one file and extracts symbols using tree-sitter queries.
-func extractFileSymbols(parser *sitter.Parser, absPath, relPath string, langInfo *languageInfo) (*FileSymbols, error) {
-	content, err := os.ReadFile(absPath)
+// extractRepoMapFile projects the canonical SymbolSnapshot output into the
+// lightweight repository-map shape. RepoMap no longer owns a second language
+// query set that can disagree with the graph, drift, or binding paths.
+func extractRepoMapFile(
+	registry *Registry,
+	absPath string,
+	source AdmittedSource,
+) (FileSymbols, error) {
+	snapshots, err := registry.ExtractAdmittedSymbolSnapshots(source)
 	if err != nil {
-		return nil, err
+		return FileSymbols{}, err
 	}
-
-	// Skip very large files (>100KB)
-	if len(content) > 100_000 {
-		lines := strings.Count(string(content), "\n") + 1
-		return &FileSymbols{
-			Path:     relPath,
-			Language: langInfo.name,
-			Lines:    lines,
-		}, nil
-	}
-
-	parser.SetLanguage(langInfo.lang)
-	tree, err := parser.ParseCtx(gocontext.Background(), nil, content)
-	if err != nil {
-		return nil, err
-	}
-	defer tree.Close()
-
+	relPath := source.Path().String()
+	content := source.bytes()
 	lines := strings.Count(string(content), "\n") + 1
-	var symbols []Symbol
-
-	for _, qp := range langInfo.queries {
-		q, err := sitter.NewQuery([]byte(qp.pattern), langInfo.lang)
-		if err != nil {
-			continue // skip invalid queries
-		}
-
-		qc := sitter.NewQueryCursor()
-		qc.Exec(q, tree.RootNode())
-
-		for {
-			match, ok := qc.NextMatch()
-			if !ok {
-				break
-			}
-			for _, capture := range match.Captures {
-				name := capture.Node.Content(content)
-				line := int(capture.Node.StartPoint().Row) + 1 // 0-based → 1-based
-
-				exported := false
-				if langInfo.name == "go" {
-					exported = len(name) > 0 && name[0] >= 'A' && name[0] <= 'Z'
-				} else {
-					exported = !strings.HasPrefix(name, "_")
-				}
-
-				symbols = append(symbols, Symbol{
-					Name:     name,
-					Kind:     qp.kind,
-					Line:     line,
-					Exported: exported,
-				})
-			}
-		}
-		q.Close()
+	symbols := make([]Symbol, 0, len(snapshots))
+	for _, snapshot := range snapshots {
+		symbols = append(symbols, Symbol{
+			Name:     snapshot.SymbolName,
+			Kind:     snapshot.SymbolKind,
+			Line:     snapshot.Line,
+			Exported: snapshot.Exported,
+		})
 	}
 
 	// Sort by line number
@@ -286,9 +207,9 @@ func extractFileSymbols(parser *sitter.Parser, absPath, relPath string, langInfo
 		modTime = info.ModTime().UnixNano()
 	}
 
-	return &FileSymbols{
+	return FileSymbols{
 		Path:     relPath,
-		Language: langInfo.name,
+		Language: source.Language().String(),
 		Lines:    lines,
 		Symbols:  symbols,
 		ModTime:  modTime,

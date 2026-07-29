@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	haftconfig "github.com/m0n0x41d/haft/internal/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -18,101 +17,10 @@ var (
 
 const hermesSkillsRelDir = "packages/haft-hermes/skills"
 
-type hermesInstallResult struct {
-	ConfigPath string
-	SkillsRoot string
-	SkillCount int
-}
-
 func init() {
 	initCmd.Flags().BoolVar(&initHermes, "hermes", false, "Configure for Hermes MCP and external skills")
 	initCmd.Flags().StringVar(&initHermesHome, "hermes-home", "", "Hermes home directory (default: $HERMES_HOME or ~/.hermes)")
 	initCmd.Flags().StringVar(&initHermesProfile, "profile", "", "Hermes profile name for --hermes (uses <home>/profiles/<profile>)")
-}
-
-func runInitHermes(projectRoot string, binaryPath string) {
-	result, err := installHermes(projectRoot, binaryPath, initHermesHome, initHermesProfile)
-	if err != nil {
-		fmt.Printf("  ⚠ Failed to configure Hermes: %v\n", err)
-		return
-	}
-
-	homeDir, _ := os.UserHomeDir()
-	configPath := displayHomePath(result.ConfigPath, homeDir)
-	skillsRoot := displayHomePath(result.SkillsRoot, homeDir)
-
-	fmt.Printf("  ✓ Materialized %d Hermes skills (%s)\n", result.SkillCount, skillsRoot)
-	fmt.Printf("  ✓ Configured MCP for Hermes (%s)\n", configPath)
-	fmt.Println("    Note: reload Hermes skills/MCP or restart the Hermes gateway/session")
-}
-
-func installHermes(
-	projectRoot string,
-	binaryPath string,
-	homeInput string,
-	profileInput string,
-) (hermesInstallResult, error) {
-	absProjectRoot, err := filepath.Abs(projectRoot)
-	if err != nil {
-		return hermesInstallResult{}, err
-	}
-
-	hermesHome, err := resolveHermesHome(homeInput, profileInput)
-	if err != nil {
-		return hermesInstallResult{}, err
-	}
-
-	skillsRoot, err := defaultHermesSkillsRoot(absProjectRoot)
-	if err != nil {
-		return hermesInstallResult{}, err
-	}
-
-	count, err := materializeHermesSkills(skillsRoot)
-	if err != nil {
-		return hermesInstallResult{}, err
-	}
-
-	configPath := filepath.Join(hermesHome, "config.yaml")
-	err = configureMCPHermes(absProjectRoot, binaryPath, configPath, skillsRoot)
-	if err != nil {
-		return hermesInstallResult{}, err
-	}
-
-	return hermesInstallResult{
-		ConfigPath: configPath,
-		SkillsRoot: skillsRoot,
-		SkillCount: count,
-	}, nil
-}
-
-func resolveHermesHome(homeInput string, profileInput string) (string, error) {
-	profile, err := cleanHermesProfile(profileInput)
-	if err != nil {
-		return "", err
-	}
-
-	explicitHome := strings.TrimSpace(homeInput)
-	rawHome := explicitHome
-	if rawHome == "" {
-		rawHome = strings.TrimSpace(os.Getenv("HERMES_HOME"))
-	}
-	if rawHome == "" {
-		homeDir, homeErr := os.UserHomeDir()
-		if homeErr != nil {
-			return "", homeErr
-		}
-		rawHome = filepath.Join(homeDir, ".hermes")
-	}
-
-	home, err := expandHermesPath(rawHome)
-	if err != nil {
-		return "", err
-	}
-	if profile == "" || explicitHome != "" {
-		return home, nil
-	}
-
-	return filepath.Join(home, "profiles", profile), nil
 }
 
 func cleanHermesProfile(profileInput string) (string, error) {
@@ -156,16 +64,6 @@ func expandHermesPath(rawPath string) (string, error) {
 	return filepath.Abs(expanded)
 }
 
-func defaultHermesSkillsRoot(projectRoot string) (string, error) {
-	if isHaftSourceRoot(projectRoot) {
-		relPath := filepath.FromSlash(hermesSkillsRelDir)
-		return filepath.Join(projectRoot, relPath), nil
-	}
-
-	skillsRoot := filepath.Join(haftconfig.HaftDir(), "hermes", "skills")
-	return filepath.Abs(skillsRoot)
-}
-
 func isHaftSourceRoot(projectRoot string) bool {
 	modulePath := goModulePath(projectRoot)
 	return modulePath == "github.com/m0n0x41d/haft"
@@ -190,61 +88,6 @@ func goModulePath(projectRoot string) string {
 	return ""
 }
 
-func materializeHermesSkills(skillsRoot string) (int, error) {
-	categoryRoot := filepath.Join(skillsRoot, "haft")
-	if err := os.RemoveAll(categoryRoot); err != nil {
-		return 0, err
-	}
-
-	installed := 0
-	for _, sk := range allSkills {
-		skillDir := filepath.Join(categoryRoot, sk.Name)
-		if err := os.MkdirAll(skillDir, 0o755); err != nil {
-			return 0, err
-		}
-
-		content := transformHermesSkillReferences(string(sk.Content))
-		skillPath := filepath.Join(skillDir, "SKILL.md")
-		if err := os.WriteFile(skillPath, []byte(content), 0o644); err != nil {
-			return 0, err
-		}
-		installed++
-	}
-
-	return installed, nil
-}
-
-func transformHermesSkillReferences(content string) string {
-	replacer := strings.NewReplacer(
-		"mcp__haft__haft_problem", "haft_problem",
-		"mcp__haft__haft_solution", "haft_solution",
-		"mcp__haft__haft_decision", "haft_decision",
-		"mcp__haft__haft_query", "haft_query",
-		"mcp__haft__haft_note", "haft_note",
-		"mcp__haft__haft_refresh", "haft_refresh",
-		"mcp__haft__haft_commission", "haft_commission",
-		"mcp__haft__haft_spec_section", "haft_spec_section",
-	)
-	return replacer.Replace(content)
-}
-
-func configureMCPHermes(
-	projectRoot string,
-	binaryPath string,
-	configPath string,
-	skillsRoot string,
-) error {
-	settings, err := readHermesConfig(configPath)
-	if err != nil {
-		return err
-	}
-
-	withHermesMCP(settings, projectRoot, binaryPath)
-	withHermesExternalDir(settings, skillsRoot)
-
-	return writeHermesConfig(configPath, settings)
-}
-
 func readHermesConfig(configPath string) (map[string]any, error) {
 	data, err := os.ReadFile(configPath)
 	if os.IsNotExist(err) {
@@ -259,20 +102,6 @@ func readHermesConfig(configPath string) (map[string]any, error) {
 		return nil, fmt.Errorf("parse %s: %w", configPath, err)
 	}
 	return settings, nil
-}
-
-func withHermesMCP(settings map[string]any, projectRoot string, binaryPath string) {
-	mcpServers := hermesMapField(settings, "mcp_servers")
-	delete(mcpServers, "quint-code")
-
-	mcpServers["haft"] = map[string]any{
-		"command": resolveHermesCommand(binaryPath),
-		"args":    []string{"serve"},
-		"env":     projectEnvForRoot(projectRoot, projectRoot),
-		"enabled": true,
-	}
-
-	settings["mcp_servers"] = mcpServers
 }
 
 func withHermesExternalDir(settings map[string]any, skillsRoot string) {
@@ -352,16 +181,4 @@ func resolveHermesCommand(binaryPath string) string {
 		return resolved
 	}
 	return absPath
-}
-
-func writeHermesConfig(configPath string, settings map[string]any) error {
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return err
-	}
-
-	data, err := yaml.Marshal(settings)
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(configPath, data, 0o644)
 }

@@ -1,0 +1,4 @@
+schema_version: haft.project-profile/v1
+profile:
+  kind: declared
+  scopes: [

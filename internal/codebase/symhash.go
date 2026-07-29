@@ -5,8 +5,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"unicode"
@@ -16,16 +14,18 @@ import (
 
 // SymbolSnapshot captures a symbol's identity and content hash at a point in time.
 type SymbolSnapshot struct {
-	FilePath   string `json:"file_path"`
-	SymbolName string `json:"symbol_name"`
-	SymbolKind string `json:"symbol_kind"`        // func, type, class, interface, method
-	Line       int    `json:"line"`               // 1-based start line
-	EndLine    int    `json:"end_line"`           // 1-based end line
-	Hash       string `json:"hash"`               // SHA256 of the symbol's source text
-	StartByte  int    `json:"start_byte"`         // body start byte offset — for byte-exact source slicing
-	EndByte    int    `json:"end_byte"`           // body end byte offset
-	Receiver   string `json:"receiver,omitempty"` // method receiver type (Go), "" otherwise
-	Exported   bool   `json:"exported"`           // first rune uppercase (Go export proxy)
+	FilePath      string `json:"file_path"`
+	SymbolName    string `json:"symbol_name"`
+	SymbolKind    string `json:"symbol_kind"`        // func, method, class, interface, type_alias, enum, constant, variable, property
+	QualifiedName string `json:"qualified_name"`     // Receiver.member for methods, bare name for file-scope declarations
+	SignatureHash string `json:"signature_hash"`     // declaration signature, excluding body and source coordinates
+	Line          int    `json:"line"`               // 1-based start line
+	EndLine       int    `json:"end_line"`           // 1-based end line
+	Hash          string `json:"hash"`               // SHA256 of the symbol's source text
+	StartByte     int    `json:"start_byte"`         // body start byte offset — for byte-exact source slicing
+	EndByte       int    `json:"end_byte"`           // body end byte offset
+	Receiver      string `json:"receiver,omitempty"` // method receiver type (Go), "" otherwise
+	Exported      bool   `json:"exported"`           // first rune uppercase (Go export proxy)
 }
 
 // SymbolDrift describes how a single symbol changed between baseline and current.
@@ -41,21 +41,19 @@ type SymbolDrift struct {
 // ExtractSymbolSnapshots extracts symbol-level hashes from a file using tree-sitter.
 // Returns one snapshot per symbol, each with a content hash of the symbol's source text.
 func ExtractSymbolSnapshots(projectRoot, relPath string) ([]SymbolSnapshot, error) {
-	ext := filepath.Ext(relPath)
-	langInfo, ok := languages[ext]
-	if !ok {
-		return nil, nil // unsupported language — skip silently
-	}
+	registry := NewRegistry()
+	return registry.ExtractSymbolSnapshots(projectRoot, relPath)
+}
 
-	absPath := filepath.Join(projectRoot, relPath)
-	content, err := os.ReadFile(absPath)
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", relPath, err)
-	}
-
-	if len(content) > 500_000 {
-		return nil, nil // skip very large files
-	}
+// extractLegacySymbolSnapshots is the transitional adapter for languages that
+// have not moved to a dedicated SymbolAdapter yet. It preserves their existing
+// query behavior while every consumer already reads the canonical snapshots.
+func extractLegacySymbolSnapshots(
+	source AdmittedSource,
+	langInfo *languageInfo,
+) ([]SymbolSnapshot, error) {
+	relPath := source.Path().String()
+	content := source.bytes()
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(langInfo.lang)
@@ -141,54 +139,21 @@ func ExtractSymbolSnapshots(projectRoot, relPath string) ([]SymbolSnapshot, erro
 
 // CompareSymbolSnapshots compares baseline snapshots against current state.
 func CompareSymbolSnapshots(baseline []SymbolSnapshot, current []SymbolSnapshot) []SymbolDrift {
-	baseMap := make(map[string]SymbolSnapshot) // key: file:name
-	for _, s := range baseline {
-		baseMap[s.FilePath+":"+s.SymbolName] = s
-	}
-
-	currMap := make(map[string]SymbolSnapshot)
-	for _, s := range current {
-		currMap[s.FilePath+":"+s.SymbolName] = s
-	}
-
+	baseGroups := groupSymbolSnapshots(baseline)
+	currentGroups := groupSymbolSnapshots(current)
 	var drifts []SymbolDrift
-
-	// Check baseline symbols against current
-	for key, base := range baseMap {
-		curr, exists := currMap[key]
-		if !exists {
-			drifts = append(drifts, SymbolDrift{
-				FilePath:   base.FilePath,
-				SymbolName: base.SymbolName,
-				SymbolKind: base.SymbolKind,
-				Status:     "removed",
-				OldLine:    base.Line,
-			})
+	seenGroups := map[string]bool{}
+	for key, baseGroup := range baseGroups {
+		seenGroups[key] = true
+		currentGroup := currentGroups[key]
+		drifts = append(drifts, compareSymbolSnapshotGroup(baseGroup, currentGroup)...)
+	}
+	for key, currentGroup := range currentGroups {
+		if seenGroups[key] {
 			continue
 		}
-		if curr.Hash != base.Hash {
-			drifts = append(drifts, SymbolDrift{
-				FilePath:   base.FilePath,
-				SymbolName: base.SymbolName,
-				SymbolKind: base.SymbolKind,
-				Status:     "modified",
-				OldLine:    base.Line,
-				NewLine:    curr.Line,
-			})
-		}
-		// unchanged — don't report
-	}
-
-	// Check for new symbols not in baseline
-	for key, curr := range currMap {
-		if _, exists := baseMap[key]; !exists {
-			drifts = append(drifts, SymbolDrift{
-				FilePath:   curr.FilePath,
-				SymbolName: curr.SymbolName,
-				SymbolKind: curr.SymbolKind,
-				Status:     "added",
-				NewLine:    curr.Line,
-			})
+		for _, currentSnapshot := range currentGroup {
+			drifts = append(drifts, addedSymbolDrift(currentSnapshot))
 		}
 	}
 
@@ -200,6 +165,130 @@ func CompareSymbolSnapshots(baseline []SymbolSnapshot, current []SymbolSnapshot)
 	})
 
 	return drifts
+}
+
+func groupSymbolSnapshots(snapshots []SymbolSnapshot) map[string][]SymbolSnapshot {
+	groups := make(map[string][]SymbolSnapshot)
+	for _, snapshot := range snapshots {
+		normalized := normalizeSnapshotForComparison(snapshot)
+		key := symbolSnapshotBaseKey(normalized)
+		groups[key] = append(groups[key], normalized)
+	}
+	return groups
+}
+
+func normalizeSnapshotForComparison(snapshot SymbolSnapshot) SymbolSnapshot {
+	snapshot.FilePath = normalizeAnchorPath(snapshot.FilePath)
+	snapshot.SymbolName = strings.TrimSpace(snapshot.SymbolName)
+	snapshot.SymbolKind = strings.TrimSpace(snapshot.SymbolKind)
+	snapshot.Receiver = strings.TrimSpace(snapshot.Receiver)
+	if strings.TrimSpace(snapshot.QualifiedName) == "" {
+		snapshot.QualifiedName = qualifiedSymbolName(snapshot.Receiver, snapshot.SymbolName)
+	}
+	snapshot.SignatureHash = strings.TrimSpace(snapshot.SignatureHash)
+	return snapshot
+}
+
+func symbolSnapshotBaseKey(snapshot SymbolSnapshot) string {
+	parts := []string{
+		snapshot.FilePath,
+		snapshot.SymbolKind,
+		snapshot.QualifiedName,
+	}
+	return strings.Join(parts, "\x00")
+}
+
+func compareSymbolSnapshotGroup(baseline, current []SymbolSnapshot) []SymbolDrift {
+	used := make([]bool, len(current))
+	drifts := make([]SymbolDrift, 0)
+	for _, baselineSnapshot := range baseline {
+		position := matchCurrentSnapshot(baselineSnapshot, current, used, len(baseline), len(current))
+		if position < 0 {
+			drifts = append(drifts, removedSymbolDrift(baselineSnapshot))
+			continue
+		}
+		used[position] = true
+		currentSnapshot := current[position]
+		if currentSnapshot.Hash != baselineSnapshot.Hash {
+			drifts = append(drifts, modifiedSymbolDrift(baselineSnapshot, currentSnapshot))
+		}
+	}
+	for position, currentSnapshot := range current {
+		if !used[position] {
+			drifts = append(drifts, addedSymbolDrift(currentSnapshot))
+		}
+	}
+	return drifts
+}
+
+func matchCurrentSnapshot(
+	baseline SymbolSnapshot,
+	current []SymbolSnapshot,
+	used []bool,
+	baselineCount int,
+	currentCount int,
+) int {
+	if baselineCount == 1 && currentCount == 1 {
+		return 0
+	}
+	if baseline.SignatureHash != "" {
+		for position, candidate := range current {
+			if !used[position] && candidate.SignatureHash == baseline.SignatureHash {
+				return position
+			}
+		}
+	}
+	bestPosition := -1
+	bestDistance := 0
+	for position, candidate := range current {
+		if used[position] {
+			continue
+		}
+		distance := snapshotLineDistance(baseline.Line, candidate.Line)
+		if bestPosition < 0 || distance < bestDistance {
+			bestPosition = position
+			bestDistance = distance
+		}
+	}
+	return bestPosition
+}
+
+func snapshotLineDistance(first, second int) int {
+	if first > second {
+		return first - second
+	}
+	return second - first
+}
+
+func removedSymbolDrift(snapshot SymbolSnapshot) SymbolDrift {
+	return SymbolDrift{
+		FilePath:   snapshot.FilePath,
+		SymbolName: snapshot.SymbolName,
+		SymbolKind: snapshot.SymbolKind,
+		Status:     "removed",
+		OldLine:    snapshot.Line,
+	}
+}
+
+func modifiedSymbolDrift(baseline, current SymbolSnapshot) SymbolDrift {
+	return SymbolDrift{
+		FilePath:   baseline.FilePath,
+		SymbolName: baseline.SymbolName,
+		SymbolKind: baseline.SymbolKind,
+		Status:     "modified",
+		OldLine:    baseline.Line,
+		NewLine:    current.Line,
+	}
+}
+
+func addedSymbolDrift(snapshot SymbolSnapshot) SymbolDrift {
+	return SymbolDrift{
+		FilePath:   snapshot.FilePath,
+		SymbolName: snapshot.SymbolName,
+		SymbolKind: snapshot.SymbolKind,
+		Status:     "added",
+		NewLine:    snapshot.Line,
+	}
 }
 
 // FormatSymbolDrift renders drift report for display.

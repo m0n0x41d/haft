@@ -5,91 +5,29 @@ import (
 	"strings"
 )
 
-// ---------------------------------------------------------------------------
-// L1: FPF Guardrails — pure functions for tool precondition checks.
-//
-// Tools call these before executing. If precondition fails, tool returns
-// a guidance error that the LLM reads and self-corrects.
-// This replaces the v1 phase machine — FPF order enforced at tool level.
-// ---------------------------------------------------------------------------
-
-// CanExplore checks if haft_solution(explore) is allowed.
-// Requires: problem framed (ProblemRef on cycle).
-func CanExplore(cycle *Cycle) error {
-	if cycle == nil || cycle.Status != CycleActive || cycle.ProblemRef == "" {
-		return &GuardrailError{
-			Tool:     "haft_solution(explore)",
-			Missing:  "problem frame bound to active cycle",
-			Guidance: "Frame a new problem: haft_problem(action=\"frame\", signal=..., acceptance=...) OR adopt an existing one: haft_problem(action=\"adopt\", ref=\"prob-...\"). Note: characterize does not create a cycle — you need frame or adopt first.",
-		}
-	}
-	if cycle.DecisionRef != "" {
-		return &GuardrailError{
-			Tool:     "haft_solution(explore)",
-			Missing:  "an undecided active cycle",
-			Guidance: "This cycle already has a recorded decision. Run baseline/measure on that decision, or frame/adopt a new problem before exploring another option set.",
-		}
-	}
+// CanExplore is retained as a compatibility seam. Explore is an independent
+// capability, so no active-cycle predecessor is required.
+func CanExplore(_ *Cycle) error {
 	return nil
 }
 
-// CanCompare checks if haft_solution(compare) is allowed.
-// Requires: solution portfolio exists (PortfolioRef on cycle).
-func CanCompare(cycle *Cycle) error {
-	if cycle == nil || cycle.Status != CycleActive || cycle.PortfolioRef == "" {
-		return &GuardrailError{
-			Tool:     "haft_solution(compare)",
-			Missing:  "solution portfolio",
-			Guidance: "Explore variants first: haft_solution(action=\"explore\", variants=[...])",
-		}
-	}
-	if cycle.DecisionRef != "" {
-		return &GuardrailError{
-			Tool:     "haft_solution(compare)",
-			Missing:  "an undecided active cycle",
-			Guidance: "This cycle already has a recorded decision. Baseline/measure that decision, or frame/adopt a new problem before comparing again.",
-		}
-	}
+// CanCompare is retained as a compatibility seam. Compare accepts variants
+// directly, so no active-cycle predecessor is required.
+func CanCompare(_ *Cycle) error {
 	return nil
 }
 
-// CanDecide checks if haft_decision(decide) is allowed.
-// Requires:
-//   - Solution portfolio exists (explored variants) — FPF B.5.2
-//   - Completed compare for the active portfolio
-//   - Explicit user selection recorded for the active compared portfolio
-//     (Transformer Mandate) — unless autonomous
-//
-// userSelectedAfterCompare should be true if the active cycle records an
-// explicit human selection for the active compared portfolio. Pass true in
-// autonomous mode.
+// CanDecide retains only the human authority boundary. When a legacy cycle
+// identifies a compared portfolio, the caller must prove that the human made
+// the selection. Absence of that legacy context is not a phase/predecessor
+// failure: manual decision validation belongs to the decision interface.
 func CanDecide(cycle *Cycle, userSelectedAfterCompare bool) error {
-	if cycle == nil || cycle.Status != CycleActive || cycle.PortfolioRef == "" {
-		return &GuardrailError{
-			Tool:     "haft_decision(decide)",
-			Missing:  "explored variants",
-			Guidance: "Explore at least 2 variants first: haft_solution(action=\"explore\", variants=[...]). FPF B.5.2 requires rival candidates.",
-		}
-	}
-	if cycle.DecisionRef != "" {
-		return &GuardrailError{
-			Tool:     "haft_decision(decide)",
-			Missing:  "an undecided active cycle",
-			Guidance: "This cycle already has a decision. Run baseline/measure for that decision, or frame/adopt a new problem before recording another one.",
-		}
-	}
-	if cycle.ComparedPortfolioRef == "" || cycle.ComparedPortfolioRef != cycle.PortfolioRef {
-		return &GuardrailError{
-			Tool:     "haft_decision(decide)",
-			Missing:  "completed comparison for the active portfolio",
-			Guidance: "Compare the active variants first: haft_solution(action=\"compare\", portfolio_ref=...) and show the Pareto front before deciding.",
-		}
-	}
-	if !userSelectedAfterCompare {
+	hasComparedPortfolioContext := cycle != nil && strings.TrimSpace(cycle.ComparedPortfolioRef) != ""
+	if hasComparedPortfolioContext && !userSelectedAfterCompare {
 		return &GuardrailError{
 			Tool:     "haft_decision(decide)",
 			Missing:  "user selection",
-			Guidance: "Present the compare summary to the user and wait for their choice. The Transformer Mandate (FPF A.12) applies at the compare -> decide boundary: you may frame, explore, and compare when delegated, but the human selects before haft_decision(action=\"decide\").",
+			Guidance: "The compared portfolio records alternatives, not authority. Obtain an explicit human selection before haft_decision(action=\"decide\").",
 		}
 	}
 	return nil
@@ -110,29 +48,15 @@ func HasDecisionSelection(cycle *Cycle) bool {
 	return strings.TrimSpace(cycle.SelectedVariantRef) != ""
 }
 
-// CanBaseline checks if haft_decision(baseline) is allowed.
-// Requires: an active cycle with a recorded decision.
-func CanBaseline(cycle *Cycle) error {
-	if cycle == nil || cycle.Status != CycleActive || cycle.DecisionRef == "" {
-		return &GuardrailError{
-			Tool:     "haft_decision(baseline)",
-			Missing:  "decision record",
-			Guidance: "Record a decision first: haft_decision(action=\"decide\", selected_title=..., why_selected=...)",
-		}
-	}
+// CanBaseline is retained as a compatibility seam. The baseline command
+// validates its explicit decision reference directly.
+func CanBaseline(_ *Cycle) error {
 	return nil
 }
 
-// CanMeasure checks if haft_decision(measure) is allowed.
-// Requires: decision exists (DecisionRef on cycle).
-func CanMeasure(cycle *Cycle) error {
-	if cycle == nil || cycle.Status != CycleActive || cycle.DecisionRef == "" {
-		return &GuardrailError{
-			Tool:     "haft_decision(measure)",
-			Missing:  "decision record",
-			Guidance: "Record a decision first: haft_decision(action=\"decide\", selected_title=..., why_selected=...)",
-		}
-	}
+// CanMeasure is retained as a compatibility seam. The measure command
+// validates its explicit decision reference directly.
+func CanMeasure(_ *Cycle) error {
 	return nil
 }
 
@@ -164,8 +88,8 @@ func CheckREff(rEff float64, fEff ...int) error {
 	}
 }
 
-// GuardrailError is returned by tools when FPF preconditions are not met.
-// The LLM reads this error and self-corrects by calling the right tool.
+// GuardrailError is returned by tools when an authority or evidence boundary
+// is not met.
 type GuardrailError struct {
 	Tool     string // which tool was blocked
 	Missing  string // what precondition is missing

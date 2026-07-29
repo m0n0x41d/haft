@@ -1,0 +1,230 @@
+{
+  "schema_version": 1,
+  "fixture_kind": "synthetic_typescript_parity_corpus",
+  "source_boundary": "synthetic_fixture_no_private_project_source",
+  "raw_counts_role": "observation_not_target",
+  "required_seeds": [
+    {"file": "src/app.ts", "name": "createApplication", "kind": "func"},
+    {"file": "src/domain.ts", "name": "ApplicationState", "kind": "type_alias"},
+    {"file": "src/domain.ts", "name": "parseEntityId", "kind": "func"},
+    {"file": "src/domain.ts", "name": "readinessCounts", "kind": "func"},
+    {"file": "src/helpers.ts", "name": "parseResponse", "kind": "func"},
+    {"file": "src/api-client.ts", "name": "apiClient", "kind": "constant"},
+    {"file": "src/api-client.ts", "name": "me", "receiver": "apiClient", "kind": "method"},
+    {"file": "src/session.ts", "name": "selectPersona", "receiver": "session", "kind": "method"},
+    {"file": "src/domain.ts", "name": "ClientError", "kind": "class"},
+    {"file": "src/domain.ts", "name": "sessionFromRequest", "kind": "func"},
+    {"file": "src/domain.ts", "name": "makeEntityId", "kind": "func"},
+    {"file": "src/domain.ts", "name": "stateLabel", "kind": "constant"}
+  ],
+  "required_relations": [
+    {
+      "id": "path_alias_named_import",
+      "kind": "call",
+      "source": {"file": "src/app.ts", "name": "createApplication"},
+      "target": {"file": "src/domain.ts", "name": "parseEntityId"}
+    },
+    {
+      "id": "second_path_alias_named_import",
+      "kind": "call",
+      "source": {"file": "src/app.ts", "name": "createApplication"},
+      "target": {"file": "src/domain.ts", "name": "readinessCounts"}
+    },
+    {
+      "id": "object_method_body_named_import",
+      "kind": "call",
+      "source": {"file": "src/api-client.ts", "name": "me", "receiver": "apiClient"},
+      "target": {"file": "src/helpers.ts", "name": "parseResponse"}
+    },
+    {
+      "id": "object_method_first_local_call",
+      "kind": "call",
+      "source": {"file": "src/session.ts", "name": "selectPersona", "receiver": "session"},
+      "target": {"file": "src/helpers.ts", "name": "advanceRevision"}
+    },
+    {
+      "id": "object_method_second_local_call",
+      "kind": "call",
+      "source": {"file": "src/session.ts", "name": "selectPersona", "receiver": "session"},
+      "target": {"file": "src/helpers.ts", "name": "persistSession"}
+    },
+    {
+      "id": "array_map_callback",
+      "kind": "callback",
+      "source": {"file": "src/app.ts", "name": "mapEntities"},
+      "target": {"file": "src/helpers.ts", "name": "parseResponse"}
+    },
+    {
+      "id": "arrow_body_call",
+      "kind": "call",
+      "source": {"file": "src/domain.ts", "name": "readinessCounts"},
+      "target": {"file": "src/domain.ts", "name": "parseEntityId"}
+    },
+    {
+      "id": "branded_id_factory_call",
+      "kind": "call",
+      "source": {"file": "src/domain.ts", "name": "makeEntityId"},
+      "target": {"file": "src/domain.ts", "name": "parseEntityId"}
+    },
+    {
+      "id": "request_adapter_call",
+      "kind": "call",
+      "source": {"file": "src/domain.ts", "name": "sessionFromRequest"},
+      "target": {"file": "src/domain.ts", "name": "makeEntityId"}
+    },
+    {
+      "id": "default_import",
+      "kind": "call",
+      "source": {"file": "src/gaps.ts", "name": "runDefault"},
+      "target": {"file": "src/default/default-handler.ts", "name": "defaultHandler"}
+    },
+    {
+      "id": "barrel_reexport",
+      "kind": "call",
+      "source": {"file": "src/gaps.ts", "name": "runBarrel"},
+      "target": {"file": "src/barrel/leaf.ts", "name": "barrelTarget"}
+    },
+    {
+      "id": "inherited_tsconfig_alias",
+      "kind": "call",
+      "source": {"file": "src/gaps.ts", "name": "runInherited"},
+      "target": {"file": "lib/inherited.ts", "name": "inheritedHelper"}
+    },
+    {
+      "id": "pnpm_workspace_package_exports",
+      "kind": "call",
+      "source": {"file": "src/gaps.ts", "name": "runWorkspace"},
+      "target": {"file": "packages/ui/src/index.ts", "name": "workspaceWidget"}
+    },
+    {
+      "id": "multiple_alias_targets",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "runMultipleAliasTarget"},
+      "target": {"file": "src/domain.ts", "name": "parseEntityId"}
+    },
+    {
+      "id": "workspace_package_subpath_export",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "runWorkspaceSubpath"},
+      "target": {"file": "packages/ui/src/sub.ts", "name": "workspaceSubpath"}
+    },
+    {
+      "id": "three_level_renamed_reexport",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "runTwiceRenamed"},
+      "target": {"file": "src/reexports/leaf.ts", "name": "renamedOriginal"}
+    },
+    {
+      "id": "default_as_named_reexport",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "runReexportedDefault"},
+      "target": {"file": "src/reexports/leaf.ts", "name": "defaultReexported"}
+    },
+    {
+      "id": "wildcard_reexport_closure",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "runWildcard"},
+      "target": {"file": "src/reexports/leaf.ts", "name": "wildcardTarget"}
+    },
+    {
+      "id": "declaration_file_export",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "runDeclaration"},
+      "target": {"file": "src/types/contracts.d.ts", "name": "declaredHelper"}
+    },
+    {
+      "id": "imported_object_member_call",
+      "kind": "call",
+      "source": {"file": "src/app.ts", "name": "createApplication"},
+      "target": {"file": "src/api-client.ts", "name": "me", "receiver": "apiClient"}
+    },
+    {
+      "id": "second_imported_object_member_call",
+      "kind": "call",
+      "source": {"file": "src/app.ts", "name": "createApplication"},
+      "target": {"file": "src/session.ts", "name": "selectPersona", "receiver": "session"}
+    },
+    {
+      "id": "same_class_this_call",
+      "kind": "call",
+      "source": {"file": "src/gaps.ts", "name": "run", "receiver": "Worker"},
+      "target": {"file": "src/gaps.ts", "name": "step", "receiver": "Worker"}
+    },
+    {
+      "id": "constructor_instantiates",
+      "kind": "instantiates",
+      "source": {"file": "src/module-resolution.ts", "name": "buildService"},
+      "target": {"file": "src/module-resolution.ts", "name": "Service"}
+    },
+    {
+      "id": "imported_value_reference",
+      "kind": "value_reference",
+      "source": {"file": "src/module-resolution.ts", "name": "readStateLabel"},
+      "target": {"file": "src/domain.ts", "name": "stateLabel"}
+    },
+    {
+      "id": "imported_type_reference",
+      "kind": "type_reference",
+      "source": {"file": "src/module-resolution.ts", "name": "readStateLabel"},
+      "target": {"file": "src/domain.ts", "name": "ApplicationState"}
+    },
+    {
+      "id": "annotated_parameter_receiver",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "useAnnotatedReceiver"},
+      "target": {"file": "src/module-resolution.ts", "name": "fetch", "receiver": "ReceiverClient"}
+    },
+    {
+      "id": "new_inferred_local_receiver",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "useInferredReceiver"},
+      "target": {"file": "src/module-resolution.ts", "name": "fetch", "receiver": "ReceiverClient"}
+    },
+    {
+      "id": "annotated_field_receiver",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "run", "receiver": "ReceiverHolder"},
+      "target": {"file": "src/module-resolution.ts", "name": "fetch", "receiver": "ReceiverClient"}
+    },
+    {
+      "id": "static_class_receiver",
+      "kind": "call",
+      "source": {"file": "src/module-resolution.ts", "name": "useStaticReceiver"},
+      "target": {"file": "src/module-resolution.ts", "name": "ping", "receiver": "ReceiverClient"}
+    },
+    {
+      "id": "vue_script_setup_call",
+      "kind": "call",
+      "source": {"file": "src/Example.vue", "name": "submit"},
+      "target": {"file": "src/helpers.ts", "name": "parseResponse"}
+    },
+    {
+      "id": "vue_template_use",
+      "kind": "template_use",
+      "source": {"file": "src/Example.vue", "name": "__template__", "kind": "template"},
+      "target": {"file": "src/Example.vue", "name": "submit"}
+    }
+  ],
+  "known_missing_relations": [],
+  "known_false_positive_relations": [],
+  "forbidden_relations": [
+    {
+      "id": "import_must_not_bind_decoy",
+      "kind": "call",
+      "source": {"file": "src/app.ts", "name": "createApplication"},
+      "target": {"file": "src/decoy.ts", "name": "parseEntityId"}
+    },
+    {
+      "id": "ambiguous_directory_fallback_a",
+      "kind": "call",
+      "source": {"file": "src/unimported.ts", "name": "runAmbiguous"},
+      "target": {"file": "src/helpers.ts", "name": "duplicate"}
+    },
+    {
+      "id": "ambiguous_directory_fallback_b",
+      "kind": "call",
+      "source": {"file": "src/unimported.ts", "name": "runAmbiguous"},
+      "target": {"file": "src/duplicate.ts", "name": "duplicate"}
+    }
+  ]
+}

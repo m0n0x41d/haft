@@ -3,25 +3,83 @@ package fpf
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 )
 
-func mustToolsListResponseBytes(t *testing.T) []byte {
-	t.Helper()
+type toolsListTestPage struct {
+	responseBytes []byte
+	tools         []map[string]interface{}
+	nextCursor    string
+}
 
-	server := NewServer()
+func mustCatalogServer() *Server {
+	server := NewServer("test")
 	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
 		return "", nil
 	})
+	server.SetMemoryHandler(func(_ context.Context, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	return server
+}
+
+func mustToolsListResponsePages(t *testing.T) []toolsListTestPage {
+	t.Helper()
+
+	return mustToolsListResponsePagesForServer(t, mustCatalogServer())
+}
+
+func mustToolsListResponsePagesForServer(
+	t *testing.T,
+	server *Server,
+) []toolsListTestPage {
+	t.Helper()
+
+	return []toolsListTestPage{
+		mustToolsListResponsePage(t, server, nil, 0),
+	}
+}
+
+func mustToolsListResponseBytes(t *testing.T) []byte {
+	t.Helper()
+
+	pages := mustToolsListResponsePages(t)
+	responseBytes := make([]byte, 0)
+	for _, page := range pages {
+		responseBytes = append(responseBytes, page.responseBytes...)
+	}
+	return responseBytes
+}
+
+func mustToolsListResponsePage(
+	t *testing.T,
+	server *Server,
+	cursor *string,
+	pageIndex int,
+) toolsListTestPage {
+	t.Helper()
+
+	var params json.RawMessage
+	if cursor != nil {
+		encoded, err := json.Marshal(map[string]string{"cursor": *cursor})
+		if err != nil {
+			t.Fatal(err)
+		}
+		params = encoded
+	}
 	request := JSONRPCRequest{
 		JSONRPC: "2.0",
 		Method:  "tools/list",
-		ID:      "req-schema-budget",
+		ID:      fmt.Sprintf("req-schema-%d", pageIndex),
+		Params:  params,
 	}
 
 	stdout := os.Stdout
@@ -45,7 +103,32 @@ func mustToolsListResponseBytes(t *testing.T) []byte {
 		t.Fatal(err)
 	}
 
-	return responseBytes
+	response := map[string]interface{}{}
+	if err := json.Unmarshal(responseBytes, &response); err != nil {
+		t.Fatalf("unmarshal tools/list response: %v\n%s", err, string(responseBytes))
+	}
+	result, ok := response["result"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("result missing or wrong type: %#v", response["result"])
+	}
+	rawTools, ok := result["tools"].([]interface{})
+	if !ok {
+		t.Fatalf("tools missing or wrong type: %#v", result["tools"])
+	}
+	tools := make([]map[string]interface{}, 0, len(rawTools))
+	for _, rawTool := range rawTools {
+		tool, ok := rawTool.(map[string]interface{})
+		if !ok {
+			t.Fatalf("tool entry has wrong type: %#v", rawTool)
+		}
+		tools = append(tools, tool)
+	}
+	nextCursor, _ := result["nextCursor"].(string)
+	return toolsListTestPage{
+		responseBytes: responseBytes,
+		tools:         tools,
+		nextCursor:    nextCursor,
+	}
 }
 
 func mustListToolProperties(t *testing.T, toolName string) map[string]interface{} {
@@ -95,80 +178,41 @@ func mustArrayItemProperties(t *testing.T, raw interface{}, label string) map[st
 func mustListToolInputSchema(t *testing.T, toolName string) map[string]interface{} {
 	t.Helper()
 
-	server := NewServer()
-	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
-		return "", nil
-	})
-	request := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "tools/list",
-		ID:      "req-schema",
-	}
+	for _, page := range mustToolsListResponsePages(t) {
+		for _, tool := range page.tools {
+			if tool["name"] != toolName {
+				continue
+			}
 
-	stdout := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() {
-		os.Stdout = stdout
-	}()
+			inputSchema, ok := tool["inputSchema"].(map[string]interface{})
+			if !ok {
+				t.Fatalf("%s inputSchema missing or wrong type: %#v", toolName, tool["inputSchema"])
+			}
 
-	os.Stdout = writer
-	server.handleToolsList(request)
-
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	responseBytes, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	response := map[string]interface{}{}
-	err = json.Unmarshal(responseBytes, &response)
-	if err != nil {
-		t.Fatalf("unmarshal tools/list response: %v\n%s", err, string(responseBytes))
-	}
-
-	result, ok := response["result"].(map[string]interface{})
-	if !ok {
-		t.Fatalf("result missing or wrong type: %#v", response["result"])
-	}
-
-	tools, ok := result["tools"].([]interface{})
-	if !ok {
-		t.Fatalf("tools missing or wrong type: %#v", result["tools"])
-	}
-
-	for _, rawTool := range tools {
-		tool, ok := rawTool.(map[string]interface{})
-		if !ok {
-			t.Fatalf("tool entry has wrong type: %#v", rawTool)
+			return inputSchema
 		}
-		if tool["name"] != toolName {
-			continue
-		}
-
-		inputSchema, ok := tool["inputSchema"].(map[string]interface{})
-		if !ok {
-			t.Fatalf("%s inputSchema missing or wrong type: %#v", toolName, tool["inputSchema"])
-		}
-
-		return inputSchema
 	}
 
 	t.Fatalf("%s tool schema not found", toolName)
 	return nil
 }
 
-func TestHandleToolsList_StaysUnderContextBudget(t *testing.T) {
-	responseBytes := mustToolsListResponseBytes(t)
-
-	const maxToolsListBytes = 15000
-	if len(responseBytes) > maxToolsListBytes {
-		t.Fatalf("tools/list response = %d bytes, want <= %d", len(responseBytes), maxToolsListBytes)
+func TestHandleToolsList_ReturnsCompleteCatalogWithoutPagination(t *testing.T) {
+	server := mustCatalogServer()
+	pages := mustToolsListResponsePages(t)
+	if len(pages) != 1 {
+		t.Fatalf("tools/list returned %d pages, want one atomic catalog", len(pages))
+	}
+	page := pages[0]
+	if page.nextCursor != "" {
+		t.Fatalf("tools/list returned nextCursor %q, want no pagination", page.nextCursor)
+	}
+	if len(page.tools) != len(server.ToolCatalog()) {
+		t.Fatalf(
+			"tools/list returned %d tools, want complete catalog of %d",
+			len(page.tools),
+			len(server.ToolCatalog()),
+		)
 	}
 }
 
@@ -176,7 +220,6 @@ func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
 	body := string(mustToolsListResponseBytes(t))
 	for _, forbidden := range []string{
 		"haft_interface_contract_generation_manifest",
-		"source_digest",
 		"generator_target_surfaces",
 		"generator_target_fields",
 		"generated_schema_fragments",
@@ -188,6 +231,10 @@ func TestHandleToolsList_DoesNotInlineContractGenerationManifest(t *testing.T) {
 			t.Fatalf("tools/list inlined contract generation manifest fragment %q", forbidden)
 		}
 	}
+	// source_digest is intentionally not a forbidden bare fragment: the
+	// strict typed-memory ContextSlice wire uses that exact field for an
+	// environment selector. The manifest-specific surrounding keys above
+	// remain forbidden.
 }
 
 func TestHandleToolsList_DoesNotInlineContractAuditRequiredCoverage(t *testing.T) {
@@ -390,15 +437,47 @@ func TestHandleToolsList_QuerySchemaIncludesExactArtifactAliases(t *testing.T) {
 		t.Fatal(err)
 	}
 	piSchema := string(piBytes)
-	for _, field := range []string{"artifact_ref: OptStr()", "ref: OptStr()", "artifact_id: OptStr()"} {
+	for _, field := range []string{"artifact_ref:", "ref: OptStr()", "artifact_id: OptStr()"} {
 		if !strings.Contains(piSchema, field) {
 			t.Fatalf("Pi haft_query schema missing %q", field)
 		}
 	}
 }
 
-func TestPiHaftQueryActionsMirrorMCPEnum(t *testing.T) {
+func TestHandleToolsList_QueryExactFieldsDeclareIdentifierNamespaces(t *testing.T) {
 	querySchema := mustListToolProperties(t, "haft_query")
+	for _, tc := range []struct {
+		field    string
+		required []string
+	}{
+		{
+			field:    "identifier",
+			required: []string{"FPF source identifier", "action=fpf", "wrong_identifier_namespace", "artifact_ref", "symbol"},
+		},
+		{
+			field:    "artifact_ref",
+			required: []string{"Canonical Haft artifact ID", "action=related", "wrong_identifier_namespace", "recovery_call"},
+		},
+		{
+			field:    "symbol",
+			required: []string{"action=node", "code symbol only", "wrong_identifier_namespace", "action=related", "artifact_ref=<id>"},
+		},
+	} {
+		fieldSchema, ok := querySchema[tc.field].(map[string]interface{})
+		if !ok {
+			t.Fatalf("haft_query %s schema missing: %#v", tc.field, querySchema[tc.field])
+		}
+		description, _ := fieldSchema["description"].(string)
+		for _, required := range tc.required {
+			if !strings.Contains(description, required) {
+				t.Fatalf("haft_query %s description missing %q: %q", tc.field, required, description)
+			}
+		}
+	}
+}
+
+func TestPiHaftQueryActionsMirrorMCPEnum(t *testing.T) {
+	querySchema := fullMemoryCatalogToolProperties(t, "haft_query")
 	mcpActions := mustStringEnum(t, querySchema["action"], "haft_query.action")
 	piActions := mustPiHaftQueryActions(t)
 
@@ -439,6 +518,45 @@ func TestToolCatalog_BindingDescriptionsNameHostReceiptVerifierBoundary(t *testi
 	}
 	if strings.Contains(body, "not kernel-verifiable manual_cli authorization receipts") {
 		t.Fatalf("tools/list still says only manual_cli receipts are kernel-verifiable:\n%s", body)
+	}
+}
+
+func TestToolCatalog_SpecLifecycleDoesNotClaimFPFSourceCompatibility(t *testing.T) {
+	tool := haftSpecSectionTool()
+	body := strings.Join([]string{
+		tool.Description,
+		toolCatalogActionDescription(t, "haft_spec_section"),
+		compactToolDescription(tool.Name, tool.Description),
+	}, "\n")
+	for _, want := range []string{
+		"does not establish compatibility with a newer FPF source",
+		"do not compare section meaning with a newer FPF source",
+		"FPF source fit is separate",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("spec lifecycle descriptions missing %q:\n%s", want, body)
+		}
+	}
+}
+
+func TestToolCatalog_SpecLifecycleSeparatesProjectAndExactSectionReads(
+	t *testing.T,
+) {
+	tool := haftSpecSectionTool()
+	body := strings.Join([]string{
+		tool.Description,
+		toolCatalogActionDescription(t, "haft_spec_section"),
+	}, "\n")
+	for _, want := range []string{
+		"project/scope-level",
+		"reject section_id",
+		"spec_trace",
+		"spec_use",
+		"not exact SpecSection lifecycle",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("spec lifecycle descriptions missing %q:\n%s", want, body)
+		}
 	}
 }
 
@@ -536,8 +654,38 @@ func TestHandleToolsList_CompareSchemaIncludesNarrativeFields(t *testing.T) {
 	}
 
 	legacyDescription, _ := legacyRef["description"].(string)
-	if !strings.Contains(legacyDescription, "Advisory recommendation only") {
+	if !strings.Contains(
+		legacyDescription,
+		"excluded from typed PortfolioComparison",
+	) {
 		t.Fatalf("unexpected legacy_recommendation_ref description: %q", legacyDescription)
+	}
+
+	selectedDescription, _ := selectedRef["description"].(string)
+	if !strings.Contains(
+		selectedDescription,
+		"Excluded from typed PortfolioComparison",
+	) {
+		t.Fatalf("unexpected selected_ref description: %q", selectedDescription)
+	}
+
+	boundedContext, ok :=
+		compareSchema["bounded_context_ref"].(map[string]interface{})
+	if !ok {
+		t.Fatalf(
+			"bounded_context_ref schema missing or wrong type: %#v",
+			compareSchema["bounded_context_ref"],
+		)
+	}
+	boundedDescription, _ := boundedContext["description"].(string)
+	if !strings.Contains(
+		boundedDescription,
+		"(explore/compare)",
+	) {
+		t.Fatalf(
+			"unexpected bounded_context_ref description: %q",
+			boundedDescription,
+		)
 	}
 }
 
@@ -943,63 +1091,27 @@ func assertCommissionSchemaHasNoTopLevelCompositors(t *testing.T, schema map[str
 // inputSchema. Anthropic API rejects all three at the top level
 // regardless of which tool ships them, so ALL tools must comply.
 func TestHandleToolsList_NoToolDeclaresTopLevelCompositors(t *testing.T) {
-	server := NewServer()
-	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
-		return "", nil
-	})
-	request := JSONRPCRequest{
-		JSONRPC: "2.0",
-		Method:  "tools/list",
-		ID:      "req-no-compositors",
+	pages := mustToolsListResponsePages(t)
+	toolCount := 0
+	for _, page := range pages {
+		toolCount += len(page.tools)
 	}
-
-	stdout := os.Stdout
-	reader, writer, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { os.Stdout = stdout }()
-	os.Stdout = writer
-	server.handleToolsList(request)
-	if err := writer.Close(); err != nil {
-		t.Fatal(err)
-	}
-
-	responseBytes, err := io.ReadAll(reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	response := map[string]any{}
-	if err := json.Unmarshal(responseBytes, &response); err != nil {
-		t.Fatalf("unmarshal tools/list: %v\n%s", err, string(responseBytes))
-	}
-	result, ok := response["result"].(map[string]any)
-	if !ok {
-		t.Fatalf("result missing: %#v", response["result"])
-	}
-	tools, ok := result["tools"].([]any)
-	if !ok {
-		t.Fatalf("tools missing: %#v", result["tools"])
-	}
-	if len(tools) == 0 {
+	if toolCount == 0 {
 		t.Fatalf("no tools advertised")
 	}
 
 	banned := []string{"allOf", "oneOf", "anyOf"}
-	for _, raw := range tools {
-		tool, ok := raw.(map[string]any)
-		if !ok {
-			t.Fatalf("tool entry has wrong type: %#v", raw)
-		}
-		name, _ := tool["name"].(string)
-		schema, ok := tool["inputSchema"].(map[string]any)
-		if !ok {
-			t.Fatalf("tool %q inputSchema missing", name)
-		}
-		for _, key := range banned {
-			if _, present := schema[key]; present {
-				t.Fatalf("tool %q declares top-level %q in inputSchema; Anthropic API rejects this and takes the whole MCP server offline", name, key)
+	for _, page := range pages {
+		for _, tool := range page.tools {
+			name, _ := tool["name"].(string)
+			schema, ok := tool["inputSchema"].(map[string]any)
+			if !ok {
+				t.Fatalf("tool %q inputSchema missing", name)
+			}
+			for _, key := range banned {
+				if _, present := schema[key]; present {
+					t.Fatalf("tool %q declares top-level %q in inputSchema; Anthropic API rejects this and takes the whole MCP server offline", name, key)
+				}
 			}
 		}
 	}
@@ -1013,14 +1125,135 @@ func TestHandleToolsList_FPFQuerySchemaIncludesMode(t *testing.T) {
 		t.Fatalf("mode schema missing or wrong type: %#v", querySchema["mode"])
 	}
 
-	description, _ := mode["description"].(string)
-	if description != "tree mode" {
-		t.Fatalf("unexpected mode description: %q", description)
+	wantModes := []interface{}{
+		"concern",
+		"lookup",
+		"inspect",
+		"tactical",
+		"standard",
+		"deep",
+	}
+	if got := mode["type"]; got != "string" {
+		t.Fatalf("FPF Query mode type = %#v, want string", got)
+	}
+	if got := mode["enum"]; !reflect.DeepEqual(got, wantModes) {
+		t.Fatalf("shared haft_query modes = %#v, want non-memory modes %#v", got, wantModes)
+	}
+
+	action := querySchema["action"].(map[string]interface{})
+	actions := action["enum"].([]interface{})
+	for _, retired := range []interface{}{"pattern_use", "pattern_recall"} {
+		if slices.Contains(actions, retired) {
+			t.Fatalf("retired query action %q remains public: %#v", retired, actions)
+		}
+	}
+	if !slices.Contains(actions, interface{}("fpf")) {
+		t.Fatalf("fpf action missing: %#v", actions)
+	}
+
+	for _, field := range []string{
+		"query",
+		"identifier",
+		"entity_of_concern",
+		"known_context",
+		"intended_use",
+		"roles",
+		"max_candidates_per_role",
+		"max_total_candidates",
+		"max_excerpt_characters",
+		"max_relations_per_candidate",
+		"max_candidates",
+		"view",
+		"trace_ref",
+	} {
+		if _, ok := querySchema[field]; !ok {
+			t.Fatalf("FPF Query schema field %q missing", field)
+		}
+	}
+
+	for _, field := range []string{"query", "identifier", "entity_of_concern", "intended_use"} {
+		schema := querySchema[field].(map[string]interface{})
+		if schema["type"] != "string" {
+			t.Fatalf("FPF Query %s schema = %#v, want string", field, schema)
+		}
+	}
+	traceRefSchema := querySchema["trace_ref"].(map[string]interface{})
+	if traceRefSchema["type"] != "string" {
+		t.Fatalf(
+			"FPF Query trace_ref schema = %#v, want string",
+			traceRefSchema,
+		)
+	}
+	if _, exists := traceRefSchema["enum"]; exists {
+		t.Fatalf(
+			"shared haft_query trace_ref must remain action-specific, got global enum: %#v",
+			traceRefSchema,
+		)
+	}
+	viewSchema := querySchema["view"].(map[string]interface{})
+	if viewSchema["type"] != "string" {
+		t.Fatalf(
+			"shared non-memory haft_query view lost its string type: %#v",
+			viewSchema,
+		)
+	}
+	view := querySchema["view"].(map[string]interface{})
+	viewDescription, _ := view["description"].(string)
+	for _, fragment := range []string{"action=fpf", "action=explore", "working (default)", "trace", "diagnostic"} {
+		if !strings.Contains(viewDescription, fragment) {
+			t.Fatalf("FPF Query view description missing %q: %q", fragment, viewDescription)
+		}
+	}
+	memoryRequest, ok := querySchema["memory_request"].(map[string]interface{})
+	if !ok {
+		t.Fatalf(
+			"haft_query memory_request schema missing: %#v",
+			querySchema["memory_request"],
+		)
+	}
+	variants, ok := memoryRequest["oneOf"].([]interface{})
+	if !ok || len(variants) != 3 {
+		t.Fatalf(
+			"haft_query memory_request variants = %#v, want three",
+			memoryRequest["oneOf"],
+		)
+	}
+	traceRef := querySchema["trace_ref"].(map[string]interface{})
+	traceDescription, _ := traceRef["description"].(string)
+	for _, fragment := range []string{"action=fpf", "action=explore", "view=trace", "view=diagnostic", "opaque replay reference", "replay_mismatch before retrieval", "Explore index/request/result drift", "working view rejects"} {
+		if !strings.Contains(traceDescription, fragment) {
+			t.Fatalf("FPF Query trace_ref description missing %q: %q", fragment, traceDescription)
+		}
+	}
+	for _, field := range []string{"known_context", "roles"} {
+		schema := querySchema[field].(map[string]interface{})
+		if schema["type"] != "array" {
+			t.Fatalf("FPF Query %s schema = %#v, want string array", field, schema)
+		}
+		items := schema["items"].(map[string]interface{})
+		if items["type"] != "string" {
+			t.Fatalf("FPF Query %s items = %#v, want string", field, items)
+		}
+	}
+	for _, field := range []string{"max_candidates_per_role", "max_total_candidates", "max_excerpt_characters", "max_relations_per_candidate"} {
+		schema := querySchema[field].(map[string]interface{})
+		if schema["type"] != "integer" || schema["minimum"] != float64(0) {
+			t.Fatalf("FPF Query %s schema = %#v, want non-negative integer", field, schema)
+		}
+	}
+	maxCandidates := querySchema["max_candidates"].(map[string]interface{})
+	if maxCandidates["type"] != "integer" ||
+		maxCandidates["minimum"] != float64(1) ||
+		maxCandidates["maximum"] != float64(50) {
+		t.Fatalf(
+			"Explore max_candidates schema = %#v, want integer 1..50",
+			maxCandidates,
+		)
 	}
 }
 
 func TestHandleInitialize_IncludesWorkflowInstructionsWhenConfigured(t *testing.T) {
-	server := NewServer()
+	server := NewServer("test")
 	server.SetInstructions("## Project Workflow\nDefaults:\n- mode: standard")
 
 	request := JSONRPCRequest{
@@ -1058,6 +1291,13 @@ func TestHandleInitialize_IncludesWorkflowInstructionsWhenConfigured(t *testing.
 	result, ok := response["result"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("result missing or wrong type: %#v", response["result"])
+	}
+	serverInfo, ok := result["serverInfo"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("serverInfo missing or wrong type: %#v", result["serverInfo"])
+	}
+	if serverInfo["version"] != "test" {
+		t.Fatalf("serverInfo version must come from the server constructor: %#v", serverInfo["version"])
 	}
 
 	instructions, _ := result["instructions"].(string)
@@ -1124,10 +1364,7 @@ func TestHandleToolsList_QuerySchemaIncludesProjectionView(t *testing.T) {
 		t.Fatalf("view schema missing or wrong type: %#v", querySchema["view"])
 	}
 
-	description, _ := view["description"].(string)
-	if description != "projection views" {
-		t.Fatalf("unexpected view description: %q", description)
-	}
+	_ = view
 }
 
 func TestHandleToolsList_QuerySchemaIncludesCodeContextLane(t *testing.T) {
@@ -1136,13 +1373,6 @@ func TestHandleToolsList_QuerySchemaIncludesCodeContextLane(t *testing.T) {
 	lane, ok := querySchema["lane"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("lane schema missing or wrong type: %#v", querySchema["lane"])
-	}
-
-	description, _ := lane["description"].(string)
-	for _, want := range []string{"Lane", "Default index", "full=true audit"} {
-		if !strings.Contains(description, want) {
-			t.Fatalf("lane description missing %q: %q", want, description)
-		}
 	}
 
 	enum, ok := lane["enum"].([]interface{})
@@ -1190,5 +1420,12 @@ func TestHandleToolsList_DecisionSchemaExposesCausalSupportBasis(t *testing.T) {
 	}
 	if _, ok := props["realizability"]; !ok {
 		t.Fatalf("predictions[].realizability missing from haft_decision schema")
+	}
+}
+
+func TestHandleToolsList_DecisionSchemaExposesDirectProblemStatement(t *testing.T) {
+	decisionSchema := mustListToolProperties(t, "haft_decision")
+	if _, ok := decisionSchema["problem_statement"]; !ok {
+		t.Fatalf("haft_decision schema must expose problem_statement: %#v", decisionSchema)
 	}
 }

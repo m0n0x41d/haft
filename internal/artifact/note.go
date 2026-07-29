@@ -314,6 +314,15 @@ func BuildNoteArtifact(id string, now time.Time, input NoteInput) *Artifact {
 
 // CreateNote creates a Note artifact. Orchestrates effects around BuildNoteArtifact.
 func CreateNote(ctx context.Context, store ArtifactStore, haftDir string, input NoteInput) (*Artifact, string, error) {
+	affectedFiles, err := canonicalAffectedFilePaths(input.AffectedFiles)
+	if err != nil {
+		return nil, "", err
+	}
+	input.AffectedFiles = make([]string, 0, len(affectedFiles))
+	for _, file := range affectedFiles {
+		input.AffectedFiles = append(input.AffectedFiles, file.Path)
+	}
+
 	// GenerateID uses a crypto/rand suffix since #63; no sequence lookup
 	// required. seq parameter preserved for backward compat — pass 0.
 	id := GenerateIDWithTaskContext(KindNote, 0, input.TaskContext)
@@ -337,12 +346,8 @@ func CreateNote(ctx context.Context, store ArtifactStore, haftDir string, input 
 
 	var warnings []string
 
-	if len(input.AffectedFiles) > 0 {
-		var files []AffectedFile
-		for _, f := range input.AffectedFiles {
-			files = append(files, AffectedFile{Path: f})
-		}
-		if err := store.SetAffectedFiles(ctx, id, files); err != nil {
+	if len(affectedFiles) > 0 {
+		if err := store.SetAffectedFiles(ctx, id, affectedFiles); err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to track affected files: %v", err))
 		}
 	}

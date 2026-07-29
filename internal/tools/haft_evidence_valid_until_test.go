@@ -15,10 +15,11 @@ func TestHaftDecisionTool_EvidencePersistsValidUntil(t *testing.T) {
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Keep benchmark evidence fresh",
-		WhySelected:     "Need a target artifact for evidence attachment",
-		SelectionPolicy: "Prefer the smallest decision artifact that still exercises evidence attachment against a real decision.",
-		CounterArgument: "A synthetic decision record can miss coupling that appears in a real compare-driven decision.",
+		SelectedTitle:    "Keep benchmark evidence fresh",
+		ProblemStatement: "Evidence attached to a decision needs an explicit validity horizon.",
+		WhySelected:      "Need a target artifact for evidence attachment",
+		SelectionPolicy:  "Prefer the smallest decision artifact that still exercises evidence attachment against a real decision.",
+		CounterArgument:  "A synthetic decision record can miss coupling that appears in a real compare-driven decision.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Attach evidence to a note",
 			Reason:  "This test explicitly needs a decision artifact target.",

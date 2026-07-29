@@ -1,8 +1,8 @@
 defmodule OpenSleigh.Gates.Semantic.LadeQuadrantsSplitOk do
   @moduledoc """
   Semantic gate — any obligation-language artifact (typically Execute
-  or Commission output). Per `specs/target-system/GATES.md §2` +
-  `.context/semiotics_slideument.md` §A.6.B Slide 33:
+  or Commission output). Per `specs/target-system/GATES.md §2` and exact
+  FPF A.6.B terminology:
 
   Normative claim sentences (containing "MUST", "guarantees",
   "accepted as proof", etc.) must be decomposed into the four
@@ -11,11 +11,11 @@ defmodule OpenSleigh.Gates.Semantic.LadeQuadrantsSplitOk do
   * **L** — Law (definition)
   * **A** — Admissibility (gate)
   * **D** — Deontics (duty)
-  * **W-E** — Work-effect / Evidence (the 4th axis literally named
-    "Work-effect / Evidence" per Slide 33, NOT just "Evidence" —
+  * **W-E** — Work-effect / Evidence (the fourth axis is
+    "Work-effect / Evidence", NOT just "Evidence" —
     conflating work-effect with evidence is itself a reportable error)
 
-  Geometrically `L D / E A` (Slide 33 literal).
+  Geometrically `L D / E A`.
 
   Process narration is NOT a target here. Sentences about what the
   agent will inspect next, which files it will read, or which evidence
@@ -41,8 +41,7 @@ defmodule OpenSleigh.Gates.Semantic.LadeQuadrantsSplitOk do
     """
     You are evaluating whether obligation-language in an engineering
     artifact is cleanly decomposed into the four quadrants of the
-    Boundary Norm Square (FPF A.6.B, `semiotics_slideument.md`
-    Slide 33):
+    Boundary Norm Square (FPF A.6.B):
 
       L — Law (definition)
       A — Admissibility (gate)

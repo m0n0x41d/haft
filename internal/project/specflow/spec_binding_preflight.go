@@ -523,7 +523,7 @@ func specBindingNeedleTokens(value string) []string {
 }
 
 func specBindingTokenSeparator(r rune) bool {
-	return !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9')
+	return (r < 'a' || r > 'z') && (r < '0' || r > '9')
 }
 
 func allSpecBindingTokensPresent(tokens []string, haystack string) bool {

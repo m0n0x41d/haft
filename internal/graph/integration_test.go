@@ -46,6 +46,13 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 	artifactStore := artifact.NewStore(rawDB)
 	graphStore := NewStore(rawDB)
 	ctx := context.Background()
+	if _, err := rawDB.Exec(
+		`CREATE TABLE IF NOT EXISTS code_files (
+			file_path TEXT PRIMARY KEY
+		)`,
+	); err != nil {
+		t.Fatalf("create code-file fixture index: %v", err)
+	}
 
 	modules := []Node{
 		{ID: "mod-artifact", Path: "internal/artifact", Name: "artifact"},
@@ -327,6 +334,13 @@ func seedIntegrationDecision(t *testing.T, ctx context.Context, artifactStore *a
 
 	files := make([]artifact.AffectedFile, 0, len(decision.files))
 	for _, file := range decision.files {
+		if _, err := artifactStore.DB().ExecContext(
+			ctx,
+			`INSERT OR IGNORE INTO code_files (file_path) VALUES (?)`,
+			file,
+		); err != nil {
+			t.Fatalf("index fixture file %s: %v", file, err)
+		}
 		files = append(files, artifact.AffectedFile{Path: file})
 	}
 

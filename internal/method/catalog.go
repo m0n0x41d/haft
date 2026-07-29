@@ -201,7 +201,7 @@ func validateSourcePatternRefs(definition Definition) error {
 			return fmt.Errorf("method %s has empty source_pattern_refs item", definition.ID)
 		}
 		if !validSourcePatternRefPrefix(ref) {
-			return fmt.Errorf("method %s source_pattern_refs item %q must start with fpf:, swe-dpf:, or methodpack:", definition.ID, ref)
+			return fmt.Errorf("method %s source_pattern_refs item %q must start with fpf:, swe-dpf:, or methodpack", definition.ID, ref)
 		}
 	}
 	return nil

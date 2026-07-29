@@ -9,7 +9,7 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
 
 # h-commission — Create work commission (manual only, sacred)
 
@@ -18,6 +18,40 @@ You are creating a WorkCommission through the manual CLI/input-file path. Commis
 Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts.
 
 The operator invoked this manually (`disable-model-invocation: true` enforces it structurally). Commissions stay sacred per FPF reasoner critique 2026-05-25.
+
+A WorkCommission is not a WorkPlan and does not perform Work. It grants bounded
+authority for separately planned and observed execution. Ordinary plan
+composition remains available through `h-reason`; use this skill only when the
+authority grant itself is current.
+
+## Require one self-contained authority grant
+
+Before asking for the manual invocation, present a self-contained
+**Human Gate Brief**. Name the source decision by readable title and ID, the exact execution
+slice, allowed and forbidden paths/actions/tools, autonomy/resource/time and
+concurrency bounds, delivery policy, stop conditions, and evidence requirements.
+State what the commission changes and leaves unchanged, why only the authority
+grant is blocked, and the real current options: grant the shown scope, narrow or
+revise it, or decline/defer it. Give each option's consequence or return
+condition and weakest link. Summarize an existing comparison/Pareto basis when
+one exists, or state that none applies. Mark the recommendation as advisory,
+state decision/evidence freshness, and ask for the human engineer's assessment
+of the scope options, trade-offs, and recommendation in natural language. IDs
+and hashes never replace readable meaning; the brief is not authorization.
+
+Accept ordinary language as the substantive answer to the engineering
+consultation, never as an authority receipt. Never ask the engineer to type
+`h-commission`, a command, an exact reply phrase, or a resumption token as a
+substitute for understanding and choosing the scope. Only after the engineer's
+position is explicit may the separate manual invocation be explained as the
+authority grant, together with what it will and will not authorize.
+
+An argumentless invocation can grant authority only when it unambiguously
+refers to exactly one current scope brief already made explicit by the engineer.
+If the scope, source decision, or delivery policy would require guessing,
+create nothing; return to the consultation, present the missing brief, and ask
+for the engineer's assessment and scope choice in natural language. This
+ambiguity guard is not a second confirmation after a valid invocation.
 
 ## Step 1 — Identify the source decision
 
@@ -34,8 +68,12 @@ Do not read raw SQLite while kernel exact recovery is available.
 
 If not found or stale or superseded or deprecated → STOP. Report to operator and recommend:
 - `/h-decide` to record the decision first
-- `/h-refresh` action=waive to extend a stale decision before commissioning
-- `/h-refresh` action=supersede if the decision is outdated and needs replacement
+- `mcp__haft__haft_refresh(action="review")` for a read-only maintenance
+  judgment packet when the record is stale; any waiver remains a separate,
+  explicit operator lifecycle mutation
+- manual `/h-decide` for a replacement, followed by
+  `haft decision supersede <old-dec-...> --new <new-dec-...> --reason "..."`
+  when the old decision is outdated
 
 ## Step 2 — Run freshness check
 
@@ -110,4 +148,4 @@ All these are read-only or state-transition; none execute. Execution is harness 
 - A.15 — Role / Capability / Method / Work distinction
 - A.7 — Object / Description / Carrier (a commission is the description; the actual run is the work)
 
-Look up via `mcp__haft__haft_query(action="fpf", query="E.16")`.
+Inspect via `mcp__haft__haft_query(action="fpf", mode="inspect", identifier="E.16")`.

@@ -7,22 +7,25 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 var (
 	artifactCreateInputFile string
 	artifactCreateJSON      bool
+	artifactResumeJSON      bool
 )
 
 var artifactCmd = &cobra.Command{
 	Use:   "artifact",
-	Short: "Create Haft artifacts from structured input files",
+	Short: "Create artifacts or resume a reviewed DecisionRecord binding",
 }
 
 var artifactCreateCmd = &cobra.Command{
@@ -32,17 +35,38 @@ var artifactCreateCmd = &cobra.Command{
 
 Use ` + "`haft interface <capability> --json`" + ` to retrieve the compact
 contract before writing the input file. Supported capabilities:
-problem.frame, solution.explore, solution.compare, decision.decide, note.record.`,
+problem.frame, solution.explore, solution.compare, decision.decide, note.record.
+Decision creation follows .haft/config.yaml. The default explicit_h_decide mode
+treats the operator's explicit h-decide invocation as sufficient; the optional
+strict_cli_speech_act mode adds a semantic review and literal SpeechAct on
+/dev/tty.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runArtifactCreate,
 }
 
+var artifactResumeDecisionCmd = &cobra.Command{
+	Use:   "resume-decision DECISION_ID",
+	Short: "Resume one reviewed manual DecisionRecord binding",
+	Long: `Resume one exact DecisionRecord binding by its human-facing DecisionRecord ID.
+
+This command is available only in strict_cli_speech_act mode. If the prior
+command stopped after the human SpeechAct became durable, it reuses that act
+and retries only the institutional effect. If the human act was cancelled, the
+same readable decision review is presented again on /dev/tty. No hash or nonce
+is required.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runArtifactResumeDecision,
+}
+
 type artifactCreateResult struct {
-	Capability string   `json:"capability"`
-	ID         string   `json:"id"`
-	Kind       string   `json:"kind"`
-	File       string   `json:"file,omitempty"`
-	Warnings   []string `json:"warnings,omitempty"`
+	Capability           string                      `json:"capability"`
+	ID                   string                      `json:"id"`
+	Kind                 string                      `json:"kind"`
+	Title                string                      `json:"title,omitempty"`
+	File                 string                      `json:"file,omitempty"`
+	ExactReplay          bool                        `json:"exact_replay,omitempty"`
+	Warnings             []string                    `json:"warnings,omitempty"`
+	TaskMemoryProjection *taskMemoryProjectionReport `json:"task_memory_projection,omitempty"`
 }
 
 type artifactCompareFileInput struct {
@@ -64,7 +88,9 @@ type artifactCompareFileInput struct {
 func init() {
 	artifactCreateCmd.Flags().StringVar(&artifactCreateInputFile, "input-file", "", "JSON input file matching the capability contract")
 	artifactCreateCmd.Flags().BoolVar(&artifactCreateJSON, "json", false, "print structured JSON output")
+	artifactResumeDecisionCmd.Flags().BoolVar(&artifactResumeJSON, "json", false, "print structured JSON output")
 	artifactCmd.AddCommand(artifactCreateCmd)
+	artifactCmd.AddCommand(artifactResumeDecisionCmd)
 	rootCmd.AddCommand(artifactCmd)
 }
 
@@ -74,27 +100,189 @@ func runArtifactCreate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("--input-file is required; run `haft interface %s --json` for the input contract", capability)
 	}
 
-	projectRoot, store, closeStore, err := openArtifactCLIStore()
-	if err != nil {
-		return err
-	}
-	defer closeStore()
-
-	haftDir := filepath.Join(projectRoot, ".haft")
 	inputBytes, err := os.ReadFile(artifactCreateInputFile)
 	if err != nil {
 		return fmt.Errorf("read input file: %w", err)
 	}
+	if capability == "decision.decide" {
+		return runDecisionArtifactCreate(cmd, inputBytes)
+	}
 
-	result, err := createArtifactFromInput(context.Background(), store, haftDir, capability, inputBytes)
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		projectRoot,
+		projectledger.ReadWrite,
+		"artifact creation",
+	)
 	if err != nil {
 		return err
+	}
+	defer ledger.Close()
+	projectRoot = ledger.ProjectRoot().String()
+	if err := ledger.Revalidate(ctx); err != nil {
+		return fmt.Errorf(
+			"revalidate checked project ledger before artifact creation: %w",
+			err,
+		)
+	}
+	store := artifact.NewStore(ledger.Database())
+	haftDir := filepath.Join(projectRoot, ".haft")
+	result, err := createArtifactFromInput(
+		ctx,
+		store,
+		haftDir,
+		capability,
+		inputBytes,
+	)
+	if err != nil {
+		return err
+	}
+	rawArguments := map[string]any{}
+	if err := json.Unmarshal(inputBytes, &rawArguments); err != nil {
+		return fmt.Errorf(
+			"decode task-memory projection arguments: %w",
+			err,
+		)
+	}
+	projector, projectionErr := newTaskMemoryProjectionRuntime(
+		ctx,
+		ledger.ProjectID(),
+		ledger.Database(),
+		store,
+	)
+	var taskProjector taskMemoryProjector = projector
+	if projectionErr != nil {
+		taskProjector = newUnavailableTaskMemoryProjector(
+			projectionErr,
+		)
+	}
+	projectionRequest := artifactTaskMemoryProjectionRequest(
+		capability,
+		result.ID,
+		rawArguments,
+	)
+	projection, applicable := taskProjector.Project(
+		ctx,
+		projectionRequest,
+	)
+	if applicable {
+		result.TaskMemoryProjection = &projection
+	}
+	if err := ledger.Revalidate(ctx); err != nil {
+		return fmt.Errorf(
+			"artifact %s was created, but checked-ledger verification after task-memory projection failed: %w",
+			result.ID,
+			err,
+		)
 	}
 
 	if artifactCreateJSON {
 		return writeJSON(cmd.OutOrStdout(), result)
 	}
 
+	return writeArtifactCreateText(cmd.OutOrStdout(), result)
+}
+
+func artifactTaskMemoryProjectionRequest(
+	capability string,
+	artifactRef string,
+	arguments map[string]any,
+) taskMemoryProjectionRequest {
+	routes := map[string]taskMemoryProjectionRequest{
+		"problem.frame": {
+			ToolName: "haft_problem",
+			Action:   "frame",
+		},
+		"solution.explore": {
+			ToolName: "haft_solution",
+			Action:   "explore",
+		},
+		"solution.compare": {
+			ToolName: "haft_solution",
+			Action:   "compare",
+		},
+		"note.record": {
+			ToolName: "haft_note",
+			Action:   "record",
+		},
+	}
+	request := routes[capability]
+	request.ArtifactRef = artifactRef
+	request.Arguments = arguments
+	request.Mode = taskMemoryProjectionApply
+	return request
+}
+
+func runDecisionArtifactCreate(cmd *cobra.Command, inputBytes []byte) error {
+	input := artifact.DecideInput{}
+	if err := decodeArtifactInput(inputBytes, &input); err != nil {
+		return err
+	}
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	bound, err := bindDecisionByProjectPolicy(
+		ctx,
+		projectRoot,
+		input,
+	)
+	if err != nil {
+		return err
+	}
+	result := decisionBindingArtifactResult(bound)
+	if artifactCreateJSON {
+		return writeJSON(cmd.OutOrStdout(), result)
+	}
+	return writeArtifactCreateText(cmd.OutOrStdout(), result)
+}
+
+func runArtifactResumeDecision(cmd *cobra.Command, args []string) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+	config, err := project.LoadProjectConfig(projectRoot)
+	if err != nil {
+		return fmt.Errorf("load Haft project config: %w", err)
+	}
+	mode := config.EffectiveDecisionBindingMode()
+	if mode != project.DecisionBindingModeStrictCLISpeechAct {
+		return fmt.Errorf(
+			"resume-decision is available only when authority.decision_binding_mode is %q; current mode is %q and does not create the separate durable SpeechAct used by strict resume",
+			project.DecisionBindingModeStrictCLISpeechAct,
+			mode,
+		)
+	}
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	session, err := openManualDecisionBindingSession(ctx, projectRoot)
+	if err != nil {
+		return err
+	}
+	defer session.Close()
+	bound, err := session.Resume(ctx, args[0])
+	if err != nil {
+		return resumableDecisionBindingError(bound, err)
+	}
+	result := decisionBindingArtifactResult(bound)
+	if artifactResumeJSON {
+		return writeJSON(cmd.OutOrStdout(), result)
+	}
 	return writeArtifactCreateText(cmd.OutOrStdout(), result)
 }
 
@@ -163,17 +351,7 @@ func createArtifactFromInput(
 		created, filePath, err := artifact.CompareSolutions(ctx, store, haftDir, compareInput)
 		return artifactResult(capability, created, filePath), err
 	case "decision.decide":
-		var input artifact.DecideInput
-		if err := decodeArtifactInput(inputBytes, &input); err != nil {
-			return artifactCreateResult{}, err
-		}
-		var err error
-		input, err = applyDecisionSpecBindingPreflight(ctx, store, haftDir, input)
-		if err != nil {
-			return artifactCreateResult{}, err
-		}
-		created, filePath, err := artifact.Decide(ctx, store, haftDir, input)
-		return artifactResult(capability, created, filePath), err
+		return artifactCreateResult{}, errDecisionBindingUnavailable
 	case "note.record":
 		var input artifact.NoteInput
 		if err := decodeArtifactInput(inputBytes, &input); err != nil {
@@ -245,11 +423,44 @@ func artifactResult(capability string, created *artifact.Artifact, filePath stri
 		Capability: capability,
 		ID:         created.Meta.ID,
 		Kind:       string(created.Meta.Kind),
+		Title:      created.Meta.Title,
 		File:       filePath,
 	}
 }
 
 func writeArtifactCreateText(output io.Writer, result artifactCreateResult) error {
-	_, err := fmt.Fprintf(output, "%s created %s `%s`\n", result.Capability, result.Kind, result.ID)
+	verb := "created"
+	if result.ExactReplay {
+		verb = "confirmed"
+	}
+	builder := strings.Builder{}
+	_, _ = fmt.Fprintf(
+		&builder,
+		"%s %s %s `%s` — %s\n",
+		result.Capability,
+		verb,
+		result.Kind,
+		result.ID,
+		result.Title,
+	)
+	for _, warning := range result.Warnings {
+		_, _ = fmt.Fprintf(&builder, "warning: %s\n", warning)
+	}
+	if result.TaskMemoryProjection != nil {
+		_, _ = fmt.Fprintf(
+			&builder,
+			"typed memory: %s",
+			result.TaskMemoryProjection.AdmissionResult,
+		)
+		if result.TaskMemoryProjection.RelationDeclarationFragmentID != "" {
+			_, _ = fmt.Fprintf(
+				&builder,
+				" (%s)",
+				result.TaskMemoryProjection.RelationDeclarationFragmentID,
+			)
+		}
+		_, _ = fmt.Fprintln(&builder)
+	}
+	_, err := io.WriteString(output, builder.String())
 	return err
 }

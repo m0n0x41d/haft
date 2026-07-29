@@ -280,6 +280,8 @@ func normalizeSectionSystemFrameKind(value string) string {
 	switch normalized {
 	case "target_system", "target":
 		return "target_system"
+	case "software_system", "software":
+		return "software_system"
 	case "enabling_system", "enabling":
 		return "enabling_system"
 	case "carrier", "carrier_system", "publication", "publication_system":

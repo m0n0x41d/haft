@@ -183,6 +183,14 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		if v.RollbackNotes != "" {
 			body.WriteString(fmt.Sprintf("**Rollback:** %s\n\n", v.RollbackNotes))
 		}
+
+		if v.ProjectRecordRef != nil {
+			body.WriteString(fmt.Sprintf(
+				"**Typed project record:** `%s/%s`\n\n",
+				v.ProjectRecordRef.RefKindID,
+				v.ProjectRecordRef.ReferenceID,
+			))
+		}
 	}
 
 	// Summary table
@@ -1924,9 +1932,20 @@ func cloneVariants(variants []Variant) []Variant {
 			AssumptionNotes:    variant.AssumptionNotes,
 			RollbackNotes:      variant.RollbackNotes,
 			EvidenceRefs:       append([]string(nil), variant.EvidenceRefs...),
+			ProjectRecordRef:   cloneVariantProjectRecordRef(variant.ProjectRecordRef),
 		})
 	}
 	return cloned
+}
+
+func cloneVariantProjectRecordRef(
+	reference *VariantProjectRecordRef,
+) *VariantProjectRecordRef {
+	if reference == nil {
+		return nil
+	}
+	cloned := *reference
+	return &cloned
 }
 
 func cloneDimensions(dimensions []ComparisonDimension) []ComparisonDimension {

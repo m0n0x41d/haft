@@ -5,9 +5,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/m0n0x41d/haft/internal/projectpath"
 )
 
 const (
@@ -44,17 +45,19 @@ type StableRangeSnapshot struct {
 }
 
 func LanguageForPath(relPath string) (string, bool) {
-	info, ok := languages[filepath.Ext(relPath)]
-	if !ok {
-		return "", false
-	}
-	return info.name, true
+	registry := NewRegistry()
+	return registry.SymbolLanguageForFile(relPath)
 }
 
 func SupportedBindingLanguages() []BindingLanguageSupport {
 	byLanguage := make(map[string][]string)
 	for ext, info := range languages {
 		byLanguage[info.name] = append(byLanguage[info.name], ext)
+	}
+	registry := NewRegistry()
+	for ext, adapter := range registry.symbolAdapters {
+		language := adapter.SymbolLanguage(ext)
+		byLanguage[language] = appendUniqueString(byLanguage[language], ext)
 	}
 
 	out := make([]BindingLanguageSupport, 0, len(byLanguage))
@@ -71,6 +74,15 @@ func SupportedBindingLanguages() []BindingLanguageSupport {
 		return out[i].Language < out[j].Language
 	})
 	return out
+}
+
+func appendUniqueString(values []string, candidate string) []string {
+	for _, value := range values {
+		if value == candidate {
+			return values
+		}
+	}
+	return append(values, candidate)
 }
 
 func InspectFileBindingSupport(projectRoot, relPath string) FileBindingSupport {
@@ -113,20 +125,27 @@ func InspectFileBindingSupport(projectRoot, relPath string) FileBindingSupport {
 }
 
 func ExtractStableFileRange(projectRoot, relPath string) (StableRangeSnapshot, error) {
-	absPath := filepath.Join(projectRoot, relPath)
+	canonical, err := projectpath.Parse(relPath)
+	if err != nil {
+		return StableRangeSnapshot{}, err
+	}
+	absPath, err := projectpath.ResolveExisting(projectRoot, canonical)
+	if err != nil {
+		return StableRangeSnapshot{}, err
+	}
 	content, err := os.ReadFile(absPath)
 	if err != nil {
 		return StableRangeSnapshot{}, err
 	}
 
-	language, _ := LanguageForPath(relPath)
+	language, _ := LanguageForPath(canonical.String())
 	normalized := normalizeRangeText(string(content))
 	anchor := firstNonEmptyLine(normalized)
 	anchorHash := sha256.Sum256([]byte(anchor))
 	textHash := sha256.Sum256([]byte(normalized))
 
 	return StableRangeSnapshot{
-		FilePath:   relPath,
+		FilePath:   canonical.String(),
 		Language:   language,
 		StartLine:  1,
 		EndLine:    countLines(content),

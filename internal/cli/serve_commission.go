@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/autonomyenvelope"
 	"github.com/m0n0x41d/haft/internal/implementationplan"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/workcommission"
 )
 
@@ -95,6 +97,45 @@ type commissionOperatorAttention struct {
 	Reason string
 }
 
+const (
+	commissionSpecApplicabilityUnderdeterminedCode = "commission_spec_applicability_underdetermined"
+	commissionSpecRefNotApplicableCode             = "commission_spec_ref_not_applicable"
+	commissionSpecRefUnresolvedCode                = "commission_spec_ref_unresolved"
+	commissionSpecRefsRequiredCode                 = "commission_spec_refs_required"
+)
+
+// commissionSpecApplicabilityIssue identifies the exact capability-local basis
+// that is missing for a spec reference the proposed commission actually uses.
+// It is an orientation cue, not a waiver, approval, or Work authorization.
+type commissionSpecApplicabilityIssue struct {
+	DocumentKind project.SpecDocumentKind
+	Capability   projectprofile.Capability
+	MissingBasis projectprofile.CapabilityApplicabilityMissingBasis
+	Ref          string
+}
+
+// commissionSpecApplicabilityCueError is one neutral fail-closed result for
+// an explicit reliance on an underdetermined specification capability.
+type commissionSpecApplicabilityCueError struct {
+	Code                 string
+	ScopeID              string
+	ProfilePayloadDigest string
+	Issue                commissionSpecApplicabilityIssue
+}
+
+func (failure *commissionSpecApplicabilityCueError) Error() string {
+	return fmt.Sprintf(
+		"%s: scope_id=%q profile_payload_digest=%q spec_section_ref=%q document_kind=%q capability=%q missing_basis=%q",
+		failure.Code,
+		failure.ScopeID,
+		failure.ProfilePayloadDigest,
+		failure.Issue.Ref,
+		failure.Issue.DocumentKind,
+		failure.Issue.Capability,
+		failure.Issue.MissingBasis,
+	)
+}
+
 var requeueWorkCommissionTransition = workCommissionTransition{
 	ErrorCode:        "commission_not_requeueable",
 	TargetState:      "queued",
@@ -123,13 +164,33 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 
 	switch action {
 	case "create":
-		return createWorkCommission(ctx, store, args)
+		return createWorkCommission(
+			ctx,
+			store,
+			args,
+			workCommissionSpecAuthority{},
+		)
 	case "create_from_decision":
-		return createWorkCommissionFromDecision(ctx, store, args)
+		return createWorkCommissionFromDecision(
+			ctx,
+			store,
+			args,
+			workCommissionSpecAuthority{},
+		)
 	case "create_from_plan":
-		return createWorkCommissionsFromPlan(ctx, store, args)
+		return createWorkCommissionsFromPlan(
+			ctx,
+			store,
+			args,
+			workCommissionSpecAuthority{},
+		)
 	case "create_batch_from_decisions":
-		return createWorkCommissionBatchFromDecisions(ctx, store, args)
+		return createWorkCommissionBatchFromDecisions(
+			ctx,
+			store,
+			args,
+			workCommissionSpecAuthority{},
+		)
 	case "list":
 		return listWorkCommissions(ctx, store, args)
 	case "list_runnable":
@@ -151,7 +212,77 @@ func handleHaftCommission(ctx context.Context, store *artifact.Store, args map[s
 	}
 }
 
-func createWorkCommission(ctx context.Context, store *artifact.Store, args map[string]any) (string, error) {
+// handleHaftCommissionForProject is the public project-bound shell. Creation
+// resolves one canonical profile/scope projection before any artifact write;
+// read and lifecycle actions retain their existing exact-artifact behavior.
+func handleHaftCommissionForProject(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+) (string, error) {
+	action := stringArg(args, "action")
+	if action == "start_after_preflight" {
+		projectArgs := copyStringAnyMap(args)
+		projectArgs["require_current_profile_authority"] = true
+		return handleHaftCommission(ctx, store, projectArgs)
+	}
+	if !workCommissionCreationAction(action) {
+		return handleHaftCommission(ctx, store, args)
+	}
+	authority, err := resolveWorkCommissionSpecAuthority(ctx, args)
+	if err != nil {
+		return "", err
+	}
+	switch action {
+	case "create":
+		return createWorkCommission(ctx, store, args, authority)
+	case "create_from_decision":
+		return createWorkCommissionFromDecision(
+			ctx,
+			store,
+			args,
+			authority,
+		)
+	case "create_from_plan":
+		return createWorkCommissionsFromPlan(
+			ctx,
+			store,
+			args,
+			authority,
+		)
+	case "create_batch_from_decisions":
+		return createWorkCommissionBatchFromDecisions(
+			ctx,
+			store,
+			args,
+			authority,
+		)
+	default:
+		return "", fmt.Errorf(
+			"unknown WorkCommission creation action %q",
+			action,
+		)
+	}
+}
+
+func workCommissionCreationAction(action string) bool {
+	switch action {
+	case "create",
+		"create_from_decision",
+		"create_from_plan",
+		"create_batch_from_decisions":
+		return true
+	default:
+		return false
+	}
+}
+
+func createWorkCommission(
+	ctx context.Context,
+	store *artifact.Store,
+	args map[string]any,
+	authority workCommissionSpecAuthority,
+) (string, error) {
 	now := time.Now().UTC()
 
 	commission, err := commissionPayload(args)
@@ -159,13 +290,20 @@ func createWorkCommission(ctx context.Context, store *artifact.Store, args map[s
 		return "", err
 	}
 
-	return persistWorkCommission(ctx, store, commission, now)
+	return persistWorkCommissionForAuthority(
+		ctx,
+		store,
+		commission,
+		now,
+		authority,
+	)
 }
 
 func createWorkCommissionFromDecision(
 	ctx context.Context,
 	store *artifact.Store,
 	args map[string]any,
+	authority workCommissionSpecAuthority,
 ) (string, error) {
 	now := time.Now().UTC()
 
@@ -178,7 +316,13 @@ func createWorkCommissionFromDecision(
 		return "", err
 	}
 
-	return persistWorkCommission(ctx, store, commission, now)
+	return persistWorkCommissionForAuthority(
+		ctx,
+		store,
+		commission,
+		now,
+		authority,
+	)
 }
 
 // guardMultiCommissionDecision enforces that the second-or-later commission
@@ -268,6 +412,7 @@ func createWorkCommissionsFromPlan(
 	ctx context.Context,
 	store *artifact.Store,
 	args map[string]any,
+	authority workCommissionSpecAuthority,
 ) (string, error) {
 	now := time.Now().UTC()
 
@@ -276,13 +421,24 @@ func createWorkCommissionsFromPlan(
 		return "", err
 	}
 
-	commissions, err := buildWorkCommissionsFromPlan(ctx, store, args, plan, now)
+	commissions, err := buildWorkCommissionsFromPlan(
+		ctx,
+		store,
+		args,
+		plan,
+		now,
+		authority,
+	)
 	if err != nil {
 		return "", err
 	}
 
 	for _, commission := range commissions {
-		if _, err := persistWorkCommission(ctx, store, commission, now); err != nil {
+		if _, err := persistNormalizedWorkCommission(
+			ctx,
+			store,
+			commission,
+		); err != nil {
 			return "", fmt.Errorf("persist commission for %s: %w", stringField(commission, "decision_ref"), err)
 		}
 	}
@@ -297,6 +453,7 @@ func createWorkCommissionBatchFromDecisions(
 	ctx context.Context,
 	store *artifact.Store,
 	args map[string]any,
+	authority workCommissionSpecAuthority,
 ) (string, error) {
 	now := time.Now().UTC()
 
@@ -319,14 +476,22 @@ func createWorkCommissionBatchFromDecisions(
 		if err != nil {
 			return "", fmt.Errorf("build commission for %s: %w", decisionRef, err)
 		}
-		if err := normalizeNewWorkCommission(commission, now); err != nil {
+		if err := normalizeNewWorkCommissionForMaybeAuthority(
+			commission,
+			now,
+			authority,
+		); err != nil {
 			return "", fmt.Errorf("normalize commission for %s: %w", decisionRef, err)
 		}
 		commissions = append(commissions, commission)
 	}
 
 	for _, commission := range commissions {
-		if _, err := persistWorkCommission(ctx, store, commission, now); err != nil {
+		if _, err := persistNormalizedWorkCommission(
+			ctx,
+			store,
+			commission,
+		); err != nil {
 			return "", fmt.Errorf("persist commission for %s: %w", stringField(commission, "decision_ref"), err)
 		}
 	}
@@ -340,6 +505,7 @@ func buildWorkCommissionsFromPlan(
 	args map[string]any,
 	plan map[string]any,
 	now time.Time,
+	authority workCommissionSpecAuthority,
 ) ([]map[string]any, error) {
 	entries, err := implementationPlanDecisionEntries(plan)
 	if err != nil {
@@ -360,7 +526,11 @@ func buildWorkCommissionsFromPlan(
 		putOptionalString(commission, "implementation_plan_revision", stringField(plan, "revision"))
 		putOptionalAnySlice(commission, "plan_tags", planDecisionAnySlice(entry, "tags"))
 
-		if err := normalizeNewWorkCommission(commission, now); err != nil {
+		if err := normalizeNewWorkCommissionForMaybeAuthority(
+			commission,
+			now,
+			authority,
+		); err != nil {
 			return nil, fmt.Errorf("normalize commission for %s: %w", decisionRef, err)
 		}
 
@@ -378,16 +548,43 @@ func buildWorkCommissionsFromPlan(
 	return planDraftCommissions(drafts), nil
 }
 
-func persistWorkCommission(
+func persistWorkCommissionForAuthority(
 	ctx context.Context,
 	store *artifact.Store,
 	commission map[string]any,
 	now time.Time,
+	authority workCommissionSpecAuthority,
 ) (string, error) {
-	if err := normalizeNewWorkCommission(commission, now); err != nil {
+	if err := normalizeNewWorkCommissionForMaybeAuthority(
+		commission,
+		now,
+		authority,
+	); err != nil {
 		return "", err
 	}
+	return persistNormalizedWorkCommission(ctx, store, commission)
+}
 
+func normalizeNewWorkCommissionForMaybeAuthority(
+	commission map[string]any,
+	now time.Time,
+	authority workCommissionSpecAuthority,
+) error {
+	if authority.valid() {
+		return normalizeNewWorkCommissionForAuthority(
+			commission,
+			now,
+			authority,
+		)
+	}
+	return normalizeNewWorkCommission(commission, now)
+}
+
+func persistNormalizedWorkCommission(
+	ctx context.Context,
+	store *artifact.Store,
+	commission map[string]any,
+) (string, error) {
 	encoded, err := json.Marshal(commission)
 	if err != nil {
 		return "", fmt.Errorf("encode WorkCommission: %w", err)
@@ -647,7 +844,7 @@ func buildWorkCommissionFromDecision(
 	fields := decision.UnmarshalDecisionFields()
 	specSectionRefs := decisionSpecSectionRefs(decision, fields)
 
-	problemRef, problemHash, err := primaryProblemRefAndHash(ctx, store, decision, fields)
+	problemBasis, err := commissionProblemBasis(ctx, store, decision, fields)
 	if err != nil {
 		return nil, err
 	}
@@ -676,8 +873,7 @@ func buildWorkCommissionFromDecision(
 	commission := map[string]any{
 		"decision_ref":           decision.Meta.ID,
 		"decision_revision_hash": decisionHash,
-		"problem_card_ref":       problemRef,
-		"problem_revision_hash":  problemHash,
+		"problem_basis":          problemBasis,
 		"scope":                  scope,
 		"scope_hash":             scopeHash,
 		"base_sha":               input.BaseSHA,
@@ -688,6 +884,10 @@ func buildWorkCommissionFromDecision(
 		"state":                  input.State,
 		"valid_until":            input.ValidUntil,
 		"fetched_at":             now.Format(time.RFC3339),
+	}
+	if stringField(problemBasis, "kind") == "problem_card" {
+		commission["problem_card_ref"] = stringField(problemBasis, "problem_card_ref")
+		commission["problem_revision_hash"] = stringField(problemBasis, "revision_hash")
 	}
 	if input.SliceDescription != "" {
 		commission["slice_description"] = input.SliceDescription
@@ -1058,7 +1258,10 @@ func commissionPayload(args map[string]any) (map[string]any, error) {
 
 	payload := map[string]any{}
 	for key, value := range args {
-		if key == "action" || key == "config_hash" || key == "project_root" {
+		if key == "action" ||
+			key == "config_hash" ||
+			key == "project_root" ||
+			key == "scope_id" {
 			continue
 		}
 		payload[key] = value
@@ -1206,27 +1409,55 @@ func loadActiveDecisionRecord(
 	return decision, nil
 }
 
-func primaryProblemRefAndHash(
+func commissionProblemBasis(
 	ctx context.Context,
 	store *artifact.Store,
 	decision *artifact.Artifact,
 	fields artifact.DecisionFields,
-) (string, string, error) {
+) (map[string]any, error) {
 	problemRefs := decisionProblemRefs(ctx, store, decision, fields)
-	if len(problemRefs) == 0 {
-		return "", "", fmt.Errorf("decision %s has no problem_card_ref", decision.Meta.ID)
+	if len(problemRefs) > 0 {
+		problem, err := store.Get(ctx, problemRefs[0])
+		if err != nil {
+			return nil, fmt.Errorf("load decision problem basis %s: %w", problemRefs[0], err)
+		}
+
+		hash, err := artifactRevisionHash(problem, nil)
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{
+			"kind":             "problem_card",
+			"problem_card_ref": problemRefs[0],
+			"revision_hash":    hash,
+		}, nil
 	}
 
-	problem, err := store.Get(ctx, problemRefs[0])
-	if err != nil {
-		return problemRefs[0], "", nil
+	if strings.TrimSpace(fields.ProblemStatement) == "" {
+		return nil, fmt.Errorf("decision %s has neither problem_card_ref nor problem_statement", decision.Meta.ID)
 	}
 
-	hash, err := artifactRevisionHash(problem, nil)
+	hash, err := inlineProblemRevisionHash(decision.Meta.ID, fields.ProblemStatement)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
-	return problemRefs[0], hash, nil
+	return map[string]any{
+		"kind":              "inline_statement",
+		"decision_ref":      decision.Meta.ID,
+		"problem_statement": fields.ProblemStatement,
+		"revision_hash":     hash,
+	}, nil
+}
+
+func inlineProblemRevisionHash(decisionRef string, statement string) (string, error) {
+	payload := struct {
+		DecisionRef      string `json:"decision_ref"`
+		ProblemStatement string `json:"problem_statement"`
+	}{
+		DecisionRef:      decisionRef,
+		ProblemStatement: statement,
+	}
+	return canonicalJSONHash(payload)
 }
 
 func decisionProblemRefs(
@@ -1679,6 +1910,23 @@ func evidenceRequirementFromString(value string) map[string]any {
 }
 
 func normalizeNewWorkCommission(commission map[string]any, now time.Time) error {
+	return normalizeNewWorkCommissionWithSpecAuthority(
+		commission,
+		now,
+		ensureWorkCommissionSpecAuthority,
+	)
+}
+
+type workCommissionSpecAuthorityCheck func(
+	map[string]any,
+	time.Time,
+) error
+
+func normalizeNewWorkCommissionWithSpecAuthority(
+	commission map[string]any,
+	now time.Time,
+	checkSpecAuthority workCommissionSpecAuthorityCheck,
+) error {
 	if stringField(commission, "id") == "" {
 		commission["id"] = generateWorkCommissionID(now)
 	}
@@ -1706,12 +1954,14 @@ func normalizeNewWorkCommission(commission map[string]any, now time.Time) error 
 	if _, ok := commission["evidence_requirements"]; !ok {
 		commission["evidence_requirements"] = []any{}
 	}
+	if err := ensureWorkCommissionProblemBasis(commission); err != nil {
+		return err
+	}
 
 	required := []string{
 		"id",
 		"decision_ref",
 		"decision_revision_hash",
-		"problem_card_ref",
 		"projection_policy",
 		"delivery_policy",
 		"state",
@@ -1730,11 +1980,82 @@ func normalizeNewWorkCommission(commission map[string]any, now time.Time) error 
 	if err := ensureWorkCommissionScopeSnapshot(commission, scope); err != nil {
 		return err
 	}
-	if err := ensureWorkCommissionSpecAuthority(commission, now); err != nil {
+	if err := checkSpecAuthority(commission, now); err != nil {
 		return err
 	}
 	if err := ensureWorkCommissionAutonomyEnvelope(commission, now); err != nil {
 		return err
+	}
+	return nil
+}
+
+func ensureWorkCommissionProblemBasis(commission map[string]any) error {
+	basis, ok := mapArg(commission, "problem_basis")
+	if !ok {
+		problemRef := stringField(commission, "problem_card_ref")
+		problemHash := stringField(commission, "problem_revision_hash")
+		if problemRef == "" {
+			return fmt.Errorf("problem_basis is required")
+		}
+		basis = map[string]any{
+			"kind":             "problem_card",
+			"problem_card_ref": problemRef,
+			"revision_hash":    problemHash,
+		}
+		commission["problem_basis"] = basis
+	}
+
+	switch stringField(basis, "kind") {
+	case "problem_card":
+		return ensureProblemCardBasis(commission, basis)
+	case "inline_statement":
+		return ensureInlineProblemBasis(commission, basis)
+	default:
+		return fmt.Errorf("problem_basis.kind must be problem_card or inline_statement")
+	}
+}
+
+func ensureProblemCardBasis(commission map[string]any, basis map[string]any) error {
+	problemRef := stringField(basis, "problem_card_ref")
+	problemHash := stringField(basis, "revision_hash")
+	if problemRef == "" {
+		return fmt.Errorf("problem_basis.problem_card_ref is required for problem_card basis")
+	}
+	if legacyRef := stringField(commission, "problem_card_ref"); legacyRef != "" && legacyRef != problemRef {
+		return fmt.Errorf("problem_card_ref does not match problem_basis.problem_card_ref")
+	}
+	if legacyHash := stringField(commission, "problem_revision_hash"); legacyHash != "" && legacyHash != problemHash {
+		return fmt.Errorf("problem_revision_hash does not match problem_basis.revision_hash")
+	}
+	commission["problem_card_ref"] = problemRef
+	if problemHash != "" {
+		commission["problem_revision_hash"] = problemHash
+	}
+	return nil
+}
+
+func ensureInlineProblemBasis(commission map[string]any, basis map[string]any) error {
+	if stringField(commission, "problem_card_ref") != "" {
+		return fmt.Errorf("inline_statement problem_basis cannot carry problem_card_ref")
+	}
+	decisionRef := stringField(basis, "decision_ref")
+	if decisionRef == "" {
+		decisionRef = stringField(commission, "decision_ref")
+		basis["decision_ref"] = decisionRef
+	}
+	if decisionRef == "" || decisionRef != stringField(commission, "decision_ref") {
+		return fmt.Errorf("problem_basis.decision_ref must match decision_ref")
+	}
+	statement := stringField(basis, "problem_statement")
+	if strings.TrimSpace(statement) == "" {
+		return fmt.Errorf("problem_basis.problem_statement is required for inline_statement basis")
+	}
+	expectedHash, err := inlineProblemRevisionHash(decisionRef, statement)
+	if err != nil {
+		return err
+	}
+	if stringField(basis, "revision_hash") != expectedHash {
+		return fmt.Errorf("problem_basis.revision_hash does not match inline problem statement")
 	}
 	return nil
 }
@@ -1782,6 +2103,324 @@ func ensureWorkCommissionSpecAuthority(commission map[string]any, now time.Time)
 	}
 
 	return fmt.Errorf("spec_section_refs is required unless spec_readiness_override records explicit out-of-spec tactical work")
+}
+
+// ensureWorkCommissionSpecAuthorityForApplicability is the scope-aware P11
+// seam. The caller supplies one already-resolved canonical applicability and
+// its scope-local ProjectSpecificationSet; this function performs no profile,
+// ledger, YAML, or filesystem read. The legacy unscoped path above remains
+// available until every public caller can supply the canonical scope.
+func ensureWorkCommissionSpecAuthorityForApplicability(
+	commission map[string]any,
+	now time.Time,
+	applicability project.ProjectSpecificationSetApplicability,
+	specSet project.ProjectSpecificationSet,
+) error {
+	refs, err := validateWorkCommissionSpecAuthorityForApplicability(
+		commission,
+		applicability,
+		specSet,
+	)
+	if err != nil {
+		return err
+	}
+	if len(refs) > 0 {
+		commission["spec_section_refs"] = stringSliceToAny(refs)
+	}
+	return setWorkCommissionScopeLocalSpecSnapshot(
+		commission,
+		refs,
+		now,
+		applicability,
+		specSet,
+	)
+}
+
+// validateWorkCommissionSpecAuthorityForApplicability is the pure preflight
+// core. NotApplicable members create no requirement. Underdetermined members
+// block only when an explicit spec reference relies on that member.
+func validateWorkCommissionSpecAuthorityForApplicability(
+	commission map[string]any,
+	applicability project.ProjectSpecificationSetApplicability,
+	specSet project.ProjectSpecificationSet,
+) ([]string, error) {
+	if !applicability.Valid() {
+		return nil, fmt.Errorf(
+			"project specification applicability is invalid",
+		)
+	}
+
+	refs := workCommissionSpecSectionRefs(commission)
+	err := validateCommissionSpecReferences(
+		refs,
+		commission,
+		applicability,
+		specSet,
+		0,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	requiredKinds := requiredCommissionAuthorityDocumentKinds(applicability)
+	if len(requiredKinds) == 0 {
+		return refs, nil
+	}
+	if commissionReferencesAnyDocumentKind(refs, specSet, requiredKinds) {
+		return refs, nil
+	}
+	if commissionHasTacticalSpecReadinessOverride(commission) {
+		return refs, nil
+	}
+
+	return nil, fmt.Errorf(
+		"%s: scope_id=%q profile_payload_digest=%q required_document_kinds=%q; provide a current applicable concern/realization SpecSection ref or an explicit tactical out-of-spec override",
+		commissionSpecRefsRequiredCode,
+		applicability.ScopeID().String(),
+		applicability.ProfilePayloadDigest().String(),
+		specDocumentKindsText(requiredKinds),
+	)
+}
+
+func validateCommissionSpecReferences(
+	refs []string,
+	commission map[string]any,
+	applicability project.ProjectSpecificationSetApplicability,
+	specSet project.ProjectSpecificationSet,
+	index int,
+) error {
+	if index == len(refs) {
+		return nil
+	}
+
+	ref := refs[index]
+	documentKind, found := commissionSpecReferenceDocumentKind(
+		ref,
+		specSet,
+	)
+	if !found {
+		return fmt.Errorf(
+			"%s: spec_section_ref=%q has no exact document_kind in the supplied scope-local ProjectSpecificationSet or its captured snapshot",
+			commissionSpecRefUnresolvedCode,
+			ref,
+		)
+	}
+
+	member, found := applicability.Member(documentKind)
+	if !found {
+		return fmt.Errorf(
+			"%s: spec_section_ref=%q uses unsupported document_kind=%q",
+			commissionSpecRefUnresolvedCode,
+			ref,
+			documentKind,
+		)
+	}
+
+	switch member.Kind() {
+	case projectprofile.CapabilityRequired:
+		if !projectSpecificationSetContainsSection(specSet, ref, documentKind) {
+			return fmt.Errorf(
+				"%s: spec_section_ref=%q document_kind=%q is not present in the supplied scope-local ProjectSpecificationSet",
+				commissionSpecRefUnresolvedCode,
+				ref,
+				documentKind,
+			)
+		}
+	case projectprofile.CapabilityNotApplicable:
+		return fmt.Errorf(
+			"%s: scope_id=%q spec_section_ref=%q document_kind=%q capability=%q",
+			commissionSpecRefNotApplicableCode,
+			applicability.ScopeID().String(),
+			ref,
+			documentKind,
+			member.Capability(),
+		)
+	case projectprofile.CapabilityUnderdetermined:
+		return commissionSpecApplicabilityFailure(
+			applicability,
+			member,
+			ref,
+		)
+	default:
+		return fmt.Errorf(
+			"%s: spec_section_ref=%q has invalid applicability",
+			commissionSpecRefUnresolvedCode,
+			ref,
+		)
+	}
+
+	return validateCommissionSpecReferences(
+		refs,
+		commission,
+		applicability,
+		specSet,
+		index+1,
+	)
+}
+
+func commissionSpecApplicabilityFailure(
+	applicability project.ProjectSpecificationSetApplicability,
+	member project.ProjectSpecificationMemberApplicability,
+	ref string,
+) error {
+	missingBasis, found := member.MissingBasis()
+	if !found {
+		return fmt.Errorf(
+			"%s: spec_section_ref=%q has no exact missing basis",
+			commissionSpecRefUnresolvedCode,
+			ref,
+		)
+	}
+	return &commissionSpecApplicabilityCueError{
+		Code:                 commissionSpecApplicabilityUnderdeterminedCode,
+		ScopeID:              applicability.ScopeID().String(),
+		ProfilePayloadDigest: applicability.ProfilePayloadDigest().String(),
+		Issue: commissionSpecApplicabilityIssue{
+			DocumentKind: member.DocumentKind(),
+			Capability:   member.Capability(),
+			MissingBasis: missingBasis,
+			Ref:          ref,
+		},
+	}
+}
+
+func requiredCommissionAuthorityDocumentKinds(
+	applicability project.ProjectSpecificationSetApplicability,
+) []project.SpecDocumentKind {
+	candidates := []project.SpecDocumentKind{
+		project.SpecDocumentKindTargetSystem,
+		project.SpecDocumentKindSoftwareSystem,
+	}
+	return slices.DeleteFunc(
+		candidates,
+		func(documentKind project.SpecDocumentKind) bool {
+			member, found := applicability.Member(documentKind)
+			return !found ||
+				member.Kind() != projectprofile.CapabilityRequired
+		},
+	)
+}
+
+func commissionReferencesAnyDocumentKind(
+	refs []string,
+	specSet project.ProjectSpecificationSet,
+	documentKinds []project.SpecDocumentKind,
+) bool {
+	return slices.ContainsFunc(refs, func(ref string) bool {
+		return slices.ContainsFunc(
+			documentKinds,
+			func(documentKind project.SpecDocumentKind) bool {
+				return projectSpecificationSetContainsSection(
+					specSet,
+					ref,
+					documentKind,
+				)
+			},
+		)
+	})
+}
+
+func projectSpecificationSetContainsSection(
+	specSet project.ProjectSpecificationSet,
+	ref string,
+	documentKind project.SpecDocumentKind,
+) bool {
+	return slices.ContainsFunc(
+		specSet.Sections,
+		func(section project.SpecSection) bool {
+			return section.ID == ref &&
+				project.SpecDocumentKind(section.DocumentKind) == documentKind
+		},
+	)
+}
+
+func commissionSpecReferenceDocumentKind(
+	ref string,
+	specSet project.ProjectSpecificationSet,
+) (project.SpecDocumentKind, bool) {
+	index := slices.IndexFunc(
+		specSet.Sections,
+		func(section project.SpecSection) bool {
+			return section.ID == ref
+		},
+	)
+	if index >= 0 {
+		return project.SpecDocumentKind(
+			specSet.Sections[index].DocumentKind,
+		), true
+	}
+	return "", false
+}
+
+func specDocumentKindsText(
+	documentKinds []project.SpecDocumentKind,
+) string {
+	values := make([]string, len(documentKinds))
+	fillCommissionSpecDocumentKindStrings(documentKinds, values, 0)
+	return strings.Join(values, ",")
+}
+
+func fillCommissionSpecDocumentKindStrings(
+	documentKinds []project.SpecDocumentKind,
+	values []string,
+	index int,
+) {
+	if index == len(documentKinds) {
+		return
+	}
+	values[index] = string(documentKinds[index])
+	fillCommissionSpecDocumentKindStrings(documentKinds, values, index+1)
+}
+
+func setWorkCommissionScopeLocalSpecSnapshot(
+	commission map[string]any,
+	refs []string,
+	now time.Time,
+	applicability project.ProjectSpecificationSetApplicability,
+	specSet project.ProjectSpecificationSet,
+) error {
+	sectionsByID := make(map[string]project.SpecSection, len(specSet.Sections))
+	fillCommissionSpecSectionsByID(specSet.Sections, sectionsByID, 0)
+	snapshots, revisionHashes, unresolvedRefs, err := commissionSpecSectionSnapshots(
+		refs,
+		sectionsByID,
+	)
+	if err != nil {
+		return err
+	}
+	if len(unresolvedRefs) > 0 {
+		return fmt.Errorf(
+			"%s: spec_section_refs=%q are absent from the supplied scope-local ProjectSpecificationSet",
+			commissionSpecRefUnresolvedCode,
+			strings.Join(unresolvedRefs, ","),
+		)
+	}
+
+	commission["spec_revision_hashes"] = revisionHashes
+	commission["spec_snapshot"] = map[string]any{
+		"captured_at":            now.Format(time.RFC3339),
+		"profile_payload_digest": applicability.ProfilePayloadDigest().String(),
+		"scope_id":               applicability.ScopeID().String(),
+		"section_refs":           stringSliceToAny(refs),
+		"snapshot_source":        "scope_local_project_specification_set",
+		"snapshot_state":         "resolved",
+		"spec_section_set":       snapshots,
+		"revision_hashes":        revisionHashes,
+	}
+	return nil
+}
+
+func fillCommissionSpecSectionsByID(
+	sections []project.SpecSection,
+	sectionsByID map[string]project.SpecSection,
+	index int,
+) {
+	if index == len(sections) {
+		return
+	}
+	section := sections[index]
+	sectionsByID[section.ID] = section
+	fillCommissionSpecSectionsByID(sections, sectionsByID, index+1)
 }
 
 func ensureWorkCommissionSpecSnapshot(
@@ -2751,6 +3390,15 @@ func workCommissionFreshnessReport(
 	report.Issues = append(report.Issues, problemIssues...)
 	report.Issues = append(report.Issues, scopeFreshnessIssues(commission, args)...)
 	report.Issues = append(report.Issues, specFreshnessIssues(commission, args)...)
+	profileIssues, err := workCommissionProfileFreshnessIssues(
+		ctx,
+		commission,
+		args,
+	)
+	if err != nil {
+		return report, err
+	}
+	report.Issues = append(report.Issues, profileIssues...)
 	report.Issues = append(report.Issues, autonomyEnvelopeFreshnessIssues(commission, args)...)
 	report.Gaps = append(report.Gaps, specFreshnessGaps(commission, args)...)
 	report.Gaps = append(report.Gaps, deferredFreshnessGaps(commission)...)
@@ -2809,8 +3457,24 @@ func problemFreshnessIssues(
 	store *artifact.Store,
 	commission map[string]any,
 ) ([]commissionFreshnessIssue, error) {
+	basis, ok := mapArg(commission, "problem_basis")
+	if ok && stringField(basis, "kind") == "inline_statement" {
+		return inlineProblemFreshnessIssues(ctx, store, commission, basis)
+	}
+	return problemCardFreshnessIssues(ctx, store, commission)
+}
+
+func problemCardFreshnessIssues(
+	ctx context.Context,
+	store *artifact.Store,
+	commission map[string]any,
+) ([]commissionFreshnessIssue, error) {
 	problemRef := stringField(commission, "problem_card_ref")
 	expectedHash := stringField(commission, "problem_revision_hash")
+	if basis, ok := mapArg(commission, "problem_basis"); ok {
+		problemRef = stringField(basis, "problem_card_ref")
+		expectedHash = stringField(basis, "revision_hash")
+	}
 	if expectedHash == "" {
 		return []commissionFreshnessIssue{{
 			Code:  "problem_revision_hash_missing",
@@ -2853,6 +3517,51 @@ func problemFreshnessIssues(
 		"problem_revision_hash_changed",
 		"problem_revision_hash",
 		problemRef,
+		expectedHash,
+		currentHash,
+	), nil
+}
+
+func inlineProblemFreshnessIssues(
+	ctx context.Context,
+	store *artifact.Store,
+	commission map[string]any,
+	basis map[string]any,
+) ([]commissionFreshnessIssue, error) {
+	decisionRef := stringField(commission, "decision_ref")
+	expectedHash := stringField(basis, "revision_hash")
+	if expectedHash == "" {
+		return []commissionFreshnessIssue{{
+			Code:  "inline_problem_revision_hash_missing",
+			Field: "problem_basis.revision_hash",
+			Ref:   decisionRef,
+		}}, nil
+	}
+
+	decision, err := store.Get(ctx, decisionRef)
+	if err != nil {
+		return []commissionFreshnessIssue{{
+			Code:  "inline_problem_decision_missing",
+			Field: "problem_basis.decision_ref",
+			Ref:   decisionRef,
+		}}, nil
+	}
+	statement := decision.UnmarshalDecisionFields().ProblemStatement
+	if strings.TrimSpace(statement) == "" {
+		return []commissionFreshnessIssue{{
+			Code:  "inline_problem_statement_missing",
+			Field: "problem_basis.problem_statement",
+			Ref:   decisionRef,
+		}}, nil
+	}
+	currentHash, err := inlineProblemRevisionHash(decisionRef, statement)
+	if err != nil {
+		return nil, err
+	}
+	return hashFreshnessIssues(
+		"inline_problem_revision_hash_changed",
+		"problem_basis.revision_hash",
+		decisionRef,
 		expectedHash,
 		currentHash,
 	), nil
@@ -3534,12 +4243,23 @@ func renderWorkCommissionBody(commission map[string]any) string {
 		"",
 		"- State: " + stringField(commission, "state"),
 		"- Decision: " + stringField(commission, "decision_ref"),
-		"- ProblemCard: " + stringField(commission, "problem_card_ref"),
+		"- Problem basis: " + workCommissionProblemBasisLabel(commission),
 		"- Projection policy: " + stringField(commission, "projection_policy"),
 		"- Delivery policy: " + stringField(commission, "delivery_policy"),
 		"- Valid until: " + stringField(commission, "valid_until"),
 	}
 	return strings.Join(lines, "\n")
+}
+
+func workCommissionProblemBasisLabel(commission map[string]any) string {
+	basis, ok := mapArg(commission, "problem_basis")
+	if !ok {
+		return "ProblemCard " + stringField(commission, "problem_card_ref")
+	}
+	if stringField(basis, "kind") == "inline_statement" {
+		return "inline DecisionRecord problem_statement"
+	}
+	return "ProblemCard " + stringField(basis, "problem_card_ref")
 }
 
 func generateWorkCommissionID(now time.Time) string {

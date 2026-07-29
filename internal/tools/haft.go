@@ -14,7 +14,6 @@ import (
 	"github.com/m0n0x41d/haft/internal/agent"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
-	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/present"
 )
 
@@ -597,11 +596,6 @@ func detectCompareWarnings(input artifact.CompareInput) []string {
 	return warnings
 }
 
-//nolint:unused // exercised by package tests as a compatibility seam
-func resolveComparedPortfolioRef(ctx context.Context, store artifact.ArtifactStore, portfolioRef string) string {
-	return artifact.ResolveComparedPortfolioRef(ctx, store, portfolioRef)
-}
-
 func repairComparedPortfolioRef(ctx context.Context, cycle *agent.Cycle, store artifact.ArtifactStore, registry *Registry) (*agent.Cycle, error) {
 	if cycle == nil || store == nil || registry == nil {
 		return cycle, nil
@@ -617,7 +611,6 @@ func repairComparedPortfolioRef(ctx context.Context, cycle *agent.Cycle, store a
 
 	repaired := *cycle
 	repaired.ComparedPortfolioRef = comparedPortfolioRef
-	repaired.Phase = agent.DerivePhaseFromCycle(&repaired)
 	if err := registry.UpdateCycle(ctx, &repaired); err != nil {
 		return cycle, fmt.Errorf("persist compared portfolio repair: %w", err)
 	}
@@ -1041,12 +1034,13 @@ When you present the rationale (rejected alternatives, counterargument, weakest 
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":         map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}, "description": "decide | evidence | baseline | measure"},
-				"problem_ref":    map[string]any{"type": "string", "description": "Problem ID (decide)"},
-				"problem_refs":   map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Problem IDs this decision addresses (decide)"},
-				"portfolio_ref":  map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
-				"selected_title": map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
-				"why_selected":   map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
+				"action":            map[string]any{"type": "string", "enum": []string{"decide", "evidence", "baseline", "measure"}, "description": "decide | evidence | baseline | measure"},
+				"problem_ref":       map[string]any{"type": "string", "description": "Problem ID (decide)"},
+				"problem_refs":      map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Problem IDs this decision addresses (decide)"},
+				"problem_statement": map[string]any{"type": "string", "description": "Inline problem basis (decide)"},
+				"portfolio_ref":     map[string]any{"type": "string", "description": "Portfolio ID (decide)"},
+				"selected_title":    map[string]any{"type": "string", "description": "Chosen variant title (decide)"},
+				"why_selected":      map[string]any{"type": "string", "description": "Rationale for selection (decide)"},
 				"selection_policy": map[string]any{
 					"type":        "string",
 					"description": "Explicit policy used to choose among the compared variants (decide)",
@@ -1189,6 +1183,12 @@ func (t *HaftDecisionTool) Execute(ctx context.Context, argsJSON string) (agent.
 
 	switch action {
 	case "decide":
+		if err := rejectModelDecisionBinding(); err != nil {
+			return agent.ToolResult{}, err
+		}
+
+		// Legacy parsing below remains unreachable until its non-binding
+		// proposal behavior is split from the old direct writer.
 		// FPF guardrails: requires compared variants + decision-boundary user selection
 		if t.registry != nil {
 			cycle := canonicalCycle(t.registry.ActiveCycle(ctx))
@@ -1370,6 +1370,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 	input := artifact.DecideInput{
 		ProblemRef:            jsonStr(args, "problem_ref"),
 		ProblemRefs:           problemRefs,
+		ProblemStatement:      jsonStr(args, "problem_statement"),
 		PortfolioRef:          jsonStr(args, "portfolio_ref"),
 		SelectedTitle:         jsonStr(args, "selected_title"),
 		WhySelected:           jsonStr(args, "why_selected"),
@@ -1404,7 +1405,7 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 	gaps := t.coverageGaps(ctx, input.AffectedFiles)
 	input.FirstModuleCoverage = len(gaps) > 0
 
-	a, filePath, err := artifact.Decide(ctx, t.store, t.haftDir, input)
+	a, filePath, err := (*artifact.Artifact)(nil), "", rejectModelDecisionBinding()
 	if err != nil {
 		return agent.ToolResult{}, err
 	}
@@ -1427,6 +1428,12 @@ func (t *HaftDecisionTool) decide(ctx context.Context, args map[string]any) (age
 		},
 		Warnings: detectDecideWarnings(input),
 	}, nil
+}
+
+func rejectModelDecisionBinding() error {
+	return fmt.Errorf(
+		"operator_confirmation_required: model tools cannot institute a DecisionRecord; use the manual `haft artifact create decision.decide --input-file <file>` command",
+	)
 }
 
 // detectDecideWarnings runs FPF heuristics on a DecideInput.
@@ -1718,28 +1725,12 @@ func (t *HaftDecisionTool) calibrationSummary(ctx context.Context) string {
 // HaftQueryTool — search, status, related decisions
 // ---------------------------------------------------------------------------
 
-// FPFSearchRequest captures deterministic FPF retrieval and presentation
-// options for the haft_query tool.
-type FPFSearchRequest struct {
-	Query   string
-	Limit   int
-	Full    bool
-	Explain bool
-	Mode    string
-}
-
-// FPFSearchFunc is a callback that searches the FPF specification.
-// Returns formatted results or error. Injected by cmd/agent.go to avoid
-// importing the embedded DB from internal packages.
-type FPFSearchFunc func(request FPFSearchRequest) (string, error)
-
 type HaftQueryTool struct {
-	store     artifact.ArtifactStore
-	fpfSearch FPFSearchFunc
+	store artifact.ArtifactStore
 }
 
-func NewHaftQueryTool(store artifact.ArtifactStore, fpfSearch FPFSearchFunc) *HaftQueryTool {
-	return &HaftQueryTool{store: store, fpfSearch: fpfSearch}
+func NewHaftQueryTool(store artifact.ArtifactStore) *HaftQueryTool {
+	return &HaftQueryTool{store: store}
 }
 
 func (t *HaftQueryTool) Name() string { return "haft_query" }
@@ -1747,32 +1738,21 @@ func (t *HaftQueryTool) Name() string { return "haft_query" }
 func (t *HaftQueryTool) Schema() agent.ToolSchema {
 	return agent.ToolSchema{
 		Name: "haft_query",
-		Description: `Search past decisions, check project status, find related artifacts, look up FPF spec.
+		Description: `Search past decisions, check project status, and find related artifacts.
 
 Actions:
 - search: FTS5 keyword search across all artifacts.
 - status: Compact dashboard — shipped/pending decisions, stale items, coverage.
 - related: Find decisions affecting a specific file.
-- projection: Render engineer/manager/audit/compare/delegated-agent/change-rationale views from the same artifact graph.
-- fpf: Search the FPF specification for formal definitions, aggregation rules, and patterns.`,
+- projection: Render engineer/manager/audit/compare/delegated-agent/change-rationale views from the same artifact graph.`,
 		Parameters: map[string]any{
 			"type": "object",
 			"properties": map[string]any{
-				"action":  map[string]any{"type": "string", "enum": []string{"search", "status", "related", "projection", "fpf"}, "description": "search | status | related | projection | fpf"},
-				"query":   map[string]any{"type": "string", "description": "Search terms (search, fpf)"},
+				"action":  map[string]any{"type": "string", "enum": []string{"search", "status", "related", "projection"}, "description": "search | status | related | projection"},
+				"query":   map[string]any{"type": "string", "description": "Search terms"},
 				"file":    map[string]any{"type": "string", "description": "File path (related)"},
 				"context": map[string]any{"type": "string", "description": "(status, projection) Optional context filter"},
 				"view":    map[string]any{"type": "string", "description": "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale; defaults to engineer"},
-				"limit":   map[string]any{"type": "integer", "description": fmt.Sprintf("(fpf) Max FPF results, default %d", fpf.DefaultSpecSearchLimit)},
-				"full":    map[string]any{"type": "boolean", "description": "(fpf) Show full section content instead of snippets"},
-				"explain": map[string]any{
-					"type":        "boolean",
-					"description": "(fpf) Show why each FPF result matched",
-				},
-				"mode": map[string]any{
-					"type":        "string",
-					"description": "(fpf) Experimental retrieval mode; currently supports tree",
-				},
 			},
 			"required": []any{"action"},
 		},
@@ -1844,27 +1824,6 @@ func (t *HaftQueryTool) Execute(ctx context.Context, argsJSON string) (agent.Too
 			return agent.ToolResult{}, err
 		}
 		return agent.PlainResult(present.ProjectionResponse(graph, view)), nil
-
-	case "fpf":
-		query := jsonStr(args, "query")
-		if query == "" {
-			return agent.ToolResult{}, fmt.Errorf("query required for fpf search")
-		}
-		if t.fpfSearch == nil {
-			return agent.ToolResult{}, fmt.Errorf("FPF spec search not available")
-		}
-		request := FPFSearchRequest{
-			Query:   query,
-			Limit:   jsonIntDefault(args, "limit", fpf.DefaultSpecSearchLimit),
-			Full:    jsonBool(args, "full"),
-			Explain: jsonBool(args, "explain"),
-			Mode:    jsonStr(args, "mode"),
-		}
-		result, err := t.fpfSearch(request)
-		if err != nil {
-			return agent.ToolResult{}, fmt.Errorf("fpf search: %w", err)
-		}
-		return agent.PlainResult(result), nil
 
 	default:
 		return agent.ToolResult{}, fmt.Errorf("unknown action: %s", action)
@@ -2099,31 +2058,6 @@ func (t *HaftNoteTool) Execute(ctx context.Context, argsJSON string) (agent.Tool
 func jsonStr(args map[string]any, key string) string {
 	v, _ := args[key].(string)
 	return v
-}
-
-func jsonBool(args map[string]any, key string) bool {
-	v, _ := args[key].(bool)
-	return v
-}
-
-func jsonIntDefault(args map[string]any, key string, defaultValue int) int {
-	value, ok := args[key]
-	if !ok {
-		return defaultValue
-	}
-
-	switch typed := value.(type) {
-	case float64:
-		if int(typed) > 0 {
-			return int(typed)
-		}
-	case int:
-		if typed > 0 {
-			return typed
-		}
-	}
-
-	return defaultValue
 }
 
 func jsonStrArray(args map[string]any, key string) []string {

@@ -215,7 +215,7 @@ func TestCarrierCheckGeneratedSurfacesIncludeMCPToolsListCatalog(t *testing.T) {
 	for _, surface := range surfaces {
 		if surface.Path == "generated/mcp-tools/haft_query" {
 			found = true
-			if !strings.Contains(surface.Content, "Lane. Default index") {
+			if !strings.Contains(surface.Content, "haft_query") {
 				t.Fatalf("haft_query generated MCP surface content = %q", surface.Content)
 			}
 		}

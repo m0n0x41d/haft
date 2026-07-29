@@ -83,7 +83,7 @@ func TestBuildSpecUseRecordReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -189,7 +189,7 @@ func TestRunSpecUseJSONWithGateFileReturnsGateDecision(t *testing.T) {
 }
 
 func TestHandleQuintQuerySpecUseReturnsCurrentnessRecord(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newBoundSpecQueryTestProject(t)
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
 		"action":      "spec_use",
 		"section_id":  "TS.environment.001",
@@ -219,7 +219,7 @@ func TestHandleQuintQuerySpecUseReturnsCurrentnessRecord(t *testing.T) {
 }
 
 func TestHandleQuintQuerySpecUseReadsCurrentAuthorityFromSectionRefs(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newBoundSpecQueryTestProject(t)
 	seedSpecUseSectionRefDecision(t, fixture.store, "dec-spec-section-ref", "TS.environment.001")
 
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -251,7 +251,7 @@ func TestHandleQuintQuerySpecUseReadsCurrentAuthorityFromSectionRefs(t *testing.
 }
 
 func TestHandleQuintQuerySpecUseAcceptsOperationalGateObject(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newBoundSpecQueryTestProject(t)
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
 		"action":      "spec_use",
 		"section_id":  "TS.environment.001",
@@ -288,7 +288,7 @@ func TestHandleQuintQuerySpecUseAcceptsOperationalGateObject(t *testing.T) {
 }
 
 func TestHandleQuintQuerySpecUseOperationalGateBlocksCurrentAuthorityConflict(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newBoundSpecQueryTestProject(t)
 	seedSpecUseGoverningDecision(t, fixture.store, "dec-spec-use-a", "spec_section:TS.environment.001")
 	seedSpecUseGoverningDecision(t, fixture.store, "dec-spec-use-b", "spec_section:TS.environment.001")
 	if err := fixture.store.AddLink(context.Background(), "dec-spec-use-a", "dec-spec-use-b", "contradicts"); err != nil {

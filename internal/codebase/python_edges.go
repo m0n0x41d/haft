@@ -2,7 +2,6 @@ package codebase
 
 import (
 	"context"
-	"os"
 	"path/filepath"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -82,11 +81,21 @@ func simpleBaseName(n *sitter.Node, content []byte) string {
 // instance-method dispatch (`obj.method()` where obj is not an imported module)
 // is deliberately dropped — it cannot be typed soundly from the AST alone.
 func (p *PythonLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath string, symbols SymbolView) ([]CodeEdge, error) {
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
 	if err != nil {
-		return nil, nil
+		return nil, err
 	}
+	return p.ResolveAdmittedFileEdges(ctx, projectRoot, source, symbols)
+}
 
+func (p *PythonLang) ResolveAdmittedFileEdges(
+	ctx context.Context,
+	_ string,
+	source AdmittedSource,
+	symbols SymbolView,
+) ([]CodeEdge, error) {
+	relPath := source.Path().String()
+	content := source.bytes()
 	// Parse the file ONCE; every extractor reads the shared tree.
 	parser := sitter.NewParser()
 	parser.SetLanguage(python.GetLanguage())

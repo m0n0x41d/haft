@@ -1,9 +1,12 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -11,25 +14,63 @@ import (
 	"strings"
 	"time"
 
-	"github.com/m0n0x41d/haft/internal/embedding"
 	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/fpf/typeenv"
+	"github.com/m0n0x41d/haft/internal/fpf/typeenvsql"
 	_ "modernc.org/sqlite"
 )
 
-// verifyIndex is the CI guard: the FPF index is baked locally (heavy CPU
-// inference unfit for runners) and committed, so CI must check the committed
-// fpf.db is fresh (matches the submodule SHA) and carries baked vectors — never
-// re-bake. Fails loudly so a maintainer who forgot `task fpf-refresh` cannot
-// ship a stale or vectorless index.
-func verifyIndex(args []string) error {
-	if len(args) < 2 {
-		return fmt.Errorf("usage: indexer -verify <fpf.db> <expected-fpf-commit-sha>")
-	}
-	dbPath, expectedSHA := args[0], strings.TrimSpace(args[1])
+var storeSourceUnitsFunc = fpf.StoreSourceUnits
+var compileBaseTypeEnvFunc = typeenv.CompileBaseTypeEnv
+var storeTypeEnvEnvelopeFunc = storeTypeEnvEnvelope
+var verifyBuiltIndexFunc = verifyBuiltIndex
 
-	db, err := sql.Open("sqlite", dbPath)
+const (
+	legacyBaseTypeEnvCompilerSchemaV1   = "fpf-base-typeenv.cov2.v1"
+	previousBaseTypeEnvCompilerSchemaV2 = typeenv.BaseTypeEnvCompilerSchemaV2
+	previousBaseTypeEnvCompilerSchemaV3 = typeenv.BaseTypeEnvCompilerSchemaV3
+)
+
+// verifyIndex is the CI guard for the committed, source-derived FPF index.
+// It never rebuilds. A stale revision, schema mismatch, broken provenance, or
+// incomplete source index must fail loudly before a release can use fpf.db.
+func verifyIndex(args []string) error {
+	if len(args) != 3 {
+		return fmt.Errorf("usage: indexer -verify <fpf.db> <FPF-Spec.md> <expected-fpf-commit-sha>")
+	}
+
+	dbPath := args[0]
+	specPath := filepath.Clean(args[1])
+	expectedSHA := strings.TrimSpace(args[2])
+	if expectedSHA == "" {
+		return fmt.Errorf("expected FPF commit SHA is required")
+	}
+	readmePath := filepath.Join(filepath.Dir(specPath), "Readme.md")
+	snapshot, err := fpf.LoadPublicationSnapshot(readmePath, specPath, expectedSHA)
 	if err != nil {
-		return fmt.Errorf("open %s: %w", dbPath, err)
+		return fmt.Errorf("load checked-out FPF publication snapshot: %w", err)
+	}
+	compilation, err := compileBaseTypeEnvFunc(snapshot)
+	if err != nil {
+		return fmt.Errorf("compile checked-out FPF TypeEnv: %w", err)
+	}
+	if compilation == nil {
+		return fmt.Errorf("compile checked-out FPF TypeEnv returned no result")
+	}
+	if compilation.Rejected() {
+		return fmt.Errorf(
+			"compile checked-out FPF TypeEnv rejected publication: %s",
+			formatCompilerDiagnostics(compilation.Diagnostics()),
+		)
+	}
+	expectedArtifact, exists := compilation.Artifact()
+	if !exists {
+		return fmt.Errorf("checked-out FPF TypeEnv compilation returned no artifact")
+	}
+
+	db, err := openSQLiteReadOnly(dbPath)
+	if err != nil {
+		return err
 	}
 	defer func() { _ = db.Close() }()
 
@@ -49,245 +90,79 @@ func verifyIndex(args []string) error {
 		return fmt.Errorf("fpf.db schema_version=%q but code expects %q — run `task fpf-refresh` and commit the result", schemaVersion, fpf.SpecIndexSchemaVersion)
 	}
 
-	indexedSections, err := readIndexedSectionCount(db)
+	if err := fpf.VerifyPublicationSnapshotReadOnlyDB(db, snapshot); err != nil {
+		return fmt.Errorf("verify checked-out FPF publication snapshot: %w", err)
+	}
+	artifact, err := typeenvsql.LoadArtifactReadOnlyDB(context.Background(), db)
+	if err != nil {
+		return fmt.Errorf("load source-derived FPF TypeEnv: %w", err)
+	}
+	if err := verifyExpectedTypeEnvArtifact(artifact, expectedArtifact); err != nil {
+		return err
+	}
+	if err := verifyArtifactMetadata(db, artifact, expectedSHA); err != nil {
+		return err
+	}
+	if err := verifyTypeEnvSourceJoin(db); err != nil {
+		return err
+	}
+	staleSourceUnits, err := countSourceUnitsOutsideRevision(db, expectedSHA)
+	if err != nil {
+		return fmt.Errorf("verify source unit revisions: %w", err)
+	}
+	if staleSourceUnits > 0 {
+		return fmt.Errorf("fpf.db source rows are STALE: %d source unit(s) do not match submodule HEAD %q", staleSourceUnits, expectedSHA)
+	}
+
+	sourceUnits, err := fpf.CountSourceUnits(db)
+	if err != nil {
+		return fmt.Errorf("count source units: %w", err)
+	}
+	expectedSourceUnits, err := readExpectedSourceUnitCount(db)
 	if err != nil {
 		return err
 	}
-
-	count, err := countSpecEmbeddingsForContract(db, shippedFPFEmbeddingContract)
-	if err != nil {
-		return fmt.Errorf("read embedding contract: %w", err)
-	}
-	if count != indexedSections {
-		return fmt.Errorf("fpf.db vector contract mismatch: expected %d vectors for %s, found %d (%s) — run `task fpf-refresh` without HAFT_FPF_BAKE_SCOPE/HAFT_FPF_BAKE_DIM/HAFT_EMBED_MODEL overrides and commit the result",
-			indexedSections, shippedFPFEmbeddingContract, count, describeDominantSpecEmbeddingContract(db))
+	if sourceUnits != expectedSourceUnits {
+		return fmt.Errorf("fpf.db source unit count mismatch: metadata expects %d, found %d", expectedSourceUnits, sourceUnits)
 	}
 
-	routeDocuments := fpf.PatternUseRouteEmbeddingDocuments(fpf.DefaultPatternUseRouteCards())
-	routeCount, err := fpf.CountPatternUseRouteEmbeddingsForContract(
-		db,
-		shippedFPFEmbeddingContract.provider,
-		shippedFPFEmbeddingContract.model,
-		shippedFPFEmbeddingContract.dim,
-	)
-	if err != nil {
-		return fmt.Errorf("read pattern-use route embedding contract: %w", err)
-	}
-	if routeCount != len(routeDocuments) {
-		return fmt.Errorf("fpf.db PatternUse route vector contract mismatch: expected %d route document vectors for %s, found %d (%s) — run `task fpf-index` without HAFT_FPF_BAKE_SCOPE/HAFT_FPF_BAKE_DIM/HAFT_EMBED_MODEL overrides and commit the result",
-			len(routeDocuments), shippedFPFEmbeddingContract, routeCount, describeDominantPatternUseRouteEmbeddingContract(db))
-	}
-
-	missingRouteDocuments, err := fpf.MissingPatternUseRouteEmbeddingDocuments(
-		db,
-		shippedFPFEmbeddingContract.provider,
-		shippedFPFEmbeddingContract.model,
-		shippedFPFEmbeddingContract.dim,
-		routeDocuments,
-	)
-	if err != nil {
-		return fmt.Errorf("verify pattern-use route embedding hashes: %w", err)
-	}
-	if len(missingRouteDocuments) > 0 {
-		return fmt.Errorf("fpf.db PatternUse route vectors are STALE: %d current route document hash(es) missing for %s (first missing: %s) — run `task fpf-index` and commit the result",
-			len(missingRouteDocuments), shippedFPFEmbeddingContract, missingRouteDocuments[0])
-	}
-
-	intentDocuments := fpf.PatternUseIntentEmbeddingDocuments(fpf.DefaultPatternUseIntentLaneCards())
-	intentCount, err := fpf.CountPatternUseIntentEmbeddingsForContract(
-		db,
-		shippedFPFEmbeddingContract.provider,
-		shippedFPFEmbeddingContract.model,
-		shippedFPFEmbeddingContract.dim,
-	)
-	if err != nil {
-		return fmt.Errorf("read pattern-use intent embedding contract: %w", err)
-	}
-	if intentCount != len(intentDocuments) {
-		return fmt.Errorf("fpf.db PatternUse intent vector contract mismatch: expected %d intent document vectors for %s, found %d (%s) — run `task fpf-index` without HAFT_FPF_BAKE_SCOPE/HAFT_FPF_BAKE_DIM/HAFT_EMBED_MODEL overrides and commit the result",
-			len(intentDocuments), shippedFPFEmbeddingContract, intentCount, describeDominantPatternUseIntentEmbeddingContract(db))
-	}
-
-	missingIntentDocuments, err := fpf.MissingPatternUseIntentEmbeddingDocuments(
-		db,
-		shippedFPFEmbeddingContract.provider,
-		shippedFPFEmbeddingContract.model,
-		shippedFPFEmbeddingContract.dim,
-		intentDocuments,
-	)
-	if err != nil {
-		return fmt.Errorf("verify pattern-use intent embedding hashes: %w", err)
-	}
-	if len(missingIntentDocuments) > 0 {
-		return fmt.Errorf("fpf.db PatternUse intent vectors are STALE: %d current intent document hash(es) missing for %s (first missing: %s) — run `task fpf-index` and commit the result",
-			len(missingIntentDocuments), shippedFPFEmbeddingContract, missingIntentDocuments[0])
-	}
-
-	atlasNodes, atlasCards, atlasLints, err := fpf.PatternAtlasCounts(db)
-	if err != nil {
-		return fmt.Errorf("read PatternAtlas contract: %w", err)
-	}
-	if atlasNodes == 0 || atlasCards == 0 {
-		return fmt.Errorf("fpf.db PatternAtlas contract mismatch: expected baked atlas nodes/cards, found %d nodes and %d cards — run `task fpf-index` and commit the result", atlasNodes, atlasCards)
-	}
-	if err := verifyPatternAtlasCommit(db, expectedSHA); err != nil {
-		return err
-	}
-	if err := verifyPatternAtlasRequiredCards(db); err != nil {
-		return err
-	}
-	if err := verifyPatternAtlasIntegrity(db); err != nil {
-		return err
-	}
-
-	fmt.Printf("fpf.db OK: commit %s, %d baked section vectors, %d PatternUse route vectors, %d PatternUse intent vectors, %d PatternAtlas nodes, %d PatternAtlas cards, %d PatternAtlas lints for %s\n",
-		commit[:min(8, len(commit))],
-		count,
-		routeCount,
-		intentCount,
-		atlasNodes,
-		atlasCards,
-		atlasLints,
-		shippedFPFEmbeddingContract,
+	shortCommit := commit[:min(8, len(commit))]
+	artifactRef, _ := artifact.TypeEnvRef()
+	fmt.Printf(
+		"fpf.db OK: commit %s, schema %s, %d source units and TypeEnv %s with verified provenance, typed relations, and FTS\n",
+		shortCommit,
+		schemaVersion,
+		sourceUnits,
+		artifactRef.String(),
 	)
 	return nil
 }
 
-const shippedFPFEmbeddingDim = 256
-
-type specEmbeddingContract struct {
-	provider string
-	model    string
-	dim      int
-}
-
-func (c specEmbeddingContract) String() string {
-	return fmt.Sprintf("%s/%s/%d", c.provider, c.model, c.dim)
-}
-
-var shippedFPFEmbeddingContract = specEmbeddingContract{
-	provider: embedding.ProviderLocal,
-	model:    embedding.DefaultLocalModel,
-	dim:      shippedFPFEmbeddingDim,
-}
-
-func readIndexedSectionCount(db *sql.DB) (int, error) {
-	value, err := fpf.GetSpecMeta(db, "indexed_sections")
+func readExpectedSourceUnitCount(db *sql.DB) (int, error) {
+	value, err := fpf.GetSpecMeta(db, "indexed_source_units")
 	if err != nil {
-		return 0, fmt.Errorf("read indexed_sections meta: %w", err)
+		return 0, fmt.Errorf("read indexed_source_units meta: %w", err)
 	}
-
 	count, err := strconv.Atoi(strings.TrimSpace(value))
 	if err != nil {
-		return 0, fmt.Errorf("indexed_sections=%q is not an integer", value)
+		return 0, fmt.Errorf("indexed_source_units=%q is not an integer", value)
 	}
 	if count <= 0 {
-		return 0, fmt.Errorf("indexed_sections=%d must be positive", count)
+		return 0, fmt.Errorf("indexed_source_units=%d must be positive", count)
 	}
 	return count, nil
 }
 
-func countSpecEmbeddingsForContract(db *sql.DB, contract specEmbeddingContract) (int, error) {
+func countSourceUnitsOutsideRevision(db *sql.DB, expectedRevision string) (int, error) {
 	var count int
 	err := db.
 		QueryRow(
-			`SELECT COUNT(*) FROM fpf_embeddings WHERE provider=? AND model=? AND dim=?`,
-			contract.provider,
-			contract.model,
-			contract.dim,
+			`SELECT COUNT(*) FROM source_units WHERE source_revision <> ?`,
+			expectedRevision,
 		).
 		Scan(&count)
 	return count, err
 }
-
-func describeDominantSpecEmbeddingContract(db *sql.DB) string {
-	provider, model, dim, count, err := fpf.SpecEmbeddingContract(db)
-	if err != nil {
-		return fmt.Sprintf("dominant contract unavailable: %v", err)
-	}
-	if count == 0 {
-		return "no baked vectors"
-	}
-	return fmt.Sprintf("dominant contract %s/%s/%d has %d vectors", provider, model, dim, count)
-}
-
-func describeDominantPatternUseRouteEmbeddingContract(db *sql.DB) string {
-	provider, model, dim, count, err := fpf.PatternUseRouteEmbeddingContract(db)
-	if err != nil {
-		return fmt.Sprintf("dominant contract unavailable: %v", err)
-	}
-	if count == 0 {
-		return "no baked PatternUse route vectors"
-	}
-	return fmt.Sprintf("dominant contract %s/%s/%d has %d vectors", provider, model, dim, count)
-}
-
-func describeDominantPatternUseIntentEmbeddingContract(db *sql.DB) string {
-	provider, model, dim, count, err := fpf.PatternUseIntentEmbeddingContract(db)
-	if err != nil {
-		return fmt.Sprintf("dominant contract unavailable: %v", err)
-	}
-	if count == 0 {
-		return "no baked PatternUse intent vectors"
-	}
-	return fmt.Sprintf("dominant contract %s/%s/%d has %d vectors", provider, model, dim, count)
-}
-
-var requiredPatternAtlasCards = []string{"F.18", "C.30", "A.10", "A.7", "B.3"}
-
-func verifyPatternAtlasCommit(db *sql.DB, expectedSHA string) error {
-	var mismatches int
-	err := db.QueryRow(`
-		SELECT COUNT(*)
-		FROM (
-			SELECT fpf_commit FROM pattern_atlas_nodes
-			UNION ALL
-			SELECT fpf_commit FROM pattern_atlas_cards
-			UNION ALL
-			SELECT fpf_commit FROM pattern_atlas_lints
-		)
-		WHERE fpf_commit <> ?`, expectedSHA).Scan(&mismatches)
-	if err != nil {
-		return fmt.Errorf("read PatternAtlas commit contract: %w", err)
-	}
-	if mismatches > 0 {
-		return fmt.Errorf("fpf.db PatternAtlas is STALE: %d atlas row(s) do not match submodule HEAD %q — run `task fpf-index` and commit the result", mismatches, expectedSHA)
-	}
-	return nil
-}
-
-func verifyPatternAtlasRequiredCards(db *sql.DB) error {
-	missing, err := fpf.MissingPatternAtlasCards(db, requiredPatternAtlasCards)
-	if err != nil {
-		return fmt.Errorf("verify PatternAtlas required cards: %w", err)
-	}
-	if len(missing) > 0 {
-		return fmt.Errorf("fpf.db PatternAtlas missing full card(s): %s — run `task fpf-index` and inspect markdown heading extraction", strings.Join(missing, ", "))
-	}
-	return nil
-}
-
-func verifyPatternAtlasIntegrity(db *sql.DB) error {
-	rangeErrors, err := fpf.PatternAtlasRangeIntegrityErrors(db)
-	if err != nil {
-		return fmt.Errorf("verify PatternAtlas ranges: %w", err)
-	}
-	if len(rangeErrors) > 0 {
-		return fmt.Errorf("fpf.db PatternAtlas range integrity failed: %s", rangeErrors[0])
-	}
-
-	hashErrors, err := fpf.PatternAtlasHashIntegrityErrors(db)
-	if err != nil {
-		return fmt.Errorf("verify PatternAtlas hashes: %w", err)
-	}
-	if len(hashErrors) > 0 {
-		return fmt.Errorf("fpf.db PatternAtlas hash integrity failed: %s", hashErrors[0])
-	}
-	return nil
-}
-
-const routeArtifactPath = "internal/fpf/fpf-routes.json"
-const patternsDir = "internal/fpf/patterns"
 
 func main() {
 	if err := run(); err != nil {
@@ -298,7 +173,7 @@ func main() {
 
 func run() error {
 	if len(os.Args) < 2 {
-		return fmt.Errorf("usage: indexer <FPF-Spec.md> [output.db] [fpf-commit-sha]  |  indexer -verify <fpf.db> <expected-sha>")
+		return fmt.Errorf("usage: indexer <FPF-Spec.md> [output.db] [fpf-commit-sha]  |  indexer -verify <fpf.db> <FPF-Spec.md> <expected-sha>")
 	}
 	if os.Args[1] == "-verify" {
 		return verifyIndex(os.Args[2:])
@@ -314,178 +189,443 @@ func run() error {
 		commitSHA = os.Args[3]
 	}
 
-	return buildIndex(specPath, dbPath, commitSHA, routeArtifactPath)
+	return buildIndex(specPath, dbPath, commitSHA)
 }
 
-func buildIndex(specPath, dbPath, commitSHA, routePath string) error {
+func buildIndex(specPath, dbPath, commitSHA string) error {
+	readmePath := filepath.Join(filepath.Dir(specPath), "Readme.md")
 	resolvedCommit := resolveSpecCommit(commitSHA, specPath)
-	corpus, err := fpf.LoadSpecIndexCorpus(specPath)
+	snapshot, err := fpf.LoadPublicationSnapshot(readmePath, specPath, resolvedCommit)
 	if err != nil {
-		return fmt.Errorf("load production spec corpus: %w", err)
+		return fmt.Errorf("load FPF source publications: %w", err)
 	}
-
-	routes, err := fpf.LoadRoutes(routePath)
+	sourceUnits := snapshot.SourceUnits()
+	compilation, err := compileBaseTypeEnvFunc(snapshot)
 	if err != nil {
-		return fmt.Errorf("loading routes: %w", err)
+		return fmt.Errorf("compile source-derived FPF TypeEnv: %w", err)
 	}
-
-	// Load compiled pattern files and merge into the corpus
-	patternChunks, err := fpf.LoadPatternChunks(patternsDir)
+	if compilation == nil {
+		return fmt.Errorf("compile source-derived FPF TypeEnv returned no result")
+	}
+	if compilation.Rejected() {
+		return fmt.Errorf(
+			"compile source-derived FPF TypeEnv rejected publication: %s",
+			formatCompilerDiagnostics(compilation.Diagnostics()),
+		)
+	}
+	artifact, exists := compilation.Artifact()
+	if !exists {
+		return fmt.Errorf("accepted FPF TypeEnv compilation returned no artifact")
+	}
+	compatibility, err := comparePreviousTypeEnv(dbPath, artifact)
 	if err != nil {
-		return fmt.Errorf("loading patterns: %w", err)
+		return err
 	}
-
-	allChunks := make([]fpf.SpecChunk, 0, len(corpus.Indexed)+len(patternChunks))
-	allChunks = append(allChunks, corpus.Indexed...)
-	allChunks = append(allChunks, patternChunks...)
-
-	if err := fpf.BuildSpecIndex(dbPath, allChunks, routes); err != nil {
-		return fmt.Errorf("building index: %w", err)
-	}
-
-	atlas, err := fpf.LoadPatternAtlas(specPath, resolvedCommit)
+	envelope, err := typeenv.NewCompilationEnvelope(artifact, compatibility)
 	if err != nil {
-		return fmt.Errorf("build PatternAtlas: %w", err)
-	}
-	if err := fpf.StorePatternAtlas(dbPath, atlas); err != nil {
-		return fmt.Errorf("store PatternAtlas: %w", err)
+		return fmt.Errorf("seal FPF TypeEnv compilation envelope: %w", err)
 	}
 
-	// build_time is the FPF spec COMMIT's date, not wall-clock time, so the
-	// index is byte-reproducible: a given submodule SHA always yields the same
-	// fpf.db (committed == rebuild; every release-matrix platform ships identical
-	// bytes). Wall-clock time.Now() would drift every build.
-	metadata := buildSpecIndexMetadata(specPath, len(allChunks), resolvedCommit, resolveSpecBuildTime(resolvedCommit, specPath))
-	if err := fpf.SetSpecMetaEntries(dbPath, metadata); err != nil {
-		return fmt.Errorf("setting meta: %w", err)
+	buildTime := resolveSpecBuildTime(resolvedCommit, specPath)
+	metadata := buildSourceIndexMetadata(
+		specPath,
+		readmePath,
+		len(sourceUnits),
+		resolvedCommit,
+		buildTime,
+	)
+	metadata["readme_document_digest"] = snapshot.ReadmeDigest().String()
+	metadata["spec_document_digest"] = snapshot.SpecDigest().String()
+	addTypeEnvMetadata(metadata, artifact)
+	build := func(tempPath string) error {
+		if err := storeSourceUnitsFunc(tempPath, sourceUnits); err != nil {
+			return fmt.Errorf("store source query units: %w", err)
+		}
+		if err := ensureIndexMetadataTable(tempPath); err != nil {
+			return err
+		}
+		if err := fpf.SetSpecMetaEntries(tempPath, metadata); err != nil {
+			return fmt.Errorf("set source index metadata: %w", err)
+		}
+		if err := storeTypeEnvEnvelopeFunc(tempPath, envelope); err != nil {
+			return fmt.Errorf("store source-derived FPF TypeEnv: %w", err)
+		}
+		return nil
+	}
+	verify := func(database *sql.DB) error {
+		return verifyBuiltIndexFunc(database, snapshot, artifact)
+	}
+	if err := fpf.RebuildSourceIndexAtomic(dbPath, build, verify); err != nil {
+		return fmt.Errorf("atomically rebuild source-native FPF index: %w", err)
 	}
 
-	baked, err := bakeSpecEmbeddingsFunc(dbPath)
-	if err != nil {
-		return fmt.Errorf("bake embeddings: %w", err)
-	}
-	if baked == 0 {
-		return fmt.Errorf("bake embeddings: no section vectors baked — install/build haft-embed before running indexer")
-	}
-
-	routeBaked, err := bakePatternUseRouteEmbeddingsFunc(dbPath)
-	if err != nil {
-		return fmt.Errorf("bake PatternUse route embeddings: %w", err)
-	}
-	if routeBaked == 0 {
-		return fmt.Errorf("bake PatternUse route embeddings: no route document vectors baked")
-	}
-
-	intentBaked, err := bakePatternUseIntentEmbeddingsFunc(dbPath)
-	if err != nil {
-		return fmt.Errorf("bake PatternUse intent embeddings: %w", err)
-	}
-	if intentBaked == 0 {
-		return fmt.Errorf("bake PatternUse intent embeddings: no intent document vectors baked")
-	}
-
-	fmt.Printf("Indexed %d chunks (%d spec + %d patterns) and %d PatternAtlas cards into %s; baked %d section vectors, %d PatternUse route vectors, and %d PatternUse intent vectors\n",
-		len(allChunks), len(corpus.Indexed), len(patternChunks), len(atlas.Cards), dbPath, baked, routeBaked, intentBaked)
+	fmt.Printf(
+		"Indexed %d source units and TypeEnv %s from Readme.md + FPF-Spec.md into %s\n",
+		len(sourceUnits),
+		artifact.Digest().String(),
+		dbPath,
+	)
 	return nil
 }
 
-var bakeSpecEmbeddingsFunc = bakeSpecEmbeddings
-var bakePatternUseRouteEmbeddingsFunc = bakePatternUseRouteEmbeddings
-var bakePatternUseIntentEmbeddingsFunc = bakePatternUseIntentEmbeddings
+func formatCompilerDiagnostics(diagnostics []typeenv.CompilerDiagnostic) string {
+	if len(diagnostics) == 0 {
+		return "no compiler diagnostic was provided"
+	}
+	formatted := make([]string, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		formatted = append(
+			formatted,
+			fmt.Sprintf(
+				"%s[%s]: %s",
+				diagnostic.Code(),
+				diagnostic.UnitID(),
+				diagnostic.Message(),
+			),
+		)
+	}
+	return strings.Join(formatted, "; ")
+}
 
-// bakeSpecEmbeddings embeds every section into fpf_embeddings via the local
-// sidecar (MRL-256). Index refresh is allowed to degrade at runtime, but the
-// committed fpf.db must not be vectorless.
-func bakeSpecEmbeddings(dbPath string) (int, error) {
-	emb, err := embedding.New(embedding.Config{Provider: embedding.ProviderLocal, Model: os.Getenv("HAFT_EMBED_MODEL"), Dim: specEmbeddingBakeDim()})
+func comparePreviousTypeEnv(
+	dbPath string,
+	current typeenv.BaseTypeEnvArtifact,
+) (typeenv.CompatibilityAssessment, error) {
+	previousCompiler, hasPreviousCompiler, err := loadPreviousTypeEnvCompilerSchema(dbPath)
 	if err != nil {
-		if embedding.Degraded(err) {
-			return 0, fmt.Errorf("haft-embed unavailable; cannot build committed FPF index without baked vectors: %w", err)
-		}
-		return 0, fmt.Errorf("start embedder: %w", err)
+		return nil, err
 	}
-	defer func() { _ = emb.Close() }()
-
-	ctx := context.Background()
-	return fpf.BakeSpecEmbeddings(ctx, dbPath, indexEmbedderAdapter{embedder: emb}, bakeScopeFromEnv())
-}
-
-func bakePatternUseRouteEmbeddings(dbPath string) (int, error) {
-	emb, err := embedding.New(embedding.Config{Provider: embedding.ProviderLocal, Model: os.Getenv("HAFT_EMBED_MODEL"), Dim: specEmbeddingBakeDim()})
+	if !hasPreviousCompiler {
+		return typeenv.NewInitialCompatibilityAssessment(), nil
+	}
+	if previousCompiler == legacyBaseTypeEnvCompilerSchemaV1 {
+		return typeenv.NewInitialCompatibilityAssessment(), nil
+	}
+	currentCompiler := current.CompilerSchemaVersion().String()
+	if previousCompiler != currentCompiler &&
+		previousCompiler != previousBaseTypeEnvCompilerSchemaV2 &&
+		previousCompiler != previousBaseTypeEnvCompilerSchemaV3 {
+		return nil, fmt.Errorf(
+			"previous FPF TypeEnv compiler schema %q is neither current %q nor a known predecessor (%q, %q, %q)",
+			previousCompiler,
+			currentCompiler,
+			legacyBaseTypeEnvCompilerSchemaV1,
+			previousBaseTypeEnvCompilerSchemaV2,
+			previousBaseTypeEnvCompilerSchemaV3,
+		)
+	}
+	previous, exists, err := loadPreviousTypeEnv(dbPath)
 	if err != nil {
-		if embedding.Degraded(err) {
-			return 0, fmt.Errorf("haft-embed unavailable; cannot build committed PatternUse route index without baked vectors: %w", err)
-		}
-		return 0, fmt.Errorf("start embedder: %w", err)
+		return nil, err
 	}
-	defer func() { _ = emb.Close() }()
-
-	ctx := context.Background()
-	routes := fpf.DefaultPatternUseRouteCards()
-	return fpf.BakePatternUseRouteEmbeddings(ctx, dbPath, indexEmbedderAdapter{embedder: emb}, routes)
-}
-
-func bakePatternUseIntentEmbeddings(dbPath string) (int, error) {
-	emb, err := embedding.New(embedding.Config{Provider: embedding.ProviderLocal, Model: os.Getenv("HAFT_EMBED_MODEL"), Dim: specEmbeddingBakeDim()})
+	if !exists {
+		return typeenv.NewInitialCompatibilityAssessment(), nil
+	}
+	assessment, err := typeenv.CompareBaseTypeEnvArtifacts(previous, current)
 	if err != nil {
-		if embedding.Degraded(err) {
-			return 0, fmt.Errorf("haft-embed unavailable; cannot build committed PatternUse intent index without baked vectors: %w", err)
+		return nil, fmt.Errorf("compare previous source-derived FPF TypeEnv: %w", err)
+	}
+	return assessment, nil
+}
+
+func loadPreviousTypeEnvCompilerSchema(
+	dbPath string,
+) (string, bool, error) {
+	cleanPath := filepath.Clean(dbPath)
+	_, err := os.Stat(cleanPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, fmt.Errorf("inspect previous FPF index: %w", err)
+	}
+	database, err := openSQLiteReadOnly(cleanPath)
+	if err != nil {
+		return "", false, err
+	}
+	var compiler string
+	loadErr := database.QueryRowContext(
+		context.Background(),
+		`SELECT compiler_schema_version
+		 FROM fpf_typeenv_artifact
+		 WHERE singleton = 1`,
+	).Scan(&compiler)
+	closeErr := database.Close()
+	if errors.Is(loadErr, sql.ErrNoRows) {
+		if closeErr != nil {
+			return "", false, fmt.Errorf("close previous FPF index: %w", closeErr)
 		}
-		return 0, fmt.Errorf("start embedder: %w", err)
+		return "", false, nil
 	}
-	defer func() { _ = emb.Close() }()
-
-	ctx := context.Background()
-	cards := fpf.DefaultPatternUseIntentLaneCards()
-	return fpf.BakePatternUseIntentEmbeddings(ctx, dbPath, indexEmbedderAdapter{embedder: emb}, cards)
+	if loadErr != nil {
+		return "", false, fmt.Errorf(
+			"load previous FPF TypeEnv compiler schema read-only: %w",
+			loadErr,
+		)
+	}
+	if closeErr != nil {
+		return "", false, fmt.Errorf("close previous FPF index: %w", closeErr)
+	}
+	return compiler, true, nil
 }
 
-// specEmbeddingBakeDim is the MRL truncation target for the bake. Default 256
-// (the shipped contract); HAFT_FPF_BAKE_DIM overrides — 0 means the model's
-// native width (use for non-MRL models like bge where truncation hurts).
-func specEmbeddingBakeDim() int {
-	if v := strings.TrimSpace(os.Getenv("HAFT_FPF_BAKE_DIM")); v != "" {
-		if d, err := strconv.Atoi(v); err == nil {
-			return d
+func loadPreviousTypeEnv(
+	dbPath string,
+) (typeenv.BaseTypeEnvArtifact, bool, error) {
+	cleanPath := filepath.Clean(dbPath)
+	_, err := os.Stat(cleanPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return typeenv.BaseTypeEnvArtifact{}, false, nil
+	}
+	if err != nil {
+		return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("inspect previous FPF index: %w", err)
+	}
+	database, err := openSQLiteReadOnly(cleanPath)
+	if err != nil {
+		return typeenv.BaseTypeEnvArtifact{}, false, err
+	}
+	artifact, loadErr := typeenvsql.LoadArtifactReadOnlyDB(context.Background(), database)
+	closeErr := database.Close()
+	if errors.Is(loadErr, sql.ErrNoRows) {
+		if closeErr != nil {
+			return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("close previous FPF index: %w", closeErr)
+		}
+		return typeenv.BaseTypeEnvArtifact{}, false, nil
+	}
+	if loadErr != nil {
+		return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("load previous FPF TypeEnv read-only: %w", loadErr)
+	}
+	if closeErr != nil {
+		return typeenv.BaseTypeEnvArtifact{}, false, fmt.Errorf("close previous FPF index: %w", closeErr)
+	}
+	return artifact, true, nil
+}
+
+func openSQLiteReadOnly(dbPath string) (*sql.DB, error) {
+	absolutePath, err := filepath.Abs(filepath.Clean(dbPath))
+	if err != nil {
+		return nil, fmt.Errorf("resolve FPF index path: %w", err)
+	}
+	readOnlyURI := url.URL{Scheme: "file", Path: absolutePath}
+	query := readOnlyURI.Query()
+	query.Set("mode", "ro")
+	readOnlyURI.RawQuery = query.Encode()
+	database, err := sql.Open("sqlite", readOnlyURI.String())
+	if err != nil {
+		return nil, fmt.Errorf("open FPF index read-only: %w", err)
+	}
+	if err := database.Ping(); err != nil {
+		_ = database.Close()
+		return nil, fmt.Errorf("open FPF index read-only: %w", err)
+	}
+	return database, nil
+}
+
+func storeTypeEnvEnvelope(
+	dbPath string,
+	envelope typeenv.CompilationEnvelope,
+) error {
+	database, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return fmt.Errorf("open FPF TypeEnv index: %w", err)
+	}
+	storeErr := typeenvsql.ReplaceEnvelopeDB(context.Background(), database, envelope)
+	closeErr := database.Close()
+	if storeErr != nil {
+		return storeErr
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close FPF TypeEnv index: %w", closeErr)
+	}
+	return nil
+}
+
+func addTypeEnvMetadata(
+	metadata map[string]string,
+	artifact typeenv.BaseTypeEnvArtifact,
+) {
+	metadata["typeenv_artifact_digest"] = artifact.Digest().String()
+	metadata["typeenv_compiler_schema_version"] = artifact.CompilerSchemaVersion().String()
+	metadata["typeenv_posture"] = artifact.Posture().String()
+	metadata["typeenv_source_revision"] = artifact.SourceRevision().String()
+	if reference, exists := artifact.TypeEnvRef(); exists {
+		metadata["typeenv_ref"] = reference.String()
+	}
+}
+
+func verifyBuiltIndex(
+	database *sql.DB,
+	snapshot fpf.PublicationSnapshot,
+	artifact typeenv.BaseTypeEnvArtifact,
+) error {
+	if err := fpf.VerifyPublicationSnapshotReadOnlyDB(database, snapshot); err != nil {
+		return fmt.Errorf("verify exact FPF publication snapshot: %w", err)
+	}
+	loaded, err := typeenvsql.LoadArtifactReadOnlyDB(context.Background(), database)
+	if err != nil {
+		return fmt.Errorf("load rebuilt FPF TypeEnv artifact: %w", err)
+	}
+	if loaded.Digest().String() != artifact.Digest().String() {
+		return fmt.Errorf(
+			"rebuilt TypeEnv digest %q differs from compiled artifact %q",
+			loaded.Digest().String(),
+			artifact.Digest().String(),
+		)
+	}
+	if artifact.SourceRevision().String() != snapshot.Revision() {
+		return fmt.Errorf(
+			"compiled TypeEnv revision %q differs from publication revision %q",
+			artifact.SourceRevision().String(),
+			snapshot.Revision(),
+		)
+	}
+	if err := verifyArtifactMetadata(database, loaded, snapshot.Revision()); err != nil {
+		return err
+	}
+	return verifyTypeEnvSourceJoin(database)
+}
+
+func verifyExpectedTypeEnvArtifact(
+	stored typeenv.BaseTypeEnvArtifact,
+	expected typeenv.BaseTypeEnvArtifact,
+) error {
+	if stored.Digest().String() != expected.Digest().String() {
+		return fmt.Errorf(
+			"fpf.db TypeEnv digest %q differs from checked-out source compilation %q",
+			stored.Digest().String(),
+			expected.Digest().String(),
+		)
+	}
+	if !bytes.Equal(stored.CanonicalBytes(), expected.CanonicalBytes()) {
+		return fmt.Errorf("fpf.db TypeEnv canonical payload differs from checked-out source compilation")
+	}
+	if stored.Posture() != expected.Posture() {
+		return fmt.Errorf(
+			"fpf.db TypeEnv posture %q differs from checked-out source compilation %q",
+			stored.Posture().String(),
+			expected.Posture().String(),
+		)
+	}
+	if stored.SourceRevision().String() != expected.SourceRevision().String() {
+		return fmt.Errorf(
+			"fpf.db TypeEnv revision %q differs from checked-out source compilation %q",
+			stored.SourceRevision().String(),
+			expected.SourceRevision().String(),
+		)
+	}
+	if stored.CompilerSchemaVersion().String() != expected.CompilerSchemaVersion().String() {
+		return fmt.Errorf(
+			"fpf.db TypeEnv compiler %q differs from checked-out source compilation %q",
+			stored.CompilerSchemaVersion().String(),
+			expected.CompilerSchemaVersion().String(),
+		)
+	}
+	storedRef, storedHasRef := stored.TypeEnvRef()
+	expectedRef, expectedHasRef := expected.TypeEnvRef()
+	if storedHasRef != expectedHasRef || storedRef.String() != expectedRef.String() {
+		return fmt.Errorf(
+			"fpf.db TypeEnv ref %q differs from checked-out source compilation %q",
+			storedRef.String(),
+			expectedRef.String(),
+		)
+	}
+	return nil
+}
+
+func verifyArtifactMetadata(
+	database *sql.DB,
+	artifact typeenv.BaseTypeEnvArtifact,
+	expectedRevision string,
+) error {
+	values := map[string]string{
+		"typeenv_artifact_digest":         artifact.Digest().String(),
+		"typeenv_compiler_schema_version": artifact.CompilerSchemaVersion().String(),
+		"typeenv_posture":                 artifact.Posture().String(),
+		"typeenv_source_revision":         artifact.SourceRevision().String(),
+	}
+	reference, hasReference := artifact.TypeEnvRef()
+	if !hasReference {
+		return fmt.Errorf("compiled FPF TypeEnv artifact has no TypeEnvRef")
+	}
+	values["typeenv_ref"] = reference.String()
+	if artifact.SourceRevision().String() != expectedRevision {
+		return fmt.Errorf(
+			"FPF TypeEnv source revision %q differs from expected revision %q",
+			artifact.SourceRevision().String(),
+			expectedRevision,
+		)
+	}
+	for key, want := range values {
+		got, err := fpf.GetSpecMeta(database, key)
+		if err != nil {
+			return fmt.Errorf("read %s metadata: %w", key, err)
+		}
+		if got != want {
+			return fmt.Errorf("FPF index metadata %s=%q, want %q", key, got, want)
 		}
 	}
-	return shippedFPFEmbeddingDim
+	return nil
 }
 
-// bakeScopeFromEnv selects the embedding scope. Default is the full corpus;
-// HAFT_FPF_BAKE_SCOPE=patterns restricts the bake to the 66 compiled pattern
-// cards (seconds vs ~tens of minutes) — used to measure whether prose sections
-// earn their place before committing the scope.
-func bakeScopeFromEnv() fpf.SpecEmbeddingScope {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("HAFT_FPF_BAKE_SCOPE")), "patterns") {
-		return fpf.ScopePatternCards
+func verifyTypeEnvSourceJoin(database *sql.DB) error {
+	var mismatches int
+	err := database.QueryRow(`
+		SELECT COUNT(*)
+		FROM fpf_typeenv_sources AS typed
+		WHERE NOT EXISTS (
+			SELECT 1
+			FROM source_units AS source
+			WHERE source.unit_id = typed.unit_id
+			  AND source.source_revision = typed.source_revision
+			  AND CASE
+				WHEN source.content_hash LIKE 'sha256:%' THEN source.content_hash
+				ELSE 'sha256:' || source.content_hash
+			  END = typed.content_hash
+			  AND source.start_line = typed.start_line
+			  AND source.end_line = typed.end_line
+			  AND source.pattern_id = COALESCE(typed.pattern_id, '')
+		)
+	`).Scan(&mismatches)
+	if err != nil {
+		return fmt.Errorf("verify FPF TypeEnv source join: %w", err)
 	}
-	return fpf.ScopeAllSections
+	if mismatches > 0 {
+		return fmt.Errorf("FPF TypeEnv has %d source input(s) outside the exact Query snapshot", mismatches)
+	}
+	return nil
 }
 
-// indexEmbedderAdapter bridges the local embedding.Embedder to the provider-free
-// fpf.SemanticEmbedder port (mirror of internal/embedding's openAIAdapter). It
-// embeds sections in the document role.
-type indexEmbedderAdapter struct {
-	embedder embedding.Embedder
+func ensureIndexMetadataTable(dbPath string) error {
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return fmt.Errorf("open source index metadata db: %w", err)
+	}
+	_, execErr := db.Exec(`CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT)`)
+	closeErr := db.Close()
+	if execErr != nil {
+		return fmt.Errorf("create source index metadata table: %w", execErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close source index metadata db: %w", closeErr)
+	}
+	return nil
 }
 
-func (a indexEmbedderAdapter) Descriptor() fpf.SemanticEmbedderDescriptor {
-	d := a.embedder.Descriptor()
-	return fpf.SemanticEmbedderDescriptor{Provider: d.Provider, Model: d.Model, Dimensions: d.Dimensions}
-}
-
-func (a indexEmbedderAdapter) EmbedTexts(ctx context.Context, texts []string) ([][]float32, error) {
-	return a.embedder.Embed(ctx, embedding.RoleDocument, texts)
-}
-
-func buildSpecIndexMetadata(specPath string, indexedSections int, explicitCommit string, buildTime time.Time) map[string]string {
+func buildSourceIndexMetadata(
+	specPath string,
+	readmePath string,
+	sourceUnits int,
+	explicitCommit string,
+	buildTime time.Time,
+) map[string]string {
 	return map[string]string{
-		"fpf_commit":       resolveSpecCommit(explicitCommit, specPath),
-		"indexed_sections": fmt.Sprintf("%d", indexedSections),
-		"build_time":       buildTime.UTC().Format(time.RFC3339),
-		"spec_path":        filepath.Clean(specPath),
-		"schema_version":   fpf.SpecIndexSchemaVersion,
+		"fpf_commit":           resolveSpecCommit(explicitCommit, specPath),
+		"indexed_sections":     "0",
+		"indexed_source_units": fmt.Sprintf("%d", sourceUnits),
+		"build_time":           buildTime.UTC().Format(time.RFC3339),
+		"spec_path":            filepath.Clean(specPath),
+		"readme_path":          filepath.Clean(readmePath),
+		"schema_version":       fpf.SpecIndexSchemaVersion,
 	}
 }
 
@@ -498,9 +638,9 @@ func resolveSpecCommit(explicitCommit, specPath string) string {
 	return detectSpecCommit(specPath)
 }
 
-// resolveSpecBuildTime returns the committer date of the FPF spec commit, so the
-// index build is deterministic. Falls back to the Unix epoch when git/the commit
-// is unavailable — still deterministic (never wall-clock).
+// resolveSpecBuildTime returns the committer date of the FPF source commit, so
+// rebuilding one revision is deterministic. Outside Git it uses the Unix epoch
+// rather than wall-clock time.
 func resolveSpecBuildTime(commitSHA, specPath string) time.Time {
 	epoch := time.Unix(0, 0).UTC()
 	gitDir, err := specGitLookupDir(specPath)
@@ -511,6 +651,7 @@ func resolveSpecBuildTime(commitSHA, specPath string) time.Time {
 	if !ok {
 		return epoch
 	}
+
 	cmd := exec.Command("git", "show", "-s", "--format=%cI", ref)
 	cmd.Dir = gitDir
 	output, err := cmd.Output()
@@ -532,16 +673,18 @@ func cleanSpecCommitRef(commitSHA string) (string, bool) {
 	if len(ref) != 40 {
 		return "", false
 	}
-	for _, r := range ref {
-		if !isHexCommitRune(r) {
+	for _, runeValue := range ref {
+		if !isHexCommitRune(runeValue) {
 			return "", false
 		}
 	}
 	return strings.ToLower(ref), true
 }
 
-func isHexCommitRune(r rune) bool {
-	return (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+func isHexCommitRune(value rune) bool {
+	return (value >= '0' && value <= '9') ||
+		(value >= 'a' && value <= 'f') ||
+		(value >= 'A' && value <= 'F')
 }
 
 func detectSpecCommit(specPath string) string {
@@ -552,12 +695,10 @@ func detectSpecCommit(specPath string) string {
 
 	cmd := exec.Command("git", "rev-parse", "HEAD")
 	cmd.Dir = gitDir
-
 	output, err := cmd.Output()
 	if err != nil {
 		return ""
 	}
-
 	return strings.TrimSpace(string(output))
 }
 
@@ -566,6 +707,5 @@ func specGitLookupDir(specPath string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-
 	return filepath.Dir(absPath), nil
 }

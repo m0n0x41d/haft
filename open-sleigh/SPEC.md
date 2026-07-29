@@ -80,9 +80,8 @@
   golden-set versioning rule, rubric-first labelling, adapter-first
   14-day time-box. **Role discipline:** removed "veto" framing per
   X-TRANSFORMER.
-- v0.3 (2026-04-22): applied second-round review (source-verified
-  against `semiotics_slideument.md`, `development_for_the_developed.md`,
-  `FPF-Spec.md`). Corrected LADE fourth quadrant, aligned left-lobe
+- v0.3 (2026-04-22): applied second-round review against exact FPF source and
+  the current target-system specifications. Corrected LADE fourth quadrant, aligned left-lobe
   first phase, declared "Generate" as compression, elevated Parity
   Report to first-class Haft artifact, added LLM-judge calibration,
   narrowed config hash scope, specified WAL ordering and cancel-mid-
@@ -140,8 +139,9 @@ under Haft-owned authority, scope, and evidence, built on OTP.
   `specs/target-system/HAFT_CONTRACT.md`.
 - **FPF** (Levenchuk's First Principles Framework) — methodological basis.
   The invariant distinctions, the lemniscate, the Comparability Governance
-  frame, the valid_until discipline all come from here. See `.context/FPF-Spec.md`,
-  `.context/slideument.md`, and `.context/semiotics_slideument.md`.
+  frame, and the valid_until discipline are recovered from exact source or
+  declared as Open-Sleigh local practice. See `data/FPF/FPF-Spec.md` and the
+  exact PatternIDs cited by the target-system specifications.
 
 **Product / subsystem / enabling split** (FPF §Target ≠ Enabling):
 
@@ -184,11 +184,13 @@ non-goals inventory.
 The entity definitions (structs, constructors, relationships) are in
 `specs/target-system/TARGET_SYSTEM_MODEL.md`.
 
-## 4. Lemniscate phase machine — full vision (MVP-2 target)
+## 4. Open-Sleigh phase machine — full vision (MVP-2 target)
 
-Canonical FPF phase names, aligned with
-`.context/slideument.md` and
-`.context/FPF-Spec.md` B.4 Canonical Evolution Loop:
+These phase labels and their order are local to Open-Sleigh's orchestration
+MethodDescription. They are not a universal FPF workflow, a canonical order
+for Haft capabilities, or evidence that any phase's Work occurred. Exact FPF
+source informed the vocabulary; the current Open-Sleigh target-system
+specifications govern this machine.
 
 ```
 ┌─────────────────────── Problem Factory ────────────────────────┐
@@ -217,11 +219,10 @@ Canonical FPF phase names, aligned with
                               (evidence pack exits to next loop)──┘
 ```
 
-The full phase graph (MVP-1 + MVP-2 alphabets, legal transitions, axis
-model, per-phase work-products, gate-per-phase binding) is canonical in
-`specs/target-system/PHASE_ONTOLOGY.md`. Compression notes for phase
-names (e.g. `Generate` collapsing Slide 12 items 4+5) are also
-documented there.
+The full local phase graph (MVP-1 + MVP-2 alphabets, legal transitions, axis
+model, per-phase work-products, gate-per-phase binding) is authoritative for
+Open-Sleigh in `specs/target-system/PHASE_ONTOLOGY.md`. Compression notes for
+phase names are also documented there as local MethodDescription choices.
 
 ## 5. MVP-1 scope cut — single-variant governed pipeline
 

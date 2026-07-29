@@ -15,6 +15,7 @@ import (
 // so rather than printing possibly-stale source.
 func NodeResponse(view codeintel.NodeView, lang string) string {
 	var b strings.Builder
+	renderIndexState(&b, view.Index)
 
 	// No exact/single definition, but fuzzy matches exist → list them to pick
 	// from, never auto-expand a dozen bodies.
@@ -31,6 +32,15 @@ func NodeResponse(view codeintel.NodeView, lang string) string {
 	}
 
 	if !view.Found {
+		if seedResolutionKind(view.NameResolution) == "seed_unavailable" {
+			fmt.Fprintf(&b, "## Node — `%s` unavailable\n\n", view.Name)
+			fmt.Fprintf(
+				&b,
+				"Symbol resolution is unavailable (%s); this is not evidence that the symbol is absent. Retry after the index capability is restored.\n",
+				seedResolutionDetail(view.NameResolution),
+			)
+			return b.String()
+		}
 		fmt.Fprintf(&b, "## Node — `%s` not found\n\n", view.Name)
 		b.WriteString("No symbol whose name matches that is in the code index (exact or substring). Check spelling, or pass `file` to scope it.\n")
 		return b.String()
@@ -62,6 +72,8 @@ func renderOverload(b *strings.Builder, ol codeintel.NodeOverload, lang string) 
 		recv = fmt.Sprintf(" (%s)", sym.Receiver)
 	}
 	fmt.Fprintf(b, "### %s%s — `%s:%d-%d` _(%s)_\n", sym.Name, recv, sym.FilePath, sym.StartLine, sym.EndLine, sym.Kind)
+	fmt.Fprintf(b, "Resolution: %d resolved • %d ambiguous • %d unresolved\n",
+		ol.Resolution.Resolved, ol.Resolution.Ambiguous, ol.Resolution.Unresolved)
 	if ol.Reindexed {
 		b.WriteString("_file was edited — re-indexed for fresh byte offsets before slicing_\n")
 	}
@@ -90,7 +102,7 @@ func renderOverload(b *strings.Builder, ol codeintel.NodeOverload, lang string) 
 func renderHopGovernance(b *strings.Builder, cc contextgraph.CodeContext) {
 	switch {
 	case len(cc.Decisions) > 0:
-		b.WriteString("Governed by:\n")
+		b.WriteString("`exact_binding` decisions:\n")
 		for _, d := range cc.Decisions {
 			fmt.Fprintf(b, "- **%s** `%s`\n", d.Meta.Title, d.Meta.ID)
 		}
@@ -98,7 +110,11 @@ func renderHopGovernance(b *strings.Builder, cc contextgraph.CodeContext) {
 			fmt.Fprintf(b, "_granularity: %s_\n", cc.SymbolGranularity)
 		}
 	case len(cc.ModuleDecisions) > 0:
-		fmt.Fprintf(b, "Module governed by %s _(no symbol-level link)_\n", moduleDecisionList(cc.ModuleDecisions))
+		fmt.Fprintf(b, "`module_context` — Module governed by %s _(no exact binding)_\n", moduleDecisionList(cc.ModuleDecisions))
+	case len(cc.AffectedPathContextDecisions) > 0:
+		b.WriteString(
+			"`affected_path_context` exists, but no exact binding or module authority was found.\n",
+		)
 	default:
 		b.WriteString("No recorded reasoning touches this definition.\n")
 	}

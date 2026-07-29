@@ -8,6 +8,7 @@ import { Type } from "typebox";
 const OptStr = () => Type.Optional(Type.String());
 const OptNum = () => Type.Optional(Type.Number());
 const OptInt = () => Type.Optional(Type.Integer());
+const OptNonNegativeInt = () => Type.Optional(Type.Integer({ minimum: 0 }));
 const OptBool = () => Type.Optional(Type.Boolean());
 const OptStrList = () => Type.Optional(Type.Array(Type.String()));
 const OptObj = () => Type.Optional(Type.Object({}, { additionalProperties: true }));
@@ -20,8 +21,16 @@ const readOnlyAuthorityBoundary =
 const bindingAuthorityBoundary =
   "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
 
+const humanGateBriefGuideline =
+  "Before requesting a human gate, give a self-contained Human Gate Brief: readable gate kind and subject, affected operation and blocker, every real current option, each option's changes, non-changes, consequence or return condition, and weakest link; existing comparison/parity basis, selection policy, and non-dominated or Pareto set, or an explicit statement that none exists or applies; advisory recommendation; freshness or expiry; and a question asking for the human engineer's assessment of the options, trade-offs, and recommendation in natural language. Accept ordinary language as the substantive answer to the engineering consultation, never as a binding receipt. A command, skill invocation, exact reply phrase, or resumption token must never substitute for that consultation. Only after the engineer's position is explicit may a separately required manual binding or persistence act be explained with its authority limits. Never end a blocking message with 'for resumption it is enough to...', 'reply exactly...', or an equivalent command-only instruction. IDs and hashes never replace readable meaning, and the brief is not authorization.";
+
 const kernelInterfaceCatalogDigest =
-  "sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1";
+  "sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735";
+
+export const HAFT_MEMORY_READ_OUTPUT_CONTRACT_JSON = `{"schema":"haft.memory-read-output-contract/v1","runtime_contract_version":"haft.memory.v1","envelope":{"required_fields":["contract_version","action","result_kind","result"],"optional_fields":["result_digest"]},"projection_profile_refs":["agent_orientation.v1","agent_orientation.v2","decision_rationale.v1","evidence_currentness.v1","implementation_trace.v1","spec_impact.v1"],"result_families":[{"action":"resolve","variants":[{"kind":"exact_entity","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","entity","resolution_witnesses"]},{"kind":"known_absent","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","inspected_index","completeness_basis_ref"]},{"kind":"entity_candidates","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","candidates","candidate_set_coverage","applied_budget"]},{"kind":"resolution_unsettled","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","issues"]},{"kind":"retry_required","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","observed_snapshot","required_snapshot","cause","retry_operation"]}]},{"action":"neighborhood","variants":[{"kind":"exact_neighborhood","required_envelope_fields":["result_digest"],"required_fields":["schema","memory_view_context","snapshot_basis","projection_basis","projection_basis_digest","root","facets","boundaries","interpretation_contract","read_affordances","applied_budget"]},{"kind":"retry_required","required_fields":["cause","required_snapshot","retry_operation","interpretation_contract"]},{"kind":"abstained","required_fields":["basis","inspected_sources","interpretation_contract"]}]},{"action":"recall","variants":[{"kind":"scoped_memory_candidate_set","required_fields":["scope","snapshot_basis","interpretation_contract","candidates","candidate_set_coverage","applied_budget"]},{"kind":"retry_required","required_fields":["scope","snapshot_basis","interpretation_contract","cause","required_snapshot","retry_operation"]},{"kind":"abstained","required_fields":["scope","snapshot_basis","interpretation_contract","inspected_producers","basis"]}]}],"named_shapes":[{"name":"ProjectionBasis","required_fields":["schema","profile_ref","profile_edition","profile_digest","projection_schema_version","canonical_inputs","derived_projection_inputs","declared_input_families","declared_slot_kinds","correspondence_manifests","item_basis"]},{"name":"ProjectionItemBasis","discriminator":"kind","variants":[{"kind":"direct","required_fields":["kind","output","inputs","transform","intentional_loss"]},{"kind":"correspondence","required_fields":["kind","output","inputs","correspondence_manifest_ref","transform","intentional_loss"]}]},{"name":"FacetBasisIssue","discriminator":"kind","variants":[{"kind":"missing_type_basis","required_fields":["kind","facet","required_ref_or_kind"]},{"kind":"missing_correspondence_basis","required_fields":["kind","facet","required_correspondence"]},{"kind":"unresolved_legacy_identity","required_fields":["kind","facet","legacy_ref","resolution_ref"]},{"kind":"stale_derived_projection","required_fields":["kind","facet","projection_ref","observed_version","required_version"]},{"kind":"explicit_bridge_required","required_fields":["kind","facet","source_context_ref","target_context_ref","bridge"],"optional_fields":["known_bridge_ref"]}]},{"name":"WholeReadRetryCause","discriminator":"kind","variants":[{"kind":"stale_snapshot","required_fields":["kind","observed_snapshot","required_snapshot"]},{"kind":"stale_cursor","required_fields":["kind","cursor","required_snapshot"]},{"kind":"projection_rebuild_required","required_fields":["kind","projection_ref","observed_epoch","required_epoch"]}]},{"name":"ReadAbstentionBasis","discriminator":"kind","variants":[{"kind":"entity_or_context_not_found","required_fields":["kind","entity_ref","bounded_context_ref","snapshot_basis"]},{"kind":"no_admissible_facet","required_fields":["kind","issues"]}]},{"name":"InterpretationContract","required_fields":["structure","identity","relational_records","ranking","truth","applicability","authority","work_order","completeness","hydrate_before_reliance"]},{"name":"RelationalRecordsInterpretation","allowed_values":["assertions_exact_at_snapshot","occurrences_exact_at_snapshot","legacy_unqualified_assertions","candidate_assertions","heterogeneous_relational_records","unavailable"]},{"name":"RelationalRecordItemPosture","allowed_values":["assertion_exact","occurrence_exact","legacy_unqualified_assertion","candidate_assertion"]},{"name":"RelationDeclarationPosture","allowed_values":["typed_relation_declaration_fragment"]},{"name":"RelationPathWitness","required_fields":["assertion_id","relation_declaration_fragment_id","relation_declaration_posture","bounded_context_ref","slot_kind_id","target_ref","provenance_ref","admission_event_ref","relational_record_posture"],"optional_fields":["signature_id","explicit_modality"]},{"name":"FacetCoverage","discriminator":"kind","variants":[{"kind":"complete","required_fields":["kind","included"]},{"kind":"partial","required_fields":["kind","included","omitted_at_least","snapshot_cursor"]},{"kind":"not_applicable","required_fields":["kind","included","applicability_basis_ref"]},{"kind":"unavailable","required_fields":["kind","included","missing_basis_ref"]},{"kind":"stale","required_fields":["kind","included","retry_basis_ref"]}]},{"name":"AppliedReadBudget","required_fields":["requested_limits","applied_limits","per_facet","emitted_relation_path_count","omitted_relation_path_count","emitted_excerpt_character_count","emitted_provenance_depth","bounded_content_utf8_bytes","continuation_cursors"]},{"name":"RetryRequired","required_fields":["cause","required_snapshot","retry_operation","interpretation_contract"]},{"name":"ScopedRecallAbstentionBasis","discriminator":"kind","variants":[{"kind":"no_matching_memory","required_fields":["kind","complete_producer_refs"]},{"kind":"no_usable_producer","required_fields":["kind","unavailable_producer_refs","missing_basis_ref"]}]}]}`;
+
+export const HAFT_MEMORY_READ_OUTPUT_CONTRACT: unknown =
+  JSON.parse(HAFT_MEMORY_READ_OUTPUT_CONTRACT_JSON);
 
 const parityPlanSchema = Type.Optional(Type.Object({
   baseline_set: OptStrList(),
@@ -69,16 +78,337 @@ const specFitVariantSchema = Type.Object({
   declared_relation: OptStr()
 }, { additionalProperties: true });
 
+const memoryProjectBasisSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal("project_current")
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("exact_project"),
+    type_env_digest: Type.String({ pattern: "^sha256:[0-9a-f]{64}$" }),
+    graph_revision: Type.Integer({ minimum: 1 })
+  }, { additionalProperties: false })
+]);
+
+const memoryEntityReferenceSchema = Type.Object({
+  ref_kind_id: Type.String(),
+  reference_id: Type.String()
+}, { additionalProperties: false });
+
+const memoryProjectRecordReferenceSchema = Type.Object({
+  ref_kind_id: Type.Literal("Haft.ProjectRecordRef"),
+  reference_id: Type.String()
+}, { additionalProperties: false });
+
+const memoryIdentifierSchema = Type.String({ minLength: 1, maxLength: 4096 });
+const memoryTextSchema = Type.String({ minLength: 1, maxLength: 16384 });
+const memoryDigestSchema = Type.String({ pattern: "^sha256:[0-9a-f]{64}$" });
+
+const memoryValidationBasisSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal("bundled_candidate_open_world")
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("project_current")
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("exact_project"),
+    type_env_digest: memoryDigestSchema,
+    graph_revision: Type.Integer({ minimum: 0 })
+  }, { additionalProperties: false })
+]);
+
+const memoryVersionedPinSchema = Type.Object({
+  reference: memoryIdentifierSchema,
+  edition: memoryIdentifierSchema,
+  digest: memoryDigestSchema
+}, { additionalProperties: false });
+
+const memoryEnvironmentSelectorSchema = Type.Object({
+  key: memoryIdentifierSchema,
+  value: memoryIdentifierSchema,
+  source_digest: memoryDigestSchema
+}, { additionalProperties: false });
+
+const memoryGammaPointSchema = Type.Object({
+  kind: Type.Literal("point"),
+  at: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryGammaWindowSchema = Type.Object({
+  kind: Type.Literal("window"),
+  start: memoryIdentifierSchema,
+  end: memoryIdentifierSchema,
+  start_boundary: enumOf("inclusive", "exclusive"),
+  end_boundary: enumOf("inclusive", "exclusive")
+}, { additionalProperties: false });
+
+const memoryResolvedGammaTimeSchema = Type.Union([
+  memoryGammaPointSchema,
+  memoryGammaWindowSchema
+]);
+
+const memoryGammaPolicyApplicationSchema = Type.Object({
+  kind: Type.Literal("policy_application"),
+  policy_ref: memoryIdentifierSchema,
+  policy_edition: memoryIdentifierSchema,
+  policy_digest: memoryDigestSchema,
+  evaluation_anchor: memoryGammaPointSchema,
+  resolved: memoryResolvedGammaTimeSchema
+}, { additionalProperties: false });
+
+const memoryGammaTimeSchema = Type.Union([
+  memoryGammaPointSchema,
+  memoryGammaWindowSchema,
+  memoryGammaPolicyApplicationSchema
+]);
+
+const memoryContextSliceSchema = Type.Object({
+  context: memoryIdentifierSchema,
+  standard_pins: Type.Array(memoryVersionedPinSchema, { maxItems: 64 }),
+  environment_selectors: Type.Array(memoryEnvironmentSelectorSchema, { maxItems: 64 }),
+  vocabulary_pins: Type.Array(memoryVersionedPinSchema, { maxItems: 64 }),
+  role_set_pins: Type.Array(memoryVersionedPinSchema, { maxItems: 64 }),
+  gamma_time: memoryGammaTimeSchema
+}, { additionalProperties: false });
+
+const memoryPersistedReferenceSchema = Type.Object({
+  kind: Type.Literal("persisted"),
+  ref_kind: memoryIdentifierSchema,
+  id: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryLocalReferenceSchema = Type.Object({
+  kind: Type.Literal("local"),
+  ref_kind: memoryIdentifierSchema,
+  local_ref: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryReferenceSchema = Type.Union([
+  memoryPersistedReferenceSchema,
+  memoryLocalReferenceSchema
+]);
+
+const memoryReferenceFillerSchema = Type.Object({
+  kind: Type.Literal("by_reference"),
+  reference: memoryReferenceSchema
+}, { additionalProperties: false });
+
+const memoryValueShapeSchema = Type.Object({
+  id: memoryIdentifierSchema,
+  digest: memoryDigestSchema
+}, { additionalProperties: false });
+
+const memoryCodecSchema = Type.Object({
+  id: memoryIdentifierSchema,
+  version: memoryIdentifierSchema,
+  specification_digest: memoryDigestSchema
+}, { additionalProperties: false });
+
+const memoryAssertedDigestSchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal("none")
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("exact"),
+    digest: memoryDigestSchema
+  }, { additionalProperties: false })
+]);
+
+const memoryTypedValueCandidateSchema = Type.Object({
+  value_kind: memoryIdentifierSchema,
+  value_shape: memoryValueShapeSchema,
+  codec: memoryCodecSchema,
+  input_base64: Type.String({ minLength: 1, maxLength: 349528 }),
+  asserted_digest: memoryAssertedDigestSchema
+}, { additionalProperties: false });
+
+const memoryValueFillerSchema = Type.Object({
+  kind: Type.Literal("by_value"),
+  value: memoryTypedValueCandidateSchema
+}, { additionalProperties: false });
+
+const memoryFillerSchema = Type.Union([
+  memoryReferenceFillerSchema,
+  memoryValueFillerSchema
+]);
+
+const memorySlotBindingSchema = Type.Object({
+  slot_kind: memoryIdentifierSchema,
+  fillers: Type.Array(memoryFillerSchema, { minItems: 1, maxItems: 64 })
+}, { additionalProperties: false });
+
+const memoryDeclareEntityChangeSchema = Type.Object({
+  kind: Type.Literal("declare_entity"),
+  entity_id: memoryIdentifierSchema,
+  local_ref: memoryIdentifierSchema,
+  context: memoryIdentifierSchema,
+  label: memoryTextSchema,
+  provenance: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryAdmitAliasSchema = Type.Object({
+  kind: Type.Literal("admit_alias"),
+  entity_id: memoryIdentifierSchema,
+  alias: memoryIdentifierSchema,
+  context: memoryIdentifierSchema,
+  provenance: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memorySupersedeAliasSchema = Type.Object({
+  kind: Type.Literal("supersede_alias"),
+  entity_id: memoryIdentifierSchema,
+  old_alias: memoryIdentifierSchema,
+  replacement: memoryIdentifierSchema,
+  context: memoryIdentifierSchema,
+  provenance: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryIdentityOperationSchema = Type.Union([
+  memoryAdmitAliasSchema,
+  memorySupersedeAliasSchema
+]);
+
+const memoryIdentityChangeSchema = Type.Object({
+  kind: Type.Literal("identity_change"),
+  change: memoryIdentityOperationSchema
+}, { additionalProperties: false });
+
+const memoryAssertionModalitySchema = Type.Union([
+  Type.Object({
+    kind: Type.Literal("affirms_obtaining")
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("denies_obtaining")
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("obtaining_unknown")
+  }, { additionalProperties: false })
+]);
+
+const memoryAssertRelationChangeSchema = Type.Object({
+  kind: Type.Literal("assert_relation"),
+  assertion_id: memoryIdentifierSchema,
+  signature_id: memoryIdentifierSchema,
+  context_slice: memoryContextSliceSchema,
+  modality: memoryAssertionModalitySchema,
+  bindings: Type.Array(memorySlotBindingSchema, { minItems: 1, maxItems: 64 }),
+  provenance: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryRetractAssertionChangeSchema = Type.Object({
+  kind: Type.Literal("retract_assertion"),
+  assertion_id: memoryIdentifierSchema,
+  reason: memoryTextSchema,
+  provenance: memoryIdentifierSchema
+}, { additionalProperties: false });
+
+const memoryChangeSchema = Type.Union([
+  memoryDeclareEntityChangeSchema,
+  memoryIdentityChangeSchema,
+  memoryAssertRelationChangeSchema,
+  memoryRetractAssertionChangeSchema
+]);
+
+const memoryChangeSetSchema = Type.Object({
+  changes: Type.Array(memoryChangeSchema, { minItems: 1, maxItems: 64 })
+}, { additionalProperties: false });
+
+const memoryNeighborhoodViewSchema = Type.Object({
+  projection_profile_ref: enumOf(
+    "agent_orientation.v2",
+    "agent_orientation.v1",
+    "decision_rationale.v1",
+    "spec_impact.v1",
+    "evidence_currentness.v1",
+    "implementation_trace.v1"
+  ),
+  requested_facets: Type.Array(enumOf(
+    "epistemes",
+    "problems",
+    "alternatives",
+    "decisions",
+    "specifications",
+    "evidence",
+    "work",
+    "implementation",
+    "unresolved"
+  )),
+  detail: enumOf("overview", "standard", "evidence"),
+  include_history: Type.Boolean()
+}, { additionalProperties: false });
+
+const memoryReadBudgetSchema = Type.Object({
+  max_facets: Type.Integer({ minimum: 1 }),
+  max_items_per_facet: Type.Integer({ minimum: 1 }),
+  max_relation_paths_per_item: Type.Integer({ minimum: 1 }),
+  max_carrier_excerpt_characters: Type.Integer({ minimum: 1 }),
+  max_provenance_depth: Type.Integer({ minimum: 1 })
+}, { additionalProperties: false });
+
+const memoryResolveQuerySchema = Type.Object({
+  mode: Type.Literal("resolve"),
+  contract_version: Type.Literal("haft.memory.v1"),
+  basis: memoryProjectBasisSchema,
+  query: memoryTextSchema,
+  bounded_context_ref: Type.Optional(memoryIdentifierSchema),
+  max_candidates: Type.Integer({ minimum: 1, maximum: 4294967295 })
+}, {
+  additionalProperties: false,
+  description: "Closed read-only resolve branch. known_absent performs no write and grants no persistence authority."
+});
+
+const memoryNeighborhoodQuerySchema = Type.Object({
+  mode: Type.Literal("neighborhood"),
+  contract_version: Type.Literal("haft.memory.v1"),
+  basis: memoryProjectBasisSchema,
+  entity_ref: memoryEntityReferenceSchema,
+  bounded_context_ref: memoryIdentifierSchema,
+  view: memoryNeighborhoodViewSchema,
+  read_budget: memoryReadBudgetSchema
+}, {
+  additionalProperties: false,
+  description: "Closed read-only neighborhood branch for one exact EntityOfConcern and bounded context."
+});
+
+const memoryRecallQuerySchema = Type.Object({
+  mode: Type.Literal("recall"),
+  contract_version: Type.Literal("haft.memory.v1"),
+  basis: memoryProjectBasisSchema,
+  entity_ref: memoryEntityReferenceSchema,
+  bounded_context_ref: memoryIdentifierSchema,
+  view: memoryNeighborhoodViewSchema,
+  read_budget: memoryReadBudgetSchema,
+  query: memoryTextSchema,
+  candidate_budget: Type.Object({
+    max_candidates: Type.Integer({ minimum: 1, maximum: 4294967295 })
+  }, { additionalProperties: false })
+}, {
+  additionalProperties: false,
+  description: "Closed read-only lexical recall branch inside one exact EntityOfConcern scope."
+});
+
+const memoryQueryEnvelopeSchema = Type.Union([
+  memoryResolveQuerySchema,
+  memoryNeighborhoodQuerySchema,
+  memoryRecallQuerySchema
+], {
+  description: "Required when action=memory. Choose exactly one closed branch. Legacy flat memory fields are rejected."
+});
+
 const haftQueryParameters = Type.Object({
   action: enumOf(
     "search", "status", "board", "related", "code_context", "callees", "callers",
     "impact", "node", "explore", "ceremony", "projection", "list", "coverage",
-    "fpf", "pattern_use", "pattern_recall", "check", "carrier_manifest", "carrier_check", "contract_audit",
+    "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit",
     "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case",
     "correspondence_graph", "drift_route", "drift_events", "decision_reconcile",
-    "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"
+    "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term",
+    "memory"
   ),
-  artifact_ref: OptStr(),
+  artifact_ref: Type.Optional(Type.String({
+    description: "Canonical Haft artifact ID for action=related exact recovery. Code symbols use symbol; FPF source IDs use identifier. A wrong_identifier_namespace response supplies the exact recovery_call."
+  })),
+  anchor_id: OptStr(),
   ref: OptStr(),
   artifact_id: OptStr(),
   attempted_use: OptStr(),
@@ -91,40 +421,128 @@ const haftQueryParameters = Type.Object({
   drift_kind: OptStr(),
   explain: OptBool(),
   exact_record_needed: OptStr(),
+  entity_of_concern: OptStr(),
   evidence_ref: OptStr(),
   file: OptStr(),
   files: OptStrList(),
   full: OptBool(),
   kind: OptStr(),
+  identifier: Type.Optional(Type.String({
+    description: "FPF source identifier only for action=fpf mode=lookup or mode=inspect. A Haft artifact ID or code symbol is a wrong_identifier_namespace; use artifact_ref with action=related or symbol with action=node."
+  })),
+  intended_use: OptStr(),
+  known_context: OptStrList(),
   label: OptStr(),
   lane: Type.Optional(enumOf("index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all")),
   limit: OptNum(),
   line: OptNum(),
   method_ref: OptStr(),
-  mode: OptStr(),
+  max_candidates_per_role: OptNonNegativeInt(),
+  max_candidates: OptNonNegativeInt(),
+  max_excerpt_characters: OptNonNegativeInt(),
+  max_relations_per_candidate: OptNonNegativeInt(),
+  max_total_candidates: OptNonNegativeInt(),
+  mode: Type.Optional(enumOf(
+    "concern",
+    "lookup",
+    "inspect",
+    "tactical",
+    "standard",
+    "deep"
+  )),
+  memory_request: Type.Optional(memoryQueryEnvelopeSchema),
   operational_gate: OptObj(),
   policy: Type.Optional(enumOf("documentary_only", "stronger_use_requires_current_source", "temporary_waiver")),
   producer_ref: OptStr(),
   probe: Type.Optional(specFitProbeSchema),
   query: OptStr(),
   requires_current_formality: OptBool(),
+  roles: Type.Optional(Type.Array(enumOf("practical_use_card", "preface", "toc_row", "pattern_body", "pattern_section"))),
   section_id: OptStr(),
+  scope_id: Type.Optional(Type.String({
+    description: "For action=status or coverage, one exact canonical project ScopeID. When a mixed-profile response reports available ScopeIDs, retry the same read-only call with one exact value; never select by display order."
+  })),
   source_refs: OptStrList(),
-  symbol: OptStr(),
+  symbol: Type.Optional(Type.String({
+    description: "For action=node, a code symbol only. A canonical Haft artifact ID returns wrong_identifier_namespace; recover it with haft_query(action=related, artifact_ref=<id>), not another node call."
+  })),
   term: OptStr(),
+  trace_ref: Type.Optional(Type.String({
+    description: "For action=fpf with view=trace or view=diagnostic, the opaque replay reference returned by an earlier FPF response. Source-snapshot or typed-request drift returns replay_mismatch before retrieval; working view rejects trace_ref."
+  })),
   variants: Type.Optional(Type.Array(specFitVariantSchema)),
   use_context: OptStr(),
   verbose: OptBool(),
-  view: OptStr(),
+  view: Type.Optional(Type.String({
+    description: "For action=fpf, use working (default), trace, or diagnostic. This string stays action-specific rather than becoming a global enum because other haft_query actions own different view contracts."
+  })),
   waiver_expires_at: OptStr(),
   work_ref: OptStr()
-});
+}, { additionalProperties: false });
+
+const memoryAdmissionBasisSchema = Type.Object({
+  kind: Type.Literal("exact_project"),
+  type_env_digest: memoryDigestSchema,
+  graph_revision: Type.Integer({ minimum: 0 })
+}, { additionalProperties: false });
+
+const memoryValidationRequestSchema = Type.Object({
+  contract_version: enumOf("haft.memory.v2"),
+  action: enumOf("validate"),
+  basis: memoryValidationBasisSchema,
+  change_set: memoryChangeSetSchema
+}, { additionalProperties: false });
+
+const memoryAdmissionRequestSchema = Type.Object({
+  contract_version: enumOf("haft.memory.v2"),
+  action: enumOf("admit"),
+  basis: memoryAdmissionBasisSchema,
+  authority_class: enumOf("non_binding_semantic_assertion"),
+  idempotency_key: Type.String({ minLength: 1, maxLength: 512 }),
+  request_provenance_ref: memoryIdentifierSchema,
+  change_set: memoryChangeSetSchema
+}, { additionalProperties: false });
+
+// Host-safe envelope for the same strict haft.memory.v2 wire variants used by
+// the kernel. The nested union keeps each branch closed and fully required
+// without placing a top-level oneOf on the MCP tool schema.
+const haftMemoryParameters = Type.Object({
+  request: Type.Union([
+    memoryValidationRequestSchema,
+    memoryAdmissionRequestSchema
+  ])
+}, { additionalProperties: false });
+
+const haftOnboardScopeSchema = Type.Object({
+  scope_id: memoryIdentifierSchema,
+  label: memoryTextSchema,
+  realization_kind: enumOf("software", "non_software"),
+  evidence_paths: Type.Array(memoryIdentifierSchema, { maxItems: 128 })
+}, { additionalProperties: false });
+
+const haftOnboardParameters = Type.Object({
+  action: enumOf("status", "profile_prepare", "memory_prepare"),
+  scopes: Type.Optional(Type.Array(haftOnboardScopeSchema, { maxItems: 32 })),
+  basis: Type.Optional(memoryTextSchema)
+}, { additionalProperties: false });
+
+const haftEntityParameters = Type.Object({
+  action: Type.Literal("establish"),
+  entity_id: memoryIdentifierSchema,
+  label: memoryTextSchema,
+  bounded_context_ref: memoryIdentifierSchema,
+  aliases: Type.Array(memoryIdentifierSchema, { maxItems: 63 }),
+  persistence_reason: enumOf("explicit_operator_request", "named_receiving_use"),
+  request_provenance_ref: memoryIdentifierSchema,
+  idempotency_key: Type.String({ minLength: 1, maxLength: 512 })
+}, { additionalProperties: false });
 
 const haftProblemParameters = Type.Object({
   action: enumOf("frame", "characterize", "select", "close"),
   acceptance: OptStr(),
   acceptance_probe: OptStr(),
   blast_radius: OptStr(),
+  bounded_context_ref: OptStr(),
   constraints: OptStrList(),
   context: OptStr(),
   dimensions: Type.Optional(Type.Array(Type.Object({
@@ -137,6 +555,7 @@ const haftProblemParameters = Type.Object({
     unit: OptStr(),
     valid_until: OptStr()
   }))),
+  entity_ref: Type.Optional(memoryEntityReferenceSchema),
   mode: OptStr(),
   observation_indicators: OptStrList(),
   optimization_targets: OptStrList(),
@@ -158,6 +577,7 @@ const haftProblemParameters = Type.Object({
 
 const haftSolutionParameters = Type.Object({
   action: enumOf("explore", "compare", "similar"),
+  bounded_context_ref: OptStr(),
   context: OptStr(),
   dimensions: OptStrList(),
   dominated_variants: Type.Optional(Type.Array(Type.Object({
@@ -191,12 +611,14 @@ const haftSolutionParameters = Type.Object({
     diversity_role: OptStr(),
     evidence_refs: OptStrList(),
     id: OptStr(),
+    project_record_ref: Type.Optional(memoryProjectRecordReferenceSchema),
     risks: OptStrList(),
     rollback_notes: OptStr(),
     stepping_stone: OptBool(),
     stepping_stone_basis: OptStr(),
     strengths: OptStrList()
-  })))
+  }))),
+  entity_ref: Type.Optional(memoryEntityReferenceSchema)
 });
 
 const haftDecisionParameters = Type.Object({
@@ -249,6 +671,7 @@ const haftDecisionParameters = Type.Object({
   }))),
   problem_ref: OptStr(),
   problem_refs: OptStrList(),
+  problem_statement: OptStr(),
   refresh_triggers: OptStrList(),
   rollback: Type.Optional(Type.Object({
     blast_radius: OptStr(),
@@ -282,6 +705,8 @@ const haftNoteParameters = Type.Object({
   }))),
   context: OptStr(),
   evidence: OptStr(),
+  entity_ref: Type.Optional(memoryEntityReferenceSchema),
+  bounded_context_ref: OptStr(),
   observations: OptStrList(),
   rationale: OptStr(),
   search_keywords: OptStr()
@@ -323,6 +748,7 @@ const haftMethodParameters = Type.Object({
     evidence: OptStr(),
     source: OptStr()
   }))),
+  scope_id: OptStr(),
   task: OptStr(),
   user_scope_constraints: OptStrList(),
   verification: OptObj(),
@@ -370,8 +796,10 @@ const haftCommissionParameters = Type.Object({
 });
 
 const haftSpecSectionParameters = Type.Object({
-  action: enumOf("lifecycle", "next_step", "approve", "rebaseline", "reopen"),
+  action: enumOf("lifecycle", "next_step", "project", "approve", "rebaseline", "reopen"),
   approved_by: OptStr(),
+  bounded_context_ref: OptStr(),
+  entity_ref: Type.Optional(memoryEntityReferenceSchema),
   project_root: OptStr(),
   reason: OptStr(),
   section_id: OptStr()
@@ -384,31 +812,84 @@ export type HaftToolSpec = {
   promptSnippet?: string;
   promptGuidelines?: string[];
   parameters: unknown;
+  outputContract?: unknown;
 };
 
 export const HAFT_TOOLS: HaftToolSpec[] = [
   {
     name: "haft_query",
     label: "Haft Query",
-    description: "Read Haft governance state, code context, coverage, and semantic drill-downs from the project kernel. Includes carrier, contract, spec, drift, reconciliation, governing-set, evidence-path, and value-space query actions.",
-    promptSnippet: "Read Haft project governance state and code context through the local Haft kernel.",
+    description: "Retrieve current FPF source units and read Haft governance state, code context, coverage, EntityOfConcern project memory, and semantic drill-downs from the project kernel. FPF retrieval returns ExactHit, CandidateSet, or Abstained; it does not select a governing pattern.",
+    promptSnippet: "Retrieve FPF source and read Haft project state through the local kernel.",
     promptGuidelines: [
-      "Use haft_query(action=\"status\") before open-ended Haft, FPF, or governed code work.",
-      "Use haft_query(action=\"code_context\") or haft_query(action=\"impact\") before editing governed files.",
+      "For a substantive FPF concern, use haft_query(action=\"fpf\", mode=\"concern\", query=...) and inspect the full direct pattern body; retrieval rank is not applicability or authority.",
+      "FPF Query defaults to the bounded working publication view. Request view=trace only when exact provenance or replay is current, and pass its opaque trace_ref rather than copying source paths or hashes; request view=diagnostic only for raw retrieval internals.",
+      "Keep exact identifier namespaces separate: FPF PatternID/SourceID/UnitID -> fpf identifier; canonical Haft artifact ID -> related artifact_ref; code symbol/SymbolAnchor -> node symbol/anchor_id; typed-memory EntityID/EntityAlias -> haft_query(action=\"memory\", memory_request={\"mode\":\"resolve\", ...}). On wrong_identifier_namespace with same_call_retryable=false, execute the exact available read-only recovery_call instead of retrying or asking for acknowledgement.",
+      "Use action=\"memory\", mode=\"resolve|neighborhood|recall\" only when haft_onboard(action=\"status\") reports structured project memory ready. Resolution, projection inclusion, and recall rank are read-only retrieval facts, not truth, applicability, authority, or Work order.",
+      "When memory.resolve returns known_absent, do not persist automatically. Only an explicit operator save request or a named receiving use may route one task-level establishment request through haft_entity.",
+      "Use haft_query(action=\"status\") when project graph state is current to the question; status is not a universal first project step.",
+      "When status reports a human gate, inspect its referenced read-only basis and apply the Human Gate Brief rule instead of repeating the gate label.",
+      humanGateBriefGuideline,
+      "When status reports a mixed canonical project profile, retry the same read-only status call with one exact reported scope_id. Never pick the first scope or collapse scopes by ordering.",
+      "Use haft_query(action=\"code_context\") or haft_query(action=\"impact\") before editing governed files. Candidate rank and file or module proximity are relevance signals, not proof of exact active authority; inspect the exact governing set before relying on a governing claim.",
       "Use haft_query(action=\"contract_audit\") / haft_query(action=\"contract_generation\") for generated-contract carrier checks; generated fragments are read-only previews.",
       "Use haft_query(action=\"drift_events\") / haft_query(action=\"decision_reconcile\") / haft_query(action=\"governing_set\") for drift fanout, reconciliation, and current-authority drill-downs.",
       "Kernel interface catalog source_digest: " + kernelInterfaceCatalogDigest + ". Update this from haft_query(action=\"contract_generation\") when kernel interface contracts change.",
-      "Treat haft_query output as project evidence, not as permission to create binding decisions.",
+      "Treat haft_query output as read-only source or state projection, not applicability, evidence truth, or permission to bind.",
       readOnlyAuthorityBoundary
     ],
-    parameters: haftQueryParameters
+    parameters: haftQueryParameters,
+    outputContract: HAFT_MEMORY_READ_OUTPUT_CONTRACT
+  },
+  {
+    name: "haft_onboard",
+    label: "Haft Onboard",
+    description: "Inspect readable Haft setup status or prepare a non-binding review. Status and detection are read-only; prepare actions may materialize or reuse only a review carrier and never apply a project profile or enable structured project memory.",
+    promptSnippet: "Inspect setup status or prepare the exact non-binding profile or structured-memory review.",
+    promptGuidelines: [
+      "Use action=\"status\" to distinguish needs_init, needs_profile, profile_review_ready, needs_memory, memory_review_ready, memory_deferred, and ready.",
+      "profile_prepare and memory_prepare may materialize or reuse only a non-binding review carrier. They never apply or enable the reviewed choice.",
+      "Apply an explicitly reviewed profile only through an explicit h-onboard invocation and `haft onboard profile apply`. Enable an explicitly reviewed structured-memory choice only through manual h-decide and `haft onboard memory enable`.",
+      "This Pi mirror is experimental compatibility support; stable host parity is not yet proven.",
+      bindingAuthorityBoundary
+    ],
+    parameters: haftOnboardParameters
+  },
+  {
+    name: "haft_entity",
+    label: "Haft Entity",
+    description: "Establish one non-binding EntityOfConcern and its aliases from task-level identity and persistence provenance; the kernel owns conflict checks, validation, internal project basis, admission, and post-commit resolution.",
+    promptSnippet: "Establish one durable EntityOfConcern only for an explicit save request or named receiving use.",
+    promptGuidelines: [
+      "Call action=\"establish\" only after memory.resolve returns known_absent and persistence is justified by explicit_operator_request or named_receiving_use.",
+      "Use exactly the task-level fields. Do not construct a raw memory change set or expose internal project-basis selection.",
+      "Use an established result's exact next_read unchanged. Preserve conflict, onboarding, restart, rejection, and commit-unknown results; retry restart_required with the unchanged idempotency key.",
+      "This Pi mirror is experimental compatibility support; stable host parity is not yet proven."
+    ],
+    parameters: haftEntityParameters
+  },
+  {
+    name: "haft_memory",
+    label: "Haft Memory",
+    description: "Expert surface: wrap one exact validate or non-binding admit request under request; ordinary EntityOfConcern establishment belongs to haft_entity.",
+    promptSnippet: "Use only for an exact raw request envelope; ordinary EntityOfConcern establishment belongs to haft_entity.",
+    promptGuidelines: [
+      "request.action=\"validate\" writes no rows. request.action=\"admit\" accepts only exact_project plus non_binding_semantic_assertion and can add typed project-memory assertions, never binding decisions, commissions, spec approval, evidence truth, or performed Work.",
+      "Never admit automatically. Persistence requires an explicit operator save request or a named receiving use with request provenance.",
+      "Use haft_entity for ordinary EntityOfConcern establishment; do not make an agent choose or repair internal schema state.",
+      "Treat Invalid and Underdetermined diagnostics as typed feedback. Do not select or apply a repair automatically.",
+      "The kernel strict decoder and server-resolved internal basis remain authoritative; this Pi schema is only a tool-calling mirror.",
+      readOnlyAuthorityBoundary
+    ],
+    parameters: haftMemoryParameters
   },
   {
     name: "haft_problem",
     label: "Haft Problem",
-    description: "Frame, characterize, and manage engineering problems. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems, 'close' marks a problem as addressed. Frame the problem BEFORE exploring solutions.",
+    description: "Persist and manage problem-shaped project memory when the problem itself is current. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems, and 'close' marks a problem as addressed.",
     promptGuidelines: [
-      "Frame with haft_problem(action=\"frame\") before presenting solution variants for a fuzzy or redesign-shaped request."
+      "Do not create a ProblemCard merely to precede exploration. Persist only on explicit save intent or when a named receiving use needs a durable accepted problem basis.",
+      "When exact current identity is known, pass entity_ref and bounded_context_ref. Preserve a committed record_reference exactly; without that basis the carrier can persist while typed projection remains underdetermined."
     ],
     parameters: haftProblemParameters
   },
@@ -417,7 +898,8 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Solution",
     description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link and novelty marker), 'compare' runs parity check and identifies the Pareto front, 'similar' searches past solution portfolios.",
     promptGuidelines: [
-      "Persist 3+ alternatives via haft_solution(action=\"explore\") instead of listing them only in chat."
+      "Exploration and comparison are independent capabilities. Keep ordinary results conversational; persist a portfolio or comparison only on explicit save intent or for a named receiving use.",
+      "A typed durable portfolio needs exact independently admitted option records. Pass each returned Haft.ProjectRecordRef as project_record_ref; never derive a record ID from an artifact ID. Missing refs leave typed projection underdetermined."
     ],
     parameters: haftSolutionParameters
   },
@@ -426,7 +908,8 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Decision",
     description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact, 'baseline' snapshots affected files for drift detection.",
     promptGuidelines: [
-      "haft_decision(action=\"decide\") is a binding human gate: only call it when the operator explicitly invoked the decide workflow.",
+      "MCP haft_decision(action=\"decide\") fails closed in both project modes. After explicit manual h-decide, bind through the CLI input-file path; explicit_h_decide adds no second prompt, while strict_cli_speech_act opts into terminal review.",
+      humanGateBriefGuideline,
       bindingAuthorityBoundary
     ],
     parameters: haftDecisionParameters
@@ -435,6 +918,10 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     name: "haft_note",
     label: "Haft Note",
     description: "Record a project FACT into the reasoning graph. A note is a fact/observation carrier — NOT a decision. Give a title plus at least one atomic observation or a source; rationale is optional. Anchor the fact to decisions/problems/notes via typed edges so it surfaces in related/code_context.",
+    promptGuidelines: [
+      "Persist a note only on explicit save intent or when a named receiving use needs an addressable non-binding fact.",
+      "When exact current identity is known, pass entity_ref and bounded_context_ref. Preserve the committed Haft.ProjectRecordRef exactly for later typed relations; never reconstruct it from the note artifact ID."
+    ],
     parameters: haftNoteParameters
   },
   {
@@ -459,7 +946,8 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Commission",
     description: "Create, list, show, claim, requeue, cancel, and update WorkCommissions — bounded execution authorizations between DecisionRecords and RuntimeRuns.",
     promptGuidelines: [
-      "Creating a WorkCommission is a binding human gate: only on explicit operator instruction.",
+      "Default MCP WorkCommission creation fails closed. Explicit manual h-commission binds through haft commission create-from-decision or a full CLI JSON payload.",
+      humanGateBriefGuideline,
       bindingAuthorityBoundary
     ],
     parameters: haftCommissionParameters
@@ -467,8 +955,11 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
   {
     name: "haft_spec_section",
     label: "Haft Spec Section",
-    description: "Drive the Haft spec lifecycle one step at a time. Actions: 'lifecycle' shows typed SpecSection state, 'next_step' suggests the next action, 'approve'/'rebaseline'/'reopen' are explicit operator-gated mutations.",
+    description: "Read and mutate the Haft spec lifecycle, or non-binding project the exact current edition at an EntityOfConcern. Actions: 'lifecycle' shows typed SpecSection state, 'next_step' suggests the next local action, 'project' relates an immutable edition without lifecycle authority, and 'approve'/'rebaseline'/'reopen' are explicit operator-gated mutations.",
     promptGuidelines: [
+      "A spec lifecycle action is local to that state machine, not the next step of the whole project.",
+      "action=\"project\" requires an exact section_id, entity_ref, and bounded_context_ref. Preserve its Haft.SpecSectionRecordRef. It cannot edit, approve, rebaseline, reopen, or authorize anything.",
+      humanGateBriefGuideline,
       bindingAuthorityBoundary
     ],
     parameters: haftSpecSectionParameters

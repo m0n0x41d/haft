@@ -13,13 +13,16 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	profileadmissionsqlite "github.com/m0n0x41d/haft/internal/profileadmission/sqlite"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
-func TestRunSpecCheckCommandSmokeCleanProject(t *testing.T) {
-	root := newSpecCheckCLIProject(t, validCLITermMapCarrier())
-	restore := enterTestProjectRoot(t, root)
+func TestRunSpecCheckCommandEmitsOneNeutralCueWithoutCanonicalProfile(t *testing.T) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	var output bytes.Buffer
@@ -35,17 +38,23 @@ func TestRunSpecCheckCommandSmokeCleanProject(t *testing.T) {
 	if err != nil {
 		t.Fatalf("runSpecCheck returned error: %v", err)
 	}
-	if *exitCode != 0 {
-		t.Fatalf("exit code = %d, want 0", *exitCode)
+	if *exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", *exitCode)
 	}
-	if !strings.Contains(output.String(), "haft spec check: clean (L0/L1/L1.5)") {
-		t.Fatalf("output = %q, want clean summary", output.String())
+	if strings.Count(output.String(), "Profile cue:") != 1 {
+		t.Fatalf("output = %q, want one profile cue", output.String())
+	}
+	if !strings.Contains(output.String(), "profile_underdetermined") {
+		t.Fatalf("output = %q, want profile-underdetermined result", output.String())
+	}
+	if strings.Contains(output.String(), "software-system") {
+		t.Fatalf("output = %q, want no speculative software pressure", output.String())
 	}
 }
 
-func TestRunSpecCheckJSONExitsOneOnFindings(t *testing.T) {
-	root := newSpecCheckCLIProject(t, invalidCLITermMapCarrier())
-	restore := enterTestProjectRoot(t, root)
+func TestRunSpecCheckJSONRetainsNeutralProfileUnderdeterminedCue(t *testing.T) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	var output bytes.Buffer
@@ -65,23 +74,106 @@ func TestRunSpecCheckJSONExitsOneOnFindings(t *testing.T) {
 		t.Fatalf("exit code = %d, want 1", *exitCode)
 	}
 
-	var report project.SpecCheckReport
-	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
+	var result publicSpecCheckResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON output: %v", err)
 	}
-	if report.Summary.TotalFindings == 0 {
-		t.Fatalf("total_findings = 0, want findings")
+	if result.SpecCheckReport != nil {
+		t.Fatalf("underdetermined result fabricated a spec-check report: %#v", result)
 	}
-	if report.Level != "L0/L1/L1.5" {
-		t.Fatalf("level = %q, want L0/L1/L1.5", report.Level)
+	applicability := result.ProfileApplicability
+	if applicability.Kind != string(projectSpecificationProfileUnderdetermined) {
+		t.Fatalf("applicability kind = %q", applicability.Kind)
 	}
-	if report.Findings[0].FieldPath == "" {
-		t.Fatalf("first finding field_path is empty: %+v", report.Findings[0])
+	if applicability.Cue == nil ||
+		applicability.Cue.Code != string(projectSpecificationProfileUnderdetermined) {
+		t.Fatalf("profile cue = %#v", applicability.Cue)
+	}
+}
+
+func TestRunSpecCoverageJSONFailsClosedOnlyItsOperationWithoutCanonicalProfile(t *testing.T) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	restoreJSON := stubSpecCoverageJSON(t, true)
+	defer restoreJSON()
+	restoreScope := stubSpecCoverageScopeID(t, "")
+	defer restoreScope()
+	exitCode := stubSpecCoverageExit(t)
+
+	err := runSpecCoverage(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSpecCoverage returned error: %v", err)
+	}
+	if *exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", *exitCode)
+	}
+
+	var result publicSpecCoverageResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("decode JSON output: %v", err)
+	}
+	if result.SpecCoverageReport != nil {
+		t.Fatalf("underdetermined profile fabricated coverage: %#v", result)
+	}
+	if result.ProfileApplicability.Kind != string(projectSpecificationProfileUnderdetermined) {
+		t.Fatalf("profile applicability = %#v", result.ProfileApplicability)
+	}
+}
+
+func TestRunSpecCoverageOmitsNotApplicableSoftwareSections(t *testing.T) {
+	fixture := newNonSoftwareProfiledSpecTestProject(t)
+	writeSpecCoverageCLICarriers(t, fixture.root)
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	restoreJSON := stubSpecCoverageJSON(t, true)
+	defer restoreJSON()
+	restoreScope := stubSpecCoverageScopeID(t, "documents-spec-cli")
+	defer restoreScope()
+
+	err := runSpecCoverage(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSpecCoverage returned error: %v", err)
+	}
+
+	var result publicSpecCoverageResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("decode JSON output: %v", err)
+	}
+	if result.SpecCoverageReport == nil {
+		t.Fatalf("resolved non-software profile omitted coverage: %#v", result)
+	}
+	if result.ProfileApplicability.ScopeID != "documents-spec-cli" {
+		t.Fatalf("scope_id = %q", result.ProfileApplicability.ScopeID)
+	}
+	if !sameSpecPlanCLIStrings(
+		result.ProfileApplicability.ExcludedDocumentKinds,
+		[]string{"software-system"},
+	) {
+		t.Fatalf(
+			"excluded document kinds = %#v",
+			result.ProfileApplicability.ExcludedDocumentKinds,
+		)
+	}
+	for _, section := range result.Sections {
+		if strings.HasPrefix(section.SectionID, "SS.") {
+			t.Fatalf("not-applicable software section leaked into coverage: %#v", section)
+		}
 	}
 }
 
 func TestRunSpecCoverageJSONReportsDerivedSectionStates(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecCoverageCLICarriers(t, fixture.root)
 
 	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
@@ -98,10 +190,8 @@ func TestRunSpecCoverageJSONReportsDerivedSectionStates(t *testing.T) {
 			Triggers: []string{"Coverage no longer derives from section refs."},
 		},
 		AffectedFiles: []string{"internal/checkout/flow.go"},
+		SectionRefs:   []string{"TS.covered.001"},
 	})
-	if err := fixture.store.AddLink(context.Background(), decision.Meta.ID, "TS.covered.001", "governs"); err != nil {
-		t.Fatalf("link decision to spec section: %v", err)
-	}
 	_, err := artifact.AttachEvidence(context.Background(), fixture.store, artifact.EvidenceInput{
 		ArtifactRef:     decision.Meta.ID,
 		Content:         "Checkout spec measurement passed.",
@@ -156,8 +246,17 @@ func TestRunSpecCoverageJSONReportsDerivedSectionStates(t *testing.T) {
 	}
 }
 
-func TestBuildSpecCoverageReportReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+func TestBuildPublicSpecCoverageReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	root := setupSpecSyncProject(t)
+	profileHarness := profileadmissionfixture.OpenExisting(t, root)
+	profileHarness.AdmitSoftwareRevisionWithTargetEntity(
+		t,
+		"spec-coverage-sql-first",
+		"entity:spec-coverage-sql-first-target",
+	)
+	if err := profileHarness.Close(); err != nil {
+		t.Fatalf("close profile admission fixture: %v", err)
+	}
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 
@@ -174,15 +273,23 @@ func TestBuildSpecCoverageReportReadsCurrentSQLEditionsBeforeCarriers(t *testing
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
 
-	report, err := buildSpecCoverageReport(context.Background(), root)
+	result, err := buildPublicSpecCoverage(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
 	if err != nil {
-		t.Fatalf("buildSpecCoverageReport: %v", err)
+		t.Fatalf("buildPublicSpecCoverage: %v", err)
 	}
+	if result.SpecCoverageReport == nil {
+		t.Fatalf("resolved software profile omitted coverage: %#v", result.ProfileApplicability)
+	}
+	report := *result.SpecCoverageReport
 
 	if len(report.Sections) != 1 {
 		t.Fatalf("sections = %#v, want exactly the current SQL edition section", report.Sections)
@@ -196,7 +303,7 @@ func TestBuildSpecCoverageReportReadsCurrentSQLEditionsBeforeCarriers(t *testing
 }
 
 func TestRunSpecCoverageJSONReportsRuntimeRunDerivedEdges(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecCoverageCLICarriers(t, fixture.root)
 
 	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
@@ -213,10 +320,8 @@ func TestRunSpecCoverageJSONReportsRuntimeRunDerivedEdges(t *testing.T) {
 			Triggers: []string{"RuntimeRun events no longer appear in SpecCoverage edges."},
 		},
 		AffectedFiles: []string{"internal/runtime/edge.go"},
+		SectionRefs:   []string{"TS.covered.001"},
 	})
-	if err := fixture.store.AddLink(context.Background(), decision.Meta.ID, "TS.covered.001", "governs"); err != nil {
-		t.Fatalf("link decision to spec section: %v", err)
-	}
 
 	commissionID := "wc-runtime-coverage"
 	runtimeRunID := commissionID + "#runtime-run-001"
@@ -290,7 +395,7 @@ func TestRunSpecCoverageJSONReportsRuntimeRunDerivedEdges(t *testing.T) {
 }
 
 func TestRunSpecCoverageJSONReportsMalformedRuntimeCarrierGap(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecCoverageCLICarriers(t, fixture.root)
 
 	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
@@ -307,10 +412,8 @@ func TestRunSpecCoverageJSONReportsMalformedRuntimeCarrierGap(t *testing.T) {
 			Triggers: []string{"Malformed RuntimeRun events disappear from SpecCoverage gaps."},
 		},
 		AffectedFiles: []string{"internal/runtime/malformed.go"},
+		SectionRefs:   []string{"TS.covered.001"},
 	})
-	if err := fixture.store.AddLink(context.Background(), decision.Meta.ID, "TS.covered.001", "governs"); err != nil {
-		t.Fatalf("link decision to spec section: %v", err)
-	}
 
 	createSpecCoverageMalformedRuntimeCommission(t, fixture, decision.Meta.ID, "wc-runtime-malformed", "run-runtime-malformed")
 
@@ -347,7 +450,7 @@ func TestRunSpecCoverageJSONReportsMalformedRuntimeCarrierGap(t *testing.T) {
 }
 
 func TestRunSpecCoverageHumanSummaryIncludesWhyAndNextAction(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecCoverageCLICarriers(t, fixture.root)
 
 	restore := enterTestProjectRoot(t, fixture.root)
@@ -366,7 +469,7 @@ func TestRunSpecCoverageHumanSummaryIncludesWhyAndNextAction(t *testing.T) {
 	}
 
 	result := output.String()
-	if !strings.Contains(result, "haft spec coverage: 2 active section(s)") {
+	if !strings.Contains(result, "haft spec coverage: 3 active section(s)") {
 		t.Fatalf("output = %q, want section count summary", result)
 	}
 	if !strings.Contains(result, "why:") {
@@ -381,8 +484,13 @@ func TestRunSpecCoverageHumanSummaryIncludesWhyAndNextAction(t *testing.T) {
 }
 
 func TestRunSpecCoverageBlocksWhenSpecCheckHasFindings(t *testing.T) {
-	root := newSpecCheckCLIProject(t, invalidCLITermMapCarrier())
-	restore := enterTestProjectRoot(t, root)
+	fixture := newSoftwareProfiledSpecTestProject(t)
+	writeSpecCheckCLIFile(
+		t,
+		filepath.Join(fixture.haftDir, "specs", "term-map.md"),
+		invalidCLITermMapCarrier(),
+	)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	var output bytes.Buffer
@@ -402,8 +510,13 @@ func TestRunSpecCoverageBlocksWhenSpecCheckHasFindings(t *testing.T) {
 }
 
 func TestRunSpecCoverageJSONReportsSpecCheckBlock(t *testing.T) {
-	root := newSpecCheckCLIProject(t, invalidCLITermMapCarrier())
-	restore := enterTestProjectRoot(t, root)
+	fixture := newSoftwareProfiledSpecTestProject(t)
+	writeSpecCheckCLIFile(
+		t,
+		filepath.Join(fixture.haftDir, "specs", "term-map.md"),
+		invalidCLITermMapCarrier(),
+	)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	var output bytes.Buffer
@@ -445,7 +558,7 @@ func TestRunSpecCoverageJSONReportsSpecCheckBlock(t *testing.T) {
 }
 
 func TestRunSpecPlanJSONGroupsDraftsAndDoesNotMutateDB(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecPlanCLICarriers(t, fixture.root)
 
 	before := countSpecPlanArtifacts(t, fixture)
@@ -476,10 +589,10 @@ func TestRunSpecPlanJSONGroupsDraftsAndDoesNotMutateDB(t *testing.T) {
 	if err := json.Unmarshal(output.Bytes(), &report); err != nil {
 		t.Fatalf("decode JSON output: %v", err)
 	}
-	if report.Summary.TotalCandidates != 3 {
-		t.Fatalf("total_candidates = %d, want 3", report.Summary.TotalCandidates)
+	if report.Summary.TotalCandidates != 4 {
+		t.Fatalf("total_candidates = %d, want 4", report.Summary.TotalCandidates)
 	}
-	if len(report.Proposals) != 2 {
+	if len(report.Proposals) != 3 {
 		t.Fatalf("proposals = %#v, want grouped proposals", report.Proposals)
 	}
 
@@ -492,22 +605,68 @@ func TestRunSpecPlanJSONGroupsDraftsAndDoesNotMutateDB(t *testing.T) {
 	}
 }
 
-func TestRunSpecPlanAcceptCreatesOneDecisionWithSectionRefsAndNoWorkPlan(t *testing.T) {
-	fixture := newCheckTestProject(t)
+func TestRunSpecPlanJSONRequiresExactScopeForMixedProfile(t *testing.T) {
+	fixture := newMixedProfiledSpecTestProject(t)
 	writeSpecPlanCLICarriers(t, fixture.root)
-
-	report, err := buildSpecPlanReport(context.Background(), fixture.root)
-	if err != nil {
-		t.Fatalf("build spec plan report: %v", err)
-	}
-
-	proposal := specPlanCLIProposal(report, "acceptance", "checkout", []string{"TS.role.001"})
-	if proposal.ID == "" {
-		t.Fatalf("missing checkout proposal in %#v", report.Proposals)
-	}
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
 
 	before := countSpecPlanArtifacts(t, fixture)
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
 
+	restoreJSON := stubSpecPlanJSON(t, true)
+	defer restoreJSON()
+	restoreScope := stubSpecPlanScopeID(t, "")
+	defer restoreScope()
+	restoreAccept := stubSpecPlanAccept(t, "must-not-bind-without-scope")
+	defer restoreAccept()
+	exitCode := stubSpecPlanExit(t)
+
+	err := runSpecPlan(cmd, nil)
+	if err != nil {
+		t.Fatalf("runSpecPlan returned error: %v", err)
+	}
+	if *exitCode != 1 {
+		t.Fatalf("exit code = %d, want 1", *exitCode)
+	}
+	if after := countSpecPlanArtifacts(t, fixture); after != before {
+		t.Fatalf("artifact count changed from %d to %d", before, after)
+	}
+
+	var result publicSpecPlanResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatalf("decode JSON output: %v", err)
+	}
+	if result.SpecPlanReport != nil {
+		t.Fatalf("scope-choice result fabricated a plan: %#v", result)
+	}
+	if result.ProfileApplicability.Kind != string(projectSpecificationScopeChoiceRequired) {
+		t.Fatalf("profile applicability = %#v", result.ProfileApplicability)
+	}
+}
+
+func TestRunSpecPlanAcceptDefaultModeBindsWithoutSecondSpeechAct(t *testing.T) {
+	fixture := newSoftwareProfiledSpecTestProject(t)
+	writeSpecPlanCLICarriers(t, fixture.root)
+
+	request := automaticProjectSpecificationScopeRequest()
+	result, err := buildPublicSpecPlan(
+		context.Background(),
+		fixture.root,
+		request,
+	)
+	if err != nil {
+		t.Fatalf("buildPublicSpecPlan: %v", err)
+	}
+	if result.SpecPlanReport == nil || len(result.Proposals) == 0 {
+		t.Fatalf("missing proposal in %#v", result)
+	}
+	proposal := result.Proposals[0]
+
+	strictSession := &fakeManualDecisionBindingSession{}
+	stubManualDecisionBindingSession(t, strictSession)
 	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
@@ -517,75 +676,126 @@ func TestRunSpecPlanAcceptCreatesOneDecisionWithSectionRefsAndNoWorkPlan(t *test
 
 	restoreJSON := stubSpecPlanJSON(t, true)
 	defer restoreJSON()
-
 	restoreAccept := stubSpecPlanAccept(t, proposal.ID)
 	defer restoreAccept()
+	restoreScope := stubSpecPlanScopeID(t, "")
+	defer restoreScope()
 
+	before := countSpecPlanArtifacts(t, fixture)
 	err = runSpecPlan(cmd, nil)
 	if err != nil {
 		t.Fatalf("runSpecPlan accept returned error: %v", err)
 	}
+	if strictSession.closed || strictSession.bindInput.SelectedTitle != "" {
+		t.Fatalf("default explicit_h_decide opened strict SpeechAct session: %#v", strictSession)
+	}
+	if after := countSpecPlanArtifacts(t, fixture); after != before+1 {
+		t.Fatalf("artifact count changed from %d to %d", before, after)
+	}
+
+	var accepted specPlanAcceptResult
+	if err := json.Unmarshal(output.Bytes(), &accepted); err != nil {
+		t.Fatalf("decode accept JSON output: %v", err)
+	}
+	if accepted.DecisionRef == "" || accepted.DecisionTitle == "" {
+		t.Fatalf("accepted decision identity is incomplete: %#v", accepted)
+	}
+	if accepted.ProfileApplicability.ScopeID != "software-spec-cli" {
+		t.Fatalf("accept lost exact profile scope: %#v", accepted.ProfileApplicability)
+	}
+	decision, err := fixture.store.Get(context.Background(), accepted.DecisionRef)
+	if err != nil {
+		t.Fatalf("load accepted DecisionRecord: %v", err)
+	}
+	fields := decision.UnmarshalDecisionFields()
+	if !sameSpecPlanCLIStrings(fields.SectionRefs, accepted.SectionRefs) {
+		t.Fatalf(
+			"DecisionRecord section_refs = %#v, want %#v",
+			fields.SectionRefs,
+			accepted.SectionRefs,
+		)
+	}
+	assertSpecPlanNoStoredKind(t, fixture, artifact.KindWorkCommission)
+}
+
+func TestRunSpecPlanAcceptUsesManualDecisionBindingService(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	writeDecisionBindingModeForTest(
+		t,
+		fixture.root,
+		project.DecisionBindingModeStrictCLISpeechAct,
+	)
+	proposal := project.SpecPlanProposal{
+		ID:           "spec-plan-test-accept",
+		Title:        "Bind checkout acceptance sections",
+		SectionRefs:  []string{"TS.checkout.001", "TS.checkout.002"},
+		Reasons:      []string{"checkout acceptance basis is current"},
+		AffectedArea: "checkout",
+		DecisionRecordDraft: project.SpecPlanDecisionDraft{
+			SelectedTitle:   "Bind checkout acceptance sections",
+			WhySelected:     "The sections share one acceptance boundary.",
+			SelectionPolicy: "Bind the smallest coherent specification group.",
+			CounterArgument: "Separate decisions would isolate each section.",
+			WhyNotOthers: []project.SpecPlanRejectedAlternative{{
+				Variant: "Keep sections unbound",
+				Reason:  "It leaves the current acceptance basis implicit.",
+			}},
+			WeakestLink:      "The sections may diverge later.",
+			RollbackTriggers: []string{"The sections acquire different owners."},
+			SectionRefs:      []string{"TS.checkout.001", "TS.checkout.002"},
+		},
+	}
+	report := project.SpecPlanReport{
+		Proposals: []project.SpecPlanProposal{proposal},
+	}
+
+	before := countSpecPlanArtifacts(t, fixture)
+	stubManualDecisionBindingSession(t, &fakeManualDecisionBindingSession{
+		bindResult: manualDecisionBindingOutcome{
+			DecisionRef: "dec-20260715-spec-plan-a1b2c3d4",
+			Title:       proposal.DecisionRecordDraft.SelectedTitle,
+			FilePath:    filepath.Join(fixture.root, ".haft", "decisions", "spec-plan.md"),
+		},
+	})
+	specificationSet := project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{
+			{ID: "TS.checkout.001", Status: "active"},
+			{ID: "TS.checkout.002", Status: "active"},
+		},
+	}
+	result, err := acceptSpecPlanProposalForSpecificationSet(
+		context.Background(),
+		fixture.root,
+		report,
+		proposal.ID,
+		specificationSet,
+	)
+	if err != nil {
+		t.Fatalf("acceptSpecPlanProposalForSpecificationSet error = %v", err)
+	}
 
 	after := countSpecPlanArtifacts(t, fixture)
-	if after != before+1 {
-		t.Fatalf("artifact count changed from %d to %d; accept should create exactly one DecisionRecord", before, after)
+	if after != before {
+		t.Fatalf("artifact count changed from %d to %d; the fake binding seam must not create a DecisionRecord", before, after)
 	}
+	assertSpecPlanNoStoredKind(t, fixture, artifact.KindDecisionRecord)
 	assertSpecPlanNoStoredKind(t, fixture, artifact.KindWorkCommission)
 	assertSpecPlanNoPlanFiles(t, fixture.root)
 
-	var result specPlanAcceptResult
-	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
-		t.Fatalf("decode accept JSON output: %v", err)
+	if result.Action != string(project.SpecPlanActionAccept) {
+		t.Fatalf("action = %q, want %q", result.Action, project.SpecPlanActionAccept)
 	}
-	if result.Action != "accept" {
-		t.Fatalf("action = %q, want accept", result.Action)
-	}
-	if result.DecisionRef == "" {
-		t.Fatalf("decision_ref is empty in %#v", result)
+	if result.DecisionRef != "dec-20260715-spec-plan-a1b2c3d4" ||
+		result.DecisionTitle != proposal.DecisionRecordDraft.SelectedTitle {
+		t.Fatalf("readable decision identity = (%q, %q)", result.DecisionRef, result.DecisionTitle)
 	}
 	if got := result.SectionRefs; !sameSpecPlanCLIStrings(got, []string{"TS.checkout.001", "TS.checkout.002"}) {
 		t.Fatalf("result section_refs = %#v, want accepted proposal section refs", got)
 	}
-
-	decision, err := fixture.store.Get(context.Background(), result.DecisionRef)
-	if err != nil {
-		t.Fatalf("load accepted decision: %v", err)
-	}
-	if decision.Meta.Kind != artifact.KindDecisionRecord {
-		t.Fatalf("accepted artifact kind = %s, want DecisionRecord", decision.Meta.Kind)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if got := fields.SectionRefs; !sameSpecPlanCLIStrings(got, []string{"TS.checkout.001", "TS.checkout.002"}) {
-		t.Fatalf("decision structured section_refs = %#v, want accepted refs", got)
-	}
-	if !strings.Contains(decision.Body, "Spec sections:") {
-		t.Fatalf("decision body missing spec section rationale:\n%s", decision.Body)
-	}
-	assertSpecPlanDecisionLinks(t, fixture, result.DecisionRef, []string{"TS.checkout.001", "TS.checkout.002"})
-
-	coverage, err := buildSpecCoverageReport(context.Background(), fixture.root)
-	if err != nil {
-		t.Fatalf("build coverage after accept: %v", err)
-	}
-	first := specCoverageCLISection(coverage, "TS.checkout.001")
-	second := specCoverageCLISection(coverage, "TS.checkout.002")
-	if first.State != project.SpecCoverageReasoned {
-		t.Fatalf("fresh accepted section state = %s, want reasoned", first.State)
-	}
-	if second.State != project.SpecCoverageStale {
-		t.Fatalf("expired accepted section state = %s, want stale", second.State)
-	}
-	if !specCoverageCLIEdgeTarget(first.Edges, result.DecisionRef) {
-		t.Fatalf("fresh section edges = %#v, want accepted DecisionRecord edge", first.Edges)
-	}
-	if !specCoverageCLIEdgeTarget(second.Edges, result.DecisionRef) {
-		t.Fatalf("expired section edges = %#v, want accepted DecisionRecord edge", second.Edges)
-	}
 }
 
 func TestRunSpecPlanHumanSummaryStatesProposalAuthorityAndReviewActions(t *testing.T) {
-	fixture := newCheckTestProject(t)
+	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecPlanCLICarriers(t, fixture.root)
 
 	restore := enterTestProjectRoot(t, fixture.root)
@@ -623,7 +833,11 @@ func TestSpecPlanHelpStatesProposalsAreNotAuthority(t *testing.T) {
 		"not authority",
 		"Use --accept <proposal-id>",
 		"no WorkCommissions are",
-		"typed non-executable actions",
+		"Merge, split, and discard",
+		"default",
+		"does not ask for a second phrase",
+		"strict_cli_speech_act",
+		"exact --scope-id",
 	}
 
 	for _, want := range required {
@@ -631,6 +845,155 @@ func TestSpecPlanHelpStatesProposalsAreNotAuthority(t *testing.T) {
 			t.Fatalf("spec plan help missing %q:\n%s", want, specPlanCmd.Long)
 		}
 	}
+	if specPlanCmd.Flags().Lookup("scope-id") == nil {
+		t.Fatal("spec plan omitted exact --scope-id selector")
+	}
+	if specCoverageCmd.Flags().Lookup("scope-id") == nil {
+		t.Fatal("spec coverage omitted exact --scope-id selector")
+	}
+	if !strings.Contains(specCoverageCmd.Long, "Unresolved applicability blocks") {
+		t.Fatalf("spec coverage help lost local fail-closed boundary:\n%s", specCoverageCmd.Long)
+	}
+}
+
+func newSoftwareProfiledSpecTestProject(t *testing.T) checkTestProject {
+	t.Helper()
+
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevisionWithTargetEntity(
+		t,
+		"spec-cli",
+		"entity:spec-cli-target",
+	)
+	return newProfiledSpecTestProject(t, harness)
+}
+
+func newNonSoftwareProfiledSpecTestProject(t *testing.T) checkTestProject {
+	t.Helper()
+
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	scope := newSpecTestNonSoftwareScope(
+		t,
+		"documents-spec-cli",
+		"entity:spec-cli-documents",
+	)
+	admitSpecTestProfile(t, harness, "spec-cli-non-software", []projectprofile.RealizationScope{scope})
+	return newProfiledSpecTestProject(t, harness)
+}
+
+func newMixedProfiledSpecTestProject(t *testing.T) checkTestProject {
+	t.Helper()
+
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	softwareScopeID, err := projectprofile.NewScopeID("software-spec-cli")
+	if err != nil {
+		t.Fatalf("software ScopeID: %v", err)
+	}
+	softwareEntityRef, err := projectprofile.NewEntityRef("entity:spec-cli-target")
+	if err != nil {
+		t.Fatalf("software EntityRef: %v", err)
+	}
+	softwareScope, err := projectprofile.NewSoftwareRealization(
+		softwareScopeID,
+		projectprofile.NewReferencedEntity(softwareEntityRef),
+	)
+	if err != nil {
+		t.Fatalf("software realization: %v", err)
+	}
+	nonSoftwareScope := newSpecTestNonSoftwareScope(
+		t,
+		"documents-spec-cli",
+		"entity:spec-cli-documents",
+	)
+	admitSpecTestProfile(
+		t,
+		harness,
+		"spec-cli-mixed",
+		[]projectprofile.RealizationScope{softwareScope, nonSoftwareScope},
+	)
+	return newProfiledSpecTestProject(t, harness)
+}
+
+func newSpecTestNonSoftwareScope(
+	t *testing.T,
+	rawScopeID string,
+	rawEntityRef string,
+) projectprofile.NonSoftwareRealization {
+	t.Helper()
+
+	scopeID, err := projectprofile.NewScopeID(rawScopeID)
+	if err != nil {
+		t.Fatalf("non-software ScopeID: %v", err)
+	}
+	entityRef, err := projectprofile.NewEntityRef(rawEntityRef)
+	if err != nil {
+		t.Fatalf("non-software EntityRef: %v", err)
+	}
+	scope, err := projectprofile.NewNonSoftwareRealization(
+		scopeID,
+		projectprofile.NewReferencedEntity(entityRef),
+		projectprofile.UnspecifiedKindOrientation{},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("non-software realization: %v", err)
+	}
+	return scope
+}
+
+func admitSpecTestProfile(
+	t *testing.T,
+	harness *profileadmissionfixture.Harness,
+	suffix string,
+	scopes []projectprofile.RealizationScope,
+) {
+	t.Helper()
+
+	scopeSet, err := projectprofile.NewScopeSet(scopes)
+	if err != nil {
+		t.Fatalf("profile ScopeSet: %v", err)
+	}
+	payload, err := projectprofile.NewProfileDeclarationPayload(scopeSet)
+	if err != nil {
+		t.Fatalf("profile payload: %v", err)
+	}
+	request := harness.PrepareRevision(t, suffix, payload)
+	service, err := profileadmissionsqlite.NewService(harness.Database())
+	if err != nil {
+		t.Fatalf("profile admission service: %v", err)
+	}
+	result := service.Admit(context.Background(), request)
+	if result.Kind() != profileadmissionsqlite.AdmissionResultAdmitted {
+		denials, _ := result.Denials()
+		failure, _ := result.Failure()
+		t.Fatalf(
+			"profile admission = %q, denials = %#v, failure = %#v",
+			result.Kind(),
+			denials,
+			failure,
+		)
+	}
+}
+
+func newProfiledSpecTestProject(
+	t *testing.T,
+	harness *profileadmissionfixture.Harness,
+) checkTestProject {
+	t.Helper()
+
+	root := harness.Root().String()
+	fixture := checkTestProject{
+		root:    root,
+		haftDir: filepath.Join(root, ".haft"),
+		store:   artifact.NewStore(harness.Database()),
+		db:      harness.Database(),
+	}
+	writeCheckTestSpecCarriers(t, fixture)
+	return fixture
 }
 
 func newSpecCheckCLIProject(t *testing.T, termMap string) string {
@@ -643,7 +1006,7 @@ func newSpecCheckCLIProject(t *testing.T, termMap string) string {
 	}
 
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "target-system.md"), validCLISpecSectionCarrier("TS.use.001", "environment-change"))
-	writeSpecCheckCLIFile(t, filepath.Join(specDir, "enabling-system.md"), validCLISpecSectionCarrier("ES.creator.001", "creator-role"))
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "software-system.md"), validCLISpecSectionCarrier("SS.role.001", "software.role"))
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), termMap)
 
 	return root
@@ -690,7 +1053,7 @@ func writeSpecCoverageCLICarriers(t *testing.T, root string) {
 		coverageCLISpecSection("TS.covered.001", "Covered section"),
 		coverageCLISpecSection("TS.uncovered.001", "Uncovered section"),
 	}, "\n"))
-	writeSpecCheckCLIFile(t, filepath.Join(specDir, "enabling-system.md"), coverageCLIDraftSpecSection("ES.coverage.001", "Coverage draft"))
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "software-system.md"), coverageCLISpecSection("SS.role.001", "Software role"))
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), validCLITermMapCarrier())
 }
 
@@ -707,7 +1070,7 @@ func writeSpecPlanCLICarriers(t *testing.T, root string) {
 		specPlanCLISpecSection("TS.checkout.002", "Checkout stale", "acceptance", "2020-01-01", []string{"TS.role.001"}),
 		specPlanCLISpecSection("TS.checkout.003", "Checkout boundary", "acceptance", "", []string{"TS.boundary.001"}),
 	}, "\n"))
-	writeSpecCheckCLIFile(t, filepath.Join(specDir, "enabling-system.md"), coverageCLIDraftSpecSection("ES.plan.001", "Plan draft"))
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "software-system.md"), coverageCLISpecSection("SS.role.001", "Software role"))
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), validCLITermMapCarrier())
 }
 
@@ -1113,6 +1476,17 @@ func stubSpecCoverageJSON(t *testing.T, value bool) func() {
 	}
 }
 
+func stubSpecCoverageScopeID(t *testing.T, value string) func() {
+	t.Helper()
+
+	previous := specCoverageScopeID
+	specCoverageScopeID = value
+
+	return func() {
+		specCoverageScopeID = previous
+	}
+}
+
 func stubSpecPlanJSON(t *testing.T, value bool) func() {
 	t.Helper()
 
@@ -1122,6 +1496,32 @@ func stubSpecPlanJSON(t *testing.T, value bool) func() {
 	return func() {
 		specPlanJSON = previous
 	}
+}
+
+func stubSpecPlanScopeID(t *testing.T, value string) func() {
+	t.Helper()
+
+	previous := specPlanScopeID
+	specPlanScopeID = value
+
+	return func() {
+		specPlanScopeID = previous
+	}
+}
+
+func stubSpecPlanExit(t *testing.T) *int {
+	t.Helper()
+
+	exitCode := new(int)
+	previous := specPlanExit
+	specPlanExit = func(code int) {
+		*exitCode = code
+	}
+	t.Cleanup(func() {
+		specPlanExit = previous
+	})
+
+	return exitCode
 }
 
 func stubSpecPlanAccept(t *testing.T, value string) func() {

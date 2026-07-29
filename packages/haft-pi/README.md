@@ -1,24 +1,36 @@
 # @haft/pi
 
-Pi-native Haft package.
+Experimental Pi compatibility package for Haft.
 
-This package is a first-class Pi carrier for Haft and FPF-assisted software
-engineering. It does not wrap the generic MCP adapter. The extension owns a
-small NDJSON MCP bridge to `haft serve`, registers the full typed `haft_*`
-tool suite natively, and injects a compact, kernel-budgeted Haft governor
-block into Pi's `before_agent_start` system prompt hook.
+This package mirrors Haft and FPF-assisted software-engineering surfaces into
+Pi. Stable host parity is not yet proven. It does not wrap the generic MCP
+adapter: the extension owns a small NDJSON MCP bridge to `haft serve`,
+registers typed `haft_*` tools natively, and injects a compact,
+kernel-budgeted Haft governor block into Pi's `before_agent_start` system
+prompt hook.
+
+Contract truth for the mirrored surfaces is explicit: source-native FPF Query,
+project-profile onboarding, structured-memory enablement, neighborhood, and
+recall are **V9 CONTRACT** capabilities. Source, schema, skill, or local-test
+presence is not installed-runtime proof and does not establish Pi host parity.
+A readiness claim requires current **EXACT-CANDIDATE EVIDENCE** from P14 tied
+to one exact candidate; RC or release status additionally requires release
+authority. Dense/hybrid retrieval and any superiority claim remain
+**DEFERRED RESEARCH**. Contract inclusion or evidence alone does not establish
+**CURRENT PRODUCT** status.
 
 ## What It Provides
 
-- Native Pi tools (full kernel suite): `haft_query`, `haft_problem`,
+- Native Pi compatibility mirrors for the kernel tools: `haft_query`,
+  `haft_onboard`, `haft_entity`, `haft_memory`, `haft_problem`,
   `haft_solution`, `haft_decision`, `haft_note`, `haft_refresh`,
-  `haft_method`, `haft_commission`, `haft_spec_section`
-- Prompt templates: `/h-status`, `/h-reason`, `/h-frame`, `/h-explore`,
-  `/h-compare`, `/h-verify`, `/h-note`, `/h-method`, and the manual gates
-  `/h-decide`, `/h-commission`
-- Agent Skills: `h-status`, `h-method` (MethodPack loop), `fpf-development`
-  (development-for-the-developed discipline), `fpf-semiotics` (semiotic
-  discipline for project artifacts)
+  `haft_method`, `haft_commission`, and `haft_spec_section`
+- Prompt templates and Agent Skills expose the same twelve public entries:
+  `h-reason`, `h-frame`, `h-diagnose`, `h-explore`, `h-compare`, manual
+  `h-decide`, manual `h-commission`, `h-verify`, `h-status`, `h-spec`,
+  `h-onboard`, and `h-note`. They are independent capabilities, not phases.
+  MethodPack orchestration and semiotic/abductive routines remain internal to
+  the relevant public entry rather than adding public skills.
 - Startup prompt governor that resolves the nearest `.haft` directory and
   reads the kernel's compact governor projection
   (`haft_query(action="status", view="governor")`), falling back to a
@@ -44,8 +56,9 @@ This materializes the package under `.haft/pi/haft-pi` and registers it in
 `.pi/settings.json` (project-local); Pi loads it after project trust. No npm
 step is required — the extension's only runtime import (`typebox`) is a
 Pi-bundled core package resolved via `peerDependencies`. Re-running
-`haft init --pi` refreshes the materialized package, keeping carriers in
-lockstep with the kernel in the same binary.
+`haft init --pi` refreshes the materialized package from the same binary. That
+packaging relationship does not itself prove behavioral parity; the
+installed-runtime matrix remains the release evidence.
 
 ## Local Install (repo development)
 

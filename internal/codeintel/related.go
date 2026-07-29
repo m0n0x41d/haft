@@ -7,7 +7,9 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/m0n0x41d/haft/internal/graphrank"
+	"github.com/m0n0x41d/haft/internal/projectpath"
 	"github.com/m0n0x41d/haft/internal/textsearch"
 )
 
@@ -24,6 +26,7 @@ const (
 	RelatedSymbol RelatedKind = iota
 	RelatedArtifact
 	relatedFile // connector node; filtered out of results
+	relatedModule
 )
 
 // RelatedNode is one graph-proximity-ranked node (a symbol or an artifact).
@@ -34,16 +37,106 @@ type RelatedNode struct {
 }
 
 const fileNodePrefix = "file::"
+const moduleNodePrefix = "module::"
 
 func fileNode(path string) string { return fileNodePrefix + path }
+func moduleNode(id string) string { return moduleNodePrefix + id }
+
+type symbolModuleAssignment struct {
+	SymbolID string
+	ModuleID string
+}
+
+type moduleFusionInputs struct {
+	Contexts    []graph.DecisionModuleContext
+	Assignments []symbolModuleAssignment
+}
+
+func resolveModuleFusionInputs(
+	modules []codebase.Module,
+	contexts []graph.DecisionModuleContext,
+	symbols []codebase.SymbolRef,
+) (moduleFusionInputs, error) {
+	graphContexts := moduleFusionGraphContexts(contexts)
+	activeModules := make(map[string]bool)
+	for _, context := range graphContexts {
+		activeModules[context.ModuleID] = true
+	}
+	refs := make([]projectpath.ModuleRef, 0, len(modules))
+	for _, module := range modules {
+		ref, err := projectpath.NewModuleRef(module.ID, module.Path)
+		if err != nil {
+			return moduleFusionInputs{}, err
+		}
+		refs = append(refs, ref)
+	}
+	assignments := make([]symbolModuleAssignment, 0, len(symbols))
+	for _, symbol := range symbols {
+		filePath, err := projectpath.Parse(symbol.FilePath)
+		if err != nil {
+			return moduleFusionInputs{}, err
+		}
+		module, ok, err := projectpath.ResolveMostSpecificModule(
+			refs,
+			filePath,
+		)
+		if err != nil {
+			return moduleFusionInputs{}, err
+		}
+		if !ok {
+			continue
+		}
+		if !activeModules[module.ID()] {
+			continue
+		}
+		assignments = append(assignments, symbolModuleAssignment{
+			SymbolID: symbol.ID,
+			ModuleID: module.ID(),
+		})
+	}
+	return moduleFusionInputs{
+		Contexts:    graphContexts,
+		Assignments: assignments,
+	}, nil
+}
+
+func moduleFusionGraphContexts(
+	contexts []graph.DecisionModuleContext,
+) []graph.DecisionModuleContext {
+	result := make([]graph.DecisionModuleContext, 0, len(contexts))
+	for _, context := range contexts {
+		if context.Source != "explicit_module_binding" {
+			continue
+		}
+		result = append(result, context)
+	}
+	return result
+}
+
+func (s *Service) loadModuleFusionInputs(
+	ctx context.Context,
+	symbols []codebase.SymbolRef,
+) (moduleFusionInputs, error) {
+	modules, err := s.scanner.GetModules(ctx)
+	if err != nil {
+		return moduleFusionInputs{}, err
+	}
+	contexts, err := s.graph.AllDecisionModuleContexts(ctx)
+	if err != nil {
+		return moduleFusionInputs{}, err
+	}
+	return resolveModuleFusionInputs(modules, contexts, symbols)
+}
 
 // Fused-graph edge weights. Uniform in v1 — per dec-20260604-3aaad199, weight
 // tuning is an OBSERVATION (watched, not optimized), so they are named consts to
 // tune later rather than magic literals.
 const (
-	wCode   = 1.0 // symbol -> symbol call/dispatch edge
-	wLink   = 1.0 // artifact -> artifact reasoning link
-	wBridge = 1.0 // artifact <-> file, symbol <-> file connector
+	wCode          = 1.0  // symbol -> symbol call/dispatch edge
+	wLink          = 1.0  // artifact -> artifact reasoning link
+	wBridge        = 1.0  // artifact <-> file, symbol <-> file connector
+	wBindingBridge = 10.0 // exact artifact <-> symbol binding
+	wModuleBridge  = 1.0  // typed module binding <-> owned symbol connector
 )
 
 // buildFusedGraph (pure) fuses the code graph, the reasoning graph, and the
@@ -55,10 +148,13 @@ func buildFusedGraph(
 	edges []codebase.CodeEdge,
 	links []artifact.LinkEdge,
 	affected []artifact.AffectedFileRef,
+	bindings []artifact.SymbolBindingRef,
 	syms []codebase.SymbolRef,
+	modules moduleFusionInputs,
 ) (*graphrank.Graph, map[string]RelatedKind) {
 	g := graphrank.NewGraph()
 	kind := make(map[string]RelatedKind)
+	symbolByAnchor := make(map[string]string, len(syms))
 
 	for _, e := range edges {
 		g.AddEdge(e.SrcID, e.DstID, wCode)
@@ -80,11 +176,38 @@ func buildFusedGraph(
 		kind[fn] = relatedFile
 	}
 	for _, sr := range syms {
+		if sr.AnchorID != "" {
+			symbolByAnchor[sr.AnchorID] = sr.ID
+		}
 		fn := fileNode(sr.FilePath)
 		g.AddEdge(sr.ID, fn, wBridge)
 		g.AddEdge(fn, sr.ID, wBridge)
 		kind[sr.ID] = RelatedSymbol
 		kind[fn] = relatedFile
+	}
+	for _, binding := range bindings {
+		symbolID, current := symbolByAnchor[binding.AnchorID]
+		if !current {
+			continue
+		}
+		g.AddEdge(binding.ArtifactID, symbolID, wBindingBridge)
+		g.AddEdge(symbolID, binding.ArtifactID, wBindingBridge)
+		kind[binding.ArtifactID] = RelatedArtifact
+		kind[symbolID] = RelatedSymbol
+	}
+	for _, context := range modules.Contexts {
+		moduleID := moduleNode(context.ModuleID)
+		g.AddEdge(context.DecisionID, moduleID, wModuleBridge)
+		g.AddEdge(moduleID, context.DecisionID, wModuleBridge)
+		kind[context.DecisionID] = RelatedArtifact
+		kind[moduleID] = relatedModule
+	}
+	for _, assignment := range modules.Assignments {
+		moduleID := moduleNode(assignment.ModuleID)
+		g.AddEdge(assignment.SymbolID, moduleID, wModuleBridge)
+		g.AddEdge(moduleID, assignment.SymbolID, wModuleBridge)
+		kind[assignment.SymbolID] = RelatedSymbol
+		kind[moduleID] = relatedModule
 	}
 	return g, kind
 }
@@ -103,7 +226,7 @@ func rankRelated(g *graphrank.Graph, kind map[string]RelatedKind, seeds map[stri
 			continue
 		}
 		k, ok := kind[id]
-		if !ok || k == relatedFile {
+		if !ok || k == relatedFile || k == relatedModule {
 			continue // drop file connector nodes — they are plumbing, not results
 		}
 		out = append(out, RelatedNode{ID: id, Kind: k, Score: sc})
@@ -213,6 +336,13 @@ type RelatedResult struct {
 	Title string
 }
 
+// RelatedView pairs proximity results with the exact index basis used to build
+// the fused code/reasoning graph.
+type RelatedView struct {
+	Results []RelatedResult
+	Index   codebase.IndexState
+}
+
 // RelatedToFile ranks the fused graph by proximity to a file: it seeds the file
 // connector node (whose neighbors are the artifacts affecting that file and the
 // symbols defined in it) and returns the nearest artifacts + symbols, each
@@ -220,26 +350,78 @@ type RelatedResult struct {
 // the pure builder + ranker, then resolve titles. A node whose title no longer
 // resolves (stale id) is dropped rather than shown bare.
 func (s *Service) RelatedToFile(ctx context.Context, projectRoot, filePath string, limit int) ([]RelatedResult, error) {
+	view, err := s.RelatedView(ctx, projectRoot, filePath, limit)
+	return view.Results, err
+}
+
+// RelatedView returns the public, basis-carrying proximity result.
+func (s *Service) RelatedView(
+	ctx context.Context,
+	projectRoot string,
+	filePath string,
+	limit int,
+) (RelatedView, error) {
+	return retryIndexQuery(func() (RelatedView, error) {
+		return s.relatedViewOnce(ctx, projectRoot, filePath, limit)
+	})
+}
+
+func (s *Service) relatedViewOnce(
+	ctx context.Context,
+	projectRoot string,
+	filePath string,
+	limit int,
+) (result RelatedView, resultErr error) {
 	if _, err := s.EnsureIndex(ctx, projectRoot); err != nil {
-		return nil, err
+		return RelatedView{}, err
 	}
+	indexMu.RLock()
+	defer indexMu.RUnlock()
+	indexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return RelatedView{}, err
+	}
+	defer func() {
+		if resultErr != nil {
+			return
+		}
+		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+			result = RelatedView{}
+			resultErr = err
+		}
+	}()
 	edges, err := s.edges.AllEdges(ctx)
 	if err != nil {
-		return nil, err
+		return RelatedView{}, err
 	}
 	links, err := s.art.AllLinks(ctx)
 	if err != nil {
-		return nil, err
+		return RelatedView{}, err
 	}
 	affected, err := s.art.AllAffectedFiles(ctx)
 	if err != nil {
-		return nil, err
+		return RelatedView{}, err
+	}
+	bindings, err := s.art.AllActiveSymbolBindingRefs(ctx)
+	if err != nil {
+		return RelatedView{}, err
 	}
 	syms, err := s.symbols.AllSymbolRefs(ctx)
 	if err != nil {
-		return nil, err
+		return RelatedView{}, err
 	}
-	g, kind := buildFusedGraph(edges, links, affected, syms)
+	moduleFusion, err := s.loadModuleFusionInputs(ctx, syms)
+	if err != nil {
+		return RelatedView{}, err
+	}
+	g, kind := buildFusedGraph(
+		edges,
+		links,
+		affected,
+		bindings,
+		syms,
+		moduleFusion,
+	)
 	// Rank ALL nodes (limit 0); resolveRelated then drops co-file AND test-file
 	// symbols (proximity is production-only — tests live in the separate Tested-by
 	// lane, dec-20260604-ef966a11), THEN trim — filtering must precede the trim so
@@ -260,7 +442,10 @@ func (s *Service) RelatedToFile(ctx context.Context, projectRoot, filePath strin
 			break
 		}
 	}
-	return out, nil
+	return RelatedView{
+		Results: out,
+		Index:   indexState,
+	}, nil
 }
 
 // resolveRelated renders a ranked node's display title and reports whether to
@@ -298,12 +483,54 @@ func (s *Service) resolveRelated(ctx context.Context, n RelatedNode, seedFile st
 // (dec-20260604-ef966a11). Thin shell — gather each symbol's inbound edges, then
 // delegate to the pure coverageFor. "Exercised by", not "verified".
 func (s *Service) TestedBy(ctx context.Context, projectRoot, filePath string) ([]SymbolCoverage, error) {
+	view, err := s.TestCoverageView(ctx, projectRoot, filePath)
+	return view.Symbols, err
+}
+
+// TestCoverageView pairs the structural exercise map with its exact index
+// basis. It does not upgrade call evidence into verification evidence.
+type TestCoverageView struct {
+	Symbols []SymbolCoverage
+	Index   codebase.IndexState
+}
+
+// TestCoverageView returns the public, basis-carrying structural test map.
+func (s *Service) TestCoverageView(
+	ctx context.Context,
+	projectRoot string,
+	filePath string,
+) (TestCoverageView, error) {
+	return retryIndexQuery(func() (TestCoverageView, error) {
+		return s.testCoverageViewOnce(ctx, projectRoot, filePath)
+	})
+}
+
+func (s *Service) testCoverageViewOnce(
+	ctx context.Context,
+	projectRoot string,
+	filePath string,
+) (result TestCoverageView, resultErr error) {
 	if _, err := s.EnsureIndex(ctx, projectRoot); err != nil {
-		return nil, err
+		return TestCoverageView{}, err
 	}
+	indexMu.RLock()
+	defer indexMu.RUnlock()
+	indexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return TestCoverageView{}, err
+	}
+	defer func() {
+		if resultErr != nil {
+			return
+		}
+		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+			result = TestCoverageView{}
+			resultErr = err
+		}
+	}()
 	syms, err := s.symbols.GetByFile(ctx, filePath)
 	if err != nil {
-		return nil, err
+		return TestCoverageView{}, err
 	}
 	callers := make(map[string][]codebase.CodeEdge, len(syms))
 	for _, sym := range syms {
@@ -312,9 +539,12 @@ func (s *Service) TestedBy(ctx context.Context, projectRoot, filePath string) ([
 		}
 		in, err := s.edges.InEdges(ctx, sym.ID)
 		if err != nil {
-			return nil, err
+			return TestCoverageView{}, err
 		}
 		callers[sym.ID] = in
 	}
-	return coverageFor(syms, callers), nil
+	return TestCoverageView{
+		Symbols: coverageFor(syms, callers),
+		Index:   indexState,
+	}, nil
 }

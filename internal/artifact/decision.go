@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/projectpath"
 
 	"github.com/m0n0x41d/haft/internal/reff"
 	"github.com/m0n0x41d/haft/logger"
@@ -25,6 +26,7 @@ import (
 type DecideInput struct {
 	ProblemRef              string                  `json:"problem_ref,omitempty"`  // single problem (backward compat)
 	ProblemRefs             []string                `json:"problem_refs,omitempty"` // multiple problems
+	ProblemStatement        string                  `json:"problem_statement,omitempty"`
 	PortfolioRef            string                  `json:"portfolio_ref,omitempty"`
 	ChoiceResult            *ChoiceResult           `json:"choice_result,omitempty"`
 	TransformationRecord    *TransformationRecord   `json:"transformation_record,omitempty"`
@@ -173,7 +175,8 @@ type DecideContext struct {
 	ProblemBody       string // pre-fetched problem markdown (fallback for older artifacts)
 	ProblemStructured string // pre-fetched structured_data JSON (preferred, no re-parsing)
 	Links             []Link
-	ProblemRefs       []string // merged refs
+	ProblemRefs       []string // merged explicit refs persisted on the decision
+	ProblemBasisRefs  []string // explicit refs plus refs resolved from a linked portfolio
 }
 
 // extractSection extracts a markdown section by heading from a body string. Pure.
@@ -272,6 +275,7 @@ func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
 func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.ProblemRef = strings.TrimSpace(input.ProblemRef)
 	input.ProblemRefs = compactStrings(input.ProblemRefs)
+	input.ProblemStatement = strings.TrimSpace(input.ProblemStatement)
 	input.PortfolioRef = strings.TrimSpace(input.PortfolioRef)
 	input.SelectedTitle = strings.TrimSpace(input.SelectedTitle)
 	input.WhySelected = strings.TrimSpace(input.WhySelected)
@@ -293,12 +297,21 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.Admissibility = compactStrings(input.Admissibility)
 	input.EvidenceReqs = compactStrings(input.EvidenceReqs)
 	input.RefreshTriggers = compactStrings(input.RefreshTriggers)
-	input.SectionRefs = compactStrings(input.SectionRefs)
+	input.SectionRefs = compactSortedStrings(input.SectionRefs)
 	input.SpecBindingPreflight = normalizeSpecBindingPreflight(input.SpecBindingPreflight)
 	if len(input.SectionRefs) == 0 && specBindingPreflightCanSupplySectionRefs(input.SpecBindingPreflight) {
 		input.SectionRefs = cloneStringSlice(input.SpecBindingPreflight.SelectedSectionRefs)
 	}
 	input.AffectedFiles = compactStrings(input.AffectedFiles)
+	input.ImplementationFootprint = normalizeImplementationFootprint(
+		input.ImplementationFootprint,
+	)
+	input.GovernanceTargets = normalizeGovernanceTargets(
+		input.GovernanceTargets,
+	)
+	input.DriftWatchTargets = normalizeDriftWatchTargets(
+		input.DriftWatchTargets,
+	)
 	input.BindingTargets = normalizeBindingTargets(input.BindingTargets)
 	input.BindingHints = compactStrings(input.BindingHints)
 	input.BindingScope = strings.TrimSpace(input.BindingScope)
@@ -320,7 +333,7 @@ func normalizeSpecBindingPreflight(preflight *SpecBindingPreflight) *SpecBinding
 	normalized.DecisionMode = strings.TrimSpace(normalized.DecisionMode)
 	normalized.LoadBearingLevel = strings.TrimSpace(normalized.LoadBearingLevel)
 	normalized.State = strings.TrimSpace(normalized.State)
-	normalized.SelectedSectionRefs = compactStrings(normalized.SelectedSectionRefs)
+	normalized.SelectedSectionRefs = compactSortedStrings(normalized.SelectedSectionRefs)
 	normalized.ConflictRefs = compactStrings(normalized.ConflictRefs)
 	normalized.OperatorActionRequired = strings.TrimSpace(normalized.OperatorActionRequired)
 	normalized.StatusDebt.Severity = strings.TrimSpace(normalized.StatusDebt.Severity)
@@ -382,24 +395,66 @@ func validateDecisionSpecBindingPreflight(input DecideInput) error {
 }
 
 func sameCompactStringSet(left []string, right []string) bool {
-	left = compactStrings(left)
-	right = compactStrings(right)
+	left = compactSortedStrings(left)
+	right = compactSortedStrings(right)
 	if len(left) != len(right) {
 		return false
 	}
-	seen := make(map[string]struct{}, len(left))
-	for _, value := range left {
-		seen[value] = struct{}{}
-	}
-	for _, value := range right {
-		if _, ok := seen[value]; !ok {
+	for index := range left {
+		if left[index] != right[index] {
 			return false
 		}
 	}
 	return true
 }
 
-func validateDecisionInput(input DecideInput) error {
+// DecisionChoiceCorrelationInput is the canonical domain port for duplicated
+// DecisionRecord and ChoiceResult fields. Adapters call this same validator
+// instead of owning a second projection policy.
+type DecisionChoiceCorrelationInput struct {
+	SelectionPolicy string
+	WhySelected     string
+	ProblemRefs     []string
+	ChoiceResult    *ChoiceResult
+}
+
+// ValidateDecisionChoiceCorrelation rejects contradictory duplicated choice
+// fields before a DecisionRecord can be persisted or projected.
+func ValidateDecisionChoiceCorrelation(
+	input DecisionChoiceCorrelationInput,
+) error {
+	choice := NormalizeChoiceResult(input.ChoiceResult)
+	if choice == nil {
+		return nil
+	}
+
+	selectionPolicy := strings.TrimSpace(input.SelectionPolicy)
+	if choice.ChoiceRule != selectionPolicy {
+		return fmt.Errorf(
+			"choice_result.choice_rule must equal selection_policy",
+		)
+	}
+
+	whySelected := strings.TrimSpace(input.WhySelected)
+	if choice.Reason != whySelected {
+		return fmt.Errorf(
+			"choice_result.reason must equal why_selected",
+		)
+	}
+
+	if !sameCompactStringSet(choice.ProblemRefs, input.ProblemRefs) {
+		return fmt.Errorf(
+			"choice_result.problem_refs must equal decision problem_refs",
+		)
+	}
+
+	return nil
+}
+
+func validateDecisionInput(dctx DecideContext, input DecideInput) error {
+	if err := validateDecisionProjectPaths(input); err != nil {
+		return err
+	}
 	if err := validateDecisionSpecBindingPreflight(input); err != nil {
 		return err
 	}
@@ -417,6 +472,16 @@ func validateDecisionInput(input DecideInput) error {
 			return
 		}
 		missing = append(missing, missingField{Field: field, Hint: hint})
+	}
+
+	problemBasisRefs := cloneStringSlice(dctx.ProblemRefs)
+	problemBasisRefs = append(problemBasisRefs, dctx.ProblemBasisRefs...)
+	problemBasisRefs = compactStrings(problemBasisRefs)
+	if len(problemBasisRefs) == 0 && input.ProblemStatement == "" {
+		missing = append(missing, missingField{
+			Field: "problem_statement",
+			Hint:  "state the problem directly when no ProblemCard is linked; provide problem_ref/problem_refs, a portfolio that resolves to a ProblemCard, or this inline statement",
+		})
 	}
 
 	if input.SelectedTitle == "" {
@@ -447,6 +512,18 @@ func validateDecisionInput(input DecideInput) error {
 		addMissing("rollback", "at least one trigger that would force reversal (FPF DEC-05)")
 	}
 	if err := ValidateChoiceResult(input.ChoiceResult); err != nil {
+		missing = append(missing, missingField{
+			Field: "choice_result",
+			Hint:  err.Error(),
+		})
+	}
+	correlation := DecisionChoiceCorrelationInput{
+		SelectionPolicy: input.SelectionPolicy,
+		WhySelected:     input.WhySelected,
+		ProblemRefs:     dctx.ProblemRefs,
+		ChoiceResult:    input.ChoiceResult,
+	}
+	if err := ValidateDecisionChoiceCorrelation(correlation); err != nil {
 		missing = append(missing, missingField{
 			Field: "choice_result",
 			Hint:  err.Error(),
@@ -666,7 +743,7 @@ func renderTransformationRefs(body *strings.Builder, label string, refs []string
 func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, error) {
 	input = normalizeDecisionInput(input)
 
-	if err := validateDecisionInput(input); err != nil {
+	if err := validateDecisionInput(dctx, input); err != nil {
 		return nil, err
 	}
 
@@ -678,12 +755,14 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	// === Component 1: Problem Frame ===
 	body.WriteString("\n## 1. Problem Frame\n\n")
+	problemFrameRendered := false
 	if dctx.ProblemStructured != "" {
 		// Prefer structured data — canonical, no re-parsing
 		var pf ProblemFields
 		if err := json.Unmarshal([]byte(dctx.ProblemStructured), &pf); err == nil {
 			if pf.Signal != "" {
 				body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", pf.Signal))
+				problemFrameRendered = true
 			}
 			if len(pf.Constraints) > 0 {
 				body.WriteString("**Constraints:**\n")
@@ -691,22 +770,32 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 					body.WriteString(fmt.Sprintf("- %s\n", c))
 				}
 				body.WriteString("\n")
+				problemFrameRendered = true
 			}
 			if pf.Acceptance != "" {
 				body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", pf.Acceptance))
+				problemFrameRendered = true
 			}
 		}
 	} else if dctx.ProblemBody != "" {
 		// Fallback: parse markdown for older artifacts without structured_data
 		if signal := extractSection(dctx.ProblemBody, "Signal"); signal != "" {
 			body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", signal))
+			problemFrameRendered = true
 		}
 		if constraints := extractSection(dctx.ProblemBody, "Constraints"); constraints != "" {
 			body.WriteString(fmt.Sprintf("**Constraints:**\n%s\n\n", constraints))
+			problemFrameRendered = true
 		}
 		if acceptance := extractSection(dctx.ProblemBody, "Acceptance"); acceptance != "" {
 			body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", acceptance))
+			problemFrameRendered = true
 		}
+	}
+	if !problemFrameRendered {
+		body.WriteString("**Problem statement:** ")
+		body.WriteString(input.ProblemStatement)
+		body.WriteString("\n\n")
 	}
 
 	// === Component 2: Decision (the contract) ===
@@ -742,6 +831,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	decisionFields := DecisionFields{
 		ProblemRefs:             dctx.ProblemRefs,
+		ProblemStatement:        input.ProblemStatement,
 		DecisionSubjectRef:      strings.TrimSpace(input.DecisionSubjectRef),
 		ChoiceResult:            NormalizeChoiceResult(choiceResult),
 		TransformationRecord:    NormalizeTransformationRecord(input.TransformationRecord),
@@ -1108,105 +1198,35 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 	return links
 }
 
-func BuildLinksWithSectionRefs(problemRefs []string, portfolioRef string, sectionRefs []string) []Link {
-	links := BuildLinks(problemRefs, portfolioRef)
-	sectionLinks := BuildSpecSectionLinks(sectionRefs)
-	links = append(links, sectionLinks...)
-
-	return links
-}
-
-func BuildSpecSectionLinks(sectionRefs []string) []Link {
-	links := make([]Link, 0, len(sectionRefs))
-	seen := map[string]struct{}{}
-
-	for _, ref := range compactStrings(sectionRefs) {
-		if _, ok := seen[ref]; ok {
-			continue
-		}
-
-		seen[ref] = struct{}{}
-		links = append(links, Link{Ref: ref, Type: "governs"})
-	}
-
-	return links
-}
-
 // Decide creates a DecisionRecord artifact. Orchestrates effects around BuildDecisionArtifact.
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
-	input = normalizeDecisionInput(input)
-	input = enrichDecisionInputBindingTargets(projectRootFromHaftDir(haftDir), input)
-
-	if _, err := ParseGovernanceMode(input.GovernanceMode); err != nil {
+	reservation, err := ReserveDecisionIdentity(input.TaskContext)
+	if err != nil {
 		return nil, "", err
 	}
-
-	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
-	if err := validateNoActiveDecisionConflict(ctx, store, problemRefs, input.PortfolioRef); err != nil {
-		return nil, "", err
-	}
-
-	// GenerateID uses a crypto/rand suffix since #63; no need for sequence
-	// lookup. The seq parameter is preserved on GenerateID for call-site
-	// backward compat — pass 0.
-	id := GenerateIDWithTaskContext(KindDecisionRecord, 0, input.TaskContext)
-	now := time.Now().UTC()
-
-	// Pure: merge refs
-	links := BuildLinksWithSectionRefs(problemRefs, input.PortfolioRef, input.SectionRefs)
-
-	// Effects: compute mode from chain
-	var declaredMode Mode
-	if input.Mode == "" {
-		declaredMode = ModeStandard
-	} else {
-		var err error
-		declaredMode, err = ParseMode(input.Mode)
+	projectRoot := projectRootFromHaftDir(haftDir)
+	bindingProjectRoot := projectRoot
+	if projectRoot == "" {
+		if strings.TrimSpace(haftDir) == "" {
+			return nil, "", fmt.Errorf("resolve legacy decision project root: haft directory is required")
+		}
+		projectRoot, err = filepath.Abs(filepath.Clean(strings.TrimSpace(haftDir)))
 		if err != nil {
-			return nil, "", fmt.Errorf("%w (valid: note, tactical, standard, deep)", err)
+			return nil, "", fmt.Errorf("resolve legacy decision project root: %w", err)
 		}
 	}
-	chainMode := inferModeFromChain(ctx, store, problemRefs, input.PortfolioRef)
-	mode := maxMode(declaredMode, chainMode)
-
-	// Effects: inherit context from linked artifacts
-	resolvedContext := input.Context
-	if resolvedContext == "" {
-		if input.PortfolioRef != "" {
-			if p, err := store.Get(ctx, input.PortfolioRef); err == nil {
-				resolvedContext = p.Meta.Context
-			}
-		} else if len(problemRefs) > 0 {
-			if p, err := store.Get(ctx, problemRefs[0]); err == nil {
-				resolvedContext = p.Meta.Context
-			}
-		}
+	prepared, err := prepareDecision(
+		ctx,
+		store,
+		reservation,
+		input,
+		projectRoot,
+		bindingProjectRoot,
+	)
+	if err != nil {
+		return nil, "", err
 	}
-
-	// Effects: pre-fetch problem body
-	primaryRef := input.ProblemRef
-	if primaryRef == "" && len(problemRefs) > 0 {
-		primaryRef = problemRefs[0]
-	}
-	var problemBody, problemStructured string
-	if primaryRef != "" {
-		if prob, err := store.Get(ctx, primaryRef); err == nil {
-			problemBody = prob.Body
-			problemStructured = prob.StructuredData
-		}
-	}
-
-	// Pure construction
-	a, err := BuildDecisionArtifact(DecideContext{
-		ID:                id,
-		Now:               now,
-		Mode:              mode,
-		Context:           resolvedContext,
-		ProblemBody:       problemBody,
-		ProblemStructured: problemStructured,
-		Links:             links,
-		ProblemRefs:       problemRefs,
-	}, input)
+	a, err := prepared.artifactAt(time.Now().UTC())
 	if err != nil {
 		return nil, "", err
 	}
@@ -1216,17 +1236,18 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 		return nil, "", fmt.Errorf("store decision: %w", err)
 	}
 
-	logger.ArtifactOp("create", id, string(KindDecisionRecord))
+	logger.ArtifactOp("create", a.Meta.ID, string(KindDecisionRecord))
 
 	var warnings []string
 
-	if len(input.AffectedFiles) > 0 {
-		warnings = append(warnings, WarnSharedFiles(input.AffectedFiles)...)
-		var files []AffectedFile
-		for _, f := range input.AffectedFiles {
-			files = append(files, AffectedFile{Path: f})
+	affectedFiles, _ := prepared.AffectedFiles()
+	if len(affectedFiles) > 0 {
+		paths := make([]string, 0, len(affectedFiles))
+		for _, file := range affectedFiles {
+			paths = append(paths, file.Path)
 		}
-		if err := store.SetAffectedFiles(ctx, id, files); err != nil {
+		warnings = append(warnings, WarnSharedFiles(paths)...)
+		if err := store.SetAffectedFiles(ctx, a.Meta.ID, affectedFiles); err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to track affected files: %v", err))
 		}
 	}
@@ -1488,9 +1509,9 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, fmt.Errorf("get affected files: %w", err)
 	}
 	if len(input.AffectedFiles) > 0 {
-		files = nil
-		for _, f := range input.AffectedFiles {
-			files = append(files, AffectedFile{Path: f})
+		files, err = canonicalAffectedFilePaths(input.AffectedFiles)
+		if err != nil {
+			return nil, err
 		}
 	}
 	if decisionFields.IsImplementationFootprintOnly() && !baselineInputRequestsBindingResolution(input) && len(input.BindingTargets) == 0 {
@@ -1533,7 +1554,18 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 	// Compute SHA-256 for each file (skip directories)
 	var hashableFiles []AffectedFile
 	for i := range files {
-		absPath := filepath.Join(projectRoot, files[i].Path)
+		absPath, resolveErr := resolveAffectedFile(projectRoot, files[i])
+		if resolveErr != nil {
+			if !os.IsNotExist(resolveErr) {
+				return nil, fmt.Errorf(
+					"resolve baseline file %s: %w",
+					files[i].Path,
+					resolveErr,
+				)
+			}
+			logger.Debug().Str("path", files[i].Path).Err(resolveErr).Msg("baseline.skip_file")
+			continue
+		}
 		hash, err := hashFile(absPath)
 		if err != nil {
 			// Skip directories and missing files gracefully
@@ -1676,7 +1708,27 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 				continue
 			}
 
-			absPath := filepath.Join(projectRoot, f.Path)
+			absPath, resolveErr := resolveAffectedFile(projectRoot, f)
+			if resolveErr != nil {
+				assessment := assessMissingFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path])
+				item := DriftItem{
+					Path:             f.Path,
+					Status:           DriftMissing,
+					Invariants:       copyDriftInvariants(decisionFields.Invariants),
+					Materiality:      assessment.Materiality,
+					TriggerKind:      DriftTriggerMissingFile,
+					ChangedTargetRef: assessment.ChangedTargetRef,
+					TargetKind:       assessment.TargetKind,
+					TargetStatus:     assessment.TargetStatus,
+					FallbackKind:     assessment.FallbackKind,
+					FallbackReason:   assessment.FallbackReason,
+					AuditOnly:        assessment.AuditOnly,
+					SuppressedReason: assessment.SuppressedReason,
+				}
+				report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
+				hasDrift = true
+				continue
+			}
 			currentHash, err := hashFile(absPath)
 			if err != nil {
 				// File doesn't exist or can't be read
@@ -2139,6 +2191,14 @@ func symbolSnapshotMatchesBindingTarget(snapshot codebase.SymbolSnapshot, target
 }
 
 func symbolSnapshotSameIdentity(snapshot codebase.SymbolSnapshot, target BindingTarget) bool {
+	if strings.TrimSpace(target.AnchorID) != "" {
+		language := strings.TrimSpace(target.Language)
+		if language == "" {
+			language, _ = codebase.LanguageForPath(snapshot.FilePath)
+		}
+		anchor := codebase.BuildSymbolAnchor(snapshot, language)
+		return anchor.ID == strings.TrimSpace(target.AnchorID)
+	}
 	if snapshot.SymbolName != target.SymbolName {
 		return false
 	}
@@ -2354,13 +2414,7 @@ func assessSymbolBindingTargetDrift(projectRoot, relPath string, target BindingT
 	}
 
 	for _, snapshot := range current {
-		if snapshot.SymbolName != target.SymbolName {
-			continue
-		}
-		if target.SymbolKind != "" && snapshot.SymbolKind != target.SymbolKind {
-			continue
-		}
-		if strings.TrimSpace(target.Receiver) != strings.TrimSpace(snapshot.Receiver) {
+		if !symbolSnapshotSameIdentity(snapshot, target) {
 			continue
 		}
 		if snapshot.Hash == target.BodyHash {
@@ -2403,7 +2457,7 @@ func rangeTargetUnchanged(projectRoot, relPath string, target BindingTarget) boo
 }
 
 func bindingTargetRangeTextHash(projectRoot, relPath string, startLine, endLine int) (string, bool) {
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	content, err := readProjectFile(projectRoot, relPath)
 	if err != nil {
 		return "", false
 	}
@@ -2602,7 +2656,10 @@ func detectAddedFiles(
 // drift pass, so a scope walked for many decisions (especially the whole-repo
 // ".") is walked only once. nil cache falls through to a direct walk.
 func listScopeFilesCached(projectRoot, scope string, cache map[string][]string) ([]string, error) {
-	scope = normalizeDriftScope(scope)
+	scope, err := canonicalDriftScope(scope)
+	if err != nil {
+		return nil, err
+	}
 	if cache != nil {
 		if v, ok := cache[scope]; ok {
 			return v, nil
@@ -2619,16 +2676,26 @@ func listScopeFilesCached(projectRoot, scope string, cache map[string][]string) 
 }
 
 func listScopeFiles(projectRoot string, scope string) ([]string, error) {
-	scope = normalizeDriftScope(scope)
+	scope, err := canonicalDriftScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	scopePath, err := resolveDriftScope(projectRoot, scope)
+	if err != nil {
+		return nil, err
+	}
+	physicalRoot, err := resolveDriftScope(projectRoot, ".")
+	if err != nil {
+		return nil, err
+	}
 	if files, ok := listGitScopeFiles(projectRoot, scope); ok {
 		return files, nil
 	}
 
-	scopePath := filepath.Join(projectRoot, scope)
 	entries := make([]string, 0)
-	ignoreChecker := codebase.NewIgnoreChecker(projectRoot)
+	ignoreChecker := codebase.NewIgnoreChecker(physicalRoot)
 
-	err := filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
 				return nil
@@ -2636,7 +2703,7 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 			return walkErr
 		}
 
-		relPath, err := filepath.Rel(projectRoot, path)
+		relPath, err := filepath.Rel(physicalRoot, path)
 		if err != nil {
 			return err
 		}
@@ -2713,7 +2780,11 @@ func listGitScopeFiles(projectRoot string, scope string) ([]string, bool) {
 }
 
 func driftPathExistsAsFile(projectRoot string, relPath string) bool {
-	info, err := os.Stat(filepath.Join(projectRoot, relPath))
+	resolved, err := resolveProjectFile(projectRoot, relPath)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(resolved)
 	if err != nil {
 		return false
 	}
@@ -2739,6 +2810,29 @@ func normalizeDriftScope(scope string) string {
 		return "."
 	}
 	return scope
+}
+
+func canonicalDriftScope(scope string) (string, error) {
+	trimmed := strings.TrimSpace(scope)
+	if trimmed == "" || trimmed == "." {
+		return ".", nil
+	}
+	canonical, err := projectpath.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("drift scope: %w", err)
+	}
+	return canonical.String(), nil
+}
+
+func resolveDriftScope(projectRoot string, scope string) (string, error) {
+	if scope != "." {
+		return resolveProjectFile(projectRoot, scope)
+	}
+	absolute, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absolute)
 }
 
 func normalizeProjectPath(path string) string {

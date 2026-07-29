@@ -4,21 +4,29 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
-// Canonical PhaseIDs for the v7.0 target-system spine and enabling-system
-// spine. Stable identifiers surfaces and tests can match on; new phases
-// are appended only.
+// Canonical PhaseIDs for the target-system and software-system spines.
 const (
 	PhaseTargetEnvironmentDraft PhaseID = "target.environment.draft"
 	PhaseTargetRoleDraft        PhaseID = "target.role.draft"
 	PhaseTargetBoundaryDraft    PhaseID = "target.boundary.draft"
 
-	PhaseEnablingArchitectureDraft     PhaseID = "enabling.architecture.draft"
-	PhaseEnablingWorkMethodsDraft      PhaseID = "enabling.work_methods.draft"
-	PhaseEnablingEffectBoundariesDraft PhaseID = "enabling.effect_boundaries.draft"
-	PhaseEnablingAgentPolicyDraft      PhaseID = "enabling.agent_policy.draft"
-	PhaseEnablingCommissionPolicyDraft PhaseID = "enabling.commission_policy.draft"
-	PhaseEnablingRuntimePolicyDraft    PhaseID = "enabling.runtime_policy.draft"
-	PhaseEnablingEvidencePolicyDraft   PhaseID = "enabling.evidence_policy.draft"
+	PhaseSoftwareRoleDraft                     PhaseID = "software.role.draft"
+	PhaseSoftwareResponsibilityAllocationDraft PhaseID = "software.responsibility_allocation.draft"
+	PhaseSoftwareFunctionalBehaviorDraft       PhaseID = "software.functional_behavior.draft"
+	PhaseSoftwareProceduralBehaviorDraft       PhaseID = "software.procedural_behavior.draft"
+	PhaseSoftwareInterfacesDraft               PhaseID = "software.interfaces.draft"
+	PhaseSoftwareConstraintsDraft              PhaseID = "software.constraints.draft"
+	PhaseSoftwareSelectedStructureDraft        PhaseID = "software.selected_structure.draft"
+
+	// Development-version aliases keep old test fixtures and stored workflow
+	// cursors readable during migration. New projections never emit these names.
+	PhaseEnablingArchitectureDraft     = PhaseSoftwareRoleDraft
+	PhaseEnablingWorkMethodsDraft      = PhaseSoftwareResponsibilityAllocationDraft
+	PhaseEnablingEffectBoundariesDraft = PhaseSoftwareFunctionalBehaviorDraft
+	PhaseEnablingAgentPolicyDraft      = PhaseSoftwareProceduralBehaviorDraft
+	PhaseEnablingCommissionPolicyDraft = PhaseSoftwareInterfacesDraft
+	PhaseEnablingRuntimePolicyDraft    = PhaseSoftwareConstraintsDraft
+	PhaseEnablingEvidencePolicyDraft   = PhaseSoftwareSelectedStructureDraft
 )
 
 // targetEnvironmentDraft establishes the environment-change statement:
@@ -26,6 +34,7 @@ const (
 // repair lives in the agent; carrier records the resolved statement.
 var targetEnvironmentDraft = Phase{
 	ID:           PhaseTargetEnvironmentDraft,
+	Required:     true,
 	DocumentKind: project.SpecDocumentKindTargetSystem,
 	SectionKind:  "target.environment",
 	PromptForUser: "What change in the world does this target system bring about? Describe " +
@@ -56,6 +65,7 @@ var targetEnvironmentDraft = Phase{
 // environment having been drafted.
 var targetRoleDraft = Phase{
 	ID:           PhaseTargetRoleDraft,
+	Required:     true,
 	DependsOn:    []PhaseID{PhaseTargetEnvironmentDraft},
 	DocumentKind: project.SpecDocumentKindTargetSystem,
 	SectionKind:  "target.role",
@@ -88,6 +98,7 @@ var targetRoleDraft = Phase{
 // Evidence). Boundary depends on role.
 var targetBoundaryDraft = Phase{
 	ID:           PhaseTargetBoundaryDraft,
+	Required:     true,
 	DependsOn:    []PhaseID{PhaseTargetRoleDraft},
 	DocumentKind: project.SpecDocumentKindTargetSystem,
 	SectionKind:  "target.boundary",
@@ -116,25 +127,14 @@ var targetBoundaryDraft = Phase{
 	},
 }
 
-// enablingArchitectureDraft drafts the EnablingSystemSpec architecture
-// section. Depends on the target boundary so the enabling structure is
-// chosen *for* a known target rather than in a vacuum.
-var enablingArchitectureDraft = Phase{
-	ID:           PhaseEnablingArchitectureDraft,
-	DependsOn:    []PhaseID{PhaseTargetBoundaryDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.architecture",
-	PromptForUser: "What is the layered architecture of the enabling system " +
-		"(the team, code, infrastructure that builds and operates the target)? " +
-		"Name the layers, the dependency direction between them, and which layer " +
-		"owns each capability. Layers are not folders — they are responsibilities " +
-		"with a one-way dependency rule.",
-	ContextForAgent: "Draft an EnablingSystemSpec architecture section. Read " +
-		"package manifests, top-level directory structure, and any existing " +
-		"architecture docs to ground the layers in the actual code. Apply the " +
-		"FPF Signature Stack (L0..L4 layered claim landing) and the spec/" +
-		"enabling-system/ARCHITECTURE.md convention internally; the YAML carries " +
-		"the resolved layer names and dependency rules, not FPF citations.",
+var softwareRoleDraft = Phase{
+	ID:              PhaseSoftwareRoleDraft,
+	Required:        true,
+	DependsOn:       []PhaseID{PhaseTargetBoundaryDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.role",
+	PromptForUser:   "What role does the software system play in realizing the target system? Name the responsibility assigned to software, not the team, harness, or coding agent.",
+	ContextForAgent: "Draft a SoftwareSystemSpec role section grounded in the active TargetSystemSpec. Keep product behavior distinct from the engineering system that creates the software.",
 	ExpectedFields: []string{
 		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
 		"valid_until", "depends_on",
@@ -151,21 +151,13 @@ var enablingArchitectureDraft = Phase{
 	},
 }
 
-// enablingWorkMethodsDraft prescribes how each load-bearing artifact
-// (specs, decisions, commissions, runtime runs, evidence) is produced.
-var enablingWorkMethodsDraft = Phase{
-	ID:           PhaseEnablingWorkMethodsDraft,
-	DependsOn:    []PhaseID{PhaseEnablingArchitectureDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.work_methods",
-	PromptForUser: "How is each load-bearing artifact produced? For specs, " +
-		"decisions, commissions, runtime runs, and evidence — name the actor, " +
-		"the trigger, and the deterministic check that closes each step.",
-	ContextForAgent: "Draft an EnablingSystemSpec work-methods section. Apply " +
-		"FRAME-09 (role/capability/method/work distinction) so each method names " +
-		"its actor and what it actually produces, not what it 'could' do. " +
-		"Apply X-STATEMENT-TYPE: each method is a duty (rule), not an " +
-		"explanation; decompose mixed types.",
+var softwareResponsibilityAllocationDraft = Phase{
+	ID:              PhaseSoftwareResponsibilityAllocationDraft,
+	DependsOn:       []PhaseID{PhaseSoftwareRoleDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.responsibility_allocation",
+	PromptForUser:   "Which responsibilities belong to software, humans, and external systems? Make every handoff explicit.",
+	ContextForAgent: "Draft responsibility allocation only where the target behavior crosses actor boundaries. Do not describe agent autonomy or delivery workflow.",
 	ExpectedFields: []string{
 		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
 		"valid_until", "depends_on",
@@ -182,56 +174,14 @@ var enablingWorkMethodsDraft = Phase{
 	},
 }
 
-// enablingEffectBoundariesDraft declares which actor/surface may mutate
-// what. Runs after architecture so the boundaries reference real layers.
-var enablingEffectBoundariesDraft = Phase{
-	ID:           PhaseEnablingEffectBoundariesDraft,
-	DependsOn:    []PhaseID{PhaseEnablingArchitectureDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.effect_boundaries",
-	PromptForUser: "Which actors and surfaces are allowed to mutate which " +
-		"resources? Enumerate the effect boundaries: what each layer or surface " +
-		"can write, what is read-only, and where mutation requires explicit " +
-		"authorization (decision, commission, scope envelope).",
-	ContextForAgent: "Draft an EnablingSystemSpec effect-boundaries section. " +
-		"Apply CHR-10 Boundary Norm Square in your reasoning to decompose mixed " +
-		"boundary statements (Law / Admissibility / Deontics / Evidence); " +
-		"target_refs lists the four perspectives where relevant. Carrier text " +
-		"records the resolved rules, not the CHR-10 vocabulary.",
-	ExpectedFields: []string{
-		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
-		"valid_until", "depends_on", "target_refs",
-	},
-	Checks: []Check{
-		RequireField{Field: "id"},
-		RequireField{Field: "spec"},
-		RequireField{Field: "kind"},
-		RequireField{Field: "title"},
-		RequireField{Field: "owner"},
-		RequireStatementType{},
-		RequireClaimLayer{},
-		RequireValidUntil{},
-		RequireBoundaryPerspectives{Min: 4},
-	},
-}
-
-// enablingAgentPolicyDraft declares which host agents are supported and
-// what autonomy bounds apply.
-var enablingAgentPolicyDraft = Phase{
-	ID:           PhaseEnablingAgentPolicyDraft,
-	DependsOn:    []PhaseID{PhaseEnablingEffectBoundariesDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.agent_policy",
-	PromptForUser: "Which host agents are supported by this project, and what " +
-		"autonomy bounds apply? State which agents may invoke which Haft tools, " +
-		"under what authorization, and which actions remain human-decision " +
-		"gates. (v7 Haft product supports Claude Code and Codex; project-local " +
-		"policy may be narrower.)",
-	ContextForAgent: "Draft an EnablingSystemSpec agent-policy section. Apply " +
-		"X-TRANSFORMER (the human is the principal; the agent does not " +
-		"self-improve) and CHR-10 (admissibility for what the agent may do, " +
-		"deontics for the human's duties when delegating). The carrier names " +
-		"agents and bounds; FPF references stay in your reasoning.",
+var softwareFunctionalBehaviorDraft = Phase{
+	ID:              PhaseSoftwareFunctionalBehaviorDraft,
+	Required:        true,
+	DependsOn:       []PhaseID{PhaseSoftwareRoleDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.functional_behavior",
+	PromptForUser:   "What functions, commands, inputs, outputs, and observable results must the software provide?",
+	ContextForAgent: "Draft normative software behavior. Describe externally meaningful behavior before selected implementation structure.",
 	ExpectedFields: []string{
 		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
 		"valid_until", "depends_on",
@@ -248,21 +198,13 @@ var enablingAgentPolicyDraft = Phase{
 	},
 }
 
-// enablingCommissionPolicyDraft prescribes how WorkCommissions are
-// authorized, scoped, and retired in this project.
-var enablingCommissionPolicyDraft = Phase{
-	ID:           PhaseEnablingCommissionPolicyDraft,
-	DependsOn:    []PhaseID{PhaseEnablingEffectBoundariesDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.commission_policy",
-	PromptForUser: "How does this project authorize work? State the rules for " +
-		"creating, scoping, and retiring WorkCommissions: who may create one, " +
-		"what the default scope (allowed_paths / forbidden_paths) is, and what " +
-		"freshness gates must pass before execution.",
-	ContextForAgent: "Draft an EnablingSystemSpec commission-policy section. " +
-		"Apply X-SCOPE (every claim has explicit where + under what + when) so " +
-		"scope rules are not 'always' / 'never' but bounded by repo, paths, " +
-		"and time. WorkCommission is bounded authorization, not execution.",
+var softwareProceduralBehaviorDraft = Phase{
+	ID:              PhaseSoftwareProceduralBehaviorDraft,
+	DependsOn:       []PhaseID{PhaseSoftwareFunctionalBehaviorDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.procedural_behavior",
+	PromptForUser:   "Which software states, transitions, sequences, retries, and failure outcomes matter to correctness?",
+	ContextForAgent: "Draft procedural behavior when order or state matters. Describe runtime product behavior, not the development harness runtime.",
 	ExpectedFields: []string{
 		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
 		"valid_until", "depends_on",
@@ -279,22 +221,14 @@ var enablingCommissionPolicyDraft = Phase{
 	},
 }
 
-// enablingRuntimePolicyDraft declares which surface owns runtime
-// lifecycle and how runtime runs are isolated and observed.
-var enablingRuntimePolicyDraft = Phase{
-	ID:           PhaseEnablingRuntimePolicyDraft,
-	DependsOn:    []PhaseID{PhaseEnablingCommissionPolicyDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.runtime_policy",
-	PromptForUser: "Which surface starts and stops the harness runtime, and " +
-		"how is each RuntimeRun isolated and observed? CLI / Desktop typically " +
-		"own the runtime lifecycle; the MCP plugin does not own long-running " +
-		"execution. State the project's rules.",
-	ContextForAgent: "Draft an EnablingSystemSpec runtime-policy section. Apply " +
-		"FRAME-09: the runtime's role is execute, the operator's role is " +
-		"start/observe/stop. Carrier records who owns lifecycle, isolation " +
-		"rules, and observability requirements; do not derive ownership from " +
-		"folder names alone.",
+var softwareInterfacesDraft = Phase{
+	ID:              PhaseSoftwareInterfacesDraft,
+	Required:        true,
+	DependsOn:       []PhaseID{PhaseSoftwareFunctionalBehaviorDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.interfaces",
+	PromptForUser:   "What APIs, events, data contracts, and integration boundaries expose the software behavior?",
+	ContextForAgent: "Draft stable software-facing interfaces and boundary contracts. Do not list repository tooling or agent integrations unless they are product interfaces.",
 	ExpectedFields: []string{
 		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
 		"valid_until", "depends_on",
@@ -311,25 +245,17 @@ var enablingRuntimePolicyDraft = Phase{
 	},
 }
 
-// enablingEvidencePolicyDraft prescribes what counts as evidence in this
-// project and how freshness is enforced.
-var enablingEvidencePolicyDraft = Phase{
-	ID:           PhaseEnablingEvidencePolicyDraft,
-	DependsOn:    []PhaseID{PhaseEnablingRuntimePolicyDraft},
-	DocumentKind: project.SpecDocumentKindEnablingSystem,
-	SectionKind:  "enabling.evidence_policy",
-	PromptForUser: "What evidence does this project require to call a claim " +
-		"verified, and how is freshness enforced? State the admissible evidence " +
-		"kinds (test, measurement, audit, etc.), the minimum congruence level " +
-		"per claim class, and the refresh triggers.",
-	ContextForAgent: "Draft an EnablingSystemSpec evidence-policy section. " +
-		"Apply VER-01 (every claim anchored to evidence), VER-02 (decay -> " +
-		"valid_until on evidence), VER-03 (R_eff is min not average), and " +
-		"VER-07 (refresh triggers). The carrier records the project's actual " +
-		"requirements; FPF citations stay in your reasoning.",
+var softwareConstraintsDraft = Phase{
+	ID:              PhaseSoftwareConstraintsDraft,
+	Required:        true,
+	DependsOn:       []PhaseID{PhaseSoftwareFunctionalBehaviorDraft, PhaseSoftwareInterfacesDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.constraints",
+	PromptForUser:   "Which invariants, illegal states, security constraints, and failure boundaries must the software preserve?",
+	ContextForAgent: "Draft falsifiable constraints on software behavior and state. Evidence requirements belong to each claim; project-wide delivery evidence policy does not.",
 	ExpectedFields: []string{
 		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
-		"valid_until", "depends_on", "evidence_required",
+		"valid_until", "depends_on",
 	},
 	Checks: []Check{
 		RequireField{Field: "id"},
@@ -340,31 +266,47 @@ var enablingEvidencePolicyDraft = Phase{
 		RequireStatementType{},
 		RequireClaimLayer{},
 		RequireValidUntil{},
-		RequireGuardLocation{},
 	},
 }
 
-// PhaseRegistry returns the canonical ordered list of phases for the
-// v7.0 target-system + enabling-system spine. Order matters: NextStep
-// walks this list and returns the first phase whose dependencies are
-// satisfied and whose section is missing or incomplete.
-//
-// Enabling phases depend on target.boundary.draft so the enabling
-// structure is chosen for a known target rather than in a vacuum
-// (per spec/target-system/PROJECT_ONBOARDING_CONTRACT.md "Enabling
-// spec starts only after target spec is admissible").
+var softwareSelectedStructureDraft = Phase{
+	ID:              PhaseSoftwareSelectedStructureDraft,
+	DependsOn:       []PhaseID{PhaseSoftwareConstraintsDraft},
+	DocumentKind:    project.SpecDocumentKindSoftwareSystem,
+	SectionKind:     "software.selected_structure",
+	PromptForUser:   "Which selected components, layers, ownership boundaries, and dependency rules realize the specified software behavior?",
+	ContextForAgent: "Land only selected durable structure. Alternatives and rationale remain in SolutionPortfolio and DecisionRecord; plans and work remain outside the spec.",
+	ExpectedFields: []string{
+		"id", "spec", "kind", "title", "owner", "statement_type", "claim_layer",
+		"valid_until", "depends_on",
+	},
+	Checks: []Check{
+		RequireField{Field: "id"},
+		RequireField{Field: "spec"},
+		RequireField{Field: "kind"},
+		RequireField{Field: "title"},
+		RequireField{Field: "owner"},
+		RequireStatementType{},
+		RequireClaimLayer{},
+		RequireValidUntil{},
+	},
+}
+
+// PhaseRegistry returns the canonical ordered catalog for the target-system
+// and software-system spines. NextStep routes only phases marked Required;
+// optional phases remain discoverable for projects whose behavior needs them.
 func PhaseRegistry() []Phase {
 	return []Phase{
 		targetEnvironmentDraft,
 		targetRoleDraft,
 		targetBoundaryDraft,
-		enablingArchitectureDraft,
-		enablingWorkMethodsDraft,
-		enablingEffectBoundariesDraft,
-		enablingAgentPolicyDraft,
-		enablingCommissionPolicyDraft,
-		enablingRuntimePolicyDraft,
-		enablingEvidencePolicyDraft,
+		softwareRoleDraft,
+		softwareResponsibilityAllocationDraft,
+		softwareFunctionalBehaviorDraft,
+		softwareProceduralBehaviorDraft,
+		softwareInterfacesDraft,
+		softwareConstraintsDraft,
+		softwareSelectedStructureDraft,
 	}
 }
 

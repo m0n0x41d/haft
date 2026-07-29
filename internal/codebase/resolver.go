@@ -28,12 +28,120 @@ type EdgeResolver interface {
 	ResolveFileEdges(ctx context.Context, projectRoot, relPath string, symbols SymbolView) ([]CodeEdge, error)
 }
 
+// admittedEdgeResolver is the HG3 parser boundary used by index refreshes.
+// Compatibility methods remain for point callers, but production batch
+// resolution passes the exact AdmittedSource whose digest belongs to the
+// candidate epoch.
+type admittedEdgeResolver interface {
+	ResolveAdmittedFileEdges(
+		ctx context.Context,
+		projectRoot string,
+		source AdmittedSource,
+		symbols SymbolView,
+	) ([]CodeEdge, error)
+}
+
+type admittedEdgeOutcomeResolver interface {
+	ResolveAdmittedFileEdgeOutcomes(
+		ctx context.Context,
+		projectRoot string,
+		source AdmittedSource,
+		symbols SymbolView,
+	) ([]EdgeResolution, error)
+}
+
+type admittedProjectSnapshotEdgeOutcomeResolver interface {
+	ResolveAdmittedFileEdgeOutcomesWithProjectSnapshot(
+		ctx context.Context,
+		projectRoot string,
+		source AdmittedSource,
+		symbols SymbolView,
+		snapshot *projectIndexSnapshot,
+	) ([]EdgeResolution, error)
+}
+
+// EdgeOutcomeResolver is the truthful resolver port. New adapters should
+// implement this in addition to EdgeResolver so unresolved and ambiguous
+// relations remain inspectable without entering traversal. EdgeResolver stays
+// as a compatibility projection for existing adapters during migration.
+type EdgeOutcomeResolver interface {
+	ResolveFileEdgeOutcomes(ctx context.Context, projectRoot, relPath string, symbols SymbolView) ([]EdgeResolution, error)
+}
+
+// projectSnapshotEdgeOutcomeResolver is the prepared project-level resolver
+// port used by whole-index refreshes. The snapshot is immutable and shared by
+// every file resolver in one epoch; point queries keep using EdgeOutcomeResolver
+// as a compatibility path.
+type projectSnapshotEdgeOutcomeResolver interface {
+	ResolveFileEdgeOutcomesWithProjectSnapshot(
+		ctx context.Context,
+		projectRoot string,
+		relPath string,
+		symbols SymbolView,
+		snapshot *projectIndexSnapshot,
+	) ([]EdgeResolution, error)
+}
+
 // ResolveFileEdges is the Go adapter's implementation of EdgeResolver — it
 // composes the Go-specific extraction + resolution (call-site, intra-package,
 // cross-file qualified, interface dispatch) behind the port. The Go-specific
 // internals live in callsites.go / dispatch.go; nothing outside this method
 // knows the language is Go.
 func (g *GoLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath string, symbols SymbolView) ([]CodeEdge, error) {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return g.ResolveAdmittedFileEdges(ctx, projectRoot, source, symbols)
+}
+
+func (g *GoLang) ResolveAdmittedFileEdges(
+	ctx context.Context,
+	projectRoot string,
+	source AdmittedSource,
+	symbols SymbolView,
+) ([]CodeEdge, error) {
+	return g.resolveAdmittedFileEdges(
+		ctx,
+		projectRoot,
+		source,
+		symbols,
+		nil,
+	)
+}
+
+func (g *GoLang) ResolveAdmittedFileEdgeOutcomesWithProjectSnapshot(
+	ctx context.Context,
+	projectRoot string,
+	source AdmittedSource,
+	symbols SymbolView,
+	snapshot *projectIndexSnapshot,
+) ([]EdgeResolution, error) {
+	edges, err := g.resolveAdmittedFileEdges(
+		ctx,
+		projectRoot,
+		source,
+		symbols,
+		snapshot.sources,
+	)
+	if err != nil {
+		return nil, err
+	}
+	outcomes := make([]EdgeResolution, 0, len(edges))
+	for _, edge := range edges {
+		outcomes = append(outcomes, ResolvedEdge{Edge: edge})
+	}
+	return outcomes, nil
+}
+
+func (g *GoLang) resolveAdmittedFileEdges(
+	ctx context.Context,
+	projectRoot string,
+	source AdmittedSource,
+	symbols SymbolView,
+	projectSources map[string]AdmittedSource,
+) ([]CodeEdge, error) {
+	relPath := source.Path().String()
 	fileSyms, err := symbols.GetByFile(ctx, relPath)
 	if err != nil {
 		return nil, err
@@ -42,7 +150,7 @@ func (g *GoLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath stri
 	if err != nil {
 		return nil, err
 	}
-	sites, err := ExtractCallSites(projectRoot, relPath)
+	sites, err := ExtractCallSitesFromSource(source)
 	if err != nil {
 		return nil, err
 	}
@@ -53,7 +161,7 @@ func (g *GoLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath stri
 	edges = append(edges, ResolveIntraPackageCallEdges(relPath, fileSyms, pkgSyms, sites)...)
 
 	// 2. cross-file qualified calls (pkg.Func)
-	imports, err := ExtractGoImports(projectRoot, relPath)
+	imports, err := ExtractGoImportsFromSource(projectRoot, source)
 	if err != nil {
 		return nil, err
 	}
@@ -70,15 +178,28 @@ func (g *GoLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath stri
 	interfaces := map[string]InterfaceDef{}
 	facts := NewTypeFacts()
 	for _, pf := range distinctFiles(pkgSyms) {
-		defs, _ := ExtractGoInterfaces(projectRoot, pf)
+		packageSource, err := admittedProjectSource(
+			projectRoot,
+			pf,
+			projectSources,
+		)
+		if err != nil {
+			return nil, err
+		}
+		defs, err := ExtractGoInterfacesFromSource(packageSource)
+		if err != nil {
+			return nil, err
+		}
 		for _, d := range defs {
 			interfaces[d.Name] = d
 		}
-		if ff, err := ExtractGoTypeFacts(projectRoot, pf); err == nil {
-			facts.merge(ff)
+		fileFacts, err := ExtractGoTypeFactsFromSource(packageSource)
+		if err != nil {
+			return nil, err
 		}
+		facts.merge(fileFacts)
 	}
-	sigs, err := ExtractGoSignaturesWithLocals(projectRoot, relPath, facts)
+	sigs, err := ExtractGoSignaturesWithLocalsFromSource(source, facts)
 	if err != nil {
 		return nil, err
 	}
@@ -95,9 +216,25 @@ func (g *GoLang) ResolveFileEdges(ctx context.Context, projectRoot, relPath stri
 
 	// 6. static embeds edges: a type DECLARED here -> each package type it embeds
 	// (anonymous struct field / embedded interface = Go composition).
-	edges = append(edges, ResolveEmbedsEdges(relPath, fileSyms, pkgSyms, ExtractGoEmbeds(projectRoot, relPath))...)
+	embeds := ExtractGoEmbedsFromSource(source)
+	edges = append(
+		edges,
+		ResolveEmbedsEdges(relPath, fileSyms, pkgSyms, embeds)...,
+	)
 
 	return dedupeEdges(edges), nil
+}
+
+func admittedProjectSource(
+	projectRoot string,
+	relPath string,
+	sources map[string]AdmittedSource,
+) (AdmittedSource, error) {
+	source, found := sources[relPath]
+	if found {
+		return source, nil
+	}
+	return NewRegistry().ReadAdmittedSource(projectRoot, relPath)
 }
 
 // nonTestSymbols drops _test.go symbols from the dispatch impl-candidate set: a

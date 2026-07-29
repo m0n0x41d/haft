@@ -37,6 +37,8 @@ type SpecCheckFinding struct {
 	NextAction string `json:"next_action,omitempty"`
 }
 
+const SpecMigrationRequiredFindingCode = "spec_migration_required"
+
 type SpecCheckSummary struct {
 	TotalFindings      int `json:"total_findings"`
 	SpecSections       int `json:"spec_sections"`
@@ -55,6 +57,10 @@ type SpecDocumentKind string
 
 const (
 	SpecDocumentKindTargetSystem   SpecDocumentKind = "target-system"
+	SpecDocumentKindSoftwareSystem SpecDocumentKind = "software-system"
+	// SpecDocumentKindEnablingSystem is retained only so migration diagnostics can
+	// identify development-version carriers. It is not part of the current
+	// ProjectSpecificationSet.
 	SpecDocumentKindEnablingSystem SpecDocumentKind = "enabling-system"
 	SpecDocumentKindTermMap        SpecDocumentKind = "term-map"
 )
@@ -162,7 +168,7 @@ type termMapAlias struct {
 
 var specCheckCarriers = []specCheckCarrier{
 	{relativePath: filepath.Join(".haft", "specs", "target-system.md"), kind: "target-system"},
-	{relativePath: filepath.Join(".haft", "specs", "enabling-system.md"), kind: "enabling-system"},
+	{relativePath: filepath.Join(".haft", "specs", "software-system.md"), kind: "software-system"},
 	{relativePath: filepath.Join(".haft", "specs", "term-map.md"), kind: "term-map"},
 }
 
@@ -259,6 +265,42 @@ func CheckSpecificationSet(projectRoot string) (SpecCheckReport, error) {
 	return normalizeSpecCheckReport(report), nil
 }
 
+// CheckSpecificationSetForScope reads and checks only the built-in carriers
+// that the supplied canonical profile projection marks Required. A
+// NotApplicable carrier is absent from the read set rather than waived after
+// a failing check. Capability-local Underdetermined state remains a visible
+// finding and cannot produce readiness.
+func CheckSpecificationSetForScope(
+	projectRoot string,
+	applicability ProjectSpecificationSetApplicability,
+) (SpecCheckReport, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return newSpecCheckReport(), fmt.Errorf("project root is required")
+	}
+
+	report := newSpecCheckReport()
+	documents, findings, err := loadSpecDocumentInputsForScope(
+		root,
+		applicability,
+	)
+	if err != nil {
+		return report, err
+	}
+
+	report.Findings = append(report.Findings, findings...)
+
+	checked, err := CheckSpecDocumentsForScope(documents, applicability)
+	if err != nil {
+		return report, err
+	}
+	report.Documents = checked.Documents
+	report.Findings = append(report.Findings, checked.Findings...)
+	report.Summary = summarizeSpecCheck(report)
+
+	return normalizeSpecCheckReport(report), nil
+}
+
 func LoadSpecSections(projectRoot string) ([]SpecSection, error) {
 	root := strings.TrimSpace(projectRoot)
 	if root == "" {
@@ -271,6 +313,42 @@ func LoadSpecSections(projectRoot string) ([]SpecSection, error) {
 	}
 
 	return SpecSectionsFromDocuments(documents), nil
+}
+
+func LoadSpecSectionsForScope(
+	projectRoot string,
+	applicability ProjectSpecificationSetApplicability,
+) ([]SpecSection, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return nil, fmt.Errorf("project root is required")
+	}
+
+	documents, _, err := loadSpecDocumentInputsForScope(root, applicability)
+	if err != nil {
+		return nil, err
+	}
+
+	specSet, err := ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+	if err != nil {
+		return nil, err
+	}
+	sections := append([]SpecSection{}, specSet.Sections...)
+	sort.SliceStable(sections, func(i int, j int) bool {
+		left := sections[i]
+		right := sections[j]
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return left.ID < right.ID
+	})
+	return sections, nil
 }
 
 // LoadProjectSpecificationSet parses the project's spec carriers and
@@ -294,12 +372,93 @@ func LoadProjectSpecificationSet(projectRoot string) (ProjectSpecificationSet, e
 	return normalizeProjectSpecificationSet(specSet), nil
 }
 
+// LoadProjectSpecificationSetForScope composes the profile-aware carrier
+// loader with the pure scoped projection. It does not resolve a profile or
+// mutate lifecycle state.
+func LoadProjectSpecificationSetForScope(
+	projectRoot string,
+	applicability ProjectSpecificationSetApplicability,
+) (ProjectSpecificationSet, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return ProjectSpecificationSet{}, fmt.Errorf("project root is required")
+	}
+
+	documents, loadFindings, err := loadSpecDocumentInputsForScope(
+		root,
+		applicability,
+	)
+	if err != nil {
+		return ProjectSpecificationSet{}, err
+	}
+
+	specSet, err := ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+	if err != nil {
+		return ProjectSpecificationSet{}, err
+	}
+	specSet.Findings = append(loadFindings, specSet.Findings...)
+
+	return normalizeProjectSpecificationSet(specSet), nil
+}
+
 func CheckSpecDocuments(documents []SpecDocumentInput) SpecCheckReport {
 	specSet := ProjectSpecificationSetFromDocuments(documents)
 	return SpecCheckReportFromSpecificationSet(specSet)
 }
 
+// CheckSpecDocumentsForScope applies the central profile matrix before
+// parsing/checking built-in specification members. Exclusion is normal
+// applicability, not a waived finding.
+func CheckSpecDocumentsForScope(
+	documents []SpecDocumentInput,
+	applicability ProjectSpecificationSetApplicability,
+) (SpecCheckReport, error) {
+	specSet, err := ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+	if err != nil {
+		return newSpecCheckReport(), err
+	}
+	return SpecCheckReportFromSpecificationSet(specSet), nil
+}
+
 func ProjectSpecificationSetFromDocuments(documents []SpecDocumentInput) ProjectSpecificationSet {
+	return projectSpecificationSetFromDocuments(documents)
+}
+
+// ProjectSpecificationSetFromDocumentsForScope is the first read-only
+// consumer of the central capability matrix. It neither resolves the profile
+// nor mutates carriers; callers must supply a scope-local projection derived
+// from the canonical admission result.
+func ProjectSpecificationSetFromDocumentsForScope(
+	documents []SpecDocumentInput,
+	applicability ProjectSpecificationSetApplicability,
+) (ProjectSpecificationSet, error) {
+	if !applicability.Valid() {
+		return ProjectSpecificationSet{}, fmt.Errorf(
+			"project specification applicability is invalid",
+		)
+	}
+	selected := applicableSpecDocumentInputs(documents, applicability)
+	specSet := projectSpecificationSetFromDocuments(selected)
+	underdetermined := applicability.UnderdeterminedDocumentKinds()
+	if len(underdetermined) > 0 {
+		specSet.Findings = append(
+			specSet.Findings,
+			profileApplicabilityUnderdeterminedFinding(
+				applicability,
+				underdetermined,
+			),
+		)
+	}
+	return normalizeProjectSpecificationSet(specSet), nil
+}
+
+func projectSpecificationSetFromDocuments(documents []SpecDocumentInput) ProjectSpecificationSet {
 	specSet := newProjectSpecificationSet()
 	seenSectionIDs := make(map[string]SpecSection)
 	seenTerms := make(map[string]TermMapEntry)
@@ -417,12 +576,56 @@ func mergeSpecCheckDocument(left SpecCheckDocument, right SpecCheckDocument) Spe
 }
 
 func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFinding, error) {
-	documents := make([]SpecDocumentInput, 0, len(specCheckCarriers))
-	findings := ignoredSpecCarrierFindings(root)
+	return loadSelectedSpecDocumentInputs(root, specCheckCarriers)
+}
 
-	for _, carrier := range specCheckCarriers {
+func loadSpecDocumentInputsForScope(
+	root string,
+	applicability ProjectSpecificationSetApplicability,
+) ([]SpecDocumentInput, []SpecCheckFinding, error) {
+	carriers, err := requiredSpecCheckCarriers(applicability)
+	if err != nil {
+		return nil, nil, err
+	}
+	return loadSelectedSpecDocumentInputs(root, carriers)
+}
+
+func loadSelectedSpecDocumentInputs(
+	root string,
+	carriers []specCheckCarrier,
+) ([]SpecDocumentInput, []SpecCheckFinding, error) {
+	documents := make([]SpecDocumentInput, 0, len(carriers))
+	findings := ignoredSpecCarrierFindings(root)
+	legacyRelativePath := filepath.Join(".haft", "specs", "enabling-system.md")
+	legacyPath := filepath.Join(root, legacyRelativePath)
+	softwareRequired := containsSpecCheckCarrier(
+		carriers,
+		string(SpecDocumentKindSoftwareSystem),
+	)
+	legacyContent, legacyPresent := loadLegacySoftwareCarrier(
+		legacyPath,
+		softwareRequired,
+	)
+	if legacyPresent {
+		findings = append(findings, SpecCheckFinding{
+			Level:      "error",
+			Code:       SpecMigrationRequiredFindingCode,
+			Path:       filepath.ToSlash(legacyRelativePath),
+			Message:    "development-version enabling-system spec must be migrated before software-system readiness can pass",
+			NextAction: "run `haft spec migrate`; Haft resolves and continues the exact registered migration, then run `haft spec sync` after completion",
+		})
+	}
+
+	for _, carrier := range carriers {
 		path := filepath.Join(root, carrier.relativePath)
 		content, err := os.ReadFile(path)
+		if os.IsNotExist(err) && carrier.kind == string(SpecDocumentKindSoftwareSystem) {
+			if legacyPresent {
+				path = legacyPath
+				content = []byte(RenderSoftwareSystemCarrier(string(legacyContent)))
+				err = nil
+			}
+		}
 		switch {
 		case err == nil:
 			documents = append(documents, SpecDocumentInput{
@@ -443,6 +646,29 @@ func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFindin
 	}
 
 	return documents, findings, nil
+}
+
+func containsSpecCheckCarrier(
+	carriers []specCheckCarrier,
+	kind string,
+) bool {
+	for _, carrier := range carriers {
+		if carrier.kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func loadLegacySoftwareCarrier(
+	path string,
+	softwareRequired bool,
+) ([]byte, bool) {
+	if !softwareRequired {
+		return nil, false
+	}
+	content, err := os.ReadFile(path)
+	return content, err == nil
 }
 
 func ignoredSpecCarrierFindings(root string) []SpecCheckFinding {
@@ -617,12 +843,12 @@ func projectSpecificationReadinessFindings(specSet ProjectSpecificationSet) []Sp
 		))
 	}
 
-	enabling, enablingOK := specDocumentByKind(specSet.Documents, SpecDocumentKindEnablingSystem)
-	if enablingOK && !targetActive && countActiveSpecSections(enabling.Sections) == 0 {
+	software, softwareOK := specDocumentByKind(specSet.Documents, SpecDocumentKindSoftwareSystem)
+	if softwareOK && countActiveSpecSections(software.Sections) == 0 {
 		findings = append(findings, noActiveSpecSectionFinding(
-			enabling.Path,
-			"enabling-system spec has no active sections; draft placeholders do not authorize engineering governance",
-			"after the target spec is admissible, add active enabling sections for creator roles, repo architecture, effect boundaries, test strategy, surfaces, and runtime policy",
+			software.Path,
+			"software-system spec has no active sections; draft placeholders do not specify the software that realizes the target system",
+			"after the target spec is admissible, add active software sections for role, functional behavior, interfaces, constraints, and selected structure where needed",
 		))
 	}
 
@@ -654,6 +880,38 @@ func noActiveSpecSectionFinding(
 		Message:    message,
 		NextAction: nextAction,
 	}
+}
+
+func profileApplicabilityUnderdeterminedFinding(
+	applicability ProjectSpecificationSetApplicability,
+	documentKinds []SpecDocumentKind,
+) SpecCheckFinding {
+	names := make([]string, len(documentKinds))
+	fillSpecDocumentKindNames(documentKinds, names, 0)
+	return SpecCheckFinding{
+		Level:     "L1",
+		Code:      "profile_capability_applicability_underdetermined",
+		Path:      filepath.ToSlash(filepath.Join(".haft", "project-profile.yaml")),
+		FieldPath: "$.scopes",
+		Message: fmt.Sprintf(
+			"scope %q cannot yet determine applicability for %s from the canonical profile alone",
+			applicability.ScopeID().String(),
+			strings.Join(names, ", "),
+		),
+		NextAction: "recover and admit the missing capability-specific relation basis; do not infer it from repository shape",
+	}
+}
+
+func fillSpecDocumentKindNames(
+	documentKinds []SpecDocumentKind,
+	result []string,
+	index int,
+) {
+	if index == len(documentKinds) {
+		return
+	}
+	result[index] = string(documentKinds[index])
+	fillSpecDocumentKindNames(documentKinds, result, index+1)
 }
 
 func validateSpecSectionFields(
@@ -943,6 +1201,8 @@ func normalizeSystemFrameKind(value string) string {
 	switch normalized {
 	case "target_system", "target":
 		return "target_system"
+	case "software_system", "software":
+		return "software_system"
 	case "enabling_system", "enabling":
 		return "enabling_system"
 	case "carrier", "carrier_system", "publication", "publication_system":
@@ -955,7 +1215,7 @@ func normalizeSystemFrameKind(value string) string {
 }
 
 func allowedSystemFrameKindsDescription() string {
-	return "target_system, enabling_system, carrier, or sidekick"
+	return "target_system, software_system, carrier, or sidekick; enabling_system is legacy migration input"
 }
 
 func specClaimStringList(fields map[string]any, field string) []string {
@@ -1978,6 +2238,8 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 	switch finding.Code {
 	case "spec_carriers_gitignored":
 		return "unignore .haft/specs and other reviewable projections, or keep the carriers local and record the dogfood state in tracked specs/tests"
+	case SpecMigrationRequiredFindingCode:
+		return "run `haft spec migrate`; Haft resolves and continues the exact registered migration, then run `haft spec sync` after completion"
 	case "spec_carrier_no_active_sections":
 		return "keep placeholders draft and add human-approved active spec sections before treating readiness as passing"
 	case "spec_carrier_missing_file":
@@ -1999,7 +2261,7 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 	case "spec_section_invalid_terms":
 		return "make `terms` a YAML list of non-empty strings"
 	case "spec_section_invalid_system_frame":
-		return "set `system_frame` to target_system, enabling_system, carrier, or sidekick; remove the field only when the carrier compatibility frame is sufficient"
+		return "set `system_frame` to target_system, software_system, carrier, or sidekick; use enabling_system only as legacy migration input"
 	case "spec_section_invalid_depends_on", "spec_section_invalid_target_refs":
 		return "make the reference field a YAML list of stable spec-section ids"
 	case "spec_section_invalid_evidence_required":

@@ -246,11 +246,6 @@ func buildClaimLifecycleSummary(claims []DecisionClaim) *ClaimLifecycleSummary {
 	return &summary
 }
 
-//nolint:unused // exercised by package tests
-func newDecisionPredictions(inputs []PredictionInput) []DecisionPrediction {
-	return decisionPredictionsFromClaims(newDecisionClaims(inputs))
-}
-
 func canonicalDecisionClaimID(index int) string {
 	return fmt.Sprintf("claim-%03d", index+1)
 }
@@ -605,51 +600,6 @@ func ClaimStatusFromPredictionMeasureMatch(match PredictionMeasureMatch) ClaimSt
 	}
 
 	return ClaimStatusUnverified
-}
-
-//nolint:unused // exercised by package tests
-func adjudicateDecisionClaims(
-	claims []DecisionClaim,
-	measuredClaimRefs []string,
-	criteriaMet []string,
-	criteriaMetScope []string,
-	criteriaNotMet []string,
-	criteriaNotMetScope []string,
-) []DecisionClaim {
-	normalized := normalizeDecisionClaims(claims)
-	if len(normalized) == 0 {
-		return nil
-	}
-
-	aliasIndex := buildDecisionClaimAliasIndex(normalized)
-	metMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaMet, criteriaMetScope)
-	notMetMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaNotMet, criteriaNotMetScope)
-	measuredRefs := normalizeClaimRefs(measuredClaimRefs)
-	measuredRefSet := make(map[string]struct{}, len(measuredRefs))
-	updated := make([]DecisionClaim, 0, len(normalized))
-
-	for _, ref := range measuredRefs {
-		measuredRefSet[ref] = struct{}{}
-	}
-
-	for index, claim := range normalized {
-		_, measuredByRef := measuredRefSet[claim.ID]
-		measurementRecorded := measuredByRef || metMatches[index] || notMetMatches[index]
-		if !measurementRecorded {
-			updated = append(updated, claim)
-			continue
-		}
-
-		match := PredictionMeasureMatch{
-			MeasurementRecorded: measurementRecorded,
-			CriteriaMet:         metMatches[index],
-			CriteriaNotMet:      notMetMatches[index],
-		}
-		claim.Status = ClaimStatusFromPredictionMeasureMatch(match)
-		updated = append(updated, claim)
-	}
-
-	return updated
 }
 
 func rebuildDecisionClaimsFromEvidence(

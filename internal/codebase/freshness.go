@@ -6,10 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 )
+
+const CodeIndexSchemaVersion = 6
 
 // SourceFingerprint computes a cheap fingerprint of the indexable source tree:
 // a sha256 over sorted "relPath\x00size\x00mtime" lines for every file that
@@ -18,33 +19,28 @@ import (
 // or a size/mtime change, flips the fingerprint; an unchanged tree reproduces
 // it exactly. Shell (walk + stat); the hash is deterministic given the metadata.
 func (s *Scanner) SourceFingerprint(projectRoot string) (string, error) {
-	ignoreChecker := NewIgnoreChecker(projectRoot)
-	var lines []string
-	err := filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
+	lines := []string{fmt.Sprintf("code-index-schema\x00%d", CodeIndexSchemaVersion)}
+	err := walkProjectFiles(projectRoot, func(
+		path string,
+		relPath string,
+		entry os.DirEntry,
+	) error {
+		if !s.registry.SupportsSymbols(path) {
 			return nil
 		}
-		if d.IsDir() {
-			if IsExcludedDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			if rel, err := filepath.Rel(projectRoot, path); err == nil && ignoreChecker.IsIgnored(rel) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if _, ok := languages[filepath.Ext(path)]; !ok {
-			return nil
-		}
-		rel, err := filepath.Rel(projectRoot, path)
-		if err != nil || ignoreChecker.IsIgnored(rel) {
-			return nil
-		}
-		info, err := d.Info()
+		info, err := entry.Info()
 		if err != nil {
-			return nil
+			return err
 		}
-		lines = append(lines, fmt.Sprintf("%s\x00%d\x00%d", rel, info.Size(), info.ModTime().UnixNano()))
+		lines = append(
+			lines,
+			fmt.Sprintf(
+				"%s\x00%d\x00%d",
+				relPath,
+				info.Size(),
+				info.ModTime().UnixNano(),
+			),
+		)
 		return nil
 	})
 	if err != nil {

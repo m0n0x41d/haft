@@ -42,6 +42,10 @@ linters:
         - G306 # WriteFile permissions 0644 — fine for markdown/config files
         - G703 # path traversal — we construct paths from project root intentionally
   exclusions:
+    # v2.11.4 already defaults to strict generated-file detection. Keep the
+    # frozen production-Go contour explicit instead of depending on that
+    # loader default.
+    generated: strict
     paths:
       - desktop/
     rules:

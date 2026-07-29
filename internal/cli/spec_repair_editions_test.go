@@ -23,7 +23,7 @@ func TestRunSpecRepairEditionsDryRunReportsMismatches(t *testing.T) {
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 	section := specRepairEditionsTestSection("TS.stale.001")
-	putRawCLISpecSectionEdition(t, database, "qnt_spec_sync_test", "stale-hash", section)
+	putRawCLISpecSectionEdition(t, database, "qnt_5eec5eec", "stale-hash", section)
 
 	restoreFlags := stubSpecRepairEditionsFlags(t, true, false)
 	defer restoreFlags()
@@ -53,7 +53,7 @@ func TestRunSpecRepairEditionsDryRunReportsMismatches(t *testing.T) {
 	}
 
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
-	_, err := store.GetCurrent("qnt_spec_sync_test", "TS.stale.001")
+	_, err := store.GetCurrent("qnt_5eec5eec", "TS.stale.001")
 	if !errors.Is(err, specflow.ErrSpecSectionEditionSemanticHashMismatch) {
 		t.Fatalf("dry-run should leave mismatch in place, err = %v", err)
 	}
@@ -67,7 +67,7 @@ func TestRunSpecRepairEditionsApplyUnblocksSpecExport(t *testing.T) {
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 	section := specRepairEditionsTestSection("TS.stale.001")
-	putRawCLISpecSectionEdition(t, database, "qnt_spec_sync_test", "stale-hash", section)
+	putRawCLISpecSectionEdition(t, database, "qnt_5eec5eec", "stale-hash", section)
 
 	restoreRepairFlags := stubSpecRepairEditionsFlags(t, true, true)
 	defer restoreRepairFlags()

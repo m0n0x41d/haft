@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
@@ -39,6 +41,10 @@ func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
 	if result.AuthorityBoundary != specSyncAuthorityBoundary {
 		t.Fatalf("authority boundary = %q", result.AuthorityBoundary)
 	}
+	if result.Scope != specSyncScopeFullProject ||
+		result.RequestedSection != "" {
+		t.Fatalf("full sync scope = %#v", result)
+	}
 	for _, want := range []string{"evidence", "gate", "claim_truth", "global_truth", "prose_authority"} {
 		if !strings.Contains(result.AuthorityBoundary, want) {
 			t.Fatalf("authority boundary missing %q: %q", want, result.AuthorityBoundary)
@@ -60,7 +66,7 @@ func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
-	edition, err := store.GetCurrent("qnt_spec_sync_test", "TS.sync.001")
+	edition, err := store.GetCurrent("qnt_5eec5eec", "TS.sync.001")
 	if err != nil {
 		t.Fatalf("GetCurrent target section: %v", err)
 	}
@@ -80,7 +86,7 @@ func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
 	}
 }
 
-func TestSyncProjectSpecificationSetToSQLBlocksCarrierFindings(t *testing.T) {
+func TestSyncProjectSpecificationSetToSQLWithScopeBlocksCarrierFindings(t *testing.T) {
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	specSet := project.ProjectSpecificationSet{
@@ -90,7 +96,16 @@ func TestSyncProjectSpecificationSetToSQLBlocksCarrierFindings(t *testing.T) {
 		},
 	}
 
-	result, err := syncProjectSpecificationSetToSQL("proj-1", specSet, store)
+	scope, err := newSpecSyncScope("")
+	if err != nil {
+		t.Fatalf("construct full-project sync scope: %v", err)
+	}
+	result, err := syncProjectSpecificationSetToSQLWithScope(
+		"proj-1",
+		specSet,
+		store,
+		scope,
+	)
 	if err == nil {
 		t.Fatal("expected sync to block on findings")
 	}
@@ -105,7 +120,7 @@ func TestSyncProjectSpecificationSetToSQLBlocksCarrierFindings(t *testing.T) {
 	}
 }
 
-func TestSyncProjectSpecificationSetToSQLDeletesMissingCarrierSections(t *testing.T) {
+func TestSyncProjectSpecificationSetToSQLWithScopeFullProjectDeletesMissingCarrierSections(t *testing.T) {
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 
@@ -130,11 +145,20 @@ func TestSyncProjectSpecificationSetToSQLDeletesMissingCarrierSections(t *testin
 		t.Fatalf("seed removed edition: %v", err)
 	}
 
-	_, err := syncProjectSpecificationSetToSQL("proj-1", project.ProjectSpecificationSet{
-		Sections: []project.SpecSection{kept},
-	}, store)
+	scope, err := newSpecSyncScope("")
 	if err != nil {
-		t.Fatalf("syncProjectSpecificationSetToSQL: %v", err)
+		t.Fatalf("construct full-project sync scope: %v", err)
+	}
+	_, err = syncProjectSpecificationSetToSQLWithScope(
+		"proj-1",
+		project.ProjectSpecificationSet{
+			Sections: []project.SpecSection{kept},
+		},
+		store,
+		scope,
+	)
+	if err != nil {
+		t.Fatalf("syncProjectSpecificationSetToSQLWithScope: %v", err)
 	}
 
 	if _, err := store.GetCurrent("proj-1", "TS.kept.001"); err != nil {
@@ -146,20 +170,140 @@ func TestSyncProjectSpecificationSetToSQLDeletesMissingCarrierSections(t *testin
 	}
 }
 
+func TestSyncProjectSpecificationSetToSQLExactSectionLeavesOtherEditionsUntouched(
+	t *testing.T,
+) {
+	database := newTestCLIDB(t)
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	selected := project.SpecSection{
+		ID:           "SS.selected.001",
+		Spec:         "software-system",
+		DocumentKind: string(project.SpecDocumentKindSoftwareSystem),
+		Status:       "draft",
+		Title:        "Selected carrier section",
+		Path:         ".haft/specs/software-system.md",
+	}
+	unrelatedBefore := project.SpecSection{
+		ID:           "TS.unrelated.001",
+		Spec:         "target-system",
+		DocumentKind: string(project.SpecDocumentKindTargetSystem),
+		Status:       "active",
+		Title:        "SQL truth remains",
+		Path:         ".haft/specs/target-system.md",
+	}
+	unrelatedCarrier := unrelatedBefore
+	unrelatedCarrier.Title = "Carrier drift must not sync"
+	unrelatedEdition := specflow.NewSpecSectionEdition(
+		"proj-1",
+		unrelatedBefore,
+		specflow.SpecSectionSourceCarrierImport,
+		time.Time{},
+	)
+	if err := store.PutCurrent(unrelatedEdition); err != nil {
+		t.Fatalf("seed unrelated edition: %v", err)
+	}
+	scope, err := newSpecSyncScope(selected.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := syncProjectSpecificationSetToSQLWithScope(
+		"proj-1",
+		project.ProjectSpecificationSet{
+			Sections: []project.SpecSection{
+				selected,
+				unrelatedCarrier,
+			},
+		},
+		store,
+		scope,
+	)
+	if err != nil {
+		t.Fatalf("scoped spec sync: %v", err)
+	}
+	if result.Scope != specSyncScopeExactSection ||
+		result.RequestedSection != selected.ID ||
+		len(result.Imported) != 1 ||
+		result.Imported[0].SectionID != selected.ID {
+		t.Fatalf("scoped sync result = %#v", result)
+	}
+	currentUnrelated, err := store.GetCurrent(
+		"proj-1",
+		unrelatedBefore.ID,
+	)
+	if err != nil {
+		t.Fatalf("read unrelated edition: %v", err)
+	}
+	if currentUnrelated.SemanticHash != unrelatedEdition.SemanticHash ||
+		currentUnrelated.Section.Title != unrelatedBefore.Title {
+		t.Fatalf(
+			"scoped sync mutated unrelated edition: before=%#v after=%#v",
+			unrelatedEdition,
+			currentUnrelated,
+		)
+	}
+	if _, err := store.GetCurrent("proj-1", selected.ID); err != nil {
+		t.Fatalf("selected edition missing: %v", err)
+	}
+}
+
+func TestSyncProjectSpecificationSetToSQLExactSectionRejectsMissingCarrier(
+	t *testing.T,
+) {
+	database := newTestCLIDB(t)
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	scope, err := newSpecSyncScope("SS.missing.001")
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := syncProjectSpecificationSetToSQLWithScope(
+		"proj-1",
+		project.ProjectSpecificationSet{
+			Sections: []project.SpecSection{
+				{ID: "SS.present.001", Status: "draft"},
+			},
+		},
+		store,
+		scope,
+	)
+	if err == nil || !strings.Contains(err.Error(), "not present") {
+		t.Fatalf("missing exact section error = %v", err)
+	}
+	if len(result.Imported) != 0 {
+		t.Fatalf("missing exact section wrote entries: %#v", result)
+	}
+}
+
 func setupSpecSyncProject(t *testing.T) string {
 	t.Helper()
-	home := t.TempDir()
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	t.Setenv("HOME", home)
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
 	haftDir := filepath.Join(root, ".haft")
 	specDir := filepath.Join(haftDir, "specs")
 	if err := os.MkdirAll(specDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	writeSpecCheckCLIFile(t, filepath.Join(haftDir, "project.yaml"), "id: qnt_spec_sync_test\nname: spec-sync-test\n")
+	writeSpecCheckCLIFile(t, filepath.Join(haftDir, "project.yaml"), "id: qnt_5eec5eec\nname: spec-sync-test\n")
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "target-system.md"), validCLISpecSectionCarrier("TS.sync.001", "acceptance"))
-	writeSpecCheckCLIFile(t, filepath.Join(specDir, "enabling-system.md"), validCLISpecSectionCarrier("ES.sync.001", "creator-role"))
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "software-system.md"), validCLISpecSectionCarrier("SS.sync.001", "software.role"))
 	writeSpecCheckCLIFile(t, filepath.Join(specDir, "term-map.md"), validCLITermMapCarrier())
+	database := openSpecSyncDB(t, root)
+	if err := database.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := projectledger.BindInitialized(
+		context.Background(),
+		root,
+		time.Date(2026, time.July, 18, 8, 0, 0, 0, time.UTC),
+	); err != nil {
+		t.Fatalf("bind initialized spec fixture: %v", err)
+	}
 	return root
 }
 
@@ -209,8 +353,11 @@ func chdirForTest(t *testing.T, dir string) func() {
 func stubSpecSyncFlags(t *testing.T, jsonFlag bool) func() {
 	t.Helper()
 	previousJSON := specSyncJSON
+	previousSection := specSyncSection
 	specSyncJSON = jsonFlag
+	specSyncSection = ""
 	return func() {
 		specSyncJSON = previousJSON
+		specSyncSection = previousSection
 	}
 }

@@ -13,11 +13,11 @@ import (
 
 func TestExploreResponse_SpineBlastSourceFused(t *testing.T) {
 	res := codeintel.ExploreResult{
-		Seed:        codebase.CodeSymbol{Name: "FrameProblem", FilePath: "internal/artifact/problem.go", StartLine: 147},
-		SeedFound:   true,
-		SeedBody:    "func FrameProblem() error { return nil }",
-		SeedBodyOK:  true,
-		BridgesUsed: 1,
+		Seed:           codebase.CodeSymbol{Name: "FrameProblem", FilePath: "internal/artifact/problem.go", StartLine: 147},
+		SeedResolution: fixtureResolvedSeed(t, "sym:test:frame-problem"),
+		SeedBody:       "func FrameProblem() error { return nil }",
+		SeedBodyOK:     true,
+		ChainOutcome:   fixtureChainOutcome(t, "leaf_reached", true),
 		Chain: []codeintel.ChainStep{
 			{
 				Symbol:   codebase.CodeSymbol{Name: "FrameProblem", FilePath: "internal/artifact/problem.go", StartLine: 147},
@@ -62,10 +62,11 @@ func TestExploreResponse_SpineBlastSourceFused(t *testing.T) {
 func TestExploreResponse_InvariantsDedupedNotPerNode(t *testing.T) {
 	inv := []graph.Invariant{{Text: "no second runtime", DecisionTitle: "extend in place"}}
 	res := codeintel.ExploreResult{
-		Seed:       codebase.CodeSymbol{Name: "A", FilePath: "x.go", StartLine: 1},
-		SeedFound:  true,
-		SeedBody:   "func A() {}",
-		SeedBodyOK: true,
+		Seed:           codebase.CodeSymbol{Name: "A", FilePath: "x.go", StartLine: 1},
+		SeedResolution: fixtureResolvedSeed(t, "sym:test:a"),
+		SeedBody:       "func A() {}",
+		SeedBodyOK:     true,
+		ChainOutcome:   fixtureChainOutcome(t, "leaf_reached", false),
 		Chain: []codeintel.ChainStep{
 			{Symbol: codebase.CodeSymbol{Name: "A", FilePath: "x.go", StartLine: 1}, Distance: 0, Context: contextgraph.CodeContext{Invariants: inv}},
 			{Symbol: codebase.CodeSymbol{Name: "B", FilePath: "x.go", StartLine: 9}, Distance: 1, ViaKind: codebase.EdgeCall, Context: contextgraph.CodeContext{Invariants: inv}},
@@ -83,10 +84,10 @@ func TestExploreResponse_InvariantsDedupedNotPerNode(t *testing.T) {
 
 func TestExploreResponse_UnresolvedBoundaryHonest(t *testing.T) {
 	res := codeintel.ExploreResult{
-		Seed:          codebase.CodeSymbol{Name: "Dispatch", FilePath: "x.go", StartLine: 1},
-		SeedFound:     true,
-		UnresolvedEnd: true,
-		SeedBodyOK:    false,
+		Seed:           codebase.CodeSymbol{Name: "Dispatch", FilePath: "x.go", StartLine: 1},
+		SeedResolution: fixtureResolvedSeed(t, "sym:test:dispatch"),
+		ChainOutcome:   fixtureChainOutcome(t, "unresolved_dispatch_boundary", false),
+		SeedBodyOK:     false,
 		Chain: []codeintel.ChainStep{
 			{Symbol: codebase.CodeSymbol{Name: "Dispatch", FilePath: "x.go", StartLine: 1}},
 		},
@@ -101,7 +102,18 @@ func TestExploreResponse_UnresolvedBoundaryHonest(t *testing.T) {
 }
 
 func TestExploreResponse_AmbiguousAndNotFound(t *testing.T) {
-	amb := ExploreResponse(codeintel.ExploreResult{Ambiguous: []codebase.CodeSymbol{{Name: "S", FilePath: "a.go", StartLine: 1}, {Name: "S", FilePath: "b.go", StartLine: 2}}}, "S", "go")
+	amb := ExploreResponse(codeintel.ExploreResult{
+		SeedResolution: fixtureCandidateSet(
+			t,
+			"ambiguous_exact_name",
+			"sym:test:s:a",
+			"sym:test:s:b",
+		),
+		Candidates: []codebase.CodeSymbol{
+			{Name: "S", FilePath: "a.go", StartLine: 1},
+			{Name: "S", FilePath: "b.go", StartLine: 2},
+		},
+	}, "S", "go")
 	if !strings.Contains(amb, "ambiguous") {
 		t.Errorf("ambiguous seed must be surfaced:\n%s", amb)
 	}
@@ -113,6 +125,8 @@ func TestExploreResponse_AmbiguousAndNotFound(t *testing.T) {
 
 func TestExploreBagResponse_ConnectedNoPathAndUnresolved(t *testing.T) {
 	res := codeintel.ExploreBagResult{
+		Index:      codebase.IndexState{Epoch: 7},
+		Resolution: codebase.ResolutionCounts{Resolved: 4, Ambiguous: 1, Unresolved: 2},
 		Seeds: []codebase.CodeSymbol{
 			{Name: "A", FilePath: "a.go", StartLine: 1},
 			{Name: "C", FilePath: "c.go", StartLine: 9},
@@ -123,7 +137,9 @@ func TestExploreBagResponse_ConnectedNoPathAndUnresolved(t *testing.T) {
 			{
 				From:      codebase.CodeSymbol{Name: "A", FilePath: "a.go", StartLine: 1},
 				To:        codebase.CodeSymbol{Name: "C", FilePath: "c.go", StartLine: 9},
-				Connected: true,
+				Forward:   fixturePathFound(t, "sym:test:a", "sym:test:c"),
+				Reverse:   fixturePathAbsent(t),
+				Direction: fixtureBagDirection(t, "forward"),
 				Steps: []codeintel.ChainStep{
 					{Symbol: codebase.CodeSymbol{Name: "A", FilePath: "a.go", StartLine: 1}, Distance: 0},
 					{Symbol: codebase.CodeSymbol{Name: "B", FilePath: "b.go", StartLine: 5}, Distance: 1, ViaKind: codebase.EdgeCall},
@@ -133,7 +149,9 @@ func TestExploreBagResponse_ConnectedNoPathAndUnresolved(t *testing.T) {
 			{
 				From:      codebase.CodeSymbol{Name: "C", FilePath: "c.go", StartLine: 9},
 				To:        codebase.CodeSymbol{Name: "Z", FilePath: "z.go", StartLine: 3},
-				Connected: false,
+				Forward:   fixturePathAbsent(t),
+				Reverse:   fixturePathAbsent(t),
+				Direction: fixtureBagDirection(t, "none"),
 			},
 		},
 	}
@@ -141,10 +159,13 @@ func TestExploreBagResponse_ConnectedNoPathAndUnresolved(t *testing.T) {
 	if !strings.Contains(out, "A → C") || !strings.Contains(out, "**B**") {
 		t.Errorf("connected leg should render the path A→...→C:\n%s", out)
 	}
-	if !strings.Contains(out, "C ⇸ Z") || !strings.Contains(out, "no static path") {
+	if !strings.Contains(out, "C ⇸ Z") || !strings.Contains(out, "no selected static path") {
 		t.Errorf("disconnected leg must say no static path, not bridge it:\n%s", out)
 	}
 	if !strings.Contains(out, "Huh") {
 		t.Errorf("unresolved seed must be surfaced:\n%s", out)
+	}
+	if !strings.Contains(out, "Index epoch: 7") || !strings.Contains(out, "4 resolved • 1 ambiguous • 2 unresolved") {
+		t.Errorf("multi-seed explore must retain epoch and aggregate resolution truth:\n%s", out)
 	}
 }

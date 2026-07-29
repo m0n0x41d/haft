@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,18 +10,24 @@ import (
 	"strings"
 	"time"
 
-	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
-// handleHaftSpecSection dispatches haft_spec_section MCP tool calls. The
-// server-bound project root (parent of haftDir) is the default; callers
-// may override via "project_root" arg.
-func handleHaftSpecSection(_ context.Context, _ *artifact.Store, haftDir string, args map[string]any) (string, error) {
+func handleHaftSpecSectionWithProjectionRef(
+	ctx context.Context,
+	haftDir string,
+	args map[string]any,
+) (string, string, error) {
 	action := strings.TrimSpace(stringArg(args, "action"))
 	if action == "" {
-		return "", fmt.Errorf("action is required")
+		return "", "", fmt.Errorf("action is required")
+	}
+	if err := validateSpecSectionActionArguments(action, args); err != nil {
+		return "", "", err
+	}
+	if ctx == nil {
+		ctx = context.Background()
 	}
 
 	projectRoot := strings.TrimSpace(stringArg(args, "project_root"))
@@ -30,27 +37,215 @@ func handleHaftSpecSection(_ context.Context, _ *artifact.Store, haftDir string,
 
 	switch action {
 	case "lifecycle":
-		return handleSpecSectionLifecycle(projectRoot)
+		result, err := handleSpecSectionLifecycle(ctx, projectRoot, args)
+		return result, "", err
 	case "next_step":
-		return handleSpecSectionNextStep(projectRoot)
+		result, err := handleSpecSectionNextStep(ctx, projectRoot, args)
+		return result, "", err
+	case "project":
+		return handleSpecSectionProjectionSource(
+			ctx,
+			projectRoot,
+			args,
+		)
 	case "approve":
-		return handleSpecSectionApprove(projectRoot, args)
+		result, err := handleSpecSectionApprove(projectRoot, args)
+		return result, "", err
 	case "rebaseline":
-		return handleSpecSectionRebaseline(projectRoot, args)
+		result, err := handleSpecSectionRebaseline(projectRoot, args)
+		return result, "", err
 	case "reopen":
-		return handleSpecSectionReopen(projectRoot, args)
+		result, err := handleSpecSectionReopen(projectRoot, args)
+		return result, "", err
 	default:
-		return "", fmt.Errorf("unknown action: %s", action)
+		return "", "", fmt.Errorf("unknown action: %s", action)
 	}
 }
 
-func handleSpecSectionLifecycle(projectRoot string) (string, error) {
-	projection, err := buildSpecLifecycleProjection(projectRoot)
+func validateSpecSectionActionArguments(
+	action string,
+	args map[string]any,
+) error {
+	if action != "lifecycle" && action != "next_step" {
+		return nil
+	}
+	sectionID := strings.TrimSpace(stringArg(args, "section_id"))
+	if sectionID == "" {
+		return nil
+	}
+	return fmt.Errorf(
+		"section_id_not_applicable: haft_spec_section action=%q is a "+
+			"project/scope-level ProjectSpecificationSet workflow projection "+
+			"and cannot inspect exact section %q; use "+
+			"haft_query(action=\"spec_trace\", section_id=%q) for its current "+
+			"edition, lifecycle, and baseline, or "+
+			"haft_query(action=\"spec_use\", section_id=%q, "+
+			"use_context=\"<named use>\") for stronger-use admission",
+		action,
+		sectionID,
+		sectionID,
+		sectionID,
+	)
+}
+
+const specSectionProjectionAuthorityBoundary = "typed_spec_section_at_concern_candidate_not_approval_rebaseline_reopen_evidence_truth_or_authority"
+const specSectionProjectionEditionRefPrefix = "spec-section-edition:"
+const specSectionProjectionEditionRefSeparator = "@"
+
+type specSectionProjectionSourceResult struct {
+	Action            string `json:"action"`
+	SectionID         string `json:"section_id"`
+	EditionRef        string `json:"edition_ref"`
+	SemanticHash      string `json:"semantic_hash"`
+	SourceKind        string `json:"source_kind"`
+	CarrierPath       string `json:"carrier_path,omitempty"`
+	AuthorityBoundary string `json:"authority_boundary"`
+}
+
+func newSpecSectionProjectionEditionRef(
+	sectionID string,
+	semanticHash string,
+) (string, error) {
+	sectionID = strings.TrimSpace(sectionID)
+	semanticHash = strings.TrimSpace(semanticHash)
+	if sectionID == "" {
+		return "", fmt.Errorf(
+			"SpecSection projection requires an exact section ID",
+		)
+	}
+	decoded, err := hex.DecodeString(semanticHash)
+	if err != nil || len(decoded) != 32 {
+		return "", fmt.Errorf(
+			"SpecSection projection requires an exact SHA-256 semantic hash",
+		)
+	}
+	return specSectionProjectionEditionRefPrefix +
+		sectionID +
+		specSectionProjectionEditionRefSeparator +
+		semanticHash, nil
+}
+
+func parseSpecSectionProjectionEditionRef(
+	raw string,
+) (string, string, error) {
+	value := strings.TrimSpace(raw)
+	if !strings.HasPrefix(
+		value,
+		specSectionProjectionEditionRefPrefix,
+	) {
+		return "", "", fmt.Errorf(
+			"invalid SpecSection edition reference %q",
+			raw,
+		)
+	}
+	coordinate := strings.TrimPrefix(
+		value,
+		specSectionProjectionEditionRefPrefix,
+	)
+	separator := strings.LastIndex(
+		coordinate,
+		specSectionProjectionEditionRefSeparator,
+	)
+	if separator <= 0 || separator == len(coordinate)-1 {
+		return "", "", fmt.Errorf(
+			"invalid SpecSection edition reference %q",
+			raw,
+		)
+	}
+	sectionID := coordinate[:separator]
+	semanticHash := coordinate[separator+1:]
+	exact, err := newSpecSectionProjectionEditionRef(
+		sectionID,
+		semanticHash,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	if exact != value {
+		return "", "", fmt.Errorf(
+			"SpecSection edition reference is noncanonical",
+		)
+	}
+	return sectionID, semanticHash, nil
+}
+
+func handleSpecSectionProjectionSource(
+	ctx context.Context,
+	projectRoot string,
+	args map[string]any,
+) (string, string, error) {
+	if err := requireSectionID(args); err != nil {
+		return "", "", err
+	}
+	cfg, err := project.Load(
+		filepath.Join(projectRoot, ".haft"),
+	)
+	if err != nil {
+		return "", "", err
+	}
+	projectID, store, closeStore, err :=
+		openSpecSectionEditionReadStore(
+			ctx,
+			projectRoot,
+			cfg,
+		)
+	if err != nil {
+		return "", "", err
+	}
+	defer closeStore()
+
+	sectionID := strings.TrimSpace(stringArg(args, "section_id"))
+	edition, err := store.GetCurrent(
+		projectID,
+		sectionID,
+	)
+	if err != nil {
+		return "", "", fmt.Errorf(
+			"load current SpecSection edition %q: %w",
+			sectionID,
+			err,
+		)
+	}
+	editionRef, err := newSpecSectionProjectionEditionRef(
+		edition.SectionID,
+		edition.SemanticHash,
+	)
+	if err != nil {
+		return "", "", err
+	}
+	result := specSectionProjectionSourceResult{
+		Action:            "project",
+		SectionID:         edition.SectionID,
+		EditionRef:        editionRef,
+		SemanticHash:      edition.SemanticHash,
+		SourceKind:        string(edition.SourceKind),
+		CarrierPath:       edition.CarrierPath,
+		AuthorityBoundary: specSectionProjectionAuthorityBoundary,
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return "", "", fmt.Errorf(
+			"marshal SpecSection projection source: %w",
+			err,
+		)
+	}
+	return string(payload), editionRef, nil
+}
+
+func handleSpecSectionLifecycle(
+	ctx context.Context,
+	projectRoot string,
+	args map[string]any,
+) (string, error) {
+	request, err := projectSpecificationScopeRequestFromSpecSectionArgs(args)
 	if err != nil {
 		return "", err
 	}
-
-	payload, err := json.Marshal(projection)
+	result, err := buildPublicSpecLifecycle(ctx, projectRoot, request)
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("marshal lifecycle projection: %w", err)
 	}
@@ -58,26 +253,67 @@ func handleSpecSectionLifecycle(projectRoot string) (string, error) {
 	return string(payload), nil
 }
 
-func handleSpecSectionNextStep(projectRoot string) (string, error) {
-	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+type publicSpecNextStepResult struct {
+	*specflow.WorkflowIntent
+	ProfileApplicability publicProjectSpecificationApplicability `json:"profile_applicability"`
+}
+
+func handleSpecSectionNextStep(
+	ctx context.Context,
+	projectRoot string,
+	args map[string]any,
+) (string, error) {
+	request, err := projectSpecificationScopeRequestFromSpecSectionArgs(args)
 	if err != nil {
 		return "", err
 	}
-
-	store, projectID, closeFn, err := projectBaseline(projectRoot)
-	defer closeFn()
+	lifecycle, err := buildPublicSpecLifecycle(ctx, projectRoot, request)
 	if err != nil {
 		return "", err
 	}
-
-	intent := specflow.NextStep(specflow.DeriveStateWithBaselines(specSet, store, projectID))
-
-	payload, err := json.Marshal(intent)
+	result := publicSpecNextStepFromLifecycle(lifecycle)
+	payload, err := json.Marshal(result)
 	if err != nil {
 		return "", fmt.Errorf("marshal intent: %w", err)
 	}
 
 	return string(payload), nil
+}
+
+func publicSpecNextStepFromLifecycle(
+	lifecycle publicSpecLifecycleResult,
+) publicSpecNextStepResult {
+	result := publicSpecNextStepResult{
+		ProfileApplicability: lifecycle.ProfileApplicability,
+	}
+	if lifecycle.SpecLifecycleProjection == nil {
+		return result
+	}
+	result.WorkflowIntent = &lifecycle.WorkflowIntent
+	return result
+}
+
+func projectSpecificationScopeRequestFromSpecSectionArgs(
+	args map[string]any,
+) (projectSpecificationScopeRequest, error) {
+	raw, found := args["scope_id"]
+	if !found {
+		return automaticProjectSpecificationScopeRequest(), nil
+	}
+	scopeID, ok := raw.(string)
+	if !ok {
+		return projectSpecificationScopeRequest{}, fmt.Errorf(
+			"scope_id must be a string",
+		)
+	}
+	request, err := projectSpecificationScopeRequestFromFlag(scopeID)
+	if err != nil {
+		return projectSpecificationScopeRequest{}, fmt.Errorf(
+			"invalid scope_id: %w",
+			err,
+		)
+	}
+	return request, nil
 }
 
 // SpecSectionBaselineResult is the response shape for approve / rebaseline

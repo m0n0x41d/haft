@@ -1,266 +1,59 @@
 package cli
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 )
 
-func TestInstallSkillAirUsesProjectSkillsDir(t *testing.T) {
-	projectRoot := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
-
-	// Multi-skill installer returns the skills ROOT (parent of each skill
-	// folder), not a per-skill subdir. Each skill in allSkills lands as
-	// `<root>/<skill-name>/SKILL.md`.
-	displayPath, count, err := installSkill("air", false, projectRoot)
-	if err != nil {
-		t.Fatalf("installSkill returned error: %v", err)
+func TestPublicSkillCatalogIsExactTwelve(t *testing.T) {
+	want := []string{
+		"h-reason",
+		"h-decide",
+		"h-frame",
+		"h-diagnose",
+		"h-explore",
+		"h-compare",
+		"h-verify",
+		"h-spec",
+		"h-status",
+		"h-onboard",
+		"h-note",
+		"h-commission",
 	}
-	if count != len(allSkills) {
-		t.Errorf("installSkill installed %d skills, expected %d", count, len(allSkills))
+	if len(allSkills) != len(want) {
+		t.Fatalf("public skill count = %d, want %d", len(allSkills), len(want))
 	}
-
-	wantRoot := filepath.Join(projectRoot, "skills")
-	if displayPath != wantRoot {
-		t.Fatalf("display path = %q, want %q", displayPath, wantRoot)
-	}
-
-	// Each governance-substrate skill should land at <root>/<name>/SKILL.md.
-	for _, sk := range allSkills {
-		skillPath := filepath.Join(wantRoot, sk.Name, "SKILL.md")
-		content, err := os.ReadFile(skillPath)
-		if err != nil {
-			t.Fatalf("failed to read installed skill %q: %v", sk.Name, err)
+	for index, skill := range allSkills {
+		if skill.Name != want[index] {
+			t.Fatalf("public skill[%d] = %q, want %q", index, skill.Name, want[index])
 		}
-		if string(content) != string(sk.Content) {
-			t.Fatalf("installed skill %q content mismatch", sk.Name)
-		}
-	}
-
-	// Deprecated h-fpf directory MUST NOT exist after install — h-fpf
-	// was the v8 narrow-fallback name; it's been superseded by the
-	// h-reason umbrella. Re-running haft init always lands the clean
-	// post-rename state.
-	if _, err := os.Stat(filepath.Join(wantRoot, "h-fpf")); !os.IsNotExist(err) {
-		t.Fatalf("h-fpf should be removed by deprecation cleanup; got err=%v", err)
 	}
 }
 
-func TestInstallCodexSkillsWritesExplicitCommandSkills(t *testing.T) {
-	projectRoot := t.TempDir()
-	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
-
-	displayPath, count, err := installCodexSkills(projectRoot, false)
-	if err != nil {
-		t.Fatalf("installCodexSkills returned error: %v", err)
-	}
-
-	// Codex installer writes exactly allSkills — no embedded commands
-	// path. Skills are the primary surface; slash commands are not
-	// shipped with haft.
-	if count != len(allSkills) {
-		t.Fatalf("installed skill count = %d, want %d (len(allSkills))",
-			count, len(allSkills))
-	}
-	if displayPath != "~/.agents/skills" {
-		t.Fatalf("display path = %q, want %q", displayPath, "~/.agents/skills")
-	}
-
-	skillsRoot := filepath.Join(homeDir, ".agents", "skills")
-
-	// h-frame is an auto-triggering workflow skill — its SKILL.md is the
-	// raw skill body (frontmatter has the description for routing), NOT
-	// the command-wrapper variant that prefixes "This skill is explicit-
-	// only". Slash-command-style $h-X references must still be rewritten
-	// from /h-X.
-	frameSkillPath := filepath.Join(skillsRoot, "h-frame", "SKILL.md")
-	frameSkill, err := os.ReadFile(frameSkillPath)
-	if err != nil {
-		t.Fatalf("failed to read h-frame skill: %v", err)
-	}
-	frameContent := string(frameSkill)
-	for _, want := range []string{
-		"name: h-frame",
-		"$h-explore",
-	} {
-		if !strings.Contains(frameContent, want) {
-			t.Fatalf("h-frame skill missing %q:\n%s", want, frameContent)
+func TestRetiredDeterministicRoutingCheckIsNotPublic(t *testing.T) {
+	for _, command := range checkCmd.Commands() {
+		if command.Name() == "routing" {
+			t.Fatal("retired deterministic `haft check routing` command remains public")
 		}
 	}
-	for _, banned := range []string{"/h-", "/q-", "Quint"} {
-		if strings.Contains(frameContent, banned) {
-			t.Fatalf("h-frame skill contains stale token %q:\n%s", banned, frameContent)
+	for _, help := range []string{rootCmd.Long, checkCmd.Long} {
+		if strings.Contains(help, "check routing") {
+			t.Fatalf("active CLI help retains retired deterministic routing check: %q", help)
 		}
-	}
-
-	skillFiles, err := filepath.Glob(filepath.Join(skillsRoot, "h-*", "SKILL.md"))
-	if err != nil {
-		t.Fatalf("glob installed skills: %v", err)
-	}
-	for _, skillFile := range skillFiles {
-		content, err := os.ReadFile(skillFile)
-		if err != nil {
-			t.Fatalf("read installed skill %s: %v", skillFile, err)
-		}
-		for _, banned := range []string{"/h-", "/q-", "$ARGUMENTS", "Quint"} {
-			if strings.Contains(string(content), banned) {
-				t.Fatalf("%s contains stale token %q", skillFile, banned)
-			}
-		}
-	}
-
-	// h-frame is an auto-triggering workflow skill — policy must reflect
-	// that. Manual-only skills (h-decide, h-commission) get asserted
-	// below.
-	framePolicyPath := filepath.Join(skillsRoot, "h-frame", "agents", "openai.yaml")
-	framePolicy, err := os.ReadFile(framePolicyPath)
-	if err != nil {
-		t.Fatalf("failed to read h-frame policy: %v", err)
-	}
-	if !strings.Contains(string(framePolicy), "allow_implicit_invocation: true") {
-		t.Fatalf("h-frame should allow implicit invocation, got:\n%s", string(framePolicy))
-	}
-
-	// h-reason is the umbrella entry — broad auto-trigger description
-	// plus manual /h-reason invocation. Carries the full FPF reasoning
-	// palette (frame, explore, compare, verify, note, slideument
-	// patterns). Verify policy allows implicit invocation.
-	reasonPolicyPath := filepath.Join(skillsRoot, "h-reason", "agents", "openai.yaml")
-	reasonPolicy, err := os.ReadFile(reasonPolicyPath)
-	if err != nil {
-		t.Fatalf("failed to read h-reason policy: %v", err)
-	}
-	if !strings.Contains(string(reasonPolicy), "allow_implicit_invocation: true") {
-		t.Fatalf("h-reason should allow implicit invocation, got:\n%s", string(reasonPolicy))
-	}
-
-	specSkillPath := filepath.Join(skillsRoot, "h-spec", "SKILL.md")
-	specSkill, err := os.ReadFile(specSkillPath)
-	if err != nil {
-		t.Fatalf("failed to read h-spec skill: %v", err)
-	}
-	specContent := string(specSkill)
-	for _, want := range []string{
-		"name: h-spec",
-		`haft_spec_section(action="lifecycle")`,
-		"SpecSectionBaseline",
-	} {
-		if !strings.Contains(specContent, want) {
-			t.Fatalf("h-spec skill missing %q:\n%s", want, specContent)
-		}
-	}
-	specPolicyPath := filepath.Join(skillsRoot, "h-spec", "agents", "openai.yaml")
-	specPolicy, err := os.ReadFile(specPolicyPath)
-	if err != nil {
-		t.Fatalf("failed to read h-spec policy: %v", err)
-	}
-	if !strings.Contains(string(specPolicy), "allow_implicit_invocation: true") {
-		t.Fatalf("h-spec should allow implicit invocation, got:\n%s", string(specPolicy))
-	}
-
-	// h-decide is manual-only (Transformer Mandate via codex policy +
-	// disable-model-invocation in claude frontmatter).
-	decidePolicyPath := filepath.Join(skillsRoot, "h-decide", "agents", "openai.yaml")
-	decidePolicy, err := os.ReadFile(decidePolicyPath)
-	if err != nil {
-		t.Fatalf("failed to read h-decide policy: %v", err)
-	}
-	if !strings.Contains(string(decidePolicy), "allow_implicit_invocation: false") {
-		t.Fatalf("h-decide must be explicit-only per Transformer Mandate, got:\n%s", string(decidePolicy))
-	}
-	decideSkillPath := filepath.Join(skillsRoot, "h-decide", "SKILL.md")
-	decideSkill, err := os.ReadFile(decideSkillPath)
-	if err != nil {
-		t.Fatalf("failed to read h-decide skill: %v", err)
-	}
-	for _, want := range []string{"haft interface decision.decide --json", "haft artifact create decision.decide"} {
-		if !strings.Contains(string(decideSkill), want) {
-			t.Fatalf("h-decide skill should point at compact CLI path %q:\n%s", want, string(decideSkill))
-		}
-	}
-
-	noteSkillPath := filepath.Join(skillsRoot, "h-note", "SKILL.md")
-	noteSkill, err := os.ReadFile(noteSkillPath)
-	if err != nil {
-		t.Fatalf("failed to read h-note skill: %v", err)
-	}
-	noteContent := string(noteSkill)
-	for _, want := range []string{"mcp__haft__haft_note", "haft interface note.record --json", "haft artifact create note.record"} {
-		if !strings.Contains(noteContent, want) {
-			t.Fatalf("h-note skill missing %q:\n%s", want, noteContent)
-		}
-	}
-	if strings.Contains(noteContent, `haft_problem(
-  action="frame"`) {
-		t.Fatalf("h-note skill must not emulate notes with ProblemCards:\n%s", noteContent)
-	}
-
-	// Deprecated h-fpf directory must be removed (migration step —
-	// h-fpf was the v8 narrow-fallback name; it's been replaced by the
-	// h-reason umbrella).
-	if _, err := os.Stat(filepath.Join(skillsRoot, "h-fpf")); !os.IsNotExist(err) {
-		t.Fatalf("h-fpf must be removed by deprecation cleanup; got err=%v", err)
 	}
 }
 
-func TestInstallCodexSkillsLocalUsesProjectAgentsDir(t *testing.T) {
-	projectRoot := t.TempDir()
-	t.Setenv("HOME", t.TempDir())
-
-	displayPath, _, err := installCodexSkills(projectRoot, true)
-	if err != nil {
-		t.Fatalf("installCodexSkills returned error: %v", err)
-	}
-
-	wantPath := filepath.Join(projectRoot, ".agents", "skills")
-	if displayPath != wantPath {
-		t.Fatalf("display path = %q, want %q", displayPath, wantPath)
-	}
-}
-
-func TestCleanupCodexPromptCommandsRemovesOnlyHaftPrompts(t *testing.T) {
-	homeDir := t.TempDir()
-	t.Setenv("HOME", homeDir)
-
-	promptDir := filepath.Join(homeDir, ".codex", "prompts")
-	if err := os.MkdirAll(promptDir, 0755); err != nil {
-		t.Fatal(err)
-	}
-
-	files := map[string]string{
-		"h-frame.md":  "old h-frame prompt",
-		"q-frame.md":  "old q-frame prompt",
-		"q-reason.md": "old q-reason prompt",
-		"custom.md":   "user prompt",
-	}
-	for name, content := range files {
-		path := filepath.Join(promptDir, name)
-		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-			t.Fatal(err)
+func TestREADMEAdvertisesCurrentSkillOnlySurface(t *testing.T) {
+	readme := readRepoFile(t, "README.md")
+	for _, want := range []string{"12 skills", "### Twelve skills installed by `haft init`"} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("README missing current skill catalog marker %q", want)
 		}
 	}
-
-	displayPath, removed, err := cleanupCodexPromptCommands()
-	if err != nil {
-		t.Fatalf("cleanupCodexPromptCommands returned error: %v", err)
-	}
-	if displayPath != "~/.codex/prompts" {
-		t.Fatalf("display path = %q, want %q", displayPath, "~/.codex/prompts")
-	}
-	if removed != 3 {
-		t.Fatalf("removed = %d, want 3", removed)
-	}
-
-	for _, removedName := range []string{"h-frame.md", "q-frame.md", "q-reason.md"} {
-		if _, err := os.Stat(filepath.Join(promptDir, removedName)); !os.IsNotExist(err) {
-			t.Fatalf("%s should have been removed", removedName)
+	for _, retired := range []string{"16 skills", "Skills + slash commands", "haft fpf search"} {
+		if strings.Contains(readme, retired) {
+			t.Fatalf("README retains retired public surface %q", retired)
 		}
-	}
-	if _, err := os.Stat(filepath.Join(promptDir, "custom.md")); err != nil {
-		t.Fatalf("custom prompt should remain: %v", err)
 	}
 }
 
@@ -284,60 +77,66 @@ func TestHDecideSkill_IsManualOnlyTransformerMandate(t *testing.T) {
 	}
 }
 
-// TestHReasonSkill_IsFullUmbrella verifies that the h-reason umbrella
-// carries the full FPF reasoning palette (frame, explore, compare,
-// verify, note, slideument patterns) rather than acting as a narrow
-// fallback. It must reference specialized skills as "heavy versions"
-// to delegate to, and point at the spec-search MCP path for deep
-// references.
-func TestHReasonSkill_IsFullUmbrella(t *testing.T) {
+// TestHReasonSkill_IsSourceFirstUmbrella verifies that h-reason is the compact
+// FPF entrypoint without rebuilding a shadow router or a universal work order.
+func TestHReasonSkill_IsSourceFirstUmbrella(t *testing.T) {
 	content := string(embeddedHReasonSkill)
 
-	// Must reference specialized skills it can delegate heavy versions to.
-	for _, sk := range []string{"h-frame", "h-diagnose", "h-explore", "h-compare", "h-decide", "h-verify", "h-spec"} {
-		if !strings.Contains(content, sk) {
-			t.Fatalf("h-reason must reference %q as a heavy-version delegate", sk)
+	for _, skill := range []string{"h-frame", "h-diagnose", "h-explore", "h-compare", "h-decide", "h-verify", "h-spec"} {
+		if !strings.Contains(content, skill) {
+			t.Fatalf("h-reason must reference independent capability %q", skill)
 		}
-	}
-	// Must point at the spec-search MCP path so the agent can retrieve
-	// pattern text without h-reason having to inline the full spec.
-	if !strings.Contains(content, `haft_query(action="fpf"`) {
-		t.Fatal("h-reason must point at haft_query(action=\"fpf\", ...) for spec lookups")
-	}
-	if !strings.Contains(content, `action="pattern_use"`) {
-		t.Fatal("h-reason must consult haft_query(action=\"pattern_use\", ...) before generic triage")
 	}
 	for _, want := range []string{
-		"PatternUse Gateway",
-		`mode="compact"`,
-		`mode="full"`,
-		"should_use_pattern",
-		"suggested_haft_surface",
-		"Do not inline the FPF catalog",
-		"not a DecisionRecord",
-		"not MethodPack",
+		`action="fpf"`,
+		`mode="concern"`,
+		`mode="lookup"`,
+		`mode="inspect"`,
+		"README practical-use cards",
+		"Table of Contents",
+		"The full pattern body governs",
+		"retrieval rank != applicability",
+		"Exact identifier namespaces",
+		"wrong_identifier_namespace",
+		`action="related"`,
+		`artifact_ref="<id>"`,
+		`action="memory"`,
+		"memory_request",
+		`"mode":"resolve"`,
+		`mcp__haft__haft_onboard(action="status")`,
+		`mcp__haft__haft_entity`,
+		"`known_absent` says only",
+		"selected direct pattern by `PatternID`, title, and stable source reference",
+		"source span, provenance, hashes, or repository-local paths only when the",
+		"current use explicitly requires trace or audit",
+		"Capabilities are independent entries, not phases",
+		"caller abstention is the correct result: skip FPF",
+		"not a fabricated\n`QueryResult(kind=\"abstained\")`; no query ran",
+		"Do not automatically create ProblemCard",
+		"Never claim that FPF is an acausal ontology",
 	} {
 		if !strings.Contains(content, want) {
-			t.Fatalf("h-reason PatternUse routing instructions missing %q", want)
+			t.Fatalf("h-reason source-first contract missing %q", want)
 		}
 	}
-	// Must carry the "Description != Work" rule — the core anti-pattern
-	// that this umbrella is designed to NOT fall into.
-	if !strings.Contains(content, "Description ≠ Work") {
-		t.Fatal("h-reason must carry the Description ≠ Work core rule")
-	}
-	if !strings.Contains(content, "unpersisted reasoning, not durable project governance, evidence, or authority") {
-		t.Fatal("h-reason must distinguish useful chat reasoning from durable governance authority")
-	}
-	// Must cover the slideument patterns that don't have dedicated skills.
-	for _, pat := range []string{"Goldilocks", "NQD", "stepping", "Anti-Goodhart"} {
-		if !strings.Contains(content, pat) {
-			t.Fatalf("h-reason must cover slideument pattern %q", pat)
+	for _, banned := range []string{
+		"should_use_pattern",
+		"suggested_haft_surface",
+		"recommended_pattern_use",
+		"required_next_action",
+		"matched_route_id",
+		"selected direct pattern and source span",
+		"ProjectTypeEnvHead",
+		"TypeEnv",
+		"haft memory typeenv",
+	} {
+		if strings.Contains(content, banned) {
+			t.Fatalf("h-reason contains retired router field %q", banned)
 		}
 	}
 }
 
-func TestSubstantiveSkillsCarryCatalogFreePatternUseGateway(t *testing.T) {
+func TestSubstantiveSkillsDoNotCarryShadowFPFRouter(t *testing.T) {
 	skills := map[string][]byte{
 		"h-frame":    embeddedHFrameSkill,
 		"h-diagnose": embeddedHDiagnoseSkill,
@@ -349,27 +148,111 @@ func TestSubstantiveSkillsCarryCatalogFreePatternUseGateway(t *testing.T) {
 	for name, contentBytes := range skills {
 		t.Run(name, func(t *testing.T) {
 			content := string(contentBytes)
-			for _, want := range []string{
-				"PatternUse Gateway",
-				`action="pattern_use"`,
-				`mode="compact"`,
-				`mode="full"`,
-				"Do not inline the FPF catalog",
-				"not MethodPack",
-			} {
-				if !strings.Contains(content, want) {
-					t.Fatalf("%s missing PatternUse gateway fragment %q", name, want)
-				}
-			}
 			for _, banned := range []string{
+				"should_use_pattern",
+				"suggested_haft_surface",
+				"recommended_pattern_use",
+				"required_next_action",
+				"matched_route_id",
 				"Naming/terminology requests should route",
 				"Architecture requests should route",
 				"SoTA/current-practice requests should route",
 			} {
 				if strings.Contains(content, banned) {
-					t.Fatalf("%s inlines route category prose %q", name, banned)
+					t.Fatalf("%s contains shadow-router fragment %q", name, banned)
 				}
 			}
 		})
+	}
+}
+
+func TestIndependentAutoSkillsCarryConditionalMemoryOrientation(t *testing.T) {
+	reasoningSkills := map[string][]byte{
+		"h-frame":    embeddedHFrameSkill,
+		"h-diagnose": embeddedHDiagnoseSkill,
+		"h-explore":  embeddedHExploreSkill,
+		"h-compare":  embeddedHCompareSkill,
+		"h-verify":   embeddedHVerifySkill,
+		"h-spec":     embeddedHSpecSkill,
+	}
+
+	for name, contentBytes := range reasoningSkills {
+		t.Run(name, func(t *testing.T) {
+			content := string(contentBytes)
+			for _, want := range []string{
+				"Conditional project-memory orientation",
+				"context-heavy",
+				`action="memory"`,
+				"memory_request",
+				`"mode":"resolve"`,
+				"agent_orientation.v2",
+				"non-blocking",
+				"code-graph preflight",
+				"named receiving use",
+			} {
+				if !strings.Contains(content, want) {
+					t.Fatalf("%s memory-orientation contract missing %q", name, want)
+				}
+			}
+		})
+	}
+
+	note := string(embeddedHNoteSkill)
+	for _, want := range []string{
+		"Conditional project-memory orientation",
+		`action="memory"`,
+		"memory_request",
+		`"mode":"resolve"`,
+		"agent_orientation.v2",
+		`mcp__haft__haft_entity`,
+		`mcp__haft__haft_onboard(action="status")`,
+		"explicit save request",
+		"non-blocking",
+		"code-graph preflight",
+	} {
+		if !strings.Contains(note, want) {
+			t.Fatalf("h-note memory-orientation contract missing %q", want)
+		}
+	}
+
+	onboard := string(embeddedHOnboardSkill)
+	for _, want := range []string{
+		`mcp__haft__haft_onboard(action="status")`,
+		`action="profile_prepare"`,
+		`action="memory_prepare"`,
+		"non-binding review carrier",
+		"haft onboard profile apply",
+		"haft onboard memory enable",
+		"haft onboard memory defer",
+		"`memory_deferred`",
+		"grants no authority",
+		"manual `h-decide`",
+	} {
+		if !strings.Contains(onboard, want) {
+			t.Fatalf("h-onboard task-level setup contract missing %q", want)
+		}
+	}
+
+	for name, contentBytes := range map[string][]byte{
+		"h-frame":    embeddedHFrameSkill,
+		"h-diagnose": embeddedHDiagnoseSkill,
+		"h-explore":  embeddedHExploreSkill,
+		"h-compare":  embeddedHCompareSkill,
+		"h-verify":   embeddedHVerifySkill,
+		"h-spec":     embeddedHSpecSkill,
+		"h-onboard":  embeddedHOnboardSkill,
+		"h-note":     embeddedHNoteSkill,
+	} {
+		content := string(contentBytes)
+		for _, forbidden := range []string{
+			"ProjectTypeEnvHead",
+			"TypeEnv",
+			"haft memory typeenv",
+			`haft_memory(action="admit")`,
+		} {
+			if strings.Contains(content, forbidden) {
+				t.Fatalf("%s exposes low-level memory UX %q", name, forbidden)
+			}
+		}
 	}
 }

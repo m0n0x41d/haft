@@ -20,9 +20,10 @@ import (
 // adding Line (1-based) disambiguates overloaded same-name symbols by which
 // one's body covers that line — the keystone of honest per-symbol fusion.
 type Target struct {
-	File   string
-	Symbol string
-	Line   int
+	File     string
+	Symbol   string
+	AnchorID string
+	Line     int
 }
 
 // CodeContext is the fused projection of the reasoning graph onto one code
@@ -31,10 +32,11 @@ type Target struct {
 // re-derives the taxonomy.
 type CodeContext struct {
 	Target     Target
-	Decisions  []*artifact.Artifact // DecisionRecords governing this code
+	Decisions  []*artifact.Artifact // compatibility projection of exact binding decisions
 	Problems   []*artifact.Artifact // ProblemCards framed around this code
 	Portfolios []*artifact.Artifact // SolutionPortfolios — the variants explored
 	Notes      []*artifact.Artifact // micro-decisions / rationale captured here
+	Specs      []SpecSectionContext // typed current SpecSections referenced by governing decisions
 	Invariants []graph.Invariant    // invariants linked to this target; file-level views are relevance candidates
 	Module     string               // module the file belongs to ("" if none)
 	Governed   bool                 // module carries ≥1 decision (vs. blind)
@@ -47,6 +49,16 @@ type CodeContext struct {
 	// label that payload as relevance candidates, not symbol-local authority.
 	ContextInvariants []graph.Invariant
 
+	// ExactBindingDecisions are current DecisionRecords joined through a real
+	// authority-bearing BindingTarget or durable symbol-anchor binding. Legacy
+	// affected_files/affected_symbols rows never enter this lane.
+	ExactBindingDecisions []*artifact.Artifact
+
+	// AffectedPathContextDecisions are current DecisionRecords connected only
+	// through an exact affected_files or legacy affected_symbols backlink.
+	// They are useful context but are not binding or module authority.
+	AffectedPathContextDecisions []*artifact.Artifact
+
 	// ModuleDecisions are the decisions governing the file's MODULE — surfaced
 	// so a symbol with no symbol-level link still shows "module governed by
 	// dec-Y" rather than rendering blank (which would read as "safe to change").
@@ -55,16 +67,26 @@ type CodeContext struct {
 	// SymbolGranularity records HOW symbol-scoped artifacts were matched, so the
 	// presentation never overstates precision:
 	//   ""                                  — file-level view (no symbol given)
-	//   "line-precise"                      — overloads disambiguated by line range
-	//   "file+name (overload not disambiguated)" — line-blind fallback; same-name
-	//                                         overloads may share this governance
+	//   "anchor-precise"                    — durable SymbolAnchor authority join
+	//   "binding-target-precise"            — explicit BindingTarget match
+	//   "legacy-line-context (not an exact binding)"
+	//   "legacy file+name context (not an exact binding)"
 	SymbolGranularity string
 }
 
 // Empty reports that no recorded reasoning touches this code — a signal the
 // agent can treat as "nothing decided here yet", not "lookup failed".
 func (c CodeContext) Empty() bool {
-	return len(c.Decisions)+len(c.Problems)+len(c.Portfolios)+len(c.Notes)+len(c.Invariants)+len(c.ContextInvariants) == 0
+	return len(c.Decisions)+
+		len(c.Problems)+
+		len(c.Portfolios)+
+		len(c.Notes)+
+		len(c.Specs)+
+		len(c.Invariants)+
+		len(c.ContextInvariants)+
+		len(c.ExactBindingDecisions)+
+		len(c.AffectedPathContextDecisions)+
+		len(c.ModuleDecisions) == 0
 }
 
 // BuildCodeContext groups a flat, already-deduplicated slice of linked

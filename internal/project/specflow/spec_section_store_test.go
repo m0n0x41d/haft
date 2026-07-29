@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
 func TestSQLiteSpecSectionEditionStoreRoundTripWithMigration(t *testing.T) {
@@ -218,6 +219,112 @@ func TestProjectSpecificationSetFromEditionsPreservesSemanticSections(t *testing
 	if HashSection(specSet.Sections[1]) != enabling.SemanticHash {
 		t.Fatalf("enabling semantic hash changed")
 	}
+}
+
+func TestProjectSpecificationSetFromEditionsForScopeFiltersBeforeParsing(
+	t *testing.T,
+) {
+	target := NewSpecSectionEdition(
+		"proj-1",
+		specSectionEditionTestSection("TS.scope.001"),
+		SpecSectionSourceSQL,
+		time.Time{},
+	)
+	softwareSection := specSectionEditionTestSection("SS.scope.001")
+	softwareSection.Spec = string(project.SpecDocumentKindSoftwareSystem)
+	softwareSection.DocumentKind = string(project.SpecDocumentKindSoftwareSystem)
+	softwareSection.Path = ".haft/specs/software-system.md"
+	software := NewSpecSectionEdition(
+		"proj-1",
+		softwareSection,
+		SpecSectionSourceSQL,
+		time.Time{},
+	)
+	legacySection := specSectionEditionTestSection("ES.scope.001")
+	legacySection.Spec = string(project.SpecDocumentKindEnablingSystem)
+	legacySection.DocumentKind = string(project.SpecDocumentKindEnablingSystem)
+	legacySection.Path = ".haft/specs/enabling-system.md"
+	legacy := NewSpecSectionEdition(
+		"proj-1",
+		legacySection,
+		SpecSectionSourceSQL,
+		time.Time{},
+	)
+	applicability := mustSpecflowNonSoftwareApplicability(t)
+
+	specSet, err := ProjectSpecificationSetFromEditionsForScope(
+		[]SpecSectionEdition{target, software, legacy},
+		applicability,
+	)
+	if err != nil {
+		t.Fatalf("ProjectSpecificationSetFromEditionsForScope: %v", err)
+	}
+	if len(specSet.Sections) != 0 {
+		t.Fatalf("non-software SQL sections = %#v, want none", specSet.Sections)
+	}
+	if len(specSet.Documents) != 0 {
+		t.Fatalf("non-software SQL documents = %#v, want none", specSet.Documents)
+	}
+	if !specflowHasFinding(
+		specSet.Findings,
+		"profile_capability_applicability_underdetermined",
+	) {
+		t.Fatalf("scoped SQL projection hid target-relation uncertainty: %#v", specSet.Findings)
+	}
+}
+
+func mustSpecflowNonSoftwareApplicability(
+	t *testing.T,
+) project.ProjectSpecificationSetApplicability {
+	t.Helper()
+	scopeID, err := projectprofile.NewScopeID("documents")
+	if err != nil {
+		t.Fatalf("NewScopeID: %v", err)
+	}
+	scope, err := projectprofile.NewNonSoftwareRealization(
+		scopeID,
+		projectprofile.NoEntityReference{},
+		projectprofile.UnspecifiedKindOrientation{},
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("NewNonSoftwareRealization: %v", err)
+	}
+	scopes, err := projectprofile.NewScopeSet(
+		[]projectprofile.RealizationScope{scope},
+	)
+	if err != nil {
+		t.Fatalf("NewScopeSet: %v", err)
+	}
+	payload, err := projectprofile.NewProfileDeclarationPayload(scopes)
+	if err != nil {
+		t.Fatalf("NewProfileDeclarationPayload: %v", err)
+	}
+	matrix, err := projectprofile.ResolveCapabilityApplicabilityMatrix(payload)
+	if err != nil {
+		t.Fatalf("ResolveCapabilityApplicabilityMatrix: %v", err)
+	}
+	applicability, err := project.DeriveProjectSpecificationSetApplicability(
+		matrix,
+		scopeID,
+	)
+	if err != nil {
+		t.Fatalf("DeriveProjectSpecificationSetApplicability: %v", err)
+	}
+	return applicability
+}
+
+func specflowHasFinding(
+	findings []project.SpecCheckFinding,
+	code string,
+) bool {
+	for _, finding := range findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+	return false
 }
 
 func putRawSpecSectionEdition(

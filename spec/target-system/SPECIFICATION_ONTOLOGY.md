@@ -16,29 +16,38 @@ Haft makes a project harnessable by constructing and maintaining a
 ```text
 ProjectSpecificationSet
   = TargetSystemSpec
-  + EnablingSystemSpec
+  + SoftwareSystemSpec
   + TermMap
-  + SpecCoverage
-  + WorkflowPolicy
 ```
 
-The harness runtime may execute WorkCommissions only after the project has at
-least the relevant specification sections, term definitions, decision links,
-scope, and evidence requirements needed to make the work admissible.
+SpecCoverage and WorkflowPolicy are related governance objects, not members of
+the specification set. The harness runtime may execute WorkCommissions only
+after the project has the relevant specification sections, term definitions,
+decision links, scope, workflow policy, and evidence requirements needed to
+make the work admissible.
 
-## Target vs Enabling System
+## Target System, Software System, and Enabling System
 
-Every onboarded project has two different systems in scope:
+This three-part model is Haft local practice for Agentic SWE. It is not a set
+of normative kinds defined by FPF A.1. A described subject may be typed with
+FPF primitives such as `U.Entity`, `U.Holon`, or `U.System` and scoped through
+an `EntityOfConcernSlot`; Haft's target/enabling distinction remains a
+project-practice boundary.
+
+Every onboarded software project must keep three systems distinct:
 
 | System | What it is | Specification role |
 |--------|------------|--------------------|
-| **Target system** | The software/product/service whose behavior must change in its environment | Describes what must be true in the world, what role the product plays, boundaries, interfaces, invariants, terms, and acceptance |
-| **Enabling system** | The engineering system that builds, changes, verifies, and operates the target system | Describes repository architecture, build/test methods, delivery policies, agent usage, harness runtime, CI, hooks, and evidence methods |
+| **Target system** | The product or socio-technical system whose behavior must change in the world | TargetSystemSpec describes the desired environment change, product role, actors, scenarios, boundaries, and acceptance |
+| **Software system** | The idealized software system that realizes part of the target-system role | SoftwareSystemSpec describes software role, responsibility allocation, functional and procedural behavior, interfaces, constraints, and selected structure |
+| **Enabling system** | The people, agents, methods, repository workflows, tests, CI, and harness runtime that create and maintain the software | Not a ProjectSpecificationSet member; its current policies live in workflow, MethodPack, agent-discipline, decision, commission, and runtime carriers |
 
-The target spec is written first. The enabling spec is downstream: it exists to
-produce and maintain the target system. A project may have an incomplete
-enabling spec, but Haft must not let enabling-system mechanics silently define
-the target-system purpose.
+TargetSystemSpec supplies the intent and boundary claims that
+SoftwareSystemSpec may reference. This dependency does not prescribe an
+authoring sequence. When a software claim would change target purpose, the
+principal must establish or revise the target claim explicitly rather than let
+repository structure define it. Enabling-system mechanics must not be smuggled
+into SoftwareSystemSpec.
 
 ## ProjectSpecificationSet
 
@@ -49,10 +58,12 @@ Required files in canonical form:
 
 ```text
 .haft/specs/target-system.md
-.haft/specs/enabling-system.md
+.haft/specs/software-system.md
 .haft/specs/term-map.md
-.haft/workflow.md
 ```
+
+`.haft/workflow.md` is required for governed work, but it is a workflow-policy
+carrier rather than a member of ProjectSpecificationSet.
 
 Optional derived files:
 
@@ -71,7 +82,7 @@ Rules:
   by themselves.
 - Init-time carriers may contain parseable draft placeholders with
   `claim_layer: carrier` and `status: draft`; validators must not treat those
-  placeholders as active product or enabling-system claims.
+  placeholders as active target-system or software-system claims.
 - `haft spec check` validates carriers, parses them into canonical objects, and
   reports missing, stale, conflicting, or uncovered sections.
 
@@ -80,16 +91,18 @@ Rules:
 **Definition:** Parseable specification of what the target system must do in its
 environment.
 
-TargetSystemSpec has two canonical parts. This prevents repo architecture from
-silently replacing product purpose.
+TargetSystemSpec describes the product from outside the software realization.
+This prevents software and repository architecture from silently replacing
+product purpose.
 
 ```text
 TargetSystemSpec
-  A. Concept of Use / black-box
-  B. Concept of System / white-box
+  = desired environment change
+  + method and target role
+  + actors and scenarios
+  + boundaries and acceptance
+  + risks and target-domain terms
 ```
-
-### A. Concept of Use / black-box
 
 Describes the target system from outside: what changes in the environment,
 who/what interacts with it, what scenarios matter, which boundaries are
@@ -106,55 +119,43 @@ Required section kinds:
 | `scenarios` | Operational scenarios and black-box behavior |
 | `boundaries` | In-scope/out-of-scope, external systems, authority boundaries |
 | `acceptance` | Observable post-conditions and evidence required |
-
-### B. Concept of System / white-box
-
-Describes the target system from inside: what it is made of, how it operates,
-which interfaces exist, which invariants must hold, and what risks bound its
-quality.
-
-Minimum required sections:
-
-| Section kind | Required content |
-|--------------|------------------|
-| `materials` | What the target system is made from: entities, data, protocols, resources, constraints |
-| `target-work-methods` | Methods of operation inside the target system |
-| `term-map` | Terms used by the target spec, with forbidden meanings |
-| `interfaces` | Public API/UI/protocol/event surfaces |
-| `invariants` | Conditions that must always hold |
 | `risks` | Weakest links and refresh triggers |
 
 This is intentionally large and formal. The product value is not low ceremony.
 The value is making delegated engineering work admissible.
 
-## EnablingSystemSpec
+## SoftwareSystemSpec
 
-**Definition:** Parseable specification of how the project is built, changed,
-verified, and governed.
+**Definition:** Parseable specification of the idealized software system that
+realizes the target-system role.
 
-Minimum required sections:
+Required readiness sections:
 
 | Section kind | Required content |
 |--------------|------------------|
-| `creator-role` | What role the enabling system plays for the target system |
-| `creator-graph` | Human principal, onboarding agent, coding agent, verifier, CI, harness runtime, repo/DB/spec carriers, and optional external tracker carrier |
-| `creator-actors` | Human principal, agents, CI, harness runtime, external carriers |
-| `method-boundaries` | Who may draft, approve, execute, verify, publish, revise, or cancel |
-| `work-methods` | Reasoning, design, implementation, verification, review, release methods |
-| `repo-architecture` | Modules, layers, dependency rules, ownership surfaces |
-| `effect-boundaries` | Filesystem, DB, network, agent, tracker, terminal, build/test effects |
-| `test-strategy` | Behavior/interface/spec tests, contract tests, E2E, prohibited test shapes |
-| `agent-policy` | Which agents may act, through which surfaces, with which permissions |
-| `surface-policy` | Operator cockpit, MCP, and CLI responsibilities and non-authority constraints |
-| `autonomy-envelope-policy` | Checkpointed default, batch/YOLO approval, budget and one-way-door restrictions |
-| `commission-policy` | Scope, lockset, evidence, projection, and autonomy defaults |
-| `runtime-policy` | Harness runtime install/start/observe/apply/cancel model |
-| `hooks-and-ci` | Local hooks, CI checks, spec check, evidence refresh |
-| `release-policy` | Branch, PR, tag, changelog, release gates |
+| `software.role` | The role software plays in realizing the target-system change |
+| `software.functional_behavior` | Capabilities and externally observable behavior the software must provide |
+| `software.interfaces` | Public API, UI, protocol, event, and integration contracts |
+| `software.constraints` | Quality, security, compliance, compatibility, performance, and operational constraints |
 
-The enabling spec may reference target spec sections, but it must not redefine
-target-system goals. If an enabling section changes what the product is for,
-Haft must route back to TargetSystemSpec revision.
+Conditional sections:
+
+| Section kind | Include when |
+|--------------|--------------|
+| `software.responsibility_allocation` | Responsibility crosses software, human, or external-system boundaries |
+| `software.procedural_behavior` | Order, state transitions, retries, failure, or recovery behavior matters |
+| `software.selected_structure` | Load-bearing internal structure already selected as part of the software contract |
+
+SoftwareSystemSpec may reference TargetSystemSpec sections, but it must not
+redefine target-system goals. It also must not absorb build commands, agent
+roles, review policy, CI, release mechanics, or harness runtime rules; those
+belong to the enabling system.
+
+Important applied choices recorded in SoftwareSystemSpec should link to a
+DecisionRecord that preserves alternatives, rationale, and consequences. The
+spec carries the selected contract; the DecisionRecord carries why that
+contract was selected. Haft does not infer or bind those decisions merely from
+prose in a section.
 
 ## SpecSection
 
@@ -230,7 +231,7 @@ required because agents and validators need a canonical object.
 
 ## TermMap
 
-**Definition:** A parseable vocabulary for the target and enabling specs.
+**Definition:** A parseable vocabulary for the target and software specs.
 
 Canonical entry:
 
@@ -251,7 +252,7 @@ owners:
 Rules:
 
 - A term must have exactly one definition in one category.
-- If the same word is needed in target and enabling categories with different
+- If the same word is needed in target and software categories with different
   meanings, create category-qualified terms.
 - Legacy term maps that still use `domain` parse as a compatibility alias for
   `category`; new carriers should use `category`.
@@ -288,13 +289,13 @@ Coverage states are derived, not stored:
 | `stale` | Evidence or linked decision/spec section is expired or drifted |
 
 Spec coverage is not test coverage. Test coverage is one evidence carrier.
-Spec coverage asks whether the architecture statement is governed, implemented,
+Spec coverage asks whether the specification statement is governed, implemented,
 and verified.
 
 ## Semantic Architecture
 
-**Definition:** The explicit relation model that keeps the target and enabling
-systems from drifting into term confusion.
+**Definition:** The explicit relation model that keeps the target, software,
+and enabling systems from drifting into term confusion.
 
 Minimum relation kinds:
 
@@ -308,6 +309,13 @@ Minimum relation kinds:
 | `projects-to` | Local/external carrier relation |
 | `supersedes` | Lifecycle replacement |
 | `blocks` | Admissibility relation |
+
+The model is relation-first. Text order, graph insertion order, card order, and
+skill order do not establish causal, temporal, method, planning, or
+performed-work order. Such order exists only when an explicit causal claim,
+`U.MethodDescription`, `ImplementationPlan`, `WorkCommission`, or work relation
+states it. Relation-first does not mean acausal: causal claims remain valid,
+but Haft does not infer them from layout or adjacency.
 
 Haft must preserve object/description/carrier distinction:
 
@@ -324,7 +332,7 @@ Haft must preserve object/description/carrier distinction:
 | L0 | Parse | Markdown/YAML syntax, IDs, required fields |
 | L1 | Structural | Required sections, unique terms, valid links, no mixed statement types |
 | L1.5 | Deterministic shape/authority guard | TermMap entry shape, optional section field shape, duplicate aliases, and obvious carrier/object authority confusion |
-| L2 | Semantic | target/enabling split, ambiguous term use, owner/authority consistency, spec coverage gaps |
+| L2 | Semantic | target/software/enabling boundary, ambiguous term use, owner/authority consistency, spec coverage gaps |
 | L3 | Runtime | stale/drift detection, evidence decay, commission freshness, code/test/spec link health |
 
 Current `haft spec check` covers deterministic L0/L1/L1.5 checks only. It is
@@ -332,22 +340,25 @@ not an LLM review, not proof of product correctness, and not L3 runtime
 evidence. The product promise still requires L2/L3 to become first-class;
 without L2/L3, large specs become documentation again.
 
-## Compilation Chain
+## Relations and Explicit Work Plans
 
-The intended chain is mechanical:
+The intended model is a typed relation graph, not a universal compilation
+sequence:
 
 ```text
-Strict markdown carriers
-  -> Parsed ProjectSpecificationSet
-  -> SpecSections + TermMap + SemanticArchitecture
-  -> SpecCoverage graph
-  -> ProblemCards for gaps/conflicts
-  -> DecisionRecords for chosen changes
-  -> WorkCommissions for bounded execution
-  -> RuntimeRuns
-  -> EvidencePacks
-  -> refreshed SpecCoverage
+strict markdown carrier --parses-as--> ProjectSpecificationSet
+SpecSection --governs--> DecisionRecord / code / test
+DecisionRecord --may-authorize--> WorkCommission
+WorkCommission --may-start--> RuntimeRun
+EvidencePack --supports-or-weakens--> claim / SpecSection
+all current relations --derive--> SpecCoverage
 ```
+
+These links become mechanically checkable once their inputs exist. They do not
+automatically detect every underdetermined applied choice, bind a
+DecisionRecord, or prescribe execution order. Planning remains a separate
+description: only an explicit `ImplementationPlan` or `WorkCommission` may
+state dependencies and scheduling, and neither is performed work.
 
 No downstream object may invent upstream authority:
 

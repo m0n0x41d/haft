@@ -2,9 +2,10 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
-	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,135 +15,167 @@ import (
 	_ "modernc.org/sqlite"
 )
 
-func TestHandleQuintQuery_FPFSupportsExplainFullAndLimit(t *testing.T) {
-	dbPath := buildFPFSearchTestDB(t)
-
-	restoreOpen := stubOpenFPFDB(t, dbPath)
+func TestHandleQuintQuery_FPFReturnsClosedSourceNativeUnion(t *testing.T) {
+	dbPath := buildFPFSourceQueryTestDB(t)
+	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
 
-	store := setupCLIArtifactStore(t)
-
-	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
-		"action":  "fpf",
-		"query":   "boundary",
-		"limit":   float64(1),
-		"full":    true,
-		"explain": true,
+	result, err := handleQuintQuery(context.Background(), setupCLIArtifactStore(t), nil, t.TempDir(), map[string]any{
+		"action":               "fpf",
+		"mode":                 "concern",
+		"query":                "strict distinctions",
+		"known_context":        []any{"system boundaries"},
+		"max_total_candidates": float64(2),
 	})
 	if err != nil {
-		t.Fatalf("handleQuintQuery returned error: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(result, "tier: route · Boundary discipline and routing") {
-		t.Fatalf("expected explain metadata in output, got:\n%s", result)
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		t.Fatalf("FPF result is not JSON: %v\n%s", err, result)
 	}
-	if !strings.Contains(result, "summary: Boundary routing keeps claims on the right layer.") {
-		t.Fatalf("expected explain output to include the section summary, got:\n%s", result)
+	if payload["kind"] != string(fpf.QueryResultKindCandidateSet) {
+		t.Fatalf("kind = %#v, want candidate_set: %s", payload["kind"], result)
 	}
-	if !strings.Contains(result, "TAIL-MARKER") {
-		t.Fatalf("expected full output to include the complete section body, got:\n%s", result)
-	}
-	if strings.Contains(result, "### 2.") {
-		t.Fatalf("expected limit=1 to cap output, got:\n%s", result)
+	for _, forbidden := range []string{"── Haft", "recommended_pattern_use", "required_next_action"} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("closed FPF result contaminated by %q: %s", forbidden, result)
+		}
 	}
 }
 
-func TestHandleQuintQuery_FPFSupportsExperimentalTreeMode(t *testing.T) {
-	dbPath := buildFPFSearchTestDB(t)
-
-	restoreOpen := stubOpenFPFDB(t, dbPath)
+func TestHandleQuintQuery_FPFLookupAndInspectAreExact(t *testing.T) {
+	dbPath := buildFPFSourceQueryTestDB(t)
+	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
-
 	store := setupCLIArtifactStore(t)
 
-	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
-		"action":  "fpf",
-		"query":   "boundary deontics",
-		"limit":   float64(3),
-		"mode":    fpf.SpecSearchModeTree,
-		"explain": true,
+	lookup, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action":     "fpf",
+		"mode":       "lookup",
+		"identifier": "A.7",
 	})
 	if err != nil {
-		t.Fatalf("handleQuintQuery(tree mode) returned error: %v", err)
+		t.Fatal(err)
 	}
-	if !strings.Contains(result, "tier: drilldown · tree drill-down leaf A.6.B") {
-		t.Fatalf("expected drilldown explain metadata in output, got:\n%s", result)
+	if !strings.Contains(lookup, `"kind":"exact_hit"`) || !strings.Contains(lookup, `"source_role":"pattern_body"`) {
+		t.Fatalf("unexpected exact lookup: %s", lookup)
 	}
-	if !strings.Contains(result, "### 2. A.6 - Signature Stack & Boundary Discipline") {
-		t.Fatalf("expected ancestor path output, got:\n%s", result)
+
+	missing, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action":     "fpf",
+		"mode":       "inspect",
+		"identifier": "definitely-missing",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(missing, `"kind":"abstained"`) || !strings.Contains(missing, "exact_source_unit_not_found") {
+		t.Fatalf("unexpected inspect abstention: %s", missing)
 	}
 }
 
-func TestHandleQuintQuery_FPFQueryOnlyStaysBackwardCompatible(t *testing.T) {
-	dbPath := buildFPFSearchTestDB(t)
-
-	restoreOpen := stubOpenFPFDB(t, dbPath)
-	defer restoreOpen()
-
-	store := setupCLIArtifactStore(t)
-
-	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+func TestHandleQuintQuery_FPFRequiresCanonicalMode(t *testing.T) {
+	_, err := handleQuintQuery(context.Background(), setupCLIArtifactStore(t), nil, t.TempDir(), map[string]any{
 		"action": "fpf",
-		"query":  "A.6",
+		"query":  "legacy implicit search",
 	})
-	if err != nil {
-		t.Fatalf("handleQuintQuery returned error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "mode is required") {
+		t.Fatalf("missing mode error = %v", err)
 	}
-	if strings.Contains(result, "tier:") {
-		t.Fatalf("expected default MCP output to hide explain metadata, got:\n%s", result)
-	}
-	if strings.Contains(result, "TAIL-MARKER") {
-		t.Fatalf("expected default MCP output to stay snippet-sized, got:\n%s", result)
-	}
-	if !strings.Contains(result, "### 1. A.6 - Signature Stack & Boundary Discipline") {
-		t.Fatalf("expected pattern result in output, got:\n%s", result)
-	}
-	if !strings.Contains(result, "── Haft") {
-		t.Fatalf("expected nav strip in output, got:\n%s", result)
+
+	_, err = fpfQueryRequestFromArgs(map[string]any{"mode": "tree", "query": "legacy mode"})
+	if err == nil || !strings.Contains(err.Error(), "unsupported FPF query mode") {
+		t.Fatalf("legacy mode error = %v", err)
 	}
 }
 
-func TestHandleQuintQuery_FPFQueryOnlyUsesSharedDefaultLimit(t *testing.T) {
-	dbPath := buildFPFManyResultsTestDB(t, fpf.DefaultSpecSearchLimit+2)
-
-	restoreOpen := stubOpenFPFDB(t, dbPath)
-	defer restoreOpen()
-
-	store := setupCLIArtifactStore(t)
-
-	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
-		"action": "fpf",
-		"query":  "governance",
+func TestFPFQueryRequestFromArgsPreservesTypedConcernFields(t *testing.T) {
+	request, err := fpfQueryRequestFromArgs(map[string]any{
+		"mode":                        "concern",
+		"query":                       "How should this concern be framed?",
+		"entity_of_concern":           "delivery system",
+		"known_context":               []any{"time-boxed release", "source-first retrieval"},
+		"intended_use":                "shape a bounded decision",
+		"max_candidates_per_role":     float64(3),
+		"max_total_candidates":        float64(7),
+		"max_excerpt_characters":      float64(900),
+		"max_relations_per_candidate": float64(4),
 	})
 	if err != nil {
-		t.Fatalf("handleQuintQuery returned error: %v", err)
+		t.Fatal(err)
 	}
 
-	resultCount := strings.Count(result, "### ")
-	if resultCount != fpf.DefaultSpecSearchLimit {
-		t.Fatalf("expected default limit %d, got %d results:\n%s", fpf.DefaultSpecSearchLimit, resultCount, result)
+	concern, ok := request.(fpf.ConcernQuery)
+	if !ok {
+		t.Fatalf("request = %T, want fpf.ConcernQuery", request)
+	}
+	if concern.EntityOfConcern != "delivery system" || concern.IntendedUse != "shape a bounded decision" {
+		t.Fatalf("contextual fields lost: %#v", concern)
+	}
+	if len(concern.KnownContext) != 2 {
+		t.Fatalf("array fields lost: %#v", concern)
+	}
+	if concern.ResponseBudget.MaxCandidatesPerRole != 3 || concern.ResponseBudget.MaxTotalCandidates != 7 || concern.ResponseBudget.MaxExcerptCharacters != 900 || concern.ResponseBudget.MaxRelationsPerCandidate != 4 {
+		t.Fatalf("response budget lost: %#v", concern.ResponseBudget)
 	}
 }
 
-func TestHandleQuintQuery_FPFEmptyStateKeepsNavStrip(t *testing.T) {
-	dbPath := buildFPFSearchTestDB(t)
-
-	restoreOpen := stubOpenFPFDB(t, dbPath)
-	defer restoreOpen()
-
-	store := setupCLIArtifactStore(t)
-
-	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
-		"action": "fpf",
-		"query":  "definitely-not-present",
+func TestFPFQueryRequestFromArgsRejectsConcernRoles(t *testing.T) {
+	_, err := fpfQueryRequestFromArgs(map[string]any{
+		"mode":  "concern",
+		"query": "How should this concern be framed?",
+		"roles": []any{"pattern_body"},
 	})
-	if err != nil {
-		t.Fatalf("handleQuintQuery returned error: %v", err)
+	if err == nil || !strings.Contains(err.Error(), "roles are not accepted for concern mode") {
+		t.Fatalf("concern roles error = %v", err)
 	}
-	if !strings.Contains(result, "No results found.") {
-		t.Fatalf("expected empty-state message, got:\n%s", result)
+}
+
+func TestFPFQueryRequestFromArgsRejectsFractionalBudget(t *testing.T) {
+	_, err := fpfQueryRequestFromArgs(map[string]any{
+		"mode":                 "concern",
+		"query":                "bounded concern",
+		"max_total_candidates": 2.5,
+	})
+	if err == nil || !strings.Contains(err.Error(), "max_total_candidates must be a non-negative integer") {
+		t.Fatalf("fractional budget error = %v", err)
 	}
-	if !strings.Contains(result, "── Haft") {
-		t.Fatalf("expected nav strip in empty-state output, got:\n%s", result)
+}
+
+func TestHandleQuintQuery_FPFRejectsPresentNonStringPublicationFields(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	tests := []struct {
+		name  string
+		field string
+		value any
+	}{
+		{name: "null view", field: "view", value: nil},
+		{name: "numeric view", field: "view", value: float64(1)},
+		{name: "null trace ref", field: "trace_ref", value: nil},
+		{name: "numeric trace ref", field: "trace_ref", value: float64(1)},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			args := map[string]any{
+				"action": "fpf",
+				"mode":   "concern",
+				"query":  "bounded concern",
+				"view":   "trace",
+			}
+			args[test.field] = test.value
+			_, err := handleQuintQuery(
+				context.Background(),
+				store,
+				nil,
+				t.TempDir(),
+				args,
+			)
+			if err == nil || !strings.Contains(err.Error(), test.field+" must be a string") {
+				t.Fatalf("%s error = %v", test.field, err)
+			}
+		})
 	}
 }
 
@@ -247,6 +280,9 @@ func TestHandleQuintQuery_ExactSearchAndCanonicalRelatedContract(t *testing.T) {
 	}
 	if !strings.Contains(compact, target.Meta.ID) || strings.Contains(compact, neighbor.Meta.ID) {
 		t.Fatalf("compact exact search returned wrong set:\n%s", compact)
+	}
+	if strings.Contains(compact, "── Haft") {
+		t.Fatalf("compact exact search must be a closed result without project-state footer:\n%s", compact)
 	}
 
 	fullSearch, err := handleQuintQuery(ctx, store, nil, t.TempDir(), map[string]any{
@@ -392,7 +428,7 @@ func TestHandleQuintProblem_FramePersistsProblemProfile(t *testing.T) {
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 
-	result, err := handleQuintProblem(ctx, store, t.TempDir(), map[string]any{
+	result, _, err := handleQuintProblemWithCreatedRef(ctx, store, t.TempDir(), map[string]any{
 		"action":                "frame",
 		"title":                 "Ticket cannot become work without boundary",
 		"problem_profile":       artifact.ProblemProfileDeep,
@@ -402,7 +438,7 @@ func TestHandleQuintProblem_FramePersistsProblemProfile(t *testing.T) {
 		"freshness_disposition": "Re-check before admission.",
 	})
 	if err != nil {
-		t.Fatalf("handleQuintProblem returned error: %v", err)
+		t.Fatalf("handleQuintProblemWithCreatedRef returned error: %v", err)
 	}
 	if !strings.Contains(result, "Problem framed") {
 		t.Fatalf("unexpected frame response:\n%s", result)
@@ -461,6 +497,24 @@ func setupCLIArtifactStore(t *testing.T) *artifact.Store {
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,
+		`CREATE TABLE affected_symbols (
+			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL,
+			symbol_name TEXT NOT NULL, symbol_kind TEXT NOT NULL,
+			symbol_line INTEGER, symbol_end_line INTEGER, symbol_hash TEXT,
+			PRIMARY KEY (artifact_id, file_path, symbol_name))`,
+		`CREATE TABLE artifact_symbol_bindings (
+			artifact_id TEXT NOT NULL, anchor_id TEXT NOT NULL,
+			anchor_version INTEGER NOT NULL, file_path TEXT NOT NULL,
+			language TEXT NOT NULL, symbol_name TEXT NOT NULL,
+			symbol_kind TEXT NOT NULL, receiver TEXT NOT NULL DEFAULT '',
+			qualified_name TEXT NOT NULL, signature_hash TEXT NOT NULL,
+			symbol_line INTEGER NOT NULL DEFAULT 0,
+			symbol_end_line INTEGER NOT NULL DEFAULT 0,
+			body_hash TEXT NOT NULL DEFAULT '',
+			binding_status TEXT NOT NULL DEFAULT 'active',
+			resolution_source TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (artifact_id, anchor_id))`,
 		`CREATE TABLE codebase_modules (
 			module_id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE,
 			name TEXT NOT NULL, lang TEXT, file_count INTEGER DEFAULT 0,
@@ -492,34 +546,293 @@ func setupCLIArtifactStore(t *testing.T) *artifact.Store {
 	return artifact.NewStore(db)
 }
 
-func buildFPFManyResultsTestDB(t *testing.T, total int) string {
+func buildFPFSourceQueryTestDB(t *testing.T) string {
+	t.Helper()
+	return buildFPFSourceQueryTestDBAtRevision(t, "cli-query-test-revision")
+}
+
+func buildFPFSourceQueryTestDBAtRevision(t *testing.T, revisionLabel string) string {
 	t.Helper()
 
-	tmpDir := t.TempDir()
-	dbPath := filepath.Join(tmpDir, "fpf-many-results.db")
-	chunks := make([]fpf.SpecChunk, 0, total)
-
-	for index := range total {
-		patternID := fmt.Sprintf("A.%d", index+1)
-		heading := fmt.Sprintf("%s - Governance Pattern %d", patternID, index+1)
-		body := fmt.Sprintf("Governance result %d keeps reasoning explicit.", index+1)
-		keywords := []string{"governance", "policy"}
-		queries := []string{fmt.Sprintf("How do I handle governance case %d?", index+1)}
-
-		chunks = append(chunks, fpf.SpecChunk{
-			ID:        index,
-			Heading:   heading,
-			Level:     2,
-			Body:      body,
-			PatternID: patternID,
-			Keywords:  keywords,
-			Queries:   queries,
-		})
+	revision := syntheticFPFSourceRevision(revisionLabel)
+	units := syntheticFPFSourceQueryUnits(revision)
+	dbPath := filepath.Join(t.TempDir(), "fpf-source-query.db")
+	if err := fpf.StoreSourceUnits(dbPath, units); err != nil {
+		t.Fatalf("store synthetic source units: %v", err)
+	}
+	metadataDB, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open synthetic source metadata database: %v", err)
+	}
+	if _, err := metadataDB.Exec(`CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`); err != nil {
+		_ = metadataDB.Close()
+		t.Fatalf("create synthetic source metadata grammar: %v", err)
+	}
+	if err := metadataDB.Close(); err != nil {
+		t.Fatalf("close synthetic source metadata database: %v", err)
+	}
+	entries := map[string]string{
+		"schema_version":         fpf.SpecIndexSchemaVersion,
+		"fpf_commit":             revision,
+		"readme_document_digest": syntheticFPFDocumentDigest("synthetic-readme-" + revision),
+		"spec_document_digest":   syntheticFPFDocumentDigest("synthetic-spec-" + revision),
+	}
+	if err := fpf.SetSpecMetaEntries(dbPath, entries); err != nil {
+		t.Fatalf("store synthetic source metadata: %v", err)
 	}
 
-	if err := fpf.BuildSpecIndex(dbPath, chunks, nil); err != nil {
-		t.Fatalf("BuildSpecIndex failed: %v", err)
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open synthetic source index: %v", err)
 	}
-
+	defer func() { _ = db.Close() }()
+	if err := fpf.VerifySourceQueryIndexReadOnlyDB(db); err != nil {
+		t.Fatalf("synthetic source index does not satisfy canonical validation: %v", err)
+	}
+	snapshot, err := fpf.LoadQuerySourceSnapshot(db)
+	if err != nil {
+		t.Fatalf("load synthetic source metadata: %v", err)
+	}
+	if snapshot.Revision() != revision || snapshot.IndexSchemaVersion() != fpf.SpecIndexSchemaVersion {
+		t.Fatalf("synthetic source snapshot = %#v", snapshot)
+	}
 	return dbPath
+}
+
+func syntheticFPFSourceQueryUnits(revision string) []fpf.SourceUnit {
+	strictTOCBody := "| A.7 | Strict Distinctions | Stable | Builds on B.5 |"
+	strictTOCProvenance := syntheticFPFProvenance(
+		"FPF-Spec.md",
+		10,
+		strictTOCBody,
+		revision,
+	)
+	strictRelation := fpf.SourceRelation{
+		Kind:            fpf.SourceRelationKindBuildsOn,
+		TargetPatternID: "B.5",
+		TargetClass:     fpf.SourceRelationTargetClassLocalPattern,
+		Origin:          fpf.SourceRelationOriginTOCExplicit,
+		Provenance:      strictTOCProvenance,
+	}
+
+	return []fpf.SourceUnit{
+		syntheticFPFSourceUnit(
+			"readme:practical-use:strict",
+			"README.STRICT",
+			fpf.SourceUnitRolePracticalUseCard,
+			"Strict distinctions working situation",
+			"Architecture structural view needs strict distinctions before selecting a method.",
+			"",
+			"",
+			"Readme.md",
+			1,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.DirectRefs = []string{"A.7"}
+				unit.AuthoredPhrases = []string{"architecture structural view", "strict distinctions"}
+				unit.Keywords = []string{"architecture", "structural", "distinctions"}
+				unit.UseCues = fpf.SourceUseCues{
+					ConditionText:   "When architecture terms collapse object, description, and carrier.",
+					FirstResultText: "A bounded set of explicit distinctions.",
+					StopReturnText:  "Return when the current concern is distinguishable.",
+				}
+			},
+		),
+		syntheticFPFSourceUnit(
+			"readme:practical-use:alternatives",
+			"README.ALTERNATIVES",
+			fpf.SourceUnitRolePracticalUseCard,
+			"Architecture alternatives working situation",
+			"Architecture structural view can keep rival alternatives visible without a hidden winner.",
+			"",
+			"",
+			"Readme.md",
+			2,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.DirectRefs = []string{"B.5"}
+				unit.AuthoredPhrases = []string{"architecture structural view", "rival alternatives"}
+				unit.Keywords = []string{"architecture", "structural", "alternatives"}
+				unit.UseCues = fpf.SourceUseCues{
+					ConditionText:   "When several architecture candidates remain live.",
+					FirstResultText: "A bounded alternative set.",
+					StopReturnText:  "Return when a selection policy is needed.",
+				}
+			},
+		),
+		syntheticFPFSourceUnit(
+			"readme:preface",
+			"",
+			fpf.SourceUnitRolePreface,
+			"Source-first preface",
+			"Source retrieval is not applicability, authority, or performed work.",
+			"",
+			"",
+			"Readme.md",
+			3,
+			revision,
+			nil,
+		),
+		{
+			UnitID:            "spec:toc-row:a-7",
+			Role:              fpf.SourceUnitRoleTOCRow,
+			Title:             "Strict Distinctions",
+			Body:              strictTOCBody,
+			PatternID:         "A.7",
+			PublicationStatus: "Stable",
+			DirectRefs:        []string{"B.5"},
+			AuthoredPhrases:   []string{"strict distinctions", "architecture structural view"},
+			Keywords:          []string{"architecture", "structural", "distinctions"},
+			Provenance:        strictTOCProvenance,
+		},
+		syntheticFPFSourceUnit(
+			"spec:toc-row:b-5",
+			"",
+			fpf.SourceUnitRoleTOCRow,
+			"Rival Alternatives",
+			"| B.5 | Rival Alternatives | Stable | Coordinates with A.7 |",
+			"B.5",
+			"",
+			"FPF-Spec.md",
+			11,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.PublicationStatus = "Stable"
+				unit.DirectRefs = []string{"A.7"}
+				unit.AuthoredPhrases = []string{"architecture structural view", "rival alternatives"}
+				unit.Keywords = []string{"architecture", "structural", "alternatives"}
+			},
+		),
+		syntheticFPFSourceUnit(
+			"spec:pattern-body:a-7",
+			"A.7",
+			fpf.SourceUnitRolePatternBody,
+			"A.7 Strict Distinctions",
+			"A.7 exact body sentinel\nProblem frame\nProblem\nForces\nSolution\nOrdinary boundary\nWorked slice\nChecklist",
+			"A.7",
+			"",
+			"FPF-Spec.md",
+			20,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.AuthoredPhrases = []string{"strict distinctions"}
+				unit.Keywords = []string{"architecture", "distinctions", "solution"}
+				unit.Relations = []fpf.SourceRelation{strictRelation}
+			},
+		),
+		syntheticFPFSourceUnit(
+			"spec:pattern-body:b-5",
+			"B.5",
+			fpf.SourceUnitRolePatternBody,
+			"B.5 Rival Alternatives",
+			"B.5 exact body sentinel\nProblem frame\nProblem\nForces\nSolution\nOrdinary boundary\nWorked slice\nChecklist",
+			"B.5",
+			"",
+			"FPF-Spec.md",
+			30,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.AuthoredPhrases = []string{"rival alternatives"}
+				unit.Keywords = []string{"architecture", "alternatives", "solution"}
+			},
+		),
+		syntheticFPFSourceUnit(
+			"spec:pattern-section:a-7:solution",
+			"A.7:solution",
+			fpf.SourceUnitRolePatternSection,
+			"A.7 Solution",
+			"A.7 exact section solution content.",
+			"A.7:solution",
+			"A.7",
+			"FPF-Spec.md",
+			21,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.Keywords = []string{"solution"}
+			},
+		),
+		syntheticFPFSourceUnit(
+			"spec:pattern-section:b-5:solution",
+			"B.5:solution",
+			fpf.SourceUnitRolePatternSection,
+			"B.5 Solution",
+			"B.5 exact section solution content.",
+			"B.5:solution",
+			"B.5",
+			"FPF-Spec.md",
+			31,
+			revision,
+			func(unit *fpf.SourceUnit) {
+				unit.Keywords = []string{"solution"}
+			},
+		),
+	}
+}
+
+func syntheticFPFSourceUnit(
+	unitID string,
+	sourceID string,
+	role fpf.SourceUnitRole,
+	title string,
+	body string,
+	patternID string,
+	parentPatternID string,
+	sourcePath string,
+	line int,
+	revision string,
+	decorate func(*fpf.SourceUnit),
+) fpf.SourceUnit {
+	unit := fpf.SourceUnit{
+		UnitID:          unitID,
+		SourceID:        sourceID,
+		Role:            role,
+		Title:           title,
+		Body:            body,
+		PatternID:       patternID,
+		ParentPatternID: parentPatternID,
+		Provenance:      syntheticFPFProvenance(sourcePath, line, body, revision),
+	}
+	if decorate != nil {
+		decorate(&unit)
+	}
+	return unit
+}
+
+func syntheticFPFProvenance(
+	sourcePath string,
+	line int,
+	body string,
+	revision string,
+) fpf.SourceProvenance {
+	digest := sha256.Sum256([]byte(body))
+	return fpf.SourceProvenance{
+		SourcePath:     sourcePath,
+		StartLine:      line,
+		EndLine:        line,
+		ContentHash:    hex.EncodeToString(digest[:]),
+		SourceRevision: revision,
+	}
+}
+
+func syntheticFPFDocumentDigest(body string) string {
+	digest := sha256.Sum256([]byte(body))
+	return "sha256:" + hex.EncodeToString(digest[:])
+}
+
+func syntheticFPFSourceRevision(label string) string {
+	digest := sha256.Sum256([]byte(label))
+	return hex.EncodeToString(digest[:20])
+}
+
+func stubSourceQueryDB(t *testing.T, dbPath string) func() {
+	t.Helper()
+	original := openFPFDBFunc
+	openFPFDBFunc = func() (*sql.DB, func(), error) {
+		db, err := sql.Open("sqlite", dbPath)
+		if err != nil {
+			return nil, nil, err
+		}
+		return db, func() { _ = db.Close() }, nil
+	}
+	return func() { openFPFDBFunc = original }
 }

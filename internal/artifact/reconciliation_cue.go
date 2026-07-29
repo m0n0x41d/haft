@@ -124,8 +124,8 @@ func appendGoverningConflictCue(
 	report.Cues = append(report.Cues, ReconciliationCue{
 		Kind:     ReconciliationCueGoverningConflict,
 		Severity: severity,
-		Title:    "Current governing authority needs operator review",
-		Detail:   "active decisions overlap or explicitly conflict for the same subject/context/target; this is a blocker cue, not a GateDecision",
+		Title:    "Scoped governing-authority conflict requires operator selection for affected use",
+		Detail:   "active decisions overlap or explicitly conflict for the same subject/context/target; this read-only cue limits only a use that relies on the unresolved authority, not unrelated already-authorized Work, and is not a GateDecision or project-wide Work gate",
 		Command:  StatusCompactGoverningSetCommand,
 	})
 	return report

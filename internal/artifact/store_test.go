@@ -48,6 +48,19 @@ func setupTestDB(t *testing.T) *Store {
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, symbol_name TEXT NOT NULL,
 			symbol_kind TEXT NOT NULL, symbol_line INTEGER, symbol_end_line INTEGER, symbol_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path, symbol_name))`,
+		`CREATE TABLE artifact_symbol_bindings (
+			artifact_id TEXT NOT NULL, anchor_id TEXT NOT NULL, anchor_version INTEGER NOT NULL,
+			file_path TEXT NOT NULL, language TEXT NOT NULL, symbol_name TEXT NOT NULL,
+			symbol_kind TEXT NOT NULL, receiver TEXT NOT NULL DEFAULT '', qualified_name TEXT NOT NULL,
+			signature_hash TEXT NOT NULL, symbol_line INTEGER NOT NULL DEFAULT 0,
+			symbol_end_line INTEGER NOT NULL DEFAULT 0, body_hash TEXT NOT NULL DEFAULT '',
+			binding_status TEXT NOT NULL DEFAULT 'active', resolution_source TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (artifact_id, anchor_id))`,
+		`CREATE TABLE symbol_rebind_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, artifact_id TEXT NOT NULL,
+			previous_anchor_id TEXT NOT NULL, current_anchor_id TEXT NOT NULL,
+			reason TEXT NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE fpf_state (
 			context_id TEXT PRIMARY KEY,
 			active_role TEXT,
@@ -116,6 +129,124 @@ func TestCreateAndGet(t *testing.T) {
 	}
 	if got.Meta.Version != 1 {
 		t.Errorf("version = %d, want 1", got.Meta.Version)
+	}
+}
+
+func TestSymbolBindingsAreAuthoritativeAndKeepRebindHistory(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	decision := &Artifact{
+		Meta: Meta{ID: "dec-anchor", Kind: KindDecisionRecord, Title: "Anchor binding"},
+		Body: "bind one symbol",
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+	first := AffectedSymbol{
+		AnchorID:      "sym:v2:first",
+		AnchorVersion: 2,
+		FilePath:      "src/app.ts",
+		Language:      "typescript",
+		SymbolName:    "run",
+		SymbolKind:    "func",
+		QualifiedName: "run",
+		SignatureHash: "sig-first",
+		Line:          10,
+		EndLine:       14,
+		Hash:          "body-first",
+	}
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{first}); err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := store.GetSymbolBindings(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 1 || bindings[0].AnchorID != first.AnchorID || bindings[0].Status != SymbolBindingActive {
+		t.Fatalf("symbol bindings = %+v", bindings)
+	}
+	hits, err := store.SearchBySymbolAnchor(ctx, first.AnchorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Meta.ID != decision.Meta.ID {
+		t.Fatalf("anchor search = %+v", hits)
+	}
+
+	lineShifted := first
+	lineShifted.Line = 30
+	lineShifted.EndLine = 34
+	lineShifted.Hash = "body-second"
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{lineShifted}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := store.GetSymbolRebindHistory(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("line/body change must not create rebind history: %+v", history)
+	}
+
+	signatureChanged := lineShifted
+	signatureChanged.AnchorID = "sym:v2:second"
+	signatureChanged.SignatureHash = "sig-second"
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{signatureChanged}); err != nil {
+		t.Fatal(err)
+	}
+	history, err = store.GetSymbolRebindHistory(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].PreviousAnchorID != first.AnchorID || history[0].CurrentAnchorID != signatureChanged.AnchorID {
+		t.Fatalf("rebind history = %+v", history)
+	}
+}
+
+func TestSymbolBindingsPreserveOverloadsBeyondLegacyProjection(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	decision := &Artifact{
+		Meta: Meta{ID: "dec-overloads", Kind: KindDecisionRecord, Title: "Overload binding"},
+		Body: "bind overloads",
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+	base := AffectedSymbol{
+		AnchorVersion: 2,
+		FilePath:      "src/app.ts",
+		Language:      "typescript",
+		SymbolName:    "parse",
+		SymbolKind:    "func",
+		QualifiedName: "parse",
+		EndLine:       2,
+	}
+	first := base
+	first.AnchorID = "sym:v2:parse-string"
+	first.SignatureHash = "sig-string"
+	first.Line = 1
+	second := base
+	second.AnchorID = "sym:v2:parse-number"
+	second.SignatureHash = "sig-number"
+	second.Line = 4
+	second.EndLine = 5
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{first, second}); err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := store.GetSymbolBindings(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("authority bindings collapsed overloads: %+v", bindings)
+	}
+	var projectionCount int
+	if err := store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM affected_symbols WHERE artifact_id = ?`, decision.Meta.ID).Scan(&projectionCount); err != nil {
+		t.Fatal(err)
+	}
+	if projectionCount != 1 {
+		t.Fatalf("legacy projection count = %d, want one compatible row", projectionCount)
 	}
 }
 

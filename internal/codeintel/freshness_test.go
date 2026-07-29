@@ -23,6 +23,16 @@ func TestEnsureIndex_RebuildsOnStaleness(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE codebase_modules (
+		module_id TEXT PRIMARY KEY,
+		path TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL,
+		lang TEXT,
+		file_count INTEGER DEFAULT 0,
+		last_scanned TEXT NOT NULL
+	)`); err != nil {
+		t.Fatal(err)
+	}
 
 	// indexStale + EnsureIndex's build path only touch scanner/symbols/edges.
 	svc := &Service{

@@ -1,156 +1,197 @@
 ---
 name: h-status
 description: |
-  Project state cockpit for haft — read-only summary of active problems, pending decisions, refresh/drift pressure, open work commissions, coverage cues, and spec lifecycle readiness when relevant, with explicit drill-down calls for omitted detail. Make sure to use this skill whenever the user asks "where are we", "what's pending", "what's stale", "project status", "what needs attention", "show me the state", "what's in flight", "what did we decide on X recently", "haft status", or "spec readiness" — or whenever a session resumes after a break and situational awareness is needed before deciding what to work on. Cheap, read-only, zero commitments. For verifying a single decision use h-verify. For managing commission lifecycle use h-commission. For editing specs use h-spec.
+  Read-only Haft project cockpit for active problems, decisions, notes, evidence freshness, drift, commissions, spec lifecycle, module decision coverage, and bounded exact file-link gaps from a current code index. Use for project status, session resumption, "what is decision-linked", "what is uncovered", or "what needs attention". This skill reports current graph state and drill-downs; it does not mutate artifacts, infer a project phase, or prescribe a universal next step.
 when_to_use: |
-  Operator wants situational awareness or session-resume context. Cheap and read-only, fire freely.
-argument-hint: "[optional: context name to filter]"
-allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh mcp__haft__haft_spec_section
+  The operator needs situational awareness, coverage inspection, or a read-only spec-readiness view. Use h-verify to gather new evidence and h-spec to edit specs.
+argument-hint: "[optional file, module, context, or artifact reference]"
+allowed-tools: Bash Read Grep Glob mcp__haft__haft_query mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
 
-# h-status — Project FPF state dashboard
+# h-status — Read-only project memory and coverage
 
-You are surfacing the current FPF state via `mcp__haft__haft_query(action="status")`. Read-only — no kernel writes (Step 0's scan is a maintenance write, not a state mutation).
+Start with the smallest read-only surface that answers the question:
 
-## Compact interface discovery
-
-If you need the exact compact contract, run `haft interface query.status --json`.
-Default status output is an operator cockpit, not an audit dump. It is allowed
-to omit detail. Omission means "not shown here", not "absent from the project".
-Use explicit follow-up calls for detail:
-
-- `mcp__haft__haft_query(action="status", full=true)` — detailed status
-- `mcp__haft__haft_query(action="coverage")` — module coverage
-- `mcp__haft__haft_refresh(action="scan", verbose=true)` — drift/stale detail
-- `mcp__haft__haft_refresh(action="plan")` — maintenance work order
-- `mcp__haft__haft_refresh(action="review")` — read-only needs-judgment packet
-- `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe closures
-- `mcp__haft__haft_query(action="contract_generation")` — read-only generated-fragment carrier hints for host/skill/plugin/Pi sync
-- `mcp__haft__haft_query(action="drift_events", limit=5)`, `mcp__haft__haft_query(action="decision_reconcile", limit=5)`, and `mcp__haft__haft_query(action="governing_set", limit=5)` — compact drift fanout, reconciliation, and current-authority drill-downs
-- add `full=true` to those drill-down calls only when you need the full audit payload
-
-read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
-
-## Step 0 — Maintenance check (FPF B.3.4 evidence decay)
-
-Before calling status, scan the most recent kernel response in this
-session for `Refresh reminder: N days since last stale scan`. If
-N > 30, OR if no scan is visible in this session's history:
-
-1. Call `mcp__haft__haft_refresh(action="scan")` first — do not
-   defer to the operator. The reminder is a signal for the agent to
-   act, not a prompt for the operator to remember.
-2. Fold any new stale or drifted findings from the scan into the
-   status reply you were already about to produce.
-3. If the scan reveals nothing new — say so briefly and proceed.
-
-Surfacing the reminder is the kernel's job; acting on it is the
-agent's job. Doing nothing is the failure mode this step exists to
-fix. See CLAUDE.md Critical Reminders — maintenance discipline.
-
-## Step 1 — Call the kernel
-
+```text
+mcp__haft__haft_query(action="status", full=false)
 ```
+
+If the status response says the canonical project profile has several scopes,
+treat that as a read-only retry requirement. Use one exact `scope_id` from the
+reported available values and retry the same status call:
+
+```text
 mcp__haft__haft_query(
   action="status",
-  context="<optional context filter>",
-  full=false
+  full=false,
+  scope_id="<exact emitted ScopeID>"
 )
 ```
 
-Or for richer visualization (terminal-friendly board view):
+Choose the scope from the operator's current object or question.
+Never select the first value, sort the values into a winner, or collapse mixed scopes. If
+the current use does not identify one scope, report the available ScopeIDs and
+narrow only that question; unrelated already-authorized Work continues.
 
+Compact output is a cockpit, not proof of absence. Drill down explicitly:
+
+- `status, full=true` for detailed artifact state;
+- `coverage` for module decision coverage plus a bounded exact `affected_files`
+  link-gap projection when the derived code index is current;
+- `related, file="<path>"` for decisions and notes touching a file;
+- `related, artifact_ref="<ref>"` for the exact artifact neighborhood;
+- `drift_events`, `decision_reconcile`, or `governing_set` for the named
+  governance question;
+- `contract_generation` for generated carrier-sync hints.
+
+Generated text and read-only projections are discovery surfaces. They are not
+evidence truth, gate passage, approval, authority, or work.
+Coverage is a read-only projection over stored module data and the current
+derived code index. If the code index is uninitialized, stale, or degraded,
+report the limitation as unavailable rather than an empty-clean result; do not
+rescan it from `h-status`.
+
+## EntityOfConcern memory
+
+Contract truth: typed neighborhood and recall are **V9 CONTRACT**
+capabilities. Source, schema, skill, and local-test presence is not
+installed-runtime proof. A current readiness claim requires
+**EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact candidate; RC or release
+status additionally requires release authority. Do not infer
+**CURRENT PRODUCT** status from contract inclusion or evidence alone.
+
+When the operator names an exact current EntityOfConcern and bounded context,
+read its typed neighborhood under `agent_orientation.v2` rather than searching
+the whole artifact corpus:
+
+```text
+mcp__haft__haft_query(
+  action="memory",
+  memory_request={
+    "mode":"neighborhood",
+    "contract_version":"haft.memory.v1",
+    "basis":{"kind":"project_current"},
+    "entity_ref":{
+      "ref_kind_id":"U.EntityRef",
+      "reference_id":"<exact EntityOfConcern>"
+    },
+    "bounded_context_ref":"<exact bounded context>",
+    "view":{
+      "projection_profile_ref":"agent_orientation.v2",
+      "requested_facets":[
+        "epistemes",
+        "problems",
+        "alternatives",
+        "decisions",
+        "specifications",
+        "evidence",
+        "work",
+        "implementation",
+        "unresolved"
+      ],
+      "detail":"overview",
+      "include_history":false
+    },
+    "read_budget":{
+      "max_facets":9,
+      "max_items_per_facet":6,
+      "max_relation_paths_per_item":3,
+      "max_carrier_excerpt_characters":800,
+      "max_provenance_depth":2
+    }
+  }
+)
 ```
-mcp__haft__haft_query(action="board")
-```
 
-## Step 2 — Interpret the response
+Report the exact snapshot/profile basis and distinguish facet coverage:
+`complete`, `partial`, `not_applicable`, `unavailable`, and `stale`. Known
+empty is valid only for `complete` at that exact basis. Keep item semantic and
+lifecycle posture separate from `evidence_currentness` and
+`projection_freshness`. Honor `hydrate_before_reliance`; a read affordance may
+recover more basis but never becomes a recommendation, skill choice,
+NextAction, or authority.
 
-The default status payload is a compact cockpit. Read it as:
+If only a name or alias is known, use `memory.resolve` first. Use
+`memory.recall` only after exact entity/context resolution and describe its
+ranked result as discovery candidates inside that scope. On `retry_required`,
+do not merge stale and current snapshots. On `abstained`, report missing basis
+rather than an empty project memory.
 
-- **Operator Cockpit** — refresh, drift, and commission items that may block or redirect work
-- **Active Work** — the most relevant in-progress problems and backlog count
-- **Problem closure hygiene** — read-only warnings for active/backlog problems
-  that already have supporting evidence but no `based_on`
-  SolutionPortfolio/DecisionRecord graph path
-- **Decision Health** — counts for healthy, pending, unassessed, refresh-due, and drifted decisions, plus active/unverified claims and the nearest planned evidence-check date
-- **Coverage Cue** — one-line module coverage orientation when modules were scanned
-- **Drill-down** — exact calls for the omitted detailed status, coverage, drift/stale, maintenance plan, read-only judgment packet, and safe drain preview
+## Attention is not interruption
 
-`full=true` restores the detailed status renderer with shipped/pending/unassessed
-decision lists, addressed problems, recent notes, and full module coverage when
-available. The response also includes a navigation strip with available next
-actions (e.g., `/h-refresh`).
+Status reports where judgment may eventually be needed; it does not suspend
+the project. Drift, refresh debt, missing bindings, stale descriptions, and
+reconciliation cues do not block unrelated already-authorized Work.
 
-`Unassessed` is evidence maturity, not a claim/prediction count. Read its
-reason: either no active evidence exists or evidence lookup was unavailable.
-The claim summary is separate. `verify_after` is a planned evidence-check date,
-not a deadline or gate. A zero-claim tactical decision has no scheduled check.
+Before suggesting a human interruption, inspect the exact affected artifact
+and current use. Interrupt only an operation that would mutate the affected
+binding or authority, cross an explicit human lifecycle gate, or rely on an
+unresolved contradiction in binding content. Otherwise report the cue and
+continue. Never request bare approval merely to acknowledge status, evidence,
+historicity, or technical cleanup.
 
-## Step 3 — Include spec lifecycle when relevant
+When status exposes a real gate, do not merely repeat its label. First inspect
+the referenced review, section, artifact, or other read-only basis. Then give a
+self-contained **Human Gate Brief**: gate kind and readable subject; the exact
+affected operation and why only it is blocked; every real option available now;
+for each option what changes, what stays unchanged, the immediate consequence
+or return condition, and the weakest link; any existing comparison/parity basis,
+selection policy, and non-dominated or Pareto set, or an explicit statement
+that none exists or applies; the advisory recommendation; evidence freshness or
+expiry; and a question asking for the human engineer's assessment of the
+options, trade-offs, and recommendation in natural language. Pair every ID or
+hash with readable meaning. Accept ordinary language as the substantive answer
+to the engineering consultation, never as a binding receipt. A command, skill
+invocation, exact reply phrase, or resumption token must never substitute for
+that consultation. Only after the engineer's position is explicit may a
+separately required manual act be explained with its authority limits. The
+brief is not authorization. If the read-only basis cannot supply those details,
+report that the gate is not yet askable and name the drill-down needed to
+recover them.
 
-If the status response says the project is `needs_onboard`, mentions missing
-SpecSections, or the operator asked about specs/readiness/onboarding, call:
+## Coverage inspection
 
-```
+1. Call `mcp__haft__haft_query(action="coverage")`.
+2. Read file gaps only as files in a decision-bearing module without an exact
+   active `affected_files` link. This does not prove that a file is
+   undocumented, unconstrained, or incorrect.
+3. If the operator names a file or module, call `related` for that exact path.
+4. If coverage reports an absent or stale derived index, limit only the current
+   coverage claim and surface that a separately authorized refresh is required
+   before relying on it. Continue unrelated Work.
+5. Distinguish:
+   - no relevant decision found;
+   - a decision exists but the file is outside its recorded footprint;
+   - the file is covered but the governing decision is stale or drifted;
+   - compact output omitted detail and a full query is still needed.
+6. Report blind spots as orientation cues. Coverage is not a quality score and
+   does not prove conformance, implementation correctness, or spec completeness.
+
+## Spec lifecycle strip
+
+When the operator asks about spec readiness or status mentions missing
+SpecSections, call:
+
+```text
 mcp__haft__haft_spec_section(action="lifecycle")
 ```
 
-Fold the projection into the dashboard as a short strip:
+Report state, current action, carrier, section identity, and any human gate.
+The lifecycle action is local to the spec state machine; it is not the next
+step of the whole project. Do not edit, approve, rebaseline, or reopen from
+this skill.
 
-- `state`
-- `action`
-- `carrier`
-- `section_id` / `section_kind`
-- `human_gate`, if present
+## Presentation
 
-This remains read-only. Do not edit carriers or call approve/rebaseline/reopen
-from h-status. Route follow-up work to `/h-spec`.
+Surface:
 
-## Step 4 — Present to operator
+- current items relevant to the operator's question;
+- stale, drifted, uncovered, or unassessed state with its exact meaning;
+- whether a cue affects the current operation or is only background attention;
+- which details were not shown and the read-only call that can recover them;
+- available capabilities, only when their condition is current.
 
-Surface the response as-is — the kernel formats it already. Highlight items that need operator attention:
-
-- Refresh-due or drift items → recommend `/h-verify` for the specific decisions,
-  or call `mcp__haft__haft_refresh(action="scan", verbose=true)` when file-level
-  detail is needed
-- Blocked work commissions → recommend `/h-commission` with `action=show` and operator review
-- Epistemic debt budget exceeded → recommend running `/h-verify` on the highest-debt decisions
-- Coverage cue with blind modules → call `mcp__haft__haft_query(action="coverage")`
-  before recommending `/h-frame` for upcoming work in a specific module
-- Problem closure hygiene → do not close from status; route to the proper
-  graph action: link the existing portfolio/decision, attach evidence to the
-  right artifact, or explicitly deprecate/supersede/waive with operator
-  rationale
-- Stale decisions → recommend `/h-refresh` action=waive (with new evidence) or `action=supersede` (with replacement decision)
-- Spec lifecycle action → recommend `/h-spec` with the surfaced action and carrier
-
-## Step 5 — Optional: cross-link to related decisions when context given
-
-If the operator's context mentions a specific file or module, also call:
-
-```
-mcp__haft__haft_query(action="related", file="<file path>")
-```
-
-To surface decisions whose affected_files include that path.
-
-## What NOT to do
-
-- Do NOT auto-fix anything from this skill. h-status is read-only.
-- Do NOT edit spec carriers or approve/rebaseline/reopen SpecSections from this skill. Use h-spec.
-- Do NOT silently filter out refresh-due items — the operator needs to see epistemic debt to triage.
-- Do NOT infer that a decision, note, module, or drift item is absent merely because compact status omitted it.
-- Do NOT use this skill for full-text search across decisions — that's h-search via `mcp__haft__haft_query(action="search", query="...")`.
-- Do NOT call this skill on every turn. Auto-trigger is fine when the operator explicitly asks; constant polling pollutes context with stale state.
-
-## FPF spec references
-
-- B.3.4 — Evidence Decay & Epistemic Debt (drives refresh-due classification)
-- F.10 — Three Ladders: Evidence / Standard / Requirement status
-- VER-02 — Decay (valid_until expiry semantics)
-- X-WLNK — Weakest-link aggregation for R_eff degradation surfacing
-
-Look up via `mcp__haft__haft_query(action="fpf", query="B.3.4")`.
+Do not call refresh mutations, close problems, attach evidence, edit specs, or
+create artifacts. Pair every artifact ID with its title or one-line claim.

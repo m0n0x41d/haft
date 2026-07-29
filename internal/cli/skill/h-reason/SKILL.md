@@ -1,617 +1,412 @@
 ---
 name: h-reason
 description: |
-  Umbrella for FPF-style structured reasoning in a haft project. Carries the full reasoning palette in one place: framing, exploration, comparison, verification, notes, spec lifecycle routing, plus slideument patterns (NQD, Goldilocks, BLP, Scaling-Law Lens). Make sure to use this skill whenever the operator wants structured thinking but the workflow isn't pre-named — phrases like "давай подумаем", "помоги разобраться", "let's think this through", "structured approach", "apply FPF here", "FPF reasoning", "haft this" — or whenever a request is ambiguous between framing, exploration, comparison, and spec lifecycle. Also the manual entry point: /h-reason or /h-fpf alias. For sharp signals dedicated skills still fire (h-frame, h-diagnose, h-explore, h-compare, h-verify, h-status, h-note, h-spec, h-onboard, h-spec-cover); binding choices use manual /h-decide; commissioning uses manual /h-commission.
+  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF source, inspect the governing pattern body, and choose only the capability that is current. Ordinary reasoning stays conversational; persist only on an explicit save request or when a named receiving use needs replay. Binding decisions and commissions remain manual.
 when_to_use: |
-  Operator wants haft-discipline thinking but doesn't pre-select a specific workflow, OR explicitly types /h-reason. Specialized skills auto-fire on sharper signals; this umbrella catches the rest.
-argument-hint: "[reasoning topic — what to think about / what to figure out]"
-allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
+  The operator asks to reason with FPF or Haft, says "let's think", "помоги разобраться", or presents a concern that could belong to several narrower skills. Prefer a narrower skill when its condition is already clear.
+argument-hint: "[current project question]"
+allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_entity mcp__haft__haft_onboard mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
 
-# h-reason — FPF reasoning umbrella
+# h-reason — Source-first FPF entrypoint
 
-You are running the **haft umbrella reasoning workflow**. This skill replaces the old narrow `/h-fpf` (still aliased — same skill) with a complete reasoning palette: framing, exploration, comparison, verification, notes, plus key patterns from the slideument that don't have dedicated skills (Goldilocks problem selection, NQD discipline, BLP, Scaling-Law Lens).
+Use FPF as a reference model and pattern language, not as a project workflow.
+FPF is relation-first at the framework-navigation level: a text sequence, graph
+path, skill list, or walkthrough does not create causal, temporal, method, or
+performed-work order. Explicit causal claims, ordered methods, WorkPlans, and
+performed Work remain valid when their direct governing patterns are current.
 
-**This is the manual entry point for FPF-style work** when the operator doesn't pre-pick a specific skill. Specialized skills (h-frame, h-diagnose, h-explore, h-compare, h-verify) still auto-fire on sharp signals and you SHOULD prefer them when the signal is clear — they carry deeper procedures. Use this umbrella when:
+Contract truth: source-native FPF Query and typed-memory resolve, neighborhood,
+and recall are **V9 CONTRACT** capabilities. Their presence in source, schemas,
+skills, or local tests is not installed-runtime proof. Any
+installed-runtime readiness claim requires current
+**EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact candidate; RC or release
+status additionally requires release authority.
+Do not infer **CURRENT PRODUCT** status from contract inclusion or evidence
+alone.
 
-- The operator's signal is ambiguous between framing / exploration / comparison
-- The operator explicitly types `/h-reason` or `/h-fpf`
-- You want the whole palette of FPF wisdom (slideument patterns, FPF glossary) accessible in one place
-- The work spans multiple workflow steps (frame → explore → compare in one session)
+## Critical distinctions
 
----
+Keep these distinctions live before choosing a pattern:
 
-## Compact interface discovery
+- object != description != representation != carrier;
+- method != MethodDescription != WorkPlan != performed Work;
+- plan != reality; promise != delivery; claim != evidence;
+- a practical-use card, mantra, or demonstrative traversal != project order;
+- retrieval rank != applicability, recommendation, authorization, or work
+  precedence;
+- the product/system being changed and the engineering arrangement changing it
+  are separate project concerns. `TargetSystemSpec` and related names are Haft
+  local-practice carriers, not FPF Core kinds by label alone.
 
-When you need exact fields for an artifact operation, run the compact CLI
-contract instead of reading or pasting long MCP schemas:
+## Exact identifier namespaces
 
-```bash
-haft interface <capability> --json
-```
+Classify an exact identifier before choosing a query field:
 
-Useful capabilities: `problem.frame`, `solution.explore`,
-`solution.compare`, `decision.decide`, `note.record`, `query.status`,
-`query.pattern_use`, `query.spec_fit_probe`, `query.code_context`,
-`refresh.scan`.
+- FPF `PatternID`, `SourceID`, or `UnitID` ->
+  `mcp__haft__haft_query(action="fpf", mode="lookup|inspect", identifier="<id>")`;
+- canonical Haft artifact ID ->
+  `mcp__haft__haft_query(action="related", artifact_ref="<id>")`;
+- code symbol or `SymbolAnchor` ->
+  `mcp__haft__haft_query(action="node", symbol="<name>")` or `anchor_id="<anchor>"`;
+- typed-memory `EntityID` or `EntityAlias` ->
+  `mcp__haft__haft_query(action="memory", memory_request={"mode":"resolve","query":"<id-or-alias>",...})`;
+  keep it out of `identifier`, `artifact_ref`, and `symbol`.
 
-Use the command as discovery. When the contract exposes a shipped
-`haft artifact create <capability> --input-file ... --json` path, prefer that
-for large write payloads; keep the matching `mcp__haft__*` tool as the
-compatible fallback.
+After exact resolution, use the closed `memory_request` branch whose nested
+`mode` is `neighborhood` to hydrate the EntityOfConcern graph, or `recall` for
+bounded lexical recall inside that exact scope. Mode-specific required fields
+come from the tool schema. When the project is not ready for these reads, use
+`mcp__haft__haft_onboard(action="status")` and follow its readable next action.
+Resolution, projection inclusion, and recall rank are not truth, applicability,
+authority, or Work order.
 
----
+If a read-only call returns `wrong_identifier_namespace` with
+`same_call_retryable=false`, do not retry the same action and do not ask the
+operator merely to acknowledge the error. Execute its exact `recovery_call`
+when that call names an available read-only surface; otherwise report the
+missing surface and preserve the identifier unchanged.
 
-## The single most important rule: Description ≠ Work
+## Conditional code-graph orientation
 
-This is the failure mode this umbrella is designed to NOT fall into.
+Use `haft_query(action="explore", query="<current code concern>")` when the
+current question is how an area or flow works and no exact symbol is known.
+The default working view is bounded and returns advisory candidates without
+selecting identity. Use `view="trace"` only when replay basis is a named
+receiving use, and `view="diagnostic"` only when retrieval or traversal itself
+is under diagnosis.
 
-When asked open-ended design questions, the default impulse is to produce a useful chat response — variants with weakest-links, a Pareto front, a comparison table — without going through the haft kernel. **Stop.** The visual shape of FPF output is not a substitute for invoking the kernel.
+Before a non-mechanical edit where recorded governance may be material, use
+`code_context` or `impact` on the actual target. Returned reasoning context is
+a relevance surface: candidate rank, file/module proximity, and a displayed
+invariant do not by themselves prove exact active authority. Inspect scope,
+status, coverage, and limiting reasons, and use the exact `governing_set` or
+artifact route before relying on a governing claim. Do not infer safety from an
+empty caller list or incomplete traversal. A purely mechanical edit whose
+meaning and blast radius cannot change may explicitly abstain and record
+`not_applicable`. Typed-memory and code-graph orientation remain separate.
 
-Analysis in chat can be useful local reasoning, but without a matching `mcp__haft__*` call it is **ephemeral**: gone by tomorrow, no ProblemCard, no SolutionPortfolio, nothing to `/h-verify` in two weeks. The chat answer is unpersisted reasoning, not durable project governance, evidence, or authority.
+## Procedure
 
-**Concrete failure patterns to catch in yourself:**
+### 1. Recover the current question
 
-| About to do this in chat... | Stop and do this instead |
-|---|---|
-| Present 3+ alternative approaches | Call `haft_problem(action="frame")` then `haft_solution(action="explore")` |
-| Compare two approaches with trade-offs | Frame first if needed, then `haft_solution(action="compare")` |
-| State what the "real problem" is | Call `haft_problem(action="frame")` and persist it |
-| Suggest "remember this" inline | Call `haft_note` |
-| Verify a past decision claim | Call `haft_decision(action="evidence")` and `haft_refresh` |
+State, in ordinary project language:
 
-**Friction tradeoff (honest).** Yes, calling kernel tools costs more in-the-moment than answering directly. The friction is the price for **durability and measurability**. Your job is not "best chat answer right now" — it is "leave the project with future-verifiable memory."
+- the EntityOfConcern or object at stake;
+- the current question about it;
+- known values, constraints, and unresolved relations;
+- the smallest useful result that would answer the question now.
 
----
+Do not ask for a universal first step. Do not manufacture a ProblemCard merely
+to make the work look started.
 
-## Self-check before long responses
+When an exact current EntityOfConcern and bounded context already exist,
+hydrate the smallest relevant typed neighborhood before rediscovering project
+history:
 
-Before sending a long response, ask:
-
-1. Is this response presenting **3+ alternatives**, a **comparison**, an **analysis with recommendation**, or **framing what the problem is**?
-2. Did I call **any `mcp__haft__*` tool** in this turn?
-
-If (1) = yes and (2) = no — STOP. Pick the right kernel action below and call it before responding.
-
----
-
-## Maintenance check (FPF B.3.4) — before reasoning
-
-When entering this umbrella, look at the most recent kernel response
-for `Refresh reminder: N days since last stale scan`. If N > 30 —
-call `mcp__haft__haft_refresh(action="scan")` BEFORE doing reasoning
-work.
-
-Reasoning on a stale graph is the same anti-pattern as reasoning on
-stale code: variants you generate may rediscover what was already
-decided, or contradict an already-decayed claim. Burn the
-1-second scan first; reason against fresh state. If the scan finds
-nothing new — mention briefly, proceed.
-
-Same discipline for drift detected on files touched in this session:
-re-baseline via `haft_decision(action="baseline", ...)` or surface
-the drift explicitly. Do not silently proceed past a drift warning.
-
-Surfacing the reminder is the kernel's job; acting on it is the
-agent's job. See CLAUDE.md Critical Reminders.
-
----
-
-## PatternUse Gateway - before generic triage
-
-After the status/refresh check and before the generic phase table below, ask
-the kernel for a compact PatternUse gateway:
-
-```
+```text
 mcp__haft__haft_query(
-  action="pattern_use",
-  mode="compact",
-  query="<operator signal / task>",
-  source_refs=["<optional file/artifact refs already in the request>"]
-)
-```
-
-Use this as a read-only routing projection. It is not performed work, not a DecisionRecord,
-not approval, not evidence, not MethodPack, and not a gate result.
-
-If `should_use_pattern=true`, either follow `suggested_haft_surface` or ask for
-the full record:
-
-```
-mcp__haft__haft_query(action="pattern_use", mode="full", query="<operator signal / task>")
-```
-
-Carry full-mode output shape, wrong-boundary, evidence need, blocked stronger
-use, and closeout expectation only when they are needed for the next action.
-Do not inline the FPF catalog in this skill. The catalog belongs in the
-kernel/index.
-
-If a sharper dedicated skill already applies (`h-frame`, `h-diagnose`,
-`h-explore`, `h-compare`, `h-verify`, `h-status`, `h-spec`, etc.), do not let
-the gateway weaken that route. Use PatternUse to add the concrete FPF
-reasoning shape, then invoke the dedicated skill if it is the stronger
-procedure.
-
-If the gateway returns `abstain`, low support, or missing support, ask for the
-missing boundary or fall back to the generic triage below. Do not fabricate a
-confident pattern.
-
----
-
-## Code work handoff — MethodPack
-
-If reasoning turns into non-trivial code edits, switch from advice to an
-operational method run before editing:
-
-- Call `haft_method(action="pull", ...)` with task kind, change intent,
-  intended files, and known risk signals.
-- Keep the returned `pull_id`; after context compaction recover it through
-  `haft_method(action="status")` or `haft_method(action="show", pull_id=...)`.
-- Before claiming completion, call `haft_method(action="close", pull_id=...)`
-  with changed files, gate results, verification evidence, and explicit
-  waivers for any hard gate not evidenced.
-- Derive changed files, commands, test output, and governed-decision
-  intersections from the worktree and traces before asking the operator;
-  reserve operator input for waivers, ambiguous authority, and residual risk.
-- If the work is linked to a ProblemCard, completion also needs graph closure:
-  a SolutionPortfolio/DecisionRecord/evidence path, or an explicit
-  operator-rationale waiver/suspension. Tests or changelog text alone are not
-  graph closure.
-
-Mechanical edits should request low or no ceremony and avoid architecture
-gates.
-
----
-
-## Spec-fit checkpoint
-
-When this umbrella routes into framing, exploration, or comparison in a project
-with active SpecSections, run an advisory spec-fit probe before recording the
-ProblemCard, SolutionPortfolio, or compare result if the topic may change
-project behavior, duties, boundaries, evidence requirements, or governed code:
-
-```
-mcp__haft__haft_query(
-  action="spec_fit_probe",
-  probe={
-    "problem_signal": "<stabilized signal>",
-    "scope": "<candidate scope>",
-    "affected_files": ["<if known>"],
-    "target_refs": ["<if known>"]
-  },
-  variants=[{"id": "V1", "title": "...", "description": "..."}]
-)
-```
-
-Use the result only as routing context:
-
-- `relates_existing` — carry candidate section refs into the artifact context.
-- `spec_gap` — surface that h-spec or draft-section work may be needed.
-- `conflict` / `outside_current_spec` — treat this as a possible spec delta,
-  not routine implementation cleanup.
-- `no_signal` — proceed without claiming spec coverage.
-
-This is not approval, baseline, evidence, a gate, or decision-time binding. It
-does not replace `spec_binding_preflight` before manual `/h-decide`.
-
----
-
-## Quick triage — what is the operator actually asking?
-
-Before doing anything, read the operator's signal carefully and classify:
-
-| Signal | Workflow | Section below |
-|---|---|---|
-| Proposing a refactor/rewrite/redesign/migration without naming the problem | Framing | [Framing](#framing) |
-| Concrete failure with unclear root cause (tests fail, X doesn't work) | Diagnosis | [Diagnosis](#diagnosis-failure-investigation) |
-| Asking for options / variants / alternatives / "how could we" | Exploration | [Exploration](#exploration-nqd-variants) |
-| Comparing 2+ approaches ("A or B", "which is better", "X vs Y") | Comparison | [Comparison](#comparison-parity-pareto) |
-| Wants to commit to a specific variant (a binding choice) | Decision (manual) | [Decision is manual](#decision-is-manual) |
-| Wants to check if a past decision still holds | Verification | [Verification](#verification) |
-| Wants to record a micro-decision with rationale | Note | [Note](#note-micro-decision) |
-| Wants situational awareness ("where are we", "what's stale") | Status | Call `haft_query(action="status")` directly |
-| Wants spec lifecycle/update ("spec status", "запиши в спеки", approve/rebaseline/reopen spec) | Spec lifecycle | [Spec lifecycle](#spec-lifecycle) |
-| Repository has no `.haft/` yet | Onboarding | Delegate to `/h-onboard` |
-| General FPF question ("what is FPF", "look up pattern E.9") | FPF spec lookup | Call `haft_query(action="fpf", query=...)` |
-
-If the signal is **ambiguous** (spans multiple workflows) — start with framing. Without a framed problem, exploration / comparison float.
-
----
-
-## Spec lifecycle
-
-Use when: the operator asks to inspect, discuss, update, approve, rebaseline, or
-reopen project specs.
-
-Spec lifecycle is not a normal "write docs" task. Keep the strict distinction:
-SpecSection = description, `.haft/specs/*.md` = carrier, project behavior =
-object, kernel lifecycle projection = method authority.
-
-Procedure:
-
-1. Call `mcp__haft__haft_spec_section(action="lifecycle")`.
-2. If the action is `draft` or `clarify`, read `workflow_intent` and follow
-   `/h-spec`: draft or fix the carrier, run `haft spec check`, then call
-   lifecycle again.
-3. If the operator says "запиши" / "write this into specs", treat that as
-   permission to edit the carrier only. It is not approval or rebaseline.
-4. If the action is `approve` or `triage`, surface the human gate. In triage,
-   `rebaseline` and `reopen` are explicit mutation choices from
-   `allowed_commands`, not autonomous lifecycle states. Only call a mutation
-   after explicit operator instruction with a reason where required.
-5. Do not create feature-local spec markdown as an authority. Decisions,
-   WorkCommissions, RuntimeRuns, code refs, and SpecSections link through the
-   graph.
-
-For a full procedure, delegate to `/h-spec`.
-
----
-
-## Framing
-
-Use when: a solution is proposed before the problem is stated, or scope/acceptance is unclear.
-
-**Procedure (compressed; full version in /h-frame):**
-
-1. **Stabilize the signal.** What's actually broken or wanted? In one sentence, what condition would make the operator say "solved"?
-2. **Type the problem** — pick one:
-   - `diagnosis` — something broke, root cause unknown
-   - `optimization` — known target, want better numbers
-   - `search` — looking for an unknown thing (e.g., a library, a pattern)
-   - `synthesis` — building something new
-3. **Umbrella-word repair** — if the signal uses overloaded terms ("service", "quality", "scalable", "готово"), unpack to specifics. Refuse to record a ProblemCard built on umbrella words.
-4. **Acceptance criterion** — one observable condition that signals "minimum viable success". Without this, the problem can't be verified later.
-5. **Run the spec-fit checkpoint** if active specs may apply. Carry any
-   candidate section refs or spec-delta warning into the frame context.
-6. **Record:**
-   ```
-   mcp__haft__haft_problem(
-     action="frame",
-     problem_type="<diagnosis|optimization|search|synthesis>",
-     title="<short title>",
-     signal="<what's happening / what's needed>",
-     acceptance="<observable condition>",
-     constraints=["<hard limit>"],
-     blast_radius="<what gets affected>",
-     reversibility="<low|medium|high>",
-     mode="<tactical|standard|deep>"
-   )
-   ```
-7. Surface the ProblemCard ID to the operator. They can edit, supersede, or move on.
-
-**Common mistakes:**
-- Framing during code-grinding sessions (h-reason isn't for every task — code work doesn't need a ProblemCard)
-- Letting acceptance stay vague ("works better") instead of observable
-- Skipping problem-type → comparisons later anchor wrong
-
-For deeper framing (B.4.1 + B.5.2 with parallel-rival generation on diagnosis problems), use `/h-frame` or `/h-diagnose` directly.
-
----
-
-## Diagnosis (failure investigation)
-
-Use when: concrete failure, unclear cause. Stronger than framing — runs parallel rival-hypothesis testing.
-
-**Compressed procedure (full version in /h-diagnose):**
-
-1. **Stabilize** — what's the symptom in one sentence? When did it start? Reproducible?
-2. **Frame** as `problem_type="diagnosis"` via `haft_problem(action="frame")`.
-3. **Generate ≥3 rival hypotheses** (FPF B.5.2 four-step abductive). Optionally spawn parallel Agent subagents — each takes one hypothesis and tests it independently against the codebase. Sequential is fine for lightweight investigations.
-4. **Filter for falsifiability** — drop hypotheses with no testable prediction.
-5. **Rank by evidence weight.** Keep losing rivals visible (CC-B.5.2-2) — do not collapse to a single answer prematurely.
-6. **Record findings** as `haft_solution(action="explore", variants=[...])` where each variant = one hypothesis + its evidence + its weakest_link.
-7. **Recommend next action.** Usually: test the leading hypothesis, then `/h-decide` if a fix path is clear.
-
-For full parallel-subagent dance use `/h-diagnose` directly.
-
----
-
-## Exploration (NQD variants)
-
-Use when: problem is framed, operator wants 3-5 distinct candidate solutions.
-
-**Compressed procedure (full version in /h-explore):**
-
-1. **Confirm there is a framed problem.** If not, frame first (above). Without a frame, variants float.
-2. **Generate 3-5 distinct variants — each must differ in KIND, not just degree** (FPF EXP-08). Parallel directions to consider:
-   - Data-flow restructure (avoid the operation)
-   - Algorithmic alternative (same op, different algo)
-   - Infrastructure swap (different runtime / service)
-   - Caching / batching / queuing (smooth load)
-   - Architectural extraction (move to different layer)
-   - Workflow restructure (change when/how triggered)
-   - Stepping-stone (suboptimal now, opens future search space)
-3. **Each variant carries:**
-   - `title`
-   - `description` (2-3 sentences)
-   - `novelty_marker` — what makes this distinct from typical AI suggestions
-   - `weakest_link` — what bounds quality if pursued (NOT title repeated)
-   - `stepping_stone: true|false` (+ basis if true)
-   - `risks` + `strengths`
-4. **Run the spec-fit checkpoint** with the candidate variants when active
-   specs may apply. Carry `variant_spec_fit` into variant notes rather than
-   treating it as authority.
-5. **Record:**
-   ```
-   mcp__haft__haft_solution(
-     action="explore",
-     problem_ref="<prob-...>",
-     variants=[...],
-     no_stepping_stone_rationale="<if all stepping_stone=false>"
-   )
-   ```
-6. Kernel returns SolutionPortfolio ID + may emit soft warnings about disguised duplicates, missing parity_rules, or weakest_links that just repeat titles. Read and self-correct.
-7. Recommend next step (usually `/h-compare` if 3+ variants).
-
-For full parallel-subagent generation use `/h-explore` directly — it spawns one Agent per direction in parallel.
-
----
-
-## Comparison (parity + Pareto)
-
-Use when: SolutionPortfolio exists with 2+ variants, operator wants to evaluate.
-
-**Compressed procedure (full version in /h-compare):**
-
-1. **Characterize first.** Declare comparison dimensions BEFORE scoring (kernel rejects subjective dimensions or stale ones):
-   ```
-   mcp__haft__haft_problem(
-     action="characterize",
-     problem_ref="<prob-...>",
-     dimensions=[
-       {"name": "latency", "scale_type": "ratio", "unit": "ms", "polarity": "lower_better", "role": "target", "proxy_for": "checkout stays usable under load"},
-       {"name": "ops_complexity", "scale_type": "ordinal", "unit": "1-5", "polarity": "lower_better", "role": "target", "proxy_for": "small team can operate it without a pager rota"},
-       {"name": "compliance_OK", "scale_type": "binary", "polarity": "true_better", "role": "constraint"},
-       ...
-     ],
-     valid_until="<ISO date>"
-   )
-   ```
-2. **Tag each dimension's indicator role:** `constraint` (hard limit), `target` (optimize), or `observation` (Anti-Goodhart — watch but don't optimize).
-3. **Run the spec-fit checkpoint** for compared variants when active specs may
-   apply. If it reports conflict or spec gap, add `spec_compatibility` or
-   `spec_delta_burden` as a constraint/target/observation dimension before
-   scoring.
-4. **Declare parity plan + selection policy BEFORE scoring.** Equal budgets/windows for all variants. State the dominance rule (Pareto front, not scalar winner).
-5. **Score dim-wise** — one evaluator per dimension applies one scale to all variants. Prevents anchoring bias.
-6. **Compute non-dominated set.** Return Pareto front (NOT a scalar winner).
-7. **Record:**
-   ```
-   mcp__haft__haft_solution(
-     action="compare",
-     portfolio_ref="<sol-...>",
-     parity_plan={...},
-     selection_policy={...},
-     dimensions=["latency_p95", "ops_complexity"],
-     scores={"V1": {"latency_p95": "...", "ops_complexity": "..."}, "V2": {...}}
-   )
-   ```
-   `dimensions` is still required here even after `haft_problem(action="characterize")`.
-   Characterization records the comparison contract; compare payloads remain
-   explicit and replayable.
-8. **Decision is manual.** See next section.
-
-For full dim-wise parallel scoring use `/h-compare` directly — it spawns one Agent per dimension.
-
----
-
-## Decision is manual
-
-**You CANNOT auto-fire `/h-decide`.** It is `disable-model-invocation: true` per Transformer Mandate.
-
-Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts. If the kernel returns `operator_confirmation_required`, recommend the correct manual gate and stop.
-
-Generated-contract drill-downs are read-only carriers: use `mcp__haft__haft_query(action="contract_generation")` for generated-fragment host/skill/plugin/Pi sync hints, and use `mcp__haft__haft_query(action="drift_events", limit=5)`, `mcp__haft__haft_query(action="decision_reconcile", limit=5)`, and `mcp__haft__haft_query(action="governing_set", limit=5)` for compact drift fanout, reconciliation, and current-authority drill-downs. Add `full=true` only when full audit payloads are needed.
-
-When the operator is ready to commit to a chosen variant from a SolutionPortfolio:
-
-- Surface the Pareto front summary
-- Recommend the variant you would pick (with rationale)
-- Treat `/h-compare` `selected_ref` / `legacy_recommendation_ref` as advisory only, not `ChoiceResult`
-- Tell the operator: **«this needs your explicit /h-decide to bind»**
-- Stop and wait
-
-If they say "go ahead" without typing `/h-decide` — still stop. Ask them to type it. The principle is: agents generate options, humans bind.
-
----
-
-## Verification
-
-Use when: a recorded DecisionRecord needs post-implementation reality check.
-
-**Compressed procedure (full version in /h-verify):**
-
-1. Find the decision via `haft_query(action="decisions", filter="active")` or specific ref.
-2. Read predictions from the DRR — what was supposed to be true?
-3. Gather evidence — run tests, check code, measure metrics, search docs.
-4. Record:
-   ```
-   mcp__haft__haft_decision(
-     action="evidence",
-     decision_ref="<dec-...>",
-     evidence_items=[{
-       "type": "<test|measurement|incident|review>",
-       "verdict": "<supports|refutes|weakens>",
-       "summary": "...",
-       "carrier_ref": "<file:line or URL or test name>",
-       "cl": "<CL3|CL2|CL1|CL0>"  // congruence level
-     }]
-   )
-   ```
-5. After enough evidence: refresh the decision status:
-   - `accepted` (predictions held)
-   - `weakened` (mixed)
-   - `superseded` (replace with new decision)
-   ```
-   mcp__haft__haft_refresh(action="<waive|supersede|deprecate>", artifact_ref="<dec-...>")
-   ```
-6. Close with a loop verdict (FPF E.23): `stop` (further movement dominated —
-   "good enough" is a legitimate terminal state), `continue`, `switch-method`
-   (supersede), `open-new-frame` (reopen), or `hold` (waive with revisit date).
-   Narrowing — shrinking scope or suppressing signals to look better — is NOT
-   a verdict; scope reduction requires an explicit dominance justification.
-
-For full verify loop (drift detection across code/affected_files, FSRS-style intervals) use `/h-verify` directly.
-
----
-
-## Note (micro-decision)
-
-Use when: small choice with rationale that doesn't justify full DRR ceremony.
-
-```
-mcp__haft__haft_note(
-  text="<one or two sentences: what + why>",
-  rationale="<the why is required — kernel rejects content-free notes>",
-  links={
-    "based_on": ["<prob-... or dec-...>"],
-    "tags": [...]
+  action="memory",
+  memory_request={
+    "mode":"neighborhood",
+    "contract_version":"haft.memory.v1",
+    "basis":{"kind":"project_current"},
+    "entity_ref":{
+      "ref_kind_id":"U.EntityRef",
+      "reference_id":"<exact EntityOfConcern>"
+    },
+    "bounded_context_ref":"<exact bounded context>",
+    "view":{
+      "projection_profile_ref":"agent_orientation.v2",
+      "requested_facets":[
+        "epistemes",
+        "problems",
+        "alternatives",
+        "decisions",
+        "specifications",
+        "evidence",
+        "work",
+        "implementation",
+        "unresolved"
+      ],
+      "detail":"standard",
+      "include_history":false
+    },
+    "read_budget":{
+      "max_facets":9,
+      "max_items_per_facet":8,
+      "max_relation_paths_per_item":4,
+      "max_carrier_excerpt_characters":1200,
+      "max_provenance_depth":3
+    }
   }
 )
 ```
 
-Common moments to note:
-- After resolving a non-trivial bug — capture cause + fix lesson
-- After ruling out a variant during exploration — capture why
-- After a user correction — capture the right approach
-- A surprising discovery in the codebase
-- A constraint discovered mid-work
+The budget is task-local and may be narrowed or expanded explicitly. Inspect
+`result_kind` before content:
 
----
+- `exact_neighborhood`: pin `snapshot_basis` and `projection_basis`, then read
+  `interpretation_contract`, each facet's `coverage`, every item's semantic,
+  lifecycle, evidence-currentness, and projection-freshness postures, and the
+  `applied_budget`;
+- `retry_required`: do not combine the stale read with current graph facts;
+  follow the returned snapshot-bound retry operation;
+- `abstained`: preserve the exact missing basis and make no graph-absence
+  claim.
 
-## Slideument patterns (Levenchuk's 2026 seminar wisdom)
+`complete` coverage supports a known-empty claim only for that exact facet,
+profile, snapshot, and bounded context. `partial`, `unavailable`, and `stale`
+do not. If `hydrate_before_reliance=true`, hydrate the named carrier or facet
+before relying on its description. A `read_affordance` is a read-only way to
+obtain more basis; it never chooses a skill, pattern, plan, Work item, or next
+project action.
 
-These don't have dedicated skills but you should apply them when relevant:
+Use `memory.resolve` only when exact identity is missing. Inspect its result
+before continuing:
 
-**Three factories.** Engineering has three production lines:
-1. **Problem factory** — generates new framed problems (problematization)
-2. **Solution factory** — generates solutions for framed problems
-3. **Factory of factories** — improves both production lines
+- an exact result supplies the canonical `entity_ref`;
+- several candidates require selection by the current use, never by rank;
+- `known_absent` says only that the identity was not found. It does not
+  authorize persistence;
+- unavailable setup routes through
+  `mcp__haft__haft_onboard(action="status")` and does not block unrelated Work.
 
-In haft: ProblemCard archive = problem factory output; SolutionPortfolio = solution factory output. Bring this lens when the operator confuses "what problem to solve" with "how to solve it" — they're separate factories.
+When `known_absent` coincides with an explicit operator save request or a named
+receiving use that requires stable identity, establish the entity through the
+task-level surface:
 
-**Goldilocks problem selection.** Pick problems just above current capability (LLM heuristic: solvable in 10-20% of runs, not less, not more). Pre-pick checks:
-- Measurable acceptance (not vague)
-- Reversibility (can we undo?)
-- Stepping-stone potential (does solving open new search space?)
-- Multi-axis trade-off (otherwise not really a Pareto problem)
-- Valid_until on framing (postings rot)
-
-Apply: when triaging which problem to work on next, surface these criteria explicitly.
-
-**NQD discipline (Novelty / Quality / Diversity).**
-- **Novelty** — how different from known solutions
-- **Quality** — measurable use-value in acceptance spec
-- **Diversity** — coverage of independent niches by the portfolio
-
-Never collapse NQD into a scalar. Hold a Pareto front. Keep 1-2 stepping-stones (high N or D, lower Q now) for future search-space expansion. Apply: in exploration, score each variant on NQD axes, not just utility.
-
-**BLP — Bitter Lesson Preference.** When choosing between hand-tuned specialist and scalable universal agent, prefer the latter as tie-breaker. Apply: in comparisons that have tied Q-scores, BLP can break ties toward general-purpose / learnable approaches.
-
-**Scaling-Law Lens (SLL).** When claiming "this approach scales", declare:
-- Scale variables (compute / data / capacity / iteration budget)
-- ScaleWindow (range over which claim holds)
-- ElasticityClass (rising / knee / flat / declining)
-
-Don't say "X scales" without naming what S is, what window, what slope. Apply: in AI/agent-related comparisons especially.
-
-**Stepping stones** (Lehman & Stanley 2015). Sub-optimal-by-Q solutions that open new search areas. Keep 1-2 in portfolio explicitly. Apply: in exploration, mark them; in comparison, don't drop them based on current Q alone.
-
-**Anti-Goodhart via Indicator Roles.** Tag each dimension:
-- `constraint` — hard limit, must satisfy
-- `target` — what you optimize
-- `observation` — watch but DON'T optimize
-
-If you optimize an `observation`, you're Goodharting. Apply: at characterization time, before any scoring.
-
----
-
-## FPF glossary (key concepts)
-
-**R_eff (Effective Reliability):** computed trust score in [0,1]. `R_eff = min(evidence_scores)` with CL penalties. Never average — weakest-link principle.
-
-**CL (Congruence Level):** how well evidence transfers across contexts.
-- CL3: same context (internal test) — no penalty
-- CL2: similar context (related project) — 0.1 penalty
-- CL1: different context (external docs) — 0.4 penalty
-- CL0: opposed context — 0.9 penalty
-
-**Evidence Decay:** evidence has `valid_until`. Expired evidence scores 0.1 (weak, not absent). Graduated epistemic debt sorted by severity.
-
-**DRR (Decision Record):** FPF E.9 four-component structure: Problem Frame, Decision/Contract, Rationale, Consequences. Created ONLY via manual `/h-decide`.
-
-**Indicator Roles:** see Anti-Goodhart above.
-
-**Transformer Mandate:** systems cannot transform themselves. Humans bind; agents document. Autonomous binding = protocol violation.
-
-**Strict Distinction (A.7):** Object ≠ Description ≠ Carrier. Plan ≠ Reality. Design-time ≠ Run-time. Promise/commitment ≠ actual delivery.
-
-**Three systems always present:**
-1. **Target system** — what delivers value to users
-2. **Enabling system** — what creates / governs the target (team + tooling + process)
-3. **Method** — the way of creating it
-
-Confusing these is the most common FPF anti-pattern.
-
----
-
-## When to delegate to a specialized skill
-
-This umbrella covers compressed versions of the workflows. For deeper procedures (parallel subagent dancing, full parity discipline, complete drift detection), recommend the specialized skill:
-
-| Heavy version | When to delegate |
-|---|---|
-| `/h-frame` | Standard/deep mode with full B.4.1 stabilize-route + problem-typing |
-| `/h-diagnose` | Need parallel rival hypothesis testing across the codebase |
-| `/h-explore` | Need parallel Agent-per-direction NQD variant generation |
-| `/h-compare` | Need parallel dim-wise scoring (one evaluator per dimension) |
-| `/h-verify` | Full drift detection + Evidence Decay scan + FSRS-style scheduling |
-| `/h-decide` (manual) | Always — binding action |
-| `/h-commission` (manual) | Always — execution authority grant |
-| `/h-spec` | Spec lifecycle, spec carrier updates, approve/rebaseline/reopen gates |
-| `/h-onboard` | No `.haft/` directory yet, or legacy bootstrap wording |
-| `/h-status` | Cheap dashboard, can call directly |
-| `/h-spec-cover` | Module-level coverage analysis |
-
-For routing on natural language signal, the specialized skill descriptions ALSO auto-trigger — so if the signal is sharp, you may never enter this umbrella. That's fine: both routes converge on the same kernel.
-
----
-
-## What NOT to do in this umbrella
-
-- DO NOT auto-fire `/h-decide` or `/h-commission`. Transformer Mandate. Even if the user says "decide for me" — stop and ask for explicit slash command.
-- DO NOT skip `haft_problem(action="frame")` before exploration. Without framing, variants are wishlist.
-- DO NOT collapse NQD into a scalar. Always present Pareto front.
-- DO NOT use FPF jargon in your responses to the operator unless they used it first. Translate `R_eff` to "trust score", `CL2` to "different project context", `Evidence Decay` to "stale evidence".
-- DO NOT replicate full procedures from specialized skills here. This umbrella's job is compressed coverage. For thoroughness — delegate.
-- DO NOT skip the kernel — even compressed procedures must persist via `mcp__haft__*` calls.
-
----
-
-## FPF spec lookup
-
-For deep references on any concept:
-
-```
-mcp__haft__haft_query(action="fpf", query="<topic or pattern-id>")
+```text
+mcp__haft__haft_entity(
+  action="establish",
+  entity_id="<stable proposed id>",
+  label="<readable label>",
+  bounded_context_ref="<exact bounded context>",
+  aliases=["<known alias, in canonical order>"],
+  persistence_reason="explicit_operator_request",
+  request_provenance_ref="<the request or named receiving use>",
+  idempotency_key="<stable key for this exact request>"
+)
 ```
 
-Add `full=true` for complete pattern text, `explain=true` for guided explanation.
+Use `persistence_reason="named_receiving_use"` when that is the real basis.
+The task-level tool owns identity and alias conflict checks, validation, exact
+project-basis selection, admission, and post-commit resolution; the agent must
+not construct those internals.
 
-Common pattern IDs:
-- `A.1` — Holonic Foundation (target vs enabling system)
-- `A.7` — Strict Distinction (Clarity Lattice)
-- `A.17` / `A.18` — Characteristic Norm (dimension declaration)
-- `B.3` — Trust & Assurance (R_eff, CL)
-- `B.3.4` — Evidence Decay
-- `B.4.1` — Observe → Notice → Stabilize → Route
-- `B.5.2` — Abductive Loop (four-step rival generation)
-- `B.5.2.1` — NQD-style Creative Abduction
-- `C.18` — NQD-CAL (Open-Ended Search Calculus)
-- `C.18.1` — Scaling-Law Lens
-- `C.19` — Explore/Exploit Governor + BLP
-- `E.9` — Design-Rationale Record method (DRR)
-- `E.16` — Autonomy Budget
-- `F.18` — Local-First Unification Naming
+Follow its closed result:
+
+- `established` returns the canonical `entity_ref`,
+  `bounded_context_ref`, and an exact `next_read` for
+  `haft_query(action="memory", memory_request={"mode":"neighborhood",...})`;
+  use its tool name and arguments unchanged when hydration is current.
+  `delivery_kind` distinguishes fresh commit, replay, and already-exact
+  identity;
+- `identity_conflict`, `alias_conflict`, or `idempotency_conflict` blocks only
+  this establishment; preserve both identities and ask only when the current
+  use cannot disambiguate them;
+- `onboarding_required` or `enablement_choice_required` routes through
+  `h-onboard`;
+- `restart_required` means reconnect and retry the unchanged request with the
+  same idempotency key;
+- `rejected` and `commit_outcome_unknown` remain explicit; never invent a
+  successful entity.
+
+If persistence is not authorized, continue ordinary reasoning without creating
+an entity. Use scoped `memory.recall` only after exact entity/context
+resolution and only when the current question needs discovery among records
+inside that scope. Recall score is not truth, applicability, recommendation,
+freshness, authority, or work priority.
+
+### 2. Query FPF, then inspect the source
+
+For purely mechanical, status-only, or exact project-lookup work where no FPF
+pattern choice is material, caller abstention is the correct result: skip FPF
+Query and do the bounded work directly. This is not a fabricated
+`QueryResult(kind="abstained")`; no query ran. If pattern applicability is
+material or uncertain, a neighborhood exposes an unfamiliar kind or missing
+method basis, or the direct governing pattern is unclear, continue with source
+retrieval.
+
+If the operator names an exact SourceID or UnitID, use non-broadening
+`mode="inspect", identifier="<exact id>"`. Otherwise query with the object,
+current question, and the important domain words:
+
+```text
+mcp__haft__haft_query(
+  action="fpf",
+  mode="concern",
+  query="<current object + question + terms>"
+)
+```
+
+For a non-English concern, preserve the operator's original `query`. Add
+`entity_of_concern`, `known_context`, and `intended_use` with precise
+source-language or FPF terms when they are already known. Do not translate the
+question into a hidden Haft route or invent a bilingual catalog. An unsupported
+raw-language query may honestly abstain.
+
+The result is source material, not applicability, selection, recommendation,
+evidence, precedence, or authority. Use the source-owned navigation:
+
+1. compare relevant README practical-use cards by situation, first-result
+   difference, direct pattern, and stop/return boundary;
+2. use the Table of Contents for PatternID, title, keywords, queries, and
+   dependencies;
+3. recover an exact source unit with `mode="lookup"` and its `identifier`, or
+   use non-broadening `mode="inspect"` when the identifier must match exactly;
+4. inspect the selected pattern's full Problem frame, Problem, Forces,
+   Solution, ordinary boundary, worked slices, and checklist.
+
+README practical-use lists are ordinary walkthroughs, not literal mantra
+objects or `DemonstrativeUnfoldingSlice` instances unless the source identifies
+them that way. FPF Query returns source candidates; `h-reason` selects by the
+current condition and applies the selected direct Solution to produce the
+ordinary result. The full pattern body governs. README, ToC, authored phrases,
+headings/keywords, and role-local FTS
+are indexes or coarsenings; none is a second specification. Dense retrieval is
+**DEFERRED RESEARCH**, not part of the v9 FPF Query contract. If several
+patterns remain plausible, keep them live and explain what fact would
+discriminate them. Abstain when the source basis is insufficient.
+
+`E.11.PUA Pattern Use in a Working Situation` and `E.11.PUR` are authoritative
+FPF patterns. Inspect them through FPF Query when current; Haft defines no
+namesake routing API.
+
+### 3. Select the governing pattern
+
+Select by the current condition and exact first-result kind, not by score,
+familiarity, identifier order, or the skill the agent happens to know. State:
+
+- selected direct pattern by `PatternID`, title, and stable source reference;
+- source span, provenance, hashes, or repository-local paths only when the
+  current use explicitly requires trace or audit;
+- why its condition fits;
+- exact first useful result;
+- what the result permits now;
+- stop, return, wrong-turn, and stronger-neighbor boundaries.
+
+A recommendation is advisory. It is not evidence, a gate, a DecisionRecord, a
+WorkCommission, or authorization.
+
+### 4. Choose one current capability
+
+Capabilities are independent entries, not phases:
+
+- `h-frame` — problem shaping is current;
+- `h-diagnose` — a concrete failure has rival causes;
+- `h-explore` — distinct alternatives are needed;
+- `h-compare` — existing alternatives need parity-aware comparison;
+- manual `h-decide` — the operator explicitly binds a choice;
+- manual `h-commission` — the operator explicitly grants execution authority;
+- `h-verify` — a recorded claim or decision needs evidence against reality;
+- `h-status` — live graph, drift, coverage, or spec readiness is current;
+- `h-spec` — a specification carrier or lifecycle question is current;
+- `h-onboard` — Haft/spec bootstrap is current;
+- `h-note` — the operator explicitly wants a non-binding fact saved.
+
+There is no public `h-plan` phase. When composing a plan is the current
+question, inspect the exact WorkPlan source (`A.15.2`) and return an ordinary
+`U.WorkPlan`-shaped result conversationally. Keep WorkPlan, performed Work, and
+WorkCommission distinct. Route to manual `h-commission` only when bounded
+execution authority is separately current; typed WorkPlan persistence remains
+outside this skill until a receiving lifecycle exists.
+
+Invoke a capability only while its condition is current. Completion of one
+does not imply that another must follow. A concrete method or WorkPlan may
+state order locally; that order belongs to that method or plan, not to this
+catalog.
+
+### 5. Interrupt only when a human choice is current
+
+Before asking the operator, use the A.6 boundary discipline to separate
+description and evidence from admissibility, binding choice, and authority.
+Cockpit drift, refresh debt, missing bindings, stale prose, or reconciliation
+cues are attention signals; they are not project-wide stop conditions.
+
+Continue without another approval when the remaining action only:
+
+- gathers or attaches evidence;
+- treats obsolete implementation prose as historical without rewriting the
+  binding choice;
+- records a current implementation fact;
+- performs reversible Work already inside the accepted task or
+  WorkCommission; or
+- leaves an unrelated unresolved artifact untouched and does not rely on it.
+
+Ask only when the current action itself would bind, change, or supersede a
+choice; create or broaden execution authority; cross a human SpecSection
+lifecycle gate; make another material human-reserved choice; or rely on an
+unresolved contradiction in binding content. Stop only the affected operation,
+name the exact choice, and explain why that operation cannot continue without
+it. Never ask for bare `OK`, `yes`, or `да` to acknowledge evidence,
+historicity, technical cleanup, or already-authorized continuation.
+
+Before making that request, publish a self-contained **Human Gate Brief**. The
+operator cannot be expected to infer hidden project state. In ordinary language
+state the gate kind, readable subject, affected operation and blocker; every
+real option currently available; and for each option what changes, what stays
+unchanged, the immediate consequence or return condition, and its weakest
+link. Include defer or reject only when real; do not manufacture variants.
+
+If a comparison exists, summarize its characteristic/parity basis, selection
+policy, and non-dominated or Pareto set. If none exists or Pareto reasoning is
+not applicable to the binary lifecycle act, say so explicitly. Mark the
+recommendation as advisory, state evidence freshness or expiry, and ask for the
+human engineer's assessment of the options, trade-offs, and recommendation in
+natural language. Pair IDs and hashes with readable meaning.
+
+Accept ordinary language as the substantive answer to the engineering
+consultation, never as a binding receipt. A command, skill invocation, exact
+reply phrase, or resumption token must never substitute for that consultation.
+Only after the engineer's position is explicit may a separately required
+manual binding or persistence act be explained, together with what it will and
+will not authorize. Never end a blocking message with “for resumption it is
+enough to…”, “reply exactly…”, or an equivalent command-only instruction. The
+brief itself is not authorization. `h-decide needed`, `approval required`, or
+`spec gate open` without this brief is an invalid operator request.
+
+### 6. Decide whether to persist
+
+Default to `ordinaryBounded`: reason in the conversation and produce the
+smallest useful result without creating Haft artifacts.
+
+Persist only when either condition holds:
+
+- the operator explicitly asks to save, record, remember, bind, commission,
+  approve, rebaseline, or otherwise mutate project memory; or
+- a named receiving use depends on addressable replay, transfer, audit,
+  delayed feedback, automation, expensive feedback, or costly reversal.
+
+When persistence is justified, materialize only the records that receiving use
+needs. Do not automatically create ProblemCard, SolutionPortfolio,
+characterization, recommendation, DecisionRecord, or WorkPlan as a bundle.
+Binding `h-decide` and `h-commission` remain manual even when reliance is high.
+
+### 7. Present one honest traversal
+
+Explain the selected use in a readable order while labelling it as an
+explanation. Keep alternative continuations and return conditions visible. Do
+not imply that the explanation order is the order of project work.
+
+## Internal routines
+
+Use these inside the public skills; do not expose them as separate skills:
+
+- abductive rival generation and falsification inside `h-diagnose`;
+- L/A/D/E boundary-statement unpacking inside `h-reason` or `h-spec` when a
+  sentence mixes definition, admissibility, commitment, and evidence;
+- semantic fanout review inside `h-spec` when a rename or claim change crosses
+  several carriers.
+
+## Stop conditions
+
+Stop when the current question has its smallest honest result and boundaries.
+Return to source selection when the object, question, condition, expected
+result, evidence basis, or receiving use changes.
+
+Never claim that FPF is an acausal ontology. The precise claim is narrower:
+FPF does not infer causal or work order from representation order; explicit
+causal and work-order claims keep their own governing patterns.

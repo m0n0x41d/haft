@@ -18,6 +18,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
+func persistHarnessTestWorkCommission(
+	t *testing.T,
+	ctx context.Context,
+	store *artifact.Store,
+	commission map[string]any,
+	now time.Time,
+) {
+	t.Helper()
+	if err := normalizeNewWorkCommission(commission, now); err != nil {
+		t.Fatalf("normalize WorkCommission fixture: %v", err)
+	}
+	if _, err := persistNormalizedWorkCommission(ctx, store, commission); err != nil {
+		t.Fatalf("persist WorkCommission fixture: %v", err)
+	}
+}
+
 func TestBuildHarnessPlanSequentialDependencies(t *testing.T) {
 	restore := overrideHarnessTestFlags()
 	defer restore()
@@ -364,7 +380,7 @@ func TestHarnessRunReadinessGateCoversReadyNeedsInitNeedsOnboard(t *testing.T) {
 	}
 }
 
-func TestRunHarnessRunBlocksNeedsOnboardWithClearReason(t *testing.T) {
+func TestRunHarnessRunBlocksUnavailableProfileWithoutSWENag(t *testing.T) {
 	restore := overrideHarnessTestFlags()
 	defer restore()
 
@@ -386,9 +402,20 @@ func TestRunHarnessRunBlocksNeedsOnboardWithClearReason(t *testing.T) {
 	}
 
 	message := err.Error()
-	for _, fragment := range []string{"needs_onboard", "ProjectSpecificationSet", "--force-skip-specs"} {
+	for _, fragment := range []string{
+		"project-profile applicability is unavailable",
+		"no software applicability was inferred",
+	} {
 		if !strings.Contains(message, fragment) {
 			t.Fatalf("block reason missing %q:\n%s", fragment, message)
+		}
+	}
+	for _, forbidden := range []string{
+		"SoftwareSystemSpec",
+		"--force-skip-specs",
+	} {
+		if strings.Contains(message, forbidden) {
+			t.Fatalf("neutral profile block gained %q:\n%s", forbidden, message)
 		}
 	}
 }
@@ -1620,9 +1647,13 @@ func TestHarnessTailFollowCompletionLineShowsTerminalSuccess(t *testing.T) {
 	commission := workCommissionFixture(commissionID, "completed", "2099-01-01T00:00:00Z")
 	scope := mapField(commission, "scope")
 	scope["allowed_paths"] = []any{trackedPath}
-	if _, err := persistWorkCommission(ctx, store, commission, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
+	persistHarnessTestWorkCommission(
+		t,
+		ctx,
+		store,
+		commission,
+		time.Now().UTC(),
+	)
 
 	line, terminal, err := harnessTailFollowCompletionLine(ctx, store, commissionID)
 	if err != nil {
@@ -1883,7 +1914,9 @@ func TestCanApplyHarnessWorkspaceDiffUsesAllowedPathsOnly(t *testing.T) {
 
 	canApply := func(c map[string]any) bool {
 		auth := harnessWorkspaceApplyAuthorization(c, workspacePath, projectRoot, workspaceSummary)
-		return canApplyAuthorizedHarnessWorkspaceDiff(c, workspaceSummary, auth)
+		return isHarnessApplyResultState(stringField(c, "state")) &&
+			workspaceSummary.State == harnessWorkspaceDiffChanged &&
+			auth.CanApply()
 	}
 
 	if canApply(commission) {
@@ -1940,9 +1973,13 @@ func TestDeliverHarnessRunCommissionsAppliesAutoPolicy(t *testing.T) {
 	scope["lockset"] = []any{trackedPath}
 	commission["lockset"] = []any{trackedPath}
 
-	if _, err := persistWorkCommission(ctx, store, commission, time.Now().UTC()); err != nil {
-		t.Fatal(err)
-	}
+	persistHarnessTestWorkCommission(
+		t,
+		ctx,
+		store,
+		commission,
+		time.Now().UTC(),
+	)
 
 	cmd := &cobra.Command{}
 	var out bytes.Buffer
@@ -2010,9 +2047,13 @@ func TestHandleQuintCommission_AutoApplyRequiresPassPolicyAndEnvelopeAllowed(t *
 	allowed := autoDeliveryCommissionFixture(allowedID, allowedPath, "allowed", "pass")
 	blocked := autoDeliveryCommissionFixture(blockedID, blockedPath, "blocked", "pass")
 	for _, commission := range []map[string]any{allowed, blocked} {
-		if _, err := persistWorkCommission(ctx, store, commission, time.Now().UTC()); err != nil {
-			t.Fatal(err)
-		}
+		persistHarnessTestWorkCommission(
+			t,
+			ctx,
+			store,
+			commission,
+			time.Now().UTC(),
+		)
 	}
 
 	cmd := &cobra.Command{}

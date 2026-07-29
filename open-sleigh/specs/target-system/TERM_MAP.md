@@ -49,7 +49,7 @@ reading_order: 2
 | **AuthoringRole** | Sum: `:frame_verifier | :executor | :measurer | :judge | :human`. Who produced this artifact. Renamed from `:framer` in v0.5 because the Frame-phase role is verification of upstream framing, not authorship of it. | Agent identity (Codex vs Claude — that's adapter identity, not role) |
 | **ProblemCardRef** | Opaque pointer to a Haft ProblemCard produced upstream by the human. In commission-first mode it is carried by WorkCommission, not parsed from tracker text. | ProblemCard (the Haft artifact); tracker issue body |
 | **DecisionRecordRef** | Opaque pointer to the Haft DecisionRecord selected for execution. WorkCommission pins both the ref and revision/hash. | DecisionRecord body; recommendation from compare |
-| **SpecSectionRef** | Opaque pointer to a Haft TargetSystemSpec or EnablingSystemSpec section governed by the linked DecisionRecord. Carried by WorkCommission when the project is spec-linked. | Prompt hint, tracker label, free-form requirement |
+| **SpecSectionRef** | Opaque pointer to a Haft TargetSystemSpec or SoftwareSystemSpec section governed by the linked DecisionRecord. Carried by WorkCommission when the project is spec-linked. | Prompt hint, tracker label, free-form requirement |
 | **CommissionRevisionSnapshot** | The deterministic equality set frozen when a WorkCommission is queued: spec section refs/revisions/hashes when present, decision revision/hash, problem ref/revision/hash, Scope hash, base SHA, ImplementationPlan revision, AutonomyEnvelope revision, projection policy, and lease state. Preflight compares them to current Haft/repo state. | Runtime evidence; optimistic cache; semantic freshness judgement |
 | **valid_until** | ISO-8601 date: when this artifact should be re-evaluated. Required on every PhaseOutcome. | Expiration (which implies deletion); deadline (which implies failure) |
 | **Evidence** | Struct: `kind`, `ref`, `hash`, `cl`. `ref ≠ authoring artifact's self_id`. | Proof, test output (those are raw materials; Evidence wraps them with metadata) |
@@ -105,11 +105,11 @@ reading_order: 2
 
 | Term | Canonical meaning | Source |
 |---|---|---|
-| **LADE** | Law / Admissibility / Deontics / Work-effect-Evidence — the four quadrants of the Boundary Norm Square. | `semiotics_slideument.md` A.6.B |
+| **LADE** | Law / Admissibility / Deontics / Work-effect-Evidence — the four quadrants of the Boundary Norm Square. | FPF A.6.B |
 | **Contract Unpacking (A.6.C)** | Decomposition of promise-language into: promise content / speech act / commitment / work-effect-evidence. | `FPF-Spec.md` A.6.C |
 | **Object of talk** | The specific entity a statement is about. For Open-Sleigh: a file path, module, subsystem — never "the system" or "the code". | FPF A.7 Strict Distinction |
-| **Lemniscate** | The ∞-shaped loop: Problem Factory ↔ Solution Factory. Full form is MVP-2. MVP-1 is a single-variant pipeline, NOT a lemniscate. | `development_for_the_developed.md` Slide 12 |
-| **Parity Plan** | One-page declaration that comparison is fair: same budget, same scope, same eval protocol across variants. | Slide 37 |
+| **Lemniscate** | The ∞-shaped loop: Problem Factory ↔ Solution Factory. Full form is MVP-2. MVP-1 is a single-variant pipeline, NOT a lemniscate. | Open-Sleigh `PHASE_ONTOLOGY.md` |
+| **Parity Plan** | One-page declaration that comparison is fair: same budget, same scope, same eval protocol across variants. | Haft `ParityPlan` contract |
 | **Self-evidence** | Artifact whose supporting evidence is the artifact itself. Forbidden. | FPF-Spec A.10 CC-A10.6 |
 | **Transformer Mandate** | "External agent decides; system doesn't self-improve; human is the principal." | h-reason skill X-TRANSFORMER |
 

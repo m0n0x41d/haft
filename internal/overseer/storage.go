@@ -232,6 +232,7 @@ func LoadStatusSummary(projectRoot string) (StatusSummary, error) {
 	}
 	if executedErr == nil {
 		summary.LatestExecutedMaintenanceID = executedMaintenance.MaintenanceID
+		summary.LatestExecutedMaintenanceCreatedAt = executedMaintenance.CreatedAt
 		summary.ExecutedActions = executedMaintenance.Executed
 		summary.HasSignals = true
 	}

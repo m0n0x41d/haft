@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -240,13 +239,18 @@ func moduleBindingTarget(projectRoot, relPath string) BindingTarget {
 }
 
 func symbolBindingTarget(symbol codebase.SymbolSnapshot, language string, source string) BindingTarget {
+	anchor := codebase.BuildSymbolAnchor(symbol, language)
 	return BindingTarget{
 		Kind:             BindingTargetSymbol,
+		AnchorID:         anchor.ID,
+		AnchorVersion:    anchor.Version,
 		FilePath:         symbol.FilePath,
 		Language:         language,
 		SymbolName:       symbol.SymbolName,
 		SymbolKind:       symbol.SymbolKind,
 		Receiver:         symbol.Receiver,
+		QualifiedName:    anchor.QualifiedName,
+		SignatureHash:    anchor.SignatureHash,
 		Line:             symbol.Line,
 		EndLine:          symbol.EndLine,
 		BodyHash:         symbol.Hash,
@@ -290,13 +294,57 @@ func wholeFileFallbackTarget(relPath, language, reason, posture string) BindingT
 }
 
 func affectedSymbolFromSnapshot(symbol codebase.SymbolSnapshot) AffectedSymbol {
+	language, _ := codebase.LanguageForPath(symbol.FilePath)
+	anchor := codebase.BuildSymbolAnchor(symbol, language)
 	return AffectedSymbol{
-		FilePath:   symbol.FilePath,
-		SymbolName: symbol.SymbolName,
-		SymbolKind: symbol.SymbolKind,
-		Line:       symbol.Line,
-		EndLine:    symbol.EndLine,
-		Hash:       symbol.Hash,
+		AnchorID:      anchor.ID,
+		AnchorVersion: anchor.Version,
+		FilePath:      symbol.FilePath,
+		Language:      language,
+		SymbolName:    symbol.SymbolName,
+		SymbolKind:    symbol.SymbolKind,
+		Receiver:      symbol.Receiver,
+		QualifiedName: anchor.QualifiedName,
+		SignatureHash: anchor.SignatureHash,
+		Line:          symbol.Line,
+		EndLine:       symbol.EndLine,
+		Hash:          symbol.Hash,
+	}
+}
+
+// ResolveLegacyAffectedSymbolAnchor is the review-time compatibility bridge.
+// It never writes and never guesses: exactly one current declaration upgrades
+// to a durable anchor; zero or multiple matches return a typed
+// needs_binding_resolution diagnostic.
+func ResolveLegacyAffectedSymbolAnchor(projectRoot string, legacy AffectedSymbol) (AffectedSymbol, *BindingDiagnostic) {
+	snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, legacy.FilePath)
+	if err != nil {
+		return legacy, &BindingDiagnostic{
+			FilePath: legacy.FilePath,
+			Kind:     SymbolBindingNeedsBindingResolution,
+			Severity: "block",
+			Message:  "legacy symbol binding cannot be resolved: " + err.Error(),
+		}
+	}
+	matches := make([]codebase.SymbolSnapshot, 0)
+	for _, snapshot := range snapshots {
+		if snapshot.SymbolName != legacy.SymbolName || snapshot.SymbolKind != legacy.SymbolKind {
+			continue
+		}
+		if legacy.Receiver != "" && snapshot.Receiver != legacy.Receiver {
+			continue
+		}
+		matches = append(matches, snapshot)
+	}
+	if len(matches) == 1 {
+		return affectedSymbolFromSnapshot(matches[0]), nil
+	}
+	message := fmt.Sprintf("legacy symbol binding matched %d current declarations; operator rebind selection required", len(matches))
+	return legacy, &BindingDiagnostic{
+		FilePath: legacy.FilePath,
+		Kind:     SymbolBindingNeedsBindingResolution,
+		Severity: "block",
+		Message:  message,
 	}
 }
 
@@ -307,12 +355,18 @@ func affectedSymbolsFromBindingTargets(targets []BindingTarget) []AffectedSymbol
 			continue
 		}
 		symbols = append(symbols, AffectedSymbol{
-			FilePath:   target.FilePath,
-			SymbolName: target.SymbolName,
-			SymbolKind: target.SymbolKind,
-			Line:       target.Line,
-			EndLine:    target.EndLine,
-			Hash:       target.BodyHash,
+			AnchorID:      target.AnchorID,
+			AnchorVersion: target.AnchorVersion,
+			FilePath:      target.FilePath,
+			Language:      target.Language,
+			SymbolName:    target.SymbolName,
+			SymbolKind:    target.SymbolKind,
+			Receiver:      target.Receiver,
+			QualifiedName: target.QualifiedName,
+			SignatureHash: target.SignatureHash,
+			Line:          target.Line,
+			EndLine:       target.EndLine,
+			Hash:          target.BodyHash,
 		})
 	}
 	return normalizeAffectedSymbols(symbols)
@@ -324,18 +378,23 @@ func normalizeBindingTargets(targets []BindingTarget) []BindingTarget {
 	for _, target := range targets {
 		target.Kind = strings.TrimSpace(target.Kind)
 		target.TargetRef = normalizeSemanticTargetRef(target.TargetRef)
+		target.AnchorID = strings.TrimSpace(target.AnchorID)
 		if strings.TrimSpace(target.FilePath) != "" {
-			target.FilePath = normalizeProjectPath(target.FilePath)
+			target.FilePath = normalizeDecisionProjectPath(target.FilePath)
 		}
 		target.Language = strings.TrimSpace(target.Language)
 		target.SymbolName = strings.TrimSpace(target.SymbolName)
 		target.SymbolKind = strings.TrimSpace(target.SymbolKind)
 		target.Receiver = strings.TrimSpace(target.Receiver)
+		target.QualifiedName = strings.TrimSpace(target.QualifiedName)
+		target.SignatureHash = strings.TrimSpace(target.SignatureHash)
 		target.BodyHash = strings.TrimSpace(target.BodyHash)
 		target.AnchorHash = strings.TrimSpace(target.AnchorHash)
 		target.TextHash = strings.TrimSpace(target.TextHash)
 		if strings.TrimSpace(target.ModulePath) != "" {
-			target.ModulePath = normalizeProjectPath(target.ModulePath)
+			target.ModulePath = normalizeDecisionModulePath(
+				target.ModulePath,
+			)
 		}
 		target.ModuleHash = strings.TrimSpace(target.ModuleHash)
 		target.Reason = strings.TrimSpace(target.Reason)
@@ -347,12 +406,16 @@ func normalizeBindingTargets(targets []BindingTarget) []BindingTarget {
 		if target.ResolutionSource == "" && semanticBindingTargetKind(target.Kind) {
 			target.ResolutionSource = BindingResolutionSourceExplicitTargets
 		}
-		if target.Kind == "" || (target.FilePath == "" && target.TargetRef == "") {
+		if target.Kind == "" ||
+			target.FilePath == "" &&
+				target.TargetRef == "" &&
+				target.ModulePath == "" {
 			continue
 		}
 		key := strings.Join([]string{
 			target.Kind,
 			target.TargetRef,
+			target.AnchorID,
 			target.FilePath,
 			target.SymbolKind,
 			target.Receiver,
@@ -396,13 +459,21 @@ func normalizeAffectedSymbols(symbols []AffectedSymbol) []AffectedSymbol {
 	seen := make(map[string]struct{})
 	for _, symbol := range symbols {
 		symbol.FilePath = normalizeProjectPath(symbol.FilePath)
+		symbol.AnchorID = strings.TrimSpace(symbol.AnchorID)
+		symbol.Language = strings.TrimSpace(symbol.Language)
 		symbol.SymbolName = strings.TrimSpace(symbol.SymbolName)
 		symbol.SymbolKind = strings.TrimSpace(symbol.SymbolKind)
+		symbol.Receiver = strings.TrimSpace(symbol.Receiver)
+		symbol.QualifiedName = strings.TrimSpace(symbol.QualifiedName)
+		symbol.SignatureHash = strings.TrimSpace(symbol.SignatureHash)
 		symbol.Hash = strings.TrimSpace(symbol.Hash)
 		if symbol.FilePath == "" || symbol.SymbolName == "" {
 			continue
 		}
-		key := symbol.FilePath + "\x00" + symbol.SymbolKind + "\x00" + symbol.SymbolName
+		key := symbol.AnchorID
+		if key == "" {
+			key = symbol.FilePath + "\x00" + symbol.SymbolKind + "\x00" + symbol.Receiver + "\x00" + symbol.SymbolName
+		}
 		if _, ok := seen[key]; ok {
 			continue
 		}
@@ -488,7 +559,7 @@ func extractMarkdownTargetRange(projectRoot, relPath, targetRef string) (markdow
 		return markdownTargetRange{}, false
 	}
 
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	content, err := readProjectFile(projectRoot, relPath)
 	if err != nil {
 		return markdownTargetRange{}, false
 	}
@@ -589,7 +660,7 @@ func extractMarkedTargetRange(projectRoot, relPath, targetRef string) (markdownT
 		return markdownTargetRange{}, false
 	}
 
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	content, err := readProjectFile(projectRoot, relPath)
 	if err != nil {
 		return markdownTargetRange{}, false
 	}
@@ -641,7 +712,7 @@ func extractYAMLTargetRange(projectRoot, relPath, targetRef string) (markdownTar
 		return markdownTargetRange{}, false
 	}
 	token := semanticTargetLookupToken(targetRef)
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	content, err := readProjectFile(projectRoot, relPath)
 	if err != nil {
 		return markdownTargetRange{}, false
 	}
@@ -696,7 +767,7 @@ func extractJSONTargetRange(projectRoot, relPath, targetRef string) (markdownTar
 	if targetRef == "" {
 		return markdownTargetRange{}, false
 	}
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
+	content, err := readProjectFile(projectRoot, relPath)
 	if err != nil {
 		return markdownTargetRange{}, false
 	}

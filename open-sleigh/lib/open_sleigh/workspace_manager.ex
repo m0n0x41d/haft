@@ -127,7 +127,9 @@ defmodule OpenSleigh.WorkspaceManager do
 
   @spec interpret_reset_yield({:ok, {binary(), integer()}} | nil, Task.t()) :: reset_result()
   defp interpret_reset_yield({:ok, {_out, 0}}, _task), do: :ok
-  defp interpret_reset_yield({:ok, {_out, _nonzero}}, _task), do: {:error, :workspace_reset_failed}
+
+  defp interpret_reset_yield({:ok, {_out, _nonzero}}, _task),
+    do: {:error, :workspace_reset_failed}
 
   defp interpret_reset_yield(nil, task) do
     _ = Task.shutdown(task, :brutal_kill)

@@ -1,57 +1,152 @@
 package cli
 
-import "testing"
+import (
+	"os"
+	"os/exec"
+	"strings"
+	"testing"
+)
 
-func TestEffectiveBuildInfoUsesVCSFallbackForDevBuilds(t *testing.T) {
-	oldCommit := Commit
-	oldBuildDate := BuildDate
-	t.Cleanup(func() {
-		Commit = oldCommit
-		BuildDate = oldBuildDate
-	})
-
-	Commit = "none"
-	BuildDate = "unknown"
-
-	info := effectiveBuildInfo(map[string]string{
-		"vcs.revision": "abcdef1234567890",
-		"vcs.time":     "2026-06-23T07:00:00Z",
-	})
-
-	if info.Commit != "abcdef1234567890" {
-		t.Fatalf("commit = %q, want VCS fallback", info.Commit)
+func TestRootExecutePrintsOneErrorWithoutUsage(t *testing.T) {
+	command := exec.Command(
+		os.Args[0],
+		"-test.run=^TestRootExecuteHelper$",
+	)
+	command.Env = append(
+		os.Environ(),
+		"HAFT_TEST_ROOT_EXECUTE_HELPER=1",
+	)
+	output, err := command.CombinedOutput()
+	if err == nil {
+		t.Fatal("unknown command unexpectedly succeeded")
 	}
-	if info.BuildDate != "unknown" {
-		t.Fatalf("build date = %q, want ldflag value preserved", info.BuildDate)
+	text := string(output)
+	if strings.Count(text, "Error:") != 1 {
+		t.Fatalf("error count = %d, output:\n%s", strings.Count(text, "Error:"), text)
 	}
-	if info.SourceTime != "2026-06-23T07:00:00Z" {
-		t.Fatalf("source time = %q", info.SourceTime)
+	if strings.Contains(text, "Usage:") ||
+		strings.Count(text, "unknown command") != 1 {
+		t.Fatalf("root error rendering is noisy:\n%s", text)
 	}
 }
 
-func TestEffectiveBuildInfoKeepsLdflagsAheadOfVCSFallback(t *testing.T) {
-	oldCommit := Commit
-	oldBuildDate := BuildDate
-	t.Cleanup(func() {
-		Commit = oldCommit
-		BuildDate = oldBuildDate
-	})
-
-	Commit = "release-sha"
-	BuildDate = "2026-06-23T08:00:00Z"
-
-	info := effectiveBuildInfo(map[string]string{
-		"vcs.revision": "dev-sha",
-		"vcs.modified": "true",
-	})
-
-	if info.Commit != "release-sha" {
-		t.Fatalf("commit = %q, want ldflag commit", info.Commit)
+func TestRootExecuteHelper(t *testing.T) {
+	if os.Getenv("HAFT_TEST_ROOT_EXECUTE_HELPER") != "1" {
+		return
 	}
-	if info.BuildDate != "2026-06-23T08:00:00Z" {
-		t.Fatalf("build date = %q, want ldflag build date", info.BuildDate)
+	rootCmd.SetArgs([]string{"definitely-not-a-haft-command"})
+	Execute()
+}
+
+func TestRootExecuteInitSyntaxErrorsPrintOnlyHelpHint(t *testing.T) {
+	tests := []struct {
+		name       string
+		mode       string
+		wantDetail string
+	}{
+		{
+			name:       "positional arguments",
+			mode:       "positional",
+			wantDetail: `accepts no positional arguments: "unexpected-positional"`,
+		},
+		{
+			name:       "unknown flag",
+			mode:       "unknown-flag",
+			wantDetail: "unknown flag: --definitely-unknown",
+		},
 	}
-	if !info.Modified {
-		t.Fatalf("modified = false, want true")
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			output, err := executeInitErrorHelper(test.mode)
+			if err == nil {
+				t.Fatal("init syntax error unexpectedly succeeded")
+			}
+			text := string(output)
+			if strings.Count(text, "Error:") != 1 {
+				t.Fatalf(
+					"error count = %d, output:\n%s",
+					strings.Count(text, "Error:"),
+					text,
+				)
+			}
+			if strings.Count(text, test.wantDetail) != 1 {
+				t.Fatalf(
+					"syntax detail count = %d, output:\n%s",
+					strings.Count(text, test.wantDetail),
+					text,
+				)
+			}
+			if strings.Count(
+				text,
+				"Run 'haft init --help' for help.",
+			) != 1 {
+				t.Fatalf("help hint is missing or repeated:\n%s", text)
+			}
+			if strings.Contains(text, "Usage:") {
+				t.Fatalf("syntax error printed full usage:\n%s", text)
+			}
+		})
 	}
+}
+
+func TestRootExecuteInitSemanticErrorHasNoSyntaxHelp(t *testing.T) {
+	output, err := executeInitErrorHelper("semantic")
+	if err == nil {
+		t.Fatal("invalid init selection unexpectedly succeeded")
+	}
+	text := string(output)
+	if strings.Count(text, "Error:") != 1 {
+		t.Fatalf(
+			"error count = %d, output:\n%s",
+			strings.Count(text, "Error:"),
+			text,
+		)
+	}
+	if !strings.Contains(
+		text,
+		"--mcp-only requires an explicit host flag or --all",
+	) {
+		t.Fatalf("semantic error detail is missing:\n%s", text)
+	}
+	if strings.Contains(text, "Usage:") ||
+		strings.Contains(text, "haft init --help") {
+		t.Fatalf("semantic error rendering is noisy:\n%s", text)
+	}
+}
+
+func executeInitErrorHelper(mode string) ([]byte, error) {
+	command := exec.Command(
+		os.Args[0],
+		"-test.run=^TestRootExecuteInitErrorHelper$",
+	)
+	command.Env = append(
+		os.Environ(),
+		"HAFT_TEST_ROOT_EXECUTE_INIT_ERROR_HELPER="+mode,
+	)
+	return command.CombinedOutput()
+}
+
+func TestRootExecuteInitErrorHelper(t *testing.T) {
+	argumentsByMode := map[string][]string{
+		"positional": {
+			"init",
+			"unexpected-positional",
+		},
+		"unknown-flag": {
+			"init",
+			"--definitely-unknown",
+		},
+		"semantic": {
+			"init",
+			"--mcp-only",
+		},
+	}
+	mode := os.Getenv("HAFT_TEST_ROOT_EXECUTE_INIT_ERROR_HELPER")
+	arguments, found := argumentsByMode[mode]
+	if !found {
+		return
+	}
+	rootCmd.SetArgs(arguments)
+	Execute()
 }

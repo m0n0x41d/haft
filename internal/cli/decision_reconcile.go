@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -33,6 +34,9 @@ var (
 	decisionGoverningSetTargetRef  string
 	decisionGoverningSetWrite      string
 	decisionGoverningSetCheck      string
+	decisionSupersedeNewRef        string
+	decisionSupersedeReason        string
+	decisionSupersedeJSON          bool
 )
 
 var decisionCmd = &cobra.Command{
@@ -128,6 +132,20 @@ this symbol / contract / spec section" without expanding default status.`,
 	RunE: runDecisionGoverningSet,
 }
 
+var decisionSupersedeCmd = &cobra.Command{
+	Use:   "supersede OLD_DECISION --new NEW_DECISION --reason REASON",
+	Short: "Manually supersede one DecisionRecord with an existing successor",
+	Long: `Supersede one current DecisionRecord with an existing current successor.
+
+Invoking this CLI command is the manual operator authority boundary. Both
+references must already name DecisionRecords, the successor must remain current,
+and a non-empty reason is required. The command records terminal status and the
+successor lineage; it does not create a decision, evidence, approval, gate
+decision, claim truth, global truth, or publication. There is no MCP alias.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runDecisionSupersede,
+}
+
 func init() {
 	decisionReconcileCmd.Flags().BoolVar(&decisionReconcileJSON, "json", false, "print structured JSON output")
 	decisionReconcileCmd.Flags().IntVar(&decisionReconcileLimit, "limit", 0, "limit compact JSON groups without approving or applying anything; default 0 emits the full audit JSON")
@@ -148,13 +166,127 @@ func init() {
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetTargetRef, "target-ref", "", "filter governing sets by exact target ref")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetWrite, "write-snapshot", "", "write the current governing-set report to a JSON snapshot carrier")
 	decisionGoverningSetCmd.Flags().StringVar(&decisionGoverningSetCheck, "check-snapshot", "", "compare the current governing-set snapshot digest with a JSON snapshot carrier")
+	decisionSupersedeCmd.Flags().StringVar(&decisionSupersedeNewRef, "new", "", "existing successor DecisionRecord ref")
+	decisionSupersedeCmd.Flags().StringVar(&decisionSupersedeReason, "reason", "", "operator rationale for the supersession")
+	decisionSupersedeCmd.Flags().BoolVar(&decisionSupersedeJSON, "json", false, "print structured JSON output")
 	decisionReconcileCmd.AddCommand(decisionReconcileMetricsCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileSelectionDraftCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileSelectionReviewCmd)
 	decisionReconcileCmd.AddCommand(decisionReconcileApplyCmd)
 	decisionCmd.AddCommand(decisionGoverningSetCmd)
 	decisionCmd.AddCommand(decisionReconcileCmd)
+	decisionCmd.AddCommand(decisionSupersedeCmd)
 	rootCmd.AddCommand(decisionCmd)
+}
+
+type decisionSupersedeReceipt struct {
+	SchemaVersion     int      `json:"schema_version"`
+	Authority         string   `json:"authority"`
+	SupersededRef     string   `json:"superseded_ref"`
+	SuccessorRef      string   `json:"successor_ref"`
+	Reason            string   `json:"reason"`
+	Status            string   `json:"status"`
+	AuthorityBoundary []string `json:"authority_boundary"`
+}
+
+func runDecisionSupersede(cmd *cobra.Command, args []string) error {
+	oldRef := strings.TrimSpace(args[0])
+	newRef := strings.TrimSpace(decisionSupersedeNewRef)
+	reason := strings.TrimSpace(decisionSupersedeReason)
+	if newRef == "" {
+		return fmt.Errorf("--new is required")
+	}
+	if reason == "" {
+		return fmt.Errorf("--reason is required")
+	}
+	if oldRef == newRef {
+		return fmt.Errorf("OLD_DECISION and --new must be different")
+	}
+
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+	store, closeFn, err := openArtifactStore(projectRoot)
+	if err != nil {
+		return err
+	}
+	defer closeFn()
+
+	ctx := context.Background()
+	oldDecision, err := store.Get(ctx, oldRef)
+	if err != nil {
+		return fmt.Errorf("load superseded decision %s: %w", oldRef, err)
+	}
+	newDecision, err := store.Get(ctx, newRef)
+	if err != nil {
+		return fmt.Errorf("load successor decision %s: %w", newRef, err)
+	}
+	if err := validateDecisionSupersession(oldDecision, newDecision); err != nil {
+		return err
+	}
+
+	updated, err := artifact.SupersedeArtifact(
+		ctx,
+		store,
+		filepath.Join(projectRoot, ".haft"),
+		oldRef,
+		newRef,
+		reason,
+	)
+	if err != nil {
+		return fmt.Errorf("supersede decision: %w", err)
+	}
+	receipt := decisionSupersedeReceipt{
+		SchemaVersion: 1,
+		Authority:     "manual_cli_operator_supersession",
+		SupersededRef: updated.Meta.ID,
+		SuccessorRef:  newRef,
+		Reason:        reason,
+		Status:        string(updated.Meta.Status),
+		AuthorityBoundary: []string{
+			"manual_cli_invocation_is_operator_authority_for_this_supersession_only",
+			"not_decision_creation",
+			"not_evidence",
+			"not_gate_decision",
+			"not_claim_truth",
+			"not_global_truth",
+			"not_publication",
+		},
+	}
+	if decisionSupersedeJSON {
+		return writeJSON(cmd.OutOrStdout(), receipt)
+	}
+	_, err = fmt.Fprintf(
+		cmd.OutOrStdout(),
+		"superseded: %s\nsuccessor: %s\nstatus: %s\nreason: %s\nauthority: %s\n",
+		receipt.SupersededRef,
+		receipt.SuccessorRef,
+		receipt.Status,
+		receipt.Reason,
+		receipt.Authority,
+	)
+	return err
+}
+
+func validateDecisionSupersession(oldDecision *artifact.Artifact, newDecision *artifact.Artifact) error {
+	if oldDecision.Meta.Kind != artifact.KindDecisionRecord {
+		return fmt.Errorf("%s is %s, want DecisionRecord", oldDecision.Meta.ID, oldDecision.Meta.Kind)
+	}
+	if newDecision.Meta.Kind != artifact.KindDecisionRecord {
+		return fmt.Errorf("%s is %s, want DecisionRecord", newDecision.Meta.ID, newDecision.Meta.Kind)
+	}
+	if !decisionStatusIsCurrent(oldDecision.Meta.Status) {
+		return fmt.Errorf("%s status is %s, want active or refresh_due", oldDecision.Meta.ID, oldDecision.Meta.Status)
+	}
+	if !decisionStatusIsCurrent(newDecision.Meta.Status) {
+		return fmt.Errorf("successor %s status is %s, want active or refresh_due", newDecision.Meta.ID, newDecision.Meta.Status)
+	}
+	return nil
+}
+
+func decisionStatusIsCurrent(status artifact.Status) bool {
+	return status == artifact.StatusActive || status == artifact.StatusRefreshDue
 }
 
 func runDecisionReconcile(cmd *cobra.Command, _ []string) error {

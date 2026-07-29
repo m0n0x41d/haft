@@ -74,7 +74,7 @@ Scenario: Queue work without executing it
     | decision_revision_hash | current DecisionRecord content/revision     |
     | spec_section_refs      | spec sections governed by the decision, if any |
     | spec_revision_hashes   | current revisions for those sections        |
-    | problem_ref            | linked ProblemCard                          |
+    | problem_basis          | `problem_card` snapshot or `inline_statement` snapshot from the DecisionRecord |
     | scope                  | closed Scope object: repo, branch, base SHA, paths, actions |
     | scope_hash             | canonical hash of the Scope object          |
     | base_sha               | repository commit pinned at queue time      |
@@ -87,6 +87,13 @@ Scenario: Queue work without executing it
   And the WorkCommission is "queued"
   And no RuntimeRun starts
 ```
+
+`problem_basis` is a closed discriminated union:
+
+| `kind` | Required snapshot fields | Meaning |
+|--------|--------------------------|---------|
+| `problem_card` | `problem_card_ref`, `revision_hash` | The DecisionRecord is grounded by a linked ProblemCard. |
+| `inline_statement` | `decision_ref`, `problem_statement`, `revision_hash` | The DecisionRecord carries its own inline problem statement. No ProblemCard is fabricated. |
 
 ```gherkin
 Scenario: Scope is authorization, not prompt context
@@ -114,13 +121,15 @@ Scenario: Start a fresh commission
   Given a WorkCommission in "queued" or "ready"
   And its linked DecisionRecord is still active
   And the decision_revision_hash still matches
-  And the problem_ref/revision still matches
+  And the problem_basis still resolves to the same problem statement
+  And its revision_hash still matches
   And the scope_hash still matches the current commission Scope
   And the base_sha still matches the admitted repository context
   And the implementation_plan_revision still matches, if present
   And the autonomy_envelope_revision still matches, if present
   And the commission valid_until is in the future
-  And no linked ProblemCard or governing DecisionRecord was superseded
+  And no linked ProblemCard, when problem_basis.kind is "problem_card", was superseded
+  And the governing DecisionRecord was not superseded
   When the user starts the WorkCommission
   Then Haft moves it to "preflighting"
   And grants exactly one runner lease
@@ -141,7 +150,7 @@ Scenario: Block a stale commission before execution
 Scenario: Block a commission after snapshot drift
   Given a WorkCommission was queued with CommissionSnapshot C1
   And a human approval or YOLO lease was recorded for C1
-  When the DecisionRecord revision, ProblemCard revision, Scope hash, base SHA,
+  When the DecisionRecord revision, problem_basis revision, Scope hash, base SHA,
       ImplementationPlan revision, AutonomyEnvelope revision, or lease state
       changes before Execute
   Then the previous approval is no longer reusable
@@ -175,7 +184,7 @@ The deterministic equality set is closed for MVP-1R:
 | Field | Owner | Drift outcome |
 |-------|-------|---------------|
 | DecisionRecord ref/revision/hash | Haft | block stale |
-| ProblemCard ref/revision/hash | Haft | block stale or human review |
+| `problem_basis`: `problem_card` (`problem_card_ref`, `revision_hash`) or `inline_statement` (`decision_ref`, `problem_statement`, `revision_hash`) | Haft | block stale or human review |
 | SpecSection refs/revisions/hashes | Haft | block stale or re-plan |
 | Scope hash | Haft | block policy |
 | base SHA / admitted repo context | Haft + repo adapter | re-preflight or block stale |
@@ -462,7 +471,7 @@ These are deferred per 5.4 review:
 
 | Feature | Why deferred |
 |---------|-------------|
-| Project harnessability onboarding | Requires dedicated TargetSystemSpec / EnablingSystemSpec / TermMap / SpecCoverage workflow, now scoped as v7 Project Harnessability MVP |
+| Project harnessability onboarding | Requires dedicated TargetSystemSpec / SoftwareSystemSpec / TermMap / SpecCoverage workflow, now scoped as v7 Project Harnessability MVP |
 | Spec parser/checker and SpecCoverage graph | Needs strict markdown carrier, section ids, term validation, and coverage edge model before runtime gating |
 | Automation triggers (CI fail, dep update, scheduled) | Mixing problem factory + execution in one release = scope sprawl |
 | DecisionRecord→WorkCommission→RuntimeRun Pipeline with broad auto-advance | Single spec-linked commission must work first; batch execution follows after spec readiness gates |

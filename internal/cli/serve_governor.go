@@ -20,16 +20,21 @@ func governorStatusResponse(
 	store *artifact.Store,
 	contextName string,
 	projectRoot string,
+	readiness canonicalProjectReadiness,
 ) (string, error) {
 	data, err := artifact.FetchStatusData(ctx, store, contextName, projectRoot)
 	if err != nil {
 		return "", err
 	}
-	data.SpecBindingDebt = specBindingDebtReportForStatus(ctx, store, projectRoot)
+	data.SpecBindingDebt = specBindingDebtReportForCanonicalStatus(
+		ctx,
+		store,
+		readiness,
+	)
 	data = applyDefaultDriftEventResolutionLedgerToStatusData(ctx, store, projectRoot, data)
 	driftEvents := governorDriftEvents(data)
 
-	return present.StatusGovernor(present.GovernorData{
+	body := present.StatusGovernor(present.GovernorData{
 		OverseerLine:               governorOverseerLine(projectRoot),
 		ReconciliationLine:         present.ReconciliationCueSummary(data.ReconciliationCues),
 		PendingCount:               len(data.PendingDecisions),
@@ -41,7 +46,8 @@ func governorStatusResponse(
 		TopAttention:               governorAttention(data),
 		ActiveProblems:             governorProblems(data),
 		OpenMethodRuns:             governorMethodRuns(ctx, store),
-	}), nil
+	})
+	return statusProfilePrefix(readiness, false) + body, nil
 }
 
 func governorOverseerLine(projectRoot string) string {

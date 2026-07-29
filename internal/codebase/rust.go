@@ -114,15 +114,13 @@ var (
 )
 
 // ParseImports extracts use/mod edges from a Rust source file.
-func (r *RustLang) ParseImports(filePath string, projectRoot string) ([]ImportEdge, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, nil
-	}
-
-	relFile, _ := filepath.Rel(projectRoot, filePath)
+func (r *RustLang) ParseImports(
+	source AdmittedSource,
+	_ string,
+) ([]ImportEdge, error) {
+	relFile := source.Path().String()
 	sourceDir := filepath.Dir(relFile)
-	content := string(data)
+	content := string(source.bytes())
 
 	var edges []ImportEdge
 	seen := make(map[string]bool)

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -46,7 +47,12 @@ func buildSpecRepairEditionsResult(projectRoot string, apply bool) (specRepairEd
 	if err != nil {
 		return specRepairEditionsResult{}, err
 	}
-	projectID, store, closeStore, err := openSpecSectionEditionStore(projectRoot, cfg)
+	projectID, store, closeStore, err := openSpecRepairEditionStore(
+		context.Background(),
+		projectRoot,
+		cfg,
+		apply,
+	)
 	if err != nil {
 		return specRepairEditionsResult{}, err
 	}
@@ -73,6 +79,18 @@ func buildSpecRepairEditionsResult(projectRoot string, apply bool) (specRepairEd
 		Mismatches:        copySpecRepairEditionsMismatches(plan.Mismatches),
 		Repaired:          copySpecRepairEditionsMismatches(plan.Repaired),
 	}, nil
+}
+
+func openSpecRepairEditionStore(
+	ctx context.Context,
+	projectRoot string,
+	cfg *project.Config,
+	apply bool,
+) (string, specflow.SpecSectionEditionStore, func(), error) {
+	if apply {
+		return openSpecSectionEditionStore(projectRoot, cfg)
+	}
+	return openSpecSectionEditionReadStore(ctx, projectRoot, cfg)
 }
 
 func copySpecRepairEditionsMismatches(

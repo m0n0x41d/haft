@@ -1,14 +1,13 @@
 package cli
 
 import (
-	"errors"
-	"os"
+	"context"
 	"strings"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 // projectBaseline opens the project's SQLite store and returns a
@@ -20,6 +19,32 @@ import (
 // Callers MUST invoke the returned close function when done; passing
 // nil close (returned alongside nil store) is safe and a no-op.
 func projectBaseline(projectRoot string) (specflow.BaselineStore, string, func(), error) {
+	return openProjectBaseline(
+		context.Background(),
+		projectRoot,
+		projectledger.ReadWrite,
+		"SpecSection baseline write",
+	)
+}
+
+func projectBaselineReadOnly(
+	ctx context.Context,
+	projectRoot string,
+) (specflow.BaselineStore, string, func(), error) {
+	return openProjectBaseline(
+		ctx,
+		projectRoot,
+		projectledger.ReadOnly,
+		"SpecSection baseline read",
+	)
+}
+
+func openProjectBaseline(
+	ctx context.Context,
+	projectRoot string,
+	access projectledger.Access,
+	operation string,
+) (specflow.BaselineStore, string, func(), error) {
 	projectRoot = strings.TrimSpace(projectRoot)
 	if projectRoot == "" {
 		return nil, "", noopClose, nil
@@ -34,26 +59,19 @@ func projectBaseline(projectRoot string) (specflow.BaselineStore, string, func()
 		return nil, "", noopClose, nil
 	}
 
-	dbPath, err := cfg.DBPath()
-	if err != nil {
-		return nil, "", noopClose, nil
-	}
-
-	if _, err := os.Stat(dbPath); err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil, "", noopClose, nil
-		}
-		return nil, "", noopClose, err
-	}
-
-	store, err := db.NewStore(dbPath)
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		projectRoot,
+		access,
+		operation,
+	)
 	if err != nil {
 		return nil, "", noopClose, err
 	}
 
-	baselineStore := specflow.NewSQLiteBaselineStore(store.GetRawDB())
+	baselineStore := specflow.NewSQLiteBaselineStore(ledger.Database())
 
-	return baselineStore, cfg.ID, func() { _ = store.Close() }, nil
+	return baselineStore, ledger.ProjectID().String(), func() { _ = ledger.Close() }, nil
 }
 
 func haftDirFor(projectRoot string) string {
@@ -62,23 +80,19 @@ func haftDirFor(projectRoot string) string {
 
 func noopClose() {}
 
-// appendSpecHealthFindings runs SpecSection drift / missing-baseline
-// detection AND time-based staleness detection over the project's
-// baseline store + carriers, folding both finding kinds into the
-// existing SpecCheckReport. When the project has no DB yet, drift
-// findings are skipped but staleness findings still run because
-// staleness only needs the carrier set + current time.
-//
-// Per dec-20260428-spec-enforcement-hardening-219a58b5: this is the
-// single source of truth for spec-health rollups consumed by both
-// `haft spec check` (CLI) and `haft_query(action="check")` (MCP).
-func appendSpecHealthFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {
-	specSet, specErr := loadProjectSpecificationSetSQLFirst(projectRoot)
-	if specErr != nil {
-		return report
-	}
-
-	store, projectID, closeFn, _ := projectBaseline(projectRoot)
+// appendSpecHealthFindingsFromSet runs SpecSection drift / missing-baseline
+// detection and time-based staleness detection over the exact specification
+// set already selected by the caller. It is the shared spec-health rollup for
+// the CLI and MCP public surfaces.
+func appendSpecHealthFindingsFromSet(
+	report project.SpecCheckReport,
+	specSet project.ProjectSpecificationSet,
+	projectRoot string,
+) project.SpecCheckReport {
+	store, projectID, closeFn, _ := projectBaselineReadOnly(
+		context.Background(),
+		projectRoot,
+	)
 	defer closeFn()
 
 	driftFindings := specflow.SectionBaselineFindings(specSet, store, projectID)
@@ -92,11 +106,4 @@ func appendSpecHealthFindings(report project.SpecCheckReport, projectRoot string
 	report.Findings = append(report.Findings, staleFindings...)
 	report.Summary.TotalFindings = len(report.Findings)
 	return report
-}
-
-// appendSpecBaselineFindings is preserved as the previous slice's name
-// for backwards compatibility within this package; new callers should
-// use appendSpecHealthFindings to get drift + stale together.
-func appendSpecBaselineFindings(report project.SpecCheckReport, projectRoot string) project.SpecCheckReport {
-	return appendSpecHealthFindings(report, projectRoot)
 }

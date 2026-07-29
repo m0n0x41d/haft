@@ -16,11 +16,11 @@ edits there flow to every haft user on next `haft init`.
 
 ## Haft Architecture Notes (Maintainer-Only)
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:71e30bee5e8fbed4a50f4b778aafdbffda2982eb14b4c0a2ea1f5fde322985d1 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
 
 Haft is a **governance substrate** consumed via three surfaces sharing one
 `.haft/` artifact graph: skills + slash commands in the host AI coding agent
-(Codex, Codex, OpenCode, Cursor), this CLI for manual access, and the
+(Claude Code, Codex, OpenCode, Cursor), this CLI for manual access, and the
 MCP server (`haft serve`) for programmatic access.
 
 Standalone interactive agent (`haft agent`), TUI, and desktop wrappers were
@@ -28,282 +28,375 @@ Standalone interactive agent (`haft agent`), TUI, and desktop wrappers were
 `.haft/decisions/dec-20260525-v8-architecture-pivot-from-standalone-agent-to-g-bbe45cb7.md`
 with parity-compared variants, rollback plan, and falsifiable predictions.
 
-**FPF discipline placement**: skills are `U.MethodDescription` carriers
-(they route + scaffold + remind, they do not enforce). The kernel MCP server
-validates args server-side and returns structured errors. CLI gates mirror
-the same validation. Hooks are NOT used for haft-tool enforcement — MCP
-error responses are sufficient and cross-host.
+**FPF discipline placement**: skills are independent `U.MethodDescription`
+capability carriers. `h-reason` retrieves the versioned FPF source through the
+kernel; the catalog and source order do not prescribe a universal workflow.
+Skills scaffold and remind; they do not enforce. The kernel MCP server validates
+args server-side and returns structured errors. CLI gates mirror the same
+validation. Hooks are NOT used for haft-tool enforcement — MCP error responses
+are sufficient and cross-host.
 
 **Transformer Mandate**: `h-decide` and `h-commission` are manual-only
 (`disable-model-invocation: true`). Binding artifacts (DecisionRecord,
-WorkCommission) require explicit human invocation. Other workflow skills
-(h-frame, h-diagnose, h-explore, h-compare, h-verify, h-status, etc.) may
-auto-trigger by description but never commit binding artifacts without
-operator confirmation in their procedure bodies.
-Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts; default MCP binding attempts fail closed with `operator_confirmation_required`.
+WorkCommission) require explicit human invocation. Other independent
+capabilities (h-frame, h-diagnose, h-explore, h-compare, h-verify, h-status,
+etc.) may auto-trigger when relevant to the current concern; they imply neither
+a sequence nor persistence and cannot bind artifacts.
+Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts. For DecisionRecords, fresh and older projects default to `explicit_h_decide`: the explicit skill invocation is the sole human gate, and the agent completes the CLI/input-file bind without a second phrase. `strict_cli_speech_act` is an opt-in extra terminal gate. MCP decision binding remains fail-closed with `operator_confirmation_required` in both modes.
 
-Execution plan lives in `.context/v8_haft_governance_substrate_plan.md`.
+The active v9 source-native query contract is
+[Source-native FPF Query with independent skills and reliance-gated memory](.haft/decisions/dec-20260716-318cdec5.md);
+the active typed-memory contract is
+[V1 algebraic typed-memory core with bounded source compilation](.haft/decisions/dec-20260716-11f33e36.md).
+`README.md` describes the public surface. Historical `.context` plans are not
+current product authority.
 
 ---
 
 <!-- haft:start -->
 # Haft Project Discipline
 
-This section is installed and maintained by `haft init`. Edits **inside** the
-haft HTML-comment markers (the start/end pair that brackets this section) will
-be overwritten on the next `haft init`. Add your own project rules **outside**
-the markers — they are preserved. To opt out entirely, run
-`haft init --no-Codex-md`.
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
 
-This project uses [haft](https://github.com/m0n0x41d/haft) for structured
-decision recording and FPF (First Principles Framework) discipline. Haft is a
-governance substrate consumed via three surfaces sharing one `.haft/` artifact
-graph: skills/slash commands in the host AI coding agent (Codex, Codex,
-OpenCode, Cursor), the `haft` CLI, and the MCP server (`haft serve`) for
-programmatic access.
+This section is installed and maintained by `haft init`. Edits inside its Haft
+markers are overwritten on re-init; project-specific rules belong outside the
+markers.
 
-## The single most important rule: Description ≠ Work
+Haft is an FPF-aware project-memory and governance substrate. Skills, CLI, and
+MCP share one `.haft/` graph. FPF source governs FPF meaning. Haft retrieves,
+applies, and records project-local use; it does not replace FPF with a workflow.
 
-When asked open-ended design questions in this project, the default impulse is
-to produce a useful chat response — variants with weakest-links, a Pareto
-front, a comparison table. **Stop.** That visual shape is the **output of a
-haft skill**, not a substitute for invoking it.
+## Current question first
 
-Analysis in chat can be useful local reasoning, but if it does not go through
-the haft kernel it is **ephemeral**: gone by tomorrow, no ProblemCard, no
-SolutionPortfolio, nothing to `/h-verify` in 2 weeks. The chat answer is
-unpersisted reasoning, not durable project governance, evidence, or authority.
+Do not ask for a universal first step. Recover:
 
-**Concrete failure patterns to catch in yourself:**
+- the project object or EntityOfConcern;
+- the current question about it;
+- known values, relations, constraints, and evidence;
+- the smallest useful result needed now.
 
-| About to do this in chat... | Stop and invoke this skill first |
-|---|---|
-| Present 3+ alternative approaches for an open question | `/h-explore` (persists a SolutionPortfolio) |
-| Compare two approaches with trade-offs | `/h-compare` (declares parity, records dimensions) |
-| Frame what the "real problem" is | `/h-frame` (persists a ProblemCard) |
-| Verify a past decision against current code | `/h-verify` (records evidence + verdict) |
-| Tell the user "let's remember that…" | `/h-note` (persists rationale into the graph) |
+FPF is relation-first at the framework-navigation level. The order of text,
+cards, graph edges, skills, or a demonstrative walkthrough does not by itself
+prescribe causal, temporal, method, or performed-work order. Explicit causal
+claims, ordered MethodDescriptions, WorkPlans, and Work relations remain valid
+when their direct governing patterns are current. Do not call FPF an acausal
+ontology.
 
-**Friction tradeoff (honest).** Yes, calling a haft skill costs more in-the-
-moment than answering directly: structured args, possibly a framing step first,
-extra round-trips. **The friction is the price for durability.** Do not
-optimize the wrong objective. Your job in this project is not "best chat
-answer right now"; it is "leave the project with measurable, future-verifiable
-memory."
+## Strict distinctions
 
-## Self-check before long responses
+Never collapse:
 
-Before sending a long response in this project, run this check internally:
+- object, description, representation, and carrier;
+- method, MethodDescription, WorkPlan, and performed Work;
+- plan and reality; promise and delivery; claim and evidence;
+- retrieval rank and applicability, recommendation, precedence, or authority;
+- a walkthrough or mantra and the wider constrained structure it explains;
+- the product/system being changed and the engineering arrangement changing
+  it. `TargetSystemSpec` and related labels are Haft local-practice carriers,
+  not FPF Core kinds by label alone.
 
-1. Is this response presenting **3+ alternatives**, a **comparison**, or an
-   **analysis with a recommendation**?
-2. Did I call **any `haft_*` tool** in this turn?
+Documents and graph nodes do not act. Name the acting system, role, method,
+work, and evidence relation when those claims are current.
 
-If (1) = yes and (2) = no — **stop and reconsider**. You are about to produce
-non-durable reasoning in the chat. Fire the appropriate skill first, then
-present the result.
+## Source-first FPF use
 
-## Canonical FPF flow
+For purely mechanical, status-only, or exact project-lookup work where no FPF
+pattern choice is material, caller abstention is the correct result: skip FPF
+Query and do the bounded work directly. This is not a fabricated
+`QueryResult(kind="abstained")`; no query ran. If pattern applicability is
+material or uncertain, query the source.
 
+For a substantive FPF question, use `/h-reason` or the exact specialized
+skill. Query the bundled source:
+
+```text
+mcp__haft__haft_query(
+  action="fpf",
+  mode="concern",
+  query="<current object + question + terms>"
+)
 ```
-/h-frame → /h-explore → /h-compare → /h-decide
-  problem    variants    char+parity   DRR contract
-                         + scoring     (manual-only)
-```
 
-Characterization (dimensions, indicator roles, `valid_until`) is a **kernel
-action inside `/h-compare` Step 1**, not a separate skill. Call via
-`mcp__haft__haft_problem(action="characterize", ...)`. Stale dimensions block
-compare with a kernel error.
+For non-English concerns, preserve the operator's original query and add
+`entity_of_concern`, `known_context`, and `intended_use` with precise
+source-language or FPF terms when known. Do not translate into a hidden Haft
+route or invent a bilingual catalog; unsupported raw language may abstain.
 
-## Skill catalog
+This returns source material, never applicability, selection, recommendation,
+or evidence. Then:
 
-| Surface | Skill | When |
+1. compare the relevant README practical-use cards by recognizable situation,
+   first-result difference, direct pattern, and stop/return boundary;
+2. use the Table of Contents as the source-owned PatternID/keyword/query index;
+3. recover an exact source unit with `mode="lookup"` and its `identifier`, or
+   use non-broadening `mode="inspect"` when the identifier must match exactly;
+4. inspect the selected pattern's full Problem frame, Problem, Forces,
+   Solution, ordinary boundary, worked slices, and checklist;
+5. select by current condition and exact result kind, not by retrieval score or
+   display order;
+6. keep several candidates live or abstain when the basis is insufficient.
+
+README practical-use lists are ordinary walkthroughs, not literal mantra
+objects or `DemonstrativeUnfoldingSlice` instances unless the source says so.
+FPF Query returns source candidates; the agent selects by current condition and
+applies the direct Solution. README, ToC, authored phrases, headings/keywords,
+and role-local FTS are source-retrieval aids. Dense retrieval
+is a deferred extension, not part of the v9 Query contract.
+The full pattern body is the authority.
+Do not maintain a second catalog of routes or inline a shadow FPF specification
+in skills.
+
+`E.11.PUA Pattern Use in a Working Situation` and `E.11.PUR` are authoritative
+FPF patterns. Inspect them through source-first FPF Query when they are current;
+Haft defines no namesake routing API.
+
+## Persistence is conditional
+
+Default to ordinary bounded use: reason in the conversation and produce the
+smallest useful result without creating artifacts.
+
+Persist only when:
+
+- the operator explicitly asks to save, record, bind, commission, approve,
+  rebaseline, reopen, or otherwise mutate project memory; or
+- a named receiving use needs addressable replay, transfer, audit, automation,
+  delayed feedback, expensive feedback, or costly reversal.
+
+Materialize only the records that receiving use needs. Do not automatically
+create a ProblemCard, SolutionPortfolio, comparison, recommendation,
+DecisionRecord, or WorkPlan as a bundle. A chat answer is ephemeral, but
+ephemeral does not mean invalid; durability must earn its cost.
+
+## Structured project memory — v9 contract
+
+Source-native FPF Query, project-profile onboarding, and structured project
+memory are **V9 CONTRACT** capabilities. Their presence in source, schemas,
+skills, or local tests is not installed-runtime proof. Any
+installed-runtime readiness claim requires current
+**EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact candidate; RC or release
+status additionally requires release authority.
+Dense/hybrid retrieval and any superiority claim remain **DEFERRED RESEARCH**.
+Do not infer **CURRENT PRODUCT** status from contract inclusion or evidence
+alone.
+
+When current Work is context-heavy, multi-session, or reliance-bearing and its
+exact EntityOfConcern is not already current, resolve a known name or alias with
+`haft_query(action="memory", memory_request={"mode":"resolve", ...})`. Select
+exact identity by the current use rather than rank, then request the smallest
+neighborhood through the closed `memory_request` branch with
+`projection_profile_ref="agent_orientation.v2"`. This is conditional read
+orientation, not a universal first step or gate, and it does not replace
+code-graph preflight.
+
+`known_absent` is an identity result, not permission to persist. Establish a
+new EntityOfConcern only for an explicit operator save request or a named
+receiving use with request provenance. Use the task-level
+`haft_entity(action="establish", ...)` surface with a stable entity ID,
+readable label, bounded context, canonically ordered aliases, persistence
+reason, provenance, and idempotency key. The kernel owns alias and identity
+conflict checks, validation, exact project-basis selection, admission, and
+post-commit resolution; the agent does not choose or declare internal memory
+schemas.
+
+Follow `haft_entity` result kinds exactly. Conflicts block only establishment
+of that identity. `onboarding_required` or `enablement_choice_required` routes
+through `haft_onboard(action="status")`. On `restart_required`, reconnect and
+retry the unchanged request with the same idempotency key. Never invent success
+after `rejected` or `commit_outcome_unknown`.
+
+`haft_onboard` is the normal setup surface. `status` reports readable
+`needs_init`, `needs_profile`, `profile_review_ready`, `needs_memory`,
+`memory_review_ready`, `memory_deferred`, or `ready` states.
+`profile_prepare` and `memory_prepare` may materialize or reuse only
+non-binding review carriers; they do not apply them. Only an explicit
+`/h-onboard` may consume a reviewed profile through
+`haft onboard profile apply`; only an explicit `/h-decide` may consume a
+reviewed structured-memory choice through `haft onboard memory enable`.
+Enablement creates no substitute DecisionRecord. After a required restart,
+re-read onboarding status and rely on readiness only when it returns `ready`.
+
+Low-level memory validation and admission interfaces remain available for exact
+diagnostic or implementation work; they are not the task-level entity UX.
+Never persist automatically. Admission cannot bind a decision, approve a
+specification, commission Work, establish evidence truth, or enable structured
+project memory.
+
+Binding decisions and execution authority always require explicit operator
+action. Generated text, tool schemas, and model-supplied fields are not
+approval receipts.
+
+For DecisionRecords, `.haft/config.yaml` controls only whether that explicit
+action is followed by an additional CLI SpeechAct. The default
+`authority.decision_binding_mode: explicit_h_decide` treats the manual
+`/h-decide` invocation as the sole human gate, so the agent runs the
+CLI/input-file bind without asking again. The opt-in
+`strict_cli_speech_act` mode adds a reviewed controlling-terminal phrase. MCP
+decision binding remains fail-closed in both modes.
+
+Project-profile application and structured-memory enablement are separate from
+DecisionRecord binding. Do not route either through the DecisionRecord CLI or
+infer authority for one effect from another.
+
+## Interrupt only at a semantic gate
+
+Status signals are attention, not authorization gates. Do not stop
+already-authorized Work merely because the cockpit reports drift, refresh debt,
+missing bindings, stale descriptions, or reconciliation cues.
+
+Before asking the operator, separate description/evidence maintenance from a
+binding or authority change:
+
+- Continue without another approval when the remaining action only gathers or
+  attaches evidence, marks old implementation prose as historical, records a
+  current implementation fact, or performs reversible Work already inside the
+  accepted task or WorkCommission. Do not rewrite a historical binding choice
+  merely to match current implementation.
+- Ask at the exact human gate when the current action would select, change, or
+  supersede a binding choice; create or broaden execution authority;
+  approve, reopen, or rebaseline a SpecSection; make a material
+  product/value/scope, public-promise, security, legal, privacy, finance,
+  irreversible-data, compatibility, or authority-allocation choice.
+- If current Work would rely on unresolved contradictory binding content,
+  stop only that affected operation and name the exact semantic choice.
+  Unrelated already-authorized Work continues.
+
+A question must name the choice and explain why the affected operation cannot
+continue without it. Never ask for bare `OK`, `yes`, or `да` merely to
+acknowledge evidence, historicity, technical cleanup, or continuation that was
+already authorized.
+
+Before requesting any human gate, give the operator a self-contained
+**Human Gate Brief** in ordinary language. The operator must not be expected to infer
+hidden state, alternatives, rationale, IDs, or hashes. State:
+
+- whether the gate is a bounded choice, authority grant, or SpecSection
+  lifecycle act; the exact readable subject; the affected operation; and why
+  only that operation is blocked;
+- every real option available now, including defer or reject when real, and for
+  each option what changes, what stays unchanged, the immediate consequence or
+  return condition, and the weakest link; never invent options for symmetry;
+- any existing comparison basis, parity basis, selection policy, and
+  non-dominated or Pareto set. If no such comparison exists or it is not
+  applicable to a binary lifecycle act, say that explicitly;
+- the agent's advisory recommendation and evidence freshness or expiry; then
+  ask for the human engineer's assessment of the options, trade-offs, and
+  recommendation in natural language.
+
+Pair every opaque identifier with its readable title or meaning. The brief
+itself is explanation, not authorization. Accept ordinary language as the
+substantive answer to the engineering consultation, never as a binding receipt.
+A command, skill invocation, exact reply phrase, or resumption token must never
+substitute for that consultation. Only after the engineer's position is
+explicit may a separately required manual binding or persistence act be
+explained, together with what it will and will not authorize. Never end a
+blocking message with “for resumption it is enough to…”, “reply exactly…”, or
+an equivalent command-only instruction. A bare statement such as `h-decide
+needed`, `approval required`, or `spec gate open` is an invalid operator
+request.
+
+Manual `/h-decide` may reuse real ProblemCard or SolutionPortfolio provenance,
+but those artifacts are not prerequisites. A direct decision supplies
+`problem_statement` when no problem ref resolves and keeps its inline option
+set in canonical `choice_result.option_set`.
+
+## Public skill catalog
+
+The public capabilities are independent entries, not phases:
+
+| Surface | Skill | Current condition |
 |---|---|---|
-| auto | `/h-frame` | Frame the problem when a solution is being proposed without acceptance criteria, or when the problem is fuzzy |
-| auto | `/h-diagnose` | Parallel rival-hypothesis testing for a failure with unclear cause |
-| auto | `/h-explore` | Generate 3-5 genuinely distinct variants with weakest-links |
-| auto | `/h-compare` | Fair comparison with parity discipline, returns a Pareto front |
-| **manual** | `/h-decide` | Bind a DecisionRecord (E.9 DRR). Cannot auto-fire — Transformer Mandate. |
-| **manual** | `/h-commission` | Create a WorkCommission (bounded execution authority). Cannot auto-fire. |
-| auto | `/h-verify` | Post-implementation check that a decision still holds |
-| auto | `/h-status` | Read-only cockpit of decisions, problems, refresh-due artifacts, with explicit drill-down calls |
-| auto | `/h-spec` | Primary spec lifecycle surface — status, draft/clarify, "write this into specs", approve/rebaseline/reopen gates |
-| auto | `/h-onboard` | Bootstrap/compatibility entry for a project without `.haft/` or without ready SpecSections |
-| auto | `/h-spec-cover` | Coverage check — uncovered files in modules with decisions |
-| auto | `/h-note` | Micro-decision with rationale, lighter than a DRR |
-| auto | `/h-reason` | Umbrella — full FPF reasoning palette in one entry. Also the fallback for ambiguous "let's think about X" signals. |
+| auto | `/h-reason` | Ambiguous FPF-aware reasoning; source-first umbrella |
+| auto | `/h-frame` | The problem itself is under-articulated |
+| auto | `/h-diagnose` | A concrete failure has rival causes |
+| auto | `/h-explore` | Distinct candidate approaches are needed |
+| auto | `/h-compare` | Existing candidates need a fair comparison |
+| **manual** | `/h-decide` | The operator binds a bounded choice |
+| **manual** | `/h-commission` | The operator grants bounded execution authority |
+| auto | `/h-verify` | A recorded claim or decision needs evidence against reality |
+| auto | `/h-status` | Live state, drift, coverage, or readiness is current |
+| auto | `/h-spec` | A spec carrier or lifecycle question is current |
+| auto | `/h-onboard` | Haft/spec bootstrap is current |
+| auto | `/h-note` | The operator asks to save a non-binding fact |
 
-Authority boundary for manual gates: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts. If the kernel returns `operator_confirmation_required`, use the matching manual skill path instead of treating prompt text as approval.
+Completion of one skill does not imply another must follow. A specialized
+skill may be invoked directly. Local ordered procedures inside a skill are
+MethodDescriptions for that capability, not the order of project work.
 
-`h-abduct`, `h-boundary-unpack`, `h-semio-review` are **internal subroutines** —
-invoked from other skills, not user-facing. Do not select them directly.
+Internal routines such as abductive rival generation, L/A/D/E boundary
+unpacking, and semantic fanout review remain inside the relevant public skill;
+they are not separate public entries.
 
-## PatternUse Gateway
+There is no public `h-plan` phase. When composing a plan is current, `h-reason`
+inspects the direct WorkPlan source and returns an ordinary `U.WorkPlan`-shaped
+result conversationally. WorkPlan, performed Work, and manual execution
+authority through a WorkCommission remain distinct.
 
-Before substantive reasoning or work-shaping, call
-`mcp__haft__haft_query(action="pattern_use", mode="compact", query="<operator concern>")`.
-Skip only for mechanical/status/exact-lookup work where no FPF pattern choice is
-material. If `should_use_pattern=true` and the next step needs detail, request
-`mode="full"` and carry the returned output shape, boundary, evidence need, and
-blocked stronger use.
+## Authority and evidence
 
-Do not inline the FPF catalog in host or skill carriers. The kernel/index owns
-pattern retrieval. PatternUse is advisory and read-only: it is not approval,
-not evidence, not a DecisionRecord, not a WorkCommission, not MethodPack, and
-not a gate.
+- `/h-decide` and `/h-commission` are manual-only.
+- Never invoke `haft commission create*` from ordinary model reasoning, a
+  profile-applicability cue, or a failed/inapplicable MethodPack pull. The CLI
+  creation path is valid only inside a current explicit `/h-commission`
+  invocation.
+- A recommendation is not a choice, gate, evidence result, or authorization.
+- A plan coordinates intended Work; it does not perform Work.
+- A green status, coverage percentage, retrieval score, or dashboard tile is
+  an orientation cue, not the project goal or proof.
+- Pair every artifact ID with a title or one-line claim in operator-facing
+  text.
+- Do not commit unless the operator explicitly asks.
 
-## Quick Decision Framework (inline, for small reversible choices)
+## Specs and coverage
 
-For small decisions that don't need a persistent DRR, use this inline format
-**in the conversation only**:
+Use `/h-spec` for typed spec lifecycle and carrier edits. Use `/h-status` for
+read-only module decision coverage and bounded exact `affected_files` link gaps
+only when the derived code index is current. A missing exact link is not proof
+that a file is undocumented or unconstrained. Treat `.haft/specs/*.md` as carriers;
+the kernel projection and human gates govern lifecycle state.
 
-```
-DECISION: [What we're deciding]
-CONTEXT: [Why now, what triggered this]
+When a governing FPF source changes, `/h-spec` recovers the exact current
+pattern and classifies its semantic fanout before editing. Keep FPF source
+compatibility, implementation evidence, and SpecSection baseline currentness
+as separate results; green carrier or semantic-review output alone is not
+proof of compatibility with the newer source.
 
-OPTIONS:
-1. [Option A]
-   + [Pros]
-   - [Cons]
-2. [Option B]
-   + [Pros]
-   - [Cons]
+Do not silently move team, agent, release, or evidence-production policy into
+a SoftwareSystemSpec. Do not attribute Haft's local project-system carrier
+names to FPF A.1 without recovering the actual FPF holon/system relations.
 
-WEAKEST LINK: [What breaks first in each option?]
-REVERSIBILITY: [Can we undo in 2 weeks? 2 months? Never?]
-RECOMMENDATION: [Which + why, or "need your input on X"]
-```
+## Code work
 
-If reversibility ≥ months or the choice affects security/public-API/data —
-this is **not** quick-mode. Use `/h-frame` → `/h-explore` → `/h-compare` →
-manual `/h-decide` instead.
+For non-trivial code work, the internal SWE MethodPack may supply task-local
+method guidance through `haft_method(action="pull", ...)`. This is a local code
+work method, not a public reasoning phase or FPF navigation authority.
 
-## Communication style
+An underdetermined or non-applicable profile returns no MethodRun and does not
+block already-authorized Work. Continue without a MethodRun; never request
+profile admission or create/broaden a WorkCommission merely to compensate.
 
-**Be a peer engineer, not a cheerleader:**
+Keep the `pull_id` and close the run with changed files, gate results, and
+verification evidence before claiming completion. Mechanical edits may request
+low or no ceremony. Hard gates need evidence or an explicit operator-approved
+waiver; soft guidance does not.
 
-- Skip validation theater ("you're absolutely right", "excellent point")
-- Be direct and technical — if something's wrong, say it
-- Use dry, technical humor when appropriate
-- Talk like you're pairing with a staff engineer, not pitching to a VP
-- Challenge bad ideas respectfully; disagreement is valuable
-- Precision over politeness; technical accuracy is respect
-- No emoji unless the user uses them first
+Use the fused code graph conditionally. For area or flow orientation without an
+exact symbol, use `explore` with a concern query and treat candidate order as
+advisory. Before a non-mechanical edit where recorded governance may be
+material, use `code_context` or `impact` on the actual target. Returned
+reasoning context is a relevance surface: rank, file/module proximity, and a
+displayed invariant are not by themselves proof of exact active authority.
+Inspect scope, status, coverage, and limiting reasons, then use the exact
+`governing_set` or artifact route before relying on a governing claim. An empty
+caller list or incomplete traversal is not a safety claim. Purely mechanical
+work may record `not_applicable`. Code-graph and structured-memory orientation
+are separate; neither substitutes for the other.
 
-**Calibration phrases (use these, avoid alternatives):**
+## Communication
 
-| USE | AVOID |
-|---|---|
-| "This won't work because..." | "Great idea, but..." |
-| "The issue is..." | "I think maybe..." |
-| "No." | "That's an interesting approach, however..." |
-| "I don't know" | "I'm not entirely sure but perhaps..." |
-| "This is overengineered" | "This is quite comprehensive" |
+Be direct. State uncertainty, weakest links, blocked stronger claims, and
+return conditions. Explain one readable traversal when useful, but label it as
+an explanation and keep alternative continuations visible.
 
-## Thinking principles
-
-**Separation of concerns:** What's Core (pure logic, transformations)? What's
-Shell (I/O, external services, side effects)? Are they mixed? They shouldn't
-be.
-
-**Weakest link analysis:** What breaks first in this design? System reliability
-≤ min(component reliabilities).
-
-**Explicit over hidden:** Are failure modes visible or buried? Can this be
-tested without mocking half the world?
-
-**Reversibility check:** Can we undo this in 2 weeks? What's the cost of being
-wrong? Are we painting ourselves into a corner?
-
-## MethodPack for code work
-
-Haft init installs the built-in SWE MethodPack carriers under
-`.haft/methods/swe-core`. The catalog becomes task-local only through the
-kernel; do not freehand generic engineering advice when a method run is needed.
-
-Before non-trivial code edits, call `haft_method(action="pull", ...)` with the
-operator task, `declared_task_kind`, `change_intent`, `intended_files`, and
-known `risk_signals`. Non-trivial means feature, bugfix/debug, refactor,
-external integration, governed files, cross-module edits, behavior changes, or
-failing tests.
-
-Mechanical edits (formatting, rename-only, comment-only, generated metadata)
-should request `ceremony_request="low"` or `"none"` and avoid architecture
-gates. Do not manufacture ceremony for work that only needs ordinary local
-verification.
-
-Keep the returned `pull_id`. If context compacts before close, recover with
-`haft_method(action="status")` or `haft_method(action="show", pull_id=...)`.
-
-Before claiming completion, call `haft_method(action="close", pull_id=...)`
-with changed files, gate results, verification evidence, and any explicit
-waivers. Derive changed files, commands, test output, and governed-decision
-intersections from the worktree and traces first; ask the operator only for
-irreducible judgment such as waivers, ambiguous authority, or acceptance of
-residual risk. Hard gates require evidence or an explicit waiver reason. Soft
-gates are guidance; they do not require a waiver.
-
-## Critical reminders
-
-1. **Description ≠ Work.** The most important rule (see top of this section).
-2. **No commits without explicit permission.** Only commit when the operator
-   asks.
-3. **Transformer Mandate.** Generate options; the human decides. Do not make
-   architectural choices autonomously.
-4. **Actually do work.** When you say "I will do X", DO X — don't just describe
-   it.
-5. **Test contracts, not implementation.** Test behavior through public
-   interfaces.
-6. **Functional core, imperative shell.** Pure core. Side effects only at the
-   boundary.
-7. **No silent failures.** Empty catch blocks are bugs.
-8. **Be direct.** "No" is a complete sentence. Disagree when you should.
-9. **Re-ground identifiers in operator-facing text (FPF A.7 Strict Distinction).**
-   Pair every artifact ID (`V1`, `sol-X`, `dec-X`, `prob-X`) with its
-   human-readable title or one-line claim. Bare IDs accumulate cognitive
-   debt across long sessions — what was obvious 30 minutes ago is opaque
-   when the operator returns. Use `V3 (drift surfacing in /h-status)
-   dominates V1 (plain coverage list)` not bare `V3 dominates V1`. Keep
-   IDs in the text — they are needed for traceability and follow-up
-   kernel calls — but never leave them standalone. Object ≠ Carrier.
-10. **Maintenance discipline (FPF B.3.4 Evidence Decay).** When a kernel
-    response includes `Refresh reminder: N days since last stale scan`
-    and N > 30 — or no scan is visible in the current session — the
-    agent calls `haft_refresh(action="scan")` BEFORE answering the
-    operator, not after. Same for drift detected on files touched
-    in-session: re-baseline via `haft_decision(action="baseline", ...)`
-    or surface the drift inline. Reasoning on a stale graph is the
-    same anti-pattern as reasoning on stale code. Surfacing the
-    reminder is the kernel's job; acting on it is the agent's job;
-    doing nothing is the failure mode this rule exists to fix.
-
-## FPF Glossary
-
-**R_eff (Effective Reliability):** Computed trust score in `[0, 1]`.
-`R_eff = min(evidence_scores)` with CL penalties. Never average — weakest-link
-principle.
-
-**CL (Congruence Level):** How well evidence transfers across contexts:
-- CL3: same context (internal test) — no penalty
-- CL2: similar context (related project) — 0.1 penalty
-- CL1: different context (external docs) — 0.4 penalty
-- CL0: opposed context — 0.9 penalty
-
-**Evidence decay:** Evidence has `valid_until`. Expired evidence scores 0.1
-(weak, not absent). Graduated epistemic debt sorted by severity.
-
-**DRR (Decision Record):** FPF E.9 four-component structure: Problem Frame,
-Decision/Contract, Rationale, Consequences. Created only via `/h-decide`.
-
-**Indicator roles:** Each comparison dimension tagged as:
-- `constraint` — hard limit, must satisfy
-- `target` — what you're optimizing
-- `observation` — watch but don't optimize (Anti-Goodhart)
-
-**Transformer Mandate:** Systems cannot transform themselves. Humans decide;
-agents document. Autonomous architectural decisions = protocol violation.
-
-**State location:** `.haft/` directory (markdown projections, git-tracked).
-Database in `~/.haft/projects/<id>/`.
+Description is not Work. Plan is not reality. Evidence is not confidence
+prose. When you say you performed an action, provide the resulting evidence.
 <!-- haft:end -->

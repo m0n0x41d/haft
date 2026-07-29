@@ -10,47 +10,141 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
-// NavStrip renders the nav state as a compact text block.
-func NavStrip(state artifact.NavState) string {
+// ProjectStateStrip renders independent project-state facets. It does not
+// derive a phase, terminal state, or global next action.
+func ProjectStateStrip(state artifact.ProjectStateView) string {
 	var sb strings.Builder
 
-	sb.WriteString("\n── Haft ───────────────────────────\n")
+	sb.WriteString("\n── Haft project state ─────────────\n")
 
 	if state.Context != "" {
 		sb.WriteString(fmt.Sprintf("Context: %s\n", state.Context))
 	}
-	if state.Mode != "" {
-		sb.WriteString(fmt.Sprintf("Mode: %s\n", state.Mode))
-	}
 
-	sb.WriteString(fmt.Sprintf("Status: %s\n", state.DerivedStatus))
-
-	if state.ProblemTitle != "" {
-		sb.WriteString(fmt.Sprintf("Problem: %s", state.ProblemTitle))
-		if state.ProblemStatus != "" {
-			sb.WriteString(fmt.Sprintf(" [%s]", state.ProblemStatus))
-		}
-		sb.WriteString("\n")
-	}
-	if state.PortfolioInfo != "" {
-		sb.WriteString(fmt.Sprintf("Portfolio: %s\n", state.PortfolioInfo))
-	}
-	if state.DecisionInfo != "" {
-		sb.WriteString(fmt.Sprintf("Decision: %s\n", state.DecisionInfo))
-	}
+	writeProjectArtifactFacet(&sb, "Open problems", state.Problems.Open)
+	writeProjectOptionFacet(&sb, state.Options.Sets)
+	writeProjectArtifactFacet(&sb, "Active decisions", state.Decisions.Active)
+	writeProjectWorkFacet(&sb, state.Work.Active)
 
 	if state.StaleCount > 0 {
-		sb.WriteString(fmt.Sprintf("Stale: %d decision(s) need refresh\n", state.StaleCount))
+		sb.WriteString(fmt.Sprintf("Evidence pressure: %d decision(s) need refresh\n", state.StaleCount))
 	}
-
-	if state.NextAction != "" {
-		sb.WriteString(fmt.Sprintf("Available: %s\n", state.NextAction))
-		sb.WriteString("↑ Present to user — do not auto-execute.\n")
+	if state.DriftKnown && state.DriftCount > 0 {
+		sb.WriteString(fmt.Sprintf("Drift pressure: %d current finding(s)\n", state.DriftCount))
+	}
+	if state.SpecHealth.Known {
+		sb.WriteString(fmt.Sprintf("Spec health: %d current finding(s)\n", state.SpecHealth.FindingCount))
+	}
+	if projectStateViewEmpty(state) {
+		sb.WriteString("Current facets: none recorded\n")
 	}
 
 	sb.WriteString("───────────────────────────────────\n")
 
 	return sb.String()
+}
+
+// NavStrip preserves the existing shell call site while rendering the new
+// coexistence view. There is no navigation instruction in the returned text.
+func NavStrip(state artifact.ProjectStateView) string {
+	return ProjectStateStrip(state)
+}
+
+func writeProjectArtifactFacet(
+	sb *strings.Builder,
+	label string,
+	items []artifact.ProjectArtifactState,
+) {
+	if len(items) == 0 {
+		return
+	}
+
+	summary := summarizeProjectArtifacts(items)
+	sb.WriteString(fmt.Sprintf("%s: %d — %s\n", label, len(items), summary))
+}
+
+func summarizeProjectArtifacts(items []artifact.ProjectArtifactState) string {
+	labels := make([]string, 0, min(len(items), 2))
+	for index, item := range items {
+		if index == 2 {
+			break
+		}
+
+		label := formatArtifactLabel(item.Title, item.ID)
+		labels = append(labels, label)
+	}
+
+	return summarizeProjectFacetLabels(labels, len(items))
+}
+
+func writeProjectOptionFacet(
+	sb *strings.Builder,
+	items []artifact.ProjectOptionSetState,
+) {
+	if len(items) == 0 {
+		return
+	}
+
+	labels := make([]string, 0, min(len(items), 2))
+	for index, item := range items {
+		if index == 2 {
+			break
+		}
+
+		comparison := "comparison not recorded"
+		if item.ComparisonRecorded {
+			comparison = "comparison recorded"
+		}
+		artifactLabel := formatArtifactLabel(item.Artifact.Title, item.Artifact.ID)
+		label := fmt.Sprintf("%s [%s]", artifactLabel, comparison)
+		labels = append(labels, label)
+	}
+
+	summary := summarizeProjectFacetLabels(labels, len(items))
+	sb.WriteString(fmt.Sprintf("Option sets: %d — %s\n", len(items), summary))
+}
+
+func writeProjectWorkFacet(
+	sb *strings.Builder,
+	items []artifact.WorkCommissionStatus,
+) {
+	if len(items) == 0 {
+		return
+	}
+
+	labels := make([]string, 0, min(len(items), 2))
+	for index, item := range items {
+		if index == 2 {
+			break
+		}
+
+		artifactLabel := formatArtifactLabel(item.Title, item.ID)
+		label := fmt.Sprintf("%s [%s]", artifactLabel, item.State)
+		labels = append(labels, label)
+	}
+
+	summary := summarizeProjectFacetLabels(labels, len(items))
+	sb.WriteString(fmt.Sprintf("Active work: %d — %s\n", len(items), summary))
+}
+
+func summarizeProjectFacetLabels(labels []string, total int) string {
+	summary := strings.Join(labels, "; ")
+	remaining := total - len(labels)
+	if remaining <= 0 {
+		return summary
+	}
+
+	return fmt.Sprintf("%s; +%d more", summary, remaining)
+}
+
+func projectStateViewEmpty(state artifact.ProjectStateView) bool {
+	return len(state.Problems.Open) == 0 &&
+		len(state.Options.Sets) == 0 &&
+		len(state.Decisions.Active) == 0 &&
+		len(state.Work.Active) == 0 &&
+		state.StaleCount == 0 &&
+		state.DriftCount == 0 &&
+		state.SpecHealth.FindingCount == 0
 }
 
 // NoteResponse builds the MCP tool response for a note.
@@ -1089,9 +1183,16 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 		len(data.CommissionAttention) > 0
 
 	if !hasAttention {
-		sb.WriteString("- No operator-blocking refresh, drift, or commission items in this status payload.\n\n")
+		sb.WriteString("- No active refresh, drift, binding, reconciliation, or commission attention items in this status payload.\n\n")
 		return
 	}
+
+	sb.WriteString(
+		"- **Interruption boundary**: attention below is not a project-wide gate. " +
+			"Continue unrelated already-authorized Work; interrupt only an affected " +
+			"binding or authority mutation, an explicit human lifecycle gate, or a " +
+			"current use that relies on unresolved contradictory binding content.\n",
+	)
 
 	const staleCap = 2
 	if len(data.StaleItems) > 0 {
@@ -1150,7 +1251,7 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	}
 
 	if reconciliationNeedsAttention {
-		sb.WriteString("- **Decision reconciliation needs operator selection**: ")
+		sb.WriteString("- **Scoped decision reconciliation contains an operator-required selection**: ")
 		sb.WriteString(cockpitReconciliationActionSummary(data.ReconciliationCues))
 		sb.WriteString("\n")
 	}

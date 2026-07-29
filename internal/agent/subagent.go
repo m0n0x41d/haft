@@ -44,18 +44,13 @@ func ValidateSpawnDepth(parentID string) error {
 
 // BuiltinSubagents returns the built-in subagent definitions.
 func BuiltinSubagents() map[string]SubagentDef {
-	defs := map[string]SubagentDef{
+	return map[string]SubagentDef{
 		"explore": ExploreSubagent(),
 		"verify":  VerifySubagent(),
 		"plan":    PlanSubagent(),
 		"title":   TitleSubagent(),
 		"compact": CompactSubagent(),
 	}
-	// Add lemniscate phase agents
-	for name, def := range LemniscateAgents() {
-		defs[name] = def
-	}
-	return defs
 }
 
 // ExploreSubagent returns the read-only codebase investigation subagent.
@@ -86,7 +81,7 @@ func TitleSubagent() SubagentDef {
 	return SubagentDef{
 		Name:         "title",
 		Description:  "Generate a short session title",
-		SystemPrompt: "", // uses BuildTitlePrompt
+		SystemPrompt: "",
 		AllowedTools: nil,
 		MaxSteps:     1,
 		Hidden:       true,
@@ -199,15 +194,14 @@ func SubagentDefByName(name string) (SubagentDef, bool) {
 	return def, ok
 }
 
-// VisibleSubagents returns only non-hidden subagent definitions.
+// VisibleSubagents returns independent capabilities available to the parent
+// agent. Their order is presentation-only and does not imply a workflow.
 // Used to build the spawn_agent tool schema (LLM shouldn't see hidden agents).
 // Pure function.
 func VisibleSubagents() []SubagentDef {
-	var visible []SubagentDef
-	for _, def := range BuiltinSubagents() {
-		if !def.Hidden {
-			visible = append(visible, def)
-		}
+	return []SubagentDef{
+		ExploreSubagent(),
+		VerifySubagent(),
+		PlanSubagent(),
 	}
-	return visible
 }

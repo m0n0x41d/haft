@@ -12,6 +12,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
 func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
@@ -626,49 +627,25 @@ func TestHandleHaftCommission_CompleteOrBlockRecordsProjectionDebtForExternalReq
 }
 
 func TestCompleteExternalWorkCommission_CompletesPreflightingCommission(t *testing.T) {
-	store := setupCLIArtifactStore(t)
+	projectRoot := t.TempDir()
+	harness := profileadmissionfixture.New(t, projectRoot)
+	harness.AdmitNonSoftwareRevision(t, "commission-external-completion")
+	store := artifact.NewStore(harness.Database())
 	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	decision := createCommissionDecisionFixture(t, ctx, store, haftDir, "External lifecycle", "internal/cli/commission.go")
-	createdResult, err := handleHaftCommission(ctx, store, map[string]any{
-		"action":        "create_from_decision",
-		"decision_ref":  decision.Meta.ID,
-		"repo_ref":      "local:haft",
-		"base_sha":      "base-r1",
-		"target_branch": "dev",
-		"valid_until":   "2099-01-01T00:00:00Z",
-		"spec_readiness_override": map[string]any{
-			"kind":              "tactical",
-			"out_of_spec":       true,
-			"project_readiness": "needs_onboard",
-			"reason":            "unit test fixture without project spec carriers",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	created := map[string]map[string]any{}
-	if err := json.Unmarshal([]byte(createdResult), &created); err != nil {
-		t.Fatal(err)
-	}
-	commissionID := created["commission"]["id"].(string)
-
-	_, err = handleHaftCommission(ctx, store, map[string]any{
-		"action":        "claim_for_preflight",
-		"commission_id": commissionID,
-		"runner_id":     "external:test",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	commissionID := createProfileAwareClaimedCommission(
+		t,
+		ctx,
+		store,
+		projectRoot,
+	)
 
 	result, err := completeExternalWorkCommission(ctx, store, map[string]any{
 		"commission_id": commissionID,
-		"runner_id":     "external:test",
+		"runner_id":     "profile-aware-test",
 		"event":         "external_runtime_terminal",
 		"verdict":       "completed",
 		"reason":        "external_runtime_succeeded_diff_pending_reviewer",
+		"project_root":  projectRoot,
 		"payload": map[string]any{
 			"final_message_path": "logs/wc.last-message.txt",
 		},
@@ -1089,7 +1066,7 @@ func TestHandleHaftCommission_CreateFromDecisionReadsCurrentSQLEditionsBeforeCar
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	sqlStore := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	if err := sqlStore.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
@@ -1152,6 +1129,71 @@ func TestHandleHaftCommission_CreateFromDecisionReadsCurrentSQLEditionsBeforeCar
 	}
 	if _, exists := revisionHashes["TS.sync.001"]; exists {
 		t.Fatalf("carrier section leaked into SQL-first snapshot: %#v", revisionHashes)
+	}
+}
+
+func TestHandleHaftCommission_CreateFromDirectDecisionSnapshotsInlineProblemBasis(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	statement := "Choose the smallest source-native FPF Query carrier that remains parseable."
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		ProblemStatement:    statement,
+		SelectedTitle:       "Use a closed query-result union",
+		WhySelected:         "Consumers can distinguish exact hits, candidate sets, and abstentions without prose parsing.",
+		SelectionPolicy:     "Prefer the smallest source-faithful public contract.",
+		CounterArgument:     "A ProblemCard would provide a reusable problem identity.",
+		WeakestLink:         "Callers that assumed appended prose must migrate.",
+		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Require a ProblemCard", Reason: "This bounded choice has no receiving use for a separate problem artifact."}},
+		Rollback:            &artifact.RollbackSpec{Triggers: []string{"A supported client cannot parse the result union."}},
+		AffectedFiles:       []string{"internal/fpf/source_query.go"},
+		ValidUntil:          "2099-01-01T00:00:00Z",
+		FirstModuleCoverage: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":          "create_from_decision",
+		"decision_ref":    decision.Meta.ID,
+		"repo_ref":        "local:haft",
+		"base_sha":        "base-direct-r1",
+		"target_branch":   "dev",
+		"allowed_actions": []any{"edit_files", "run_tests"},
+		"valid_until":     "2099-01-01T00:00:00Z",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "isolated direct-decision fixture without spec carriers",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+	commission := created["commission"]
+	if _, exists := commission["problem_card_ref"]; exists {
+		t.Fatalf("direct decision commission invented problem_card_ref: %#v", commission["problem_card_ref"])
+	}
+	basis, ok := commission["problem_basis"].(map[string]any)
+	if !ok {
+		t.Fatalf("problem_basis = %#v, want object", commission["problem_basis"])
+	}
+	if basis["kind"] != "inline_statement" || basis["problem_statement"] != statement {
+		t.Fatalf("problem_basis = %#v, want inline statement snapshot", basis)
+	}
+	if !hexLike(basis["revision_hash"]) {
+		t.Fatalf("problem basis revision_hash = %#v, want sha256 hex", basis["revision_hash"])
+	}
+	if issues, err := problemFreshnessIssues(ctx, store, commission); err != nil || len(issues) != 0 {
+		t.Fatalf("inline problem basis freshness = %#v / %v, want current", issues, err)
 	}
 }
 

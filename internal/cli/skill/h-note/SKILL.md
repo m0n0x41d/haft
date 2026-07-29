@@ -1,87 +1,87 @@
 ---
 name: h-note
 description: |
-  Records a fact, observation, or small non-binding rationale into the haft artifact graph — lighter than a full DecisionRecord but persisted so future sessions and conflict detection can surface it. Make sure to use this skill whenever the user says "remember that", "FYI for later", "note that", "side note", "for the record", "worth noting", "TIL", "important caveat", "save this thought" — or whenever a project fact belongs in memory but does not justify the full DRR ceremony. The kernel rejects content-free notes. For binding choices use h-decide (manual-only). For framing problems use h-frame.
+  Persist an explicit operator-requested fact, observation, caveat, or small non-binding rationale in Haft project memory. Use for "remember this", "запиши", "note for later", or when a named receiving use needs a lightweight addressable fact. Do not auto-persist ordinary reasoning. A note is not a choice, ProblemCard, evidence verdict, approval, or WorkPlan.
 when_to_use: |
-  Fact, observation, or small non-binding rationale worth persisting across sessions, but lighter than a binding DecisionRecord.
-argument-hint: "[note text — what + why]"
-allowed-tools: Bash mcp__haft__haft_note mcp__haft__haft_problem mcp__haft__haft_query
+  The operator explicitly asks to save a non-binding project fact, or identifies a receiving use that needs it to remain addressable.
+argument-hint: "[fact or observation to save]"
+allowed-tools: Bash mcp__haft__haft_entity mcp__haft__haft_onboard mcp__haft__haft_note mcp__haft__haft_query
 ---
 
-# h-note — Record a note
+# h-note — Save a lightweight project-memory item
 
-You are recording a Note via `mcp__haft__haft_note(...)`. Notes are lightweight
-fact/observation carriers in the graph — they do not have the DRR ceremony,
-and they are not binding choices. The kernel rejects content-free notes.
+Confirm that the payload contains at least one atomic observation or a
+non-binding rationale. Preserve source and uncertainty when known. If the text
+binds a choice, use manual `h-decide`; if it frames an unresolved problem, use
+`h-frame` only when problem shaping is current.
 
-## Compact interface discovery
+## Conditional project-memory orientation
 
-If you need the exact compact contract, run:
+The explicit save request authorizes persistence of this note, but it does not
+make an EntityOfConcern identity safe to guess. When the note is
+context-heavy or multi-session and that identity is not already current,
+resolve it with `haft_query(action="memory",
+memory_request={"mode":"resolve","contract_version":"haft.memory.v1",
+"basis":{"kind":"project_current"},"query":"...","max_candidates":5})`, select
+the exact candidate by current use rather than rank, and hydrate the smallest
+relevant neighborhood through the closed `memory_request` neighborhood branch
+advertised by the tool schema with
+`projection_profile_ref="agent_orientation.v2"`.
 
-```bash
-haft interface note.record --json
+Inspect `result_kind` first. If the note needs a stable concern and resolve
+returns `known_absent`, the explicit save request is sufficient persistence
+provenance for the task-level entity route:
+
+```text
+mcp__haft__haft_entity(
+  action="establish",
+  entity_id="<stable proposed id>",
+  label="<readable label>",
+  bounded_context_ref="<exact bounded context>",
+  aliases=["<known alias, in canonical order>"],
+  persistence_reason="explicit_operator_request",
+  request_provenance_ref="<this save request>",
+  idempotency_key="<stable key for this exact request>"
+)
 ```
 
-Use that as discovery; do not paste long MCP schemas or CLI help into the
-session. For large payloads prefer the input-file path:
+The tool owns alias-conflict checking, validation, admission, and exact
+post-commit resolution. Use only the returned canonical `entity_ref`.
+`identity_conflict`, `alias_conflict`, or `idempotency_conflict` must remain
+visible; do not guess. Route `onboarding_required` or
+`enablement_choice_required` through `mcp__haft__haft_onboard(action="status")`.
+On `restart_required`, reconnect and retry the unchanged request and key.
 
-```bash
-haft artifact create note.record --input-file <input.json> --json
+If the note does not need a stable concern, or setup is deferred, save the note
+without invented concern fields. Missing setup and explicit abstention are
+non-blocking. This read does not replace code-graph preflight before a later
+code edit. The dedicated `haft_note` surface performs only the authorized note
+persistence and returns its provenance.
+
+Persist through the dedicated note surface:
+
+```text
+mcp__haft__haft_note(
+  title="<short title>",
+  observations=["<atomic fact>"],
+  rationale="<why it matters, when current>",
+  anchors=[{"type":"relates_to","ref":"<artifact ref>"}],
+  entity_ref={
+    "ref_kind_id":"U.EntityRef",
+    "reference_id":"<exact current EntityOfConcern>"
+  },
+  bounded_context_ref="<exact current bounded context>"
+)
 ```
 
-`mcp__haft__haft_note(...)` remains the compatible fallback when the host
-cannot write a local input file.
+Supply the concern fields only when their exact identity is known. A committed
+typed projection returns an exact `record_reference` with
+`ref_kind_id="Haft.ProjectRecordRef"`; preserve that value for later typed
+relations instead of deriving `record:<note-id>`. If the concern basis is
+absent, the note may remain a useful legacy carrier while typed projection is
+`underdetermined`.
 
-## Step 1 — Confirm intent
-
-The operator said something note-worthy. Before persisting:
-- Verify the note has substantive content: a fact OR an observation OR non-binding rationale
-- Reject: "FYI" alone, "we should remember this" with no payload
-- Accept: "Observation: tests run 30s slower on M1 baseline since dependency update"
-- Reroute binding choices ("we choose X over Y") to h-decide; do not store them as notes
-
-## Step 2 — Capture rationale explicitly
-
-Every Note must answer at least one of:
-- WHAT was observed (atomic facts in `observations`)
-- WHERE the evidence came from (`evidence`)
-- WHY it matters (`rationale`, optional for bare facts)
-
-## Step 3 — Persist
-
-Use the dedicated note-write tool:
-
-```json
-{
-  "title": "<short title>",
-  "observations": ["<atomic fact>"],
-  "rationale": "<optional reason this fact matters>",
-  "anchors": [{"type": "relates_to", "ref": "<dec-/prob-/sol-/note-ref>"}]
-}
-```
-
-Then either run `haft artifact create note.record --input-file <input.json> --json`
-or call `mcp__haft__haft_note(...)` with that payload. Do not emulate notes by
-creating tactical ProblemCards.
-
-## Step 4 — Confirm to operator
-
-Surface:
-- The note ID (the recorded artifact)
-- A reminder that future `/h-status` or related-query lookups will surface this note when relevant context arises
-
-## What NOT to do
-
-- DO NOT persist notes that lack rationale. Force the operator to articulate WHY, or refuse and ask for the rationale.
-- DO NOT use h-note for binding choices — those go through `/h-decide` (manual-only).
-- DO NOT use h-note for full problem framing — that's `/h-frame`.
-- DO NOT silently expand a note into a DecisionRecord. If the operator's intent is bigger than a note, recommend `/h-decide` and let them invoke it explicitly.
-- DO NOT capture meta-notes about agent behavior ("agent helped me with X") — those are session telemetry, not project knowledge.
-- DO NOT emulate notes with `haft_problem(action="frame")`; notes have a dedicated carrier.
-
-## FPF spec references
-
-- DEC-01 — Decision record structure (notes are the lightweight cousin — same problem-frame + decision + rationale + consequences minimum, just compressed)
-- E.9 — Design-Rationale Record (full DRR; notes are sub-DRR but still rationale-bearing)
-
-Look up via `mcp__haft__haft_query(action="fpf", query="DEC-01")`.
+Do not emulate notes with ProblemCards. Do not convert a conversational aside
+into durable memory unless the operator asked or named a receiving reliance.
+After saving, return the note ID paired with its title, the exact
+`record_reference` when present, and state that it is non-binding.

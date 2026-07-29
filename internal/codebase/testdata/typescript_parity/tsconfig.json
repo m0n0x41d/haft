@@ -1,0 +1,10 @@
+{
+  "extends": "./configs/base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/*"],
+      "@multi/*": ["missing/*", "src/*"]
+    }
+  }
+}

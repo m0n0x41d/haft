@@ -76,11 +76,39 @@ type SpecSectionEditionStore interface {
 }
 
 func ProjectSpecificationSetFromEditions(editions []SpecSectionEdition) (project.ProjectSpecificationSet, error) {
+	documents, err := specDocumentInputsFromEditions(editions)
+	if err != nil {
+		return project.ProjectSpecificationSet{}, err
+	}
+	return project.ProjectSpecificationSetFromDocuments(documents), nil
+}
+
+// ProjectSpecificationSetFromEditionsForScope applies the same central
+// applicability projection used by carrier reads before parsing SQL editions.
+// SQL-first is a source-selection rule; it does not bypass profile
+// applicability.
+func ProjectSpecificationSetFromEditionsForScope(
+	editions []SpecSectionEdition,
+	applicability project.ProjectSpecificationSetApplicability,
+) (project.ProjectSpecificationSet, error) {
+	documents, err := specDocumentInputsFromEditions(editions)
+	if err != nil {
+		return project.ProjectSpecificationSet{}, err
+	}
+	return project.ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+}
+
+func specDocumentInputsFromEditions(
+	editions []SpecSectionEdition,
+) ([]project.SpecDocumentInput, error) {
 	documents := make([]project.SpecDocumentInput, 0, len(editions))
 	for _, edition := range editions {
 		publication, err := RenderSpecSectionEditionMarkdown(edition)
 		if err != nil {
-			return project.ProjectSpecificationSet{}, err
+			return nil, err
 		}
 
 		documents = append(documents, project.SpecDocumentInput{
@@ -90,7 +118,7 @@ func ProjectSpecificationSetFromEditions(editions []SpecSectionEdition) (project
 		})
 	}
 
-	return project.ProjectSpecificationSetFromDocuments(documents), nil
+	return documents, nil
 }
 
 func specSectionEditionDocumentKind(section project.SpecSection) string {

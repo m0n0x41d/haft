@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -13,14 +14,12 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
-func TestRunSpecStatusSummaryShowsLifecycleAction(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".haft", "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	restore := enterTestProjectRoot(t, root)
+func TestRunSpecStatusSummaryShowsOneNeutralCueWithoutCanonicalProfile(t *testing.T) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	restoreJSON := stubSpecStatusJSON(t, false)
@@ -36,27 +35,31 @@ func TestRunSpecStatusSummaryShowsLifecycleAction(t *testing.T) {
 
 	got := output.String()
 	for _, want := range []string{
-		"Spec status: needs_action",
-		"Next action: draft",
-		"Carrier:     .haft/specs/target-system.md",
-		"Allowed next steps:",
+		"haft spec status: not evaluated (profile_underdetermined)",
+		"Profile cue:",
+		"Missing basis: current_canonical_profile_admission",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q\n--- got ---\n%s", want, got)
 		}
 	}
+	if strings.Count(got, "Profile cue:") != 1 {
+		t.Fatalf("status emitted repeated profile cues:\n%s", got)
+	}
+	if strings.Contains(got, "software-system") {
+		t.Fatalf("status emitted speculative software pressure:\n%s", got)
+	}
 }
 
-func TestRunSpecNextJSONReturnsLifecycleProjection(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".haft", "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	restore := enterTestProjectRoot(t, root)
+func TestRunSpecNextJSONReturnsOneNeutralCueWithoutCanonicalProfile(t *testing.T) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	restoreJSON := stubSpecNextJSON(t, true)
 	defer restoreJSON()
+	restoreScopeID := stubSpecNextScopeID(t, "")
+	defer restoreScopeID()
 
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -66,20 +69,30 @@ func TestRunSpecNextJSONReturnsLifecycleProjection(t *testing.T) {
 		t.Fatalf("runSpecNext returned error: %v", err)
 	}
 
-	var projection specflow.SpecLifecycleProjection
-	if err := json.Unmarshal(output.Bytes(), &projection); err != nil {
+	var result publicSpecLifecycleResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON: %v\nraw: %s", err, output.String())
 	}
-	if projection.Action != specflow.LifecycleActionDraft {
-		t.Fatalf("Action = %q, want %q", projection.Action, specflow.LifecycleActionDraft)
+	if result.SpecLifecycleProjection != nil {
+		t.Fatalf("underdetermined profile fabricated lifecycle: %#v", result)
 	}
-	if projection.WorkflowIntent.Phase != specflow.PhaseTargetEnvironmentDraft {
-		t.Fatalf("WorkflowIntent.Phase = %q", projection.WorkflowIntent.Phase)
+	if result.ProfileApplicability.Kind !=
+		string(projectSpecificationProfileUnderdetermined) {
+		t.Fatalf(
+			"profile applicability kind = %q",
+			result.ProfileApplicability.Kind,
+		)
+	}
+	if result.ProfileApplicability.Cue == nil ||
+		result.ProfileApplicability.Cue.Code !=
+			string(projectSpecificationProfileUnderdetermined) {
+		t.Fatalf("profile applicability cue = %#v", result.ProfileApplicability.Cue)
 	}
 }
 
-func TestBuildSpecLifecycleProjectionReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+func TestBuildPublicSpecLifecycleReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	root := setupSpecSyncProject(t)
+	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-lifecycle-sql-first")
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
@@ -95,15 +108,12 @@ func TestBuildSpecLifecycleProjectionReadsCurrentSQLEditionsBeforeCarriers(t *te
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
 
-	projection, err := buildSpecLifecycleProjection(root)
-	if err != nil {
-		t.Fatalf("buildSpecLifecycleProjection: %v", err)
-	}
+	projection := buildAutomaticPublicSpecLifecycleProjectionForTest(t, root)
 	if projection.SectionID != "TS.sql.status.001" {
 		t.Fatalf("SectionID = %q, want SQL edition section", projection.SectionID)
 	}
@@ -127,7 +137,7 @@ func TestLoadProjectSpecificationSetSQLFirstPreservesCarrierTermMapEntries(t *te
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -150,7 +160,7 @@ func TestLoadProjectSpecificationSetSQLFirstPreservesCarrierTermMapEntries(t *te
 	t.Fatalf("SQL-first spec set should retain typed term-map document: %#v", specSet.Documents)
 }
 
-func TestCheckProjectSpecificationSetSQLFirstIgnoresStaleSectionCarrierFindings(t *testing.T) {
+func TestLoadProjectSpecificationSetSQLFirstIgnoresStaleSectionCarrierFindings(t *testing.T) {
 	root := setupSpecSyncProject(t)
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
@@ -168,7 +178,7 @@ func TestCheckProjectSpecificationSetSQLFirstIgnoresStaleSectionCarrierFindings(
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -181,10 +191,11 @@ func TestCheckProjectSpecificationSetSQLFirstIgnoresStaleSectionCarrierFindings(
 		"",
 	}, "\n"))
 
-	report, err := checkProjectSpecificationSetSQLFirst(root)
+	specificationSet, err := loadProjectSpecificationSetSQLFirst(root)
 	if err != nil {
-		t.Fatalf("checkProjectSpecificationSetSQLFirst: %v", err)
+		t.Fatalf("loadProjectSpecificationSetSQLFirst: %v", err)
 	}
+	report := project.SpecCheckReportFromSpecificationSet(specificationSet)
 	if report.HasFindings() {
 		t.Fatalf("SQL-first spec check should ignore stale section carrier findings: %#v", report.Findings)
 	}
@@ -196,14 +207,116 @@ func TestCheckProjectSpecificationSetSQLFirstIgnoresStaleSectionCarrierFindings(
 	}
 }
 
-func TestBuildSpecLifecycleProjectionPropagatesBaselineStoreError(t *testing.T) {
+func TestSQLFirstLifecyclePreservesLegacyMigrationBlock(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-lifecycle-legacy-migration")
+	specDir := filepath.Join(root, ".haft", "specs")
+	if err := os.Remove(filepath.Join(specDir, "software-system.md")); err != nil {
+		t.Fatal(err)
+	}
+	writeSpecCheckCLIFile(t, filepath.Join(specDir, "enabling-system.md"), validCLISpecSectionCarrier("ES.architecture.001", "enabling.architecture"))
+
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.migration.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	specSet, err := loadProjectSpecificationSetSQLFirst(root)
+	if err != nil {
+		t.Fatalf("loadProjectSpecificationSetSQLFirst: %v", err)
+	}
+	if !containsSpecFindingCode(specSet.Findings, project.SpecMigrationRequiredFindingCode) {
+		t.Fatalf("findings = %#v, want migration block", specSet.Findings)
+	}
+
+	projection := buildAutomaticPublicSpecLifecycleProjectionForTest(t, root)
+	if projection.Action != specflow.LifecycleActionClarify || projection.Carrier != ".haft/specs/enabling-system.md" {
+		t.Fatalf("projection = %#v", projection)
+	}
+}
+
+func containsSpecFindingCode(findings []project.SpecCheckFinding, code string) bool {
+	for _, finding := range findings {
+		if finding.Code == code {
+			return true
+		}
+	}
+	return false
+}
+
+func TestBuildPublicSpecLifecyclePropagatesCanonicalLedgerOpenError(t *testing.T) {
 	root, _ := newBaselineTestProject(t)
+	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-lifecycle-ledger-error")
 	makeBaselineDBUnopenable(t)
 
-	_, err := buildSpecLifecycleProjection(root)
+	_, err := buildPublicSpecLifecycle(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
 	if err == nil {
-		t.Fatal("buildSpecLifecycleProjection ignored baseline store error")
+		t.Fatal("buildPublicSpecLifecycle ignored canonical ledger open error")
 	}
+}
+
+func admitSoftwareSpecLifecycleTestProfile(
+	t *testing.T,
+	root string,
+	suffix string,
+) {
+	t.Helper()
+	harness := profileadmissionfixture.OpenExisting(t, root)
+	harness.AdmitSoftwareRevisionWithTargetEntity(
+		t,
+		suffix,
+		"entity:"+suffix+"-target",
+	)
+	if err := harness.Close(); err != nil {
+		t.Fatalf("close profile admission fixture: %v", err)
+	}
+}
+
+func buildAutomaticPublicSpecLifecycleProjectionForTest(
+	t *testing.T,
+	root string,
+) specflow.SpecLifecycleProjection {
+	t.Helper()
+	result, err := buildPublicSpecLifecycle(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
+	if err != nil {
+		t.Fatalf("build public spec lifecycle: %v", err)
+	}
+	if result.SpecLifecycleProjection == nil {
+		t.Fatalf(
+			"resolved software profile omitted lifecycle projection: %#v",
+			result.ProfileApplicability,
+		)
+	}
+	if result.ProfileApplicability.Basis == nil {
+		t.Fatalf(
+			"resolved lifecycle omitted canonical profile basis: %#v",
+			result.ProfileApplicability,
+		)
+	}
+	return *result.SpecLifecycleProjection
 }
 
 func stubSpecStatusJSON(t *testing.T, value bool) func() {
@@ -218,4 +331,11 @@ func stubSpecNextJSON(t *testing.T, value bool) func() {
 	prev := specNextJSON
 	specNextJSON = value
 	return func() { specNextJSON = prev }
+}
+
+func stubSpecNextScopeID(t *testing.T, value string) func() {
+	t.Helper()
+	prev := specNextScopeID
+	specNextScopeID = value
+	return func() { specNextScopeID = prev }
 }

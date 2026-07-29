@@ -58,6 +58,10 @@ func InstallPostCommitHook(projectRoot string, command string) (HookInstallResul
 	return result, nil
 }
 
+func PostCommitHookPath(projectRoot string) (string, bool, error) {
+	return resolvePostCommitHookPath(projectRoot)
+}
+
 func resolvePostCommitHookPath(projectRoot string) (string, bool, error) {
 	gitPath := filepath.Join(projectRoot, ".git")
 	defaultHookPath := filepath.Join(gitPath, "hooks", "post-commit")
@@ -116,6 +120,11 @@ func RenderPostCommitHookBlock(command string) string {
 		hookEndMarker,
 		"",
 	}, "\n")
+}
+
+func RenderPostCommitHook(existing string, command string) string {
+	block := RenderPostCommitHookBlock(command)
+	return mergeHookBlock(existing, block)
 }
 
 func mergeHookBlock(existing string, block string) string {

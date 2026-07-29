@@ -1,0 +1,15 @@
+schema_version: haft.project-profile/v1
+profile:
+  kind: declared
+  scopes:
+    - kind: non_software
+      scope_id: imported-model
+      admitted_kind_ref: U.Episteme
+  declaration_record:
+    kind: imported_declaration_record
+    source_ref: carrier:upstream/project-profile.yaml
+    source_digest: sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+    declaration_authority_basis_ref: authority-basis:imported-profile:1
+    scope_payload_digest: sha256:d8900906d34a7566f59e08f3ee304e0353b7b74c08d09d1ebeb61536b40db77b
+    observed_basis_digest: sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
+    carrier_revision: 4

@@ -11,10 +11,11 @@ import (
 )
 
 func TestResolveProjectBindingFromInput_WalksUpAndDerivesDBPath(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
-	if err := createDirectoryStructure(haftDir); err != nil {
-		t.Fatalf("createDirectoryStructure: %v", err)
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatalf("create .haft: %v", err)
 	}
 	cfg, err := project.Create(haftDir, root)
 	if err != nil {
@@ -60,9 +61,10 @@ func TestResolveProjectBindingFromInput_WalksUpAndDerivesDBPath(t *testing.T) {
 }
 
 func TestResolveProjectBindingFromInput_RejectsExpectedProjectIDMismatch(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	intendedRoot := t.TempDir()
 	intendedHaftDir := filepath.Join(intendedRoot, ".haft")
-	if err := createDirectoryStructure(intendedHaftDir); err != nil {
+	if err := os.MkdirAll(intendedHaftDir, 0o755); err != nil {
 		t.Fatalf("create intended .haft: %v", err)
 	}
 	intendedCfg, err := project.Create(intendedHaftDir, intendedRoot)
@@ -72,7 +74,7 @@ func TestResolveProjectBindingFromInput_RejectsExpectedProjectIDMismatch(t *test
 
 	actualRoot := t.TempDir()
 	actualHaftDir := filepath.Join(actualRoot, ".haft")
-	if err := createDirectoryStructure(actualHaftDir); err != nil {
+	if err := os.MkdirAll(actualHaftDir, 0o755); err != nil {
 		t.Fatalf("create actual .haft: %v", err)
 	}
 	actualCfg, err := project.Create(actualHaftDir, actualRoot)
@@ -100,24 +102,39 @@ func TestResolveProjectBindingFromInput_RejectsExpectedProjectIDMismatch(t *test
 	}
 }
 
-func TestProjectEnvForRoot_AddsExpectedProjectIDWhenAvailable(t *testing.T) {
-	root := t.TempDir()
-	haftDir := filepath.Join(root, ".haft")
-	if err := createDirectoryStructure(haftDir); err != nil {
-		t.Fatalf("createDirectoryStructure: %v", err)
-	}
-	cfg, err := project.Create(haftDir, root)
-	if err != nil {
-		t.Fatalf("project.Create: %v", err)
-	}
-
-	env := projectEnvForRoot(root, ".")
+func TestCurrentBoundProjectEnvironmentCarriesExactPortableBinding(
+	t *testing.T,
+) {
+	const projectID = "qnt_c38a6ec1"
+	env := currentBoundProjectEnvironment(".", projectID)
 
 	if env[envProjectRoot] != "." {
 		t.Fatalf("HAFT_PROJECT_ROOT = %q, want .", env[envProjectRoot])
 	}
-	if env[envExpectedProjectID] != cfg.ID {
-		t.Fatalf("HAFT_EXPECTED_PROJECT_ID = %q, want %q", env[envExpectedProjectID], cfg.ID)
+	if env[envExpectedProjectID] != projectID {
+		t.Fatalf(
+			"HAFT_EXPECTED_PROJECT_ID = %q, want %q",
+			env[envExpectedProjectID],
+			projectID,
+		)
+	}
+}
+
+func TestProjectRootInputFromExplicitOrEnvPrefersExplicitRoot(t *testing.T) {
+	explicitRoot := t.TempDir()
+	envRoot := t.TempDir()
+	t.Setenv(envProjectRoot, envRoot)
+
+	input, err := projectRootInputFromExplicitOrEnv(explicitRoot)
+	if err != nil {
+		t.Fatalf("projectRootInputFromExplicitOrEnv: %v", err)
+	}
+
+	if input.Path != explicitRoot {
+		t.Fatalf("Path = %q, want explicit root %q", input.Path, explicitRoot)
+	}
+	if input.Source != projectRootSourceFlag {
+		t.Fatalf("Source = %q, want %q", input.Source, projectRootSourceFlag)
 	}
 }
 

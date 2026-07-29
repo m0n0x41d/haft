@@ -2,18 +2,46 @@
 
 *formerly [quint-code](https://github.com/m0n0x41d/quint-code)*
 
-**FPF governance substrate for AI-assisted software delivery.**
+**Source-native FPF delivery and reliance-bearing project memory for
+AI-assisted software engineering.**
 
-Haft is a local governance layer for AI coding agents. It gives your agent a
-durable project memory: what problem is being solved, which options were
-compared, which decision the human approved, what evidence supports it, and
-what has gone stale. And ***more!***
+Haft brings a versioned FPF source into an agent's working context and keeps a
+local project graph when later work must rely on the result. A small,
+reversible exchange can remain in conversation. A decision that authorizes
+work, a handoff that another session must replay, or a claim that needs fresh
+evidence becomes a typed project record.
 
 Under the hood Haft is built on [FPF](https://github.com/ailev/FPF) by
 [Anatoly Levenchuk](https://www.linkedin.com/in/ailev/). FPF is a rigorous
-architecture for thinking about systems, and it is not small. Haft is the
-practical handle: install it, let your agent use the skills and MCP gates, and
-start getting the benefits before you have mastered the whole framework.
+architecture for thinking about systems, and it is not small. Haft delivers
+the pinned source, project-local application surfaces, and durable records
+without replacing FPF with a second pattern catalog.
+
+## Runtime truth labels
+
+<!-- haft:truth-labels:start -->
+
+- **CURRENT PRODUCT** — the published
+  [v8.1.0 release](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
+  No v8.2 release was published.
+- **V9 CONTRACT** — source-native FPF Query, fused code-graph orientation,
+  project-profile onboarding, task-level EntityOfConcern establishment, typed
+  project memory, neighborhood, and recall are included in the v9 contract.
+  Contract inclusion specifies behavior; it is not delivery evidence.
+- **EXACT-CANDIDATE EVIDENCE** — installed-runtime readiness claims require
+  current P14 evidence tied to one exact candidate. Source, schema, skill, or
+  local-test presence is not installed-runtime proof. That evidence does not
+  grant RC or release status; either additionally requires release authority.
+- **DEFERRED RESEARCH** — dense/hybrid retrieval and any claim that Haft
+  retrieves or helps an agent better than a pinned FPF file, `rg`, or built-in
+  RAG. No such superiority claim is made before the separate benchmark.
+
+<!-- haft:truth-labels:end -->
+
+These distinctions separate contract inclusion, exact-candidate evidence,
+published-product status, and release authority. No source file, local test, or
+matrix result silently promotes a contract to CURRENT PRODUCT, an RC, or a
+release.
 
 ---
 
@@ -23,37 +51,97 @@ start getting the benefits before you have mastered the whole framework.
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bash
 ```
 
-Then initialize Haft in your project with the host you use:
+Then initialize Haft in your project. Bare `haft init` opens an interactive
+multi-select when stdin and stdout are terminals; no host is preselected.
+Scripts and CI must name their intent explicitly:
 
 ```bash
-haft init            # Claude Code (default)
-haft init --local    # Claude Code, repo-local commands
-haft init --codex    # Codex CLI / Codex App
-haft init --hermes   # Hermes MCP + external skills directory
-haft init --all      # Claude Code + Codex
+haft init                    # Interactive host multi-select (TTY only)
+haft init --core-only        # Project core/ledger, no host carriers
+haft init --claude           # Claude MCP + skills + CLAUDE.md section
+haft init --claude --local   # Claude integration with repo-local skills
+haft init --codex            # Codex MCP + skills + AGENTS.md section
+haft init --codex --local    # Codex integration with repo-local skills
+haft init --codex --mcp-only # Compatibility: Codex MCP config only
+haft init --agents           # Global .agents/skills only
+haft init --agents --local   # Repo-local .agents/skills only
+haft init --codex --agents   # Codex integration; shared skill target coalesces
+haft init --grok             # Grok CLI project MCP + skills
+haft init --hermes           # Hermes MCP + external skills directory
+haft init --zed              # Zed global MCP context server
+haft init --agy              # Google Antigravity MCP + shared skills
+haft init --all              # Full Claude + Codex integrations
+haft init --all --mcp-only   # Claude + Codex MCP configs only
 ```
 
-Claude Code and Codex are the most used supported hosts. Pi, Hermes, Cursor,
-Gemini CLI, and OpenCode have additional config flags (`--pi`, `--hermes`,
-`--cursor`, `--gemini`, `--opencode`) while their runtime and docs converge.
-Please report any host-specific issues with a PR or issue.
+Any explicit init flag skips the menu and executes its declared behavior.
+Bare non-interactive invocation fails before writing files instead of guessing
+a host or waiting for terminal input. `--mcp-only` is a compatibility modifier:
+it requires an explicit host flag or `--all` and suppresses that host's skills
+and managed instruction section.
+
+Codex publishes its transformed skills to `~/.agents/skills`, or project
+`.agents/skills` with `--local`, as part of the full Codex integration.
+`--agents` addresses the same location as an independent skills-only target
+without MCP or instruction publication. It may compose with host flags; with
+`--codex`, the identical `.agents/skills` projection is coalesced into one
+write rather than treated as two competing targets.
+`--all` means exactly the full Claude and Codex integrations; it does not add a
+second independent `--agents` target.
+
+For an already initialized project that only needs an additive database
+upgrade, use the explicit core-only recovery command:
+
+```bash
+haft project migrate --project-root /absolute/project/root --project-id qnt_........
+```
+
+It verifies the exact project binding and changes no agent-host config, skill,
+instruction, hook, or package carrier.
+
+Claude Code and Codex are the stable supported hosts. Grok, Pi, Hermes, Zed,
+Antigravity, Cursor, Gemini CLI, and OpenCode remain experimental or legacy
+adapters with additional config flags
+(`--grok`, `--pi`, `--hermes`, `--zed`, `--agy`, `--cursor`, `--gemini`,
+`--opencode`). Please report host-specific issues with a PR or issue.
+
+**Grok:** use `haft init --grok` (optionally `--local`). Native project
+`.grok/config.toml` takes precedence over Claude/Cursor compat MCP sources, so
+a stale global `haft` entry in `~/.claude.json` no longer shadows the project
+server. Reload MCP in Grok (`/mcps` → `r`) or start a new session after init.
 
 **Cursor:** after init, open Settings -> MCP -> find `haft` -> enable the
 toggle. Cursor adds MCP servers disabled by default.
 
 ### What init does per tool
 
-The binary is the same; only the MCP config and command/skill install locations
-differ.
+The binary is the same; host adapters differ in MCP config, transformed skill
+location, and instruction carrier. Re-init replaces recognized legacy Haft
+skills and updates only the content between `<!-- haft:start -->` and
+`<!-- haft:end -->` in project instruction files. Content outside those
+markers remains project-owned. A foreign file colliding with a desired
+Haft-owned skill path fails before writes instead of being overwritten.
 
-| Tool | MCP config | Commands / prompts | Skills |
-|------|-----------|--------------------|--------|
-| Claude Code | `.mcp.json` (project root) | `~/.claude/commands/` (or `.claude/commands/` with `--local`) | `~/.claude/skills/` (16 skills) |
-| Codex CLI / App | `.codex/config.toml` | `~/.codex/prompts/` (or `.codex/prompts/` with `--local`) | `~/.agents/skills/` (16 skills) |
-| Hermes | `~/.hermes/config.yaml` (or `$HERMES_HOME/config.yaml`; profile via `--profile`) | n/a | `skills.external_dirs` pointing at generated Hermes-adapted haft skills |
+| Tool | MCP config | Skills | Project instructions |
+|------|-----------|--------|----------------------|
+| Claude Code (stable) | `.mcp.json` | `~/.claude/skills/` or `.claude/skills/` with `--local` | managed section in `CLAUDE.md` |
+| Codex CLI / App (stable) | `.codex/config.toml` | `~/.agents/skills/` or `.agents/skills/` with `--local` | managed section in `AGENTS.md` |
+| Agent skill bundle (`--agents`) | n/a | `~/.agents/skills/` or `.agents/skills/` with `--local` | none |
+| Grok CLI (experimental) | `.grok/config.toml` (`mcp_servers.haft`) | `~/.grok/skills/` or `.grok/skills/` with `--local` | host adapter |
+| Hermes (experimental) | `~/.hermes/config.yaml` (or `$HERMES_HOME/config.yaml`; profile via `--profile`) | generated Hermes-adapted skills through `skills.external_dirs` | host adapter |
+| Zed (experimental) | `~/.config/zed/settings.json` (`context_servers.Haft`) | n/a | none |
+| Antigravity (experimental) | `~/.gemini/config/mcp_config.json` (`mcpServers.haft`) | `~/.gemini/skills/` or `.gemini/skills/` with `--local` | host adapter |
 
-Project-scoped configs (`.mcp.json`, `.codex/config.toml`) use portable
-project-root paths, so they are safe to commit for shared repositories.
+Project-scoped configs (`.mcp.json`, `.codex/config.toml`, `.grok/config.toml`)
+use portable project-root paths, so they are safe to commit for shared
+repositories.
+Zed and Antigravity settings are global and may start MCP/context servers
+outside the workspace cwd. `haft init --zed` writes `HAFT_PROJECT_ROOT` and
+`HAFT_EXPECTED_PROJECT_ID` for the project where you ran init. `haft init
+--agy` writes `serve --project-root <root> --expected-project-id <id>` args so
+the Antigravity entry does not depend on cwd or env propagation. Re-run the
+host-specific init command in another project to point the global host entry
+there.
 
 ### Local footprint
 
@@ -63,13 +151,15 @@ creates markdown carriers in `.haft/` and a project SQLite database under
 artifact graph, baselines, indexes, and runtime state that agents query through
 CLI/MCP.
 
-Semantic recall can also use the Rust `haft-embed` sidecar. When available,
-Haft may start a shared local EmbeddingGemma process and cache models under
-`~/.haft/`; a warm sidecar can reasonably take around 1-2 GB of RAM depending
-on platform, model, and workload. If the sidecar is absent or disabled, core
-governance still works and semantic recall degrades to keyword/graph recall.
-Set `embedding.provider: none` in `~/.haft/config.yaml` if you want to keep that
-path off deliberately.
+The Rust `haft-embed` sidecar is retained as an optional compatibility
+component for older semantic-recall paths. It is outside the v9 contract and
+P14 acceptance basis; its presence carries no v9 retrieval-quality claim. If
+one of those compatibility paths uses it, Haft may start a shared local
+EmbeddingGemma process and cache models under `~/.haft/`; a warm sidecar can
+reasonably take around 1-2 GB of RAM depending on platform, model, and
+workload. If the sidecar is absent or disabled, core governance still works
+and the older compatibility path falls back to keyword/graph recall. Set
+`embedding.provider: none` in `~/.haft/config.yaml` to keep that path off.
 
 ---
 
@@ -78,12 +168,13 @@ path off deliberately.
 FPF is <ins>**powerful**</ins> and *genuinely complex*.
 You do not need to learn it all before Haft becomes useful.
 
-Install Haft, run `haft init` for your agent, and keep working normally. When
-the agent sees broad reasoning work, unclear architecture, risky changes, or a
-need to compare options, it should route into `h-reason` automatically. You can
-also call `/h-reason` by hand when you want to force the full reasoning loop.
+Install Haft, run `haft init` for your agent, and keep working normally. When a
+concern benefits from FPF, the agent can retrieve the relevant source and use
+the smallest applicable method. Call `/h-reason` when you want a deliberate
+source-supported reasoning pass.
 
-Over time, learn the smaller commands:
+The narrower skills are independent application surfaces, not stages in a
+mandatory workflow:
 
 - `/h-frame` — clarify the real problem and acceptance criteria
 - `/h-explore` — generate genuinely different solution variants
@@ -92,20 +183,35 @@ Over time, learn the smaller commands:
 - `/h-verify` — check whether a past decision still holds
 - `/h-status` — read the compact project cockpit
 
-Haft will try to make the next required action explicit: when a human decision
-is needed, when evidence has gone stale, when spec-drift should be reviewed, and
-which command or drill-down can move the work forward.
+Haft makes actual gates explicit: when a human decision is needed, when
+evidence has gone stale, when spec drift needs review, and when execution needs
+an authorized plan or commission. It does not infer a universal next step from
+the order of skills or artifacts.
 
-Existing project? Run `/h-onboard` after init. It builds a parseable
-target-system spec, enabling-system spec, term map, and spec-coverage graph —
-not just a codebase summary.
+Existing project? Run `/h-onboard` after init to prepare and review the project
+profile basis. Fresh no-basis init does not invent spec carriers. After the
+explicit profile declaration, Haft materializes the target-system,
+software-system, term-map, and coverage carriers only when the admitted
+software scope marks them required.
 
 Check spec carriers locally:
 
 ```bash
 haft spec check
 haft spec check --json
+haft spec migrate
+haft spec migrate --json # read-only state for agents and automation
 ```
+
+`SoftwareSystemSpec` describes the software that realizes the target system:
+its role, responsibility allocation, behavior, interfaces, constraints, and
+selected structure. Agent, commission, harness-runtime, and delivery policies
+are deliberately outside this spec. Development-version `enabling-system.md`
+carriers are migrated with one state-driven `haft spec migrate` command. Haft
+resolves the internal exact candidate itself, records semantic review on one
+invocation, performs the already reviewed migration on a later invocation, and
+continues a sealed recovery journal when needed. Humans never pass packet
+paths, hashes, refs, targets, or recovery modes.
 
 `haft spec check` is deterministic L0/L1/L1.5 only: it parses fenced
 `yaml spec-section` blocks, checks required structural fields, validates known
@@ -116,12 +222,15 @@ semantic judgment, no LLM review, and no L3 runtime claim.
 
 ## What is Haft?
 
-Haft is a **governance substrate** that makes a repository harnessable for
-principal-led engineering work. It turns problem frames, comparisons,
-decisions, notes, commissions, specs, methods, and evidence into auditable
-artifacts, with enforcement at the haft kernel boundary.
-
-**Specify → Think → Run → Govern.**
+The v9 target contract is a **source-native FPF delivery and project-memory
+substrate** for principal-led engineering work. It includes source-native FPF
+Query, project-profile onboarding, and typed project memory. Source presence is
+not installed-runtime proof: readiness claims require current P14 evidence tied
+to one exact candidate, while RC or release status additionally requires
+release authority. The target contract exposes the versioned FPF source to the
+host agent, then materializes problem frames, comparisons, decisions, notes,
+commissions, specs, methods, and evidence only when a receiving use depends on
+them.
 
 Haft is not a coding agent, and it is not an AI documentation generator. It is
 the handle between the human principal, the agent, the repository, and the
@@ -129,8 +238,11 @@ evolution lifecycle of your project.
 
 ## What Makes It Different
 
-- **Durable reasoning, not chat-only memory** — problems, options, decisions,
-  notes, specs, methods, and evidence live in one project graph.
+- **Source-native FPF delivery** — agents can retrieve the versioned FPF source
+  with provenance instead of relying on a Haft-owned substitute catalog.
+- **Reliance-bearing memory** — ordinary local reasoning may stay in chat;
+  records enter the project graph for handoff, replay, authority, automation,
+  evidence, or another explicit downstream reliance.
 - **Kernel gates, not prompt-only discipline** — skills carry the procedure; the MCP
   kernel validates required fields, parity gaps, missing evidence, and authority
   boundaries server-side.
@@ -142,14 +254,14 @@ evolution lifecycle of your project.
   prepare records, but binding decisions and commissions require the human
   principal.
 - **Agent guidance is built in** — status, method cards, spec checks, and
-  structured errors tell the agent what is missing instead of leaving it to
-  guess. People call it "harness" nowadays.
+  structured errors tell the agent what is missing.
 
 ### Three surfaces, one artifact graph
 
 Haft is consumed through three surfaces over one `.haft/` artifact graph:
 
-- **Skills + slash commands** in your agent — workflow skills auto-trigger; `/h-frame /h-decide /h-verify ...` run manually
+- **Skills** in your agent. Capability skills may trigger from the current
+  operator intent; `h-decide` and `h-commission` require explicit invocation.
 - **CLI** (`haft problem`, `haft solution`, `haft decision`, ...) — manual access. Those might be used manually, but usually it is just another surface for your agent to use.
 - **MCP server** (`haft serve`) — programmatic access for any LLM agent over the Model Context Protocol
 
@@ -161,30 +273,64 @@ required fields, parity gaps, weakest-link omissions, predictions without
 Skills carry the procedure; the kernel carries the gates. The same graph also
 gives agents retrieval over project-local reasoning: notes for small facts,
 decision records for authority, problem cards for open work, spec sections for
-target/enabling-system shape, MethodRuns for execution discipline, and evidence
+target/software-system shape, MethodRuns for execution discipline, and evidence
 for verification.
 
-### FPF under the hood
+### FPF source and project-local application
 
-The skill set (`h-frame`, `h-explore`, `h-compare`, `h-decide`, `h-verify`, and
-the full catalog below) gives your agent a project-local FPF governance
-substrate for engineering decisions: framing before solutions,
-characterization before comparison, parity enforcement, evidence with
-congruence penalties, weakest-link assurance, and a cycle that reopens itself
-when evidence ages or a measurement fails. It is a bounded kernel and workflow
-surface for human-authorized AI engineering work, not a claim that Haft is a
-complete FPF operating system.
+The FPF source defines the available concepts and methods. Haft pins and
+indexes that source, carries it into the host agent, and supplies project-local
+records and gates where later work needs them. Retrieval is not application,
+evidence, approval, or performed work.
 
-The framing and comparison skills auto-trigger on operator context. The binding
-step (`h-decide`, `h-commission`) is manual-only per the Transformer Mandate:
-agents frame and compare; the human principal records the binding choice.
+FPF is relation-first: the order of text, graph edges, cards, skills, or a
+demonstrative walkthrough does not by itself prescribe causal, temporal,
+method, or performed-work order. Such order exists only when an explicit,
+separately governed causal claim, `U.MethodDescription`, `WorkPlan`, or work
+relation states it. This does not make FPF acausal. Causal reasoning remains
+available, but causality must be carried as a claim rather than inferred from
+layout.
 
-`haft fpf search` (and `haft_query(action="fpf")` from MCP) searches the indexed
-FPF specification. Retrieval is hybrid: exact pattern id first, then keyword
-(FTS5) fused with semantic recall over baked section vectors, so a reworded "how
-do I think about X" finds the pattern that answers it. The vectors ship inside
-the binary; semantic recall degrades to keyword when the embedding sidecar is
-absent.
+Planning remains a separate current task. A `U.WorkPlan` may state dependencies
+and execution order whenever planning is the concern; an FPF source lookup,
+application record, or reasoning capability does not prescribe that order. A
+`WorkCommission` carries bounded execution authority and must not stand in for
+the plan. Binding actions (`h-decide`, `h-commission`) remain manual-only per
+the Transformer Mandate.
+
+`haft fpf query|lookup|inspect` and
+`haft_query(action="fpf", mode="concern|lookup|inspect", ...)` expose the
+versioned source as addressable publication units. Concern retrieval reports
+observable authored-phrase, heading/keyword, and role-local FTS grounds;
+lookup tries exact identity before returning compact candidates; inspect is
+exact-only. Source roles (`practical_use_card`, `toc_row`, `preface`,
+`pattern_body`, `pattern_section`) control progressive disclosure. Candidates
+are not selected patterns, and their order is not a causal or work order.
+
+### Fused code-graph Explore (v9 contract)
+
+Explore accepts exactly one input shape: an exact symbol, or a bounded concern
+query. The concern route returns advisory candidates and never selects a code
+identity from rank alone.
+
+```bash
+haft graph explore --symbol PublishIndexEpoch --view working --json
+haft graph explore --query "where is the index epoch published?" --view working --json
+```
+
+The equivalent MCP calls are
+`haft_query(action="explore", symbol="PublishIndexEpoch")` and
+`haft_query(action="explore", query="where is the index epoch published?")`.
+Both surfaces execute one canonical `ExploreEnvelope` and use the same JSON
+encoder. `working` is bounded, score-free, and omits retrieval and per-edge
+provenance. `trace` adds bounded provenance plus an opaque replay basis;
+`diagnostic` adds retrieval and traversal internals. A replay after the index,
+request, or canonical result changes returns `replay_mismatch`.
+
+Use Explore when area or flow orientation is current. Before a non-mechanical
+edit to governed code, use `code_context` or `impact` on the actual target.
+Purely mechanical work may abstain explicitly. Code-graph orientation and
+typed-memory orientation are separate; neither substitutes for the other.
 
 ### What changed in v8
 
@@ -193,12 +339,13 @@ desktop wrappers. Haft no longer competes with general coding agents on the
 runtime surface — it adds governance discipline on top of whichever agent you
 already use.
 
-Upgrading from v7? See [MIGRATION-v8.md](MIGRATION-v8.md) — the upgrade checklist
-plus what was dropped (`haft agent`, TUI, desktop, v7 helper commands).
+Upgrading from the published v8.1.0 release, or still migrating a v7 project?
+See [MIGRATION-v8.md](MIGRATION-v8.md) for backup, forward-upgrade, host
+restart, and rollback boundaries.
 
 ## How It Works
 
-### Nine MCP tools
+### Twelve MCP tools
 
 | Tool | What it does |
 |------|-------------|
@@ -207,41 +354,66 @@ plus what was dropped (`haft agent`, TUI, desktop, v7 helper commands).
 | `haft_solution` | Explore variants with diversity check, compare under parity |
 | `haft_decision` | Decision contracts: invariants, claims, evidence, baseline lifecycle |
 | `haft_refresh` | Lifecycle management for every artifact kind |
-| `haft_query` | Search, status dashboard, code graph (callers/callees/impact/explore — each reached symbol fused with the decisions governing it), FPF spec search |
+| `haft_query` | Project search/status, code graph, source-native FPF query/lookup/inspect, and typed-memory resolve/neighborhood/recall |
 | `haft_method` | Task-local SWE MethodRun cards: pull gates before non-trivial work, close with evidence or waivers |
 | `haft_commission` | WorkCommission lifecycle for execution harnesses |
-| `haft_spec_section` | Typed SpecSection lifecycle projection; manual CLI gates approve, rebaseline, or reopen baselines |
+| `haft_spec_section` | Typed SpecSection lifecycle projection over project SQL editions; FPF source compatibility is assessed separately; manual CLI gates approve, rebaseline, or reopen baselines |
+| `haft_onboard` | Read setup status or prepare non-binding profile and structured-memory review carriers |
+| `haft_entity` | Establish one non-binding EntityOfConcern and its aliases after an explicit persistence reason |
+| `haft_memory` | Expert raw MemoryChangeSet validation/admission through a nested `request` envelope; ordinary agents use `haft_entity`, and validation never admits automatically |
 
-### Sixteen skills installed by `haft init`
+### Twelve skills installed by `haft init`
+
+Haft installs 12 skills with independent trigger conditions:
 
 | Skill | Mode | What it does |
 |---|---|---|
-| **h-reason** | auto (umbrella) | Full FPF reasoning palette in one entry — framing, exploration, comparison, verification, notes, plus slideument patterns (Goldilocks, NQD, BLP, Scaling-Law Lens). Manual `/h-reason` always works; auto-fires on broad "let's think this through" signals where no specialized skill matches sharply. |
-| **h-frame** | auto | Frame a problem with B.4.1 stabilize + problem typing + umbrella-word repair |
+| **h-reason** | auto (umbrella) | Minimum FPF distillate and source-query entry point. It helps choose one current capability without imposing a project sequence. |
+| **h-frame** | auto | Shape the current problem conversationally; persist a ProblemCard only on explicit save intent or a named durable receiving use. |
 | **h-diagnose** | auto | Diagnose a failure with parallel hypothesis testing (one Agent subagent per hypothesis to prevent anchoring) |
-| **h-explore** | auto | Generate distinct candidate variants with NQD diversity discipline (parallel direction-assigned agents) |
-| **h-compare** | auto | Fair comparison with dim-wise parallel scoring + Pareto front (not a scalar winner) |
-| **h-decide** | **manual** | Record a binding DecisionRecord with full DRR — Transformer Mandate (`disable-model-invocation`) |
+| **h-explore** | auto | Generate genuinely distinct candidate variants when exploration is the current task; record only when durability is warranted. |
+| **h-compare** | auto | Compare an existing candidate set under declared parity and return a Pareto front, not a scalar winner. |
+| **h-decide** | **manual** | Record a binding DecisionRecord — Transformer Mandate (`disable-model-invocation`) |
 | **h-verify** | auto | Baseline → measure → evidence loop with drift detection |
 | **h-status** | auto | Read-only project FPF cockpit with explicit drill-down calls |
-| **h-onboard** | auto | First-frame ceremony for projects new to haft |
-| **h-spec** | auto | Spec lifecycle surface: inspect readiness, draft/clarify carriers, and route approve/rebaseline/reopen gates |
-| **h-spec-cover** | auto | Spec-coverage check with blind/stale module triage |
-| **h-note** | auto | Lightweight micro-decision recording |
+| **h-onboard** | auto | Bootstrap Haft and typed spec carriers when project state is absent or incomplete. |
+| **h-spec** | auto | Spec lifecycle and source-currentness repair: inspect readiness, draft/clarify carriers, repair FPF semantic fanout, and route approve/rebaseline/reopen gates |
+| **h-note** | auto | Persist an explicitly requested non-binding fact, observation, caveat, or rationale in project memory. |
 | **h-commission** | **manual** | WorkCommission lifecycle — manual per Transformer Mandate (`disable-model-invocation`) |
-| **h-abduct** | subroutine | Pure B.5.2 abductive four-step (frame prompt → ≥3 rivals → filters → prime) |
-| **h-boundary-unpack** | subroutine | A.6.B L/A/D/E decomposition of boundary statements |
-| **h-semio-review** | subroutine | X-FANOUT-AUDIT — concept-rename / spec-consistency audit |
 
 Auto-triggering skills fire when their description matches operator context.
 Manual-only skills (`h-decide`, `h-commission`) require explicit invocation per
 the Transformer Mandate — binding artifacts come from the human principal, not
-the agent. Subroutines (`h-abduct`, `h-boundary-unpack`, `h-semio-review`) are
-called from other skills or invoked explicitly when working a specific FPF
-sub-discipline.
+the agent. Boundary unpacking, abductive checks, and semantic fanout review are
+internal routines of the relevant public skill, not additional user-facing
+skills or mandatory stages.
 
-Routing reliability is testable: `haft check routing` runs 44 golden prompts
-(current pass rate 77.3%).
+For `h-decide`, that explicit invocation is the only human confirmation in a
+fresh install and in older projects without a project config. The agent
+prepares the reviewed payload and runs the CLI/input-file bind without asking
+the operator to type another approval phrase. Projects that deliberately need
+the additional terminal ceremony can opt in:
+
+```yaml
+# .haft/config.yaml
+schema_version: 1
+authority:
+  decision_binding_mode: strict_cli_speech_act
+```
+
+The default value is `explicit_h_decide`. `haft init` creates the default file
+when it is missing and preserves an existing choice. MCP
+`haft_decision(action="decide", ...)` remains fail-closed with
+`operator_confirmation_required` in both modes; the config changes the CLI
+decision-binding ceremony, not MCP authority.
+
+That setting applies only to DecisionRecords. Project-profile declaration has
+the separate `authority.profile_declaration_mode` setting. Its default
+`explicit_h_onboard` path uses the reviewed `haft profile propose` carrier and
+the dedicated `haft profile declare` invocation without a second phrase. The
+reserved profile `strict_cli_speech_act` branch currently fails closed with
+`strict_profile_authority_not_available`; DecisionRecord strict mode remains a
+different, working authority path.
 
 ### Evidence workflow
 
@@ -309,8 +481,15 @@ authorization receipt and becomes a typed artifact transition. Model-supplied
 MCP arguments or prompt text are not proof of operator authorization:
 
 ```text
-SpecSection(s) → DecisionRecord → WorkCommission → RuntimeRun → Evidence → SpecCoverage
+SpecSection(s) --may-govern--> DecisionRecord
+DecisionRecord --may-authorize--> WorkCommission
+WorkCommission --may-start--> RuntimeRun
+Evidence --supports-or-weakens--> claim / SpecSection
+current relations --derive--> SpecCoverage
 ```
+
+This is the commissioned execution path after explicit authority, not a
+universal FPF or planning sequence.
 
 ---
 
@@ -320,9 +499,9 @@ SpecSection(s) → DecisionRecord → WorkCommission → RuntimeRun → Evidence
 
 ```text
 operator (to agent): "we need to pick a queue for the new ingestion path"
-↓ h-explore auto-triggers, generates 3+ distinct variants with NQD diversity
-↓ h-compare auto-triggers, scores dim-wise in parallel, surfaces the Pareto front
-↓ operator picks a variant, then explicitly types:
+↓ agent retrieves the relevant FPF source and checks whether a durable record is needed
+↓ agent uses only the applicable methods; framing, exploration, and comparison are available but not a fixed sequence
+↓ when downstream work depends on a binding choice, the operator explicitly types:
 /h-decide
 ↓ kernel validates required DRR fields; missing fields → structured error
 ↓ on pass: DRR written to .haft/decisions/, ready for `haft run`
@@ -335,7 +514,10 @@ operator: "tests are failing on the schema migration after the deploy"
 ↓ h-diagnose auto-triggers, spawns 3+ parallel Agent subagents, one per hypothesis
 ↓ each subagent reads only what its hypothesis needs (no anchoring)
 ↓ results merged, ranked by the FPF B.5.2 filter chain
-↓ if confirmed: /h-note records the diagnosis; if architectural: /h-frame
+↓ the diagnosis stays in chat unless the operator explicitly asks to save it
+  or names a reliance-bearing receiving use that needs a durable record
+↓ when that persistence condition holds: /h-note records the diagnosis
+↓ /h-frame is used only if the evidence shows the problem itself needs reframing
 ```
 
 ### Verify a decision still holds
@@ -353,7 +535,6 @@ operator: "did dec-20260420-cache-redesign actually work"
 
 ```bash
 haft check          # CI-friendly governance verification (exit 0 clean / 1 findings)
-haft check routing  # sanity-check skill routing reliability
 ```
 
 From the host agent: `/h-status` for the compact cockpit; use explicit

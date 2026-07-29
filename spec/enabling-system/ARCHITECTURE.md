@@ -1,7 +1,9 @@
-# Functional Architecture
+# Software Architecture Reference
 
-> Layered enabling-system architecture for Haft as a project harnessability
-> system. Each layer depends only on the layer directly below it.
+> Layered software architecture for Haft as a project harnessability system.
+> This engineering carrier remains outside ProjectSpecificationSet; the
+> project-local software contract lives in `.haft/specs/software-system.md`.
+> Each layer depends only on the layer directly below it.
 
 ## Module Hierarchy
 
@@ -27,12 +29,12 @@
 │             REASONING CORE                   │
 │ ProblemCard │ SolutionPortfolio │            │
 │ DecisionRecord │ EvidencePack │ Note         │
-│ R_eff │ Pareto │ Refresh │ FPF index          │
+│ R_eff │ Pareto │ Refresh │ FPF source/index   │
 └────────────────────┬────────────────────────┘
                      ▼
 ┌─────────────────────────────────────────────┐
 │          SPECIFICATION CORE                  │
-│ TargetSystemSpec │ EnablingSystemSpec        │
+│ TargetSystemSpec │ SoftwareSystemSpec        │
 │ TermMap │ SpecSection │ SpecCoverage          │
 │ SemanticArchitecture │ SpecCheck              │
 └────────────────────┬────────────────────────┘
@@ -60,55 +62,37 @@
 6. **Surfaces depend on Governor/Flow only.** Host skills, MCP, and CLI do not query SQLite or raw files directly.
 7. **Side effects only at Flow and above.** Core layers expose pure transformations plus explicit store interfaces.
 
-## Data Flow: Specify → Think → Run → Govern
+## Relation Model and Explicit Work Flows
 
+Haft Core stores typed relations. It does not infer a canonical reasoning or
+delivery sequence from source order, card order, graph insertion order, or
+skill order.
+
+```text
+versioned FPF source --retrieved-into--> agent context
+project concern --may-use--> U.MethodDescription
+named reliance --materializes--> project artifact
+SpecSection --governs--> DecisionRecord / code / test
+DecisionRecord --may-authorize--> WorkCommission
+WorkCommission --may-start--> RuntimeRun
+EvidencePack --supports-or-weakens--> claim / SpecSection
+current relations --derive--> status / SpecCoverage / drift findings
 ```
-SPECIFY (human + onboarding agent)
-  │
-  ├─ Initialize .haft and host-agent MCP config
-  ├─ Draft TargetSystemSpec
-  ├─ Draft EnablingSystemSpec
-  ├─ Validate TermMap and SpecSections
-  └─ Compute SpecCoverage
-       │
-       ▼
-THINK (human via host skill/CLI, or agent via MCP)
-  │
-  ├─ Frame problem from spec gap, drift, or human signal
-  ├─ Explore variants (3+ genuinely distinct)
-  ├─ [Probe-or-commit gate]
-  ├─ Compare under parity (Pareto front computed)
-  └─ Decide (spec refs, invariants, claims, rollback, valid_until)
-       │
-       ▼
-RUN (agent via Flow layer)
-  │
-  ├─ Create WorkCommission from DecisionRecord and AutonomyEnvelope
-  ├─ Claim runnable commission or enter bounded drain loop
-  ├─ Preflight spec/decision/scope freshness and AutonomyEnvelope
-  ├─ Create isolated workspace
-  ├─ Inject invariants from knowledge graph
-  ├─ Re-check AutonomyEnvelope before execution
-  ├─ Spawn agent (Claude Code / Codex / custom)
-  ├─ Agent executes with full reasoning context
-  ├─ Post-execution: verify invariants and judge evidence
-  ├─ Attach evidence and terminalize commission with verdict
-  ├─ Apply only policy-allowed passing work through AutonomyEnvelope
-  └─ Update SpecCoverage
-       │
-       ▼
-GOVERN (background via Governor layer)
-  │
-  ├─ Detect spec drift and file drift
-  ├─ Verify invariants against dependency graph
-  ├─ Check evidence freshness (valid_until countdown)
-  ├─ Compute impact propagation (transitive dependencies)
-  ├─ Generate problem candidates for violations
-  └─ Alert via h-status / CLI / MCP status
-       │
-       ▼
-  (cycle back to THINK if problems found)
-```
+
+Relation-first does not mean acausal. A causal claim may establish causal
+order, and an explicit `U.MethodDescription` may establish method order. Haft
+does not infer either from adjacency or presentation.
+
+Planning remains a separate description. An `ImplementationPlan` states work
+dependencies and scheduling; a `WorkCommission` states bounded authority for a
+specific execution slice. Neither an FPF source lookup nor an application
+record is a plan, and no plan is performed work.
+
+Once a WorkCommission exists, Flow may execute its explicit operational
+pipeline: preflight scope and freshness, acquire a workspace and lease, run the
+authorized agent, verify required evidence, record the terminal verdict, and
+apply only when policy permits. Governor scans current specs, artifacts, code,
+evidence, and runtime state independently of that execution path.
 
 ## Flow: WorkCommission Draining
 

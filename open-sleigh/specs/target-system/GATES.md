@@ -58,7 +58,7 @@ LLM-judge; the expensive ones as HumanGate.
 |---|---|---|---|
 | `object_of_talk_is_specific` | Frame exit | Is `describedEntity` specific (file path, module, subsystem) or vacuous ("the system", "the code")? | LLM-judge |
 | `context_material_change_review` | Preflight exit | Did repo/context changes since commission queue materially affect the selected DecisionRecord or commission scope? Agent reports; Haft validates hard facts. Uncertainty maps to human review. | LLM-judge + deterministic validation |
-| `lade_quadrants_split_ok` | any obligation-language artifact | Sentences containing MUST / guarantees / accepted / evidence are decomposed into **Law** (definition) / **Admissibility** (gate) / **Deontics** (duty) / **Work-effect ∣ Evidence** (carrier). Per `../../.context/semiotics_slideument.md` §A.6.B Slide 33 literal. Renamed from `lade_split_ok` in v0.2 — the quad is **not** {Law, Admissibility, Deontics, Evidence}; the 4th axis is explicitly "Work-effect / Evidence", and conflating those two is itself a reportable error. | LLM-judge |
+| `lade_quadrants_split_ok` | any obligation-language artifact | Sentences containing MUST / guarantees / accepted / evidence are decomposed into **Law** (definition) / **Admissibility** (gate) / **Deontics** (duty) / **Work-effect ∣ Evidence** (carrier), following exact FPF A.6.B terminology. The quad is **not** {Law, Admissibility, Deontics, Evidence}; the fourth axis is explicitly "Work-effect / Evidence", and conflating those two is itself a reportable error. | LLM-judge |
 | `no_self_evidence_semantic` | Measure exit | **Two separate checks:** (a) the cited evidence is produced by a role **external to the authoring role** (FPF-Spec A.10 CC-A10.6: no self-evidence); (b) the **evidence carrier** (PR sha, CI run id, test log) is distinguished from the **work-effect** (what the merged code actually does in runtime). A carrier is not a work-effect; conflating them is the trap this gate exists to catch. | LLM-judge |
 | `contract_unpacked_ok` | any artifact containing promise-language ("I implemented X", "delivered Y") | Promise content / speech act / commitment / work-effect-evidence decomposed per `../../.context/FPF-Spec.md` A.6.C. Deferred to MVP-2; flagged now so agents publishing "done" claims don't conflate promise content with delivery evidence. | **not in MVP-1** |
 | `cg_frame_wellformed` | Parity-run exit (MVP-2) | Characteristics have scales/procedures; budgets equal; selection rule pre-declared; `valid_until` set; seeds recorded | LLM-judge |
@@ -174,8 +174,8 @@ close a ticket. Authoring framing is the human's role upstream in Haft
 
 ## 5. Observation indicators (anti-Goodhart)
 
-Per FPF CHR-01 + `../../.context/development_for_the_developed.md` Slide 16:
-characteristics that are **monitored for risk, not optimized**. These are
+Per FPF characteristic discipline, these characteristics are **monitored for
+risk, not optimized**. They are
 explicitly NOT gates — they never block a transition. They are surfaced
 on the dashboard (MVP-2) and emitted as metrics from day 1.
 

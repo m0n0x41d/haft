@@ -36,6 +36,7 @@ var (
 	commissionFromDecisionValidFor         string
 	commissionFromDecisionValidUntil       string
 	commissionFromDecisionSliceDescription string
+	commissionScopeID                      string
 	commissionLifecycleEvent               string
 	commissionLifecycleVerdict             string
 	commissionLifecycleReason              string
@@ -135,6 +136,12 @@ complete_or_block event. It does not apply, merge, or publish any workspace diff
 
 func init() {
 	commissionCreateCmd.Flags().StringVar(&commissionJSONPath, "json", "", "JSON payload path, or '-' for stdin")
+	commissionCreateCmd.Flags().StringVar(
+		&commissionScopeID,
+		"scope-id",
+		"",
+		"Exact admitted ScopeID when the canonical project profile has multiple scopes",
+	)
 	registerCommissionFromDecisionFlags(commissionCreateFromDecisionCmd)
 	registerCommissionFromDecisionFlags(commissionCreateBatchCmd)
 	registerCommissionFromDecisionFlags(commissionCreateFromPlanCmd)
@@ -184,6 +191,12 @@ func registerCommissionFromDecisionFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&commissionFromDecisionValidFor, "valid-for", "168h", "commission validity duration when --valid-until is omitted")
 	cmd.Flags().StringVar(&commissionFromDecisionValidUntil, "valid-until", "", "explicit commission expiry timestamp (RFC3339)")
 	cmd.Flags().StringVar(&commissionFromDecisionSliceDescription, "slice-description", "", "names which slice of the decision THIS commission implements; REQUIRED when the decision already has a non-terminal commission. Multi-commission decisions without per-slice scope text leak the decision body to every codex session.")
+	cmd.Flags().StringVar(
+		&commissionScopeID,
+		"scope-id",
+		"",
+		"Exact admitted ScopeID when the canonical project profile has multiple scopes",
+	)
 }
 
 func runCommissionCreate(cmd *cobra.Command, _ []string) error {
@@ -192,13 +205,18 @@ func runCommissionCreate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
-	args := map[string]any{
-		"action":     "create",
-		"commission": payload,
-	}
-
-	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
-		result, err := handleHaftCommission(ctx, store, args)
+	return withCommissionProject(func(
+		ctx context.Context,
+		store *artifact.Store,
+		projectRoot string,
+	) error {
+		args := map[string]any{
+			"action":       "create",
+			"commission":   payload,
+			"project_root": projectRoot,
+			"scope_id":     commissionScopeID,
+		}
+		result, err := handleHaftCommissionForProject(ctx, store, args)
 		return writeCommissionResult(cmd, result, err)
 	})
 }
@@ -210,7 +228,7 @@ func runCommissionCreateFromDecision(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		result, err := handleHaftCommission(ctx, store, params)
+		result, err := handleHaftCommissionForProject(ctx, store, params)
 		return writeCommissionResult(cmd, result, err)
 	})
 }
@@ -222,7 +240,7 @@ func runCommissionCreateBatch(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		result, err := handleHaftCommission(ctx, store, params)
+		result, err := handleHaftCommissionForProject(ctx, store, params)
 		return writeCommissionResult(cmd, result, err)
 	})
 }
@@ -239,7 +257,7 @@ func runCommissionCreateFromPlan(cmd *cobra.Command, args []string) error {
 			return err
 		}
 
-		result, err := handleHaftCommission(ctx, store, params)
+		result, err := handleHaftCommissionForProject(ctx, store, params)
 		return writeCommissionResult(cmd, result, err)
 	})
 }
@@ -362,7 +380,12 @@ func runCommissionCompleteExternal(cmd *cobra.Command, args []string) error {
 		params["payload"] = payload
 	}
 
-	return withCommissionStore(func(ctx context.Context, store *artifact.Store) error {
+	return withCommissionProject(func(
+		ctx context.Context,
+		store *artifact.Store,
+		projectRoot string,
+	) error {
+		params["project_root"] = projectRoot
 		result, err := completeExternalWorkCommission(ctx, store, params)
 		return writeCommissionResult(cmd, result, err)
 	})
@@ -391,13 +414,14 @@ func completeExternalWorkCommission(ctx context.Context, store *artifact.Store, 
 
 	switch state {
 	case "preflighting":
-		_, err := handleHaftCommission(ctx, store, map[string]any{
+		_, err := handleHaftCommissionForProject(ctx, store, map[string]any{
 			"action":        "start_after_preflight",
 			"commission_id": commissionID,
 			"runner_id":     stringArg(params, "runner_id"),
 			"event":         "external_preflight_passed",
 			"verdict":       "pass",
 			"reason":        stringArg(params, "reason"),
+			"project_root":  stringArg(params, "project_root"),
 		})
 		if err != nil {
 			return "", err
@@ -583,6 +607,10 @@ func commissionFromPlanCLIParams(projectRoot string, plan map[string]any) (map[s
 }
 
 func commissionPlanBaseParams(projectRoot string, plan map[string]any) (map[string]any, error) {
+	scopeID := strings.TrimSpace(commissionScopeID)
+	if scopeID == "" {
+		scopeID = strings.TrimSpace(stringField(plan, "scope_id"))
+	}
 	repoRef := commissionFromDecisionRepoRef
 	if strings.TrimSpace(repoRef) == "" {
 		repoRef = stringField(plan, "repo_ref")
@@ -617,6 +645,7 @@ func commissionPlanBaseParams(projectRoot string, plan map[string]any) (map[stri
 
 	return map[string]any{
 		"project_root":          projectRoot,
+		"scope_id":              scopeID,
 		"repo_ref":              repoRef,
 		"base_sha":              baseSHA,
 		"target_branch":         targetBranch,
@@ -662,6 +691,7 @@ func commissionFromDecisionBaseParams(projectRoot string) (map[string]any, error
 
 	return map[string]any{
 		"project_root":          projectRoot,
+		"scope_id":              strings.TrimSpace(commissionScopeID),
 		"repo_ref":              repoRef,
 		"base_sha":              baseSHA,
 		"target_branch":         targetBranch,

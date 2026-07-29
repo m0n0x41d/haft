@@ -30,7 +30,10 @@ type ModuleDetector interface {
 type ImportParser interface {
 	// ParseImports extracts import edges from a single source file.
 	// Returns edges with raw import paths. Caller resolves to modules.
-	ParseImports(filePath string, projectRoot string) ([]ImportEdge, error)
+	ParseImports(
+		source AdmittedSource,
+		projectRoot string,
+	) ([]ImportEdge, error)
 
 	// Extensions returns file extensions this parser handles.
 	Extensions() []string

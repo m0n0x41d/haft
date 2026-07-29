@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"reflect"
 	"sort"
@@ -16,18 +15,20 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
-func TestRunSpecOnboardJSONReturnsFirstPhaseOnEmptyProject(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".haft", "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	restore := enterTestProjectRoot(t, root)
+func TestRunSpecOnboardJSONReturnsOneNeutralCueWithoutCanonicalProfile(
+	t *testing.T,
+) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	restoreJSON := stubSpecOnboardJSON(t, true)
 	defer restoreJSON()
+	restoreScopeID := stubSpecOnboardScopeID(t, "")
+	defer restoreScopeID()
 
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -37,35 +38,32 @@ func TestRunSpecOnboardJSONReturnsFirstPhaseOnEmptyProject(t *testing.T) {
 		t.Fatalf("runSpecOnboard returned error: %v", err)
 	}
 
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal(output.Bytes(), &intent); err != nil {
+	var result publicSpecNextStepResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON: %v\nraw: %s", err, output.String())
 	}
-
-	if intent.Terminal {
-		t.Fatalf("intent.Terminal = true on empty project; want first phase")
+	if result.WorkflowIntent != nil {
+		t.Fatalf("underdetermined profile fabricated next step: %#v", result)
 	}
-	if intent.Phase != specflow.PhaseTargetEnvironmentDraft {
-		t.Fatalf("intent.Phase = %q, want %q", intent.Phase, specflow.PhaseTargetEnvironmentDraft)
-	}
-	if intent.PromptForUser == "" {
-		t.Fatalf("PromptForUser is empty")
-	}
-	if len(intent.Checks) == 0 {
-		t.Fatalf("Checks is empty; want SoTA list")
+	if result.ProfileApplicability.Kind !=
+		string(projectSpecificationProfileUnderdetermined) ||
+		result.ProfileApplicability.Cue == nil {
+		t.Fatalf(
+			"profile applicability = %#v",
+			result.ProfileApplicability,
+		)
 	}
 }
 
-func TestRunSpecOnboardSummaryRendersHumanLines(t *testing.T) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".haft", "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	restore := enterTestProjectRoot(t, root)
+func TestRunSpecOnboardSummaryRendersOneNeutralProfileCue(t *testing.T) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
 	restoreJSON := stubSpecOnboardJSON(t, false)
 	defer restoreJSON()
+	restoreScopeID := stubSpecOnboardScopeID(t, "")
+	defer restoreScopeID()
 
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -77,21 +75,30 @@ func TestRunSpecOnboardSummaryRendersHumanLines(t *testing.T) {
 
 	got := output.String()
 	for _, want := range []string{
-		"Phase:",
-		"Audience:",
-		"Document:",
-		"For the operator:",
-		"For the host agent:",
-		"Structural checks:",
+		"haft spec onboard: not evaluated (profile_underdetermined)",
+		"Profile cue:",
+		"Missing basis: current_canonical_profile_admission",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q\n--- got ---\n%s", want, got)
 		}
 	}
+	if strings.Count(got, "Profile cue:") != 1 {
+		t.Fatalf("onboard emitted repeated profile cues:\n%s", got)
+	}
+	if strings.Contains(got, "software-system") {
+		t.Fatalf("onboard emitted speculative software pressure:\n%s", got)
+	}
 }
 
 func TestRunSpecOnboardReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	root := setupSpecSyncProject(t)
+	profileHarness := profileadmissionfixture.OpenExisting(t, root)
+	profileHarness.AdmitSoftwareRevisionWithTargetEntity(
+		t,
+		"spec-onboard-sql",
+		"entity:spec-onboard-target",
+	)
 	database := openSpecSyncDB(t, root)
 	defer database.Close()
 
@@ -109,7 +116,7 @@ func TestRunSpecOnboardReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 		DocumentKind:  "target-system",
 		Path:          ".haft/specs/target-system.md",
 	}
-	edition := specflow.NewSpecSectionEdition("qnt_spec_sync_test", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
 	if err := store.PutCurrent(edition); err != nil {
 		t.Fatalf("seed SQL spec section edition: %v", err)
 	}
@@ -118,6 +125,8 @@ func TestRunSpecOnboardReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	defer restoreRoot()
 	restoreJSON := stubSpecOnboardJSON(t, true)
 	defer restoreJSON()
+	restoreScopeID := stubSpecOnboardScopeID(t, "")
+	defer restoreScopeID()
 
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
@@ -127,10 +136,14 @@ func TestRunSpecOnboardReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 		t.Fatalf("runSpecOnboard returned error: %v", err)
 	}
 
-	var intent specflow.WorkflowIntent
-	if err := json.Unmarshal(output.Bytes(), &intent); err != nil {
+	var result publicSpecNextStepResult
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
 		t.Fatalf("decode JSON: %v\nraw: %s", err, output.String())
 	}
+	if result.WorkflowIntent == nil {
+		t.Fatalf("resolved profile omitted workflow intent: %#v", result)
+	}
+	intent := result.WorkflowIntent
 	if len(intent.BlockingFindings) == 0 {
 		t.Fatalf("expected missing-baseline finding for SQL edition: %#v", intent)
 	}
@@ -140,16 +153,16 @@ func TestRunSpecOnboardReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 }
 
 func TestRunSpecOnboardJSONMatchesMCPNextStepKeys(t *testing.T) {
-	root := t.TempDir()
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	root := fixture.root
 	haftDir := filepath.Join(root, ".haft")
-	if err := os.MkdirAll(filepath.Join(haftDir, "specs"), 0o755); err != nil {
-		t.Fatal(err)
-	}
 
 	restoreRoot := enterTestProjectRoot(t, root)
 	defer restoreRoot()
 	restoreJSON := stubSpecOnboardJSON(t, true)
 	defer restoreJSON()
+	restoreScopeID := stubSpecOnboardScopeID(t, "")
+	defer restoreScopeID()
 
 	var cliOutput bytes.Buffer
 	cmd := &cobra.Command{}
@@ -158,7 +171,7 @@ func TestRunSpecOnboardJSONMatchesMCPNextStepKeys(t *testing.T) {
 		t.Fatalf("runSpecOnboard returned error: %v", err)
 	}
 
-	mcpOutput, err := handleHaftSpecSection(context.Background(), nil, haftDir, map[string]any{
+	mcpOutput, _, err := handleHaftSpecSectionWithProjectionRef(context.Background(), haftDir, map[string]any{
 		"action":       "next_step",
 		"project_root": root,
 	})
@@ -194,4 +207,11 @@ func stubSpecOnboardJSON(t *testing.T, value bool) func() {
 	prev := specOnboardJSON
 	specOnboardJSON = value
 	return func() { specOnboardJSON = prev }
+}
+
+func stubSpecOnboardScopeID(t *testing.T, value string) func() {
+	t.Helper()
+	prev := specOnboardScopeID
+	specOnboardScopeID = value
+	return func() { specOnboardScopeID = prev }
 }

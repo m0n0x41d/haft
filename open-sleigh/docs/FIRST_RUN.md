@@ -34,7 +34,7 @@ adapter real.
 ```sh
 cd open-sleigh
 mix deps.get
-export REPO_URL=/Users/ivanzakutnii/Repos/projects/haft
+export REPO_URL="$(git rev-parse --show-toplevel)"
 mix open_sleigh.doctor --path sleigh.commission.md.example --mock-haft
 mix open_sleigh.start --path sleigh.commission.md.example --mock-haft --mock-judge
 ```

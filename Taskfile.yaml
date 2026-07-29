@@ -6,7 +6,6 @@ vars:
   OPEN_SLEIGH_RELEASE_DIR: open-sleigh/_build/prod/rel/open_sleigh
   OPEN_SLEIGH_INSTALL_DIR: ~/.haft/runtimes/open-sleigh/current
   FPF_SPEC: data/FPF/FPF-Spec.md
-  FPF_README: data/FPF/Readme.md
   FPF_DB: internal/cli/fpf.db
 
 tasks:
@@ -89,10 +88,16 @@ tasks:
     cmds:
       # Remove any stale `haft` in GOBIN so PATH picks up BIN_DIR/haft,
       # not a leftover `go install`'d binary from an older build.
-      - rm -f /Users/ivanzakutnii/go/bin/haft
+      - |
+        gobin="$(go env GOBIN)"
+        if [ -z "$gobin" ]; then
+          gobin="$(go env GOPATH)/bin"
+        fi
+        rm -f "$gobin/haft"
+      - mkdir -p {{.BIN_DIR}}
       - go build -o {{.BIN_DIR}}/{{.BIN_NAME}} -trimpath ./cmd/haft/
       # Remove ~/.haft/tui and ~/.haft/tui-v8 leftovers from v7/pre-pivot
-      # installs so stale bundles don't sit next to the v8 governance
+      # installs so stale bundles don't sit next to the current governance
       # substrate binary.
       - rm -rf ~/.haft/tui ~/.haft/tui-v8
       - echo "Installed {{.BIN_DIR}}/{{.BIN_NAME}}"
@@ -127,25 +132,25 @@ tasks:
     desc: Check the local Open-Sleigh commission harness prerequisites
     dir: open-sleigh
     cmds:
-      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.doctor --path sleigh.commission.md.example --mock-haft
+      - REPO_URL="${REPO_URL:-$(git rev-parse --show-toplevel)}" mix open_sleigh.doctor --path sleigh.commission.md.example --mock-haft
 
   open-sleigh:doctor-haft:
     desc: Check the Haft commission-source harness prerequisites
     dir: open-sleigh
     cmds:
-      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.doctor --path sleigh.haft.md.example --mock-haft
+      - REPO_URL="${REPO_URL:-$(git rev-parse --show-toplevel)}" mix open_sleigh.doctor --path sleigh.haft.md.example --mock-haft
 
   open-sleigh:smoke:
     desc: Run one deterministic local Open-Sleigh commission smoke
     dir: open-sleigh
     cmds:
-      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.commission.md.example --mock --once --once-timeout-ms=5000
+      - REPO_URL="${REPO_URL:-$(git rev-parse --show-toplevel)}" mix open_sleigh.start --path sleigh.commission.md.example --mock --once --once-timeout-ms=5000
 
   open-sleigh:smoke-haft:
     desc: Run one deterministic Haft commission-source smoke
     dir: open-sleigh
     cmds:
-      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.haft.md.example --mock --once --once-timeout-ms=5000
+      - REPO_URL="${REPO_URL:-$(git rev-parse --show-toplevel)}" mix open_sleigh.start --path sleigh.haft.md.example --mock --once --once-timeout-ms=5000
 
   open-sleigh:smoke-real-haft:
     desc: Run Open-Sleigh against a real temporary Haft MCP server and WorkCommission
@@ -196,13 +201,13 @@ tasks:
     desc: Run local Open-Sleigh commission harness with real agent and mock Haft/Judge
     dir: open-sleigh
     cmds:
-      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.commission.md.example --mock-haft --mock-judge
+      - REPO_URL="${REPO_URL:-$(git rev-parse --show-toplevel)}" mix open_sleigh.start --path sleigh.commission.md.example --mock-haft --mock-judge
 
   open-sleigh:harness-haft:
     desc: Run Haft commission-source harness with real agent and mock Haft/Judge
     dir: open-sleigh
     cmds:
-      - REPO_URL="${REPO_URL:-/Users/ivanzakutnii/Repos/projects/haft}" mix open_sleigh.start --path sleigh.haft.md.example --mock-haft --mock-judge
+      - REPO_URL="${REPO_URL:-$(git rev-parse --show-toplevel)}" mix open_sleigh.start --path sleigh.haft.md.example --mock-haft --mock-judge
 
   open-sleigh:harness-from-decision:
     desc: Create a WorkCommission from DECISION and run the real Haft-backed Open-Sleigh harness

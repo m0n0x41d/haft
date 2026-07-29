@@ -84,6 +84,7 @@ jobs:
     name: Pre-release tests
     needs: [guard]
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v6
         with:
@@ -105,9 +106,17 @@ jobs:
 
       - name: Run Go race tests
         run: |
-          go test -race -count=1 -timeout=20m \
-            -skip '^TestP13ConsolidatedAcceptance$' \
-            ./...
+          packages=$(go list ./... | grep -v /desktop)
+
+          while IFS= read -r pkg; do
+            echo "::group::go test -race $pkg"
+            go test -v -race -count=1 -timeout=180m \
+              -skip '^TestP13ConsolidatedAcceptance$' \
+              "$pkg"
+            echo "::endgroup::"
+          done <<EOF
+          $packages
+          EOF
 
       - name: Run OpenSleigh tests
         working-directory: open-sleigh

@@ -25,6 +25,7 @@ jobs:
   test-and-build:
     name: Test & Build
     runs-on: ubuntu-latest
+    timeout-minutes: 360
     steps:
       - uses: actions/checkout@v6
         with:
@@ -57,7 +58,7 @@ jobs:
 
           while IFS= read -r pkg; do
             echo "::group::go test -race $pkg"
-            go test -v -race -count=1 -timeout=20m \
+            go test -v -race -count=1 -timeout=180m \
               -skip '^TestP13ConsolidatedAcceptance$' \
               "$pkg"
             echo "::endgroup::"

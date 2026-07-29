@@ -106,11 +106,14 @@ func TestMiniMaxRegistry(t *testing.T) {
 	cases := []struct {
 		id      string
 		context int
+		in      float64
+		out     float64
+		cacheR  float64
 		cacheW  float64
 		video   bool
 	}{
-		{id: "MiniMax-M3", context: 1_000_000, video: true},
-		{id: "MiniMax-M2.7", context: 204_800, cacheW: 0.375},
+		{id: "MiniMax-M3", context: 1_000_000, in: 0.6, out: 2.4, cacheR: 0.12, video: true},
+		{id: "MiniMax-M2.7", context: 204_800, in: 0.3, out: 1.2, cacheR: 0.06, cacheW: 0.375},
 	}
 	for _, tc := range cases {
 		m, ok := r.Lookup(tc.id)
@@ -119,6 +122,15 @@ func TestMiniMaxRegistry(t *testing.T) {
 		}
 		if m.ContextWindow != tc.context {
 			t.Errorf("%s context window: got %d, want %d", tc.id, m.ContextWindow, tc.context)
+		}
+		if m.CostPer1MIn != tc.in {
+			t.Errorf("%s input price: got %v, want %v", tc.id, m.CostPer1MIn, tc.in)
+		}
+		if m.CostPer1MOut != tc.out {
+			t.Errorf("%s output price: got %v, want %v", tc.id, m.CostPer1MOut, tc.out)
+		}
+		if m.CostPer1MCacheRead != tc.cacheR {
+			t.Errorf("%s cache-read price: got %v, want %v", tc.id, m.CostPer1MCacheRead, tc.cacheR)
 		}
 		if m.CostPer1MCacheWrite != tc.cacheW {
 			t.Errorf("%s cache-write price: got %v, want %v", tc.id, m.CostPer1MCacheWrite, tc.cacheW)

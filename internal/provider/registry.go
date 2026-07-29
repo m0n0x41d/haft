@@ -497,9 +497,9 @@ func EmbeddedProviders() []ProviderInfo {
 					SupportsImages:     true,
 					SupportsVideo:      true,
 					ThinkingModes:      []string{"adaptive", "disabled"},
-					CostPer1MIn:        0.3,
-					CostPer1MOut:       1.2,
-					CostPer1MCacheRead: 0.06,
+					CostPer1MIn:        0.6,
+					CostPer1MOut:       2.4,
+					CostPer1MCacheRead: 0.12,
 				},
 				{
 					ID:                  "MiniMax-M2.7",

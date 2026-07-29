@@ -409,6 +409,10 @@ defmodule OpenSleigh.Agent.Adapter do
         prefix = String.trim_trailing(pattern, "/**")
         path == prefix or String.starts_with?(path, prefix <> "/")
 
+      String.ends_with?(pattern, "/") ->
+        prefix = String.trim_trailing(pattern, "/")
+        path == prefix or String.starts_with?(path, prefix <> "/")
+
       String.contains?(pattern, "*") ->
         pattern
         |> glob_regex()

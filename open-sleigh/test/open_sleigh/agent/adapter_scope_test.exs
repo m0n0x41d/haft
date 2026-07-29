@@ -89,6 +89,26 @@ defmodule OpenSleigh.Agent.AdapterScopeTest do
              Adapter.validate_terminal_diff(session, ["lib/a.ex", "lib/b.ex"])
   end
 
+  test "terminal diff validation treats trailing slash scope entries as recursive directories",
+       ctx do
+    commission =
+      ["gui/"]
+      |> scope!([])
+      |> commission!()
+
+    session =
+      ctx.workspace
+      |> adapter_session!(commission, MapSet.new([:write]))
+
+    changed_paths = [
+      "gui/foo.cpp",
+      "gui/nested/bar.cpp"
+    ]
+
+    assert :ok = Adapter.validate_terminal_diff(session, changed_paths)
+    assert [] = Adapter.terminal_diff_out_of_scope_paths(session, changed_paths)
+  end
+
   test "terminal diff observability reports exact out-of-scope paths", ctx do
     commission =
       ["lib/a.ex"]

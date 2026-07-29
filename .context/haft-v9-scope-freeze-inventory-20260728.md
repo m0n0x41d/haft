@@ -85,7 +85,7 @@ totals.
 - COMMIT, push/integration, SpecSection lifecycle, host restart, tag, and
   release remain separate operator gates.
 
-## Current addendum — 2026-07-29
+## Historical source-closeout addendum — 2026-07-29, before the FPF 2ada refresh
 
 This addendum preserves the historical 2026-07-28 baseline above and records
 the post-C3/C4 source-closeout tree. It remains an inventory and proposed
@@ -361,3 +361,158 @@ evidence.
 
 No repository path was staged, committed, reset, restored, stashed, cleaned,
 or deleted during this addendum.
+
+## Current source-integration addendum — 2026-07-29
+
+This addendum supersedes the word “Current” in the historical addendum above
+for closeout orientation. It describes the FPF integration worktree over parent
+HEAD `432eb8572974b022a63e98972c2222d3d364c6b6`; it is not a post-commit tree
+identity.
+
+- `data/FPF`: `0990ff1` -> `2ada413629b846ef308222d16489a82cb5b40a71`;
+- committed-index candidate: 7,968 source units, database SHA-256
+  `2df40bb9d4e754ee8e9d47ced1eb4926fbb941ac42880dc0a365c60fa4b04bc4`;
+- current source compiler: `fpf-base-typeenv.cov2.v5`;
+- current Base TypeEnv:
+  `typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`;
+- historical `0990ff1` V4 Base retained for exact replay;
+- Local-Practice `1.4.0` prepared as a non-binding candidate, with no head
+  selection;
+- the embedded token gate was rebaselined and passed against the refreshed
+  source bundle;
+- an exact `task fpf-index` rerun retained the V4-to-V5 compatibility
+  assessment and the byte-identical database SHA-256 above;
+- the embedded “target system” query again reaches the source-owned
+  `SYSTEM-IN-CONTEXT` card and its current C.26, C.32.PAD, and E.18.NET
+  witnesses;
+- full `cmd/indexer`, `internal/fpf`, `internal/fpf/typeenvsql`, and
+  `internal/cli` package checks passed on the refreshed source worktree.
+
+No earlier P13/P14 evidence is current for these bytes. The
+RoleAssignment/work attribution, C.2.1 ClaimGraph invariant, and existing
+merge/split semantic questions remain outside this evidence-maintenance
+addendum. Commit, SpecSection lifecycle, install/restart, P14, tag, publication,
+and release authority remain separate.
+
+## Final source and commit-readiness addendum — 2026-07-29
+
+This addendum supersedes older uses of “current” for the delegated source and
+commit task. It does not close D2 through D7 and does not turn source evidence
+into installed-runtime or release evidence.
+
+### Exact source identities and commits
+
+- starting parent: `432eb8572974b022a63e98972c2222d3d364c6b6`;
+- materialized source commits, in order:
+  `7e4ac03b`, `aff54c13`, `0de1cc17`, `fdd6ad96`, `5c989004`,
+  `72d6e310`, `545053c2`, `c948e747`, `f2937047`, and `c6422f11`;
+- `data/FPF`: clean detached source at
+  `2ada413629b846ef308222d16489a82cb5b40a71`, equal to live
+  `origin/main`;
+- `FPF-Spec.md`: 11,789,814 bytes, SHA-256
+  `00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af`;
+- `internal/cli/fpf.db`: 73,265,152 bytes, 7,968 source units, schema 11,
+  SHA-256
+  `2df40bb9d4e754ee8e9d47ced1eb4926fbb941ac42880dc0a365c60fa4b04bc4`;
+- Base compiler and ref: `fpf-base-typeenv.cov2.v5` and
+  `typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`;
+- retained compatibility: `compared` against exact V4 Base
+  `typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`,
+  with 22 changes and no self-comparison;
+- immutable V4 archive: 139,574 bytes, SHA-256
+  `28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`;
+- Local-Practice candidate `1.4.0`: 81,823 bytes, SHA-256
+  `8c4544660446dff9de3edb8ac93b6ccd9378e69e2909bb57c47d107a0900a2b7`,
+  still non-binding;
+- temporary, uninstalled source binary:
+  `/tmp/haft-v9-candidate.0Vw6IR/haft`, SHA-256
+  `b24c5237a41e71ce5ab5daa527a3c884854e8d4fc0ffd4365a3b35dfe9b7ca9a`.
+
+### Exact verification result
+
+- `gofmt` over changed Go files, `go mod tidy`, `git diff --check`,
+  `go mod tidy -diff`, `go mod verify`, and `go list ./...`: PASS;
+  module verification reported `all modules verified`;
+- focused indexer, FPF, TypeEnv-SQL, embedding, config, CLI, and direct
+  provider-normalization suites: PASS;
+- predecessor compiler and envelope reads now share one read-only `sql.Tx`;
+  deterministic path-replacement tests prove one opened snapshot, unknown
+  compiler fail-closure, exactly-once close, and joined operation/close errors;
+- optional candidate source-ground spoofing and fallback optional-batch
+  retention have bounded regression coverage, including dedupe, ordering,
+  caps, and combined omission/truncation metadata;
+- pre/post `task fpf-index` database SHA-256 values were identical; nested
+  `task fpf-verify` and a separate `task fpf-verify` passed. The handoff's
+  alternate raw command had DB/spec arguments reversed and failed before
+  verification; the live `Taskfile.yaml` order is authoritative;
+- actionlint v1.7.7 and `go vet ./...`: PASS;
+- the first golangci-lint v2.11.4 run found one test-only helper left in
+  production; the helper moved to `_test.go`, focused tests passed again, and
+  the final exact linter run reported `0 issues`;
+- literal
+  `GOMAXPROCS=2 GOFLAGS=-p=1 go test -count=1 ./...` reached the Go test
+  binary's default 10-minute package deadline and failed
+  `internal/cli` at 601.320 seconds while test 955 of 985 had been running for
+  one second. `h-diagnose` probes refuted deadlock and order dependence: that
+  test passed alone in 1.30 seconds, five repetitions passed, and neighboring
+  order probes were stable;
+- the established finite-budget normal run
+  `GOMAXPROCS=2 GOFLAGS=-p=1 go test -count=1 -timeout=30m ./...` passed
+  the complete package graph; `internal/cli` passed in 747.861 seconds. The
+  stronger claim that the stock 10-minute command is green remains false;
+- Open-Sleigh `mix format --check-formatted`,
+  `mix compile --warnings-as-errors`, and `mix test`: PASS; 509 tests and
+  2 properties passed, 3 integration-tagged tests were excluded by the suite;
+- temporary candidate `version`, `carrier check`, and `doctor`: PASS.
+  Doctor reported 7 passes, 0 failures, and one warning about pre-existing
+  installed `haft serve` processes; no process was signaled;
+- focused current race runs for the indexer snapshot, optional FPF source
+  fallback, and embedding-provider validation: PASS. The earlier exact
+  isolated DB race pass remains relevant because that package was unchanged.
+  Full package-isolated hosted race proof is still absent; the earlier CLI
+  race run remains a partial timeout, not a pass;
+- final audit: 0 staged junk, 0 unexpected untracked files, 0 added maintainer
+  paths, 0 shaped secrets, 0 live production callers of deleted standalone
+  packages, and 0 SQLite journal/WAL/SHM leftovers.
+
+### Cleanup, ports, and release-note truth
+
+- commits `72d6e310` and `c948e747` remove the retired standalone
+  agent/provider/tooling islands and obsolete repository hooks while retaining
+  the current terminal presentation paths with live production callers;
+- published-main safeguards absent from the divergent v9 ancestry were ported
+  for recursive directory scopes, commission lifecycle fail-closure,
+  passed-running-preflight replay, and recursive Open-Sleigh struct
+  serialization. The Linux ARM64 Beam safeguard was already present and was
+  not reimplemented;
+- current Unreleased has exactly one each of `Changed`, `Added`, `Fixed`, and
+  `Removed`; 457 bold bullet labels are unique. Numeric and hash claims match
+  the tree. Race wording now says release aligns with CI's existing
+  package-isolation policy and cites no uncarried timing measurements;
+- root MethodRun
+  `mpull-20260729-update-haft-to-the-newly-pulled-fpf-revision-2ad-613b5564`
+  closed through the temporary source candidate with both hard gates
+  satisfied, no waivers, and verification `partial`. The partial result keeps
+  the stock test-budget mismatch and later release gates visible.
+
+### Open semantic and release gates
+
+- FPF `2ada413` still exposes unresolved source/spec relations around
+  `BoundedContext`, the performer of Work, episteme slot assignments, and the
+  breadth of the C.2.1 ClaimGraph invariant;
+- the active DecisionRecord still includes merge/split semantics while the
+  frozen runtime/spec contract supports context-bound `admit_alias` and
+  `supersede_alias`. Selecting, narrowing, or superseding that binding remains
+  a separate human semantic and SpecSection lifecycle gate;
+- `docs` is clean at recorded gitlink
+  `2053e86cb791cfb89c83b24d3756da39c76c472c`, but live `origin/main` is
+  `cb4034307bd2bb3c909afa53f4065a41928b36f1`; the checkout is ahead by one and
+  no advertised remote ref contains `2053e86`. Reproducible checkout and D7
+  publication remain blocked until that commit is pushed under separate
+  authority;
+- fresh consolidated P13, installation, restart, installed P14, tag,
+  publication, and release authority remain absent. No install, restart,
+  signal, P14 run, push, tag, or release occurred in this source task.
+
+Source implementation and atomic local commits are complete. The v9 release
+verdict remains **NO-GO**.

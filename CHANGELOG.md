@@ -8,8 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 The last published release is
 [v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
-The v8.2.0 candidate was never published; entries previously grouped under
-that heading remain unreleased and are part of the v9 candidate lineage.
+The v8.2.0 candidate was never published; work previously described as an
+8.2 candidate remains unreleased and is part of the v9 candidate lineage.
 
 ### Changed
 
@@ -57,6 +57,58 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   ImplementationPlans, WorkCommissions, and work relations carry those orders.
   `TargetSystemSpec` and `SoftwareSystemSpec` are now stated as Haft
   local-practice carriers for Agentic SWE, not normative FPF A.1 kinds.
+- **`h-verify` safe drain autonomy.** The bundled `h-verify` skill now treats an
+  operator request to verify stale/refresh-due backlog as sufficient authority
+  to apply kernel-classified machine-safe closures: rung-1 deterministic
+  auto-baselines and rung-2 allowlisted machine evidence/revalidation. Material
+  drift, semantic uncertainty, reopen/supersede choices, weak waivers, and
+  public/authority/security-sensitive cases remain operator-facing, with
+  applied automatic closures reported alongside undo commands.
+- **README onboarding flow.** README now leads with the practical Haft
+  installation/onboarding path, a shorter FPF explanation, explicit `h-reason`
+  and host-agent guidance, updated host tables, and a leaner roadmap section
+  that points release history back to this changelog.
+- **Markdown carriers round-trip structured artifact data through `haft sync`.**
+  Artifact markdown projections now include a hidden `structured_data` carrier
+  block when structured JSON exists. The shared artifact parser extracts that
+  block back into SQLite on `haft sync`; legacy ProblemCard markdown without an
+  envelope imports as `legacy` with audit warnings instead of being promoted to
+  exact v3 semantics.
+- **Default `h-status` is now an operator cockpit.** `haft_query(action="status")`
+  renders capped high-signal lanes for operator attention, active work,
+  decision-health counts, and a one-line coverage cue; detailed status remains
+  available through `full=true`, full module coverage through
+  `haft_query(action="coverage")`, drift/stale detail through
+  `haft_refresh(action="scan", verbose=true)`, and maintenance work orders
+  through `haft_refresh(action="plan")`. MCP initialize instructions, the
+  bundled `h-status` skill, the interface catalog, Pi carriers, and installed
+  instruction templates now spell out that compact omission is not evidence of
+  absence.
+- **MCP defaults now stay compact by default.** `tools/list` trims
+  non-load-bearing schema descriptions and points agents at `haft interface`
+  for full contracts; `haft_refresh(action="scan")`, `haft_query(status)`,
+  and `haft_query(code_context)` now return capped summaries unless callers
+  explicitly request `verbose=true` or `full=true`.
+- **Bundled haft skills now teach the compact CLI path.** The frame, explore,
+  compare, decide, note, reason, and status skills route agents through
+  `haft interface` and input-file artifact creation instead of inlining long
+  schemas; MCP write tools remain the compatible fallback.
+- **MCP initialize instructions surface autonomous maintenance explicitly.**
+  Agents are now told to relay autonomous-maintenance actions, undo commands,
+  and typed maintenance work orders instead of silently absorbing overseer
+  changes.
+- **Bundled FPF publication and source-derived index updated.** Advanced
+  `data/FPF` from `0990ff1` to `2ada413` and regenerated the committed
+  `internal/cli/fpf.db` from that exact source snapshot. The bundle now contains
+  7,968 source units at spec digest
+  `sha256:00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af`,
+  including A.15.6 and E.18.NET plus changed role-assignment, method/work, and
+  transformation-flow semantics.
+- **Base TypeEnv compiler edition V5.** Updated the source compiler for current
+  C.2.1 empirical-grounding semantics: `covered=C` and the maximal continuous
+  coverage interval are predicate and occurrence-identity content, not a third
+  participant `SlotSpec`. The aligned Base is
+  `typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`.
 
 ### Added
 
@@ -119,6 +171,17 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   hidden routing decision. A pinned token gate verifies bounded concern
   retrieval against full-source context. Dense/hybrid superiority remains
   deferred.
+- **Exact V4 Base TypeEnv replay archive.** Added the immutable 139,574-byte
+  artifact compiled from FPF `0990ff1` under compiler V4, keyed by
+  `typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`.
+  Exact lookup has no latest or fallback route.
+- **Typed-memory Local-Practice candidate 1.4.0.** Added a non-binding successor
+  carrying the 1.3.0 declaration set on the exact V5 Base. Current runtime and
+  Genesis/Transition preparation use its exact source bytes while every older
+  edition remains available for replay. This carrier does not select a
+  `ProjectTypeEnvHead`, provide P13/P14 evidence, or grant release authority.
+- **Versioned documentation source.** Added the `docs` submodule and aligned its
+  public guides with the Haft v9 CLI, skills, onboarding, and migration surface.
 - **Compact twelve-tool MCP contract.** The v9 server advertises exactly twelve
   public capabilities: note, problem, solution, decision, refresh, query,
   method, commission, spec section, onboarding, entity establishment, and raw
@@ -428,7 +491,8 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   with explicit evidence refs, missing-evidence boundaries, simplify/kill
   criteria, and unmeasured gaps; the evidence ontology and term map now name
   current F0-F9 formality with legacy F0-F3 bridge/loss wording.
-- **Product-value evidence refresh.** The semantic-spine product-value evidence
+- **Product-value stale-footer evidence refresh.** The semantic-spine
+  product-value evidence
   packet now includes the read-only query stale-footer fallback guard as
   compact-status/noise-control evidence.
 - **Equal-budget product-value comparison protocol.** The product-value
@@ -765,7 +829,7 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   unvalidated, with summary counts kept in the explicit drill-down report. This
   makes generated/validated/legacy contract posture visible without generating
   schemas or expanding default status payloads.
-- **EvidencePath formality diagnostics.** `haft evidence path` and
+- **EvidencePath stronger-use formality enforcement.** `haft evidence path` and
   `haft_query(action="evidence_path")` now expose explicit
   `formality_diagnostics` for current F0-F9, legacy lossy, and unversioned
   formality readings. Stronger uses that require current F0-F9 formality now
@@ -845,7 +909,8 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   posture for the evidence item that determines the weakest formality reading.
   Legacy F0-F3 evidence remains readable as lossy legacy formality rather than
   being silently presented as current F0-F9 authority.
-- **EvidencePath formality diagnostics.** The read-only `haft evidence path`
+- **EvidencePath text/discovery formality labeling.** The read-only
+  `haft evidence path`
   text summary and `query.evidence_path` discovery contract now name evidence
   formality scale, bridge, and loss posture explicitly. Legacy or undeclared
   F-levels stay diagnostic-only and still cannot create approval, gate passage,
@@ -1331,54 +1396,58 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   `reopen`) plus the bundled `h-spec` skill surface so spec readiness,
   carrier edits, and human baseline gates share one kernel-backed workflow.
 
-### Changed
-
-- **`h-verify` safe drain autonomy.** The bundled `h-verify` skill now treats an
-  operator request to verify stale/refresh-due backlog as sufficient authority
-  to apply kernel-classified machine-safe closures: rung-1 deterministic
-  auto-baselines and rung-2 allowlisted machine evidence/revalidation. Material
-  drift, semantic uncertainty, reopen/supersede choices, weak waivers, and
-  public/authority/security-sensitive cases remain operator-facing, with
-  applied automatic closures reported alongside undo commands.
-- **README onboarding flow.** README now leads with the practical Haft
-  installation/onboarding path, a shorter FPF explanation, explicit `h-reason`
-  and host-agent guidance, updated host tables, and a leaner roadmap section
-  that points release history back to this changelog.
-- **Markdown carriers round-trip structured artifact data through `haft sync`.**
-  Artifact markdown projections now include a hidden `structured_data` carrier
-  block when structured JSON exists. The shared artifact parser extracts that
-  block back into SQLite on `haft sync`; legacy ProblemCard markdown without an
-  envelope imports as `legacy` with audit warnings instead of being promoted to
-  exact v3 semantics.
-- **Default `h-status` is now an operator cockpit.** `haft_query(action="status")`
-  renders capped high-signal lanes for operator attention, active work,
-  decision-health counts, and a one-line coverage cue; detailed status remains
-  available through `full=true`, full module coverage through
-  `haft_query(action="coverage")`, drift/stale detail through
-  `haft_refresh(action="scan", verbose=true)`, and maintenance work orders
-  through `haft_refresh(action="plan")`. MCP initialize instructions, the
-  bundled `h-status` skill, the interface catalog, Pi carriers, and installed
-  instruction templates now spell out that compact omission is not evidence of
-  absence.
-- **MCP defaults now stay compact by default.** `tools/list` trims
-  non-load-bearing schema descriptions and points agents at `haft interface`
-  for full contracts; `haft_refresh(action="scan")`, `haft_query(status)`,
-  and `haft_query(code_context)` now return capped summaries unless callers
-  explicitly request `verbose=true` or `full=true`.
-- **Bundled haft skills now teach the compact CLI path.** The frame, explore,
-  compare, decide, note, reason, and status skills route agents through
-  `haft interface` and input-file artifact creation instead of inlining long
-  schemas; MCP write tools remain the compatible fallback.
-- **MCP initialize instructions surface autonomous maintenance explicitly.**
-  Agents are now told to relay autonomous-maintenance actions, undo commands,
-  and typed maintenance work orders instead of silently absorbing overseer
-  changes.
-- **Bundled FPF corpus refreshed.** The vendored `data/FPF` pointer and baked
-  `internal/cli/fpf.db` were regenerated for the upstream ontic/transformation
-  vocabulary update.
-
 ### Fixed
 
+- **Fail-closed predecessor snapshots and optional FPF retrieval.** Predecessor
+  compiler probing and envelope loading now share one opened read-only SQLite
+  snapshot, so path replacement cannot mix compiler and artifact identities
+  while legacy-V1 and exact-rebuild behavior remain intact. Optional candidate
+  producers can no longer claim authored-source grounding, and successful
+  pattern-body fallback retains their bounded weak candidates plus accurate
+  omission and truncation metadata without promoting retrieval rank to
+  applicability.
+- **Source-current FPF query and conformance oracles.** Rebased exact source
+  ranges, provenance assertions, P13 current-candidate anchors,
+  A.15.6/E.18.NET navigation, category-error boundaries, and the embedded
+  token-gate corpus to FPF `2ada413`. These are source-test results; they are
+  not installed P14 evidence or release authority.
+- **Idempotent source-index regeneration.** Exact `fpf-index` rebuilds now
+  preserve the prior non-self TypeEnv compatibility assessment when the
+  compiled artifact is unchanged, while a stored self-comparison fails closed.
+  Rebuilding the committed FPF `2ada413` index therefore retains its V4-to-V5
+  assessment and byte-identical database digest.
+- **Exact source phrases outrank weak token unions.** A candidate admitted only
+  by separate heading, keyword, or FTS tokens can no longer suppress stronger
+  contiguous pattern-body phrase navigation. The real “target system” concern
+  again reaches the source-owned `SYSTEM-IN-CONTEXT` card and its current
+  C.26, C.32.PAD, and E.18.NET witnesses.
+- **CI and release package-isolated race contour and budget.** Both
+  workflows run the full non-desktop Go package closure under the race detector
+  one package at a time with a 180-minute per-package ceiling inside an explicit
+  360-minute job budget. This aligns the release lane with CI's existing
+  package-isolation policy and gives long-running packages explicit finite
+  headroom. The timeout change removes no additional package or test;
+  consolidated P13 remains on its separate acceptance lane.
+- **Root-layout maintenance paths and current repository links.** Optional
+  reference-repository discovery now resolves the project-local
+  `.context/repos` path after the root-level Go-module move. Contributor setup
+  and the current Open-Sleigh specification point to `m0n0x41d/haft`, while
+  Open-Sleigh tasks derive the active checkout instead of embedding one
+  maintainer's path, public profile fixtures use a neutral absolute root, and
+  obsolete `src/mcp` ignore and binary-attribute entries are gone.
+- **Portable installation and current health diagnostics.** `task install`
+  resolves its stale-binary cleanup target through `GOBIN` or `GOPATH`, creates
+  the selected binary directory before building, and no longer embeds a
+  maintainer-specific path. `haft doctor` now checks the current CLI, project
+  database, binding, and MCP-process contour instead of requiring a JavaScript
+  runtime or reporting removed standalone-agent auth, provider, hook, and skill
+  surfaces.
+- **Published v8 lineage safeguards retained.** Ported the four safeguards
+  absent from the divergent v9 development ancestry: recursive trailing-slash
+  scopes in Go and Open-Sleigh, fail-closed commission lifecycle commands,
+  idempotent replay of passed running preflight events, and recursive
+  Open-Sleigh struct serialization. The already-present Linux ARM64 Beam setup
+  contract was confirmed unchanged.
 - **Historical changelog restoration.** Restored the pre-v5 quint-code release
   history under a distinct `[Unreleased - pre-v5]` heading, preserving the
   recovered v1-v4 notes without colliding with the current Unreleased section.
@@ -1735,7 +1804,8 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   now emits the same grouped drift/stale signal projection as compact text by
   default, with `--full` preserving the raw per-decision signal list for exact
   drill-down.
-- **Product-value evidence refresh.** The 2026-06-24 product-value evidence
+- **Product-value diagnostics evidence refresh.** The 2026-06-24 product-value
+  evidence
   packet now includes the stale `haft serve` diagnostic and contract-audit
   authority-inventory guard, with updated value-space evidence-ref counts and
   current drift metrics while preserving the equal-budget comparison gap.
@@ -1801,15 +1871,10 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   archived carrier, and keeps current enabling-system architecture/stack docs
   aligned to the v8 host-skills + MCP + CLI surface model.
 - **Dead-surface carrier semio guard.** Carrier semio checks no longer treat a
-  neighboring "supported hosts" phrase as permission to present desktop/TUI/
-  standalone surfaces as current, and target-system support docs now state the
-  v8 current surface as host skills/prompts + MCP + CLI while keeping desktop
-  references archived/provenance-only.
-- **Transport parity guard current query actions.** The transport action parity
-  regression now documents the current `haft_query` MCP action surface,
-  including code-intelligence, ceremony, check, and term-resolution actions,
-  while keeping the old standalone surface as documented legacy drift instead
-  of silently omitting current actions from the guard.
+  neighboring "supported hosts" phrase as permission to present the desktop
+  wrapper or standalone-agent TUI as current, and target-system support docs
+  now state the v8 current surface as host skills/prompts + MCP + CLI while
+  keeping desktop references archived/provenance-only.
 - **Product-value evidence post-rebuild packet.** The 2026-06-24 product-value
   evidence now reflects the rebuilt installed CLI, the latest autonomous
   maintenance run/undo command, the read-only overseer drill-down fix, the host
@@ -2261,14 +2326,15 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   `--json` as an explicit drill-down over current authority, support,
   compatibility, provenance, archive, and sidekick carriers. The manifest keeps
   `/h-reason` as a current umbrella skill, marks Pi as compatibility packaging,
-  and labels standalone/TUI/desktop/Open-Sleigh surfaces as non-current so they
-  do not re-enter the product model through stale carriers.
+  labels the standalone-agent TUI and desktop wrappers as archive, recognizes
+  `haft board` and `haft run` terminal rendering as current CLI presentation
+  support, and keeps Open-Sleigh outside Haft semantic authority.
 - **Carrier semio guard.** Added `haft carrier check` / `--json` as a focused
   fixed-point wording check over current/support/compat carrier text. It fails
-  dead standalone/TUI/desktop runtime-surface mentions that are not explicitly
-  labeled dropped, archive, provenance, support, or not-current, while keeping
-  default status free of carrier-manifest noise. MCP parity is available through
-  read-only `haft_query(action="carrier_manifest")` and
+  dead standalone-agent TUI/desktop runtime-surface mentions that are not
+  explicitly labeled dropped, archive, provenance, support, or not-current,
+  while keeping default status free of carrier-manifest noise. MCP parity is
+  available through read-only `haft_query(action="carrier_manifest")` and
   `haft_query(action="carrier_check")` drill-down actions, and `haft interface`
   documents both carrier query contracts as read-only, non-status surfaces.
 - **MCP binding authority boundary.** MCP dispatch now fails binding governance
@@ -2334,13 +2400,15 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   style from the original `CLAUDE.md`: dry technical humor is allowed when it
   helps, and agents are told to sound like pairing engineers rather than
   executive-presenting bots. Fixes [#92](https://github.com/m0n0x41d/haft/issues/92).
-- **RETAINED COMPATIBILITY/MIGRATION.** Shared `haft-embed` daemons no longer
+- **RETAINED COMPATIBILITY/MIGRATION — shared-sidecar cwd isolation.** Shared
+  `haft-embed` daemons no longer
   inherit the first client project's
   working directory; the launcher now starts them from the private socket
   directory and resolves configured cache paths to absolute paths before
   launch. This retained runtime is outside the v9 contract and P14 acceptance
   basis.
-- **RETAINED COMPATIBILITY/MIGRATION.** Shared `haft-embed` daemons no longer
+- **RETAINED COMPATIBILITY/MIGRATION — shared-sidecar memory retention.** Shared
+  `haft-embed` daemons no longer
   retain multi-gigabyte allocator arenas indefinitely after cold corpus warms:
   hybrid recall batches corpus embedding misses, the Rust sidecar disables the
   ORT CPU memory arena by default (`--cpu-arena` restores the old allocator
@@ -2350,6 +2418,11 @@ that heading remain unreleased and are part of the v9 candidate lineage.
 
 ### Removed
 
+- **Obsolete `src/mcp` hook stack.** Removed the tracked shell hook,
+  `pre-commit` configuration, and setup script that targeted a deleted module,
+  pinned an obsolete linter, and incorrectly claimed exact CI parity. Current
+  contributor guidance now describes bounded local checks without presenting
+  them as release evidence.
 - **PatternUse and PatternRecall product surfaces.** Removed the transient
   route-card, route-vector, hybrid gateway, `pattern-use`, `pattern_recall`,
   compiled recommendation, behavior-corpus, and shadow pattern-description
@@ -2363,10 +2436,15 @@ that heading remain unreleased and are part of the v9 candidate lineage.
   guidance, while abductive, boundary, semantic-fanout, and spec-coverage
   routines stay inside the independent public capability that owns the current
   question.
-- **Remaining standalone-agent implementation.** Removed legacy prompt-cycle,
-  phase, permission, safety, compaction, title, and TUI-adjacent packages left
-  after the v8 governance-substrate pivot. Haft v9 is consumed through host
-  skills, CLI, and MCP over one project artifact graph.
+- **Remaining standalone-agent implementation.** Removed the unreachable
+  prompt-cycle, guardrail, evidence, subagent, LLM-provider, tool registry,
+  file/bash/web tool, LSP client, MCP client, task-manager, hook-executor, and
+  legacy skill-loader packages left after the v8 governance-substrate pivot.
+  The optional OpenAI embedding adapter retains its embeddings client and a
+  local direct-API-key resolver; no agent/chat provider transport remains.
+  Current `haft board` and `haft run` terminal presentation remains supported.
+  Haft v9 is consumed through host skills, CLI, and MCP over one project
+  artifact graph.
 - **EnablingSystemSpec as the software implementation carrier.** Removed the
   overloaded `.haft/specs/enabling-system.md` software carrier from current
   onboarding. `SoftwareSystemSpec` now carries the software-system boundary;
@@ -2937,7 +3015,20 @@ Flagship release. New v8 agent TUI on Bun + @opentui/core + SolidJS, talking to 
 
 ### Fixed
 
-- (No fixes in this release — the v8 work is purely additive on top of the v7.1.0 foundation.)
+- **Open-Sleigh runtime writers serialize nested structs.** Runtime log and
+  status JSON conversion recursively passes structs through
+  `Map.from_struct/1` instead of rejecting nested struct fields.
+- **Commission lifecycle and directory scope authorization.** Go and
+  Open-Sleigh both treat a trailing-slash scope such as `docs/` as that
+  directory plus descendants without admitting sibling prefixes. Open-Sleigh
+  rejects commission lifecycle bash/MCP spellings before command execution.
+- **Replayed preflight lifecycle is idempotent only after a passed running
+  preflight.** Replayed `record_preflight` and `start_after_preflight` events
+  are accepted only for a running commission whose preflight already passed;
+  queued, blocked, failed, and unrelated replays remain fail-closed.
+- **Linux ARM64 release Beam setup.** Release builds on
+  `ubuntu-24.04-arm` normalize `ImageOS=ubuntu24` for `erlef/setup-beam` while
+  retaining Erlang/OTP 27 and Elixir 1.18.3.
 
 ## [7.1.0] — 2026-05-13
 

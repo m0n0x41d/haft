@@ -9,7 +9,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/fpf/typeenv"
 	_ "modernc.org/sqlite"
@@ -224,6 +227,282 @@ func TestLoadEmbeddedMemoryRuntimeRejectsNilInputs(t *testing.T) {
 	if _, err := loadEmbeddedMemoryRuntimeFromDB(context.Background(), nil); err == nil {
 		t.Fatal("nil database unexpectedly accepted")
 	}
+}
+
+func TestEmbeddedMemoryRuntimeCacheLoadsImmutableRuntimeOnce(t *testing.T) {
+	cache := embeddedMemoryRuntimeCache{}
+	var calls atomic.Int64
+	loader := func(context.Context) (embeddedMemoryRuntime, error) {
+		calls.Add(1)
+		return embeddedMemoryRuntime{}, nil
+	}
+
+	if _, err := cache.load(context.Background(), loader); err != nil {
+		t.Fatalf("first cache load: %v", err)
+	}
+	if _, err := cache.load(context.Background(), loader); err != nil {
+		t.Fatalf("replayed cache load: %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("immutable runtime loads = %d, want 1", got)
+	}
+}
+
+func TestEmbeddedMemoryRuntimeCacheRetriesFailureAndDoesNotCacheCancellation(
+	t *testing.T,
+) {
+	cache := embeddedMemoryRuntimeCache{}
+	var calls atomic.Int64
+	loader := func(context.Context) (embeddedMemoryRuntime, error) {
+		if calls.Add(1) == 1 {
+			return embeddedMemoryRuntime{}, errors.New("transient load")
+		}
+		return embeddedMemoryRuntime{}, nil
+	}
+
+	if _, err := cache.load(context.Background(), loader); err == nil ||
+		!strings.Contains(err.Error(), "transient load") {
+		t.Fatalf("first cache load error = %v", err)
+	}
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := cache.load(cancelled, loader); !errors.Is(
+		err,
+		context.Canceled,
+	) {
+		t.Fatalf("cancelled cache load error = %v", err)
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("cancelled load called loader; calls = %d", got)
+	}
+	if _, err := cache.load(context.Background(), loader); err != nil {
+		t.Fatalf("retry cache load: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("retried runtime loads = %d, want 2", got)
+	}
+}
+
+func TestEmbeddedMemoryRuntimeCacheCoordinatesConcurrentLoadAndCanceledWaiter(
+	t *testing.T,
+) {
+	cache := embeddedMemoryRuntimeCache{}
+	var calls atomic.Int64
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	loader := func(context.Context) (embeddedMemoryRuntime, error) {
+		if calls.Add(1) == 1 {
+			close(entered)
+		}
+		<-release
+		return embeddedMemoryRuntime{}, nil
+	}
+
+	primaryDone := make(chan error, 1)
+	go func() {
+		_, err := cache.load(context.Background(), loader)
+		primaryDone <- err
+	}()
+	<-entered
+
+	waiterBase, cancelWaiter := context.WithCancel(context.Background())
+	waiterObserved := make(chan struct{})
+	waiterCtx := &doneObservedContext{
+		Context:  waiterBase,
+		observed: waiterObserved,
+	}
+	waiterDone := make(chan error, 1)
+	go func() {
+		_, err := cache.load(waiterCtx, loader)
+		waiterDone <- err
+	}()
+	<-waiterObserved
+	cancelWaiter()
+	select {
+	case err := <-waiterDone:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("canceled waiter error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("canceled waiter remained blocked behind the active loader")
+	}
+
+	const concurrentWaiters = 16
+	var waiters sync.WaitGroup
+	waiterErrors := make(chan error, concurrentWaiters)
+	waiters.Add(concurrentWaiters)
+	for range concurrentWaiters {
+		go func() {
+			defer waiters.Done()
+			_, err := cache.load(context.Background(), loader)
+			waiterErrors <- err
+		}()
+	}
+	close(release)
+	if err := <-primaryDone; err != nil {
+		t.Fatalf("primary load: %v", err)
+	}
+	waiters.Wait()
+	close(waiterErrors)
+	for err := range waiterErrors {
+		if err != nil {
+			t.Fatalf("concurrent waiter: %v", err)
+		}
+	}
+	if got := calls.Load(); got != 1 {
+		t.Fatalf("immutable runtime loader calls = %d, want 1", got)
+	}
+}
+
+func TestEmbeddedMemoryRuntimeCacheDoesNotRetainSuccessRacingCancellation(
+	t *testing.T,
+) {
+	cache := embeddedMemoryRuntimeCache{}
+	var calls atomic.Int64
+	ctx, cancel := context.WithCancel(context.Background())
+	loader := func(context.Context) (embeddedMemoryRuntime, error) {
+		if calls.Add(1) == 1 {
+			cancel()
+		}
+		return embeddedMemoryRuntime{}, nil
+	}
+
+	if _, err := cache.load(ctx, loader); !errors.Is(err, context.Canceled) {
+		t.Fatalf("cancellation-racing load error = %v", err)
+	}
+	if _, err := cache.load(context.Background(), loader); err != nil {
+		t.Fatalf("retry after cancellation-racing success: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("loader calls = %d, want uncached retry count 2", got)
+	}
+}
+
+func TestEmbeddedMemoryRuntimeCacheHealthyWaiterRetriesCanceledLeader(
+	t *testing.T,
+) {
+	cache := embeddedMemoryRuntimeCache{}
+	var calls atomic.Int64
+	leaderEntered := make(chan struct{})
+	loader := func(ctx context.Context) (embeddedMemoryRuntime, error) {
+		if calls.Add(1) == 1 {
+			close(leaderEntered)
+			<-ctx.Done()
+			return embeddedMemoryRuntime{}, ctx.Err()
+		}
+		return embeddedMemoryRuntime{}, nil
+	}
+
+	leaderCtx, cancelLeader := context.WithCancel(context.Background())
+	leaderDone := make(chan error, 1)
+	go func() {
+		_, err := cache.load(leaderCtx, loader)
+		leaderDone <- err
+	}()
+	<-leaderEntered
+
+	waiterObserved := make(chan struct{})
+	waiterCtx := &doneObservedContext{
+		Context:  context.Background(),
+		observed: waiterObserved,
+	}
+	waiterDone := make(chan error, 1)
+	go func() {
+		_, err := cache.load(waiterCtx, loader)
+		waiterDone <- err
+	}()
+	<-waiterObserved
+	cancelLeader()
+	if err := <-leaderDone; !errors.Is(err, context.Canceled) {
+		t.Fatalf("leader error = %v, want canceled", err)
+	}
+	select {
+	case err := <-waiterDone:
+		if err != nil {
+			t.Fatalf("healthy waiter did not retry canceled leader: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("healthy waiter remained blocked after canceled leader")
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("loader calls = %d, want canceled leader plus one retry", got)
+	}
+}
+
+func TestEmbeddedMemoryRuntimeCacheReleasesWaitersAndRetriesAfterPanic(
+	t *testing.T,
+) {
+	cache := embeddedMemoryRuntimeCache{}
+	panicValue := errors.New("loader panic")
+	var calls atomic.Int64
+	leaderEntered := make(chan struct{})
+	releaseLeader := make(chan struct{})
+	loader := func(context.Context) (embeddedMemoryRuntime, error) {
+		if calls.Add(1) == 1 {
+			close(leaderEntered)
+			<-releaseLeader
+			panic(panicValue)
+		}
+		return embeddedMemoryRuntime{}, nil
+	}
+
+	leaderDone := make(chan any, 1)
+	go func() {
+		defer func() {
+			leaderDone <- recover()
+		}()
+		_, _ = cache.load(context.Background(), loader)
+	}()
+	<-leaderEntered
+
+	waiterObserved := make(chan struct{})
+	waiterCtx := &doneObservedContext{
+		Context:  context.Background(),
+		observed: waiterObserved,
+	}
+	waiterDone := make(chan any, 1)
+	go func() {
+		defer func() {
+			waiterDone <- recover()
+		}()
+		_, _ = cache.load(waiterCtx, loader)
+	}()
+	<-waiterObserved
+	close(releaseLeader)
+
+	for name, result := range map[string]<-chan any{
+		"leader": leaderDone,
+		"waiter": waiterDone,
+	} {
+		select {
+		case got := <-result:
+			if got != panicValue {
+				t.Fatalf("%s panic = %#v, want %#v", name, got, panicValue)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("%s remained blocked after loader panic", name)
+		}
+	}
+
+	if _, err := cache.load(context.Background(), loader); err != nil {
+		t.Fatalf("retry after loader panic: %v", err)
+	}
+	if got := calls.Load(); got != 2 {
+		t.Fatalf("loader calls = %d, want panic plus one retry", got)
+	}
+}
+
+type doneObservedContext struct {
+	context.Context
+	once     sync.Once
+	observed chan struct{}
+}
+
+func (ctx *doneObservedContext) Done() <-chan struct{} {
+	ctx.once.Do(func() {
+		close(ctx.observed)
+	})
+	return ctx.Context.Done()
 }
 
 func embeddedDatabasePath(t *testing.T, database *sql.DB) string {

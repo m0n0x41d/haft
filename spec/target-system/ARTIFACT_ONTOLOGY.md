@@ -11,7 +11,7 @@
 | **SpecCoverageEdge** | Spec parser, decision tools, commission tools, evidence tools | Link from spec sections to reasoning artifacts, code, tests, runtime, and evidence | Active → Stale/Superseded |
 | **ProblemCard** | Explicit problem-frame persistence | Frames what's broken: signal, constraints, acceptance | Backlog → In Progress → Addressed |
 | **SolutionPortfolio** | Explicit solution-portfolio persistence | Contains 2+ variants + optional characterization + comparison | Active → Superseded/Deprecated |
-| **DecisionRecord** | Explicit manual `h-decide` binding | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
+| **DecisionRecord** | Direct unambiguous operator request routed through `h-decide` | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
 | **EvidencePack** | Explicit verification or measurement persistence | Measurement data with verdict, CL, valid_until | Active → Superseded (when new measurement replaces) |
 | **Note** | Note fast path | Micro-decision with rationale | Active → (auto-expires 90 days) → Deprecated |
 | **RefreshReport** | Explicit lifecycle action | Documents lifecycle action (waive, reopen, etc.) | Active (immutable log) |

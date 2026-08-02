@@ -324,6 +324,7 @@ func mustCLICanonicalProfileApplicabilityBasis(
 	}
 	return canonicalProfileApplicabilityBasis{
 		projectRoot:           projectRoot,
+		origin:                projectprofile.ProfileAdmissionOriginExplicitOperator,
 		admissionRecordRef:    admissionRef,
 		admissionRecordDigest: admissionDigest,
 		payloadDigest:         matrix.ProfilePayloadDigest(),

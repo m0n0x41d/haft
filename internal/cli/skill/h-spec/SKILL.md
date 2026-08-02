@@ -5,7 +5,7 @@ description: |
 when_to_use: |
   A specification description, carrier, lifecycle state, or cross-carrier semantic repair is current.
 argument-hint: "[spec question, section id, or clarification]"
-allowed-tools: Bash Read Grep Glob Write Edit mcp__haft__haft_query mcp__haft__haft_spec_section
+allowed-tools: Bash Read Grep Glob Write Edit mcp__haft__haft_query mcp__haft__haft_spec_section mcp__haft__haft_onboard
 ---
 
 # h-spec — Typed spec lifecycle and semantic repair
@@ -39,8 +39,9 @@ known absence, or explicit abstention is visible but non-blocking: continue the
 spec lifecycle work without inventing a profile, entity, artifact, or human
 gate. This read does not replace code-graph preflight before editing code or a
 generated carrier. Never persist typed memory merely because a read failed;
-persistence requires an explicit operator save request or a named receiving
-use with request provenance.
+persistence requires an explicit operator save request or a concrete
+operator-named or agent-inferred receiving use supplied by current Work, with
+request provenance.
 
 ## 1. Read lifecycle first
 
@@ -55,7 +56,7 @@ one named section. For an exact section, use
 `haft_query(action="spec_trace", section_id="<id>")` to inspect its current
 edition, status, and baseline, then
 `haft_query(action="spec_use", section_id="<id>",
-use_context="<named receiving use>")` when stronger-use admission is current.
+use_context="<concrete receiving use>")` when stronger-use admission is current.
 The kernel rejects an action-inapplicable `section_id` and returns these
 recovery routes rather than silently ignoring it.
 
@@ -63,6 +64,25 @@ If the MCP action is unavailable, use `haft spec next --json` or
 `haft spec status --json` as the read-only projection of the same lifecycle
 contract and report that fallback. Do not infer lifecycle state from carrier
 grep or Markdown status fields.
+
+### Missing canonical profile
+
+When the same spec request returns `profile_underdetermined`, preserve that
+request, including its exact ScopeID when one was supplied. Treat
+`recovery_surface=haft_onboard` and `next_action` as navigation, not admission
+authority:
+
+1. Read `haft_onboard(action="status")`.
+2. For `needs_profile`, prepare at most a non-binding review.
+3. For `profile_review_ready`, show the readable review without applying it.
+4. Apply only after the operator directly and unambiguously selects the exact
+   reviewed profile and scope; the host routes that request through `h-onboard`
+   without requiring a skill name.
+5. After apply and any required restart, retry the same specification request.
+
+Unrelated draft or clarification work may continue only when it does not rely
+on profile applicability. Never infer or auto-admit a profile, select
+`software` for convenience, or invent a SpecSection lifecycle state.
 
 Use `state`, current `action`, `object`, `carrier`, section identity,
 `workflow_intent`, and `human_gate` as returned. A lifecycle action belongs to
@@ -188,7 +208,8 @@ Never bind a DecisionRecord from this skill.
 ## 6. Relate the current edition to project memory
 
 When an exact current SpecSection edition and exact EntityOfConcern are both
-needed by a named receiving use, project their non-binding relation:
+needed by a concrete operator-named or agent-inferred receiving use, project
+their non-binding relation:
 
 ```text
 mcp__haft__haft_spec_section(

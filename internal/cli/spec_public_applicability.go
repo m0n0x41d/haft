@@ -12,7 +12,11 @@ import (
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
-const projectSpecificationReadOnlyAuthority = "read_only_profile_applicability_projection"
+const (
+	projectSpecificationReadOnlyAuthority         = "read_only_profile_applicability_projection"
+	projectSpecificationProfileRecoverySurface    = "haft_onboard"
+	projectSpecificationProfileRecoveryNextAction = "Read haft_onboard status; prepare or review the project-profile candidate, and apply it only through an explicit h-onboard act before retrying the same specification request."
+)
 
 type publicProjectSpecificationScopeRequest struct {
 	Kind    string `json:"kind"`
@@ -21,6 +25,7 @@ type publicProjectSpecificationScopeRequest struct {
 
 type publicProjectSpecificationApplicabilityBasis struct {
 	ProjectRoot           string `json:"project_root"`
+	Origin                string `json:"origin"`
 	AdmissionRecordRef    string `json:"admission_record_ref"`
 	AdmissionRecordDigest string `json:"admission_record_digest"`
 	ProfilePayloadDigest  string `json:"profile_payload_digest"`
@@ -35,10 +40,12 @@ type publicProjectSpecificationMemberApplicability struct {
 }
 
 type publicProjectSpecificationApplicabilityCue struct {
-	Code          string `json:"code"`
-	Message       string `json:"message"`
-	MissingBasis  string `json:"missing_basis,omitempty"`
-	RequiredInput string `json:"required_input,omitempty"`
+	Code            string `json:"code"`
+	Message         string `json:"message"`
+	MissingBasis    string `json:"missing_basis,omitempty"`
+	RequiredInput   string `json:"required_input,omitempty"`
+	RecoverySurface string `json:"recovery_surface,omitempty"`
+	NextAction      string `json:"next_action,omitempty"`
 }
 
 // publicProjectSpecificationApplicability is an additive read projection over
@@ -210,9 +217,11 @@ func publicProjectSpecificationApplicabilityFrom(
 		missingBasis, _ := resolution.MissingBasis()
 		response.MissingBasis = string(missingBasis)
 		response.Cue = &publicProjectSpecificationApplicabilityCue{
-			Code:         string(projectSpecificationProfileUnderdetermined),
-			Message:      "Canonical project-profile applicability is underdetermined; specification carriers were not evaluated.",
-			MissingBasis: string(missingBasis),
+			Code:            string(projectSpecificationProfileUnderdetermined),
+			Message:         "Canonical project-profile applicability is underdetermined; specification carriers were not evaluated.",
+			MissingBasis:    string(missingBasis),
+			RecoverySurface: projectSpecificationProfileRecoverySurface,
+			NextAction:      projectSpecificationProfileRecoveryNextAction,
 		}
 		return response, nil
 	case projectSpecificationScopeChoiceRequired:
@@ -291,6 +300,7 @@ func publicProjectSpecificationApplicabilityBasisFrom(
 	ledgerRevision := basis.ledgerRevision.Value()
 	return &publicProjectSpecificationApplicabilityBasis{
 		ProjectRoot:           projectRoot,
+		Origin:                string(basis.origin),
 		AdmissionRecordRef:    admissionRecordRef,
 		AdmissionRecordDigest: admissionRecordDigest,
 		ProfilePayloadDigest:  profilePayloadDigest,
@@ -414,6 +424,16 @@ func writeProjectSpecificationApplicabilityCue(
 	fmt.Fprintf(&builder, "Profile cue: %s\n", applicability.Cue.Message)
 	if applicability.Cue.MissingBasis != "" {
 		fmt.Fprintf(&builder, "Missing basis: %s\n", applicability.Cue.MissingBasis)
+	}
+	if applicability.Cue.RecoverySurface != "" {
+		fmt.Fprintf(
+			&builder,
+			"Recovery surface: %s\n",
+			applicability.Cue.RecoverySurface,
+		)
+	}
+	if applicability.Cue.NextAction != "" {
+		fmt.Fprintf(&builder, "Next: %s\n", applicability.Cue.NextAction)
 	}
 	if len(applicability.AvailableScopeIDs) > 0 {
 		availableScopeIDs := strings.Join(

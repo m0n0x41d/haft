@@ -3,11 +3,11 @@ package cli
 type decisionBindingUnavailableError struct{}
 
 func (decisionBindingUnavailableError) Error() string {
-	return "operator_confirmation_required: MCP and generic internal-helper calls cannot institute a DecisionRecord; explicitly invoke h-decide and use `haft artifact create decision.decide --input-file <file>`; default explicit_h_decide trusts that external invocation by project policy, but the kernel neither observes it nor records a durable authorization receipt; strict_cli_speech_act adds a durable controlling-terminal SpeechAct on /dev/tty"
+	return "operator_confirmation_required: MCP and generic internal-helper calls cannot institute a DecisionRecord because they cannot verify conversational provenance; a supported host must recognize one direct, unambiguous operator request and route the exact reviewed payload to `haft artifact create decision.decide --input-file <file>` with host_routed_operator_request provenance"
 }
 
 var errDecisionBindingUnavailable = decisionBindingUnavailableError{}
 
-func rejectNonManualDecisionBinding() error {
+func rejectUnverifiedMCPDecisionBinding() error {
 	return errDecisionBindingUnavailable
 }

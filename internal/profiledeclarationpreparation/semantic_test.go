@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 )
 
 func TestPlanBuildsOnlyCoherentV2ProfileDeclarationWork(t *testing.T) {
@@ -21,11 +23,7 @@ func TestPlanBuildsOnlyCoherentV2ProfileDeclarationWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := NewPolicy(
-		ModeExplicitHOnboard,
-		".haft/config.yaml",
-		[]byte("authority:\n  profile_declaration_mode: explicit_h_onboard\n"),
-	)
+	policy, err := newHostRoutedTestPolicy(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -75,7 +73,7 @@ func TestPlanBuildsOnlyCoherentV2ProfileDeclarationWork(t *testing.T) {
 	}
 }
 
-func TestPlanRejectsStrictProfileAuthorityBeforeAnyWork(t *testing.T) {
+func TestPlanRejectsOperatorRequestForAnotherWorkInput(t *testing.T) {
 	root := canonicalWorkInputTestRoot(t)
 	suggestion := workInputTestSuggestion(t, root, []string{"go.mod", "main.go"})
 	proposal, err := ProposeProfileOnboardingWorkInput(suggestion)
@@ -86,13 +84,21 @@ func TestPlanRejectsStrictProfileAuthorityBeforeAnyWork(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := NewPolicy(ModeStrictSpeechAct, "", nil)
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		input.Ref().String(),
+		[]byte("another reviewed WorkInput"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := NewHostRoutedOperatorRequestPolicy(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = NewPlan(root, input, policy, time.Now().UTC())
-	if err == nil || !strings.Contains(err.Error(), "strict_profile_authority_not_available") {
-		t.Fatalf("strict preparation error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "does not bind the exact reviewed WorkInput") {
+		t.Fatalf("operator request mismatch error = %v", err)
 	}
 }
 
@@ -142,13 +148,7 @@ func TestManualPlanKeepsObservationDetectorAndScopeClassifierDistinct(
 			reloaded.ClassifierVersion(),
 		)
 	}
-	policy, err := NewPolicy(
-		ModeExplicitHOnboard,
-		".haft/config.yaml",
-		[]byte(
-			"authority:\n  profile_declaration_mode: explicit_h_onboard\n",
-		),
-	)
+	policy, err := newHostRoutedTestPolicy(reloaded)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,4 +233,18 @@ func TestManualPlanKeepsObservationDetectorAndScopeClassifierDistinct(
 			candidate.Provenance().PolicyVersion().String(),
 		)
 	}
+}
+
+func newHostRoutedTestPolicy(
+	input ProfileOnboardingWorkInput,
+) (Policy, error) {
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		input.Ref().String(),
+		input.CanonicalJSON(),
+	)
+	if err != nil {
+		return Policy{}, err
+	}
+	return NewHostRoutedOperatorRequestPolicy(request)
 }

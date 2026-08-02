@@ -16,7 +16,7 @@
 | **EvidencePack** | Artifact containing measurement data attached to a decision: type, verdict, congruence level, valid_until | Not a test report. Not a PR review. | "evidence" |
 | **Note** | Micro-decision artifact: what was decided and why, with rationale validation. Auto-expires in 90 days. | Not a comment. Not a log entry. Not a TODO. | — |
 | **RefreshReport** | Artifact documenting a lifecycle action (waive, reopen, supersede, deprecate) | Not an audit log entry (though audit log exists separately). | — |
-| **Reliance-bearing project memory** | Project-local records materialized because a named receiving use depends on handoff, replay, authority, automation, evidence, or later verification. | Not a transcript archive. Not a requirement to persist every FPF use. | "durable project memory" when the reliance boundary is already clear |
+| **Reliance-bearing project memory** | Project-local records materialized because a concrete receiving use, operator-named or agent-inferred from current Work, depends on handoff, replay, authority, automation, evidence, or later verification. The minimum non-binding EntityOfConcern is established proactively when stable identity is recoverable. | Not a transcript archive. Not persistence from known absence, an empty graph, or generic future usefulness alone. Not a grant of binding authority. | "durable project memory" when the reliance boundary is already clear |
 
 ## Project Specification & Harnessability
 

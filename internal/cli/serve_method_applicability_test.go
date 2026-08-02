@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -85,6 +86,37 @@ func TestHandleHaftMethodForProjectCreatesSWEForSoftware(
 	}
 	if run.Meta.Kind != artifact.KindMethodRun {
 		t.Fatalf("created kind = %q", run.Meta.Kind)
+	}
+}
+
+func TestHandleHaftMethodForProjectIgnoresNonScopeSelectorForSingleton(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevision(t, "method-software-singleton")
+	store := artifact.NewStore(harness.Database())
+	result, ref, err := handleHaftMethodForProject(
+		context.Background(),
+		store,
+		filepath.Join(root, ".haft"),
+		map[string]any{
+			"action":             "pull",
+			"task":               "Fix a failing parser",
+			"declared_task_kind": "bugfix",
+			"change_intent":      "fix_bug",
+			"scope_id":           "task-019fb9c0-8c3e-7282-be6f-615698e685e6",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ref == "" {
+		t.Fatalf("singleton selector prevented MethodRun:\n%s", result)
+	}
+	if !strings.Contains(result, "ignored_unnecessary_selector") ||
+		!strings.Contains(result, "selected=\"software-method-software-singleton\"") {
+		t.Fatalf("singleton selector diagnostic is absent:\n%s", result)
 	}
 }
 

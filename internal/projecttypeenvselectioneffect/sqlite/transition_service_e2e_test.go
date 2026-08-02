@@ -521,7 +521,7 @@ func transitionSelectionInput(
 	return TransitionSelectionInput{
 		Request:   fixture.request,
 		Content:   fixture.content,
-		Authority: NewDedicatedCLIInvocation(),
+		Authority: hostRoutedIngressForFixture(fixture.request, fixture.content),
 	}
 }
 

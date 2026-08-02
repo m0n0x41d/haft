@@ -135,7 +135,7 @@ func TestMemoryTypeEnvPrepareAndSelectUsesOneHumanReadableReviewCarrier(
 	}
 	if selected.Kind != "freshly_committed" ||
 		selectedEnvelope.ProjectID != harness.ProjectID() ||
-		selectedEnvelope.AuthorityIngress != "explicit_h_decide" ||
+		selectedEnvelope.AuthorityIngress != "host_routed_operator_request" ||
 		selected.CommittedClosure.HeadRevision != 1 ||
 		selected.CommittedClosure.CommittedGraphRevision != 1 ||
 		selected.CommittedClosure.SelectedCompositeRef !=
@@ -203,93 +203,6 @@ func TestMemoryTypeEnvPrepareAndSelectUsesOneHumanReadableReviewCarrier(
 	if err == nil {
 		t.Fatal("tampered review carrier was accepted")
 	}
-	assertGenesisSelectionTableCount(
-		t,
-		harness,
-		"project_typeenv_head_selection_receipts",
-		1,
-	)
-}
-
-func TestMemoryTypeEnvSelectStrictModeCapturesOnceThenReplaysWithoutPrompt(
-	t *testing.T,
-) {
-	root := filepath.Join(t.TempDir(), "project")
-	harness := profileadmissionfixture.New(t, root)
-	harness.AdmitSoftwareRevision(t, "memory-typeenv-genesis-strict")
-	t.Setenv(envProjectRoot, harness.Root().String())
-	t.Setenv(envExpectedProjectID, harness.ProjectID())
-
-	configPath := filepath.Join(root, ".haft", "config.yaml")
-	strictConfig := []byte(
-		"schema_version: 1\n" +
-			"authority:\n" +
-			"  decision_binding_mode: explicit_h_decide\n" +
-			"  project_typeenv_head_selection_mode: strict_cli_speech_act\n",
-	)
-	if err := os.WriteFile(configPath, strictConfig, 0o600); err != nil {
-		t.Fatalf("write strict project config: %v", err)
-	}
-	if err := runMemoryTypeEnvPrepare(
-		genesisTestCommand(&bytes.Buffer{}),
-		nil,
-	); err != nil {
-		t.Fatalf("prepare strict Genesis review: %v", err)
-	}
-
-	capturer := &genesisCLISpeechActCapturer{t: t}
-	selectedOutput := &bytes.Buffer{}
-	if err := runMemoryTypeEnvSelectWithCapturer(
-		genesisTestCommand(selectedOutput),
-		capturer,
-	); err != nil {
-		t.Fatalf("select strict Genesis review: %v", err)
-	}
-	selectedEnvelope := decodeGenesisSelectionEnvelope(
-		t,
-		selectedOutput.Bytes(),
-	)
-	selected := projectTypeEnvGenesisFreshlyCommitted{}
-	if err := json.Unmarshal(selectedEnvelope.Outcome, &selected); err != nil {
-		t.Fatalf("decode strict selection outcome: %v", err)
-	}
-	if selected.Kind != "freshly_committed" ||
-		selectedEnvelope.AuthorityIngress != "strict_speech_act_captured" ||
-		capturer.calls != 1 {
-		t.Fatalf(
-			"strict selection = %#v, capture calls = %d",
-			selectedEnvelope,
-			capturer.calls,
-		)
-	}
-
-	replayOutput := &bytes.Buffer{}
-	if err := runMemoryTypeEnvSelectWithCapturer(
-		genesisTestCommand(replayOutput),
-		capturer,
-	); err != nil {
-		t.Fatalf("replay strict Genesis review: %v", err)
-	}
-	replayEnvelope := decodeGenesisSelectionEnvelope(t, replayOutput.Bytes())
-	replayed := projectTypeEnvGenesisReplayedExisting{}
-	if err := json.Unmarshal(replayEnvelope.Outcome, &replayed); err != nil {
-		t.Fatalf("decode strict replay outcome: %v", err)
-	}
-	if replayed.Kind != "replayed_existing" ||
-		replayEnvelope.AuthorityIngress != "strict_speech_act_replayed" ||
-		capturer.calls != 1 {
-		t.Fatalf(
-			"strict replay = %#v, capture calls = %d",
-			replayEnvelope,
-			capturer.calls,
-		)
-	}
-	assertGenesisSelectionTableCount(
-		t,
-		harness,
-		"project_typeenv_heads",
-		1,
-	)
 	assertGenesisSelectionTableCount(
 		t,
 		harness,
@@ -426,7 +339,7 @@ func TestMemoryTypeEnvSelectRejectsExpiredReviewWithoutReceipt(
 	)
 }
 
-func TestMemoryTypeEnvPrepareBlocksManualSelectionWithoutCompatibleProfile(
+func TestMemoryTypeEnvPrepareAllowsDefaultGenesisWithoutCanonicalProfile(
 	t *testing.T,
 ) {
 	root := filepath.Join(t.TempDir(), "project")
@@ -439,24 +352,18 @@ func TestMemoryTypeEnvPrepareBlocksManualSelectionWithoutCompatibleProfile(
 		genesisTestCommand(output),
 		nil,
 	); err != nil {
-		t.Fatalf("prepare profile-blocked Genesis review: %v", err)
+		t.Fatalf("prepare profile-independent Genesis review: %v", err)
 	}
 	prepared := genesisPrepareTestResponse{}
 	if err := json.Unmarshal(output.Bytes(), &prepared); err != nil {
-		t.Fatalf("decode profile-blocked prepare response: %v", err)
+		t.Fatalf("decode profile-independent prepare response: %v", err)
 	}
-	if prepared.Review.Readiness.Posture != "blocked" ||
-		len(prepared.Review.Readiness.Reasons) == 0 ||
-		prepared.Interpretation.NextHumanGate != "" ||
+	if prepared.Review.Readiness.Posture != "selectable" ||
+		len(prepared.Review.Readiness.Reasons) != 0 ||
+		prepared.Candidate.ProfilePosture != "underdetermined" ||
 		prepared.Review.Validity.From == "" ||
 		prepared.Review.Validity.Until == "" {
-		t.Fatalf("profile-blocked prepare response = %#v", prepared)
-	}
-	if err := runMemoryTypeEnvSelect(
-		genesisTestCommand(&bytes.Buffer{}),
-		nil,
-	); err == nil {
-		t.Fatal("profile-blocked Genesis review reached selection")
+		t.Fatalf("profile-independent prepare response = %#v", prepared)
 	}
 	assertGenesisSelectionTableCount(
 		t,
@@ -629,26 +536,6 @@ type genesisTestClock struct {
 
 func (clock genesisTestClock) Now() time.Time {
 	return clock.value
-}
-
-type genesisCLISpeechActCapturer struct {
-	t     testing.TB
-	calls int
-}
-
-func (capturer *genesisCLISpeechActCapturer) Capture(
-	_ context.Context,
-	prepared authority.PreparedManualSpeechAct,
-) (authority.VerifiedSpeechActSource, error) {
-	capturer.calls++
-	startedAt := time.Now().Add(-2 * time.Millisecond).Round(0).UTC()
-	return authority.CaptureVerifiedSpeechActForTestFixture(
-		capturer.t,
-		prepared,
-		startedAt,
-		startedAt.Add(time.Millisecond),
-		startedAt.Add(2*time.Millisecond),
-	)
 }
 
 func genesisTestTypedDigest(

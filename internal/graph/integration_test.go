@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 type projectGraphFixture struct {
@@ -34,7 +34,7 @@ func setupProjectGraphFixture(t *testing.T) *projectGraphFixture {
 	projectRoot := fixtureProjectRoot(t)
 	dbPath := filepath.Join(t.TempDir(), "graph-integration.db")
 
-	database, err := db.NewStore(dbPath)
+	database, err := kerneldbfixture.OpenCurrentStore(dbPath)
 	if err != nil {
 		t.Fatalf("open test database: %v", err)
 	}

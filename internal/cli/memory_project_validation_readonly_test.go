@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/typedmemorywire"
 )
@@ -203,7 +202,7 @@ func newReadOnlyProjectValidationFixture(
 		t.Fatal(err)
 	}
 	databasePath := filepath.Join(databaseDirectory, "haft.db")
-	store, err := db.NewStore(databasePath)
+	store, err := openCurrentKernelTestStore(databasePath)
 	if err != nil {
 		t.Fatalf("db.NewStore() error = %v", err)
 	}

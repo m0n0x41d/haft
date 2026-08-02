@@ -29,12 +29,19 @@ family on FPF Base TypeEnv
 `typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`.
 `SourceV1_3()` continues to return those exact bytes for replay.
 
-[`candidates/1.4.0.yaml`](candidates/1.4.0.yaml) is the current non-binding
-candidate. It preserves the 1.3.0 declaration set while moving to exact FPF
-Base TypeEnv
+[`candidates/1.4.0.yaml`](candidates/1.4.0.yaml) is the byte-stable historical
+candidate that preserves the 1.3.0 declaration set on exact FPF Base TypeEnv
 `typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`
 and FPF source revision
 `2ada413629b846ef308222d16489a82cb5b40a71`.
+
+[`candidates/1.5.0.yaml`](candidates/1.5.0.yaml) is the current non-binding
+candidate. It preserves the 1.4.0 declaration set while moving its exact FPF
+source pins to revision
+`d1f696e7c7767705206a8cacd9f6ed48e4dc5b02` and Base TypeEnv
+`typeenv:sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa`.
+`SourceV1_4()` remains byte-stable for replay; `SourceV1_5()` returns the
+separate successor carrier.
 
 The shared additive declaration set contains:
 
@@ -71,7 +78,7 @@ obtaining predicate/laws, applicability, occurrence-identity rule, or the
 complete declaration-episteme ClaimGraph/ReferenceScheme basis. Structural
 slot validation therefore cannot establish truth, create an obtaining
 occurrence, or admit a durable FPF relation kind. Full RelationSignature
-lowering remains outside v9 until a named receiving use and a separate human
+lowering remains outside v9 until a concrete receiving use and a separate human
 choice justify its schema and runtime fanout.
 
 The candidate deliberately implements Haft-local record/use/occurrence
@@ -82,7 +89,7 @@ tokens, Completed/InFlight interval algebra, and canonical-instant contract
 remain candidate choices pending their reviewed specification decision and
 the separate human-gated head selection.
 
-The 1.1.0 through 1.4.0 basis carriers are not the source C.2.1
+The 1.1.0 through 1.5.0 basis carriers are not the source C.2.1
 `EpistemeConstitutionRelationSignature`, an obtaining relation occurrence, or
 proof that the constitution predicate obtains. Its
 `runtime_evaluator_requirement` declarations state required E-to-X

@@ -82,8 +82,9 @@ func TestInstructionCarriersExposeSourceFirstFPFContract(t *testing.T) {
 			"`known_absent` is an identity result, not permission to persist",
 			`haft_entity(action="establish", ...)`,
 			`haft_onboard(action="status")`,
-			"Never persist automatically",
-			"receiving use with request provenance",
+			"Never persist merely because memory is empty or a read failed",
+			"operator-named or agent-inferred",
+			"preserve its exact request provenance",
 			"FPF is relation-first at the framework-navigation level",
 			"Status signals are attention, not authorization gates",
 			"Never ask for bare `OK`, `yes`, or `да`",
@@ -101,9 +102,8 @@ func TestInstructionCarriersExposeSourceFirstFPFContract(t *testing.T) {
 			"Naming/terminology requests should route",
 			"Architecture requests should route",
 			"SoTA/current-practice requests should route",
-			"ProjectTypeEnvHead",
-			"TypeEnv",
 			"haft memory typeenv",
+			"Never persist automatically",
 		} {
 			if strings.Contains(content, banned) {
 				t.Fatalf("%s contains retired router fragment %q", carrier, banned)

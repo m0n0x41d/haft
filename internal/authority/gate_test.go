@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 type authorityFixture struct {
@@ -746,7 +746,9 @@ func TestOpenKernelGateFailsClosedWithoutCanonicalSchema(t *testing.T) {
 }
 
 func TestOpenKernelGateRejectsAnIncompleteMigration34Schema(t *testing.T) {
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "authority.sqlite"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "authority.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}

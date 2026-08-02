@@ -12,7 +12,8 @@ func haftEntityTool() Tool {
 		Name: "haft_entity",
 		Description: "Establish one non-binding EntityOfConcern and its aliases. " +
 			"The server derives and validates all internal memory coordinates; " +
-			"the caller supplies only task-level identity and persistence provenance.",
+			"the caller supplies only task-level identity and persistence provenance. " +
+			"A concrete receiving use may be operator-named or agent-inferred from current Work.",
 		InputSchema: entityEstablishmentRequestSchema(),
 	}
 }
@@ -21,7 +22,7 @@ func entityEstablishmentRequestSchema() map[string]interface{} {
 	action := stringLiteralSchema(
 		entitycontract.ActionEstablish,
 	)
-	action["description"] = "Establish identity only after an explicit persistence reason. A known_absent read never invokes this action automatically."
+	action["description"] = "Establish identity after an explicit save request or an agent-inferred receiving use makes stable identity necessary. known_absent alone never invokes this action."
 	entityID := entityExactTextSchema(
 		typedmemorywire.MaximumIdentifierBytes,
 		"Stable identity for the existing EntityOfConcern.",
@@ -49,10 +50,10 @@ func entityEstablishmentRequestSchema() map[string]interface{} {
 		entitycontract.ExplicitOperatorRequest,
 		entitycontract.NamedReceivingUse,
 	)
-	persistenceReason["description"] = "Why persistence is authorized: an explicit operator save request or an exact named receiving use."
+	persistenceReason["description"] = "Why persistence is justified: an explicit operator save request or an exact concrete receiving use, including an agent-inferred receiving use from current Work."
 	requestProvenance := entityExactTextSchema(
 		typedmemorywire.MaximumIdentifierBytes,
-		"Addressable provenance for the operator request or named receiving use.",
+		"Addressable provenance for the operator request or the concrete operator-named or agent-inferred receiving use.",
 	)
 	idempotencyPurpose := "Stable key for this exact request. On retry or an " +
 		"unknown commit outcome, resend the unchanged request and the same key."
@@ -84,10 +85,12 @@ func entityEstablishmentRequestSchema() map[string]interface{} {
 	)
 	schema["description"] = "Atomically establish one EntityOfConcern identity " +
 		"and its aliases. Closed results are onboarding_required, " +
-		"enablement_choice_required, restart_required, established, " +
+		"restart_required, established, " +
 		"identity_conflict, alias_conflict, idempotency_conflict, rejected, " +
 		"and commit_outcome_unknown. Every response reports persistence.performed " +
-		"and persistence.authority_granted; establishment never grants decision, " +
+		"and persistence.authority_granted. An agent-inferred receiving use may justify " +
+		"this minimal non-binding persistence without a separate permission prompt; " +
+		"establishment never grants decision, " +
 		"specification, commission, or evidence authority. established returns " +
 		"an exact U.EntityRef payload accepted verbatim by project-memory reads."
 	return schema

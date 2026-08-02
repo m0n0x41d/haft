@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	haftdb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestNodeRetriesWhenPublishedBasisChangesDuringQuery(t *testing.T) {
@@ -119,7 +119,9 @@ func newCurrentnessArtifactStore(
 	root string,
 ) (*artifact.Store, func()) {
 	t.Helper()
-	legacy, err := haftdb.NewStore(filepath.Join(root, "haft.db"))
+	legacy, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(root, "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

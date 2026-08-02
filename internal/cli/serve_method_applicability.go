@@ -14,22 +14,30 @@ import (
 const methodProfileApplicabilityAuthority = "canonical_project_profile_methodpack_applicability"
 
 type methodProfileApplicabilityResponse struct {
-	Kind                   string                                  `json:"kind"`
-	SchemaVersion          int                                     `json:"schema_version"`
-	Authority              string                                  `json:"authority"`
-	Action                 string                                  `json:"action"`
-	ArtifactCreated        bool                                    `json:"artifact_created"`
-	Capability             string                                  `json:"capability"`
-	Applicability          string                                  `json:"applicability,omitempty"`
-	MissingBasis           string                                  `json:"missing_basis,omitempty"`
-	ScopeID                string                                  `json:"scope_id,omitempty"`
-	ProfileApplicability   publicProjectSpecificationApplicability `json:"profile_applicability"`
-	BlocksCurrentWork      bool                                    `json:"blocks_current_work"`
-	RequiresMethodRun      bool                                    `json:"requires_method_run"`
-	RequiresHumanGate      bool                                    `json:"requires_human_gate"`
-	Continuation           string                                  `json:"continuation"`
-	ForbiddenCompensations []string                                `json:"forbidden_compensations"`
-	Boundary               []string                                `json:"boundary"`
+	Kind                    string                                  `json:"kind"`
+	SchemaVersion           int                                     `json:"schema_version"`
+	Authority               string                                  `json:"authority"`
+	Action                  string                                  `json:"action"`
+	ArtifactCreated         bool                                    `json:"artifact_created"`
+	Capability              string                                  `json:"capability"`
+	Applicability           string                                  `json:"applicability,omitempty"`
+	MissingBasis            string                                  `json:"missing_basis,omitempty"`
+	ScopeID                 string                                  `json:"scope_id,omitempty"`
+	ProfileApplicability    publicProjectSpecificationApplicability `json:"profile_applicability"`
+	BlocksCurrentWork       bool                                    `json:"blocks_current_work"`
+	RequiresMethodRun       bool                                    `json:"requires_method_run"`
+	RequiresHumanGate       bool                                    `json:"requires_human_gate"`
+	Continuation            string                                  `json:"continuation"`
+	ForbiddenCompensations  []string                                `json:"forbidden_compensations"`
+	Boundary                []string                                `json:"boundary"`
+	ScopeSelectorDiagnostic *methodScopeSelectorDiagnostic          `json:"scope_selector_diagnostic,omitempty"`
+}
+
+type methodScopeSelectorDiagnostic struct {
+	RequestedScopeID string `json:"requested_scope_id"`
+	SelectedScopeID  string `json:"selected_scope_id"`
+	Disposition      string `json:"disposition"`
+	Detail           string `json:"detail"`
 }
 
 func handleHaftMethodForProject(
@@ -42,9 +50,8 @@ func handleHaftMethodForProject(
 	if action != "pull" && action != "catalog" {
 		return handleHaftMethod(ctx, store, haftDir, args)
 	}
-	request, err := projectSpecificationScopeRequestFromFlag(
-		stringArg(args, "scope_id"),
-	)
+	rawScopeID := stringArg(args, "scope_id")
+	request, err := projectSpecificationScopeRequestFromFlag(rawScopeID)
 	if err != nil {
 		return "", "", err
 	}
@@ -55,6 +62,21 @@ func handleHaftMethodForProject(
 	)
 	if err != nil {
 		return "", "", err
+	}
+	diagnostic := ignoredSingletonMethodScopeSelector(
+		rawScopeID,
+		resolution,
+	)
+	if diagnostic != nil {
+		request = automaticProjectSpecificationScopeRequest()
+		resolution, err = resolveCanonicalProjectSpecificationApplicability(
+			ctx,
+			filepath.Dir(haftDir),
+			request,
+		)
+		if err != nil {
+			return "", "", err
+		}
 	}
 	publicApplicability, err := publicProjectSpecificationApplicabilityFrom(
 		resolution,
@@ -70,6 +92,7 @@ func handleHaftMethodForProject(
 			publicApplicability,
 			projectprofile.ScopedCapabilityApplicability{},
 		)
+		response.ScopeSelectorDiagnostic = diagnostic
 		return encodeMethodProfileApplicabilityResponse(response)
 	}
 	applicability, err := scopeApplicability.ScopedCapabilityApplicability(
@@ -79,14 +102,66 @@ func handleHaftMethodForProject(
 		return "", "", err
 	}
 	if applicability.Kind() == projectprofile.CapabilityRequired {
-		return handleHaftMethod(ctx, store, haftDir, args)
+		result, recovery, err := handleHaftMethod(ctx, store, haftDir, args)
+		if err != nil || diagnostic == nil {
+			return result, recovery, err
+		}
+		result, err = attachMethodScopeSelectorDiagnostic(result, diagnostic)
+		return result, recovery, err
 	}
 	response := newMethodProfileApplicabilityResponse(
 		action,
 		publicApplicability,
 		applicability,
 	)
+	response.ScopeSelectorDiagnostic = diagnostic
 	return encodeMethodProfileApplicabilityResponse(response)
+}
+
+func ignoredSingletonMethodScopeSelector(
+	rawScopeID string,
+	resolution projectSpecificationApplicabilityResolution,
+) *methodScopeSelectorDiagnostic {
+	if strings.TrimSpace(rawScopeID) == "" ||
+		resolution.Kind() != projectSpecificationRequestedScopeNotFound {
+		return nil
+	}
+	available := resolution.AvailableScopeIDs()
+	if len(available) != 1 {
+		return nil
+	}
+	return &methodScopeSelectorDiagnostic{
+		RequestedScopeID: rawScopeID,
+		SelectedScopeID:  available[0].String(),
+		Disposition:      "ignored_unnecessary_selector",
+		Detail:           "The canonical profile has one scope, so the supplied task, thread, commission, work, or other non-scope identifier was ignored.",
+	}
+}
+
+func attachMethodScopeSelectorDiagnostic(
+	result string,
+	diagnostic *methodScopeSelectorDiagnostic,
+) (string, error) {
+	trimmed := strings.TrimSpace(result)
+	if strings.HasPrefix(trimmed, "{") {
+		payload := map[string]any{}
+		if err := json.Unmarshal([]byte(result), &payload); err != nil {
+			return "", err
+		}
+		payload["scope_selector_diagnostic"] = diagnostic
+		encoded, err := json.MarshalIndent(payload, "", "  ")
+		if err != nil {
+			return "", err
+		}
+		return string(encoded), nil
+	}
+	return result + fmt.Sprintf(
+		"\nScope selector ignored: requested=%q selected=%q disposition=%s. %s\n",
+		diagnostic.RequestedScopeID,
+		diagnostic.SelectedScopeID,
+		diagnostic.Disposition,
+		diagnostic.Detail,
+	), nil
 }
 
 func newMethodProfileApplicabilityResponse(

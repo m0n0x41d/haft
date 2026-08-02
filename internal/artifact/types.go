@@ -536,6 +536,7 @@ type DecisionFields struct {
 	ProblemRefs             []string                `json:"problem_refs,omitempty"`
 	ProblemStatement        string                  `json:"problem_statement,omitempty"`
 	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
+	AuthorityProvenance     string                  `json:"authority_provenance,omitempty"`
 	ChoiceResult            *ChoiceResult           `json:"choice_result,omitempty"`
 	TransformationRecord    *TransformationRecord   `json:"transformation_record,omitempty"`
 	SelectedTitle           string                  `json:"selected_title"`

@@ -16,6 +16,7 @@ import (
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 type valueStoreFixtureV1 struct {
@@ -836,7 +837,7 @@ func newMethodBindingsV1(
 
 func openValueStoreDatabaseV1(t *testing.T, path string) valueStoreDatabaseV1 {
 	t.Helper()
-	kernel, err := db.NewStore(path)
+	kernel, err := kerneldbfixture.OpenCurrentStore(path)
 	if err != nil {
 		t.Fatalf("db.NewStore: %v", err)
 	}

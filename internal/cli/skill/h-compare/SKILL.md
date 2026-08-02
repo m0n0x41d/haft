@@ -1,7 +1,7 @@
 ---
 name: h-compare
 description: |
-  Compare two or more existing candidates under an explicit characteristic space, parity basis, and predeclared selection policy. Return constraints, trade-offs, and a non-dominated set rather than hiding the choice in one score. This skill is independent of h-frame and h-explore. Default to a conversational comparison; persist comparison artifacts only on explicit save intent or when a named receiving use needs replay. A binding choice remains manual h-decide.
+  Compare two or more existing candidates under an explicit characteristic space, parity basis, and predeclared selection policy. Return constraints, trade-offs, and a non-dominated set rather than hiding the choice in one score. This skill is independent of h-frame and h-explore. Default to a conversational comparison; persist comparison artifacts only on explicit save intent or when current Work supplies a concrete operator-named or agent-inferred receiving use that needs replay. A binding choice requires a direct unambiguous operator request routed through h-decide.
 when_to_use: |
   Two or more live candidates already exist and the current question is their fair comparison.
 argument-hint: "[candidate set, portfolio reference, or comparison question]"
@@ -18,6 +18,10 @@ query="<comparison question>")`, then inspect the direct pattern body. Query
 returns source candidates, not a selected governing pattern or a comparison
 verdict. A retrieval score or candidate-list order is presentation metadata,
 not comparison evidence or precedence.
+A `candidate_set` is incomplete: select by the current condition and required
+result kind, then inspect one exact PatternID. If no candidate fits, abstain.
+Never use a query performed after comparison or editing as proof that the
+earlier work followed that source.
 
 ## Conditional project-memory orientation
 
@@ -35,7 +39,8 @@ known absence, or explicit abstention is visible but non-blocking: continue the
 comparison without inventing a profile, entity, artifact, or human gate. This
 read does not replace code-graph preflight before a later code edit. Never
 persist typed memory merely because a read failed; persistence requires an
-explicit operator save request or a named receiving use with provenance.
+explicit operator save request or a concrete operator-named or agent-inferred
+receiving use supplied by current Work, with provenance.
 
 ## Procedure
 
@@ -55,10 +60,18 @@ explicit operator save request or a named receiving use with provenance.
 7. Eliminate constraint violations, then report the non-dominated set and the
    concrete trade-off among survivors. Abstain where parity is insufficient.
 
+This n-candidate comparison is Haft local practice, not automatically an
+`A.19.CPM` actual application or an `A.19.SelectorMechanism` result. Claim exact
+FPF conformance only when the current use also preserves each required binary
+CPM application, pair coverage, token-to-producer trace, claim scope and
+selected context slices, predicate basis, reference plane, evaluation window,
+and separate eligibility/output bindings recovered from the direct source.
+
 ## Persistence boundary
 
 Ordinary comparison stays conversational. Persist characterization or a
-comparison only when the operator asks to save it or a named receiving use
+comparison only when the operator asks to save it or a concrete operator-named
+or agent-inferred receiving use
 needs addressable replay. Use existing problem/portfolio refs when available;
 do not manufacture a frame or exploration history to simulate a universal
 workflow.
@@ -106,5 +119,5 @@ authority.
 
 Present evidence limitations first, then the options still worth considering,
 what each gives up, and the exact value choice that remains with the operator.
-Do not prescribe `h-decide`; mention it only when the operator says the
-binding choice is now current.
+Do not prescribe a skill token. Route through `h-decide` only when the operator
+directly and unambiguously asks to bind a current choice.

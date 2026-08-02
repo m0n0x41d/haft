@@ -164,8 +164,8 @@ func (runtime *EntityEstablishmentRuntime) establishAtCurrentBasis(
 	}
 	switch basis := resolution.(type) {
 	case *typedmemoryvalidation.ProjectBasisUnavailable:
-		result, resultErr := NewEntityEnablementChoiceRequired(
-			"Typed project memory is not enabled for this project; no entity was written.",
+		result, resultErr := NewEntityOnboardingRequired(
+			"Default project memory is incomplete; rerun haft init. No entity was written.",
 		)
 		return result, false, resultErr
 	case *typedmemoryvalidation.ResolvedProjectBasis:

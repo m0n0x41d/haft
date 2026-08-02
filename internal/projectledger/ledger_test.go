@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestParseProjectIDRejectsTraversalAndNonCanonicalSyntax(t *testing.T) {
@@ -218,7 +219,7 @@ func TestMigrationBindingRejectsOrdinaryTransactionAtCurrentSchema(
 
 func TestProjectLedgerBindingRejectsPreexistingForeignRootRows(t *testing.T) {
 	fixture := newProjectLedgerFixture(t, "qnt_d8f3b2c1")
-	store, err := db.NewStore(fixture.dbPath)
+	store, err := kerneldbfixture.OpenCurrentStore(fixture.dbPath)
 	if err != nil {
 		t.Fatalf("db.NewStore: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestProjectLedgerBindingRejectsPreexistingForeignRootRows(t *testing.T) {
 
 func TestProjectLedgerBindingDiscoversFutureRootBearingTables(t *testing.T) {
 	fixture := newProjectLedgerFixture(t, "qnt_d9f3b2c1")
-	store, err := db.NewStore(fixture.dbPath)
+	store, err := kerneldbfixture.OpenCurrentStore(fixture.dbPath)
 	if err != nil {
 		t.Fatalf("db.NewStore: %v", err)
 	}
@@ -822,7 +823,7 @@ func prepareReplacementLedgerDirectory(
 		t.Fatal(err)
 	}
 	databasePath := filepath.Join(directory, "haft.db")
-	store, err := db.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("db.NewStore replacement: %v", err)
 	}
@@ -863,7 +864,7 @@ func newProjectLedgerFixture(t *testing.T, id string) projectLedgerFixture {
 		t.Fatal(err)
 	}
 	databasePath := filepath.Join(directory, "haft.db")
-	store, err := db.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("db.NewStore: %v", err)
 	}

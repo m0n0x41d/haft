@@ -36,6 +36,37 @@ type taskMemoryProjectionTestFixture struct {
 	concernRev uint64
 }
 
+func TestAppendTaskMemoryProjectionSeparatesCarrierAndTypedEffects(
+	t *testing.T,
+) {
+	report := underdeterminedTaskMemoryProjectionReport(
+		taskMemoryArtifactProjection{
+			Ref:  "note-example",
+			Kind: string(artifact.KindNote),
+		},
+		[]taskMemoryMissingBasisProjection{
+			{Name: "entity_ref", Repair: "supply exact current concern"},
+		},
+	)
+
+	rendered := appendTaskMemoryProjection("Note recorded.", report)
+
+	for _, want := range []string{
+		"## Persistence effects",
+		"Carrier: `note-example` remains durable (`retained_unsettled`)",
+		"Typed projection: admission `not_attempted`; write mode `not_attempted_no_write`; durable changes `0`",
+		"## Typed project-memory projection",
+	} {
+		if !strings.Contains(rendered, want) {
+			t.Fatalf(
+				"rendered task-memory projection missing %q:\n%s",
+				want,
+				rendered,
+			)
+		}
+	}
+}
+
 func TestTaskMemoryAdapterSourceModeRecognizesCurrentClassificationRuntime(t *testing.T) {
 	t.Parallel()
 
@@ -45,7 +76,7 @@ func TestTaskMemoryAdapterSourceModeRecognizesCurrentClassificationRuntime(t *te
 	}
 	target, err := localpracticeruntime.Build(
 		base.Artifact(),
-		typedmemorycandidates.SourceV1_4(),
+		typedmemorycandidates.SourceV1_5(),
 	)
 	if err != nil {
 		t.Fatalf("localpracticeruntime.Build() error = %v", err)

@@ -247,8 +247,8 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	if !contractAuditTestContains(decide.SchemaCoverage.ActionRequiredFields, "selected_title") {
 		t.Fatalf("decision.decide action required fields missing selected_title: %#v", decide.SchemaCoverage)
 	}
-	if !contractAuditTestContains(decide.SchemaCoverage.ExcludedFields, "task_context") {
-		t.Fatalf("decision.decide schema exclusions missing task_context: %#v", decide.SchemaCoverage)
+	if len(decide.SchemaCoverage.ExcludedFields) != 0 {
+		t.Fatalf("decision.decide still hides schema fields: %#v", decide.SchemaCoverage)
 	}
 	if decide.ShapeCoverage.Status != "covered" {
 		t.Fatalf("decision.decide shape coverage = %#v", decide.ShapeCoverage)
@@ -355,6 +355,65 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 	}
 }
 
+func TestInterfaceContractAuditTreatsDedicatedNoteToolAsMCPBacked(t *testing.T) {
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	note, ok := findContractAuditSurface(report, "note.record")
+	if !ok {
+		t.Fatal("note.record missing from contract audit")
+	}
+	if note.MCPTool != "haft_note" || note.MCPAction != "" {
+		t.Fatalf("note.record MCP target = %#v", note)
+	}
+	if note.SchemaCoverage.Status != "covered" ||
+		note.HostSchemaPosture != "validated_mcp_mirror" ||
+		note.ContractFragmentPosture != "validated_fragment" {
+		t.Fatalf("dedicated note tool was not validated as an MCP mirror: %#v", note)
+	}
+	if note.SchemaCoverage.ActionSchemaPosture != "direct_tool_without_action" {
+		t.Fatalf(
+			"note.record schema posture = %q",
+			note.SchemaCoverage.ActionSchemaPosture,
+		)
+	}
+	if len(note.SchemaCoverage.ExcludedFields) != 0 {
+		t.Fatalf(
+			"note.record still hides schema fields: %#v",
+			note.SchemaCoverage.ExcludedFields,
+		)
+	}
+
+	generation := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	fragment, ok := findContractGeneratedSchemaFragment(
+		generation,
+		"note.record",
+	)
+	if !ok {
+		t.Fatal("note.record generated schema fragment missing")
+	}
+	if fragment.MCPTool != "haft_note" || fragment.MCPAction != "" {
+		t.Fatalf("note.record generated MCP target = %#v", fragment)
+	}
+	for _, field := range []string{"title", "task_context", "valid_until"} {
+		if !stringSliceContains(fragment.AllowedTopLevelFields, field) {
+			t.Fatalf(
+				"note.record generated fields omit %q: %#v",
+				field,
+				fragment.AllowedTopLevelFields,
+			)
+		}
+	}
+	if !stringSliceContains(fragment.RequiredFields, "title") {
+		t.Fatalf(
+			"note.record required fields = %#v",
+			fragment.RequiredFields,
+		)
+	}
+	properties, _ := fragment.Schema["properties"].(map[string]any)
+	if _, invented := properties["action"]; invented {
+		t.Fatalf("note.record generated schema invented action: %#v", properties)
+	}
+}
+
 func TestInterfaceContractAuditInventoriesAuthorityMutationSurfaces(t *testing.T) {
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 
@@ -414,10 +473,10 @@ func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
 		if surface.ContractFragmentPosture == "" || surface.ContractFragmentPosture == "unvalidated_fragment" {
 			t.Fatalf("%s has unvalidated contract fragment posture: %#v", surface.CapabilityID, surface)
 		}
-		if surface.MCPTool != "" && surface.MCPAction != "" && !strings.HasPrefix(surface.HostSchemaPosture, "validated_mcp_mirror") {
+		if surface.MCPTool != "" && !strings.HasPrefix(surface.HostSchemaPosture, "validated_mcp_mirror") {
 			t.Fatalf("%s MCP-backed surface should be a validated mirror, got %q", surface.CapabilityID, surface.HostSchemaPosture)
 		}
-		if surface.MCPTool != "" && surface.MCPAction != "" &&
+		if surface.MCPTool != "" &&
 			surface.ContractFragmentPosture != "validated_fragment" &&
 			surface.ContractFragmentPosture != "generated_target_fragment" {
 			t.Fatalf("%s MCP-backed fragment posture = %q", surface.CapabilityID, surface.ContractFragmentPosture)
@@ -533,8 +592,8 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 	}
 	for _, want := range []string{
 		"kernel_interface_catalog",
-		"binding actions require explicit operator/manual authorization",
-		"not approval receipts",
+		"binding actions require effect-specific operator authority",
+		"not operator authorization and are not approval receipts",
 	} {
 		if !strings.Contains(decide.GeneratedText, want) && !strings.Contains(decide.AuthorityBoundary, want) {
 			t.Fatalf("decision.decide generated fragment missing %q:\n%#v", want, decide)
@@ -588,7 +647,11 @@ func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
 		t.Fatal("expected generated schema fragments")
 	}
 	for _, fragment := range report.SchemaFragments {
-		if !contractAuditTestContains(toolActionEnums[fragment.MCPTool], fragment.MCPAction) {
+		if fragment.MCPAction != "" &&
+			!contractAuditTestContains(
+				toolActionEnums[fragment.MCPTool],
+				fragment.MCPAction,
+			) {
 			t.Fatalf("%s generated schema action %q missing from %s enum %v", fragment.CapabilityID, fragment.MCPAction, fragment.MCPTool, toolActionEnums[fragment.MCPTool])
 		}
 		for _, field := range fragment.RequiredFields {
@@ -608,12 +671,18 @@ func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
 		if !ok {
 			t.Fatalf("%s generated schema properties missing: %#v", fragment.CapabilityID, fragment.Schema)
 		}
-		actionProperty, ok := schemaProperties["action"].(map[string]any)
-		if !ok {
-			t.Fatalf("%s generated schema action property missing: %#v", fragment.CapabilityID, schemaProperties)
-		}
-		if actionProperty["const"] != fragment.MCPAction {
-			t.Fatalf("%s generated schema action const = %#v, want %q", fragment.CapabilityID, actionProperty["const"], fragment.MCPAction)
+		actionProperty, hasAction := schemaProperties["action"].(map[string]any)
+		if fragment.MCPAction == "" {
+			if hasAction {
+				t.Fatalf("%s direct-tool schema invented action: %#v", fragment.CapabilityID, actionProperty)
+			}
+		} else {
+			if !hasAction {
+				t.Fatalf("%s generated schema action property missing: %#v", fragment.CapabilityID, schemaProperties)
+			}
+			if actionProperty["const"] != fragment.MCPAction {
+				t.Fatalf("%s generated schema action const = %#v, want %q", fragment.CapabilityID, actionProperty["const"], fragment.MCPAction)
+			}
 		}
 		if fragment.CapabilityID == "decision.decide" {
 			selectedTitle, ok := schemaProperties["selected_title"].(map[string]any)
@@ -700,8 +769,10 @@ func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing
 
 	for _, carrier := range report.Carriers {
 		source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+		normalizedSource := normalizeInterfaceContractMarkerText(source)
 		for _, marker := range carrier.RequiredMarkers {
-			if !strings.Contains(source, marker) {
+			normalizedMarker := normalizeInterfaceContractMarkerText(marker)
+			if !strings.Contains(normalizedSource, normalizedMarker) {
 				t.Fatalf("%s missing required generated-contract marker %q", carrier.CarrierPath, marker)
 			}
 		}
@@ -722,7 +793,7 @@ func TestInterfaceContractGenerationChecksMaterializedCarriers(t *testing.T) {
 
 	result, err := checkInterfaceContractMaterializedCarriers(report)
 	if err != nil {
-		t.Fatalf("check materialized carriers: %v", err)
+		t.Fatalf("check materialized carriers: %v\nresult=%#v", err, result)
 	}
 
 	if !result.Summary.RequiredMarkersPresent {
@@ -1176,7 +1247,7 @@ func TestPiToolSchemasMirrorGeneratedSchemaFragments(t *testing.T) {
 			piSchema = parsePiToolSchemaMirror(t, source, fragment.MCPTool)
 			piSchemas[fragment.MCPTool] = piSchema
 		}
-		if !piSchema.Actions[fragment.MCPAction] {
+		if fragment.MCPAction != "" && !piSchema.Actions[fragment.MCPAction] {
 			t.Fatalf("%s generated action %q missing from Pi %s action enum", fragment.CapabilityID, fragment.MCPAction, fragment.MCPTool)
 		}
 		for _, field := range fragment.AllowedTopLevelFields {
@@ -1375,7 +1446,6 @@ func TestPiReasoningCarriersTeachIdentifierNamespaces(t *testing.T) {
 			t.Fatalf("%s missing artifact_ref namespace guidance", strings.Join(path, "/"))
 		}
 		for _, banned := range []string{
-			"ProjectTypeEnvHead",
 			"selected project TypeEnv",
 			"memory typeenv",
 		} {
@@ -1403,7 +1473,7 @@ func TestBundledReasoningSkillUsesSourceNativeFPFQuery(t *testing.T) {
 		"known_absent",
 		"retrieval rank != applicability",
 		"ordinaryBounded",
-		"Binding `h-decide` and `h-commission` remain manual",
+		"h-decide may route a direct operator request; h-commission remains manual-only",
 	} {
 		if !strings.Contains(source, want) {
 			t.Fatalf("bundled h-reason skill missing source-native FPF Query fragment %q", want)
@@ -1414,8 +1484,6 @@ func TestBundledReasoningSkillUsesSourceNativeFPFQuery(t *testing.T) {
 		"should_use_pattern",
 		"recommended_pattern_use",
 		"route_match_strategy",
-		"ProjectTypeEnvHead",
-		"TypeEnv",
 		"memory typeenv",
 	} {
 		if strings.Contains(source, banned) {
@@ -1966,7 +2034,7 @@ func TestInterfaceCatalogMCPFieldsExistInToolsListSchemas(t *testing.T) {
 
 	for _, capability := range haftInterfaceCatalog() {
 		toolName := capability.CurrentExecution.MCPTool
-		if toolName == "" || capability.CurrentExecution.MCPAction == "" {
+		if toolName == "" {
 			continue
 		}
 
@@ -1991,7 +2059,7 @@ func TestInterfaceCatalogMCPRequiredFieldsExistInToolsListSchemas(t *testing.T) 
 
 	for _, capability := range haftInterfaceCatalog() {
 		toolName := capability.CurrentExecution.MCPTool
-		if toolName == "" || capability.CurrentExecution.MCPAction == "" {
+		if toolName == "" {
 			continue
 		}
 
@@ -2205,16 +2273,15 @@ func parsePiTypeObjectSchema(t *testing.T, source string, constName string) piTy
 
 	actionPattern := regexp.MustCompile(`(?s)action:\s*enumOf\((.*?)\),`)
 	actionMatches := actionPattern.FindStringSubmatch(matches[1])
-	if len(actionMatches) != 2 {
-		t.Fatalf("Pi Type.Object schema %s action enum not found", constName)
-	}
-	actionValuePattern := regexp.MustCompile(`"([^"]+)"`)
 	actions := map[string]bool{}
-	for _, match := range actionValuePattern.FindAllStringSubmatch(actionMatches[1], -1) {
-		actions[match[1]] = true
-	}
-	if len(actions) == 0 {
-		t.Fatalf("Pi Type.Object schema %s action enum is empty", constName)
+	if len(actionMatches) == 2 {
+		actionValuePattern := regexp.MustCompile(`"([^"]+)"`)
+		for _, match := range actionValuePattern.FindAllStringSubmatch(actionMatches[1], -1) {
+			actions[match[1]] = true
+		}
+		if len(actions) == 0 {
+			t.Fatalf("Pi Type.Object schema %s action enum is empty", constName)
+		}
 	}
 
 	return piTypeObjectSchemaMirror{
@@ -2335,7 +2402,7 @@ func sortedMapKeys(values map[string]interface{}) string {
 	return strings.Join(keys, ", ")
 }
 
-func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
+func TestInterfaceDecisionContractExposesHostRoutedCLIInvariant(t *testing.T) {
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "decision.decide")
 	if !ok {
 		t.Fatal("decision.decide capability missing")
@@ -2347,20 +2414,17 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft artifact create decision.decide") {
 		t.Fatalf("decision capability should name CLI input-file execution:\n%#v", capability.CurrentExecution)
 	}
-	if capability.CurrentExecution.ResumeCommand != "haft artifact resume-decision DECISION_ID" {
-		t.Fatalf("decision capability should name human-readable resume execution:\n%#v", capability.CurrentExecution)
-	}
 	output := bytes.Buffer{}
 	if err := writeInterfaceCapabilityText(&output, capability); err != nil {
 		t.Fatalf("write decision interface text: %v", err)
 	}
-	if !strings.Contains(output.String(), "Resume: haft artifact resume-decision DECISION_ID") {
-		t.Fatalf("human decision interface omitted resume command:\n%s", output.String())
+	if strings.Contains(output.String(), "Resume:") {
+		t.Fatalf("decision interface still exposes a retired resume surface:\n%s", output.String())
 	}
-	resumeFlow := strings.Join(capability.CurrentExecution.InputFileFlow, " ")
-	for _, want := range []string{"durable", "DecisionRecord ID and title", "no hash or nonce", "act is reused"} {
-		if !strings.Contains(resumeFlow, want) {
-			t.Fatalf("decision resume flow omitted %q:\n%s", want, resumeFlow)
+	routingFlow := strings.Join(capability.CurrentExecution.InputFileFlow, " ")
+	for _, want := range []string{"direct operator request", "exact effect, subject, selected option, and scope", "Human Gate Brief", "natural-language answer"} {
+		if !strings.Contains(routingFlow, want) {
+			t.Fatalf("decision routing flow omitted %q:\n%s", want, routingFlow)
 		}
 	}
 	if !strings.Contains(capability.CurrentExecution.MCPCall, `haft_decision(action="decide"`) {
@@ -2421,14 +2485,14 @@ func TestInterfaceDecisionContractExposesCLIAndManualInvariant(t *testing.T) {
 	if !strings.Contains(notes, "does not require manufacturing a ProblemCard or SolutionPortfolio") {
 		t.Fatalf("decision interface notes missing direct-decision boundary:\n%s", notes)
 	}
-	for _, want := range []string{"MCP decide is fail-closed in both project modes", "default explicit_h_decide policy", "sole human gate", "opt-in strict_cli_speech_act policy"} {
+	for _, want := range []string{"MCP decide is fail-closed", "host_routed_operator_request", "do not claim independent proof of U.SpeechAct", "bare yes is usable only for one current unambiguous Human Gate Brief"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("decision interface notes missing project authority policy %q:\n%s", want, notes)
 		}
 	}
 }
 
-func TestDecisionManualSkillCarriersExposeDefaultAndStrictProtocols(t *testing.T) {
+func TestDecisionSkillCarriersExposeHostRoutedProtocol(t *testing.T) {
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("build current skill source bundle: %v", err)
@@ -2449,24 +2513,28 @@ func TestDecisionManualSkillCarriersExposeDefaultAndStrictProtocols(t *testing.T
 	}
 	for name, source := range carriers {
 		for _, want := range []string{
-			"explicit_h_decide",
-			"sole human gate",
-			"do not ask for a second approval",
-			"strict_cli_speech_act",
-			"mcp__haft__haft_onboard",
-			"haft onboard memory enable",
-			"Never create a",
-			"DecisionRecord merely to authorize or imitate structured-memory enablement",
-			"This route creates no DecisionRecord",
+			"disable-model-invocation: false",
+			"host_routed_operator_request",
+			"direct, unambiguous",
+			"compatible route hint",
+			"without a confirmation round trip",
+			"skill name",
 			"DecisionRecord route",
-			"DECIDE THIS REVIEWED CHOICE",
-			"haft artifact resume-decision DECISION_ID",
-			"transcribes no hash or nonce",
-			"durable SpeechAct",
-			"does not ask the operator to perform the same decision act twice",
+			"internal effect sink",
+			"operator_confirmation_required",
 		} {
 			if !strings.Contains(source, want) {
 				t.Fatalf("%s h-decide carrier omitted %q", name, want)
+			}
+		}
+		for _, forbidden := range []string{
+			"explicit_h_decide",
+			"strict_cli_speech_act",
+			"DECIDE THIS REVIEWED CHOICE",
+			"haft artifact resume-decision",
+		} {
+			if strings.Contains(source, forbidden) {
+				t.Fatalf("%s h-decide carrier retains retired authority surface %q", name, forbidden)
 			}
 		}
 		for _, forbidden := range []string{
@@ -2602,6 +2670,7 @@ func TestInterfaceFPFDocumentsSourceNativeRetrievalBoundary(t *testing.T) {
 		"role_local_fts",
 		"excerpt_truncated",
 		"source_role",
+		"pattern_scope",
 		"provenance",
 		"practical_use_card and toc_row",
 		"strict per-candidate total across excerpt and practical-use cue text",
@@ -3307,9 +3376,9 @@ func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.
 	for _, want := range []string{
 		"human engineer's assessment",
 		"natural language",
-		"substantive answer to the engineering consultation",
-		"command, skill invocation, exact reply phrase, or resumption token",
-		"Only after the engineer's position is explicit",
+		"Accept ordinary language as the substantive answer",
+		"host_routed_operator_request",
+		"without requiring a skill name or second confirmation",
 		"command-only instruction",
 	} {
 		if !strings.Contains(humanGateBriefRequirement, want) {
@@ -3366,7 +3435,6 @@ func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.
 			"assessment",
 			"natural language",
 			"substantive answer",
-			"resumption token",
 		} {
 			if !strings.Contains(source, want) {
 				t.Fatalf("%s omits Engineer Consultation field %q", strings.Join(path, "/"), want)
@@ -3374,13 +3442,13 @@ func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.
 		}
 	}
 
-	manualSkill := readRepoFile(t, "internal", "cli", "skill", "h-decide", "SKILL.md")
+	decisionSkill := readRepoFile(t, "internal", "cli", "skill", "h-decide", "SKILL.md")
 	for _, want := range []string{
-		"argumentless manual invocation",
 		"bind nothing",
-		"not a second confirmation",
+		"without a confirmation round trip",
+		"skill name",
 	} {
-		if !strings.Contains(manualSkill, want) {
+		if !strings.Contains(decisionSkill, want) {
 			t.Fatalf("h-decide ambiguity guard missing %q", want)
 		}
 	}
@@ -3417,7 +3485,6 @@ func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.
 			"assessment",
 			"natural language",
 			"substantive answer",
-			"resumption token",
 		} {
 			if !strings.Contains(source, want) {
 				t.Fatalf("%s omits Engineer Consultation marker %q", strings.Join(path, "/"), want)
@@ -3440,7 +3507,6 @@ func TestInstalledHostGateSkillsCarryEngineerConsultationContract(t *testing.T) 
 		"assessment",
 		"natural language",
 		"substantive answer",
-		"resumption token",
 	}
 
 	adapters, err := buildCurrentSkillAdapterRegistry()

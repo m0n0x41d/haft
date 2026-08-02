@@ -51,7 +51,7 @@ terms: []
 target_refs: []
 evidence_required:
   - kind: review
-    description: Human confirms that the environment change is scoped by an admitted project-profile declaration produced through the explicitly invoked onboarding path rather than by the repository container.
+    description: Human directly and unambiguously selects an environment change scoped by an admitted project-profile declaration, or the closed supported-singleton init policy applies the detector default; the repository container alone never selects it.
   - kind: runtime
     description: Software, non-software, mixed, and undetermined fixtures expose the expected applicability, FPF Query, and typed project-memory behavior through CLI or MCP surfaces.
 claims:
@@ -104,6 +104,31 @@ claims:
       - capability-applicability
     governing_pattern_refs:
       - A.6.B
+  - id: TS.environment.001.L7
+    class: L
+    statement: A canonical project-profile admission has exactly one origin—detector_default, host_routed_operator_request, or the readable legacy provenance explicit_operator or legacy_unknown—and that origin describes its admission path without changing its realization-scope payload or capability-applicability semantics.
+    scope:
+      - project-profile
+      - profile-origin
+    support_refs:
+      - TS.environment.001.L1
+      - TS.environment.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.L8
+    class: L
+    statement: InitialProfileBootstrapDecision is exactly KeepExisting, ApplySupportedSingleton, or HumanReviewRequired; ApplySupportedSingleton requires a complete non-truncated observation, supported confidence, exactly one suggested scope, no canonical profile, and no human-authored or foreign profile review.
+    scope:
+      - project-profile
+      - initial-profile-bootstrap
+    support_refs:
+      - TS.environment.001.L1
+      - TS.environment.001.L2
+      - TS.environment.001.L4
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
   - id: TS.environment.001.D1
     class: D
     statement: HaftSoftwareSystem, acting in the ProjectGovernanceSubstrate role, must expose source-native FPF retrieval and typed project memory for every admitted project scope.
@@ -126,6 +151,18 @@ claims:
       - TS.environment.001.L2
     governing_pattern_refs:
       - A.6.B
+  - id: TS.environment.001.D3
+    class: D
+    statement: HaftSoftwareSystem, through the Haft Core init capability, must apply an initial detector_default profile only for TS.environment.001.L8 ApplySupportedSingleton; mixed, multiple-scope, insufficient, truncated, or human-reviewed bases must preserve the ledger and require one direct, unambiguous operator selection routed as host_routed_operator_request.
+    scope:
+      - initial-profile-bootstrap
+      - profile-origin
+    support_refs:
+      - TS.environment.001.L7
+      - TS.environment.001.L8
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
 ```
 
 Informatively, the environment claim is scope-specific: a repository path is
@@ -407,7 +444,7 @@ claims:
       - A.7
   - id: TS.boundary.001.L5
     class: L
-    statement: Each authority-gated mutation uses an action-specific authority-basis type named by its direct contract. For one-pass onboarding profile declaration, ProfileDeclarationAuthorityBasis consists of references to the authorizing U.SpeechAct occurrence, its ProfileDeclarationAuthorizationContent utterance description, the ProfileDeclarationPermission U.Commitment instituted by that act under a named context policy, and that policy. The act, content, instituted permission, authority-basis tuple, later ProfileDeclarationReceiptV1, and their carriers are distinct, and no basis for one action kind authorizes another.
+    statement: Each authority-gated mutation uses an action-specific provenance basis named by its direct contract. Human profile application uses an exact HostRoutedOperatorRequest binding effect, reviewed subject, payload digest and project scope without asserting hidden intent or independently proven U.SpeechAct; automatic initial bootstrap uses the disjoint InitialProfileBootstrapAuthorityBasis with exact detector, policy, suggestion, observation, project binding and deterministic-predicate provenance. Neither basis fabricates or substitutes for the other, and no basis for one action authorizes another.
     scope:
       - profile-authority
       - capability-applicability
@@ -422,12 +459,13 @@ claims:
       - A.7
   - id: TS.boundary.001.A4
     class: A
-    statement: A repository-inferred project-profile suggestion is admissible for non-binding orientation only and cannot establish binding capability applicability.
+    statement: A repository-inferred project-profile suggestion alone is admissible only for non-binding orientation and cannot establish binding capability applicability; the closed initial-bootstrap contract may use the exact suggestion and observation only as constituents of an admitted InitialProfileBootstrapAuthorityBasis satisfying TS.environment.001.L8.
     scope:
       - profile-orientation
       - capability-applicability
     support_refs:
       - TS.boundary.001.L5
+      - TS.environment.001.L8
     governing_pattern_refs:
       - A.6.B
       - A.7
@@ -435,18 +473,14 @@ claims:
     class: A
     statement: >-
       An onboarding ProfileDeclarationCandidate is authority-admissible only
-      when its ProfileDeclarationAuthorityBasis resolves all of the following
-      in one judgement context: a conforming authorizing U.SpeechAct; an
-      utterance-referenced ProfileDeclarationAuthorizationContent whose project
-      root, action kind, ProfileAuthorRoleAssignment, method-description
-      reference, classifier and policy versions, session, allowed Work window,
-      basis-observation window, validity window, and single-use key match the
-      request; a current ProfileDeclarationPermission U.Commitment instituted
-      by that act under the named policy; and a durable
-      ProfileOnboardingWorkRecord whose performedBy, executedWithin, Work
-      interval, RoleAssignment interval coverage, basis-observation window,
-      payload digest, and observed-basis digest satisfy that permission and
-      content.
+      when one exact HostRoutedOperatorRequest has host_routed_operator_request
+      provenance, the profile-declaration effect, the exact reviewed candidate
+      as subject, and the exact payload digest; its request digest and project
+      scope match the current ledger binding; and the durable
+      ProfileOnboardingWorkRecord has matching performedBy, executedWithin,
+      Work interval, RoleAssignment coverage, basis-observation window, payload
+      digest, and observed-basis digest. The host request records routing
+      provenance only and does not prove U.SpeechAct or hidden mental intent.
     scope:
       - profile-onboarding-authority
       - profile-admissibility
@@ -495,7 +529,7 @@ claims:
       - A.7
   - id: TS.boundary.001.A6
     class: A
-    statement: A project-state mutation classified as authority-gated by its direct contract is authority-admissible only when the common authority verifier returns Admitted for that contract's exact action-specific authority basis and the same action kind, project scope, canonical request-payload digest, judgement context, and validity window. For profile declaration the authorization content's singleUseKey is unused in the canonical admission ledger at judgement time; semantic or type validity and an authority basis admitted for another action kind do not satisfy this predicate.
+    statement: A project-state mutation classified as authority-gated by its direct contract is authority-admissible only when the verifier accepts that contract's exact action-specific provenance basis with the same effect kind, subject, project scope, canonical payload and request digests, judgement time and validity window. For profile declaration the single-use key must be unused at transaction judgement time. Semantic validity, a skill token, and a basis admitted for another action do not satisfy this predicate.
     scope:
       - authority-admission
       - semantic-mutation
@@ -511,6 +545,20 @@ claims:
       - A.6.B
       - A.7
       - A.15.1
+  - id: TS.boundary.001.A7
+    class: A
+    statement: An automatic initial profile admission is authority-admissible only when the exact action is profile.apply_supported_singleton_default, the authority mode is automatic_supported_singleton_init, the resolution is deterministic_policy_satisfaction, Haft Core is the verifier and executor, the detector and policy versions plus suggestion and observation digests match the current complete observation, TS.environment.001.L8 evaluates to ApplySupportedSingleton, and no canonical profile revision exists at transaction judgement time.
+    scope:
+      - profile-admissibility
+      - initial-profile-bootstrap-authority
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A4
+      - TS.boundary.001.A6
+      - TS.environment.001.L8
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
   - id: TS.boundary.001.D1
     class: D
     statement: HaftSoftwareSystem, through its semantic-validation capability allocated to the Haft Core component, must return Underdetermined with exact missing-basis diagnostics when required type or applicability basis is absent.
@@ -534,13 +582,14 @@ claims:
       - A.7
   - id: TS.boundary.001.D3
     class: D
-    statement: HaftSoftwareSystem, through its authority-gate capability allocated to the Haft Core component, must reject a project-profile declaration unless both TS.boundary.001.A5 and TS.boundary.001.A6 are satisfied; generated rationale, model-supplied references, schema-visible fields, tool possession, carriers, and shape-valid receipts satisfy neither predicate.
+    statement: HaftSoftwareSystem, through its authority-gate capability allocated to the Haft Core component, must reject a project-profile declaration unless TS.boundary.001.A6 and exactly one path-specific predicate are satisfied—TS.boundary.001.A5 for a host-routed direct operator selection or TS.boundary.001.A7 for automatic initial bootstrap; generated rationale, model-supplied references, schema-visible fields, tool possession, carriers, and shape-valid receipts satisfy neither predicate merely by existing.
     scope:
       - human-authority
     support_refs:
       - TS.boundary.001.L5
       - TS.boundary.001.A5
       - TS.boundary.001.A6
+      - TS.boundary.001.A7
     governing_pattern_refs:
       - A.6.B
       - A.2.9

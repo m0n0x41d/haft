@@ -173,6 +173,7 @@ const (
 	CoreFileCreate   CoreFileEffectKind = "create"
 	CoreFilePreserve CoreFileEffectKind = "preserve"
 	CoreFileReplace  CoreFileEffectKind = "replace"
+	CoreFileRemove   CoreFileEffectKind = "remove"
 )
 
 type CoreFileEffect struct {
@@ -196,7 +197,8 @@ func NewCoreFileEffect(
 ) (CoreFileEffect, error) {
 	if kind != CoreFileCreate &&
 		kind != CoreFilePreserve &&
-		kind != CoreFileReplace {
+		kind != CoreFileReplace &&
+		kind != CoreFileRemove {
 		return CoreFileEffect{}, fmt.Errorf(
 			"core file effect kind is invalid",
 		)
@@ -208,10 +210,17 @@ func NewCoreFileEffect(
 			err,
 		)
 	}
-	if !validPermissionMode(mode) ||
-		!sha256DigestPattern.MatchString(renderedDigest) {
+	removes := kind == CoreFileRemove
+	if !removes &&
+		(!validPermissionMode(mode) ||
+			!sha256DigestPattern.MatchString(renderedDigest)) {
 		return CoreFileEffect{}, fmt.Errorf(
 			"core file rendered state is invalid",
+		)
+	}
+	if removes && (mode != 0 || renderedDigest != "" || len(content) != 0) {
+		return CoreFileEffect{}, fmt.Errorf(
+			"core file removal must render absence",
 		)
 	}
 	hasExpected := expectedDigest != ""
@@ -234,7 +243,7 @@ func NewCoreFileEffect(
 	}
 	if kind != CoreFileCreate && !hasExpected {
 		return CoreFileEffect{}, fmt.Errorf(
-			"core file preserve/replace requires a predecessor",
+			"core file preserve/replace/remove requires a predecessor",
 		)
 	}
 	if kind == CoreFilePreserve &&
@@ -286,11 +295,21 @@ func (effect CoreFileEffect) ExpectedMode() fs.FileMode {
 func (effect CoreFileEffect) valid() bool {
 	if effect.kind != CoreFileCreate &&
 		effect.kind != CoreFilePreserve &&
-		effect.kind != CoreFileReplace {
+		effect.kind != CoreFileReplace &&
+		effect.kind != CoreFileRemove {
 		return false
 	}
-	if effect.path == "" ||
-		!validPermissionMode(effect.mode) ||
+	if effect.path == "" {
+		return false
+	}
+	if effect.kind == CoreFileRemove {
+		return effect.mode == 0 &&
+			effect.renderedDigest == "" &&
+			len(effect.content) == 0 &&
+			sha256DigestPattern.MatchString(effect.expectedDigest) &&
+			validPermissionMode(effect.expectedMode)
+	}
+	if !validPermissionMode(effect.mode) ||
 		!sha256DigestPattern.MatchString(effect.renderedDigest) {
 		return false
 	}
@@ -356,6 +375,7 @@ type CoreProjectPlan struct {
 	beforeSchema  int
 	afterSchema   int
 	basis         BasisReadiness
+	profile       InitialProfileBootstrapPlan
 }
 
 type CoreProjectPlanBuilder struct {
@@ -369,6 +389,7 @@ type CoreProjectPlanBuilder struct {
 	beforeSchema  int
 	afterSchema   int
 	basis         BasisReadiness
+	profile       InitialProfileBootstrapPlan
 }
 
 func NewCoreProjectPlanBuilder() CoreProjectPlanBuilder {
@@ -447,6 +468,14 @@ func (builder CoreProjectPlanBuilder) WithBasis(
 	return next
 }
 
+func (builder CoreProjectPlanBuilder) WithInitialProfileBootstrap(
+	plan InitialProfileBootstrapPlan,
+) CoreProjectPlanBuilder {
+	next := builder
+	next.profile = plan
+	return next
+}
+
 func (builder CoreProjectPlanBuilder) Build() (CoreProjectPlan, error) {
 	projectRoot, err := parseCanonicalAbsolutePath(builder.projectRoot)
 	if err != nil {
@@ -469,6 +498,9 @@ func (builder CoreProjectPlanBuilder) Build() (CoreProjectPlan, error) {
 	}
 	if !builder.basis.valid() {
 		return CoreProjectPlan{}, fmt.Errorf("core TypeEnv basis readiness is invalid")
+	}
+	if err := validateInitialProfileBootstrapPlan(builder.profile); err != nil {
+		return CoreProjectPlan{}, fmt.Errorf("core initial profile bootstrap: %w", err)
 	}
 	databaseSeed := builder.databaseSeed
 	if databaseSeed.kind == "" {
@@ -519,6 +551,7 @@ func (builder CoreProjectPlanBuilder) Build() (CoreProjectPlan, error) {
 		beforeSchema:  builder.beforeSchema,
 		afterSchema:   builder.afterSchema,
 		basis:         builder.basis,
+		profile:       builder.profile,
 	}, nil
 }
 
@@ -587,6 +620,10 @@ func (plan CoreProjectPlan) AfterSchema() int {
 
 func (plan CoreProjectPlan) Basis() BasisReadiness {
 	return plan.basis
+}
+
+func (plan CoreProjectPlan) InitialProfileBootstrap() InitialProfileBootstrapPlan {
+	return plan.profile
 }
 
 type PredecessorKind string

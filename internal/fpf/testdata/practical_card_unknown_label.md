@@ -1,0 +1,5 @@
+- **Situation and question.** A new source-owned result label is not yet admitted by the adapter grammar.
+- **Fresh outcome route.** `A.1 Solution -> U.System`.
+- **Boundaries.** Stop at the exact unsupported grammar diagnostic.
+- **Result test.** The source visibly carries result-like labeled material.
+- **Public coarsening.** "Fresh route" is not silently interpreted.

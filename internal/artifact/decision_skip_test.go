@@ -186,10 +186,14 @@ func TestDecide_StructuredErrorIncludesReferences(t *testing.T) {
 		"_skip_reason\":",
 		"References:",
 		"FPF E.9",
-		"haft_query(action=\"fpf\"",
+		"haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"E.9\")",
+		"haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"DEC-01\")",
 	} {
 		if !strings.Contains(got, marker) {
 			t.Errorf("validation error missing %q in output:\n%s", marker, got)
 		}
+	}
+	if strings.Contains(got, `haft_query(action="fpf", query=`) {
+		t.Fatalf("validation error advertises the retired FPF query shape:\n%s", got)
 	}
 }

@@ -125,22 +125,25 @@ entries:
       - A retrieval result.
     owners:
       - human
-  - term: DecisionBindingMode
+  - term: HostRoutedOperatorRequest
     category: authority
     definition: >-
-      The project-local operational policy selecting which human-confirmation
-      carrier is sufficient for DecisionRecord binding. explicit_h_decide treats
-      the operator's explicit invocation of the manual-only h-decide capability
-      as sufficient and requires no second terminal utterance.
-      strict_cli_speech_act additionally requires Haft to capture and durably
-      record the exact controlling-terminal U.SpeechAct. Missing configuration
-      resolves to explicit_h_decide; an unknown value is invalid.
+      The effect-specific provenance value created when a host recognizes a
+      direct, unambiguous operator request and routes its exact effect, subject,
+      payload digest, and request digest to the kernel effect boundary. It says
+      only what the host routed: the kernel does not claim to have independently
+      established a mental intent or a U.SpeechAct occurrence. Decision binding,
+      manual profile application, and ProjectTypeEnvHead selection each require
+      a fresh request for their own exact effect and subject.
     aliases:
-      - decision binding mode
+      - host-routed operator request
+      - host_routed_operator_request
     not:
-      - Permission for an agent to invoke h-decide autonomously.
-      - A claim that explicit_h_decide independently verifies a U.SpeechAct.
-      - A project-work phase.
+      - A skill-token invocation or authorization receipt.
+      - A quotation, tool output, agent recommendation, or the agent's own
+        proposal.
+      - Independent kernel proof of U.SpeechAct or hidden operator intent.
+      - Reusable authority for another effect, subject, option, or scope.
     owners:
       - human
   - term: WorkCommission
@@ -292,17 +295,18 @@ entries:
   - term: ProfileDeclarationAuthorityBasis
     category: project-profile
     definition: >-
-      The v1 action-specific authority tuple required for profile-declaration
-      admission. It contains references to the authorizing U.SpeechAct
-      occurrence, its ProfileDeclarationAuthorizationContent utterance
-      description, the ProfileDeclarationPermission U.Commitment instituted by
-      that act under a named context policy, and that policy. The tuple is not
-      any one of its members and is not reusable for another action kind.
+      The action-specific provenance basis required for current
+      profile-declaration admission. The explicit-operator variant binds one
+      exact HostRoutedOperatorRequest to the reviewed work input and project;
+      the automatic singleton-bootstrap variant records detector_default and
+      the exact deterministic policy basis. Neither variant claims independent
+      proof of a U.SpeechAct. Older speech-act and permission tuples remain
+      sealed, readable history and cannot authorize a current admission.
     aliases:
       - profile declaration authority basis
     not:
       - A ProfileDeclarationReceiptV1.
-      - The operator U.SpeechAct or its utterance description.
+      - The operator message or a skill-token invocation.
       - A generated rationale or model-supplied reference.
       - A repository-classification signal.
       - A generic authority basis for decisions, commissions, spec lifecycle,
@@ -312,35 +316,32 @@ entries:
   - term: ProfileDeclarationAuthorizationContent
     category: project-profile
     definition: >-
-      The utterance-description episteme for one bounded onboarding declaration
-      authorization. It carries the exact action kind, project root,
-      ProfileAuthorRoleAssignment, ProfileOnboardingMethodDescription reference,
-      classifier and policy versions, session, allowed Work window,
-      basis-observation window, authorization validity window, and singleUseKey.
-      It is referenced by the authorizing SpeechAct and the authority basis but
-      is not itself the act, permission, admission, receipt, or carrier.
+      A legacy v1-v3 utterance-description episteme retained only to decode and
+      audit sealed profile-admission history. It carried the bounded action,
+      project, method, role, observation and validity coordinates used by that
+      historical generation. Current explicit profile application uses an exact
+      HostRoutedOperatorRequest; automatic singleton bootstrap uses
+      detector_default. New authorization-content rows are not admitted.
     aliases:
       - profile declaration authorization content
     not:
-      - The U.SpeechAct occurrence.
-      - ProfileDeclarationPermission.
+      - A current HostRoutedOperatorRequest.
+      - Current profile-declaration authority.
       - A ProfileDeclarationReceiptV1.
     owners:
       - human
   - term: ProfileDeclarationPermission
     category: project-profile
     definition: >-
-      The project-local U.Commitment with modality MAY instituted by the
-      authorizing U.SpeechAct under the named context policy. Its subject,
-      scope, referents, and validity window must match
-      ProfileDeclarationAuthorizationContent at admission time. It authorizes
-      only the exact one-pass profile-declaration action and is not the
-      utterance, Work, receipt, or generic authority for another mutation.
+      A legacy v1-v3 project-local U.Commitment retained only as part of sealed,
+      readable profile-admission history. Current admission never creates or
+      reuses this permission: explicit application is host-routed and automatic
+      singleton bootstrap is justified by its deterministic system policy.
     aliases:
       - profile declaration permission
     not:
       - ProfileDeclarationAuthorizationContent.
-      - The authorizing U.SpeechAct.
+      - A current profile-application request.
       - ProfileOnboardingWork.
     owners:
       - human
@@ -350,8 +351,9 @@ entries:
       A read-only detector result containing suggested RealizationScopes,
       positive and negative repository signals, detector version, confidence
       posture, and conflicting detector signals. It is non-binding orientation
-      input and may supply observed basis to explicitly invoked onboarding
-      Work, but it never acts or mutates ConfiguredProjectProfile by itself.
+      input and may supply observed basis to host-routed profile application or
+      deterministic singleton bootstrap Work, but it never acts or mutates
+      ConfiguredProjectProfile by itself.
     aliases:
       - project profile suggestion
     not:
@@ -428,7 +430,7 @@ entries:
     aliases:
       - profile onboarding work record
     not:
-      - The authorizing U.SpeechAct occurrence.
+      - The HostRoutedOperatorRequest or automatic-bootstrap policy basis.
       - ProfileOnboardingMethod or its U.MethodDescription.
       - Proof of profile persistence.
     owners:
@@ -495,17 +497,18 @@ entries:
     definition: >-
       The canonical single-use record written in the same admission-ledger
       transaction as one ProfileDeclarationAdmissionRecord. Its unique
-      singleUseKey equals the exact key from
-      ProfileDeclarationAuthorizationContent. It also binds action kind,
+      singleUseKey equals the exact key from the admitted authority basis. It
+      also binds action kind,
       project-binding digest, authorization-envelope digest,
       authority-record reference and digest, exact admission-request digest,
       verifier identity and version, committed result reference and digest, and
       timestamps. The unique key makes same-key/different-request a replay
-      conflict; the record is not the authorizing act, permission, or receipt.
+      conflict; the record is not the operator request, bootstrap policy, or
+      receipt.
     aliases:
       - authority use record
     not:
-      - ProfileDeclarationPermission.
+      - HostRoutedOperatorRequest or detector_default policy.
       - A caller-supplied single-use Boolean.
       - A ProfileDeclarationReceiptV1.
     owners:
@@ -513,13 +516,13 @@ entries:
   - term: AuthorityResolutionRecord
     category: authority
     definition: >-
-      The canonical record behind one sealed Admitted authority resolution. It
-      binds the resolved U.SpeechAct, ProfileDeclarationAuthorizationContent,
-      ProfileDeclarationPermission, context policy, exact action envelope,
-      project binding, verifier identity and version, and resolution time. It is
-      created only by a trusted authority adapter and is read by the kernel gate;
-      it neither consumes the singleUseKey nor proves that profile admission
-      committed.
+      The canonical record behind one current admitted profile-authority
+      resolution. The host-routed variant binds the exact
+      HostRoutedOperatorRequest, reviewed work input, action envelope, project
+      binding, verifier, and resolution time. The automatic variant binds the
+      detector_default singleton policy and its exact observed basis. It neither
+      consumes the singleUseKey nor proves that profile admission committed;
+      legacy speech-act resolutions are decode-only history.
     aliases:
       - authority resolution record
     not:
@@ -532,14 +535,14 @@ entries:
     category: authority
     definition: >-
       The kernel-owned canonical transactional store for authority
-      presentations, AuthorityResolutionRecords, immutable
+      provenance bases, AuthorityResolutionRecords, immutable
       ProfileOnboardingWorkRecords, AuthorityUseRecords,
       ProfileDeclarationAdmissionRecords, admitted ConfiguredProjectProfile
       revisions, and projection debt. After persisting and rereading the Work
       record, the current canonical profile revision is captured as the expected
       admission revision. The later admission
-      transaction revalidates the exact authority-resolution record, request,
-      action, project binding, envelope, and current permission at its judgement
+      transaction revalidates the exact authority-resolution record, request or
+      automatic policy basis, action, project binding, and envelope at its judgement
       time, then performs expected-revision comparison, uniqueness-enforced
       singleUseKey consumption, authority-use recording, and canonical profile
       admission.
@@ -563,8 +566,8 @@ entries:
       revision, and recording time. Admission finalizes it only inside the
       canonical transaction that consumes the singleUseKey and installs the
       profile. A pre-admission candidate carries CandidateProvenance instead.
-      The receipt is neither the permission U.Commitment, instituting SpeechAct,
-      Work, declaration, admission proof, nor YAML carrier.
+      The receipt is neither the HostRoutedOperatorRequest, automatic-bootstrap
+      policy, Work, declaration, admission proof, nor YAML carrier.
     aliases:
       - profile declaration receipt
       - onboarding profile receipt
@@ -572,7 +575,7 @@ entries:
     not:
       - A ProjectProfileSuggestion.
       - A detector score.
-      - An authorization U.SpeechAct or authority by itself.
+      - An operator request, automatic policy, or authority by itself.
       - The declaration or classification Work it records.
       - The `.haft/project-profile.yaml` carrier.
       - A carrier acting as an agent.
@@ -1233,13 +1236,13 @@ entries:
       digest covers the canonical request bytes. Genesis and Transition differ
       only through the closed predecessor variant; rollback is a Transition to
       a previously admitted C through a fresh Stage. The request is data for a
-      separately authorized system CAS Work and is not authority or Work.
+      separately routed system CAS Work and is not authority or Work.
     aliases:
       - ProjectTypeEnvHeadSelectionRequestV1
       - TypeEnv head-selection request
     not:
       - A MemoryChangeSet.
-      - A human SpeechAct or system CAS Work occurrence.
+      - A HostRoutedOperatorRequest or system CAS Work occurrence.
       - A request with common project, target, graph revision, or idempotency
         fields duplicated inside both predecessor variants.
     owners:
@@ -1249,17 +1252,17 @@ entries:
     definition: >-
       The dedicated system-performed CAS U.Work effect that creates one
       project's first ProjectTypeEnvHead from an exact
-      ProjectTypeEnvGenesisPredecessor and target after separate exact human
-      authorization. HaftSoftwareSystem performs the CAS Work through an exact
-      RoleAssignment; the earlier human SpeechAct authorizes but does not
-      perform the head mutation.
+      ProjectTypeEnvGenesisPredecessor and target after the host routes one exact
+      operator request for the reviewed selection. HaftSoftwareSystem performs
+      the CAS Work through an exact RoleAssignment; the routed request records
+      provenance but does not perform the head mutation.
     aliases:
       - TypeEnv genesis
     not:
       - haft init, compilation, linking, or staging.
       - A transition from an existing head.
       - A generic MemoryChangeSet.
-      - The human authorization SpeechAct.
+      - The HostRoutedOperatorRequest.
     owners:
       - human
   - term: NoPriorHeadProof
@@ -1283,16 +1286,16 @@ entries:
       The dedicated system-performed CAS U.Work effect that moves an existing
       exact ProjectTypeEnvHead to an already-derived successor C under one
       ProjectTypeEnvTransitionPredecessor, exact target, and separately recorded
-      human authorization. HaftSoftwareSystem performs the CAS Work through an
-      exact RoleAssignment; rollback is a fresh Transition selecting a
-      previously admitted C.
+      HostRoutedOperatorRequest. HaftSoftwareSystem performs the CAS Work through
+      an exact RoleAssignment; rollback is a fresh Transition selecting a
+      previously admitted C through another exact request.
     aliases:
       - TypeEnv transition
     not:
       - Genesis with a missing prior ref.
       - Silent adoption of the newest bundled extension.
       - Reinterpretation of historical assertions.
-      - The human authorization SpeechAct.
+      - The HostRoutedOperatorRequest.
     owners:
       - human
   - term: ProjectTypeEnvHead
@@ -1333,10 +1336,11 @@ entries:
     category: typed-memory
     definition: >-
       The immutable content-addressed durable record created exactly once by
-      the original successful authorized Genesis or Transition CAS commit. It
-      binds exact ProjectID, request ref and digest, authorization-content ref
-      and digest, SpeechActRef and SpeechAct-record ref, authority-resolution
-      and authority-use refs, CAS WorkRef and CAS-Work-record ref, the closed
+      the original successful host-routed Genesis or Transition CAS commit. It
+      binds exact ProjectID, selection-request ref and digest,
+      HostRoutedOperatorRequest coordinates, reviewed-content ref and digest,
+      authority-resolution and authority-use refs, CAS WorkRef and
+      CAS-Work-record ref, the closed
       predecessor variant, exact B and ordered E DAG and X and C and Stage
       target, ExpectedGraphRevision, committed ProjectTypeEnvHead and
       ProjectTypeEnvHeadRevision, committed GraphRevision, IdempotencyKey,
@@ -1348,7 +1352,7 @@ entries:
       - ProjectTypeEnvHeadSelectionReceipt
       - TypeEnv head-selection receipt
     not:
-      - Human intent or the authorization act itself.
+      - Hidden human intent or independent proof of a U.SpeechAct.
       - Part of composite identity.
       - Proof that later project records remain compatible.
       - ProjectTypeEnvActivationReceipt except as an explicitly legacy
@@ -1361,18 +1365,18 @@ entries:
     definition: >-
       The immutable content-addressed aggregate proving one complete committed
       head-selection transaction. It contains exact refs and digests for the
-      request, authorization content, SpeechAct occurrence and record,
-      authority resolution, authority-use record, CAS Work occurrence and
-      record, closed predecessor, B and ordered E DAG and X and C and Stage
-      target, ExpectedGraphRevision, committed head and head revision,
-      committed GraphRevision, IdempotencyKey, receipt ref and digest, and
-      committed result. Missing, mismatched, or corrupt members make the closure
-      unusable for replay; partial rows are not successful selection evidence.
+      selection request, HostRoutedOperatorRequest, reviewed content, host-routed
+      authority resolution, authority-use record, CAS Work occurrence and record,
+      closed predecessor, B and ordered E DAG and X and C and Stage target,
+      ExpectedGraphRevision, committed head and head revision, committed
+      GraphRevision, IdempotencyKey, receipt ref and digest, and committed result.
+      Missing, mismatched, or corrupt members make the closure unusable for
+      replay; partial rows are not successful selection evidence.
     aliases:
       - TypeEnv head-selection committed closure
     not:
       - A plan or request to perform selection.
-      - A substitute for the distinct human SpeechAct or system CAS Work.
+      - A substitute for the host-routed request or system CAS Work.
     owners:
       - human
   - term: ProjectTypeEnvHeadSelectionReplayResult
@@ -1381,12 +1385,12 @@ entries:
       The closed replay result
       ReplayedExistingClosure{ClosureRef, ReceiptRef} or
       ReplayConflict{IdempotencyKey, ExistingRequestDigest,
-      PresentedRequestDigest, ExistingAuthorizationContentDigest,
-      PresentedAuthorizationContentDigest}. Exact replay first verifies the existing
+      PresentedRequestDigest, ExistingReviewedContentDigest,
+      PresentedReviewedContentDigest}. Exact replay first verifies the existing
       ProjectTypeEnvHeadSelectionClosureV1 and returns its existing canonical
       bytes and refs without current-authority revalidation, second key
       consumption, new Work, head mutation, receipt creation, or semantic write.
-      The same key with any different exact request or authorization-content
+      The same key with any different exact request or reviewed-content
       digest is ReplayConflict with zero writes.
     aliases:
       - TypeEnv head-selection replay result
@@ -1401,7 +1405,7 @@ entries:
     definition: >-
       A strong reference to a description episteme or claim content, represented
       here only as ClaimIdRef or EpistemeRef. For head selection it identifies
-      the reviewed utterance description carried by
+      the reviewed selection description carried by
       ProjectTypeEnvHeadSelectionAuthorizationContent. It does not identify the
       U.SpeechAct occurrence, its Work occurrence, or any physical or serialized
       carrier.
@@ -1443,7 +1447,6 @@ entries:
     aliases:
       - speech-act occurrence ref
     not:
-      - ProjectTypeEnvHeadSelectionSpeechActRecordRef.
       - DescriptionRef.
       - CarrierRef.
       - Deontic permission inferred from an act-type name.
@@ -1469,7 +1472,7 @@ entries:
   - term: ProjectTypeEnvHeadSelectionAuthorizationContent
     category: authority
     definition: >-
-      The immutable reviewed utterance-description episteme, addressed by one
+      The immutable reviewed selection-description episteme, addressed by one
       exact DescriptionRef, for exactly one Genesis or Transition request.
       Rollback is represented as Transition. It binds the exact request ref and
       digest, project, closed predecessor, ordered E DAG, exact B, X, verified
@@ -1478,7 +1481,9 @@ entries:
       validity window, and IdempotencyKey. Verified C transitively
       authenticates the same B, E and X, but the content keeps those identities
       explicit for human review. Any CarrierRef that bears this content is a
-      separate observable carrier and is not the content.
+      separate observable carrier and is not the content. Current execution
+      binds this content and its selection request inside one exact
+      HostRoutedOperatorRequest; the content alone has no authority.
     aliases:
       - TypeEnv head-selection content
     not:
@@ -1488,75 +1493,16 @@ entries:
       - The CarrierRef that bears it.
     owners:
       - human
-  - term: ProjectTypeEnvHeadSelectionSpeechAct
-    category: authority
-    definition: >-
-      The human communicative U.SpeechAct and therefore dated U.Work occurrence
-      that places or references one exact
-      ProjectTypeEnvHeadSelectionAuthorizationContent DescriptionRef in its
-      named judgement context. Its SpeechActTypeRef names have no deontic or
-      head-selection force by themselves. Only an exact named context policy
-      and current ProjectTypeEnvHeadSelectionAuthorityResolution can make the
-      occurrence part of the authority basis for a later system CAS Work. The
-      act remains distinct from its description, carrier, authority judgement,
-      use record, and later CAS Work occurrence.
-    aliases:
-      - TypeEnv head-selection act
-    not:
-      - Generated command text or visible hashes.
-      - The later CAS Work.
-      - A reusable authority token.
-      - Permission or commitment inferred from an `approve`, `authorize`, or
-        equivalent act-type name alone.
-    owners:
-      - human
-  - term: ProjectTypeEnvHeadSelectionSpeechActRecord
-    category: authority
-    definition: >-
-      The durable addressable description of one exact
-      ProjectTypeEnvHeadSelectionSpeechAct occurrence. As a reliance-bearing
-      U.SpeechAct/U.Work description it contains the exact SpeechActRef and
-      WorkRef of that one communicative occurrence and identifies
-      context-recognized actTypes;
-      the exact enactsMethod U.MethodRef and methodDescriptionRef used for the
-      A.2.9 isExecutionOf anchor; performedBy as one exact human-holder
-      U.RoleAssignmentRef whose assignment interval covers the Work interval;
-      executedWithin U.SystemRef; bounded judgement context; Work interval;
-      StatePlaneRef plus exact pre/post refs or declared delta predicate;
-      concrete parameter bindings, input/output refs, resource-ledger ref,
-      outcome and audit-trace refs; the exact authorization-content
-      DescriptionRef; at least one observable CarrierRef; and
-      affected project, current or prospective ProjectTypeEnvHead slot,
-      predecessor posture, target C and Stage referents. It also carries the
-      intended Genesis or Transition effect; rollback is represented as a
-      Transition selecting a previously admitted C. The act's judgement context
-      and the request/authority-judgement context are identical, or the record
-      carries the exact BridgeRef or named context policy required by A.2.9
-      SA-C6, including direction, congruence, and loss where applicable. The
-      record describes the act and is not the act itself; actTypes create no
-      deontic force by name.
-    aliases:
-      - TypeEnv head-selection act record
-    not:
-      - The ProjectTypeEnvHeadSelectionSpeechAct occurrence.
-      - The later CAS Work or its record.
-      - A current authority judgement.
-    owners:
-      - human
   - term: ProjectTypeEnvHeadSelectionAuthorityResolution
     category: authority
     definition: >-
-      A TypeEnv-specific current judgement at the CAS boundary that the exact
-      SpeechActRef and WorkRef, ProjectTypeEnvHeadSelectionSpeechAct and its
-      exact record and DescriptionRef content,
-      performer assignment, context, project, action, validity window, and
-      expected predecessor admit the requested head-selection effect under one
-      exact named context policy. The act judgement context is the same as the
-      authority-judgement context, or one explicit BridgeRef/policy licenses
-      the cross-context interpretation and records direction, congruence, and
-      loss under A.2.9 SA-C6. An act-type label has no deontic or authority force
-      by itself. Resolution is revalidated at transaction time and neither
-      consumes the single-use key nor proves that CAS committed.
+      A TypeEnv-specific current judgement at the CAS boundary that one exact
+      HostRoutedOperatorRequest binds the exact selection-request and reviewed
+      content payload, project binding, action, validity window, and expected
+      predecessor. The kernel verifies those coordinates but deliberately does
+      not claim independent proof of hidden operator intent or U.SpeechAct.
+      Resolution is revalidated at transaction time and neither consumes the
+      single-use key nor proves that CAS committed.
     aliases:
       - TypeEnv head-selection authority resolution
     not:
@@ -1570,15 +1516,16 @@ entries:
     definition: >-
       The TypeEnv-specific single-use record atomically written only by the
       original successful ProjectTypeEnvHead update. It binds the exact
-      authority resolution, authorization-content DescriptionRef and digest,
-      request ref and digest, IdempotencyKey, closed predecessor, B, ordered E
-      DAG, X, C, Stage, ExpectedGraphRevision, committed
+      host-routed operator request, authority resolution, reviewed-content
+      DescriptionRef and digest, selection-request ref and digest,
+      IdempotencyKey, closed predecessor, B, ordered E DAG, X, C, Stage,
+      ExpectedGraphRevision, committed
       ProjectTypeEnvHeadRevision and GraphRevision, verifier, original CAS
       WorkRef, receipt ref, and committed result. An exact idempotent replay
       returns the existing record without current-authority revalidation,
       another consumption, new Work, or another write; the same key with a
       different exact request or content digest is ReplayConflict. The record
-      is neither the human act nor permission.
+      is neither the operator request nor a reusable permission.
     aliases:
       - TypeEnv authority-use record
     not:
@@ -1603,16 +1550,17 @@ entries:
       predicate; concrete parameter bindings, input/output refs, resource-ledger
       ref, outcome and audit-trace refs; affected project, closed predecessor,
       target ProjectTypeEnvHead slot, C, and Stage referents; exact request,
-      DescriptionRef content, authority-resolution and authority-use refs;
+      HostRoutedOperatorRequest, DescriptionRef content, authority-resolution
+      and authority-use refs;
       predecessor comparison; and committed head revision, graph revision,
       receipt, and result. The record is created only with the original CAS Work
       commit and returned unchanged on exact replay; replay creates no new Work
       occurrence. The record is not the Work occurrence, and the CAS Work is
-      distinct from the earlier human SpeechAct and its SpeechActRef.
+      distinct from the host-routed operator request.
     aliases:
       - TypeEnv head CAS Work record
     not:
-      - ProjectTypeEnvHeadSelectionSpeechAct.
+      - HostRoutedOperatorRequest.
       - ProjectTypeEnvStage.
       - Part of B, E, X, or C identity.
     owners:

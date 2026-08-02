@@ -986,6 +986,9 @@ func handleQuintNote(ctx context.Context, store *artifact.Store, haftDir string,
 	if v, ok := args["context"].(string); ok {
 		input.Context = v
 	}
+	if v, ok := args["valid_until"].(string); ok {
+		input.ValidUntil = v
+	}
 	input.AffectedFiles = parseStringArrayFromArgs(args, "affected_files")
 	input.Observations = parseStringArrayFromArgs(args, "observations")
 	// Classify each anchor: an artifact ID (dec-/prob-/...) becomes a typed link;
@@ -1312,12 +1315,10 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 
 	switch action {
 	case "decide":
-		// MCP arguments are proposal content, never operator authorization.
-		// The default explicit_h_decide policy trusts an external skill invocation
-		// that this handler cannot observe; strict_cli_speech_act is the only mode
-		// that records a durable controlling-terminal SpeechAct. MCP therefore
-		// fails closed in both modes.
-		if err := rejectNonManualDecisionBinding(); err != nil {
+		// MCP arguments are proposal content, never conversational provenance.
+		// Until MCP receives a verifiable host receipt, decision binding stays
+		// fail-closed and the supported host routes the operator request to CLI.
+		if err := rejectUnverifiedMCPDecisionBinding(); err != nil {
 			return "", "", err
 		}
 
@@ -1450,7 +1451,7 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 
-		a, filePath, err := (*artifact.Artifact)(nil), "", rejectNonManualDecisionBinding()
+		a, filePath, err := (*artifact.Artifact)(nil), "", rejectUnverifiedMCPDecisionBinding()
 		if err != nil {
 			return "", "", err
 		}

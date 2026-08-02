@@ -9,16 +9,18 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/profileauthority"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestV44ResolutionWriterIsSealedAfterV51AndAdmissionGateStaysClosed(
 	t *testing.T,
 ) {
 	ctx := context.Background()
-	storeDB, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "profile-authority-v44.sqlite"))
+	storeDB, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "profile-authority-v44.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

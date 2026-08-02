@@ -9,13 +9,13 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
 
 # h-commission — Create work commission (manual only, sacred)
 
 You are creating a WorkCommission through the manual CLI/input-file path. Commissions are execution-authority grants — they encode WHAT the operator authorized an autonomous agent (harness) to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS. Default MCP serve mode rejects WorkCommission creation actions with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. Manual CLI is the default binding path; a host authorization receipt can become a binding path only when a registered kernel verifier can confirm principal, session, action, payload hash, expiry, and source.
 
-Authority boundary: binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts.
+Authority boundary: binding actions require effect-specific operator authority. Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts.
 
 The operator invoked this manually (`disable-model-invocation: true` enforces it structurally). Commissions stay sacred per FPF reasoner critique 2026-05-25.
 
@@ -71,7 +71,8 @@ If not found or stale or superseded or deprecated → STOP. Report to operator a
 - `mcp__haft__haft_refresh(action="review")` for a read-only maintenance
   judgment packet when the record is stale; any waiver remains a separate,
   explicit operator lifecycle mutation
-- manual `/h-decide` for a replacement, followed by
+- a direct, unambiguous operator request routed through `/h-decide` for a
+  replacement, followed by
   `haft decision supersede <old-dec-...> --new <new-dec-...> --reason "..."`
   when the old decision is outdated
 

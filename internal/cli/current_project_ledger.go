@@ -49,16 +49,45 @@ func currentProjectLedgerError(
 	if projectID == "" {
 		projectID = "<project-id>"
 	}
-	migrationCommand := fmt.Sprintf(
+	repair := currentProjectLedgerRepair(projectRoot, projectID, cause)
+	return fmt.Errorf(
+		"haft project database is not ready for %s: %w; run `%s` to %s, then retry; no migration was attempted and no binding recovery was attempted by %s",
+		operation,
+		cause,
+		repair.command,
+		repair.effect,
+		operation,
+	)
+}
+
+type projectLedgerRepair struct {
+	command string
+	effect  string
+}
+
+func currentProjectLedgerRepair(
+	projectRoot string,
+	projectID string,
+	cause error,
+) projectLedgerRepair {
+	if errors.Is(cause, projectledger.ErrBindingMissing) {
+		command := fmt.Sprintf(
+			"haft project recover-binding --project-root %q --project-id %s",
+			projectRoot,
+			projectID,
+		)
+		return projectLedgerRepair{
+			command: command,
+			effect:  "recover the exact missing durable binding from a consistent backup",
+		}
+	}
+	command := fmt.Sprintf(
 		"haft project migrate --project-root %q --project-id %s",
 		projectRoot,
 		projectID,
 	)
-	return fmt.Errorf(
-		"haft project database is not ready for %s: %w; run `%s` to apply the explicit host-free database upgrade, then retry; no migration was attempted by %s",
-		operation,
-		cause,
-		migrationCommand,
-		operation,
-	)
+	return projectLedgerRepair{
+		command: command,
+		effect:  "apply the explicit host-free database upgrade",
+	}
 }

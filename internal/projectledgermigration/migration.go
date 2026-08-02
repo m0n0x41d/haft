@@ -366,10 +366,16 @@ func requireBindingForObservedSchema(
 		return nil
 	}
 	if err := handle.RequireAttachedIdentity(ctx); err != nil {
+		recoveryCommand := fmt.Sprintf(
+			"haft project recover-binding --project-root %q --project-id %s",
+			handle.ProjectRoot().String(),
+			handle.ProjectID().String(),
+		)
 		return fmt.Errorf(
-			"schema %d requires a durable project identity binding: %w",
+			"schema %d requires a durable project identity binding: %w; run `%s` for explicit backed-up recovery",
 			observedSchema,
 			err,
+			recoveryCommand,
 		)
 	}
 	return nil

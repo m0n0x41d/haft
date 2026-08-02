@@ -1,7 +1,7 @@
 ---
 name: h-explore
 description: |
-  Generate 3-5 genuinely distinct candidate approaches for a current question, with the weakest link of each kept visible. Use when alternatives are needed or one favored approach is prematurely closing the search. This skill is independent: it may work from an inline question, cue, accepted problem, or other current basis. Default to conversational candidates; persist a SolutionPortfolio only on explicit save intent or when a named receiving use needs replay.
+  Generate 3-5 genuinely distinct candidate approaches for a current question, with the weakest link of each kept visible. Use when alternatives are needed or one favored approach is prematurely closing the search. This skill is independent: it may work from an inline question, cue, accepted problem, or other current basis. Default to conversational candidates; persist a SolutionPortfolio only on explicit save intent or when current Work supplies a concrete operator-named or agent-inferred receiving use that needs replay.
 when_to_use: |
   The current need is option generation, not diagnosis of a failure or comparison of already available options.
 argument-hint: "[current question, cue, or problem reference]"
@@ -14,6 +14,10 @@ Inspect an exact FPF SourceID or UnitID with `haft_query(action="fpf",
 mode="inspect", identifier="...")`; otherwise use `mode="concern"` with the
 current exploration question. Retrieval is recall; the full pattern body
 supplies the conditions and result semantics.
+A `candidate_set` is incomplete: select by the current condition and required
+result kind, then inspect one exact PatternID. If no candidate fits, abstain.
+Never use a query performed after exploration or editing as proof that the
+earlier work followed that source.
 
 ## Conditional project-memory orientation
 
@@ -31,7 +35,8 @@ known absence, or explicit abstention is visible but non-blocking: continue the
 exploration without inventing a profile, entity, artifact, or human gate. This
 read does not replace code-graph preflight before a later code edit. Never
 persist typed memory merely because a read failed; persistence requires an
-explicit operator save request or a named receiving use with provenance.
+explicit operator save request or a concrete operator-named or agent-inferred
+receiving use supplied by current Work, with provenance.
 
 ## Procedure
 
@@ -52,7 +57,8 @@ explicit operator save request or a named receiving use with provenance.
 ## Persistence boundary
 
 In ordinary use, return candidates in conversation and stop. Persist only on
-explicit save intent or a named reliance-bearing receiving use. A durable
+explicit save intent or when current Work supplies a concrete operator-named
+or agent-inferred reliance-bearing receiving use. A durable
 typed portfolio requires each candidate to be an independently addressable
 ProjectRecord. When that receiving use is current, persist one non-binding
 candidate-description Note per variant through `haft_note`, using the same

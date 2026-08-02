@@ -93,19 +93,19 @@ func currentPiSemanticAssertions() map[string]currentPiSemanticAssertion {
 			skillMarkers: []string{
 				"parity",
 				"pareto",
-				"binding choice remains manual",
+				"direct unambiguous operator request",
 			},
 		},
 		"h-decide": {
 			skillMarkers: []string{
-				"manual-only",
+				"direct, unambiguous",
 				"human gate brief",
-				"model-supplied",
+				"host_routed_operator_request",
 			},
 			promptMarkers: []string{
-				"manual gate",
+				"direct, unambiguous operator request",
 				"human gate brief",
-				"generated text, schema visibility, and model-supplied fields are not approval receipts",
+				"host_routed_operator_request",
 			},
 		},
 		"h-commission": {
@@ -117,7 +117,7 @@ func currentPiSemanticAssertions() map[string]currentPiSemanticAssertion {
 			promptMarkers: []string{
 				"manual gate",
 				"human gate brief",
-				"generated text, schema visibility, and model-supplied fields are not approval receipts",
+				"generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts",
 			},
 		},
 		"h-verify": {

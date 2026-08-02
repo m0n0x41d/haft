@@ -9,17 +9,18 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestPrepareBeforeAdmissionCommitsV3AuthorityThenV2WorkAndReplays(t *testing.T) {
 	database, root := newPreparationDatabase(t)
 	input := newPreparationInput(t, root, []string{"go.mod", "internal/kernel.go"})
-	policy := newPreparationPolicy(t, "base")
+	policy := newPreparationPolicy(t, input, "base")
 	checkedAt := time.Date(2026, 7, 19, 9, 0, 0, 0, time.UTC)
 	revalidations := 0
 	revalidate := func(ctx context.Context) error {
@@ -98,7 +99,7 @@ func TestPrepareBeforeAdmissionRecoversAfterPostAuthorityRevalidationFailure(t *
 		root,
 		[]string{"go.mod", "internal/kernel.go", "models/current.onnx"},
 	)
-	policy := newPreparationPolicy(t, "recovery")
+	policy := newPreparationPolicy(t, input, "recovery")
 	checkedAt := time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC)
 	_, err := PrepareBeforeAdmission(
 		context.Background(),
@@ -147,7 +148,7 @@ func TestPrepareBeforeAdmissionReturnsConflictWithoutCandidate(t *testing.T) {
 		database,
 		root,
 		input,
-		newPreparationPolicy(t, "first"),
+		newPreparationPolicy(t, input, "first"),
 		sequenceClock(
 			checkedAt,
 			checkedAt.Add(time.Microsecond),
@@ -165,7 +166,7 @@ func TestPrepareBeforeAdmissionReturnsConflictWithoutCandidate(t *testing.T) {
 		database,
 		root,
 		input,
-		newPreparationPolicy(t, "different-carrier"),
+		newPreparationPolicy(t, input, "different-carrier"),
 		sequenceClock(checkedAt.Add(time.Minute)),
 		func(context.Context) error { return nil },
 	)
@@ -204,7 +205,9 @@ func newPreparationDatabase(t testing.TB) (*sql.DB, string) {
 	if err := os.MkdirAll(directory, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	store, err := kerneldb.NewStore(filepath.Join(directory, "haft.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(directory, "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,17 +249,19 @@ func newPreparationInput(
 
 func newPreparationPolicy(
 	t testing.TB,
+	input profiledeclarationpreparation.ProfileOnboardingWorkInput,
 	suffix string,
 ) profiledeclarationpreparation.Policy {
 	t.Helper()
-	carrier := []byte(
-		"authority:\n  profile_declaration_mode: explicit_h_onboard\nfixture: " + suffix + "\n",
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		"profile-review:"+suffix,
+		input.CanonicalJSON(),
 	)
-	policy, err := profiledeclarationpreparation.NewPolicy(
-		profiledeclarationpreparation.ModeExplicitHOnboard,
-		".haft/config.yaml",
-		carrier,
-	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := profiledeclarationpreparation.NewHostRoutedOperatorRequestPolicy(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,12 +300,12 @@ func assertPreparationCounts(
 	t.Helper()
 	tables := []string{
 		"profile_onboarding_work_inputs_v1",
-		"profile_declaration_authority_bases_v3",
-		"profile_declaration_authority_resolutions_v3",
+		"profile_declaration_authority_bases_v5",
+		"profile_declaration_authority_resolutions_v5",
 		"profile_onboarding_work_records",
-		"project_profile_admissions_v3",
-		"profile_declaration_authority_uses_v3",
-		"project_profile_revisions_v3",
+		"project_profile_admissions_v5",
+		"profile_declaration_authority_uses_v5",
+		"project_profile_revisions_v5",
 	}
 	for index, table := range tables {
 		count := 0

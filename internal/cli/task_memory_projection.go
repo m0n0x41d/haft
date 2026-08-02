@@ -1233,14 +1233,14 @@ func (basis projectMemoryRuntimeBasis) selectedTargetFor(
 	target, present := basis.targetsByTypeEnv[selected.String()]
 	if !present {
 		return localpracticeruntime.Target{}, fmt.Errorf(
-			"selected project TypeEnv %s has no exact installed Local-Practice target",
+			"selected project-memory model %s has no exact installed Local-Practice target",
 			selected.String(),
 		)
 	}
 	if target.Composite().Ref() != selected ||
 		target.RuntimeBasis().Ref() != target.Composite().RuntimeEvaluationBasisRef() {
 		return localpracticeruntime.Target{}, fmt.Errorf(
-			"installed Local-Practice target is uncorrelated with selected project TypeEnv %s",
+			"installed Local-Practice target is uncorrelated with selected project-memory model %s",
 			selected.String(),
 		)
 	}
@@ -3701,7 +3701,7 @@ func taskMemoryInterpretation(
 		DoesNotAuthorize: []string{
 			"binding a DecisionRecord or WorkCommission",
 			"approving, reopening, or rebaselining a SpecSection",
-			"selecting or evolving a ProjectTypeEnvHead",
+			"selecting or evolving the active project-memory model",
 		},
 	}
 }
@@ -3736,18 +3736,42 @@ func appendTaskMemoryProjection(
 	rendered string,
 	report taskMemoryProjectionReport,
 ) string {
+	effects := renderTaskMemoryPersistenceEffects(report)
 	encoded, err := json.MarshalIndent(report, "", "  ")
 	if err != nil {
 		return rendered +
-			"\n\n## Typed project-memory projection\n\n" +
+			"\n\n" +
+			effects +
+			"\n## Typed project-memory projection\n\n" +
 			"Projection result could not be encoded: " +
 			err.Error() +
 			"\n"
 	}
 	return rendered +
-		"\n\n## Typed project-memory projection\n\n```json\n" +
+		"\n\n" +
+		effects +
+		"\n## Typed project-memory projection\n\n```json\n" +
 		string(encoded) +
 		"\n```\n"
+}
+
+func renderTaskMemoryPersistenceEffects(
+	report taskMemoryProjectionReport,
+) string {
+	carrierRef := strings.TrimSpace(report.Artifact.Ref)
+	if carrierRef == "" {
+		carrierRef = "current source carrier"
+	}
+	return fmt.Sprintf(
+		"## Persistence effects\n\n"+
+			"- Carrier: `%s` remains durable (`%s`).\n"+
+			"- Typed projection: admission `%s`; write mode `%s`; durable changes `%d`.\n",
+		carrierRef,
+		report.LegacyCarrierDisposition,
+		report.AdmissionResult,
+		report.Persistence.Mode,
+		report.DurableChangeCount,
+	)
 }
 
 func applyTaskMemoryProjection(

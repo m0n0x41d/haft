@@ -78,6 +78,15 @@ func TestExploreSolutions_Success(t *testing.T) {
 	if !strings.Contains(a.Body, "## Summary") {
 		t.Error("missing summary table")
 	}
+	if !strings.Contains(
+		a.Body,
+		`haft_query(action="fpf", mode="concern", query="<current question>")`,
+	) {
+		t.Errorf("portfolio guidance omits the executable FPF concern call:\n%s", a.Body)
+	}
+	if strings.Contains(a.Body, `haft_query(action="fpf", query=`) {
+		t.Errorf("portfolio guidance advertises the retired FPF query shape:\n%s", a.Body)
+	}
 
 	// Check links
 	links, _ := store.GetLinks(ctx, a.Meta.ID)

@@ -77,8 +77,18 @@ func TestProfileAwareReadinessReminderUsesOneNeutralProfileCue(
 		t.Fatalf("profile cue count in %q, want one", result)
 	}
 	if strings.Contains(result, "SoftwareSystemSpec") ||
-		strings.Contains(result, "force-skip-specs") {
+		strings.Contains(result, "force-skip-specs") ||
+		strings.Contains(result, "declare the missing basis") {
 		t.Fatalf("neutral profile cue gained SWE pressure: %q", result)
+	}
+	for _, want := range []string{
+		"does not block the completed operation",
+		"requires no action now",
+		"only when onboarding or profile-dependent capability review is the current question",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("neutral profile cue missing %q: %q", want, result)
+		}
 	}
 }
 

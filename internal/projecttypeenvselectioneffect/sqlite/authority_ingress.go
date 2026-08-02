@@ -4,76 +4,46 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 )
 
-type genesisAuthorityIngressVariant interface {
-	genesisAuthorityIngressVariant()
-}
-
-// DedicatedCLIInvocation marks the lower-assurance dedicated CLI ingress. It
-// carries no caller-made authority resolution. The service seals the exact
-// source and resolution only after replay absence and current config reads.
-type DedicatedCLIInvocation struct{}
-
-func (DedicatedCLIInvocation) genesisAuthorityIngressVariant() {}
-
-// VerifiedSpeechActIngress carries only the already verified human source
-// record plus the resolver-policy edition needed to interpret it. The service
-// still rebuilds the strict mode policy from the current config and resolves
-// authority against the current transaction Stage.
-type VerifiedSpeechActIngress struct {
-	resolverPolicy projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionResolverPolicy
-	record         projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionSpeechActRecord
-}
-
-func (VerifiedSpeechActIngress) genesisAuthorityIngressVariant() {}
-
-// GenesisAuthorityIngress is a closed source union. It deliberately cannot
-// hold an AuthorityResolutionRecord or a live authority-use capability.
+// GenesisAuthorityIngress carries one exact host-routed operator request. It
+// cannot contain a caller-made resolution or a live authority-use capability.
 type GenesisAuthorityIngress struct {
-	variant genesisAuthorityIngressVariant
+	request operatorrequest.Request
 }
 
-func NewDedicatedCLIInvocation() GenesisAuthorityIngress {
-	return GenesisAuthorityIngress{variant: DedicatedCLIInvocation{}}
-}
-
-func NewVerifiedSpeechActIngress(
-	resolverPolicy projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionResolverPolicy,
-	record projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionSpeechActRecord,
+func NewHostRoutedOperatorRequest(
+	request operatorrequest.Request,
 ) (GenesisAuthorityIngress, error) {
-	if err := resolverPolicy.ExactAgainst(
-		resolverPolicy.SourceContract(),
-		resolverPolicy.SourceAdapter(),
-		resolverPolicy.ProjectBinding(),
-	); err != nil {
+	restored, err := operatorrequest.FromCoordinates(
+		request.Effect(),
+		request.SubjectRef(),
+		request.PayloadDigest(),
+		request.Digest(),
+	)
+	if err != nil || restored != request ||
+		request.Provenance() != operatorrequest.HostRoutedOperatorRequest ||
+		request.Effect() != operatorrequest.ProjectTypeEnvHeadSelect {
 		return GenesisAuthorityIngress{}, fmt.Errorf(
-			"verified SpeechAct ingress resolver policy: %w",
-			err,
+			"TypeEnv authority ingress requires an exact host-routed operator request",
 		)
 	}
-	if err := record.Verify(record.Content().Request()); err != nil {
-		return GenesisAuthorityIngress{}, fmt.Errorf(
-			"verified SpeechAct ingress record: %w",
-			err,
-		)
-	}
-	return GenesisAuthorityIngress{
-		variant: VerifiedSpeechActIngress{
-			resolverPolicy: resolverPolicy,
-			record:         record,
-		},
-	}, nil
+	return GenesisAuthorityIngress{request: request}, nil
+}
+
+func (ingress GenesisAuthorityIngress) Request() operatorrequest.Request {
+	return ingress.request
 }
 
 type resolvedGenesisAuthority struct {
-	policy      projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityPolicyRecord
-	source      projecttypeenvselectionauthority.AuthoritySourceRecord
-	resolution  projecttypeenvselectionauthority.AuthorityResolutionRecord
-	coordinates projecttypeenvselectioneffect.ProjectTypeEnvHeadSelectionAuthorityCoordinates
+	request        operatorrequest.Request
+	hostResolution projecttypeenvselectionauthority.HostRoutedSelectionResolution
+	content        projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent
+	coordinates    projecttypeenvselectioneffect.ProjectTypeEnvHeadSelectionAuthorityCoordinates
 }
 
 // admittedGenesisAuthorityUse is minted and consumed inside one transaction.
@@ -124,7 +94,6 @@ func (service *GenesisService) resolveCurrentAuthority(
 			request:   input.Request,
 			content:   input.Content,
 			authority: input.Authority,
-			stage:     frame.readyStage.Stage(),
 			profile:   frame.currentProfile,
 		},
 	)

@@ -9,11 +9,11 @@ import (
 	"testing"
 	"time"
 
-	haftdb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/contextgraph"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 // TestTypeScriptQualifiedNodeRetainsGovernanceFusion proves the new TypeScript
@@ -47,7 +47,9 @@ export const session = {
 		}
 	}
 
-	legacy, err := haftdb.NewStore(filepath.Join(root, "haft.db"))
+	legacy, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(root, "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

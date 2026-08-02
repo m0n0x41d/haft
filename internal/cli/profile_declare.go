@@ -5,15 +5,14 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
-	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
@@ -30,10 +29,9 @@ var profileDeclareCmd = &cobra.Command{
 	Long: `Declare the readable project-profile review candidate.
 
 By default this reads .haft/profile-declaration-review.json produced by
-"haft profile propose". The command derives all durable identities itself.
-The default explicit_h_onboard policy treats this explicit invocation as the
-human gate. The reserved strict_cli_speech_act mode fails closed until a native
-v3 strict profile-authority source is available.`,
+"haft profile propose". The command is an internal effect sink after the host
+has routed one direct, unambiguous operator request for this exact profile. No
+skill token or project-local authority config is required.`,
 	Args: cobra.NoArgs,
 	RunE: runProfileDeclare,
 }
@@ -158,7 +156,7 @@ func executeReviewedProfileDeclaration(
 			err,
 		)
 	}
-	policy, err := loadProfileDeclarationPolicy(projectRoot)
+	policy, err := hostRoutedProfileDeclarationPolicy(projectRoot, input)
 	if err != nil {
 		return profileOnboardResponse{}, err
 	}
@@ -251,40 +249,19 @@ func executeProfileDeclaration(
 	return response, nil
 }
 
-func loadProfileDeclarationPolicy(
+func hostRoutedProfileDeclarationPolicy(
 	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
 ) (profileonboarding.ProfileDeclarationPolicy, error) {
-	configPath := project.ProjectConfigPath(filepath.Join(projectRoot, ".haft"))
-	content, err := os.ReadFile(configPath)
-	if errors.Is(err, os.ErrNotExist) {
-		content = []byte(project.ExampleProjectConfigYAML())
-		config := project.DefaultProjectConfig()
-		mode := config.EffectiveProfileDeclarationMode()
-		return profileonboarding.NewProfileDeclarationPolicy(
-			string(mode),
-			"haft:default-project-config/v1",
-			content,
-		)
-	}
-	if err != nil {
-		return profileonboarding.ProfileDeclarationPolicy{}, fmt.Errorf(
-			"read project profile authority config: %w",
-			err,
-		)
-	}
-	config, err := project.ParseProjectConfig(content)
-	if err != nil {
-		return profileonboarding.ProfileDeclarationPolicy{}, fmt.Errorf(
-			"parse project profile authority config: %w",
-			err,
-		)
-	}
-	mode := config.EffectiveProfileDeclarationMode()
-	return profileonboarding.NewProfileDeclarationPolicy(
-		string(mode),
-		profileDeclarationConfigRef(),
-		content,
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		"project-profile:"+filepath.Clean(projectRoot),
+		input.CanonicalJSON(),
 	)
+	if err != nil {
+		return profileonboarding.ProfileDeclarationPolicy{}, err
+	}
+	return profileonboarding.NewProfileDeclarationPolicy(request)
 }
 
 func resolveProfileDeclarationInputPath(
@@ -321,8 +298,4 @@ func profileDeclarationDisplayPath(projectRoot string, inputPath string) string 
 		return filepath.ToSlash(relative)
 	}
 	return inputPath
-}
-
-func profileDeclarationConfigRef() string {
-	return filepath.ToSlash(filepath.Join(".haft", "config.yaml"))
 }

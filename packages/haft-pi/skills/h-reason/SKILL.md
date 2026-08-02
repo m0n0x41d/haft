@@ -3,7 +3,7 @@ name: h-reason
 description: Source-first umbrella for FPF-aware reasoning in a Haft project. Use for ambiguous engineering, management, architecture, specification, or project questions when no narrower Haft capability is already current. Ordinary reasoning stays conversational; persistence is conditional and binding actions remain manual.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
 
 # h-reason — Source-first FPF entry
 
@@ -57,18 +57,22 @@ invent or expose an internal schema-selection step. Resolution, projection
 inclusion, and recall rank are not truth, applicability, authority, or Work
 order.
 
-When `memory.resolve` returns `known_absent`, continue without creating an
-entity unless the operator explicitly asked to save it or a named receiving
-use requires stable identity. In either authorized case, call
+`known_absent` alone authorizes nothing. A concrete durability-requiring
+receiving use may be operator-named or agent-inferred from current Work. Infer
+it when cross-session continuation, handoff, audit, automation, delayed or
+expensive feedback, or costly reversal already depends on stable identity; the
+operator does not need to pre-name it. When identity, context, and aliases are
+recoverable, establish the minimum EntityOfConcern without asking for separate permission.
+Do not infer this use from an empty graph or generic future usefulness. Call
 `haft_entity(action="establish", entity_id=..., label=...,
 bounded_context_ref=..., aliases=[...],
-persistence_reason="explicit_operator_request|named_receiving_use",
+persistence_reason="named_receiving_use",
 request_provenance_ref=..., idempotency_key=...)`.
 
 The task-level tool owns alias conflict checks, validation, internal project
 basis, admission, and post-commit resolution. Use an `established` result's
 exact `next_read` unchanged. Preserve `identity_conflict`, `alias_conflict`,
-`idempotency_conflict`, `onboarding_required`, `enablement_choice_required`,
+`idempotency_conflict`, `onboarding_required`,
 `restart_required`, `rejected`, or `commit_outcome_unknown`; never invent
 success. Retry `restart_required` with the unchanged idempotency key.
 
@@ -122,8 +126,9 @@ Explicit causal claims, MethodDescriptions, WorkPlans, and Work relations may
 still state order. Do not call FPF an acausal ontology.
 
 Choose only the capability currently needed. Public skills are independent,
-not phases. Keep ordinary reasoning conversational; persist only on explicit
-save intent or a named receiving use. `haft_method` remains internal task-local
+not phases. Keep ordinary reasoning conversational; persist on explicit save
+intent or for a concrete receiving use, operator-named or agent-inferred from
+current Work. `haft_method` remains internal task-local
 code guidance, not a public skill. Decisions and commissions are manual.
 
 Cockpit drift, refresh debt, stale prose, missing bindings, and reconciliation
@@ -144,14 +149,17 @@ existing comparison/parity basis, selection policy, and non-dominated or Pareto
 set, or explicitly state that none exists or applies. Mark the recommendation
 as advisory, state freshness or expiry, and ask for the human engineer's
 assessment of the options, trade-offs, and recommendation in natural language.
-Accept ordinary language as the substantive answer to the engineering
-consultation, never as a binding receipt. A command, skill invocation, exact
-reply phrase, or resumption token must never substitute for that consultation.
-Only after the engineer's position is explicit may a separately required
-manual binding or persistence act be explained, together with what it will and
-will not authorize. Never end a blocking message with “for resumption it is
-enough to…”, “reply exactly…”, or an equivalent command-only instruction. IDs
-and hashes never replace readable meaning, and the brief is not authorization.
+Accept ordinary language as the substantive answer. When one current brief
+makes the exact effect, subject, option, and scope unambiguous, the host may
+route that answer for DecisionRecord binding, manual profile application, or
+a later non-default project-memory model change as
+`host_routed_operator_request`, without a skill
+name or second confirmation. It is not reusable authority; a bare `yes` or `да`
+works only for that one current brief. A command or skill invocation adds no
+authority. `h-commission` remains a separately manual authority act. Never end
+a blocking message with “for resumption it is enough to…”, “reply exactly…”,
+or an equivalent command-only instruction. IDs and hashes never replace
+readable meaning, and the brief itself is explanation rather than authority.
 A bare `h-decide needed`, `approval required`, or `spec gate open` request is
 invalid.
 

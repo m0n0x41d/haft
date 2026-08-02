@@ -11,6 +11,7 @@ const (
 	baseTypeEnvRefV1_2 = "typeenv:sha256:973eeeed8e234b4ff0194662d80e204fe27ad5ba92c87840a6d1ed3a9d5d742d"
 	baseTypeEnvRefV1_3 = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
 	baseTypeEnvRefV1_4 = "typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e"
+	baseTypeEnvRefV1_5 = "typeenv:sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa"
 )
 
 // sourceV1 is the exact 1.0.0 Local-Practice publication candidate.
@@ -70,6 +71,18 @@ func SourceV1_4() []byte {
 	return append([]byte(nil), sourceV1_4...)
 }
 
+// sourceV1_5 carries the 1.4.0 declaration set at the current exact FPF Base
+// and source coordinates. It is a successor source stream; sourceV1_4 remains
+// embedded byte-for-byte for historical replay.
+//
+//go:embed 1.5.0.yaml
+var sourceV1_5 []byte
+
+// SourceV1_5 returns a private copy of the exact 1.5.0 source carrier bytes.
+func SourceV1_5() []byte {
+	return append([]byte(nil), sourceV1_5...)
+}
+
 // SourcesForExactBaseTypeEnvRef resolves shipped carriers only from the exact
 // B coordinate each declares. It keeps the historical 1.0.0 bytes available
 // for already-persisted Genesis replay while exposing every successor only at
@@ -86,6 +99,7 @@ func SourcesForExactBaseTypeEnvRef(ref string) [][]byte {
 		{base: baseTypeEnvRefV1_2, source: sourceV1_2},
 		{base: baseTypeEnvRefV1_3, source: sourceV1_3},
 		{base: baseTypeEnvRefV1_4, source: sourceV1_4},
+		{base: baseTypeEnvRefV1_5, source: sourceV1_5},
 	}
 	result := make([][]byte, 0, len(candidates))
 	for _, candidate := range candidates {

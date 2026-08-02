@@ -3,11 +3,14 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/spf13/cobra"
 
+	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
@@ -197,10 +200,28 @@ func TestPublicProjectSpecificationApplicabilityEmitsOneNeutralMissingProfileCue
 		response.Cue.Code != string(projectSpecificationProfileUnderdetermined) {
 		t.Fatalf("cue = %#v", response.Cue)
 	}
+	if response.Cue.RecoverySurface !=
+		projectSpecificationProfileRecoverySurface ||
+		response.Cue.NextAction !=
+			projectSpecificationProfileRecoveryNextAction {
+		t.Fatalf("profile recovery cue = %#v", response.Cue)
+	}
 	if response.Basis != nil ||
 		response.ScopeID != "" ||
 		len(response.AvailableScopeIDs) != 0 {
 		t.Fatalf("underdetermined response fabricated canonical basis: %#v", response)
+	}
+	encoded, err := json.Marshal(response)
+	if err != nil {
+		t.Fatalf("marshal public applicability: %v", err)
+	}
+	for _, want := range []string{
+		`"recovery_surface":"haft_onboard"`,
+		`"next_action":"Read haft_onboard status;`,
+	} {
+		if !strings.Contains(string(encoded), want) {
+			t.Fatalf("JSON cue missing %q: %s", want, encoded)
+		}
 	}
 
 	output := bytes.Buffer{}
@@ -213,6 +234,24 @@ func TestPublicProjectSpecificationApplicabilityEmitsOneNeutralMissingProfileCue
 	}
 	if strings.Count(output.String(), "Profile cue:") != 1 {
 		t.Fatalf("cue output = %q, want one cue", output.String())
+	}
+	for _, want := range []string{
+		"Recovery surface: haft_onboard",
+		"Next: " + projectSpecificationProfileRecoveryNextAction,
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("cue output = %q, want %q", output.String(), want)
+		}
+	}
+	assertCLIProfileOnboardMutationCounts(t, fixture.root, 0)
+	if _, err := os.Stat(
+		filepath.Join(
+			fixture.root,
+			".haft",
+			"profile-declaration-review.json",
+		),
+	); !os.IsNotExist(err) {
+		t.Fatalf("spec read created a profile review carrier: %v", err)
 	}
 }
 
@@ -244,6 +283,63 @@ func TestMissingProfileApplicabilityPreservesExactOriginatingScopeRequest(
 		response.Request.ScopeID != "documents" {
 		t.Fatalf("public response lost originating request: %#v", response.Request)
 	}
+}
+
+func TestReviewedProfileCandidateWithoutAdmissionRemainsActionableUnderdetermined(
+	t *testing.T,
+) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	writeProfileInspectionFixture(t, fixture.root, "go.mod")
+	writeProfileInspectionFixture(t, fixture.root, "internal/kernel.go")
+	suggestion, err := profiledetector.Inspect(fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	candidate, err := prepareProfileReviewCandidate(fixture.root, suggestion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if candidate.State != "created" {
+		t.Fatalf("review candidate state = %q, want created", candidate.State)
+	}
+	reviewPath := profileDeclarationReviewPath(fixture.root)
+	before, err := os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := automaticProjectSpecificationScopeRequest()
+	resolution, err := resolveCanonicalProjectSpecificationApplicability(
+		t.Context(),
+		fixture.root,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := publicProjectSpecificationApplicabilityFrom(
+		resolution,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if response.Kind != string(projectSpecificationProfileUnderdetermined) ||
+		response.Cue == nil ||
+		response.Cue.RecoverySurface !=
+			projectSpecificationProfileRecoverySurface ||
+		response.Cue.NextAction !=
+			projectSpecificationProfileRecoveryNextAction {
+		t.Fatalf("review-ready applicability = %#v", response)
+	}
+	after, err := os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatal("spec applicability read rewrote the prepared profile review")
+	}
+	assertCLIProfileOnboardMutationCounts(t, fixture.root, 0)
 }
 
 func TestPublicSpecJSONKeepsLegacyTopLevelFieldsAndExactProfileBasis(

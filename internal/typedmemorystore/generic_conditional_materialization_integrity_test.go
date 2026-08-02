@@ -15,6 +15,8 @@ import (
 func TestGenericCommitRejectsConditionalRowOwnershipDriftBeforeCommit(t *testing.T) {
 	for _, fault := range conditionalOwnershipFaults() {
 		t.Run(fault.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := fault.newFixture(t, "same-tx-"+fault.name)
 			dropConditionalOwnershipGuard(t, fixture.database, fault.guardTrigger)
 			installConditionalOwnershipFaultTrigger(t, fixture.database, fault)
@@ -37,6 +39,8 @@ func TestGenericCommitRejectsConditionalRowOwnershipDriftBeforeCommit(t *testing
 func TestGenericReplayRejectsConditionalRowOwnershipDrift(t *testing.T) {
 	for _, fault := range conditionalOwnershipFaults() {
 		t.Run(fault.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := fault.newFixture(t, "replay-"+fault.name)
 			receipt, err := fixture.adapter.CommitMemoryChangeSet(
 				context.Background(),

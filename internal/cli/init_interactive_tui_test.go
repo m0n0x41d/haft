@@ -58,8 +58,12 @@ func TestPublicInitRealPTYSpaceEnterAppliesSelectedHost(
 			)
 		}
 	}
-	for _, path := range []string{
+	if _, err := os.Stat(
 		filepath.Join(projectRoot, ".haft", "config.yaml"),
+	); !os.IsNotExist(err) {
+		t.Fatalf("PTY init created obsolete project config: %v", err)
+	}
+	for _, path := range []string{
 		filepath.Join(
 			projectRoot,
 			".haft",

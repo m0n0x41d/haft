@@ -1,6 +1,6 @@
 ---
 name: h-onboard
-description: Bootstrap Haft through the readable task-level onboarding surface, prepare non-binding project-profile or structured-memory reviews, and orient only applicable typed spec carriers. Apply and lifecycle gates remain human.
+description: Bootstrap Haft through the readable task-level onboarding surface, prepare a non-binding project-profile review when needed, and orient only applicable typed spec carriers. Project memory is ready immediately after haft init; profile apply and lifecycle gates remain human.
 ---
 
 # h-onboard — Bootstrap through one readable setup contract
@@ -8,7 +8,7 @@ description: Bootstrap Haft through the readable task-level onboarding surface, 
 Use the native Pi `haft_onboard` tool rather than exposing low-level profile or
 memory machinery.
 
-Contract truth: project-profile onboarding and structured-memory setup are
+Contract truth: project-profile onboarding and automatic project-memory setup are
 **V9 CONTRACT** capabilities. Source, schema, skill, or local-test presence is
 not installed-runtime proof and does not establish Pi host parity. A readiness
 claim requires current **EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact
@@ -31,12 +31,12 @@ Follow only its closed result kind:
 - `needs_profile` — call `haft_onboard` with
   `{ "action": "profile_prepare" }`;
 - `profile_review_ready` — present the readable review and its exact next act;
-- `needs_memory` — call `haft_onboard` with
-  `{ "action": "memory_prepare" }`;
-- `memory_review_ready` — present the enable/defer choice and route a selected
-  enablement through manual `h-decide`;
-- `memory_deferred` — setup is intentionally usable without structured memory;
 - `ready` — continue with the current project question.
+
+`haft init` installs default project memory as part of initialization. Never
+ask the operator to enable, defer, select, or understand a memory schema. A
+legacy or partial installation reporting `needs_init` is repaired by rerunning
+`haft init`, reconnecting, and repeating `status`.
 
 If repository detection cannot establish the profile basis, call
 `profile_prepare` again with the top-level readable `basis` and explicit
@@ -47,26 +47,13 @@ does not change canonical profile state.
 Detector proposals are read-only. Profile and spec gates remain human. A
 readable scope_id is not a ScopeID or proof of canonical applicability.
 
-Automatic `h-onboard` may inspect and prepare but must not apply. Only a current
-explicit operator invocation of `h-onboard`, after the readable review and
-engineering assessment, authorizes `haft onboard profile apply`. Do not ask for
-a second confirmation after that valid explicit invocation.
-
-`memory_prepare` may likewise create or reuse only a non-binding review.
-Present both real choices. Explicitly selected enablement is a separate
-binding effect routed through manual `h-decide` and
-`haft onboard memory enable`; it creates no substitute DecisionRecord. Only
-after the operator actually selects **Not now**, run
-`haft onboard memory defer`. A successful `memory_deferred` result is
-non-binding, grants no authority, creates no DecisionRecord, and does not
-pretend structured memory is enabled.
-
-To reconsider `memory_deferred`, call `haft_onboard` with
-`{ "action": "memory_prepare" }`; this safely reopens the review and does not
-enable memory. On enablement `restart_required`, reconnect and retry
-`haft_onboard({ "action": "status" })`. Rely on structured-memory readiness
-only when that fresh status returns `ready`; deferral remains readable as
-`memory_deferred`.
+Automatic `h-onboard` may inspect and prepare but must not apply. After the
+readable review and engineering assessment, route only a direct, unambiguous
+operator selection of that exact profile and scope to `haft onboard profile
+apply`. Do not require a skill name or ask for a second confirmation. A bare
+`yes` or `да` works only for one current unambiguous profile brief.
+Successful application records `host_routed_operator_request` provenance;
+automatic singleton bootstrap remains the separate `detector_default` path.
 
 Never expose or ask the operator to choose internal memory schemas, revision
 heads, staging records, or implementation letters. Missing setup or known

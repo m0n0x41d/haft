@@ -11,11 +11,15 @@ func TestHandleToolsCallRoutesTaskLevelArgumentsBeforeV5(t *testing.T) {
 	for _, fixture := range []struct {
 		name      string
 		tool      string
+		arguments json.RawMessage
 		configure func(*Server, MemoryToolHandler)
 	}{
 		{
 			name: "onboard",
 			tool: "haft_onboard",
+			arguments: json.RawMessage(
+				`{"action":"status"}`,
+			),
 			configure: func(server *Server, handler MemoryToolHandler) {
 				server.SetOnboardHandler(handler)
 			},
@@ -23,6 +27,9 @@ func TestHandleToolsCallRoutesTaskLevelArgumentsBeforeV5(t *testing.T) {
 		{
 			name: "entity",
 			tool: "haft_entity",
+			arguments: json.RawMessage(
+				`{"action":"status","action":"duplicate-preserved"}`,
+			),
 			configure: func(server *Server, handler MemoryToolHandler) {
 				server.SetEntityHandler(handler)
 			},
@@ -40,9 +47,7 @@ func TestHandleToolsCallRoutesTaskLevelArgumentsBeforeV5(t *testing.T) {
 				v5Calls++
 				return "unexpected-v5", nil
 			})
-			rawArguments := json.RawMessage(
-				`{"action":"status","action":"duplicate-preserved"}`,
-			)
+			rawArguments := fixture.arguments
 			var received json.RawMessage
 			fixture.configure(server, func(
 				_ context.Context,
@@ -86,6 +91,36 @@ func TestHandleToolsCallRoutesTaskLevelArgumentsBeforeV5(t *testing.T) {
 				t.Fatalf("%s result = %#v", fixture.tool, result)
 			}
 		})
+	}
+}
+
+func TestHandleToolsCallRejectsRemovedOnboardMemoryChoiceBeforeHandler(
+	t *testing.T,
+) {
+	server := NewServer("test")
+	handlerCalls := 0
+	server.SetOnboardHandler(func(
+		context.Context,
+		json.RawMessage,
+	) (string, error) {
+		handlerCalls++
+		return "unexpected-handler", nil
+	})
+	result := captureToolsCallResult(t, server, JSONRPCRequest{
+		JSONRPC: "2.0",
+		Method:  "tools/call",
+		ID:      "req-onboard-memory-prepare",
+		Params: json.RawMessage(
+			`{"name":"haft_onboard","arguments":{"action":"memory_prepare"}}`,
+		),
+	})
+	if !result.IsError || len(result.Content) != 1 ||
+		result.Content[0].Text !=
+			"Invalid haft_onboard request: action must be status or profile_prepare" {
+		t.Fatalf("removed onboard action result = %#v", result)
+	}
+	if handlerCalls != 0 {
+		t.Fatalf("removed onboard action reached handler %d times", handlerCalls)
 	}
 }
 

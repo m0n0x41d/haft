@@ -16,6 +16,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 type transactionFixture struct {
@@ -63,29 +64,29 @@ func TestAdapterRequiresPreWorkResolutionWithoutCreatingOne(t *testing.T) {
 		"missing-resolution.nonce",
 	)
 	_, err := fixture.database.Exec(
-		"DROP TRIGGER profile_declaration_authority_resolutions_v3_no_delete",
+		"DROP TRIGGER profile_declaration_authority_resolutions_v5_no_delete",
 	)
 	if err != nil {
-		t.Fatalf("drop v3 resolution delete guard: %v", err)
+		t.Fatalf("drop v5 resolution delete guard: %v", err)
 	}
 	_, err = fixture.database.Exec(
-		"DELETE FROM profile_declaration_authority_resolutions_v3",
+		"DELETE FROM profile_declaration_authority_resolutions_v5",
 	)
 	if err != nil {
-		t.Fatalf("remove prepared v3 resolution: %v", err)
+		t.Fatalf("remove prepared v5 resolution: %v", err)
 	}
 	outcome := fixture.adapter.Admit(context.Background(), fixture.request)
 	if outcome.kind != AdmissionResultNotAdmitted || len(outcome.denials) != 1 {
 		t.Fatalf("outcome = %#v, want one typed denial", outcome)
 	}
-	if outcome.denials[0].Code() != "authority_resolution_required" {
-		t.Fatalf("denial = %q, want authority_resolution_required", outcome.denials[0].Code())
+	if outcome.denials[0].Code() != "authority_closure_unavailable" {
+		t.Fatalf("denial = %q, want authority_closure_unavailable", outcome.denials[0].Code())
 	}
 	assertCanonicalMutationCounts(t, fixture.database, 0)
 	assertTableCounts(
 		t,
 		fixture.database,
-		[]string{"profile_declaration_authority_resolutions_v3"},
+		[]string{"profile_declaration_authority_resolutions_v5"},
 		0,
 		0,
 	)
@@ -181,9 +182,9 @@ func TestAdapterRollsBackEveryStatementFailure(t *testing.T) {
 		name  string
 		table string
 	}{
-		{name: "admission", table: "project_profile_admissions_v3"},
-		{name: "authority use", table: "profile_declaration_authority_uses_v3"},
-		{name: "revision", table: "project_profile_revisions_v3"},
+		{name: "admission", table: "project_profile_admissions_v5"},
+		{name: "authority use", table: "profile_declaration_authority_uses_v5"},
+		{name: "revision", table: "project_profile_revisions_v5"},
 	}
 	runStatementFailureCases(t, tests, 0)
 }
@@ -242,11 +243,11 @@ func TestExactLedgerHeadRejectsAdmissionWithoutAuthorityUse(t *testing.T) {
 	fixture := newTransactionFixture(t, "ledger-integrity", "ledger-integrity.nonce")
 	outcome := fixture.adapter.Admit(context.Background(), fixture.request)
 	requireAdmitted(t, outcome, CanonicalAdmissionFresh)
-	_, err := fixture.database.Exec("DROP TRIGGER profile_declaration_authority_uses_v3_no_delete")
+	_, err := fixture.database.Exec("DROP TRIGGER profile_declaration_authority_uses_v5_no_delete")
 	if err != nil {
 		t.Fatalf("drop authority-use delete guard: %v", err)
 	}
-	_, err = fixture.database.Exec("DELETE FROM profile_declaration_authority_uses_v3")
+	_, err = fixture.database.Exec("DELETE FROM profile_declaration_authority_uses_v5")
 	if err != nil {
 		t.Fatalf("delete authority use: %v", err)
 	}
@@ -291,27 +292,27 @@ func TestAdapterRejectsCorruptedHistoricalCanonicalMaterial(t *testing.T) {
 		{
 			name: "payload",
 			statements: []string{
-				`UPDATE project_profile_admissions_v3 SET profile_payload_json = '{}' WHERE ledger_revision = 1`,
-				`UPDATE project_profile_revisions_v3 SET profile_payload_json = '{}' WHERE ledger_revision = 1`,
+				`UPDATE project_profile_admissions_v5 SET profile_payload_json = '{}' WHERE ledger_revision = 1`,
+				`UPDATE project_profile_revisions_v5 SET profile_payload_json = '{}' WHERE ledger_revision = 1`,
 			},
 		},
 		{
 			name: "receipt",
 			statements: []string{
-				`UPDATE project_profile_admissions_v3 SET receipt_json = '{}' WHERE ledger_revision = 1`,
-				`UPDATE project_profile_revisions_v3 SET receipt_json = '{}' WHERE ledger_revision = 1`,
+				`UPDATE project_profile_admissions_v5 SET receipt_json = '{}' WHERE ledger_revision = 1`,
+				`UPDATE project_profile_revisions_v5 SET receipt_json = '{}' WHERE ledger_revision = 1`,
 			},
 		},
 		{
 			name: "admission",
 			statements: []string{
-				`UPDATE project_profile_admissions_v3 SET admission_json = '{}' WHERE ledger_revision = 1`,
+				`UPDATE project_profile_admissions_v5 SET admission_json = '{}' WHERE ledger_revision = 1`,
 			},
 		},
 		{
 			name: "provenance",
 			statements: []string{
-				`UPDATE project_profile_admissions_v3 SET candidate_provenance_json = '{}' WHERE ledger_revision = 1`,
+				`UPDATE project_profile_admissions_v5 SET candidate_provenance_json = '{}' WHERE ledger_revision = 1`,
 			},
 		},
 	}
@@ -382,11 +383,11 @@ func prepareHistoricalRevision(
 
 func dropHistoricalUpdateGuards(t *testing.T, database *sql.DB) {
 	t.Helper()
-	_, err := database.Exec("DROP TRIGGER project_profile_admissions_v3_no_update")
+	_, err := database.Exec("DROP TRIGGER project_profile_admissions_v5_no_update")
 	if err != nil {
 		t.Fatalf("drop admission update guard: %v", err)
 	}
-	_, err = database.Exec("DROP TRIGGER project_profile_revisions_v3_no_update")
+	_, err = database.Exec("DROP TRIGGER project_profile_revisions_v5_no_update")
 	if err != nil {
 		t.Fatalf("drop revision update guard: %v", err)
 	}
@@ -577,7 +578,7 @@ func newTransactionFixtureWithPayload(
 		t.Fatalf("create fixture project-ledger directory: %v", err)
 	}
 	databasePath := filepath.Join(databaseDirectory, "haft.db")
-	store, err := kerneldb.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -666,9 +667,9 @@ func containsPosture(
 func assertCanonicalMutationCounts(t *testing.T, database *sql.DB, want int) {
 	t.Helper()
 	tables := []string{
-		"project_profile_admissions_v3",
-		"profile_declaration_authority_uses_v3",
-		"project_profile_revisions_v3",
+		"project_profile_admissions_v5",
+		"profile_declaration_authority_uses_v5",
+		"project_profile_revisions_v5",
 	}
 	assertTableCounts(t, database, tables, want, 0)
 }

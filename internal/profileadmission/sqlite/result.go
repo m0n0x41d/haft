@@ -71,6 +71,7 @@ func (failure AdmissionFailure) FailureRef() string {
 
 type canonicalProfileAdmissionState struct {
 	projectRoot                       projectprofile.ProjectRootV1
+	origin                            projectprofile.ProfileAdmissionOrigin
 	payload                           projectprofile.ProfileDeclarationPayload
 	admissionRecordRef                projectprofile.ProfileDeclarationAdmissionRecordRef
 	admissionRecordDigest             projectprofile.ContentDigest
@@ -114,6 +115,13 @@ func (admission CanonicalProfileAdmission) ProjectRoot() projectprofile.ProjectR
 		return projectprofile.ProjectRootV1{}
 	}
 	return admission.state.projectRoot
+}
+
+func (admission CanonicalProfileAdmission) Origin() projectprofile.ProfileAdmissionOrigin {
+	if !admission.Valid() {
+		return ""
+	}
+	return admission.state.origin
 }
 
 func (admission CanonicalProfileAdmission) Payload() projectprofile.ProfileDeclarationPayload {
@@ -355,6 +363,7 @@ func newCanonicalProfileAdmission(
 	payload := material.candidate.Payload()
 	state := canonicalProfileAdmissionState{
 		projectRoot:                       material.projectRoot,
+		origin:                            material.origin,
 		payload:                           payload,
 		admissionRecordRef:                material.admissionRef,
 		admissionRecordDigest:             material.admissionDigest,
@@ -409,6 +418,7 @@ func validateCanonicalProfileAdmission(admission CanonicalProfileAdmission) erro
 		return err
 	}
 	material := canonicalAdmissionMaterial{
+		origin:                            state.origin,
 		projectRoot:                       state.projectRoot,
 		candidate:                         candidate,
 		payloadJSON:                       payloadJSON,

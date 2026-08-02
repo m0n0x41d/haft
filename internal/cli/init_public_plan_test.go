@@ -131,9 +131,9 @@ func TestCompilePublicCorePlanIsPureForGreenfieldProject(
 		core.Basis().Kind() != initplanning.BasisUnavailable {
 		t.Fatalf("core = %#v", core)
 	}
-	if len(core.FileEffects()) != 10 {
+	if len(core.FileEffects()) != 9 {
 		t.Fatalf(
-			"greenfield core file effects = %d, want 10",
+			"greenfield core file effects = %d, want 9",
 			len(core.FileEffects()),
 		)
 	}

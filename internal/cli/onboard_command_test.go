@@ -14,7 +14,6 @@ import (
 	"github.com/m0n0x41d/haft/internal/onboarding"
 	"github.com/m0n0x41d/haft/internal/onboardingfs"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvreviewcarrier"
-	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -30,14 +29,15 @@ func TestOnboardPublicCommandTreeHidesLowLevelMemorySetup(
 			path: []string{"onboard", "profile", "apply"},
 			want: onboardProfileApplyCmd,
 		},
-		{
-			path: []string{"onboard", "memory", "enable"},
-			want: onboardMemoryEnableCmd,
-		},
-		{
-			path: []string{"onboard", "memory", "defer"},
-			want: onboardMemoryDeferCmd,
-		},
+	}
+	for _, obsolete := range [][]string{
+		{"onboard", "memory", "enable"},
+		{"onboard", "memory", "defer"},
+	} {
+		command, _, err := rootCmd.Find(obsolete)
+		if err == nil && (command == onboardMemoryEnableCmd || command == onboardMemoryDeferCmd) {
+			t.Fatalf("obsolete public memory command remains registered: %v", obsolete)
+		}
 	}
 	for _, fixture := range fixtures {
 		command, remaining, err := rootCmd.Find(fixture.path)
@@ -173,6 +173,7 @@ func TestOnboardProfileMatrixRunsReviewThroughPublicApplyCommand(
 				"mkdocs.yml",
 				"docs/intro.md",
 				"docs/usage.md",
+				"docs/design.rst",
 			},
 			wantScopeKind: []string{
 				"non_software",
@@ -297,7 +298,7 @@ func TestOnboardProfileMatrixRunsReviewThroughPublicApplyCommand(
 				firstOutput,
 			)
 			if first.Result != "profile_applied" ||
-				first.Status != "needs_memory" ||
+				first.Status != "needs_init" ||
 				!first.Effects.CanonicalProfileChanged {
 				t.Fatalf(
 					"fresh public apply = %#v",
@@ -322,7 +323,7 @@ func TestOnboardProfileMatrixRunsReviewThroughPublicApplyCommand(
 				replayOutput,
 			)
 			if replay.Result != "profile_applied" ||
-				replay.Status != "needs_memory" ||
+				replay.Status != "needs_init" ||
 				replay.Delivery != "reused" ||
 				replay.Effects.CanonicalProfileChanged {
 				t.Fatalf(
@@ -493,7 +494,8 @@ func TestOnboardFreshProjectMemoryEnableRestartAndDeferralLifecycle(
 			`{"action":"status"}`,
 		)
 		status := decodeOnboardResponse(t, statusOutput)
-		if status.Result != "memory_deferred" {
+		if status.Result != "onboarding_required" ||
+			status.Status != "needs_init" {
 			t.Fatalf("deferred status = %#v", status)
 		}
 		profileReplayOutput, profileReplayErr :=
@@ -510,7 +512,7 @@ func TestOnboardFreshProjectMemoryEnableRestartAndDeferralLifecycle(
 			profileReplayOutput,
 		)
 		if profileReplay.Result != "profile_applied" ||
-			profileReplay.Status != "memory_deferred" ||
+			profileReplay.Status != "needs_init" ||
 			profileReplay.Delivery != "reused" ||
 			profileReplay.Effects.CanonicalProfileChanged {
 			t.Fatalf(
@@ -557,7 +559,8 @@ func TestOnboardFreshProjectMemoryEnableRestartAndDeferralLifecycle(
 			`{"action":"status"}`,
 		)
 		ready := decodeOnboardResponse(t, readyOutput)
-		if ready.Result != "memory_review_ready" {
+		if ready.Result != "onboarding_required" ||
+			ready.Status != "needs_init" {
 			t.Fatalf(
 				"reopened status = %#v",
 				ready,
@@ -614,8 +617,8 @@ func TestOnboardStatusDoesNotTrustUnreadableOrForeignMemoryDeferral(
 			`{"action":"status"}`,
 		)
 		response := decodeOnboardResponse(t, output)
-		if response.Result != "needs_memory" ||
-			response.Status != "needs_memory" ||
+		if response.Result != "onboarding_required" ||
+			response.Status != "needs_init" ||
 			!strings.Contains(response.Detail, "unreadable") {
 			t.Fatalf(
 				"unreadable deferral status = %#v",
@@ -667,8 +670,8 @@ func TestOnboardStatusDoesNotTrustUnreadableOrForeignMemoryDeferral(
 			`{"action":"status"}`,
 		)
 		response := decodeOnboardResponse(t, output)
-		if response.Result != "needs_memory" ||
-			response.Status != "needs_memory" ||
+		if response.Result != "onboarding_required" ||
+			response.Status != "needs_init" ||
 			!strings.Contains(
 				response.Detail,
 				"different onboarding basis",
@@ -707,7 +710,7 @@ func TestOnboardMemoryEnableProjectsEveryClosedNoCommitOutcome(
 				Reason: "review_expired",
 			},
 			result: "not_enabled",
-			status: "memory_review_ready",
+			status: "needs_init",
 		},
 		{
 			name: "replay conflict",
@@ -715,7 +718,7 @@ func TestOnboardMemoryEnableProjectsEveryClosedNoCommitOutcome(
 				Kind: "replay_conflict",
 			},
 			result: "enablement_conflict",
-			status: "memory_review_ready",
+			status: "needs_init",
 		},
 		{
 			name: "commit outcome unknown",
@@ -781,8 +784,6 @@ func TestOnboardConcurrentEnableAndDeferKeepEnabledMemoryAuthoritative(
 		}()
 		effect := func(
 			ctx context.Context,
-			capturer projecttypeenvselectionauthority.
-				StrictCLISpeechActCapturer,
 		) (projectTypeEnvGenesisSelectionResponse, error) {
 			deferral := currentMemoryDeferralForTest(
 				t,
@@ -801,10 +802,7 @@ func TestOnboardConcurrentEnableAndDeferKeepEnabledMemoryAuthoritative(
 					installed,
 				)
 			}
-			return executeReviewedMemorySelection(
-				ctx,
-				capturer,
-			)
+			return executeReviewedMemorySelection(ctx)
 		}
 		if err := runOnboardMemoryEnableWithEffect(
 			command,
@@ -867,8 +865,6 @@ func TestOnboardConcurrentEnableAndDeferKeepEnabledMemoryAuthoritative(
 			selection, selectionErr :=
 				executeReviewedMemorySelection(
 					context.Background(),
-					projecttypeenvselectionauthority.
-						ControllingTerminalStrictCLISpeechActCapturer{},
 				)
 			if selectionErr != nil {
 				return installed, selectionErr

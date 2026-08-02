@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"encoding/base64"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/db"
@@ -13,6 +17,333 @@ import (
 	"github.com/m0n0x41d/haft/internal/initplanning"
 	"github.com/m0n0x41d/haft/internal/project"
 )
+
+func TestPublicProjectCoreEffectConsumesOnlyUneditedGeneratedProfileReview(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	writePublicBootstrapFixture(t, projectRoot, "go.mod", "module example.test/app\n")
+	writePublicBootstrapFixture(t, projectRoot, "internal/kernel.go", "package internal\n")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".haft"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	suggestion, err := inspectPublicProfileSuggestion(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareProfileReviewCandidate(projectRoot, suggestion); err != nil {
+		t.Fatal(err)
+	}
+	reviewPath := profileDeclarationReviewPath(projectRoot)
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_4c8e2a6d")
+	plan, err := compilePublicCorePlan(context.Background(), request, homeRoot)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	if plan.InitialProfileBootstrap().Kind() !=
+		initplanning.InitialProfileApplySingleton {
+		t.Fatalf("generated review bootstrap = %s", plan.InitialProfileBootstrap().Kind())
+	}
+	effect := newPublicProjectCoreEffect(request, io.Discard)
+	if _, err := effect.ApplyCore(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyCore: %v", err)
+	}
+	if _, err := os.Stat(reviewPath); !os.IsNotExist(err) {
+		t.Fatalf("admitted generated review was not removed: %v", err)
+	}
+}
+
+func TestPublicProfileBootstrapRequiresReviewForEnrichedGeneratedCarrier(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	writePublicBootstrapFixture(t, projectRoot, "go.mod", "module example.test/app\n")
+	writePublicBootstrapFixture(t, projectRoot, "internal/kernel.go", "package internal\n")
+	if err := os.MkdirAll(filepath.Join(projectRoot, ".haft"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	suggestion, err := inspectPublicProfileSuggestion(projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := prepareProfileReviewCandidate(projectRoot, suggestion); err != nil {
+		t.Fatal(err)
+	}
+	reviewPath := profileDeclarationReviewPath(projectRoot)
+	reviewBytes, err := os.ReadFile(reviewPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	review := map[string]any{}
+	if err := json.Unmarshal(reviewBytes, &review); err != nil {
+		t.Fatal(err)
+	}
+	review["operator_note"] = "Keep this human assessment."
+	enriched, err := json.MarshalIndent(review, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	enriched = append(enriched, '\n')
+	if err := os.WriteFile(reviewPath, enriched, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_6a2e4c8d")
+	plan, err := compilePublicCorePlan(context.Background(), request, homeRoot)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	bootstrap := plan.InitialProfileBootstrap()
+	if bootstrap.Kind() != initplanning.InitialProfileHumanReviewRequired ||
+		bootstrap.Reason() != "human_or_foreign_review" {
+		t.Fatalf("enriched review bootstrap = %s reason=%s", bootstrap.Kind(), bootstrap.Reason())
+	}
+	if _, err := os.Stat(plan.DatabasePath()); !os.IsNotExist(err) {
+		t.Fatalf("planning enriched review mutated ledger: %v", err)
+	}
+}
+
+func TestPublicProjectCoreEffectAutomaticallyBootstrapsSoftwareProfile(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	writePublicBootstrapFixture(t, projectRoot, "go.mod", "module example.test/app\n")
+	writePublicBootstrapFixture(
+		t,
+		projectRoot,
+		"internal/kernel.go",
+		"package internal\n\nfunc Ready() bool { return true }\n",
+	)
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_e3149c17")
+	plan, err := compilePublicCorePlan(context.Background(), request, homeRoot)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	if plan.InitialProfileBootstrap().Kind() !=
+		initplanning.InitialProfileApplySingleton {
+		t.Fatalf("profile bootstrap = %s", plan.InitialProfileBootstrap().Kind())
+	}
+	output := &bytes.Buffer{}
+	effect := newPublicProjectCoreEffect(request, output)
+	if _, err := effect.ApplyCore(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyCore: %v", err)
+	}
+	inspection, err := executeProfileInspection(
+		context.Background(),
+		projectRoot,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("executeProfileInspection: %v", err)
+	}
+	if inspection.CanonicalProfile.Origin != "detector_default" ||
+		len(inspection.CanonicalProfile.Scopes) != 1 ||
+		inspection.CanonicalProfile.Scopes[0].RealizationKind != "software" {
+		t.Fatalf("canonical profile = %#v", inspection.CanonicalProfile)
+	}
+	methodCarrierFound := false
+	methodCarrierPath := ""
+	for _, carrier := range plan.InitialProfileBootstrap().ContingentFileEffects() {
+		if _, err := os.Stat(carrier.Path()); err != nil {
+			t.Fatalf("profile carrier %s: %v", carrier.Path(), err)
+		}
+		isMethodCarrier := strings.Contains(
+			filepath.ToSlash(carrier.Path()),
+			"/.haft/methods/",
+		)
+		methodCarrierFound = methodCarrierFound || isMethodCarrier
+		if isMethodCarrier {
+			methodCarrierPath = carrier.Path()
+		}
+	}
+	if !methodCarrierFound {
+		t.Fatal("software bootstrap installed no MethodPack carrier")
+	}
+	if !strings.Contains(output.String(), "origin=detector_default") {
+		t.Fatalf("init output = %q", output.String())
+	}
+	if err := os.Remove(methodCarrierPath); err != nil {
+		t.Fatalf("remove MethodPack carrier for recovery fixture: %v", err)
+	}
+	repeatPlan, err := compilePublicCorePlan(
+		context.Background(),
+		request,
+		homeRoot,
+	)
+	if err != nil {
+		t.Fatalf("compile repeat init: %v", err)
+	}
+	if repeatPlan.InitialProfileBootstrap().Kind() !=
+		initplanning.InitialProfileKeepExisting {
+		t.Fatalf("repeat bootstrap = %s", repeatPlan.InitialProfileBootstrap().Kind())
+	}
+	repeatOutput := &bytes.Buffer{}
+	repeatEffect := newPublicProjectCoreEffect(request, repeatOutput)
+	if _, err := repeatEffect.ApplyCore(
+		context.Background(),
+		repeatPlan,
+	); err != nil {
+		t.Fatalf("repeat ApplyCore: %v", err)
+	}
+	if !strings.Contains(repeatOutput.String(), "origin=detector_default") {
+		t.Fatalf("repeat init output = %q", repeatOutput.String())
+	}
+	if _, err := os.Stat(methodCarrierPath); err != nil {
+		t.Fatalf("repeat init did not recover MethodPack carrier: %v", err)
+	}
+	binding := mustOnboardProjectBinding(t, projectRoot)
+	surface, err := openSealedProjectOnboardSurface(
+		context.Background(),
+		binding,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer surface.Close()
+	statusOutput := callOnboardHandler(
+		t,
+		surface.Handler(),
+		`{"action":"status"}`,
+	)
+	status := decodeOnboardResponse(t, statusOutput)
+	if status.ProfileOrigin != "detector_default" ||
+		!status.ProfileOverrideEligible {
+		t.Fatalf("detector-default onboarding status = %#v", status)
+	}
+	prepareOutput := callOnboardHandler(
+		t,
+		surface.Handler(),
+		`{"action":"profile_prepare"}`,
+	)
+	prepared := decodeOnboardResponse(t, prepareOutput)
+	if prepared.Result != "profile_review_prepared" ||
+		prepared.ProfileOrigin != "detector_default" ||
+		!prepared.ProfileOverrideEligible ||
+		prepared.Effects.CanonicalProfileChanged {
+		t.Fatalf("detector-default explicit review = %#v", prepared)
+	}
+}
+
+func TestPublicProjectCoreEffectAutomaticallyBootstrapsDocumentsProfile(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	writePublicBootstrapFixture(t, projectRoot, "notes/one.md", "# One\n")
+	writePublicBootstrapFixture(t, projectRoot, "proposal.mdx", "# Two\n")
+	writePublicBootstrapFixture(t, projectRoot, "papers/three.rst", "Three\n")
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_2b6c8d4e")
+	plan, err := compilePublicCorePlan(context.Background(), request, homeRoot)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	if plan.InitialProfileBootstrap().Kind() !=
+		initplanning.InitialProfileApplySingleton {
+		t.Fatalf("profile bootstrap = %s", plan.InitialProfileBootstrap().Kind())
+	}
+	for _, carrier := range plan.InitialProfileBootstrap().ContingentFileEffects() {
+		if strings.Contains(filepath.ToSlash(carrier.Path()), "/.haft/methods/") {
+			t.Fatalf("docs-only bootstrap planned MethodPack carrier %s", carrier.Path())
+		}
+	}
+	effect := newPublicProjectCoreEffect(request, io.Discard)
+	if _, err := effect.ApplyCore(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyCore: %v", err)
+	}
+	inspection, err := executeProfileInspection(
+		context.Background(),
+		projectRoot,
+		false,
+	)
+	if err != nil {
+		t.Fatalf("executeProfileInspection: %v", err)
+	}
+	if inspection.CanonicalProfile.Origin != "detector_default" ||
+		len(inspection.CanonicalProfile.Scopes) != 1 ||
+		inspection.CanonicalProfile.Scopes[0].RealizationKind != "non_software" {
+		t.Fatalf("canonical profile = %#v", inspection.CanonicalProfile)
+	}
+}
+
+func TestPublicProjectCoreEffectRejectsProfileDetectorTOCTOUBeforeWrites(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	writePublicBootstrapFixture(t, projectRoot, "go.mod", "module example.test/app\n")
+	writePublicBootstrapFixture(t, projectRoot, "internal/kernel.go", "package internal\n")
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_8e4d2b6c")
+	plan, err := compilePublicCorePlan(context.Background(), request, homeRoot)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	writePublicBootstrapFixture(
+		t,
+		projectRoot,
+		"internal/kernel.go",
+		"package internal\n\nvar Changed = true\n",
+	)
+	effect := newPublicProjectCoreEffect(request, io.Discard)
+	if _, err := effect.ApplyCore(context.Background(), plan); err == nil {
+		t.Fatal("changed detector observation was admitted")
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, ".haft")); !os.IsNotExist(err) {
+		t.Fatalf("TOCTOU rejection wrote .haft: %v", err)
+	}
+}
+
+func mustResolvedTempDir(t *testing.T) string {
+	t.Helper()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+func mustPublicCoreOnlyRequest(
+	t *testing.T,
+	projectRoot string,
+	projectID string,
+) publicInitRequest {
+	t.Helper()
+	request, err := compilePublicInitRequest(
+		weakPublicInitRequest{
+			invocation:  initplanning.InvocationExplicit,
+			projectRoot: projectRoot,
+			projectID:   projectID,
+			coreOnly:    true,
+			overseer:    publicOverseerWeakDisabled(),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return request
+}
+
+func writePublicBootstrapFixture(
+	t *testing.T,
+	projectRoot string,
+	relativePath string,
+	content string,
+) {
+	t.Helper()
+	path := filepath.Join(projectRoot, filepath.FromSlash(relativePath))
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestPublicProjectCoreEffectInitializesExactPlannedIdentity(
 	t *testing.T,
@@ -168,9 +499,9 @@ func TestPublicProjectCoreEffectMigratesExactLegacyQuintDatabaseSeed(
 		seed.Digest() == "" {
 		t.Fatalf("legacy seed = %#v", seed)
 	}
-	if len(plan.FileEffects()) != 10 {
+	if len(plan.FileEffects()) != 9 {
 		t.Fatalf(
-			"legacy carrier effects = %d, want 10",
+			"legacy carrier effects = %d, want 9",
 			len(plan.FileEffects()),
 		)
 	}
@@ -415,12 +746,7 @@ func TestPublicProjectCoreEffectPreservesExistingCoreCarriers(
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {
 		t.Fatalf("create Haft root: %v", err)
 	}
-	configBytes := []byte(
-		"schema_version: 1\nauthority:\n" +
-			"  decision_binding_mode: strict_cli_speech_act\n" +
-			"  project_typeenv_head_selection_mode: explicit_h_decide\n" +
-			"  profile_declaration_mode: explicit_h_onboard\n",
-	)
+	configBytes := []byte("operator_owned: true\n")
 	workflowBytes := []byte(
 		"# Workflow\n\n## Intent\n\nKeep custom workflow bytes.\n\n" +
 			"## Defaults\n\n```yaml\nmode: standard\n" +
@@ -455,7 +781,8 @@ func TestPublicProjectCoreEffectPreservesExistingCoreCarriers(
 	if err != nil {
 		t.Fatalf("compilePublicCorePlan: %v", err)
 	}
-	effect := newPublicProjectCoreEffect(request, io.Discard)
+	output := &bytes.Buffer{}
+	effect := newPublicProjectCoreEffect(request, output)
 	if _, err := effect.ApplyCore(
 		context.Background(),
 		plan,
@@ -477,6 +804,53 @@ func TestPublicProjectCoreEffectPreservesExistingCoreCarriers(
 			gotConfig,
 			gotWorkflow,
 		)
+	}
+	if !strings.Contains(
+		output.String(),
+		"preserved byte-for-byte and ignored",
+	) {
+		t.Fatalf("legacy warning = %q", output.String())
+	}
+}
+
+func TestPublicProjectCoreEffectRemovesExactGeneratedLegacyConfig(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	haftDir := filepath.Join(projectRoot, ".haft")
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	encoded := "IyBIYWZ0IHByb2plY3QgYmVoYXZpb3IgY29uZmlndXJhdGlvbgpzY2hlbWFfdmVyc2lvbjogMQphdXRob3JpdHk6CiAgIyBEZWNpc2lvblJlY29yZDogZXhwbGljaXRfaF9kZWNpZGUgKGRlZmF1bHQpIHwgc3RyaWN0X2NsaV9zcGVlY2hfYWN0IChvcHQtaW4pCiAgZGVjaXNpb25fYmluZGluZ19tb2RlOiBleHBsaWNpdF9oX2RlY2lkZQogICMgUHJvamVjdCBwcm9maWxlOiBleHBsaWNpdF9oX29uYm9hcmQgKGRlZmF1bHQpIHwgc3RyaWN0X2NsaV9zcGVlY2hfYWN0IChyZXNlcnZlZDsgZmFpbHMgY2xvc2VkIHdpdGhvdXQgbmF0aXZlIHYzIHN0cmljdCBhdXRob3JpdHkpCiAgcHJvZmlsZV9kZWNsYXJhdGlvbl9tb2RlOiBleHBsaWNpdF9oX29uYm9hcmQK"
+	legacy, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configPath := project.ProjectConfigPath(haftDir)
+	if err := os.WriteFile(configPath, legacy, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_e3149c17")
+	plan, err := compilePublicCorePlan(
+		context.Background(),
+		request,
+		homeRoot,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := &bytes.Buffer{}
+	effect := newPublicProjectCoreEffect(request, output)
+	if _, err := effect.ApplyCore(context.Background(), plan); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
+		t.Fatalf("generated legacy config still exists: %v", err)
+	}
+	if !strings.Contains(output.String(), "Legacy project config removed") {
+		t.Fatalf("removal report = %q", output.String())
 	}
 }
 

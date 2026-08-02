@@ -1,71 +1,103 @@
 package profiledeclarationpreparation
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
-	"strings"
 
-	"github.com/m0n0x41d/haft/internal/projectprofile"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
+	"github.com/m0n0x41d/haft/internal/profiledetector"
 )
 
 const (
-	ModeExplicitHOnboard = "explicit_h_onboard"
-	ModeStrictSpeechAct  = "strict_cli_speech_act"
+	ModeHostRoutedOperatorRequest   = "host_routed_operator_request"
+	ModeAutomaticSupportedSingleton = "automatic_supported_singleton_init"
+
+	ActionHostRoutedProfileDeclaration = "profile.declare.from_onboarding_candidate"
+	ActionAutomaticSupportedSingleton  = "profile.apply_supported_singleton_default"
+	ResolutionHostRoutedRequest        = "host_routed_request_acceptance"
+	ResolutionAutomaticPolicy          = "deterministic_policy_satisfaction"
 )
 
-// Policy is the exact project-local declaration-authority policy. It carries
-// semantic configuration provenance, never an authority receipt.
+// Policy is the closed provenance basis for profile declaration. The
+// host-routed branch records what the host recognized; it does not claim an
+// independently proven SpeechAct or hidden operator intent.
 type Policy struct {
-	mode                string
-	configCarrierRef    string
-	configCarrierDigest projectprofile.ContentDigest
+	mode      string
+	request   operatorrequest.Request
+	automatic automaticPolicyProvenance
 }
 
-func NewPolicy(mode string, configCarrierRef string, configCarrier []byte) (Policy, error) {
-	switch mode {
-	case ModeExplicitHOnboard:
-		if strings.TrimSpace(configCarrierRef) == "" || len(configCarrier) == 0 {
-			return Policy{}, fmt.Errorf(
-				"explicit profile declaration requires its effective config carrier",
-			)
-		}
-		digest, err := digestBytes(
-			"haft.project-config.profile-declaration-policy/v1",
-			configCarrier,
-		)
-		if err != nil {
-			return Policy{}, err
-		}
-		return Policy{
-			mode:                mode,
-			configCarrierRef:    configCarrierRef,
-			configCarrierDigest: digest,
-		}, nil
-	case ModeStrictSpeechAct:
-		return Policy{mode: mode}, nil
-	default:
+type automaticPolicyProvenance struct {
+	detectorVersion   string
+	policyVersion     string
+	suggestionRef     string
+	observationDigest string
+}
+
+func NewHostRoutedOperatorRequestPolicy(
+	request operatorrequest.Request,
+) (Policy, error) {
+	if request.Provenance() != operatorrequest.HostRoutedOperatorRequest ||
+		request.Effect() != operatorrequest.ProfileDeclaration ||
+		request.Ref() == "" ||
+		request.Digest() == "" {
 		return Policy{}, fmt.Errorf(
-			"profile declaration authority mode %q is unsupported",
-			mode,
+			"profile declaration requires exact host-routed operator-request provenance",
 		)
 	}
+	return Policy{mode: ModeHostRoutedOperatorRequest, request: request}, nil
+}
+
+// NewAutomaticSupportedSingletonPolicy seals the exact detector result that
+// satisfied the automatic-init policy. It cannot represent mixed, truncated,
+// weak, or multi-scope observations.
+func NewAutomaticSupportedSingletonPolicy(
+	suggestion profiledetector.Suggestion,
+) (Policy, error) {
+	if suggestion.Snapshot().Truncated() ||
+		suggestion.ConfidencePosture() != profiledetector.SupportedConfidence ||
+		len(suggestion.SuggestedScopes()) != 1 {
+		return Policy{}, fmt.Errorf(
+			"automatic profile policy requires a complete supported singleton detector result",
+		)
+	}
+	return Policy{
+		mode: ModeAutomaticSupportedSingleton,
+		automatic: automaticPolicyProvenance{
+			detectorVersion:   suggestion.DetectorVersion(),
+			policyVersion:     profiledetector.PolicyVersion,
+			suggestionRef:     suggestion.SuggestionRef(),
+			observationDigest: suggestion.Snapshot().ObservationDigest(),
+		},
+	}, nil
 }
 
 func (policy Policy) Mode() string { return policy.mode }
 
-func (policy Policy) ConfigCarrier() (string, projectprofile.ContentDigest, bool) {
-	if policy.mode != ModeExplicitHOnboard || policy.configCarrierRef == "" {
-		return "", projectprofile.ContentDigest{}, false
+func (policy Policy) OperatorRequest() (operatorrequest.Request, bool) {
+	if policy.mode != ModeHostRoutedOperatorRequest || policy.request.Ref() == "" {
+		return operatorrequest.Request{}, false
 	}
-	return policy.configCarrierRef, policy.configCarrierDigest, true
+	return policy.request, true
 }
 
-func digestBytes(domain string, value []byte) (projectprofile.ContentDigest, error) {
-	hash := sha256.New()
-	_, _ = hash.Write([]byte(domain))
-	_, _ = hash.Write([]byte{0})
-	_, _ = hash.Write(value)
-	raw := "sha256:" + hex.EncodeToString(hash.Sum(nil))
-	return projectprofile.NewContentDigest(raw)
+func (policy Policy) AutomaticProvenance() (
+	detectorVersion string,
+	policyVersion string,
+	suggestionRef string,
+	observationDigest string,
+	ok bool,
+) {
+	if policy.mode != ModeAutomaticSupportedSingleton {
+		return "", "", "", "", false
+	}
+	value := policy.automatic
+	valid := value.detectorVersion != "" &&
+		value.policyVersion != "" &&
+		value.suggestionRef != "" &&
+		value.observationDigest != ""
+	return value.detectorVersion,
+		value.policyVersion,
+		value.suggestionRef,
+		value.observationDigest,
+		valid
 }

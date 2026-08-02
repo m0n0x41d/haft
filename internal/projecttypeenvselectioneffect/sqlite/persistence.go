@@ -8,10 +8,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselection"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
-	"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
@@ -28,12 +26,6 @@ func (service *GenesisService) writeGenesisEffectTx(
 		effect.prepared.request.Target().OrderedExtensions(),
 	)
 	if err != nil {
-		return err
-	}
-	if err := writeGenesisConfigBasisTx(ctx, transaction, effect); err != nil {
-		return err
-	}
-	if err := writeGenesisModePolicyTx(ctx, transaction, effect); err != nil {
 		return err
 	}
 	if err := writeGenesisProofTx(ctx, transaction, effect); err != nil {
@@ -54,7 +46,7 @@ func (service *GenesisService) writeGenesisEffectTx(
 	); err != nil {
 		return err
 	}
-	if err := writeGenesisAuthoritySourceTx(
+	if err := writeGenesisHostRequestTx(
 		ctx,
 		transaction,
 		effect,
@@ -118,19 +110,13 @@ func (service *TransitionService) writeTransitionEffectTx(
 	if err != nil {
 		return err
 	}
-	if err := writeGenesisConfigBasisTx(ctx, transaction, effect); err != nil {
-		return err
-	}
-	if err := writeGenesisModePolicyTx(ctx, transaction, effect); err != nil {
-		return err
-	}
 	if err := writeGenesisRequestTx(ctx, transaction, effect, extensions); err != nil {
 		return err
 	}
 	if err := writeGenesisAuthorizationContentTx(ctx, transaction, effect); err != nil {
 		return err
 	}
-	if err := writeGenesisAuthoritySourceTx(ctx, transaction, effect); err != nil {
+	if err := writeGenesisHostRequestTx(ctx, transaction, effect); err != nil {
 		return err
 	}
 	if err := writeGenesisAuthorityResolutionTx(ctx, transaction, effect); err != nil {
@@ -260,133 +246,6 @@ func sealOrderedExtensionCoordinates(
 		digest:    digest,
 		canonical: canonical,
 	}, nil
-}
-
-func writeGenesisConfigBasisTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	effect sealedGenesisEffect,
-) error {
-	basis := effect.prepared.resolved.policy.ConfigBasis()
-	exact, err := exactGenesisCanonicalRowExistsTx(
-		ctx,
-		transaction,
-		"project_typeenv_head_selection_config_authority_bases",
-		"config_authority_basis_ref",
-		"config_authority_basis_digest",
-		"canonical_bytes",
-		basis.Ref().String(),
-		basis.Digest().String(),
-		basis.CanonicalJSON(),
-	)
-	if err != nil || exact {
-		return err
-	}
-	carrier := basis.ConfigCarrier()
-	return executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_config_authority_bases (
-			config_authority_basis_ref,
-			config_authority_basis_digest,
-			project_id,
-			authority_mode,
-			config_carrier_ref,
-			config_carrier_digest,
-			canonical_bytes,
-			recorded_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		basis.Ref().String(),
-		basis.Digest().String(),
-		basis.Project().String(),
-		basis.Mode().String(),
-		carrier.Ref().String(),
-		carrier.Digest().String(),
-		basis.CanonicalJSON(),
-		canonicalGenesisTime(effect.recordedAt),
-	)
-}
-
-func writeGenesisModePolicyTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	effect sealedGenesisEffect,
-) error {
-	policy := effect.prepared.resolved.policy
-	exact, err := exactGenesisCanonicalRowExistsTx(
-		ctx,
-		transaction,
-		"project_typeenv_head_selection_mode_policies",
-		"mode_policy_ref",
-		"mode_policy_digest",
-		"canonical_bytes",
-		policy.Ref().String(),
-		policy.Digest().String(),
-		policy.CanonicalJSON(),
-	)
-	if err != nil || exact {
-		return err
-	}
-	strict, strictOK := policy.StrictCLISpeechAct()
-	if strictOK {
-		resolver := strict.ResolverPolicy()
-		return executeGenesisStatement(
-			ctx,
-			transaction,
-			`INSERT OR IGNORE INTO project_typeenv_head_selection_mode_policies (
-				mode_policy_ref,
-				mode_policy_digest,
-				project_id,
-				authority_mode,
-				config_authority_basis_ref,
-				config_authority_basis_digest,
-				resolver_policy_ref,
-				resolver_policy_edition,
-				resolver_policy_digest,
-				canonical_bytes,
-				recorded_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-			policy.Ref().String(),
-			policy.Digest().String(),
-			policy.Project().String(),
-			policy.Mode().String(),
-			policy.ConfigBasis().Ref().String(),
-			policy.ConfigBasis().Digest().String(),
-			resolver.Ref().String(),
-			resolver.Edition().String(),
-			resolver.Digest().String(),
-			policy.CanonicalJSON(),
-			canonicalGenesisTime(effect.recordedAt),
-		)
-	}
-	if _, explicitOK := policy.ExplicitHDecide(); !explicitOK {
-		return fmt.Errorf("genesis mode policy variant is invalid")
-	}
-	return executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_mode_policies (
-			mode_policy_ref,
-			mode_policy_digest,
-			project_id,
-			authority_mode,
-			config_authority_basis_ref,
-			config_authority_basis_digest,
-			resolver_policy_ref,
-			resolver_policy_edition,
-			resolver_policy_digest,
-			canonical_bytes,
-			recorded_at
-		) VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, NULL, ?, ?)`,
-		policy.Ref().String(),
-		policy.Digest().String(),
-		policy.Project().String(),
-		policy.Mode().String(),
-		policy.ConfigBasis().Ref().String(),
-		policy.ConfigBasis().Digest().String(),
-		policy.CanonicalJSON(),
-		canonicalGenesisTime(effect.recordedAt),
-	)
 }
 
 func writeGenesisProofTx(
@@ -577,328 +436,39 @@ func writeGenesisAuthorizationContentTx(
 	)
 }
 
-func writeGenesisAuthoritySourceTx(
+func writeGenesisHostRequestTx(
 	ctx context.Context,
 	transaction *sqlitetransaction.Transaction,
 	effect sealedGenesisEffect,
 ) error {
-	source := effect.prepared.resolved.source
-	if explicit, ok := source.TrustedDedicatedCLIInvocation(); ok {
-		return writeGenesisTrustedCLISourceTx(
-			ctx,
-			transaction,
-			effect,
-			explicit,
-		)
-	}
-	if strict, ok := source.VerifiedSpeechAct(); ok {
-		return writeGenesisStrictSpeechActSourceTx(
-			ctx,
-			transaction,
-			effect,
-			strict,
-		)
-	}
-	return fmt.Errorf("genesis authority source variant is invalid")
-}
-
-func writeGenesisTrustedCLISourceTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	effect sealedGenesisEffect,
-	source projecttypeenvselectionauthority.TrustedDedicatedCLIInvocationSourceRecord,
-) error {
-	policy := source.Policy()
-	content := source.Content()
-	request := source.Request()
+	resolved := effect.prepared.resolved
+	request := resolved.request
+	resolution := resolved.hostResolution
+	binding := resolution.ProjectBinding()
 	return executeGenesisStatement(
 		ctx,
 		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_trusted_cli_sources (
-			trusted_cli_source_ref,
-			trusted_cli_source_digest,
-			project_id,
-			mode_policy_ref,
-			mode_policy_digest,
-			config_authority_basis_ref,
-			config_authority_basis_digest,
-			content_ref,
-			content_digest,
+		`INSERT OR IGNORE INTO project_typeenv_head_selection_host_requests_v1 (
 			request_ref,
 			request_digest,
-			canonical_bytes,
+			project_id,
+			project_root,
+			effect_kind,
+			subject_ref,
+			payload_digest,
+			provenance,
 			recorded_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		source.Ref().String(),
-		source.Digest().String(),
-		request.Project().String(),
-		policy.Ref().String(),
-		policy.Digest().String(),
-		policy.ConfigBasis().Ref().String(),
-		policy.ConfigBasis().Digest().String(),
-		content.DescriptionRef().String(),
-		content.Digest().String(),
-		request.Ref().String(),
-		request.Ref().Digest().String(),
-		source.CanonicalJSON(),
-		canonicalGenesisTime(source.RecordedAt()),
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		request.Ref(),
+		request.Digest(),
+		resolved.content.Project().String(),
+		binding.Root().String(),
+		string(request.Effect()),
+		request.SubjectRef(),
+		request.PayloadDigest(),
+		string(request.Provenance()),
+		canonicalGenesisTime(resolution.EvaluatedAt()),
 	)
-}
-
-func writeGenesisStrictSpeechActSourceTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	effect sealedGenesisEffect,
-	source projecttypeenvselectionauthority.VerifiedSpeechActAuthoritySourceRecord,
-) error {
-	record := source.Record()
-	permission := record.PermissionRecord()
-	recordExact, err := exactGenesisCanonicalRowExistsTx(
-		ctx,
-		transaction,
-		"project_typeenv_head_selection_speech_act_records",
-		"speech_act_record_ref",
-		"speech_act_record_digest",
-		"canonical_bytes",
-		record.Ref().String(),
-		record.Digest().String(),
-		record.CanonicalJSON(),
-	)
-	if err != nil {
-		return err
-	}
-	permissionExact, err := exactGenesisCanonicalRowExistsTx(
-		ctx,
-		transaction,
-		"project_typeenv_head_selection_permissions_v3",
-		"permission_ref",
-		"permission_digest",
-		"canonical_bytes",
-		permission.Ref().String(),
-		permission.Digest().String(),
-		permission.CanonicalJSON(),
-	)
-	if err != nil {
-		return err
-	}
-	if recordExact != permissionExact {
-		return fmt.Errorf(
-			"durable strict SpeechAct source is partial: record exact=%t permission exact=%t",
-			recordExact,
-			permissionExact,
-		)
-	}
-	if recordExact {
-		return nil
-	}
-	sourceCoordinates, err := strictSpeechActSourceCoordinates(record.Source())
-	if err != nil {
-		return err
-	}
-	content := record.Content()
-	if err := executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_speech_act_records (
-			speech_act_record_ref,
-			speech_act_record_digest,
-			project_id,
-			speech_act_ref,
-			human_work_ref,
-			source_digest,
-			content_ref,
-			content_digest,
-			request_ref,
-			request_digest,
-			permission_ref,
-			permission_digest,
-			canonical_bytes,
-			recorded_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		record.Ref().String(),
-		record.Digest().String(),
-		content.Project().String(),
-		sourceCoordinates.speechAct.String(),
-		sourceCoordinates.work.String(),
-		sourceCoordinates.digest.String(),
-		content.DescriptionRef().String(),
-		content.Digest().String(),
-		content.Request().Ref().String(),
-		content.Request().Ref().Digest().String(),
-		permission.Ref().String(),
-		permission.Digest().String(),
-		record.CanonicalJSON(),
-		canonicalGenesisTime(effect.recordedAt),
-	); err != nil {
-		return err
-	}
-	return writeGenesisPermissionTx(
-		ctx,
-		transaction,
-		record,
-		permission,
-	)
-}
-
-type strictSpeechActSourceCoordinateSet struct {
-	speechAct authority.SpeechActRef
-	work      authority.WorkRef
-	digest    authority.Digest
-}
-
-func strictSpeechActSourceCoordinates(
-	source authority.VerifiedSpeechActSourceV2,
-) (strictSpeechActSourceCoordinateSet, error) {
-	speechAct, speechActOK := source.SpeechActRef()
-	work, workOK := source.WorkRef()
-	digest, digestOK := source.Digest()
-	if !speechActOK || !workOK || !digestOK {
-		return strictSpeechActSourceCoordinateSet{},
-			fmt.Errorf("strict SpeechAct source coordinates are unavailable")
-	}
-	return strictSpeechActSourceCoordinateSet{
-		speechAct: speechAct,
-		work:      work,
-		digest:    digest,
-	}, nil
-}
-
-func writeGenesisPermissionTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	record projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionSpeechActRecord,
-	permission projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionPermissionRecord,
-) error {
-	subject := permission.Subject()
-	subjectPolicy := subject.AssignmentPolicy()
-	subjectWindow := subject.AssignmentWindow()
-	scope := permission.Scope()
-	referents, err := canonicalPermissionReferents(permission.Referents())
-	if err != nil {
-		return err
-	}
-	content := record.Content()
-	return executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_permissions_v3 (
-			permission_ref,
-			permission_digest,
-			project_id,
-			subject_role_assignment_ref,
-			subject_role_assignment_digest,
-			subject_schema,
-			subject_holder_system_ref,
-			subject_holder_kind,
-			subject_role_ref,
-			subject_context_ref,
-			subject_assignment_from,
-			subject_assignment_until,
-			subject_assignment_policy_ref,
-			subject_assignment_policy_digest,
-			subject_assignment_policy_edition_ref,
-			subject_assignment_policy_selection,
-			subject_system_admission_ref,
-			subject_system_admission_digest,
-			subject_role_admission_ref,
-			subject_role_admission_digest,
-			subject_assignment_justification_ref,
-			subject_assignment_justification_digest,
-			subject_assignment_provenance_ref,
-			subject_assignment_provenance_digest,
-			subject_authorization_description_kind,
-			subject_authorization_description_ref,
-			subject_authorization_content_digest,
-			subject_canonical_bytes,
-			modality,
-			claim_scope_ref,
-			claim_scope_digest,
-			context_policy_ref,
-			context_policy_digest,
-			referents_canonical_bytes,
-			effective_from,
-			validity_until,
-			speech_act_record_ref,
-			speech_act_record_digest,
-			content_ref,
-			content_digest,
-			request_ref,
-			request_digest,
-			canonical_bytes
-		) VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-			?, ?, ?
-		)`,
-		permission.Ref().String(),
-		permission.Digest().String(),
-		content.Project().String(),
-		subject.Ref().String(),
-		subject.Digest().String(),
-		"haft.project-typeenv.head-selection-permission-subject-role-assignment/v1",
-		subject.HolderSystemRef().String(),
-		"U.System",
-		subject.RoleRef().String(),
-		subject.BoundedContext().String(),
-		canonicalGenesisTime(subjectWindow.From()),
-		canonicalGenesisTime(subjectWindow.Until()),
-		subjectPolicy.Ref().String(),
-		subjectPolicy.Digest().String(),
-		subjectPolicy.Edition().String(),
-		"current_for_new_write_at_seal",
-		subject.SystemAdmissionRef().String(),
-		subject.SystemAdmissionDigest().String(),
-		subject.RoleAdmissionRef().String(),
-		subject.RoleAdmissionDigest().String(),
-		subject.AssignmentJustificationRef().String(),
-		subject.AssignmentJustificationDigest().String(),
-		subject.AssignmentProvenanceRef().String(),
-		subject.AssignmentProvenanceDigest().String(),
-		string(subject.AuthorizationDescriptionRef().Kind()),
-		subject.AuthorizationDescriptionRef().String(),
-		subject.AuthorizationContentDigest().String(),
-		subject.CanonicalJSON(),
-		permission.Modality().String(),
-		scope.Ref().String(),
-		scope.Digest().String(),
-		scope.ContextPolicyRef().String(),
-		scope.ContextPolicyDigest().String(),
-		referents,
-		canonicalGenesisTime(permission.EffectiveFrom()),
-		canonicalGenesisTime(permission.ValidityUntil()),
-		record.Ref().String(),
-		record.Digest().String(),
-		content.DescriptionRef().String(),
-		content.Digest().String(),
-		content.Request().Ref().String(),
-		content.Request().Ref().Digest().String(),
-		permission.CanonicalJSON(),
-	)
-}
-
-func canonicalPermissionReferents(
-	referents []projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionPermissionReferent,
-) ([]byte, error) {
-	type projection struct {
-		Kind   string `json:"kind"`
-		Ref    string `json:"ref"`
-		Digest string `json:"digest"`
-	}
-	values := make([]projection, len(referents))
-	for index := range referents {
-		values[index] = projection{
-			Kind:   referents[index].Kind().String(),
-			Ref:    referents[index].Ref(),
-			Digest: referents[index].Digest().String(),
-		}
-	}
-	canonical, err := json.Marshal(values)
-	if err != nil {
-		return nil, fmt.Errorf("encode Permission referents: %w", err)
-	}
-	return canonical, nil
 }
 
 func writeGenesisAuthorityResolutionTx(
@@ -906,41 +476,54 @@ func writeGenesisAuthorityResolutionTx(
 	transaction *sqlitetransaction.Transaction,
 	effect sealedGenesisEffect,
 ) error {
-	resolution := effect.prepared.resolved.resolution
-	if explicit, ok := resolution.ExplicitPolicyAcceptance(); ok {
-		return writeGenesisExplicitResolutionTx(
-			ctx,
-			transaction,
-			effect,
-			explicit,
-		)
-	}
-	if strict, ok := resolution.StrictPermission(); ok {
-		return writeGenesisStrictResolutionTx(
-			ctx,
-			transaction,
-			effect,
-			strict,
-		)
-	}
-	return fmt.Errorf("genesis authority resolution variant is invalid")
-}
-
-func writeGenesisExplicitResolutionTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	effect sealedGenesisEffect,
-	resolution projecttypeenvselectionauthority.ExplicitPolicyAcceptanceResolution,
-) error {
-	source := resolution.Source()
-	content := source.Content()
-	request := source.Request()
+	resolved := effect.prepared.resolved
+	resolution := resolved.hostResolution
+	request := resolution.SelectionRequest()
+	content := resolution.Content()
+	binding := resolution.ProjectBinding()
 	if err := executeGenesisStatement(
+		ctx,
+		transaction,
+		`INSERT OR IGNORE INTO project_typeenv_head_selection_host_resolutions_v1 (
+			resolution_ref,
+			resolution_digest,
+			request_ref,
+			request_digest,
+			project_id,
+			project_root,
+			project_binding_digest,
+			selection_request_ref,
+			selection_request_digest,
+			content_ref,
+			content_digest,
+			resolution_kind,
+			canonical_bytes,
+			recorded_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		resolution.Ref().String(),
+		resolution.Digest().String(),
+		resolved.request.Ref(),
+		resolved.request.Digest(),
+		request.Project().String(),
+		binding.Root().String(),
+		binding.Digest().String(),
+		request.Ref().String(),
+		request.Ref().Digest().String(),
+		content.DescriptionRef().String(),
+		content.Digest().String(),
+		"host_routed_request_acceptance",
+		resolution.CanonicalJSON(),
+		canonicalGenesisTime(resolution.EvaluatedAt()),
+	); err != nil {
+		return err
+	}
+	return executeGenesisStatement(
 		ctx,
 		transaction,
 		`INSERT OR IGNORE INTO project_typeenv_head_selection_authority_resolutions (
 			authority_resolution_ref,
 			authority_resolution_digest,
+			authority_generation,
 			project_id,
 			authority_resolution_kind,
 			content_ref,
@@ -955,13 +538,16 @@ func writeGenesisExplicitResolutionTx(
 			explicit_resolution_digest,
 			strict_resolution_ref,
 			strict_resolution_digest,
+			host_resolution_ref,
+			host_resolution_digest,
 			evaluated_at,
 			canonical_bytes,
 			recorded_at
 		) VALUES (
-			?, ?, ?, 'explicit_policy_acceptance',
-			?, ?, ?, ?, ?, ?,
-			NULL, NULL, ?, ?, NULL, NULL, ?, ?, ?
+			?, ?, 'host_routed_operator_request', ?,
+			'host_routed_request_acceptance', ?, ?, ?, ?,
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+			?, ?, ?, ?, ?
 		)`,
 		resolution.Ref().String(),
 		resolution.Digest().String(),
@@ -970,178 +556,12 @@ func writeGenesisExplicitResolutionTx(
 		content.Digest().String(),
 		request.Ref().String(),
 		request.Ref().Digest().String(),
-		source.Ref().String(),
-		source.Digest().String(),
 		resolution.Ref().String(),
 		resolution.Digest().String(),
 		canonicalGenesisTime(resolution.EvaluatedAt()),
 		resolution.CanonicalJSON(),
-		canonicalGenesisTime(effect.recordedAt),
-	); err != nil {
-		return err
-	}
-	return executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_explicit_policy_acceptance_resolutions (
-			authority_resolution_ref,
-			authority_resolution_digest,
-			trusted_cli_source_ref,
-			trusted_cli_source_digest
-		) VALUES (?, ?, ?, ?)`,
-		resolution.Ref().String(),
-		resolution.Digest().String(),
-		source.Ref().String(),
-		source.Digest().String(),
-	)
-}
-
-func writeGenesisStrictResolutionTx(
-	ctx context.Context,
-	transaction *sqlitetransaction.Transaction,
-	effect sealedGenesisEffect,
-	resolution projecttypeenvselectionauthority.StrictPermissionResolution,
-) error {
-	basis := resolution.Basis()
-	record := basis.Record()
-	content := basis.Content()
-	request := basis.Request()
-	resolver := basis.Policy()
-	if err := executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_authority_resolution_bases (
-			basis_ref,
-			basis_digest,
-			project_id,
-			resolver_policy_ref,
-			resolver_policy_edition,
-			resolver_policy_digest,
-			speech_act_record_ref,
-			speech_act_record_digest,
-			content_ref,
-			content_digest,
-			request_ref,
-			request_digest,
-			stage_ref,
-			stage_digest,
-			evaluated_at,
-			canonical_bytes
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		basis.Ref().String(),
-		basis.Digest().String(),
-		request.Project().String(),
-		resolver.Ref().String(),
-		resolver.Edition().String(),
-		resolver.Digest().String(),
-		record.Ref().String(),
-		record.Digest().String(),
-		content.DescriptionRef().String(),
-		content.Digest().String(),
-		request.Ref().String(),
-		request.Ref().Digest().String(),
-		basis.Stage().Ref().String(),
-		basis.Stage().Ref().Digest().String(),
-		canonicalGenesisTime(basis.EvaluatedAt()),
-		basis.CanonicalJSON(),
-	); err != nil {
-		return err
-	}
-	if err := executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_authority_resolutions (
-			authority_resolution_ref,
-			authority_resolution_digest,
-			project_id,
-			authority_resolution_kind,
-			content_ref,
-			content_digest,
-			request_ref,
-			request_digest,
-			trusted_cli_source_ref,
-			trusted_cli_source_digest,
-			strict_basis_ref,
-			strict_basis_digest,
-			explicit_resolution_ref,
-			explicit_resolution_digest,
-			strict_resolution_ref,
-			strict_resolution_digest,
-			evaluated_at,
-			canonical_bytes,
-			recorded_at
-		) VALUES (
-			?, ?, ?, 'strict_permission',
-			?, ?, ?, ?, NULL, NULL, ?, ?,
-			NULL, NULL, ?, ?, ?, ?, ?
-		)`,
-		resolution.Ref().String(),
-		resolution.Digest().String(),
-		request.Project().String(),
-		content.DescriptionRef().String(),
-		content.Digest().String(),
-		request.Ref().String(),
-		request.Ref().Digest().String(),
-		basis.Ref().String(),
-		basis.Digest().String(),
-		resolution.Ref().String(),
-		resolution.Digest().String(),
 		canonicalGenesisTime(resolution.EvaluatedAt()),
-		resolution.CanonicalJSON(),
-		canonicalGenesisTime(effect.recordedAt),
-	); err != nil {
-		return err
-	}
-	permission := resolution.Permission()
-	return executeGenesisStatement(
-		ctx,
-		transaction,
-		`INSERT OR IGNORE INTO project_typeenv_head_selection_strict_permission_resolutions (
-			authority_resolution_ref,
-			authority_resolution_digest,
-			basis_ref,
-			basis_digest,
-			speech_act_record_ref,
-			speech_act_record_digest,
-			permission_ref,
-			permission_digest
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-		resolution.Ref().String(),
-		resolution.Digest().String(),
-		basis.Ref().String(),
-		basis.Digest().String(),
-		record.Ref().String(),
-		record.Digest().String(),
-		permission.Ref().String(),
-		permission.Digest().String(),
 	)
-}
-
-type storedAuthorityResolutionCoordinates struct {
-	kind   string
-	ref    projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef
-	digest authority.Digest
-}
-
-func storedAuthorityResolution(
-	coordinates projecttypeenvselectioneffect.ProjectTypeEnvHeadSelectionAuthorityCoordinates,
-) (storedAuthorityResolutionCoordinates, error) {
-	if explicit, ok := coordinates.TrustedDedicatedCLIInvocation(); ok {
-		return storedAuthorityResolutionCoordinates{
-			kind:   "explicit_policy_acceptance",
-			ref:    explicit.AuthorityResolutionRef(),
-			digest: explicit.AuthorityResolutionDigest(),
-		}, nil
-	}
-	if strict, ok := coordinates.VerifiedSpeechAct(); ok {
-		return storedAuthorityResolutionCoordinates{
-			kind:   "strict_permission",
-			ref:    strict.AuthorityResolutionRef(),
-			digest: strict.AuthorityResolutionDigest(),
-		}, nil
-	}
-	return storedAuthorityResolutionCoordinates{},
-		fmt.Errorf("stored authority coordinates variant is invalid")
 }
 
 func writeGenesisAuthorityUseTx(
@@ -1156,9 +576,9 @@ func writeGenesisAuthorityUseTx(
 	if err != nil {
 		return err
 	}
-	resolution, err := storedAuthorityResolution(use.AuthorityCoordinates())
-	if err != nil {
-		return err
+	host, ok := use.AuthorityCoordinates().HostRoutedOperatorRequest()
+	if !ok {
+		return fmt.Errorf("current authority use is not host-routed")
 	}
 	expectedGraphRevision, err := exactSQLiteInteger(
 		"authority use expected graph revision",
@@ -1188,12 +608,13 @@ func writeGenesisAuthorityUseTx(
 	if err != nil {
 		return err
 	}
-	return executeGenesisStatement(
+	if err := executeGenesisStatement(
 		ctx,
 		transaction,
 		`INSERT OR IGNORE INTO project_typeenv_head_selection_authority_uses (
 			authority_use_ref,
 			authority_use_digest,
+			authority_generation,
 			project_id,
 			original_idempotency_key,
 			authority_resolution_kind,
@@ -1224,7 +645,7 @@ func writeGenesisAuthorityUseTx(
 			canonical_bytes,
 			recorded_at
 		) VALUES (
-			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, 'host_routed_operator_request', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
 			?, ?, ?, ?,
 			?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 		)`,
@@ -1232,9 +653,9 @@ func writeGenesisAuthorityUseTx(
 		use.Digest().String(),
 		use.Project().String(),
 		use.IdempotencyKey().String(),
-		resolution.kind,
-		resolution.ref.String(),
-		resolution.digest.String(),
+		"host_routed_request_acceptance",
+		host.AuthorityResolutionRef().String(),
+		host.AuthorityResolutionDigest().String(),
 		use.AuthorityCoordinates().ContentRef().String(),
 		use.AuthorityCoordinates().ContentDigest().String(),
 		use.RequestRef().String(),
@@ -1257,6 +678,39 @@ func writeGenesisAuthorityUseTx(
 		committedGraphRevision,
 		use.Verifier().String(),
 		verifierEdition,
+		use.CanonicalBytes(),
+		canonicalGenesisTime(effect.recordedAt),
+	); err != nil {
+		return err
+	}
+	request := host.OperatorRequest()
+	return executeGenesisStatement(
+		ctx,
+		transaction,
+		`INSERT OR IGNORE INTO project_typeenv_head_selection_host_uses_v1 (
+			use_ref,
+			use_digest,
+			resolution_ref,
+			resolution_digest,
+			request_ref,
+			request_digest,
+			project_id,
+			project_root,
+			selected_composite_ref,
+			head_revision,
+			canonical_bytes,
+			consumed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		use.Ref().String(),
+		use.Digest().String(),
+		host.AuthorityResolutionRef().String(),
+		host.AuthorityResolutionDigest().String(),
+		request.Ref(),
+		request.Digest(),
+		use.Project().String(),
+		effect.prepared.resolved.hostResolution.ProjectBinding().Root().String(),
+		target.Composite().String(),
+		committedHeadRevision,
 		use.CanonicalBytes(),
 		canonicalGenesisTime(effect.recordedAt),
 	)
@@ -1510,9 +964,9 @@ func writeGenesisReceiptTx(
 ) error {
 	receipt := effect.receipt
 	activation := effect.activation.Delta()
-	resolution, err := storedAuthorityResolution(receipt.AuthorityCoordinates())
-	if err != nil {
-		return err
+	host, ok := receipt.AuthorityCoordinates().HostRoutedOperatorRequest()
+	if !ok {
+		return fmt.Errorf("current receipt authority is not host-routed")
 	}
 	successor := receipt.SuccessorHead()
 	proofRef, proofDigest, err := storedGenesisProofCoordinates(effect)
@@ -1574,8 +1028,8 @@ func writeGenesisReceiptTx(
 		receipt.WorkRef().String(),
 		activation.Ref().String(),
 		activation.Digest().String(),
-		resolution.ref.String(),
-		resolution.digest.String(),
+		host.AuthorityResolutionRef().String(),
+		host.AuthorityResolutionDigest().String(),
 		receipt.AuthorityCoordinates().ContentRef().String(),
 		receipt.AuthorityCoordinates().ContentDigest().String(),
 		receipt.RequestRef().String(),
@@ -1600,9 +1054,9 @@ func writeGenesisClosureTx(
 ) error {
 	closure := effect.closure
 	activation := effect.activation.Delta()
-	resolution, err := storedAuthorityResolution(closure.AuthorityCoordinates())
-	if err != nil {
-		return err
+	host, ok := closure.AuthorityCoordinates().HostRoutedOperatorRequest()
+	if !ok {
+		return fmt.Errorf("current closure authority is not host-routed")
 	}
 	successor := closure.SuccessorHead()
 	proofRef, proofDigest, err := storedGenesisProofCoordinates(effect)
@@ -1667,8 +1121,8 @@ func writeGenesisClosureTx(
 		closure.ReceiptDigest().String(),
 		activation.Ref().String(),
 		activation.Digest().String(),
-		resolution.ref.String(),
-		resolution.digest.String(),
+		host.AuthorityResolutionRef().String(),
+		host.AuthorityResolutionDigest().String(),
 		closure.AuthorityCoordinates().ContentRef().String(),
 		closure.AuthorityCoordinates().ContentDigest().String(),
 		closure.RequestRef().String(),
@@ -1687,18 +1141,8 @@ func writeGenesisClosureTx(
 	)
 }
 
-func (resolved resolvedGenesisAuthority) resolvedContent() projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent {
-	if source, ok := resolved.source.TrustedDedicatedCLIInvocation(); ok {
-		return source.Content()
-	}
-	if source, ok := resolved.source.VerifiedSpeechAct(); ok {
-		return source.Record().Content()
-	}
-	return projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent{}
-}
-
 func (prepared preparedGenesisEffect) resolvedContent() projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent {
-	return prepared.resolved.resolvedContent()
+	return prepared.resolved.content
 }
 
 func executeGenesisStatement(

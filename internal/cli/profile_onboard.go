@@ -47,6 +47,7 @@ func init() {
 }
 
 type profileOnboardAdmission struct {
+	Origin                    string `json:"origin"`
 	RecordRef                 string `json:"record_ref"`
 	RecordDigest              string `json:"record_digest"`
 	PayloadDigest             string `json:"payload_digest"`
@@ -145,6 +146,7 @@ func profileOnboardAdmissionFromCanonical(
 ) *profileOnboardAdmission {
 	recordedAt := admission.RecordedAt().UTC().Format(time.RFC3339Nano)
 	return &profileOnboardAdmission{
+		Origin:                    string(admission.Origin()),
 		RecordRef:                 admission.AdmissionRecordRef().String(),
 		RecordDigest:              admission.AdmissionRecordDigest().String(),
 		PayloadDigest:             admission.PayloadDigest().String(),
@@ -288,6 +290,7 @@ func writeProfileOnboardSuccess(
 	}
 	lines = append(lines,
 		"Authority: durable and bound to the admitted profile.",
+		"Profile origin: "+response.Admission.Origin+".",
 		fmt.Sprintf(
 			"Admission: committed to project memory at ledger revision %d.",
 			response.Revision.Current,
@@ -307,6 +310,7 @@ func appendProfileOnboardAdmissionSummary(
 		return lines
 	}
 	return append(lines,
+		"Profile origin: "+admission.Origin+".",
 		fmt.Sprintf(
 			"Admission: committed to project memory at ledger revision %d.",
 			revision.Current,

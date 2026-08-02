@@ -14,6 +14,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/initplanning"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestExecutorPublishesHostsOnlyAfterExactCoreReceipt(
@@ -121,7 +122,7 @@ func TestExistingProjectCoreEffectVerifiesExactCurrentPlan(
 	if err != nil {
 		t.Fatalf("DBPath: %v", err)
 	}
-	store, err := db.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

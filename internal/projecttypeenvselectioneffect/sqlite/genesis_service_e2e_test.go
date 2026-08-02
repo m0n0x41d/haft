@@ -141,7 +141,7 @@ func TestGenesisServiceCommitsEffectOwnedHeadAbsenceAndReplaysExactClosure(
 	input := GenesisSelectionInput{
 		Request:   fixture.request,
 		Content:   fixture.content,
-		Authority: NewDedicatedCLIInvocation(),
+		Authority: hostRoutedIngressForTest(t, fixture.request, fixture.content),
 	}
 
 	result, err := fixture.service.SelectGenesis(ctx, input)

@@ -26,6 +26,9 @@ func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 	var productionBody SourceUnit
 	var formalityTOC SourceUnit
 	var stratificationTOC SourceUnit
+	var systemRecognition SourceUnit
+	var systemDelimitation SourceUnit
+	var legacySystemInContext SourceUnit
 	for _, unit := range units {
 		counts[unit.Role]++
 		if unit.SourceID == "ARCHITECTURE" {
@@ -52,6 +55,15 @@ func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 		if unit.Role == SourceUnitRoleTOCRow && unit.PatternID == "C.30.STRAT" {
 			stratificationTOC = unit
 		}
+		if unit.Role == SourceUnitRolePracticalUseCard && unit.SourceID == "SYSTEM-RECOGNITION" {
+			systemRecognition = unit
+		}
+		if unit.Role == SourceUnitRolePracticalUseCard && unit.SourceID == "SYSTEM-DELIMITATION" {
+			systemDelimitation = unit
+		}
+		if unit.Role == SourceUnitRolePracticalUseCard && unit.SourceID == "SYSTEM-IN-CONTEXT" {
+			legacySystemInContext = unit
+		}
 		if unit.Role == SourceUnitRolePracticalUseCard {
 			if unit.UseCues.ConditionText == "" || unit.UseCues.FirstResultText == "" || unit.UseCues.StopReturnText == "" {
 				t.Errorf("practical-use card %s lacks condition/result/boundary cues: %#v", unit.SourceID, unit.UseCues)
@@ -61,6 +73,29 @@ func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 
 	if counts[SourceUnitRolePracticalUseCard] == 0 || counts[SourceUnitRolePreface] == 0 || counts[SourceUnitRoleTOCRow] == 0 || counts[SourceUnitRolePatternBody] == 0 || counts[SourceUnitRolePatternSection] == 0 {
 		t.Fatalf("missing required source roles: %#v", counts)
+	}
+	if counts[SourceUnitRolePracticalUseCard] != 16 {
+		t.Fatalf("practical-use card count = %d, want exact current publication count 16", counts[SourceUnitRolePracticalUseCard])
+	}
+	if legacySystemInContext.UnitID != "" {
+		t.Fatal("removed SYSTEM-IN-CONTEXT card remained a current practical-use source unit")
+	}
+	for _, currentCard := range []SourceUnit{systemRecognition, systemDelimitation} {
+		if currentCard.UnitID == "" ||
+			currentCard.UseCues.ConditionText == "" ||
+			currentCard.UseCues.FirstResultText == "" ||
+			currentCard.UseCues.StopReturnText == "" {
+			t.Fatalf("current system card lacks exact source-owned cues: %#v", currentCard)
+		}
+	}
+	if !containsSourceString(systemRecognition.DirectRefs, "A.1.SCR") ||
+		!containsSourceString(systemRecognition.DirectRefs, "A.1") {
+		t.Fatalf("SYSTEM-RECOGNITION direct refs = %#v, want A.1.SCR and A.1", systemRecognition.DirectRefs)
+	}
+	for _, want := range []string{"B.1.2", "A.14", "C.13"} {
+		if !containsSourceString(systemDelimitation.DirectRefs, want) {
+			t.Fatalf("SYSTEM-DELIMITATION direct refs = %#v, want %s", systemDelimitation.DirectRefs, want)
+		}
 	}
 	if architecture.UnitID == "" || architecture.UseCues.ConditionText == "" || architecture.UseCues.FirstResultText == "" || architecture.UseCues.StopReturnText == "" {
 		t.Fatalf("architecture card lacks source-owned use cues: %#v", architecture.UseCues)
@@ -188,6 +223,35 @@ func TestBuildSourceUnits_BrokenTOCDirectReferenceFailsLoudly(t *testing.T) {
 	_, err := BuildSourceUnits(bundle)
 	if err == nil || !strings.Contains(err.Error(), "A.999") {
 		t.Fatalf("expected unresolved A.999 direct-reference failure, got %v", err)
+	}
+}
+
+func TestCurrentPracticalUseCardFixtureExposesSourceOwnedResultLabels(t *testing.T) {
+	body := string(mustReadSourceFixture(
+		t,
+		filepath.Join("testdata", "practical_card_current.md"),
+	))
+
+	projection, err := ParsePracticalUseCardSource(PracticalUseCardSource{
+		SourceID:       "SYSTEM-RECOGNITION",
+		Title:          "Decide whether the exact entity in the claim is a system",
+		Body:           body,
+		SourcePath:     "testdata/practical_card_current.md",
+		SourceRevision: "fixture",
+		StartLine:      1,
+		EndLine:        7,
+	})
+	if err != nil {
+		t.Fatalf("ParsePracticalUseCardSource() error: %v", err)
+	}
+	cues := projection.UseCues
+	if cues.FirstResultText == "" {
+		t.Fatal("current First route, named Template branches, and Result test must provide a first-result cue")
+	}
+	for _, want := range []string{"First route", "Template A", "Template B", "Result test"} {
+		if !strings.Contains(cues.FirstResultText, want) {
+			t.Fatalf("first-result cue = %q, want source-owned label %q", cues.FirstResultText, want)
+		}
 	}
 }
 

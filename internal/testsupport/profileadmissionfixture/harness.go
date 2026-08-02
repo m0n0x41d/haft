@@ -10,11 +10,13 @@ import (
 	"time"
 
 	kerneldb "github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/profileadmission"
 	profileadmissionsqlite "github.com/m0n0x41d/haft/internal/profileadmission/sqlite"
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 // Harness owns one migrated database and one physical project root.
@@ -61,7 +63,7 @@ func New(t testing.TB, projectRoot string) *Harness {
 		t.Fatalf("create fixture project-ledger directory: %v", err)
 	}
 	databasePath := filepath.Join(databaseDir, "haft.db")
-	store, err := kerneldb.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("create fixture database: %v", err)
 	}
@@ -244,14 +246,15 @@ func (harness *Harness) prepareV3AdmissionRequest(
 ) profileadmission.ProfileDeclarationAdmissionRequest {
 	t.Helper()
 	input := newFixtureProfileWorkInput(t, harness.root, payload)
-	policyCarrier := []byte(
-		"authority:\n  profile_declaration_mode: explicit_h_onboard\nfixture: " + suffix + "\n",
+	operatorRequest, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		"profile-fixture:"+suffix,
+		input.CanonicalJSON(),
 	)
-	policy, err := profileonboarding.NewProfileDeclarationPolicy(
-		profileonboarding.ProfileDeclarationModeExplicitHOnboard,
-		".haft/config.yaml",
-		policyCarrier,
-	)
+	if err != nil {
+		t.Fatalf("build fixture operator request: %v", err)
+	}
+	policy, err := profileonboarding.NewProfileDeclarationPolicy(operatorRequest)
 	if err != nil {
 		t.Fatalf("build fixture profile-declaration policy: %v", err)
 	}

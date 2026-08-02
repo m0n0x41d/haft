@@ -5,6 +5,12 @@ Retrieve current FPF source first. Inspect a known SourceID or UnitID with
 `mode="concern"` with the exploration question, then inspect the direct pattern
 body. Retrieval does not choose or rank a candidate.
 
+Treat a concern result's `candidate_set` as incomplete navigation. Before
+relying on one candidate, inspect its exact identifier and direct pattern
+body. Keep several candidates live or abstain when the basis is insufficient.
+Never query after exploration merely to manufacture support for candidates
+already chosen.
+
 - Work from an inline question, cue, accepted problem, or ProblemCard; do not
   invent a ProblemCard merely to satisfy a sequence.
 - Make variants differ in kind, not only degree.
@@ -13,8 +19,9 @@ body. Retrieval does not choose or rank a candidate.
 - Keep unresolved alternatives and return conditions visible.
 
 Return candidates conversationally by default. Persist with
-`haft_solution(action="explore")` only on explicit save intent or when a named
-receiving use needs a durable portfolio. If the kernel needs a ProblemCard for
+`haft_solution(action="explore")` only on explicit save intent or when current
+Work supplies a concrete operator-named or agent-inferred receiving use that
+needs a durable portfolio. If the kernel needs a ProblemCard for
 that durable call and none exists, ask whether to materialize one; do not
 fabricate it.
 

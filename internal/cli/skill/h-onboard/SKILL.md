@@ -1,7 +1,7 @@
 ---
 name: h-onboard
 description: |
-  Bootstrap Haft through one readable onboarding surface, prepare project-profile or structured-memory reviews, and orient applicable specification carriers. Use for first-time setup or when haft_onboard reports that setup is incomplete. Status and repository detection are read-only; preparation may materialize or reuse only a non-binding review carrier. Profile application, structured-memory enablement, and specification lifecycle gates remain explicit human acts.
+  Bootstrap Haft through one readable onboarding surface, prepare a project-profile review when needed, and orient applicable specification carriers. Use for first-time setup or when haft_onboard reports that setup is incomplete. Project memory is ready immediately after haft init. Status and repository detection are read-only; haft init may admit only an obvious supported singleton as detector_default, while reviewed or ambiguous profile application and specification lifecycle gates remain explicit human acts.
 when_to_use: |
   The repository has no Haft state or its initial spec lifecycle is not ready.
 argument-hint: "[optional project description]"
@@ -10,7 +10,7 @@ allowed-tools: Bash Read Grep Glob Write Edit mcp__haft__haft_onboard mcp__haft_
 
 # h-onboard — Bootstrap Haft through one readable setup contract
 
-Contract truth: project-profile onboarding and structured-memory setup are
+Contract truth: project-profile onboarding and automatic project-memory setup are
 **V9 CONTRACT** capabilities. Source, schema, skill, and local-test presence is
 not installed-runtime proof. A current readiness claim requires
 **EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact candidate; RC or release
@@ -29,19 +29,36 @@ mcp__haft__haft_onboard(action="status")
 Interpret only its closed result kind:
 
 - `needs_init` — initialize, reconnect when instructed, and repeat `status`;
-- `needs_profile` — prepare a profile review;
+- `needs_profile` — follow `next_action`; an eligible supported singleton routes
+  through `haft init --core-only`, otherwise prepare a profile review;
 - `profile_review_ready` — present the readable review and its exact next act;
-- `needs_memory` — prepare the structured-memory review;
-- `memory_review_ready` — present the enable/defer choice and route a selected
-  enablement through manual `h-decide`;
-- `memory_deferred` — setup is intentionally usable without structured memory;
 - `ready` — continue with the current project question.
+
+`haft init` installs default project memory as part of initialization. Never
+ask the operator to enable, defer, select, or understand a memory schema. If a
+legacy or partial installation reports `needs_init`, rerun `haft init`; do not
+route initial memory setup through `h-decide`.
 
 Do not expose or ask the operator to choose internal schema composites,
 revision heads, staging records, or implementation letters. `status` is a
 readable setup projection, not authority and not performed setup Work.
 
 ## 2. Prepare a project-profile review
+
+`haft init` may admit `origin=detector_default` without a review only when the
+detector observation is complete and non-truncated, confidence is supported,
+exactly one scope is suggested, no canonical profile exists, and any existing
+review is an unchanged Haft-generated carrier. It never changes an existing
+profile. A human-authored, semantically enriched, or foreign review blocks this
+automatic path and remains operator-mediated profile-review work.
+
+When status reports `origin=detector_default` and
+`profile_override_eligible=true`, `profile_prepare` may prepare a reviewed
+replacement and a direct, unambiguous operator request may apply it. Successful
+application appends a `host_routed_operator_request` admission. Profiles already
+marked `host_routed_operator_request`, or carrying legacy `explicit_operator`
+or `legacy_unknown` provenance, require the separate profile-change contract
+and are not replaceable through this initial onboarding path.
 
 When status returns `needs_profile`, call:
 
@@ -73,55 +90,27 @@ required when repository detection cannot establish the scope. Evidence paths
 may be empty for an empty repository when that readable basis is explicit.
 `realization_kind` is `software` or `non_software`. A
 `profile_review_prepared` or `profile_review_reused` result writes only the
-review carrier; `canonical_profile_changed` remains false.
+non-binding review carrier; `canonical_profile_changed` remains false.
 
-Automatic `h-onboard` may inspect and prepare, but it must not apply. Only an
-explicit operator invocation of `h-onboard`, after the readable review and
-engineering assessment are current, authorizes:
+Automatic `h-onboard` may inspect and prepare, but it must not apply. After the
+readable review and engineering assessment are current, route only a direct,
+unambiguous operator choice of that exact profile and scope to:
 
 ```bash
 haft onboard profile apply
 ```
 
-Do not ask for a second confirmation after that valid explicit invocation.
+Do not require a skill name or ask for a second confirmation after that valid
+request. A bare `да` is usable only as the answer to one current unambiguous
+profile brief.
 Report the readable scope and applicability result, not internal profile
 machinery.
-
-## 3. Prepare the structured-memory choice
-
-When status returns `needs_memory`, call:
-
-```text
-mcp__haft__haft_onboard(action="memory_prepare")
-```
-
-This may materialize or reuse only a non-binding review carrier. It returns
-`memory_review_prepared`, `memory_review_reused`, or `blocked`, plus a readable
-brief and opaque `review_ref`. Present both real choices:
-
-- **Enable structured memory** is a separate binding effect. Route an
-  explicitly selected enablement through manual `h-decide`, which runs
-  `haft onboard memory enable`. Do not substitute a DecisionRecord for this
-  effect.
-- **Not now** is a non-binding disposition. Only after the operator actually
-  selects it, run `haft onboard memory defer`. A successful result is
-  `memory_deferred`; it grants no authority, creates no DecisionRecord, and
-  does not pretend structured memory is enabled.
-
-To reconsider a current `memory_deferred` disposition, call
-`mcp__haft__haft_onboard(action="memory_prepare")`. This safely reopens the
-same review route; it does not enable memory by itself.
-
-If enablement returns `restart_required`, reconnect the MCP client and repeat
-`haft_onboard(action="status")`. Structured-memory readiness is established
-only when that fresh status returns `ready`. Deferral instead remains readable
-as `memory_deferred`.
 
 Missing setup, known absence, or explicit abstention does not block unrelated
 already-authorized Work. Never establish an EntityOfConcern or persist typed
 memory merely because a read could not resolve it.
 
-## 4. Continue to applicable specifications
+## 3. Continue to applicable specifications
 
 Only after exact project applicability is readable, call
 `mcp__haft__haft_spec_section(action="lifecycle")` for carriers applicable to

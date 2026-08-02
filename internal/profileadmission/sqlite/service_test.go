@@ -182,13 +182,13 @@ func TestServiceResolveCurrentFailsClosedOnCurrentAuthorityCorruption(t *testing
 		CanonicalAdmissionFresh,
 	)
 	_, err = fixture.database.Exec(
-		"DROP TRIGGER profile_declaration_authority_resolutions_v3_no_update",
+		"DROP TRIGGER profile_declaration_authority_resolutions_v5_no_update",
 	)
 	if err != nil {
 		t.Fatalf("drop authority-resolution update guard: %v", err)
 	}
 	corruption, err := fixture.database.Exec(
-		`UPDATE profile_declaration_authority_resolutions_v3
+		`UPDATE profile_declaration_authority_resolutions_v5
 		 SET verifier_version = 'v-corrupt',
 		     canonical_json = json_set(canonical_json, '$.verifier_version', 'v-corrupt')`,
 	)

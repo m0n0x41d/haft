@@ -14,11 +14,14 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/initialprofilebootstrap"
 	"github.com/m0n0x41d/haft/internal/initplanning"
 	"github.com/m0n0x41d/haft/internal/onboarding"
+	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvreviewcarrier"
 	"github.com/m0n0x41d/haft/internal/typedmemorystore"
 	"github.com/m0n0x41d/haft/internal/typedmemorywire"
@@ -193,15 +196,18 @@ type onboardScopeWire struct {
 }
 
 type onboardResponseWire struct {
-	Action     string             `json:"action"`
-	Result     string             `json:"result"`
-	Status     string             `json:"status"`
-	Detail     string             `json:"detail"`
-	NextAction string             `json:"next_action"`
-	ReviewRef  string             `json:"review_ref,omitempty"`
-	Scopes     []onboardScopeWire `json:"scopes,omitempty"`
-	Choices    []string           `json:"choices,omitempty"`
-	Effects    onboardEffectsWire `json:"effects"`
+	Action                     string             `json:"action"`
+	Result                     string             `json:"result"`
+	Status                     string             `json:"status"`
+	Detail                     string             `json:"detail"`
+	NextAction                 string             `json:"next_action"`
+	ReviewRef                  string             `json:"review_ref,omitempty"`
+	ProfileOrigin              string             `json:"profile_origin,omitempty"`
+	AutomaticBootstrapEligible bool               `json:"automatic_bootstrap_eligible,omitempty"`
+	ProfileOverrideEligible    bool               `json:"profile_override_eligible,omitempty"`
+	Scopes                     []onboardScopeWire `json:"scopes,omitempty"`
+	Choices                    []string           `json:"choices,omitempty"`
+	Effects                    onboardEffectsWire `json:"effects"`
 }
 
 type onboardEffectsWire struct {
@@ -327,14 +333,17 @@ func presentOnboardOutcome(
 ) onboardResponseWire {
 	effects := outcome.Effects()
 	return onboardResponseWire{
-		Action:     string(outcome.Action()),
-		Result:     string(outcome.Result()),
-		Status:     string(outcome.Status()),
-		Detail:     outcome.Detail(),
-		NextAction: outcome.NextAction(),
-		ReviewRef:  outcome.ReviewRef(),
-		Scopes:     onboardScopesToWire(outcome.Scopes()),
-		Choices:    outcome.Choices(),
+		Action:                     string(outcome.Action()),
+		Result:                     string(outcome.Result()),
+		Status:                     string(outcome.Status()),
+		Detail:                     outcome.Detail(),
+		NextAction:                 outcome.NextAction(),
+		ReviewRef:                  outcome.ReviewRef(),
+		ProfileOrigin:              string(outcome.ProfileOrigin()),
+		AutomaticBootstrapEligible: outcome.AutoBootstrapEligible(),
+		ProfileOverrideEligible:    outcome.ProfileOverrideEligible(),
+		Scopes:                     onboardScopesToWire(outcome.Scopes()),
+		Choices:                    outcome.Choices(),
 		Effects: onboardEffectsWire{
 			RepositoryInspected:     effects.RepositoryInspected,
 			ReviewCarrierCreated:    effects.ReviewCarrierCreated,
@@ -418,8 +427,13 @@ func (runtime *projectOnboardingRuntime) Observe(
 	}
 	return onboarding.NewObservation(
 		onboarding.ObservationInput{
-			Initialized:       true,
-			ProfileDeclared:   true,
+			Initialized:     true,
+			ProfileDeclared: true,
+			ProfileOverrideEligible: inspection.CanonicalProfile.Origin ==
+				string(projectprofile.ProfileAdmissionOriginDetectorDefault),
+			ProfileOrigin: projectprofile.ProfileAdmissionOrigin(
+				inspection.CanonicalProfile.Origin,
+			),
 			MemoryReady:       memoryReady,
 			MemoryReviewReady: reviewReady,
 			MemoryDeferred:    memoryDeferred,
@@ -453,16 +467,50 @@ func (runtime *projectOnboardingRuntime) observePendingProfile(
 			inspection.Suggestion.Classification,
 		)
 	}
+	autoBootstrapEligible, err := publicOnboardingAutomaticBootstrapEligible(
+		runtime.binding.ProjectRoot,
+		suggestion,
+	)
+	if err != nil {
+		return onboarding.Observation{}, err
+	}
 	return onboarding.NewObservation(
 		onboarding.ObservationInput{
 			Initialized:        true,
 			ProfileReviewReady: reviewReady,
 			DetectionNeedsHelp: suggestion.Classification() ==
 				profiledetector.InsufficientDetectorBasis,
-			Scopes: scopes,
-			Detail: detail,
+			AutoBootstrapEligible: autoBootstrapEligible,
+			Scopes:                scopes,
+			Detail:                detail,
 		},
 	)
+}
+
+func publicOnboardingAutomaticBootstrapEligible(
+	projectRoot string,
+	suggestion profiledetector.Suggestion,
+) (bool, error) {
+	reviewBytes, reviewPresent, err := readOptionalRegularProfileReview(
+		profileDeclarationReviewPath(projectRoot),
+	)
+	if err != nil {
+		return false, err
+	}
+	review := initialprofilebootstrap.ReviewAbsent
+	if reviewPresent {
+		_, generated := profiledeclarationpreparation.
+			InspectGeneratedProfileReview(reviewBytes)
+		review = initialprofilebootstrap.ReviewHumanOrForeign
+		if generated {
+			review = initialprofilebootstrap.ReviewGeneratedUnedited
+		}
+	}
+	decision, err := initialprofilebootstrap.Decide(false, review, suggestion)
+	if err != nil {
+		return false, err
+	}
+	return decision.Kind() == initialprofilebootstrap.ApplySupportedSingleton, nil
 }
 
 func (runtime *projectOnboardingRuntime) PrepareProfile(
@@ -478,12 +526,15 @@ func (runtime *projectOnboardingRuntime) PrepareProfile(
 	if err != nil {
 		return onboarding.Preparation{}, err
 	}
-	if inspection.CanonicalProfile.Kind == "declared" {
+	declaredProfile := inspection.CanonicalProfile.Kind == "declared"
+	detectorDefault := inspection.CanonicalProfile.Origin ==
+		string(projectprofile.ProfileAdmissionOriginDetectorDefault)
+	if declaredProfile && !detectorDefault {
 		return onboarding.NewPreparation(
 			onboarding.PreparationBlocked,
 			"",
 			nil,
-			"The canonical project profile already exists; no initial review was changed.",
+			"The canonical project profile is not detector_default; explicit-over-explicit and legacy profile changes require their own mutation contract.",
 		)
 	}
 	detected, err := onboardScopesFromSuggestion(suggestion)

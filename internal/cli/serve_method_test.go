@@ -139,6 +139,14 @@ func TestHandleHaftMethodStatusAndShowRecoverOpenRun(t *testing.T) {
 	if !strings.Contains(status, ref) {
 		t.Fatalf("status response = %q, want open run %s", status, ref)
 	}
+	recoveryCall := `haft_method(action="show", pull_id="` + ref + `")`
+	if !strings.Contains(status, recoveryCall) {
+		t.Fatalf(
+			"status response = %q, want exact recovery call %q",
+			status,
+			recoveryCall,
+		)
+	}
 
 	shown, _, err := handleHaftMethod(ctx, store, haftDir, map[string]any{
 		"action":  "show",

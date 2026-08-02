@@ -81,6 +81,7 @@ func TestProfileAuthorityAdmissionV2Migration44InstallsExactAdditiveContract(t *
 		"storage_generation", "project_root", "ledger_revision", "configured_profile_kind",
 		"profile_payload_json", "profile_payload_digest",
 		"receipt_json", "receipt_digest", "admission_id", "admission_digest", "recorded_at",
+		"profile_origin",
 	})
 	err = insertGenericSpeechActSourceFixture(
 		store.conn,

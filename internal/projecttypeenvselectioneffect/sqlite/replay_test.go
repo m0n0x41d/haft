@@ -7,16 +7,18 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/projectidentity"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselection"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
 func TestProbeReplayTxReturnsAbsentBeforeAnyCurrentnessRead(t *testing.T) {
-	store, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatalf("new migrated store: %v", err)
 	}
@@ -37,7 +39,9 @@ func TestProbeReplayTxReturnsAbsentBeforeAnyCurrentnessRead(t *testing.T) {
 }
 
 func TestProbeReplayTxRejectsAuthorityUseWithoutClosure(t *testing.T) {
-	store, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatalf("new migrated store: %v", err)
 	}
@@ -111,7 +115,7 @@ func insertOrphanReplayOwner(
 	if _, err := connection.ExecContext(
 		ctx,
 		`DROP TRIGGER IF EXISTS
-			project_typeenv_head_selection_authority_uses_v47_exact_source`,
+			project_typeenv_head_selection_authority_uses_v56_current_generation_only`,
 	); err != nil {
 		t.Fatalf("disable exact-source trigger for corrupt fixture: %v", err)
 	}
@@ -129,6 +133,7 @@ func insertOrphanReplayOwner(
 		`INSERT INTO project_typeenv_head_selection_authority_uses (
 			authority_use_ref,
 			authority_use_digest,
+			authority_generation,
 			project_id,
 			original_idempotency_key,
 			authority_resolution_kind,
@@ -156,7 +161,7 @@ func insertOrphanReplayOwner(
 			canonical_bytes,
 			recorded_at
 		) VALUES (
-			?, ?, ?, ?, 'explicit_policy_acceptance', ?, ?, ?, ?, ?, ?, ?, ?,
+			?, ?, 'legacy_unreproducible', ?, ?, 'historical_authority', ?, ?, ?, ?, ?, ?, ?, ?,
 			'genesis', ?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, 1, ?, ?
 		)`,
 		"authority-use:orphan",

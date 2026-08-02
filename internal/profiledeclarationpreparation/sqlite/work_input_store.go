@@ -25,6 +25,10 @@ const selectProfileOnboardingWorkInputSQL = `SELECT
 FROM profile_onboarding_work_inputs_v1
 WHERE work_input_ref = ?`
 
+const selectProfileOnboardingWorkInputDigestSQL = `SELECT work_input_digest
+FROM profile_onboarding_work_inputs_v1
+WHERE work_input_ref = ?`
+
 type durableProfileOnboardingWorkInputRow struct {
 	digest            string
 	projectRoot       string
@@ -61,6 +65,17 @@ func StoreAndReloadProfileOnboardingWorkInput(
 			"profile onboarding Work-input recorded_at is required",
 		)
 	}
+	existing, err := loadExistingProfileOnboardingWorkInput(
+		ctx,
+		transaction,
+		input,
+	)
+	if err != nil {
+		return profiledeclarationpreparation.ProfileOnboardingWorkInput{}, err
+	}
+	if existing.Valid() {
+		return existing, nil
+	}
 	arguments := []any{
 		input.Ref().String(),
 		input.Digest().String(),
@@ -74,7 +89,7 @@ func StoreAndReloadProfileOnboardingWorkInput(
 		string(input.CanonicalJSON()),
 		canonicalTime.Format(time.RFC3339Nano),
 	}
-	_, err := transaction.Execute(
+	_, err = transaction.Execute(
 		ctx,
 		insertProfileOnboardingWorkInputSQL,
 		arguments,
@@ -82,6 +97,35 @@ func StoreAndReloadProfileOnboardingWorkInput(
 	if err != nil {
 		return profiledeclarationpreparation.ProfileOnboardingWorkInput{}, fmt.Errorf(
 			"persist profile onboarding Work input: %w",
+			err,
+		)
+	}
+	return LoadProfileOnboardingWorkInput(
+		ctx,
+		transaction,
+		input.Ref().String(),
+		input.Digest().String(),
+	)
+}
+
+func loadExistingProfileOnboardingWorkInput(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	input profiledeclarationpreparation.ProfileOnboardingWorkInput,
+) (profiledeclarationpreparation.ProfileOnboardingWorkInput, error) {
+	storedDigest := ""
+	err := transaction.ScanOne(
+		ctx,
+		selectProfileOnboardingWorkInputDigestSQL,
+		[]any{input.Ref().String()},
+		[]any{&storedDigest},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return profiledeclarationpreparation.ProfileOnboardingWorkInput{}, nil
+	}
+	if err != nil {
+		return profiledeclarationpreparation.ProfileOnboardingWorkInput{}, fmt.Errorf(
+			"inspect existing profile onboarding Work input: %w",
 			err,
 		)
 	}

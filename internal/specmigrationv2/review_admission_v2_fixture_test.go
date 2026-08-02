@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 	_ "modernc.org/sqlite"
 )
 
@@ -80,7 +80,7 @@ func newReviewAdmissionFixture(t *testing.T) reviewAdmissionFixture {
 	}
 
 	databasePath := filepath.Join(rootPath, ".haft", "haft.db")
-	store, err := db.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

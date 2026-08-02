@@ -179,7 +179,7 @@ mandatory workflow:
 - `/h-frame` — clarify the real problem and acceptance criteria
 - `/h-explore` — generate genuinely different solution variants
 - `/h-compare` — compare options under explicit parity rules
-- `/h-decide` — record the human-approved binding decision
+- `/h-decide` — route a direct operator request for a binding decision
 - `/h-verify` — check whether a past decision still holds
 - `/h-status` — read the compact project cockpit
 
@@ -188,11 +188,16 @@ evidence has gone stale, when spec drift needs review, and when execution needs
 an authorized plan or commission. It does not infer a universal next step from
 the order of skills or artifacts.
 
-Existing project? Run `/h-onboard` after init to prepare and review the project
-profile basis. Fresh no-basis init does not invent spec carriers. After the
-explicit profile declaration, Haft materializes the target-system,
-software-system, term-map, and coverage carriers only when the admitted
-software scope marks them required.
+Existing project? Run `haft init --core-only`. A complete, non-truncated,
+supported singleton detector result is admitted as `origin=detector_default`;
+Haft then installs only the specification and MethodPack carriers applicable
+to that scope. Mixed, multiple-scope, insufficient, truncated, or manually
+reviewed bases remain profile-review work, and init never changes an existing
+canonical profile. A later direct, unambiguous operator request may supersede
+only a current `detector_default` profile; onboarding status reports
+`profile_override_eligible`, and successful application appends an
+`host_routed_operator_request` admission. Further operator-mediated and legacy
+profile changes remain a separate contract.
 
 Check spec carriers locally:
 
@@ -261,7 +266,8 @@ evolution lifecycle of your project.
 Haft is consumed through three surfaces over one `.haft/` artifact graph:
 
 - **Skills** in your agent. Capability skills may trigger from the current
-  operator intent; `h-decide` and `h-commission` require explicit invocation.
+  operator request; `h-decide` may route a direct unambiguous binding request,
+  while `h-commission` still requires manual invocation.
 - **CLI** (`haft problem`, `haft solution`, `haft decision`, ...) — manual access. Those might be used manually, but usually it is just another surface for your agent to use.
 - **MCP server** (`haft serve`) — programmatic access for any LLM agent over the Model Context Protocol
 
@@ -295,8 +301,8 @@ Planning remains a separate current task. A `U.WorkPlan` may state dependencies
 and execution order whenever planning is the concern; an FPF source lookup,
 application record, or reasoning capability does not prescribe that order. A
 `WorkCommission` carries bounded execution authority and must not stand in for
-the plan. Binding actions (`h-decide`, `h-commission`) remain manual-only per
-the Transformer Mandate.
+the plan. Decision binding requires a direct unambiguous operator request;
+execution-authority grants through `h-commission` remain manual-only.
 
 `haft fpf query|lookup|inspect` and
 `haft_query(action="fpf", mode="concern|lookup|inspect", ...)` expose the
@@ -304,8 +310,43 @@ versioned source as addressable publication units. Concern retrieval reports
 observable authored-phrase, heading/keyword, and role-local FTS grounds;
 lookup tries exact identity before returning compact candidates; inspect is
 exact-only. Source roles (`practical_use_card`, `toc_row`, `preface`,
-`pattern_body`, `pattern_section`) control progressive disclosure. Candidates
+`pattern_body`, `pattern_section`, `pattern_scope`) control progressive disclosure. Candidates
 are not selected patterns, and their order is not a causal or work order.
+
+#### Maintaining the pinned FPF publication
+
+Start with `task fpf-refresh-check`. It fetches and resolves one exact upstream
+candidate, builds private temporary artifacts, and writes
+`.context/fpf-refresh/latest-report.json` without changing the checked-out
+source, embedded database, integration lock, typed-memory candidate, or specs.
+The report has one closed result:
+
+| Result | Meaning | Next action |
+|---|---|---|
+| `no_change` | Candidate and current publication are the same. | Nothing to apply. |
+| `apply_ready` | The technical compatibility checks admit the candidate. | Run `task fpf-refresh`. |
+| `review_ready` | Technical adaptation succeeded and semantic deltas are material enough to preserve explicitly. | `task fpf-refresh` applies the fresh source baseline and retains the deltas for downstream review. |
+| `candidate_rejected` | Source, grammar, derivation, or compatibility checks failed closed. | Resolve the reported diagnostic and check again. |
+
+`task fpf-refresh` repeats the check, pins the resolved candidate SHA, and
+recoverably applies the coherent source, database, and generated
+integration-lock publication for both `apply_ready` and `review_ready`.
+`review_ready` is an auditable semantic-delta classification, not a veto on
+adopting fresh FPF as Haft's source baseline. Applying it records no semantic
+approval and grants no release authority. The apply also rebases only the
+repo-owned Local-Practice compiled memory basis and `FPF-Spec.md` source pins,
+then proves that the carrier parses, compiles, seals, verifies, and links
+against the fresh basis. `task fpf-refresh` finishes with the exact read-only
+integration verification. After a low-level recovery, run
+`task fpf-verify`. If an apply is interrupted, keep the receipt unchanged and
+use `task fpf-refresh-resume` to continue or `task fpf-refresh-restore` to
+restore its exact predecessor; never delete or hand-edit the receipt.
+
+Generated hashes, counts, and compatibility results remain distinct from
+human-reviewed semantic and changelog claims. None of these commands commits,
+binds a decision, changes a SpecSection lifecycle, changes the active
+project-memory model, installs or restarts Haft, runs P13/P14, pushes, tags, or
+releases.
 
 ### Fused code-graph Explore (v9 contract)
 
@@ -359,8 +400,8 @@ restart, and rollback boundaries.
 | `haft_method` | Task-local SWE MethodRun cards: pull gates before non-trivial work, close with evidence or waivers |
 | `haft_commission` | WorkCommission lifecycle for execution harnesses |
 | `haft_spec_section` | Typed SpecSection lifecycle projection over project SQL editions; FPF source compatibility is assessed separately; manual CLI gates approve, rebaseline, or reopen baselines |
-| `haft_onboard` | Read setup status or prepare non-binding profile and structured-memory review carriers |
-| `haft_entity` | Establish one non-binding EntityOfConcern and its aliases after an explicit persistence reason |
+| `haft_onboard` | Read setup status or prepare a non-binding project-profile review; `haft init` automatically admits only a complete supported singleton as `origin=detector_default` and installs default project memory |
+| `haft_entity` | Proactively establish one minimum non-binding EntityOfConcern when current Work supplies a concrete operator-named or agent-inferred durable receiving use; known absence alone is insufficient |
 | `haft_memory` | Expert raw MemoryChangeSet validation/admission through a nested `request` envelope; ordinary agents use `haft_entity`, and validation never admits automatically |
 
 ### Twelve skills installed by `haft init`
@@ -374,7 +415,7 @@ Haft installs 12 skills with independent trigger conditions:
 | **h-diagnose** | auto | Diagnose a failure with parallel hypothesis testing (one Agent subagent per hypothesis to prevent anchoring) |
 | **h-explore** | auto | Generate genuinely distinct candidate variants when exploration is the current task; record only when durability is warranted. |
 | **h-compare** | auto | Compare an existing candidate set under declared parity and return a Pareto front, not a scalar winner. |
-| **h-decide** | **manual** | Record a binding DecisionRecord — Transformer Mandate (`disable-model-invocation`) |
+| **h-decide** | auto router | Bind a DecisionRecord only from a direct, unambiguous operator request; the skill token is not a receipt. |
 | **h-verify** | auto | Baseline → measure → evidence loop with drift detection |
 | **h-status** | auto | Read-only project FPF cockpit with explicit drill-down calls |
 | **h-onboard** | auto | Bootstrap Haft and typed spec carriers when project state is absent or incomplete. |
@@ -383,38 +424,32 @@ Haft installs 12 skills with independent trigger conditions:
 | **h-commission** | **manual** | WorkCommission lifecycle — manual per Transformer Mandate (`disable-model-invocation`) |
 
 Auto-triggering skills fire when their description matches operator context.
-Manual-only skills (`h-decide`, `h-commission`) require explicit invocation per
-the Transformer Mandate — binding artifacts come from the human principal, not
-the agent. Boundary unpacking, abductive checks, and semantic fanout review are
-internal routines of the relevant public skill, not additional user-facing
-skills or mandatory stages.
+`h-decide` is a host-side router: a manual invocation remains a compatible
+shortcut, but invocation itself creates no communicative act and adds no
+authority. `h-commission` remains manual-only because it grants bounded
+execution authority. Boundary unpacking, abductive checks, and semantic fanout
+review are internal routines, not extra public stages.
 
-For `h-decide`, that explicit invocation is the only human confirmation in a
-fresh install and in older projects without a project config. The agent
-prepares the reviewed payload and runs the CLI/input-file bind without asking
-the operator to type another approval phrase. Projects that deliberately need
-the additional terminal ceremony can opt in:
+For a DecisionRecord, one direct, unambiguous operator request must identify the
+effect, readable subject, selected option, and scope. The host then runs the
+CLI/input-file effect sink without another confirmation and records
+`host_routed_operator_request`; it does not claim independent proof of
+`U.SpeechAct`. If anything is ambiguous, the agent presents one Human Gate
+Brief and accepts the natural-language answer. Bare `yes` or `да` works only for
+one current brief with one unambiguous effect and selection. Quotations, pasted
+text, agent recommendations, hypotheticals, and tool output do not bind.
 
-```yaml
-# .haft/config.yaml
-schema_version: 1
-authority:
-  decision_binding_mode: strict_cli_speech_act
-```
+MCP `haft_decision(action="decide", ...)` remains fail-closed with
+`operator_confirmation_required` until a verifiable host receipt exists.
+Project-profile application and later non-default project-memory model changes
+use the same direct-request rule through their own effect sinks. The automatic singleton
+profile bootstrap is a separate system policy and stays `detector_default`.
 
-The default value is `explicit_h_decide`. `haft init` creates the default file
-when it is missing and preserves an existing choice. MCP
-`haft_decision(action="decide", ...)` remains fail-closed with
-`operator_confirmation_required` in both modes; the config changes the CLI
-decision-binding ceremony, not MCP authority.
-
-That setting applies only to DecisionRecords. Project-profile declaration has
-the separate `authority.profile_declaration_mode` setting. Its default
-`explicit_h_onboard` path uses the reviewed `haft profile propose` carrier and
-the dedicated `haft profile declare` invocation without a second phrase. The
-reserved profile `strict_cli_speech_act` branch currently fails closed with
-`strict_profile_authority_not_available`; DecisionRecord strict mode remains a
-different, working authority path.
+Project-local `.haft/config.yaml` is no longer an authority-policy carrier.
+Fresh `haft init` does not create it. Init removes only the exact historical
+Haft-generated authority-only file after digest revalidation; changed or
+unrecognized bytes are preserved, ignored, and reported as legacy. Global
+`~/.haft/config.yaml` and project `.haft/project.yaml` are unchanged.
 
 ### Evidence workflow
 
@@ -502,8 +537,8 @@ universal FPF or planning sequence.
 operator (to agent): "we need to pick a queue for the new ingestion path"
 ↓ agent retrieves the relevant FPF source and checks whether a durable record is needed
 ↓ agent uses only the applicable methods; framing, exploration, and comparison are available but not a fixed sequence
-↓ when downstream work depends on a binding choice, the operator explicitly types:
-/h-decide
+↓ when downstream work depends on a binding choice, the operator directly says which exact option to bind
+↓ h-decide routes that request; a skill token is optional and is not authority
 ↓ kernel validates required DRR fields; missing fields → structured error
 ↓ on pass: DRR written to .haft/decisions/, ready for `haft run`
 ```

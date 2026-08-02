@@ -43,7 +43,7 @@ func bindingSurfaceInventory() []bindingSurfaceInventoryEntry {
 			Action:      "decide",
 			Class:       bindingSurfaceBindingAuthorityMutation,
 			Enforcement: bindingEnforcementMCPOperatorConfirmationRequired,
-			AllowedPath: "Use the manual h-decide/CLI decision workflow after explicit operator authorization.",
+			AllowedPath: "Route one direct, unambiguous operator request through h-decide and the CLI input-file effect sink; a skill token is not authorization.",
 		},
 		{Tool: "haft_decision", Action: "apply", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_decision", Action: "measure", Class: bindingSurfaceEvidenceRecording, Enforcement: bindingEnforcementMCPAllowedExistingArtifact},

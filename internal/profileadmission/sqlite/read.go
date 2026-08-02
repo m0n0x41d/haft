@@ -144,6 +144,100 @@ const selectDurableAdmissionSQL = `WITH all_durable AS (
 		ON r.admission_id = a.admission_id
 		AND r.project_root = a.project_root
 		AND r.ledger_revision = a.ledger_revision
+	UNION ALL
+	SELECT 'v4' AS storage_generation,
+		a.admission_id, a.action_kind, a.project_root, a.project_binding_digest,
+		a.profile_payload_json, a.profile_payload_digest,
+		a.candidate_provenance_json, a.candidate_provenance_digest,
+		a.profile_author_role_assignment_ref, a.profile_author_role_assignment_digest,
+		a.observed_project_basis_ref, a.observed_project_basis_digest,
+		a.work_record_ref, a.work_record_digest,
+		a.outcome_assessment_ref, a.outcome_assessment_digest,
+		a.authority_basis_ref, a.authority_basis_digest,
+		a.authority_resolution_ref, a.authority_resolution_digest,
+		a.receipt_json, a.receipt_digest,
+		a.expected_ledger_revision, a.ledger_revision,
+		a.single_use_key, a.admission_request_digest,
+		a.admission_json, a.admission_digest, a.recorded_at,
+		u.use_ref AS use_id, u.use_digest,
+		u.authority_resolution_ref AS use_resolution_ref,
+		u.authority_resolution_digest AS use_resolution_digest,
+		u.single_use_key AS use_single_use_key, u.action_kind AS use_action_kind,
+		u.project_root AS use_project_root,
+		u.project_binding_digest AS use_project_binding_digest,
+		'' AS envelope_digest,
+		u.authority_basis_ref AS authority_record_ref,
+		u.authority_basis_digest AS authority_record_digest,
+		u.admission_request_digest AS use_request_digest,
+		resolution.verifier_identity, resolution.verifier_version,
+		u.committed_admission_ref AS committed_result_ref,
+		u.committed_admission_digest AS committed_result_digest,
+		u.consumed_at,
+		r.project_root AS revision_project_root,
+		r.ledger_revision AS revision_ledger_revision,
+		r.configured_profile_kind, r.profile_payload_json AS revision_payload_json,
+		r.profile_payload_digest AS revision_payload_digest,
+		r.receipt_json AS revision_receipt_json,
+		r.receipt_digest AS revision_receipt_digest,
+		r.admission_id AS revision_admission_id,
+		r.admission_digest AS revision_admission_digest,
+		r.recorded_at AS revision_recorded_at
+	FROM project_profile_admissions_v4 a
+	JOIN profile_declaration_authority_uses_v4 u
+		ON u.committed_admission_ref = a.admission_id
+	JOIN profile_initial_bootstrap_authority_resolutions_v1 resolution
+		ON resolution.authority_resolution_ref = u.authority_resolution_ref
+	JOIN project_profile_revisions_v4 r
+		ON r.admission_id = a.admission_id
+		AND r.project_root = a.project_root
+		AND r.ledger_revision = a.ledger_revision
+	UNION ALL
+	SELECT 'v5' AS storage_generation,
+		a.admission_id, a.action_kind, a.project_root, a.project_binding_digest,
+		a.profile_payload_json, a.profile_payload_digest,
+		a.candidate_provenance_json, a.candidate_provenance_digest,
+		a.profile_author_role_assignment_ref, a.profile_author_role_assignment_digest,
+		a.observed_project_basis_ref, a.observed_project_basis_digest,
+		a.work_record_ref, a.work_record_digest,
+		a.outcome_assessment_ref, a.outcome_assessment_digest,
+		a.authority_basis_ref, a.authority_basis_digest,
+		a.authority_resolution_ref, a.authority_resolution_digest,
+		a.receipt_json, a.receipt_digest,
+		a.expected_ledger_revision, a.ledger_revision,
+		a.single_use_key, a.admission_request_digest,
+		a.admission_json, a.admission_digest, a.recorded_at,
+		u.use_ref AS use_id, u.use_digest,
+		u.authority_resolution_ref AS use_resolution_ref,
+		u.authority_resolution_digest AS use_resolution_digest,
+		u.single_use_key AS use_single_use_key, u.action_kind AS use_action_kind,
+		u.project_root AS use_project_root,
+		u.project_binding_digest AS use_project_binding_digest,
+		'' AS envelope_digest,
+		u.authority_basis_ref AS authority_record_ref,
+		u.authority_basis_digest AS authority_record_digest,
+		u.admission_request_digest AS use_request_digest,
+		resolution.verifier_identity, resolution.verifier_version,
+		u.committed_admission_ref AS committed_result_ref,
+		u.committed_admission_digest AS committed_result_digest,
+		u.consumed_at,
+		r.project_root AS revision_project_root,
+		r.ledger_revision AS revision_ledger_revision,
+		r.configured_profile_kind, r.profile_payload_json AS revision_payload_json,
+		r.profile_payload_digest AS revision_payload_digest,
+		r.receipt_json AS revision_receipt_json,
+		r.receipt_digest AS revision_receipt_digest,
+		r.admission_id AS revision_admission_id,
+		r.admission_digest AS revision_admission_digest,
+		r.recorded_at AS revision_recorded_at
+	FROM project_profile_admissions_v5 a
+	JOIN profile_declaration_authority_uses_v5 u
+		ON u.committed_admission_ref = a.admission_id
+	JOIN profile_declaration_authority_resolutions_v5 resolution
+		ON resolution.authority_resolution_ref = u.authority_resolution_ref
+	JOIN project_profile_revisions_v5 r
+		ON r.admission_id = a.admission_id
+		AND r.project_root = a.project_root
+		AND r.ledger_revision = a.ledger_revision
 )
 SELECT * FROM all_durable WHERE admission_id = ?`
 

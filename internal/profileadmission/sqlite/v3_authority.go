@@ -1,5 +1,9 @@
 package sqlite
 
+// This file is the read/verification codec for the sealed v3 profile-authority
+// generation. Current operator-mediated profile writes use v5 host-routed
+// authority; migration 56 prevents any new v3 authority row.
+
 import (
 	"bytes"
 	"context"

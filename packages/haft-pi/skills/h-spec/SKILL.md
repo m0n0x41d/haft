@@ -15,11 +15,24 @@ carrier labels, not FPF Core kinds by label alone.
 them or treat project workflow readiness as the state of one named section.
 Use `haft_query(action="spec_trace", section_id="<id>")` for the exact edition,
 status, and baseline, and `haft_query(action="spec_use", section_id="<id>",
-use_context="<named receiving use>")` for stronger-use admission. The kernel
+use_context="<concrete receiving use>")` for stronger-use admission. The kernel
 rejects an action-inapplicable `section_id` with these recovery routes.
 
 If the MCP action is unavailable, use `haft spec next --json` or
 `haft spec status --json`; never infer lifecycle from Markdown status fields.
+
+When a spec request returns `profile_underdetermined`, preserve the exact
+request and any supplied ScopeID. Treat `recovery_surface=haft_onboard` and
+`next_action` as navigation only. Read `haft_onboard(action="status")`;
+`needs_profile` permits at most a non-binding review, while
+`profile_review_ready` permits showing that review. Apply only after the
+operator directly and unambiguously selects the exact reviewed profile and
+scope; route that request through `h-onboard` without requiring a skill name.
+After apply and any required restart retry the same specification request.
+Unrelated draft or clarification
+work may continue only when it does not rely on profile applicability. Never
+infer or auto-admit a profile, select `software` for convenience, or invent
+lifecycle state.
 
 Keep team, agent, delivery, release, MethodPack, and evidence-production policy
 outside SoftwareSystemSpec. Do not silently reclassify enabling-system policy
@@ -56,7 +69,8 @@ substitute for explaining and choosing the lifecycle outcome. Only after the
 engineer's position is explicit may a separately required lifecycle act be
 explained with its authority limits.
 
-For a named receiving use with an exact current edition and concern, call
+For a concrete operator-named or agent-inferred receiving use with an exact
+current edition and concern, call
 `haft_spec_section(action="project", section_id="...", entity_ref=...,
 bounded_context_ref="...")`. A committed result returns an exact
 `Haft.SpecSectionRecordRef`. This action only relates the immutable edition to

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 )
 
@@ -20,9 +21,9 @@ type storedAuthorityRow struct {
 }
 
 type existingAuthority struct {
-	plan       profiledeclarationpreparation.Plan
-	basis      authorityBasisRowV3
-	resolution authorityResolutionRowV3
+	plan             profiledeclarationpreparation.Plan
+	basisDigest      projectprofile.ContentDigest
+	resolutionDigest projectprofile.ContentDigest
 }
 
 type authorityPresence string
@@ -38,98 +39,11 @@ func recoverExistingAuthority(
 	transaction *sqlitetransaction.Transaction,
 	probe profiledeclarationpreparation.Plan,
 ) (existingAuthority, authorityPresence, string, error) {
-	basisRef, err := probe.AuthorityBasisRef()
-	if err != nil {
-		return existingAuthority{}, authorityAbsent, "", err
+	if probe.Policy().Mode() ==
+		profiledeclarationpreparation.ModeAutomaticSupportedSingleton {
+		return recoverExistingAutomaticAuthority(ctx, transaction, probe)
 	}
-	basis, basisFound, err := loadStoredAuthorityRow(
-		ctx,
-		transaction,
-		`SELECT basis_digest, canonical_json
-		 FROM profile_declaration_authority_bases_v3
-		 WHERE basis_ref = ?`,
-		basisRef.String(),
-	)
-	if err != nil {
-		return existingAuthority{}, authorityAbsent, "", err
-	}
-	resolution, resolutionFound, err := loadStoredAuthorityRow(
-		ctx,
-		transaction,
-		`SELECT authority_resolution_digest, canonical_json
-		 FROM profile_declaration_authority_resolutions_v3
-		 WHERE authority_resolution_ref = ?`,
-		probe.AuthorityResolutionRef(),
-	)
-	if err != nil {
-		return existingAuthority{}, authorityAbsent, "", err
-	}
-	if !basisFound && !resolutionFound {
-		return existingAuthority{}, authorityAbsent, "", nil
-	}
-	if basisFound != resolutionFound {
-		return existingAuthority{}, authorityConflict,
-			"v3 profile authority basis and resolution are not an atomic pair", nil
-	}
-	resolutionDTO := authorityResolutionJSONV3{}
-	if err := decodeExactJSON([]byte(resolution.canonical), &resolutionDTO); err != nil {
-		return existingAuthority{}, authorityConflict, err.Error(), nil
-	}
-	checkedAt, err := time.Parse(time.RFC3339Nano, resolutionDTO.CheckedAt)
-	if err != nil {
-		return existingAuthority{}, authorityConflict,
-			fmt.Sprintf("v3 profile authority checked_at is invalid: %v", err), nil
-	}
-	plan, err := profiledeclarationpreparation.NewPlan(
-		probe.Root().String(),
-		probe.Input(),
-		probe.Policy(),
-		checkedAt,
-	)
-	if err != nil {
-		return existingAuthority{}, authorityConflict, err.Error(), nil
-	}
-	durableInput, err := LoadProfileOnboardingWorkInput(
-		ctx,
-		transaction,
-		plan.Input().Ref().String(),
-		plan.Input().Digest().String(),
-	)
-	if err != nil {
-		return existingAuthority{}, authorityConflict, err.Error(), nil
-	}
-	if string(durableInput.CanonicalJSON()) != string(plan.Input().CanonicalJSON()) {
-		return existingAuthority{}, authorityConflict,
-			"durable v3 profile authority binds another reviewed Work input", nil
-	}
-	bindingDigest, err := loadProjectBindingDigest(ctx, transaction, plan.Root())
-	if err != nil {
-		return existingAuthority{}, authorityAbsent, "", err
-	}
-	expectedBasis, expectedResolution, err := buildAuthorityRowsV3(plan, bindingDigest)
-	if err != nil {
-		return existingAuthority{}, authorityConflict, err.Error(), nil
-	}
-	checks := []struct {
-		matches bool
-		name    string
-	}{
-		{matches: basis.digest == expectedBasis.digest.String(), name: "basis digest"},
-		{matches: basis.canonical == string(expectedBasis.canonical), name: "basis canonical JSON"},
-		{matches: resolution.digest == expectedResolution.digest.String(), name: "resolution digest"},
-		{matches: resolution.canonical == string(expectedResolution.canonical), name: "resolution canonical JSON"},
-	}
-	for _, check := range checks {
-		if !check.matches {
-			return existingAuthority{}, authorityConflict,
-				"existing v3 profile declaration authority differs at " + check.name, nil
-		}
-	}
-	return existingAuthority{
-		plan:       plan,
-		basis:      expectedBasis,
-		resolution: expectedResolution,
-	}, authorityExact, "", nil
+	return recoverExistingHostRoutedAuthority(ctx, transaction, probe)
 }
 
 func loadStoredAuthorityRow(

@@ -14,7 +14,7 @@ import (
 )
 
 // ProfileDeclarationAdmissionTestFixture is the exact pre-admission result of
-// production v3 authority and performed profile-declaration Work. It exposes
+// production host-routed authority and performed profile-declaration Work. It exposes
 // only semantic addresses needed by cross-package fault/replay tests.
 type ProfileDeclarationAdmissionTestFixture struct {
 	request          profileadmission.ProfileDeclarationAdmissionRequest
@@ -84,9 +84,9 @@ func PrepareProfileDeclarationAdmissionForTestFixture(
 			"profile declaration fixture requires context, database, exact input, and clock",
 		)
 	}
-	if policy.Mode() != ProfileDeclarationModeExplicitHOnboard {
+	if policy.Mode() != ProfileDeclarationModeHostRoutedOperatorRequest {
 		return ProfileDeclarationAdmissionTestFixture{}, fmt.Errorf(
-			"profile declaration fixture supports only explicit_h_onboard v3 authority",
+			"profile declaration fixture supports only host-routed operator-request authority",
 		)
 	}
 	preparation, err := profiledeclarationpreparationsqlite.PrepareBeforeAdmission(

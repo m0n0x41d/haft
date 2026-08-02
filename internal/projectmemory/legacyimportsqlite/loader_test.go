@@ -8,9 +8,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	haftdb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectidentity"
 	"github.com/m0n0x41d/haft/internal/projectmemory/legacyimport"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 	_ "modernc.org/sqlite"
 )
 
@@ -190,7 +190,7 @@ func TestCoreSnapshotChangesEditionWhenExactRowChanges(t *testing.T) {
 
 func TestCoreSnapshotReadsCurrentEmptyHaftSchema(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "haft.db")
-	store, err := haftdb.NewStore(path)
+	store, err := kerneldbfixture.OpenCurrentStore(path)
 	if err != nil {
 		t.Fatalf("db.NewStore() error = %v", err)
 	}

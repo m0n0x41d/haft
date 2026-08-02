@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func insertProfileOnboardingTestLedgerBinding(
@@ -67,7 +67,7 @@ func openProfileAuthoritySourceTestDatabase(
 ) *sql.DB {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), name+".db")
-	store, err := kerneldb.NewStore(path)
+	store, err := kerneldbfixture.OpenCurrentStore(path)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

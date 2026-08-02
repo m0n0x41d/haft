@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/spf13/cobra"
@@ -72,7 +73,33 @@ var (
 	fpfReplayRef                      string
 )
 
+type fpfQueryIndexVerificationCache struct {
+	once      sync.Once
+	operation func(*sql.DB) error
+	err       error
+}
+
+func newFPFQueryIndexVerificationCache(
+	operation func(*sql.DB) error,
+) *fpfQueryIndexVerificationCache {
+	return &fpfQueryIndexVerificationCache{operation: operation}
+}
+
+func (cache *fpfQueryIndexVerificationCache) Verify(db *sql.DB) error {
+	if cache == nil || cache.operation == nil {
+		return fmt.Errorf("FPF query index verifier is unavailable")
+	}
+	cache.once.Do(func() {
+		cache.err = cache.operation(db)
+	})
+	return cache.err
+}
+
 var openFPFDBFunc = openFPFDB
+
+var embeddedFPFQueryIndexVerification = newFPFQueryIndexVerificationCache(fpf.VerifySourceQueryIndexReadOnlyDB)
+
+var verifyFPFDBFunc = embeddedFPFQueryIndexVerification.Verify
 
 func init() {
 	fpfCmd.PersistentFlags().StringVar(
@@ -226,7 +253,7 @@ func publishEmbeddedFPFQuery(
 		return nil, err
 	}
 	defer cleanup()
-	if err := fpf.VerifySourceQueryIndexReadOnlyDB(db); err != nil {
+	if err := verifyFPFDBFunc(db); err != nil {
 		return nil, fmt.Errorf("verify canonical FPF source index: %w", err)
 	}
 	snapshot, err := fpf.LoadQuerySourceSnapshot(db)
@@ -262,7 +289,7 @@ func queryEmbeddedFPF(request fpf.QueryRequest) (fpf.QueryResult, error) {
 		return nil, err
 	}
 	defer cleanup()
-	if err := fpf.VerifySourceQueryIndexReadOnlyDB(db); err != nil {
+	if err := verifyFPFDBFunc(db); err != nil {
 		return nil, fmt.Errorf("verify canonical FPF source index: %w", err)
 	}
 	index := fpf.NewSQLiteQueryIndex(db)

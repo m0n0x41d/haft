@@ -152,6 +152,12 @@ func validateHistoricalAuthorityMaterialInTransaction(
 	if material.storageGeneration == "v3" {
 		return validateV3HistoricalMaterialInTransaction(ctx, transaction, material)
 	}
+	if material.storageGeneration == "v4" {
+		return validateV4HistoricalMaterialInTransaction(ctx, transaction, material)
+	}
+	if material.storageGeneration == "v5" {
+		return validateV5HistoricalMaterialInTransaction(ctx, transaction, material)
+	}
 	if material.storageGeneration != "v2" {
 		return fmt.Errorf("canonical admission has an unknown storage generation")
 	}

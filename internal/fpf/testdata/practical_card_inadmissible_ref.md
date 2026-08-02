@@ -1,0 +1,6 @@
+- **Situation and question.** Only admitted source-owned result blocks may contribute direct references.
+- **Optional obstacle.** An arbitrary example mentions `A.999` and must not ground it.
+- **Template A.** `A.1 Solution -> U.System`.
+- **Boundaries.** Stop at the exact admitted result.
+- **Result test.** Only `A.1` is a direct result reference.
+- **Public coarsening.** "Reference guard" restores to the admitted block.

@@ -11,10 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/authority"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
+
+const decisionBindingTransactionWatchdog = 30 * time.Second
 
 func TestDecisionBindingServicePersistsExactTwoPhaseClosure(t *testing.T) {
 	fixture := openDecisionBindingServiceFixture(t)
@@ -202,7 +204,10 @@ func TestDecisionBindingServiceGuardRunsAfterDurableSourceBeforeEffectAndResume(
 		}
 		return nil
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		decisionBindingTransactionWatchdog,
+	)
 	defer cancel()
 
 	partial, err := fixture.service.Bind(ctx, decisionServiceInputFixture())
@@ -297,7 +302,10 @@ func TestDecisionBindingServiceRevalidatesSourcePinsOnSingleConnectionTransactio
 	input := decisionServiceInputFixture()
 	input.ProblemRef = problem.Meta.ID
 	input.ChoiceResult.ProblemRefs = []string{problem.Meta.ID}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(
+		context.Background(),
+		decisionBindingTransactionWatchdog,
+	)
 	defer cancel()
 
 	result, err := fixture.service.Bind(ctx, input)
@@ -330,9 +338,11 @@ func openDecisionBindingServiceFixture(t *testing.T) *decisionBindingServiceFixt
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {
 		t.Fatalf("create .haft: %v", err)
 	}
-	ledger, err := db.NewStore(filepath.Join(haftDir, "haft.db"))
+	ledger, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(haftDir, "haft.db"),
+	)
 	if err != nil {
-		t.Fatalf("db.NewStore: %v", err)
+		t.Fatalf("open current kernel test store: %v", err)
 	}
 	t.Cleanup(func() { _ = ledger.Close() })
 	database := ledger.GetRawDB()

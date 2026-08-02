@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
@@ -201,7 +200,7 @@ func newBoundSpecQueryTestProject(t *testing.T) checkTestProject {
 	if err != nil {
 		t.Fatalf("resolve project database path: %v", err)
 	}
-	database, err := db.NewStore(databasePath)
+	database, err := openCurrentKernelTestStore(databasePath)
 	if err != nil {
 		t.Fatalf("create current project database: %v", err)
 	}

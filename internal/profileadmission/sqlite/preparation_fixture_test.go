@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/profileadmission"
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	profiledeclarationpreparationsqlite "github.com/m0n0x41d/haft/internal/profiledeclarationpreparation/sqlite"
@@ -65,16 +66,17 @@ func prepareV3ProfileDeclaration(
 ) profiledeclarationpreparationsqlite.Prepared {
 	t.Helper()
 	input := newV3TestWorkInput(t, root, payload)
-	carrier := []byte(
-		"authority:\n  profile_declaration_mode: explicit_h_onboard\nfixture: " + suffix + "\n",
-	)
-	policy, err := profiledeclarationpreparation.NewPolicy(
-		profiledeclarationpreparation.ModeExplicitHOnboard,
-		".haft/config.yaml",
-		carrier,
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		"profile-fixture:"+suffix,
+		input.CanonicalJSON(),
 	)
 	if err != nil {
-		t.Fatalf("NewPolicy: %v", err)
+		t.Fatalf("new operator request: %v", err)
+	}
+	policy, err := profiledeclarationpreparation.NewHostRoutedOperatorRequestPolicy(request)
+	if err != nil {
+		t.Fatalf("new host-routed policy: %v", err)
 	}
 	outcome, err := profiledeclarationpreparationsqlite.PrepareBeforeAdmission(
 		context.Background(),
@@ -167,7 +169,12 @@ func testDetectorFilesForScopes(
 		files = append(files, "go.mod", "internal/fixture.go")
 	}
 	if nonSoftware >= 1 {
-		files = append(files, "book.toml", "docs/index.md")
+		files = append(
+			files,
+			"docs/index.md",
+			"docs/operations.md",
+			"docs/product.md",
+		)
 	}
 	if nonSoftware == 2 {
 		files = append(files, "models/fixture.onnx")

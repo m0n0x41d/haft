@@ -38,11 +38,10 @@ func assertDecisionBindingUnavailable(t *testing.T, err error) {
 	}
 	for _, want := range []string{
 		"operator_confirmation_required",
-		"explicit_h_decide",
-		"trusts that external invocation by project policy",
-		"kernel neither observes it nor records a durable authorization receipt",
-		"strict_cli_speech_act",
-		"durable controlling-terminal SpeechAct",
+		"cannot verify conversational provenance",
+		"direct, unambiguous operator request",
+		"host_routed_operator_request",
+		"haft artifact create decision.decide --input-file",
 	} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error = %v, want %q", err, want)

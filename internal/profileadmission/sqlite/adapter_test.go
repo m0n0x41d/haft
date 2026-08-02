@@ -7,15 +7,17 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/authority"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestNewTransactionAdapterRequiresExactCanonicalSchema(t *testing.T) {
 	if _, err := newAdapter(nil); err == nil {
 		t.Fatal("nil database was accepted")
 	}
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -24,7 +26,7 @@ func TestNewTransactionAdapterRequiresExactCanonicalSchema(t *testing.T) {
 	if _, err = newAdapter(database); err != nil {
 		t.Fatalf("newAdapter: %v", err)
 	}
-	_, err = database.Exec("DROP TRIGGER project_profile_admissions_v3_revision_cas")
+	_, err = database.Exec("DROP TRIGGER project_profile_admissions_v5_revision_cas")
 	if err != nil {
 		t.Fatalf("drop required trigger: %v", err)
 	}

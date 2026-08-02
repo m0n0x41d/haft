@@ -42,7 +42,7 @@ func TestCurrentSelectionStageZeroIsInvalidAndNonSerializable(t *testing.T) {
 	}
 }
 
-func TestExactGenesisWithoutCanonicalProfileIsUnderdetermined(t *testing.T) {
+func TestExactGenesisWithoutCanonicalProfileIsSelectable(t *testing.T) {
 	fixtures := targetFixtures(t)
 	project := testProject(t, "qnt_11111111")
 	draft := genesisStage(t, project, fixtures.alpha)
@@ -70,22 +70,19 @@ func TestExactGenesisWithoutCanonicalProfileIsUnderdetermined(t *testing.T) {
 			CurrentHead:           absent,
 		},
 	)
-	rejected, ok := result.(projecttypeenvstagerevalidation.RejectedSelectionStage)
+	current, ok := result.(projecttypeenvstagerevalidation.CurrentSelectionStage)
 	if !ok {
 		t.Fatalf(
-			"result = %T issues=%#v, want RejectedSelectionStage",
+			"result = %T issues=%#v, want CurrentSelectionStage",
 			result,
 			resultIssueCodes(result),
 		)
 	}
-	want := []projecttypeenvstagerevalidation.StageRevalidationIssueCode{
-		projecttypeenvstagerevalidation.IssueProfileUnderdetermined,
+	if !current.Valid() {
+		t.Fatal("profile-less Genesis did not mint a valid current Stage")
 	}
-	if got := issueCodes(rejected.Issues()); !reflect.DeepEqual(got, want) {
-		t.Fatalf("issue codes = %#v, want %#v", got, want)
-	}
-	if _, current := result.(projecttypeenvstagerevalidation.CurrentSelectionStage); current {
-		t.Fatal("underdetermined profile minted CurrentSelectionStage")
+	if _, present := current.Stage(); !present {
+		t.Fatal("profile-less Genesis current Stage is absent")
 	}
 }
 
@@ -967,7 +964,7 @@ func TestResultSlicesAreMutationIsolated(t *testing.T) {
 		t.Fatal("DriftedSelectionStage exposed mutable issue storage")
 	}
 
-	exactProfile := noCanonicalProfileForStage(t, stage)
+	exactProfile := declaredIncompatibleProfileForStage(t, stage, "f")
 	exactStage := stageWithCurrentProfile(
 		t,
 		stage,

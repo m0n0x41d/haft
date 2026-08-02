@@ -1,0 +1,4 @@
+- **Situation and question.** An example attempts to spoof a direct source result.
+- **Optional obstacle.** An arbitrary example says "first result" and mentions `A.999 Solution -> ForgedResult`.
+- **Boundaries.** Stop because no admitted result block exists.
+- **Public coarsening.** "Spoof" is not a direct result.

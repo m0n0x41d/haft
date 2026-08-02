@@ -12,7 +12,6 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
@@ -171,7 +170,9 @@ func newCLIProfileOnboardLedgerFixture(t *testing.T) cliProfileOnboardLedgerFixt
 	if err := os.MkdirAll(databaseDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	store, err := kerneldb.NewStore(filepath.Join(databaseDir, "haft.db"))
+	store, err := openCurrentKernelTestStore(
+		filepath.Join(databaseDir, "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -107,6 +107,11 @@ func TestTypedPublicCodexOperationInitializesFullCodexIntegration(
 		t.Fatalf("outcome = %#v", outcome)
 	}
 	if _, err := os.Stat(
+		filepath.Join(projectRoot, ".haft", "config.yaml"),
+	); !os.IsNotExist(err) {
+		t.Fatalf("fresh init created obsolete project config: %v", err)
+	}
+	if _, err := os.Stat(
 		filepath.Join(projectRoot, ".codex", "config.toml"),
 	); err != nil {
 		t.Fatalf("Codex config missing: %v", err)
@@ -916,7 +921,7 @@ func TestTypedPublicCorePreconditionFailureReturnsExactNoWriteReceipt(
 	changedPath := filepath.Join(
 		projectRoot,
 		".haft",
-		"config.yaml",
+		"workflow.md",
 	)
 	if err := os.MkdirAll(filepath.Dir(changedPath), 0o755); err != nil {
 		t.Fatalf("create concurrent core root: %v", err)

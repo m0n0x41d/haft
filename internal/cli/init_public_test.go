@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -155,6 +156,7 @@ func TestPublicInitProductionExplicitCodexUsesTypedOperation(
 		t.Fatalf("runPublicInit: %v", err)
 	}
 	if !strings.Contains(output.String(), "Haft initialization complete") ||
+		!strings.Contains(output.String(), "Project memory ready") ||
 		!strings.Contains(
 			output.String(),
 			"Project core initialized (schema ",
@@ -172,6 +174,22 @@ func TestPublicInitProductionExplicitCodexUsesTypedOperation(
 		strings.Contains(output.String(), "Apply this exact plan?") ||
 		strings.Contains(output.String(), "Initializing Haft project...") {
 		t.Fatalf("typed public output = %q", output.String())
+	}
+	binding := mustOnboardProjectBinding(t, projectRoot)
+	memoryReady, err := projectMemoryReadyReadOnly(
+		context.Background(),
+		binding,
+	)
+	if err != nil {
+		t.Fatalf("inspect initialized project memory: %v", err)
+	}
+	if !memoryReady {
+		t.Fatal("haft init completed without ready project memory")
+	}
+	if _, statErr := os.Stat(
+		projectTypeEnvGenesisReviewPath(projectRoot),
+	); !os.IsNotExist(statErr) {
+		t.Fatalf("haft init retained an internal memory review carrier: %v", statErr)
 	}
 	if _, err := os.Stat(
 		filepath.Join(projectRoot, ".codex", "config.toml"),
@@ -237,6 +255,7 @@ func TestPublicInitProductionExplicitCodexUsesTypedOperation(
 	for _, expected := range []string{
 		"Haft is already initialized",
 		"Project core already current (schema ",
+		"Project memory ready",
 		"Codex: MCP and instructions already current",
 		"Codex (user): skills already current",
 		"Project ID: ",
@@ -857,6 +876,63 @@ func TestPublicInitCodexPreservesAGENTSBytesOutsideManagedMarkers(
 			info.Mode().Perm(),
 			content,
 		)
+	}
+}
+
+func TestPublicInitCodexReplacesPreManifestHaftInstructions(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	homeRoot := t.TempDir()
+	restoreDirectory := changeInitTestDirectory(t, projectRoot)
+	defer restoreDirectory()
+	restoreFlags := captureInitHostFlagState()
+	defer restoreFlags.apply()
+	clearInitHostFlags()
+	initCodex = true
+	t.Setenv("HOME", homeRoot)
+	instructionPath := filepath.Join(projectRoot, "AGENTS.md")
+	prefix := []byte("# Operator prelude\n\n")
+	legacy := []byte(
+		"<!-- haft:start -->\n" +
+			"# Legacy Haft instructions\n" +
+			"<!-- haft:end -->",
+	)
+	suffix := []byte("\n\n## Local project rules\n")
+	content := make([]byte, 0)
+	content = append(content, prefix...)
+	content = append(content, legacy...)
+	content = append(content, suffix...)
+	if err := os.WriteFile(instructionPath, content, 0o640); err != nil {
+		t.Fatalf("write legacy AGENTS instructions: %v", err)
+	}
+	cmd := newPublicInitTestCommand()
+	var codex bool
+	cmd.Flags().BoolVar(&codex, "codex", false, "")
+	if err := cmd.Flags().Set("codex", "true"); err != nil {
+		t.Fatalf("set Codex flag: %v", err)
+	}
+	if err := runPublicInit(cmd, nil); err != nil {
+		t.Fatalf("runPublicInit: %v", err)
+	}
+	updated, err := os.ReadFile(instructionPath)
+	if err != nil {
+		t.Fatalf("read updated AGENTS instructions: %v", err)
+	}
+	if !bytes.HasPrefix(updated, prefix) ||
+		!bytes.HasSuffix(updated, suffix) ||
+		bytes.Contains(updated, []byte("Legacy Haft instructions")) ||
+		!bytes.Contains(updated, []byte(embeddedClaudeMDTemplate)) {
+		t.Fatalf("pre-manifest AGENTS update = %q", updated)
+	}
+	manifestPath := filepath.Join(
+		projectRoot,
+		".haft",
+		"host-installations",
+		"codex.project.json",
+	)
+	if _, err := os.Stat(manifestPath); err != nil {
+		t.Fatalf("Codex project manifest missing: %v", err)
 	}
 }
 

@@ -81,9 +81,13 @@ func openAdmissionGenerationTestDatabase(t *testing.T) *sql.DB {
 		admissionGenerationTestAdmissionTable("project_profile_admissions"),
 		admissionGenerationTestAdmissionTable("project_profile_admissions_v2"),
 		admissionGenerationTestAdmissionTable("project_profile_admissions_v3"),
+		admissionGenerationTestAdmissionTable("project_profile_admissions_v4"),
+		admissionGenerationTestAdmissionTable("project_profile_admissions_v5"),
 		admissionGenerationTestRevisionTable("project_profile_revisions"),
 		admissionGenerationTestRevisionTable("project_profile_revisions_v2"),
 		admissionGenerationTestRevisionTable("project_profile_revisions_v3"),
+		admissionGenerationTestRevisionTable("project_profile_revisions_v4"),
+		admissionGenerationTestRevisionTable("project_profile_revisions_v5"),
 	}
 	executeAdmissionGenerationTestStatements(t, database, statements, 0)
 	return database

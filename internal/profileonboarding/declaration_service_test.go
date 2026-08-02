@@ -6,20 +6,244 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	kerneldb "github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	profiledeclarationpreparationsqlite "github.com/m0n0x41d/haft/internal/profiledeclarationpreparation/sqlite"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
+
+func TestConcurrentAutomaticProfileBootstrapConvergesOnOneAdmission(
+	t *testing.T,
+) {
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "automatic-profile-race.db"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	database := store.GetRawDB()
+	database.SetMaxOpenConns(4)
+	root := canonicalWorkInputTestRoot(t)
+	insertProfileOnboardingTestLedgerBinding(
+		t,
+		database,
+		root,
+		time.Now().UTC().Round(0).Add(-time.Minute),
+	)
+	suggestion := workInputTestSuggestion(
+		t,
+		root,
+		[]string{"go.mod", "internal/kernel.go"},
+	)
+	var revalidationCount atomic.Int64
+	revalidate := func(ctx context.Context) error {
+		transaction, err := sqlitetransaction.BeginImmediate(ctx, database)
+		if err != nil {
+			return err
+		}
+		finish := transaction.Rollback(ctx)
+		if !finish.Succeeded() {
+			return finish.Err()
+		}
+		revalidationCount.Add(1)
+		return nil
+	}
+	type raceResult struct {
+		result Result
+		err    error
+	}
+	results := make(chan raceResult, 2)
+	start := make(chan struct{})
+	var workers sync.WaitGroup
+	workers.Add(2)
+	for range 2 {
+		go func() {
+			defer workers.Done()
+			<-start
+			result, err := RunAutomaticInitialProfileBootstrap(
+				context.Background(),
+				database,
+				root,
+				suggestion,
+				revalidate,
+			)
+			results <- raceResult{result: result, err: err}
+		}()
+	}
+	close(start)
+	workers.Wait()
+	close(results)
+	digests := []string{}
+	for outcome := range results {
+		if outcome.err != nil {
+			t.Fatalf("automatic bootstrap race error: %v", outcome.err)
+		}
+		admission, ok := outcome.result.Admission()
+		if outcome.result.Kind() != ResultSynchronized || !ok {
+			failure, _ := outcome.result.Failure()
+			t.Fatalf(
+				"automatic bootstrap race result=%q failure=%s",
+				outcome.result.Kind(),
+				failure.Detail(),
+			)
+		}
+		digests = append(digests, admission.AdmissionRecordDigest().String())
+	}
+	if len(digests) != 2 || digests[0] != digests[1] {
+		t.Fatalf("race admission digests = %#v", digests)
+	}
+	var admissionCount int
+	if err := database.QueryRow(
+		"SELECT COUNT(*) FROM project_profile_admissions_v4",
+	).Scan(&admissionCount); err != nil {
+		t.Fatal(err)
+	}
+	if admissionCount != 1 || revalidationCount.Load() == 0 {
+		t.Fatalf(
+			"race admissions=%d revalidations=%d",
+			admissionCount,
+			revalidationCount.Load(),
+		)
+	}
+}
+
+func TestAutomaticProfileBootstrapIsReplaySafeAndExplicitOnboardMayOverride(
+	t *testing.T,
+) {
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "automatic-profile-bootstrap.db"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	database := store.GetRawDB()
+	database.SetMaxOpenConns(1)
+	root := canonicalWorkInputTestRoot(t)
+	insertProfileOnboardingTestLedgerBinding(
+		t,
+		database,
+		root,
+		time.Now().UTC().Round(0).Add(-time.Minute),
+	)
+	suggestion := workInputTestSuggestion(
+		t,
+		root,
+		[]string{"go.mod", "internal/kernel.go"},
+	)
+	revalidationCount := 0
+	revalidate := profileDeclarationTestRevalidator(
+		database,
+		&revalidationCount,
+	)
+	first, err := RunAutomaticInitialProfileBootstrap(
+		context.Background(),
+		database,
+		root,
+		suggestion,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstAdmission, ok := first.Admission()
+	if first.Kind() != ResultSynchronized || !ok ||
+		firstAdmission.Origin() !=
+			projectprofile.ProfileAdmissionOriginDetectorDefault ||
+		firstAdmission.LedgerRevision().Value() != 1 {
+		t.Fatalf("automatic admission = %q %#v", first.Kind(), firstAdmission)
+	}
+	replayed, err := RunAutomaticInitialProfileBootstrap(
+		context.Background(),
+		database,
+		root,
+		suggestion,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replayedAdmission, ok := replayed.Admission()
+	if replayed.Kind() != ResultSynchronized || !ok ||
+		replayedAdmission.AdmissionRecordDigest() !=
+			firstAdmission.AdmissionRecordDigest() {
+		t.Fatalf("automatic replay = %q %#v", replayed.Kind(), replayedAdmission)
+	}
+	manualJSON, err := ProposeProfileOnboardingWorkInput(suggestion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualInput, err := DecodeProfileOnboardingWorkInput(
+		manualJSON,
+		suggestion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	explicitPolicy, err := newHostRoutedProfileDeclarationTestPolicy(manualInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overridden, err := RunProfileDeclaration(
+		context.Background(),
+		database,
+		root,
+		manualInput,
+		explicitPolicy,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	overriddenAdmission, ok := overridden.Admission()
+	if overridden.Kind() != ResultSynchronized || !ok ||
+		overriddenAdmission.Origin() !=
+			projectprofile.ProfileAdmissionOriginHostRoutedOperatorRequest ||
+		overriddenAdmission.LedgerRevision().Value() != 2 {
+		failure, _ := overridden.Failure()
+		rejections, _ := overridden.Rejections()
+		t.Fatalf(
+			"explicit override = %q %#v failure=%s rejections=%#v",
+			overridden.Kind(),
+			overriddenAdmission,
+			failure.Detail(),
+			rejections,
+		)
+	}
+	differentSuggestion := workInputTestSuggestion(
+		t,
+		root,
+		[]string{"notes/one.md", "notes/two.mdx", "notes/three.rst"},
+	)
+	automaticAfterExplicit, err := RunAutomaticInitialProfileBootstrap(
+		context.Background(),
+		database,
+		root,
+		differentSuggestion,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if automaticAfterExplicit.Kind() != ResultNotAdmitted {
+		t.Fatalf("automatic override of explicit profile = %q", automaticAfterExplicit.Kind())
+	}
+}
 
 func TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart(
 	t *testing.T,
 ) {
 	databasePath := filepath.Join(t.TempDir(), "generic-declaration.db")
-	store, err := kerneldb.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,12 +275,7 @@ func TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart(
 	if err != nil {
 		t.Fatal(err)
 	}
-	policyCarrier := []byte("authority:\n  profile_declaration_mode: explicit_h_onboard\n")
-	policy, err := NewProfileDeclarationPolicy(
-		ProfileDeclarationModeExplicitHOnboard,
-		".haft/config.yaml",
-		policyCarrier,
-	)
+	policy, err := newHostRoutedProfileDeclarationTestPolicy(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +353,7 @@ func TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart(
 func TestRunProfileDeclarationAdmitsManualFallbackWithExactProvenance(
 	t *testing.T,
 ) {
-	store, err := kerneldb.NewStore(
+	store, err := kerneldbfixture.OpenCurrentStore(
 		filepath.Join(t.TempDir(), "manual-declaration.db"),
 	)
 	if err != nil {
@@ -184,13 +403,7 @@ func TestRunProfileDeclarationAdmitsManualFallbackWithExactProvenance(
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := NewProfileDeclarationPolicy(
-		ProfileDeclarationModeExplicitHOnboard,
-		".haft/config.yaml",
-		[]byte(
-			"authority:\n  profile_declaration_mode: explicit_h_onboard\n",
-		),
-	)
+	policy, err := newHostRoutedProfileDeclarationTestPolicy(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +441,7 @@ func TestRunProfileDeclarationAdmitsManualFallbackWithExactProvenance(
 	workInputCanonical := ""
 	err = database.QueryRow(
 		`SELECT basis.classifier_version, basis.policy_version, input.canonical_json
-		 FROM profile_declaration_authority_bases_v3 basis
+		 FROM profile_declaration_authority_bases_v5 basis
 		 JOIN profile_onboarding_work_inputs_v1 input
 		   ON input.work_input_ref = basis.work_input_ref
 		 WHERE basis.project_root = ?`,
@@ -270,9 +483,9 @@ func TestRunProfileDeclarationAdmitsManualFallbackWithExactProvenance(
 	}
 }
 
-func TestExplicitProfileAuthorityExactReuseAfterDatabaseRestart(t *testing.T) {
+func TestHostRoutedProfileAuthorityExactReuseAfterDatabaseRestart(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "authority-restart.db")
-	store, err := kerneldb.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,11 +507,7 @@ func TestExplicitProfileAuthorityExactReuseAfterDatabaseRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := NewProfileDeclarationPolicy(
-		ProfileDeclarationModeExplicitHOnboard,
-		".haft/config.yaml",
-		[]byte("profile_declaration_mode: explicit_h_onboard"),
-	)
+	policy, err := newHostRoutedProfileDeclarationTestPolicy(input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -378,15 +587,15 @@ func TestExplicitProfileAuthorityExactReuseAfterDatabaseRestart(t *testing.T) {
 		database,
 		[]string{
 			"profile_onboarding_work_inputs_v1",
-			"profile_declaration_authority_bases_v3",
-			"profile_declaration_authority_resolutions_v3",
+			"profile_declaration_authority_bases_v5",
+			"profile_declaration_authority_resolutions_v5",
 		},
 		1,
 	)
 }
 
-func TestStrictProfileDeclarationFailsBeforeAnySealedAuthorityWrite(t *testing.T) {
-	database := openProfileAuthoritySourceTestDatabase(t, "strict-fail-closed")
+func TestMismatchedOperatorRequestFailsBeforeAnySealedAuthorityWrite(t *testing.T) {
+	database := openProfileAuthoritySourceTestDatabase(t, "request-mismatch")
 	database.SetMaxOpenConns(1)
 	root := canonicalWorkInputTestRoot(t)
 	insertProfileOnboardingTestLedgerBinding(
@@ -404,11 +613,15 @@ func TestStrictProfileDeclarationFailsBeforeAnySealedAuthorityWrite(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := NewProfileDeclarationPolicy(
-		ProfileDeclarationModeStrictSpeechAct,
-		"",
-		nil,
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		input.Ref().String(),
+		[]byte("another reviewed WorkInput"),
 	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	policy, err := NewProfileDeclarationPolicy(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -427,14 +640,11 @@ func TestStrictProfileDeclarationFailsBeforeAnySealedAuthorityWrite(t *testing.T
 		policy,
 	)
 	if result.Kind() != ResultFailed {
-		t.Fatalf("strict declaration result = %q", result.Kind())
+		t.Fatalf("mismatched declaration result = %q", result.Kind())
 	}
 	failure, ok := result.Failure()
-	if !ok || failure.Code() != "strict_profile_authority_not_available" {
-		t.Fatalf("strict declaration failure = %#v", failure)
-	}
-	if revalidationCount != 0 {
-		t.Fatalf("strict unavailable path crossed write orchestration %d times", revalidationCount)
+	if !ok || !strings.Contains(failure.Detail(), "does not bind the exact reviewed WorkInput") {
+		t.Fatalf("mismatched declaration failure = %#v", failure)
 	}
 	assertProfileAuthoritySourceCounts(t, database, 0)
 	assertProfileAuthorityClosureCounts(t, database, 0)
@@ -443,11 +653,25 @@ func TestStrictProfileDeclarationFailsBeforeAnySealedAuthorityWrite(t *testing.T
 		database,
 		[]string{
 			"profile_onboarding_work_inputs_v1",
-			"profile_declaration_authority_bases_v3",
-			"profile_declaration_authority_resolutions_v3",
+			"profile_declaration_authority_bases_v5",
+			"profile_declaration_authority_resolutions_v5",
 		},
 		0,
 	)
+}
+
+func newHostRoutedProfileDeclarationTestPolicy(
+	input ProfileOnboardingWorkInput,
+) (ProfileDeclarationPolicy, error) {
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		input.Ref().String(),
+		input.CanonicalJSON(),
+	)
+	if err != nil {
+		return ProfileDeclarationPolicy{}, err
+	}
+	return NewProfileDeclarationPolicy(request)
 }
 
 func profileDeclarationTestRevalidator(

@@ -15,11 +15,14 @@ import (
 const (
 	HistoricalV3Ref = "typeenv:sha256:973eeeed8e234b4ff0194662d80e204fe27ad5ba92c87840a6d1ed3a9d5d742d"
 	HistoricalV4Ref = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
+	HistoricalV5Ref = "typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e"
 
 	historicalV3CompilerSchema = typeenv.BaseTypeEnvCompilerSchemaV3
 	historicalV3SourceRevision = "6e7eeb93d7d6208877649ac999d52ab845640817"
 	historicalV4CompilerSchema = typeenv.BaseTypeEnvCompilerSchemaV4
 	historicalV4SourceRevision = "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4"
+	historicalV5CompilerSchema = typeenv.BaseTypeEnvCompilerSchemaV5
+	historicalV5SourceRevision = "2ada413629b846ef308222d16489a82cb5b40a71"
 )
 
 var ErrExactArtifactNotFound = errors.New(
@@ -46,6 +49,14 @@ var historicalV3Canonical []byte
 //go:embed 0990ff1-cov2-v4.bin
 var historicalV4Canonical []byte
 
+// historicalV5Canonical is the exact canonical artifact payload compiled from
+// FPF revision 2ada413 by compiler schema v5. It preserves the Base declared
+// by the byte-stable Local-Practice 1.4.0 carrier after the newer FPF Base
+// becomes current.
+//
+//go:embed 2ada413-cov2-v5.bin
+var historicalV5Canonical []byte
+
 var historicalArtifacts = map[string]historicalArtifact{
 	HistoricalV3Ref: {
 		canonical:      historicalV3Canonical,
@@ -56,6 +67,11 @@ var historicalArtifacts = map[string]historicalArtifact{
 		canonical:      historicalV4Canonical,
 		compilerSchema: historicalV4CompilerSchema,
 		sourceRevision: historicalV4SourceRevision,
+	},
+	HistoricalV5Ref: {
+		canonical:      historicalV5Canonical,
+		compilerSchema: historicalV5CompilerSchema,
+		sourceRevision: historicalV5SourceRevision,
 	},
 }
 

@@ -68,6 +68,8 @@ func TestParseCanonicalGenericRecordedAtRejectsNonCanonicalUTCOffset(t *testing.
 func TestGenericCommitRejectsCarrierRecordedAtDriftBeforeCommit(t *testing.T) {
 	for _, testCase := range genericRecordedAtCarrierCases() {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newExactBasisStoreFixture(t)
 			fixture.allowTestMutation(t, testCase.table)
 			driftedRecordedAt := canonicalTime(fixture.base.clock.Now().Add(time.Second))
@@ -105,6 +107,8 @@ func TestGenericCommitRejectsCarrierRecordedAtDriftBeforeCommit(t *testing.T) {
 func TestGenericReplayRejectsDurableCarrierRecordedAtDrift(t *testing.T) {
 	for _, testCase := range genericRecordedAtCarrierCases() {
 		t.Run(testCase.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := newExactBasisStoreFixture(t)
 			request := fixture.request(t, "durable-recorded-at-"+testCase.name)
 			receipt, err := fixture.adapter.CommitMemoryChangeSet(

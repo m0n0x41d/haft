@@ -209,7 +209,7 @@ func TestPreCommitNotSelectedReasonUsesTypedOperationalFailuresOnly(
 	}
 }
 
-func TestGenesisServiceMapsCurrentAuthorityRejectionWithoutWrites(
+func TestGenesisServiceIgnoresLegacyProjectAuthorityConfig(
 	t *testing.T,
 ) {
 	fixture := newGenesisE2EFixture(t)
@@ -227,7 +227,6 @@ func TestGenesisServiceMapsCurrentAuthorityRejectionWithoutWrites(
 	if err := os.WriteFile(configPath, config, 0o600); err != nil {
 		t.Fatalf("write strict current authority config: %v", err)
 	}
-	before := genesisE2EEffectCounts(t, fixture.database)
 	result, err := fixture.service.SelectGenesis(
 		context.Background(),
 		genesisSelectionInput(fixture),
@@ -235,18 +234,8 @@ func TestGenesisServiceMapsCurrentAuthorityRejectionWithoutWrites(
 	if err != nil {
 		t.Fatalf("SelectGenesis(): %v", err)
 	}
-	assertGenesisNotSelected(
-		t,
-		result,
-		projecttypeenvselectioneffect.NotSelectedCurrentAuthorityRejection(),
-	)
-	after := genesisE2EEffectCounts(t, fixture.database)
-	if after != before {
-		t.Fatalf(
-			"current-authority rejection wrote effect rows: before=%+v after=%+v",
-			before,
-			after,
-		)
+	if _, ok := result.(projecttypeenvselectioneffect.FreshlyCommitted); !ok {
+		t.Fatalf("SelectGenesis() = %T, want FreshlyCommitted", result)
 	}
 }
 
@@ -271,7 +260,7 @@ func TestGenesisServiceMapsPriorHeadBeforeConcurrentGraphDrift(
 		GenesisSelectionInput{
 			Request:   request,
 			Content:   content,
-			Authority: NewDedicatedCLIInvocation(),
+			Authority: hostRoutedIngressForTest(t, request, content),
 		},
 	)
 	if err != nil {
@@ -292,7 +281,7 @@ func TestGenesisServiceMapsPriorHeadBeforeConcurrentGraphDrift(
 	}
 }
 
-func TestGenesisServiceDoesNotMapInvalidIngressToNotSelected(
+func TestGenesisServiceRejectsMissingHostRequestWithoutWrites(
 	t *testing.T,
 ) {
 	fixture := newGenesisE2EFixture(t)
@@ -304,12 +293,14 @@ func TestGenesisServiceDoesNotMapInvalidIngressToNotSelected(
 			Content: fixture.content,
 		},
 	)
-	if err == nil {
-		t.Fatalf("SelectGenesis(invalid ingress) = %T, want error", result)
+	if err != nil {
+		t.Fatalf("SelectGenesis(missing host request): %v", err)
 	}
-	if result != nil {
-		t.Fatalf("SelectGenesis(invalid ingress) result = %T, want nil", result)
-	}
+	assertGenesisNotSelected(
+		t,
+		result,
+		projecttypeenvselectioneffect.NotSelectedCurrentAuthorityRejection(),
+	)
 	after := genesisE2EEffectCounts(t, fixture.database)
 	if after != before {
 		t.Fatalf(

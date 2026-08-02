@@ -1,0 +1,5 @@
+- **Situation and question.** A legacy publication card needs one exact result.
+- **Template A.** `A.1 Solution -> U.System`.
+- **Boundaries.** Stop after the exact result or return when the entity changes.
+- **Result test.** The result is the exact entity recognized under `U.System`.
+- **Public coarsening.** "Legacy result" restores to the direct result.

@@ -20,6 +20,8 @@ func TestGenericCommitRejectsSupplementalProjectedColumnDriftBeforeCommit(
 ) {
 	for _, fault := range supplementalProjectedColumnFaults() {
 		t.Run(fault.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := fault.newFixture(t, "same-tx-"+fault.name)
 			allowDecomposedProjectionMutation(t, fixture.database, fault.updates)
 			installDecomposedProjectionFaultTrigger(t, fixture.database, fault)
@@ -47,6 +49,8 @@ func TestGenericReplayRejectsSupplementalDurableProjectedColumnDrift(
 ) {
 	for _, fault := range supplementalProjectedColumnFaults() {
 		t.Run(fault.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := fault.newFixture(t, "replay-"+fault.name)
 			receipt, err := fixture.adapter.CommitMemoryChangeSet(
 				context.Background(),

@@ -130,8 +130,9 @@ func (readiness canonicalProjectReadiness) fullProfileBasisLine() string {
 		return ""
 	}
 	return fmt.Sprintf(
-		"Project profile: scope_id=%s; admission_record_ref=%s; admission_record_digest=%s; profile_payload_digest=%s; ledger_revision=%d.",
+		"Project profile: scope_id=%s; origin=%s; admission_record_ref=%s; admission_record_digest=%s; profile_payload_digest=%s; ledger_revision=%d.",
 		applicability.ScopeID().String(),
+		basis.origin,
 		basis.admissionRecordRef.String(),
 		basis.admissionRecordDigest.String(),
 		basis.payloadDigest.String(),

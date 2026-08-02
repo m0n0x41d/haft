@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"strings"
@@ -273,10 +274,10 @@ func TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject(t *testing.T) {
 			t.Fatal(err)
 		}
 		for _, required := range []string{
-			`"unit_id":"readme:practical_use_card:system-in-context"`,
+			`"unit_id":"readme:practical_use_card:system-recognition"`,
+			`"unit_id":"readme:practical_use_card:system-delimitation"`,
 			`"pattern_id":"C.26"`,
 			`"pattern_id":"C.32.PAD"`,
-			`"pattern_id":"E.18.NET"`,
 		} {
 			if !bytes.Contains(encoded, []byte(required)) {
 				t.Fatalf(
@@ -293,6 +294,24 @@ func TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Fatalf("embedded Query wrote into downstream project: %#v", entries)
+	}
+}
+
+func TestFPFQueryIndexVerificationCacheRunsExactVerificationOnce(t *testing.T) {
+	calls := 0
+	cache := newFPFQueryIndexVerificationCache(func(*sql.DB) error {
+		calls++
+		return nil
+	})
+
+	if err := cache.Verify(nil); err != nil {
+		t.Fatalf("first cached verification: %v", err)
+	}
+	if err := cache.Verify(nil); err != nil {
+		t.Fatalf("replayed cached verification: %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("verification calls = %d, want 1", calls)
 	}
 }
 

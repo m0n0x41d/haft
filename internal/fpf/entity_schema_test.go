@@ -118,7 +118,6 @@ func TestHaftEntitySchemaIsClosedIntentWithoutMemoryInternals(t *testing.T) {
 	schemaDescription, _ := schema["description"].(string)
 	for _, fragment := range []string{
 		"onboarding_required",
-		"enablement_choice_required",
 		"restart_required",
 		"established",
 		"identity_conflict",
@@ -130,6 +129,7 @@ func TestHaftEntitySchemaIsClosedIntentWithoutMemoryInternals(t *testing.T) {
 		"persistence.performed",
 		"persistence.authority_granted",
 		"never grants decision",
+		"agent-inferred receiving use",
 	} {
 		if !strings.Contains(schemaDescription, fragment) {
 			t.Fatalf(

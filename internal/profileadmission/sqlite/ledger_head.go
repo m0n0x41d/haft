@@ -21,6 +21,14 @@ all_revisions AS (
 	SELECT revision.project_root, revision.ledger_revision
 	FROM project_profile_revisions_v3 revision
 	JOIN target ON target.project_root = revision.project_root
+	UNION ALL
+	SELECT revision.project_root, revision.ledger_revision
+	FROM project_profile_revisions_v4 revision
+	JOIN target ON target.project_root = revision.project_root
+	UNION ALL
+	SELECT revision.project_root, revision.ledger_revision
+	FROM project_profile_revisions_v5 revision
+	JOIN target ON target.project_root = revision.project_root
 ), all_admissions AS (
 	SELECT admission.admission_id
 	FROM project_profile_admissions admission
@@ -32,6 +40,14 @@ all_revisions AS (
 	UNION ALL
 	SELECT admission.admission_id
 	FROM project_profile_admissions_v3 admission
+	JOIN target ON target.project_root = admission.project_root
+	UNION ALL
+	SELECT admission.admission_id
+	FROM project_profile_admissions_v4 admission
+	JOIN target ON target.project_root = admission.project_root
+	UNION ALL
+	SELECT admission.admission_id
+	FROM project_profile_admissions_v5 admission
 	JOIN target ON target.project_root = admission.project_root
 ), exact_uses AS (
 	SELECT admission.admission_id
@@ -75,6 +91,38 @@ all_revisions AS (
 		AND admission.admission_id = revision.admission_id
 		AND admission.admission_digest = revision.admission_digest
 	JOIN profile_declaration_authority_uses_v3 authority_use
+		ON authority_use.committed_admission_ref = admission.admission_id
+		AND authority_use.committed_admission_digest = admission.admission_digest
+		AND authority_use.authority_resolution_ref = admission.authority_resolution_ref
+		AND authority_use.authority_resolution_digest = admission.authority_resolution_digest
+		AND authority_use.single_use_key = admission.single_use_key
+		AND authority_use.admission_request_digest = admission.admission_request_digest
+	UNION ALL
+	SELECT admission.admission_id
+	FROM project_profile_revisions_v4 revision
+	JOIN target ON target.project_root = revision.project_root
+	JOIN project_profile_admissions_v4 admission
+		ON admission.project_root = revision.project_root
+		AND admission.ledger_revision = revision.ledger_revision
+		AND admission.admission_id = revision.admission_id
+		AND admission.admission_digest = revision.admission_digest
+	JOIN profile_declaration_authority_uses_v4 authority_use
+		ON authority_use.committed_admission_ref = admission.admission_id
+		AND authority_use.committed_admission_digest = admission.admission_digest
+		AND authority_use.authority_resolution_ref = admission.authority_resolution_ref
+		AND authority_use.authority_resolution_digest = admission.authority_resolution_digest
+		AND authority_use.single_use_key = admission.single_use_key
+		AND authority_use.admission_request_digest = admission.admission_request_digest
+	UNION ALL
+	SELECT admission.admission_id
+	FROM project_profile_revisions_v5 revision
+	JOIN target ON target.project_root = revision.project_root
+	JOIN project_profile_admissions_v5 admission
+		ON admission.project_root = revision.project_root
+		AND admission.ledger_revision = revision.ledger_revision
+		AND admission.admission_id = revision.admission_id
+		AND admission.admission_digest = revision.admission_digest
+	JOIN profile_declaration_authority_uses_v5 authority_use
 		ON authority_use.committed_admission_ref = admission.admission_id
 		AND authority_use.committed_admission_digest = admission.admission_digest
 		AND authority_use.authority_resolution_ref = admission.authority_resolution_ref
@@ -192,6 +240,88 @@ JOIN project_profile_admissions_v3 admission
 	AND admission.receipt_digest = revision.receipt_digest
 	AND admission.recorded_at = revision.recorded_at
 JOIN profile_declaration_authority_uses_v3 authority_use
+	ON authority_use.committed_admission_ref = admission.admission_id
+	AND authority_use.committed_admission_digest = admission.admission_digest
+	AND authority_use.authority_resolution_ref = admission.authority_resolution_ref
+	AND authority_use.authority_resolution_digest = admission.authority_resolution_digest
+	AND authority_use.single_use_key = admission.single_use_key
+	AND authority_use.action_kind = admission.action_kind
+	AND authority_use.project_root = admission.project_root
+	AND authority_use.project_binding_digest = admission.project_binding_digest
+	AND authority_use.authority_basis_ref = admission.authority_basis_ref
+	AND authority_use.authority_basis_digest = admission.authority_basis_digest
+	AND authority_use.work_input_ref = admission.work_input_ref
+	AND authority_use.work_input_digest = admission.work_input_digest
+	AND authority_use.admission_request_digest = admission.admission_request_digest
+	AND authority_use.consumed_at = admission.recorded_at
+WHERE revision.configured_profile_kind = 'Declared'
+	AND admission.action_kind = 'profile.declare.from_onboarding_candidate'
+UNION ALL
+SELECT admission.admission_json,
+	admission.admission_digest,
+	admission.receipt_json,
+	admission.receipt_digest,
+	admission.profile_payload_json,
+	admission.profile_payload_digest,
+	admission.candidate_provenance_json,
+	admission.candidate_provenance_digest,
+	revision.ledger_revision
+FROM project_profile_revisions_v4 revision
+JOIN target ON target.project_root = revision.project_root
+	AND target.ledger_revision = revision.ledger_revision
+JOIN project_profile_admissions_v4 admission
+	ON admission.project_root = revision.project_root
+	AND admission.ledger_revision = revision.ledger_revision
+	AND admission.expected_ledger_revision = revision.ledger_revision - 1
+	AND admission.admission_id = revision.admission_id
+	AND admission.admission_digest = revision.admission_digest
+	AND admission.profile_payload_json = revision.profile_payload_json
+	AND admission.profile_payload_digest = revision.profile_payload_digest
+	AND admission.receipt_json = revision.receipt_json
+	AND admission.receipt_digest = revision.receipt_digest
+	AND admission.recorded_at = revision.recorded_at
+JOIN profile_declaration_authority_uses_v4 authority_use
+	ON authority_use.committed_admission_ref = admission.admission_id
+	AND authority_use.committed_admission_digest = admission.admission_digest
+	AND authority_use.authority_resolution_ref = admission.authority_resolution_ref
+	AND authority_use.authority_resolution_digest = admission.authority_resolution_digest
+	AND authority_use.single_use_key = admission.single_use_key
+	AND authority_use.action_kind = admission.action_kind
+	AND authority_use.project_root = admission.project_root
+	AND authority_use.project_binding_digest = admission.project_binding_digest
+	AND authority_use.authority_basis_ref = admission.authority_basis_ref
+	AND authority_use.authority_basis_digest = admission.authority_basis_digest
+	AND authority_use.work_input_ref = admission.work_input_ref
+	AND authority_use.work_input_digest = admission.work_input_digest
+	AND authority_use.admission_request_digest = admission.admission_request_digest
+	AND authority_use.consumed_at = admission.recorded_at
+WHERE revision.configured_profile_kind = 'Declared'
+	AND admission.action_kind = 'profile.apply_supported_singleton_default'
+UNION ALL
+SELECT admission.admission_json,
+	admission.admission_digest,
+	admission.receipt_json,
+	admission.receipt_digest,
+	admission.profile_payload_json,
+	admission.profile_payload_digest,
+	admission.candidate_provenance_json,
+	admission.candidate_provenance_digest,
+	revision.ledger_revision
+FROM project_profile_revisions_v5 revision
+JOIN target ON target.project_root = revision.project_root
+	AND target.ledger_revision = revision.ledger_revision
+JOIN project_profile_admissions_v5 admission
+	ON admission.project_root = revision.project_root
+	AND admission.ledger_revision = revision.ledger_revision
+	AND admission.expected_ledger_revision = revision.ledger_revision - 1
+	AND admission.admission_id = revision.admission_id
+	AND admission.admission_digest = revision.admission_digest
+	AND admission.profile_payload_json = revision.profile_payload_json
+	AND admission.profile_payload_digest = revision.profile_payload_digest
+	AND admission.receipt_json = revision.receipt_json
+	AND admission.receipt_digest = revision.receipt_digest
+	AND admission.recorded_at = revision.recorded_at
+JOIN profile_declaration_authority_uses_v5 authority_use
 	ON authority_use.committed_admission_ref = admission.admission_id
 	AND authority_use.committed_admission_digest = admission.admission_digest
 	AND authority_use.authority_resolution_ref = admission.authority_resolution_ref

@@ -1,6 +1,6 @@
 ---
 name: h-frame
-description: Shape an under-articulated engineering problem without assuming a solution or forcing a project phase. Default to a conversational frame; create a ProblemCard only on explicit save intent or when a named receiving use needs a durable accepted problem statement.
+description: Shape an under-articulated engineering problem without assuming a solution or forcing a project phase. Default to a conversational frame; create a ProblemCard only on explicit save intent or when current Work supplies a concrete operator-named or agent-inferred receiving use that needs a durable accepted problem statement.
 ---
 
 # h-frame — Shape the current problem
@@ -10,6 +10,12 @@ Retrieve current FPF source first. Use
 SourceID or UnitID; otherwise use `mode="concern"` with the operator's query,
 then inspect the direct pattern body. Query retrieves candidates only; it does
 not choose the governing pattern or justify persistence.
+
+Treat a concern result's `candidate_set` as incomplete navigation. Before
+relying on one candidate, inspect its exact identifier and direct pattern
+body. Keep several candidates live or abstain when the basis is insufficient.
+Never query after framing merely to manufacture support for a frame already
+chosen.
 
 Separate the object from its description and carrier. State the observed
 signal, unresolved relation, scope, constraints, acceptance basis, uncertainty,

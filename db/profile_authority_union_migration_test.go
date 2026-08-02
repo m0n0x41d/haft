@@ -227,7 +227,9 @@ func TestProfileAuthorityUnionMigration51PinsExactSourcesCASAndUnionView(t *test
 	for _, required := range []string{
 		"FROM project_profile_revisions legacy",
 		"FROM project_profile_revisions_v2 previous",
-		"FROM project_profile_revisions_v3 current",
+		"FROM project_profile_revisions_v3 historical",
+		"FROM project_profile_revisions_v4 automatic",
+		"FROM project_profile_revisions_v5 current",
 		"COUNT(DISTINCT ledger_revision)",
 		"minimum_revision = 1",
 		"maximum_revision = NEW.expected_ledger_revision",
@@ -242,6 +244,8 @@ func TestProfileAuthorityUnionMigration51PinsExactSourcesCASAndUnionView(t *test
 		"SELECT 'v1'",
 		"SELECT 'v2'",
 		"SELECT 'v3'",
+		"SELECT 'v4'",
+		"SELECT 'v5'",
 		"COUNT(DISTINCT ledger_revision) = COUNT(*)",
 	} {
 		if !strings.Contains(currentView, required) {

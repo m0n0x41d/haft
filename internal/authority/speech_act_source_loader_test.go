@@ -10,12 +10,14 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestResolveRecordedSpeechActSourceMissing(t *testing.T) {
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "speech-act-source.sqlite"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "speech-act-source.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -140,7 +142,9 @@ func recordSpeechActSourceResolverFixture(
 	t *testing.T,
 ) (*sql.DB, VerifiedSpeechActSource, RecordedSpeechActSource) {
 	t.Helper()
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "speech-act-source.sqlite"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "speech-act-source.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -162,7 +166,9 @@ func recordSpeechActSourceResolverFixture(
 func TestSpeechActSourceWriterRecordSurvivesLaterEffectFailureAndReplaysExactly(
 	t *testing.T,
 ) {
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "speech-act-source.sqlite"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "speech-act-source.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -292,7 +298,9 @@ func assertRecordedSpeechActSourceBindings(
 }
 
 func TestRecordedSpeechActSourceLoaderRejectsMalformedStoredReference(t *testing.T) {
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "speech-act-source.sqlite"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "speech-act-source.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

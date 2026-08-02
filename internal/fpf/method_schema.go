@@ -3,7 +3,7 @@ package fpf
 func haftMethodTool() Tool {
 	return Tool{
 		Name:        "haft_method",
-		Description: "MethodRun lifecycle.",
+		Description: "MethodRun lifecycle. Do not pass task, thread, commission, or work IDs as scope_id unless a prior response returned scope_choice_required.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -64,7 +64,7 @@ func haftMethodTool() Tool {
 				},
 				"scope_id": map[string]interface{}{
 					"type":        "string",
-					"description": "Exact canonical project ScopeID for pull/catalog when the admitted profile has several scopes.",
+					"description": "Exact canonical project ScopeID only after scope_choice_required for a multi-scope profile. Never pass task, thread, commission, or work IDs as selectors.",
 				},
 				"carry_through": map[string]interface{}{
 					"type":        "array",

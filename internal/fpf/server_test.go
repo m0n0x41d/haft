@@ -503,6 +503,86 @@ func TestHandleToolsList_AdvertisesNativePiTools(t *testing.T) {
 	}
 }
 
+func TestToolCatalog_AgentQualityDescriptionsExposeEffectsAndSourceFollowup(
+	t *testing.T,
+) {
+	server := NewServer("test")
+	server.SetV5Handler(
+		func(
+			_ context.Context,
+			_ string,
+			_ json.RawMessage,
+		) (string, error) {
+			return "", nil
+		},
+	)
+	tools := make(map[string]Tool)
+	for _, tool := range server.ToolCatalog() {
+		tools[tool.Name] = tool
+	}
+
+	for _, toolName := range []string{"haft_note", "haft_problem", "haft_solution"} {
+		full := tools[toolName].Description
+		compact := compactToolDescription(toolName, full)
+		for _, want := range []string{"Durably", "explicit save", "agent-inferred receiving use"} {
+			if !strings.Contains(full, want) {
+				t.Fatalf("%s full description missing %q: %q", toolName, want, full)
+			}
+			if !strings.Contains(compact, want) {
+				t.Fatalf("%s compact description missing %q: %q", toolName, want, compact)
+			}
+		}
+	}
+
+	queryFull := tools["haft_query"].Description
+	queryCompact := compactToolDescription("haft_query", queryFull)
+	for _, text := range []string{queryFull, queryCompact} {
+		for _, want := range []string{"concern", "exact", "inspect"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("haft_query description missing %q: %q", want, text)
+			}
+		}
+	}
+
+	refreshFull := tools["haft_refresh"].Description
+	refreshCompact := compactToolDescription("haft_refresh", refreshFull)
+	for _, text := range []string{refreshFull, refreshCompact} {
+		if !strings.Contains(text, "lifecycle") ||
+			!strings.Contains(text, "write") {
+			t.Fatalf("haft_refresh description hides mutation: %q", text)
+		}
+	}
+
+	methodCompact := compactToolDescription(
+		"haft_method",
+		tools["haft_method"].Description,
+	)
+	for _, want := range []string{"before non-mechanical edits", "close", "completion"} {
+		if !strings.Contains(methodCompact, want) {
+			t.Fatalf("haft_method compact description missing %q: %q", want, methodCompact)
+		}
+	}
+}
+
+func TestHandleToolsList_ExposesTaskContextAndNoteValidity(t *testing.T) {
+	note := mustListToolProperties(t, "haft_note")
+	for _, field := range []string{"task_context", "valid_until"} {
+		if _, ok := note[field]; !ok {
+			t.Fatalf("haft_note schema missing %q: %#v", field, note)
+		}
+	}
+	for _, toolName := range []string{
+		"haft_problem",
+		"haft_solution",
+		"haft_decision",
+	} {
+		properties := mustListToolProperties(t, toolName)
+		if _, ok := properties["task_context"]; !ok {
+			t.Fatalf("%s schema missing task_context: %#v", toolName, properties)
+		}
+	}
+}
+
 func TestToolCatalog_BindingDescriptionsNameHostReceiptVerifierBoundary(t *testing.T) {
 	body := strings.Join([]string{
 		toolCatalogActionDescription(t, "haft_commission"),
@@ -942,7 +1022,7 @@ func TestHaftDecisionSchemaExposesTaskContext(t *testing.T) {
 	}
 
 	description, _ := taskContext["description"].(string)
-	if !strings.Contains(description, "DecisionRecord ID filename") {
+	if !strings.Contains(description, "Stable task/fork context") {
 		t.Fatalf("unexpected task_context description: %q", description)
 	}
 }

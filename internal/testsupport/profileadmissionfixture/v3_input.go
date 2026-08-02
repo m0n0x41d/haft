@@ -76,7 +76,12 @@ func fixtureProfileSuggestion(
 		files = append(files, "go.mod", "internal/fixture.go")
 	}
 	if nonSoftwareCount > 0 {
-		files = append(files, "book.toml", "docs/index.md")
+		files = append(
+			files,
+			"docs/index.md",
+			"docs/operations.md",
+			"docs/product.md",
+		)
 	}
 	if nonSoftwareCount > 1 {
 		files = append(files, "models/fixture.onnx")

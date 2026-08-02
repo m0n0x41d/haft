@@ -166,9 +166,10 @@ func renderProjectProfileDrift(
 			drift.SemanticRole,
 		),
 		fmt.Sprintf(
-			"Declared basis: scope_ids=[%s]; realization_kinds=[%s]; admission_record_ref=%s; admission_record_digest=%s; profile_payload_digest=%s; ledger_revision=%d; recorded_at=%s.",
+			"Declared basis: scope_ids=[%s]; realization_kinds=[%s]; origin=%s; admission_record_ref=%s; admission_record_digest=%s; profile_payload_digest=%s; ledger_revision=%d; recorded_at=%s.",
 			strings.Join(canonicalProfileScopeIDs(declared.Scopes), ","),
 			strings.Join(canonicalRealizationKinds(declared.Scopes), ","),
+			declared.Origin,
 			declared.AdmissionRecordRef,
 			declared.AdmissionRecordDigest,
 			declared.PayloadDigest,

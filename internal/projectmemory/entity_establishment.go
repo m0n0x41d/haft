@@ -407,7 +407,7 @@ func NewEntityEnablementChoiceRequired(
 	return newEntityEstablishmentRecovery(
 		EntityEnablementChoiceRequiredResult,
 		detail,
-		"Use h-onboard to review and choose typed project-memory enablement; no entity was written.",
+		"Run haft init to repair the default project-memory installation, restart the host MCP session, then retry the unchanged request; no entity was written.",
 	)
 }
 

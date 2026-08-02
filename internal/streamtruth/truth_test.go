@@ -91,12 +91,11 @@ func TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim(t *testing.T) {
 		}
 		for _, distinction := range []string{
 			"`haft_onboard` is the normal setup surface",
-			"`profile_prepare` and `memory_prepare` may materialize or reuse only non-binding review carriers",
-			"Only an explicit `/h-onboard` may consume a reviewed profile",
-			"only an explicit `/h-decide` may consume a reviewed structured-memory choice",
+			"`haft init` installs default project memory automatically",
+			"`profile_prepare` may materialize or reuse only a non-binding review carrier",
+			"require a direct, unambiguous operator choice before",
 			"`haft onboard profile apply`",
-			"`haft onboard memory enable`",
-			"Enablement creates no substitute DecisionRecord",
+			"`host_routed_operator_request`",
 		} {
 			if !strings.Contains(normalized, distinction) {
 				t.Errorf("%s omits profile/DecisionRecord authority distinction %q", carrier, distinction)
@@ -160,9 +159,9 @@ func TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim(t *testing.T) {
 			"experimental",
 			"native Pi `haft_onboard` tool",
 			"`profile_prepare`",
-			"`memory_prepare`",
 			"`haft onboard profile apply`",
-			"`haft onboard memory enable`",
+			"default project memory",
+			"direct, unambiguous operator selection",
 		},
 		"packages/haft-pi/prompts/h-onboard.md": {
 			"V9 CONTRACT",
@@ -171,9 +170,9 @@ func TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim(t *testing.T) {
 			"experimental",
 			"native Pi `haft_onboard` tool",
 			"`profile_prepare`",
-			"`memory_prepare`",
 			"`haft onboard profile apply`",
-			"`haft onboard memory enable`",
+			"default project memory",
+			"direct, unambiguous operator selection",
 		},
 	}
 	for carrier, markers := range requiredCarrierMarkers {
@@ -267,12 +266,12 @@ func TestPublicMCPDocsNameExactV9DiscoverySurface(t *testing.T) {
 	normalized := normalizeTruthProse(protocol)
 	for _, boundary := range []string{
 		"`tools/list` is atomic",
-		"stay advertised before project onboarding or structured-memory enablement",
+		"stay advertised before project-profile onboarding completes",
 		"return a closed recovery result instead of disappearing",
 		"not a blanket stability promise for every diagnostic, migration, or compatibility action",
 		"`haft_memory` validate/admit is an expert diagnostic or implementation surface",
 		"through a nested `request` envelope",
-		"Agents do not choose or declare an internal memory schema",
+		"Users and ordinary agents do not choose, declare, or need to understand an internal memory schema",
 		"Only Claude Code and Codex are stable-host acceptance targets",
 	} {
 		if !strings.Contains(normalized, boundary) {
@@ -347,14 +346,14 @@ func TestAgentDisciplineTemplateKeepsOneTruthContract(t *testing.T) {
 	}
 
 	for _, requiredBoundary := range []string{
-		"authority.decision_binding_mode",
-		"explicit_h_decide",
-		"`strict_cli_speech_act` mode adds a reviewed controlling-terminal phrase",
 		"`haft_onboard` is the normal setup surface",
-		"`profile_prepare` and `memory_prepare` may materialize or reuse only non-binding review carriers",
-		"Only an explicit `/h-onboard` may consume a reviewed profile",
-		"only an explicit `/h-decide` may consume a reviewed structured-memory choice",
-		"Enablement creates no substitute DecisionRecord",
+		"`haft init` installs default project memory automatically",
+		"`profile_prepare` may materialize or reuse only a non-binding review carrier",
+		"direct, unambiguous operator request",
+		"without a confirmation round trip",
+		"`host_routed_operator_request`",
+		"skill token is not a receipt",
+		"`/h-commission` remains manual-only",
 	} {
 		if !strings.Contains(normalizeTruthProse(agents), requiredBoundary) {
 			t.Errorf("installed agent discipline omits authority boundary %q", requiredBoundary)

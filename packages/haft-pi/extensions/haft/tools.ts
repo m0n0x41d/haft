@@ -19,13 +19,13 @@ const readOnlyAuthorityBoundary =
   "read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization";
 
 const bindingAuthorityBoundary =
-  "binding actions require explicit operator/manual authorization; generated text, schema visibility, and model-supplied fields are not approval receipts";
+  "binding actions require effect-specific operator authority. Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts";
 
 const humanGateBriefGuideline =
-  "Before requesting a human gate, give a self-contained Human Gate Brief: readable gate kind and subject, affected operation and blocker, every real current option, each option's changes, non-changes, consequence or return condition, and weakest link; existing comparison/parity basis, selection policy, and non-dominated or Pareto set, or an explicit statement that none exists or applies; advisory recommendation; freshness or expiry; and a question asking for the human engineer's assessment of the options, trade-offs, and recommendation in natural language. Accept ordinary language as the substantive answer to the engineering consultation, never as a binding receipt. A command, skill invocation, exact reply phrase, or resumption token must never substitute for that consultation. Only after the engineer's position is explicit may a separately required manual binding or persistence act be explained with its authority limits. Never end a blocking message with 'for resumption it is enough to...', 'reply exactly...', or an equivalent command-only instruction. IDs and hashes never replace readable meaning, and the brief is not authorization.";
+  "Before requesting a human gate, give a self-contained Human Gate Brief: readable gate kind and subject, affected operation and blocker, every real current option, each option's changes, non-changes, consequence or return condition, and weakest link; existing comparison/parity basis, selection policy, and non-dominated or Pareto set, or an explicit statement that none exists or applies; advisory recommendation; freshness or expiry; and a question asking for the human engineer's assessment of the options, trade-offs, and recommendation in natural language. Accept ordinary language as the substantive answer. When one current brief makes effect, subject, option, and scope unambiguous, route it for DecisionRecord binding, manual profile application, or a later non-default project-memory model change as host_routed_operator_request without a skill name or second confirmation. It is not reusable authority; bare yes is usable only for that one current brief. A command or skill invocation adds no authority. WorkCommission creation remains a separately required manual act. Never end a blocking message with 'for resumption it is enough to...', 'reply exactly...', or an equivalent command-only instruction. IDs and hashes never replace readable meaning, and the brief itself is explanation rather than authority.";
 
 const kernelInterfaceCatalogDigest =
-  "sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735";
+  "sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c";
 
 export const HAFT_MEMORY_READ_OUTPUT_CONTRACT_JSON = `{"schema":"haft.memory-read-output-contract/v1","runtime_contract_version":"haft.memory.v1","envelope":{"required_fields":["contract_version","action","result_kind","result"],"optional_fields":["result_digest"]},"projection_profile_refs":["agent_orientation.v1","agent_orientation.v2","decision_rationale.v1","evidence_currentness.v1","implementation_trace.v1","spec_impact.v1"],"result_families":[{"action":"resolve","variants":[{"kind":"exact_entity","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","entity","resolution_witnesses"]},{"kind":"known_absent","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","inspected_index","completeness_basis_ref"]},{"kind":"entity_candidates","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","candidates","candidate_set_coverage","applied_budget"]},{"kind":"resolution_unsettled","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","issues"]},{"kind":"retry_required","required_fields":["resolution_scope","snapshot_basis","interpretation_contract","observed_snapshot","required_snapshot","cause","retry_operation"]}]},{"action":"neighborhood","variants":[{"kind":"exact_neighborhood","required_envelope_fields":["result_digest"],"required_fields":["schema","memory_view_context","snapshot_basis","projection_basis","projection_basis_digest","root","facets","boundaries","interpretation_contract","read_affordances","applied_budget"]},{"kind":"retry_required","required_fields":["cause","required_snapshot","retry_operation","interpretation_contract"]},{"kind":"abstained","required_fields":["basis","inspected_sources","interpretation_contract"]}]},{"action":"recall","variants":[{"kind":"scoped_memory_candidate_set","required_fields":["scope","snapshot_basis","interpretation_contract","candidates","candidate_set_coverage","applied_budget"]},{"kind":"retry_required","required_fields":["scope","snapshot_basis","interpretation_contract","cause","required_snapshot","retry_operation"]},{"kind":"abstained","required_fields":["scope","snapshot_basis","interpretation_contract","inspected_producers","basis"]}]}],"named_shapes":[{"name":"ProjectionBasis","required_fields":["schema","profile_ref","profile_edition","profile_digest","projection_schema_version","canonical_inputs","derived_projection_inputs","declared_input_families","declared_slot_kinds","correspondence_manifests","item_basis"]},{"name":"ProjectionItemBasis","discriminator":"kind","variants":[{"kind":"direct","required_fields":["kind","output","inputs","transform","intentional_loss"]},{"kind":"correspondence","required_fields":["kind","output","inputs","correspondence_manifest_ref","transform","intentional_loss"]}]},{"name":"FacetBasisIssue","discriminator":"kind","variants":[{"kind":"missing_type_basis","required_fields":["kind","facet","required_ref_or_kind"]},{"kind":"missing_correspondence_basis","required_fields":["kind","facet","required_correspondence"]},{"kind":"unresolved_legacy_identity","required_fields":["kind","facet","legacy_ref","resolution_ref"]},{"kind":"stale_derived_projection","required_fields":["kind","facet","projection_ref","observed_version","required_version"]},{"kind":"explicit_bridge_required","required_fields":["kind","facet","source_context_ref","target_context_ref","bridge"],"optional_fields":["known_bridge_ref"]}]},{"name":"WholeReadRetryCause","discriminator":"kind","variants":[{"kind":"stale_snapshot","required_fields":["kind","observed_snapshot","required_snapshot"]},{"kind":"stale_cursor","required_fields":["kind","cursor","required_snapshot"]},{"kind":"projection_rebuild_required","required_fields":["kind","projection_ref","observed_epoch","required_epoch"]}]},{"name":"ReadAbstentionBasis","discriminator":"kind","variants":[{"kind":"entity_or_context_not_found","required_fields":["kind","entity_ref","bounded_context_ref","snapshot_basis"]},{"kind":"no_admissible_facet","required_fields":["kind","issues"]}]},{"name":"InterpretationContract","required_fields":["structure","identity","relational_records","ranking","truth","applicability","authority","work_order","completeness","hydrate_before_reliance"]},{"name":"RelationalRecordsInterpretation","allowed_values":["assertions_exact_at_snapshot","occurrences_exact_at_snapshot","legacy_unqualified_assertions","candidate_assertions","heterogeneous_relational_records","unavailable"]},{"name":"RelationalRecordItemPosture","allowed_values":["assertion_exact","occurrence_exact","legacy_unqualified_assertion","candidate_assertion"]},{"name":"RelationDeclarationPosture","allowed_values":["typed_relation_declaration_fragment"]},{"name":"RelationPathWitness","required_fields":["assertion_id","relation_declaration_fragment_id","relation_declaration_posture","bounded_context_ref","slot_kind_id","target_ref","provenance_ref","admission_event_ref","relational_record_posture"],"optional_fields":["signature_id","explicit_modality"]},{"name":"FacetCoverage","discriminator":"kind","variants":[{"kind":"complete","required_fields":["kind","included"]},{"kind":"partial","required_fields":["kind","included","omitted_at_least","snapshot_cursor"]},{"kind":"not_applicable","required_fields":["kind","included","applicability_basis_ref"]},{"kind":"unavailable","required_fields":["kind","included","missing_basis_ref"]},{"kind":"stale","required_fields":["kind","included","retry_basis_ref"]}]},{"name":"AppliedReadBudget","required_fields":["requested_limits","applied_limits","per_facet","emitted_relation_path_count","omitted_relation_path_count","emitted_excerpt_character_count","emitted_provenance_depth","bounded_content_utf8_bytes","continuation_cursors"]},{"name":"RetryRequired","required_fields":["cause","required_snapshot","retry_operation","interpretation_contract"]},{"name":"ScopedRecallAbstentionBasis","discriminator":"kind","variants":[{"kind":"no_matching_memory","required_fields":["kind","complete_producer_refs"]},{"kind":"no_usable_producer","required_fields":["kind","unavailable_producer_refs","missing_basis_ref"]}]}]}`;
 
@@ -521,7 +521,7 @@ const haftOnboardScopeSchema = Type.Object({
 }, { additionalProperties: false });
 
 const haftOnboardParameters = Type.Object({
-  action: enumOf("status", "profile_prepare", "memory_prepare"),
+  action: enumOf("status", "profile_prepare"),
   scopes: Type.Optional(Type.Array(haftOnboardScopeSchema, { maxItems: 32 })),
   basis: Type.Optional(memoryTextSchema)
 }, { additionalProperties: false });
@@ -602,6 +602,7 @@ const haftSolutionParameters = Type.Object({
   recommendation_rationale: OptStr(),
   scores: OptObj(),
   selected_ref: OptStr(),
+  task_context: OptStr(),
   variants: Type.Optional(Type.Array(Type.Object({
     title: Type.String(),
     weakest_link: Type.String(),
@@ -709,7 +710,9 @@ const haftNoteParameters = Type.Object({
   bounded_context_ref: OptStr(),
   observations: OptStrList(),
   rationale: OptStr(),
-  search_keywords: OptStr()
+  search_keywords: OptStr(),
+  task_context: OptStr(),
+  valid_until: OptStr()
 });
 
 const haftRefreshParameters = Type.Object({
@@ -826,7 +829,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
       "FPF Query defaults to the bounded working publication view. Request view=trace only when exact provenance or replay is current, and pass its opaque trace_ref rather than copying source paths or hashes; request view=diagnostic only for raw retrieval internals.",
       "Keep exact identifier namespaces separate: FPF PatternID/SourceID/UnitID -> fpf identifier; canonical Haft artifact ID -> related artifact_ref; code symbol/SymbolAnchor -> node symbol/anchor_id; typed-memory EntityID/EntityAlias -> haft_query(action=\"memory\", memory_request={\"mode\":\"resolve\", ...}). On wrong_identifier_namespace with same_call_retryable=false, execute the exact available read-only recovery_call instead of retrying or asking for acknowledgement.",
       "Use action=\"memory\", mode=\"resolve|neighborhood|recall\" only when haft_onboard(action=\"status\") reports structured project memory ready. Resolution, projection inclusion, and recall rank are read-only retrieval facts, not truth, applicability, authority, or Work order.",
-      "When memory.resolve returns known_absent, do not persist automatically. Only an explicit operator save request or a named receiving use may route one task-level establishment request through haft_entity.",
+      "When memory.resolve returns known_absent, do not persist from absence alone. If current Work supplies a concrete durability-requiring receiving use, operator-named or agent-inferred, and stable identity is recoverable, establish the minimum EntityOfConcern through haft_entity without asking for separate permission. Preserve the exact use as provenance.",
       "Use haft_query(action=\"status\") when project graph state is current to the question; status is not a universal first project step.",
       "When status reports a human gate, inspect its referenced read-only basis and apply the Human Gate Brief rule instead of repeating the gate label.",
       humanGateBriefGuideline,
@@ -844,12 +847,14 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
   {
     name: "haft_onboard",
     label: "Haft Onboard",
-    description: "Inspect readable Haft setup status or prepare a non-binding review. Status and detection are read-only; prepare actions may materialize or reuse only a review carrier and never apply a project profile or enable structured project memory.",
-    promptSnippet: "Inspect setup status or prepare the exact non-binding profile or structured-memory review.",
+    description: "Inspect readable Haft setup status or prepare a non-binding project-profile review. haft init installs default memory and may admit only a complete supported singleton as origin=detector_default; profile preparation never applies the review.",
+    promptSnippet: "Inspect setup status or prepare the exact non-binding project-profile review.",
     promptGuidelines: [
-      "Use action=\"status\" to distinguish needs_init, needs_profile, profile_review_ready, needs_memory, memory_review_ready, memory_deferred, and ready.",
-      "profile_prepare and memory_prepare may materialize or reuse only a non-binding review carrier. They never apply or enable the reviewed choice.",
-      "Apply an explicitly reviewed profile only through an explicit h-onboard invocation and `haft onboard profile apply`. Enable an explicitly reviewed structured-memory choice only through manual h-decide and `haft onboard memory enable`.",
+      "Use action=\"status\" to distinguish needs_init, needs_profile, profile_review_ready, and ready.",
+      "haft init installs default project memory automatically. Never ask the operator to enable, defer, select, or understand an internal memory schema.",
+      "When status reports automatic_bootstrap_eligible, route recovery through haft init --core-only; mixed, multiple-scope, insufficient, truncated, or manually reviewed bases remain operator-mediated profile-review work.",
+      "profile_prepare may materialize or reuse only a non-binding review carrier. Apply a directly and unambiguously selected reviewed profile through `haft onboard profile apply`; no skill name or second confirmation is required.",
+      "When status reports profile_override_eligible, a direct, unambiguous operator request may supersede the current detector_default profile and records host_routed_operator_request provenance. Further operator-mediated and legacy profile changes remain a separate contract.",
       "This Pi mirror is experimental compatibility support; stable host parity is not yet proven.",
       bindingAuthorityBoundary
     ],
@@ -859,9 +864,9 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     name: "haft_entity",
     label: "Haft Entity",
     description: "Establish one non-binding EntityOfConcern and its aliases from task-level identity and persistence provenance; the kernel owns conflict checks, validation, internal project basis, admission, and post-commit resolution.",
-    promptSnippet: "Establish one durable EntityOfConcern only for an explicit save request or named receiving use.",
+    promptSnippet: "Establish the minimum durable EntityOfConcern for an explicit save request or a concrete operator-named or agent-inferred receiving use.",
     promptGuidelines: [
-      "Call action=\"establish\" only after memory.resolve returns known_absent and persistence is justified by explicit_operator_request or named_receiving_use.",
+      "Call action=\"establish\" only after memory.resolve returns known_absent and persistence is justified by explicit_operator_request or a concrete named_receiving_use. The latter may be inferred from current cross-session, handoff, audit, automation, delayed-feedback, expensive-feedback, or costly-reversal Work; it needs no separate permission prompt.",
       "Use exactly the task-level fields. Do not construct a raw memory change set or expose internal project-basis selection.",
       "Use an established result's exact next_read unchanged. Preserve conflict, onboarding, restart, rejection, and commit-unknown results; retry restart_required with the unchanged idempotency key.",
       "This Pi mirror is experimental compatibility support; stable host parity is not yet proven."
@@ -875,7 +880,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     promptSnippet: "Use only for an exact raw request envelope; ordinary EntityOfConcern establishment belongs to haft_entity.",
     promptGuidelines: [
       "request.action=\"validate\" writes no rows. request.action=\"admit\" accepts only exact_project plus non_binding_semantic_assertion and can add typed project-memory assertions, never binding decisions, commissions, spec approval, evidence truth, or performed Work.",
-      "Never admit automatically. Persistence requires an explicit operator save request or a named receiving use with request provenance.",
+      "Do not admit from known absence or an empty graph alone. Persistence requires an explicit operator save request or a concrete receiving use, operator-named or agent-inferred from current Work, with request provenance. Binding decisions require a direct operator request; commissions remain manual-only.",
       "Use haft_entity for ordinary EntityOfConcern establishment; do not make an agent choose or repair internal schema state.",
       "Treat Invalid and Underdetermined diagnostics as typed feedback. Do not select or apply a repair automatically.",
       "The kernel strict decoder and server-resolved internal basis remain authoritative; this Pi schema is only a tool-calling mirror.",
@@ -888,7 +893,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Problem",
     description: "Persist and manage problem-shaped project memory when the problem itself is current. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems, and 'close' marks a problem as addressed.",
     promptGuidelines: [
-      "Do not create a ProblemCard merely to precede exploration. Persist only on explicit save intent or when a named receiving use needs a durable accepted problem basis.",
+      "Do not create a ProblemCard merely to precede exploration. Persist only on explicit save intent or when current Work supplies a concrete operator-named or agent-inferred receiving use that needs a durable accepted problem basis.",
       "When exact current identity is known, pass entity_ref and bounded_context_ref. Preserve a committed record_reference exactly; without that basis the carrier can persist while typed projection remains underdetermined."
     ],
     parameters: haftProblemParameters
@@ -898,7 +903,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Solution",
     description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link and novelty marker), 'compare' runs parity check and identifies the Pareto front, 'similar' searches past solution portfolios.",
     promptGuidelines: [
-      "Exploration and comparison are independent capabilities. Keep ordinary results conversational; persist a portfolio or comparison only on explicit save intent or for a named receiving use.",
+      "Exploration and comparison are independent capabilities. Keep ordinary results conversational; persist a portfolio or comparison only on explicit save intent or when current Work supplies a concrete operator-named or agent-inferred receiving use.",
       "A typed durable portfolio needs exact independently admitted option records. Pass each returned Haft.ProjectRecordRef as project_record_ref; never derive a record ID from an artifact ID. Missing refs leave typed projection underdetermined."
     ],
     parameters: haftSolutionParameters
@@ -908,7 +913,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Decision",
     description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact, 'baseline' snapshots affected files for drift detection.",
     promptGuidelines: [
-      "MCP haft_decision(action=\"decide\") fails closed in both project modes. After explicit manual h-decide, bind through the CLI input-file path; explicit_h_decide adds no second prompt, while strict_cli_speech_act opts into terminal review.",
+      "MCP haft_decision(action=\"decide\") fails closed until a verifiable host receipt exists. Route a direct, unambiguous operator request through h-decide and the CLI input-file effect sink; the skill token itself is not authorization.",
       humanGateBriefGuideline,
       bindingAuthorityBoundary
     ],
@@ -919,7 +924,7 @@ export const HAFT_TOOLS: HaftToolSpec[] = [
     label: "Haft Note",
     description: "Record a project FACT into the reasoning graph. A note is a fact/observation carrier — NOT a decision. Give a title plus at least one atomic observation or a source; rationale is optional. Anchor the fact to decisions/problems/notes via typed edges so it surfaces in related/code_context.",
     promptGuidelines: [
-      "Persist a note only on explicit save intent or when a named receiving use needs an addressable non-binding fact.",
+      "Persist a note only on explicit save intent or when current Work supplies a concrete operator-named or agent-inferred receiving use that needs an addressable non-binding fact.",
       "When exact current identity is known, pass entity_ref and bounded_context_ref. Preserve the committed Haft.ProjectRecordRef exactly for later typed relations; never reconstruct it from the note artifact ID."
     ],
     parameters: haftNoteParameters

@@ -13,7 +13,6 @@ import (
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvreviewcarrier"
-	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
 	"github.com/spf13/cobra"
 )
 
@@ -42,9 +41,11 @@ var onboardProfileApplyCmd = &cobra.Command{
 	Short: "Apply the current reviewed project profile",
 	Long: `Apply the current non-binding project-profile review.
 
-The default explicit_h_onboard policy treats this explicit command, reached
-from the reviewed h-onboard consultation, as the human gate. The command reads
-the prepared review and derives the durable admission inputs itself.`,
+The host calls this internal effect sink only after the operator directly and
+unambiguously selects this exact reviewed profile and scope. The command reads
+the prepared review, records host_routed_operator_request, and derives the
+durable admission inputs itself; no skill name or second confirmation is
+required.`,
 	Args: cobra.NoArgs,
 	RunE: runOnboardProfileApply,
 }
@@ -59,10 +60,11 @@ var onboardMemoryEnableCmd = &cobra.Command{
 	Short: "Enable the current reviewed structured-memory capability",
 	Long: `Enable structured project memory from the current readable review.
 
-This command is valid only from the dedicated manual h-decide route. It
-revalidates and consumes the exact prepared review, preserves the configured
-manual authority policy, and derives all internal effect inputs itself. It
-does not create a DecisionRecord or authorize any other work.`,
+This command is an internal effect sink after the host routes a direct,
+unambiguous operator request for this exact reviewed successor. It revalidates
+and consumes that review, records host_routed_operator_request, and derives all
+internal effect inputs itself. It does not create a DecisionRecord or authorize
+any other work.`,
 	Args: cobra.NoArgs,
 	RunE: runOnboardMemoryEnable,
 }
@@ -103,7 +105,6 @@ type onboardTaskEffectEffects struct {
 
 type reviewedMemorySelectionEffect func(
 	context.Context,
-	projecttypeenvselectionauthority.StrictCLISpeechActCapturer,
 ) (projectTypeEnvGenesisSelectionResponse, error)
 
 type reviewedMemoryDeferralEffect func(
@@ -131,13 +132,8 @@ func init() {
 		"print the task-level result as structured JSON",
 	)
 	onboardProfileCmd.AddCommand(onboardProfileApplyCmd)
-	onboardMemoryCmd.AddCommand(
-		onboardMemoryEnableCmd,
-		onboardMemoryDeferCmd,
-	)
 	onboardCmd.AddCommand(
 		onboardProfileCmd,
-		onboardMemoryCmd,
 	)
 	rootCmd.AddCommand(onboardCmd)
 }
@@ -381,8 +377,6 @@ func runOnboardMemoryEnableWithEffect(
 	}
 	selection, effectErr := selectEffect(
 		commandContext(cmd),
-		projecttypeenvselectionauthority.
-			ControllingTerminalStrictCLISpeechActCapturer{},
 	)
 	if selection.ContractVersion == "" {
 		return fmt.Errorf(
@@ -528,11 +522,11 @@ func readableMemoryNotSelected(
 ) (string, string) {
 	switch reason {
 	case "current_authority_rejection":
-		return "The configured manual authority gate did not accept the current reviewed enablement.",
-			"Return through the dedicated manual h-decide route for this unchanged review."
+		return "The host-routed operator request did not match the current reviewed enablement.",
+			"Return to the unchanged readable review and ask for one exact natural-language selection."
 	case "review_expired":
 		return "The structured-memory review expired before enablement.",
-			"Prepare a fresh readable review, assess it again, and use a new explicit h-decide."
+			"Prepare a fresh readable review and obtain a new direct operator selection."
 	case "profile_incompatible",
 		"profile_underdetermined",
 		"profile_drift":

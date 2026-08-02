@@ -6,6 +6,12 @@ Retrieve current FPF source first. For a known SourceID or UnitID, call
 signal>")`, then inspect the direct pattern body. Query only retrieves source
 candidates; it does not select a governing pattern or authorize persistence.
 
+Treat a concern result's `candidate_set` as incomplete navigation. Before
+relying on one candidate, inspect its exact identifier and direct pattern
+body. Keep several candidates live or abstain when the basis is insufficient.
+Never query after framing merely to manufacture support for a frame already
+chosen.
+
 - Separate the affected object from its description and carrier.
 - State the observed signal, unresolved relation, scope, constraints,
   acceptance basis, uncertainty, blast radius, and reversibility.
@@ -16,7 +22,8 @@ candidates; it does not select a governing pattern or authorize persistence.
 Return a conversational frame by default. It may have the source
 `ProblemCard@Context` shape without being a persisted Haft artifact. Call
 `haft_problem(action="frame")`
-only when the operator asks to save it or a named receiving use needs a stable
+only when the operator asks to save it or a concrete operator-named or
+agent-inferred receiving use supplied by current Work needs a stable
 ProblemCard. When exact current identity is known, supply
 `entity_ref={ref_kind_id:"U.EntityRef",reference_id:"..."}` and
 `bounded_context_ref`; do not infer either from the title. Preserve a returned

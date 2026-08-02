@@ -77,8 +77,6 @@ func TestCurrentSkillSourceBundlePublishesTaskLevelMemoryUX(t *testing.T) {
 		content := string(skill.Content())
 		contentByName[skill.Name()] = content
 		for _, forbidden := range []string{
-			"ProjectTypeEnvHead",
-			"TypeEnv",
 			"haft memory typeenv",
 			`haft_memory(action="admit")`,
 			"preparation is read-only",
@@ -94,24 +92,22 @@ func TestCurrentSkillSourceBundlePublishesTaskLevelMemoryUX(t *testing.T) {
 			"mcp__haft__haft_onboard",
 			`action="status"`,
 			`action="profile_prepare"`,
-			`action="memory_prepare"`,
 			"haft onboard profile apply",
-			"haft onboard memory enable",
-			"haft onboard memory defer",
-			"`memory_deferred`",
-			"grants no authority",
+			"installs default project memory",
+			"ask the operator to enable, defer, select, or understand a memory schema",
 		},
 		"h-decide": {
-			"mcp__haft__haft_onboard",
-			"Prepared structured-memory enablement route",
-			"haft onboard memory enable",
-			"This route creates no DecisionRecord",
 			"## DecisionRecord route",
+			"Routes one direct, unambiguous operator request",
+			"host_routed_operator_request",
+			"disable-model-invocation: false",
 		},
 		"h-reason": {
 			"mcp__haft__haft_entity",
 			"mcp__haft__haft_onboard",
 			"`known_absent` says only",
+			"operator-named or agent-inferred",
+			"establish the minimum EntityOfConcern without asking for separate permission",
 			"same idempotency key",
 		},
 		"h-note": {

@@ -8,6 +8,11 @@ candidate; RC or release status additionally requires release authority. Pi
 support is experimental, and contract inclusion or evidence alone does not
 establish **CURRENT PRODUCT** status.
 
+If the operator's current question is not about project status, resumption,
+coverage, or reliance on recorded project state, return without calling this
+prompt. Do not run status after completing unrelated work merely to backfill a
+governance-looking report.
+
 Call `haft_query` with:
 
 ```json
@@ -77,11 +82,14 @@ non-dominated or Pareto set, or an explicit statement that none exists or
 applies; the advisory recommendation; freshness or expiry; and a question
 asking for the human engineer's assessment of the options, trade-offs, and
 recommendation in natural language. IDs and hashes never replace readable
-meaning. Accept ordinary language as the substantive answer to the engineering
-consultation, never as a binding receipt. A command, skill invocation, exact
-reply phrase, or resumption token must never substitute for that consultation.
-Only after the engineer's position is explicit may a separately required manual
-act be explained with its authority limits. The brief is not authorization. If
+meaning. Accept ordinary language as the substantive answer. When one current
+brief makes effect, subject, option, and scope unambiguous, the host may route
+it for DecisionRecord binding, manual profile application, or
+a later non-default project-memory model change as
+`host_routed_operator_request`, without a skill
+name or second confirmation. It is not reusable authority; a bare `yes` or `да`
+works only for that one current brief. `h-commission` remains a separately
+manual authority act. The brief itself is explanation rather than authority. If
 the basis cannot supply the details, report that the gate is not yet askable
 and name the needed drill-down.
 

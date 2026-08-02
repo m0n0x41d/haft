@@ -3,7 +3,7 @@ name: h-status
 description: Read-only Haft project cockpit for active problems, decisions, notes, evidence freshness, drift, commissions, spec lifecycle, module coverage, and bounded exact file-link gaps from a current code index. Use for project status, session resumption, what is decision-linked, what is uncovered, or what needs attention.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
 
 # h-status — Read-only project memory
 
@@ -16,6 +16,11 @@ claim requires current **EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact
 candidate; RC or release status additionally requires release authority. Pi
 support is experimental, and contract inclusion or evidence alone does not
 establish **CURRENT PRODUCT** status.
+
+If the operator's current question is not about project status, resumption,
+coverage, or reliance on recorded project state, return without calling this
+skill. Do not run status after completing unrelated work merely to backfill a
+governance-looking report.
 
 Start with:
 
@@ -100,14 +105,18 @@ non-dominated or Pareto set, or an explicit statement that none exists or
 applies; the advisory recommendation; freshness or expiry; and a question
 asking for the human engineer's assessment of the options, trade-offs, and
 recommendation in natural language. IDs and hashes never replace readable
-meaning. Accept ordinary language as the substantive answer to the engineering
-consultation, never as a binding receipt. A command, skill invocation, exact
-reply phrase, or resumption token must never substitute for that consultation.
-Only after the engineer's position is explicit may a separately required manual
-act be explained with its authority limits. The brief is not authorization. If
+meaning. Accept ordinary language as the substantive answer. When one current
+brief makes effect, subject, option, and scope unambiguous, the host may route
+it for DecisionRecord binding, manual profile application, or
+a later non-default project-memory model change as
+`host_routed_operator_request`, without a skill
+name or second confirmation. It is not reusable authority; a bare `yes` or `да`
+works only for that one current brief. `h-commission` remains a separately
+manual authority act. The brief itself is explanation rather than authority. If
 the basis cannot supply the details, report that the gate is not yet askable
 and name the needed drill-down.
 
 Use `coverage` and `related` drill-downs for module/file decision coverage.
 Do not mutate artifacts, infer a project phase, or prescribe a universal next
-step. Binding decisions and commissions remain explicit manual actions.
+step. Binding decisions require a direct operator request; commissions remain
+explicit manual actions.

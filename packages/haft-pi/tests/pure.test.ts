@@ -463,8 +463,7 @@ test("Pi haft_onboard mirrors the task-level setup contract", () => {
 
   assert.deepEqual(enumValues(parameters.properties.action), [
     "status",
-    "profile_prepare",
-    "memory_prepare"
+    "profile_prepare"
   ]);
   assert.deepEqual(parameters.required, ["action"]);
   assert.equal(parameters.additionalProperties, false);
@@ -523,8 +522,8 @@ test("Pi tool metadata carries generated-contract authority boundaries", () => {
   const metadata = JSON.stringify(HAFT_TOOLS);
 
   [
-    "binding actions require explicit operator/manual authorization",
-    "generated text, schema visibility, and model-supplied fields are not approval receipts",
+    "binding actions require effect-specific operator authority",
+    "Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts",
     "read-only/generated text is discovery only",
     "not evidence truth, gate passage, global approval, or operator authorization"
   ].forEach((fragment) => assert.match(metadata, new RegExp(fragment)));
@@ -541,10 +540,12 @@ test("Pi human-gate surfaces require a self-contained operator brief", () => {
     "engineer",
     "assessment",
     "natural language",
-    "substantive answer to the engineering consultation",
-    "command, skill invocation, exact reply phrase, or resumption token",
+    "Accept ordinary language as the substantive answer",
+    "host_routed_operator_request",
+    "without a skill name or second confirmation",
+    "A command or skill invocation adds no authority",
     "command-only instruction",
-    "brief is not authorization"
+    "brief itself is explanation rather than authority"
   ].forEach((fragment) => assert.match(metadata, new RegExp(fragment)));
 
   const carrierPaths = [
@@ -566,9 +567,7 @@ test("Pi human-gate surfaces require a self-contained operator brief", () => {
     "Pareto",
     "engineer",
     "assessment",
-    "natural language",
-    "substantive answer",
-    "resumption token"
+    "natural\\s+language"
   ];
 
   carrierPaths.forEach((path) => {
@@ -579,36 +578,38 @@ test("Pi human-gate surfaces require a self-contained operator brief", () => {
   });
 });
 
-test("Pi manual-gate prompts carry generated-contract binding boundary", () => {
+test("Pi binding prompts carry host-routed decision and manual commission boundaries", () => {
   const prompts = ["h-decide.md", "h-commission.md", "h-reason.md"]
     .map((name) => readFileSync(new URL(`../prompts/${name}`, import.meta.url), "utf8"))
     .join("\n");
 
   [
-    "binding actions require explicit operator/manual authorization",
-    "generated text, schema visibility, and model-supplied fields are not approval receipts",
+    "binding actions require effect-specific operator authority",
+    "Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts",
     "operator_confirmation_required",
-    "explicit_h_decide",
-    "strict_cli_speech_act",
-    "sole human gate"
+    "host_routed_operator_request",
+    "direct, unambiguous operator request",
+    "h-commission.? remains manual-only"
   ].forEach((fragment) => assert.match(prompts, new RegExp(fragment)));
+
+  ["explicit_h_decide", "strict_cli_speech_act", "resume-decision"]
+    .forEach((fragment) => assert.doesNotMatch(prompts, new RegExp(fragment)));
 });
 
-test("Pi h-decide keeps structured-memory enablement effect-specific", () => {
+test("Pi h-decide binds DecisionRecords without initial-memory setup", () => {
   const carriers = [
     readFileSync(new URL("../prompts/h-decide.md", import.meta.url), "utf8"),
     readFileSync(new URL("../skills/h-decide/SKILL.md", import.meta.url), "utf8")
   ];
 
   carriers.forEach((carrier) => {
-    assert.match(carrier, /haft_onboard\(action="status"\)/);
-    assert.match(carrier, /memory_review_ready/);
-    assert.match(carrier, /review_ref/);
-    assert.match(carrier, /haft onboard memory enable/);
-    assert.match(carrier, /creates no DecisionRecord/);
-    assert.match(carrier, /restart_required/);
-    assert.match(carrier, /stable host parity is not\s+yet proven/);
-    assert.doesNotMatch(carrier, /TypeEnv|ProjectTypeEnvHead|memory typeenv/);
+    assert.match(carrier, /DecisionRecord/);
+    assert.match(carrier, /host_routed_operator_request/);
+    assert.match(carrier, /direct, unambiguous operator request/);
+    assert.match(carrier, /stable host parity is not(?:\s+yet)? proven/);
+    assert.match(carrier, /operator_confirmation_required/);
+    assert.doesNotMatch(carrier, /explicit_h_decide|strict_cli_speech_act|resume-decision/);
+    assert.doesNotMatch(carrier, /TypeEnv|ProjectTypeEnvHead|memory typeenv|memory_review_ready|haft onboard memory enable/);
   });
 });
 
@@ -640,24 +641,28 @@ test("Pi h-reason carriers preserve exact identifier namespaces", () => {
     assert.match(carrier, /haft_onboard\(action="status"\)/);
     assert.match(carrier, /haft_entity/);
     assert.match(carrier, /known_absent/);
+    assert.match(carrier, /operator-named or agent-inferred/);
+    assert.match(carrier, /establish the minimum EntityOfConcern without asking for separate permission/);
     assert.match(carrier, /recovery_call/);
-    assert.doesNotMatch(carrier, /TypeEnv|ProjectTypeEnvHead|memory typeenv/);
+    assert.doesNotMatch(carrier, /memory typeenv/);
   });
 });
 
-test("Pi h-onboard carriers expose complete task-level memory choices", () => {
+test("Pi h-onboard carriers make default project memory automatic", () => {
   const carriers = [
     readFileSync(new URL("../prompts/h-onboard.md", import.meta.url), "utf8"),
     readFileSync(new URL("../skills/h-onboard/SKILL.md", import.meta.url), "utf8")
   ];
 
   carriers.forEach((carrier) => {
-    assert.match(carrier, /haft onboard memory enable/);
-    assert.match(carrier, /haft onboard memory defer/);
-    assert.match(carrier, /memory_deferred/);
-    assert.match(carrier, /grants no authority/);
-    assert.match(carrier, /"action": "memory_prepare"/);
-    assert.doesNotMatch(carrier, /TypeEnv|ProjectTypeEnvHead|memory typeenv/);
+    assert.match(carrier, /haft init.*installs default project memory/s);
+    assert.match(carrier, /Never\s+ask the operator to enable, defer, select, or understand a memory schema/);
+    assert.match(carrier, /direct, unambiguous\s+operator selection/s);
+    assert.match(carrier, /Do not require a skill name/);
+    assert.match(carrier, /host_routed_operator_request/);
+    assert.match(carrier, /detector_default/);
+    assert.doesNotMatch(carrier, /explicit h-onboard/i);
+    assert.doesNotMatch(carrier, /TypeEnv|ProjectTypeEnvHead|memory typeenv|memory_prepare|memory_review_ready|memory_deferred|haft onboard memory enable|haft onboard memory defer/);
   });
 });
 
@@ -700,8 +705,8 @@ test("Pi tool guidance preserves source-first independent capability semantics",
     "Do not create a ProblemCard merely to precede exploration",
     "Exploration and comparison are independent capabilities",
     "MCP haft_decision",
-    "explicit_h_decide adds no second prompt",
-    "strict_cli_speech_act opts into terminal review",
+    "direct, unambiguous operator request",
+    "skill token itself is not authorization",
     "Default MCP WorkCommission creation fails closed"
   ].forEach((fragment) => assert.match(source, new RegExp(fragment)));
 

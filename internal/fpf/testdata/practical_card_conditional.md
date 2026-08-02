@@ -1,0 +1,6 @@
+- **Situation and question.** One initial result and one conditional continuation may be current.
+- **Template A.** `G.2 Solution -> SoTA Synthesis Pack@CG-Frame`.
+- **Conditional walkthrough.** If retained variants become current, use `C.18 -> ExplorationArchiveRecord@Context`.
+- **Boundaries.** Stop at the pack unless the named later use needs the continuation.
+- **Result test.** Return the `G.2` pack or the exact `C.18` continuation result.
+- **Public coarsening.** "Portfolio" restores to the selected direct result.

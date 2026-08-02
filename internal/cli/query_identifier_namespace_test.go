@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
@@ -380,7 +379,7 @@ func setupCodeQueryStore(t *testing.T) (*artifact.Store, string) {
 		t.Fatal(err)
 	}
 	databasePath := filepath.Join(haftDir, "haft.db")
-	database, err := db.NewStore(databasePath)
+	database, err := openCurrentKernelTestStore(databasePath)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -629,7 +629,7 @@ func TestOnboardMCPDetectedMixedProjectPreparesNormalMultiScopeReview(
 	assertOnboardOutputHasNoInternalJargon(t, output)
 }
 
-func TestOnboardMCPMemoryPreparationIsNonBindingAndIdempotent(
+func TestOnboardLegacyMemoryPreparationRemainsNonBindingButStatusRequiresInitRepair(
 	t *testing.T,
 ) {
 	root := filepath.Join(t.TempDir(), "project")
@@ -658,8 +658,9 @@ func TestOnboardMCPMemoryPreparationIsNonBindingAndIdempotent(
 		`{"action":"status"}`,
 	)
 	status := decodeOnboardResponse(t, statusOutput)
-	if status.Result != "needs_memory" ||
-		status.Status != "needs_memory" {
+	if status.Result != "onboarding_required" ||
+		status.Status != "needs_init" ||
+		!strings.Contains(status.NextAction, "haft init") {
 		t.Fatalf(
 			"preparation status = %#v",
 			status,
@@ -669,12 +670,9 @@ func TestOnboardMCPMemoryPreparationIsNonBindingAndIdempotent(
 		"Enable structured project memory",
 		"Not now",
 	}
-	if !reflect.DeepEqual(
-		status.Choices,
-		wantChoices,
-	) {
+	if len(status.Choices) != 0 {
 		t.Fatalf(
-			"status choices = %#v",
+			"legacy repair status exposed choices = %#v",
 			status.Choices,
 		)
 	}
@@ -698,6 +696,12 @@ func TestOnboardMCPMemoryPreparationIsNonBindingAndIdempotent(
 		t,
 		harness,
 		"project_profile_admissions_v3",
+		0,
+	)
+	assertOnboardTableCount(
+		t,
+		harness,
+		"project_profile_admissions_v5",
 		1,
 	)
 
@@ -759,6 +763,12 @@ func TestOnboardMCPMemoryPreparationIsNonBindingAndIdempotent(
 		t,
 		harness,
 		"project_profile_admissions_v3",
+		0,
+	)
+	assertOnboardTableCount(
+		t,
+		harness,
+		"project_profile_admissions_v5",
 		1,
 	)
 
@@ -801,12 +811,9 @@ func TestOnboardMCPMemoryPreparationIsNonBindingAndIdempotent(
 		t,
 		readyOutput,
 	)
-	if ready.Result != "memory_review_ready" ||
-		ready.Status != "memory_review_ready" ||
-		!reflect.DeepEqual(
-			ready.Choices,
-			wantChoices,
-		) {
+	if ready.Result != "onboarding_required" ||
+		ready.Status != "needs_init" ||
+		len(ready.Choices) != 0 {
 		t.Fatalf(
 			"memory review status = %#v",
 			ready,
@@ -989,4 +996,34 @@ func assertOnboardTableCount(
 
 func stringPointer(value string) *string {
 	return &value
+}
+
+func TestOnboardStatusRoutesSupportedSingletonLegacyProjectThroughInit(
+	t *testing.T,
+) {
+	project := newCLIProfileOnboardLedgerFixture(t)
+	writeProfileInspectionFixture(t, project.root, "go.mod")
+	writeProfileInspectionFixture(t, project.root, "internal/kernel.go")
+	binding := mustOnboardProjectBinding(t, project.root)
+	surface, err := openSealedProjectOnboardSurface(
+		context.Background(),
+		binding,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer surface.Close()
+	output := callOnboardHandler(
+		t,
+		surface.Handler(),
+		`{"action":"status"}`,
+	)
+	response := decodeOnboardResponse(t, output)
+	if response.Result != "needs_profile" ||
+		response.Status != "needs_profile" ||
+		!response.AutomaticBootstrapEligible ||
+		!strings.Contains(response.NextAction, "haft init --core-only") {
+		t.Fatalf("supported singleton onboarding status = %#v", response)
+	}
+	assertCLIProfileOnboardMutationCounts(t, project.root, 0)
 }

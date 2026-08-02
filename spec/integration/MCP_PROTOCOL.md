@@ -7,7 +7,7 @@
 The v9 public discovery surface contains the twelve tool names below.
 `tools/list` is atomic: a host sees the whole catalog in one response. The
 task-level onboarding, entity, and typed-memory recovery surfaces stay
-advertised before project onboarding or structured-memory enablement; their
+advertised before project-profile onboarding completes; their
 handlers return a closed recovery result instead of disappearing.
 
 Within the v9 minor line:
@@ -36,22 +36,32 @@ that every expert action belongs to ordinary agent UX.
 | `haft_method` | Pull, inspect, and close task-local SWE MethodRuns | Task-level engineering method |
 | `haft_commission` | Inspect and manage WorkCommission lifecycle; authority creation remains human-gated | Task-level with authority gate |
 | `haft_spec_section` | Read and manage typed SpecSection lifecycle; FPF source fit is separate and lifecycle acts stay human-gated | Task-level with lifecycle gates |
-| `haft_onboard` | Read setup status or prepare non-binding project-profile and structured-memory review carriers | Task-level setup |
-| `haft_entity` | Establish one non-binding EntityOfConcern and its aliases after an explicit persistence reason | Task-level identity |
+| `haft_onboard` | Read setup status or prepare a non-binding project-profile review; `haft init` installs default project memory automatically | Task-level setup |
+| `haft_entity` | Proactively establish one minimum non-binding EntityOfConcern for an explicit save request or a concrete operator-named or agent-inferred receiving use | Task-level identity |
 | `haft_memory` | Validate or admit a raw typed `MemoryChangeSet` through a nested `request` envelope; ordinary EntityOfConcern creation uses `haft_entity` | Expert low-level surface |
 
-The normal structured-memory path is:
+The normal project-memory path is:
 
-1. use `haft_onboard(action="status")` when setup readiness is unknown;
-2. resolve identity through
+1. run `haft init`; default project memory is installed without an enable/defer
+   choice or any user-visible schema selection;
+2. use `haft_onboard(action="status")` when setup readiness is unknown;
+3. resolve identity through
    `haft_query(action="memory", memory_request={"mode":"resolve", ...})`;
-3. treat `known_absent` as an identity result, not persistence permission;
-4. only for an explicit save request or named receiving use, call
+4. treat `known_absent` as an identity result, not persistence permission;
+5. for an explicit save request or a concrete receiving use recognized from
+   current Work, whether operator-named or agent-inferred, call
    `haft_entity(action="establish", ...)`;
-5. follow the returned exact `next_read`, preserving conflict, restart,
+6. follow the returned exact `next_read`, preserving conflict, restart,
    rejection, and unknown-outcome result kinds.
 
-Agents do not choose or declare an internal memory schema. Raw `haft_memory`
+The operator does not need to pre-name that receiving use or separately permit
+the minimum non-binding establishment. `known_absent`, an empty graph, and
+generic possible future usefulness are insufficient by themselves. Binding
+decisions, commissions, specification lifecycle, and evidence truth remain
+human-gated.
+
+Users and ordinary agents do not choose, declare, or need to understand an
+internal memory schema. Raw `haft_memory`
 validate/admit is an expert diagnostic or implementation surface and never
 admits automatically.
 

@@ -1,0 +1,210 @@
+{
+  "schema_version": "haft.fpf-query-token-gate-corpus/v1",
+  "fixture_revision": "fpf-d1f696e-query-behavior/v1",
+  "cases": [
+    {
+      "case_id": "relation-occurrence-assertion",
+      "request": {
+        "query": "relation occurrence assertion distinction"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 5,
+      "expected_candidate_ids": [
+        "spec:toc_row:a-6-rsir",
+        "spec:toc_row:c-3-1",
+        "spec:toc_row:c-3-3",
+        "spec:toc_row:a-15-2",
+        "spec:toc_row:a-3"
+      ],
+      "expected_candidate_source_ids": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expected_truncation_applied": true,
+      "expected_omitted_at_least": 1,
+      "expected_truncation_basis": [
+        "response_budget"
+      ]
+    },
+    {
+      "case_id": "pattern-use-working-situation",
+      "request": {
+        "query": "pattern use working situation"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 4,
+      "expected_candidate_ids": [
+        "readme:practical_use_card:working-documents",
+        "readme:practical_use_card:architecture",
+        "spec:toc_row:e-11-pua",
+        "spec:toc_row:e-8-ecspf"
+      ],
+      "expected_candidate_source_ids": [
+        "WORKING-DOCUMENTS",
+        "ARCHITECTURE",
+        "",
+        ""
+      ],
+      "expected_truncation_applied": false,
+      "expected_omitted_at_least": 0,
+      "expected_truncation_basis": null
+    },
+    {
+      "case_id": "evidence-decay-decision-verification",
+      "request": {
+        "query": "evidence decay decision verification"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 3,
+      "expected_candidate_ids": [
+        "readme:practical_use_card:costly-action",
+        "readme:practical_use_card:time",
+        "spec:toc_row:b-3-4"
+      ],
+      "expected_candidate_source_ids": [
+        "COSTLY-ACTION",
+        "TIME",
+        ""
+      ],
+      "expected_truncation_applied": false,
+      "expected_omitted_at_least": 0,
+      "expected_truncation_basis": null
+    },
+    {
+      "case_id": "work-plan-performed-work-evidence",
+      "request": {
+        "query": "work plan performed work evidence"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 8,
+      "expected_candidate_ids": [
+        "readme:practical_use_card:costly-action",
+        "readme:practical_use_card:working-documents",
+        "readme:practical_use_card:system-recognition",
+        "spec:toc_row:f-6",
+        "spec:toc_row:a-15",
+        "spec:toc_row:a-15-5",
+        "spec:toc_row:a-15-1",
+        "spec:toc_row:a-2-9"
+      ],
+      "expected_candidate_source_ids": [
+        "COSTLY-ACTION",
+        "WORKING-DOCUMENTS",
+        "SYSTEM-RECOGNITION",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expected_truncation_applied": true,
+      "expected_omitted_at_least": 5,
+      "expected_truncation_basis": [
+        "response_budget"
+      ]
+    },
+    {
+      "case_id": "entity-reference-claim-graph",
+      "request": {
+        "query": "entity of concern reference scheme claim graph"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 9,
+      "expected_candidate_ids": [
+        "readme:practical_use_card:wording",
+        "readme:practical_use_card:architecture",
+        "readme:practical_use_card:naming",
+        "readme:practical_use_card:description-use",
+        "spec:toc_row:a-6-3",
+        "spec:toc_row:a-6-3-cr",
+        "spec:toc_row:a-6-3-rt",
+        "spec:toc_row:a-6-4",
+        "spec:toc_row:e-10-d2"
+      ],
+      "expected_candidate_source_ids": [
+        "WORDING",
+        "ARCHITECTURE",
+        "NAMING",
+        "DESCRIPTION-USE",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expected_truncation_applied": true,
+      "expected_omitted_at_least": 6,
+      "expected_truncation_basis": [
+        "response_budget"
+      ]
+    },
+    {
+      "case_id": "authority-speech-act-permission",
+      "request": {
+        "query": "authority speech act permission"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 5,
+      "expected_candidate_ids": [
+        "spec:toc_row:a-2-9",
+        "spec:toc_row:a-6-c",
+        "spec:toc_row:e-16",
+        "spec:toc_row:e-17-efp",
+        "spec:toc_row:a-2-8-per"
+      ],
+      "expected_candidate_source_ids": [
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expected_truncation_applied": false,
+      "expected_omitted_at_least": 0,
+      "expected_truncation_basis": null
+    },
+    {
+      "case_id": "russian-plan-work-evidence",
+      "request": {
+        "query": "Как различить план, выполненную работу и свидетельство результата?",
+        "entity_of_concern": "план и выполненная работа",
+        "known_context": [
+          "work plan performed work evidence"
+        ],
+        "intended_use": "выбрать прямой FPF pattern для проверки"
+      },
+      "expected_kind": "candidate_set",
+      "expected_candidate_count": 8,
+      "expected_candidate_ids": [
+        "readme:practical_use_card:costly-action",
+        "readme:practical_use_card:working-documents",
+        "readme:practical_use_card:system-recognition",
+        "spec:toc_row:f-6",
+        "spec:toc_row:a-15",
+        "spec:toc_row:a-15-5",
+        "spec:toc_row:a-15-1",
+        "spec:toc_row:a-2-9"
+      ],
+      "expected_candidate_source_ids": [
+        "COSTLY-ACTION",
+        "WORKING-DOCUMENTS",
+        "SYSTEM-RECOGNITION",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ],
+      "expected_truncation_applied": true,
+      "expected_omitted_at_least": 49,
+      "expected_truncation_basis": [
+        "role_local_fts_producer_limit",
+        "role_local_fts:toc_row",
+        "response_budget"
+      ]
+    }
+  ]
+}

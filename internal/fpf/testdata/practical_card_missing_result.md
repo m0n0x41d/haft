@@ -1,0 +1,4 @@
+- **Situation and question.** A card has a condition but no source-owned result branch.
+- **Optional obstacle.** Arbitrary prose says the first result might resemble `A.1`.
+- **Boundaries.** Stop because the result structure is absent.
+- **Public coarsening.** "Missing result" is not a direct result.

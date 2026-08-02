@@ -155,6 +155,7 @@ func selectProjectSpecificationScope(
 
 type canonicalProfileApplicabilityBasis struct {
 	projectRoot           projectprofile.ProjectRootV1
+	origin                projectprofile.ProfileAdmissionOrigin
 	admissionRecordRef    projectprofile.ProfileDeclarationAdmissionRecordRef
 	admissionRecordDigest projectprofile.ContentDigest
 	payloadDigest         projectprofile.ContentDigest
@@ -163,6 +164,7 @@ type canonicalProfileApplicabilityBasis struct {
 
 func (basis canonicalProfileApplicabilityBasis) valid() bool {
 	return basis.projectRoot.String() != "" &&
+		basis.origin != "" &&
 		basis.admissionRecordRef.String() != "" &&
 		basis.admissionRecordDigest.String() != "" &&
 		basis.payloadDigest.String() != "" &&
@@ -378,6 +380,7 @@ func projectSpecificationApplicabilityFromCanonicalResult(
 	}
 	basis := canonicalProfileApplicabilityBasis{
 		projectRoot:           resolved.ProjectRoot(),
+		origin:                resolved.Origin(),
 		admissionRecordRef:    resolved.AdmissionRecordRef(),
 		admissionRecordDigest: resolved.AdmissionRecordDigest(),
 		payloadDigest:         resolved.ProfilePayloadDigest(),

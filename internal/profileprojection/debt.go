@@ -174,9 +174,13 @@ func insertOpenedDebtEvent(
 	ctx context.Context,
 	record debtRecord,
 ) error {
-	_, err := transaction.Execute(
+	statement, err := debtInsertStatement(record.storageGeneration)
+	if err != nil {
+		return err
+	}
+	_, err = transaction.Execute(
 		ctx,
-		insertDebtEventV3SQL,
+		statement,
 		debtOpenArguments(record),
 	)
 	return err
@@ -712,27 +716,26 @@ func (service Service) resolveExactDebt(
 	}
 	eventID := deterministicEventIdentifier(opened.debtID, "resolved")
 	resolved := resolvedDebtRecord(opened, observedDigest, eventID, service.now())
+	insertStatement, err := debtInsertStatement(resolved.storageGeneration)
+	if err != nil {
+		return err
+	}
 	_, err = transaction.Execute(
 		ctx,
-		insertDebtEventV3SQL,
+		insertStatement,
 		debtResolvedArguments(resolved, opened),
 	)
 	if err != nil {
 		return err
 	}
 	var count int
+	rereadStatement, err := resolvedDebtRereadStatement(resolved.storageGeneration)
+	if err != nil {
+		return err
+	}
 	err = transaction.ScanOne(
 		ctx,
-		`SELECT COUNT(*)
-         FROM project_profile_projection_debt_v3
-         WHERE event_id = ?
-           AND debt_id = ?
-           AND profile_revision_generation = ?
-           AND event_kind = 'resolved'
-           AND supersedes_event_generation = ?
-           AND supersedes_event_id = ?
-           AND expected_projection_digest = ?
-           AND observed_projection_digest = ?`,
+		rereadStatement,
 		[]any{
 			eventID,
 			opened.debtID,
@@ -753,6 +756,43 @@ func (service Service) resolveExactDebt(
 		)
 	}
 	return nil
+}
+
+const resolvedDebtRereadBody = `SELECT COUNT(*)
+         FROM %s
+         WHERE event_id = ?
+           AND debt_id = ?
+           AND profile_revision_generation = ?
+           AND event_kind = 'resolved'
+           AND supersedes_event_generation = ?
+           AND supersedes_event_id = ?
+           AND expected_projection_digest = ?
+           AND observed_projection_digest = ?`
+
+func debtInsertStatement(storage debtEventStorageGeneration) (string, error) {
+	if storage == debtEventStorageV3 {
+		return insertDebtEventV3SQL, nil
+	}
+	if storage == debtEventStorageV4 {
+		return insertDebtEventV4SQL, nil
+	}
+	if storage == debtEventStorageV5 {
+		return insertDebtEventV5SQL, nil
+	}
+	return "", fmt.Errorf("projection-debt storage generation %q is unsupported", storage)
+}
+
+func resolvedDebtRereadStatement(storage debtEventStorageGeneration) (string, error) {
+	if storage == debtEventStorageV3 {
+		return fmt.Sprintf(resolvedDebtRereadBody, "project_profile_projection_debt_v3"), nil
+	}
+	if storage == debtEventStorageV4 {
+		return fmt.Sprintf(resolvedDebtRereadBody, "project_profile_projection_debt_v4"), nil
+	}
+	if storage == debtEventStorageV5 {
+		return fmt.Sprintf(resolvedDebtRereadBody, "project_profile_projection_debt_v5"), nil
+	}
+	return "", fmt.Errorf("projection-debt storage generation %q is unsupported", storage)
 }
 
 func countExactDebtCycles(
@@ -827,8 +867,15 @@ func debtRecordFromAdmission(
 	eventID string,
 	recordedAt time.Time,
 ) debtRecord {
+	storage := debtEventStorageV3
+	if source.generation == admissionStorageV4 {
+		storage = debtEventStorageV4
+	}
+	if source.generation == admissionStorageV5 {
+		storage = debtEventStorageV5
+	}
 	return debtRecord{
-		storageGeneration:         debtEventStorageV3,
+		storageGeneration:         storage,
 		profileRevisionGeneration: source.generation,
 		eventID:                   eventID,
 		debtID:                    debtID,
@@ -852,8 +899,15 @@ func resolvedDebtRecord(
 	eventID string,
 	recordedAt time.Time,
 ) debtRecord {
+	storage := debtEventStorageV3
+	if opened.profileRevisionGeneration == admissionStorageV4 {
+		storage = debtEventStorageV4
+	}
+	if opened.profileRevisionGeneration == admissionStorageV5 {
+		storage = debtEventStorageV5
+	}
 	return debtRecord{
-		storageGeneration:         debtEventStorageV3,
+		storageGeneration:         storage,
 		profileRevisionGeneration: opened.profileRevisionGeneration,
 		eventID:                   eventID,
 		debtID:                    opened.debtID,

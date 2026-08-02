@@ -9,15 +9,63 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/m0n0x41d/haft/db"
+	basetypeenvartifacts "github.com/m0n0x41d/haft/data/haft/base-typeenv/artifacts"
+	typedmemorycandidates "github.com/m0n0x41d/haft/data/haft/local-practice/typed-memory/candidates"
 	"github.com/m0n0x41d/haft/internal/projectidentity"
+	"github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime"
+	"github.com/m0n0x41d/haft/internal/typedmemory"
 	"github.com/m0n0x41d/haft/internal/typedmemorywire"
 )
+
+func TestProjectMemoryRuntimeCatalogRetainsHistoricalV1_4(t *testing.T) {
+	database, err := openCurrentKernelTestStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	basis, err := buildProjectMemoryRuntimeBasis(
+		context.Background(),
+		mustProjectMemoryRuntimeProjectID(t, "qnt_cafebabe"),
+		database.GetRawDB(),
+	)
+	if err != nil {
+		t.Fatalf("build project-memory runtime basis: %v", err)
+	}
+	historicalRef, err := typedmemory.ParseTypeEnvRef(
+		basetypeenvartifacts.HistoricalV5Ref,
+	)
+	if err != nil {
+		t.Fatalf("parse historical 1.4.0 Base TypeEnv ref: %v", err)
+	}
+	historicalBase, err := basetypeenvartifacts.LoadExact(historicalRef)
+	if err != nil {
+		t.Fatalf("load historical 1.4.0 Base TypeEnv: %v", err)
+	}
+	historicalTarget, err := localpracticeruntime.Build(
+		historicalBase,
+		typedmemorycandidates.SourceV1_4(),
+	)
+	if err != nil {
+		t.Fatalf("build historical 1.4.0 Local-Practice target: %v", err)
+	}
+	composite := historicalTarget.Composite().Ref().String()
+	installed, present := basis.targetsByTypeEnv[composite]
+	if !present {
+		t.Fatalf("installed runtime catalog omitted historical 1.4.0 composite %s", composite)
+	}
+	if installed.RuntimeBasis().Ref() != historicalTarget.RuntimeBasis().Ref() {
+		t.Fatal("installed historical 1.4.0 runtime uses another exact X basis")
+	}
+}
 
 func TestProjectMemoryRuntimeBuildsWithoutSelectingAProjectTypeEnvHead(
 	t *testing.T,
 ) {
-	database, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	database, err := openCurrentKernelTestStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -125,7 +173,9 @@ func TestProjectMemoryRuntimeBuildsWithoutSelectingAProjectTypeEnvHead(
 }
 
 func TestProjectMemoryValidationHandlerCannotReachAdmission(t *testing.T) {
-	database, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	database, err := openCurrentKernelTestStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +221,9 @@ func TestProjectMemoryValidationHandlerCannotReachAdmission(t *testing.T) {
 }
 
 func TestProjectMemoryReadRuntimeHasNoAdmissionCapability(t *testing.T) {
-	database, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	database, err := openCurrentKernelTestStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

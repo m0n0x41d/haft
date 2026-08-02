@@ -172,7 +172,6 @@ func (service *TransitionService) selectTransitionTx(
 			request:   input.Request,
 			content:   input.Content,
 			authority: input.Authority,
-			stage:     frame.readyStage.Stage(),
 			profile:   frame.currentProfile,
 		},
 	)

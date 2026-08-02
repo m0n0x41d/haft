@@ -77,11 +77,11 @@ func TestResolveCurrentWithinSeparatesCorruptionFromAbsence(t *testing.T) {
 		fixture.adapter.Admit(context.Background(), fixture.request),
 		CanonicalAdmissionFresh,
 	)
-	_, err := fixture.database.Exec("DROP TRIGGER profile_declaration_authority_uses_v3_no_delete")
+	_, err := fixture.database.Exec("DROP TRIGGER profile_declaration_authority_uses_v5_no_delete")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = fixture.database.Exec("DELETE FROM profile_declaration_authority_uses_v3")
+	_, err = fixture.database.Exec("DELETE FROM profile_declaration_authority_uses_v5")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,19 +102,19 @@ func TestResolveCurrentWithinSeparatesCorruptionFromAbsence(t *testing.T) {
 	assertCurrentProfileReadFailureKind(t, err, CurrentProfileStoreCorruption)
 }
 
-func TestResolveCurrentWithinRehashesV3AuthorityUseInsideCallerSnapshot(t *testing.T) {
+func TestResolveCurrentWithinRehashesV5AuthorityUseInsideCallerSnapshot(t *testing.T) {
 	fixture := newTransactionFixture(t, "current-reader-authority", "current-reader-authority.nonce")
 	requireAdmitted(
 		t,
 		fixture.adapter.Admit(context.Background(), fixture.request),
 		CanonicalAdmissionFresh,
 	)
-	_, err := fixture.database.Exec("DROP TRIGGER profile_declaration_authority_uses_v3_no_update")
+	_, err := fixture.database.Exec("DROP TRIGGER profile_declaration_authority_uses_v5_no_update")
 	if err != nil {
 		t.Fatal(err)
 	}
 	_, err = fixture.database.Exec(
-		`UPDATE profile_declaration_authority_uses_v3
+		`UPDATE profile_declaration_authority_uses_v5
 		 SET canonical_json = ' ' || canonical_json`,
 	)
 	if err != nil {

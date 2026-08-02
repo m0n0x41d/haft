@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/authority"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestClosureKeepsFourRefsAndFPFTypedAdjudicationSeparate(t *testing.T) {
@@ -463,7 +463,9 @@ func recordSourceFromRecipe(
 	if err != nil {
 		t.Fatalf("CaptureVerifiedSpeechActForTestFixture: %v", err)
 	}
-	store, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "profile-authority.sqlite"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "profile-authority.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

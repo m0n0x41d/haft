@@ -843,17 +843,6 @@ func displayComparisonVariantLabel(value string, labels map[string]string) strin
 	return trimmed
 }
 
-// MissingProblemResponse returns prescriptive guidance when problem is missing.
-func MissingProblemResponse(navStrip string) string {
-	return "No active problem found.\n\n" +
-		"Frame the problem first:\n" +
-		"  /h-frame — define what's anomalous, constraints, acceptance criteria\n\n" +
-		"Or explore directly in tactical mode:\n" +
-		"  haft_solution(action=\"explore\", variants=[...])\n" +
-		"  → will create a lightweight problem from context\n" +
-		navStrip
-}
-
 // ProblemResponse builds the MCP tool response for a framed problem.
 func ProblemResponse(action string, a *artifact.Artifact, filePath string, navStrip string) string {
 	var sb strings.Builder

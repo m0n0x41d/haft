@@ -34,7 +34,9 @@ var profileInspectCmd = &cobra.Command{
 	Short: "Inspect canonical profile state and read-only repository signals",
 	Long: `Inspect the canonical profile-admission ledger and run the read-only
 repository detector. Detector output is orientation evidence only: it cannot
-declare a profile, establish applicability, or mutate project state.`,
+by itself declare a profile, establish applicability, or mutate project state.
+haft init may consume only a complete supported singleton through its separate
+deterministic initial-bootstrap authority contract.`,
 	Args: cobra.NoArgs,
 	RunE: runProfileInspect,
 }
@@ -143,6 +145,7 @@ type canonicalProfileScopeView struct {
 type canonicalProfileView struct {
 	Kind                  string                      `json:"kind"`
 	SemanticRole          string                      `json:"semantic_role"`
+	Origin                string                      `json:"origin,omitempty"`
 	LedgerRevision        uint64                      `json:"ledger_revision,omitempty"`
 	PayloadDigest         string                      `json:"payload_digest,omitempty"`
 	AdmissionRecordRef    string                      `json:"admission_record_ref,omitempty"`
@@ -207,9 +210,13 @@ func runProfilePropose(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	if inspection.CanonicalProfile.Kind != "auto" {
+	declaredProfile := inspection.CanonicalProfile.Kind == "declared"
+	detectorDefault := inspection.CanonicalProfile.Origin ==
+		string(projectprofile.ProfileAdmissionOriginDetectorDefault)
+	if inspection.CanonicalProfile.Kind != "auto" &&
+		!(declaredProfile && detectorDefault) {
 		return fmt.Errorf(
-			"a canonical project profile is already declared; initial profile propose cannot replace it, and later profile changes require their own mutation contract",
+			"the canonical project profile is not detector_default; explicit-over-explicit and legacy profile changes require their own mutation contract",
 		)
 	}
 	review, err := prepareProfileReviewCandidate(projectRoot, suggestion)
@@ -330,6 +337,7 @@ func canonicalProfileViewFromAdmission(
 	return canonicalProfileView{
 		Kind:                  "declared",
 		SemanticRole:          "canonical_admitted_profile",
+		Origin:                string(admission.Origin()),
 		LedgerRevision:        admission.LedgerRevision().Value(),
 		PayloadDigest:         admission.PayloadDigest().String(),
 		AdmissionRecordRef:    admission.AdmissionRecordRef().String(),
@@ -670,10 +678,13 @@ func writeProfileInspectionResponse(
 		"Canonical profile: " + response.CanonicalProfile.Kind + ".",
 		"Detector: " + response.Suggestion.Classification + " (" + response.Suggestion.ConfidencePosture + ").",
 	}
+	if response.CanonicalProfile.Origin != "" {
+		lines = append(lines, "Profile origin: "+response.CanonicalProfile.Origin+".")
+	}
 	lines = appendProfileSuggestedScopeSummary(lines, profileSuggestionScopes(response.Suggestion))
 	lines = append(lines,
 		"Relation: "+response.Relation.Kind+".",
-		"Authority: detector output cannot mutate the profile or satisfy a binding gate.",
+		"Authority: detector output alone cannot mutate the profile or satisfy a binding gate; haft init may admit only an exact supported singleton through the separate deterministic bootstrap contract.",
 		"Use --json for exact signals, scopes, and canonical provenance.",
 	)
 	_, err := fmt.Fprintln(writer, strings.Join(lines, "\n"))
@@ -698,7 +709,7 @@ func writeProfileProposalResponse(
 		"Review candidate: "+response.ReviewCandidate.Path+" ("+response.ReviewCandidate.State+").",
 		"Edit scope_id and optional semantic references there when the detector orientation is not the intended project scope.",
 		"No profile declaration or admission was performed.",
-		"The review file is input to a later explicit `haft profile declare`; it is not an applicability basis by itself.",
+		"An edited or foreign review is input to later explicit `haft profile declare`. An unchanged Haft-generated review does not block eligible haft init bootstrap and is removed only after successful admission and carrier installation.",
 		"Use --json for exact detector evidence.",
 	)
 	_, err := fmt.Fprintln(writer, strings.Join(lines, "\n"))

@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
 type Action string
@@ -244,30 +246,67 @@ func (request Request) Scopes() []Scope {
 }
 
 type Observation struct {
-	initialized        bool
-	profileDeclared    bool
-	profileReviewReady bool
-	memoryReady        bool
-	memoryReviewReady  bool
-	memoryDeferred     bool
-	detectionNeedsHelp bool
-	scopes             []Scope
-	detail             string
+	initialized             bool
+	profileDeclared         bool
+	profileReviewReady      bool
+	memoryReady             bool
+	memoryReviewReady       bool
+	memoryDeferred          bool
+	detectionNeedsHelp      bool
+	autoBootstrapEligible   bool
+	profileOverrideEligible bool
+	profileOrigin           projectprofile.ProfileAdmissionOrigin
+	scopes                  []Scope
+	detail                  string
 }
 
 type ObservationInput struct {
-	Initialized        bool
-	ProfileDeclared    bool
-	ProfileReviewReady bool
-	MemoryReady        bool
-	MemoryReviewReady  bool
-	MemoryDeferred     bool
-	DetectionNeedsHelp bool
-	Scopes             []Scope
-	Detail             string
+	Initialized             bool
+	ProfileDeclared         bool
+	ProfileReviewReady      bool
+	MemoryReady             bool
+	MemoryReviewReady       bool
+	MemoryDeferred          bool
+	DetectionNeedsHelp      bool
+	AutoBootstrapEligible   bool
+	ProfileOverrideEligible bool
+	ProfileOrigin           projectprofile.ProfileAdmissionOrigin
+	Scopes                  []Scope
+	Detail                  string
 }
 
 func NewObservation(input ObservationInput) (Observation, error) {
+	profileOrigin := input.ProfileOrigin
+	if input.ProfileDeclared && profileOrigin == "" {
+		profileOrigin = projectprofile.ProfileAdmissionOriginLegacyUnknown
+	}
+	if !input.ProfileDeclared && profileOrigin != "" {
+		return Observation{}, fmt.Errorf(
+			"profile origin requires a declared project profile",
+		)
+	}
+	if input.ProfileDeclared && input.AutoBootstrapEligible {
+		return Observation{}, fmt.Errorf(
+			"automatic initial profile bootstrap cannot replace a declared profile",
+		)
+	}
+	if input.ProfileOverrideEligible && !input.ProfileDeclared {
+		return Observation{}, fmt.Errorf(
+			"profile override eligibility requires a declared project profile",
+		)
+	}
+	if input.ProfileOverrideEligible &&
+		profileOrigin != projectprofile.ProfileAdmissionOriginDetectorDefault {
+		return Observation{}, fmt.Errorf(
+			"profile override eligibility requires detector_default origin",
+		)
+	}
+	if input.ProfileDeclared {
+		_, valid := projectprofile.ParseProfileAdmissionOrigin(string(profileOrigin))
+		if !valid {
+			return Observation{}, fmt.Errorf("declared project profile origin is invalid")
+		}
+	}
 	if !input.Initialized &&
 		(input.ProfileDeclared ||
 			input.ProfileReviewReady ||
@@ -307,15 +346,18 @@ func NewObservation(input ObservationInput) (Observation, error) {
 		)
 	}
 	return Observation{
-		initialized:        input.Initialized,
-		profileDeclared:    input.ProfileDeclared,
-		profileReviewReady: input.ProfileReviewReady,
-		memoryReady:        input.MemoryReady,
-		memoryReviewReady:  input.MemoryReviewReady,
-		memoryDeferred:     input.MemoryDeferred,
-		detectionNeedsHelp: input.DetectionNeedsHelp,
-		scopes:             append([]Scope{}, input.Scopes...),
-		detail:             strings.TrimSpace(input.Detail),
+		initialized:             input.Initialized,
+		profileDeclared:         input.ProfileDeclared,
+		profileReviewReady:      input.ProfileReviewReady,
+		memoryReady:             input.MemoryReady,
+		memoryReviewReady:       input.MemoryReviewReady,
+		memoryDeferred:          input.MemoryDeferred,
+		detectionNeedsHelp:      input.DetectionNeedsHelp,
+		autoBootstrapEligible:   input.AutoBootstrapEligible,
+		profileOverrideEligible: input.ProfileOverrideEligible,
+		profileOrigin:           profileOrigin,
+		scopes:                  append([]Scope{}, input.Scopes...),
+		detail:                  strings.TrimSpace(input.Detail),
 	}, nil
 }
 
@@ -345,6 +387,18 @@ func (observation Observation) MemoryDeferred() bool {
 
 func (observation Observation) DetectionNeedsHelp() bool {
 	return observation.detectionNeedsHelp
+}
+
+func (observation Observation) AutoBootstrapEligible() bool {
+	return observation.autoBootstrapEligible
+}
+
+func (observation Observation) ProfileOverrideEligible() bool {
+	return observation.profileOverrideEligible
+}
+
+func (observation Observation) ProfileOrigin() projectprofile.ProfileAdmissionOrigin {
+	return observation.profileOrigin
 }
 
 func (observation Observation) Scopes() []Scope {
@@ -426,15 +480,18 @@ type Effects struct {
 }
 
 type Outcome struct {
-	action     Action
-	result     Result
-	status     Status
-	detail     string
-	nextAction string
-	reviewRef  string
-	scopes     []Scope
-	choices    []string
-	effects    Effects
+	action                  Action
+	result                  Result
+	status                  Status
+	detail                  string
+	nextAction              string
+	reviewRef               string
+	autoBootstrapEligible   bool
+	profileOverrideEligible bool
+	profileOrigin           projectprofile.ProfileAdmissionOrigin
+	scopes                  []Scope
+	choices                 []string
+	effects                 Effects
 }
 
 func (outcome Outcome) Action() Action {
@@ -459,6 +516,18 @@ func (outcome Outcome) NextAction() string {
 
 func (outcome Outcome) ReviewRef() string {
 	return outcome.reviewRef
+}
+
+func (outcome Outcome) AutoBootstrapEligible() bool {
+	return outcome.autoBootstrapEligible
+}
+
+func (outcome Outcome) ProfileOverrideEligible() bool {
+	return outcome.profileOverrideEligible
+}
+
+func (outcome Outcome) ProfileOrigin() projectprofile.ProfileAdmissionOrigin {
+	return outcome.profileOrigin
 }
 
 func (outcome Outcome) Scopes() []Scope {
@@ -516,7 +585,7 @@ func (service Service) Execute(
 		return onboardingRequiredOutcome(request.Action()), nil
 	}
 	if !service.memoryReadyAtStartup && observation.MemoryReady() {
-		return restartRequiredOutcome(request.Action()), nil
+		return restartRequiredOutcome(request.Action(), observation.ProfileOrigin()), nil
 	}
 	switch request.Action() {
 	case ActionStatus:
@@ -538,7 +607,7 @@ func (service Service) prepareProfile(
 	request Request,
 	observation Observation,
 ) (Outcome, error) {
-	if observation.ProfileDeclared() {
+	if observation.ProfileDeclared() && !observation.ProfileOverrideEligible() {
 		current := statusOutcome(observation)
 		return blockedOutcome(
 			ActionProfilePrepare,
@@ -546,6 +615,9 @@ func (service Service) prepareProfile(
 			"The canonical project profile already exists; initial profile preparation cannot replace it.",
 			current.NextAction(),
 			current.Scopes(),
+		).withProfileState(
+			current.ProfileOrigin(),
+			current.ProfileOverrideEligible(),
 		), nil
 	}
 	preparation, err := service.runtime.PrepareProfile(ctx, request)
@@ -559,6 +631,9 @@ func (service Service) prepareProfile(
 			ResultProfileReviewCreated,
 			StatusProfileReviewReady,
 			preparation,
+		).withProfileState(
+			observation.ProfileOrigin(),
+			observation.ProfileOverrideEligible(),
 		), nil
 	case PreparationReused:
 		return preparedOutcome(
@@ -566,6 +641,9 @@ func (service Service) prepareProfile(
 			ResultProfileReviewReused,
 			StatusProfileReviewReady,
 			preparation,
+		).withProfileState(
+			observation.ProfileOrigin(),
+			observation.ProfileOverrideEligible(),
 		), nil
 	case PreparationNeedsScopeReview:
 		return Outcome{
@@ -578,7 +656,10 @@ func (service Service) prepareProfile(
 			effects: Effects{
 				RepositoryInspected: true,
 			},
-		}, nil
+		}.withProfileState(
+			observation.ProfileOrigin(),
+			observation.ProfileOverrideEligible(),
+		), nil
 	case PreparationBlocked:
 		return blockedOutcome(
 			ActionProfilePrepare,
@@ -586,6 +667,9 @@ func (service Service) prepareProfile(
 			preparation.Detail(),
 			"Inspect the existing readable profile review and current repository scope before retrying.",
 			preparation.Scopes(),
+		).withProfileState(
+			observation.ProfileOrigin(),
+			observation.ProfileOverrideEligible(),
 		), nil
 	default:
 		return Outcome{}, fmt.Errorf(
@@ -610,12 +694,13 @@ func (service Service) prepareMemory(
 	}
 	if observation.MemoryReady() {
 		return Outcome{
-			action:     ActionMemoryPrepare,
-			result:     ResultReady,
-			status:     StatusReady,
-			detail:     "Structured project memory is already enabled for this process.",
-			nextAction: "Continue with the current project question.",
-			scopes:     observation.Scopes(),
+			action:        ActionMemoryPrepare,
+			result:        ResultReady,
+			status:        StatusReady,
+			detail:        "Structured project memory is already enabled for this process.",
+			nextAction:    "Continue with the current project question.",
+			scopes:        observation.Scopes(),
+			profileOrigin: observation.ProfileOrigin(),
 			effects: Effects{
 				RepositoryInspected: true,
 			},
@@ -632,14 +717,14 @@ func (service Service) prepareMemory(
 			ResultMemoryReviewCreated,
 			StatusMemoryReviewReady,
 			preparation,
-		), nil
+		).withProfileOrigin(observation.ProfileOrigin()), nil
 	case PreparationReused:
 		return preparedOutcome(
 			ActionMemoryPrepare,
 			ResultMemoryReviewReused,
 			StatusMemoryReviewReady,
 			preparation,
-		), nil
+		).withProfileOrigin(observation.ProfileOrigin()), nil
 	case PreparationBlocked:
 		status := StatusNeedsMemory
 		nextAction := "Inspect the existing structured-memory review and retry only after its conflict or stale basis is resolved."
@@ -653,7 +738,7 @@ func (service Service) prepareMemory(
 			preparation.Detail(),
 			nextAction,
 			observation.Scopes(),
-		), nil
+		).withProfileOrigin(observation.ProfileOrigin()), nil
 	default:
 		return Outcome{}, fmt.Errorf(
 			"unsupported memory preparation result %q",
@@ -674,13 +759,25 @@ func statusOutcome(observation Observation) Outcome {
 		RepositoryInspected: true,
 	}
 	if !observation.ProfileDeclared() {
+		if observation.AutoBootstrapEligible() {
+			return Outcome{
+				action:                ActionStatus,
+				result:                ResultNeedsProfile,
+				status:                StatusNeedsProfile,
+				detail:                readableDetail(observation.Detail(), "The project has no canonical profile and satisfies the automatic supported-singleton init policy."),
+				nextAction:            "Run haft init --core-only to admit the detector_default profile, install applicable carriers, and repeat status.",
+				scopes:                observation.Scopes(),
+				autoBootstrapEligible: true,
+				effects:               effects,
+			}
+		}
 		if observation.ProfileReviewReady() {
 			return Outcome{
 				action:     ActionStatus,
 				result:     ResultProfileReviewReady,
 				status:     StatusProfileReviewReady,
 				detail:     readableDetail(observation.Detail(), "A non-binding project-profile review is ready."),
-				nextAction: "Review the readable scopes; profile application remains an explicit h-onboard act.",
+				nextAction: "Review the readable scopes; profile application requires one direct, unambiguous operator selection.",
 				reviewRef:  "review:onboard-profile",
 				scopes:     observation.Scopes(),
 				effects:    effects,
@@ -702,48 +799,53 @@ func statusOutcome(observation Observation) Outcome {
 	}
 	if observation.MemoryReady() {
 		return Outcome{
-			action:     ActionStatus,
-			result:     ResultReady,
-			status:     StatusReady,
-			detail:     readableDetail(observation.Detail(), "Project profile and structured project memory are ready."),
-			nextAction: "Continue with the current project question.",
-			scopes:     observation.Scopes(),
-			effects:    effects,
+			action:                  ActionStatus,
+			result:                  ResultReady,
+			status:                  StatusReady,
+			detail:                  readableDetail(observation.Detail(), "Project profile and structured project memory are ready."),
+			nextAction:              "Continue with the current project question.",
+			scopes:                  observation.Scopes(),
+			profileOrigin:           observation.ProfileOrigin(),
+			profileOverrideEligible: observation.ProfileOverrideEligible(),
+			effects:                 effects,
 		}
 	}
 	if observation.MemoryDeferred() {
 		return Outcome{
-			action:     ActionStatus,
-			result:     ResultMemoryDeferred,
-			status:     StatusMemoryDeferred,
-			detail:     readableDetail(observation.Detail(), "Structured project memory was deferred."),
-			nextAction: "Continue without structured memory or reopen the choice through explicit onboarding.",
-			scopes:     observation.Scopes(),
-			effects:    effects,
+			action:                  ActionStatus,
+			result:                  ResultOnboardingRequired,
+			status:                  StatusNeedsInit,
+			detail:                  readableDetail(observation.Detail(), "Default project memory is incomplete."),
+			nextAction:              "Run haft init to repair default project memory, reload the host integration, and repeat status.",
+			scopes:                  observation.Scopes(),
+			profileOrigin:           observation.ProfileOrigin(),
+			profileOverrideEligible: observation.ProfileOverrideEligible(),
+			effects:                 effects,
 		}
 	}
 	if observation.MemoryReviewReady() {
 		return Outcome{
-			action:     ActionStatus,
-			result:     ResultMemoryReviewReady,
-			status:     StatusMemoryReviewReady,
-			detail:     readableDetail(observation.Detail(), "A non-binding structured-memory review is ready."),
-			nextAction: "Present the enable/defer choice; enabling remains an explicit h-decide act.",
-			reviewRef:  "review:onboard-memory",
-			scopes:     observation.Scopes(),
-			choices:    memoryChoices(),
-			effects:    effects,
+			action:                  ActionStatus,
+			result:                  ResultOnboardingRequired,
+			status:                  StatusNeedsInit,
+			detail:                  readableDetail(observation.Detail(), "Default project memory is incomplete."),
+			nextAction:              "Run haft init to repair default project memory, reload the host integration, and repeat status.",
+			scopes:                  observation.Scopes(),
+			profileOrigin:           observation.ProfileOrigin(),
+			profileOverrideEligible: observation.ProfileOverrideEligible(),
+			effects:                 effects,
 		}
 	}
 	return Outcome{
-		action:     ActionStatus,
-		result:     ResultNeedsMemory,
-		status:     StatusNeedsMemory,
-		detail:     readableDetail(observation.Detail(), "Structured project memory is not enabled."),
-		nextAction: "Call memory_prepare to create a non-binding enable/defer review.",
-		scopes:     observation.Scopes(),
-		choices:    memoryChoices(),
-		effects:    effects,
+		action:                  ActionStatus,
+		result:                  ResultOnboardingRequired,
+		status:                  StatusNeedsInit,
+		detail:                  readableDetail(observation.Detail(), "Default project memory is incomplete."),
+		nextAction:              "Run haft init to repair default project memory, reload the host integration, and repeat status.",
+		scopes:                  observation.Scopes(),
+		profileOrigin:           observation.ProfileOrigin(),
+		profileOverrideEligible: observation.ProfileOverrideEligible(),
+		effects:                 effects,
 	}
 }
 
@@ -758,17 +860,37 @@ func onboardingRequiredOutcome(action Action) Outcome {
 	}
 }
 
-func restartRequiredOutcome(action Action) Outcome {
+func restartRequiredOutcome(
+	action Action,
+	origin projectprofile.ProfileAdmissionOrigin,
+) Outcome {
 	return Outcome{
-		action:     action,
-		result:     ResultRestartRequired,
-		status:     StatusReady,
-		detail:     "Structured project memory became enabled after this MCP process started; this stale process made no setup change.",
-		nextAction: "Reload the host integration and call haft_onboard with action status in the new process.",
+		action:        action,
+		result:        ResultRestartRequired,
+		status:        StatusReady,
+		detail:        "Structured project memory became enabled after this MCP process started; this stale process made no setup change.",
+		nextAction:    "Reload the host integration and call haft_onboard with action status in the new process.",
+		profileOrigin: origin,
 		effects: Effects{
 			RepositoryInspected: true,
 		},
 	}
+}
+
+func (outcome Outcome) withProfileOrigin(
+	origin projectprofile.ProfileAdmissionOrigin,
+) Outcome {
+	outcome.profileOrigin = origin
+	return outcome
+}
+
+func (outcome Outcome) withProfileState(
+	origin projectprofile.ProfileAdmissionOrigin,
+	overrideEligible bool,
+) Outcome {
+	outcome.profileOrigin = origin
+	outcome.profileOverrideEligible = overrideEligible
+	return outcome
 }
 
 func preparedOutcome(
@@ -793,7 +915,7 @@ func preparedOutcome(
 		},
 	}
 	if action == ActionProfilePrepare {
-		outcome.nextAction = "Review the readable scopes; profile application remains an explicit h-onboard act."
+		outcome.nextAction = "Review the readable scopes; profile application requires one direct, unambiguous operator selection."
 		return outcome
 	}
 	outcome.nextAction = "Present the enable/defer choice; enabling remains an explicit h-decide act."

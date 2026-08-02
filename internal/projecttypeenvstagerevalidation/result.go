@@ -65,7 +65,11 @@ func (value CurrentSelectionStage) Valid() bool {
 	if value.state.assertions.Posture() != typedmemory.RevalidationClean {
 		return false
 	}
-	if _, compatible := value.state.profile.(projecttypeenvprofilefit.Compatible); !compatible {
+	if !selectionProfileReady(
+		value.state.stage,
+		value.state.profileBasis,
+		value.state.profile,
+	) {
 		return false
 	}
 	if value.state.stage.ProfileLedgerRevision() !=

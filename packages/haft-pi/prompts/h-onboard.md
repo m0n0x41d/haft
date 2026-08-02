@@ -1,7 +1,7 @@
 Bootstrap Haft through the native Pi `haft_onboard` tool only when project
 setup or its canonical basis is incomplete.
 
-Contract truth: project-profile onboarding and structured-memory setup are
+Contract truth: project-profile onboarding and automatic project-memory setup are
 **V9 CONTRACT** capabilities. Source, schema, skill, or local-test presence is
 not installed-runtime proof and does not establish Pi host parity. A readiness
 claim requires current **EXACT-CANDIDATE EVIDENCE** from P14 tied to one exact
@@ -24,12 +24,12 @@ Follow only its closed result kind:
 - `needs_profile` — call `haft_onboard` with
   `{ "action": "profile_prepare" }`;
 - `profile_review_ready` — present the readable review and its exact next act;
-- `needs_memory` — call `haft_onboard` with
-  `{ "action": "memory_prepare" }`;
-- `memory_review_ready` — present the enable/defer choice and route a selected
-  enablement through manual `h-decide`;
-- `memory_deferred` — setup is intentionally usable without structured memory;
 - `ready` — continue with the operator's current question.
+
+`haft init` installs default project memory as part of initialization. Never
+ask the operator to enable, defer, select, or understand a memory schema. A
+legacy or partial installation reporting `needs_init` is repaired by rerunning
+`haft init`, reconnecting, and repeating `status`.
 
 `profile_prepare` may use repository detection. When the result needs an
 explicit scope, pass only the readable scope fields exposed by the tool:
@@ -37,26 +37,13 @@ explicit scope, pass only the readable scope fields exposed by the tool:
 the top-level readable `basis`. Preparation may materialize or reuse only a
 non-binding review carrier. It does not apply canonical profile state.
 
-Automatic `h-onboard` may inspect and prepare, but it must not apply. Only a
-current explicit operator invocation of `h-onboard`, after the readable review
-and engineering assessment, authorizes `haft onboard profile apply`. Do not ask
-for a second confirmation after that valid explicit invocation.
-
-`memory_prepare` may likewise materialize or reuse only a non-binding review
-carrier. Present both real choices. Explicitly selected enablement is a
-separate binding effect routed through manual `h-decide` and
-`haft onboard memory enable`; it creates no substitute DecisionRecord. Only
-after the operator actually selects **Not now**, run
-`haft onboard memory defer`. A successful `memory_deferred` result is
-non-binding, grants no authority, creates no DecisionRecord, and does not
-pretend structured memory is enabled.
-
-To reconsider `memory_deferred`, call `haft_onboard` with
-`{ "action": "memory_prepare" }`; this safely reopens the review and does not
-enable memory. If enablement returns `restart_required`, reconnect and repeat
-`haft_onboard({ "action": "status" })`. Treat structured memory as ready only
-when that fresh call returns `ready`; deferral remains readable as
-`memory_deferred`.
+Automatic `h-onboard` may inspect and prepare, but it must not apply. After the
+readable review and engineering assessment, route only a direct, unambiguous
+operator selection of that exact profile and scope to `haft onboard profile
+apply`. Do not require a skill name or ask for a second confirmation. A bare
+`yes` or `да` works only for one current unambiguous profile brief.
+Successful application records `host_routed_operator_request` provenance;
+automatic singleton bootstrap remains the separate `detector_default` path.
 
 Do not expose or ask the operator to choose internal memory schemas, revision
 heads, staging records, or implementation letters. Missing setup or known

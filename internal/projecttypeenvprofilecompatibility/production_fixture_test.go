@@ -7,17 +7,26 @@ import (
 	"path/filepath"
 	"testing"
 
+	basetypeenvartifacts "github.com/m0n0x41d/haft/data/haft/base-typeenv/artifacts"
 	typedmemorycandidates "github.com/m0n0x41d/haft/data/haft/local-practice/typed-memory/candidates"
 	"github.com/m0n0x41d/haft/internal/fpf/typeenvsql"
 	"github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime"
 	typeenvcompatibility "github.com/m0n0x41d/haft/internal/projecttypeenvcompatibility"
 	profilecompatibility "github.com/m0n0x41d/haft/internal/projecttypeenvprofilecompatibility"
+	"github.com/m0n0x41d/haft/internal/typedmemory"
 	_ "modernc.org/sqlite"
 )
 
-func TestProductionUnchangedSuccessorKeepsInstalledProfilesCompatible(
+func TestProductionHistoricalToCurrentSuccessorKeepsInstalledProfilesCompatible(
 	t *testing.T,
 ) {
+	historicalBaseRef := mustProductionProfileTest(
+		typedmemory.ParseTypeEnvRef(basetypeenvartifacts.HistoricalV5Ref),
+	)
+	historicalBase := mustProductionProfileTest(
+		basetypeenvartifacts.LoadExact(historicalBaseRef),
+	)
+
 	basePath := filepath.Join("..", "cli", "fpf.db")
 	database, err := sql.Open(
 		"sqlite",
@@ -27,17 +36,38 @@ func TestProductionUnchangedSuccessorKeepsInstalledProfilesCompatible(
 		t.Fatalf("open embedded FPF database: %v", err)
 	}
 	t.Cleanup(func() { _ = database.Close() })
-	base := mustProductionProfileTest(typeenvsql.LoadArtifactReadOnlyDB(
+	currentBase := mustProductionProfileTest(typeenvsql.LoadArtifactReadOnlyDB(
 		context.Background(),
 		database,
 	))
+
 	priorSource := typedmemorycandidates.SourceV1_4()
-	currentSource := successorProductionSource(t, priorSource)
-	prior := mustProductionProfileTest(localpracticeruntime.Build(base, priorSource))
-	current := mustProductionProfileTest(localpracticeruntime.Build(base, currentSource))
+	currentSource := typedmemorycandidates.SourceV1_5()
+	if bytes.Equal(priorSource, currentSource) {
+		t.Fatal("historical and current Local-Practice carriers are byte-identical")
+	}
+	prior := mustProductionProfileTest(
+		localpracticeruntime.Build(historicalBase, priorSource),
+	)
+	current := mustProductionProfileTest(
+		localpracticeruntime.Build(currentBase, currentSource),
+	)
+	assertProductionCarrierBytesStable(
+		t,
+		"historical Local-Practice 1.4.0",
+		priorSource,
+		typedmemorycandidates.SourceV1_4(),
+	)
+	assertProductionCarrierBytesStable(
+		t,
+		"current Local-Practice 1.5.0",
+		currentSource,
+		typedmemorycandidates.SourceV1_5(),
+	)
+
 	priorEnvironment, present := prior.Preparation().Environment()
 	if !present {
-		t.Fatal("prior production fixture has no executable environment")
+		t.Fatal("historical production fixture has no executable environment")
 	}
 	currentEnvironment, present := current.Preparation().Environment()
 	if !present {
@@ -51,22 +81,78 @@ func TestProductionUnchangedSuccessorKeepsInstalledProfilesCompatible(
 	if len(rules) != 253 {
 		t.Fatalf("production successor rule count = %d, want 253", len(rules))
 	}
+
+	classCounts := map[typeenvcompatibility.SuccessorRuleClass]int{}
 	for _, rule := range rules {
-		if rule.Class() != typeenvcompatibility.SuccessorUnchanged {
+		classCounts[rule.Class()]++
+		switch rule.Class() {
+		case typeenvcompatibility.SuccessorUnchanged:
+		case typeenvcompatibility.SuccessorCompilerGap:
+			if rule.Family() != typeenvcompatibility.KindClassificationSignatureFamily ||
+				rule.Ground() != typeenvcompatibility.GroundSemanticOrderNotImplemented {
+				t.Fatalf(
+					"production compiler gap %s is %s/%s, want %s/%s",
+					rule.Key(),
+					rule.Family().String(),
+					rule.Ground(),
+					typeenvcompatibility.KindClassificationSignatureFamily.String(),
+					typeenvcompatibility.GroundSemanticOrderNotImplemented,
+				)
+			}
+		case typeenvcompatibility.SuccessorAdditive,
+			typeenvcompatibility.SuccessorWidened,
+			typeenvcompatibility.SuccessorNarrowed,
+			typeenvcompatibility.SuccessorRemoved:
 			t.Fatalf(
-				"production successor rule %s is %s, want unchanged",
+				"production successor rule %s is %s, want unchanged or compiler gap",
 				rule.Key(),
 				rule.Class().String(),
 			)
+		default:
+			t.Fatalf(
+				"production successor rule %s has unsupported class %d",
+				rule.Key(),
+				rule.Class(),
+			)
 		}
 	}
+	assertProductionRuleClassCount(
+		t,
+		classCounts,
+		typeenvcompatibility.SuccessorUnchanged,
+		241,
+	)
+	assertProductionRuleClassCount(
+		t,
+		classCounts,
+		typeenvcompatibility.SuccessorCompilerGap,
+		12,
+	)
+	for _, class := range []typeenvcompatibility.SuccessorRuleClass{
+		typeenvcompatibility.SuccessorAdditive,
+		typeenvcompatibility.SuccessorWidened,
+		typeenvcompatibility.SuccessorNarrowed,
+		typeenvcompatibility.SuccessorRemoved,
+	} {
+		assertProductionRuleClassCount(t, classCounts, class, 0)
+	}
+
+	diffCanonical := diff.CanonicalBytes()
+	decodedDiff := mustProductionProfileTest(
+		typeenvcompatibility.DecodeSuccessorDiff(diffCanonical),
+	)
+	if decodedDiff.Digest() != diff.Digest() ||
+		!bytes.Equal(decodedDiff.CanonicalBytes(), diffCanonical) {
+		t.Fatal("production successor canonical round-trip changed identity")
+	}
+
 	profiles := mustProductionProfileTest(
 		profilecompatibility.AssessInstalledProjectionProfiles(diff),
 	)
 	for _, profile := range profiles.Profiles() {
 		if profile.Kind() != profilecompatibility.ProfileCompatible {
 			t.Fatalf(
-				"unchanged production successor made %s %s",
+				"production successor made %s %s",
 				profile.ProfileRef().String(),
 				profile.Kind().String(),
 			)
@@ -81,23 +167,46 @@ func TestProductionUnchangedSuccessorKeepsInstalledProfilesCompatible(
 			}
 		}
 	}
+
+	profilesCanonical := profiles.CanonicalBytes()
+	decodedProfiles := mustProductionProfileTest(
+		profilecompatibility.DecodeProjectionProfileCompatibilitySet(
+			profilesCanonical,
+		),
+	)
+	if decodedProfiles.Digest() != profiles.Digest() ||
+		!bytes.Equal(decodedProfiles.CanonicalBytes(), profilesCanonical) {
+		t.Fatal("production profile compatibility canonical round-trip changed identity")
+	}
 }
 
-func successorProductionSource(t *testing.T, prior []byte) []byte {
+func assertProductionCarrierBytesStable(
+	t *testing.T,
+	label string,
+	used []byte,
+	reread []byte,
+) {
 	t.Helper()
-	successor := append([]byte(nil), prior...)
-	replacements := [][2]string{
-		{"  edition: 1.4.0\n", "  edition: 1.4.1\n"},
-		{"  version: 1.4.0\n", "  version: 1.4.1\n"},
+	if !bytes.Equal(used, reread) {
+		t.Fatalf("%s carrier bytes changed while building the runtime", label)
 	}
-	for _, replacement := range replacements {
-		before := []byte(replacement[0])
-		if bytes.Count(successor, before) != 1 {
-			t.Fatalf("successor source replacement %q is not unique", replacement[0])
-		}
-		successor = bytes.Replace(successor, before, []byte(replacement[1]), 1)
+}
+
+func assertProductionRuleClassCount(
+	t *testing.T,
+	counts map[typeenvcompatibility.SuccessorRuleClass]int,
+	class typeenvcompatibility.SuccessorRuleClass,
+	want int,
+) {
+	t.Helper()
+	if got := counts[class]; got != want {
+		t.Fatalf(
+			"production successor %s rule count = %d, want %d",
+			class.String(),
+			got,
+			want,
+		)
 	}
-	return successor
 }
 
 func mustProductionProfileTest[T any](value T, err error) T {

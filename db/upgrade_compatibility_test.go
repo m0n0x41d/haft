@@ -806,6 +806,12 @@ func assertUpgradeTriggersPreserved(
 			}
 			continue
 		}
+		if v56SupersededTypeEnvAuthorityTrigger(name) {
+			if ok {
+				t.Fatalf("superseded TypeEnv authority trigger %s survived v56", name)
+			}
+			continue
+		}
 		if !ok {
 			t.Fatalf("pre-existing trigger %s disappeared during upgrade", name)
 		}
@@ -855,6 +861,21 @@ func assertUpgradeTriggersPreserved(
 			)
 		}
 	}
+}
+
+func v56SupersededTypeEnvAuthorityTrigger(name string) bool {
+	superseded := map[string]struct{}{
+		"project_typeenv_head_selection_authority_resolutions_v47_no_insert":   {},
+		"project_typeenv_head_selection_authority_resolutions_v47_no_update":   {},
+		"project_typeenv_head_selection_authority_resolutions_v47_no_delete":   {},
+		"project_typeenv_head_selection_authority_resolutions_v47_exact_basis": {},
+		"project_typeenv_head_selection_authority_uses_v47_no_insert":          {},
+		"project_typeenv_head_selection_authority_uses_v47_no_update":          {},
+		"project_typeenv_head_selection_authority_uses_v47_no_delete":          {},
+		"project_typeenv_head_selection_authority_uses_v47_exact_source":       {},
+	}
+	_, ok := superseded[name]
+	return ok
 }
 
 func v54RebuiltStableTrigger(name string) bool {

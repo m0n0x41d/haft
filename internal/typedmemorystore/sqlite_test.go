@@ -15,6 +15,7 @@ import (
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
@@ -829,7 +830,7 @@ func emptyDeclarationCounts() map[string]int64 {
 
 func openStoreAt(t *testing.T, databasePath string) *db.Store {
 	t.Helper()
-	store, err := db.NewStore(databasePath)
+	store, err := kerneldbfixture.OpenCurrentStore(databasePath)
 	if err != nil {
 		t.Fatalf("db.NewStore: %v", err)
 	}

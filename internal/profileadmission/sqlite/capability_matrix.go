@@ -18,6 +18,7 @@ const (
 
 type canonicalProfileApplicabilityBinding struct {
 	projectRoot           projectprofile.ProjectRootV1
+	origin                projectprofile.ProfileAdmissionOrigin
 	admissionRecordRef    projectprofile.ProfileDeclarationAdmissionRecordRef
 	admissionRecordDigest projectprofile.ContentDigest
 	payloadDigest         projectprofile.ContentDigest
@@ -44,6 +45,13 @@ func (resolved ResolvedCapabilityApplicabilityMatrix) ProjectRoot() projectprofi
 		return projectprofile.ProjectRootV1{}
 	}
 	return resolved.state.binding.projectRoot
+}
+
+func (resolved ResolvedCapabilityApplicabilityMatrix) Origin() projectprofile.ProfileAdmissionOrigin {
+	if !resolved.Valid() {
+		return ""
+	}
+	return resolved.state.binding.origin
 }
 
 func (resolved ResolvedCapabilityApplicabilityMatrix) AdmissionRecordRef() projectprofile.ProfileDeclarationAdmissionRecordRef {
@@ -222,6 +230,7 @@ func canonicalProfileApplicabilityBindingFrom(
 ) (canonicalProfileApplicabilityBinding, error) {
 	binding := canonicalProfileApplicabilityBinding{
 		projectRoot:           admission.ProjectRoot(),
+		origin:                admission.Origin(),
 		admissionRecordRef:    admission.AdmissionRecordRef(),
 		admissionRecordDigest: admission.AdmissionRecordDigest(),
 		payloadDigest:         admission.PayloadDigest(),
@@ -256,6 +265,9 @@ func validateCanonicalProfileApplicabilityBinding(
 ) error {
 	if binding.projectRoot.String() == "" {
 		return fmt.Errorf("canonical profile applicability project root is absent")
+	}
+	if _, ok := projectprofile.ParseProfileAdmissionOrigin(string(binding.origin)); !ok {
+		return fmt.Errorf("canonical profile applicability origin is invalid")
 	}
 	if binding.admissionRecordRef.String() == "" || binding.admissionRecordDigest.String() == "" {
 		return fmt.Errorf("canonical profile applicability admission binding is absent")

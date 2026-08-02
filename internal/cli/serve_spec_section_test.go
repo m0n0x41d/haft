@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 	"github.com/m0n0x41d/haft/internal/projectledger"
@@ -50,7 +49,9 @@ func newBaselineTestProject(t *testing.T) (string, string) {
 	if err := os.MkdirAll(dbDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	store, err := db.NewStore(filepath.Join(dbDir, "haft.db"))
+	store, err := openCurrentKernelTestStore(
+		filepath.Join(dbDir, "haft.db"),
+	)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

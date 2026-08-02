@@ -257,7 +257,7 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		a.Body += "Before deciding, have you surveyed existing solutions?\n"
 		a.Body += "- **Web search** — industry patterns, blog posts, case studies\n"
 		a.Body += "- **Library docs** — check current API/usage patterns for relevant libraries\n"
-		a.Body += "- **FPF spec search** — `haft_query(action=\"fpf\", query=\"<topic>\")` for methodology patterns\n"
+		a.Body += "- **FPF source navigation** — start with `haft_query(action=\"fpf\", mode=\"concern\", query=\"<current question>\")`, then inspect one selected exact PatternID before relying on it\n"
 		a.Body += "\n## Evidence Collection\n\n"
 		a.Body += "Research each variant before comparing. Run tests, check benchmarks, validate claims.\n"
 		a.Body += fmt.Sprintf("Attach findings: `haft_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"research\", evidence_verdict=\"supports\")`\n", a.Meta.ID)
@@ -503,7 +503,12 @@ func parityPlanWarning(mode Mode, source parityPlanSource) string {
 	)
 }
 
-// ValidateCompareInput applies FPF compare-time validation without side effects.
+// ValidateCompareInput applies Haft's local-practice compare-time validation
+// without side effects. It does not by itself materialize an A.19.CPM actual
+// binary application or an A.19.SelectorMechanism application: those require
+// exact scope/predicate/plane/window bindings, a finite covered CPM basis, and
+// comparison-token provenance that this legacy portfolio carrier does not
+// represent.
 func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (CompareValidationResult, error) {
 	result := CompareValidationResult{}
 	if len(input.Results.Dimensions) == 0 {
@@ -1449,13 +1454,14 @@ func subjectiveComparisonDimensionWarnings(compareDimensions []string, character
 	return warnings
 }
 
-// nonDiscriminatingDimensionWarnings flags TARGET dimensions on which every
-// scored variant has the same value — a target that does not separate the
-// variants is dead weight (or a hidden parity condition mislabeled as a
-// target). Per FPF A.19.ECS discriminating-case discipline. Constraints are
-// skipped (all variants satisfying a hard limit identically is correct, not a
-// defect) and observations are watch-only. Needs >=2 scored variants;
-// single-scored dimensions are a missing-data concern handled elsewhere.
+// nonDiscriminatingDimensionWarnings applies a Haft-local heuristic to TARGET
+// dimensions on which every currently scored variant has the same value. The
+// heuristic is informed by the A.19.ECS:4.2 move to remove false coordinates,
+// but identical values in one candidate set are not themselves the
+// A.19.ECS:4.4 discriminating-case test. Constraints are skipped (all variants
+// satisfying a hard limit identically is correct, not a defect) and
+// observations are watch-only. Needs >=2 scored variants; single-scored
+// dimensions are a missing-data concern handled elsewhere.
 func nonDiscriminatingDimensionWarnings(comparedVariants []string, scores map[string]map[string]string, compareDimensions []string, characterized map[string]charDim) []string {
 	var warnings []string
 	for _, dimension := range compareDimensions {
@@ -1480,7 +1486,7 @@ func nonDiscriminatingDimensionWarnings(comparedVariants []string, scores map[st
 		}
 		if allEqual {
 			warnings = append(warnings, fmt.Sprintf(
-				"target dimension '%s' scores identically across all variants (%q) — it does not discriminate; drop it or it is a hidden parity condition, not a target (FPF A.19.ECS discriminating-case)",
+				"target dimension '%s' scores identically across all variants (%q) — it does not discriminate; drop it or it is a hidden parity condition, not a target (Haft-local heuristic informed by FPF A.19.ECS:4.2 move 5)",
 				dimension, values[0]))
 		}
 	}

@@ -86,17 +86,22 @@ func BuildSourceUnits(bundle SourceBundle) ([]SourceUnit, error) {
 	if err != nil {
 		return nil, err
 	}
+	scopes, err := buildPatternScopeSourceUnits(bundle.Spec, specAtlas)
+	if err != nil {
+		return nil, err
+	}
 	bodies, toc, err = projectTOCRelationsToCanonicalUnits(bodies, toc, publicationCatalog)
 	if err != nil {
 		return nil, err
 	}
 
-	units := make([]SourceUnit, 0, len(practical)+len(preface)+len(toc)+len(bodies)+len(sections))
+	units := make([]SourceUnit, 0, len(practical)+len(preface)+len(toc)+len(bodies)+len(sections)+len(scopes))
 	units = append(units, practical...)
 	units = append(units, preface...)
 	units = append(units, toc...)
 	units = append(units, bodies...)
 	units = append(units, sections...)
+	units = append(units, scopes...)
 	removeAmbiguousSourceIDs(units)
 	resolveSourceDirectRefs(units)
 
@@ -272,7 +277,9 @@ func removeAmbiguousSourceIDs(units []SourceUnit) {
 		canonical := -1
 		for _, index := range indexes {
 			role := units[index].Role
-			if role == SourceUnitRolePatternBody || (role == SourceUnitRoleTOCRow && units[index].PublicationStatus == "Planned") {
+			if role == SourceUnitRolePatternBody ||
+				role == SourceUnitRolePatternScope ||
+				(role == SourceUnitRoleTOCRow && units[index].PublicationStatus == "Planned") {
 				if canonical >= 0 {
 					canonical = -1
 					break
@@ -355,7 +362,20 @@ func buildPracticalUseSourceUnits(document SourceDocument, atlas PatternAtlas) (
 		)
 		unit.AuthoredPhrases = extractReadmeAuthoredPhrases(body)
 		unit.Keywords = sourceKeywords(title, body)
-		unit.UseCues = extractSourceUseCues(body)
+		projection, err := ParsePracticalUseCardSource(PracticalUseCardSource{
+			SourceID:       sourceID,
+			Title:          title,
+			Body:           body,
+			SourcePath:     document.Path,
+			SourceRevision: document.SourceRevision,
+			StartLine:      node.StartLine,
+			EndLine:        node.EndLine,
+		})
+		if err != nil {
+			return nil, err
+		}
+		unit.UseCues = projection.UseCues
+		unit.DirectRefs = extractSourcePatternLinks(projection.DirectReferenceText)
 		units = append(units, unit)
 	}
 	if len(units) == 0 {
@@ -571,15 +591,22 @@ func ValidateSourceUnits(units []SourceUnit) error {
 		}
 		counts[unit.Role]++
 	}
-	for _, role := range sourceUnitRoleOrder {
+	requiredRoles := []SourceUnitRole{
+		SourceUnitRolePracticalUseCard,
+		SourceUnitRolePreface,
+		SourceUnitRoleTOCRow,
+		SourceUnitRolePatternBody,
+		SourceUnitRolePatternSection,
+	}
+	for _, role := range requiredRoles {
 		if counts[role] == 0 {
 			return fmt.Errorf("source unit grammar produced no %s units", role)
 		}
 	}
 	for _, unit := range units {
-		if unit.Role == SourceUnitRolePatternSection {
+		if unit.Role == SourceUnitRolePatternSection || unit.Role == SourceUnitRolePatternScope {
 			if _, exists := patternBodies[unit.ParentPatternID]; !exists {
-				return fmt.Errorf("pattern section %s has missing parent pattern body %s", unit.UnitID, unit.ParentPatternID)
+				return fmt.Errorf("%s %s has missing parent pattern body %s", unit.Role, unit.UnitID, unit.ParentPatternID)
 			}
 		}
 		if err := validateSourceRelations(unit, canonicalPatterns, tocProvenanceByPatternID); err != nil {
@@ -661,6 +688,14 @@ func validateRoleSpecificSourceGrammar(unit SourceUnit) error {
 			return fmt.Errorf("pattern section %s lacks parent pattern id", unit.UnitID)
 		}
 		return nil
+	case SourceUnitRolePatternScope:
+		if unit.SourceID == "" || unit.ParentPatternID == "" {
+			return fmt.Errorf("pattern scope %s lacks source id or parent pattern id", unit.UnitID)
+		}
+		if unit.PatternID != unit.ParentPatternID {
+			return fmt.Errorf("pattern scope %s must retain its governing parent pattern id", unit.SourceID)
+		}
+		return nil
 	case SourceUnitRolePracticalUseCard:
 		if unit.SourceID == "" {
 			return fmt.Errorf("practical-use card %s lacks source id", unit.UnitID)
@@ -691,14 +726,14 @@ func validateSourceReferences(units []SourceUnit, catalog map[string]SpecCatalog
 	for _, unit := range units {
 		if unit.Role == SourceUnitRolePatternBody {
 			patternBodies[unit.PatternID] = struct{}{}
-			addressable[unit.PatternID] = struct{}{}
+			addressable[sourceReferenceKey(unit.PatternID)] = struct{}{}
 		}
 		if unit.Role == SourceUnitRoleTOCRow && unit.PatternID != "" {
 			tocRows[unit.PatternID] = unit.PublicationStatus
-			addressable[unit.PatternID] = struct{}{}
+			addressable[sourceReferenceKey(unit.PatternID)] = struct{}{}
 		}
-		if unit.Role == SourceUnitRolePatternSection && unit.SourceID != "" {
-			addressable[unit.SourceID] = struct{}{}
+		if (unit.Role == SourceUnitRolePatternSection || unit.Role == SourceUnitRolePatternScope) && unit.SourceID != "" {
+			addressable[sourceReferenceKey(unit.SourceID)] = struct{}{}
 		}
 		for _, relation := range unit.Relations {
 			if relation.TargetClass != SourceRelationTargetClassUnresolvedAuthored {
@@ -732,11 +767,17 @@ func validateSourceReferences(units []SourceUnit, catalog map[string]SpecCatalog
 			continue
 		}
 		for _, ref := range unit.DirectRefs {
-			if _, exists := addressable[ref]; !exists {
+			refKey := sourceReferenceKey(ref)
+			if _, exists := addressable[refKey]; !exists {
 				if _, sourceGap := unresolvedByPattern[unit.PatternID][ref]; sourceGap {
 					continue
 				}
-				return fmt.Errorf("FPF %s unit %s directly references missing pattern source %s", unit.Role, unit.SourceID, ref)
+				return fmt.Errorf(
+					"source_reference_unresolved[%s %s]: directly references missing pattern source %s",
+					unit.Role,
+					unit.SourceID,
+					ref,
+				)
 			}
 		}
 	}
@@ -776,43 +817,6 @@ func newSourceUnit(unitID, sourceID string, role SourceUnitRole, title, body, pa
 			SourceRevision: document.SourceRevision,
 		},
 	}
-}
-
-func extractSourceUseCues(body string) SourceUseCues {
-	condition := sourceLabeledLines(body, "Situation and question")
-	firstResults := sourceFirstResultLines(body)
-	boundaries := sourceLabeledLines(body, "Boundaries")
-	return SourceUseCues{
-		ConditionText:   strings.Join(condition, "\n"),
-		FirstResultText: strings.Join(firstResults, "\n"),
-		StopReturnText:  strings.Join(boundaries, "\n"),
-	}
-}
-
-func sourceLabeledLines(body, label string) []string {
-	needle := "**" + label + ".**"
-	lines := make([]string, 0)
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		if strings.HasPrefix(trimmed, needle) {
-			lines = append(lines, strings.TrimSpace(strings.TrimPrefix(trimmed, needle)))
-		}
-	}
-	return lines
-}
-
-func sourceFirstResultLines(body string) []string {
-	lines := make([]string, 0)
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		hasDirectResult := strings.Contains(trimmed, " Solution -> ") || strings.Contains(trimmed, "Solution ->")
-		hasConditionalWalkthrough := strings.HasPrefix(trimmed, "**Conditional walkthrough.**")
-		if !hasDirectResult && !hasConditionalWalkthrough {
-			continue
-		}
-		lines = append(lines, trimmed)
-	}
-	return dedupeStrings(lines)
 }
 
 func extractReadmeAuthoredPhrases(body string) []string {
@@ -896,10 +900,11 @@ func sourcePatternCatalog(catalog map[string]SpecCatalogEntry, atlas PatternAtla
 }
 
 func resolveSourceDirectRefs(units []SourceUnit) {
-	known := make(map[string]struct{})
+	known := make(map[string]string)
 	for _, unit := range units {
-		if unit.Role == SourceUnitRolePatternBody {
-			known[unit.PatternID] = struct{}{}
+		for _, sourceID := range addressableSourceIDs(unit) {
+			key := sourceReferenceKey(sourceID)
+			known[key] = sourceID
 		}
 	}
 
@@ -908,13 +913,19 @@ func resolveSourceDirectRefs(units []SourceUnit) {
 			units[index].DirectRefs = nil
 			continue
 		}
-		refText := sourceDirectRefText(units[index])
-		refs := extractSourcePatternLinks(refText)
-		refs = removeString(refs, units[index].PatternID)
+		refs := append([]string(nil), units[index].DirectRefs...)
+		if units[index].Role != SourceUnitRolePracticalUseCard {
+			refText := sourceDirectRefText(units[index])
+			refs = extractSourcePatternLinks(refText)
+		}
+		refs = removeSourceReference(refs, units[index].SourceID)
+		refs = removeSourceReference(refs, units[index].PatternID)
 		filtered := make([]string, 0, len(refs))
 		for _, ref := range refs {
-			if _, exists := known[ref]; exists {
-				filtered = append(filtered, ref)
+			key := sourceReferenceKey(ref)
+			canonical, exists := known[key]
+			if exists {
+				filtered = append(filtered, canonical)
 				continue
 			}
 			if isDirectRefValidatedRole(units[index].Role) && isUnknownCanonicalPatternRef(ref) {
@@ -925,31 +936,45 @@ func resolveSourceDirectRefs(units []SourceUnit) {
 	}
 }
 
+func addressableSourceIDs(unit SourceUnit) []string {
+	switch unit.Role {
+	case SourceUnitRolePatternBody, SourceUnitRoleTOCRow:
+		if unit.PatternID != "" {
+			return []string{unit.PatternID}
+		}
+	case SourceUnitRolePatternSection, SourceUnitRolePatternScope:
+		if unit.SourceID != "" {
+			return []string{unit.SourceID}
+		}
+	}
+	return nil
+}
+
+func sourceReferenceKey(value string) string {
+	trimmed := strings.TrimSpace(value)
+	return strings.ToLower(trimmed)
+}
+
+func removeSourceReference(values []string, value string) []string {
+	valueKey := sourceReferenceKey(value)
+	filtered := make([]string, 0, len(values))
+	for _, candidate := range values {
+		candidateKey := sourceReferenceKey(candidate)
+		if valueKey != "" && candidateKey == valueKey {
+			continue
+		}
+		filtered = append(filtered, candidate)
+	}
+	return filtered
+}
+
 func sourceDirectRefText(unit SourceUnit) string {
 	switch unit.Role {
-	case SourceUnitRolePracticalUseCard:
-		return practicalUseDirectRefText(unit.Body)
 	case SourceUnitRoleTOCRow:
 		return tocDirectRefText(unit.Body)
 	default:
 		return unit.Body
 	}
-}
-
-func practicalUseDirectRefText(body string) string {
-	selected := make([]string, 0)
-	for _, line := range strings.Split(body, "\n") {
-		trimmed := strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(line), "-"))
-		if strings.Contains(trimmed, "Solution ->") ||
-			strings.HasPrefix(trimmed, "**Template ") ||
-			strings.HasPrefix(trimmed, "**Conditional ") ||
-			strings.HasPrefix(trimmed, "**Direct ") ||
-			strings.HasPrefix(trimmed, "**Leading ") ||
-			strings.HasPrefix(trimmed, "**Branch ") {
-			selected = append(selected, trimmed)
-		}
-	}
-	return strings.Join(selected, "\n")
 }
 
 func tocDirectRefText(body string) string {

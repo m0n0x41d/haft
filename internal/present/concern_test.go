@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	haftdb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codeintel"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestConcernDiscoveryResponseKeepsCandidateOrderAdvisory(t *testing.T) {
@@ -64,7 +64,9 @@ func newPresentArtifactStore(
 	root string,
 ) (*artifact.Store, func()) {
 	t.Helper()
-	legacy, err := haftdb.NewStore(filepath.Join(root, "present.db"))
+	legacy, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(root, "present.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

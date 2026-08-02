@@ -56,7 +56,7 @@
 
 | # | Illegal state | Why | Enforcement |
 |---|--------------|-----|-------------|
-| 18 | Agent creates a binding DecisionRecord or WorkCommission without verifiable explicit operator/manual authority | Transformer Mandate: a capability catalog, recommendation, generated payload, or autonomous continuation policy cannot authorize a binding choice or execution scope. | Default MCP binding fails closed with `operator_confirmation_required`; manual `h-decide` and `h-commission` are the binding paths. |
+| 18 | Agent creates a binding DecisionRecord without a direct unambiguous operator request, or creates a WorkCommission without explicit manual authority | A capability catalog, skill token, recommendation, generated payload, quotation, or autonomous continuation policy cannot authorize a binding choice or execution scope. | MCP binding fails closed with `operator_confirmation_required`; a host routes an exact operator request through `h-decide`, while `h-commission` remains manual-only. |
 | 19 | Comparison with subjective dimensions not operationalized | "Maintainable" means nothing until decomposed into measurables. | Language precision triggers in skill (L1). L2 enforcement planned. |
 | 20 | Constraint dimension scored instead of eliminating | Constraints are hard limits. Violating variants must be removed, not penalized. | `computeParetoFront()` eliminates constraint violations before dominance. |
 
@@ -74,7 +74,7 @@
 |---|--------------|-----|-------------|
 | 24 | SQLite and `.haft/*.md` projection disagree on artifact content | Dual-truth corrupts team workflow. SQLite is runtime authority; projections are exchange format. | `WriteFile()` regenerates projection on every create/update. `haft sync` is explicit reconcile, fails closed on schema mismatch. |
 | 25 | Derived project-state facet (`pending`, `shipped`, evidence pressure) stored as a universal phase or next action | Facets are computed from artifact status and evidence state. Persisting one as project order creates stale-view and false-precedence bugs. | Facets are computed independently at query time and are never written as a global phase or `NextAction`. |
-| 26 | Advisory recommendation (`selected_ref`) treated as human choice | Violates Transformer Mandate. Agent recommendations, retrieval rank, and prior capability use are not authorization. | Manual `h-decide` records the operator's exact `ChoiceResult`; ordinary capabilities never advance implicitly into binding. |
+| 26 | Advisory recommendation (`selected_ref`) treated as human choice | Agent recommendations, retrieval rank, skill invocation, and prior capability use are not operator requests. | `h-decide` records the exact `ChoiceResult` only after a direct unambiguous operator request; ordinary recommendations never bind implicitly. |
 
 ## Work Execution & External Projection (vNext)
 

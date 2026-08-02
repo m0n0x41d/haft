@@ -1,14 +1,14 @@
 ---
 name: h-reason
 description: |
-  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF source, inspect the governing pattern body, and choose only the capability that is current. Ordinary reasoning stays conversational; persist only on an explicit save request or when a named receiving use needs replay. Binding decisions and commissions remain manual.
+  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF source, inspect the governing pattern body, and choose only the capability that is current. Ordinary reasoning stays conversational; proactively persist the minimum needed memory when current Work supplies a concrete durable receiving use. h-decide may route a direct operator request; h-commission remains manual-only.
 when_to_use: |
   The operator asks to reason with FPF or Haft, says "let's think", "помоги разобраться", or presents a concern that could belong to several narrower skills. Prefer a narrower skill when its condition is already clear.
 argument-hint: "[current project question]"
 allowed-tools: Bash Read Grep Glob Agent Write Edit mcp__haft__haft_problem mcp__haft__haft_solution mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_entity mcp__haft__haft_onboard mcp__haft__haft_note mcp__haft__haft_refresh mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
 
 # h-reason — Source-first FPF entrypoint
 
@@ -174,9 +174,22 @@ before continuing:
 - unavailable setup routes through
   `mcp__haft__haft_onboard(action="status")` and does not block unrelated Work.
 
-When `known_absent` coincides with an explicit operator save request or a named
-receiving use that requires stable identity, establish the entity through the
-task-level surface:
+`known_absent` alone authorizes nothing. Separately decide whether current Work
+has a concrete durability-requiring receiving use. That use may be
+operator-named or agent-inferred. The agent must infer it when current Work
+already makes cross-session continuation, handoff, audit, automation, delayed
+or expensive feedback, or costly reversal dependent on stable identity. The
+operator does not need to pre-name the use or grant separate permission.
+
+When such a use exists and the stable identity, bounded context, and aliases
+are recoverable, establish the minimum EntityOfConcern without asking for separate permission.
+Record the concrete use in request provenance. Do not infer a receiving use
+merely from `known_absent`, generic future usefulness, or a desire to populate
+an empty graph. An unresolved identity or alias conflict blocks only that
+establishment; it does not turn descriptive persistence into a human authority
+gate.
+
+Use the task-level surface:
 
 ```text
 mcp__haft__haft_entity(
@@ -185,13 +198,15 @@ mcp__haft__haft_entity(
   label="<readable label>",
   bounded_context_ref="<exact bounded context>",
   aliases=["<known alias, in canonical order>"],
-  persistence_reason="explicit_operator_request",
-  request_provenance_ref="<the request or named receiving use>",
+  persistence_reason="named_receiving_use",
+  request_provenance_ref="<exact current Work and its concrete receiving use>",
   idempotency_key="<stable key for this exact request>"
 )
 ```
 
-Use `persistence_reason="named_receiving_use"` when that is the real basis.
+Use `persistence_reason="explicit_operator_request"` instead only when an
+explicit save request, rather than the inferred receiving use, is the real
+basis.
 The task-level tool owns identity and alias conflict checks, validation, exact
 project-basis selection, admission, and post-commit resolution; the agent must
 not construct those internals.
@@ -207,8 +222,8 @@ Follow its closed result:
 - `identity_conflict`, `alias_conflict`, or `idempotency_conflict` blocks only
   this establishment; preserve both identities and ask only when the current
   use cannot disambiguate them;
-- `onboarding_required` or `enablement_choice_required` routes through
-  `h-onboard`;
+- `onboarding_required` routes through `h-onboard`; a partial or legacy memory
+  installation is repaired by `haft init`, never by exposing a schema choice;
 - `restart_required` means reconnect and retry the unchanged request with the
   same idempotency key;
 - `rejected` and `commit_outcome_unknown` remain explicit; never invent a
@@ -299,7 +314,7 @@ Capabilities are independent entries, not phases:
 - `h-diagnose` — a concrete failure has rival causes;
 - `h-explore` — distinct alternatives are needed;
 - `h-compare` — existing alternatives need parity-aware comparison;
-- manual `h-decide` — the operator explicitly binds a choice;
+- `h-decide` — route the operator's direct, unambiguous request to bind a choice;
 - manual `h-commission` — the operator explicitly grants execution authority;
 - `h-verify` — a recorded claim or decision needs evidence against reality;
 - `h-status` — live graph, drift, coverage, or spec readiness is current;
@@ -359,14 +374,15 @@ human engineer's assessment of the options, trade-offs, and recommendation in
 natural language. Pair IDs and hashes with readable meaning.
 
 Accept ordinary language as the substantive answer to the engineering
-consultation, never as a binding receipt. A command, skill invocation, exact
-reply phrase, or resumption token must never substitute for that consultation.
-Only after the engineer's position is explicit may a separately required
-manual binding or persistence act be explained, together with what it will and
-will not authorize. Never end a blocking message with “for resumption it is
-enough to…”, “reply exactly…”, or an equivalent command-only instruction. The
-brief itself is not authorization. `h-decide needed`, `approval required`, or
-`spec gate open` without this brief is an invalid operator request.
+consultation. When exactly one current Human Gate Brief makes the effect,
+subject, option, and scope unambiguous, that natural answer is also the direct
+operator request the host may route; a bare `yes` or `да` is usable only in that
+single-brief case. A command or skill invocation never adds authority and must
+not substitute for the consultation. `h-commission` remains a separately
+manual execution-authority grant. Never end a blocking message with “reply
+exactly…” or an equivalent command-only instruction. The brief itself is not
+authorization. `h-decide needed`, `approval required`, or `spec gate open`
+without this brief is an invalid operator request.
 
 ### 6. Decide whether to persist
 
@@ -377,13 +393,19 @@ Persist only when either condition holds:
 
 - the operator explicitly asks to save, record, remember, bind, commission,
   approve, rebaseline, or otherwise mutate project memory; or
-- a named receiving use depends on addressable replay, transfer, audit,
-  delayed feedback, automation, expensive feedback, or costly reversal.
+- a concrete receiving use, operator-named or agent-inferred from current Work,
+  depends on addressable replay, transfer, audit, delayed feedback, automation,
+  expensive feedback, or costly reversal.
+
+The second condition is proactive: when it is satisfied, do not ask the
+operator whether memory should be used. Establish the minimum stable
+EntityOfConcern and materialize only the records that the concrete use needs.
 
 When persistence is justified, materialize only the records that receiving use
 needs. Do not automatically create ProblemCard, SolutionPortfolio,
 characterization, recommendation, DecisionRecord, or WorkPlan as a bundle.
-Binding `h-decide` and `h-commission` remain manual even when reliance is high.
+Decision binding still requires a direct operator request, and `h-commission`
+remains manual even when reliance is high.
 
 ### 7. Present one honest traversal
 

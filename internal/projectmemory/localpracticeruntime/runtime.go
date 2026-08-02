@@ -109,10 +109,18 @@ func (target Target) ExactRuntimeRegistry() (
 	return target.registry, true
 }
 
-// Build compiles the source carrier and constructs the exact installed
-// callable registry required by the resulting X. The final observation must
-// match before the target is returned.
+// Build returns the immutable target compiled from the exact base artifact and
+// source carrier bytes. Successful targets are reused process-wide for that
+// exact input pair; failed builds are never cached. The final observation must
+// match before a target is admitted to the cache.
 func Build(
+	base typeenv.BaseTypeEnvArtifact,
+	source []byte,
+) (Target, error) {
+	return processTargetBuildCache.load(base, source, buildTargetUncached)
+}
+
+func buildTargetUncached(
 	base typeenv.BaseTypeEnvArtifact,
 	source []byte,
 ) (Target, error) {

@@ -38,6 +38,8 @@ func TestRunSpecStatusSummaryShowsOneNeutralCueWithoutCanonicalProfile(t *testin
 		"haft spec status: not evaluated (profile_underdetermined)",
 		"Profile cue:",
 		"Missing basis: current_canonical_profile_admission",
+		"Recovery surface: haft_onboard",
+		"Next: " + projectSpecificationProfileRecoveryNextAction,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q\n--- got ---\n%s", want, got)
@@ -87,6 +89,55 @@ func TestRunSpecNextJSONReturnsOneNeutralCueWithoutCanonicalProfile(t *testing.T
 		result.ProfileApplicability.Cue.Code !=
 			string(projectSpecificationProfileUnderdetermined) {
 		t.Fatalf("profile applicability cue = %#v", result.ProfileApplicability.Cue)
+	}
+	if result.ProfileApplicability.Cue.RecoverySurface !=
+		projectSpecificationProfileRecoverySurface ||
+		result.ProfileApplicability.Cue.NextAction !=
+			projectSpecificationProfileRecoveryNextAction {
+		t.Fatalf(
+			"profile recovery cue = %#v",
+			result.ProfileApplicability.Cue,
+		)
+	}
+}
+
+func TestRunSpecNextSummaryShowsOneActionableRecoveryWithoutCanonicalProfile(
+	t *testing.T,
+) {
+	fixture := newCLIProfileOnboardLedgerFixture(t)
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	restoreJSON := stubSpecNextJSON(t, false)
+	defer restoreJSON()
+	restoreScopeID := stubSpecNextScopeID(t, "")
+	defer restoreScopeID()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+
+	if err := runSpecNext(cmd, nil); err != nil {
+		t.Fatalf("runSpecNext returned error: %v", err)
+	}
+	got := output.String()
+	for _, want := range []string{
+		"haft spec next: not evaluated (profile_underdetermined)",
+		"Profile cue:",
+		"Missing basis: current_canonical_profile_admission",
+		"Recovery surface: haft_onboard",
+		"Next: " + projectSpecificationProfileRecoveryNextAction,
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("output missing %q\n--- got ---\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "Profile cue:") != 1 ||
+		strings.Count(got, "Recovery surface:") != 1 {
+		t.Fatalf("next emitted repeated recovery cues:\n%s", got)
+	}
+	if strings.Contains(got, "software-system") {
+		t.Fatalf("next emitted speculative software pressure:\n%s", got)
 	}
 }
 

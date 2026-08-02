@@ -114,7 +114,7 @@ func Revalidate(
 		if len(currentBasisIssues) > 0 {
 			return newDriftedResult(currentBasisIssues)
 		}
-		readinessIssues := currentSelectionReadinessIssues(derived)
+		readinessIssues := currentSelectionReadinessIssues(input, derived)
 		if len(readinessIssues) > 0 {
 			return newRejectedResult(readinessIssues)
 		}
@@ -459,6 +459,7 @@ func compareProfileFitIdentity(
 }
 
 func currentSelectionReadinessIssues(
+	input ProjectTypeEnvStageRevalidationInput,
 	current currentSelectionInputs,
 ) []StageRevalidationIssue {
 	issues := make([]StageRevalidationIssue, 0, 2)
@@ -468,7 +469,11 @@ func currentSelectionReadinessIssues(
 	)
 	issues = append(
 		issues,
-		profileReadinessIssues(current.profile)...,
+		profileReadinessIssues(
+			input.Stage,
+			input.CurrentProfile,
+			current.profile,
+		)...,
 	)
 	return normalizeIssues(issues)
 }
@@ -507,11 +512,22 @@ func assertionReadinessIssues(
 }
 
 func profileReadinessIssues(
+	stage projecttypeenvselection.ProjectTypeEnvStage,
+	basis projecttypeenvprofilebasis.CurrentProjectProfileBasis,
 	actual projecttypeenvprofilefit.Assessment,
 ) []StageRevalidationIssue {
+	if selectionProfileReady(stage, basis, actual) {
+		return nil
+	}
 	switch actual.(type) {
 	case projecttypeenvprofilefit.Compatible:
-		return nil
+		return []StageRevalidationIssue{newIssue(
+			IssueProfileFitAssessmentFailed,
+			"current project profile",
+			"selection-ready profile assessment",
+			"compatible assessment rejected by readiness policy",
+			"repair the profile readiness policy",
+		)}
 	case projecttypeenvprofilefit.Incompatible:
 		return []StageRevalidationIssue{newIssue(
 			IssueProfileIncompatible,
@@ -545,6 +561,25 @@ func profileReadinessIssues(
 			"repair the profile-fit assessment producer",
 		)}
 	}
+}
+
+func selectionProfileReady(
+	stage projecttypeenvselection.ProjectTypeEnvStage,
+	_ projecttypeenvprofilebasis.CurrentProjectProfileBasis,
+	actual projecttypeenvprofilefit.Assessment,
+) bool {
+	if _, compatible := actual.(projecttypeenvprofilefit.Compatible); compatible {
+		return true
+	}
+	_, underdetermined := actual.(projecttypeenvprofilefit.Underdetermined)
+	return underdetermined && genesisDefaultSelection(stage)
+}
+
+func genesisDefaultSelection(
+	stage projecttypeenvselection.ProjectTypeEnvStage,
+) bool {
+	_, genesis := stage.Predecessor().(projecttypeenvselection.GenesisStagePredecessor)
+	return genesis
 }
 
 func trustedStageEditionInputIssuesForRevalidation(

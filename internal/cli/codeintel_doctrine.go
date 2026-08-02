@@ -55,9 +55,13 @@ visible and does not block unrelated authorized Work.
 
 ## Persistence gate
 
-Never persist automatically. Persistence requires an explicit operator
-save/record request or a named receiving use with request provenance.
-` + "`known_absent`" + ` is an identity result, not permission to persist.
+Do not persist merely because memory is empty or resolution returns
+` + "`known_absent`" + `. Persistence requires an explicit operator save/record
+request or a concrete durability-requiring receiving use, operator-named or
+agent-inferred from current Work, with request provenance. When that use makes
+stable identity necessary and identity coordinates are recoverable, establish
+the minimum EntityOfConcern without asking for separate permission. Binding
+decisions and commissions remain manual.
 
 ## Status is not authority
 

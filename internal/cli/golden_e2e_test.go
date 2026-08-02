@@ -862,7 +862,7 @@ func baselineGoldenE2ESpecSections(t *testing.T, root string) {
 		t.Fatalf("resolve db path: %v", err)
 	}
 
-	database, err := db.NewStore(dbPath)
+	database, err := openCurrentKernelTestStore(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -901,7 +901,7 @@ func openGoldenE2EStore(t *testing.T, root string) (*db.Store, *artifact.Store) 
 		t.Fatalf("resolve db path: %v", err)
 	}
 
-	database, err := db.NewStore(dbPath)
+	database, err := openCurrentKernelTestStore(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

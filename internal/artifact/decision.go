@@ -52,6 +52,7 @@ type DecideInput struct {
 	SpecBindingRequired     bool                    `json:"spec_binding_preflight_required,omitempty"`
 	AffectedFiles           []string                `json:"affected_files,omitempty"`
 	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
+	AuthorityProvenance     string                  `json:"authority_provenance,omitempty"`
 	ImplementationFootprint ImplementationFootprint `json:"implementation_footprint,omitempty"`
 	GovernanceTargets       []GovernanceTarget      `json:"governance_targets,omitempty"`
 	DriftWatchTargets       []DriftWatchTarget      `json:"drift_watch_targets,omitempty"`
@@ -674,8 +675,8 @@ func formatStructuredValidationError(missing []missingField, input DecideInput) 
 	b.WriteString("\nReferences:\n")
 	b.WriteString("- FPF E.9 — Design Rationale Record minimum kernel\n")
 	b.WriteString("- FPF C.11 — Decision Theory requirements\n")
-	b.WriteString("- haft_query(action=\"fpf\", query=\"E.9\") — full pattern text\n")
-	b.WriteString("- haft_query(action=\"fpf\", query=\"DEC-01\") — DRR structure micro-pattern\n")
+	b.WriteString("- haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"E.9\") — full pattern text\n")
+	b.WriteString("- haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"DEC-01\") — DRR structure micro-pattern\n")
 
 	return fmt.Errorf("%s", b.String())
 }
@@ -833,6 +834,7 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		ProblemRefs:             dctx.ProblemRefs,
 		ProblemStatement:        input.ProblemStatement,
 		DecisionSubjectRef:      strings.TrimSpace(input.DecisionSubjectRef),
+		AuthorityProvenance:     strings.TrimSpace(input.AuthorityProvenance),
 		ChoiceResult:            NormalizeChoiceResult(choiceResult),
 		TransformationRecord:    NormalizeTransformationRecord(input.TransformationRecord),
 		SelectedTitle:           input.SelectedTitle,

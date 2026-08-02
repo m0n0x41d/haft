@@ -12,6 +12,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/fpf/typeenv"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvcompatibility"
@@ -434,7 +435,7 @@ func projectTypeEnvTransitionReadiness(
 		Reasons:  []string{},
 		Warnings: warnings,
 		Repair:   "",
-	}, "manual h-decide on this exact readable successor review"
+	}, "direct unambiguous operator selection of this exact readable successor review"
 }
 
 func transitionCompatibilitySummary(
@@ -553,13 +554,12 @@ func executeMemoryTypeEnvTransitionSelection(
 	ctx context.Context,
 	ledger *projectledger.Handle,
 	binding ProjectBinding,
-	capturer projecttypeenvselectionauthority.StrictCLISpeechActCapturer,
 ) (projectTypeEnvGenesisSelectionResponse, error) {
 	observed, err := observeProjectTypeEnvTransitionReview(binding.ProjectRoot)
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
-	request, content, stage, target, err := decodeProjectTypeEnvTransitionReview(
+	request, content, _, target, err := decodeProjectTypeEnvTransitionReview(
 		ctx,
 		ledger,
 		observed.carrier,
@@ -577,14 +577,22 @@ func executeMemoryTypeEnvTransitionSelection(
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
-	ingress, err := service.ResolveCurrentCLIIngress(
-		ctx,
+	payload, err := projecttypeenvselectionauthority.HostRoutedSelectionPayload(
 		request,
 		content,
-		stage,
-		observed.binding,
-		capturer,
 	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	operatorRequest, err := operatorrequest.New(
+		operatorrequest.ProjectTypeEnvHeadSelect,
+		request.Ref().String(),
+		payload,
+	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	ingress, err := selectionsqlite.NewHostRoutedOperatorRequest(operatorRequest)
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
@@ -593,7 +601,7 @@ func executeMemoryTypeEnvTransitionSelection(
 		selectionsqlite.TransitionSelectionInput{
 			Request:   request,
 			Content:   content,
-			Authority: ingress.Ingress(),
+			Authority: ingress,
 		},
 	)
 	if err != nil {
@@ -606,11 +614,7 @@ func executeMemoryTypeEnvTransitionSelection(
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
-	posture, err := projectTypeEnvGenesisCLIIngressPosture(ingress)
-	if err != nil {
-		return projectTypeEnvGenesisSelectionResponse{}, err
-	}
-	response.AuthorityIngress = posture
+	response.AuthorityIngress = string(operatorRequest.Provenance())
 	revalidationErr := ledger.Revalidate(ctx)
 	response.PostEffectLedgerRevalidation = genesisLedgerRevalidationResult(revalidationErr)
 	if revalidationErr == nil {

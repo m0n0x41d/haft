@@ -75,7 +75,7 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 			Surface:        "skill",
 			Current:        true,
 			Normativity:    "method carrier only; kernel validates and persists authority",
-			Notes:          "h-reason remains the current umbrella skill; h-decide and h-commission remain manual-only",
+			Notes:          "h-reason remains the current umbrella skill; h-decide allows host routing of direct operator requests while h-commission remains manual-only",
 		},
 		{
 			ID:             "agent-template-carrier",

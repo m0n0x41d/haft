@@ -61,6 +61,27 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 	host := readMaterializedSkillSet(t, hostRoot, wantNames)
 	pi := readMaterializedPiSet(t, piRoot, wantNames)
 
+	assertCarrierFragments(t, "host h-onboard", host["h-onboard"], []string{
+		"direct, unambiguous operator request",
+		"Do not require a skill name",
+		"host_routed_operator_request",
+		"detector_default",
+	})
+	assertCarrierFragments(t, "Pi h-onboard", pi["h-onboard"], []string{
+		"direct, unambiguous",
+		"Do not require a skill name",
+		"host_routed_operator_request",
+		"detector_default",
+	})
+	for label, carrier := range map[string]string{
+		"host h-onboard": host["h-onboard"],
+		"Pi h-onboard":   pi["h-onboard"],
+	} {
+		if strings.Contains(strings.ToLower(carrier), "explicit h-onboard") {
+			t.Fatalf("%s still requires ritual explicit h-onboard:\n%s", label, carrier)
+		}
+	}
+
 	assertCarrierFragments(t, "host h-reason", host["h-reason"], []string{
 		`action="fpf"`,
 		`mode="concern"`,
@@ -96,7 +117,8 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"Default to an inline conversational frame",
 		"ProblemCard@Context",
 		"operator explicitly asks to record or save",
-		"named receiving use",
+		"operator-named",
+		"agent-inferred",
 		"never prescribe `h-explore` as the automatic next stage",
 	})
 	assertCarrierFragments(t, "Pi h-frame", pi["h-frame"], []string{
@@ -106,20 +128,23 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"conversational frame by default",
 		"ProblemCard@Context",
 		"operator asks to save",
-		"named receiving use",
+		"operator-named",
+		"agent-inferred",
 		"Do not prescribe `h-explore`",
 	})
 
 	assertCarrierFragments(t, "host h-explore", host["h-explore"], []string{
 		"In ordinary use, return candidates in conversation and stop",
 		"explicit save intent",
-		"named reliance-bearing receiving use",
+		"operator-named",
+		"agent-inferred reliance-bearing receiving use",
 		"none is an automatic next step",
 	})
 	assertCarrierFragments(t, "Pi h-explore", pi["h-explore"], []string{
 		"Return candidates conversationally by default",
 		"explicit save intent",
-		"named receiving use",
+		"operator-named",
+		"agent-inferred",
 		"do not prescribe comparison next",
 	})
 	assertCarrierFragments(t, "host h-compare", host["h-compare"], []string{
@@ -148,6 +173,13 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		`action="spec_trace"`,
 		`action="spec_use"`,
 		"Never pass `section_id`",
+		"`profile_underdetermined`",
+		`haft_onboard(action="status")`,
+		"non-binding review",
+		"directly and unambiguously selects the exact reviewed profile and scope",
+		"without requiring a skill name",
+		"retry the same specification request",
+		"does not rely on profile applicability",
 	})
 	assertCarrierFragments(t, "Pi h-spec", pi["h-spec"], []string{
 		"exact current pattern body and source identity",
@@ -161,6 +193,13 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		`action="spec_trace"`,
 		`action="spec_use"`,
 		"Never pass `section_id`",
+		"`profile_underdetermined`",
+		`haft_onboard(action="status")`,
+		"non-binding review",
+		"directly and unambiguously selects the exact reviewed profile and scope",
+		"without requiring a skill name",
+		"retry the same specification request",
+		"does not rely on profile applicability",
 	})
 
 	assertCarrierFragments(t, "host h-status", host["h-status"], []string{
@@ -192,14 +231,14 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"Never select the first value",
 	})
 
-	assertManualCarrierBoundary(t, hostRoot, pi, "h-decide")
+	assertImplicitDecisionCarrierBoundary(t, hostRoot, pi)
 	assertManualCarrierBoundary(t, hostRoot, pi, "h-commission")
 	assertCarrierFragments(t, "Pi h-decide", pi["h-decide"], []string{
 		"haft artifact create decision.decide --input-file",
-		"explicit_h_decide",
-		"strict_cli_speech_act",
-		"sole human gate",
-		"fails closed",
+		"host_routed_operator_request",
+		"direct, unambiguous operator request",
+		"compatible shortcut",
+		"operator_confirmation_required",
 	})
 	assertCarrierFragments(t, "Pi h-commission", pi["h-commission"], []string{
 		"haft commission create-from-decision",
@@ -320,7 +359,8 @@ func assertManualCarrierBoundary(t *testing.T, hostRoot string, pi map[string]st
 		"MANUAL ONLY",
 		"disable-model-invocation: true",
 		"operator_confirmation_required",
-		"binding actions require explicit operator/manual authorization",
+		"binding actions require effect-specific operator authority",
+		"not operator authorization and are not approval receipts",
 	})
 	assertCarrierFragments(t, "host policy "+name, policy, []string{
 		"allow_implicit_invocation: false",
@@ -329,7 +369,33 @@ func assertManualCarrierBoundary(t *testing.T, hostRoot string, pi map[string]st
 		"Manual-only",
 		"MANUAL GATE",
 		"operator_confirmation_required",
-		"binding actions require explicit operator/manual authorization",
+		"binding actions require effect-specific operator authority",
+		"not operator authorization and are not approval receipts",
+	})
+}
+
+func assertImplicitDecisionCarrierBoundary(t *testing.T, hostRoot string, pi map[string]string) {
+	t.Helper()
+
+	hostPath := filepath.Join(hostRoot, "h-decide", "SKILL.md")
+	host := readMaterializedCarrier(t, hostPath)
+	policyPath := filepath.Join(hostRoot, "h-decide", "agents", "openai.yaml")
+	policy := readMaterializedCarrier(t, policyPath)
+	assertCarrierFragments(t, "host h-decide", host, []string{
+		"disable-model-invocation: false",
+		"host_routed_operator_request",
+		"direct, unambiguous",
+		"operator_confirmation_required",
+		"skill name",
+	})
+	assertCarrierFragments(t, "host policy h-decide", policy, []string{
+		"allow_implicit_invocation: true",
+	})
+	assertCarrierFragments(t, "Pi h-decide", pi["h-decide"], []string{
+		"host_routed_operator_request",
+		"direct, unambiguous operator request",
+		"operator_confirmation_required",
+		"invocation creates no communicative act",
 	})
 }
 

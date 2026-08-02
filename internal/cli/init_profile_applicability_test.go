@@ -15,6 +15,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/initplanning"
 	"github.com/m0n0x41d/haft/internal/method"
+	profileadmissionsqlite "github.com/m0n0x41d/haft/internal/profileadmission/sqlite"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
@@ -23,8 +24,11 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 	t *testing.T,
 ) {
 	tests := []struct {
-		name             string
-		admit            func(*testing.T, *profileadmissionfixture.Harness)
+		name  string
+		admit func(
+			*testing.T,
+			*profileadmissionfixture.Harness,
+		) profileadmissionsqlite.CanonicalProfileAdmission
 		wantSpecPaths    []string
 		wantMethodExists bool
 	}{
@@ -33,8 +37,8 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 			admit: func(
 				t *testing.T,
 				harness *profileadmissionfixture.Harness,
-			) {
-				harness.AdmitSoftwareRevision(
+			) profileadmissionsqlite.CanonicalProfileAdmission {
+				return harness.AdmitSoftwareRevision(
 					t,
 					"typed-init-software",
 				)
@@ -50,8 +54,8 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 			admit: func(
 				t *testing.T,
 				harness *profileadmissionfixture.Harness,
-			) {
-				harness.AdmitSoftwareRevisionWithTargetEntity(
+			) profileadmissionsqlite.CanonicalProfileAdmission {
+				return harness.AdmitSoftwareRevisionWithTargetEntity(
 					t,
 					"typed-init-software-target",
 					"entity:typed-init-target",
@@ -69,8 +73,8 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 			admit: func(
 				t *testing.T,
 				harness *profileadmissionfixture.Harness,
-			) {
-				harness.AdmitNonSoftwareRevision(
+			) profileadmissionsqlite.CanonicalProfileAdmission {
+				return harness.AdmitNonSoftwareRevision(
 					t,
 					"typed-init-documents",
 				)
@@ -88,7 +92,7 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 				t,
 				projectRoot,
 			)
-			test.admit(t, harness)
+			admitted := test.admit(t, harness)
 			request, err := compilePublicInitRequest(
 				weakPublicInitRequest{
 					invocation:  initplanning.InvocationExplicit,
@@ -152,6 +156,40 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 				core,
 			); err != nil {
 				t.Fatalf("ApplyCore: %v", err)
+			}
+			service, err := profileadmissionsqlite.NewService(
+				harness.Database(),
+			)
+			if err != nil {
+				t.Fatalf("create profile admission resolver: %v", err)
+			}
+			resolved := service.ResolveCurrent(
+				context.Background(),
+				harness.Root(),
+			)
+			current, present := resolved.Admission()
+			if !present {
+				t.Fatalf(
+					"init lost canonical profile admission: kind=%q",
+					resolved.Kind(),
+				)
+			}
+			if current.AdmissionRecordRef() != admitted.AdmissionRecordRef() ||
+				current.AdmissionRecordDigest() !=
+					admitted.AdmissionRecordDigest() ||
+				current.PayloadDigest() != admitted.PayloadDigest() ||
+				current.LedgerRevision() != admitted.LedgerRevision() {
+				t.Fatalf(
+					"init changed canonical profile admission:\nbefore=%q/%q/%q/%d\nafter=%q/%q/%q/%d",
+					admitted.AdmissionRecordRef(),
+					admitted.AdmissionRecordDigest(),
+					admitted.PayloadDigest(),
+					admitted.LedgerRevision().Value(),
+					current.AdmissionRecordRef(),
+					current.AdmissionRecordDigest(),
+					current.PayloadDigest(),
+					current.LedgerRevision().Value(),
+				)
 			}
 			gotPaths := existingInitProfileDependentPaths(
 				t,
@@ -334,6 +372,55 @@ func TestTypedPublicInitWithoutAdmissionCreatesNoProfileDependentCarriers(
 		"Haft initialization complete",
 	) {
 		t.Fatalf("typed init output = %q", output.String())
+	}
+	for _, want := range []string{
+		"Next setup surface: h-onboard status",
+		"Profile admission is separate from initialization and may still be required.",
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("fresh init output missing %q: %q", want, output.String())
+		}
+	}
+
+	currentOutput := bytes.Buffer{}
+	currentCommand := newPublicInitTestCommand()
+	currentCommand.SetOut(&currentOutput)
+	currentCommand.SetErr(&currentOutput)
+	var currentCodex bool
+	var currentLocal bool
+	var currentOmitInstructions bool
+	currentCommand.Flags().BoolVar(&currentCodex, "codex", false, "")
+	currentCommand.Flags().BoolVar(&currentLocal, "local", false, "")
+	currentCommand.Flags().BoolVar(
+		&currentOmitInstructions,
+		"no-file-instructions",
+		false,
+		"",
+	)
+	for _, flag := range []string{
+		"codex",
+		"local",
+		"no-file-instructions",
+	} {
+		if err := currentCommand.Flags().Set(flag, "true"); err != nil {
+			t.Fatalf("set current %s flag: %v", flag, err)
+		}
+	}
+	if err := runPublicInit(currentCommand, nil); err != nil {
+		t.Fatalf("rerun current public init: %v", err)
+	}
+	for _, want := range []string{
+		"Haft is already initialized",
+		"Next setup surface: h-onboard status",
+		"Profile admission is separate from initialization and may still be required.",
+	} {
+		if !strings.Contains(currentOutput.String(), want) {
+			t.Fatalf(
+				"already-current init output missing %q: %q",
+				want,
+				currentOutput.String(),
+			)
+		}
 	}
 	for _, path := range []string{
 		filepath.Join(projectRoot, ".haft", "specs"),

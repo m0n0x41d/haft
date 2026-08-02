@@ -1,5 +1,10 @@
 package projecttypeenvselectionauthority
 
+// This file is the decode-and-verify codec for authority-policy values sealed
+// before schema 56. Current ingress has no constructor path to these values,
+// and migration 56 seals every table that could persist them. Keep the codec
+// only so historical rows remain inspectable without reinterpretation.
+
 import (
 	"bytes"
 	"encoding/json"

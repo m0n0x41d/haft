@@ -320,7 +320,7 @@ func (s *Server) ToolCatalog() []Tool {
 		tools = append(tools,
 			Tool{
 				Name:        "haft_note",
-				Description: "Record a project fact/observation carrier; not a decision.",
+				Description: "Durably record a non-binding project fact/observation carrier. Use after an explicit save request or for a concrete operator-named or agent-inferred receiving use; this is not a decision.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -366,6 +366,14 @@ func (s *Server) ToolCatalog() []Tool {
 							"type":        "string",
 							"description": "Optional context name for grouping (e.g., 'auth', 'payments')",
 						},
+						"task_context": map[string]string{
+							"type":        "string",
+							"description": "Stable task/fork context used to correlate this durable carrier with the current work.",
+						},
+						"valid_until": map[string]string{
+							"type":        "string",
+							"description": "Optional RFC3339 expiry for this fact. When omitted, the note lifecycle applies its normal default.",
+						},
 						"entity_ref": memoryEntityReferenceSchema(),
 						"bounded_context_ref": map[string]interface{}{
 							"type":        "string",
@@ -377,7 +385,7 @@ func (s *Server) ToolCatalog() []Tool {
 			},
 			Tool{
 				Name:        "haft_problem",
-				Description: "Frame, characterize, select, and close engineering problems.",
+				Description: "Read or durably update engineering ProblemCards. Frame and characterize require an explicit save request or a concrete operator-named or agent-inferred receiving use; close is a lifecycle mutation.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -486,6 +494,10 @@ func (s *Server) ToolCatalog() []Tool {
 							"type":        "string",
 							"description": "Optional context name for grouping",
 						},
+						"task_context": map[string]string{
+							"type":        "string",
+							"description": "(frame) Stable task/fork context used to correlate this durable carrier with the current work.",
+						},
 						"entity_ref": memoryEntityReferenceSchema(),
 						"bounded_context_ref": map[string]interface{}{
 							"type":        "string",
@@ -503,7 +515,7 @@ func (s *Server) ToolCatalog() []Tool {
 
 		tools = append(tools, Tool{
 			Name:        "haft_solution",
-			Description: "Explore or compare solution variants. With exact EntityOfConcern coordinates and already-addressable option records, the task result is also projected into typed project memory without selecting a winner.",
+			Description: "Search existing portfolios or durably create/update a SolutionPortfolio. Explore and compare require an explicit save request or a concrete operator-named or agent-inferred receiving use; typed projection never selects a winner.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -634,6 +646,10 @@ func (s *Server) ToolCatalog() []Tool {
 					"context": map[string]string{
 						"type":        "string",
 						"description": "Optional context name",
+					},
+					"task_context": map[string]string{
+						"type":        "string",
+						"description": "(explore) Stable task/fork context used to correlate this durable carrier with the current work.",
 					},
 					"mode": map[string]string{
 						"type":        "string",
@@ -845,7 +861,7 @@ func (s *Server) ToolCatalog() []Tool {
 					},
 					"task_context": map[string]string{
 						"type":        "string",
-						"description": "DecisionRecord ID filename",
+						"description": "Stable task/fork context used to correlate this durable carrier with the current work.",
 					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
@@ -925,7 +941,7 @@ func (s *Server) ToolCatalog() []Tool {
 		})
 		tools = append(tools, Tool{
 			Name:        "haft_refresh",
-			Description: "Manage artifact lifecycle, stale scans, safe drain, and review packets.",
+			Description: "Read stale/review state or explicitly mutate artifact lifecycle. Scan, plan, and review are read-oriented; lifecycle actions and non-dry-run drain can write.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
@@ -981,7 +997,7 @@ func (s *Server) ToolCatalog() []Tool {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Read project state.",
+			Description: "Read project state or FPF source. FPF concern returns navigation candidates; inspect one exact selected identifier before relying on source meaning.",
 			InputSchema: map[string]interface{}{
 				"type":                 "object",
 				"additionalProperties": false,
@@ -1179,15 +1195,15 @@ func compactToolDescription(toolName, fallback string) string {
 		return strings.TrimSpace(fallback)
 	}
 	descriptions := map[string]string{
-		"haft_note":         "Record a non-binding project fact.",
-		"haft_problem":      "Frame or update an engineering problem.",
-		"haft_solution":     "Explore or compare solution variants.",
+		"haft_note":         "Durably record after explicit save or agent-inferred receiving use.",
+		"haft_problem":      "Durably update after explicit save or agent-inferred receiving use.",
+		"haft_solution":     "Durably update after explicit save or agent-inferred receiving use.",
 		"haft_decision":     "Manage decisions; human-gated binding needs a full choice brief.",
-		"haft_refresh":      "Inspect or update artifact lifecycle.",
-		"haft_query":        "Read project state or FPF source; expand human gates into briefs.",
+		"haft_refresh":      "Read/write lifecycle; mutation actions can write.",
+		"haft_query":        "FPF/project read; concern then exact inspect; human gates need briefs.",
 		"haft_onboard":      "Inspect setup or prepare a non-binding onboarding review.",
 		"haft_entity":       "Establish one non-binding EntityOfConcern with atomic aliases.",
-		"haft_method":       "Pull, inspect, or close a SWE MethodRun.",
+		"haft_method":       "Pull before non-mechanical edits; close with completion evidence.",
 		"haft_commission":   "Manage commissions; human-gated authority needs a full scope brief.",
 		"haft_spec_section": "Spec lifecycle; FPF source fit is separate; human-gated acts need briefs",
 	}
@@ -1226,6 +1242,7 @@ func isLoadBearingSchemaDescription(description string) bool {
 	for _, marker := range []string{
 		"C.28",
 		"DecisionRecord ID filename",
+		"Stable task/fork context",
 		"Expiry date",
 		"_skip_reason",
 		"tree mode",
@@ -1263,6 +1280,19 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	}
 
 	if params.Name == "haft_onboard" {
+		action, err := decodeMemoryToolAction(params.Arguments)
+		if err != nil ||
+			(action != haftOnboardStatusAction &&
+				action != haftOnboardProfilePrepareAction) {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_onboard request: action must be status or profile_prepare",
+				}},
+				IsError: true,
+			})
+			return
+		}
 		s.handleDedicatedToolCall(
 			req.ID,
 			ctx,

@@ -63,48 +63,60 @@ func TestGenesisServicePrecommitFailureMatrixIsAtomic(t *testing.T) {
 		},
 		{
 			number:    7,
-			name:      "authority source",
+			name:      "host-routed operator request",
 			operation: "INSERT",
-			table:     "project_typeenv_head_selection_trusted_cli_sources",
+			table:     "project_typeenv_head_selection_host_requests_v1",
 		},
 		{
 			number:    8,
-			name:      "authority resolution",
+			name:      "host-routed authority resolution",
+			operation: "INSERT",
+			table:     "project_typeenv_head_selection_host_resolutions_v1",
+		},
+		{
+			number:    9,
+			name:      "current authority resolution catalog",
 			operation: "INSERT",
 			table:     "project_typeenv_head_selection_authority_resolutions",
 		},
 		{
-			number:    9,
-			name:      "authority use",
+			number:    10,
+			name:      "current authority use catalog",
 			operation: "INSERT",
 			table:     "project_typeenv_head_selection_authority_uses",
 		},
 		{
-			number:    10,
+			number:    11,
+			name:      "host-routed authority use",
+			operation: "INSERT",
+			table:     "project_typeenv_head_selection_host_uses_v1",
+		},
+		{
+			number:    12,
 			name:      "CAS Work",
 			operation: "INSERT",
 			table:     "project_typeenv_head_cas_work_records",
 		},
 		{
-			number:    11,
+			number:    13,
 			name:      "dedicated head projection and immutable state",
 			operation: "INSERT",
 			table:     "project_typeenv_head_states",
 		},
 		{
-			number:    12,
+			number:    14,
 			name:      "TypeEnv activation",
 			operation: "INSERT",
 			table:     "typed_memory_type_env_activations",
 		},
 		{
-			number:    13,
+			number:    15,
 			name:      "dedicated head history",
 			operation: "INSERT",
 			table:     "project_typeenv_head_history",
 		},
 		{
-			number:    14,
+			number:    16,
 			name:      "receipt",
 			operation: "INSERT",
 			table:     "project_typeenv_head_selection_receipts",
@@ -152,7 +164,7 @@ func runGenesisPrecommitFailureStages(
 func TestGenesisServicePrecommitClosureBoundaryFailureIsAtomic(t *testing.T) {
 	fixture := newGenesisE2EFixture(t)
 	stage := genesisPrecommitFailureStage{
-		number:    15,
+		number:    17,
 		name:      "selection closure boundary after receipt",
 		timing:    "AFTER",
 		operation: "INSERT",
@@ -172,19 +184,19 @@ func TestGenesisServicePrecommitGraphFinalizationFailureMatrixIsAtomic(
 	fixture := newGenesisE2EFixture(t)
 	stages := []genesisPrecommitFailureStage{
 		{
-			number:    16,
+			number:    18,
 			name:      "graph materialization closure",
 			operation: "INSERT",
 			table:     "typed_memory_commit_materialization_closures",
 		},
 		{
-			number:    17,
+			number:    19,
 			name:      "graph-head finalization",
 			operation: "UPDATE",
 			table:     "typed_memory_graph_heads",
 		},
 		{
-			number:    18,
+			number:    20,
 			name:      "graph commit",
 			operation: "INSERT",
 			table:     "typed_memory_graph_commits",

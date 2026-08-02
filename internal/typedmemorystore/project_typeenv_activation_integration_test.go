@@ -341,18 +341,16 @@ func activationIntegrationSuccessor(
 }
 
 type activationIntegrationEffect struct {
-	configBasisRef          string
-	configBasisDigest       typedmemory.SHA256Digest
-	configCarrierDigest     typedmemory.SHA256Digest
-	modePolicyRef           string
-	modePolicyDigest        typedmemory.SHA256Digest
+	hostRequestRef          string
+	hostRequestDigest       typedmemory.SHA256Digest
+	hostPayloadDigest       typedmemory.SHA256Digest
+	hostUseBytes            []byte
 	proofRef                string
 	proofDigest             typedmemory.SHA256Digest
 	contentRef              string
-	trustedCLIRef           string
-	trustedCLIDigest        typedmemory.SHA256Digest
 	resolutionRef           string
 	resolutionDigest        typedmemory.SHA256Digest
+	resolutionBytes         []byte
 	authorityUseDigest      typedmemory.SHA256Digest
 	workRecordDigest        typedmemory.SHA256Digest
 	receiptRef              string
@@ -375,45 +373,32 @@ func newActivationIntegrationEffect(
 	t.Helper()
 	receiptBytes := []byte("canonical-project-typeenv-selection-receipt:activation-integration")
 	closureBytes := []byte("canonical-project-typeenv-selection-closure:activation-integration")
-	configBasisDigest := activationIntegrationDigest(
-		t,
-		[]byte("canonical-config-authority-basis:activation-integration"),
-	)
-	modePolicyDigest := activationIntegrationDigest(
-		t,
-		[]byte("canonical-mode-policy:activation-integration"),
-	)
-	trustedCLIDigest := activationIntegrationDigest(
-		t,
-		[]byte("canonical-trusted-cli-source:activation-integration"),
-	)
+	hostRequestBytes := []byte("canonical-host-routed-operator-request:activation-integration")
+	hostUseBytes := []byte("canonical-authority-use:activation-integration")
+	resolutionBytes := []byte("canonical-host-routed-authority-resolution:activation-integration")
+	hostRequestDigest := activationIntegrationDigest(t, hostRequestBytes)
 	resolutionDigest := activationIntegrationDigest(
 		t,
-		[]byte("canonical-authority-resolution:activation-integration"),
+		resolutionBytes,
 	)
 	orderedExtensions := []byte("[]")
 	proofDigest := activationAdapterTestDigest('e')
 	return activationIntegrationEffect{
-		configBasisRef: "project-typeenv-config-basis:" +
-			configBasisDigest.String(),
-		configBasisDigest: configBasisDigest,
-		configCarrierDigest: activationIntegrationDigest(
+		hostRequestRef:    "operator-request:" + hostRequestDigest.String(),
+		hostRequestDigest: hostRequestDigest,
+		hostPayloadDigest: activationIntegrationDigest(
 			t,
-			[]byte("canonical-config-carrier:activation-integration"),
+			[]byte("canonical-host-routed-payload:activation-integration"),
 		),
-		modePolicyRef: "project-typeenv-mode-policy:" +
-			modePolicyDigest.String(),
-		modePolicyDigest: modePolicyDigest,
+		hostUseBytes: hostUseBytes,
 		proofRef: "project-typeenv-no-prior-head-proof:" +
 			proofDigest.String(),
 		proofDigest: proofDigest,
 		contentRef:  "claim:" + input.Delta.ContentDigest().String(),
-		trustedCLIRef: "project-typeenv-trusted-cli-source:" +
-			trustedCLIDigest.String(),
-		trustedCLIDigest: trustedCLIDigest,
 		resolutionRef: "project-typeenv-authority-resolution:" +
 			resolutionDigest.String(),
 		resolutionDigest:   resolutionDigest,
+		resolutionBytes:    resolutionBytes,
 		authorityUseDigest: activationAdapterTestDigest('9'),
 		workRecordDigest: activationIntegrationDigest(
 			t,
@@ -560,53 +545,19 @@ func insertActivationIntegrationSources(
 	if !ok {
 		t.Fatalf("activation integration request is not Genesis")
 	}
-	activationIntegrationMustExecute(
-		t,
+	var projectRoot string
+	var projectBindingDigest string
+	err = transaction.ScanOne(
 		ctx,
-		transaction,
-		`INSERT INTO project_typeenv_head_selection_config_authority_bases (
-			config_authority_basis_ref,
-			config_authority_basis_digest,
-			project_id,
-			authority_mode,
-			config_carrier_ref,
-			config_carrier_digest,
-			canonical_bytes,
-			recorded_at
-		) VALUES (?, ?, ?, 'explicit_h_decide', ?, ?, ?, ?)`,
-		effect.configBasisRef,
-		effect.configBasisDigest.String(),
-		request.Project().String(),
-		".haft/config.yaml",
-		effect.configCarrierDigest.String(),
-		[]byte("canonical-config-authority-basis:activation-integration"),
-		effect.recordedAt,
+		`SELECT project_root, binding_digest
+		FROM project_ledger_binding
+		WHERE project_id = ?`,
+		[]any{request.Project().String()},
+		[]any{&projectRoot, &projectBindingDigest},
 	)
-	activationIntegrationMustExecute(
-		t,
-		ctx,
-		transaction,
-		`INSERT INTO project_typeenv_head_selection_mode_policies (
-			mode_policy_ref,
-			mode_policy_digest,
-			project_id,
-			authority_mode,
-			config_authority_basis_ref,
-			config_authority_basis_digest,
-			resolver_policy_ref,
-			resolver_policy_edition,
-			resolver_policy_digest,
-			canonical_bytes,
-			recorded_at
-		) VALUES (?, ?, ?, 'explicit_h_decide', ?, ?, NULL, NULL, NULL, ?, ?)`,
-		effect.modePolicyRef,
-		effect.modePolicyDigest.String(),
-		request.Project().String(),
-		effect.configBasisRef,
-		effect.configBasisDigest.String(),
-		[]byte("canonical-mode-policy:activation-integration"),
-		effect.recordedAt,
-	)
+	if err != nil {
+		t.Fatalf("load activation integration project binding: %v", err)
+	}
 	activationIntegrationMustExecute(
 		t,
 		ctx,
@@ -715,33 +666,59 @@ func insertActivationIntegrationSources(
 		t,
 		ctx,
 		transaction,
-		`INSERT INTO project_typeenv_head_selection_trusted_cli_sources (
-			trusted_cli_source_ref,
-			trusted_cli_source_digest,
-			project_id,
-			mode_policy_ref,
-			mode_policy_digest,
-			config_authority_basis_ref,
-			config_authority_basis_digest,
-			content_ref,
-			content_digest,
+		`INSERT INTO project_typeenv_head_selection_host_requests_v1 (
 			request_ref,
 			request_digest,
+			project_id,
+			project_root,
+			effect_kind,
+			subject_ref,
+			payload_digest,
+			provenance,
+			recorded_at
+		) VALUES (?, ?, ?, ?, 'project_typeenv_head.select', ?, ?,
+			'host_routed_operator_request', ?)`,
+		effect.hostRequestRef,
+		effect.hostRequestDigest.String(),
+		request.Project().String(),
+		projectRoot,
+		request.Ref().String(),
+		effect.hostPayloadDigest.String(),
+		effect.recordedAt,
+	)
+	activationIntegrationMustExecute(
+		t,
+		ctx,
+		transaction,
+		`INSERT INTO project_typeenv_head_selection_host_resolutions_v1 (
+			resolution_ref,
+			resolution_digest,
+			request_ref,
+			request_digest,
+			project_id,
+			project_root,
+			project_binding_digest,
+			selection_request_ref,
+			selection_request_digest,
+			content_ref,
+			content_digest,
+			resolution_kind,
 			canonical_bytes,
 			recorded_at
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		effect.trustedCLIRef,
-		effect.trustedCLIDigest.String(),
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+			'host_routed_request_acceptance', ?, ?)`,
+		effect.resolutionRef,
+		effect.resolutionDigest.String(),
+		effect.hostRequestRef,
+		effect.hostRequestDigest.String(),
 		request.Project().String(),
-		effect.modePolicyRef,
-		effect.modePolicyDigest.String(),
-		effect.configBasisRef,
-		effect.configBasisDigest.String(),
-		effect.contentRef,
-		input.Delta.ContentDigest().String(),
+		projectRoot,
+		projectBindingDigest,
 		request.Ref().String(),
 		request.Ref().Digest().String(),
-		[]byte("canonical-trusted-cli-source:activation-integration"),
+		effect.contentRef,
+		input.Delta.ContentDigest().String(),
+		effect.resolutionBytes,
 		effect.recordedAt,
 	)
 	activationIntegrationMustExecute(
@@ -751,6 +728,7 @@ func insertActivationIntegrationSources(
 		`INSERT INTO project_typeenv_head_selection_authority_resolutions (
 			authority_resolution_ref,
 			authority_resolution_digest,
+			authority_generation,
 			project_id,
 			authority_resolution_kind,
 			content_ref,
@@ -765,14 +743,15 @@ func insertActivationIntegrationSources(
 			explicit_resolution_digest,
 			strict_resolution_ref,
 			strict_resolution_digest,
+			host_resolution_ref,
+			host_resolution_digest,
 			evaluated_at,
 			canonical_bytes,
 			recorded_at
-		) VALUES (
-			?, ?, ?, 'explicit_policy_acceptance',
-			?, ?, ?, ?, ?, ?,
-			NULL, NULL, ?, ?, NULL, NULL, ?, ?, ?
-		)`,
+		) VALUES (?, ?, 'host_routed_operator_request', ?,
+			'host_routed_request_acceptance', ?, ?, ?, ?,
+			NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,
+			?, ?, ?, ?, ?)`,
 		effect.resolutionRef,
 		effect.resolutionDigest.String(),
 		request.Project().String(),
@@ -780,28 +759,11 @@ func insertActivationIntegrationSources(
 		input.Delta.ContentDigest().String(),
 		request.Ref().String(),
 		request.Ref().Digest().String(),
-		effect.trustedCLIRef,
-		effect.trustedCLIDigest.String(),
 		effect.resolutionRef,
 		effect.resolutionDigest.String(),
 		effect.recordedAt,
-		[]byte("canonical-authority-resolution:activation-integration"),
+		effect.resolutionBytes,
 		effect.recordedAt,
-	)
-	activationIntegrationMustExecute(
-		t,
-		ctx,
-		transaction,
-		`INSERT INTO project_typeenv_head_selection_explicit_policy_acceptance_resolutions (
-			authority_resolution_ref,
-			authority_resolution_digest,
-			trusted_cli_source_ref,
-			trusted_cli_source_digest
-		) VALUES (?, ?, ?, ?)`,
-		effect.resolutionRef,
-		effect.resolutionDigest.String(),
-		effect.trustedCLIRef,
-		effect.trustedCLIDigest.String(),
 	)
 	activationIntegrationMustExecute(
 		t,
@@ -810,6 +772,7 @@ func insertActivationIntegrationSources(
 		`INSERT INTO project_typeenv_head_selection_authority_uses (
 			authority_use_ref,
 			authority_use_digest,
+			authority_generation,
 			project_id,
 			original_idempotency_key,
 			authority_resolution_kind,
@@ -840,7 +803,8 @@ func insertActivationIntegrationSources(
 			canonical_bytes,
 			recorded_at
 		) VALUES (
-			?, ?, ?, ?, 'explicit_policy_acceptance',
+			?, ?, 'host_routed_operator_request', ?, ?,
+			'host_routed_request_acceptance',
 			?, ?, ?, ?, ?, ?, ?, ?,
 			'genesis', NULL, NULL, NULL,
 			?, ?, ?, ?, ?, ?, ?, 0, 1, 1, ?, 1, ?, ?
@@ -866,6 +830,36 @@ func insertActivationIntegrationSources(
 		target.Stage().Digest().String(),
 		effect.verifierRef,
 		[]byte("canonical-authority-use:activation-integration"),
+		effect.recordedAt,
+	)
+	activationIntegrationMustExecute(
+		t,
+		ctx,
+		transaction,
+		`INSERT INTO project_typeenv_head_selection_host_uses_v1 (
+			use_ref,
+			use_digest,
+			resolution_ref,
+			resolution_digest,
+			request_ref,
+			request_digest,
+			project_id,
+			project_root,
+			selected_composite_ref,
+			head_revision,
+			canonical_bytes,
+			consumed_at
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+		input.Delta.AuthorityUseRef(),
+		effect.authorityUseDigest.String(),
+		effect.resolutionRef,
+		effect.resolutionDigest.String(),
+		effect.hostRequestRef,
+		effect.hostRequestDigest.String(),
+		request.Project().String(),
+		projectRoot,
+		target.VerifiedComposite().String(),
+		effect.hostUseBytes,
 		effect.recordedAt,
 	)
 	activationIntegrationMustExecute(

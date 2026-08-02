@@ -1,7 +1,7 @@
 ---
 name: h-note
 description: |
-  Persist an explicit operator-requested fact, observation, caveat, or small non-binding rationale in Haft project memory. Use for "remember this", "запиши", "note for later", or when a named receiving use needs a lightweight addressable fact. Do not auto-persist ordinary reasoning. A note is not a choice, ProblemCard, evidence verdict, approval, or WorkPlan.
+  Persist a fact, observation, caveat, or small non-binding rationale in Haft project memory when the operator explicitly asks or current Work supplies a concrete operator-named or agent-inferred receiving use that needs a lightweight addressable fact. Use for "remember this", "запиши", or "note for later". Do not auto-persist ordinary reasoning. A note is not a choice, ProblemCard, evidence verdict, approval, or WorkPlan.
 when_to_use: |
   The operator explicitly asks to save a non-binding project fact, or identifies a receiving use that needs it to remain addressable.
 argument-hint: "[fact or observation to save]"
@@ -12,7 +12,7 @@ allowed-tools: Bash mcp__haft__haft_entity mcp__haft__haft_onboard mcp__haft__ha
 
 Confirm that the payload contains at least one atomic observation or a
 non-binding rationale. Preserve source and uncertainty when known. If the text
-binds a choice, use manual `h-decide`; if it frames an unresolved problem, use
+binds a choice, route the direct operator request through `h-decide`; if it frames an unresolved problem, use
 `h-frame` only when problem shaping is current.
 
 ## Conditional project-memory orientation
@@ -48,15 +48,17 @@ mcp__haft__haft_entity(
 The tool owns alias-conflict checking, validation, admission, and exact
 post-commit resolution. Use only the returned canonical `entity_ref`.
 `identity_conflict`, `alias_conflict`, or `idempotency_conflict` must remain
-visible; do not guess. Route `onboarding_required` or
-`enablement_choice_required` through `mcp__haft__haft_onboard(action="status")`.
+visible; do not guess. Route `onboarding_required` through
+`mcp__haft__haft_onboard(action="status")`; repair a partial or legacy default
+memory installation with `haft init` rather than presenting a schema choice.
 On `restart_required`, reconnect and retry the unchanged request and key.
 
 If the note does not need a stable concern, or setup is deferred, save the note
 without invented concern fields. Missing setup and explicit abstention are
 non-blocking. This read does not replace code-graph preflight before a later
-code edit. The dedicated `haft_note` surface performs only the authorized note
-persistence and returns its provenance.
+code edit. The dedicated `haft_note` surface performs the note persistence, but
+model-supplied fields are not proof of operator authorization. Preserve the
+request or named receiving-use reference in `task_context` for correlation.
 
 Persist through the dedicated note surface:
 
@@ -66,6 +68,8 @@ mcp__haft__haft_note(
   observations=["<atomic fact>"],
   rationale="<why it matters, when current>",
   anchors=[{"type":"relates_to","ref":"<artifact ref>"}],
+  task_context="<operator request or named receiving-use reference>",
+  valid_until="<RFC3339 expiry when this fact is time-bounded>",
   entity_ref={
     "ref_kind_id":"U.EntityRef",
     "reference_id":"<exact current EntityOfConcern>"

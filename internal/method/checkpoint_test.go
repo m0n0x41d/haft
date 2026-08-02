@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestCheckpointOpenCloseTraceIsAppendOnly(t *testing.T) {
@@ -274,7 +274,9 @@ func satisfiedGateResults(run MethodRun) []GateResult {
 
 func newCheckpointTestStore(t *testing.T) (*artifact.Store, string) {
 	t.Helper()
-	database, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	database, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

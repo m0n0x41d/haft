@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +21,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/fpfrefresh"
 )
 
 const (
@@ -29,12 +32,6 @@ const (
 	embeddedTokenGateEncodingAssetHash = "446a9538cb6c348e3516120d7c08b09f57c36495e2acfffe59a5bf8b0cfb1a2d"
 	embeddedTokenGateCalibrationTokens = 21
 	embeddedTokenGateMinimumReduction  = 0.30
-	embeddedTokenGateDatabaseDigest    = "2df40bb9d4e754ee8e9d47ced1eb4926fbb941ac42880dc0a365c60fa4b04bc4"
-	embeddedTokenGateCorpusDigest      = "9983c5f594bc2dbab503d4f3a6fce29157a50105eee64568274ff4211db19952"
-	embeddedTokenGateIndexSchema       = "11"
-	embeddedTokenGateSourceRevision    = "2ada413629b846ef308222d16489a82cb5b40a71"
-	embeddedTokenGateReadmeDigest      = "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd"
-	embeddedTokenGateSpecDigest        = "sha256:00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af"
 )
 
 var embeddedTokenGateDefaultBudget = fpf.ResponseBudget{
@@ -54,6 +51,24 @@ type embeddedTokenGateCase struct {
 	ExpectedTruncationApplied  bool                `json:"expected_truncation_applied"`
 	ExpectedOmittedAtLeast     int                 `json:"expected_omitted_at_least"`
 	ExpectedTruncationBasis    []string            `json:"expected_truncation_basis"`
+}
+
+type embeddedTokenGateFixture struct {
+	SchemaVersion   string                  `json:"schema_version"`
+	FixtureRevision string                  `json:"fixture_revision"`
+	Cases           []embeddedTokenGateCase `json:"cases"`
+}
+
+type embeddedTokenGateBasis struct {
+	DatabaseImage []byte
+	Fixture       embeddedTokenGateFixture
+	Lock          fpfrefresh.IntegrationLock
+}
+
+type embeddedTokenGateArtifactPaths struct {
+	DatabasePath string
+	FixturePath  string
+	LockPath     string
 }
 
 type embeddedTokenGateInput struct {
@@ -92,11 +107,15 @@ type embeddedWorkingCandidateSet struct {
 }
 
 func TestFPFQueryWorkingViewEmbeddedO200kAcceptance(t *testing.T) {
-	assertEmbeddedTokenGateDatabaseDigest(t)
-	corpus := embeddedTokenGateCorpus()
-	assertEmbeddedTokenGateCorpusDigest(t, corpus)
+	basis := loadEmbeddedTokenGateBasis(t)
+	assertEmbeddedTokenGateDatabaseDigest(
+		t,
+		basis.DatabaseImage,
+		basis.Lock.Coordinates.DatabaseDigest,
+	)
+	corpus := basis.Fixture.Cases
 
-	db, cleanup, err := openFPFDBImage(context.Background(), embeddedFPFDB)
+	db, cleanup, err := openFPFDBImage(context.Background(), basis.DatabaseImage)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +127,7 @@ func TestFPFQueryWorkingViewEmbeddedO200kAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load embedded FPF Query source snapshot: %v", err)
 	}
-	assertEmbeddedTokenGateSnapshot(t, snapshot)
+	assertEmbeddedTokenGateSnapshot(t, snapshot, basis.Lock.Coordinates)
 
 	publicationRequest, err := fpf.NewQueryPublicationRequest("working", "")
 	if err != nil {
@@ -116,278 +135,234 @@ func TestFPFQueryWorkingViewEmbeddedO200kAcceptance(t *testing.T) {
 	}
 	index := fpf.NewSQLiteQueryIndex(db)
 	inputCases := make([]embeddedTokenGateInputCase, 0, len(corpus))
+	allCasesMatched := true
 	for _, testCase := range corpus {
-		evaluation, err := fpf.EvaluateQuery(index, testCase.Request)
-		if err != nil {
-			t.Fatalf("%s evaluate real embedded concern: %v", testCase.CaseID, err)
-		}
-		canonical := evaluation.Result()
-		candidateSet, ok := canonical.(fpf.CandidateSet)
-		if !ok {
-			t.Fatalf("%s canonical result = %T, want CandidateSet", testCase.CaseID, canonical)
-		}
-		assertEmbeddedTokenGateCanonicalResult(t, testCase, candidateSet)
-
-		execution, err := fpf.NewCanonicalQueryExecution(
-			testCase.Request,
-			evaluation,
-			snapshot,
-		)
-		if err != nil {
-			t.Fatalf("%s canonical execution: %v", testCase.CaseID, err)
-		}
-		published, err := fpf.ProjectQueryResult(execution, publicationRequest)
-		if err != nil {
-			t.Fatalf("%s working projection: %v", testCase.CaseID, err)
-		}
-		workingJSON, err := fpf.EncodePublishedQuery(published, fpf.PublishedQueryJSONCompact)
-		if err != nil {
-			t.Fatalf("%s compact working JSON: %v", testCase.CaseID, err)
-		}
-		assertEmbeddedTokenGateWorkingSemantics(t, candidateSet, workingJSON)
-
-		canonicalJSON, err := json.Marshal(canonical)
-		if err != nil {
-			t.Fatalf("%s compact canonical JSON: %v", testCase.CaseID, err)
-		}
-		inputCases = append(inputCases, embeddedTokenGateInputCase{
-			CaseID:        testCase.CaseID,
-			CanonicalJSON: string(canonicalJSON),
-			WorkingJSON:   string(workingJSON),
+		caseMatched := t.Run(testCase.CaseID, func(t *testing.T) {
+			inputCase := evaluateEmbeddedTokenGateCase(
+				t,
+				index,
+				snapshot,
+				publicationRequest,
+				testCase,
+			)
+			inputCases = append(inputCases, inputCase)
 		})
+		allCasesMatched = allCasesMatched && caseMatched
+	}
+	if !allCasesMatched {
+		t.FailNow()
 	}
 
 	measurements := runEmbeddedTokenGateCounter(t, inputCases)
 	assertEmbeddedTokenGateReduction(t, measurements)
 }
 
-func embeddedTokenGateCorpus() []embeddedTokenGateCase {
-	return []embeddedTokenGateCase{
-		{
-			CaseID:                 "relation-occurrence-assertion",
-			Request:                fpf.ConcernQuery{Text: "relation occurrence assertion distinction"},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 6,
-			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:system-in-context",
-				"spec:toc_row:a-6-rsir",
-				"spec:toc_row:c-3-1",
-				"spec:toc_row:c-3-3",
-				"spec:toc_row:a-15-2",
-				"spec:toc_row:a-3",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"SYSTEM-IN-CONTEXT",
-				"",
-				"",
-				"",
-				"",
-				"",
-			},
-			ExpectedTruncationApplied: false,
-			ExpectedOmittedAtLeast:    0,
-			ExpectedTruncationBasis:   nil,
-		},
-		{
-			CaseID:                 "pattern-use-working-situation",
-			Request:                fpf.ConcernQuery{Text: "pattern use working situation"},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 4,
-			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:working-documents",
-				"readme:practical_use_card:architecture",
-				"spec:toc_row:e-11-pua",
-				"spec:toc_row:e-8-ecspf",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"WORKING-DOCUMENTS",
-				"ARCHITECTURE",
-				"",
-				"",
-			},
-			ExpectedTruncationApplied: false,
-			ExpectedOmittedAtLeast:    0,
-			ExpectedTruncationBasis:   nil,
-		},
-		{
-			CaseID:                 "evidence-decay-decision-verification",
-			Request:                fpf.ConcernQuery{Text: "evidence decay decision verification"},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 3,
-			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:costly-action",
-				"readme:practical_use_card:time",
-				"spec:toc_row:b-3-4",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"COSTLY-ACTION",
-				"TIME",
-				"",
-			},
-			ExpectedTruncationApplied: false,
-			ExpectedOmittedAtLeast:    0,
-			ExpectedTruncationBasis:   nil,
-		},
-		{
-			CaseID:                 "work-plan-performed-work-evidence",
-			Request:                fpf.ConcernQuery{Text: "work plan performed work evidence"},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 8,
-			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:system-in-context",
-				"readme:practical_use_card:costly-action",
-				"readme:practical_use_card:working-documents",
-				"spec:toc_row:f-6",
-				"spec:toc_row:a-15",
-				"spec:toc_row:a-15-5",
-				"spec:toc_row:a-15-1",
-				"spec:toc_row:a-2-9",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"SYSTEM-IN-CONTEXT",
-				"COSTLY-ACTION",
-				"WORKING-DOCUMENTS",
-				"",
-				"",
-				"",
-				"",
-				"",
-			},
-			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    4,
-			ExpectedTruncationBasis:   []string{"response_budget"},
-		},
-		{
-			CaseID:                 "entity-reference-claim-graph",
-			Request:                fpf.ConcernQuery{Text: "entity of concern reference scheme claim graph"},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 10,
-			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:system-in-context",
-				"readme:practical_use_card:problem-shaping",
-				"readme:practical_use_card:dpf-authoring",
-				"readme:practical_use_card:naming",
-				"readme:practical_use_card:description-use",
-				"spec:toc_row:a-6-3",
-				"spec:toc_row:a-6-3-cr",
-				"spec:toc_row:a-6-3-rt",
-				"spec:toc_row:a-6-4",
-				"spec:toc_row:e-10-d2",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"SYSTEM-IN-CONTEXT",
-				"PROBLEM-SHAPING",
-				"DPF-AUTHORING",
-				"NAMING",
-				"DESCRIPTION-USE",
-				"",
-				"",
-				"",
-				"",
-				"",
-			},
-			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    7,
-			ExpectedTruncationBasis:   []string{"response_budget"},
-		},
-		{
-			CaseID:                 "authority-speech-act-permission",
-			Request:                fpf.ConcernQuery{Text: "authority speech act permission"},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 5,
-			ExpectedCandidateIDs: []string{
-				"spec:toc_row:a-2-9",
-				"spec:toc_row:a-10",
-				"spec:toc_row:a-6-c",
-				"spec:toc_row:e-16",
-				"spec:toc_row:e-17-efp",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"",
-				"",
-				"",
-				"",
-				"",
-			},
-			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    1,
-			ExpectedTruncationBasis:   []string{"response_budget"},
-		},
-		{
-			CaseID: "russian-plan-work-evidence",
-			Request: fpf.ConcernQuery{
-				Text:            "Как различить план, выполненную работу и свидетельство результата?",
-				EntityOfConcern: "план и выполненная работа",
-				KnownContext:    []string{"work plan performed work evidence"},
-				IntendedUse:     "выбрать прямой FPF pattern для проверки",
-			},
-			ExpectedKind:           fpf.QueryResultKindCandidateSet,
-			ExpectedCandidateCount: 8,
-			ExpectedCandidateIDs: []string{
-				"readme:practical_use_card:system-in-context",
-				"readme:practical_use_card:costly-action",
-				"readme:practical_use_card:working-documents",
-				"spec:toc_row:f-6",
-				"spec:toc_row:a-15",
-				"spec:toc_row:a-15-5",
-				"spec:toc_row:a-15-1",
-				"spec:toc_row:a-2-9",
-			},
-			ExpectedCandidateSourceIDs: []string{
-				"SYSTEM-IN-CONTEXT",
-				"COSTLY-ACTION",
-				"WORKING-DOCUMENTS",
-				"",
-				"",
-				"",
-				"",
-				"",
-			},
-			ExpectedTruncationApplied: true,
-			ExpectedOmittedAtLeast:    46,
-			ExpectedTruncationBasis: []string{
-				"role_local_fts_producer_limit",
-				"role_local_fts:toc_row",
-				"response_budget",
-			},
-		},
+func evaluateEmbeddedTokenGateCase(
+	t *testing.T,
+	index fpf.QueryIndex,
+	snapshot fpf.QuerySourceSnapshot,
+	publicationRequest fpf.QueryPublicationRequest,
+	testCase embeddedTokenGateCase,
+) embeddedTokenGateInputCase {
+	t.Helper()
+	evaluation, err := fpf.EvaluateQuery(index, testCase.Request)
+	if err != nil {
+		t.Fatalf("evaluate real embedded concern: %v", err)
+	}
+	canonical := evaluation.Result()
+	candidateSet, ok := canonical.(fpf.CandidateSet)
+	if !ok {
+		t.Fatalf("canonical result = %T, want CandidateSet", canonical)
+	}
+	assertEmbeddedTokenGateCanonicalResult(t, testCase, candidateSet)
+
+	execution, err := fpf.NewCanonicalQueryExecution(
+		testCase.Request,
+		evaluation,
+		snapshot,
+	)
+	if err != nil {
+		t.Fatalf("canonical execution: %v", err)
+	}
+	published, err := fpf.ProjectQueryResult(execution, publicationRequest)
+	if err != nil {
+		t.Fatalf("working projection: %v", err)
+	}
+	workingJSON, err := fpf.EncodePublishedQuery(published, fpf.PublishedQueryJSONCompact)
+	if err != nil {
+		t.Fatalf("compact working JSON: %v", err)
+	}
+	assertEmbeddedTokenGateWorkingSemantics(t, candidateSet, workingJSON)
+
+	canonicalJSON, err := json.Marshal(canonical)
+	if err != nil {
+		t.Fatalf("compact canonical JSON: %v", err)
+	}
+	return embeddedTokenGateInputCase{
+		CaseID:        testCase.CaseID,
+		CanonicalJSON: string(canonicalJSON),
+		WorkingJSON:   string(workingJSON),
 	}
 }
 
-func assertEmbeddedTokenGateDatabaseDigest(t *testing.T) {
+func loadEmbeddedTokenGateBasis(t *testing.T) embeddedTokenGateBasis {
 	t.Helper()
-	digest := sha256.Sum256(embeddedFPFDB)
-	got := hex.EncodeToString(digest[:])
-	if got != embeddedTokenGateDatabaseDigest {
-		t.Fatalf("embedded FPF database digest = %s, want %s", got, embeddedTokenGateDatabaseDigest)
+	paths, err := resolveEmbeddedTokenGateArtifactPaths(os.Getenv)
+	if err != nil {
+		t.Fatalf("resolve token-gate artifact paths: %v", err)
 	}
-}
-
-func assertEmbeddedTokenGateCorpusDigest(t *testing.T, corpus []embeddedTokenGateCase) {
-	t.Helper()
-	encoded, err := json.Marshal(corpus)
+	fixtureCoordinates, err := fpfrefresh.ReadTokenGateCoordinates(paths.FixturePath)
+	if err != nil {
+		t.Fatalf("read token-gate fixture coordinates: %v", err)
+	}
+	payload, err := os.ReadFile(paths.FixturePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256(encoded)
-	got := hex.EncodeToString(digest[:])
-	if got != embeddedTokenGateCorpusDigest {
+	decoder := json.NewDecoder(bytes.NewReader(payload))
+	decoder.DisallowUnknownFields()
+	fixture := embeddedTokenGateFixture{}
+	if err := decoder.Decode(&fixture); err != nil {
+		t.Fatalf("decode token-gate behavior fixture: %v", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); !errors.Is(err, io.EOF) {
+		t.Fatalf("decode token-gate behavior fixture trailing data: %v", err)
+	}
+	if fixture.SchemaVersion != fpfrefresh.TokenGateFixtureSchemaVersion ||
+		fixture.FixtureRevision != fixtureCoordinates.FixtureRevision ||
+		len(fixture.Cases) == 0 {
 		t.Fatalf(
-			"embedded concern corpus digest = %s, want %s; requests or expected retrieval facts require an explicit quantitative rebaseline",
-			got,
-			embeddedTokenGateCorpusDigest,
+			"token-gate behavior fixture identity = schema %q revision %q cases %d",
+			fixture.SchemaVersion,
+			fixture.FixtureRevision,
+			len(fixture.Cases),
 		)
+	}
+
+	lockPayload, err := os.ReadFile(paths.LockPath)
+	if err != nil {
+		t.Fatalf("read generated FPF integration lock: %v", err)
+	}
+	lock, err := fpfrefresh.ParseIntegrationLock(lockPayload)
+	if err != nil {
+		t.Fatalf("parse generated FPF integration lock: %v", err)
+	}
+	if lock.TokenGate == nil || *lock.TokenGate != fixtureCoordinates {
+		t.Fatalf(
+			"generated lock token fixture = %#v, exact fixture coordinates = %#v",
+			lock.TokenGate,
+			fixtureCoordinates,
+		)
+	}
+	databaseImage := embeddedFPFDB
+	if paths.DatabasePath != "" {
+		info, statErr := os.Stat(paths.DatabasePath)
+		if statErr != nil {
+			t.Fatalf("inspect candidate FPF database: %v", statErr)
+		}
+		if !info.Mode().IsRegular() || info.Size() <= 0 {
+			t.Fatalf(
+				"candidate FPF database %q is not a non-empty regular file",
+				paths.DatabasePath,
+			)
+		}
+		databaseImage, err = os.ReadFile(paths.DatabasePath)
+		if err != nil {
+			t.Fatalf("read candidate FPF database: %v", err)
+		}
+	}
+	return embeddedTokenGateBasis{
+		DatabaseImage: databaseImage,
+		Fixture:       fixture,
+		Lock:          lock,
 	}
 }
 
-func assertEmbeddedTokenGateSnapshot(t *testing.T, snapshot fpf.QuerySourceSnapshot) {
+func resolveEmbeddedTokenGateArtifactPaths(
+	getenv func(string) string,
+) (embeddedTokenGateArtifactPaths, error) {
+	if getenv == nil {
+		return embeddedTokenGateArtifactPaths{}, fmt.Errorf(
+			"token-gate environment reader is required",
+		)
+	}
+	paths := embeddedTokenGateArtifactPaths{
+		DatabasePath: getenv(fpfrefresh.CandidateTokenGateDatabasePathEnvironment),
+		FixturePath:  getenv(fpfrefresh.CandidateTokenGateFixturePathEnvironment),
+		LockPath:     getenv(fpfrefresh.CandidateTokenGateLockPathEnvironment),
+	}
+	supplied := 0
+	for _, path := range []string{
+		paths.DatabasePath,
+		paths.FixturePath,
+		paths.LockPath,
+	} {
+		if path != "" {
+			supplied++
+		}
+	}
+	if supplied == 0 {
+		return embeddedTokenGateArtifactPaths{
+			FixturePath: filepath.Join("testdata", "fpf_query_token_gate_corpus.json"),
+			LockPath: filepath.Join(
+				"..",
+				"..",
+				fpfrefresh.DefaultIntegrationLockRelativePath,
+			),
+		}, nil
+	}
+	if supplied != 3 {
+		return embeddedTokenGateArtifactPaths{}, fmt.Errorf(
+			"candidate database, integration lock, and fixture overrides must be supplied together",
+		)
+	}
+	for label, path := range map[string]string{
+		"database":         paths.DatabasePath,
+		"integration lock": paths.LockPath,
+		"fixture":          paths.FixturePath,
+	} {
+		if path != strings.TrimSpace(path) ||
+			!filepath.IsAbs(path) ||
+			filepath.Clean(path) != path {
+			return embeddedTokenGateArtifactPaths{}, fmt.Errorf(
+				"candidate %s override must be a trimmed canonical absolute path",
+				label,
+			)
+		}
+	}
+	return paths, nil
+}
+
+func assertEmbeddedTokenGateDatabaseDigest(
+	t *testing.T,
+	databaseImage []byte,
+	expected string,
+) {
 	t.Helper()
-	if fpf.SpecIndexSchemaVersion != embeddedTokenGateIndexSchema ||
-		snapshot.IndexSchemaVersion() != embeddedTokenGateIndexSchema ||
-		snapshot.Revision() != embeddedTokenGateSourceRevision ||
-		snapshot.ReadmeDigest() != embeddedTokenGateReadmeDigest ||
-		snapshot.SpecDigest() != embeddedTokenGateSpecDigest {
-		t.Fatalf("embedded token-gate source snapshot = %#v", snapshot)
+	digest := sha256.Sum256(databaseImage)
+	got := "sha256:" + hex.EncodeToString(digest[:])
+	if got != expected {
+		t.Fatalf("selected FPF database digest = %s, generated lock = %s", got, expected)
+	}
+}
+
+func assertEmbeddedTokenGateSnapshot(
+	t *testing.T,
+	snapshot fpf.QuerySourceSnapshot,
+	coordinates fpfrefresh.IntegrationCoordinates,
+) {
+	t.Helper()
+	if fpf.SpecIndexSchemaVersion != coordinates.IndexSchemaVersion ||
+		snapshot.IndexSchemaVersion() != coordinates.IndexSchemaVersion ||
+		snapshot.Revision() != coordinates.SourceRevision ||
+		snapshot.ReadmeDigest() != coordinates.ReadmeDocumentDigest ||
+		snapshot.SpecDigest() != coordinates.SpecDocumentDigest {
+		t.Fatalf(
+			"embedded token-gate source snapshot = %#v, generated lock = %#v",
+			snapshot,
+			coordinates,
+		)
 	}
 }
 
@@ -737,7 +712,13 @@ func TestEmbeddedTokenGateSupportedPython(t *testing.T) {
 }
 
 func TestEmbeddedTokenGateExpectedCountsMatchIDs(t *testing.T) {
-	for _, testCase := range embeddedTokenGateCorpus() {
+	basis := loadEmbeddedTokenGateBasis(t)
+	seen := make(map[string]struct{}, len(basis.Fixture.Cases))
+	for _, testCase := range basis.Fixture.Cases {
+		if _, duplicate := seen[testCase.CaseID]; duplicate || strings.TrimSpace(testCase.CaseID) == "" {
+			t.Fatalf("duplicate or empty token-gate case ID %q", testCase.CaseID)
+		}
+		seen[testCase.CaseID] = struct{}{}
 		if testCase.ExpectedCandidateCount != len(testCase.ExpectedCandidateIDs) {
 			t.Fatalf(
 				"%s expected candidate count = %d, IDs = %d",
@@ -761,15 +742,68 @@ func TestEmbeddedTokenGateExpectedCountsMatchIDs(t *testing.T) {
 	}
 }
 
-func TestEmbeddedTokenGatePinnedDatabaseDigestFormat(t *testing.T) {
-	decoded, err := hex.DecodeString(embeddedTokenGateDatabaseDigest)
+func TestEmbeddedTokenGateGeneratedDatabaseDigestFormat(t *testing.T) {
+	basis := loadEmbeddedTokenGateBasis(t)
+	digest := strings.TrimPrefix(basis.Lock.Coordinates.DatabaseDigest, "sha256:")
+	decoded, err := hex.DecodeString(digest)
 	if err != nil || len(decoded) != sha256.Size {
-		t.Fatalf("embedded token-gate database digest is invalid: %q", embeddedTokenGateDatabaseDigest)
+		t.Fatalf("generated token-gate database digest is invalid: %q", digest)
 	}
 }
 
-func Example_embeddedTokenGateIdentity() {
-	fmt.Printf("db=sha256:%s source=%s\n", embeddedTokenGateDatabaseDigest, embeddedTokenGateSourceRevision)
-	// Output:
-	// db=sha256:2df40bb9d4e754ee8e9d47ced1eb4926fbb941ac42880dc0a365c60fa4b04bc4 source=2ada413629b846ef308222d16489a82cb5b40a71
+func TestEmbeddedTokenGateArtifactOverridesAreAllOrNoneAndAbsolute(t *testing.T) {
+	root := t.TempDir()
+	complete := map[string]string{
+		fpfrefresh.CandidateTokenGateDatabasePathEnvironment: filepath.Join(root, "candidate.db"),
+		fpfrefresh.CandidateTokenGateLockPathEnvironment: filepath.Join(
+			root,
+			"candidate.lock.json",
+		),
+		fpfrefresh.CandidateTokenGateFixturePathEnvironment: filepath.Join(root, "corpus.json"),
+	}
+	getenv := func(values map[string]string) func(string) string {
+		return func(key string) string {
+			return values[key]
+		}
+	}
+
+	defaults, err := resolveEmbeddedTokenGateArtifactPaths(getenv(nil))
+	if err != nil {
+		t.Fatalf("default artifact paths error = %v", err)
+	}
+	if defaults.DatabasePath != "" ||
+		defaults.FixturePath != filepath.Join("testdata", "fpf_query_token_gate_corpus.json") ||
+		defaults.LockPath != filepath.Join(
+			"..",
+			"..",
+			fpfrefresh.DefaultIntegrationLockRelativePath,
+		) {
+		t.Fatalf("default artifact paths = %#v", defaults)
+	}
+
+	overridden, err := resolveEmbeddedTokenGateArtifactPaths(getenv(complete))
+	if err != nil {
+		t.Fatalf("complete artifact overrides error = %v", err)
+	}
+	if overridden.DatabasePath != complete[fpfrefresh.CandidateTokenGateDatabasePathEnvironment] ||
+		overridden.LockPath != complete[fpfrefresh.CandidateTokenGateLockPathEnvironment] ||
+		overridden.FixturePath != complete[fpfrefresh.CandidateTokenGateFixturePathEnvironment] {
+		t.Fatalf("complete artifact overrides = %#v", overridden)
+	}
+
+	incomplete := map[string]string{
+		fpfrefresh.CandidateTokenGateDatabasePathEnvironment: complete[fpfrefresh.CandidateTokenGateDatabasePathEnvironment],
+	}
+	if _, err := resolveEmbeddedTokenGateArtifactPaths(getenv(incomplete)); err == nil {
+		t.Fatal("incomplete artifact overrides error = nil")
+	}
+
+	relative := make(map[string]string, len(complete))
+	for key, value := range complete {
+		relative[key] = value
+	}
+	relative[fpfrefresh.CandidateTokenGateFixturePathEnvironment] = "relative/corpus.json"
+	if _, err := resolveEmbeddedTokenGateArtifactPaths(getenv(relative)); err == nil {
+		t.Fatal("relative artifact override error = nil")
+	}
 }

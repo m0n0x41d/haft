@@ -1,7 +1,7 @@
 ---
 name: h-diagnose
 description: |
-  Diagnose a concrete failure with parallel rival-hypothesis testing. Use when symptoms are observable but cause is unclear. Stabilize the signal, generate distinct explanations, test them read-only in parallel, and rank by evidence while keeping losing rivals visible. This skill is independent and ordinarily non-persistent; save a diagnosis frame or hypothesis portfolio only on explicit request or when a named receiving use needs replay.
+  Diagnose a concrete failure with parallel rival-hypothesis testing. Use when symptoms are observable but cause is unclear. Stabilize the signal, generate distinct explanations, test them read-only in parallel, and rank by evidence while keeping losing rivals visible. This skill is independent and ordinarily non-persistent; save a diagnosis frame or hypothesis portfolio only on explicit request or when current Work supplies a concrete operator-named or agent-inferred receiving use that needs replay.
 when_to_use: |
   A test, runtime, data, integration, or operational failure has more than one plausible cause. For a feature or redesign question use h-frame.
 argument-hint: "[observed failure]"
@@ -11,11 +11,16 @@ allowed-tools: Bash Read Grep Glob Agent mcp__haft__haft_problem mcp__haft__haft
 # h-diagnose — Test rival explanations
 
 Abduction is an internal routine of this skill, not a separate public skill.
-Retrieve the current FPF source before relying on its diagnostic semantics:
-inspect a known SourceID or UnitID with
+Use FPF source when an FPF distinction or diagnostic pattern is material to the
+current failure; a purely mechanical failure needs no ritual source query.
+Before relying on FPF diagnostic semantics, inspect a known SourceID or UnitID with
 `mcp__haft__haft_query(action="fpf", mode="inspect", identifier="...")`, or
 use `mode="concern"` with the concrete failure question and inspect the direct
 pattern body. Query returns source candidates, not a selected cause or verdict.
+A `candidate_set` is incomplete: select by the current condition and required
+result kind, then inspect one exact PatternID. If no candidate fits, abstain.
+Never use a query performed after the diagnosis or edit as proof that the
+earlier work followed that source.
 
 ## Conditional project-memory orientation
 
@@ -33,7 +38,8 @@ known absence, or explicit abstention is visible but non-blocking: continue the
 diagnosis without inventing a profile, entity, artifact, or human gate. This
 read does not replace code-graph preflight before a later code edit. Never
 persist typed memory merely because a read failed; persistence requires an
-explicit operator save request or a named receiving use with provenance.
+explicit operator save request or a concrete operator-named or agent-inferred
+receiving use supplied by current Work, with provenance.
 
 ## Procedure
 
@@ -56,7 +62,8 @@ explicit operator save request or a named receiving use with provenance.
 
 Default to a conversational diagnosis. Do not automatically create a
 ProblemCard or SolutionPortfolio. Persist only on explicit save intent or when
-a named receiving use needs the diagnosis to remain addressable. In that case,
+a concrete operator-named or agent-inferred receiving use needs the diagnosis
+to remain addressable. In that case,
 record the stable diagnosis problem and the rival hypotheses with their
 evidence limits; do not present hypothesis ranking as a binding decision.
 

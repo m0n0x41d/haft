@@ -132,12 +132,12 @@ func prepareAuthorityStage(
 		return profiledeclarationpreparation.Plan{}, false, "",
 			rollbackPreparation(transaction, err)
 	}
-	basis, resolution, err := buildAuthorityRowsV3(probe, bindingDigest)
-	if err != nil {
-		return profiledeclarationpreparation.Plan{}, false, "",
-			rollbackPreparation(transaction, err)
-	}
-	if err := persistAuthorityRowsV3(ctx, transaction, basis, resolution); err != nil {
+	if err := persistSelectedAuthorityRows(
+		ctx,
+		transaction,
+		probe,
+		bindingDigest,
+	); err != nil {
 		return profiledeclarationpreparation.Plan{}, false, "",
 			rollbackPreparation(transaction, err)
 	}
@@ -223,8 +223,8 @@ func prepareWorkStage(
 		plan,
 		values,
 		candidate,
-		existing.basis.digest,
-		existing.resolution.digest,
+		existing.basisDigest,
+		existing.resolutionDigest,
 	)
 	if err != nil {
 		return Prepared{}, false, "", err

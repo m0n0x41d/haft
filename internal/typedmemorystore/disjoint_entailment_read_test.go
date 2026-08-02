@@ -427,6 +427,8 @@ func TestCurrentProjectSnapshotRejectsExactDisjointEntailmentWitnessDrift(
 	}
 	for _, test := range cases {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
 			keySuffix := strings.ReplaceAll(test.name, " ", "-")
 			key := "snapshot-disjoint-entailment-" + keySuffix
 			fixture, adapter, receipt := commitDisjointEntailmentFixture(

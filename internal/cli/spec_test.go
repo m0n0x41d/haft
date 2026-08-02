@@ -47,6 +47,14 @@ func TestRunSpecCheckCommandEmitsOneNeutralCueWithoutCanonicalProfile(t *testing
 	if !strings.Contains(output.String(), "profile_underdetermined") {
 		t.Fatalf("output = %q, want profile-underdetermined result", output.String())
 	}
+	for _, want := range []string{
+		"Recovery surface: haft_onboard",
+		"Next: " + projectSpecificationProfileRecoveryNextAction,
+	} {
+		if !strings.Contains(output.String(), want) {
+			t.Fatalf("output = %q, want %q", output.String(), want)
+		}
+	}
 	if strings.Contains(output.String(), "software-system") {
 		t.Fatalf("output = %q, want no speculative software pressure", output.String())
 	}
@@ -88,6 +96,12 @@ func TestRunSpecCheckJSONRetainsNeutralProfileUnderdeterminedCue(t *testing.T) {
 	if applicability.Cue == nil ||
 		applicability.Cue.Code != string(projectSpecificationProfileUnderdetermined) {
 		t.Fatalf("profile cue = %#v", applicability.Cue)
+	}
+	if applicability.Cue.RecoverySurface !=
+		projectSpecificationProfileRecoverySurface ||
+		applicability.Cue.NextAction !=
+			projectSpecificationProfileRecoveryNextAction {
+		t.Fatalf("profile recovery cue = %#v", applicability.Cue)
 	}
 }
 
@@ -647,7 +661,7 @@ func TestRunSpecPlanJSONRequiresExactScopeForMixedProfile(t *testing.T) {
 	}
 }
 
-func TestRunSpecPlanAcceptDefaultModeBindsWithoutSecondSpeechAct(t *testing.T) {
+func TestRunSpecPlanAcceptBindsFromHostRoutedOperatorRequest(t *testing.T) {
 	fixture := newSoftwareProfiledSpecTestProject(t)
 	writeSpecPlanCLICarriers(t, fixture.root)
 
@@ -665,8 +679,6 @@ func TestRunSpecPlanAcceptDefaultModeBindsWithoutSecondSpeechAct(t *testing.T) {
 	}
 	proposal := result.Proposals[0]
 
-	strictSession := &fakeManualDecisionBindingSession{}
-	stubManualDecisionBindingSession(t, strictSession)
 	restore := enterTestProjectRoot(t, fixture.root)
 	defer restore()
 
@@ -685,9 +697,6 @@ func TestRunSpecPlanAcceptDefaultModeBindsWithoutSecondSpeechAct(t *testing.T) {
 	err = runSpecPlan(cmd, nil)
 	if err != nil {
 		t.Fatalf("runSpecPlan accept returned error: %v", err)
-	}
-	if strictSession.closed || strictSession.bindInput.SelectedTitle != "" {
-		t.Fatalf("default explicit_h_decide opened strict SpeechAct session: %#v", strictSession)
 	}
 	if after := countSpecPlanArtifacts(t, fixture); after != before+1 {
 		t.Fatalf("artifact count changed from %d to %d", before, after)
@@ -708,6 +717,9 @@ func TestRunSpecPlanAcceptDefaultModeBindsWithoutSecondSpeechAct(t *testing.T) {
 		t.Fatalf("load accepted DecisionRecord: %v", err)
 	}
 	fields := decision.UnmarshalDecisionFields()
+	if fields.AuthorityProvenance != "host_routed_operator_request" {
+		t.Fatalf("DecisionRecord authority provenance = %q", fields.AuthorityProvenance)
+	}
 	if !sameSpecPlanCLIStrings(fields.SectionRefs, accepted.SectionRefs) {
 		t.Fatalf(
 			"DecisionRecord section_refs = %#v, want %#v",
@@ -718,13 +730,8 @@ func TestRunSpecPlanAcceptDefaultModeBindsWithoutSecondSpeechAct(t *testing.T) {
 	assertSpecPlanNoStoredKind(t, fixture, artifact.KindWorkCommission)
 }
 
-func TestRunSpecPlanAcceptUsesManualDecisionBindingService(t *testing.T) {
+func TestRunSpecPlanAcceptUsesHostRoutedDecisionBinder(t *testing.T) {
 	fixture := newCheckTestProject(t)
-	writeDecisionBindingModeForTest(
-		t,
-		fixture.root,
-		project.DecisionBindingModeStrictCLISpeechAct,
-	)
 	proposal := project.SpecPlanProposal{
 		ID:           "spec-plan-test-accept",
 		Title:        "Bind checkout acceptance sections",
@@ -750,8 +757,8 @@ func TestRunSpecPlanAcceptUsesManualDecisionBindingService(t *testing.T) {
 	}
 
 	before := countSpecPlanArtifacts(t, fixture)
-	stubManualDecisionBindingSession(t, &fakeManualDecisionBindingSession{
-		bindResult: manualDecisionBindingOutcome{
+	stubHostRoutedDecisionBinder(t, &fakeHostRoutedDecisionBinder{
+		result: decisionBindingOutcome{
 			DecisionRef: "dec-20260715-spec-plan-a1b2c3d4",
 			Title:       proposal.DecisionRecordDraft.SelectedTitle,
 			FilePath:    filepath.Join(fixture.root, ".haft", "decisions", "spec-plan.md"),
@@ -829,19 +836,19 @@ func TestRunSpecPlanHumanSummaryStatesProposalAuthorityAndReviewActions(t *testi
 }
 
 func TestSpecPlanHelpStatesProposalsAreNotAuthority(t *testing.T) {
+	help := strings.Join(strings.Fields(specPlanCmd.Long), " ")
 	required := []string{
 		"not authority",
 		"Use --accept <proposal-id>",
 		"no WorkCommissions are",
 		"Merge, split, and discard",
-		"default",
-		"does not ask for a second phrase",
-		"strict_cli_speech_act",
+		"direct, unambiguous operator request",
+		"does not require a skill token",
 		"exact --scope-id",
 	}
 
 	for _, want := range required {
-		if !strings.Contains(specPlanCmd.Long, want) {
+		if !strings.Contains(help, want) {
 			t.Fatalf("spec plan help missing %q:\n%s", want, specPlanCmd.Long)
 		}
 	}

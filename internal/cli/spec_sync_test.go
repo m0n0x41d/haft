@@ -317,7 +317,7 @@ func openSpecSyncDB(t *testing.T, root string) *db.Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	database, err := db.NewStore(dbPath)
+	database, err := openCurrentKernelTestStore(dbPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -326,7 +326,9 @@ func openSpecSyncDB(t *testing.T, root string) *db.Store {
 
 func newTestCLIDB(t *testing.T) *db.Store {
 	t.Helper()
-	database, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	database, err := openCurrentKernelTestStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -286,12 +286,11 @@ and affected area. Listing output is a human-review draft surface only:
 proposals are not authority. No DecisionRecords are created by listing, and
 no WorkCommissions are created or scheduled.
 
-Use --accept <proposal-id> to bind one exact reviewed proposal through the same
-project-local decision policy as decision.decide. The default
-explicit_h_decide mode treats the operator's explicit invocation as the human
-gate and does not ask for a second phrase; opt-in strict_cli_speech_act adds the
-readable /dev/tty review. Merge, split, and discard are typed non-executable
-actions in this slice and are reported with command gaps.
+Use --accept <proposal-id> as the internal effect sink for one exact reviewed
+proposal after the host has routed a direct, unambiguous operator request. The
+request does not require a skill token or a second confirmation. Merge, split,
+and discard are typed non-executable actions in this slice and are reported
+with command gaps.
 
 The public command resolves canonical project-profile applicability before
 deriving proposals. A singleton scope is selected automatically; a mixed
@@ -831,7 +830,7 @@ func bindSpecPlanDecision(
 	proposal project.SpecPlanProposal,
 	input artifact.DecideInput,
 ) (specPlanAcceptResult, error) {
-	bound, err := bindDecisionByProjectPolicy(
+	bound, err := bindDecisionFromHostRequest(
 		ctx,
 		projectRoot,
 		input,

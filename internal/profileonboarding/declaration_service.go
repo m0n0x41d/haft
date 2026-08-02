@@ -6,9 +6,41 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/profileadmission"
 	profileadmissionsqlite "github.com/m0n0x41d/haft/internal/profileadmission/sqlite"
+	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	profiledeclarationpreparationsqlite "github.com/m0n0x41d/haft/internal/profiledeclarationpreparation/sqlite"
+	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
+
+// RunAutomaticInitialProfileBootstrap applies only the exact complete,
+// supported singleton suggestion supplied by haft init. The automatic policy
+// constructor rechecks that closed condition before any durable preparation.
+func RunAutomaticInitialProfileBootstrap(
+	ctx context.Context,
+	database *sql.DB,
+	projectRoot string,
+	suggestion profiledetector.Suggestion,
+	revalidate profileLedgerRevalidator,
+) (Result, error) {
+	content, err := ProposeProfileOnboardingWorkInput(suggestion)
+	if err != nil {
+		return Result{}, err
+	}
+	input, err := DecodeProfileOnboardingWorkInput(content, suggestion)
+	if err != nil {
+		return Result{}, err
+	}
+	policy, err := profiledeclarationpreparation.
+		NewAutomaticSupportedSingletonPolicy(suggestion)
+	if err != nil {
+		return Result{}, err
+	}
+	service, err := newService(database, revalidate)
+	if err != nil {
+		return Result{}, err
+	}
+	return service.DeclareProfile(ctx, projectRoot, input, policy), nil
+}
 
 // RunProfileDeclaration is the public application boundary for declaring the
 // exact, operator-reviewed profile input. The caller supplies semantic input
@@ -49,37 +81,44 @@ func (service Service) DeclareProfile(
 		return failure
 	}
 	current := service.state.admission.ResolveCurrent(ctx, root)
-	if admissionResultPresent(current) {
-		return service.projectExistingAdmissionForPayload(
-			ctx,
-			current,
-			input.PayloadDigest(),
+	currentPresent := admissionResultPresent(current)
+	overrideDetectorDefault := false
+	if currentPresent {
+		admission, _ := current.Admission()
+		overrideDetectorDefault = explicitPolicyMayOverrideDetectorDefault(
+			policy,
+			admission,
 		)
+		if admission.PayloadDigest() == input.PayloadDigest() &&
+			!overrideDetectorDefault {
+			return service.projectAdmission(ctx, current)
+		}
+		if !overrideDetectorDefault {
+			return rejectedResult(
+				"profile_change_requires_separate_action",
+				"the current profile has another payload; only a direct host-routed operator request may supersede an automatic detector_default profile",
+			)
+		}
 	}
-	if !admissionResultAbsent(current) {
+	if !currentPresent && !admissionResultAbsent(current) {
 		return service.projectAdmission(ctx, current)
 	}
-	committed := service.state.admission.ResolveCommittedForPayload(
-		ctx,
-		root,
-		input.PayloadDigest(),
-	)
-	if admissionResultPresent(committed) {
-		return service.projectExistingAdmissionForPayload(
+	if !overrideDetectorDefault {
+		committed := service.state.admission.ResolveCommittedForPayload(
 			ctx,
-			committed,
+			root,
 			input.PayloadDigest(),
 		)
-	}
-	if !admissionResultMissingCommitted(committed) {
-		return service.projectAdmission(ctx, committed)
-	}
-	if policy.Mode() == ProfileDeclarationModeStrictSpeechAct {
-		return failedResult(
-			"authority",
-			"strict_profile_authority_not_available",
-			"strict_cli_speech_act requires a native v3 profile authority source; this build will not write sealed v1/v2 authority rows; use explicit_h_onboard or upgrade when native strict support is available",
-		)
+		if admissionResultPresent(committed) {
+			return service.projectExistingAdmissionForPayload(
+				ctx,
+				committed,
+				input.PayloadDigest(),
+			)
+		}
+		if !admissionResultMissingCommitted(committed) {
+			return service.projectAdmission(ctx, committed)
+		}
 	}
 	if err := service.state.revalidate(ctx); err != nil {
 		return failedResult(
@@ -142,6 +181,14 @@ func (service Service) DeclareProfile(
 	return service.projectAdmission(ctx, admission)
 }
 
+func explicitPolicyMayOverrideDetectorDefault(
+	policy ProfileDeclarationPolicy,
+	admission profileadmissionsqlite.CanonicalProfileAdmission,
+) bool {
+	return policy.Mode() == ProfileDeclarationModeHostRoutedOperatorRequest &&
+		admission.Origin() == projectprofile.ProfileAdmissionOriginDetectorDefault
+}
+
 func (service Service) validateProfileDeclaration(
 	ctx context.Context,
 	projectRoot string,
@@ -169,8 +216,8 @@ func (service Service) validateProfileDeclaration(
 			"profile declaration requires an exact reviewed Work input",
 		)
 	}
-	if policy.Mode() != ProfileDeclarationModeExplicitHOnboard &&
-		policy.Mode() != ProfileDeclarationModeStrictSpeechAct {
+	if policy.Mode() != ProfileDeclarationModeHostRoutedOperatorRequest &&
+		policy.Mode() != ProfileDeclarationModeAutomaticSupportedSingleton {
 		return projectprofile.ProjectRootV1{}, failedResult(
 			"orchestration",
 			"authority_policy_required",

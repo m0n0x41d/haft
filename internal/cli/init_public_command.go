@@ -275,6 +275,12 @@ func renderTypedPublicInitSuccess(
 		); err != nil {
 			return err
 		}
+		if err := writePublicInitSuccessLine(
+			output,
+			"Project memory ready",
+		); err != nil {
+			return err
+		}
 	}
 	for _, receipt := range base.HostReceipts() {
 		summary := publicInitHostSummary(
@@ -350,10 +356,27 @@ func renderTypedPublicInitSuccess(
 			return err
 		}
 	}
+	if err := renderPublicInitOnboardingRecovery(output); err != nil {
+		return err
+	}
 	return renderPublicInitReloadReceipt(
 		output,
 		buildPublicInitReloadReceipt(outcome),
 	)
+}
+
+func renderPublicInitOnboardingRecovery(output io.Writer) error {
+	if _, err := fmt.Fprintln(
+		output,
+		"Next setup surface: h-onboard status",
+	); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintln(
+		output,
+		"Profile admission is separate from initialization and may still be required.",
+	)
+	return err
 }
 
 type publicInitReloadPosture string

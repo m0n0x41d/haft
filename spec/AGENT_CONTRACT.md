@@ -56,7 +56,11 @@ When spec and implementation diverge:
   carry that order.
 - Ordinary local and reversible reasoning may remain conversational. Persist a
   project record when handoff, replay, authority, automation, evidence, or
-  another named receiving use will rely on it.
+  a concrete receiving use will rely on it. That use may be operator-named or
+  inferred by the agent from current Work. When stable identity, bounded
+  context, and aliases are recoverable, the agent establishes the minimum
+  non-binding EntityOfConcern without a separate permission prompt. Known
+  absence or generic future usefulness alone is insufficient.
 - Planning remains separate from reasoning and memory. Only an explicit
   ImplementationPlan or WorkCommission establishes execution dependencies.
 - Agent must **stop at the binding-choice or work-authorization boundary** and

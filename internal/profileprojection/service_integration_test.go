@@ -314,6 +314,24 @@ func readDebtEvents(
 			       COALESCE(supersedes_event_generation, ''),
 			       COALESCE(supersedes_event_id, '')
 			FROM project_profile_projection_debt_v3
+			UNION ALL
+			SELECT 'v4', profile_revision_generation,
+			       event_id, debt_id, admission_id, admission_digest,
+			       project_root, ledger_revision, profile_payload_digest,
+			       projection_path, event_kind, reason_code,
+			       expected_projection_digest, observed_projection_digest,
+			       COALESCE(supersedes_event_generation, ''),
+			       COALESCE(supersedes_event_id, '')
+			FROM project_profile_projection_debt_v4
+			UNION ALL
+			SELECT 'v5', profile_revision_generation,
+			       event_id, debt_id, admission_id, admission_digest,
+			       project_root, ledger_revision, profile_payload_digest,
+			       projection_path, event_kind, reason_code,
+			       expected_projection_digest, observed_projection_digest,
+			       COALESCE(supersedes_event_generation, ''),
+			       COALESCE(supersedes_event_id, '')
+			FROM project_profile_projection_debt_v5
 		)
 		SELECT storage_generation, profile_revision_generation,
 		       event_id, debt_id, admission_id, admission_digest,
@@ -382,11 +400,11 @@ func assertOpenedDebt(
 	if event.eventKind != "opened" || event.debtID != result.DebtID() {
 		t.Fatalf("opened event = %#v, result = %#v", event, result)
 	}
-	if event.storageGeneration != "v3" || event.supersedesEventGeneration != "" {
-		t.Fatalf("new opened debt was not stored in the v3 event sum: %#v", event)
+	if event.storageGeneration != "v5" || event.supersedesEventGeneration != "" {
+		t.Fatalf("new opened debt was not stored in the v5 event sum: %#v", event)
 	}
-	if event.profileRevisionGeneration != "v3" {
-		t.Fatalf("new projection debt did not retain its exact v3 admission generation: %#v", event)
+	if event.profileRevisionGeneration != "v5" {
+		t.Fatalf("new projection debt did not retain its exact v5 admission generation: %#v", event)
 	}
 	if event.admissionID != admission.AdmissionRecordRef().String() ||
 		event.admissionDigest != admission.AdmissionRecordDigest().String() ||
@@ -426,7 +444,7 @@ func assertResolvedDebtPair(
 	if resolved.eventKind != "resolved" || resolved.reasonCode != "projection_verified" {
 		t.Fatalf("resolved debt = %#v", resolved)
 	}
-	if resolved.storageGeneration != "v3" ||
+	if resolved.storageGeneration != "v5" ||
 		resolved.profileRevisionGeneration != opened.profileRevisionGeneration ||
 		resolved.supersedesEventGeneration != opened.storageGeneration {
 		t.Fatalf("resolution generation lineage = %#v, opened = %#v", resolved, opened)

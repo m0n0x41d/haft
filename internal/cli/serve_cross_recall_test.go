@@ -6,7 +6,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 )
@@ -35,7 +34,9 @@ func TestApplyCrossProjectRecallAppendsParaphrasedFrameHit(t *testing.T) {
 		t.Fatalf("seed cross-project decision: %v", err)
 	}
 
-	database, err := db.NewStore(filepath.Join(t.TempDir(), "haft.db"))
+	database, err := openCurrentKernelTestStore(
+		filepath.Join(t.TempDir(), "haft.db"),
+	)
 	if err != nil {
 		t.Fatalf("open artifact db: %v", err)
 	}

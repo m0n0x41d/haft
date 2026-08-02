@@ -15,8 +15,8 @@ import (
 // TypeEnv. The exact source snapshot is pinned so a changed FPF publication
 // forces a fresh semantic review instead of silently preserving these rules.
 const (
-	sourceConformanceFPFRevision   = "2ada413629b846ef308222d16489a82cb5b40a71"
-	sourceConformanceFPFSpecDigest = "sha256:00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af"
+	sourceConformanceFPFRevision   = "d1f696e7c7767705206a8cacd9f6ed48e4dc5b02"
+	sourceConformanceFPFSpecDigest = "sha256:7a1e56595a5bb850d6db571f1bd42bccec4a5a3859f480aadebae4e532557da9"
 )
 
 type sourceConformanceSourceRange struct {
@@ -39,46 +39,46 @@ type sourceConformanceNetworkSelection struct {
 }
 
 var sourceConformanceSourceRanges = []sourceConformanceSourceRange{
-	{pattern: "A.1", start: 1420, end: 1769, digest: "sha256:bf8825b3253010367c12259830f55a62db6276dee1bdd467f611b91396773a7c"},
-	{pattern: "A.2.1", start: 2543, end: 2858, digest: "sha256:46339a090e017792ca4f3fd5fec9975389c926b4182a867ee2a65976b11d0c7a"},
-	{pattern: "A.2.8", start: 5651, end: 5994, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
-	{pattern: "A.2.8.PER", start: 5995, end: 6289, digest: "sha256:e684e2cbc8af12d64a914b0ea9588e0f1bebce72e9a3c7778c28cff788932ea7"},
-	{pattern: "A.3.1", start: 6883, end: 7317, digest: "sha256:f72c4b6ac6a1f5af3b0a46466dbbee5508ea008c41a7d649ffe142eac3901c43"},
-	{pattern: "A.3.2", start: 7318, end: 7644, digest: "sha256:cf47f9b9b208f775785b7298f97cbf2c887248ef93b735deb1521baa67087ebb"},
-	{pattern: "A.3.4", start: 7953, end: 8345, digest: "sha256:ffc48e1f415ff674ed51b6c2d384a3dcae71527b837159d54a955f7233e3816a"},
-	{pattern: "A.6.REL", start: 10845, end: 11237, digest: "sha256:3cb3082cd874089268c64fbb4b814fe4a15adbcc3174247f7969feddb3c1ad01"},
-	{pattern: "A.6.0", start: 11238, end: 11642, digest: "sha256:6be5122b7698a5dbb9d2f2ab33693c5bc38b9eadc0f13a9ed67ff85ff7f27505"},
-	{pattern: "A.6.1", start: 11643, end: 12165, digest: "sha256:946668db562ee4447896a8ff7a3e92105413d66e1f34f488ba7402aacd4ac591"},
-	{pattern: "A.6.P.WMR", start: 15778, end: 16209, digest: "sha256:4e1b7532551ed390ce9120a32a3956cdf47a92b9f77470647ee973b08c2a9fae"},
-	{pattern: "A.6.5", start: 18352, end: 18716, digest: "sha256:e98c56aa0e8cf17f4ffb31f44ab7f1639e4793eb0f6a614b6a16a0cbce53bc04"},
-	{pattern: "A.10", start: 22631, end: 23044, digest: "sha256:36524f54c2b51a9b621bd92cf74b38e383b3274aee2be109cdc7eb4af12da0ca"},
-	{pattern: "A.14", start: 23617, end: 23908, digest: "sha256:227edc79b41e830d228923b83efbdf96233f9dacd3b39d0da56cf29fbbfff9a4"},
-	{pattern: "A.15.1", start: 24373, end: 24917, digest: "sha256:874a4fc8c1f99a6c05b8c38ff526d8db5c63a5b1018b95260bfa7be1711027d2"},
-	{pattern: "A.15.2", start: 24918, end: 25215, digest: "sha256:b801fd269fe447cddf3f22098d79e5c2595a2f8fd2e8d047d8833c740792583e"},
-	{pattern: "A.15.3", start: 25216, end: 25534, digest: "sha256:855b07fd09219bbff05c56721b2a65877e073ded18bb4713289201f37ec4e46e"},
-	{pattern: "A.15.PROD", start: 26546, end: 26960, digest: "sha256:743bd9dea2ed22003518749f03f6137e57173d99f6132d52c0e7e5eeb42854a5"},
-	{pattern: "A.18", start: 28224, end: 28375, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
-	{pattern: "A.19.UNM", start: 31372, end: 31793, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
-	{pattern: "A.19.UINDM", start: 31794, end: 32082, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
-	{pattern: "A.19.USCM", start: 32083, end: 32410, digest: "sha256:11915662fc97720f6ad4b5f6d285f02a5e36528254de4bee51431c651f908bc0"},
-	{pattern: "A.19.ULSAM", start: 32411, end: 32705, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
-	{pattern: "A.19.CPM", start: 32706, end: 33040, digest: "sha256:2c93d996964d5c4f1ac5c0992d27c13770da41238569a2ccad5c8086b0d19514"},
-	{pattern: "A.19.SelectorMechanism", start: 33041, end: 33404, digest: "sha256:95c9465f83bb10d6914d3469c3498ea2ae46a46127c76fb89fe639d70dd4d961"},
-	{pattern: "C.2.1", start: 41132, end: 41666, digest: "sha256:cecf2e397e1920a01e788aa6f4cade027ec254ce8d1661cadaebd08edd3f36ed"},
-	{pattern: "C.11", start: 46167, end: 46882, digest: "sha256:c5653ceefc92d44398f76dad117eb0630b77e99d5b01c4ccc513ef9ab62f233f"},
-	{pattern: "C.16", start: 47134, end: 47587, digest: "sha256:8f5b8e3fcfba3ed338023c3309ed1690acd4ab443ae6f12a188a31dbbfd51f8b"},
-	{pattern: "C.18", start: 49335, end: 49559, digest: "sha256:31bdfdcdf2df6b5353308e9b0dd8308a79b60805bee50dcd3ac1b12d21d41f12"},
-	{pattern: "C.22", start: 50784, end: 51156, digest: "sha256:b023ed72759281302918505b32a5df1244bd75665816f5eb27d13becb10dcf62"},
-	{pattern: "C.22.2", start: 51626, end: 52280, digest: "sha256:3cc758e6003daf15950e27a6a9e67395c5ba676b4364595df8a70b59e09c43fc"},
-	{pattern: "C.28", start: 57058, end: 57924, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
-	{pattern: "C.30", start: 59289, end: 59880, digest: "sha256:6bc92805ff97431ae5124e93200965023904c64d26db0c54cb637ab3c95dfc37"},
-	{pattern: "E.11.PUR", start: 76626, end: 76897, digest: "sha256:2bf7d9e99873a6204c770c5957021641a37e9c9b66539a8f74d04d749a3a167b"},
-	{pattern: "E.17", start: 79140, end: 79744, digest: "sha256:2ac39fded54d84c54c659dd542cb869e644fe11cd40f9c770667b4d237f6c3bc"},
-	{pattern: "E.18", start: 81952, end: 82584, digest: "sha256:4f9685512c14e100afc3d577ebf562c332ac804d9b7fbf269f2b1f9a92df528b"},
-	{pattern: "E.18.NET", start: 83692, end: 84077, digest: "sha256:a5e0976b4d3a9492c00d3231453af2e0a8acec66c93ed8e429eaacdb33a68d1d"},
-	{pattern: "E.24.PUB", start: 87296, end: 87541, digest: "sha256:6c26ccd5f5441bf2490008c38f9b166cae1b66d3be3ea1f00c8dfc31abccad49"},
-	{pattern: "E.24.UK", start: 87542, end: 88012, digest: "sha256:544d4ea89b5637b1165819bc932ee79356e0f1907204cdeb1afd79bc0efe0bdf"},
-	{pattern: "F.6", start: 89895, end: 90208, digest: "sha256:df4bf77abf80ee635672f8e8e6bd2a6f7269fbd825c40955530388998af147ff"},
+	{pattern: "A.1", start: 1440, end: 1795, digest: "sha256:c2022fcb43120f35217fe2cf6503891583a42c7293b9ca1be14dcb54e844aa48"},
+	{pattern: "A.2.1", start: 2995, end: 3310, digest: "sha256:46339a090e017792ca4f3fd5fec9975389c926b4182a867ee2a65976b11d0c7a"},
+	{pattern: "A.2.8", start: 6071, end: 6414, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
+	{pattern: "A.2.8.PER", start: 6415, end: 6709, digest: "sha256:e684e2cbc8af12d64a914b0ea9588e0f1bebce72e9a3c7778c28cff788932ea7"},
+	{pattern: "A.3.1", start: 7303, end: 7737, digest: "sha256:f72c4b6ac6a1f5af3b0a46466dbbee5508ea008c41a7d649ffe142eac3901c43"},
+	{pattern: "A.3.2", start: 7738, end: 8064, digest: "sha256:cf47f9b9b208f775785b7298f97cbf2c887248ef93b735deb1521baa67087ebb"},
+	{pattern: "A.3.4", start: 8373, end: 8765, digest: "sha256:ffc48e1f415ff674ed51b6c2d384a3dcae71527b837159d54a955f7233e3816a"},
+	{pattern: "A.6.REL", start: 11265, end: 11657, digest: "sha256:3cb3082cd874089268c64fbb4b814fe4a15adbcc3174247f7969feddb3c1ad01"},
+	{pattern: "A.6.0", start: 11658, end: 12062, digest: "sha256:6be5122b7698a5dbb9d2f2ab33693c5bc38b9eadc0f13a9ed67ff85ff7f27505"},
+	{pattern: "A.6.1", start: 12063, end: 12585, digest: "sha256:946668db562ee4447896a8ff7a3e92105413d66e1f34f488ba7402aacd4ac591"},
+	{pattern: "A.6.P.WMR", start: 16249, end: 16680, digest: "sha256:4e1b7532551ed390ce9120a32a3956cdf47a92b9f77470647ee973b08c2a9fae"},
+	{pattern: "A.6.5", start: 18823, end: 19187, digest: "sha256:e98c56aa0e8cf17f4ffb31f44ab7f1639e4793eb0f6a614b6a16a0cbce53bc04"},
+	{pattern: "A.10", start: 22542, end: 22916, digest: "sha256:f6c4693742dee23cb363fd2c19c2a3c4097d265776b3b14345efb6a8bf85e65b"},
+	{pattern: "A.14", start: 23508, end: 23799, digest: "sha256:198e2398482ebef666c8c4b8b3f21753043e892aa9e532c40e31409a39051778"},
+	{pattern: "A.15.1", start: 24264, end: 24808, digest: "sha256:874a4fc8c1f99a6c05b8c38ff526d8db5c63a5b1018b95260bfa7be1711027d2"},
+	{pattern: "A.15.2", start: 24809, end: 25106, digest: "sha256:b801fd269fe447cddf3f22098d79e5c2595a2f8fd2e8d047d8833c740792583e"},
+	{pattern: "A.15.3", start: 25107, end: 25425, digest: "sha256:855b07fd09219bbff05c56721b2a65877e073ded18bb4713289201f37ec4e46e"},
+	{pattern: "A.15.PROD", start: 26448, end: 26862, digest: "sha256:743bd9dea2ed22003518749f03f6137e57173d99f6132d52c0e7e5eeb42854a5"},
+	{pattern: "A.18", start: 28126, end: 28277, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
+	{pattern: "A.19.UNM", start: 31250, end: 31671, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
+	{pattern: "A.19.UINDM", start: 31672, end: 31960, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
+	{pattern: "A.19.USCM", start: 31961, end: 32288, digest: "sha256:11915662fc97720f6ad4b5f6d285f02a5e36528254de4bee51431c651f908bc0"},
+	{pattern: "A.19.ULSAM", start: 32289, end: 32583, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
+	{pattern: "A.19.CPM", start: 32584, end: 32962, digest: "sha256:163ad299dbd0b09bb55e3603c7676556f2262b2e44056933a2100636e1490843"},
+	{pattern: "A.19.SelectorMechanism", start: 32963, end: 33383, digest: "sha256:4cba7db789460a08dcf8e8f57a5f80e18852133240883ef3d40615f30af9261e"},
+	{pattern: "C.2.1", start: 41136, end: 41670, digest: "sha256:cecf2e397e1920a01e788aa6f4cade027ec254ce8d1661cadaebd08edd3f36ed"},
+	{pattern: "C.11", start: 46171, end: 46886, digest: "sha256:c5653ceefc92d44398f76dad117eb0630b77e99d5b01c4ccc513ef9ab62f233f"},
+	{pattern: "C.16", start: 47138, end: 47433, digest: "sha256:c017e22af795e1ec92e490662060614614444e0155a792cbd474e418bf4eadcb"},
+	{pattern: "C.18", start: 49181, end: 49405, digest: "sha256:31bdfdcdf2df6b5353308e9b0dd8308a79b60805bee50dcd3ac1b12d21d41f12"},
+	{pattern: "C.22", start: 50630, end: 51005, digest: "sha256:3c234451a2b1756d402140df4d7f5e173e0db7145e086cc74202b96c6db3e10e"},
+	{pattern: "C.22.2", start: 51488, end: 52132, digest: "sha256:41c0255acc564837cf999f297c7d86557b20fef509817b330b8ba48c43bbfb8b"},
+	{pattern: "C.28", start: 56910, end: 57776, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
+	{pattern: "C.30", start: 59141, end: 59732, digest: "sha256:6bc92805ff97431ae5124e93200965023904c64d26db0c54cb637ab3c95dfc37"},
+	{pattern: "E.11.PUR", start: 76485, end: 76756, digest: "sha256:2bf7d9e99873a6204c770c5957021641a37e9c9b66539a8f74d04d749a3a167b"},
+	{pattern: "E.17", start: 78999, end: 79603, digest: "sha256:2ac39fded54d84c54c659dd542cb869e644fe11cd40f9c770667b4d237f6c3bc"},
+	{pattern: "E.18", start: 81811, end: 82443, digest: "sha256:4f9685512c14e100afc3d577ebf562c332ac804d9b7fbf269f2b1f9a92df528b"},
+	{pattern: "E.18.NET", start: 83551, end: 83946, digest: "sha256:a8b5f818c1114282391800ee257317cc46965d0bc1bde9994c11c226bb5a7318"},
+	{pattern: "E.24.PUB", start: 87165, end: 87410, digest: "sha256:6c26ccd5f5441bf2490008c38f9b166cae1b66d3be3ea1f00c8dfc31abccad49"},
+	{pattern: "E.24.UK", start: 87411, end: 87879, digest: "sha256:c216f4d2c213bbeddf003106d10cc9d15a876b36b7022148c3ed4fabe0ddc35c"},
+	{pattern: "F.6", start: 89764, end: 90077, digest: "sha256:df4bf77abf80ee635672f8e8e6bd2a6f7269fbd825c40955530388998af147ff"},
 }
 
 type sourceConformanceSource struct {
@@ -227,9 +227,13 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "comparison_comparator_boundary",
 		pattern: "A.19.CPM",
-		// This only checks the explicit ComparatorSpec category boundary.
-		// Complete comparison admissibility also needs CN/CG specs, context,
-		// evidence pins when required, and the direct A.19.CPM predicate.
+		// This oracle-local tuple checks only that the comparison subject and
+		// explicit ComparatorSpec remain different categories, and that changing
+		// the comparator changes this partial coordinate. It is not the identity
+		// of an actual Compare application. That identity additionally binds the
+		// profile pair, CN/CG specs, claim scope and selected context slices,
+		// optional A.19 predicate, reference scheme and plane, evaluation window,
+		// policies, eligibility, and the separate result binding.
 		slots: []sourceConformanceSlotSpec{
 			{name: "ComparisonSlot", kind: "G3.Comparison"},
 			{name: "ComparatorSpecSlot", kind: "G3.ComparatorSpec"},
@@ -1118,10 +1122,10 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		assertSourceConformanceTypeAdmission(t, typedComparison)
 
 		changedComparator := fixture.reference(t, snapshot, "case18-changed-comparator", "G3.ComparatorSpec")
-		originalCoordinate := sourceConformanceComparisonCoordinate(comparison, comparatorSpec)
-		changedCoordinate := sourceConformanceComparisonCoordinate(comparison, changedComparator)
+		originalCoordinate := sourceConformancePartialComparisonCoordinate(comparison, comparatorSpec)
+		changedCoordinate := sourceConformancePartialComparisonCoordinate(comparison, changedComparator)
 		if originalCoordinate == changedCoordinate {
-			t.Fatal("changed ComparatorSpec preserved the old comparison coordinate")
+			t.Fatal("changed ComparatorSpec preserved the old partial comparison coordinate")
 		}
 	})
 
@@ -2971,7 +2975,7 @@ func sourceConformanceCoordinate(
 	return strings.Join(parts, "\x00")
 }
 
-func sourceConformanceComparisonCoordinate(
+func sourceConformancePartialComparisonCoordinate(
 	comparison ByReferenceCandidate,
 	basis ByReferenceCandidate,
 ) string {

@@ -20,12 +20,11 @@ import (
 var (
 	artifactCreateInputFile string
 	artifactCreateJSON      bool
-	artifactResumeJSON      bool
 )
 
 var artifactCmd = &cobra.Command{
 	Use:   "artifact",
-	Short: "Create artifacts or resume a reviewed DecisionRecord binding",
+	Short: "Create Haft artifacts through their dedicated effect sinks",
 }
 
 var artifactCreateCmd = &cobra.Command{
@@ -36,26 +35,12 @@ var artifactCreateCmd = &cobra.Command{
 Use ` + "`haft interface <capability> --json`" + ` to retrieve the compact
 contract before writing the input file. Supported capabilities:
 problem.frame, solution.explore, solution.compare, decision.decide, note.record.
-Decision creation follows .haft/config.yaml. The default explicit_h_decide mode
-treats the operator's explicit h-decide invocation as sufficient; the optional
-strict_cli_speech_act mode adds a semantic review and literal SpeechAct on
-/dev/tty.`,
+For decision.decide, a supported host routes one direct and unambiguous
+operator request to this internal effect sink. The command records
+host_routed_operator_request provenance and never treats a skill token,
+recommendation, quotation, or generated tool payload as authority.`,
 	Args: cobra.ExactArgs(1),
 	RunE: runArtifactCreate,
-}
-
-var artifactResumeDecisionCmd = &cobra.Command{
-	Use:   "resume-decision DECISION_ID",
-	Short: "Resume one reviewed manual DecisionRecord binding",
-	Long: `Resume one exact DecisionRecord binding by its human-facing DecisionRecord ID.
-
-This command is available only in strict_cli_speech_act mode. If the prior
-command stopped after the human SpeechAct became durable, it reuses that act
-and retries only the institutional effect. If the human act was cancelled, the
-same readable decision review is presented again on /dev/tty. No hash or nonce
-is required.`,
-	Args: cobra.ExactArgs(1),
-	RunE: runArtifactResumeDecision,
 }
 
 type artifactCreateResult struct {
@@ -88,9 +73,7 @@ type artifactCompareFileInput struct {
 func init() {
 	artifactCreateCmd.Flags().StringVar(&artifactCreateInputFile, "input-file", "", "JSON input file matching the capability contract")
 	artifactCreateCmd.Flags().BoolVar(&artifactCreateJSON, "json", false, "print structured JSON output")
-	artifactResumeDecisionCmd.Flags().BoolVar(&artifactResumeJSON, "json", false, "print structured JSON output")
 	artifactCmd.AddCommand(artifactCreateCmd)
-	artifactCmd.AddCommand(artifactResumeDecisionCmd)
 	rootCmd.AddCommand(artifactCmd)
 }
 
@@ -234,7 +217,7 @@ func runDecisionArtifactCreate(cmd *cobra.Command, inputBytes []byte) error {
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	bound, err := bindDecisionByProjectPolicy(
+	bound, err := bindDecisionFromHostRequest(
 		ctx,
 		projectRoot,
 		input,
@@ -244,43 +227,6 @@ func runDecisionArtifactCreate(cmd *cobra.Command, inputBytes []byte) error {
 	}
 	result := decisionBindingArtifactResult(bound)
 	if artifactCreateJSON {
-		return writeJSON(cmd.OutOrStdout(), result)
-	}
-	return writeArtifactCreateText(cmd.OutOrStdout(), result)
-}
-
-func runArtifactResumeDecision(cmd *cobra.Command, args []string) error {
-	projectRoot, err := findProjectRoot()
-	if err != nil {
-		return fmt.Errorf("not a haft project: %w", err)
-	}
-	config, err := project.LoadProjectConfig(projectRoot)
-	if err != nil {
-		return fmt.Errorf("load Haft project config: %w", err)
-	}
-	mode := config.EffectiveDecisionBindingMode()
-	if mode != project.DecisionBindingModeStrictCLISpeechAct {
-		return fmt.Errorf(
-			"resume-decision is available only when authority.decision_binding_mode is %q; current mode is %q and does not create the separate durable SpeechAct used by strict resume",
-			project.DecisionBindingModeStrictCLISpeechAct,
-			mode,
-		)
-	}
-	ctx := cmd.Context()
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	session, err := openManualDecisionBindingSession(ctx, projectRoot)
-	if err != nil {
-		return err
-	}
-	defer session.Close()
-	bound, err := session.Resume(ctx, args[0])
-	if err != nil {
-		return resumableDecisionBindingError(bound, err)
-	}
-	result := decisionBindingArtifactResult(bound)
-	if artifactResumeJSON {
 		return writeJSON(cmd.OutOrStdout(), result)
 	}
 	return writeArtifactCreateText(cmd.OutOrStdout(), result)

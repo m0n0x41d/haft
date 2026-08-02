@@ -272,18 +272,25 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 	}
 	targetSet := targetResult.(CandidateSet)
 	assertDefaultConcernRoles(t, targetSet)
-	systemCard := findSourceCandidateByUnitID(t, targetSet, "readme:practical_use_card:system-in-context")
-	assertNavigationExpansionGround(t, systemCard, "system")
-	assertCandidateDirectRefs(t, systemCard, []string{
+	recognitionCard := findSourceCandidateByUnitID(t, targetSet, "readme:practical_use_card:system-recognition")
+	assertNavigationExpansionGround(t, recognitionCard, "system")
+	assertCandidateDirectRefs(t, recognitionCard, []string{
+		"A.1.SCR",
 		"A.1",
-		"B.1.2",
-		"C.30",
-		"A.15.2",
-		"A.15.1",
-		"F.6",
-		"A.15.PROD",
 	})
-	for _, patternID := range []string{"C.26", "C.32.PAD", "E.18.NET"} {
+	delimitationCard := findSourceCandidateByUnitID(t, targetSet, "readme:practical_use_card:system-delimitation")
+	assertNavigationExpansionGround(t, delimitationCard, "system")
+	assertCandidateDirectRefs(t, delimitationCard, []string{
+		"B.1.2",
+		"A.14",
+		"C.13",
+		"A.1",
+		"C.11",
+		"C.32.PAD",
+		"C.2.1",
+		"A.22",
+	})
+	for _, patternID := range []string{"C.26", "C.32.PAD"} {
 		candidate := findSourceCandidateByPatternID(t, targetSet, patternID)
 		assertProjectedPatternBodyPhraseGround(t, candidate, "target system", patternID)
 	}
@@ -296,21 +303,26 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 	}
 	vignetteSet := vignetteResult.(CandidateSet)
 	assertDefaultConcernRoles(t, vignetteSet)
-	vignetteCard := findSourceCandidateByUnitID(t, vignetteSet, "readme:practical_use_card:system-in-context")
+	vignetteCard := findSourceCandidateByUnitID(t, vignetteSet, "readme:practical_use_card:system-recognition")
 	assertNavigationExpansionGround(t, vignetteCard, "system")
-	for _, patternID := range []string{"A.6.H", "A.21"} {
+	for _, patternID := range []string{"A.19.CHR", "A.21"} {
 		candidate := findSourceCandidateByPatternID(t, vignetteSet, patternID)
 		assertProjectedPatternBodyPhraseGround(t, candidate, "system vignette", patternID)
 	}
 
-	changeResult, err := Query(index, ConcernQuery{Text: "How should I change this system?"})
+	changeResult, err := Query(index, ConcernQuery{
+		Text: "Which exact entities are parts of this system and which relations only cross its boundary?",
+	})
 	if err != nil {
-		t.Fatalf("change-system concern query error: %v", err)
+		t.Fatalf("system-delimitation concern query error: %v", err)
 	}
-	changeSet := changeResult.(CandidateSet)
-	assertDefaultConcernRoles(t, changeSet)
-	if !candidateSetHasUnitID(changeSet, "readme:practical_use_card:system-in-context") {
-		t.Fatalf("change-system navigation omits SYSTEM-IN-CONTEXT: %#v", changeSet.Groups)
+	delimitationSet, ok := changeResult.(CandidateSet)
+	if !ok {
+		t.Fatalf("system-delimitation concern result = %T, want CandidateSet", changeResult)
+	}
+	assertDefaultConcernRoles(t, delimitationSet)
+	if !candidateSetHasUnitID(delimitationSet, "readme:practical_use_card:system-delimitation") {
+		t.Fatalf("system-delimitation navigation omits SYSTEM-DELIMITATION: %#v", delimitationSet.Groups)
 	}
 
 	assertConcernIncludesPattern(t, index, "causality ladder", "C.28")

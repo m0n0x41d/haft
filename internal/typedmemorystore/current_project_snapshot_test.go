@@ -548,6 +548,8 @@ func TestCurrentProjectSnapshotRejectsQueryVisibleMaterializationDrift(t *testin
 			continue
 		}
 		t.Run(fault.name, func(t *testing.T) {
+			t.Parallel()
+
 			fixture := fault.newFixture(t, "snapshot-"+fault.name)
 			receipt, err := fixture.adapter.CommitMemoryChangeSet(
 				context.Background(),

@@ -79,16 +79,176 @@ const insertRevisionV3SQL = `INSERT INTO project_profile_revisions_v3 (
 	admission_id, admission_digest, recorded_at
 ) VALUES (?, ?, 'Declared', ?, ?, ?, ?, ?, ?, ?)`
 
+const insertAdmissionV4SQL = `INSERT INTO project_profile_admissions_v4 (
+	admission_id, action_kind, project_root, authority_mode, resolution_kind,
+	profile_origin, project_binding_digest, work_input_ref, work_input_digest,
+	profile_payload_json, candidate_provenance_json, candidate_provenance_digest,
+	profile_author_role_assignment_ref, profile_author_role_assignment_digest,
+	profile_payload_digest, observed_project_basis_ref, observed_project_basis_digest,
+	work_record_ref, work_record_digest,
+	outcome_assessment_ref, outcome_assessment_digest,
+	authority_basis_ref, authority_basis_digest,
+	authority_resolution_ref, authority_resolution_digest,
+	receipt_json, receipt_digest,
+	expected_ledger_revision, ledger_revision,
+	single_use_key, admission_request_digest,
+	admission_json, admission_digest, recorded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+const insertAuthorityUseV4SQL = `INSERT INTO profile_declaration_authority_uses_v4 (
+	use_ref, use_digest, project_root, action_kind, authority_mode,
+	resolution_kind, profile_origin, project_binding_digest,
+	authority_resolution_ref, authority_resolution_digest,
+	authority_basis_ref, authority_basis_digest,
+	work_input_ref, work_input_digest,
+	single_use_key, admission_request_digest,
+	committed_admission_ref, committed_admission_digest,
+	canonical_json, consumed_at, recorded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+const insertRevisionV4SQL = `INSERT INTO project_profile_revisions_v4 (
+	project_root, ledger_revision, configured_profile_kind, profile_origin,
+	profile_payload_json, profile_payload_digest,
+	receipt_json, receipt_digest,
+	admission_id, admission_digest, recorded_at
+) VALUES (?, ?, 'Declared', ?, ?, ?, ?, ?, ?, ?, ?)`
+
+const insertAdmissionV5SQL = `INSERT INTO project_profile_admissions_v5 (
+	admission_id, action_kind, project_root, authority_mode, resolution_kind,
+	profile_origin, project_binding_digest, work_input_ref, work_input_digest,
+	profile_payload_json, candidate_provenance_json, candidate_provenance_digest,
+	profile_author_role_assignment_ref, profile_author_role_assignment_digest,
+	profile_payload_digest, observed_project_basis_ref, observed_project_basis_digest,
+	work_record_ref, work_record_digest,
+	outcome_assessment_ref, outcome_assessment_digest,
+	authority_basis_ref, authority_basis_digest,
+	authority_resolution_ref, authority_resolution_digest,
+	receipt_json, receipt_digest,
+	expected_ledger_revision, ledger_revision,
+	single_use_key, admission_request_digest,
+	admission_json, admission_digest, recorded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+const insertAuthorityUseV5SQL = `INSERT INTO profile_declaration_authority_uses_v5 (
+	use_ref, use_digest, project_root, action_kind, authority_mode,
+	resolution_kind, profile_origin, project_binding_digest,
+	authority_resolution_ref, authority_resolution_digest,
+	authority_basis_ref, authority_basis_digest,
+	work_input_ref, work_input_digest,
+	single_use_key, admission_request_digest,
+	committed_admission_ref, committed_admission_digest,
+	canonical_json, consumed_at, recorded_at
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+
+const insertRevisionV5SQL = `INSERT INTO project_profile_revisions_v5 (
+	project_root, ledger_revision, configured_profile_kind, profile_origin,
+	profile_payload_json, profile_payload_digest,
+	receipt_json, receipt_digest,
+	admission_id, admission_digest, recorded_at
+) VALUES (?, ?, 'Declared', ?, ?, ?, ?, ?, ?, ?, ?)`
+
 type writeMaterial struct {
 	prepared          projectprofile.PreparedProfileAdmissionV1
 	tentative         projectprofile.TentativeProfileAdmissionTransactionMaterialV1
 	authority         authorityMaterial
 	authorityUse      profileauthority.AuthorityUseRecord
 	v3AuthorityUse    v3AuthorityUseRecord
+	v4AuthorityUse    v4AuthorityUseRecord
+	v5AuthorityUse    v4AuthorityUseRecord
 	admissionRef      projectprofile.ProfileDeclarationAdmissionRecordRef
 	useRef            string
 	recordedAt        time.Time
 	committedRevision projectprofile.LedgerRevision
+}
+
+func newWriteMaterialV5(
+	prepared projectprofile.PreparedProfileAdmissionV1,
+	authorityValue authorityMaterial,
+) (writeMaterial, error) {
+	expectedRevision := prepared.ExpectedLedgerRevision()
+	committedRevision, err := expectedRevision.Next()
+	if err != nil {
+		return writeMaterial{}, fmt.Errorf("advance profile ledger revision: %w", err)
+	}
+	requestDigest := prepared.AdmissionRequestDigest()
+	digestSuffix := strings.TrimPrefix(requestDigest.String(), "sha256:")
+	admissionRef, err := projectprofile.NewProfileDeclarationAdmissionRecordRef(
+		"profile-admission." + digestSuffix,
+	)
+	if err != nil {
+		return writeMaterial{}, fmt.Errorf("derive admission-record ref: %w", err)
+	}
+	recordedAt := authorityValue.judgementTime.UTC().Round(0)
+	tentative, err := projectprofile.PrepareTentativeProfileAdmissionTransactionMaterialV1(
+		prepared,
+		committedRevision,
+		recordedAt,
+		admissionRef,
+	)
+	if err != nil {
+		return writeMaterial{}, fmt.Errorf("prepare tentative admission material: %w", err)
+	}
+	use, err := newV5AuthorityUseRecord(
+		"profile-authority-use:"+digestSuffix,
+		authorityValue,
+		requestDigest.String(),
+		admissionRef.String(),
+		tentative.TentativeAdmissionRecordDigest().String(),
+		recordedAt,
+	)
+	if err != nil {
+		return writeMaterial{}, err
+	}
+	return writeMaterial{
+		prepared: prepared, tentative: tentative, authority: authorityValue,
+		v5AuthorityUse: use, admissionRef: admissionRef, useRef: use.ref,
+		recordedAt: recordedAt, committedRevision: committedRevision,
+	}, nil
+}
+
+func newWriteMaterialV4(
+	prepared projectprofile.PreparedProfileAdmissionV1,
+	authorityValue authorityMaterial,
+) (writeMaterial, error) {
+	expectedRevision := prepared.ExpectedLedgerRevision()
+	committedRevision, err := expectedRevision.Next()
+	if err != nil {
+		return writeMaterial{}, fmt.Errorf("advance profile ledger revision: %w", err)
+	}
+	requestDigest := prepared.AdmissionRequestDigest()
+	digestSuffix := strings.TrimPrefix(requestDigest.String(), "sha256:")
+	admissionRef, err := projectprofile.NewProfileDeclarationAdmissionRecordRef(
+		"profile-admission." + digestSuffix,
+	)
+	if err != nil {
+		return writeMaterial{}, fmt.Errorf("derive admission-record ref: %w", err)
+	}
+	recordedAt := authorityValue.judgementTime.UTC().Round(0)
+	tentative, err := projectprofile.PrepareTentativeProfileAdmissionTransactionMaterialV1(
+		prepared,
+		committedRevision,
+		recordedAt,
+		admissionRef,
+	)
+	if err != nil {
+		return writeMaterial{}, fmt.Errorf("prepare tentative admission material: %w", err)
+	}
+	use, err := newV4AuthorityUseRecord(
+		"profile-authority-use:"+digestSuffix,
+		authorityValue,
+		requestDigest.String(),
+		admissionRef.String(),
+		tentative.TentativeAdmissionRecordDigest().String(),
+		recordedAt,
+	)
+	if err != nil {
+		return writeMaterial{}, err
+	}
+	return writeMaterial{
+		prepared: prepared, tentative: tentative, authority: authorityValue,
+		v4AuthorityUse: use, admissionRef: admissionRef, useRef: use.ref,
+		recordedAt: recordedAt, committedRevision: committedRevision,
+	}, nil
 }
 
 func newWriteMaterialV3(
@@ -427,6 +587,150 @@ func persistRevisionV3(
 	_, err := transaction.Execute(ctx, insertRevisionV3SQL, row.args())
 	if err != nil {
 		return fmt.Errorf("insert v3 project profile revision: %w", err)
+	}
+	return nil
+}
+
+func persistAdmissionV4(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	material writeMaterial,
+) error {
+	row := buildAdmissionWriteRow(material)
+	authorityValue := material.authority
+	args := []any{
+		row.admissionID, row.actionKind, row.projectRoot,
+		authorityValue.authorityMode, authorityValue.resolutionKind,
+		v4ProfileOrigin, row.projectBindingDigest,
+		authorityValue.workInputRef, authorityValue.workInputDigest,
+		row.payloadJSON, row.provenanceJSON, row.provenanceDigest,
+		row.assignmentRef, row.assignmentDigest, row.payloadDigest,
+		row.basisRef, row.basisDigest, row.workRef, row.workDigest,
+		row.assessmentRef, row.assessmentDigest,
+		row.authorityBasisRef, row.authorityBasisDigest,
+		row.authorityResolutionRef, row.authorityResolutionDigest,
+		row.receiptJSON, row.receiptDigest,
+		row.expectedRevision, row.committedRevision,
+		row.singleUseKey, row.admissionRequestDigest,
+		row.admissionJSON, row.admissionDigest, row.recordedAt,
+	}
+	_, err := transaction.Execute(ctx, insertAdmissionV4SQL, args)
+	if err != nil {
+		return fmt.Errorf("insert v4 automatic profile admission: %w", err)
+	}
+	return nil
+}
+
+func persistAuthorityUseV4(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	material writeMaterial,
+) error {
+	use := material.v4AuthorityUse
+	args := []any{
+		use.ref, use.digest, use.projectRoot, use.actionKind,
+		use.mode, use.resolutionKind, use.origin, use.projectBindingDigest,
+		use.authorityResolutionRef, use.authorityResolutionDigest,
+		use.authorityBasisRef, use.authorityBasisDigest,
+		use.workInputRef, use.workInputDigest, use.singleUseKey,
+		use.admissionRequestDigest, use.committedAdmissionRef,
+		use.committedAdmissionDigest, use.canonicalJSON,
+		use.consumedAt, use.consumedAt,
+	}
+	_, err := transaction.Execute(ctx, insertAuthorityUseV4SQL, args)
+	if err != nil {
+		return fmt.Errorf("insert v4 automatic authority use: %w", err)
+	}
+	return nil
+}
+
+func persistRevisionV4(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	material writeMaterial,
+) error {
+	row := buildRevisionWriteRow(material)
+	args := []any{
+		row.projectRoot, row.ledgerRevision, v4ProfileOrigin,
+		row.payloadJSON, row.payloadDigest, row.receiptJSON,
+		row.receiptDigest, row.admissionID, row.admissionDigest,
+		row.recordedAt,
+	}
+	_, err := transaction.Execute(ctx, insertRevisionV4SQL, args)
+	if err != nil {
+		return fmt.Errorf("insert v4 automatic project profile revision: %w", err)
+	}
+	return nil
+}
+
+func persistAdmissionV5(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	material writeMaterial,
+) error {
+	row := buildAdmissionWriteRow(material)
+	authorityValue := material.authority
+	args := []any{
+		row.admissionID, row.actionKind, row.projectRoot,
+		authorityValue.authorityMode, authorityValue.resolutionKind,
+		v5ProfileOrigin, row.projectBindingDigest,
+		authorityValue.workInputRef, authorityValue.workInputDigest,
+		row.payloadJSON, row.provenanceJSON, row.provenanceDigest,
+		row.assignmentRef, row.assignmentDigest, row.payloadDigest,
+		row.basisRef, row.basisDigest, row.workRef, row.workDigest,
+		row.assessmentRef, row.assessmentDigest,
+		row.authorityBasisRef, row.authorityBasisDigest,
+		row.authorityResolutionRef, row.authorityResolutionDigest,
+		row.receiptJSON, row.receiptDigest,
+		row.expectedRevision, row.committedRevision,
+		row.singleUseKey, row.admissionRequestDigest,
+		row.admissionJSON, row.admissionDigest, row.recordedAt,
+	}
+	_, err := transaction.Execute(ctx, insertAdmissionV5SQL, args)
+	if err != nil {
+		return fmt.Errorf("insert v5 host-routed profile admission: %w", err)
+	}
+	return nil
+}
+
+func persistAuthorityUseV5(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	material writeMaterial,
+) error {
+	use := material.v5AuthorityUse
+	args := []any{
+		use.ref, use.digest, use.projectRoot, use.actionKind,
+		use.mode, use.resolutionKind, use.origin, use.projectBindingDigest,
+		use.authorityResolutionRef, use.authorityResolutionDigest,
+		use.authorityBasisRef, use.authorityBasisDigest,
+		use.workInputRef, use.workInputDigest, use.singleUseKey,
+		use.admissionRequestDigest, use.committedAdmissionRef,
+		use.committedAdmissionDigest, use.canonicalJSON,
+		use.consumedAt, use.consumedAt,
+	}
+	_, err := transaction.Execute(ctx, insertAuthorityUseV5SQL, args)
+	if err != nil {
+		return fmt.Errorf("insert v5 host-routed authority use: %w", err)
+	}
+	return nil
+}
+
+func persistRevisionV5(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	material writeMaterial,
+) error {
+	row := buildRevisionWriteRow(material)
+	args := []any{
+		row.projectRoot, row.ledgerRevision, v5ProfileOrigin,
+		row.payloadJSON, row.payloadDigest, row.receiptJSON,
+		row.receiptDigest, row.admissionID, row.admissionDigest,
+		row.recordedAt,
+	}
+	_, err := transaction.Execute(ctx, insertRevisionV5SQL, args)
+	if err != nil {
+		return fmt.Errorf("insert v5 host-routed project profile revision: %w", err)
 	}
 	return nil
 }

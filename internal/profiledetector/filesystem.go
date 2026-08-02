@@ -11,9 +11,17 @@ import (
 const scanFileLimit = 100000
 
 var ignoredDirectories = []string{
+	".agents",
+	".claude",
+	".codex",
+	".cursor",
+	".gemini",
 	".git",
+	".github",
 	".haft",
+	".opencode",
 	".venv",
+	".vscode",
 	"build",
 	"dist",
 	"node_modules",
@@ -32,7 +40,7 @@ func Inspect(projectRoot string) (Suggestion, error) {
 	if err != nil {
 		return Suggestion{}, err
 	}
-	snapshot, err := NewSnapshot(root, files, scanned, truncated)
+	snapshot, err := NewObservedSnapshot(root, files, scanned, truncated)
 	if err != nil {
 		return Suggestion{}, err
 	}
@@ -59,8 +67,8 @@ func canonicalPhysicalRoot(raw string) (string, error) {
 	return physical, nil
 }
 
-func inspectRelativeFiles(root string) ([]string, int, bool, error) {
-	files := []string{}
+func inspectRelativeFiles(root string) ([]ObservedFile, int, bool, error) {
+	files := []ObservedFile{}
 	scanned := 0
 	truncated := false
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, walkErr error) error {
@@ -92,7 +100,14 @@ func inspectRelativeFiles(root string) ([]string, int, bool, error) {
 		if err != nil {
 			return err
 		}
-		files = append(files, filepath.ToSlash(relative))
+		observed, err := NewObservedFile(
+			filepath.ToSlash(relative),
+			info.Size(),
+		)
+		if err != nil {
+			return err
+		}
+		files = append(files, observed)
 		return nil
 	})
 	if err != nil {

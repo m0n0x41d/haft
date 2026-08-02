@@ -94,6 +94,58 @@ This file belongs to the operator.
 	}
 }
 
+func TestPublicLegacyHaftSkillRecognitionRequiresHostToolNamespace(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	path := filepath.Join(
+		root,
+		"h-compare",
+		"SKILL.md",
+	)
+	grokAdapter, err := currentSkillAdapterForPlatform("grok")
+	if err != nil {
+		t.Fatalf("build Grok skill adapter: %v", err)
+	}
+	expected, err := grokAdapter.rewrite.Apply(embeddedHCompareSkill)
+	if err != nil {
+		t.Fatalf("render Grok skill: %v", err)
+	}
+	output, err := initplanning.NewRenderedOutput(
+		path,
+		initplanning.ComponentSkills,
+		expected,
+		0o644,
+	)
+	if err != nil {
+		t.Fatalf("NewRenderedOutput: %v", err)
+	}
+	legacyGrok := []byte(`---
+name: h-compare
+description: Old Grok-rendered Haft comparison skill.
+---
+
+# h-compare — Old Haft comparison
+
+Use haft__haft_query for Haft project state.
+`)
+	legacyAntigravity := []byte(`---
+name: h-compare
+description: Old Antigravity-rendered Haft comparison skill.
+---
+
+# h-compare — Old Haft comparison
+
+Use haft_query for Haft project state.
+`)
+	if !isPublicLegacyHaftSkill(output, legacyGrok) {
+		t.Fatal("Grok-rendered Haft legacy skill was not recognized")
+	}
+	if isPublicLegacyHaftSkill(output, legacyAntigravity) {
+		t.Fatal("different host tool namespace was accepted for Grok")
+	}
+}
+
 func TestPublicInitReplacesLegacyHaftSkillForClaudeAndCodex(
 	t *testing.T,
 ) {
@@ -185,6 +237,99 @@ func TestPublicInitReplacesLegacyHaftSkillForClaudeAndCodex(
 		"Haft initialization complete",
 	) {
 		t.Fatalf("legacy replacement output = %q", output.String())
+	}
+}
+
+func TestPublicInitReplacesPreMarkerGrokSkill(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	homeRoot := t.TempDir()
+	physicalHomeRoot, err := filepath.EvalSymlinks(homeRoot)
+	if err != nil {
+		t.Fatalf("resolve physical home root: %v", err)
+	}
+	restoreDirectory := changeInitTestDirectory(t, projectRoot)
+	defer restoreDirectory()
+	restoreFlags := captureInitHostFlagState()
+	defer restoreFlags.apply()
+	clearInitHostFlags()
+	initGrok = true
+	t.Setenv("HOME", physicalHomeRoot)
+
+	grokAdapter, err := currentSkillAdapterForPlatform("grok")
+	if err != nil {
+		t.Fatalf("build Grok skill adapter: %v", err)
+	}
+	expectedSkill, err := grokAdapter.rewrite.Apply(
+		embeddedHCompareSkill,
+	)
+	if err != nil {
+		t.Fatalf("render current Grok skill: %v", err)
+	}
+	legacySkill := []byte(`---
+name: h-compare
+description: Old Grok-rendered Haft comparison skill.
+---
+
+# h-compare — Old Haft comparison
+
+Use haft__haft_query for Haft project state.
+`)
+	if publicHaftSkillContractSourcePattern.Match(legacySkill) {
+		t.Fatal("Grok legacy fixture unexpectedly has a contract marker")
+	}
+	skillPath := filepath.Join(
+		physicalHomeRoot,
+		".grok",
+		"skills",
+		"h-compare",
+		"SKILL.md",
+	)
+	if err := os.MkdirAll(filepath.Dir(skillPath), 0o755); err != nil {
+		t.Fatalf("create legacy Grok skill directory: %v", err)
+	}
+	if err := os.WriteFile(skillPath, legacySkill, 0o644); err != nil {
+		t.Fatalf("write legacy Grok skill: %v", err)
+	}
+
+	output := &bytes.Buffer{}
+	command := newPublicInitTestCommand()
+	command.SetOut(output)
+	var grok bool
+	command.Flags().BoolVar(&grok, "grok", false, "")
+	if err := command.Flags().Set("grok", "true"); err != nil {
+		t.Fatalf("set Grok flag: %v", err)
+	}
+	if err := runPublicInit(command, nil); err != nil {
+		t.Fatalf("replace legacy Grok skill: %v", err)
+	}
+
+	updated, err := os.ReadFile(skillPath)
+	if err != nil {
+		t.Fatalf("read updated Grok skill: %v", err)
+	}
+	if !bytes.Equal(updated, expectedSkill) {
+		t.Fatal("legacy Grok skill was not replaced by the current projection")
+	}
+	for _, path := range []string{
+		filepath.Join(projectRoot, ".grok", "config.toml"),
+		filepath.Join(
+			physicalHomeRoot,
+			".haft",
+			"host-installations",
+			"grok.user.json",
+		),
+	} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("expected applied Grok path %s: %v", path, err)
+		}
+	}
+	if !strings.Contains(
+		output.String(),
+		"Haft initialization complete",
+	) {
+		t.Fatalf("Grok legacy replacement output = %q", output.String())
 	}
 }
 

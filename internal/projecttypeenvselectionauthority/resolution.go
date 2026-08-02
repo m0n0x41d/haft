@@ -1,5 +1,9 @@
 package projecttypeenvselectionauthority
 
+// This file verifies pre-schema-56 resolution carriers for historical reads.
+// Current TypeEnv selection resolves only HostRoutedSelectionResolution and
+// cannot persist either legacy resolution variant represented below.
+
 import (
 	"bytes"
 	"encoding/json"

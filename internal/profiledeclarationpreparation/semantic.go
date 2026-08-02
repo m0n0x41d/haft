@@ -93,10 +93,36 @@ func NewPlan(
 	if !input.Valid() {
 		return Plan{}, fmt.Errorf("profile declaration preparation requires an exact reviewed Work input")
 	}
-	if policy.Mode() != ModeExplicitHOnboard {
+	if policy.Mode() != ModeHostRoutedOperatorRequest &&
+		policy.Mode() != ModeAutomaticSupportedSingleton {
 		return Plan{}, fmt.Errorf(
-			"strict_profile_authority_not_available: native v3 strict profile authority is not implemented",
+			"profile declaration provenance policy is unsupported",
 		)
+	}
+	if policy.Mode() == ModeHostRoutedOperatorRequest {
+		request, ok := policy.OperatorRequest()
+		if !ok || !request.MatchesPayload(input.CanonicalJSON()) {
+			return Plan{}, fmt.Errorf(
+				"host-routed profile request does not bind the exact reviewed WorkInput",
+			)
+		}
+	}
+	if policy.Mode() == ModeAutomaticSupportedSingleton {
+		detectorVersion,
+			policyVersion,
+			suggestionRef,
+			observationDigest,
+			ok := policy.AutomaticProvenance()
+		if !ok ||
+			input.UsesManualScopeBasis() ||
+			input.DetectorVersion() != detectorVersion ||
+			input.PolicyVersion() != policyVersion ||
+			input.SuggestionRef() != suggestionRef ||
+			input.ObservationDigest() != observationDigest {
+			return Plan{}, fmt.Errorf(
+				"automatic profile policy does not match the exact detector WorkInput",
+			)
+		}
 	}
 	root, err := projectprofile.NewProjectRootV1(projectRoot)
 	if err != nil {

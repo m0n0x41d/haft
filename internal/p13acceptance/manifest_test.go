@@ -71,7 +71,6 @@ var requiredPrivateP13BasisPaths = []string{
 	".agents/skills",
 	".context/current-plan-issue-report.md",
 	p13PlanRelativePath,
-	".haft/config.yaml",
 	".haft/project-profile.yaml",
 	".haft/project.yaml",
 }
@@ -1228,7 +1227,6 @@ func validateIdentitySpec(spec identitySpec) error {
 	wantFiles := []string{
 		".context/current-plan-issue-report.md",
 		p13PlanRelativePath,
-		".haft/config.yaml",
 		".haft/project-profile.yaml",
 		".haft/project.yaml",
 		"AGENTS.md",
@@ -2003,7 +2001,7 @@ func exactGateContract() []gateContract {
 			ID:           "G0",
 			Title:        "Authority and specification",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:ca55d7e091e52f8fddb7c42e7ca12a9392e91b9fad9ce1f3821cef275c12aac1",
+			ClaimsDigest: "sha256:0c83c8d33fcc12994c29670081aea39f01e7271944d67c029cfda58e154791b1",
 			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_test"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/specmigrationv2::TestMigrationEffectSagaArchivesExactBytesWritesReceiptAndReplays",
@@ -2011,7 +2009,7 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/authority::TestEvaluateReceiptRejectsModelSuppliedArguments",
 				"github.com/m0n0x41d/haft/internal/decisionbinding::TestDecisionBindingServicePersistsExactTwoPhaseClosure",
 				"github.com/m0n0x41d/haft/internal/decisionbinding::TestDecisionContextPolicyRejectsProfileAndMigrationCrossBinding",
-				"github.com/m0n0x41d/haft/internal/cli::TestArtifactCreateCLIUnknownDecisionBindingModeWritesNothing",
+				"github.com/m0n0x41d/haft/internal/cli::TestArtifactCreateCLIUsesHostRoutedDecisionBinder",
 				"github.com/m0n0x41d/haft/internal/cli::TestDispatchToolRejectsMCPBindingDecisionWithoutCreatingArtifact",
 			},
 		},
@@ -2019,11 +2017,11 @@ func exactGateContract() []gateContract {
 			ID:           "G0P",
 			Title:        "Project-profile and applicability",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:869752aee38d916b36c1f34d7505e3482c7321468800fe5cf7d0e009a6363df2",
+			ClaimsDigest: "sha256:a5148c129f7830f0a21585b6148e7186c3ac715659618870ed4d303ff66367e2",
 			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/profileonboarding::TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart",
-				"github.com/m0n0x41d/haft/internal/profileadmission/sqlite::TestResolveCurrentWithinRehashesV3AuthorityUseInsideCallerSnapshot",
+				"github.com/m0n0x41d/haft/internal/profileadmission/sqlite::TestResolveCurrentWithinRehashesV5AuthorityUseInsideCallerSnapshot",
 				"github.com/m0n0x41d/haft/internal/profileadmission/sqlite::TestCapabilityApplicabilityMatrixResolverIsUnderdeterminedWithoutAdmission",
 				"github.com/m0n0x41d/haft/internal/projectprofile::TestAdmittedScopeEntityRelationMakesTargetSystemSpecApplicable",
 				"github.com/m0n0x41d/haft/internal/profileprojection::TestHistoricalV2OpenDebtResolvesThroughV3TaggedEvent",

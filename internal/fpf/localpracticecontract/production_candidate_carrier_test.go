@@ -8,14 +8,19 @@ import (
 	"strings"
 	"testing"
 
+	baseartifacts "github.com/m0n0x41d/haft/data/haft/base-typeenv/artifacts"
 	"github.com/m0n0x41d/haft/internal/fpf/localpractice"
 	"github.com/m0n0x41d/haft/internal/fpf/projecttypeenv"
 	"github.com/m0n0x41d/haft/internal/fpf/typeenv"
 	"github.com/m0n0x41d/haft/internal/fpf/typeenvsql"
+	"github.com/m0n0x41d/haft/internal/typedmemory"
 	_ "modernc.org/sqlite"
 )
 
-const typedMemoryCandidateCarrierPath = "../../../data/haft/local-practice/typed-memory/candidates/1.4.0.yaml"
+const (
+	typedMemoryCandidateCarrierPath           = "../../../data/haft/local-practice/typed-memory/candidates/1.5.0.yaml"
+	historicalTypedMemoryCandidateCarrierPath = "../../../data/haft/local-practice/typed-memory/candidates/1.4.0.yaml"
+)
 
 func TestTypedMemoryCandidateCarrierParsesCompilesAndSeals(t *testing.T) {
 	source := readTypedMemoryCandidateCarrier(t)
@@ -33,7 +38,51 @@ func TestTypedMemoryCandidateCarrierParsesCompilesAndSeals(t *testing.T) {
 	if got := parsed.Carrier().BaseTypeEnvRef().Value(); got != baseRef.String() {
 		t.Fatalf("candidate base_type_env_ref = %q, current embedded B = %q", got, baseRef.String())
 	}
+	assertTypedMemoryCandidateCompilesAndSeals(
+		t,
+		parsed,
+		base,
+		"haft.typed-memory@1.5.0",
+	)
+}
 
+func TestHistoricalTypedMemoryCandidateV1_4ReplaysAgainstArchivedBase(t *testing.T) {
+	source, err := os.ReadFile(historicalTypedMemoryCandidateCarrierPath)
+	if err != nil {
+		t.Fatalf("read historical typed-memory candidate carrier: %v", err)
+	}
+	parsed, err := localpractice.Parse(source)
+	if err != nil {
+		t.Fatalf("parse historical typed-memory candidate carrier: %v", err)
+	}
+	assertTypedMemoryCandidateSourceContract(t, parsed)
+	ref, err := typedmemory.ParseTypeEnvRef(parsed.Carrier().BaseTypeEnvRef().Value())
+	if err != nil {
+		t.Fatalf("parse historical candidate Base TypeEnv ref: %v", err)
+	}
+	base, err := baseartifacts.LoadExact(ref)
+	if err != nil {
+		t.Fatalf("load archived historical Base TypeEnv: %v", err)
+	}
+	assertTypedMemoryCandidateCompilesAndSeals(
+		t,
+		parsed,
+		base,
+		"haft.typed-memory@1.4.0",
+	)
+}
+
+func assertTypedMemoryCandidateCompilesAndSeals(
+	t *testing.T,
+	parsed localpractice.ParsedCarrier,
+	base typeenv.BaseTypeEnvArtifact,
+	wantCoordinate string,
+) {
+	t.Helper()
+	baseRef, exists := base.TypeEnvRef()
+	if !exists {
+		t.Fatal("candidate Base TypeEnv has no executable TypeEnvRef")
+	}
 	resolution := projecttypeenv.ResolveManifestGraph(
 		base,
 		[]localpractice.ParsedCarrier{parsed},
@@ -60,8 +109,12 @@ func TestTypedMemoryCandidateCarrierParsesCompilesAndSeals(t *testing.T) {
 	if err := artifact.Verify(); err != nil {
 		t.Fatalf("verify candidate E artifact: %v", err)
 	}
-	if artifact.ManifestCoordinate().String() != "haft.typed-memory@1.4.0" {
-		t.Fatalf("candidate E coordinate = %q", artifact.ManifestCoordinate().String())
+	if artifact.ManifestCoordinate().String() != wantCoordinate {
+		t.Fatalf(
+			"candidate E coordinate = %q, want %q",
+			artifact.ManifestCoordinate().String(),
+			wantCoordinate,
+		)
 	}
 	if artifact.IR().BaseTypeEnvRef() != baseRef {
 		t.Fatal("sealed candidate E lost its exact B reference")

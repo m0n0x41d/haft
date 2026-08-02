@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 
 	"github.com/m0n0x41d/haft/internal/initplanning"
 )
@@ -13,6 +14,26 @@ import (
 var publicHaftSkillContractSourcePattern = regexp.MustCompile(
 	`(?m)^<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:[0-9a-f]{64} -->$`,
 )
+
+var publicHaftSkillToolNamespaces = []string{
+	"mcp__haft__haft_",
+	"haft__haft_",
+	"haft_",
+}
+
+var publicHaftSkillToolNames = []string{
+	"problem",
+	"solution",
+	"decision",
+	"query",
+	"note",
+	"refresh",
+	"commission",
+	"spec_section",
+	"onboard",
+	"entity",
+	"method",
+}
 
 func currentPublicTakeoverDigest(
 	output initplanning.RenderedOutput,
@@ -89,10 +110,51 @@ func isPublicLegacyHaftSkill(
 	if publicHaftSkillContractSourcePattern.Match(observed) {
 		return true
 	}
-	usesHaftMCP := bytes.Contains(
+	usesHaftToolNamespace := sharesPublicHaftToolNamespace(
+		output.Content(),
 		observed,
-		[]byte("mcp__haft__haft_"),
 	)
 	namesHaft := bytes.Contains(observed, []byte("Haft"))
-	return usesHaftMCP && namesHaft
+	return usesHaftToolNamespace && namesHaft
+}
+
+func sharesPublicHaftToolNamespace(
+	expected []byte,
+	observed []byte,
+) bool {
+	expectedNamespace := publicHaftSkillToolNamespace(expected)
+	observedNamespace := publicHaftSkillToolNamespace(observed)
+	hasExpectedNamespace := expectedNamespace != ""
+	usesExpectedNamespace := observedNamespace == expectedNamespace
+	return hasExpectedNamespace && usesExpectedNamespace
+}
+
+func publicHaftSkillToolNamespace(content []byte) string {
+	namespaceIndex := slices.IndexFunc(
+		publicHaftSkillToolNamespaces,
+		func(namespace string) bool {
+			return publicHaftSkillUsesToolNamespace(
+				content,
+				namespace,
+			)
+		},
+	)
+	if namespaceIndex < 0 {
+		return ""
+	}
+	return publicHaftSkillToolNamespaces[namespaceIndex]
+}
+
+func publicHaftSkillUsesToolNamespace(
+	content []byte,
+	namespace string,
+) bool {
+	return slices.ContainsFunc(
+		publicHaftSkillToolNames,
+		func(toolName string) bool {
+			signatureText := namespace + toolName
+			signature := []byte(signatureText)
+			return bytes.Contains(content, signature)
+		},
+	)
 }

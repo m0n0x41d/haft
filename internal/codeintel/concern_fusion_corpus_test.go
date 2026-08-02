@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	haftdb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 type hg6CorpusManifest struct {
@@ -35,7 +35,7 @@ func TestConcernFusionMeetsFrozenReasoningToCodeCorpus(t *testing.T) {
 	}
 	manifest := readHG6CorpusManifest(t, projectRoot)
 	fixtureRoot := copyHG6SourceCorpus(t, projectRoot)
-	database, err := haftdb.NewStore(
+	database, err := kerneldbfixture.OpenCurrentStore(
 		filepath.Join(t.TempDir(), "hg6-corpus.db"),
 	)
 	if err != nil {
@@ -202,7 +202,7 @@ func BenchmarkConcernFusionFrozenReasoningCorpus(b *testing.B) {
 	}
 	manifest := readHG6CorpusManifest(b, projectRoot)
 	fixtureRoot := copyHG6SourceCorpus(b, projectRoot)
-	database, err := haftdb.NewStore(
+	database, err := kerneldbfixture.OpenCurrentStore(
 		filepath.Join(b.TempDir(), "hg6-benchmark.db"),
 	)
 	if err != nil {

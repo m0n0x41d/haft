@@ -163,7 +163,7 @@ func TestGenesisServiceSameKeyDifferentContentConflictsWithoutWrites(
 		GenesisSelectionInput{
 			Request:   fixture.request,
 			Content:   conflictingContent,
-			Authority: NewDedicatedCLIInvocation(),
+			Authority: hostRoutedIngressForTest(t, fixture.request, conflictingContent),
 		},
 	)
 	if err != nil {
@@ -438,7 +438,7 @@ func genesisSelectionInput(
 	return GenesisSelectionInput{
 		Request:   fixture.request,
 		Content:   fixture.content,
-		Authority: NewDedicatedCLIInvocation(),
+		Authority: hostRoutedIngressForFixture(fixture.request, fixture.content),
 	}
 }
 

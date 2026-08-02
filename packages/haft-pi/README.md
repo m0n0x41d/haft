@@ -10,7 +10,7 @@ kernel-budgeted Haft governor block into Pi's `before_agent_start` system
 prompt hook.
 
 Contract truth for the mirrored surfaces is explicit: source-native FPF Query,
-project-profile onboarding, structured-memory enablement, neighborhood, and
+project-profile onboarding, automatic project-memory initialization, neighborhood, and
 recall are **V9 CONTRACT** capabilities. Source, schema, skill, or local-test
 presence is not installed-runtime proof and does not establish Pi host parity.
 A readiness claim requires current **EXACT-CANDIDATE EVIDENCE** from P14 tied

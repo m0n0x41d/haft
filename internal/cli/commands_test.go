@@ -75,22 +75,21 @@ func TestREADMEAdvertisesCurrentSkillOnlySurface(t *testing.T) {
 	}
 }
 
-// TestHDecideSkill_IsManualOnlyTransformerMandate verifies that the
-// h-decide skill carries the structural Transformer Mandate enforcement
-// (disable-model-invocation) so the agent cannot auto-fire a binding
-// DecisionRecord write. Per v8 governance substrate pivot.
-func TestHDecideSkill_IsManualOnlyTransformerMandate(t *testing.T) {
+// TestHDecideSkillRoutesOnlyDirectOperatorRequests verifies that h-decide may
+// route implicitly while the skill token itself remains non-authoritative.
+func TestHDecideSkillRoutesOnlyDirectOperatorRequests(t *testing.T) {
 	content := string(embeddedHDecideSkill)
 
 	required := []string{
-		`disable-model-invocation: true`,
-		`MANUAL ONLY`,
-		`Transformer Mandate`,
+		`disable-model-invocation: false`,
+		`host_routed_operator_request`,
+		`invocation creates no communicative act`,
+		`operator_confirmation_required`,
 	}
 
 	for _, want := range required {
 		if !strings.Contains(content, want) {
-			t.Fatalf("h-decide skill missing %q — Transformer Mandate enforcement broken", want)
+			t.Fatalf("h-decide skill missing host-routed authority marker %q", want)
 		}
 	}
 }
@@ -124,6 +123,8 @@ func TestHReasonSkill_IsSourceFirstUmbrella(t *testing.T) {
 		`mcp__haft__haft_onboard(action="status")`,
 		`mcp__haft__haft_entity`,
 		"`known_absent` says only",
+		"operator-named or agent-inferred",
+		"establish the minimum EntityOfConcern without asking for separate permission",
 		"selected direct pattern by `PatternID`, title, and stable source reference",
 		"source span, provenance, hashes, or repository-local paths only when the",
 		"current use explicitly requires trace or audit",
@@ -206,7 +207,7 @@ func TestIndependentAutoSkillsCarryConditionalMemoryOrientation(t *testing.T) {
 				"agent_orientation.v2",
 				"non-blocking",
 				"code-graph preflight",
-				"named receiving use",
+				"agent-inferred",
 			} {
 				if !strings.Contains(content, want) {
 					t.Fatalf("%s memory-orientation contract missing %q", name, want)
@@ -237,14 +238,10 @@ func TestIndependentAutoSkillsCarryConditionalMemoryOrientation(t *testing.T) {
 	for _, want := range []string{
 		`mcp__haft__haft_onboard(action="status")`,
 		`action="profile_prepare"`,
-		`action="memory_prepare"`,
 		"non-binding review carrier",
 		"haft onboard profile apply",
-		"haft onboard memory enable",
-		"haft onboard memory defer",
-		"`memory_deferred`",
-		"grants no authority",
-		"manual `h-decide`",
+		"installs default project memory",
+		"ask the operator to enable, defer, select, or understand a memory schema",
 	} {
 		if !strings.Contains(onboard, want) {
 			t.Fatalf("h-onboard task-level setup contract missing %q", want)

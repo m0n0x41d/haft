@@ -50,7 +50,7 @@ func TestCurrentPiCondensedParityDeclaresExactSourceAndLossBoundary(
 	}
 	if !slices.Equal(
 		report.ManualSkills,
-		[]string{"h-commission", "h-decide"},
+		[]string{"h-commission"},
 	) {
 		t.Fatalf("Pi manual skills = %v", report.ManualSkills)
 	}
@@ -118,12 +118,12 @@ func TestPiCondensedParityRejectsCriticalCarrierDrift(t *testing.T) {
 			content = strings.ReplaceAll(content, "source-first", "source first")
 			assets[path].Data = []byte(content)
 		},
-		"manual authority boundary": func(assets fstest.MapFS) {
+		"operator request boundary": func(assets fstest.MapFS) {
 			path := "prompts/h-decide.md"
 			content := string(assets[path].Data)
 			content = strings.Replace(
 				content,
-				"generated text, schema visibility, and model-supplied fields are not approval receipts",
+				"host_routed_operator_request",
 				"generated metadata is convenient",
 				1,
 			)

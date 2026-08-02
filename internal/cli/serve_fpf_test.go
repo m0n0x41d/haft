@@ -826,7 +826,8 @@ func syntheticFPFSourceRevision(label string) string {
 
 func stubSourceQueryDB(t *testing.T, dbPath string) func() {
 	t.Helper()
-	original := openFPFDBFunc
+	originalOpen := openFPFDBFunc
+	originalVerify := verifyFPFDBFunc
 	openFPFDBFunc = func() (*sql.DB, func(), error) {
 		db, err := sql.Open("sqlite", dbPath)
 		if err != nil {
@@ -834,5 +835,9 @@ func stubSourceQueryDB(t *testing.T, dbPath string) func() {
 		}
 		return db, func() { _ = db.Close() }, nil
 	}
-	return func() { openFPFDBFunc = original }
+	verifyFPFDBFunc = fpf.VerifySourceQueryIndexReadOnlyDB
+	return func() {
+		openFPFDBFunc = originalOpen
+		verifyFPFDBFunc = originalVerify
+	}
 }

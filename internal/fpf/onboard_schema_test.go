@@ -36,13 +36,12 @@ func TestHaftOnboardSchemaIsClosedReadableActionUnion(t *testing.T) {
 	for _, action := range []string{
 		haftOnboardStatusAction,
 		haftOnboardProfilePrepareAction,
-		haftOnboardMemoryPrepareAction,
 	} {
 		if !actions[action] {
 			t.Fatalf("haft_onboard action %q is missing", action)
 		}
 	}
-	if len(actions) != 3 {
+	if len(actions) != 2 {
 		t.Fatalf("haft_onboard actions = %#v", actions)
 	}
 }
@@ -197,16 +196,13 @@ func TestHaftOnboardCatalogPreservesEffectsAndClosedRecovery(t *testing.T) {
 	}
 	for _, fragment := range []string{
 		"status never writes",
-		"never apply a profile",
-		"grant authority",
+		"never applies a profile",
+		"grants authority",
 		"onboarding_required",
 		"needs_scope_review",
 		"profile_review_ready",
 		"profile_review_prepared",
-		"memory_review_prepared",
-		"memory_deferred",
-		"Enable structured project memory",
-		"Not now",
+		"initialized automatically by haft init",
 		"restart_required",
 		"repository_inspected",
 		"authority_granted",
@@ -217,6 +213,17 @@ func TestHaftOnboardCatalogPreservesEffectsAndClosedRecovery(t *testing.T) {
 				fragment,
 				encoded,
 			)
+		}
+	}
+	for _, obsolete := range []string{
+		"memory_prepare",
+		"memory_review_ready",
+		"memory_deferred",
+		"Enable structured project memory",
+		"Not now",
+	} {
+		if strings.Contains(string(encoded), obsolete) {
+			t.Fatalf("catalog onboarding schema retained obsolete choice %q:\n%s", obsolete, encoded)
 		}
 	}
 }

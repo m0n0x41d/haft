@@ -8,7 +8,7 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:e02060d2589a8e2d28dcf0acc7111ebea4e0629ac7ff5cd096adb2c688764735 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
 
 # h-verify — Verify a decision still holds
 
@@ -37,7 +37,8 @@ with the exact artifact/evidence surfaces available to this verification and
 do not invent a profile, entity, artifact, or human gate. This read does not
 replace code-graph preflight before a later code edit. Never persist typed
 memory merely because a read failed; persistence requires an explicit operator
-save request or a named receiving use with request provenance.
+save request or a concrete operator-named or agent-inferred receiving use
+supplied by current Work, with request provenance.
 
 ## Step 1 — Identify the decision
 
@@ -94,8 +95,8 @@ whether claims, predictions, observables, or thresholds exist. Do not read the
 project SQLite database directly while kernel exact recovery is available.
 
 If predictions are empty (the decision was recorded tactical with `_skips: ["predictions"]`), there's nothing to measure — report that to operator and recommend either:
-- record a replacement with testable claims through explicit manual
-  `/h-decide`, then supersede the old record with
+- ask the operator for a direct choice of a replacement with testable claims,
+  route it through `/h-decide`, then supersede the old record with
   `haft decision supersede <old-dec-...> --new <new-dec-...> --reason "..."`
 - Just attach evidence directly via `haft_decision(action="evidence", ...)`
 
@@ -211,7 +212,7 @@ operator but do not over-read a sparse profile.
 If verification reveals:
 - **Evidence decayed** (valid_until passed): `mcp__haft__haft_refresh(action="waive", artifact_ref=..., evidence="<new evidence>", new_valid_until="...")` to extend validity, OR `action=reopen` to start a new problem cycle
 - **Drift detected** (affected_files changed since baseline): classify drift as cosmetic / incidental / material via `haft_query(action="status")` and decide whether to re-baseline or reopen
-- **Verdict failed**: `mcp__haft__haft_refresh(action="supersede", artifact_ref=<old>, new_artifact_ref=<replacement>)` after recording the replacement decision via `/h-decide`
+- **Verdict failed**: `mcp__haft__haft_refresh(action="supersede", artifact_ref=<old>, new_artifact_ref=<replacement>)` after the operator directly requests and `/h-decide` routes the replacement decision
 
 ## Step 8 — Present to operator
 

@@ -57,7 +57,8 @@ func applyProfileAwareReadinessReminder(
 		return result + "\n\n" +
 			"── Project profile ─────────────\n" +
 			cue + "\n" +
-			"Use /h-onboard to inspect or declare the missing basis.\n" +
+			"This does not block the completed operation and requires no action now.\n" +
+			"Use /h-onboard only when onboarding or profile-dependent capability review is the current question.\n" +
 			"────────────────────────────────"
 	}
 	applicability, resolved := readiness.resolvedApplicability()

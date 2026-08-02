@@ -43,8 +43,8 @@ var embeddedHNoteSkill []byte
 var embeddedHCommissionSkill []byte
 
 // skillManifest declares a haft skill to be installed by `haft init`.
-// AllowImplicit is the codex policy gate — false means the skill is
-// explicit-only (e.g., h-decide manual-only per Transformer Mandate).
+// AllowImplicit is the host routing policy. A routable skill may interpret a
+// direct operator request; routability is never itself an authority receipt.
 type skillManifest struct {
 	Name          string
 	Content       []byte
@@ -61,8 +61,8 @@ var allSkills = []skillManifest{
 	// it does not impose a project sequence.
 	{Name: "h-reason", Content: embeddedHReasonSkill, AllowImplicit: true},
 
-	// Manual-only Transformer Mandate skills (cannot auto-fire)
-	{Name: "h-decide", Content: embeddedHDecideSkill, AllowImplicit: false},
+	// h-decide is a routable interpreter for direct operator choice requests.
+	{Name: "h-decide", Content: embeddedHDecideSkill, AllowImplicit: true},
 
 	// Independent reasoning capabilities; none implies the next.
 	{Name: "h-frame", Content: embeddedHFrameSkill, AllowImplicit: true},
@@ -77,7 +77,7 @@ var allSkills = []skillManifest{
 	{Name: "h-onboard", Content: embeddedHOnboardSkill, AllowImplicit: true},
 	{Name: "h-note", Content: embeddedHNoteSkill, AllowImplicit: true},
 
-	// Manual-only sacred skill (execution authority — Transformer Mandate)
+	// Execution-authority grants remain manual-only.
 	{Name: "h-commission", Content: embeddedHCommissionSkill, AllowImplicit: false},
 }
 

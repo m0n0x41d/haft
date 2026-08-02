@@ -108,7 +108,7 @@ func (*entityRuntimeSnapshot) ResolveReconciliationBasis(
 	return nil
 }
 
-func TestEntityEstablishmentRuntimeReturnsEnablementChoiceWithoutWrite(
+func TestEntityEstablishmentRuntimeRoutesMissingDefaultMemoryToInitRepair(
 	t *testing.T,
 ) {
 	t.Parallel()
@@ -129,7 +129,7 @@ func TestEntityEstablishmentRuntimeReturnsEnablementChoiceWithoutWrite(
 	if err != nil {
 		t.Fatalf("Establish() error = %v", err)
 	}
-	if result.Kind() != EntityEnablementChoiceRequiredResult ||
+	if result.Kind() != EntityOnboardingRequiredResult ||
 		store.commitCalls != 0 ||
 		store.replayCalls != 1 {
 		t.Fatalf(

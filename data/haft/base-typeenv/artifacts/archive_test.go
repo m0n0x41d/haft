@@ -31,6 +31,13 @@ func TestHistoricalArtifactsAreExactAndPrivatelyDecoded(t *testing.T) {
 			sourceRevision: historicalV4SourceRevision,
 			canonicalSize:  139574,
 		},
+		{
+			name:           "v5",
+			ref:            HistoricalV5Ref,
+			compilerSchema: typeenv.BaseTypeEnvCompilerSchemaV5,
+			sourceRevision: historicalV5SourceRevision,
+			canonicalSize:  133848,
+		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

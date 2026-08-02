@@ -6,6 +6,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/fpf/projecttypeenv"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/projectidentity"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselection"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
@@ -318,13 +319,14 @@ func decodePredecessor(
 }
 
 // ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind is the durable
-// discriminator for the two non-coercible authority source/resolution
+// discriminator for the non-coercible authority provenance/resolution
 // variants. It is not authority itself.
 type ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind uint8
 
 const (
 	ProjectTypeEnvHeadSelectionAuthorityCoordinatesTrustedDedicatedCLI ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind = iota + 1
 	ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct
+	ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest
 )
 
 func (kind ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind) String() string {
@@ -333,6 +335,8 @@ func (kind ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind) String() string 
 		return "trusted_dedicated_cli_invocation"
 	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct:
 		return "verified_speech_act"
+	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest:
+		return string(operatorrequest.HostRoutedOperatorRequest)
 	default:
 		return ""
 	}
@@ -450,6 +454,43 @@ func (value VerifiedSpeechActAuthorityCoordinates) AuthorityResolutionDigest() a
 	return value.authorityResolutionDig
 }
 
+// HostRoutedOperatorRequestAuthorityCoordinates is the current authority
+// provenance branch. It records the exact host request, current project
+// binding, reviewed content, and kernel resolution without claiming an
+// independently observed SpeechAct.
+type HostRoutedOperatorRequestAuthorityCoordinates struct {
+	request              operatorrequest.Request
+	projectBindingDigest authority.Digest
+	resolutionRef        projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef
+	resolutionDigest     authority.Digest
+}
+
+type HostRoutedOperatorRequestAuthorityCoordinatesInput struct {
+	ContentRef           authority.DescriptionRef
+	ContentDigest        authority.Digest
+	ExecutionSubject     projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionPermissionSubject
+	OperatorRequest      operatorrequest.Request
+	ProjectBindingDigest authority.Digest
+	ResolutionRef        projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef
+	ResolutionDigest     authority.Digest
+}
+
+func (value HostRoutedOperatorRequestAuthorityCoordinates) OperatorRequest() operatorrequest.Request {
+	return value.request
+}
+
+func (value HostRoutedOperatorRequestAuthorityCoordinates) ProjectBindingDigest() authority.Digest {
+	return value.projectBindingDigest
+}
+
+func (value HostRoutedOperatorRequestAuthorityCoordinates) AuthorityResolutionRef() projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef {
+	return value.resolutionRef
+}
+
+func (value HostRoutedOperatorRequestAuthorityCoordinates) AuthorityResolutionDigest() authority.Digest {
+	return value.resolutionDigest
+}
+
 type projectTypeEnvHeadSelectionAuthorityCoordinatesVariant interface {
 	projectTypeEnvHeadSelectionAuthorityCoordinatesVariant()
 }
@@ -458,6 +499,9 @@ func (TrustedDedicatedCLIAuthorityCoordinates) projectTypeEnvHeadSelectionAuthor
 }
 
 func (VerifiedSpeechActAuthorityCoordinates) projectTypeEnvHeadSelectionAuthorityCoordinatesVariant() {
+}
+
+func (HostRoutedOperatorRequestAuthorityCoordinates) projectTypeEnvHeadSelectionAuthorityCoordinatesVariant() {
 }
 
 // ProjectTypeEnvHeadSelectionAuthorityCoordinates is a closed durable sum.
@@ -569,6 +613,67 @@ func NewVerifiedSpeechActAuthorityCoordinates(
 			permissionDigest:       permissionDigest,
 			authorityResolutionRef: authorityResolutionRef,
 			authorityResolutionDig: input.AuthorityResolutionDigest,
+		},
+	}, nil
+}
+
+func NewHostRoutedOperatorRequestAuthorityCoordinates(
+	input HostRoutedOperatorRequestAuthorityCoordinatesInput,
+) (ProjectTypeEnvHeadSelectionAuthorityCoordinates, error) {
+	contentRef, err := normalizeDescriptionRef(input.ContentRef)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentDigest, err := authority.NewDigest(input.ContentDigest.String())
+	if err != nil || contentDigest != input.ContentDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("host-routed authorization-content digest is required")
+	}
+	subject, err :=
+		projecttypeenvselectionauthority.DecodeProjectTypeEnvHeadSelectionPermissionSubject(
+			input.ExecutionSubject.CanonicalJSON(),
+		)
+	if err != nil || !executionSubjectsEqual(subject, input.ExecutionSubject) {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("host-routed execution subject is required")
+	}
+	request, err := operatorrequest.FromCoordinates(
+		input.OperatorRequest.Effect(),
+		input.OperatorRequest.SubjectRef(),
+		input.OperatorRequest.PayloadDigest(),
+		input.OperatorRequest.Digest(),
+	)
+	if err != nil || request != input.OperatorRequest ||
+		request.Provenance() != operatorrequest.HostRoutedOperatorRequest ||
+		request.Effect() != operatorrequest.ProjectTypeEnvHeadSelect {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("host-routed operator request is invalid")
+	}
+	projectBindingDigest, err := authority.NewDigest(input.ProjectBindingDigest.String())
+	if err != nil || projectBindingDigest != input.ProjectBindingDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("host-routed project binding digest is required")
+	}
+	resolutionRef, err :=
+		projecttypeenvselectionauthority.ParseProjectTypeEnvHeadSelectionAuthorityResolutionRef(
+			input.ResolutionRef.String(),
+		)
+	if err != nil || resolutionRef != input.ResolutionRef ||
+		resolutionRef.Digest() != input.ResolutionDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("host-routed authority resolution ref and digest must match")
+	}
+	return ProjectTypeEnvHeadSelectionAuthorityCoordinates{
+		common: projectTypeEnvHeadSelectionAuthorityCommon{
+			contentRef:       contentRef,
+			contentDigest:    contentDigest,
+			executionSubject: subject,
+		},
+		variant: HostRoutedOperatorRequestAuthorityCoordinates{
+			request:              request,
+			projectBindingDigest: projectBindingDigest,
+			resolutionRef:        resolutionRef,
+			resolutionDigest:     input.ResolutionDigest,
 		},
 	}, nil
 }
@@ -727,6 +832,8 @@ func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) Kind() ProjectTypeE
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesTrustedDedicatedCLI
 	case VerifiedSpeechActAuthorityCoordinates:
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct
+	case HostRoutedOperatorRequestAuthorityCoordinates:
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest
 	default:
 		return 0
 	}
@@ -765,17 +872,27 @@ func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) ExactEqual(
 ) bool {
 	if value.Kind() != other.Kind() ||
 		value.ContentRef() != other.ContentRef() ||
-		value.ContentDigest() != other.ContentDigest() ||
-		value.PolicyRef() != other.PolicyRef() ||
-		value.PolicyDigest() != other.PolicyDigest() ||
-		value.ConfigBasisRef() != other.ConfigBasisRef() ||
-		value.ConfigBasisDigest() != other.ConfigBasisDigest() {
+		value.ContentDigest() != other.ContentDigest() {
 		return false
 	}
 	leftSubject := value.ExecutionSubject()
 	rightSubject := other.ExecutionSubject()
 	if leftSubject.Ref() != rightSubject.Ref() ||
 		leftSubject.Digest() != rightSubject.Digest() {
+		return false
+	}
+	if left, ok := value.HostRoutedOperatorRequest(); ok {
+		right, rightOK := other.HostRoutedOperatorRequest()
+		return rightOK &&
+			left.OperatorRequest() == right.OperatorRequest() &&
+			left.ProjectBindingDigest() == right.ProjectBindingDigest() &&
+			left.AuthorityResolutionRef() == right.AuthorityResolutionRef() &&
+			left.AuthorityResolutionDigest() == right.AuthorityResolutionDigest()
+	}
+	if value.PolicyRef() != other.PolicyRef() ||
+		value.PolicyDigest() != other.PolicyDigest() ||
+		value.ConfigBasisRef() != other.ConfigBasisRef() ||
+		value.ConfigBasisDigest() != other.ConfigBasisDigest() {
 		return false
 	}
 	if left, ok := value.TrustedDedicatedCLIInvocation(); ok {
@@ -818,11 +935,32 @@ func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) VerifiedSpeechAct()
 	return coordinates, ok
 }
 
+func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) HostRoutedOperatorRequest() (
+	HostRoutedOperatorRequestAuthorityCoordinates,
+	bool,
+) {
+	coordinates, ok := value.variant.(HostRoutedOperatorRequestAuthorityCoordinates)
+	return coordinates, ok
+}
+
 func encodeAuthorityCoordinates(
 	writer *canonicalWriter,
 	value ProjectTypeEnvHeadSelectionAuthorityCoordinates,
 ) {
 	writer.writeString(value.Kind().String())
+	if coordinates, ok := value.HostRoutedOperatorRequest(); ok {
+		writer.writeString(string(value.common.contentRef.Kind()))
+		writer.writeString(value.common.contentRef.String())
+		writer.writeString(value.common.contentDigest.String())
+		writer.writeBytes(value.common.executionSubject.CanonicalJSON())
+		writer.writeString(coordinates.request.SubjectRef())
+		writer.writeString(coordinates.request.PayloadDigest())
+		writer.writeString(coordinates.request.Digest())
+		writer.writeString(coordinates.projectBindingDigest.String())
+		writer.writeString(coordinates.resolutionRef.String())
+		writer.writeString(coordinates.resolutionDigest.String())
+		return
+	}
 	writer.writeString(string(value.common.contentRef.Kind()))
 	writer.writeString(value.common.contentRef.String())
 	writer.writeString(value.common.contentDigest.String())
@@ -852,7 +990,18 @@ func encodeAuthorityCoordinates(
 func decodeAuthorityCoordinates(
 	reader *canonicalReader,
 ) (ProjectTypeEnvHeadSelectionAuthorityCoordinates, error) {
-	kind, common, err := decodeAuthorityCommon(reader)
+	kindText, err := reader.readString("authority coordinates kind")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	kind, err := parseAuthorityCoordinatesKind(kindText)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	if kind == ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest {
+		return decodeHostRoutedOperatorRequestAuthorityCoordinates(reader)
+	}
+	common, err := decodeLegacyAuthorityCommon(reader)
 	if err != nil {
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
 	}
@@ -867,82 +1016,73 @@ func decodeAuthorityCoordinates(
 	}
 }
 
-func decodeAuthorityCommon(
+func decodeLegacyAuthorityCommon(
 	reader *canonicalReader,
 ) (
-	ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind,
 	ProjectTypeEnvHeadSelectionAuthorityCommonInput,
 	error,
 ) {
-	kindText, err := reader.readString("authority coordinates kind")
-	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
-	}
-	kind, err := parseAuthorityCoordinatesKind(kindText)
-	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
-	}
 	contentKind, err := reader.readString("authorization-content ref kind")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	contentText, err := reader.readString("authorization-content ref")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	contentRef, err := parseDescriptionRef(
 		authority.DescriptionRefKind(contentKind),
 		contentText,
 	)
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	contentDigest, err := readAuthorityDigest(reader, "authorization-content digest")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	policyText, err := reader.readString("authority mode-policy ref")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	policyRef, err :=
 		projecttypeenvselectionauthority.ParseProjectTypeEnvHeadSelectionModePolicyRef(
 			policyText,
 		)
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	policyDigest, err := readAuthorityDigest(reader, "authority mode-policy digest")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	configText, err := reader.readString("config authority-basis ref")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	configRef, err :=
 		projecttypeenvselectionauthority.ParseProjectTypeEnvHeadSelectionConfigAuthorityBasisRef(
 			configText,
 		)
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	configDigest, err := readAuthorityDigest(reader, "config authority-basis digest")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	subjectBytes, err := reader.readBytes("head-selection execution subject")
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
 	subject, err :=
 		projecttypeenvselectionauthority.DecodeProjectTypeEnvHeadSelectionPermissionSubject(
 			subjectBytes,
 		)
 	if err != nil {
-		return 0, ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
+		return ProjectTypeEnvHeadSelectionAuthorityCommonInput{}, err
 	}
-	return kind, ProjectTypeEnvHeadSelectionAuthorityCommonInput{
+	return ProjectTypeEnvHeadSelectionAuthorityCommonInput{
 		ContentRef:        contentRef,
 		ContentDigest:     contentDigest,
 		PolicyRef:         policyRef,
@@ -951,6 +1091,95 @@ func decodeAuthorityCommon(
 		ConfigBasisDigest: configDigest,
 		ExecutionSubject:  subject,
 	}, nil
+}
+
+func decodeHostRoutedOperatorRequestAuthorityCoordinates(
+	reader *canonicalReader,
+) (ProjectTypeEnvHeadSelectionAuthorityCoordinates, error) {
+	contentKind, err := reader.readString("authorization-content ref kind")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentText, err := reader.readString("authorization-content ref")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentRef, err := parseDescriptionRef(
+		authority.DescriptionRefKind(contentKind),
+		contentText,
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentDigest, err := readAuthorityDigest(reader, "authorization-content digest")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	subjectBytes, err := reader.readBytes("head-selection execution subject")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	subject, err :=
+		projecttypeenvselectionauthority.DecodeProjectTypeEnvHeadSelectionPermissionSubject(
+			subjectBytes,
+		)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	requestSubject, err := reader.readString("operator request subject")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	payloadDigest, err := reader.readString("operator request payload digest")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	requestDigest, err := reader.readString("operator request digest")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	request, err := operatorrequest.FromCoordinates(
+		operatorrequest.ProjectTypeEnvHeadSelect,
+		requestSubject,
+		payloadDigest,
+		requestDigest,
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	projectBindingDigest, err := readAuthorityDigest(reader, "project binding digest")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	resolutionText, err := reader.readString("host-routed authority resolution ref")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	resolutionRef, err :=
+		projecttypeenvselectionauthority.ParseProjectTypeEnvHeadSelectionAuthorityResolutionRef(
+			resolutionText,
+		)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	resolutionDigest, err := readAuthorityDigest(
+		reader,
+		"host-routed authority resolution digest",
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	return NewHostRoutedOperatorRequestAuthorityCoordinates(
+		HostRoutedOperatorRequestAuthorityCoordinatesInput{
+			ContentRef:           contentRef,
+			ContentDigest:        contentDigest,
+			ExecutionSubject:     subject,
+			OperatorRequest:      request,
+			ProjectBindingDigest: projectBindingDigest,
+			ResolutionRef:        resolutionRef,
+			ResolutionDigest:     resolutionDigest,
+		},
+	)
 }
 
 func decodeTrustedDedicatedCLIAuthorityCoordinates(
@@ -1167,6 +1396,8 @@ func parseAuthorityCoordinatesKind(
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesTrustedDedicatedCLI, nil
 	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct.String():
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct, nil
+	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest.String():
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest, nil
 	default:
 		return 0, fmt.Errorf("head-selection authority coordinates kind is invalid")
 	}

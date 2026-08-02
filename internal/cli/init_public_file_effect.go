@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+
+	"github.com/m0n0x41d/haft/internal/project"
 )
 
 type publicExactFileEffectKind string
@@ -16,6 +18,7 @@ const (
 	publicExactFileCreate   publicExactFileEffectKind = "create"
 	publicExactFilePreserve publicExactFileEffectKind = "preserve"
 	publicExactFileReplace  publicExactFileEffectKind = "replace"
+	publicExactFileRemove   publicExactFileEffectKind = "remove"
 )
 
 type publicExactFileEffect struct {
@@ -121,6 +124,9 @@ func planPublicExactFile(
 }
 
 func verifyPublicExactFile(effect publicExactFileEffect) error {
+	if effect.kind == publicExactFileRemove {
+		return verifyPublicExactFileRemoval(effect)
+	}
 	observed, err := planPublicExactFile(
 		effect.path,
 		effect.content,
@@ -143,9 +149,60 @@ func verifyPublicExactFile(effect publicExactFileEffect) error {
 	return nil
 }
 
+func verifyPublicExactFileRemoval(effect publicExactFileEffect) error {
+	info, err := os.Lstat(effect.path)
+	if err != nil {
+		return fmt.Errorf(
+			"inspect obsolete project file %s: %w",
+			effect.path,
+			err,
+		)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf(
+			"obsolete project file %s is no longer regular",
+			effect.path,
+		)
+	}
+	content, err := os.ReadFile(effect.path)
+	if err != nil {
+		return fmt.Errorf(
+			"read obsolete project file %s: %w",
+			effect.path,
+			err,
+		)
+	}
+	observedDigest := publicContentDigest(content)
+	exact := observedDigest == effect.expectedDigest
+	exact = exact && info.Mode().Perm() == effect.expectedMode.Perm()
+	if !exact {
+		return fmt.Errorf(
+			"obsolete project file %s changed after preview; it was preserved",
+			effect.path,
+		)
+	}
+	if !project.IsKnownGeneratedLegacyProjectConfigDigest(observedDigest) {
+		return fmt.Errorf(
+			"obsolete project file %s is not an exact Haft-generated carrier; it was preserved",
+			effect.path,
+		)
+	}
+	return nil
+}
+
 func writePublicExactFile(effect publicExactFileEffect) error {
 	if effect.kind == publicExactFilePreserve {
 		return nil
+	}
+	if effect.kind == publicExactFileRemove {
+		if err := os.Remove(effect.path); err != nil {
+			return fmt.Errorf(
+				"remove obsolete project file %s: %w",
+				effect.path,
+				err,
+			)
+		}
+		return syncPublicExactFileDirectory(filepath.Dir(effect.path))
 	}
 	parent := filepath.Dir(effect.path)
 	if err := os.MkdirAll(parent, 0o755); err != nil {
@@ -194,6 +251,22 @@ func writePublicExactFile(effect publicExactFileEffect) error {
 			effect.path,
 			err,
 		)
+	}
+	return nil
+}
+
+func syncPublicExactFileDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return fmt.Errorf("open public exact file directory %s: %w", path, err)
+	}
+	syncErr := directory.Sync()
+	closeErr := directory.Close()
+	if syncErr != nil {
+		return fmt.Errorf("sync public exact file directory %s: %w", path, syncErr)
+	}
+	if closeErr != nil {
+		return fmt.Errorf("close public exact file directory %s: %w", path, closeErr)
 	}
 	return nil
 }

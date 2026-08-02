@@ -23,6 +23,14 @@ const selectRecordedV2UseByBasisSQL = `WITH recorded AS (
 	SELECT committed_admission_ref, committed_admission_digest,
 		admission_request_digest, authority_basis_ref
 	FROM profile_declaration_authority_uses_v3
+	UNION ALL
+	SELECT committed_admission_ref, committed_admission_digest,
+		admission_request_digest, authority_basis_ref
+	FROM profile_declaration_authority_uses_v4
+	UNION ALL
+	SELECT committed_admission_ref, committed_admission_digest,
+		admission_request_digest, authority_basis_ref
+	FROM profile_declaration_authority_uses_v5
 )
 SELECT committed_admission_ref, committed_admission_digest, admission_request_digest
 FROM recorded
@@ -45,6 +53,62 @@ type recordedV3Use struct {
 	admissionRef         string
 	admissionDigest      string
 	admissionRequestHash string
+}
+
+const selectRecordedV4UseByBasisSQL = `SELECT
+	committed_admission_ref,
+	committed_admission_digest,
+	admission_request_digest
+FROM profile_declaration_authority_uses_v4
+WHERE authority_basis_ref = ?`
+
+const selectRecordedV5UseByBasisSQL = `SELECT
+	committed_admission_ref,
+	committed_admission_digest,
+	admission_request_digest
+FROM profile_declaration_authority_uses_v5
+WHERE authority_basis_ref = ?`
+
+func loadRecordedV5UseByBasis(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	basisRef string,
+) (recordedV3Use, bool, error) {
+	row := recordedV3Use{}
+	err := transaction.ScanOne(
+		ctx,
+		selectRecordedV5UseByBasisSQL,
+		[]any{basisRef},
+		[]any{&row.admissionRef, &row.admissionDigest, &row.admissionRequestHash},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return recordedV3Use{}, false, nil
+	}
+	if err != nil {
+		return recordedV3Use{}, false, fmt.Errorf("load recorded v5 authority use: %w", err)
+	}
+	return row, true, nil
+}
+
+func loadRecordedV4UseByBasis(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	basisRef string,
+) (recordedV3Use, bool, error) {
+	row := recordedV3Use{}
+	err := transaction.ScanOne(
+		ctx,
+		selectRecordedV4UseByBasisSQL,
+		[]any{basisRef},
+		[]any{&row.admissionRef, &row.admissionDigest, &row.admissionRequestHash},
+	)
+	if errors.Is(err, sql.ErrNoRows) {
+		return recordedV3Use{}, false, nil
+	}
+	if err != nil {
+		return recordedV3Use{}, false, fmt.Errorf("load recorded v4 authority use: %w", err)
+	}
+	return row, true, nil
 }
 
 func loadRecordedV3UseByBasis(
@@ -256,6 +320,28 @@ func (adapter adapter) Admit(
 	if err != nil {
 		return denied("invalid_authority_basis", err.Error())
 	}
+	v5Found, err := discoverV5Basis(
+		ctx,
+		adapter.database,
+		authorityBasisRef.String(),
+	)
+	if err != nil {
+		return denied("authority_closure_unavailable", err.Error())
+	}
+	if v5Found {
+		return adapter.admitV5(ctx, candidate)
+	}
+	v4Found, err := discoverV4Basis(
+		ctx,
+		adapter.database,
+		authorityBasisRef.String(),
+	)
+	if err != nil {
+		return denied("authority_closure_unavailable", err.Error())
+	}
+	if v4Found {
+		return adapter.admitV4(ctx, candidate)
+	}
 	v3Discovery, v3Found, err := discoverV3Basis(
 		ctx,
 		adapter.database,
@@ -371,6 +457,180 @@ func (adapter adapter) Admit(
 		ctx,
 		transaction,
 		snapshot,
+		prepared,
+		authorityValue,
+	)
+}
+
+func (adapter adapter) admitV5(
+	ctx context.Context,
+	candidate projectprofile.ProfileDeclarationCandidateV1,
+) adapterOutcome {
+	transaction, err := adapter.starter.BeginImmediate(ctx, adapter.database)
+	if err != nil {
+		return writeFailure(
+			AdmissionDefinitelyNotCommitted,
+			failureStageBeginImmediate,
+		)
+	}
+	basisRef := candidate.Provenance().AuthorityBasisRef().String()
+	recorded, found, err := loadRecordedV5UseByBasis(ctx, transaction, basisRef)
+	if err != nil {
+		return adapter.rollbackFailure(transaction, failureStageReplayReread)
+	}
+	if found {
+		material, loadErr := resolveReplayCandidateV3(
+			ctx,
+			transaction,
+			candidate,
+			recorded,
+		)
+		if loadErr != nil {
+			outcome := denied("single_use_already_consumed", loadErr.Error())
+			return adapter.rollbackOutcome(transaction, outcome)
+		}
+		return adapter.commitAndDeliver(
+			ctx,
+			transaction,
+			material,
+			CanonicalAdmissionReplayed,
+		)
+	}
+	closure, err := loadV5AuthorityClosure(ctx, transaction, basisRef)
+	if err != nil {
+		outcome := denied("authority_closure_unavailable", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	valueSnapshot, err := projectprofilesqlite.ResolveProfileAdmissionValueSnapshotV1(
+		ctx,
+		transaction,
+		candidate,
+	)
+	if err != nil {
+		outcome := denied(
+			"durable_support_invalid",
+			fmt.Sprintf("durable profile-onboarding support is invalid: %v", err),
+		)
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	values, ok := valueSnapshot.Values()
+	if !ok {
+		return adapter.rollbackFailure(transaction, failureStageSupportContract)
+	}
+	authorityValue, err := materializeV5Authority(
+		closure,
+		values,
+		adapter.now(),
+	)
+	if err != nil {
+		outcome := denied("candidate_authority_mismatch", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	projectRoot := candidate.Provenance().ProjectRoot()
+	ledgerRevision, err := loadExactLedgerHead(ctx, transaction, projectRoot)
+	if err != nil {
+		return adapter.rollbackFailure(transaction, failureStageLedgerHeadIntegrity)
+	}
+	prepared, err := prepareAdmission(
+		candidate,
+		values,
+		authorityValue,
+		ledgerRevision,
+	)
+	if err != nil {
+		outcome := denied("candidate_authority_mismatch", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	return adapter.writeCommitAndDeliverV5(
+		ctx,
+		transaction,
+		prepared,
+		authorityValue,
+	)
+}
+
+func (adapter adapter) admitV4(
+	ctx context.Context,
+	candidate projectprofile.ProfileDeclarationCandidateV1,
+) adapterOutcome {
+	transaction, err := adapter.starter.BeginImmediate(ctx, adapter.database)
+	if err != nil {
+		return writeFailure(
+			AdmissionDefinitelyNotCommitted,
+			failureStageBeginImmediate,
+		)
+	}
+	basisRef := candidate.Provenance().AuthorityBasisRef().String()
+	recorded, found, err := loadRecordedV4UseByBasis(ctx, transaction, basisRef)
+	if err != nil {
+		return adapter.rollbackFailure(transaction, failureStageReplayReread)
+	}
+	if found {
+		material, loadErr := resolveReplayCandidateV3(
+			ctx,
+			transaction,
+			candidate,
+			recorded,
+		)
+		if loadErr != nil {
+			outcome := denied("single_use_already_consumed", loadErr.Error())
+			return adapter.rollbackOutcome(transaction, outcome)
+		}
+		return adapter.commitAndDeliver(
+			ctx,
+			transaction,
+			material,
+			CanonicalAdmissionReplayed,
+		)
+	}
+	closure, err := loadV4AuthorityClosure(ctx, transaction, basisRef)
+	if err != nil {
+		outcome := denied("authority_closure_unavailable", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	valueSnapshot, err := projectprofilesqlite.ResolveProfileAdmissionValueSnapshotV1(
+		ctx,
+		transaction,
+		candidate,
+	)
+	if err != nil {
+		outcome := denied(
+			"durable_support_invalid",
+			fmt.Sprintf("durable profile-onboarding support is invalid: %v", err),
+		)
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	values, ok := valueSnapshot.Values()
+	if !ok {
+		return adapter.rollbackFailure(transaction, failureStageSupportContract)
+	}
+	authorityValue, err := materializeV4Authority(
+		closure,
+		values,
+		adapter.now(),
+	)
+	if err != nil {
+		outcome := denied("candidate_authority_mismatch", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	projectRoot := candidate.Provenance().ProjectRoot()
+	ledgerRevision, err := loadExactLedgerHead(ctx, transaction, projectRoot)
+	if err != nil {
+		return adapter.rollbackFailure(transaction, failureStageLedgerHeadIntegrity)
+	}
+	prepared, err := prepareAdmission(
+		candidate,
+		values,
+		authorityValue,
+		ledgerRevision,
+	)
+	if err != nil {
+		outcome := denied("candidate_authority_mismatch", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	return adapter.writeCommitAndDeliverV4(
+		ctx,
+		transaction,
 		prepared,
 		authorityValue,
 	)
@@ -584,6 +844,106 @@ func (adapter adapter) writeCommitAndDeliverV3(
 		return adapter.rollbackFailure(transaction, failureStageAuthorityUseWrite)
 	}
 	if err := persistRevisionV3(ctx, transaction, material); err != nil {
+		return adapter.rollbackFailure(transaction, failureStageRevisionWrite)
+	}
+	tentativeDigest := material.tentative.TentativeAdmissionRecordDigest()
+	precommit, err := resolveCanonicalByReferenceOnConnection(
+		ctx,
+		transaction,
+		prepared.ProjectRoot(),
+		material.admissionRef,
+		tentativeDigest,
+	)
+	if err != nil {
+		return adapter.rollbackFailure(transaction, failureStagePrecommitReread)
+	}
+	return adapter.commitAndDeliver(
+		ctx,
+		transaction,
+		precommit,
+		CanonicalAdmissionFresh,
+	)
+}
+
+func (adapter adapter) writeCommitAndDeliverV4(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	prepared projectprofile.PreparedProfileAdmissionV1,
+	authorityValue authorityMaterial,
+) adapterOutcome {
+	material, err := newWriteMaterialV4(prepared, authorityValue)
+	if err != nil {
+		outcome := denied("admission_material_invalid", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	if err := persistAdmissionV4(ctx, transaction, material); err != nil {
+		return adapter.rollbackFailure(transaction, failureStageAdmissionWrite)
+	}
+	if err := persistAuthorityUseV4(ctx, transaction, material); err != nil {
+		return adapter.rollbackFailure(transaction, failureStageAuthorityUseWrite)
+	}
+	recorded, found, err := loadRecordedV4UseByBasis(
+		ctx,
+		transaction,
+		authorityValue.authorityBasisRef.String(),
+	)
+	if err != nil || !found ||
+		recorded.admissionRef != material.admissionRef.String() ||
+		recorded.admissionDigest != material.tentative.TentativeAdmissionRecordDigest().String() ||
+		recorded.admissionRequestHash != prepared.AdmissionRequestDigest().String() {
+		return adapter.rollbackFailure(transaction, failureStageAuthorityUseWrite)
+	}
+	if err := persistRevisionV4(ctx, transaction, material); err != nil {
+		return adapter.rollbackFailure(transaction, failureStageRevisionWrite)
+	}
+	tentativeDigest := material.tentative.TentativeAdmissionRecordDigest()
+	precommit, err := resolveCanonicalByReferenceOnConnection(
+		ctx,
+		transaction,
+		prepared.ProjectRoot(),
+		material.admissionRef,
+		tentativeDigest,
+	)
+	if err != nil {
+		return adapter.rollbackFailure(transaction, failureStagePrecommitReread)
+	}
+	return adapter.commitAndDeliver(
+		ctx,
+		transaction,
+		precommit,
+		CanonicalAdmissionFresh,
+	)
+}
+
+func (adapter adapter) writeCommitAndDeliverV5(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	prepared projectprofile.PreparedProfileAdmissionV1,
+	authorityValue authorityMaterial,
+) adapterOutcome {
+	material, err := newWriteMaterialV5(prepared, authorityValue)
+	if err != nil {
+		outcome := denied("admission_material_invalid", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
+	if err := persistAdmissionV5(ctx, transaction, material); err != nil {
+		return adapter.rollbackFailure(transaction, failureStageAdmissionWrite)
+	}
+	if err := persistAuthorityUseV5(ctx, transaction, material); err != nil {
+		return adapter.rollbackFailure(transaction, failureStageAuthorityUseWrite)
+	}
+	recorded, found, err := loadRecordedV5UseByBasis(
+		ctx,
+		transaction,
+		authorityValue.authorityBasisRef.String(),
+	)
+	if err != nil || !found ||
+		recorded.admissionRef != material.admissionRef.String() ||
+		recorded.admissionDigest != material.tentative.TentativeAdmissionRecordDigest().String() ||
+		recorded.admissionRequestHash != prepared.AdmissionRequestDigest().String() {
+		return adapter.rollbackFailure(transaction, failureStageAuthorityUseWrite)
+	}
+	if err := persistRevisionV5(ctx, transaction, material); err != nil {
 		return adapter.rollbackFailure(transaction, failureStageRevisionWrite)
 	}
 	tentativeDigest := material.tentative.TentativeAdmissionRecordDigest()

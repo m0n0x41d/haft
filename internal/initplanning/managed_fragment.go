@@ -1928,6 +1928,15 @@ func classifyManagedFragment(
 		return state, ManagedFragmentVacantTarget{}, managedFragmentStateEmitted, nil
 	}
 	if observed.kind == ManagedFragmentObservedPresent {
+		if coordinate.kind == ManagedHTMLCommentSection {
+			return classifyMarkerOwnedManagedFragment(
+				coordinate,
+				component,
+				observed,
+				desired,
+				hasDesired,
+			), ManagedFragmentVacantTarget{}, managedFragmentStateEmitted, nil
+		}
 		kind := ManagedFragmentForeign
 		basis := OwnershipBasis{}
 		if managedFragmentRecordsContainDigest(legacy, observed.digest) {
@@ -2008,6 +2017,14 @@ func classifyManifestOwnedManagedFragment(
 		return state
 	}
 	state.observedDigest = observed.digest
+	if coordinate.kind == ManagedHTMLCommentSection {
+		state.kind = markerOwnedManagedFragmentKind(
+			observed.digest,
+			desired,
+			hasDesired,
+		)
+		return state
+	}
 	if observed.digest != manifest.digest {
 		state.kind = ManagedFragmentLocallyModifiedOwned
 		return state
@@ -2022,6 +2039,41 @@ func classifyManifestOwnedManagedFragment(
 	}
 	state.kind = ManagedFragmentOutdatedOwned
 	return state
+}
+
+func classifyMarkerOwnedManagedFragment(
+	coordinate ManagedFragmentCoordinate,
+	component Component,
+	observed ManagedFragmentObservation,
+	desired ManagedFragment,
+	hasDesired bool,
+) ManagedFragmentCurrentness {
+	return ManagedFragmentCurrentness{
+		coordinate: cloneManagedFragmentCoordinate(coordinate),
+		component:  component,
+		kind: markerOwnedManagedFragmentKind(
+			observed.digest,
+			desired,
+			hasDesired,
+		),
+		observedDigest: observed.digest,
+		desiredDigest:  managedDesiredDigest(desired, hasDesired),
+		hasDesired:     hasDesired,
+	}
+}
+
+func markerOwnedManagedFragmentKind(
+	observedDigest string,
+	desired ManagedFragment,
+	hasDesired bool,
+) ManagedFragmentCurrentnessKind {
+	if !hasDesired {
+		return ManagedFragmentOrphanedOwned
+	}
+	if observedDigest == desired.digest {
+		return ManagedFragmentCurrentOwned
+	}
+	return ManagedFragmentOutdatedOwned
 }
 
 func managedDesiredDigest(

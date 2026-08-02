@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
 type scriptedRuntime struct {
@@ -73,6 +75,17 @@ func TestStatusProjectsClosedReadableStatesWithoutAuthorityEffects(
 			status: StatusNeedsProfile,
 		},
 		{
+			name: "automatic bootstrap eligible",
+			observation: ObservationInput{
+				Initialized:           true,
+				AutoBootstrapEligible: true,
+				ProfileReviewReady:    true,
+				Scopes:                []Scope{scope},
+			},
+			result: ResultNeedsProfile,
+			status: StatusNeedsProfile,
+		},
+		{
 			name: "profile review",
 			observation: ObservationInput{
 				Initialized:        true,
@@ -83,38 +96,36 @@ func TestStatusProjectsClosedReadableStatesWithoutAuthorityEffects(
 			status: StatusProfileReviewReady,
 		},
 		{
-			name: "needs memory",
+			name: "legacy missing memory requires init repair",
 			observation: ObservationInput{
 				Initialized:     true,
 				ProfileDeclared: true,
 				Scopes:          []Scope{scope},
 			},
-			result:  ResultNeedsMemory,
-			status:  StatusNeedsMemory,
-			choices: memoryChoices(),
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
 		},
 		{
-			name: "memory review",
+			name: "legacy memory review requires init repair",
 			observation: ObservationInput{
 				Initialized:       true,
 				ProfileDeclared:   true,
 				MemoryReviewReady: true,
 				Scopes:            []Scope{scope},
 			},
-			result:  ResultMemoryReviewReady,
-			status:  StatusMemoryReviewReady,
-			choices: memoryChoices(),
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
 		},
 		{
-			name: "deferred",
+			name: "legacy deferral requires init repair",
 			observation: ObservationInput{
 				Initialized:     true,
 				ProfileDeclared: true,
 				MemoryDeferred:  true,
 				Scopes:          []Scope{scope},
 			},
-			result: ResultMemoryDeferred,
-			status: StatusMemoryDeferred,
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
 		},
 		{
 			name: "ready",
@@ -336,6 +347,87 @@ func TestPreparationResultsKeepBindingEffectsFalse(t *testing.T) {
 			"preparation effects = %#v",
 			effects,
 		)
+	}
+}
+
+func TestProfilePrepareAllowsExplicitReviewForDetectorDefaultProfile(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	scope := mustScope(t, "app", "Application", Software, nil)
+	observation, err := NewObservation(
+		ObservationInput{
+			Initialized:             true,
+			ProfileDeclared:         true,
+			ProfileOverrideEligible: true,
+			ProfileOrigin: projectprofile.
+				ProfileAdmissionOriginDetectorDefault,
+			Scopes: []Scope{scope},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := NewPreparation(
+		PreparationCreated,
+		"review:onboard-profile",
+		[]Scope{scope},
+		"Prepared explicit replacement review.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &scriptedRuntime{
+		observation: observation,
+		profile:     profile,
+	}
+	service, err := NewService(runtime, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(
+		RequestInput{Action: string(ActionProfilePrepare)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := service.Execute(
+		context.Background(),
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Result() != ResultProfileReviewCreated ||
+		outcome.ProfileOrigin() !=
+			projectprofile.ProfileAdmissionOriginDetectorDefault ||
+		!outcome.ProfileOverrideEligible() ||
+		runtime.profileCalls != 1 {
+		t.Fatalf(
+			"detector-default preparation = %#v calls=%d",
+			outcome,
+			runtime.profileCalls,
+		)
+	}
+}
+
+func TestObservationRejectsOverrideEligibilityForNonDetectorProfile(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	_, err := NewObservation(
+		ObservationInput{
+			Initialized:             true,
+			ProfileDeclared:         true,
+			ProfileOverrideEligible: true,
+			ProfileOrigin: projectprofile.
+				ProfileAdmissionOriginExplicitOperator,
+		},
+	)
+	if err == nil {
+		t.Fatal("explicit profile was marked eligible for initial override")
 	}
 }
 

@@ -291,7 +291,10 @@ Haft lives inside the software engineering delivery system:
 
 1. **Local-first.** Works without any server or cloud service.
 2. **Solo-first.** Valuable for one engineer before needing teams.
-3. **Reliance-first.** Persist only what a named receiving use must trust;
+3. **Reliance-first.** Persist only what a concrete receiving use must trust.
+   The use may be operator-named or inferred by the agent from current Work;
+   when stable identity is recoverable, establish the minimum non-binding
+   EntityOfConcern proactively without a separate permission prompt;
    governed or commissioned work may require formal target/software specs.
 4. **Host-agent-first.** Skills/prompts plus MCP are the primary embedded agent surface; CLI remains the operator/runtime surface.
 5. **Plugin-compatible.** MCP plugin is the highest-reach integration channel, with Claude Code and Codex as supported hosts.

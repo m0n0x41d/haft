@@ -5,8 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"os"
-	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -17,7 +15,6 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
-	"github.com/m0n0x41d/haft/internal/project"
 )
 
 func TestProfileDeclareCommandExposesOnlyReadableInputAndRenderingFlags(
@@ -37,34 +34,6 @@ func TestProfileDeclareCommandExposesOnlyReadableInputAndRenderingFlags(
 	want := []string{"input-file", "json"}
 	if !reflect.DeepEqual(flags, want) {
 		t.Fatalf("profile declare flags = %#v, want %#v", flags, want)
-	}
-}
-
-func TestLoadProfileDeclarationPolicyDefaultsWithoutSecondApproval(
-	t *testing.T,
-) {
-	root := t.TempDir()
-	if err := os.MkdirAll(filepath.Join(root, ".haft"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	policy, err := loadProfileDeclarationPolicy(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if policy.Mode() != profileonboarding.ProfileDeclarationModeExplicitHOnboard {
-		t.Fatalf("default profile declaration mode = %q", policy.Mode())
-	}
-	strict := []byte("schema_version: 1\nauthority:\n  profile_declaration_mode: strict_cli_speech_act\n")
-	configPath := project.ProjectConfigPath(filepath.Join(root, ".haft"))
-	if err := os.WriteFile(configPath, strict, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	policy, err = loadProfileDeclarationPolicy(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if policy.Mode() != profileonboarding.ProfileDeclarationModeStrictSpeechAct {
-		t.Fatalf("strict profile declaration mode = %q", policy.Mode())
 	}
 }
 
@@ -113,11 +82,7 @@ func TestExecuteProfileDeclarationPassesSemanticInputAndPolicyToRuntime(
 	if err != nil {
 		t.Fatal(err)
 	}
-	policy, err := profileonboarding.NewProfileDeclarationPolicy(
-		profileonboarding.ProfileDeclarationModeExplicitHOnboard,
-		".haft/config.yaml",
-		[]byte("authority: explicit_h_onboard"),
-	)
+	policy, err := hostRoutedProfileDeclarationPolicy(fixture.root, input)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,7 +103,7 @@ func TestExecuteProfileDeclarationPassesSemanticInputAndPolicyToRuntime(
 	if runtime.inputDigest != input.Digest().String() {
 		t.Fatalf("runtime input digest = %q", runtime.inputDigest)
 	}
-	if runtime.mode != profileonboarding.ProfileDeclarationModeExplicitHOnboard {
+	if runtime.mode != profileonboarding.ProfileDeclarationModeHostRoutedOperatorRequest {
 		t.Fatalf("runtime authority mode = %q", runtime.mode)
 	}
 	if response.Kind != profileDeclarationRecordKind ||

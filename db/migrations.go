@@ -2000,4 +2000,6 @@ var kernelMigrations = []Migration{
 	typedMemoryIdentityReconciliationMigration52,
 	typedMemoryRelationalAssertionMigration53,
 	typedMemoryKindClassificationMigration54,
+	profileAutomaticBootstrapMigration55,
+	hostRoutedOperatorAuthorityMigration56,
 }

@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestRebuildReturnsAutoOnlyWhenLedgerAndProjectionAreBothAbsent(t *testing.T) {
@@ -15,7 +15,9 @@ func TestRebuildReturnsAutoOnlyWhenLedgerAndProjectionAreBothAbsent(t *testing.T
 	if err := os.Mkdir(haftPath, 0o755); err != nil {
 		t.Fatalf("create .haft: %v", err)
 	}
-	store, err := kerneldb.NewStore(filepath.Join(haftPath, "haft.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(haftPath, "haft.db"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -57,7 +59,7 @@ func TestZeroServiceAndNilContextFailClosed(t *testing.T) {
 		t.Fatal("zero service rebuilt a profile projection")
 	}
 	storePath := filepath.Join(t.TempDir(), "haft.db")
-	store, err := kerneldb.NewStore(storePath)
+	store, err := kerneldbfixture.OpenCurrentStore(storePath)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

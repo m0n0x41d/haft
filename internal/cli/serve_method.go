@@ -99,6 +99,10 @@ func handleHaftMethodStatus(ctx context.Context, store *artifact.Store, args map
 			run.TaskSignature.Task,
 			run.TaskSignature.Ceremony,
 		))
+		b.WriteString(fmt.Sprintf(
+			"  Recover: `haft_method(action=\"show\", pull_id=\"%s\")`\n",
+			run.ID,
+		))
 	}
 	return b.String(), nil
 }

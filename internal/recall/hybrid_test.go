@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/embedding"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 // fakeEmbedder maps text topics to fixed orthogonal unit vectors so the test
@@ -211,7 +211,9 @@ func decisionArtifact(id, title, body string) *artifact.Artifact {
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	store, err := db.NewStore(filepath.Join(t.TempDir(), "recall.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "recall.db"),
+	)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

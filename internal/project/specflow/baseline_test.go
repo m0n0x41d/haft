@@ -9,12 +9,13 @@ import (
 
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func newTestBaselineDB(t *testing.T) *db.Store {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "haft.db")
-	store, err := db.NewStore(dbPath)
+	store, err := kerneldbfixture.OpenCurrentStore(dbPath)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}

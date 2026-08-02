@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectmemory"
 	"github.com/m0n0x41d/haft/internal/projectmemory/identityreconciliation"
 	"github.com/m0n0x41d/haft/internal/projectmemory/memoryresolve"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 	"github.com/m0n0x41d/haft/internal/typedmemorystore"
 )
@@ -550,7 +550,9 @@ type identityFixture struct {
 func newIdentityFixture(t *testing.T) identityFixture {
 	t.Helper()
 	root := t.TempDir()
-	store, err := db.NewStore(filepath.Join(root, "identity-reconciliation.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(root, "identity-reconciliation.db"),
+	)
 	if err != nil {
 		t.Fatalf("db.NewStore: %v", err)
 	}

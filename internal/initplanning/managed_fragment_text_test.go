@@ -152,7 +152,7 @@ func TestManagedHTMLCommentSectionReplacesOwnedSectionOnly(
 	}
 }
 
-func TestManagedHTMLCommentSectionLocalEditBlocksReplacement(
+func TestManagedHTMLCommentSectionLocalEditIsReplacedInsideMarkersOnly(
 	t *testing.T,
 ) {
 	carrierPath := t.TempDir() + "/CLAUDE.md"
@@ -174,10 +174,16 @@ func TestManagedHTMLCommentSectionLocalEditBlocksReplacement(
 		ComponentInstructions,
 		"new instructions",
 	)
+	prefix := []byte("# Operator prefix\n\n")
+	suffix := []byte("\n\n## Operator suffix\n")
+	content := make([]byte, 0)
+	content = append(content, prefix...)
+	content = append(content, locallyEdited.Content()...)
+	content = append(content, suffix...)
 	input := mustPresentManagedCarrierBytes(
 		t,
 		carrierPath,
-		locallyEdited.Content(),
+		content,
 	)
 	baseline := mustManagedFragmentBaseline(
 		t,
@@ -194,26 +200,85 @@ func TestManagedHTMLCommentSectionLocalEditBlocksReplacement(
 	assertSingleManagedState(
 		t,
 		currentness,
-		ManagedFragmentLocallyModifiedOwned,
+		ManagedFragmentOutdatedOwned,
 	)
 	plan, err := CompileManagedCarrierReconciliation(currentness)
 	if err != nil {
 		t.Fatalf("CompileManagedCarrierReconciliation: %v", err)
 	}
-	if plan.Readiness() != ManagedCarrierBlocked ||
-		len(plan.Conflicts()) != 1 {
-		t.Fatalf(
-			"locally edited text readiness=%s conflicts=%+v",
-			plan.Readiness(),
-			plan.Conflicts(),
-		)
+	if plan.Readiness() != ManagedCarrierReady {
+		t.Fatalf("locally edited text readiness=%s", plan.Readiness())
 	}
-	if _, err := ApplyManagedCarrierReconciliation(plan, input); err == nil {
-		t.Fatal("locally edited managed text was overwritten")
+	result, err := ApplyManagedCarrierReconciliation(plan, input)
+	if err != nil {
+		t.Fatalf("ApplyManagedCarrierReconciliation: %v", err)
+	}
+	expected := make([]byte, 0)
+	expected = append(expected, prefix...)
+	expected = append(expected, desired.Content()...)
+	expected = append(expected, suffix...)
+	if !bytes.Equal(result.Content(), expected) {
+		t.Fatalf(
+			"marker-owned replacement changed outside bytes\n got: %q\nwant: %q",
+			result.Content(),
+			expected,
+		)
 	}
 }
 
-func TestManagedHTMLCommentSectionExactLegacyCanBeAdopted(
+func TestManagedHTMLCommentSectionPreManifestVersionIsReplaced(
+	t *testing.T,
+) {
+	carrierPath := t.TempDir() + "/AGENTS.md"
+	installed := mustHTMLCommentSectionFragment(
+		t,
+		carrierPath,
+		ComponentInstructions,
+		"instructions from an older Haft installation",
+	)
+	desired := mustHTMLCommentSectionFragment(
+		t,
+		carrierPath,
+		ComponentInstructions,
+		"current Haft instructions",
+	)
+	prefix := []byte("# Project rules\n\n")
+	suffix := []byte("\n\n## Local rules\n")
+	content := make([]byte, 0)
+	content = append(content, prefix...)
+	content = append(content, installed.Content()...)
+	content = append(content, suffix...)
+	input := mustPresentManagedCarrierBytes(t, carrierPath, content)
+	currentness := inspectManagedCarrier(
+		t,
+		[]ManagedFragment{desired},
+		NoPriorManagedFragmentBaseline(),
+		NoManagedFragmentLegacyRegistry(),
+		input,
+	)
+	assertSingleManagedState(t, currentness, ManagedFragmentOutdatedOwned)
+	plan, err := CompileManagedCarrierReconciliation(currentness)
+	if err != nil {
+		t.Fatalf("CompileManagedCarrierReconciliation: %v", err)
+	}
+	result, err := ApplyManagedCarrierReconciliation(plan, input)
+	if err != nil {
+		t.Fatalf("ApplyManagedCarrierReconciliation: %v", err)
+	}
+	expected := make([]byte, 0)
+	expected = append(expected, prefix...)
+	expected = append(expected, desired.Content()...)
+	expected = append(expected, suffix...)
+	if !bytes.Equal(result.Content(), expected) {
+		t.Fatalf(
+			"pre-manifest replacement changed outside bytes\n got: %q\nwant: %q",
+			result.Content(),
+			expected,
+		)
+	}
+}
+
+func TestManagedHTMLCommentSectionExactPreManifestVersionIsCurrent(
 	t *testing.T,
 ) {
 	carrierPath := t.TempDir() + "/CLAUDE.md"
@@ -245,7 +310,7 @@ func TestManagedHTMLCommentSectionExactLegacyCanBeAdopted(
 		legacy,
 		input,
 	)
-	assertSingleManagedState(t, currentness, ManagedFragmentKnownLegacyExact)
+	assertSingleManagedState(t, currentness, ManagedFragmentCurrentOwned)
 	plan, err := CompileManagedCarrierReconciliation(currentness)
 	if err != nil {
 		t.Fatalf("CompileManagedCarrierReconciliation: %v", err)

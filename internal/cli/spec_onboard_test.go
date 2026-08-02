@@ -53,6 +53,15 @@ func TestRunSpecOnboardJSONReturnsOneNeutralCueWithoutCanonicalProfile(
 			result.ProfileApplicability,
 		)
 	}
+	if result.ProfileApplicability.Cue.RecoverySurface !=
+		projectSpecificationProfileRecoverySurface ||
+		result.ProfileApplicability.Cue.NextAction !=
+			projectSpecificationProfileRecoveryNextAction {
+		t.Fatalf(
+			"profile recovery cue = %#v",
+			result.ProfileApplicability.Cue,
+		)
+	}
 }
 
 func TestRunSpecOnboardSummaryRendersOneNeutralProfileCue(t *testing.T) {
@@ -78,6 +87,8 @@ func TestRunSpecOnboardSummaryRendersOneNeutralProfileCue(t *testing.T) {
 		"haft spec onboard: not evaluated (profile_underdetermined)",
 		"Profile cue:",
 		"Missing basis: current_canonical_profile_admission",
+		"Recovery surface: haft_onboard",
+		"Next: " + projectSpecificationProfileRecoveryNextAction,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("output missing %q\n--- got ---\n%s", want, got)

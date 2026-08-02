@@ -24,14 +24,14 @@ func TestDetectorClassifiesRequiredRepositoryFixturesWithoutBinding(t *testing.T
 		},
 		{
 			name:           "documents",
-			files:          []string{"mkdocs.yml", "docs/one.md", "docs/two.md"},
+			files:          []string{"notes/one.md", "proposal.mdx", "papers/two.pdf"},
 			classification: NonSoftwareSignals,
 			confidence:     SupportedConfidence,
 			orientations:   []string{"documents"},
 		},
 		{
 			name:           "documents_with_helper_code",
-			files:          []string{"mkdocs.yml", "docs/one.md", "scripts/build.py"},
+			files:          []string{"notes/one.md", "proposal.mdx", "papers/two.pdf", "scripts/build.py"},
 			classification: NonSoftwareSignals,
 			confidence:     SupportedConfidence,
 			orientations:   []string{"documents"},
@@ -70,6 +70,53 @@ func TestDetectorClassifiesRequiredRepositoryFixturesWithoutBinding(t *testing.T
 				t.Fatalf("orientations = %#v, want %#v", gotOrientations, test.orientations)
 			}
 		})
+	}
+}
+
+func TestDetectorDocsOnlyRequiresThreeSubstantiveNonServiceDocuments(t *testing.T) {
+	root := mustPhysicalTempDir(t)
+	observed := []ObservedFile{
+		mustObservedFile(t, "README.md", 500),
+		mustObservedFile(t, "CHANGELOG.md", 500),
+		mustObservedFile(t, ".agents/instructions.md", 500),
+		mustObservedFile(t, "notes/empty.md", 0),
+		mustObservedFile(t, "notes/one.md", 1),
+		mustObservedFile(t, "proposal.mdx", 1),
+	}
+	snapshot, err := NewObservedSnapshot(root, observed, len(observed), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := Detect(snapshot)
+	if result.Classification() != InsufficientDetectorBasis {
+		t.Fatalf("classification = %q", result.Classification())
+	}
+	third := mustObservedFile(t, "management/third.rst", 1)
+	observed = append(observed, third)
+	snapshot, err = NewObservedSnapshot(root, observed, len(observed), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result = Detect(snapshot)
+	if result.Classification() != NonSoftwareSignals ||
+		result.ConfidencePosture() != SupportedConfidence {
+		t.Fatalf("docs-only result = %q/%q", result.Classification(), result.ConfidencePosture())
+	}
+}
+
+func TestDetectorIncompleteSoftwareSignalBlocksDocsOnlySupport(t *testing.T) {
+	root := mustPhysicalTempDir(t)
+	files := []string{"package.json", "plan.md", "requirements.rst", "proposal.mdx"}
+	snapshot, err := NewSnapshot(root, files, len(files), false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := Detect(snapshot)
+	if result.Classification() != MixedSignals {
+		t.Fatalf("classification = %q", result.Classification())
+	}
+	if result.ConfidencePosture() != ConflictingConfidence {
+		t.Fatalf("confidence = %q", result.ConfidencePosture())
 	}
 }
 
@@ -143,4 +190,13 @@ func writeDetectorFile(t *testing.T, root string, relative string) {
 	if err := os.WriteFile(path, []byte("fixture"), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func mustObservedFile(t *testing.T, path string, size int64) ObservedFile {
+	t.Helper()
+	file, err := NewObservedFile(path, size)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return file
 }

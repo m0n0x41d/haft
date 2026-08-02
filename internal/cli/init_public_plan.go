@@ -44,7 +44,7 @@ func compilePublicCorePlan(
 		return initplanning.CoreProjectPlan{}, err
 	}
 	basis, err := initplanning.NewUnavailableBasis(
-		"project TypeEnv basis is unavailable before core initialization",
+		"project memory basis is unavailable before core initialization",
 	)
 	if err != nil {
 		return initplanning.CoreProjectPlan{}, err
@@ -128,7 +128,7 @@ func compilePublicCorePlan(
 				}
 			} else {
 				basis, err = initplanning.NewUnavailableBasis(
-					"project TypeEnv basis will be re-observed after the planned core migration",
+					"project memory basis will be re-observed after the planned core migration",
 				)
 				if err != nil {
 					return initplanning.CoreProjectPlan{}, err
@@ -159,6 +159,15 @@ func compilePublicCorePlan(
 	if err != nil {
 		return initplanning.CoreProjectPlan{}, err
 	}
+	profileBootstrap, err := compilePublicInitialProfileBootstrapPlan(
+		ctx,
+		request,
+		databasePresent,
+		carrierRoot,
+	)
+	if err != nil {
+		return initplanning.CoreProjectPlan{}, err
+	}
 	coreFiles, err := compilePublicCoreFileEffects(
 		request,
 		config,
@@ -178,7 +187,8 @@ func compilePublicCorePlan(
 			compiledSchema,
 		).
 		WithBasis(basis).
-		WithFileEffects(coreFiles)
+		WithFileEffects(coreFiles).
+		WithInitialProfileBootstrap(profileBootstrap)
 	if legacySeedPath != "" {
 		builder = builder.WithLegacyDatabaseSeed(
 			legacySeedObservationPath,
@@ -250,30 +260,30 @@ func compilePublicCoreFileEffects(
 	if err != nil {
 		return nil, err
 	}
-	effects := make(
-		[]initplanning.CoreFileEffect,
-		len(inputs),
-	)
-	for index, input := range inputs {
-		exact, err := planPublicCoreFile(input)
-		if err != nil {
-			return nil, err
-		}
-		effect, err := initplanning.NewCoreFileEffect(
-			initplanning.CoreFileEffectKind(exact.kind),
-			exact.path,
-			exact.content,
-			exact.mode,
-			exact.renderedDigest,
-			exact.expectedDigest,
-			exact.expectedMode,
-		)
-		if err != nil {
-			return nil, err
-		}
-		effects[index] = effect
+	effects, err := publicCoreFileEffectsFromInputs(inputs)
+	if err != nil {
+		return nil, err
 	}
-	return effects, nil
+	legacyConfig, present, err := planPublicLegacyProjectConfig(carrierRoot)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return effects, nil
+	}
+	legacyEffect, err := initplanning.NewCoreFileEffect(
+		initplanning.CoreFileEffectKind(legacyConfig.kind),
+		legacyConfig.path,
+		legacyConfig.content,
+		legacyConfig.mode,
+		legacyConfig.renderedDigest,
+		legacyConfig.expectedDigest,
+		legacyConfig.expectedMode,
+	)
+	if err != nil {
+		return nil, err
+	}
+	return append(effects, legacyEffect), nil
 }
 
 func publicCoreFileInputs(
@@ -304,14 +314,6 @@ func publicCoreFileInputs(
 	}
 	inputs = append(
 		inputs,
-		publicCoreFileInput{
-			path: filepath.Join(carrierRoot, "config.yaml"),
-			content: []byte(
-				project.ExampleProjectConfigYAML(),
-			),
-			mode:             0o644,
-			preserveExisting: true,
-		},
 		publicCoreFileInput{
 			path: filepath.Join(carrierRoot, "workflow.md"),
 			content: []byte(
@@ -357,6 +359,47 @@ func publicCoreFileInputs(
 	})
 	inputs = append(inputs, profileFiles...)
 	return inputs, nil
+}
+
+func planPublicLegacyProjectConfig(
+	carrierRoot string,
+) (publicExactFileEffect, bool, error) {
+	path := project.ProjectConfigPath(carrierRoot)
+	info, err := os.Lstat(path)
+	if os.IsNotExist(err) {
+		return publicExactFileEffect{}, false, nil
+	}
+	if err != nil {
+		return publicExactFileEffect{}, false,
+			fmt.Errorf("inspect legacy project config %s: %w", path, err)
+	}
+	if !info.Mode().IsRegular() {
+		return publicExactFileEffect{}, false,
+			fmt.Errorf("legacy project config %s is not a regular file", path)
+	}
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return publicExactFileEffect{}, false,
+			fmt.Errorf("read legacy project config %s: %w", path, err)
+	}
+	digest := publicContentDigest(content)
+	if project.IsKnownGeneratedLegacyProjectConfigDigest(digest) {
+		return publicExactFileEffect{
+			kind:           publicExactFileRemove,
+			path:           path,
+			expectedDigest: digest,
+			expectedMode:   info.Mode().Perm(),
+		}, true, nil
+	}
+	preserved, err := planPublicExactFile(
+		path,
+		content,
+		info.Mode().Perm(),
+	)
+	if err != nil {
+		return publicExactFileEffect{}, false, err
+	}
+	return preserved, true, nil
 }
 
 func compilePublicProfileCoreFileInputs(
@@ -753,12 +796,12 @@ func observePublicTypeEnvBasis(
 			return initplanning.BasisReadiness{}, closeErr
 		}
 		return initplanning.NewUnavailableBasis(
-			"project_basis_unavailable: no current project TypeEnv head",
+			"project_basis_unavailable: project memory is not ready",
 		)
 	}
 	if err := errors.Join(queryErr, closeErr); err != nil {
 		return initplanning.BasisReadiness{}, fmt.Errorf(
-			"observe current project TypeEnv basis: %w",
+			"observe current project memory basis: %w",
 			err,
 		)
 	}

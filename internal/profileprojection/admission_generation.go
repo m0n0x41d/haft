@@ -105,6 +105,56 @@ exact_sources AS (
      AND revision.profile_payload_digest = admission.profile_payload_digest
      AND revision.receipt_digest = admission.receipt_digest
      AND revision.recorded_at = admission.recorded_at
+	UNION ALL
+	SELECT 'v4' AS storage_generation,
+	       admission.admission_id, admission.admission_digest,
+	       admission.receipt_digest, admission.authority_resolution_ref,
+	       admission.single_use_key, admission.project_root,
+	       admission.ledger_revision
+	FROM expected
+	JOIN project_profile_admissions_v4 admission
+	  ON admission.project_root = expected.project_root
+	 AND admission.ledger_revision = expected.ledger_revision
+	 AND admission.admission_id = expected.admission_id
+	 AND admission.admission_digest = expected.admission_digest
+	 AND admission.profile_payload_digest = expected.profile_payload_digest
+	 AND admission.receipt_digest = expected.receipt_digest
+	 AND admission.authority_resolution_ref = expected.authority_resolution_ref
+	 AND admission.authority_resolution_digest = expected.authority_resolution_digest
+	 AND admission.recorded_at = expected.recorded_at
+	JOIN project_profile_revisions_v4 revision
+	  ON revision.project_root = admission.project_root
+	 AND revision.ledger_revision = admission.ledger_revision
+	 AND revision.admission_id = admission.admission_id
+	 AND revision.admission_digest = admission.admission_digest
+	 AND revision.profile_payload_digest = admission.profile_payload_digest
+	 AND revision.receipt_digest = admission.receipt_digest
+	 AND revision.recorded_at = admission.recorded_at
+	UNION ALL
+	SELECT 'v5' AS storage_generation,
+	       admission.admission_id, admission.admission_digest,
+	       admission.receipt_digest, admission.authority_resolution_ref,
+	       admission.single_use_key, admission.project_root,
+	       admission.ledger_revision
+	FROM expected
+	JOIN project_profile_admissions_v5 admission
+	  ON admission.project_root = expected.project_root
+	 AND admission.ledger_revision = expected.ledger_revision
+	 AND admission.admission_id = expected.admission_id
+	 AND admission.admission_digest = expected.admission_digest
+	 AND admission.profile_payload_digest = expected.profile_payload_digest
+	 AND admission.receipt_digest = expected.receipt_digest
+	 AND admission.authority_resolution_ref = expected.authority_resolution_ref
+	 AND admission.authority_resolution_digest = expected.authority_resolution_digest
+	 AND admission.recorded_at = expected.recorded_at
+	JOIN project_profile_revisions_v5 revision
+	  ON revision.project_root = admission.project_root
+	 AND revision.ledger_revision = admission.ledger_revision
+	 AND revision.admission_id = admission.admission_id
+	 AND revision.admission_digest = admission.admission_digest
+	 AND revision.profile_payload_digest = admission.profile_payload_digest
+	 AND revision.receipt_digest = admission.receipt_digest
+	 AND revision.recorded_at = admission.recorded_at
 ),
 all_admissions AS (
     SELECT 'v1' AS storage_generation,
@@ -124,6 +174,18 @@ all_admissions AS (
            authority_resolution_ref, single_use_key,
            project_root, ledger_revision
     FROM project_profile_admissions_v3
+	UNION ALL
+	SELECT 'v4' AS storage_generation,
+	       admission_id, admission_digest, receipt_digest,
+	       authority_resolution_ref, single_use_key,
+	       project_root, ledger_revision
+	FROM project_profile_admissions_v4
+	UNION ALL
+	SELECT 'v5' AS storage_generation,
+	       admission_id, admission_digest, receipt_digest,
+	       authority_resolution_ref, single_use_key,
+	       project_root, ledger_revision
+	FROM project_profile_admissions_v5
 )
 SELECT COALESCE((
            SELECT storage_generation
@@ -155,6 +217,8 @@ const (
 	admissionStorageV1 admissionStorageGeneration = "v1"
 	admissionStorageV2 admissionStorageGeneration = "v2"
 	admissionStorageV3 admissionStorageGeneration = "v3"
+	admissionStorageV4 admissionStorageGeneration = "v4"
+	admissionStorageV5 admissionStorageGeneration = "v5"
 )
 
 type exactAdmissionSource struct {
@@ -164,7 +228,9 @@ type exactAdmissionSource struct {
 func (source exactAdmissionSource) valid() bool {
 	return source.generation == admissionStorageV1 ||
 		source.generation == admissionStorageV2 ||
-		source.generation == admissionStorageV3
+		source.generation == admissionStorageV3 ||
+		source.generation == admissionStorageV4 ||
+		source.generation == admissionStorageV5
 }
 
 type exactAdmissionSourceRow struct {

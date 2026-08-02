@@ -171,7 +171,7 @@ Scenario: Important applied choices receive DecisionRecords
   Given TargetSystemSpec and SoftwareSystemSpec are structurally valid
   And a software section contains or depends on an important applied choice
   When the user uses whatever independent analysis capabilities that concern needs
-  And explicitly invokes manual h-decide to bind that choice
+  And directly and unambiguously requests that h-decide bind the choice
   Then the DecisionRecord references the software and target sections it governs
   And the selected software contract is reflected in SoftwareSystemSpec
   And Haft does not treat every section or bullet as a decision
@@ -255,7 +255,7 @@ Examples:
 |----------------|----------------|---------------------|
 | `Draft Target Spec` | `onboarding.target_spec.draft` | repo carriers -> draft `SpecSection` blocks |
 | `Approve Target Section` | `onboarding.target_spec.approve` | draft section -> active section |
-| `Record Decided Choice` | manual `/h-decide` workflow | human-confirmed choice + section refs -> DecisionRecord |
+| `Record Decided Choice` | host-routed `/h-decide` workflow | direct unambiguous operator choice + section refs -> DecisionRecord |
 | `Create WorkCommission` | `commission.create` | DecisionRecord + scope -> WorkCommission |
 | `Delegate to Harness` | `harness.run_commission` | runnable WorkCommission -> RuntimeRun |
 | `Review Evidence` | `evidence.review` | evidence carrier -> derived SpecCoverage state |

@@ -25,6 +25,7 @@ const (
 	SourceUnitRoleTOCRow           SourceUnitRole = "toc_row"
 	SourceUnitRolePatternBody      SourceUnitRole = "pattern_body"
 	SourceUnitRolePatternSection   SourceUnitRole = "pattern_section"
+	SourceUnitRolePatternScope     SourceUnitRole = "pattern_scope"
 )
 
 var sourceUnitRoleOrder = []SourceUnitRole{
@@ -33,6 +34,7 @@ var sourceUnitRoleOrder = []SourceUnitRole{
 	SourceUnitRoleTOCRow,
 	SourceUnitRolePatternBody,
 	SourceUnitRolePatternSection,
+	SourceUnitRolePatternScope,
 }
 
 type SourceProvenance struct {
@@ -269,7 +271,7 @@ func (request InspectQuery) execute(index QueryIndex, _ []CandidateProducer) (Qu
 	if !found {
 		return newQueryAbstention(
 			identifier,
-			"exact_source_unit_not_found",
+			ReasonExactSourceUnitNotFound,
 			[]string{"exact SourceID or UnitID in the requested source roles"},
 		), nil
 	}
@@ -282,6 +284,10 @@ const (
 	QueryResultKindExactHit     QueryResultKind = "exact_hit"
 	QueryResultKindCandidateSet QueryResultKind = "candidate_set"
 	QueryResultKindAbstained    QueryResultKind = "abstained"
+
+	// ReasonExactSourceUnitNotFound is the stable abstention reason returned
+	// when inspect mode cannot resolve an exact source identity.
+	ReasonExactSourceUnitNotFound = "exact_source_unit_not_found"
 )
 
 type QueryResult interface {

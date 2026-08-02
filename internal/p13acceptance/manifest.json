@@ -53,7 +53,6 @@
     "source_files": [
       ".context/current-plan-issue-report.md",
       ".context/haft-v9-deterministic-closeout.plan.md",
-      ".haft/config.yaml",
       ".haft/project-profile.yaml",
       ".haft/project.yaml",
       "AGENTS.md",
@@ -407,7 +406,7 @@
         "migration-v2 remains source-digest-pinned, tri-state, lossless, collision-safe, and authority-gated",
         "software specification claims preserve L/A/D/E and product-versus-enabling-system boundaries",
         "profile, semantic review, decision, TypeEnv selection, and release authority cannot be cross-bound",
-        "explicit_h_decide and strict_cli_speech_act retain their distinct evidence and failure contracts"
+        "host-routed operator requests bind exact decision, profile, and TypeEnv effects without claiming independent U.SpeechAct proof; MCP decision binding remains fail-closed"
       ],
       "suite_ids": ["go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_test"],
       "anchors": [
@@ -416,7 +415,7 @@
         {"package": "github.com/m0n0x41d/haft/internal/authority", "test": "TestEvaluateReceiptRejectsModelSuppliedArguments"},
         {"package": "github.com/m0n0x41d/haft/internal/decisionbinding", "test": "TestDecisionBindingServicePersistsExactTwoPhaseClosure"},
         {"package": "github.com/m0n0x41d/haft/internal/decisionbinding", "test": "TestDecisionContextPolicyRejectsProfileAndMigrationCrossBinding"},
-        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestArtifactCreateCLIUnknownDecisionBindingModeWritesNothing"},
+        {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestArtifactCreateCLIUsesHostRoutedDecisionBinder"},
         {"package": "github.com/m0n0x41d/haft/internal/cli", "test": "TestDispatchToolRejectsMCPBindingDecisionWithoutCreatingArtifact"}
       ]
     },
@@ -426,7 +425,7 @@
       "plan_span": "heading:### D2 — freeze and run one P13",
       "claims": [
         "only a canonical admitted profile can establish scoped applicability",
-        "v3 profile declaration is atomic, replay-safe, restart-safe, and projection debt cannot become Auto",
+        "host-routed v5 profile declaration and automatic singleton bootstrap are atomic, replay-safe, restart-safe, and projection debt cannot become Auto",
         "software, non-software, mixed, helper-code, Markdown-only, and ambiguous fixtures retain distinct policy results",
         "missing target-system relation is Underdetermined with admitted_target_system_relation, not NotApplicable",
         "the selected Transition Stage v5 is bound to the exact current profile basis, compatible ProfileFit, and unblocked installed projection-profile set"
@@ -434,7 +433,7 @@
       "suite_ids": ["go_normal", "go_vet", "pi_test", "pi_typecheck"],
       "anchors": [
         {"package": "github.com/m0n0x41d/haft/internal/profileonboarding", "test": "TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart"},
-        {"package": "github.com/m0n0x41d/haft/internal/profileadmission/sqlite", "test": "TestResolveCurrentWithinRehashesV3AuthorityUseInsideCallerSnapshot"},
+        {"package": "github.com/m0n0x41d/haft/internal/profileadmission/sqlite", "test": "TestResolveCurrentWithinRehashesV5AuthorityUseInsideCallerSnapshot"},
         {"package": "github.com/m0n0x41d/haft/internal/profileadmission/sqlite", "test": "TestCapabilityApplicabilityMatrixResolverIsUnderdeterminedWithoutAdmission"},
         {"package": "github.com/m0n0x41d/haft/internal/projectprofile", "test": "TestAdmittedScopeEntityRelationMakesTargetSystemSpecApplicable"},
         {"package": "github.com/m0n0x41d/haft/internal/profileprojection", "test": "TestHistoricalV2OpenDebtResolvesThroughV3TaggedEvent"},

@@ -11,8 +11,8 @@ import (
 )
 
 // The serve/MCP surface receives proposal content, not a human approval
-// SpeechAct. Rich decision fields are covered at the artifact core and manual
-// CLI seams; this test keeps the transport boundary honest and proves that no
+// request provenance. Rich decision fields are covered at the artifact core
+// and host-routed CLI seam; this test keeps the transport boundary honest and proves that no
 // model-supplied field can bypass it.
 func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T) {
 	store := setupCLIArtifactStore(t)
@@ -22,8 +22,8 @@ func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T
 	out, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
 		"action":            "decide",
 		"problem_statement": "A rich model-authored proposal must not institute a DecisionRecord.",
-		"selected_title":    "Use the typed manual decision path",
-		"why_selected":      "The binding act belongs to the human-operated CLI boundary.",
+		"selected_title":    "Use the host-routed decision path",
+		"why_selected":      "The binding effect belongs to a host route with operator provenance.",
 		"selection_policy":  "Reject every model or MCP attempt to institute the decision.",
 		"counterargument":   "The proposal contains all fields needed by a valid decision.",
 		"weakest_link":      "A future refactor could accidentally resume parsing before the authority check.",
@@ -43,18 +43,18 @@ func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T
 		}},
 		"choice_result": map[string]any{
 			"subject_ref":      "operator",
-			"option_set":       []any{"Use the typed manual decision path", "Bind directly from MCP"},
-			"comparison_basis": []any{"explicit h-decide follows project authority policy", "MCP cannot observe that external invocation"},
-			"choice_rule":      "Require explicit manual authorization.",
+			"option_set":       []any{"Use the host-routed decision path", "Bind directly from MCP"},
+			"comparison_basis": []any{"host conversation has operator request provenance", "MCP cannot observe the conversation"},
+			"choice_rule":      "Require one direct unambiguous operator request.",
 			"next_move":        string(artifact.ChoiceNextMoveChooseNow),
-			"variant_ref":      "Use the typed manual decision path",
+			"variant_ref":      "Use the host-routed decision path",
 		},
 		"transformation_record": map[string]any{
 			"transformed_entity": "DecisionRecord authority boundary",
 			"initial_state":      "model proposal",
-			"post_state":         "human-instituted decision",
+			"post_state":         "host-routed operator-requested decision",
 			"relation":           "requires",
-			"context":            "manual decision binding",
+			"context":            "operator request provenance",
 		},
 	})
 	assertDecisionBindingUnavailable(t, err)
@@ -63,7 +63,7 @@ func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T
 	}
 	for _, marker := range []string{
 		"haft artifact create decision.decide --input-file",
-		"/dev/tty",
+		"host_routed_operator_request",
 	} {
 		if !strings.Contains(err.Error(), marker) {
 			t.Fatalf("authority error omitted %q: %v", marker, err)

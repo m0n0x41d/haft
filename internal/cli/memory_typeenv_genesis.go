@@ -14,6 +14,7 @@ import (
 	typedmemorycandidates "github.com/m0n0x41d/haft/data/haft/local-practice/typed-memory/candidates"
 	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/fpf/typeenv"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvpreparation"
@@ -35,6 +36,7 @@ const (
 	projectTypeEnvGenesisReviewSchema              = "haft.project-typeenv.genesis-review/v1"
 	projectTypeEnvGenesisReviewFileName            = projecttypeenvreviewcarrier.FileName
 	projectTypeEnvGenesisReviewCarrierAuthorityRef = "carrier:.haft/" + projecttypeenvreviewcarrier.FileName
+	defaultProjectMemoryCarrierAuthorityRef        = "carrier:built-in/haft-init-default-project-memory/v1"
 	projectTypeEnvGenesisReviewWindow              = 24 * time.Hour
 	maximumProjectTypeEnvGenesisReviewBytes        = projecttypeenvreviewcarrier.MaximumBytes
 )
@@ -54,7 +56,7 @@ var memoryTypeEnvPrepareCmd = &cobra.Command{
 
 var memoryTypeEnvSelectCmd = &cobra.Command{
 	Use:   "select",
-	Short: "Select the exact reviewed project TypeEnv after manual h-decide",
+	Short: "Select the exact reviewed project TypeEnv after host routing",
 	Args:  cobra.NoArgs,
 	RunE:  runMemoryTypeEnvSelect,
 }
@@ -363,20 +365,8 @@ func runMemoryTypeEnvSelect(
 	cmd *cobra.Command,
 	_ []string,
 ) error {
-	return runMemoryTypeEnvSelectWithCapturer(
-		cmd,
-		projecttypeenvselectionauthority.
-			ControllingTerminalStrictCLISpeechActCapturer{},
-	)
-}
-
-func runMemoryTypeEnvSelectWithCapturer(
-	cmd *cobra.Command,
-	capturer projecttypeenvselectionauthority.StrictCLISpeechActCapturer,
-) error {
 	response, runErr := executeReviewedMemorySelection(
 		commandContext(cmd),
-		capturer,
 	)
 	if response.ContractVersion != "" {
 		writeErr := writeJSON(cmd.OutOrStdout(), response)
@@ -391,14 +381,31 @@ func runMemoryTypeEnvSelectWithCapturer(
 // round-trip the low-level JSON wire.
 func executeReviewedMemorySelection(
 	ctx context.Context,
-	capturer projecttypeenvselectionauthority.StrictCLISpeechActCapturer,
 ) (
 	response projectTypeEnvGenesisSelectionResponse,
 	runErr error,
 ) {
-	ledger, binding, err := openProjectTypeEnvGenesisLedger(
+	binding, err := resolveProjectMemoryAdmissionRoot()
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	return executeReviewedMemorySelectionAtBinding(
+		ctx,
+		binding,
+	)
+}
+
+func executeReviewedMemorySelectionAtBinding(
+	ctx context.Context,
+	binding ProjectBinding,
+) (
+	response projectTypeEnvGenesisSelectionResponse,
+	runErr error,
+) {
+	ledger, binding, err := openProjectTypeEnvGenesisLedgerAtBinding(
 		ctx,
 		projectledger.ReadWrite,
+		binding,
 	)
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
@@ -416,7 +423,6 @@ func executeReviewedMemorySelection(
 			ctx,
 			ledger,
 			binding,
-			capturer,
 		)
 	}
 	if reviewSchema != projectTypeEnvGenesisReviewSchema {
@@ -432,6 +438,23 @@ func executeReviewedMemorySelection(
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
+	return executeObservedGenesisSelection(
+		ctx,
+		ledger,
+		binding,
+		observedReview,
+	)
+}
+
+func executeObservedGenesisSelection(
+	ctx context.Context,
+	ledger *projectledger.Handle,
+	binding ProjectBinding,
+	observedReview observedProjectTypeEnvGenesisReview,
+) (
+	response projectTypeEnvGenesisSelectionResponse,
+	runErr error,
+) {
 	carrier := observedReview.carrier
 	request, content, stage, err := decodeProjectTypeEnvGenesisReview(
 		ctx,
@@ -473,14 +496,22 @@ func executeReviewedMemorySelection(
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
-	ingress, err := service.ResolveCurrentCLIIngress(
-		ctx,
+	payload, err := projecttypeenvselectionauthority.HostRoutedSelectionPayload(
 		request,
 		content,
-		stage,
-		observedReview.binding,
-		capturer,
 	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	operatorRequest, err := operatorrequest.New(
+		operatorrequest.ProjectTypeEnvHeadSelect,
+		request.Ref().String(),
+		payload,
+	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	ingress, err := selectionsqlite.NewHostRoutedOperatorRequest(operatorRequest)
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
@@ -489,7 +520,7 @@ func executeReviewedMemorySelection(
 		selectionsqlite.GenesisSelectionInput{
 			Request:   request,
 			Content:   content,
-			Authority: ingress.Ingress(),
+			Authority: ingress,
 		},
 	)
 	if err != nil {
@@ -502,11 +533,7 @@ func executeReviewedMemorySelection(
 	if err != nil {
 		return projectTypeEnvGenesisSelectionResponse{}, err
 	}
-	ingressPosture, err := projectTypeEnvGenesisCLIIngressPosture(ingress)
-	if err != nil {
-		return projectTypeEnvGenesisSelectionResponse{}, err
-	}
-	response.AuthorityIngress = ingressPosture
+	response.AuthorityIngress = string(operatorRequest.Provenance())
 	revalidationErr := ledger.Revalidate(ctx)
 	response.PostEffectLedgerRevalidation =
 		genesisLedgerRevalidationResult(revalidationErr)
@@ -517,6 +544,43 @@ func executeReviewedMemorySelection(
 		"revalidate project after Genesis selection: the exact effect outcome was emitted but the current root-to-ledger attachment is unverified: %w",
 		revalidationErr,
 	)
+}
+
+func observePreparedDefaultMemoryReview(
+	carrier projectTypeEnvGenesisReviewCarrier,
+) (observedProjectTypeEnvGenesisReview, error) {
+	canonical, err := json.MarshalIndent(carrier, "", "  ")
+	if err != nil {
+		return observedProjectTypeEnvGenesisReview{},
+			fmt.Errorf("encode default project memory basis: %w", err)
+	}
+	canonical = append(canonical, '\n')
+	sealed, err := projecttypeenvreviewcarrier.NewCarrier(canonical)
+	if err != nil {
+		return observedProjectTypeEnvGenesisReview{},
+			fmt.Errorf("seal default project memory basis: %w", err)
+	}
+	ref, err := authority.NewCarrierRef(
+		defaultProjectMemoryCarrierAuthorityRef,
+	)
+	if err != nil {
+		return observedProjectTypeEnvGenesisReview{},
+			fmt.Errorf("construct default project memory carrier ref: %w", err)
+	}
+	digest, err := authority.NewDigest(sealed.Digest().String())
+	if err != nil {
+		return observedProjectTypeEnvGenesisReview{},
+			fmt.Errorf("construct default project memory carrier digest: %w", err)
+	}
+	binding, err := authority.NewObservableCarrierBinding(ref, digest)
+	if err != nil {
+		return observedProjectTypeEnvGenesisReview{},
+			fmt.Errorf("bind default project memory carrier: %w", err)
+	}
+	return observedProjectTypeEnvGenesisReview{
+		carrier: carrier,
+		binding: binding,
+	}, nil
 }
 
 func loadExactReviewedMemoryTarget(
@@ -576,21 +640,6 @@ func reviewedTargetMatchesStage(
 		stage.VerifiedComposite() == target.Composite().Ref()
 }
 
-func projectTypeEnvGenesisCLIIngressPosture(
-	resolution selectionsqlite.CurrentCLIIngressResolution,
-) (string, error) {
-	switch {
-	case resolution.ExplicitHDecide():
-		return "explicit_h_decide", nil
-	case resolution.StrictCaptured():
-		return "strict_speech_act_captured", nil
-	case resolution.StrictReplayed():
-		return "strict_speech_act_replayed", nil
-	default:
-		return "", fmt.Errorf("genesis CLI ingress posture is invalid")
-	}
-}
-
 func genesisLedgerRevalidationResult(
 	cause error,
 ) projectTypeEnvGenesisPostEffectRevalidation {
@@ -615,6 +664,18 @@ func openProjectTypeEnvGenesisLedger(
 	if err != nil {
 		return nil, binding, projectBindingError(binding, err)
 	}
+	return openProjectTypeEnvGenesisLedgerAtBinding(
+		ctx,
+		mode,
+		binding,
+	)
+}
+
+func openProjectTypeEnvGenesisLedgerAtBinding(
+	ctx context.Context,
+	mode projectledger.Access,
+	binding ProjectBinding,
+) (*projectledger.Handle, ProjectBinding, error) {
 	ledger, err := projectledger.OpenExisting(
 		ctx,
 		binding.ProjectRoot,
@@ -895,7 +956,9 @@ func projectTypeEnvGenesisReviewReadinessFor(
 	profilePosture string,
 ) (projectTypeEnvGenesisReviewReadiness, string) {
 	reasons := make([]string, 0, 2)
-	if profilePosture != "compatible" {
+	profileReady := profilePosture == "compatible" ||
+		profilePosture == "underdetermined"
+	if !profileReady {
 		reasons = append(
 			reasons,
 			"project profile posture is "+profilePosture,
@@ -920,7 +983,7 @@ func projectTypeEnvGenesisReviewReadinessFor(
 			Reasons: []string{},
 			Repair:  "",
 		},
-		"manual h-decide on this exact candidate after the P8 SpecSections are rebaselined"
+		"direct unambiguous operator selection of this exact candidate after the P8 SpecSections are rebaselined"
 }
 
 func projectTypeEnvProfilePosture(
@@ -1479,7 +1542,7 @@ func genesisSelectionRepair(
 ) string {
 	switch reason.String() {
 	case "current_authority_rejection":
-		return "invoke h-decide manually for this exact review; strict_cli_speech_act projects additionally require the reviewed terminal SpeechAct"
+		return "route one direct, unambiguous operator request for this exact review"
 	case "review_expired":
 		return "prepare a fresh exact review carrier; another h-decide cannot revive expired authorization content"
 	case "profile_incompatible", "profile_underdetermined", "profile_drift":

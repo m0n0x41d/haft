@@ -41,6 +41,26 @@ const selectCommittedV2ByPayloadSQL = `WITH committed AS (
 	JOIN project_profile_revisions_v3 revision
 		ON revision.admission_id = admission.admission_id
 		AND revision.admission_digest = admission.admission_digest
+	UNION ALL
+	SELECT admission.admission_id, admission.admission_digest,
+		admission.project_root, admission.profile_payload_digest
+	FROM project_profile_admissions_v4 admission
+	JOIN profile_declaration_authority_uses_v4 authority_use
+		ON authority_use.committed_admission_ref = admission.admission_id
+		AND authority_use.committed_admission_digest = admission.admission_digest
+	JOIN project_profile_revisions_v4 revision
+		ON revision.admission_id = admission.admission_id
+		AND revision.admission_digest = admission.admission_digest
+	UNION ALL
+	SELECT admission.admission_id, admission.admission_digest,
+		admission.project_root, admission.profile_payload_digest
+	FROM project_profile_admissions_v5 admission
+	JOIN profile_declaration_authority_uses_v5 authority_use
+		ON authority_use.committed_admission_ref = admission.admission_id
+		AND authority_use.committed_admission_digest = admission.admission_digest
+	JOIN project_profile_revisions_v5 revision
+		ON revision.admission_id = admission.admission_id
+		AND revision.admission_digest = admission.admission_digest
 )
 SELECT
 	COUNT(*),
@@ -75,6 +95,7 @@ WHERE project_root = ?
 
 type canonicalAdmissionMaterial struct {
 	storageGeneration                 string
+	origin                            projectprofile.ProfileAdmissionOrigin
 	projectRoot                       projectprofile.ProjectRootV1
 	candidate                         projectprofile.ProfileDeclarationCandidateV1
 	payloadJSON                       []byte
@@ -333,6 +354,44 @@ func (adapter adapter) validateHistoricalAuthorityMaterial(
 		}
 		if err := finishError(finish); err != nil {
 			return fmt.Errorf("finish historical v3 authority validation: %w", err)
+		}
+		return nil
+	}
+	if material.storageGeneration == "v4" {
+		transaction, err := adapter.starter.BeginRead(ctx, adapter.database)
+		if err != nil {
+			return fmt.Errorf("begin historical v4 authority validation: %w", err)
+		}
+		validateErr := validateV4HistoricalMaterialInTransaction(
+			ctx,
+			transaction,
+			material,
+		)
+		finish := adapter.rollbackTransaction(transaction)
+		if validateErr != nil {
+			return validateErr
+		}
+		if err := finishError(finish); err != nil {
+			return fmt.Errorf("finish historical v4 authority validation: %w", err)
+		}
+		return nil
+	}
+	if material.storageGeneration == "v5" {
+		transaction, err := adapter.starter.BeginRead(ctx, adapter.database)
+		if err != nil {
+			return fmt.Errorf("begin historical v5 authority validation: %w", err)
+		}
+		validateErr := validateV5HistoricalMaterialInTransaction(
+			ctx,
+			transaction,
+			material,
+		)
+		finish := adapter.rollbackTransaction(transaction)
+		if validateErr != nil {
+			return validateErr
+		}
+		if err := finishError(finish); err != nil {
+			return fmt.Errorf("finish historical v5 authority validation: %w", err)
 		}
 		return nil
 	}
@@ -797,7 +856,10 @@ func parseCanonicalAdmissionMaterial(
 		return canonicalAdmissionMaterial{}, fmt.Errorf("parse durable authority-resolution digest: %w", err)
 	}
 	authorityUseDigest := projectprofile.ContentDigest{}
-	if row.storageGeneration == "v2" || row.storageGeneration == "v3" {
+	if row.storageGeneration == "v2" ||
+		row.storageGeneration == "v3" ||
+		row.storageGeneration == "v4" ||
+		row.storageGeneration == "v5" {
 		authorityUseDigest, err = projectprofile.NewContentDigest(row.useDigest)
 		if err != nil {
 			return canonicalAdmissionMaterial{}, fmt.Errorf("parse durable %s authority-use digest: %w", row.storageGeneration, err)
@@ -839,8 +901,15 @@ func parseCanonicalAdmissionMaterial(
 	if err != nil {
 		return canonicalAdmissionMaterial{}, err
 	}
+	origin, err := profileAdmissionOriginForStorageGeneration(
+		row.storageGeneration,
+	)
+	if err != nil {
+		return canonicalAdmissionMaterial{}, err
+	}
 	return canonicalAdmissionMaterial{
 		storageGeneration:                 row.storageGeneration,
+		origin:                            origin,
 		projectRoot:                       projectRoot,
 		candidate:                         candidate,
 		payloadJSON:                       []byte(row.payloadJSON),
@@ -872,6 +941,11 @@ func parseCanonicalAdmissionMaterial(
 }
 
 func validateCanonicalAdmissionMaterial(material canonicalAdmissionMaterial) error {
+	if _, ok := projectprofile.ParseProfileAdmissionOrigin(
+		string(material.origin),
+	); !ok {
+		return fmt.Errorf("canonical profile admission origin is invalid")
+	}
 	materialPayload := material.candidate.Payload()
 	materialProvenance := material.candidate.Provenance()
 	candidate, err := projectprofile.NewProfileDeclarationCandidateV1(
@@ -999,6 +1073,26 @@ func validateCanonicalAdmissionMaterial(material canonicalAdmissionMaterial) err
 	return nil
 }
 
+func profileAdmissionOriginForStorageGeneration(
+	generation string,
+) (projectprofile.ProfileAdmissionOrigin, error) {
+	switch generation {
+	case "v1", "v2":
+		return projectprofile.ProfileAdmissionOriginLegacyUnknown, nil
+	case "v3":
+		return projectprofile.ProfileAdmissionOriginExplicitOperator, nil
+	case "v4":
+		return projectprofile.ProfileAdmissionOriginDetectorDefault, nil
+	case "v5":
+		return projectprofile.ProfileAdmissionOriginHostRoutedOperatorRequest, nil
+	default:
+		return "", fmt.Errorf(
+			"canonical admission has unknown storage generation %q",
+			generation,
+		)
+	}
+}
+
 func buildCanonicalDurableTuple(
 	material canonicalAdmissionMaterial,
 ) (projectprofile.DurableProfileAdmissionTupleV1, error) {
@@ -1034,13 +1128,16 @@ func decodeCandidateFromCanonicalParts(
 }
 
 func validateRequestFreeDurableRow(row durableAdmissionRow) error {
-	if row.storageGeneration != "v1" && row.storageGeneration != "v2" && row.storageGeneration != "v3" {
+	if row.storageGeneration != "v1" && row.storageGeneration != "v2" &&
+		row.storageGeneration != "v3" && row.storageGeneration != "v4" &&
+		row.storageGeneration != "v5" {
 		return fmt.Errorf("durable profile admission has an unknown storage generation")
 	}
 	if row.storageGeneration == "v1" && row.useDigest != "" {
 		return fmt.Errorf("legacy durable profile admission has a v2 authority-use digest")
 	}
-	if row.storageGeneration == "v2" || row.storageGeneration == "v3" {
+	if row.storageGeneration == "v2" || row.storageGeneration == "v3" ||
+		row.storageGeneration == "v4" || row.storageGeneration == "v5" {
 		_, err := projectprofile.NewContentDigest(row.useDigest)
 		if err != nil {
 			return fmt.Errorf("parse %s authority-use digest: %w", row.storageGeneration, err)
@@ -1062,11 +1159,15 @@ func validateRequestFreeDurableRow(row durableAdmissionRow) error {
 	if err != nil {
 		return err
 	}
+	expectedActionKind := "profile.declare.from_onboarding_candidate"
+	if row.storageGeneration == "v4" {
+		expectedActionKind = v4ActionKind
+	}
 	checks := []struct {
 		matches bool
 		name    string
 	}{
-		{matches: row.actionKind == "profile.declare.from_onboarding_candidate", name: "action kind"},
+		{matches: row.actionKind == expectedActionKind, name: "action kind"},
 		{matches: row.ledgerRevision == committedRevisionRaw, name: "ledger revision"},
 		{matches: row.useAuthorityResolutionRef == row.authorityResolutionRef, name: "use authority-resolution ref"},
 		{matches: row.useAuthorityResolutionHash == row.authorityResolutionDigest, name: "use authority-resolution digest"},

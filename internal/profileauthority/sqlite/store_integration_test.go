@@ -9,15 +9,17 @@ import (
 	"testing"
 	"time"
 
-	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/profileauthority"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 func TestV43PreparationSourceAndClosureRoundTrip(t *testing.T) {
 	ctx := context.Background()
-	storeDB, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "profile-authority-v43.sqlite"))
+	storeDB, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "profile-authority-v43.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}
@@ -123,7 +125,9 @@ func TestV43PreparationSourceAndClosureRoundTrip(t *testing.T) {
 
 func TestV43SourceRejectionRollsBackPreparationSavepoint(t *testing.T) {
 	ctx := context.Background()
-	storeDB, err := kerneldb.NewStore(filepath.Join(t.TempDir(), "profile-authority-reject.sqlite"))
+	storeDB, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "profile-authority-reject.sqlite"),
+	)
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
 	}

@@ -8,12 +8,18 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/initexecution"
 	"github.com/m0n0x41d/haft/internal/initplanning"
+	profileadmissionsqlite "github.com/m0n0x41d/haft/internal/profileadmission/sqlite"
+	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
+	"github.com/m0n0x41d/haft/internal/profiledetector"
+	"github.com/m0n0x41d/haft/internal/profileonboarding"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
 type publicProjectCoreEffect struct {
@@ -68,7 +74,19 @@ func (effect publicProjectCoreEffect) ApplyCore(
 	if err != nil {
 		return initexecution.CoreEffectReceipt{}, err
 	}
+	profilePlan := plan.InitialProfileBootstrap()
+	contingentFiles, err := publicExactProfileBootstrapFileEffects(profilePlan)
+	if err != nil {
+		return initexecution.CoreEffectReceipt{}, err
+	}
+	if err := verifyPublicInitialProfileSnapshot(plan.ProjectRoot(), profilePlan); err != nil {
+		return initexecution.CoreEffectReceipt{}, err
+	}
+	if err := verifyPublicGeneratedProfileReview(profilePlan); err != nil {
+		return initexecution.CoreEffectReceipt{}, err
+	}
 	plannedPaths := publicCoreApplicationPaths(plan, coreFiles)
+	plannedPaths = append(plannedPaths, publicExactFilePaths(contingentFiles)...)
 	if err := verifyPublicRootMigrationPrecondition(plan); err != nil {
 		return initexecution.CoreEffectReceipt{},
 			newPublicCoreApplicationError(
@@ -90,6 +108,18 @@ func (effect publicProjectCoreEffect) ApplyCore(
 			)
 	}
 	for _, file := range coreFiles {
+		if err := verifyPublicExactFile(file); err != nil {
+			return initexecution.CoreEffectReceipt{},
+				newPublicCoreApplicationError(
+					err,
+					nil,
+					file.path,
+					plannedPaths,
+					recovery,
+				)
+		}
+	}
+	for _, file := range contingentFiles {
 		if err := verifyPublicExactFile(file); err != nil {
 			return initexecution.CoreEffectReceipt{},
 				newPublicCoreApplicationError(
@@ -192,7 +222,344 @@ func (effect publicProjectCoreEffect) ApplyCore(
 				}
 		}
 	}
+	reportPublicLegacyProjectConfigOutcome(
+		effect.output,
+		effect.request.projectRoot,
+		coreFiles,
+	)
+	if profilePlan.Kind() == initplanning.InitialProfileApplySingleton {
+		if err := verifyPublicInitialProfileSnapshot(plan.ProjectRoot(), profilePlan); err != nil {
+			return initexecution.CoreEffectReceipt{},
+				newPublicCoreApplicationError(
+					err,
+					completedPaths,
+					plan.DatabasePath(),
+					publicExactFilePaths(contingentFiles),
+					recovery,
+				)
+		}
+		admission, err := effect.applyAutomaticInitialProfile(
+			ctx,
+			plan,
+			profilePlan,
+		)
+		if err != nil {
+			return initexecution.CoreEffectReceipt{},
+				newPublicCoreApplicationError(
+					err,
+					completedPaths,
+					plan.DatabasePath(),
+					publicExactFilePaths(contingentFiles),
+					recovery,
+				)
+		}
+		carrierReceipt, err := applyPublicExactFileEffects(
+			ctx,
+			contingentFiles,
+			recovery,
+		)
+		completedPaths = append(completedPaths, carrierReceipt.Completed()...)
+		if err != nil {
+			return initexecution.CoreEffectReceipt{}, publicCoreApplicationError{
+				cause: err,
+				receipt: publicExactFileReceipt{
+					completed: completedPaths,
+					failed:    carrierReceipt.Failed(),
+					untouched: carrierReceipt.Untouched(),
+					retry:     carrierReceipt.Retry(),
+					recovery:  carrierReceipt.Recovery(),
+				},
+			}
+		}
+		if err := removePublicGeneratedProfileReview(profilePlan); err != nil {
+			return initexecution.CoreEffectReceipt{},
+				newPublicCoreApplicationError(
+					err,
+					completedPaths,
+					plan.DatabasePath(),
+					nil,
+					recovery,
+				)
+		}
+		fmt.Fprintf(
+			effect.output,
+			"Project profile: scope=%s origin=%s detector=%s policy=%s observation=%s carriers=%s\n",
+			profilePlan.ScopeID(),
+			admission.Origin(),
+			profilePlan.DetectorVersion(),
+			profilePlan.PolicyVersion(),
+			profilePlan.ObservationDigest(),
+			strings.Join(publicExactFilePaths(contingentFiles), ","),
+		)
+	}
+	if profilePlan.Kind() == initplanning.InitialProfileKeepExisting {
+		if err := effect.reportExistingPublicProfile(
+			ctx,
+			plan,
+			profilePlan,
+			coreFiles,
+		); err != nil {
+			return initexecution.CoreEffectReceipt{},
+				newPublicCoreApplicationError(
+					err,
+					completedPaths,
+					plan.DatabasePath(),
+					nil,
+					recovery,
+				)
+		}
+	}
+	if profilePlan.Kind() == initplanning.InitialProfileHumanReviewRequired {
+		fmt.Fprintf(
+			effect.output,
+			"Project profile: human_review_required detector=%s policy=%s observation=%s classification=%s confidence=%s reason=%s recovery=/h-onboard\n",
+			profilePlan.DetectorVersion(),
+			profilePlan.PolicyVersion(),
+			profilePlan.ObservationDigest(),
+			profilePlan.Classification(),
+			profilePlan.Confidence(),
+			profilePlan.Reason(),
+		)
+	}
+	if err := initializeDefaultProjectMemory(
+		ctx,
+		plan.ProjectRoot(),
+		plan.ProjectID().String(),
+	); err != nil {
+		return initexecution.CoreEffectReceipt{},
+			publicCoreApplicationError{
+				cause: err,
+				receipt: publicExactFileReceipt{
+					completed: completedPaths,
+					failed:    plan.DatabasePath(),
+					retry:     []string{plan.DatabasePath()},
+					recovery:  recovery,
+				},
+			}
+	}
 	return coreReceipt, nil
+}
+
+func (effect publicProjectCoreEffect) reportExistingPublicProfile(
+	ctx context.Context,
+	plan initplanning.CoreProjectPlan,
+	profilePlan initplanning.InitialProfileBootstrapPlan,
+	coreFiles []publicExactFileEffect,
+) (runErr error) {
+	ledger, err := projectledger.OpenExisting(
+		ctx,
+		plan.ProjectRoot(),
+		projectledger.ReadOnly,
+	)
+	if err != nil {
+		return fmt.Errorf("open current profile for init report: %w", err)
+	}
+	defer func() {
+		runErr = errors.Join(runErr, ledger.Close())
+	}()
+	current, err := readCanonicalProfile(
+		ctx,
+		ledger.Database(),
+		ledger.ProjectRoot().String(),
+	)
+	if err != nil {
+		return err
+	}
+	if current.Kind != "declared" {
+		return fmt.Errorf("existing initial profile plan has no canonical admission")
+	}
+	scopeIDs := make([]string, len(current.Scopes))
+	for index, scope := range current.Scopes {
+		scopeIDs[index] = scope.ScopeID
+	}
+	carriers := publicProfileCarrierPaths(coreFiles)
+	fmt.Fprintf(
+		effect.output,
+		"Project profile: scopes=%s origin=%s current_detector=%s policy=%s observation=%s carriers=%s\n",
+		strings.Join(scopeIDs, ","),
+		current.Origin,
+		profilePlan.DetectorVersion(),
+		profilePlan.PolicyVersion(),
+		profilePlan.ObservationDigest(),
+		strings.Join(carriers, ","),
+	)
+	return nil
+}
+
+func publicProfileCarrierPaths(files []publicExactFileEffect) []string {
+	paths := make([]string, 0, len(files))
+	for _, file := range files {
+		normalized := filepath.ToSlash(file.path)
+		if !strings.Contains(normalized, "/.haft/specs/") &&
+			!strings.Contains(normalized, "/.haft/methods/") {
+			continue
+		}
+		paths = append(paths, file.path)
+	}
+	if len(paths) == 0 {
+		return []string{"none"}
+	}
+	return paths
+}
+
+func publicExactProfileBootstrapFileEffects(
+	plan initplanning.InitialProfileBootstrapPlan,
+) ([]publicExactFileEffect, error) {
+	if plan.Kind() != initplanning.InitialProfileApplySingleton {
+		return nil, nil
+	}
+	planned := plan.ContingentFileEffects()
+	effects := make([]publicExactFileEffect, len(planned))
+	for index, effect := range planned {
+		kind := publicExactFileEffectKind(effect.Kind())
+		if kind != publicExactFileCreate && kind != publicExactFilePreserve &&
+			kind != publicExactFileReplace {
+			return nil, fmt.Errorf("profile carrier %s has invalid effect", effect.Path())
+		}
+		effects[index] = publicExactFileEffect{
+			kind: kind, path: effect.Path(), content: effect.Content(),
+			mode: effect.Mode(), renderedDigest: effect.RenderedDigest(),
+			expectedDigest: effect.ExpectedDigest(), expectedMode: effect.ExpectedMode(),
+		}
+	}
+	return effects, nil
+}
+
+func verifyPublicInitialProfileSnapshot(
+	projectRoot string,
+	plan initplanning.InitialProfileBootstrapPlan,
+) error {
+	if plan.Kind() == "" || plan.Kind() == initplanning.InitialProfileNotPlanned {
+		return nil
+	}
+	suggestion, err := inspectPublicProfileSuggestion(projectRoot)
+	if err != nil {
+		return err
+	}
+	checks := []struct {
+		matches bool
+		name    string
+	}{
+		{matches: suggestion.DetectorVersion() == plan.DetectorVersion(), name: "detector version"},
+		{matches: profiledetector.PolicyVersion == plan.PolicyVersion(), name: "policy version"},
+		{matches: suggestion.SuggestionRef() == plan.SuggestionRef(), name: "suggestion ref"},
+		{matches: suggestion.Snapshot().ObservationDigest() == plan.ObservationDigest(), name: "observation digest"},
+		{matches: string(suggestion.Classification()) == plan.Classification(), name: "classification"},
+		{matches: string(suggestion.ConfidencePosture()) == plan.Confidence(), name: "confidence"},
+		{matches: suggestion.Snapshot().ScannedFileCount() == plan.ScannedFileCount(), name: "scanned file count"},
+		{matches: suggestion.Snapshot().Truncated() == plan.Truncated(), name: "truncation posture"},
+	}
+	for _, check := range checks {
+		if !check.matches {
+			return fmt.Errorf(
+				"project profile detector %s changed after init planning; no automatic profile admission was attempted",
+				check.name,
+			)
+		}
+	}
+	return nil
+}
+
+func verifyPublicGeneratedProfileReview(
+	plan initplanning.InitialProfileBootstrapPlan,
+) error {
+	path, expectedDigest, present := plan.GeneratedReview()
+	if !present {
+		return nil
+	}
+	content, found, err := readOptionalRegularProfileReview(path)
+	if err != nil {
+		return err
+	}
+	if !found {
+		return fmt.Errorf("planned generated profile review disappeared")
+	}
+	if _, generated := profiledeclarationpreparation.InspectGeneratedProfileReview(content); !generated {
+		return fmt.Errorf("planned generated profile review was semantically edited")
+	}
+	digest, err := digestRegularFile(path)
+	if err != nil {
+		return err
+	}
+	if digest != expectedDigest {
+		return fmt.Errorf("planned generated profile review changed")
+	}
+	return nil
+}
+
+func (effect publicProjectCoreEffect) applyAutomaticInitialProfile(
+	ctx context.Context,
+	plan initplanning.CoreProjectPlan,
+	profilePlan initplanning.InitialProfileBootstrapPlan,
+) (profileadmissionsqlite.CanonicalProfileAdmission, error) {
+	suggestion, err := inspectPublicProfileSuggestion(plan.ProjectRoot())
+	if err != nil {
+		return profileadmissionsqlite.CanonicalProfileAdmission{}, err
+	}
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		plan.ProjectRoot(),
+		projectledger.ReadWrite,
+		"automatic initial profile bootstrap",
+	)
+	if err != nil {
+		return profileadmissionsqlite.CanonicalProfileAdmission{}, err
+	}
+	result, runErr := profileonboarding.RunAutomaticInitialProfileBootstrap(
+		ctx,
+		ledger.Database(),
+		plan.ProjectRoot(),
+		suggestion,
+		ledger.Revalidate,
+	)
+	closeErr := ledger.Close()
+	if runErr != nil || closeErr != nil {
+		return profileadmissionsqlite.CanonicalProfileAdmission{}, errors.Join(runErr, closeErr)
+	}
+	if result.Kind() != profileonboarding.ResultSynchronized {
+		if failure, ok := result.Failure(); ok {
+			return profileadmissionsqlite.CanonicalProfileAdmission{}, fmt.Errorf(
+				"automatic profile bootstrap %s: %s",
+				failure.Code(),
+				failure.Detail(),
+			)
+		}
+		if rejections, ok := result.Rejections(); ok {
+			return profileadmissionsqlite.CanonicalProfileAdmission{}, fmt.Errorf(
+				"automatic profile bootstrap rejected: %s: %s",
+				rejections[0].Code(),
+				rejections[0].Detail(),
+			)
+		}
+		return profileadmissionsqlite.CanonicalProfileAdmission{}, fmt.Errorf(
+			"automatic profile bootstrap returned %s",
+			result.Kind(),
+		)
+	}
+	admission, ok := result.Admission()
+	if !ok || admission.Origin() != projectprofile.ProfileAdmissionOriginDetectorDefault ||
+		admission.PayloadDigest().String() != profilePlan.PayloadDigest() {
+		return profileadmissionsqlite.CanonicalProfileAdmission{}, fmt.Errorf(
+			"automatic profile bootstrap returned a mismatched canonical admission",
+		)
+	}
+	return admission, nil
+}
+
+func removePublicGeneratedProfileReview(
+	plan initplanning.InitialProfileBootstrapPlan,
+) error {
+	path, _, present := plan.GeneratedReview()
+	if !present {
+		return nil
+	}
+	if err := verifyPublicGeneratedProfileReview(plan); err != nil {
+		return err
+	}
+	if err := os.Remove(path); err != nil {
+		return fmt.Errorf("remove admitted generated profile review: %w", err)
+	}
+	return syncProfileReviewDirectory(filepath.Dir(path))
 }
 
 func newPublicCoreApplicationError(
@@ -295,7 +662,8 @@ func publicExactCoreFileEffects(
 		kind := publicExactFileEffectKind(effect.Kind())
 		if kind != publicExactFileCreate &&
 			kind != publicExactFilePreserve &&
-			kind != publicExactFileReplace {
+			kind != publicExactFileReplace &&
+			kind != publicExactFileRemove {
 			return nil, fmt.Errorf(
 				"core file effect %s has invalid kind %s",
 				effect.Path(),
@@ -313,6 +681,33 @@ func publicExactCoreFileEffects(
 		}
 	}
 	return effects, nil
+}
+
+func reportPublicLegacyProjectConfigOutcome(
+	output io.Writer,
+	projectRoot string,
+	files []publicExactFileEffect,
+) {
+	path := project.ProjectConfigPath(filepath.Join(projectRoot, ".haft"))
+	for _, file := range files {
+		if file.path != path {
+			continue
+		}
+		if file.kind == publicExactFileRemove {
+			fmt.Fprintf(
+				output,
+				"Legacy project config removed: %s (exact Haft-generated authority-only carrier)\n",
+				path,
+			)
+			return
+		}
+		fmt.Fprintf(
+			output,
+			"Legacy project config preserved byte-for-byte and ignored: %s (operator-modified or unrecognized carrier)\n",
+			path,
+		)
+		return
+	}
 }
 
 func verifyPublicCorePreconditions(

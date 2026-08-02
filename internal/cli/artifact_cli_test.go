@@ -2,6 +2,7 @@ package cli
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"os"
@@ -51,14 +52,12 @@ func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
 			},
 		},
 	})
-	strictSession := &fakeManualDecisionBindingSession{}
-	stubManualDecisionBindingSession(t, strictSession)
 	decision := runArtifactCreateForTest(t, root, "decision.decide", artifact.DecideInput{
 		ProblemRef:      problem.ID,
 		PortfolioRef:    portfolio.ID,
 		SelectedTitle:   "Input-file artifact CLI",
 		WhySelected:     "It moves large write payloads out of MCP tool-call arguments while using the same artifact core.",
-		SelectionPolicy: "Preserve kernel validation and manual binding, then reduce session context.",
+		SelectionPolicy: "Preserve kernel validation and host-routed operator provenance, then reduce session context.",
 		WeakestLink:     "Agents must retrieve the compact interface before writing the input file.",
 		CounterArgument: "MCP-only writes are simpler and already typed.",
 		WhyNotOthers: []artifact.RejectionReason{
@@ -72,7 +71,7 @@ func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
 		Predictions: []artifact.PredictionInput{
 			{Claim: "CLI artifact create works", Observable: "CLI e2e test", Threshold: "test passes"},
 		},
-		Invariants:    []string{"Manual binding remains explicit."},
+		Invariants:    []string{"Only a direct unambiguous operator request reaches the effect sink."},
 		AffectedFiles: []string{"internal/cli/artifact_cli.go"},
 		ValidUntil:    "2026-08-08T00:00:00+04:00",
 		Context:       "cli-artifact-test",
@@ -85,11 +84,10 @@ func TestArtifactCreateCLI_CreatesProblemPortfolioAndDecision(t *testing.T) {
 	if !strings.Contains(decision.File, ".haft/decisions/") {
 		t.Fatalf("decision file should be a decision projection path, got %q", decision.File)
 	}
-	if strictSession.bindInput.SelectedTitle != "" {
-		t.Fatalf(
-			"default explicit_h_decide unexpectedly invoked strict SpeechAct binding with %q",
-			strictSession.bindInput.SelectedTitle,
-		)
+	decisionRecord := loadArtifactRecordForTest(t, root, decision.ID)
+	fields := decisionRecord.UnmarshalDecisionFields()
+	if fields.AuthorityProvenance != "host_routed_operator_request" {
+		t.Fatalf("decision authority provenance = %q", fields.AuthorityProvenance)
 	}
 }
 
@@ -198,73 +196,62 @@ func assertArtifactCLITaskProjection(
 	}
 }
 
-func TestArtifactCreateCLIStrictModeUsesSpeechActBindingService(t *testing.T) {
+func TestArtifactCreateCLIUsesHostRoutedDecisionBinder(t *testing.T) {
 	root := newArtifactCLITestProject(t)
-	writeDecisionBindingModeForTest(
-		t,
-		root,
-		project.DecisionBindingModeStrictCLISpeechAct,
-	)
-	session := &fakeManualDecisionBindingSession{
-		bindResult: manualDecisionBindingOutcome{
-			DecisionRef: "dec-20260716-strict-cli-a1b2c3d4",
-			Title:       "Strict CLI SpeechAct",
-			FilePath:    filepath.Join(root, ".haft", "decisions", "strict-cli.md"),
+	binder := &fakeHostRoutedDecisionBinder{
+		result: decisionBindingOutcome{
+			DecisionRef: "dec-20260801-host-route-a1b2c3d4",
+			Title:       "Host-routed operator request",
+			FilePath:    filepath.Join(root, ".haft", "decisions", "host-route.md"),
 		},
 	}
-	stubManualDecisionBindingSession(t, session)
+	stubHostRoutedDecisionBinder(t, binder)
 
 	result := runArtifactCreateForTest(t, root, "decision.decide", artifact.DecideInput{
-		ProblemStatement: "Strict projects require a second controlling-terminal act.",
-		SelectedTitle:    "Strict CLI SpeechAct",
-		WhySelected:      "The project explicitly opted into the stronger local gate.",
+		ProblemStatement: "The host needs a bounded decision effect sink.",
+		SelectedTitle:    "Host-routed operator request",
+		WhySelected:      "The host already received the direct operator request.",
 	})
 
-	if session.bindInput.SelectedTitle != "Strict CLI SpeechAct" {
-		t.Fatalf("strict binding input title = %q", session.bindInput.SelectedTitle)
+	if binder.input.SelectedTitle != "Host-routed operator request" {
+		t.Fatalf("host-routed binding input title = %q", binder.input.SelectedTitle)
 	}
-	if result.ID != "dec-20260716-strict-cli-a1b2c3d4" {
-		t.Fatalf("strict decision ID = %q", result.ID)
+	if result.ID != "dec-20260801-host-route-a1b2c3d4" {
+		t.Fatalf("host-routed decision ID = %q", result.ID)
 	}
 }
 
-func TestArtifactCreateCLIUnknownDecisionBindingModeWritesNothing(t *testing.T) {
+func TestArtifactCreateCLIIgnoresAndPreservesLegacyProjectConfig(t *testing.T) {
 	root := newArtifactCLITestProject(t)
-	before := countDecisionRecordsForTest(t, root)
 	configPath := filepath.Join(root, ".haft", "config.yaml")
-	invalidConfig := strings.Join([]string{
-		"schema_version: 1",
-		"authority:",
-		"  decision_binding_mode: typo_that_must_not_fallback",
-		"",
-	}, "\n")
-	if err := os.WriteFile(configPath, []byte(invalidConfig), 0o644); err != nil {
-		t.Fatalf("write invalid project config: %v", err)
+	legacyConfig := []byte("operator-owned: true\n# byte-for-byte preservation\n")
+	if err := os.WriteFile(configPath, legacyConfig, 0o644); err != nil {
+		t.Fatalf("write legacy project config: %v", err)
 	}
+	binder := &fakeHostRoutedDecisionBinder{
+		result: decisionBindingOutcome{
+			DecisionRef: "dec-20260801-config-ignored-a1b2c3d4",
+			Title:       "Ignore project authority config",
+			FilePath:    filepath.Join(root, ".haft", "decisions", "config-ignored.md"),
+		},
+	}
+	stubHostRoutedDecisionBinder(t, binder)
 
-	inputPath := filepath.Join(root, "invalid-mode-decision.json")
-	if err := os.WriteFile(inputPath, []byte(`{}`), 0o644); err != nil {
-		t.Fatalf("write decision input: %v", err)
-	}
-	previousInputFile := artifactCreateInputFile
-	previousJSON := artifactCreateJSON
-	artifactCreateInputFile = inputPath
-	artifactCreateJSON = true
-	t.Cleanup(func() {
-		artifactCreateInputFile = previousInputFile
-		artifactCreateJSON = previousJSON
+	result := runArtifactCreateForTest(t, root, "decision.decide", artifact.DecideInput{
+		ProblemStatement: "Project-local authority switches are retired.",
+		SelectedTitle:    "Ignore project authority config",
+		WhySelected:      "The host route owns request classification.",
 	})
 
-	err := runArtifactCreate(&cobra.Command{}, []string{"decision.decide"})
-	if err == nil {
-		t.Fatal("unknown decision binding mode was accepted")
+	if result.ID != "dec-20260801-config-ignored-a1b2c3d4" {
+		t.Fatalf("decision ID = %q", result.ID)
 	}
-	if !strings.Contains(err.Error(), "typo_that_must_not_fallback") {
-		t.Fatalf("config error omitted invalid mode: %v", err)
+	after, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read preserved legacy project config: %v", err)
 	}
-	after := countDecisionRecordsForTest(t, root)
-	if after != before {
-		t.Fatalf("DecisionRecord count changed after config rejection: before=%d after=%d", before, after)
+	if !bytes.Equal(after, legacyConfig) {
+		t.Fatalf("legacy project config changed:\n%s", after)
 	}
 }
 
@@ -467,19 +454,6 @@ func runArtifactCreateForTest(t *testing.T, root string, capability string, inpu
 	return result
 }
 
-func writeDecisionBindingModeForTest(
-	t *testing.T,
-	projectRoot string,
-	mode project.DecisionBindingMode,
-) {
-	t.Helper()
-	content := "schema_version: 1\nauthority:\n  decision_binding_mode: " + string(mode) + "\n"
-	path := filepath.Join(projectRoot, ".haft", "config.yaml")
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write project config: %v", err)
-	}
-}
-
 func countDecisionRecordsForTest(t *testing.T, projectRoot string) int {
 	t.Helper()
 	cfg, err := project.Load(filepath.Join(projectRoot, ".haft"))
@@ -505,4 +479,30 @@ func countDecisionRecordsForTest(t *testing.T, projectRoot string) int {
 		t.Fatalf("count DecisionRecords: %v", err)
 	}
 	return count
+}
+
+func loadArtifactRecordForTest(
+	t *testing.T,
+	projectRoot string,
+	artifactID string,
+) *artifact.Artifact {
+	t.Helper()
+	cfg, err := project.Load(filepath.Join(projectRoot, ".haft"))
+	if err != nil {
+		t.Fatalf("load project identity: %v", err)
+	}
+	dbPath, err := cfg.DBPath()
+	if err != nil {
+		t.Fatalf("resolve project database: %v", err)
+	}
+	database, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open project database: %v", err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	record, err := artifact.NewStore(database).Get(context.Background(), artifactID)
+	if err != nil {
+		t.Fatalf("load artifact %s: %v", artifactID, err)
+	}
+	return record
 }

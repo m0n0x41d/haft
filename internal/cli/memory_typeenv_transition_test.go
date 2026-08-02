@@ -11,11 +11,13 @@ import (
 
 	basetypeenvartifacts "github.com/m0n0x41d/haft/data/haft/base-typeenv/artifacts"
 	typedmemorycandidates "github.com/m0n0x41d/haft/data/haft/local-practice/typed-memory/candidates"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectmemory"
 	"github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvpreparation"
 	profilebasissqlite "github.com/m0n0x41d/haft/internal/projecttypeenvprofilebasis/sqlite"
+	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect"
 	selectionsqlite "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvstage"
@@ -60,7 +62,7 @@ func TestTransitionPriorFixtureBuildsDistinctExactTarget(t *testing.T) {
 	prior := transitionPriorTarget(t)
 	current, err := localpracticeruntime.Build(
 		runtime.Artifact(),
-		typedmemorycandidates.SourceV1_4(),
+		typedmemorycandidates.SourceV1_5(),
 	)
 	if err != nil {
 		t.Fatalf("build current target: %v", err)
@@ -132,10 +134,29 @@ func TestMemoryTypeEnvPrepareAndSelectTransitionWithoutTechnicalArguments(
 		prepared.Candidate.PriorHeadRevision != 1 ||
 		prepared.Candidate.PriorCompositeTypeEnvRef != priorComposite ||
 		prepared.Candidate.GraphRevision != 1 ||
+		prepared.Candidate.Compatibility.Unchanged != 241 ||
+		prepared.Candidate.Compatibility.CompilerGap != 12 ||
+		prepared.Candidate.Compatibility.Additive != 0 ||
+		prepared.Candidate.Compatibility.Widened != 0 ||
+		prepared.Candidate.Compatibility.Narrowed != 0 ||
+		prepared.Candidate.Compatibility.Removed != 0 ||
 		prepared.Review.Readiness.Posture != "selectable" ||
 		prepared.Interpretation.NextHumanGate == "" ||
 		prepared.ReviewCarrier.Path != projectTypeEnvGenesisReviewRelativePath() {
 		t.Fatalf("Transition prepare response = %#v", prepared)
+	}
+	if len(prepared.Candidate.ProjectionProfiles) == 0 {
+		t.Fatal("Transition prepare response has no installed projection-profile review")
+	}
+	for _, profile := range prepared.Candidate.ProjectionProfiles {
+		if profile.Posture != "compatible" || len(profile.AffectedFacets) != 0 {
+			t.Fatalf(
+				"Transition projection profile %s = %s/%v, want compatible with no affected facets",
+				profile.ProfileRef,
+				profile.Posture,
+				profile.AffectedFacets,
+			)
+		}
 	}
 	if strings.Contains(prepareOutput.String(), "DECIDE THIS") ||
 		strings.Contains(prepareOutput.String(), "--packet") {
@@ -163,7 +184,7 @@ func TestMemoryTypeEnvPrepareAndSelectTransitionWithoutTechnicalArguments(
 		t.Fatalf("decode Transition selection outcome: %v", err)
 	}
 	if selectedEnvelope.ContractVersion != "haft.project-typeenv.transition-selection/v1" ||
-		selectedEnvelope.AuthorityIngress != "explicit_h_decide" ||
+		selectedEnvelope.AuthorityIngress != "host_routed_operator_request" ||
 		selected.Kind != "freshly_committed" ||
 		selected.CommittedClosure.HeadRevision != 2 ||
 		selected.CommittedClosure.CommittedGraphRevision != 2 ||
@@ -395,12 +416,31 @@ func seedPriorProjectTypeEnvHead(
 	if err != nil {
 		t.Fatalf("open seed Genesis selection service: %v", err)
 	}
+	payload, err := projecttypeenvselectionauthority.HostRoutedSelectionPayload(
+		request,
+		content,
+	)
+	if err != nil {
+		t.Fatalf("seal seed host-routed payload: %v", err)
+	}
+	operatorRequest, err := operatorrequest.New(
+		operatorrequest.ProjectTypeEnvHeadSelect,
+		request.Ref().String(),
+		payload,
+	)
+	if err != nil {
+		t.Fatalf("seal seed host-routed request: %v", err)
+	}
+	ingress, err := selectionsqlite.NewHostRoutedOperatorRequest(operatorRequest)
+	if err != nil {
+		t.Fatalf("seal seed host-routed ingress: %v", err)
+	}
 	result, err := service.SelectGenesis(
 		ctx,
 		selectionsqlite.GenesisSelectionInput{
 			Request:   request,
 			Content:   content,
-			Authority: selectionsqlite.NewDedicatedCLIInvocation(),
+			Authority: ingress,
 		},
 	)
 	if err != nil {
@@ -414,12 +454,12 @@ func seedPriorProjectTypeEnvHead(
 
 func transitionPriorSource(t *testing.T) []byte {
 	t.Helper()
-	return typedmemorycandidates.SourceV1_2()
+	return typedmemorycandidates.SourceV1_4()
 }
 
 func transitionPriorTarget(t *testing.T) localpracticeruntime.Target {
 	t.Helper()
-	ref, err := typedmemory.ParseTypeEnvRef(basetypeenvartifacts.HistoricalV3Ref)
+	ref, err := typedmemory.ParseTypeEnvRef(basetypeenvartifacts.HistoricalV5Ref)
 	if err != nil {
 		t.Fatalf("parse historical transition Base reference: %v", err)
 	}

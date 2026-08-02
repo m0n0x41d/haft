@@ -3,7 +3,9 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/fpf/typeenv"
@@ -13,6 +15,8 @@ import (
 
 var openEmbeddedMemoryDBFunc = openFPFDBContext
 
+var processEmbeddedMemoryRuntimeCache embeddedMemoryRuntimeCache
+
 // embeddedMemoryRuntime is the immutable executable projection of the exact
 // source-derived TypeEnv embedded in fpf.db. It deliberately owns no database
 // handle and has no project-memory dependency.
@@ -20,6 +24,28 @@ type embeddedMemoryRuntime struct {
 	artifact    typeenv.BaseTypeEnvArtifact
 	environment typedmemory.TypeEnv
 	codecs      typedmemory.CodecRegistry
+}
+
+// embeddedMemoryRuntimeCache owns one immutable source-derived runtime for the
+// current process. The embedded database and its source bytes cannot change
+// after the binary starts, so reloading and lowering that exact artifact for
+// every command or test adds work without refreshing any observable basis.
+//
+// Failed and cancelled loads are deliberately not cached. A later caller can
+// therefore retry after a transient extraction or context failure.
+type embeddedMemoryRuntimeCache struct {
+	mu       sync.Mutex
+	runtime  embeddedMemoryRuntime
+	ready    bool
+	inFlight *embeddedMemoryRuntimeLoad
+}
+
+type embeddedMemoryRuntimeLoad struct {
+	done       chan struct{}
+	runtime    embeddedMemoryRuntime
+	err        error
+	panicked   bool
+	panicValue any
 }
 
 func (runtime embeddedMemoryRuntime) Artifact() typeenv.BaseTypeEnvArtifact {
@@ -40,6 +66,117 @@ func loadEmbeddedMemoryRuntime(
 	if ctx == nil {
 		return embeddedMemoryRuntime{}, fmt.Errorf("load embedded memory runtime: context is required")
 	}
+	return processEmbeddedMemoryRuntimeCache.load(
+		ctx,
+		loadEmbeddedMemoryRuntimeUncached,
+	)
+}
+
+func (cache *embeddedMemoryRuntimeCache) load(
+	ctx context.Context,
+	loader func(context.Context) (embeddedMemoryRuntime, error),
+) (embeddedMemoryRuntime, error) {
+	if ctx == nil {
+		return embeddedMemoryRuntime{}, fmt.Errorf(
+			"load embedded memory runtime: context is required",
+		)
+	}
+	if loader == nil {
+		return embeddedMemoryRuntime{}, fmt.Errorf(
+			"load embedded memory runtime: loader is required",
+		)
+	}
+	for {
+		if err := ctx.Err(); err != nil {
+			return embeddedMemoryRuntime{}, fmt.Errorf(
+				"load embedded memory runtime: %w",
+				err,
+			)
+		}
+
+		cache.mu.Lock()
+		if cache.ready {
+			runtime := cache.runtime
+			cache.mu.Unlock()
+			if err := ctx.Err(); err != nil {
+				return embeddedMemoryRuntime{}, fmt.Errorf(
+					"load embedded memory runtime: %w",
+					err,
+				)
+			}
+			return runtime, nil
+		}
+		if cache.inFlight != nil {
+			load := cache.inFlight
+			cache.mu.Unlock()
+			select {
+			case <-load.done:
+				if err := ctx.Err(); err != nil {
+					return embeddedMemoryRuntime{}, fmt.Errorf(
+						"load embedded memory runtime: %w",
+						err,
+					)
+				}
+				if load.panicked {
+					panic(load.panicValue)
+				}
+				if errors.Is(load.err, context.Canceled) ||
+					errors.Is(load.err, context.DeadlineExceeded) {
+					continue
+				}
+				return load.runtime, load.err
+			case <-ctx.Done():
+				return embeddedMemoryRuntime{}, fmt.Errorf(
+					"load embedded memory runtime: %w",
+					ctx.Err(),
+				)
+			}
+		}
+		load := &embeddedMemoryRuntimeLoad{done: make(chan struct{})}
+		cache.inFlight = load
+		cache.mu.Unlock()
+
+		var runtime embeddedMemoryRuntime
+		var err error
+		var panicValue any
+		func() {
+			defer func() {
+				panicValue = recover()
+			}()
+			runtime, err = loader(ctx)
+		}()
+		if panicValue == nil && err == nil {
+			if contextErr := ctx.Err(); contextErr != nil {
+				err = fmt.Errorf(
+					"load embedded memory runtime: %w",
+					contextErr,
+				)
+				runtime = embeddedMemoryRuntime{}
+			}
+		}
+
+		cache.mu.Lock()
+		load.runtime = runtime
+		load.err = err
+		load.panicked = panicValue != nil
+		load.panicValue = panicValue
+		if panicValue == nil && err == nil {
+			cache.runtime = runtime
+			cache.ready = true
+		}
+		cache.inFlight = nil
+		close(load.done)
+		cache.mu.Unlock()
+		if panicValue != nil {
+			panic(panicValue)
+		}
+		return runtime, err
+	}
+}
+
+func loadEmbeddedMemoryRuntimeUncached(
+	ctx context.Context,
+) (embeddedMemoryRuntime, error) {
 	database, cleanup, err := openEmbeddedMemoryDBFunc(ctx)
 	if err != nil {
 		return embeddedMemoryRuntime{}, fmt.Errorf("open embedded FPF database: %w", err)

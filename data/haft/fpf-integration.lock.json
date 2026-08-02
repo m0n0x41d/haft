@@ -1,0 +1,19 @@
+{
+  "schema_version": "haft.fpf-integration-lock/v1",
+  "generated_by": "fpf-refresh-inputs/v1:sha256:d9c6fdd52b18043eee92300f1dfd3a165710c537964e4567862f33465b083f15",
+  "coordinates": {
+    "source_revision": "d1f696e7c7767705206a8cacd9f6ed48e4dc5b02",
+    "readme_document_digest": "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",
+    "spec_document_digest": "sha256:7a1e56595a5bb850d6db571f1bd42bccec4a5a3859f480aadebae4e532557da9",
+    "database_digest": "sha256:7296d61656a8309f5fbc8cef2cb88bc02178752046f9f7b02ac9ac9a724df6d1",
+    "source_unit_count": 8044,
+    "index_schema_version": "11",
+    "base_type_env_ref": "typeenv:sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa",
+    "base_type_env_digest": "sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa",
+    "type_env_compiler_edition": "fpf-base-typeenv.cov2.v5"
+  },
+  "token_gate": {
+    "fixture_revision": "fpf-d1f696e-query-behavior/v1",
+    "fixture_digest": "sha256:7495ed41c5482c106bab5227342745532233f8a6d57740afe81ba60982b06e87"
+  }
+}

@@ -747,7 +747,7 @@ func TestVerifyIndexRejectsBrokenSourceProvenance(t *testing.T) {
 	}
 }
 
-func TestVerifyIndexRejectsConsistentlyDeletedSourceUnit(t *testing.T) {
+func TestVerifyIndexRejectsConsistentlyDeletedAddressableSourceUnit(t *testing.T) {
 	dir := t.TempDir()
 	specPath := writeSourceFixture(t, dir, "completeness source")
 	dbPath := filepath.Join(dir, "fpf.db")
@@ -781,8 +781,8 @@ func TestVerifyIndexRejectsConsistentlyDeletedSourceUnit(t *testing.T) {
 	}
 
 	err = verifyIndex([]string{dbPath, specPath, "source-revision"})
-	if err == nil || !strings.Contains(err.Error(), "publication snapshot has") {
-		t.Fatalf("expected completeness error, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "has no addressable target") {
+		t.Fatalf("expected dangling direct-reference error, got %v", err)
 	}
 }
 
@@ -1608,6 +1608,33 @@ func fileDigest(t *testing.T, path string) [sha256.Size]byte {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return sha256.Sum256(content)
+}
+
+func TestResolveSpecBuildTimeUsesExplicitCandidateCommitEpoch(t *testing.T) {
+	t.Setenv(fpfSourceCommitEpochEnvironment, "1785433758")
+	got := resolveSpecBuildTime(
+		"308edacfa2bdb2c60d07e4e10c0deb1f260a6a31",
+		filepath.Join(t.TempDir(), "data", "FPF", "FPF-Spec.md"),
+	)
+	want := time.Unix(1785433758, 0).UTC()
+	if !got.Equal(want) {
+		t.Fatalf("resolveSpecBuildTime() = %s, want %s", got, want)
+	}
+}
+
+func TestResolveSpecBuildTimeInvalidExplicitEpochFailsClosedToUnixEpoch(t *testing.T) {
+	for _, value := range []string{"not-a-number", "-1"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv(fpfSourceCommitEpochEnvironment, value)
+			got := resolveSpecBuildTime(
+				"308edacfa2bdb2c60d07e4e10c0deb1f260a6a31",
+				filepath.Join(t.TempDir(), "data", "FPF", "FPF-Spec.md"),
+			)
+			if !got.Equal(time.Unix(0, 0).UTC()) {
+				t.Fatalf("resolveSpecBuildTime() = %s, want Unix epoch", got)
+			}
+		})
+	}
 }
 
 func runGit(t *testing.T, dir string, args ...string) string {

@@ -39,6 +39,7 @@ const (
 	previousBaseTypeEnvCompilerSchemaV2 = typeenv.BaseTypeEnvCompilerSchemaV2
 	previousBaseTypeEnvCompilerSchemaV3 = typeenv.BaseTypeEnvCompilerSchemaV3
 	previousBaseTypeEnvCompilerSchemaV4 = typeenv.BaseTypeEnvCompilerSchemaV4
+	fpfSourceCommitEpochEnvironment     = "HAFT_FPF_SOURCE_COMMIT_EPOCH"
 )
 
 // verifyIndex is the CI guard for the committed, source-derived FPF index.
@@ -716,6 +717,15 @@ func resolveSpecCommit(explicitCommit, specPath string) string {
 // rather than wall-clock time.
 func resolveSpecBuildTime(commitSHA, specPath string) time.Time {
 	epoch := time.Unix(0, 0).UTC()
+	if explicitEpoch := strings.TrimSpace(
+		os.Getenv(fpfSourceCommitEpochEnvironment),
+	); explicitEpoch != "" {
+		seconds, err := strconv.ParseInt(explicitEpoch, 10, 64)
+		if err == nil && seconds >= 0 {
+			return time.Unix(seconds, 0).UTC()
+		}
+		return epoch
+	}
 	gitDir, err := specGitLookupDir(specPath)
 	if err != nil {
 		return epoch

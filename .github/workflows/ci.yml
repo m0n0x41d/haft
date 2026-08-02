@@ -52,22 +52,8 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
 
-      - name: Run race tests
-        run: |
-          packages=$(go list ./... | grep -v /desktop)
-
-          while IFS= read -r pkg; do
-            echo "::group::go test -race $pkg"
-            go test -v -race -count=1 -timeout=180m \
-              -skip '^TestP13ConsolidatedAcceptance$' \
-              "$pkg"
-            echo "::endgroup::"
-          done <<EOF
-          $packages
-          EOF
-
-      - name: Verify committed FPF Query and TypeEnv index
-        run: go run ./cmd/indexer -verify internal/cli/fpf.db data/FPF/FPF-Spec.md "$(git -C data/FPF rev-parse HEAD)"
+      - name: Verify committed FPF source, index, and integration lock
+        run: go run ./cmd/fpf-refresh verify --repo .
 
       - name: Verify FPF Query working-view token gate
         run: bash scripts/fpf_query_token_gate.sh
@@ -88,6 +74,7 @@ jobs:
             fi
 
             go test -v \
+              -timeout=90m \
               -skip '^TestP13ConsolidatedAcceptance$' \
               -coverprofile="$tmp_profile" \
               "$pkg"
@@ -123,6 +110,137 @@ jobs:
           files: coverage.out
           fail_ci_if_error: false
         continue-on-error: true
+
+  race-shard:
+    name: Race shard ${{ matrix.shard_index }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        shard_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - name: Prepare desktop embed placeholder
+        run: |
+          mkdir -p desktop/frontend/dist
+          printf 'ci placeholder\n' > desktop/frontend/dist/.ci-placeholder
+
+      - name: Run one validated race shard
+        run: |
+          mkdir -p "$RUNNER_TEMP/haft-race"
+          go run ./cmd/race-shard \
+            --mode shard \
+            --shard-count 12 \
+            --shard-index "${{ matrix.shard_index }}" \
+            --package-timeout 90m \
+            --output "$RUNNER_TEMP/haft-race/shard-${{ matrix.shard_index }}.json"
+
+      - name: Preserve race shard observation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: race-shard-${{ github.sha }}-${{ matrix.shard_index }}
+          path: ${{ runner.temp }}/haft-race/shard-${{ matrix.shard_index }}.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+  race-tests:
+    name: Race tests
+    if: ${{ always() }}
+    needs: [race-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - name: Download current-run race shard observations
+        id: race_download
+        if: ${{ always() }}
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          pattern: race-shard-${{ github.sha }}-*
+          path: ${{ runner.temp }}/haft-race-shards
+          merge-multiple: true
+
+      - name: Aggregate race shard observations
+        id: race_aggregate
+        if: ${{ always() }}
+        shell: bash
+        continue-on-error: true
+        run: |
+          mkdir -p "$RUNNER_TEMP/haft-race-aggregate"
+          shopt -s nullglob
+          inputs=("$RUNNER_TEMP/haft-race-shards"/shard-*.json)
+          args=()
+          for input in "${inputs[@]}"; do
+            args+=(--input "$input")
+          done
+
+          go run ./cmd/race-shard \
+            --mode aggregate \
+            --shard-count 12 \
+            --package-timeout 90m \
+            "${args[@]}" \
+            --output "$RUNNER_TEMP/haft-race-aggregate/aggregate.json"
+
+      - name: Preserve aggregate race observation
+        id: race_upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        continue-on-error: true
+        with:
+          name: race-aggregate-${{ github.sha }}
+          path: ${{ runner.temp }}/haft-race-aggregate/aggregate.json
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 14
+
+      - name: Require complete race qualification evidence
+        if: ${{ always() }}
+        env:
+          RACE_MATRIX_RESULT: ${{ needs.race-shard.result }}
+          RACE_DOWNLOAD_OUTCOME: ${{ steps.race_download.outcome }}
+          RACE_AGGREGATE_OUTCOME: ${{ steps.race_aggregate.outcome }}
+          RACE_UPLOAD_OUTCOME: ${{ steps.race_upload.outcome }}
+        run: |
+          failures=0
+          require_success() {
+            if [ "$2" != "success" ]; then
+              echo "$1: $2" >&2
+              failures=1
+            fi
+          }
+
+          require_success "race-shard matrix result" "$RACE_MATRIX_RESULT"
+          require_success "race shard download outcome" "$RACE_DOWNLOAD_OUTCOME"
+          require_success "race aggregate outcome" "$RACE_AGGREGATE_OUTCOME"
+          require_success "race aggregate upload outcome" "$RACE_UPLOAD_OUTCOME"
+
+          if [ "$failures" -ne 0 ]; then
+            exit 1
+          fi
 
   open-sleigh:
     name: OpenSleigh

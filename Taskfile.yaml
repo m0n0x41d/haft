@@ -5,8 +5,6 @@ vars:
   BIN_DIR: ~/.local/bin
   OPEN_SLEIGH_RELEASE_DIR: open-sleigh/_build/prod/rel/open_sleigh
   OPEN_SLEIGH_INSTALL_DIR: ~/.haft/runtimes/open-sleigh/current
-  FPF_SPEC: data/FPF/FPF-Spec.md
-  FPF_DB: internal/cli/fpf.db
 
 tasks:
   default:
@@ -17,29 +15,61 @@ tasks:
   test:
     desc: Run all tests
     cmds:
-      - go test $(go list ./... | grep -v /desktop)
+      - go test -count=1 -timeout=90m ./...
+
+  test:race-plan:
+    desc: Build and validate the deterministic race qualification plan without running tests
+    cmds:
+      - |
+        go run ./cmd/race-shard \
+          --mode plan \
+          --shard-count "${RACE_SHARD_COUNT:-12}" \
+          --package-timeout "${RACE_PACKAGE_TIMEOUT:-90m}" \
+          --output "${RACE_OUTPUT:-/tmp/haft-race-plan.json}"
+
+  test:race-shard:
+    desc: Run one validated race qualification shard
+    cmds:
+      - |
+        shard_index="${RACE_SHARD_INDEX:-0}"
+        output="${RACE_OUTPUT:-/tmp/haft-race-shard-${shard_index}.json}"
+        go run ./cmd/race-shard \
+          --mode shard \
+          --shard-count "${RACE_SHARD_COUNT:-12}" \
+          --shard-index "$shard_index" \
+          --package-timeout "${RACE_PACKAGE_TIMEOUT:-90m}" \
+          --output "$output"
+
+  test:race:
+    desc: Run every validated race qualification shard with bounded local parallelism
+    cmds:
+      - |
+        go run ./cmd/race-shard \
+          --mode all \
+          --shard-count "${RACE_SHARD_COUNT:-12}" \
+          --parallelism "${RACE_PARALLELISM:-0}" \
+          --package-timeout "${RACE_PACKAGE_TIMEOUT:-90m}" \
+          --output "${RACE_OUTPUT:-/tmp/haft-race-local.json}"
 
   lint:
     desc: Run linter (go vet)
     cmds:
       - go vet ./...
 
-  fpf-pull:
-    desc: Pull FPF submodule to latest upstream
-    cmds:
-      - git -C data/FPF fetch origin
-      - git -C data/FPF checkout origin/main
-
   fpf-index:
-    desc: Rebuild embedded SQLite index from current FPF checkout
+    desc: Low-level deterministic DB build to an explicit FPF_DB from the current FPF checkout; honors FPF_SPEC and does not change source or the integration lock
     cmds:
-      - go run ./cmd/indexer {{.FPF_SPEC}} {{.FPF_DB}} "$(git -C data/FPF rev-parse HEAD 2>/dev/null || true)"
-      - task fpf-verify
+      - |
+        fpf_spec="${FPF_SPEC:-data/FPF/FPF-Spec.md}"
+        fpf_db="${FPF_DB:?set FPF_DB to an explicit low-level output path}"
+        fpf_revision="$(git -C data/FPF rev-parse HEAD)"
+        go run ./cmd/indexer "$fpf_spec" "$fpf_db" "$fpf_revision"
+        go run ./cmd/indexer -verify "$fpf_db" "$fpf_spec" "$fpf_revision"
 
   fpf-verify:
-    desc: Read-only verification of the committed FPF Query and TypeEnv index against the current checkout
+    desc: Read-only verification that checked-out FPF source, DB, integration lock, TypeEnv, and token fixture share one exact basis
     cmds:
-      - go run ./cmd/indexer -verify {{.FPF_DB}} {{.FPF_SPEC}} "$(git -C data/FPF rev-parse HEAD)"
+      - go run ./cmd/fpf-refresh verify --repo .
 
   fpf-query-token-gate:
     desc: Verify the pinned embedded 1d5 concern corpus saves at least 30% o200k_base tokens; also run the separate synthetic calculus check
@@ -65,18 +95,35 @@ tasks:
         --custom-compile-command 'task fpf-query-token-lock'
         --output-file scripts/fpf_query_token_count.requirements.txt
 
-  fpf-refresh:
-    desc: Pull FPF submodule to latest upstream and rebuild embedded SQLite index
-    deps: [fpf-pull]
+  fpf-refresh-check:
+    desc: Fetch and evaluate an exact upstream FPF candidate in private temporary artifacts without changing the live publication
     cmds:
-      - task fpf-index
+      - go run ./cmd/fpf-refresh check --repo .
+
+  fpf-refresh:
+    desc: Check and recoverably apply the exact fresh FPF source baseline, DB, and generated-lock publication; semantic deltas are reported but do not stop refresh
+    cmds:
+      - go run ./cmd/fpf-refresh apply --repo .
+      - go run ./cmd/fpf-refresh verify --repo .
+
+  fpf-refresh-resume:
+    desc: Resume only the exact interrupted FPF apply named by its recovery receipt
+    cmds:
+      - go run ./cmd/fpf-refresh resume --repo .
+      - go run ./cmd/fpf-refresh rebase-local-practice --repo .
+      - go run ./cmd/fpf-refresh verify --repo .
+
+  fpf-refresh-restore:
+    desc: Restore only the exact predecessor publication named by an interrupted FPF apply receipt
+    cmds:
+      - go run ./cmd/fpf-refresh restore --repo .
 
   # build/install/dev use the COMMITTED internal/cli/fpf.db (go:embed'd into the
-  # binary), the same source of truth CI verifies but never rebuilds. Rebuilding
-  # is the explicit maintainer step `task fpf-refresh` — run it after an FPF
-  # source revision bump, then commit the regenerated source-native fpf.db.
+  # binary), the same source of truth CI verifies but never rebuilds. A
+  # maintainer refresh recoverably updates the coherent source + DB + generated
+  # integration-lock publication; it does not itself commit or release it.
   build:
-    desc: Build Go binary (uses the committed FPF index; run `task fpf-refresh` to rebuild)
+    desc: Build Go binary (uses the committed FPF index; run `task fpf-refresh` to refresh the coherent publication)
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:
@@ -84,7 +131,7 @@ tasks:
 
   install:
     desc: Build and install haft (CLI + Open-Sleigh runtime) locally
-    deps: [open-sleigh:install-runtime]
+    deps: ['open-sleigh:install-runtime']
     cmds:
       # Remove any stale `haft` in GOBIN so PATH picks up BIN_DIR/haft,
       # not a leftover `go install`'d binary from an older build.
@@ -191,7 +238,7 @@ tasks:
 
   open-sleigh:install-runtime:
     desc: Install packaged Open-Sleigh runtime under ~/.haft
-    deps: [open-sleigh:release]
+    deps: ['open-sleigh:release']
     cmds:
       - rm -rf {{.OPEN_SLEIGH_INSTALL_DIR}}
       - mkdir -p "$(dirname {{.OPEN_SLEIGH_INSTALL_DIR}})"

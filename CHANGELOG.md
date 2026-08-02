@@ -44,8 +44,31 @@ The v8.2.0 candidate was never published; work previously described as an
   P14 acceptance basis; their presence carries no v9 PatternRecall,
   route-vector, or retrieval-quality claim.
 - **V9 CONTRACT — reliance-bearing typed project memory.** Durable Haft
-  artifacts connect to named receiving uses such as handoff, replay, authority,
-  automation, evidence, and later verification.
+  artifacts connect to concrete receiving uses such as handoff, replay,
+  automation, evidence, and later verification. The use may be named by the
+  operator or inferred by the agent from current Work; empty memory or generic
+  possible future usefulness is not sufficient.
+- **Default project memory and proactive entity orientation.** `haft init`
+  installs the package-default project-memory model automatically, without an
+  enable/defer prompt or an internal-schema choice. When current Work has a
+  concrete durability-requiring receiving use and stable identity is
+  recoverable, agents establish the minimum non-binding EntityOfConcern
+  proactively. Explicit authority remains required for decisions,
+  specifications, commissions, profile changes, and later non-default changes
+  to the project-memory model.
+- **Deterministic initial project-profile bootstrap.** Fresh init may admit a
+  complete, non-truncated, supported singleton detector result as
+  `origin=detector_default` only when no canonical profile or human/foreign
+  review exists. Mixed, multiple-scope, insufficient, truncated, or reviewed
+  bases still require one direct operator choice; an eligible automatic
+  profile may be superseded through that ordinary-language choice without a
+  command-only confirmation ritual.
+- **Task-level memory UX no longer exposes implementation schemas.** Public
+  onboarding, entity, status, reasoning, spec, Pi, README, and generated host
+  carriers describe setup, identity, readiness, and later model changes in
+  project language. Legacy low-level validation and replay machinery remains
+  available for exact diagnostics but is no longer presented as a choice that
+  ordinary users must understand.
 - **EXACT-CANDIDATE EVIDENCE and release authority remain separate.** Source,
   schema, skill, or local-test presence is not installed-runtime proof.
   Readiness claims require current P14 evidence tied to one exact candidate;
@@ -98,20 +121,38 @@ The v8.2.0 candidate was never published; work previously described as an
   and typed maintenance work orders instead of silently absorbing overseer
   changes.
 - **Bundled FPF publication and source-derived index updated.** Advanced
-  `data/FPF` from `0990ff1` to `2ada413` and regenerated the committed
+  `data/FPF` from `0990ff1` to `d1f696e` and regenerated the committed
   `internal/cli/fpf.db` from that exact source snapshot. The bundle now contains
-  7,968 source units at spec digest
-  `sha256:00e8213ed4f2ab548ea16118b0559d72c1fc9c9baedd025891eeed160d5143af`,
-  including A.15.6 and E.18.NET plus changed role-assignment, method/work, and
-  transformation-flow semantics.
-- **Base TypeEnv compiler edition V5.** Updated the source compiler for current
+  8,044 source units at spec digest
+  `sha256:7a1e56595a5bb850d6db571f1bd42bccec4a5a3859f480aadebae4e532557da9`.
+  The practical-use catalog now has 16 cards: source-owned
+  `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` replace the retired
+  `SYSTEM-IN-CONTEXT` route. The source also adds A.1.SCR and A.1.STM and
+  removes A.6.8, then incorporates the current measurement-relation and
+  problem-relation corrections; no compatibility alias was invented for a
+  removed identifier.
+- **Compiled memory-basis edition V5.** Updated the source compiler for current
   C.2.1 empirical-grounding semantics: `covered=C` and the maximal continuous
   coverage interval are predicate and occurrence-identity content, not a third
-  participant `SlotSpec`. The aligned Base is
-  `typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`.
+  participant `SlotSpec`. The aligned Base has content identity
+  `sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa`.
+  The existing Local-Practice 1.4.0 carrier remains byte-stable on its
+  historical Base. The separate non-binding 1.5.0 successor preserves its
+  declaration set while updating exact source and Base coordinates; it does
+  not change an active project-memory model or establish installed-runtime
+  readiness.
 
 ### Added
 
+- **Candidate-first, recoverable FPF refresh.** Added one shared maintainer
+  command that resolves an exact upstream commit without changing the live
+  checkout, builds two isolated byte-identical candidate indexes, emits a
+  closed compatibility report, and applies only verified source/DB/lock bytes
+  through a resumable or restorable receipt. A generated integration lock now
+  binds the exact source documents, database, source-unit count, index schema,
+  compiled memory basis/compiler, and token-gate fixture identity. Query expectations
+  and the 30% token-reduction policy remain explicit test data rather than
+  generated semantic claims.
 - **Native TypeScript/JavaScript/Vue code graph with durable symbol anchors.**
   Added a Go-native tree-sitter index for project-aware symbols, calls,
   references, type relations, re-exports, aliases, callbacks, receiver flows,
@@ -137,10 +178,10 @@ The v8.2.0 candidate was never published; work previously described as an
   that carrier required; fresh no-basis init remains core-only until onboarding
   establishes the project basis. Legacy carriers remain readable as
   development-version migration input.
-- **Typed project-memory core and exact project TypeEnv.** Added closed
+- **Typed project-memory core and exact project memory model.** Added closed
   algebraic types for entities, aliases, relational assertions, retractions,
   provenance, context slices, by-reference and registered-codec by-value
-  fillers, plus project-local TypeEnv selection and compatibility checks.
+  fillers, plus project-local memory-model selection and compatibility checks.
   Validation and admission are separate operations: validation is read-only;
   admission is non-binding, idempotent, transactionally persisted, and cannot
   mint schema, bind decisions, approve specifications, or create evidence
@@ -150,15 +191,15 @@ The v8.2.0 candidate was never published; work previously described as an
 - **Task-level onboarding and entity establishment.** Added always-advertised
   `haft_onboard` and `haft_entity` MCP capabilities so agents can inspect
   setup, prepare review carriers, apply an explicitly reviewed project profile,
-  enable or defer structured memory through the correct human gate, and
-  establish the first `U.EntityRef` without assembling raw TypeEnv or
-  MemoryChangeSet payloads. Entity-plus-alias admission is atomic; collisions,
+  rely on the default memory installed by `haft init`, and establish the first
+  `U.EntityRef` without assembling internal schema or raw `MemoryChangeSet`
+  payloads. Entity-plus-alias admission is atomic; collisions,
   stale bases, missing onboarding, restart requirements, replays, rejected
   requests, and unknown commit outcomes are typed results rather than guessed
   success.
 - **Scoped project-memory reads.** Added exact entity resolution, bounded
   neighborhood projection, and scoped recall under `haft.memory.v1`.
-  Project-current and exact-project bases expose graph revision and TypeEnv
+  Project-current and exact-project bases expose graph revision and exact model
   identity; projection profiles and read budgets bound facets, excerpts,
   relation paths, and provenance depth. Results distinguish complete, partial,
   stale, unavailable, not-applicable, known-absent, retry-required, and
@@ -171,15 +212,23 @@ The v8.2.0 candidate was never published; work previously described as an
   hidden routing decision. A pinned token gate verifies bounded concern
   retrieval against full-source context. Dense/hybrid superiority remains
   deferred.
-- **Exact V4 Base TypeEnv replay archive.** Added the immutable 139,574-byte
-  artifact compiled from FPF `0990ff1` under compiler V4, keyed by
-  `typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`.
+- **Exact V4 compiled-basis replay archive.** Added the immutable 139,574-byte
+  artifact compiled from FPF `0990ff1` under compiler V4, keyed by content
+  identity `sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`.
   Exact lookup has no latest or fallback route.
+- **Exact V5 compiled-basis replay archive.** Added the immutable 133,848-byte
+  artifact compiled from FPF `2ada413` under compiler V5, keyed by content
+  identity `sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`.
+  This preserves exact replay for the byte-stable Local-Practice 1.4.0 basis
+  after the current package default advances to the `d1f696e` successor.
 - **Typed-memory Local-Practice candidate 1.4.0.** Added a non-binding successor
-  carrying the 1.3.0 declaration set on the exact V5 Base. Current runtime and
-  Genesis/Transition preparation use its exact source bytes while every older
-  edition remains available for replay. This carrier does not select a
-  `ProjectTypeEnvHead`, provide P13/P14 evidence, or grant release authority.
+  carrying the 1.3.0 declaration set on the exact `2ada413` V5 Base. Its exact
+  bytes and compiled basis remain available for historical replay.
+- **Typed-memory Local-Practice candidate 1.5.0.** Added the current non-binding
+  successor carrying the same declaration set on the exact `d1f696e` V5 Base.
+  Package-default initialization and later preparation use its exact source
+  bytes. Neither carrier selects a project-memory model, provides P13/P14
+  evidence, or grants release authority merely by existing in the package.
 - **Versioned documentation source.** Added the `docs` submodule and aligned its
   public guides with the Haft v9 CLI, skills, onboarding, and migration surface.
 - **Compact twelve-tool MCP contract.** The v9 server advertises exactly twelve
@@ -1398,6 +1447,44 @@ The v8.2.0 candidate was never published; work previously described as an
 
 ### Fixed
 
+- **Fresh-init memory readiness and partial-install repair.** The public init
+  core effect now creates the exact package-default project-memory basis as
+  part of initialization and verifies its committed readiness before reporting
+  success. Re-init repairs a partial or legacy installation through the same
+  idempotent package-owned effect; onboarding and entity recovery direct users
+  back to `haft init` instead of presenting enable/defer or schema-selection
+  choices.
+- **Host-routed authority provenance without command rituals.** Direct,
+  unambiguous operator choices for DecisionRecords, manual profile application,
+  and later non-default project-memory model changes are recorded as
+  `host_routed_operator_request` by their dedicated effect sinks. Legacy strict
+  CLI-source and local speech-act simulations are sealed as history; generated
+  text, tool output, visible schemas, recommendations, and skill invocation
+  remain non-authorizing.
+- **Recoverable missing-binding repair.** Added `haft project
+  recover-binding` for one exact binding-aware ledger whose immutable project
+  identity row is missing. It creates and verifies a SQLite backup first and
+  rejects pre-binding or newer schemas, already-bound ledgers, root/identity
+  mismatches, integrity failures, and foreign-key failures; it never repairs an
+  already-bound worktree-root mismatch or changes host projections.
+- **Memory guidance and source-pin regression cleanup.** Canonical, generated,
+  Pi, README, and installed-skill carriers now agree that a concrete receiving
+  use may be inferred from current Work and that default memory is automatic.
+  Current Local-Practice candidate identities, compiled-basis references, FPF
+  body ranges, body digests, and whole-source pins were refreshed from the
+  exact `d1f696e` publication instead of leaving stale test expectations.
+- **Embedded FPF query verification reuse.** The immutable bundled source index
+  is now fully verified once per process and the exact result is replayed for
+  later query, lookup, and inspect calls. Synthetic or replaced test databases
+  still use uncached verification, preserving corruption detection while
+  avoiding repeated whole-index scans in normal agent use and integration
+  tests.
+- **Bounded full-suite execution for large source indexes.** The default local
+  test task and CI coverage loop now give each package a 90-minute ceiling,
+  accommodating recoverable-refresh interruption cases that each execute the
+  production full-index replay path. The change removes false global
+  ten-minute timeouts rather than weakening an assertion or replacing an exact
+  verification with a mock.
 - **Pre-binding project-ledger migration during explicit init.** `haft init`
   can now inspect and migrate a genuine schema-35 project ledger that predates
   `project_ledger_binding`. The schema-37 binding table and exact configured
@@ -1428,25 +1515,63 @@ The v8.2.0 candidate was never published; work previously described as an
 - **Source-current FPF query and conformance oracles.** Rebased exact source
   ranges, provenance assertions, P13 current-candidate anchors,
   A.15.6/E.18.NET navigation, category-error boundaries, and the embedded
-  token-gate corpus to FPF `2ada413`. These are source-test results; they are
-  not installed P14 evidence or release authority.
+  token-gate corpus to FPF `d1f696e`, including the reviewed measurement,
+  evidence-provenance, episteme-edition, problem, and role-assignment relation
+  corrections. These are source-test results; they are not installed P14
+  evidence or release authority.
 - **Idempotent source-index regeneration.** Exact `fpf-index` rebuilds now
-  preserve the prior non-self TypeEnv compatibility assessment when the
+  preserve the prior non-self memory-model compatibility assessment when the
   compiled artifact is unchanged, while a stored self-comparison fails closed.
-  Rebuilding the committed FPF `2ada413` index therefore retains its V4-to-V5
+  Rebuilding the committed FPF `d1f696e` index therefore retains its V4-to-V5
   assessment and byte-identical database digest.
 - **Exact source phrases outrank weak token unions.** A candidate admitted only
   by separate heading, keyword, or FTS tokens can no longer suppress stronger
   contiguous pattern-body phrase navigation. The real “target system” concern
-  again reaches the source-owned `SYSTEM-IN-CONTEXT` card and its current
-  C.26, C.32.PAD, and E.18.NET witnesses.
-- **CI and release package-isolated race contour and budget.** Both
-  workflows run the full non-desktop Go package closure under the race detector
-  one package at a time with a 180-minute per-package ceiling inside an explicit
-  360-minute job budget. This aligns the release lane with CI's existing
-  package-isolation policy and gives long-running packages explicit finite
-  headroom. The timeout change removes no additional package or test;
-  consolidated P13 remains on its separate acceptance lane.
+  reaches the source-owned `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` cards
+  plus their current C.26 and C.32.PAD witnesses.
+- **Deterministic lossless race qualification.** Replaced the serial
+  package-isolated CI and release loops with one shared 12-shard runner used by
+  local Taskfile adapters and both workflow matrices. On the executing
+  platform, the validated plan assigns every current non-desktop package to
+  exactly one contour: configured split packages assign every platform-visible
+  top-level Test, Example, or Fuzz target to exactly one shard, while all
+  remaining packages are assigned whole to exactly one shard. Subtests remain
+  with their parent. Shard execution preserves `-race -count=1` and the sole
+  deliberate `TestP13ConsolidatedAcceptance` skip. Missing or duplicate work,
+  invalid partitioning, shard failure, timeout, interruption, or a missing
+  observation prevents aggregate success. Plan, shard, and bounded local-all
+  modes emit machine-readable observations; CI and release retain each shard
+  observation and expose one aggregate check that fails unless the complete
+  matrix succeeds. No measured speedup or hosted-run result is claimed here.
+- **Actionable project-profile recovery with bounded automatic bootstrap.**
+  `profile_underdetermined` projections name `haft_onboard` as the recovery
+  surface and preserve the originating scope. During `haft init`, only a
+  complete, non-truncated, supported singleton detector result with no existing
+  canonical or reviewed basis is admitted automatically as `detector_default`.
+  Every mixed, ambiguous, multi-scope, insufficient, truncated, or already
+  reviewed basis remains a non-binding review plus direct operator choice;
+  spec reads and ordinary status calls never create or admit a profile.
+- **Source-first agent guidance without ritual governance calls.** Canonical,
+  installed-agent, and Pi skill carriers now omit FPF queries for mechanical
+  probes, require concern retrieval to be followed by exact `inspect` before
+  source reliance, and keep several candidates live or abstain when the basis
+  is insufficient. Status is requested only for a current status, resumption,
+  coverage, or recorded-reliance question; post-hoc queries no longer stand in
+  for evidence of reasoning already performed.
+- **Explicit MCP effects and complete dedicated-note contracts.** Full and
+  compact tool descriptions distinguish read-oriented operations from durable
+  carrier or lifecycle writes. Generated authority boundaries separately
+  repeat that model-supplied fields are not approval receipts. Interface audit
+  and generated schema validation now cover the actionless `haft_note` tool,
+  including `task_context` correlation and optional `valid_until`; problem,
+  solution, and decision carriers preserve their available task context
+  instead of hiding it from schema parity.
+- **Recoverable MethodRuns and truthful projection effects.** Method status
+  prints an exact recovery call containing each open `pull_id`, while
+  task-memory responses report durable carrier persistence separately from
+  typed-projection admission or write effects. The unused solution-explore
+  response helper that implied automatic lightweight-problem creation was
+  removed.
 - **Root-layout maintenance paths and current repository links.** Optional
   reference-repository discovery now resolves the project-local
   `.context/repos` path after the root-level Go-module move. Contributor setup

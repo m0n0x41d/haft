@@ -17,7 +17,7 @@ const (
 	activationEnvelopeDomain    = "haft.project-typeenv.activation-admission-envelope.v1"
 	activationEnvelopeRefPrefix = "project-typeenv-activation-envelope:"
 
-	activationBasisDomain    = "haft.project-typeenv.activation-admission-basis.v2"
+	activationBasisDomain    = "haft.project-typeenv.activation-admission-basis.v3"
 	activationBasisRefPrefix = "project-typeenv-activation-basis:"
 
 	activationManifestDomain    = "haft.project-typeenv.activation-materialization-manifest.v1"
@@ -25,8 +25,13 @@ const (
 
 	ProjectTypeEnvActivationAdmissionKindSnapshotOnly = "snapshot_only"
 	ProjectTypeEnvActivationEventKind                 = "activate_type_env"
-	ProjectTypeEnvActivationAuthorityClass            = "manual_type_env_activation"
-	ProjectTypeEnvActivationMaterializationOrdinal    = uint32(0)
+	ProjectTypeEnvActivationLegacyAuthorityClass      = projecttypeenvactivation.LegacyManualAuthorityClass
+	ProjectTypeEnvActivationHostRoutedAuthorityClass  = projecttypeenvactivation.HostRoutedOperatorRequestAuthorityClass
+	ProjectTypeEnvActivationCompatibleAuthorityClass  = projecttypeenvactivation.CompatibleSuccessorPolicyAuthorityClass
+	// ProjectTypeEnvActivationAuthorityClass names the decode-only v1/v2
+	// carrier value retained for frozen-history tests.
+	ProjectTypeEnvActivationAuthorityClass         = ProjectTypeEnvActivationLegacyAuthorityClass
+	ProjectTypeEnvActivationMaterializationOrdinal = uint32(0)
 )
 
 type ProjectTypeEnvActivationDeltaRef struct {
@@ -72,6 +77,7 @@ type ProjectTypeEnvActivationDelta struct {
 	expectedGraphRevision  typedmemory.GraphRevision
 	committedGraphRevision typedmemory.GraphRevision
 	successorHeadRevision  projecttypeenvselection.HeadRevision
+	authorityClass         string
 	canonicalBytes         []byte
 }
 
@@ -82,6 +88,7 @@ type ProjectTypeEnvActivationDeltaInput struct {
 	Predecessor           projecttypeenvselection.ProjectTypeEnvHeadSelectionPredecessor
 	Target                ProjectTypeEnvHeadSelectionTarget
 	ExpectedGraphRevision typedmemory.GraphRevision
+	AuthorityClass        string
 }
 
 func SealProjectTypeEnvActivationDelta(
@@ -148,6 +155,7 @@ func SealProjectTypeEnvActivationDelta(
 			ExpectedGraphRevision:  expected,
 			CommittedGraphRevision: committed,
 			SuccessorHeadRevision:  input.Identity.SuccessorHeadRevision(),
+			AuthorityClass:         input.AuthorityClass,
 		},
 	)
 	if err != nil {
@@ -211,6 +219,7 @@ func DecodeProjectTypeEnvActivationDelta(
 		expectedGraphRevision:  coreDelta.ExpectedGraphRevision(),
 		committedGraphRevision: coreDelta.CommittedGraphRevision(),
 		successorHeadRevision:  coreDelta.SuccessorHeadRevision(),
+		authorityClass:         coreDelta.AuthorityClass(),
 		canonicalBytes:         coreDelta.CanonicalBytes(),
 	}, nil
 }
@@ -288,7 +297,7 @@ func (delta ProjectTypeEnvActivationDelta) EventKind() string {
 }
 
 func (delta ProjectTypeEnvActivationDelta) AuthorityClass() string {
-	return ProjectTypeEnvActivationAuthorityClass
+	return delta.authorityClass
 }
 
 func (delta ProjectTypeEnvActivationDelta) CanonicalBytes() []byte {

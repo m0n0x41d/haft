@@ -133,8 +133,10 @@ entries:
       payload digest, and request digest to the kernel effect boundary. It says
       only what the host routed: the kernel does not claim to have independently
       established a mental intent or a U.SpeechAct occurrence. Decision binding,
-      manual profile application, and ProjectTypeEnvHead selection each require
-      a fresh request for their own exact effect and subject.
+      manual profile application, incompatible ProjectTypeEnv selection, and
+      rollback each require a fresh request for their own exact effect and
+      subject. A proven-compatible bundled successor uses the disjoint
+      CompatibleSuccessorPolicy authority generation instead.
     aliases:
       - host-routed operator request
       - host_routed_operator_request
@@ -146,6 +148,30 @@ entries:
       - Reusable authority for another effect, subject, option, or scope.
     owners:
       - human
+  - term: CompatibleSuccessorPolicy
+    category: authority
+    definition: >-
+      The package-owned deterministic authority generation for one automatic
+      ProjectTypeEnv Transition. At the atomic CAS boundary it admits only the
+      exact bundled successor whose Transition predecessor, project/root
+      binding, Stage, B, ordered E DAG, X, C, graph and profile basis are
+      current, whose existing-assertion revalidation is clean, whose project
+      profile is Compatible, and whose installed projection profiles contain
+      no blocked posture. It records a distinct append-only resolution and
+      single-use authority use without creating a HostRoutedOperatorRequest or
+      claiming human review.
+    aliases:
+      - compatible successor policy
+      - compatible_successor_policy
+      - automatic_compatible_successor
+    not:
+      - Permission to activate an incompatible, stale, incomplete, or
+        underdetermined successor.
+      - A U.SpeechAct, DecisionRecord, review carrier, or reusable capability.
+      - Authority for rollback, release, specification lifecycle, or another
+        project effect.
+    owners:
+      - haft-core
   - term: WorkCommission
     category: execution
     definition: >-
@@ -417,9 +443,11 @@ entries:
     definition: >-
       An immutable description record that references one dated U.Work
       occurrence in which a host-agent system executes ProfileOnboardingMethod.
-      It carries WorkRef, enactsMethod, methodDescriptionRef, performedBy as the
-      exact ProfileAuthorRole U.RoleAssignment, executedWithin as the concrete
-      host-agent U.System, onboarding context, Work interval, canonical concrete
+      It carries WorkRef, enactsMethod, methodDescriptionRef,
+      actualPerformerSystem as the concrete host-agent U.System,
+      coveringRoleAssignment as the exact ProfileAuthorRole U.RoleAssignment,
+      performedUnderAssignment linking the Work to that assignment,
+      executedWithin as the containing U.System, onboarding context, Work interval, canonical concrete
       parameter bindings for the named MethodDescription edition, explicit
       inputs, outputs, resources and affected classification episteme, a
       separately named basisObservationWindow, StatePlaneRef with pre/post
@@ -971,7 +999,8 @@ entries:
     aliases:
       - current head-selected TypeEnv
     not:
-      - The newest bundled TypeEnv by default.
+      - Unconditional adoption of the newest bundled TypeEnv without the exact
+        compatible-successor predicate and atomic selection effect.
       - A mutable state stored inside B, E, X, or C.
       - A reason to reinterpret historical assertions silently.
     owners:
@@ -998,13 +1027,16 @@ entries:
   - term: IdentityChange
     category: typed-memory
     definition: >-
-      A closed instance-level MemoryChange for admitting or superseding a
-      context-bound alias or for an explicitly reviewed, append-only merge or
-      split of entity identities. It preserves provenance and history and does
-      not declare a kind, signature, or codec.
+      The v9 closed instance-level MemoryChange for admitting or superseding a
+      context-bound alias. Its only public variants are admit_alias and
+      supersede_alias; it preserves alias provenance and history and does not
+      declare a kind, signature, or codec. Reviewed entity merge and split are
+      not v9 MemoryChange variants and are deferred to the separately reviewed
+      v9.1 identity-reconciliation contract.
     aliases:
       - identity change
     not:
+      - A merge or split operation in the v9 public MemoryChange algebra.
       - A fuzzy-search identity merge.
       - A schema mutation.
       - Permission to erase historical EntityRefs.
@@ -1252,14 +1284,14 @@ entries:
     definition: >-
       The dedicated system-performed CAS U.Work effect that creates one
       project's first ProjectTypeEnvHead from an exact
-      ProjectTypeEnvGenesisPredecessor and target after the host routes one exact
-      operator request for the reviewed selection. HaftSoftwareSystem performs
-      the CAS Work through an exact RoleAssignment; the routed request records
-      provenance but does not perform the head mutation.
+      ProjectTypeEnvGenesisPredecessor and package-default target under the
+      deterministic init policy. HaftSoftwareSystem performs the CAS Work
+      through an exact RoleAssignment; no operator request, review carrier, or
+      schema choice is created by Genesis.
     aliases:
       - TypeEnv genesis
     not:
-      - haft init, compilation, linking, or staging.
+      - Compilation, linking, or staging by itself.
       - A transition from an existing head.
       - A generic MemoryChangeSet.
       - The HostRoutedOperatorRequest.
@@ -1285,17 +1317,20 @@ entries:
     definition: >-
       The dedicated system-performed CAS U.Work effect that moves an existing
       exact ProjectTypeEnvHead to an already-derived successor C under one
-      ProjectTypeEnvTransitionPredecessor, exact target, and separately recorded
-      HostRoutedOperatorRequest. HaftSoftwareSystem performs the CAS Work through
-      an exact RoleAssignment; rollback is a fresh Transition selecting a
-      previously admitted C through another exact request.
+      ProjectTypeEnvTransitionPredecessor and exact target. A package-bundled
+      successor that satisfies the transaction-current compatibility predicate
+      uses CompatibleSuccessorPolicy and is selected automatically; rollback or
+      explicit selection outside that predicate uses a separately recorded
+      HostRoutedOperatorRequest. HaftSoftwareSystem performs either CAS Work
+      through an exact RoleAssignment.
     aliases:
       - TypeEnv transition
     not:
       - Genesis with a missing prior ref.
-      - Silent adoption of the newest bundled extension.
+      - Unconditional adoption of the newest bundled extension without exact
+        compatibility proof and atomic CAS revalidation.
       - Reinterpretation of historical assertions.
-      - The HostRoutedOperatorRequest.
+      - The HostRoutedOperatorRequest or CompatibleSuccessorPolicy resolution.
     owners:
       - human
   - term: ProjectTypeEnvHead
@@ -1336,9 +1371,9 @@ entries:
     category: typed-memory
     definition: >-
       The immutable content-addressed durable record created exactly once by
-      the original successful host-routed Genesis or Transition CAS commit. It
+      the original successful Genesis or Transition CAS commit. It
       binds exact ProjectID, selection-request ref and digest,
-      HostRoutedOperatorRequest coordinates, reviewed-content ref and digest,
+      exact authority-generation coordinates, authorization-content ref and digest,
       authority-resolution and authority-use refs, CAS WorkRef and
       CAS-Work-record ref, the closed
       predecessor variant, exact B and ordered E DAG and X and C and Stage
@@ -1365,8 +1400,9 @@ entries:
     definition: >-
       The immutable content-addressed aggregate proving one complete committed
       head-selection transaction. It contains exact refs and digests for the
-      selection request, HostRoutedOperatorRequest, reviewed content, host-routed
-      authority resolution, authority-use record, CAS Work occurrence and record,
+      selection request, authorization content, exact host-routed or
+      compatible-successor authority resolution, authority-use record, CAS Work
+      occurrence and record,
       closed predecessor, B and ordered E DAG and X and C and Stage target,
       ExpectedGraphRevision, committed head and head revision, committed
       GraphRevision, IdempotencyKey, receipt ref and digest, and committed result.
@@ -1376,7 +1412,7 @@ entries:
       - TypeEnv head-selection committed closure
     not:
       - A plan or request to perform selection.
-      - A substitute for the host-routed request or system CAS Work.
+      - A substitute for the applicable authority resolution or system CAS Work.
     owners:
       - human
   - term: ProjectTypeEnvHeadSelectionReplayResult
@@ -1405,7 +1441,7 @@ entries:
     definition: >-
       A strong reference to a description episteme or claim content, represented
       here only as ClaimIdRef or EpistemeRef. For head selection it identifies
-      the reviewed selection description carried by
+      the exact selection description carried by
       ProjectTypeEnvHeadSelectionAuthorizationContent. It does not identify the
       U.SpeechAct occurrence, its Work occurrence, or any physical or serialized
       carrier.
@@ -1472,7 +1508,7 @@ entries:
   - term: ProjectTypeEnvHeadSelectionAuthorizationContent
     category: authority
     definition: >-
-      The immutable reviewed selection-description episteme, addressed by one
+      The immutable selection-description episteme, addressed by one
       exact DescriptionRef, for exactly one Genesis or Transition request.
       Rollback is represented as Transition. It binds the exact request ref and
       digest, project, closed predecessor, ordered E DAG, exact B, X, verified
@@ -1480,10 +1516,12 @@ entries:
       posture, intended head update, bounded judgement context, action kind,
       validity window, and IdempotencyKey. Verified C transitively
       authenticates the same B, E and X, but the content keeps those identities
-      explicit for human review. Any CarrierRef that bears this content is a
+      explicit for exact verification. A host-routed branch may present it for
+      human review; the automatic compatible-successor branch does not claim
+      that such review occurred. Any CarrierRef that bears this content is a
       separate observable carrier and is not the content. Current execution
-      binds this content and its selection request inside one exact
-      HostRoutedOperatorRequest; the content alone has no authority.
+      binds this content and its selection request inside one exact applicable
+      authority generation; the content alone has no authority.
     aliases:
       - TypeEnv head-selection content
     not:
@@ -1496,11 +1534,15 @@ entries:
   - term: ProjectTypeEnvHeadSelectionAuthorityResolution
     category: authority
     definition: >-
-      A TypeEnv-specific current judgement at the CAS boundary that one exact
-      HostRoutedOperatorRequest binds the exact selection-request and reviewed
-      content payload, project binding, action, validity window, and expected
-      predecessor. The kernel verifies those coordinates but deliberately does
-      not claim independent proof of hidden operator intent or U.SpeechAct.
+      A TypeEnv-specific current judgement at the CAS boundary. Its disjoint
+      variants are HostRoutedSelectionResolution, which binds one exact direct
+      operator request to the selection request and content, and
+      CompatibleSuccessorResolution, which binds the package policy, exact
+      project/root, current Transition predecessor, Stage, compatibility,
+      assertion revalidation, project profile, projection profiles, runtime,
+      and validity window without claiming an operator request. The kernel
+      verifies the applicable coordinates and never infers hidden intent or a
+      U.SpeechAct for the automatic branch.
       Resolution is revalidated at transaction time and neither consumes the
       single-use key nor proves that CAS committed.
     aliases:
@@ -1516,7 +1558,7 @@ entries:
     definition: >-
       The TypeEnv-specific single-use record atomically written only by the
       original successful ProjectTypeEnvHead update. It binds the exact
-      host-routed operator request, authority resolution, reviewed-content
+      exact authority generation and resolution, authorization-content
       DescriptionRef and digest, selection-request ref and digest,
       IdempotencyKey, closed predecessor, B, ordered E DAG, X, C, Stage,
       ExpectedGraphRevision, committed
@@ -1543,24 +1585,26 @@ entries:
       ProjectTypeEnvHead result together with its authority-use record and
       ProjectTypeEnvHeadSelectionReceiptV1. As a reliance-bearing U.Work
       description it identifies the exact enactsMethod U.MethodRef and TypeEnv-head CAS
-      methodDescriptionRef; performedBy as a U.RoleAssignmentRef whose holder is
-      HaftSoftwareSystem and whose interval covers the Work interval;
-      executedWithin U.SystemRef; bounded judgement context; Work interval;
+      methodDescriptionRef; actualPerformerSystem as HaftSoftwareSystem;
+      coveringRoleAssignment as a U.RoleAssignmentRef whose holder is that
+      system and whose interval covers the Work interval;
+      performedUnderAssignment linking the Work to that assignment;
+      executedWithin U.SystemRef naming the containing system; bounded judgement context; Work interval;
       StatePlaneRef with exact pre/post head-and-revision refs or declared delta
       predicate; concrete parameter bindings, input/output refs, resource-ledger
       ref, outcome and audit-trace refs; affected project, closed predecessor,
       target ProjectTypeEnvHead slot, C, and Stage referents; exact request,
-      HostRoutedOperatorRequest, DescriptionRef content, authority-resolution
-      and authority-use refs;
+      DescriptionRef content, exact authority-generation coordinates,
+      authority-resolution and authority-use refs;
       predecessor comparison; and committed head revision, graph revision,
       receipt, and result. The record is created only with the original CAS Work
       commit and returned unchanged on exact replay; replay creates no new Work
       occurrence. The record is not the Work occurrence, and the CAS Work is
-      distinct from the host-routed operator request.
+      distinct from either authority basis and resolution.
     aliases:
       - TypeEnv head CAS Work record
     not:
-      - HostRoutedOperatorRequest.
+      - HostRoutedOperatorRequest or CompatibleSuccessorPolicy resolution.
       - ProjectTypeEnvStage.
       - Part of B, E, X, or C identity.
     owners:
@@ -1846,7 +1890,9 @@ entries:
     category: typed-memory
     definition: >-
       The dedicated canonical codec required for the exactly one ByValue
-      ClaimGraphSlot in every supported C.2.1 episteme signature. It
+      ClaimGraphSlot in the supported C.2.1
+      EpistemeConstitutionRelationSignature. Other C.2.1 relation signatures
+      retain only their source-declared participants. The codec
       canonicalizes unordered typed ClaimNode and ClaimEdge sets, preserves
       explicitly governed order, and rejects duplicate node identities and
       dangling endpoints.
@@ -2032,6 +2078,8 @@ entries:
 ```
 
 Review must compare these meanings with the final `SoftwareSystemSpec` draft
-and exact FPF source before any lifecycle action. Approval, rebaseline,
-migration apply, and `ProjectTypeEnvHead` selection remain separate explicit
-human gates.
+and exact FPF source before any lifecycle action. Approval and rebaseline remain
+explicit human gates. Migration apply remains an operational mutation boundary.
+An exact proven-compatible bundled `ProjectTypeEnvHead` successor is activated
+automatically under `CompatibleSuccessorPolicy`; incompatible selection and
+rollback remain separate explicit human gates.

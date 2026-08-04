@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -28,6 +29,106 @@ type transitionE2EFixture struct {
 	request projecttypeenvselection.ProjectTypeEnvHeadSelectionRequest
 	content projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent
 	service *TransitionService
+}
+
+func TestTransitionServiceAutomaticallyCommitsCompatibleSuccessorWithoutHostRequest(
+	t *testing.T,
+) {
+	fixture := newGenesisE2EFixture(t)
+	ctx := context.Background()
+	genesisResult, err := fixture.service.SelectGenesis(
+		ctx,
+		genesisSelectionInput(fixture),
+	)
+	if err != nil {
+		t.Fatalf("SelectGenesis(): %v", err)
+	}
+	genesis, ok := genesisResult.(projecttypeenvselectioneffect.FreshlyCommitted)
+	if !ok {
+		t.Fatalf("Genesis result = %T, want FreshlyCommitted", genesisResult)
+	}
+	target := newGenesisE2ETargetWithRuntime(
+		t,
+		"artifact:transition-compatible-policy-runtime",
+		"2.0.0",
+	)
+	transition := newTransitionE2EFixture(
+		t,
+		fixture,
+		genesis.Closure().SuccessorHead(),
+		fixture.target.snapshot,
+		target,
+		"transition-compatible-policy-key",
+		"transition-compatible-policy",
+	)
+	input := TransitionSelectionInput{
+		Request:   transition.request,
+		Content:   transition.content,
+		Authority: NewAutomaticCompatibleSuccessorIngress(),
+	}
+
+	result, err := transition.service.SelectTransition(ctx, input)
+	if err != nil {
+		t.Fatalf("SelectTransition(automatic compatible): %v", err)
+	}
+	fresh, ok := result.(projecttypeenvselectioneffect.FreshlyCommitted)
+	if !ok {
+		t.Fatalf("automatic compatible result = %T, want FreshlyCommitted", result)
+	}
+	if fresh.Closure().SuccessorHead().Revision().Value() != 2 ||
+		fresh.Closure().SuccessorHead().SelectedComposite() != target.snapshot.TypeEnvRef() {
+		t.Fatalf(
+			"automatic successor = head %d C %s",
+			fresh.Closure().SuccessorHead().Revision().Value(),
+			fresh.Closure().SuccessorHead().SelectedComposite().String(),
+		)
+	}
+	assertTransitionAuthorityRowCount(
+		t,
+		fixture.database,
+		"project_typeenv_head_selection_host_resolutions_v1",
+		"selection_request_ref",
+		transition.request.Ref().String(),
+		0,
+	)
+	assertTransitionAuthorityRowCount(
+		t,
+		fixture.database,
+		"project_typeenv_head_selection_compatible_resolutions_v1",
+		"selection_request_ref",
+		transition.request.Ref().String(),
+		1,
+	)
+	assertTransitionAuthorityRowCount(
+		t,
+		fixture.database,
+		"project_typeenv_head_selection_authority_resolutions",
+		"authority_generation",
+		projecttypeenvselectionauthority.CompatibleSuccessorAuthorityGeneration,
+		1,
+	)
+	assertTransitionGraphAuthorityClass(
+		t,
+		fixture.database,
+		fresh.Closure().EventRef().String(),
+		projecttypeenvselectionauthority.CompatibleSuccessorAuthorityGeneration,
+	)
+
+	replayed, err := transition.service.SelectTransition(ctx, input)
+	if err != nil {
+		t.Fatalf("SelectTransition(automatic replay): %v", err)
+	}
+	if _, ok := replayed.(projecttypeenvselectioneffect.ReplayedExisting); !ok {
+		t.Fatalf("automatic replay = %T, want ReplayedExisting", replayed)
+	}
+	assertTransitionAuthorityRowCount(
+		t,
+		fixture.database,
+		"project_typeenv_head_selection_compatible_uses_v1",
+		"project_id",
+		fixture.project.String(),
+		1,
+	)
 }
 
 func TestTransitionServiceCommitsExactSuccessorAndReplays(t *testing.T) {
@@ -93,6 +194,12 @@ func TestTransitionServiceCommitsExactSuccessorAndReplays(t *testing.T) {
 		)
 	}
 	assertTransitionE2EStoredPredecessor(t, fixture.database, transition, prior)
+	assertTransitionGraphAuthorityClass(
+		t,
+		fixture.database,
+		closure.EventRef().String(),
+		"host_routed_operator_request",
+	)
 
 	replayedResult, err := transition.service.SelectTransition(ctx, input)
 	if err != nil {
@@ -115,6 +222,25 @@ func TestTransitionServiceCommitsExactSuccessorAndReplays(t *testing.T) {
 			afterFresh,
 			afterReplay,
 		)
+	}
+}
+
+func assertTransitionGraphAuthorityClass(
+	t *testing.T,
+	database *sql.DB,
+	eventRef string,
+	want string,
+) {
+	t.Helper()
+	var got string
+	if err := database.QueryRow(
+		`SELECT authority_class FROM typed_memory_graph_events WHERE event_ref = ?`,
+		eventRef,
+	).Scan(&got); err != nil {
+		t.Fatalf("read transition graph authority class: %v", err)
+	}
+	if got != want {
+		t.Fatalf("transition graph authority class = %q, want %q", got, want)
 	}
 }
 
@@ -148,7 +274,7 @@ func TestTransitionServiceNeverTreatsAbsentHeadAsGenesis(t *testing.T) {
 
 	result, err := transition.service.SelectTransition(
 		context.Background(),
-		transitionSelectionInput(transition),
+		automaticTransitionSelectionInput(transition),
 	)
 	if err != nil {
 		t.Fatalf("SelectTransition(absent): %v", err)
@@ -215,7 +341,7 @@ func TestTransitionServiceRejectsExactStalePriorHead(t *testing.T) {
 
 	result, err := stale.service.SelectTransition(
 		ctx,
-		transitionSelectionInput(stale),
+		automaticTransitionSelectionInput(stale),
 	)
 	if err != nil {
 		t.Fatalf("SelectTransition(stale): %v", err)
@@ -525,6 +651,16 @@ func transitionSelectionInput(
 	}
 }
 
+func automaticTransitionSelectionInput(
+	fixture transitionE2EFixture,
+) TransitionSelectionInput {
+	return TransitionSelectionInput{
+		Request:   fixture.request,
+		Content:   fixture.content,
+		Authority: NewAutomaticCompatibleSuccessorIngress(),
+	}
+}
+
 func mustTransitionHeadRevision(
 	t *testing.T,
 	value uint64,
@@ -602,4 +738,27 @@ func transitionE2ERelationCount(
 		t.Fatalf("count Transition relation instances: %v", err)
 	}
 	return count
+}
+
+func assertTransitionAuthorityRowCount(
+	t *testing.T,
+	database *sql.DB,
+	table string,
+	column string,
+	value string,
+	want int,
+) {
+	t.Helper()
+	var count int
+	query := fmt.Sprintf(
+		"SELECT COUNT(*) FROM %s WHERE %s = ?",
+		table,
+		column,
+	)
+	if err := database.QueryRow(query, value).Scan(&count); err != nil {
+		t.Fatalf("count %s by %s: %v", table, column, err)
+	}
+	if count != want {
+		t.Fatalf("%s rows by %s = %d, want %d", table, column, count, want)
+	}
 }

@@ -17,6 +17,7 @@ import (
 )
 
 var onboardProfileApplyJSON bool
+var onboardProfileChangeApplyJSON bool
 var onboardMemoryEnableJSON bool
 var onboardMemoryDeferJSON bool
 
@@ -50,9 +51,22 @@ required.`,
 	RunE: runOnboardProfileApply,
 }
 
-var onboardMemoryCmd = &cobra.Command{
-	Use:   "memory",
-	Short: "Apply the reviewed structured-memory choice",
+var onboardProfileChangeCmd = &cobra.Command{
+	Use:   "change",
+	Short: "Apply a reviewed bounded profile change",
+}
+
+var onboardProfileChangeApplyCmd = &cobra.Command{
+	Use:   "apply",
+	Short: "Apply the current reviewed scope entity relation change",
+	Long: `Apply the current predecessor-pinned profile-change review.
+
+The host calls this effect sink only after the operator directly selects the
+exact scope and successor entity_ref. The admission is compare-and-swap bound
+to the reviewed predecessor ledger revision; a stale review cannot overwrite a
+newer canonical profile.`,
+	Args: cobra.NoArgs,
+	RunE: runOnboardProfileChangeApply,
 }
 
 var onboardMemoryEnableCmd = &cobra.Command{
@@ -81,16 +95,19 @@ grant. A later explicit memory_prepare reopens the choice.`,
 }
 
 type onboardTaskEffectResponse struct {
-	Kind       string                   `json:"kind"`
-	Action     string                   `json:"action"`
-	Result     string                   `json:"result"`
-	Status     string                   `json:"status"`
-	Detail     string                   `json:"detail"`
-	NextAction string                   `json:"next_action"`
-	ReviewRef  string                   `json:"review_ref"`
-	Delivery   string                   `json:"delivery"`
-	Scopes     []onboardScopeWire       `json:"scopes,omitempty"`
-	Effects    onboardTaskEffectEffects `json:"effects"`
+	Kind             string                     `json:"kind"`
+	Action           string                     `json:"action"`
+	Result           string                     `json:"result"`
+	Status           string                     `json:"status"`
+	Detail           string                     `json:"detail"`
+	NextAction       string                     `json:"next_action"`
+	ReviewRef        string                     `json:"review_ref"`
+	Delivery         string                     `json:"delivery"`
+	Scopes           []onboardScopeResponseWire `json:"scopes,omitempty"`
+	Effects          onboardTaskEffectEffects   `json:"effects"`
+	StateDomain      string                     `json:"state_domain"`
+	ReadyFor         []string                   `json:"ready_for"`
+	DoesNotEstablish []string                   `json:"does_not_establish"`
 }
 
 type onboardTaskEffectEffects struct {
@@ -119,6 +136,12 @@ func init() {
 		false,
 		"print the task-level result as structured JSON",
 	)
+	onboardProfileChangeApplyCmd.Flags().BoolVar(
+		&onboardProfileChangeApplyJSON,
+		"json",
+		false,
+		"print the task-level result as structured JSON",
+	)
 	onboardMemoryEnableCmd.Flags().BoolVar(
 		&onboardMemoryEnableJSON,
 		"json",
@@ -131,11 +154,155 @@ func init() {
 		false,
 		"print the task-level result as structured JSON",
 	)
-	onboardProfileCmd.AddCommand(onboardProfileApplyCmd)
+	onboardProfileChangeCmd.AddCommand(onboardProfileChangeApplyCmd)
+	onboardProfileCmd.AddCommand(
+		onboardProfileApplyCmd,
+		onboardProfileChangeCmd,
+	)
 	onboardCmd.AddCommand(
 		onboardProfileCmd,
 	)
 	rootCmd.AddCommand(onboardCmd)
+}
+
+func runOnboardProfileChangeApply(
+	cmd *cobra.Command,
+	_ []string,
+) error {
+	binding, err := resolveOnboardTaskBinding(commandContext(cmd))
+	if err != nil {
+		return fmt.Errorf(
+			"resolve exact Haft project binding for profile change: current project attachment could not be verified",
+		)
+	}
+	reviewContent, present, err := readOptionalRegularProfileReview(
+		profileChangeReviewPath(binding.ProjectRoot),
+	)
+	if err != nil || !present {
+		return fmt.Errorf(
+			"read exact profile-change review before apply: current review is unavailable",
+		)
+	}
+	declaration, effectErr := executeReviewedProfileChange(
+		commandContext(cmd),
+		binding.ProjectRoot,
+	)
+	if declaration.Kind == "" {
+		return fmt.Errorf(
+			"apply reviewed profile change: the current review could not be verified; inspect onboarding status and prepare a fresh change review when required",
+		)
+	}
+	if declaration.Admission == nil {
+		return writeOnboardProfileChangeNoCommit(cmd, declaration)
+	}
+	cleanupErr := consumeProfileChangeReviewCandidate(
+		binding.ProjectRoot,
+		reviewContent,
+	)
+	observation, err := newProjectOnboardingRuntime(binding).Observe(
+		commandContext(cmd),
+	)
+	if err != nil || !observation.ProfileDeclared() {
+		response := onboardTaskEffectResponse{
+			Kind:       "haft_onboard_profile_change_apply",
+			Action:     "profile_change_apply",
+			Result:     "profile_change_status_unverified",
+			Status:     "verification_required",
+			Detail:     "The profile-change admission was recorded, but its current project status could not be verified.",
+			NextAction: "Read fresh onboarding and specification status before retrying the unchanged review.",
+			ReviewRef:  "review:onboard-profile-change",
+			Delivery:   onboardProfileDelivery(declaration),
+			Effects: onboardTaskEffectEffects{
+				CanonicalProfileChanged: declaration.Admission.Delivery == "fresh",
+			},
+		}
+		writeErr := writeOnboardTaskEffect(
+			cmd.OutOrStdout(),
+			response,
+			onboardProfileChangeApplyJSON,
+		)
+		return errors.Join(
+			writeErr,
+			fmt.Errorf(
+				"profile relation may be canonical; inspect fresh status before retrying",
+			),
+		)
+	}
+	current := onboarding.StatusForObservation(observation)
+	result := "profile_change_applied"
+	detail := "The reviewed scope entity relation is now part of the canonical project profile."
+	attention := effectErr != nil || cleanupErr != nil
+	if attention {
+		result = "profile_change_applied_attachment_unverified"
+		detail = "The reviewed scope entity relation is canonical, but final attachment or review-carrier cleanup could not be verified."
+	}
+	response := onboardTaskEffectResponse{
+		Kind:       "haft_onboard_profile_change_apply",
+		Action:     "profile_change_apply",
+		Result:     result,
+		Status:     string(current.Status()),
+		Detail:     detail,
+		NextAction: "Run h-spec or haft spec status to recompute specification applicability from the new canonical profile.",
+		ReviewRef:  "review:onboard-profile-change",
+		Delivery:   onboardProfileDelivery(declaration),
+		Scopes:     onboardScopesToWire(observation.Scopes()),
+		Effects: onboardTaskEffectEffects{
+			CanonicalProfileChanged: declaration.Admission.Delivery == "fresh",
+		},
+	}
+	writeErr := writeOnboardTaskEffect(
+		cmd.OutOrStdout(),
+		response,
+		onboardProfileChangeApplyJSON,
+	)
+	if attention {
+		return errors.Join(
+			writeErr,
+			fmt.Errorf(
+				"profile relation is canonical but its final attachment requires verification",
+			),
+		)
+	}
+	return writeErr
+}
+
+func writeOnboardProfileChangeNoCommit(
+	cmd *cobra.Command,
+	declaration profileOnboardResponse,
+) error {
+	result := "blocked_without_commit"
+	status := "blocked"
+	detail := "The reviewed profile change was not applied. Its predecessor may be stale or its delta may be invalid."
+	nextAction := "Inspect the current canonical profile and prepare a fresh bounded change review."
+	delivery := "none"
+	if declaration.Failure != nil &&
+		declaration.Failure.CommitPosture == "commit_outcome_unknown" {
+		result = "commit_outcome_unknown"
+		status = "outcome_unknown"
+		detail = "The command could not determine whether the exact reviewed profile change committed."
+		nextAction = "Retry the unchanged review; do not replace it until the exact outcome is resolved."
+		delivery = "outcome_unknown"
+	}
+	response := onboardTaskEffectResponse{
+		Kind:       "haft_onboard_profile_change_apply",
+		Action:     "profile_change_apply",
+		Result:     result,
+		Status:     status,
+		Detail:     detail,
+		NextAction: nextAction,
+		ReviewRef:  "review:onboard-profile-change",
+		Delivery:   delivery,
+		Effects:    onboardTaskEffectEffects{},
+	}
+	writeErr := writeOnboardTaskEffect(
+		cmd.OutOrStdout(),
+		response,
+		onboardProfileChangeApplyJSON,
+	)
+	return errors.Join(
+		writeErr,
+		fmt.Errorf("reviewed profile change was not confirmed as canonical"),
+	)
 }
 
 func runOnboardProfileApply(
@@ -883,6 +1050,12 @@ func writeOnboardTaskEffect(
 	response onboardTaskEffectResponse,
 	asJSON bool,
 ) error {
+	response.StateDomain = onboarding.StateDomainProjectSetupReadiness
+	response.ReadyFor = []string{}
+	if response.Status == string(onboarding.StatusReady) {
+		response.ReadyFor = onboarding.ProjectSetupReadyFor()
+	}
+	response.DoesNotEstablish = onboarding.ProjectSetupDoesNotEstablish()
 	if asJSON {
 		return writeIndentedJSON(writer, response)
 	}
@@ -904,6 +1077,8 @@ func onboardTaskEffectTitle(
 	switch response.Action {
 	case "profile_apply":
 		return "Haft onboarding: project profile applied"
+	case "profile_change_apply":
+		return "Haft onboarding: project profile relation changed"
 	case "memory_enable":
 		return "Haft onboarding: structured memory enabled"
 	case "memory_defer":

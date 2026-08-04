@@ -36,12 +36,13 @@ func TestHaftOnboardSchemaIsClosedReadableActionUnion(t *testing.T) {
 	for _, action := range []string{
 		haftOnboardStatusAction,
 		haftOnboardProfilePrepareAction,
+		haftOnboardProfileChangePrepareAction,
 	} {
 		if !actions[action] {
 			t.Fatalf("haft_onboard action %q is missing", action)
 		}
 	}
-	if len(actions) != 2 {
+	if len(actions) != 3 {
 		t.Fatalf("haft_onboard actions = %#v", actions)
 	}
 }

@@ -253,13 +253,6 @@ func doctorCurrentProjectServeProcesses(projectRoot string, processes []doctorSe
 
 func doctorServeProcessIssues(current []doctorServeProcess, snapshot doctorServeProcessSnapshot) []string {
 	issues := make([]string, 0)
-	if len(current) > 1 {
-		issues = append(issues, fmt.Sprintf(
-			"multiple current-project serve processes: %s",
-			doctorServeProcessList(current),
-		))
-	}
-
 	for _, process := range current {
 		if doctorServeExecutableDiffersFromPath(process, snapshot.PathHaft) {
 			issues = append(issues, fmt.Sprintf(

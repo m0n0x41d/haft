@@ -51,7 +51,7 @@ func TestScopedCapabilityApplicabilityRequiresExactScopeInMixedProfile(
 	}
 }
 
-func TestScopedCapabilityApplicabilityPreservesNeutralUnderdeterminedBasis(
+func TestScopedCapabilityApplicabilityRequiresTargetSystemForDeclaredScope(
 	t *testing.T,
 ) {
 	payload := mustCapabilityMatrixPayload(
@@ -73,11 +73,11 @@ func TestScopedCapabilityApplicabilityPreservesNeutralUnderdeterminedBasis(
 	if err != nil {
 		t.Fatalf("ResolveScopedCapabilityApplicability: %v", err)
 	}
-	if result.Kind() != projectprofile.CapabilityUnderdetermined {
+	if result.Kind() != projectprofile.CapabilityRequired {
 		t.Fatalf("kind = %q", result.Kind())
 	}
 	missing, present := result.MissingBasis()
-	if !present || missing != projectprofile.MissingAdmittedTargetSystemRelation {
+	if present || missing != "" {
 		t.Fatalf("missing basis = %q, present=%t", missing, present)
 	}
 }

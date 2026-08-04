@@ -7,7 +7,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
-func TestSoftwareApplicablePhaseSetPreservesMissingTargetPrerequisiteAsCue(
+func TestSoftwareApplicablePhaseSetStartsTargetLifecycleWithoutEntityRelation(
 	t *testing.T,
 ) {
 	phaseSet := mustApplicablePhaseSet(t, softwareProfileScope(t, "software"))
@@ -19,29 +19,13 @@ func TestSoftwareApplicablePhaseSetPreservesMissingTargetPrerequisiteAsCue(
 	if err != nil {
 		t.Fatalf("NextStepForPhaseSet: %v", err)
 	}
-	if intent.Phase != "" {
-		t.Fatalf("phase = %q, want no phase before target basis", intent.Phase)
+	if intent.Phase != PhaseTargetEnvironmentDraft {
+		t.Fatalf("phase = %q, want %q", intent.Phase, PhaseTargetEnvironmentDraft)
 	}
-	if intent.ApplicabilityCue == nil {
-		t.Fatal("missing target prerequisite did not produce applicability cue")
-	}
-	if len(intent.ApplicabilityCue.BlockedDependencies) != 1 {
-		t.Fatalf(
-			"blocked dependencies = %#v, want one",
-			intent.ApplicabilityCue.BlockedDependencies,
-		)
-	}
-	blocked := intent.ApplicabilityCue.BlockedDependencies[0]
-	if blocked.BlockedPhase != PhaseSoftwareRoleDraft ||
-		blocked.RequiredPhase != PhaseTargetBoundaryDraft ||
-		blocked.RequiredDocumentKind != project.SpecDocumentKindTargetSystem ||
-		blocked.RequiredMissingBasis == "" {
-		t.Fatalf("blocked dependency = %#v", blocked)
+	if intent.ApplicabilityCue != nil {
+		t.Fatalf("target lifecycle retained relation cue: %#v", intent.ApplicabilityCue)
 	}
 	for _, phase := range phaseSet.Phases() {
-		if phase.DocumentKind == project.SpecDocumentKindTargetSystem {
-			t.Fatalf("phase set retained underdetermined target phase %q", phase.ID)
-		}
 		if phase.ID == PhaseSoftwareRoleDraft &&
 			!containsPhaseID(phase.DependsOn, PhaseTargetBoundaryDraft) {
 			t.Fatalf(
@@ -52,7 +36,7 @@ func TestSoftwareApplicablePhaseSetPreservesMissingTargetPrerequisiteAsCue(
 	}
 }
 
-func TestSoftwareApplicablePhaseSetEndsInOneNeutralCueNotReady(
+func TestSoftwareApplicablePhaseSetReturnsToMissingTargetLifecycle(
 	t *testing.T,
 ) {
 	phaseSet := mustApplicablePhaseSet(t, softwareProfileScope(t, "software"))
@@ -68,25 +52,18 @@ func TestSoftwareApplicablePhaseSetEndsInOneNeutralCueNotReady(
 	if err != nil {
 		t.Fatalf("ProjectLifecycleForPhaseSet: %v", err)
 	}
-	if projection.State != LifecycleStateUnderdetermined {
-		t.Fatalf("state = %q, want underdetermined", projection.State)
+	if projection.State != LifecycleStateNeedsAction {
+		t.Fatalf("state = %q, want needs_action", projection.State)
 	}
-	if projection.Action != LifecycleActionInspectApplicability {
-		t.Fatalf("action = %q, want inspect_applicability", projection.Action)
+	if projection.Action != LifecycleActionDraft {
+		t.Fatalf("action = %q, want draft", projection.Action)
 	}
 	if projection.HumanGate != "" {
 		t.Fatalf("neutral applicability cue became human gate %q", projection.HumanGate)
 	}
-	if projection.WorkflowIntent.ApplicabilityCue == nil ||
-		len(projection.WorkflowIntent.ApplicabilityCue.Issues) != 1 {
-		t.Fatalf(
-			"applicability cue = %#v, want one issue",
-			projection.WorkflowIntent.ApplicabilityCue,
-		)
-	}
-	issue := projection.WorkflowIntent.ApplicabilityCue.Issues[0]
-	if issue.DocumentKind != project.SpecDocumentKindTargetSystem {
-		t.Fatalf("cue document = %q, want target-system", issue.DocumentKind)
+	if projection.WorkflowIntent.ApplicabilityCue != nil ||
+		projection.WorkflowIntent.Phase != PhaseTargetEnvironmentDraft {
+		t.Fatalf("target lifecycle projection = %#v", projection.WorkflowIntent)
 	}
 }
 
@@ -110,11 +87,14 @@ func TestNonSoftwareApplicablePhaseSetHasNoSoftwarePhaseOrSWEDebt(
 	if err != nil {
 		t.Fatalf("ProjectLifecycleForPhaseSet: %v", err)
 	}
-	if projection.State != LifecycleStateUnderdetermined {
-		t.Fatalf("state = %q, want underdetermined", projection.State)
+	if projection.State != LifecycleStateNeedsAction {
+		t.Fatalf("state = %q, want needs_action", projection.State)
 	}
 	if projection.DocumentKind == project.SpecDocumentKindSoftwareSystem {
 		t.Fatalf("projection retained software pressure: %#v", projection)
+	}
+	if projection.DocumentKind != project.SpecDocumentKindTargetSystem {
+		t.Fatalf("projection omitted target lifecycle: %#v", projection)
 	}
 }
 

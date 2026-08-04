@@ -8,7 +8,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
-func TestNonSoftwareSpecificationProjectionOmitsSystemAndSoftwareCarriers(
+func TestNonSoftwareSpecificationProjectionKeepsTargetAndOmitsSoftwareCarrier(
 	t *testing.T,
 ) {
 	applicability := mustSpecificationApplicability(
@@ -23,27 +23,23 @@ func TestNonSoftwareSpecificationProjectionOmitsSystemAndSoftwareCarriers(
 	if err != nil {
 		t.Fatalf("CheckSpecDocumentsForScope: %v", err)
 	}
-	if hasSpecCheckFinding(report, "spec_carrier_no_active_sections") {
-		t.Fatalf("non-software report retained system/SWE pressure: %+v", report.Findings)
+	if hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
+		t.Fatalf("non-software report retained a target-relation gate: %+v", report.Findings)
 	}
-	if !hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
-		t.Fatalf("non-software report omitted the target-relation basis gap: %+v", report.Findings)
+	if len(report.Documents) != 2 {
+		t.Fatalf("non-software documents = %#v, want TargetSystemSpec and TermMap", report.Documents)
 	}
-	if len(report.Documents) != 1 {
-		t.Fatalf("non-software documents = %#v, want only TermMap", report.Documents)
-	}
-	if report.Documents[0].Kind != string(SpecDocumentKindTermMap) {
-		t.Fatalf("non-software document kind = %q", report.Documents[0].Kind)
+	if report.Documents[0].Kind != string(SpecDocumentKindTargetSystem) ||
+		report.Documents[1].Kind != string(SpecDocumentKindTermMap) {
+		t.Fatalf("non-software document kinds = %#v", report.Documents)
 	}
 	excluded := applicability.ExcludedDocumentKinds()
 	if len(excluded) != 1 ||
 		excluded[0] != SpecDocumentKindSoftwareSystem {
 		t.Fatalf("excluded document kinds = %#v", excluded)
 	}
-	underdetermined := applicability.UnderdeterminedDocumentKinds()
-	if len(underdetermined) != 1 ||
-		underdetermined[0] != SpecDocumentKindTargetSystem {
-		t.Fatalf("underdetermined document kinds = %#v", underdetermined)
+	if len(applicability.UnderdeterminedDocumentKinds()) != 0 {
+		t.Fatalf("underdetermined document kinds = %#v", applicability.UnderdeterminedDocumentKinds())
 	}
 }
 
@@ -65,8 +61,8 @@ func TestSoftwareSpecificationProjectionKeepsSoftwareReadinessFinding(
 	if !hasSpecCheckFinding(report, "spec_carrier_no_active_sections") {
 		t.Fatalf("software report findings = %+v", report.Findings)
 	}
-	if len(report.Documents) != 2 {
-		t.Fatalf("software documents = %#v, want SoftwareSystemSpec and TermMap", report.Documents)
+	if len(report.Documents) != 3 {
+		t.Fatalf("software documents = %#v, want TargetSystemSpec, SoftwareSystemSpec, and TermMap", report.Documents)
 	}
 	if len(applicability.ExcludedDocumentKinds()) != 0 {
 		t.Fatalf("software excluded kinds = %#v", applicability.ExcludedDocumentKinds())
@@ -128,11 +124,11 @@ func TestMixedProfileDerivesDifferentSpecificationSetsPerScope(t *testing.T) {
 	if err != nil {
 		t.Fatalf("documents projection: %v", err)
 	}
-	if len(softwareSet.Documents) != 2 {
-		t.Fatalf("software document count = %d, want 2", len(softwareSet.Documents))
+	if len(softwareSet.Documents) != 3 {
+		t.Fatalf("software document count = %d, want 3", len(softwareSet.Documents))
 	}
-	if len(documentSet.Documents) != 1 {
-		t.Fatalf("document/model document count = %d, want 1", len(documentSet.Documents))
+	if len(documentSet.Documents) != 2 {
+		t.Fatalf("document/model document count = %d, want 2", len(documentSet.Documents))
 	}
 	if software.ProfilePayloadDigest() != documents.ProfilePayloadDigest() {
 		t.Fatal("mixed scope projections lost their common canonical profile basis")
@@ -164,6 +160,11 @@ func TestNonSoftwareCarrierLoaderDoesNotReadLegacySoftwareCarrier(
 	)
 	writeFixture(
 		t,
+		filepath.Join(specDir, "target-system.md"),
+		readinessSpecSection("TS.environment.001", "target.environment"),
+	)
+	writeFixture(
+		t,
 		filepath.Join(specDir, "term-map.md"),
 		validTermMapCarrier(),
 	)
@@ -180,15 +181,14 @@ func TestNonSoftwareCarrierLoaderDoesNotReadLegacySoftwareCarrier(
 	if hasSpecCheckFinding(report, SpecMigrationRequiredFindingCode) {
 		t.Fatalf("non-software report retained legacy migration pressure: %+v", report.Findings)
 	}
-	if hasSpecCheckFinding(report, "spec_carrier_missing_file") {
-		t.Fatalf("non-software report required a system carrier: %+v", report.Findings)
+	if hasSpecCheckFinding(report, "spec_carrier_missing_file") ||
+		hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
+		t.Fatalf("non-software report retained a relation gate: %+v", report.Findings)
 	}
-	if !hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
-		t.Fatalf("non-software report hid target-relation uncertainty: %+v", report.Findings)
-	}
-	if len(report.Documents) != 1 ||
-		report.Documents[0].Kind != string(SpecDocumentKindTermMap) {
-		t.Fatalf("non-software documents = %#v, want only TermMap", report.Documents)
+	if len(report.Documents) != 2 ||
+		report.Documents[0].Kind != string(SpecDocumentKindTargetSystem) ||
+		report.Documents[1].Kind != string(SpecDocumentKindTermMap) {
+		t.Fatalf("non-software documents = %#v, want TargetSystemSpec and TermMap", report.Documents)
 	}
 }
 
@@ -204,6 +204,11 @@ func TestSoftwareCarrierLoaderPreservesLegacyMigrationFinding(
 		t,
 		filepath.Join(specDir, "enabling-system.md"),
 		readinessSpecSection("ES.role.001", "enabling.role"),
+	)
+	writeFixture(
+		t,
+		filepath.Join(specDir, "target-system.md"),
+		readinessSpecSection("TS.environment.001", "target.environment"),
 	)
 	writeFixture(
 		t,

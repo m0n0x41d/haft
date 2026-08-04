@@ -304,12 +304,12 @@ func TestP13FPFReadmePathMatchesTrackedSourceCase(t *testing.T) {
 
 func TestRequiredFPFIdentityRejectsCheckoutOrEmbeddedDrift(t *testing.T) {
 	required := fpfIdentitySpec{
-		Revision:          "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4",
-		SpecDigest:        "sha256:1093a25640c61a2674f56443bffb8e27f33ac2cdf95f09af2c0cf67c68913eac",
+		Revision:          "8b727cba9e893a467b82aab9da84fb7d6d945480",
+		SpecDigest:        "sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42",
 		ReadmeDigest:      "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",
-		BaseTypeEnvRef:    "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6",
-		BaseTypeEnvDigest: "sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6",
-		CompilerSchema:    "fpf-base-typeenv.cov2.v4",
+		BaseTypeEnvRef:    "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786",
+		BaseTypeEnvDigest: "sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786",
+		CompilerSchema:    "fpf-base-typeenv.cov2.v5",
 	}
 	observed := fpfIdentity{
 		Head:         required.Revision,
@@ -817,7 +817,7 @@ func validateRequiredPredecessorIdentity(
 	want := predecessorIdentityFromSpec(required)
 	if observed != want {
 		return fmt.Errorf(
-			"Transition predecessor is not the exact selected 44dd881 project-head closure",
+			"Transition predecessor is not the exact selected 0990ff1 project-head closure",
 		)
 	}
 	return nil

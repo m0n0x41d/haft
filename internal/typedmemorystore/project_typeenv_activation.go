@@ -119,8 +119,8 @@ func PrepareProjectTypeEnvActivationGraph(
 		basis.String(),
 		input.Delta.Digest().String(),
 		string(input.Delta.CanonicalBytes()),
-		projecttypeenvactivation.EventKind,
-		projecttypeenvactivation.AuthorityClass,
+		input.Delta.EventKind(),
+		input.Delta.AuthorityClass(),
 		input.Request.Ref().String(),
 	)
 	if err != nil {
@@ -705,8 +705,8 @@ func activationPreludeStatements(
 				request.Target().VerifiedComposite().String(),
 				delta.Digest().String(),
 				delta.CanonicalBytes(),
-				projecttypeenvactivation.EventKind,
-				projecttypeenvactivation.AuthorityClass,
+				delta.EventKind(),
+				delta.AuthorityClass(),
 				request.Ref().String(),
 				recordedAt,
 			},

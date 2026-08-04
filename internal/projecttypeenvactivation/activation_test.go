@@ -186,19 +186,19 @@ func TestGenesisDeltaRequiresFirstHeadRevision(t *testing.T) {
 
 func TestCurrentGenesisCarriersUseTagOnlyVersionMap(t *testing.T) {
 	fixture := newActivationCarrierFixture(t, '7')
-	if fixture.delta.edition != currentCarrierV2 ||
-		fixture.basis.edition != currentCarrierV2 {
-		t.Fatal("current constructors did not issue v2 delta and basis")
+	if fixture.delta.edition != currentCarrierV3 ||
+		fixture.basis.edition != currentCarrierV3 {
+		t.Fatal("current constructors did not issue v3 delta and basis")
 	}
 	if _, err := newCanonicalReader(
 		fixture.delta.CanonicalBytes(),
-		deltaDomainV2,
+		deltaDomainV3,
 	); err != nil {
 		t.Fatalf("current delta domain: %v", err)
 	}
 	if _, err := newCanonicalReader(
 		fixture.basis.CanonicalBytes(),
-		basisDomainV2,
+		basisDomainV3,
 	); err != nil {
 		t.Fatalf("current basis domain: %v", err)
 	}
@@ -218,6 +218,87 @@ func TestCurrentGenesisCarriersUseTagOnlyVersionMap(t *testing.T) {
 	if bytes.Contains(fixture.delta.CanonicalBytes(), proofPrefix) ||
 		bytes.Contains(fixture.basis.CanonicalBytes(), proofPrefix) {
 		t.Fatal("current Genesis carrier retained a no-prior-head proof")
+	}
+}
+
+func TestLegacyV2GenesisCarriersRemainExactReadOnly(t *testing.T) {
+	fixture := newActivationCarrierFixture(t, '6')
+	deltaWriter := newCanonicalWriter(deltaDomainV2)
+	deltaWriter.writeString(fixture.delta.TransactionRef())
+	deltaWriter.writeString(fixture.delta.TransactionDigest().String())
+	deltaWriter.writeString(fixture.delta.Project().String())
+	deltaWriter.writeString(fixture.delta.Head().String())
+	deltaWriter.writeString(fixture.delta.RequestRef().String())
+	deltaWriter.writeString(fixture.delta.RequestDigest().String())
+	deltaWriter.writeString(fixture.delta.ContentDigest().String())
+	deltaWriter.writeString(fixture.delta.AuthorityUseRef())
+	deltaWriter.writeString(fixture.delta.WorkRef().String())
+	deltaWriter.writeString(fixture.delta.WorkRecordRef())
+	deltaWriter.writeString("genesis")
+	if err := encodeTarget(&deltaWriter, fixture.delta.Target()); err != nil {
+		t.Fatalf("encodeTarget(legacy v2): %v", err)
+	}
+	deltaWriter.writeUint64(fixture.delta.ExpectedGraphRevision().Value())
+	deltaWriter.writeUint64(fixture.delta.CommittedGraphRevision().Value())
+	deltaWriter.writeUint64(fixture.delta.SuccessorHeadRevision().Value())
+	deltaWriter.writeString(EventKind)
+	deltaWriter.writeString(LegacyManualAuthorityClass)
+	legacyDelta, err := DecodeDelta(deltaWriter.bytes())
+	if err != nil {
+		t.Fatalf("DecodeDelta(legacy v2): %v", err)
+	}
+	if legacyDelta.edition != legacyCarrierV2 ||
+		legacyDelta.AuthorityClass() != LegacyManualAuthorityClass {
+		t.Fatalf(
+			"legacy v2 delta edition=%d authority=%q",
+			legacyDelta.edition,
+			legacyDelta.AuthorityClass(),
+		)
+	}
+	if _, err := NewAdmissionEnvelope(
+		legacyDelta,
+		graphKeyPrefix+strings.Repeat("c", 64),
+	); err == nil {
+		t.Fatal("legacy v2 delta reissued a current envelope")
+	}
+
+	envelope := decodeLegacyEnvelopeFixture(
+		t,
+		legacyDelta,
+		graphKeyPrefix+strings.Repeat("c", 64),
+	)
+	basisWriter := newCanonicalWriter(basisDomainV2)
+	basisWriter.writeString(AdmissionKindSnapshotOnly)
+	basisWriter.writeString(envelope.Ref().String())
+	basisWriter.writeString(envelope.Digest().String())
+	basisWriter.writeString(legacyDelta.Project().String())
+	basisWriter.writeString("genesis")
+	basisWriter.writeString(legacyDelta.Target().Composite().String())
+	basisWriter.writeString(legacyDelta.Target().Stage().String())
+	basisWriter.writeUint64(legacyDelta.ExpectedGraphRevision().Value())
+	legacyBasis, err := DecodeAdmissionBasis(basisWriter.bytes())
+	if err != nil {
+		t.Fatalf("DecodeAdmissionBasis(legacy v2): %v", err)
+	}
+	if legacyBasis.edition != legacyCarrierV2 {
+		t.Fatalf("legacy v2 basis edition = %d", legacyBasis.edition)
+	}
+}
+
+func TestCurrentActivationRequiresExactCurrentAuthorityClass(t *testing.T) {
+	fixture := newActivationCarrierFixture(t, '5')
+	input := deltaInputFromFixture(fixture.delta)
+	input.AuthorityClass = LegacyManualAuthorityClass
+	if _, err := NewDelta(input); err == nil {
+		t.Fatal("current activation accepted the legacy manual authority class")
+	}
+	input.AuthorityClass = CompatibleSuccessorPolicyAuthorityClass
+	delta, err := NewDelta(input)
+	if err != nil {
+		t.Fatalf("NewDelta(compatible successor policy): %v", err)
+	}
+	if delta.AuthorityClass() != CompatibleSuccessorPolicyAuthorityClass {
+		t.Fatalf("current activation authority class = %q", delta.AuthorityClass())
 	}
 }
 
@@ -420,6 +501,7 @@ func newActivationCarrierFixture(t *testing.T, fill byte) activationCarrierFixtu
 		ExpectedGraphRevision:  typedmemory.NewGraphRevision(0),
 		CommittedGraphRevision: typedmemory.NewGraphRevision(1),
 		SuccessorHeadRevision:  successorHead,
+		AuthorityClass:         HostRoutedOperatorRequestAuthorityClass,
 	})
 	if err != nil {
 		t.Fatalf("NewDelta: %v", err)
@@ -636,6 +718,7 @@ func deltaInputFromFixture(delta Delta) DeltaInput {
 		ExpectedGraphRevision:  delta.ExpectedGraphRevision(),
 		CommittedGraphRevision: delta.CommittedGraphRevision(),
 		SuccessorHeadRevision:  delta.SuccessorHeadRevision(),
+		AuthorityClass:         delta.AuthorityClass(),
 	}
 }
 

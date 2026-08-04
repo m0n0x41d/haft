@@ -227,12 +227,18 @@ func TestPrepareCandidateArtifactRejectsNonDeterministicBuildAndCleansRoot(t *te
 	}
 }
 
-func TestPrepareCandidateArtifactRunsCandidateQueryVerification(t *testing.T) {
+func TestPrepareCandidateArtifactRetainsSourceSpecificQueryDriftForReview(t *testing.T) {
 	source := candidateArtifactProductionSource(t)
 	source.specificationBytes = bytes.ReplaceAll(
 		source.specificationBytes,
 		[]byte("SYSTEM-RECOGNITION"),
 		[]byte("SYSTEM-RECOGNITION-ALT"),
+	)
+	source.specificationBytes = bytes.Replace(
+		source.specificationBytes,
+		[]byte("- **Template A.**"),
+		[]byte("- **Fresh outcome route.**"),
+		1,
 	)
 	predecessorPath := candidateArtifactPredecessorDatabase(t)
 	builder := &candidateArtifactVerifyingBuilder{}
@@ -246,21 +252,40 @@ func TestPrepareCandidateArtifactRunsCandidateQueryVerification(t *testing.T) {
 			GeneratedBy:             candidateArtifactTestGeneratedBy,
 		},
 	)
-	if artifact != nil {
-		t.Fatal("unverified predecessor copy returned a candidate artifact")
+	if err != nil {
+		t.Fatalf("PrepareCandidateArtifact() error = %v", err)
 	}
-	if err == nil || !strings.Contains(err.Error(), "verify candidate Query contract") {
-		t.Fatalf("error = %v, want candidate Query verification failure", err)
+	if artifact == nil {
+		t.Fatal("source-specific query drift discarded a structurally valid candidate")
 	}
+	t.Cleanup(func() { _ = artifact.Cleanup() })
 	if len(builder.inputs) != 2 {
 		t.Fatalf(
 			"builder calls = %d, want 2 deterministic copies before verification",
 			len(builder.inputs),
 		)
 	}
-	ownedRoot := filepath.Dir(builder.inputs[0].WorkingDirectory)
-	if _, statErr := os.Stat(ownedRoot); !errors.Is(statErr, os.ErrNotExist) {
-		t.Fatalf("unverified candidate root remains after rejection: %v", statErr)
+	if err := VerifySourceQueryRuntime(artifact.DatabasePath()); err != nil {
+		t.Fatalf("candidate source Query runtime is invalid: %v", err)
+	}
+	querySmokeErr := artifact.querySmokeError()
+	if querySmokeErr == nil ||
+		!strings.Contains(querySmokeErr.Error(), "query_contract_regression") {
+		t.Fatalf(
+			"query smoke error = %v, want retained source-specific regression",
+			querySmokeErr,
+		)
+	}
+	if len(artifact.QuerySmokeResults()) != 0 {
+		t.Fatalf(
+			"failed source-specific smoke results = %#v, want no invented successes",
+			artifact.QuerySmokeResults(),
+		)
+	}
+	sourceDiagnostics := artifact.sourceGrammarDiagnostics()
+	if len(sourceDiagnostics) != 1 ||
+		sourceDiagnostics[0].Class != fpf.SourceGrammarUnsupported {
+		t.Fatalf("source grammar diagnostics = %#v", sourceDiagnostics)
 	}
 }
 

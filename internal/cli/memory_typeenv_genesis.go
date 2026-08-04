@@ -43,20 +43,20 @@ const (
 
 var memoryTypeEnvCmd = &cobra.Command{
 	Use:    "typeenv",
-	Short:  "Prepare and select the project's exact typed-memory ontology",
+	Short:  "Initialize or reconcile the project's exact typed-memory ontology",
 	Hidden: true,
 }
 
 var memoryTypeEnvPrepareCmd = &cobra.Command{
 	Use:   "prepare",
-	Short: "Prepare a non-binding project TypeEnv review",
+	Short: "Prepare Genesis or automatically activate a compatible TypeEnv successor",
 	Args:  cobra.NoArgs,
 	RunE:  runMemoryTypeEnvPrepare,
 }
 
 var memoryTypeEnvSelectCmd = &cobra.Command{
 	Use:   "select",
-	Short: "Select the exact reviewed project TypeEnv after host routing",
+	Short: "Select an exact retained manual TypeEnv review after host routing",
 	Args:  cobra.NoArgs,
 	RunE:  runMemoryTypeEnvSelect,
 }

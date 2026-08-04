@@ -44,7 +44,7 @@ release:
   header: |
     ## Haft {{ .Tag }}
 
-    FPF governance substrate. CLI + MCP server + 15 skills for Claude Code / Codex / OpenCode / Cursor.
+    FPF governance substrate. CLI + MCP server + 12 skills for Claude Code / Codex / OpenCode / Cursor.
 
     ### Install
 

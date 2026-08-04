@@ -66,22 +66,20 @@ claims:
       - A.7
   - id: TS.environment.001.L5
     class: L
-    statement: TargetSystemSpec applicability for a scope is derived from an explicit target relation whose EntityOfConcernSlot is filled by an EntityRef with a KindClassificationJudgement=true for the applicable local system kind under an exact KindSignature edition, bounded context, and context slice.
+    statement: TargetSystemSpec is Required for every declared realization scope. An EntityRef may relate that scope to an exact EntityOfConcern for memory, traceability, and stronger identity-bearing use, but the relation is not an applicability gate and its absence does not authorize a profile mutation.
     scope:
       - target-system-applicability
     governing_pattern_refs:
       - A.6.B
       - A.7
-      - C.3.2
   - id: TS.environment.001.L6
     class: L
-    statement: SoftwareSystemSpec applicability and software-engineering readiness pressure for a scope are derived from a SoftwareRealization scope whose selected target EntityRef has a KindClassificationJudgement=true for the applicable local software-system kind under an exact KindSignature edition, bounded context, and context slice.
+    statement: SoftwareSystemSpec applicability and software-engineering readiness pressure for a scope are derived from the admitted SoftwareRealization classification. An optional target EntityRef can strengthen identity-bearing use but does not determine this capability result.
     scope:
       - software-system-applicability
     governing_pattern_refs:
       - A.6.B
       - A.7
-      - C.3.2
   - id: TS.environment.001.L2
     class: L
     statement: An Applicability result for one capability and ScopeID is exactly one of Required, NotApplicable, or Underdetermined and carries its profile basis or missing basis.
@@ -477,8 +475,9 @@ claims:
       provenance, the profile-declaration effect, the exact reviewed candidate
       as subject, and the exact payload digest; its request digest and project
       scope match the current ledger binding; and the durable
-      ProfileOnboardingWorkRecord has matching performedBy, executedWithin,
-      Work interval, RoleAssignment coverage, basis-observation window, payload
+      ProfileOnboardingWorkRecord has matching actual performer system,
+      covering RoleAssignment, performedUnderAssignment, executedWithin, Work
+      interval, assignment coverage, basis-observation window, payload
       digest, and observed-basis digest. The host request records routing
       provenance only and does not prove U.SpeechAct or hidden mental intent.
     scope:
@@ -556,6 +555,19 @@ claims:
       - TS.boundary.001.A4
       - TS.boundary.001.A6
       - TS.environment.001.L8
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.A8
+    class: A
+    statement: An automatic ProjectTypeEnv successor activation is authority-admissible only when the exact action is project_typeenv_head.select, the authority generation is compatible_successor_policy, the predecessor is the transaction-current exact project head, the target is the exact package-bundled B and ordered E DAG and X and verified C, existing-assertion revalidation is clean, the current project profile is Compatible, no installed projection profile is blocked, and project binding, Stage, graph, profile and runtime currentness are revalidated inside the same atomic compare-and-swap. It requires no operator request or human review; the activation delta, authority-use record, and typed-memory graph event all record compatible_successor_policy rather than manual or host-routed provenance. Every false, missing, stale, incompatible or underdetermined predicate leaves the head unchanged.
+    scope:
+      - project-typeenv-head-selection
+      - automatic-compatible-successor-authority
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A6
+      - TS.role.001.A2
     governing_pattern_refs:
       - A.6.B
       - A.7

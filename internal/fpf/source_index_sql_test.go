@@ -290,10 +290,17 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 		"C.2.1",
 		"A.22",
 	})
-	for _, patternID := range []string{"C.26", "C.32.PAD"} {
-		candidate := findSourceCandidateByPatternID(t, targetSet, patternID)
-		assertProjectedPatternBodyPhraseGround(t, candidate, "target system", patternID)
-	}
+	targetWitness := findSourceCandidateByPatternID(t, targetSet, "C.26")
+	// The current source has one exact "target system" pattern-body span in
+	// C.26. C.32.PAD remains a direct ref on SYSTEM-DELIMITATION above, not an
+	// exact phrase witness after the source revision changed its wording.
+	assertProjectedPatternBodyPhraseGround(
+		t,
+		targetWitness,
+		"target system",
+		"C.26",
+		SourcePhraseKindExactProbeSpan,
+	)
 
 	vignetteResult, err := Query(index, ConcernQuery{
 		Text: "What is the system vignette here?",
@@ -305,10 +312,14 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 	assertDefaultConcernRoles(t, vignetteSet)
 	vignetteCard := findSourceCandidateByUnitID(t, vignetteSet, "readme:practical_use_card:system-recognition")
 	assertNavigationExpansionGround(t, vignetteCard, "system")
-	for _, patternID := range []string{"A.19.CHR", "A.21"} {
-		candidate := findSourceCandidateByPatternID(t, vignetteSet, patternID)
-		assertProjectedPatternBodyPhraseGround(t, candidate, "system vignette", patternID)
-	}
+	vignetteWitness := findSourceCandidateByPatternID(t, vignetteSet, "A.21")
+	assertProjectedPatternBodyPhraseGround(
+		t,
+		vignetteWitness,
+		"system vignette",
+		"A.21",
+		SourcePhraseKindExactProbeSpan,
+	)
 
 	changeResult, err := Query(index, ConcernQuery{
 		Text: "Which exact entities are parts of this system and which relations only cross its boundary?",
@@ -940,15 +951,13 @@ func TestRebuildSourceQueryIndexAtomic_PreservesPreviousFileOnFailure(t *testing
 	err = RebuildSourceQueryIndexAtomic(target, func(temporary string) error {
 		return StoreSourceUnits(temporary, brokenCues)
 	})
-	if err == nil || !strings.Contains(err.Error(), "first-result cue") {
-		t.Fatalf("expected practical-use cue grammar failure, got %v", err)
-	}
-	afterCueFailure, err := os.ReadFile(target)
 	if err != nil {
-		t.Fatalf("read target after cue failure: %v", err)
+		t.Fatalf("degraded practical-use cue rebuild error: %v", err)
 	}
-	if string(afterCueFailure) != string(before) {
-		t.Fatal("cue-invalid rebuild changed the previous target")
+	readOnly := openSourceIndexReadOnlyTestDB(t, target)
+	defer func() { _ = readOnly.Close() }()
+	if err := VerifySourceQueryIndexReadOnlyDB(readOnly); err != nil {
+		t.Fatalf("degraded practical-use source runtime is invalid: %v", err)
 	}
 }
 
@@ -1524,7 +1533,13 @@ func assertNavigationExpansionGround(t *testing.T, candidate SourceCandidate, ma
 	t.Fatalf("candidate %s lacks admitted navigation expansion ground %q: %#v", candidate.Source.UnitID, matchedValue, candidate.MatchGrounds)
 }
 
-func assertProjectedPatternBodyPhraseGround(t *testing.T, candidate SourceCandidate, phrase, patternID string) {
+func assertProjectedPatternBodyPhraseGround(
+	t *testing.T,
+	candidate SourceCandidate,
+	phrase string,
+	patternID string,
+	phraseKind SourcePhraseKind,
+) {
 	t.Helper()
 	for _, ground := range candidate.MatchGrounds {
 		if ground.SourceField != sourceFieldPatternBodyDerivedPhrase || ground.MatchedValue != phrase {
@@ -1532,7 +1547,7 @@ func assertProjectedPatternBodyPhraseGround(t *testing.T, candidate SourceCandid
 		}
 		evidence := ground.Evidence
 		if evidence == nil ||
-			ground.PhraseKind != SourcePhraseKindScaffoldCompressed ||
+			ground.PhraseKind != phraseKind ||
 			evidence.PatternID != patternID ||
 			evidence.SourceRole != SourceUnitRolePatternBody ||
 			evidence.ProjectionRelation != "same_pattern_id" ||

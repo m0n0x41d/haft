@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/authority"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselection"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectionauthority"
+	"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
@@ -442,6 +444,9 @@ func writeGenesisHostRequestTx(
 	effect sealedGenesisEffect,
 ) error {
 	resolved := effect.prepared.resolved
+	if resolved.isCompatibleSuccessor() {
+		return nil
+	}
 	request := resolved.request
 	resolution := resolved.hostResolution
 	binding := resolution.ProjectBinding()
@@ -477,6 +482,13 @@ func writeGenesisAuthorityResolutionTx(
 	effect sealedGenesisEffect,
 ) error {
 	resolved := effect.prepared.resolved
+	if resolved.isCompatibleSuccessor() {
+		return writeCompatibleSuccessorAuthorityResolutionTx(
+			ctx,
+			transaction,
+			effect,
+		)
+	}
 	resolution := resolved.hostResolution
 	request := resolution.SelectionRequest()
 	content := resolution.Content()
@@ -570,6 +582,14 @@ func writeGenesisAuthorityUseTx(
 	effect sealedGenesisEffect,
 	extensions orderedExtensionCoordinates,
 ) error {
+	if effect.prepared.resolved.isCompatibleSuccessor() {
+		return writeCompatibleSuccessorAuthorityUseTx(
+			ctx,
+			transaction,
+			effect,
+			extensions,
+		)
+	}
 	use := effect.authorityUse
 	target := use.Target()
 	predecessor, err := storedPredecessorCoordinates(use.Predecessor())
@@ -780,8 +800,8 @@ func writeGenesisCASWorkTx(
 		proofRef,
 		proofDigest,
 		coordinates.MethodDescription().String(),
-		coordinates.ExecutedWithin().String(),
-		coordinates.PerformedBy().String(),
+		coordinates.ActualPerformerSystem().String(),
+		coordinates.CoveringRoleAssignment().String(),
 		coordinates.BoundedContext().String(),
 		canonicalGenesisTime(window.From()),
 		canonicalGenesisTime(window.Until()),
@@ -964,9 +984,11 @@ func writeGenesisReceiptTx(
 ) error {
 	receipt := effect.receipt
 	activation := effect.activation.Delta()
-	host, ok := receipt.AuthorityCoordinates().HostRoutedOperatorRequest()
-	if !ok {
-		return fmt.Errorf("current receipt authority is not host-routed")
+	resolutionRef, resolutionDigest, err := currentAuthorityResolutionCoordinates(
+		receipt.AuthorityCoordinates(),
+	)
+	if err != nil {
+		return err
 	}
 	successor := receipt.SuccessorHead()
 	proofRef, proofDigest, err := storedGenesisProofCoordinates(effect)
@@ -1028,8 +1050,8 @@ func writeGenesisReceiptTx(
 		receipt.WorkRef().String(),
 		activation.Ref().String(),
 		activation.Digest().String(),
-		host.AuthorityResolutionRef().String(),
-		host.AuthorityResolutionDigest().String(),
+		resolutionRef.String(),
+		resolutionDigest.String(),
 		receipt.AuthorityCoordinates().ContentRef().String(),
 		receipt.AuthorityCoordinates().ContentDigest().String(),
 		receipt.RequestRef().String(),
@@ -1054,9 +1076,11 @@ func writeGenesisClosureTx(
 ) error {
 	closure := effect.closure
 	activation := effect.activation.Delta()
-	host, ok := closure.AuthorityCoordinates().HostRoutedOperatorRequest()
-	if !ok {
-		return fmt.Errorf("current closure authority is not host-routed")
+	resolutionRef, resolutionDigest, err := currentAuthorityResolutionCoordinates(
+		closure.AuthorityCoordinates(),
+	)
+	if err != nil {
+		return err
 	}
 	successor := closure.SuccessorHead()
 	proofRef, proofDigest, err := storedGenesisProofCoordinates(effect)
@@ -1121,8 +1145,8 @@ func writeGenesisClosureTx(
 		closure.ReceiptDigest().String(),
 		activation.Ref().String(),
 		activation.Digest().String(),
-		host.AuthorityResolutionRef().String(),
-		host.AuthorityResolutionDigest().String(),
+		resolutionRef.String(),
+		resolutionDigest.String(),
 		closure.AuthorityCoordinates().ContentRef().String(),
 		closure.AuthorityCoordinates().ContentDigest().String(),
 		closure.RequestRef().String(),
@@ -1139,6 +1163,24 @@ func writeGenesisClosureTx(
 		closure.CanonicalBytes(),
 		canonicalGenesisTime(effect.recordedAt),
 	)
+}
+
+func currentAuthorityResolutionCoordinates(
+	coordinates projecttypeenvselectioneffect.ProjectTypeEnvHeadSelectionAuthorityCoordinates,
+) (
+	projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef,
+	authority.Digest,
+	error,
+) {
+	if host, ok := coordinates.HostRoutedOperatorRequest(); ok {
+		return host.AuthorityResolutionRef(), host.AuthorityResolutionDigest(), nil
+	}
+	if automatic, ok := coordinates.CompatibleSuccessorPolicy(); ok {
+		return automatic.AuthorityResolutionRef(), automatic.AuthorityResolutionDigest(), nil
+	}
+	return projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef{},
+		authority.Digest{},
+		fmt.Errorf("current receipt or closure authority provenance is unsupported")
 }
 
 func (prepared preparedGenesisEffect) resolvedContent() projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent {

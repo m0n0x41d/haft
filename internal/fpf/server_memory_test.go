@@ -390,7 +390,7 @@ func captureToolsCallResult(
 	}()
 
 	os.Stdout = writer
-	server.handleToolsCall(request)
+	server.handleToolsCallContext(context.Background(), request)
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}

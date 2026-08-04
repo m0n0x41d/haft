@@ -3,6 +3,7 @@ package present
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/codebase"
 	"github.com/m0n0x41d/haft/internal/codeintel"
@@ -16,6 +17,7 @@ import (
 func FlowResponse(res codeintel.FlowResult, action, seedName string) string {
 	var b strings.Builder
 	renderIndexState(&b, res.Index)
+	renderIndexCoordination(&b, res.IndexRefresh)
 
 	// Candidates: surface them, never silently pick (keystone discipline). The
 	// wording distinguishes exact-name overloads from a fuzzy (no-exact) match.
@@ -153,6 +155,32 @@ func IndexStateResponse(state codebase.IndexState) string {
 	var b strings.Builder
 	renderIndexState(&b, state)
 	return b.String()
+}
+
+// IndexCoordinationResponse renders the closed freshness outcome for public
+// code-derived responses that carry it separately from their index basis.
+func IndexCoordinationResponse(
+	result codeintel.IndexCoordinationResult,
+) string {
+	var builder strings.Builder
+	renderIndexCoordination(&builder, result)
+	return builder.String()
+}
+
+func renderIndexCoordination(
+	builder *strings.Builder,
+	result codeintel.IndexCoordinationResult,
+) {
+	if result.Outcome == "" {
+		return
+	}
+	fmt.Fprintf(
+		builder,
+		"Index coordination: %s • wait: %s • published epoch: %d\n\n",
+		result.Outcome,
+		result.WaitDuration.Round(time.Millisecond),
+		result.PublishedEpoch,
+	)
 }
 
 // renderFusedHop prints one reached symbol: its code relationship, then its

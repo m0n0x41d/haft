@@ -31,7 +31,9 @@ Follow only its closed result kind:
 - `needs_profile` — call `haft_onboard` with
   `{ "action": "profile_prepare" }`;
 - `profile_review_ready` — present the readable review and its exact next act;
-- `ready` — continue with the current project question.
+- `ready` — only the canonical profile and structured project memory are ready.
+  This does not establish specification applicability, health, lifecycle, or
+  release readiness; use `h-spec` separately for specification work.
 
 `haft init` installs default project memory as part of initialization. Never
 ask the operator to enable, defer, select, or understand a memory schema. A
@@ -54,6 +56,17 @@ apply`. Do not require a skill name or ask for a second confirmation. A bare
 `yes` or `да` works only for one current unambiguous profile brief.
 Successful application records `host_routed_operator_request` provenance;
 automatic singleton bootstrap remains the separate `detector_default` path.
+
+A missing `entity_reference` does not make `TargetSystemSpec` underdetermined
+and is never a prerequisite for spec lifecycle. Use
+`profile_change_prepare` only when the operator directly asks to add or replace
+the relation itself, never to make a carrier applicable. The exact existing
+`scope_id` and operator-selected `entity_ref` create or reuse only the
+predecessor-pinned `.haft/profile-change-review.json`; they cannot change
+another profile field. Do not infer the target from memory rank or repository
+paths. After a direct selection, `haft onboard profile change apply` remains
+CAS-pinned and changes profile identity metadata only; it does not advance a
+SpecSection lifecycle.
 
 Never expose or ask the operator to choose internal memory schemas, revision
 heads, staging records, or implementation letters. Missing setup or known

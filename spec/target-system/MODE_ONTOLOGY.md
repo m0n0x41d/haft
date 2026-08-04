@@ -5,9 +5,12 @@
 >
 > The active v9 source-native query contract is
 > [Source-native FPF Query with independent skills and reliance-gated memory](../../.haft/decisions/dec-20260716-318cdec5.md).
-> The separate active
-> [typed EntityOfConcern project-memory contract](../../.haft/decisions/dec-20260716-11f33e36.md)
-> governs typed memory. These are projected through the current `h-reason`,
+> The active project-memory upgrade policy is
+> [Automatically activate every proven-compatible ProjectTypeEnv successor without operator interaction](../../.haft/decisions/dec-20260804-ebf1a001.md).
+> The typed-memory architecture is now governed by the current specification
+> carriers; its
+> [original v9 design decision](../../.haft/decisions/dec-20260716-11f33e36.md)
+> is retained as superseded history. The current contracts are projected through the current `h-reason`,
 > host-routed `h-decide`, and manual-only `h-commission` carriers. Haft
 > capabilities are independent
 > entries selected by the current condition; their list, presentation order,

@@ -17,6 +17,7 @@ func ConcernDiscoveryResponse(
 ) string {
 	var builder strings.Builder
 	renderIndexState(&builder, result.Index)
+	renderIndexCoordination(&builder, result.IndexRefresh)
 	fmt.Fprintf(
 		&builder,
 		"## Concern discovery — %q\n\n",

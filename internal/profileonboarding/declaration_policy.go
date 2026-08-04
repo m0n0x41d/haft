@@ -21,3 +21,11 @@ func NewProfileDeclarationPolicy(
 		request,
 	)
 }
+
+func NewProfileChangePolicy(
+	request operatorrequest.Request,
+) (ProfileDeclarationPolicy, error) {
+	return profiledeclarationpreparation.NewHostRoutedProfileChangePolicy(
+		request,
+	)
+}

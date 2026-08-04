@@ -503,8 +503,7 @@ func verifyReceiptPair(
 		if err := verifyReceiptIntegrationLock(basis, coordinates); err != nil {
 			return err
 		}
-		_, err := VerifyCandidateQueryContract(basis.Targets.DatabasePath)
-		return err
+		return VerifySourceQueryRuntime(basis.Targets.DatabasePath)
 	}
 	switch basis.Artifacts.PredecessorLock.Presence {
 	case ReceiptLockMissing:

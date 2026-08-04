@@ -11,11 +11,17 @@ import (
 	"github.com/m0n0x41d/haft/logger"
 )
 
+// Resolve concurrency is a runtime thermal policy, not part of the persisted
+// index basis. Keeping it separate from IndexBudget avoids forcing a full
+// rebuild merely because an interactive host lowers its active CPU fan-out.
+const defaultMaxResolveWorkers = int64(2)
+
 // Scanner detects modules and builds the dependency graph for a project.
 type Scanner struct {
 	db                     *sql.DB
 	registry               *Registry
 	indexBudget            IndexBudget
+	maxResolveWorkers      WorkerCount
 	projectSnapshotFactory func(map[string]AdmittedSource, tsProjectResolution) *projectIndexSnapshot
 	projectSnapshot        *projectIndexSnapshot
 	projectSnapshotRoot    string
@@ -24,10 +30,12 @@ type Scanner struct {
 
 // NewScanner creates a new codebase scanner.
 func NewScanner(db *sql.DB) *Scanner {
+	maxResolveWorkers, _ := NewWorkerCount(defaultMaxResolveWorkers)
 	return &Scanner{
 		db:                     db,
 		registry:               NewRegistry(),
 		indexBudget:            DefaultIndexBudget(),
+		maxResolveWorkers:      maxResolveWorkers,
 		projectSnapshotFactory: newProjectIndexSnapshot,
 	}
 }

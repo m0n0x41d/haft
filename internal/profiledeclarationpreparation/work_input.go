@@ -19,8 +19,11 @@ const (
 	profileOnboardingWorkInputDomain = "haft.profile-onboarding.work-input/v1"
 	profileOnboardingWorkInputPrefix = "profile-onboarding-work-input:"
 	profileProposalSourceManual      = "manual_scope_proposal"
+	profileProposalSourceRelation    = "profile_entity_relation_change"
 	profileManualClassifierVersion   = "haft-profile-manual-scope/v1"
 	profileManualPolicyVersion       = "haft-profile-manual-scope-policy/v1"
+	profileRelationClassifierVersion = "haft-profile-entity-relation-change/v1"
+	profileRelationPolicyVersion     = "haft-profile-entity-relation-change-policy/v1"
 	maximumProfileWorkInputBytes     = 256 * 1024
 	maximumManualProfileBasisBytes   = 4 * 1024
 )
@@ -44,6 +47,7 @@ type profileOnboardingWorkInputState struct {
 	observationDigest          string
 	proposalSource             string
 	manualBasis                string
+	changeBasis                *ProfileChangeBasis
 	scopeBindings              []profileScopeBinding
 	payload                    projectprofile.ProfileDeclarationPayload
 	ref                        projectprofile.WorkInputRef
@@ -67,7 +71,102 @@ type profileOnboardingWorkInputJSON struct {
 	ObservationDigest          string                        `json:"observation_digest"`
 	ProposalSource             string                        `json:"proposal_source,omitempty"`
 	ManualBasis                string                        `json:"manual_basis,omitempty"`
+	ChangeBasis                *profileChangeBasisJSON       `json:"change_basis,omitempty"`
 	Scopes                     []profileScopeDeclarationJSON `json:"scopes"`
+}
+
+type profileChangeBasisJSON struct {
+	AdmissionRecordRef    string `json:"admission_record_ref"`
+	AdmissionRecordDigest string `json:"admission_record_digest"`
+	PayloadDigest         string `json:"payload_digest"`
+	LedgerRevision        uint64 `json:"ledger_revision"`
+	ScopeID               string `json:"scope_id"`
+	PreviousEntityRef     string `json:"previous_entity_ref,omitempty"`
+	NextEntityRef         string `json:"next_entity_ref"`
+}
+
+// ProfileChangeBasis pins one bounded successor review to the exact current
+// admission that was inspected. It is review evidence, not authority and not
+// a mutation receipt.
+type ProfileChangeBasis struct {
+	admissionRecordRef    projectprofile.ProfileDeclarationAdmissionRecordRef
+	admissionRecordDigest projectprofile.ContentDigest
+	payloadDigest         projectprofile.ContentDigest
+	ledgerRevision        projectprofile.LedgerRevision
+	scopeID               projectprofile.ScopeID
+	previousEntityRef     string
+	nextEntityRef         projectprofile.EntityRef
+}
+
+func NewProfileChangeBasis(
+	admissionRecordRef projectprofile.ProfileDeclarationAdmissionRecordRef,
+	admissionRecordDigest projectprofile.ContentDigest,
+	payloadDigest projectprofile.ContentDigest,
+	ledgerRevision projectprofile.LedgerRevision,
+	scopeID projectprofile.ScopeID,
+	previousEntityRef string,
+	nextEntityRef projectprofile.EntityRef,
+) (ProfileChangeBasis, error) {
+	if admissionRecordRef.String() == "" ||
+		admissionRecordDigest.String() == "" ||
+		payloadDigest.String() == "" ||
+		ledgerRevision.Value() == 0 ||
+		scopeID.String() == "" ||
+		nextEntityRef.String() == "" {
+		return ProfileChangeBasis{}, fmt.Errorf(
+			"profile change basis requires exact predecessor coordinates and one next entity_ref",
+		)
+	}
+	if previousEntityRef != "" {
+		if _, err := projectprofile.NewEntityRef(previousEntityRef); err != nil {
+			return ProfileChangeBasis{}, err
+		}
+	}
+	if previousEntityRef == nextEntityRef.String() {
+		return ProfileChangeBasis{}, fmt.Errorf(
+			"profile entity relation change must select a different entity_ref",
+		)
+	}
+	if _, err := ledgerRevision.Next(); err != nil {
+		return ProfileChangeBasis{}, err
+	}
+	return ProfileChangeBasis{
+		admissionRecordRef:    admissionRecordRef,
+		admissionRecordDigest: admissionRecordDigest,
+		payloadDigest:         payloadDigest,
+		ledgerRevision:        ledgerRevision,
+		scopeID:               scopeID,
+		previousEntityRef:     previousEntityRef,
+		nextEntityRef:         nextEntityRef,
+	}, nil
+}
+
+func (basis ProfileChangeBasis) AdmissionRecordRef() projectprofile.ProfileDeclarationAdmissionRecordRef {
+	return basis.admissionRecordRef
+}
+
+func (basis ProfileChangeBasis) AdmissionRecordDigest() projectprofile.ContentDigest {
+	return basis.admissionRecordDigest
+}
+
+func (basis ProfileChangeBasis) PayloadDigest() projectprofile.ContentDigest {
+	return basis.payloadDigest
+}
+
+func (basis ProfileChangeBasis) LedgerRevision() projectprofile.LedgerRevision {
+	return basis.ledgerRevision
+}
+
+func (basis ProfileChangeBasis) ScopeID() projectprofile.ScopeID {
+	return basis.scopeID
+}
+
+func (basis ProfileChangeBasis) PreviousEntityRef() string {
+	return basis.previousEntityRef
+}
+
+func (basis ProfileChangeBasis) NextEntityRef() projectprofile.EntityRef {
+	return basis.nextEntityRef
 }
 
 type profileScopeDeclarationJSON struct {
@@ -241,6 +340,199 @@ func ProposeManualProfileOnboardingWorkInput(
 	}
 	buffer.WriteByte('\n')
 	return buffer.Bytes(), nil
+}
+
+// ProposeProfileEntityRelationChangeWorkInput prepares one non-binding,
+// predecessor-pinned successor review. The only semantic delta it can express
+// is changing entity_ref on one existing realization scope.
+func ProposeProfileEntityRelationChangeWorkInput(
+	suggestion profiledetector.Suggestion,
+	current projectprofile.ProfileDeclarationPayload,
+	basis ProfileChangeBasis,
+) ([]byte, error) {
+	snapshot := suggestion.Snapshot()
+	if snapshot.Truncated() {
+		return nil, fmt.Errorf(
+			"profile relation change requires a complete repository observation",
+		)
+	}
+	currentDigest, err := projectprofile.DigestProfileDeclarationPayload(current)
+	if err != nil {
+		return nil, err
+	}
+	if currentDigest != basis.PayloadDigest() {
+		return nil, fmt.Errorf(
+			"profile relation change basis does not match the current payload",
+		)
+	}
+	scopes, previous, err := profileRelationChangeScopes(current, basis)
+	if err != nil {
+		return nil, err
+	}
+	if previous != basis.PreviousEntityRef() {
+		return nil, fmt.Errorf(
+			"profile relation change basis carries another previous entity_ref",
+		)
+	}
+	dto := profileOnboardingWorkInputJSON{
+		Schema:                     profileOnboardingWorkInputSchema,
+		ProjectRoot:                snapshot.ProjectRoot(),
+		SuggestionRef:              suggestion.SuggestionRef(),
+		DetectorVersion:            profileRelationClassifierVersion,
+		PolicyVersion:              profileRelationPolicyVersion,
+		ObservationDetectorVersion: suggestion.DetectorVersion(),
+		ObservationPolicyVersion:   profiledetector.PolicyVersion,
+		ObservationDigest:          snapshot.ObservationDigest(),
+		ProposalSource:             profileProposalSourceRelation,
+		ChangeBasis:                profileChangeBasisToJSON(basis),
+		Scopes:                     scopes,
+	}
+	input, err := newProfileOnboardingWorkInput(dto, suggestion)
+	if err != nil {
+		return nil, err
+	}
+	buffer := &bytes.Buffer{}
+	if err := json.Indent(buffer, input.CanonicalJSON(), "", "  "); err != nil {
+		return nil, fmt.Errorf(
+			"format profile relation change review: %w",
+			err,
+		)
+	}
+	buffer.WriteByte('\n')
+	return buffer.Bytes(), nil
+}
+
+func profileRelationChangeScopes(
+	current projectprofile.ProfileDeclarationPayload,
+	basis ProfileChangeBasis,
+) ([]profileScopeDeclarationJSON, string, error) {
+	values := current.Scopes().Values()
+	result := make([]profileScopeDeclarationJSON, len(values))
+	previous := ""
+	found := false
+	for index, value := range values {
+		scope, entityRef, err := profileRelationScopeJSON(value, basis)
+		if err != nil {
+			return nil, "", err
+		}
+		if value.ScopeID() == basis.ScopeID() {
+			previous = entityRef
+			scope.EntityRef = basis.NextEntityRef().String()
+			found = true
+		}
+		result[index] = scope
+	}
+	if !found {
+		return nil, "", fmt.Errorf(
+			"profile relation change scope_id %q is absent from the current profile",
+			basis.ScopeID().String(),
+		)
+	}
+	return result, previous, nil
+}
+
+func profileRelationScopeJSON(
+	value projectprofile.RealizationScope,
+	basis ProfileChangeBasis,
+) (profileScopeDeclarationJSON, string, error) {
+	componentRef := profileChangeComponentCandidateRef(
+		basis.PayloadDigest().String(),
+		value.ScopeID().String(),
+	)
+	switch scope := value.(type) {
+	case projectprofile.SoftwareRealization:
+		entityRef, err := profileEntityReferenceText(scope.EntityReference())
+		return profileScopeDeclarationJSON{
+			ComponentCandidateRef: componentRef,
+			ScopeID:               scope.ScopeID().String(),
+			RealizationKind:       string(profiledetector.SoftwareRealization),
+			EntityRef:             entityRef,
+		}, entityRef, err
+	case projectprofile.NonSoftwareRealization:
+		entityRef, err := profileEntityReferenceText(scope.EntityReference())
+		if err != nil {
+			return profileScopeDeclarationJSON{}, "", err
+		}
+		kindRef, err := profileKindOrientationText(scope.KindOrientation())
+		if err != nil {
+			return profileScopeDeclarationJSON{}, "", err
+		}
+		patterns := make([]string, len(scope.GoverningPatternRefs()))
+		for index, ref := range scope.GoverningPatternRefs() {
+			patterns[index] = ref.String()
+		}
+		contracts := make([]string, len(scope.ContractRefs()))
+		for index, ref := range scope.ContractRefs() {
+			contracts[index] = ref.String()
+		}
+		return profileScopeDeclarationJSON{
+			ComponentCandidateRef: componentRef,
+			ScopeID:               scope.ScopeID().String(),
+			RealizationKind:       string(profiledetector.NonSoftwareRealization),
+			EntityRef:             entityRef,
+			AdmittedKindRef:       kindRef,
+			GoverningPatternRefs:  patterns,
+			ContractRefs:          contracts,
+		}, entityRef, nil
+	default:
+		return profileScopeDeclarationJSON{}, "", fmt.Errorf(
+			"profile relation change found an unsupported realization scope",
+		)
+	}
+}
+
+func profileEntityReferenceText(
+	reference projectprofile.EntityReference,
+) (string, error) {
+	switch value := reference.(type) {
+	case projectprofile.NoEntityReference:
+		return "", nil
+	case projectprofile.ReferencedEntity:
+		return value.Ref().String(), nil
+	default:
+		return "", fmt.Errorf("profile entity reference variant is unsupported")
+	}
+}
+
+func profileKindOrientationText(
+	orientation projectprofile.KindOrientation,
+) (string, error) {
+	switch value := orientation.(type) {
+	case projectprofile.UnspecifiedKindOrientation:
+		return "", nil
+	case projectprofile.ReferencedKindOrientation:
+		return value.Ref().String(), nil
+	default:
+		return "", fmt.Errorf("profile kind orientation variant is unsupported")
+	}
+}
+
+func profileChangeComponentCandidateRef(
+	payloadDigest string,
+	scopeID string,
+) string {
+	hash := sha256.New()
+	_, _ = hash.Write([]byte("haft.profile-change-component/v1"))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(payloadDigest))
+	_, _ = hash.Write([]byte{0})
+	_, _ = hash.Write([]byte(scopeID))
+	return "profile-change-component:sha256:" +
+		hex.EncodeToString(hash.Sum(nil))
+}
+
+func profileChangeBasisToJSON(
+	basis ProfileChangeBasis,
+) *profileChangeBasisJSON {
+	return &profileChangeBasisJSON{
+		AdmissionRecordRef:    basis.AdmissionRecordRef().String(),
+		AdmissionRecordDigest: basis.AdmissionRecordDigest().String(),
+		PayloadDigest:         basis.PayloadDigest().String(),
+		LedgerRevision:        basis.LedgerRevision().Value(),
+		ScopeID:               basis.ScopeID().String(),
+		PreviousEntityRef:     basis.PreviousEntityRef(),
+		NextEntityRef:         basis.NextEntityRef().String(),
+	}
 }
 
 func validateManualProfileBasis(raw string) (string, error) {
@@ -424,11 +716,17 @@ func newProfileOnboardingWorkInput(
 	if err != nil {
 		return ProfileOnboardingWorkInput{}, err
 	}
-	if dto.ProposalSource == profileProposalSourceManual {
+	switch dto.ProposalSource {
+	case profileProposalSourceManual:
 		if err := validateManualProfileScopeCoverage(
 			dto,
 			suggestion,
 		); err != nil {
+			return ProfileOnboardingWorkInput{}, err
+		}
+		return input, nil
+	case profileProposalSourceRelation:
+		if err := validateProfileRelationChangeCoverage(dto); err != nil {
 			return ProfileOnboardingWorkInput{}, err
 		}
 		return input, nil
@@ -498,6 +796,7 @@ func sealProfileOnboardingWorkInput(
 		observationDigest:          dto.ObservationDigest,
 		proposalSource:             dto.ProposalSource,
 		manualBasis:                dto.ManualBasis,
+		changeBasis:                profileChangeBasisFromDTO(dto.ChangeBasis),
 		scopeBindings:              append([]profileScopeBinding{}, bindings...),
 		payload:                    payload,
 		ref:                        ref,
@@ -590,6 +889,9 @@ func validateProfileSuggestionBinding(
 		}
 		return nil
 	}
+	if dto.ProposalSource == profileProposalSourceRelation {
+		return nil
+	}
 	if suggestion.Classification() ==
 		profiledetector.InsufficientDetectorBasis {
 		return fmt.Errorf(
@@ -603,6 +905,11 @@ func validateProfileProposalSource(
 	dto profileOnboardingWorkInputJSON,
 ) error {
 	if dto.ProposalSource == "" {
+		if dto.ChangeBasis != nil {
+			return fmt.Errorf(
+				"detector profile proposal cannot carry change_basis",
+			)
+		}
 		if dto.ObservationDetectorVersion != "" ||
 			dto.ObservationPolicyVersion != "" {
 			return fmt.Errorf(
@@ -624,9 +931,35 @@ func validateProfileProposalSource(
 		}
 		return nil
 	}
+	if dto.ProposalSource == profileProposalSourceRelation {
+		if dto.ManualBasis != "" {
+			return fmt.Errorf(
+				"profile relation change cannot carry manual_basis",
+			)
+		}
+		if dto.DetectorVersion != profileRelationClassifierVersion ||
+			dto.PolicyVersion != profileRelationPolicyVersion {
+			return fmt.Errorf(
+				"profile relation change classifier coordinates are invalid",
+			)
+		}
+		if strings.TrimSpace(dto.ObservationDetectorVersion) == "" ||
+			strings.TrimSpace(dto.ObservationPolicyVersion) == "" {
+			return fmt.Errorf(
+				"profile relation change requires exact observation detector coordinates",
+			)
+		}
+		_, err := profileChangeBasisFromJSON(dto.ChangeBasis)
+		return err
+	}
 	if dto.ProposalSource != profileProposalSourceManual {
 		return fmt.Errorf(
 			"profile onboarding Work input proposal_source is invalid",
+		)
+	}
+	if dto.ChangeBasis != nil {
+		return fmt.Errorf(
+			"manual profile fallback cannot carry change_basis",
 		)
 	}
 	if _, err := validateManualProfileBasis(dto.ManualBasis); err != nil {
@@ -648,6 +981,98 @@ func validateProfileProposalSource(
 		dto.Scopes,
 		dto.ObservationDigest,
 	)
+}
+
+func profileChangeBasisFromJSON(
+	dto *profileChangeBasisJSON,
+) (ProfileChangeBasis, error) {
+	if dto == nil {
+		return ProfileChangeBasis{}, fmt.Errorf(
+			"profile relation change requires change_basis",
+		)
+	}
+	admissionRef, err := projectprofile.NewProfileDeclarationAdmissionRecordRef(
+		dto.AdmissionRecordRef,
+	)
+	if err != nil {
+		return ProfileChangeBasis{}, err
+	}
+	admissionDigest, err := projectprofile.NewContentDigest(
+		dto.AdmissionRecordDigest,
+	)
+	if err != nil {
+		return ProfileChangeBasis{}, err
+	}
+	payloadDigest, err := projectprofile.NewContentDigest(dto.PayloadDigest)
+	if err != nil {
+		return ProfileChangeBasis{}, err
+	}
+	scopeID, err := projectprofile.NewScopeID(dto.ScopeID)
+	if err != nil {
+		return ProfileChangeBasis{}, err
+	}
+	nextEntityRef, err := projectprofile.NewEntityRef(dto.NextEntityRef)
+	if err != nil {
+		return ProfileChangeBasis{}, err
+	}
+	return NewProfileChangeBasis(
+		admissionRef,
+		admissionDigest,
+		payloadDigest,
+		projectprofile.NewLedgerRevision(dto.LedgerRevision),
+		scopeID,
+		dto.PreviousEntityRef,
+		nextEntityRef,
+	)
+}
+
+func profileChangeBasisFromDTO(
+	dto *profileChangeBasisJSON,
+) *ProfileChangeBasis {
+	if dto == nil {
+		return nil
+	}
+	basis, err := profileChangeBasisFromJSON(dto)
+	if err != nil {
+		return nil
+	}
+	return &basis
+}
+
+func validateProfileRelationChangeCoverage(
+	dto profileOnboardingWorkInputJSON,
+) error {
+	basis, err := profileChangeBasisFromJSON(dto.ChangeBasis)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, scope := range dto.Scopes {
+		expected := profileChangeComponentCandidateRef(
+			basis.PayloadDigest().String(),
+			scope.ScopeID,
+		)
+		if scope.ComponentCandidateRef != expected {
+			return fmt.Errorf(
+				"profile relation change scope %q has another predecessor binding",
+				scope.ScopeID,
+			)
+		}
+		if scope.ScopeID == basis.ScopeID().String() {
+			if scope.EntityRef != basis.NextEntityRef().String() {
+				return fmt.Errorf(
+					"profile relation change successor does not carry the selected entity_ref",
+				)
+			}
+			found = true
+		}
+	}
+	if !found {
+		return fmt.Errorf(
+			"profile relation change successor omits its selected scope",
+		)
+	}
+	return nil
 }
 
 func validateCanonicalManualProfileScopes(
@@ -1004,8 +1429,19 @@ func canonicalProfileWorkInputDTO(
 		ObservationDigest:          dto.ObservationDigest,
 		ProposalSource:             dto.ProposalSource,
 		ManualBasis:                dto.ManualBasis,
+		ChangeBasis:                cloneProfileChangeBasisJSON(dto.ChangeBasis),
 		Scopes:                     scopes,
 	}
+}
+
+func cloneProfileChangeBasisJSON(
+	value *profileChangeBasisJSON,
+) *profileChangeBasisJSON {
+	if value == nil {
+		return nil
+	}
+	copyValue := *value
+	return &copyValue
 }
 
 func canonicalStringSet(values []string) []string {
@@ -1108,4 +1544,63 @@ func (input ProfileOnboardingWorkInput) UsesManualScopeBasis() bool {
 
 func (input ProfileOnboardingWorkInput) ManualBasis() string {
 	return input.state.manualBasis
+}
+
+func (input ProfileOnboardingWorkInput) ProfileChangeBasis() (
+	ProfileChangeBasis,
+	bool,
+) {
+	if input.state == nil || input.state.changeBasis == nil {
+		return ProfileChangeBasis{}, false
+	}
+	return *input.state.changeBasis, true
+}
+
+// ValidateProfileEntityRelationChange proves that the reviewed successor is
+// exactly the predecessor payload with one scope entity_ref replaced.
+func (input ProfileOnboardingWorkInput) ValidateProfileEntityRelationChange(
+	current projectprofile.ProfileDeclarationPayload,
+) error {
+	basis, ok := input.ProfileChangeBasis()
+	if !ok {
+		return fmt.Errorf(
+			"reviewed WorkInput is not a profile entity relation change",
+		)
+	}
+	currentDigest, err := projectprofile.DigestProfileDeclarationPayload(current)
+	if err != nil {
+		return err
+	}
+	if currentDigest != basis.PayloadDigest() {
+		return fmt.Errorf(
+			"profile relation change predecessor payload is stale",
+		)
+	}
+	scopes, previous, err := profileRelationChangeScopes(current, basis)
+	if err != nil {
+		return err
+	}
+	if previous != basis.PreviousEntityRef() {
+		return fmt.Errorf(
+			"profile relation change previous entity_ref is stale",
+		)
+	}
+	bindings, err := profileScopeBindings(scopes)
+	if err != nil {
+		return err
+	}
+	expected, err := profilePayloadFromBindings(bindings)
+	if err != nil {
+		return err
+	}
+	expectedDigest, err := projectprofile.DigestProfileDeclarationPayload(expected)
+	if err != nil {
+		return err
+	}
+	if expectedDigest != input.PayloadDigest() {
+		return fmt.Errorf(
+			"profile relation change contains a semantic delta outside the selected entity_ref",
+		)
+	}
+	return nil
 }

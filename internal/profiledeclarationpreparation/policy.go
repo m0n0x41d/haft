@@ -47,6 +47,23 @@ func NewHostRoutedOperatorRequestPolicy(
 	return Policy{mode: ModeHostRoutedOperatorRequest, request: request}, nil
 }
 
+// NewHostRoutedProfileChangePolicy seals a separate operator effect for
+// changing one relation in an already-canonical profile. It cannot be reused
+// as authority for initial declaration.
+func NewHostRoutedProfileChangePolicy(
+	request operatorrequest.Request,
+) (Policy, error) {
+	if request.Provenance() != operatorrequest.HostRoutedOperatorRequest ||
+		request.Effect() != operatorrequest.ProfileChange ||
+		request.Ref() == "" ||
+		request.Digest() == "" {
+		return Policy{}, fmt.Errorf(
+			"profile change requires exact host-routed operator-request provenance",
+		)
+	}
+	return Policy{mode: ModeHostRoutedOperatorRequest, request: request}, nil
+}
+
 // NewAutomaticSupportedSingletonPolicy seals the exact detector result that
 // satisfied the automatic-init policy. It cannot represent mixed, truncated,
 // weak, or multi-scope observations.

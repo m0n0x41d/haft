@@ -57,6 +57,33 @@ func TestAdapterCommitsReplaysAndSurvivesRestart(t *testing.T) {
 	assertCanonicalMutationCounts(t, restarted.GetRawDB(), 1)
 }
 
+func TestAdapterRejectsStaleProfileChangeHeadInsideTransaction(t *testing.T) {
+	fixture := newTransactionFixture(t, "profile-change-cas", "profile-change-cas.nonce")
+	first := fixture.adapter.Admit(context.Background(), fixture.request)
+	requireAdmitted(t, first, CanonicalAdmissionFresh)
+	second := prepareHistoricalRevision(
+		t,
+		fixture.database,
+		fixture.root,
+		"profile-change-cas-second",
+	)
+	stale, err := profileadmission.NewProfileChangeAdmissionRequest(
+		second.Candidate(),
+		projectprofile.NewLedgerRevision(2),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome := fixture.adapter.Admit(context.Background(), stale)
+	if outcome.kind != AdmissionResultNotAdmitted || len(outcome.denials) != 1 {
+		t.Fatalf("stale outcome = %#v", outcome)
+	}
+	if outcome.denials[0].Code() != "ledger_revision_conflict" {
+		t.Fatalf("stale denial = %q", outcome.denials[0].Code())
+	}
+	assertCanonicalMutationCounts(t, fixture.database, 1)
+}
+
 func TestAdapterRequiresPreWorkResolutionWithoutCreatingOne(t *testing.T) {
 	fixture := newTransactionFixture(
 		t,

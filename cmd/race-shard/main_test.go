@@ -1358,10 +1358,10 @@ func TestAutomaticCommandParallelismReservesCapacityForTheHost(t *testing.T) {
 	}{
 		{logicalCPUs: 1, want: 1},
 		{logicalCPUs: 2, want: 1},
-		{logicalCPUs: 3, want: 2},
-		{logicalCPUs: 4, want: 2},
-		{logicalCPUs: 8, want: 6},
-		{logicalCPUs: 12, want: 9},
+		{logicalCPUs: 3, want: 1},
+		{logicalCPUs: 4, want: 1},
+		{logicalCPUs: 8, want: 3},
+		{logicalCPUs: 12, want: 4},
 	} {
 		got := automaticCommandParallelism(testCase.logicalCPUs)
 		if got != testCase.want {
@@ -1370,6 +1370,22 @@ func TestAutomaticCommandParallelismReservesCapacityForTheHost(t *testing.T) {
 				testCase.logicalCPUs,
 				got,
 				testCase.want,
+			)
+		}
+	}
+}
+
+func TestAutomaticCommandParallelismBoundsAggregateTestCPUCapacity(t *testing.T) {
+	t.Parallel()
+
+	for _, logicalCPUs := range []int{1, 2, 3, 4, 8, 12, 16, 32} {
+		workers := automaticCommandParallelism(logicalCPUs)
+		if logicalCPUs > 1 &&
+			workers*racequalification.CurrentCommandGOMAXPROCS > logicalCPUs {
+			t.Fatalf(
+				"automatic workers consume %d test CPUs on a %d-CPU host",
+				workers*racequalification.CurrentCommandGOMAXPROCS,
+				logicalCPUs,
 			)
 		}
 	}

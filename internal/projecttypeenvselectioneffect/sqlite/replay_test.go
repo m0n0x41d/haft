@@ -115,7 +115,7 @@ func insertOrphanReplayOwner(
 	if _, err := connection.ExecContext(
 		ctx,
 		`DROP TRIGGER IF EXISTS
-			project_typeenv_head_selection_authority_uses_v56_current_generation_only`,
+			project_typeenv_head_selection_authority_uses_v57_current_generation_only`,
 	); err != nil {
 		t.Fatalf("disable exact-source trigger for corrupt fixture: %v", err)
 	}

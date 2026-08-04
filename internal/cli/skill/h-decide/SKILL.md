@@ -9,7 +9,7 @@ disable-model-invocation: false
 allowed-tools: Bash mcp__haft__haft_query
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
 
 # h-decide — Route one operator-requested binding choice
 

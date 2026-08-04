@@ -2,6 +2,7 @@ package specflow
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -11,6 +12,7 @@ import (
 const (
 	ReviewKindSpecSemantic  = "spec_semantic_review"
 	ReviewProfileSemanticV2 = "spec_semantic_review_v2"
+	ReviewProfileDraftV1    = "spec_draft_semantic_review_v1"
 	ReviewAuthority         = "advisory_only"
 
 	ReviewSeverityInfo                  = "info"
@@ -95,6 +97,7 @@ type ReviewSection struct {
 	Title         string                       `json:"title,omitempty"`
 	DocumentKind  string                       `json:"document_kind"`
 	Kind          string                       `json:"kind"`
+	Status        string                       `json:"status"`
 	StatementType string                       `json:"statement_type"`
 	ClaimLayer    string                       `json:"claim_layer"`
 	Bearer        string                       `json:"bearer"`
@@ -152,16 +155,49 @@ type reviewSubject struct {
 // active SpecSections. It creates advisory findings only; lifecycle mutation and
 // authority-bearing state are intentionally inexpressible here.
 func ReviewSpecificationSet(set project.ProjectSpecificationSet) ReviewPacket {
-	subjects := reviewSubjects(set)
+	return reviewSpecificationSet(
+		set,
+		[]project.SpecSectionState{project.SpecSectionStateActive},
+		ReviewProfileSemanticV2,
+	)
+}
+
+// ReviewDraftSpecificationSet applies the same deterministic semantic floor
+// to draft and active sections. It remains advisory and cannot activate,
+// approve, admit, or establish applicability for any section.
+func ReviewDraftSpecificationSet(
+	set project.ProjectSpecificationSet,
+) ReviewPacket {
+	return reviewSpecificationSet(
+		set,
+		[]project.SpecSectionState{
+			project.SpecSectionStateDraft,
+			project.SpecSectionStateActive,
+		},
+		ReviewProfileDraftV1,
+	)
+}
+
+func reviewSpecificationSet(
+	set project.ProjectSpecificationSet,
+	states []project.SpecSectionState,
+	profileID string,
+) ReviewPacket {
+	subjects := reviewSubjects(set, states)
+	activeSections := countReviewSectionsWithStatus(
+		set.Sections,
+		string(project.SpecSectionStateActive),
+		0,
+	)
 
 	packet := ReviewPacket{
 		ReviewKind:        ReviewKindSpecSemantic,
 		Authority:         ReviewAuthority,
 		AuthorityBoundary: semanticReviewAuthorityBoundary(),
-		Profile:           semanticReviewProfile(),
+		Profile:           semanticReviewProfile(profileID),
 		Summary: ReviewSummary{
 			TotalSections:   len(set.Sections),
-			ActiveSections:  len(subjects),
+			ActiveSections:  activeSections,
 			CheckedSections: len(subjects),
 		},
 		Sections: make([]ReviewSection, 0, len(subjects)),
@@ -171,7 +207,10 @@ func ReviewSpecificationSet(set project.ProjectSpecificationSet) ReviewPacket {
 	for _, subject := range subjects {
 		findings := reviewSubjectFindings(subject)
 		packet.Findings = append(packet.Findings, findings...)
-		packet.Sections = append(packet.Sections, reviewSection(subject, findings))
+		packet.Sections = append(
+			packet.Sections,
+			reviewSection(subject, findings, profileID),
+		)
 	}
 
 	packet.Summary = summarizeReview(packet)
@@ -192,10 +231,10 @@ func semanticReviewAuthorityBoundary() ReviewAuthorityBoundary {
 	}
 }
 
-func semanticReviewProfile() ReviewProfile {
+func semanticReviewProfile(profileID string) ReviewProfile {
 	return ReviewProfile{
 		SchemaVersion: 1,
-		ID:            ReviewProfileSemanticV2,
+		ID:            profileID,
 		Authority:     ReviewAuthority,
 		ModelInputs: []ReviewModelInput{
 			{
@@ -232,11 +271,14 @@ func semanticReviewProfile() ReviewProfile {
 	}
 }
 
-func reviewSubjects(set project.ProjectSpecificationSet) []reviewSubject {
+func reviewSubjects(
+	set project.ProjectSpecificationSet,
+	states []project.SpecSectionState,
+) []reviewSubject {
 	subjects := make([]reviewSubject, 0, len(set.Sections))
 
 	for _, section := range set.Sections {
-		if !sectionIsActive(section) {
+		if !reviewStateSelected(section.Status, states) {
 			continue
 		}
 
@@ -264,6 +306,35 @@ func reviewSubjects(set project.ProjectSpecificationSet) []reviewSubject {
 	})
 
 	return subjects
+}
+
+func reviewStateSelected(
+	status string,
+	states []project.SpecSectionState,
+) bool {
+	normalized := strings.ToLower(strings.TrimSpace(status))
+	return slices.ContainsFunc(
+		states,
+		func(state project.SpecSectionState) bool {
+			return normalized == string(state)
+		},
+	)
+}
+
+func countReviewSectionsWithStatus(
+	sections []project.SpecSection,
+	status string,
+	index int,
+) int {
+	if index == len(sections) {
+		return 0
+	}
+	match := 0
+	if strings.EqualFold(strings.TrimSpace(sections[index].Status), status) {
+		match = 1
+	}
+	remaining := countReviewSectionsWithStatus(sections, status, index+1)
+	return match + remaining
 }
 
 func structuralReviewFindings(findings []project.SpecCheckFinding) []ReviewFinding {
@@ -374,6 +445,12 @@ func frameMismatchFindings(subject reviewSubject) []ReviewFinding {
 }
 
 func activeCarrierFindings(subject reviewSubject) []ReviewFinding {
+	if !strings.EqualFold(
+		strings.TrimSpace(subject.section.Status),
+		string(project.SpecSectionStateActive),
+	) {
+		return nil
+	}
 	if !strings.EqualFold(strings.TrimSpace(subject.section.ClaimLayer), "carrier") {
 		return nil
 	}
@@ -541,7 +618,11 @@ func reviewFindingCategory(ruleID string) string {
 	}
 }
 
-func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSection {
+func reviewSection(
+	subject reviewSubject,
+	findings []ReviewFinding,
+	profileID string,
+) ReviewSection {
 	codes := make([]string, 0, len(findings))
 	for _, finding := range findings {
 		codes = append(codes, finding.RuleID)
@@ -558,13 +639,14 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 		Title:         subject.section.Title,
 		DocumentKind:  subject.section.DocumentKind,
 		Kind:          subject.section.Kind,
+		Status:        subject.section.Status,
 		StatementType: subject.section.StatementType,
 		ClaimLayer:    subject.section.ClaimLayer,
 		Bearer:        subject.bearer,
 		Frame:         subject.frame,
 		SystemFrame:   subject.section.SystemFrame,
 		StrongerUse:   strongerUse,
-		StateReading:  sectionStateReading(subject, strongerUse),
+		StateReading:  sectionStateReading(subject, strongerUse, profileID),
 		ClaimRegister: claimRegisterSummary(claims, findings),
 		Claims:        claims,
 		Source:        subject.source,
@@ -572,10 +654,14 @@ func reviewSection(subject reviewSubject, findings []ReviewFinding) ReviewSectio
 	}
 }
 
-func sectionStateReading(subject reviewSubject, strongerUse string) StateReading {
+func sectionStateReading(
+	subject reviewSubject,
+	strongerUse string,
+	profileID string,
+) StateReading {
 	return StateReading{
 		SchemaVersion:   1,
-		Profile:         ReviewProfileSemanticV2,
+		Profile:         profileID,
 		Bearer:          subject.bearer,
 		Frame:           subject.frame,
 		Use:             strongerUse,

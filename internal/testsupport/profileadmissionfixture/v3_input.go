@@ -83,6 +83,11 @@ func fixtureProfileSuggestion(
 			"docs/product.md",
 		)
 	}
+	if softwareCount > 0 && nonSoftwareCount > 0 {
+		// In a software repository, ordinary documentation is part of the
+		// software scope unless it has an independent document-system signal.
+		files = append(files, "mkdocs.yml")
+	}
 	if nonSoftwareCount > 1 {
 		files = append(files, "models/fixture.onnx")
 	}

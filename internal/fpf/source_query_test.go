@@ -16,8 +16,16 @@ func TestSourceProbePhrases_RemoveOnlyQueryScaffoldAndPreserveOrder(t *testing.T
 		phrases[0].Kind != SourcePhraseKindExactProbeSpan ||
 		phrases[1].ProbeField != "text" ||
 		phrases[1].Value != "target system" ||
-		phrases[1].Kind != SourcePhraseKindScaffoldCompressed {
-		t.Fatalf("derived source phrases = %#v, want exact span plus ordered scaffold-compressed target system", phrases)
+		phrases[1].Kind != SourcePhraseKindExactProbeSpan {
+		t.Fatalf("derived source phrases = %#v, want full query plus exact contiguous target-system span", phrases)
+	}
+
+	separated := derivedSourcePhrases(CandidateProbe{Text: "target and system"})
+	if len(separated) != 2 ||
+		separated[0].Kind != SourcePhraseKindExactProbeSpan ||
+		separated[1].Value != "target system" ||
+		separated[1].Kind != SourcePhraseKindScaffoldCompressed {
+		t.Fatalf("separated source phrases = %#v, want cross-scaffold phrase to remain compressed", separated)
 	}
 
 	exact := sourceUnitExactGroundingValues(SourceUnit{

@@ -183,6 +183,7 @@ func runCheck(
 	if err := check.Report.Verify(); err != nil {
 		return 1, errors.Join(checkErr, fmt.Errorf("verify candidate check report: %w", err))
 	}
+	state := check.Report.Outcome().State()
 	postCheckToolErr := verifyRefreshToolRevision(ctx, layout.Root, toolRevision)
 
 	if _, err := fmt.Fprint(stdout, check.Report.Readable()); err != nil {
@@ -205,7 +206,12 @@ func runCheck(
 	if checkErr != nil || postCheckToolErr != nil {
 		return 1, errors.Join(checkErr, postCheckToolErr)
 	}
-	state := check.Report.Outcome().State()
+	if err := writeReviewWarning(stdout, check.Report, apply); err != nil {
+		return 1, err
+	}
+	if err := writeRejectionWarning(stdout, check.Report); err != nil {
+		return 1, err
+	}
 	if !apply {
 		if err := writeNextCommand(
 			stdout,
@@ -271,6 +277,147 @@ func runCheck(
 		return 1, err
 	}
 	return 0, nil
+}
+
+const reviewWarningBorder = "!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!"
+
+func writeReviewWarning(
+	writer io.Writer,
+	report fpfrefresh.Report,
+	apply bool,
+) error {
+	state := report.Outcome().State()
+	if state != fpfrefresh.StateReviewReady {
+		return nil
+	}
+	action := "the candidate remains eligible for source-current apply"
+	if apply {
+		action = "the fresh source, index, and integration lock will now be applied"
+	}
+	deltas := report.Deltas()
+	diagnostics := report.Diagnostics()
+	summaryLine := fmt.Sprintf(
+		"!!! Review debt remains visible: deltas=%d diagnostics=%d.",
+		len(deltas),
+		len(diagnostics),
+	)
+	lines := []string{
+		reviewWarningBorder,
+		"!!! FPF REFRESH REVIEW WARNING",
+		"!!! A complete, structurally supported candidate was built and verified.",
+		"!!! " + action + ".",
+		summaryLine,
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintln(writer, line); err != nil {
+			return err
+		}
+	}
+	if err := writeRefreshWarningDiagnostics(writer, diagnostics); err != nil {
+		return err
+	}
+	footer := []string{
+		"!!! These findings may block release or quality claims, but they do not block FPF source freshness.",
+		"!!! Inspect the canonical report and tune the affected expectations separately.",
+		reviewWarningBorder,
+	}
+	for _, line := range footer {
+		if _, err := fmt.Fprintln(writer, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeRejectionWarning(
+	writer io.Writer,
+	report fpfrefresh.Report,
+) error {
+	if report.Outcome().State() != fpfrefresh.StateCandidateRejected {
+		return nil
+	}
+	lines := []string{
+		reviewWarningBorder,
+		"!!! FPF REFRESH STRUCTURE BLOCKED",
+		"!!! No complete, internally coherent source/index publication passed the hard boundary.",
+		"!!! The fresh candidate was NOT applied; Haft remains on the previous verified FPF publication.",
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprintln(writer, line); err != nil {
+			return err
+		}
+	}
+	if err := writeRefreshWarningDiagnostics(
+		writer,
+		report.Diagnostics(),
+	); err != nil {
+		return err
+	}
+	footer := []string{
+		"!!! This is reserved for missing required source, extreme structural collapse, failed derivation, or integrity failure.",
+		"!!! Repair/adapt the structural boundary, then rerun the exact reproduce command.",
+		reviewWarningBorder,
+	}
+	for _, line := range footer {
+		if _, err := fmt.Fprintln(writer, line); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeRefreshWarningDiagnostics(
+	writer io.Writer,
+	diagnostics []fpfrefresh.Diagnostic,
+) error {
+	for _, diagnostic := range diagnostics {
+		code := diagnostic.Code()
+		codeText := code.String()
+		subject := diagnostic.Subject()
+		if _, err := fmt.Fprintf(
+			writer,
+			"!!! %s: %s\n",
+			codeText,
+			subject,
+		); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(
+			writer,
+			"!!! detail: %s\n",
+			diagnostic.Message(),
+		); err != nil {
+			return err
+		}
+		sourceRef := diagnostic.SourceRef()
+		if err := writeOptionalRefreshWarningField(
+			writer,
+			"source",
+			sourceRef,
+		); err != nil {
+			return err
+		}
+		command := diagnostic.ReproduceCommand()
+		if command == "" {
+			continue
+		}
+		if _, err := fmt.Fprintf(writer, "!!! reproduce: %s\n", command); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func writeOptionalRefreshWarningField(
+	writer io.Writer,
+	label string,
+	value string,
+) error {
+	if value == "" {
+		return nil
+	}
+	_, err := fmt.Fprintf(writer, "!!! %s: %s\n", label, value)
+	return err
 }
 
 func runLocalPracticeRebase(

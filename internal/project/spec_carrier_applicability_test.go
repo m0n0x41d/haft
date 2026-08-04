@@ -24,6 +24,7 @@ func TestRequiredSpecCarriersFollowExactScopeCapabilityMatrix(t *testing.T) {
 				"software",
 			),
 			wantPaths: []string{
+				filepath.Join("specs", "target-system.md"),
 				filepath.Join("specs", "software-system.md"),
 				filepath.Join("specs", "term-map.md"),
 			},
@@ -37,6 +38,7 @@ func TestRequiredSpecCarriersFollowExactScopeCapabilityMatrix(t *testing.T) {
 				"documents",
 			),
 			wantPaths: []string{
+				filepath.Join("specs", "target-system.md"),
 				filepath.Join("specs", "term-map.md"),
 			},
 			wantMethod: projectprofile.CapabilityNotApplicable,

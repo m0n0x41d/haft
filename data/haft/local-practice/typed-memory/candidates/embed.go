@@ -11,7 +11,7 @@ const (
 	baseTypeEnvRefV1_2 = "typeenv:sha256:973eeeed8e234b4ff0194662d80e204fe27ad5ba92c87840a6d1ed3a9d5d742d"
 	baseTypeEnvRefV1_3 = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
 	baseTypeEnvRefV1_4 = "typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e"
-	baseTypeEnvRefV1_5 = "typeenv:sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa"
+	baseTypeEnvRefV1_5 = "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
 )
 
 // sourceV1 is the exact 1.0.0 Local-Practice publication candidate.

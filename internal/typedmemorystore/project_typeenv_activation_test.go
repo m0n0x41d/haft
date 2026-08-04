@@ -215,6 +215,8 @@ func activationAdapterTestInputForProject(
 			ExpectedGraphRevision:  typedmemory.NewGraphRevision(0),
 			CommittedGraphRevision: typedmemory.NewGraphRevision(1),
 			SuccessorHeadRevision:  successor,
+			AuthorityClass: projecttypeenvactivation.
+				HostRoutedOperatorRequestAuthorityClass,
 		},
 	)
 	if err != nil {

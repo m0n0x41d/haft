@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	transitionsqlite "github.com/m0n0x41d/haft/internal/projecttypeenvtransitionpreparation/sqlite"
 	"github.com/m0n0x41d/haft/internal/typedmemorystore"
 )
 
@@ -26,11 +27,11 @@ func initializeDefaultProjectMemory(
 	if err != nil {
 		return err
 	}
-	ready, err := projectMemoryReadyReadOnly(ctx, binding)
+	headPresent, err := reconcileBundledDefaultProjectMemory(ctx, binding)
 	if err != nil {
-		return fmt.Errorf("inspect default project memory: %w", err)
+		return fmt.Errorf("reconcile default project memory: %w", err)
 	}
-	if ready {
+	if headPresent {
 		return removeConsumedDefaultMemoryReview(binding.ProjectRoot)
 	}
 	prepared, err := prepareDefaultProjectMemory(ctx, binding)
@@ -53,7 +54,7 @@ func initializeDefaultProjectMemory(
 	if err := removeConsumedDefaultMemoryReview(binding.ProjectRoot); err != nil {
 		return err
 	}
-	ready, err = projectMemoryReadyReadOnly(ctx, binding)
+	ready, err := projectMemoryReadyReadOnly(ctx, binding)
 	if err != nil {
 		return fmt.Errorf("verify default project memory: %w", err)
 	}
@@ -63,6 +64,86 @@ func initializeDefaultProjectMemory(
 		)
 	}
 	return nil
+}
+
+// reconcileBundledDefaultProjectMemory advances an existing project head to
+// the bundled successor whenever the transaction-current compatibility policy
+// is satisfied. It never fabricates an operator request or waits on a human
+// review. A non-compatible or stale candidate leaves the head unchanged and
+// returns a typed reason as an initialization error.
+func reconcileBundledDefaultProjectMemory(
+	ctx context.Context,
+	binding ProjectBinding,
+) (
+	headPresent bool,
+	runErr error,
+) {
+	ledger, err := projectledger.OpenExisting(
+		ctx,
+		binding.ProjectRoot,
+		projectledger.ReadWrite,
+	)
+	if err != nil {
+		return false, fmt.Errorf("open project memory for successor reconciliation: %w", err)
+	}
+	defer func() {
+		runErr = errors.Join(runErr, ledger.Close())
+	}()
+	if ledger.ProjectID().String() != binding.ProjectID {
+		return false, fmt.Errorf("project identity changed during successor reconciliation")
+	}
+	runtime, err := loadEmbeddedMemoryRuntime(ctx)
+	if err != nil {
+		return false, fmt.Errorf("load bundled project memory runtime: %w", err)
+	}
+	service, err := transitionsqlite.NewService(ctx, ledger)
+	if err != nil {
+		return false, err
+	}
+	result, preparationErr := service.PrepareAtBase(ctx, runtime.Artifact())
+	switch value := result.(type) {
+	case transitionsqlite.NoPriorHead:
+		return false, preparationErr
+	case transitionsqlite.AlreadySelected:
+		return true, preparationErr
+	case transitionsqlite.Prepared:
+		if preparationErr != nil {
+			return true, fmt.Errorf(
+				"bundled successor was prepared but its project basis changed: %w",
+				preparationErr,
+			)
+		}
+		response, selectionErr := executeAutomaticCompatibleTransition(
+			ctx,
+			ledger,
+			value.Candidate(),
+			typedmemorystore.SystemClock{},
+		)
+		if selectionErr != nil {
+			return true, selectionErr
+		}
+		if defaultMemorySelectionCommitted(response) {
+			return true, nil
+		}
+		if notSelected, ok := response.Outcome.(projectTypeEnvGenesisNotSelected); ok {
+			return true, fmt.Errorf(
+				"bundled successor was not automatically selected: reason=%s repair=%s",
+				notSelected.Reason,
+				notSelected.Repair,
+			)
+		}
+		return true, fmt.Errorf(
+			"bundled successor returned an unsupported selection outcome %T",
+			response.Outcome,
+		)
+	case nil:
+		return false, preparationErr
+	default:
+		return false, fmt.Errorf(
+			"successor reconciliation returned an unsupported result %T",
+			result,
+		)
+	}
 }
 
 func removeConsumedDefaultMemoryReview(projectRoot string) error {
@@ -78,7 +159,8 @@ func removeConsumedDefaultMemoryReview(projectRoot string) error {
 	if err != nil {
 		return fmt.Errorf("inspect consumed default memory review schema: %w", err)
 	}
-	if schema != projectTypeEnvGenesisReviewSchema {
+	if schema != projectTypeEnvGenesisReviewSchema &&
+		schema != projectTypeEnvTransitionReviewSchema {
 		return nil
 	}
 	if err := os.Remove(path); err != nil {

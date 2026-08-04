@@ -239,6 +239,217 @@ func TestAutomaticProfileBootstrapIsReplaySafeAndExplicitOnboardMayOverride(
 	}
 }
 
+func TestExplicitProfileRelationChangeIsBoundedAndCASPinned(t *testing.T) {
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "profile-relation-change.db"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	database := store.GetRawDB()
+	database.SetMaxOpenConns(1)
+	root := canonicalWorkInputTestRoot(t)
+	insertProfileOnboardingTestLedgerBinding(
+		t,
+		database,
+		root,
+		time.Now().UTC().Round(0).Add(-time.Minute),
+	)
+	suggestion := workInputTestSuggestion(
+		t,
+		root,
+		[]string{"go.mod", "internal/kernel.go"},
+	)
+	proposal, err := ProposeProfileOnboardingWorkInput(suggestion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialInput, err := DecodeProfileOnboardingWorkInput(
+		proposal,
+		suggestion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialPolicy, err := newHostRoutedProfileDeclarationTestPolicy(initialInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	revalidationCount := 0
+	revalidate := profileDeclarationTestRevalidator(
+		database,
+		&revalidationCount,
+	)
+	wrongInitialPolicy, err := newHostRoutedProfileChangeTestPolicy(initialInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongInitial, err := RunProfileDeclaration(
+		context.Background(),
+		database,
+		root,
+		initialInput,
+		wrongInitialPolicy,
+		revalidate,
+	)
+	if err != nil || wrongInitial.Kind() != ResultNotAdmitted {
+		t.Fatalf("profile-change authority admitted initial profile: %q / %v", wrongInitial.Kind(), err)
+	}
+	initial, err := RunProfileDeclaration(
+		context.Background(),
+		database,
+		root,
+		initialInput,
+		initialPolicy,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	initialAdmission, ok := initial.Admission()
+	if !ok || initialAdmission.LedgerRevision().Value() != 1 {
+		t.Fatalf("initial admission = %q %#v", initial.Kind(), initialAdmission)
+	}
+	scopeID := initialAdmission.Payload().Scopes().Values()[0].ScopeID()
+	nextEntityRef, _ := projectprofile.NewEntityRef("entity:target-system")
+	basis, err := NewProfileChangeBasis(
+		initialAdmission.AdmissionRecordRef(),
+		initialAdmission.AdmissionRecordDigest(),
+		initialAdmission.PayloadDigest(),
+		initialAdmission.LedgerRevision(),
+		scopeID,
+		"",
+		nextEntityRef,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeReview, err := ProposeProfileEntityRelationChangeWorkInput(
+		suggestion,
+		initialAdmission.Payload(),
+		basis,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changeInput, err := DecodeProfileOnboardingWorkInput(
+		changeReview,
+		suggestion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongChangePolicy, err := newHostRoutedProfileDeclarationTestPolicy(changeInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongChange, err := RunProfileEntityRelationChange(
+		context.Background(),
+		database,
+		root,
+		changeInput,
+		wrongChangePolicy,
+		revalidate,
+	)
+	if err != nil || wrongChange.Kind() != ResultNotAdmitted {
+		t.Fatalf("profile-declaration authority admitted change: %q / %v", wrongChange.Kind(), err)
+	}
+	changePolicy, err := newHostRoutedProfileChangeTestPolicy(changeInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changed, err := RunProfileEntityRelationChange(
+		context.Background(),
+		database,
+		root,
+		changeInput,
+		changePolicy,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	changedAdmission, ok := changed.Admission()
+	if !ok || changedAdmission.LedgerRevision().Value() != 2 {
+		rejections, _ := changed.Rejections()
+		failure, _ := changed.Failure()
+		t.Fatalf(
+			"changed admission = %q %#v rejections=%#v failure=%#v",
+			changed.Kind(),
+			changedAdmission,
+			rejections,
+			failure,
+		)
+	}
+	changedScope := changedAdmission.Payload().Scopes().Values()[0]
+	software, ok := changedScope.(projectprofile.SoftwareRealization)
+	entity, entityPresent := software.EntityReference().(projectprofile.ReferencedEntity)
+	if !ok || !entityPresent || entity.Ref() != nextEntityRef {
+		t.Fatalf("changed scope = %#v", changedScope)
+	}
+	staleEntityRef, _ := projectprofile.NewEntityRef("entity:stale-successor")
+	staleBasis, err := NewProfileChangeBasis(
+		initialAdmission.AdmissionRecordRef(),
+		initialAdmission.AdmissionRecordDigest(),
+		initialAdmission.PayloadDigest(),
+		initialAdmission.LedgerRevision(),
+		scopeID,
+		"",
+		staleEntityRef,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleReview, err := ProposeProfileEntityRelationChangeWorkInput(
+		suggestion,
+		initialAdmission.Payload(),
+		staleBasis,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleInput, err := DecodeProfileOnboardingWorkInput(
+		staleReview,
+		suggestion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stalePolicy, err := newHostRoutedProfileChangeTestPolicy(staleInput)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleResult, err := RunProfileEntityRelationChange(
+		context.Background(),
+		database,
+		root,
+		staleInput,
+		stalePolicy,
+		revalidate,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if staleResult.Kind() != ResultNotAdmitted {
+		t.Fatalf("stale result = %q", staleResult.Kind())
+	}
+	service, err := newService(database, revalidate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	canonicalRoot, _ := projectprofile.NewProjectRootV1(root)
+	current := service.state.admission.ResolveCurrent(
+		context.Background(),
+		canonicalRoot,
+	)
+	currentAdmission, ok := current.Admission()
+	if !ok || currentAdmission.LedgerRevision().Value() != 2 ||
+		currentAdmission.PayloadDigest() != changedAdmission.PayloadDigest() {
+		t.Fatalf("current admission after stale apply = %#v", currentAdmission)
+	}
+}
+
 func TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart(
 	t *testing.T,
 ) {
@@ -672,6 +883,20 @@ func newHostRoutedProfileDeclarationTestPolicy(
 		return ProfileDeclarationPolicy{}, err
 	}
 	return NewProfileDeclarationPolicy(request)
+}
+
+func newHostRoutedProfileChangeTestPolicy(
+	input ProfileOnboardingWorkInput,
+) (ProfileDeclarationPolicy, error) {
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileChange,
+		input.Ref().String(),
+		input.CanonicalJSON(),
+	)
+	if err != nil {
+		return ProfileDeclarationPolicy{}, err
+	}
+	return NewProfileChangePolicy(request)
 }
 
 func profileDeclarationTestRevalidator(

@@ -1405,6 +1405,7 @@ func derivedSourcePhrases(probe CandidateProbe) []SourceProbePhrase {
 
 	phrases := make([]SourceProbePhrase, 0, len(inputs)*2)
 	seen := make(map[string]struct{})
+	exactValues := make(map[string]struct{})
 	appendPhrase := func(field, phrase string, kind SourcePhraseKind) {
 		lexemes := orderedSourceRecallLexemes(phrase)
 		if len(dedupeStrings(lexemes)) < minimumDistinctSourceGroundedLexemes {
@@ -1420,17 +1421,49 @@ func derivedSourcePhrases(probe CandidateProbe) []SourceProbePhrase {
 			Value:      phrase,
 			Kind:       kind,
 		})
+		if kind == SourcePhraseKindExactProbeSpan {
+			exactValues[field+"\x00"+phrase] = struct{}{}
+		}
 	}
 	for _, input := range inputs {
 		exactValue := normalizeSourceGroundingValue(input.Value)
 		appendPhrase(input.ProbeField, exactValue, SourcePhraseKindExactProbeSpan)
+		for _, exactSpan := range contiguousNonScaffoldSourcePhrases(input.Value) {
+			appendPhrase(input.ProbeField, exactSpan, SourcePhraseKindExactProbeSpan)
+		}
 		compressedLexemes := nonScaffoldSourceLexemes(input.Value)
 		compressedValue := strings.Join(compressedLexemes, " ")
-		if compressedValue != exactValue {
+		_, alreadyExact := exactValues[input.ProbeField+"\x00"+compressedValue]
+		if compressedValue != exactValue && !alreadyExact {
 			appendPhrase(input.ProbeField, compressedValue, SourcePhraseKindScaffoldCompressed)
 		}
 	}
 	return phrases
+}
+
+// contiguousNonScaffoldSourcePhrases preserves exact lexical spans from the
+// operator's query after removing only scaffold runs at their boundaries.
+// Unlike scaffold compression, it never joins meaningful words that were
+// separated by question scaffolding, so one canonical source occurrence is a
+// truthful exact-span witness rather than a synthetic phrase coincidence.
+func contiguousNonScaffoldSourcePhrases(value string) []string {
+	result := make([]string, 0)
+	run := make([]string, 0)
+	flush := func() {
+		if len(dedupeStrings(run)) >= minimumDistinctSourceGroundedLexemes {
+			result = append(result, strings.Join(run, " "))
+		}
+		run = run[:0]
+	}
+	for _, lexeme := range orderedSourceRecallLexemes(value) {
+		if _, scaffold := genericQuestionScaffoldLexemes[lexeme]; scaffold {
+			flush()
+			continue
+		}
+		run = append(run, lexeme)
+	}
+	flush()
+	return dedupeStrings(result)
 }
 
 func candidateProbeValues(probe CandidateProbe) []string {

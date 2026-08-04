@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/m0n0x41d/haft/internal/fpf"
 )
 
 const (
@@ -87,6 +89,8 @@ type CandidateArtifact struct {
 	lockDigest        string
 	integrationLock   IntegrationLock
 	querySmokeResults []QuerySmokeResult
+	querySmokeFailure error
+	sourceDiagnostics []fpf.SourceGrammarDiagnostic
 	cleaned           bool
 }
 
@@ -190,6 +194,27 @@ func (artifact *CandidateArtifact) QuerySmokeResults() []QuerySmokeResult {
 	artifact.mutex.Lock()
 	defer artifact.mutex.Unlock()
 	return cloneCandidateQuerySmokeResults(artifact.querySmokeResults)
+}
+
+// querySmokeError returns source-specific query expectation drift retained on
+// an otherwise structurally valid candidate. It is review evidence, not a
+// candidate-integrity result.
+func (artifact *CandidateArtifact) querySmokeError() error {
+	if artifact == nil {
+		return nil
+	}
+	artifact.mutex.Lock()
+	defer artifact.mutex.Unlock()
+	return artifact.querySmokeFailure
+}
+
+func (artifact *CandidateArtifact) sourceGrammarDiagnostics() []fpf.SourceGrammarDiagnostic {
+	if artifact == nil {
+		return nil
+	}
+	artifact.mutex.Lock()
+	defer artifact.mutex.Unlock()
+	return cloneCandidateSourceGrammarDiagnostics(artifact.sourceDiagnostics)
 }
 
 // Cleaned reports whether Cleanup has successfully removed the owned root.
@@ -336,19 +361,21 @@ func PrepareCandidateArtifact(
 		return nil, ErrCandidateNonDeterministic
 	}
 
-	if err := verifyGitSourceDerivedProjection(
+	sourceDiagnostics, err := verifyGitSourceDerivedProjection(
 		builds[0].databasePath,
 		input.Source,
-	); err != nil {
+	)
+	if err != nil {
 		return nil, fmt.Errorf(
 			"verify candidate source and TypeEnv projection: %w",
 			err,
 		)
 	}
-	queryResults, err := VerifyCandidateQueryContract(builds[0].databasePath)
-	if err != nil {
-		return nil, fmt.Errorf("verify candidate Query contract: %w", err)
+	if err := VerifySourceQueryRuntime(builds[0].databasePath); err != nil {
+		return nil, fmt.Errorf("verify candidate source Query runtime: %w", err)
 	}
+	queryResults, err := VerifyCandidateQueryContract(builds[0].databasePath)
+	querySmokeFailure := err
 	lockInput := IntegrationCoordinateInput{
 		SourceRevision: sourceRevision,
 		ReadmePath:     builds[0].readmePath,
@@ -393,6 +420,8 @@ func PrepareCandidateArtifact(
 		lockDigest:        lockDigest,
 		integrationLock:   integrationLock,
 		querySmokeResults: cloneCandidateQuerySmokeResults(queryResults),
+		querySmokeFailure: querySmokeFailure,
+		sourceDiagnostics: cloneCandidateSourceGrammarDiagnostics(sourceDiagnostics),
 	}
 	rootTransferred = true
 	return artifact, nil
@@ -751,6 +780,24 @@ func cloneCandidateQuerySmokeResults(values []QuerySmokeResult) []QuerySmokeResu
 	for index, value := range values {
 		cloned[index] = value
 		cloned[index].UnitIDs = append([]string{}, value.UnitIDs...)
+	}
+	return cloned
+}
+
+func cloneCandidateSourceGrammarDiagnostics(
+	diagnostics []fpf.SourceGrammarDiagnostic,
+) []fpf.SourceGrammarDiagnostic {
+	cloned := make([]fpf.SourceGrammarDiagnostic, len(diagnostics))
+	for index, diagnostic := range diagnostics {
+		diagnostic.LabelsDiscovered = append(
+			[]string(nil),
+			diagnostic.LabelsDiscovered...,
+		)
+		diagnostic.LabelsRecognized = append(
+			[]string(nil),
+			diagnostic.LabelsRecognized...,
+		)
+		cloned[index] = diagnostic
 	}
 	return cloned
 }

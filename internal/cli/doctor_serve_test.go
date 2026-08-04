@@ -21,7 +21,7 @@ func TestDoctorServeProcessStatusReportsNoCurrentProjectServe(t *testing.T) {
 	}
 }
 
-func TestDoctorServeProcessStatusWarnsOnDuplicateCurrentProjectServe(t *testing.T) {
+func TestDoctorServeProcessStatusAcceptsSeveralCurrentProjectServers(t *testing.T) {
 	now := time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC)
 	status, ok := doctorServeProcessStatus("/repo/haft", doctorServeProcessSnapshot{
 		PathHaft:      "/repo/bin/haft",
@@ -32,11 +32,13 @@ func TestDoctorServeProcessStatusWarnsOnDuplicateCurrentProjectServe(t *testing.
 		},
 	})
 
-	if ok {
-		t.Fatalf("ok = true, status = %q", status)
+	if !ok {
+		t.Fatalf("ok = false, status = %q", status)
 	}
-	if !strings.Contains(status, "multiple current-project serve processes") {
-		t.Fatalf("status = %q, want duplicate warning", status)
+	if !strings.Contains(status, "2 current-project serve process(es)") ||
+		!strings.Contains(status, "pid=10") ||
+		!strings.Contains(status, "pid=11") {
+		t.Fatalf("status = %q, want bounded ordinary process summary", status)
 	}
 }
 

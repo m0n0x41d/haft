@@ -93,7 +93,10 @@ func (service *TransitionService) commitOriginalTransition(
 	commitSucceeded := service.core.committer.commit(ctx, transaction)
 	result := service.core.observeCommittedGenesis(
 		ctx,
-		GenesisSelectionInput(input),
+		GenesisSelectionInput{
+			Request: input.Request,
+			Content: input.Content,
+		},
 		sealed.closure,
 		commitSucceeded,
 	)

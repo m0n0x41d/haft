@@ -214,7 +214,7 @@ func runProfilePropose(cmd *cobra.Command, _ []string) error {
 	detectorDefault := inspection.CanonicalProfile.Origin ==
 		string(projectprofile.ProfileAdmissionOriginDetectorDefault)
 	if inspection.CanonicalProfile.Kind != "auto" &&
-		!(declaredProfile && detectorDefault) {
+		(!declaredProfile || !detectorDefault) {
 		return fmt.Errorf(
 			"the canonical project profile is not detector_default; explicit-over-explicit and legacy profile changes require their own mutation contract",
 		)

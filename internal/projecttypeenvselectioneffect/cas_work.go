@@ -24,17 +24,17 @@ const (
 // by the local record. They do not by themselves admit anything into the
 // project graph as U.Work.
 type ProjectTypeEnvHeadCASWorkCoordinates struct {
-	method            authority.MethodRef
-	methodDescription authority.MethodDescriptionRef
-	performedBy       authority.RoleAssignmentRef
-	executedWithin    authority.SystemRef
-	boundedContext    authority.BoundedContextRef
-	workInterval      authority.TimeWindow
-	statePlane        authority.StatePlaneRef
-	resourceLedger    authority.ResourceLedgerRef
-	outcome           authority.WorkOutcomeRef
-	acceptance        authority.AcceptancePostureRef
-	auditTrace        authority.AuditTraceRef
+	method             authority.MethodRef
+	methodDescription  authority.MethodDescriptionRef
+	coveringAssignment authority.RoleAssignmentRef
+	actualPerformer    authority.SystemRef
+	boundedContext     authority.BoundedContextRef
+	workInterval       authority.TimeWindow
+	statePlane         authority.StatePlaneRef
+	resourceLedger     authority.ResourceLedgerRef
+	outcome            authority.WorkOutcomeRef
+	acceptance         authority.AcceptancePostureRef
+	auditTrace         authority.AuditTraceRef
 }
 
 type ProjectTypeEnvHeadCASWorkCoordinatesInput struct {
@@ -58,33 +58,33 @@ func NewProjectTypeEnvHeadCASWorkCoordinates(
 	}
 	return newProjectTypeEnvHeadCASWorkCoordinates(
 		projectTypeEnvHeadCASWorkCoordinatesRawInput{
-			Method:            input.Method,
-			MethodDescription: input.MethodDescription,
-			PerformedBy:       subject.Ref(),
-			ExecutedWithin:    subject.HolderSystemRef(),
-			BoundedContext:    subject.BoundedContext(),
-			WorkInterval:      input.WorkInterval,
-			StatePlane:        input.StatePlane,
-			ResourceLedger:    input.ResourceLedger,
-			Outcome:           input.Outcome,
-			Acceptance:        input.Acceptance,
-			AuditTrace:        input.AuditTrace,
+			Method:             input.Method,
+			MethodDescription:  input.MethodDescription,
+			CoveringAssignment: subject.Ref(),
+			ActualPerformer:    subject.HolderSystemRef(),
+			BoundedContext:     subject.BoundedContext(),
+			WorkInterval:       input.WorkInterval,
+			StatePlane:         input.StatePlane,
+			ResourceLedger:     input.ResourceLedger,
+			Outcome:            input.Outcome,
+			Acceptance:         input.Acceptance,
+			AuditTrace:         input.AuditTrace,
 		},
 	)
 }
 
 type projectTypeEnvHeadCASWorkCoordinatesRawInput struct {
-	Method            authority.MethodRef
-	MethodDescription authority.MethodDescriptionRef
-	PerformedBy       authority.RoleAssignmentRef
-	ExecutedWithin    authority.SystemRef
-	BoundedContext    authority.BoundedContextRef
-	WorkInterval      authority.TimeWindow
-	StatePlane        authority.StatePlaneRef
-	ResourceLedger    authority.ResourceLedgerRef
-	Outcome           authority.WorkOutcomeRef
-	Acceptance        authority.AcceptancePostureRef
-	AuditTrace        authority.AuditTraceRef
+	Method             authority.MethodRef
+	MethodDescription  authority.MethodDescriptionRef
+	CoveringAssignment authority.RoleAssignmentRef
+	ActualPerformer    authority.SystemRef
+	BoundedContext     authority.BoundedContextRef
+	WorkInterval       authority.TimeWindow
+	StatePlane         authority.StatePlaneRef
+	ResourceLedger     authority.ResourceLedgerRef
+	Outcome            authority.WorkOutcomeRef
+	Acceptance         authority.AcceptancePostureRef
+	AuditTrace         authority.AuditTraceRef
 }
 
 func newProjectTypeEnvHeadCASWorkCoordinates(
@@ -101,17 +101,17 @@ func newProjectTypeEnvHeadCASWorkCoordinates(
 		return ProjectTypeEnvHeadCASWorkCoordinates{},
 			fmt.Errorf("CAS Work MethodDescription ref is required")
 	}
-	performedBy, err := authority.NewRoleAssignmentRef(
-		input.PerformedBy.String(),
+	coveringAssignment, err := authority.NewRoleAssignmentRef(
+		input.CoveringAssignment.String(),
 	)
-	if err != nil || performedBy != input.PerformedBy {
+	if err != nil || coveringAssignment != input.CoveringAssignment {
 		return ProjectTypeEnvHeadCASWorkCoordinates{},
-			fmt.Errorf("CAS Work performedBy RoleAssignment ref is required")
+			fmt.Errorf("CAS Work covering RoleAssignment ref is required")
 	}
-	system, err := authority.NewSystemRef(input.ExecutedWithin.String())
-	if err != nil || system != input.ExecutedWithin {
+	actualPerformer, err := authority.NewSystemRef(input.ActualPerformer.String())
+	if err != nil || actualPerformer != input.ActualPerformer {
 		return ProjectTypeEnvHeadCASWorkCoordinates{},
-			fmt.Errorf("CAS Work executedWithin System ref is required")
+			fmt.Errorf("CAS Work actual performer System ref is required")
 	}
 	context, err := authority.NewBoundedContextRef(input.BoundedContext.String())
 	if err != nil || context != input.BoundedContext {
@@ -153,17 +153,17 @@ func newProjectTypeEnvHeadCASWorkCoordinates(
 			fmt.Errorf("CAS Work audit-trace ref is required")
 	}
 	return ProjectTypeEnvHeadCASWorkCoordinates{
-		method:            method,
-		methodDescription: description,
-		performedBy:       performedBy,
-		executedWithin:    system,
-		boundedContext:    context,
-		workInterval:      window,
-		statePlane:        statePlane,
-		resourceLedger:    ledger,
-		outcome:           outcome,
-		acceptance:        acceptance,
-		auditTrace:        audit,
+		method:             method,
+		methodDescription:  description,
+		coveringAssignment: coveringAssignment,
+		actualPerformer:    actualPerformer,
+		boundedContext:     context,
+		workInterval:       window,
+		statePlane:         statePlane,
+		resourceLedger:     ledger,
+		outcome:            outcome,
+		acceptance:         acceptance,
+		auditTrace:         audit,
 	}, nil
 }
 
@@ -202,12 +202,28 @@ func (value ProjectTypeEnvHeadCASWorkCoordinates) MethodDescription() authority.
 	return value.methodDescription
 }
 
-func (value ProjectTypeEnvHeadCASWorkCoordinates) PerformedBy() authority.RoleAssignmentRef {
-	return value.performedBy
+func (value ProjectTypeEnvHeadCASWorkCoordinates) CoveringRoleAssignment() authority.RoleAssignmentRef {
+	return value.coveringAssignment
 }
 
+func (value ProjectTypeEnvHeadCASWorkCoordinates) ActualPerformerSystem() authority.SystemRef {
+	return value.actualPerformer
+}
+
+// PerformedBy preserves the pre-v9 accessor for callers reading frozen
+// records. Its value is a covering assignment, not an actor.
+//
+// Deprecated: use CoveringRoleAssignment.
+func (value ProjectTypeEnvHeadCASWorkCoordinates) PerformedBy() authority.RoleAssignmentRef {
+	return value.CoveringRoleAssignment()
+}
+
+// ExecutedWithin preserves the pre-v9 accessor for callers reading frozen
+// records. For this record the value is the actual performer system.
+//
+// Deprecated: use ActualPerformerSystem.
 func (value ProjectTypeEnvHeadCASWorkCoordinates) ExecutedWithin() authority.SystemRef {
-	return value.executedWithin
+	return value.ActualPerformerSystem()
 }
 
 func (value ProjectTypeEnvHeadCASWorkCoordinates) BoundedContext() authority.BoundedContextRef {
@@ -244,8 +260,10 @@ func encodeCASWorkCoordinates(
 ) {
 	writer.writeString(value.method.String())
 	writer.writeString(value.methodDescription.String())
-	writer.writeString(value.performedBy.String())
-	writer.writeString(value.executedWithin.String())
+	// Keep the v1 canonical byte order stable: covering assignment first,
+	// actual performer system second.
+	writer.writeString(value.coveringAssignment.String())
+	writer.writeString(value.actualPerformer.String())
 	writer.writeString(value.boundedContext.String())
 	writer.writeString(value.workInterval.From().UTC().Format(time.RFC3339Nano))
 	writer.writeString(value.workInterval.Until().UTC().Format(time.RFC3339Nano))
@@ -275,19 +293,19 @@ func decodeCASWorkCoordinates(
 	if err != nil {
 		return ProjectTypeEnvHeadCASWorkCoordinates{}, err
 	}
-	performedByText, err := reader.readString("CAS Work performedBy ref")
+	coveringAssignmentText, err := reader.readString("CAS Work covering RoleAssignment ref")
 	if err != nil {
 		return ProjectTypeEnvHeadCASWorkCoordinates{}, err
 	}
-	performedBy, err := authority.NewRoleAssignmentRef(performedByText)
+	coveringAssignment, err := authority.NewRoleAssignmentRef(coveringAssignmentText)
 	if err != nil {
 		return ProjectTypeEnvHeadCASWorkCoordinates{}, err
 	}
-	systemText, err := reader.readString("CAS Work executedWithin ref")
+	actualPerformerText, err := reader.readString("CAS Work actual performer System ref")
 	if err != nil {
 		return ProjectTypeEnvHeadCASWorkCoordinates{}, err
 	}
-	system, err := authority.NewSystemRef(systemText)
+	actualPerformer, err := authority.NewSystemRef(actualPerformerText)
 	if err != nil {
 		return ProjectTypeEnvHeadCASWorkCoordinates{}, err
 	}
@@ -363,17 +381,17 @@ func decodeCASWorkCoordinates(
 	}
 	return newProjectTypeEnvHeadCASWorkCoordinates(
 		projectTypeEnvHeadCASWorkCoordinatesRawInput{
-			Method:            method,
-			MethodDescription: description,
-			PerformedBy:       performedBy,
-			ExecutedWithin:    system,
-			BoundedContext:    context,
-			WorkInterval:      window,
-			StatePlane:        statePlane,
-			ResourceLedger:    ledger,
-			Outcome:           outcome,
-			Acceptance:        acceptance,
-			AuditTrace:        audit,
+			Method:             method,
+			MethodDescription:  description,
+			CoveringAssignment: coveringAssignment,
+			ActualPerformer:    actualPerformer,
+			BoundedContext:     context,
+			WorkInterval:       window,
+			StatePlane:         statePlane,
+			ResourceLedger:     ledger,
+			Outcome:            outcome,
+			Acceptance:         acceptance,
+			AuditTrace:         audit,
 		},
 	)
 }
@@ -895,8 +913,8 @@ func verifyCASWorkCoordinatesAgainstAuthority(
 	); err != nil {
 		return err
 	}
-	matches := coordinates.PerformedBy() == subject.Ref() &&
-		coordinates.ExecutedWithin() == subject.HolderSystemRef() &&
+	matches := coordinates.CoveringRoleAssignment() == subject.Ref() &&
+		coordinates.ActualPerformerSystem() == subject.HolderSystemRef() &&
 		coordinates.BoundedContext() == subject.BoundedContext()
 	if !matches {
 		return fmt.Errorf(

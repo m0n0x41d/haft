@@ -20,7 +20,7 @@ import (
 type TransitionSelectionInput struct {
 	Request   projecttypeenvselection.ProjectTypeEnvHeadSelectionRequest
 	Content   projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent
-	Authority GenesisAuthorityIngress
+	Authority TransitionAuthorityIngress
 }
 
 // TransitionService reuses the same physical stores and authority adapters as
@@ -163,17 +163,13 @@ func (service *TransitionService) selectTransitionTx(
 			projecttypeenvselectioneffect.NotSelectedCurrentAuthorityRejection(),
 		)
 	}
-	authorityResult, err := resolveCurrentHeadSelectionAuthority(
+	authorityResult, err := resolveCurrentTransitionAuthority(
 		ctx,
 		transaction,
 		service.core.projectRoot,
 		service.core.clock,
-		currentHeadSelectionAuthorityInput{
-			request:   input.Request,
-			content:   input.Content,
-			authority: input.Authority,
-			profile:   frame.currentProfile,
-		},
+		frame,
+		input,
 	)
 	if err != nil {
 		return replayAbsent, fmt.Errorf("resolve current Transition authority: %w", err)
@@ -210,14 +206,19 @@ func (service *TransitionService) verifyInput(
 	if service == nil || service.core == nil {
 		return fmt.Errorf("transition service is invalid")
 	}
-	if err := service.core.verifyInput(
-		ctx,
-		GenesisSelectionInput(input),
-	); err != nil {
+	if err := service.core.verifyInput(ctx, GenesisSelectionInput{
+		Request: input.Request,
+		Content: input.Content,
+	}); err != nil {
 		return err
 	}
 	if _, ok := input.Request.Predecessor().(projecttypeenvselection.TransitionStagePredecessor); !ok {
 		return fmt.Errorf("transition selection request requires an exact prior head")
+	}
+	switch input.Authority.(type) {
+	case GenesisAuthorityIngress, AutomaticCompatibleSuccessorIngress:
+	default:
+		return fmt.Errorf("transition authority ingress is invalid")
 	}
 	return nil
 }

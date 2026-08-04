@@ -11,7 +11,10 @@ import (
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
 )
 
-const profileDeclarationReviewFileName = "profile-declaration-review.json"
+const (
+	profileDeclarationReviewFileName = "profile-declaration-review.json"
+	profileChangeReviewFileName      = "profile-change-review.json"
+)
 
 type profileReviewCandidate struct {
 	Path            string   `json:"path"`
@@ -67,7 +70,68 @@ func installProfileReviewCandidate(
 	projectRoot string,
 	content []byte,
 ) (string, error) {
-	target := profileDeclarationReviewPath(projectRoot)
+	return installProfileReviewCandidateAt(
+		profileDeclarationReviewPath(projectRoot),
+		profileDeclarationReviewRelativePath(),
+		".profile-declaration-review-stage-",
+		content,
+	)
+}
+
+func installProfileChangeReviewCandidate(
+	projectRoot string,
+	content []byte,
+) (string, error) {
+	return installProfileReviewCandidateAt(
+		profileChangeReviewPath(projectRoot),
+		profileChangeReviewRelativePath(),
+		".profile-change-review-stage-",
+		content,
+	)
+}
+
+func consumeProfileChangeReviewCandidate(
+	projectRoot string,
+	expected []byte,
+) error {
+	target := profileChangeReviewPath(projectRoot)
+	current, present, err := readOptionalRegularProfileReview(target)
+	if err != nil {
+		return err
+	}
+	if !present {
+		return nil
+	}
+	if !bytes.Equal(current, expected) {
+		return fmt.Errorf(
+			"profile-change review changed while its exact effect was being applied; the newer carrier was retained",
+		)
+	}
+	if err := os.Remove(target); err != nil {
+		return fmt.Errorf("consume applied profile-change review: %w", err)
+	}
+	if err := syncProfileReviewDirectory(filepath.Dir(target)); err != nil {
+		return fmt.Errorf(
+			"profile-change review was consumed but directory synchronization failed: %w",
+			err,
+		)
+	}
+	_, stillPresent, err := readOptionalRegularProfileReview(target)
+	if err != nil {
+		return err
+	}
+	if stillPresent {
+		return fmt.Errorf("applied profile-change review remains present")
+	}
+	return nil
+}
+
+func installProfileReviewCandidateAt(
+	target string,
+	displayPath string,
+	stagePrefix string,
+	content []byte,
+) (string, error) {
 	current, present, err := readOptionalRegularProfileReview(target)
 	if err != nil {
 		return "", err
@@ -78,11 +142,11 @@ func installProfileReviewCandidate(
 	if present {
 		return "", fmt.Errorf(
 			"%s already contains a different review candidate; declare or deliberately remove that readable file before preparing another one",
-			profileDeclarationReviewRelativePath(),
+			displayPath,
 		)
 	}
 	directory := filepath.Dir(target)
-	stage, err := os.CreateTemp(directory, ".profile-declaration-review-stage-")
+	stage, err := os.CreateTemp(directory, stagePrefix)
 	if err != nil {
 		return "", fmt.Errorf("create project-profile review stage: %w", err)
 	}
@@ -116,7 +180,7 @@ func installProfileReviewCandidate(
 		}
 		return "", fmt.Errorf(
 			"%s was concurrently populated with a different review candidate",
-			profileDeclarationReviewRelativePath(),
+			displayPath,
 		)
 	}
 	if err := syncProfileReviewDirectory(directory); err != nil {
@@ -190,4 +254,16 @@ func profileDeclarationReviewPath(projectRoot string) string {
 
 func profileDeclarationReviewRelativePath() string {
 	return filepath.ToSlash(filepath.Join(".haft", profileDeclarationReviewFileName))
+}
+
+func profileChangeReviewPath(projectRoot string) string {
+	return filepath.Join(
+		projectRoot,
+		".haft",
+		profileChangeReviewFileName,
+	)
+}
+
+func profileChangeReviewRelativePath() string {
+	return filepath.ToSlash(filepath.Join(".haft", profileChangeReviewFileName))
 }

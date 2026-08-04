@@ -1157,6 +1157,16 @@ func currentPublicTakeoverRegistries(
 	if present {
 		records = append(records, legacyPortableCodex)
 	}
+	legacyPublishedV8Codex, present, err :=
+		currentPublicLegacyPublishedV8CodexHaftRecord(projection)
+	if err != nil {
+		return initplanning.LegacyRegistrySelection{},
+			initplanning.ManagedFragmentLegacyRegistry{},
+			err
+	}
+	if present {
+		records = append(records, legacyPublishedV8Codex)
+	}
 	legacyPi, err := currentPublicLegacyPiFragments(projection)
 	if err != nil {
 		return initplanning.LegacyRegistrySelection{},
@@ -1372,6 +1382,100 @@ default_tools_approval_mode = "prompt"
 `)
 }
 
+var publicLegacyPublishedV8CodexHaftPattern = regexp.MustCompile(
+	`(?s)^\[mcp_servers\.haft\]\n` +
+		`command = "([^"\n]+)"\n` +
+		`args = \["serve"\]\n` +
+		`startup_timeout_sec = 10\n` +
+		`tool_timeout_sec = 60\n\n` +
+		`\[mcp_servers\.haft\.env\]\n` +
+		`HAFT_PROJECT_ROOT = "\."\n$`,
+)
+
+func currentPublicLegacyPublishedV8CodexHaftRecord(
+	projection initplanning.HostAdapterProjection,
+) (initplanning.ManagedFragmentRecord, bool, error) {
+	if (projection.Host() != initplanning.HostCodex &&
+		projection.Host() != initplanning.HostAir) ||
+		projection.Scope() != initplanning.ScopeProject {
+		return initplanning.ManagedFragmentRecord{}, false, nil
+	}
+	var desired initplanning.ManagedFragment
+	found := false
+	for _, fragment := range projection.ManagedFragments() {
+		coordinate := fragment.Coordinate()
+		if coordinate.Kind() != initplanning.ManagedTOMLTableSet ||
+			coordinate.Selector() != "mcp_servers.haft" {
+			continue
+		}
+		if found {
+			return initplanning.ManagedFragmentRecord{}, false,
+				fmt.Errorf(
+					"codex projection repeats its Haft MCP table set",
+				)
+		}
+		desired = fragment
+		found = true
+	}
+	if !found {
+		return initplanning.ManagedFragmentRecord{}, false,
+			fmt.Errorf(
+				"codex projection lacks its Haft MCP table set",
+			)
+	}
+	path := filepath.Join(
+		projection.ProjectRoot(),
+		".codex",
+		"config.toml",
+	)
+	raw, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		return initplanning.ManagedFragmentRecord{}, false, nil
+	}
+	if err != nil {
+		return initplanning.ManagedFragmentRecord{}, false,
+			fmt.Errorf(
+				"read possible published v8 Codex MCP configuration: %w",
+				err,
+			)
+	}
+	observed, present, err := initplanning.ExtractTOMLTableSet(
+		raw,
+		"mcp_servers.haft",
+		[]string{
+			"mcp_servers.haft",
+			"mcp_servers.haft.env",
+		},
+	)
+	if err != nil {
+		return initplanning.ManagedFragmentRecord{}, false,
+			fmt.Errorf(
+				"inspect possible published v8 Codex MCP configuration: %w",
+				err,
+			)
+	}
+	if !present || !isPublicLegacyPublishedV8CodexHaftTables(observed) {
+		return initplanning.ManagedFragmentRecord{}, false, nil
+	}
+	record, err := initplanning.NewKnownLegacyManagedFragmentRecord(
+		desired,
+		observed,
+	)
+	if err != nil {
+		return initplanning.ManagedFragmentRecord{}, false, err
+	}
+	return record, true, nil
+}
+
+func isPublicLegacyPublishedV8CodexHaftTables(content []byte) bool {
+	matches := publicLegacyPublishedV8CodexHaftPattern.FindSubmatch(content)
+	if len(matches) != 2 {
+		return false
+	}
+	command := filepath.Clean(string(matches[1]))
+	return filepath.Base(command) == "haft"
+}
+
 func publicLegacyCodexQuintContent(
 	command string,
 	projectRoot string,
@@ -1427,16 +1531,42 @@ func currentPublicWholeTakeoverRegistry(
 			initplanning.OwnershipBasis{},
 			nil
 	}
+	legacyDigests := make(map[string]string, len(outputs))
+	recognizedSkillRoots := make(map[string]struct{})
+	for _, output := range outputs {
+		digest, recognized, err := observePublicLegacyHaftSkill(output)
+		if err != nil {
+			return initplanning.LegacyRegistrySelection{},
+				initplanning.OwnershipBasis{},
+				err
+		}
+		if !recognized {
+			continue
+		}
+		legacyDigests[output.Path()] = digest
+		recognizedSkillRoots[filepath.Dir(output.Path())] = struct{}{}
+	}
 	paths := make(
 		[]initplanning.KnownLegacyPath,
 		len(outputs),
 	)
 	for index, output := range outputs {
-		digest, err := currentPublicTakeoverDigest(output)
-		if err != nil {
-			return initplanning.LegacyRegistrySelection{},
-				initplanning.OwnershipBasis{},
-				err
+		digest, recognized := legacyDigests[output.Path()]
+		if !recognized {
+			var err error
+			digest, recognized, err =
+				observePublicLegacyCodexSkillPolicy(
+					output,
+					recognizedSkillRoots,
+				)
+			if err != nil {
+				return initplanning.LegacyRegistrySelection{},
+					initplanning.OwnershipBasis{},
+					err
+			}
+		}
+		if !recognized {
+			digest = output.Digest()
 		}
 		paths[index] = initplanning.KnownLegacyPath{
 			Path:      output.Path(),

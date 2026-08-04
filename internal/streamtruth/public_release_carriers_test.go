@@ -10,10 +10,19 @@ import (
 	"testing"
 )
 
-var publicDecisionCarrierPaths = []string{
-	".haft/decisions/dec-20260716-11f33e36.md",
+var publicActiveDecisionCarrierPaths = []string{
 	".haft/decisions/dec-20260716-318cdec5.md",
+	".haft/decisions/dec-20260804-ebf1a001.md",
 }
+
+var publicHistoricalDecisionCarrierPaths = []string{
+	".haft/decisions/dec-20260716-11f33e36.md",
+}
+
+var publicDecisionCarrierPaths = append(
+	append([]string(nil), publicActiveDecisionCarrierPaths...),
+	publicHistoricalDecisionCarrierPaths...,
+)
 
 var publicExecutionCarrierPaths = []string{
 	".context/haft-v9-deterministic-closeout.plan.md",
@@ -45,8 +54,11 @@ func TestPublicContractDecisionLinksResolveToPublishedCarriers(t *testing.T) {
 		assertExactStringSet(t, source, actual, publicDecisionCarrierPaths)
 	}
 
-	for _, carrier := range publicDecisionCarrierPaths {
-		assertActiveDecisionCarrier(t, carrier)
+	for _, carrier := range publicActiveDecisionCarrierPaths {
+		assertDecisionCarrierStatus(t, carrier, "active")
+	}
+	for _, carrier := range publicHistoricalDecisionCarrierPaths {
+		assertDecisionCarrierStatus(t, carrier, "superseded")
 	}
 	for _, carrier := range publicReleaseCarrierPaths {
 		assertNotIgnored(t, carrier)
@@ -202,14 +214,14 @@ func assertExactStringSet(
 	)
 }
 
-func assertActiveDecisionCarrier(t *testing.T, carrier string) {
+func assertDecisionCarrierStatus(t *testing.T, carrier string, status string) {
 	t.Helper()
 	content := readTruthRepoFile(t, carrier)
 	identifier := strings.TrimSuffix(filepath.Base(carrier), filepath.Ext(carrier))
 	for _, required := range []string{
 		"id: " + identifier,
 		"kind: DecisionRecord",
-		"status: active",
+		"status: " + status,
 	} {
 		if !frontmatterHasExactLine(content, required) {
 			t.Fatalf("%s frontmatter omits %q", carrier, required)

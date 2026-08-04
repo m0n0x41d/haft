@@ -16,6 +16,24 @@ type GenesisAuthorityIngress struct {
 	request operatorrequest.Request
 }
 
+// TransitionAuthorityIngress is closed to the two current transition bases:
+// an exact host-routed operator request (retained for explicit rollback and
+// historical compatibility) or the package-owned compatible-successor
+// policy. Neither variant can carry a caller-made resolution or live use.
+type TransitionAuthorityIngress interface {
+	transitionAuthorityIngressVariant()
+}
+
+func (GenesisAuthorityIngress) transitionAuthorityIngressVariant() {}
+
+type AutomaticCompatibleSuccessorIngress struct{}
+
+func (AutomaticCompatibleSuccessorIngress) transitionAuthorityIngressVariant() {}
+
+func NewAutomaticCompatibleSuccessorIngress() AutomaticCompatibleSuccessorIngress {
+	return AutomaticCompatibleSuccessorIngress{}
+}
+
 func NewHostRoutedOperatorRequest(
 	request operatorrequest.Request,
 ) (GenesisAuthorityIngress, error) {
@@ -40,10 +58,16 @@ func (ingress GenesisAuthorityIngress) Request() operatorrequest.Request {
 }
 
 type resolvedGenesisAuthority struct {
-	request        operatorrequest.Request
-	hostResolution projecttypeenvselectionauthority.HostRoutedSelectionResolution
-	content        projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent
-	coordinates    projecttypeenvselectioneffect.ProjectTypeEnvHeadSelectionAuthorityCoordinates
+	request                       operatorrequest.Request
+	hostResolution                projecttypeenvselectionauthority.HostRoutedSelectionResolution
+	compatibleSuccessorResolution projecttypeenvselectionauthority.CompatibleSuccessorResolution
+	content                       projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent
+	coordinates                   projecttypeenvselectioneffect.ProjectTypeEnvHeadSelectionAuthorityCoordinates
+}
+
+func (value resolvedGenesisAuthority) isCompatibleSuccessor() bool {
+	_, ok := value.coordinates.CompatibleSuccessorPolicy()
+	return ok
 }
 
 // admittedGenesisAuthorityUse is minted and consumed inside one transaction.

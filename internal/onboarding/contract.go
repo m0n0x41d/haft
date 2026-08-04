@@ -15,40 +15,45 @@ import (
 type Action string
 
 const (
-	ActionStatus         Action = "status"
-	ActionProfilePrepare Action = "profile_prepare"
-	ActionMemoryPrepare  Action = "memory_prepare"
+	ActionStatus               Action = "status"
+	ActionProfilePrepare       Action = "profile_prepare"
+	ActionProfileChangePrepare Action = "profile_change_prepare"
+	ActionMemoryPrepare        Action = "memory_prepare"
 )
 
 type Status string
 
 const (
-	StatusNeedsInit          Status = "needs_init"
-	StatusNeedsProfile       Status = "needs_profile"
-	StatusProfileReviewReady Status = "profile_review_ready"
-	StatusNeedsMemory        Status = "needs_memory"
-	StatusMemoryReviewReady  Status = "memory_review_ready"
-	StatusMemoryDeferred     Status = "memory_deferred"
-	StatusReady              Status = "ready"
+	StatusNeedsInit                Status = "needs_init"
+	StatusNeedsProfile             Status = "needs_profile"
+	StatusProfileReviewReady       Status = "profile_review_ready"
+	StatusProfileChangeReviewReady Status = "profile_change_review_ready"
+	StatusNeedsMemory              Status = "needs_memory"
+	StatusMemoryReviewReady        Status = "memory_review_ready"
+	StatusMemoryDeferred           Status = "memory_deferred"
+	StatusReady                    Status = "ready"
 )
 
 type Result string
 
 const (
-	ResultOnboardingRequired   Result = "onboarding_required"
-	ResultNeedsProfile         Result = "needs_profile"
-	ResultNeedsScopeReview     Result = "needs_scope_review"
-	ResultProfileReviewReady   Result = "profile_review_ready"
-	ResultProfileReviewCreated Result = "profile_review_prepared"
-	ResultProfileReviewReused  Result = "profile_review_reused"
-	ResultNeedsMemory          Result = "needs_memory"
-	ResultMemoryReviewReady    Result = "memory_review_ready"
-	ResultMemoryReviewCreated  Result = "memory_review_prepared"
-	ResultMemoryReviewReused   Result = "memory_review_reused"
-	ResultMemoryDeferred       Result = "memory_deferred"
-	ResultRestartRequired      Result = "restart_required"
-	ResultReady                Result = "ready"
-	ResultBlocked              Result = "blocked"
+	ResultOnboardingRequired         Result = "onboarding_required"
+	ResultNeedsProfile               Result = "needs_profile"
+	ResultNeedsScopeReview           Result = "needs_scope_review"
+	ResultProfileReviewReady         Result = "profile_review_ready"
+	ResultProfileChangeReviewReady   Result = "profile_change_review_ready"
+	ResultProfileReviewCreated       Result = "profile_review_prepared"
+	ResultProfileReviewReused        Result = "profile_review_reused"
+	ResultProfileChangeReviewCreated Result = "profile_change_review_prepared"
+	ResultProfileChangeReviewReused  Result = "profile_change_review_reused"
+	ResultNeedsMemory                Result = "needs_memory"
+	ResultMemoryReviewReady          Result = "memory_review_ready"
+	ResultMemoryReviewCreated        Result = "memory_review_prepared"
+	ResultMemoryReviewReused         Result = "memory_review_reused"
+	ResultMemoryDeferred             Result = "memory_deferred"
+	ResultRestartRequired            Result = "restart_required"
+	ResultReady                      Result = "ready"
+	ResultBlocked                    Result = "blocked"
 )
 
 type RealizationKind string
@@ -67,16 +72,19 @@ const (
 	MaximumProfileScopes     = 32
 	MaximumScopeIDBytes      = 200
 	MaximumScopeLabelBytes   = 200
+	MaximumEntityRefBytes    = 4096
 	MaximumProfileBasisBytes = 4096
 	MaximumEvidencePaths     = 64
 	MaximumEvidencePathBytes = 4096
 )
 
 type Scope struct {
-	scopeID         string
-	label           string
-	realizationKind RealizationKind
-	evidencePaths   []string
+	scopeID                string
+	label                  string
+	realizationKind        RealizationKind
+	evidencePaths          []string
+	evidencePathCount      int
+	evidencePathsTruncated bool
 }
 
 func NewScope(
@@ -84,6 +92,41 @@ func NewScope(
 	label string,
 	realizationKind RealizationKind,
 	evidencePaths []string,
+) (Scope, error) {
+	return newScopeProjection(
+		scopeID,
+		label,
+		realizationKind,
+		evidencePaths,
+		len(evidencePaths),
+	)
+}
+
+// NewProjectedScope constructs one read-only detector projection. The retained
+// paths stay within the public response bound while evidencePathCount preserves
+// the exact size of the canonical source set.
+func NewProjectedScope(
+	scopeID string,
+	label string,
+	realizationKind RealizationKind,
+	evidencePaths []string,
+	evidencePathCount int,
+) (Scope, error) {
+	return newScopeProjection(
+		scopeID,
+		label,
+		realizationKind,
+		evidencePaths,
+		evidencePathCount,
+	)
+}
+
+func newScopeProjection(
+	scopeID string,
+	label string,
+	realizationKind RealizationKind,
+	evidencePaths []string,
+	evidencePathCount int,
 ) (Scope, error) {
 	if err := requireExactReadableText(
 		"scope_id",
@@ -112,6 +155,20 @@ func NewScope(
 			MaximumEvidencePaths,
 		)
 	}
+	if evidencePathCount < len(evidencePaths) {
+		return Scope{}, fmt.Errorf(
+			"evidence_path_count cannot be smaller than the retained path set",
+		)
+	}
+	if evidencePathCount != len(evidencePaths) &&
+		(len(evidencePaths) != MaximumEvidencePaths ||
+			evidencePathCount <= MaximumEvidencePaths) {
+		return Scope{}, fmt.Errorf(
+			"truncated evidence projection must retain exactly %d of more than %d paths",
+			MaximumEvidencePaths,
+			MaximumEvidencePaths,
+		)
+	}
 	paths := append([]string{}, evidencePaths...)
 	for _, path := range paths {
 		if err := requireExactReadableText(
@@ -127,10 +184,12 @@ func NewScope(
 		return Scope{}, fmt.Errorf("evidence_paths must not repeat")
 	}
 	return Scope{
-		scopeID:         scopeID,
-		label:           label,
-		realizationKind: realizationKind,
-		evidencePaths:   paths,
+		scopeID:                scopeID,
+		label:                  label,
+		realizationKind:        realizationKind,
+		evidencePaths:          paths,
+		evidencePathCount:      evidencePathCount,
+		evidencePathsTruncated: evidencePathCount > len(paths),
 	}, nil
 }
 
@@ -150,27 +209,42 @@ func (scope Scope) EvidencePaths() []string {
 	return append([]string{}, scope.evidencePaths...)
 }
 
+func (scope Scope) EvidencePathCount() int {
+	return scope.evidencePathCount
+}
+
+func (scope Scope) EvidencePathsTruncated() bool {
+	return scope.evidencePathsTruncated
+}
+
 type Request struct {
-	action Action
-	basis  string
-	scopes []Scope
+	action    Action
+	basis     string
+	scopes    []Scope
+	scopeID   string
+	entityRef string
 }
 
 type RequestInput struct {
-	Action        string
-	BasisPresent  bool
-	Basis         string
-	ScopesPresent bool
-	Scopes        []Scope
+	Action           string
+	BasisPresent     bool
+	Basis            string
+	ScopesPresent    bool
+	Scopes           []Scope
+	ScopeIDPresent   bool
+	ScopeID          string
+	EntityRefPresent bool
+	EntityRef        string
 }
 
 func NewRequest(input RequestInput) (Request, error) {
 	action := Action(input.Action)
 	if action != ActionStatus &&
 		action != ActionProfilePrepare &&
+		action != ActionProfileChangePrepare &&
 		action != ActionMemoryPrepare {
 		return Request{}, fmt.Errorf(
-			"action must be status, profile_prepare, or memory_prepare",
+			"action must be status, profile_prepare, profile_change_prepare, or memory_prepare",
 		)
 	}
 	if action != ActionProfilePrepare &&
@@ -179,6 +253,40 @@ func NewRequest(input RequestInput) (Request, error) {
 			"%s accepts only action",
 			action,
 		)
+	}
+	if action != ActionProfileChangePrepare &&
+		(input.ScopeIDPresent || input.EntityRefPresent) {
+		return Request{}, fmt.Errorf(
+			"%s does not accept scope_id or entity_ref",
+			action,
+		)
+	}
+	if action == ActionProfileChangePrepare {
+		if !input.ScopeIDPresent || !input.EntityRefPresent {
+			return Request{}, fmt.Errorf(
+				"profile_change_prepare requires scope_id and entity_ref",
+			)
+		}
+		scopeID, err := projectprofile.NewScopeID(input.ScopeID)
+		if err != nil {
+			return Request{}, err
+		}
+		if exactErr := requireExactReadableText(
+			"entity_ref",
+			input.EntityRef,
+			MaximumEntityRefBytes,
+		); exactErr != nil {
+			return Request{}, exactErr
+		}
+		entityRef, err := projectprofile.NewEntityRef(input.EntityRef)
+		if err != nil {
+			return Request{}, err
+		}
+		return Request{
+			action:    action,
+			scopeID:   scopeID.String(),
+			entityRef: entityRef.String(),
+		}, nil
 	}
 	if action != ActionProfilePrepare {
 		return Request{action: action}, nil
@@ -245,34 +353,44 @@ func (request Request) Scopes() []Scope {
 	return append([]Scope{}, request.scopes...)
 }
 
+func (request Request) ScopeID() string {
+	return request.scopeID
+}
+
+func (request Request) EntityRef() string {
+	return request.entityRef
+}
+
 type Observation struct {
-	initialized             bool
-	profileDeclared         bool
-	profileReviewReady      bool
-	memoryReady             bool
-	memoryReviewReady       bool
-	memoryDeferred          bool
-	detectionNeedsHelp      bool
-	autoBootstrapEligible   bool
-	profileOverrideEligible bool
-	profileOrigin           projectprofile.ProfileAdmissionOrigin
-	scopes                  []Scope
-	detail                  string
+	initialized              bool
+	profileDeclared          bool
+	profileReviewReady       bool
+	profileChangeReviewReady bool
+	memoryReady              bool
+	memoryReviewReady        bool
+	memoryDeferred           bool
+	detectionNeedsHelp       bool
+	autoBootstrapEligible    bool
+	profileOverrideEligible  bool
+	profileOrigin            projectprofile.ProfileAdmissionOrigin
+	scopes                   []Scope
+	detail                   string
 }
 
 type ObservationInput struct {
-	Initialized             bool
-	ProfileDeclared         bool
-	ProfileReviewReady      bool
-	MemoryReady             bool
-	MemoryReviewReady       bool
-	MemoryDeferred          bool
-	DetectionNeedsHelp      bool
-	AutoBootstrapEligible   bool
-	ProfileOverrideEligible bool
-	ProfileOrigin           projectprofile.ProfileAdmissionOrigin
-	Scopes                  []Scope
-	Detail                  string
+	Initialized              bool
+	ProfileDeclared          bool
+	ProfileReviewReady       bool
+	ProfileChangeReviewReady bool
+	MemoryReady              bool
+	MemoryReviewReady        bool
+	MemoryDeferred           bool
+	DetectionNeedsHelp       bool
+	AutoBootstrapEligible    bool
+	ProfileOverrideEligible  bool
+	ProfileOrigin            projectprofile.ProfileAdmissionOrigin
+	Scopes                   []Scope
+	Detail                   string
 }
 
 func NewObservation(input ObservationInput) (Observation, error) {
@@ -310,6 +428,7 @@ func NewObservation(input ObservationInput) (Observation, error) {
 	if !input.Initialized &&
 		(input.ProfileDeclared ||
 			input.ProfileReviewReady ||
+			input.ProfileChangeReviewReady ||
 			input.MemoryReady ||
 			input.MemoryReviewReady ||
 			input.MemoryDeferred) {
@@ -320,6 +439,11 @@ func NewObservation(input ObservationInput) (Observation, error) {
 	if input.ProfileDeclared && input.ProfileReviewReady {
 		return Observation{}, fmt.Errorf(
 			"declared profile cannot remain a pending initial profile review",
+		)
+	}
+	if input.ProfileChangeReviewReady && !input.ProfileDeclared {
+		return Observation{}, fmt.Errorf(
+			"profile change review requires a declared canonical profile",
 		)
 	}
 	if !input.ProfileDeclared &&
@@ -346,18 +470,19 @@ func NewObservation(input ObservationInput) (Observation, error) {
 		)
 	}
 	return Observation{
-		initialized:             input.Initialized,
-		profileDeclared:         input.ProfileDeclared,
-		profileReviewReady:      input.ProfileReviewReady,
-		memoryReady:             input.MemoryReady,
-		memoryReviewReady:       input.MemoryReviewReady,
-		memoryDeferred:          input.MemoryDeferred,
-		detectionNeedsHelp:      input.DetectionNeedsHelp,
-		autoBootstrapEligible:   input.AutoBootstrapEligible,
-		profileOverrideEligible: input.ProfileOverrideEligible,
-		profileOrigin:           profileOrigin,
-		scopes:                  append([]Scope{}, input.Scopes...),
-		detail:                  strings.TrimSpace(input.Detail),
+		initialized:              input.Initialized,
+		profileDeclared:          input.ProfileDeclared,
+		profileReviewReady:       input.ProfileReviewReady,
+		profileChangeReviewReady: input.ProfileChangeReviewReady,
+		memoryReady:              input.MemoryReady,
+		memoryReviewReady:        input.MemoryReviewReady,
+		memoryDeferred:           input.MemoryDeferred,
+		detectionNeedsHelp:       input.DetectionNeedsHelp,
+		autoBootstrapEligible:    input.AutoBootstrapEligible,
+		profileOverrideEligible:  input.ProfileOverrideEligible,
+		profileOrigin:            profileOrigin,
+		scopes:                   append([]Scope{}, input.Scopes...),
+		detail:                   strings.TrimSpace(input.Detail),
 	}, nil
 }
 
@@ -371,6 +496,10 @@ func (observation Observation) ProfileDeclared() bool {
 
 func (observation Observation) ProfileReviewReady() bool {
 	return observation.profileReviewReady
+}
+
+func (observation Observation) ProfileChangeReviewReady() bool {
+	return observation.profileChangeReviewReady
 }
 
 func (observation Observation) MemoryReady() bool {
@@ -494,6 +623,20 @@ type Outcome struct {
 	effects                 Effects
 }
 
+const StateDomainProjectSetupReadiness = "project_setup_readiness"
+
+var projectSetupDoesNotEstablish = []string{
+	"specification_applicability",
+	"specification_health",
+	"specification_lifecycle",
+	"release_readiness",
+}
+
+var projectSetupReadyFor = []string{
+	"canonical_project_profile",
+	"structured_project_memory",
+}
+
 func (outcome Outcome) Action() Action {
 	return outcome.action
 }
@@ -542,9 +685,33 @@ func (outcome Outcome) Effects() Effects {
 	return outcome.effects
 }
 
+func (outcome Outcome) StateDomain() string {
+	return StateDomainProjectSetupReadiness
+}
+
+func (outcome Outcome) ReadyFor() []string {
+	if outcome.Result() != ResultReady {
+		return []string{}
+	}
+	return append([]string{}, projectSetupReadyFor...)
+}
+
+func (outcome Outcome) DoesNotEstablish() []string {
+	return append([]string{}, projectSetupDoesNotEstablish...)
+}
+
+func ProjectSetupReadyFor() []string {
+	return append([]string{}, projectSetupReadyFor...)
+}
+
+func ProjectSetupDoesNotEstablish() []string {
+	return append([]string{}, projectSetupDoesNotEstablish...)
+}
+
 type Runtime interface {
 	Observe(context.Context) (Observation, error)
 	PrepareProfile(context.Context, Request) (Preparation, error)
+	PrepareProfileChange(context.Context, Request) (Preparation, error)
 	PrepareMemory(context.Context) (Preparation, error)
 }
 
@@ -592,12 +759,63 @@ func (service Service) Execute(
 		return statusOutcome(observation), nil
 	case ActionProfilePrepare:
 		return service.prepareProfile(ctx, request, observation)
+	case ActionProfileChangePrepare:
+		return service.prepareProfileChange(ctx, request, observation)
 	case ActionMemoryPrepare:
 		return service.prepareMemory(ctx, observation)
 	default:
 		return Outcome{}, fmt.Errorf(
 			"unsupported onboarding action %q",
 			request.Action(),
+		)
+	}
+}
+
+func (service Service) prepareProfileChange(
+	ctx context.Context,
+	request Request,
+	observation Observation,
+) (Outcome, error) {
+	if !observation.ProfileDeclared() {
+		return blockedOutcome(
+			ActionProfileChangePrepare,
+			StatusNeedsProfile,
+			"A canonical project profile is required before one of its scope relations can change.",
+			"Prepare and explicitly apply the initial project profile first.",
+			observation.Scopes(),
+		), nil
+	}
+	preparation, err := service.runtime.PrepareProfileChange(ctx, request)
+	if err != nil {
+		return Outcome{}, err
+	}
+	switch preparation.Kind() {
+	case PreparationCreated:
+		return preparedOutcome(
+			ActionProfileChangePrepare,
+			ResultProfileChangeReviewCreated,
+			StatusProfileChangeReviewReady,
+			preparation,
+		).withProfileOrigin(observation.ProfileOrigin()), nil
+	case PreparationReused:
+		return preparedOutcome(
+			ActionProfileChangePrepare,
+			ResultProfileChangeReviewReused,
+			StatusProfileChangeReviewReady,
+			preparation,
+		).withProfileOrigin(observation.ProfileOrigin()), nil
+	case PreparationBlocked:
+		return blockedOutcome(
+			ActionProfileChangePrepare,
+			StatusReady,
+			preparation.Detail(),
+			"Inspect the current profile and existing readable change review before retrying.",
+			preparation.Scopes(),
+		).withProfileOrigin(observation.ProfileOrigin()), nil
+	default:
+		return Outcome{}, fmt.Errorf(
+			"unsupported profile change preparation result %q",
+			preparation.Kind(),
 		)
 	}
 }
@@ -797,13 +1015,27 @@ func statusOutcome(observation Observation) Outcome {
 			effects:    effects,
 		}
 	}
+	if observation.ProfileChangeReviewReady() {
+		return Outcome{
+			action:                  ActionStatus,
+			result:                  ResultProfileChangeReviewReady,
+			status:                  StatusProfileChangeReviewReady,
+			detail:                  readableDetail(observation.Detail(), "A predecessor-pinned profile-change review is ready. The canonical profile has not changed."),
+			nextAction:              "Review the exact scope entity_ref delta; application requires one direct, unambiguous operator selection.",
+			reviewRef:               "review:onboard-profile-change",
+			scopes:                  observation.Scopes(),
+			profileOrigin:           observation.ProfileOrigin(),
+			profileOverrideEligible: observation.ProfileOverrideEligible(),
+			effects:                 effects,
+		}
+	}
 	if observation.MemoryReady() {
 		return Outcome{
 			action:                  ActionStatus,
 			result:                  ResultReady,
 			status:                  StatusReady,
-			detail:                  readableDetail(observation.Detail(), "Project profile and structured project memory are ready."),
-			nextAction:              "Continue with the current project question.",
+			detail:                  readableDetailWithBoundary(observation.Detail(), "Project setup is ready: the canonical profile and structured project memory are available. This does not establish specification applicability, health, lifecycle state, or release readiness."),
+			nextAction:              "For specification work, inspect h-spec or haft spec status separately; otherwise continue with the current project question.",
 			scopes:                  observation.Scopes(),
 			profileOrigin:           observation.ProfileOrigin(),
 			profileOverrideEligible: observation.ProfileOverrideEligible(),
@@ -918,6 +1150,10 @@ func preparedOutcome(
 		outcome.nextAction = "Review the readable scopes; profile application requires one direct, unambiguous operator selection."
 		return outcome
 	}
+	if action == ActionProfileChangePrepare {
+		outcome.nextAction = "Review the exact predecessor and scope entity_ref delta; application requires one direct, unambiguous operator selection."
+		return outcome
+	}
 	outcome.nextAction = "Present the enable/defer choice; enabling remains an explicit h-decide act."
 	outcome.choices = memoryChoices()
 	return outcome
@@ -970,6 +1206,17 @@ func readableDetail(observed string, fallback string) string {
 		return fallback
 	}
 	return strings.TrimSpace(observed)
+}
+
+func readableDetailWithBoundary(
+	observed string,
+	boundary string,
+) string {
+	detail := strings.TrimSpace(observed)
+	if detail == "" {
+		return boundary
+	}
+	return detail + " " + boundary
 }
 
 func requireExactReadableText(

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/authority"
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/profileauthority"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 	projectprofilesqlite "github.com/m0n0x41d/haft/internal/projectprofile/sqlite"
@@ -228,6 +229,7 @@ type v4AuthorityBasisJSON struct {
 	AuthorityMode                     string `json:"authority_mode"`
 	ProfileOrigin                     string `json:"profile_origin"`
 	OperatorRequestRef                string `json:"operator_request_ref,omitempty"`
+	OperatorRequestEffect             string `json:"operator_request_effect,omitempty"`
 	OperatorRequestDigest             string `json:"operator_request_digest,omitempty"`
 	OperatorRequestSubjectRef         string `json:"operator_request_subject_ref,omitempty"`
 	OperatorRequestPayloadDigest      string `json:"operator_request_payload_digest,omitempty"`
@@ -262,6 +264,7 @@ type v4AuthorityResolutionJSON struct {
 	ResolutionKind               string `json:"resolution_kind"`
 	ProfileOrigin                string `json:"profile_origin"`
 	OperatorRequestRef           string `json:"operator_request_ref,omitempty"`
+	OperatorRequestEffect        string `json:"operator_request_effect,omitempty"`
 	OperatorRequestDigest        string `json:"operator_request_digest,omitempty"`
 	OperatorRequestSubjectRef    string `json:"operator_request_subject_ref,omitempty"`
 	OperatorRequestPayloadDigest string `json:"operator_request_payload_digest,omitempty"`
@@ -426,6 +429,20 @@ func validateDirectProfileAuthorityClosure(
 	basis := closure.basis
 	resolution := closure.resolution
 	workInput := closure.workInput
+	basisEffect, err := operatorRequestEffectFromCanonical(basis.canonicalJSON)
+	if err != nil {
+		return err
+	}
+	resolutionEffect, err := operatorRequestEffectFromCanonical(
+		resolution.canonicalJSON,
+	)
+	if err != nil {
+		return err
+	}
+	changeInput, err := workInputCarriesProfileChange(workInput.canonicalJSON)
+	if err != nil {
+		return err
+	}
 	basisRecordedAt, err := parseV3Time(basis.recordedAt)
 	if err != nil {
 		return err
@@ -456,6 +473,7 @@ func validateDirectProfileAuthorityClosure(
 		{matches: resolution.operatorRequestDigest == basis.operatorRequestDigest, name: "resolution operator request digest"},
 		{matches: resolution.operatorSubjectRef == basis.operatorSubjectRef, name: "resolution operator subject"},
 		{matches: resolution.operatorPayloadDigest == basis.operatorPayloadDigest, name: "resolution operator payload"},
+		{matches: resolutionEffect == basisEffect, name: "resolution operator effect"},
 		{matches: resolution.workInputRef == basis.workInputRef, name: "resolution WorkInput ref"},
 		{matches: resolution.workInputDigest == basis.workInputDigest, name: "resolution WorkInput digest"},
 		{matches: resolution.detectorVersion == basis.classifierVersion, name: "resolution detector version"},
@@ -472,21 +490,36 @@ func validateDirectProfileAuthorityClosure(
 		{matches: !basisRecordedAt.Before(workInputRecordedAt), name: "WorkInput recorded before basis"},
 		{matches: allowedWork.Contains(checkedAt), name: "resolution inside allowed Work window"},
 	}
+	if contract.hostRouted && changeInput {
+		checks = append(checks, struct {
+			matches bool
+			name    string
+		}{matches: basisEffect == operatorrequest.ProfileChange, name: "profile-change operator effect"})
+	}
+	if contract.hostRouted && !changeInput {
+		legacyOrDeclaration := basisEffect == "" ||
+			basisEffect == operatorrequest.ProfileDeclaration
+		checks = append(checks, struct {
+			matches bool
+			name    string
+		}{matches: legacyOrDeclaration, name: "profile-declaration operator effect"})
+	}
 	return firstMismatch(checks, contract.generation+" profile authority closure")
-}
-
-func validateV4AuthorityBasis(row v4AuthorityBasisRow) error {
-	return validateDirectProfileAuthorityBasis(row, v4DirectProfileAuthorityContract)
 }
 
 func validateDirectProfileAuthorityBasis(
 	row v4AuthorityBasisRow,
 	contract directProfileAuthorityContract,
 ) error {
+	operatorEffect, err := operatorRequestEffectFromCanonical(row.canonicalJSON)
+	if err != nil {
+		return err
+	}
 	value := v4AuthorityBasisJSON{
 		Schema: contract.basisSchema, BasisRef: row.ref, ProjectRoot: row.projectRoot,
 		ActionKind: row.actionKind, AuthorityMode: row.mode, ProfileOrigin: row.origin,
 		OperatorRequestRef:           row.operatorRequestRef,
+		OperatorRequestEffect:        string(operatorEffect),
 		OperatorRequestDigest:        row.operatorRequestDigest,
 		OperatorRequestSubjectRef:    row.operatorSubjectRef,
 		OperatorRequestPayloadDigest: row.operatorPayloadDigest,
@@ -520,7 +553,7 @@ func validateDirectProfileAuthorityBasis(
 		return err
 	}
 	validators := []error{}
-	_, err := profileauthority.NewBasisRef(row.ref)
+	_, err = profileauthority.NewBasisRef(row.ref)
 	validators = append(validators, err)
 	_, err = authority.NewDigest(row.digest)
 	validators = append(validators, err)
@@ -566,18 +599,27 @@ func validateDirectProfileAuthorityBasis(
 		validators = append(validators, err)
 		_, err = authority.NewDigest(row.operatorPayloadDigest)
 		validators = append(validators, err)
+		if operatorEffect != "" {
+			_, err = operatorrequest.FromCoordinates(
+				operatorEffect,
+				row.operatorSubjectRef,
+				row.operatorPayloadDigest,
+				row.operatorRequestDigest,
+			)
+			validators = append(validators, err)
+		}
 	}
 	return errors.Join(validators...)
-}
-
-func validateV4AuthorityResolution(row v4AuthorityResolutionRow) error {
-	return validateDirectProfileAuthorityResolution(row, v4DirectProfileAuthorityContract)
 }
 
 func validateDirectProfileAuthorityResolution(
 	row v4AuthorityResolutionRow,
 	contract directProfileAuthorityContract,
 ) error {
+	operatorEffect, err := operatorRequestEffectFromCanonical(row.canonicalJSON)
+	if err != nil {
+		return err
+	}
 	value := v4AuthorityResolutionJSON{
 		Schema: contract.resolutionSchema, AuthorityResolutionRef: row.ref,
 		AuthorityBasisRef: row.basisRef, AuthorityBasisDigest: row.basisDigest,
@@ -585,6 +627,7 @@ func validateDirectProfileAuthorityResolution(
 		AuthorityMode: row.mode, ResolutionKind: row.resolutionKind,
 		ProfileOrigin: row.origin, WorkInputRef: row.workInputRef,
 		OperatorRequestRef:           row.operatorRequestRef,
+		OperatorRequestEffect:        string(operatorEffect),
 		OperatorRequestDigest:        row.operatorRequestDigest,
 		OperatorRequestSubjectRef:    row.operatorSubjectRef,
 		OperatorRequestPayloadDigest: row.operatorPayloadDigest,
@@ -620,7 +663,7 @@ func validateDirectProfileAuthorityResolution(
 		return err
 	}
 	validators := []error{}
-	_, err := profileauthority.NewProfileDeclarationAuthorityResolutionRef(row.ref)
+	_, err = profileauthority.NewProfileDeclarationAuthorityResolutionRef(row.ref)
 	validators = append(validators, err)
 	_, err = authority.NewDigest(row.digest)
 	validators = append(validators, err)
@@ -648,8 +691,37 @@ func validateDirectProfileAuthorityResolution(
 		validators = append(validators, err)
 		_, err = authority.NewDigest(row.operatorPayloadDigest)
 		validators = append(validators, err)
+		if operatorEffect != "" {
+			_, err = operatorrequest.FromCoordinates(
+				operatorEffect,
+				row.operatorSubjectRef,
+				row.operatorPayloadDigest,
+				row.operatorRequestDigest,
+			)
+			validators = append(validators, err)
+		}
 	}
 	return errors.Join(validators...)
+}
+
+func operatorRequestEffectFromCanonical(
+	raw string,
+) (operatorrequest.Effect, error) {
+	coordinates := struct {
+		Effect string `json:"operator_request_effect"`
+	}{}
+	if err := json.Unmarshal([]byte(raw), &coordinates); err != nil {
+		return "", fmt.Errorf("decode operator-request effect: %w", err)
+	}
+	return operatorrequest.Effect(coordinates.Effect), nil
+}
+
+func workInputCarriesProfileChange(raw string) (bool, error) {
+	value := v3WorkInputJSON{}
+	if err := json.Unmarshal([]byte(raw), &value); err != nil {
+		return false, fmt.Errorf("decode profile WorkInput effect: %w", err)
+	}
+	return value.ChangeBasis != nil, nil
 }
 
 func newV4AuthorityUseRecord(
@@ -986,19 +1058,6 @@ func materializeDirectProfileAuthority(
 		workInputRef:   basis.workInputRef, workInputDigest: basis.workInputDigest,
 		permissionRequired: false,
 	}, nil
-}
-
-func validateV4ClosureAgainstCandidateSupport(
-	closure v4AuthorityClosure,
-	values projectprofilesqlite.ProfileOnboardingValueSetV1,
-	admissionTime time.Time,
-) error {
-	return validateDirectProfileClosureAgainstCandidateSupport(
-		closure,
-		values,
-		admissionTime,
-		v4DirectProfileAuthorityContract,
-	)
 }
 
 func validateDirectProfileClosureAgainstCandidateSupport(

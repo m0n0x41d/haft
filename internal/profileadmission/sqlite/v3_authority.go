@@ -273,17 +273,28 @@ type v3AuthorityResolutionJSON struct {
 }
 
 type v3WorkInputJSON struct {
-	Schema                     string                 `json:"schema"`
-	ProjectRoot                string                 `json:"project_root"`
-	SuggestionRef              string                 `json:"suggestion_ref"`
-	DetectorVersion            string                 `json:"detector_version"`
-	PolicyVersion              string                 `json:"policy_version"`
-	ObservationDetectorVersion string                 `json:"observation_detector_version,omitempty"`
-	ObservationPolicyVersion   string                 `json:"observation_policy_version,omitempty"`
-	ObservationDigest          string                 `json:"observation_digest"`
-	ProposalSource             string                 `json:"proposal_source,omitempty"`
-	ManualBasis                string                 `json:"manual_basis,omitempty"`
-	Scopes                     []v3WorkInputScopeJSON `json:"scopes"`
+	Schema                     string                    `json:"schema"`
+	ProjectRoot                string                    `json:"project_root"`
+	SuggestionRef              string                    `json:"suggestion_ref"`
+	DetectorVersion            string                    `json:"detector_version"`
+	PolicyVersion              string                    `json:"policy_version"`
+	ObservationDetectorVersion string                    `json:"observation_detector_version,omitempty"`
+	ObservationPolicyVersion   string                    `json:"observation_policy_version,omitempty"`
+	ObservationDigest          string                    `json:"observation_digest"`
+	ProposalSource             string                    `json:"proposal_source,omitempty"`
+	ManualBasis                string                    `json:"manual_basis,omitempty"`
+	ChangeBasis                *v3ProfileChangeBasisJSON `json:"change_basis,omitempty"`
+	Scopes                     []v3WorkInputScopeJSON    `json:"scopes"`
+}
+
+type v3ProfileChangeBasisJSON struct {
+	AdmissionRecordRef    string `json:"admission_record_ref"`
+	AdmissionRecordDigest string `json:"admission_record_digest"`
+	PayloadDigest         string `json:"payload_digest"`
+	LedgerRevision        uint64 `json:"ledger_revision"`
+	ScopeID               string `json:"scope_id"`
+	PreviousEntityRef     string `json:"previous_entity_ref,omitempty"`
+	NextEntityRef         string `json:"next_entity_ref"`
 }
 
 type v3WorkInputScopeJSON struct {

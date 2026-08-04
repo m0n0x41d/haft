@@ -71,6 +71,30 @@ linters:
         linters:
           - gosec
         text: "G702:"
+      # The preceding carrier-length check proves this uint64 is a valid slice
+      # index; keep the generator source bytes stable because they are pinned.
+      - path: internal/fpfrefresh/local_practice_rebase.go
+        linters:
+          - gosec
+        text: "G115:"
+      # These compatibility adapters are part of the pinned refresh-generator
+      # input closure; current production paths use their context-aware forms.
+      - path: internal/codebase/symhash.go
+        linters:
+          - unused
+        text: "extractLegacySymbolSnapshots"
+      - path: internal/codebase/ts_symbols.go
+        linters:
+          - unused
+        text: "extractTSSymbolSnapshotsFromContent"
+      - path: internal/fpf/source_adapter.go
+        linters:
+          - unused
+        text: "removeString"
+      - path: internal/artifact/drift_symbol_corpus.go
+        linters:
+          - unused
+        text: "complete"
 
 formatters:
   enable:

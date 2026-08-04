@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"unicode/utf8"
+
+	"github.com/m0n0x41d/haft/internal/fpf"
 )
 
 func TestSanitizeCandidateDiagnosticBoundsCanonicalMessage(t *testing.T) {
@@ -122,15 +124,104 @@ func TestCleanupCandidateArtifactPropagatesFailure(t *testing.T) {
 	}
 }
 
-func TestClassifyCandidateBuildDiagnosticRecognizesCompilerLineageGap(t *testing.T) {
+func TestClassifyCandidateBuildDiagnosticRejectsUnbuildableCompilerLineageGap(t *testing.T) {
 	err := errors.New(
 		`candidate compiler version "fpf-base-typeenv.cov2.v99" is neither current "fpf-base-typeenv.cov2.v5" nor a known predecessor`,
 	)
-	if got := classifyCandidateBuildDiagnostic(err); got != DiagnosticTypeEnvCompilerGap {
+	if got := classifyCandidateBuildDiagnostic(err); got != DiagnosticCandidateVerificationFailed {
 		t.Fatalf(
 			"classifyCandidateBuildDiagnostic() = %s, want %s",
 			got.String(),
-			DiagnosticTypeEnvCompilerGap.String(),
+			DiagnosticCandidateVerificationFailed.String(),
 		)
+	}
+}
+
+func TestCandidateSourceGrammarDriftBecomesReviewDiagnostic(t *testing.T) {
+	revision := strings.Repeat("a", 40)
+	observed := []fpf.SourceGrammarDiagnostic{{
+		Class:                   fpf.SourceGrammarUnsupported,
+		SourceID:                "SYSTEM-RECOGNITION",
+		Title:                   "Recognize a system",
+		SourcePath:              "data/FPF/FPF-Spec.md",
+		SourceRevision:          revision,
+		StartLine:               10,
+		EndLine:                 20,
+		LabelsDiscovered:        []string{"Fresh outcome route"},
+		LabelsRecognized:        []string{"Situation and question", "Boundaries"},
+		MissingSemanticCategory: "admitted_result_block",
+		Detail:                  "new recognizable result label",
+	}}
+
+	diagnostics, err := candidateSourceGrammarReviewDiagnostics(
+		revision,
+		observed,
+	)
+	if err != nil {
+		t.Fatalf("candidateSourceGrammarReviewDiagnostics() error = %v", err)
+	}
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Code() != DiagnosticAdapterGrammarUnsupported {
+		t.Fatalf("review diagnostics = %#v", diagnostics)
+	}
+	if diagnostics[0].SourceRef() != "data/FPF/FPF-Spec.md:10-20" {
+		t.Fatalf("source reference = %q", diagnostics[0].SourceRef())
+	}
+}
+
+func TestCandidateIncompleteCardBecomesDegradedProjectionDiagnostic(t *testing.T) {
+	revision := strings.Repeat("b", 40)
+	observed := []fpf.SourceGrammarDiagnostic{{
+		Class:                   fpf.SourceGrammarMalformed,
+		SourceID:                "NEW-CARD",
+		SourcePath:              "data/FPF/FPF-Spec.md",
+		SourceRevision:          revision,
+		StartLine:               30,
+		EndLine:                 40,
+		MissingSemanticCategory: "first_result",
+		Detail:                  "card lacks one projected cue category",
+	}}
+
+	diagnostics, err := candidateSourceGrammarReviewDiagnostics(
+		revision,
+		observed,
+	)
+	if err != nil {
+		t.Fatalf("candidateSourceGrammarReviewDiagnostics() error = %v", err)
+	}
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Code() != DiagnosticSourceProjectionDegraded {
+		t.Fatalf("degraded projection diagnostics = %#v", diagnostics)
+	}
+}
+
+func TestCandidateSourceStructureCollapseHasExplicitHardBoundary(t *testing.T) {
+	revision := strings.Repeat("c", 40)
+	withinBoundary, collapsed, err := candidateSourceStructureDiagnostic(
+		100,
+		50,
+		revision,
+	)
+	if err != nil || collapsed || withinBoundary.Code() != 0 {
+		t.Fatalf(
+			"50%% retention = %#v, %v, %v; want no collapse",
+			withinBoundary,
+			collapsed,
+			err,
+		)
+	}
+	diagnostic, collapsed, err := candidateSourceStructureDiagnostic(
+		100,
+		49,
+		revision,
+	)
+	if err != nil {
+		t.Fatalf("candidateSourceStructureDiagnostic() error = %v", err)
+	}
+	if !collapsed || diagnostic.Code() != DiagnosticSourceStructureCollapse {
+		t.Fatalf("49%% retention = %#v, collapsed=%v", diagnostic, collapsed)
+	}
+	if !strings.Contains(diagnostic.Message(), "less than 50%") {
+		t.Fatalf("collapse diagnostic message = %q", diagnostic.Message())
 	}
 }

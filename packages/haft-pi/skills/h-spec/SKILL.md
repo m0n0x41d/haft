@@ -34,6 +34,26 @@ work may continue only when it does not rely on profile applicability. Never
 infer or auto-admit a profile, select `software` for convenience, or invent
 lifecycle state.
 
+`TargetSystemSpec` is `Required` for every declared realization scope even
+when its profile has `entity_reference: none`. The optional entity relation is
+for exact EntityOfConcern memory, traceability, and stronger identity-bearing
+use; never prepare a profile change merely to continue TargetSystemSpec
+lifecycle. A response that still reports
+`missing_basis=admitted_target_system_relation` comes from a stale runtime or
+skill projection: rebuild or reconnect the exact candidate and retry the same
+read-only request without asking the operator for a relation choice. Changing
+an existing relation remains a separate profile effect when that relation is
+itself current.
+
+Retrieve the profile-independent draft grammar with
+`haft_spec_section(action="draft_contract")`, then validate every authored
+draft and active carrier with `haft_query(action="spec_validate")`. If MCP is
+unavailable, use `haft spec draft-contract --json` and
+`haft spec validate --json`. This validation does not determine applicability,
+activate or approve sections, create evidence, admit stronger use, mutate a
+carrier, or establish FPF source currentness. Keep `haft spec check` for the
+separate profile-applicable health question.
+
 Keep team, agent, delivery, release, MethodPack, and evidence-production policy
 outside SoftwareSystemSpec. Do not silently reclassify enabling-system policy
 during migration. Run semantic fanout and L/A/D/E repair internally. Approve,

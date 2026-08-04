@@ -914,6 +914,7 @@ func SearchResponse(results []*artifact.Artifact, query string) string {
 func StatusResponse(data artifact.StatusData) string {
 	var sb strings.Builder
 	sb.WriteString("## Haft Status\n\n")
+	appendStatusDriftProjection(&sb, data.DriftProjection)
 
 	formatDecisionList := func(items []*artifact.Artifact, cap int) {
 		for i, d := range items {
@@ -1149,6 +1150,7 @@ func CockpitStatusResponse(data artifact.StatusData) string {
 	var sb strings.Builder
 	sb.WriteString("## Haft Status\n\n")
 	sb.WriteString("### Operator Cockpit\n\n")
+	appendStatusDriftProjection(&sb, data.DriftProjection)
 
 	appendCockpitAttention(&sb, data)
 	appendCockpitActiveWork(&sb, data)
@@ -1164,6 +1166,9 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	driftPartitions := artifact.PartitionDriftEvents(openDriftEvents)
 	reconciliationNeedsAttention := cockpitReconciliationNeedsOperator(data.ReconciliationCues)
 	hasAttention := len(data.StaleItems) > 0 ||
+		(data.DriftProjection.State != "" &&
+			data.DriftProjection.State != artifact.DriftProjectionSkipped &&
+			data.DriftProjection.State != artifact.DriftProjectionComplete) ||
 		len(data.ProblemHygiene) > 0 ||
 		data.SpecBindingDebt.Summary.Total() > 0 ||
 		len(driftPartitions.Material) > 0 ||
@@ -1182,6 +1187,14 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 			"binding or authority mutation, an explicit human lifecycle gate, or a " +
 			"current use that relies on unresolved contradictory binding content.\n",
 	)
+	if data.DriftProjection.State == artifact.DriftProjectionPartial ||
+		data.DriftProjection.State == artifact.DriftProjectionUnavailable {
+		sb.WriteString(fmt.Sprintf(
+			"- **Drift projection %s**: %s. This does not support a known-absence or release-readiness claim.\n",
+			data.DriftProjection.State,
+			firstNonEmptyStatusText(data.DriftProjection.Reason, "complete current symbol basis was not established"),
+		))
+	}
 
 	const staleCap = 2
 	if len(data.StaleItems) > 0 {
@@ -1285,6 +1298,35 @@ func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
 	}
 
 	sb.WriteString("\n")
+}
+
+func appendStatusDriftProjection(
+	sb *strings.Builder,
+	projection artifact.DriftProjection,
+) {
+	if projection.State == "" || projection.State == artifact.DriftProjectionSkipped {
+		return
+	}
+	line := fmt.Sprintf("- Drift projection: `%s`", projection.State)
+	if projection.SourceIndexEpoch > 0 {
+		line += fmt.Sprintf("; code-index epoch=%d", projection.SourceIndexEpoch)
+	}
+	if projection.Reason != "" {
+		line += "; " + projection.Reason
+	}
+	if projection.OmittedDecisions > 0 {
+		line += fmt.Sprintf("; omitted_decisions=%d", projection.OmittedDecisions)
+	}
+	sb.WriteString(line + ".\n\n")
+}
+
+func firstNonEmptyStatusText(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {

@@ -40,12 +40,12 @@ description: Old Haft commission skill.
 `)
 	signatureLegacy := []byte(`---
 name: h-commission
-description: Old Haft commission skill.
+description: Old commission skill.
 ---
 
-# h-commission — Old Haft commission
+# h-commission — Old commission
 
-Use mcp__haft__haft_query for Haft project state.
+Use mcp__haft__haft_query for project state.
 `)
 	foreign := []byte(`---
 name: h-commission
@@ -375,6 +375,28 @@ func TestPublicInitReplacesEveryRecognizedCodexSkillFromExactCurrentBundle(
 		stale = append(stale, []byte("\nLegacy-only Haft instruction.\n")...)
 		if writeErr := os.WriteFile(skillPath, stale, 0o644); writeErr != nil {
 			t.Fatalf("write stale Codex skill %s: %v", skill.Name, writeErr)
+		}
+		legacyAllowImplicit := skill.AllowImplicit
+		if skill.Name == "h-decide" {
+			// Published v8.1 kept h-decide manual-only; v9 routes one direct,
+			// unambiguous operator request automatically.
+			legacyAllowImplicit = false
+		}
+		legacyPolicy := []byte(
+			"policy:\n  allow_implicit_invocation: " +
+				strconv.FormatBool(legacyAllowImplicit) +
+				"\n",
+		)
+		policyPath := filepath.Join(
+			filepath.Dir(skillPath),
+			"agents",
+			"openai.yaml",
+		)
+		if mkdirErr := os.MkdirAll(filepath.Dir(policyPath), 0o755); mkdirErr != nil {
+			t.Fatalf("create stale Codex policy root %s: %v", skill.Name, mkdirErr)
+		}
+		if writeErr := os.WriteFile(policyPath, legacyPolicy, 0o644); writeErr != nil {
+			t.Fatalf("write stale Codex policy %s: %v", skill.Name, writeErr)
 		}
 	}
 

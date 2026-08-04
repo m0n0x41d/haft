@@ -13,6 +13,9 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
+
+	"github.com/m0n0x41d/haft/logger"
 )
 
 const (
@@ -53,6 +56,28 @@ type IndexRefreshResult struct {
 	Epoch        int64
 	ChangedFiles int
 	Reason       string
+	Metrics      IndexRefreshMetrics
+}
+
+// IndexRefreshMetrics makes the expensive incremental stages observable
+// without turning runtime concurrency into persisted index identity.
+type IndexRefreshMetrics struct {
+	DiscoveredFiles     int
+	AdmittedFiles       int
+	ObservedBytes       int64
+	SeedFiles           int
+	ReindexFiles        int
+	ResolveFiles        int
+	ResolveWorkers      int
+	SetupDuration       time.Duration
+	CorpusScanDuration  time.Duration
+	DeltaDuration       time.Duration
+	ParseDuration       time.Duration
+	SymbolViewDuration  time.Duration
+	ResolveDuration     time.Duration
+	CandidateDuration   time.Duration
+	PublicationDuration time.Duration
+	TotalDuration       time.Duration
 }
 
 type IndexState struct {
@@ -179,7 +204,19 @@ func (s *Scanner) EnsureIncrementalSchema(ctx context.Context) error {
 	return nil
 }
 
-func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (IndexRefreshResult, error) {
+func (s *Scanner) RefreshIncremental(
+	ctx context.Context,
+	projectRoot string,
+) (result IndexRefreshResult, resultErr error) {
+	started := time.Now()
+	metrics := IndexRefreshMetrics{}
+	defer func() {
+		metrics.TotalDuration = time.Since(started)
+		result.Metrics = metrics
+		logIndexRefreshMetrics(result, resultErr)
+	}()
+
+	setupStarted := time.Now()
 	if err := s.EnsureIncrementalSchema(ctx); err != nil {
 		return IndexRefreshResult{}, err
 	}
@@ -193,7 +230,14 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 	if err != nil {
 		return IndexRefreshResult{}, err
 	}
+	metrics.SetupDuration = time.Since(setupStarted)
+
+	corpusScanStarted := time.Now()
 	corpus, err := s.scanCurrentCodeCorpus(projectRoot)
+	metrics.CorpusScanDuration = time.Since(corpusScanStarted)
+	metrics.DiscoveredFiles = len(corpus.states)
+	metrics.AdmittedFiles = len(corpus.admissions)
+	metrics.ObservedBytes = corpus.usage.Bytes().Value()
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return IndexRefreshResult{}, err
@@ -209,6 +253,7 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		}, nil
 	}
 	current := corpus.states
+	deltaStarted := time.Now()
 	stored, err := s.storedCodeFiles(ctx)
 	if err != nil {
 		return IndexRefreshResult{}, err
@@ -227,7 +272,9 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 	schemaChanged := meta.schemaVersion != CodeIndexSchemaVersion ||
 		basisUnavailable
 	preliminary := computeIndexDelta(stored, current, nil, configChanged, schemaChanged)
+	metrics.SeedFiles = indexDeltaSeedCount(preliminary)
 	if len(preliminary.Added) == 0 && len(preliminary.Modified) == 0 && len(preliminary.Deleted) == 0 && !preliminary.FullRebuild {
+		metrics.DeltaDuration = time.Since(deltaStarted)
 		if err := s.clearIndexDegraded(ctx); err != nil {
 			return IndexRefreshResult{}, err
 		}
@@ -245,6 +292,9 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		return IndexRefreshResult{}, err
 	}
 	delta := computeIndexDelta(stored, current, imports, configChanged, schemaChanged)
+	metrics.SeedFiles = indexDeltaSeedCount(delta)
+	metrics.ReindexFiles = len(delta.Reindex)
+	metrics.DeltaDuration = time.Since(deltaStarted)
 	if len(delta.Reindex) == 0 &&
 		len(delta.Deleted) == 0 &&
 		!delta.FullRebuild {
@@ -254,18 +304,22 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		return IndexRefreshResult{Epoch: meta.epoch}, nil
 	}
 	epoch := meta.epoch + 1
+	parseStarted := time.Now()
 	parsed, parseErr := s.parseIndexFiles(
+		ctx,
 		delta.Reindex,
 		current,
 		corpus.admissions,
 		corpus.dispositions,
 		epoch,
 	)
+	metrics.ParseDuration = time.Since(parseStarted)
 	if parseErr != nil {
 		reason := parseErr.Error()
 		_ = s.markIndexDegraded(ctx, reason)
 		return IndexRefreshResult{Degraded: true, Epoch: meta.epoch, Reason: reason}, nil
 	}
+	symbolViewStarted := time.Now()
 	baseSymbols := []CodeSymbol{}
 	if !delta.FullRebuild {
 		baseSymbols, err = NewSymbolStore(s.db).AllSymbols(ctx)
@@ -285,10 +339,19 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		projectResolution,
 		projectSnapshotFactory,
 	)
+	metrics.SymbolViewDuration = time.Since(symbolViewStarted)
 	resolutionFiles := admittedIndexPaths(
 		delta.Reindex,
 		corpus.admissions,
 	)
+	metrics.ResolveFiles = len(resolutionFiles)
+	if len(resolutionFiles) > 0 {
+		metrics.ResolveWorkers = indexResolveWorkerCount(
+			len(resolutionFiles),
+			s.resolveWorkerLimit(),
+		)
+	}
+	resolveStarted := time.Now()
 	resolved, resolveErr := s.resolveIndexFiles(
 		ctx,
 		projectRoot,
@@ -298,11 +361,13 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		projectSnapshot,
 		epoch,
 	)
+	metrics.ResolveDuration = time.Since(resolveStarted)
 	if resolveErr != nil {
 		reason := resolveErr.Error()
 		_ = s.markIndexDegraded(ctx, reason)
 		return IndexRefreshResult{Degraded: true, Epoch: meta.epoch, Reason: reason}, nil
 	}
+	candidateStarted := time.Now()
 	fingerprint, err := s.SourceFingerprint(projectRoot)
 	if err != nil {
 		return IndexRefreshResult{}, err
@@ -327,6 +392,8 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 	if err != nil {
 		return IndexRefreshResult{}, err
 	}
+	metrics.CandidateDuration = time.Since(candidateStarted)
+	publicationStarted := time.Now()
 	if err := s.publishIndexEpoch(
 		ctx,
 		candidate,
@@ -338,9 +405,11 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		fingerprint,
 		configHash,
 	); err != nil {
+		metrics.PublicationDuration = time.Since(publicationStarted)
 		_ = s.markIndexDegraded(ctx, err.Error())
 		return IndexRefreshResult{}, err
 	}
+	metrics.PublicationDuration = time.Since(publicationStarted)
 	s.projectSnapshot = projectSnapshot
 	s.projectSnapshotRoot = projectRoot
 	return IndexRefreshResult{
@@ -349,6 +418,41 @@ func (s *Scanner) RefreshIncremental(ctx context.Context, projectRoot string) (I
 		Epoch:        epoch,
 		ChangedFiles: len(delta.Reindex) + len(delta.Deleted),
 	}, nil
+}
+
+func indexDeltaSeedCount(delta IndexDelta) int {
+	return len(delta.Added) + len(delta.Modified) + len(delta.Deleted)
+}
+
+func logIndexRefreshMetrics(result IndexRefreshResult, err error) {
+	metrics := result.Metrics
+	event := logger.Info().
+		Str("component", "code_index").
+		Str("op", "refresh_profile").
+		Bool("published", result.Published).
+		Bool("degraded", result.Degraded).
+		Bool("full_rebuild", result.FullRebuild).
+		Int64("epoch", result.Epoch).
+		Int("discovered_files", metrics.DiscoveredFiles).
+		Int("admitted_files", metrics.AdmittedFiles).
+		Int64("observed_bytes", metrics.ObservedBytes).
+		Int("seed_files", metrics.SeedFiles).
+		Int("reindex_files", metrics.ReindexFiles).
+		Int("resolve_files", metrics.ResolveFiles).
+		Int("resolve_workers", metrics.ResolveWorkers).
+		Dur("setup", metrics.SetupDuration).
+		Dur("corpus_scan", metrics.CorpusScanDuration).
+		Dur("delta", metrics.DeltaDuration).
+		Dur("parse", metrics.ParseDuration).
+		Dur("symbol_view", metrics.SymbolViewDuration).
+		Dur("resolve", metrics.ResolveDuration).
+		Dur("candidate", metrics.CandidateDuration).
+		Dur("publication", metrics.PublicationDuration).
+		Dur("total", metrics.TotalDuration)
+	if err != nil {
+		event = event.Err(err)
+	}
+	event.Msg("code-index refresh profile")
 }
 
 type incrementalMetaState struct {
@@ -493,6 +597,7 @@ type scannedCodeCorpus struct {
 	admissions   map[string]AdmittedSource
 	dispositions map[string]FileIndexDisposition
 	exclusions   map[string]SourceSkipInfo
+	usage        AdmissionUsage
 }
 
 func (s *Scanner) scanCurrentCodeCorpus(
@@ -567,6 +672,7 @@ func (s *Scanner) scanCurrentCodeCorpus(
 		}
 		return nil
 	})
+	corpus.usage = usage
 	return corpus, err
 }
 
@@ -761,30 +867,46 @@ func (s *Scanner) prepareProjectIndexSnapshot(
 
 func incrementalReindexClosure(current map[string]CodeFileState, imports []CodeImport, changed, deleted []string) []string {
 	selected := map[string]bool{}
-	queue := append(append([]string{}, changed...), deleted...)
+	queued := map[string]bool{}
+	queue := make([]string, 0, len(changed)+len(deleted))
+	enqueue := func(path string) {
+		if queued[path] {
+			return
+		}
+		queued[path] = true
+		queue = append(queue, path)
+	}
+	for _, path := range changed {
+		enqueue(path)
+	}
+	for _, path := range deleted {
+		enqueue(path)
+	}
 	reverse := map[string][]string{}
 	for _, item := range imports {
 		reverse[moduleBase(item.TargetBase)] = append(reverse[moduleBase(item.TargetBase)], item.SourceFile)
 	}
+	directoryMembers := directoryInvalidationMembers(current)
 	for len(queue) > 0 {
 		path := queue[0]
 		queue = queue[1:]
+		if _, exists := current[path]; exists {
+			selected[path] = true
+		}
 		base := moduleBase(path)
-		for _, importer := range append(reverse[base], reverse[strings.TrimSuffix(base, "/index")]...) {
-			if !selected[importer] {
-				selected[importer] = true
-				queue = append(queue, importer)
+		bases := []string{base}
+		if directoryBase := strings.TrimSuffix(base, "/index"); directoryBase != base {
+			bases = append(bases, directoryBase)
+		}
+		for _, target := range bases {
+			for _, importer := range reverse[target] {
+				enqueue(importer)
 			}
 		}
-		dir := filepath.Dir(path)
-		for candidate := range current {
-			if filepath.Dir(candidate) == dir && !selected[candidate] {
-				selected[candidate] = true
-			}
+		key := directoryInvalidationKey(path, current[path].Language)
+		for _, candidate := range directoryMembers[key] {
+			selected[candidate] = true
 		}
-	}
-	for _, path := range changed {
-		selected[path] = true
 	}
 	out := make([]string, 0, len(selected))
 	for path := range selected {
@@ -792,7 +914,51 @@ func incrementalReindexClosure(current map[string]CodeFileState, imports []CodeI
 			out = append(out, path)
 		}
 	}
+	sort.Strings(out)
 	return out
+}
+
+// Go and Python edge resolvers intentionally consume directory/package symbol
+// scope. JS/TS/Vue resolution is file-local plus explicit imports, so pulling
+// every sibling into their closure is both unnecessary and catastrophically
+// amplifies large feature directories.
+func directoryInvalidationDomain(path, language string) string {
+	switch strings.ToLower(strings.TrimSpace(language)) {
+	case "go":
+		return "go"
+	case "python":
+		return "python"
+	}
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".go":
+		return "go"
+	case ".py":
+		return "python"
+	default:
+		return ""
+	}
+}
+
+func directoryInvalidationKey(path, language string) string {
+	domain := directoryInvalidationDomain(path, language)
+	if domain == "" {
+		return ""
+	}
+	return domain + "\x00" + filepath.Dir(path)
+}
+
+func directoryInvalidationMembers(
+	current map[string]CodeFileState,
+) map[string][]string {
+	members := map[string][]string{}
+	for path, state := range current {
+		key := directoryInvalidationKey(path, state.Language)
+		if key == "" {
+			continue
+		}
+		members[key] = append(members[key], path)
+	}
+	return members
 }
 
 type parsedIndexBatch struct {
@@ -843,6 +1009,7 @@ func candidateFileDispositions(
 }
 
 func (s *Scanner) parseIndexFiles(
+	ctx context.Context,
 	files []string,
 	current map[string]CodeFileState,
 	admissions map[string]AdmittedSource,
@@ -854,6 +1021,9 @@ func (s *Scanner) parseIndexFiles(
 		dispositions: map[string]FileIndexDisposition{},
 	}
 	for _, path := range files {
+		if err := ctx.Err(); err != nil {
+			return parsedIndexBatch{}, err
+		}
 		source, admitted := admissions[path]
 		if !admitted {
 			disposition, found := preparseDispositions[path]
@@ -867,7 +1037,7 @@ func (s *Scanner) parseIndexFiles(
 			continue
 		}
 		if filepath.Ext(path) == ".vue" {
-			status := InspectVueAdmittedParse(source)
+			status := InspectVueAdmittedParseContext(ctx, source)
 			if status.Status == VueParseDegraded {
 				failure, err := NewFileIndexFailure(path, status.Reason)
 				if err != nil {
@@ -876,7 +1046,7 @@ func (s *Scanner) parseIndexFiles(
 				return parsedIndexBatch{}, failure
 			}
 		}
-		snapshots, err := s.registry.ExtractAdmittedSymbolSnapshots(source)
+		snapshots, err := s.registry.ExtractAdmittedSymbolSnapshotsContext(ctx, source)
 		if err != nil {
 			failure, failureErr := NewFileIndexFailure(
 				path,
@@ -962,7 +1132,7 @@ func (s *Scanner) resolveIndexFiles(
 	results := make(chan indexResolveResult, len(files))
 	workerCount := indexResolveWorkerCount(
 		len(files),
-		s.indexBudget.MaxParseWorkers(),
+		s.resolveWorkerLimit(),
 	)
 	for worker := 0; worker < workerCount; worker++ {
 		go s.resolveIndexWorker(
@@ -991,6 +1161,18 @@ func (s *Scanner) resolveIndexFiles(
 		batch.outcomes[result.path] = edgeOutcomesAtEpoch(result.outcomes, epoch)
 	}
 	return batch, nil
+}
+
+func (s *Scanner) resolveWorkerLimit() WorkerCount {
+	runtimeLimit := s.maxResolveWorkers
+	if !runtimeLimit.valid() {
+		runtimeLimit, _ = NewWorkerCount(defaultMaxResolveWorkers)
+	}
+	budgetLimit := s.indexBudget.MaxParseWorkers()
+	if budgetLimit.valid() && budgetLimit.Value() < runtimeLimit.Value() {
+		return budgetLimit
+	}
+	return runtimeLimit
 }
 
 func indexResolveWorkerCount(

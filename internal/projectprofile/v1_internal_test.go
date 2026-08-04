@@ -455,12 +455,12 @@ func internalV1WorkRecordWithOutcome(
 	builder = builder.Enacts(record.enactsMethodRef, record.methodDescriptionRef, record.parameterBindings)
 	builder = builder.WithMethodDescriptionDigest(record.methodDescriptionDigest)
 	builder = builder.GovernedByMethodContract(record.methodContractRef, record.methodContractDigest)
-	builder = builder.PerformedBy(record.performedBy)
+	builder = builder.PerformedUnderAssignment(record.coveringRoleAssignment)
 	builder = builder.WithProfileAuthorRoleAssignment(
 		record.profileAuthorRoleAssignmentRef,
 		record.profileAuthorRoleAssignmentDigest,
 	)
-	builder = builder.ExecutedWithin(record.executedWithin)
+	builder = builder.ActualPerformer(record.actualPerformerSystem)
 	builder = builder.InContext(record.boundedContextRef)
 	builder = builder.During(record.workInterval, record.basisObservationWindow)
 	builder = builder.WithObservedProjectBasis(

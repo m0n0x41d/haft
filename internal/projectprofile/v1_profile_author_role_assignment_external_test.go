@@ -24,7 +24,7 @@ type profileAuthorRoleAssignmentFixtureV1 struct {
 	provenanceDigest      projectprofile.ContentDigest
 }
 
-func TestProfileAuthorRoleAssignmentV1IsConcreteRelationForExactWorkPerformer(t *testing.T) {
+func TestProfileAuthorRoleAssignmentV1CoversWorkPerformedByExactSystem(t *testing.T) {
 	fixture := mustProfileAuthorRoleAssignmentFixtureV1(t)
 	assignment := fixture.assignment
 	record := fixture.workRecord
@@ -36,11 +36,15 @@ func TestProfileAuthorRoleAssignmentV1IsConcreteRelationForExactWorkPerformer(t 
 		t.Fatalf("ValidateProfileOnboardingWorkRecordAgainstProfileAuthorRoleAssignmentV1: %v", err)
 	}
 
-	if assignment.RoleAssignmentRef() != record.PerformedBy() {
-		t.Fatal("assignment identity differs from Work.performedBy")
+	if assignment.RoleAssignmentRef() != record.CoveringRoleAssignmentRef() {
+		t.Fatal("assignment identity differs from Work covering RoleAssignment")
 	}
-	if assignment.HolderSystemRef() != record.ExecutedWithin() {
-		t.Fatal("assignment holder differs from Work.executedWithin")
+	if assignment.HolderSystemRef() != record.ActualPerformerSystemRef() {
+		t.Fatal("assignment holder differs from Work actual performer system")
+	}
+	if record.PerformedBy() != record.CoveringRoleAssignmentRef() ||
+		record.ExecutedWithin() != record.ActualPerformerSystemRef() {
+		t.Fatal("legacy Work accessors no longer preserve their frozen v1 wire values")
 	}
 	if assignment.AdmittedRoleRef() != projectprofile.ProfileAuthorRoleRefV1() {
 		t.Fatal("assignment did not preserve the admitted ProfileAuthor role")

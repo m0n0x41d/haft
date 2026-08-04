@@ -1618,6 +1618,19 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 
 // CheckDrift compares current file state against stored baseline hashes for all active decisions.
 func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([]DriftReport, error) {
+	return CheckDriftWithSymbolCorpus(ctx, store, projectRoot, nil)
+}
+
+// CheckDriftWithSymbolCorpus compares current state against decision baselines
+// while resolving missing-file symbol moves from one request-local corpus.
+// A nil corpus keeps direct artifact callers compatible by building one source
+// snapshot lazily on the first missing file.
+func CheckDriftWithSymbolCorpus(
+	ctx context.Context,
+	store ArtifactStore,
+	projectRoot string,
+	corpus *DriftSymbolCorpus,
+) ([]DriftReport, error) {
 	decisions, err := store.ListActiveByKind(ctx, KindDecisionRecord, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list decisions: %w", err)
@@ -1631,8 +1644,25 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	// once per such decision — the dominant cost of the session-mandatory status
 	// check. One walk per distinct scope per drift pass.
 	scopeCache := map[string][]string{}
+	corpusInitialized := corpus != nil
+	loadCorpus := func() *DriftSymbolCorpus {
+		if corpusInitialized {
+			return corpus
+		}
+		corpusInitialized = true
+		built, buildErr := buildDriftSymbolCorpusFromSource(ctx, projectRoot)
+		if buildErr != nil {
+			corpus = NewUnavailableDriftSymbolCorpus(buildErr.Error())
+			return corpus
+		}
+		corpus = built
+		return corpus
+	}
 
 	for _, d := range decisions {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		decisionArtifact, err := store.Get(ctx, d.Meta.ID)
 		if err != nil {
 			return nil, fmt.Errorf("get decision %s: %w", d.Meta.ID, err)
@@ -1699,6 +1729,9 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 		// Compare current state to baseline
 		hasDrift := false
 		for _, f := range files {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if f.Hash == "" {
 				// File was added to affected_files after baseline — treat as no_baseline
 				report.Files = append(report.Files, DriftItem{
@@ -1712,7 +1745,7 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 
 			absPath, resolveErr := resolveAffectedFile(projectRoot, f)
 			if resolveErr != nil {
-				assessment := assessMissingFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path])
+				assessment := assessMissingFileDrift(f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path], loadCorpus())
 				item := DriftItem{
 					Path:             f.Path,
 					Status:           DriftMissing,
@@ -1734,7 +1767,7 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			currentHash, err := hashFile(absPath)
 			if err != nil {
 				// File doesn't exist or can't be read
-				assessment := assessMissingFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path])
+				assessment := assessMissingFileDrift(f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path], loadCorpus())
 				item := DriftItem{
 					Path:             f.Path,
 					Status:           DriftMissing,
@@ -1780,7 +1813,11 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 
 		addedFiles, err := detectAddedFiles(projectRoot, files, decisionFields.DriftManifests, scopeCache)
 		if err != nil {
-			return nil, fmt.Errorf("detect added files for %s: %w", d.Meta.ID, err)
+			loadCorpus().markPartial(
+				fmt.Sprintf("detect added files for %s: %v", d.Meta.ID, err),
+				1,
+			)
+			addedFiles = nil
 		}
 		for _, path := range addedFiles {
 			item := DriftItem{
@@ -2012,8 +2049,13 @@ func flattenBindingTargetGroups(groups [][]BindingTarget) []BindingTarget {
 	return nil
 }
 
-func assessMissingFileDrift(projectRoot, relPath string, baseline []AffectedSymbol, targets []BindingTarget) modifiedFileAssessment {
-	if moved, ok := findMovedSymbolTarget(projectRoot, relPath, targets); ok {
+func assessMissingFileDrift(
+	relPath string,
+	baseline []AffectedSymbol,
+	targets []BindingTarget,
+	corpus *DriftSymbolCorpus,
+) modifiedFileAssessment {
+	if moved, ok := findMovedSymbolTarget(corpus, relPath, targets); ok {
 		return modifiedFileAssessment{
 			Materiality: DriftMaterialityMaterialSymbol,
 			ChangedTargetRef: driftEventSymbolTarget(moved.FilePath, SymbolDriftItem{
@@ -2026,7 +2068,7 @@ func assessMissingFileDrift(projectRoot, relPath string, baseline []AffectedSymb
 			SuppressedReason: fmt.Sprintf("governed symbol %s moved from %s to %s with identical body hash", moved.SymbolName, relPath, moved.FilePath),
 		}
 	}
-	if candidate, ok := findEditedMovedSymbolTarget(projectRoot, relPath, targets); ok {
+	if candidate, ok := findEditedMovedSymbolTarget(corpus, relPath, targets); ok {
 		return modifiedFileAssessment{
 			Materiality: DriftMaterialityNeedsBindingResolution,
 			ChangedTargetRef: driftEventSymbolTarget(candidate.FilePath, SymbolDriftItem{
@@ -2041,7 +2083,7 @@ func assessMissingFileDrift(projectRoot, relPath string, baseline []AffectedSymb
 			SuppressedReason: fmt.Sprintf("governed symbol %s may have moved from %s to %s with edits; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
 		}
 	}
-	if candidate, ok := findFuzzyEditedMovedSymbolTarget(projectRoot, relPath, targets); ok {
+	if candidate, ok := findFuzzyEditedMovedSymbolTarget(corpus, relPath, targets); ok {
 		return modifiedFileAssessment{
 			Materiality: DriftMaterialityNeedsBindingResolution,
 			ChangedTargetRef: driftEventSymbolTarget(candidate.FilePath, SymbolDriftItem{
@@ -2061,7 +2103,7 @@ func assessMissingFileDrift(projectRoot, relPath string, baseline []AffectedSymb
 	}
 }
 
-func findMovedSymbolTarget(projectRoot, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+func findMovedSymbolTarget(corpus *DriftSymbolCorpus, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
 	for _, target := range targets {
 		if target.Kind != BindingTargetSymbol {
 			continue
@@ -2069,7 +2111,7 @@ func findMovedSymbolTarget(projectRoot, relPath string, targets []BindingTarget)
 		if strings.TrimSpace(target.BodyHash) == "" {
 			continue
 		}
-		moved, ok := findMovedSymbolSnapshot(projectRoot, relPath, target)
+		moved, ok := corpus.exactMoved(relPath, target)
 		if ok {
 			return moved, true
 		}
@@ -2077,7 +2119,7 @@ func findMovedSymbolTarget(projectRoot, relPath string, targets []BindingTarget)
 	return codebase.SymbolSnapshot{}, false
 }
 
-func findEditedMovedSymbolTarget(projectRoot, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+func findEditedMovedSymbolTarget(corpus *DriftSymbolCorpus, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
 	for _, target := range targets {
 		if target.Kind != BindingTargetSymbol {
 			continue
@@ -2085,7 +2127,7 @@ func findEditedMovedSymbolTarget(projectRoot, relPath string, targets []BindingT
 		if strings.TrimSpace(target.SymbolName) == "" {
 			continue
 		}
-		moved, ok := findEditedMovedSymbolSnapshot(projectRoot, relPath, target)
+		moved, ok := corpus.editedMoved(relPath, target, symbolSnapshotSameIdentity)
 		if ok {
 			return moved, true
 		}
@@ -2093,7 +2135,7 @@ func findEditedMovedSymbolTarget(projectRoot, relPath string, targets []BindingT
 	return codebase.SymbolSnapshot{}, false
 }
 
-func findFuzzyEditedMovedSymbolTarget(projectRoot, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+func findFuzzyEditedMovedSymbolTarget(corpus *DriftSymbolCorpus, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
 	for _, target := range targets {
 		if target.Kind != BindingTargetSymbol {
 			continue
@@ -2101,88 +2143,12 @@ func findFuzzyEditedMovedSymbolTarget(projectRoot, relPath string, targets []Bin
 		if strings.TrimSpace(target.SymbolName) == "" {
 			continue
 		}
-		moved, ok := findFuzzyEditedMovedSymbolSnapshot(projectRoot, relPath, target)
+		moved, ok := corpus.editedMoved(relPath, target, symbolSnapshotSameNameOnly)
 		if ok {
 			return moved, true
 		}
 	}
 	return codebase.SymbolSnapshot{}, false
-}
-
-func findMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarget) (codebase.SymbolSnapshot, bool) {
-	files, err := listScopeFiles(projectRoot, ".")
-	if err != nil {
-		return codebase.SymbolSnapshot{}, false
-	}
-	oldRelPath = normalizeProjectPath(oldRelPath)
-	for _, path := range files {
-		normalizedPath := normalizeProjectPath(path)
-		if normalizedPath == oldRelPath {
-			continue
-		}
-		if generatedOrIgnoredPath(normalizedPath) || carrierOnlyPath(normalizedPath) {
-			continue
-		}
-		snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, normalizedPath)
-		if err != nil {
-			continue
-		}
-		for _, snapshot := range snapshots {
-			if !symbolSnapshotMatchesBindingTarget(snapshot, target) {
-				continue
-			}
-			return snapshot, true
-		}
-	}
-	return codebase.SymbolSnapshot{}, false
-}
-
-func findEditedMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarget) (codebase.SymbolSnapshot, bool) {
-	return findEditedMovedSymbolSnapshotBy(projectRoot, oldRelPath, target, symbolSnapshotSameIdentity)
-}
-
-func findFuzzyEditedMovedSymbolSnapshot(projectRoot, oldRelPath string, target BindingTarget) (codebase.SymbolSnapshot, bool) {
-	return findEditedMovedSymbolSnapshotBy(projectRoot, oldRelPath, target, symbolSnapshotSameNameOnly)
-}
-
-func findEditedMovedSymbolSnapshotBy(
-	projectRoot string,
-	oldRelPath string,
-	target BindingTarget,
-	match func(codebase.SymbolSnapshot, BindingTarget) bool,
-) (codebase.SymbolSnapshot, bool) {
-	files, err := listScopeFiles(projectRoot, ".")
-	if err != nil {
-		return codebase.SymbolSnapshot{}, false
-	}
-	oldRelPath = normalizeProjectPath(oldRelPath)
-	var candidates []codebase.SymbolSnapshot
-	for _, path := range files {
-		normalizedPath := normalizeProjectPath(path)
-		if normalizedPath == oldRelPath {
-			continue
-		}
-		if generatedOrIgnoredPath(normalizedPath) || carrierOnlyPath(normalizedPath) {
-			continue
-		}
-		snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, normalizedPath)
-		if err != nil {
-			continue
-		}
-		for _, snapshot := range snapshots {
-			if !match(snapshot, target) {
-				continue
-			}
-			if strings.TrimSpace(snapshot.Hash) == strings.TrimSpace(target.BodyHash) {
-				continue
-			}
-			candidates = append(candidates, snapshot)
-		}
-	}
-	if len(candidates) != 1 {
-		return codebase.SymbolSnapshot{}, false
-	}
-	return candidates[0], true
 }
 
 func symbolSnapshotMatchesBindingTarget(snapshot codebase.SymbolSnapshot, target BindingTarget) bool {

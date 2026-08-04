@@ -259,17 +259,18 @@ func TestProjectSpecificationSetFromEditionsForScopeFiltersBeforeParsing(
 	if err != nil {
 		t.Fatalf("ProjectSpecificationSetFromEditionsForScope: %v", err)
 	}
-	if len(specSet.Sections) != 0 {
-		t.Fatalf("non-software SQL sections = %#v, want none", specSet.Sections)
+	if len(specSet.Sections) != 1 || specSet.Sections[0].ID != "TS.scope.001" {
+		t.Fatalf("non-software SQL sections = %#v, want target section", specSet.Sections)
 	}
-	if len(specSet.Documents) != 0 {
-		t.Fatalf("non-software SQL documents = %#v, want none", specSet.Documents)
+	if len(specSet.Documents) != 1 ||
+		specSet.Documents[0].Kind != project.SpecDocumentKindTargetSystem {
+		t.Fatalf("non-software SQL documents = %#v, want target document", specSet.Documents)
 	}
-	if !specflowHasFinding(
+	if specflowHasFinding(
 		specSet.Findings,
 		"profile_capability_applicability_underdetermined",
 	) {
-		t.Fatalf("scoped SQL projection hid target-relation uncertainty: %#v", specSet.Findings)
+		t.Fatalf("scoped SQL projection retained target-relation uncertainty: %#v", specSet.Findings)
 	}
 }
 

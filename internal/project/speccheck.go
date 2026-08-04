@@ -203,6 +203,27 @@ var SpecSectionValidClaimLayers = []string{
 	"evidence",
 }
 
+// SpecSectionValidOwners is the canonical set of owner values accepted by
+// the carrier parser and published by the draft contract. Keeping the values
+// here prevents a public contract from shadowing parser behavior.
+var SpecSectionValidOwners = []string{
+	"human",
+	"haft",
+	"agent",
+	"ci",
+	"external-carrier",
+}
+
+// SpecSectionValidStatuses is the canonical set of status values accepted by
+// the carrier parser. Draft validation consumes the same set without
+// promoting a draft to an active or approved section.
+var SpecSectionValidStatuses = []string{
+	"draft",
+	"active",
+	"deprecated",
+	"superseded",
+}
+
 // SpecSectionValidGuardLocations is the canonical set of guard_location
 // values for evidence_required[].kind on invariant / illegal-state
 // sections. Mirrors the FPF / Levenchuk layer vocabulary.
@@ -220,19 +241,8 @@ var SpecSectionValidGuardLocations = []string{
 var specSectionValueSets = map[string]map[string]struct{}{
 	"statement_type": stringSliceToSet(SpecSectionValidStatementTypes),
 	"claim_layer":    stringSliceToSet(SpecSectionValidClaimLayers),
-	"owner": {
-		"human":            {},
-		"haft":             {},
-		"agent":            {},
-		"ci":               {},
-		"external-carrier": {},
-	},
-	"status": {
-		"draft":      {},
-		"active":     {},
-		"deprecated": {},
-		"superseded": {},
-	},
+	"owner":          stringSliceToSet(SpecSectionValidOwners),
+	"status":         stringSliceToSet(SpecSectionValidStatuses),
 }
 
 func stringSliceToSet(values []string) map[string]struct{} {
@@ -838,7 +848,7 @@ func projectSpecificationReadinessFindings(specSet ProjectSpecificationSet) []Sp
 	if targetOK && !targetActive {
 		findings = append(findings, noActiveSpecSectionFinding(
 			target.Path,
-			"target-system spec has no active sections; draft placeholders do not make the product specified",
+			"target-system spec has no active sections; draft sections remain review material and do not make the product specified",
 			"run target-system onboarding and add human-approved active sections for environment change, target role, boundaries, interfaces, invariants, risks, and acceptance evidence",
 		))
 	}
@@ -847,7 +857,7 @@ func projectSpecificationReadinessFindings(specSet ProjectSpecificationSet) []Sp
 	if softwareOK && countActiveSpecSections(software.Sections) == 0 {
 		findings = append(findings, noActiveSpecSectionFinding(
 			software.Path,
-			"software-system spec has no active sections; draft placeholders do not specify the software that realizes the target system",
+			"software-system spec has no active sections; draft sections remain review material and do not specify the software that realizes the target system",
 			"after the target spec is admissible, add active software sections for role, functional behavior, interfaces, constraints, and selected structure where needed",
 		))
 	}

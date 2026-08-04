@@ -3522,6 +3522,40 @@ func ExtractTOMLTableFamily(
 	return slices.Clone(content), found, nil
 }
 
+// ExtractTOMLTableSet returns the exact normalized bytes used by managed
+// fragment observation for a closed set of tables. Callers may validate those
+// bytes as historical input, but the observation does not establish ownership.
+func ExtractTOMLTableSet(
+	raw []byte,
+	prefix string,
+	tables []string,
+) ([]byte, bool, error) {
+	validatedPrefix, err := validateTOMLTablePrefix(prefix)
+	if err != nil {
+		return nil, false, err
+	}
+	validatedTables, err := canonicalTOMLTableNames(
+		validatedPrefix,
+		tables,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	sections, err := scanTOMLSections(raw)
+	if err != nil {
+		return nil, false, err
+	}
+	content, found, err := extractTOMLTableSet(
+		raw,
+		sections,
+		validatedTables,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	return slices.Clone(content), found, nil
+}
+
 func extractTOMLTableSet(
 	raw []byte,
 	sections []tomlSectionSpan,

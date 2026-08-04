@@ -15,8 +15,8 @@ import (
 // TypeEnv. The exact source snapshot is pinned so a changed FPF publication
 // forces a fresh semantic review instead of silently preserving these rules.
 const (
-	sourceConformanceFPFRevision   = "d1f696e7c7767705206a8cacd9f6ed48e4dc5b02"
-	sourceConformanceFPFSpecDigest = "sha256:7a1e56595a5bb850d6db571f1bd42bccec4a5a3859f480aadebae4e532557da9"
+	sourceConformanceFPFRevision   = "8b727cba9e893a467b82aab9da84fb7d6d945480"
+	sourceConformanceFPFSpecDigest = "sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42"
 )
 
 type sourceConformanceSourceRange struct {
@@ -39,46 +39,46 @@ type sourceConformanceNetworkSelection struct {
 }
 
 var sourceConformanceSourceRanges = []sourceConformanceSourceRange{
-	{pattern: "A.1", start: 1440, end: 1795, digest: "sha256:c2022fcb43120f35217fe2cf6503891583a42c7293b9ca1be14dcb54e844aa48"},
-	{pattern: "A.2.1", start: 2995, end: 3310, digest: "sha256:46339a090e017792ca4f3fd5fec9975389c926b4182a867ee2a65976b11d0c7a"},
-	{pattern: "A.2.8", start: 6071, end: 6414, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
-	{pattern: "A.2.8.PER", start: 6415, end: 6709, digest: "sha256:e684e2cbc8af12d64a914b0ea9588e0f1bebce72e9a3c7778c28cff788932ea7"},
-	{pattern: "A.3.1", start: 7303, end: 7737, digest: "sha256:f72c4b6ac6a1f5af3b0a46466dbbee5508ea008c41a7d649ffe142eac3901c43"},
-	{pattern: "A.3.2", start: 7738, end: 8064, digest: "sha256:cf47f9b9b208f775785b7298f97cbf2c887248ef93b735deb1521baa67087ebb"},
-	{pattern: "A.3.4", start: 8373, end: 8765, digest: "sha256:ffc48e1f415ff674ed51b6c2d384a3dcae71527b837159d54a955f7233e3816a"},
-	{pattern: "A.6.REL", start: 11265, end: 11657, digest: "sha256:3cb3082cd874089268c64fbb4b814fe4a15adbcc3174247f7969feddb3c1ad01"},
-	{pattern: "A.6.0", start: 11658, end: 12062, digest: "sha256:6be5122b7698a5dbb9d2f2ab33693c5bc38b9eadc0f13a9ed67ff85ff7f27505"},
-	{pattern: "A.6.1", start: 12063, end: 12585, digest: "sha256:946668db562ee4447896a8ff7a3e92105413d66e1f34f488ba7402aacd4ac591"},
-	{pattern: "A.6.P.WMR", start: 16249, end: 16680, digest: "sha256:4e1b7532551ed390ce9120a32a3956cdf47a92b9f77470647ee973b08c2a9fae"},
-	{pattern: "A.6.5", start: 18823, end: 19187, digest: "sha256:e98c56aa0e8cf17f4ffb31f44ab7f1639e4793eb0f6a614b6a16a0cbce53bc04"},
-	{pattern: "A.10", start: 22542, end: 22916, digest: "sha256:f6c4693742dee23cb363fd2c19c2a3c4097d265776b3b14345efb6a8bf85e65b"},
-	{pattern: "A.14", start: 23508, end: 23799, digest: "sha256:198e2398482ebef666c8c4b8b3f21753043e892aa9e532c40e31409a39051778"},
-	{pattern: "A.15.1", start: 24264, end: 24808, digest: "sha256:874a4fc8c1f99a6c05b8c38ff526d8db5c63a5b1018b95260bfa7be1711027d2"},
-	{pattern: "A.15.2", start: 24809, end: 25106, digest: "sha256:b801fd269fe447cddf3f22098d79e5c2595a2f8fd2e8d047d8833c740792583e"},
-	{pattern: "A.15.3", start: 25107, end: 25425, digest: "sha256:855b07fd09219bbff05c56721b2a65877e073ded18bb4713289201f37ec4e46e"},
-	{pattern: "A.15.PROD", start: 26448, end: 26862, digest: "sha256:743bd9dea2ed22003518749f03f6137e57173d99f6132d52c0e7e5eeb42854a5"},
-	{pattern: "A.18", start: 28126, end: 28277, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
-	{pattern: "A.19.UNM", start: 31250, end: 31671, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
-	{pattern: "A.19.UINDM", start: 31672, end: 31960, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
-	{pattern: "A.19.USCM", start: 31961, end: 32288, digest: "sha256:11915662fc97720f6ad4b5f6d285f02a5e36528254de4bee51431c651f908bc0"},
-	{pattern: "A.19.ULSAM", start: 32289, end: 32583, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
-	{pattern: "A.19.CPM", start: 32584, end: 32962, digest: "sha256:163ad299dbd0b09bb55e3603c7676556f2262b2e44056933a2100636e1490843"},
-	{pattern: "A.19.SelectorMechanism", start: 32963, end: 33383, digest: "sha256:4cba7db789460a08dcf8e8f57a5f80e18852133240883ef3d40615f30af9261e"},
-	{pattern: "C.2.1", start: 41136, end: 41670, digest: "sha256:cecf2e397e1920a01e788aa6f4cade027ec254ce8d1661cadaebd08edd3f36ed"},
-	{pattern: "C.11", start: 46171, end: 46886, digest: "sha256:c5653ceefc92d44398f76dad117eb0630b77e99d5b01c4ccc513ef9ab62f233f"},
-	{pattern: "C.16", start: 47138, end: 47433, digest: "sha256:c017e22af795e1ec92e490662060614614444e0155a792cbd474e418bf4eadcb"},
-	{pattern: "C.18", start: 49181, end: 49405, digest: "sha256:31bdfdcdf2df6b5353308e9b0dd8308a79b60805bee50dcd3ac1b12d21d41f12"},
-	{pattern: "C.22", start: 50630, end: 51005, digest: "sha256:3c234451a2b1756d402140df4d7f5e173e0db7145e086cc74202b96c6db3e10e"},
-	{pattern: "C.22.2", start: 51488, end: 52132, digest: "sha256:41c0255acc564837cf999f297c7d86557b20fef509817b330b8ba48c43bbfb8b"},
-	{pattern: "C.28", start: 56910, end: 57776, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
-	{pattern: "C.30", start: 59141, end: 59732, digest: "sha256:6bc92805ff97431ae5124e93200965023904c64d26db0c54cb637ab3c95dfc37"},
-	{pattern: "E.11.PUR", start: 76485, end: 76756, digest: "sha256:2bf7d9e99873a6204c770c5957021641a37e9c9b66539a8f74d04d749a3a167b"},
-	{pattern: "E.17", start: 78999, end: 79603, digest: "sha256:2ac39fded54d84c54c659dd542cb869e644fe11cd40f9c770667b4d237f6c3bc"},
-	{pattern: "E.18", start: 81811, end: 82443, digest: "sha256:4f9685512c14e100afc3d577ebf562c332ac804d9b7fbf269f2b1f9a92df528b"},
-	{pattern: "E.18.NET", start: 83551, end: 83946, digest: "sha256:a8b5f818c1114282391800ee257317cc46965d0bc1bde9994c11c226bb5a7318"},
-	{pattern: "E.24.PUB", start: 87165, end: 87410, digest: "sha256:6c26ccd5f5441bf2490008c38f9b166cae1b66d3be3ea1f00c8dfc31abccad49"},
-	{pattern: "E.24.UK", start: 87411, end: 87879, digest: "sha256:c216f4d2c213bbeddf003106d10cc9d15a876b36b7022148c3ed4fabe0ddc35c"},
-	{pattern: "F.6", start: 89764, end: 90077, digest: "sha256:df4bf77abf80ee635672f8e8e6bd2a6f7269fbd825c40955530388998af147ff"},
+	{pattern: "A.1", start: 1460, end: 1815, digest: "sha256:c2022fcb43120f35217fe2cf6503891583a42c7293b9ca1be14dcb54e844aa48"},
+	{pattern: "A.2.1", start: 2972, end: 3287, digest: "sha256:46339a090e017792ca4f3fd5fec9975389c926b4182a867ee2a65976b11d0c7a"},
+	{pattern: "A.2.8", start: 6143, end: 6486, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
+	{pattern: "A.2.8.PER", start: 6487, end: 6781, digest: "sha256:e684e2cbc8af12d64a914b0ea9588e0f1bebce72e9a3c7778c28cff788932ea7"},
+	{pattern: "A.3.1", start: 7375, end: 7809, digest: "sha256:f72c4b6ac6a1f5af3b0a46466dbbee5508ea008c41a7d649ffe142eac3901c43"},
+	{pattern: "A.3.2", start: 7810, end: 8136, digest: "sha256:cf47f9b9b208f775785b7298f97cbf2c887248ef93b735deb1521baa67087ebb"},
+	{pattern: "A.3.4", start: 8464, end: 8856, digest: "sha256:ffc48e1f415ff674ed51b6c2d384a3dcae71527b837159d54a955f7233e3816a"},
+	{pattern: "A.6.REL", start: 11356, end: 11748, digest: "sha256:3cb3082cd874089268c64fbb4b814fe4a15adbcc3174247f7969feddb3c1ad01"},
+	{pattern: "A.6.0", start: 11749, end: 12153, digest: "sha256:6be5122b7698a5dbb9d2f2ab33693c5bc38b9eadc0f13a9ed67ff85ff7f27505"},
+	{pattern: "A.6.1", start: 12154, end: 12676, digest: "sha256:946668db562ee4447896a8ff7a3e92105413d66e1f34f488ba7402aacd4ac591"},
+	{pattern: "A.6.P.WMR", start: 16317, end: 16748, digest: "sha256:4e1b7532551ed390ce9120a32a3956cdf47a92b9f77470647ee973b08c2a9fae"},
+	{pattern: "A.6.5", start: 18932, end: 19296, digest: "sha256:e98c56aa0e8cf17f4ffb31f44ab7f1639e4793eb0f6a614b6a16a0cbce53bc04"},
+	{pattern: "A.10", start: 22714, end: 23088, digest: "sha256:f6c4693742dee23cb363fd2c19c2a3c4097d265776b3b14345efb6a8bf85e65b"},
+	{pattern: "A.14", start: 23680, end: 23971, digest: "sha256:1973fcdcb4e7d3f4966ba203089fc079af7f6517b46b1b7144566ce0fbc7fa44"},
+	{pattern: "A.15.1", start: 24439, end: 24983, digest: "sha256:874a4fc8c1f99a6c05b8c38ff526d8db5c63a5b1018b95260bfa7be1711027d2"},
+	{pattern: "A.15.2", start: 24984, end: 25283, digest: "sha256:799fd65740de85cd67fa7636487a89ca33e734b86fda899601a0aa294f7ba1d1"},
+	{pattern: "A.15.3", start: 25284, end: 25602, digest: "sha256:855b07fd09219bbff05c56721b2a65877e073ded18bb4713289201f37ec4e46e"},
+	{pattern: "A.15.PROD", start: 26612, end: 27026, digest: "sha256:743bd9dea2ed22003518749f03f6137e57173d99f6132d52c0e7e5eeb42854a5"},
+	{pattern: "A.18", start: 28290, end: 28441, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
+	{pattern: "A.19.UNM", start: 31414, end: 31835, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
+	{pattern: "A.19.UINDM", start: 31836, end: 32124, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
+	{pattern: "A.19.USCM", start: 32125, end: 32452, digest: "sha256:32a4ab65a48be8dd504009bd25f1a299e6a4afaac73abac18ba95adb191d5a62"},
+	{pattern: "A.19.ULSAM", start: 32453, end: 32747, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
+	{pattern: "A.19.CPM", start: 32748, end: 33126, digest: "sha256:163ad299dbd0b09bb55e3603c7676556f2262b2e44056933a2100636e1490843"},
+	{pattern: "A.19.SelectorMechanism", start: 33127, end: 33547, digest: "sha256:4cba7db789460a08dcf8e8f57a5f80e18852133240883ef3d40615f30af9261e"},
+	{pattern: "C.2.1", start: 41109, end: 41643, digest: "sha256:cecf2e397e1920a01e788aa6f4cade027ec254ce8d1661cadaebd08edd3f36ed"},
+	{pattern: "C.11", start: 46148, end: 46863, digest: "sha256:2aef2c11aa77100fb7ff0079eb424a895e34a8b2ce183710dfa8571c84b23938"},
+	{pattern: "C.16", start: 47115, end: 47410, digest: "sha256:c017e22af795e1ec92e490662060614614444e0155a792cbd474e418bf4eadcb"},
+	{pattern: "C.18", start: 49229, end: 49504, digest: "sha256:5898c91bfd6248957c8b9cad9d5c8cca8e84a16bcd6f549ad143b72df983ec14"},
+	{pattern: "C.22", start: 50935, end: 51310, digest: "sha256:3c234451a2b1756d402140df4d7f5e173e0db7145e086cc74202b96c6db3e10e"},
+	{pattern: "C.22.2", start: 51793, end: 52437, digest: "sha256:41c0255acc564837cf999f297c7d86557b20fef509817b330b8ba48c43bbfb8b"},
+	{pattern: "C.28", start: 57251, end: 58117, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
+	{pattern: "C.30", start: 59482, end: 60162, digest: "sha256:7dcfd570a5f8b9baa25ce55b83f525f77a4edd7d08a15c3586aaee61ef221c11"},
+	{pattern: "E.11.PUR", start: 77634, end: 77916, digest: "sha256:5ad8ec01ea1b5c208c00189a315ae4be7cce45b1c369df4bd973e37163eea3d9"},
+	{pattern: "E.17", start: 80122, end: 80713, digest: "sha256:06309c9d1d2a64499fb98bf6945fb5bd42a9a6308e434b911a89c5848913c375"},
+	{pattern: "E.18", start: 82921, end: 83553, digest: "sha256:4f9685512c14e100afc3d577ebf562c332ac804d9b7fbf269f2b1f9a92df528b"},
+	{pattern: "E.18.NET", start: 84674, end: 85069, digest: "sha256:a8b5f818c1114282391800ee257317cc46965d0bc1bde9994c11c226bb5a7318"},
+	{pattern: "E.24.PUB", start: 88448, end: 88727, digest: "sha256:dc353f9af0dee36b3b74b8414a3a61cf73e84911c75de6878a0b06830d19163f"},
+	{pattern: "E.24.UK", start: 88728, end: 89196, digest: "sha256:c216f4d2c213bbeddf003106d10cc9d15a876b36b7022148c3ed4fabe0ddc35c"},
+	{pattern: "F.6", start: 91048, end: 91365, digest: "sha256:f5df0818e5c611431c177e498a0812ce7eeac41bb08da7c5934a93a99e98fc47"},
 }
 
 type sourceConformanceSource struct {
@@ -117,6 +117,37 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 			{name: "ClaimGraphSlot", kind: "U.ClaimGraph"},
 			{name: "EntityOfConcernSlot", kind: "U.Entity"},
 			{name: "ReferenceSchemeSlot", kind: "U.ReferenceScheme"},
+		},
+	},
+	{
+		key:     "episteme_publication",
+		pattern: "E.24.PUB",
+		// E.24.PUB owns the exact five-participant availability relation.
+		// Publication Work and raw audience members are deliberately absent:
+		// neither participates in this occurrence.
+		slots: []sourceConformanceSlotSpec{
+			{name: "SelectedEpistemeEditionSlot", kind: "U.Episteme"},
+			{name: "AudienceDeclarationSlot", kind: "U.Episteme"},
+			{name: "BoundedUseDeclarationSlot", kind: "U.Episteme"},
+			{name: "PublicationFormSlot", kind: "PublicationForm"},
+			{name: "PresentationCarrierSlot", kind: "U.PresentationCarrier"},
+		},
+	},
+	{
+		key:     "publication_form_expression",
+		pattern: "E.24.PUB",
+		slots: []sourceConformanceSlotSpec{
+			{name: "ExpressedEpistemeEditionSlot", kind: "U.Episteme"},
+			{name: "PublicationFormSlot", kind: "PublicationForm"},
+			{name: "BoundedUseDeclarationSlot", kind: "U.Episteme"},
+		},
+	},
+	{
+		key:     "publication_form_bearing",
+		pattern: "E.24.PUB",
+		slots: []sourceConformanceSlotSpec{
+			{name: "PresentationCarrierSlot", kind: "U.PresentationCarrier"},
+			{name: "BornePublicationFormSlot", kind: "PublicationForm"},
 		},
 	},
 	{
@@ -240,29 +271,40 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 		},
 	},
 	{
-		key:     "architecture_of_boundary",
+		key:     "architecture_relation_boundary",
 		pattern: "C.30",
-		// Oracle-local minimum record-category boundary for the branch that
-		// selects one structure ref. The bounded context is carried by
-		// RelationInstantiation.ContextSlice. This is not membership-complete:
-		// structure-kind refs and use fields remain outside this case, while
-		// ArchitectureDescription is a separate conditional bridge.
+		// Oracle-local minimum participant boundary for the direct current
+		// ArchitectureRelation. Type admission does not establish that the
+		// structure is constituted, its selected subject relations obtain, or
+		// this architecture relation obtains.
 		slots: []sourceConformanceSlotSpec{
-			{name: "DescribedHolonSlot", kind: "U.Holon"},
+			{name: "ArchitectureBearingHolonSlot", kind: "U.Holon"},
 			{name: "SelectedStructureSlot", kind: "G3.SelectedStructure"},
-			{name: "ArchitectureOfClaimSlot", kind: "G3.ArchitectureOfClaim"},
+		},
+	},
+	{
+		key:     "architecture_claim_boundary",
+		pattern: "C.30",
+		// Oracle-local constitution tuple for current ArchitectureClaim. The
+		// claim remains a C.2.1 episteme with one exact EntityOfConcern and
+		// effective reference scheme; it is not the direct relation.
+		slots: []sourceConformanceSlotSpec{
+			{name: "ArchitectureClaimSlot", kind: "G3.ArchitectureClaim"},
+			{name: "EntityOfConcernSlot", kind: "U.Entity"},
+			{name: "ReferenceSchemeSlot", kind: "U.ReferenceScheme"},
 		},
 	},
 	{
 		key:     "architecture_candidate_basis",
 		pattern: "C.30",
-		// This oracle-local tuple mirrors the required C.30
-		// ArchitectureCandidateMove content used by this case. It is not a
-		// source relation, C.32 candidate lowering, choice, or authorization.
+		// This oracle-local tuple mirrors the required current C.30
+		// ArchitectureCandidateMove content used by this case. Optional current
+		// relation, selected-structure, and ArchitectureClaim refs are omitted.
+		// This is not a source relation, C.32 lowering, choice, or authorization.
 		slots: []sourceConformanceSlotSpec{
 			{name: "CandidateSetOrArchiveSlot", kind: "G3.ArchitectureCandidateSetOrArchive"},
-			{name: "ArchitectureOfClaimSlot", kind: "G3.ArchitectureOfClaim"},
-			{name: "SelectedStructureSlot", kind: "G3.SelectedStructure"},
+			{name: "DescribedHolonSlot", kind: "U.Holon"},
+			{name: "CandidateStructureSlot", kind: "G3.CandidateStructure"},
 			{name: "AffectedCharacteristicSlot", kind: "G3.Characteristic"},
 			{name: "CandidateMoveClaimSlot", kind: "G3.ArchitectureCandidateMoveClaim"},
 			{name: "StopConditionSlot", kind: "G3.ArchitectureCandidateStopCondition"},
@@ -515,10 +557,12 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		snapshot := fixture.snapshot()
 		carrier := fixture.reference(t, snapshot, "case4-carrier", "U.PresentationCarrier")
 		episteme := fixture.reference(t, snapshot, "case4-episteme", "U.Episteme")
+		audienceDeclaration := fixture.reference(t, snapshot, "case4-audience-declaration", "U.Episteme")
+		boundedUseDeclaration := fixture.reference(t, snapshot, "case4-bounded-use-declaration", "U.Episteme")
 		claimGraph := fixture.reference(t, snapshot, "case4-claim-graph", "U.ClaimGraph")
 		referenceScheme := fixture.reference(t, snapshot, "case4-reference-scheme", "U.ReferenceScheme")
-		fixture.reference(t, snapshot, "case4-publication-occurrence", "U.Relation")
-		fixture.reference(t, snapshot, "case4-publication-form", "PublicationForm")
+		publicationOccurrence := fixture.reference(t, snapshot, "case4-publication-occurrence", "G3.PublicationOccurrence")
+		publicationForm := fixture.reference(t, snapshot, "case4-publication-form", "PublicationForm")
 
 		if _, rejectedKindWasReintroduced := fixture.kinds["U.EpistemePublication"]; rejectedKindWasReintroduced {
 			t.Fatal("source oracle reintroduced rejected U.EpistemePublication kind")
@@ -526,7 +570,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		assertSourceConformanceDistinctKinds(t, fixture, []string{
 			"U.Episteme",
 			"U.ClaimGraph",
-			"U.Relation",
+			"G3.PublicationOccurrence",
 			"U.PresentationCarrier",
 			"PublicationForm",
 		})
@@ -544,6 +588,55 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 				{slot: "ClaimGraphSlot", filler: claimGraph},
 				{slot: "EntityOfConcernSlot", filler: episteme},
 				{slot: "ReferenceSchemeSlot", filler: referenceScheme},
+			}),
+		)
+
+		wrongPublication := fixture.validate(t, snapshot, "episteme_publication", []sourceConformanceBinding{
+			{slot: "SelectedEpistemeEditionSlot", filler: publicationForm},
+			{slot: "AudienceDeclarationSlot", filler: audienceDeclaration},
+			{slot: "BoundedUseDeclarationSlot", filler: boundedUseDeclaration},
+			{slot: "PublicationFormSlot", filler: publicationForm},
+			{slot: "PresentationCarrierSlot", filler: carrier},
+		})
+		assertSourceConformanceRejected(t, wrongPublication, ValidationInvalid, DiagnosticEntityKindMismatch)
+
+		assertSourceConformanceTypeAdmission(
+			t,
+			fixture.validate(t, snapshot, "episteme_publication", []sourceConformanceBinding{
+				{slot: "SelectedEpistemeEditionSlot", filler: episteme},
+				{slot: "AudienceDeclarationSlot", filler: audienceDeclaration},
+				{slot: "BoundedUseDeclarationSlot", filler: boundedUseDeclaration},
+				{slot: "PublicationFormSlot", filler: publicationForm},
+				{slot: "PresentationCarrierSlot", filler: carrier},
+			}),
+		)
+
+		assertSourceConformanceTypeAdmission(
+			t,
+			fixture.validate(t, snapshot, "publication_form_expression", []sourceConformanceBinding{
+				{slot: "ExpressedEpistemeEditionSlot", filler: episteme},
+				{slot: "PublicationFormSlot", filler: publicationForm},
+				{slot: "BoundedUseDeclarationSlot", filler: boundedUseDeclaration},
+			}),
+		)
+
+		wrongBearing := fixture.validate(t, snapshot, "publication_form_bearing", []sourceConformanceBinding{
+			{slot: "PresentationCarrierSlot", filler: episteme},
+			{slot: "BornePublicationFormSlot", filler: publicationForm},
+		})
+		assertSourceConformanceRejected(t, wrongBearing, ValidationInvalid, DiagnosticEntityKindMismatch)
+		assertSourceConformanceTypeAdmission(
+			t,
+			fixture.validate(t, snapshot, "publication_form_bearing", []sourceConformanceBinding{
+				{slot: "PresentationCarrierSlot", filler: carrier},
+				{slot: "BornePublicationFormSlot", filler: publicationForm},
+			}),
+		)
+
+		assertSourceConformanceTypeAdmission(
+			t,
+			fixture.validate(t, snapshot, "relation_occurrence_designation", []sourceConformanceBinding{
+				{slot: "OccurrenceSlot", filler: publicationOccurrence},
 			}),
 		)
 	})
@@ -1163,10 +1256,12 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		assertSourceConformanceTypeAdmission(t, typedWork)
 	})
 
-	t.Run("selected structure architecture claim candidate record ADR and observations stay distinct", func(t *testing.T) {
+	t.Run("selected structure architecture relation claim candidate record ADR and observations stay distinct", func(t *testing.T) {
 		architectureKinds := []string{
 			"G3.SelectedStructure",
-			"G3.ArchitectureOfClaim",
+			"G3.CandidateStructure",
+			"G3.ArchitectureRelation",
+			"G3.ArchitectureClaim",
 			"G3.ArchitectureDescription",
 			"G3.ArchitectureCandidateSetOrArchive",
 			"G3.ArchitectureCandidateMoveClaim",
@@ -1194,34 +1289,52 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		snapshot := fixture.snapshot()
 		holon := fixture.reference(t, snapshot, "case20-described-holon", "U.System")
 		selected := fixture.reference(t, snapshot, "case20-selected-structure", "G3.SelectedStructure")
-		claim := fixture.reference(t, snapshot, "case20-architecture-claim", "G3.ArchitectureOfClaim")
+		relation := fixture.reference(t, snapshot, "case20-architecture-relation", "G3.ArchitectureRelation")
+		claim := fixture.reference(t, snapshot, "case20-architecture-claim", "G3.ArchitectureClaim")
+		referenceScheme := fixture.reference(t, snapshot, "case20-reference-scheme", "U.ReferenceScheme")
 		for _, kind := range architectureKinds {
 			if kind == "G3.SelectedStructure" {
 				continue
 			}
 			candidate := fixture.reference(t, snapshot, "case20-selected-as-"+kind, kind)
-			verdict := fixture.validate(t, snapshot, "architecture_of_boundary", []sourceConformanceBinding{
-				{slot: "DescribedHolonSlot", filler: holon},
+			verdict := fixture.validate(t, snapshot, "architecture_relation_boundary", []sourceConformanceBinding{
+				{slot: "ArchitectureBearingHolonSlot", filler: holon},
 				{slot: "SelectedStructureSlot", filler: candidate},
-				{slot: "ArchitectureOfClaimSlot", filler: claim},
 			})
 			assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 		}
 
 		unknownStructure := fixture.reference(t, snapshot, "case20-unknown-structure", "")
-		unknownVerdict := fixture.validate(t, snapshot, "architecture_of_boundary", []sourceConformanceBinding{
-			{slot: "DescribedHolonSlot", filler: holon},
+		unknownVerdict := fixture.validate(t, snapshot, "architecture_relation_boundary", []sourceConformanceBinding{
+			{slot: "ArchitectureBearingHolonSlot", filler: holon},
 			{slot: "SelectedStructureSlot", filler: unknownStructure},
-			{slot: "ArchitectureOfClaimSlot", filler: claim},
 		})
 		assertSourceConformanceRejected(t, unknownVerdict, ValidationUnderdetermined, DiagnosticTypeRuleUnavailable)
 
-		typedArchitecture := fixture.validate(t, snapshot, "architecture_of_boundary", []sourceConformanceBinding{
-			{slot: "DescribedHolonSlot", filler: holon},
+		typedArchitecture := fixture.validate(t, snapshot, "architecture_relation_boundary", []sourceConformanceBinding{
+			{slot: "ArchitectureBearingHolonSlot", filler: holon},
 			{slot: "SelectedStructureSlot", filler: selected},
-			{slot: "ArchitectureOfClaimSlot", filler: claim},
 		})
 		assertSourceConformanceTypeAdmission(t, typedArchitecture)
+
+		relationOccurrence := fixture.validate(t, snapshot, "relation_occurrence_designation", []sourceConformanceBinding{
+			{slot: "OccurrenceSlot", filler: relation},
+		})
+		assertSourceConformanceTypeAdmission(t, relationOccurrence)
+
+		relationAsClaim := fixture.validate(t, snapshot, "architecture_claim_boundary", []sourceConformanceBinding{
+			{slot: "ArchitectureClaimSlot", filler: relation},
+			{slot: "EntityOfConcernSlot", filler: relation},
+			{slot: "ReferenceSchemeSlot", filler: referenceScheme},
+		})
+		assertSourceConformanceRejected(t, relationAsClaim, ValidationInvalid, DiagnosticEntityKindMismatch)
+
+		typedClaim := fixture.validate(t, snapshot, "architecture_claim_boundary", []sourceConformanceBinding{
+			{slot: "ArchitectureClaimSlot", filler: claim},
+			{slot: "EntityOfConcernSlot", filler: relation},
+			{slot: "ReferenceSchemeSlot", filler: referenceScheme},
+		})
+		assertSourceConformanceTypeAdmission(t, typedClaim)
 	})
 
 	t.Run("method description plan work transformation view model publication carrier and episteme stay distinct", func(t *testing.T) {
@@ -1290,8 +1403,8 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"case22-candidate-set",
 			"G3.ArchitectureCandidateSetOrArchive",
 		)
-		architectureClaim := fixture.reference(t, snapshot, "case22-architecture-claim", "G3.ArchitectureOfClaim")
-		selected := fixture.reference(t, snapshot, "case22-selected-structure", "G3.SelectedStructure")
+		holon := fixture.reference(t, snapshot, "case22-described-holon", "U.System")
+		candidateStructure := fixture.reference(t, snapshot, "case22-candidate-structure", "G3.CandidateStructure")
 		characteristic := fixture.reference(t, snapshot, "case22-characteristic", "G3.Characteristic")
 		stopCondition := fixture.reference(
 			t,
@@ -1302,8 +1415,8 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		unknownSuggestion := fixture.reference(t, snapshot, "case22-ai-suggestion", "")
 		unknownCandidate := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
 			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
-			{slot: "ArchitectureOfClaimSlot", filler: architectureClaim},
-			{slot: "SelectedStructureSlot", filler: selected},
+			{slot: "DescribedHolonSlot", filler: holon},
+			{slot: "CandidateStructureSlot", filler: candidateStructure},
 			{slot: "AffectedCharacteristicSlot", filler: characteristic},
 			{slot: "CandidateMoveClaimSlot", filler: unknownSuggestion},
 			{slot: "StopConditionSlot", filler: stopCondition},
@@ -1316,10 +1429,21 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"case22-candidate-move-claim",
 			"G3.ArchitectureCandidateMoveClaim",
 		)
+		selectedStructure := fixture.reference(t, snapshot, "case22-selected-structure", "G3.SelectedStructure")
+		actualAsCandidate := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
+			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
+			{slot: "DescribedHolonSlot", filler: holon},
+			{slot: "CandidateStructureSlot", filler: selectedStructure},
+			{slot: "AffectedCharacteristicSlot", filler: characteristic},
+			{slot: "CandidateMoveClaimSlot", filler: candidate},
+			{slot: "StopConditionSlot", filler: stopCondition},
+		})
+		assertSourceConformanceRejected(t, actualAsCandidate, ValidationInvalid, DiagnosticEntityKindMismatch)
+
 		incompleteCandidate := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
 			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
-			{slot: "ArchitectureOfClaimSlot", filler: architectureClaim},
-			{slot: "SelectedStructureSlot", filler: selected},
+			{slot: "DescribedHolonSlot", filler: holon},
+			{slot: "CandidateStructureSlot", filler: candidateStructure},
 			{slot: "AffectedCharacteristicSlot", filler: characteristic},
 			{slot: "CandidateMoveClaimSlot", filler: candidate},
 		})
@@ -1327,8 +1451,8 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 
 		typedCandidateMove := fixture.validate(t, snapshot, "architecture_candidate_basis", []sourceConformanceBinding{
 			{slot: "CandidateSetOrArchiveSlot", filler: candidateSet},
-			{slot: "ArchitectureOfClaimSlot", filler: architectureClaim},
-			{slot: "SelectedStructureSlot", filler: selected},
+			{slot: "DescribedHolonSlot", filler: holon},
+			{slot: "CandidateStructureSlot", filler: candidateStructure},
 			{slot: "AffectedCharacteristicSlot", filler: characteristic},
 			{slot: "CandidateMoveClaimSlot", filler: candidate},
 			{slot: "StopConditionSlot", filler: stopCondition},
@@ -2012,7 +2136,9 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{kind: "G3.DecisionRecord", pattern: "C.11"},
 		{kind: "G3.TargetEffect", pattern: "A.10"},
 		{kind: "G3.SelectedStructure", pattern: "C.30"},
-		{kind: "G3.ArchitectureOfClaim", pattern: "C.30"},
+		{kind: "G3.CandidateStructure", pattern: "C.30"},
+		{kind: "G3.ArchitectureRelation", pattern: "C.30"},
+		{kind: "G3.ArchitectureClaim", pattern: "C.30"},
 		{kind: "G3.ArchitectureDescription", pattern: "C.30"},
 		{kind: "G3.ArchitectureCandidateSetOrArchive", pattern: "C.30"},
 		{kind: "G3.ArchitectureCandidateMoveClaim", pattern: "C.30"},
@@ -2193,8 +2319,10 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "G3.Choice", superkind: "U.Episteme", pattern: "C.11"},
 		{subkind: "G3.DecisionRecord", superkind: "U.Episteme", pattern: "C.11"},
 		{subkind: "G3.TargetEffect", superkind: "U.Entity", pattern: "A.10"},
-		{subkind: "G3.SelectedStructure", superkind: "U.Entity", pattern: "C.30"},
-		{subkind: "G3.ArchitectureOfClaim", superkind: "U.Episteme", pattern: "C.30"},
+		{subkind: "G3.SelectedStructure", superkind: "U.Structure", pattern: "C.30"},
+		{subkind: "G3.CandidateStructure", superkind: "U.Structure", pattern: "C.30"},
+		{subkind: "G3.ArchitectureRelation", superkind: "U.Relation", pattern: "C.30"},
+		{subkind: "G3.ArchitectureClaim", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.ArchitectureDescription", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.ArchitectureCandidateSetOrArchive", superkind: "U.Episteme", pattern: "C.30"},
 		{subkind: "G3.ArchitectureCandidateMoveClaim", superkind: "U.Episteme", pattern: "C.30"},
@@ -2514,6 +2642,8 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 	addNotMember("U.Role", "U.System", "A.2.1")
 	addNotMember("U.WorkPlan", "U.Work", "A.15.1")
 	addNotMember("U.PresentationCarrier", "U.Episteme", "E.17")
+	addNotMember("U.Episteme", "U.PresentationCarrier", "E.24.PUB")
+	addNotMember("PublicationForm", "U.Episteme", "E.24.PUB")
 	addNotMember("U.PresentationCarrier", "U.ClaimGraph", "C.2.1")
 	addNotMember("C.22.TaskSignature", "U.Work", "C.22")
 	addNotMember("C.22.2.ProblemCard", "U.Work", "C.22.2")
@@ -2598,7 +2728,9 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		"G3.TargetEffect",
 	}, "U.Work", "A.15.1")
 	addNotMembers([]string{
-		"G3.ArchitectureOfClaim",
+		"G3.CandidateStructure",
+		"G3.ArchitectureRelation",
+		"G3.ArchitectureClaim",
 		"G3.ArchitectureDescription",
 		"G3.ArchitectureCandidateSetOrArchive",
 		"G3.ArchitectureCandidateMoveClaim",
@@ -2607,6 +2739,8 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		"G3.ExpectedStructureClaim",
 		"G3.ObservedStructureClaim",
 	}, "G3.SelectedStructure", "C.30")
+	addNotMember("G3.SelectedStructure", "G3.CandidateStructure", "C.30")
+	addNotMember("G3.ArchitectureRelation", "G3.ArchitectureClaim", "C.30")
 	addNotMembers([]string{
 		"U.Method",
 		"U.MethodDescription",

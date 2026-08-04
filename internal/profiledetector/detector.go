@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	Version       = "haft.project-profile-detector/file-metadata-v2"
-	PolicyVersion = "haft.project-profile-detector-policy/supported-singleton-v2"
+	Version       = "haft.project-profile-detector/file-metadata-v3"
+	PolicyVersion = "haft.project-profile-detector-policy/supported-singleton-v3"
 )
 
 type Classification string
@@ -239,7 +239,7 @@ func Detect(snapshot Snapshot) Suggestion {
 	documents := componentEvidenceFor("documents", signals)
 	models := componentEvidenceFor("models", signals)
 	softwareReady := hasRule(software, "software_manifest") && hasRule(software, "production_source")
-	documentsReady := documentScopeReady(documents)
+	documentsReady := documentScopeReady(documents, softwareReady)
 	modelsReady := hasRule(models, "model_artifact")
 	return buildSuggestion(
 		snapshot,
@@ -402,7 +402,17 @@ func insufficientSuggestion(snapshot Snapshot, excluded []Signal) Suggestion {
 	}
 }
 
-func documentScopeReady(signals []Signal) bool {
+func documentScopeReady(signals []Signal, softwareReady bool) bool {
+	if hasRule(signals, "document_primary_manifest") {
+		return true
+	}
+	if hasRule(signals, "document_tool_manifest") &&
+		countRule(signals, "document_content") > 0 {
+		return true
+	}
+	if softwareReady {
+		return false
+	}
 	return countRule(signals, "document_content") >= 3
 }
 
@@ -522,7 +532,7 @@ func componentCandidateReference(
 }
 
 func digestSnapshot(root string, files []ObservedFile, scanned int, truncated bool) string {
-	writer := newDigestWriter("haft.project-profile-observation/file-metadata-v2")
+	writer := newDigestWriter("haft.project-profile-observation/file-metadata-v3")
 	writer.add(root)
 	writer.add(strconv.Itoa(scanned))
 	writer.add(strconv.FormatBool(truncated))
@@ -549,20 +559,6 @@ func (writer *digestAccumulator) add(value string) {
 func (writer digestAccumulator) digest() string {
 	sum := sha256.Sum256(writer.bytes)
 	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-func canonicalRelativeFiles(values []string) ([]string, error) {
-	result := make([]string, len(values))
-	for index, value := range values {
-		canonical, err := canonicalRelativeFile(value)
-		if err != nil {
-			return nil, fmt.Errorf("relative file %d: %w", index, err)
-		}
-		result[index] = canonical
-	}
-	slices.Sort(result)
-	result = slices.Compact(result)
-	return result, nil
 }
 
 func canonicalObservedFiles(values []ObservedFile) ([]ObservedFile, error) {
@@ -677,6 +673,8 @@ var ignoredDocumentDirectories = []string{
 	".agents",
 	".claude",
 	".codex",
+	".codex-review",
+	".context",
 	".cursor",
 	".gemini",
 	".git",

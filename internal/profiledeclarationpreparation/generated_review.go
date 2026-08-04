@@ -3,7 +3,6 @@ package profiledeclarationpreparation
 import (
 	"bytes"
 	"encoding/json"
-	"fmt"
 	"slices"
 	"strings"
 )
@@ -11,11 +10,13 @@ import (
 var generatedReviewDetectorVersions = []string{
 	"haft.project-profile-detector/file-paths-v1",
 	"haft.project-profile-detector/file-metadata-v2",
+	"haft.project-profile-detector/file-metadata-v3",
 }
 
 var generatedReviewPolicyVersions = []string{
 	"haft.project-profile-detector-policy/file-paths-v1",
 	"haft.project-profile-detector-policy/supported-singleton-v2",
+	"haft.project-profile-detector-policy/supported-singleton-v3",
 }
 
 // GeneratedProfileReview identifies an exact, unedited review carrier emitted
@@ -122,17 +123,4 @@ func generatedReviewScope(scope profileScopeDeclarationJSON) bool {
 		len(scope.GoverningPatternRefs) == 0 &&
 		len(scope.ContractRefs) == 0 &&
 		len(scope.EvidencePaths) == 0
-}
-
-func formatGeneratedProfileReviewForTest(dto profileOnboardingWorkInputJSON) ([]byte, error) {
-	canonical, err := json.Marshal(dto)
-	if err != nil {
-		return nil, err
-	}
-	formatted := &bytes.Buffer{}
-	if err := json.Indent(formatted, canonical, "", "  "); err != nil {
-		return nil, fmt.Errorf("format generated review: %w", err)
-	}
-	formatted.WriteByte('\n')
-	return formatted.Bytes(), nil
 }

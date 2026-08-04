@@ -77,13 +77,7 @@ func TestMemoryTypeEnvTransitionRejectsStaleCrossProcessAdmission(
 		genesisTestCommand(&bytes.Buffer{}),
 		nil,
 	); err != nil {
-		t.Fatalf("prepare successor while helper holds predecessor request: %v", err)
-	}
-	if err := runMemoryTypeEnvSelect(
-		genesisTestCommand(&bytes.Buffer{}),
-		nil,
-	); err != nil {
-		t.Fatalf("select successor while helper holds predecessor request: %v", err)
+		t.Fatalf("automatically select successor while helper holds predecessor request: %v", err)
 	}
 	if err := os.WriteFile(releasePath, []byte("successor-selected\n"), 0o600); err != nil {
 		t.Fatalf("release stale-admission helper: %v", err)

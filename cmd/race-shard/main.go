@@ -423,10 +423,11 @@ func parseConfiguration(
 }
 
 func automaticCommandParallelism(logicalCPUs int) int {
+	perCommand := racequalification.CurrentCommandGOMAXPROCS
 	if logicalCPUs >= 8 {
-		return max(1, logicalCPUs*3/4)
+		return max(1, logicalCPUs*3/(4*perCommand))
 	}
-	return max(1, logicalCPUs*2/3)
+	return max(1, logicalCPUs*2/(3*perCommand))
 }
 
 func (app application) run(
@@ -929,9 +930,10 @@ func commandWorkerPools(
 		}}
 	}
 
-	// Round the split-preferred share up. At the measured 12-core default this
-	// yields seven split-preferred and two whole-preferred workers; the pools
-	// remain work-conserving once either primary queue drains.
+	// Round the split-preferred share up. At the measured 12-core default the
+	// per-command GOMAXPROCS budget yields three split-preferred and one
+	// whole-preferred worker; the pools remain work-conserving once either
+	// primary queue drains.
 	splitWorkerCount := max(1, (parallelism*3+3)/4)
 	splitWorkerCount = min(splitWorkerCount, len(splitJobs))
 	wholeWorkerCount := parallelism - splitWorkerCount

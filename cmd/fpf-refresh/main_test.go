@@ -165,6 +165,136 @@ func TestWriteNextCommandKeepsReviewVisibleWithoutBlockingRefresh(t *testing.T) 
 	}
 }
 
+func TestWriteReviewWarningMakesNonBlockingFindingsProminent(t *testing.T) {
+	relativeRoot := filepath.Join("..", "..")
+	root, err := filepath.Abs(relativeRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, err := fpfrefresh.ResolveRepositoryLayout(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPayload, err := os.ReadFile(layout.IntegrationLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := fpfrefresh.ParseIntegrationLock(lockPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic, err := fpfrefresh.NewDiagnostic(
+		fpfrefresh.DiagnosticTokenGateFailed,
+		"candidate query behavior",
+		"the frozen query expectation changed on the fresh source",
+		fpfrefresh.DefaultTokenGateFixtureRelativePath,
+		"bash scripts/fpf_query_token_gate.sh",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := fpfrefresh.BuildCompatibilityReport(
+		fpfrefresh.CompatibilityReportInput{
+			ToolRevision:                 lock.GeneratedBy,
+			Predecessor:                  lock.Coordinates,
+			Candidate:                    lock.Coordinates,
+			PredecessorDatabasePath:      layout.Database,
+			CandidateDatabasePath:        layout.Database,
+			LatestLocalPracticeCandidate: layout.LatestLocalPracticeCandidate,
+			AdditionalDiagnostics:        []fpfrefresh.Diagnostic{diagnostic},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := writeReviewWarning(&output, report, true); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	required := []string{
+		reviewWarningBorder,
+		"FPF REFRESH REVIEW WARNING",
+		"fresh source, index, and integration lock will now be applied",
+		"token_gate_failed: candidate query behavior",
+		"detail: the frozen query expectation changed on the fresh source",
+		"source: " + fpfrefresh.DefaultTokenGateFixtureRelativePath,
+		"may block release or quality claims",
+		"do not block FPF source freshness",
+		"bash scripts/fpf_query_token_gate.sh",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("review warning omits %q:\n%s", fragment, text)
+		}
+	}
+	borderCount := strings.Count(text, reviewWarningBorder)
+	if borderCount != 2 {
+		t.Fatalf("review warning border count = %d:\n%s", borderCount, text)
+	}
+}
+
+func TestWriteRejectionWarningMakesHardStructureBoundaryProminent(t *testing.T) {
+	root, err := filepath.Abs(filepath.Join("..", ".."))
+	if err != nil {
+		t.Fatal(err)
+	}
+	layout, err := fpfrefresh.ResolveRepositoryLayout(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lockPayload, err := os.ReadFile(layout.IntegrationLock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lock, err := fpfrefresh.ParseIntegrationLock(lockPayload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diagnostic, err := fpfrefresh.NewDiagnostic(
+		fpfrefresh.DiagnosticSourceStructureCollapse,
+		"candidate source-unit projection",
+		"source-unit count collapsed from 8000 to 100",
+		"candidate:{Readme.md,FPF-Spec.md}",
+		"go run ./cmd/fpf-refresh check --candidate-ref candidate --no-fetch",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	report, err := fpfrefresh.BuildCompatibilityReport(
+		fpfrefresh.CompatibilityReportInput{
+			ToolRevision:                 lock.GeneratedBy,
+			Predecessor:                  lock.Coordinates,
+			Candidate:                    lock.Coordinates,
+			PredecessorDatabasePath:      layout.Database,
+			CandidateDatabasePath:        layout.Database,
+			LatestLocalPracticeCandidate: layout.LatestLocalPracticeCandidate,
+			AdditionalDiagnostics:        []fpfrefresh.Diagnostic{diagnostic},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	if err := writeRejectionWarning(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	text := output.String()
+	for _, fragment := range []string{
+		"FPF REFRESH STRUCTURE BLOCKED",
+		"fresh candidate was NOT applied",
+		"source_structure_collapse: candidate source-unit projection",
+		"extreme structural collapse",
+	} {
+		if !strings.Contains(text, fragment) {
+			t.Fatalf("rejection warning omits %q:\n%s", fragment, text)
+		}
+	}
+	if strings.Count(text, reviewWarningBorder) != 2 {
+		t.Fatalf("rejection warning border is not prominent:\n%s", text)
+	}
+}
+
 func TestRunCheckEmitsReportBeforeReturningCleanupFailure(t *testing.T) {
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {

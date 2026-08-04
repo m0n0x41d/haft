@@ -112,9 +112,10 @@
         "query": "entity of concern reference scheme claim graph"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 9,
+      "expected_candidate_count": 10,
       "expected_candidate_ids": [
         "readme:practical_use_card:wording",
+        "readme:practical_use_card:dpf-authoring",
         "readme:practical_use_card:architecture",
         "readme:practical_use_card:naming",
         "readme:practical_use_card:description-use",
@@ -126,6 +127,7 @@
       ],
       "expected_candidate_source_ids": [
         "WORDING",
+        "DPF-AUTHORING",
         "ARCHITECTURE",
         "NAMING",
         "DESCRIPTION-USE",
@@ -199,7 +201,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 49,
+      "expected_omitted_at_least": 46,
       "expected_truncation_basis": [
         "role_local_fts_producer_limit",
         "role_local_fts:toc_row",

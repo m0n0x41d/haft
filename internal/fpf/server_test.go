@@ -640,6 +640,26 @@ func TestToolCatalog_SpecLifecycleSeparatesProjectAndExactSectionReads(
 	}
 }
 
+func TestToolCatalog_SpecDraftActionsAreProfileIndependentAndNonBinding(
+	t *testing.T,
+) {
+	tool := haftSpecSectionTool()
+	body := strings.Join([]string{
+		tool.Description,
+		toolCatalogActionDescription(t, "haft_spec_section"),
+	}, "\n")
+	for _, want := range []string{
+		"draft_contract",
+		"profile-independent",
+		"spec_validate",
+		"does not establish applicability",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("spec draft descriptions missing %q:\n%s", want, body)
+		}
+	}
+}
+
 func toolCatalogActionDescription(t *testing.T, toolName string) string {
 	t.Helper()
 

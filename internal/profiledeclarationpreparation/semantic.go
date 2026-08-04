@@ -829,12 +829,12 @@ func buildWorkAndEffect(
 	workBuilder = workBuilder.Enacts(description.DescribedMethodRef(), description.Ref(), bindings)
 	workBuilder = workBuilder.WithMethodDescriptionDigest(descriptionDigest)
 	workBuilder = workBuilder.GovernedByMethodContract(contract.Ref(), contractDigest)
-	workBuilder = workBuilder.PerformedBy(plan.support.actors.assignment.RoleAssignmentRef())
+	workBuilder = workBuilder.PerformedUnderAssignment(plan.support.actors.assignment.RoleAssignmentRef())
 	workBuilder = workBuilder.WithProfileAuthorRoleAssignment(
 		plan.support.actors.assignment.RoleAssignmentRef(),
 		assignmentDigest,
 	)
-	workBuilder = workBuilder.ExecutedWithin(plan.support.actors.assignment.HolderSystemRef())
+	workBuilder = workBuilder.ActualPerformer(plan.support.actors.assignment.HolderSystemRef())
 	workBuilder = workBuilder.InContext(description.BoundedContextRef())
 	workBuilder = workBuilder.During(workWindow, basisWindow)
 	workBuilder = workBuilder.WithObservedProjectBasis(basis.Ref(), basisDigest)

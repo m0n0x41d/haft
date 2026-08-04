@@ -282,17 +282,17 @@ func TestCASWorkRecordRejectsExecutionSubjectSubstitution(t *testing.T) {
 	mustNoError(t, err)
 	substituted, err := newProjectTypeEnvHeadCASWorkCoordinates(
 		projectTypeEnvHeadCASWorkCoordinatesRawInput{
-			Method:            original.Method(),
-			MethodDescription: original.MethodDescription(),
-			PerformedBy:       substitutedRole,
-			ExecutedWithin:    original.ExecutedWithin(),
-			BoundedContext:    original.BoundedContext(),
-			WorkInterval:      original.WorkInterval(),
-			StatePlane:        original.StatePlane(),
-			ResourceLedger:    original.ResourceLedger(),
-			Outcome:           original.Outcome(),
-			Acceptance:        original.Acceptance(),
-			AuditTrace:        original.AuditTrace(),
+			Method:             original.Method(),
+			MethodDescription:  original.MethodDescription(),
+			CoveringAssignment: substitutedRole,
+			ActualPerformer:    original.ActualPerformerSystem(),
+			BoundedContext:     original.BoundedContext(),
+			WorkInterval:       original.WorkInterval(),
+			StatePlane:         original.StatePlane(),
+			ResourceLedger:     original.ResourceLedger(),
+			Outcome:            original.Outcome(),
+			Acceptance:         original.Acceptance(),
+			AuditTrace:         original.AuditTrace(),
 		},
 	)
 	mustNoError(t, err)
@@ -418,6 +418,7 @@ func newEffectFixture(
 			Predecessor:           predecessor,
 			Target:                target,
 			ExpectedGraphRevision: typedmemory.NewGraphRevision(7),
+			AuthorityClass:        ProjectTypeEnvActivationHostRoutedAuthorityClass,
 		},
 	)
 	mustNoError(t, err)

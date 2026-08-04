@@ -55,6 +55,65 @@ type recordedV3Use struct {
 	admissionRequestHash string
 }
 
+type admissionHeadExpectation struct {
+	revision projectprofile.LedgerRevision
+	present  bool
+}
+
+func admissionHeadExpectationFromRequest(
+	request profileadmission.ProfileDeclarationAdmissionRequest,
+) admissionHeadExpectation {
+	revision, present := request.ExpectedLedgerRevision()
+	return admissionHeadExpectation{
+		revision: revision,
+		present:  present,
+	}
+}
+
+func validateAdmissionHeadExpectation(
+	expectation admissionHeadExpectation,
+	current projectprofile.LedgerRevision,
+) error {
+	if !expectation.present || expectation.revision == current {
+		return nil
+	}
+	return fmt.Errorf(
+		"profile change expected ledger revision %d but current revision is %d",
+		expectation.revision.Value(),
+		current.Value(),
+	)
+}
+
+func (adapter adapter) rejectUnexpectedAdmissionHead(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	candidate projectprofile.ProfileDeclarationCandidateV1,
+	expectation admissionHeadExpectation,
+) (adapterOutcome, bool) {
+	if !expectation.present {
+		return adapterOutcome{}, false
+	}
+	ledgerRevision, err := loadExactLedgerHead(
+		ctx,
+		transaction,
+		candidate.Provenance().ProjectRoot(),
+	)
+	if err != nil {
+		return adapter.rollbackFailure(
+			transaction,
+			failureStageLedgerHeadIntegrity,
+		), true
+	}
+	if err := validateAdmissionHeadExpectation(
+		expectation,
+		ledgerRevision,
+	); err != nil {
+		outcome := denied("ledger_revision_conflict", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome), true
+	}
+	return adapterOutcome{}, false
+}
+
 const selectRecordedV4UseByBasisSQL = `SELECT
 	committed_admission_ref,
 	committed_admission_digest,
@@ -303,6 +362,7 @@ func (adapter adapter) Admit(
 		)
 	}
 	candidate := request.Candidate()
+	expectation := admissionHeadExpectationFromRequest(request)
 	_, err := projectprofile.NewProfileDeclarationCandidateV1(
 		candidate.Payload(),
 		candidate.Provenance(),
@@ -329,7 +389,7 @@ func (adapter adapter) Admit(
 		return denied("authority_closure_unavailable", err.Error())
 	}
 	if v5Found {
-		return adapter.admitV5(ctx, candidate)
+		return adapter.admitV5(ctx, candidate, expectation)
 	}
 	v4Found, err := discoverV4Basis(
 		ctx,
@@ -340,7 +400,7 @@ func (adapter adapter) Admit(
 		return denied("authority_closure_unavailable", err.Error())
 	}
 	if v4Found {
-		return adapter.admitV4(ctx, candidate)
+		return adapter.admitV4(ctx, candidate, expectation)
 	}
 	v3Discovery, v3Found, err := discoverV3Basis(
 		ctx,
@@ -351,7 +411,12 @@ func (adapter adapter) Admit(
 		return denied("authority_closure_unavailable", err.Error())
 	}
 	if v3Found {
-		return adapter.admitV3(ctx, candidate, v3Discovery)
+		return adapter.admitV3(
+			ctx,
+			candidate,
+			v3Discovery,
+			expectation,
+		)
 	}
 	snapshot, err := adapter.authorityGate.PrepareClosureSnapshotForBasis(
 		ctx,
@@ -366,6 +431,26 @@ func (adapter adapter) Admit(
 			AdmissionDefinitelyNotCommitted,
 			failureStageBeginImmediate,
 		)
+	}
+	if expectation.present {
+		ledgerRevision, headErr := loadExactLedgerHead(
+			ctx,
+			transaction,
+			candidate.Provenance().ProjectRoot(),
+		)
+		if headErr != nil {
+			return adapter.rollbackFailure(
+				transaction,
+				failureStageLedgerHeadIntegrity,
+			)
+		}
+		if headErr := validateAdmissionHeadExpectation(
+			expectation,
+			ledgerRevision,
+		); headErr != nil {
+			outcome := denied("ledger_revision_conflict", headErr.Error())
+			return adapter.rollbackOutcome(transaction, outcome)
+		}
 	}
 	replay, replayFound, err := adapter.authorityGate.ResolveAuthorityUseForBasisInTransaction(
 		ctx,
@@ -440,6 +525,10 @@ func (adapter adapter) Admit(
 	if err != nil {
 		return adapter.rollbackFailure(transaction, failureStageLedgerHeadIntegrity)
 	}
+	if err := validateAdmissionHeadExpectation(expectation, ledgerRevision); err != nil {
+		outcome := denied("ledger_revision_conflict", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
 	prepared, err := prepareAdmission(
 		candidate,
 		values,
@@ -465,6 +554,7 @@ func (adapter adapter) Admit(
 func (adapter adapter) admitV5(
 	ctx context.Context,
 	candidate projectprofile.ProfileDeclarationCandidateV1,
+	expectation admissionHeadExpectation,
 ) adapterOutcome {
 	transaction, err := adapter.starter.BeginImmediate(ctx, adapter.database)
 	if err != nil {
@@ -472,6 +562,14 @@ func (adapter adapter) admitV5(
 			AdmissionDefinitelyNotCommitted,
 			failureStageBeginImmediate,
 		)
+	}
+	if outcome, rejected := adapter.rejectUnexpectedAdmissionHead(
+		ctx,
+		transaction,
+		candidate,
+		expectation,
+	); rejected {
+		return outcome
 	}
 	basisRef := candidate.Provenance().AuthorityBasisRef().String()
 	recorded, found, err := loadRecordedV5UseByBasis(ctx, transaction, basisRef)
@@ -531,6 +629,10 @@ func (adapter adapter) admitV5(
 	if err != nil {
 		return adapter.rollbackFailure(transaction, failureStageLedgerHeadIntegrity)
 	}
+	if err := validateAdmissionHeadExpectation(expectation, ledgerRevision); err != nil {
+		outcome := denied("ledger_revision_conflict", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
 	prepared, err := prepareAdmission(
 		candidate,
 		values,
@@ -552,6 +654,7 @@ func (adapter adapter) admitV5(
 func (adapter adapter) admitV4(
 	ctx context.Context,
 	candidate projectprofile.ProfileDeclarationCandidateV1,
+	expectation admissionHeadExpectation,
 ) adapterOutcome {
 	transaction, err := adapter.starter.BeginImmediate(ctx, adapter.database)
 	if err != nil {
@@ -559,6 +662,14 @@ func (adapter adapter) admitV4(
 			AdmissionDefinitelyNotCommitted,
 			failureStageBeginImmediate,
 		)
+	}
+	if outcome, rejected := adapter.rejectUnexpectedAdmissionHead(
+		ctx,
+		transaction,
+		candidate,
+		expectation,
+	); rejected {
+		return outcome
 	}
 	basisRef := candidate.Provenance().AuthorityBasisRef().String()
 	recorded, found, err := loadRecordedV4UseByBasis(ctx, transaction, basisRef)
@@ -618,6 +729,10 @@ func (adapter adapter) admitV4(
 	if err != nil {
 		return adapter.rollbackFailure(transaction, failureStageLedgerHeadIntegrity)
 	}
+	if err := validateAdmissionHeadExpectation(expectation, ledgerRevision); err != nil {
+		outcome := denied("ledger_revision_conflict", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
+	}
 	prepared, err := prepareAdmission(
 		candidate,
 		values,
@@ -640,6 +755,7 @@ func (adapter adapter) admitV3(
 	ctx context.Context,
 	candidate projectprofile.ProfileDeclarationCandidateV1,
 	discovery v3BasisDiscovery,
+	expectation admissionHeadExpectation,
 ) adapterOutcome {
 	strictSnapshot := profileauthoritysqlite.ClosureSnapshot{}
 	if discovery.strict() {
@@ -661,6 +777,14 @@ func (adapter adapter) admitV3(
 			AdmissionDefinitelyNotCommitted,
 			failureStageBeginImmediate,
 		)
+	}
+	if outcome, rejected := adapter.rejectUnexpectedAdmissionHead(
+		ctx,
+		transaction,
+		candidate,
+		expectation,
+	); rejected {
+		return outcome
 	}
 	basisRef := candidate.Provenance().AuthorityBasisRef().String()
 	recorded, found, err := loadRecordedV3UseByBasis(ctx, transaction, basisRef)
@@ -742,6 +866,10 @@ func (adapter adapter) admitV3(
 	ledgerRevision, err := loadExactLedgerHead(ctx, transaction, projectRoot)
 	if err != nil {
 		return adapter.rollbackFailure(transaction, failureStageLedgerHeadIntegrity)
+	}
+	if err := validateAdmissionHeadExpectation(expectation, ledgerRevision); err != nil {
+		outcome := denied("ledger_revision_conflict", err.Error())
+		return adapter.rollbackOutcome(transaction, outcome)
 	}
 	prepared, err := prepareAdmission(
 		candidate,

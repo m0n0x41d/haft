@@ -22,6 +22,7 @@ type Effect string
 const (
 	DecisionBinding          Effect = "decision.bind"
 	ProfileDeclaration       Effect = "profile.declare"
+	ProfileChange            Effect = "profile.change"
 	ProjectTypeEnvHeadSelect Effect = "project_typeenv_head.select"
 )
 
@@ -109,6 +110,7 @@ func (request Request) MatchesPayload(payload []byte) bool {
 func validEffect(effect Effect) bool {
 	return effect == DecisionBinding ||
 		effect == ProfileDeclaration ||
+		effect == ProfileChange ||
 		effect == ProjectTypeEnvHeadSelect
 }
 

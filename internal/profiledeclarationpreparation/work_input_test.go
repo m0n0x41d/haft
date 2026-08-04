@@ -60,6 +60,90 @@ func TestProfileOnboardingWorkInputBindsCurrentDetectorAndStableScope(t *testing
 	}
 }
 
+func TestProfileEntityRelationChangeReviewPinsPredecessorAndOneDelta(
+	t *testing.T,
+) {
+	root := canonicalWorkInputTestRoot(t)
+	suggestion := workInputTestSuggestion(t, root, []string{
+		"go.mod",
+		"internal/kernel.go",
+	})
+	leftID, _ := projectprofile.NewScopeID("product-software")
+	rightID, _ := projectprofile.NewScopeID("support-software")
+	left, _ := projectprofile.NewSoftwareRealization(
+		leftID,
+		projectprofile.NoEntityReference{},
+	)
+	right, _ := projectprofile.NewSoftwareRealization(
+		rightID,
+		projectprofile.NoEntityReference{},
+	)
+	scopeSet, _ := projectprofile.NewScopeSet(
+		[]projectprofile.RealizationScope{left, right},
+	)
+	current, _ := projectprofile.NewProfileDeclarationPayload(scopeSet)
+	payloadDigest, _ := projectprofile.DigestProfileDeclarationPayload(current)
+	admissionRef, _ := projectprofile.NewProfileDeclarationAdmissionRecordRef(
+		"profile-admission:current",
+	)
+	admissionDigest, _ := projectprofile.NewContentDigest(
+		"sha256:" + strings.Repeat("1", 64),
+	)
+	nextEntityRef, _ := projectprofile.NewEntityRef("entity:product")
+	basis, err := NewProfileChangeBasis(
+		admissionRef,
+		admissionDigest,
+		payloadDigest,
+		projectprofile.NewLedgerRevision(4),
+		leftID,
+		"",
+		nextEntityRef,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, err := ProposeProfileEntityRelationChangeWorkInput(
+		suggestion,
+		current,
+		basis,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := DecodeProfileOnboardingWorkInput(content, suggestion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := input.ValidateProfileEntityRelationChange(current); err != nil {
+		t.Fatalf("validate exact relation change: %v", err)
+	}
+	decodedBasis, ok := input.ProfileChangeBasis()
+	if !ok || decodedBasis.LedgerRevision().Value() != 4 ||
+		decodedBasis.ScopeID() != leftID {
+		t.Fatalf("decoded change basis = %#v, present=%v", decodedBasis, ok)
+	}
+	dto := profileOnboardingWorkInputJSON{}
+	if err := json.Unmarshal(content, &dto); err != nil {
+		t.Fatal(err)
+	}
+	for index := range dto.Scopes {
+		if dto.Scopes[index].ScopeID == rightID.String() {
+			dto.Scopes[index].EntityRef = "entity:smuggled-delta"
+		}
+	}
+	tampered := marshalProfileWorkInputTest(t, dto)
+	tamperedInput, err := DecodeProfileOnboardingWorkInput(
+		tampered,
+		suggestion,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := tamperedInput.ValidateProfileEntityRelationChange(current); err == nil {
+		t.Fatal("relation change accepted a second semantic delta")
+	}
+}
+
 func TestProfileOnboardingWorkInputMapsEveryMixedCandidateExactlyOnce(t *testing.T) {
 	root := canonicalWorkInputTestRoot(t)
 	suggestion := workInputTestSuggestion(t, root, []string{

@@ -73,6 +73,119 @@ func TestNewReportDerivesClosedCheckPolicy(t *testing.T) {
 		assertOutcome[ReviewReady](t, report, StateReviewReady)
 	})
 
+	t.Run("token-gate drift is review ready", func(t *testing.T) {
+		diagnostic := testDiagnostic(
+			t,
+			DiagnosticTokenGateFailed,
+			"candidate query behavior",
+			"the frozen query expectation changed on the fresh source",
+		)
+		report, err := newTestReport(t,
+			testRevision(t, "f"),
+			predecessor,
+			changed,
+			nil,
+			[]Diagnostic{diagnostic},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("NewReport() error = %v", err)
+		}
+		assertOutcome[ReviewReady](t, report, StateReviewReady)
+	})
+
+	t.Run("source-specific query drift is review ready", func(t *testing.T) {
+		diagnostic := testDiagnostic(
+			t,
+			DiagnosticQueryContractRegression,
+			"candidate source-specific Query expectations",
+			"one exact PatternID from the previous FPF source was renamed",
+		)
+		report, err := newTestReport(t,
+			testRevision(t, "f"),
+			predecessor,
+			changed,
+			nil,
+			[]Diagnostic{diagnostic},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("NewReport() error = %v", err)
+		}
+		assertOutcome[ReviewReady](t, report, StateReviewReady)
+	})
+
+	t.Run("new recognizable source label is review ready", func(t *testing.T) {
+		diagnostic := testDiagnostic(
+			t,
+			DiagnosticAdapterGrammarUnsupported,
+			"candidate practical-use card",
+			"a result-like block uses a new source-owned label family",
+		)
+		report, err := newTestReport(t,
+			testRevision(t, "f"),
+			predecessor,
+			changed,
+			nil,
+			[]Diagnostic{diagnostic},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("NewReport() error = %v", err)
+		}
+		assertOutcome[ReviewReady](t, report, StateReviewReady)
+	})
+
+	t.Run("incomplete card projection is review ready", func(t *testing.T) {
+		diagnostic := testDiagnostic(
+			t,
+			DiagnosticSourceProjectionDegraded,
+			"candidate practical-use card",
+			"raw source is indexed but one projected cue is absent",
+		)
+		report, err := newTestReport(t,
+			testRevision(t, "f"),
+			predecessor,
+			changed,
+			nil,
+			[]Diagnostic{diagnostic},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("NewReport() error = %v", err)
+		}
+		assertOutcome[ReviewReady](t, report, StateReviewReady)
+	})
+
+	t.Run("semantic compiler comparison gap is review ready", func(t *testing.T) {
+		delta := testDelta(
+			t,
+			DeltaBaseTypeEnv,
+			DeltaTypeEnvCompilerGap,
+			"compiled semantic relation",
+			"sha256:before",
+			"sha256:after",
+		)
+		diagnostic := testDiagnostic(
+			t,
+			DiagnosticTypeEnvCompilerGap,
+			"compiled semantic relation",
+			"the compatibility order is not yet implemented",
+		)
+		report, err := newTestReport(t,
+			testRevision(t, "f"),
+			predecessor,
+			changed,
+			[]Delta{delta},
+			[]Diagnostic{diagnostic},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("NewReport() error = %v", err)
+		}
+		assertOutcome[ReviewReady](t, report, StateReviewReady)
+	})
+
 	t.Run("candidate rejected before derived build", func(t *testing.T) {
 		sourceOnly, err := NewCandidateSourceSnapshot(changed.Source())
 		if err != nil {
@@ -80,9 +193,9 @@ func TestNewReportDerivesClosedCheckPolicy(t *testing.T) {
 		}
 		diagnostic := testDiagnostic(
 			t,
-			DiagnosticAdapterGrammarUnsupported,
-			"SYSTEM-RECOGNITION",
-			"source-owned result labels are not admitted by the adapter grammar",
+			DiagnosticCandidateVerificationFailed,
+			"candidate derived publication",
+			"no coherent deterministic source/index projection could be built",
 		)
 		report, err := newTestReport(t,
 			testRevision(t, "f"),
@@ -99,6 +212,27 @@ func TestNewReportDerivesClosedCheckPolicy(t *testing.T) {
 		if _, exists := report.Candidate().Derived(); exists {
 			t.Fatal("rejected source-only candidate unexpectedly has derived coordinates")
 		}
+	})
+
+	t.Run("candidate rejected after extreme source structure collapse", func(t *testing.T) {
+		diagnostic := testDiagnostic(
+			t,
+			DiagnosticSourceStructureCollapse,
+			"candidate source-unit projection",
+			"candidate retains less than 50% of the predecessor projection",
+		)
+		report, err := newTestReport(t,
+			testRevision(t, "f"),
+			predecessor,
+			changed,
+			nil,
+			[]Diagnostic{diagnostic},
+			nil,
+		)
+		if err != nil {
+			t.Fatalf("NewReport() error = %v", err)
+		}
+		assertOutcome[CandidateRejected](t, report, StateCandidateRejected)
 	})
 
 	t.Run("candidate rejected before required publications are complete", func(t *testing.T) {
@@ -423,28 +557,6 @@ func TestNewReportRejectsInconsistentInputs(t *testing.T) {
 		_, err := newTestReport(t, testRevision(t, "f"), predecessor, changed, nil, nil, nil)
 		if !errors.Is(err, ErrUnexplainedCandidateChange) {
 			t.Fatalf("error = %v, want ErrUnexplainedCandidateChange", err)
-		}
-	})
-
-	t.Run("rejecting delta requires diagnostic", func(t *testing.T) {
-		delta := testDelta(
-			t,
-			DeltaBaseTypeEnv,
-			DeltaTypeEnvCompilerGap,
-			"Base TypeEnv",
-			"compiler v3",
-			"compiler v4 required",
-		)
-		_, err := newTestReport(t,
-			testRevision(t, "f"),
-			predecessor,
-			changed,
-			[]Delta{delta},
-			nil,
-			nil,
-		)
-		if err == nil || !strings.Contains(err.Error(), "rejecting diagnostic") {
-			t.Fatalf("error = %v, want rejecting diagnostic requirement", err)
 		}
 	})
 

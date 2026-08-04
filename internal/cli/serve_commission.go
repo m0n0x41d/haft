@@ -2288,7 +2288,6 @@ func requiredCommissionAuthorityDocumentKinds(
 	applicability project.ProjectSpecificationSetApplicability,
 ) []project.SpecDocumentKind {
 	candidates := []project.SpecDocumentKind{
-		project.SpecDocumentKindTargetSystem,
 		project.SpecDocumentKindSoftwareSystem,
 	}
 	return slices.DeleteFunc(

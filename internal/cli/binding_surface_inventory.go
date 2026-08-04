@@ -96,6 +96,7 @@ func bindingSurfaceInventory() []bindingSurfaceInventoryEntry {
 		{Tool: "haft_commission", Action: "cancel", Class: bindingSurfaceLifecycleAuthorityMutation, Enforcement: bindingEnforcementMCPAllowedExistingArtifact},
 		{Tool: "haft_spec_section", Action: "lifecycle", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_spec_section", Action: "next_step", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
+		{Tool: "haft_spec_section", Action: "draft_contract", Class: bindingSurfaceReadOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{Tool: "haft_spec_section", Action: "project", Class: bindingSurfaceDraftOnly, Enforcement: bindingEnforcementMCPAllowed},
 		{
 			Tool:        "haft_spec_section",

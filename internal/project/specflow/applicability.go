@@ -2,6 +2,7 @@ package specflow
 
 import (
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/m0n0x41d/haft/internal/project"
@@ -10,6 +11,7 @@ import (
 
 const (
 	PhaseApplicabilityUnderdeterminedCode = "profile_capability_applicability_underdetermined"
+	PhaseApplicabilityRecoveryCode        = "project_profile_recovery_required"
 )
 
 // PhaseApplicabilityIssue preserves one capability-local missing basis. It is
@@ -42,6 +44,26 @@ type PhaseApplicabilityCue struct {
 	ProfilePayloadDigest string                              `json:"profile_payload_digest"`
 	Issues               []PhaseApplicabilityIssue           `json:"issues"`
 	BlockedDependencies  []PhaseApplicabilityDependencyIssue `json:"blocked_dependencies,omitempty"`
+	Recovery             PhaseApplicabilityRecovery          `json:"recovery"`
+}
+
+// PhaseApplicabilityRecovery makes the public contract boundary explicit.
+// It does not fabricate a mutation call before the public surface resolves
+// the canonical profile origin. SafeContinuationCalls expose the work that
+// remains valid without that effect through public Haft surfaces.
+type PhaseApplicabilityRecovery struct {
+	ResultKind            string          `json:"result_kind"`
+	Code                  string          `json:"code"`
+	RequiredEffect        string          `json:"required_effect"`
+	SubjectRef            string          `json:"subject_ref"`
+	ScopeID               string          `json:"scope_id"`
+	ProfileOrigin         string          `json:"profile_origin,omitempty"`
+	RecoverySurface       string          `json:"recovery_surface"`
+	MutationAvailability  string          `json:"mutation_availability"`
+	HumanGateRequired     bool            `json:"human_gate_required"`
+	Why                   string          `json:"why"`
+	SafeContinuationCalls []DraftToolCall `json:"safe_continuation_calls"`
+	ReturnCondition       string          `json:"return_condition"`
 }
 
 // ApplicablePhaseSet is the immutable phase projection for one exact
@@ -146,12 +168,49 @@ func phaseApplicabilityCue(
 			MissingBasis: string(missingBasis),
 		})
 	}
+	recovery := phaseApplicabilityRecovery(applicability)
 	return PhaseApplicabilityCue{
 		Code:                 PhaseApplicabilityUnderdeterminedCode,
 		ScopeID:              applicability.ScopeID().String(),
 		ProfilePayloadDigest: applicability.ProfilePayloadDigest().String(),
 		Issues:               issues,
+		Recovery:             recovery,
 	}, nil
+}
+
+func phaseApplicabilityRecovery(
+	applicability project.ProjectSpecificationSetApplicability,
+) PhaseApplicabilityRecovery {
+	scopeID := applicability.ScopeID().String()
+	payloadDigest := applicability.ProfilePayloadDigest().String()
+	contractCall := DraftToolCall{
+		Tool: "haft_spec_section",
+		Arguments: map[string]interface{}{
+			"action": "draft_contract",
+		},
+	}
+	validationCall := DraftToolCall{
+		Tool: "haft_query",
+		Arguments: map[string]interface{}{
+			"action": "spec_validate",
+		},
+	}
+	return PhaseApplicabilityRecovery{
+		ResultKind:           "blocked",
+		Code:                 PhaseApplicabilityRecoveryCode,
+		RequiredEffect:       "resolve_missing_project_profile_relation",
+		SubjectRef:           payloadDigest,
+		ScopeID:              scopeID,
+		RecoverySurface:      "haft_onboard",
+		MutationAvailability: "depends_on_current_profile_origin",
+		HumanGateRequired:    true,
+		Why:                  "The lifecycle surface must resolve the current canonical profile origin before naming an available mutation path. Follow the origin-specific public recovery route returned by the surface.",
+		SafeContinuationCalls: []DraftToolCall{
+			contractCall,
+			validationCall,
+		},
+		ReturnCondition: "The missing relation is admitted through the origin-specific public profile route; then retry the unchanged lifecycle request.",
+	}
 }
 
 func addUnavailableDependencyIssues(
@@ -241,7 +300,32 @@ func clonePhaseApplicabilityCue(
 		[]PhaseApplicabilityDependencyIssue{},
 		cue.BlockedDependencies...,
 	)
+	cue.Recovery.SafeContinuationCalls = cloneDraftToolCalls(
+		cue.Recovery.SafeContinuationCalls,
+	)
 	return cue
+}
+
+func cloneDraftToolCalls(values []DraftToolCall) []DraftToolCall {
+	result := make([]DraftToolCall, len(values))
+	fillClonedDraftToolCalls(values, result, 0)
+	return result
+}
+
+func fillClonedDraftToolCalls(
+	values []DraftToolCall,
+	result []DraftToolCall,
+	index int,
+) {
+	if index == len(values) {
+		return
+	}
+	arguments := maps.Clone(values[index].Arguments)
+	result[index] = DraftToolCall{
+		Tool:      values[index].Tool,
+		Arguments: arguments,
+	}
+	fillClonedDraftToolCalls(values, result, index+1)
 }
 
 func validateApplicablePhaseSet(set ApplicablePhaseSet) error {
@@ -250,6 +334,9 @@ func validateApplicablePhaseSet(set ApplicablePhaseSet) error {
 	}
 	if set.cue.ScopeID == "" || set.cue.ProfilePayloadDigest == "" {
 		return fmt.Errorf("phase applicability provenance is incomplete")
+	}
+	if err := validatePhaseApplicabilityRecovery(set.cue); err != nil {
+		return err
 	}
 	seen := make(map[PhaseID]struct{}, len(set.phases))
 	for _, phase := range set.phases {
@@ -294,6 +381,24 @@ func validateApplicablePhaseSet(set ApplicablePhaseSet) error {
 				)
 			}
 		}
+	}
+	return nil
+}
+
+func validatePhaseApplicabilityRecovery(cue PhaseApplicabilityCue) error {
+	recovery := cue.Recovery
+	if recovery.ResultKind != "blocked" ||
+		recovery.Code != PhaseApplicabilityRecoveryCode ||
+		recovery.RequiredEffect == "" ||
+		recovery.SubjectRef != cue.ProfilePayloadDigest ||
+		recovery.ScopeID != cue.ScopeID ||
+		recovery.RecoverySurface == "" ||
+		recovery.MutationAvailability == "" ||
+		!recovery.HumanGateRequired ||
+		recovery.Why == "" ||
+		len(recovery.SafeContinuationCalls) == 0 ||
+		recovery.ReturnCondition == "" {
+		return fmt.Errorf("phase applicability recovery contract is incomplete")
 	}
 	return nil
 }

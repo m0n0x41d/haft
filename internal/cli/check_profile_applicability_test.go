@@ -29,12 +29,21 @@ func TestBuildCheckReportOmitsSoftwareSpecHealthForDeclaredNonSoftwareProject(
 		t.Fatal(err)
 	}
 	assertNoSoftwareSpecHealth(t, report.SpecHealth)
-	if !profileCheckContainsFindingCode(
+	if profileCheckContainsFindingCode(
 		report.SpecHealth,
 		"profile_capability_applicability_underdetermined",
 	) {
 		t.Fatalf(
-			"non-software check hid target-system applicability uncertainty: %#v",
+			"non-software check retained a resolved target-system applicability gate: %#v",
+			report.SpecHealth,
+		)
+	}
+	if !profileCheckContainsFindingCode(
+		report.SpecHealth,
+		"spec_carrier_missing_file",
+	) {
+		t.Fatalf(
+			"non-software check suppressed required TargetSystemSpec health: %#v",
 			report.SpecHealth,
 		)
 	}

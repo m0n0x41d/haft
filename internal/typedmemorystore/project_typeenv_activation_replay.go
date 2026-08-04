@@ -43,7 +43,18 @@ type durableProjectTypeEnvActivationFootprint struct {
 
 func isStoredProjectTypeEnvActivation(common durableGenericCommonRow) bool {
 	return common.eventKind == projecttypeenvactivation.EventKind ||
-		common.eventAuthorityClass == projecttypeenvactivation.AuthorityClass
+		isProjectTypeEnvActivationAuthorityClass(common.eventAuthorityClass)
+}
+
+func isProjectTypeEnvActivationAuthorityClass(value string) bool {
+	switch value {
+	case projecttypeenvactivation.LegacyManualAuthorityClass,
+		projecttypeenvactivation.HostRoutedOperatorRequestAuthorityClass,
+		projecttypeenvactivation.CompatibleSuccessorPolicyAuthorityClass:
+		return true
+	default:
+		return false
+	}
 }
 
 func verifyExactProjectTypeEnvActivationCoordinate(
@@ -162,8 +173,8 @@ func verifyStoredProjectTypeEnvActivationEvent(
 		basisTypeEnv.String(),
 		delta.Digest().String(),
 		string(delta.CanonicalBytes()),
-		projecttypeenvactivation.EventKind,
-		projecttypeenvactivation.AuthorityClass,
+		delta.EventKind(),
+		delta.AuthorityClass(),
 		delta.RequestRef().String(),
 	)
 	if err != nil {
@@ -188,8 +199,8 @@ func verifyStoredProjectTypeEnvActivationEvent(
 		delta.Digest().String() == common.eventChangeDigest &&
 		delta.Digest().String() == common.idempotencyChangeDigest &&
 		delta.Digest().String() == common.commitChangeDigest &&
-		common.eventKind == projecttypeenvactivation.EventKind &&
-		common.eventAuthorityClass == projecttypeenvactivation.AuthorityClass &&
+		common.eventKind == delta.EventKind() &&
+		common.eventAuthorityClass == delta.AuthorityClass() &&
 		common.eventChangeCount == 1 &&
 		common.eventDigest == recomputed.String() &&
 		common.idempotencyResultDigest == recomputed.String() &&

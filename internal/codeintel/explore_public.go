@@ -182,12 +182,13 @@ func (request ExplorePublicationRequest) TraceRef() string {
 // one canonical variant is populated and the index basis is shared by every
 // later projection.
 type ExploreEnvelope struct {
-	request ExploreExecutionRequest
-	kind    string
-	index   codebase.IndexState
-	exact   ExploreResult
-	bag     ExploreBagResult
-	concern ConcernDiscoveryResult
+	request      ExploreExecutionRequest
+	kind         string
+	index        codebase.IndexState
+	indexRefresh IndexCoordinationResult
+	exact        ExploreResult
+	bag          ExploreBagResult
+	concern      ConcernDiscoveryResult
 }
 
 func (envelope ExploreEnvelope) Request() ExploreExecutionRequest {
@@ -196,6 +197,10 @@ func (envelope ExploreEnvelope) Request() ExploreExecutionRequest {
 
 func (envelope ExploreEnvelope) Index() codebase.IndexState {
 	return envelope.index
+}
+
+func (envelope ExploreEnvelope) IndexRefresh() IndexCoordinationResult {
+	return envelope.indexRefresh
 }
 
 func (s *Service) ExecuteExplore(
@@ -214,10 +219,11 @@ func (s *Service) ExecuteExplore(
 			return ExploreEnvelope{}, err
 		}
 		return ExploreEnvelope{
-			request: request,
-			kind:    exploreCanonicalResultConcern,
-			index:   result.Index,
-			concern: result,
+			request:      request,
+			kind:         exploreCanonicalResultConcern,
+			index:        result.Index,
+			indexRefresh: result.IndexRefresh,
+			concern:      result,
 		}, nil
 	}
 	if request.kind != exploreRequestKindSymbol {
@@ -232,10 +238,11 @@ func (s *Service) ExecuteExplore(
 			return ExploreEnvelope{}, err
 		}
 		return ExploreEnvelope{
-			request: request,
-			kind:    exploreCanonicalResultBag,
-			index:   result.Index,
-			bag:     result,
+			request:      request,
+			kind:         exploreCanonicalResultBag,
+			index:        result.Index,
+			indexRefresh: result.IndexRefresh,
+			bag:          result,
 		}, nil
 	}
 	result, err := s.Explore(
@@ -249,10 +256,11 @@ func (s *Service) ExecuteExplore(
 		return ExploreEnvelope{}, err
 	}
 	return ExploreEnvelope{
-		request: request,
-		kind:    exploreCanonicalResultExact,
-		index:   result.Index,
-		exact:   result,
+		request:      request,
+		kind:         exploreCanonicalResultExact,
+		index:        result.Index,
+		indexRefresh: result.IndexRefresh,
+		exact:        result,
 	}, nil
 }
 

@@ -72,6 +72,36 @@ func TestReviewSpecificationSet_ReturnsV2ProfileModelBoundaries(t *testing.T) {
 	assertReviewProfileInput(t, packet.Profile, "value_slice", ReviewModelDispositionAbstain)
 }
 
+func TestReviewDraftSpecificationSetChecksDraftWithoutActivatingIt(t *testing.T) {
+	section := reviewSectionFixture(
+		"SS.draft.001",
+		"software-system",
+		"software.functional_behavior",
+		"Draft behavior",
+		"definition",
+		"object",
+		nil,
+	)
+	section.Status = string(project.SpecSectionStateDraft)
+	set := project.ProjectSpecificationSet{
+		Sections: []project.SpecSection{section},
+	}
+
+	packet := ReviewDraftSpecificationSet(set)
+
+	if packet.Profile.ID != ReviewProfileDraftV1 ||
+		packet.Summary.CheckedSections != 1 ||
+		packet.Summary.ActiveSections != 0 ||
+		len(packet.Sections) != 1 ||
+		packet.Sections[0].Status != "draft" {
+		t.Fatalf("draft semantic review = %#v", packet)
+	}
+	if packet.Authority != ReviewAuthority ||
+		packet.AuthorityBoundary.Approval != "not_approval" {
+		t.Fatalf("draft review authority = %#v", packet.AuthorityBoundary)
+	}
+}
+
 func TestReviewSpecificationSet_BlocksFrameMismatch(t *testing.T) {
 	packet := ReviewSpecificationSet(project.ProjectSpecificationSet{
 		Sections: []project.SpecSection{

@@ -2,7 +2,6 @@ package codeintel
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -44,6 +43,7 @@ type FlowResult struct {
 	Depth          int
 	Hops           []FusedHop
 	ColdBuilt      bool // a one-time index build ran to answer this query
+	IndexRefresh   IndexCoordinationResult
 	Resolution     codebase.ResolutionCounts
 	Index          codebase.IndexState
 }
@@ -60,6 +60,8 @@ type Service struct {
 	seeds   ConcernExactSeedSource
 
 	beforeBasisConfirm func(context.Context) error
+	coordinatorMu      sync.Mutex
+	coordinator        *ProjectIndexCoordinator
 }
 
 // NewService wires a code-graph service over the artifact store's DB.
@@ -75,6 +77,19 @@ func NewService(store *artifact.Store) *Service {
 	}
 }
 
+// NewServiceWithIndexCoordinator wires the checked project-scoped coordinator
+// used by every production startup and request path that can refresh the code
+// index. Tests and narrow in-process consumers may continue to use NewService;
+// its lazy fallback is process-scoped and never fabricates a ledger binding.
+func NewServiceWithIndexCoordinator(
+	store *artifact.Store,
+	coordinator *ProjectIndexCoordinator,
+) *Service {
+	service := NewService(store)
+	service.coordinator = coordinator
+	return service
+}
+
 // NewServiceWithConcernExactSeeds adds an optional exact-seed adapter without
 // making the draft typed-memory runtime a dependency of core concern
 // discovery. The ordinary NewService path always uses the explicit null
@@ -86,43 +101,6 @@ func NewServiceWithConcernExactSeeds(
 	service := NewService(store)
 	service.seeds = seeds
 	return service
-}
-
-// buildMu serializes index builds across the process. Service is created per
-// request (and one runs at server startup), so the lock cannot live on the
-// struct — it must be package-scoped. With double-checked staleness inside the
-// lock, a query arriving during the startup rebuild waits, then sees a fresh
-// index instead of triggering a second build.
-var indexMu sync.RWMutex
-
-// EnsureIndex atomically publishes a complete initial epoch or a closure-scoped
-// incremental epoch. Readers are excluded only for the short publication path;
-// parse and resolution failures retain the previous complete epoch and mark the
-// index degraded instead of exposing a half-built graph.
-func (s *Service) EnsureIndex(ctx context.Context, projectRoot string) (bool, error) {
-	indexMu.Lock()
-	defer indexMu.Unlock()
-	result, err := s.scanner.RefreshIncremental(ctx, projectRoot)
-	if err != nil || result.Degraded {
-		return result.Published, err
-	}
-	modules, err := s.scanner.GetModules(ctx)
-	if err != nil {
-		return result.Published, fmt.Errorf(
-			"inspect code modules: %w",
-			err,
-		)
-	}
-	if !result.Published && len(modules) > 0 {
-		return result.Published, nil
-	}
-	if _, err := s.scanner.ScanModules(ctx, projectRoot); err != nil {
-		return result.Published, fmt.Errorf(
-			"refresh code modules: %w",
-			err,
-		)
-	}
-	return result.Published, nil
 }
 
 // Flow runs a callers/callees traversal from the named seed, fusing the
@@ -168,21 +146,25 @@ func (s *Service) flowWithProfileOnce(
 	dir Direction,
 	profile TraversalProfile,
 ) (result FlowResult, resultErr error) {
-	cold, err := s.EnsureIndex(ctx, projectRoot)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return FlowResult{}, err
 	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
 	if err != nil {
 		return FlowResult{}, err
 	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return FlowResult{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = FlowResult{}
 			resultErr = err
 		}
@@ -197,7 +179,8 @@ func (s *Service) flowWithProfileOnce(
 			Direction:      dir,
 			Profile:        profile,
 			Depth:          depth,
-			ColdBuilt:      cold,
+			ColdBuilt:      indexRefresh.Rebuilt(),
+			IndexRefresh:   indexRefresh,
 			Index:          indexState,
 		}, nil
 	}
@@ -227,7 +210,8 @@ func (s *Service) flowWithProfileOnce(
 		Direction:      dir,
 		Profile:        profile,
 		Depth:          depth,
-		ColdBuilt:      cold,
+		ColdBuilt:      indexRefresh.Rebuilt(),
+		IndexRefresh:   indexRefresh,
 		Index:          indexState,
 	}
 	if seedResolution.Kind().String() != "resolved_seed" {

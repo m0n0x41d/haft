@@ -711,10 +711,9 @@ func (delta Delta) disposition() (resultDisposition, error) {
 		case DeltaTypeEnvChanged,
 			DeltaTypeEnvAdditive,
 			DeltaTypeEnvNarrowed,
-			DeltaTypeEnvRemoved:
+			DeltaTypeEnvRemoved,
+			DeltaTypeEnvCompilerGap:
 			return dispositionReview, nil
-		case DeltaTypeEnvCompilerGap:
-			return dispositionReject, nil
 		}
 	case DeltaQueryBehavior:
 		if delta.kind == DeltaQueryExpectationChanged {
@@ -752,6 +751,8 @@ type DiagnosticCode uint8
 const (
 	DiagnosticSourcePublicationMalformed DiagnosticCode = iota + 1
 	DiagnosticAdapterGrammarUnsupported
+	DiagnosticSourceProjectionDegraded
+	DiagnosticSourceStructureCollapse
 	DiagnosticSourceReferenceUnresolved
 	DiagnosticTypeEnvSemanticRejection
 	DiagnosticTypeEnvCompatibilityReviewRequired
@@ -769,6 +770,10 @@ func (code DiagnosticCode) String() string {
 		return "source_publication_malformed"
 	case DiagnosticAdapterGrammarUnsupported:
 		return "adapter_grammar_unsupported"
+	case DiagnosticSourceProjectionDegraded:
+		return "source_projection_degraded"
+	case DiagnosticSourceStructureCollapse:
+		return "source_structure_collapse"
 	case DiagnosticSourceReferenceUnresolved:
 		return "source_reference_unresolved"
 	case DiagnosticTypeEnvSemanticRejection:
@@ -795,17 +800,19 @@ func (code DiagnosticCode) String() string {
 func (code DiagnosticCode) disposition() (resultDisposition, error) {
 	switch code {
 	case DiagnosticTypeEnvCompatibilityReviewRequired,
-		DiagnosticSnapshotPinStale,
-		DiagnosticLocalPracticeRebaseRequired:
-		return dispositionReview, nil
-	case DiagnosticSourcePublicationMalformed,
 		DiagnosticAdapterGrammarUnsupported,
-		DiagnosticSourceReferenceUnresolved,
-		DiagnosticTypeEnvSemanticRejection,
+		DiagnosticSourceProjectionDegraded,
 		DiagnosticTypeEnvCompilerGap,
 		DiagnosticQueryContractRegression,
-		DiagnosticCandidateVerificationFailed,
+		DiagnosticSnapshotPinStale,
+		DiagnosticLocalPracticeRebaseRequired,
 		DiagnosticTokenGateFailed:
+		return dispositionReview, nil
+	case DiagnosticSourcePublicationMalformed,
+		DiagnosticSourceStructureCollapse,
+		DiagnosticSourceReferenceUnresolved,
+		DiagnosticTypeEnvSemanticRejection,
+		DiagnosticCandidateVerificationFailed:
 		return dispositionReject, nil
 	default:
 		return 0, fmt.Errorf("unsupported refresh diagnostic code %d", code)
@@ -980,16 +987,18 @@ type NoChange struct{}
 func (NoChange) State() CheckState    { return StateNoChange }
 func (NoChange) checkOutcomeVariant() {}
 
-// CandidateRejected means a predeclared fail-closed diagnostic rejected the
-// candidate.
+// CandidateRejected means the source could not produce one complete,
+// structurally supported, deterministically verified candidate publication.
 type CandidateRejected struct{}
 
 // State returns StateCandidateRejected.
 func (CandidateRejected) State() CheckState    { return StateCandidateRejected }
 func (CandidateRejected) checkOutcomeVariant() {}
 
-// ReviewReady means verified candidate facts require human semantic or
-// expectation review. It does not mean approval or authorization.
+// ReviewReady means a complete verified candidate has non-blocking parser,
+// semantic, query-behavior, token-budget, or expectation findings to review.
+// It does not mean approval or authorization, and it does not veto
+// source-current apply.
 type ReviewReady struct{}
 
 // State returns StateReviewReady.

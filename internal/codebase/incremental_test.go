@@ -106,6 +106,147 @@ func TestIncrementalClosureReachesBarrelImporters(t *testing.T) {
 	}
 }
 
+func TestIncrementalClosureDoesNotFanOutJSTSSiblings(t *testing.T) {
+	current := map[string]CodeFileState{
+		"app/main.ts": {
+			Language: "typescript",
+		},
+		"feature/changed.ts": {
+			Language: "typescript",
+		},
+		"feature/unrelated-a.ts": {
+			Language: "typescript",
+		},
+		"feature/unrelated-b.vue": {
+			Language: "vue",
+		},
+	}
+	imports := []CodeImport{
+		{SourceFile: "app/main.ts", TargetBase: "feature/changed"},
+	}
+
+	got := incrementalReindexClosure(
+		current,
+		imports,
+		[]string{"feature/changed.ts"},
+		nil,
+	)
+	want := []string{"app/main.ts", "feature/changed.ts"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("JSTS closure = %v, want %v", got, want)
+	}
+}
+
+func TestIncrementalClosureRetainsDirectoryScopedResolvers(t *testing.T) {
+	tests := []struct {
+		name     string
+		changed  string
+		deleted  bool
+		current  map[string]CodeFileState
+		expected []string
+	}{
+		{
+			name:    "Go package",
+			changed: "pkg/changed.go",
+			current: map[string]CodeFileState{
+				"pkg/changed.go": {Language: "go"},
+				"pkg/caller.go":  {Language: "go"},
+				"pkg/unrelated.ts": {
+					Language: "typescript",
+				},
+			},
+			expected: []string{"pkg/caller.go", "pkg/changed.go"},
+		},
+		{
+			name:    "deleted Python module",
+			changed: "pkg/changed.py",
+			deleted: true,
+			current: map[string]CodeFileState{
+				"pkg/caller.py": {Language: "python"},
+				"pkg/unrelated.js": {
+					Language: "javascript",
+				},
+			},
+			expected: []string{"pkg/caller.py"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			changed := []string{test.changed}
+			var deleted []string
+			if test.deleted {
+				changed = nil
+				deleted = []string{test.changed}
+			}
+			got := incrementalReindexClosure(
+				test.current,
+				nil,
+				changed,
+				deleted,
+			)
+			if !reflect.DeepEqual(got, test.expected) {
+				t.Fatalf("closure = %v, want %v", got, test.expected)
+			}
+		})
+	}
+}
+
+func TestRefreshIncrementalProfilesExactJSTSClosure(t *testing.T) {
+	store, root := newSymbolStore(t)
+	ctx := context.Background()
+	writeTestFile(t, root, "feature/changed.ts", `export function changed(): number { return 1 }
+`)
+	writeTestFile(t, root, "feature/unrelated-a.ts", `export function unrelatedA(): number { return 1 }
+`)
+	writeTestFile(t, root, "feature/unrelated-b.ts", `export function unrelatedB(): number { return 1 }
+`)
+
+	scanner := NewScanner(store.db)
+	if _, err := scanner.RefreshIncremental(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, root, "feature/changed.ts", `export function changed(): number { return 2 }
+`)
+
+	result, err := scanner.RefreshIncremental(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Published || result.FullRebuild || result.ChangedFiles != 1 {
+		t.Fatalf("incremental refresh = %+v", result)
+	}
+	metrics := result.Metrics
+	if metrics.DiscoveredFiles != 3 ||
+		metrics.AdmittedFiles != 3 ||
+		metrics.ObservedBytes < 1 ||
+		metrics.SeedFiles != 1 ||
+		metrics.ReindexFiles != 1 ||
+		metrics.ResolveFiles != 1 ||
+		metrics.ResolveWorkers != 1 ||
+		metrics.TotalDuration <= 0 {
+		t.Fatalf("refresh metrics = %+v", metrics)
+	}
+}
+
+func TestScannerResolveWorkerLimitIsThermalSafe(t *testing.T) {
+	scanner := NewScanner(nil)
+	limit := scanner.resolveWorkerLimit()
+	if limit.Value() != defaultMaxResolveWorkers {
+		t.Fatalf(
+			"resolve worker limit = %d, want %d",
+			limit.Value(),
+			defaultMaxResolveWorkers,
+		)
+	}
+	if workers := indexResolveWorkerCount(100, limit); workers > 2 {
+		t.Fatalf("active resolve workers = %d, want at most 2", workers)
+	}
+	if DefaultIndexBudget().MaxParseWorkers().Value() == limit.Value() {
+		t.Fatal("runtime thermal limit must remain outside persisted index budget")
+	}
+}
+
 func TestRefreshIncrementalUpdatesPreparedBarrelModel(t *testing.T) {
 	store, root := newSymbolStore(t)
 	ctx := context.Background()

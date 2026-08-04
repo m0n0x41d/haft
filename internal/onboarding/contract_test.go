@@ -10,13 +10,15 @@ import (
 )
 
 type scriptedRuntime struct {
-	observation       Observation
-	profile           Preparation
-	memory            Preparation
-	observeCalls      int
-	profileCalls      int
-	memoryCalls       int
-	observationUpdate func() Observation
+	observation        Observation
+	profile            Preparation
+	profileChange      Preparation
+	memory             Preparation
+	observeCalls       int
+	profileCalls       int
+	profileChangeCalls int
+	memoryCalls        int
+	observationUpdate  func() Observation
 }
 
 func (runtime *scriptedRuntime) Observe(
@@ -35,6 +37,14 @@ func (runtime *scriptedRuntime) PrepareProfile(
 ) (Preparation, error) {
 	runtime.profileCalls++
 	return runtime.profile, nil
+}
+
+func (runtime *scriptedRuntime) PrepareProfileChange(
+	context.Context,
+	Request,
+) (Preparation, error) {
+	runtime.profileChangeCalls++
+	return runtime.profileChange, nil
 }
 
 func (runtime *scriptedRuntime) PrepareMemory(
@@ -206,14 +216,100 @@ func TestStatusProjectsClosedReadableStatesWithoutAuthorityEffects(
 				)
 			}
 			if runtime.profileCalls != 0 ||
+				runtime.profileChangeCalls != 0 ||
 				runtime.memoryCalls != 0 {
 				t.Fatalf(
-					"status invoked preparation: %d/%d",
+					"status invoked preparation: %d/%d/%d",
 					runtime.profileCalls,
+					runtime.profileChangeCalls,
 					runtime.memoryCalls,
 				)
 			}
+			if outcome.StateDomain() != StateDomainProjectSetupReadiness {
+				t.Fatalf("state domain = %q", outcome.StateDomain())
+			}
+			if fixture.result == ResultReady {
+				if !slices.Equal(outcome.ReadyFor(), projectSetupReadyFor) ||
+					!slices.Equal(
+						outcome.DoesNotEstablish(),
+						projectSetupDoesNotEstablish,
+					) {
+					t.Fatalf(
+						"ready semantics = %#v / %#v",
+						outcome.ReadyFor(),
+						outcome.DoesNotEstablish(),
+					)
+				}
+			}
 		})
+	}
+}
+
+func TestProfileChangePreparationIsSeparateAndNonBinding(t *testing.T) {
+	t.Parallel()
+
+	scope := mustScope(t, "app", "Application", Software, nil)
+	observation, err := NewObservation(
+		ObservationInput{
+			Initialized:     true,
+			ProfileDeclared: true,
+			MemoryReady:     true,
+			Scopes:          []Scope{scope},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := NewPreparation(
+		PreparationCreated,
+		"review:onboard-profile-change",
+		[]Scope{scope},
+		"Prepared one relation change.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &scriptedRuntime{
+		observation:   observation,
+		profileChange: prepared,
+	}
+	service, err := NewService(runtime, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(
+		RequestInput{
+			Action:           string(ActionProfileChangePrepare),
+			ScopeIDPresent:   true,
+			ScopeID:          "app",
+			EntityRefPresent: true,
+			EntityRef:        "entity:target-system",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := service.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Result() != ResultProfileChangeReviewCreated ||
+		outcome.Status() != StatusProfileChangeReviewReady ||
+		outcome.ReviewRef() != "review:onboard-profile-change" {
+		t.Fatalf("profile change preparation = %#v", outcome)
+	}
+	effects := outcome.Effects()
+	if !effects.ReviewCarrierCreated ||
+		effects.CanonicalProfileChanged ||
+		effects.AuthorityGranted {
+		t.Fatalf("profile change effects = %#v", effects)
+	}
+	if runtime.profileCalls != 0 || runtime.profileChangeCalls != 1 {
+		t.Fatalf(
+			"preparation calls = initial:%d change:%d",
+			runtime.profileCalls,
+			runtime.profileChangeCalls,
+		)
 	}
 }
 
@@ -503,6 +599,44 @@ func TestScopeEvidencePathCountMatchesPublicSchemaBound(t *testing.T) {
 		overLimit,
 	); err == nil {
 		t.Fatal("scope above evidence-path limit was accepted")
+	}
+}
+
+func TestProjectedScopePreservesTotalWhenEvidencePathsAreBounded(t *testing.T) {
+	t.Parallel()
+
+	retained := make([]string, MaximumEvidencePaths)
+	for index := range retained {
+		retained[index] = fmt.Sprintf("internal/evidence-%03d.go", index)
+	}
+	scope, err := NewProjectedScope(
+		"software",
+		"Software",
+		Software,
+		retained,
+		MaximumEvidencePaths+37,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.EvidencePathCount() != MaximumEvidencePaths+37 ||
+		!scope.EvidencePathsTruncated() ||
+		len(scope.EvidencePaths()) != MaximumEvidencePaths {
+		t.Fatalf(
+			"projection = count:%d truncated:%t retained:%d",
+			scope.EvidencePathCount(),
+			scope.EvidencePathsTruncated(),
+			len(scope.EvidencePaths()),
+		)
+	}
+	if _, err := NewProjectedScope(
+		"software",
+		"Software",
+		Software,
+		retained[:MaximumEvidencePaths-1],
+		MaximumEvidencePaths+37,
+	); err == nil {
+		t.Fatal("short truncated evidence projection was accepted")
 	}
 }
 

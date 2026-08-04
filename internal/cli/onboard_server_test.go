@@ -71,6 +71,9 @@ func TestOnboardMCPStrictDecoderRejectsInvalidVariantsBeforeWork(
 		`{"action":"memory_prepare","scopes":[]}`,
 		`{"action":"profile_prepare","basis":"Missing scopes."}`,
 		`{"action":"profile_prepare","scopes":[]}`,
+		`{"action":"profile_change_prepare"}`,
+		`{"action":"profile_change_prepare","scope_id":"app"}`,
+		`{"action":"profile_change_prepare","entity_ref":"entity:target"}`,
 		`{"action":"status"}{"action":"status"}`,
 	}
 	for index, fixture := range fixtures {
@@ -138,15 +141,29 @@ func TestOnboardPublishedSchemaBoundsReachStrictHandler(t *testing.T) {
 		evidenceItemSchema,
 		"maxLength",
 	)
+	changeScopeLimit := onboardPublishedInteger(
+		t,
+		properties["scope_id"],
+		"maxLength",
+	)
+	entityRefLimit := onboardPublishedInteger(
+		t,
+		properties["entity_ref"],
+		"maxLength",
+	)
 	if basisLimit != onboarding.MaximumProfileBasisBytes ||
 		scopeLimit != onboarding.MaximumScopeIDBytes ||
+		changeScopeLimit != onboarding.MaximumScopeIDBytes ||
+		entityRefLimit != onboarding.MaximumEntityRefBytes ||
 		labelLimit != onboarding.MaximumScopeLabelBytes ||
 		evidenceCountLimit != onboarding.MaximumEvidencePaths ||
 		evidencePathLimit != onboarding.MaximumEvidencePathBytes {
 		t.Fatalf(
-			"published bounds = basis:%d scope:%d label:%d evidence:%d/%d",
+			"published bounds = basis:%d scope:%d change_scope:%d entity:%d label:%d evidence:%d/%d",
 			basisLimit,
 			scopeLimit,
+			changeScopeLimit,
+			entityRefLimit,
 			labelLimit,
 			evidenceCountLimit,
 			evidencePathLimit,
@@ -169,6 +186,14 @@ func TestOnboardPublishedSchemaBoundsReachStrictHandler(t *testing.T) {
 		); callErr != nil {
 			t.Fatalf("published %s variant failed: %v", action, callErr)
 		}
+	}
+	if _, callErr := handler(
+		context.Background(),
+		json.RawMessage(
+			`{"action":"profile_change_prepare","scope_id":"app","entity_ref":"entity:target"}`,
+		),
+	); callErr != nil {
+		t.Fatalf("published profile_change_prepare variant failed: %v", callErr)
 	}
 
 	evidencePaths := make([]string, evidenceCountLimit)
@@ -221,6 +246,15 @@ func (runtime *toggledOnboardRuntime) PrepareProfile(
 	runtime.profileCalls++
 	return onboarding.Preparation{}, fmt.Errorf(
 		"unexpected profile preparation",
+	)
+}
+
+func (runtime *toggledOnboardRuntime) PrepareProfileChange(
+	context.Context,
+	onboarding.Request,
+) (onboarding.Preparation, error) {
+	return onboarding.Preparation{}, fmt.Errorf(
+		"unexpected profile change preparation",
 	)
 }
 
@@ -530,7 +564,7 @@ func TestOnboardMCPManualFallbackCoversUnsupportedDocsEmptyAndMultipleScopes(
 				)
 			}
 			readyByID := make(
-				map[string]onboardScopeWire,
+				map[string]onboardScopeResponseWire,
 				len(ready.Scopes),
 			)
 			for _, scope := range ready.Scopes {
@@ -1026,4 +1060,44 @@ func TestOnboardStatusRoutesSupportedSingletonLegacyProjectThroughInit(
 		t.Fatalf("supported singleton onboarding status = %#v", response)
 	}
 	assertCLIProfileOnboardMutationCounts(t, project.root, 0)
+}
+
+func TestOnboardStatusBoundsLargeDetectorEvidenceWithoutLosingTotal(
+	t *testing.T,
+) {
+	project := newCLIProfileOnboardLedgerFixture(t)
+	writeProfileInspectionFixture(t, project.root, "go.mod")
+	for index := 0; index < onboarding.MaximumEvidencePaths+19; index++ {
+		writeProfileInspectionFixture(
+			t,
+			project.root,
+			fmt.Sprintf("internal/component-%03d.go", index),
+		)
+	}
+	surface, err := openSealedProjectOnboardSurface(
+		context.Background(),
+		mustOnboardProjectBinding(t, project.root),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer surface.Close()
+	output := callOnboardHandler(
+		t,
+		surface.Handler(),
+		`{"action":"status"}`,
+	)
+	response := decodeOnboardResponse(t, output)
+	if response.Result != "needs_profile" ||
+		len(response.Scopes) != 1 {
+		t.Fatalf("large status = %#v", response)
+	}
+	scope := response.Scopes[0]
+	wantTotal := onboarding.MaximumEvidencePaths + 20
+	if scope.ScopeID != "software" ||
+		scope.EvidencePathCount != wantTotal ||
+		!scope.EvidencePathsTruncated ||
+		len(scope.EvidencePaths) != onboarding.MaximumEvidencePaths {
+		t.Fatalf("large evidence scope = %#v, want total %d", scope, wantTotal)
+	}
 }

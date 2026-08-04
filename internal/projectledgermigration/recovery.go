@@ -253,6 +253,7 @@ func createBindingRecoveryBackup(
 		)
 	}
 	literal := sqliteStringLiteral(backupPath)
+	// #nosec G202 -- SQLite VACUUM INTO does not accept a bind parameter; sqliteStringLiteral escapes the exact path as a single SQL string literal.
 	statement := "VACUUM INTO " + literal
 	if _, err := database.ExecContext(ctx, statement); err != nil {
 		return "", fmt.Errorf(

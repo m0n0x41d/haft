@@ -171,6 +171,7 @@ func testDetectorFilesForScopes(
 	if nonSoftware >= 1 {
 		files = append(
 			files,
+			"docs/Book.toml",
 			"docs/index.md",
 			"docs/operations.md",
 			"docs/product.md",

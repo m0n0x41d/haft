@@ -73,7 +73,7 @@ target_refs:
 claims:
   - id: SS.allocation.001.L1
     class: L
-    statement: The human principal owns value choices, the exact requested effect, project-profile declaration, selection of later non-default or incompatible project-memory schema transitions, binding decisions, WorkCommission authorization, and specification lifecycle gates. A host may route only the principal's direct unambiguous request and must not model hidden mental intent. Haft init owns the fixed package-default Genesis memory basis and exposes no initial schema choice.
+    statement: The human principal owns value choices, the exact requested effect, project-profile declaration, selection of incompatible project-memory schema transitions and rollbacks, binding decisions, WorkCommission authorization, and specification lifecycle gates. A host may route only the principal's direct unambiguous request and must not model hidden mental intent. Haft Core owns both the fixed package-default Genesis memory basis and automatic activation of every exact proven-compatible bundled ProjectTypeEnv successor; neither exposes an operator schema choice.
     scope:
       - human-principal
   - id: SS.allocation.001.L2
@@ -138,7 +138,7 @@ claims:
       - profile-resolver
   - id: SS.allocation.001.L14
     class: L
-    statement: ProfileAuthorRole@OnboardingContext is the U.Role value used to attribute bounded profile-classification Work. An exact U.RoleAssignment assigns that role to a host-agent U.System in the onboarding context and is an input to Work-admission and attribution; it neither performs nor proves Work and grants no profile-declaration authority. A dated ProfileOnboardingWork occurrence names performedBy as that assignment and executedWithin as that host-agent system and produces only a ProfileClassificationResult. HaftSoftwareSystem, through Haft Core and AdmissionService, separately validates and persists an admitted profile declaration.
+    statement: ProfileAuthorRole@OnboardingContext is the U.Role value used to attribute bounded profile-classification Work. An exact U.RoleAssignment assigns that role to a host-agent U.System in the onboarding context and is an input to Work-admission and attribution; it neither performs nor proves Work and grants no profile-declaration authority. A dated ProfileOnboardingWork occurrence names that host-agent U.System as its actual performer, names the exact covering assignment, relates the Work to that assignment through performedUnderAssignment, and names its containing system through executedWithin; it produces only a ProfileClassificationResult. HaftSoftwareSystem, through Haft Core and AdmissionService, separately validates and persists an admitted profile declaration.
     scope:
       - profile-onboarding
       - host-agent
@@ -202,8 +202,9 @@ claims:
       - capability-applicability
   - id: SS.functional.profile.001.L3
     class: L
-    statement: SoftwareSystemSpec migration and software-specific readiness resolve to Required for an admitted Declared profile containing the relevant SoftwareRealization scope, NotApplicable only for an admitted Declared profile whose relevant NonSoftwareRealization scope excludes that capability, and Underdetermined when no integrity-valid admitted Declared basis exists; ProfileDeclarationReceiptV1 records the admission-time authority and Work lineage but is neither current permission nor authority by itself.
+    statement: TargetSystemSpec resolves to Required for every scope in an integrity-valid admitted Declared profile regardless of whether its optional EntityRef is present. SoftwareSystemSpec migration and software-specific readiness resolve to Required for a relevant SoftwareRealization scope and NotApplicable for a relevant NonSoftwareRealization scope; either capability is Underdetermined only when no integrity-valid admitted Declared basis exists. ProfileDeclarationReceiptV1 records the admission-time authority and Work lineage but is neither current permission nor authority by itself.
     scope:
+      - target-system-spec
       - software-system-spec
       - readiness
     support_refs:
@@ -417,7 +418,7 @@ claims:
       - A.15.1
   - id: SS.procedural.profile-onboarding.001.L2
     class: L
-    statement: Each execution is a separate dated U.Work occurrence with enactsMethod=ProfileOnboardingMethod, methodDescriptionRef=ProfileOnboardingMethodDescription, canonical concrete parameter bindings for that MethodDescription edition, performedBy=the exact ProfileAuthorRoleAssignment, executedWithin=the host-agent U.System, an explicit Work interval, onboarding bounded context, explicit inputs, outputs, resources, affected candidate-classification episteme, StatePlaneRef with pre/post references or a declared delta predicate, and outcome. A separate durable ProfileOnboardingWorkRecord describes that occurrence by WorkRef. Its basisObservationWindow is distinct from the Work interval, and its outcome is only CandidatePayloadProduced{payloadDigest, observedBasisDigest} or ClassificationUnderdetermined{missingBasisDigest}; it does not embed CandidateProvenance or a declaration-admission result.
+    statement: Each execution is a separate dated U.Work occurrence with enactsMethod=ProfileOnboardingMethod, methodDescriptionRef=ProfileOnboardingMethodDescription, canonical concrete parameter bindings for that MethodDescription edition, actualPerformerSystem=the host-agent U.System, coveringRoleAssignment=the exact ProfileAuthorRoleAssignment, performedUnderAssignment linking that Work to the covering assignment, executedWithin naming the containing U.System, an explicit Work interval, onboarding bounded context, explicit inputs, outputs, resources, affected candidate-classification episteme, StatePlaneRef with pre/post references or a declared delta predicate, and outcome. A separate durable ProfileOnboardingWorkRecord describes that occurrence by WorkRef. Its basisObservationWindow is distinct from the Work interval, and its outcome is only CandidatePayloadProduced{payloadDigest, observedBasisDigest} or ClassificationUnderdetermined{missingBasisDigest}; it does not embed CandidateProvenance or a declaration-admission result.
     scope:
       - profile-onboarding
       - performed-work
@@ -501,7 +502,7 @@ claims:
       - A.15.1
   - id: SS.procedural.profile-onboarding.001.D3
     class: D
-    statement: HaftSoftwareSystem, through a Haft Core Work-record adapter, must validate the complete SS.procedural.profile-onboarding.001.L2 Work shape—including exact method anchors, canonical concrete parameter bindings, explicit inputs, outputs, resources and affected referent, performedBy and executedWithin, RoleAssignment interval coverage, StatePlane pre/post references or declared delta predicate, and outcome digests—then durably persist and reread the immutable ProfileOnboardingWorkRecord before exposing ProfileClassificationResult.Candidate. After the Work record is reread, the current canonical profile-ledger revision becomes the expected admission revision; a validation, persistence, or reread failure returns an effect failure and exposes no Candidate.
+    statement: HaftSoftwareSystem, through a Haft Core Work-record adapter, must validate the complete SS.procedural.profile-onboarding.001.L2 Work shape—including exact method anchors, canonical concrete parameter bindings, explicit inputs, outputs, resources and affected referent, actual performer system, covering RoleAssignment, performedUnderAssignment, executedWithin, assignment interval coverage, StatePlane pre/post references or declared delta predicate, and outcome digests—then durably persist and reread the immutable ProfileOnboardingWorkRecord before exposing ProfileClassificationResult.Candidate. After the Work record is reread, the current canonical profile-ledger revision becomes the expected admission revision; a validation, persistence, or reread failure returns an effect failure and exposes no Candidate.
     scope:
       - profile-onboarding
       - work-record
@@ -959,7 +960,7 @@ claims:
       - typed-memory-write-request
   - id: SS.interfaces.memory.001.L3
     class: L
-    statement: The task-level haft_onboard MCP interface exposes only status and profile_prepare. Haft init atomically installs the package-default project-memory basis before reporting success, without an enable, defer, or schema-selection question and without requiring a canonical project profile. Status and repository detection write no state; profile_prepare may materialize or reuse only a non-binding profile review carrier and never applies it or binds a decision. A reviewed profile is consumed through haft onboard profile apply only after one direct, unambiguous operator request; no skill name or second confirmation is required. A legacy or partial default-memory installation reports needs_init and is repaired by rerunning haft init; later non-default schema transitions are outside the onboarding surface.
+    statement: The task-level haft_onboard MCP interface exposes only status and profile_prepare. Haft init atomically installs the package-default project-memory basis and reconciles an existing head to every exact proven-compatible bundled ProjectTypeEnv successor before reporting success, without an enable, defer, review, or schema-selection question and without requiring a canonical project profile for Genesis. Status and repository detection write no state; profile_prepare may materialize or reuse only a non-binding profile review carrier and never applies it or binds a decision. A reviewed profile is consumed through haft onboard profile apply only after one direct, unambiguous operator request; no skill name or second confirmation is required. A legacy or partial default-memory installation reports needs_init and is repaired by rerunning haft init. An incompatible, incomplete, stale, or underdetermined successor leaves the current head unchanged and returns an exact diagnostic; manual rollback and incompatible model selection remain outside the onboarding surface.
     scope:
       - onboarding-interface
       - review-carrier
@@ -1468,7 +1469,7 @@ claims:
       - C.3.1
   - id: SS.procedural.typeenv.001.A1
     class: A
-    statement: ProjectTypeEnvHeadSelectionRequest is the only admissible head-selection proposal and contains exact ProjectID; predecessor as Genesis carrying only NoPriorHeadProofRef or Transition carrying only ExactPriorHead with distinct HeadRevision, prior C and project; target carrying exact B, canonically ordered exact E DAG, exact X, exact verified successor C and exact ProjectTypeEnvStageRef; distinct ExpectedGraphRevision; and IdempotencyKey. All proof, predecessor, Stage, C, graph-revision and project fields must agree exactly, and verified C must authenticate the same B, E DAG and X. Default Genesis atomically reproves absence and is a package-owned haft init effect under SS.constraints.authority.001.A6. A Transition or rollback additionally requires one exact host-routed direct operator request for the selected C and scope before the dedicated system CAS Work. Missing or corrupt prior state is neither Genesis nor Transition, and generic memory admission cannot create or move a head or reinterpret history.
+    statement: ProjectTypeEnvHeadSelectionRequest is the only admissible head-selection proposal and contains exact ProjectID; predecessor as Genesis carrying only NoPriorHeadProofRef or Transition carrying only ExactPriorHead with distinct HeadRevision, prior C and project; target carrying exact B, canonically ordered exact E DAG, exact X, exact verified successor C and exact ProjectTypeEnvStageRef; distinct ExpectedGraphRevision; and IdempotencyKey. All proof, predecessor, Stage, C, graph-revision and project fields must agree exactly, and verified C must authenticate the same B, E DAG and X. Default Genesis atomically reproves absence and is a package-owned haft init effect under SS.constraints.authority.001.A6. Every successor proven compatible under SS.constraints.authority.001.A5 advances automatically without an operator request; rollback or explicit selection outside that predicate requires one exact host-routed direct operator request for the selected C and scope. Missing or corrupt prior state is neither Genesis nor Transition, and generic memory admission cannot create or move a head or reinterpret history.
     scope:
       - project-typeenv-head-selection
     support_refs:
@@ -1604,7 +1605,7 @@ claims:
       - C.2.1
   - id: SS.constraints.typed-memory.001.D2
     class: D
-    statement: Every supported C.2.1 episteme relation signature must require exactly one ClaimGraphSlot with ValueKind U.ClaimGraph, ByValue reference mode, the dedicated ClaimGraph ValueShape, and ClaimGraphCodecV1; the codec must canonicalize unordered node and edge sets, preserve explicitly governed order within ordered values, and reject duplicate node identities and dangling endpoints.
+    statement: The supported C.2.1 EpistemeConstitutionRelation signature must require exactly one ClaimGraphSlot with ValueKind U.ClaimGraph, ByValue reference mode, the dedicated ClaimGraph ValueShape, and ClaimGraphCodecV1; other C.2.1 relation signatures retain only their source-declared participants and must not gain a ClaimGraphSlot by family-wide inference. The codec must canonicalize unordered node and edge sets, preserve explicitly governed order within ordered values, and reject duplicate node identities and dangling endpoints.
     scope:
       - claim-graph-codec
     support_refs:
@@ -1751,7 +1752,7 @@ target_refs:
 claims:
   - id: SS.constraints.authority.001.A1
     class: A
-    statement: DecisionRecord creation or supersession, project-profile application, SpecSection lifecycle acts, and later non-default ProjectTypeEnvTransition or rollback are admissible only from a direct unambiguous operator request routed to the exact effect-specific interface. WorkCommission creation remains manual-only. Haft init may perform only the fixed package-default profile and Genesis effects admitted by their deterministic policies. Compilation, staging, generic admission, an earlier skill token, request, or authority use cannot authorize another effect.
+    statement: DecisionRecord creation or supersession, project-profile application, SpecSection lifecycle acts, incompatible ProjectTypeEnvTransition selection, and rollback are admissible only from a direct unambiguous operator request routed to the exact effect-specific interface. WorkCommission creation remains manual-only. Haft Core may perform the fixed package-default profile and Genesis effects plus an exact proven-compatible ProjectTypeEnv successor activation admitted by their deterministic policies. Compilation, staging, generic admission, an earlier skill token, request, or authority use cannot authorize another effect.
     scope:
       - binding-actions
     support_refs:
@@ -1844,7 +1845,7 @@ claims:
       - A.15
   - id: SS.constraints.authority.001.A5
     class: A
-    statement: "A later non-default ProjectTypeEnvTransition or rollback is admissible only when one exact HostRoutedOperatorRequest has provenance host_routed_operator_request, effect project_typeenv_head.select, the exact ProjectTypeEnvHeadSelectionRequest as subject, and the digest of the exact reviewed ProjectTypeEnvHeadSelectionAuthorizationContent as payload. The content binds project, closed predecessor, B, ordered E DAG, X, verified C, Stage, expected graph revision, compatibility, revalidation and project-profile posture, intended head update, validity window and single-use key. At CAS judgement time Haft Core must revalidate the current profile and project binding and seal one HostRoutedSelectionResolution. This proves only exact coordinate matching and host provenance; it does not independently prove U.SpeechAct or hidden intent. Quotations, recommendations, tool output, visible hashes, staged rows, another lifecycle act, or an earlier request are not authorization."
+    statement: "A ProjectTypeEnvTransition is admissible through exactly one of two disjoint current authority generations. The compatible_successor_policy generation automatically admits the exact bundled successor only when the transaction-current request has a Transition predecessor, the project/root binding and Stage are exact, existing-assertion revalidation is clean, the project profile is Compatible, no installed projection profile is blocked, the authorization content is current, and the head, graph, profile, runtime, B, ordered E DAG, X and C still match at CAS time; it creates no HostRoutedOperatorRequest or human-review claim. The host_routed_operator_request generation remains available for rollback or explicit selection outside that predicate and requires one exact direct operator request whose effect, subject and payload digest bind the same request and content. Both generations produce distinct append-only resolutions and single-use authority-use records, and the current activation delta plus typed-memory graph event must record the same exact generation as the authority-use record. Legacy manual_type_env_activation activation carriers and graph rows remain decode-and-replay history only. Incompatible, incomplete, stale, or underdetermined automatic attempts write no head. Quotations, recommendations, tool output, visible hashes, staged rows, another lifecycle act, or an earlier request authorize neither branch."
     scope:
       - project-typeenv-head-selection-authority
       - project-typeenv-transition
@@ -1859,7 +1860,7 @@ claims:
       - A.7
   - id: SS.constraints.authority.001.A6
     class: A
-    statement: Default ProjectTypeEnvGenesis is admissible only as an idempotent internal haft init effect for a project with no current head, using the exact package-bundled B, ordered E DAG, X, verified C, clean assertion revalidation, and a compatible or underdetermined current profile assessment. The effect must reprove project identity, Genesis absence, graph revision, installed source/runtime exactness, and committed readiness before init succeeds. It exposes no memory schema, enable/defer choice, review carrier, DecisionRecord, SpeechAct claim, or authority for later schema transitions; any non-default, incompatible, or already-headed change routes through the separately human-gated Transition contract.
+    statement: Default ProjectTypeEnvGenesis is admissible only as an idempotent internal haft init effect for a project with no current head, using the exact package-bundled B, ordered E DAG, X, verified C, clean assertion revalidation, and a compatible or underdetermined current profile assessment. The effect must reprove project identity, Genesis absence, graph revision, installed source/runtime exactness, and committed readiness before init succeeds. The same init reconciliation must automatically select an already-headed bundled successor only through SS.constraints.authority.001.A5's exact compatible-successor predicate. Neither path exposes a memory schema, enable/defer choice, review carrier, DecisionRecord, SpeechAct claim, or authority for incompatible selection or rollback.
     scope:
       - default-project-memory-genesis
       - haft-init
@@ -1872,7 +1873,8 @@ claims:
       - A.15.1
   - id: SS.constraints.authority.001.D3
     class: D
-    statement: The dedicated TypeEnv-head transaction must branch on the authorization content's single-use key and exact request/content digest before current-authority revalidation or consumption. Exact replay verifies and returns the existing closure byte-identically without another authority use, Work occurrence, head mutation, or semantic write; a digest mismatch is ReplayConflict with zero writes. For an absent key, the transaction revalidates Stage identity, project, C, snapshot, graph and profile revisions, compatibility, assertions, the exact HostRoutedOperatorRequest and HostRoutedSelectionResolution; reproves Genesis absence or compares Transition's exact predecessor; performs exactly one CAS Work; records one host-routed authority use; updates the head; and atomically finalizes the Work record, history, receipt and closure or writes none. The operator request, reviewed content, host resolution, authority use, CAS Work, head and receipt remain distinct; no skill token or carrier substitutes for a missing basis. Legacy authority generations remain readable history but cannot be inserted or reused for current selection.
+    statement: >-
+      The dedicated TypeEnv-head transaction must branch on the authorization content's single-use key and exact request/content digest before current-authority revalidation or consumption. Exact replay verifies and returns the existing closure byte-identically without another authority use, Work occurrence, head mutation, or semantic write; a digest mismatch is ReplayConflict with zero writes. For an absent key, the transaction revalidates Stage identity, project, C, snapshot, graph and profile revisions, compatibility and assertions, then resolves exactly one current authority generation: HostRoutedOperatorRequest plus HostRoutedSelectionResolution, or CompatibleSuccessorPolicy plus CompatibleSuccessorResolution. It reproves Genesis absence or compares Transition's exact predecessor; performs exactly one CAS Work; records one generation-specific authority use; updates the head; and atomically finalizes the Work record, history, receipt and closure or writes none. Authorization content, authority resolution, authority use, CAS Work, head and receipt remain distinct; the compatible branch has no operator request or review claim, and no skill token or carrier substitutes for a missing basis. Legacy authority generations remain readable history but cannot be inserted or reused for current selection.
     scope:
       - project-typeenv-head-selection-effect
       - project-typeenv-authority-use

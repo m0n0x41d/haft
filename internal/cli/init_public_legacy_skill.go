@@ -35,17 +35,57 @@ var publicHaftSkillToolNames = []string{
 	"method",
 }
 
-func currentPublicTakeoverDigest(
+func observePublicLegacyCodexSkillPolicy(
 	output initplanning.RenderedOutput,
-) (string, error) {
-	digest, recognized, err := observePublicLegacyHaftSkill(output)
+	recognizedSkillRoots map[string]struct{},
+) (string, bool, error) {
+	if output.Component() != initplanning.ComponentSkills ||
+		filepath.Base(output.Path()) != "openai.yaml" ||
+		filepath.Base(filepath.Dir(output.Path())) != "agents" {
+		return "", false, nil
+	}
+	skillRoot := filepath.Dir(filepath.Dir(output.Path()))
+	if _, recognized := recognizedSkillRoots[skillRoot]; !recognized ||
+		!isCanonicalPublicCodexSkillPolicy(output.Content()) {
+		return "", false, nil
+	}
+	info, err := os.Lstat(output.Path())
+	if os.IsNotExist(err) {
+		return "", false, nil
+	}
 	if err != nil {
-		return "", err
+		return "", false, fmt.Errorf(
+			"inspect possible legacy Codex skill policy %s: %w",
+			output.Path(),
+			err,
+		)
 	}
-	if recognized {
-		return digest, nil
+	if !info.Mode().IsRegular() ||
+		info.Size() > publicInitMaxCarrierBytes {
+		return "", false, nil
 	}
-	return output.Digest(), nil
+	observed, err := os.ReadFile(output.Path())
+	if err != nil {
+		return "", false, fmt.Errorf(
+			"read possible legacy Codex skill policy %s: %w",
+			output.Path(),
+			err,
+		)
+	}
+	if !isCanonicalPublicCodexSkillPolicy(observed) {
+		return "", false, nil
+	}
+	return publicContentDigest(observed), true, nil
+}
+
+func isCanonicalPublicCodexSkillPolicy(content []byte) bool {
+	return bytes.Equal(
+		content,
+		[]byte("policy:\n  allow_implicit_invocation: true\n"),
+	) || bytes.Equal(
+		content,
+		[]byte("policy:\n  allow_implicit_invocation: false\n"),
+	)
 }
 
 func observePublicLegacyHaftSkill(
@@ -114,8 +154,11 @@ func isPublicLegacyHaftSkill(
 		output.Content(),
 		observed,
 	)
-	namesHaft := bytes.Contains(observed, []byte("Haft"))
-	return usesHaftToolNamespace && namesHaft
+	// The exact Haft MCP namespace is the product identity witness. Published
+	// v8.x skills used that namespace but did not necessarily spell the product
+	// name in prose, so a case-sensitive prose token cannot be an ownership
+	// prerequisite.
+	return usesHaftToolNamespace
 }
 
 func sharesPublicHaftToolNamespace(

@@ -622,8 +622,13 @@ func verifyStoredDirectReferenceTargets(db *sql.DB) error {
 		SELECT refs.unit_id, refs.ref_id
 		FROM source_unit_refs refs
 		WHERE NOT EXISTS (
-			SELECT 1 FROM source_units target
-			WHERE target.source_id = refs.ref_id OR target.pattern_id = refs.ref_id
+			SELECT 1 FROM source_units source_target
+			WHERE source_target.source_id = refs.ref_id
+				AND source_target.source_id <> ''
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM source_units pattern_target
+			WHERE pattern_target.pattern_id = refs.ref_id
 		)
 		AND NOT EXISTS (
 			SELECT 1

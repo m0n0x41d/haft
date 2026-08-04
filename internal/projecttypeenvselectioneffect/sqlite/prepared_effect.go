@@ -165,6 +165,7 @@ func prepareOriginalHeadSelectionEffect(
 				Predecessor:           request.Predecessor(),
 				Target:                target,
 				ExpectedGraphRevision: request.ExpectedGraphRevision(),
+				AuthorityClass:        resolved.coordinates.Kind().String(),
 			},
 		)
 	if err != nil {

@@ -44,7 +44,7 @@ const (
 	profileOnboardingSuccessCriterionV1Statement = "produce exactly one CandidatePayloadProduced or ClassificationUnderdetermined value"
 	profileOnboardingFailureStopV1Statement      = "emit no candidate when required input, parameter, role, system, affected-referent, state-plane, or state-witness basis is absent or invalid; represent insufficient observed basis only as ClassificationUnderdetermined"
 	profileOnboardingAcceptanceV1Statement       = "accept only a declared result kind whose inputs, parameter bindings, role and system admission, affected referent, state plane, and pre/post-or-delta witness satisfy this exact contract"
-	holderEqualsExecutedWithinV1Statement        = "RoleAssignment.holderSystemRef must equal Work.executedWithinSystemRef for ProfileOnboardingMethod use"
+	holderEqualsExecutedWithinV1Statement        = "RoleAssignment.holderSystemRef must equal Work.actualPerformerSystemRef for ProfileOnboardingMethod use; the assignment is not the actor"
 	profileOnboardingEffectWitnessV1Statement    = "require exactly one valid Work state witness: pre-state plus post-state, or pre-state plus delta-predicate; mixed and empty witnesses are inadmissible"
 )
 

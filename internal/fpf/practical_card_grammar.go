@@ -1,6 +1,7 @@
 package fpf
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -123,6 +124,56 @@ func ParsePracticalUseCardSource(source PracticalUseCardSource) (SourceUseCuePro
 			),
 		)
 	}
+	return projectPracticalUseBlocks(source, blocks, discovered, recognized)
+}
+
+// parsePracticalUseCardSourceForIndex preserves a source-owned result-like
+// block with a new label family as a degraded result projection and returns an
+// exact diagnostic for refresh review. Missing core categories remain a hard
+// error because no coherent practical-use projection can be produced.
+func parsePracticalUseCardSourceForIndex(
+	source PracticalUseCardSource,
+) (SourceUseCueProjection, []SourceGrammarDiagnostic, error) {
+	blocks, discovered, recognized, unsupported := parsePracticalUseBlocks(source)
+	diagnostics := make([]SourceGrammarDiagnostic, 0, 2)
+	if len(unsupported) > 0 {
+		diagnostic := sourceGrammarDiagnostic(
+			source,
+			SourceGrammarUnsupported,
+			discovered,
+			recognized,
+			"admitted_result_block",
+			fmt.Sprintf(
+				"card contains source-owned result-like structure whose label family is not admitted: %s",
+				strings.Join(unsupported, ", "),
+			),
+		)
+		diagnostics = append(diagnostics, diagnostic)
+		blocks = admitUnsupportedResultBlocks(blocks)
+	}
+	projection, err := projectPracticalUseBlocks(
+		source,
+		blocks,
+		discovered,
+		recognized,
+	)
+	if err != nil {
+		var diagnostic SourceGrammarDiagnostic
+		if !errors.As(err, &diagnostic) {
+			return SourceUseCueProjection{}, diagnostics, err
+		}
+		diagnostics = append(diagnostics, diagnostic)
+		return projection, diagnostics, nil
+	}
+	return projection, diagnostics, nil
+}
+
+func projectPracticalUseBlocks(
+	source PracticalUseCardSource,
+	blocks []SourceLabeledBlock,
+	discovered []string,
+	recognized []string,
+) (SourceUseCueProjection, error) {
 
 	conditionLines := make([]string, 0)
 	resultLines := make([]string, 0)
@@ -168,8 +219,17 @@ func ParsePracticalUseCardSource(source PracticalUseCardSource) (SourceUseCuePro
 	if len(boundaryLines) == 0 {
 		missing = append(missing, "boundary")
 	}
+	projection := SourceUseCueProjection{
+		Blocks: blocks,
+		UseCues: SourceUseCues{
+			ConditionText:   strings.Join(dedupeStrings(conditionLines), "\n"),
+			FirstResultText: strings.Join(dedupeStrings(resultLines), "\n"),
+			StopReturnText:  strings.Join(dedupeStrings(boundaryLines), "\n"),
+		},
+		DirectReferenceText: strings.Join(dedupeStrings(directReferenceLines), "\n"),
+	}
 	if len(missing) > 0 {
-		return SourceUseCueProjection{}, sourceGrammarDiagnostic(
+		return projection, sourceGrammarDiagnostic(
 			source,
 			SourceGrammarMalformed,
 			discovered,
@@ -178,16 +238,28 @@ func ParsePracticalUseCardSource(source PracticalUseCardSource) (SourceUseCuePro
 			"card lacks one or more required source-owned semantic block categories",
 		)
 	}
+	return projection, nil
+}
 
-	return SourceUseCueProjection{
-		Blocks: blocks,
-		UseCues: SourceUseCues{
-			ConditionText:   strings.Join(dedupeStrings(conditionLines), "\n"),
-			FirstResultText: strings.Join(dedupeStrings(resultLines), "\n"),
-			StopReturnText:  strings.Join(dedupeStrings(boundaryLines), "\n"),
-		},
-		DirectReferenceText: strings.Join(dedupeStrings(directReferenceLines), "\n"),
-	}, nil
+func admitUnsupportedResultBlocks(
+	blocks []SourceLabeledBlock,
+) []SourceLabeledBlock {
+	result := append([]SourceLabeledBlock(nil), blocks...)
+	for index := range result {
+		block := result[index]
+		if block.Kind != SourceBlockOtherAuthored {
+			continue
+		}
+		_, admitted := classifyPracticalUseLabel(block.Label)
+		if admitted {
+			continue
+		}
+		if !looksLikeResultStructure(block.Label, block.Body) {
+			continue
+		}
+		result[index].Kind = SourceBlockResultBranch
+	}
+	return result
 }
 
 func parsePracticalUseBlocks(source PracticalUseCardSource) (

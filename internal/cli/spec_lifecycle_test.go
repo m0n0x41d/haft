@@ -141,6 +141,92 @@ func TestRunSpecNextSummaryShowsOneActionableRecoveryWithoutCanonicalProfile(
 	}
 }
 
+func TestPublicSpecLifecycleKeepsWorkflowReadyDistinctFromHealthFindings(
+	t *testing.T,
+) {
+	projection := specflow.SpecLifecycleProjection{
+		State:  specflow.LifecycleStateReady,
+		Action: specflow.LifecycleActionNone,
+		Object: "SpecSection",
+		Why:    "all required phases satisfied",
+		WorkflowIntent: specflow.WorkflowIntent{
+			Terminal: true,
+			Reason:   "all required phases satisfied",
+		},
+	}
+	report := project.SpecCheckReport{
+		Level: "L0/L1/L1.5",
+		Findings: []project.SpecCheckFinding{{
+			Level:      "error",
+			Code:       "spec_section_needs_baseline",
+			SectionID:  "SS.example.001",
+			Message:    "active section has no operator-approved baseline",
+			NextAction: "review the exact section lifecycle gate",
+		}},
+	}
+	workflow := publicSpecWorkflowProjectionFrom(projection)
+	health := publicSpecHealthProjectionFrom(report)
+	result := publicSpecLifecycleResult{
+		SpecLifecycleProjection: &projection,
+		StateDomain:             publicSpecLifecycleStateDomain,
+		Workflow:                &workflow,
+		Health:                  &health,
+	}
+
+	var jsonOutput bytes.Buffer
+	if err := writePublicSpecLifecycleJSON(&jsonOutput, result); err != nil {
+		t.Fatalf("write lifecycle JSON: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(jsonOutput.Bytes(), &payload); err != nil {
+		t.Fatalf("decode lifecycle JSON: %v", err)
+	}
+	if payload["state"] != "ready" || payload["state_domain"] != publicSpecLifecycleStateDomain {
+		t.Fatalf("workflow state is not explicitly scoped: %#v", payload)
+	}
+	healthPayload, ok := payload["health"].(map[string]any)
+	if !ok || healthPayload["state"] != "findings" || healthPayload["total_findings"] != float64(1) {
+		t.Fatalf("health findings are not distinct from workflow readiness: %#v", payload["health"])
+	}
+
+	var textOutput bytes.Buffer
+	if err := writePublicSpecLifecycleSummary(&textOutput, result); err != nil {
+		t.Fatalf("write lifecycle summary: %v", err)
+	}
+	for _, expected := range []string{
+		"Spec status: ready",
+		"Spec health: findings (1 finding(s); 1 error(s), 0 warning(s))",
+		"Workflow readiness does not clear these health findings.",
+	} {
+		if !strings.Contains(textOutput.String(), expected) {
+			t.Fatalf("summary missing %q:\n%s", expected, textOutput.String())
+		}
+	}
+}
+
+func TestBuildPublicSpecLifecycleAddsWorkflowAndHealthForResolvedProfile(
+	t *testing.T,
+) {
+	root := setupSpecSyncProject(t)
+	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-lifecycle-health")
+	result, err := buildPublicSpecLifecycle(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
+	if err != nil {
+		t.Fatalf("build public spec lifecycle: %v", err)
+	}
+	if result.SpecLifecycleProjection == nil || result.Workflow == nil || result.Health == nil {
+		t.Fatalf("resolved lifecycle omitted workflow/health distinction: %#v", result)
+	}
+	if result.StateDomain != publicSpecLifecycleStateDomain ||
+		result.Workflow.State != result.SpecLifecycleProjection.State ||
+		result.Health.CheckCommand != "haft spec check --json" {
+		t.Fatalf("resolved lifecycle distinction is inconsistent: %#v", result)
+	}
+}
+
 func TestBuildPublicSpecLifecycleReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
 	root := setupSpecSyncProject(t)
 	admitSoftwareSpecLifecycleTestProfile(t, root, "spec-lifecycle-sql-first")

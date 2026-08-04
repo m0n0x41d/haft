@@ -9,6 +9,7 @@ import (
 	"hash"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
@@ -28,6 +29,7 @@ type hostRoutedAuthorityBasisJSON struct {
 	AuthorityMode                     string `json:"authority_mode"`
 	ProfileOrigin                     string `json:"profile_origin"`
 	OperatorRequestRef                string `json:"operator_request_ref"`
+	OperatorRequestEffect             string `json:"operator_request_effect,omitempty"`
 	OperatorRequestDigest             string `json:"operator_request_digest"`
 	OperatorRequestSubjectRef         string `json:"operator_request_subject_ref"`
 	OperatorRequestPayloadDigest      string `json:"operator_request_payload_digest"`
@@ -62,6 +64,7 @@ type hostRoutedAuthorityResolutionJSON struct {
 	ResolutionKind               string `json:"resolution_kind"`
 	ProfileOrigin                string `json:"profile_origin"`
 	OperatorRequestRef           string `json:"operator_request_ref"`
+	OperatorRequestEffect        string `json:"operator_request_effect,omitempty"`
 	OperatorRequestDigest        string `json:"operator_request_digest"`
 	OperatorRequestSubjectRef    string `json:"operator_request_subject_ref"`
 	OperatorRequestPayloadDigest string `json:"operator_request_payload_digest"`
@@ -127,14 +130,20 @@ func buildHostRoutedAuthorityRows(
 		return hostRoutedAuthorityBasisRow{}, hostRoutedAuthorityResolutionRow{}, err
 	}
 	input := plan.Input()
+	actionKind, policyRef, policySchema, err := hostRoutedEffectPolicy(request.Effect())
+	if err != nil {
+		return hostRoutedAuthorityBasisRow{}, hostRoutedAuthorityResolutionRow{}, err
+	}
 	allowedWork := plan.AllowedWork()
 	allowedBasis := plan.AllowedBasis()
 	basisDTO := hostRoutedAuthorityBasisJSON{
 		Schema: hostRoutedBasisSchema, BasisRef: basisRef.String(),
 		ProjectRoot:   plan.Root().String(),
-		ActionKind:    profiledeclarationpreparation.ActionHostRoutedProfileDeclaration,
+		ActionKind:    actionKind,
 		AuthorityMode: plan.Policy().Mode(), ProfileOrigin: hostRoutedProfileOrigin,
-		OperatorRequestRef: request.Ref(), OperatorRequestDigest: request.Digest(),
+		OperatorRequestRef:           request.Ref(),
+		OperatorRequestEffect:        string(request.Effect()),
+		OperatorRequestDigest:        request.Digest(),
 		OperatorRequestSubjectRef:    request.SubjectRef(),
 		OperatorRequestPayloadDigest: request.PayloadDigest(),
 		WorkInputRef:                 input.Ref().String(), WorkInputDigest: input.Digest().String(),
@@ -159,9 +168,8 @@ func buildHostRoutedAuthorityRows(
 	if err != nil {
 		return hostRoutedAuthorityBasisRow{}, hostRoutedAuthorityResolutionRow{}, err
 	}
-	policyRef := "verification-policy:profile-declaration/host-routed-request/v1"
 	verificationDigest, err := digestStrings(
-		"haft.profile-declaration.host-routed-verification-policy/v1",
+		policySchema,
 		[]string{policyRef, projectBindingDigest.String(), request.Digest()},
 	)
 	if err != nil {
@@ -171,12 +179,14 @@ func buildHostRoutedAuthorityRows(
 		Schema:                 hostRoutedResolutionSchema,
 		AuthorityResolutionRef: plan.AuthorityResolutionRef(),
 		AuthorityBasisRef:      basisRef.String(), AuthorityBasisDigest: basisDigest.String(),
-		ProjectRoot:        plan.Root().String(),
-		ActionKind:         profiledeclarationpreparation.ActionHostRoutedProfileDeclaration,
-		AuthorityMode:      plan.Policy().Mode(),
-		ResolutionKind:     profiledeclarationpreparation.ResolutionHostRoutedRequest,
-		ProfileOrigin:      hostRoutedProfileOrigin,
-		OperatorRequestRef: request.Ref(), OperatorRequestDigest: request.Digest(),
+		ProjectRoot:                  plan.Root().String(),
+		ActionKind:                   actionKind,
+		AuthorityMode:                plan.Policy().Mode(),
+		ResolutionKind:               profiledeclarationpreparation.ResolutionHostRoutedRequest,
+		ProfileOrigin:                hostRoutedProfileOrigin,
+		OperatorRequestRef:           request.Ref(),
+		OperatorRequestEffect:        string(request.Effect()),
+		OperatorRequestDigest:        request.Digest(),
 		OperatorRequestSubjectRef:    request.SubjectRef(),
 		OperatorRequestPayloadDigest: request.PayloadDigest(),
 		WorkInputRef:                 input.Ref().String(), WorkInputDigest: input.Digest().String(),
@@ -205,6 +215,35 @@ func buildHostRoutedAuthorityRows(
 			dto: resolutionDTO, digest: resolutionDigest, canonical: resolutionCanonical,
 			recorded: plan.PreparedAt(),
 		}, nil
+}
+
+func hostRoutedEffectPolicy(
+	effect operatorrequest.Effect,
+) (actionKind string, policyRef string, policySchema string, err error) {
+	// Both branches append a new canonical profile declaration revision at the
+	// admission layer. The operator-request effect remains distinct in the
+	// canonical authority coordinates and selects a separate verification
+	// policy; it must not be inferred from this lower-layer admission action.
+	policies := map[operatorrequest.Effect][3]string{
+		operatorrequest.ProfileDeclaration: {
+			profiledeclarationpreparation.ActionHostRoutedProfileDeclaration,
+			"verification-policy:profile-declaration/host-routed-request/v1",
+			"haft.profile-declaration.host-routed-verification-policy/v1",
+		},
+		operatorrequest.ProfileChange: {
+			profiledeclarationpreparation.ActionHostRoutedProfileDeclaration,
+			"verification-policy:profile-change/host-routed-request/v1",
+			"haft.profile-change.host-routed-verification-policy/v1",
+		},
+	}
+	selected, present := policies[effect]
+	if !present {
+		return "", "", "", fmt.Errorf(
+			"host-routed profile authority effect %q is unsupported",
+			effect,
+		)
+	}
+	return selected[0], selected[1], selected[2], nil
 }
 
 func loadProjectBindingDigest(

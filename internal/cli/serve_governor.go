@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/codeintel"
 	methodpkg "github.com/m0n0x41d/haft/internal/method"
 	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/present"
@@ -18,11 +19,18 @@ import (
 func governorStatusResponse(
 	ctx context.Context,
 	store *artifact.Store,
+	codeIntelService *codeintel.Service,
 	contextName string,
 	projectRoot string,
 	readiness canonicalProjectReadiness,
 ) (string, error) {
-	data, err := artifact.FetchStatusData(ctx, store, contextName, projectRoot)
+	data, err := fetchBoundedProjectStatusData(
+		ctx,
+		store,
+		codeIntelService,
+		contextName,
+		projectRoot,
+	)
 	if err != nil {
 		return "", err
 	}

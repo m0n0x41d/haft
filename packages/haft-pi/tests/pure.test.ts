@@ -463,7 +463,8 @@ test("Pi haft_onboard mirrors the task-level setup contract", () => {
 
   assert.deepEqual(enumValues(parameters.properties.action), [
     "status",
-    "profile_prepare"
+    "profile_prepare",
+    "profile_change_prepare"
   ]);
   assert.deepEqual(parameters.required, ["action"]);
   assert.equal(parameters.additionalProperties, false);
@@ -480,7 +481,9 @@ test("Pi haft_onboard mirrors the task-level setup contract", () => {
     "software",
     "non_software"
   ]);
-  assert.equal(scopes.items.properties.evidence_paths.maxItems, 128);
+  assert.equal(scopes.items.properties.evidence_paths.maxItems, 64);
+  assert.ok(parameters.properties.scope_id);
+  assert.ok(parameters.properties.entity_ref);
   assert.doesNotMatch(JSON.stringify(onboard), /TypeEnv|ProjectTypeEnvHead|contract_version/);
 });
 
@@ -715,6 +718,19 @@ test("Pi tool guidance preserves source-first independent capability semantics",
     "Persist 3\\+ alternatives",
     "before open-ended Haft, FPF"
   ].forEach((fragment) => assert.doesNotMatch(source, new RegExp(fragment)));
+});
+
+test("Pi h-spec carriers expose profile-independent draft validation", () => {
+  const carriers = ["../prompts/h-spec.md", "../skills/h-spec/SKILL.md"]
+    .map((path) => readFileSync(new URL(path, import.meta.url), "utf8"));
+
+  carriers.forEach((carrier) => {
+    assert.match(carrier, /haft_spec_section\(action="draft_contract"\)/);
+    assert.match(carrier, /haft_query\(action="spec_validate"\)/);
+    assert.match(carrier, /haft spec validate --json/);
+    assert.match(carrier, /does not determine applicability/);
+    assert.match(carrier, /Keep `haft spec check`/);
+  });
 });
 
 test("Pi exposes exactly the twelve public Haft capabilities as prompts and skills", () => {

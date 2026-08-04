@@ -14,6 +14,8 @@ var ignoredDirectories = []string{
 	".agents",
 	".claude",
 	".codex",
+	".codex-review",
+	".context",
 	".cursor",
 	".gemini",
 	".git",

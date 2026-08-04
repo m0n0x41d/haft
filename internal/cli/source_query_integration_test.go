@@ -277,7 +277,6 @@ func TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject(t *testing.T) {
 			`"unit_id":"readme:practical_use_card:system-recognition"`,
 			`"unit_id":"readme:practical_use_card:system-delimitation"`,
 			`"pattern_id":"C.26"`,
-			`"pattern_id":"C.32.PAD"`,
 		} {
 			if !bytes.Contains(encoded, []byte(required)) {
 				t.Fatalf(
@@ -287,6 +286,16 @@ func TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject(t *testing.T) {
 				)
 			}
 		}
+		// The current FPF source contains the exact "target system" span in
+		// C.26. C.32.PAD remains an authored navigation edge from the
+		// SYSTEM-DELIMITATION card; it must not be promoted into a fabricated
+		// phrase witness merely to preserve an older-source result set.
+		assertQueryIntegrationCandidateDirectRef(
+			t,
+			decodeQueryIntegrationJSON(t, encoded),
+			"readme:practical_use_card:system-delimitation",
+			"C.32.PAD",
+		)
 	})
 	entries, err := os.ReadDir(downstream)
 	if err != nil {
@@ -411,6 +420,51 @@ func queryIntegrationCandidateCount(t *testing.T, payload map[string]any) int {
 		total += len(candidates)
 	}
 	return total
+}
+
+func assertQueryIntegrationCandidateDirectRef(
+	t *testing.T,
+	payload map[string]any,
+	unitID string,
+	wantRef string,
+) {
+	t.Helper()
+
+	groups, ok := payload["groups"].([]any)
+	if !ok {
+		t.Fatalf("CandidateSet groups = %#v", payload["groups"])
+	}
+	for _, groupValue := range groups {
+		group, ok := groupValue.(map[string]any)
+		if !ok {
+			t.Fatalf("candidate group = %#v", groupValue)
+		}
+		candidates, ok := group["candidates"].([]any)
+		if !ok {
+			t.Fatalf("candidate list = %#v", group["candidates"])
+		}
+		for _, candidateValue := range candidates {
+			candidate, ok := candidateValue.(map[string]any)
+			if !ok {
+				t.Fatalf("candidate = %#v", candidateValue)
+			}
+			source, ok := candidate["source"].(map[string]any)
+			if !ok || source["unit_id"] != unitID {
+				continue
+			}
+			refs, ok := source["direct_refs"].([]any)
+			if !ok {
+				t.Fatalf("candidate %s direct_refs = %#v", unitID, source["direct_refs"])
+			}
+			for _, ref := range refs {
+				if ref == wantRef {
+					return
+				}
+			}
+			t.Fatalf("candidate %s omits authored direct ref %s: %#v", unitID, wantRef, refs)
+		}
+	}
+	t.Fatalf("CandidateSet omits source unit %s", unitID)
 }
 
 func queryIntegrationExactUnit(t *testing.T, payload map[string]any) map[string]any {

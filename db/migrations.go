@@ -2002,4 +2002,5 @@ var kernelMigrations = []Migration{
 	typedMemoryKindClassificationMigration54,
 	profileAutomaticBootstrapMigration55,
 	hostRoutedOperatorAuthorityMigration56,
+	projectTypeEnvCompatibleSuccessorMigration57,
 }

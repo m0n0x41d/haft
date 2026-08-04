@@ -205,8 +205,8 @@ func ValidateProfileOnboardingWorkRecordAgainstProfileAuthorRoleAssignmentV1(
 		return err
 	}
 	checks := []profileAuthorRoleAssignmentCheckV1{
-		{valid: relation.roleAssignmentRef == work.performedBy, reason: "assignment ref must equal Work.performedBy"},
-		{valid: relation.holderSystemRef == work.executedWithin, reason: "assignment holder must equal Work.executedWithin"},
+		{valid: relation.roleAssignmentRef == work.coveringRoleAssignment, reason: "assignment ref must equal Work covering RoleAssignment"},
+		{valid: relation.holderSystemRef == work.actualPerformerSystem, reason: "assignment holder must equal Work actual performer system"},
 		{valid: relation.boundedContextRef == work.boundedContextRef, reason: "assignment and Work contexts must match"},
 		{valid: relation.validityWindow.covers(work.workInterval), reason: "assignment window must cover the Work interval"},
 	}

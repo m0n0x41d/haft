@@ -34,13 +34,14 @@ func (o ConcernDiscoveryOutcome) DetailCode() string {
 // ConcernDiscoveryResult is a read-only candidate projection. Candidate order
 // is advisory lexical precedence; no field can represent a selected identity.
 type ConcernDiscoveryResult struct {
-	Query     codebase.ConcernQuery
-	Batch     codebase.SymbolDiscoveryBatch
-	Fused     ConcernCandidateBatch
-	Basis     ConcernFusionBasis
-	Outcome   ConcernDiscoveryOutcome
-	ColdBuilt bool
-	Index     codebase.IndexState
+	Query        codebase.ConcernQuery
+	Batch        codebase.SymbolDiscoveryBatch
+	Fused        ConcernCandidateBatch
+	Basis        ConcernFusionBasis
+	Outcome      ConcernDiscoveryOutcome
+	ColdBuilt    bool
+	IndexRefresh IndexCoordinationResult
+	Index        codebase.IndexState
 }
 
 func (r ConcernDiscoveryResult) Candidates() []ConcernCandidate {
@@ -53,21 +54,23 @@ func (r ConcernDiscoveryResult) LexicalCandidates() []codebase.SymbolDiscoveryCa
 
 func (r ConcernDiscoveryResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
-		Query      codebase.ConcernQuery `json:"query"`
-		Outcome    string                `json:"outcome"`
-		Detail     string                `json:"detail,omitempty"`
-		Candidates []ConcernCandidate    `json:"candidates"`
-		Basis      ConcernFusionBasis    `json:"basis"`
-		ColdBuilt  bool                  `json:"cold_built"`
-		Index      codebase.IndexState   `json:"index"`
+		Query        codebase.ConcernQuery   `json:"query"`
+		Outcome      string                  `json:"outcome"`
+		Detail       string                  `json:"detail,omitempty"`
+		Candidates   []ConcernCandidate      `json:"candidates"`
+		Basis        ConcernFusionBasis      `json:"basis"`
+		ColdBuilt    bool                    `json:"cold_built"`
+		IndexRefresh IndexCoordinationResult `json:"index_refresh"`
+		Index        codebase.IndexState     `json:"index"`
 	}{
-		Query:      r.Query,
-		Outcome:    r.Outcome.String(),
-		Detail:     r.Outcome.DetailCode(),
-		Candidates: r.Candidates(),
-		Basis:      r.Basis,
-		ColdBuilt:  r.ColdBuilt,
-		Index:      r.Index,
+		Query:        r.Query,
+		Outcome:      r.Outcome.String(),
+		Detail:       r.Outcome.DetailCode(),
+		Candidates:   r.Candidates(),
+		Basis:        r.Basis,
+		ColdBuilt:    r.ColdBuilt,
+		IndexRefresh: r.IndexRefresh,
+		Index:        r.Index,
 	})
 }
 
@@ -103,21 +106,25 @@ func (s *Service) discoverConcernOnce(
 	query codebase.ConcernQuery,
 	budget codebase.DiscoveryBudget,
 ) (result ConcernDiscoveryResult, resultErr error) {
-	cold, err := s.EnsureIndex(ctx, projectRoot)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return ConcernDiscoveryResult{}, err
 	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
 	if err != nil {
 		return ConcernDiscoveryResult{}, err
 	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return ConcernDiscoveryResult{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = ConcernDiscoveryResult{}
 			resultErr = err
 			return
@@ -136,9 +143,10 @@ func (s *Service) discoverConcernOnce(
 		}
 	}()
 	result = ConcernDiscoveryResult{
-		Query:     query,
-		ColdBuilt: cold,
-		Index:     indexState,
+		Query:        query,
+		ColdBuilt:    indexRefresh.Rebuilt(),
+		IndexRefresh: indexRefresh,
+		Index:        indexState,
 	}
 	if indexState.Epoch == 0 {
 		result.Outcome = ConcernDiscoveryOutcome{

@@ -193,8 +193,7 @@ func TestStatusProfilePrefixOmitsResolvedProfileUntilFullView(
 		"profile_payload_digest=" + admission.PayloadDigest().String(),
 		"Capability applicability (authority=canonical_profile_capability_matrix.v1)",
 		"capability=software_system_spec; applicability=not_applicable",
-		"capability=target_system_spec; applicability=underdetermined",
-		"missing_basis=admitted_target_system_relation",
+		"capability=target_system_spec; applicability=required",
 	} {
 		if strings.Contains(full, marker) {
 			continue

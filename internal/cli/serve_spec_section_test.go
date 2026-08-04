@@ -310,7 +310,7 @@ func TestHandleHaftSpecSection_DefaultsToServerBoundProjectRoot(t *testing.T) {
 	}
 }
 
-func TestHandleHaftSpecSection_NextStepReturnsScopeLocalApplicabilityCue(
+func TestHandleHaftSpecSection_NextStepStartsTargetSpecWithoutEntityRelation(
 	t *testing.T,
 ) {
 	root := mustCLIProfileOnboardPhysicalPath(t, t.TempDir())
@@ -335,21 +335,13 @@ func TestHandleHaftSpecSection_NextStepReturnsScopeLocalApplicabilityCue(
 	if next.WorkflowIntent == nil {
 		t.Fatalf("resolved applicability omitted next-step projection: %#v", next)
 	}
-	if next.WorkflowIntent.Phase != "" ||
-		next.WorkflowIntent.ApplicabilityCue == nil {
+	if next.WorkflowIntent.Phase != specflow.PhaseTargetEnvironmentDraft ||
+		next.WorkflowIntent.ApplicabilityCue != nil {
 		t.Fatalf(
-			"next step fabricated a phase instead of the scope-local cue: %#v; raw = %s",
+			"next step did not start target-system lifecycle: %#v; raw = %s",
 			next,
 			raw,
 		)
-	}
-	cue := next.WorkflowIntent.ApplicabilityCue
-	if cue.ScopeID != "software-spec-next" ||
-		len(cue.Issues) != 1 ||
-		cue.Issues[0].DocumentKind != project.SpecDocumentKindTargetSystem ||
-		len(cue.BlockedDependencies) != 1 ||
-		cue.BlockedDependencies[0].BlockedPhase != specflow.PhaseSoftwareRoleDraft {
-		t.Fatalf("scope-local applicability cue = %#v", cue)
 	}
 	if next.ProfileApplicability.ScopeID != "software-spec-next" {
 		t.Fatalf(

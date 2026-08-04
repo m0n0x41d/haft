@@ -195,18 +195,32 @@ to that scope. Mixed, multiple-scope, insufficient, truncated, or manually
 reviewed bases remain profile-review work, and init never changes an existing
 canonical profile. A later direct, unambiguous operator request may supersede
 only a current `detector_default` profile; onboarding status reports
-`profile_override_eligible`, and successful application appends an
-`host_routed_operator_request` admission. Further operator-mediated and legacy
-profile changes remain a separate contract.
+`profile_override_eligible`, and successful application appends a
+`host_routed_operator_request` admission. `TargetSystemSpec` is Required for
+every declared realization scope; an optional `entity_reference` strengthens
+exact EntityOfConcern memory and traceability but does not gate specification
+applicability or lifecycle. The bounded `profile_change_prepare` route remains
+available only when changing that relation is itself current, and is never a
+prerequisite for spec work. Onboarding `ready` covers only the canonical
+profile and structured project memory; it is not a spec-applicability, health,
+lifecycle, or release-readiness verdict.
 
 Check spec carriers locally:
 
 ```bash
+haft spec status
+haft spec status --json
 haft spec check
 haft spec check --json
 haft spec migrate
 haft spec migrate --json # read-only state for agents and automation
 ```
+
+`haft spec status` keeps two read-only results explicit: `workflow.state`
+reports the next onboarding lifecycle action, while `health` reports current
+structural, baseline, drift, and staleness findings. A terminal workflow state
+such as `ready` therefore does not erase health findings and is not a release
+readiness claim; use `haft spec check --json` for the full health report.
 
 `SoftwareSystemSpec` describes the software that realizes the target system:
 its role, responsibility allocation, behavior, interfaces, constraints, and
@@ -325,16 +339,30 @@ The report has one closed result:
 |---|---|---|
 | `no_change` | Candidate and current publication are the same. | Nothing to apply. |
 | `apply_ready` | The technical compatibility checks admit the candidate. | Run `task fpf-refresh`. |
-| `review_ready` | Technical adaptation succeeded and semantic deltas are material enough to preserve explicitly. | `task fpf-refresh` applies the fresh source baseline and retains the deltas for downstream review. |
-| `candidate_rejected` | Source, grammar, derivation, or compatibility checks failed closed. | Resolve the reported diagnostic and check again. |
+| `review_ready` | A complete candidate built and verified, while parser, semantic, Query-behavior, token-budget, or expectation findings need later review. | `task fpf-refresh` prints a prominent warning, applies the fresh source baseline, and retains every finding for downstream review. |
+| `candidate_rejected` | The required source publication is missing, its structure is unsupported, or no deterministic and internally coherent source/index publication could be built and verified. | Adapt the source parser/compiler or repair the integrity failure, then check again. |
 
 `task fpf-refresh` repeats the check, pins the resolved candidate SHA, and
 recoverably applies the coherent source, database, and generated
 integration-lock publication for both `apply_ready` and `review_ready`.
 `review_ready` is an auditable semantic-delta classification, not a veto on
-adopting fresh FPF as Haft's source baseline. Applying it records no semantic
-approval and grants no release authority. The apply also rebases only the
-repo-owned Local-Practice compiled memory basis and `FPF-Spec.md` source pins,
+adopting fresh FPF as Haft's source baseline. Query/token fixture drift is also
+`review_ready`: the command prints a large `FPF REFRESH REVIEW WARNING`, keeps
+the exact diagnostics and reproduction commands in the report, and continues
+the recoverable apply. Exact PatternID/query-smoke drift, token fixtures, and
+semantic compatibility gaps belong here when the generic source-query runtime
+and derived publication are still coherent. A new recognizable result-label
+family is indexed with its exact raw source, flagged as degraded parser review,
+and does not veto refresh. Such findings may block release or query-quality
+claims, but they do not leave Haft on stale FPF source. Applying the candidate
+records no semantic approval and grants no release authority. A hard rejection is
+reserved for the absence of a complete structurally supported candidate — for
+example a missing required publication, source structure too incomplete to
+derive the required roles/categories, a derived source-unit projection below
+50% of the preceding verified count, failed derivation, or failed source/DB/lock
+integrity verification. The apply also
+rebases only the repo-owned Local-Practice compiled memory basis and
+`FPF-Spec.md` source pins,
 then proves that the carrier parses, compiles, seals, verifies, and links
 against the fresh basis. `task fpf-refresh` finishes with the exact read-only
 integration verification. After a low-level recovery, run
@@ -373,6 +401,14 @@ edit to governed code, use `code_context` or `impact` on the actual target.
 Purely mechanical work may abstain explicitly. Code-graph orientation and
 typed-memory orientation are separate; neither substitutes for the other.
 
+Code-graph indexing is automatic and shared by concurrent `haft serve`
+processes for the same project. Several host tasks can remain open: one server
+publishes a changed source epoch while followers stay responsive and recheck
+the completed result. A request that cannot establish freshness within its
+bounded wait reports the retained complete epoch as degraded, or reports the
+index unavailable when no complete epoch exists. Distinct projects continue
+indexing independently; no single-server setup or manual cleanup is required.
+
 ### What changed in v8
 
 v8 dropped the standalone interactive agent (`haft agent`), its coding-agent
@@ -400,9 +436,16 @@ restart, and rollback boundaries.
 | `haft_method` | Task-local SWE MethodRun cards: pull gates before non-trivial work, close with evidence or waivers |
 | `haft_commission` | WorkCommission lifecycle for execution harnesses |
 | `haft_spec_section` | Typed SpecSection lifecycle projection over project SQL editions; FPF source compatibility is assessed separately; manual CLI gates approve, rebaseline, or reopen baselines |
-| `haft_onboard` | Read setup status or prepare a non-binding project-profile review; `haft init` automatically admits only a complete supported singleton as `origin=detector_default` and installs default project memory |
+| `haft_onboard` | Read setup status, prepare a non-binding initial profile review, or prepare an explicitly requested predecessor-pinned scope relation change; a missing relation never gates TargetSystemSpec lifecycle; `haft init` automatically admits only a complete supported singleton as `origin=detector_default` and installs default project memory |
 | `haft_entity` | Proactively establish one minimum non-binding EntityOfConcern when current Work supplies a concrete operator-named or agent-inferred durable receiving use; known absence alone is insufficient |
 | `haft_memory` | Expert raw MemoryChangeSet validation/admission through a nested `request` envelope; ordinary agents use `haft_entity`, and validation never admits automatically |
+
+The v9 public identity-change contract is alias-only: `admit_alias` adds a
+context-bound alias and `supersede_alias` replaces one while retaining
+provenance. Entity merge and split are not v9 `MemoryChange` variants; their
+reviewed reconciliation contract is deferred to v9.1. Exact-ID and alias
+collisions return explicit candidates—retrieval rank or similarity never
+selects or merges an identity.
 
 ### Twelve skills installed by `haft init`
 
@@ -441,9 +484,21 @@ text, agent recommendations, hypotheticals, and tool output do not bind.
 
 MCP `haft_decision(action="decide", ...)` remains fail-closed with
 `operator_confirmation_required` until a verifiable host receipt exists.
-Project-profile application and later non-default project-memory model changes
-use the same direct-request rule through their own effect sinks. The automatic singleton
-profile bootstrap is a separate system policy and stays `detector_default`.
+Project-profile application, incompatible project-memory model selection, and
+rollback use the same direct-request rule through their own effect sinks.
+Compatible bundled ProjectTypeEnv successors are different: `haft init` and the
+mutation-capable TypeEnv reconciliation path activate them automatically under
+`compatible_successor_policy`, after transaction-current compatibility,
+assertion, profile, runtime, graph, and head checks. No prompt, review carrier,
+or host-routed operator request is created. A stale, incompatible, incomplete,
+or underdetermined successor leaves the head unchanged with an exact diagnostic.
+The activation audit path is equally disjoint: current activation deltas and
+typed-memory graph events record `compatible_successor_policy` for that
+automatic branch and `host_routed_operator_request` for an explicit branch.
+Legacy `manual_type_env_activation` rows remain readable history and are never
+emitted by the v9 writer.
+The automatic singleton profile bootstrap is another separate system policy
+and stays `detector_default`.
 
 Project-local `.haft/config.yaml` is no longer an authority-policy carrier.
 Fresh `haft init` does not create it. Init removes only the exact historical

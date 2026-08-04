@@ -979,6 +979,104 @@ func prepareAppliedTypeScriptProject(
 	}
 }
 
+func TestOnboardProfileChangePrepareAndApplyRepairsSpecApplicability(
+	t *testing.T,
+) {
+	fixture := prepareAppliedTypeScriptProject(t)
+	defer fixture.surface.Close()
+	statusOutput := callOnboardHandler(
+		t,
+		fixture.surface.Handler(),
+		`{"action":"status"}`,
+	)
+	status := decodeOnboardResponse(t, statusOutput)
+	if len(status.Scopes) != 1 {
+		t.Fatalf("profile scopes = %#v", status.Scopes)
+	}
+	request := onboardRequestWire{
+		Action:    "profile_change_prepare",
+		ScopeID:   stringPointer(status.Scopes[0].ScopeID),
+		EntityRef: stringPointer("entity:typescript-target-system"),
+	}
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	preparedOutput := callOnboardHandler(
+		t,
+		fixture.surface.Handler(),
+		string(requestBytes),
+	)
+	prepared := decodeOnboardResponse(t, preparedOutput)
+	if prepared.Result != "profile_change_review_prepared" ||
+		prepared.Status != "profile_change_review_ready" ||
+		prepared.ReviewRef != "review:onboard-profile-change" ||
+		!prepared.Effects.ReviewCarrierCreated ||
+		prepared.Effects.CanonicalProfileChanged {
+		t.Fatalf("profile change prepare = %#v", prepared)
+	}
+	if _, err := os.Stat(profileChangeReviewPath(fixture.binding.ProjectRoot)); err != nil {
+		t.Fatalf("profile change review: %v", err)
+	}
+	reviewStatusOutput := callOnboardHandler(
+		t,
+		fixture.surface.Handler(),
+		`{"action":"status"}`,
+	)
+	reviewStatus := decodeOnboardResponse(t, reviewStatusOutput)
+	if reviewStatus.Result != "profile_change_review_ready" ||
+		reviewStatus.Status != "profile_change_review_ready" ||
+		!reviewStatus.ProfileChangeEligible ||
+		reviewStatus.ReviewRef != "review:onboard-profile-change" {
+		t.Fatalf("profile change review status = %#v", reviewStatus)
+	}
+	output, err := runOnboardProfileChangeApplyJSONForTest(t)
+	if err != nil {
+		t.Fatalf("profile change apply: %v\n%s", err, output)
+	}
+	response := onboardTaskEffectResponse{}
+	if err := json.Unmarshal([]byte(output), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Result != "profile_change_applied" ||
+		response.Action != "profile_change_apply" ||
+		!response.Effects.CanonicalProfileChanged {
+		t.Fatalf("profile change apply response = %#v", response)
+	}
+	if _, err := os.Stat(profileChangeReviewPath(fixture.binding.ProjectRoot)); !os.IsNotExist(err) {
+		t.Fatalf("applied profile change review was not consumed: %v", err)
+	}
+	inspection, err := executeProfileInspection(
+		context.Background(),
+		fixture.binding.ProjectRoot,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.CanonicalProfile.LedgerRevision != 2 {
+		t.Fatalf(
+			"canonical profile revision = %d, want 2",
+			inspection.CanonicalProfile.LedgerRevision,
+		)
+	}
+	lifecycle, err := buildPublicSpecLifecycle(
+		context.Background(),
+		fixture.binding.ProjectRoot,
+		automaticProjectSpecificationScopeRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lifecycle.ProfileApplicability.Kind != "resolved" ||
+		len(lifecycle.ProfileApplicability.UnderdeterminedKinds) != 0 {
+		t.Fatalf(
+			"spec applicability after profile change = %#v",
+			lifecycle.ProfileApplicability,
+		)
+	}
+}
+
 func prepareManualProfileReview(
 	t *testing.T,
 	handler func(
@@ -1042,7 +1140,7 @@ func assertMemoryReviewReadyForTaskCommand(
 }
 
 func onboardScopeKinds(
-	scopes []onboardScopeWire,
+	scopes []onboardScopeResponseWire,
 ) []string {
 	result := make([]string, len(scopes))
 	for index, scope := range scopes {
@@ -1063,6 +1161,21 @@ func runOnboardProfileApplyJSONForTest(
 		onboardProfileApplyJSON = previous
 	}()
 	err := runOnboardProfileApply(command, nil)
+	return output.String(), err
+}
+
+func runOnboardProfileChangeApplyJSONForTest(
+	t *testing.T,
+) (string, error) {
+	t.Helper()
+	output := &bytes.Buffer{}
+	command := onboardingTaskTestCommand(output)
+	previous := onboardProfileChangeApplyJSON
+	onboardProfileChangeApplyJSON = true
+	defer func() {
+		onboardProfileChangeApplyJSON = previous
+	}()
+	err := runOnboardProfileChangeApply(command, nil)
 	return output.String(), err
 }
 

@@ -299,6 +299,67 @@ func TestCheckCandidatePreservesReportWhenWorkspaceCleanupFails(t *testing.T) {
 	})
 }
 
+func TestCheckCandidateKeepsVerifiedArtifactWhenTokenGateNeedsReview(t *testing.T) {
+	fixture := newRefreshEffectsFixture(t)
+	layout := transactionTestLayout(t, fixture)
+	builder := IndexBuilderFunc(func(
+		_ context.Context,
+		input IndexBuildInput,
+	) error {
+		content, err := os.ReadFile(fixture.candidateDatabase)
+		if err != nil {
+			return err
+		}
+		databasePath := candidateAbsolutePath(input.WorkingDirectory, input.DatabasePath)
+		return os.WriteFile(databasePath, content, 0o600)
+	})
+	tokenGateFailure := errors.New("frozen query behavior changed on fresh source")
+	ctx := context.Background()
+	check, err := CheckCandidate(ctx, CandidateCheckRequest{
+		Layout:       layout,
+		CandidateRef: fixture.candidateSHA,
+		Builder:      builder,
+		ToolRevision: "fpf-refresh-test",
+		TokenGateVerifier: CandidateTokenGateFunc(func(
+			context.Context,
+			CandidateTokenGateInput,
+		) error {
+			return tokenGateFailure
+		}),
+	})
+	if err != nil {
+		t.Fatalf("CheckCandidate() error = %v", err)
+	}
+	state := check.Report.Outcome().State()
+	if state != StateReviewReady {
+		t.Fatalf(
+			"token-gate outcome = %s, want %s",
+			state.String(),
+			StateReviewReady.String(),
+		)
+	}
+	if check.CandidateArtifact == nil {
+		t.Fatal("token-gate review discarded the verified candidate artifact")
+	}
+	diagnostics := check.Report.Diagnostics()
+	if len(diagnostics) != 1 || diagnostics[0].Code() != DiagnosticTokenGateFailed {
+		t.Fatalf("token-gate diagnostics = %#v", diagnostics)
+	}
+	result, err := ApplyCheckedCandidate(ctx, ApplyCandidateRequest{
+		Layout:                         layout,
+		Check:                          check,
+		AllowReviewReadyTechnicalApply: true,
+	})
+	if err != nil {
+		t.Fatalf("ApplyCheckedCandidate() error = %v", err)
+	}
+	if result.TerminalReceipt.State != ReceiptStateComplete {
+		t.Fatalf("terminal receipt state = %s", result.TerminalReceipt.State)
+	}
+	assertCandidateEffectsPair(t, fixture)
+	assertCandidateRepositoryIntegration(t, fixture)
+}
+
 func TestDurableLockArtifactNameSeparatesSameSourceLockRevisions(t *testing.T) {
 	const sourceRevision = "308edacfa2bdb2c60d07e4e10c0deb1f260a6a31"
 	firstDigest := "sha256:" + strings.Repeat("a", 64)

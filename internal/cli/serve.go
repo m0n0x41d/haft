@@ -218,6 +218,23 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	rawDatabase := ledger.Database()
 	artStore := artifact.NewStore(rawDatabase)
+	codeIndexCoordinator, err := codeintel.NewProjectIndexCoordinator(
+		codeintel.ProjectIndexCoordinates{
+			ProjectID:   ledger.ProjectID().String(),
+			ProjectRoot: ledger.ProjectRoot().String(),
+			LedgerPath:  ledger.DatabasePath(),
+		},
+	)
+	if err != nil {
+		return fmt.Errorf(
+			"configure checked project code-index coordinator: %w",
+			err,
+		)
+	}
+	codeIntelService := codeintel.NewServiceWithIndexCoordinator(
+		artStore,
+		codeIndexCoordinator,
+	)
 
 	memorySurface, memorySurfaceErr := configureServeProjectMemoryFullSurface(
 		cmd.Context(),
@@ -240,10 +257,11 @@ func runServe(cmd *cobra.Command, args []string) error {
 	_ = project.PopulateContextFacts(context.Background(), rawDatabase, binding.ProjectName)
 
 	go func() {
-		if built, err := codeintel.NewService(artStore).EnsureIndex(context.Background(), binding.ProjectRoot); err != nil {
+		if _, err := codeIntelService.EnsureIndexForStartup(
+			context.Background(),
+			binding.ProjectRoot,
+		); err != nil {
 			logger.Warn().Err(err).Msg("code-graph startup refresh failed")
-		} else if built {
-			logger.Info().Msg("code-graph index rebuilt on startup (source changed)")
 		}
 	}()
 
@@ -270,7 +288,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	v5Handler := makeV5HandlerWithTaskMemoryProjection(
+	v5Handler := makeV5HandlerWithTaskMemoryProjectionAndCodeIntel(
 		artStore,
 		searcher,
 		crossHybrid,
@@ -278,6 +296,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		projCfg,
 		indexStore,
 		taskMemorySurface,
+		codeIntelService,
 	)
 	server.SetV5Handler(makeRevalidatedServeV5Handler(
 		binding,
@@ -528,7 +547,7 @@ func searchArtifacts(ctx context.Context, store *artifact.Store, searcher recall
 	return searcher.Search(ctx, query, limit)
 }
 
-func makeV5HandlerWithTaskMemoryProjection(
+func makeV5HandlerWithTaskMemoryProjectionAndCodeIntel(
 	store *artifact.Store,
 	searcher recall.Searcher,
 	crossHybrid *project.CrossHybrid,
@@ -536,6 +555,7 @@ func makeV5HandlerWithTaskMemoryProjection(
 	projCfg *project.Config,
 	indexStore *project.IndexStore,
 	taskProjector taskMemoryProjector,
+	codeIntelService *codeintel.Service,
 ) fpf.V5ToolHandler {
 	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 		var params struct {
@@ -551,7 +571,15 @@ func makeV5HandlerWithTaskMemoryProjection(
 		start := time.Now()
 
 		// Dispatch
-		result, createdRef, toolErr := dispatchTool(ctx, store, searcher, haftDir, params.Name, params.Arguments)
+		result, createdRef, toolErr := dispatchToolWithCodeIntel(
+			ctx,
+			store,
+			searcher,
+			haftDir,
+			params.Name,
+			params.Arguments,
+			codeIntelService,
+		)
 
 		// Post-dispatch hooks
 		logger.ToolResult(params.Name, action, time.Since(start).Milliseconds(), toolErr)
@@ -570,7 +598,16 @@ func makeV5HandlerWithTaskMemoryProjection(
 				taskProjector,
 			)
 			result = applyCrossProjectRecall(ctx, result, params.Name, action, params.Arguments, store, projCfg, indexStore, crossHybrid)
-			result = applyGraphSeededRecall(ctx, result, params.Name, action, params.Arguments, store, haftDir)
+			result = applyGraphSeededRecallWithCodeIntel(
+				ctx,
+				result,
+				params.Name,
+				action,
+				params.Arguments,
+				store,
+				haftDir,
+				codeIntelService,
+			)
 			applyCrossProjectIndex(ctx, params.Name, action, params.Arguments, createdRef, store, projCfg, indexStore, crossHybrid)
 			invalidateRecall(searcher, createdRef)
 		}
@@ -597,7 +634,15 @@ func makeV5HandlerWithTaskMemoryProjection(
 // ID of the artifact created by this call (e.g. "dec-20260418-a3f7c1d2"); empty
 // string when the action does not create a primary artifact (e.g. read-only
 // queries, mutations of existing artifacts).
-func dispatchTool(ctx context.Context, store *artifact.Store, searcher recall.Searcher, haftDir string, name string, args map[string]any) (string, string, error) {
+func dispatchToolWithCodeIntel(
+	ctx context.Context,
+	store *artifact.Store,
+	searcher recall.Searcher,
+	haftDir string,
+	name string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+) (string, string, error) {
 	if err := rejectMCPBindingAction(name, args); err != nil {
 		return "", "", err
 	}
@@ -622,10 +667,23 @@ func dispatchTool(ctx context.Context, store *artifact.Store, searcher recall.Se
 	case "haft_decision":
 		return handleQuintDecision(ctx, store, haftDir, args)
 	case "haft_refresh":
-		result, err := handleQuintRefresh(ctx, store, haftDir, args)
+		result, err := handleQuintRefreshWithCodeIntel(
+			ctx,
+			store,
+			haftDir,
+			args,
+			codeIntelService,
+		)
 		return result, "", err
 	case "haft_query":
-		result, err := handleQuintQuery(ctx, store, searcher, haftDir, args)
+		result, err := handleQuintQueryWithCodeIntel(
+			ctx,
+			store,
+			searcher,
+			haftDir,
+			args,
+			codeIntelService,
+		)
 		return result, "", err
 	case "haft_commission":
 		args = commissionArgsWithProjectRoot(args, filepath.Dir(haftDir))
@@ -714,7 +772,16 @@ func applyCrossProjectRecall(ctx context.Context, result, name, action string, a
 // exact file but phrased differently. Best-effort: any error or empty result
 // leaves the frame response unchanged. Lives in the shell because the artifact
 // core cannot import the code-graph (codeintel).
-func applyGraphSeededRecall(ctx context.Context, result, name, action string, args map[string]any, store *artifact.Store, haftDir string) string {
+func applyGraphSeededRecallWithCodeIntel(
+	ctx context.Context,
+	result string,
+	name string,
+	action string,
+	args map[string]any,
+	store *artifact.Store,
+	haftDir string,
+	codeIntelService *codeintel.Service,
+) string {
 	if name != "haft_problem" || action != "frame" {
 		return result
 	}
@@ -724,7 +791,12 @@ func applyGraphSeededRecall(ctx context.Context, result, name, action string, ar
 		return result
 	}
 	projectRoot := filepath.Dir(haftDir)
-	view, err := codeintel.NewService(store).RelatedView(ctx, projectRoot, seedFile, 6)
+	view, err := codeIntelService.RelatedView(
+		ctx,
+		projectRoot,
+		seedFile,
+		6,
+	)
 	if err != nil || len(view.Results) == 0 {
 		return result
 	}
@@ -1677,7 +1749,13 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 	}
 }
 
-func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir string, args map[string]any) (string, error) {
+func handleQuintRefreshWithCodeIntel(
+	ctx context.Context,
+	store *artifact.Store,
+	haftDir string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+) (string, error) {
 	action, _ := args["action"].(string)
 	contextName, _ := args["context"].(string)
 	reason, _ := args["reason"].(string)
@@ -1694,16 +1772,25 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 	case artifact.RefreshScan:
 		projectRoot := filepath.Dir(haftDir)
 
-		// Rescan modules before drift detection — keeps dependency graph fresh
-		scanner := codebase.NewScanner(store.DB())
-		if _, err := scanner.ScanModules(ctx, projectRoot); err != nil {
-			logger.Warn().Err(err).Msg("refresh: module rescan failed (non-fatal)")
+		// The shared coordinator owns source parsing and module publication.
+		// The legacy dependency projection remains a secondary best-effort scan.
+		indexRefresh, err := codeIntelService.EnsureIndex(ctx, projectRoot)
+		if err != nil {
+			logger.Warn().Err(err).Msg("refresh: code-index coordination failed (non-fatal)")
+		} else if indexRefresh.Outcome == codeintel.IndexNoCompleteEpoch ||
+			indexRefresh.Outcome == codeintel.IndexRetainedAfterFailure {
+			logger.Info().
+				Str("outcome", string(indexRefresh.Outcome)).
+				Str("reason", indexRefresh.Reason).
+				Msg("refresh: code index retained its prior publication")
 		}
-		if _, err := scanner.ScanDependencies(ctx, projectRoot); err != nil {
-			_ = err // non-fatal
-		}
-		if _, err := scanner.RefreshIncremental(ctx, projectRoot); err != nil {
-			logger.Warn().Err(err).Msg("refresh: code index refresh failed (non-fatal)")
+		if _, err := codebase.NewScanner(store.DB()).ScanDependencies(
+			ctx,
+			projectRoot,
+		); err != nil {
+			logger.Warn().Err(err).Msg(
+				"refresh: dependency rescan failed (non-fatal)",
+			)
 		}
 
 		items, err := artifact.ScanStale(ctx, store, projectRoot)
@@ -1870,12 +1957,13 @@ func handleQuintRefresh(ctx context.Context, store *artifact.Store, haftDir stri
 
 const codeContextBatchLimit = 8
 
-func handleCodeContextQuery(
+func handleCodeContextQueryWithCodeIntel(
 	ctx context.Context,
 	store *artifact.Store,
 	haftDir string,
 	args map[string]any,
 	navStrip string,
+	codeIntelService *codeintel.Service,
 ) (string, error) {
 	projectRoot := filepath.Dir(haftDir)
 	files := codeContextFiles(args)
@@ -1883,7 +1971,13 @@ func handleCodeContextQuery(
 	symbol, _ := args["symbol"].(string)
 	line := intArg(args, "line", 0)
 	if anchorID != "" && len(files) == 0 {
-		resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+		resolved, err := resolveCurrentSymbolAnchorWithCodeIntel(
+			ctx,
+			store,
+			projectRoot,
+			anchorID,
+			codeIntelService,
+		)
 		if err != nil {
 			return "", err
 		}
@@ -1919,20 +2013,30 @@ func handleCodeContextQuery(
 	if usesCodeIndex {
 		attemptLimit = 2
 	}
-	service := codeintel.NewService(store)
 	var lastErr error
 	for range attemptLimit {
 		refreshed := false
 		var indexState codebase.IndexState
+		var publishedIndexState codebase.IndexState
+		var indexRefresh codeintel.IndexCoordinationResult
 		if usesCodeIndex {
-			refreshed, err = service.EnsureIndex(ctx, projectRoot)
+			var refreshErr error
+			indexRefresh, refreshErr = codeIntelService.EnsureIndex(
+				ctx,
+				projectRoot,
+			)
+			err = refreshErr
 			if err != nil {
 				return "", err
 			}
-			indexState, err = service.CurrentIndexState(ctx)
+			refreshed = indexRefresh.Rebuilt()
+			publishedIndexState, err = codeIntelService.CurrentIndexState(ctx)
 			if err != nil {
 				return "", err
 			}
+			indexState = indexRefresh.EffectiveIndexState(
+				publishedIndexState,
+			)
 		}
 		parts, err := renderCodeContextTargets(
 			ctx,
@@ -1954,7 +2058,10 @@ func handleCodeContextQuery(
 		if !usesCodeIndex {
 			return strings.Join(parts, "\n---\n\n") + navStrip, nil
 		}
-		if err := service.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := codeIntelService.ConfirmIndexState(
+			ctx,
+			publishedIndexState,
+		); err != nil {
 			var changed *codeintel.IndexBasisChangedError
 			if !errors.As(err, &changed) {
 				return "", err
@@ -1963,6 +2070,7 @@ func handleCodeContextQuery(
 			continue
 		}
 		response := present.IndexStateResponse(indexState)
+		response += present.IndexCoordinationResponse(indexRefresh)
 		response += strings.Join(parts, "\n---\n\n")
 		return response + navStrip, nil
 	}
@@ -2225,12 +2333,36 @@ func codeContextSymbolName(symbol codebase.CodeSymbol) string {
 }
 
 func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recall.Searcher, haftDir string, args map[string]any) (string, error) {
+	return handleQuintQueryWithCodeIntel(
+		ctx,
+		store,
+		searcher,
+		haftDir,
+		args,
+		codeintel.NewService(store),
+	)
+}
+
+func handleQuintQueryWithCodeIntel(
+	ctx context.Context,
+	store *artifact.Store,
+	searcher recall.Searcher,
+	haftDir string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+) (string, error) {
 	action, _ := args["action"].(string)
 	if err := rejectWrongIdentifierNamespaceForQueryAction(ctx, store, action, args); err != nil {
 		return "", err
 	}
 	contextName, _ := args["context"].(string)
-	navStrip := navStripForStatusStaleLane(ctx, store, contextName)
+	// Status already owns one StatusData snapshot and renders its navigation
+	// strip from that same snapshot below. Computing the generic strip here
+	// would perform the full status aggregation twice for every status call.
+	var navStrip string
+	if action != "status" {
+		navStrip = navStripForStatusStaleLane(ctx, store, contextName)
+	}
 
 	switch action {
 	case "search":
@@ -2283,6 +2415,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			response, responseErr := governorStatusResponse(
 				ctx,
 				store,
+				codeIntelService,
 				contextName,
 				projectRoot,
 				readiness,
@@ -2301,7 +2434,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			return "", err
 		}
 		full, _ := args["full"].(bool)
-		data, err := artifact.FetchStatusData(ctx, store, contextName, projectRoot)
+		data, err := fetchBoundedProjectStatusData(
+			ctx,
+			store,
+			codeIntelService,
+			contextName,
+			projectRoot,
+		)
 		if err != nil {
 			return "", err
 		}
@@ -2383,7 +2522,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		resp := present.RelatedResponse(results, file)
 		if file != "" {
-			svc := codeintel.NewService(store)
+			svc := codeIntelService
 			projectRoot := filepath.Dir(haftDir)
 			// Phase-2 graph-proximity recall (dec-20260604-3aaad199): FTS5-seeded
 			// PPR over the fused graph, additive to the exact affected-file list.
@@ -2407,6 +2546,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 					items = append(items, present.RelatedProximityItem{Title: r.Title, Label: label, Ref: r.ID})
 				}
 				resp += present.IndexStateResponse(view.Index)
+				resp += present.IndexCoordinationResponse(view.IndexRefresh)
 				resp += present.RelatedProximityResponse(items)
 			}
 			// Structural test-coverage lane (dec-20260604-ef966a11): which tests
@@ -2417,13 +2557,21 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 					items = append(items, present.TestedByItem{Symbol: c.Symbol, Exported: c.Exported, TestedBy: c.TestedBy})
 				}
 				resp += present.IndexStateResponse(view.Index)
+				resp += present.IndexCoordinationResponse(view.IndexRefresh)
 				resp += present.TestedByResponse(items)
 			}
 		}
 		return resp + navStrip, nil
 
 	case "code_context":
-		return handleCodeContextQuery(ctx, store, haftDir, args, navStrip)
+		return handleCodeContextQueryWithCodeIntel(
+			ctx,
+			store,
+			haftDir,
+			args,
+			navStrip,
+			codeIntelService,
+		)
 
 	case "callees", "callers", "impact":
 		name := firstNonEmptyQueryArg(args, "symbol", "name")
@@ -2434,7 +2582,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		projectRoot := filepath.Dir(haftDir)
 		if anchorID, _ := args["anchor_id"].(string); anchorID != "" && name == "" {
-			resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+			resolved, err := resolveCurrentSymbolAnchorWithCodeIntel(
+				ctx,
+				store,
+				projectRoot,
+				anchorID,
+				codeIntelService,
+			)
 			if err != nil {
 				return "", err
 			}
@@ -2458,7 +2612,16 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if !validProfile {
 			return "", fmt.Errorf("unknown traversal profile %q; valid profiles: call_flow, type_impact, reference_impact, all_code", profileRaw)
 		}
-		res, err := codeintel.NewService(store).FlowWithProfile(ctx, projectRoot, name, file, line, depth, dir, profile)
+		res, err := codeIntelService.FlowWithProfile(
+			ctx,
+			projectRoot,
+			name,
+			file,
+			line,
+			depth,
+			dir,
+			profile,
+		)
 		if err != nil {
 			return "", err
 		}
@@ -2473,7 +2636,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		}
 		projectRoot := filepath.Dir(haftDir)
 		if anchorID, _ := args["anchor_id"].(string); anchorID != "" && name == "" {
-			resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+			resolved, err := resolveCurrentSymbolAnchorWithCodeIntel(
+				ctx,
+				store,
+				projectRoot,
+				anchorID,
+				codeIntelService,
+			)
 			if err != nil {
 				return "", err
 			}
@@ -2484,7 +2653,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		if name == "" {
 			return "", fmt.Errorf("symbol is required for node action")
 		}
-		view, err := codeintel.NewService(store).Node(ctx, projectRoot, name, file, line)
+		view, err := codeIntelService.Node(
+			ctx,
+			projectRoot,
+			name,
+			file,
+			line,
+		)
 		if err != nil {
 			return "", err
 		}
@@ -2505,7 +2680,13 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 					"explore accepts a concern query or anchor_id, not both",
 				)
 			}
-			resolved, err := resolveCurrentSymbolAnchor(ctx, store, projectRoot, anchorID)
+			resolved, err := resolveCurrentSymbolAnchorWithCodeIntel(
+				ctx,
+				store,
+				projectRoot,
+				anchorID,
+				codeIntelService,
+			)
 			if err != nil {
 				return "", err
 			}
@@ -2524,9 +2705,10 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 			}
 			maxCandidates = parsedCandidates
 		}
-		wire, err := publishCodeExplore(
+		wire, err := publishCodeExploreWithService(
 			ctx,
 			store,
+			codeIntelService,
 			projectRoot,
 			name,
 			file,
@@ -2700,6 +2882,18 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		payload, err := json.Marshal(packet)
 		if err != nil {
 			return "", fmt.Errorf("marshal spec review packet: %w", err)
+		}
+		return string(payload), nil
+
+	case "spec_validate":
+		projectRoot := filepath.Dir(haftDir)
+		report, err := buildSpecValidationReport(projectRoot)
+		if err != nil {
+			return "", fmt.Errorf("build spec validation report: %w", err)
+		}
+		payload, err := json.Marshal(report)
+		if err != nil {
+			return "", fmt.Errorf("marshal spec validation report: %w", err)
 		}
 		return string(payload), nil
 
@@ -2946,7 +3140,7 @@ func handleQuintQuery(ctx context.Context, store *artifact.Store, searcher recal
 		return handleQuintQueryResolveTerm(ctx, store, haftDir, args)
 
 	default:
-		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
+		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_validate', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
 }
 
@@ -3172,22 +3366,22 @@ func splitSeedBag(s string) []string {
 	return out
 }
 
-func resolveCurrentSymbolAnchor(
+func resolveCurrentSymbolAnchorWithCodeIntel(
 	ctx context.Context,
 	store *artifact.Store,
 	projectRoot string,
 	anchorID string,
+	codeIntelService *codeintel.Service,
 ) (codebase.CodeSymbol, error) {
-	service := codeintel.NewService(store)
 	var lastErr error
 	for range 2 {
-		if _, err := service.EnsureIndex(ctx, projectRoot); err != nil {
+		if _, err := codeIntelService.EnsureIndex(ctx, projectRoot); err != nil {
 			return codebase.CodeSymbol{}, fmt.Errorf(
 				"refresh code index for anchor lookup: %w",
 				err,
 			)
 		}
-		indexState, err := service.CurrentIndexState(ctx)
+		indexState, err := codeIntelService.CurrentIndexState(ctx)
 		if err != nil {
 			return codebase.CodeSymbol{}, err
 		}
@@ -3200,7 +3394,7 @@ func resolveCurrentSymbolAnchor(
 				err,
 			)
 		}
-		if err := service.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := codeIntelService.ConfirmIndexState(ctx, indexState); err != nil {
 			var changed *codeintel.IndexBasisChangedError
 			if !errors.As(err, &changed) {
 				return codebase.CodeSymbol{}, err

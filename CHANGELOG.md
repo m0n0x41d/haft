@@ -13,6 +13,43 @@ The v8.2.0 candidate was never published; work previously described as an
 
 ### Changed
 
+- **Specification recovery no longer dead-ends in onboarding.** Onboarding
+  `ready` now names its domain and explicitly covers only the canonical profile
+  plus structured project memory. When one declared scope lacks the
+  target-system relation required by spec applicability, `haft_onboard`
+  prepares a one-relation, predecessor-pinned review and
+  `haft onboard profile change apply` records a separate `profile.change`
+  operator effect. Stale reviews fail closed, successful applies consume the
+  ephemeral carrier, and the original `h-spec` request resumes against fresh
+  applicability instead of rebuilding the whole profile.
+- **Specification workflow and health are separate status results.**
+  `haft spec status` now exposes a named onboarding `workflow` beside bounded
+  read-only spec `health`. Legacy top-level lifecycle fields remain compatible,
+  while workflow `ready` can no longer be mistaken for a clean spec check or a
+  release-readiness verdict.
+- **Code-graph refresh is shared across concurrent project servers.** Multiple
+  Codex tasks or other MCP clients may run `haft serve` for the same project
+  without multiplying parser work. One server publishes a changed source
+  epoch; followers recheck the completed publication, remain responsive, and
+  retain the last complete epoch with an explicit degraded/unavailable result
+  when their bounded wait cannot establish freshness. Process exit is
+  recoverable without manual cleanup, distinct projects still refresh in
+  parallel, and `haft doctor` no longer treats several current-project servers
+  as a defect by count alone.
+- **Fresh FPF source is no longer vetoed by source-dependent Query fixtures.**
+  `task fpf-refresh` now retains and recoverably applies a complete verified
+  candidate when semantic compatibility, exact PatternID/query-smoke,
+  token-budget, parser-label, or frozen-expectation checks need review. New
+  recognizable result-label families retain their exact raw source in the
+  index and surface as degraded parser warnings. The command prints a prominent
+  review-warning banner with exact diagnostics and reproduction commands;
+  those findings may still block release or quality claims. Hard rejection is
+  reserved for cases where no complete structurally supported and internally
+  coherent source/DB/lock publication can be built, so ordinary FPF content
+  evolution cannot strand Haft on a stale embedded corpus. A candidate that
+  retains less than 50% of the preceding verified source-unit projection is an
+  explicit hard structural-collapse boundary rather than a silently accepted
+  parser result.
 - **Explicit and interactive `haft init` contract.** Bare `haft init` now opens
   a zero-preselection host multi-select only when stdin and stdout are
   terminals. Bare non-interactive/CI invocation fails before writes. Each
@@ -48,14 +85,36 @@ The v8.2.0 candidate was never published; work previously described as an
   automation, evidence, and later verification. The use may be named by the
   operator or inferred by the agent from current Work; empty memory or generic
   possible future usefulness is not sufficient.
+- **V9 identity changes are alias-only.** The public `identity_change` union
+  contains only context-bound `admit_alias` and `supersede_alias`. Exact-ID and
+  alias collisions remain explicit candidates, and no lexical, semantic, PPR,
+  dense, or other retrieval score may merge identities. Reviewed entity
+  merge/split is deferred to a separate v9.1 reconciliation contract while
+  historical records remain readable.
+- **Performed-Work attribution follows current FPF.** Active specifications
+  name the actual performer `U.System`, the covering `U.RoleAssignment`, and
+  `performedUnderAssignment` separately; an assignment never acts or enacts a
+  method. The ClaimGraph codec requirement is scoped to the C.2.1
+  `EpistemeConstitutionRelationSignature`, not inferred onto every C.2.1
+  relation signature.
 - **Default project memory and proactive entity orientation.** `haft init`
   installs the package-default project-memory model automatically, without an
-  enable/defer prompt or an internal-schema choice. When current Work has a
-  concrete durability-requiring receiving use and stable identity is
-  recoverable, agents establish the minimum non-binding EntityOfConcern
-  proactively. Explicit authority remains required for decisions,
-  specifications, commissions, profile changes, and later non-default changes
-  to the project-memory model.
+  enable/defer prompt or an internal-schema choice. Existing projects now
+  advance to every exact bundled ProjectTypeEnv successor proven compatible at
+  the transaction-current head, graph, profile, assertion, projection-profile,
+  and runtime boundary. This `compatible_successor_policy` path creates no
+  prompt, review carrier, or operator-request provenance; incompatible,
+  incomplete, stale, or underdetermined candidates leave the head unchanged.
+  Schema 57 carries the distinction through the complete audit closure: new
+  activation deltas, authority uses, and typed-memory graph events record
+  `compatible_successor_policy` for automatic transitions or
+  `host_routed_operator_request` for explicit transitions, while legacy
+  `manual_type_env_activation` rows remain read-only history.
+  When current Work has a concrete durability-requiring receiving use and
+  stable identity is recoverable, agents establish the minimum non-binding
+  EntityOfConcern proactively. Explicit authority remains required for
+  decisions, specifications, commissions, profile changes, incompatible model
+  selection, and rollback.
 - **Deterministic initial project-profile bootstrap.** Fresh init may admit a
   complete, non-truncated, supported singleton detector result as
   `origin=detector_default` only when no canonical profile or human/foreign
@@ -121,10 +180,10 @@ The v8.2.0 candidate was never published; work previously described as an
   and typed maintenance work orders instead of silently absorbing overseer
   changes.
 - **Bundled FPF publication and source-derived index updated.** Advanced
-  `data/FPF` from `0990ff1` to `d1f696e` and regenerated the committed
+  `data/FPF` from `0990ff1` to `8b727cb` and regenerated the committed
   `internal/cli/fpf.db` from that exact source snapshot. The bundle now contains
-  8,044 source units at spec digest
-  `sha256:7a1e56595a5bb850d6db571f1bd42bccec4a5a3859f480aadebae4e532557da9`.
+  8,092 source units at spec digest
+  `sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42`.
   The practical-use catalog now has 16 cards: source-owned
   `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` replace the retired
   `SYSTEM-IN-CONTEXT` route. The source also adds A.1.SCR and A.1.STM and
@@ -135,7 +194,7 @@ The v8.2.0 candidate was never published; work previously described as an
   C.2.1 empirical-grounding semantics: `covered=C` and the maximal continuous
   coverage interval are predicate and occurrence-identity content, not a third
   participant `SlotSpec`. The aligned Base has content identity
-  `sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa`.
+  `sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786`.
   The existing Local-Practice 1.4.0 carrier remains byte-stable on its
   historical Base. The separate non-binding 1.5.0 successor preserves its
   declaration set while updating exact source and Base coordinates; it does
@@ -220,12 +279,12 @@ The v8.2.0 candidate was never published; work previously described as an
   artifact compiled from FPF `2ada413` under compiler V5, keyed by content
   identity `sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`.
   This preserves exact replay for the byte-stable Local-Practice 1.4.0 basis
-  after the current package default advances to the `d1f696e` successor.
+  after the current package default advances to the `8b727cb` successor.
 - **Typed-memory Local-Practice candidate 1.4.0.** Added a non-binding successor
   carrying the 1.3.0 declaration set on the exact `2ada413` V5 Base. Its exact
   bytes and compiled basis remain available for historical replay.
 - **Typed-memory Local-Practice candidate 1.5.0.** Added the current non-binding
-  successor carrying the same declaration set on the exact `d1f696e` V5 Base.
+  successor carrying the same declaration set on the exact `8b727cb` V5 Base.
   Package-default initialization and later preparation use its exact source
   bytes. Neither carrier selects a project-memory model, provides P13/P14
   evidence, or grants release authority merely by existing in the package.
@@ -1385,7 +1444,7 @@ The v8.2.0 candidate was never published; work previously described as an
   `haft_commission`, `haft_spec_section`, `haft_onboard`, `haft_entity`, and
   expert-only raw `haft_memory`. It carries the same twelve public prompts and
   skills (`h-reason`, `h-frame`, `h-diagnose`, `h-explore`, `h-compare`,
-  manual `h-decide`, manual `h-commission`, `h-verify`, `h-status`, `h-spec`,
+  auto-routed `h-decide`, manual `h-commission`, `h-verify`, `h-status`, `h-spec`,
   `h-onboard`, and `h-note`), a `before_agent_start` governor fed by the
   kernel's compact projection, and cockpit surfaces. The bridge handles
   concurrent starts, spawn failures with retry, and tools absent from older
@@ -1456,11 +1515,12 @@ The v8.2.0 candidate was never published; work previously described as an
   choices.
 - **Host-routed authority provenance without command rituals.** Direct,
   unambiguous operator choices for DecisionRecords, manual profile application,
-  and later non-default project-memory model changes are recorded as
-  `host_routed_operator_request` by their dedicated effect sinks. Legacy strict
-  CLI-source and local speech-act simulations are sealed as history; generated
-  text, tool output, visible schemas, recommendations, and skill invocation
-  remain non-authorizing.
+  incompatible project-memory model selection, and rollback are recorded as
+  `host_routed_operator_request` by their dedicated effect sinks. Proven-
+  compatible bundled successors use the separate automatic
+  `compatible_successor_policy` generation. Legacy strict CLI-source and local
+  speech-act simulations are sealed as history; generated text, tool output,
+  visible schemas, recommendations, and skill invocation remain non-authorizing.
 - **Recoverable missing-binding repair.** Added `haft project
   recover-binding` for one exact binding-aware ledger whose immutable project
   identity row is missing. It creates and verifies a SQLite backup first and
@@ -1472,7 +1532,7 @@ The v8.2.0 candidate was never published; work previously described as an
   use may be inferred from current Work and that default memory is automatic.
   Current Local-Practice candidate identities, compiled-basis references, FPF
   body ranges, body digests, and whole-source pins were refreshed from the
-  exact `d1f696e` publication instead of leaving stale test expectations.
+  exact `8b727cb` publication instead of leaving stale test expectations.
 - **Embedded FPF query verification reuse.** The immutable bundled source index
   is now fully verified once per process and the exact result is replayed for
   later query, lookup, and inspect calls. Synthetic or replaced test databases
@@ -1514,15 +1574,16 @@ The v8.2.0 candidate was never published; work previously described as an
   applicability.
 - **Source-current FPF query and conformance oracles.** Rebased exact source
   ranges, provenance assertions, P13 current-candidate anchors,
-  A.15.6/E.18.NET navigation, category-error boundaries, and the embedded
-  token-gate corpus to FPF `d1f696e`, including the reviewed measurement,
+  A.15.6/E.18.NET navigation, and category-error boundaries to FPF `8b727cb`;
+  the unchanged pinned token-gate corpus also passes on that publication,
+  including the reviewed measurement,
   evidence-provenance, episteme-edition, problem, and role-assignment relation
   corrections. These are source-test results; they are not installed P14
   evidence or release authority.
 - **Idempotent source-index regeneration.** Exact `fpf-index` rebuilds now
   preserve the prior non-self memory-model compatibility assessment when the
   compiled artifact is unchanged, while a stored self-comparison fails closed.
-  Rebuilding the committed FPF `d1f696e` index therefore retains its V4-to-V5
+  Rebuilding the committed FPF `8b727cb` index therefore retains its V4-to-V5
   assessment and byte-identical database digest.
 - **Exact source phrases outrank weak token unions.** A candidate admitted only
   by separate heading, keyword, or FTS tokens can no longer suppress stronger

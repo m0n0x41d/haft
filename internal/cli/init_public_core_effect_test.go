@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/initexecution"
 	"github.com/m0n0x41d/haft/internal/initplanning"
+	"github.com/m0n0x41d/haft/internal/onboarding"
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
@@ -268,6 +270,70 @@ func TestPublicProjectCoreEffectAutomaticallyBootstrapsDocumentsProfile(
 		len(inspection.CanonicalProfile.Scopes) != 1 ||
 		inspection.CanonicalProfile.Scopes[0].RealizationKind != "non_software" {
 		t.Fatalf("canonical profile = %#v", inspection.CanonicalProfile)
+	}
+}
+
+func TestPublicProjectCoreEffectBootstrapsLargeSoftwareRepository(
+	t *testing.T,
+) {
+	homeRoot := mustResolvedTempDir(t)
+	projectRoot := mustResolvedTempDir(t)
+	t.Setenv("HOME", homeRoot)
+	writePublicBootstrapFixture(
+		t,
+		projectRoot,
+		"go.mod",
+		"module example.test/large-app\n",
+	)
+	for index := 0; index < onboarding.MaximumEvidencePaths+17; index++ {
+		writePublicBootstrapFixture(
+			t,
+			projectRoot,
+			fmt.Sprintf("internal/component-%03d.go", index),
+			"package internal\n",
+		)
+		writePublicBootstrapFixture(
+			t,
+			projectRoot,
+			fmt.Sprintf("fixtures/generated-%03d.pdf", index),
+			"fixture\n",
+		)
+		writePublicBootstrapFixture(
+			t,
+			projectRoot,
+			fmt.Sprintf(".context/archive-%03d.md", index),
+			"historical context\n",
+		)
+	}
+	request := mustPublicCoreOnlyRequest(t, projectRoot, "qnt_91c4e7a2")
+	plan, err := compilePublicCorePlan(context.Background(), request, homeRoot)
+	if err != nil {
+		t.Fatalf("compilePublicCorePlan: %v", err)
+	}
+	if plan.InitialProfileBootstrap().Kind() !=
+		initplanning.InitialProfileApplySingleton {
+		t.Fatalf(
+			"large profile bootstrap = %s reason=%s",
+			plan.InitialProfileBootstrap().Kind(),
+			plan.InitialProfileBootstrap().Reason(),
+		)
+	}
+	effect := newPublicProjectCoreEffect(request, io.Discard)
+	if _, err := effect.ApplyCore(context.Background(), plan); err != nil {
+		t.Fatalf("ApplyCore: %v", err)
+	}
+	inspection, err := executeProfileInspection(
+		context.Background(),
+		projectRoot,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if inspection.CanonicalProfile.Origin != "detector_default" ||
+		len(inspection.CanonicalProfile.Scopes) != 1 ||
+		inspection.CanonicalProfile.Scopes[0].RealizationKind != "software" {
+		t.Fatalf("large canonical profile = %#v", inspection.CanonicalProfile)
 	}
 }
 

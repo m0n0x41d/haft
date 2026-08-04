@@ -137,6 +137,11 @@ type observedProjectTypeEnvTransitionReview struct {
 	binding authority.ObservableCarrierBinding
 }
 
+type projectTypeEnvTransitionSelectionInputs struct {
+	request projecttypeenvselection.ProjectTypeEnvHeadSelectionRequest
+	content projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContent
+}
+
 func tryRunMemoryTypeEnvTransitionPrepare(
 	cmd *cobra.Command,
 	ledger *projectledger.Handle,
@@ -202,6 +207,20 @@ func tryRunMemoryTypeEnvTransitionPrepare(
 			writeErr := writeJSON(cmd.OutOrStdout(), response)
 			return true, errors.Join(preparationErr, writeErr)
 		}
+		if prepared.response.Review.Readiness.Posture == "selectable" {
+			response, selectionErr := executeAutomaticCompatibleTransition(
+				cmd.Context(),
+				ledger,
+				value.Candidate(),
+				clock,
+			)
+			var cleanupErr error
+			if selectionErr == nil && defaultMemorySelectionCommitted(response) {
+				cleanupErr = removeConsumedDefaultMemoryReview(binding.ProjectRoot)
+			}
+			writeErr := writeJSON(cmd.OutOrStdout(), response)
+			return true, errors.Join(selectionErr, cleanupErr, writeErr)
+		}
 		digest, installErr := installProjectTypeEnvTransitionReview(
 			binding.ProjectRoot,
 			prepared.carrier,
@@ -236,58 +255,16 @@ func sealProjectTypeEnvTransitionReview(
 	candidate projecttypeenvtransitionpreparation.Candidate,
 	preparedAt time.Time,
 ) (preparedProjectTypeEnvTransitionReview, error) {
-	if err := candidate.Verify(); err != nil {
+	inputs, err := sealProjectTypeEnvTransitionSelectionInputs(candidate, preparedAt)
+	if err != nil {
 		return preparedProjectTypeEnvTransitionReview{}, err
 	}
+	request := inputs.request
+	content := inputs.content
 	stage := candidate.Stage()
-	key, err := projecttypeenvselection.NewProjectTypeEnvHeadSelectionIdempotencyKey(
-		"transition:" + stage.Ref().String(),
-	)
-	if err != nil {
-		return preparedProjectTypeEnvTransitionReview{}, err
-	}
-	request, err := projecttypeenvselection.SealTransitionProjectTypeEnvHeadSelectionRequest(
-		projecttypeenvselection.TransitionProjectTypeEnvHeadSelectionRequestInput{
-			Project:               stage.Project(),
-			ExactPriorHead:        candidate.PriorHead(),
-			Stage:                 stage,
-			ExpectedGraphRevision: stage.GraphRevision(),
-			IdempotencyKey:        key,
-		},
-	)
-	if err != nil {
-		return preparedProjectTypeEnvTransitionReview{}, err
-	}
-	description, err := authority.NewClaimIDDescriptionRef(
-		"claim:project-typeenv-transition:" + stage.Ref().String(),
-	)
-	if err != nil {
-		return preparedProjectTypeEnvTransitionReview{}, err
-	}
-	judgementContext, err := authority.NewBoundedContextRef(
-		"bounded-context:haft-project-governance",
-	)
-	if err != nil {
-		return preparedProjectTypeEnvTransitionReview{}, err
-	}
-	from := preparedAt.Round(0).UTC()
-	until := from.Add(projectTypeEnvGenesisReviewWindow)
-	validity, err := authority.NewTimeWindow(from, until)
-	if err != nil {
-		return preparedProjectTypeEnvTransitionReview{}, err
-	}
-	content, err := projecttypeenvselectionauthority.SealProjectTypeEnvHeadSelectionAuthorizationContent(
-		projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContentInput{
-			DescriptionRef:   description,
-			Request:          request,
-			Stage:            stage,
-			JudgementContext: judgementContext,
-			ValidityWindow:   validity,
-		},
-	)
-	if err != nil {
-		return preparedProjectTypeEnvTransitionReview{}, err
-	}
+	validity := content.ValidityWindow()
+	from := validity.From()
+	until := validity.Until()
 	response, err := projectTypeEnvTransitionReviewResult(candidate, validity)
 	if err != nil {
 		return preparedProjectTypeEnvTransitionReview{}, err
@@ -320,6 +297,68 @@ func sealProjectTypeEnvTransitionReview(
 	return preparedProjectTypeEnvTransitionReview{
 		carrier:  carrier,
 		response: response,
+	}, nil
+}
+
+func sealProjectTypeEnvTransitionSelectionInputs(
+	candidate projecttypeenvtransitionpreparation.Candidate,
+	preparedAt time.Time,
+) (projectTypeEnvTransitionSelectionInputs, error) {
+	if err := candidate.Verify(); err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	stage := candidate.Stage()
+	key, err := projecttypeenvselection.NewProjectTypeEnvHeadSelectionIdempotencyKey(
+		"transition:" + stage.Ref().String(),
+	)
+	if err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	request, err := projecttypeenvselection.SealTransitionProjectTypeEnvHeadSelectionRequest(
+		projecttypeenvselection.TransitionProjectTypeEnvHeadSelectionRequestInput{
+			Project:               stage.Project(),
+			ExactPriorHead:        candidate.PriorHead(),
+			Stage:                 stage,
+			ExpectedGraphRevision: stage.GraphRevision(),
+			IdempotencyKey:        key,
+		},
+	)
+	if err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	description, err := authority.NewClaimIDDescriptionRef(
+		"claim:project-typeenv-transition:" + stage.Ref().String(),
+	)
+	if err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	judgementContext, err := authority.NewBoundedContextRef(
+		"bounded-context:haft-project-governance",
+	)
+	if err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	from := preparedAt.Round(0).UTC()
+	until := from.Add(projectTypeEnvGenesisReviewWindow)
+	validity, err := authority.NewTimeWindow(from, until)
+	if err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	content, err := projecttypeenvselectionauthority.SealProjectTypeEnvHeadSelectionAuthorizationContent(
+		projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorizationContentInput{
+			DescriptionRef:   description,
+			Request:          request,
+			Stage:            stage,
+			JudgementContext: judgementContext,
+			ValidityWindow:   validity,
+		},
+	)
+	if err != nil {
+		return projectTypeEnvTransitionSelectionInputs{}, err
+	}
+	return projectTypeEnvTransitionSelectionInputs{
+		request: request,
+		content: content,
 	}, nil
 }
 
@@ -622,6 +661,65 @@ func executeMemoryTypeEnvTransitionSelection(
 	}
 	return response, fmt.Errorf(
 		"revalidate project after Transition selection: %w",
+		revalidationErr,
+	)
+}
+
+// executeAutomaticCompatibleTransition applies the package-owned successor
+// policy directly to one freshly prepared candidate. It creates no operator
+// request and consumes no human review carrier. The effect shell repeats the
+// compatibility and currentness checks inside the head CAS transaction.
+func executeAutomaticCompatibleTransition(
+	ctx context.Context,
+	ledger *projectledger.Handle,
+	candidate projecttypeenvtransitionpreparation.Candidate,
+	clock typedmemorystore.Clock,
+) (projectTypeEnvGenesisSelectionResponse, error) {
+	inputs, err := sealProjectTypeEnvTransitionSelectionInputs(
+		candidate,
+		clock.Now(),
+	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	service, err := selectionsqlite.NewTransitionService(
+		ctx,
+		ledger.Database(),
+		ledger.ProjectRoot().String(),
+		candidate.Target().InstalledRuntime(),
+		clock,
+	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	result, err := service.SelectTransition(
+		ctx,
+		selectionsqlite.TransitionSelectionInput{
+			Request:   inputs.request,
+			Content:   inputs.content,
+			Authority: selectionsqlite.NewAutomaticCompatibleSuccessorIngress(),
+		},
+	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	response, err := projectTypeEnvTransitionResultResponse(
+		ledger.ProjectID().String(),
+		result,
+	)
+	if err != nil {
+		return projectTypeEnvGenesisSelectionResponse{}, err
+	}
+	response.AuthorityIngress =
+		projecttypeenvselectionauthority.CompatibleSuccessorAuthorityGeneration
+	revalidationErr := ledger.Revalidate(ctx)
+	response.PostEffectLedgerRevalidation =
+		genesisLedgerRevalidationResult(revalidationErr)
+	if revalidationErr == nil {
+		return response, nil
+	}
+	return response, fmt.Errorf(
+		"revalidate project after automatic compatible Transition: %w",
 		revalidationErr,
 	)
 }

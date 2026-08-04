@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
-	"github.com/m0n0x41d/haft/internal/projectprofile"
 	projectprofilesqlite "github.com/m0n0x41d/haft/internal/projectprofile/sqlite"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 )
@@ -226,8 +225,4 @@ func materializeV5Authority(
 		admissionTime,
 		v5DirectProfileAuthorityContract,
 	)
-}
-
-func v5ProfileOriginValue() projectprofile.ProfileAdmissionOrigin {
-	return projectprofile.ProfileAdmissionOriginHostRoutedOperatorRequest
 }

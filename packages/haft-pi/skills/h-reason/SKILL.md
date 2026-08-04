@@ -3,7 +3,7 @@ name: h-reason
 description: Source-first umbrella for FPF-aware reasoning in a Haft project. Use for ambiguous engineering, management, architecture, specification, or project questions when no narrower Haft capability is already current. Ordinary reasoning stays conversational; persistence is conditional and binding actions remain manual.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
 
 # h-reason — Source-first FPF entry
 

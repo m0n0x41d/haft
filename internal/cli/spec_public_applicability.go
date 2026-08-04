@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
@@ -15,7 +16,7 @@ import (
 const (
 	projectSpecificationReadOnlyAuthority         = "read_only_profile_applicability_projection"
 	projectSpecificationProfileRecoverySurface    = "haft_onboard"
-	projectSpecificationProfileRecoveryNextAction = "Read haft_onboard status; prepare or review the project-profile candidate, and apply it only through an explicit h-onboard act before retrying the same specification request."
+	projectSpecificationProfileRecoveryNextAction = "Read haft_onboard status. Prepare or apply a project profile only when onboarding reports that the canonical profile itself is missing; then retry the unchanged specification request."
 )
 
 type publicProjectSpecificationScopeRequest struct {
@@ -76,7 +77,37 @@ type publicSpecCheckResult struct {
 
 type publicSpecLifecycleResult struct {
 	*specflow.SpecLifecycleProjection
+	StateDomain          string                                  `json:"state_domain,omitempty"`
+	Workflow             *publicSpecWorkflowProjection           `json:"workflow,omitempty"`
+	Health               *publicSpecHealthProjection             `json:"health,omitempty"`
 	ProfileApplicability publicProjectSpecificationApplicability `json:"profile_applicability"`
+}
+
+const (
+	publicSpecLifecycleStateDomain = "spec_onboarding_workflow"
+	publicSpecHealthAuthority      = "read_only_spec_health_projection"
+	publicSpecHealthFindingLimit   = 20
+)
+
+type publicSpecWorkflowProjection struct {
+	State    specflow.LifecycleState  `json:"state"`
+	Action   specflow.LifecycleAction `json:"action"`
+	Terminal bool                     `json:"terminal"`
+	Meaning  string                   `json:"meaning"`
+}
+
+type publicSpecHealthProjection struct {
+	Authority         string                     `json:"authority"`
+	State             string                     `json:"state"`
+	Level             string                     `json:"level"`
+	Meaning           string                     `json:"meaning"`
+	TotalFindings     int                        `json:"total_findings"`
+	ErrorFindings     int                        `json:"error_findings"`
+	WarningFindings   int                        `json:"warning_findings"`
+	Findings          []project.SpecCheckFinding `json:"findings,omitempty"`
+	FindingsTruncated bool                       `json:"findings_truncated"`
+	CheckCommand      string                     `json:"check_command"`
+	LifecycleEffect   string                     `json:"lifecycle_effect"`
 }
 
 func projectSpecificationScopeRequestFromFlag(
@@ -179,10 +210,72 @@ func buildPublicSpecLifecycle(
 	if err != nil {
 		return publicSpecLifecycleResult{}, err
 	}
+	healthReport := project.SpecCheckReportFromSpecificationSet(specSet)
+	healthReport.Findings = append(
+		healthReport.Findings,
+		specflow.SectionBaselineFindings(specSet, store, projectID)...,
+	)
+	healthReport.Findings = append(
+		healthReport.Findings,
+		specflow.SectionStalenessFindings(specSet, time.Now().UTC())...,
+	)
+	healthReport.Summary.TotalFindings = len(healthReport.Findings)
+	workflow := publicSpecWorkflowProjectionFrom(projection)
+	health := publicSpecHealthProjectionFrom(healthReport)
 	return publicSpecLifecycleResult{
 		SpecLifecycleProjection: &projection,
+		StateDomain:             publicSpecLifecycleStateDomain,
+		Workflow:                &workflow,
+		Health:                  &health,
 		ProfileApplicability:    applicability,
 	}, nil
+}
+
+func publicSpecWorkflowProjectionFrom(
+	projection specflow.SpecLifecycleProjection,
+) publicSpecWorkflowProjection {
+	return publicSpecWorkflowProjection{
+		State:    projection.State,
+		Action:   projection.Action,
+		Terminal: projection.WorkflowIntent.Terminal,
+		Meaning:  "Workflow state reports the next specification-onboarding lifecycle action; it is not a spec-health or release-readiness verdict.",
+	}
+}
+
+func publicSpecHealthProjectionFrom(
+	report project.SpecCheckReport,
+) publicSpecHealthProjection {
+	errors := 0
+	warnings := 0
+	for _, finding := range report.Findings {
+		switch strings.ToLower(strings.TrimSpace(finding.Level)) {
+		case "error":
+			errors++
+		case "warning", "warn":
+			warnings++
+		}
+	}
+	state := "clear"
+	meaning := "The current bounded spec-health check has no findings."
+	if len(report.Findings) > 0 {
+		state = "findings"
+		meaning = "Specification health has findings even if the onboarding workflow is terminal; inspect haft spec check before relying on currentness."
+	}
+	limit := min(len(report.Findings), publicSpecHealthFindingLimit)
+	findings := append([]project.SpecCheckFinding(nil), report.Findings[:limit]...)
+	return publicSpecHealthProjection{
+		Authority:         publicSpecHealthAuthority,
+		State:             state,
+		Level:             report.Level,
+		Meaning:           meaning,
+		TotalFindings:     len(report.Findings),
+		ErrorFindings:     errors,
+		WarningFindings:   warnings,
+		Findings:          findings,
+		FindingsTruncated: len(report.Findings) > limit,
+		CheckCommand:      "haft spec check --json",
+		LifecycleEffect:   "none_read_only_health_does_not_approve_rebaseline_or_reopen",
+	}
 }
 
 func publicProjectSpecificationApplicabilityFrom(

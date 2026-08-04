@@ -3,7 +3,7 @@ package fpf
 func haftSpecSectionTool() Tool {
 	return Tool{
 		Name:        "haft_spec_section",
-		Description: "Project/scope-level specification workflow projection plus exact-section projection and binding mutations over project SQL editions. Project workflow readiness is not exact SpecSection lifecycle or stronger-use admission. This tool does not establish compatibility with a newer FPF source. Approval actions fail closed by default; host receipts require a registered kernel verifier.",
+		Description: "Project/scope-level specification workflow projection, profile-independent draft contract, exact-section projection, and binding mutations over project SQL editions. Project workflow readiness is not exact SpecSection lifecycle or stronger-use admission. The draft contract does not establish applicability, activation, approval, or evidence. This tool does not establish compatibility with a newer FPF source. Approval actions fail closed by default; host receipts require a registered kernel verifier.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
@@ -12,12 +12,13 @@ func haftSpecSectionTool() Tool {
 					"enum": []interface{}{
 						"lifecycle",
 						"next_step",
+						"draft_contract",
 						"project",
 						"approve",
 						"rebaseline",
 						"reopen",
 					},
-					"description": "lifecycle=project/scope-level ProjectSpecificationSet workflow projection. next_step=its WorkflowIntent. Both reject section_id; exact-section reads use haft_query action spec_trace or spec_use. project=non-binding SpecSectionAtConcern projection from one exact current SQL edition. These actions do not compare section meaning with a newer FPF source. approve/rebaseline/reopen return operator_confirmation_required in default MCP cli-only mode; host receipts require a registered kernel verifier.",
+					"description": "lifecycle=project/scope-level ProjectSpecificationSet workflow projection. next_step=its WorkflowIntent. Both reject section_id; exact-section reads use haft_query action spec_trace or spec_use. draft_contract=canonical phases, fields, values, checks, and exact haft_query action=spec_validate continuation without resolving applicability. project=non-binding SpecSectionAtConcern projection from one exact current SQL edition. These actions do not compare section meaning with a newer FPF source. approve/rebaseline/reopen return operator_confirmation_required in default MCP cli-only mode; host receipts require a registered kernel verifier.",
 				},
 				"project_root": map[string]string{
 					"type":        "string",
@@ -25,7 +26,7 @@ func haftSpecSectionTool() Tool {
 				},
 				"scope_id": map[string]string{
 					"type":        "string",
-					"description": "(lifecycle/next_step) Exact canonical project-profile ScopeID. Optional for a singleton profile; required when several scopes exist. This is read-only selection, not profile authority.",
+					"description": "(lifecycle/next_step) Exact canonical project-profile ScopeID. Optional for a singleton profile; required when several scopes exist. Rejected by draft_contract because that action is explicitly profile-independent. This is read-only selection, not profile authority.",
 				},
 				"section_id": map[string]string{
 					"type":        "string",

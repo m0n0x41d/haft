@@ -20,10 +20,10 @@ const (
 	manifestRelativePath             = "internal/p13acceptance/manifest.json"
 	manifestSchema                   = "haft.p13.acceptance-manifest/v3"
 	manifestStatusPendingFinalSource = "pending_final_source"
-	manifestStatusPendingSelection   = "pending_selected_basis"
+	manifestStatusPendingActivation  = "pending_automatic_activation"
 	manifestStatusFrozen             = "frozen_for_execution"
 	freezePosturePendingFinalSource  = "pending_final_source"
-	freezePosturePendingSelection    = "pending_manual_selection"
+	freezePosturePendingActivation   = "pending_automatic_activation"
 	freezePostureSelectedAndFrozen   = "selected_and_frozen"
 	modulePath                       = "github.com/m0n0x41d/haft"
 	consolidatedOuterTimeoutSeconds  = 12 * 60 * 60
@@ -40,14 +40,14 @@ const (
 	releaseBlockerRelativePath       = ".context/current-plan-issue-report.md"
 	releaseBlockerSpan               = "document:full"
 	releaseBlockerHeading            = "# V9 release blocker: internal FPF Query provenance leaks into MCP working responses"
-	requiredPriorHeadRevision        = int64(1)
-	requiredPriorCompositeRef        = "typeenv:sha256:d6097b7231aee200a0b998bd4146496b796222917e1e16505ac897079b7f29c2"
-	requiredPriorBaseRef             = "typeenv:sha256:aa1eec077868e611108810f1e4bc187d55eb38e3bc705cc149a098008b58cd1a"
-	requiredPriorBaseDigest          = "sha256:aa1eec077868e611108810f1e4bc187d55eb38e3bc705cc149a098008b58cd1a"
-	requiredPriorFPFRevision         = "44dd88188a07646ef23aca32627a3f670525853f"
-	requiredPriorCompilerSchema      = "fpf-base-typeenv.cov2.v2"
-	requiredPriorSnapshotDigest      = "sha256:a38f3d1ab0eb3674a0153b5c38e705c69d68f5afed98bb928fa88019d527b6b5"
-	requiredPriorLoweredDigest       = "sha256:a553e9edd919475393819b8eae6fed2129313ce9c5ee70f2fc4e23d1d8e73d73"
+	requiredPriorHeadRevision        = int64(2)
+	requiredPriorCompositeRef        = "typeenv:sha256:6dc594a9d5470701b583a6e0893cf75d89629a27673d7aecd34b0993979c6aaf"
+	requiredPriorBaseRef             = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
+	requiredPriorBaseDigest          = "sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
+	requiredPriorFPFRevision         = "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4"
+	requiredPriorCompilerSchema      = "fpf-base-typeenv.cov2.v4"
+	requiredPriorSnapshotDigest      = "sha256:ac18d783a1b256b35fc542b0a1662fd9bfc260e3fae9b6fac19ba428bbb10d30"
+	requiredPriorLoweredDigest       = "sha256:c5bbf428a3bba6590b4d37747bd803b9d85941a1233b5faa536fe1a2dfe45689"
 	requiredStageSchemaEdition       = "haft.project-typeenv.stage-schema/v5"
 )
 
@@ -152,6 +152,7 @@ var expectedCriticalRaceCases = []goRaceCase{
 		Tests: []string{
 			"TestGenesisServiceConcurrentSameKeyCommitsOnceAndReplaysExactly",
 			"TestGenesisServiceMapsPriorHeadBeforeConcurrentGraphDrift",
+			"TestTransitionServiceAutomaticallyCommitsCompatibleSuccessorWithoutHostRequest",
 			"TestTransitionServiceCommitsExactSuccessorAndReplays",
 			"TestTransitionServiceRollbackSelectsPriorImmutableCWithoutDeletingAssertions",
 		},
@@ -592,17 +593,17 @@ func TestP13ManifestStateSeparatesSourceSelectionFromExecutionFreeze(t *testing.
 	}
 
 	finalSource := exactFPFIdentityForStateTest()
-	pendingSelection := acceptanceManifest{
-		Status: manifestStatusPendingSelection,
+	pendingActivation := acceptanceManifest{
+		Status: manifestStatusPendingActivation,
 		Identity: identitySpec{
 			RequiredFPF: finalSource,
 		},
 		FreezeInput: freezeInputSpec{
-			Posture: freezePosturePendingSelection,
+			Posture: freezePosturePendingActivation,
 		},
 	}
-	if err := validateManifestState(pendingSelection); err != nil {
-		t.Fatalf("pending selected basis state rejected: %v", err)
+	if err := validateManifestState(pendingActivation); err != nil {
+		t.Fatalf("pending automatic activation state rejected: %v", err)
 	}
 
 	pendingSource.Identity.RequiredFPF = finalSource
@@ -610,21 +611,21 @@ func TestP13ManifestStateSeparatesSourceSelectionFromExecutionFreeze(t *testing.
 		t.Fatal("pending final source state retained a temporary target basis")
 	}
 
-	pendingSelection.Status = manifestStatusFrozen
-	if err := validateManifestState(pendingSelection); err == nil {
-		t.Fatal("unselected basis was labelled frozen for execution")
+	pendingActivation.Status = manifestStatusFrozen
+	if err := validateManifestState(pendingActivation); err == nil {
+		t.Fatal("unactivated basis was labelled frozen for execution")
 	}
 }
 
 func exactFPFIdentityForStateTest() fpfIdentitySpec {
-	baseDigest := "sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
+	baseDigest := "sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
 	return fpfIdentitySpec{
-		Revision:          "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4",
-		SpecDigest:        "sha256:1093a25640c61a2674f56443bffb8e27f33ac2cdf95f09af2c0cf67c68913eac",
+		Revision:          "8b727cba9e893a467b82aab9da84fb7d6d945480",
+		SpecDigest:        "sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42",
 		ReadmeDigest:      "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",
 		BaseTypeEnvRef:    "typeenv:" + baseDigest,
 		BaseTypeEnvDigest: baseDigest,
-		CompilerSchema:    "fpf-base-typeenv.cov2.v4",
+		CompilerSchema:    "fpf-base-typeenv.cov2.v5",
 	}
 }
 
@@ -633,6 +634,7 @@ func validateRequiredIdentityPaths(paths []string) error {
 		"assurance/calculator.go",
 		".context/current-plan-issue-report.md",
 		p13PlanRelativePath,
+		".haft/decisions/dec-20260804-ebf1a001.md",
 		"data/FPF/FPF-Spec.md",
 		"db/typed_memory_identity_reconciliation_migration_test.go",
 		"docs/src/pages/docs/agent-prompt.astro",
@@ -1177,9 +1179,9 @@ func requireOneP13Anchor(
 }
 
 func validateIdentitySpec(spec identitySpec) error {
-	if spec.RequiredSchemaVersion != 54 {
+	if spec.RequiredSchemaVersion != 57 {
 		return fmt.Errorf(
-			"P13 schema version = %d, want exactly 54",
+			"P13 schema version = %d, want exactly 57",
 			spec.RequiredSchemaVersion,
 		)
 	}
@@ -1227,6 +1229,10 @@ func validateIdentitySpec(spec identitySpec) error {
 	wantFiles := []string{
 		".context/current-plan-issue-report.md",
 		p13PlanRelativePath,
+		".gitignore",
+		".haft/decisions/dec-20260716-11f33e36.md",
+		".haft/decisions/dec-20260716-318cdec5.md",
+		".haft/decisions/dec-20260804-ebf1a001.md",
 		".haft/project-profile.yaml",
 		".haft/project.yaml",
 		"AGENTS.md",
@@ -1279,7 +1285,7 @@ func validateRequiredPredecessorSpec(spec predecessorSpec) error {
 	}
 	if spec != want {
 		return fmt.Errorf(
-			"P13 predecessor identity differs from exact 44dd881 project-head closure",
+			"P13 predecessor identity differs from exact 0990ff1 project-head closure",
 		)
 	}
 	return nil
@@ -1323,8 +1329,8 @@ func validateManifestState(manifest acceptanceManifest) error {
 			manifest.Identity.RequiredFPF,
 			manifest.FreezeInput,
 		)
-	case manifestStatusPendingSelection:
-		return validatePendingSelectionState(
+	case manifestStatusPendingActivation:
+		return validatePendingActivationState(
 			manifest.Identity.RequiredFPF,
 			manifest.FreezeInput,
 		)
@@ -1352,16 +1358,16 @@ func validatePendingFinalSourceState(
 	return nil
 }
 
-func validatePendingSelectionState(
+func validatePendingActivationState(
 	requiredFPF fpfIdentitySpec,
 	freezeInput freezeInputSpec,
 ) error {
 	if err := validateRequiredFPFSpec(requiredFPF); err != nil {
 		return err
 	}
-	want := freezeInputSpec{Posture: freezePosturePendingSelection}
+	want := freezeInputSpec{Posture: freezePosturePendingActivation}
 	if freezeInput != want {
-		return fmt.Errorf("pending-selection P13 manifest carries unaccepted coordinates")
+		return fmt.Errorf("pending-automatic-activation P13 manifest carries unfrozen coordinates")
 	}
 	return nil
 }
@@ -1398,7 +1404,7 @@ func validateManifestExecutionState(manifest acceptanceManifest) error {
 func validateFrozenExecutionInput(spec freezeInputSpec) error {
 	if spec.Posture != freezePostureSelectedAndFrozen {
 		return fmt.Errorf(
-			"P13 execution is blocked until the manually selected head, receipt, and graph coordinates are frozen",
+			"P13 execution is blocked until the automatically activated head, receipt, and graph coordinates are frozen",
 		)
 	}
 	if spec.ProfileLedgerRevision <= 0 ||
@@ -1566,7 +1572,7 @@ func completeFrozenInputForTest() freezeInputSpec {
 		ProfileLedgerDigest:         "sha256:profile-ledger",
 		ProfileSupportDAGDigest:     "sha256:profile-support",
 		HeadRef:                     "project-typeenv-head:qnt_01234567",
-		HeadRevision:                2,
+		HeadRevision:                3,
 		SelectedCompositeRef:        "typeenv:sha256:target",
 		HeadStateDigest:             "sha256:head",
 		SelectionClosureRef:         "project-typeenv-head-selection-closure:sha256:closure",
@@ -1579,7 +1585,7 @@ func completeFrozenInputForTest() freezeInputSpec {
 		SelectionReadyClosureDigest: "sha256:selection-ready-closure",
 		SelectionPredecessorKind:    "transition",
 		PriorHeadRef:                "project-typeenv-head:qnt_01234567",
-		PriorHeadRevision:           1,
+		PriorHeadRevision:           requiredPriorHeadRevision,
 		PriorSelectedCompositeRef:   requiredPriorCompositeRef,
 		PriorHeadStateDigest:        "sha256:prior-head",
 		PriorCompositeDigest:        strings.TrimPrefix(requiredPriorCompositeRef, "typeenv:"),
@@ -2001,7 +2007,7 @@ func exactGateContract() []gateContract {
 			ID:           "G0",
 			Title:        "Authority and specification",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:0c83c8d33fcc12994c29670081aea39f01e7271944d67c029cfda58e154791b1",
+			ClaimsDigest: "sha256:6eeea56705a03db2803424e2bc143a1d6c8d7e472e5efa650b92c237a25a4337",
 			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_test"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/specmigrationv2::TestMigrationEffectSagaArchivesExactBytesWritesReceiptAndReplays",
@@ -2011,19 +2017,20 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/decisionbinding::TestDecisionContextPolicyRejectsProfileAndMigrationCrossBinding",
 				"github.com/m0n0x41d/haft/internal/cli::TestArtifactCreateCLIUsesHostRoutedDecisionBinder",
 				"github.com/m0n0x41d/haft/internal/cli::TestDispatchToolRejectsMCPBindingDecisionWithoutCreatingArtifact",
+				"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestTransitionServiceAutomaticallyCommitsCompatibleSuccessorWithoutHostRequest",
 			},
 		},
 		{
 			ID:           "G0P",
 			Title:        "Project-profile and applicability",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:a5148c129f7830f0a21585b6148e7186c3ac715659618870ed4d303ff66367e2",
+			ClaimsDigest: "sha256:37e9009bb18cd148243dfd2c33619a57ad67566a551859440dd237e24ad0d4bd",
 			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/profileonboarding::TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart",
 				"github.com/m0n0x41d/haft/internal/profileadmission/sqlite::TestResolveCurrentWithinRehashesV5AuthorityUseInsideCallerSnapshot",
 				"github.com/m0n0x41d/haft/internal/profileadmission/sqlite::TestCapabilityApplicabilityMatrixResolverIsUnderdeterminedWithoutAdmission",
-				"github.com/m0n0x41d/haft/internal/projectprofile::TestAdmittedScopeEntityRelationMakesTargetSystemSpecApplicable",
+				"github.com/m0n0x41d/haft/internal/projectprofile::TestTargetSystemSpecApplicabilityDoesNotDependOnEntityRelation",
 				"github.com/m0n0x41d/haft/internal/profileprojection::TestHistoricalV2OpenDebtResolvesThroughV3TaggedEvent",
 				"github.com/m0n0x41d/haft/internal/cli::TestCanonicalProjectSpecificationApplicabilityIsUnderdeterminedWithoutAdmission",
 				"github.com/m0n0x41d/haft/internal/cli::TestCanonicalProjectReadinessKeepsNonSoftwareHarnessFreeOfSWEGate",
@@ -2035,10 +2042,11 @@ func exactGateContract() []gateContract {
 			ID:           "G0I",
 			Title:        "Core initialization and host-adapter publication",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:bc9e10e15346c7b84fcec5f894496e5c257a398e6ab0e3c60718210869d285df",
+			ClaimsDigest: "sha256:474d60b89318eed8973fa3c9dfb7e3fac21ec66cd8ea5f84e4876421c7d184fe",
 			SuiteIDs:     []string{"go_normal", "go_race", "go_vet", "pi_test", "pi_typecheck"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/cli::TestProjectMigrateCommandExposesNoHostSelectionFlags",
+				"github.com/m0n0x41d/haft/internal/cli::TestInitializeDefaultProjectMemoryAutomaticallyConvergesCompatibleExistingProject",
 				"github.com/m0n0x41d/haft/internal/projectledgermigration::TestApplyExactRejectsStaleSchemaPlanBeforeMigration",
 				"github.com/m0n0x41d/haft/internal/initplanning::TestCompileInitPlanSeparatesCoreAndHostEffectsAndProjectsExactPreview",
 				"github.com/m0n0x41d/haft/internal/cli::TestInitSelectionTUIMapsCancelAndEOFToDistinctNoWriteOutcomes",
@@ -2060,7 +2068,7 @@ func exactGateContract() []gateContract {
 			ID:           "G1",
 			Title:        "Source compiler and FPF upgrades",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:8f5a36143052e4c6d1340cda148c9db43f7de69483399824f5b861b1a8e41421",
+			ClaimsDigest: "sha256:01c2e5ff2877829d9bdba6d098a8ae4be6739458f6eeaa4653d84ba3070a90e7",
 			SuiteIDs:     []string{"fpf_index_exact", "query_token_gate", "go_normal", "go_vet"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/fpf::TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration",
@@ -2085,6 +2093,7 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/projecttypeenvcompatibility::TestSuccessorDiffClosedTaxonomy",
 				"github.com/m0n0x41d/haft/internal/projecttypeenvstage::TestLoadExecutableSnapshotTxRestoresExactImmutableCWithoutStageLookup",
 				"github.com/m0n0x41d/haft/internal/projecttypeenvstage::TestStoreLoadSelectionReadyFailsClosedOnPersistedCorruption",
+				"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestTransitionServiceAutomaticallyCommitsCompatibleSuccessorWithoutHostRequest",
 				"github.com/m0n0x41d/haft/internal/p13acceptance::TestRequiredTransitionPredecessorRejectsArbitraryAndSecondTransition",
 			},
 		},
@@ -2155,7 +2164,7 @@ func exactGateContract() []gateContract {
 			ID:           "G5",
 			Title:        "Transactional durability",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:5b857e3210fbc69af4902bbff87b9d7731fa5dc3ce86dfc97dad061d89ab6114",
+			ClaimsDigest: "sha256:9bf7c7bf786e6f3490cb4a0fb22b20626ca11d0854536a1cf80b0154be5276ce",
 			SuiteIDs:     []string{"go_normal", "go_race", "go_vet"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/typedmemorystore::TestSQLiteAdapterCommitDeclareEntityPersistsExactClosureAndReopens",
@@ -2163,7 +2172,9 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/typedmemorystore::TestGenericCommitFailureRollsBackWholeMixedBatch",
 				"github.com/m0n0x41d/haft/internal/typedmemorystore::TestCommitDeclareEntityRecoversAfterPhysicalCommitReportsFailure",
 				"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestTransitionServiceCommitsExactSuccessorAndReplays",
+				"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestTransitionServiceAutomaticallyCommitsCompatibleSuccessorWithoutHostRequest",
 				"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestTransitionServiceRollbackSelectsPriorImmutableCWithoutDeletingAssertions",
+				"github.com/m0n0x41d/haft/db::TestProjectTypeEnvCompatibleSuccessorMigration57PreservesV56History",
 				"github.com/m0n0x41d/haft/db::TestTypedMemoryRelationalAssertionMigration53PreservesV52HistoryByteExactly",
 				"github.com/m0n0x41d/haft/internal/typedmemorystore::TestFreshV2AdmissionsUseWriter53AcrossConsecutiveCommitsAndSnapshotRead",
 				"github.com/m0n0x41d/haft/internal/typedmemorystore::TestV2RelationalAssertionSemanticFootprintMatchesSchemaV53View",

@@ -12,8 +12,10 @@ type QuerySmokeResult struct {
 	UnitIDs    []string            `json:"unit_ids,omitempty"`
 }
 
-// VerifyCandidateQueryContract checks exact source retrieval and bounded
-// navigation against one already-built candidate index. It makes no
+// VerifyCandidateQueryContract checks the current source-specific retrieval
+// expectations against one already-built candidate index. A failure is quality
+// review evidence after VerifySourceQueryRuntime succeeds; it is not proof that
+// the fresh source/index publication is structurally invalid. It makes no
 // applicability, pattern-selection, approval, or release claim.
 func VerifyCandidateQueryContract(databasePath string) ([]QuerySmokeResult, error) {
 	database, err := openIntegrationDatabaseReadOnly(databasePath)

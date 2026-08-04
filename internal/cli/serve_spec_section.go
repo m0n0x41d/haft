@@ -42,6 +42,9 @@ func handleHaftSpecSectionWithProjectionRef(
 	case "next_step":
 		result, err := handleSpecSectionNextStep(ctx, projectRoot, args)
 		return result, "", err
+	case "draft_contract":
+		result, err := encodeDraftContractJSON()
+		return result, "", err
 	case "project":
 		return handleSpecSectionProjectionSource(
 			ctx,
@@ -66,6 +69,9 @@ func validateSpecSectionActionArguments(
 	action string,
 	args map[string]any,
 ) error {
+	if action == "draft_contract" {
+		return validateProfileIndependentDraftArguments(action, args)
+	}
 	if action != "lifecycle" && action != "next_step" {
 		return nil
 	}
@@ -86,6 +92,25 @@ func validateSpecSectionActionArguments(
 		sectionID,
 		sectionID,
 	)
+}
+
+func validateProfileIndependentDraftArguments(
+	action string,
+	args map[string]any,
+) error {
+	if strings.TrimSpace(stringArg(args, "scope_id")) != "" {
+		return fmt.Errorf(
+			"scope_id_not_applicable: haft_spec_section action=%q is profile-independent and does not resolve or select project-profile applicability",
+			action,
+		)
+	}
+	if strings.TrimSpace(stringArg(args, "section_id")) != "" {
+		return fmt.Errorf(
+			"section_id_not_applicable: haft_spec_section action=%q publishes the canonical project-independent drafting contract; use haft_query action=spec_validate to check current draft carriers",
+			action,
+		)
+	}
+	return nil
 }
 
 const specSectionProjectionAuthorityBoundary = "typed_spec_section_at_concern_candidate_not_approval_rebaseline_reopen_evidence_truth_or_authority"

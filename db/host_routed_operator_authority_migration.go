@@ -267,9 +267,7 @@ func hostRoutedProfileResolutionExactSourcesTrigger56() string {
 
 func hostRoutedProfileAdmissionExactSourcesTrigger56() string {
 	value := projectProfileAdmissionExactSourcesTrigger55()
-	value = applyHostRoutedProfileReplacements56(value)
-	value = strings.Replace(value, "CREATE TRIGGER project_profile_admissions_v5_exact_sources", "CREATE TRIGGER project_profile_admissions_v5_exact_sources", 1)
-	return value
+	return applyHostRoutedProfileReplacements56(value)
 }
 
 func hostRoutedProfileAuthorityUseExactSourcesTrigger56() string {

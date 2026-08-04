@@ -100,15 +100,39 @@ func runGraphExplore(
 	if err != nil {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
-	store, closeStore, err := openArtifactStore(projectRoot)
+	input, err := absProjectRootInput(projectRoot, "graph")
 	if err != nil {
 		return err
 	}
-	defer closeStore()
+	binding, err := resolveProjectBindingFromInput(input, "")
+	if err != nil {
+		return err
+	}
+	ledger, err := openServeProjectLedger(cmd.Context(), binding)
+	if err != nil {
+		return err
+	}
+	defer ledger.Close()
+	store := artifact.NewStore(ledger.Database())
+	coordinator, err := codeintel.NewProjectIndexCoordinator(
+		codeintel.ProjectIndexCoordinates{
+			ProjectID:   ledger.ProjectID().String(),
+			ProjectRoot: ledger.ProjectRoot().String(),
+			LedgerPath:  ledger.DatabasePath(),
+		},
+	)
+	if err != nil {
+		return err
+	}
+	codeIntelService := codeintel.NewServiceWithIndexCoordinator(
+		store,
+		coordinator,
+	)
 
-	wire, err := publishCodeExplore(
+	wire, err := publishCodeExploreWithService(
 		context.Background(),
 		store,
+		codeIntelService,
 		projectRoot,
 		graphExploreSymbol,
 		graphExploreFile,
@@ -124,9 +148,10 @@ func runGraphExplore(
 	return writeExactBytes(cmd.OutOrStdout(), wire)
 }
 
-func publishCodeExplore(
+func publishCodeExploreWithService(
 	ctx context.Context,
 	store *artifact.Store,
+	service *codeintel.Service,
 	projectRoot string,
 	symbol string,
 	file string,
@@ -153,7 +178,6 @@ func publishCodeExplore(
 	if err != nil {
 		return nil, err
 	}
-	service := codeintel.NewService(store)
 	result, err := codeintel.PublishExplore(
 		ctx,
 		service,

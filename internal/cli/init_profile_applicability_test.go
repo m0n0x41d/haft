@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -44,6 +43,7 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 				)
 			},
 			wantSpecPaths: []string{
+				filepath.Join("specs", "target-system.md"),
 				filepath.Join("specs", "software-system.md"),
 				filepath.Join("specs", "term-map.md"),
 			},
@@ -80,6 +80,7 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 				)
 			},
 			wantSpecPaths: []string{
+				filepath.Join("specs", "target-system.md"),
 				filepath.Join("specs", "term-map.md"),
 			},
 			wantMethodExists: false,
@@ -217,22 +218,6 @@ func TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities(
 					"non-applicable SWE MethodPack was installed: %v",
 					methodErr,
 				)
-			}
-			if !slices.Contains(
-				test.wantSpecPaths,
-				filepath.Join("specs", "target-system.md"),
-			) {
-				targetPath := filepath.Join(
-					haftDir,
-					"specs",
-					"target-system.md",
-				)
-				if _, err := os.Stat(targetPath); !os.IsNotExist(err) {
-					t.Fatalf(
-						"underdetermined target carrier was installed: %v",
-						err,
-					)
-				}
 			}
 		})
 	}

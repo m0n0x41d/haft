@@ -244,9 +244,10 @@ func TestScopedReadinessRequirementsFollowCapabilityMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("non-software readiness requirements: %v", err)
 	}
-	if len(nonSoftwareRequirements) != 0 {
+	if len(nonSoftwareRequirements) != 1 ||
+		nonSoftwareRequirements[0].documentKind != string(SpecDocumentKindTargetSystem) {
 		t.Fatalf(
-			"non-software readiness requirements = %#v, want none while target relation is underdetermined",
+			"non-software readiness requirements = %#v, want one target-system requirement",
 			nonSoftwareRequirements,
 		)
 	}
@@ -262,16 +263,17 @@ func TestScopedReadinessRequirementsFollowCapabilityMatrix(t *testing.T) {
 	if err != nil {
 		t.Fatalf("software readiness requirements: %v", err)
 	}
-	if len(softwareRequirements) != 1 {
+	if len(softwareRequirements) != 2 {
 		t.Fatalf(
-			"software readiness requirements = %#v, want one software requirement",
+			"software readiness requirements = %#v, want target and software requirements",
 			softwareRequirements,
 		)
 	}
-	if softwareRequirements[0].documentKind != string(SpecDocumentKindSoftwareSystem) {
+	if softwareRequirements[0].documentKind != string(SpecDocumentKindTargetSystem) ||
+		softwareRequirements[1].documentKind != string(SpecDocumentKindSoftwareSystem) {
 		t.Fatalf(
-			"software readiness document kind = %q",
-			softwareRequirements[0].documentKind,
+			"software readiness document kinds = %#v",
+			softwareRequirements,
 		)
 	}
 }
@@ -302,6 +304,13 @@ func TestInspectReadinessForNonSoftwareScopeAvoidsSoftwarePressure(
 	)
 	writeFixture(
 		t,
+		filepath.Join(specDir, "target-system.md"),
+		readinessSpecSection("TS.environment.001", "target.environment")+
+			readinessSpecSection("TS.role.001", "target.role")+
+			readinessSpecSection("TS.boundary.001", "target.boundary"),
+	)
+	writeFixture(
+		t,
 		filepath.Join(specDir, "term-map.md"),
 		validTermMapCarrier(),
 	)
@@ -315,8 +324,8 @@ func TestInspectReadinessForNonSoftwareScopeAvoidsSoftwarePressure(
 	if err != nil {
 		t.Fatalf("InspectReadinessForScope: %v", err)
 	}
-	if facts.Status != ReadinessNeedsOnboard || facts.HasSpecs {
-		t.Fatalf("facts = %+v, want fail-closed target-relation onboarding", facts)
+	if facts.Status != ReadinessReady || !facts.HasSpecs {
+		t.Fatalf("facts = %+v, want target-only non-software readiness", facts)
 	}
 
 	report, err := CheckSpecificationSetForScope(root, applicability)
@@ -326,11 +335,9 @@ func TestInspectReadinessForNonSoftwareScopeAvoidsSoftwarePressure(
 	if hasSpecCheckFinding(report, SpecMigrationRequiredFindingCode) {
 		t.Fatalf("non-software readiness retained migration pressure: %+v", report.Findings)
 	}
-	if hasSpecCheckFinding(report, "spec_carrier_no_active_sections") {
-		t.Fatalf("non-software readiness retained SWE section pressure: %+v", report.Findings)
-	}
-	if !hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
-		t.Fatalf("non-software readiness hid target-relation uncertainty: %+v", report.Findings)
+	if hasSpecCheckFinding(report, "spec_carrier_no_active_sections") ||
+		hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
+		t.Fatalf("non-software readiness retained software or relation pressure: %+v", report.Findings)
 	}
 }
 

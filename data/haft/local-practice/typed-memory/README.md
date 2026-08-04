@@ -38,8 +38,8 @@ and FPF source revision
 [`candidates/1.5.0.yaml`](candidates/1.5.0.yaml) is the current non-binding
 candidate. It preserves the 1.4.0 declaration set while moving its exact FPF
 source pins to revision
-`d1f696e7c7767705206a8cacd9f6ed48e4dc5b02` and Base TypeEnv
-`typeenv:sha256:5affe9142ec15d209fa44505d9c5e39c801df2c77624d8f3f954f2a9d07793fa`.
+`8b727cba9e893a467b82aab9da84fb7d6d945480` and Base TypeEnv
+`typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786`.
 `SourceV1_4()` remains byte-stable for replay; `SourceV1_5()` returns the
 separate successor carrier.
 

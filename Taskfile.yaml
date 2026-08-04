@@ -101,7 +101,7 @@ tasks:
       - go run ./cmd/fpf-refresh check --repo .
 
   fpf-refresh:
-    desc: Check and recoverably apply the exact fresh FPF source baseline, DB, and generated-lock publication; semantic deltas are reported but do not stop refresh
+    desc: Recoverably apply every structurally supported fresh FPF source/index publication; parser, semantic, query, and token findings print review warnings but do not stop refresh
     cmds:
       - go run ./cmd/fpf-refresh apply --repo .
       - go run ./cmd/fpf-refresh verify --repo .

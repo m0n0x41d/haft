@@ -27,13 +27,14 @@ func (digest SourceDocumentDigest) Equal(other SourceDocumentDigest) bool {
 // SourceUnit derived from that pair. Its fields stay private so callers cannot
 // mutate the source basis shared by Query and later source compilers.
 type PublicationSnapshot struct {
-	revision        string
-	readme          SourceDocument
-	spec            SourceDocument
-	readmeDigest    SourceDocumentDigest
-	specDigest      SourceDocumentDigest
-	sourceUnits     []SourceUnit
-	sourceUnitsByID map[string]SourceUnit
+	revision          string
+	readme            SourceDocument
+	spec              SourceDocument
+	readmeDigest      SourceDocumentDigest
+	specDigest        SourceDocumentDigest
+	sourceUnits       []SourceUnit
+	sourceUnitsByID   map[string]SourceUnit
+	sourceDiagnostics []SourceGrammarDiagnostic
 }
 
 // LoadPublicationSnapshot reads each upstream publication exactly once and
@@ -65,10 +66,23 @@ func LoadPublicationSnapshot(readmePath, specPath, sourceRevision string) (Publi
 	return BuildPublicationSnapshot(bundle)
 }
 
-// BuildPublicationSnapshot parses the source-owned publication grammar once
-// and seals the exact input bytes together with the resulting SourceUnits.
+// BuildPublicationSnapshot parses the source-owned publication, seals its
+// exact input bytes and SourceUnits, and retains non-blocking grammar review
+// diagnostics without weakening structural validation.
 func BuildPublicationSnapshot(bundle SourceBundle) (PublicationSnapshot, error) {
-	return buildPublicationSnapshot(bundle, BuildSourceUnits)
+	snapshot, err := buildPublicationSnapshot(bundle, BuildSourceUnits)
+	if err != nil {
+		return PublicationSnapshot{}, err
+	}
+	diagnostics, err := inspectSourceGrammarDiagnostics(snapshot.SourceBundle())
+	if err != nil {
+		return PublicationSnapshot{}, fmt.Errorf(
+			"inspect publication source grammar: %w",
+			err,
+		)
+	}
+	snapshot.sourceDiagnostics = cloneSourceGrammarDiagnostics(diagnostics)
+	return snapshot, nil
 }
 
 type sourceUnitBuilder func(SourceBundle) ([]SourceUnit, error)
@@ -120,6 +134,14 @@ func (snapshot PublicationSnapshot) SourceBundle() SourceBundle {
 	}
 }
 
+// SourceGrammarDiagnostics returns non-blocking source-grammar observations
+// retained while the raw publication and a coherent derived index remain
+// available. A malformed publication that cannot produce such an index is
+// returned as an error by BuildPublicationSnapshot instead.
+func (snapshot PublicationSnapshot) SourceGrammarDiagnostics() []SourceGrammarDiagnostic {
+	return cloneSourceGrammarDiagnostics(snapshot.sourceDiagnostics)
+}
+
 func (snapshot PublicationSnapshot) ReadmeDigest() SourceDocumentDigest {
 	return snapshot.readmeDigest
 }
@@ -161,6 +183,24 @@ func cloneSourceDocument(document SourceDocument) SourceDocument {
 		SourceRevision: document.SourceRevision,
 		Markdown:       append([]byte(nil), document.Markdown...),
 	}
+}
+
+func cloneSourceGrammarDiagnostics(
+	diagnostics []SourceGrammarDiagnostic,
+) []SourceGrammarDiagnostic {
+	cloned := make([]SourceGrammarDiagnostic, len(diagnostics))
+	for index, diagnostic := range diagnostics {
+		diagnostic.LabelsDiscovered = append(
+			[]string(nil),
+			diagnostic.LabelsDiscovered...,
+		)
+		diagnostic.LabelsRecognized = append(
+			[]string(nil),
+			diagnostic.LabelsRecognized...,
+		)
+		cloned[index] = diagnostic
+	}
+	return cloned
 }
 
 func cloneSourceUnits(units []SourceUnit) []SourceUnit {

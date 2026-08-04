@@ -465,6 +465,45 @@ approval_mode = "approve"
 	)
 }
 
+func TestExtractTOMLTableSetReturnsOnlyClosedSelection(t *testing.T) {
+	raw := []byte(`approval_policy = "never"
+
+[mcp_servers.haft]
+command = "haft"
+args = ["serve"]
+
+[mcp_servers.haft.env]
+HAFT_PROJECT_ROOT = "."
+
+[mcp_servers.haft.tools.haft_query]
+approval_mode = "approve"
+
+[mcp_servers.private]
+command = "private-server"
+`)
+	want := `[mcp_servers.haft]
+command = "haft"
+args = ["serve"]
+
+[mcp_servers.haft.env]
+HAFT_PROJECT_ROOT = "."
+`
+	got, found, err := ExtractTOMLTableSet(
+		raw,
+		"mcp_servers.haft",
+		[]string{
+			"mcp_servers.haft",
+			"mcp_servers.haft.env",
+		},
+	)
+	if err != nil {
+		t.Fatalf("ExtractTOMLTableSet: %v", err)
+	}
+	if !found || string(got) != want {
+		t.Fatalf("closed TOML table set found=%t\nwant:\n%s\ngot:\n%s", found, want, got)
+	}
+}
+
 func TestManagedJSONArrayMemberReplacesExactOwnedMemberOnly(
 	t *testing.T,
 ) {

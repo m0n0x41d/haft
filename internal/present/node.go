@@ -16,6 +16,7 @@ import (
 func NodeResponse(view codeintel.NodeView, lang string) string {
 	var b strings.Builder
 	renderIndexState(&b, view.Index)
+	renderIndexCoordination(&b, view.IndexRefresh)
 
 	// No exact/single definition, but fuzzy matches exist → list them to pick
 	// from, never auto-expand a dozen bodies.

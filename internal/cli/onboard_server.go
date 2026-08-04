@@ -17,6 +17,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/initialprofilebootstrap"
 	"github.com/m0n0x41d/haft/internal/initplanning"
 	"github.com/m0n0x41d/haft/internal/onboarding"
+	profileadmissionsqlite "github.com/m0n0x41d/haft/internal/profileadmission/sqlite"
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
@@ -141,6 +142,15 @@ func (fixedOnboardingRuntime) PrepareProfile(
 	)
 }
 
+func (fixedOnboardingRuntime) PrepareProfileChange(
+	context.Context,
+	onboarding.Request,
+) (onboarding.Preparation, error) {
+	return onboarding.Preparation{}, fmt.Errorf(
+		"profile change preparation is unavailable before Haft initialization",
+	)
+}
+
 func (fixedOnboardingRuntime) PrepareMemory(
 	context.Context,
 ) (onboarding.Preparation, error) {
@@ -183,9 +193,11 @@ func newOnboardingRequiredMCPHandler() (
 }
 
 type onboardRequestWire struct {
-	Action string              `json:"action"`
-	Scopes *[]onboardScopeWire `json:"scopes,omitempty"`
-	Basis  *string             `json:"basis,omitempty"`
+	Action    string              `json:"action"`
+	Scopes    *[]onboardScopeWire `json:"scopes,omitempty"`
+	Basis     *string             `json:"basis,omitempty"`
+	ScopeID   *string             `json:"scope_id,omitempty"`
+	EntityRef *string             `json:"entity_ref,omitempty"`
 }
 
 type onboardScopeWire struct {
@@ -196,18 +208,31 @@ type onboardScopeWire struct {
 }
 
 type onboardResponseWire struct {
-	Action                     string             `json:"action"`
-	Result                     string             `json:"result"`
-	Status                     string             `json:"status"`
-	Detail                     string             `json:"detail"`
-	NextAction                 string             `json:"next_action"`
-	ReviewRef                  string             `json:"review_ref,omitempty"`
-	ProfileOrigin              string             `json:"profile_origin,omitempty"`
-	AutomaticBootstrapEligible bool               `json:"automatic_bootstrap_eligible,omitempty"`
-	ProfileOverrideEligible    bool               `json:"profile_override_eligible,omitempty"`
-	Scopes                     []onboardScopeWire `json:"scopes,omitempty"`
-	Choices                    []string           `json:"choices,omitempty"`
-	Effects                    onboardEffectsWire `json:"effects"`
+	Action                     string                     `json:"action"`
+	Result                     string                     `json:"result"`
+	Status                     string                     `json:"status"`
+	Detail                     string                     `json:"detail"`
+	NextAction                 string                     `json:"next_action"`
+	ReviewRef                  string                     `json:"review_ref,omitempty"`
+	ProfileOrigin              string                     `json:"profile_origin,omitempty"`
+	AutomaticBootstrapEligible bool                       `json:"automatic_bootstrap_eligible,omitempty"`
+	ProfileOverrideEligible    bool                       `json:"profile_override_eligible,omitempty"`
+	ProfileChangeEligible      bool                       `json:"profile_change_eligible,omitempty"`
+	Scopes                     []onboardScopeResponseWire `json:"scopes,omitempty"`
+	Choices                    []string                   `json:"choices,omitempty"`
+	Effects                    onboardEffectsWire         `json:"effects"`
+	StateDomain                string                     `json:"state_domain"`
+	ReadyFor                   []string                   `json:"ready_for"`
+	DoesNotEstablish           []string                   `json:"does_not_establish"`
+}
+
+type onboardScopeResponseWire struct {
+	ScopeID                string   `json:"scope_id"`
+	Label                  string   `json:"label"`
+	RealizationKind        string   `json:"realization_kind"`
+	EvidencePaths          []string `json:"evidence_paths"`
+	EvidencePathCount      int      `json:"evidence_path_count"`
+	EvidencePathsTruncated bool     `json:"evidence_paths_truncated"`
 }
 
 type onboardEffectsWire struct {
@@ -271,13 +296,21 @@ func decodeOnboardMCPRequest(
 		return onboarding.Request{}, err
 	}
 	input := onboarding.RequestInput{
-		Action:        wire.Action,
-		BasisPresent:  wire.Basis != nil,
-		ScopesPresent: wire.Scopes != nil,
-		Scopes:        scopes,
+		Action:           wire.Action,
+		BasisPresent:     wire.Basis != nil,
+		ScopesPresent:    wire.Scopes != nil,
+		Scopes:           scopes,
+		ScopeIDPresent:   wire.ScopeID != nil,
+		EntityRefPresent: wire.EntityRef != nil,
 	}
 	if wire.Basis != nil {
 		input.Basis = *wire.Basis
+	}
+	if wire.ScopeID != nil {
+		input.ScopeID = *wire.ScopeID
+	}
+	if wire.EntityRef != nil {
+		input.EntityRef = *wire.EntityRef
 	}
 	return onboarding.NewRequest(input)
 }
@@ -342,8 +375,12 @@ func presentOnboardOutcome(
 		ProfileOrigin:              string(outcome.ProfileOrigin()),
 		AutomaticBootstrapEligible: outcome.AutoBootstrapEligible(),
 		ProfileOverrideEligible:    outcome.ProfileOverrideEligible(),
+		ProfileChangeEligible:      outcome.ProfileOrigin() != "",
 		Scopes:                     onboardScopesToWire(outcome.Scopes()),
 		Choices:                    outcome.Choices(),
+		StateDomain:                outcome.StateDomain(),
+		ReadyFor:                   outcome.ReadyFor(),
+		DoesNotEstablish:           outcome.DoesNotEstablish(),
 		Effects: onboardEffectsWire{
 			RepositoryInspected:     effects.RepositoryInspected,
 			ReviewCarrierCreated:    effects.ReviewCarrierCreated,
@@ -357,14 +394,16 @@ func presentOnboardOutcome(
 
 func onboardScopesToWire(
 	values []onboarding.Scope,
-) []onboardScopeWire {
-	result := make([]onboardScopeWire, len(values))
+) []onboardScopeResponseWire {
+	result := make([]onboardScopeResponseWire, len(values))
 	for index, value := range values {
-		result[index] = onboardScopeWire{
-			ScopeID:         value.ScopeID(),
-			Label:           value.Label(),
-			RealizationKind: string(value.RealizationKind()),
-			EvidencePaths:   value.EvidencePaths(),
+		result[index] = onboardScopeResponseWire{
+			ScopeID:                value.ScopeID(),
+			Label:                  value.Label(),
+			RealizationKind:        string(value.RealizationKind()),
+			EvidencePaths:          value.EvidencePaths(),
+			EvidencePathCount:      value.EvidencePathCount(),
+			EvidencePathsTruncated: value.EvidencePathsTruncated(),
 		}
 	}
 	return result
@@ -408,6 +447,12 @@ func (runtime *projectOnboardingRuntime) Observe(
 	if err != nil {
 		return onboarding.Observation{}, err
 	}
+	profileChangeReviewReady, profileChangeDetail :=
+		inspectCurrentProfileChangeReview(
+			runtime.binding.ProjectRoot,
+			suggestion,
+			inspection.CanonicalProfile,
+		)
 	memoryReady, err := projectMemoryReadyReadOnly(
 		ctx,
 		runtime.binding,
@@ -417,13 +462,20 @@ func (runtime *projectOnboardingRuntime) Observe(
 	}
 	reviewReady := false
 	memoryDeferred := false
-	detail := ""
+	detail := profileChangeDetail
 	if !memoryReady {
-		memoryDeferred, detail =
+		memoryDetail := ""
+		memoryDeferred, memoryDetail =
 			inspectOnboardMemoryDeferral(runtime)
-		if !memoryDeferred && detail == "" {
-			reviewReady, detail = runtime.inspectMemoryReview()
+		if !memoryDeferred && memoryDetail == "" {
+			reviewReady, memoryDetail = runtime.inspectMemoryReview()
 		}
+		detail = strings.TrimSpace(
+			strings.Join(
+				[]string{profileChangeDetail, memoryDetail},
+				" ",
+			),
+		)
 	}
 	return onboarding.NewObservation(
 		onboarding.ObservationInput{
@@ -434,13 +486,55 @@ func (runtime *projectOnboardingRuntime) Observe(
 			ProfileOrigin: projectprofile.ProfileAdmissionOrigin(
 				inspection.CanonicalProfile.Origin,
 			),
-			MemoryReady:       memoryReady,
-			MemoryReviewReady: reviewReady,
-			MemoryDeferred:    memoryDeferred,
-			Scopes:            scopes,
-			Detail:            detail,
+			MemoryReady:              memoryReady,
+			ProfileChangeReviewReady: profileChangeReviewReady,
+			MemoryReviewReady:        reviewReady,
+			MemoryDeferred:           memoryDeferred,
+			Scopes:                   scopes,
+			Detail:                   detail,
 		},
 	)
+}
+
+func inspectCurrentProfileChangeReview(
+	projectRoot string,
+	suggestion profiledetector.Suggestion,
+	current canonicalProfileView,
+) (bool, string) {
+	content, present, err := readOptionalRegularProfileReview(
+		profileChangeReviewPath(projectRoot),
+	)
+	if err != nil {
+		return false, "The profile-change review could not be read safely."
+	}
+	if !present {
+		return false, ""
+	}
+	input, err := profileonboarding.DecodeProfileOnboardingWorkInput(
+		content,
+		suggestion,
+	)
+	if err != nil {
+		return false, "The existing profile-change review is stale against the current repository observation."
+	}
+	basis, ok := input.ProfileChangeBasis()
+	if !ok {
+		return false, "The existing profile-change review does not carry a valid predecessor basis."
+	}
+	currentMatches := basis.AdmissionRecordRef().String() == current.AdmissionRecordRef &&
+		basis.AdmissionRecordDigest().String() == current.AdmissionRecordDigest &&
+		basis.PayloadDigest().String() == current.PayloadDigest &&
+		basis.LedgerRevision().Value() == current.LedgerRevision
+	if !currentMatches {
+		return false, "The existing profile-change review is stale against the current canonical profile."
+	}
+	detail := fmt.Sprintf(
+		"A predecessor-pinned profile-change review is ready for scope %q: entity_ref %q -> %q.",
+		basis.ScopeID().String(),
+		basis.PreviousEntityRef(),
+		basis.NextEntityRef().String(),
+	)
+	return true, detail
 }
 
 func (runtime *projectOnboardingRuntime) observePendingProfile(
@@ -572,6 +666,181 @@ func (runtime *projectOnboardingRuntime) PrepareProfile(
 		review.State,
 		detected,
 	)
+}
+
+func (runtime *projectOnboardingRuntime) PrepareProfileChange(
+	ctx context.Context,
+	request onboarding.Request,
+) (preparation onboarding.Preparation, runErr error) {
+	inspection, suggestion, err := executeProfileInspectionWithSuggestion(
+		ctx,
+		runtime.binding.ProjectRoot,
+		false,
+	)
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	if inspection.CanonicalProfile.Kind != "declared" {
+		return onboarding.NewPreparation(
+			onboarding.PreparationBlocked,
+			"",
+			nil,
+			"A canonical project profile is required before a scope relation can change.",
+		)
+	}
+	handle, err := projectledger.OpenExisting(
+		ctx,
+		runtime.binding.ProjectRoot,
+		projectledger.ReadOnly,
+	)
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	defer func() {
+		runErr = errors.Join(runErr, handle.Close())
+	}()
+	service, err := profileadmissionsqlite.NewService(handle.Database())
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	root, err := projectprofile.NewProjectRootV1(
+		handle.ProjectRoot().String(),
+	)
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	resolved := service.ResolveCurrent(ctx, root)
+	admission, ok := resolved.Admission()
+	if !ok {
+		return onboarding.Preparation{}, canonicalProfileResolutionError(resolved)
+	}
+	scopeID, err := projectprofile.NewScopeID(request.ScopeID())
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	entityRef, err := projectprofile.NewEntityRef(request.EntityRef())
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	previousEntityRef, present := profileScopeEntityRef(
+		admission.Payload(),
+		scopeID,
+	)
+	if !present {
+		return onboarding.NewPreparation(
+			onboarding.PreparationBlocked,
+			"",
+			onboardScopesFromCanonicalProfileOrEmpty(
+				inspection.CanonicalProfile.Scopes,
+			),
+			fmt.Sprintf(
+				"The canonical profile has no scope_id %q; no change review was written.",
+				scopeID.String(),
+			),
+		)
+	}
+	basis, err := profileonboarding.NewProfileChangeBasis(
+		admission.AdmissionRecordRef(),
+		admission.AdmissionRecordDigest(),
+		admission.PayloadDigest(),
+		admission.LedgerRevision(),
+		scopeID,
+		previousEntityRef,
+		entityRef,
+	)
+	if err != nil {
+		return onboarding.NewPreparation(
+			onboarding.PreparationBlocked,
+			"",
+			onboardScopesFromCanonicalProfileOrEmpty(
+				inspection.CanonicalProfile.Scopes,
+			),
+			"The selected scope already has that entity_ref; no change review was written.",
+		)
+	}
+	content, err := profileonboarding.
+		ProposeProfileEntityRelationChangeWorkInput(
+			suggestion,
+			admission.Payload(),
+			basis,
+		)
+	if err != nil {
+		return onboarding.Preparation{}, err
+	}
+	if _, err := profileonboarding.DecodeProfileOnboardingWorkInput(
+		content,
+		suggestion,
+	); err != nil {
+		return onboarding.Preparation{}, err
+	}
+	state, err := installProfileChangeReviewCandidate(
+		runtime.binding.ProjectRoot,
+		content,
+	)
+	if err != nil {
+		return onboarding.NewPreparation(
+			onboarding.PreparationBlocked,
+			"",
+			onboardScopesFromCanonicalProfileOrEmpty(
+				inspection.CanonicalProfile.Scopes,
+			),
+			"A different or stale profile-change review is already present; it was retained unchanged.",
+		)
+	}
+	kind := onboarding.PreparationCreated
+	detail := fmt.Sprintf(
+		"A non-binding profile-change review was prepared for scope %q: entity_ref %q -> %q. The canonical profile did not change.",
+		scopeID.String(),
+		previousEntityRef,
+		entityRef.String(),
+	)
+	if state == "reused" {
+		kind = onboarding.PreparationReused
+		detail = fmt.Sprintf(
+			"The exact non-binding profile-change review was reused for scope %q: entity_ref %q -> %q. The canonical profile did not change.",
+			scopeID.String(),
+			previousEntityRef,
+			entityRef.String(),
+		)
+	}
+	return onboarding.NewPreparation(
+		kind,
+		"review:onboard-profile-change",
+		onboardScopesFromCanonicalProfileOrEmpty(
+			inspection.CanonicalProfile.Scopes,
+		),
+		detail,
+	)
+}
+
+func profileScopeEntityRef(
+	payload projectprofile.ProfileDeclarationPayload,
+	scopeID projectprofile.ScopeID,
+) (string, bool) {
+	for _, scope := range payload.Scopes().Values() {
+		if scope.ScopeID() != scopeID {
+			continue
+		}
+		switch value := scope.(type) {
+		case projectprofile.SoftwareRealization:
+			return entityReferenceText(value.EntityReference()), true
+		case projectprofile.NonSoftwareRealization:
+			return entityReferenceText(value.EntityReference()), true
+		default:
+			return "", false
+		}
+	}
+	return "", false
+}
+
+func onboardScopesFromCanonicalProfileOrEmpty(
+	values []canonicalProfileScopeView,
+) []onboarding.Scope {
+	scopes, err := onboardScopesFromCanonicalProfile(values)
+	if err != nil {
+		return nil
+	}
+	return scopes
 }
 
 func (runtime *projectOnboardingRuntime) prepareManualProfileReview(
@@ -838,11 +1107,19 @@ func onboardScopesFromSuggestion(
 		}
 		slices.Sort(paths)
 		paths = slices.Compact(paths)
-		scope, err := onboarding.NewScope(
+		evidencePathCount := len(paths)
+		if len(paths) > onboarding.MaximumEvidencePaths {
+			paths = append(
+				[]string{},
+				paths[:onboarding.MaximumEvidencePaths]...,
+			)
+		}
+		scope, err := onboarding.NewProjectedScope(
 			value.Orientation(),
 			readableScopeLabel(value.Orientation()),
 			onboarding.RealizationKind(value.RealizationKind()),
 			paths,
+			evidencePathCount,
 		)
 		if err != nil {
 			return nil, err
@@ -965,19 +1242,22 @@ func readableScopesFromProfileInput(
 			label = readableScopeLabel(value.ScopeID)
 		}
 		evidence := value.EvidencePaths
+		evidencePathCount := len(evidence)
 		if len(evidence) == 0 {
 			if detectedScope, present :=
 				detectedByID[value.ScopeID]; present {
 				evidence = detectedScope.EvidencePaths()
+				evidencePathCount = detectedScope.EvidencePathCount()
 			}
 		}
-		scope, err := onboarding.NewScope(
+		scope, err := onboarding.NewProjectedScope(
 			value.ScopeID,
 			label,
 			onboarding.RealizationKind(
 				value.RealizationKind,
 			),
 			evidence,
+			evidencePathCount,
 		)
 		if err != nil {
 			return nil, err

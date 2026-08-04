@@ -217,7 +217,7 @@ func (s *SymbolStore) IndexAdmittedFileSymbolsWithRegistry(
 	source AdmittedSource,
 	registry *Registry,
 ) error {
-	snaps, err := registry.ExtractAdmittedSymbolSnapshots(source)
+	snaps, err := registry.ExtractAdmittedSymbolSnapshotsContext(ctx, source)
 	if err != nil {
 		return err
 	}

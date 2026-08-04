@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	basetypeenvartifacts "github.com/m0n0x41d/haft/data/haft/base-typeenv/artifacts"
@@ -21,6 +20,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect"
 	selectionsqlite "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite"
 	"github.com/m0n0x41d/haft/internal/projecttypeenvstage"
+	transitionsqlite "github.com/m0n0x41d/haft/internal/projecttypeenvtransitionpreparation/sqlite"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
@@ -72,7 +72,7 @@ func TestTransitionPriorFixtureBuildsDistinctExactTarget(t *testing.T) {
 	}
 }
 
-func TestMemoryTypeEnvPrepareAndSelectTransitionWithoutTechnicalArguments(
+func TestMemoryTypeEnvPrepareAutomaticallySelectsCompatibleTransitionWithoutTechnicalArguments(
 	t *testing.T,
 ) {
 	root := filepath.Join(t.TempDir(), "project")
@@ -124,102 +124,27 @@ func TestMemoryTypeEnvPrepareAndSelectTransitionWithoutTechnicalArguments(
 	); err != nil {
 		t.Fatalf("runMemoryTypeEnvPrepare(Transition): %v", err)
 	}
-	prepared := transitionPrepareTestResponse{}
-	if err := json.Unmarshal(prepareOutput.Bytes(), &prepared); err != nil {
-		t.Fatalf("decode Transition prepare response: %v", err)
-	}
-	if prepared.ContractVersion != projectTypeEnvTransitionReviewSchema ||
-		prepared.Result != "prepared_successor" ||
-		prepared.ProjectID != harness.ProjectID() ||
-		prepared.Candidate.PriorHeadRevision != 1 ||
-		prepared.Candidate.PriorCompositeTypeEnvRef != priorComposite ||
-		prepared.Candidate.GraphRevision != 1 ||
-		prepared.Candidate.Compatibility.Unchanged != 241 ||
-		prepared.Candidate.Compatibility.CompilerGap != 12 ||
-		prepared.Candidate.Compatibility.Additive != 0 ||
-		prepared.Candidate.Compatibility.Widened != 0 ||
-		prepared.Candidate.Compatibility.Narrowed != 0 ||
-		prepared.Candidate.Compatibility.Removed != 0 ||
-		prepared.Review.Readiness.Posture != "selectable" ||
-		prepared.Interpretation.NextHumanGate == "" ||
-		prepared.ReviewCarrier.Path != projectTypeEnvGenesisReviewRelativePath() {
-		t.Fatalf("Transition prepare response = %#v", prepared)
-	}
-	if len(prepared.Candidate.ProjectionProfiles) == 0 {
-		t.Fatal("Transition prepare response has no installed projection-profile review")
-	}
-	for _, profile := range prepared.Candidate.ProjectionProfiles {
-		if profile.Posture != "compatible" || len(profile.AffectedFacets) != 0 {
-			t.Fatalf(
-				"Transition projection profile %s = %s/%v, want compatible with no affected facets",
-				profile.ProfileRef,
-				profile.Posture,
-				profile.AffectedFacets,
-			)
-		}
-	}
-	if strings.Contains(prepareOutput.String(), "DECIDE THIS") ||
-		strings.Contains(prepareOutput.String(), "--packet") {
-		t.Fatalf("Transition prepare leaked legacy operator ceremony: %s", prepareOutput.String())
-	}
-	observed, err := observeProjectTypeEnvTransitionReview(harness.Root().String())
-	if err != nil {
-		t.Fatalf("observe readable Transition review: %v", err)
-	}
-	if observed.carrier.Review.Choice != prepared.Review.Choice ||
-		observed.carrier.Candidate.StageRef != prepared.Candidate.StageRef {
-		t.Fatal("known review carrier differs from the readable prepare response")
-	}
-
-	selectOutput := &bytes.Buffer{}
-	if err := runMemoryTypeEnvSelect(
-		genesisTestCommand(selectOutput),
-		nil,
-	); err != nil {
-		t.Fatalf("runMemoryTypeEnvSelect(Transition): %v", err)
-	}
-	selectedEnvelope := decodeGenesisSelectionEnvelope(t, selectOutput.Bytes())
+	selectedEnvelope := decodeGenesisSelectionEnvelope(t, prepareOutput.Bytes())
 	selected := projectTypeEnvGenesisFreshlyCommitted{}
 	if err := json.Unmarshal(selectedEnvelope.Outcome, &selected); err != nil {
-		t.Fatalf("decode Transition selection outcome: %v", err)
+		t.Fatalf("decode automatic Transition outcome: %v", err)
 	}
 	if selectedEnvelope.ContractVersion != "haft.project-typeenv.transition-selection/v1" ||
-		selectedEnvelope.AuthorityIngress != "host_routed_operator_request" ||
+		selectedEnvelope.AuthorityIngress != projecttypeenvselectionauthority.CompatibleSuccessorAuthorityGeneration ||
 		selected.Kind != "freshly_committed" ||
 		selected.CommittedClosure.HeadRevision != 2 ||
 		selected.CommittedClosure.CommittedGraphRevision != 2 ||
-		selected.CommittedClosure.SelectedCompositeRef != prepared.Candidate.CompositeTypeEnvRef {
+		selected.CommittedClosure.SelectedCompositeRef != dualRuntime.target.Composite().Ref().String() {
 		t.Fatalf("Transition selection response = %#v / %#v", selectedEnvelope, selected)
 	}
-	if current := dualRuntime.target.Composite().Ref().String(); current != prepared.Candidate.CompositeTypeEnvRef {
-		t.Fatalf(
-			"catalog current target C = %s, want prepared target %s",
-			current,
-			prepared.Candidate.CompositeTypeEnvRef,
-		)
+	if _, err := observeProjectTypeEnvTransitionReview(harness.Root().String()); err == nil {
+		t.Fatal("automatic compatible Transition created a human review carrier")
 	}
 	assertProjectCurrentValidationUsesComposite(
 		t,
 		dualRuntime.readOnly,
-		prepared.Candidate.CompositeTypeEnvRef,
+		selected.CommittedClosure.SelectedCompositeRef,
 	)
-
-	replayOutput := &bytes.Buffer{}
-	if err := runMemoryTypeEnvSelect(
-		genesisTestCommand(replayOutput),
-		nil,
-	); err != nil {
-		t.Fatalf("runMemoryTypeEnvSelect(Transition replay): %v", err)
-	}
-	replayEnvelope := decodeGenesisSelectionEnvelope(t, replayOutput.Bytes())
-	replayed := projectTypeEnvGenesisReplayedExisting{}
-	if err := json.Unmarshal(replayEnvelope.Outcome, &replayed); err != nil {
-		t.Fatalf("decode Transition replay: %v", err)
-	}
-	if replayed.Kind != "replayed_existing" ||
-		replayed.CommittedClosure.ReceiptRef != selected.CommittedClosure.ReceiptRef {
-		t.Fatalf("Transition replay = %#v", replayEnvelope)
-	}
 
 	assertGenesisSelectionTableCount(t, harness, "project_typeenv_stages", 2)
 	prepareAgain := &bytes.Buffer{}
@@ -246,6 +171,81 @@ func TestMemoryTypeEnvPrepareAndSelectTransitionWithoutTechnicalArguments(
 		"project_typeenv_head_selection_receipts",
 		2,
 	)
+	assertGenesisSelectionTableCount(
+		t,
+		harness,
+		"project_typeenv_head_selection_compatible_resolutions_v1",
+		1,
+	)
+	assertGenesisSelectionTableCount(
+		t,
+		harness,
+		"project_typeenv_head_selection_compatible_uses_v1",
+		1,
+	)
+}
+
+func TestInitializeDefaultProjectMemoryAutomaticallyConvergesCompatibleExistingProject(
+	t *testing.T,
+) {
+	root := filepath.Join(t.TempDir(), "project")
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevision(t, "init-compatible-typeenv-successor")
+	t.Setenv(envProjectRoot, harness.Root().String())
+	t.Setenv(envExpectedProjectID, harness.ProjectID())
+	prior := seedPriorProjectTypeEnvHead(t, harness)
+
+	if err := initializeDefaultProjectMemory(
+		context.Background(),
+		harness.Root().String(),
+		harness.ProjectID(),
+	); err != nil {
+		t.Fatalf("initializeDefaultProjectMemory(compatible successor): %v", err)
+	}
+	var revision uint64
+	var selected string
+	if err := harness.Database().QueryRow(
+		`SELECT head_revision, selected_composite_ref
+		 FROM project_typeenv_heads
+		 WHERE project_id = ?`,
+		harness.ProjectID(),
+	).Scan(&revision, &selected); err != nil {
+		t.Fatalf("read automatically reconciled head: %v", err)
+	}
+	if revision != 2 || selected == prior.Composite().Ref().String() {
+		t.Fatalf("reconciled head = revision %d C %s", revision, selected)
+	}
+	assertGenesisSelectionTableCount(
+		t,
+		harness,
+		"project_typeenv_head_selection_compatible_resolutions_v1",
+		1,
+	)
+
+	if err := initializeDefaultProjectMemory(
+		context.Background(),
+		harness.Root().String(),
+		harness.ProjectID(),
+	); err != nil {
+		t.Fatalf("initializeDefaultProjectMemory(idempotent): %v", err)
+	}
+	if err := harness.Database().QueryRow(
+		`SELECT head_revision, selected_composite_ref
+		 FROM project_typeenv_heads
+		 WHERE project_id = ?`,
+		harness.ProjectID(),
+	).Scan(&revision, &selected); err != nil {
+		t.Fatalf("reread automatically reconciled head: %v", err)
+	}
+	if revision != 2 {
+		t.Fatalf("idempotent init advanced head to revision %d", revision)
+	}
+	assertGenesisSelectionTableCount(
+		t,
+		harness,
+		"project_typeenv_head_selection_compatible_uses_v1",
+		1,
+	)
 }
 
 func TestMemoryTypeEnvTransitionRejectsTamperedReadableReview(
@@ -258,11 +258,49 @@ func TestMemoryTypeEnvTransitionRejectsTamperedReadableReview(
 	t.Setenv(envExpectedProjectID, harness.ProjectID())
 	seedPriorProjectTypeEnvHead(t, harness)
 
-	if err := runMemoryTypeEnvPrepare(
-		genesisTestCommand(&bytes.Buffer{}),
-		nil,
+	ctx := context.Background()
+	ledger, _, err := openProjectTypeEnvGenesisLedger(ctx, projectledger.ReadWrite)
+	if err != nil {
+		t.Fatalf("open Transition review test ledger: %v", err)
+	}
+	runtime, err := loadEmbeddedMemoryRuntime(ctx)
+	if err != nil {
+		_ = ledger.Close()
+		t.Fatalf("load embedded memory runtime: %v", err)
+	}
+	service, err := transitionsqlite.NewService(ctx, ledger)
+	if err != nil {
+		_ = ledger.Close()
+		t.Fatalf("open Transition preparation service: %v", err)
+	}
+	result, err := service.PrepareAtBase(ctx, runtime.Artifact())
+	if err != nil {
+		_ = ledger.Close()
+		t.Fatalf("prepare Transition candidate: %v", err)
+	}
+	preparedResult, ok := result.(transitionsqlite.Prepared)
+	if !ok {
+		_ = ledger.Close()
+		t.Fatalf("Transition preparation = %T, want Prepared", result)
+	}
+	prepared, err := sealProjectTypeEnvTransitionReview(
+		preparedResult.Candidate(),
+		typedmemorystore.SystemClock{}.Now(),
+	)
+	if err != nil {
+		_ = ledger.Close()
+		t.Fatalf("seal Transition review: %v", err)
+	}
+	if _, err := installProjectTypeEnvTransitionReview(
+		harness.Root().String(),
+		prepared.carrier,
+		false,
 	); err != nil {
-		t.Fatalf("prepare Transition review: %v", err)
+		_ = ledger.Close()
+		t.Fatalf("install Transition review: %v", err)
+	}
+	if err := ledger.Close(); err != nil {
+		t.Fatalf("close Transition review test ledger: %v", err)
 	}
 	observed, err := observeProjectTypeEnvTransitionReview(harness.Root().String())
 	if err != nil {

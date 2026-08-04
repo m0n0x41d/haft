@@ -39,13 +39,21 @@ var (
 func (v *VueLang) ExtractSymbolSnapshots(
 	source AdmittedSource,
 ) ([]SymbolSnapshot, error) {
+	return v.ExtractSymbolSnapshotsContext(context.Background(), source)
+}
+
+func (v *VueLang) ExtractSymbolSnapshotsContext(
+	ctx context.Context,
+	source AdmittedSource,
+) ([]SymbolSnapshot, error) {
 	relPath := source.Path().String()
 	content := source.bytes()
 	projection, scripts := vueScriptProjection(content)
 	if scripts == 0 {
 		return vueTemplateSnapshots(relPath, content), nil
 	}
-	snapshots, err := extractTSSymbolSnapshotsFromContent(
+	snapshots, err := extractTSSymbolSnapshotsFromContentContext(
+		ctx,
 		relPath,
 		projection,
 		tsLanguage(),
@@ -167,6 +175,13 @@ func InspectVueParse(projectRoot, relPath string) VueParseStatus {
 }
 
 func InspectVueAdmittedParse(source AdmittedSource) VueParseStatus {
+	return InspectVueAdmittedParseContext(context.Background(), source)
+}
+
+func InspectVueAdmittedParseContext(
+	ctx context.Context,
+	source AdmittedSource,
+) VueParseStatus {
 	content := source.bytes()
 	_, scripts := vueScriptProjection(content)
 	hasTemplate := vueTemplatePattern.Match(content)
@@ -180,7 +195,7 @@ func InspectVueAdmittedParse(source AdmittedSource) VueParseStatus {
 		projection, _ := vueScriptProjection(content)
 		parser := sitter.NewParser()
 		parser.SetLanguage(tsLanguage())
-		tree, err := parser.ParseCtx(context.Background(), nil, projection)
+		tree, err := parser.ParseCtx(ctx, nil, projection)
 		if err != nil {
 			return VueParseStatus{Status: VueParseDegraded, ScriptBlocks: scripts, HasTemplate: hasTemplate, Reason: err.Error()}
 		}

@@ -19,7 +19,7 @@ const (
 	p13FreezeVerifyEnvironmentKey  = "HAFT_P13_VERIFY_FREEZE_INPUT"
 	p13FreezeCandidateSchema       = "haft.p13.freeze-input-candidate/v1"
 	p13FreezeCandidatePosture      = "review_candidate_not_selection_or_evidence"
-	p13FreezeCandidateSemantics    = "Read-only capture of an already selected P12E basis for exact P13 manifest review. This carrier does not select a TypeEnv head, authorize Work, modify the manifest, pass P13, or establish evidence."
+	p13FreezeCandidateSemantics    = "Read-only capture of an already activated current-source basis for exact P13 manifest review. This carrier does not activate a TypeEnv head, authorize Work, modify the manifest, pass P13, or establish evidence."
 )
 
 type freezeInputCandidate struct {
@@ -52,7 +52,7 @@ func TestP13CaptureFreezeInputCandidate(t *testing.T) {
 	}
 	capture := os.Getenv(p13FreezeCaptureEnvironmentKey)
 	if capture == "" {
-		t.Skip("set HAFT_P13_CAPTURE_FREEZE_INPUT=1 after manual P12E selection")
+		t.Skip("set HAFT_P13_CAPTURE_FREEZE_INPUT=1 after automatic compatible-successor activation")
 	}
 	if capture != "1" {
 		t.Fatalf("%s must equal 1", p13FreezeCaptureEnvironmentKey)
@@ -159,9 +159,9 @@ func TestP13VerifyFreezeInputCandidate(t *testing.T) {
 
 func TestFreezeInputCandidateCapturePostureAllowsPendingAndFrozen(t *testing.T) {
 	pending := acceptanceManifest{
-		Status: manifestStatusPendingSelection,
+		Status: manifestStatusPendingActivation,
 		FreezeInput: freezeInputSpec{
-			Posture: freezePosturePendingSelection,
+			Posture: freezePosturePendingActivation,
 		},
 	}
 	frozen := acceptanceManifest{
@@ -175,7 +175,7 @@ func TestFreezeInputCandidateCapturePostureAllowsPendingAndFrozen(t *testing.T) 
 		},
 	}
 	if !freezeInputCandidateCapturePostureAllowed(pending) {
-		t.Fatal("pending selected basis cannot publish a freeze-input review candidate")
+		t.Fatal("pending automatic activation cannot publish a freeze-input review candidate")
 	}
 	if !freezeInputCandidateCapturePostureAllowed(frozen) {
 		t.Fatal("frozen basis cannot publish a current-source review candidate")
@@ -254,8 +254,8 @@ func TestFreezeInputCandidateIsNonAuthorizingAndNoClobber(t *testing.T) {
 }
 
 func freezeInputCandidateCapturePostureAllowed(manifest acceptanceManifest) bool {
-	pending := manifest.Status == manifestStatusPendingSelection &&
-		manifest.FreezeInput.Posture == freezePosturePendingSelection
+	pending := manifest.Status == manifestStatusPendingActivation &&
+		manifest.FreezeInput.Posture == freezePosturePendingActivation
 	frozen := manifest.Status == manifestStatusFrozen &&
 		manifest.FreezeInput.Posture == freezePostureSelectedAndFrozen
 	return pending || frozen

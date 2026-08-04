@@ -819,8 +819,19 @@ func assertUpgradeTriggersPreserved(
 			if slices.Equal(beforeSQL, afterSQL) ||
 				!strings.Contains(afterSQL[0], typedMemoryIdentityReconciliationsTable52) ||
 				!strings.Contains(afterSQL[0], "generation.writer_generation = 54") ||
-				!strings.Contains(afterSQL[0], "kind_classification_evaluation_count") {
-				t.Fatalf("current graph-commit trigger lacks its v52 and v54 branches: %v", afterSQL)
+				!strings.Contains(afterSQL[0], "kind_classification_evaluation_count") ||
+				!strings.Contains(afterSQL[0], hostRoutedAuthorityMode56) ||
+				!strings.Contains(afterSQL[0], typeEnvCompatibleAuthorityGeneration57) {
+				t.Fatalf("current graph-commit trigger lacks its v52, v54, or v57 branches: %v", afterSQL)
+			}
+			continue
+		}
+		if name == "typed_memory_type_env_activations_v47_exact_effect" ||
+			name == "typed_memory_graph_commits_v47_activation_effect" {
+			if slices.Equal(beforeSQL, afterSQL) ||
+				!strings.Contains(afterSQL[0], hostRoutedAuthorityMode56) ||
+				!strings.Contains(afterSQL[0], typeEnvCompatibleAuthorityGeneration57) {
+				t.Fatalf("v57 TypeEnv activation trigger lacks exact current authority classes: %v", afterSQL)
 			}
 			continue
 		}

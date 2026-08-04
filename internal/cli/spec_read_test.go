@@ -23,6 +23,9 @@ func TestSpecRuntimeReadPathsDoNotBypassSQLEditionSource(t *testing.T) {
 		"internal/cli/spec_sync.go": {
 			"project.LoadProjectSpecificationSet(": "spec sync is the explicit carrier import path into SQL editions",
 		},
+		"internal/cli/spec_validate.go": {
+			"project.LoadProjectSpecificationSet(": "spec validate intentionally reads authored draft and active carriers before profile applicability or lifecycle admission; it is read-only and keeps lifecycle observations separate",
+		},
 		"internal/cli/spec_classify_change.go": {
 			"project.SpecSectionsFromDocuments(": "spec classify-change parses explicit before/after carrier files as read-only review input",
 		},
@@ -166,11 +169,11 @@ func TestLoadProjectSpecificationSetSQLFirstForNonSoftwareScopeFiltersSQLSoftwar
 	) {
 		t.Fatalf("non-software SQL set retained migration pressure: %#v", specSet.Findings)
 	}
-	if !containsSpecFindingCode(
+	if containsSpecFindingCode(
 		specSet.Findings,
 		"profile_capability_applicability_underdetermined",
 	) {
-		t.Fatalf("non-software SQL set hid target-relation uncertainty: %#v", specSet.Findings)
+		t.Fatalf("non-software SQL set retained resolved target-relation uncertainty: %#v", specSet.Findings)
 	}
 	if len(specSet.TermMapEntries) != 1 {
 		t.Fatalf("term-map entries = %#v, want carrier support", specSet.TermMapEntries)

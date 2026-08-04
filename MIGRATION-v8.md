@@ -64,6 +64,20 @@ fail before writes. Re-run only the host flags you actually want. Use
 instructions; `--core-only` performs project-core migration without publishing
 host files.
 
+During the mutation-capable core step, an existing project automatically moves
+to the bundled ProjectTypeEnv successor only when the transaction-current
+compatibility, assertion, profile, projection-profile, graph, head, and runtime
+checks all pass. This path does not prompt or create an operator-request record.
+If any basis is incompatible, missing, stale, or underdetermined, the current
+head is retained and init reports the exact blocker.
+
+The schema-57 migration preserves historical `manual_type_env_activation`
+records and widens only the current activation closure. New automatic
+transitions record `compatible_successor_policy` consistently in the authority
+use, activation delta, and typed-memory graph event; explicit host-routed
+transitions record `host_routed_operator_request`. Migration does not relabel
+old audit history.
+
 ### 4. Restart and verify
 
 Completely restart each host agent after init. Check that its MCP server starts
@@ -160,11 +174,13 @@ to one of the three remaining surfaces (skills/CLI/MCP).
 
 ## Behavioral changes worth knowing
 
-- **h-decide is now manual-only** (`disable-model-invocation: true`).
-  The host AI agent will not fire it automatically even on matching
-  prompts. You must type `/h-decide` (or its host-specific equivalent).
-  Same for `/h-commission`. This enforces the Transformer Mandate:
-  binding artifacts come from the human principal, not the agent.
+- **`h-decide` is an auto-routed authority boundary; `h-commission` remains
+  manual-only.** A managed host may route one direct, unambiguous operator
+  request for an exact DecisionRecord effect without a second confirmation.
+  The skill token is not an approval receipt, and generated text, tool output,
+  recommendations, or quoted requests cannot bind. WorkCommission creation
+  still requires an explicit manual `/h-commission` invocation because it
+  grants execution authority.
 
 - **Tactical-mode validation has explicit skip.** When recording a
   decision in `tactical` mode, you can pass `_skips` (list of field

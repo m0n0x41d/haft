@@ -159,6 +159,53 @@ func TestParsePracticalUseCardSourceRejectsMalformedAndUnsupportedGrammarSeparat
 	}
 }
 
+func TestIndexProjectionRetainsRecognizableUnknownResultLabelForReview(t *testing.T) {
+	source := practicalUseFixtureSource(t, "practical_card_unknown_label.md")
+	projection, diagnostics, err := parsePracticalUseCardSourceForIndex(source)
+	if err != nil {
+		t.Fatalf("parsePracticalUseCardSourceForIndex() error = %v", err)
+	}
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Class != SourceGrammarUnsupported {
+		t.Fatalf("source grammar diagnostics = %#v", diagnostics)
+	}
+	if !strings.Contains(
+		projection.UseCues.FirstResultText,
+		"Fresh outcome route",
+	) {
+		t.Fatalf(
+			"degraded first-result projection = %q",
+			projection.UseCues.FirstResultText,
+		)
+	}
+	if !containsSourceString(
+		extractSourcePatternLinks(projection.DirectReferenceText),
+		"A.1",
+	) {
+		t.Fatalf(
+			"degraded direct-reference projection = %q",
+			projection.DirectReferenceText,
+		)
+	}
+}
+
+func TestIndexProjectionRetainsIncompleteCardForDegradedReview(t *testing.T) {
+	source := practicalUseFixtureSource(t, "practical_card_missing_result.md")
+	projection, diagnostics, err := parsePracticalUseCardSourceForIndex(source)
+	if err != nil {
+		t.Fatalf("parsePracticalUseCardSourceForIndex() error = %v", err)
+	}
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Class != SourceGrammarMalformed {
+		t.Fatalf("source grammar diagnostics = %#v", diagnostics)
+	}
+	if projection.UseCues.ConditionText == "" ||
+		projection.UseCues.StopReturnText == "" ||
+		projection.UseCues.FirstResultText != "" {
+		t.Fatalf("partial source-owned cue projection = %#v", projection.UseCues)
+	}
+}
+
 func TestParsePracticalUseCardSourcePublicCoarseningCannotGroundResult(t *testing.T) {
 	source := PracticalUseCardSource{
 		SourceID:       "COARSENING-ONLY",

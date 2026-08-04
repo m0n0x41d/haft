@@ -843,7 +843,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":48,"kernel_owned_contracts":48,"mcp_mirrored_actions":28,"cli_available_surfaces":35,"binding_authority_surfaces":2,"read_only_surfaces":30,"legacy_transport_exceptions":22,"schema_covered_surfaces":43,"schema_missing_surfaces":0,"schema_excluded_fields":12,"schema_required_covered_surfaces":43,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":43,"shape_missing_surfaces":0,"shape_skipped_fields":47,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":43,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":43,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered"},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
+						Shape: `{"kind":"haft_interface_contract_audit","schema_version":1,"authority":"read_only_contract_inventory_not_schema_generation","authority_boundary":{"inventory":"read_only_contract_inventory","schema_generation":"not_schema_generation","host_materialization":"not_host_materialization","evidence":"not_evidence","approval":"not_approval","gate_decision":"not_gate_decision","claim_truth":"not_claim_truth","global_truth":"not_global_truth","publication":"not_publication"},"summary":{"capabilities":50,"kernel_owned_contracts":50,"mcp_mirrored_actions":29,"cli_available_surfaces":37,"binding_authority_surfaces":2,"read_only_surfaces":31,"legacy_transport_exceptions":23,"schema_covered_surfaces":45,"schema_missing_surfaces":0,"schema_excluded_fields":12,"schema_required_covered_surfaces":45,"schema_required_missing_surfaces":0,"schema_missing_required_fields":0,"shape_covered_surfaces":45,"shape_missing_surfaces":0,"shape_skipped_fields":49,"shape_generator_targets":0,"shape_generator_target_fields":0,"validated_mcp_mirrors":45,"manual_cli_contracts":5,"unvalidated_host_fragments":0,"generated_target_fragments":0,"validated_fragments":45,"legacy_fragments":5,"unvalidated_fragments":0},"surfaces":[{"capability_id":"decision.decide","contract_sources":["kernel_interface_catalog"],"contract_fragment_posture":"validated_fragment","schema_posture":"mcp_schema_mirrored","authority_posture":"binding_denied_by_default_mcp","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"legacy_exception":false,"schema_coverage":{"checked":true,"status":"covered"},"shape_coverage":{"checked":true,"status":"covered"}}]}`,
 						Note:  "The audit identifies contract fragments and validation posture; it does not generate schemas, materialize host descriptions, create evidence, approve binding actions, pass gates, create claim/global truth, publish, or change tool descriptions.",
 					},
 				},
@@ -876,7 +876,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":48,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":48,"generated_schema_fragments":42,"runtime_schema_mirrors":42,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":14,"digest_marker_guarded_carriers":14,"authority_boundary_guarded_carriers":14},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_digest_marker":"sha256:...","marker_refresh_posture":"digest_marker_presence_only_not_semantic_sync","marker_guard_posture":"required_marker_presence_only_not_semantic_bytes"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require effect-specific operator authority. Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
+						Shape: `{"kind":"haft_interface_contract_generation_manifest","schema_version":1,"authority":"read_only_generation_manifest_not_host_materialization","source":"kernel_interface_catalog","source_digest":"sha256:...","validation_refs":["internal/cli/interface_test.go","internal/fpf/server_test.go"],"summary":{"capabilities":50,"generator_target_surfaces":0,"generator_target_fields":0,"generated_preview_fragments":50,"generated_schema_fragments":44,"runtime_schema_mirrors":44,"runtime_schema_drift":0,"binding_preview_fragments":2,"materialized_carriers":14,"digest_marker_guarded_carriers":14,"authority_boundary_guarded_carriers":14},"surface_policy":{"default_status":"cue_or_count_only_never_inline_generation_manifest","default_code_context":"lane_index_only_never_inline_generated_descriptions","tools_list":"action_enum_and_compact_description_only_no_generated_schema_fragments","compact_cli":"summary_counts_only_field_targets_require_json","generated_descriptions":"drill_down_only_validate_with_carrier_semio_before_host_materialization","required_guards":["carrier_semio_authority_boundary","tools_list_context_budget","compact_status_no_manifest_inline","code_context_lane_index_default"]},"targets":[],"materialized_carriers":[{"carrier_path":"packages/haft-pi/extensions/haft/tools.ts","carrier_kind":"pi_tool_metadata","contract_role":"tool_schema_and_description_materialization","source_contract":"kernel_interface_catalog","expected_digest_marker":"sha256:...","marker_refresh_posture":"digest_marker_presence_only_not_semantic_sync","marker_guard_posture":"required_marker_presence_only_not_semantic_bytes"}],"generated_fragments":[{"capability_id":"decision.decide","fragment_kind":"host_skill_plugin_description_preview","source_contract":"kernel_interface_catalog","source_digest":"sha256:...","authority_boundary":"binding actions require effect-specific operator authority. Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts","generated_text":"...","input_fields":["choice_result","selected_title"]}],"generated_schema_fragments":[{"capability_id":"decision.decide","fragment_kind":"mcp_action_schema_fragment","schema_digest":"sha256:...","required_fields":["action"],"action_required_fields":["selected_title"],"handler_validated_fields":["selected_title"]}]}`,
 						Note:  "The manifest is the kernel-owned generated-preview source plus any remaining generator queue; it does not materialize host schemas or authorize binding actions.",
 					},
 				},
@@ -1316,6 +1316,73 @@ func haftInterfaceCatalog() []interfaceCapability {
 				"Baseline audit is read-only.",
 				"Baseline audit does not mutate SpecSectionApprovalBaseline rows, DecisionRecord baselines, evidence, carriers, gates, claims, global truth, or publication.",
 				"Default status must not inline baseline audit findings.",
+			),
+		},
+		{
+			ID:      "spec.draft_contract",
+			Purpose: "Publish the canonical profile-independent phases, fields, values, checks, and validation continuation needed to author specification carriers through public Haft surfaces.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_spec_section",
+				MCPAction:        "draft_contract",
+				MCPCall:          `haft_spec_section(action="draft_contract")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft spec draft-contract --json",
+				DiscoveryCommand: "haft interface spec.draft_contract --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"contract_version":"haft.spec-draft-contract/v1","authority":"read_only_design_time_contract_not_applicability_approval_or_evidence","applicability_effect":"none_contract_does_not_establish_profile_applicability","lifecycle_effect":"none_contract_does_not_activate_approve_rebaseline_or_reopen","phases":[{"phase_id":"target.boundary.draft","depends_on":[],"document_kind":"target-system","section_kind":"target.boundary","expected_fields":["boundary_perspectives"],"checks":["require_boundary_perspectives:min=4"]}],"spec_section":{"fence_info":"yaml spec-section","required_fields":["id","kind","statement_type","claim_layer","owner","status"]},"term_map":{"fence_info":"yaml term-map","container_field":"entries"},"validation_call":{"tool":"haft_query","arguments":{"action":"spec_validate"}}}`,
+						Note:  "The response is shipped product grammar, not project applicability, lifecycle state, approval, evidence, or a profile mutation.",
+					},
+				},
+				Notes: []string{
+					"Use this contract when lifecycle applicability is underdetermined but draft-carrier work can continue safely.",
+					"Follow validation_call for the canonical carrier-validation continuation.",
+				},
+			},
+			OutputVolume: []string{"one bounded contract containing all registered phases and canonical carrier shapes"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Draft contract is profile-independent read-only product knowledge.",
+				"Draft contract does not establish applicability, activate or approve sections, mutate profiles, create evidence, or pass gates.",
+				"Validation continuation is the existing query.spec_validate surface; no parallel validator is introduced.",
+			),
+		},
+		{
+			ID:      "query.spec_validate",
+			Purpose: "Validate authored draft and active spec carriers structurally and semantically without profile-applicability filtering or lifecycle admission.",
+			CurrentExecution: interfaceExecution{
+				MCPTool:          "haft_query",
+				MCPAction:        "spec_validate",
+				MCPCall:          `haft_query(action="spec_validate")`,
+				CLIStatus:        "available",
+				CLICommand:       "haft spec validate --json",
+				DiscoveryCommand: "haft interface query.spec_validate --json",
+			},
+			InputContract: interfaceContract{
+				RequiredFields: []string{},
+				FieldShapes: []fieldShape{
+					{
+						Field: "response",
+						Shape: `{"schema_version":1,"validation_kind":"spec_carrier_validation","authority":"read_only_carrier_validation","source_basis":"authored_carriers_without_profile_applicability_filter","authority_boundary":{"applicability":"not_applicability_determination_or_admission","activation":"not_section_activation","approval":"not_approval_or_baseline","evidence":"not_evidence","stronger_use":"not_spec_use_admission","lifecycle_effect":"none_read_only","carrier_mutation":"none_read_only"},"summary":{"total_sections":10,"draft_sections":10,"active_sections":0,"checked_sections":10,"structural_findings":0,"semantic_findings":2,"lifecycle_observations":2},"structural":{"level":"L0/L1/L1.5","findings":[]},"semantic":{"profile":{"id":"spec_draft_semantic_review_v1"},"sections":[{"section_id":"TS.boundary.001","status":"draft"}]},"lifecycle_observations":[{"code":"spec_carrier_no_active_sections"}]}`,
+						Note:  "Lifecycle observations remain visible but do not block structural or advisory semantic validation of draft carriers.",
+					},
+				},
+				Notes: []string{
+					"Validation reads authored target-system, software-system, and term-map carriers without profile-applicability filtering.",
+					"Draft sections remain draft; validation does not activate, approve, baseline, admit applicability, create evidence, or authorize stronger use.",
+					"Structural findings control the CLI failure status; semantic findings remain advisory review input.",
+					"Validation does not establish compatibility with a newer FPF source revision or source-baseline currentness.",
+				},
+			},
+			OutputVolume: []string{"default: compact validation summary; --json one structural plus advisory semantic carrier-validation report"},
+			Invariants: append(commonInterfaceInvariants(),
+				"Carrier validation is independent of canonical profile applicability.",
+				"Carrier validation does not activate, approve, baseline, admit, mutate, create evidence, or authorize stronger use.",
+				"Draft lifecycle status and validation findings remain separate readings.",
+				"Existing spec check and active-only spec review semantics remain unchanged.",
 			),
 		},
 		{

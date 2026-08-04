@@ -356,7 +356,7 @@ func VerifyRepositoryIntegration(
 	); err != nil {
 		return fmt.Errorf("verify current Local-Practice FPF basis: %w", err)
 	}
-	if _, err := VerifyCandidateQueryContract(layout.Database); err != nil {
+	if err := VerifySourceQueryRuntime(layout.Database); err != nil {
 		return err
 	}
 	if err := onVerified(lock); err != nil {
@@ -442,16 +442,19 @@ func verifyRepositoryDerivedProjection(
 func verifyGitSourceDerivedProjection(
 	databasePath string,
 	source GitSourceSnapshot,
-) error {
+) ([]fpf.SourceGrammarDiagnostic, error) {
 	snapshot, err := buildLogicalPublicationSnapshot(
 		source.ReadmeBytes(),
 		source.SpecificationBytes(),
 		source.CommitSHA(),
 	)
 	if err != nil {
-		return fmt.Errorf("build exact FPF publication snapshot: %w", err)
+		return nil, fmt.Errorf("build exact FPF publication snapshot: %w", err)
 	}
-	return verifyDerivedProjection(databasePath, snapshot)
+	if err := verifyDerivedProjection(databasePath, snapshot); err != nil {
+		return nil, err
+	}
+	return snapshot.SourceGrammarDiagnostics(), nil
 }
 
 func buildLogicalPublicationSnapshot(

@@ -23,6 +23,30 @@ func TestDetectorClassifiesRequiredRepositoryFixturesWithoutBinding(t *testing.T
 			orientations:   []string{"software"},
 		},
 		{
+			name: "software_with_embedded_document_artifacts",
+			files: []string{
+				"go.mod",
+				"internal/kernel.go",
+				"fixtures/generated-one.pdf",
+				"fixtures/generated-two.docx",
+				"packages/source-material/guide.md",
+			},
+			classification: SoftwareSignals,
+			confidence:     SupportedConfidence,
+			orientations:   []string{"software"},
+		},
+		{
+			name: "software_with_explicit_document_system",
+			files: []string{
+				"go.mod",
+				"internal/kernel.go",
+				"docs/Book.toml",
+			},
+			classification: MixedSignals,
+			confidence:     ConflictingConfidence,
+			orientations:   []string{"documents", "software"},
+		},
+		{
 			name:           "documents",
 			files:          []string{"notes/one.md", "proposal.mdx", "papers/two.pdf"},
 			classification: NonSoftwareSignals,
@@ -32,6 +56,13 @@ func TestDetectorClassifiesRequiredRepositoryFixturesWithoutBinding(t *testing.T
 		{
 			name:           "documents_with_helper_code",
 			files:          []string{"notes/one.md", "proposal.mdx", "papers/two.pdf", "scripts/build.py"},
+			classification: NonSoftwareSignals,
+			confidence:     SupportedConfidence,
+			orientations:   []string{"documents"},
+		},
+		{
+			name:           "documents_with_primary_manifest",
+			files:          []string{"Book.toml"},
 			classification: NonSoftwareSignals,
 			confidence:     SupportedConfidence,
 			orientations:   []string{"documents"},
@@ -141,6 +172,8 @@ func TestInspectSkipsHaftGitDependenciesAndSymlinks(t *testing.T) {
 	writeDetectorFile(t, root, "go.mod")
 	writeDetectorFile(t, root, "internal/kernel.go")
 	writeDetectorFile(t, root, ".haft/specs/software-system.md")
+	writeDetectorFile(t, root, ".codex-review/run/report.md")
+	writeDetectorFile(t, root, ".context/archive/proposal.md")
 	writeDetectorFile(t, root, "node_modules/tool/index.js")
 	outside := filepath.Join(mustPhysicalTempDir(t), "outside.onnx")
 	if err := os.WriteFile(outside, []byte("model"), 0o644); err != nil {

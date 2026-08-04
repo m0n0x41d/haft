@@ -641,7 +641,7 @@ func TestProductionCorpusCarriesExactE11SplitContinuitySpan(t *testing.T) {
 			"SYSTEM-DELIMITATION",
 			"WORDING",
 			"ARCHITECTURE",
-		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:75766-75766" {
+		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:76915-76915" {
 		t.Fatalf("production E.11 split = %#v", splits[0])
 	}
 }

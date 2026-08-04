@@ -61,8 +61,8 @@ func TestActivationCanonicalWireMatchesNeutralCore(t *testing.T) {
 			effectDigest:  fixture.delta.Digest().String(),
 			neutralDigest: delta.Digest().String(),
 			goldenRef: "project-typeenv-activation-delta:" +
-				"sha256:5b945c2988434e94e2e86db7a45a260" +
-				"2c1268ba1bba342a9a2f5f51f7a7c8674",
+				"sha256:bc811fc7ea47a8c750525a8d0a530106" +
+				"ec449c100c8e7854618ec3a05a367016",
 		},
 		{
 			name:          "envelope",
@@ -73,8 +73,8 @@ func TestActivationCanonicalWireMatchesNeutralCore(t *testing.T) {
 			effectDigest:  fixture.envelope.Digest().String(),
 			neutralDigest: envelope.Digest().String(),
 			goldenRef: "project-typeenv-activation-envelope:" +
-				"sha256:50791e1dcb33fda945e58244dd63b228" +
-				"d63d0ceae9d779053b0e6e026494253d",
+				"sha256:a770d5f5571c3a02d827b911aaaa30c7" +
+				"a74ad50142192a4ac9fafb74f9d36633",
 		},
 		{
 			name:          "basis",
@@ -85,8 +85,8 @@ func TestActivationCanonicalWireMatchesNeutralCore(t *testing.T) {
 			effectDigest:  fixture.basis.Digest().String(),
 			neutralDigest: basis.Digest().String(),
 			goldenRef: "project-typeenv-activation-basis:" +
-				"sha256:8b2b0c0c60282101f5d57a8b1fa8875" +
-				"d37871f2b7369532ac5a9804d0b677926",
+				"sha256:150f129350386da9e159d5da347ea397" +
+				"0a16ce4cde2b1ef6161db273af02f08f",
 		},
 		{
 			name:          "manifest",
@@ -97,8 +97,8 @@ func TestActivationCanonicalWireMatchesNeutralCore(t *testing.T) {
 			effectDigest:  fixture.manifest.Digest().String(),
 			neutralDigest: manifest.Digest().String(),
 			goldenRef: "project-typeenv-activation-manifest:" +
-				"sha256:55fcad6a7f244d207e07d959d7dc6b78" +
-				"480ddcf56c04487de46df538a7ffdb0b",
+				"sha256:43d73ee120544e11b37cecba11a2f89" +
+				"b6463d1fee25de33993d8c4d7c51209ce",
 		},
 	}
 	for _, check := range checks {

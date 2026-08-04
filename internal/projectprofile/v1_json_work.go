@@ -30,32 +30,36 @@ type profileOnboardingWorkOutcomeJSONV1 struct {
 }
 
 type profileOnboardingWorkRecordJSONV1 struct {
-	Schema                            string                             `json:"schema"`
-	RecordRef                         string                             `json:"record_ref"`
-	WorkRef                           string                             `json:"work_ref"`
-	EnactsMethodRef                   string                             `json:"enacts_method_ref"`
-	MethodDescriptionRef              string                             `json:"method_description_ref"`
-	MethodDescriptionDigest           string                             `json:"method_description_digest"`
-	MethodContractRef                 string                             `json:"method_contract_ref"`
-	MethodContractDigest              string                             `json:"method_contract_digest"`
-	ParameterBindings                 []methodParameterBindingJSONV1     `json:"parameter_bindings"`
-	PerformedBy                       string                             `json:"performed_by_role_assignment_ref"`
-	ProfileAuthorRoleAssignmentRef    string                             `json:"profile_author_role_assignment_ref"`
-	ProfileAuthorRoleAssignmentDigest string                             `json:"profile_author_role_assignment_digest"`
-	ExecutedWithin                    string                             `json:"executed_within_system_ref"`
-	BoundedContextRef                 string                             `json:"bounded_context_ref"`
-	WorkInterval                      closedIntervalJSONV1               `json:"work_interval"`
-	BasisObservationWindow            closedIntervalJSONV1               `json:"basis_observation_window"`
-	ObservedProjectBasisRef           string                             `json:"observed_project_basis_ref"`
-	ObservedProjectBasisDigest        string                             `json:"observed_project_basis_digest"`
-	InputRefs                         []string                           `json:"input_refs"`
-	OutputRefs                        []string                           `json:"output_refs"`
-	ResourceRefs                      []string                           `json:"resource_refs"`
-	AffectedRefKind                   string                             `json:"affected_ref_kind"`
-	AffectedRefs                      []string                           `json:"affected_refs"`
-	StatePlaneRef                     string                             `json:"state_plane_ref"`
-	StateTransition                   workStateTransitionJSONV1          `json:"state_transition"`
-	Outcome                           profileOnboardingWorkOutcomeJSONV1 `json:"outcome"`
+	Schema                  string                         `json:"schema"`
+	RecordRef               string                         `json:"record_ref"`
+	WorkRef                 string                         `json:"work_ref"`
+	EnactsMethodRef         string                         `json:"enacts_method_ref"`
+	MethodDescriptionRef    string                         `json:"method_description_ref"`
+	MethodDescriptionDigest string                         `json:"method_description_digest"`
+	MethodContractRef       string                         `json:"method_contract_ref"`
+	MethodContractDigest    string                         `json:"method_contract_digest"`
+	ParameterBindings       []methodParameterBindingJSONV1 `json:"parameter_bindings"`
+	// PerformedBy is a frozen v1 wire name. Its value is the covering
+	// RoleAssignment, not the actual performer system.
+	PerformedBy                       string `json:"performed_by_role_assignment_ref"`
+	ProfileAuthorRoleAssignmentRef    string `json:"profile_author_role_assignment_ref"`
+	ProfileAuthorRoleAssignmentDigest string `json:"profile_author_role_assignment_digest"`
+	// ExecutedWithin is a frozen v1 wire name. In this record it carries the
+	// actual performer system.
+	ExecutedWithin             string                             `json:"executed_within_system_ref"`
+	BoundedContextRef          string                             `json:"bounded_context_ref"`
+	WorkInterval               closedIntervalJSONV1               `json:"work_interval"`
+	BasisObservationWindow     closedIntervalJSONV1               `json:"basis_observation_window"`
+	ObservedProjectBasisRef    string                             `json:"observed_project_basis_ref"`
+	ObservedProjectBasisDigest string                             `json:"observed_project_basis_digest"`
+	InputRefs                  []string                           `json:"input_refs"`
+	OutputRefs                 []string                           `json:"output_refs"`
+	ResourceRefs               []string                           `json:"resource_refs"`
+	AffectedRefKind            string                             `json:"affected_ref_kind"`
+	AffectedRefs               []string                           `json:"affected_refs"`
+	StatePlaneRef              string                             `json:"state_plane_ref"`
+	StateTransition            workStateTransitionJSONV1          `json:"state_transition"`
+	Outcome                    profileOnboardingWorkOutcomeJSONV1 `json:"outcome"`
 }
 
 func EncodeProfileOnboardingWorkRecordCanonicalJSON(
@@ -113,10 +117,10 @@ func profileOnboardingWorkRecordToJSONV1(
 	methodContractRef := validated.methodContractRef.String()
 	methodContractDigest := validated.methodContractDigest.String()
 	parameterBindings := methodParameterBindingsToJSONV1(validated.parameterBindings)
-	performedBy := validated.performedBy.String()
+	coveringRoleAssignment := validated.coveringRoleAssignment.String()
 	assignmentRef := validated.profileAuthorRoleAssignmentRef.String()
 	assignmentDigest := validated.profileAuthorRoleAssignmentDigest.String()
-	executedWithin := validated.executedWithin.String()
+	actualPerformerSystem := validated.actualPerformerSystem.String()
 	boundedContextRef := validated.boundedContextRef.String()
 	workInterval := closedIntervalToJSONV1(validated.workInterval.closedIntervalV1)
 	basisWindow := closedIntervalToJSONV1(validated.basisObservationWindow.closedIntervalV1)
@@ -143,10 +147,10 @@ func profileOnboardingWorkRecordToJSONV1(
 		MethodContractRef:                 methodContractRef,
 		MethodContractDigest:              methodContractDigest,
 		ParameterBindings:                 parameterBindings,
-		PerformedBy:                       performedBy,
+		PerformedBy:                       coveringRoleAssignment,
 		ProfileAuthorRoleAssignmentRef:    assignmentRef,
 		ProfileAuthorRoleAssignmentDigest: assignmentDigest,
-		ExecutedWithin:                    executedWithin,
+		ExecutedWithin:                    actualPerformerSystem,
 		BoundedContextRef:                 boundedContextRef,
 		WorkInterval:                      workInterval,
 		BasisObservationWindow:            basisWindow,
@@ -202,7 +206,7 @@ func profileOnboardingWorkRecordFromJSONV1(
 	if err != nil {
 		return ProfileOnboardingWorkRecord{}, err
 	}
-	performedBy, err := NewRoleAssignmentRef(dto.PerformedBy)
+	coveringRoleAssignment, err := NewRoleAssignmentRef(dto.PerformedBy)
 	if err != nil {
 		return ProfileOnboardingWorkRecord{}, err
 	}
@@ -214,7 +218,7 @@ func profileOnboardingWorkRecordFromJSONV1(
 	if err != nil {
 		return ProfileOnboardingWorkRecord{}, err
 	}
-	executedWithin, err := NewSystemRef(dto.ExecutedWithin)
+	actualPerformerSystem, err := NewSystemRef(dto.ExecutedWithin)
 	if err != nil {
 		return ProfileOnboardingWorkRecord{}, err
 	}
@@ -274,12 +278,12 @@ func profileOnboardingWorkRecordFromJSONV1(
 	builder = builder.Enacts(methodRef, methodDescriptionRef, bindings)
 	builder = builder.WithMethodDescriptionDigest(methodDescriptionDigest)
 	builder = builder.GovernedByMethodContract(methodContractRef, methodContractDigest)
-	builder = builder.PerformedBy(performedBy)
+	builder = builder.PerformedUnderAssignment(coveringRoleAssignment)
 	builder = builder.WithProfileAuthorRoleAssignment(
 		profileAuthorRoleAssignmentRef,
 		profileAuthorRoleAssignmentDigest,
 	)
-	builder = builder.ExecutedWithin(executedWithin)
+	builder = builder.ActualPerformer(actualPerformerSystem)
 	builder = builder.InContext(boundedContextRef)
 	builder = builder.During(workInterval, basisWindow)
 	builder = builder.WithObservedProjectBasis(observedProjectBasisRef, observedProjectBasisDigest)

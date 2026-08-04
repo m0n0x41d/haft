@@ -94,8 +94,8 @@ var capabilityPolicies = []capabilityPolicy{
 	},
 	{
 		capability:  TargetSystemSpecCapability,
-		software:    underdeterminedCapability(MissingAdmittedTargetSystemRelation),
-		nonSoftware: underdeterminedCapability(MissingAdmittedTargetSystemRelation),
+		software:    requiredCapability(),
+		nonSoftware: requiredCapability(),
 	},
 	{
 		capability:  TermMapCapability,
@@ -267,11 +267,7 @@ func capabilityApplicabilityEntriesForScope(
 	return mapSliceV1(
 		capabilityPolicies,
 		func(_ int, policy capabilityPolicy) (CapabilityApplicabilityEntry, error) {
-			outcome, err := capabilityPolicyOutcomeForScope(
-				scope,
-				realizationClass,
-				policy,
-			)
+			outcome, err := policy.applicabilityFor(realizationClass)
 			if err != nil {
 				return CapabilityApplicabilityEntry{}, err
 			}
@@ -288,47 +284,6 @@ func capabilityApplicabilityEntriesForScope(
 			return entry, nil
 		},
 	)
-}
-
-func capabilityPolicyOutcomeForScope(
-	scope RealizationScope,
-	realizationClass RealizationClass,
-	policy capabilityPolicy,
-) (capabilityPolicyOutcome, error) {
-	if policy.capability != TargetSystemSpecCapability {
-		return policy.applicabilityFor(realizationClass)
-	}
-	entityReference, err := realizationScopeEntityReference(scope)
-	if err != nil {
-		return capabilityPolicyOutcome{}, err
-	}
-	switch entityReference.(type) {
-	case ReferencedEntity:
-		return requiredCapability(), nil
-	case NoEntityReference:
-		return underdeterminedCapability(
-			MissingAdmittedTargetSystemRelation,
-		), nil
-	default:
-		return capabilityPolicyOutcome{}, fmt.Errorf(
-			"target-system applicability received an unknown entity-reference variant",
-		)
-	}
-}
-
-func realizationScopeEntityReference(
-	scope RealizationScope,
-) (EntityReference, error) {
-	switch value := scope.(type) {
-	case SoftwareRealization:
-		return value.EntityReference(), nil
-	case NonSoftwareRealization:
-		return value.EntityReference(), nil
-	default:
-		return nil, fmt.Errorf(
-			"unknown realization scope variant",
-		)
-	}
 }
 
 func (policy capabilityPolicy) applicabilityFor(
@@ -350,15 +305,6 @@ func requiredCapability() capabilityPolicyOutcome {
 
 func notApplicableCapability() capabilityPolicyOutcome {
 	return capabilityPolicyOutcome{kind: CapabilityNotApplicable}
-}
-
-func underdeterminedCapability(
-	missingBasis CapabilityApplicabilityMissingBasis,
-) capabilityPolicyOutcome {
-	return capabilityPolicyOutcome{
-		kind:         CapabilityUnderdetermined,
-		missingBasis: missingBasis,
-	}
 }
 
 func realizationClassOf(scope RealizationScope) (RealizationClass, error) {
@@ -406,9 +352,6 @@ func validateCapabilityApplicabilityEntry(
 	if !found {
 		return fmt.Errorf("capability applicability names an unknown capability")
 	}
-	if entry.capability == TargetSystemSpecCapability {
-		return validateTargetSystemCapabilityApplicabilityEntry(entry)
-	}
 	expected, err := policy.applicabilityFor(entry.realizationClass)
 	if err != nil {
 		return err
@@ -425,24 +368,6 @@ func validateCapabilityApplicabilityEntry(
 		return fmt.Errorf("capability applicability missing basis is unknown")
 	}
 	return nil
-}
-
-func validateTargetSystemCapabilityApplicabilityEntry(
-	entry CapabilityApplicabilityEntry,
-) error {
-	switch entry.kind {
-	case CapabilityRequired:
-		if entry.missingBasis == "" {
-			return nil
-		}
-	case CapabilityUnderdetermined:
-		if entry.missingBasis == MissingAdmittedTargetSystemRelation {
-			return nil
-		}
-	}
-	return fmt.Errorf(
-		"target-system capability applicability does not match an admitted entity relation",
-	)
 }
 
 func policyForCapability(capability Capability) (capabilityPolicy, bool) {

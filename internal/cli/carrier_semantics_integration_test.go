@@ -180,6 +180,9 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"without requiring a skill name",
 		"retry the same specification request",
 		"does not rely on profile applicability",
+		`action="spec_validate"`,
+		"haft spec validate",
+		"without profile-applicability filtering",
 	})
 	assertCarrierFragments(t, "Pi h-spec", pi["h-spec"], []string{
 		"exact current pattern body and source identity",
@@ -200,6 +203,9 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"without requiring a skill name",
 		"retry the same specification request",
 		"does not rely on profile applicability",
+		`action="spec_validate"`,
+		"haft spec validate",
+		"profile-independent draft grammar",
 	})
 
 	assertCarrierFragments(t, "host h-status", host["h-status"], []string{

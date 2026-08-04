@@ -79,6 +79,7 @@ func TestNonSoftwareMatrixRetainsGeneralCapabilitiesWithoutSWECapabilities(
 	required := []projectprofile.Capability{
 		projectprofile.FPFQueryCapability,
 		projectprofile.ProjectStatusCapability,
+		projectprofile.TargetSystemSpecCapability,
 		projectprofile.TermMapCapability,
 		projectprofile.TypedProjectMemoryCapability,
 	}
@@ -102,27 +103,9 @@ func TestNonSoftwareMatrixRetainsGeneralCapabilitiesWithoutSWECapabilities(
 		notApplicable,
 		projectprofile.CapabilityNotApplicable,
 	)
-	assertCapabilityResult(
-		t,
-		matrix,
-		"knowledge-model",
-		projectprofile.TargetSystemSpecCapability,
-		projectprofile.CapabilityUnderdetermined,
-	)
-	target, found := matrix.Entry(
-		mustScopeID(t, "knowledge-model"),
-		projectprofile.TargetSystemSpecCapability,
-	)
-	if !found {
-		t.Fatal("target-system applicability is absent")
-	}
-	missing, found := target.MissingBasis()
-	if !found || missing != projectprofile.MissingAdmittedTargetSystemRelation {
-		t.Fatalf("target-system missing basis = %q, present=%t", missing, found)
-	}
 }
 
-func TestAdmittedScopeEntityRelationMakesTargetSystemSpecApplicable(
+func TestTargetSystemSpecApplicabilityDoesNotDependOnEntityRelation(
 	t *testing.T,
 ) {
 	entityRef, err := projectprofile.NewEntityRef("entity:target")
@@ -148,13 +131,23 @@ func TestAdmittedScopeEntityRelationMakesTargetSystemSpecApplicable(
 	}
 	payload := mustCapabilityMatrixPayload(
 		t,
-		[]projectprofile.RealizationScope{software, nonSoftware},
+		[]projectprofile.RealizationScope{
+			software,
+			nonSoftware,
+			mustSoftwareScope(t, "software-without-target"),
+			mustNonSoftwareScope(t, "model-without-target"),
+		},
 	)
 	matrix, err := projectprofile.ResolveCapabilityApplicabilityMatrix(payload)
 	if err != nil {
 		t.Fatalf("ResolveCapabilityApplicabilityMatrix: %v", err)
 	}
-	for _, scopeID := range []string{"model-target", "software-target"} {
+	for _, scopeID := range []string{
+		"model-target",
+		"model-without-target",
+		"software-target",
+		"software-without-target",
+	} {
 		assertCapabilityResult(
 			t,
 			matrix,

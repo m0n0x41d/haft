@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/logger"
@@ -66,6 +67,19 @@ type Server struct {
 	memoryReadHandler MemoryToolHandler
 	instructions      string
 	version           string
+	requestMu         sync.Mutex
+	activeRequests    map[string]*activeToolRequest
+	writeMu           sync.Mutex
+}
+
+type activeToolRequest struct {
+	cancel context.CancelFunc
+}
+
+type queuedJSONRPCRequest struct {
+	request JSONRPCRequest
+	ctx     context.Context
+	active  *activeToolRequest
 }
 
 // parityPlanMCPSchema delegates to the canonical artifact schema so all MCP
@@ -139,7 +153,10 @@ func bindingTargetArrayMCPSchema() map[string]interface{} {
 }
 
 func NewServer(version string) *Server {
-	return &Server{version: version}
+	return &Server{
+		version:        version,
+		activeRequests: map[string]*activeToolRequest{},
+	}
 }
 
 // SetV5Handler registers the handler for v5 tools (haft_note, haft_problem, etc).
@@ -199,9 +216,32 @@ func (s *Server) SetInstructions(instructions string) {
 
 func (s *Server) Start() {
 	logger.Info().Msg("MCP server starting")
+	requests := make(chan queuedJSONRPCRequest, 64)
+	scanResult := make(chan error, 1)
+	go func() {
+		scanResult <- s.scanRequests(requests)
+		close(requests)
+	}()
 
+	for queued := range requests {
+		s.handleRequestContext(queued.ctx, queued.request)
+		s.finishToolRequest(queued.request.ID, queued.active)
+	}
+
+	// Scanner exited — log why.
+	if err := <-scanResult; err != nil {
+		logger.Error().Err(err).Msg("MCP server: scanner error (stdin read failure)")
+	} else {
+		logger.Info().Msg("MCP server: stdin closed (EOF)")
+	}
+}
+
+func (s *Server) scanRequests(
+	requests chan<- queuedJSONRPCRequest,
+) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB buffer
+	defer s.cancelAllToolRequests()
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -217,19 +257,38 @@ func (s *Server) Start() {
 		}
 
 		logger.Debug().Str("method", req.Method).Msg("request received")
-
-		s.handleRequest(req)
+		if req.Method == "notifications/cancelled" {
+			s.handleRequest(req)
+			continue
+		}
+		ctx := context.Background()
+		var active *activeToolRequest
+		if req.Method == "tools/call" {
+			ctx, active = s.beginToolRequest(req.ID)
+		}
+		requests <- queuedJSONRPCRequest{
+			request: req,
+			ctx:     ctx,
+			active:  active,
+		}
 	}
-
-	// Scanner exited — log why
-	if err := scanner.Err(); err != nil {
-		logger.Error().Err(err).Msg("MCP server: scanner error (stdin read failure)")
-	} else {
-		logger.Info().Msg("MCP server: stdin closed (EOF)")
-	}
+	return scanner.Err()
 }
 
 func (s *Server) handleRequest(req JSONRPCRequest) {
+	ctx := context.Background()
+	var active *activeToolRequest
+	if req.Method == "tools/call" {
+		ctx, active = s.beginToolRequest(req.ID)
+		defer s.finishToolRequest(req.ID, active)
+	}
+	s.handleRequestContext(ctx, req)
+}
+
+func (s *Server) handleRequestContext(
+	ctx context.Context,
+	req JSONRPCRequest,
+) {
 	// Recover from panics — log and return error instead of crashing
 	defer func() {
 		if r := recover(); r != nil {
@@ -246,9 +305,11 @@ func (s *Server) handleRequest(req JSONRPCRequest) {
 	case "tools/list":
 		s.handleToolsList(req)
 	case "tools/call":
-		s.handleToolsCall(req)
+		s.handleToolsCallContext(ctx, req)
 	case "notifications/initialized":
 		// No-op
+	case "notifications/cancelled":
+		s.handleCancelledNotification(req.Params)
 	default:
 		if req.ID != nil {
 			s.sendError(req.ID, -32601, "Method not found")
@@ -257,6 +318,8 @@ func (s *Server) handleRequest(req JSONRPCRequest) {
 }
 
 func (s *Server) send(resp JSONRPCResponse) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	bytes, err := json.Marshal(resp)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to marshal JSON-RPC response")
@@ -1004,7 +1067,7 @@ func (s *Server) ToolCatalog() []Tool {
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type": "string",
-						"enum": []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
+						"enum": []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_validate", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 					},
 					"query": map[string]interface{}{"type": "string"},
 					"identifier": map[string]interface{}{
@@ -1267,8 +1330,94 @@ func isLoadBearingSchemaDescription(description string) bool {
 	return false
 }
 
-func (s *Server) handleToolsCall(req JSONRPCRequest) {
-	ctx := context.Background()
+func jsonRPCRequestKey(id interface{}) string {
+	if id == nil {
+		return ""
+	}
+	encoded, err := json.Marshal(id)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func (s *Server) beginToolRequest(
+	id interface{},
+) (context.Context, *activeToolRequest) {
+	// Cancellation ownership moves into activeToolRequest and is discharged by
+	// finishToolRequest on every synchronous and queued tools/call path.
+	//nolint:gosec // G118 cannot follow the explicit ownership transfer.
+	ctx, cancel := context.WithCancel(context.Background())
+	active := &activeToolRequest{cancel: cancel}
+	key := jsonRPCRequestKey(id)
+	if key == "" {
+		return ctx, active
+	}
+	s.requestMu.Lock()
+	previous := s.activeRequests[key]
+	s.activeRequests[key] = active
+	s.requestMu.Unlock()
+	if previous != nil {
+		previous.cancel()
+	}
+	return ctx, active
+}
+
+func (s *Server) finishToolRequest(
+	id interface{},
+	active *activeToolRequest,
+) {
+	if active == nil {
+		return
+	}
+	active.cancel()
+	key := jsonRPCRequestKey(id)
+	if key == "" {
+		return
+	}
+	s.requestMu.Lock()
+	if s.activeRequests[key] == active {
+		delete(s.activeRequests, key)
+	}
+	s.requestMu.Unlock()
+}
+
+func (s *Server) handleCancelledNotification(raw json.RawMessage) {
+	var params struct {
+		RequestID interface{} `json:"requestId"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		logger.Warn().Err(err).Msg("invalid MCP cancellation notification")
+		return
+	}
+	key := jsonRPCRequestKey(params.RequestID)
+	if key == "" {
+		return
+	}
+	s.requestMu.Lock()
+	active := s.activeRequests[key]
+	s.requestMu.Unlock()
+	if active != nil {
+		active.cancel()
+	}
+}
+
+func (s *Server) cancelAllToolRequests() {
+	s.requestMu.Lock()
+	active := make([]*activeToolRequest, 0, len(s.activeRequests))
+	for _, request := range s.activeRequests {
+		active = append(active, request)
+	}
+	s.requestMu.Unlock()
+	for _, request := range active {
+		request.cancel()
+	}
+}
+
+func (s *Server) handleToolsCallContext(
+	ctx context.Context,
+	req JSONRPCRequest,
+) {
 
 	var params struct {
 		Name      string          `json:"name"`

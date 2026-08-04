@@ -41,7 +41,7 @@ printf '%s\n' "$fpf_query_output" \
     HAFT_EMBED_BIN=/definitely/missing/haft-embed \
     "$extract_dir/haft" init --codex --local
 )
-test -f "$extract_dir/project/.haft/config.yaml"
+test ! -e "$extract_dir/project/.haft/config.yaml"
 test -f "$extract_dir/project/.haft/project.yaml"
 test ! -e "$extract_dir/project/.haft/specs/target-system.md"
 test ! -e "$extract_dir/project/.haft/specs/software-system.md"

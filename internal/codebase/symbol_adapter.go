@@ -1,6 +1,7 @@
 package codebase
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -17,6 +18,13 @@ type SymbolAdapter interface {
 	Extensions() []string
 	SymbolLanguage(path string) string
 	ExtractSymbolSnapshots(source AdmittedSource) ([]SymbolSnapshot, error)
+}
+
+type contextSymbolAdapter interface {
+	ExtractSymbolSnapshotsContext(
+		context.Context,
+		AdmittedSource,
+	) ([]SymbolSnapshot, error)
 }
 
 // SymbolAdapterForFile returns the registered rich symbol adapter for a file.
@@ -133,13 +141,29 @@ func (r *Registry) ReadSourceAdmission(
 func (r *Registry) ExtractAdmittedSymbolSnapshots(
 	source AdmittedSource,
 ) ([]SymbolSnapshot, error) {
+	return r.ExtractAdmittedSymbolSnapshotsContext(context.Background(), source)
+}
+
+// ExtractAdmittedSymbolSnapshotsContext is the cancellable scanner path. The
+// legacy method remains for compatibility callers, while coordinated index
+// refreshes must pass their request context through tree-sitter.
+func (r *Registry) ExtractAdmittedSymbolSnapshotsContext(
+	ctx context.Context,
+	source AdmittedSource,
+) ([]SymbolSnapshot, error) {
 	if !source.valid() {
 		return nil, fmt.Errorf("symbol extraction requires admitted source")
 	}
 	relPath := source.Path().String()
 	adapter := r.SymbolAdapterForFile(relPath)
 	if adapter != nil {
-		snapshots, err := adapter.ExtractSymbolSnapshots(source)
+		var snapshots []SymbolSnapshot
+		var err error
+		if contextual, ok := adapter.(contextSymbolAdapter); ok {
+			snapshots, err = contextual.ExtractSymbolSnapshotsContext(ctx, source)
+		} else {
+			snapshots, err = adapter.ExtractSymbolSnapshots(source)
+		}
 		return normalizeSymbolSnapshots(snapshots), err
 	}
 	ext := normalizedExtension(relPath)
@@ -147,7 +171,7 @@ func (r *Registry) ExtractAdmittedSymbolSnapshots(
 	if !ok {
 		return nil, nil
 	}
-	snapshots, err := extractLegacySymbolSnapshots(source, info)
+	snapshots, err := extractLegacySymbolSnapshotsContext(ctx, source, info)
 	return normalizeSymbolSnapshots(snapshots), err
 }
 

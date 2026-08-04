@@ -240,10 +240,10 @@ type ProfileOnboardingWorkRecord struct {
 	methodContractRef                 ProfileOnboardingMethodContractRef
 	methodContractDigest              ContentDigest
 	parameterBindings                 MethodParameterBindings
-	performedBy                       RoleAssignmentRef
+	coveringRoleAssignment            RoleAssignmentRef
 	profileAuthorRoleAssignmentRef    RoleAssignmentRef
 	profileAuthorRoleAssignmentDigest ContentDigest
-	executedWithin                    SystemRef
+	actualPerformerSystem             SystemRef
 	boundedContextRef                 BoundedContextRef
 	workInterval                      WorkIntervalV1
 	basisObservationWindow            BasisObservationWindowV1
@@ -300,11 +300,25 @@ func (builder ProfileOnboardingWorkRecordBuilder) GovernedByMethodContract(
 	return builder
 }
 
+// PerformedUnderAssignment binds the obtaining RoleAssignment that covers the
+// Work occurrence. The assignment supplies role/context/interval authority;
+// it is not the actor.
+func (builder ProfileOnboardingWorkRecordBuilder) PerformedUnderAssignment(
+	ref RoleAssignmentRef,
+) ProfileOnboardingWorkRecordBuilder {
+	builder.value.coveringRoleAssignment = ref
+	return builder
+}
+
+// PerformedBy is the v1 compatibility spelling for the legacy serialized
+// performed_by_role_assignment_ref field. New code must use
+// PerformedUnderAssignment so a RoleAssignment is not described as an actor.
+//
+// Deprecated: use PerformedUnderAssignment.
 func (builder ProfileOnboardingWorkRecordBuilder) PerformedBy(
 	ref RoleAssignmentRef,
 ) ProfileOnboardingWorkRecordBuilder {
-	builder.value.performedBy = ref
-	return builder
+	return builder.PerformedUnderAssignment(ref)
 }
 
 func (builder ProfileOnboardingWorkRecordBuilder) WithProfileAuthorRoleAssignment(
@@ -316,11 +330,23 @@ func (builder ProfileOnboardingWorkRecordBuilder) WithProfileAuthorRoleAssignmen
 	return builder
 }
 
+// ActualPerformer records the admitted U.System that performed the Work.
+func (builder ProfileOnboardingWorkRecordBuilder) ActualPerformer(
+	ref SystemRef,
+) ProfileOnboardingWorkRecordBuilder {
+	builder.value.actualPerformerSystem = ref
+	return builder
+}
+
+// ExecutedWithin is the v1 compatibility spelling for the legacy
+// executed_within_system_ref field. For this exact record that field carries
+// the actual performer system and remains byte-stable for replay.
+//
+// Deprecated: use ActualPerformer.
 func (builder ProfileOnboardingWorkRecordBuilder) ExecutedWithin(
 	ref SystemRef,
 ) ProfileOnboardingWorkRecordBuilder {
-	builder.value.executedWithin = ref
-	return builder
+	return builder.ActualPerformer(ref)
 }
 
 func (builder ProfileOnboardingWorkRecordBuilder) InContext(
@@ -439,8 +465,15 @@ func (record ProfileOnboardingWorkRecord) ParameterBindings() MethodParameterBin
 	return record.parameterBindings
 }
 
+func (record ProfileOnboardingWorkRecord) CoveringRoleAssignmentRef() RoleAssignmentRef {
+	return record.coveringRoleAssignment
+}
+
+// PerformedBy exposes the legacy v1 field meaning for compatible callers.
+//
+// Deprecated: use CoveringRoleAssignmentRef.
 func (record ProfileOnboardingWorkRecord) PerformedBy() RoleAssignmentRef {
-	return record.performedBy
+	return record.CoveringRoleAssignmentRef()
 }
 
 func (record ProfileOnboardingWorkRecord) ProfileAuthorRoleAssignmentRef() RoleAssignmentRef {
@@ -451,8 +484,15 @@ func (record ProfileOnboardingWorkRecord) ProfileAuthorRoleAssignmentDigest() Co
 	return record.profileAuthorRoleAssignmentDigest
 }
 
+func (record ProfileOnboardingWorkRecord) ActualPerformerSystemRef() SystemRef {
+	return record.actualPerformerSystem
+}
+
+// ExecutedWithin exposes the legacy v1 field meaning for compatible callers.
+//
+// Deprecated: use ActualPerformerSystemRef.
 func (record ProfileOnboardingWorkRecord) ExecutedWithin() SystemRef {
-	return record.executedWithin
+	return record.ActualPerformerSystemRef()
 }
 
 func (record ProfileOnboardingWorkRecord) BoundedContextRef() BoundedContextRef {
@@ -640,7 +680,7 @@ func ValidateProfileOnboardingWorkRecordAgainstSupportV1(
 	err = ValidateHolderEqualsExecutedWithinV1(
 		holderRule,
 		exactAssignment,
-		work.executedWithin,
+		work.actualPerformerSystem,
 	)
 	if err != nil {
 		return err
@@ -752,7 +792,7 @@ func profileOnboardingWorkSupportChecksV1(
 		{valid: contractDescriptionDigest == descriptionDigest, reason: "MethodContract does not bind the exact MethodDescription digest"},
 		{valid: work.profileAuthorRoleAssignmentRef == assignmentRef, reason: "Work ProfileAuthorRoleAssignment ref does not match exact assignment"},
 		{valid: work.profileAuthorRoleAssignmentDigest == assignmentDigest, reason: "Work ProfileAuthorRoleAssignment digest does not match exact assignment"},
-		{valid: work.executedWithin == systemRef, reason: "Work executedWithin does not match admitted executor system"},
+		{valid: work.actualPerformerSystem == systemRef, reason: "Work actual performer does not match admitted executor system"},
 		{valid: work.observedProjectBasisRef == basisRef, reason: "Work ObservedProjectBasis ref does not match exact basis"},
 		{valid: work.observedProjectBasisDigest == basisDigest, reason: "Work ObservedProjectBasis digest does not match exact basis"},
 		{valid: work.boundedContextRef == descriptionContext, reason: "Work context does not match MethodDescription"},
@@ -875,19 +915,19 @@ func canonicalizeProfileOnboardingWorkRecord(
 	if !validProfileOnboardingParameterNamesV1(parameterNames) {
 		return ProfileOnboardingWorkRecord{}, fmt.Errorf("work parameter bindings do not match ProfileOnboardingMethodDescription v1")
 	}
-	performedByValid := record.performedBy.valid()
-	executedWithinValid := record.executedWithin.valid()
+	coveringAssignmentValid := record.coveringRoleAssignment.valid()
+	actualPerformerValid := record.actualPerformerSystem.valid()
 	boundedContextValid := record.boundedContextRef.valid()
-	if !performedByValid || !executedWithinValid || !boundedContextValid {
-		return ProfileOnboardingWorkRecord{}, fmt.Errorf("work performer, executing system, and context refs are required")
+	if !coveringAssignmentValid || !actualPerformerValid || !boundedContextValid {
+		return ProfileOnboardingWorkRecord{}, fmt.Errorf("work actual performer system, covering RoleAssignment, and context refs are required")
 	}
 	assignmentRefValid := record.profileAuthorRoleAssignmentRef.valid()
 	assignmentDigestValid := record.profileAuthorRoleAssignmentDigest.valid()
 	if !assignmentRefValid || !assignmentDigestValid {
 		return ProfileOnboardingWorkRecord{}, fmt.Errorf("work ProfileAuthorRoleAssignment ref and digest are required")
 	}
-	if record.profileAuthorRoleAssignmentRef != record.performedBy {
-		return ProfileOnboardingWorkRecord{}, fmt.Errorf("work ProfileAuthorRoleAssignment ref must equal performedBy")
+	if record.profileAuthorRoleAssignmentRef != record.coveringRoleAssignment {
+		return ProfileOnboardingWorkRecord{}, fmt.Errorf("work ProfileAuthorRoleAssignment ref must equal covering RoleAssignment")
 	}
 	workIntervalValid := record.workInterval.valid()
 	basisWindowValid := record.basisObservationWindow.valid()
@@ -1155,10 +1195,10 @@ func addProfileOnboardingWorkRecordDigestFields(
 	methodDescriptionDigest := record.methodDescriptionDigest.String()
 	methodContractRef := record.methodContractRef.String()
 	methodContractDigest := record.methodContractDigest.String()
-	performedBy := record.performedBy.String()
+	coveringRoleAssignment := record.coveringRoleAssignment.String()
 	profileAuthorRoleAssignmentRef := record.profileAuthorRoleAssignmentRef.String()
 	profileAuthorRoleAssignmentDigest := record.profileAuthorRoleAssignmentDigest.String()
-	executedWithin := record.executedWithin.String()
+	actualPerformerSystem := record.actualPerformerSystem.String()
 	boundedContextRef := record.boundedContextRef.String()
 	observedProjectBasisRef := record.observedProjectBasisRef.String()
 	observedProjectBasisDigest := record.observedProjectBasisDigest.String()
@@ -1176,10 +1216,10 @@ func addProfileOnboardingWorkRecordDigestFields(
 	writer.add(methodContractRef)
 	writer.add(methodContractDigest)
 	addMethodParameterBindings(writer, record.parameterBindings)
-	writer.add(performedBy)
+	writer.add(coveringRoleAssignment)
 	writer.add(profileAuthorRoleAssignmentRef)
 	writer.add(profileAuthorRoleAssignmentDigest)
-	writer.add(executedWithin)
+	writer.add(actualPerformerSystem)
 	writer.add(boundedContextRef)
 	addClosedIntervalV1(writer, record.workInterval.closedIntervalV1)
 	addClosedIntervalV1(writer, record.basisObservationWindow.closedIntervalV1)

@@ -142,7 +142,7 @@ func validateProfileOnboardingOccurrenceV2(
 		{valid: contract.MethodDescriptionRef() == description.Ref(), reason: "MethodContract v2 does not bind the exact MethodDescription ref"},
 		{valid: contract.MethodDescriptionDigest() == descriptionDigest, reason: "MethodContract v2 does not bind the exact MethodDescription digest"},
 		{valid: work.profileAuthorRoleAssignmentRef == assignment.RoleAssignmentRef(), reason: "Work ProfileAuthorRoleAssignment ref does not match exact assignment"},
-		{valid: work.executedWithin == assignment.HolderSystemRef(), reason: "Work executedWithin does not match assignment holder"},
+		{valid: work.actualPerformerSystem == assignment.HolderSystemRef(), reason: "Work actual performer does not match assignment holder"},
 		{valid: work.boundedContextRef == description.BoundedContextRef(), reason: "Work context does not match MethodDescription v2"},
 		{valid: work.boundedContextRef == contract.BoundedContextRef(), reason: "Work context does not match MethodContract v2"},
 		{valid: work.boundedContextRef == assignment.BoundedContextRef(), reason: "Work context does not match ProfileAuthorRoleAssignment"},
@@ -164,7 +164,7 @@ func validateProfileOnboardingOccurrenceV2(
 	if err := ValidateHolderEqualsExecutedWithinV1(
 		contract.HolderEqualsExecutedWithinRule(),
 		assignment,
-		work.executedWithin,
+		work.actualPerformerSystem,
 	); err != nil {
 		return err
 	}

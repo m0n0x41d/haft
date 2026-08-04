@@ -1,6 +1,7 @@
 package fpf
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -56,6 +57,52 @@ func TestBuildPublicationSnapshotOwnsExactPublicationAndSourceUnits(t *testing.T
 	}
 
 	assertPublicationSourceUnitCopiesAreIndependent(t, snapshot)
+}
+
+func TestBuildPublicationSnapshotRetainsRecognizableGrammarDrift(t *testing.T) {
+	readmePath := filepath.Join("..", "..", "data", "FPF", "Readme.md")
+	specPath := filepath.Join("..", "..", "data", "FPF", "FPF-Spec.md")
+	readme := mustReadSourceFixture(t, readmePath)
+	spec := mustReadSourceFixture(t, specPath)
+	mutatedSpec := bytes.Replace(
+		spec,
+		[]byte("- **Template A.**"),
+		[]byte("- **Fresh outcome route.**"),
+		1,
+	)
+	if bytes.Equal(mutatedSpec, spec) {
+		t.Fatal("production source no longer contains the expected result-label fixture")
+	}
+	bundle := SourceBundle{
+		Readme: SourceDocument{
+			Path:           readmePath,
+			SourceRevision: "grammar-review-revision",
+			Markdown:       readme,
+		},
+		Spec: SourceDocument{
+			Path:           specPath,
+			SourceRevision: "grammar-review-revision",
+			Markdown:       mutatedSpec,
+		},
+	}
+
+	snapshot, err := BuildPublicationSnapshot(bundle)
+	if err != nil {
+		t.Fatalf("BuildPublicationSnapshot() error = %v", err)
+	}
+	diagnostics := snapshot.SourceGrammarDiagnostics()
+	if len(diagnostics) != 1 ||
+		diagnostics[0].Class != SourceGrammarUnsupported {
+		t.Fatalf("source grammar diagnostics = %#v", diagnostics)
+	}
+	if len(snapshot.SourceUnits()) == 0 {
+		t.Fatal("recognizable grammar drift discarded the source projection")
+	}
+	diagnostics[0].LabelsDiscovered[0] = "caller mutation"
+	if snapshot.SourceGrammarDiagnostics()[0].LabelsDiscovered[0] ==
+		"caller mutation" {
+		t.Fatal("caller mutation changed snapshot grammar diagnostics")
+	}
 }
 
 func TestLoadPublicationSnapshotReadsOneExactPublicationBasis(t *testing.T) {

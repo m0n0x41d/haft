@@ -35,10 +35,7 @@ func runSpecStatus(cmd *cobra.Command, _ []string) error {
 	}
 
 	if result.SpecLifecycleProjection != nil {
-		return writeSpecLifecycleSummary(
-			cmd.OutOrStdout(),
-			*result.SpecLifecycleProjection,
-		)
+		return writePublicSpecLifecycleSummary(cmd.OutOrStdout(), result)
 	}
 	return writeProjectSpecificationApplicabilityCue(
 		cmd.OutOrStdout(),
@@ -70,10 +67,7 @@ func runSpecNext(cmd *cobra.Command, _ []string) error {
 		return writePublicSpecLifecycleJSON(cmd.OutOrStdout(), result)
 	}
 	if result.SpecLifecycleProjection != nil {
-		return writeSpecLifecycleSummary(
-			cmd.OutOrStdout(),
-			*result.SpecLifecycleProjection,
-		)
+		return writePublicSpecLifecycleSummary(cmd.OutOrStdout(), result)
 	}
 	return writeProjectSpecificationApplicabilityCue(
 		cmd.OutOrStdout(),
@@ -181,5 +175,32 @@ func writeSpecLifecycleSummary(w io.Writer, projection specflow.SpecLifecyclePro
 	}
 
 	_, err := fmt.Fprint(w, b.String())
+	return err
+}
+
+func writePublicSpecLifecycleSummary(
+	w io.Writer,
+	result publicSpecLifecycleResult,
+) error {
+	if result.SpecLifecycleProjection == nil {
+		return fmt.Errorf("spec lifecycle projection is unavailable")
+	}
+	var output strings.Builder
+	if err := writeSpecLifecycleSummary(&output, *result.SpecLifecycleProjection); err != nil {
+		return err
+	}
+	if result.Health != nil {
+		fmt.Fprintf(&output, "\nSpec health: %s (%d finding(s); %d error(s), %d warning(s))\n",
+			result.Health.State,
+			result.Health.TotalFindings,
+			result.Health.ErrorFindings,
+			result.Health.WarningFindings,
+		)
+		fmt.Fprintf(&output, "Health check: %s\n", result.Health.CheckCommand)
+		if result.Health.TotalFindings > 0 {
+			fmt.Fprintln(&output, "Workflow readiness does not clear these health findings.")
+		}
+	}
+	_, err := io.WriteString(w, output.String())
 	return err
 }

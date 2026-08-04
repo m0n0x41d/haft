@@ -18,11 +18,13 @@ import (
 )
 
 const (
-	// Delta and AdmissionBasis change canonical shape because Genesis no
-	// longer embeds a no-prior-head proof. Their v1 domains remain decode-only;
-	// all constructors issue v2.
+	// Delta and AdmissionBasis changed canonical shape in v2 because Genesis no
+	// longer embeds a no-prior-head proof. V3 binds the exact current authority
+	// generation instead of relabelling every activation as manual. V1 and v2
+	// remain decode-only; all constructors issue v3.
 	deltaDomainV1  = "haft.project-typeenv.activation-delta.v1"
 	deltaDomainV2  = "haft.project-typeenv.activation-delta.v2"
+	deltaDomainV3  = "haft.project-typeenv.activation-delta.v3"
 	deltaRefPrefix = "project-typeenv-activation-delta:"
 
 	envelopeDomain    = "haft.project-typeenv.activation-admission-envelope.v1"
@@ -30,10 +32,11 @@ const (
 
 	basisDomainV1  = "haft.project-typeenv.activation-admission-basis.v1"
 	basisDomainV2  = "haft.project-typeenv.activation-admission-basis.v2"
+	basisDomainV3  = "haft.project-typeenv.activation-admission-basis.v3"
 	basisRefPrefix = "project-typeenv-activation-basis:"
 
 	// Envelope and Manifest shapes are unchanged. Their existing domains stay
-	// current; new instances acquire new identities through their v2
+	// current; new instances acquire new identities through their v3
 	// Delta/Basis member references.
 	manifestDomain    = "haft.project-typeenv.activation-materialization-manifest.v1"
 	manifestRefPrefix = "project-typeenv-activation-manifest:"
@@ -43,10 +46,15 @@ const (
 	workRecordRefPrefix   = "project-typeenv-head-cas-work-record:"
 	graphKeyPrefix        = "project-typeenv-head-activation:"
 
-	AdmissionKindSnapshotOnly = "snapshot_only"
-	EventKind                 = "activate_type_env"
-	AuthorityClass            = "manual_type_env_activation"
-	MaterializationOrdinal    = uint32(0)
+	AdmissionKindSnapshotOnly               = "snapshot_only"
+	EventKind                               = "activate_type_env"
+	LegacyManualAuthorityClass              = "manual_type_env_activation"
+	HostRoutedOperatorRequestAuthorityClass = "host_routed_operator_request"
+	CompatibleSuccessorPolicyAuthorityClass = "compatible_successor_policy"
+	// AuthorityClass is the decode-only v1/v2 value retained for frozen
+	// historical carrier construction in compatibility tests.
+	AuthorityClass         = LegacyManualAuthorityClass
+	MaterializationOrdinal = uint32(0)
 
 	maximumOrderedExtensions = 4096
 )
@@ -55,11 +63,12 @@ type carrierEdition uint8
 
 const (
 	legacyCarrierV1 carrierEdition = iota + 1
-	currentCarrierV2
+	legacyCarrierV2
+	currentCarrierV3
 )
 
 func (edition carrierEdition) current() bool {
-	return edition == currentCarrierV2
+	return edition == currentCarrierV3
 }
 
 var stableHexPattern = regexp.MustCompile(`^[0-9a-f]{64}$`)
@@ -223,6 +232,7 @@ type Delta struct {
 	expectedGraphRevision  typedmemory.GraphRevision
 	committedGraphRevision typedmemory.GraphRevision
 	successorHeadRevision  projecttypeenvselection.HeadRevision
+	authorityClass         string
 	canonicalBytes         []byte
 }
 
@@ -242,6 +252,7 @@ type DeltaInput struct {
 	ExpectedGraphRevision  typedmemory.GraphRevision
 	CommittedGraphRevision typedmemory.GraphRevision
 	SuccessorHeadRevision  projecttypeenvselection.HeadRevision
+	AuthorityClass         string
 }
 
 func NewDelta(input DeltaInput) (Delta, error) {
@@ -253,7 +264,7 @@ func NewDelta(input DeltaInput) (Delta, error) {
 		return Delta{}, err
 	}
 	state, err := normalizeDeltaState(deltaState{
-		edition:                currentCarrierV2,
+		edition:                currentCarrierV3,
 		transactionRef:         input.TransactionRef,
 		transactionDigest:      input.TransactionDigest,
 		project:                input.Project,
@@ -269,6 +280,7 @@ func NewDelta(input DeltaInput) (Delta, error) {
 		expectedGraphRevision:  input.ExpectedGraphRevision,
 		committedGraphRevision: input.CommittedGraphRevision,
 		successorHeadRevision:  input.SuccessorHeadRevision,
+		authorityClass:         input.AuthorityClass,
 	})
 	if err != nil {
 		return Delta{}, err
@@ -283,6 +295,7 @@ func NewDelta(input DeltaInput) (Delta, error) {
 func DecodeDelta(canonical []byte) (Delta, error) {
 	reader, edition, domain, err := newEditionedCanonicalReader(
 		canonical,
+		deltaDomainV3,
 		deltaDomainV2,
 		deltaDomainV1,
 	)
@@ -330,6 +343,7 @@ func DecodeDelta(canonical []byte) (Delta, error) {
 		expectedGraphRevision:  normalized.expectedGraphRevision,
 		committedGraphRevision: normalized.committedGraphRevision,
 		successorHeadRevision:  normalized.successorHeadRevision,
+		authorityClass:         normalized.authorityClass,
 		canonicalBytes:         append([]byte(nil), canonical...),
 	}, nil
 }
@@ -417,7 +431,7 @@ func (delta Delta) EventKind() string {
 }
 
 func (delta Delta) AuthorityClass() string {
-	return AuthorityClass
+	return delta.authorityClass
 }
 
 func (delta Delta) CanonicalBytes() []byte {
@@ -452,11 +466,13 @@ type deltaState struct {
 	expectedGraphRevision  typedmemory.GraphRevision
 	committedGraphRevision typedmemory.GraphRevision
 	successorHeadRevision  projecttypeenvselection.HeadRevision
+	authorityClass         string
 }
 
 func normalizeDeltaState(state deltaState) (deltaState, error) {
 	if state.edition != legacyCarrierV1 &&
-		state.edition != currentCarrierV2 {
+		state.edition != legacyCarrierV2 &&
+		state.edition != currentCarrierV3 {
 		return deltaState{}, fmt.Errorf(
 			"activation delta carrier edition is invalid",
 		)
@@ -531,6 +547,22 @@ func normalizeDeltaState(state deltaState) (deltaState, error) {
 	if err != nil || successor != state.successorHeadRevision {
 		return deltaState{}, fmt.Errorf("activation successor HeadRevision is required")
 	}
+	authorityClass := state.authorityClass
+	switch state.edition {
+	case legacyCarrierV1, legacyCarrierV2:
+		if authorityClass != LegacyManualAuthorityClass {
+			return deltaState{}, fmt.Errorf(
+				"legacy activation authority class is invalid",
+			)
+		}
+	case currentCarrierV3:
+		if authorityClass != HostRoutedOperatorRequestAuthorityClass &&
+			authorityClass != CompatibleSuccessorPolicyAuthorityClass {
+			return deltaState{}, fmt.Errorf(
+				"current activation authority class is invalid",
+			)
+		}
+	}
 	switch predecessorValue := predecessor.(type) {
 	case currentGenesisActivationPredecessor,
 		legacyGenesisActivationPredecessor:
@@ -564,6 +596,7 @@ func normalizeDeltaState(state deltaState) (deltaState, error) {
 		expectedGraphRevision:  typedmemory.NewGraphRevision(state.expectedGraphRevision.Value()),
 		committedGraphRevision: typedmemory.NewGraphRevision(state.committedGraphRevision.Value()),
 		successorHeadRevision:  successor,
+		authorityClass:         authorityClass,
 	}, nil
 }
 
@@ -588,7 +621,7 @@ func encodeDeltaState(state deltaState) ([]byte, error) {
 	writer.writeUint64(state.committedGraphRevision.Value())
 	writer.writeUint64(state.successorHeadRevision.Value())
 	writer.writeString(EventKind)
-	writer.writeString(AuthorityClass)
+	writer.writeString(state.authorityClass)
 	return writer.bytes(), nil
 }
 
@@ -699,8 +732,8 @@ func decodeDeltaState(
 		return deltaState{}, fmt.Errorf("activation event kind is invalid")
 	}
 	authorityClass, err := reader.readString("activation authority class")
-	if err != nil || authorityClass != AuthorityClass {
-		return deltaState{}, fmt.Errorf("activation authority class is invalid")
+	if err != nil {
+		return deltaState{}, err
 	}
 	return deltaState{
 		edition:                edition,
@@ -719,6 +752,7 @@ func decodeDeltaState(
 		expectedGraphRevision:  typedmemory.NewGraphRevision(expectedValue),
 		committedGraphRevision: typedmemory.NewGraphRevision(committedValue),
 		successorHeadRevision:  headRevision,
+		authorityClass:         authorityClass,
 	}, nil
 }
 
@@ -964,7 +998,7 @@ func NewAdmissionBasis(delta Delta, envelope AdmissionEnvelope) (AdmissionBasis,
 			"legacy activation delta is read-only and cannot issue a current admission basis",
 		)
 	}
-	domain := basisDomainForEdition(currentCarrierV2)
+	domain := basisDomainForEdition(currentCarrierV3)
 	writer := newCanonicalWriter(domain)
 	writer.writeString(AdmissionKindSnapshotOnly)
 	writer.writeString(envelope.Ref().String())
@@ -980,6 +1014,7 @@ func NewAdmissionBasis(delta Delta, envelope AdmissionEnvelope) (AdmissionBasis,
 func DecodeAdmissionBasis(canonical []byte) (AdmissionBasis, error) {
 	reader, edition, domain, err := newEditionedCanonicalReader(
 		canonical,
+		basisDomainV3,
 		basisDomainV2,
 		basisDomainV1,
 	)
@@ -1451,8 +1486,10 @@ func deltaDomainForEdition(edition carrierEdition) string {
 	switch edition {
 	case legacyCarrierV1:
 		return deltaDomainV1
-	case currentCarrierV2:
+	case legacyCarrierV2:
 		return deltaDomainV2
+	case currentCarrierV3:
+		return deltaDomainV3
 	default:
 		return ""
 	}
@@ -1462,8 +1499,10 @@ func basisDomainForEdition(edition carrierEdition) string {
 	switch edition {
 	case legacyCarrierV1:
 		return basisDomainV1
-	case currentCarrierV2:
+	case legacyCarrierV2:
 		return basisDomainV2
+	case currentCarrierV3:
+		return basisDomainV3
 	default:
 		return ""
 	}
@@ -1472,19 +1511,26 @@ func basisDomainForEdition(edition carrierEdition) string {
 func newEditionedCanonicalReader(
 	canonical []byte,
 	currentDomain string,
-	legacyDomain string,
+	legacyV2Domain string,
+	legacyV1Domain string,
 ) (*canonicalReader, carrierEdition, string, error) {
 	current, currentErr := newCanonicalReader(canonical, currentDomain)
 	if currentErr == nil {
-		return current, currentCarrierV2, currentDomain, nil
+		return current, currentCarrierV3, currentDomain, nil
 	}
-	legacy, legacyErr := newCanonicalReader(canonical, legacyDomain)
-	if legacyErr == nil {
-		return legacy, legacyCarrierV1, legacyDomain, nil
+	legacyV2, legacyV2Err := newCanonicalReader(canonical, legacyV2Domain)
+	if legacyV2Err == nil {
+		return legacyV2, legacyCarrierV2, legacyV2Domain, nil
+	}
+	legacyV1, legacyV1Err := newCanonicalReader(canonical, legacyV1Domain)
+	if legacyV1Err == nil {
+		return legacyV1, legacyCarrierV1, legacyV1Domain, nil
 	}
 	return nil, 0, "", fmt.Errorf(
-		"canonical carrier domain is neither current nor supported legacy: %w",
+		"canonical carrier domain is neither current nor supported legacy: current=%v legacy_v2=%v legacy_v1=%v",
 		currentErr,
+		legacyV2Err,
+		legacyV1Err,
 	)
 }
 
@@ -1563,7 +1609,7 @@ func normalizeActivationPredecessor(
 ) (activationPredecessor, error) {
 	switch value := predecessor.(type) {
 	case currentGenesisActivationPredecessor:
-		if edition != currentCarrierV2 {
+		if edition == legacyCarrierV1 {
 			return nil, fmt.Errorf(
 				"legacy activation Genesis predecessor requires its historical proof",
 			)
@@ -1634,7 +1680,7 @@ func decodeActivationPredecessor(
 	}
 	switch kind {
 	case "genesis":
-		if edition == currentCarrierV2 {
+		if edition != legacyCarrierV1 {
 			return currentGenesisActivationPredecessor{}, nil
 		}
 		proofText, readErr := reader.readString("Genesis proof")

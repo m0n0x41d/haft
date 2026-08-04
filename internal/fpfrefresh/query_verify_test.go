@@ -9,6 +9,8 @@ import (
 )
 
 func TestVerifyCandidateQueryContractAgainstCurrentProductionSource(t *testing.T) {
+	// This is deliberately a source-specific quality gate. Refresh preserves a
+	// failure as review debt after the generic runtime/index integrity check.
 	lockPath := filepath.Join(
 		"..",
 		"..",

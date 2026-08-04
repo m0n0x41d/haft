@@ -339,8 +339,9 @@ type RelatedResult struct {
 // RelatedView pairs proximity results with the exact index basis used to build
 // the fused code/reasoning graph.
 type RelatedView struct {
-	Results []RelatedResult
-	Index   codebase.IndexState
+	Results      []RelatedResult
+	IndexRefresh IndexCoordinationResult
+	Index        codebase.IndexState
 }
 
 // RelatedToFile ranks the fused graph by proximity to a file: it seeds the file
@@ -372,20 +373,25 @@ func (s *Service) relatedViewOnce(
 	filePath string,
 	limit int,
 ) (result RelatedView, resultErr error) {
-	if _, err := s.EnsureIndex(ctx, projectRoot); err != nil {
-		return RelatedView{}, err
-	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return RelatedView{}, err
 	}
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
+	if err != nil {
+		return RelatedView{}, err
+	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return RelatedView{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = RelatedView{}
 			resultErr = err
 		}
@@ -443,8 +449,9 @@ func (s *Service) relatedViewOnce(
 		}
 	}
 	return RelatedView{
-		Results: out,
-		Index:   indexState,
+		Results:      out,
+		IndexRefresh: indexRefresh,
+		Index:        indexState,
 	}, nil
 }
 
@@ -490,8 +497,9 @@ func (s *Service) TestedBy(ctx context.Context, projectRoot, filePath string) ([
 // TestCoverageView pairs the structural exercise map with its exact index
 // basis. It does not upgrade call evidence into verification evidence.
 type TestCoverageView struct {
-	Symbols []SymbolCoverage
-	Index   codebase.IndexState
+	Symbols      []SymbolCoverage
+	IndexRefresh IndexCoordinationResult
+	Index        codebase.IndexState
 }
 
 // TestCoverageView returns the public, basis-carrying structural test map.
@@ -510,20 +518,25 @@ func (s *Service) testCoverageViewOnce(
 	projectRoot string,
 	filePath string,
 ) (result TestCoverageView, resultErr error) {
-	if _, err := s.EnsureIndex(ctx, projectRoot); err != nil {
-		return TestCoverageView{}, err
-	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return TestCoverageView{}, err
 	}
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
+	if err != nil {
+		return TestCoverageView{}, err
+	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return TestCoverageView{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = TestCoverageView{}
 			resultErr = err
 		}
@@ -544,7 +557,8 @@ func (s *Service) testCoverageViewOnce(
 		callers[sym.ID] = in
 	}
 	return TestCoverageView{
-		Symbols: coverageFor(syms, callers),
-		Index:   indexState,
+		Symbols:      coverageFor(syms, callers),
+		IndexRefresh: indexRefresh,
+		Index:        indexState,
 	}, nil
 }

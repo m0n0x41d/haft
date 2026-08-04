@@ -1,10 +1,12 @@
 # P13 consolidated acceptance harness
 
-Status: exact P12F source identity is pinned, and P12E has selected the
-current-source project basis at head revision 2. The manifest is
-`frozen_for_execution` against the selected basis and graph revision 8. This
-permits one consolidated source run; it is not itself an acceptance result and
-this package does not claim P13 closure.
+Status: the exact current FPF `8b727cb` / COV2 v5 source identity is pinned and
+source-built dogfood `haft init --core-only` automatically activated its
+proven-compatible successor under `compatible_successor_policy`. The project
+ledger now records head revision 3 and graph revision 9 with zero host-routed
+TypeEnv requests. Freeze capture and verification passed, and the manifest is
+`frozen_for_execution` on those exact coordinates. This makes P13 executable;
+it does not itself claim that the consolidated P13 run passed.
 
 The active execution carrier is
 `.context/haft-v9-deterministic-closeout.plan.md`, specifically
@@ -68,29 +70,32 @@ The manifest is a three-state fail-closed carrier:
 1. `pending_final_source` carries no target FPF identity and no selection
    coordinates. This is the fail-closed state before one exact current-source
    candidate and its semantic delta have been accepted.
-2. `pending_selected_basis` carries the exact final FPF revision, source
+2. `pending_automatic_activation` carries the exact final FPF revision, source
    digests, Base TypeEnv identity, and compiler schema, while
-   `freeze_input.posture` remains `pending_manual_selection`. Enter this state
-   only after P12F has accepted one internally consistent aligned candidate.
+   `freeze_input.posture` remains `pending_automatic_activation`. Enter this
+   state only after P12F has accepted one internally consistent aligned
+   candidate. The next mutation-capable reconciliation activates it
+   automatically if the transaction-current compatibility predicate holds.
 3. `frozen_for_execution` requires `freeze_input.posture=selected_and_frozen`,
    exact post-P12E head/selection-receipt/graph coordinates, and a target Base
    equal to the selected final FPF identity.
 
 The consolidated command fails before package discovery or suite execution in
-the first two states. Candidate Stage coordinates are not selected authority
-and must not be copied into the frozen state. The completed P12E Transition
-advanced the exact revision-1 project head selected from FPF `44dd881`
-(`C=d6097b...`, `B=aa1eec...`) directly to the P12F candidate; the temporary
-`1d5c1ed` development basis did not become an intermediate live head. The
-selected Stage must still be schema v5 and byte-match the current canonical
-profile basis, compatible ProfileFit, and installed transition-profile
-closure when final freeze input is captured. The same preflight requires the
-exact selected FPF checkout plus embedded index metadata, schema 54 with its
-exact writer-54 marker, and an explicitly empty excluded-Go-package set. Any
+the first two states. Candidate Stage coordinates are not activation authority
+and must not be copied into the frozen state. The preceding P12E Transition
+advanced the exact revision-1 project head from FPF `44dd881`
+(`C=d6097b...`, `B=aa1eec...`) to the now-predecessor `0990ff1` candidate at
+head revision 2. The current automatic activation advanced from that exact
+predecessor rather than relabeling it. The activated target Stage remains schema v5
+and byte-match the current canonical profile basis, compatible ProfileFit, and
+installed transition-profile closure when final freeze input is captured. The
+same preflight requires the exact selected FPF checkout plus embedded index
+metadata, schema 57 with its exact writer-54 marker (independently verified), and an
+explicitly empty excluded-Go-package set. Any
 changed coordinate, missing anchor, skipped anchor, non-empty waiver set, or
 failed command blocks the run.
 
-After any release-relevant source-byte change, recapture the already-selected
+After any release-relevant source-byte change, recapture the already-activated
 profile/head/receipt/graph basis as a review candidate with:
 
 ```bash
@@ -99,14 +104,14 @@ HAFT_P13_CAPTURE_FREEZE_INPUT=1 \
   -run '^TestP13CaptureFreezeInputCandidate$'
 ```
 
-P12E selection is already complete, but a capture made before the current
-manifest and source bytes is stale because the carrier binds both the manifest
-and full acceptance identity. This read-only capture uses the same identity
+Compatible-successor activation is already complete before capture, but a
+capture made before the current manifest and source bytes is stale because the
+carrier binds both the manifest and full acceptance identity. This read-only capture uses the same identity
 loader and closure checks as the consolidated runner. It atomically publishes a no-clobber
 `haft.p13.freeze-input-candidate/v1` carrier under `.context/p13/`, but does
 not edit `manifest.json`. Its posture is
 `review_candidate_not_selection_or_evidence`: the carrier records an already
-selected basis for exact review; it cannot select a TypeEnv head, authorize
+activated basis for exact review; it cannot activate a TypeEnv head, authorize
 Work, pass P13, or establish evidence. Verify its manifest and identity
 digests against the current selected basis with:
 
@@ -122,7 +127,7 @@ After it passes, copy only the carrier's `freeze_input` object into the
 still-pending manifest as a separately reviewed mechanical edit. A
 pre-selection Stage is not accepted by either path.
 
-After the P12E selection exists, those exact accepted coordinates have been
+After automatic activation exists, those exact accepted coordinates have been
 frozen, and the manifest status is `frozen_for_execution`, run exactly:
 
 ```bash

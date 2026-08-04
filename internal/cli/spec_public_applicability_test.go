@@ -72,12 +72,12 @@ func TestPublicProjectSpecificationApplicabilityOmitsSoftwareForNonSoftwareScope
 		)
 	}
 	if !containsPublicSpecString(
-		response.UnderdeterminedKinds,
+		response.ApplicableDocumentKinds,
 		string(project.SpecDocumentKindTargetSystem),
 	) {
 		t.Fatalf(
-			"underdetermined document kinds = %#v, want target-system",
-			response.UnderdeterminedKinds,
+			"applicable document kinds = %#v, want target-system",
+			response.ApplicableDocumentKinds,
 		)
 	}
 	targetMember, found := publicSpecMemberByDocumentKind(
@@ -85,9 +85,10 @@ func TestPublicProjectSpecificationApplicabilityOmitsSoftwareForNonSoftwareScope
 		string(project.SpecDocumentKindTargetSystem),
 	)
 	if !found ||
-		targetMember.MissingBasis != "admitted_target_system_relation" {
+		targetMember.Kind != string(projectprofile.CapabilityRequired) ||
+		targetMember.MissingBasis != "" {
 		t.Fatalf(
-			"target-system member = %#v, found=%t; want exact missing basis",
+			"target-system member = %#v, found=%t; want required without missing basis",
 			targetMember,
 			found,
 		)
@@ -217,7 +218,7 @@ func TestPublicProjectSpecificationApplicabilityEmitsOneNeutralMissingProfileCue
 	}
 	for _, want := range []string{
 		`"recovery_surface":"haft_onboard"`,
-		`"next_action":"Read haft_onboard status;`,
+		`"next_action":"Read haft_onboard status.`,
 	} {
 		if !strings.Contains(string(encoded), want) {
 			t.Fatalf("JSON cue missing %q: %s", want, encoded)

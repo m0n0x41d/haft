@@ -150,8 +150,7 @@ func TestStatusSurfacesDeclaredDetectedProfileDriftWithoutMutation(
 		"capability=process_checks; applicability=not_applicable",
 		"capability=software_system_spec; applicability=not_applicable",
 		"capability=swe_methodpack; applicability=not_applicable",
-		"capability=target_system_spec; applicability=underdetermined",
-		"missing_basis=admitted_target_system_relation",
+		"capability=target_system_spec; applicability=required",
 		"Detector candidates (non-binding)",
 	} {
 		if !strings.Contains(full, marker) {

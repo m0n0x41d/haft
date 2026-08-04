@@ -331,13 +331,48 @@ func validateReadmeCarrierRoots(readmeAtlas, specAtlas PatternAtlas) error {
 }
 
 func buildPracticalUseSourceUnits(document SourceDocument, atlas PatternAtlas) ([]SourceUnit, error) {
+	sources, err := practicalUseCardSources(document, atlas)
+	if err != nil {
+		return nil, err
+	}
+	units := make([]SourceUnit, 0, len(sources))
+	for _, source := range sources {
+		unit := newSourceUnit(
+			"readme:practical_use_card:"+sourceUnitSlug(source.SourceID),
+			source.SourceID,
+			SourceUnitRolePracticalUseCard,
+			source.Title,
+			source.Body,
+			"",
+			"",
+			document,
+			source.StartLine,
+			source.EndLine,
+		)
+		unit.AuthoredPhrases = extractReadmeAuthoredPhrases(source.Body)
+		unit.Keywords = sourceKeywords(source.Title, source.Body)
+		projection, _, err := parsePracticalUseCardSourceForIndex(source)
+		if err != nil {
+			return nil, err
+		}
+		unit.UseCues = projection.UseCues
+		unit.DirectRefs = extractSourcePatternLinks(projection.DirectReferenceText)
+		units = append(units, unit)
+	}
+	return units, nil
+}
+
+func practicalUseCardSources(
+	document SourceDocument,
+	atlas PatternAtlas,
+) ([]PracticalUseCardSource, error) {
 	root, ok := findAtlasNode(atlas.Nodes, isPracticalUseRoot)
 	if !ok {
 		return nil, fmt.Errorf("FPF README grammar: Practical-Use Cards H2 not found")
 	}
 
 	lines := splitPatternAtlasLines(document.Markdown)
-	units := make([]SourceUnit, 0)
+	sources := make([]PracticalUseCardSource, 0)
 	for _, node := range atlas.Nodes {
 		if node.ParentNodeID != root.NodeID || node.Level != 3 {
 			continue
@@ -348,21 +383,7 @@ func buildPracticalUseSourceUnits(document SourceDocument, atlas PatternAtlas) (
 			return nil, fmt.Errorf("FPF README grammar: practical-use heading %q lacks source id and title", node.Heading)
 		}
 		body := patternAtlasLineRange(lines, node.StartLine, node.EndLine)
-		unit := newSourceUnit(
-			"readme:practical_use_card:"+sourceUnitSlug(sourceID),
-			sourceID,
-			SourceUnitRolePracticalUseCard,
-			title,
-			body,
-			"",
-			"",
-			document,
-			node.StartLine,
-			node.EndLine,
-		)
-		unit.AuthoredPhrases = extractReadmeAuthoredPhrases(body)
-		unit.Keywords = sourceKeywords(title, body)
-		projection, err := ParsePracticalUseCardSource(PracticalUseCardSource{
+		sources = append(sources, PracticalUseCardSource{
 			SourceID:       sourceID,
 			Title:          title,
 			Body:           body,
@@ -371,17 +392,37 @@ func buildPracticalUseSourceUnits(document SourceDocument, atlas PatternAtlas) (
 			StartLine:      node.StartLine,
 			EndLine:        node.EndLine,
 		})
+	}
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("FPF README grammar: Practical-Use Cards contains no H3 cards")
+	}
+	return sources, nil
+}
+
+func inspectSourceGrammarDiagnostics(
+	bundle SourceBundle,
+) ([]SourceGrammarDiagnostic, error) {
+	atlas, err := BuildPatternAtlas(
+		bundle.Spec.Markdown,
+		bundle.Spec.Path,
+		bundle.Spec.SourceRevision,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("inspect FPF specification structure: %w", err)
+	}
+	sources, err := practicalUseCardSources(bundle.Spec, atlas)
+	if err != nil {
+		return nil, err
+	}
+	diagnostics := make([]SourceGrammarDiagnostic, 0)
+	for _, source := range sources {
+		_, observed, err := parsePracticalUseCardSourceForIndex(source)
 		if err != nil {
 			return nil, err
 		}
-		unit.UseCues = projection.UseCues
-		unit.DirectRefs = extractSourcePatternLinks(projection.DirectReferenceText)
-		units = append(units, unit)
+		diagnostics = append(diagnostics, observed...)
 	}
-	if len(units) == 0 {
-		return nil, fmt.Errorf("FPF README grammar: Practical-Use Cards contains no H3 cards")
-	}
-	return units, nil
+	return diagnostics, nil
 }
 
 func buildPrefaceSourceUnits(document SourceDocument, atlas PatternAtlas) ([]SourceUnit, error) {
@@ -700,22 +741,13 @@ func validateRoleSpecificSourceGrammar(unit SourceUnit) error {
 		if unit.SourceID == "" {
 			return fmt.Errorf("practical-use card %s lacks source id", unit.UnitID)
 		}
+		// Exact raw source remains indexable when one projected cue category is
+		// missing. PublicationSnapshot carries the source-coordinate-bearing
+		// degradation diagnostic; source/index integrity does not invent a cue.
+		return nil
 	default:
 		return nil
 	}
-	if strings.TrimSpace(unit.UseCues.ConditionText) == "" {
-		return fmt.Errorf("practical-use card %s lacks source-owned condition cue", unit.SourceID)
-	}
-	if strings.TrimSpace(unit.UseCues.FirstResultText) == "" {
-		return fmt.Errorf("practical-use card %s lacks source-owned first-result cue", unit.SourceID)
-	}
-	if strings.TrimSpace(unit.UseCues.StopReturnText) == "" {
-		return fmt.Errorf("practical-use card %s lacks source-owned stop/return cue", unit.SourceID)
-	}
-	if len(unit.DirectRefs) == 0 {
-		return fmt.Errorf("practical-use card %s lacks source-owned direct pattern references", unit.SourceID)
-	}
-	return nil
 }
 
 func validateSourceReferences(units []SourceUnit, catalog map[string]SpecCatalogEntry) error {

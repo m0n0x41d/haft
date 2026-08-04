@@ -52,6 +52,7 @@ type ExploreResult struct {
 	SeedBody       string
 	SeedBodyOK     bool
 	ColdBuilt      bool
+	IndexRefresh   IndexCoordinationResult
 	Resolution     codebase.ResolutionCounts
 	Index          codebase.IndexState
 }
@@ -71,21 +72,25 @@ func (s *Service) exploreOnce(
 	file string,
 	line int,
 ) (result ExploreResult, resultErr error) {
-	cold, err := s.EnsureIndex(ctx, projectRoot)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return ExploreResult{}, err
 	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
 	if err != nil {
 		return ExploreResult{}, err
 	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return ExploreResult{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = ExploreResult{}
 			resultErr = err
 		}
@@ -97,7 +102,8 @@ func (s *Service) exploreOnce(
 		}
 		return ExploreResult{
 			SeedResolution: resolution,
-			ColdBuilt:      cold,
+			ColdBuilt:      indexRefresh.Rebuilt(),
+			IndexRefresh:   indexRefresh,
 			Index:          indexState,
 		}, nil
 	}
@@ -124,7 +130,8 @@ func (s *Service) exploreOnce(
 	res := ExploreResult{
 		SeedResolution: seedResolution,
 		Candidates:     displayCandidates,
-		ColdBuilt:      cold,
+		ColdBuilt:      indexRefresh.Rebuilt(),
+		IndexRefresh:   indexRefresh,
 		Index:          indexState,
 	}
 	if seedResolution.Kind().String() != "resolved_seed" {
@@ -203,6 +210,7 @@ type ExploreBagResult struct {
 	Unresolved      []string
 	Legs            []BagLeg
 	ColdBuilt       bool
+	IndexRefresh    IndexCoordinationResult
 	Resolution      codebase.ResolutionCounts
 	Index           codebase.IndexState
 }
@@ -222,29 +230,34 @@ func (s *Service) exploreBagOnce(
 	projectRoot string,
 	names []string,
 ) (result ExploreBagResult, resultErr error) {
-	cold, err := s.EnsureIndex(ctx, projectRoot)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return ExploreBagResult{}, err
 	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
 	if err != nil {
 		return ExploreBagResult{}, err
 	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return ExploreBagResult{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = ExploreBagResult{}
 			resultErr = err
 		}
 	}()
 	if indexState.Epoch == 0 {
 		result := ExploreBagResult{
-			ColdBuilt: cold,
-			Index:     indexState,
+			ColdBuilt:    indexRefresh.Rebuilt(),
+			IndexRefresh: indexRefresh,
+			Index:        indexState,
 		}
 		for _, name := range names {
 			resolution, err := unavailableSeedForIndex(name, indexState)
@@ -270,7 +283,11 @@ func (s *Service) exploreBagOnce(
 	if err != nil {
 		return ExploreBagResult{}, err
 	}
-	res := ExploreBagResult{ColdBuilt: cold, Index: indexState}
+	res := ExploreBagResult{
+		ColdBuilt:    indexRefresh.Rebuilt(),
+		IndexRefresh: indexRefresh,
+		Index:        indexState,
+	}
 	var seeds []codebase.CodeSymbol
 	for _, n := range names {
 		seed, candidates, fuzzy, err := s.resolveSeed(ctx, n, "", 0)

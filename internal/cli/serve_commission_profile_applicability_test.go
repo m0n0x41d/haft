@@ -72,7 +72,7 @@ func TestWorkCommissionSpecAuthorityForApplicability(
 			wantErrorCode: commissionSpecRefNotApplicableCode,
 		},
 		{
-			name:             "target uncertainty blocks only explicit target reliance",
+			name:             "declared scope accepts current target section without profile relation",
 			realizationClass: projectprofile.NonSoftwareRealizationClass,
 			commission:       commissionWithSpecReference("TS.boundary.001"),
 			specSet: project.ProjectSpecificationSet{
@@ -83,8 +83,8 @@ func TestWorkCommissionSpecAuthorityForApplicability(
 					),
 				}},
 			},
-			wantErrorCode: commissionSpecApplicabilityUnderdeterminedCode,
-			wantCue:       true,
+			wantSnapshot:    true,
+			wantSnapshotRef: "TS.boundary.001",
 		},
 		{
 			name:             "tactical override preserves software authority boundary",

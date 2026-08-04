@@ -40,6 +40,7 @@ type NodeView struct {
 	Candidates     []codebase.CodeSymbol // fuzzy matches when no exact name resolved and >1 hit
 	Fuzzy          bool                  // the shown definitions / candidates came from the fuzzy fallback
 	ColdBuilt      bool
+	IndexRefresh   IndexCoordinationResult
 	Index          codebase.IndexState
 }
 
@@ -59,21 +60,25 @@ func (s *Service) nodeOnce(
 	file string,
 	line int,
 ) (result NodeView, resultErr error) {
-	cold, err := s.EnsureIndex(ctx, projectRoot)
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
 	if err != nil {
 		return NodeView{}, err
 	}
-	indexMu.RLock()
-	defer indexMu.RUnlock()
-	indexState, err := s.scanner.CurrentIndexState(ctx)
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
 	if err != nil {
 		return NodeView{}, err
 	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return NodeView{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
 	defer func() {
 		if resultErr != nil {
 			return
 		}
-		if err := s.ConfirmIndexState(ctx, indexState); err != nil {
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
 			result = NodeView{}
 			resultErr = err
 		}
@@ -86,7 +91,8 @@ func (s *Service) nodeOnce(
 		return NodeView{
 			Name:           name,
 			NameResolution: resolution,
-			ColdBuilt:      cold,
+			ColdBuilt:      indexRefresh.Rebuilt(),
+			IndexRefresh:   indexRefresh,
 			Index:          indexState,
 		}, nil
 	}
@@ -98,7 +104,14 @@ func (s *Service) nodeOnce(
 	if err != nil {
 		return NodeView{}, err
 	}
-	view := NodeView{Name: name, ColdBuilt: cold, Fuzzy: fuzzy, Candidates: candidates, Index: indexState}
+	view := NodeView{
+		Name:         name,
+		ColdBuilt:    indexRefresh.Rebuilt(),
+		IndexRefresh: indexRefresh,
+		Fuzzy:        fuzzy,
+		Candidates:   candidates,
+		Index:        indexState,
+	}
 	for _, sym := range overloads {
 		ol, err := s.buildOverload(ctx, projectRoot, sym)
 		if err != nil {

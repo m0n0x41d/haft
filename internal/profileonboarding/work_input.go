@@ -3,6 +3,7 @@ package profileonboarding
 import (
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
 
 // ProfileOnboardingWorkInput remains the public onboarding name for the
@@ -12,6 +13,7 @@ import (
 type ProfileOnboardingWorkInput = profiledeclarationpreparation.ProfileOnboardingWorkInput
 type ManualProfileScopeInput = profiledeclarationpreparation.ManualProfileScopeInput
 type ManualProfileProposalInput = profiledeclarationpreparation.ManualProfileProposalInput
+type ProfileChangeBasis = profiledeclarationpreparation.ProfileChangeBasis
 
 func DecodeProfileOnboardingWorkInput(
 	data []byte,
@@ -39,5 +41,38 @@ func ProposeManualProfileOnboardingWorkInput(
 		ProposeManualProfileOnboardingWorkInput(
 			suggestion,
 			proposal,
+		)
+}
+
+func NewProfileChangeBasis(
+	admissionRecordRef projectprofile.ProfileDeclarationAdmissionRecordRef,
+	admissionRecordDigest projectprofile.ContentDigest,
+	payloadDigest projectprofile.ContentDigest,
+	ledgerRevision projectprofile.LedgerRevision,
+	scopeID projectprofile.ScopeID,
+	previousEntityRef string,
+	nextEntityRef projectprofile.EntityRef,
+) (ProfileChangeBasis, error) {
+	return profiledeclarationpreparation.NewProfileChangeBasis(
+		admissionRecordRef,
+		admissionRecordDigest,
+		payloadDigest,
+		ledgerRevision,
+		scopeID,
+		previousEntityRef,
+		nextEntityRef,
+	)
+}
+
+func ProposeProfileEntityRelationChangeWorkInput(
+	suggestion profiledetector.Suggestion,
+	current projectprofile.ProfileDeclarationPayload,
+	basis ProfileChangeBasis,
+) ([]byte, error) {
+	return profiledeclarationpreparation.
+		ProposeProfileEntityRelationChangeWorkInput(
+			suggestion,
+			current,
+			basis,
 		)
 }

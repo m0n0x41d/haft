@@ -36,7 +36,7 @@ func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
 		ids[capability.ID] = true
 	}
 
-	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "method.catalog", "query.status", "query.node", "query.related", "query.carrier_manifest", "query.carrier_check", "baseline.audit", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
+	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "method.catalog", "query.status", "query.node", "query.related", "query.carrier_manifest", "query.carrier_check", "baseline.audit", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.draft_contract", "query.spec_validate", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
 		if !ids[want] {
 			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
 		}
@@ -2004,6 +2004,37 @@ func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
 	for _, want := range []string{"existing claim register", "does not establish compatibility with a newer FPF source", "source-baseline currentness"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("spec_review notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceSpecValidateNamesCarrierAndLifecycleBoundaries(t *testing.T) {
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_validate")
+	if !ok {
+		t.Fatal("query.spec_validate capability missing")
+	}
+	if capability.CurrentExecution.MCPCall != `haft_query(action="spec_validate")` {
+		t.Fatalf("spec_validate MCP call = %#v", capability.CurrentExecution)
+	}
+	if capability.CurrentExecution.CLICommand != "haft spec validate --json" {
+		t.Fatalf("spec_validate CLI command = %#v", capability.CurrentExecution)
+	}
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"authored_carriers_without_profile_applicability_filter",
+		"spec_draft_semantic_review_v1",
+		"not_applicability_determination_or_admission",
+		"not_approval_or_baseline",
+		"lifecycle_observations",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("spec_validate contract missing %q:\n%s", want, contract)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"independent of canonical profile applicability", "does not activate", "Draft lifecycle status", "active-only spec review"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec_validate invariant missing %q:\n%s", want, invariants)
 		}
 	}
 }

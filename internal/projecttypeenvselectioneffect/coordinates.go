@@ -327,6 +327,7 @@ const (
 	ProjectTypeEnvHeadSelectionAuthorityCoordinatesTrustedDedicatedCLI ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind = iota + 1
 	ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct
 	ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest
+	ProjectTypeEnvHeadSelectionAuthorityCoordinatesCompatibleSuccessorPolicy
 )
 
 func (kind ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind) String() string {
@@ -337,6 +338,8 @@ func (kind ProjectTypeEnvHeadSelectionAuthorityCoordinatesKind) String() string 
 		return "verified_speech_act"
 	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest:
 		return string(operatorrequest.HostRoutedOperatorRequest)
+	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesCompatibleSuccessorPolicy:
+		return projecttypeenvselectionauthority.CompatibleSuccessorAuthorityGeneration
 	default:
 		return ""
 	}
@@ -475,6 +478,42 @@ type HostRoutedOperatorRequestAuthorityCoordinatesInput struct {
 	ResolutionDigest     authority.Digest
 }
 
+// CompatibleSuccessorPolicyAuthorityCoordinates records the exact
+// transaction-current system-policy resolution that admitted an automatic
+// compatible successor. It contains no operator request or human-act claim.
+type CompatibleSuccessorPolicyAuthorityCoordinates struct {
+	projectBindingDigest authority.Digest
+	policyDigest         authority.Digest
+	resolutionRef        projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef
+	resolutionDigest     authority.Digest
+}
+
+type CompatibleSuccessorPolicyAuthorityCoordinatesInput struct {
+	ContentRef           authority.DescriptionRef
+	ContentDigest        authority.Digest
+	ExecutionSubject     projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionPermissionSubject
+	ProjectBindingDigest authority.Digest
+	PolicyDigest         authority.Digest
+	ResolutionRef        projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef
+	ResolutionDigest     authority.Digest
+}
+
+func (value CompatibleSuccessorPolicyAuthorityCoordinates) ProjectBindingDigest() authority.Digest {
+	return value.projectBindingDigest
+}
+
+func (value CompatibleSuccessorPolicyAuthorityCoordinates) PolicyDigest() authority.Digest {
+	return value.policyDigest
+}
+
+func (value CompatibleSuccessorPolicyAuthorityCoordinates) AuthorityResolutionRef() projecttypeenvselectionauthority.ProjectTypeEnvHeadSelectionAuthorityResolutionRef {
+	return value.resolutionRef
+}
+
+func (value CompatibleSuccessorPolicyAuthorityCoordinates) AuthorityResolutionDigest() authority.Digest {
+	return value.resolutionDigest
+}
+
 func (value HostRoutedOperatorRequestAuthorityCoordinates) OperatorRequest() operatorrequest.Request {
 	return value.request
 }
@@ -502,6 +541,9 @@ func (VerifiedSpeechActAuthorityCoordinates) projectTypeEnvHeadSelectionAuthorit
 }
 
 func (HostRoutedOperatorRequestAuthorityCoordinates) projectTypeEnvHeadSelectionAuthorityCoordinatesVariant() {
+}
+
+func (CompatibleSuccessorPolicyAuthorityCoordinates) projectTypeEnvHeadSelectionAuthorityCoordinatesVariant() {
 }
 
 // ProjectTypeEnvHeadSelectionAuthorityCoordinates is a closed durable sum.
@@ -678,6 +720,68 @@ func NewHostRoutedOperatorRequestAuthorityCoordinates(
 	}, nil
 }
 
+func NewCompatibleSuccessorPolicyAuthorityCoordinates(
+	input CompatibleSuccessorPolicyAuthorityCoordinatesInput,
+) (ProjectTypeEnvHeadSelectionAuthorityCoordinates, error) {
+	contentRef, err := normalizeDescriptionRef(input.ContentRef)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentDigest, err := authority.NewDigest(input.ContentDigest.String())
+	if err != nil || contentDigest != input.ContentDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("compatible-successor content digest is required")
+	}
+	subject, err :=
+		projecttypeenvselectionauthority.DecodeProjectTypeEnvHeadSelectionPermissionSubject(
+			input.ExecutionSubject.CanonicalJSON(),
+		)
+	if err != nil || !executionSubjectsEqual(subject, input.ExecutionSubject) {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("compatible-successor execution subject is required")
+	}
+	if subject.AuthorizationDescriptionRef() != contentRef ||
+		subject.AuthorizationContentDigest() != contentDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("compatible-successor execution subject differs from authorization content")
+	}
+	projectBindingDigest, err := authority.NewDigest(
+		input.ProjectBindingDigest.String(),
+	)
+	if err != nil || projectBindingDigest != input.ProjectBindingDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("compatible-successor project binding digest is required")
+	}
+	expectedPolicyDigest, err :=
+		projecttypeenvselectionauthority.CompatibleSuccessorPolicyDigest()
+	if err != nil || expectedPolicyDigest != input.PolicyDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("compatible-successor policy digest is not current")
+	}
+	resolutionRef, err :=
+		projecttypeenvselectionauthority.ParseProjectTypeEnvHeadSelectionAuthorityResolutionRef(
+			input.ResolutionRef.String(),
+		)
+	if err != nil || resolutionRef != input.ResolutionRef ||
+		resolutionRef.Digest() != input.ResolutionDigest {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{},
+			fmt.Errorf("compatible-successor resolution ref and digest must match")
+	}
+	return ProjectTypeEnvHeadSelectionAuthorityCoordinates{
+		common: projectTypeEnvHeadSelectionAuthorityCommon{
+			contentRef:       contentRef,
+			contentDigest:    contentDigest,
+			executionSubject: subject,
+		},
+		variant: CompatibleSuccessorPolicyAuthorityCoordinates{
+			projectBindingDigest: projectBindingDigest,
+			policyDigest:         input.PolicyDigest,
+			resolutionRef:        resolutionRef,
+			resolutionDigest:     input.ResolutionDigest,
+		},
+	}, nil
+}
+
 // ProjectTypeEnvHeadSelectionAuthorityCoordinatesFromResolution projects
 // durable coordinates from one exact durable resolution. It never accepts or
 // recreates the service-private live authority use.
@@ -834,6 +938,8 @@ func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) Kind() ProjectTypeE
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct
 	case HostRoutedOperatorRequestAuthorityCoordinates:
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest
+	case CompatibleSuccessorPolicyAuthorityCoordinates:
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesCompatibleSuccessorPolicy
 	default:
 		return 0
 	}
@@ -886,6 +992,14 @@ func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) ExactEqual(
 		return rightOK &&
 			left.OperatorRequest() == right.OperatorRequest() &&
 			left.ProjectBindingDigest() == right.ProjectBindingDigest() &&
+			left.AuthorityResolutionRef() == right.AuthorityResolutionRef() &&
+			left.AuthorityResolutionDigest() == right.AuthorityResolutionDigest()
+	}
+	if left, ok := value.CompatibleSuccessorPolicy(); ok {
+		right, rightOK := other.CompatibleSuccessorPolicy()
+		return rightOK &&
+			left.ProjectBindingDigest() == right.ProjectBindingDigest() &&
+			left.PolicyDigest() == right.PolicyDigest() &&
 			left.AuthorityResolutionRef() == right.AuthorityResolutionRef() &&
 			left.AuthorityResolutionDigest() == right.AuthorityResolutionDigest()
 	}
@@ -943,6 +1057,14 @@ func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) HostRoutedOperatorR
 	return coordinates, ok
 }
 
+func (value ProjectTypeEnvHeadSelectionAuthorityCoordinates) CompatibleSuccessorPolicy() (
+	CompatibleSuccessorPolicyAuthorityCoordinates,
+	bool,
+) {
+	coordinates, ok := value.variant.(CompatibleSuccessorPolicyAuthorityCoordinates)
+	return coordinates, ok
+}
+
 func encodeAuthorityCoordinates(
 	writer *canonicalWriter,
 	value ProjectTypeEnvHeadSelectionAuthorityCoordinates,
@@ -957,6 +1079,17 @@ func encodeAuthorityCoordinates(
 		writer.writeString(coordinates.request.PayloadDigest())
 		writer.writeString(coordinates.request.Digest())
 		writer.writeString(coordinates.projectBindingDigest.String())
+		writer.writeString(coordinates.resolutionRef.String())
+		writer.writeString(coordinates.resolutionDigest.String())
+		return
+	}
+	if coordinates, ok := value.CompatibleSuccessorPolicy(); ok {
+		writer.writeString(string(value.common.contentRef.Kind()))
+		writer.writeString(value.common.contentRef.String())
+		writer.writeString(value.common.contentDigest.String())
+		writer.writeBytes(value.common.executionSubject.CanonicalJSON())
+		writer.writeString(coordinates.projectBindingDigest.String())
+		writer.writeString(coordinates.policyDigest.String())
 		writer.writeString(coordinates.resolutionRef.String())
 		writer.writeString(coordinates.resolutionDigest.String())
 		return
@@ -1000,6 +1133,9 @@ func decodeAuthorityCoordinates(
 	}
 	if kind == ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest {
 		return decodeHostRoutedOperatorRequestAuthorityCoordinates(reader)
+	}
+	if kind == ProjectTypeEnvHeadSelectionAuthorityCoordinatesCompatibleSuccessorPolicy {
+		return decodeCompatibleSuccessorPolicyAuthorityCoordinates(reader)
 	}
 	common, err := decodeLegacyAuthorityCommon(reader)
 	if err != nil {
@@ -1176,6 +1312,86 @@ func decodeHostRoutedOperatorRequestAuthorityCoordinates(
 			ExecutionSubject:     subject,
 			OperatorRequest:      request,
 			ProjectBindingDigest: projectBindingDigest,
+			ResolutionRef:        resolutionRef,
+			ResolutionDigest:     resolutionDigest,
+		},
+	)
+}
+
+func decodeCompatibleSuccessorPolicyAuthorityCoordinates(
+	reader *canonicalReader,
+) (ProjectTypeEnvHeadSelectionAuthorityCoordinates, error) {
+	contentKind, err := reader.readString("authorization-content ref kind")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentText, err := reader.readString("authorization-content ref")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentRef, err := parseDescriptionRef(
+		authority.DescriptionRefKind(contentKind),
+		contentText,
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	contentDigest, err := readAuthorityDigest(reader, "authorization-content digest")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	subjectBytes, err := reader.readBytes("head-selection execution subject")
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	subject, err :=
+		projecttypeenvselectionauthority.DecodeProjectTypeEnvHeadSelectionPermissionSubject(
+			subjectBytes,
+		)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	projectBindingDigest, err := readAuthorityDigest(
+		reader,
+		"compatible-successor project binding digest",
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	policyDigest, err := readAuthorityDigest(
+		reader,
+		"compatible-successor policy digest",
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	resolutionText, err := reader.readString(
+		"compatible-successor authority resolution ref",
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	resolutionRef, err :=
+		projecttypeenvselectionauthority.ParseProjectTypeEnvHeadSelectionAuthorityResolutionRef(
+			resolutionText,
+		)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	resolutionDigest, err := readAuthorityDigest(
+		reader,
+		"compatible-successor authority resolution digest",
+	)
+	if err != nil {
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinates{}, err
+	}
+	return NewCompatibleSuccessorPolicyAuthorityCoordinates(
+		CompatibleSuccessorPolicyAuthorityCoordinatesInput{
+			ContentRef:           contentRef,
+			ContentDigest:        contentDigest,
+			ExecutionSubject:     subject,
+			ProjectBindingDigest: projectBindingDigest,
+			PolicyDigest:         policyDigest,
 			ResolutionRef:        resolutionRef,
 			ResolutionDigest:     resolutionDigest,
 		},
@@ -1398,6 +1614,8 @@ func parseAuthorityCoordinatesKind(
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesVerifiedSpeechAct, nil
 	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest.String():
 		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesHostRoutedOperatorRequest, nil
+	case ProjectTypeEnvHeadSelectionAuthorityCoordinatesCompatibleSuccessorPolicy.String():
+		return ProjectTypeEnvHeadSelectionAuthorityCoordinatesCompatibleSuccessorPolicy, nil
 	default:
 		return 0, fmt.Errorf("head-selection authority coordinates kind is invalid")
 	}

@@ -38,19 +38,40 @@ func (j *JSTSLang) SymbolLanguage(path string) string {
 func (j *JSTSLang) ExtractSymbolSnapshots(
 	source AdmittedSource,
 ) ([]SymbolSnapshot, error) {
+	return j.ExtractSymbolSnapshotsContext(gocontext.Background(), source)
+}
+
+func (j *JSTSLang) ExtractSymbolSnapshotsContext(
+	ctx gocontext.Context,
+	source AdmittedSource,
+) ([]SymbolSnapshot, error) {
 	relPath := source.Path().String()
 	lang := tsGrammarForExt(normalizedExtension(relPath))
 	if lang == nil {
 		return nil, nil
 	}
 	content := source.bytes()
-	return extractTSSymbolSnapshotsFromContent(relPath, content, lang)
+	return extractTSSymbolSnapshotsFromContentContext(ctx, relPath, content, lang)
 }
 
 func extractTSSymbolSnapshotsFromContent(relPath string, content []byte, lang *sitter.Language) ([]SymbolSnapshot, error) {
+	return extractTSSymbolSnapshotsFromContentContext(
+		gocontext.Background(),
+		relPath,
+		content,
+		lang,
+	)
+}
+
+func extractTSSymbolSnapshotsFromContentContext(
+	ctx gocontext.Context,
+	relPath string,
+	content []byte,
+	lang *sitter.Language,
+) ([]SymbolSnapshot, error) {
 	parser := sitter.NewParser()
 	parser.SetLanguage(lang)
-	tree, err := parser.ParseCtx(gocontext.Background(), nil, content)
+	tree, err := parser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", relPath, err)
 	}

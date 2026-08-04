@@ -16,7 +16,7 @@ edits there flow to every haft user on next `haft init`.
 
 ## Haft Architecture Notes (Maintainer-Only)
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
 
 Haft is a **governance substrate** consumed via three surfaces sharing one
 `.haft/` artifact graph: skills + slash commands in the host AI coding agent
@@ -53,8 +53,12 @@ and are not approval receipts.
 
 The active v9 source-native query contract is
 [Source-native FPF Query with independent skills and reliance-gated memory](.haft/decisions/dec-20260716-318cdec5.md);
-the active typed-memory contract is
-[V1 algebraic typed-memory core with bounded source compilation](.haft/decisions/dec-20260716-11f33e36.md).
+the active typed-memory contract is carried by `.haft/specs/software-system.md`,
+`.haft/specs/target-system.md`, and `.haft/specs/term-map.md`. Its current
+successor-activation policy is
+[Automatically activate every proven-compatible ProjectTypeEnv successor without operator interaction](.haft/decisions/dec-20260804-ebf1a001.md).
+[V1 algebraic typed-memory core with bounded source compilation](.haft/decisions/dec-20260716-11f33e36.md)
+is retained as superseded design history.
 `README.md` describes the public surface. Historical `.context` plans are not
 current product authority.
 
@@ -63,7 +67,7 @@ current product authority.
 <!-- haft:start -->
 # Haft Project Discipline
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:748e5c014551af025c2b340b6d172f66229a257e1b366c647b1d6a0781258b5c -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
 
 This section is installed and maintained by `haft init`. Edits inside its Haft
 markers are overwritten on re-init; project-specific rules belong outside the
@@ -229,9 +233,18 @@ the same idempotency key. Never invent success after `rejected` or
 `commit_outcome_unknown`.
 
 `haft_onboard` is the normal setup surface. `status` reports readable
-`needs_init`, `needs_profile`, `profile_review_ready`, or `ready` states.
+`needs_init`, `needs_profile`, `profile_review_ready`,
+`profile_change_review_ready`, or `ready` states.
 `haft init` installs default project memory automatically; never ask the
 operator to enable, defer, select, or understand an internal memory schema.
+For an existing project, every exact bundled ProjectTypeEnv successor that is
+proven compatible with the transaction-current head, graph, profile, installed
+projection profiles, assertions, and runtime is activated automatically under
+`compatible_successor_policy`. Do not ask the operator, create a human review,
+or fabricate `host_routed_operator_request` provenance for that transition.
+An incompatible, incomplete, stale, or underdetermined successor leaves the
+head unchanged and returns an exact diagnostic; rollback or explicit selection
+outside the compatible-successor predicate remains a separate operator effect.
 `profile_prepare` may materialize or reuse only a non-binding review carrier;
 it does not apply it. During `haft init`, Haft Core may admit an initial
 `detector_default` profile only from a complete, non-truncated, supported
@@ -241,10 +254,18 @@ reviewed bases require a direct, unambiguous operator choice before
 `haft onboard profile apply`. That request may supersede only a current
 `detector_default` profile; status reports
 `profile_override_eligible`, and successful application changes the origin to
-`host_routed_operator_request`. Further operator-mediated changes and profiles
-with legacy `explicit_operator` or `legacy_unknown` provenance remain a
-separate profile-change contract. After a required restart,
-re-read onboarding status and rely on readiness only when it returns `ready`.
+`host_routed_operator_request`. `TargetSystemSpec` is Required for every
+declared realization scope; an optional `entity_ref` supports exact
+EntityOfConcern memory and traceability but never gates spec applicability.
+For any declared profile origin, the separate `profile_change_prepare`
+contract may prepare one predecessor-pinned existing-scope `entity_ref`
+successor only when changing that relation is itself current, never as
+spec-lifecycle recovery. Apply the exact selected review through
+`haft onboard profile change apply`; CAS rejects a stale predecessor and the
+effect preserves every other profile relation. After a required restart,
+re-read onboarding status. Its `ready` means only canonical profile plus
+structured project memory and does not establish specification applicability,
+health, lifecycle, or release readiness.
 
 Low-level memory validation and admission interfaces remain available for exact
 diagnostic or implementation work; they are not the task-level entity UX.
@@ -265,10 +286,12 @@ The host records `host_routed_operator_request`; it does not claim independent
 proof of `U.SpeechAct`. MCP decision binding remains fail-closed with
 `operator_confirmation_required` until a verifiable host receipt exists.
 
-Project-profile application and later changes to the project's memory model are separate effects,
-but use the same direct-request criterion. Do not infer authority for one effect
-from another. Automatic singleton profile bootstrap remains a separate system
-policy recorded as `detector_default`. Project-local `.haft/config.yaml` is not
+Project-profile application, incompatible project-memory model selection, and
+rollback are separate effects that use the direct-request criterion. Do not
+infer authority for one effect from another. Automatic singleton profile
+bootstrap and automatic compatible ProjectTypeEnv successor activation are
+separate system policies recorded respectively as `detector_default` and
+`compatible_successor_policy`. Project-local `.haft/config.yaml` is not
 an authority-policy carrier: current runtime does not read it and fresh init
 does not create it.
 

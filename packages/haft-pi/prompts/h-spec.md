@@ -29,6 +29,24 @@ work may continue only when it does not rely on profile applicability. Never
 infer or auto-admit a profile, select `software` for convenience, or invent
 lifecycle state.
 
+When one declared-profile member remains underdetermined, retrieve the
+profile-independent draft grammar with
+`haft_spec_section(action="draft_contract")`, then validate every authored
+draft and active carrier with `haft_query(action="spec_validate")`. If MCP is
+unavailable, use `haft spec draft-contract --json` and
+`haft spec validate --json`. This validation does not determine applicability,
+activate or approve sections, create evidence, admit stronger use, mutate a
+carrier, or establish FPF source currentness. Keep `haft spec check` for the
+separate profile-applicable health question.
+
+`TargetSystemSpec` is `Required` for every declared realization scope even
+when the canonical profile has `entity_reference: none`. That optional
+relation supports exact EntityOfConcern memory and traceability; it is not an
+applicability gate. Do not prepare a profile change merely to continue spec
+lifecycle. Treat a remaining `missing_basis=admitted_target_system_relation`
+response as stale installed/runtime behavior and reconnect or rebuild before
+retrying the unchanged read-only request.
+
 `TargetSystemSpec` and `SoftwareSystemSpec` are Haft local-practice carrier
 labels, not FPF Core kinds by label alone. A SoftwareSystemSpec describes the
 idealized software contract, not the team, coding agents, delivery workflow,

@@ -9,6 +9,7 @@
 .haft/decisions/*
 !.haft/decisions/dec-20260716-318cdec5.md
 !.haft/decisions/dec-20260716-11f33e36.md
+!.haft/decisions/dec-20260804-ebf1a001.md
 .haft/evidence/
 .haft/method-runs/
 .haft/methods/

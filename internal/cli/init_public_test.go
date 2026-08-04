@@ -1148,6 +1148,132 @@ func TestPublicInitCodexReplacesKnownPortableHaftMCPAndPreservesForeignTOML(
 	}
 }
 
+func TestPublicInitCodexReplacesPublishedV8HaftMCPAndPreservesForeignTOML(
+	t *testing.T,
+) {
+	projectRoot := t.TempDir()
+	homeRoot := t.TempDir()
+	restoreDirectory := changeInitTestDirectory(t, projectRoot)
+	defer restoreDirectory()
+	restoreFlags := captureInitHostFlagState()
+	defer restoreFlags.apply()
+	clearInitHostFlags()
+	initCodex = true
+	t.Setenv("HOME", homeRoot)
+
+	configPath := filepath.Join(projectRoot, ".codex", "config.toml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		t.Fatalf("create Codex config root: %v", err)
+	}
+	operatorPrefix := []byte("approval_policy = \"never\"\n\n")
+	legacy := []byte(`[mcp_servers.haft]
+command = "haft"
+args = ["serve"]
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.haft.env]
+HAFT_PROJECT_ROOT = "."
+`)
+	operatorSuffix := []byte(
+		"\n[mcp_servers.haft.tools.haft_query]\n" +
+			"approval_mode = \"approve\"\n\n" +
+			"[mcp_servers.private]\n" +
+			"command = \"private-server\"\n",
+	)
+	fixture := append([]byte{}, operatorPrefix...)
+	fixture = append(fixture, legacy...)
+	fixture = append(fixture, operatorSuffix...)
+	if err := os.WriteFile(configPath, fixture, 0o640); err != nil {
+		t.Fatalf("write published v8 Codex config: %v", err)
+	}
+
+	cmd := newPublicInitTestCommand()
+	var codex bool
+	cmd.Flags().BoolVar(&codex, "codex", false, "")
+	if err := cmd.Flags().Set("codex", "true"); err != nil {
+		t.Fatalf("set Codex flag: %v", err)
+	}
+	if err := runPublicInit(cmd, nil); err != nil {
+		t.Fatalf("replace published v8 Codex config: %v", err)
+	}
+	applied, err := os.ReadFile(configPath)
+	if err != nil {
+		t.Fatalf("read migrated Codex config: %v", err)
+	}
+	config, err := currentPublicProjectConfig(projectRoot)
+	if err != nil {
+		t.Fatalf("read applied project identity: %v", err)
+	}
+	expectedManaged, err := currentCodexTOMLFragmentContent(
+		currentCoherentHostContext{
+			projectRoot: projectRoot,
+			projectID:   config.ID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("render expected Codex Haft tables: %v", err)
+	}
+	expected := append([]byte{}, operatorPrefix...)
+	expected = append(expected, expectedManaged...)
+	expected = append(expected, operatorSuffix...)
+	info, err := os.Stat(configPath)
+	if err != nil {
+		t.Fatalf("stat migrated Codex config: %v", err)
+	}
+	if !bytes.Equal(applied, expected) || info.Mode().Perm() != 0o640 {
+		t.Fatalf(
+			"published v8 Codex migration mode=%o\nwant:\n%q\ngot:\n%q",
+			info.Mode().Perm(),
+			expected,
+			applied,
+		)
+	}
+}
+
+func TestPublicLegacyPublishedV8CodexHaftTablesRequireExactBinaryShape(
+	t *testing.T,
+) {
+	valid := []byte(`[mcp_servers.haft]
+command = "/usr/local/bin/haft"
+args = ["serve"]
+startup_timeout_sec = 10
+tool_timeout_sec = 60
+
+[mcp_servers.haft.env]
+HAFT_PROJECT_ROOT = "."
+`)
+	if !isPublicLegacyPublishedV8CodexHaftTables(valid) {
+		t.Fatal("exact published v8 Codex Haft tables were rejected")
+	}
+	for name, nearMiss := range map[string][]byte{
+		"operator wrapper": bytes.Replace(
+			valid,
+			[]byte(`/usr/local/bin/haft`),
+			[]byte(`/usr/local/bin/operator-wrapper`),
+			1,
+		),
+		"different project root": bytes.Replace(
+			valid,
+			[]byte(`HAFT_PROJECT_ROOT = "."`),
+			[]byte(`HAFT_PROJECT_ROOT = ".."`),
+			1,
+		),
+		"extra authority field": bytes.Replace(
+			valid,
+			[]byte("tool_timeout_sec = 60\n"),
+			[]byte("tool_timeout_sec = 60\ndefault_tools_approval_mode = \"prompt\"\n"),
+			1,
+		),
+	} {
+		t.Run(name, func(t *testing.T) {
+			if isPublicLegacyPublishedV8CodexHaftTables(nearMiss) {
+				t.Fatal("near-miss published v8 shape was accepted")
+			}
+		})
+	}
+}
+
 func TestPublicInitCodexRejectsNearMissPortableHaftMCPBeforeAnyWrite(
 	t *testing.T,
 ) {

@@ -63,7 +63,9 @@ recovery routes rather than silently ignoring it.
 If the MCP action is unavailable, use `haft spec next --json` or
 `haft spec status --json` as the read-only projection of the same lifecycle
 contract and report that fallback. Do not infer lifecycle state from carrier
-grep or Markdown status fields.
+grep or Markdown status fields. In status output, keep `workflow` and `health`
+separate: workflow `ready` means no next onboarding phase, not a clean health
+check, current baseline, or release readiness.
 
 ### Missing canonical profile
 
@@ -84,6 +86,25 @@ Unrelated draft or clarification work may continue only when it does not rely
 on profile applicability. Never infer or auto-admit a profile, select
 `software` for convenience, or invent a SpecSection lifecycle state.
 
+### TargetSystemSpec relation boundary
+
+For every declared realization scope, `TargetSystemSpec` is `Required` even
+when the profile carries `entity_reference: none`. The optional
+`entity_reference` supports exact EntityOfConcern memory, traceability, and
+stronger identity-bearing use; it is not a specification-applicability gate.
+Do not prepare or apply a profile change merely to continue TargetSystemSpec
+lifecycle.
+
+If a current lifecycle response still reports
+`missing_basis=admitted_target_system_relation`, treat the connected runtime
+or installed skill projection as stale. Rebuild or reconnect the exact
+candidate, then retry the unchanged read-only request. Do not ask the operator
+to choose a target relation as recovery for this lifecycle condition.
+
+Changing or replacing an existing `entity_reference` remains a separate
+profile effect only when that relation itself is the current question. It does
+not authorize a SpecSection approve, rebaseline, or reopen act.
+
 Use `state`, current `action`, `object`, `carrier`, section identity,
 `workflow_intent`, and `human_gate` as returned. A lifecycle action belongs to
 this spec state machine; it is not a universal project phase.
@@ -98,7 +119,18 @@ For `draft` or `clarify`:
    points, build/test configuration, decisions, and relevant docs.
 3. Ask at most 1-3 questions only for values the repository cannot establish.
 4. Edit the fenced `yaml spec-section` block and keep uncertainty explicit.
-5. Run `haft spec check`, then call lifecycle again.
+5. Run `haft spec validate` to check authored draft and active carriers without
+   profile-applicability filtering, then call lifecycle again. Use
+   `haft_query(action="spec_validate")` for the same read-only structured
+   report through MCP.
+
+`spec validate` composes L0/L1/L1.5 structural checks with advisory semantic
+review. It keeps `no active sections` as a separate lifecycle observation, not
+as a reason to skip draft semantics. It does not determine applicability,
+activate or approve a section, create evidence, admit stronger use, mutate a
+carrier, or establish compatibility with a newer FPF source revision. Use
+`haft spec check` separately when the current question is profile-applicable
+spec health rather than draft-carrier validation.
 
 Do not maintain a second schema template in this skill.
 

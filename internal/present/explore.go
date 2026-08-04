@@ -16,6 +16,7 @@ import (
 func ExploreResponse(res codeintel.ExploreResult, seedName, lang string) string {
 	var b strings.Builder
 	renderIndexState(&b, res.Index)
+	renderIndexCoordination(&b, res.IndexRefresh)
 
 	switch seedResolutionKind(res.SeedResolution) {
 	case "candidate_set":

@@ -51,29 +51,29 @@ func TestEnsureIndex_RebuildsOnStaleness(t *testing.T) {
 	}
 
 	write("package a\nfunc A() { B() }\nfunc B() {}\n")
-	built, err := svc.EnsureIndex(ctx, root)
+	result, err := svc.EnsureIndex(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !built {
+	if !result.Rebuilt() {
 		t.Fatal("first EnsureIndex must build (empty index)")
 	}
 
-	built, err = svc.EnsureIndex(ctx, root)
+	result, err = svc.EnsureIndex(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built {
+	if result.Rebuilt() {
 		t.Fatal("unchanged tree must NOT rebuild")
 	}
 
 	// Source change (different size) → detected stale → rebuilt.
 	write("package a\nfunc A() { B(); C() }\nfunc B() {}\nfunc C() {}\n")
-	built, err = svc.EnsureIndex(ctx, root)
+	result, err = svc.EnsureIndex(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !built {
+	if !result.Rebuilt() {
 		t.Fatal("a source change must trigger a rebuild")
 	}
 }

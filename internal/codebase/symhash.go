@@ -52,12 +52,24 @@ func extractLegacySymbolSnapshots(
 	source AdmittedSource,
 	langInfo *languageInfo,
 ) ([]SymbolSnapshot, error) {
+	return extractLegacySymbolSnapshotsContext(
+		gocontext.Background(),
+		source,
+		langInfo,
+	)
+}
+
+func extractLegacySymbolSnapshotsContext(
+	ctx gocontext.Context,
+	source AdmittedSource,
+	langInfo *languageInfo,
+) ([]SymbolSnapshot, error) {
 	relPath := source.Path().String()
 	content := source.bytes()
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(langInfo.lang)
-	tree, err := parser.ParseCtx(gocontext.Background(), nil, content)
+	tree, err := parser.ParseCtx(ctx, nil, content)
 	if err != nil {
 		return nil, fmt.Errorf("parse %s: %w", relPath, err)
 	}

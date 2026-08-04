@@ -89,6 +89,32 @@ func (canonicalProfileDeclarationRuntime) declare(
 	return normalizeProfileOnboardResult(result)
 }
 
+type canonicalProfileChangeRuntime struct{}
+
+func (canonicalProfileChangeRuntime) declare(
+	ctx context.Context,
+	database *sql.DB,
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+	policy profileonboarding.ProfileDeclarationPolicy,
+	revalidate profileLedgerRevalidation,
+) (profileOnboardOutcome, error) {
+	result, err := profileonboarding.RunProfileEntityRelationChange(
+		ctx,
+		database,
+		projectRoot,
+		input,
+		policy,
+		func(revalidationContext context.Context) error {
+			return revalidate(revalidationContext)
+		},
+	)
+	if err != nil {
+		return profileOnboardOutcome{}, err
+	}
+	return normalizeProfileOnboardResult(result)
+}
+
 func runProfileDeclare(cmd *cobra.Command, _ []string) error {
 	return runProfileDeclarationCommand(
 		cmd,
@@ -172,6 +198,61 @@ func executeReviewedProfileDeclaration(
 			projectRoot,
 			inputPath,
 		)
+		response.AuthorityMode = policy.Mode()
+	}
+	if runErr != nil {
+		return response, runErr
+	}
+	return response, profileOnboardOutcomeError(response)
+}
+
+func executeReviewedProfileChange(
+	ctx context.Context,
+	projectRoot string,
+) (profileOnboardResponse, error) {
+	inputPath := profileChangeReviewPath(projectRoot)
+	content, err := readProfileChangeInput(inputPath)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"read profile-change review: %w",
+			err,
+		)
+	}
+	suggestion, err := profiledetector.Inspect(projectRoot)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"inspect current profile-change evidence: %w",
+			err,
+		)
+	}
+	input, err := profileonboarding.DecodeProfileOnboardingWorkInput(
+		content,
+		suggestion,
+	)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"profile-change review no longer matches current repository evidence: %w; prepare a fresh review after deliberately removing or archiving the stale carrier",
+			err,
+		)
+	}
+	if _, ok := input.ProfileChangeBasis(); !ok {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"profile-change review is not a predecessor-pinned relation change",
+		)
+	}
+	policy, err := hostRoutedProfileChangePolicy(projectRoot, input)
+	if err != nil {
+		return profileOnboardResponse{}, err
+	}
+	response, runErr := executeProfileDeclaration(
+		ctx,
+		projectRoot,
+		input,
+		policy,
+		canonicalProfileChangeRuntime{},
+	)
+	if response.Kind != "" {
+		response.ReviewInput = profileChangeReviewRelativePath()
 		response.AuthorityMode = policy.Mode()
 	}
 	if runErr != nil {
@@ -264,6 +345,21 @@ func hostRoutedProfileDeclarationPolicy(
 	return profileonboarding.NewProfileDeclarationPolicy(request)
 }
 
+func hostRoutedProfileChangePolicy(
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+) (profileonboarding.ProfileDeclarationPolicy, error) {
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileChange,
+		"project-profile:"+filepath.Clean(projectRoot),
+		input.CanonicalJSON(),
+	)
+	if err != nil {
+		return profileonboarding.ProfileDeclarationPolicy{}, err
+	}
+	return profileonboarding.NewProfileChangePolicy(request)
+}
+
 func resolveProfileDeclarationInputPath(
 	projectRoot string,
 	requested string,
@@ -285,6 +381,20 @@ func readProfileDeclarationInput(path string) ([]byte, error) {
 	if !present {
 		return nil, fmt.Errorf(
 			"project-profile review candidate %s is absent; run `haft profile propose` first",
+			path,
+		)
+	}
+	return content, nil
+}
+
+func readProfileChangeInput(path string) ([]byte, error) {
+	content, present, err := readOptionalRegularProfileReview(path)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, fmt.Errorf(
+			"profile-change review %s is absent; prepare it with haft_onboard action=profile_change_prepare after selecting the exact scope_id and entity_ref",
 			path,
 		)
 	}

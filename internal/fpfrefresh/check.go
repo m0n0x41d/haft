@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/m0n0x41d/haft/internal/fpf"
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
@@ -187,7 +188,7 @@ func CheckCandidate(
 		return CandidateCheckResult{}, err
 	}
 	if shouldVerifyPredecessorProjection(existingLock, request.ToolRevision) {
-		if err := verifyGitSourceDerivedProjection(
+		if _, err := verifyGitSourceDerivedProjection(
 			predecessorDatabasePath,
 			predecessorSource,
 		); err != nil {
@@ -278,7 +279,7 @@ func CheckCandidate(
 		candidateSource.CommitSHA(),
 		additionalDeltas,
 	) {
-		if _, err := VerifyCandidateQueryContract(predecessorDatabasePath); err != nil {
+		if err := VerifySourceQueryRuntime(predecessorDatabasePath); err != nil {
 			return CandidateCheckResult{}, err
 		}
 		report, err := BuildCompatibilityReport(CompatibilityReportInput{
@@ -357,8 +358,50 @@ func CheckCandidate(
 		return CandidateCheckResult{}, cleanupCandidateArtifact(artifact, timingErr)
 	}
 	timings = append(timings, tokenGateTiming)
-	var tokenGateDiagnostics []Diagnostic
+	reviewDiagnostics, diagnosticErr := candidateSourceGrammarReviewDiagnostics(
+		candidateSource.CommitSHA(),
+		artifact.sourceGrammarDiagnostics(),
+	)
+	if diagnosticErr != nil {
+		return CandidateCheckResult{}, cleanupCandidateArtifact(
+			artifact,
+			diagnosticErr,
+		)
+	}
+	structureDiagnostic, collapsed, diagnosticErr := candidateSourceStructureDiagnostic(
+		predecessorLock.Coordinates.SourceUnitCount,
+		artifact.IntegrationLock().Coordinates.SourceUnitCount,
+		candidateSource.CommitSHA(),
+	)
+	if diagnosticErr != nil {
+		return CandidateCheckResult{}, cleanupCandidateArtifact(
+			artifact,
+			diagnosticErr,
+		)
+	}
+	if collapsed {
+		reviewDiagnostics = append(reviewDiagnostics, structureDiagnostic)
+	}
+	querySmokeErr := artifact.querySmokeError()
+	if querySmokeErr != nil {
+		diagnostic, diagnosticErr := NewDiagnostic(
+			DiagnosticQueryContractRegression,
+			"candidate "+candidateSource.CommitSHA()+" source-specific Query expectations",
+			sanitizeCandidateDiagnostic(querySmokeErr.Error()),
+			"internal/fpfrefresh/query_verify.go",
+			"go test -count=1 ./internal/fpfrefresh -run TestVerifyCandidateQueryContractAgainstCurrentProductionSource",
+		)
+		if diagnosticErr != nil {
+			return CandidateCheckResult{}, cleanupCandidateArtifact(
+				artifact,
+				errors.Join(querySmokeErr, diagnosticErr),
+			)
+		}
+		reviewDiagnostics = append(reviewDiagnostics, diagnostic)
+	}
 	if tokenGateErr != nil {
+		// Query behavior is source-dependent. Preserve exact drift as review
+		// evidence without discarding an otherwise complete verified candidate.
 		diagnostic, diagnosticErr := NewDiagnostic(
 			DiagnosticTokenGateFailed,
 			"candidate "+candidateSource.CommitSHA()+" query/token acceptance",
@@ -372,7 +415,7 @@ func CheckCandidate(
 				errors.Join(tokenGateErr, diagnosticErr),
 			)
 		}
-		tokenGateDiagnostics = []Diagnostic{diagnostic}
+		reviewDiagnostics = append(reviewDiagnostics, diagnostic)
 	}
 
 	comparisonStarted := time.Now()
@@ -384,7 +427,7 @@ func CheckCandidate(
 		CandidateDatabasePath:        artifact.DatabasePath(),
 		LatestLocalPracticeCandidate: request.Layout.LatestLocalPracticeCandidate,
 		AdditionalDeltas:             additionalDeltas,
-		AdditionalDiagnostics:        tokenGateDiagnostics,
+		AdditionalDiagnostics:        reviewDiagnostics,
 		// Measured timings live in the execution envelope returned above. They
 		// are intentionally excluded from canonical compatibility bytes so
 		// identical source/artifact inputs produce byte-identical reports.
@@ -400,19 +443,6 @@ func CheckCandidate(
 	timings = append(timings, comparisonTiming)
 	if err != nil {
 		return CandidateCheckResult{}, cleanupCandidateArtifact(artifact, err)
-	}
-	if tokenGateErr != nil {
-		result := CandidateCheckResult{
-			Report:                         report,
-			PredecessorSource:              predecessorSource,
-			CandidateSource:                candidateSource,
-			ExecutionTimings:               timings,
-			checkedPredecessorLockIdentity: predecessorLockIdentity,
-		}
-		return result, cleanupCandidateArtifact(
-			artifact,
-			verifyPredecessorStillCurrent(),
-		)
 	}
 	result := CandidateCheckResult{
 		Report:                         report,
@@ -778,7 +808,7 @@ func classifyCandidateBuildDiagnostic(err error) DiagnosticCode {
 	case strings.Contains(message, "source_publication_malformed"):
 		return DiagnosticSourcePublicationMalformed
 	case strings.Contains(message, "adapter_grammar_unsupported"):
-		return DiagnosticAdapterGrammarUnsupported
+		return DiagnosticCandidateVerificationFailed
 	case strings.Contains(message, "source_reference_unresolved"):
 		return DiagnosticSourceReferenceUnresolved
 	case strings.Contains(message, "TypeEnv") &&
@@ -786,17 +816,79 @@ func classifyCandidateBuildDiagnostic(err error) DiagnosticCode {
 		return DiagnosticTypeEnvSemanticRejection
 	case strings.Contains(message, "compiler") &&
 		strings.Contains(message, "unsupported"):
-		return DiagnosticTypeEnvCompilerGap
+		return DiagnosticCandidateVerificationFailed
 	case strings.Contains(message, "compiler version") &&
 		strings.Contains(message, "neither current") &&
 		strings.Contains(message, "known predecessor"):
-		return DiagnosticTypeEnvCompilerGap
-	case strings.Contains(message, "query_contract_regression") ||
-		strings.Contains(message, "verify candidate Query contract"):
-		return DiagnosticQueryContractRegression
+		return DiagnosticCandidateVerificationFailed
 	default:
 		return DiagnosticCandidateVerificationFailed
 	}
+}
+
+func candidateSourceGrammarReviewDiagnostics(
+	candidateRevision string,
+	observed []fpf.SourceGrammarDiagnostic,
+) ([]Diagnostic, error) {
+	diagnostics := make([]Diagnostic, 0, len(observed))
+	for _, sourceDiagnostic := range observed {
+		subject := "candidate " + candidateRevision +
+			" practical-use card " + sourceDiagnostic.SourceID
+		sourceRef := fmt.Sprintf(
+			"%s:%d-%d",
+			sourceDiagnostic.SourcePath,
+			sourceDiagnostic.StartLine,
+			sourceDiagnostic.EndLine,
+		)
+		code := DiagnosticSourceProjectionDegraded
+		if sourceDiagnostic.Class == fpf.SourceGrammarUnsupported {
+			code = DiagnosticAdapterGrammarUnsupported
+		}
+		diagnostic, err := NewDiagnostic(
+			code,
+			subject,
+			sanitizeCandidateDiagnostic(sourceDiagnostic.Error()),
+			sourceRef,
+			"go test -count=1 ./internal/fpf -run 'PracticalUse|SourceUseCue|SourceGrammar|ProductionGrammar'",
+		)
+		if err != nil {
+			return nil, err
+		}
+		diagnostics = append(diagnostics, diagnostic)
+	}
+	return diagnostics, nil
+}
+
+func candidateSourceStructureDiagnostic(
+	predecessorCount int,
+	candidateCount int,
+	candidateRevision string,
+) (Diagnostic, bool, error) {
+	if predecessorCount <= 0 || candidateCount <= 0 {
+		return Diagnostic{}, false, fmt.Errorf(
+			"source structure comparison requires positive unit counts",
+		)
+	}
+	predecessor := uint64(predecessorCount)
+	candidate := uint64(candidateCount)
+	if candidate*2 >= predecessor {
+		return Diagnostic{}, false, nil
+	}
+	diagnostic, err := NewDiagnostic(
+		DiagnosticSourceStructureCollapse,
+		"candidate "+candidateRevision+" source-unit projection",
+		fmt.Sprintf(
+			"source-unit count collapsed from %d to %d; candidate retains less than 50%% of the previous structurally verified projection",
+			predecessorCount,
+			candidateCount,
+		),
+		candidateRevision+":{Readme.md,FPF-Spec.md}",
+		"go run ./cmd/fpf-refresh check --candidate-ref "+candidateRevision+" --no-fetch",
+	)
+	if err != nil {
+		return Diagnostic{}, false, err
+	}
+	return diagnostic, true, nil
 }
 
 func sanitizeCandidateDiagnostic(message string) string {

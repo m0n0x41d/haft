@@ -122,6 +122,11 @@ type StatusData struct {
 	// nothing). See dec-20260526-9fdd33ed (PRIME of sol-20260526-744c6381).
 	Drift []DriftReport
 
+	// DriftProjection states whether Drift was derived from one complete current
+	// symbol-index basis. Partial/unavailable results remain useful attention
+	// surfaces but never support a known-absence or release-readiness claim.
+	DriftProjection DriftProjection
+
 	// DriftEvents groups the full current drift report by changed
 	// target/trigger/materiality so compact status can show unique events and
 	// fanout without multiplying one shared change across many decisions.
@@ -139,6 +144,11 @@ type StatusData struct {
 	// explicitly out-of-spec. It is populated by project-aware shells that can
 	// read the current ProjectSpecificationSet.
 	SpecBindingDebt SpecBindingDebtReport
+}
+
+type StatusFetchOptions struct {
+	ProjectRoot       string
+	DriftSymbolCorpus *DriftSymbolCorpus
 }
 
 type ProblemHygieneItem struct {
@@ -184,6 +194,20 @@ func (summary SpecBindingDebtSummary) Total() int {
 // and Drift stays nil. The production MCP path (cli/serve.go status case)
 // passes filepath.Dir(haftDir).
 func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter string, projectRoot string) (StatusData, error) {
+	return FetchStatusDataWithOptions(ctx, store, contextFilter, StatusFetchOptions{
+		ProjectRoot: projectRoot,
+	})
+}
+
+// FetchStatusDataWithOptions gathers status data using an optional exact
+// request-local drift corpus supplied by the project-aware shell.
+func FetchStatusDataWithOptions(
+	ctx context.Context,
+	store ArtifactStore,
+	contextFilter string,
+	options StatusFetchOptions,
+) (StatusData, error) {
+	projectRoot := strings.TrimSpace(options.ProjectRoot)
 	var data StatusData
 	data.InProgressBy = make(map[string]string)
 	data.AddressedBy = make(map[string]string)
@@ -303,7 +327,9 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	// swallowed so /h-status remains responsive even if drift compute
 	// fails (drift is informational, not gating).
 	if strings.TrimSpace(projectRoot) != "" {
-		if reports, err := CheckDrift(ctx, store, projectRoot); err == nil {
+		data.DriftProjection = options.DriftSymbolCorpus.Projection()
+		if reports, err := CheckDriftWithSymbolCorpus(ctx, store, projectRoot, options.DriftSymbolCorpus); err == nil {
+			data.DriftProjection = options.DriftSymbolCorpus.Projection()
 			eventReports := make([]DriftReport, 0, len(reports))
 			if contextFilter == "" {
 				for _, r := range reports {
@@ -331,7 +357,15 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 			}
 			data.DriftEvents = BuildDriftEventReport(eventReports)
 			data.ReconciliationCues = BuildStatusReconciliationCueReport(ctx, store, data.DriftEvents)
+		} else {
+			data.DriftProjection = DriftProjection{
+				State:            DriftProjectionUnavailable,
+				Reason:           err.Error(),
+				OmittedDecisions: len(activeDecisions),
+			}
 		}
+	} else {
+		data.DriftProjection = DriftProjection{State: DriftProjectionSkipped}
 	}
 
 	// Recent notes (active only, context-filtered if set)

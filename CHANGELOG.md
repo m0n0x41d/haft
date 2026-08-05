@@ -21,6 +21,8 @@ into this v9.0.0 release entry.
   and its aggregate is still available, then packages without rerunning full
   race, coverage-equivalent source checks, or lint. A manual P13 dispatch skips
   the ordinary CI matrix rather than running both qualification contours.
+  Race package discovery now consumes only `go list` stdout, so cold-cache
+  module-download diagnostics cannot be mistaken for package IDs.
 - **V9 removes the built-in execution product and BEAM dependency.** The
   `haft run` and `haft harness` commands, the complete `open-sleigh/` source
   tree, Open-Sleigh CI/release/archive machinery, and Elixir/OTP/BEAM

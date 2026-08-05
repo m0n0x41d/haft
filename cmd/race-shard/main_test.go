@@ -395,6 +395,34 @@ func TestEnvironmentWithOverridesReplacesExactNames(t *testing.T) {
 	}
 }
 
+func TestLocalProcessExecutorOutputSeparatesSuccessfulStderr(t *testing.T) {
+	const helperEnvironment = "HAFT_RACE_SHARD_OUTPUT_HELPER"
+	if os.Getenv(helperEnvironment) == "1" {
+		_, _ = io.WriteString(os.Stdout, "example.test/package\n")
+		_, _ = io.WriteString(
+			os.Stderr,
+			"go: downloading modernc.org/sqlite v1.54.0\n",
+		)
+		os.Exit(0)
+	}
+
+	executor := localProcessExecutor{
+		directory:   t.TempDir(),
+		environment: []string{helperEnvironment + "=1"},
+	}
+	output, err := executor.Output(
+		context.Background(),
+		os.Args[0],
+		"-test.run=^TestLocalProcessExecutorOutputSeparatesSuccessfulStderr$",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := string(output), "example.test/package\n"; got != want {
+		t.Fatalf("stdout = %q, want %q", got, want)
+	}
+}
+
 func TestRaceSharedFixtureDirectoryIsPrivateAndRunnerOwned(t *testing.T) {
 	t.Parallel()
 

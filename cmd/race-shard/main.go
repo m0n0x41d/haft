@@ -87,17 +87,29 @@ func (executor localProcessExecutor) Output(
 	name string,
 	args ...string,
 ) ([]byte, error) {
-	var output bytes.Buffer
-	result := executor.run(ctx, &output, &output, name, args...)
+	var stdout bytes.Buffer
+	var stderr bytes.Buffer
+	result := executor.run(ctx, &stdout, &stderr, name, args...)
 	if result.err != nil {
+		detail := strings.TrimSpace(stderr.String())
+		if detail == "" {
+			detail = strings.TrimSpace(stdout.String())
+		}
+		if detail == "" {
+			return nil, fmt.Errorf(
+				"%s: %w",
+				strings.Join(append([]string{name}, args...), " "),
+				result.err,
+			)
+		}
 		return nil, fmt.Errorf(
 			"%s: %w: %s",
 			strings.Join(append([]string{name}, args...), " "),
 			result.err,
-			strings.TrimSpace(output.String()),
+			detail,
 		)
 	}
-	return output.Bytes(), nil
+	return stdout.Bytes(), nil
 }
 
 func (executor localProcessExecutor) Run(

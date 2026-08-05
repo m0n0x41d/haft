@@ -3,7 +3,7 @@ name: h-status
 description: Read-only Haft project cockpit for active problems, decisions, notes, evidence freshness, drift, commissions, spec lifecycle, module coverage, and bounded exact file-link gaps from a current code index. Use for project status, session resumption, what is decision-linked, what is uncovered, or what needs attention.
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:26e174fdd87993d53721c925be9727239d77e8a425b7c52d28fd9f833b6d1153 -->
 
 # h-status — Read-only project memory
 

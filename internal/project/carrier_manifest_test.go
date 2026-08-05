@@ -93,19 +93,8 @@ func TestCarrierAuthorityManifestKeepsCLIPresentationCurrent(t *testing.T) {
 	if entry.AuthorityClass != CarrierAuthoritySupport {
 		t.Fatalf("authority_class = %q, want support", entry.AuthorityClass)
 	}
-	if entry.PathPattern != "internal/ui/**, internal/cli/run_tui.go, internal/cli/board.go" {
+	if entry.PathPattern != "internal/ui/**, internal/cli/board.go" {
 		t.Fatalf("path_pattern = %q", entry.PathPattern)
-	}
-}
-
-func TestCarrierAuthorityManifestKeepsOpenSleighOutOfScope(t *testing.T) {
-	entry := carrierManifestEntry(t, "open-sleigh-sidekick")
-
-	if entry.Current {
-		t.Fatal("open-sleigh sidekick must not be current Haft authority")
-	}
-	if entry.AuthorityClass != CarrierAuthoritySidekick {
-		t.Fatalf("authority_class = %q, want sidekick", entry.AuthorityClass)
 	}
 }
 

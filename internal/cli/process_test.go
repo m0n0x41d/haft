@@ -106,6 +106,9 @@ func TestBuildProcessTelemetryReportCoversMethodRunsSessionsAndBindingRisk(t *te
 	if report.Kind != processTelemetryKind {
 		t.Fatalf("kind = %q", report.Kind)
 	}
+	if report.SchemaVersion != 2 {
+		t.Fatalf("schema version = %d, want 2", report.SchemaVersion)
+	}
 	if report.MethodRuns.Total != 2 || report.MethodRuns.Open != 1 || report.MethodRuns.Closed != 1 {
 		t.Fatalf("method run counts = %+v", report.MethodRuns)
 	}
@@ -159,7 +162,7 @@ func TestBuildProcessTelemetryReportCoversMethodRunsSessionsAndBindingRisk(t *te
 	if session.CloseWithoutPriorPull != 1 {
 		t.Fatalf("close without pull = %d, want 1", session.CloseWithoutPriorPull)
 	}
-	if session.InvocationLanes.CLIRunCommands != 1 || session.InvocationLanes.CLIHelpOnlyCommands != 1 {
+	if session.InvocationLanes.MCPMethodCalls != 5 || session.InvocationLanes.ProseMentions != 1 {
 		t.Fatalf("invocation lanes = %+v", session.InvocationLanes)
 	}
 	if session.PullToCloseMinutes.Count != 1 || session.PullToCloseMinutes.Max != 5.0 {
@@ -1243,7 +1246,7 @@ func writeProcessTelemetrySessionFixture(t *testing.T, root string) string {
 		`{"timestamp":"2026-06-25T00:05:00Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"pull_id\":\"mpull-a\",\"gate_results\":[{\"gate_id\":\"fresh_verification_before_completion\",\"status\":\"satisfied\",\"evidence_refs\":[\"go test ./internal/cli\"]}],\"verification\":{\"result\":\"pass\",\"commands\":[\"go test ./internal/cli\"],\"output_ref\":\"test output\"},\"carry_through\":[{\"source_ref\":\"review:external\",\"source_item_ref\":\"finding-1\",\"acceptance_ref\":\"operator:accepted\",\"disposition\":\"applied\",\"target_refs\":[\"internal/cli/process.go\"],\"evidence_refs\":[\"go test ./internal/cli\"]}]}"}}`,
 		`{"timestamp":"2026-06-25T00:06:00Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"pull_id\":\"mpull-a\",\"gate_results\":[{\"gate_id\":\"fresh_verification_before_completion\",\"status\":\"waived\",\"waiver_reason\":\"operator accepted residual risk\"}],\"verification\":{\"result\":\"failed\",\"commands\":[\"go test ./internal/cli\"],\"output_ref\":\"test output\"}}"}}`,
 		`{"timestamp":"2026-06-25T00:07:00Z","type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"close\",\"pull_id\":\"mpull-missing\",\"verification\":{\"result\":\"pass\"}}"}}`,
-		`{"timestamp":"2026-06-25T00:08:00Z","type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"exec_command","arguments":"{\"cmd\":\"go run ./cmd/haft run --help\"}"}}`,
+		`{"timestamp":"2026-06-25T00:08:00Z","type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"exec_command","arguments":"{\"cmd\":\"go run ./cmd/haft board --help\"}"}}`,
 		`{"timestamp":"2026-06-25T00:09:00Z","type":"response_item","payload":{"type":"message","content":[{"type":"output_text","text":"transcript body that should not be in telemetry, with haft_method prose mention"}]}}`,
 	})
 	return path

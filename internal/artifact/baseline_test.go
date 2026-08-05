@@ -543,7 +543,6 @@ func TestAssessModifiedFileDriftClassifiesGeneratedAndCarrierPaths(t *testing.T)
 		{path: ".context/current.plan", want: DriftMaterialityCarrierOnly},
 		{path: ".haft/specs/target-system.md", want: DriftMaterialityCarrierOnly},
 		{path: "internal/cli/skill/h-frame/SKILL.md", want: DriftMaterialityCarrierOnly},
-		{path: "open-sleigh/.haft/project.yaml", want: DriftMaterialityCarrierOnly},
 	}
 
 	for _, tc := range cases {
@@ -798,36 +797,6 @@ func TestCheckDriftIgnoresAddedFilesExcludedByNestedGitignore(t *testing.T) {
 	}
 	if len(reports) != 0 {
 		t.Fatalf("expected nested-gitignored build artifact to stay out of drift, got %#v", reports)
-	}
-}
-
-func TestCheckDriftIgnoresAddedRuntimeCarrierDirectories(t *testing.T) {
-	store := setupTestDB(t)
-	ctx := context.Background()
-	projectRoot := t.TempDir()
-	initTestGitRepository(t, projectRoot)
-
-	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
-
-	dec := createTestDecision(t, store, "dec-test-016c", "Governed root with runtime carrier")
-	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	writeTestFile(t, projectRoot, "open-sleigh/.haft/project.yaml", "project_id: local-runtime\n")
-
-	reports, err := CheckDrift(ctx, store, projectRoot)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(reports) != 0 {
-		t.Fatalf("expected runtime carrier directory to stay out of drift, got %#v", reports)
 	}
 }
 

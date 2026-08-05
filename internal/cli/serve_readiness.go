@@ -76,7 +76,7 @@ func appendReadinessReminder(result string) string {
 		"This project is `needs_onboard` — `.haft/` exists but the\n" +
 		"ProjectSpecificationSet has no active SpecSections yet. Decisions\n" +
 		"made now cannot link to spec refs and downstream\n" +
-		"WorkCommissions / harness runs will block until specs are in\n" +
+		"WorkCommission execution starts will block until specs are in\n" +
 		"place. Run /h-spec to follow the typed spec lifecycle\n" +
 		"(/h-onboard remains a bootstrap alias), or proceed and record the work as tactical\n" +
 		"so coverage will not later confuse it with spec-driven work.\n" +

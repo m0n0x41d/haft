@@ -1236,13 +1236,13 @@ func haftInterfaceCatalog() []interfaceCapability {
 				FieldShapes: []fieldShape{
 					{
 						Field: "response",
-						Shape: `{"schema_version":1,"generated_by":"haft carrier manifest","entries":[{"id":"...","path_pattern":"...","authority_class":"current_authority|support_material|compatibility_carrier|provenance|archive|external_sidekick_out_of_scope","current":true|false,"normativity":"..."}]}`,
+						Shape: `{"schema_version":1,"generated_by":"haft carrier manifest","entries":[{"id":"...","path_pattern":"...","authority_class":"current_authority|support_material|compatibility_carrier|provenance|archive","current":true|false,"normativity":"..."}]}`,
 						Note:  "Carrier classifies where wording lives; it is not itself a binding decision or evidence item.",
 					},
 				},
 				Notes: []string{
 					"Use this when carrier/currentness wording is ambiguous; do not add it to default status.",
-					"Open-Sleigh remains external_sidekick_out_of_scope unless explicitly reopened.",
+					"Removed execution products are absent from the current carrier manifest; historical release records remain provenance.",
 				},
 			},
 			OutputVolume: []string{"default: JSON manifest drill-down only; never in compact status"},
@@ -1306,7 +1306,7 @@ func haftInterfaceCatalog() []interfaceCapability {
 				},
 				Notes: []string{
 					"Use this when plan or code uses the word baseline without saying which kind of snapshot/currentness/comparison it means.",
-					"The audit skips Open-Sleigh, node_modules, vendor, ignored planning carriers, and build output.",
+					"The audit skips node_modules, vendor, ignored planning carriers, and build output.",
 					"`--limit` caps emitted findings without changing summary counts.",
 					"Legacy ambiguous findings require a later typed rename or local wording clarification; the audit itself is read-only.",
 				},

@@ -28,10 +28,10 @@ Haft is consumed via three surfaces sharing one artifact graph:
   - This CLI for direct manual access without an LLM
   - MCP server for programmatic access from any LLM agent
 
-The standalone interactive agent, its coding-agent TUI, and desktop wrappers
-were dropped in v8.0 per the governance substrate pivot. Terminal presentation
-for current CLI commands such as haft board and haft run remains supported.
-Operate haft through your existing coding agent (recommended) or via
+The standalone interactive agent, its coding-agent TUI, desktop wrappers, and
+built-in commission executors are not part of the v9 product. Haft records and
+governs WorkCommissions; external runners perform them through the lifecycle
+API. Operate Haft through your existing coding agent (recommended) or via the
 subcommands below.
 
 Examples:

@@ -198,11 +198,13 @@ func DeliveryAfterLocalEvidence(
 	if policy != DeliveryPolicyWorkspacePatchAutoOnPass {
 		return manualDeliveryDecision("delivery_policy_manual")
 	}
-	// V3 invariant (dec-20260428-harness-drain-v3-16bf21f3):
+	// Retained runner-neutral invariant after
+	// dec-20260805-haft-v9-remove-built-in-execution-contour-a1eb55b6:
 	// AutonomyEnvelope evaluates at WorkCommission creation, preflight, and
-	// execute — unchanged. This decision adds NO envelope evaluation at apply.
+	// execute. This pure decision adds NO envelope evaluation at an external
+	// runner's apply step.
 	// Reaching terminal+pass means envelope did not block at the earlier
-	// phases; the apply gate is purely (policy + verdict). An explicitly
+	// phases; the runner-facing apply gate is purely (policy + verdict). An explicitly
 	// blocked envelope still keeps the manual path because it represents a
 	// concrete operator decision, not a missing snapshot.
 	if gate == DeliveryGateBlocked {

@@ -21,7 +21,7 @@ WHITE='\033[37m'
 REPO="m0n0x41d/haft"
 BIN_NAME="haft"
 BIN_DIRS=("$HOME/.local/bin" "/usr/local/bin")
-OPEN_SLEIGH_INSTALL_DIR="$HOME/.haft/runtimes/open-sleigh/current"
+LEGACY_OPEN_SLEIGH_INSTALL_DIR="$HOME/.haft/runtimes/open-sleigh/current"
 HAFT_EMBED_INSTALL_DIR="$HOME/.haft/runtimes/haft-embed/current"
 # Internal validation seam: install one already-built local release archive
 # without consulting GitHub. Normal user installs leave this unset.
@@ -93,25 +93,6 @@ find_archive_binary() {
     return 1
 }
 
-find_archive_open_sleigh_runtime() {
-    local archive_root="$1"
-    local candidates=(
-        "$archive_root/runtimes/open-sleigh"
-        "$archive_root/open-sleigh-runtime"
-        "$archive_root/open_sleigh_runtime"
-    )
-
-    local candidate
-    for candidate in "${candidates[@]}"; do
-        if [[ -x "$candidate/bin/open_sleigh" ]]; then
-            echo "$candidate"
-            return 0
-        fi
-    done
-
-    return 1
-}
-
 require_source_build_toolchain() {
     if ! command -v go >/dev/null 2>&1; then
         printf "${RED}   ✗ Go is not installed${RESET}\n"
@@ -119,51 +100,9 @@ require_source_build_toolchain() {
     fi
 }
 
-ensure_elixir_toolchain() {
-    if command -v mix >/dev/null 2>&1; then
-        return 0
-    fi
-
-    printf "${YELLOW}   ⚠ Elixir/Mix not found; installing for source runtime build...${RESET}\n"
-    if command -v brew >/dev/null 2>&1; then
-        brew install elixir
-        return 0
-    fi
-
-    if command -v apt-get >/dev/null 2>&1; then
-        sudo apt-get update
-        sudo apt-get install -y elixir
-        return 0
-    fi
-
-    printf "${RED}   ✗ Elixir/Mix is required to build Open-Sleigh from source${RESET}\n"
-    printf "${DIM}   Install Elixir 1.18+ or use a Haft release archive with bundled runtime.${RESET}\n"
-    exit 1
-}
-
-install_open_sleigh_runtime_from_dir() {
-    local runtime_dir="$1"
-
-    if [[ ! -x "$runtime_dir/bin/open_sleigh" ]]; then
-        printf "${RED}   ✗ Open-Sleigh runtime not found at $runtime_dir${RESET}\n"
-        exit 1
-    fi
-
-    rm -rf "$OPEN_SLEIGH_INSTALL_DIR"
-    mkdir -p "$OPEN_SLEIGH_INSTALL_DIR"
-    (
-        cd "$runtime_dir"
-        tar cf - .
-    ) | (
-        cd "$OPEN_SLEIGH_INSTALL_DIR"
-        tar xf -
-    )
-}
-
 # The embedding sidecar (haft-embed) powers optional hybrid semantic recall.
-# It is OPTIONAL: when absent, haft search degrades to FTS5+PPR. So unlike the
-# Open-Sleigh runtime, a missing toolchain/binary here WARNS and continues —
-# never aborts the install.
+# It is OPTIONAL: when absent, haft search degrades to FTS5+PPR. A missing
+# toolchain or binary warns and continues rather than aborting installation.
 find_archive_haft_embed_runtime() {
     local archive_root="$1"
     local candidates=(
@@ -218,7 +157,6 @@ install_from_release_archive() {
     local archive_root="$1"
     local bin_dir="$2"
     local archive_binary
-    local archive_open_sleigh
     local archive_haft_embed
 
     archive_binary=$(find_archive_binary "$archive_root") || {
@@ -227,13 +165,6 @@ install_from_release_archive() {
     }
     cp "$archive_binary" "$bin_dir/$BIN_NAME"
     chmod +x "$bin_dir/$BIN_NAME"
-
-    if archive_open_sleigh=$(find_archive_open_sleigh_runtime "$archive_root"); then
-        install_open_sleigh_runtime_from_dir "$archive_open_sleigh"
-    else
-        printf "${YELLOW}   ⚠ Open-Sleigh runtime not found in release archive${RESET}\n"
-        printf "${DIM}   Harness runs will require --runtime or a newer Haft release.${RESET}\n"
-    fi
 
     if archive_haft_embed=$(find_archive_haft_embed_runtime "$archive_root"); then
         install_haft_embed_runtime_from_binary "$archive_haft_embed" || true
@@ -266,16 +197,35 @@ install_from_source_checkout() {
     ) &
     spinner $! "Building binary"
 
-    ensure_elixir_toolchain
-    (
-        cd "$repo_dir/open-sleigh"
-        MIX_ENV=prod mix deps.get --only prod
-        MIX_ENV=prod mix release --overwrite
-    ) &
-    spinner $! "Building Open-Sleigh runtime"
-    install_open_sleigh_runtime_from_dir "$repo_dir/open-sleigh/_build/prod/rel/open_sleigh"
-
     build_haft_embed_runtime_from_source "$repo_dir"
+}
+
+remove_managed_legacy_open_sleigh_runtime() {
+    local expected="$HOME/.haft/runtimes/open-sleigh/current"
+    local parent
+
+    if [[ -z "${HOME:-}" || "$LEGACY_OPEN_SLEIGH_INSTALL_DIR" != "$expected" ]]; then
+        printf "${YELLOW}   ⚠ Refusing legacy runtime cleanup: managed path is not exact${RESET}\n"
+        return 0
+    fi
+
+    # Refuse to traverse a symlinked parent. This leaves an unusual legacy
+    # installation untouched instead of risking deletion outside Haft's tree.
+    for parent in "$HOME/.haft" "$HOME/.haft/runtimes" "$HOME/.haft/runtimes/open-sleigh"; do
+        if [[ -L "$parent" ]]; then
+            printf "${YELLOW}   ⚠ Preserved legacy runtime because %s is a symlink${RESET}\n" "$parent"
+            return 0
+        fi
+    done
+
+    if [[ -e "$LEGACY_OPEN_SLEIGH_INSTALL_DIR" || -L "$LEGACY_OPEN_SLEIGH_INSTALL_DIR" ]]; then
+        rm -rf -- "$LEGACY_OPEN_SLEIGH_INSTALL_DIR"
+        printf "   ${GREEN}✓${RESET} Removed managed v8 runtime at ${WHITE}$LEGACY_OPEN_SLEIGH_INSTALL_DIR${RESET}\n"
+    fi
+
+    # Remove only now-empty managed parents. User-owned ~/.open-sleigh and the
+    # independent haft-embed runtime are deliberately outside this path.
+    rmdir -- "$HOME/.haft/runtimes/open-sleigh" 2>/dev/null || true
 }
 
 main() {
@@ -326,10 +276,9 @@ main() {
         fi
     fi
 
+    remove_managed_legacy_open_sleigh_runtime
+
     printf "   ${GREEN}✓${RESET} Installed to ${WHITE}$bin_dir/$BIN_NAME${RESET}\n"
-    if [[ -x "$OPEN_SLEIGH_INSTALL_DIR/bin/open_sleigh" ]]; then
-        printf "   ${GREEN}✓${RESET} Installed Open-Sleigh runtime to ${WHITE}$OPEN_SLEIGH_INSTALL_DIR${RESET}\n"
-    fi
     if [[ -x "$HAFT_EMBED_INSTALL_DIR/bin/haft-embed" ]]; then
         printf "   ${GREEN}✓${RESET} Installed embedding sidecar to ${WHITE}$HAFT_EMBED_INSTALL_DIR${RESET} (hybrid semantic recall)\n"
     fi

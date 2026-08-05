@@ -24,6 +24,7 @@ concurrency:
 jobs:
   test-and-build:
     name: Test & Build
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_p13 }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     steps:
@@ -113,6 +114,7 @@ jobs:
 
   race-shard:
     name: Race shard ${{ matrix.shard_index }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_p13 }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:
@@ -158,7 +160,7 @@ jobs:
 
   race-tests:
     name: Race tests
-    if: ${{ always() }}
+    if: ${{ always() && (github.event_name != 'workflow_dispatch' || !inputs.run_p13) }}
     needs: [race-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -242,26 +244,9 @@ jobs:
             exit 1
           fi
 
-  open-sleigh:
-    name: OpenSleigh
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: '27'
-          elixir-version: '1.18.3'
-
-      - name: Check format and run tests
-        working-directory: open-sleigh
-        run: |
-          mix deps.get
-          mix format --check-formatted
-          mix test
-
   lint:
     name: Lint
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_p13 }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -311,11 +296,6 @@ jobs:
           python-version: '3.12'
           cache: pip
           cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
-
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: '27'
-          elixir-version: '1.18.3'
 
       - name: Require an explicit frozen-basis artifact
         env:
@@ -390,10 +370,7 @@ jobs:
           printf 'P13_FREEZE_CANDIDATE=%s\n' "$freeze_candidate" >> "$GITHUB_ENV"
 
       - name: Restore frozen dependency inputs
-        run: |
-          npm ci --prefix packages/haft-pi
-          cd open-sleigh
-          mix deps.get
+        run: npm ci --prefix packages/haft-pi
 
       - name: Verify frozen-basis currentness
         run: |

@@ -208,11 +208,11 @@ Scenario: Commission selected decisions
 ```gherkin
 Scenario: Runtime consumes WorkCommissions
   Given WorkCommissions are queued
-  When "haft harness run" or a not-current Desktop Runtime archive starts the harness engine
-  Then the runtime polls Haft for runnable commissions
+  When a separately operated external runner starts
+  Then the runner requests runnable commissions from Haft
   And does not poll external trackers for authority
   And does not choose new spec work by itself
-  And writes RuntimeRun, PhaseOutcome, and Evidence back to Haft
+  And submits RuntimeRun lifecycle observations and evidence candidates to Haft
   And Haft updates SpecCoverage after evidence is accepted
 ```
 
@@ -257,7 +257,7 @@ Examples:
 | `Approve Target Section` | `onboarding.target_spec.approve` | draft section -> active section |
 | `Record Decided Choice` | host-routed `/h-decide` workflow | direct unambiguous operator choice + section refs -> DecisionRecord |
 | `Create WorkCommission` | `commission.create` | DecisionRecord + scope -> WorkCommission |
-| `Delegate to Harness` | `harness.run_commission` | runnable WorkCommission -> RuntimeRun |
+| `Delegate externally` | runner-selected lifecycle integration | runnable WorkCommission -> externally performed RuntimeRun -> recorded lifecycle result |
 | `Review Evidence` | `evidence.review` | evidence carrier -> derived SpecCoverage state |
 
 Invalid shape:
@@ -280,7 +280,7 @@ The human principal must explicitly approve:
 - software responsibility allocation, interfaces, constraints, and selected structure;
 - creation of active DecisionRecords from spec drafts;
 - WorkCommission scope widening;
-- AutonomyEnvelope approval for batch/YOLO execution;
+- AutonomyEnvelope approval for high-autonomy external-runner execution;
 - any one-way-door action: merge, release, tag, external terminal status.
 
 ## Acceptance Criteria for MVP
@@ -293,7 +293,8 @@ The smallest honest product proof is:
 4. Run spec check and see deterministic readiness/gap output.
 5. Create at least one DecisionRecord linked to spec section ids.
 6. Create one WorkCommission linked to that DecisionRecord and spec refs.
-7. Run the harness runtime.
+7. Have a separately operated runner perform the WorkCommission and report its
+   lifecycle result through the runner-neutral interface.
 8. Attach evidence.
 9. Show SpecCoverage moved from `commissioned` to `verified` for the relevant section.
 

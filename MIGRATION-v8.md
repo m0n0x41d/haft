@@ -14,6 +14,27 @@ candidate binary.
 
 ## Upgrading v8.1.0 → v9.0.0
 
+### Breaking execution-surface removal
+
+v9 removes the built-in `haft run` and `haft harness` commands, the complete
+Open-Sleigh source/runtime contour, and the Elixir/OTP/BEAM release dependency.
+There are no compatibility stubs: those command names now return Cobra's
+ordinary unknown-command error.
+
+The runner-neutral governance records remain supported: WorkCommission,
+RuntimeRunRecord, the `haft commission` CLI, the `haft_commission` lifecycle
+API, and `haft commission complete-external`. Existing commission and runtime
+history is not deleted or rewritten. To continue delegated execution, perform
+the work in your host agent or move the runner to an independently operated
+integration that claims and reports the same lifecycle.
+
+After a successful install, the v9 installer deletes only the exact managed v8
+runtime at `~/.haft/runtimes/open-sleigh/current`. It does not delete
+`~/.open-sleigh/` workspaces, logs, results, or configuration, and it does not
+delete `~/.haft/runtimes/haft-embed/`. Back up any managed-runtime files you
+intentionally modified before upgrading; ordinary Open-Sleigh user data should
+already live outside that managed path.
+
 ### 1. Stop writers and take a complete backup
 
 Quit every host agent that can run `haft serve`, then confirm no Haft MCP
@@ -138,7 +159,7 @@ to one of the three remaining surfaces (skills/CLI/MCP).
 | `/h-reason "..."` (one-shot) | v9 `/h-reason` for source-first reasoning, or one exact specialized skill |
 | `/h-reason` for explicit reasoning | Invoke `/h-reason`; specialized skills remain independent capabilities, not mandatory stages |
 | `haft setup`, `haft login`, `haft models` | Not needed — host AI provides the LLM; haft only manages the artifact graph |
-| Desktop dashboard | `haft check`, `/h-status`, `/h-verify` from the host AI; PR creation via `haft run` |
+| Desktop dashboard | `haft check`, `/h-status`, and `/h-verify` from the host AI; implementation and PR creation stay in the host agent |
 | TUI session view | `/h-status` in the host AI, or `haft_query(action="status")` from MCP |
 
 ## Upgrade steps for an existing project
@@ -156,11 +177,12 @@ to one of the three remaining surfaces (skills/CLI/MCP).
 
 2. **Audit references to dropped commands.** Search your project notes
    and CI for `haft agent`, `haft login`, `haft models`, `haft setup`,
+   `haft run`, `haft harness`, and Open-Sleigh build/runtime commands,
    and replace them per the table above. Current `/h-reason` references are
    valid v9 usage and should not be removed mechanically.
 
    ```bash
-   grep -rn "haft agent\|haft login\|haft models\|haft setup" .
+   grep -rn "haft agent\|haft login\|haft models\|haft setup\|haft run\|haft harness\|open-sleigh" .
    ```
 
 3. **Restart your host AI.** Claude Code, Codex, etc. cache skill

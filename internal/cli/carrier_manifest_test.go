@@ -33,7 +33,6 @@ func TestRunCarrierManifestText(t *testing.T) {
 		"agent-skill-carriers",
 		"desktop-standalone-code",
 		"cli-interactive-presentation-code",
-		"open-sleigh-sidekick",
 		"dead_surface_policy:",
 	} {
 		if !strings.Contains(text, want) {

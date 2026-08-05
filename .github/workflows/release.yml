@@ -40,6 +40,7 @@ jobs:
       version: ${{ steps.candidate.outputs.version }}
       sha: ${{ steps.candidate.outputs.sha }}
       short_sha: ${{ steps.candidate.outputs.short_sha }}
+      ci_run_id: ${{ steps.ci.outputs.run_id }}
     steps:
       - uses: actions/checkout@v6
         with:
@@ -80,202 +81,46 @@ jobs:
           echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
           echo "short_sha=$short_sha" >> "$GITHUB_OUTPUT"
 
-  test:
-    name: Pre-release tests
-    needs: [guard]
-    runs-on: ubuntu-latest
-    timeout-minutes: 360
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: true
-          fetch-depth: 0
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: go.sum
-      - uses: actions/setup-python@v6
-        with:
-          python-version: '3.12'
-          cache: pip
-          cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
-      - uses: erlef/setup-beam@v1
-        with:
-          otp-version: '27'
-          elixir-version: '1.18.3'
-
-      - name: Run OpenSleigh tests
-        working-directory: open-sleigh
-        run: |
-          mix deps.get
-          mix format --check-formatted
-          mix test
-
-      # The source-derived FPF index is built locally and committed. CI verifies
-      # source revision, provenance, grammar, identity, and FTS integrity.
-      - name: Verify committed FPF source, index, and integration lock
-        run: go run ./cmd/fpf-refresh verify --repo .
-
-      - name: Verify FPF Query working-view token gate
-        run: bash scripts/fpf_query_token_gate.sh
-
-  race-shard:
-    name: Release race shard ${{ matrix.shard_index }}
-    needs: [guard]
-    runs-on: ubuntu-latest
-    timeout-minutes: 180
-    strategy:
-      fail-fast: false
-      matrix:
-        shard_index: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: true
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: go.sum
-
-      - name: Prepare desktop embed placeholder
-        run: |
-          mkdir -p desktop/frontend/dist
-          printf 'release placeholder\n' > desktop/frontend/dist/.release-placeholder
-
-      - name: Run one validated race shard
-        run: |
-          mkdir -p "$RUNNER_TEMP/haft-race"
-          go run ./cmd/race-shard \
-            --mode shard \
-            --shard-count 12 \
-            --shard-index "${{ matrix.shard_index }}" \
-            --package-timeout 90m \
-            --output "$RUNNER_TEMP/haft-race/shard-${{ matrix.shard_index }}.json"
-
-      - name: Preserve release race shard observation
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-race-shard-${{ github.sha }}-${{ matrix.shard_index }}
-          path: ${{ runner.temp }}/haft-race/shard-${{ matrix.shard_index }}.json
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-
-  race-tests:
-    name: Release race tests
-    if: ${{ always() && (github.event_name == 'push' || inputs.operation == 'validate') }}
-    needs: [race-shard]
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: true
-          fetch-depth: 0
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: go.sum
-
-      - name: Download current-run release race shard observations
-        id: race_download
-        if: ${{ always() }}
-        uses: actions/download-artifact@v4
-        continue-on-error: true
-        with:
-          pattern: release-race-shard-${{ github.sha }}-*
-          path: ${{ runner.temp }}/haft-race-shards
-          merge-multiple: true
-
-      - name: Aggregate release race shard observations
-        id: race_aggregate
-        if: ${{ always() }}
-        shell: bash
-        continue-on-error: true
-        run: |
-          mkdir -p "$RUNNER_TEMP/haft-race-aggregate"
-          shopt -s nullglob
-          inputs=("$RUNNER_TEMP/haft-race-shards"/shard-*.json)
-          args=()
-          for input in "${inputs[@]}"; do
-            args+=(--input "$input")
-          done
-
-          go run ./cmd/race-shard \
-            --mode aggregate \
-            --shard-count 12 \
-            --package-timeout 90m \
-            "${args[@]}" \
-            --output "$RUNNER_TEMP/haft-race-aggregate/aggregate.json"
-
-      - name: Preserve aggregate release race observation
-        id: race_upload
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v4
-        continue-on-error: true
-        with:
-          name: release-race-aggregate-${{ github.sha }}
-          path: ${{ runner.temp }}/haft-race-aggregate/aggregate.json
-          if-no-files-found: error
-          overwrite: true
-          retention-days: 14
-
-      - name: Require complete release race qualification evidence
-        if: ${{ always() }}
+      - name: Require successful CI and full-race evidence for exact SHA
+        id: ci
         env:
-          RACE_MATRIX_RESULT: ${{ needs.race-shard.result }}
-          RACE_DOWNLOAD_OUTCOME: ${{ steps.race_download.outcome }}
-          RACE_AGGREGATE_OUTCOME: ${{ steps.race_aggregate.outcome }}
-          RACE_UPLOAD_OUTCOME: ${{ steps.race_upload.outcome }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_SHA: ${{ steps.candidate.outputs.sha }}
         run: |
-          failures=0
-          require_success() {
-            if [ "$2" != "success" ]; then
-              echo "$1: $2" >&2
-              failures=1
-            fi
-          }
+          runs_json="$RUNNER_TEMP/ci-runs.json"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${CANDIDATE_SHA}&event=push&per_page=100" \
+            > "$runs_json"
 
-          require_success "release race-shard matrix result" "$RACE_MATRIX_RESULT"
-          require_success "release race shard download outcome" "$RACE_DOWNLOAD_OUTCOME"
-          require_success "release race aggregate outcome" "$RACE_AGGREGATE_OUTCOME"
-          require_success "release race aggregate upload outcome" "$RACE_UPLOAD_OUTCOME"
+          run_id=$(
+            jq -er \
+              --arg sha "$CANDIDATE_SHA" \
+              '[.workflow_runs[] |
+                select(.head_sha == $sha and
+                       .event == "push" and
+                       .status == "completed" and
+                       .conclusion == "success")] |
+               sort_by(.run_number) |
+               last |
+               .id' \
+              "$runs_json"
+          )
 
-          if [ "$failures" -ne 0 ]; then
-            exit 1
-          fi
+          artifacts_json="$RUNNER_TEMP/ci-artifacts.json"
+          gh api \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+            > "$artifacts_json"
+          jq -e \
+            --arg name "race-aggregate-${CANDIDATE_SHA}" \
+            'any(.artifacts[];
+                 .name == $name and .expired == false)' \
+            "$artifacts_json" >/dev/null
 
-  lint:
-    name: Exact release lint
-    needs: [guard]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          submodules: true
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: '1.25'
-          cache-dependency-path: go.sum
-
-      - name: Prepare desktop embed placeholder
-        run: |
-          mkdir -p desktop/frontend/dist
-          printf 'release placeholder\n' > desktop/frontend/dist/.release-placeholder
-
-      - uses: golangci/golangci-lint-action@v7
-        with:
-          version: v2.11.4
-          args: --timeout=5m
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build CLI ${{ matrix.goos }}-${{ matrix.goarch }}
-    needs: [guard, test, lint, race-tests]
+    needs: [guard]
     runs-on: ${{ matrix.runner }}
     strategy:
       matrix:
@@ -297,23 +142,6 @@ jobs:
         with:
           go-version: '1.25'
           cache-dependency-path: go.sum
-      - name: Set up Erlang/Elixir
-        if: matrix.runner != 'ubuntu-24.04-arm'
-        uses: erlef/setup-beam@v1
-        with:
-          otp-version: '27'
-          elixir-version: '1.18.3'
-
-      - name: Set up Erlang/Elixir (linux arm64)
-        if: matrix.runner == 'ubuntu-24.04-arm'
-        uses: erlef/setup-beam@v1
-        env:
-          # setup-beam does not recognize GitHub's ubuntu24-arm64 ImageOS.
-          ImageOS: ubuntu24
-        with:
-          otp-version: '27'
-          elixir-version: '1.18.3'
-
       - name: Install Rust toolchain (embedding sidecar)
         uses: dtolnay/rust-toolchain@stable
 
@@ -339,12 +167,6 @@ jobs:
               -X github.com/m0n0x41d/haft/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o haft ./cmd/haft/
 
-      - name: Build Open-Sleigh runtime
-        run: |
-          cd open-sleigh
-          MIX_ENV=prod mix deps.get --only prod
-          MIX_ENV=prod mix release --overwrite
-
       # Optional embedding sidecar (haft-embed). ort statically links onnxruntime
       # so the output is a single self-contained binary (no libonnxruntime to
       # ship). continue-on-error: embeddings are OPTIONAL — a sidecar build
@@ -361,8 +183,6 @@ jobs:
       - name: Package
         run: |
           mkdir -p _dist
-          mkdir -p runtimes/open-sleigh
-          cp -R open-sleigh/_build/prod/rel/open_sleigh/. runtimes/open-sleigh/
           mkdir -p runtimes/haft-embed/bin
           sidecar_path=embed-sidecar/target/release/haft-embed
           if [ "${{ steps.embed.outcome }}" = "success" ] && [ -x "$sidecar_path" ]; then

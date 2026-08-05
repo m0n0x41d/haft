@@ -1,4 +1,4 @@
-# Execution Contract — v6.2 + Commissioned Execution Draft
+# Runner-neutral Commission Contract — v9
 
 > What Implement, Adopt, and verification are allowed to do.
 > BDD scenarios define the authority boundaries.
@@ -20,8 +20,9 @@ The distinction is load-bearing:
 - RuntimeRun = one actual attempt by a runner.
 - Evidence = what was verified after execution.
 
-`Open-Sleigh` is the current runtime implementation of `haft harness`. It is
-the execution subsystem of Haft, not a peer source of truth.
+Haft v9 ships no execution runtime. A separately operated runner may claim and
+perform a WorkCommission through the typed lifecycle, but remains outside the
+Haft product and authority boundary.
 
 A DecisionRecord may have zero WorkCommissions. Creating a decision does not
 mean the work is scheduled. A WorkCommission may be queued for later, and must
@@ -47,7 +48,7 @@ Scenario: Spec-linked work carries section authority
 ```gherkin
 Scenario: Missing spec coverage blocks broad autonomous execution
   Given a project is marked "needs_onboard" or has uncovered required target sections
-  When the user attempts batch/YOLO harness execution
+  When an external runner attempts broad batch execution
   Then Haft blocks autonomous execution by default
   And shows the missing spec sections or coverage gaps
   And allows only explicit tactical override with a recorded out-of-spec commission reason
@@ -110,7 +111,7 @@ Scenario: Scope is authorization, not prompt context
     | allowed_modules   | optional module-level slice               |
     | affected_files    | expected mutation/evidence surface        |
     | lockset           | concurrency-control projection            |
-  And Open-Sleigh must carry the Scope in Session and AdapterSession
+  And the external runner must carry the Scope in its execution context
   And every file-mutating adapter call must check the target path/action
       against the Scope before executing
   And terminal diff validation must prove every mutation stayed inside Scope
@@ -133,14 +134,14 @@ Scenario: Start a fresh commission
   When the user starts the WorkCommission
   Then Haft moves it to "preflighting"
   And grants exactly one runner lease
-  And Open-Sleigh may run the Preflight phase
+  And the external runner may run the Preflight phase
 ```
 
 ```gherkin
 Scenario: Block a stale commission before execution
   Given a WorkCommission created from DecisionRecord revision R1
   And the DecisionRecord was superseded to revision R2 before execution
-  When the user or YOLO scheduler attempts to start the WorkCommission
+  When an operator or external scheduler attempts to start the WorkCommission
   Then Haft marks the WorkCommission "blocked_stale"
   And no RuntimeRun enters Execute
   And the block reason names the invalidating artifact
@@ -149,7 +150,7 @@ Scenario: Block a stale commission before execution
 ```gherkin
 Scenario: Block a commission after snapshot drift
   Given a WorkCommission was queued with CommissionSnapshot C1
-  And a human approval or YOLO lease was recorded for C1
+  And a human approval or external-runner lease was recorded for C1
   When the DecisionRecord revision, problem_basis revision, Scope hash, base SHA,
       ImplementationPlan revision, AutonomyEnvelope revision, or lease state
       changes before Execute
@@ -171,7 +172,7 @@ Scenario: Runtime mutation outside Scope is terminal
 
 ## Preflight
 
-Preflight is mandatory before execution, including YOLO/batch runs. It has two
+Preflight is mandatory before execution, including externally scheduled batch runs. It has two
 parts:
 
 | Layer | May do | May NOT do |
@@ -194,7 +195,7 @@ The deterministic equality set is closed for MVP-1R:
 
 ```gherkin
 Scenario: Runner cannot bypass Haft authority
-  Given Open-Sleigh has a commission_id
+  Given an external runner has a commission_id
   When it starts work
   Then it first calls Haft to claim a preflight lease
   And it receives a signed/structured preflight context
@@ -207,16 +208,18 @@ Scenario: Uncertain preflight needs human review
   But the preflight agent reports material context change it cannot classify
   When Haft validates the PreflightReport
   Then the WorkCommission becomes "needs_human_review"
-  And Open-Sleigh stops before Execute
+  And the external runner stops before Execute
 ```
 
-## ImplementationPlan and YOLO Mode
+## ImplementationPlan and external batch scheduling
 
-YOLO mode is batch continuation inside a human-approved AutonomyEnvelope. It
-does not skip freshness, evidence, lease, lockset, or one-way-door gates.
+External batch scheduling may continue only inside a human-approved
+AutonomyEnvelope. Haft stores the governing records but does not own or run the
+scheduler. The scheduler cannot skip freshness, evidence, lease, lockset, or
+one-way-door gates.
 
 ```gherkin
-Scenario: Run an approved implementation plan in YOLO mode
+Scenario: An external runner consumes an approved implementation plan
   Given an ImplementationPlan with 20 WorkCommissions
   And an AutonomyEnvelope approved by the human principal:
     | property        | example                         |
@@ -228,7 +231,7 @@ Scenario: Run an approved implementation plan in YOLO mode
     | forbidden_actions | merge_pr, tag_release, delete_data |
     | on_failure      | continue_independent            |
     | on_stale        | block_node                      |
-  When Open-Sleigh starts the plan
+  When the external runner starts the plan
   Then it schedules only dependency-ready WorkCommissions
   And it never runs two commissions with overlapping locksets
   And it preflights every commission immediately before Execute
@@ -237,7 +240,7 @@ Scenario: Run an approved implementation plan in YOLO mode
 ```
 
 ```gherkin
-Scenario: YOLO cannot expand its own authority
+Scenario: An external runner cannot expand its own authority
   Given an AutonomyEnvelope forbids schema changes and release tagging
   When an agent discovers the chosen implementation requires a schema change
   Then the current WorkCommission becomes "needs_human_review"
@@ -248,7 +251,7 @@ Scenario: YOLO cannot expand its own authority
 Scenario: ImplementationPlan changes after a commission is leased
   Given a WorkCommission was leased under ImplementationPlan revision P1
   And the plan is revised to P2 before the commission reaches Execute
-  When Open-Sleigh calls start_after_preflight
+  When the external runner calls start_after_preflight
   Then Haft rejects the start with "plan_revision_changed"
   And the scheduler must release or re-preflight the node under P2
 ```

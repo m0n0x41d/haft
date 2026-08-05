@@ -97,8 +97,6 @@ type toolchainIdentity struct {
 	PythonRuntime     string `json:"python_runtime"`
 	NodeVersion       string `json:"node_version"`
 	PNPMVersion       string `json:"pnpm_version"`
-	MixVersion        string `json:"mix_version"`
-	ElixirVersion     string `json:"elixir_version"`
 	Platform          string `json:"platform"`
 	ExecutableDigest  string `json:"executable_digest"`
 	EnvironmentDigest string `json:"environment_digest"`
@@ -752,7 +750,7 @@ func captureAcceptanceIdentity(
 		return acceptanceIdentity{}, err
 	}
 	identity := acceptanceIdentity{
-		Schema:      "haft.p13.acceptance-identity/v2",
+		Schema:      "haft.p13.acceptance-identity/v3",
 		ProjectID:   project.ID,
 		ProjectRoot: root,
 		Source:      source,
@@ -1411,18 +1409,6 @@ func captureToolchainIdentity(
 	if err != nil {
 		return toolchainIdentity{}, err
 	}
-	mixProgram, err := resolveExecutable("mix")
-	if err != nil {
-		return toolchainIdentity{}, err
-	}
-	elixirProgram, err := resolveExecutable("elixir")
-	if err != nil {
-		return toolchainIdentity{}, err
-	}
-	erlProgram, err := resolveExecutable("erl")
-	if err != nil {
-		return toolchainIdentity{}, err
-	}
 	unameProgram, err := resolveExecutable("uname")
 	if err != nil {
 		return toolchainIdentity{}, err
@@ -1501,14 +1487,6 @@ print(json.dumps({
 	if err != nil {
 		return toolchainIdentity{}, err
 	}
-	mixVersion, err := runIdentityCommand(root, mixProgram, "--version")
-	if err != nil {
-		return toolchainIdentity{}, err
-	}
-	elixirVersion, err := runIdentityCommand(root, elixirProgram, "--version")
-	if err != nil {
-		return toolchainIdentity{}, err
-	}
 	platform, err := runIdentityCommand(root, unameProgram, "-a")
 	if err != nil {
 		return toolchainIdentity{}, err
@@ -1526,12 +1504,9 @@ print(json.dumps({
 	}
 	executables := map[string]string{
 		"bash":   bashProgram,
-		"elixir": elixirProgram,
-		"erl":    erlProgram,
 		"git":    gitProgram,
 		"go":     goProgram,
 		"gofmt":  gofmtProgram,
-		"mix":    mixProgram,
 		"node":   nodeProgram,
 		"pnpm":   pnpmProgram,
 		"python": pythonProgram,
@@ -1576,8 +1551,6 @@ print(json.dumps({
 		PythonRuntime:     normalizedCommandText(pythonRuntime),
 		NodeVersion:       normalizedCommandText(nodeVersion),
 		PNPMVersion:       normalizedCommandText(pnpmVersion),
-		MixVersion:        normalizedCommandText(mixVersion),
-		ElixirVersion:     normalizedCommandText(elixirVersion),
 		Platform:          normalizedCommandText(platform),
 		ExecutableDigest:  executableDigest,
 		EnvironmentDigest: environmentDigest,

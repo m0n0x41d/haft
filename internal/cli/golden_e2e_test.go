@@ -28,13 +28,9 @@ const (
 	goldenE2ESoftwareConstraintSection = "SS.constraints.001"
 	goldenE2EAffectedFile              = "internal/app/flow.go"
 	goldenE2EEvidence                  = "test -f internal/app/flow.go"
-	goldenE2EPlanID                    = "plan-golden-e2e"
-	goldenE2EPlanRevision              = "p1"
-	goldenE2EStatusFileName            = "status.json"
-	goldenE2ELogFileName               = "runtime.jsonl"
 )
 
-func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
+func TestGoldenE2EInitOnboardCommissionExternalRuntimeEvidenceCoverage(t *testing.T) {
 	restore := overrideGoldenE2EFlags(t)
 	defer restore()
 
@@ -68,31 +64,6 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 		)
 	}
 
-	err = runHarnessRun(&cobra.Command{}, nil)
-	if err == nil {
-		t.Fatal("harness run before onboarding succeeded, want profile-underdetermined block")
-	}
-	harnessBlock := err.Error()
-	for _, fragment := range []string{
-		"profile is underdetermined",
-		"missing_basis=current_canonical_profile_admission",
-		"no software applicability was inferred",
-	} {
-		if strings.Contains(harnessBlock, fragment) {
-			continue
-		}
-		t.Fatalf("harness block = %q, want fragment %q", harnessBlock, fragment)
-	}
-	for _, forbidden := range []string{
-		"SoftwareSystemSpec",
-		"--force-skip-specs",
-	} {
-		if !strings.Contains(harnessBlock, forbidden) {
-			continue
-		}
-		t.Fatalf("profile-underdetermined harness block gained %q: %s", forbidden, harnessBlock)
-	}
-
 	profileHarness := profileadmissionfixture.OpenExisting(t, root)
 	profileHarness.AdmitSoftwareRevisionWithTargetEntity(
 		t,
@@ -124,23 +95,7 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	reasonedCoverage := goldenE2ESpecCoverageFromCore(t, root)
 	assertGoldenE2ESectionStates(t, reasonedCoverage, project.SpecCoverageReasoned)
 
-	runtimeRoot := newGoldenE2ERuntime(t, root)
-	configureGoldenE2EHarness(root, runtimeRoot)
-
-	var runOutput bytes.Buffer
-	runCmd := &cobra.Command{}
-	runCmd.SetOut(&runOutput)
-	if err := runHarnessRun(runCmd, []string{decisionID}); err != nil {
-		t.Fatalf("harness prepare-only run: %v", err)
-	}
-	for _, fragment := range []string{
-		filepath.Join(".haft", "plans", goldenE2EPlanID+".yaml"),
-		"Commissions: created",
-	} {
-		if !strings.Contains(runOutput.String(), fragment) {
-			t.Fatalf("harness output missing %q:\n%s", fragment, runOutput.String())
-		}
-	}
+	createdCommission := createGoldenE2ECommission(t, root, decisionID)
 
 	commissions := goldenE2ECommissions(t, root)
 	if len(commissions) != 1 {
@@ -158,14 +113,17 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	if stringField(commission, "state") != "queued" {
 		t.Fatalf("state = %q, want queued", stringField(commission, "state"))
 	}
-	if stringField(commission, "implementation_plan_ref") != goldenE2EPlanID {
-		t.Fatalf("plan ref = %q, want %s", stringField(commission, "implementation_plan_ref"), goldenE2EPlanID)
+	if stringField(createdCommission, "id") != commissionID {
+		t.Fatalf("created commission = %#v, listed commission = %#v", createdCommission, commission)
 	}
 	if stringField(commission, "projection_policy") != "local_only" {
 		t.Fatalf("projection policy = %q, want local_only", stringField(commission, "projection_policy"))
 	}
 
-	scope := mapField(commission, "scope")
+	scope, ok := mapArg(commission, "scope")
+	if !ok {
+		t.Fatalf("commission scope = %#v, want object", commission["scope"])
+	}
 	if !containsAnyString(scope["allowed_paths"], goldenE2EAffectedFile) {
 		t.Fatalf("allowed_paths = %#v, want %s", scope["allowed_paths"], goldenE2EAffectedFile)
 	}
@@ -176,18 +134,6 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	commissionedCoverage := goldenE2ESpecCoverageFromCore(t, root)
 	assertGoldenE2ESectionStates(t, commissionedCoverage, project.SpecCoverageCommissioned)
 
-	resultOutput := goldenE2EHarnessResult(t, commissionID)
-	for _, fragment := range []string{
-		"commission: " + commissionID,
-		"state: queued",
-		"evidence_summary:",
-		"requirement: kind=command command=" + goldenE2EEvidence,
-	} {
-		if !strings.Contains(resultOutput, fragment) {
-			t.Fatalf("harness result missing %q:\n%s", fragment, resultOutput)
-		}
-	}
-
 	runtimeRunID := runGoldenE2EMockRuntime(t, root, commissionID)
 	implementedCoverage := goldenE2ESpecCoverageFromCore(t, root)
 	assertGoldenE2ESectionStates(t, implementedCoverage, project.SpecCoverageImplemented)
@@ -197,25 +143,17 @@ func TestGoldenE2EInitOnboardCommissionRuntimeEvidenceCoverage(t *testing.T) {
 	assertGoldenE2ESectionStates(t, verifiedCoverage, project.SpecCoverageVerified)
 	assertGoldenE2ERuntimeEvidenceEdges(t, verifiedCoverage, runtimeRunID, evidenceID)
 
-	completedResult := goldenE2EHarnessResult(t, commissionID)
-	for _, fragment := range []string{
-		"commission: " + commissionID,
-		"state: completed",
-		"last_event: workflow_terminal",
-		"evidence_summary:",
-	} {
-		if !strings.Contains(completedResult, fragment) {
-			t.Fatalf("completed harness result missing %q:\n%s", fragment, completedResult)
-		}
+	completed := goldenE2ECommissions(t, root)
+	if len(completed) != 1 || stringField(completed[0], "state") != "completed" {
+		t.Fatalf("completed commissions = %#v, want one completed external run", completed)
 	}
-
-	status := goldenE2EHarnessStatus(t)
-	metadata := mapField(status, "metadata")
-	if stringField(metadata, "tracker_kind") != "commission_source:haft" {
-		t.Fatalf("tracker_kind = %#v, want local Haft commission source", metadata["tracker_kind"])
+	events, ok := completed[0]["events"].([]any)
+	if !ok || len(events) == 0 {
+		t.Fatalf("completed commission events = %#v", completed[0]["events"])
 	}
-	if unavailable, ok := status["status_unavailable"].(bool); !ok || !unavailable {
-		t.Fatalf("status_unavailable = %#v, want true for prepare-only missing runtime status", status["status_unavailable"])
+	lastEvent, ok := events[len(events)-1].(map[string]any)
+	if !ok || stringField(lastEvent, "event") != "workflow_terminal" {
+		t.Fatalf("last external-runner event = %#v, want workflow_terminal", lastEvent)
 	}
 }
 
@@ -357,7 +295,7 @@ func createGoldenE2EDecision(t *testing.T, root string) string {
 	ctx := context.Background()
 	haftDir := filepath.Join(root, ".haft")
 	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
-		Title:      "Golden E2E harness proof",
+		Title:      "Golden E2E external-runner proof",
 		Signal:     "The product loop needs one deterministic init-to-commission proof.",
 		Acceptance: "A local-only WorkCommission can be prepared from a narrow DecisionRecord without external trackers.",
 	})
@@ -374,7 +312,7 @@ func createGoldenE2EDecision(t *testing.T, root string) string {
 		WeakestLink:     "The fixture can become unrepresentative if it stops using real project storage and CLI seams.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Unit-only proof",
-			Reason:  "It would not prove project readiness, spec check, and harness preparation compose.",
+			Reason:  "It would not prove project readiness, spec check, and commission preparation compose.",
 		}},
 		Rollback: &artifact.RollbackSpec{
 			Triggers: []string{"Golden E2E fixture becomes flaky or requires network."},
@@ -398,69 +336,33 @@ func createGoldenE2EDecision(t *testing.T, root string) string {
 	return decision.Meta.ID
 }
 
-func newGoldenE2ERuntime(t *testing.T, root string) string {
+func createGoldenE2ECommission(t *testing.T, root string, decisionID string) map[string]any {
 	t.Helper()
 
-	runtimeRoot := filepath.Join(root, ".fake-open-sleigh")
-	executable := filepath.Join(runtimeRoot, "bin", "open_sleigh")
-	writeGoldenE2EFile(t, executable, "#!/bin/sh\nexit 0\n")
-	if err := os.Chmod(executable, 0o755); err != nil {
-		t.Fatalf("chmod fake runtime: %v", err)
+	database, store := openGoldenE2EStore(t, root)
+	defer database.Close()
+
+	result, err := handleHaftCommissionForProject(context.Background(), store, map[string]any{
+		"action":        "create_from_decision",
+		"decision_ref":  decisionID,
+		"repo_ref":      "local:golden-e2e",
+		"base_sha":      "golden-e2e-base",
+		"target_branch": "dev",
+		"valid_until":   "2099-01-01T00:00:00Z",
+		"project_root":  root,
+	})
+	if err != nil {
+		t.Fatalf("create runner-neutral WorkCommission: %v", err)
 	}
-
-	return runtimeRoot
-}
-
-func configureGoldenE2EHarness(root string, runtimeRoot string) {
-	harnessPlanID = goldenE2EPlanID
-	harnessPlanRevision = goldenE2EPlanRevision
-	harnessRunPrepareOnly = true
-	harnessRunMock = true
-	harnessRunRuntimePath = runtimeRoot
-	harnessRunStatusPath = filepath.Join(root, ".haft", "runtime", goldenE2EStatusFileName)
-	harnessRunLogPath = filepath.Join(root, ".haft", "runtime", goldenE2ELogFileName)
-	harnessRunWorkspaceRoot = filepath.Join(root, ".haft", "workspaces")
-	harnessStatusPath = harnessRunStatusPath
-	harnessStatusLogPath = harnessRunLogPath
-}
-
-func goldenE2EHarnessResult(t *testing.T, commissionID string) string {
-	t.Helper()
-
-	var output bytes.Buffer
-	cmd := &cobra.Command{}
-	cmd.SetOut(&output)
-
-	if err := runHarnessResult(cmd, []string{commissionID}); err != nil {
-		t.Fatalf("harness result: %v", err)
+	payload := map[string]any{}
+	if err := json.Unmarshal([]byte(result), &payload); err != nil {
+		t.Fatalf("decode WorkCommission creation: %v\n%s", err, result)
 	}
-
-	return output.String()
-}
-
-func goldenE2EHarnessStatus(t *testing.T) map[string]any {
-	t.Helper()
-
-	var output bytes.Buffer
-	cmd := &cobra.Command{}
-	cmd.SetOut(&output)
-
-	previous := harnessStatusJSON
-	harnessStatusJSON = true
-	defer func() {
-		harnessStatusJSON = previous
-	}()
-
-	if err := runHarnessStatus(cmd, nil); err != nil {
-		t.Fatalf("harness status: %v", err)
+	commission, ok := payload["commission"].(map[string]any)
+	if !ok {
+		t.Fatalf("WorkCommission creation omitted commission: %#v", payload)
 	}
-
-	status := map[string]any{}
-	if err := json.Unmarshal(output.Bytes(), &status); err != nil {
-		t.Fatalf("decode harness status: %v\n%s", err, output.String())
-	}
-
-	return status
+	return commission
 }
 
 func goldenE2ESourceRoot(t *testing.T) string {
@@ -934,8 +836,6 @@ func runGoldenE2EGit(t *testing.T, root string, args ...string) {
 func overrideGoldenE2EFlags(t *testing.T) func() {
 	t.Helper()
 
-	restoreHarness := overrideHarnessTestFlags()
-
 	oldInitClaude := initClaude
 	oldInitCursor := initCursor
 	oldInitGemini := initGemini
@@ -945,22 +845,6 @@ func overrideGoldenE2EFlags(t *testing.T) func() {
 	oldInitAgy := initAgy
 	oldInitAll := initAll
 	oldInitLocal := initLocal
-
-	oldHarnessRunPrepareOnly := harnessRunPrepareOnly
-	oldHarnessRunForceCreate := harnessRunForceCreate
-	oldHarnessRunOnce := harnessRunOnce
-	oldHarnessRunOnceTimeoutMS := harnessRunOnceTimeoutMS
-	oldHarnessRunMock := harnessRunMock
-	oldHarnessRunMockAgent := harnessRunMockAgent
-	oldHarnessRunMockJudge := harnessRunMockJudge
-	oldHarnessRunStatusPath := harnessRunStatusPath
-	oldHarnessRunLogPath := harnessRunLogPath
-	oldHarnessRunWorkspaceRoot := harnessRunWorkspaceRoot
-	oldHarnessRunRuntimePath := harnessRunRuntimePath
-	oldHarnessRunGeneratedPlanPath := harnessRunGeneratedPlanPath
-	oldHarnessStatusPath := harnessStatusPath
-	oldHarnessStatusLogPath := harnessStatusLogPath
-	oldHarnessStatusJSON := harnessStatusJSON
 
 	initClaude = false
 	initCursor = false
@@ -972,25 +856,7 @@ func overrideGoldenE2EFlags(t *testing.T) func() {
 	initAll = false
 	initLocal = false
 
-	harnessRunPrepareOnly = false
-	harnessRunForceCreate = false
-	harnessRunOnce = false
-	harnessRunOnceTimeoutMS = 8000
-	harnessRunMock = false
-	harnessRunMockAgent = false
-	harnessRunMockJudge = false
-	harnessRunStatusPath = ""
-	harnessRunLogPath = ""
-	harnessRunWorkspaceRoot = ""
-	harnessRunRuntimePath = ""
-	harnessRunGeneratedPlanPath = ""
-	harnessStatusPath = ""
-	harnessStatusLogPath = ""
-	harnessStatusJSON = false
-
 	return func() {
-		restoreHarness()
-
 		initClaude = oldInitClaude
 		initCursor = oldInitCursor
 		initGemini = oldInitGemini
@@ -1001,20 +867,5 @@ func overrideGoldenE2EFlags(t *testing.T) func() {
 		initAll = oldInitAll
 		initLocal = oldInitLocal
 
-		harnessRunPrepareOnly = oldHarnessRunPrepareOnly
-		harnessRunForceCreate = oldHarnessRunForceCreate
-		harnessRunOnce = oldHarnessRunOnce
-		harnessRunOnceTimeoutMS = oldHarnessRunOnceTimeoutMS
-		harnessRunMock = oldHarnessRunMock
-		harnessRunMockAgent = oldHarnessRunMockAgent
-		harnessRunMockJudge = oldHarnessRunMockJudge
-		harnessRunStatusPath = oldHarnessRunStatusPath
-		harnessRunLogPath = oldHarnessRunLogPath
-		harnessRunWorkspaceRoot = oldHarnessRunWorkspaceRoot
-		harnessRunRuntimePath = oldHarnessRunRuntimePath
-		harnessRunGeneratedPlanPath = oldHarnessRunGeneratedPlanPath
-		harnessStatusPath = oldHarnessStatusPath
-		harnessStatusLogPath = oldHarnessStatusLogPath
-		harnessStatusJSON = oldHarnessStatusJSON
 	}
 }

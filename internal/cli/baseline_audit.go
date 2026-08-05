@@ -63,8 +63,8 @@ var baselineAuditCmd = &cobra.Command{
 
 The audit is read-only. It distinguishes spec approval baselines, pre-work
 reference snapshots, verified-state snapshots, comparison baselines, ordinary
-language, and legacy ambiguous baseline wording. It skips Open-Sleigh, ignored
-planning carriers, node_modules, vendor, and build output.`,
+language, and legacy ambiguous baseline wording. It skips ignored planning
+carriers, node_modules, vendor, and build output.`,
 	RunE: runBaselineAudit,
 }
 
@@ -1177,7 +1177,6 @@ func baselineAuditExcludedPathHints() []string {
 		"desktop/frontend/node_modules",
 		"node_modules",
 		"*/node_modules",
-		"open-sleigh",
 		"vendor",
 		"dist",
 		"build",

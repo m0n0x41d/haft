@@ -33,9 +33,12 @@
 | **Lint** | golangci-lint v2 | Comprehensive Go linting |
 | **Archived desktop build** | Tauri CLI (`cargo tauri build`) | Historical archived native app packaging for the removed Rust shell plus React frontend |
 
-## Harness Batch Execution
+## Historical Harness Batch Execution (removed in v9)
 
-Decision record: `dec-20260428-harness-drain-v3-16bf21f3`.
+Decision record `dec-20260428-harness-drain-v3-16bf21f3` is superseded by
+`dec-20260805-haft-v9-remove-built-in-execution-contour-a1eb55b6`. The table
+below is retained as provenance for the v7/v8 design; none of these runtime
+components or commands ships in v9.
 
 | Component | Technology / policy | Why | Alternatives considered |
 |-----------|---------------------|-----|-------------------------|

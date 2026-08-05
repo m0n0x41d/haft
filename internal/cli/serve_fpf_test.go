@@ -190,7 +190,7 @@ func TestHandleQuintQuery_RelatedArtifactIDReturnsProblemCardJSON(t *testing.T) 
 			Title:      "Portable project MCP config",
 			ValidUntil: "2026-05-23",
 		},
-		Body:           "Problem body for Open-Sleigh frame verification.",
+		Body:           "Problem body for external runner frame verification.",
 		StructuredData: `{"signal":"shared config embeds an absolute path"}`,
 	}
 	if err := store.Create(ctx, problem); err != nil {

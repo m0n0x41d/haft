@@ -1241,20 +1241,26 @@ golangci-lint run \
   --max-issues-per-linter=0
 npm --prefix packages/haft-pi run typecheck
 npm --prefix packages/haft-pi test
-(
-  cd open-sleigh
-  mix format --check-formatted
-  mix compile --warnings-as-errors
-  mix test
-)
 actionlint .github/workflows/*.yml
 bash -n install.sh scripts/*.sh scripts/release/*.sh
+bash scripts/release/smoke-archive.sh \
+  <exact-v9-candidate-archive> <version> <short-sha>
 task test:race
 git diff --check
 ```
 
-Capture the race aggregate carrier and require all twelve shards, all expected
-packages, no duplicate shard, no missing shard, and overall pass.
+The Open-Sleigh/Elixir/OTP gates were removed from this current command set by
+`dec-20260805-haft-v9-remove-built-in-execution-contour-a1eb55b6`. Historical
+execution-ledger entries below remain provenance for older source identities;
+they do not qualify the v9 boundary. The archive smoke is now the negative
+gate: it must reject every Open-Sleigh, ERTS, Elixir, or BEAM payload.
+
+`task test:race` is the bounded P13 critical profile: require all 37 exact
+tests across its 12 manifest-owned packages to pass. Do not run a full local
+race before P13. `task test:race-full` is an explicit, very slow reproduction
+of the hosted CI contour only. CI owns the twelve-shard aggregate; release
+requires the successful unexpired aggregate for its exact candidate SHA rather
+than executing those shards again.
 
 ### M4.3 fresh and upgrade/archive probes
 
@@ -1360,7 +1366,6 @@ Wait for:
 
 - Test & Build;
 - all twelve race shards and the aggregate;
-- OpenSleigh;
 - exact lint;
 - FPF verification and token gate.
 
@@ -1964,6 +1969,39 @@ plus 34/34 tests, and OpenSleigh format/compile plus 509 tests with three
 declared exclusions passed. The final generator rebase after the Go cleanup
 again contained exactly one `derivation_tool_changed` delta, zero semantic,
 source, DB, or Base deltas, and zero diagnostics.
+
+### 2026-08-05 — non-duplicating qualification topology
+
+This addendum supersedes only current instructions that made a local full race,
+P13, hosted CI, and release execute overlapping repository-wide test contours.
+It does not invalidate historical evidence on older source identities, import
+that evidence into the current candidate, pass P13/P14, or grant release
+authority.
+
+- The operator-authorized local full race was stopped after 1 hour 40 minutes.
+  Its exact `cli.test` leaf, `go test -race`, compiled `race-shard`, and
+  `go run ./cmd/race-shard` parents were terminated leaf-to-root. No aggregate
+  was atomically published; the partial run is not evidence.
+- `task test:race` now consumes the exact `go_race` cases in
+  `internal/p13acceptance/manifest.json`: 37 named tests in 12 packages,
+  `-p=1`, `-cpu=2`, and bounded `GOMAXPROCS`. The previous full-repository
+  behavior remains available only as the explicit `task test:race-full`.
+- CI owns one full non-desktop race matrix and its exact-SHA aggregate. A
+  manual P13 dispatch skips CI's ordinary/coverage, full-race, and lint jobs so
+  P13 does not run beside a second qualification matrix.
+- Release runs no second full race, FPF token/source verification, or lint. Its
+  guard queries the exact candidate SHA's successful push CI run and requires
+  the matching unexpired `race-aggregate-<sha>` artifact before release-only
+  build, archive smoke, sealing, or later publication can proceed.
+- The commission drain regression remains valid runner-neutral lifecycle
+  coverage and is renamed `TestExternalRunnerDrainStatus`; it is not a public
+  `haft harness` compatibility test.
+
+The current source return condition is focused topology verification followed
+by one canonical consolidated P13. Hosted full-race evidence still requires a
+future successful CI run for an exact committed SHA. Installation, host
+restart, P14, manual E2E, push, tag, publication, and release authority remain
+separate and absent.
 
 ## One-line continuation rule
 

@@ -127,10 +127,10 @@ func TestLocksetsOverlap(t *testing.T) {
 	if !LocksetsOverlap([]string{"internal/cli/**"}, []string{"internal/cli/serve.go"}) {
 		t.Fatal("locksets overlap = false, want true")
 	}
-	if !LocksetsOverlap([]string{"**/*"}, []string{"open-sleigh/lib/open_sleigh/work_commission.ex"}) {
+	if !LocksetsOverlap([]string{"**/*"}, []string{"external-runner/work_commission.json"}) {
 		t.Fatal("wildcard locksets overlap = false, want true")
 	}
-	if LocksetsOverlap([]string{"internal/cli/**"}, []string{"open-sleigh/**"}) {
+	if LocksetsOverlap([]string{"internal/cli/**"}, []string{"external-runner/**"}) {
 		t.Fatal("locksets overlap = true, want false")
 	}
 }

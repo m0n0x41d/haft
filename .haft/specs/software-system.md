@@ -88,9 +88,9 @@ claims:
       - haft-core
   - id: SS.allocation.001.L4
     class: L
-    statement: OpenSleigh performs the dated runtime Work admitted by a WorkCommission and emits runtime status observations; CommissionService records the corresponding RuntimeRun lifecycle result. Neither component owns human commission authority or semantic admission.
+    statement: A separately operated external runner may perform the dated Work admitted by a WorkCommission and submit lifecycle observations; CommissionService validates and records the corresponding RuntimeRun lifecycle result. The external runner is not a Haft product component and owns neither human commission authority nor semantic admission.
     scope:
-      - opensleigh-runtime
+      - external-runner
   - id: SS.allocation.001.L5
     class: L
     statement: The FPF Source Query component owns source-unit indexing, retrieval, exact hydration, and retrieval provenance; it does not own pattern applicability or selection.
@@ -118,7 +118,7 @@ claims:
       - spec-lifecycle-service
   - id: SS.allocation.001.L10
     class: L
-    statement: CommissionService owns WorkCommission validation and audited lifecycle transitions; it does not own human authorization or OpenSleigh execution.
+    statement: CommissionService owns WorkCommission validation and audited lifecycle transitions; it owns neither human authorization nor execution of commissioned Work.
     scope:
       - commission-service
   - id: SS.allocation.001.L11
@@ -2015,18 +2015,17 @@ claims:
       - A.15
   - id: SS.procedural.commission.001.L3
     class: L
-    statement: DeliveryPolicy distinguishes workspace_patch_manual from workspace_patch_auto_on_pass; the project-selected default is policy outside this SoftwareSystemSpec.
+    statement: DeliveryPolicy records a runner-facing delivery instruction that distinguishes workspace_patch_manual from workspace_patch_auto_on_pass; Haft stores and projects that instruction but does not itself execute either delivery effect, and the project-selected default is policy outside this SoftwareSystemSpec.
     scope:
       - commission-delivery-policy
   - id: SS.procedural.commission.001.A3
     class: A
-    statement: Automatic local apply is admissible only for workspace_patch_auto_on_pass when the current apply-time autonomy envelope, scope, checks, and delivery decision all admit it.
+    statement: An external runner that implements automatic local apply may do so only for workspace_patch_auto_on_pass when its current apply-time authority, scope, checks, and delivery decision all admit it; this condition grants no apply capability to Haft Core.
     scope:
       - commission-auto-apply
     support_refs:
       - SS.procedural.commission.001.L3
       - "code:internal/workcommission/lifecycle.go"
-      - "code:internal/cli/harness.go"
     governing_pattern_refs:
       - A.15
       - A.10
@@ -2057,7 +2056,7 @@ target_refs:
 claims:
   - id: SS.interfaces.runtime.001.L1
     class: L
-    statement: Dedicated commission interfaces expose creation, inspection, claim, requeue, cancel, and lifecycle results; harness interfaces expose run, bounded drain, status, result inspection, and local apply behavior.
+    statement: Dedicated commission interfaces expose creation, inspection, runnable selection, claim, requeue, cancel, lifecycle-event recording, and external completion. No Haft CLI or MCP interface spawns a coding agent, drains an execution queue, or applies a workspace patch.
     scope:
       - cli
       - mcp
@@ -2069,14 +2068,13 @@ claims:
     support_refs:
       - SS.allocation.001.L11
       - "code:internal/cli/serve_commission.go"
-      - "code:internal/cli/harness.go"
       - "code:internal/workcommission/projection.go"
     governing_pattern_refs:
       - A.15
       - A.10
   - id: SS.interfaces.runtime.001.D2
     class: D
-    statement: Host adapters must keep commission execution, local workspace apply, and remote publication as distinct effects and must not present a RuntimeRunRecord as remote publication authority.
+    statement: Host adapters must keep external commission execution, local workspace apply, and remote publication as distinct effects and must not present a WorkCommission, lifecycle event, or RuntimeRunRecord as apply or remote-publication authority.
     scope:
       - effect-boundary
     support_refs:
@@ -2089,7 +2087,7 @@ claims:
       - A.15
   - id: SS.interfaces.runtime.001.L2
     class: L
-    statement: A human operator acts through CLI commands to start, observe, stop, recover, apply, requeue, or cancel runtime work; the MCP adapter exposes bounded typed lifecycle operations and projections to an authorized caller. The CLI and MCP surfaces are interfaces rather than owners or performers of that work, and the MCP adapter is not an unattended long-running executor.
+    statement: A human operator uses Haft CLI commands to authorize, inspect, requeue, cancel, or record externally completed Work, while an external runner uses bounded typed lifecycle operations to claim and report one commission. The CLI and MCP surfaces validate and record these effects rather than performing the commissioned Work, and the MCP adapter is not an unattended long-running executor.
     scope:
       - runtime-surface-ownership
     support_refs:
@@ -2099,7 +2097,7 @@ claims:
       - SS.allocation.001.L11
   - id: SS.interfaces.runtime.001.L3
     class: L
-    statement: Single-commission `haft harness run` is the default execution surface; queue drain is an explicit opt-in `--drain` mode with bounded concurrency.
+    statement: Haft v9 exposes no built-in execution entry point. Each external runner chooses its own scheduling and concurrency policy outside Haft, while every claimed commission remains individually subject to the same WorkCommission admission and lifecycle contract.
     scope:
       - runtime-entry-mode
 ```
@@ -2111,7 +2109,7 @@ id: SS.constraints.runtime.001
 spec: software-system
 system_frame: software_system
 kind: software.constraints
-title: Runtime admission and isolation constraints
+title: External-runner admission and isolation constraints
 statement_type: admissibility
 claim_layer: object
 owner: human
@@ -2131,26 +2129,26 @@ claims:
       - runtime-bounded-context
   - id: SS.constraints.runtime.001.A1
     class: A
-    statement: Runtime startup for a WorkCommission is admissible only when SS.procedural.commission.001.A4 admits that same WorkCommission in the bounded execution context defined by SS.constraints.runtime.001.L1.
+    statement: An external runner may record startup for a WorkCommission only when SS.procedural.commission.001.A4 admits that same WorkCommission and the runner supplies the bounded execution context defined by SS.constraints.runtime.001.L1.
     scope:
       - runtime-start
     support_refs:
       - SS.procedural.commission.001.A4
       - SS.constraints.runtime.001.L1
       - "legacy:ES.runtime-policy.001"
-      - "code:internal/cli/harness.go"
+      - "code:internal/cli/serve_commission.go"
     governing_pattern_refs:
       - A.15
       - A.10
   - id: SS.constraints.runtime.001.A2
     class: A
-    statement: A drain-mode commission start is admissible only under the same per-commission admission contract used by single-run mode and the declared concurrency bound.
+    statement: When an external runner schedules more than one commission, every start remains admissible only under the per-commission contract in SS.constraints.runtime.001.A1 and current lockset or lease conflict checks; the runner's concurrency mechanism is outside Haft Core.
     scope:
       - runtime-drain
     support_refs:
       - SS.constraints.runtime.001.A1
       - SS.interfaces.runtime.001.L3
-      - "code:internal/cli/harness.go"
+      - "code:internal/cli/serve_commission.go"
     governing_pattern_refs:
       - A.15
   - id: SS.constraints.runtime.001.L2
@@ -2160,14 +2158,14 @@ claims:
       - runtime-recovery-boundary
 ```
 
-## SS.procedural.runtime.001 OpenSleigh RuntimeRun lifecycle
+## SS.procedural.runtime.001 External RuntimeRun recording lifecycle
 
 ```yaml spec-section
 id: SS.procedural.runtime.001
 spec: software-system
 system_frame: software_system
 kind: software.procedural_behavior
-title: OpenSleigh RuntimeRun lifecycle
+title: External RuntimeRun recording lifecycle
 statement_type: duty
 claim_layer: object
 owner: human
@@ -2182,7 +2180,7 @@ target_refs:
 claims:
   - id: SS.procedural.runtime.001.L1
     class: L
-    statement: A RuntimeRun is the dated Work occurrence in which OpenSleigh executes one admitted WorkCommission in an isolated workspace; it remains distinct from the authorization record.
+    statement: A RuntimeRun is the dated Work occurrence in which a separately operated external runner performs one admitted WorkCommission in an isolated workspace; it remains distinct from both the runner and the authorization record.
     scope:
       - runtime-run
   - id: SS.procedural.runtime.001.L2
@@ -2200,30 +2198,28 @@ claims:
       - SS.constraints.runtime.001.L1
   - id: SS.procedural.runtime.001.L4
     class: L
-    statement: A WorkspacePatchApply is a discrete reversible local effect whose inputs include a patch reference, RuntimeRunRecord reference, delivery-policy decision, and current-checkout state observation; it is neither the RuntimeRun nor its record and carries no remote publication authority.
+    statement: A WorkspacePatchApply performed outside Haft is a discrete reversible local effect whose inputs include a patch reference, RuntimeRunRecord reference, delivery-policy decision, and current-checkout state observation; it is neither the RuntimeRun nor its record and carries no remote publication authority.
     scope:
       - runtime-apply-effect
     support_refs:
       - SS.procedural.commission.001.L4
   - id: SS.procedural.runtime.001.D1
     class: D
-    statement: CommissionService must submit a terminal RuntimeRunRecord conforming to SS.procedural.runtime.001.L3 through AdmissionService from validated OpenSleigh observation carriers and commission lifecycle events.
+    statement: CommissionService must validate runner identity, WorkCommission state, lifecycle ordering, and submitted payload before recording a terminal lifecycle result conforming to SS.procedural.runtime.001.L3; a runner-supplied result is not evidence truth or proof of performed Work merely because it was recorded.
     scope:
       - runtime-terminal-result
     support_refs:
       - SS.allocation.001.L10
-      - SS.allocation.001.L7
       - SS.procedural.runtime.001.L2
       - SS.procedural.runtime.001.L3
-      - SS.procedural.memory-admission.001.A1
-      - "legacy:ES.runtime-policy.001"
       - SS.interfaces.runtime.001.D1
+      - "code:internal/cli/serve_commission.go"
     governing_pattern_refs:
       - A.15.1
       - A.10
   - id: SS.procedural.runtime.001.D2
     class: D
-    statement: CommissionService must preserve the WorkspacePatchApply boundary in SS.procedural.runtime.001.L4 and must not admit automatic local apply unless SS.procedural.commission.001.A3 is satisfied.
+    statement: CommissionService must preserve the WorkspacePatchApply boundary in SS.procedural.runtime.001.L4 by recording and projecting delivery policy without spawning an executor or applying a patch; any external automatic apply remains subject to SS.procedural.commission.001.A3.
     scope:
       - runtime-apply
     support_refs:
@@ -2232,28 +2228,10 @@ claims:
       - SS.procedural.commission.001.L3
       - SS.procedural.commission.001.A3
       - SS.interfaces.runtime.001.L2
-      - "legacy:ES.runtime-policy.001"
+      - "code:internal/cli/serve_commission.go"
     governing_pattern_refs:
       - A.15
       - A.10
-  - id: SS.procedural.runtime.001.E1
-    class: E
-    statement: Under current-worktree source inspection and focused WorkCommission and harness tests on 2026-07-14, RuntimeStatusWriter source defines a JSON status carrier, and the focused harness tests observe a scope-checked local git apply as an effect distinct from runtime execution; these observations support the carrier distinction in SS.procedural.runtime.001.L2 and the separate-local-effect portion of L4 for the human specification reviewer in the runtime-contract viewpoint. They are not admitted supporting epistemes for Evidence relations about existence, admission, or the complete L3 shape of a RuntimeRunRecord, an actual RuntimeRun, the D1 or D2 duties, remote-publication authority, or production-code drain readiness.
-    scope:
-      - runtime-contract-evidence
-    support_refs:
-      - SS.procedural.runtime.001.L2
-      - SS.procedural.runtime.001.L4
-    evidence_refs:
-      - "carrier:open-sleigh/lib/open_sleigh/runtime_status_writer.ex"
-      - "carrier:internal/cli/harness.go"
-      - "carrier:internal/cli/harness_test.go"
-      - "carrier:internal/workcommission/lifecycle_test.go"
-      - "command:go test ./internal/workcommission ./internal/cli -run 'WorkCommission|Harness|Projection' -count=1"
-    valid_until: 2026-07-21
-    governing_pattern_refs:
-      - A.10
-      - B.3
 ```
 
 ## SS.functional.evidence-recording.001 Typed evidence recording
@@ -2608,7 +2586,7 @@ claims:
       - persistence-migration
   - id: SS.structure.001.L4
     class: L
-    statement: OpenSleigh is the shipped execution-mechanics component of HaftSoftwareSystem; Haft Core is an internal component that implements core semantic, TypeEnv, admission, commission, and project-memory responsibilities. Neither component is a second target system or ProjectGovernanceSubstrate role holder.
+    statement: HaftSoftwareSystem ships no coding-agent execution component. Haft Core implements semantic, TypeEnv, admission, commission-governance, and project-memory responsibilities; separately operated external runners remain outside the product boundary and acquire no ProjectGovernanceSubstrate role merely by consuming a WorkCommission.
     scope:
       - runtime-allocation
   - id: SS.structure.001.L7

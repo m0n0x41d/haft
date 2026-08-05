@@ -49,7 +49,7 @@ func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
 	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-cli-001",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -136,7 +136,7 @@ func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-requeue-001",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -502,7 +502,7 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -511,7 +511,7 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	})
@@ -522,7 +522,7 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	result, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "phase_blocked",
 		"verdict":       "blocked",
 		"reason":        "semantic gate failed",
@@ -576,7 +576,7 @@ func TestHandleHaftCommission_CompleteOrBlockRecordsProjectionDebtForExternalReq
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": "wc-external-required",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "pass",
 		"payload": map[string]any{
@@ -754,7 +754,7 @@ func TestHandleHaftCommission_CompleteOrBlockKeepsLocalOnlyCompletionUnaffected(
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": "wc-local-only-pass",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "pass",
 	})
@@ -810,7 +810,7 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -819,7 +819,7 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	result, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "record_run_event",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "phase_outcome",
 		"verdict":       "pass",
 		"payload": map[string]any{
@@ -852,8 +852,8 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	if event["runtime_run_id"] != commissionID+"#runtime-run-001" {
 		t.Fatalf("runtime_run_id = %#v, want deterministic attempt ref", event["runtime_run_id"])
 	}
-	if event["runner_id"] != "open-sleigh:test" {
-		t.Fatalf("runner_id = %#v, want open-sleigh:test", event["runner_id"])
+	if event["runner_id"] != "external:test" {
+		t.Fatalf("runner_id = %#v, want external:test", event["runner_id"])
 	}
 }
 
@@ -891,7 +891,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -900,7 +900,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	})
@@ -911,7 +911,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "record_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_checked",
 		"verdict":       "pass",
 	})
@@ -922,7 +922,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	result, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	})
@@ -955,7 +955,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "record_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_checked",
 		"verdict":       "blocked",
 		"reason":        "late stale replay",
@@ -981,7 +981,7 @@ func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *test
 		_, err = handleHaftCommission(ctx, store, map[string]any{
 			"action":        action,
 			"commission_id": "wc-lifecycle-order",
-			"runner_id":     "open-sleigh:test",
+			"runner_id":     "external:test",
 			"event":         "phase_outcome",
 			"verdict":       "pass",
 		})
@@ -1021,7 +1021,7 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 
 	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
 		Title:      "Harness intake",
-		Signal:     "Open-Sleigh needs runnable work without hand-written commission JSON.",
+		Signal:     "external runner needs runnable work without hand-written commission JSON.",
 		Acceptance: "A DecisionRecord can become a bounded WorkCommission.",
 	})
 	if err != nil {
@@ -1035,7 +1035,7 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 		SelectionPolicy:     "Prefer the shortest path that keeps DecisionRecord and WorkCommission distinct.",
 		CounterArgument:     "A direct prompt runner would be simpler for a one-off local task.",
 		WeakestLink:         "Scope must remain explicit enough that the runner cannot widen authority.",
-		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Hand-written JSON", Reason: "Too error-prone for repeated harness runs."}},
+		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Hand-written JSON", Reason: "Too error-prone for repeated external runs."}},
 		Rollback:            &artifact.RollbackSpec{Triggers: []string{"Commission creation produces invalid scope."}},
 		EvidenceReqs:        []string{"go test ./internal/cli"},
 		AffectedFiles:       []string{"internal/cli/commission.go", "internal/cli/serve_commission.go"},
@@ -1462,7 +1462,7 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksFreshnessDrift(t *testing
 			args := map[string]any{
 				"action":        "start_after_preflight",
 				"commission_id": fixture.CommissionID,
-				"runner_id":     "open-sleigh:test",
+				"runner_id":     "external:test",
 				"event":         "preflight_passed",
 				"verdict":       "pass",
 				"project_root":  fixture.ProjectRoot,
@@ -1748,7 +1748,7 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": secondID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err == nil || !strings.Contains(err.Error(), "commission_not_runnable") {
 		t.Fatalf("claim error = %v, want dependency-blocked commission_not_runnable", err)
@@ -1777,7 +1777,7 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 	claimed := map[string]map[string]any{}
 	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":    "claim_for_preflight",
-		"runner_id": "open-sleigh:test",
+		"runner_id": "external:test",
 		"plan_ref":  "plan-cli-deps",
 	})
 	if err != nil {
@@ -1895,7 +1895,7 @@ func TestHandleHaftCommission_RunnableFilterMatchesPlanRevision(t *testing.T) {
 	claimed := map[string]map[string]any{}
 	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"plan_ref":      "plan-revisioned",
 		"plan_revision": "p2",
 	})
@@ -1959,7 +1959,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	for _, commission := range []map[string]any{
 		workCommissionFixtureWithLockset("wc-lock-a", "queued", "2099-01-01T00:00:00Z", []any{"internal/cli/**"}),
 		workCommissionFixtureWithLockset("wc-lock-b", "queued", "2099-01-01T00:00:00Z", []any{"internal/cli/serve.go"}),
-		workCommissionFixtureWithLockset("wc-lock-c", "queued", "2099-01-01T00:00:00Z", []any{"open-sleigh/**"}),
+		workCommissionFixtureWithLockset("wc-lock-c", "queued", "2099-01-01T00:00:00Z", []any{"external-runner/**"}),
 	} {
 		_, err := handleHaftCommission(ctx, store, map[string]any{
 			"action":     "create",
@@ -1973,7 +1973,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	_, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-lock-a",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1982,7 +1982,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-lock-b",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err == nil || !strings.Contains(err.Error(), "commission_lock_conflict") {
 		t.Fatalf("claim error = %v, want commission_lock_conflict", err)
@@ -1991,7 +1991,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-lock-c",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatalf("non-overlapping claim error = %v", err)
@@ -2099,7 +2099,7 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(
 			_, err = handleHaftCommission(ctx, store, map[string]any{
 				"action":        "claim_for_preflight",
 				"commission_id": commissionID,
-				"runner_id":     "open-sleigh:test",
+				"runner_id":     "external:test",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -2117,7 +2117,7 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(
 			_, err = handleHaftCommission(ctx, store, map[string]any{
 				"action":        "start_after_preflight",
 				"commission_id": commissionID,
-				"runner_id":     "open-sleigh:test",
+				"runner_id":     "external:test",
 				"event":         "preflight_passed",
 				"verdict":       "pass",
 			})
@@ -2192,7 +2192,7 @@ func TestHandleQuintCommission_AutoApply(t *testing.T) {
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": "wc-auto-apply",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "pass",
 	})
@@ -2237,7 +2237,7 @@ func TestStaleLeaseCap(t *testing.T) {
 
 	stale := workCommissionFixture("wc-stale-lease", "queued", "2099-01-01T00:00:00Z")
 	stale["lease"] = map[string]any{
-		"runner_id":  "open-sleigh:old",
+		"runner_id":  "external:old",
 		"state":      "claimed_for_preflight",
 		"claimed_at": now.Add(-25 * time.Hour).Format(time.RFC3339),
 	}
@@ -2283,7 +2283,7 @@ func TestStaleLeaseCap(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-stale-lease",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"lease_age_cap": "24h",
 	})
 	if err == nil || !strings.Contains(err.Error(), "lease_too_old") {
@@ -2313,7 +2313,7 @@ func TestStaleLeaseCap(t *testing.T) {
 	}
 }
 
-func TestHarnessRun_Drain(t *testing.T) {
+func TestExternalRunnerDrainStatus(t *testing.T) {
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -2322,7 +2322,7 @@ func TestHarnessRun_Drain(t *testing.T) {
 	stale := workCommissionFixture("wc-drain-stale", "queued", "2099-01-01T00:00:00Z")
 	stale["decision_ref"] = "dec-drain-stale"
 	stale["lease"] = map[string]any{
-		"runner_id":  "open-sleigh:old",
+		"runner_id":  "external:old",
 		"state":      "claimed_for_preflight",
 		"claimed_at": now.Add(-25 * time.Hour).Format(time.RFC3339),
 	}
@@ -2435,7 +2435,7 @@ func createClaimedFreshnessCommission(
 		SelectedTitle:   "Gate commission freshness",
 		WhySelected:     "The runtime needs Haft to enforce the snapshot before Execute.",
 		SelectionPolicy: "Block hard deterministic mismatches at start_after_preflight.",
-		CounterArgument: "Open-Sleigh already has structural gates.",
+		CounterArgument: "external runner already has structural gates.",
 		WeakestLink:     "The Go lifecycle transition must not admit stale snapshots.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Advisory warning",
@@ -2476,7 +2476,7 @@ func createClaimedFreshnessCommission(
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2642,7 +2642,7 @@ func runCommissionThroughPreflight(
 	_, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "completed",
 	})
@@ -2663,7 +2663,7 @@ func runCommissionStartAfterPreflight(
 	_, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2672,7 +2672,7 @@ func runCommissionStartAfterPreflight(
 	args := map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	}

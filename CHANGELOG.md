@@ -4,15 +4,33 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [9.0.0] — 2026-08-05
 
 The last published release is
 [v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
-The v8.2.0 candidate was never published; work previously described as an
-8.2 candidate remains unreleased and is part of the v9 candidate lineage.
+The v8.2.0 candidate was never published; its candidate lineage is incorporated
+into this v9.0.0 release entry.
 
 ### Changed
 
+- **Race qualification no longer multiplies the same suite locally and at
+  release.** `task test:race` now reads P13's bounded 37-test critical profile
+  instead of launching the full repository; the old behavior is explicit as
+  `task test:race-full`. CI remains the single owner of full race closure and
+  its exact-SHA aggregate. Release now fails closed unless that CI run passed
+  and its aggregate is still available, then packages without rerunning full
+  race, coverage-equivalent source checks, or lint. A manual P13 dispatch skips
+  the ordinary CI matrix rather than running both qualification contours.
+- **V9 removes the built-in execution product and BEAM dependency.** The
+  `haft run` and `haft harness` commands, the complete `open-sleigh/` source
+  tree, Open-Sleigh CI/release/archive machinery, and Elixir/OTP/BEAM
+  toolchain requirements are gone. Haft retains runner-neutral
+  WorkCommission/RuntimeRunRecord governance, `haft commission`, the typed
+  `haft_commission` lifecycle API, and `complete-external`. A successful
+  upgrade removes only `~/.haft/runtimes/open-sleigh/current`; it preserves
+  `~/.open-sleigh/` user data and the independent `haft-embed` runtime, which
+  remains outside the v9 contract and P14 acceptance basis. Process telemetry
+  schema v2 also removes the obsolete `haft run` command-count fields.
 - **Specification recovery no longer dead-ends in onboarding.** Onboarding
   `ready` now names its domain and explicitly covers only the canonical profile
   plus structured project memory. When one declared scope lacks the
@@ -811,9 +829,6 @@ The v8.2.0 candidate was never published; work previously described as an
   audit` now classifies `h-spec`, `h-verify`, and agent guardrail baseline
   wording as current lifecycle/verification surfaces instead of legacy
   ambiguous baseline debt.
-- **Baseline audit verification/run snapshot classification.** `haft baseline
-  audit` now classifies verification-pass baseline fields and `haft run`
-  baseline-phase output as verified-state snapshot terminology.
 - **Baseline audit interface-contract classification.** `haft baseline audit`
   now classifies baseline wording inside the interface contract catalog as
   contract-surface terminology rather than unresolved baseline semantics.
@@ -989,7 +1004,7 @@ The v8.2.0 candidate was never published; work previously described as an
   / `--json` to classify repository `baseline` wording across code, tests,
   docs, skills, templates, and `.haft` carriers as spec approval, pre-work
   reference, verified-state snapshot, comparison, ordinary-language, or legacy
-  ambiguous usage while skipping Open-Sleigh and generated dependency noise.
+  ambiguous usage while skipping generated dependency noise.
 - **Baseline split rewrite regression.** Added compatibility coverage proving
   pre-work reference and verified-state snapshots cannot rewrite an existing
   `SpecSectionApprovalBaseline` row for the same spec section.
@@ -1591,8 +1606,10 @@ The v8.2.0 candidate was never published; work previously described as an
   reaches the source-owned `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` cards
   plus their current C.26 and C.32.PAD witnesses.
 - **Deterministic lossless race qualification.** Replaced the serial
-  package-isolated CI and release loops with one shared 12-shard runner used by
-  local Taskfile adapters and both workflow matrices. On the executing
+  package-isolated CI loop with one shared 12-shard runner used by CI and the
+  explicit `test:race-full` local adapter. The default `test:race` adapter
+  instead consumes P13's bounded critical profile, and release reuses the
+  successful exact-SHA CI aggregate rather than running a second matrix. On the executing
   platform, the validated plan assigns every current non-desktop package to
   exactly one contour: configured split packages assign every platform-visible
   top-level Test, Example, or Fuzz target to exactly one shard, while all
@@ -1601,9 +1618,9 @@ The v8.2.0 candidate was never published; work previously described as an
   deliberate `TestP13ConsolidatedAcceptance` skip. Missing or duplicate work,
   invalid partitioning, shard failure, timeout, interruption, or a missing
   observation prevents aggregate success. Plan, shard, and bounded local-all
-  modes emit machine-readable observations; CI and release retain each shard
-  observation and expose one aggregate check that fails unless the complete
-  matrix succeeds. No measured speedup or hosted-run result is claimed here.
+  modes emit machine-readable observations; CI retains each shard observation
+  and exposes one aggregate check that fails unless the complete matrix
+  succeeds. No measured speedup or hosted-run result is claimed here.
 - **Actionable project-profile recovery with bounded automatic bootstrap.**
   `profile_underdetermined` projections name `haft_onboard` as the recovery
   surface and preserve the originating scope. During `haft init`, only a
@@ -1636,10 +1653,8 @@ The v8.2.0 candidate was never published; work previously described as an
 - **Root-layout maintenance paths and current repository links.** Optional
   reference-repository discovery now resolves the project-local
   `.context/repos` path after the root-level Go-module move. Contributor setup
-  and the current Open-Sleigh specification point to `m0n0x41d/haft`, while
-  Open-Sleigh tasks derive the active checkout instead of embedding one
-  maintainer's path, public profile fixtures use a neutral absolute root, and
-  obsolete `src/mcp` ignore and binary-attribute entries are gone.
+  points to `m0n0x41d/haft`, public profile fixtures use a neutral absolute
+  root, and obsolete `src/mcp` ignore and binary-attribute entries are gone.
 - **Portable installation and current health diagnostics.** `task install`
   resolves its stale-binary cleanup target through `GOBIN` or `GOPATH`, creates
   the selected binary directory before building, and no longer embeds a
@@ -1647,15 +1662,14 @@ The v8.2.0 candidate was never published; work previously described as an
   database, binding, and MCP-process contour instead of requiring a JavaScript
   runtime or reporting removed standalone-agent auth, provider, hook, and skill
   surfaces.
-- **Published v8 lineage safeguards retained.** Ported the four safeguards
-  absent from the divergent v9 development ancestry: recursive trailing-slash
-  scopes in Go and Open-Sleigh, fail-closed commission lifecycle commands,
-  idempotent replay of passed running preflight events, and recursive
-  Open-Sleigh struct serialization. The already-present Linux ARM64 Beam setup
-  contract was confirmed unchanged.
+- **Published v8 Go safeguards retained.** Ported the safeguards absent from
+  the divergent v9 development ancestry: recursive trailing-slash scopes,
+  fail-closed commission lifecycle commands, and idempotent replay of passed
+  running preflight events. Open-Sleigh-only safeguards are not part of the v9
+  product because the complete executor contour is removed.
 - **Historical changelog restoration.** Restored the pre-v5 quint-code release
   history under a distinct `[Unreleased - pre-v5]` heading, preserving the
-  recovered v1-v4 notes without colliding with the current Unreleased section.
+  recovered v1-v4 notes without presenting them as the current release entry.
 - **MethodRun structured-data lint compatibility.** MethodRun open/close update
   paths now store encoded structured data in the native carrier field shape
   instead of converting it through string casts that break current lint/type
@@ -2532,8 +2546,8 @@ The v8.2.0 candidate was never published; work previously described as an
   compatibility, provenance, archive, and sidekick carriers. The manifest keeps
   `/h-reason` as a current umbrella skill, marks Pi as compatibility packaging,
   labels the standalone-agent TUI and desktop wrappers as archive, recognizes
-  `haft board` and `haft run` terminal rendering as current CLI presentation
-  support, and keeps Open-Sleigh outside Haft semantic authority.
+  `haft board` as current CLI presentation support, and does not advertise a
+  built-in executor.
 - **Carrier semio guard.** Added `haft carrier check` / `--json` as a focused
   fixed-point wording check over current/support/compat carrier text. It fails
   dead standalone-agent TUI/desktop runtime-surface mentions that are not
@@ -2596,7 +2610,7 @@ The v8.2.0 candidate was never published; work previously described as an
   scope files through `git ls-files --cached --others --exclude-standard` when
   available, preserving modified/missing checks for baselined files while
   keeping nested-gitignored build output and local governance/runtime carrier
-  directories such as `open-sleigh/.haft/` out of added-file drift.
+  directories out of added-file drift.
 - **Maintenance evidence cooldown date basis.** The maintenance plan cooldown
   now compares today's evidence using the same local date prefix that
   `AttachEvidence` writes into `evid-YYYYMMDD-*` IDs, avoiding duplicate
@@ -2623,6 +2637,16 @@ The v8.2.0 candidate was never published; work previously described as an
 
 ### Removed
 
+- **Built-in Open-Sleigh execution contour.** Removed the `haft run` and
+  `haft harness` commands, their Go execution/TUI helpers, the complete
+  `open-sleigh/` Elixir application and tests, its smoke scripts, and all
+  Elixir/OTP/BEAM setup and packaging from CI, P13, installers, and release
+  archives. Haft still governs runner-neutral WorkCommission and
+  RuntimeRunRecord lifecycle through `haft commission`, `haft_commission`, and
+  `complete-external`; execution now belongs to the host agent or an external
+  runner. The v9 installer removes only the exact Haft-managed legacy runtime
+  and preserves user-owned Open-Sleigh data and the independent embedding
+  sidecar, which remains outside the v9 contract and P14 acceptance basis.
 - **Obsolete `src/mcp` hook stack.** Removed the tracked shell hook,
   `pre-commit` configuration, and setup script that targeted a deleted module,
   pinned an obsolete linter, and incorrectly claimed exact CI parity. Current
@@ -2647,9 +2671,9 @@ The v8.2.0 candidate was never published; work previously described as an
   legacy skill-loader packages left after the v8 governance-substrate pivot.
   The optional OpenAI embedding adapter retains its embeddings client and a
   local direct-API-key resolver; no agent/chat provider transport remains.
-  Current `haft board` and `haft run` terminal presentation remains supported.
-  Haft v9 is consumed through host skills, CLI, and MCP over one project
-  artifact graph.
+  `haft board` remains presentation-only; `haft run` is removed with the
+  execution contour. Haft v9 is consumed through host skills, CLI, and MCP over
+  one project artifact graph.
 - **EnablingSystemSpec as the software implementation carrier.** Removed the
   overloaded `.haft/specs/enabling-system.md` software carrier from current
   onboarding. `SoftwareSystemSpec` now carries the software-system boundary;
@@ -3675,7 +3699,7 @@ ADR-1 through ADR-19 documented in `.context/v5-architecture-decisions.md`
 
 ## Historical pre-v5 quint-code changelog
 
-Recovered from `9e8f5d8a^:CHANGELOG.md`, the last tracked changelog state before `9e8f5d8a` replaced the v1-v4 history with the v5 changelog. The original pre-v5 top section was named `[Unreleased]`; it is labeled `[Unreleased - pre-v5]` below to avoid conflicting with the current unreleased section.
+Recovered from `9e8f5d8a^:CHANGELOG.md`, the last tracked changelog state before `9e8f5d8a` replaced the v1-v4 history with the v5 changelog. The original pre-v5 top section was named `[Unreleased]`; it is labeled `[Unreleased - pre-v5]` below so it cannot be mistaken for a current release entry.
 
 ## [Unreleased - pre-v5]
 

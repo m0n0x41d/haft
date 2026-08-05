@@ -321,7 +321,6 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 		"Do NOT skip baseline if the decision has affected_files.",
 	}, "\n")+"\n")
 	writeBaselineAuditFixture(t, root, ".claude/worktrees/ignored.md", "Run baseline before release.\n")
-	writeBaselineAuditFixture(t, root, "open-sleigh/.haft/decisions/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "node_modules/pkg/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "tui/node_modules/pkg/ignored.md", "Run baseline before release.\n")
 	writeBaselineAuditFixture(t, root, "package-lock.json", `"baseline-browser-mapping": "dist/cli.cjs"`)
@@ -472,9 +471,6 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 	}
 
 	for _, finding := range report.Findings {
-		if strings.Contains(finding.Path, "open-sleigh") {
-			t.Fatalf("open-sleigh path was not skipped: %+v", finding)
-		}
 		if strings.Contains(finding.Path, "node_modules") {
 			t.Fatalf("node_modules path was not skipped: %+v", finding)
 		}

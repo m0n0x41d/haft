@@ -203,8 +203,8 @@ func TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim(t *testing.T) {
 		}
 	}
 
-	unreleased := carriers["CHANGELOG.md [Unreleased]"]
-	normalizedUnreleased := normalizeTruthProse(unreleased)
+	v9Release := carriers["CHANGELOG.md [9.0.0]"]
+	normalizedV9Release := normalizeTruthProse(v9Release)
 	for _, marker := range []string{
 		"V9 CONTRACT",
 		"EXACT-CANDIDATE EVIDENCE",
@@ -212,7 +212,7 @@ func TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim(t *testing.T) {
 		"PatternRecall are no longer v9 product concepts",
 		"outside the v9 contract and P14 acceptance basis",
 	} {
-		if !strings.Contains(normalizedUnreleased, marker) {
+		if !strings.Contains(normalizedV9Release, marker) {
 			t.Errorf("current changelog section omits %q", marker)
 		}
 	}
@@ -232,7 +232,7 @@ func TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim(t *testing.T) {
 		"`fpf-development`",
 		"`fpf-semiotics`",
 	} {
-		if strings.Contains(unreleased, historical) {
+		if strings.Contains(v9Release, historical) {
 			t.Errorf("truth audit leaked historical changelog content %q", historical)
 		}
 	}
@@ -291,8 +291,8 @@ func TestPublicMCPDocsNameExactV9DiscoverySurface(t *testing.T) {
 	}
 }
 
-func TestUnreleasedCompatibilityRecallStaysOutsideV9Acceptance(t *testing.T) {
-	unreleased := unreleasedChangelogSection(
+func TestV9CompatibilityRecallStaysOutsideV9Acceptance(t *testing.T) {
+	v9Release := v9ChangelogSection(
 		t,
 		readTruthRepoFile(t, "CHANGELOG.md"),
 	)
@@ -318,7 +318,7 @@ func TestUnreleasedCompatibilityRecallStaysOutsideV9Acceptance(t *testing.T) {
 		"outside the v9 contract and P14 acceptance basis",
 		"outside v9 contract and P14 acceptance basis",
 	}
-	for _, block := range markdownBulletBlocks(unreleased) {
+	for _, block := range markdownBulletBlocks(v9Release) {
 		if !containsAny(block, triggers) {
 			continue
 		}
@@ -326,7 +326,7 @@ func TestUnreleasedCompatibilityRecallStaysOutsideV9Acceptance(t *testing.T) {
 			continue
 		}
 		t.Errorf(
-			"Unreleased compatibility/retrieval bullet lacks v9/P14 boundary %q",
+			"v9 compatibility/retrieval bullet lacks v9/P14 boundary %q",
 			block,
 		)
 	}
@@ -419,7 +419,6 @@ func currentFacingTruthCarriers(t *testing.T) map[string]string {
 		"internal/cli/claude_md_template.md",
 		"data/haft/local-practice/typed-memory/README.md",
 		"packages/haft-pi/README.md",
-		"open-sleigh/SPEC.md",
 		"spec/integration/MCP_PROTOCOL.md",
 		"docs/src/pages/docs/agent-prompt.astro",
 		"docs/src/pages/docs/concepts.astro",
@@ -460,7 +459,7 @@ func currentFacingTruthCarriers(t *testing.T) map[string]string {
 	if err != nil {
 		t.Fatalf("read changelog: %v", err)
 	}
-	carriers["CHANGELOG.md [Unreleased]"] = unreleasedChangelogSection(t, string(changelog))
+	carriers["CHANGELOG.md [9.0.0]"] = v9ChangelogSection(t, string(changelog))
 	return carriers
 }
 
@@ -482,7 +481,7 @@ func assertRetrievalClaimsRemainDeferred(
 ) {
 	t.Helper()
 	paragraphs := strings.Split(normalizeTruthNewlines(content), "\n\n")
-	if carrier == "CHANGELOG.md [Unreleased]" {
+	if carrier == "CHANGELOG.md [9.0.0]" {
 		paragraphs = markdownBulletBlocks(content)
 	}
 	for _, paragraph := range paragraphs {
@@ -538,18 +537,19 @@ func truthRepoRoot(t *testing.T) string {
 	return filepath.Clean(filepath.Join(filepath.Dir(currentFile), "..", ".."))
 }
 
-func unreleasedChangelogSection(t *testing.T, changelog string) string {
+func v9ChangelogSection(t *testing.T, changelog string) string {
 	t.Helper()
-	start := strings.Index(changelog, "## [Unreleased]")
+	const heading = "## [9.0.0]"
+	start := strings.Index(changelog, heading)
 	if start < 0 {
-		t.Fatal("CHANGELOG.md has no Unreleased section")
+		t.Fatal("CHANGELOG.md has no 9.0.0 section")
 	}
 	remainder := changelog[start:]
-	next := strings.Index(remainder[len("## [Unreleased]"):], "\n## [")
+	next := strings.Index(remainder[len(heading):], "\n## [")
 	if next < 0 {
 		return remainder
 	}
-	return remainder[:len("## [Unreleased]")+next]
+	return remainder[:len(heading)+next]
 }
 
 func exactMarkedSection(

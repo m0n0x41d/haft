@@ -30,8 +30,8 @@ Haft v9 combines two primary capabilities:
    the result.
 
 Specification onboarding, drift checks, evidence lifecycle, commissioning, and
-runtime execution remain project-governance capabilities around that core. They
-do not turn every FPF use into an artifact. Ordinary bounded and reversible
+external-runner lifecycle recording remain project-governance capabilities
+around that core. They do not turn every FPF use into an artifact. Ordinary bounded and reversible
 reasoning may remain conversational; Haft materializes a trace when a named
 receiving use will rely on it.
 
@@ -63,8 +63,7 @@ What it IS:
 - Work authorization surface (turns an accepted decision into bounded,
   auditable execution work when the human chooses to commission it)
 - Commission compiler (`DecisionRecord -> WorkCommission -> RuntimeRun`)
-- Execution-runtime host (`haft harness`, with Open-Sleigh as the current
-  runtime implementation)
+- Runner-neutral commission lifecycle for separately operated executors
 - Optional external projection engine (Linear/Jira/GitHub issue text is a
   carrier for observers, not Haft's semantic authority)
 
@@ -110,8 +109,9 @@ The TargetSystemSpec answers what must change in the target system's
 environment, by what method, and what role the target system plays. The
 SoftwareSystemSpec answers what idealized software realizes that role: its
 responsibilities, behavior, interfaces, constraints, and selected structure.
-Repository workflows, tests, agents, CI, release policy, and harness runtime
-belong to the enabling system, not the SoftwareSystemSpec.
+Repository workflows, tests, agents, CI, release policy, and separately
+operated external runners belong to the enabling system, not the
+SoftwareSystemSpec.
 
 `TargetSystemSpec`, `SoftwareSystemSpec`, and the target/enabling distinction
 are Haft local practice for Agentic SWE, not normative kinds defined by FPF
@@ -123,19 +123,19 @@ ProjectSpecificationSet or a durable trace.
 
 ## Execution subsystem
 
-`Haft Harness` is the commissioned execution subsystem of Haft. Today its
-runtime implementation is `Open-Sleigh`.
+Haft v9 has no built-in execution subsystem. It records the authority and
+lifecycle boundary that an independently operated runner may consume.
 
 This distinction is load-bearing:
 
 - **Haft owns semantic authority:** ProblemCards, DecisionRecords,
   WorkCommissions, Evidence, stale/refresh logic, and external projections.
-- **Open-Sleigh owns runtime execution mechanics:** long-running orchestration,
-  sessions, workspaces, retries, phase machine, leases, and agent adapters.
+- **An external runner owns execution mechanics:** orchestration, sessions,
+  workspaces, retries, scheduling, and agent adapters.
 
-That means Open-Sleigh is **not** a peer product and **not** a second source
-of truth. It is a subsystem/runtime of Haft, even if the implementation keeps
-its own process boundary.
+The runner is outside the HaftSoftwareSystem boundary. Its submitted events are
+inputs to validation and recording, not a second source of authority or proof
+that its claims are true.
 
 ## Three delivery surfaces over one semantic core
 
@@ -159,8 +159,9 @@ ProjectSpecificationSet
 Again, these arrows are typed relations. They do not infer work order.
 
 No surface owns truth. The operator cockpit is the human-facing view. MCP is the
-embedded agent-facing authoring surface. CLI is the runtime/operator surface.
-Haft Core owns semantic authority; Open-Sleigh owns execution mechanics.
+embedded agent-facing authoring surface. CLI is the manual governance surface.
+Haft Core owns semantic authority; external runners own their execution
+mechanics.
 
 ### Surface A — Historical Desktop App (archived, not current)
 
@@ -169,7 +170,9 @@ The visual cockpit where the engineer lives during reasoning work.
 - See: problem board, decision health, evidence quality, coverage, drift
 - Specify: build target/software specs, term maps, and spec coverage
 - Think: frame problems, explore variants, compare on Pareto front, decide
-- Act: create commissions, start/stop harness runs, verify claims, create PRs from decisions
+- Historical act surface: create commissions, start/stop harness runs, verify
+  claims, and create PRs from decisions. The desktop and harness actions are
+  archived and do not describe v9 behavior.
 - Govern: dashboard with findings, stale alerts, invariant violations
 
 Technology: Tauri v2 (Rust shell + native WebView + React frontend).
@@ -190,21 +193,21 @@ Deferred or experimental hosts: Cursor, Gemini CLI, JetBrains Air, and generic
 MCP clients. They may remain installable while v7 narrows support, but product
 support and acceptance tests target Claude Code and Codex.
 
-### Surface C — CLI Harness (primary: runtime/operator)
+### Surface C — CLI (manual governance/operator)
 
-Operator access for scripting, CI, terminal workflows, and the harness runtime
-boundary.
+Operator access for scripting, CI, terminal workflows, and runner-neutral
+commission lifecycle records.
 
 - `haft init`, `haft serve`, `haft sync`, `haft board`, `haft search`
 - `haft commission ...`
-- `haft harness prepare/run/status/watch/tail/result/apply/requeue/cancel`
 - `haft fpf query`, `haft fpf lookup`, and `haft fpf inspect` (source-native FPF retrieval)
 - `haft agent` (removed standalone agent mode; archived)
+- `haft run` and `haft harness` (removed built-in execution modes; archived)
 
 The CLI is not a second semantic system. It exposes operator commands for the
-harness runtime and local automation. Runtime preflight must still check
-WorkCommission, linked DecisionRecord, Scope, freshness, lockset, and autonomy
-envelope through Haft Core.
+governance kernel. An external runner must still use Haft Core to check the
+WorkCommission, linked DecisionRecord, Scope, freshness, lockset, and authority
+envelope before recording a start.
 
 ## Surface transition rule
 
@@ -223,7 +226,7 @@ Examples:
 
 - `Draft Target Spec` -> OnboardingAgent draft -> `SpecSection` carriers -> spec check -> human approval.
 - `Create WorkCommission` -> `DecisionRecord` + scope -> `WorkCommission` snapshot -> runnable queue.
-- `Delegate to Harness` -> runnable `WorkCommission` -> preflight -> `RuntimeRun`.
+- `Delegate externally` -> runnable `WorkCommission` -> runner preflight -> `RuntimeRun` lifecycle record.
 - `Review Evidence` -> evidence carrier -> claim/spec coverage derivation.
 
 ### Optional external projections
@@ -296,13 +299,15 @@ Haft lives inside the software engineering delivery system:
    when stable identity is recoverable, establish the minimum non-binding
    EntityOfConcern proactively without a separate permission prompt;
    governed or commissioned work may require formal target/software specs.
-4. **Host-agent-first.** Skills/prompts plus MCP are the primary embedded agent surface; CLI remains the operator/runtime surface.
+4. **Host-agent-first.** Skills/prompts plus MCP are the primary embedded agent
+   surface; CLI remains the manual governance and runner-neutral lifecycle
+   surface.
 5. **Plugin-compatible.** MCP plugin is the highest-reach integration channel, with Claude Code and Codex as supported hosts.
 6. **FPF source-native.** Haft delivers versioned upstream source and
    project-local application records; it does not define a substitute pattern
    ontology.
-7. **Single binary.** One `haft` binary serves the MCP server and CLI, and
-   installs or operates the harness runtime.
+7. **Single binary.** One `haft` binary serves the MCP server and governance
+   CLI. It neither installs nor operates a coding-agent execution runtime.
 
 ## Enabling system (what builds Haft)
 

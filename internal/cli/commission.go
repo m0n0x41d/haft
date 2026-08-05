@@ -46,12 +46,14 @@ var (
 
 var commissionCmd = &cobra.Command{
 	Use:   "commission",
-	Short: "Manage WorkCommissions for execution harnesses",
-	Long: `Manage WorkCommissions for execution harnesses.
+	Short: "Manage runner-neutral WorkCommission authority and lifecycle records",
+	Long: `Manage runner-neutral WorkCommission authority and lifecycle records.
 
 WorkCommission is the bounded authorization boundary between a DecisionRecord
-and a runtime such as Open-Sleigh. Normal operator lifecycle actions inspect,
-requeue, or cancel the record; they do not physically delete it.`,
+and an external runner. Haft records scope, claims, lifecycle events, and
+terminal evidence; it does not spawn an agent or apply its workspace changes.
+Normal operator lifecycle actions inspect, requeue, or cancel the record; they
+do not physically delete it.`,
 }
 
 var commissionCreateCmd = &cobra.Command{
@@ -126,8 +128,8 @@ var commissionCompleteExternalCmd = &cobra.Command{
 	Short: "Record terminal success/failure for an externally-run WorkCommission",
 	Long: `Record terminal success/failure for an externally-run WorkCommission.
 
-This is the operator path for external runners that already wrote local runtime
-evidence outside Haft Harness. If the commission is still preflighting, this
+This is the operator path after an external runner has written local runtime
+evidence. If the commission is still preflighting, this
 command first records a passed preflight/start event, then records the terminal
 complete_or_block event. It does not apply, merge, or publish any workspace diff.`,
 	Args: cobra.ExactArgs(1),
@@ -186,7 +188,7 @@ func registerCommissionFromDecisionFlags(cmd *cobra.Command) {
 	cmd.Flags().StringSliceVar(&commissionFromDecisionLockset, "lock", nil, "lockset path/pattern; repeatable (default: affected files)")
 	cmd.Flags().StringSliceVar(&commissionFromDecisionEvidence, "evidence", nil, "required evidence command; repeatable (default: decision evidence_requirements)")
 	cmd.Flags().StringVar(&commissionFromDecisionProjectionPolicy, "projection-policy", "local_only", "projection policy: local_only, external_optional, external_required")
-	cmd.Flags().StringVar(&commissionFromDecisionDeliveryPolicy, "delivery-policy", defaultDeliveryPolicy, "delivery policy: workspace_patch_manual, workspace_patch_auto_on_pass")
+	cmd.Flags().StringVar(&commissionFromDecisionDeliveryPolicy, "delivery-policy", defaultDeliveryPolicy, "delivery instruction recorded for an external runner: workspace_patch_manual or workspace_patch_auto_on_pass")
 	cmd.Flags().StringVar(&commissionFromDecisionState, "state", "queued", "initial commission state")
 	cmd.Flags().StringVar(&commissionFromDecisionValidFor, "valid-for", "168h", "commission validity duration when --valid-until is omitted")
 	cmd.Flags().StringVar(&commissionFromDecisionValidUntil, "valid-until", "", "explicit commission expiry timestamp (RFC3339)")

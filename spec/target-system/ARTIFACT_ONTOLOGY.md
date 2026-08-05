@@ -21,15 +21,15 @@ table order does not define a lifecycle or execution sequence.
 
 ## Execution Records (vNext Model)
 
-These records are part of the target model for the Haft/Open-Sleigh
-integration. They are listed separately because the current artifact store does
-not yet implement these kinds.
+These records form the runner-neutral commission model. They are listed
+separately from reasoning artifacts because execution may be performed by a
+separately operated runner.
 
 | Record | Created by | Purpose | Lifecycle |
 |--------|-----------|---------|-----------|
 | **ImplementationPlan** | Human-assisted planning from active DecisionRecord(s) | DAG of WorkCommissions with dependencies, locksets, evidence requirements, and scheduler policy | Draft → Approved → Running → Partially Blocked → Completed/Cancelled |
 | **WorkCommission** | Human/User via Haft UI/CLI/agent draft | Bounded authorization to execute a selected DecisionRecord in a declared scope | Draft → Queued → Ready → Preflighting → Running → Completed/CompletedWithProjectionDebt/Failed/Blocked/Cancelled/Expired |
-| **RuntimeRun** | Runner such as Open-Sleigh | One execution attempt against a WorkCommission, including phase outcomes and evidence refs | Claimed → Running → Passed/Failed/Cancelled/Stalled |
+| **RuntimeRun** | External runner | One execution attempt against a WorkCommission, including phase outcomes and evidence refs | Claimed → Running → Passed/Failed/Cancelled/Stalled |
 | **ExternalProjection** | Haft projection engine | Idempotent external tracker binding for observers | Desired → Drafted → Published → Synced/Drifted/Blocked/ProjectionDebt |
 | **AutonomyEnvelope** | Human principal | Batch/YOLO permission bounds for an ImplementationPlan | Draft → Approved → Active → Exhausted/Revoked/Expired |
 

@@ -46,18 +46,20 @@ concurrency boundaries around project-ledger and SQLite transactions, TypeEnv
 selection, typed-memory writes and reads, graph epochs, cache invalidation, and
 init publication without making full-repository race the local default.
 
-The broader race closure remains independently visible in CI:
-`.github/workflows/ci.yml` runs non-desktop packages sequentially under the
-race detector and `.github/workflows/release.yml` owns the release-time
-full-repository race command. Those workflow definitions are not passing
-evidence by themselves, and P13 does not import them unless a canonical
-compatible evidence carrier exists.
+The broader race closure runs once in CI: `.github/workflows/ci.yml` assigns
+every non-desktop package to one validated race shard and publishes the exact
+SHA's aggregate carrier. Release does not rerun those tests. Its guard requires
+one successful push CI run for the candidate SHA and an unexpired aggregate
+named for that same SHA before packaging can begin. Workflow definitions are
+not passing evidence by themselves, and P13 does not import the CI carrier.
+Manual P13 dispatch also skips the normal CI/coverage/full-race matrix so the
+two qualification contours cannot execute redundantly in one workflow run.
 
 The frozen source identity includes the v9 release-blocker report at
 `.context/current-plan-issue-report.md`, the deterministic closeout carrier,
-every Go build input reported by `go list`, the installed Haft-Pi and
-Open-Sleigh dependency trees, and the resolved executable/symlink bytes for
-the Go, Node, BEAM, shell, Python, C, and C++ toolchain closure used by the
+every Go build input reported by `go list`, the installed Haft-Pi dependency
+tree, and the resolved executable/symlink bytes for the Go, Node, shell,
+Python, C, and C++ toolchain closure used by the
 suites. The explicit Query token suite runs
 `scripts/fpf_query_token_gate.sh`, whose CPython 3.10-3.13 environment is
 installed from the binary-only hash lock before the exact embedded and
@@ -241,20 +243,16 @@ Release or a public release claim. No producer for the sensitive frozen-basis
 input artifact is enabled by default; until one is explicitly provisioned, the
 manual P13 lane is unavailable rather than falsely green.
 
-Before the consolidated run, the bounded race profile may be exercised
-directly without publishing a P13 evidence carrier:
+Before the consolidated run, the same manifest-owned bounded race profile may
+be exercised directly without publishing a P13 evidence carrier:
 
 ```bash
-jq -r \
-  '.suites[] | select(.id == "go_race") | .go_race_cases[] | [.package, ("^(" + (.tests | join("|")) + ")$")] | @tsv' \
-  internal/p13acceptance/manifest.json |
-  while IFS=$'\t' read -r package pattern; do
-    if ! go test -race -count=1 -timeout=3h -p=1 -cpu=2 \
-      -run "$pattern" "$package"; then
-      exit 1
-    fi
-  done
+task test:race
 ```
 
-A passing focused command locates race failures on the current bytes. It is
-not a substitute for the consolidated identity-bound evidence record.
+`scripts/test-critical-race.sh` reads the exact package/test sets from
+`manifest.json`; it does not maintain a second list. A passing focused command
+locates race failures on the current bytes. It is not a substitute for the
+consolidated identity-bound evidence record. The deliberately expensive
+`task test:race-full` is the explicit local adapter for reproducing CI's full
+closure, not a prerequisite before P13.

@@ -368,8 +368,6 @@ func TestCommissionCreationCommandsExposeExactScopeSelector(t *testing.T) {
 		commissionCreateFromDecisionCmd,
 		commissionCreateBatchCmd,
 		commissionCreateFromPlanCmd,
-		harnessPlanCmd,
-		harnessRunCmd,
 	}
 	for _, command := range commands {
 		if command.Flags().Lookup("scope-id") == nil {

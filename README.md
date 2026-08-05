@@ -161,6 +161,11 @@ workload. If the sidecar is absent or disabled, core governance still works
 and the older compatibility path falls back to keyword/graph recall. Set
 `embedding.provider: none` in `~/.haft/config.yaml` to keep that path off.
 
+v9 no longer ships Elixir, OTP, BEAM, or the Open-Sleigh runtime. During a
+successful upgrade the installer removes only the exact legacy managed path
+`~/.haft/runtimes/open-sleigh/current`. It preserves user-owned
+`~/.open-sleigh/` data and the independent `haft-embed` runtime.
+
 ---
 
 ## How to Start
@@ -224,7 +229,7 @@ readiness claim; use `haft spec check --json` for the full health report.
 
 `SoftwareSystemSpec` describes the software that realizes the target system:
 its role, responsibility allocation, behavior, interfaces, constraints, and
-selected structure. Agent, commission, harness-runtime, and delivery policies
+selected structure. Agent, commission, external-runner, and delivery policies
 are deliberately outside this spec. Development-version `enabling-system.md`
 carriers are migrated with one state-driven `haft spec migrate` command. Haft
 resolves the internal exact candidate itself, records semantic review on one
@@ -409,13 +414,14 @@ bounded wait reports the retained complete epoch as degraded, or reports the
 index unavailable when no complete epoch exists. Distinct projects continue
 indexing independently; no single-server setup or manual cleanup is required.
 
-### What changed in v8
+### What changed in v8 and v9
 
 v8 dropped the standalone interactive agent (`haft agent`), its coding-agent
-TUI, and the desktop wrappers. The terminal presentation used by current
-`haft board` and `haft run` commands remains supported. Haft no longer competes
-with general coding agents on the runtime surface — it adds governance
-discipline on top of whichever agent you already use.
+TUI, and the desktop wrappers. v9 completes that boundary by removing the
+built-in `haft run` and `haft harness` executors and the bundled Open-Sleigh
+BEAM runtime. `haft board`, the governance CLI, MCP server, and skills remain.
+Haft records runner-neutral WorkCommissions; execution belongs to the host
+agent or another separately operated runner.
 
 Upgrading from the published v8.1.0 release, or still migrating a v7 project?
 See [MIGRATION-v8.md](MIGRATION-v8.md) for backup, forward-upgrade, host
@@ -434,7 +440,7 @@ restart, and rollback boundaries.
 | `haft_refresh` | Lifecycle management for every artifact kind |
 | `haft_query` | Project search/status, code graph, source-native FPF query/lookup/inspect, and typed-memory resolve/neighborhood/recall |
 | `haft_method` | Task-local SWE MethodRun cards: pull gates before non-trivial work, close with evidence or waivers |
-| `haft_commission` | WorkCommission lifecycle for execution harnesses |
+| `haft_commission` | Runner-neutral WorkCommission authority and lifecycle records |
 | `haft_spec_section` | Typed SpecSection lifecycle projection over project SQL editions; FPF source compatibility is assessed separately; manual CLI gates approve, rebaseline, or reopen baselines |
 | `haft_onboard` | Read setup status, prepare a non-binding initial profile review, or prepare an explicitly requested predecessor-pinned scope relation change; a missing relation never gates TargetSystemSpec lifecycle; `haft init` automatically admits only a complete supported singleton as `origin=detector_default` and installs default project memory |
 | `haft_entity` | Proactively establish one minimum non-binding EntityOfConcern when current Work supplies a concrete operator-named or agent-inferred durable receiving use; known absence alone is insufficient |
@@ -513,63 +519,43 @@ formality levels (F0–F9), congruence levels (CL0–CL3), and expiry dates. Tru
 scores (R_eff) degrade as evidence ages; stale evidence triggers refresh. Use
 `haft_decision(action="measure", ...)` for post-implementation verification.
 
-### Harness execution engine (beta, Codex only)
+### External runners and WorkCommission lifecycle
 
-> 🚨 It is likely to be suspended in future versions because the work commission is highly commoditized already by subagents of most agents. Those agents usually have access to the same skills and MCP, meaning... Subagents work quite well on half-created problems and decisions, so I find myself using Claude code and Codex subagents quite well without the need for any external harness circuit.
+Haft v9 deliberately has no built-in coding-agent executor. It does not spawn
+an agent, create an isolated worktree, apply a patch, merge, push, or publish.
+The host agent can perform already-authorized work directly, and a future
+integration can consume the same runner-neutral lifecycle without becoming
+part of Haft Core.
 
-The harness implements code from `DecisionRecord` artifacts under a real Codex
-agent in an isolated workspace. It is **beta**, and the execution agent is
-**Codex only** — there is no Claude execution path. Single-commission
-`haft harness run` is the trustworthy operator path; drain mode and auto-apply
-are validated on docs-class commissions, so treat them as beta on
-production-code commissions.
-
-Two entry points spawn the engine. `haft run` implements one decision directly:
+`h-commission` remains manual-only because creating a WorkCommission grants
+bounded execution authority. The CLI can create and inspect that record:
 
 ```bash
-haft run dec-20260414-001
+haft commission create-from-decision dec-20260414-001
+haft commission list-runnable
+haft commission show wc-...
+haft commission claim wc-... --runner external:my-runner
+haft commission complete-external wc-... --runner external:my-runner \
+  --verdict pass --payload-file evidence.json
 ```
 
-It reads the decision's invariants, claims, and affected files from the graph,
-builds a prompt with full reasoning context, spawns a Codex agent with the
-invariants as guardrails, and takes a baseline snapshot on completion.
+An external runner uses the typed `haft_commission` lifecycle operations to
+claim a commission, record preflight/start/events, and submit its terminal
+result. `complete-external` is the operator shortcut when the work was already
+performed elsewhere. Recording a lifecycle result does not make its claims
+true and does not grant local-apply or publication authority.
 
-`haft harness` runs commissioned work through Open-Sleigh, with scope guards
-(`allowed_paths` / `forbidden_paths`), per-commission locks, and discrete
-revertable apply commits:
+Commissions retain `scope`, `lockset`, evidence requirements, and
+`delivery_policy` as runner-facing governance data. The values
+`workspace_patch_manual` and `workspace_patch_auto_on_pass` do not cause Haft
+Core to apply anything; an external runner must enforce its own effect-specific
+authority and scope checks.
 
-```bash
-haft harness run --prepare-only      # create/reuse commissions, do not start runtime
-haft harness run                     # create/reuse commissions and start Open-Sleigh
-haft harness run --drain --concurrency 4   # drain the queue (apply still manual by default)
-haft harness status                  # inspect active/recent runs
-haft harness result wc-...           # inspect one completed run and its workspace diff
-haft harness apply wc-...            # apply a completed workspace patch to this checkout
-```
-
-Commissions carry a `delivery_policy`. The default `workspace_patch_manual`
-keeps changes in the isolated workspace until you run `haft harness apply`.
-`workspace_patch_auto_on_pass` applies a passing run as a discrete commit;
-`blocked_policy` / failed runs wait for an operator decision.
-
-Broad harness execution is blocked for `needs_onboard` projects by default. For
-intentional tactical out-of-spec work, pass `--force-skip-specs "<reason>"`;
-haft records the reason on the selected commissions.
-
-Release archives bundle the Open-Sleigh BEAM runtime, so normal harness use
-needs no Elixir/Mix install:
-
-```text
-~/.haft/runtimes/open-sleigh/current
-```
-
-The lower-level surface is the `haft commission` CLI for binding creation
-(`create-from-decision`, `create-batch`, `create-from-plan`, ...) plus the
-`haft_commission` MCP tool for non-creation lifecycle/read actions. MCP creation
-actions fail closed by default with `operator_confirmation_required`; every
-authorized commission action must come through a kernel-accepted `manual_cli`
-authorization receipt and becomes a typed artifact transition. Model-supplied
-MCP arguments or prompt text are not proof of operator authorization:
+MCP creation actions fail closed by default with
+`operator_confirmation_required`; every authorized commission action must come
+through the manual authority boundary and becomes a typed artifact transition.
+Model-supplied MCP arguments or prompt text are not proof of operator
+authorization:
 
 ```text
 SpecSection(s) --may-govern--> DecisionRecord
@@ -595,7 +581,7 @@ operator (to agent): "we need to pick a queue for the new ingestion path"
 ↓ when downstream work depends on a binding choice, the operator directly says which exact option to bind
 ↓ h-decide routes that request; a skill token is optional and is not authority
 ↓ kernel validates required DRR fields; missing fields → structured error
-↓ on pass: DRR written to .haft/decisions/, ready for `haft run`
+↓ on pass: DRR written to .haft/decisions/, ready for host-agent work or an explicit WorkCommission
 ```
 
 ### Diagnose a failure with rival hypotheses

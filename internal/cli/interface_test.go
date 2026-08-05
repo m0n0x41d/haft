@@ -2855,7 +2855,7 @@ func TestInterfaceBaselineAuditDocumentsTermSplitBoundary(t *testing.T) {
 	}
 
 	notes := strings.Join(capability.InputContract.Notes, " ")
-	for _, want := range []string{"which kind", "skips Open-Sleigh", "`--limit` caps emitted findings", "read-only"} {
+	for _, want := range []string{"which kind", "skips node_modules", "`--limit` caps emitted findings", "read-only"} {
 		if !strings.Contains(notes, want) {
 			t.Fatalf("baseline.audit notes missing %q:\n%s", want, notes)
 		}

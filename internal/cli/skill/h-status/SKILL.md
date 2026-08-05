@@ -8,7 +8,7 @@ argument-hint: "[optional file, module, context, or artifact reference]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_query mcp__haft__haft_spec_section
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:26e174fdd87993d53721c925be9727239d77e8a425b7c52d28fd9f833b6d1153 -->
 
 # h-status — Read-only project memory and coverage
 

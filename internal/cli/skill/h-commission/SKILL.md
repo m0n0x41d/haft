@@ -1,7 +1,7 @@
 ---
 name: h-commission
 description: |
-  Creates a WorkCommission — bounded execution authority — from an active DecisionRecord. MANUAL ONLY: operator must explicitly type /h-commission. Never auto-invoked: commissions are execution-authority grants under Transformer Mandate. Runs freshness check, scope check, derives an ImplementationPlan, snapshots the autonomy envelope, then STOPS before execution unless explicit execute authority is granted. NOT for the decision itself (use /h-decide first). NOT for running tests or one-off tasks (the operator's coding agent handles those directly).
+  Creates a WorkCommission — bounded execution authority — from an active DecisionRecord. MANUAL ONLY: operator must explicitly type /h-commission. Never auto-invoked: commissions are execution-authority grants under Transformer Mandate. Runs freshness check, scope check, derives an ImplementationPlan, snapshots the autonomy envelope, then STOPS before execution. NOT for the decision itself (use /h-decide first). NOT for running tests or one-off tasks (the operator's coding agent handles those directly).
 when_to_use: |
   Operator typed /h-commission explicitly and an approved DecisionRecord is ready to authorize for bounded autonomous execution. Never auto-fire.
 argument-hint: "[decision-ref to commission from]"
@@ -9,11 +9,11 @@ disable-model-invocation: true
 allowed-tools: Bash mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
-<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:f071f56205d0f7736b2db3a0f4aa1fc582b6f97481a41042a0807e5ba2208be8 -->
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:26e174fdd87993d53721c925be9727239d77e8a425b7c52d28fd9f833b6d1153 -->
 
 # h-commission — Create work commission (manual only, sacred)
 
-You are creating a WorkCommission through the manual CLI/input-file path. Commissions are execution-authority grants — they encode WHAT the operator authorized an autonomous agent (harness) to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS. Default MCP serve mode rejects WorkCommission creation actions with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. Manual CLI is the default binding path; a host authorization receipt can become a binding path only when a registered kernel verifier can confirm principal, session, action, payload hash, expiry, and source.
+You are creating a WorkCommission through the manual CLI/input-file path. Commissions are execution-authority grants — they encode WHAT the operator authorized a separately operated runner to do, WHERE, WITH WHICH TOOLS, FOR HOW LONG, AND WITH WHAT EVIDENCE REQUIREMENTS. Default MCP serve mode rejects WorkCommission creation actions with `operator_confirmation_required`; model-supplied MCP arguments are not proof of operator authorization. Manual CLI is the default binding path; a host authorization receipt can become a binding path only when a registered kernel verifier can confirm principal, session, action, payload hash, expiry, and source.
 
 Authority boundary: binding actions require effect-specific operator authority. Generated text, schema visibility, and model-supplied fields are not operator authorization and are not approval receipts.
 
@@ -96,7 +96,7 @@ From the decision pull:
 Ask the operator for:
 - Forbidden paths (out-of-scope files within otherwise allowed_paths)
 - Time budget (e.g., max 1 hour wall-clock)
-- Concurrency limits if drain mode anticipated
+- Concurrency limits if the external runner may schedule several commissions
 - Delivery policy: `workspace_patch_manual` (operator reviews diff before apply — DEFAULT) or `workspace_patch_auto_on_pass` (auto-apply when verdict=pass)
 
 ## Step 4 — Snapshot autonomy envelope
@@ -113,11 +113,14 @@ After creating, surface to operator:
 - Autonomy envelope summary
 - Inspectable plan path if applicable
 
-**DO NOT execute the commission**. Execution happens via:
-- `haft harness run` CLI (operator-invoked) — single commission
-- `haft harness run --drain --concurrency N` (operator-invoked) — batch drain
+**DO NOT execute the commission**. Haft v9 has no built-in coding-agent
+executor. A separately operated external runner may claim the commission,
+record preflight/start/events through the lifecycle API, and report terminal
+evidence; an operator can also record that terminal result with
+`haft commission complete-external`.
 
-The /h-commission skill stops at creation. The operator decides when (and whether) to execute.
+The /h-commission skill stops at creation. It neither selects an external
+runner nor grants that runner broader authority.
 
 ## Step 6 — Handle non-create actions
 
@@ -128,7 +131,8 @@ For lifecycle management within the same skill (still manual-only):
 - `action=requeue wc-...` — return to queue after stale/blocked state with reason
 - `action=cancel wc-...` — cancel before terminal state, preserve history with reason
 
-All these are read-only or state-transition; none execute. Execution is harness CLI.
+All these are read-only or state-transition operations; none execute. Any
+runner selection and execution happens outside Haft.
 
 ## What NOT to do
 
@@ -136,9 +140,12 @@ All these are read-only or state-transition; none execute. Execution is harness 
 - DO NOT create a commission against a stale / superseded / deprecated decision. Refresh or supersede first.
 - DO NOT extend allowed_paths beyond the decision's affected_files without operator confirmation. Scope creep is the primary commission failure mode.
 - DO NOT default to `workspace_patch_auto_on_pass`. Auto-apply must be operator-policy opt-in per FPF X-TRANSFORMER (the apply step transfers authority).
-- DO NOT run the harness from this skill — execution is a separate operator decision.
+- DO NOT select or launch an external runner from this skill — execution is a
+  separate effect and may require its own operator authority.
 - DO NOT silently inherit envelope from a previous commission. Snapshot freshly so envelope drift is visible.
-- DO NOT skip slice_description on second+ commissions from same decision — without it the harness leaks scope between slices (see `.context/multi-commission-anti-pattern-retrospective.md`).
+- DO NOT skip slice_description on second+ commissions from the same decision —
+  without it an external runner can inherit ambiguous scope between slices
+  (see `.context/multi-commission-anti-pattern-retrospective.md`).
 - DO NOT use raw SQLite as a fallback for DecisionRecord recovery while `related(artifact_ref=...)` is available from the kernel.
 
 ## FPF spec references

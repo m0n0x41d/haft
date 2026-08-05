@@ -1,6 +1,8 @@
-# Desktop Layer Contract
+# Historical Desktop Layer Contract
 
-Status: target contract with current audit notes.
+Status: archived v7/v8 design carrier. The desktop wrapper was removed in v8;
+its Harness/Open-Sleigh execution model was removed in v9. This document is
+retained only as design provenance and is not a current product contract.
 
 ## Clarifying Answers
 

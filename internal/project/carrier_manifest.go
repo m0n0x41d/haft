@@ -17,7 +17,6 @@ const (
 	CarrierAuthorityCompatibility CarrierAuthorityClass = "compatibility_carrier"
 	CarrierAuthorityProvenance    CarrierAuthorityClass = "provenance"
 	CarrierAuthorityArchive       CarrierAuthorityClass = "archive"
-	CarrierAuthoritySidekick      CarrierAuthorityClass = "external_sidekick_out_of_scope"
 )
 
 type CarrierManifestEntry struct {
@@ -147,7 +146,7 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 			Surface:        "enabling_system_doc",
 			Current:        true,
 			Normativity:    "enabling-system support documentation; SQL/artifact graph remains runtime source of truth",
-			Notes:          "creator-system docs cover team, methods, repository workflow, and harness runtime; they are not ProjectSpecificationSet members; archived desktop docs must stay explicitly archival",
+			Notes:          "creator-system docs cover team, methods, repository workflow, and external-runner integration; they are not ProjectSpecificationSet members; archived desktop docs must stay explicitly archival",
 		},
 		{
 			ID:                "archived-desktop-layer-contract",
@@ -211,20 +210,12 @@ func DefaultCarrierAuthorityManifest() CarrierAuthorityManifest {
 		},
 		{
 			ID:             "cli-interactive-presentation-code",
-			PathPattern:    "internal/ui/**, internal/cli/run_tui.go, internal/cli/board.go",
+			PathPattern:    "internal/ui/**, internal/cli/board.go",
 			AuthorityClass: CarrierAuthoritySupport,
 			Surface:        "cli_presentation",
 			Current:        true,
-			Normativity:    "current presentation support for haft board and haft run; not a standalone coding agent or desktop wrapper",
+			Normativity:    "current presentation support for haft board; not a standalone coding agent, executor, or desktop wrapper",
 			Notes:          "terminal rendering contains no independent product authority or execution policy",
-		},
-		{
-			ID:             "open-sleigh-sidekick",
-			PathPattern:    "open-sleigh/**",
-			AuthorityClass: CarrierAuthoritySidekick,
-			Surface:        "sidekick",
-			Current:        false,
-			Normativity:    "execution-adjacent sidekick; out of current Haft semantic authority model",
 		},
 	}
 
@@ -259,9 +250,6 @@ func ValidateCarrierAuthorityManifest(manifest CarrierAuthorityManifest) []strin
 		}
 		if entry.Current && entry.AuthorityClass == CarrierAuthorityArchive {
 			findings = append(findings, fmt.Sprintf("%s marks archive as current", id))
-		}
-		if entry.Current && entry.AuthorityClass == CarrierAuthoritySidekick {
-			findings = append(findings, fmt.Sprintf("%s marks sidekick as current", id))
 		}
 	}
 

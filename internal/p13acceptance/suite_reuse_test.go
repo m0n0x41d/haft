@@ -57,8 +57,6 @@ type suiteToolchainBasis struct {
 	PythonRuntime       string       `json:"python_runtime,omitempty"`
 	NodeVersion         string       `json:"node_version,omitempty"`
 	PNPMVersion         string       `json:"pnpm_version,omitempty"`
-	MixVersion          string       `json:"mix_version,omitempty"`
-	ElixirVersion       string       `json:"elixir_version,omitempty"`
 	InstalledDependency byteIdentity `json:"installed_dependency,omitempty"`
 }
 
@@ -461,17 +459,15 @@ func captureSuiteDependencyProfileBasis(
 
 func suiteDependencyProfile(suiteID string) (string, error) {
 	profiles := map[string]string{
-		"fpf_index_exact":    "fpf_index",
-		"query_token_gate":   "fpf_query",
-		"go_normal":          "go_repository",
-		"go_race":            "go_repository",
-		"go_vet":             "go_repository",
-		"pi_test":            "pi",
-		"pi_typecheck":       "pi",
-		"open_sleigh_format": "open_sleigh",
-		"open_sleigh_test":   "open_sleigh",
-		"gofmt_check":        "go_format",
-		"git_diff_check":     "git_diff",
+		"fpf_index_exact":  "fpf_index",
+		"query_token_gate": "fpf_query",
+		"go_normal":        "go_repository",
+		"go_race":          "go_repository",
+		"go_vet":           "go_repository",
+		"pi_test":          "pi",
+		"pi_typecheck":     "pi",
+		"gofmt_check":      "go_format",
+		"git_diff_check":   "git_diff",
 	}
 	profile, found := profiles[suiteID]
 	if !found {
@@ -497,13 +493,6 @@ func captureSuiteSourceIdentity(
 			[]string{"packages/haft-pi"},
 			[]string{},
 			[]string{"node_modules"},
-		)
-	case "open_sleigh":
-		return captureScopedSource(
-			root,
-			[]string{"open-sleigh"},
-			[]string{},
-			[]string{"_build", "deps"},
 		)
 	case "go_format":
 		return digestPaths(root, inputs.GoFiles)
@@ -695,7 +684,7 @@ func suiteRuntimeInputDigest(
 		value.GoFiles = inputs.GoFileDigest
 	case "git_diff":
 		value.GitStatusDigest = source.Digest
-	case "pi", "open_sleigh":
+	case "pi":
 	default:
 		return "", fmt.Errorf("unsupported dependency profile %q", profile)
 	}
@@ -737,18 +726,6 @@ func captureSuiteToolchainBasis(
 		basis.NodeVersion = toolchain.NodeVersion
 		basis.PNPMVersion = toolchain.PNPMVersion
 		basis.InstalledDependency = dependency
-	case "open_sleigh":
-		dependency, err := digestDependencyRoots(
-			root,
-			[]string{"open-sleigh/deps"},
-		)
-		if err != nil {
-			return suiteToolchainBasis{}, err
-		}
-		basis.Family = "beam"
-		basis.MixVersion = toolchain.MixVersion
-		basis.ElixirVersion = toolchain.ElixirVersion
-		basis.InstalledDependency = dependency
 	case "git_diff":
 		basis.Family = "git"
 		basis.GitVersion = toolchain.GitVersion
@@ -789,7 +766,7 @@ func suiteSemanticBasis(
 		return fpfDigest, projectDigest, "", err
 	case "git_diff":
 		return "", "", identity.Git.StatusDigest, nil
-	case "pi", "open_sleigh", "go_format":
+	case "pi", "go_format":
 		return "", "", "", nil
 	default:
 		return "", "", "", fmt.Errorf(

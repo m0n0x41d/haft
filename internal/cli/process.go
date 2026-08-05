@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -173,7 +172,6 @@ type processTelemetrySummary struct {
 	SessionCloseRepairRounds           int `json:"session_close_repair_rounds"`
 	SessionCarryThroughItems           int `json:"session_carry_through_items"`
 	MethodRunsPendingCarryThroughItems int `json:"method_runs_pending_carry_through_items"`
-	SessionCLIRunCommands              int `json:"session_cli_run_commands"`
 	BroadBindingRisks                  int `json:"broad_binding_risks"`
 }
 
@@ -228,7 +226,6 @@ type processSessionTelemetryFile struct {
 	CloseWithoutPriorPull     int                            `json:"close_without_prior_pull"`
 	PullWithoutClose          int                            `json:"pull_without_close"`
 	InvocationLanes           processInvocationLaneTelemetry `json:"invocation_lanes"`
-	ExampleRunCommands        []string                       `json:"example_run_commands,omitempty"`
 }
 
 type processSessionResponseSpan struct {
@@ -256,10 +253,8 @@ type processDuplicateCloseID struct {
 }
 
 type processInvocationLaneTelemetry struct {
-	MCPMethodCalls      int `json:"mcp_method_calls"`
-	CLIRunCommands      int `json:"cli_run_commands"`
-	CLIHelpOnlyCommands int `json:"cli_help_only_commands"`
-	ProseMentions       int `json:"prose_mentions"`
+	MCPMethodCalls int `json:"mcp_method_calls"`
+	ProseMentions  int `json:"prose_mentions"`
 }
 
 type processOperatorBurdenTelemetry struct {
@@ -312,8 +307,6 @@ type processSessionMethodEvent struct {
 	CarryThroughCount  int
 	Payload            string
 }
-
-var processCLIRunCommandPattern = regexp.MustCompile(`(^|\s)(go\s+run\s+\./cmd/haft\s+run|haft\s+run)(\s|$)`)
 
 func init() {
 	processTelemetryCmd.Flags().BoolVar(&processTelemetryJSON, "json", false, "print structured JSON output")
@@ -1085,7 +1078,7 @@ func buildProcessTelemetryReport(
 	options = normalizeProcessTelemetryOptions(options)
 	report := processTelemetryReport{
 		Kind:             processTelemetryKind,
-		SchemaVersion:    1,
+		SchemaVersion:    2,
 		Authority:        processTelemetryAuthority,
 		MutationBoundary: append([]string(nil), processTelemetryMutationBoundary...),
 		ScanPolicy: processTelemetryScanPolicy{
@@ -1389,7 +1382,6 @@ func processSessionTelemetryFileFromPath(path string) (processSessionTelemetryFi
 	}
 	events := []processSessionMethodEvent{}
 	pullIDsByCallID := map[string]string{}
-	runCommands := []string{}
 	scanner := bufio.NewScanner(file)
 	scanner.Buffer(make([]byte, 64*1024), 1024*1024*32)
 	for scanner.Scan() {
@@ -1407,8 +1399,6 @@ func processSessionTelemetryFileFromPath(path string) (processSessionTelemetryFi
 		nextEvents := processMethodInvocationEvents(record, len(events)+1)
 		events = append(events, nextEvents...)
 		processCollectPullResultIDs(record, pullIDsByCallID)
-		commands := processCLIRunCommands(record)
-		runCommands = append(runCommands, commands...)
 	}
 	if err := scanner.Err(); err != nil {
 		return processSessionTelemetryFile{}, err
@@ -1422,7 +1412,7 @@ func processSessionTelemetryFileFromPath(path string) (processSessionTelemetryFi
 			events[index].PullID = pullID
 		}
 	}
-	return summarizeProcessSessionTelemetry(session, events, runCommands), nil
+	return summarizeProcessSessionTelemetry(session, events), nil
 }
 
 func processDecodeSessionLine(line []byte) (map[string]any, error) {
@@ -1493,38 +1483,13 @@ func processCollectPullResultIDs(record map[string]any, pullIDsByCallID map[stri
 	pullIDsByCallID[callID] = pullID
 }
 
-func processCLIRunCommands(record map[string]any) []string {
-	calls := sessionAuditToolCalls(record)
-	var commands []string
-	for _, call := range calls {
-		tool := strings.ToLower(sessionAuditToolName(call))
-		if !strings.Contains(tool, "exec_command") && !strings.Contains(tool, "bash") {
-			continue
-		}
-		args := processCallArguments(call)
-		command := processStringValue(args["cmd"])
-		if command == "" {
-			command = processStringValue(args["command"])
-		}
-		if !processCLIRunCommandPattern.MatchString(command) {
-			continue
-		}
-		commands = append(commands, processCompactCommand(command))
-	}
-	return commands
-}
-
 func summarizeProcessSessionTelemetry(
 	session processSessionTelemetryFile,
 	events []processSessionMethodEvent,
-	runCommands []string,
 ) processSessionTelemetryFile {
 	pulls := processEventsByAction(events, "pull")
 	closes := processEventsByAction(events, "close")
 	session.InvocationLanes.MCPMethodCalls = len(events)
-	session.InvocationLanes.CLIRunCommands = len(runCommands)
-	session.InvocationLanes.CLIHelpOnlyCommands = processHelpOnlyCommandCount(runCommands)
-	session.ExampleRunCommands = processSampleStrings(runCommands, 3)
 	for _, event := range events {
 		action := processNormalizeStatus(event.Action)
 		if action == "" {
@@ -1827,7 +1792,6 @@ func summarizeProcessTelemetry(report processTelemetryReport) processTelemetrySu
 		summary.SessionDuplicatePulls += len(session.DuplicatePullTasks)
 		summary.SessionDuplicateCloses += len(session.DuplicateCloseIDs)
 		summary.SessionCloseFailures += session.CloseFailures
-		summary.SessionCLIRunCommands += session.InvocationLanes.CLIRunCommands
 	}
 	return summary
 }
@@ -1904,7 +1868,7 @@ func writeProcessTelemetryText(output io.Writer, report processTelemetryReport) 
 		return err
 	}
 	if err := printf(
-		"summary: method_runs=%d open=%d closed=%d long_open=%d sessions=%d session_pulls=%d session_closes=%d duplicate_pulls=%d duplicate_closes=%d waiver_items=%d close_repair_rounds=%d carry_through_items=%d pending_carry_through_items=%d cli_run_commands=%d broad_binding_risks=%d\n",
+		"summary: method_runs=%d open=%d closed=%d long_open=%d sessions=%d session_pulls=%d session_closes=%d duplicate_pulls=%d duplicate_closes=%d waiver_items=%d close_repair_rounds=%d carry_through_items=%d pending_carry_through_items=%d broad_binding_risks=%d\n",
 		report.Summary.MethodRunsTotal,
 		report.Summary.MethodRunsOpen,
 		report.Summary.MethodRunsClosed,
@@ -1918,7 +1882,6 @@ func writeProcessTelemetryText(output io.Writer, report processTelemetryReport) 
 		report.Summary.SessionCloseRepairRounds,
 		report.Summary.SessionCarryThroughItems,
 		report.Summary.MethodRunsPendingCarryThroughItems,
-		report.Summary.SessionCLIRunCommands,
 		report.Summary.BroadBindingRisks,
 	); err != nil {
 		return err
@@ -2114,20 +2077,10 @@ func processLineHasToolInvocation(record map[string]any) bool {
 
 func processLineHasProseMention(line []byte) bool {
 	text := strings.ToLower(string(line))
-	if !strings.Contains(text, "haft_method") && !strings.Contains(text, "haft run") {
+	if !strings.Contains(text, "haft_method") {
 		return false
 	}
 	return true
-}
-
-func processHelpOnlyCommandCount(commands []string) int {
-	count := 0
-	for _, command := range commands {
-		if strings.Contains(command, "--help") {
-			count++
-		}
-	}
-	return count
 }
 
 func processNormalizeTaskKey(value string) string {
@@ -2170,14 +2123,6 @@ func processBroadBindingRiskRefs(values []processBroadBindingRiskItem, limit int
 		refs = append(refs, value.DecisionRef)
 	}
 	return processSampleStrings(refs, limit)
-}
-
-func processCompactCommand(command string) string {
-	compact := strings.Join(strings.Fields(command), " ")
-	if len(compact) > 240 {
-		return compact[:240]
-	}
-	return compact
 }
 
 func compactProcessStrings(values []string) []string {

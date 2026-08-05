@@ -53,9 +53,15 @@ jobs:
           candidate_home="$RUNNER_TEMP/haft-candidate-home"
           install_bin="$candidate_home/.local/bin/haft"
 
-          mkdir -p "$archive_root/runtimes/open-sleigh/bin"
           mkdir -p "$archive_root/runtimes/haft-embed/bin"
           mkdir -p "$candidate_home/.local/bin"
+          mkdir -p "$candidate_home/.haft/runtimes/open-sleigh/current"
+          mkdir -p "$candidate_home/.open-sleigh/workspaces"
+
+          printf '%s\n' managed-v8-runtime \
+            > "$candidate_home/.haft/runtimes/open-sleigh/current/sentinel"
+          printf '%s\n' preserve-user-data \
+            > "$candidate_home/.open-sleigh/workspaces/sentinel"
 
           go build -trimpath \
             -ldflags "-s -w \
@@ -66,13 +72,8 @@ jobs:
             ./cmd/haft/
           printf '%s\n' \
             '#!/usr/bin/env bash' \
-            'printf "%s\n" candidate-open-sleigh' \
-            > "$archive_root/runtimes/open-sleigh/bin/open_sleigh"
-          printf '%s\n' \
-            '#!/usr/bin/env bash' \
             'printf "%s\n" candidate-haft-embed' \
             > "$archive_root/runtimes/haft-embed/bin/haft-embed"
-          chmod +x "$archive_root/runtimes/open-sleigh/bin/open_sleigh"
           chmod +x "$archive_root/runtimes/haft-embed/bin/haft-embed"
           tar -czf "$archive_path" -C "$archive_root" .
 
@@ -91,8 +92,9 @@ jobs:
           printf '%s\n' "$response" |
             grep -F '"serverInfo":{"name":"haft","version":"9.0.0"}'
 
-          "$candidate_home/.haft/runtimes/open-sleigh/current/bin/open_sleigh" |
-            grep -F 'candidate-open-sleigh'
+          test ! -e "$candidate_home/.haft/runtimes/open-sleigh/current"
+          grep -F 'preserve-user-data' \
+            "$candidate_home/.open-sleigh/workspaces/sentinel"
           "$candidate_home/.haft/runtimes/haft-embed/current/bin/haft-embed" |
             grep -F 'candidate-haft-embed'
 
@@ -112,5 +114,4 @@ jobs:
             HOME="$published_home" "$install_bin" serve 2>/dev/null)
           printf '%s\n' "$response" | grep -F '"protocolVersion"'
           printf '%s\n' "$response" | grep -F '"serverInfo":{"name":"haft"'
-          test -x \
-            "$published_home/.haft/runtimes/open-sleigh/current/bin/open_sleigh"
+          test ! -e "$published_home/.haft/runtimes/open-sleigh/current"

@@ -171,6 +171,67 @@ func TestReleaseWorkflowUsesCandidateGuardForValidationAndPublication(t *testing
 	}
 }
 
+func TestReleaseWorkflowReusesExactSuccessfulCIRaceEvidence(t *testing.T) {
+	workflow := readTruthRepoFile(t, ".github/workflows/release.yml")
+	for _, required := range []string{
+		"Require successful CI and full-race evidence for exact SHA",
+		"actions/workflows/ci.yml/runs?head_sha=${CANDIDATE_SHA}",
+		".conclusion == \"success\"",
+		"race-aggregate-${CANDIDATE_SHA}",
+		".expired == false",
+	} {
+		if !strings.Contains(workflow, required) {
+			t.Fatalf("release workflow omits exact-CI reuse guard %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"go run ./cmd/race-shard",
+		"scripts/fpf_query_token_gate.sh",
+		"golangci/golangci-lint-action",
+	} {
+		if strings.Contains(workflow, forbidden) {
+			t.Fatalf("release workflow redundantly executes CI check %q", forbidden)
+		}
+	}
+}
+
+func TestRaceTasksKeepCriticalLocalAndFullCIContoursDistinct(t *testing.T) {
+	taskfile := readTruthRepoFile(t, "Taskfile.yaml")
+	for _, required := range []string{
+		"test:race:",
+		"bash scripts/test-critical-race.sh",
+		"test:race-full:",
+		"complete CI race qualification locally (very slow)",
+	} {
+		if !strings.Contains(taskfile, required) {
+			t.Fatalf("Taskfile omits separated race contour %q", required)
+		}
+	}
+
+	script := readTruthRepoFile(t, "scripts/test-critical-race.sh")
+	for _, required := range []string{
+		"internal/p13acceptance/manifest.json",
+		"go_test_race_critical",
+		"-p=1",
+		"-cpu=2",
+	} {
+		if !strings.Contains(script, required) {
+			t.Fatalf("critical-race adapter omits canonical constraint %q", required)
+		}
+	}
+}
+
+func TestManualP13DoesNotAlsoStartTheFullCIMatrix(t *testing.T) {
+	workflow := readTruthRepoFile(t, ".github/workflows/ci.yml")
+	const exclusion = "github.event_name != 'workflow_dispatch' || !inputs.run_p13"
+	if count := strings.Count(workflow, exclusion); count != 4 {
+		t.Fatalf(
+			"full CI jobs excluding manual P13 = %d, want 4 exact guards",
+			count,
+		)
+	}
+}
+
 func publicDecisionLinks(t *testing.T, source string) []string {
 	t.Helper()
 	root := truthRepoRoot(t)

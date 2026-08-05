@@ -244,8 +244,8 @@ func TestReviewSpecificationSet_UsesCarrierAndSidekickFrames(t *testing.T) {
 	sidekickSection := reviewSectionFixture(
 		"ES.sidekick-frame.001",
 		"enabling-system",
-		"enabling.open_sleigh_sidekick",
-		"Open-Sleigh sidekick view",
+		"enabling.external_runner_sidekick",
+		"External runner sidekick view",
 		"explanation",
 		"description",
 		nil,

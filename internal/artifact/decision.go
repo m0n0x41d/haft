@@ -2481,9 +2481,6 @@ func carrierOnlyPath(path string) bool {
 	if strings.HasPrefix(clean, ".haft/specs/") || strings.HasPrefix(clean, ".haft/decisions/") {
 		return true
 	}
-	if strings.HasPrefix(clean, "open-sleigh/.haft/") {
-		return true
-	}
 	if strings.HasPrefix(clean, "docs/") {
 		return true
 	}

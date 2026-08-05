@@ -12,9 +12,23 @@ version="$2"
 short_sha="$3"
 extract_seed=$(mktemp -d)
 extract_dir=$(cd "$extract_seed" && pwd -P)
-trap 'rm -rf -- "$extract_dir"' EXIT
+mcp_pid=""
+cleanup() {
+  if [ -n "$mcp_pid" ] && kill -0 "$mcp_pid" 2>/dev/null; then
+    kill "$mcp_pid" 2>/dev/null || true
+    wait "$mcp_pid" 2>/dev/null || true
+  fi
+  rm -rf -- "$extract_dir"
+}
+trap cleanup EXIT
 
 tar -xzf "$archive" -C "$extract_dir"
+archive_entries=$(tar -tzf "$archive")
+if printf '%s\n' "$archive_entries" \
+  | grep -Eqi '(^|/)(open[-_]?sleigh|elixir)(/|$)|(^|/)erts-[^/]+(/|$)|(^|/)(erl|elixir|iex|mix)(\.bat)?$|(^|/)lib/erlang(/|$)|\.beam$'; then
+  echo "archive contains removed Open-Sleigh/Elixir/OTP/BEAM payload" >&2
+  exit 1
+fi
 mkdir -p "$extract_dir/home"
 mkdir -p "$extract_dir/project"
 
@@ -62,15 +76,48 @@ test "$(
     | tr -d ' '
 )" = "12"
 
-mcp_output=$(
+mcp_input="$extract_dir/mcp-input"
+mcp_output_file="$extract_dir/mcp-output"
+mkfifo "$mcp_input"
+touch "$mcp_output_file"
+(
   cd "$extract_dir/project"
-  printf '%s\n' \
-    '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' \
-    '{"jsonrpc":"2.0","method":"tools/call","id":2,"params":{"name":"haft_query","arguments":{"action":"status"}}}' \
-    | HOME="$extract_dir/home" \
-      HAFT_EMBED_BIN=/definitely/missing/haft-embed \
-      "$extract_dir/haft" serve 2>/dev/null
-)
+  HOME="$extract_dir/home" \
+    HAFT_EMBED_BIN=/definitely/missing/haft-embed \
+    "$extract_dir/haft" serve <"$mcp_input" >"$mcp_output_file" 2>/dev/null
+) &
+mcp_pid=$!
+
+# Keep the request stream open until the status response is complete. Closing
+# stdin immediately after writing is a client disconnect and may legitimately
+# cancel an active MCP tool call before the response reaches stdout.
+exec 3>"$mcp_input"
+printf '%s\n' \
+  '{"jsonrpc":"2.0","method":"initialize","id":1,"params":{}}' \
+  '{"jsonrpc":"2.0","method":"tools/call","id":2,"params":{"name":"haft_query","arguments":{"action":"status"}}}' \
+  >&3
+
+mcp_attempt=0
+while ! grep -Fq '"id":2' "$mcp_output_file"; do
+  if ! kill -0 "$mcp_pid" 2>/dev/null; then
+    echo "MCP server exited before returning fresh-project status" >&2
+    exec 3>&-
+    wait "$mcp_pid" 2>/dev/null || true
+    mcp_pid=""
+    exit 1
+  fi
+  if [ "$mcp_attempt" -ge 600 ]; then
+    echo "timed out waiting for fresh-project MCP status" >&2
+    exec 3>&-
+    exit 1
+  fi
+  mcp_attempt=$((mcp_attempt + 1))
+  sleep 0.1
+done
+exec 3>&-
+wait "$mcp_pid"
+mcp_pid=""
+mcp_output=$(<"$mcp_output_file")
 printf '%s\n' "$mcp_output" | grep -Fq '"protocolVersion"'
 printf '%s\n' "$mcp_output" | grep -Fq '"serverInfo":{"name":"haft","version":"'"$version"'"}'
 printf '%s\n' "$mcp_output" | grep -Fq 'Haft Status'
@@ -103,13 +150,13 @@ printf '%s\n' "$migration_absence_output" \
   | grep -Fq 'migration_candidate_not_prepared'
 diff -qr "$fresh_haft_before" "$extract_dir/project/.haft"
 
-open_sleigh="$extract_dir/runtimes/open-sleigh/bin/open_sleigh"
-test -x "$open_sleigh"
-runtime_output=$(
-  cd "$extract_dir"
-  ./runtimes/open-sleigh/bin/open_sleigh eval 'IO.write("open_sleigh_runtime_ok")'
-)
-printf '%s\n' "$runtime_output" | grep -F 'open_sleigh_runtime_ok'
+for removed_command in run harness; do
+  if HOME="$extract_dir/home" "$extract_dir/haft" "$removed_command" --help >/dev/null 2>&1; then
+    echo "removed command remains public: $removed_command" >&2
+    exit 1
+  fi
+done
+HOME="$extract_dir/home" "$extract_dir/haft" commission --help >/dev/null
 
 haft_embed="$extract_dir/runtimes/haft-embed/bin/haft-embed"
 if [ -x "$haft_embed" ]; then

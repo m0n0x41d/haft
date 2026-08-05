@@ -381,9 +381,8 @@ func sharedSidecarEnabled() bool {
 }
 
 // locateSidecar resolves the haft-embed binary: an explicit HAFT_EMBED_BIN
-// override, then the installed runtime location (mirroring open-sleigh under
-// ~/.haft/runtimes), then dev build outputs when running from the haft repo,
-// then PATH.
+// override, then the managed ~/.haft/runtimes location, then dev build outputs
+// when running from the haft repo, then PATH.
 func locateSidecar() (string, bool) {
 	if override := os.Getenv(sidecarBinaryEnv); override != "" {
 		if isExecutableFile(override) {

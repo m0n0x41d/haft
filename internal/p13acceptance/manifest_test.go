@@ -635,6 +635,7 @@ func validateRequiredIdentityPaths(paths []string) error {
 		".context/current-plan-issue-report.md",
 		p13PlanRelativePath,
 		".haft/decisions/dec-20260804-ebf1a001.md",
+		".haft/decisions/dec-20260805-haft-v9-remove-built-in-execution-contour-a1eb55b6.md",
 		"data/FPF/FPF-Spec.md",
 		"db/typed_memory_identity_reconciliation_migration_test.go",
 		"docs/src/pages/docs/agent-prompt.astro",
@@ -648,7 +649,6 @@ func validateRequiredIdentityPaths(paths []string) error {
 		"internal/typedmemory/genericity_acceptance_external_test.go",
 		"internal/typedmemory/fpf_category_error_test.go",
 		"logger/logger.go",
-		"open-sleigh/lib/open_sleigh.ex",
 		"packages/haft-pi/tests/pure.test.ts",
 	}
 	for _, path := range required {
@@ -1220,7 +1220,6 @@ func validateIdentitySpec(spec identitySpec) error {
 		"docs/src",
 		"internal",
 		"logger",
-		"open-sleigh",
 		"packages/haft-pi",
 		"scripts",
 		"skills",
@@ -1233,6 +1232,7 @@ func validateIdentitySpec(spec identitySpec) error {
 		".haft/decisions/dec-20260716-11f33e36.md",
 		".haft/decisions/dec-20260716-318cdec5.md",
 		".haft/decisions/dec-20260804-ebf1a001.md",
+		".haft/decisions/dec-20260805-haft-v9-remove-built-in-execution-contour-a1eb55b6.md",
 		".haft/project-profile.yaml",
 		".haft/project.yaml",
 		"AGENTS.md",
@@ -1244,8 +1244,6 @@ func validateIdentitySpec(spec identitySpec) error {
 		"go.mod",
 		"go.sum",
 		"internal/cli/fpf.db",
-		"open-sleigh/mix.exs",
-		"open-sleigh/mix.lock",
 		"package-lock.json",
 		"package.json",
 	}
@@ -1260,7 +1258,6 @@ func validateIdentitySpec(spec identitySpec) error {
 		"tmp",
 	}
 	wantDependencyRoots := []string{
-		"open-sleigh/deps",
 		"packages/haft-pi/node_modules",
 	}
 	if !slices.Equal(spec.SourceRoots, wantRoots) ||
@@ -1835,22 +1832,6 @@ func validateExactSuiteContract(suites []suiteSpec) error {
 			WorkingDirectory: "packages/haft-pi",
 			TimeoutSeconds:   1200,
 		},
-		{
-			ID:               "open_sleigh_format",
-			Kind:             "exec",
-			Program:          "mix",
-			Args:             []string{"format", "--check-formatted"},
-			WorkingDirectory: "open-sleigh",
-			TimeoutSeconds:   1200,
-		},
-		{
-			ID:               "open_sleigh_test",
-			Kind:             "exec",
-			Program:          "mix",
-			Args:             []string{"test"},
-			WorkingDirectory: "open-sleigh",
-			TimeoutSeconds:   3600,
-		},
 		{ID: "gofmt_check", Kind: "gofmt_check", TimeoutSeconds: 900},
 		{
 			ID:               "git_diff_check",
@@ -2008,7 +1989,7 @@ func exactGateContract() []gateContract {
 			Title:        "Authority and specification",
 			PlanSpan:     p13PlanSpan,
 			ClaimsDigest: "sha256:6eeea56705a03db2803424e2bc143a1d6c8d7e472e5efa650b92c237a25a4337",
-			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_test"},
+			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/specmigrationv2::TestMigrationEffectSagaArchivesExactBytesWritesReceiptAndReplays",
 				"github.com/m0n0x41d/haft/internal/specmigrationv2::TestAuditPacketCandidateVerifiesExactEightSectionPartition",
@@ -2033,7 +2014,7 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/projectprofile::TestTargetSystemSpecApplicabilityDoesNotDependOnEntityRelation",
 				"github.com/m0n0x41d/haft/internal/profileprojection::TestHistoricalV2OpenDebtResolvesThroughV3TaggedEvent",
 				"github.com/m0n0x41d/haft/internal/cli::TestCanonicalProjectSpecificationApplicabilityIsUnderdeterminedWithoutAdmission",
-				"github.com/m0n0x41d/haft/internal/cli::TestCanonicalProjectReadinessKeepsNonSoftwareHarnessFreeOfSWEGate",
+				"github.com/m0n0x41d/haft/internal/cli::TestHandleHaftCommissionForProjectAdmitsNonSoftwareWithoutFakeSWESpec",
 				"github.com/m0n0x41d/haft/internal/cli::TestProfileDeclarationFreshReviewedCandidateReplaysAfterLedgerRestart",
 				"github.com/m0n0x41d/haft/internal/p13acceptance::TestStageProfileBindingRejectsPostStageProfileDrift",
 			},
@@ -2285,7 +2266,7 @@ func exactGateContract() []gateContract {
 			Title:        "Stream and release truth",
 			PlanSpan:     p13PlanSpan,
 			ClaimsDigest: "sha256:5923088099b8e3032714734f7b032db13ffc023eea0eaf11065e687a34fc3b1c",
-			SuiteIDs:     []string{"fpf_index_exact", "query_token_gate", "go_normal", "go_vet", "pi_test", "pi_typecheck", "open_sleigh_format", "open_sleigh_test", "gofmt_check", "git_diff_check"},
+			SuiteIDs:     []string{"fpf_index_exact", "query_token_gate", "go_normal", "go_vet", "pi_test", "pi_typecheck", "gofmt_check", "git_diff_check"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestREADMEDeclaresExactlyTheFourStreamTruthLabels",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim",

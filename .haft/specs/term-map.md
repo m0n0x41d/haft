@@ -188,10 +188,11 @@ entries:
   - term: RuntimeRun
     category: execution
     definition: >-
-      A dated occurrence of performed Work in which the runtime harness executes
-      an admissible WorkCommission in an identified isolated workspace or
-      worktree. The occurrence exists in time and remains distinct from every
-      description, result record, and carrier that reports it.
+      A dated occurrence of performed Work in which a separately operated
+      external runner performs an admissible WorkCommission in an identified
+      isolated workspace or worktree. The occurrence exists in time and remains
+      distinct from the runner, every description, result record, and carrier
+      that reports it.
     aliases:
       - runtime run
     not:

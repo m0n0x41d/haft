@@ -210,7 +210,7 @@ func seedAlreadyAuthorizedUnrelatedWork(
 	_, err = handleHaftCommission(ctx, fixture.store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:semantic-interruption",
+		"runner_id":     "external:semantic-interruption",
 	})
 	if err != nil {
 		t.Fatalf("claim already-authorized WorkCommission: %v", err)
@@ -231,7 +231,7 @@ func recordUnrelatedWorkEvidence(
 	result, err := handleHaftCommission(ctx, fixture.store, map[string]any{
 		"action":        "record_run_event",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:semantic-interruption",
+		"runner_id":     "external:semantic-interruption",
 		"event":         "phase_outcome",
 		"verdict":       "pass",
 		"payload": map[string]any{

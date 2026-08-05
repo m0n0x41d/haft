@@ -12,55 +12,6 @@ import (
 	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
-func TestCanonicalProjectReadinessKeepsNonSoftwareHarnessFreeOfSWEGate(
-	t *testing.T,
-) {
-	root := t.TempDir()
-	harness := profileadmissionfixture.New(t, root)
-	harness.AdmitNonSoftwareRevision(t, "readiness-nonsoftware")
-	readiness, err := inspectCanonicalProjectReadiness(
-		context.Background(),
-		root,
-		automaticProjectSpecificationScopeRequest(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gate := harnessRunReadinessGateForCanonicalProfile(readiness, "")
-	if gate.Kind != harnessRunReadinessAdmissible {
-		t.Fatalf(
-			"non-software gate = %#v, want admissible without tactical waiver",
-			gate,
-		)
-	}
-}
-
-func TestCanonicalProjectReadinessRetainsSoftwareHarnessGate(
-	t *testing.T,
-) {
-	root := t.TempDir()
-	harness := profileadmissionfixture.New(t, root)
-	harness.AdmitSoftwareRevision(t, "readiness-software")
-	readiness, err := inspectCanonicalProjectReadiness(
-		context.Background(),
-		root,
-		automaticProjectSpecificationScopeRequest(),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	gate := harnessRunReadinessGateForCanonicalProfile(readiness, "")
-	if gate.Kind != harnessRunReadinessBlocked {
-		t.Fatalf("software gate = %#v, want blocked", gate)
-	}
-	if !strings.Contains(gate.BlockReason, "ProjectSpecificationSet") {
-		t.Fatalf(
-			"software block reason = %q, want specification boundary",
-			gate.BlockReason,
-		)
-	}
-}
-
 func TestProfileAwareReadinessReminderUsesOneNeutralProfileCue(
 	t *testing.T,
 ) {

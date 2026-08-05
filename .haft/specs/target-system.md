@@ -409,9 +409,10 @@ claims:
       - A.7
   - id: TS.boundary.001.L2
     class: L
-    statement: OpenSleigh is the shipped execution-mechanics runtime of HaftSoftwareSystem and is not the runtime of the product or other EntityOfConcern that a user constructs with HaftSoftwareSystem.
+    statement: HaftSoftwareSystem ships no coding-agent execution runtime. A separately operated external runner may consume WorkCommissions and report lifecycle observations, but remains outside both HaftSoftwareSystem and the product or other EntityOfConcern that a user constructs with HaftSoftwareSystem.
     scope:
       - haft-runtime
+      - external-runner
       - user-target-runtime
     support_refs:
       - TS.role.001.L3
@@ -420,7 +421,7 @@ claims:
       - A.7
   - id: TS.boundary.001.L3
     class: L
-    statement: A RuntimeRun is a dated occurrence of commissioned Work executed through OpenSleigh; a RuntimeRunRecord is the description of that occurrence; a result carrier carries or represents the RuntimeRunRecord and is distinct from both the record and the Work occurrence.
+    statement: A RuntimeRun is a dated occurrence of commissioned Work performed through a separately operated external runner; a RuntimeRunRecord is the description of that occurrence; a result carrier carries or represents the RuntimeRunRecord and is distinct from the runner, the record, and the Work occurrence.
     scope:
       - runtime-run
       - runtime-run-record
@@ -641,24 +642,25 @@ The canonical/projection distinction and projection-failure invariant are
 fully stated by `TS.boundary.001.L1` and `TS.boundary.001.L7`. This prose adds
 no alternate persistence or recovery requirement.
 
-OpenSleigh belongs to the shipped HaftSoftwareSystem boundary while remaining
-distinct from the user's target runtime (`TS.boundary.001.L2`). The dated Work
-occurrence, its RuntimeRunRecord description, and the result carrier that
-carries that record remain distinct. The observation or episteme basis, the
-contextual Evidence relation, its EvidenceRecord description, and the evidence
-carrier that carries that record likewise remain distinct (`TS.boundary.001.L3`,
+A separately operated external runner remains outside HaftSoftwareSystem and
+the user's target runtime (`TS.boundary.001.L2`). The dated Work occurrence,
+its RuntimeRunRecord description, and the result carrier that carries that
+record remain distinct. The observation or episteme basis, the contextual
+Evidence relation, its EvidenceRecord description, and the evidence carrier
+that carries that record likewise remain distinct (`TS.boundary.001.L3`,
 `TS.boundary.001.L4`).
 
 The remaining boundary explanation follows from the Query-result restriction
 and explicit authority gate (`TS.role.001.A1`, `TS.boundary.001.D3`):
 HaftSoftwareSystem does not become FPF authority, the human principal, or the
-runtime of the user's target merely by carrying descriptions or operating
-OpenSleigh.
+runtime of the user's target merely by carrying descriptions or recording
+observations submitted by an external runner.
 
 ### Boundary Perspectives
 
 - Canonical versus projected values: `TS.boundary.001.L1`.
-- OpenSleigh versus the user's target runtime: `TS.boundary.001.L2`.
+- HaftSoftwareSystem, an external runner, and the user's target runtime:
+  `TS.boundary.001.L2`.
 - Work occurrence versus RuntimeRunRecord versus result carrier:
   `TS.boundary.001.L3`.
 - Observation or episteme basis versus contextual Evidence relation versus

@@ -43,21 +43,38 @@ func TestRetiredDeterministicRoutingCheckIsNotPublic(t *testing.T) {
 	}
 }
 
-func TestRootHelpDistinguishesDroppedAgentTUIFromCurrentCLIPresentation(
+func TestRootHelpDescribesGovernanceWithoutBuiltInExecution(
 	t *testing.T,
 ) {
-	if strings.Contains(rootCmd.Long, "TUI surfaces were dropped") {
-		t.Fatal("root help still drops current CLI presentation with the retired agent TUI")
-	}
 	for _, required := range []string{
 		"coding-agent TUI",
-		"haft board",
-		"haft run",
-		"remains supported",
+		"built-in commission executors",
+		"external runners",
+		"WorkCommissions",
 	} {
 		if !strings.Contains(rootCmd.Long, required) {
-			t.Fatalf("root help is missing current presentation boundary %q", required)
+			t.Fatalf("root help is missing v9 execution boundary %q", required)
 		}
+	}
+	for _, removed := range []string{"haft run", "haft harness", "Open-Sleigh"} {
+		if strings.Contains(rootCmd.Long, removed) {
+			t.Fatalf("root help retains removed execution surface %q", removed)
+		}
+	}
+}
+
+func TestRootCommandOmitsRemovedExecutors(t *testing.T) {
+	commands := map[string]bool{}
+	for _, command := range rootCmd.Commands() {
+		commands[command.Name()] = true
+	}
+	for _, removed := range []string{"run", "harness"} {
+		if commands[removed] {
+			t.Fatalf("removed command %q remains registered", removed)
+		}
+	}
+	if !commands["commission"] {
+		t.Fatal("runner-neutral commission command is not registered")
 	}
 }
 

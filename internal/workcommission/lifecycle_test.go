@@ -75,11 +75,11 @@ func TestLifecycleSemanticsForTerminalAndRecoverableStates(t *testing.T) {
 }
 
 func TestDeliveryAfterLocalEvidence_PolicyAndVerdictDriveAutoApply(t *testing.T) {
-	// V3 invariant (dec-20260428-harness-drain-v3-16bf21f3): the apply gate is
+	// Retained runner-neutral invariant: an external runner's apply gate is
 	// purely (delivery_policy + verdict). AutonomyEnvelope already gates
 	// creation/preflight/execute; reaching terminal+pass means it didn't block
 	// earlier. Missing envelope on terminal must NOT prevent auto-apply,
-	// otherwise the V3 path collapses back to V2's runtime-envelope behavior.
+	// otherwise the lifecycle collapses back to the old runtime-envelope behavior.
 	// An EXPLICITLY blocked envelope still keeps the manual path because it
 	// represents a concrete operator decision, not a missing snapshot.
 	cases := []struct {

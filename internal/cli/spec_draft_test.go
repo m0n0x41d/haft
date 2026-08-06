@@ -11,8 +11,6 @@ import (
 func TestSpecSectionDraftContractActionPublishesCanonicalValidationCall(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	haftDir := filepath.Join(t.TempDir(), ".haft")
 	raw, _, err := handleHaftSpecSectionWithProjectionRef(
 		t.Context(),

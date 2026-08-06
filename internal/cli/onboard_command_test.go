@@ -689,8 +689,6 @@ func TestOnboardStatusDoesNotTrustUnreadableOrForeignMemoryDeferral(
 func TestOnboardMemoryEnableProjectsEveryClosedNoCommitOutcome(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	observation, err := onboarding.NewObservation(
 		onboarding.ObservationInput{
 			Initialized:       true,

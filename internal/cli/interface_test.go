@@ -813,6 +813,8 @@ func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing
 }
 
 func TestInterfaceContractGenerationChecksMaterializedCarriers(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 
 	result, err := checkInterfaceContractMaterializedCarriers(report)
@@ -838,6 +840,8 @@ func TestInterfaceContractGenerationChecksMaterializedCarriers(t *testing.T) {
 }
 
 func TestInterfaceContractGenerationMaterializedCarrierCheckDetectsMissingMarkers(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	if len(report.Carriers) == 0 {
 		t.Fatal("expected materialized carriers")
@@ -869,6 +873,8 @@ func TestInterfaceContractGenerationMaterializedCarrierCheckDetectsMissingMarker
 }
 
 func TestInterfaceContractGenerationSyncsMaterializedCarrierMarkers(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	if len(report.Carriers) < 2 {
 		t.Fatalf("expected at least two materialized carriers: %#v", report.Carriers)
@@ -923,6 +929,8 @@ func TestInterfaceContractGenerationSyncsMaterializedCarrierMarkers(t *testing.T
 }
 
 func TestInterfaceContractGenerationMarkerRefreshCannotClaimSemanticCurrentness(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	if len(report.Carriers) == 0 {
 		t.Fatal("expected materialized carriers")
@@ -1210,8 +1218,6 @@ func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 }
 
 func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
@@ -2225,8 +2231,6 @@ func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
 }
 
 func TestHandleQuintQueryContractAuditReturnsReadOnlyReport(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{

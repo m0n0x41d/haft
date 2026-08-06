@@ -1088,8 +1088,6 @@ func TestProjectMemoryFullSurfaceIsInstalledOnlyAfterExactReadiness(
 func TestConfigureServeProjectMemoryFullSurfaceOwnsReadinessAndCleanup(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	original := openServeProjectMemoryFullSurface
 	t.Cleanup(func() {
 		openServeProjectMemoryFullSurface = original

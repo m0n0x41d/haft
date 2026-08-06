@@ -261,8 +261,6 @@ func TestDecisionReconcileSelectionReviewHelpNamesAuthorityBoundaries(t *testing
 }
 
 func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
-	t.Parallel()
-
 	restore := stubDecisionReconcileReportLimits(t, 2, 0)
 	defer restore()
 
@@ -318,8 +316,6 @@ func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
 }
 
 func TestCurrentGoverningSetJSONProjectionHonorsLimit(t *testing.T) {
-	t.Parallel()
-
 	restore := stubDecisionReconcileReportLimits(t, 0, 1)
 	defer restore()
 
@@ -591,8 +587,6 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 }
 
 func TestDecisionReconcileSelectionDraftLimitDefaultsToCompactUnlessFull(t *testing.T) {
-	t.Parallel()
-
 	previousLimit := decisionReconcileDraftLimit
 	previousFull := decisionReconcileDraftFull
 	defer func() {
@@ -738,8 +732,6 @@ func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
 }
 
 func TestHandleQuintQueryDecisionReconcileDefaultsToCompactReportOnlyPlan(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
@@ -794,8 +786,6 @@ func TestHandleQuintQueryDecisionReconcileDefaultsToCompactReportOnlyPlan(t *tes
 }
 
 func TestHandleQuintQueryDecisionReconcileHonorsCompactLimit(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-save-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
@@ -845,8 +835,6 @@ func TestHandleQuintQueryDecisionReconcileHonorsCompactLimit(t *testing.T) {
 }
 
 func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-current", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 
@@ -900,8 +888,6 @@ func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t
 }
 
 func TestHandleQuintQueryGoverningSetHonorsCompactLimit(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store-save", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store-load", "Load")
@@ -950,8 +936,6 @@ func TestHandleQuintQueryGoverningSetHonorsCompactLimit(t *testing.T) {
 }
 
 func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store", "Load")
@@ -983,8 +967,6 @@ func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
 }
 
 func TestHandleQuintQueryGoverningSetAnswerPathSourceRefsFilterExactTarget(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store", "Load")

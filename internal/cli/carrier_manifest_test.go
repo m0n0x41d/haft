@@ -16,8 +16,6 @@ import (
 )
 
 func TestRunCarrierManifestText(t *testing.T) {
-	t.Parallel()
-
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -44,8 +42,6 @@ func TestRunCarrierManifestText(t *testing.T) {
 }
 
 func TestRunCarrierManifestJSON(t *testing.T) {
-	t.Parallel()
-
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -82,8 +78,6 @@ func TestCarrierManifestHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestRunCarrierCheckText(t *testing.T) {
-	t.Parallel()
-
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -119,8 +113,6 @@ func TestCarrierCheckHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestRunCarrierCheckJSON(t *testing.T) {
-	t.Parallel()
-
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -145,8 +137,6 @@ func TestRunCarrierCheckJSON(t *testing.T) {
 }
 
 func TestHandleQuintQueryCarrierManifest(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
@@ -166,8 +156,6 @@ func TestHandleQuintQueryCarrierManifest(t *testing.T) {
 }
 
 func TestHandleQuintQueryCarrierCheck(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".haft"), 0o755); err != nil {

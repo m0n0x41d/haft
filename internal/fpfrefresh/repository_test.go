@@ -48,8 +48,6 @@ func TestMain(testingMain *testing.M) {
 }
 
 func TestRepositoryCoordinatesRemainDistinctAndIntegrationFailsClosed(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	ctx := context.Background()
 
@@ -390,8 +388,6 @@ func verifyRepositoryIntegrationForTest(
 }
 
 func TestValidateReportPathRejectsRepositoryAndRecoveryTargets(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	layout, err := ResolveRepositoryLayout(fixture.root)
 	if err != nil {
@@ -422,8 +418,6 @@ func TestValidateReportPathRejectsRepositoryAndRecoveryTargets(t *testing.T) {
 }
 
 func TestCheckoutExactSourceRejectsAndPreservesUnrelatedDirt(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	ctx := context.Background()
 	layout, err := ResolveRepositoryLayout(fixture.root)

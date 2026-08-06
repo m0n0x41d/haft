@@ -303,8 +303,6 @@ func TestBoundProjectMemoryAdmissionPostCheckPreservesCommittedAmbiguity(
 func TestRunMemoryAdmitSurfacesReceiptWithPostWriteRevalidationError(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	want := []byte(
 		`{"result":"committed","receipt":{"event_ref":"event:test"}}` + "\n",
 	)
@@ -366,8 +364,6 @@ func TestMemoryAdmitInputHelpSelectsCurrentV2Contract(t *testing.T) {
 func TestProjectMemoryCommitUnknownHasCLIAndMCPDeliveryParity(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	request, err := typedmemorywire.DecodeAdmitRequest(
 		[]byte(projectMemoryAdmissionTestPayload),
 	)

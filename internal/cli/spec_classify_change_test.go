@@ -14,8 +14,6 @@ import (
 )
 
 func TestRunSpecClassifyChangeJSONReportsRelationshipUpdate(t *testing.T) {
-	t.Parallel()
-
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
 	after := writeSpecClassifyChangeFile(t, "target-system-updated.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", "depends_on:\n  - TS.boundary.001\n"))
 	restore := stubSpecClassifyChangeFlags(t, before, after, "TS.sync.001", "target-system", true)
@@ -45,8 +43,6 @@ func TestRunSpecClassifyChangeJSONReportsRelationshipUpdate(t *testing.T) {
 }
 
 func TestRunSpecClassifyChangeTextReportsHighRiskDocumentShift(t *testing.T) {
-	t.Parallel()
-
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
 	after := writeSpecClassifyChangeFile(t, "enabling-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
 	restore := stubSpecClassifyChangeFlags(t, before, after, "TS.sync.001", "", false)
@@ -69,8 +65,6 @@ func TestRunSpecClassifyChangeTextReportsHighRiskDocumentShift(t *testing.T) {
 }
 
 func TestRunSpecClassifyChangeRequiresExplicitInputs(t *testing.T) {
-	t.Parallel()
-
 	restore := stubSpecClassifyChangeFlags(t, "", "", "", "", false)
 	defer restore()
 

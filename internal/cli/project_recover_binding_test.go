@@ -13,8 +13,6 @@ import (
 func TestProjectRecoverBindingCommandRequiresExactRootAndIdentity(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	previousRoot := projectRecoverBindingRoot
 	previousID := projectRecoverBindingID
 	projectRecoverBindingRoot = ""

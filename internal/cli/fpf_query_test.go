@@ -46,8 +46,6 @@ func TestFPFConcernQueryDoesNotExposeSourceRoleSelection(t *testing.T) {
 }
 
 func TestRunFPFQueryEmitsSourceNativeCandidateSetJSON(t *testing.T) {
-	t.Parallel()
-
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
@@ -84,8 +82,6 @@ func TestRunFPFQueryEmitsSourceNativeCandidateSetJSON(t *testing.T) {
 }
 
 func TestRunFPFInspectRejectsUnknownSourceRole(t *testing.T) {
-	t.Parallel()
-
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()

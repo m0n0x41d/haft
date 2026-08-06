@@ -57,8 +57,6 @@ func TestDriftEventsHelpNamesReviewPostureBoundary(t *testing.T) {
 }
 
 func TestValidateDriftBindingsModeRejectsDryRunWithMutation(t *testing.T) {
-	t.Parallel()
-
 	restore := setDriftBindingsModeForTest(t, true, true, "")
 	defer restore()
 
@@ -72,8 +70,6 @@ func TestValidateDriftBindingsModeRejectsDryRunWithMutation(t *testing.T) {
 }
 
 func TestValidateDriftBindingsModeRejectsDryRunWithSelection(t *testing.T) {
-	t.Parallel()
-
 	restore := setDriftBindingsModeForTest(t, true, false, "selection.json")
 	defer restore()
 
@@ -87,8 +83,6 @@ func TestValidateDriftBindingsModeRejectsDryRunWithSelection(t *testing.T) {
 }
 
 func TestValidateDriftBindingsModeAllowsDryRunPreview(t *testing.T) {
-	t.Parallel()
-
 	restore := setDriftBindingsModeForTest(t, true, false, "")
 	defer restore()
 

@@ -218,8 +218,6 @@ func TestHandleHaftSpecSection_NextStepPropagatesBaselineStoreError(t *testing.T
 func TestHandleHaftSpecSection_ProjectLifecycleRejectsExactSectionID(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
 	for _, action := range []string{"lifecycle", "next_step"} {
@@ -381,8 +379,6 @@ func TestProjectSpecificationScopeRequestFromSpecSectionArgs(t *testing.T) {
 }
 
 func TestHandleHaftSpecSection_RejectsMissingAction(t *testing.T) {
-	t.Parallel()
-
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {
@@ -396,8 +392,6 @@ func TestHandleHaftSpecSection_RejectsMissingAction(t *testing.T) {
 }
 
 func TestHandleHaftSpecSection_RejectsUnknownAction(t *testing.T) {
-	t.Parallel()
-
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {

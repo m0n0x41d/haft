@@ -10,8 +10,6 @@ import (
 )
 
 func TestHandleQuintQuery_CorrespondenceGraphKeepsPathNonProof(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

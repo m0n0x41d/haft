@@ -21,6 +21,8 @@ import (
 func TestPublicInitRealPTYSpaceEnterAppliesSelectedHost(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	if runtime.GOOS != "darwin" && runtime.GOOS != "linux" {
 		t.Skip("real PTY init oracle requires the Unix script utility")
 	}

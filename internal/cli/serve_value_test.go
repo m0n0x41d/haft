@@ -9,8 +9,6 @@ import (
 )
 
 func TestHandleQuintQuery_ValueSpaceReturnsCharacteristicSpace(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
 		"action":      "value_space",

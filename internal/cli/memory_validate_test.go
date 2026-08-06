@@ -19,8 +19,6 @@ import (
 )
 
 func TestMemoryValidationCLIAndMCPShareStableReadOnlyPresentation(t *testing.T) {
-	t.Parallel()
-
 	runtime, err := newReadOnlyMemoryValidation(context.Background())
 	if err != nil {
 		t.Fatalf("newReadOnlyMemoryValidation() error = %v", err)
@@ -104,8 +102,6 @@ func TestMemoryValidationCLIAndMCPShareStableReadOnlyPresentation(t *testing.T) 
 }
 
 func TestMemoryValidateReadsStdinBytesStrictly(t *testing.T) {
-	t.Parallel()
-
 	payload := bundledMemoryValidationFixture()
 	fromStdin := runMemoryValidateForTest(t, "-", bytes.NewReader(payload))
 
@@ -232,8 +228,6 @@ func TestMemoryValidationProductionResolverNeverFabricatesProjectBasis(t *testin
 func TestPublicMemoryValidateRoutesProjectBasisThroughCheckedReadSession(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	cases := []struct {
 		name  string
 		basis []byte
@@ -515,8 +509,6 @@ func TestMemoryValidateInterfaceContractNamesReadOnlyBoundary(t *testing.T) {
 }
 
 func TestMemoryValidateCommandIsRegisteredWithRequiredInputFileFlag(t *testing.T) {
-	t.Parallel()
-
 	command, _, err := rootCmd.Find([]string{"memory", "validate"})
 	if err != nil {
 		t.Fatalf("find memory validate command: %v", err)

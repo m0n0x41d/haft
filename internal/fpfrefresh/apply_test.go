@@ -11,8 +11,6 @@ import (
 )
 
 func TestExecuteReceiptResumeAcrossInterruptionStages(t *testing.T) {
-	t.Parallel()
-
 	tests := []struct {
 		name                         string
 		state                        ReceiptState
@@ -149,8 +147,6 @@ func TestExecuteReceiptResumeAcrossInterruptionStages(t *testing.T) {
 }
 
 func TestExecuteReceiptRestoreHandlesPresentMissingAndMixedPredecessors(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	ctx := context.Background()
 
@@ -224,8 +220,6 @@ func TestExecuteReceiptRestoreHandlesPresentMissingAndMixedPredecessors(t *testi
 }
 
 func TestExecuteReceiptRecoveryTransactsTokenGateFixture(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	ctx := context.Background()
 	targetFixture := filepath.Join(
@@ -391,8 +385,6 @@ func TestExecuteReceiptRecoveryTransactsTokenGateFixture(t *testing.T) {
 }
 
 func TestExecuteReceiptRecoveryRejectsStaleStateWithoutBroadMutation(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	ctx := context.Background()
 	presentBasis := fixture.receiptBasis(ReceiptLockPresent, fixture.predecessorSHA)

@@ -17,6 +17,8 @@ const (
 // stay identical so that haft maintainers reading repo-root CLAUDE.md see
 // the same content end-users get from `haft init`.
 func TestClaudeMDTemplateInSyncWithRepoRoot(t *testing.T) {
+	t.Parallel()
+
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		t.Skipf("skipping sync check outside repo: %v", err)
@@ -47,6 +49,8 @@ func TestClaudeMDTemplateInSyncWithRepoRoot(t *testing.T) {
 }
 
 func TestInstructionCarriersExposeSourceFirstFPFContract(t *testing.T) {
+	t.Parallel()
+
 	repoRoot, err := findRepoRoot()
 	if err != nil {
 		t.Skipf("skipping sync check outside repo: %v", err)

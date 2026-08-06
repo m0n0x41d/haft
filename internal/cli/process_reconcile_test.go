@@ -83,8 +83,6 @@ func TestBuildProcessReconcileReportFindsDuplicateHistoryAndCarrierIssues(t *tes
 }
 
 func TestRunProcessReconcileJSON(t *testing.T) {
-	t.Parallel()
-
 	oldJSON := processReconcileJSON
 	t.Cleanup(func() {
 		processReconcileJSON = oldJSON
@@ -111,8 +109,6 @@ func TestRunProcessReconcileJSON(t *testing.T) {
 }
 
 func TestRunProcessReconcileTextStaysCompact(t *testing.T) {
-	t.Parallel()
-
 	oldJSON := processReconcileJSON
 	t.Cleanup(func() {
 		processReconcileJSON = oldJSON

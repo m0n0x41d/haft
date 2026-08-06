@@ -12,8 +12,6 @@ import (
 func TestPrepareApplyReceiptRejectsPredecessorLockDriftAfterCheck(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	tests := []struct {
 		name            string
 		checkedPresence ReceiptLockPresence
@@ -108,8 +106,6 @@ func TestPrepareApplyReceiptRejectsPredecessorLockDriftAfterCheck(
 }
 
 func TestPrepareApplyReceiptUsesCheckedPredecessorLockDigest(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	check := transactionTestCandidateCheck(t, fixture, layout)
@@ -157,8 +153,6 @@ func TestPrepareApplyReceiptUsesCheckedPredecessorLockDigest(t *testing.T) {
 }
 
 func TestPrepareApplyReceiptReturnsBusyWithoutMutation(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	check := transactionTestCandidateCheck(t, fixture, layout)
@@ -217,8 +211,6 @@ func TestPrepareApplyReceiptReturnsBusyWithoutMutation(t *testing.T) {
 }
 
 func TestApplyCheckedCandidateCompletesSerializedReceiptLifecycle(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	check := transactionTestCandidateCheck(t, fixture, layout)
@@ -253,8 +245,6 @@ func TestApplyCheckedCandidateCompletesSerializedReceiptLifecycle(t *testing.T) 
 }
 
 func TestCheckCandidatePreservesReportWhenWorkspaceCleanupFails(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	cleanupFailure := errors.New("injected predecessor workspace cleanup failure")
@@ -310,8 +300,6 @@ func TestCheckCandidatePreservesReportWhenWorkspaceCleanupFails(t *testing.T) {
 }
 
 func TestCheckCandidateKeepsVerifiedArtifactWhenTokenGateNeedsReview(t *testing.T) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	builder := IndexBuilderFunc(func(

@@ -9,8 +9,6 @@ import (
 )
 
 func TestHandleQuintQuery_ProjectionRendersAuditView(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -76,8 +74,6 @@ func TestHandleQuintQuery_ProjectionRendersAuditView(t *testing.T) {
 }
 
 func TestHandleQuintQuery_ProjectionRendersDelegatedBriefAlias(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -145,8 +141,6 @@ func TestHandleQuintQuery_ProjectionRendersDelegatedBriefAlias(t *testing.T) {
 }
 
 func TestHandleQuintQuery_ProjectionRendersChangeRationaleAlias(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

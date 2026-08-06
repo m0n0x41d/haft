@@ -9,8 +9,6 @@ import (
 )
 
 func TestProjectMigrateCommandRequiresExactRootAndIdentity(t *testing.T) {
-	t.Parallel()
-
 	previousRoot := projectMigrateRoot
 	previousID := projectMigrateID
 	projectMigrateRoot = ""

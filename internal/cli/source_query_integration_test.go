@@ -15,8 +15,6 @@ import (
 )
 
 func TestSourceNativeFPFQueryIntegration(t *testing.T) {
-	t.Parallel()
-
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()

@@ -71,8 +71,6 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 }
 
 func TestHandleQuintQuery_EvidencePathBlocksLegacyFormalityWhenCurrentRequired(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -241,8 +239,6 @@ func TestHandleQuintDecision_EvidencePersistsClaimBinding(t *testing.T) {
 }
 
 func TestHandleQuintQuery_EvidencePathBuildsBoundedReliance(t *testing.T) {
-	t.Parallel()
-
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

@@ -2350,6 +2350,15 @@ func findCarrierGeneratedDescriptionFragment(carrier interfaceContractDescriptio
 	return interfaceContractGeneratedFragment{}, false
 }
 
+// repoFileExists reports whether a repository-relative carrier is present.
+// Installed carriers under untracked directories are absent in a fresh
+// checkout, so callers distinguish "missing because untracked" from "missing
+// because broken".
+func repoFileExists(elem ...string) bool {
+	_, err := os.Stat(filepath.Join(append([]string{"..", ".."}, elem...)...))
+	return err == nil
+}
+
 func readRepoFile(t *testing.T, elem ...string) string {
 	t.Helper()
 
@@ -3595,6 +3604,15 @@ func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.
 		{"internal", "cli", "skill", "h-status", "SKILL.md"},
 	}
 	for _, path := range coreCarriers {
+		// `.agents/skills` — установленная копия, которую создаёт `haft init`.
+		// Она не отслеживается git, поэтому в свежем чекауте её нет. Источник
+		// тех же носителей лежит в internal/cli/skill и проверяется этим же
+		// циклом всегда, так что пропуск копии ничего не теряет.
+		if path[0] == ".agents" && !repoFileExists(path...) {
+			t.Logf("installed carrier %s absent — checking its tracked source only",
+				strings.Join(path, "/"))
+			continue
+		}
 		source := readRepoFile(t, path...)
 		for _, want := range []string{
 			"Human Gate Brief",

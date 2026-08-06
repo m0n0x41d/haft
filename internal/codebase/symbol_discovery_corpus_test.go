@@ -283,6 +283,14 @@ func readHG5CorpusManifest(
 		"corpus-manifest.json",
 	)
 	content, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		// Корпус живёт под .context, который не отслеживается git, поэтому в
+		// свежем чекауте его нет. Пропускаем, как это делает
+		// internal/recall/liveeval_test.go со своим живым корпусом: без
+		// носителя проверять нечего, и падение сообщало бы об отсутствии
+		// файла, а не о регрессии.
+		t.Skipf("frozen HG5 corpus not found at %s — skipping", path)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

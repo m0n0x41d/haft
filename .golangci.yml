@@ -95,6 +95,14 @@ linters:
         linters:
           - unused
         text: "complete"
+      # Stat_t.Nlink is uint16 on darwin and uint64 on linux, so this one
+      # conversion is required on one supported platform and redundant on the
+      # other. A //nolint would itself be unused on darwin and trip nolintlint,
+      # so the cross-platform difference is recorded here instead.
+      - path: internal/codeintel/index_lease_supported.go
+        linters:
+          - unconvert
+        text: "unnecessary conversion"
 
 formatters:
   enable:

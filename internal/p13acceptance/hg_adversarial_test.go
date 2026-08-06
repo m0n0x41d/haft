@@ -63,6 +63,14 @@ func TestHGAdversarialAcceptance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Носители HG0 живут под .context, который не отслеживается git, поэтому в
+	// свежем чекауте их нет. Пропускаем по образцу
+	// internal/recall/liveeval_test.go: отсутствие носителя — не регрессия.
+	if _, statErr := os.Stat(
+		filepath.Join(root, hg0EvidenceDirectory, hg0ChecksumManifest),
+	); os.IsNotExist(statErr) {
+		t.Skipf("HG0 evidence carriers not found under %s — skipping", hg0EvidenceDirectory)
+	}
 	if err := validateHG0CarrierDigests(root); err != nil {
 		t.Fatal(err)
 	}

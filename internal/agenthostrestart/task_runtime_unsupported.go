@@ -11,6 +11,6 @@ func captureCurrentCodexTaskRuntime(
 	context.Context,
 ) (TaskRuntimeIdentity, error) {
 	return TaskRuntimeIdentity{}, fmt.Errorf(
-		"Codex task runtime capture requires macOS",
+		"capturing the Codex task runtime requires macOS",
 	)
 }

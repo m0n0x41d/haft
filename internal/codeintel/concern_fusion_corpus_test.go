@@ -256,13 +256,20 @@ func readHG6CorpusManifest(
 	projectRoot string,
 ) hg6CorpusManifest {
 	t.Helper()
-	content, err := os.ReadFile(filepath.Join(
+	path := filepath.Join(
 		projectRoot,
 		".context",
 		"v9-remaining-evidence",
 		"r2-graph-baseline",
 		"corpus-manifest.json",
-	))
+	)
+	content, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		// .context не отслеживается git, поэтому в свежем чекауте корпуса нет.
+		// Пропускаем по образцу internal/recall/liveeval_test.go: отсутствие
+		// носителя — не регрессия, и падение сообщало бы не о ней.
+		t.Skipf("frozen HG6 corpus not found at %s — skipping", path)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -214,6 +214,8 @@ func (surface *fixedProjectMemoryFullSurface) Close() error {
 func TestSealedProjectMemorySplitSurfaceImplementsEveryAdvertisedAction(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	tests := []struct {
 		name               string
 		payload            string
@@ -326,6 +328,8 @@ func TestSealedProjectMemorySplitSurfaceImplementsEveryAdvertisedAction(
 func TestSealedProjectMemoryFullHandlerStrictlyDecodesOriginalBytes(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &sequencedProjectMemoryRevalidator{}
 	executor := &fixedProjectMemoryFullExecutor{}
 	surface := &sealedProjectMemoryFullSurface{
@@ -366,6 +370,8 @@ func TestSealedProjectMemoryFullHandlerStrictlyDecodesOriginalBytes(
 func TestSealedProjectMemoryQueryHandlerStrictlyDecodesOriginalBytes(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &sequencedProjectMemoryRevalidator{}
 	executor := &fixedProjectMemoryFullExecutor{}
 	surface := &sealedProjectMemoryFullSurface{
@@ -410,6 +416,8 @@ func TestSealedProjectMemoryQueryHandlerStrictlyDecodesOriginalBytes(
 func TestSealedProjectMemorySurfaceRequiresRestartAfterEnablement(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &sequencedProjectMemoryRevalidator{}
 	executor := &fixedProjectMemoryFullExecutor{
 		basisAvailable: true,
@@ -453,6 +461,8 @@ func TestSealedProjectMemorySurfaceRequiresRestartAfterEnablement(
 func TestSealedProjectMemoryDedicatedHandlerRejectsReadActions(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		payload string
@@ -521,6 +531,8 @@ func TestSealedProjectMemoryDedicatedHandlerRejectsReadActions(
 func TestSealedProjectMemoryFullHandlerPreEffectIdentityFailureWritesNothing(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &sequencedProjectMemoryRevalidator{
 		results: []error{errors.New("injected root-to-ledger drift")},
 	}
@@ -553,6 +565,8 @@ func TestSealedProjectMemoryFullHandlerPreEffectIdentityFailureWritesNothing(
 func TestSealedProjectMemoryFullHandlerDiscardsReadAfterIdentityFailure(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &sequencedProjectMemoryRevalidator{
 		results: []error{
 			nil,
@@ -584,6 +598,8 @@ func TestSealedProjectMemoryFullHandlerDiscardsReadAfterIdentityFailure(
 func TestSealedProjectMemoryFullHandlerPreservesAdmissionOnPostEffectAmbiguity(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &sequencedProjectMemoryRevalidator{
 		results: []error{
 			nil,
@@ -680,6 +696,8 @@ func TestSealedProjectMemoryFullHandlerPreservesAdmissionOnPostEffectAmbiguity(
 func TestSealedProjectMemoryFullHandlerReturnsClosedUnknownAndSameKeyReplay(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	postLedgerErr := errors.New(
 		"injected post-admission root-to-ledger drift",
 	)
@@ -819,6 +837,8 @@ func TestSealedProjectMemoryFullHandlerReturnsClosedUnknownAndSameKeyReplay(
 func TestProjectMemoryFullAdmissionIdentityIgnoresJSONPresentation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectID := mustProjectMemoryRuntimeProjectID(t, "qnt_f017beef")
 	v1 := projectMemoryAdmissionRetryCoordinatesForPresentation(
 		t,
@@ -929,6 +949,8 @@ func projectMemoryAdmissionRetryCoordinatesForPresentation(
 func TestProjectMemoryFullSurfaceIsInstalledOnlyAfterExactReadiness(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	t.Run("ready", func(t *testing.T) {
 		server := fpf.NewServer("test")
 		surface := &fixedProjectMemoryFullSurface{
@@ -1066,6 +1088,8 @@ func TestProjectMemoryFullSurfaceIsInstalledOnlyAfterExactReadiness(
 func TestConfigureServeProjectMemoryFullSurfaceOwnsReadinessAndCleanup(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	original := openServeProjectMemoryFullSurface
 	t.Cleanup(func() {
 		openServeProjectMemoryFullSurface = original

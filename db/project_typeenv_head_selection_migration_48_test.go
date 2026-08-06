@@ -10,6 +10,8 @@ import (
 func TestProjectTypeEnvHeadSelectionMigration48PreservesCompleteV47GenesisEffect(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, basisTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, basisTypeEnvRef)
@@ -181,6 +183,8 @@ func TestProjectTypeEnvHeadSelectionMigration48PreservesCompleteV47GenesisEffect
 func TestProjectTypeEnvHeadSelectionMigration48AcceptsV2GenesisRequestAndEffectObservation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, basisTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	migrateProjectTypeEnvHeadSelection47(t, database)
@@ -366,6 +370,8 @@ func TestProjectTypeEnvHeadSelectionMigration48AcceptsV2GenesisRequestAndEffectO
 func TestProjectTypeEnvHeadSelectionMigration48UpgradesOlderDatabaseInSequence(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration46(t)
 	defer database.Close()
 	if err := Migrate(

@@ -46,6 +46,8 @@ type typedMemoryClosureCounts46 struct {
 }
 
 func TestTypedMemoryStorageMigration46InstallsExactSchemaAndPreservesV45Objects(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration46(t)
 	defer database.Close()
 	before := typedMemorySchemaObjects46(t, database)
@@ -136,6 +138,8 @@ func TestTypedMemoryStorageMigration46InstallsExactSchemaAndPreservesV45Objects(
 }
 
 func TestTypedMemoryStorageMigration46PreservesV45HistoryWithoutFabricatedBasis(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, false)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -211,6 +215,8 @@ func TestTypedMemoryStorageMigration46PreservesV45HistoryWithoutFabricatedBasis(
 }
 
 func TestTypedMemoryStorageMigration46RejectsPostCapabilityV45Generation(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -242,6 +248,8 @@ func TestTypedMemoryStorageMigration46RejectsPostCapabilityV45Generation(t *test
 }
 
 func TestTypedMemoryStorageMigration46RequiresCompleteV45Source(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration45(t)
 	defer database.Close()
 
@@ -260,6 +268,8 @@ func TestTypedMemoryStorageMigration46RequiresCompleteV45Source(t *testing.T) {
 }
 
 func TestTypedMemoryStorageMigration46RejectsDriftedV45SourceFootprintAtomically(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name       string
 		statements []string
@@ -314,6 +324,8 @@ func TestTypedMemoryStorageMigration46RejectsDriftedV45SourceFootprintAtomically
 }
 
 func TestTypedMemoryStorageMigration46RejectsUnknownPartialFootprintAtomically(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration46(t)
 	defer database.Close()
 	partialTable := "typed_memory_context_slices"
@@ -348,6 +360,8 @@ func TestTypedMemoryStorageMigration46RejectsUnknownPartialFootprintAtomically(t
 }
 
 func TestTypedMemoryStorageMigration46MakesV45WriterFailClosedWithoutRows(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -391,6 +405,8 @@ func TestTypedMemoryStorageMigration46MakesV45WriterFailClosedWithoutRows(t *tes
 }
 
 func TestTypedMemoryStorageMigration46PreservesEntityContextEventCorrelation(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -430,6 +446,8 @@ func TestTypedMemoryStorageMigration46PreservesEntityContextEventCorrelation(t *
 }
 
 func TestTypedMemoryStorageMigration46PreservesClosedEventMaterializationBoundary(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -472,6 +490,8 @@ func TestTypedMemoryStorageMigration46PreservesClosedEventMaterializationBoundar
 }
 
 func TestTypedMemoryStorageMigration46CommitsSnapshotOnlyDeclarationWithExactClosure(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -522,6 +542,8 @@ func TestTypedMemoryStorageMigration46CommitsSnapshotOnlyDeclarationWithExactClo
 }
 
 func TestTypedMemoryStorageMigration46CommitsExistingEntityInNewBoundedContext(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -587,6 +609,8 @@ func TestTypedMemoryStorageMigration46CommitsExistingEntityInNewBoundedContext(t
 }
 
 func TestTypedMemoryStorageMigration46RejectsUnpairedEntityAndForeignContextDeclaration(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -647,6 +671,8 @@ func TestTypedMemoryStorageMigration46RejectsUnpairedEntityAndForeignContextDecl
 }
 
 func TestTypedMemoryStorageMigration46RejectsContextBoundToCommittedForeignEvent(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -673,6 +699,8 @@ func TestTypedMemoryStorageMigration46RejectsContextBoundToCommittedForeignEvent
 }
 
 func TestTypedMemoryStorageMigration46RejectsEntityFromUncommittedForeignEvent(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -731,6 +759,8 @@ func TestTypedMemoryStorageMigration46RejectsEntityFromUncommittedForeignEvent(t
 }
 
 func TestTypedMemoryStorageMigration46RejectsClosureWhenTopLevelChangeCountIsPartial(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -765,6 +795,8 @@ func TestTypedMemoryStorageMigration46RejectsClosureWhenTopLevelChangeCountIsPar
 }
 
 func TestTypedMemoryStorageMigration46RejectsUndefinedMemberOfRows(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -822,6 +854,8 @@ func TestTypedMemoryStorageMigration46RejectsUndefinedMemberOfRows(t *testing.T)
 }
 
 func TestTypedMemoryStorageMigration46SealsContentAddressedContextSliceIdentity(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -908,6 +942,8 @@ func TestTypedMemoryStorageMigration46SealsContentAddressedContextSliceIdentity(
 }
 
 func TestTypedMemoryStorageMigration46SealsReferenceResolutionVariants(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name                     string
 		resolutionKind           string
@@ -1047,6 +1083,8 @@ func TestTypedMemoryStorageMigration46SealsReferenceResolutionVariants(t *testin
 }
 
 func TestTypedMemoryStorageMigration46RejectsResolutionEvaluationViewMismatch(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name           string
 		resolutionKind string
@@ -1113,6 +1151,8 @@ func TestTypedMemoryStorageMigration46RejectsResolutionEvaluationViewMismatch(t 
 }
 
 func TestTypedMemoryStorageMigration46RejectsIncompleteObservableInputSetAtClosure(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -1183,6 +1223,8 @@ func TestTypedMemoryStorageMigration46RejectsIncompleteObservableInputSetAtClosu
 }
 
 func TestTypedMemoryStorageMigration46RepresentsAliasReplacementChainWithoutForks(t *testing.T) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)

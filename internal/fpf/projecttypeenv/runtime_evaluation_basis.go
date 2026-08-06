@@ -474,6 +474,23 @@ func (artifact RuntimeEvaluationBasisArtifact) ResolvedRegistrationPolicies() (
 	return append([]RegistrationPolicyArtifact(nil), policies...), true
 }
 
+// ResolvedClosureCanonicalBytes returns owned copies of the exact runtime
+// mechanism and registration-policy bytes attached to a fully resolved X.
+// The method verifies the closure before exposing its reconstruction inputs;
+// it does not attest executable code or add project authority.
+func (artifact RuntimeEvaluationBasisArtifact) ResolvedClosureCanonicalBytes() (
+	mechanisms [][]byte,
+	registrationPolicies [][]byte,
+	err error,
+) {
+	if err := artifact.VerifyResolvedClosure(); err != nil {
+		return nil, nil, err
+	}
+	return cloneProjectTypeEnvSnapshotBytes(artifact.resolvedMechanisms),
+		cloneProjectTypeEnvSnapshotBytes(artifact.resolvedRegistrationPolicies),
+		nil
+}
+
 func (artifact RuntimeEvaluationBasisArtifact) Verify() error {
 	if len(artifact.canonical) == 0 {
 		return fmt.Errorf("runtime evaluation basis artifact is empty")

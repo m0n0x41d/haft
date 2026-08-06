@@ -10,6 +10,8 @@ import (
 )
 
 func TestProfileAuthorityUnionMigration51InstallsClosedV3Contract(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-v51.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -131,6 +133,8 @@ func TestProfileAuthorityUnionMigration51InstallsClosedV3Contract(t *testing.T) 
 }
 
 func TestProfileAuthorityUnionMigration51PinsExactSourcesCASAndUnionView(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-v51-contract.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -255,6 +259,8 @@ func TestProfileAuthorityUnionMigration51PinsExactSourcesCASAndUnionView(t *test
 }
 
 func TestProfileAuthorityUnionMigration51UpgradesHistoryWithoutBackfill(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAuthorityAdmissionV2Migration44(t)
 	defer database.Close()
 	seedHistoricalV1ProfileRevision44(t, database)
@@ -300,6 +306,8 @@ func TestProfileAuthorityUnionMigration51UpgradesHistoryWithoutBackfill(t *testi
 }
 
 func TestProfileAuthorityUnionMigration51RejectsUnknownPartialFootprint(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAuthorityUnionMigration51(t)
 	defer database.Close()
 

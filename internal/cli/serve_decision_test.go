@@ -15,6 +15,8 @@ import (
 // and host-routed CLI seam; this test keeps the transport boundary honest and proves that no
 // model-supplied field can bypass it.
 func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -80,6 +82,8 @@ func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T
 }
 
 func TestHandleQuintDecision_NonDecideActionsReturnEmptyRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -102,6 +106,8 @@ func TestHandleQuintDecision_NonDecideActionsReturnEmptyRef(t *testing.T) {
 // ignored artifact_ref and fell through to ListByKind auto-detect, landing on the
 // wrong decision. Now both keys are accepted and the auto-detect is gone.
 func TestHandleQuintDecision_BaselineAcceptsArtifactRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	projectRoot := t.TempDir()
@@ -159,6 +165,8 @@ func TestHandleQuintDecision_BaselineAcceptsArtifactRef(t *testing.T) {
 // fall-through (issue #77) is gone — calling baseline without any ref errors loudly
 // instead of picking the most-recent decision.
 func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -190,6 +198,8 @@ func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {
 
 // TestHandleQuintDecision_MeasureAcceptsArtifactRef — same fix on the measure side.
 func TestHandleQuintDecision_MeasureAcceptsArtifactRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -242,6 +252,8 @@ func TestHandleQuintDecision_MeasureAcceptsArtifactRef(t *testing.T) {
 }
 
 func TestHandleQuintDecision_MeasureRejectsMalformedMeasurements(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

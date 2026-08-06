@@ -19,6 +19,8 @@ import (
 )
 
 func TestHandleQuintQuery_CodeContextDefaultsToIndex(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -43,6 +45,8 @@ func TestHandleQuintQuery_CodeContextDefaultsToIndex(t *testing.T) {
 }
 
 func TestHandleQuintQuery_CodeContextBatchesFilesWithBoundedTypedLane(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	second := "internal/second.go"
 	root := filepath.Dir(fixture.haftDir)
@@ -75,6 +79,8 @@ func TestHandleQuintQuery_CodeContextBatchesFilesWithBoundedTypedLane(t *testing
 }
 
 func TestHandleQuintQuery_CodeContextBatchRejectsUnboundedOrAmbiguousInputs(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	files := make([]any, codeContextBatchLimit+1)
 	for index := range files {
@@ -99,6 +105,8 @@ func TestHandleQuintQuery_CodeContextBatchRejectsUnboundedOrAmbiguousInputs(t *t
 }
 
 func TestHandleQuintQuery_CodeContextFooterUsesTypedStaleSnapshot(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	checkFixture := checkTestProject{
 		root:    filepath.Dir(fixture.haftDir),
@@ -135,6 +143,8 @@ func TestHandleQuintQuery_CodeContextFooterUsesTypedStaleSnapshot(t *testing.T) 
 }
 
 func TestNavStripWithoutStaleSnapshotSuppressesRawStaleDebt(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	checkFixture := checkTestProject{
 		root:    filepath.Dir(fixture.haftDir),
@@ -236,6 +246,8 @@ func assertNoInterfaceOutputShapeInline(t *testing.T, surface string, text strin
 }
 
 func TestHandleQuintQuery_CodeContextTypedLanes(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 
 	decisions, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -287,6 +299,8 @@ func TestHandleQuintQuery_CodeContextTypedLanes(t *testing.T) {
 }
 
 func TestHandleQuintQuery_CodeContextShowsSpecSectionLinkedDecision(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	mustExecCodeContextLaneFixture(t, fixture.store, `CREATE TABLE IF NOT EXISTS spec_section_editions (
 		project_id TEXT NOT NULL,
@@ -394,6 +408,8 @@ func TestHandleQuintQuery_CodeContextShowsSpecSectionLinkedDecision(t *testing.T
 }
 
 func TestHandleQuintQuery_CodeContextInvariantsLaneSummarizesHighFanout(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 
 	invariants := make([]string, 0, 50)
@@ -455,6 +471,8 @@ func TestHandleQuintQuery_CodeContextInvariantsLaneSummarizesHighFanout(t *testi
 }
 
 func TestHandleQuintQuery_CodeContextSymbolsLaneCapsByLimit(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 
 	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -478,6 +496,8 @@ func TestHandleQuintQuery_CodeContextSymbolsLaneCapsByLimit(t *testing.T) {
 }
 
 func TestHandleQuintQuery_CodeContextExcludedSourceIsUnavailable(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	root := filepath.Dir(fixture.haftDir)
 	absoluteFile := filepath.Join(root, fixture.file)
@@ -519,6 +539,8 @@ func TestHandleQuintQuery_CodeContextExcludedSourceIsUnavailable(t *testing.T) {
 }
 
 func TestHandleQuintQuery_CodeContextRejectsUnknownLane(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 
 	_, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
@@ -537,6 +559,8 @@ func TestHandleQuintQuery_CodeContextRejectsUnknownLane(t *testing.T) {
 }
 
 func TestCodeContextNormalTrace_StaysUnderBudget(t *testing.T) {
+	t.Parallel()
+
 	fixture := setupCodeContextLaneFixture(t)
 	ctx := context.Background()
 

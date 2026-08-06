@@ -12,6 +12,8 @@ import (
 )
 
 func TestNodeRejectsArtifactIdentifierBeforeCodeIndex(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	identifier := "dec-20260712-cb647a5c"
 	assertSQLiteTableAbsent(t, store, "code_symbols")
@@ -46,6 +48,8 @@ func TestNodeRejectsArtifactIdentifierBeforeCodeIndex(t *testing.T) {
 }
 
 func TestEveryCodeSymbolActionRejectsArtifactIdentifierBeforeCodeIndex(t *testing.T) {
+	t.Parallel()
+
 	actions := []string{
 		"node",
 		"callees",
@@ -83,6 +87,8 @@ func TestEveryCodeSymbolActionRejectsArtifactIdentifierBeforeCodeIndex(t *testin
 }
 
 func TestNodeWrongNamespaceSurvivesV5MCPBoundary(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	identifier := "note-20260717-a1b2c3d4"
 	handler := makeV5HandlerWithTaskMemoryProjection(
@@ -121,6 +127,8 @@ func TestNodeWrongNamespaceSurvivesV5MCPBoundary(t *testing.T) {
 }
 
 func TestNodeNameAliasReportsTheActualWrongParameter(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	identifier := "note-20260717-a1b2c3d4"
 	_, err := handleQuintQuery(
@@ -140,6 +148,8 @@ func TestNodeNameAliasReportsTheActualWrongParameter(t *testing.T) {
 }
 
 func TestRelatedRejectsExactFPFSourceIDWithExactInspectRecovery(t *testing.T) {
+	t.Parallel()
+
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
@@ -173,6 +183,8 @@ func TestRelatedRejectsExactFPFSourceIDWithExactInspectRecovery(t *testing.T) {
 }
 
 func TestNodeRejectsEntityIDWithExactMemoryResolveRecovery(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	identifier := "entity:authorization-service"
 	assertSQLiteTableAbsent(t, store, "code_symbols")
@@ -210,6 +222,8 @@ func TestNodeRejectsEntityIDWithExactMemoryResolveRecovery(t *testing.T) {
 }
 
 func TestRelatedRejectsExactIndexedCodeSymbolWithExactNodeRecovery(t *testing.T) {
+	t.Parallel()
+
 	store, haftDir := setupCodeQueryStore(t)
 	projectRoot := filepath.Dir(haftDir)
 	sourcePath := filepath.Join(projectRoot, "sample.go")
@@ -260,6 +274,8 @@ func TestRelatedRejectsExactIndexedCodeSymbolWithExactNodeRecovery(t *testing.T)
 }
 
 func TestNodeLeavesNonArtifactHyphenatedSymbolInCodeNamespace(t *testing.T) {
+	t.Parallel()
+
 	store, haftDir := setupCodeQueryStore(t)
 	result, err := handleQuintQuery(
 		context.Background(),
@@ -280,6 +296,8 @@ func TestNodeLeavesNonArtifactHyphenatedSymbolInCodeNamespace(t *testing.T) {
 }
 
 func TestNodeStillResolvesOrdinaryCodeSymbol(t *testing.T) {
+	t.Parallel()
+
 	store, haftDir := setupCodeQueryStore(t)
 	projectRoot := filepath.Dir(haftDir)
 	sourcePath := filepath.Join(projectRoot, "sample.go")

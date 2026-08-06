@@ -486,6 +486,8 @@ func TestTypeEnvSuccessorDeltasClassifyOnlyProvenSemanticOrder(t *testing.T) {
 func TestCompareExecutableTypeEnvCompatibilityIgnoresSourceIdentityOnlyChange(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	fixture := newRefreshEffectsFixture(t)
 
 	deltas, diagnostics, err := compareExecutableTypeEnvCompatibility(
@@ -624,6 +626,8 @@ func TestSourceAuthoredE11SplitContinuityDoesNotInferFromSimilarNames(t *testing
 }
 
 func TestProductionCorpusCarriesExactE11SplitContinuitySpan(t *testing.T) {
+	t.Parallel()
+
 	index, err := loadAnalysisIndex(filepath.Join("..", "cli", "fpf.db"))
 	if err != nil {
 		t.Fatalf("load production FPF index: %v", err)
@@ -730,6 +734,8 @@ func TestClassifyLocalPracticeCompatibilityClosedResults(t *testing.T) {
 }
 
 func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.T) {
+	t.Parallel()
+
 	historicalRef := mustAnalysisTypeEnvRef(
 		t,
 		basetypeenvartifacts.HistoricalV5Ref,
@@ -846,6 +852,8 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 func TestBuildCompatibilityReportCarriesExactProductionLocalPracticeAssessment(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	lockBytes, err := os.ReadFile(filepath.Join(
 		"..",
 		"..",

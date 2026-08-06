@@ -8,6 +8,8 @@ import (
 )
 
 func TestGovernorAttentionUsesDriftEventsNotPerDecisionDrift(t *testing.T) {
+	t.Parallel()
+
 	items := governorAttention(artifact.StatusData{
 		Drift: []artifact.DriftReport{
 			{

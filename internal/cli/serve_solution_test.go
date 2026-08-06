@@ -9,6 +9,8 @@ import (
 )
 
 func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -52,6 +54,8 @@ func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.
 }
 
 func TestHandleQuintProblem_FramePersistsProblemType(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -87,6 +91,8 @@ func TestHandleQuintProblem_FramePersistsProblemType(t *testing.T) {
 }
 
 func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -124,6 +130,8 @@ func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.
 }
 
 func TestHandleQuintSolution_CompareAcceptsLegacyRecommendationRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -171,6 +179,8 @@ func TestHandleQuintSolution_CompareAcceptsLegacyRecommendationRef(t *testing.T)
 }
 
 func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -209,6 +219,8 @@ func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *tes
 }
 
 func TestHandleQuintSolution_CompareRejectsDimensionFirstScoresWithShapeHint(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

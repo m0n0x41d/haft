@@ -48,6 +48,8 @@ type typedMemoryLegacyRelationSnapshot53 struct {
 func TestTypedMemoryRelationalAssertionMigration53PreservesV52HistoryByteExactly(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _, fixture := openDatabaseBeforeRelationalAssertion53(t, true)
 	defer database.Close()
 	eventBefore := loadTypedMemoryGraphEventSnapshot53(t, database, fixture.eventRef)
@@ -112,6 +114,8 @@ func TestTypedMemoryRelationalAssertionMigration53PreservesV52HistoryByteExactly
 func TestTypedMemoryRelationalAssertionClosure53AcceptsLegacyAndV3PrefixOwners(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	t.Helper()
 	trigger, err := typedMemoryCommitClosureExactFootprintTrigger53()
 	if err != nil {
@@ -148,6 +152,8 @@ func TestTypedMemoryRelationalAssertionClosure53AcceptsLegacyAndV3PrefixOwners(
 func TestTypedMemoryRelationalAssertionClosure53RejectsOrphanCandidatePrefix(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef, _ := openDatabaseBeforeRelationalAssertion53(t, false)
 	defer database.Close()
 	if err := Migrate(
@@ -268,6 +274,8 @@ func TestTypedMemoryRelationalAssertionClosure53RejectsOrphanCandidatePrefix(
 func TestTypedMemoryRelationalAssertionMigration53RejectsUnknownDDLWithoutMutation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _, _ := openDatabaseBeforeRelationalAssertion53(t, false)
 	defer database.Close()
 	graphEventsBefore := sqliteObjectSQL44(t, database, "table", "typed_memory_graph_events")
@@ -301,6 +309,8 @@ func TestTypedMemoryRelationalAssertionMigration53RejectsUnknownDDLWithoutMutati
 func TestTypedMemoryRelationalAssertionMigration53RollsBackInjectedFailure(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _, fixture := openDatabaseBeforeRelationalAssertion53(t, true)
 	defer database.Close()
 	eventBefore := loadTypedMemoryGraphEventSnapshot53(t, database, fixture.eventRef)
@@ -334,6 +344,8 @@ func TestTypedMemoryRelationalAssertionMigration53RollsBackInjectedFailure(
 func TestTypedMemoryRelationalAssertionMigration53SealsModalityAndCrossLaneIdentity(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef, _ := openDatabaseBeforeRelationalAssertion53(t, false)
 	defer database.Close()
 	if err := Migrate(

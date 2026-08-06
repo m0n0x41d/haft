@@ -12,6 +12,8 @@ import (
 )
 
 func TestApplyReceiptCanonicalJSONIsDeterministicAndStrict(t *testing.T) {
+	t.Parallel()
+
 	basis := ReceiptBasis{
 		Predecessor: ReceiptCoordinates{
 			SourceSHA:      strings.Repeat("a", 40),
@@ -95,6 +97,8 @@ func TestApplyReceiptCanonicalJSONIsDeterministicAndStrict(t *testing.T) {
 }
 
 func TestApplyReceiptTransitionsAreClosedLinearAndIdempotent(t *testing.T) {
+	t.Parallel()
+
 	receipt := newReceiptTestReceipt(t, "/repo")
 	original, err := receipt.CanonicalJSON()
 	if err != nil {
@@ -150,6 +154,8 @@ func TestApplyReceiptTransitionsAreClosedLinearAndIdempotent(t *testing.T) {
 }
 
 func TestApplyReceiptRecoveryDirectionsAreExactForEveryState(t *testing.T) {
+	t.Parallel()
+
 	receipt := newReceiptTestReceipt(t, "/repo")
 	states := []struct {
 		state        ReceiptState
@@ -286,6 +292,8 @@ func TestApplyReceiptRecoveryDirectionsAreExactForEveryState(t *testing.T) {
 }
 
 func TestApplyReceiptPreparedMixedCheckoutHasExactResumeAndRestore(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	basis := newReceiptTestReceipt(t, root).Basis()
 	basis.InitialSourceSHA = basis.Candidate.SourceSHA
@@ -341,6 +349,8 @@ func TestApplyReceiptPreparedMixedCheckoutHasExactResumeAndRestore(t *testing.T)
 }
 
 func TestApplyReceiptRestoredIsTerminalAndIdempotent(t *testing.T) {
+	t.Parallel()
+
 	receipt := newReceiptTestReceipt(t, "/repo")
 	var err error
 	receipt, err = TransitionApplyReceipt(receipt, ReceiptStateSourceApplied)
@@ -379,6 +389,8 @@ func TestApplyReceiptRestoredIsTerminalAndIdempotent(t *testing.T) {
 }
 
 func TestApplyReceiptRestoreDistinguishesPresentAndFirstEverLock(t *testing.T) {
+	t.Parallel()
+
 	missing := newReceiptTestReceipt(t, "/repo")
 	for _, state := range []ReceiptState{
 		ReceiptStateSourceApplied,
@@ -442,6 +454,8 @@ func TestApplyReceiptRestoreDistinguishesPresentAndFirstEverLock(t *testing.T) {
 }
 
 func TestReceiptStoreCreatesAdvancesAndReplaysCompleteReceipt(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	receipt := newReceiptTestReceipt(t, root)
 	path := filepath.Join(root, "apply-receipt.json")
@@ -535,6 +549,8 @@ func TestReceiptStoreCreatesAdvancesAndReplaysCompleteReceipt(t *testing.T) {
 }
 
 func TestReceiptStoreClosesAndReplaysRestoredReceipt(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	receipt := newReceiptTestReceipt(t, root)
 	path := filepath.Join(root, "apply-receipt.json")
@@ -591,6 +607,8 @@ func TestReceiptStoreClosesAndReplaysRestoredReceipt(t *testing.T) {
 }
 
 func TestReceiptStoreRejectsStaleAndCorruptReceipts(t *testing.T) {
+	t.Parallel()
+
 	t.Run("stale exact basis", func(t *testing.T) {
 		root := t.TempDir()
 		receipt := newReceiptTestReceipt(t, root)
@@ -686,6 +704,8 @@ func TestReceiptStoreRejectsStaleAndCorruptReceipts(t *testing.T) {
 }
 
 func TestCreateReceiptIsExclusiveUnderConcurrency(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	receipt := newReceiptTestReceipt(t, root)
 	path := filepath.Join(root, "apply-receipt.json")
@@ -730,6 +750,8 @@ func TestCreateReceiptIsExclusiveUnderConcurrency(t *testing.T) {
 }
 
 func TestCreateReceiptReusesUnlockedPersistentLockCarrier(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	receipt := newReceiptTestReceipt(t, root)
 	path := filepath.Join(root, "apply-receipt.json")
@@ -751,6 +773,8 @@ func TestCreateReceiptReusesUnlockedPersistentLockCarrier(t *testing.T) {
 }
 
 func TestApplyReceiptRejectsInexactIdentityAndTargetPaths(t *testing.T) {
+	t.Parallel()
+
 	valid := newReceiptTestReceipt(t, "/repo").Basis()
 	tests := []struct {
 		name   string

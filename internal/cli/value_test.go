@@ -9,6 +9,8 @@ import (
 )
 
 func TestEngineeringValueSpaceHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(valueSpaceCmd.Long), " "))
 	for _, want := range []string{"no total", "not evidence", "approval", "gate", "claim truth", "global truth", "publication", "product-value proof"} {
 		if !strings.Contains(normalized, want) {
@@ -18,6 +20,8 @@ func TestEngineeringValueSpaceHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestWriteEngineeringValueSpaceSummaryShowsMissingEvidence(t *testing.T) {
+	t.Parallel()
+
 	space := artifact.BuildEngineeringValueSpace(artifact.EngineeringValueSpaceInput{
 		BearerRef: "release-1",
 	})
@@ -62,6 +66,8 @@ func TestWriteEngineeringValueSpaceSummaryShowsMissingEvidence(t *testing.T) {
 }
 
 func TestWriteEngineeringValueSpaceSummaryShowsEvidenceContext(t *testing.T) {
+	t.Parallel()
+
 	space := artifact.BuildEngineeringValueSpace(artifact.EngineeringValueSpaceInput{
 		BearerRef:    "release-1",
 		Window:       "2026-Q3",

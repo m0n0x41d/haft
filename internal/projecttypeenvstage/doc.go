@@ -6,6 +6,7 @@
 // "current" pointer. Plain reads return data-only Stage and verification
 // records. A selection-ready read is a stronger operation: it reloads the
 // exact B/E/X/C closure, resolves the runtime-mechanism catalogs bound by X,
-// reruns final lowering, and byte-compares the newly minted verification
-// receipt with the persisted receipt.
+// and either reruns final lowering or reuses one bounded per-Store result only
+// after every reconstruction input byte matches. A miss byte-compares the
+// newly minted verification receipt with the persisted receipt.
 package projecttypeenvstage

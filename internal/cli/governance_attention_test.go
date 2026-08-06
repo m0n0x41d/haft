@@ -9,6 +9,8 @@ import (
 )
 
 func TestScanGovernanceAttention_SurfacesProblemCountsOrphansAndInvariantViolations(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 

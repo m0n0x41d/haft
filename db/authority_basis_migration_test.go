@@ -8,6 +8,8 @@ import (
 )
 
 func TestAuthorityBasisMigration38InstallsCanonicalClosure(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/v38.db")
 	if err != nil {
 		t.Fatalf("open v38 store: %v", err)
@@ -117,6 +119,8 @@ func TestAuthorityBasisMigration38InstallsCanonicalClosure(t *testing.T) {
 }
 
 func TestAuthorityBasisMigration38AcceptsExactGenericSpeechActSources(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/source.db")
 	if err != nil {
 		t.Fatalf("open v38 source store: %v", err)
@@ -143,6 +147,8 @@ func TestAuthorityBasisMigration38AcceptsExactGenericSpeechActSources(t *testing
 }
 
 func TestAuthorityBasisMigration38RejectsMethodContextMismatch(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/context-mismatch.db")
 	if err != nil {
 		t.Fatalf("open v38 mismatch store: %v", err)
@@ -162,6 +168,8 @@ func TestAuthorityBasisMigration38RejectsMethodContextMismatch(t *testing.T) {
 }
 
 func TestAuthorityBasisMigration38RejectsNonStrictTimeWindows(t *testing.T) {
+	t.Parallel()
+
 	t.Run("authorization content allowed Work equal", func(t *testing.T) {
 		store, err := NewStore(t.TempDir() + "/content-work-equal.db")
 		if err != nil {
@@ -251,6 +259,8 @@ func TestAuthorityBasisMigration38RejectsNonStrictTimeWindows(t *testing.T) {
 }
 
 func TestAuthorityBasisMigration38PreservesNanosecondCaptureOrdering(t *testing.T) {
+	t.Parallel()
+
 	accepted := []struct {
 		name    string
 		started string
@@ -385,6 +395,8 @@ func TestAuthorityBasisMigration38PreservesNanosecondCaptureOrdering(t *testing.
 }
 
 func TestAuthorityBasisMigration38TriggerBoundsPreserveNanoseconds(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/trigger-boundary.db")
 	if err != nil {
 		t.Fatalf("open trigger-boundary store: %v", err)
@@ -423,6 +435,8 @@ func TestAuthorityBasisMigration38TriggerBoundsPreserveNanoseconds(t *testing.T)
 }
 
 func TestAuthorityBasisMigration38RejectsForeignProjectRoot(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/root.db")
 	if err != nil {
 		t.Fatalf("open v38 root store: %v", err)
@@ -455,6 +469,8 @@ func TestAuthorityBasisMigration38RejectsForeignProjectRoot(t *testing.T) {
 }
 
 func TestAuthorityBasisMigration38AllowsRepeatedObservedTerminalMaterial(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/repeated-observation.db")
 	if err != nil {
 		t.Fatalf("open repeated-observation store: %v", err)
@@ -520,6 +536,8 @@ func TestAuthorityBasisMigration38AllowsRepeatedObservedTerminalMaterial(t *test
 }
 
 func TestAuthorityBasisMigration38RejectsNonEmptyLegacyAuthorityAtomically(t *testing.T) {
+	t.Parallel()
+
 	store := newStoreBeforeAuthoritySourceMigration(t)
 	defer store.Close()
 	insertTypedMemoryDAGFixture(t, store.conn)
@@ -535,6 +553,8 @@ func TestAuthorityBasisMigration38RejectsNonEmptyLegacyAuthorityAtomically(t *te
 }
 
 func TestAuthorityBasisMigration38RejectsUnknownHybridAtomically(t *testing.T) {
+	t.Parallel()
+
 	store := newStoreBeforeAuthoritySourceMigration(t)
 	defer store.Close()
 	if _, err := store.conn.Exec(`CREATE TABLE speech_acts (unknown_column TEXT)`); err != nil {
@@ -549,6 +569,8 @@ func TestAuthorityBasisMigration38RejectsUnknownHybridAtomically(t *testing.T) {
 }
 
 func TestAuthorityBasisMigration38BlocksLegacyPresentationWithoutClosure(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration39(t)
 	defer database.Close()
 	insertTypedMemoryDAGFixture(t, database)
@@ -566,6 +588,8 @@ func TestAuthorityBasisMigration38BlocksLegacyPresentationWithoutClosure(t *test
 }
 
 func TestAuthorityBasisMigration38UsesPostActPermissionStartInLegacyProjection(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(t.TempDir() + "/permission-window.db")
 	if err != nil {
 		t.Fatalf("open permission-window store: %v", err)

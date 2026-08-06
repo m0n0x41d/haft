@@ -107,6 +107,8 @@ type embeddedWorkingCandidateSet struct {
 }
 
 func TestFPFQueryWorkingViewEmbeddedO200kAcceptance(t *testing.T) {
+	t.Parallel()
+
 	basis := loadEmbeddedTokenGateBasis(t)
 	assertEmbeddedTokenGateDatabaseDigest(
 		t,
@@ -699,6 +701,8 @@ func embeddedTokenGateMedianFloat64(values []float64) float64 {
 }
 
 func TestEmbeddedTokenGateSupportedPython(t *testing.T) {
+	t.Parallel()
+
 	for _, version := range []string{"3.10.0", "3.12.7", "3.13.1"} {
 		if !embeddedTokenGateSupportedPython(version) {
 			t.Fatalf("supported Python rejected: %s", version)
@@ -712,6 +716,8 @@ func TestEmbeddedTokenGateSupportedPython(t *testing.T) {
 }
 
 func TestEmbeddedTokenGateExpectedCountsMatchIDs(t *testing.T) {
+	t.Parallel()
+
 	basis := loadEmbeddedTokenGateBasis(t)
 	seen := make(map[string]struct{}, len(basis.Fixture.Cases))
 	for _, testCase := range basis.Fixture.Cases {
@@ -743,6 +749,8 @@ func TestEmbeddedTokenGateExpectedCountsMatchIDs(t *testing.T) {
 }
 
 func TestEmbeddedTokenGateGeneratedDatabaseDigestFormat(t *testing.T) {
+	t.Parallel()
+
 	basis := loadEmbeddedTokenGateBasis(t)
 	digest := strings.TrimPrefix(basis.Lock.Coordinates.DatabaseDigest, "sha256:")
 	decoded, err := hex.DecodeString(digest)
@@ -752,6 +760,8 @@ func TestEmbeddedTokenGateGeneratedDatabaseDigestFormat(t *testing.T) {
 }
 
 func TestEmbeddedTokenGateArtifactOverridesAreAllOrNoneAndAbsolute(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	complete := map[string]string{
 		fpfrefresh.CandidateTokenGateDatabasePathEnvironment: filepath.Join(root, "candidate.db"),

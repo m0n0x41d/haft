@@ -79,6 +79,8 @@ func TestDecisionArtifactCreateUsesHostRoutedEffectSink(t *testing.T) {
 }
 
 func TestDecisionOperatorRequestUsesHonestProvenance(t *testing.T) {
+	t.Parallel()
+
 	request, err := decisionOperatorRequest(artifact.DecideInput{
 		DecisionSubjectRef: "subject:authority",
 		SelectedTitle:      "Host routing",
@@ -95,6 +97,8 @@ func TestDecisionOperatorRequestUsesHonestProvenance(t *testing.T) {
 }
 
 func TestArtifactCommandHasNoDecisionResumeSurface(t *testing.T) {
+	t.Parallel()
+
 	for _, command := range artifactCmd.Commands() {
 		if command.Name() == "resume-decision" {
 			t.Fatal("resume-decision remains registered")

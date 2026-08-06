@@ -12,6 +12,8 @@ import (
 func TestTypedMemoryIdentityReconciliationMigration52UpgradesV51Additively(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openDatabaseBeforeIdentityReconciliation52(t)
 	defer database.Close()
 	legacyTrigger := sqliteObjectSQL44(
@@ -49,6 +51,8 @@ func TestTypedMemoryIdentityReconciliationMigration52UpgradesV51Additively(
 func TestTypedMemoryIdentityReconciliationMigration52RollsBackAtomicallyOnConflict(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openDatabaseBeforeIdentityReconciliation52(t)
 	defer database.Close()
 	legacyTrigger := sqliteObjectSQL44(
@@ -97,6 +101,8 @@ func TestTypedMemoryIdentityReconciliationMigration52RollsBackAtomicallyOnConfli
 func TestTypedMemoryIdentityReconciliationMigration52FootprintIsImmutable(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "identity-v52.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

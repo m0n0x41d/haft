@@ -41,6 +41,8 @@ type releasedUpgradeFixture struct {
 func TestReleasedV6AndV8DatabasesUpgradeAdditivelyToCurrentSchema(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	// The repository's v6.0.0 and v8.1.0 tags share the current base schema
 	// and exact kernel-migration prefixes through versions 25 and 29. Freeze
 	// those public release frontiers here instead of approximating an old DB by
@@ -403,6 +405,8 @@ func assertExactMigrationFrontier(
 func TestSchema50DatabaseCopyUpgradesToCurrentSchemaWithoutInventingState(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	temporaryDirectory := t.TempDir()
 	sourcePath := filepath.Join(temporaryDirectory, "schema50-source.db")
 	copyPath := filepath.Join(temporaryDirectory, "schema50-upgrade-copy.db")
@@ -463,6 +467,8 @@ func TestSchema50DatabaseCopyUpgradesToCurrentSchemaWithoutInventingState(
 func TestSchema50UpgradeRollsBackV51WhenVersionRecordingFails(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openSchema50UpgradeFixture(
 		t,
 		filepath.Join(t.TempDir(), "schema50-rollback.db"),
@@ -1060,6 +1066,8 @@ func assertSealedLegacyProfileHistoryReadable(
 func TestReportedLegacyV36FailureRetriesAfterUnrelatedViolationIsRemoved(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openLegacyV34Database(
 		t,
 		filepath.Join(t.TempDir(), "reported-v36-retry.db"),

@@ -13,6 +13,8 @@ import (
 func TestProcessCarrierCheckTreatsNonSoftwareAsNormalNotApplicable(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := processCarrierMixedCapabilityMatrix(t)
 	now := time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC)
 	missingRoot := filepath.Join(t.TempDir(), "root-that-does-not-exist")
@@ -53,6 +55,8 @@ func TestProcessCarrierCheckTreatsNonSoftwareAsNormalNotApplicable(
 }
 
 func TestProcessCarrierCheckKeepsSoftwareCarrierRequirement(t *testing.T) {
+	t.Parallel()
+
 	matrix := processCarrierMixedCapabilityMatrix(t)
 	now := time.Date(2026, 7, 18, 9, 0, 0, 0, time.UTC)
 

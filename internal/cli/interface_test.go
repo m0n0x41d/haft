@@ -16,6 +16,8 @@ import (
 )
 
 func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	if err := writeInterfaceCatalogJSON(&output, haftInterfaceCatalog()); err != nil {
@@ -153,6 +155,8 @@ func TestMemoryReadInterfaceSeparatesMCPModeFromDedicatedCLIRequest(t *testing.T
 }
 
 func TestInterfaceCatalogTextStaysCompact(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	if err := writeInterfaceCatalogText(&output, haftInterfaceCatalog()); err != nil {
@@ -173,6 +177,8 @@ func TestInterfaceCatalogTextStaysCompact(t *testing.T) {
 }
 
 func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 
 	if report.Kind != "haft_interface_contract_audit" {
@@ -356,6 +362,8 @@ func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
 }
 
 func TestInterfaceContractAuditTreatsDedicatedNoteToolAsMCPBacked(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 	note, ok := findContractAuditSurface(report, "note.record")
 	if !ok {
@@ -415,6 +423,8 @@ func TestInterfaceContractAuditTreatsDedicatedNoteToolAsMCPBacked(t *testing.T) 
 }
 
 func TestInterfaceContractAuditInventoriesAuthorityMutationSurfaces(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 
 	for _, tc := range []struct {
@@ -461,6 +471,8 @@ func TestInterfaceContractAuditInventoriesAuthorityMutationSurfaces(t *testing.T
 }
 
 func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 
 	for _, surface := range report.Surfaces {
@@ -491,6 +503,8 @@ func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
 }
 
 func TestInterfaceContractValidationRefsExist(t *testing.T) {
+	t.Parallel()
+
 	catalog := haftInterfaceCatalog()
 	generation := buildInterfaceContractGenerationReport(catalog)
 	audit := buildInterfaceContractAuditReport(catalog)
@@ -514,6 +528,8 @@ func TestInterfaceContractValidationRefsExist(t *testing.T) {
 }
 
 func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 
 	if report.Kind != "haft_interface_contract_generation_manifest" {
@@ -637,6 +653,8 @@ func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) 
 }
 
 func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	toolActionEnums := fpfToolActionEnums(t)
 	toolProperties := fpfToolProperties(t)
@@ -697,6 +715,8 @@ func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
 }
 
 func TestInterfaceContractGenerationRuntimeSchemaAuditValidatesLiveToolCatalog(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 
 	if report.RuntimeAudit.Authority != "read_only_runtime_schema_validation_not_generation_authority" {
@@ -720,6 +740,8 @@ func TestInterfaceContractGenerationRuntimeSchemaAuditValidatesLiveToolCatalog(t
 }
 
 func TestInterfaceContractGenerationRuntimeSchemaAuditDetectsFragmentDrift(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	if len(report.SchemaFragments) == 0 {
 		t.Fatal("expected generated schema fragments")
@@ -740,6 +762,8 @@ func TestInterfaceContractGenerationRuntimeSchemaAuditDetectsFragmentDrift(t *te
 }
 
 func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 
 	toolsCarrier, ok := findContractMaterializedCarrier(report, "packages/haft-pi/extensions/haft/tools.ts")
@@ -981,6 +1005,8 @@ func TestInterfaceContractGenerationMarkerRefreshCannotClaimSemanticCurrentness(
 }
 
 func TestInterfaceContractGenerationMarkerFlagsDescribeNonSemanticScope(t *testing.T) {
+	t.Parallel()
+
 	for _, name := range []string{"check-materialized-carriers", "sync-materialized-carriers"} {
 		flag := interfaceCmd.Flags().Lookup(name)
 		if flag == nil {
@@ -994,6 +1020,8 @@ func TestInterfaceContractGenerationMarkerFlagsDescribeNonSemanticScope(t *testi
 }
 
 func TestInterfaceContractGenerationSyncOnlyUpdatesCatalogDigestLine(t *testing.T) {
+	t.Parallel()
+
 	sourceDigest := "sha256:" + strings.Repeat("2", 64)
 	staleDigest := "sha256:" + strings.Repeat("1", 64)
 	otherDigest := "sha256:" + strings.Repeat("3", 64)
@@ -1016,6 +1044,8 @@ func TestInterfaceContractGenerationSyncOnlyUpdatesCatalogDigestLine(t *testing.
 }
 
 func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	path := filepath.Join(t.TempDir(), "generated", "mcp-schema-fragments.json")
 
@@ -1084,6 +1114,8 @@ func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testin
 }
 
 func TestInterfaceContractGenerationMaterializesDescriptionFragmentsCarrier(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	path := filepath.Join(t.TempDir(), "generated", "description-fragments.json")
 
@@ -1146,6 +1178,8 @@ func TestInterfaceContractGenerationMaterializesDescriptionFragmentsCarrier(t *t
 }
 
 func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 
@@ -1176,6 +1210,8 @@ func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
 }
 
 func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
@@ -1210,6 +1246,8 @@ func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T)
 }
 
 func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
 
@@ -1237,6 +1275,8 @@ func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T)
 }
 
 func TestPiToolSchemasMirrorGeneratedSchemaFragments(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
 	piSchemas := make(map[string]piTypeObjectSchemaMirror)
@@ -1322,6 +1362,8 @@ func mergePiTypeObjectSchemaMirrors(
 }
 
 func TestPiToolMetadataCarriesSelectedGeneratedQueryFragments(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
 
@@ -1368,6 +1410,8 @@ func TestPiToolMetadataCarriesSelectedGeneratedQueryFragments(t *testing.T) {
 }
 
 func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")
 	if !ok {
@@ -1391,6 +1435,8 @@ func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T)
 }
 
 func TestPiReasoningPromptUsesSourceNativeFPFQuery(t *testing.T) {
+	t.Parallel()
+
 	source := readRepoFile(t, "packages", "haft-pi", "prompts", "h-reason.md")
 
 	for _, want := range []string{
@@ -1420,6 +1466,8 @@ func TestPiReasoningPromptUsesSourceNativeFPFQuery(t *testing.T) {
 }
 
 func TestPiReasoningCarriersTeachIdentifierNamespaces(t *testing.T) {
+	t.Parallel()
+
 	for _, path := range [][]string{
 		{"packages", "haft-pi", "prompts", "h-reason.md"},
 		{"packages", "haft-pi", "skills", "h-reason", "SKILL.md"},
@@ -1457,6 +1505,8 @@ func TestPiReasoningCarriersTeachIdentifierNamespaces(t *testing.T) {
 }
 
 func TestBundledReasoningSkillUsesSourceNativeFPFQuery(t *testing.T) {
+	t.Parallel()
+
 	source := readRepoFile(t, "internal", "cli", "skill", "h-reason", "SKILL.md")
 
 	for _, want := range []string{
@@ -1493,6 +1543,8 @@ func TestBundledReasoningSkillUsesSourceNativeFPFQuery(t *testing.T) {
 }
 
 func TestPiPackageDocsCarryGeneratedContractAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	contractGeneration, ok := findContractGeneratedFragment(report, "query.contract_generation")
 	if !ok {
@@ -1518,6 +1570,8 @@ func TestPiPackageDocsCarryGeneratedContractAuthorityBoundary(t *testing.T) {
 }
 
 func TestPiSkillCarriersCarrySelectedGeneratedQueryFragments(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	source := readRepoFile(t, "packages", "haft-pi", "skills", "h-status", "SKILL.md")
 
@@ -1564,6 +1618,8 @@ func TestPiSkillCarriersCarrySelectedGeneratedQueryFragments(t *testing.T) {
 }
 
 func TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	decide, ok := findContractGeneratedFragment(report, "decision.decide")
 	if !ok {
@@ -1590,6 +1646,8 @@ func TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries(t *testin
 }
 
 func TestBundledSkillCarriersCarrySelectedGeneratedQueryFragments(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	source := strings.Join([]string{
 		readRepoFile(t, "internal", "cli", "skill", "h-status", "SKILL.md"),
@@ -1674,6 +1732,8 @@ func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
 }
 
 func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t *testing.T) {
+	t.Parallel()
+
 	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
 	var text strings.Builder
 
@@ -1714,6 +1774,8 @@ func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t
 }
 
 func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
 	if !ok {
 		t.Fatal("query.contract_generation capability missing")
@@ -1729,6 +1791,8 @@ func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.
 }
 
 func TestInterfaceContractGenerationDiscoveryShapeCountsMatchManifest(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
 	if !ok {
 		t.Fatal("query.contract_generation capability missing")
@@ -1762,6 +1826,8 @@ func TestInterfaceContractGenerationDiscoveryShapeCountsMatchManifest(t *testing
 }
 
 func TestInterfaceContractAuditDiscoveryShapeCountsMatchReport(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_audit")
 	if !ok {
 		t.Fatal("query.contract_audit capability missing")
@@ -1783,6 +1849,8 @@ func TestInterfaceContractAuditDiscoveryShapeCountsMatchReport(t *testing.T) {
 }
 
 func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.value_space")
 	if !ok {
 		t.Fatal("query.value_space capability missing")
@@ -1818,6 +1886,8 @@ func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
 }
 
 func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.evidence_path")
 	if !ok {
 		t.Fatal("query.evidence_path capability missing")
@@ -1852,6 +1922,8 @@ func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
 }
 
 func TestInterfaceRelatedDocumentsDecisionEvidenceFormalityAudit(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.related")
 	if !ok {
 		t.Fatal("query.related capability missing")
@@ -1890,6 +1962,8 @@ func TestInterfaceRelatedDocumentsDecisionEvidenceFormalityAudit(t *testing.T) {
 }
 
 func TestInterfaceChangeCaseNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.change_case")
 	if !ok {
 		t.Fatal("query.change_case capability missing")
@@ -1931,6 +2005,8 @@ func TestInterfaceChangeCaseNamesCompleteAuthorityBoundary(t *testing.T) {
 }
 
 func TestInterfaceCorrespondenceGraphNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.correspondence_graph")
 	if !ok {
 		t.Fatal("query.correspondence_graph capability missing")
@@ -1975,6 +2051,8 @@ func TestInterfaceCorrespondenceGraphNamesCompleteAuthorityBoundary(t *testing.T
 }
 
 func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_review")
 	if !ok {
 		t.Fatal("query.spec_review capability missing")
@@ -2009,6 +2087,8 @@ func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
 }
 
 func TestInterfaceSpecValidateNamesCarrierAndLifecycleBoundaries(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_validate")
 	if !ok {
 		t.Fatal("query.spec_validate capability missing")
@@ -2040,6 +2120,8 @@ func TestInterfaceSpecValidateNamesCarrierAndLifecycleBoundaries(t *testing.T) {
 }
 
 func TestInterfaceCatalogMCPActionsExistInToolsListSchemas(t *testing.T) {
+	t.Parallel()
+
 	toolActionEnums := fpfToolActionEnums(t)
 
 	for _, capability := range haftInterfaceCatalog() {
@@ -2060,6 +2142,8 @@ func TestInterfaceCatalogMCPActionsExistInToolsListSchemas(t *testing.T) {
 }
 
 func TestInterfaceCatalogMCPFieldsExistInToolsListSchemas(t *testing.T) {
+	t.Parallel()
+
 	toolProperties := fpfToolProperties(t)
 	exclusions := interfaceContractAuditSchemaFieldExclusions()
 
@@ -2086,6 +2170,8 @@ func TestInterfaceCatalogMCPFieldsExistInToolsListSchemas(t *testing.T) {
 }
 
 func TestInterfaceCatalogMCPRequiredFieldsExistInToolsListSchemas(t *testing.T) {
+	t.Parallel()
+
 	toolRequired := fpfToolRequiredFields(t)
 
 	for _, capability := range haftInterfaceCatalog() {
@@ -2107,6 +2193,8 @@ func TestInterfaceCatalogMCPRequiredFieldsExistInToolsListSchemas(t *testing.T) 
 }
 
 func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
 
@@ -2137,6 +2225,8 @@ func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
 }
 
 func TestHandleQuintQueryContractAuditReturnsReadOnlyReport(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
@@ -2434,6 +2524,8 @@ func sortedMapKeys(values map[string]interface{}) string {
 }
 
 func TestInterfaceDecisionContractExposesHostRoutedCLIInvariant(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "decision.decide")
 	if !ok {
 		t.Fatal("decision.decide capability missing")
@@ -2524,6 +2616,8 @@ func TestInterfaceDecisionContractExposesHostRoutedCLIInvariant(t *testing.T) {
 }
 
 func TestDecisionSkillCarriersExposeHostRoutedProtocol(t *testing.T) {
+	t.Parallel()
+
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("build current skill source bundle: %v", err)
@@ -2581,6 +2675,8 @@ func TestDecisionSkillCarriersExposeHostRoutedProtocol(t *testing.T) {
 }
 
 func TestInterfaceProblemFrameExposesProblemProfileAdmissionFields(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "problem.frame")
 	if !ok {
 		t.Fatal("problem.frame capability missing")
@@ -2609,6 +2705,8 @@ func TestInterfaceProblemFrameExposesProblemProfileAdmissionFields(t *testing.T)
 }
 
 func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.status")
 	if !ok {
 		t.Fatal("query.status capability missing")
@@ -2662,6 +2760,8 @@ func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
 }
 
 func TestInterfaceFPFDocumentsSourceNativeRetrievalBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.fpf")
 	if !ok {
 		t.Fatal("query.fpf capability missing")
@@ -2755,6 +2855,8 @@ func TestInterfaceFPFDocumentsSourceNativeRetrievalBoundary(t *testing.T) {
 }
 
 func TestInterfaceNodeDocumentsExactIdentifierNamespaces(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.node")
 	if !ok {
 		t.Fatal("query.node capability missing")
@@ -2797,6 +2899,8 @@ func TestInterfaceNodeDocumentsExactIdentifierNamespaces(t *testing.T) {
 }
 
 func TestInterfaceCarrierSurfacesAreReadOnlyDrillDowns(t *testing.T) {
+	t.Parallel()
+
 	for _, capabilityID := range []string{"query.carrier_manifest", "query.carrier_check"} {
 		t.Run(capabilityID, func(t *testing.T) {
 			capability, ok := findInterfaceCapability(haftInterfaceCatalog(), capabilityID)
@@ -2827,6 +2931,8 @@ func TestInterfaceCarrierSurfacesAreReadOnlyDrillDowns(t *testing.T) {
 }
 
 func TestInterfaceBaselineAuditDocumentsTermSplitBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "baseline.audit")
 	if !ok {
 		t.Fatal("baseline.audit capability missing")
@@ -2888,6 +2994,8 @@ func TestInterfaceBaselineAuditDocumentsTermSplitBoundary(t *testing.T) {
 }
 
 func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.governing_set")
 	if !ok {
 		t.Fatal("query.governing_set capability missing")
@@ -2960,6 +3068,8 @@ func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
 }
 
 func TestInterfaceDriftRouteNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.drift_route")
 	if !ok {
 		t.Fatal("query.drift_route capability missing")
@@ -2989,6 +3099,8 @@ func TestInterfaceDriftRouteNamesCompleteAuthorityBoundary(t *testing.T) {
 }
 
 func TestInterfaceBlockedUseNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.blocked_use_attention")
 	if !ok {
 		t.Fatal("query.blocked_use_attention capability missing")
@@ -3018,6 +3130,8 @@ func TestInterfaceBlockedUseNamesCompleteAuthorityBoundary(t *testing.T) {
 }
 
 func TestInterfaceRefreshReviewNamesAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.review")
 	if !ok {
 		t.Fatal("refresh.review capability missing")
@@ -3046,6 +3160,8 @@ func TestInterfaceRefreshReviewNamesAuthorityBoundary(t *testing.T) {
 }
 
 func TestInterfaceRefreshDrainNamesSafeClosureBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.drain")
 	if !ok {
 		t.Fatal("refresh.drain capability missing")
@@ -3093,6 +3209,8 @@ func TestInterfaceRefreshDrainNamesSafeClosureBoundary(t *testing.T) {
 }
 
 func TestInterfaceCodeContextNamesLaneEscalation(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.code_context")
 	if !ok {
 		t.Fatal("query.code_context capability missing")
@@ -3126,6 +3244,8 @@ func TestInterfaceCodeContextNamesLaneEscalation(t *testing.T) {
 }
 
 func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.related")
 	if !ok {
 		t.Fatal("query.related capability missing")
@@ -3168,6 +3288,8 @@ func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
 }
 
 func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.close")
 	if !ok {
 		t.Fatal("method.close capability missing")
@@ -3202,6 +3324,8 @@ func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
 }
 
 func TestInterfaceMethodPullNamesCarryThroughContract(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.pull")
 	if !ok {
 		t.Fatal("method.pull capability missing")
@@ -3228,6 +3352,8 @@ func TestInterfaceMethodPullNamesCarryThroughContract(t *testing.T) {
 }
 
 func TestPiMethodSchemaMirrorsCarryThroughItemShape(t *testing.T) {
+	t.Parallel()
+
 	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
 	for _, want := range []string{
 		"const carryThroughItemSchema = Type.Object({",
@@ -3248,6 +3374,8 @@ func TestPiMethodSchemaMirrorsCarryThroughItemShape(t *testing.T) {
 }
 
 func TestInterfaceMethodCatalogNamesLifecycleDiscoveryContract(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.catalog")
 	if !ok {
 		t.Fatal("method.catalog capability missing")
@@ -3281,6 +3409,8 @@ func TestInterfaceMethodCatalogNamesLifecycleDiscoveryContract(t *testing.T) {
 }
 
 func TestInterfaceNestedContractsExposeShapesAndTemplates(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		capability string
 		field      string
@@ -3341,6 +3471,8 @@ func TestInterfaceNestedContractsExposeShapesAndTemplates(t *testing.T) {
 }
 
 func TestInterfaceProblemCharacterizeUsesArtifactPolarityVocabulary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "problem.characterize")
 	if !ok {
 		t.Fatal("problem.characterize capability missing")
@@ -3361,6 +3493,8 @@ func TestInterfaceProblemCharacterizeUsesArtifactPolarityVocabulary(t *testing.T
 }
 
 func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_use")
 	if !ok {
 		t.Fatal("query.spec_use capability missing")
@@ -3403,6 +3537,8 @@ func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
 }
 
 func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.T) {
+	t.Parallel()
+
 	catalog := haftInterfaceCatalog()
 	for _, want := range []string{
 		"human engineer's assessment",
@@ -3525,6 +3661,8 @@ func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.
 }
 
 func TestInstalledHostGateSkillsCarryEngineerConsultationContract(t *testing.T) {
+	t.Parallel()
+
 	gatedSkills := map[string]struct{}{
 		"h-reason":     {},
 		"h-decide":     {},
@@ -3573,6 +3711,8 @@ func TestInstalledHostGateSkillsCarryEngineerConsultationContract(t *testing.T) 
 }
 
 func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "spec.apply_change")
 	if !ok {
 		t.Fatal("spec.apply_change capability missing")
@@ -3623,6 +3763,8 @@ func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
 }
 
 func TestInterfaceSpecExportDocumentsPublicationProjectionBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "spec.export")
 	if !ok {
 		t.Fatal("spec.export capability missing")
@@ -3684,6 +3826,8 @@ func TestInterfaceSpecExportDocumentsPublicationProjectionBoundary(t *testing.T)
 }
 
 func TestInterfaceDriftEventsDocumentsFanoutBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.drift_events")
 	if !ok {
 		t.Fatal("query.drift_events capability missing")
@@ -3713,6 +3857,8 @@ func TestInterfaceDriftEventsDocumentsFanoutBoundary(t *testing.T) {
 }
 
 func TestInterfaceDriftBindingReviewDocumentsDryRunBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "drift.binding_review")
 	if !ok {
 		t.Fatal("drift.binding_review capability missing")
@@ -3777,6 +3923,8 @@ func TestInterfaceDriftBindingReviewDocumentsDryRunBoundary(t *testing.T) {
 }
 
 func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.decision_reconcile")
 	if !ok {
 		t.Fatal("query.decision_reconcile capability missing")
@@ -3900,6 +4048,8 @@ func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testi
 }
 
 func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "decision.reconcile_apply")
 	if !ok {
 		t.Fatal("decision.reconcile_apply capability missing")
@@ -3950,6 +4100,8 @@ func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *
 }
 
 func TestInterfaceCompareTemplateUsesFlatCanonicalScores(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
 	if !ok {
 		t.Fatal("solution.compare capability missing")
@@ -3967,6 +4119,8 @@ func TestInterfaceCompareTemplateUsesFlatCanonicalScores(t *testing.T) {
 }
 
 func TestInterfaceCompareJSONStaysUnderPlanningBudget(t *testing.T) {
+	t.Parallel()
+
 	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
 	if !ok {
 		t.Fatal("solution.compare capability missing")
@@ -3984,6 +4138,8 @@ func TestInterfaceCompareJSONStaysUnderPlanningBudget(t *testing.T) {
 }
 
 func TestMemoryAdmissionInterfaceSelectsV2AssertionContract(t *testing.T) {
+	t.Parallel()
+
 	admit, ok := findInterfaceCapability(haftInterfaceCatalog(), "memory.admit")
 	if !ok {
 		t.Fatal("memory.admit capability missing")
@@ -4027,6 +4183,8 @@ func TestMemoryAdmissionInterfaceSelectsV2AssertionContract(t *testing.T) {
 }
 
 func TestMemoryValidationInterfaceMatchesV2ToolSchema(t *testing.T) {
+	t.Parallel()
+
 	validation, ok := findInterfaceCapability(
 		haftInterfaceCatalog(),
 		"memory.validate",

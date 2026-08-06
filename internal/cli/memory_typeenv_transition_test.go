@@ -31,6 +31,8 @@ import (
 func TestMemoryTypeEnvCommandsExposeNoTechnicalTransitionCoordinates(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	for _, command := range []*cobra.Command{
 		memoryTypeEnvPrepareCmd,
 		memoryTypeEnvSelectCmd,
@@ -55,6 +57,8 @@ func TestMemoryTypeEnvCommandsExposeNoTechnicalTransitionCoordinates(
 }
 
 func TestTransitionPriorFixtureBuildsDistinctExactTarget(t *testing.T) {
+	t.Parallel()
+
 	runtime, err := loadEmbeddedMemoryRuntime(context.Background())
 	if err != nil {
 		t.Fatalf("load embedded TypeEnv base: %v", err)

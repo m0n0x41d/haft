@@ -11,6 +11,8 @@ import (
 )
 
 func TestBuildProcessAuthorityReportDerivesMethodAndInterfaceEntries(t *testing.T) {
+	t.Parallel()
+
 	report, err := buildProcessAuthorityReport()
 	if err != nil {
 		t.Fatal(err)
@@ -47,6 +49,8 @@ func TestBuildProcessAuthorityReportDerivesMethodAndInterfaceEntries(t *testing.
 }
 
 func TestRunProcessAuthorityJSON(t *testing.T) {
+	t.Parallel()
+
 	oldJSON := processAuthorityJSON
 	t.Cleanup(func() {
 		processAuthorityJSON = oldJSON
@@ -73,6 +77,8 @@ func TestRunProcessAuthorityJSON(t *testing.T) {
 }
 
 func TestRunProcessAuthorityTextStaysCompact(t *testing.T) {
+	t.Parallel()
+
 	oldJSON := processAuthorityJSON
 	t.Cleanup(func() {
 		processAuthorityJSON = oldJSON

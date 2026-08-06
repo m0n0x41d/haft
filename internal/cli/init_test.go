@@ -10,6 +10,8 @@ import (
 )
 
 func TestConfigureOverseerWithConfigWritesConfigAndHook(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	git(t, root, "init")
 
@@ -51,6 +53,8 @@ func TestConfigureOverseerWithConfigWritesConfigAndHook(t *testing.T) {
 }
 
 func TestConfigureOverseerWithConfigUsesCodexReviewerPreset(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	git(t, root, "init")
 
@@ -93,6 +97,8 @@ func TestConfigureOverseerWithConfigUsesCodexReviewerPreset(t *testing.T) {
 }
 
 func TestBuildOverseerConfigForProjectAutoUsesCodexHost(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	config, err := buildOverseerConfigForProject(
 		root,
@@ -114,6 +120,8 @@ func TestBuildOverseerConfigForProjectAutoUsesCodexHost(t *testing.T) {
 }
 
 func TestBuildOverseerConfigForProjectAutoDetectsCodexCarrier(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	configPath := filepath.Join(root, ".codex", "config.toml")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {

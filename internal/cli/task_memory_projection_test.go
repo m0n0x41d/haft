@@ -39,6 +39,8 @@ type taskMemoryProjectionTestFixture struct {
 func TestAppendTaskMemoryProjectionSeparatesCarrierAndTypedEffects(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	report := underdeterminedTaskMemoryProjectionReport(
 		taskMemoryArtifactProjection{
 			Ref:  "note-example",

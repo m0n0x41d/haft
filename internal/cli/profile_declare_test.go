@@ -20,6 +20,8 @@ import (
 func TestProfileDeclareCommandExposesOnlyReadableInputAndRenderingFlags(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	if profileDeclareCmd.Use != "declare" {
 		t.Fatalf("command use = %q", profileDeclareCmd.Use)
 	}

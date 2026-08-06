@@ -10,6 +10,8 @@ import (
 )
 
 func TestDispatchToolRejectsMCPBindingDecisionWithoutCreatingArtifact(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -39,6 +41,8 @@ func TestDispatchToolRejectsMCPBindingDecisionWithoutCreatingArtifact(t *testing
 }
 
 func TestDispatchToolRejectsMCPBindingActionsBeforeHandlers(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -101,6 +105,8 @@ func TestDispatchToolRejectsMCPBindingActionsBeforeHandlers(t *testing.T) {
 }
 
 func TestDispatchToolAllowsMCPReadAndEvidenceDiscoveryActions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

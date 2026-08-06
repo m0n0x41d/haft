@@ -690,6 +690,8 @@ func productionNoteValidatedAssertion(
 }
 
 func TestProductionNoteAtConcernSelectedRuntimeFixtureIsExecutable(t *testing.T) {
+	t.Parallel()
+
 	target := newProductionNoteE2ETarget(t)
 	memberOf, found := target.registry.MemberOfRegistry()
 	if !found || memberOf.Len() != 6 {
@@ -710,6 +712,8 @@ func TestProductionNoteAtConcernSelectedRuntimeFixtureIsExecutable(t *testing.T)
 func TestProductionProjectEntityMemberOfUsesPersistedC32Prerequisites(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	production := newProductionLocalPracticeETarget(t)
 	environment, ok := production.preparation.Environment()
 	if !ok {
@@ -835,6 +839,8 @@ func TestProductionProjectEntityMemberOfUsesPersistedC32Prerequisites(
 func TestProductionProjectEntityMemberOfUsesProspectiveVisibilityCertificate(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	production := newProductionLocalPracticeETarget(t)
 	environment, ok := production.preparation.Environment()
 	if !ok {

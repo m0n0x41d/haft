@@ -10,6 +10,8 @@ import (
 )
 
 func TestLiveDriftStatusSignalUsesActionablePartitions(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.BuildDriftEventReport([]artifact.DriftReport{
 		{
 			DecisionID: "dec-material",
@@ -67,6 +69,8 @@ func TestLiveDriftStatusSignalUsesActionablePartitions(t *testing.T) {
 }
 
 func TestNonDriftStatusSignalsDropsStoredDriftSignals(t *testing.T) {
+	t.Parallel()
+
 	signals := nonDriftStatusSignals([]overseer.StatusSignal{
 		{
 			Source: "drift",
@@ -93,6 +97,8 @@ func TestNonDriftStatusSignalsDropsStoredDriftSignals(t *testing.T) {
 func TestNonProfileSpecHealthStatusSignalsDropsStoredAndPriorLiveSignals(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	signals := nonProfileSpecHealthStatusSignals([]overseer.StatusSignal{
 		{
 			Source: "spec_health",
@@ -123,6 +129,8 @@ func TestNonProfileSpecHealthStatusSignalsDropsStoredAndPriorLiveSignals(
 func TestCurrentScopeSpecHealthStatusSignalPreservesSoftwareFinding(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	signals := currentScopeSpecHealthStatusSignals(
 		[]project.SpecCheckFinding{
 			{

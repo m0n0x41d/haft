@@ -9,6 +9,8 @@ import (
 )
 
 func TestBuildSessionGraphAuditReportPassesCodexGraphPreflight(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(root, "codex.jsonl")
 	writeSessionAuditFixture(t, path, []string{
@@ -53,6 +55,8 @@ func TestBuildSessionGraphAuditReportPassesCodexGraphPreflight(t *testing.T) {
 func TestSessionAuditSeparatesTypedMemoryHydrationFromGraphPreflight(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "context-heavy.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Review the prior multi-session Haft work and continue the implementation."}]}}`,
@@ -96,6 +100,8 @@ func TestSessionAuditSeparatesTypedMemoryHydrationFromGraphPreflight(
 func TestSessionAuditTreatsUnavailableTypedMemoryBasisAsNonBlocking(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "memory-unavailable.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Continue the implementation using context from the previous session."}]}}`,
@@ -138,6 +144,8 @@ func TestSessionAuditTreatsUnavailableTypedMemoryBasisAsNonBlocking(
 func TestSessionAuditFlagsContextHeavyWorkWithoutTypedMemoryOrientation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "missing-memory.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Audit the previous Codex session and continue its implementation."}]}}`,
@@ -169,6 +177,8 @@ func TestSessionAuditFlagsContextHeavyWorkWithoutTypedMemoryOrientation(
 }
 
 func TestSessionAuditFlagsUnauthorizedTypedMemoryPersistence(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "unauthorized-admit.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Inspect the prior session and report what happened."}]}}`,
@@ -196,6 +206,8 @@ func TestSessionAuditFlagsUnauthorizedTypedMemoryPersistence(t *testing.T) {
 func TestSessionAuditFlagsUnauthorizedTypedMemoryPersistenceNestedInExec(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "unauthorized-admit-exec.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Inspect the prior session and report what happened."}]}}`,
@@ -217,6 +229,8 @@ func TestSessionAuditFlagsUnauthorizedTypedMemoryPersistenceNestedInExec(
 }
 
 func TestSessionAuditAcceptsExplicitNamedMemoryReceivingUse(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "authorized-admit.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Запиши это в проектную память Haft для следующей сессии."}]}}`,
@@ -238,6 +252,8 @@ func TestSessionAuditAcceptsExplicitNamedMemoryReceivingUse(t *testing.T) {
 }
 
 func TestSessionAuditRecognizesGraphPreflightNestedInExec(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "nested-exec.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"functions","name":"exec","arguments":"const result = await tools.mcp__haft__haft_query({action:\"impact\", symbol:\"Serve\"}); text(result);"}}`,
@@ -259,6 +275,8 @@ func TestSessionAuditRecognizesGraphPreflightNestedInExec(t *testing.T) {
 }
 
 func TestBuildSessionGraphAuditReportV2TracksTypeScriptBatchAnchorAndTruth(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "typescript-v2.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"status\"}"}}`,
@@ -294,6 +312,8 @@ func TestBuildSessionGraphAuditReportV2TracksTypeScriptBatchAnchorAndTruth(t *te
 }
 
 func TestBuildSessionGraphAuditReportV2RejectsTypeScriptEditWithoutTargetedGraph(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "typescript-missing-graph.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_query","arguments":"{\"action\":\"code_context\",\"file\":\"internal/cli/serve.go\"}"}}`,
@@ -310,6 +330,8 @@ func TestBuildSessionGraphAuditReportV2RejectsTypeScriptEditWithoutTargetedGraph
 }
 
 func TestBuildSessionGraphAuditReportV2FlagsAttemptWithoutResultAndDegradedResult(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	attemptPath := filepath.Join(root, "attempt.jsonl")
 	writeSessionAuditFixture(t, attemptPath, []string{
@@ -340,6 +362,8 @@ func TestBuildSessionGraphAuditReportV2FlagsAttemptWithoutResultAndDegradedResul
 }
 
 func TestBuildSessionGraphAuditReportFailsEditBeforeGraph(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(root, "codex-fail.jsonl")
 	writeSessionAuditFixture(t, path, []string{
@@ -364,6 +388,8 @@ func TestBuildSessionGraphAuditReportFailsEditBeforeGraph(t *testing.T) {
 }
 
 func TestBuildSessionGraphAuditReportReadsClaudeToolUse(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(root, "claude.jsonl")
 	writeSessionAuditFixture(t, path, []string{
@@ -387,6 +413,8 @@ func TestBuildSessionGraphAuditReportReadsClaudeToolUse(t *testing.T) {
 }
 
 func TestBuildSessionGraphAuditReportClassifiesSubstantiveTextWithoutEditAsNoEdit(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(root, "architecture-text.jsonl")
 	writeSessionAuditFixture(t, path, []string{
@@ -412,6 +440,8 @@ func TestBuildSessionGraphAuditReportClassifiesSubstantiveTextWithoutEditAsNoEdi
 }
 
 func TestBuildSessionGraphAuditReportDoesNotClassifyMechanicalTextAsSubstantive(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(root, "mechanical-text.jsonl")
 	writeSessionAuditFixture(t, path, []string{
@@ -433,6 +463,8 @@ func TestBuildSessionGraphAuditReportDoesNotClassifyMechanicalTextAsSubstantive(
 func TestSessionAuditClassifiesMechanicalEditAsGraphNotApplicable(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "mechanical-edit.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"mechanical_edit\",\"change_intent\":\"format generated marker\"}"}}`,
@@ -461,6 +493,8 @@ func TestSessionAuditClassifiesMechanicalEditAsGraphNotApplicable(
 func TestSessionAuditDoesNotRequireStatusForBoundedGraphBackedEdit(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "bounded-edit.jsonl")
 	writeSessionAuditFixture(t, path, []string{
 		`{"type":"response_item","payload":{"type":"function_call","namespace":"mcp__haft","name":"haft_method","arguments":"{\"action\":\"pull\",\"declared_task_kind\":\"bugfix\"}"}}`,
@@ -483,6 +517,8 @@ func TestSessionAuditDoesNotRequireStatusForBoundedGraphBackedEdit(
 }
 
 func TestSessionAuditHasNoRoutingExpectationFlags(t *testing.T) {
+	t.Parallel()
+
 	for _, name := range []string{"expect-pattern", "expect-strategy"} {
 		if flag := sessionAuditCmd.Flags().Lookup(name); flag != nil {
 			t.Fatalf("legacy routing expectation flag %q is still public", name)
@@ -490,6 +526,8 @@ func TestSessionAuditHasNoRoutingExpectationFlags(t *testing.T) {
 	}
 }
 func TestSessionAuditTextShowsSummary(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(root, "codex-fail.jsonl")
 	writeSessionAuditFixture(t, path, []string{

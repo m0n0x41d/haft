@@ -13,6 +13,8 @@ const generatePrebindingSchema35FixtureEnv = "HAFT_GENERATE_PREBINDING_SCHEMA35_
 // fixture consumed by the explicit project-ledger migration integration test.
 // It is intentionally opt-in and refuses to overwrite an existing fixture.
 func TestGeneratePrebindingSchema35Fixture(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv(generatePrebindingSchema35FixtureEnv) != "1" {
 		t.Skip(
 			"set " + generatePrebindingSchema35FixtureEnv +
@@ -38,6 +40,8 @@ func TestGeneratePrebindingSchema35Fixture(t *testing.T) {
 }
 
 func TestPrebindingSchema35FixtureMatchesGenerator(t *testing.T) {
+	t.Parallel()
+
 	generated := filepath.Join(t.TempDir(), "schema35.db")
 	generatePrebindingSchema35Fixture(t, generated)
 	committed := filepath.Join(

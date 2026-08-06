@@ -18,6 +18,8 @@ import (
 )
 
 func TestProfileInspectAndProposeCommandsAreReadOnlyPublicSurfaces(t *testing.T) {
+	t.Parallel()
+
 	commands := []*struct {
 		name    string
 		command commandContract
@@ -124,6 +126,8 @@ func TestExecuteProfileInspectionReportsAutoAndEvidenceWithoutWrites(t *testing.
 }
 
 func TestMixedProposalKeepsPartialComponentsButMintsNoScopeIdentity(t *testing.T) {
+	t.Parallel()
+
 	root := mustCLIProfileOnboardPhysicalPath(t, t.TempDir())
 	files := []string{"go.mod", "internal/kernel.go", "models/current.onnx"}
 	snapshot, err := profiledetector.NewSnapshot(root, files, len(files), false)
@@ -154,6 +158,8 @@ func TestMixedProposalKeepsPartialComponentsButMintsNoScopeIdentity(t *testing.T
 }
 
 func TestProfileSuggestionEvidenceIsBoundedByDefaultAndExactOnRequest(t *testing.T) {
+	t.Parallel()
+
 	root := mustCLIProfileOnboardPhysicalPath(t, t.TempDir())
 	files := []string{"go.mod"}
 	for index := 0; index < profileEvidenceWindowLimit+3; index++ {
@@ -195,6 +201,8 @@ func TestProfileSuggestionEvidenceIsBoundedByDefaultAndExactOnRequest(t *testing
 }
 
 func TestDeclaredProfileWinsWhenDetectorClassesConflict(t *testing.T) {
+	t.Parallel()
+
 	canonical := canonicalProfileView{
 		Kind:         "declared",
 		SemanticRole: "canonical_admitted_profile",
@@ -225,6 +233,8 @@ func TestDeclaredProfileWinsWhenDetectorClassesConflict(t *testing.T) {
 }
 
 func TestWriteProfileProposalResponseStatesNonBindingBoundary(t *testing.T) {
+	t.Parallel()
+
 	response := profileProposalResponse{
 		Kind:         profileProposalRecordKind,
 		ProjectRoot:  "/tmp/profile-proposal",
@@ -265,6 +275,8 @@ func TestWriteProfileProposalResponseStatesNonBindingBoundary(t *testing.T) {
 }
 
 func TestPrepareProfileReviewCandidateCreatesReadableNoClobberCarrier(t *testing.T) {
+	t.Parallel()
+
 	root := mustCLIProfileOnboardPhysicalPath(t, t.TempDir())
 	if err := os.MkdirAll(filepath.Join(root, ".haft"), 0o755); err != nil {
 		t.Fatal(err)

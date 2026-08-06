@@ -14,6 +14,8 @@ import (
 )
 
 func TestAuthorityProfileReconciliationFreshDatabase(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "fresh.db"))
 	if err != nil {
 		t.Fatalf("open fresh store: %v", err)
@@ -25,6 +27,8 @@ func TestAuthorityProfileReconciliationFreshDatabase(t *testing.T) {
 }
 
 func TestAuthorityProfileReconciliationReplacesExactEmptyLegacyV34(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-empty.db"))
 	defer database.Close()
 	insertUnrelatedGraphAndArtifactData(t, database)
@@ -47,6 +51,8 @@ func TestAuthorityProfileReconciliationReplacesExactEmptyLegacyV34(t *testing.T)
 }
 
 func TestAuthorityProfileReconciliationRejectsNonEmptyLegacyV34(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-nonempty.db"))
 	defer database.Close()
 	_, err := database.Exec(`INSERT INTO project_profile_projection_debt (
@@ -83,6 +89,8 @@ func TestAuthorityProfileReconciliationRejectsNonEmptyLegacyV34(t *testing.T) {
 }
 
 func TestAuthorityProfileReconciliationRejectsUnknownLegacyMutation(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-unknown.db"))
 	defer database.Close()
 	if _, err := database.Exec(`ALTER TABLE authority_presentations ADD COLUMN unexpected_legacy_field TEXT`); err != nil {
@@ -107,6 +115,8 @@ func TestAuthorityProfileReconciliationRejectsUnknownLegacyMutation(t *testing.T
 }
 
 func TestAuthorityProfileReconciliationRejectsDroppedMigrationReviewTrigger(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-missing-review-trigger.db"))
 	defer database.Close()
 	installMigration35(t, database)
@@ -120,6 +130,8 @@ func TestAuthorityProfileReconciliationRejectsDroppedMigrationReviewTrigger(t *t
 }
 
 func TestAuthorityProfileReconciliationRejectsMutatedMigrationReviewTrigger(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-mutated-review-trigger.db"))
 	defer database.Close()
 	installMigration35(t, database)
@@ -154,6 +166,8 @@ func TestAuthorityProfileReconciliationRejectsMutatedMigrationReviewTrigger(t *t
 }
 
 func TestAuthorityProfileReconciliationRejectsWeakenedMigrationReviewConstraint(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-weakened-review-check.db"))
 	defer database.Close()
 	installMigration35(t, database)
@@ -230,6 +244,8 @@ func assertMigrationReviewSchemaRefusal(t *testing.T, database *sql.DB, err erro
 }
 
 func TestAuthorityProfileReconciliationIsStableAcrossRestart(t *testing.T) {
+	t.Parallel()
+
 	databasePath := filepath.Join(t.TempDir(), "legacy-restart.db")
 	database := openLegacyV34Database(t, databasePath)
 	insertUnrelatedGraphAndArtifactData(t, database)
@@ -251,6 +267,8 @@ func TestAuthorityProfileReconciliationIsStableAcrossRestart(t *testing.T) {
 }
 
 func TestAuthorityProfileReconciliationConvergesAcrossConcurrentConnections(t *testing.T) {
+	t.Parallel()
+
 	databasePath := filepath.Join(t.TempDir(), "legacy-concurrent.db")
 	first := openLegacyV34Database(t, databasePath)
 	defer first.Close()
@@ -297,6 +315,8 @@ func TestAuthorityProfileReconciliationConvergesAcrossConcurrentConnections(t *t
 }
 
 func TestCanonicalAuthorityProfileContractTracksSuppliedMigrations(t *testing.T) {
+	t.Parallel()
+
 	baseline, err := loadCanonicalAuthorityProfileContract(kernelMigrations)
 	if err != nil {
 		t.Fatalf("load baseline canonical contract: %v", err)
@@ -348,6 +368,8 @@ func cloneMigrations(source []Migration) []Migration {
 }
 
 func TestAuthorityProfileReconciliationRollsBackWhenFinalVerificationFails(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-rollback.db"))
 	defer database.Close()
 	if _, err := database.Exec("PRAGMA foreign_keys=OFF"); err != nil {
@@ -373,6 +395,8 @@ func TestAuthorityProfileReconciliationRollsBackWhenFinalVerificationFails(t *te
 }
 
 func TestAuthorityProfileReconciliationAdmitsWitnessedDecisionSpecSectionRelation(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-spec-relation.db"))
 	defer database.Close()
 	seedLegacyDecisionSpecSectionRelation(t, database, true)
@@ -402,6 +426,8 @@ func TestAuthorityProfileReconciliationAdmitsWitnessedDecisionSpecSectionRelatio
 func TestCurrentMigrationsPreserveExactNineWitnessedLegacySpecRelations(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openLegacyV34Database(
 		t,
 		filepath.Join(t.TempDir(), "personal-brand-shape.db"),
@@ -447,6 +473,8 @@ func TestCurrentMigrationsPreserveExactNineWitnessedLegacySpecRelations(
 }
 
 func TestAuthorityProfileReconciliationRejectsUnwitnessedDecisionSpecSectionRelation(t *testing.T) {
+	t.Parallel()
+
 	database := openLegacyV34Database(t, filepath.Join(t.TempDir(), "legacy-unwitnessed-spec-relation.db"))
 	defer database.Close()
 	seedLegacyDecisionSpecSectionRelation(t, database, false)

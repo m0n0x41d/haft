@@ -12,6 +12,8 @@ import (
 func TestCompilePublicInitRequestPreservesExplicitFlagPublicationContract(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := filepath.Join(t.TempDir(), "project")
 	projectID := "qnt_e3149c17"
 	testCases := []struct {
@@ -173,6 +175,8 @@ func TestCompilePublicInitRequestPreservesExplicitFlagPublicationContract(
 func TestCompilePublicInitRequestRejectsMCPOnlyWithoutExplicitHost(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	_, err := compilePublicInitRequest(
 		weakPublicInitRequest{
 			invocation:  initplanning.InvocationExplicit,
@@ -191,6 +195,8 @@ func TestCompilePublicInitRequestRejectsMCPOnlyWithoutExplicitHost(
 func TestCompilePublicInitRequestNeverInfersAHost(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := filepath.Join(t.TempDir(), "project")
 	base := weakPublicInitRequest{
 		invocation:  initplanning.InvocationExplicit,
@@ -227,6 +233,8 @@ func TestCompilePublicInitRequestNeverInfersAHost(
 func TestCompilePublicInitRequestRepresentsAncillaryOptionsWithoutBooleans(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := filepath.Join(t.TempDir(), "project")
 	request, err := compilePublicInitRequest(
 		weakPublicInitRequest{
@@ -269,6 +277,8 @@ func TestCompilePublicInitRequestRepresentsAncillaryOptionsWithoutBooleans(
 func TestCompilePublicInitRequestRejectsCoreOnlyPublicationCombinations(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := filepath.Join(t.TempDir(), "project")
 	testCases := []weakPublicInitRequest{
 		{
@@ -309,6 +319,8 @@ func TestCompilePublicInitRequestRejectsCoreOnlyPublicationCombinations(
 func TestCompilePublicInitRequestRejectsHermesOptionsWithoutHermes(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := filepath.Join(t.TempDir(), "project")
 	for _, input := range []weakPublicInitRequest{
 		{

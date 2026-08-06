@@ -73,6 +73,8 @@ func TestOpenServeProjectLedgerRejectsOldSchemaWithoutMigration(
 func TestInitializeDatabaseRemainsExplicitSchemaActivationEffect(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	databasePath := filepath.Join(t.TempDir(), "nested", "haft.db")
 	if _, err := os.Stat(databasePath); !os.IsNotExist(err) {
 		t.Fatalf("precondition database state = %v, want missing", err)

@@ -13,6 +13,8 @@ import (
 )
 
 func TestAcquireGitSourceReadsPinnedCommitWithoutTouchingDirtyCheckout(t *testing.T) {
+	t.Parallel()
+
 	repositoryPath := newGitSourceTestRepository(t)
 	writeGitSourceTestPublications(t, repositoryPath, "readme-a\n", "spec-a\n")
 	commitA := commitGitSourceTestChanges(t, repositoryPath, "candidate A")
@@ -68,6 +70,8 @@ func TestAcquireGitSourceReadsPinnedCommitWithoutTouchingDirtyCheckout(t *testin
 }
 
 func TestAcquireGitSourceFetchOccursOnlyWhenExplicitlyRequested(t *testing.T) {
+	t.Parallel()
+
 	fixtureRoot := t.TempDir()
 	seedPath := filepath.Join(fixtureRoot, "seed")
 	initializeGitSourceTestRepository(t, seedPath)
@@ -129,6 +133,8 @@ func TestAcquireGitSourceFetchOccursOnlyWhenExplicitlyRequested(t *testing.T) {
 }
 
 func TestAcquireGitSourcePinsOnceAndObservesMovingRefSeparately(t *testing.T) {
+	t.Parallel()
+
 	repositoryPath := newGitSourceTestRepository(t)
 	writeGitSourceTestPublications(t, repositoryPath, "readme-a\n", "spec-a\n")
 	commitA := commitGitSourceTestChanges(t, repositoryPath, "candidate A")
@@ -181,6 +187,8 @@ func TestAcquireGitSourcePinsOnceAndObservesMovingRefSeparately(t *testing.T) {
 }
 
 func TestAcquireGitSourceClassifiesMissingAndMalformedPublications(t *testing.T) {
+	t.Parallel()
+
 	t.Run("missing specification", func(t *testing.T) {
 		repositoryPath := newGitSourceTestRepository(t)
 		writeGitSourceTestFile(t, repositoryPath, gitSourceReadmePath, []byte("readme\n"))
@@ -241,6 +249,8 @@ func TestAcquireGitSourceClassifiesMissingAndMalformedPublications(t *testing.T)
 }
 
 func TestAcquireGitSourceRejectsMalformedInputs(t *testing.T) {
+	t.Parallel()
+
 	repositoryPath := newGitSourceTestRepository(t)
 	writeGitSourceTestPublications(t, repositoryPath, "readme\n", "spec\n")
 	_ = commitGitSourceTestChanges(t, repositoryPath, "fixture")

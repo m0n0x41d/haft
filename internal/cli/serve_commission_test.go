@@ -16,6 +16,8 @@ import (
 )
 
 func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -80,6 +82,8 @@ func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -122,6 +126,8 @@ func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
 }
 
 func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -200,6 +206,8 @@ func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
 }
 
 func TestHandleHaftCommission_RequeueRejectsTerminalCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -228,6 +236,8 @@ func TestHandleHaftCommission_RequeueRejectsTerminalCommissions(t *testing.T) {
 }
 
 func TestHandleHaftCommission_RequeueRequiresReasonForRecoverableState(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -252,6 +262,8 @@ func TestHandleHaftCommission_RequeueRequiresReasonForRecoverableState(t *testin
 }
 
 func TestHandleHaftCommission_RequeueRejectsExpiredOpenCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -277,6 +289,8 @@ func TestHandleHaftCommission_RequeueRejectsExpiredOpenCommission(t *testing.T) 
 }
 
 func TestHandleHaftCommission_CancelRejectsTerminalCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -305,6 +319,8 @@ func TestHandleHaftCommission_CancelRejectsTerminalCommissions(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -398,6 +414,8 @@ func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ListStaleIncludesBlockedAndRunningTooLong(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -469,6 +487,8 @@ func TestHandleHaftCommission_ListStaleIncludesBlockedAndRunningTooLong(t *testi
 }
 
 func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -559,6 +579,8 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 }
 
 func TestHandleHaftCommission_CompleteOrBlockRecordsProjectionDebtForExternalRequired(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -681,6 +703,8 @@ func TestCompleteExternalWorkCommission_CompletesPreflightingCommission(t *testi
 }
 
 func TestCompleteExternalWorkCommissionIsIdempotentForMatchingTerminalState(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -713,6 +737,8 @@ func TestCompleteExternalWorkCommissionIsIdempotentForMatchingTerminalState(t *t
 }
 
 func TestCompleteExternalWorkCommissionRejectsQueuedCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -740,6 +766,8 @@ func TestCompleteExternalWorkCommissionRejectsQueuedCommission(t *testing.T) {
 }
 
 func TestHandleHaftCommission_CompleteOrBlockKeepsLocalOnlyCompletionUnaffected(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -777,6 +805,8 @@ func TestHandleHaftCommission_CompleteOrBlockKeepsLocalOnlyCompletionUnaffected(
 }
 
 func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -858,6 +888,8 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 }
 
 func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -966,6 +998,8 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 }
 
 func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -1014,6 +1048,8 @@ func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *test
 }
 
 func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1241,6 +1277,8 @@ func TestHandleHaftCommission_CreateFromDecisionReadsCurrentSQLEditionsBeforeCar
 }
 
 func TestHandleHaftCommission_CreateFromDirectDecisionSnapshotsInlineProblemBasis(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1306,6 +1344,8 @@ func TestHandleHaftCommission_CreateFromDirectDecisionSnapshotsInlineProblemBasi
 }
 
 func TestHandleHaftCommission_CreateFromDecisionRequiresSpecRefsOrTacticalOverride(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1383,6 +1423,8 @@ func TestHandleHaftCommission_CreateFromDecisionRequiresSpecRefsOrTacticalOverri
 }
 
 func TestHandleHaftCommission_StartAfterPreflightBlocksFreshnessDrift(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		wantCode  string
@@ -1497,6 +1539,8 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksFreshnessDrift(t *testing
 }
 
 func TestHandleHaftCommission_StartAfterPreflightRecordsDeferredPlanGap(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1543,6 +1587,8 @@ func TestHandleHaftCommission_StartAfterPreflightRecordsDeferredPlanGap(t *testi
 }
 
 func TestHandleHaftCommission_CreateBatchFromDecisionsBuildsRunnableCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1603,6 +1649,8 @@ func TestHandleHaftCommission_CreateBatchFromDecisionsBuildsRunnableCommissions(
 }
 
 func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1684,6 +1732,8 @@ func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing
 }
 
 func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1792,6 +1842,8 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 }
 
 func TestHandleHaftCommission_CreateFromPlanRejectsUnknownDependency(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1821,6 +1873,8 @@ func TestHandleHaftCommission_CreateFromPlanRejectsUnknownDependency(t *testing.
 }
 
 func TestHandleHaftCommission_CreateFromPlanRejectsDependencyCycle(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1855,6 +1909,8 @@ func TestHandleHaftCommission_CreateFromPlanRejectsDependencyCycle(t *testing.T)
 }
 
 func TestHandleHaftCommission_RunnableFilterMatchesPlanRevision(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -1911,6 +1967,8 @@ func TestHandleHaftCommission_RunnableFilterMatchesPlanRevision(t *testing.T) {
 }
 
 func TestHandleHaftCommission_CreateFromDecisionRequiresScope(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1953,6 +2011,8 @@ func TestHandleHaftCommission_CreateFromDecisionRequiresScope(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -1999,6 +2059,8 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 }
 
 func TestHandleHaftCommission_AutonomyEnvelopeRejectsOutOfEnvelopeAction(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -2027,6 +2089,8 @@ func TestHandleHaftCommission_AutonomyEnvelopeRejectsOutOfEnvelopeAction(t *test
 }
 
 func TestHandleHaftCommission_AutonomyEnvelopeCannotSkipRequiredGates(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2048,6 +2112,8 @@ func TestHandleHaftCommission_AutonomyEnvelopeCannotSkipRequiredGates(t *testing
 }
 
 func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		code   string
@@ -2143,6 +2209,8 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(
 }
 
 func TestHandleHaftCommission_NoEnvelopeRemainsManualRunnable(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2174,6 +2242,8 @@ func TestHandleHaftCommission_NoEnvelopeRemainsManualRunnable(t *testing.T) {
 }
 
 func TestHandleQuintCommission_AutoApply(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2231,6 +2301,8 @@ func TestHandleQuintCommission_AutoApply(t *testing.T) {
 }
 
 func TestStaleLeaseCap(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -2314,6 +2386,8 @@ func TestStaleLeaseCap(t *testing.T) {
 }
 
 func TestExternalRunnerDrainStatus(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -2730,6 +2804,8 @@ func createCommissionDecisionFixture(
 }
 
 func TestHandleHaftCommission_ListRunnableFiltersExpiredAndTerminal(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2865,6 +2941,8 @@ func workCommissionFixture(id, state, validUntil string) map[string]any {
 }
 
 func TestHandleHaftCommission_CreateFromDecisionRequiresSliceDescriptionOnSecondCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -2948,6 +3026,8 @@ func TestHandleHaftCommission_CreateFromDecisionRequiresSliceDescriptionOnSecond
 }
 
 func TestHandleHaftCommission_CreateFromDecisionAcceptsExplicitSliceDescription(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

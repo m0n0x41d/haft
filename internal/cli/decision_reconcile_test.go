@@ -16,6 +16,8 @@ import (
 )
 
 func TestWriteDecisionReconciliationSummary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	plan := artifact.BuildDecisionReconciliationPlanFromItems([]artifact.DecisionReconciliationItem{{
 		DecisionID:         "dec-1",
@@ -46,6 +48,8 @@ func TestWriteDecisionReconciliationSummary(t *testing.T) {
 }
 
 func TestDecisionReconcileHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileCmd.Long), " "))
 	for _, want := range []string{
 		"report-only decisionreconciliationplan",
@@ -66,6 +70,8 @@ func TestDecisionReconcileHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestDecisionReconcileApplyHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileApplyCmd.Long), " "))
 	for _, want := range []string{
 		"operator-approved reconciliation selection",
@@ -85,6 +91,8 @@ func TestDecisionReconcileApplyHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestDecisionReconcileMetricsHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileMetricsCmd.Long), " "))
 	for _, want := range []string{
 		"read-only metrics packet",
@@ -104,6 +112,8 @@ func TestDecisionReconcileMetricsHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestWriteDecisionReconciliationSummaryShowsPreviewCues(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	target := "symbol:internal/store.go:func::Save"
 	plan := artifact.BuildDecisionReconciliationPlanFromItems([]artifact.DecisionReconciliationItem{
@@ -144,6 +154,8 @@ func TestWriteDecisionReconciliationSummaryShowsPreviewCues(t *testing.T) {
 }
 
 func TestWriteCurrentGoverningSetSummary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	report := artifact.CurrentGoverningSetReport{
 		SchemaVersion: 1,
@@ -190,6 +202,8 @@ func TestWriteCurrentGoverningSetSummary(t *testing.T) {
 }
 
 func TestDecisionGoverningSetHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionGoverningSetCmd.Long), " "))
 	for _, want := range []string{
 		"read-only",
@@ -208,6 +222,8 @@ func TestDecisionGoverningSetHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestDecisionReconcileSelectionDraftHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileSelectionDraftCmd.Long), " "))
 	for _, want := range []string{
 		"read-only",
@@ -224,6 +240,8 @@ func TestDecisionReconcileSelectionDraftHelpNamesAuthorityBoundaries(t *testing.
 }
 
 func TestDecisionReconcileSelectionReviewHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(decisionReconcileSelectionReviewCmd.Long), " "))
 	for _, want := range []string{
 		"read-only",
@@ -243,6 +261,8 @@ func TestDecisionReconcileSelectionReviewHelpNamesAuthorityBoundaries(t *testing
 }
 
 func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
+	t.Parallel()
+
 	restore := stubDecisionReconcileReportLimits(t, 2, 0)
 	defer restore()
 
@@ -298,6 +318,8 @@ func TestDecisionReconciliationJSONProjectionHonorsLimit(t *testing.T) {
 }
 
 func TestCurrentGoverningSetJSONProjectionHonorsLimit(t *testing.T) {
+	t.Parallel()
+
 	restore := stubDecisionReconcileReportLimits(t, 0, 1)
 	defer restore()
 
@@ -354,6 +376,8 @@ func TestCurrentGoverningSetJSONProjectionHonorsLimit(t *testing.T) {
 }
 
 func TestCurrentGoverningSetSnapshotWriteAndCheck(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.CurrentGoverningSetReport{
 		SchemaVersion: artifact.CurrentGoverningSetSchemaVersion,
 		Authority:     artifact.CurrentGoverningSetAuthority,
@@ -396,6 +420,8 @@ func TestCurrentGoverningSetSnapshotWriteAndCheck(t *testing.T) {
 }
 
 func TestCurrentGoverningSetSnapshotRejectsWrongAuthority(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "governing-set.json")
 	data := []byte(`{"schema_version":1,"authority":"not_the_frontier","snapshot":{"snapshot_digest":"sha256:x"}}`)
 	if err := os.WriteFile(path, data, 0o644); err != nil {
@@ -412,6 +438,8 @@ func TestCurrentGoverningSetSnapshotRejectsWrongAuthority(t *testing.T) {
 }
 
 func TestWriteDecisionReconciliationMetricsSummary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	packet := artifact.ReconciliationMetricsPacket{
 		SchemaVersion: 1,
@@ -469,6 +497,8 @@ func TestWriteDecisionReconciliationMetricsSummary(t *testing.T) {
 }
 
 func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	draft := artifact.DecisionReconciliationSelectionDraft{
 		SchemaVersion:          1,
@@ -561,6 +591,8 @@ func TestWriteDecisionReconciliationSelectionDraftSummary(t *testing.T) {
 }
 
 func TestDecisionReconcileSelectionDraftLimitDefaultsToCompactUnlessFull(t *testing.T) {
+	t.Parallel()
+
 	previousLimit := decisionReconcileDraftLimit
 	previousFull := decisionReconcileDraftFull
 	defer func() {
@@ -602,6 +634,8 @@ func stubDecisionReconcileReportLimits(t *testing.T, reconcileLimit int, governi
 }
 
 func TestWriteDecisionReconciliationSelectionDraftSummaryShowsOmittedAuditRoute(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	draft := artifact.DecisionReconciliationSelectionDraft{
 		SchemaVersion:          1,
@@ -643,6 +677,8 @@ func TestWriteDecisionReconciliationSelectionDraftSummaryShowsOmittedAuditRoute(
 }
 
 func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	review := artifact.DecisionReconciliationSelectionReview{
 		SchemaVersion:     1,
@@ -702,6 +738,8 @@ func TestWriteDecisionReconciliationSelectionReviewSummary(t *testing.T) {
 }
 
 func TestHandleQuintQueryDecisionReconcileDefaultsToCompactReportOnlyPlan(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
@@ -756,6 +794,8 @@ func TestHandleQuintQueryDecisionReconcileDefaultsToCompactReportOnlyPlan(t *tes
 }
 
 func TestHandleQuintQueryDecisionReconcileHonorsCompactLimit(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save-1", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-save-2", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
@@ -805,6 +845,8 @@ func TestHandleQuintQueryDecisionReconcileHonorsCompactLimit(t *testing.T) {
 }
 
 func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-current", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 
@@ -858,6 +900,8 @@ func TestHandleQuintQueryGoverningSetDefaultsToCompactCurrentAuthorityFrontier(t
 }
 
 func TestHandleQuintQueryGoverningSetHonorsCompactLimit(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store-save", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store-load", "Load")
@@ -906,6 +950,8 @@ func TestHandleQuintQueryGoverningSetHonorsCompactLimit(t *testing.T) {
 }
 
 func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store", "Load")
@@ -937,6 +983,8 @@ func TestHandleQuintQueryGoverningSetFiltersByQuery(t *testing.T) {
 }
 
 func TestHandleQuintQueryGoverningSetAnswerPathSourceRefsFilterExactTarget(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	seedDecisionReconcileDecision(t, store, "dec-save", artifact.StatusActive, "artifact", "subject:artifact-store", "Save")
 	seedDecisionReconcileDecision(t, store, "dec-load", artifact.StatusActive, "artifact", "subject:artifact-store", "Load")
@@ -981,6 +1029,8 @@ func TestHandleQuintQueryGoverningSetAnswerPathSourceRefsFilterExactTarget(t *te
 }
 
 func TestDecisionReconcileJSONWriterKeepsReportShape(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -1013,6 +1063,8 @@ func TestDecisionReconcileJSONWriterKeepsReportShape(t *testing.T) {
 }
 
 func TestReadDecisionReconciliationSelectionDocument(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "selection.json")
 	data := []byte(`{
   "schema_version": 1,
@@ -1054,6 +1106,8 @@ func TestReadDecisionReconciliationSelectionDocument(t *testing.T) {
 }
 
 func TestWriteDecisionReconciliationSelectionTemplateFileKeepsApprovalEmpty(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "review", "selection.json")
 	draft := artifact.DecisionReconciliationSelectionDraft{
 		SelectionDocumentTemplate: &artifact.DecisionReconciliationSelectionDocument{
@@ -1110,6 +1164,8 @@ func TestWriteDecisionReconciliationSelectionTemplateFileKeepsApprovalEmpty(t *t
 }
 
 func TestWriteDecisionReconciliationSelectionTemplateFileRejectsMissingTemplate(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "selection.json")
 
 	err := writeDecisionReconciliationSelectionTemplateFile(
@@ -1125,6 +1181,8 @@ func TestWriteDecisionReconciliationSelectionTemplateFileRejectsMissingTemplate(
 }
 
 func TestWriteDecisionReconciliationSelectionDraftFileKeepsReportOnlyAuthority(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "review", "selection-draft.json")
 	draft := artifact.DecisionReconciliationSelectionDraft{
 		SchemaVersion:          artifact.DecisionReconciliationSchemaVersion,
@@ -1190,6 +1248,8 @@ func TestWriteDecisionReconciliationSelectionDraftFileKeepsReportOnlyAuthority(t
 }
 
 func TestWriteDecisionReconciliationSelectionDraftFileRejectsApplyAuthorityDocument(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "selection-draft.json")
 
 	err := writeDecisionReconciliationSelectionDraftFile(
@@ -1207,6 +1267,8 @@ func TestWriteDecisionReconciliationSelectionDraftFileRejectsApplyAuthorityDocum
 }
 
 func TestWriteDecisionReconciliationApplySummary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	result := artifact.DecisionReconciliationApplyResult{
 		SchemaVersion: 1,

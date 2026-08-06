@@ -15,6 +15,8 @@ import (
 )
 
 func TestSourceNativeFPFQueryIntegration(t *testing.T) {
+	t.Parallel()
+
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
@@ -307,6 +309,8 @@ func TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject(t *testing.T) {
 }
 
 func TestFPFQueryIndexVerificationCacheRunsExactVerificationOnce(t *testing.T) {
+	t.Parallel()
+
 	calls := 0
 	cache := newFPFQueryIndexVerificationCache(func(*sql.DB) error {
 		calls++

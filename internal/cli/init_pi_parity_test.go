@@ -15,6 +15,8 @@ import (
 func TestCurrentPiCondensedParityDeclaresExactSourceAndLossBoundary(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("currentSkillSourceBundle: %v", err)
@@ -103,6 +105,8 @@ func TestCurrentPiCondensedParityDeclaresExactSourceAndLossBoundary(
 }
 
 func TestPiCondensedParityRejectsCriticalCarrierDrift(t *testing.T) {
+	t.Parallel()
+
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("currentSkillSourceBundle: %v", err)
@@ -179,6 +183,8 @@ func TestPiCondensedParityRejectsCriticalCarrierDrift(t *testing.T) {
 }
 
 func TestPiPackageDigestIsRootIndependentAndContentSensitive(t *testing.T) {
+	t.Parallel()
+
 	leftRoot := filepath.Join(t.TempDir(), "left")
 	rightRoot := filepath.Join(t.TempDir(), "right")
 	left, err := currentPiPackageOutputs(leftRoot)

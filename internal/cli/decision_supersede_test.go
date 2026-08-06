@@ -105,6 +105,8 @@ func TestRunDecisionSupersedeRejectsTerminalSuccessor(t *testing.T) {
 }
 
 func TestDecisionSupersedeCommandHasNoMCPAlias(t *testing.T) {
+	t.Parallel()
+
 	if decisionSupersedeCmd.Use != "supersede OLD_DECISION --new NEW_DECISION --reason REASON" {
 		t.Fatalf("unexpected use: %s", decisionSupersedeCmd.Use)
 	}

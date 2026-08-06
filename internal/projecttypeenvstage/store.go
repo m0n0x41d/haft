@@ -12,8 +12,9 @@ import (
 )
 
 type Store struct {
-	database  *sql.DB
-	artifacts *projecttypeenvstore.Store
+	database    *sql.DB
+	artifacts   *projecttypeenvstore.Store
+	reloadCache selectionReadyStageCache
 }
 
 func New(ctx context.Context, database *sql.DB) (*Store, error) {

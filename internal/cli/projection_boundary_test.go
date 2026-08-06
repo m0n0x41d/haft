@@ -9,6 +9,8 @@ import (
 )
 
 func TestWriteCorrespondenceGraphSummaryNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	record := artifact.QualifiedCorrespondenceGraph{
 		RecordKind:  artifact.CorrespondenceGraphRecordKind,
 		Authority:   artifact.CorrespondenceGraphAuthority,
@@ -38,6 +40,8 @@ func TestWriteCorrespondenceGraphSummaryNamesCompleteAuthorityBoundary(t *testin
 }
 
 func TestWriteEngineeringChangeCaseSummaryNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	record := artifact.EngineeringChangeCase{
 		RecordKind:           artifact.EngineeringChangeCaseRecordKind,
 		Authority:            artifact.EngineeringChangeCaseAuthority,

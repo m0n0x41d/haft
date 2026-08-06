@@ -11,6 +11,8 @@ import (
 )
 
 func TestEmbeddedFPFSnapshotMatchesGeneratedIntegrationLock(t *testing.T) {
+	t.Parallel()
+
 	root := filepath.Join("..", "..")
 	lockPath := filepath.Join(root, fpfrefresh.DefaultIntegrationLockRelativePath)
 	lockPayload, err := os.ReadFile(lockPath)

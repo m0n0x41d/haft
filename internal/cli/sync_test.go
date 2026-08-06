@@ -13,6 +13,8 @@ import (
 )
 
 func TestSyncOneFile_RestoresProblemSemanticEnvelopeFromCarrierBlock(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	sourceStore := setupCLIArtifactStore(t)
 	haftDir := t.TempDir()
@@ -58,6 +60,8 @@ func TestSyncOneFile_RestoresProblemSemanticEnvelopeFromCarrierBlock(t *testing.
 }
 
 func TestSyncOneFile_RoundTripsRichProblemSemanticIdentityFromCarrier(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	sourceStore := setupCLIArtifactStore(t)
 	haftDir := t.TempDir()
@@ -147,6 +151,8 @@ func TestSyncOneFile_RoundTripsRichProblemSemanticIdentityFromCarrier(t *testing
 }
 
 func TestSyncOneFile_ImportsLegacyProblemAsLegacyDegraded(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 	filePath := filepath.Join(t.TempDir(), "prob-legacy.md")
@@ -203,6 +209,8 @@ Old markdown has no structured data carrier block.
 }
 
 func TestSyncOneFile_AddsCarrierLinksEvenWhenArtifactRowIsUnchanged(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 
@@ -273,6 +281,8 @@ links:
 }
 
 func TestSyncOneFile_RejectsUnknownProblemSemanticSchema(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 	filePath := filepath.Join(t.TempDir(), "prob-unknown-schema.md")

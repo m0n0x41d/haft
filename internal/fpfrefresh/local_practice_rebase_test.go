@@ -8,6 +8,8 @@ import (
 )
 
 func TestRebaseLocalPracticeCandidateMakesCurrentCarrierExactAndIdempotent(t *testing.T) {
+	t.Parallel()
+
 	root, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)

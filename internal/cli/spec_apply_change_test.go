@@ -136,6 +136,8 @@ func TestRunSpecApplyChangeBlocksUnknownHighRisk(t *testing.T) {
 }
 
 func TestApplySpecCarrierChangeToSQLBlockedHighRiskPreservesCurrentEdition(t *testing.T) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	seed := project.SpecSection{
@@ -190,6 +192,8 @@ func TestApplySpecCarrierChangeToSQLBlockedHighRiskPreservesCurrentEdition(t *te
 }
 
 func TestApplySpecCarrierChangeToSQLBlocksStaleBeforeCarrier(t *testing.T) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
@@ -245,6 +249,8 @@ func TestApplySpecCarrierChangeToSQLBlocksStaleBeforeCarrier(t *testing.T) {
 }
 
 func TestApplySpecCarrierChangeToSQLCarrierOnlyNoop(t *testing.T) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	before := writeSpecClassifyChangeFile(t, "target-system.md", specClassifyChangeCarrier("TS.sync.001", "acceptance", ""))
@@ -313,6 +319,8 @@ func TestRunSpecApplyChangeDryRunReportsScalarUpdateWithoutWriting(t *testing.T)
 }
 
 func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	result := specApplyChangeResult{
 		AuthorityBoundary: specApplyChangeAuthorityBoundary,
@@ -354,6 +362,8 @@ func TestWriteSpecApplyChangeTextShowsAuditBoundary(t *testing.T) {
 }
 
 func TestWriteSpecApplyChangeTextShowsCarrierOnlyDisposition(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	result := specApplyChangeResult{
 		AuthorityBoundary: specApplyChangeAuthorityBoundary,

@@ -67,6 +67,8 @@ func TestRunSpecValidateReviewsTenDraftSectionsWithoutApplicabilityAdmission(
 func TestWriteSpecValidationSummaryNamesIndependentSourceAndAuthority(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	report, err := buildSpecValidationReport(newDraftSpecValidationProject(t))
 	if err != nil {
 		t.Fatalf("buildSpecValidationReport: %v", err)

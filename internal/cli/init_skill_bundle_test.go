@@ -13,6 +13,8 @@ import (
 func TestCurrentSkillSourceBundleBindsExactPublicCatalogAndKernelDigest(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("currentSkillSourceBundle: %v", err)
@@ -68,6 +70,8 @@ func TestCurrentSkillSourceBundleBindsExactPublicCatalogAndKernelDigest(
 }
 
 func TestCurrentSkillSourceBundlePublishesTaskLevelMemoryUX(t *testing.T) {
+	t.Parallel()
+
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("currentSkillSourceBundle: %v", err)
@@ -130,6 +134,8 @@ func TestCurrentSkillSourceBundlePublishesTaskLevelMemoryUX(t *testing.T) {
 }
 
 func TestSkillSourceInputRejectsManifestFrontmatterPolicyDrift(t *testing.T) {
+	t.Parallel()
+
 	implicitSource := []byte("---\nname: h-test\ndescription: test\n---\nbody\n")
 	manualSource := []byte("---\nname: h-test\ndescription: test\ndisable-model-invocation: true\n---\nbody\n")
 	for name, manifest := range map[string]skillManifest{

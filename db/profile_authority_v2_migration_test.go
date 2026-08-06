@@ -8,6 +8,8 @@ import (
 )
 
 func TestProfileAuthorityV2Migration43InstallsSourceNativeClosure(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-authority-v2.db"))
 	if err != nil {
 		t.Fatalf("open v43 store: %v", err)
@@ -35,6 +37,8 @@ func TestProfileAuthorityV2Migration43InstallsSourceNativeClosure(t *testing.T) 
 }
 
 func TestProfileAuthorityV2Migration43PinsCorrectedTypedProtocol(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-authority-protocol.db"))
 	if err != nil {
 		t.Fatalf("open v43 store: %v", err)
@@ -110,6 +114,8 @@ func TestProfileAuthorityV2Migration43PinsCorrectedTypedProtocol(t *testing.T) {
 }
 
 func TestProfileAuthorityV2Migration43RejectsNonCanonicalRecordedAtShape(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-authority-time-shape.db"))
 	if err != nil {
 		t.Fatalf("open v43 store: %v", err)
@@ -153,6 +159,8 @@ func TestProfileAuthorityV2Migration43RejectsNonCanonicalRecordedAtShape(t *test
 }
 
 func TestProfileAuthorityV2Migration43RejectsUnknownPartialFootprintAtomically(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration43(t)
 	defer database.Close()
 	if _, err := database.Exec(`CREATE TABLE profile_declaration_authorization_contents_v2 (project_root TEXT)`); err != nil {
@@ -170,6 +178,8 @@ func TestProfileAuthorityV2Migration43RejectsUnknownPartialFootprintAtomically(t
 }
 
 func TestProfileAuthorityV2Migration43PreparationSurvivesRestartBeforeTTY(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "profile-preparation-restart.db")
 	store, err := NewStore(path)
 	if err != nil {
@@ -217,6 +227,8 @@ func TestProfileAuthorityV2Migration43PreparationSurvivesRestartBeforeTTY(t *tes
 }
 
 func TestProfileAuthorityV2Migration43PreservesHistoricalV38WithoutBackfill(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration43(t)
 	defer database.Close()
 	insertProfileAuthorityV2SourceFixture(t, database)

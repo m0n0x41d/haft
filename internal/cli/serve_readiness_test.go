@@ -115,6 +115,8 @@ func TestApplyReadinessReminder_SkipsReadyProject(t *testing.T) {
 }
 
 func TestApplyReadinessReminder_SkipsNeedsInitProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir() // no .haft at all → needs_init
 	haftDir := filepath.Join(root, ".haft")
 

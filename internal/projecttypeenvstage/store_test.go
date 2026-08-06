@@ -238,7 +238,7 @@ func TestLoadExecutableSnapshotTxRestoresExactImmutableCWithoutStageLookup(
 	}
 }
 
-func TestStoreLoadSelectionReadyRerunsExactFinalLowerer(t *testing.T) {
+func TestStoreLoadSelectionReadyReusesExactReconstruction(t *testing.T) {
 	fixture := newStageStoreFixture(t, "b")
 	ctx := context.Background()
 	if err := fixture.store.PutArtifactClosure(ctx, fixture.domain.closure); err != nil {
@@ -267,6 +267,16 @@ func TestStoreLoadSelectionReadyRerunsExactFinalLowerer(t *testing.T) {
 		ready.ExecutableSnapshot().Digest() != fixture.domain.snapshot.Digest() {
 		t.Fatalf("selection-ready result changed Stage or verification identity")
 	}
+	cached, err := fixture.store.LoadSelectionReady(ctx, fixture.domain.stage.Ref())
+	if err != nil {
+		t.Fatalf("LoadSelectionReady(cached): %v", err)
+	}
+	if cached.capability != ready.capability {
+		t.Fatal("exact reconstruction did not reuse the per-Store cache entry")
+	}
+	if err := cached.Verify(); err != nil {
+		t.Fatalf("cached SelectionReadyStage.Verify(): %v", err)
+	}
 }
 
 func TestStoreLoadSelectionReadyFailsClosedOnPersistedCorruption(t *testing.T) {
@@ -284,6 +294,7 @@ func TestStoreLoadSelectionReadyFailsClosedOnPersistedCorruption(t *testing.T) {
 		); err != nil {
 			t.Fatalf("Put(): %v", err)
 		}
+		warmSelectionReadyStageCache(t, fixture)
 		_, err := fixture.database.ExecContext(
 			ctx,
 			`UPDATE project_typeenv_executable_snapshots
@@ -318,6 +329,7 @@ func TestStoreLoadSelectionReadyFailsClosedOnPersistedCorruption(t *testing.T) {
 		); err != nil {
 			t.Fatalf("Put(): %v", err)
 		}
+		warmSelectionReadyStageCache(t, fixture)
 		_, err := fixture.database.ExecContext(
 			ctx,
 			`UPDATE project_typeenv_executable_snapshots
@@ -412,6 +424,7 @@ func TestStoreLoadSelectionReadyFailsClosedOnPersistedCorruption(t *testing.T) {
 			); err != nil {
 				t.Fatalf("Put(): %v", err)
 			}
+			warmSelectionReadyStageCache(t, fixture)
 			statement := `UPDATE project_typeenv_artifacts
 				 SET ` + corruption.column + ` = ?
 				 WHERE artifact_kind = ? AND artifact_ref = ?`
@@ -443,6 +456,9 @@ func TestStoreRejectsCorruptionAndVerificationSubstitution(t *testing.T) {
 	t.Run("Stage canonical corruption", func(t *testing.T) {
 		fixture := newStageStoreFixture(t, "c")
 		ctx := context.Background()
+		if err := fixture.store.PutArtifactClosure(ctx, fixture.domain.closure); err != nil {
+			t.Fatalf("PutArtifactClosure(): %v", err)
+		}
 		if err := fixture.store.Put(
 			ctx,
 			fixture.domain.stage,
@@ -451,6 +467,7 @@ func TestStoreRejectsCorruptionAndVerificationSubstitution(t *testing.T) {
 		); err != nil {
 			t.Fatalf("Put(): %v", err)
 		}
+		warmSelectionReadyStageCache(t, fixture)
 		_, err := fixture.database.ExecContext(
 			ctx,
 			`UPDATE project_typeenv_stages SET canonical_bytes = ? WHERE stage_ref = ?`,
@@ -460,9 +477,9 @@ func TestStoreRejectsCorruptionAndVerificationSubstitution(t *testing.T) {
 		if err != nil {
 			t.Fatalf("corrupt Stage row: %v", err)
 		}
-		_, err = fixture.store.Get(ctx, fixture.domain.stage.Ref())
+		_, err = fixture.store.LoadSelectionReady(ctx, fixture.domain.stage.Ref())
 		if !errors.Is(err, ErrStageIntegrity) {
-			t.Fatalf("Get(corrupt Stage) error = %v; want ErrStageIntegrity", err)
+			t.Fatalf("LoadSelectionReady(corrupt Stage) error = %v; want ErrStageIntegrity", err)
 		}
 	})
 
@@ -554,6 +571,7 @@ func TestStoreSelectionReadyFailsClosedForMissingArtifactClosure(t *testing.T) {
 		); err != nil {
 			t.Fatalf("Put(): %v", err)
 		}
+		warmSelectionReadyStageCache(t, fixture)
 		if _, err := fixture.database.ExecContext(
 			ctx,
 			`DELETE FROM project_typeenv_artifacts
@@ -582,6 +600,7 @@ func TestStoreSelectionReadyFailsClosedForMissingArtifactClosure(t *testing.T) {
 		); err != nil {
 			t.Fatalf("Put(): %v", err)
 		}
+		warmSelectionReadyStageCache(t, fixture)
 		if _, err := fixture.database.ExecContext(
 			ctx,
 			`DELETE FROM project_typeenv_runtime_mechanisms`,
@@ -621,6 +640,54 @@ func TestStorePutRollsBackVerificationWhenStageInsertFails(t *testing.T) {
 	}
 	assertStageStoreRowCount(t, fixture, "project_typeenv_stages", 0)
 	assertStageStoreRowCount(t, fixture, "project_typeenv_composite_verifications", 0)
+}
+
+func TestStoreSelectionReadyCacheDoesNotCrossDatabases(t *testing.T) {
+	ctx := context.Background()
+	first := newStageStoreFixture(t, "cache-database-first")
+	if err := first.store.PutArtifactClosure(ctx, first.domain.closure); err != nil {
+		t.Fatalf("PutArtifactClosure(first): %v", err)
+	}
+	if err := first.store.Put(
+		ctx,
+		first.domain.stage,
+		first.domain.verification,
+		first.domain.snapshot,
+	); err != nil {
+		t.Fatalf("Put(first): %v", err)
+	}
+	warmSelectionReadyStageCache(t, first)
+
+	second := newStageStoreFixture(t, "cache-database-second")
+	if err := second.store.Put(
+		ctx,
+		first.domain.stage,
+		first.domain.verification,
+		first.domain.snapshot,
+	); err != nil {
+		t.Fatalf("Put(second Stage only): %v", err)
+	}
+	_, err := second.store.LoadSelectionReady(ctx, first.domain.stage.Ref())
+	if !errors.Is(err, projecttypeenvstore.ErrArtifactNotFound) {
+		t.Fatalf(
+			"LoadSelectionReady(second database without closure) error = %v; want ErrArtifactNotFound",
+			err,
+		)
+	}
+}
+
+func warmSelectionReadyStageCache(t *testing.T, fixture stageStoreFixture) {
+	t.Helper()
+	ready, err := fixture.store.LoadSelectionReady(
+		context.Background(),
+		fixture.domain.stage.Ref(),
+	)
+	if err != nil {
+		t.Fatalf("warm LoadSelectionReady(): %v", err)
+	}
+	if err := ready.Verify(); err != nil {
+		t.Fatalf("warm SelectionReadyStage.Verify(): %v", err)
+	}
 }
 
 func assertStageStoreRowCount(

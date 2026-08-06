@@ -11,6 +11,8 @@ import (
 )
 
 func TestSemanticSpeechActProtocolMigration42PinsNewReviewLiteral(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "semantic-protocol-v42.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -52,6 +54,8 @@ func TestSemanticSpeechActProtocolMigration42PinsNewReviewLiteral(t *testing.T) 
 }
 
 func TestSemanticSpeechActProtocolMigration42AcceptsOnlyV2ReviewWrites(t *testing.T) {
+	t.Parallel()
+
 	t.Run("v2 semantic literal", func(t *testing.T) {
 		store, err := NewStore(filepath.Join(t.TempDir(), "v2-write.db"))
 		if err != nil {
@@ -98,6 +102,8 @@ func TestSemanticSpeechActProtocolMigration42AcceptsOnlyV2ReviewWrites(t *testin
 }
 
 func TestSemanticSpeechActProtocolMigration42PreservesHistoricalV1Admission(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration42(t)
 	defer database.Close()
 

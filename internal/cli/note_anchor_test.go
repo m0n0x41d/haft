@@ -4,6 +4,8 @@ import "testing"
 
 // isArtifactRef distinguishes an artifact-ID anchor from a code-symbol anchor.
 func TestIsArtifactRef(t *testing.T) {
+	t.Parallel()
+
 	artifacts := []string{
 		"dec-20260604-ef966a11",
 		"prob-20260603-5d066704",

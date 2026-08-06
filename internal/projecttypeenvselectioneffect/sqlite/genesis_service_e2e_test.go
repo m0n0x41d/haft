@@ -122,6 +122,8 @@ type genesisE2EFixture struct {
 func TestGenesisSelectionInputExposesOnlyImmutableProposalAndIngress(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	inputType := reflect.TypeOf(GenesisSelectionInput{})
 	got := make([]string, inputType.NumField())
 	for index := 0; index < inputType.NumField(); index++ {

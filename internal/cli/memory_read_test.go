@@ -14,6 +14,8 @@ import (
 func TestMemoryReadCommandsArePublicAndUseInputFiles(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	registered := map[string]bool{}
 	for _, command := range memoryCmd.Commands() {
 		registered[command.Name()] = true
@@ -36,6 +38,8 @@ func TestMemoryReadCommandsArePublicAndUseInputFiles(
 func TestMemoryReadCommandRejectsCrossActionBeforeOpeningProject(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	openCalls := 0
 	previousOpener := openProjectMemoryReadSession
 	openProjectMemoryReadSession = func(
@@ -67,6 +71,8 @@ func TestMemoryReadCommandRejectsCrossActionBeforeOpeningProject(
 func TestRunMemoryResolveUsesOneReadOnlySessionAndClosesIt(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	want := []byte(
 		`{"contract_version":"haft.memory.v1","action":"resolve","result_kind":"known_absent","result":{}}` + "\n",
 	)

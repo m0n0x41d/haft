@@ -426,6 +426,8 @@ func TestTypedPublicInitWithoutAdmissionCreatesNoProfileDependentCarriers(
 }
 
 func TestInitScopeFlagIsReadOnlySelectionOnly(t *testing.T) {
+	t.Parallel()
+
 	if initCmd.Flags().Lookup("scope-id") == nil {
 		t.Fatal("haft init omitted exact --scope-id selector")
 	}
@@ -442,6 +444,8 @@ func TestInitScopeFlagIsReadOnlySelectionOnly(t *testing.T) {
 }
 
 func TestInitProfileSelectionErrorSupportsErrorsAs(t *testing.T) {
+	t.Parallel()
+
 	failure := initProfileSelectionError{
 		kind:              projectSpecificationScopeChoiceRequired,
 		availableScopeIDs: []string{"documents", "software"},

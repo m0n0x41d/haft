@@ -19,6 +19,8 @@ import (
 func TestProjectTypeEnvHeadSelectionMigration47InstallsExactEmptyFootprintAndPreservesV46History(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -157,6 +159,8 @@ func TestProjectTypeEnvHeadSelectionMigration47InstallsExactEmptyFootprintAndPre
 func TestProjectTypeEnvHeadSelectionMigration47BackfillsAndRegistersCoordinateOwners(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, baseTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	ctx := context.Background()
@@ -272,6 +276,8 @@ func TestProjectTypeEnvHeadSelectionMigration47BackfillsAndRegistersCoordinateOw
 func TestProjectTypeEnvHeadSelectionMigration47RejectsPreexistingCoordinateOwnerCollisionAtomically(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, baseTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	ctx := context.Background()
@@ -328,6 +334,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsPreexistingCoordinateOwner
 func TestProjectTypeEnvHeadSelectionMigration47RejectsGenericOnlySelectedComposite(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, baseTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	migrateProjectTypeEnvHeadSelection47(t, database)
@@ -363,6 +371,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsGenericOnlySelectedComposi
 func TestProjectTypeEnvHeadSelectionMigration47AnnexesExactLiveCandidateStores(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _ := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	ctx := context.Background()
@@ -461,6 +471,8 @@ func TestProjectTypeEnvHeadSelectionMigration47AnnexesExactLiveCandidateStores(
 func TestProjectTypeEnvHeadSelectionMigration47RejectsNonEmptyPreReleaseHeadStore(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	ctx := context.Background()
@@ -511,6 +523,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsNonEmptyPreReleaseHeadStor
 func TestProjectTypeEnvHeadSelectionMigration47RejectsPartialCandidateFootprintAtomically(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _ := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	_, err := database.Exec(
@@ -542,6 +556,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsPartialCandidateFootprintA
 func TestProjectTypeEnvHeadSelectionMigration47RejectsDriftedV46SourceAtomically(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _ := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	_, err := database.Exec(
@@ -570,6 +586,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsDriftedV46SourceAtomically
 func TestProjectTypeEnvHeadSelectionMigration47SealsEffectRows(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _ := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	migrateProjectTypeEnvHeadSelection47(t, database)
@@ -636,6 +654,8 @@ func TestProjectTypeEnvHeadSelectionMigration47SealsEffectRows(
 func TestProjectTypeEnvHeadSelectionMigration47RejectsActivationRowForNonActivationEvent(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -671,6 +691,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsActivationRowForNonActivat
 func TestProjectTypeEnvHeadSelectionMigration47RejectsActivationCommitWithoutP8GClosure(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -737,6 +759,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsActivationCommitWithoutP8G
 func TestProjectTypeEnvHeadSelectionMigration47RejectsHeadOnlyCASAtCommit(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _ := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	migrateProjectTypeEnvHeadSelection47(t, database)
@@ -784,6 +808,8 @@ func TestProjectTypeEnvHeadSelectionMigration47RejectsHeadOnlyCASAtCommit(
 func TestProjectTypeEnvHeadSelectionMigration47AcceptsCompleteSameTransactionHeadEffect(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, basisTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, basisTypeEnvRef)
@@ -870,6 +896,8 @@ func commitCompleteGenesisHeadEffect47(
 func TestProjectTypeEnvHeadSelectionMigration47AcceptsTransitionRequestWithGenericBaseAndPriorExecutable(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, baseTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, baseTypeEnvRef)
@@ -997,6 +1025,8 @@ func TestProjectTypeEnvHeadSelectionMigration47AcceptsTransitionRequestWithGener
 func TestProjectTypeEnvHeadSelectionMigration47AcceptsStrictPermissionResolutionUnion(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, basisTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	migrateProjectTypeEnvHeadSelection47(t, database)

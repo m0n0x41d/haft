@@ -14,8 +14,9 @@ import (
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
-// LoadSelectionReady reloads the exact immutable closure and reruns final
-// lowering inside one caller-owned read transaction.
+// LoadSelectionReady reloads the exact immutable closure inside one
+// caller-owned read transaction. It reruns final lowering on a cache miss and
+// reuses a bounded per-Store result only after all reconstruction bytes match.
 func (store *Store) LoadSelectionReady(
 	ctx context.Context,
 	ref projecttypeenvselection.ProjectTypeEnvStageRef,
@@ -48,9 +49,10 @@ func (store *Store) LoadSelectionReady(
 	return ready, nil
 }
 
-// LoadSelectionReadyTx keeps Stage, verification, executable snapshot, and
-// exact B/E/X/C reload under one opaque caller-owned SQLite transaction. It
-// performs no head, authority, CAS, or mutation effect.
+// LoadSelectionReadyTx keeps Stage, verification, executable snapshot, exact
+// B/E/X/C, and X catalog reload under one opaque caller-owned SQLite
+// transaction. Cache reuse does not skip those reads or their integrity checks.
+// The operation performs no head, authority, CAS, or mutation effect.
 func (store *Store) LoadSelectionReadyTx(
 	ctx context.Context,
 	transaction *sqlitetransaction.Transaction,
@@ -88,23 +90,75 @@ func (store *Store) LoadSelectionReadyTx(
 	if err != nil {
 		return SelectionReadyStage{}, err
 	}
+	rowsKey := newSelectionReadyStageRowsCacheKey(
+		stageRow,
+		verificationRow,
+		snapshotRow,
+	)
+	inputs := selectionReadyStageReloadInputs{}
+	inputsLoaded := false
+	if cachedKey, cached, found := store.reloadCache.lookupRows(rowsKey); found {
+		inputs, err = loadSelectionReadyStageReloadInputs(
+			ctx,
+			transaction,
+			cached.Stage(),
+			cached.VerificationRecord(),
+		)
+		if err != nil {
+			return SelectionReadyStage{}, err
+		}
+		inputsLoaded = true
+		if newSelectionReadyStageCacheKey(
+			stageRow,
+			verificationRow,
+			snapshotRow,
+			inputs,
+		) == cachedKey {
+			return cached, nil
+		}
+	}
 	persisted, err := decodePersistedStage(stageRow, verificationRow, snapshotRow)
 	if err != nil {
 		return SelectionReadyStage{}, err
 	}
-	stage := persisted.Stage()
-	record := persisted.VerificationRecord()
-	snapshotRecord := persisted.ExecutableSnapshotRecord()
+	if !inputsLoaded {
+		inputs, err = loadSelectionReadyStageReloadInputs(
+			ctx,
+			transaction,
+			persisted.Stage(),
+			persisted.VerificationRecord(),
+		)
+		if err != nil {
+			return SelectionReadyStage{}, err
+		}
+	}
+	key := newSelectionReadyStageCacheKey(
+		stageRow,
+		verificationRow,
+		snapshotRow,
+		inputs,
+	)
+	return store.reloadCache.load(rowsKey, key, func() (SelectionReadyStage, error) {
+		return rebuildSelectionReadyStage(persisted, inputs)
+	})
+}
+
+func loadSelectionReadyStageReloadInputs(
+	ctx context.Context,
+	transaction *sqlitetransaction.Transaction,
+	stage projecttypeenvselection.ProjectTypeEnvStage,
+	record projecttypeenv.ProjectTypeEnvCompositeVerificationRecord,
+) (selectionReadyStageReloadInputs, error) {
 	base, err := projecttypeenvstore.GetBaseTypeEnvArtifactTx(
 		ctx,
 		transaction,
 		stage.Base(),
 	)
 	if err != nil {
-		return SelectionReadyStage{}, fmt.Errorf("reload exact Stage B: %w", err)
+		return selectionReadyStageReloadInputs{}, fmt.Errorf("reload exact Stage B: %w", err)
 	}
 	if base.Digest() != record.BaseArtifactDigest() {
-		return SelectionReadyStage{}, integrityError(
+		return selectionReadyStageReloadInputs{}, integrityError(
 			stage.Ref().String(),
 			fmt.Errorf("stored B digest differs from final-lowerer record"),
 		)
@@ -118,7 +172,7 @@ func (store *Store) LoadSelectionReadyTx(
 			extensionRef,
 		)
 		if loadErr != nil {
-			return SelectionReadyStage{}, fmt.Errorf(
+			return selectionReadyStageReloadInputs{}, fmt.Errorf(
 				"reload exact Stage E[%d] %q: %w",
 				index,
 				extensionRef.String(),
@@ -133,10 +187,12 @@ func (store *Store) LoadSelectionReadyTx(
 		stage.RuntimeBasis(),
 	)
 	if err != nil {
-		return SelectionReadyStage{}, fmt.Errorf("reload exact Stage X: %w", err)
+		return selectionReadyStageReloadInputs{}, fmt.Errorf("reload exact Stage X: %w", err)
 	}
-	if err := runtimeBasis.VerifyResolvedClosure(); err != nil {
-		return SelectionReadyStage{}, integrityError(
+	runtimeMechanisms, registrationPolicies, err :=
+		runtimeBasis.ResolvedClosureCanonicalBytes()
+	if err != nil {
+		return selectionReadyStageReloadInputs{}, integrityError(
 			stage.Ref().String(),
 			fmt.Errorf("verify reloaded X runtime catalogs: %w", err),
 		)
@@ -147,11 +203,33 @@ func (store *Store) LoadSelectionReadyTx(
 		stage.VerifiedComposite(),
 	)
 	if err != nil {
-		return SelectionReadyStage{}, fmt.Errorf("reload exact Stage C: %w", err)
+		return selectionReadyStageReloadInputs{}, fmt.Errorf("reload exact Stage C: %w", err)
 	}
 	if err := verifyReloadedCompositeCoordinates(stage, composite); err != nil {
-		return SelectionReadyStage{}, integrityError(stage.Ref().String(), err)
+		return selectionReadyStageReloadInputs{}, integrityError(stage.Ref().String(), err)
 	}
+	return selectionReadyStageReloadInputs{
+		base:                         base,
+		extensions:                   extensions,
+		runtimeBasis:                 runtimeBasis,
+		runtimeMechanismCanonicals:   runtimeMechanisms,
+		registrationPolicyCanonicals: registrationPolicies,
+		composite:                    composite,
+	}, nil
+}
+
+func rebuildSelectionReadyStage(
+	persisted PersistedStage,
+	inputs selectionReadyStageReloadInputs,
+) (SelectionReadyStage, error) {
+	stage := persisted.Stage()
+	record := persisted.VerificationRecord()
+	snapshotRecord := persisted.ExecutableSnapshotRecord()
+	base := inputs.base
+	extensions := inputs.extensions
+	runtimeBasis := inputs.runtimeBasis
+	composite := inputs.composite
+	extensionRefs := stage.OrderedExtensions()
 	resolution := projecttypeenv.LinkProjectTypeEnvCompositeIR(base, extensions)
 	if resolution.Rejected() {
 		return SelectionReadyStage{}, integrityError(

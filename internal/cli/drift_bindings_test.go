@@ -13,6 +13,8 @@ import (
 )
 
 func TestDriftBindingsDryRunFlagIsAdvertised(t *testing.T) {
+	t.Parallel()
+
 	flag := driftBindingsCmd.Flags().Lookup("dry-run")
 	if flag == nil {
 		t.Fatal("drift bindings --dry-run flag is not registered")
@@ -23,6 +25,8 @@ func TestDriftBindingsDryRunFlagIsAdvertised(t *testing.T) {
 }
 
 func TestDriftBindingsLimitFlagIsAdvertised(t *testing.T) {
+	t.Parallel()
+
 	flag := driftBindingsCmd.Flags().Lookup("limit")
 	if flag == nil {
 		t.Fatal("drift bindings --limit flag is not registered")
@@ -33,6 +37,8 @@ func TestDriftBindingsLimitFlagIsAdvertised(t *testing.T) {
 }
 
 func TestDriftEventsHelpNamesReviewPostureBoundary(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(driftEventsCmd.Long), " "))
 	for _, want := range []string{
 		"read-only projection",
@@ -51,6 +57,8 @@ func TestDriftEventsHelpNamesReviewPostureBoundary(t *testing.T) {
 }
 
 func TestValidateDriftBindingsModeRejectsDryRunWithMutation(t *testing.T) {
+	t.Parallel()
+
 	restore := setDriftBindingsModeForTest(t, true, true, "")
 	defer restore()
 
@@ -64,6 +72,8 @@ func TestValidateDriftBindingsModeRejectsDryRunWithMutation(t *testing.T) {
 }
 
 func TestValidateDriftBindingsModeRejectsDryRunWithSelection(t *testing.T) {
+	t.Parallel()
+
 	restore := setDriftBindingsModeForTest(t, true, false, "selection.json")
 	defer restore()
 
@@ -77,6 +87,8 @@ func TestValidateDriftBindingsModeRejectsDryRunWithSelection(t *testing.T) {
 }
 
 func TestValidateDriftBindingsModeAllowsDryRunPreview(t *testing.T) {
+	t.Parallel()
+
 	restore := setDriftBindingsModeForTest(t, true, false, "")
 	defer restore()
 
@@ -86,6 +98,8 @@ func TestValidateDriftBindingsModeAllowsDryRunPreview(t *testing.T) {
 }
 
 func TestDriftBindingsJSONPayloadDryRunDefaultsCompact(t *testing.T) {
+	t.Parallel()
+
 	report := driftBindingsReportWithItems(7)
 
 	payload, ok := driftBindingsJSONPayload(report, true, -1).(driftBindingsProjectedReport)
@@ -107,6 +121,8 @@ func TestDriftBindingsJSONPayloadDryRunDefaultsCompact(t *testing.T) {
 }
 
 func TestDriftBindingsJSONPayloadKeepsFullAuditWithoutDryRun(t *testing.T) {
+	t.Parallel()
+
 	report := driftBindingsReportWithItems(7)
 
 	payload, ok := driftBindingsJSONPayload(report, false, -1).(artifact.LegacyBindingReport)
@@ -119,6 +135,8 @@ func TestDriftBindingsJSONPayloadKeepsFullAuditWithoutDryRun(t *testing.T) {
 }
 
 func TestDriftBindingsJSONPayloadHonorsExplicitLimit(t *testing.T) {
+	t.Parallel()
+
 	report := driftBindingsReportWithItems(3)
 
 	payload, ok := driftBindingsJSONPayload(report, false, 1).(driftBindingsProjectedReport)
@@ -134,6 +152,8 @@ func TestDriftBindingsJSONPayloadHonorsExplicitLimit(t *testing.T) {
 }
 
 func TestDriftBindingsJSONPayloadProjectsBoundedReviewDetails(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.LegacyBindingReport{
 		SchemaVersion: artifact.LegacyBindingSchemaVersion,
 		Authority:     artifact.LegacyBindingAuthority,
@@ -216,6 +236,8 @@ func TestDriftBindingsJSONPayloadProjectsBoundedReviewDetails(t *testing.T) {
 }
 
 func TestDriftBindingsJSONPayloadRanksAndGroupsCandidateReview(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.LegacyBindingReport{
 		SchemaVersion: artifact.LegacyBindingSchemaVersion,
 		Authority:     artifact.LegacyBindingAuthority,
@@ -352,6 +374,8 @@ func setDriftBindingsModeForTest(t *testing.T, dryRun bool, apply bool, selectio
 }
 
 func TestWriteDriftBindingsSummaryNamesActions(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.LegacyBindingReport{
 		Authority: artifact.LegacyBindingAuthority,
 		Summary: artifact.LegacyBindingSummary{
@@ -395,6 +419,8 @@ func TestWriteDriftBindingsSummaryNamesActions(t *testing.T) {
 }
 
 func TestReadDriftEventResolutionLedgerTreatsEmptyFileAsEmptyLedger(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "empty-ledger.json")
 	if err := os.WriteFile(path, nil, 0o644); err != nil {
 		t.Fatalf("write empty ledger: %v", err)
@@ -413,6 +439,8 @@ func TestReadDriftEventResolutionLedgerTreatsEmptyFileAsEmptyLedger(t *testing.T
 }
 
 func TestWriteDriftEventsSummaryNamesFanout(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.DriftEventReport{
 		Summary: artifact.DriftEventSummary{
 			UniqueEvents:                 1,
@@ -459,6 +487,8 @@ func TestWriteDriftEventsSummaryNamesFanout(t *testing.T) {
 }
 
 func TestWriteDriftEventsSummaryCapsDefaultEventList(t *testing.T) {
+	t.Parallel()
+
 	events := make([]artifact.DriftEvent, 0, driftEventsSummaryEventLimit+2)
 	for i := 1; i <= driftEventsSummaryEventLimit+2; i++ {
 		events = append(events, artifact.DriftEvent{
@@ -499,6 +529,8 @@ func TestWriteDriftEventsSummaryCapsDefaultEventList(t *testing.T) {
 }
 
 func TestDriftEventResolutionLedgerRoundTrip(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "drift-event-resolutions.json")
 	ledger := artifact.NewDriftEventResolutionLedger([]artifact.DriftEventResolution{{
 		EventID:          "drift-event-abc",
@@ -534,6 +566,8 @@ func TestDriftEventResolutionLedgerRoundTrip(t *testing.T) {
 }
 
 func TestWriteDriftEventsResolutionSummaryNamesAuthority(t *testing.T) {
+	t.Parallel()
+
 	var buf bytes.Buffer
 	record := artifact.DriftEventResolution{
 		EventID: "drift-event-abc",

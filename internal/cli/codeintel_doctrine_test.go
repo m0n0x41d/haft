@@ -12,6 +12,8 @@ import (
 )
 
 func TestComposeServerInstructionsContainsOnlyGlobalInvariants(t *testing.T) {
+	t.Parallel()
+
 	got := composeServerInstructionsForUnavailableProfile(nil)
 	for _, want := range []string{
 		"# Haft project memory",
@@ -96,6 +98,8 @@ func TestComposeServerInstructionsContainsOnlyGlobalInvariants(t *testing.T) {
 func TestComposeServerInstructionsForUnavailableProfileOmitsProjectLocalState(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	const localWorkflowText = "LOCAL_UNAVAILABLE_PROFILE_WORKFLOW"
 	workflow := &project.Workflow{Intent: localWorkflowText}
 	instructions := composeServerInstructionsForUnavailableProfile(workflow)
@@ -111,6 +115,8 @@ func TestComposeServerInstructionsForUnavailableProfileOmitsProjectLocalState(
 }
 
 func TestComposeServerInstructions_AlwaysIncludesMethodPackProtocol(t *testing.T) {
+	t.Parallel()
+
 	got := composeServerInstructionsForUnavailableProfile(nil)
 
 	for _, want := range []string{
@@ -141,6 +147,8 @@ func TestComposeServerInstructions_AlwaysIncludesMethodPackProtocol(t *testing.T
 func TestComposeServerInstructionPartsBeforeInitializationKeepsGlobalRoutingInvariants(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	got := composeServerInstructionParts(nil, nil)
 
 	for _, want := range []string{

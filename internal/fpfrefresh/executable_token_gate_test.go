@@ -125,6 +125,8 @@ set -eu
 }
 
 func TestExecutableCandidateTokenGateRequiresCanonicalAbsoluteInputPaths(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCandidateTokenGateFixture(t)
 	fixture.input.DatabasePath = filepath.Dir(fixture.input.DatabasePath) +
 		string(filepath.Separator) + "." +
@@ -142,6 +144,8 @@ func TestExecutableCandidateTokenGateRequiresCanonicalAbsoluteInputPaths(t *test
 }
 
 func TestExecutableCandidateTokenGateReturnsScriptFailure(t *testing.T) {
+	t.Parallel()
+
 	fixture := newCandidateTokenGateFixture(t)
 	gate := ExecutableCandidateTokenGate{
 		ShellPath: candidateTokenGateShellPath(t),
@@ -157,6 +161,8 @@ exit 23
 }
 
 func TestCandidateTokenGateFuncRejectsNilAndAdaptsFunction(t *testing.T) {
+	t.Parallel()
+
 	var nilFunction CandidateTokenGateFunc
 	if err := nilFunction.VerifyCandidate(
 		context.Background(),
@@ -184,6 +190,8 @@ func TestCandidateTokenGateFuncRejectsNilAndAdaptsFunction(t *testing.T) {
 }
 
 func TestBoundedCandidateTokenGateOutputCapsRetainedDetail(t *testing.T) {
+	t.Parallel()
+
 	var output boundedCandidateTokenGateOutput
 	payload := strings.Repeat("x", maxCandidateTokenGateOutputBytes+1024)
 	written, err := output.Write([]byte(payload))

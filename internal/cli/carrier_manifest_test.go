@@ -16,6 +16,8 @@ import (
 )
 
 func TestRunCarrierManifestText(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -42,6 +44,8 @@ func TestRunCarrierManifestText(t *testing.T) {
 }
 
 func TestRunCarrierManifestJSON(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -63,6 +67,8 @@ func TestRunCarrierManifestJSON(t *testing.T) {
 }
 
 func TestCarrierManifestHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(carrierManifestCmd.Long), " "))
 	for _, want := range []string{
 		"review/discovery metadata",
@@ -76,6 +82,8 @@ func TestCarrierManifestHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestRunCarrierCheckText(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -95,6 +103,8 @@ func TestRunCarrierCheckText(t *testing.T) {
 }
 
 func TestCarrierCheckHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(carrierCheckCmd.Long), " "))
 	for _, want := range []string{
 		"review inputs",
@@ -109,6 +119,8 @@ func TestCarrierCheckHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestRunCarrierCheckJSON(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&output)
@@ -133,6 +145,8 @@ func TestRunCarrierCheckJSON(t *testing.T) {
 }
 
 func TestHandleQuintQueryCarrierManifest(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
@@ -152,6 +166,8 @@ func TestHandleQuintQueryCarrierManifest(t *testing.T) {
 }
 
 func TestHandleQuintQueryCarrierCheck(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	root := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(root, ".haft"), 0o755); err != nil {
@@ -188,6 +204,8 @@ func TestHandleQuintQueryCarrierCheck(t *testing.T) {
 }
 
 func TestCarrierCheckGeneratedSurfacesIncludeInterfaceCatalog(t *testing.T) {
+	t.Parallel()
+
 	surfaces := carrierCheckGeneratedSurfaces()
 	if len(surfaces) == 0 {
 		t.Fatal("expected generated interface surfaces")
@@ -207,6 +225,8 @@ func TestCarrierCheckGeneratedSurfacesIncludeInterfaceCatalog(t *testing.T) {
 }
 
 func TestCarrierCheckGeneratedSurfacesIncludeMCPToolsListCatalog(t *testing.T) {
+	t.Parallel()
+
 	surfaces := carrierCheckGeneratedSurfaces()
 	if len(surfaces) == 0 {
 		t.Fatal("expected generated surfaces")
@@ -226,6 +246,8 @@ func TestCarrierCheckGeneratedSurfacesIncludeMCPToolsListCatalog(t *testing.T) {
 }
 
 func TestCarrierCheckGeneratedSurfacesIncludeContractGenerationFragments(t *testing.T) {
+	t.Parallel()
+
 	surfaces := carrierCheckGeneratedSurfaces()
 	previewFound := false
 	schemaFound := false
@@ -257,6 +279,8 @@ func TestCarrierCheckGeneratedSurfacesIncludeContractGenerationFragments(t *test
 }
 
 func TestCarrierCheckMCPToolSurfaceFlagsAuthorityGrantWording(t *testing.T) {
+	t.Parallel()
+
 	text := carrierCheckMCPToolSurfaceText(fpf.Tool{
 		Name:        "haft_bad",
 		Description: "Tool description authorizes operator approval.",

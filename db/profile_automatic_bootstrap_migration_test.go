@@ -12,6 +12,8 @@ import (
 func TestProfileAutomaticBootstrapMigration55PreservesExplicitAdmissionStorage(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAutomaticBootstrapMigration55(t)
 	defer database.Close()
 	explicitTables := []string{
@@ -75,6 +77,8 @@ func TestProfileAutomaticBootstrapMigration55PreservesExplicitAdmissionStorage(
 func TestProfileAutomaticBootstrapMigration55RejectsUnknownPartialFootprint(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAutomaticBootstrapMigration55(t)
 	defer database.Close()
 	_, err := database.Exec(

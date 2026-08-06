@@ -7,6 +7,8 @@ import (
 )
 
 func TestDoctorServeProcessStatusReportsNoCurrentProjectServe(t *testing.T) {
+	t.Parallel()
+
 	status, ok := doctorServeProcessStatus("/repo/haft", doctorServeProcessSnapshot{
 		Processes: []doctorServeProcess{
 			{PID: 7, CWD: "/repo/other", Executable: "/bin/haft"},
@@ -22,6 +24,8 @@ func TestDoctorServeProcessStatusReportsNoCurrentProjectServe(t *testing.T) {
 }
 
 func TestDoctorServeProcessStatusAcceptsSeveralCurrentProjectServers(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 6, 24, 1, 2, 3, 0, time.UTC)
 	status, ok := doctorServeProcessStatus("/repo/haft", doctorServeProcessSnapshot{
 		PathHaft:      "/repo/bin/haft",
@@ -43,6 +47,8 @@ func TestDoctorServeProcessStatusAcceptsSeveralCurrentProjectServers(t *testing.
 }
 
 func TestDoctorServeProcessStatusWarnsOnStaleServeExecutable(t *testing.T) {
+	t.Parallel()
+
 	pathMTime := time.Date(2026, 6, 24, 5, 17, 0, 0, time.UTC)
 	serveMTime := time.Date(2026, 6, 24, 4, 31, 0, 0, time.UTC)
 	startedAt := time.Date(2026, 6, 24, 4, 45, 0, 0, time.UTC)
@@ -75,6 +81,8 @@ func TestDoctorServeProcessStatusWarnsOnStaleServeExecutable(t *testing.T) {
 }
 
 func TestDoctorServeProcessStatusWarnsWhenServeStartedBeforeExecutableRebuild(t *testing.T) {
+	t.Parallel()
+
 	rebuildTime := time.Date(2026, 6, 24, 5, 17, 0, 0, time.UTC)
 	startedAt := time.Date(2026, 6, 24, 5, 1, 0, 0, time.UTC)
 	status, ok := doctorServeProcessStatus("/repo/haft", doctorServeProcessSnapshot{
@@ -100,6 +108,8 @@ func TestDoctorServeProcessStatusWarnsWhenServeStartedBeforeExecutableRebuild(t 
 }
 
 func TestDoctorServeProcessStatusAcceptsSingleCurrentProjectServe(t *testing.T) {
+	t.Parallel()
+
 	now := time.Date(2026, 6, 24, 5, 17, 0, 0, time.UTC)
 	status, ok := doctorServeProcessStatus("/repo/haft", doctorServeProcessSnapshot{
 		PathHaft:      "/repo/bin/haft",
@@ -124,6 +134,8 @@ func TestDoctorServeProcessStatusAcceptsSingleCurrentProjectServe(t *testing.T) 
 }
 
 func TestParseDoctorServeProcessLineAcceptsPathHaftServe(t *testing.T) {
+	t.Parallel()
+
 	process, ok := parseDoctorServeProcessLine(" 348 /Users/me/.local/bin/haft serve")
 	if !ok {
 		t.Fatal("line was not accepted")
@@ -134,6 +146,8 @@ func TestParseDoctorServeProcessLineAcceptsPathHaftServe(t *testing.T) {
 }
 
 func TestParseDoctorServeProcessLineRejectsNonServeHaft(t *testing.T) {
+	t.Parallel()
+
 	_, ok := parseDoctorServeProcessLine(" 349 /Users/me/.local/bin/haft doctor")
 	if ok {
 		t.Fatal("doctor command accepted as serve")
@@ -141,6 +155,8 @@ func TestParseDoctorServeProcessLineRejectsNonServeHaft(t *testing.T) {
 }
 
 func TestDoctorProcessCWDAndExecutablePrefersHaftText(t *testing.T) {
+	t.Parallel()
+
 	cwd, executable := doctorProcessCWDAndExecutable(strings.Join([]string{
 		"p348",
 		"fcwd",

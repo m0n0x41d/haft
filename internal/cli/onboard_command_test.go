@@ -21,6 +21,8 @@ import (
 func TestOnboardPublicCommandTreeHidesLowLevelMemorySetup(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	fixtures := []struct {
 		path []string
 		want *cobra.Command
@@ -687,6 +689,8 @@ func TestOnboardStatusDoesNotTrustUnreadableOrForeignMemoryDeferral(
 func TestOnboardMemoryEnableProjectsEveryClosedNoCommitOutcome(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	observation, err := onboarding.NewObservation(
 		onboarding.ObservationInput{
 			Initialized:       true,

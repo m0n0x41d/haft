@@ -11,6 +11,8 @@ import (
 )
 
 func TestOverseerCodeGovernancePathSemanticsMatrix(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()

@@ -20,6 +20,8 @@ import (
 )
 
 func TestDecisionRecordEffectMigrationInstallsAdditiveClosure(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "decision-effect.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -56,6 +58,8 @@ func TestDecisionRecordEffectMigrationInstallsAdditiveClosure(t *testing.T) {
 }
 
 func TestDecisionRecordEffectMigrationRejectsUnknownPartialFootprint(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration41(t)
 	defer database.Close()
 
@@ -72,6 +76,8 @@ func TestDecisionRecordEffectMigrationRejectsUnknownPartialFootprint(t *testing.
 }
 
 func TestDecisionRecordEffectMigrationPreservesLegacyDecisionWithoutBackfill(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration41(t)
 	defer database.Close()
 
@@ -113,6 +119,8 @@ func TestDecisionRecordEffectMigrationPreservesLegacyDecisionWithoutBackfill(t *
 }
 
 func TestDecisionBindingContentRejectsForeignRootRetrobindAndInvalidCollections(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "decision-content-guards.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -144,6 +152,8 @@ func TestDecisionBindingContentRejectsForeignRootRetrobindAndInvalidCollections(
 }
 
 func TestDecisionBindingContentAcceptsCanonicalPreparedDecisionBytes(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "prepared-parity.db"))
 	if err != nil {
@@ -217,6 +227,8 @@ func TestDecisionBindingContentAcceptsCanonicalPreparedDecisionBytes(t *testing.
 }
 
 func TestDecisionBindingContentRejectsMalformedSourcePinVariants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		mutate func(*decisionEffectPrepared)
@@ -286,6 +298,8 @@ func TestDecisionBindingContentRejectsMalformedSourcePinVariants(t *testing.T) {
 }
 
 func TestDecisionRecordEffectRequiresExactSourceAndArtifactClosure(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "decision-effect-exact.db"))
 	if err != nil {
@@ -384,6 +398,8 @@ func TestDecisionRecordEffectRequiresExactSourceAndArtifactClosure(t *testing.T)
 }
 
 func TestDecisionRecordEffectRejectsArtifactDriftAndLeavesSpeechActSource(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	store, err := NewStore(filepath.Join(root, "decision-effect-drift.db"))
 	if err != nil {
@@ -422,6 +438,8 @@ func TestDecisionRecordEffectRejectsArtifactDriftAndLeavesSpeechActSource(t *tes
 }
 
 func TestDecisionRecordEffectRejectsWrongFrameAndCrossDomainSource(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name     string
 		material func(testing.TB, decisionEffectPrepared) decisionEffectSpeechActMaterial

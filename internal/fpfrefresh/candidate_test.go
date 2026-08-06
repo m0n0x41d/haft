@@ -186,6 +186,8 @@ func TestPrepareCandidateArtifactBuildsExactVerifiedOwnedCandidate(t *testing.T)
 }
 
 func TestPrepareCandidateArtifactRejectsNonDeterministicBuildAndCleansRoot(t *testing.T) {
+	t.Parallel()
+
 	source := candidateArtifactSmallSource()
 	predecessorPath := candidateArtifactPredecessorDatabase(t)
 	predecessorBefore := candidateArtifactReadFile(t, predecessorPath)

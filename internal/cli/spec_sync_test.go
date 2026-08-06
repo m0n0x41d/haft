@@ -87,6 +87,8 @@ func TestRunSpecSyncImportsTypedSectionsIntoSQLWithoutBaselines(t *testing.T) {
 }
 
 func TestSyncProjectSpecificationSetToSQLWithScopeBlocksCarrierFindings(t *testing.T) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	specSet := project.ProjectSpecificationSet{
@@ -121,6 +123,8 @@ func TestSyncProjectSpecificationSetToSQLWithScopeBlocksCarrierFindings(t *testi
 }
 
 func TestSyncProjectSpecificationSetToSQLWithScopeFullProjectDeletesMissingCarrierSections(t *testing.T) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 
@@ -173,6 +177,8 @@ func TestSyncProjectSpecificationSetToSQLWithScopeFullProjectDeletesMissingCarri
 func TestSyncProjectSpecificationSetToSQLExactSectionLeavesOtherEditionsUntouched(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	selected := project.SpecSection{
@@ -249,6 +255,8 @@ func TestSyncProjectSpecificationSetToSQLExactSectionLeavesOtherEditionsUntouche
 func TestSyncProjectSpecificationSetToSQLExactSectionRejectsMissingCarrier(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := newTestCLIDB(t)
 	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
 	scope, err := newSpecSyncScope("SS.missing.001")

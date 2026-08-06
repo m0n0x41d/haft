@@ -19,6 +19,8 @@ import (
 )
 
 func TestOpenFPFDBExtractsImmutableReadOnlyImage(t *testing.T) {
+	t.Parallel()
+
 	database, cleanup, err := openFPFDB()
 	if err != nil {
 		t.Fatalf("openFPFDB() error = %v", err)
@@ -74,6 +76,8 @@ func TestOpenFPFDBExtractsImmutableReadOnlyImage(t *testing.T) {
 }
 
 func TestLoadEmbeddedMemoryRuntimeReturnsExactExecutableEnvironment(t *testing.T) {
+	t.Parallel()
+
 	expectedArtifact, expectedRevision, expectedReference := embeddedArtifactExpectation(t)
 	runtime, err := loadEmbeddedMemoryRuntime(context.Background())
 	if err != nil {
@@ -132,6 +136,8 @@ func TestLoadEmbeddedMemoryRuntimeReturnsExactExecutableEnvironment(t *testing.T
 }
 
 func TestLoadEmbeddedMemoryRuntimeRejectsMetadataMismatch(t *testing.T) {
+	t.Parallel()
+
 	testCases := []struct {
 		name string
 		key  string
@@ -167,6 +173,8 @@ func TestLoadEmbeddedMemoryRuntimeRejectsMetadataMismatch(t *testing.T) {
 }
 
 func TestLoadEmbeddedMemoryRuntimeRejectsSourceProjectionMismatch(t *testing.T) {
+	t.Parallel()
+
 	database := writableEmbeddedFPFDatabase(t)
 	result, err := database.Exec(`
 		UPDATE source_units
@@ -199,6 +207,8 @@ func TestLoadEmbeddedMemoryRuntimeRejectsSourceProjectionMismatch(t *testing.T) 
 }
 
 func TestLoadEmbeddedMemoryRuntimeDoesNotCreateMissingSchema(t *testing.T) {
+	t.Parallel()
+
 	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "empty.db"))
 	if err != nil {
 		t.Fatalf("open empty database: %v", err)
@@ -221,6 +231,8 @@ func TestLoadEmbeddedMemoryRuntimeDoesNotCreateMissingSchema(t *testing.T) {
 }
 
 func TestLoadEmbeddedMemoryRuntimeRejectsNilInputs(t *testing.T) {
+	t.Parallel()
+
 	if _, err := loadEmbeddedMemoryRuntime(nil); err == nil {
 		t.Fatal("nil context unexpectedly accepted")
 	}
@@ -230,6 +242,8 @@ func TestLoadEmbeddedMemoryRuntimeRejectsNilInputs(t *testing.T) {
 }
 
 func TestEmbeddedMemoryRuntimeCacheLoadsImmutableRuntimeOnce(t *testing.T) {
+	t.Parallel()
+
 	cache := embeddedMemoryRuntimeCache{}
 	var calls atomic.Int64
 	loader := func(context.Context) (embeddedMemoryRuntime, error) {
@@ -251,6 +265,8 @@ func TestEmbeddedMemoryRuntimeCacheLoadsImmutableRuntimeOnce(t *testing.T) {
 func TestEmbeddedMemoryRuntimeCacheRetriesFailureAndDoesNotCacheCancellation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	cache := embeddedMemoryRuntimeCache{}
 	var calls atomic.Int64
 	loader := func(context.Context) (embeddedMemoryRuntime, error) {
@@ -286,6 +302,8 @@ func TestEmbeddedMemoryRuntimeCacheRetriesFailureAndDoesNotCacheCancellation(
 func TestEmbeddedMemoryRuntimeCacheCoordinatesConcurrentLoadAndCanceledWaiter(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	cache := embeddedMemoryRuntimeCache{}
 	var calls atomic.Int64
 	entered := make(chan struct{})
@@ -357,6 +375,8 @@ func TestEmbeddedMemoryRuntimeCacheCoordinatesConcurrentLoadAndCanceledWaiter(
 func TestEmbeddedMemoryRuntimeCacheDoesNotRetainSuccessRacingCancellation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	cache := embeddedMemoryRuntimeCache{}
 	var calls atomic.Int64
 	ctx, cancel := context.WithCancel(context.Background())
@@ -381,6 +401,8 @@ func TestEmbeddedMemoryRuntimeCacheDoesNotRetainSuccessRacingCancellation(
 func TestEmbeddedMemoryRuntimeCacheHealthyWaiterRetriesCanceledLeader(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	cache := embeddedMemoryRuntimeCache{}
 	var calls atomic.Int64
 	leaderEntered := make(chan struct{})
@@ -432,6 +454,8 @@ func TestEmbeddedMemoryRuntimeCacheHealthyWaiterRetriesCanceledLeader(
 func TestEmbeddedMemoryRuntimeCacheReleasesWaitersAndRetriesAfterPanic(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	cache := embeddedMemoryRuntimeCache{}
 	panicValue := errors.New("loader panic")
 	var calls atomic.Int64

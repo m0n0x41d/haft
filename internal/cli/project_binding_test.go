@@ -105,6 +105,8 @@ func TestResolveProjectBindingFromInput_RejectsExpectedProjectIDMismatch(t *test
 func TestCurrentBoundProjectEnvironmentCarriesExactPortableBinding(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	const projectID = "qnt_c38a6ec1"
 	env := currentBoundProjectEnvironment(".", projectID)
 

@@ -11,6 +11,8 @@ import (
 )
 
 func TestCurrentStandardSkillProjectionsDeriveFromOneExactBundle(t *testing.T) {
+	t.Parallel()
+
 	bundle, err := currentSkillSourceBundle()
 	if err != nil {
 		t.Fatalf("build current skill bundle: %v", err)
@@ -93,6 +95,8 @@ func TestCurrentStandardSkillProjectionsDeriveFromOneExactBundle(t *testing.T) {
 }
 
 func TestCurrentSkillRewriteRegistryPreservesPriorRenderedBytes(t *testing.T) {
+	t.Parallel()
+
 	corpus := strings.Join([]string{
 		"/h-frame /h-decide",
 		"Slash commands slash commands Slash command slash command",
@@ -126,6 +130,8 @@ func TestCurrentSkillRewriteRegistryPreservesPriorRenderedBytes(t *testing.T) {
 func TestCurrentSkillAdapterRegistryRejectsUnsupportedPlatforms(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	if _, err := currentSkillAdapterForPlatform("gemini"); err == nil {
 		t.Fatal("non-skill Gemini adapter was accepted as a standard skill renderer")
 	}

@@ -9,6 +9,8 @@ import (
 )
 
 func TestHandleQuintNoteReturnsArtifactID(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -39,6 +41,8 @@ func TestHandleQuintNoteReturnsArtifactID(t *testing.T) {
 }
 
 func TestHandleQuintNotePreservesTaskContextAndExplicitValidity(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

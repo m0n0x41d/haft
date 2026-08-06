@@ -13,6 +13,8 @@ import (
 )
 
 func TestHandleHaftMethodPullCreatesMethodRun(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := filepath.Join(t.TempDir(), ".haft")
@@ -76,6 +78,8 @@ func TestHandleHaftMethodPullCreatesMethodRun(t *testing.T) {
 }
 
 func TestHandleHaftMethodCatalogReturnsCurrentLifecycleReport(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := filepath.Join(t.TempDir(), ".haft")
@@ -115,6 +119,8 @@ func TestHandleHaftMethodCatalogReturnsCurrentLifecycleReport(t *testing.T) {
 }
 
 func TestHandleHaftMethodStatusAndShowRecoverOpenRun(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := filepath.Join(t.TempDir(), ".haft")
@@ -166,6 +172,8 @@ func TestHandleHaftMethodStatusAndShowRecoverOpenRun(t *testing.T) {
 }
 
 func TestHandleHaftMethodCloseRequiresEvidenceOrExplicitWaiver(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := filepath.Join(t.TempDir(), ".haft")
@@ -223,6 +231,8 @@ func TestHandleHaftMethodCloseRequiresEvidenceOrExplicitWaiver(t *testing.T) {
 }
 
 func TestHandleHaftMethodCloseRequiresCarryThroughDisposition(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := filepath.Join(t.TempDir(), ".haft")
@@ -291,6 +301,8 @@ func TestHandleHaftMethodCloseRequiresCarryThroughDisposition(t *testing.T) {
 }
 
 func TestHandleHaftMethodCloseRequiresProblemGraphClosure(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := filepath.Join(t.TempDir(), ".haft")

@@ -13,6 +13,8 @@ import (
 )
 
 func TestHandleQuintQueryExploreConcernReturnsEvidenceBearingCandidates(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
@@ -125,6 +127,8 @@ func (s *Scanner) publishIndexEpoch() {}
 }
 
 func TestHandleQuintQueryExploreRejectsFractionalConcernBudget(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	_, err := handleQuintQuery(
 		context.Background(),
@@ -148,6 +152,8 @@ func TestHandleQuintQueryExploreRejectsFractionalConcernBudget(t *testing.T) {
 func TestHandleQuintQueryExploreModuleDecisionRefsMatchCLIProjection(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
@@ -258,6 +264,8 @@ func TestHandleQuintQueryExploreModuleDecisionRefsMatchCLIProjection(
 }
 
 func TestHandleQuintQueryExploreRejectsMixedConcernAndSymbol(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	_, err := handleQuintQuery(
 		context.Background(),
@@ -279,6 +287,8 @@ func TestHandleQuintQueryExploreRejectsMixedConcernAndSymbol(t *testing.T) {
 }
 
 func TestHandleQuintQueryExploreExactKeepsSourceAndPathSemantics(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")

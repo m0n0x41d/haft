@@ -922,6 +922,8 @@ func TestTypedPublicLegacyCleanupRecoveryPreservesMCPOnlyScope(
 func TestTypedPublicPartialLegacyCleanupRendersReloadRequirement(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	claudePath := "/cleanup/.claude/commands/h-frame.md"
 	codexPath := "/cleanup/.codex/prompts/h-frame.md"
 	plan := publicDeprecatedSkillCleanupPlan{

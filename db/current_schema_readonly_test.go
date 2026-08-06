@@ -13,6 +13,8 @@ import (
 func TestRequireCurrentSchemaReadOnlyAcceptsExactKernelEdition(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "current.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -34,6 +36,8 @@ func TestRequireCurrentSchemaReadOnlyAcceptsExactKernelEdition(
 func TestRequireCurrentSchemaReadOnlyRejectsDriftWithoutRepair(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	currentVersion := kernelMigrations[len(kernelMigrations)-1].Version
 	tests := []struct {
 		name      string
@@ -90,6 +94,8 @@ func TestRequireCurrentSchemaReadOnlyRejectsDriftWithoutRepair(
 func TestRequireCurrentSchemaReadOnlyDoesNotCreateVersionTable(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, err := sql.Open(
 		"sqlite",
 		filepath.Join(t.TempDir(), "missing-version-table.db"),
@@ -123,6 +129,8 @@ func TestRequireCurrentSchemaReadOnlyDoesNotCreateVersionTable(
 func TestRequireSchemaPrefixReadOnlyRequiresExactContiguousPrefix(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "prefix.db"))
 	if err != nil {
 		t.Fatal(err)

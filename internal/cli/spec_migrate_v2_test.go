@@ -253,6 +253,8 @@ func TestSpecMigrationPublicCommandWithoutPreparedCandidateFailsClosed(t *testin
 }
 
 func TestWriteSpecMigrationV2ResultHumanOutputHidesOpaqueProvenance(t *testing.T) {
+	t.Parallel()
+
 	result := specMigrationV2Result{
 		State:                "pending_review",
 		PacketID:             "migration-packet:opaque",

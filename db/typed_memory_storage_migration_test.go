@@ -46,6 +46,8 @@ func (execer typedMemoryConnectionExecer45) Exec(
 }
 
 func TestTypedMemoryStorageMigration45InstallsEmptyTransactionalSchema(t *testing.T) {
+	t.Parallel()
+
 	store := newStoreThroughTypedMemoryStorageMigration45(t)
 	defer store.Close()
 
@@ -76,6 +78,8 @@ func TestTypedMemoryStorageMigration45InstallsEmptyTransactionalSchema(t *testin
 }
 
 func TestTypedMemoryStorageMigration45RejectsUnknownPartialFootprintAtomically(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration45(t)
 	defer database.Close()
 	partialTable := "typed_memory_graph_heads"
@@ -116,6 +120,8 @@ func TestTypedMemoryStorageMigration45RejectsUnknownPartialFootprintAtomically(t
 }
 
 func TestTypedMemoryStorageMigration45RequiresV44Source(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAuthorityAdmissionV2Migration44(t)
 	defer database.Close()
 
@@ -135,6 +141,8 @@ func TestTypedMemoryStorageMigration45RequiresV44Source(t *testing.T) {
 }
 
 func TestTypedMemoryStorageMigration45RejectsFabricatedGenesisHead(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 
@@ -153,6 +161,8 @@ func TestTypedMemoryStorageMigration45RejectsFabricatedGenesisHead(t *testing.T)
 }
 
 func TestTypedMemoryStorageMigration45RejectsHeadForUnboundProject(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 
@@ -171,6 +181,8 @@ func TestTypedMemoryStorageMigration45RejectsHeadForUnboundProject(t *testing.T)
 }
 
 func TestTypedMemoryStorageMigration45RejectsEventOnlyTransactionAtCommit(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 	insertTypedMemoryGenesisHead45(t, store.conn, typeEnvRef)
@@ -203,6 +215,8 @@ func TestTypedMemoryStorageMigration45RejectsEventOnlyTransactionAtCommit(t *tes
 }
 
 func TestTypedMemoryStorageMigration45RejectsEntityContextFromDifferentEvent(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 	insertTypedMemoryGenesisHead45(t, store.conn, typeEnvRef)
@@ -238,6 +252,8 @@ func TestTypedMemoryStorageMigration45RejectsEntityContextFromDifferentEvent(t *
 }
 
 func TestTypedMemoryStorageMigration45RejectsMaterializationAfterCommitClosure(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 	insertTypedMemoryGenesisHead45(t, store.conn, typeEnvRef)
@@ -282,6 +298,8 @@ func TestTypedMemoryStorageMigration45RejectsMaterializationAfterCommitClosure(t
 }
 
 func TestTypedMemoryStorageMigration45RejectsCommitWhoseChangeCountIsNotOne(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 	insertTypedMemoryGenesisHead45(t, store.conn, typeEnvRef)
@@ -305,6 +323,8 @@ func TestTypedMemoryStorageMigration45RejectsCommitWhoseChangeCountIsNotOne(t *t
 }
 
 func TestTypedMemoryStorageMigration45TypeEnvSnapshotsAreImmutable(t *testing.T) {
+	t.Parallel()
+
 	store, typeEnvRef := newTypedMemoryRawSQLStore45(t)
 	defer store.Close()
 	originalBytes := []byte("canonical-type-env-v1")
@@ -347,6 +367,8 @@ func TestTypedMemoryStorageMigration45TypeEnvSnapshotsAreImmutable(t *testing.T)
 }
 
 func TestTypedMemoryStorageMigration45PreservesV44LegacyRowsAndBytes(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration45(t)
 	defer database.Close()
 	legacyVector := []byte{0x00, 0x7f, 0x80, 0xff, 0x10, 0x20, 0x30, 0x40}
@@ -423,6 +445,8 @@ func TestTypedMemoryStorageMigration45PreservesV44LegacyRowsAndBytes(t *testing.
 func TestSchema44UpgradePreservesHistoricalDecisionSpecSectionRelation(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration45(t)
 	defer database.Close()
 	database.SetMaxOpenConns(1)

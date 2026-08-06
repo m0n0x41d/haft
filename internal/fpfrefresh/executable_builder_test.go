@@ -36,6 +36,8 @@ func TestBoundedIndexerOutputRetainsOnlyTail(t *testing.T) {
 }
 
 func TestExecutableIndexBuilderBoundsFailedProcessOutput(t *testing.T) {
+	t.Parallel()
+
 	if runtime.GOOS == "windows" {
 		t.Skip("executable script fixture requires a POSIX shell")
 	}

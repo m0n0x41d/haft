@@ -10,6 +10,8 @@ import "testing"
 // and valid_until — so every characterized dimension persisted as role="target"
 // with no valid_until, which made /h-compare ignore constraint/observation roles.
 func TestParseDimensions_PreservesRoleAndValidUntil(t *testing.T) {
+	t.Parallel()
+
 	raw := []any{
 		map[string]any{
 			"name":        "must_pass",

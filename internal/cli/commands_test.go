@@ -6,6 +6,8 @@ import (
 )
 
 func TestPublicSkillCatalogIsExactTwelve(t *testing.T) {
+	t.Parallel()
+
 	want := []string{
 		"h-reason",
 		"h-decide",
@@ -31,6 +33,8 @@ func TestPublicSkillCatalogIsExactTwelve(t *testing.T) {
 }
 
 func TestRetiredDeterministicRoutingCheckIsNotPublic(t *testing.T) {
+	t.Parallel()
+
 	for _, command := range checkCmd.Commands() {
 		if command.Name() == "routing" {
 			t.Fatal("retired deterministic `haft check routing` command remains public")
@@ -46,6 +50,8 @@ func TestRetiredDeterministicRoutingCheckIsNotPublic(t *testing.T) {
 func TestRootHelpDescribesGovernanceWithoutBuiltInExecution(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	for _, required := range []string{
 		"coding-agent TUI",
 		"built-in commission executors",
@@ -64,6 +70,8 @@ func TestRootHelpDescribesGovernanceWithoutBuiltInExecution(
 }
 
 func TestRootCommandOmitsRemovedExecutors(t *testing.T) {
+	t.Parallel()
+
 	commands := map[string]bool{}
 	for _, command := range rootCmd.Commands() {
 		commands[command.Name()] = true
@@ -79,6 +87,8 @@ func TestRootCommandOmitsRemovedExecutors(t *testing.T) {
 }
 
 func TestREADMEAdvertisesCurrentSkillOnlySurface(t *testing.T) {
+	t.Parallel()
+
 	readme := readRepoFile(t, "README.md")
 	for _, want := range []string{"12 skills", "### Twelve skills installed by `haft init`"} {
 		if !strings.Contains(readme, want) {
@@ -95,6 +105,8 @@ func TestREADMEAdvertisesCurrentSkillOnlySurface(t *testing.T) {
 // TestHDecideSkillRoutesOnlyDirectOperatorRequests verifies that h-decide may
 // route implicitly while the skill token itself remains non-authoritative.
 func TestHDecideSkillRoutesOnlyDirectOperatorRequests(t *testing.T) {
+	t.Parallel()
+
 	content := string(embeddedHDecideSkill)
 
 	required := []string{
@@ -114,6 +126,8 @@ func TestHDecideSkillRoutesOnlyDirectOperatorRequests(t *testing.T) {
 // TestHReasonSkill_IsSourceFirstUmbrella verifies that h-reason is the compact
 // FPF entrypoint without rebuilding a shadow router or a universal work order.
 func TestHReasonSkill_IsSourceFirstUmbrella(t *testing.T) {
+	t.Parallel()
+
 	content := string(embeddedHReasonSkill)
 
 	for _, skill := range []string{"h-frame", "h-diagnose", "h-explore", "h-compare", "h-decide", "h-verify", "h-spec"} {
@@ -173,6 +187,8 @@ func TestHReasonSkill_IsSourceFirstUmbrella(t *testing.T) {
 }
 
 func TestSubstantiveSkillsDoNotCarryShadowFPFRouter(t *testing.T) {
+	t.Parallel()
+
 	skills := map[string][]byte{
 		"h-frame":    embeddedHFrameSkill,
 		"h-diagnose": embeddedHDiagnoseSkill,
@@ -203,6 +219,8 @@ func TestSubstantiveSkillsDoNotCarryShadowFPFRouter(t *testing.T) {
 }
 
 func TestIndependentAutoSkillsCarryConditionalMemoryOrientation(t *testing.T) {
+	t.Parallel()
+
 	reasoningSkills := map[string][]byte{
 		"h-frame":    embeddedHFrameSkill,
 		"h-diagnose": embeddedHDiagnoseSkill,

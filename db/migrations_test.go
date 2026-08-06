@@ -41,6 +41,8 @@ func newStoreBeforeAuthoritySourceMigration(t *testing.T) *Store {
 }
 
 func TestRunMigrations_FreshDatabase(t *testing.T) {
+	t.Parallel()
+
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
@@ -204,6 +206,8 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 }
 
 func TestRunMigrations_ProjectLedgerBindingRejectsWeakIDAndForeignRoot(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -250,6 +254,8 @@ func TestRunMigrations_ProjectLedgerBindingRejectsWeakIDAndForeignRoot(t *testin
 }
 
 func TestRunMigrations_SemanticReviewLedgerIsDistinctAppendOnlyAndExact(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -346,6 +352,8 @@ func TestRunMigrations_SemanticReviewLedgerIsDistinctAppendOnlyAndExact(t *testi
 }
 
 func TestRunMigrations_AuthorityLedgerIsAppendOnly(t *testing.T) {
+	t.Parallel()
+
 	store := newStoreBeforeAuthoritySourceMigration(t)
 	defer store.Close()
 	insertTypedMemoryDAGFixture(t, store.conn)
@@ -424,6 +432,8 @@ func TestRunMigrations_AuthorityLedgerIsAppendOnly(t *testing.T) {
 }
 
 func TestRunMigrations_ProfileOnboardingWorkHasOneCanonicalDigest(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -500,6 +510,8 @@ func TestRunMigrations_ProfileOnboardingWorkHasOneCanonicalDigest(t *testing.T) 
 }
 
 func TestRunMigrations_ProfileAdmissionBindsExactSemanticSupport(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -559,6 +571,8 @@ func TestRunMigrations_ProfileAdmissionBindsExactSemanticSupport(t *testing.T) {
 }
 
 func TestRunMigrations_TypedMemoryValueTablesAreAppendOnly(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -588,6 +602,8 @@ func TestRunMigrations_TypedMemoryValueTablesAreAppendOnly(t *testing.T) {
 }
 
 func TestRunMigrations_TypedMemoryRejectsMismatchedDigestPairs(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -657,6 +673,8 @@ func TestRunMigrations_TypedMemoryRejectsMismatchedDigestPairs(t *testing.T) {
 }
 
 func TestRunMigrations_ExecutorAdmissionUsesClosedIdentityAndSessionWindow(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -687,6 +705,8 @@ func TestRunMigrations_ExecutorAdmissionUsesClosedIdentityAndSessionWindow(t *te
 }
 
 func TestRunMigrations_AuthorityPersistenceCarriesExactAssignmentAndMethodTuple(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "test.db"))
 	if err != nil {
 		t.Fatalf("NewStore failed: %v", err)
@@ -712,6 +732,8 @@ func TestRunMigrations_AuthorityPersistenceCarriesExactAssignmentAndMethodTuple(
 }
 
 func TestRunMigrations_ProfileAdmissionRequiresExactTypedMemoryAndAuthoritySession(t *testing.T) {
+	t.Parallel()
+
 	t.Run("exact tuple is admitted", func(t *testing.T) {
 		store := newStoreBeforeAuthoritySourceMigration(t)
 		defer store.Close()
@@ -738,6 +760,8 @@ func TestRunMigrations_ProfileAdmissionRequiresExactTypedMemoryAndAuthoritySessi
 }
 
 func TestRunMigrations_AuthorityPresentationAndResolutionBindExactAssignmentAndMethod(t *testing.T) {
+	t.Parallel()
+
 	t.Run("presentation rejects assignment digest mismatch", func(t *testing.T) {
 		store := newStoreBeforeAuthoritySourceMigration(t)
 		defer store.Close()
@@ -800,6 +824,8 @@ func TestRunMigrations_AuthorityPresentationAndResolutionBindExactAssignmentAndM
 }
 
 func TestRunMigrations_ProfileAdmissionRevisionRejectsMaxInt64(t *testing.T) {
+	t.Parallel()
+
 	store := newStoreBeforeAuthoritySourceMigration(t)
 	defer store.Close()
 
@@ -1192,6 +1218,8 @@ func tableColumns(t *testing.T, conn *sql.DB, table string) map[string]bool {
 }
 
 func TestRunMigrations_ExistingDatabase(t *testing.T) {
+	t.Parallel()
+
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
@@ -1243,6 +1271,8 @@ func TestRunMigrations_ExistingDatabase(t *testing.T) {
 }
 
 func TestRunMigrations_Idempotent(t *testing.T) {
+	t.Parallel()
+
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 
@@ -1317,6 +1347,8 @@ func TestMigrateRejectsFutureSchemaBeforeApplyingOlderBinaryChanges(
 }
 
 func TestRunMigrations_AddsEpistemicDebtBudget(t *testing.T) {
+	t.Parallel()
+
 	tempDir := t.TempDir()
 	dbPath := filepath.Join(tempDir, "test.db")
 

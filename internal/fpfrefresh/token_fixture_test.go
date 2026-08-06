@@ -10,6 +10,8 @@ import (
 )
 
 func TestReadTokenGateCoordinatesBindsExactFixtureBytes(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "corpus.json")
 	payload := []byte(`{
   "schema_version": "haft.fpf-query-token-gate-corpus/v1",
@@ -49,6 +51,8 @@ func TestReadTokenGateCoordinatesBindsExactFixtureBytes(t *testing.T) {
 }
 
 func TestReadTokenGateCoordinatesRejectsMalformedEnvelope(t *testing.T) {
+	t.Parallel()
+
 	tests := map[string]string{
 		"wrong schema": `{
   "schema_version": "wrong",
@@ -90,6 +94,8 @@ func TestReadTokenGateCoordinatesRejectsMalformedEnvelope(t *testing.T) {
 }
 
 func TestReadTokenGateCoordinatesRejectsOversizedFixture(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "corpus.json")
 	if err := os.WriteFile(
 		path,
@@ -113,6 +119,8 @@ func TestReadBoundedTokenGateFixtureRejectsOversizedStream(t *testing.T) {
 }
 
 func TestTokenGateCompatibilityDeltasDistinguishUnboundAndChangedFixture(t *testing.T) {
+	t.Parallel()
+
 	const digestA = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 	const digestB = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	candidate := &TokenGateCoordinates{
@@ -157,6 +165,8 @@ func TestTokenGateCompatibilityDeltasDistinguishUnboundAndChangedFixture(t *test
 }
 
 func TestVerifyRepositoryTokenGateFixtureFailsClosedOnByteDrift(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "corpus.json")
 	payload := []byte(`{
   "schema_version": "haft.fpf-query-token-gate-corpus/v1",

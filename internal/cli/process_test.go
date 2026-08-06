@@ -552,6 +552,8 @@ func TestProcessCheckDoesNotInlineIntoDefaultStatus(t *testing.T) {
 }
 
 func TestProcessDefaultStatusActionLinesCountsOperatorDrilldowns(t *testing.T) {
+	t.Parallel()
+
 	status := strings.Join([]string{
 		"## Haft Status",
 		"- **HIGH** Current drift needs scoped inspection: inspect exact items with `haft_query(action=\"drift_events\")`",
@@ -579,6 +581,8 @@ func TestProcessDefaultStatusActionLinesCountsOperatorDrilldowns(t *testing.T) {
 }
 
 func TestSummarizeProcessCheckResultsClassifiesStatuses(t *testing.T) {
+	t.Parallel()
+
 	results := []ProcessCheckResult{
 		{Status: processCheckStatusPass},
 		{Status: processCheckStatusFail},
@@ -600,6 +604,8 @@ func TestSummarizeProcessCheckResultsClassifiesStatuses(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportReturnsContinuePolicy(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -663,6 +669,8 @@ func TestBuildProcessValueSliceReportReturnsContinuePolicy(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportRequiresEqualBudgetPairsForPolicy(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -713,6 +721,8 @@ func TestBuildProcessValueSliceReportRequiresEqualBudgetPairsForPolicy(t *testin
 }
 
 func TestBuildProcessValueSliceReportIgnoresUnpairedFavorableHaftCases(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -775,6 +785,8 @@ func TestBuildProcessValueSliceReportIgnoresUnpairedFavorableHaftCases(t *testin
 }
 
 func TestBuildProcessValueSliceReportRequiresSameTaskPair(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -822,6 +834,8 @@ func TestBuildProcessValueSliceReportRequiresSameTaskPair(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportAllowsComparisonGroupRefPair(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -869,6 +883,8 @@ func TestBuildProcessValueSliceReportAllowsComparisonGroupRefPair(t *testing.T) 
 }
 
 func TestBuildProcessValueSliceReportAllowsTaskTextDigestPair(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -919,6 +935,8 @@ func TestBuildProcessValueSliceReportAllowsTaskTextDigestPair(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportRejectsIncompleteBudgetPair(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -961,6 +979,8 @@ func TestBuildProcessValueSliceReportRejectsIncompleteBudgetPair(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportMissingMetricsPreventContinue(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -1010,6 +1030,8 @@ func TestBuildProcessValueSliceReportMissingMetricsPreventContinue(t *testing.T)
 }
 
 func TestBuildProcessValueSliceReportObservedFieldsCannotInventMetric(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -1060,6 +1082,8 @@ func TestBuildProcessValueSliceReportObservedFieldsCannotInventMetric(t *testing
 }
 
 func TestBuildProcessValueSliceReportNullMetricIsMissing(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -1107,6 +1131,8 @@ func TestBuildProcessValueSliceReportNullMetricIsMissing(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportExplicitZeroIsObserved(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {
@@ -1154,6 +1180,8 @@ func TestBuildProcessValueSliceReportExplicitZeroIsObserved(t *testing.T) {
 }
 
 func TestBuildProcessValueSliceReportPauseCheckpointOnPairedRuntimeBurden(t *testing.T) {
+	t.Parallel()
+
 	input := []byte(`{
   "cases": [
     {

@@ -165,6 +165,8 @@ func TestGenesisServiceMapsBusyBeginAsStorageFailureWithoutWrites(
 func TestPreCommitNotSelectedReasonUsesTypedOperationalFailuresOnly(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		err    error
@@ -314,6 +316,8 @@ func TestGenesisServiceRejectsMissingHostRequestWithoutWrites(
 func TestSelectionReadyLoadRejectionUsesOnlyTypedStoreFailures(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		err    error

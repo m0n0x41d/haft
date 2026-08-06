@@ -11,6 +11,8 @@ import (
 func TestTypedMemoryKindClassificationMigration54PreservesV53HistoryByteExactly(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, _, fixture := openDatabaseBeforeRelationalAssertion53(t, true)
 	defer database.Close()
 	if err := Migrate(
@@ -115,6 +117,8 @@ func TestTypedMemoryKindClassificationMigration54PreservesV53HistoryByteExactly(
 func TestTypedMemoryKindClassificationMigration54InstallsExactCurrentBoundary(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "v54-fresh.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

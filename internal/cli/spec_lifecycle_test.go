@@ -144,6 +144,8 @@ func TestRunSpecNextSummaryShowsOneActionableRecoveryWithoutCanonicalProfile(
 func TestPublicSpecLifecycleKeepsWorkflowReadyDistinctFromHealthFindings(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projection := specflow.SpecLifecycleProjection{
 		State:  specflow.LifecycleStateReady,
 		Action: specflow.LifecycleActionNone,

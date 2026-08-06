@@ -8,6 +8,8 @@ import (
 )
 
 func TestAuditProjectPathCarriersCountsExactSupportedReferences(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
 	projectRoot := filepath.Join(root, "new", "haft")
@@ -40,6 +42,8 @@ func TestAuditProjectPathCarriersCountsExactSupportedReferences(t *testing.T) {
 }
 
 func TestRepairProjectPathCarriersRemovesStaleCodexSectionWhenCurrentRootExists(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	configPath := filepath.Join(root, ".codex", "config.toml")
 	oldRoot := filepath.Join(root, "old", "haft")
@@ -80,6 +84,8 @@ func TestRepairProjectPathCarriersRemovesStaleCodexSectionWhenCurrentRootExists(
 }
 
 func TestRepairProjectPathCarriersRenamesCodexSectionWhenCurrentRootMissing(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	configPath := filepath.Join(root, ".codex", "config.toml")
 	oldRoot := filepath.Join(root, "old", "haft")
@@ -109,6 +115,8 @@ func TestRepairProjectPathCarriersRenamesCodexSectionWhenCurrentRootMissing(t *t
 }
 
 func TestRepairJSONStringProjectRootOnlyRewritesExactStringLiteral(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	statePath := filepath.Join(root, ".claude.json")
 	oldRoot := filepath.Join(root, "old", "haft")

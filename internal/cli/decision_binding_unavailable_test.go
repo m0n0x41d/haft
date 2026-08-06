@@ -8,6 +8,8 @@ import (
 )
 
 func TestNonManualDecisionRecordWritesFailClosed(t *testing.T) {
+	t.Parallel()
+
 	t.Run("internal helper", func(t *testing.T) {
 		_, err := createArtifactFromInput(
 			context.Background(),

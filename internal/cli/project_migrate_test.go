@@ -9,6 +9,8 @@ import (
 )
 
 func TestProjectMigrateCommandRequiresExactRootAndIdentity(t *testing.T) {
+	t.Parallel()
+
 	previousRoot := projectMigrateRoot
 	previousID := projectMigrateID
 	projectMigrateRoot = ""
@@ -33,6 +35,8 @@ func TestProjectMigrateCommandRequiresExactRootAndIdentity(t *testing.T) {
 }
 
 func TestProjectMigrateCommandExposesNoHostSelectionFlags(t *testing.T) {
+	t.Parallel()
+
 	if projectMigrateCmd.Flags().Lookup("project-root") == nil {
 		t.Fatal("project migrate is missing --project-root")
 	}

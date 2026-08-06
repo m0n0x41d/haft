@@ -10,6 +10,8 @@ import (
 func TestCurrentCoherentHostApplicabilityIsCompleteAndHookFree(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	applicability, err := currentCoherentHostApplicabilityRegistry()
 	if err != nil {
 		t.Fatalf("currentCoherentHostApplicabilityRegistry: %v", err)
@@ -49,6 +51,8 @@ func TestCurrentCoherentHostApplicabilityIsCompleteAndHookFree(
 func TestCurrentPiApplicabilityRequiresControlledPackageCoarsening(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	registry, err := currentCoherentHostApplicabilityRegistry()
 	if err != nil {
 		t.Fatalf("currentCoherentHostApplicabilityRegistry: %v", err)
@@ -90,6 +94,8 @@ func TestCurrentPiApplicabilityRequiresControlledPackageCoarsening(
 }
 
 func TestOnlyPiRepresentsComponentsInsideAPackage(t *testing.T) {
+	t.Parallel()
+
 	registry, err := currentCoherentHostApplicabilityRegistry()
 	if err != nil {
 		t.Fatalf("currentCoherentHostApplicabilityRegistry: %v", err)

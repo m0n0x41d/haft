@@ -57,6 +57,25 @@ func TestRuntimeEvaluationBasisSealDerivesCanonicalPermutationInvariantIdentity(
 	if err := first.VerifyResolvedClosure(); err != nil {
 		t.Fatalf("RuntimeEvaluationBasisArtifact.VerifyResolvedClosure(): %v", err)
 	}
+	mechanisms, policies, err := first.ResolvedClosureCanonicalBytes()
+	if err != nil {
+		t.Fatalf("RuntimeEvaluationBasisArtifact.ResolvedClosureCanonicalBytes(): %v", err)
+	}
+	if len(mechanisms) == 0 {
+		t.Fatal("resolved X exposed no runtime mechanism canonical bytes")
+	}
+	originalMechanism := append([]byte(nil), mechanisms[0]...)
+	mechanisms[0][0] ^= 0xff
+	reloadedMechanisms, reloadedPolicies, err := first.ResolvedClosureCanonicalBytes()
+	if err != nil {
+		t.Fatalf("reload resolved X canonical bytes: %v", err)
+	}
+	if !bytes.Equal(reloadedMechanisms[0], originalMechanism) {
+		t.Fatal("resolved X canonical-byte accessor leaked mutable mechanism storage")
+	}
+	if len(reloadedPolicies) != len(policies) {
+		t.Fatal("resolved X canonical-byte accessor changed policy closure")
+	}
 
 	decoded, err := DecodeRuntimeEvaluationBasisArtifact(first.CanonicalBytes())
 	if err != nil {
@@ -68,6 +87,10 @@ func TestRuntimeEvaluationBasisSealDerivesCanonicalPermutationInvariantIdentity(
 	if err := decoded.VerifyResolvedClosure(); err == nil ||
 		!strings.Contains(err.Error(), "is not resolved") {
 		t.Fatalf("decoded X transitive closure error = %v", err)
+	}
+	if _, _, err := decoded.ResolvedClosureCanonicalBytes(); err == nil ||
+		!strings.Contains(err.Error(), "is not resolved") {
+		t.Fatalf("decoded X canonical closure error = %v", err)
 	}
 	verified, err := VerifyRuntimeEvaluationBasisArtifact(first.Ref(), first.CanonicalBytes())
 	if err != nil {

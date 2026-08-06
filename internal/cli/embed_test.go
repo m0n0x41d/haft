@@ -9,6 +9,8 @@ import (
 )
 
 func TestWriteEmbedStatusSummaryShowsProcessContractAndMemoryNote(t *testing.T) {
+	t.Parallel()
+
 	report := embedding.SidecarStatusReport{
 		SharedEnabled: true,
 		SocketDir:     "/tmp/haft-501/embed",

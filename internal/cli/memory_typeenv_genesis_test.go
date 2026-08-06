@@ -22,6 +22,8 @@ import (
 func TestMemoryTypeEnvGenesisCommandsExposeExplicitPrepareAndSelectBoundary(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	var typeEnvCommand *cobra.Command
 	for _, command := range memoryCmd.Commands() {
 		if command.Name() == memoryTypeEnvCmd.Name() {
@@ -382,6 +384,8 @@ func TestMemoryTypeEnvPrepareAllowsDefaultGenesisWithoutCanonicalProfile(
 func TestReadProjectTypeEnvGenesisReviewRejectsOversizedCarrier(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".haft"), 0o700); err != nil {
 		t.Fatalf("create .haft directory: %v", err)
@@ -411,6 +415,8 @@ func TestReadProjectTypeEnvGenesisReviewRejectsOversizedCarrier(
 func TestWriteProjectTypeEnvGenesisReviewDoesNotSilentlyReplaceReview(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	root := t.TempDir()
 	if err := os.Mkdir(filepath.Join(root, ".haft"), 0o700); err != nil {
 		t.Fatalf("create .haft directory: %v", err)
@@ -461,6 +467,8 @@ func TestWriteProjectTypeEnvGenesisReviewDoesNotSilentlyReplaceReview(
 func TestProjectTypeEnvGenesisResultResponsePreservesConflictAndUnknownCoordinates(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	key, err :=
 		projecttypeenvselection.NewProjectTypeEnvHeadSelectionIdempotencyKey(
 			"genesis:test-result-contract",

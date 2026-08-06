@@ -16,6 +16,8 @@ import (
 )
 
 func TestHandleQuintQuery_FPFReturnsClosedSourceNativeUnion(t *testing.T) {
+	t.Parallel()
+
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
@@ -46,6 +48,8 @@ func TestHandleQuintQuery_FPFReturnsClosedSourceNativeUnion(t *testing.T) {
 }
 
 func TestHandleQuintQuery_FPFLookupAndInspectAreExact(t *testing.T) {
+	t.Parallel()
+
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
@@ -77,6 +81,8 @@ func TestHandleQuintQuery_FPFLookupAndInspectAreExact(t *testing.T) {
 }
 
 func TestHandleQuintQuery_FPFRequiresCanonicalMode(t *testing.T) {
+	t.Parallel()
+
 	_, err := handleQuintQuery(context.Background(), setupCLIArtifactStore(t), nil, t.TempDir(), map[string]any{
 		"action": "fpf",
 		"query":  "legacy implicit search",
@@ -92,6 +98,8 @@ func TestHandleQuintQuery_FPFRequiresCanonicalMode(t *testing.T) {
 }
 
 func TestFPFQueryRequestFromArgsPreservesTypedConcernFields(t *testing.T) {
+	t.Parallel()
+
 	request, err := fpfQueryRequestFromArgs(map[string]any{
 		"mode":                        "concern",
 		"query":                       "How should this concern be framed?",
@@ -123,6 +131,8 @@ func TestFPFQueryRequestFromArgsPreservesTypedConcernFields(t *testing.T) {
 }
 
 func TestFPFQueryRequestFromArgsRejectsConcernRoles(t *testing.T) {
+	t.Parallel()
+
 	_, err := fpfQueryRequestFromArgs(map[string]any{
 		"mode":  "concern",
 		"query": "How should this concern be framed?",
@@ -134,6 +144,8 @@ func TestFPFQueryRequestFromArgsRejectsConcernRoles(t *testing.T) {
 }
 
 func TestFPFQueryRequestFromArgsRejectsFractionalBudget(t *testing.T) {
+	t.Parallel()
+
 	_, err := fpfQueryRequestFromArgs(map[string]any{
 		"mode":                 "concern",
 		"query":                "bounded concern",
@@ -145,6 +157,8 @@ func TestFPFQueryRequestFromArgsRejectsFractionalBudget(t *testing.T) {
 }
 
 func TestHandleQuintQuery_FPFRejectsPresentNonStringPublicationFields(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	tests := []struct {
 		name  string
@@ -180,6 +194,8 @@ func TestHandleQuintQuery_FPFRejectsPresentNonStringPublicationFields(t *testing
 }
 
 func TestHandleQuintQuery_RelatedArtifactIDReturnsProblemCardJSON(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 
@@ -246,6 +262,8 @@ func TestHandleQuintQuery_RelatedArtifactIDReturnsProblemCardJSON(t *testing.T) 
 }
 
 func TestHandleQuintQuery_ExactSearchAndCanonicalRelatedContract(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 	target := &artifact.Artifact{
@@ -326,6 +344,8 @@ func TestHandleQuintQuery_ExactSearchAndCanonicalRelatedContract(t *testing.T) {
 }
 
 func TestHandleQuintQuery_RelatedFileModeRemainsAvailable(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 	decision := &artifact.Artifact{
@@ -351,6 +371,8 @@ func TestHandleQuintQuery_RelatedFileModeRemainsAvailable(t *testing.T) {
 }
 
 func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 
@@ -425,6 +447,8 @@ func TestHandleQuintQuery_RelatedProblemPayloadIncludesExactSemanticViews(t *tes
 }
 
 func TestHandleQuintProblem_FramePersistsProblemProfile(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store := setupCLIArtifactStore(t)
 

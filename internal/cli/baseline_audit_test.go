@@ -9,6 +9,8 @@ import (
 )
 
 func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	writeBaselineAuditFixture(t, root, "internal/project/specflow/baseline.go", strings.Join([]string{
 		"const profile = \"spec_section_approval_baseline\"",
@@ -484,6 +486,8 @@ func TestBuildBaselineTermAuditReportClassifiesAndSkipsNoise(t *testing.T) {
 }
 
 func TestWriteBaselineAuditText(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 	report := baselineTermAuditReport{
 		SchemaVersion: 1,
@@ -573,6 +577,8 @@ func TestWriteBaselineAuditText(t *testing.T) {
 }
 
 func TestLimitBaselineTermAuditReportPreservesSummaryAndMarksOmission(t *testing.T) {
+	t.Parallel()
+
 	report := baselineTermAuditReport{
 		Summary: baselineTermAuditSummary{
 			MatchedLines:            3,
@@ -611,6 +617,8 @@ func TestLimitBaselineTermAuditReportPreservesSummaryAndMarksOmission(t *testing
 }
 
 func TestClassifyBaselineTermTreatsNotRebaselineBoundaryAsLifecycleAuthority(t *testing.T) {
+	t.Parallel()
+
 	category, rationale := classifyBaselineTerm(
 		"internal/cli/spec_apply_change_test.go",
 		`AuthorityBoundary: "source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth"`,
@@ -622,6 +630,8 @@ func TestClassifyBaselineTermTreatsNotRebaselineBoundaryAsLifecycleAuthority(t *
 }
 
 func TestClassifyBaselineTermTreatsBaselineAuditInterfaceTestsAsContractSurface(t *testing.T) {
+	t.Parallel()
+
 	category, rationale := classifyBaselineTerm(
 		"internal/cli/interface_test.go",
 		`capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "baseline.audit")`,

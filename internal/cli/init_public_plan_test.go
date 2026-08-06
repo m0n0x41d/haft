@@ -101,6 +101,8 @@ func TestCompilePublicHostInitPlanUsesExactRequestBindings(
 func TestCompilePublicCorePlanIsPureForGreenfieldProject(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := filepath.Join(t.TempDir(), "greenfield")
 	userHomeRoot := t.TempDir()
 	projectID := "qnt_e3149c17"

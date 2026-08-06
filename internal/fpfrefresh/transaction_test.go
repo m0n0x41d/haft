@@ -12,6 +12,8 @@ import (
 func TestPrepareApplyReceiptRejectsPredecessorLockDriftAfterCheck(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	tests := []struct {
 		name            string
 		checkedPresence ReceiptLockPresence
@@ -106,6 +108,8 @@ func TestPrepareApplyReceiptRejectsPredecessorLockDriftAfterCheck(
 }
 
 func TestPrepareApplyReceiptUsesCheckedPredecessorLockDigest(t *testing.T) {
+	t.Parallel()
+
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	check := transactionTestCandidateCheck(t, fixture, layout)
@@ -153,6 +157,8 @@ func TestPrepareApplyReceiptUsesCheckedPredecessorLockDigest(t *testing.T) {
 }
 
 func TestPrepareApplyReceiptReturnsBusyWithoutMutation(t *testing.T) {
+	t.Parallel()
+
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	check := transactionTestCandidateCheck(t, fixture, layout)
@@ -211,6 +217,8 @@ func TestPrepareApplyReceiptReturnsBusyWithoutMutation(t *testing.T) {
 }
 
 func TestApplyCheckedCandidateCompletesSerializedReceiptLifecycle(t *testing.T) {
+	t.Parallel()
+
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	check := transactionTestCandidateCheck(t, fixture, layout)
@@ -245,6 +253,8 @@ func TestApplyCheckedCandidateCompletesSerializedReceiptLifecycle(t *testing.T) 
 }
 
 func TestCheckCandidatePreservesReportWhenWorkspaceCleanupFails(t *testing.T) {
+	t.Parallel()
+
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	cleanupFailure := errors.New("injected predecessor workspace cleanup failure")
@@ -300,6 +310,8 @@ func TestCheckCandidatePreservesReportWhenWorkspaceCleanupFails(t *testing.T) {
 }
 
 func TestCheckCandidateKeepsVerifiedArtifactWhenTokenGateNeedsReview(t *testing.T) {
+	t.Parallel()
+
 	fixture := newRefreshEffectsFixture(t)
 	layout := transactionTestLayout(t, fixture)
 	builder := IndexBuilderFunc(func(
@@ -361,6 +373,8 @@ func TestCheckCandidateKeepsVerifiedArtifactWhenTokenGateNeedsReview(t *testing.
 }
 
 func TestDurableLockArtifactNameSeparatesSameSourceLockRevisions(t *testing.T) {
+	t.Parallel()
+
 	const sourceRevision = "308edacfa2bdb2c60d07e4e10c0deb1f260a6a31"
 	firstDigest := "sha256:" + strings.Repeat("a", 64)
 	secondDigest := "sha256:" + strings.Repeat("b", 64)

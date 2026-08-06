@@ -125,6 +125,8 @@ func assertMemoryValidationSchemaRetained(
 func TestProjectMemoryReadHandlerRejectsCrossActionSupersetShape(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	payload := json.RawMessage(`{
 	  "contract_version":"haft.memory.v1",
 	  "action":"resolve",

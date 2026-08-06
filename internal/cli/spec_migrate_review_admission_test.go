@@ -193,6 +193,8 @@ func TestSpecMigrationReviewAdmissionPostTTYDriftKeepsSourceWithoutDomainEffect(
 }
 
 func TestWriteSpecMigrationV2ReviewAdmissionResultHidesOpaqueReferences(t *testing.T) {
+	t.Parallel()
+
 	result := specMigrationV2ReviewAdmissionResult{
 		reviewRef:             "review-admission:abc",
 		reviewAdmissionDigest: "sha256:review",

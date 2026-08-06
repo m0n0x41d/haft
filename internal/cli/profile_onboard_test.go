@@ -16,6 +16,8 @@ import (
 )
 
 func TestProfileOnboardHaftSoftwareCommandIsManualAndBounded(t *testing.T) {
+	t.Parallel()
+
 	if profileOnboardHaftSoftwareCmd.Use != "onboard-haft-software" {
 		t.Fatalf("command use = %q", profileOnboardHaftSoftwareCmd.Use)
 	}
@@ -59,6 +61,8 @@ func TestProfileOnboardHaftSoftwareCommandIsManualAndBounded(t *testing.T) {
 }
 
 func TestWriteProfileOnboardResponsePrintsTypedTextAndJSON(t *testing.T) {
+	t.Parallel()
+
 	response := profileOnboardTestResponse()
 	textOutput := &bytes.Buffer{}
 	if err := writeProfileOnboardResponse(textOutput, response, false); err != nil {
@@ -103,6 +107,8 @@ func TestWriteProfileOnboardResponsePrintsTypedTextAndJSON(t *testing.T) {
 }
 
 func TestProfileOnboardProjectionFailurePreservesCommittedAdmission(t *testing.T) {
+	t.Parallel()
+
 	response := profileOnboardTestResponse()
 	response.State = "projection_failed"
 	response.Projection = nil

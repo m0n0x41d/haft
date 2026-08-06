@@ -1234,6 +1234,8 @@ HAFT_PROJECT_ROOT = "."
 func TestPublicLegacyPublishedV8CodexHaftTablesRequireExactBinaryShape(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	valid := []byte(`[mcp_servers.haft]
 command = "/usr/local/bin/haft"
 args = ["serve"]
@@ -2040,6 +2042,8 @@ func TestPublicInitCoreOnlyRejectsAgentsBeforeApply(t *testing.T) {
 }
 
 func TestPublicInitMenuCoversCoherentHostRegistry(t *testing.T) {
+	t.Parallel()
+
 	registry, err := currentCoherentHostApplicabilityRegistry()
 	if err != nil {
 		t.Fatalf("currentCoherentHostApplicabilityRegistry: %v", err)

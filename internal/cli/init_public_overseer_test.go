@@ -173,6 +173,8 @@ func TestTypedPublicOverseerPlanIsExactPreservesHookAndBecomesCurrent(
 func TestPublicExactFileEffectsRejectStalePreviewBeforeAnyWrite(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	root, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("resolve root: %v", err)

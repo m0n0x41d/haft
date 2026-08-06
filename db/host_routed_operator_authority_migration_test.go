@@ -9,6 +9,8 @@ import (
 func TestHostRoutedOperatorAuthorityMigration56InstallsClosedCurrentGeneration(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "host-routed-v56.db"))
 	if err != nil {
 		t.Fatalf("open current store: %v", err)
@@ -61,6 +63,8 @@ func TestHostRoutedOperatorAuthorityMigration56InstallsClosedCurrentGeneration(
 func TestHostRoutedOperatorAuthorityMigration56SealsHistoricalWriters(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "sealed-authority-v56.db"))
 	if err != nil {
 		t.Fatalf("open current store: %v", err)
@@ -84,6 +88,8 @@ func TestHostRoutedOperatorAuthorityMigration56SealsHistoricalWriters(
 func TestHostRoutedOperatorAuthorityMigration56PreservesTypeEnvHeadAndHistory(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, basisTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, basisTypeEnvRef)

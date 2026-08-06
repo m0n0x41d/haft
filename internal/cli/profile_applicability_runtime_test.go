@@ -45,6 +45,8 @@ func TestCanonicalProjectSpecificationApplicabilityIsUnderdeterminedWithoutAdmis
 func TestProjectSpecificationScopeSelectionDoesNotChooseMixedByOrder(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -74,6 +76,8 @@ func TestProjectSpecificationScopeSelectionDoesNotChooseMixedByOrder(
 func TestProjectSpecificationScopeSelectionUsesOnlyCanonicalSingleton(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -97,6 +101,8 @@ func TestProjectSpecificationScopeSelectionUsesOnlyCanonicalSingleton(
 func TestProjectSpecificationScopeSelectionAcceptsExactMixedScope(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -126,6 +132,8 @@ func TestProjectSpecificationScopeSelectionAcceptsExactMixedScope(
 func TestProjectSpecificationScopeSelectionReportsUnknownExactScope(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -153,6 +161,8 @@ func TestProjectSpecificationScopeSelectionReportsUnknownExactScope(
 func TestProjectSpecificationApplicabilityRequiresScopeForMixedMatrix(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -182,6 +192,8 @@ func TestProjectSpecificationApplicabilityRequiresScopeForMixedMatrix(
 func TestProjectSpecificationApplicabilityResolvesExactMixedScope(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -219,6 +231,8 @@ func TestProjectSpecificationApplicabilityResolvesExactMixedScope(
 func TestResolvedProjectSpecificationApplicabilityRejectsMismatchedProfileDigest(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -254,6 +268,8 @@ func TestResolvedProjectSpecificationApplicabilityRejectsMismatchedProfileDigest
 func TestResolvedProjectSpecificationApplicabilityBindsOriginatingScopeRequest(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{

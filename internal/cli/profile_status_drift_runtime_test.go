@@ -15,6 +15,8 @@ import (
 func TestProjectProfileDriftProjectionKeepsDeclaredAuthoritySeparate(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	inspection := profileInspectionResponse{
 		CanonicalProfile: canonicalProfileView{
 			Kind:                  "declared",

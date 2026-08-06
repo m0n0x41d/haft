@@ -14,6 +14,8 @@ import (
 )
 
 func TestHandleQuintQueryResolveTerm_RejectsMissingTerm(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	haftDir := filepath.Join(root, ".haft")
 
@@ -24,6 +26,8 @@ func TestHandleQuintQueryResolveTerm_RejectsMissingTerm(t *testing.T) {
 }
 
 func TestHandleQuintQueryResolveTerm_AbsentWhenNoMatches(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	haftDir := filepath.Join(root, ".haft")
 
@@ -48,6 +52,8 @@ func TestHandleQuintQueryResolveTerm_AbsentWhenNoMatches(t *testing.T) {
 }
 
 func TestHandleQuintQueryResolveTerm_ResolvedWhenSingleTermMapEntry(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	writeResolveTermMap(t, root, "Harnessability\n    category: target\n    definition: Project ready for harness engineering.")
 	haftDir := filepath.Join(root, ".haft")
@@ -82,6 +88,8 @@ func TestHandleQuintQueryResolveTerm_ResolvedWhenSingleTermMapEntry(t *testing.T
 }
 
 func TestHandleQuintQueryResolveTerm_AmbiguousWithMultipleSpecSections(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	// One term-map entry + two sections that mention the term — agent must
 	// surface both candidates instead of guessing.
@@ -113,6 +121,8 @@ func TestHandleQuintQueryResolveTerm_AmbiguousWithMultipleSpecSections(t *testin
 }
 
 func TestHandleQuintQueryResolveTerm_CaseInsensitiveTermMap(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	writeResolveTermMap(t, root, "HarnessableProject\n    category: target\n    definition: Foo.")
 	haftDir := filepath.Join(root, ".haft")

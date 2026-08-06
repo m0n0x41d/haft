@@ -19,6 +19,8 @@ import (
 )
 
 func TestMemoryValidationCLIAndMCPShareStableReadOnlyPresentation(t *testing.T) {
+	t.Parallel()
+
 	runtime, err := newReadOnlyMemoryValidation(context.Background())
 	if err != nil {
 		t.Fatalf("newReadOnlyMemoryValidation() error = %v", err)
@@ -102,6 +104,8 @@ func TestMemoryValidationCLIAndMCPShareStableReadOnlyPresentation(t *testing.T) 
 }
 
 func TestMemoryValidateReadsStdinBytesStrictly(t *testing.T) {
+	t.Parallel()
+
 	payload := bundledMemoryValidationFixture()
 	fromStdin := runMemoryValidateForTest(t, "-", bytes.NewReader(payload))
 
@@ -151,6 +155,8 @@ func TestMemoryValidateReadsStdinBytesStrictly(t *testing.T) {
 }
 
 func TestMemoryValidationProductionResolverNeverFabricatesProjectBasis(t *testing.T) {
+	t.Parallel()
+
 	runtime, err := newReadOnlyMemoryValidation(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -226,6 +232,8 @@ func TestMemoryValidationProductionResolverNeverFabricatesProjectBasis(t *testin
 func TestPublicMemoryValidateRoutesProjectBasisThroughCheckedReadSession(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	cases := []struct {
 		name  string
 		basis []byte
@@ -312,6 +320,8 @@ func TestMemoryValidateCallDoesNotMutateProjectTree(t *testing.T) {
 }
 
 func TestConfigureMemoryValidationAdvertisesDedicatedToolWithoutProjectBinding(t *testing.T) {
+	t.Parallel()
+
 	server := fpf.NewServer("test")
 	if err := configureMemoryValidation(context.Background(), server); err != nil {
 		t.Fatalf("configureMemoryValidation() error = %v", err)
@@ -325,6 +335,8 @@ func TestConfigureMemoryValidationAdvertisesDedicatedToolWithoutProjectBinding(t
 }
 
 func TestPreProjectMemoryHandlersReturnTypedRecovery(t *testing.T) {
+	t.Parallel()
+
 	runtime, err := newReadOnlyMemoryValidation(context.Background())
 	if err != nil {
 		t.Fatal(err)
@@ -392,6 +404,8 @@ func TestPreProjectMemoryHandlersReturnTypedRecovery(t *testing.T) {
 func TestReadOnlyMemoryValidationSurfaceRejectsAdmissionWhileCLIRegistersIt(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	registered := false
 	for _, command := range memoryCmd.Commands() {
 		if command.Name() == memoryAdmitCmd.Name() {
@@ -437,6 +451,8 @@ func TestReadOnlyMemoryValidationSurfaceRejectsAdmissionWhileCLIRegistersIt(
 }
 
 func TestMemoryValidateInterfaceContractNamesReadOnlyBoundary(t *testing.T) {
+	t.Parallel()
+
 	capability, found := findInterfaceCapability(haftInterfaceCatalog(), "memory.validate")
 	if !found {
 		t.Fatal("memory.validate interface capability missing")
@@ -499,6 +515,8 @@ func TestMemoryValidateInterfaceContractNamesReadOnlyBoundary(t *testing.T) {
 }
 
 func TestMemoryValidateCommandIsRegisteredWithRequiredInputFileFlag(t *testing.T) {
+	t.Parallel()
+
 	command, _, err := rootCmd.Find([]string{"memory", "validate"})
 	if err != nil {
 		t.Fatalf("find memory validate command: %v", err)

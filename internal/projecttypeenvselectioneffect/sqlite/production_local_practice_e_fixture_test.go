@@ -49,6 +49,8 @@ type productionLocalPracticeETarget struct {
 func TestProductionLocalPracticeEFixtureCarriesNoteAndExactRuntimeClosure(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	fixture := newProductionLocalPracticeETarget(t)
 	if fixture.extension.Ref().String() == "" {
 		t.Fatal("production Local-Practice E has no content-derived reference")
@@ -146,6 +148,8 @@ func TestProductionLocalPracticeEFixtureCarriesNoteAndExactRuntimeClosure(
 func TestProductionLocalPracticeRuntimeDiscoveryIsOrderInvariantAndNotACompleteX(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	fixture := newProductionLocalPracticeETarget(t)
 	reversed := fixture.requirements.Requirements()
 	for left, right := 0, len(reversed)-1; left < right; left, right = left+1, right-1 {
@@ -197,6 +201,8 @@ func TestProductionLocalPracticeRuntimeDiscoveryIsOrderInvariantAndNotACompleteX
 func TestProductionProblemCardMappingChangesCandidateXAndCompositeC(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	fixture := newProductionLocalPracticeETarget(t)
 	noteOnly := func(
 		t *testing.T,
@@ -261,6 +267,8 @@ func TestProductionProblemCardMappingChangesCandidateXAndCompositeC(
 func TestProductionPortfolioMappingsEachChangeCandidateXAndCompositeC(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	fixture := newProductionLocalPracticeETarget(t)
 	recordRule := recordcarrier.NewRecordMembershipEvaluatorV1().RuleRef()
 	removedIDs := []string{

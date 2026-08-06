@@ -13,6 +13,8 @@ import (
 func TestProjectRecoverBindingCommandRequiresExactRootAndIdentity(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	previousRoot := projectRecoverBindingRoot
 	previousID := projectRecoverBindingID
 	projectRecoverBindingRoot = ""
@@ -39,6 +41,8 @@ func TestProjectRecoverBindingCommandRequiresExactRootAndIdentity(
 func TestProjectRecoverBindingCommandExposesOnlyExactIdentityFlags(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	if projectRecoverBindingCmd.Flags().Lookup("project-root") == nil {
 		t.Fatal("project recover-binding is missing --project-root")
 	}
@@ -64,6 +68,8 @@ func TestProjectRecoverBindingCommandExposesOnlyExactIdentityFlags(
 func TestCurrentProjectLedgerRepairRoutesMissingBindingToRecovery(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	repair := currentProjectLedgerRepair(
 		"/project",
 		"qnt_12345678",

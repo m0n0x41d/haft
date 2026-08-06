@@ -21,6 +21,8 @@ func (blockingStatusCorpusSource) PublishedDriftSymbolCorpus(
 }
 
 func TestFetchBoundedProjectStatusDataReturnsUnavailableOnCancellation(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
 	defer cancel()
@@ -44,6 +46,8 @@ func TestFetchBoundedProjectStatusDataReturnsUnavailableOnCancellation(t *testin
 }
 
 func TestStatusDeadlineFitsObservedMCPHostLimit(t *testing.T) {
+	t.Parallel()
+
 	if statusRequestDeadline >= 60*time.Second {
 		t.Fatalf("status deadline %s must fit within 60s host limit", statusRequestDeadline)
 	}

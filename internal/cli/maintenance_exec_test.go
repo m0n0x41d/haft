@@ -16,6 +16,8 @@ import (
 const maintExecAffectedFile = "internal/app/maintflow.go"
 
 func TestOverseerDrainHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(overseerDrainCmd.Long), " "))
 	for _, want := range []string{
 		"opt-in",
@@ -219,6 +221,8 @@ func TestMaintenanceDrainDryRunReportsProposalsAndNeedsOperatorWithoutMutation(t
 }
 
 func TestCompactMaintenanceDrainReportPreservesSummaryAndOmitsAuditTail(t *testing.T) {
+	t.Parallel()
+
 	report := maintenanceDrainReport{
 		SchemaVersion: maintenanceDrainSchemaVersion,
 		DryRun:        true,
@@ -317,6 +321,8 @@ func TestCompactMaintenanceDrainReportPreservesSummaryAndOmitsAuditTail(t *testi
 }
 
 func TestMaintenanceDrainActionLinesRenderDecisionTitleBeforeRef(t *testing.T) {
+	t.Parallel()
+
 	lines := maintenanceDrainActionLines([]overseer.MaintenanceAction{{
 		Kind:        maintenanceActionObservable,
 		DecisionRef: "dec-20260620-134e8f83",

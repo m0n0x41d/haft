@@ -169,6 +169,8 @@ func TestBuildOverseerPacket_MarksChangedSpecCarrierSections(t *testing.T) {
 }
 
 func TestMapOverseerGovernanceScopesSpecHealthToAffectedSections(t *testing.T) {
+	t.Parallel()
+
 	report := checkReport{
 		SpecHealth: []project.SpecCheckFinding{
 			{
@@ -206,6 +208,8 @@ func TestMapOverseerGovernanceScopesSpecHealthToAffectedSections(t *testing.T) {
 }
 
 func TestMapOverseerGovernanceScopesChangedSpecHealthByPath(t *testing.T) {
+	t.Parallel()
+
 	report := checkReport{
 		SpecHealth: []project.SpecCheckFinding{
 			{
@@ -276,6 +280,8 @@ func TestRunOverseerPacket_JSON(t *testing.T) {
 }
 
 func TestOverseerInitFlagExistsAndIsOptIn(t *testing.T) {
+	t.Parallel()
+
 	if initCmd.Flags().Lookup("overseer") == nil {
 		t.Fatalf("expected opt-in --overseer flag")
 	}
@@ -712,6 +718,8 @@ func TestRunOverseerJudgmentJSONIsReadOnly(t *testing.T) {
 }
 
 func TestOverseerJudgmentHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(overseerJudgmentCmd.Long), " "))
 	for _, want := range []string{
 		"read-only judgment packet",

@@ -8,6 +8,8 @@ import (
 )
 
 func TestRootExecutePrintsOneErrorWithoutUsage(t *testing.T) {
+	t.Parallel()
+
 	command := exec.Command(
 		os.Args[0],
 		"-test.run=^TestRootExecuteHelper$",
@@ -31,6 +33,8 @@ func TestRootExecutePrintsOneErrorWithoutUsage(t *testing.T) {
 }
 
 func TestRootExecuteHelper(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv("HAFT_TEST_ROOT_EXECUTE_HELPER") != "1" {
 		return
 	}
@@ -39,6 +43,8 @@ func TestRootExecuteHelper(t *testing.T) {
 }
 
 func TestRootExecuteInitSyntaxErrorsPrintOnlyHelpHint(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name       string
 		mode       string
@@ -91,6 +97,8 @@ func TestRootExecuteInitSyntaxErrorsPrintOnlyHelpHint(t *testing.T) {
 }
 
 func TestRootExecuteInitSemanticErrorHasNoSyntaxHelp(t *testing.T) {
+	t.Parallel()
+
 	output, err := executeInitErrorHelper("semantic")
 	if err == nil {
 		t.Fatal("invalid init selection unexpectedly succeeded")
@@ -128,6 +136,8 @@ func executeInitErrorHelper(mode string) ([]byte, error) {
 }
 
 func TestRootExecuteInitErrorHelper(t *testing.T) {
+	t.Parallel()
+
 	argumentsByMode := map[string][]string{
 		"positional": {
 			"init",

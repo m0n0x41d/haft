@@ -10,6 +10,8 @@ import (
 )
 
 func TestStatusReportsPredecessorRestartCheckpointWithoutFailing(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir()
 	haftDirectory := filepath.Join(root, ".haft")
 	restartDirectory := filepath.Join(haftDirectory, "restart")

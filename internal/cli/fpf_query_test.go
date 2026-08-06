@@ -12,6 +12,8 @@ import (
 )
 
 func TestFPFCommandRegistersOnlyCanonicalQueryCommands(t *testing.T) {
+	t.Parallel()
+
 	names := make([]string, 0)
 	for _, command := range fpfCmd.Commands() {
 		names = append(names, command.Name())
@@ -30,6 +32,8 @@ func TestFPFCommandRegistersOnlyCanonicalQueryCommands(t *testing.T) {
 }
 
 func TestFPFConcernQueryDoesNotExposeSourceRoleSelection(t *testing.T) {
+	t.Parallel()
+
 	if fpfQueryCmd.Flags().Lookup("role") != nil {
 		t.Fatal("haft fpf query exposes --role; concern retrieval must remain navigation-only")
 	}
@@ -42,6 +46,8 @@ func TestFPFConcernQueryDoesNotExposeSourceRoleSelection(t *testing.T) {
 }
 
 func TestRunFPFQueryEmitsSourceNativeCandidateSetJSON(t *testing.T) {
+	t.Parallel()
+
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()
@@ -78,6 +84,8 @@ func TestRunFPFQueryEmitsSourceNativeCandidateSetJSON(t *testing.T) {
 }
 
 func TestRunFPFInspectRejectsUnknownSourceRole(t *testing.T) {
+	t.Parallel()
+
 	dbPath := buildFPFSourceQueryTestDB(t)
 	restoreOpen := stubSourceQueryDB(t, dbPath)
 	defer restoreOpen()

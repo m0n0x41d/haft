@@ -11,6 +11,8 @@ import (
 func TestRequireCurrentProjectTypeEnvCandidateFootprintReadOnlyAcceptsExactDDL(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "candidate-exact.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -32,6 +34,8 @@ func TestRequireCurrentProjectTypeEnvCandidateFootprintReadOnlyAcceptsExactDDL(
 func TestRequireCurrentProjectTypeEnvCandidateFootprintReadOnlyRejectsAlteredTriggerWithoutRepair(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "candidate-drift.db"))
 	if err != nil {
 		t.Fatal(err)

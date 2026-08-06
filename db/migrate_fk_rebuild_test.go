@@ -15,6 +15,8 @@ import (
 func TestForeignKeyTableRebuildMigrationCommitsAndRestoresEnforcement(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 	seedForeignKeyRebuildParentAndChild(t, database)
@@ -54,6 +56,8 @@ func TestForeignKeyTableRebuildMigrationCommitsAndRestoresEnforcement(
 func TestForeignKeyTableRebuildMigrationRollsBackApplyFailureAndRestoresEnforcement(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 	seedForeignKeyRebuildParentAndChild(t, database)
@@ -88,6 +92,8 @@ func TestForeignKeyTableRebuildMigrationRollsBackApplyFailureAndRestoresEnforcem
 func TestForeignKeyTableRebuildMigrationRejectsViolationBeforeVersionAndCommit(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 	seedForeignKeyRebuildParentAndChild(t, database)
@@ -125,6 +131,8 @@ func TestForeignKeyTableRebuildMigrationRejectsViolationBeforeVersionAndCommit(
 func TestForeignKeyTableRebuildMigrationChecksVersionInsertTriggerBeforeCommit(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 	seedForeignKeyRebuildParentAndChild(t, database)
@@ -169,6 +177,8 @@ func TestForeignKeyTableRebuildMigrationChecksVersionInsertTriggerBeforeCommit(
 func TestForeignKeyTableRebuildMigrationDiscardsConnectionWhenRestoreFails(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 	seedForeignKeyRebuildParentAndChild(t, database)
@@ -217,6 +227,8 @@ func TestForeignKeyTableRebuildMigrationDiscardsConnectionWhenRestoreFails(
 func TestForeignKeyTableRebuildMigrationConcurrentRecheckAppliesOnce(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 2)
 	defer database.Close()
 	seedForeignKeyRebuildParentAndChild(t, database)
@@ -284,6 +296,8 @@ func TestForeignKeyTableRebuildMigrationConcurrentRecheckAppliesOnce(
 func TestOrdinaryCustomMigrationKeepsForeignKeysEnforced(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 
@@ -312,6 +326,8 @@ func TestOrdinaryCustomMigrationKeepsForeignKeysEnforced(
 func TestOrdinaryCustomMigrationEstablishesForeignKeyEnforcement(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 	if _, err := database.Exec("PRAGMA foreign_keys = OFF"); err != nil {
@@ -341,6 +357,8 @@ func TestOrdinaryCustomMigrationEstablishesForeignKeyEnforcement(
 }
 
 func TestForeignKeyTableRebuildBoundaryRequiresCustomApply(t *testing.T) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 
@@ -363,6 +381,8 @@ func TestForeignKeyTableRebuildBoundaryRequiresCustomApply(t *testing.T) {
 }
 
 func TestMigrationForeignKeyVerifierRequiresTableRebuildBoundary(t *testing.T) {
+	t.Parallel()
+
 	database := openForeignKeyRebuildTestDatabase(t, 1)
 	defer database.Close()
 

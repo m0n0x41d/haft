@@ -11,6 +11,8 @@ import (
 )
 
 func TestApplyRefreshReminderSkipsCommissionProtocol(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -25,6 +27,8 @@ func TestApplyRefreshReminderSkipsCommissionProtocol(t *testing.T) {
 }
 
 func TestApplyRefreshReminderSkipsMachineJSON(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -39,6 +43,8 @@ func TestApplyRefreshReminderSkipsMachineJSON(t *testing.T) {
 }
 
 func TestApplyRefreshReminderKeepsHumanReadableReminder(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 

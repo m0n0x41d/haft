@@ -6,6 +6,8 @@ import (
 )
 
 func TestSpecLifecycleHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	cases := map[string]string{
 		"spec sync":            specSyncCmd.Long,
 		"spec export":          specExportCmd.Long,

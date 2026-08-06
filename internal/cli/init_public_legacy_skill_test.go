@@ -14,6 +14,8 @@ import (
 func TestPublicLegacyHaftSkillRecognition(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(
 		root,
@@ -97,6 +99,8 @@ This file belongs to the operator.
 func TestPublicLegacyHaftSkillRecognitionRequiresHostToolNamespace(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	root := t.TempDir()
 	path := filepath.Join(
 		root,

@@ -969,6 +969,8 @@ func TestHostStatusCommandEvaluatesEveryRegisteredCoherentProjection(
 func TestHostStatusCommandExposesOnlyReadOnlyOutputControl(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	if hostStatusCmd.Flags().Lookup("json") == nil {
 		t.Fatal("host status is missing --json")
 	}
@@ -995,6 +997,8 @@ func TestHostStatusCommandExposesOnlyReadOnlyOutputControl(
 func TestHostStatusJSONUsesStableNestedFieldNames(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	report := hostStatusReport{
 		Schema: hostStatusSchema,
 		Manifests: []hostManifestStatus{{
@@ -1042,6 +1046,8 @@ func TestHostStatusJSONUsesStableNestedFieldNames(
 func TestHostStatusTextSummarizesPerSkillDuplicatesByRootPair(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	first := hostDuplicateSkillRoot{
 		SkillName:   "h-reason",
 		LeftRoot:    "/project/.agents/skills",

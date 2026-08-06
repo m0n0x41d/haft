@@ -836,6 +836,8 @@ func TestRunSpecPlanHumanSummaryStatesProposalAuthorityAndReviewActions(t *testi
 }
 
 func TestSpecPlanHelpStatesProposalsAreNotAuthority(t *testing.T) {
+	t.Parallel()
+
 	help := strings.Join(strings.Fields(specPlanCmd.Long), " ")
 	required := []string{
 		"not authority",

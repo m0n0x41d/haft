@@ -369,6 +369,8 @@ func TestTypedPublicCodexOperationSharesUserSkillsAcrossProjects(
 func TestResolvePublicHostBindingOwnerHandlesMissingAndInvalidSharedManifest(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	homeRoot, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatalf("resolve home root: %v", err)

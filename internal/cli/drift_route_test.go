@@ -9,6 +9,8 @@ import (
 )
 
 func TestWriteDriftRouteSummaryNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	route := artifact.BuildSemanticDriftRoute(artifact.DriftRouteInput{
 		DriftKind:  "evidence_binding_drift",
 		BearerRef:  "evid-1",

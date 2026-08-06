@@ -10,6 +10,8 @@ import (
 func TestProjectTypeEnvCompatibleSuccessorMigration57InstallsClosedAuthorityGeneration(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "compatible-successor-v57.db"))
 	if err != nil {
 		t.Fatalf("open current store: %v", err)
@@ -67,6 +69,8 @@ func TestProjectTypeEnvCompatibleSuccessorMigration57InstallsClosedAuthorityGene
 func TestProjectTypeEnvCompatibleSuccessorMigration57PreservesV56History(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, basisTypeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, basisTypeEnvRef)

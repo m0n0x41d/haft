@@ -12,6 +12,8 @@ import (
 )
 
 func TestProfileAuthorityAdmissionV2Migration44InstallsExactAdditiveContract(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-v44.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -97,6 +99,8 @@ func TestProfileAuthorityAdmissionV2Migration44InstallsExactAdditiveContract(t *
 }
 
 func TestProfileAuthorityAdmissionV2Migration44RejectsUnknownPartialFootprint(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAuthorityAdmissionV2Migration44(t)
 	defer database.Close()
 
@@ -114,6 +118,8 @@ func TestProfileAuthorityAdmissionV2Migration44RejectsUnknownPartialFootprint(t 
 }
 
 func TestProfileAuthorityAdmissionV2Migration44RejectsMissingV43Guard(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAuthorityAdmissionV2Migration44(t)
 	defer database.Close()
 
@@ -132,6 +138,8 @@ func TestProfileAuthorityAdmissionV2Migration44RejectsMissingV43Guard(t *testing
 }
 
 func TestProfileAuthorityAdmissionV2Migration44PreservesV1HistoryWithoutBackfill(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeProfileAuthorityAdmissionV2Migration44(t)
 	defer database.Close()
 	seedHistoricalV1ProfileRevision44(t, database)
@@ -198,6 +206,8 @@ func TestProfileAuthorityAdmissionV2Migration44PreservesV1HistoryWithoutBackfill
 }
 
 func TestProfileAuthorityAdmissionV2Migration44PinsCrossGenerationAndTypedJoins(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "profile-v44-contract.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

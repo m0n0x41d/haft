@@ -9,6 +9,8 @@ import (
 )
 
 func TestReconciliationPlanMaintenanceProposalsAreReadOnly(t *testing.T) {
+	t.Parallel()
+
 	plan := artifact.DecisionReconciliationPlan{
 		Groups: []artifact.DecisionReconciliationGroup{
 			{
@@ -48,6 +50,8 @@ func TestReconciliationPlanMaintenanceProposalsAreReadOnly(t *testing.T) {
 }
 
 func TestGoverningSetMaintenanceProposalsAreReadOnly(t *testing.T) {
+	t.Parallel()
+
 	report := artifact.CurrentGoverningSetReport{
 		Sets: []artifact.CurrentGoverningSet{{
 			SetID:                    "governing-set-fallback",
@@ -77,6 +81,8 @@ func TestGoverningSetMaintenanceProposalsAreReadOnly(t *testing.T) {
 }
 
 func TestMaintenanceReconciliationReviewFromProposalsPreservesReadOnlyBoundary(t *testing.T) {
+	t.Parallel()
+
 	review := maintenanceReconciliationReviewFromProposals([]overseer.MaintenanceReconciliationProposal{
 		{
 			ID:                "reconcile-a",

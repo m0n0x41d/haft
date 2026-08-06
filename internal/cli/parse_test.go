@@ -6,6 +6,8 @@ import (
 )
 
 func TestParseStringArrayFromArgs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name string
 		args map[string]interface{}
@@ -60,6 +62,8 @@ func TestParseStringArrayFromArgs(t *testing.T) {
 }
 
 func TestParseVariants(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		args      map[string]interface{}
@@ -135,6 +139,8 @@ func TestParseVariants(t *testing.T) {
 }
 
 func TestParseVariants_JSONStringPreservesFields(t *testing.T) {
+	t.Parallel()
+
 	args := map[string]interface{}{
 		"variants": `[
 			{
@@ -191,6 +197,8 @@ func TestParseVariants_JSONStringPreservesFields(t *testing.T) {
 }
 
 func TestParseNestedStringMapFromArgs(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		args      map[string]interface{}
@@ -271,6 +279,8 @@ func TestParseNestedStringMapFromArgs(t *testing.T) {
 }
 
 func TestParseNestedStringMapFromArgs_ValuesPreserved(t *testing.T) {
+	t.Parallel()
+
 	args := map[string]interface{}{
 		"scores": `{"V1":{"latency":"10ms","throughput":"100k/s"}}`,
 	}
@@ -293,6 +303,8 @@ func TestParseNestedStringMapFromArgs_ValuesPreserved(t *testing.T) {
 }
 
 func TestParseNestedStringMapArg_ReturnsShapeErrors(t *testing.T) {
+	t.Parallel()
+
 	cases := []struct {
 		name string
 		args map[string]any
@@ -334,6 +346,8 @@ func TestParseNestedStringMapArg_ReturnsShapeErrors(t *testing.T) {
 // validators then reported "missing variant" coverage errors that pointed
 // nowhere. parseJSONArg must surface the parse failure with the offending key.
 func TestParseJSONArg_ReturnsErrorOnMalformedShape(t *testing.T) {
+	t.Parallel()
+
 	type tradeoffNote struct {
 		Variant string `json:"variant"`
 		Summary string `json:"summary"`

@@ -117,6 +117,8 @@ func TestPublicInitRealPTYSpaceEnterAppliesSelectedHost(
 func TestInitSelectionTUIMapsSpaceAndEnterToPureInteractiveIntent(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	session := mustInitSelectionTUISession(t)
 	model, err := newInitSelectionTUIModel(session)
 	if err != nil {
@@ -182,6 +184,8 @@ func TestInitSelectionTUIMapsSpaceAndEnterToPureInteractiveIntent(
 func TestInitSelectionTUIMapsCancelAndEOFToDistinctNoWriteOutcomes(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	model, err := newInitSelectionTUIModel(
 		mustInitSelectionTUISession(t),
 	)
@@ -215,6 +219,8 @@ func TestInitSelectionTUIMapsCancelAndEOFToDistinctNoWriteOutcomes(
 func TestInitSelectionTUIConfirmWithoutToggleIsExplicitCoreOnly(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	model, err := newInitSelectionTUIModel(
 		mustInitSelectionTUISession(t),
 	)
@@ -241,6 +247,8 @@ func TestInitSelectionTUIConfirmWithoutToggleIsExplicitCoreOnly(
 func TestInitSelectionTUIKeepsTerminalFileVisibleToBubbleTea(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	terminalInput := os.Stdin
 	if got := initSelectionProgramInput(terminalInput); got != terminalInput {
 		t.Fatalf("terminal input was wrapped as %T", got)

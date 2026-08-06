@@ -7,6 +7,8 @@ import (
 )
 
 func TestHandleQuintProblem_CharacterizeMissingProblemUsesPlainLanguage(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 
 	result, _, err := handleQuintProblemWithCreatedRef(context.Background(), store, t.TempDir(), map[string]any{
@@ -28,6 +30,8 @@ func TestHandleQuintProblem_CharacterizeMissingProblemUsesPlainLanguage(t *testi
 }
 
 func TestHandleQuintDecision_ApplyMissingDecisionUsesPlainLanguage(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 
 	result, _, err := handleQuintDecision(context.Background(), store, t.TempDir(), map[string]any{

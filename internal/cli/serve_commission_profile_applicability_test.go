@@ -20,6 +20,8 @@ import (
 func TestWorkCommissionSpecAuthorityForApplicability(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	tests := []struct {
 		name             string
 		realizationClass projectprofile.RealizationClass
@@ -134,6 +136,8 @@ func TestWorkCommissionSpecAuthorityForApplicability(
 func TestValidateWorkCommissionSpecAuthorityForApplicabilityIsPure(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	applicability := mustCommissionSpecApplicability(
 		t,
 		projectprofile.NonSoftwareRealizationClass,
@@ -345,6 +349,8 @@ func TestHandleHaftCommissionForProjectRevalidatesProfileBeforeStart(
 func TestCommissionArgsWithProjectRootOverridesCallerSuppliedRoot(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	caller := map[string]any{
 		"action":       "create",
 		"project_root": "/attacker-controlled",
@@ -363,6 +369,8 @@ func TestCommissionArgsWithProjectRootOverridesCallerSuppliedRoot(
 }
 
 func TestCommissionCreationCommandsExposeExactScopeSelector(t *testing.T) {
+	t.Parallel()
+
 	commands := []*cobra.Command{
 		commissionCreateCmd,
 		commissionCreateFromDecisionCmd,

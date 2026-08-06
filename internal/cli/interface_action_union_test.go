@@ -13,6 +13,8 @@ import (
 func TestInterfaceContractAuditUnderstandsClosedMemoryActionUnion(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	toolSchemas := fullMemoryInterfaceAuditToolSchemas(t)
 	capabilities := fullMemoryInterfaceAuditCapabilities()
 
@@ -113,6 +115,8 @@ func TestInterfaceContractAuditUnderstandsClosedMemoryActionUnion(
 func TestInterfaceContractAuditReadsNestedMemoryMCPEnvelopeAsExactBranches(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	// haft_memory is the validate/admit boundary. Project-memory reads are
 	// deliberately exposed through the closed
 	// haft_query(action="memory", memory_request={...}) branches.
@@ -156,6 +160,8 @@ func TestInterfaceContractAuditReadsNestedMemoryMCPEnvelopeAsExactBranches(
 func TestInterfaceContractAuditRejectsCatalogActionAbsentFromHandlerSurface(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	toolSchemas := fullMemoryInterfaceAuditToolSchemas(t)
 	overstated := memoryInterfaceAuditCapability(
 		"memory.delete",
@@ -200,6 +206,8 @@ func TestInterfaceContractAuditRejectsCatalogActionAbsentFromHandlerSurface(
 func TestInterfaceContractAuditRejectsHandlerActionsAbsentFromCatalog(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	toolSchemas := installedFullMemoryInterfaceAuditToolSchemas(t)
 	validateOnlyCatalog := []interfaceCapability{
 		fullMemoryInterfaceAuditCapabilities()[0],
@@ -240,6 +248,8 @@ func TestInterfaceContractAuditRejectsHandlerActionsAbsentFromCatalog(
 func TestInterfaceContractAuditRejectsMalformedOrOpenActionBranches(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	closedBranch := func(actionSchema map[string]interface{}) map[string]interface{} {
 		return map[string]interface{}{
 			"type":                 "object",
@@ -382,6 +392,8 @@ func TestInterfaceContractAuditRejectsMalformedOrOpenActionBranches(
 func TestInterfaceContractAuditAcceptsConstActionDiscriminator(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	schemas := interfaceContractAuditToolSchemasFromCatalog(
 		[]fpf.Tool{
 			{
@@ -426,6 +438,8 @@ func TestInterfaceContractAuditAcceptsConstActionDiscriminator(
 func TestPublicInterfaceCatalogSeparatesMemoryMutationAndReadSurfaces(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	memoryCapabilities := make([]string, 0)
 	for _, capability := range haftInterfaceCatalog() {
 		if strings.HasPrefix(capability.ID, "memory.") {
@@ -497,6 +511,8 @@ func TestPublicInterfaceCatalogSeparatesMemoryMutationAndReadSurfaces(
 func TestMemoryInterfaceUsesNestedMCPExamplesAndFlatCLIContracts(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	wantCLI := map[string]string{
 		"memory.validate": "haft memory validate --input-file request.json",
 		"memory.admit":    "haft memory admit --input-file request.json",

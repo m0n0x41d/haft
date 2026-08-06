@@ -56,7 +56,9 @@ type selectionReadyStageCapability struct{}
 
 // SelectionReadyStage is a non-serializable in-process result minted only
 // after the exact persisted closure has been reloaded and final lowering has
-// been replayed. It performs no head mutation or selection effect.
+// been replayed. A bounded per-Store cache may share that immutable result only
+// after every reconstruction input has been reread and byte-matched. It
+// performs no head mutation or selection effect.
 type SelectionReadyStage struct {
 	persisted    PersistedStage
 	verification projecttypeenv.ProjectTypeEnvCompositeVerification

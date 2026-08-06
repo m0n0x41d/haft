@@ -41,6 +41,8 @@ func TestServeExpectedProjectIDForRunFallsBackToEnv(t *testing.T) {
 func TestRevalidatedServeV5HandlerFailsCleanlyBeforeSQLiteReadWhenSidecarGenerationChanged(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &serveProjectLedgerRevalidationSequence{
 		results: []error{
 			projectledger.ErrSQLiteSidecarGenerationChanged,
@@ -92,6 +94,8 @@ func TestRevalidatedServeV5HandlerFailsCleanlyBeforeSQLiteReadWhenSidecarGenerat
 func TestRevalidatedServeV5HandlerQualifiesPostOperationGenerationChange(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidator := &serveProjectLedgerRevalidationSequence{
 		results: []error{
 			nil,

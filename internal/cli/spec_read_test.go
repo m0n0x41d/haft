@@ -13,6 +13,8 @@ import (
 )
 
 func TestSpecRuntimeReadPathsDoNotBypassSQLEditionSource(t *testing.T) {
+	t.Parallel()
+
 	root := testProjectRoot(t)
 	cliDir := filepath.Join(root, "internal", "cli")
 

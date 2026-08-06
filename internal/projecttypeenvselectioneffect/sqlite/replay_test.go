@@ -16,6 +16,8 @@ import (
 )
 
 func TestProbeReplayTxReturnsAbsentBeforeAnyCurrentnessRead(t *testing.T) {
+	t.Parallel()
+
 	store, err := kerneldbfixture.OpenCurrentStore(
 		filepath.Join(t.TempDir(), "haft.db"),
 	)
@@ -39,6 +41,8 @@ func TestProbeReplayTxReturnsAbsentBeforeAnyCurrentnessRead(t *testing.T) {
 }
 
 func TestProbeReplayTxRejectsAuthorityUseWithoutClosure(t *testing.T) {
+	t.Parallel()
+
 	store, err := kerneldbfixture.OpenCurrentStore(
 		filepath.Join(t.TempDir(), "haft.db"),
 	)

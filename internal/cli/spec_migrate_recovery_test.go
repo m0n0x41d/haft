@@ -16,6 +16,8 @@ import (
 )
 
 func TestSpecMigrationPublicSurfaceIsStateDrivenAndJSONOnly(t *testing.T) {
+	t.Parallel()
+
 	flags := make([]string, 0, 1)
 	specMigrateCmd.Flags().VisitAll(func(flag *pflag.Flag) {
 		flags = append(flags, flag.Name)

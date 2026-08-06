@@ -348,6 +348,8 @@ func TestTypedPublicAirMigratesSharedHistoricalCodexAlias(
 func TestPublicLegacyJSONMCPValidatorAcceptsOnlyBoundEmittedShapes(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	projectRoot := t.TempDir()
 	commandArgs := func() map[string]any {
 		return map[string]any{

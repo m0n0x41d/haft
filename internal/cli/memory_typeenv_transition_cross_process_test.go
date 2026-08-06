@@ -90,6 +90,8 @@ func TestMemoryTypeEnvTransitionRejectsStaleCrossProcessAdmission(
 }
 
 func TestMemoryTypeEnvTransitionStaleAdmissionHelper(t *testing.T) {
+	t.Parallel()
+
 	if os.Getenv(transitionCrossProcessHelperEnv) != "1" {
 		t.Skip("subprocess helper")
 	}

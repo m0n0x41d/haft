@@ -11,6 +11,8 @@ import (
 )
 
 func TestSemanticSpeechActUtteranceMigrationPreservesLegacyPolicies(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration40(t)
 	defer database.Close()
 
@@ -39,6 +41,8 @@ func TestSemanticSpeechActUtteranceMigrationPreservesLegacyPolicies(t *testing.T
 }
 
 func TestSemanticSpeechActUtterancePolicyRequiresExactLiteralInCanonicalJSON(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "literal-policy.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)

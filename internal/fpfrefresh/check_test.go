@@ -10,6 +10,8 @@ import (
 )
 
 func TestSanitizeCandidateDiagnosticBoundsCanonicalMessage(t *testing.T) {
+	t.Parallel()
+
 	workspace := "/tmp/" + candidateTemporaryPrefix + "owned/FPF-Spec.md"
 	message := workspace + ": " + strings.Repeat("ошибка ", maxMessageText)
 
@@ -30,6 +32,8 @@ func TestSanitizeCandidateDiagnosticBoundsCanonicalMessage(t *testing.T) {
 }
 
 func TestCanReuseVerifiedPredecessorRequiresNoRebuildDelta(t *testing.T) {
+	t.Parallel()
+
 	const revision = "308edacfa2bdb2c60d07e4e10c0deb1f260a6a31"
 	if !canReuseVerifiedPredecessor(revision, revision, nil) {
 		t.Fatal("identical source and token-gate coordinates should reuse the predecessor")
@@ -54,6 +58,8 @@ func TestCanReuseVerifiedPredecessorRequiresNoRebuildDelta(t *testing.T) {
 }
 
 func TestDerivationToolCompatibilityDeltasExposeGeneratorDrift(t *testing.T) {
+	t.Parallel()
+
 	predecessor := &IntegrationLock{GeneratedBy: "fpf-refresh-inputs/v1:sha256:" + strings.Repeat("a", 64)}
 	candidate := "fpf-refresh-inputs/v1:sha256:" + strings.Repeat("b", 64)
 
@@ -82,6 +88,8 @@ func TestDerivationToolCompatibilityDeltasExposeGeneratorDrift(t *testing.T) {
 }
 
 func TestShouldVerifyPredecessorProjectionSeparatesCorruptionFromToolMigration(t *testing.T) {
+	t.Parallel()
+
 	const current = "fpf-refresh-inputs/v1:sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
 	if !shouldVerifyPredecessorProjection(nil, current) {
 		t.Fatal("predecessor without a verified integration lock must reproduce under the current tool")
@@ -98,6 +106,8 @@ func TestShouldVerifyPredecessorProjectionSeparatesCorruptionFromToolMigration(t
 }
 
 func TestCleanupCandidateArtifactPropagatesFailure(t *testing.T) {
+	t.Parallel()
+
 	primaryErr := errors.New("comparison failure")
 	artifact := &CandidateArtifact{ownedRootPath: "not-an-owned-absolute-root"}
 
@@ -125,6 +135,8 @@ func TestCleanupCandidateArtifactPropagatesFailure(t *testing.T) {
 }
 
 func TestClassifyCandidateBuildDiagnosticRejectsUnbuildableCompilerLineageGap(t *testing.T) {
+	t.Parallel()
+
 	err := errors.New(
 		`candidate compiler version "fpf-base-typeenv.cov2.v99" is neither current "fpf-base-typeenv.cov2.v5" nor a known predecessor`,
 	)
@@ -138,6 +150,8 @@ func TestClassifyCandidateBuildDiagnosticRejectsUnbuildableCompilerLineageGap(t 
 }
 
 func TestCandidateSourceGrammarDriftBecomesReviewDiagnostic(t *testing.T) {
+	t.Parallel()
+
 	revision := strings.Repeat("a", 40)
 	observed := []fpf.SourceGrammarDiagnostic{{
 		Class:                   fpf.SourceGrammarUnsupported,
@@ -170,6 +184,8 @@ func TestCandidateSourceGrammarDriftBecomesReviewDiagnostic(t *testing.T) {
 }
 
 func TestCandidateIncompleteCardBecomesDegradedProjectionDiagnostic(t *testing.T) {
+	t.Parallel()
+
 	revision := strings.Repeat("b", 40)
 	observed := []fpf.SourceGrammarDiagnostic{{
 		Class:                   fpf.SourceGrammarMalformed,
@@ -196,6 +212,8 @@ func TestCandidateIncompleteCardBecomesDegradedProjectionDiagnostic(t *testing.T
 }
 
 func TestCandidateSourceStructureCollapseHasExplicitHardBoundary(t *testing.T) {
+	t.Parallel()
+
 	revision := strings.Repeat("c", 40)
 	withinBoundary, collapsed, err := candidateSourceStructureDiagnostic(
 		100,

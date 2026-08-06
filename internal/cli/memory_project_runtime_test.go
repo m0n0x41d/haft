@@ -18,6 +18,8 @@ import (
 )
 
 func TestProjectMemoryRuntimeCatalogRetainsHistoricalV1_4(t *testing.T) {
+	t.Parallel()
+
 	database, err := openCurrentKernelTestStore(
 		filepath.Join(t.TempDir(), "haft.db"),
 	)
@@ -63,6 +65,8 @@ func TestProjectMemoryRuntimeCatalogRetainsHistoricalV1_4(t *testing.T) {
 func TestProjectMemoryRuntimeBuildsWithoutSelectingAProjectTypeEnvHead(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, err := openCurrentKernelTestStore(
 		filepath.Join(t.TempDir(), "haft.db"),
 	)
@@ -173,6 +177,8 @@ func TestProjectMemoryRuntimeBuildsWithoutSelectingAProjectTypeEnvHead(
 }
 
 func TestProjectMemoryValidationHandlerCannotReachAdmission(t *testing.T) {
+	t.Parallel()
+
 	database, err := openCurrentKernelTestStore(
 		filepath.Join(t.TempDir(), "haft.db"),
 	)
@@ -221,6 +227,8 @@ func TestProjectMemoryValidationHandlerCannotReachAdmission(t *testing.T) {
 }
 
 func TestProjectMemoryReadRuntimeHasNoAdmissionCapability(t *testing.T) {
+	t.Parallel()
+
 	database, err := openCurrentKernelTestStore(
 		filepath.Join(t.TempDir(), "haft.db"),
 	)
@@ -280,6 +288,8 @@ func TestProjectMemoryReadRuntimeHasNoAdmissionCapability(t *testing.T) {
 }
 
 func TestProjectMemoryAdmissionPresenterRejectsMissingClosedResult(t *testing.T) {
+	t.Parallel()
+
 	response, err := presentProjectMemoryAdmission(
 		nil,
 		"non_binding_semantic_assertion",

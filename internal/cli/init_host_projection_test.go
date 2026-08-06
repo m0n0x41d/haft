@@ -575,6 +575,8 @@ func containsPathPrefix(paths []string, prefix string) bool {
 func TestCurrentCoherentHostProjectionRejectsUnboundHermesProjectScope(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	runtime := currentHostPublicationRuntime{
 		haftVersion:    "v9.dev",
 		executablePath: filepath.Join(t.TempDir(), "haft"),
@@ -598,6 +600,8 @@ func TestCurrentCoherentHostProjectionRejectsUnboundHermesProjectScope(
 func TestCurrentHaftInstructionFragmentMatchesLegacyClaudeSection(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	root := t.TempDir()
 	fragment, err := currentHaftInstructionFragment(root)
 	if err != nil {

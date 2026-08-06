@@ -9,6 +9,8 @@ import (
 )
 
 func TestWriteBlockedUseAttentionSummaryNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
 	item := artifact.BuildBlockedUseAttentionItem(artifact.BlockedUseAttentionInput{
 		BearerRef:         "dec-1",
 		FindingKind:       "missing_exact_source",

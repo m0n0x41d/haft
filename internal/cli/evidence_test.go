@@ -10,6 +10,8 @@ import (
 )
 
 func TestEvidencePathHelpNamesAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
 	normalized := strings.ToLower(strings.Join(strings.Fields(evidencePathCmd.Long), " "))
 	for _, want := range []string{"read-only", "does not create evidence", "approve", "gate", "claim truth", "global truth", "publication"} {
 		if !strings.Contains(normalized, want) {
@@ -19,6 +21,8 @@ func TestEvidencePathHelpNamesAuthorityBoundaries(t *testing.T) {
 }
 
 func TestWriteEvidencePathSummaryNamesCurrentFormalityScale(t *testing.T) {
+	t.Parallel()
+
 	scale := reff.CurrentFormalityScale(7)
 	record := artifact.EvidencePathRecord{
 		RecordKind:  artifact.EvidencePathRecordKind,
@@ -65,6 +69,8 @@ func TestWriteEvidencePathSummaryNamesCurrentFormalityScale(t *testing.T) {
 }
 
 func TestWriteEvidencePathSummaryNamesLegacyFormalityBridge(t *testing.T) {
+	t.Parallel()
+
 	scale := reff.LegacyFormalityScale(2)
 	bridge := reff.LegacyFormalityBridge(2)
 	record := artifact.EvidencePathRecord{
@@ -113,6 +119,8 @@ func TestWriteEvidencePathSummaryNamesLegacyFormalityBridge(t *testing.T) {
 }
 
 func TestWriteEvidencePathSummaryNamesFormalityDiagnostics(t *testing.T) {
+	t.Parallel()
+
 	scale := reff.UnversionedFormalityScale(2)
 	bridge := reff.UnversionedFormalityBridge(2)
 	record := artifact.EvidencePathRecord{

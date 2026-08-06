@@ -19,6 +19,8 @@ import (
 func TestPublicProjectSpecificationApplicabilityOmitsSoftwareForNonSoftwareScope(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -99,6 +101,8 @@ func TestPublicProjectSpecificationApplicabilityOmitsSoftwareForNonSoftwareScope
 func TestPublicProjectSpecificationApplicabilityRequiresExactMixedScope(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -144,6 +148,8 @@ func TestPublicProjectSpecificationApplicabilityRequiresExactMixedScope(
 func TestPublicProjectSpecificationApplicabilityRejectsDifferentScopeRequest(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -346,6 +352,8 @@ func TestReviewedProfileCandidateWithoutAdmissionRemainsActionableUnderdetermine
 func TestPublicSpecJSONKeepsLegacyTopLevelFieldsAndExactProfileBasis(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	matrix := mustCLIProjectCapabilityMatrix(
 		t,
 		[]projectprofile.RealizationScope{
@@ -453,6 +461,8 @@ func TestScopedPublicSpecHealthDoesNotReloadExcludedSoftwareCarriers(
 func TestProjectSpecificationScopeRequestFromFlagIsExplicitAndBounded(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	automatic, err := projectSpecificationScopeRequestFromFlag("  ")
 	if err != nil {
 		t.Fatalf("automatic scope request: %v", err)
@@ -479,6 +489,8 @@ func TestProjectSpecificationScopeRequestFromFlagIsExplicitAndBounded(
 }
 
 func TestPublicSpecCommandsExposeOnlyReadScopeSelection(t *testing.T) {
+	t.Parallel()
+
 	for _, command := range []*cobra.Command{
 		specCheckCmd,
 		specStatusCmd,

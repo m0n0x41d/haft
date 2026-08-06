@@ -9,6 +9,8 @@ import (
 )
 
 func TestBindingSurfaceInventoryIsUniqueAndClassified(t *testing.T) {
+	t.Parallel()
+
 	seen := map[string]struct{}{}
 	for _, entry := range bindingSurfaceInventory() {
 		if strings.TrimSpace(entry.Tool) == "" {
@@ -32,6 +34,8 @@ func TestBindingSurfaceInventoryIsUniqueAndClassified(t *testing.T) {
 }
 
 func TestMCPBindingGateMatchesBindingSurfaceInventory(t *testing.T) {
+	t.Parallel()
+
 	for _, entry := range bindingSurfaceInventory() {
 		got := mcpActionRequiresOperatorConfirmation(entry.Tool, entry.Action)
 		want := entry.Enforcement == bindingEnforcementMCPOperatorConfirmationRequired
@@ -42,6 +46,8 @@ func TestMCPBindingGateMatchesBindingSurfaceInventory(t *testing.T) {
 }
 
 func TestBindingSurfaceInventoryCoversKnownAuthorityMutations(t *testing.T) {
+	t.Parallel()
+
 	for _, item := range []struct {
 		tool   string
 		action string
@@ -74,6 +80,8 @@ func TestBindingSurfaceInventoryCoversKnownAuthorityMutations(t *testing.T) {
 }
 
 func TestAuthorityBoundaryCarrierWording(t *testing.T) {
+	t.Parallel()
+
 	projectRoot := testProjectRoot(t)
 	requiredBoundaryPhrases := map[string][]string{
 		"README.md": {

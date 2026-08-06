@@ -14,6 +14,8 @@ import (
 )
 
 func TestHandleQuintQuery_DriftRouteDoesNotRepairCodeForEvidenceDrift(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
 		"action":      "drift_route",
@@ -48,6 +50,8 @@ func TestHandleQuintQuery_DriftRouteDoesNotRepairCodeForEvidenceDrift(t *testing
 }
 
 func TestHandleQuintQuery_DriftRouteUnknownKindFailsClosed(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
 		"action":     "drift_route",
@@ -71,6 +75,8 @@ func TestHandleQuintQuery_DriftRouteUnknownKindFailsClosed(t *testing.T) {
 }
 
 func TestHandleQuintQuery_DriftRouteRecognizesCarrierOnly(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
 		"action":      "drift_route",

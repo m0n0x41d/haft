@@ -8,6 +8,8 @@ import (
 )
 
 func TestTypedMemoryDisjointEntailmentMigration49FreshKernelPath(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeTypedMemoryStorageMigration46(t)
 	defer database.Close()
 
@@ -35,6 +37,8 @@ func TestTypedMemoryDisjointEntailmentMigration49FreshKernelPath(t *testing.T) {
 func TestTypedMemoryDisjointEntailmentMigration49PreservesV48History(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)
@@ -107,6 +111,8 @@ func TestTypedMemoryDisjointEntailmentMigration49PreservesV48History(
 func TestTypedMemoryDisjointEntailmentMigration49RollsBackOnHistoricalFootprintMismatch(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database, typeEnvRef := newTypedMemoryRawSQLDatabase46(t, true)
 	defer database.Close()
 	insertTypedMemoryGenesisHead45(t, database, typeEnvRef)

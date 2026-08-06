@@ -248,6 +248,8 @@ func TestRunCheck_JSONExitsOneWhenFindingsExist(t *testing.T) {
 }
 
 func TestWriteCheckJSON_ZeroValueUsesStableSchema(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := writeCheckJSON(&output, checkReport{})

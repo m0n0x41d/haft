@@ -266,6 +266,8 @@ func TestBoundProjectMemoryAdmissionRejectsIdentityAndTopologyDrift(
 func TestBoundProjectMemoryAdmissionPostCheckPreservesCommittedAmbiguity(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	revalidations := 0
 	revalidate := func(context.Context) error {
 		revalidations++
@@ -301,6 +303,8 @@ func TestBoundProjectMemoryAdmissionPostCheckPreservesCommittedAmbiguity(
 func TestRunMemoryAdmitSurfacesReceiptWithPostWriteRevalidationError(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	want := []byte(
 		`{"result":"committed","receipt":{"event_ref":"event:test"}}` + "\n",
 	)
@@ -345,6 +349,8 @@ func TestRunMemoryAdmitSurfacesReceiptWithPostWriteRevalidationError(
 }
 
 func TestMemoryAdmitInputHelpSelectsCurrentV2Contract(t *testing.T) {
+	t.Parallel()
+
 	flag := memoryAdmitCmd.Flags().Lookup("input-file")
 	if flag == nil {
 		t.Fatal("memory admit input-file flag is missing")
@@ -360,6 +366,8 @@ func TestMemoryAdmitInputHelpSelectsCurrentV2Contract(t *testing.T) {
 func TestProjectMemoryCommitUnknownHasCLIAndMCPDeliveryParity(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	request, err := typedmemorywire.DecodeAdmitRequest(
 		[]byte(projectMemoryAdmissionTestPayload),
 	)
@@ -447,6 +455,8 @@ func TestProjectMemoryCommitUnknownHasCLIAndMCPDeliveryParity(
 func TestBoundProjectMemoryAdmissionPreCheckPreventsAdmission(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	admitCalls := 0
 	revalidate := func(context.Context) error {
 		return errors.New("injected pre-admission identity drift")
@@ -502,6 +512,8 @@ func (session *fixedProjectMemoryAdmissionSession) Close() error {
 }
 
 func TestProjectMemoryAdmissionPresenterRetainsV2InEnvelopeAndRetry(t *testing.T) {
+	t.Parallel()
+
 	payload := fmt.Sprintf(`{
   "contract_version": %q,
   "action": "admit",

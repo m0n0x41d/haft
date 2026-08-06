@@ -12,6 +12,8 @@ import (
 )
 
 func TestIntegrationLockCanonicalRoundTripAndHandEditRejection(t *testing.T) {
+	t.Parallel()
+
 	lock := testIntegrationLock()
 	payload, err := MarshalIntegrationLock(lock)
 	if err != nil {
@@ -44,6 +46,8 @@ func TestIntegrationLockCanonicalRoundTripAndHandEditRejection(t *testing.T) {
 }
 
 func TestBuildAndVerifyIntegrationLockBindsSourceDatabaseAndTypeEnv(t *testing.T) {
+	t.Parallel()
+
 	directory := t.TempDir()
 	readmePath := filepath.Join(directory, "Readme.md")
 	specPath := filepath.Join(directory, "FPF-Spec.md")
@@ -106,6 +110,8 @@ func TestBuildAndVerifyIntegrationLockBindsSourceDatabaseAndTypeEnv(t *testing.T
 }
 
 func TestWriteIntegrationLockUsesCanonicalBytes(t *testing.T) {
+	t.Parallel()
+
 	path := filepath.Join(t.TempDir(), "nested", "fpf-integration.lock.json")
 	lock := testIntegrationLock()
 	if err := WriteIntegrationLock(path, lock); err != nil {

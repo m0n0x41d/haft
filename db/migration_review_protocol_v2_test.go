@@ -11,6 +11,8 @@ import (
 )
 
 func TestMigrationReviewProtocolV2InstallsCanonicalTablesAndTriggers(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "review-v2.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -50,6 +52,8 @@ func TestMigrationReviewProtocolV2InstallsCanonicalTablesAndTriggers(t *testing.
 }
 
 func TestMigrationReviewProtocolV2RejectsUnknownPartialFootprint(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration39(t)
 	defer database.Close()
 
@@ -65,6 +69,8 @@ func TestMigrationReviewProtocolV2RejectsUnknownPartialFootprint(t *testing.T) {
 }
 
 func TestMigrationReviewProtocolV2RootGuardAndAppendOnlyContent(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "review-v2-root.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -96,6 +102,8 @@ func TestMigrationReviewProtocolV2RootGuardAndAppendOnlyContent(t *testing.T) {
 }
 
 func TestMigrationReviewProtocolV2AdmissionRequiresGenericExactSources(t *testing.T) {
+	t.Parallel()
+
 	store, err := NewStore(filepath.Join(t.TempDir(), "review-v2-exact.db"))
 	if err != nil {
 		t.Fatalf("NewStore: %v", err)
@@ -158,6 +166,8 @@ func TestMigrationReviewProtocolV2AdmissionRequiresGenericExactSources(t *testin
 }
 
 func TestMigrationReviewProtocolV2TriggerPinsCanonicalReviewTextAndProtocol(t *testing.T) {
+	t.Parallel()
+
 	database := openDatabaseBeforeMigration40(t)
 	defer database.Close()
 

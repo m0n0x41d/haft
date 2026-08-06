@@ -13,6 +13,8 @@ import (
 func TestRunMigrationsThroughProjectLedgerBindingRollsBackSchemaAndBindingTogether(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openPreBindingMigrationDatabase(t)
 	defer database.Close()
 	injected := errors.New("injected project ledger binding failure")
@@ -91,6 +93,8 @@ func TestRunMigrationsThroughProjectLedgerBindingRollsBackSchemaAndBindingTogeth
 func TestRunMigrationsThroughProjectLedgerBindingDoesNotRepairRecordedSchema(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openPreBindingMigrationDatabase(t)
 	defer database.Close()
 	throughBinding := migrationsBeforeVersion(
@@ -135,6 +139,8 @@ func TestRunMigrationsThroughProjectLedgerBindingDoesNotRepairRecordedSchema(
 func TestRunMigrationsThroughProjectLedgerBindingRejectsMissingEffect(
 	t *testing.T,
 ) {
+	t.Parallel()
+
 	database := openPreBindingMigrationDatabase(t)
 	defer database.Close()
 	err := RunMigrationsThroughProjectLedgerBinding(

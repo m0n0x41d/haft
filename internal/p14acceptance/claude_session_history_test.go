@@ -1571,6 +1571,12 @@ func TestP14ClaudeHistoryRootIgnoresCallerHomeAndPrefixIsAppendOnly(
 	t *testing.T,
 ) {
 	canonical, err := p14CanonicalClaudeProjectsRoot()
+	if os.IsNotExist(err) {
+		// Same live-host prerequisite as the other Claude history proofs: a CI
+		// runner has no canonical Claude host root, so there is nothing here to
+		// prove about ignoring a caller's HOME.
+		t.Skipf("canonical Claude host history root is unavailable: %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

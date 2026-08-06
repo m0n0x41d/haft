@@ -166,8 +166,8 @@ func TestPublicProjectCoreEffectAutomaticallyBootstrapsSoftwareProfile(
 	if !methodCarrierFound {
 		t.Fatal("software bootstrap installed no MethodPack carrier")
 	}
-	if !strings.Contains(output.String(), "origin=detector_default") {
-		t.Fatalf("init output = %q", output.String())
+	if output.Len() != 0 {
+		t.Fatalf("core effect leaked implementation details: %q", output.String())
 	}
 	if err := os.Remove(methodCarrierPath); err != nil {
 		t.Fatalf("remove MethodPack carrier for recovery fixture: %v", err)
@@ -192,8 +192,8 @@ func TestPublicProjectCoreEffectAutomaticallyBootstrapsSoftwareProfile(
 	); err != nil {
 		t.Fatalf("repeat ApplyCore: %v", err)
 	}
-	if !strings.Contains(repeatOutput.String(), "origin=detector_default") {
-		t.Fatalf("repeat init output = %q", repeatOutput.String())
+	if repeatOutput.Len() != 0 {
+		t.Fatalf("repeat core effect leaked implementation details: %q", repeatOutput.String())
 	}
 	if _, err := os.Stat(methodCarrierPath); err != nil {
 		t.Fatalf("repeat init did not recover MethodPack carrier: %v", err)
@@ -871,11 +871,8 @@ func TestPublicProjectCoreEffectPreservesExistingCoreCarriers(
 			gotWorkflow,
 		)
 	}
-	if !strings.Contains(
-		output.String(),
-		"preserved byte-for-byte and ignored",
-	) {
-		t.Fatalf("legacy warning = %q", output.String())
+	if output.Len() != 0 {
+		t.Fatalf("legacy preservation leaked implementation details: %q", output.String())
 	}
 }
 
@@ -915,8 +912,8 @@ func TestPublicProjectCoreEffectRemovesExactGeneratedLegacyConfig(
 	if _, err := os.Stat(configPath); !os.IsNotExist(err) {
 		t.Fatalf("generated legacy config still exists: %v", err)
 	}
-	if !strings.Contains(output.String(), "Legacy project config removed") {
-		t.Fatalf("removal report = %q", output.String())
+	if output.Len() != 0 {
+		t.Fatalf("legacy cleanup leaked implementation details: %q", output.String())
 	}
 }
 

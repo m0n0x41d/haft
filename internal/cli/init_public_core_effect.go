@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/initexecution"
@@ -222,20 +221,6 @@ func (effect publicProjectCoreEffect) ApplyCore(
 				}
 		}
 	}
-	if err := reportPublicLegacyProjectConfigOutcome(
-		effect.output,
-		effect.request.projectRoot,
-		coreFiles,
-	); err != nil {
-		return initexecution.CoreEffectReceipt{},
-			newPublicCoreApplicationError(
-				fmt.Errorf("write legacy project config outcome: %w", err),
-				completedPaths,
-				"standard output",
-				nil,
-				recovery,
-			)
-	}
 	if profilePlan.Kind() == initplanning.InitialProfileApplySingleton {
 		if err := verifyPublicInitialProfileSnapshot(plan.ProjectRoot(), profilePlan); err != nil {
 			return initexecution.CoreEffectReceipt{},
@@ -247,7 +232,7 @@ func (effect publicProjectCoreEffect) ApplyCore(
 					recovery,
 				)
 		}
-		admission, err := effect.applyAutomaticInitialProfile(
+		_, err := effect.applyAutomaticInitialProfile(
 			ctx,
 			plan,
 			profilePlan,
@@ -290,59 +275,17 @@ func (effect publicProjectCoreEffect) ApplyCore(
 					recovery,
 				)
 		}
-		if _, err := fmt.Fprintf(
-			effect.output,
-			"Project profile: scope=%s origin=%s detector=%s policy=%s observation=%s carriers=%s\n",
-			profilePlan.ScopeID(),
-			admission.Origin(),
-			profilePlan.DetectorVersion(),
-			profilePlan.PolicyVersion(),
-			profilePlan.ObservationDigest(),
-			strings.Join(publicExactFilePaths(contingentFiles), ","),
-		); err != nil {
-			return initexecution.CoreEffectReceipt{},
-				newPublicCoreApplicationError(
-					fmt.Errorf("write applied project profile outcome: %w", err),
-					completedPaths,
-					"standard output",
-					nil,
-					recovery,
-				)
-		}
 	}
 	if profilePlan.Kind() == initplanning.InitialProfileKeepExisting {
-		if err := effect.reportExistingPublicProfile(
+		if err := effect.verifyExistingPublicProfile(
 			ctx,
 			plan,
-			profilePlan,
-			coreFiles,
 		); err != nil {
 			return initexecution.CoreEffectReceipt{},
 				newPublicCoreApplicationError(
 					err,
 					completedPaths,
 					plan.DatabasePath(),
-					nil,
-					recovery,
-				)
-		}
-	}
-	if profilePlan.Kind() == initplanning.InitialProfileHumanReviewRequired {
-		if _, err := fmt.Fprintf(
-			effect.output,
-			"Project profile: human_review_required detector=%s policy=%s observation=%s classification=%s confidence=%s reason=%s recovery=/h-onboard\n",
-			profilePlan.DetectorVersion(),
-			profilePlan.PolicyVersion(),
-			profilePlan.ObservationDigest(),
-			profilePlan.Classification(),
-			profilePlan.Confidence(),
-			profilePlan.Reason(),
-		); err != nil {
-			return initexecution.CoreEffectReceipt{},
-				newPublicCoreApplicationError(
-					fmt.Errorf("write project profile review outcome: %w", err),
-					completedPaths,
-					"standard output",
 					nil,
 					recovery,
 				)
@@ -367,11 +310,9 @@ func (effect publicProjectCoreEffect) ApplyCore(
 	return coreReceipt, nil
 }
 
-func (effect publicProjectCoreEffect) reportExistingPublicProfile(
+func (effect publicProjectCoreEffect) verifyExistingPublicProfile(
 	ctx context.Context,
 	plan initplanning.CoreProjectPlan,
-	profilePlan initplanning.InitialProfileBootstrapPlan,
-	coreFiles []publicExactFileEffect,
 ) (runErr error) {
 	ledger, err := projectledger.OpenExisting(
 		ctx,
@@ -379,7 +320,7 @@ func (effect publicProjectCoreEffect) reportExistingPublicProfile(
 		projectledger.ReadOnly,
 	)
 	if err != nil {
-		return fmt.Errorf("open current profile for init report: %w", err)
+		return fmt.Errorf("verify existing profile during init: %w", err)
 	}
 	defer func() {
 		runErr = errors.Join(runErr, ledger.Close())
@@ -395,40 +336,7 @@ func (effect publicProjectCoreEffect) reportExistingPublicProfile(
 	if current.Kind != "declared" {
 		return fmt.Errorf("existing initial profile plan has no canonical admission")
 	}
-	scopeIDs := make([]string, len(current.Scopes))
-	for index, scope := range current.Scopes {
-		scopeIDs[index] = scope.ScopeID
-	}
-	carriers := publicProfileCarrierPaths(coreFiles)
-	if _, err := fmt.Fprintf(
-		effect.output,
-		"Project profile: scopes=%s origin=%s current_detector=%s policy=%s observation=%s carriers=%s\n",
-		strings.Join(scopeIDs, ","),
-		current.Origin,
-		profilePlan.DetectorVersion(),
-		profilePlan.PolicyVersion(),
-		profilePlan.ObservationDigest(),
-		strings.Join(carriers, ","),
-	); err != nil {
-		return fmt.Errorf("write existing project profile outcome: %w", err)
-	}
 	return nil
-}
-
-func publicProfileCarrierPaths(files []publicExactFileEffect) []string {
-	paths := make([]string, 0, len(files))
-	for _, file := range files {
-		normalized := filepath.ToSlash(file.path)
-		if !strings.Contains(normalized, "/.haft/specs/") &&
-			!strings.Contains(normalized, "/.haft/methods/") {
-			continue
-		}
-		paths = append(paths, file.path)
-	}
-	if len(paths) == 0 {
-		return []string{"none"}
-	}
-	return paths
 }
 
 func publicExactProfileBootstrapFileEffects(
@@ -710,34 +618,6 @@ func publicExactCoreFileEffects(
 		}
 	}
 	return effects, nil
-}
-
-func reportPublicLegacyProjectConfigOutcome(
-	output io.Writer,
-	projectRoot string,
-	files []publicExactFileEffect,
-) error {
-	path := project.ProjectConfigPath(filepath.Join(projectRoot, ".haft"))
-	for _, file := range files {
-		if file.path != path {
-			continue
-		}
-		if file.kind == publicExactFileRemove {
-			_, err := fmt.Fprintf(
-				output,
-				"Legacy project config removed: %s (exact Haft-generated authority-only carrier)\n",
-				path,
-			)
-			return err
-		}
-		_, err := fmt.Fprintf(
-			output,
-			"Legacy project config preserved byte-for-byte and ignored: %s (operator-modified or unrecognized carrier)\n",
-			path,
-		)
-		return err
-	}
-	return nil
 }
 
 func verifyPublicCorePreconditions(

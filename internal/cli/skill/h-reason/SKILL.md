@@ -261,7 +261,9 @@ For a non-English concern, preserve the operator's original `query`. Add
 `entity_of_concern`, `known_context`, and `intended_use` with precise
 source-language or FPF terms when they are already known. Do not translate the
 question into a hidden Haft route or invent a bilingual catalog. An unsupported
-raw-language query may honestly abstain.
+raw-language query abstains: a measured 6 of 6 Russian concerns returned zero
+candidates, while the same concerns with English `known_context` resolved to the
+exact card at rank 1. Supplying those terms is therefore required, not optional.
 
 The result is source material, not applicability, selection, recommendation,
 evidence, precedence, or authority. Use the source-owned navigation:

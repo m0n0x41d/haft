@@ -136,9 +136,12 @@ mcp__haft__haft_query(
 ```
 
 For non-English concerns, preserve the operator's original query and add
-`entity_of_concern`, `known_context`, and `intended_use` with precise
-source-language or FPF terms when known. Do not translate into a hidden Haft
-route or invent a bilingual catalog; unsupported raw language may abstain.
+`entity_of_concern`, `known_context`, and `intended_use` with precise English or
+FPF terms. Those terms are required, not optional: the bundled source is
+English, a measured 6 of 6 Russian concerns returned zero candidates without
+them, and the same concerns with English `known_context` resolved to the exact
+card at rank 1. Do not translate the query itself into a hidden Haft route or
+invent a bilingual catalog.
 
 This returns source material, never applicability, selection, recommendation,
 or evidence. Then:

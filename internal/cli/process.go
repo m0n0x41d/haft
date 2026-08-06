@@ -2077,10 +2077,7 @@ func processLineHasToolInvocation(record map[string]any) bool {
 
 func processLineHasProseMention(line []byte) bool {
 	text := strings.ToLower(string(line))
-	if !strings.Contains(text, "haft_method") {
-		return false
-	}
-	return true
+	return strings.Contains(text, "haft_method")
 }
 
 func processNormalizeTaskKey(value string) string {

@@ -2828,21 +2828,6 @@ func commissionIntakeSkipError(skip map[string]any) error {
 	)
 }
 
-func workCommissionRunnableForRequest(
-	commission map[string]any,
-	commissions []map[string]any,
-	args map[string]any,
-	now time.Time,
-) bool {
-	return workCommissionRunnableForRequestWithLeaseCap(
-		commission,
-		commissions,
-		args,
-		now,
-		defaultCommissionLeaseAgeCap,
-	)
-}
-
 func workCommissionRunnableForRequestWithLeaseCap(
 	commission map[string]any,
 	commissions []map[string]any,

@@ -101,7 +101,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 5,
+      "expected_omitted_at_least": 6,
       "expected_truncation_basis": [
         "response_budget"
       ]
@@ -117,8 +117,8 @@
         "readme:practical_use_card:wording",
         "readme:practical_use_card:dpf-authoring",
         "readme:practical_use_card:architecture",
-        "readme:practical_use_card:naming",
         "readme:practical_use_card:description-use",
+        "readme:practical_use_card:naming",
         "spec:toc_row:a-6-3",
         "spec:toc_row:a-6-3-cr",
         "spec:toc_row:a-6-3-rt",
@@ -129,8 +129,8 @@
         "WORDING",
         "DPF-AUTHORING",
         "ARCHITECTURE",
-        "NAMING",
         "DESCRIPTION-USE",
+        "NAMING",
         "",
         "",
         "",
@@ -138,7 +138,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 6,
+      "expected_omitted_at_least": 8,
       "expected_truncation_basis": [
         "response_budget"
       ]
@@ -201,7 +201,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 46,
+      "expected_omitted_at_least": 48,
       "expected_truncation_basis": [
         "role_local_fts_producer_limit",
         "role_local_fts:toc_row",

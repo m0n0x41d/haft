@@ -2,7 +2,7 @@ schema_version: haft.local-practice/v1
 carrier:
   id: haft.typed-memory
   edition: 1.5.0
-base_type_env_ref: typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786
+base_type_env_ref: typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc
 bounded_context_ref: haft-project
 compiler_version: haft.local-practice.compiler/v2
 signature_manifest:
@@ -361,8 +361,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -375,8 +375,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -389,8 +389,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -403,8 +403,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -417,8 +417,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -431,8 +431,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -445,8 +445,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -459,8 +459,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -473,8 +473,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -487,8 +487,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -501,8 +501,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none
@@ -515,8 +515,8 @@ signature:
         slice_conditions_rule: haft.context-slice.project/v1
         reference_scheme:
           carrier_ref: fpf-source:FPF-Spec.md
-          edition: 8b727cba9e893a467b82aab9da84fb7d6d945480
-          digest: sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
         dependencies: []
         extent_rule:
           kind: none

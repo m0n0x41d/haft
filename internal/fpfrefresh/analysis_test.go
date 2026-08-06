@@ -486,8 +486,6 @@ func TestTypeEnvSuccessorDeltasClassifyOnlyProvenSemanticOrder(t *testing.T) {
 func TestCompareExecutableTypeEnvCompatibilityIgnoresSourceIdentityOnlyChange(
 	t *testing.T,
 ) {
-	t.Parallel()
-
 	fixture := newRefreshEffectsFixture(t)
 
 	deltas, diagnostics, err := compareExecutableTypeEnvCompatibility(
@@ -645,7 +643,7 @@ func TestProductionCorpusCarriesExactE11SplitContinuitySpan(t *testing.T) {
 			"SYSTEM-DELIMITATION",
 			"WORDING",
 			"ARCHITECTURE",
-		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:76915-76915" {
+		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:76918-76918" {
 		t.Fatalf("production E.11 split = %#v", splits[0])
 	}
 }

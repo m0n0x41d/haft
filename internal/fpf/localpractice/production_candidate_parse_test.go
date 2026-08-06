@@ -20,12 +20,12 @@ const (
 	productionCandidateCarrierV1_2Digest = "3d4cfaef710daf2ec70a43970ef4ebff2a0cdeac4d26da0486947a4a15ed4d2e"
 	productionCandidateCarrierV1_3Digest = "cffa1363f6b0b5cd1bc701f48c117826a802e640205a1f76e0957f78b5897327"
 	productionCandidateCarrierV1_4Digest = "8c4544660446dff9de3edb8ac93b6ccd9378e69e2909bb57c47d107a0900a2b7"
-	productionCandidateCarrierV1_5Digest = "1776b46c80229925c251623195680bf45f3c89c76f2791a4d215272a34ec2248"
+	productionCandidateCarrierV1_5Digest = "a0c633b8d088ae2acddfd367bab572a94c7209d834ecb364ac38665ced74ced3"
 	productionCandidateBaseV1_1          = "typeenv:sha256:a5223d5018230095652543f0378a1fc3f64175f21d01309e6f4084088d5d2804"
 	productionCandidateBaseV1_2          = "typeenv:sha256:973eeeed8e234b4ff0194662d80e204fe27ad5ba92c87840a6d1ed3a9d5d742d"
 	productionCandidateBaseV1_3          = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
 	productionCandidateBaseV1_4          = "typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e"
-	productionCandidateBaseV1_5          = "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
+	productionCandidateBaseV1_5          = "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc"
 )
 
 func TestProductionCandidateCarrierV1RemainsByteStableAndReplayable(t *testing.T) {

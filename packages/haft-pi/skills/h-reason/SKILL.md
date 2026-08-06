@@ -31,6 +31,12 @@ pattern's full body. Retrieval returns source candidates. Returned source
 material is not applicability, selection, recommendation, evidence,
 precedence, or authority.
 
+For a non-English concern, keep the operator's wording in `query` and add
+precise English or FPF terms in `known_context`. Those terms are required: the
+bundled source is English, a measured 6 of 6 Russian concerns returned zero
+candidates without them, and the same concerns with English `known_context`
+resolved to the exact card at rank 1. Do not translate `query` itself.
+
 In ordinary working use, identify the selected direct pattern by `PatternID`,
 title, and stable source reference. Do not routinely reproduce source spans,
 repository-local paths, line ranges, hashes, revisions, or other provenance.

@@ -4,7 +4,7 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [9.0.0] — 2026-08-05
+## [9.0.0] — 2026-08-06
 
 The last published release is
 [v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
@@ -12,6 +12,32 @@ The v8.2.0 candidate was never published; its candidate lineage is incorporated
 into this v9.0.0 release entry.
 
 ### Changed
+
+- **FPF Query recall is measured, and non-English concerns now state their
+  requirement.** A recall@k harness scores the shipped concern path on two
+  query sets built to avoid circularity: hand-written questions in deliberately
+  foreign wording, and author phrases mechanically stripped of their target's
+  title words. Baseline on `3dbce51`: paraphrase R@1 0.50 / R@10 0.73,
+  degraded R@1 0.16 / R@10 0.86. The floors are regression guards below the
+  measurement, not targets, and the harness compares Haft only with itself — it
+  licenses no retrieval superiority claim and does not lift the deferred
+  research label. The same measurement showed raw non-English concerns abstain
+  with zero candidates, 6 of 6, while the same concerns carrying English
+  `known_context` resolved to the exact card at rank 1, so `h-reason`, the Pi
+  skill, the installed project template, and the `haft_query` schema now
+  require those terms and keep the operator's wording in `query`.
+- **Coverage collection stops serialising the CI test job.** The per-package
+  loop gave up Go's package-level parallelism; one invocation over the same
+  package set produces a byte-identical profile. Measured at GOMAXPROCS=4,
+  matching a standard runner: 40.3s looped versus 14.7s in one call for ten
+  packages, identical 73.9% total coverage.
+- **Tests racing on package-level variables no longer run in parallel.** 103
+  tests were marked parallel while writing shared package state; they did not
+  fail deterministically and would have surfaced later in CI on unrelated
+  commits. Neither grep nor a call-graph walk detects this class, because the
+  hazard is an assignment rather than a call, so the analysis now tracks writes
+  to package-level variables across the full dependency closure. `internal/cli`
+  keeps 509 parallel tests at 533s isolated wall time against a 737s baseline.
 
 - **Race qualification no longer multiplies the same suite locally and at
   release.** `task test:race` now reads P13's bounded 37-test critical profile
@@ -200,10 +226,13 @@ into this v9.0.0 release entry.
   and typed maintenance work orders instead of silently absorbing overseer
   changes.
 - **Bundled FPF publication and source-derived index updated.** Advanced
-  `data/FPF` from `0990ff1` to `8b727cb` and regenerated the committed
-  `internal/cli/fpf.db` from that exact source snapshot. The bundle now contains
-  8,092 source units at spec digest
-  `sha256:c03441b51561922ec7bdbcb0c76bb3d26bd5c904ac9c68364625cbe454af3a42`.
+  `data/FPF` from `0990ff1` through `8b727cb` to `3dbce51` and regenerated the
+  committed `internal/cli/fpf.db` from that exact source snapshot. The shipped
+  bundle contains 8,087 source units at spec digest
+  `sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf`,
+  Base TypeEnv `typeenv:sha256:1b6b04c1…`, database digest
+  `sha256:620e73e4…`. Earlier entries in this release that name `8b727cb`
+  describe the intermediate candidate, not the shipped publication.
   The practical-use catalog now has 16 cards: source-owned
   `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` replace the retired
   `SYSTEM-IN-CONTEXT` route. The source also adds A.1.SCR and A.1.STM and

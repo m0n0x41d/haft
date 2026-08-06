@@ -40,15 +40,23 @@ const (
 	releaseBlockerRelativePath       = ".context/current-plan-issue-report.md"
 	releaseBlockerSpan               = "document:full"
 	releaseBlockerHeading            = "# V9 release blocker: internal FPF Query provenance leaks into MCP working responses"
-	requiredPriorHeadRevision        = int64(2)
-	requiredPriorCompositeRef        = "typeenv:sha256:6dc594a9d5470701b583a6e0893cf75d89629a27673d7aecd34b0993979c6aaf"
-	requiredPriorBaseRef             = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
-	requiredPriorBaseDigest          = "sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
-	requiredPriorFPFRevision         = "0990ff1d1ccee4587b8f7e16e7a725a8edbe66b4"
-	requiredPriorCompilerSchema      = "fpf-base-typeenv.cov2.v4"
-	requiredPriorSnapshotDigest      = "sha256:ac18d783a1b256b35fc542b0a1662fd9bfc260e3fae9b6fac19ba428bbb10d30"
-	requiredPriorLoweredDigest       = "sha256:c5bbf428a3bba6590b4d37747bd803b9d85941a1233b5faa536fe1a2dfe45689"
-	requiredStageSchemaEdition       = "haft.project-typeenv.stage-schema/v5"
+	// Предшественник текущей приёмки — голова 3 на FPF 8b727cb, от которой
+	// compatible_successor_policy автоматически перевела проект на голову 4
+	// (FPF 3dbce51, Base 1b6b04c1). Значения сняты из живого project ledger
+	// через LoadExecutableSnapshotTx, а не выведены из прозы.
+	//
+	// Эти константы задают ОДИН принимаемый переход. Тесты рядом параметризованы
+	// ими и продолжают доказывать своё свойство — что произвольный, исторический
+	// или второй переход отвергается, — относительно нового пина.
+	requiredPriorHeadRevision   = int64(3)
+	requiredPriorCompositeRef   = "typeenv:sha256:3ccfcdbc97f1a6f4a8241f03357ebcacf827868a35343cb19f88fd0ec07da615"
+	requiredPriorBaseRef        = "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
+	requiredPriorBaseDigest     = "sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
+	requiredPriorFPFRevision    = "8b727cba9e893a467b82aab9da84fb7d6d945480"
+	requiredPriorCompilerSchema = "fpf-base-typeenv.cov2.v5"
+	requiredPriorSnapshotDigest = "sha256:4aa850110aa7f5a0bfbc94a0a747cba461aed8fc7316ff7a2f958072d5539c40"
+	requiredPriorLoweredDigest  = "sha256:89fab8411e61205f39ea5bacc11fcadc789dc33e7aff3495c04e12c1028ff0f0"
+	requiredStageSchemaEdition  = "haft.project-typeenv.stage-schema/v5"
 )
 
 type privateP13BasisPosture string
@@ -1569,7 +1577,10 @@ func completeFrozenInputForTest() freezeInputSpec {
 		ProfileLedgerDigest:         "sha256:profile-ledger",
 		ProfileSupportDAGDigest:     "sha256:profile-support",
 		HeadRef:                     "project-typeenv-head:qnt_01234567",
-		HeadRevision:                3,
+		// Производная от запиненного предшественника: validateFrozenExecutionInput
+		// требует ровно Prior+1. Держим её выраженной, чтобы фикстура не
+		// разъезжалась с константами при следующем перепине перехода.
+		HeadRevision:                requiredPriorHeadRevision + 1,
 		SelectedCompositeRef:        "typeenv:sha256:target",
 		HeadStateDigest:             "sha256:head",
 		SelectionClosureRef:         "project-typeenv-head-selection-closure:sha256:closure",

@@ -486,6 +486,29 @@ func TestPrivateP13BasisPostureSeparatesAbsentPartialAndComplete(t *testing.T) {
 	}
 }
 
+// neverTrackedPrivateP13BasisPaths are the entries of the private basis that
+// git never carries. Their joint absence means the basis was never installed
+// here, not that an installed one lost pieces.
+var neverTrackedPrivateP13BasisPaths = map[string]bool{
+	".agents/skills":                        true,
+	".context/current-plan-issue-report.md": true,
+	".haft/project-profile.yaml":            true,
+	".haft/project.yaml":                    true,
+}
+
+func everyNeverTrackedPrivateBasisPathMissing(missing []string) bool {
+	absent := make(map[string]bool, len(missing))
+	for _, path := range missing {
+		absent[path] = true
+	}
+	for path := range neverTrackedPrivateP13BasisPaths {
+		if !absent[path] {
+			return false
+		}
+	}
+	return true
+}
+
 func inspectPrivateP13Basis(root string) (privateP13BasisState, error) {
 	missing := make([]string, 0, len(requiredPrivateP13BasisPaths))
 	for _, relativePath := range requiredPrivateP13BasisPaths {
@@ -502,12 +525,17 @@ func inspectPrivateP13Basis(root string) (privateP13BasisState, error) {
 			)
 		}
 	}
-	switch len(missing) {
-	case 0:
+	switch {
+	case len(missing) == 0:
 		return privateP13BasisState{
 			Posture: privateP13BasisComplete,
 		}, nil
-	case len(requiredPrivateP13BasisPaths):
+	case everyNeverTrackedPrivateBasisPathMissing(missing):
+		// Только один путь этого набора отслеживается git — план закрытия.
+		// Остальные появляются лишь на машине разработчика после `haft init`
+		// и накопления рабочих артефактов, поэтому в свежем чекауте
+		// «отсутствует всё» не наступает никогда, и partial читался бы как
+		// повреждение там, где приватный базис просто не установлен.
 		return privateP13BasisState{
 			Posture: privateP13BasisAbsent,
 			Missing: missing,

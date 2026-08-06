@@ -58,8 +58,23 @@ type expectedScenarioContract struct {
 	ExpectedEffect string
 }
 
+// p14PrivateCarriersPresent reports whether the untracked `.context` carriers
+// this contract validates against exist. They are produced during live P14
+// preparation and git never carries them, so a fresh checkout has none.
+func p14PrivateCarriersPresent(repositoryRoot string) bool {
+	for _, relative := range []string{p14ChecklistPath, p14PlanRelativePath} {
+		if _, err := os.Stat(filepath.Join(repositoryRoot, relative)); err != nil {
+			return false
+		}
+	}
+	return true
+}
+
 func TestP14RequestOracleContract(t *testing.T) {
 	repositoryRoot, err := p14RepositoryRoot()
+	if err == nil && !p14PrivateCarriersPresent(repositoryRoot) {
+		t.Skipf("P14 preparation carriers under .context are absent — skipping")
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

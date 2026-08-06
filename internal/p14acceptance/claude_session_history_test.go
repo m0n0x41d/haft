@@ -1691,6 +1691,13 @@ func syntheticP14ClaudeSessionBasis(
 func syntheticP14ClaudeSessionPath(t *testing.T) string {
 	t.Helper()
 	root, err := p14CanonicalClaudeProjectsRoot()
+	if os.IsNotExist(err) {
+		// These derive evidence against the canonical Claude host history root
+		// under the caller's home directory. A CI runner has no such host, so
+		// there is nothing to prove there; the repo already skips the same way
+		// when a sidecar, symlink support, or a live corpus is unavailable.
+		t.Skipf("canonical Claude host history root is unavailable: %v", err)
+	}
 	if err != nil {
 		t.Fatal(err)
 	}

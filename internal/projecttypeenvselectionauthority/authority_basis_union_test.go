@@ -294,9 +294,15 @@ func TestExecutionRolePolicyDogfoodPinsMatchCurrentSpecCarriers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read target-system spec: %v", err)
 	}
-	manifest, err := os.ReadFile(
-		"../../.context/haft-v9-p2d-evidence/active-spec-section-editions.manifest.json",
-	)
+	const manifestPath = "../../.context/haft-v9-p2d-evidence/" +
+		"active-spec-section-editions.manifest.json"
+	manifest, err := os.ReadFile(manifestPath)
+	if os.IsNotExist(err) {
+		// .context не отслеживается git, поэтому в свежем чекауте манифеста
+		// нет. Пропускаем, как это делает internal/recall/liveeval_test.go со
+		// своим корпусом: отсутствие носителя — не регрессия.
+		t.Skipf("active spec edition manifest not found at %s — skipping", manifestPath)
+	}
 	if err != nil {
 		t.Fatalf("read active spec edition manifest: %v", err)
 	}

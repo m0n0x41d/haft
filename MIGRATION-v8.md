@@ -5,12 +5,12 @@
 The published predecessor to v9 is
 [v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
 There is no published v8.2 release. Work that was previously described as an
-8.2 candidate remains unreleased v9 lineage.
+8.2 candidate was incorporated into the published v9.0.0 lineage.
 
 This document states the supported migration and rollback boundary. It is not
-evidence that a particular project has been upgraded successfully. Release
-publication remains separate from the real v8.1-to-v9 rehearsal on the exact
-candidate binary.
+evidence that a particular project has been upgraded successfully. The
+published release and a real v8.1-to-v9 rehearsal on the exact installed binary
+remain separate results.
 
 ## Upgrading v8.1.0 → v9.0.0
 

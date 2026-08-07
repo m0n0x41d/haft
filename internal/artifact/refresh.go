@@ -18,6 +18,9 @@ type RefreshAction string
 
 const (
 	RefreshScan      RefreshAction = "scan"
+	RefreshPlan      RefreshAction = "plan"
+	RefreshReview    RefreshAction = "review"
+	RefreshDrain     RefreshAction = "drain"
 	RefreshWaive     RefreshAction = "waive"
 	RefreshReopen    RefreshAction = "reopen"
 	RefreshSupersede RefreshAction = "supersede"
@@ -166,7 +169,7 @@ func ScanStale(ctx context.Context, store ArtifactStore, projectRoot ...string) 
 		if wlnk.REff < 0.5 {
 			reason := fmt.Sprintf("evidence degraded (R_eff: %.2f)", wlnk.REff)
 			if wlnk.REff < 0.3 {
-				reason = fmt.Sprintf("AT RISK — evidence degraded (R_eff: %.2f) — consider reopen or supersede", wlnk.REff)
+				reason = fmt.Sprintf("AT RISK — evidence degraded (R_eff: %.2f) — verdicts: open-new-frame (reopen), switch-method (supersede), or stop with dominance rationale", wlnk.REff)
 			}
 			addItem(StaleItem{
 				ID:       d.Meta.ID,

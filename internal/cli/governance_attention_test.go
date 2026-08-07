@@ -9,6 +9,8 @@ import (
 )
 
 func TestScanGovernanceAttention_SurfacesProblemCountsOrphansAndInvariantViolations(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -66,8 +68,8 @@ func TestScanGovernanceAttention_SurfacesProblemCountsOrphansAndInvariantViolati
 	}
 
 	decision := &artifact.Artifact{
-		Meta: artifact.Meta{ID: "dec-001", Kind: artifact.KindDecisionRecord, Status: artifact.StatusActive, Title: "Invariant decision"},
-		Body: "decision",
+		Meta:           artifact.Meta{ID: "dec-001", Kind: artifact.KindDecisionRecord, Status: artifact.StatusActive, Title: "Invariant decision"},
+		Body:           "decision",
 		StructuredData: string(structuredJSON),
 	}
 	if err := store.Create(ctx, decision); err != nil {

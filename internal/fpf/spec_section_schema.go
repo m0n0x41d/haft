@@ -2,41 +2,44 @@ package fpf
 
 func haftSpecSectionTool() Tool {
 	return Tool{
-		Name: "haft_spec_section",
-		Description: "Drive the Haft v7 spec onboarding method one step at a time. " +
-			"`next_step` returns a typed WorkflowIntent (which onboarding phase is " +
-			"next, what the human should decide, what context the host agent needs " +
-			"to draft the section, which YAML fields the section must carry, " +
-			"which structural Checks the resulting section must satisfy). " +
-			"`approve` records a SpecSectionBaseline so drift detection becomes " +
-			"meaningful; `rebaseline` overwrites a baseline after the operator " +
-			"confirms drift is intentional evolution; `reopen` deletes a baseline " +
-			"so the section returns to the onboarding loop. Surfaces (MCP plugin, " +
-			"Desktop wizard, CLI) all consume the same intent shape.",
+		Name:        "haft_spec_section",
+		Description: "Project/scope-level specification workflow projection, profile-independent draft contract, exact-section projection, and binding mutations over project SQL editions. Project workflow readiness is not exact SpecSection lifecycle or stronger-use admission. The draft contract does not establish applicability, activation, approval, or evidence. This tool does not establish compatibility with a newer FPF source. Approval actions fail closed by default; host receipts require a registered kernel verifier.",
 		InputSchema: map[string]interface{}{
 			"type": "object",
 			"properties": map[string]interface{}{
 				"action": map[string]interface{}{
 					"type": "string",
 					"enum": []interface{}{
+						"lifecycle",
 						"next_step",
+						"draft_contract",
+						"project",
 						"approve",
 						"rebaseline",
 						"reopen",
 					},
-					"description": "next_step=return the next typed WorkflowIntent. approve=record a baseline for an active section that has none. rebaseline=overwrite an existing baseline after confirming the carrier change is intentional. reopen=delete a baseline so the section re-enters the onboarding loop.",
+					"description": "lifecycle=project/scope-level ProjectSpecificationSet workflow projection. next_step=its WorkflowIntent. Both reject section_id; exact-section reads use haft_query action spec_trace or spec_use. draft_contract=canonical phases, fields, values, checks, and exact haft_query action=spec_validate continuation without resolving applicability. project=non-binding SpecSectionAtConcern projection from one exact current SQL edition. These actions do not compare section meaning with a newer FPF source. approve/rebaseline/reopen return operator_confirmation_required in default MCP cli-only mode; host receipts require a registered kernel verifier.",
 				},
 				"project_root": map[string]string{
 					"type":        "string",
 					"description": "Project root containing .haft/specs/*. Optional; defaults to the server-bound project.",
 				},
+				"scope_id": map[string]string{
+					"type":        "string",
+					"description": "(lifecycle/next_step) Exact canonical project-profile ScopeID. Optional for a singleton profile; required when several scopes exist. Rejected by draft_contract because that action is explicitly profile-independent. This is read-only selection, not profile authority.",
+				},
 				"section_id": map[string]string{
 					"type":        "string",
-					"description": "(approve/rebaseline/reopen) SpecSection id (e.g. 'TS.environment-change.001'). Must match an active section in the carriers for approve/rebaseline.",
+					"description": "(project/approve/rebaseline/reopen) SpecSection id (e.g. 'TS.environment-change.001'). Rejected for lifecycle/next_step because those actions are project/scope-level; use haft_query action spec_trace or spec_use for an exact section. project requires an exact current SQL edition; approve/rebaseline require an active section.",
+				},
+				"entity_ref": memoryEntityReferenceSchema(),
+				"bounded_context_ref": map[string]interface{}{
+					"type":        "string",
+					"description": "(project) Exact typed-memory bounded context paired with entity_ref.",
 				},
 				"approved_by": map[string]string{
 					"type":        "string",
-					"description": "(approve/rebaseline) Identifier of who approved the baseline. Defaults to 'human' when omitted; use 'agent' when the host agent is acting on explicit operator authority.",
+					"description": "(approve/rebaseline) Identifier recorded by manual/authorized paths. In default MCP cli-only mode this is not accepted as proof of human authorship.",
 				},
 				"reason": map[string]string{
 					"type":        "string",

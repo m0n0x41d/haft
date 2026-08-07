@@ -11,49 +11,97 @@ import (
 	"github.com/m0n0x41d/haft/internal/present"
 )
 
-func TestNavStrip_AvailableGuardLine(t *testing.T) {
-	state := artifact.NavState{
-		DerivedStatus: artifact.DerivedFramed,
-		Mode:          artifact.ModeTactical,
-		NextAction:    `/h-explore (generate variants) | /h-decide (decide directly)`,
+func TestProjectStateStrip_DoesNotRenderPhaseOrGlobalNextAction(t *testing.T) {
+	state := artifact.ProjectStateView{
+		Problems: artifact.ProjectProblemFacet{
+			Known: true,
+			Open: []artifact.ProjectArtifactState{
+				{ID: "prob-routing", Title: "Choose a delivery shape", Status: artifact.StatusActive},
+			},
+		},
 	}
 
-	output := present.NavStrip(state)
+	output := present.ProjectStateStrip(state)
 
-	if !strings.Contains(output, "Available:") {
-		t.Errorf("should contain 'Available:', got:\n%s", output)
-	}
-	if !strings.Contains(output, "do not auto-execute") {
-		t.Errorf("should contain guard line, got:\n%s", output)
-	}
-}
-
-func TestNavStrip_NoGuardWhenDecided(t *testing.T) {
-	state := artifact.NavState{
-		DerivedStatus: artifact.DerivedDecided,
-		DecisionInfo:  "Use Redis",
-	}
-
-	output := present.NavStrip(state)
-
-	if strings.Contains(output, "Available:") {
-		t.Errorf("DECIDED state should NOT show Available, got:\n%s", output)
+	for _, forbidden := range []string{"Status:", "Available:", "Next action", "/h-explore", "do not auto-execute"} {
+		if strings.Contains(output, forbidden) {
+			t.Fatalf("project state should not render global navigation %q:\n%s", forbidden, output)
+		}
 	}
 }
 
-func TestNavStrip_AllFieldsRendered(t *testing.T) {
-	state := artifact.NavState{
-		Context:       "payments",
-		Mode:          artifact.ModeStandard,
-		DerivedStatus: artifact.DerivedExploring,
-		PortfolioInfo: "API redesign",
-		StaleCount:    2,
-		NextAction:    "/h-compare (compare variants)",
+func TestProjectStateStrip_EmptyViewIsNotUnderframed(t *testing.T) {
+	state := artifact.ProjectStateView{
+		Problems:  artifact.ProjectProblemFacet{Known: true},
+		Options:   artifact.ProjectOptionFacet{Known: true},
+		Decisions: artifact.ProjectDecisionFacet{Known: true},
+		Work:      artifact.ProjectWorkFacet{Known: true},
+	}
+
+	output := present.ProjectStateStrip(state)
+
+	if !strings.Contains(output, "Current facets: none recorded") {
+		t.Fatalf("empty view should report absence without inventing a phase:\n%s", output)
+	}
+	if strings.Contains(output, "UNDERFRAMED") {
+		t.Fatalf("empty view must not be classified as UNDERFRAMED:\n%s", output)
+	}
+}
+
+func TestProjectStateStrip_CoexistingFacetsRendered(t *testing.T) {
+	state := artifact.ProjectStateView{
+		Context: "payments",
+		Problems: artifact.ProjectProblemFacet{
+			Known: true,
+			Open: []artifact.ProjectArtifactState{
+				{ID: "prob-payments", Title: "Payment retries", Status: artifact.StatusActive},
+			},
+		},
+		Options: artifact.ProjectOptionFacet{
+			Known: true,
+			Sets: []artifact.ProjectOptionSetState{
+				{
+					Artifact: artifact.ProjectArtifactState{
+						ID: "sol-payments", Title: "Retry options", Status: artifact.StatusActive,
+					},
+					ComparisonRecorded: true,
+				},
+			},
+		},
+		Decisions: artifact.ProjectDecisionFacet{
+			Known: true,
+			Active: []artifact.ProjectArtifactState{
+				{ID: "dec-payments", Title: "Use bounded retries", Status: artifact.StatusActive},
+			},
+		},
+		Work: artifact.ProjectWorkFacet{
+			Known: true,
+			Active: []artifact.WorkCommissionStatus{
+				{ID: "wc-payments", Title: "Implement retry cap", State: "queued"},
+			},
+		},
+		ProjectPressureFacet: artifact.ProjectPressureFacet{
+			EvidenceKnown: true,
+			StaleCount:    2,
+		},
+		SpecHealth: artifact.ProjectSpecHealthFacet{
+			Known:        true,
+			FindingCount: 1,
+		},
 	}
 
 	output := present.NavStrip(state)
 
-	for _, want := range []string{"Context: payments", "Mode: standard", "Status: EXPLORING", "Portfolio: API redesign", "Stale: 2", "Available:", "/h-compare"} {
+	for _, want := range []string{
+		"Context: payments",
+		"Open problems: 1",
+		"Option sets: 1",
+		"comparison recorded",
+		"Active decisions: 1",
+		"Active work: 1",
+		"Evidence pressure: 2",
+		"Spec health: 1",
+	} {
 		if !strings.Contains(output, want) {
 			t.Errorf("output missing %q:\n%s", want, output)
 		}
@@ -110,6 +158,68 @@ func TestDriftResponseSummary_StaysCompactOnLargeReports(t *testing.T) {
 	}
 }
 
+func TestDriftResponseSummary_StaysCompactOnImpactFanout(t *testing.T) {
+	reports := make([]artifact.DriftReport, 0, 8)
+	for r := 0; r < 8; r++ {
+		impacts := make([]artifact.ModuleImpact, 0, 20)
+		for i := 0; i < 20; i++ {
+			impacts = append(impacts, artifact.ModuleImpact{
+				ModulePath: fmt.Sprintf("internal/mod-%02d-%02d", r, i),
+				DecisionIDs: []string{
+					"dec-a",
+					"dec-b",
+					"dec-c",
+					"dec-d",
+					"dec-e",
+					"dec-f",
+				},
+				DecisionTitles: map[string]string{
+					"dec-a": "Decision A",
+					"dec-b": "Decision B",
+					"dec-c": "Decision C",
+					"dec-d": "Decision D",
+					"dec-e": "Decision E",
+					"dec-f": "Decision F",
+				},
+			})
+		}
+		reports = append(reports, artifact.DriftReport{
+			DecisionID:        fmt.Sprintf("dec-impact-%02d", r),
+			DecisionTitle:     fmt.Sprintf("Impact %02d", r),
+			HasBaseline:       true,
+			Files:             []artifact.DriftItem{{Path: fmt.Sprintf("internal/file-%02d.go", r), Status: artifact.DriftModified}},
+			ImpactedModules:   impacts,
+			LikelyImplemented: true,
+		})
+	}
+
+	summary := present.DriftResponseSummary(reports, "")
+
+	for _, want := range []string{
+		"Impact propagation for **Impact 00** `dec-impact-00`",
+		"internal/mod-00-00",
+		"**Decision A** `dec-a`",
+		"... +2",
+		"... and 15 more impacted module(s)",
+		"... and 5 more decision(s) with impact propagation omitted from summary",
+		"verbose: true",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("summary missing %q:\n%s", want, summary)
+		}
+	}
+	for _, banned := range []string{"internal/mod-00-19", "Impact propagation for dec-impact-07"} {
+		if strings.Contains(summary, banned) {
+			t.Fatalf("summary leaked uncapped impact detail %q:\n%s", banned, summary)
+		}
+	}
+
+	summaryLines := strings.Count(summary, "\n")
+	if summaryLines > 80 {
+		t.Fatalf("impact summary should stay compact; got %d lines\n%s", summaryLines, summary)
+	}
+}
+
 func TestDriftResponseSummary_EmptyAndNoBaseline(t *testing.T) {
 	if got := present.DriftResponseSummary(nil, ""); !strings.Contains(got, "No drift detected") {
 		t.Fatalf("empty reports should say so; got:\n%s", got)
@@ -127,6 +237,42 @@ func TestDriftResponseSummary_EmptyAndNoBaseline(t *testing.T) {
 	got := present.DriftResponseSummary(reports, "")
 	if !strings.Contains(got, "git activity detected after decision date") {
 		t.Fatalf("summary should preserve LikelyImplemented hint:\n%s", got)
+	}
+	if !strings.Contains(got, "**Implemented decision** `dec-001`") {
+		t.Fatalf("summary should render no-baseline decisions title-first with ref:\n%s", got)
+	}
+}
+
+func TestScanResponseSummary_StaysCompactAndKeepsVerboseRecoveryHint(t *testing.T) {
+	items := make([]artifact.StaleItem, 0, 25)
+	for i := 0; i < 25; i++ {
+		items = append(items, artifact.StaleItem{
+			ID:     fmt.Sprintf("dec-stale-%02d", i),
+			Title:  fmt.Sprintf("Stale %02d", i),
+			Kind:   string(artifact.KindDecisionRecord),
+			Reason: "evidence expired",
+		})
+	}
+
+	summary := present.ScanResponseSummary(items, "")
+
+	if !strings.Contains(summary, "Refresh Due (25 artifact(s)) — summary") {
+		t.Fatalf("summary missing heading:\n%s", summary)
+	}
+	if !strings.Contains(summary, "dec-stale-09") {
+		t.Fatalf("summary should include top stale items:\n%s", summary)
+	}
+	if !strings.Contains(summary, "**Stale 00** `dec-stale-00`") {
+		t.Fatalf("summary should render stale items title-first with ref:\n%s", summary)
+	}
+	if strings.Contains(summary, "dec-stale-10") {
+		t.Fatalf("summary should omit stale item 11+:\n%s", summary)
+	}
+	if !strings.Contains(summary, "15 more refresh-due artifact(s)") {
+		t.Fatalf("summary should report omitted stale count:\n%s", summary)
+	}
+	if !strings.Contains(summary, "verbose: true") {
+		t.Fatalf("summary should explain full recovery:\n%s", summary)
 	}
 }
 
@@ -170,6 +316,12 @@ func TestProblemResponse_ShowsRecall(t *testing.T) {
 
 	response := present.ProblemResponse("frame", a, "/tmp/test.md", "\n-- nav --\n")
 
+	if !strings.Contains(response, "Problem framed: **Test problem** `prob-001`") {
+		t.Fatalf("frame response should pair problem title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "\nID: prob-001\n") {
+		t.Fatalf("frame response should not expose a standalone bare problem ID:\n%s", response)
+	}
 	if !strings.Contains(response, "Related History") {
 		t.Error("frame response should surface Related History from body")
 	}
@@ -270,6 +422,7 @@ func TestSolutionResponse_ExploreShowsVariantsIndexAndUsageHint(t *testing.T) {
 	response := present.SolutionResponse("explore", a, "/tmp/sol.md", "")
 
 	required := []string{
+		"Portfolio created: **Transport portfolio** `sol-001`",
 		"Variants:",
 		"V1 — Kafka",
 		"V2 — NATS JetStream",
@@ -285,6 +438,9 @@ func TestSolutionResponse_ExploreShowsVariantsIndexAndUsageHint(t *testing.T) {
 		if !strings.Contains(response, want) {
 			t.Fatalf("explore response missing %q:\n%s", want, response)
 		}
+	}
+	if strings.Contains(response, "\nID: sol-001\n") {
+		t.Fatalf("explore response should not expose a standalone bare portfolio ID:\n%s", response)
 	}
 }
 
@@ -329,13 +485,14 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 	response := present.SolutionResponse("compare", a, "/tmp/sol.md", "\n-- nav --\n")
 
 	required := []string{
+		"Comparison added to: **Transport portfolio** `sol-001`",
 		"File: /tmp/sol.md",
-		"Computed Pareto front: Kafka, NATS",
+		"Computed Pareto front: Kafka `V1`, NATS `V2`",
 		"Dominated variant elimination:",
-		"Redis Streams: dominated by NATS. Lower throughput with no compensating operations win.",
+		"Redis Streams `V3`: dominated by NATS `V2`. Lower throughput with no compensating operations win.",
 		"Pareto-front trade-offs:",
-		"Kafka: Best throughput, but highest ops cost.",
-		"Recommendation (advisory): NATS",
+		"Kafka `V1`: Best throughput, but highest ops cost.",
+		"Recommendation (advisory): NATS `V2`",
 		"Recommendation rationale: Meets the throughput floor while minimizing operational burden.",
 		"Human choice remains open until decide.",
 	}
@@ -344,6 +501,9 @@ func TestSolutionResponse_CompareShowsNarrativeSummary(t *testing.T) {
 		if !strings.Contains(response, want) {
 			t.Fatalf("compare response missing %q:\n%s", want, response)
 		}
+	}
+	if strings.Contains(response, "\nID: sol-001\n") {
+		t.Fatalf("compare response should not expose a standalone bare portfolio ID:\n%s", response)
 	}
 }
 
@@ -436,6 +596,425 @@ func TestStatusResponse_NoDriftSectionWhenEmpty(t *testing.T) {
 	}
 }
 
+func TestCockpitStatusResponse_CompactsDefaultAndNamesDrilldowns(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-healthy", Title: "Healthy decision"}},
+		},
+		PendingDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-pending", Title: "Pending decision"}},
+		},
+		UnassessedDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-unassessed", Title: "Unassessed decision"}},
+		},
+		StaleItems: []artifact.StaleItem{
+			{ID: "dec-stale-a", Title: "Stale A", Reason: "expired"},
+			{ID: "dec-stale-b", Title: "Stale B", Reason: "at risk"},
+			{ID: "dec-stale-c", Title: "Stale C", Reason: "hidden by cap"},
+		},
+		Drift: []artifact.DriftReport{{
+			DecisionID:    "dec-drift",
+			DecisionTitle: "Drifted decision",
+			Files: []artifact.DriftItem{
+				{Path: "internal/a.go", Status: artifact.DriftModified},
+				{Path: "internal/b.go", Status: artifact.DriftAdded},
+			},
+		}},
+		InProgressProblems: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "prob-progress", Title: "Progress problem"}},
+		},
+		InProgressBy:    map[string]string{"prob-progress": "sol-001"},
+		PortfolioTitles: map[string]string{"sol-001": "Progress portfolio"},
+		RecentNotes: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "note-hidden", Title: "Hidden note"}},
+		},
+		ReconciliationCues: artifact.ReconciliationCueReport{
+			Summary: artifact.ReconciliationCueSummary{
+				HighFanoutEvents:       1,
+				MaxFanout:              4,
+				ReconciliationGroups:   2,
+				OperatorRequiredGroups: 2,
+				GoverningConflictSets:  1,
+				GoverningOverlapSets:   1,
+			},
+			Cues: []artifact.ReconciliationCue{{
+				Kind: artifact.ReconciliationCueHighFanout,
+			}},
+			Commands: []string{
+				artifact.StatusCompactDriftEventsCommand,
+				artifact.StatusCompactDecisionReconcileCommand,
+				artifact.StatusCompactGoverningSetCommand,
+			},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	for _, want := range []string{
+		"### Operator Cockpit",
+		"**Interruption boundary**: attention below is not a project-wide gate",
+		"Continue unrelated already-authorized Work",
+		"current use that relies on unresolved contradictory binding content",
+		"**Refresh due** (3)",
+		"Stale A",
+		"Stale B",
+		"... and 1 more.",
+		"**Binding resolution needed**: 1 unique event(s), 1 impacted decision(s) need precise binding targets",
+		"**Scoped decision reconciliation contains an operator-required selection**: 2 operator-required reconciliation group(s); 1 governing conflict set(s); 1 governing overlap review set(s)",
+		"detail commands are in Drill-down",
+		"**Progress problem** `prob-progress` → **Progress portfolio** `sol-001`",
+		"Core details: `haft_query(action=\"status\", full=true)`, `haft_query(action=\"coverage\")`, `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"plan\", verbose=true)`",
+		"Governance details: `haft_query(action=\"drift_events\", limit=5)`, `haft_query(action=\"decision_reconcile\", limit=5)`, `haft_query(action=\"governing_set\", limit=5)`, `haft_refresh(action=\"review\")`, `haft overseer judgment --json --limit 20`, `haft_refresh(action=\"drain\", dry_run=true)`",
+		"Default status omits shipped/pending decision lists",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("cockpit output missing %q:\n%s", want, output)
+		}
+	}
+
+	for _, unwanted := range []string{
+		"### Shipped / Healthy",
+		"### Pending",
+		"### Recent Notes",
+		"Hidden note",
+		"Stale C",
+		"**Drift events**",
+		"**Audit-only drift events**",
+		"high-fanout drift event",
+	} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("cockpit output should omit %q:\n%s", unwanted, output)
+		}
+	}
+}
+
+func TestCockpitStatusResponse_DoesNotReportResolvedDriftEventsAsAttention(t *testing.T) {
+	data := artifact.StatusData{
+		Drift: []artifact.DriftReport{{
+			DecisionID: "dec-resolved",
+			Files: []artifact.DriftItem{{
+				Path:   "internal/a.go",
+				Status: artifact.DriftModified,
+			}},
+		}},
+		DriftEvents: artifact.DriftEventReport{
+			SchemaVersion: 2,
+			Summary: artifact.DriftEventSummary{
+				UniqueEvents:           1,
+				ImpactedDecisions:      1,
+				MaterialEvents:         1,
+				ResolvedByLedgerEvents: 1,
+				MaxFanout:              1,
+			},
+			Events: []artifact.DriftEvent{{
+				EventID:          "drift-event-resolved",
+				ChangedTargetRef: "symbol:internal/a.go::func:Done",
+				Materiality:      artifact.DriftMaterialityMaterialSymbol,
+				Fanout:           1,
+				ImpactedDecisions: []artifact.DriftEventDecision{{
+					DecisionID: "dec-resolved",
+				}},
+				RootCause:        artifact.DriftEventRootCauseSemanticTargetChanged,
+				ResolutionStatus: artifact.DriftEventResolutionResolved,
+				ResolutionRecord: &artifact.DriftEventResolution{
+					EventID: "drift-event-resolved",
+					Status:  artifact.DriftEventResolutionResolved,
+					Reason:  "verified externally",
+				},
+			}},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	if strings.Contains(output, "**Drift events**") {
+		t.Fatalf("resolved drift event should not appear as active cockpit drift:\n%s", output)
+	}
+	if strings.Contains(output, "Decision Health") {
+		t.Fatalf("resolved-only drift should not create decision health noise:\n%s", output)
+	}
+	if !strings.Contains(output, "No active refresh, drift, binding, reconciliation, or commission attention items") {
+		t.Fatalf("resolved-only drift should leave cockpit calm:\n%s", output)
+	}
+}
+
+func TestCockpitStatusResponse_GroupsAuditOnlyDrift(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-healthy", Title: "Healthy decision"}},
+		},
+		Drift: []artifact.DriftReport{
+			{
+				DecisionID:    "dec-audit",
+				DecisionTitle: "Audit-only decision",
+				Files: []artifact.DriftItem{{
+					Path:        "internal/shared.go",
+					Status:      artifact.DriftModified,
+					Materiality: artifact.DriftMaterialityAdjacentFileChurn,
+					AuditOnly:   true,
+				}},
+			},
+			{
+				DecisionID:    "dec-audit-2",
+				DecisionTitle: "Second audit-only decision",
+				Files: []artifact.DriftItem{{
+					Path:        "internal/shared.go",
+					Status:      artifact.DriftModified,
+					Materiality: artifact.DriftMaterialityAdjacentFileChurn,
+					AuditOnly:   true,
+				}},
+			},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	for _, want := range []string{
+		"No active refresh, drift, binding, reconciliation, or commission attention items",
+		"Drift: 0 material event(s), 1 audit-only event(s)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("cockpit output missing %q:\n%s", want, output)
+		}
+	}
+	for _, unwanted := range []string{"**Drift events**", "**Audit-only drift events**"} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("audit-only drift should not render %q as attention:\n%s", unwanted, output)
+		}
+	}
+}
+
+func TestCockpitStatusResponse_MixedMaterialAndAuditDriftUsesMaterialHeadline(t *testing.T) {
+	data := artifact.StatusData{
+		HealthyDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-healthy", Title: "Healthy decision"}},
+		},
+		DriftEvents: artifact.DriftEventReport{
+			SchemaVersion: 2,
+			Summary: artifact.DriftEventSummary{
+				UniqueEvents:      5,
+				ImpactedDecisions: 5,
+				MaterialEvents:    2,
+				AuditOnlyEvents:   3,
+				MaxFanout:         20,
+			},
+			Events: []artifact.DriftEvent{
+				{
+					EventID:          "drift-event-material-a",
+					ChangedTargetRef: "symbol:internal/a.go::func:ChangedA",
+					Materiality:      artifact.DriftMaterialityMaterialSymbol,
+					Fanout:           2,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-material-a"},
+						{DecisionID: "dec-material-b"},
+					},
+				},
+				{
+					EventID:          "drift-event-material-b",
+					ChangedTargetRef: "symbol:internal/b.go::func:ChangedB",
+					Materiality:      artifact.DriftMaterialityMaterialSymbol,
+					Fanout:           1,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-material-a"},
+					},
+				},
+				{
+					EventID:          "drift-event-audit-a",
+					ChangedTargetRef: "file:internal/shared.go",
+					Materiality:      artifact.DriftMaterialityAdjacentFileChurn,
+					AuditOnly:        true,
+					Fanout:           20,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-audit-a"},
+					},
+				},
+				{
+					EventID:          "drift-event-audit-b",
+					ChangedTargetRef: "file:README.md",
+					Materiality:      artifact.DriftMaterialityCarrierOnly,
+					AuditOnly:        true,
+					Fanout:           10,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-audit-b"},
+					},
+				},
+				{
+					EventID:          "drift-event-audit-c",
+					ChangedTargetRef: "file:generated.db",
+					Materiality:      artifact.DriftMaterialityGeneratedOrIgnored,
+					AuditOnly:        true,
+					Fanout:           7,
+					ImpactedDecisions: []artifact.DriftEventDecision{
+						{DecisionID: "dec-audit-c"},
+					},
+				},
+			},
+		},
+	}
+
+	output := present.CockpitStatusResponse(data)
+
+	for _, want := range []string{
+		"**Drift events** (2 material; 2 impacted decision(s); max fanout 2; 3 audit-only in drill-down)",
+		"symbol:internal/a.go::func:ChangedA",
+		"symbol:internal/b.go::func:ChangedB",
+		"Drift: 2 material event(s), 3 audit-only event(s), 0 needs-binding event(s).",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("cockpit output missing %q:\n%s", want, output)
+		}
+	}
+	for _, unwanted := range []string{
+		"5 unique",
+		"max fanout 20",
+		"file:README.md — fanout=10",
+		"file:generated.db — fanout=7",
+	} {
+		if strings.Contains(output, unwanted) {
+			t.Fatalf("cockpit output should not expose mixed audit fanout %q:\n%s", unwanted, output)
+		}
+	}
+}
+
+func TestCockpitStatusResponse_GroupsBindingResolutionDrift(t *testing.T) {
+	data := artifact.StatusData{
+		Drift: []artifact.DriftReport{{
+			DecisionID:    "dec-needs-binding",
+			DecisionTitle: "Whole-file fallback decision",
+			HasBaseline:   true,
+			Files: []artifact.DriftItem{{
+				Path:        "notes.txt",
+				Status:      artifact.DriftModified,
+				Materiality: artifact.DriftMaterialityNeedsBindingResolution,
+			}},
+		}},
+	}
+
+	output := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Binding resolution needed**",
+		"Drift: 0 material event(s), 0 audit-only event(s), 1 needs-binding event(s)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "**Drift events**") {
+		t.Fatalf("binding-resolution drift should not render as material drift:\n%s", output)
+	}
+}
+
+func TestCockpitStatusResponse_GroupsLegacyFileFallbackAsBindingResolution(t *testing.T) {
+	data := artifact.StatusData{
+		Drift: []artifact.DriftReport{{
+			DecisionID:    "dec-legacy-file",
+			DecisionTitle: "Legacy whole-file decision",
+			HasBaseline:   true,
+			Files: []artifact.DriftItem{{
+				Path:        "internal/tools/haft.go",
+				Status:      artifact.DriftModified,
+				Materiality: artifact.DriftMaterialityUnknownLegacyFileScope,
+			}},
+		}},
+	}
+
+	output := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Binding resolution needed**",
+		"Drift: 0 material event(s), 0 audit-only event(s), 1 needs-binding event(s)",
+		"haft_query(action=\"decision_reconcile\", limit=5)",
+	} {
+		if !strings.Contains(output, want) {
+			t.Fatalf("output missing %q:\n%s", want, output)
+		}
+	}
+	if strings.Contains(output, "**Drift events**") {
+		t.Fatalf("legacy file fallback should not render as material drift:\n%s", output)
+	}
+}
+
+func TestStatusResponses_SurfaceProblemClosureHygieneReadOnly(t *testing.T) {
+	data := artifact.StatusData{
+		ProblemHygiene: []artifact.ProblemHygieneItem{{
+			Problem: &artifact.Artifact{
+				Meta: artifact.Meta{
+					ID:    "prob-unlinked",
+					Kind:  artifact.KindProblemCard,
+					Title: "Done but unlinked",
+				},
+			},
+			Reason: "supporting evidence exists but no based_on SolutionPortfolio or DecisionRecord links this active problem",
+			Action: "link an existing portfolio/decision, attach the missing evidence to that artifact, or explicitly deprecate/supersede/waive with operator rationale",
+		}},
+	}
+
+	cockpit := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Problem closure hygiene** (1)",
+		"**Done but unlinked** `prob-unlinked`",
+		"supporting evidence exists",
+		`haft_query(action="status", full=true)`,
+	} {
+		if !strings.Contains(cockpit, want) {
+			t.Fatalf("cockpit missing %q:\n%s", want, cockpit)
+		}
+	}
+
+	full := present.StatusResponse(data)
+	for _, want := range []string{
+		"### Problem Closure Hygiene (1)",
+		"Action: link an existing portfolio/decision",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full status missing %q:\n%s", want, full)
+		}
+	}
+}
+
+func TestStatusResponses_SurfaceSpecBindingDebtReadOnly(t *testing.T) {
+	data := artifact.StatusData{
+		SpecBindingDebt: artifact.SpecBindingDebtReport{
+			SchemaVersion: 1,
+			Authority:     "read_only_spec_binding_debt_attention",
+			Summary: artifact.SpecBindingDebtSummary{
+				DecisionsMissingSpecBinding:  1,
+				DecisionsWithInvalidSpecRefs: 1,
+				DraftSectionNeededDebt:       1,
+				OutOfSpecDecisionDebt:        1,
+			},
+			Items: []artifact.SpecBindingDebtItem{{
+				DecisionRef: "dec-invalid",
+				Title:       "Invalid spec refs",
+				Kind:        "decisions_with_invalid_spec_refs",
+				SectionRefs: []string{"TS.missing.999"},
+				Message:     "section_refs do not resolve to active SpecSections",
+			}},
+		},
+	}
+
+	cockpit := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"**Spec binding debt**: missing=1 invalid_refs=1 draft_section_needed=1 out_of_spec=1",
+		`haft_query(action="status", full=true)`,
+	} {
+		if !strings.Contains(cockpit, want) {
+			t.Fatalf("cockpit missing %q:\n%s", want, cockpit)
+		}
+	}
+
+	full := present.StatusResponse(data)
+	for _, want := range []string{
+		"### Spec Binding Debt (4)",
+		"**Invalid spec refs** `dec-invalid`",
+		"decisions_with_invalid_spec_refs",
+		"TS.missing.999",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full status missing %q:\n%s", want, full)
+		}
+	}
+}
+
 func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 	data := artifact.StatusData{
 		HealthyDecisions: []*artifact.Artifact{
@@ -478,8 +1057,10 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		OpenCommissions: []artifact.WorkCommissionStatus{
 			{
 				ID:               "wc-stale",
+				Title:            "Drain stale decision",
 				State:            "queued",
 				DecisionRef:      "dec-stale",
+				DecisionTitle:    "Stale decision",
 				AttentionReason:  "open longer than 24h0m0s",
 				SuggestedActions: []string{"inspect", "requeue", "cancel"},
 			},
@@ -487,8 +1068,10 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		CommissionAttention: []artifact.WorkCommissionStatus{
 			{
 				ID:               "wc-stale",
+				Title:            "Drain stale decision",
 				State:            "queued",
 				DecisionRef:      "dec-stale",
+				DecisionTitle:    "Stale decision",
 				AttentionReason:  "open longer than 24h0m0s",
 				SuggestedActions: []string{"inspect", "requeue", "cancel"},
 			},
@@ -503,11 +1086,73 @@ func TestStatusResponse_ShowsDerivedDecisionHealth(t *testing.T) {
 		"### Unassessed (1)",
 		"**Stale decision** `dec-stale` — Shipped / Stale — evidence degraded (R_eff: 0.40)",
 		"### WorkCommissions Need Attention (1)",
-		"`wc-stale` queued → dec-stale — open longer than 24h0m0s — actions: inspect, requeue, cancel",
+		"**Drain stale decision** `wc-stale` queued → **Stale decision** `dec-stale` — open longer than 24h0m0s — actions: inspect, requeue, cancel",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)
 		}
+	}
+}
+
+func TestStatusResponsesExplainEvidenceAndClaimVerificationSeparately(t *testing.T) {
+	data := artifact.StatusData{
+		UnassessedDecisions: []*artifact.Artifact{
+			{Meta: artifact.Meta{ID: "dec-no-evidence", Title: "No evidence"}},
+			{Meta: artifact.Meta{ID: "dec-unavailable", Title: "Evidence unavailable"}},
+		},
+		DecisionHealth: map[string]artifact.DecisionHealth{
+			"dec-no-evidence": {
+				Maturity:      artifact.DecisionMaturityUnassessed,
+				EvidenceState: artifact.DecisionEvidenceNoActiveEvidence,
+			},
+			"dec-unavailable": {
+				Maturity:      artifact.DecisionMaturityUnassessed,
+				EvidenceState: artifact.DecisionEvidenceUnavailable,
+			},
+		},
+		DecisionVerification: map[string]artifact.DecisionVerificationSummary{
+			"dec-no-evidence": {
+				ActiveClaims:       7,
+				UnverifiedClaims:   5,
+				NextScheduledCheck: "2026-08-01",
+			},
+			"dec-unavailable": {},
+		},
+	}
+
+	full := present.StatusResponse(data)
+	for _, want := range []string{
+		"claims: 7 active, 5 unverified; next scheduled check: 2026-08-01; no active evidence",
+		"claims: 0 active, 0 unverified; evidence unavailable",
+	} {
+		if !strings.Contains(full, want) {
+			t.Fatalf("full status missing %q:\n%s", want, full)
+		}
+	}
+	if strings.Contains(full, "deadline") || strings.Contains(full, "scheduled gate") {
+		t.Fatalf("status mislabels verify_after semantics:\n%s", full)
+	}
+
+	compact := present.CockpitStatusResponse(data)
+	for _, want := range []string{
+		"Claims: 7 active, 5 unverified; next scheduled check: 2026-08-01",
+		"Unassessed reasons: 1 no active evidence, 1 evidence unavailable",
+	} {
+		if !strings.Contains(compact, want) {
+			t.Fatalf("compact status missing %q:\n%s", want, compact)
+		}
+	}
+}
+
+func TestDecisionListUsesRecordedContextLabel(t *testing.T) {
+	output := present.ListResponse(artifact.ListData{
+		Kind: artifact.KindDecisionRecord,
+		Artifacts: []*artifact.Artifact{{
+			Meta: artifact.Meta{ID: "dec-20260711-context", Title: "Context decision", Context: "licensing"},
+		}},
+	})
+	if !strings.Contains(output, "recorded context: licensing") || strings.Contains(output, " ctx:licensing") {
+		t.Fatalf("decision list context label is ambiguous:\n%s", output)
 	}
 }
 
@@ -534,14 +1179,23 @@ func TestStatusResponse_ShowsProblemTypeInListings(t *testing.T) {
 				StructuredData: string(inProgressFields),
 			},
 		},
-		InProgressBy: map[string]string{"prob-progress": "sol-001"},
+		InProgressBy:    map[string]string{"prob-progress": "sol-001"},
+		PortfolioTitles: map[string]string{"sol-001": "Progress portfolio"},
+		AddressedProblems: []*artifact.Artifact{
+			{
+				Meta: artifact.Meta{ID: "prob-addressed", Title: "Addressed problem"},
+			},
+		},
+		AddressedBy:    map[string]string{"prob-addressed": "dec-001"},
+		DecisionTitles: map[string]string{"dec-001": "Accepted decision"},
 	}
 
 	output := present.StatusResponse(data)
 
 	for _, want := range []string{
-		"**In progress problem (diagnosis)** `prob-progress` → sol-001",
+		"**In progress problem (diagnosis)** `prob-progress` → **Progress portfolio** `sol-001`",
 		"**Backlog problem (search)** `prob-backlog`",
+		"**Addressed problem** `prob-addressed` → **Accepted decision** `dec-001`",
 	} {
 		if !strings.Contains(output, want) {
 			t.Fatalf("status output missing %q:\n%s", want, output)
@@ -627,8 +1281,49 @@ func TestDecisionResponse_PreservesDecisionBodyVerbatim(t *testing.T) {
 
 	response := present.DecisionResponse("decide", a, "", "", "\n-- nav --\n")
 
+	if !strings.Contains(response, "Decision recorded: **Fix DecisionRecord parser** `dec-001`") {
+		t.Fatalf("decide response should pair decision title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "\nID: dec-001\n") {
+		t.Fatalf("decide response should not expose a standalone bare decision ID:\n%s", response)
+	}
 	if !strings.Contains(response, body) {
 		t.Fatalf("expected decision body to stay verbatim, got:\n%s", response)
+	}
+}
+
+func TestNoteResponse_PairsTitleWithRef(t *testing.T) {
+	a := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "note-001",
+			Kind:  artifact.KindNote,
+			Title: "Operator transparency invariant",
+		},
+	}
+
+	response := present.NoteResponse(a, "/tmp/note.md", artifact.NoteValidation{OK: true}, "\n-- nav --\n")
+
+	if !strings.Contains(response, "Recorded: **Operator transparency invariant** `note-001`") {
+		t.Fatalf("note response should pair note title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "\nID: note-001\n") {
+		t.Fatalf("note response should not expose a standalone bare note ID:\n%s", response)
+	}
+}
+
+func TestBaselineResponse_PairsDecisionTitleWithRef(t *testing.T) {
+	response := present.BaselineResponse(
+		"Operator transparency decision",
+		"dec-001",
+		[]artifact.AffectedFile{{Path: "internal/present/format.go", Hash: "1234567890abcdef"}},
+		"\n-- nav --\n",
+	)
+
+	if !strings.Contains(response, "Baseline set for **Operator transparency decision** `dec-001`") {
+		t.Fatalf("baseline response should pair decision title with ref:\n%s", response)
+	}
+	if strings.Contains(response, "Baseline set for dec-001") {
+		t.Fatalf("baseline response should not expose a bare decision ref:\n%s", response)
 	}
 }
 
@@ -732,12 +1427,14 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 					MeasurementCount:   1,
 					MeasurementVerdict: "partial",
 					WLNK: artifact.WLNKSummary{
-						Summary:      "R_eff=0.60 · 2 evidence item(s) · 1 supporting · 1 weakening",
-						REff:         0.60,
-						FEff:         2,
-						WeakestCL:    1,
-						MinFreshness: "2026-07-01T00:00:00Z",
-						CoverageGaps: []string{"operational-cost"},
+						Summary:             "R_eff=0.60 · 2 evidence item(s) · 1 supporting · 1 weakening",
+						REff:                0.60,
+						FEff:                2,
+						FormalityScaleID:    "haft-legacy-f0-f3",
+						FormalityBridgeLoss: "legacy-scale-has-fewer-buckets",
+						WeakestCL:           1,
+						MinFreshness:        "2026-07-01T00:00:00Z",
+						CoverageGaps:        []string{"operational-cost"},
 					},
 				},
 			},
@@ -753,7 +1450,8 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 			wants: []string{
 				"## Engineer View",
 				"Signal: Latency variance between protocols",
-				"Portfolios: sol-001",
+				"Portfolios: **Solutions for: Transport choice** `sol-001`",
+				"Decisions: **gRPC** `dec-001`",
 				"Selected: gRPC",
 				"Predictions:",
 				"supported: Latency stays under 50ms (observable: publish latency p99; threshold: < 50ms)",
@@ -774,16 +1472,19 @@ func TestProjectionResponse_RendersAudienceViewsFromSameGraph(t *testing.T) {
 				"Selection policy: Minimize latency within the accepted cost envelope.",
 				"inconclusive: Throughput stays above 100k events/sec (observable: throughput; threshold: > 100k events/sec)",
 				"Coverage gaps: operational-cost",
-				"Assurance: R_eff=0.60 | F_eff=2 | weakest CL=1",
+				"Assurance: R_eff=0.60 | F_eff=2 scale=haft-legacy-f0-f3 bridge_loss=legacy-scale-has-fewer-buckets | weakest CL=1",
+				"Assurance boundary: evidence/formality are diagnostics, not approval, gate passage, claim truth, global truth, or publication.",
 			},
 		},
 		{
 			view: artifact.ProjectionViewCompare,
 			wants: []string{
 				"## Compare/Pareto View",
-				"Computed Pareto front: gRPC",
+				"Problems: **Transport choice** `prob-001`",
+				"Decisions: **gRPC** `dec-001`",
+				"Computed Pareto front: gRPC `V2`",
 				"Dominated variant elimination:",
-				"Recommendation (advisory): gRPC",
+				"Recommendation (advisory): gRPC `V2`",
 			},
 		},
 		{

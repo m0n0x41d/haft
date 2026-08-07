@@ -10,19 +10,44 @@ import (
 
 // ProblemFrameInput is the input for framing a problem.
 type ProblemFrameInput struct {
-	Title                 string   `json:"title"`
-	TaskContext           string   `json:"task_context,omitempty"`
-	ProblemType           string   `json:"problem_type,omitempty"`
-	Signal                string   `json:"signal"`
-	Constraints           []string `json:"constraints,omitempty"`
-	OptimizationTargets   []string `json:"optimization_targets,omitempty"`
-	ObservationIndicators []string `json:"observation_indicators,omitempty"`
-	Acceptance            string   `json:"acceptance,omitempty"`
-	BlastRadius           string   `json:"blast_radius,omitempty"`
-	Reversibility         string   `json:"reversibility,omitempty"`
-	Context               string   `json:"context,omitempty"`
-	Mode                  string   `json:"mode,omitempty"`
+	Title                 string         `json:"title"`
+	TaskContext           string         `json:"task_context,omitempty"`
+	ProblemType           string         `json:"problem_type,omitempty"`
+	ProblemProfile        string         `json:"problem_profile,omitempty"`
+	SourceKind            string         `json:"source_kind,omitempty"`
+	Signal                string         `json:"signal"`
+	WhyNow                string         `json:"why_now,omitempty"`
+	Scope                 string         `json:"scope,omitempty"`
+	AcceptanceProbe       string         `json:"acceptance_probe,omitempty"`
+	FreshnessDisposition  string         `json:"freshness_disposition,omitempty"`
+	Constraints           []string       `json:"constraints,omitempty"`
+	OptimizationTargets   []string       `json:"optimization_targets,omitempty"`
+	ObservationIndicators []string       `json:"observation_indicators,omitempty"`
+	Acceptance            string         `json:"acceptance,omitempty"`
+	BlastRadius           string         `json:"blast_radius,omitempty"`
+	Reversibility         string         `json:"reversibility,omitempty"`
+	Context               string         `json:"context,omitempty"`
+	Mode                  string         `json:"mode,omitempty"`
+	SpecFit               *SpecFitRecord `json:"spec_fit,omitempty"`
 }
+
+const (
+	ProblemProfileCue  = "cue"
+	ProblemProfileThin = "thin"
+	ProblemProfileDeep = "deep"
+
+	ProblemReadinessCueOnly   = "cue_only"
+	ProblemReadinessCandidate = "p2w_candidate"
+	ProblemReadinessReady     = "p2w_ready"
+	ProblemReadinessBlocked   = "p2w_blocked"
+	ProblemBoundaryExplicit   = "explicit"
+	ProblemBoundaryMissing    = "missing"
+	ProblemBoundaryPartial    = "partial"
+	ProblemSourceObserved     = "observed_problem"
+	ProblemSourceWish         = "wish"
+	ProblemSourceTicket       = "ticket"
+	ProblemSourceChosenMethod = "chosen_method"
+)
 
 // CharacterizeInput is the input for adding comparison dimensions.
 type CharacterizeInput struct {
@@ -37,8 +62,9 @@ type ComparisonDimension struct {
 	Name         string `json:"name"`
 	ScaleType    string `json:"scale_type,omitempty"` // ordinal, ratio, nominal
 	Unit         string `json:"unit,omitempty"`
-	Polarity     string `json:"polarity,omitempty"` // higher_better, lower_better
-	Role         string `json:"role,omitempty"`     // constraint, target, observation (default: target)
+	Polarity     string `json:"polarity,omitempty"`  // higher_better, lower_better
+	Role         string `json:"role,omitempty"`      // constraint, target, observation (default: target)
+	ProxyFor     string `json:"proxy_for,omitempty"` // intended value this dimension proxies (FPF E.13 — value before proxy)
 	HowToMeasure string `json:"how_to_measure,omitempty"`
 	ValidUntil   string `json:"valid_until,omitempty"` // when this measurement definition expires (RFC3339 or YYYY-MM-DD)
 }
@@ -53,6 +79,10 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		return nil, fmt.Errorf("signal is required — what's anomalous or broken?")
 	}
 	problemType, err := ParseProblemType(input.ProblemType)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := BuildProblemCardProfile(input)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +104,7 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	if problemType != "" {
 		body.WriteString(fmt.Sprintf("\n## Problem Type\n\n%s\n", problemType))
 	}
+	renderProblemProfileSections(&body, profile)
 
 	if len(input.Constraints) > 0 {
 		body.WriteString("\n## Constraints\n\n")
@@ -108,6 +139,8 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 		body.WriteString(fmt.Sprintf("\n## Reversibility\n\n%s\n", input.Reversibility))
 	}
 
+	appendSpecFitSection(&body, input.SpecFit)
+
 	a := &Artifact{
 		Meta: Meta{
 			ID:        id,
@@ -128,19 +161,165 @@ func BuildProblemArtifact(id string, now time.Time, input ProblemFrameInput, rec
 	}
 
 	// Populate structured data — canonical fields alongside markdown body
-	sd, _ := json.Marshal(ProblemFields{
+	fields := ProblemFields{
 		ProblemType:           problemType,
 		Signal:                input.Signal,
+		Profile:               profilePtr(profile),
+		SpecFit:               cloneSpecFitRecord(input.SpecFit),
 		Constraints:           input.Constraints,
 		OptimizationTargets:   input.OptimizationTargets,
 		ObservationIndicators: input.ObservationIndicators,
 		Acceptance:            input.Acceptance,
 		BlastRadius:           input.BlastRadius,
 		Reversibility:         input.Reversibility,
-	})
+	}
+	fields.Semantic = semanticPtr(NewProblemSemanticEnvelopeForProblem(id, now, fields, a.Body))
+	sd, _ := json.Marshal(fields)
 	a.StructuredData = string(sd)
 
 	return a, nil
+}
+
+func semanticPtr(value SemanticEnvelope) *SemanticEnvelope {
+	return &value
+}
+
+func profilePtr(value ProblemCardProfile) *ProblemCardProfile {
+	return &value
+}
+
+func BuildProblemCardProfile(input ProblemFrameInput) (ProblemCardProfile, error) {
+	level, err := normalizeProblemProfileLevel(input.ProblemProfile)
+	if err != nil {
+		return ProblemCardProfile{}, err
+	}
+	sourceKind, err := normalizeProblemSourceKind(input.SourceKind)
+	if err != nil {
+		return ProblemCardProfile{}, err
+	}
+
+	profile := ProblemCardProfile{
+		Level:                level,
+		SourceKind:           sourceKind,
+		WhyNow:               strings.TrimSpace(input.WhyNow),
+		Scope:                strings.TrimSpace(input.Scope),
+		AcceptanceProbe:      strings.TrimSpace(input.AcceptanceProbe),
+		FreshnessDisposition: strings.TrimSpace(input.FreshnessDisposition),
+	}
+	profile.BoundaryStatus = problemBoundaryStatus(profile)
+	profile.Blockers = problemReadinessBlockers(profile)
+	profile.Readiness = problemReadiness(profile)
+
+	return profile, nil
+}
+
+func normalizeProblemProfileLevel(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "" {
+		return ProblemProfileThin, nil
+	}
+
+	switch normalized {
+	case ProblemProfileCue, ProblemProfileThin, ProblemProfileDeep:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("problem_profile must be cue, thin, or deep")
+	}
+}
+
+func normalizeProblemSourceKind(value string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+	if normalized == "" {
+		return ProblemSourceObserved, nil
+	}
+
+	switch normalized {
+	case ProblemSourceObserved, ProblemSourceWish, ProblemSourceTicket, ProblemSourceChosenMethod:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("source_kind must be observed_problem, wish, ticket, or chosen_method")
+	}
+}
+
+func problemBoundaryStatus(profile ProblemCardProfile) string {
+	hasScope := strings.TrimSpace(profile.Scope) != ""
+	hasProbe := strings.TrimSpace(profile.AcceptanceProbe) != ""
+	if hasScope && hasProbe {
+		return ProblemBoundaryExplicit
+	}
+	if hasScope || hasProbe {
+		return ProblemBoundaryPartial
+	}
+
+	return ProblemBoundaryMissing
+}
+
+func problemReadinessBlockers(profile ProblemCardProfile) []string {
+	blockers := make([]string, 0)
+	if profile.Level != ProblemProfileDeep {
+		blockers = append(blockers, "problem_profile is not deep")
+	}
+	if strings.TrimSpace(profile.WhyNow) == "" {
+		blockers = append(blockers, "why_now missing")
+	}
+	if strings.TrimSpace(profile.Scope) == "" {
+		blockers = append(blockers, "scope boundary missing")
+	}
+	if strings.TrimSpace(profile.AcceptanceProbe) == "" {
+		blockers = append(blockers, "acceptance_probe missing")
+	}
+	if strings.TrimSpace(profile.FreshnessDisposition) == "" {
+		blockers = append(blockers, "freshness_disposition missing")
+	}
+	if sourceKindNeedsBoundary(profile.SourceKind) && profile.BoundaryStatus != ProblemBoundaryExplicit {
+		blockers = append(blockers, "wish/ticket/chosen_method source requires explicit boundary before P2W readiness")
+	}
+
+	return blockers
+}
+
+func sourceKindNeedsBoundary(sourceKind string) bool {
+	switch sourceKind {
+	case ProblemSourceWish, ProblemSourceTicket, ProblemSourceChosenMethod:
+		return true
+	default:
+		return false
+	}
+}
+
+func problemReadiness(profile ProblemCardProfile) string {
+	if profile.Level == ProblemProfileCue {
+		return ProblemReadinessCueOnly
+	}
+	if len(profile.Blockers) == 0 {
+		return ProblemReadinessReady
+	}
+	if sourceKindNeedsBoundary(profile.SourceKind) && profile.BoundaryStatus != ProblemBoundaryExplicit {
+		return ProblemReadinessBlocked
+	}
+	if profile.Level == ProblemProfileDeep {
+		return ProblemReadinessBlocked
+	}
+
+	return ProblemReadinessCandidate
+}
+
+func renderProblemProfileSections(body *strings.Builder, profile ProblemCardProfile) {
+	body.WriteString(fmt.Sprintf("\n## Problem Profile\n\n%s\n", profile.Level))
+	body.WriteString(fmt.Sprintf("\n## P2W Readiness\n\n%s\n", profile.Readiness))
+	if profile.WhyNow != "" {
+		body.WriteString(fmt.Sprintf("\n## Why Now\n\n%s\n", profile.WhyNow))
+	}
+	if profile.Scope != "" {
+		body.WriteString(fmt.Sprintf("\n## Scope\n\n%s\n", profile.Scope))
+	}
+	if profile.AcceptanceProbe != "" {
+		body.WriteString(fmt.Sprintf("\n## Acceptance Probe\n\n%s\n", profile.AcceptanceProbe))
+	}
+	if profile.FreshnessDisposition != "" {
+		body.WriteString(fmt.Sprintf("\n## Freshness Disposition\n\n%s\n", profile.FreshnessDisposition))
+	}
 }
 
 // FrameProblem creates a ProblemCard artifact. Orchestrates effects around BuildProblemArtifact.
@@ -214,54 +393,52 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 	var section strings.Builder
 	section.WriteString(fmt.Sprintf("\n## Characterization v%d (%s)\n\n",
 		charVersion, time.Now().UTC().Format("2006-01-02")))
-	// Check if any dimension has valid_until — only show column if used
+	// Optional columns appear only when at least one dimension uses them.
+	hasProxyFor := false
 	hasValidUntil := false
 	for _, d := range input.Dimensions {
-		if d.ValidUntil != "" {
-			hasValidUntil = true
-			break
-		}
+		hasProxyFor = hasProxyFor || d.ProxyFor != ""
+		hasValidUntil = hasValidUntil || d.ValidUntil != ""
 	}
 
-	if hasValidUntil {
-		section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement | Valid Until |\n")
-		section.WriteString("|-----------|------|-------|------|----------|-------------|-------------|\n")
-	} else {
-		section.WriteString("| Dimension | Role | Scale | Unit | Polarity | Measurement |\n")
-		section.WriteString("|-----------|------|-------|------|----------|-------------|\n")
+	orDash := func(v string) string {
+		if v == "" {
+			return "-"
+		}
+		return v
 	}
+
+	headers := []string{"Dimension", "Role", "Scale", "Unit", "Polarity", "Measurement"}
+	if hasProxyFor {
+		headers = append(headers, "Proxy For (value)")
+	}
+	if hasValidUntil {
+		headers = append(headers, "Valid Until")
+	}
+	separators := make([]string, len(headers))
+	for i := range separators {
+		separators[i] = strings.Repeat("-", len(headers[i]))
+	}
+	section.WriteString("| " + strings.Join(headers, " | ") + " |\n")
+	section.WriteString("|" + strings.Join(separators, "|") + "|\n")
+
 	for _, d := range input.Dimensions {
 		role := d.Role
 		if role == "" {
 			role = "target"
 		}
-		scale := d.ScaleType
-		if scale == "" {
-			scale = "-"
-		}
-		unit := d.Unit
-		if unit == "" {
-			unit = "-"
-		}
-		polarity := d.Polarity
-		if polarity == "" {
-			polarity = "-"
-		}
-		measure := d.HowToMeasure
-		if measure == "" {
-			measure = "-"
+		cells := []string{d.Name, role, orDash(d.ScaleType), orDash(d.Unit), orDash(d.Polarity), orDash(d.HowToMeasure)}
+		if hasProxyFor {
+			cells = append(cells, orDash(d.ProxyFor))
 		}
 		if hasValidUntil {
 			vu := d.ValidUntil
-			if vu == "" {
-				vu = "-"
-			} else if len(vu) > 10 {
+			if len(vu) > 10 {
 				vu = vu[:10]
 			}
-			section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure, vu))
-		} else {
-			section.WriteString(fmt.Sprintf("| %s | %s | %s | %s | %s | %s |\n", d.Name, role, scale, unit, polarity, measure))
+			cells = append(cells, orDash(vu))
 		}
+		section.WriteString("| " + strings.Join(cells, " | ") + " |\n")
 	}
 
 	if input.ParityRules != "" && input.ParityPlan == nil {
@@ -279,6 +456,7 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 		Dimensions: cloneDimensions(input.Dimensions),
 		ParityPlan: cloneParityPlan(parityPlan),
 	})
+	fields.Semantic = semanticPtr(NewProblemSemanticEnvelopeForProblem(a.Meta.ID, time.Now().UTC(), fields, a.Body))
 	sd, _ := json.Marshal(fields)
 	a.StructuredData = string(sd)
 
@@ -292,6 +470,28 @@ func CharacterizeProblem(ctx context.Context, store ArtifactStore, haftDir strin
 	}
 
 	return a, filePath, nil
+}
+
+// ValueBeforeProxyWarning surfaces target-role dimensions that do not name the
+// value they proxy (FPF E.13 — value before proxy). Soft warning, not a gate:
+// field honesty is curation's job; the kernel only refuses to let the omission
+// pass silently.
+func ValueBeforeProxyWarning(dims []ComparisonDimension) string {
+	missing := make([]string, 0, len(dims))
+	for _, d := range dims {
+		role := d.Role
+		if role == "" {
+			role = "target"
+		}
+		if role == "target" && d.ProxyFor == "" {
+			missing = append(missing, d.Name)
+		}
+	}
+	if len(missing) == 0 {
+		return ""
+	}
+	return fmt.Sprintf("⚠ Value before proxy (FPF E.13): target dimension(s) %s do not name the value they proxy. A target under optimization pressure is a proxy — set proxy_for (the intended value this number serves) or re-tag as observation.",
+		strings.Join(missing, ", "))
 }
 
 func renderParityPlanSection(plan *ParityPlan) string {

@@ -34,7 +34,8 @@ func setupTestDB(t *testing.T) *sql.DB {
 			id TEXT PRIMARY KEY, kind TEXT NOT NULL, version INTEGER DEFAULT 1,
 			status TEXT DEFAULT 'active', context TEXT, mode TEXT,
 			title TEXT NOT NULL, content TEXT NOT NULL,
-			valid_until TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
+			valid_until TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+			structured_data TEXT DEFAULT '{}')`,
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,
@@ -45,6 +46,29 @@ func setupTestDB(t *testing.T) *sql.DB {
 		}
 	}
 	return db
+}
+
+func seedCoverageIndexedFiles(
+	t *testing.T,
+	db *sql.DB,
+	filePaths ...string,
+) {
+	t.Helper()
+	if _, err := db.Exec(
+		`CREATE TABLE IF NOT EXISTS code_files (
+			file_path TEXT PRIMARY KEY
+		)`,
+	); err != nil {
+		t.Fatal(err)
+	}
+	for _, filePath := range filePaths {
+		if _, err := db.Exec(
+			`INSERT OR IGNORE INTO code_files (file_path) VALUES (?)`,
+			filePath,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
 }
 
 // --- Go Detection Tests ---
@@ -104,7 +128,10 @@ func main() {
 `)
 
 	parser := &GoLang{}
-	edges, err := parser.ParseImports(filepath.Join(root, "cmd/server/main.go"), root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "cmd/server/main.go"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +209,10 @@ import './styles.css';
 `)
 
 	parser := &JSTSLang{}
-	edges, err := parser.ParseImports(filepath.Join(root, "src/app.ts"), root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "src/app.ts"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -234,7 +264,10 @@ import json
 `)
 
 	parser := &PythonLang{}
-	edges, err := parser.ParseImports(filepath.Join(root, "myapp/app.py"), root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "myapp/app.py"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -281,7 +314,10 @@ fn main() {}
 `)
 
 	parser := &RustLang{}
-	edges, err := parser.ParseImports(filepath.Join(root, "src/main.rs"), root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "src/main.rs"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -433,7 +469,10 @@ func TestCCppParseImports(t *testing.T) {
 	writeFile(t, root, "compile_commands.json", ccj)
 
 	parser := &CCppLang{}
-	edges, err := parser.ParseImports(filepath.Join(root, "src/main.c"), root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "src/main.c"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -468,7 +507,10 @@ func TestCCppParseImportsRelative(t *testing.T) {
 	writeFile(t, root, "lib/math.h", "int add(int, int);\n")
 
 	parser := &CCppLang{}
-	edges, err := parser.ParseImports(filepath.Join(root, "src/main.c"), root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "src/main.c"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -504,7 +546,10 @@ func TestCCppResolveIncludeWithSymlinks(t *testing.T) {
 	// Parse imports using the SYMLINK path (user's working dir)
 	// but -I flags point to the REAL path
 	parser := &CCppLang{}
-	edges, err := parser.ParseImports(filepath.Join(symlinkDir, "src/main.c"), symlinkDir)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, symlinkDir, "src/main.c"),
+		symlinkDir,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -614,6 +659,35 @@ func main() { auth.Check() }
 	}
 }
 
+func TestScanModulesClearsStaleRowsWhenNoModulesRemain(t *testing.T) {
+	root := t.TempDir()
+	database := setupTestDB(t)
+	ctx := context.Background()
+	if _, err := database.Exec(`
+		INSERT INTO codebase_modules
+			(module_id, path, name, lang, file_count, last_scanned)
+		VALUES
+			('mod-stale', 'stale', 'stale', 'go', 1, CURRENT_TIMESTAMP)
+	`); err != nil {
+		t.Fatal(err)
+	}
+
+	modules, err := NewScanner(database).ScanModules(ctx, root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(modules) != 0 {
+		t.Fatalf("detected modules = %+v, want none", modules)
+	}
+	stored, err := NewScanner(database).GetModules(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 0 {
+		t.Fatalf("stale stored modules survived empty scan: %+v", stored)
+	}
+}
+
 func TestCoverageComputation_RootModule(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
@@ -621,9 +695,10 @@ func TestCoverageComputation_RootModule(t *testing.T) {
 	now := "2026-03-18T12:00:00Z"
 	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-root', '', 'myapp', 'go', 5, ?)`, now)
 
-	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Root decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Root decision', 'body', '', ?, ?, '{}')`, now, now)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'main.go', '')`)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'handlers.go', '')`)
+	seedCoverageIndexedFiles(t, db, "main.go", "handlers.go")
 
 	report, err := ComputeCoverage(ctx, db)
 	if err != nil {
@@ -664,12 +739,19 @@ func TestImpactRankedCoverage(t *testing.T) {
 	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-isolated', 'internal/isolated', 'isolated', 'go', 1, ?)`, now)
 
 	// Governance: mod-api, mod-handler, mod-cli have decisions.
-	db.Exec(`INSERT INTO artifacts VALUES ('dec-api', 'DecisionRecord', 1, 'active', '', '', 'API decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-api', 'DecisionRecord', 1, 'active', '', '', 'API decision', 'body', '', ?, ?, '{}')`, now, now)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-api', 'internal/api/api.go', '')`)
-	db.Exec(`INSERT INTO artifacts VALUES ('dec-handler', 'DecisionRecord', 1, 'active', '', '', 'Handler decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-handler', 'DecisionRecord', 1, 'active', '', '', 'Handler decision', 'body', '', ?, ?, '{}')`, now, now)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-handler', 'internal/handler/handler.go', '')`)
-	db.Exec(`INSERT INTO artifacts VALUES ('dec-cli', 'DecisionRecord', 1, 'active', '', '', 'CLI decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-cli', 'DecisionRecord', 1, 'active', '', '', 'CLI decision', 'body', '', ?, ?, '{}')`, now, now)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-cli', 'internal/cli/cli.go', '')`)
+	seedCoverageIndexedFiles(
+		t,
+		db,
+		"internal/api/api.go",
+		"internal/handler/handler.go",
+		"internal/cli/cli.go",
+	)
 
 	// Dependency edges: mod-shared is used by mod-api, mod-handler, mod-cli (3 governed callers — HIGH impact).
 	// mod-util is used by mod-handler (1 governed caller — MEDIUM impact).
@@ -746,6 +828,78 @@ func TestImpactRankedCoverage(t *testing.T) {
 	}
 }
 
+func TestFormatCoverageSummary_CompactsLargeTiers(t *testing.T) {
+	modules := make([]ModuleCoverage, 0, 9)
+	for i := 0; i < 9; i++ {
+		modules = append(modules, ModuleCoverage{
+			Module: Module{
+				ID:   "mod-blind",
+				Path: "internal/blind-" + string(rune('a'+i)),
+				Lang: "go",
+			},
+			Status:      CoverageBlind,
+			ImpactScore: 9 - i,
+		})
+	}
+
+	report := &CoverageReport{
+		TotalModules: 9,
+		BlindCount:   9,
+		Modules:      modules,
+	}
+
+	summary := FormatCoverageSummary(report)
+	if !strings.Contains(summary, "Module Coverage Summary") {
+		t.Fatalf("summary missing heading:\n%s", summary)
+	}
+	if !strings.Contains(summary, "internal/blind-a") {
+		t.Fatalf("summary should include highest-impact module:\n%s", summary)
+	}
+	if strings.Contains(summary, "internal/blind-i") {
+		t.Fatalf("summary should omit modules beyond top tier cap:\n%s", summary)
+	}
+	if !strings.Contains(summary, "... and 4 more module(s)") {
+		t.Fatalf("summary should report omitted modules:\n%s", summary)
+	}
+	if !strings.Contains(summary, "full=true") {
+		t.Fatalf("summary should explain how to retrieve full coverage:\n%s", summary)
+	}
+}
+
+func TestFormatCoverageCockpitSummary_UsesOneCueLine(t *testing.T) {
+	report := &CoverageReport{
+		TotalModules: 8,
+		CoveredCount: 3,
+		PartialCount: 1,
+		BlindCount:   4,
+		Modules: []ModuleCoverage{{
+			Module: Module{
+				ID:   "mod-blind",
+				Path: "internal/blind",
+				Lang: "go",
+			},
+			Status:      CoverageBlind,
+			ImpactScore: 9,
+		}},
+	}
+
+	summary := FormatCoverageCockpitSummary(report)
+
+	for _, want := range []string{
+		"## Coverage Cue",
+		"8 module(s), 50% governed; 4 blind, 1 degraded",
+		"Detailed coverage stays behind the Drill-down commands",
+	} {
+		if !strings.Contains(summary, want) {
+			t.Fatalf("cockpit coverage summary missing %q:\n%s", want, summary)
+		}
+	}
+
+	if strings.Contains(summary, "internal/blind") {
+		t.Fatalf("cockpit coverage summary should not list modules:\n%s", summary)
+	}
+}
+
 func TestCoverageComputation(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
@@ -757,9 +911,15 @@ func TestCoverageComputation(t *testing.T) {
 	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-api', 'internal/api', 'api', 'go', 5, ?)`, now)
 
 	// Insert a decision with affected_files in auth module
-	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?, '{}')`, now, now)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'internal/auth/auth.go', '')`)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'internal/auth/middleware.go', '')`)
+	seedCoverageIndexedFiles(
+		t,
+		db,
+		"internal/auth/auth.go",
+		"internal/auth/middleware.go",
+	)
 
 	report, err := ComputeCoverage(ctx, db)
 	if err != nil {
@@ -794,6 +954,124 @@ func TestCoverageComputation(t *testing.T) {
 	}
 }
 
+func TestCoverageFileGapsRequireCurrentIndexAndStayBounded(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	writeFile(t, root, "internal/auth/auth.go", "package auth\nfunc Authorize() {}\n")
+	writeFile(t, root, "internal/auth/middleware.go", "package auth\nfunc Middleware() {}\n")
+	writeFile(t, root, "internal/auth/z_extra.go", "package auth\nfunc Extra() {}\n")
+	writeFile(t, root, "internal/blind/server.go", "package blind\nfunc Serve() {}\n")
+
+	now := "2026-07-13T12:00:00Z"
+	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-auth', 'internal/auth', 'auth', 'go', 3, ?)`, now)
+	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-blind', 'internal/blind', 'blind', 'go', 1, ?)`, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-auth', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?, '{}')`, now, now)
+	db.Exec(`INSERT INTO affected_files VALUES ('dec-auth', 'internal/auth/auth.go', '')`)
+
+	scanner := NewScanner(db)
+	if _, err := scanner.RefreshIncremental(ctx, root); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ComputeCoverageWithFileGaps(ctx, db, root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FileGaps.IndexState != FileGapIndexCurrent {
+		t.Fatalf("file-gap index state = %q, want current: %#v", report.FileGaps.IndexState, report.FileGaps)
+	}
+	if report.FileGaps.IndexedFiles != 4 || report.FileGaps.TotalGaps != 2 || report.FileGaps.OmittedGaps != 1 {
+		t.Fatalf("file-gap counts = %#v, want 4 indexed, 2 total gaps, and 1 omitted", report.FileGaps)
+	}
+	if len(report.FileGaps.Gaps) != 1 || report.FileGaps.Gaps[0].FilePath != "internal/auth/middleware.go" {
+		t.Fatalf("file gaps = %#v, want only auth middleware; blind-module file is a module gap", report.FileGaps.Gaps)
+	}
+	formatted := FormatCoverageResponse(report)
+	for _, want := range []string{"Exact File Decision-Link Gaps", "internal/auth/middleware.go", "not proof that a file is undocumented", "code-index:v5:basis:sha256:", "coverage `complete`"} {
+		if !strings.Contains(formatted, want) {
+			t.Fatalf("coverage response missing %q:\n%s", want, formatted)
+		}
+	}
+
+	writeFile(t, root, "internal/auth/middleware.go", "package auth\nfunc MiddlewareChanged() {}\n")
+	stale, err := ComputeCoverageWithFileGaps(ctx, db, root, 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stale.FileGaps.IndexState != FileGapIndexStale || stale.FileGaps.TotalGaps != 0 {
+		t.Fatalf("stale projection = %#v, want unavailable without gap claims", stale.FileGaps)
+	}
+	staleText := FormatCoverageResponse(stale)
+	for _, want := range []string{"Unavailable", "not an empty or clean result", `haft_refresh(action="scan")`} {
+		if !strings.Contains(staleText, want) {
+			t.Fatalf("stale coverage response missing %q:\n%s", want, staleText)
+		}
+	}
+}
+
+func TestCoverageFileGapsRejectPartialCodeIndex(t *testing.T) {
+	database := setupTestDB(t)
+	ctx := context.Background()
+	root := t.TempDir()
+	writeFile(
+		t,
+		root,
+		"internal/auth/auth.go",
+		"package auth\nfunc Authorize() {}\n",
+	)
+	writeFile(
+		t,
+		root,
+		"internal/auth/oversized.go",
+		strings.Repeat("x", int(defaultMaxFileBytes)+1),
+	)
+	now := "2026-07-13T12:00:00Z"
+	database.Exec(
+		`INSERT INTO codebase_modules VALUES ('mod-auth', 'internal/auth', 'auth', 'go', 2, ?)`,
+		now,
+	)
+	database.Exec(
+		`INSERT INTO artifacts VALUES ('dec-auth', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?, '{}')`,
+		now,
+		now,
+	)
+	database.Exec(
+		`INSERT INTO affected_files VALUES ('dec-auth', 'internal/auth/auth.go', '')`,
+	)
+	if _, err := NewScanner(database).RefreshIncremental(
+		ctx,
+		root,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := ComputeCoverageWithFileGaps(
+		ctx,
+		database,
+		root,
+		20,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.FileGaps.IndexState != FileGapIndexPartial ||
+		report.FileGaps.TotalGaps != 0 ||
+		report.FileGaps.IndexBasisRef == "" {
+		t.Fatalf("partial file-gap projection = %+v", report.FileGaps)
+	}
+	formatted := FormatCoverageResponse(report)
+	for _, want := range []string{
+		"derived code index is `partial`",
+		"bounded_with_exclusions",
+		"not an empty or clean result",
+	} {
+		if !strings.Contains(formatted, want) {
+			t.Fatalf("partial coverage response missing %q:\n%s", want, formatted)
+		}
+	}
+}
+
 func TestFindFirstDecisionModules(t *testing.T) {
 	db := setupTestDB(t)
 	ctx := context.Background()
@@ -801,8 +1079,9 @@ func TestFindFirstDecisionModules(t *testing.T) {
 	now := "2026-03-18T12:00:00Z"
 	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-auth', 'internal/auth', 'auth', 'go', 3, ?)`, now)
 	db.Exec(`INSERT INTO codebase_modules VALUES ('mod-api', 'internal/api', 'api', 'go', 2, ?)`, now)
-	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?)`, now, now)
+	db.Exec(`INSERT INTO artifacts VALUES ('dec-001', 'DecisionRecord', 1, 'active', '', '', 'Auth decision', 'body', '', ?, ?, '{}')`, now, now)
 	db.Exec(`INSERT INTO affected_files VALUES ('dec-001', 'internal/auth/auth.go', '')`)
+	seedCoverageIndexedFiles(t, db, "internal/auth/auth.go")
 
 	gaps, err := FindFirstDecisionModules(ctx, db, []string{
 		"internal/auth/middleware.go",
@@ -879,7 +1158,10 @@ func TestSelfHostGoImports(t *testing.T) {
 		t.Skip("serve.go not found")
 	}
 
-	edges, err := parser.ParseImports(servePath, root)
+	edges, err := parser.ParseImports(
+		mustAdmittedFile(t, root, "cmd/serve.go"),
+		root,
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -937,8 +1219,8 @@ func findRepoRoot(t *testing.T, repoName string) string {
 	if projectRoot == "" {
 		return ""
 	}
-	// Go up from src/mcp to repo root
-	repoRoot := filepath.Join(projectRoot, "..", "..", ".context", "repos", repoName)
+	// Reference repositories live in the project-local .context directory.
+	repoRoot := filepath.Join(projectRoot, ".context", "repos", repoName)
 	if _, err := os.Stat(repoRoot); err != nil {
 		return ""
 	}
@@ -957,6 +1239,19 @@ func writeFile(t *testing.T, root, path, content string) {
 	if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func mustAdmittedFile(
+	t *testing.T,
+	root string,
+	relPath string,
+) AdmittedSource {
+	t.Helper()
+	source, err := NewRegistry().ReadAdmittedSource(root, relPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return source
 }
 
 func moduleNames(modules []Module) []string {

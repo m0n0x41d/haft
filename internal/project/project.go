@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/m0n0x41d/haft/internal/projectidentity"
 	"gopkg.in/yaml.v3"
 )
 
@@ -72,6 +73,65 @@ func Create(haftDir string, projectRoot string) (*Config, error) {
 	return cfg, nil
 }
 
+func ProposeConfig(projectRoot string) (Config, error) {
+	root, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return Config{}, fmt.Errorf("resolve project root: %w", err)
+	}
+	root = filepath.Clean(root)
+	id, err := generateID()
+	if err != nil {
+		return Config{}, fmt.Errorf("generate project ID: %w", err)
+	}
+	return Config{
+		ID:   id,
+		Name: filepath.Base(root),
+	}, nil
+}
+
+func PersistExactConfig(
+	haftDir string,
+	projectRoot string,
+	proposal Config,
+) (*Config, error) {
+	root, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return nil, fmt.Errorf("resolve project root: %w", err)
+	}
+	root = filepath.Clean(root)
+	if _, err := projectidentity.ParseProjectID(proposal.ID); err != nil {
+		return nil, fmt.Errorf("exact project identity: %w", err)
+	}
+	if proposal.Name != filepath.Base(root) {
+		return nil, fmt.Errorf(
+			"exact project name %q differs from root name %q",
+			proposal.Name,
+			filepath.Base(root),
+		)
+	}
+	existing, err := Load(haftDir)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.ID != proposal.ID {
+		return nil, fmt.Errorf(
+			"project already carries project identity %s; refusing replacement with %s",
+			existing.ID,
+			proposal.ID,
+		)
+	}
+	if existing != nil && existing.Name == proposal.Name {
+		return existing, nil
+	}
+	if err := os.MkdirAll(haftDir, 0o755); err != nil {
+		return nil, fmt.Errorf("create project identity directory: %w", err)
+	}
+	if err := writeConfig(haftDir, &proposal); err != nil {
+		return nil, err
+	}
+	return &proposal, nil
+}
+
 // Repair keeps the mutable project metadata aligned with the actual project
 // root. The ID remains immutable; the human-readable name is derived from the
 // directory name and may be repaired after a moved/copied .haft/ carrier.
@@ -114,7 +174,11 @@ func (c *Config) DBDir() (string, error) {
 		return "", fmt.Errorf("get home dir: %w", err)
 	}
 
-	dir := filepath.Join(homeDir, ".haft", "projects", c.ID)
+	path, err := CanonicalDBPath(homeDir, c.ID)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", fmt.Errorf("create project DB dir: %w", err)
 	}
@@ -140,6 +204,28 @@ func (c *Config) DBPath() (string, error) {
 		return haftDB, nil
 	}
 	return haftDB, nil // new DB will be created here
+}
+
+func CanonicalDBPath(
+	userHomeRoot string,
+	projectID string,
+) (string, error) {
+	homeRoot, err := filepath.Abs(userHomeRoot)
+	if err != nil {
+		return "", fmt.Errorf("resolve user home root: %w", err)
+	}
+	homeRoot = filepath.Clean(homeRoot)
+	project, err := projectidentity.ParseProjectID(projectID)
+	if err != nil {
+		return "", fmt.Errorf("canonical database project identity: %w", err)
+	}
+	return filepath.Join(
+		homeRoot,
+		".haft",
+		"projects",
+		project.String(),
+		"haft.db",
+	), nil
 }
 
 // IndexDBPath returns the path to the global cross-project index.

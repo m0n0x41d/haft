@@ -279,8 +279,10 @@ func pathMatches(pattern string, changedPath string) bool {
 }
 
 func scopePatternIsDirectory(pattern string) bool {
-	trimmedPattern := strings.TrimSpace(filepath.ToSlash(pattern))
-	return strings.HasSuffix(trimmedPattern, "/")
+	trimmedPattern := strings.TrimSpace(pattern)
+	slashPattern := filepath.ToSlash(trimmedPattern)
+
+	return strings.HasSuffix(slashPattern, "/")
 }
 
 func globRegex(pattern string) *regexp.Regexp {

@@ -3,180 +3,87 @@ package cli
 import (
 	"context"
 	"os"
-	"regexp"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
-func TestHandleQuintDecision_DecidePersistsPredictions(t *testing.T) {
+// The serve/MCP surface receives proposal content, not a human approval
+// request provenance. Rich decision fields are covered at the artifact core
+// and host-routed CLI seam; this test keeps the transport boundary honest and proves that no
+// model-supplied field can bypass it.
+func TestHandleQuintDecision_DecideTreatsModelPayloadAsProposalOnly(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	_, _, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
-		"action":           "decide",
-		"selected_title":   "gRPC",
-		"why_selected":     "Plugin-mode decide should persist falsifiable predictions through the serve path.",
-		"selection_policy": "Prefer the lowest latency option that stays inside the operational budget.",
-		"counterargument":  "The simplified benchmark can miss production load variance.",
-		"weakest_link":     "Operational confidence still depends on limited production-grade evidence.",
+	out, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
+		"action":            "decide",
+		"problem_statement": "A rich model-authored proposal must not institute a DecisionRecord.",
+		"selected_title":    "Use the host-routed decision path",
+		"why_selected":      "The binding effect belongs to a host route with operator provenance.",
+		"selection_policy":  "Reject every model or MCP attempt to institute the decision.",
+		"counterargument":   "The proposal contains all fields needed by a valid decision.",
+		"weakest_link":      "A future refactor could accidentally resume parsing before the authority check.",
+		"task_context":      "Task #4: authority boundary",
+		"affected_files":    []any{"internal/cli/serve.go"},
 		"why_not_others": []map[string]any{{
-			"variant": "REST",
-			"reason":  "Higher steady-state latency with no decisive compensating advantage.",
+			"variant": "Bind directly from MCP",
+			"reason":  "Model-supplied arguments are not operator authorization.",
 		}},
 		"rollback": map[string]any{
-			"triggers": []string{"Latency regresses in production."},
+			"triggers": []string{"The manual binding surface becomes unavailable."},
 		},
 		"predictions": []map[string]any{{
-			"claim":      "Throughput stays above 100k events/sec",
-			"observable": "throughput",
-			"threshold":  "> 100k events/sec",
+			"claim":      "No DecisionRecord is persisted",
+			"observable": "DecisionRecord count",
+			"threshold":  "equals zero",
 		}},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	decisions, err := store.ListByKind(ctx, artifact.KindDecisionRecord, 10)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(decisions) != 1 {
-		t.Fatalf("expected 1 decision, got %d", len(decisions))
-	}
-
-	decision, err := store.Get(ctx, decisions[0].Meta.ID)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if len(fields.Predictions) != 1 {
-		t.Fatalf("expected 1 prediction, got %+v", fields.Predictions)
-	}
-
-	prediction := fields.Predictions[0]
-	if prediction.Claim != "Throughput stays above 100k events/sec" {
-		t.Fatalf("prediction claim = %q", prediction.Claim)
-	}
-	if prediction.Observable != "throughput" {
-		t.Fatalf("prediction observable = %q", prediction.Observable)
-	}
-	if prediction.Threshold != "> 100k events/sec" {
-		t.Fatalf("prediction threshold = %q", prediction.Threshold)
-	}
-}
-
-func TestHandleQuintDecision_DecideUsesTaskContextInArtifactID(t *testing.T) {
-	store := setupCLIArtifactStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	_, ref, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
-		"action":           "decide",
-		"selected_title":   "Use gRPC",
-		"why_selected":     "Serve-mode decide should pass task_context into the DecisionRecord ID.",
-		"selection_policy": "Prefer a transport decision that remains traceable to the implementation task.",
-		"counterargument":  "Filename context can be mistaken for the decision's semantic authority.",
-		"weakest_link":     "The slug is metadata only and can go stale if the task changes.",
-		"task_context":     "Task #4: API/CLI cleanup",
-		"why_not_others": []map[string]any{{
-			"variant": "REST",
-			"reason":  "It does not exercise the optional DecisionRecord slug path.",
-		}},
-		"rollback": map[string]any{
-			"triggers": []string{"Decision IDs lose their random suffix."},
+		"choice_result": map[string]any{
+			"subject_ref":      "operator",
+			"option_set":       []any{"Use the host-routed decision path", "Bind directly from MCP"},
+			"comparison_basis": []any{"host conversation has operator request provenance", "MCP cannot observe the conversation"},
+			"choice_rule":      "Require one direct unambiguous operator request.",
+			"next_move":        string(artifact.ChoiceNextMoveChooseNow),
+			"variant_ref":      "Use the host-routed decision path",
+		},
+		"transformation_record": map[string]any{
+			"transformed_entity": "DecisionRecord authority boundary",
+			"initial_state":      "model proposal",
+			"post_state":         "host-routed operator-requested decision",
+			"relation":           "requires",
+			"context":            "operator request provenance",
 		},
 	})
-	if err != nil {
-		t.Fatal(err)
+	assertDecisionBindingUnavailable(t, err)
+	if out != "" || ref != "" {
+		t.Fatalf("rejected model binding returned output/ref %q/%q", out, ref)
+	}
+	for _, marker := range []string{
+		"haft artifact create decision.decide --input-file",
+		"host_routed_operator_request",
+	} {
+		if !strings.Contains(err.Error(), marker) {
+			t.Fatalf("authority error omitted %q: %v", marker, err)
+		}
 	}
 
-	pattern := regexp.MustCompile(`^dec-\d{8}-task-4-api-cli-cleanup-[0-9a-f]{8}$`)
-	if !pattern.MatchString(ref) {
-		t.Fatalf("created ref = %q, want sanitized task_context slug before 8-hex suffix", ref)
+	decisions, listErr := store.ListByKind(ctx, artifact.KindDecisionRecord, 10)
+	if listErr != nil {
+		t.Fatalf("list decisions after rejected model binding: %v", listErr)
 	}
-
-	decision, err := store.Get(ctx, ref)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	fields := decision.UnmarshalDecisionFields()
-	if fields.TaskContext != "task-4-api-cli-cleanup" {
-		t.Fatalf("structured task_context = %q, want sanitized slug", fields.TaskContext)
+	if len(decisions) != 0 {
+		t.Fatalf("rejected model binding persisted %d DecisionRecord(s)", len(decisions))
 	}
 }
 
-// TestHandleQuintDecision_DecideReturnsArtifactID verifies that the decide
-// action returns the canonical artifact ID as the second return value. This
-// closes the cross-project recall bug where the global index was keyed by
-// selected_title (collision-prone) instead of the real DecisionRecord ID.
-//
-// Two decisions with the same selected_title in the same project must produce
-// distinct IDs — otherwise the cross-project index silently overwrites the
-// first decision's entry on the second decide call.
-func TestHandleQuintDecision_DecideReturnsArtifactID(t *testing.T) {
-	store := setupCLIArtifactStore(t)
-	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	args := func() map[string]any {
-		return map[string]any{
-			"action":           "decide",
-			"selected_title":   "Use Postgres",
-			"why_selected":     "The team already operates Postgres at scale; default storage choice.",
-			"selection_policy": "Prefer the storage system the on-call team already operates at scale.",
-			"counterargument":  "Postgres at scale assumes operational maturity that may not hold for new services.",
-			"weakest_link":     "Operational maturity in this team is the binding factor.",
-			"why_not_others": []map[string]any{{
-				"variant": "MySQL",
-				"reason":  "Team has no production operational experience with MySQL at the required scale.",
-			}},
-			"rollback": map[string]any{
-				"triggers": []string{"Operational load makes Postgres untenable."},
-			},
-		}
-	}
-
-	_, ref1, err := handleQuintDecision(ctx, store, haftDir, args())
-	if err != nil {
-		t.Fatalf("first decide: %v", err)
-	}
-	if ref1 == "" {
-		t.Fatal("first decide returned empty createdRef; expected canonical artifact ID")
-	}
-
-	_, ref2, err := handleQuintDecision(ctx, store, haftDir, args())
-	if err != nil {
-		t.Fatalf("second decide: %v", err)
-	}
-	if ref2 == "" {
-		t.Fatal("second decide returned empty createdRef; expected canonical artifact ID")
-	}
-
-	if ref1 == ref2 {
-		t.Fatalf("two decisions with same selected_title produced identical IDs (%q); cross-project index would collide", ref1)
-	}
-
-	// Both refs must match real persisted artifacts.
-	for _, ref := range []string{ref1, ref2} {
-		a, err := store.Get(ctx, ref)
-		if err != nil || a == nil {
-			t.Fatalf("createdRef %q does not resolve to a stored artifact: %v", ref, err)
-		}
-		if a.Meta.Kind != artifact.KindDecisionRecord {
-			t.Fatalf("createdRef %q resolved to %s, want DecisionRecord", ref, a.Meta.Kind)
-		}
-	}
-}
-
-// TestHandleQuintDecision_NonDecideActionsReturnEmptyRef verifies that actions
-// other than "decide" do not return a createdRef. Cross-project indexing is
-// only triggered for decide; other actions mutate or read existing artifacts.
 func TestHandleQuintDecision_NonDecideActionsReturnEmptyRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -199,18 +106,22 @@ func TestHandleQuintDecision_NonDecideActionsReturnEmptyRef(t *testing.T) {
 // ignored artifact_ref and fell through to ListByKind auto-detect, landing on the
 // wrong decision. Now both keys are accepted and the auto-detect is gone.
 func TestHandleQuintDecision_BaselineAcceptsArtifactRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
-	haftDir := t.TempDir()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
 
 	older, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Older decision — the intended target",
-		WhySelected:     "This is the decision we want to baseline by passing artifact_ref.",
-		SelectionPolicy: "Prefer explicit identification over implicit recency.",
-		CounterArgument: "Auto-detect may seem convenient but corrupts the artifact graph.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "auto-detect", Reason: "silent misrouting"}},
-		WeakestLink:     "LLM clients may still confuse parameter names — schema docs must be clear.",
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"regressions"}},
+		SelectedTitle:    "Older decision — the intended target",
+		ProblemStatement: "Baseline routing must use the caller's explicit decision reference.",
+		WhySelected:      "This is the decision we want to baseline by passing artifact_ref.",
+		SelectionPolicy:  "Prefer explicit identification over implicit recency.",
+		CounterArgument:  "Auto-detect may seem convenient but corrupts the artifact graph.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "auto-detect", Reason: "silent misrouting"}},
+		WeakestLink:      "LLM clients may still confuse parameter names — schema docs must be clear.",
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"regressions"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -218,20 +129,21 @@ func TestHandleQuintDecision_BaselineAcceptsArtifactRef(t *testing.T) {
 
 	// Newer decision exists after — this is what ListByKind(...,1) would pick.
 	_, _, err = artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Newer decision — should NOT be picked",
-		WhySelected:     "If auto-detect leaks, this newer decision would steal the baseline.",
-		SelectionPolicy: "Most-recent default is the trap we're closing.",
-		CounterArgument: "None.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "older decision", Reason: "test fixture"}},
-		WeakestLink:     "None.",
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"regressions"}},
+		SelectedTitle:    "Newer decision — should NOT be picked",
+		ProblemStatement: "Baseline routing must not substitute a newer decision for an explicit target.",
+		WhySelected:      "If auto-detect leaks, this newer decision would steal the baseline.",
+		SelectionPolicy:  "Most-recent default is the trap we're closing.",
+		CounterArgument:  "None.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "older decision", Reason: "test fixture"}},
+		WeakestLink:      "None.",
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"regressions"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	// Touch a file so baseline has something to hash.
-	tmpFile := t.TempDir() + "/sample.go"
+	tmpFile := filepath.Join(projectRoot, "sample.go")
 	if werr := os.WriteFile(tmpFile, []byte("package sample\n"), 0o644); werr != nil {
 		t.Fatal(werr)
 	}
@@ -239,7 +151,7 @@ func TestHandleQuintDecision_BaselineAcceptsArtifactRef(t *testing.T) {
 	out, _, err := handleQuintDecision(ctx, store, haftDir, map[string]any{
 		"action":         "baseline",
 		"artifact_ref":   older.Meta.ID,
-		"affected_files": []any{tmpFile},
+		"affected_files": []any{"sample.go"},
 	})
 	if err != nil {
 		t.Fatalf("baseline with artifact_ref: %v", err)
@@ -253,18 +165,21 @@ func TestHandleQuintDecision_BaselineAcceptsArtifactRef(t *testing.T) {
 // fall-through (issue #77) is gone — calling baseline without any ref errors loudly
 // instead of picking the most-recent decision.
 func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
 	_, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Some decision",
-		WhySelected:     "Exists so the bug-prone auto-detect would have something to grab.",
-		SelectionPolicy: "Explicit refs only.",
-		CounterArgument: "None.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "implicit", Reason: "unsafe"}},
-		WeakestLink:     "None.",
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"regressions"}},
+		SelectedTitle:    "Some decision",
+		ProblemStatement: "Baseline without an explicit decision reference must fail closed.",
+		WhySelected:      "Exists so the bug-prone auto-detect would have something to grab.",
+		SelectionPolicy:  "Explicit refs only.",
+		CounterArgument:  "None.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "implicit", Reason: "unsafe"}},
+		WeakestLink:      "None.",
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"regressions"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -283,31 +198,35 @@ func TestHandleQuintDecision_BaselineRequiresRef(t *testing.T) {
 
 // TestHandleQuintDecision_MeasureAcceptsArtifactRef — same fix on the measure side.
 func TestHandleQuintDecision_MeasureAcceptsArtifactRef(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
 	older, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Older decision — measure target",
-		WhySelected:     "We want measure() to land here when artifact_ref names it.",
-		SelectionPolicy: "Explicit refs only.",
-		CounterArgument: "None.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "auto-detect", Reason: "corrupts graph"}},
-		WeakestLink:     "None.",
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"regressions"}},
+		SelectedTitle:    "Older decision — measure target",
+		ProblemStatement: "Measurement routing must use the caller's explicit decision reference.",
+		WhySelected:      "We want measure() to land here when artifact_ref names it.",
+		SelectionPolicy:  "Explicit refs only.",
+		CounterArgument:  "None.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "auto-detect", Reason: "corrupts graph"}},
+		WeakestLink:      "None.",
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"regressions"}},
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	_, _, err = artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Newer decision — must not be picked",
-		WhySelected:     "Sanity guard for the regression test.",
-		SelectionPolicy: "Explicit refs only.",
-		CounterArgument: "None.",
-		WhyNotOthers:    []artifact.RejectionReason{{Variant: "older", Reason: "fixture"}},
-		WeakestLink:     "None.",
-		Rollback:        &artifact.RollbackSpec{Triggers: []string{"regressions"}},
+		SelectedTitle:    "Newer decision — must not be picked",
+		ProblemStatement: "Measurement routing must not substitute a newer decision for an explicit target.",
+		WhySelected:      "Sanity guard for the regression test.",
+		SelectionPolicy:  "Explicit refs only.",
+		CounterArgument:  "None.",
+		WhyNotOthers:     []artifact.RejectionReason{{Variant: "older", Reason: "fixture"}},
+		WeakestLink:      "None.",
+		Rollback:         &artifact.RollbackSpec{Triggers: []string{"regressions"}},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -325,18 +244,26 @@ func TestHandleQuintDecision_MeasureAcceptsArtifactRef(t *testing.T) {
 	if !strings.Contains(out, older.Meta.ID) {
 		t.Fatalf("measure response %q does not reference intended target %q", out, older.Meta.ID)
 	}
+	for _, want := range []string{"not approval", "not gate passage", "not claim truth", "not global truth", "not publication", "EvidencePath"} {
+		if !strings.Contains(out, want) {
+			t.Fatalf("measure response missing authority boundary %q:\n%s", want, out)
+		}
+	}
 }
 
 func TestHandleQuintDecision_MeasureRejectsMalformedMeasurements(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
 	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
-		SelectedTitle:   "Keep measurement parsing strict",
-		WhySelected:     "Serve-mode measure should reject malformed arrays instead of truncating them.",
-		SelectionPolicy: "Prefer payload validation that preserves semantic parity with the direct tool path.",
-		CounterArgument: "Strict parsing can reject callers that relied on historical truncation.",
+		SelectedTitle:    "Keep measurement parsing strict",
+		ProblemStatement: "Serve-mode measurement must reject malformed arrays without truncation.",
+		WhySelected:      "Serve-mode measure should reject malformed arrays instead of truncating them.",
+		SelectionPolicy:  "Prefer payload validation that preserves semantic parity with the direct tool path.",
+		CounterArgument:  "Strict parsing can reject callers that relied on historical truncation.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Lenient truncation",
 			Reason:  "Silently losing measured values corrupts the decision record.",

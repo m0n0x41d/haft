@@ -1,0 +1,43 @@
+{
+  "schema": "haft.test-fixture.p4-decision-choice-source/v1",
+  "id": "dec-20260716-11f33e36",
+  "version": 1,
+  "status": "active",
+  "title": "V1 algebraic typed-memory core with bounded COV-2, manually activated ProjectTypeEnvExtension, registered canonical codecs, and a V5 legacy migration shell",
+  "context": "Architectural exploration for the FPF-typed EntityOfConcern-centric project memory in Haft v9. The current spec-fit result is spec_gap; every viable variant therefore carries an explicit spec-delta burden before a binding decision.",
+  "decision_subject_ref": "operator",
+  "problem_refs": [
+    "prob-20260713-the-release-by-wednesday-constraint-is-explicitl-de76ca5a"
+  ],
+  "selected_title": "V1 algebraic typed-memory core with bounded COV-2, manually activated ProjectTypeEnvExtension, registered canonical codecs, and a V5 legacy migration shell",
+  "selection_policy": "Apply the declared hard-floor and maximin selection policy, require disjoint manually activated project schema and deterministic admitted canonical codecs, then require a real adapter-built GoldenConcernBundle as the product proof.",
+  "why_selected": "This split preserves the strongest semantic architecture while using the lowest-risk compatible migration mechanics. The extension gate prevents agents from inventing schema, the codec boundary makes ByValue stable and verifiable, and the product conditions directly test whether agents can actually remember and recover connected project entities.",
+  "choice_result": {
+    "subject_ref": "operator",
+    "option_set": [
+      "V1 algebraic Go kernel with bounded COV-2, gated ProjectTypeEnvExtension, canonical codecs, and V5 as migration shell only",
+      "V1 algebraic Go kernel without the task-adapter, identity-reconciliation, and GoldenConcernBundle product conditions",
+      "V2 canonical RDF, OWL, SHACL, and PROV knowledge graph",
+      "V3 canonical TypeDB typed relation database",
+      "V4 canonical Datalog fact and rule engine",
+      "V5 incrementally typed labeled-property artifact graph as canonical model"
+    ],
+    "comparison_basis": [
+      "selected V1 plus V5 split: passes both hard floors, keeps migration mechanics outside canonical semantics, keeps local schema outside generic memory admission, and gives ByValue an exact canonical codec boundary",
+      "rejected bare V1: a correct type checker without adapters, identity reconciliation, and a real bundle can remain an ergonomically unusable empty graph",
+      "rejected V2: useful future export but weaker local/runtime and n-ary admission fit as the canonical core",
+      "rejected V3: mandatory external runtime fails the local-first floor",
+      "rejected V4: useful possible monotone Rule IR but incomplete as identity, authority, carrier, and migration semantics",
+      "rejected canonical V5: compatibility gravity risks two semantic cores and scattered shadow rules"
+    ],
+    "choice_rule": "Apply the declared hard-floor and maximin selection policy, require disjoint manually activated project schema and deterministic admitted canonical codecs, then require a real adapter-built GoldenConcernBundle as the product proof.",
+    "next_move": "choose_now",
+    "variant_ref": "V1 algebraic Go kernel with bounded COV-2, gated ProjectTypeEnvExtension, canonical codecs, and V5 as migration shell only",
+    "problem_refs": [
+      "prob-20260713-the-release-by-wednesday-constraint-is-explicitl-de76ca5a"
+    ],
+    "reason": "This split preserves the strongest semantic architecture while using the lowest-risk compatible migration mechanics. The extension gate prevents agents from inventing schema, the codec boundary makes ByValue stable and verifiable, and the product conditions directly test whether agents can actually remember and recover connected project entities.",
+    "reversibility": "Stop new typed writes and TypeEnv activation, retain typed history and exact export, keep legacy reads, and reopen the architecture without lossy back-translation.",
+    "reopen_condition": "Reopen if a kill trigger or prediction threshold fails, FPF publication grammar changes materially, the first real project exposes a missing canonical relation form, or entity reconciliation cannot preserve identity and provenance."
+  }
+}

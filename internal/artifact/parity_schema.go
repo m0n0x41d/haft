@@ -1,9 +1,7 @@
 package artifact
 
-// ParityPlanJSONSchema returns the JSON Schema fragment describing the
-// structured parity plan parameter. Used by both the standalone tool surface
-// (internal/tools/haft.go) and the MCP-advertised schema
-// (internal/fpf/server.go) so the two transports stay in lock-step.
+// ParityPlanJSONSchema returns the canonical JSON Schema fragment describing
+// the structured parity plan parameter advertised by the MCP surface.
 //
 // Mirrors the ParityPlan struct + MissingDataPolicy* constants and the
 // FPF G.9:4.2 ParityPlan contract. Required for deep-mode comparison;

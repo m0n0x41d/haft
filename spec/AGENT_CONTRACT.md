@@ -6,7 +6,7 @@
 ## Authority hierarchy
 
 1. **This contract** — operating rules, always followed
-2. **spec/** — intended semantics of Haft's target and enabling systems
+2. **spec/** — intended semantics of Haft's target, software, and enabling systems
 3. **Implementation** — current runtime behavior
 
 When spec and implementation diverge:
@@ -20,7 +20,7 @@ When spec and implementation diverge:
 | Category | Editable by agent? | Notes |
 |----------|-------------------|-------|
 | `internal/` Go code | Yes | Follow architecture rules below |
-| `desktop/` frontend | Yes | Follow existing component patterns |
+| archived `desktop/` frontend | Yes, archive/provenance only | Do not treat as current product surface unless a new decision reopens it |
 | `spec/` documents | Yes, but flag semantic changes | New terms → add to TERM_MAP first |
 | `.haft/specs/*.md` project specs | Yes, only through explicit user/project onboarding work | Treat as project-local spec carriers; keep strict section IDs and YAML blocks intact. |
 | `.haft/*.md` projections | **No** | Derived from database. Never edit directly. |
@@ -38,18 +38,41 @@ When spec and implementation diverge:
 
 ## Architecture rules
 
-- **Core** (`internal/artifact`, `internal/graph`, `internal/fpf`, `internal/reff`, `internal/codebase`, `internal/spec` when added) must NOT import `desktop/`, `internal/cli/`, or `internal/agentloop/`
+- **Core** (`internal/artifact`, `internal/graph`, `internal/fpf`,
+  `internal/reff`, `internal/codebase`) must NOT import current surface or
+  packages (`internal/cli`, `internal/present`, `internal/ui`, `cmd/haft`) or
+  the archived `desktop/` wrapper.
 - **Flow** may import Core. **Governor** may import Core + Flow. **Surfaces** may import anything below.
 - Side effects only at Flow layer and above. Core is pure queries + mutations through Store interface.
 
-## Decision boundary
+## Relation and authority boundary
 
-- Agent may frame, explore, compare, and recommend when delegated
-- Agent must **stop at Choose → Execute boundary** and wait for human confirmation
+- Agent may retrieve and apply relevant FPF source when delegated; framing,
+  exploration, comparison, and verification are available methods, not a
+  mandatory sequence.
+- Text order, graph order, and skill order do not establish causal, temporal,
+  method, planning, or performed-work order. An explicit causal claim,
+  `U.MethodDescription`, ImplementationPlan, WorkCommission, or work relation must
+  carry that order.
+- Ordinary local and reversible reasoning may remain conversational. Persist a
+  project record when handoff, replay, authority, automation, evidence, or
+  a concrete receiving use will rely on it. That use may be operator-named or
+  inferred by the agent from current Work. When stable identity, bounded
+  context, and aliases are recoverable, the agent establishes the minimum
+  non-binding EntityOfConcern without a separate permission prompt. Known
+  absence or generic future usefulness alone is insufficient.
+- Planning remains separate from reasoning and memory. Only an explicit
+  ImplementationPlan or WorkCommission establishes execution dependencies.
+- Agent must **stop at the binding-choice or work-authorization boundary** and
+  wait for human confirmation.
 - `selected_ref` from compare is advisory — not the decision
 - Exception: autonomous mode explicitly enabled for the session
 - Even in autonomous mode: one-way-door decisions require confirmation
-- Agents may draft TargetSystemSpec and EnablingSystemSpec sections, but the human principal approves load-bearing target-system role, boundary, acceptance, and autonomy statements.
+- `TargetSystemSpec` and `SoftwareSystemSpec` are Haft local-practice carriers
+  for Agentic SWE, not normative FPF A.1 kinds. Agents may draft them, but the
+  human principal approves load-bearing target-system role, boundary, and
+  acceptance statements, plus software responsibility allocation, interfaces,
+  constraints, and selected structure.
 
 ## Verdict vocabulary
 

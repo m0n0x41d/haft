@@ -19,26 +19,30 @@
 
 ```bash
 # Clone and enter the project
-git clone https://github.com/m0n0x41d/quint-code.git
-cd quint-code
-
-# Enable pre-commit hooks (mirrors CI pipeline exactly)
-git config core.hooksPath .githooks
-
-# Install golangci-lint (required for full lint checks)
-# https://golangci-lint.run/welcome/install/
-curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b $(go env GOPATH)/bin
+git clone https://github.com/m0n0x41d/haft.git
+cd haft
 
 # Build the current binary
+mkdir -p ~/.local/bin
 go build -o ~/.local/bin/haft -trimpath .
 
-# Run tests
-go test -race ./...
+# Run bounded local checks
+task test
+task lint
+
+# Run the exact repository linter version
+GOMAXPROCS=1 GOFLAGS=-p=1 \
+  go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.11.4 \
+  run --timeout=5m --concurrency=1
 ```
 
-The GitHub repository path still uses the historical `quint-code` name. The current module and binary are `haft`.
+The Go module and binary are both named `haft`.
 
-The pre-commit hook runs the same checks as CI: `go mod tidy`, `golangci-lint`, `go test -race`, `go build`. If it fails locally, CI will fail too.
+These commands are a bounded local preflight, not proof of CI or release
+qualification. CI and release run their defined non-desktop Go package contour
+under the race detector one package at a time, with a 180-minute ceiling for
+each package, plus their workflow-specific checks. Consolidated P13 remains a
+separate acceptance lane.
 
 ## Documentation expectations
 

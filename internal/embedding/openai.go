@@ -14,7 +14,6 @@ import (
 	"github.com/openai/openai-go/v3/option"
 
 	"github.com/m0n0x41d/haft/internal/fpf"
-	"github.com/m0n0x41d/haft/internal/provider"
 )
 
 // Re-exported defaults so Surface layer (CLI flags) can stay decoupled from
@@ -42,8 +41,9 @@ type openAIEmbeddingClientAdapter struct {
 }
 
 // NewOpenAI creates the explicit embedding model used by the optional
-// semantic FPF prototype. Resolves the OpenAI API key via the provider
-// package; defaults model + dimensions when unset.
+// semantic FPF prototype. Resolves a platform API key without accepting
+// Codex/ChatGPT OAuth tokens, which are not valid for the embeddings API.
+// Defaults model + dimensions when unset.
 func NewOpenAI(model string, dimensions int) (fpf.SemanticEmbedder, error) {
 	resolvedModel := strings.TrimSpace(model)
 	if resolvedModel == "" {
@@ -53,7 +53,7 @@ func NewOpenAI(model string, dimensions int) (fpf.SemanticEmbedder, error) {
 		dimensions = DefaultDimensions
 	}
 
-	apiKey, err := provider.ResolveOpenAIAPIKey()
+	apiKey, err := resolveOpenAIAPIKey()
 	if err != nil {
 		return nil, err
 	}

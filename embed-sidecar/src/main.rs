@@ -29,6 +29,7 @@ use std::os::unix::net::{UnixListener, UnixStream};
 use anyhow::{anyhow, Context, Result};
 use clap::Parser;
 use fastembed::{EmbeddingModel, InitOptions, TextEmbedding};
+use ort::ep;
 use serde::{Deserialize, Serialize};
 
 /// Local embedding sidecar for haft.
@@ -58,6 +59,10 @@ struct Args {
     /// Exit socket server mode after this many idle seconds. 0 = never exit.
     #[arg(long, default_value_t = 1200)]
     idle_timeout_secs: u64,
+
+    /// Keep ONNX Runtime's CPU memory arena enabled.
+    #[arg(long)]
+    cpu_arena: bool,
 }
 
 #[derive(Deserialize)]
@@ -144,7 +149,12 @@ struct Embedder {
 impl Embedder {
     fn load(args: &Args) -> Result<Self> {
         let kind = resolve_model(&args.model)?;
-        let mut options = InitOptions::new(kind).with_show_download_progress(args.show_progress);
+        let cpu_provider = ep::CPU::default()
+            .with_arena_allocator(args.cpu_arena)
+            .build();
+        let mut options = InitOptions::new(kind)
+            .with_show_download_progress(args.show_progress)
+            .with_execution_providers(vec![cpu_provider]);
         if let Some(dir) = &args.cache_dir {
             options = options.with_cache_dir(dir.clone());
         }
@@ -265,7 +275,7 @@ fn run_socket(args: &Args, socket: &Path) -> Result<()> {
         .context("set socket nonblocking")?;
 
     let embedder = Arc::new(Mutex::new(embedder));
-    let active = Arc::new(AtomicUsize::new(0));
+    let active_requests = Arc::new(AtomicUsize::new(0));
     let last_activity = Arc::new(Mutex::new(Instant::now()));
     let idle_timeout = Duration::from_secs(args.idle_timeout_secs);
 
@@ -280,12 +290,12 @@ fn run_socket(args: &Args, socket: &Path) -> Result<()> {
                     stream,
                     embedder.clone(),
                     handshake.clone(),
-                    active.clone(),
+                    active_requests.clone(),
                     last_activity.clone(),
                 );
             }
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
-                if should_exit_idle(&active, &last_activity, idle_timeout) {
+                if should_exit_idle(&active_requests, &last_activity, idle_timeout) {
                     break;
                 }
                 thread::sleep(Duration::from_millis(100));
@@ -310,27 +320,39 @@ fn spawn_client(
     stream: UnixStream,
     embedder: Arc<Mutex<Embedder>>,
     handshake: Handshake,
-    active: Arc<AtomicUsize>,
+    active_requests: Arc<AtomicUsize>,
     last_activity: Arc<Mutex<Instant>>,
 ) {
-    active.fetch_add(1, Ordering::SeqCst);
     thread::spawn(move || {
-        let _guard = ActiveClient { active };
-        if let Err(err) = handle_client(stream, embedder, handshake, last_activity) {
+        if let Err(err) = handle_client(stream, embedder, handshake, active_requests, last_activity)
+        {
             eprintln!("haft-embed client error: {err:#}");
         }
     });
 }
 
 #[cfg(unix)]
-struct ActiveClient {
+struct ActiveRequest {
     active: Arc<AtomicUsize>,
+    last_activity: Arc<Mutex<Instant>>,
 }
 
 #[cfg(unix)]
-impl Drop for ActiveClient {
+impl ActiveRequest {
+    fn begin(active: Arc<AtomicUsize>, last_activity: Arc<Mutex<Instant>>) -> Self {
+        active.fetch_add(1, Ordering::SeqCst);
+        Self {
+            active,
+            last_activity,
+        }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for ActiveRequest {
     fn drop(&mut self) {
         self.active.fetch_sub(1, Ordering::SeqCst);
+        mark_activity(&self.last_activity);
     }
 }
 
@@ -339,6 +361,7 @@ fn handle_client(
     stream: UnixStream,
     embedder: Arc<Mutex<Embedder>>,
     handshake: Handshake,
+    active_requests: Arc<AtomicUsize>,
     last_activity: Arc<Mutex<Instant>>,
 ) -> Result<()> {
     let reader_stream = stream.try_clone().context("clone socket stream")?;
@@ -358,6 +381,7 @@ fn handle_client(
             continue;
         }
         mark_activity(&last_activity);
+        let _active_request = ActiveRequest::begin(active_requests.clone(), last_activity.clone());
         let response = {
             let mut guard = embedder
                 .lock()
@@ -378,15 +402,44 @@ fn mark_activity(last_activity: &Arc<Mutex<Instant>>) {
 
 #[cfg(unix)]
 fn should_exit_idle(
-    active: &Arc<AtomicUsize>,
+    active_requests: &Arc<AtomicUsize>,
     last_activity: &Arc<Mutex<Instant>>,
     idle_timeout: Duration,
 ) -> bool {
-    if idle_timeout.is_zero() || active.load(Ordering::SeqCst) > 0 {
+    if idle_timeout.is_zero() || active_requests.load(Ordering::SeqCst) > 0 {
         return false;
     }
     last_activity
         .lock()
         .map(|last| last.elapsed() >= idle_timeout)
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_exit_idle_when_no_request_is_active() {
+        let active_requests = Arc::new(AtomicUsize::new(0));
+        let last_activity = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(30)));
+
+        assert!(should_exit_idle(
+            &active_requests,
+            &last_activity,
+            Duration::from_secs(20),
+        ));
+    }
+
+    #[test]
+    fn should_not_exit_idle_while_request_is_active() {
+        let active_requests = Arc::new(AtomicUsize::new(1));
+        let last_activity = Arc::new(Mutex::new(Instant::now() - Duration::from_secs(30)));
+
+        assert!(!should_exit_idle(
+            &active_requests,
+            &last_activity,
+            Duration::from_secs(20),
+        ));
+    }
 }

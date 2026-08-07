@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/governance"
+	"github.com/m0n0x41d/haft/internal/projectpath"
 	"github.com/m0n0x41d/haft/internal/reff"
 )
 
@@ -43,7 +45,50 @@ type CoverageReport struct {
 	PartialCount int
 	BlindCount   int
 	Modules      []ModuleCoverage
+	FileGaps     FileGapProjection
 }
+
+// FileGapIndexState reports whether the derived code index is safe to use for
+// exact file-link gap claims. An unavailable projection is never equivalent to
+// an empty gap set.
+type FileGapIndexState string
+
+const (
+	FileGapIndexUninitialized FileGapIndexState = "uninitialized"
+	FileGapIndexCurrent       FileGapIndexState = "current"
+	FileGapIndexStale         FileGapIndexState = "stale"
+	FileGapIndexDegraded      FileGapIndexState = "degraded"
+	FileGapIndexPartial       FileGapIndexState = "partial"
+)
+
+// FileDecisionLinkGap is an indexed source file inside a module that already
+// has at least one active DecisionRecord, but has no exact active
+// affected_files link of its own. It is an orientation cue, not proof that the
+// file is undocumented, unconstrained, or incorrect.
+type FileDecisionLinkGap struct {
+	FilePath   string
+	ModuleID   string
+	ModulePath string
+}
+
+// FileGapProjection is a bounded read-only projection over the current code
+// index. TotalGaps counts the full result; Gaps contains at most the requested
+// projection limit.
+type FileGapProjection struct {
+	IndexState      FileGapIndexState
+	Reason          string
+	IndexEpoch      int64
+	IndexBasisRef   string
+	CoveragePosture string
+	IndexedFiles    int
+	TotalGaps       int
+	OmittedGaps     int
+	ProjectionLimit int
+	Gaps            []FileDecisionLinkGap
+}
+
+const defaultFileGapProjectionLimit = 50
+const maxFileGapProjectionLimit = 200
 
 // ModuleGovernanceGap reports that a module touched by a new decision has no
 // prior active decision coverage.
@@ -66,44 +111,113 @@ func ComputeCoverage(ctx context.Context, db *sql.DB) (*CoverageReport, error) {
 		return &CoverageReport{}, nil
 	}
 
-	// Get all affected_files from active decisions and notes
-	// Only DecisionRecords count as governance — Notes are descriptive, not architectural contracts
+	// Only current DecisionRecords with module-scoped authority count as module
+	// governance. Exact decisions stay exact; implementation footprints stay
+	// descriptive. Typed module targets are authority in their own right and do
+	// not depend on a redundant affected_files backlink.
 	rows, err := db.QueryContext(ctx, `
-		SELECT af.file_path, a.id
-		FROM affected_files af
-		JOIN artifacts a ON a.id = af.artifact_id
-		WHERE a.status = 'active'
+		SELECT a.id, COALESCE(a.structured_data, '{}'),
+		       COALESCE(af.file_path, '')
+		FROM artifacts a
+		LEFT JOIN affected_files af ON a.id = af.artifact_id
+		WHERE a.status IN ('active', 'refresh_due')
 		  AND a.kind = 'DecisionRecord'
-		ORDER BY af.file_path`)
+		ORDER BY a.id, af.file_path`)
 	if err != nil {
 		return nil, fmt.Errorf("query affected files: %w", err)
 	}
 	defer rows.Close()
 
-	// Build map: file_path -> list of decision IDs
-	fileDecisions := make(map[string][]string)
+	type coverageDecision struct {
+		structuredData string
+		affectedPaths  []string
+	}
+	decisions := make(map[string]coverageDecision)
 	for rows.Next() {
-		var filePath, decID string
-		if err := rows.Scan(&filePath, &decID); err != nil {
-			continue
+		var decID, structuredData, filePath string
+		if err := rows.Scan(&decID, &structuredData, &filePath); err != nil {
+			return nil, err
 		}
-		fileDecisions[filePath] = append(fileDecisions[filePath], decID)
+		decision := decisions[decID]
+		decision.structuredData = structuredData
+		if strings.TrimSpace(filePath) != "" {
+			decision.affectedPaths = append(
+				decision.affectedPaths,
+				filePath,
+			)
+		}
+		decisions[decID] = decision
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
-	// For each module, check if any affected_file falls within its path
+	indexedFiles, _, err := coverageIndexedSourcePaths(
+		ctx,
+		db,
+	)
+	if err != nil {
+		return nil, err
+	}
+	moduleDecisions := make(map[string]map[string]bool)
+	addModuleDecision := func(moduleID string, decisionID string) {
+		decisionSet := moduleDecisions[moduleID]
+		if decisionSet == nil {
+			decisionSet = make(map[string]bool)
+			moduleDecisions[moduleID] = decisionSet
+		}
+		decisionSet[decisionID] = true
+	}
+	for decID, decision := range decisions {
+		policy, err := governance.ParseDecisionPathPolicy(
+			decision.structuredData,
+		)
+		if err != nil {
+			continue
+		}
+		for _, target := range policy.ModuleTargets() {
+			for _, module := range modules {
+				modulePath, err := projectpath.ParseModule(module.Path)
+				if err != nil ||
+					modulePath.String() != target.String() {
+					continue
+				}
+				addModuleDecision(module.ID, decID)
+			}
+		}
+		for _, rawPath := range decision.affectedPaths {
+			canonical, err := projectpath.Parse(rawPath)
+			if err != nil {
+				continue
+			}
+			module, ok := mostSpecificModuleForPath(
+				modules,
+				canonical.String(),
+			)
+			if !ok {
+				continue
+			}
+			modulePath, err := projectpath.ParseModule(module.Path)
+			if err != nil {
+				continue
+			}
+			if !policy.AllowsAffectedPathModuleContext(
+				rawPath,
+				canonical,
+				modulePath,
+				indexedFiles[canonical.String()],
+			) {
+				continue
+			}
+			addModuleDecision(module.ID, decID)
+		}
+	}
+
 	report := &CoverageReport{TotalModules: len(modules)}
 
 	for _, m := range modules {
 		mc := ModuleCoverage{Module: m}
-		decisionSet := make(map[string]bool)
-
-		for filePath, decIDs := range fileDecisions {
-			if isFileInModule(filePath, m.Path) {
-				for _, id := range decIDs {
-					decisionSet[id] = true
-				}
-			}
-		}
+		decisionSet := moduleDecisions[m.ID]
 
 		mc.DecisionCount = len(decisionSet)
 		for id := range decisionSet {
@@ -172,10 +286,361 @@ func ComputeCoverage(ctx context.Context, db *sql.DB) (*CoverageReport, error) {
 	return report, nil
 }
 
+// ComputeCoverageWithFileGaps adds a bounded exact-file projection only when
+// the existing derived code index matches the current source tree. It performs
+// no scans and no writes; callers must run an explicit refresh to publish a new
+// index before relying on stale or uninitialized results.
+func ComputeCoverageWithFileGaps(
+	ctx context.Context,
+	db *sql.DB,
+	projectRoot string,
+	requestedLimit int,
+) (*CoverageReport, error) {
+	report, err := ComputeCoverage(ctx, db)
+	if err != nil {
+		return nil, err
+	}
+
+	projection, err := projectCurrentFileDecisionLinkGaps(
+		ctx,
+		db,
+		projectRoot,
+		report.Modules,
+		normalizeFileGapProjectionLimit(requestedLimit),
+	)
+	if err != nil {
+		return nil, err
+	}
+	report.FileGaps = projection
+	return report, nil
+}
+
+type coverageIndexMeta struct {
+	Fingerprint    string
+	Epoch          int64
+	Degraded       bool
+	DegradedReason string
+}
+
+func projectCurrentFileDecisionLinkGaps(
+	ctx context.Context,
+	db *sql.DB,
+	projectRoot string,
+	modules []ModuleCoverage,
+	limit int,
+) (FileGapProjection, error) {
+	projection := FileGapProjection{
+		IndexState:      FileGapIndexUninitialized,
+		ProjectionLimit: limit,
+	}
+
+	present, err := coverageTableExists(ctx, db, "code_files")
+	if err != nil {
+		return projection, err
+	}
+	if !present {
+		projection.Reason = "derived code index has not been initialized"
+		return projection, nil
+	}
+
+	meta, found, err := readCoverageIndexMeta(ctx, db)
+	if err != nil {
+		projection.Reason = "derived code index metadata is unreadable: " + err.Error()
+		return projection, nil
+	}
+	if !found || meta.Epoch <= 0 || strings.TrimSpace(meta.Fingerprint) == "" {
+		projection.Reason = "derived code index has no published epoch"
+		return projection, nil
+	}
+	projection.IndexEpoch = meta.Epoch
+	if meta.Degraded {
+		projection.IndexState = FileGapIndexDegraded
+		projection.Reason = strings.TrimSpace(meta.DegradedReason)
+		if projection.Reason == "" {
+			projection.Reason = "the last code-index refresh degraded"
+		}
+		return projection, nil
+	}
+	indexState, err := NewScanner(db).CurrentIndexState(ctx)
+	if err != nil {
+		projection.IndexState = FileGapIndexDegraded
+		projection.Reason = "exact code-index basis is unreadable: " +
+			err.Error()
+		return projection, nil
+	}
+	projection.IndexBasisRef = indexState.Basis.CoverageRef()
+	projection.CoveragePosture = indexState.Basis.Coverage.Posture
+	if !indexState.SupportsKnownAbsence() {
+		projection.IndexState = FileGapIndexPartial
+		projection.Reason = fmt.Sprintf(
+			"code-index coverage is %s under %s",
+			indexState.Basis.Coverage.Posture,
+			indexState.Basis.CoverageRef(),
+		)
+		return projection, nil
+	}
+
+	currentFingerprint, err := NewScanner(db).SourceFingerprint(projectRoot)
+	if err != nil {
+		projection.IndexState = FileGapIndexStale
+		projection.Reason = "current source fingerprint is unavailable: " + err.Error()
+		return projection, nil
+	}
+	if currentFingerprint != meta.Fingerprint {
+		projection.IndexState = FileGapIndexStale
+		projection.Reason = "current source tree differs from the published code index"
+		return projection, nil
+	}
+	if len(modules) == 0 {
+		projection.Reason = "module index is unavailable for file-to-module projection"
+		return projection, nil
+	}
+
+	files, err := currentIndexedFiles(ctx, db)
+	if err != nil {
+		return projection, err
+	}
+	projection.IndexedFiles = len(files)
+	if len(files) == 0 {
+		projection.Reason = "published code index contains no source files"
+		return projection, nil
+	}
+
+	linkedFiles, err := activeDecisionLinkedFiles(ctx, db)
+	if err != nil {
+		return projection, err
+	}
+	gaps := make([]FileDecisionLinkGap, 0)
+	for _, filePath := range files {
+		module, ok := mostSpecificCoverageModule(modules, filePath)
+		if !ok || module.DecisionCount == 0 || module.Status == CoverageBlind {
+			continue
+		}
+		if linkedFiles[filePath] {
+			continue
+		}
+		projection.TotalGaps++
+		if len(gaps) >= limit {
+			continue
+		}
+		gaps = append(gaps, FileDecisionLinkGap{
+			FilePath:   filePath,
+			ModuleID:   module.Module.ID,
+			ModulePath: module.Module.Path,
+		})
+	}
+
+	afterIndexState, err := NewScanner(db).CurrentIndexState(ctx)
+	if err != nil {
+		return projection, err
+	}
+	if !indexState.SameCurrentBasis(afterIndexState) {
+		projection.IndexState = FileGapIndexStale
+		projection.Reason = "code-index basis changed during the file-gap query; retry"
+		projection.IndexedFiles = 0
+		projection.TotalGaps = 0
+		projection.OmittedGaps = 0
+		projection.Gaps = nil
+		return projection, nil
+	}
+	projection.IndexState = FileGapIndexCurrent
+	projection.Gaps = gaps
+	projection.OmittedGaps = projection.TotalGaps - len(gaps)
+	return projection, nil
+}
+
+func normalizeFileGapProjectionLimit(requested int) int {
+	if requested <= 0 {
+		return defaultFileGapProjectionLimit
+	}
+	return min(requested, maxFileGapProjectionLimit)
+}
+
+func coverageTableExists(ctx context.Context, db *sql.DB, name string) (bool, error) {
+	var count int
+	err := db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		name,
+	).Scan(&count)
+	return count > 0, err
+}
+
+func coverageIndexedSourcePaths(
+	ctx context.Context,
+	db *sql.DB,
+) (map[string]bool, bool, error) {
+	present, err := coverageTableExists(ctx, db, "code_files")
+	if err != nil || !present {
+		return nil, false, err
+	}
+	rows, err := db.QueryContext(
+		ctx,
+		`SELECT file_path FROM code_files ORDER BY file_path`,
+	)
+	if err != nil {
+		return nil, false, err
+	}
+	defer rows.Close()
+
+	result := make(map[string]bool)
+	for rows.Next() {
+		var rawPath string
+		if err := rows.Scan(&rawPath); err != nil {
+			return nil, false, err
+		}
+		canonical, err := projectpath.Parse(rawPath)
+		if err != nil || rawPath != canonical.String() {
+			continue
+		}
+		result[canonical.String()] = true
+	}
+	return result, len(result) > 0, rows.Err()
+}
+
+func readCoverageIndexMeta(ctx context.Context, db *sql.DB) (coverageIndexMeta, bool, error) {
+	present, err := coverageTableExists(ctx, db, "code_index_meta")
+	if err != nil || !present {
+		return coverageIndexMeta{}, false, err
+	}
+
+	var meta coverageIndexMeta
+	var degraded int
+	err = db.QueryRowContext(ctx, `
+		SELECT fingerprint, current_epoch, degraded, degraded_reason
+		FROM code_index_meta
+		WHERE id = 1`).Scan(
+		&meta.Fingerprint,
+		&meta.Epoch,
+		&degraded,
+		&meta.DegradedReason,
+	)
+	if err == sql.ErrNoRows {
+		return coverageIndexMeta{}, false, nil
+	}
+	meta.Degraded = degraded != 0
+	return meta, err == nil, err
+}
+
+func currentIndexedFiles(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT file_path
+		FROM code_files
+		WHERE parse_status IN ('indexed', 'empty')
+		ORDER BY file_path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	files := make([]string, 0)
+	for rows.Next() {
+		var filePath string
+		if err := rows.Scan(&filePath); err != nil {
+			return nil, err
+		}
+		canonical, err := projectpath.Parse(filePath)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"indexed file has invalid project path %q: %w",
+				filePath,
+				err,
+			)
+		}
+		files = append(files, canonical.String())
+	}
+	return files, rows.Err()
+}
+
+func activeDecisionLinkedFiles(ctx context.Context, db *sql.DB) (map[string]bool, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT af.file_path, COALESCE(a.structured_data, '{}')
+		FROM affected_files af
+		JOIN artifacts a ON a.id = af.artifact_id
+		WHERE a.status IN ('active', 'refresh_due')
+		  AND a.kind = 'DecisionRecord'
+		ORDER BY af.file_path`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	linked := make(map[string]bool)
+	for rows.Next() {
+		var filePath, structuredData string
+		if err := rows.Scan(&filePath, &structuredData); err != nil {
+			return nil, err
+		}
+		_, err := governance.ParseDecisionPathPolicy(structuredData)
+		if err != nil {
+			continue
+		}
+		canonical, err := projectpath.Parse(filePath)
+		if err != nil {
+			continue
+		}
+		linked[canonical.String()] = true
+	}
+	return linked, rows.Err()
+}
+
+func mostSpecificCoverageModule(modules []ModuleCoverage, filePath string) (ModuleCoverage, bool) {
+	rawModules := make([]Module, 0, len(modules))
+	for _, module := range modules {
+		rawModules = append(rawModules, module.Module)
+	}
+	resolved, ok := mostSpecificModuleForPath(rawModules, filePath)
+	if !ok {
+		return ModuleCoverage{}, false
+	}
+	for _, module := range modules {
+		if module.Module.ID == resolved.ID {
+			return module, true
+		}
+	}
+	return ModuleCoverage{}, false
+}
+
+func mostSpecificModuleForPath(modules []Module, filePath string) (Module, bool) {
+	candidate, err := projectpath.Parse(filePath)
+	if err != nil {
+		return Module{}, false
+	}
+
+	refs := make([]projectpath.ModuleRef, 0, len(modules))
+	for _, module := range modules {
+		moduleRef, err := projectpath.NewModuleRef(
+			module.ID,
+			module.Path,
+		)
+		if err != nil {
+			return Module{}, false
+		}
+		refs = append(refs, moduleRef)
+	}
+	resolved, ok, err := projectpath.ResolveMostSpecificModule(
+		refs,
+		candidate,
+	)
+	if err != nil || !ok {
+		return Module{}, false
+	}
+	for _, module := range modules {
+		if module.ID == resolved.ID() {
+			return module, true
+		}
+	}
+	return Module{}, false
+}
+
 // FormatCoverageResponse formats the coverage report for MCP output.
 func FormatCoverageResponse(report *CoverageReport) string {
 	if report.TotalModules == 0 {
-		return "No modules detected. Run module scan first.\n"
+		result := "No stored module index. Run explicit `haft_refresh(action=\"scan\")` before relying on module or file coverage. This is unavailable, not an empty-clean result.\n"
+		if report.FileGaps.IndexState != "" {
+			result += formatFileGapProjection(report.FileGaps)
+		}
+		return result
 	}
 
 	var sb strings.Builder
@@ -234,7 +699,184 @@ func FormatCoverageResponse(report *CoverageReport) string {
 		}
 	}
 
+	if report.FileGaps.IndexState != "" {
+		sb.WriteString(formatFileGapProjection(report.FileGaps))
+	}
+
 	return sb.String()
+}
+
+func formatFileGapProjection(projection FileGapProjection) string {
+	var sb strings.Builder
+	sb.WriteString("\n## Exact File Decision-Link Gaps\n\n")
+	if projection.IndexState != FileGapIndexCurrent {
+		sb.WriteString(fmt.Sprintf(
+			"- Unavailable: derived code index is `%s`",
+			projection.IndexState,
+		))
+		if projection.Reason != "" {
+			sb.WriteString(" — " + projection.Reason)
+		}
+		sb.WriteString(".\n")
+		sb.WriteString("- This is not an empty or clean result. Run explicit `haft_refresh(action=\"scan\")` before relying on file-gap claims.\n")
+		return sb.String()
+	}
+
+	sb.WriteString(fmt.Sprintf(
+		"- Current code index epoch %d contains %d indexed source file(s).\n",
+		projection.IndexEpoch,
+		projection.IndexedFiles,
+	))
+	sb.WriteString(fmt.Sprintf(
+		"- Exact basis: `%s` (coverage `%s`).\n",
+		projection.IndexBasisRef,
+		projection.CoveragePosture,
+	))
+	sb.WriteString(fmt.Sprintf(
+		"- %d file(s) inside modules with active DecisionRecords have no exact active `affected_files` link. This is an orientation cue, not proof that a file is undocumented, unconstrained, or incorrect.\n",
+		projection.TotalGaps,
+	))
+	for _, gap := range projection.Gaps {
+		modulePath := gap.ModulePath
+		if modulePath == "" {
+			modulePath = "(root)"
+		}
+		sb.WriteString(fmt.Sprintf("  ✗ %s — module %s\n", gap.FilePath, modulePath))
+	}
+	if projection.OmittedGaps > 0 {
+		sb.WriteString(fmt.Sprintf(
+			"  ... %d more gap(s) omitted; repeat `haft_query(action=\"coverage\", limit=N)` with N up to %d.\n",
+			projection.OmittedGaps,
+			maxFileGapProjectionLimit,
+		))
+	}
+	return sb.String()
+}
+
+// FormatCoverageSummary formats a compact module coverage projection for
+// default status output. The full module list remains available through
+// FormatCoverageResponse and haft_query(action="status", full=true).
+func FormatCoverageSummary(report *CoverageReport) string {
+	if report.TotalModules == 0 {
+		return "No modules detected. Run module scan first.\n"
+	}
+
+	var sb strings.Builder
+
+	pct := 0
+	if report.TotalModules > 0 {
+		pct = (report.CoveredCount + report.PartialCount) * 100 / report.TotalModules
+	}
+
+	header := fmt.Sprintf("## Module Coverage Summary (%d modules, %d%% governed", report.TotalModules, pct)
+	if report.PartialCount > 0 {
+		header += fmt.Sprintf(", %d degraded", report.PartialCount)
+	}
+	header += ") — orientation cue, not a target\n\n"
+	sb.WriteString(header)
+
+	const topModulesPerTier = 5
+	for _, status := range []CoverageStatus{CoverageBlind, CoveragePartial, CoverageCovered} {
+		tier := sortedCoverageTier(report, status)
+		if len(tier) == 0 {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("### %s (%d)\n", coverageStatusLabel(status), len(tier)))
+		for i, mc := range tier {
+			if i >= topModulesPerTier {
+				break
+			}
+			sb.WriteString(formatCoverageModuleLine(mc))
+		}
+		if omitted := len(tier) - topModulesPerTier; omitted > 0 {
+			sb.WriteString(fmt.Sprintf("  ... and %d more module(s)\n", omitted))
+		}
+		sb.WriteString("\n")
+	}
+
+	sb.WriteString("Full module list: `haft_query(action=\"status\", full=true)` or `haft_query(action=\"coverage\")`.\n")
+
+	return sb.String()
+}
+
+// FormatCoverageCockpitSummary formats a one-cue coverage projection for the
+// default status cockpit. Full coverage stays behind explicit drill-down calls.
+func FormatCoverageCockpitSummary(report *CoverageReport) string {
+	if report.TotalModules == 0 {
+		return "## Coverage Cue\n\n- No modules detected. Run module scan first.\n"
+	}
+
+	pct := 0
+	if report.TotalModules > 0 {
+		pct = (report.CoveredCount + report.PartialCount) * 100 / report.TotalModules
+	}
+
+	var sb strings.Builder
+	sb.WriteString("## Coverage Cue\n\n")
+	sb.WriteString(fmt.Sprintf(
+		"- %d module(s), %d%% governed; %d blind, %d degraded. Detailed coverage stays behind the Drill-down commands.\n",
+		report.TotalModules,
+		pct,
+		report.BlindCount,
+		report.PartialCount,
+	))
+
+	return sb.String()
+}
+
+func sortedCoverageTier(report *CoverageReport, status CoverageStatus) []ModuleCoverage {
+	var tier []ModuleCoverage
+	for _, mc := range report.Modules {
+		if mc.Status == status {
+			tier = append(tier, mc)
+		}
+	}
+
+	sort.Slice(tier, func(i, j int) bool {
+		if tier[i].ImpactScore != tier[j].ImpactScore {
+			return tier[i].ImpactScore > tier[j].ImpactScore
+		}
+		return tier[i].Module.Path < tier[j].Module.Path
+	})
+
+	return tier
+}
+
+func coverageStatusLabel(status CoverageStatus) string {
+	switch status {
+	case CoverageCovered:
+		return "Covered"
+	case CoveragePartial:
+		return "Degraded"
+	case CoverageBlind:
+		return "Blind"
+	default:
+		return string(status)
+	}
+}
+
+func formatCoverageModuleLine(mc ModuleCoverage) string {
+	path := mc.Module.Path
+	if path == "" {
+		path = "(root)"
+	}
+
+	impactTag := ""
+	if mc.ImpactScore > 0 {
+		impactTag = fmt.Sprintf(", impact: %d", mc.ImpactScore)
+	}
+
+	switch mc.Status {
+	case CoverageCovered:
+		return fmt.Sprintf("  ✓ %-30s — %d decision(s)%s [%s]\n", path, mc.DecisionCount, impactTag, mc.Module.Lang)
+	case CoveragePartial:
+		return fmt.Sprintf("  ~ %-30s — %d decision(s), stale%s [%s]\n", path, mc.DecisionCount, impactTag, mc.Module.Lang)
+	case CoverageBlind:
+		return fmt.Sprintf("  ✗ %-30s — no decisions (blind)%s [%s]\n", path, impactTag, mc.Module.Lang)
+	default:
+		return fmt.Sprintf("  ? %-30s — %s%s [%s]\n", path, mc.Status, impactTag, mc.Module.Lang)
+	}
 }
 
 // FindFirstDecisionModules returns touched modules that currently have no
@@ -429,13 +1071,4 @@ func computeDecisionREff(ctx context.Context, db *sql.DB, decisionID string) (fl
 	}
 
 	return minScore, true
-}
-
-// isFileInModule checks if a file path belongs to a module's directory.
-func isFileInModule(filePath, modulePath string) bool {
-	if modulePath == "" {
-		// Root module covers all files in the project
-		return true
-	}
-	return strings.HasPrefix(filePath, modulePath+"/") || filePath == modulePath
 }

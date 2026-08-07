@@ -68,6 +68,15 @@ func TestMeasure_Success(t *testing.T) {
 	if items[0].FormalityLevel != 2 {
 		t.Errorf("evidence formality = %d, want 2", items[0].FormalityLevel)
 	}
+	if items[0].FormalityScale == nil {
+		t.Fatal("measurement evidence formality scale missing")
+	}
+	if items[0].FormalityScale.ScaleID != reff.FormalityScaleCurrent {
+		t.Fatalf("measurement evidence formality scale = %q, want current F0-F9", items[0].FormalityScale.ScaleID)
+	}
+	if items[0].FormalityBridge != nil {
+		t.Fatalf("current F0-F9 measurement evidence should not need a bridge: %#v", items[0].FormalityBridge)
+	}
 	if items[0].ValidUntil != "2027-01-01T00:00:00Z" {
 		t.Errorf("evidence valid_until = %q, want propagated decision validity", items[0].ValidUntil)
 	}
@@ -76,6 +85,72 @@ func TestMeasure_Success(t *testing.T) {
 	}
 	if len(items[0].ClaimRefs) != 0 {
 		t.Errorf("evidence claim_refs = %#v, want none without structured claims", items[0].ClaimRefs)
+	}
+}
+
+func TestMeasureDoesNotRewriteDecisionBaselineHashes(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"before\" }\n")
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep drift baseline stable",
+		WhySelected:   "Measurement evidence must not rewrite the verified-state snapshot used for drift.",
+		WeakestLink:   "A measurement path could accidentally mutate affected file hashes.",
+		PostConditions: []string{
+			"app.go behavior is measured after implementation",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	before, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(before) != 1 || before[0].Hash == "" {
+		t.Fatalf("baseline files = %+v, want one hashed file", before)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"after\" }\n")
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef: dec.Meta.ID,
+		Findings:    "Implementation was measured after app.go changed.",
+		CriteriaMet: []string{"app.go behavior is measured after implementation"},
+		Verdict:     "accepted",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	after, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("Measure rewrote baseline hashes:\nbefore=%+v\nafter=%+v", before, after)
+	}
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("drift reports = %+v, want one report from unchanged baseline snapshot", reports)
+	}
+	if reports[0].BaselineKind != BaselineKindVerifiedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want verified-state snapshot", reports[0].BaselineKind)
 	}
 }
 
@@ -566,8 +641,8 @@ func TestAttachEvidence_Success(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected 1 evidence item, got %d", len(items))
 	}
-	if items[0].FormalityLevel != 2 {
-		t.Errorf("stored formality = %d, want normalized F2", items[0].FormalityLevel)
+	if items[0].FormalityLevel != 7 {
+		t.Errorf("stored formality = %d, want preserved F7", items[0].FormalityLevel)
 	}
 	if got := strings.Join(items[0].ClaimRefs, ","); got != "claim-002" {
 		t.Errorf("stored claim_refs = %q, want claim-002", got)
@@ -1195,8 +1270,8 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	}
 
 	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
-	if wlnk.FEff != 2 {
-		t.Errorf("FEff = %d, want 2", wlnk.FEff)
+	if wlnk.FEff != 7 {
+		t.Errorf("FEff = %d, want 7", wlnk.FEff)
 	}
 	if !wlnk.CoverageKnown {
 		t.Fatal("expected explicit acceptance coverage")
@@ -1207,11 +1282,117 @@ func TestWLNKSummary_SurfacesAssuranceCoverage(t *testing.T) {
 	if got := strings.Join(wlnk.CoverageGaps, ","); got != "Throughput above 100k events/sec" {
 		t.Errorf("CoverageGaps = %q, want uncovered criterion", got)
 	}
-	if !strings.Contains(wlnk.Summary, "Assurance: F2 (structured-formal)") {
+	if !strings.Contains(wlnk.Summary, "Assurance: F7 (machine-checkable-obligations)") {
 		t.Errorf("summary should show structured assurance: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "scale=fpf-2026-f0-f9") {
+		t.Errorf("summary should name current F0-F9 scale: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "bridge_loss=none") {
+		t.Errorf("summary should name no-loss bridge posture: %q", wlnk.Summary)
 	}
 	if !strings.Contains(wlnk.Summary, "G: 1/2 criteria covered") {
 		t.Errorf("summary should show coverage ratio: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "boundary=diagnostic_not_approval_gate_claim_truth_global_truth_or_publication") {
+		t.Errorf("summary should show diagnostic-only authority boundary: %q", wlnk.Summary)
+	}
+}
+
+func TestWLNKSummary_NamesLegacyFormalityBridgeLoss(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep legacy evidence readable",
+		WhySelected:   "Legacy evidence remains audit input but not current-formality proof.",
+		WeakestLink:   "legacy formality bridge",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:      dec.Meta.ID,
+		Content:          "Old checker produced a structured result.",
+		Type:             "test",
+		Verdict:          "supports",
+		CongruenceLevel:  3,
+		FormalityLevel:   2,
+		FormalityScaleID: reff.FormalityScaleLegacy,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, store, dec.Meta.ID)
+	if wlnk.FormalityScaleID != reff.FormalityScaleLegacy {
+		t.Fatalf("FormalityScaleID = %q, want legacy", wlnk.FormalityScaleID)
+	}
+	if wlnk.FormalityBridgeLoss != reff.FormalityBridgeLegacyLoss {
+		t.Fatalf("FormalityBridgeLoss = %q, want legacy loss", wlnk.FormalityBridgeLoss)
+	}
+	if !strings.Contains(wlnk.Summary, "scale=haft-legacy-f0-f3") {
+		t.Errorf("summary should name legacy scale: %q", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "bridge_loss=legacy-scale-has-fewer-buckets") {
+		t.Errorf("summary should name legacy bridge loss: %q", wlnk.Summary)
+	}
+}
+
+type unversionedEvidenceStore struct {
+	*Store
+	items []EvidenceItem
+}
+
+func (s unversionedEvidenceStore) GetEvidenceItems(ctx context.Context, artifactRef string) ([]EvidenceItem, error) {
+	return s.items, nil
+}
+
+func TestWLNKSummary_DoesNotPromoteUnversionedFormalityToCurrent(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep unversioned evidence diagnostic",
+		WhySelected:   "Projection must not make missing scale metadata look current.",
+		WeakestLink:   "unversioned formality source",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	wrappedStore := unversionedEvidenceStore{
+		Store: store,
+		items: []EvidenceItem{
+			{
+				ID:              "evid-unversioned",
+				Type:            "test",
+				Content:         "Legacy in-memory evidence item without scale metadata.",
+				Verdict:         "supports",
+				CongruenceLevel: 3,
+				FormalityLevel:  2,
+			},
+		},
+	}
+
+	wlnk := ComputeWLNKSummary(ctx, wrappedStore, dec.Meta.ID)
+	if wlnk.FormalityScaleID != reff.FormalityScaleUnversioned {
+		t.Fatalf("FormalityScaleID = %q, want unversioned", wlnk.FormalityScaleID)
+	}
+	if wlnk.FormalityBridgeLoss != reff.FormalityBridgeUnversionedGap {
+		t.Fatalf("FormalityBridgeLoss = %q, want unversioned gap", wlnk.FormalityBridgeLoss)
+	}
+	if strings.Contains(wlnk.Summary, "scale="+reff.FormalityScaleCurrent) {
+		t.Fatalf("summary should not promote unversioned formality to current:\n%s", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "scale=unversioned-formality") {
+		t.Fatalf("summary should name unversioned formality scale:\n%s", wlnk.Summary)
+	}
+	if !strings.Contains(wlnk.Summary, "bridge_loss=source-scale-not-declared") {
+		t.Fatalf("summary should name unversioned bridge loss:\n%s", wlnk.Summary)
 	}
 }
 

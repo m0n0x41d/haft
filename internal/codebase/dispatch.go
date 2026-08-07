@@ -6,7 +6,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"os"
 	"path/filepath"
 
 	sitter "github.com/smacker/go-tree-sitter"
@@ -35,18 +34,24 @@ type InterfaceDef struct {
 // ExtractGoInterfaces extracts each interface type's method set from a Go file.
 // Pure relative to file content. Go only.
 func ExtractGoInterfaces(projectRoot, relPath string) ([]InterfaceDef, error) {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return ExtractGoInterfacesFromSource(source)
+}
+
+// ExtractGoInterfacesFromSource consumes only centrally admitted bytes.
+func ExtractGoInterfacesFromSource(
+	source AdmittedSource,
+) ([]InterfaceDef, error) {
+	relPath := source.Path().String()
 	ext := filepath.Ext(relPath)
 	li, ok := languages[ext]
 	if !ok || li.name != "go" {
 		return nil, nil
 	}
-	content, err := os.ReadFile(filepath.Join(projectRoot, relPath))
-	if err != nil {
-		return nil, fmt.Errorf("read %s: %w", relPath, err)
-	}
-	if len(content) > 500_000 {
-		return nil, nil
-	}
+	content := source.bytes()
 
 	parser := sitter.NewParser()
 	parser.SetLanguage(li.lang)
@@ -115,7 +120,19 @@ func ExtractGoInterfaces(projectRoot, relPath string) ([]InterfaceDef, error) {
 // inference that bounds dispatch precision: a call x.M() links through an
 // interface only when x's DECLARED type is a known interface.
 func ExtractGoSignatures(projectRoot, relPath string) (map[int]map[string]string, error) {
-	return extractGoSignatures(projectRoot, relPath, TypeFacts{}, false)
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return ExtractGoSignaturesFromSource(source)
+}
+
+// ExtractGoSignaturesFromSource derives declared signature variables from
+// admitted bytes.
+func ExtractGoSignaturesFromSource(
+	source AdmittedSource,
+) (map[int]map[string]string, error) {
+	return extractGoSignaturesFromSource(source, TypeFacts{}, false)
 }
 
 // ExtractGoSignaturesWithLocals additionally infers the types of LOCAL variables
@@ -124,15 +141,36 @@ func ExtractGoSignatures(projectRoot, relPath string) (map[int]map[string]string
 // declared receiver/param ones. Same conservative discipline: an unresolvable
 // local contributes no entry.
 func ExtractGoSignaturesWithLocals(projectRoot, relPath string, facts TypeFacts) (map[int]map[string]string, error) {
-	return extractGoSignatures(projectRoot, relPath, facts, true)
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return nil, err
+	}
+	return ExtractGoSignaturesWithLocalsFromSource(source, facts)
+}
+
+// ExtractGoSignaturesWithLocalsFromSource adds inferred locals while preserving
+// the exact admitted parser input.
+func ExtractGoSignaturesWithLocalsFromSource(
+	source AdmittedSource,
+	facts TypeFacts,
+) (map[int]map[string]string, error) {
+	return extractGoSignaturesFromSource(source, facts, true)
 }
 
 // extractGoSignatures maps each function's start line to its variable→type
 // table (receiver + params, optionally extended with inferred locals).
-func extractGoSignatures(projectRoot, relPath string, facts TypeFacts, withLocals bool) (map[int]map[string]string, error) {
-	absPath := filepath.Join(projectRoot, relPath)
+func extractGoSignaturesFromSource(
+	source AdmittedSource,
+	facts TypeFacts,
+	withLocals bool,
+) (map[int]map[string]string, error) {
 	fset := token.NewFileSet()
-	f, err := parser.ParseFile(fset, absPath, nil, 0)
+	f, err := parser.ParseFile(
+		fset,
+		source.Path().String(),
+		source.bytes(),
+		0,
+	)
 	if err != nil {
 		return nil, nil // skip unparseable
 	}

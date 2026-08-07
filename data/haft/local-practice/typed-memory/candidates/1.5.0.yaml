@@ -1,0 +1,1841 @@
+schema_version: haft.local-practice/v1
+carrier:
+  id: haft.typed-memory
+  edition: 1.5.0
+base_type_env_ref: typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc
+bounded_context_ref: haft-project
+compiler_version: haft.local-practice.compiler/v2
+signature_manifest:
+  id: haft.typed-memory
+  version: 1.5.0
+  publication_state: candidate
+  imports: []
+  provides:
+    - haft-project
+    - Haft.ProjectRecord
+    - Haft.DecisionRecord
+    - Haft.SpecSectionRecord
+    - Haft.EvidenceRecord
+    - Haft.SupportingEpistemeRecord
+    - Haft.WorkRecord
+    - Haft.WorkPlanRecord
+    - Haft.CarrierEdition
+    - Haft.ProjectClaim
+    - Haft.PerformedWorkOccurrence
+    - Haft.CodeAnchor
+    - Haft.EvidenceUseQualifier
+    - Haft.PerformedInterval
+    - Haft.CodeAnchorLocator
+    - Haft.EvidencePolarity
+    - Haft.CanonicalInstant
+    - Haft.Text
+    - Haft.ProjectRecordRef
+    - Haft.DecisionRecordRef
+    - Haft.SpecSectionRecordRef
+    - Haft.EvidenceRecordRef
+    - Haft.SupportingEpistemeRecordRef
+    - Haft.WorkRecordRef
+    - Haft.WorkPlanRecordRef
+    - Haft.CarrierEditionRef
+    - Haft.ProjectClaimRef
+    - Haft.PerformedWorkOccurrenceRef
+    - Haft.CodeAnchorRef
+    - Haft.KindSignature.ProjectEntityV2
+    - Haft.KindSignature.ProjectRecordV2
+    - Haft.KindSignature.DecisionRecordV2
+    - Haft.KindSignature.SpecSectionRecordV2
+    - Haft.KindSignature.EvidenceRecordV2
+    - Haft.KindSignature.SupportingEpistemeRecordV2
+    - Haft.KindSignature.WorkRecordV2
+    - Haft.KindSignature.WorkPlanRecordV2
+    - Haft.KindSignature.CarrierEditionV2
+    - Haft.KindSignature.ProjectClaimV2
+    - Haft.KindSignature.PerformedWorkOccurrenceV2
+    - Haft.KindSignature.CodeAnchorV2
+    - Haft.CarrierPresentsRecord
+    - Haft.CarrierPresentsRecord.CarrierEditionSlot
+    - Haft.CarrierPresentsRecord.ProjectRecordSlot
+    - Haft.NoteAtConcern
+    - Haft.NoteAtConcern.NoteSlot
+    - Haft.NoteAtConcern.EntityOfConcernSlot
+    - Haft.NoteAtConcern.ClaimGraphSlot
+    - Haft.ProblemCardAtConcern
+    - Haft.ProblemCardAtConcern.ProblemCardSlot
+    - Haft.ProblemCardAtConcern.EntityOfConcernSlot
+    - Haft.ProblemCardAtConcern.ClaimGraphSlot
+    - Haft.SolutionPortfolioAtConcern
+    - Haft.SolutionPortfolioAtConcern.PortfolioSlot
+    - Haft.SolutionPortfolioAtConcern.EntityOfConcernSlot
+    - Haft.SolutionPortfolioAtConcern.ClaimGraphSlot
+    - Haft.SolutionPortfolioAtConcern.OptionSlot
+    - Haft.PortfolioComparison
+    - Haft.PortfolioComparison.ComparisonSlot
+    - Haft.PortfolioComparison.PortfolioSlot
+    - Haft.PortfolioComparison.EntityOfConcernSlot
+    - Haft.PortfolioComparison.ComparedOptionSlot
+    - Haft.PortfolioComparison.NonDominatedOptionSlot
+    - Haft.PortfolioComparison.ClaimGraphSlot
+    - Haft.DecisionChoiceAtConcern
+    - Haft.DecisionChoiceAtConcern.DecisionRecordSlot
+    - Haft.DecisionChoiceAtConcern.EntityOfConcernSlot
+    - Haft.DecisionChoiceAtConcern.ProblemRecordSlot
+    - Haft.DecisionChoiceAtConcern.PortfolioRecordSlot
+    - Haft.DecisionChoiceAtConcern.OptionSlot
+    - Haft.DecisionChoiceAtConcern.ChosenOptionSlot
+    - Haft.DecisionChoiceAtConcern.RejectedOptionSlot
+    - Haft.DecisionChoiceAtConcern.ComparisonRecordSlot
+    - Haft.DecisionChoiceAtConcern.ClaimGraphSlot
+    - Haft.SpecSectionAtConcern
+    - Haft.SpecSectionAtConcern.SpecSectionRecordSlot
+    - Haft.SpecSectionAtConcern.EntityOfConcernSlot
+    - Haft.SpecSectionAtConcern.ClaimGraphSlot
+    - Haft.ProjectClaimAtConcern
+    - Haft.ProjectClaimAtConcern.ProjectClaimSlot
+    - Haft.ProjectClaimAtConcern.EntityOfConcernSlot
+    - Haft.ProjectClaimAtConcern.ClaimGraphSlot
+    - Haft.RecordStatesClaim
+    - Haft.RecordStatesClaim.ProjectRecordSlot
+    - Haft.RecordStatesClaim.ProjectClaimSlot
+    - Haft.SupportingEpistemeRecordAtConcern
+    - Haft.SupportingEpistemeRecordAtConcern.SupportingEpistemeRecordSlot
+    - Haft.SupportingEpistemeRecordAtConcern.EntityOfConcernSlot
+    - Haft.SupportingEpistemeRecordAtConcern.ClaimGraphSlot
+    - Haft.EvidenceUse
+    - Haft.EvidenceUse.EvidenceRecordSlot
+    - Haft.EvidenceUse.SupportingEpistemeRecordSlot
+    - Haft.EvidenceUse.TargetProjectClaimSlot
+    - Haft.EvidenceUse.EvidenceUseQualifierSlot
+    - Haft.EvidenceUse.ProvenanceCarrierEditionSlot
+    - Haft.EvidenceUse.ProducedByPerformedWorkOccurrenceSlot
+    - Haft.WorkOccurrenceRecord
+    - Haft.WorkOccurrenceRecord.WorkRecordSlot
+    - Haft.WorkOccurrenceRecord.PerformedWorkOccurrenceSlot
+    - Haft.WorkOccurrenceRecord.EntityOfConcernSlot
+    - Haft.WorkOccurrenceRecord.PerformerSlot
+    - Haft.WorkOccurrenceRecord.ProducedSupportingEpistemeRecordSlot
+    - Haft.WorkOccurrenceRecord.PerformedIntervalSlot
+    - Haft.WorkOccurrenceRecord.ClaimGraphSlot
+    - Haft.WorkPlanAtConcern
+    - Haft.WorkPlanAtConcern.WorkPlanRecordSlot
+    - Haft.WorkPlanAtConcern.EntityOfConcernSlot
+    - Haft.WorkPlanAtConcern.ClaimGraphSlot
+    - Haft.CodeAnchorDefinition
+    - Haft.CodeAnchorDefinition.CodeAnchorSlot
+    - Haft.CodeAnchorDefinition.CodeAnchorLocatorSlot
+    - Haft.CodeRealizesClaim
+    - Haft.CodeRealizesClaim.CodeAnchorSlot
+    - Haft.CodeRealizesClaim.TargetProjectClaimSlot
+    - Haft.CodeChangedByWork
+    - Haft.CodeChangedByWork.CodeAnchorSlot
+    - Haft.CodeChangedByWork.PerformedWorkOccurrenceSlot
+    - Haft.Shape.TextV1
+    - Haft.Shape.EvidencePolarityV1
+    - Haft.Shape.CanonicalInstantV1
+    - Haft.Shape.EvidenceUseQualifierV1
+    - Haft.Shape.CompletedPerformedIntervalV1
+    - Haft.Shape.InFlightPerformedIntervalV1
+    - Haft.Shape.PerformedIntervalStateV1
+    - Haft.Shape.PerformedIntervalV1
+    - Haft.Shape.FileCodeAnchorTargetV1
+    - Haft.Shape.SymbolCodeAnchorTargetV1
+    - Haft.Shape.CodeAnchorTargetV1
+    - Haft.Shape.CodeAnchorLocatorV1
+    - Haft.Codec.TextV1
+    - Haft.Codec.EvidencePolarityV1
+    - Haft.Codec.CanonicalInstantV1
+    - Haft.Codec.EvidenceUseQualifierV1
+    - Haft.Codec.PerformedIntervalV1
+    - Haft.Codec.CodeAnchorLocatorV1
+    - Haft.ProjectEpistemeConstitutionBasis
+    - Haft.ProjectEpistemeConstitutionBasis.ClaimGraphSlot
+    - Haft.ProjectEpistemeConstitutionBasis.EntityOfConcernSlot
+    - Haft.ProjectEpistemeConstitutionBasis.ReferenceSchemeSlot
+    - Haft.Shape.ProjectMemoryReferenceSchemeExactSourceCarrierPinV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeExactRuntimeMechanismPinV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeRuntimeNotRequiredRulePinV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeRuntimeRequiredRulePinV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinSetV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeRuleBranchV1
+    - Haft.Shape.ProjectMemoryReferenceSchemeV1
+    - Haft.Codec.ProjectMemoryReferenceSchemeV1
+    - Haft.RuntimeRequirement.ProjectMemoryReferenceDesignationResolutionV1
+    - Haft.RuntimeRequirement.ProjectMemoryClaimInterpretationV1
+    - Haft.RuntimeRequirement.ProjectMemoryClaimMeasurementV1
+    - Haft.RuntimeRequirement.ProjectMemoryClaimEvaluationV1
+    - Haft.RuntimeRequirement.ProjectEpistemeConstitutionEvaluationV1
+    - Haft.Constraint.CarrierPresentsRecord.CarrierEditionSlot.CardinalityV1
+    - Haft.Constraint.CarrierPresentsRecord.ProjectRecordSlot.CardinalityV1
+    - Haft.Constraint.NoteAtConcern.NoteSlot.CardinalityV1
+    - Haft.Constraint.NoteAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.NoteAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.ProblemCardAtConcern.ProblemCardSlot.CardinalityV1
+    - Haft.Constraint.ProblemCardAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.ProblemCardAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.SolutionPortfolioAtConcern.PortfolioSlot.CardinalityV1
+    - Haft.Constraint.SolutionPortfolioAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.SolutionPortfolioAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.SolutionPortfolioAtConcern.OptionSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.ComparisonSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.PortfolioSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.ComparedOptionSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.NonDominatedOptionSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.DecisionRecordSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.ProblemRecordSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.PortfolioRecordSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.OptionSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.ChosenOptionSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.RejectedOptionSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.ComparisonRecordSlot.CardinalityV1
+    - Haft.Constraint.DecisionChoiceAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.SpecSectionAtConcern.SpecSectionRecordSlot.CardinalityV1
+    - Haft.Constraint.SpecSectionAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.SpecSectionAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.ProjectClaimAtConcern.ProjectClaimSlot.CardinalityV1
+    - Haft.Constraint.ProjectClaimAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.ProjectClaimAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.RecordStatesClaim.ProjectRecordSlot.CardinalityV1
+    - Haft.Constraint.RecordStatesClaim.ProjectClaimSlot.CardinalityV1
+    - Haft.Constraint.SupportingEpistemeRecordAtConcern.SupportingEpistemeRecordSlot.CardinalityV1
+    - Haft.Constraint.SupportingEpistemeRecordAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.SupportingEpistemeRecordAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.EvidenceUse.EvidenceRecordSlot.CardinalityV1
+    - Haft.Constraint.EvidenceUse.SupportingEpistemeRecordSlot.CardinalityV1
+    - Haft.Constraint.EvidenceUse.TargetProjectClaimSlot.CardinalityV1
+    - Haft.Constraint.EvidenceUse.EvidenceUseQualifierSlot.CardinalityV1
+    - Haft.Constraint.EvidenceUse.ProvenanceCarrierEditionSlot.CardinalityV1
+    - Haft.Constraint.EvidenceUse.ProducedByPerformedWorkOccurrenceSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.WorkRecordSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.PerformedWorkOccurrenceSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.PerformerSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.ProducedSupportingEpistemeRecordSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.PerformedIntervalSlot.CardinalityV1
+    - Haft.Constraint.WorkOccurrenceRecord.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.WorkPlanAtConcern.WorkPlanRecordSlot.CardinalityV1
+    - Haft.Constraint.WorkPlanAtConcern.EntityOfConcernSlot.CardinalityV1
+    - Haft.Constraint.WorkPlanAtConcern.ClaimGraphSlot.CardinalityV1
+    - Haft.Constraint.CodeAnchorDefinition.CodeAnchorSlot.CardinalityV1
+    - Haft.Constraint.CodeAnchorDefinition.CodeAnchorLocatorSlot.CardinalityV1
+    - Haft.Constraint.CodeRealizesClaim.CodeAnchorSlot.CardinalityV1
+    - Haft.Constraint.CodeRealizesClaim.TargetProjectClaimSlot.CardinalityV1
+    - Haft.Constraint.CodeChangedByWork.CodeAnchorSlot.CardinalityV1
+    - Haft.Constraint.CodeChangedByWork.PerformedWorkOccurrenceSlot.CardinalityV1
+    - Haft.Constraint.PortfolioComparison.NonDominatedSubsetV1
+    - Haft.Constraint.DecisionChoice.OptionPartitionV1
+    - Haft.Constraint.ProjectRecordCarrierEditionDisjointV1
+    - Haft.Constraint.ProjectRecordPerformedWorkOccurrenceDisjointV1
+    - Haft.Constraint.ProjectRecordCodeAnchorDisjointV1
+    - Haft.Constraint.EvidenceRecordSupportingEpistemeRecordDisjointV1
+    - Haft.Constraint.AuthorityLifecycleRecordKindsPairwiseDisjointV1
+signature:
+  subject_block:
+    subject_kind: Haft.ProjectRecord
+    ranged_value_kind: U.Entity
+    slice_set: ContextSliceSet
+    extent_rule: haft.local-practice.typed-memory.extent/v1
+  vocabulary:
+    declarations:
+      - kind: bounded_context
+        symbol: haft-project
+      - kind: value_kind
+        symbol: Haft.ProjectRecord
+      - kind: value_kind
+        symbol: Haft.DecisionRecord
+      - kind: value_kind
+        symbol: Haft.SpecSectionRecord
+      - kind: value_kind
+        symbol: Haft.EvidenceRecord
+      - kind: value_kind
+        symbol: Haft.SupportingEpistemeRecord
+      - kind: value_kind
+        symbol: Haft.WorkRecord
+      - kind: value_kind
+        symbol: Haft.WorkPlanRecord
+      - kind: value_kind
+        symbol: Haft.CarrierEdition
+      - kind: value_kind
+        symbol: Haft.ProjectClaim
+      - kind: value_kind
+        symbol: Haft.PerformedWorkOccurrence
+      - kind: value_kind
+        symbol: Haft.CodeAnchor
+      - kind: value_kind
+        symbol: Haft.EvidenceUseQualifier
+      - kind: value_kind
+        symbol: Haft.PerformedInterval
+      - kind: value_kind
+        symbol: Haft.CodeAnchorLocator
+      - kind: value_kind
+        symbol: Haft.EvidencePolarity
+      - kind: value_kind
+        symbol: Haft.CanonicalInstant
+      - kind: value_kind
+        symbol: Haft.Text
+      - kind: subkind
+        symbol: Haft.Subkind.ProjectRecordEntity
+        child_kind: Haft.ProjectRecord
+        super_kind: U.Entity
+      - kind: subkind
+        symbol: Haft.Subkind.DecisionRecordProjectRecord
+        child_kind: Haft.DecisionRecord
+        super_kind: Haft.ProjectRecord
+      - kind: subkind
+        symbol: Haft.Subkind.SpecSectionRecordProjectRecord
+        child_kind: Haft.SpecSectionRecord
+        super_kind: Haft.ProjectRecord
+      - kind: subkind
+        symbol: Haft.Subkind.EvidenceRecordProjectRecord
+        child_kind: Haft.EvidenceRecord
+        super_kind: Haft.ProjectRecord
+      - kind: subkind
+        symbol: Haft.Subkind.SupportingEpistemeRecordProjectRecord
+        child_kind: Haft.SupportingEpistemeRecord
+        super_kind: Haft.ProjectRecord
+      - kind: subkind
+        symbol: Haft.Subkind.WorkRecordProjectRecord
+        child_kind: Haft.WorkRecord
+        super_kind: Haft.ProjectRecord
+      - kind: subkind
+        symbol: Haft.Subkind.WorkPlanRecordProjectRecord
+        child_kind: Haft.WorkPlanRecord
+        super_kind: Haft.ProjectRecord
+      - kind: subkind
+        symbol: Haft.Subkind.CarrierEditionEntity
+        child_kind: Haft.CarrierEdition
+        super_kind: U.Entity
+      - kind: subkind
+        symbol: Haft.Subkind.ProjectClaimEntity
+        child_kind: Haft.ProjectClaim
+        super_kind: U.Entity
+      - kind: subkind
+        symbol: Haft.Subkind.PerformedWorkOccurrenceEntity
+        child_kind: Haft.PerformedWorkOccurrence
+        super_kind: U.Entity
+      - kind: subkind
+        symbol: Haft.Subkind.CodeAnchorEntity
+        child_kind: Haft.CodeAnchor
+        super_kind: U.Entity
+      - kind: ref_kind
+        symbol: Haft.ProjectRecordRef
+        value_kind: Haft.ProjectRecord
+      - kind: ref_kind
+        symbol: Haft.DecisionRecordRef
+        value_kind: Haft.DecisionRecord
+      - kind: ref_kind
+        symbol: Haft.SpecSectionRecordRef
+        value_kind: Haft.SpecSectionRecord
+      - kind: ref_kind
+        symbol: Haft.EvidenceRecordRef
+        value_kind: Haft.EvidenceRecord
+      - kind: ref_kind
+        symbol: Haft.SupportingEpistemeRecordRef
+        value_kind: Haft.SupportingEpistemeRecord
+      - kind: ref_kind
+        symbol: Haft.WorkRecordRef
+        value_kind: Haft.WorkRecord
+      - kind: ref_kind
+        symbol: Haft.WorkPlanRecordRef
+        value_kind: Haft.WorkPlanRecord
+      - kind: ref_kind
+        symbol: Haft.CarrierEditionRef
+        value_kind: Haft.CarrierEdition
+      - kind: ref_kind
+        symbol: Haft.ProjectClaimRef
+        value_kind: Haft.ProjectClaim
+      - kind: ref_kind
+        symbol: Haft.PerformedWorkOccurrenceRef
+        value_kind: Haft.PerformedWorkOccurrence
+      - kind: ref_kind
+        symbol: Haft.CodeAnchorRef
+        value_kind: Haft.CodeAnchor
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.ProjectEntityV2
+        local_kind: U.Entity
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.project-entity/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.ProjectRecordV2
+        local_kind: Haft.ProjectRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.project-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.DecisionRecordV2
+        local_kind: Haft.DecisionRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.decision-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.SpecSectionRecordV2
+        local_kind: Haft.SpecSectionRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.spec-section-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.EvidenceRecordV2
+        local_kind: Haft.EvidenceRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.evidence-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.SupportingEpistemeRecordV2
+        local_kind: Haft.SupportingEpistemeRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.supporting-episteme-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.WorkRecordV2
+        local_kind: Haft.WorkRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.work-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.WorkPlanRecordV2
+        local_kind: Haft.WorkPlanRecord
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.work-plan-record-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.CarrierEditionV2
+        local_kind: Haft.CarrierEdition
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.carrier-edition-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.ProjectClaimV2
+        local_kind: Haft.ProjectClaim
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.project-claim-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.PerformedWorkOccurrenceV2
+        local_kind: Haft.PerformedWorkOccurrence
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.performed-work-occurrence-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: kind_classification_signature_definition
+        symbol: Haft.KindSignature.CodeAnchorV2
+        local_kind: Haft.CodeAnchor
+        candidate_value_kind: U.Entity
+        formality: F4
+        criterion_rule: haft.classify.code-anchor-carrier/v1
+        slice_conditions_rule: haft.context-slice.project/v1
+        reference_scheme:
+          carrier_ref: fpf-source:FPF-Spec.md
+          edition: 3dbce51436bfd718bf49cb0356eebce70c4fc015
+          digest: sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf
+        dependencies: []
+        extent_rule:
+          kind: none
+      - kind: relation_signature
+        symbol: Haft.CarrierPresentsRecord
+        slots:
+          - slot_kind: Haft.CarrierPresentsRecord.CarrierEditionSlot
+            value_kind: Haft.CarrierEdition
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.CarrierEditionRef
+          - slot_kind: Haft.CarrierPresentsRecord.ProjectRecordSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+      - kind: relation_signature
+        symbol: Haft.NoteAtConcern
+        slots:
+          - slot_kind: Haft.NoteAtConcern.NoteSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.NoteAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.NoteAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.ProblemCardAtConcern
+        slots:
+          - slot_kind: Haft.ProblemCardAtConcern.ProblemCardSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.ProblemCardAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.ProblemCardAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.SolutionPortfolioAtConcern
+        slots:
+          - slot_kind: Haft.SolutionPortfolioAtConcern.PortfolioSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.SolutionPortfolioAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.SolutionPortfolioAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+          - slot_kind: Haft.SolutionPortfolioAtConcern.OptionSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+      - kind: relation_signature
+        symbol: Haft.PortfolioComparison
+        slots:
+          - slot_kind: Haft.PortfolioComparison.ComparisonSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.PortfolioComparison.PortfolioSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.PortfolioComparison.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.PortfolioComparison.ComparedOptionSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.PortfolioComparison.NonDominatedOptionSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.PortfolioComparison.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.DecisionChoiceAtConcern
+        slots:
+          - slot_kind: Haft.DecisionChoiceAtConcern.DecisionRecordSlot
+            value_kind: Haft.DecisionRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.DecisionRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.ProblemRecordSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.PortfolioRecordSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.OptionSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.ChosenOptionSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.RejectedOptionSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.ComparisonRecordSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.DecisionChoiceAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.SpecSectionAtConcern
+        slots:
+          - slot_kind: Haft.SpecSectionAtConcern.SpecSectionRecordSlot
+            value_kind: Haft.SpecSectionRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.SpecSectionRecordRef
+          - slot_kind: Haft.SpecSectionAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.SpecSectionAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.ProjectClaimAtConcern
+        slots:
+          - slot_kind: Haft.ProjectClaimAtConcern.ProjectClaimSlot
+            value_kind: Haft.ProjectClaim
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectClaimRef
+          - slot_kind: Haft.ProjectClaimAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.ProjectClaimAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.RecordStatesClaim
+        slots:
+          - slot_kind: Haft.RecordStatesClaim.ProjectRecordSlot
+            value_kind: Haft.ProjectRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectRecordRef
+          - slot_kind: Haft.RecordStatesClaim.ProjectClaimSlot
+            value_kind: Haft.ProjectClaim
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectClaimRef
+      - kind: relation_signature
+        symbol: Haft.SupportingEpistemeRecordAtConcern
+        slots:
+          - slot_kind: Haft.SupportingEpistemeRecordAtConcern.SupportingEpistemeRecordSlot
+            value_kind: Haft.SupportingEpistemeRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.SupportingEpistemeRecordRef
+          - slot_kind: Haft.SupportingEpistemeRecordAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.SupportingEpistemeRecordAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.EvidenceUse
+        slots:
+          - slot_kind: Haft.EvidenceUse.EvidenceRecordSlot
+            value_kind: Haft.EvidenceRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.EvidenceRecordRef
+          - slot_kind: Haft.EvidenceUse.SupportingEpistemeRecordSlot
+            value_kind: Haft.SupportingEpistemeRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.SupportingEpistemeRecordRef
+          - slot_kind: Haft.EvidenceUse.TargetProjectClaimSlot
+            value_kind: Haft.ProjectClaim
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectClaimRef
+          - slot_kind: Haft.EvidenceUse.EvidenceUseQualifierSlot
+            value_kind: Haft.EvidenceUseQualifier
+            ref_mode:
+              kind: by_value
+          - slot_kind: Haft.EvidenceUse.ProvenanceCarrierEditionSlot
+            value_kind: Haft.CarrierEdition
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.CarrierEditionRef
+          - slot_kind: Haft.EvidenceUse.ProducedByPerformedWorkOccurrenceSlot
+            value_kind: Haft.PerformedWorkOccurrence
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.PerformedWorkOccurrenceRef
+      - kind: relation_signature
+        symbol: Haft.WorkOccurrenceRecord
+        slots:
+          - slot_kind: Haft.WorkOccurrenceRecord.WorkRecordSlot
+            value_kind: Haft.WorkRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.WorkRecordRef
+          - slot_kind: Haft.WorkOccurrenceRecord.PerformedWorkOccurrenceSlot
+            value_kind: Haft.PerformedWorkOccurrence
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.PerformedWorkOccurrenceRef
+          - slot_kind: Haft.WorkOccurrenceRecord.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.WorkOccurrenceRecord.PerformerSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.WorkOccurrenceRecord.ProducedSupportingEpistemeRecordSlot
+            value_kind: Haft.SupportingEpistemeRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.SupportingEpistemeRecordRef
+          - slot_kind: Haft.WorkOccurrenceRecord.PerformedIntervalSlot
+            value_kind: Haft.PerformedInterval
+            ref_mode:
+              kind: by_value
+          - slot_kind: Haft.WorkOccurrenceRecord.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.WorkPlanAtConcern
+        slots:
+          - slot_kind: Haft.WorkPlanAtConcern.WorkPlanRecordSlot
+            value_kind: Haft.WorkPlanRecord
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.WorkPlanRecordRef
+          - slot_kind: Haft.WorkPlanAtConcern.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.WorkPlanAtConcern.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.CodeAnchorDefinition
+        slots:
+          - slot_kind: Haft.CodeAnchorDefinition.CodeAnchorSlot
+            value_kind: Haft.CodeAnchor
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.CodeAnchorRef
+          - slot_kind: Haft.CodeAnchorDefinition.CodeAnchorLocatorSlot
+            value_kind: Haft.CodeAnchorLocator
+            ref_mode:
+              kind: by_value
+      - kind: relation_signature
+        symbol: Haft.CodeRealizesClaim
+        slots:
+          - slot_kind: Haft.CodeRealizesClaim.CodeAnchorSlot
+            value_kind: Haft.CodeAnchor
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.CodeAnchorRef
+          - slot_kind: Haft.CodeRealizesClaim.TargetProjectClaimSlot
+            value_kind: Haft.ProjectClaim
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectClaimRef
+      - kind: relation_signature
+        symbol: Haft.CodeChangedByWork
+        slots:
+          - slot_kind: Haft.CodeChangedByWork.CodeAnchorSlot
+            value_kind: Haft.CodeAnchor
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.CodeAnchorRef
+          - slot_kind: Haft.CodeChangedByWork.PerformedWorkOccurrenceSlot
+            value_kind: Haft.PerformedWorkOccurrence
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.PerformedWorkOccurrenceRef
+      - kind: value_shape
+        symbol: Haft.Shape.TextV1
+        shape:
+          kind: scalar
+          scalar_kind: text
+      - kind: value_shape
+        symbol: Haft.Shape.EvidencePolarityV1
+        shape:
+          kind: scalar
+          scalar_kind: text
+      - kind: value_shape
+        symbol: Haft.Shape.CanonicalInstantV1
+        shape:
+          kind: scalar
+          scalar_kind: text
+      - kind: value_shape
+        symbol: Haft.Shape.EvidenceUseQualifierV1
+        shape:
+          kind: record
+          fields:
+            - name: polarity
+              shape: Haft.Shape.EvidencePolarityV1
+      - kind: value_shape
+        symbol: Haft.Shape.CompletedPerformedIntervalV1
+        shape:
+          kind: record
+          fields:
+            - name: start
+              shape: Haft.Shape.CanonicalInstantV1
+            - name: end
+              shape: Haft.Shape.CanonicalInstantV1
+      - kind: value_shape
+        symbol: Haft.Shape.InFlightPerformedIntervalV1
+        shape:
+          kind: record
+          fields:
+            - name: start
+              shape: Haft.Shape.CanonicalInstantV1
+      - kind: value_shape
+        symbol: Haft.Shape.PerformedIntervalStateV1
+        shape:
+          kind: sum
+          variants:
+            - name: Completed
+              shape: Haft.Shape.CompletedPerformedIntervalV1
+            - name: InFlight
+              shape: Haft.Shape.InFlightPerformedIntervalV1
+      - kind: value_shape
+        symbol: Haft.Shape.PerformedIntervalV1
+        shape:
+          kind: record
+          fields:
+            - name: state
+              shape: Haft.Shape.PerformedIntervalStateV1
+      - kind: value_shape
+        symbol: Haft.Shape.FileCodeAnchorTargetV1
+        shape:
+          kind: record
+          fields:
+            - name: path
+              shape: Haft.Shape.TextV1
+      - kind: value_shape
+        symbol: Haft.Shape.SymbolCodeAnchorTargetV1
+        shape:
+          kind: record
+          fields:
+            - name: path
+              shape: Haft.Shape.TextV1
+            - name: symbol
+              shape: Haft.Shape.TextV1
+      - kind: value_shape
+        symbol: Haft.Shape.CodeAnchorTargetV1
+        shape:
+          kind: sum
+          variants:
+            - name: File
+              shape: Haft.Shape.FileCodeAnchorTargetV1
+            - name: Symbol
+              shape: Haft.Shape.SymbolCodeAnchorTargetV1
+      - kind: value_shape
+        symbol: Haft.Shape.CodeAnchorLocatorV1
+        shape:
+          kind: record
+          fields:
+            - name: repository
+              shape: Haft.Shape.TextV1
+            - name: revision
+              shape: Haft.Shape.TextV1
+            - name: target
+              shape: Haft.Shape.CodeAnchorTargetV1
+      - kind: codec_binding
+        symbol: Haft.Codec.TextV1
+        value_kind: Haft.Text
+        value_shape: Haft.Shape.TextV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes are domain-separated, length-framed, and EOF-checked."
+          - "Decode then encode preserves canonical bytes."
+          - "Equal conceptual values produce equal canonical bytes."
+          - "The value is non-empty valid UTF-8 and preserves its exact Unicode scalar sequence without implicit normalization."
+      - kind: codec_binding
+        symbol: Haft.Codec.EvidencePolarityV1
+        value_kind: Haft.EvidencePolarity
+        value_shape: Haft.Shape.EvidencePolarityV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes are domain-separated, length-framed, and EOF-checked."
+          - "Decode then encode preserves canonical bytes."
+          - "Equal conceptual values produce equal canonical bytes."
+          - "The only tokens are confirming, rebutting, undercutting, constraining, and neutral."
+          - "confirming asserts directed support for the target claim in the relation context."
+          - "rebutting asserts directed support for the negation of, or an incompatible alternative to, the target claim."
+          - "undercutting challenges the reliability or applicability of the target claim's inference or basis without asserting its negation."
+          - "constraining narrows the conditions or scope under which the target claim may be relied on without itself confirming or rebutting it."
+          - "neutral asserts relevance to assessment while asserting no directed confirming, rebutting, undercutting, or constraining polarity."
+          - "The token carries polarity only and carries no freshness, assessment, assurance, authority, gate, lifecycle, or reopen meaning."
+      - kind: codec_binding
+        symbol: Haft.Codec.CanonicalInstantV1
+        value_kind: Haft.CanonicalInstant
+        value_shape: Haft.Shape.CanonicalInstantV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes are domain-separated, length-framed, and EOF-checked."
+          - "Decode then encode preserves canonical bytes."
+          - "Equal conceptual values produce equal canonical bytes."
+          - "Accepted input is YYYY-MM-DDTHH:MM:SS with an optional one-to-nine-digit fraction and either Z or an explicit plus-or-minus HH:MM offset."
+          - "Year is 0001 through 9999; hour is 00 through 23; minute and second are 00 through 59; leap seconds, 24:00, lowercase t or z, whitespace, -00:00, and offsets beyond plus-or-minus 14:00 are rejected."
+          - "Values normalize to UTC within years 0001 through 9999; canonical text ends in Z, strips trailing fractional zeroes, and omits a zero fraction."
+      - kind: codec_binding
+        symbol: Haft.Codec.EvidenceUseQualifierV1
+        value_kind: Haft.EvidenceUseQualifier
+        value_shape: Haft.Shape.EvidenceUseQualifierV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes are domain-separated, length-framed, and EOF-checked."
+          - "Decode then encode preserves canonical bytes."
+          - "Equal conceptual values produce equal canonical bytes."
+          - "The record contains exactly one polarity value governed by Haft.Codec.EvidencePolarityV1."
+          - "The record is a Haft-local evidence-use qualifier and is not an assertion of exact FPF Evidence semantics."
+      - kind: codec_binding
+        symbol: Haft.Codec.PerformedIntervalV1
+        value_kind: Haft.PerformedInterval
+        value_shape: Haft.Shape.PerformedIntervalV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes are domain-separated, length-framed, and EOF-checked."
+          - "Decode then encode preserves canonical bytes."
+          - "Equal conceptual values produce equal canonical bytes."
+          - "The state is exactly Completed with start and end, or InFlight with start and no fabricated end."
+          - "A Completed interval requires start less than or equal to end after canonical-instant normalization and admits a point occurrence."
+          - "The value is a Haft-local occurrence interval and is not an assertion that a record is performed U.Work."
+      - kind: codec_binding
+        symbol: Haft.Codec.CodeAnchorLocatorV1
+        value_kind: Haft.CodeAnchorLocator
+        value_shape: Haft.Shape.CodeAnchorLocatorV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes are domain-separated, length-framed, and EOF-checked."
+          - "Decode then encode preserves canonical bytes."
+          - "Equal conceptual values produce equal canonical bytes."
+          - "repository is a stable repository identity and revision is an exact immutable source revision."
+          - "A File target carries one repository-relative path; a Symbol target carries that path and one exact source symbol identity."
+          - "Paths are slash-separated, non-empty, relative, dot-segment-free, and contain no NUL byte."
+      - kind: runtime_evaluator_input
+        symbol: Haft.ProjectEpistemeConstitutionBasis
+        evaluator_requirement: Haft.RuntimeRequirement.ProjectEpistemeConstitutionEvaluationV1
+        slots:
+          - slot_kind: Haft.ProjectEpistemeConstitutionBasis.ClaimGraphSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+          - slot_kind: Haft.ProjectEpistemeConstitutionBasis.EntityOfConcernSlot
+            value_kind: U.Entity
+            ref_mode:
+              kind: reference
+              ref_kind: U.EntityRef
+          - slot_kind: Haft.ProjectEpistemeConstitutionBasis.ReferenceSchemeSlot
+            value_kind: U.ReferenceScheme
+            ref_mode:
+              kind: by_value
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeExactSourceCarrierPinV1
+        shape:
+          kind: record
+          fields:
+            - name: revision
+              shape: Haft.Shape.TextV1
+            - name: carrier
+              shape: Haft.Shape.TextV1
+            - name: edition
+              shape: Haft.Shape.TextV1
+            - name: digest
+              shape: Haft.Shape.TextV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeExactRuntimeMechanismPinV1
+        shape:
+          kind: record
+          fields:
+            - name: artifact
+              shape: Haft.Shape.TextV1
+            - name: edition
+              shape: Haft.Shape.TextV1
+            - name: digest
+              shape: Haft.Shape.TextV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeRuntimeNotRequiredRulePinV1
+        shape:
+          kind: record
+          fields:
+            - name: semantic_role
+              shape: Haft.Shape.TextV1
+            - name: rule_ref
+              shape: Haft.Shape.TextV1
+            - name: source
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactSourceCarrierPinV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeRuntimeRequiredRulePinV1
+        shape:
+          kind: record
+          fields:
+            - name: semantic_role
+              shape: Haft.Shape.TextV1
+            - name: rule_ref
+              shape: Haft.Shape.TextV1
+            - name: source
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactSourceCarrierPinV1
+            - name: runtime_mechanism
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactRuntimeMechanismPinV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinV1
+        shape:
+          kind: sum
+          variants:
+            - name: RuntimeNotRequired
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeRuntimeNotRequiredRulePinV1
+            - name: RuntimeRequired
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeRuntimeRequiredRulePinV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinSetV1
+        shape:
+          kind: unordered_set
+          element_shape: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeRuleBranchV1
+        shape:
+          kind: sum
+          variants:
+            - name: Rules
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinSetV1
+            - name: NotApplicable
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinV1
+      - kind: value_shape
+        symbol: Haft.Shape.ProjectMemoryReferenceSchemeV1
+        shape:
+          kind: record
+          fields:
+            - name: designation
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinSetV1
+            - name: interpretation
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeExactRulePinSetV1
+            - name: measurement
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeRuleBranchV1
+            - name: evaluation
+              shape: Haft.Shape.ProjectMemoryReferenceSchemeRuleBranchV1
+      - kind: codec_binding
+        symbol: Haft.Codec.ProjectMemoryReferenceSchemeV1
+        value_kind: U.ReferenceScheme
+        value_shape: Haft.Shape.ProjectMemoryReferenceSchemeV1
+        canonicalization_version: v1
+        contract:
+          - "Canonical bytes use the exact domain haft.project-memory.reference-scheme.canonical.v1, length framing, and strict EOF checking."
+          - "Decode then encode preserves canonical bytes, and equal conceptual values produce equal canonical bytes."
+          - "The value contains exactly designation, interpretation, measurement, and evaluation groups in that canonical order."
+          - "Designation and interpretation are non-empty normalized ExactRulePin sets with duplicate RuleRefs rejected."
+          - "Measurement and evaluation are each a closed Rules(non-empty ExactRulePin set) or NotApplicable(one ExactRulePin) sum."
+          - "Each ExactRulePin contains its semantic role, exact RuleRef, exact source revision/carrier/edition/digest pin, and an explicit RuntimeNotRequired or RuntimeRequired(exact mechanism artifact/edition/digest) branch."
+          - "Each ExactRulePin semantic role must match its containing designation, interpretation, measurement, or evaluation group."
+          - "Pin order is canonicalized; the intrinsic ReferenceScheme digest depends only on canonical scheme bytes."
+          - "TypeEnv, ContextSlice, GammaTime, graph revision, ResolutionBasis, grounding, viewpoint, publication, carrier, and timestamp are absent from the intrinsic value and digest."
+          - "Legacy ReferenceScheme Primary/Anchors bytes and non-canonical or trailing bytes are rejected."
+          - "This is a Haft-local codec binding for inherited U.ReferenceScheme; it does not declare another U-kind or prove a runtime codec is registered."
+      - kind: runtime_evaluator_requirement
+        symbol: Haft.RuntimeRequirement.ProjectMemoryReferenceDesignationResolutionV1
+        rule_ref: haft.reference-scheme.project-memory/v1/designation-resolution
+        invocation_contract: reference_designation_resolution
+      - kind: runtime_evaluator_requirement
+        symbol: Haft.RuntimeRequirement.ProjectMemoryClaimInterpretationV1
+        rule_ref: haft.reference-scheme.project-memory/v1/claim-interpretation
+        invocation_contract: claim_interpretation
+      - kind: runtime_evaluator_requirement
+        symbol: Haft.RuntimeRequirement.ProjectMemoryClaimMeasurementV1
+        rule_ref: haft.reference-scheme.project-memory/v1/claim-measurement
+        invocation_contract: claim_measurement
+      - kind: runtime_evaluator_requirement
+        symbol: Haft.RuntimeRequirement.ProjectMemoryClaimEvaluationV1
+        rule_ref: haft.reference-scheme.project-memory/v1/claim-evaluation
+        invocation_contract: claim_evaluation
+      - kind: runtime_evaluator_requirement
+        symbol: Haft.RuntimeRequirement.ProjectEpistemeConstitutionEvaluationV1
+        rule_ref: haft.episteme-constitution.project-memory/v1/evaluate
+        invocation_contract: episteme_constitution_evaluation
+      - kind: constraint
+        symbol: Haft.Constraint.CarrierPresentsRecord.CarrierEditionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CarrierPresentsRecord
+          slot: Haft.CarrierPresentsRecord.CarrierEditionSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CarrierPresentsRecord.ProjectRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CarrierPresentsRecord
+          slot: Haft.CarrierPresentsRecord.ProjectRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.NoteAtConcern.NoteSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.NoteAtConcern
+          slot: Haft.NoteAtConcern.NoteSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.NoteAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.NoteAtConcern
+          slot: Haft.NoteAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.NoteAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.NoteAtConcern
+          slot: Haft.NoteAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ProblemCardAtConcern.ProblemCardSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ProblemCardAtConcern
+          slot: Haft.ProblemCardAtConcern.ProblemCardSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ProblemCardAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ProblemCardAtConcern
+          slot: Haft.ProblemCardAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ProblemCardAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ProblemCardAtConcern
+          slot: Haft.ProblemCardAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SolutionPortfolioAtConcern.PortfolioSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SolutionPortfolioAtConcern
+          slot: Haft.SolutionPortfolioAtConcern.PortfolioSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SolutionPortfolioAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SolutionPortfolioAtConcern
+          slot: Haft.SolutionPortfolioAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SolutionPortfolioAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SolutionPortfolioAtConcern
+          slot: Haft.SolutionPortfolioAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SolutionPortfolioAtConcern.OptionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SolutionPortfolioAtConcern
+          slot: Haft.SolutionPortfolioAtConcern.OptionSlot
+          cardinality:
+            minimum: 2
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.ComparisonSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.PortfolioComparison
+          slot: Haft.PortfolioComparison.ComparisonSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.PortfolioSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.PortfolioComparison
+          slot: Haft.PortfolioComparison.PortfolioSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.PortfolioComparison
+          slot: Haft.PortfolioComparison.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.ComparedOptionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.PortfolioComparison
+          slot: Haft.PortfolioComparison.ComparedOptionSlot
+          cardinality:
+            minimum: 2
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.NonDominatedOptionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.PortfolioComparison
+          slot: Haft.PortfolioComparison.NonDominatedOptionSlot
+          cardinality:
+            minimum: 1
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.PortfolioComparison
+          slot: Haft.PortfolioComparison.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.DecisionRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.DecisionRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.ProblemRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.ProblemRecordSlot
+          cardinality:
+            minimum: 0
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.PortfolioRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.PortfolioRecordSlot
+          cardinality:
+            minimum: 0
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.OptionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.OptionSlot
+          cardinality:
+            minimum: 2
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.ChosenOptionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.ChosenOptionSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.RejectedOptionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.RejectedOptionSlot
+          cardinality:
+            minimum: 1
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.ComparisonRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.ComparisonRecordSlot
+          cardinality:
+            minimum: 0
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoiceAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.DecisionChoiceAtConcern
+          slot: Haft.DecisionChoiceAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SpecSectionAtConcern.SpecSectionRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SpecSectionAtConcern
+          slot: Haft.SpecSectionAtConcern.SpecSectionRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SpecSectionAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SpecSectionAtConcern
+          slot: Haft.SpecSectionAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SpecSectionAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SpecSectionAtConcern
+          slot: Haft.SpecSectionAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ProjectClaimAtConcern.ProjectClaimSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ProjectClaimAtConcern
+          slot: Haft.ProjectClaimAtConcern.ProjectClaimSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ProjectClaimAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ProjectClaimAtConcern
+          slot: Haft.ProjectClaimAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ProjectClaimAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ProjectClaimAtConcern
+          slot: Haft.ProjectClaimAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.RecordStatesClaim.ProjectRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.RecordStatesClaim
+          slot: Haft.RecordStatesClaim.ProjectRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.RecordStatesClaim.ProjectClaimSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.RecordStatesClaim
+          slot: Haft.RecordStatesClaim.ProjectClaimSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SupportingEpistemeRecordAtConcern.SupportingEpistemeRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SupportingEpistemeRecordAtConcern
+          slot: Haft.SupportingEpistemeRecordAtConcern.SupportingEpistemeRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SupportingEpistemeRecordAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SupportingEpistemeRecordAtConcern
+          slot: Haft.SupportingEpistemeRecordAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.SupportingEpistemeRecordAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.SupportingEpistemeRecordAtConcern
+          slot: Haft.SupportingEpistemeRecordAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceUse.EvidenceRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.EvidenceUse
+          slot: Haft.EvidenceUse.EvidenceRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceUse.SupportingEpistemeRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.EvidenceUse
+          slot: Haft.EvidenceUse.SupportingEpistemeRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceUse.TargetProjectClaimSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.EvidenceUse
+          slot: Haft.EvidenceUse.TargetProjectClaimSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceUse.EvidenceUseQualifierSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.EvidenceUse
+          slot: Haft.EvidenceUse.EvidenceUseQualifierSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceUse.ProvenanceCarrierEditionSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.EvidenceUse
+          slot: Haft.EvidenceUse.ProvenanceCarrierEditionSlot
+          cardinality:
+            minimum: 0
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceUse.ProducedByPerformedWorkOccurrenceSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.EvidenceUse
+          slot: Haft.EvidenceUse.ProducedByPerformedWorkOccurrenceSlot
+          cardinality:
+            minimum: 0
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.WorkRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.WorkRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.PerformedWorkOccurrenceSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.PerformedWorkOccurrenceSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.PerformerSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.PerformerSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.ProducedSupportingEpistemeRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.ProducedSupportingEpistemeRecordSlot
+          cardinality:
+            minimum: 0
+            maximum: unbounded
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.PerformedIntervalSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.PerformedIntervalSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkOccurrenceRecord.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkOccurrenceRecord
+          slot: Haft.WorkOccurrenceRecord.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkPlanAtConcern.WorkPlanRecordSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkPlanAtConcern
+          slot: Haft.WorkPlanAtConcern.WorkPlanRecordSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkPlanAtConcern.EntityOfConcernSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkPlanAtConcern
+          slot: Haft.WorkPlanAtConcern.EntityOfConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.WorkPlanAtConcern.ClaimGraphSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.WorkPlanAtConcern
+          slot: Haft.WorkPlanAtConcern.ClaimGraphSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CodeAnchorDefinition.CodeAnchorSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CodeAnchorDefinition
+          slot: Haft.CodeAnchorDefinition.CodeAnchorSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CodeAnchorDefinition.CodeAnchorLocatorSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CodeAnchorDefinition
+          slot: Haft.CodeAnchorDefinition.CodeAnchorLocatorSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CodeRealizesClaim.CodeAnchorSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CodeRealizesClaim
+          slot: Haft.CodeRealizesClaim.CodeAnchorSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CodeRealizesClaim.TargetProjectClaimSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CodeRealizesClaim
+          slot: Haft.CodeRealizesClaim.TargetProjectClaimSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CodeChangedByWork.CodeAnchorSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CodeChangedByWork
+          slot: Haft.CodeChangedByWork.CodeAnchorSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.CodeChangedByWork.PerformedWorkOccurrenceSlot.CardinalityV1
+        rule:
+          kind: slot_cardinality
+          relation: Haft.CodeChangedByWork
+          slot: Haft.CodeChangedByWork.PerformedWorkOccurrenceSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.PortfolioComparison.NonDominatedSubsetV1
+        rule:
+          kind: reference_slot_subset
+          relation: Haft.PortfolioComparison
+          subset: Haft.PortfolioComparison.NonDominatedOptionSlot
+          superset: Haft.PortfolioComparison.ComparedOptionSlot
+      - kind: constraint
+        symbol: Haft.Constraint.DecisionChoice.OptionPartitionV1
+        rule:
+          kind: reference_slot_partition
+          relation: Haft.DecisionChoiceAtConcern
+          whole: Haft.DecisionChoiceAtConcern.OptionSlot
+          parts:
+            - Haft.DecisionChoiceAtConcern.ChosenOptionSlot
+            - Haft.DecisionChoiceAtConcern.RejectedOptionSlot
+      - kind: constraint
+        symbol: Haft.Constraint.ProjectRecordCarrierEditionDisjointV1
+        rule:
+          kind: kind_disjoint
+          kinds:
+            - Haft.ProjectRecord
+            - Haft.CarrierEdition
+      - kind: constraint
+        symbol: Haft.Constraint.ProjectRecordPerformedWorkOccurrenceDisjointV1
+        rule:
+          kind: kind_disjoint
+          kinds:
+            - Haft.ProjectRecord
+            - Haft.PerformedWorkOccurrence
+      - kind: constraint
+        symbol: Haft.Constraint.ProjectRecordCodeAnchorDisjointV1
+        rule:
+          kind: kind_disjoint
+          kinds:
+            - Haft.ProjectRecord
+            - Haft.CodeAnchor
+      - kind: constraint
+        symbol: Haft.Constraint.EvidenceRecordSupportingEpistemeRecordDisjointV1
+        rule:
+          kind: kind_disjoint
+          kinds:
+            - Haft.EvidenceRecord
+            - Haft.SupportingEpistemeRecord
+      - kind: constraint
+        symbol: Haft.Constraint.AuthorityLifecycleRecordKindsPairwiseDisjointV1
+        rule:
+          kind: kind_disjoint
+          kinds:
+            - Haft.DecisionRecord
+            - Haft.SpecSectionRecord
+            - Haft.EvidenceRecord
+            - Haft.WorkRecord
+            - Haft.WorkPlanRecord
+  laws:
+    constraint_refs:
+      - Haft.Constraint.CarrierPresentsRecord.CarrierEditionSlot.CardinalityV1
+      - Haft.Constraint.CarrierPresentsRecord.ProjectRecordSlot.CardinalityV1
+      - Haft.Constraint.NoteAtConcern.NoteSlot.CardinalityV1
+      - Haft.Constraint.NoteAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.NoteAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.ProblemCardAtConcern.ProblemCardSlot.CardinalityV1
+      - Haft.Constraint.ProblemCardAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.ProblemCardAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.SolutionPortfolioAtConcern.PortfolioSlot.CardinalityV1
+      - Haft.Constraint.SolutionPortfolioAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.SolutionPortfolioAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.SolutionPortfolioAtConcern.OptionSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.ComparisonSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.PortfolioSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.ComparedOptionSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.NonDominatedOptionSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.DecisionRecordSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.ProblemRecordSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.PortfolioRecordSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.OptionSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.ChosenOptionSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.RejectedOptionSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.ComparisonRecordSlot.CardinalityV1
+      - Haft.Constraint.DecisionChoiceAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.SpecSectionAtConcern.SpecSectionRecordSlot.CardinalityV1
+      - Haft.Constraint.SpecSectionAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.SpecSectionAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.ProjectClaimAtConcern.ProjectClaimSlot.CardinalityV1
+      - Haft.Constraint.ProjectClaimAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.ProjectClaimAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.RecordStatesClaim.ProjectRecordSlot.CardinalityV1
+      - Haft.Constraint.RecordStatesClaim.ProjectClaimSlot.CardinalityV1
+      - Haft.Constraint.SupportingEpistemeRecordAtConcern.SupportingEpistemeRecordSlot.CardinalityV1
+      - Haft.Constraint.SupportingEpistemeRecordAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.SupportingEpistemeRecordAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.EvidenceUse.EvidenceRecordSlot.CardinalityV1
+      - Haft.Constraint.EvidenceUse.SupportingEpistemeRecordSlot.CardinalityV1
+      - Haft.Constraint.EvidenceUse.TargetProjectClaimSlot.CardinalityV1
+      - Haft.Constraint.EvidenceUse.EvidenceUseQualifierSlot.CardinalityV1
+      - Haft.Constraint.EvidenceUse.ProvenanceCarrierEditionSlot.CardinalityV1
+      - Haft.Constraint.EvidenceUse.ProducedByPerformedWorkOccurrenceSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.WorkRecordSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.PerformedWorkOccurrenceSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.PerformerSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.ProducedSupportingEpistemeRecordSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.PerformedIntervalSlot.CardinalityV1
+      - Haft.Constraint.WorkOccurrenceRecord.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.WorkPlanAtConcern.WorkPlanRecordSlot.CardinalityV1
+      - Haft.Constraint.WorkPlanAtConcern.EntityOfConcernSlot.CardinalityV1
+      - Haft.Constraint.WorkPlanAtConcern.ClaimGraphSlot.CardinalityV1
+      - Haft.Constraint.CodeAnchorDefinition.CodeAnchorSlot.CardinalityV1
+      - Haft.Constraint.CodeAnchorDefinition.CodeAnchorLocatorSlot.CardinalityV1
+      - Haft.Constraint.CodeRealizesClaim.CodeAnchorSlot.CardinalityV1
+      - Haft.Constraint.CodeRealizesClaim.TargetProjectClaimSlot.CardinalityV1
+      - Haft.Constraint.CodeChangedByWork.CodeAnchorSlot.CardinalityV1
+      - Haft.Constraint.CodeChangedByWork.PerformedWorkOccurrenceSlot.CardinalityV1
+      - Haft.Constraint.PortfolioComparison.NonDominatedSubsetV1
+      - Haft.Constraint.DecisionChoice.OptionPartitionV1
+      - Haft.Constraint.ProjectRecordCarrierEditionDisjointV1
+      - Haft.Constraint.ProjectRecordPerformedWorkOccurrenceDisjointV1
+      - Haft.Constraint.ProjectRecordCodeAnchorDisjointV1
+      - Haft.Constraint.EvidenceRecordSupportingEpistemeRecordDisjointV1
+      - Haft.Constraint.AuthorityLifecycleRecordKindsPairwiseDisjointV1
+    invariants:
+      - "EntityOfConcern is a scoped U.Entity slot filler, not a stored Haft kind."
+      - "ProblemCard and SolutionPortfolio are relation roles over ProjectRecord, not invented FPF Core kinds."
+      - "A WorkPlanRecord is not performed Work and a local occurrence record does not claim exact U.Work semantics."
+      - "EvidenceUse is a Haft-local record/use contract; exact FPF Evidence semantics remain underdetermined."
+      - "Graph direction carries only the declared relation and does not imply causal, temporal, or work order."
+      - "ProjectEpistemeConstitutionBasis is a local three-input carrier, not the source C.2.1 EpistemeConstitutionRelationSignature, an obtaining relation occurrence, or proof that the constitution predicate obtains."
+      - "The project-memory ReferenceScheme codec binds inherited U.ReferenceScheme by value and neither admits a new U-kind nor substitutes a TypeEnv or legacy Primary/Anchors carrier identifier for the scheme."
+      - "runtime_evaluator_requirement declarations state exact E-to-X requirements only; they identify no callable mechanism, invocation result, positive Satisfied evidence, or obtaining relation."
+      - "A project-memory record receives an exact episteme posture only after its canonical ClaimGraph, resolved EntityOfConcern, verified effective ReferenceScheme, and episteme-constitution evaluation basis are all available."
+      - "Project-memory episteme identity uses only canonical ClaimGraph identity, resolved EntityID, and the intrinsic ReferenceScheme digest; grounding, viewpoint, publication, carrier, timestamp, selected TypeEnv, and record edition are not identity discriminators."
+      - "The project-memory ReferenceScheme uses generic by-value storage, requires no dedicated table, and causes no semantic backfill of historical records."
+      - "The project-memory ReferenceScheme cannot substitute for an authorial FPF declaration episteme's separately recoverable source-publication ReferenceScheme, and storage succession alone proves no EpistemeEditionRelation."
+  applicability:
+    bounded_context_ref: haft-project
+    assumptions:
+      - "The exact source-derived base TypeEnv reference is available and verified."
+      - "Required runtime evaluator, classification feature-source delivery, and codec mechanisms are resolved through an exact X basis before staging."
+      - "Missing project-memory ReferenceScheme or episteme-constitution evaluator coordinates return Underdetermined(reference_scheme_runtime_basis_missing), never a fabricated exact episteme posture."
+      - "This candidate is not selected or active until spec review and a separately authorized ProjectTypeEnvHead effect."

@@ -4,7 +4,6 @@ import (
 	"go/ast"
 	"go/parser"
 	"go/token"
-	"path/filepath"
 	"strings"
 )
 
@@ -50,9 +49,25 @@ func (f TypeFacts) merge(other TypeFacts) {
 // and struct field types. Shell (file read + parse); the recorded facts are pure
 // data. Unparseable files yield empty facts, never an error that aborts a scan.
 func ExtractGoTypeFacts(projectRoot, relPath string) (TypeFacts, error) {
+	source, err := NewRegistry().ReadAdmittedSource(projectRoot, relPath)
+	if err != nil {
+		return NewTypeFacts(), err
+	}
+	return ExtractGoTypeFactsFromSource(source)
+}
+
+// ExtractGoTypeFactsFromSource derives package type facts from admitted bytes.
+func ExtractGoTypeFactsFromSource(
+	source AdmittedSource,
+) (TypeFacts, error) {
 	facts := NewTypeFacts()
 	fset := token.NewFileSet()
-	af, err := parser.ParseFile(fset, filepath.Join(projectRoot, relPath), nil, 0)
+	af, err := parser.ParseFile(
+		fset,
+		source.Path().String(),
+		source.bytes(),
+		0,
+	)
 	if err != nil {
 		return facts, nil
 	}

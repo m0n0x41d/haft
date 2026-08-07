@@ -2,11 +2,14 @@ package fpf
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"strings"
+	"sync"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/logger"
@@ -33,7 +36,7 @@ type RPCError struct {
 
 type Tool struct {
 	Name        string      `json:"name"`
-	Description string      `json:"description"`
+	Description string      `json:"description,omitempty"`
 	InputSchema interface{} `json:"inputSchema"`
 }
 
@@ -50,25 +53,161 @@ type ContentItem struct {
 // V5ToolHandler handles a v5 MCP tool call and returns the result text.
 type V5ToolHandler func(ctx context.Context, toolName string, params json.RawMessage) (string, error)
 
+// MemoryToolHandler handles the strict typed-memory wire contract. It receives
+// the original tools/call arguments bytes so duplicate fields and other JSON
+// boundary violations remain observable to the dedicated decoder.
+type MemoryToolHandler func(ctx context.Context, arguments json.RawMessage) (string, error)
+
 type Server struct {
-	v5Handler    V5ToolHandler
-	instructions string
+	v5Handler         V5ToolHandler
+	onboardHandler    MemoryToolHandler
+	entityHandler     MemoryToolHandler
+	memoryHandler     MemoryToolHandler
+	memorySurface     memorySurfaceMode
+	memoryReadHandler MemoryToolHandler
+	instructions      string
+	version           string
+	requestMu         sync.Mutex
+	activeRequests    map[string]*activeToolRequest
+	writeMu           sync.Mutex
 }
 
-// parityPlanMCPSchema delegates to the shared artifact.ParityPlanJSONSchema
-// so the MCP-advertised schema and the standalone tool surface stay in
-// lock-step on field shape, types, and missing_data_policy enum values.
+type activeToolRequest struct {
+	cancel context.CancelFunc
+}
+
+type queuedJSONRPCRequest struct {
+	request JSONRPCRequest
+	ctx     context.Context
+	active  *activeToolRequest
+}
+
+// parityPlanMCPSchema delegates to the canonical artifact schema so all MCP
+// tools use one field shape, type set, and missing_data_policy vocabulary.
 func parityPlanMCPSchema(description string) map[string]interface{} {
 	return artifact.ParityPlanJSONSchema(description)
 }
 
-func NewServer() *Server {
-	return &Server{}
+func stringArrayMCPSchema() map[string]interface{} {
+	return map[string]interface{}{
+		"type":  "array",
+		"items": map[string]interface{}{"type": "string"},
+	}
+}
+
+func objectMCPSchema(properties map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": properties,
+	}
+}
+
+func objectArrayMCPSchema(properties map[string]interface{}) map[string]interface{} {
+	return map[string]interface{}{
+		"type":  "array",
+		"items": objectMCPSchema(properties),
+	}
+}
+
+func bindingTargetArrayMCPSchema() map[string]interface{} {
+	stringField := func() map[string]interface{} {
+		return map[string]interface{}{"type": "string"}
+	}
+	integerField := func() map[string]interface{} {
+		return map[string]interface{}{"type": "integer"}
+	}
+	return map[string]interface{}{
+		"type": "array",
+		"items": map[string]interface{}{
+			"type":                 "object",
+			"additionalProperties": false,
+			"properties": map[string]interface{}{
+				"kind":              stringField(),
+				"target_ref":        stringField(),
+				"anchor_id":         stringField(),
+				"anchor_version":    integerField(),
+				"file_path":         stringField(),
+				"language":          stringField(),
+				"symbol_name":       stringField(),
+				"symbol_kind":       stringField(),
+				"receiver":          stringField(),
+				"qualified_name":    stringField(),
+				"signature_hash":    stringField(),
+				"line":              integerField(),
+				"end_line":          integerField(),
+				"body_hash":         stringField(),
+				"anchor_hash":       stringField(),
+				"text_hash":         stringField(),
+				"nearest_symbol":    stringField(),
+				"module_path":       stringField(),
+				"module_hash":       stringField(),
+				"reason":            stringField(),
+				"why_symbol_failed": stringField(),
+				"why_range_failed":  stringField(),
+				"language_support":  stringField(),
+				"confidence":        stringField(),
+				"resolution_source": stringField(),
+			},
+		},
+	}
+}
+
+func NewServer(version string) *Server {
+	return &Server{
+		version:        version,
+		activeRequests: map[string]*activeToolRequest{},
+	}
 }
 
 // SetV5Handler registers the handler for v5 tools (haft_note, haft_problem, etc).
 func (s *Server) SetV5Handler(h V5ToolHandler) {
 	s.v5Handler = h
+}
+
+// SetOnboardHandler registers the readable task-level setup boundary.
+// Detection is read-only; preparation can only materialize a non-binding
+// review carrier and cannot apply a profile or enable project memory.
+func (s *Server) SetOnboardHandler(h MemoryToolHandler) {
+	s.onboardHandler = h
+}
+
+// SetEntityHandler registers the task-level EntityOfConcern establishment
+// boundary. The handler derives all project-memory coordinates internally.
+func (s *Server) SetEntityHandler(h MemoryToolHandler) {
+	s.entityHandler = h
+}
+
+// SetMemoryHandler registers the dedicated validate-only typed-memory boundary.
+// It is deliberately separate from the v5 handler, whose project hooks include
+// audit and recall effects that are not part of haft_memory(validate).
+func (s *Server) SetMemoryHandler(h MemoryToolHandler) {
+	s.setMemorySurface(memorySurfaceValidateOnly, h)
+}
+
+// SetMemoryReadHandler registers the closed selected-project read variants
+// behind haft_query(action="memory"). It does not widen the dedicated
+// haft_memory(validate|admit) mutation boundary.
+func (s *Server) SetMemoryReadHandler(h MemoryToolHandler) {
+	s.memoryReadHandler = h
+}
+
+// SetMemoryFullHandler registers validate plus the non-binding exact-snapshot
+// admission action. Project-memory reads remain a separate query capability.
+func (s *Server) SetMemoryFullHandler(h MemoryToolHandler) {
+	s.setMemorySurface(memorySurfaceFull, h)
+}
+
+func (s *Server) setMemorySurface(
+	mode memorySurfaceMode,
+	handler MemoryToolHandler,
+) {
+	if handler == nil {
+		s.memoryHandler = nil
+		s.memorySurface = memorySurfaceUnavailable
+		return
+	}
+	s.memoryHandler = handler
+	s.memorySurface = mode
 }
 
 func (s *Server) SetInstructions(instructions string) {
@@ -77,9 +216,32 @@ func (s *Server) SetInstructions(instructions string) {
 
 func (s *Server) Start() {
 	logger.Info().Msg("MCP server starting")
+	requests := make(chan queuedJSONRPCRequest, 64)
+	scanResult := make(chan error, 1)
+	go func() {
+		scanResult <- s.scanRequests(requests)
+		close(requests)
+	}()
 
+	for queued := range requests {
+		s.handleRequestContext(queued.ctx, queued.request)
+		s.finishToolRequest(queued.request.ID, queued.active)
+	}
+
+	// Scanner exited — log why.
+	if err := <-scanResult; err != nil {
+		logger.Error().Err(err).Msg("MCP server: scanner error (stdin read failure)")
+	} else {
+		logger.Info().Msg("MCP server: stdin closed (EOF)")
+	}
+}
+
+func (s *Server) scanRequests(
+	requests chan<- queuedJSONRPCRequest,
+) error {
 	scanner := bufio.NewScanner(os.Stdin)
 	scanner.Buffer(make([]byte, 1<<20), 1<<20) // 1MB buffer
+	defer s.cancelAllToolRequests()
 
 	for scanner.Scan() {
 		line := scanner.Bytes()
@@ -95,19 +257,38 @@ func (s *Server) Start() {
 		}
 
 		logger.Debug().Str("method", req.Method).Msg("request received")
-
-		s.handleRequest(req)
+		if req.Method == "notifications/cancelled" {
+			s.handleRequest(req)
+			continue
+		}
+		ctx := context.Background()
+		var active *activeToolRequest
+		if req.Method == "tools/call" {
+			ctx, active = s.beginToolRequest(req.ID)
+		}
+		requests <- queuedJSONRPCRequest{
+			request: req,
+			ctx:     ctx,
+			active:  active,
+		}
 	}
-
-	// Scanner exited — log why
-	if err := scanner.Err(); err != nil {
-		logger.Error().Err(err).Msg("MCP server: scanner error (stdin read failure)")
-	} else {
-		logger.Info().Msg("MCP server: stdin closed (EOF)")
-	}
+	return scanner.Err()
 }
 
 func (s *Server) handleRequest(req JSONRPCRequest) {
+	ctx := context.Background()
+	var active *activeToolRequest
+	if req.Method == "tools/call" {
+		ctx, active = s.beginToolRequest(req.ID)
+		defer s.finishToolRequest(req.ID, active)
+	}
+	s.handleRequestContext(ctx, req)
+}
+
+func (s *Server) handleRequestContext(
+	ctx context.Context,
+	req JSONRPCRequest,
+) {
 	// Recover from panics — log and return error instead of crashing
 	defer func() {
 		if r := recover(); r != nil {
@@ -124,9 +305,11 @@ func (s *Server) handleRequest(req JSONRPCRequest) {
 	case "tools/list":
 		s.handleToolsList(req)
 	case "tools/call":
-		s.handleToolsCall(req)
+		s.handleToolsCallContext(ctx, req)
 	case "notifications/initialized":
 		// No-op
+	case "notifications/cancelled":
+		s.handleCancelledNotification(req.Params)
 	default:
 		if req.ID != nil {
 			s.sendError(req.ID, -32601, "Method not found")
@@ -135,6 +318,8 @@ func (s *Server) handleRequest(req JSONRPCRequest) {
 }
 
 func (s *Server) send(resp JSONRPCResponse) {
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
 	bytes, err := json.Marshal(resp)
 	if err != nil {
 		logger.Error().Err(err).Msg("failed to marshal JSON-RPC response")
@@ -169,7 +354,7 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 		},
 		"serverInfo": map[string]string{
 			"name":    "haft",
-			"version": "5.0.0",
+			"version": s.version,
 		},
 	}
 
@@ -181,6 +366,16 @@ func (s *Server) handleInitialize(req JSONRPCRequest) {
 }
 
 func (s *Server) handleToolsList(req JSONRPCRequest) {
+	// Several real MCP hosts register only the first tools/list response and do
+	// not follow nextCursor. The catalog is therefore intentionally atomic: one
+	// response advertises every currently available tool. Client-specific params
+	// are ignored because they must never make part of the catalog undiscoverable.
+	s.sendResult(req.ID, map[string]interface{}{
+		"tools": s.ToolCatalog(),
+	})
+}
+
+func (s *Server) ToolCatalog() []Tool {
 	var tools []Tool
 
 	// v5 tools only
@@ -188,7 +383,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		tools = append(tools,
 			Tool{
 				Name:        "haft_note",
-				Description: "Record a project FACT into the reasoning graph. A note is a fact/observation carrier — NOT a decision (a choice among alternatives goes to /h-decide). Give a title plus at least one atomic observation or a source; rationale is optional. Anchor the fact to decisions/problems/notes via typed edges so it surfaces at them in related/code_context.",
+				Description: "Durably record a non-binding project fact/observation carrier. Use after an explicit save request or for a concrete operator-named or agent-inferred receiving use; this is not a decision.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -234,13 +429,26 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"type":        "string",
 							"description": "Optional context name for grouping (e.g., 'auth', 'payments')",
 						},
+						"task_context": map[string]string{
+							"type":        "string",
+							"description": "Stable task/fork context used to correlate this durable carrier with the current work.",
+						},
+						"valid_until": map[string]string{
+							"type":        "string",
+							"description": "Optional RFC3339 expiry for this fact. When omitted, the note lifecycle applies its normal default.",
+						},
+						"entity_ref": memoryEntityReferenceSchema(),
+						"bounded_context_ref": map[string]interface{}{
+							"type":        "string",
+							"description": "Exact typed-memory bounded context paired with entity_ref. Legacy context is only a grouping label and is never inferred as this coordinate.",
+						},
 					},
 					"required": []string{"title"},
 				},
 			},
 			Tool{
 				Name:        "haft_problem",
-				Description: "Frame, characterize, and manage engineering problems. Actions: 'frame' creates a ProblemCard, 'characterize' adds comparison dimensions, 'select' lists active problems, 'close' marks a problem as addressed. Frame the problem BEFORE exploring solutions.",
+				Description: "Read or durably update engineering ProblemCards. Frame and characterize require an explicit save request or a concrete operator-named or agent-inferred receiving use; close is a lifecycle mutation.",
 				InputSchema: map[string]interface{}{
 					"type": "object",
 					"properties": map[string]interface{}{
@@ -255,11 +463,37 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						},
 						"problem_type": map[string]string{
 							"type":        "string",
-							"description": "(frame) Problem type: optimization, diagnosis, search, or synthesis",
+							"description": "optimization",
+						},
+						"problem_profile": map[string]interface{}{
+							"type":        "string",
+							"enum":        []interface{}{"cue", "thin", "deep"},
+							"description": "(frame) ProblemCard profile level: cue, thin, or deep. Only deep cards with explicit boundary/probe/freshness can be P2W-ready.",
+						},
+						"source_kind": map[string]interface{}{
+							"type":        "string",
+							"enum":        []interface{}{"observed_problem", "wish", "ticket", "chosen_method"},
+							"description": "(frame) Source posture: observed_problem, wish, ticket, or chosen_method. Wish/ticket/chosen_method require explicit boundary before P2W readiness.",
 						},
 						"signal": map[string]string{
 							"type":        "string",
 							"description": "(frame) What's anomalous, broken, or needs changing",
+						},
+						"why_now": map[string]string{
+							"type":        "string",
+							"description": "(frame) Why this problem matters now, not just someday.",
+						},
+						"scope": map[string]string{
+							"type":        "string",
+							"description": "(frame) Explicit boundary/scope for what is inside and outside the problem.",
+						},
+						"acceptance_probe": map[string]string{
+							"type":        "string",
+							"description": "(frame) Probe that would show the problem is sufficiently bounded/solved.",
+						},
+						"freshness_disposition": map[string]string{
+							"type":        "string",
+							"description": "(frame) How fresh/current the problem signal is and when to revisit it.",
 						},
 						"constraints": map[string]interface{}{
 							"type":        "array",
@@ -286,7 +520,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						},
 						"seed_file": map[string]string{
 							"type":        "string",
-							"description": "(frame) Optional file the framing is about. When set, the response appends the artifacts the fused code+reasoning graph ranks nearest that file — catching a decision governing it that keyword recall would miss.",
+							"description": "(frame) Optional file context",
 						},
 						"reversibility": map[string]string{
 							"type":        "string",
@@ -306,6 +540,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 									"unit":           map[string]string{"type": "string", "description": "Measurement unit"},
 									"polarity":       map[string]string{"type": "string", "description": "higher_better or lower_better"},
 									"role":           map[string]string{"type": "string", "description": "Indicator role: constraint (hard limit), target (optimize), observation (watch, don't optimize). Default: target"},
+									"proxy_for":      map[string]string{"type": "string", "description": "Intended value this dimension proxies (FPF E.13 value-before-proxy). Expected for target-role dimensions; kernel warns when absent"},
 									"how_to_measure": map[string]string{"type": "string", "description": "How this dimension is measured"},
 									"valid_until":    map[string]string{"type": "string", "description": "When this measurement expires (RFC3339). Compare warns on expired dimensions."},
 								},
@@ -322,6 +557,15 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 							"type":        "string",
 							"description": "Optional context name for grouping",
 						},
+						"task_context": map[string]string{
+							"type":        "string",
+							"description": "(frame) Stable task/fork context used to correlate this durable carrier with the current work.",
+						},
+						"entity_ref": memoryEntityReferenceSchema(),
+						"bounded_context_ref": map[string]interface{}{
+							"type":        "string",
+							"description": "(frame) Exact typed-memory bounded context paired with entity_ref. Legacy context remains only a grouping label.",
+						},
 						"mode": map[string]string{
 							"type":        "string",
 							"description": "(frame) Decision mode: tactical, standard (default), deep",
@@ -334,14 +578,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_solution",
-			Description: "Explore solution variants and compare them fairly. Actions: 'explore' creates a SolutionPortfolio with >=2 variants (each with weakest link and novelty marker), 'compare' runs parity check and identifies the Pareto front, 'similar' searches past solution portfolios.",
+			Description: "Search existing portfolios or durably create/update a SolutionPortfolio. Explore and compare require an explicit save request or a concrete operator-named or agent-inferred receiving use; typed projection never selects a winner.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"explore", "compare", "similar"},
-						"description": "explore=create variants portfolio, compare=run parity comparison, similar=search past solutions",
+						"description": "explore=create variants, compare=parity comparison, similar=search",
 					},
 					"query": map[string]string{
 						"type":        "string",
@@ -369,10 +613,16 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"assumption_notes":     map[string]string{"type": "string", "description": "Key assumptions this variant depends on"},
 								"rollback_notes":       map[string]string{"type": "string"},
 								"evidence_refs":        map[string]interface{}{"type": "array", "items": map[string]string{"type": "string"}, "description": "References to supporting evidence"},
+								"project_record_ref":   memoryProjectRecordReferenceSchema(),
 							},
 							"required": []string{"title", "weakest_link", "novelty_marker"},
 						},
-						"description": "(explore) Solution variants — at least 2, genuinely distinct",
+						"description": "(explore) at least 2 distinct variants",
+					},
+					"entity_ref": memoryEntityReferenceSchema(),
+					"bounded_context_ref": map[string]interface{}{
+						"type":        "string",
+						"description": "(explore/compare) Exact typed-memory bounded context paired with entity_ref. Legacy context remains only a grouping label.",
 					},
 					"no_stepping_stone_rationale": map[string]string{
 						"type":        "string",
@@ -380,7 +630,7 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"portfolio_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) SolutionPortfolio ID to add comparison results to. Auto-detected if only one active.",
+						"description": "(compare) SolutionPortfolio ID to add comparison results to. Its typed portfolio record and option records must already resolve for typed PortfolioComparison projection; otherwise the legacy comparison remains durable but typed projection abstains.",
 					},
 					"dimensions": map[string]interface{}{
 						"type":        "array",
@@ -390,6 +640,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"scores": map[string]interface{}{
 						"type":        "object",
 						"description": "(compare) Scores per variant: {\"V1\": {\"throughput\": \"100k/s\", \"cost\": \"$200\"}}",
+						"additionalProperties": map[string]interface{}{
+							"type":                 "object",
+							"additionalProperties": map[string]string{"type": "string"},
+						},
 					},
 					"non_dominated_set": map[string]interface{}{
 						"type":        "array",
@@ -442,19 +696,27 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"parity_plan": parityPlanMCPSchema("(compare) Structured parity plan. REQUIRED for deep mode: baseline_set, window, budget, and missing_data_policy MUST be present. Standard/tactical modes accept any subset and warn on gaps. Per FPF G.9:4.2."),
 					"selected_ref": map[string]string{
 						"type":        "string",
-						"description": "(compare) Advisory recommendation variant ID; the human still chooses",
+						"description": "(compare) Legacy advisory variant ID. Excluded from typed PortfolioComparison; never a winner, ChoiceResult, or DecisionRecord.",
+					},
+					"legacy_recommendation_ref": map[string]string{
+						"type":        "string",
+						"description": "Advisory recommendation only; excluded from typed PortfolioComparison.",
 					},
 					"recommendation_rationale": map[string]string{
 						"type":        "string",
-						"description": "(compare) Why the advisory recommendation is preferred under the declared policy",
+						"description": "(compare) Why the advisory rec is preferred",
 					},
 					"context": map[string]string{
 						"type":        "string",
 						"description": "Optional context name",
 					},
+					"task_context": map[string]string{
+						"type":        "string",
+						"description": "(explore) Stable task/fork context used to correlate this durable carrier with the current work.",
+					},
 					"mode": map[string]string{
 						"type":        "string",
-						"description": "(explore/compare) Decision mode: tactical, standard (default), deep. Deep mode requires structured parity_plan.",
+						"description": "(explore/compare) tactical, standard, or deep",
 					},
 				},
 				"required": []string{"action"},
@@ -462,30 +724,59 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "haft_decision",
-			Description: "Manage the decision lifecycle. Actions: 'decide' creates a DecisionRecord, 'apply' generates implementation brief, 'measure' records post-implementation impact, 'evidence' attaches evidence to any artifact, 'baseline' snapshots affected files for drift detection.",
+			Description: "Manage decisions; MCP binding creation fails closed.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
 						"enum":        []interface{}{"decide", "apply", "measure", "evidence", "baseline"},
-						"description": "decide=create DRR, apply=impl brief, measure=record impact, evidence=attach evidence item, baseline=snapshot affected files for drift detection",
+						"description": "Decision lifecycle action",
 					},
 					"selected_title": map[string]string{
-						"type":        "string",
-						"description": "(decide) Name of the selected variant",
+						"type": "string",
 					},
 					"why_selected": map[string]string{
-						"type":        "string",
-						"description": "(decide) Why this variant was chosen",
+						"type": "string",
+					},
+					"choice_result": map[string]interface{}{
+						"properties": map[string]interface{}{
+							"subject_ref":      map[string]interface{}{},
+							"option_set":       map[string]interface{}{},
+							"comparison_basis": map[string]interface{}{},
+							"choice_rule":      map[string]interface{}{},
+							"next_move": map[string]interface{}{
+								"type": "string",
+								"enum": []interface{}{"choose_now", "reject_current_set", "probe_again", "reroute"},
+							},
+							"variant_ref":      map[string]interface{}{},
+							"problem_refs":     map[string]interface{}{},
+							"portfolio_ref":    map[string]interface{}{},
+							"reason":           map[string]interface{}{},
+							"reversibility":    map[string]interface{}{},
+							"reopen_condition": map[string]interface{}{},
+						},
+					},
+					"transformation_record": map[string]interface{}{
+						"properties": map[string]interface{}{
+							"schema_version":     map[string]interface{}{},
+							"transformed_entity": map[string]interface{}{},
+							"initial_state":      map[string]interface{}{},
+							"post_state":         map[string]interface{}{},
+							"relation":           map[string]interface{}{},
+							"context":            map[string]interface{}{},
+							"window":             map[string]interface{}{},
+							"method_refs":        map[string]interface{}{},
+							"work_refs":          map[string]interface{}{},
+							"evidence_refs":      map[string]interface{}{},
+							"publication_refs":   map[string]interface{}{},
+						},
 					},
 					"selection_policy": map[string]string{
-						"type":        "string",
-						"description": "(decide) Explicit policy used to choose the winning variant",
+						"type": "string",
 					},
 					"counterargument": map[string]string{
-						"type":        "string",
-						"description": "(decide) Strongest argument against the chosen option",
+						"type": "string",
 					},
 					"why_not_others": map[string]interface{}{
 						"type": "array",
@@ -535,6 +826,20 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "array", "items": map[string]string{"type": "string"},
 						"description": "(decide) SpecSection IDs governed by this DecisionRecord",
 					},
+					"spec_binding_preflight": map[string]interface{}{
+						"properties": map[string]interface{}{
+							"schema_version":        map[string]interface{}{},
+							"record_kind":           map[string]interface{}{},
+							"state":                 map[string]interface{}{},
+							"selected_section_refs": map[string]interface{}{},
+							"status_debt":           map[string]interface{}{},
+						},
+						"description": "(decide) spec_binding_preflight receipt; incompatible states fail closed.",
+					},
+					"spec_binding_preflight_required": map[string]interface{}{
+						"type":        "boolean",
+						"description": "(decide) Require compatible spec_binding_preflight without globally requiring section_refs.",
+					},
 					"predictions": map[string]interface{}{
 						"type":        "array",
 						"description": "(decide) Testable predictions — measure will check each one",
@@ -545,19 +850,20 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 								"observable":    map[string]string{"type": "string"},
 								"threshold":     map[string]string{"type": "string"},
 								"verify_after":  map[string]string{"type": "string", "description": "When to check (RFC3339 or YYYY-MM-DD) — for async claims"},
-								"realizability": map[string]string{"type": "string", "description": "C.28 verdict: realizable|nonrealizable|unknown; nonrealizable caps R_eff at 0.5 per CC-B3.9"},
-								"probability":   map[string]string{"type": "number", "description": "Optional elicited p(this claim holds) in [0,1] — a noisy forecast sampled at decide time. Verified outcomes feed decomposed-Brier calibration. Sample 2-3 independent estimates and pass their consensus; never a single authoritative number."},
+								"realizability": map[string]string{"type": "string"},
+								"probability":   map[string]string{"type": "number", "description": "Optional p(claim holds) in [0,1]."},
+								"command":       map[string]string{"type": "string", "description": "Optional allowlisted verification command."},
 							},
 							"required": []string{"claim", "observable", "threshold"},
 						},
 					},
 					"weakest_link": map[string]string{
-						"type":        "string",
-						"description": "(decide) Selected variant weakest link — what most plausibly breaks this choice",
+						"type": "string",
 					},
 					"problem_ref": map[string]string{
 						"type": "string", "description": "(decide) Single ProblemCard ID. Use problem_refs for multiple.",
 					},
+					"problem_statement": map[string]interface{}{},
 					"problem_refs": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
@@ -570,19 +876,55 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type": "string", "description": "(apply) DecisionRecord ID to generate brief from",
 					},
 					"valid_until": map[string]string{
-						"type": "string", "description": "(decide/evidence) Expiry date (RFC3339 or YYYY-MM-DD)",
+						"type": "string", "description": "Expiry date",
 					},
 					"affected_files": map[string]interface{}{
 						"type": "array", "items": map[string]string{"type": "string"},
-						"description": "(decide/baseline) Files affected by this decision. For baseline: optional — if provided, replaces the file list before snapshotting.",
+						"description": "(decide/baseline) Affected files.",
 					},
+					"decision_subject_ref": map[string]string{
+						"type": "string",
+					},
+					"implementation_footprint": objectMCPSchema(map[string]interface{}{
+						"files":     stringArrayMCPSchema(),
+						"commits":   stringArrayMCPSchema(),
+						"work_refs": stringArrayMCPSchema(),
+					}),
+					"governance_targets": objectArrayMCPSchema(map[string]interface{}{
+						"kind":           map[string]interface{}{},
+						"ref":            map[string]interface{}{},
+						"binding_target": map[string]interface{}{},
+					}),
+					"drift_watch_targets": objectArrayMCPSchema(map[string]interface{}{
+						"target_ref":     map[string]interface{}{},
+						"trigger":        map[string]interface{}{},
+						"binding_target": map[string]interface{}{},
+					}),
+					"claims": objectArrayMCPSchema(map[string]interface{}{
+						"id":                     map[string]interface{}{},
+						"claim":                  map[string]interface{}{},
+						"observable":             map[string]interface{}{},
+						"threshold":              map[string]interface{}{},
+						"lifecycle_status":       map[string]interface{}{},
+						"successor_ref":          map[string]interface{}{},
+						"retired_reason":         map[string]interface{}{},
+						"governance_target_refs": stringArrayMCPSchema(),
+					}),
+					"binding_hints": stringArrayMCPSchema(),
+					"binding_scope": map[string]string{
+						"type": "string",
+					},
+					"binding_fallback_reason": map[string]string{
+						"type": "string",
+					},
+					"binding_targets": bindingTargetArrayMCPSchema(),
 					"search_keywords": map[string]string{
 						"type":        "string",
 						"description": "(decide) Space-separated synonyms and related terms for search enrichment",
 					},
 					"task_context": map[string]string{
 						"type":        "string",
-						"description": "(decide) Optional task/context text sanitized into the DecisionRecord ID filename",
+						"description": "Stable task/fork context used to correlate this durable carrier with the current work.",
 					},
 					"findings": map[string]string{
 						"type": "string", "description": "(measure) What actually happened after implementation",
@@ -620,6 +962,12 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					"congruence_level": map[string]interface{}{
 						"type": "integer", "description": "(evidence) CL 0-3: 3=same context, 2=similar, 1=different, 0=opposed",
 					},
+					"formality_level": map[string]interface{}{
+						"type": "integer", "description": "(evidence) F0-F9 current FPF; use formality_scale_id; display not approval/gate passage/claim truth/global truth/publication",
+					},
+					"formality_scale_id": map[string]string{
+						"type": "string", "description": "(evidence) scale: fpf-2026-f0-f9, legacy bridge/loss, or unversioned-formality gap",
+					},
 					"claim_refs": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
@@ -632,21 +980,21 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 					},
 					"causal_support_basis": map[string]string{
 						"type":        "string",
-						"description": "(evidence) C.28 basis for causal-use claim support. Accepts: observational | interventional | realized_counterfactual | identified_estimate | simulation_only (long FPF forms also accepted). simulation-only caps R_eff at 0.5 per CC-B3.9.",
+						"description": "C.28 simulation_only",
 					},
 					"_skips": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "(decide) Tactical-mode required-field bypass list. Requires _skip_reason.",
+						"description": "_skip_reason",
 					},
 					"_skip": map[string]interface{}{
 						"type":        "array",
 						"items":       map[string]string{"type": "string"},
-						"description": "(decide) Legacy alias for _skips; prefer _skips. Requires _skip_reason.",
+						"description": "_skip_reason",
 					},
 					"_skip_reason": map[string]string{
 						"type":        "string",
-						"description": "(decide) Operator rationale required when _skips/_skip is non-empty.",
+						"description": "_skip_reason!",
 					},
 					"context": map[string]string{"type": "string", "description": "Optional context name"},
 					"mode":    map[string]string{"type": "string", "description": "(decide) tactical, standard (default), deep"},
@@ -656,14 +1004,14 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 		})
 		tools = append(tools, Tool{
 			Name:        "haft_refresh",
-			Description: "Manage artifact lifecycle — detect stale items, extend validity, archive, replace, or find note-decision overlaps. Works on ALL artifact types. Actions: 'scan' finds expired and evidence-degraded artifacts, 'waive' extends validity, 'reopen' starts new problem cycle from a decision, 'supersede' replaces one artifact with another, 'deprecate' archives as no longer relevant, 'reconcile' finds notes that overlap with decisions.",
+			Description: "Read stale/review state or explicitly mutate artifact lifecycle. Scan, plan, and review are read-oriented; lifecycle actions and non-dry-run drain can write.",
 			InputSchema: map[string]interface{}{
 				"type": "object",
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
 						"type":        "string",
-						"enum":        []interface{}{"scan", "waive", "reopen", "supersede", "deprecate", "reconcile"},
-						"description": "scan=find stale/degraded, waive=extend validity, reopen=new problem cycle, supersede=replace, deprecate=archive, reconcile=find note-decision overlaps",
+						"enum":        []interface{}{"scan", "plan", "review", "drain", "waive", "reopen", "supersede", "deprecate", "reconcile"},
+						"description": "scan stale, plan work order, review judgment packet, drain machine-safe actions, waive/reopen/supersede/deprecate/reconcile.",
 					},
 					"artifact_ref": map[string]string{
 						"type":        "string",
@@ -701,6 +1049,10 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 						"type":        "boolean",
 						"description": "(scan) Include full per-file drift dump. Default false — drift is summarized as counts + top-5 modified paths per decision. Full mode can exceed context budget on repos with vendor subtrees or large added-files sets.",
 					},
+					"dry_run": map[string]string{
+						"type":        "boolean",
+						"description": "(drain) Propose machine-safe actions without mutating baselines, evidence, or stored maintenance runs.",
+					},
 				},
 				"required": []string{"action"},
 			},
@@ -708,88 +1060,364 @@ func (s *Server) handleToolsList(req JSONRPCRequest) {
 
 		tools = append(tools, Tool{
 			Name:        "haft_query",
-			Description: "Search past decisions, check status, find related artifacts, render audience projections, list all artifacts by kind, or show module coverage. Actions: 'search' does FTS5 search, 'status' shows compact dashboard, 'related' finds decisions affecting a file, 'projection' renders deterministic audience views, 'list' shows all artifacts of a given kind, 'coverage' shows module-level decision coverage.",
+			Description: "Read project state or FPF source. FPF concern returns navigation candidates; inspect one exact selected identifier before relying on source meaning.",
 			InputSchema: map[string]interface{}{
-				"type": "object",
+				"type":                 "object",
+				"additionalProperties": false,
 				"properties": map[string]interface{}{
 					"action": map[string]interface{}{
-						"type":        "string",
-						"enum":        []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "resolve_term"},
-						"description": "search=FTS5 keyword search, status=compact dashboard (at-a-glance overview), board=rich health dashboard, related=decisions affecting a file, code_context=the FULL reasoning context for a file (or a symbol within it): decisions governing it, problems framed around it, solution variants explored, notes, invariants that must hold, and module coverage — call this BEFORE changing unfamiliar code to see what was already decided and why, callees=what a symbol calls (forward dependency set), callers=what calls a symbol, impact=what breaks if you change a symbol (inbound traversal) — callees/callers/impact each fuse the reasoning graph onto every reached symbol: per node you see BOTH the call/dispatch edge AND the decisions governing it (symbol-level, or module-level so a governed node never reads as safe-to-change), node=the detail page for a symbol: its byte-exact body (re-read + re-hash from disk, never stale), the decisions fused onto exactly it, its immediate caller/callee trail, and ALL same-name overloads each with their own per-overload governance — call this instead of Read when you want one symbol with its reasoning attached, ceremony=recommend a ceremony mode (tactical/standard/deep) for a change BEFORE you start: pass the files it will touch and get a risk-proportioned mode from path/content + governance signals — a deterministic floor never routes a high-risk change (migration/sql, auth/secrets, public-API, infra, destructive content) to tactical, and asks one question when it cannot tell; advisory only, you bind the mode, explore=the PRIMARY single-call answer for a symbol: the deepest connected call chain (each on-chain symbol interleaved with the decisions/invariants governing it), the blast radius (direct callers + covering decisions), and the seed's verbatim freshness-checked source — start here to understand an unfamiliar flow AND why it is shaped that way in one call; a chain that hits a dynamic-dispatch boundary it cannot resolve says so rather than implying completeness, projection=audience-specific artifact view, list=all artifacts by kind, coverage=module-level decision coverage, fpf=search FPF methodology spec, check=CI-actionable enforcement findings, resolve_term=ground an umbrella term in this project's bounded context (term-map entries + spec sections referencing it + past artifact mentions) before deciding to ask the operator. Use status for overview; use check when the operator or CI must act on debt; use impact BEFORE editing a symbol to see who depends on it and what was decided; use node to read a symbol's source WITH its governance; use resolve_term BEFORE asking 'what do you mean?' on a vague signal.",
+						"type": "string",
+						"enum": []interface{}{"search", "status", "board", "related", "code_context", "callees", "callers", "impact", "node", "explore", "ceremony", "projection", "list", "coverage", "fpf", "check", "carrier_manifest", "carrier_check", "contract_audit", "contract_generation", "spec_review", "spec_validate", "spec_use", "spec_trace", "spec_binding_preflight", "spec_fit_probe", "change_case", "correspondence_graph", "drift_route", "drift_events", "decision_reconcile", "governing_set", "blocked_use", "value_space", "evidence_path", "resolve_term"},
 					},
-					"query": map[string]string{
+					"query": map[string]interface{}{"type": "string"},
+					"identifier": map[string]interface{}{
 						"type":        "string",
-						"description": "(search, fpf) Search terms",
+						"description": "FPF source identifier only for action=fpf mode=lookup or mode=inspect. A Haft artifact ID or code symbol is a wrong_identifier_namespace; use artifact_ref with action=related or symbol with action=node.",
 					},
-					"term": map[string]string{
+					"entity_of_concern": map[string]interface{}{"type": "string"},
+					"scope_id": map[string]interface{}{
 						"type":        "string",
-						"description": "(resolve_term) Umbrella or load-bearing term to ground in the project's bounded context — e.g. 'auth service', 'ready', 'process'. Returned shape: term_map_entries, spec_section_refs, artifact_mentions, resolution (resolved | ambiguous | absent), next_action.",
+						"description": "(status, coverage) Exact canonical project ScopeID. Required when the admitted profile has several scopes.",
 					},
-					"kind": map[string]string{
-						"type":        "string",
-						"description": "(list) Artifact kind: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport",
+					"known_context": map[string]interface{}{
+						"type":  "array",
+						"items": map[string]interface{}{"type": "string"},
 					},
-					"file": map[string]string{
-						"type":        "string",
-						"description": "(related, code_context, callees/callers/impact, node) File path — for code-graph actions it scopes/disambiguates an overloaded symbol name to one definition",
+					"intended_use": map[string]interface{}{"type": "string"},
+					"roles": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"type": "string",
+						},
 					},
-					"symbol": map[string]string{
-						"type":        "string",
-						"description": "(code_context) symbol to narrow context to; (callees/callers/impact) REQUIRED — the symbol to traverse from, returns candidates if ambiguous; (node) REQUIRED — the symbol to show, node shows ALL overloads; (explore) REQUIRED — the seed symbol to explore the flow from",
-					},
-					"line": map[string]interface{}{
+					"max_candidates_per_role":     map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_total_candidates":        map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_excerpt_characters":      map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_relations_per_candidate": map[string]interface{}{"type": "integer", "minimum": 0},
+					"max_candidates": map[string]interface{}{
 						"type":        "integer",
-						"description": "(code_context, callees/callers/impact, node) Optional 1-based line of the symbol — disambiguates overloaded same-name symbols so the right one is selected",
+						"minimum":     1,
+						"maximum":     50,
+						"description": "For action=explore with query, bounded canonical candidate retrieval before the working projection caps visible candidates at five.",
 					},
-					"depth": map[string]interface{}{
-						"type":        "integer",
-						"description": "(callees/callers/impact) Traversal depth, default 2, capped at 10 — how many call hops to follow from the seed",
+					"term":           map[string]interface{}{},
+					"section_id":     map[string]interface{}{},
+					"decision_draft": map[string]interface{}{},
+					"probe": map[string]interface{}{
+						"type":        "object",
+						"description": "(spec_fit_probe) Problem/scope/variant draft.",
+						"properties": map[string]interface{}{
+							"problem_signal":    map[string]interface{}{},
+							"scope":             map[string]interface{}{},
+							"mode":              map[string]interface{}{},
+							"section_refs":      map[string]interface{}{},
+							"affected_files":    map[string]interface{}{},
+							"target_refs":       map[string]interface{}{},
+							"conflict_refs":     map[string]interface{}{},
+							"declared_relation": map[string]interface{}{},
+						},
 					},
-					"files": map[string]interface{}{
-						"type":        "array",
-						"items":       map[string]interface{}{"type": "string"},
-						"description": "(ceremony) The files the change will touch — the floor classifies their risk. May also pass a space/comma-separated list via `file`.",
+					"problem_signal":    map[string]interface{}{},
+					"scope":             map[string]interface{}{},
+					"section_refs":      map[string]interface{}{},
+					"affected_files":    map[string]interface{}{},
+					"target_refs":       map[string]interface{}{},
+					"conflict_refs":     map[string]interface{}{},
+					"declared_relation": map[string]interface{}{},
+					"variants": map[string]interface{}{
+						"type": "array",
+						"items": map[string]interface{}{
+							"properties": map[string]interface{}{
+								"id":                map[string]interface{}{},
+								"title":             map[string]interface{}{},
+								"description":       map[string]interface{}{},
+								"section_refs":      map[string]interface{}{},
+								"affected_files":    map[string]interface{}{},
+								"target_refs":       map[string]interface{}{},
+								"conflict_refs":     map[string]interface{}{},
+								"declared_relation": map[string]interface{}{},
+							},
+						},
 					},
-					"context": map[string]string{
+					"use_context": map[string]interface{}{},
+					"policy": map[string]interface{}{
 						"type":        "string",
-						"description": "Optional context filter",
+						"enum":        []interface{}{"documentary_only", "stronger_use_requires_current_source", "temporary_waiver"},
+						"description": "(spec_use) Admission policy; currentness/waiver/gate stay separate.",
 					},
-					"view": map[string]string{
+					"waiver_expires_at": map[string]interface{}{},
+					"operational_gate": map[string]interface{}{
+						"type": "object",
+						"properties": map[string]interface{}{
+							"schema_version":   map[string]interface{}{},
+							"gate_ref":         map[string]interface{}{},
+							"bearer_ref":       map[string]interface{}{},
+							"use_context":      map[string]interface{}{},
+							"rule":             map[string]interface{}{},
+							"evidence_refs":    stringArrayMCPSchema(),
+							"expires_at":       map[string]interface{}{},
+							"reopen_condition": map[string]interface{}{},
+						},
+						"description": "(spec_use) Optional OperationalGate v1.",
+					},
+					"artifact_ref": map[string]interface{}{
 						"type":        "string",
-						"description": "(projection) engineer | manager | audit | compare | delegated-agent | change-rationale",
+						"description": "Canonical Haft artifact ID for action=related exact recovery. Code symbols use symbol; FPF source IDs use identifier. A wrong_identifier_namespace response supplies the exact recovery_call.",
 					},
-					"limit": map[string]interface{}{
-						"type":        "integer",
-						"description": fmt.Sprintf("(search) Max results, default 20; (fpf) max results, default %d", DefaultSpecSearchLimit),
+					"ref": map[string]interface{}{
+						"description": "(related) Backward-compatible alias for artifact_ref.",
 					},
+					"artifact_id": map[string]interface{}{
+						"description": "(related) Backward-compatible alias for artifact_ref.",
+					},
+					"evidence_ref":               map[string]interface{}{},
+					"claim_ref":                  map[string]interface{}{},
+					"attempted_use":              map[string]interface{}{},
+					"requires_current_formality": map[string]interface{}{},
+					"producer_ref":               map[string]interface{}{},
+					"method_ref":                 map[string]interface{}{},
+					"work_ref":                   map[string]interface{}{},
+					"drift_kind":                 map[string]interface{}{},
+					"bearer_ref":                 map[string]interface{}{},
+					"label":                      map[string]interface{}{},
+					"blocked_use":                map[string]interface{}{},
+					"source_refs":                map[string]interface{}{},
+					"exact_record_needed":        map[string]interface{}{},
+					"kind":                       map[string]interface{}{},
+					"file":                       map[string]interface{}{},
+					"symbol": map[string]interface{}{
+						"type":        "string",
+						"description": "For action=node, a code symbol only. A canonical Haft artifact ID returns wrong_identifier_namespace; recover it with haft_query(action=related, artifact_ref=<id>), not another node call.",
+					},
+					"anchor_id": map[string]interface{}{},
+					"line":      map[string]interface{}{},
+					"lane": map[string]interface{}{
+						"type": "string",
+						"enum": []interface{}{"index", "symbols", "decisions", "invariants", "notes", "problems", "portfolios", "all"},
+					},
+					"depth":   map[string]interface{}{},
+					"profile": map[string]interface{}{},
+					"files":   stringArrayMCPSchema(),
+					"context": map[string]interface{}{},
+					"view": map[string]interface{}{
+						"type":        "string",
+						"description": "For action=fpf and action=explore, publication projection views are working (default), trace, or diagnostic. Other haft_query actions retain their own view contracts, so this shared field is not a global enum.",
+					},
+					"trace_ref": map[string]interface{}{
+						"type":        "string",
+						"description": "For action=fpf or action=explore with view=trace or view=diagnostic, trace_ref is the opaque replay reference from an earlier response. FPF source-snapshot or typed-request drift returns replay_mismatch before retrieval; Explore index/request/result drift returns replay_mismatch. working view rejects trace_ref.",
+					},
+					"limit": map[string]interface{}{},
 					"full": map[string]interface{}{
-						"type":        "boolean",
-						"description": "(fpf) Show full section content instead of snippets",
-					},
-					"explain": map[string]interface{}{
-						"type":        "boolean",
-						"description": "(fpf) Show why each result matched",
+						"description": "(search) Exact artifact payload only.",
 					},
 					"mode": map[string]interface{}{
-						"type":        "string",
-						"description": "(fpf) Experimental retrieval mode; currently supports tree",
+						"type": "string",
+						"enum": []interface{}{"concern", "lookup", "inspect", "tactical", "standard", "deep"},
 					},
 				},
 				"required": []string{"action"},
 			},
 		})
 
+		tools = append(tools, haftMethodTool())
 		tools = append(tools, haftCommissionTool())
 		tools = append(tools, haftSpecSectionTool())
 	}
+	// These task-level and typed-memory contracts are stable discovery
+	// surfaces. They remain advertised before project onboarding or memory
+	// enablement; the configured handlers return a closed recovery result
+	// instead of making the tools disappear from tools/list.
+	tools = installMemoryQuerySchema(tools)
+	tools = append(
+		tools,
+		haftOnboardTool(),
+		haftEntityTool(),
+		haftMemoryFullTool(),
+	)
 
-	s.sendResult(req.ID, map[string]interface{}{
-		"tools": tools,
-	})
+	return compactToolDescriptions(tools)
 }
 
-func (s *Server) handleToolsCall(req JSONRPCRequest) {
-	ctx := context.Background()
+func compactToolDescriptions(tools []Tool) []Tool {
+	compacted := make([]Tool, 0, len(tools))
+	for _, tool := range tools {
+		tool.Description = compactToolDescription(tool.Name, tool.Description)
+		if tool.Name != "haft_onboard" &&
+			tool.Name != "haft_entity" {
+			compactSchemaDescriptions(tool.InputSchema)
+		}
+		compacted = append(compacted, tool)
+	}
+
+	return compacted
+}
+
+func compactToolDescription(toolName, fallback string) string {
+	if toolName == "haft_memory" {
+		return strings.TrimSpace(fallback)
+	}
+	descriptions := map[string]string{
+		"haft_note":         "Durably record after explicit save or agent-inferred receiving use.",
+		"haft_problem":      "Durably update after explicit save or agent-inferred receiving use.",
+		"haft_solution":     "Durably update after explicit save or agent-inferred receiving use.",
+		"haft_decision":     "Manage decisions; human-gated binding needs a full choice brief.",
+		"haft_refresh":      "Read/write lifecycle; mutation actions can write.",
+		"haft_query":        "FPF/project read; concern then exact inspect; human gates need briefs.",
+		"haft_onboard":      "Inspect setup or prepare a non-binding onboarding review.",
+		"haft_entity":       "Establish one non-binding EntityOfConcern with atomic aliases.",
+		"haft_method":       "Pull before non-mechanical edits; close with completion evidence.",
+		"haft_commission":   "Manage commissions; human-gated authority needs a full scope brief.",
+		"haft_spec_section": "Spec lifecycle; FPF source fit is separate; human-gated acts need briefs",
+	}
+	description, ok := descriptions[toolName]
+	if ok {
+		return description
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func compactSchemaDescriptions(value interface{}) {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		if description, ok := typed["description"].(string); ok {
+			if !isLoadBearingSchemaDescription(description) {
+				delete(typed, "description")
+			}
+		}
+		for _, child := range typed {
+			compactSchemaDescriptions(child)
+		}
+	case map[string]string:
+		if description, ok := typed["description"]; ok {
+			if !isLoadBearingSchemaDescription(description) {
+				delete(typed, "description")
+			}
+		}
+	case []interface{}:
+		for _, child := range typed {
+			compactSchemaDescriptions(child)
+		}
+	}
+}
+
+func isLoadBearingSchemaDescription(description string) bool {
+	for _, marker := range []string{
+		"C.28",
+		"DecisionRecord ID filename",
+		"Stable task/fork context",
+		"Expiry date",
+		"_skip_reason",
+		"tree mode",
+		"projection views",
+		"Advisory recommendation only",
+		"Excluded from typed PortfolioComparison",
+		"explore/compare",
+		"Lane. Default index",
+		"lane=index",
+		"optimization",
+		"simulation_only",
+		"strict typed-memory decoder",
+		"wrong_identifier_namespace",
+		"publication projection views",
+		"trace_ref",
+	} {
+		if strings.Contains(description, marker) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func jsonRPCRequestKey(id interface{}) string {
+	if id == nil {
+		return ""
+	}
+	encoded, err := json.Marshal(id)
+	if err != nil {
+		return ""
+	}
+	return string(encoded)
+}
+
+func (s *Server) beginToolRequest(
+	id interface{},
+) (context.Context, *activeToolRequest) {
+	// Cancellation ownership moves into activeToolRequest and is discharged by
+	// finishToolRequest on every synchronous and queued tools/call path.
+	//nolint:gosec // G118 cannot follow the explicit ownership transfer.
+	ctx, cancel := context.WithCancel(context.Background())
+	active := &activeToolRequest{cancel: cancel}
+	key := jsonRPCRequestKey(id)
+	if key == "" {
+		return ctx, active
+	}
+	s.requestMu.Lock()
+	previous := s.activeRequests[key]
+	s.activeRequests[key] = active
+	s.requestMu.Unlock()
+	if previous != nil {
+		previous.cancel()
+	}
+	return ctx, active
+}
+
+func (s *Server) finishToolRequest(
+	id interface{},
+	active *activeToolRequest,
+) {
+	if active == nil {
+		return
+	}
+	active.cancel()
+	key := jsonRPCRequestKey(id)
+	if key == "" {
+		return
+	}
+	s.requestMu.Lock()
+	if s.activeRequests[key] == active {
+		delete(s.activeRequests, key)
+	}
+	s.requestMu.Unlock()
+}
+
+func (s *Server) handleCancelledNotification(raw json.RawMessage) {
+	var params struct {
+		RequestID interface{} `json:"requestId"`
+	}
+	if err := json.Unmarshal(raw, &params); err != nil {
+		logger.Warn().Err(err).Msg("invalid MCP cancellation notification")
+		return
+	}
+	key := jsonRPCRequestKey(params.RequestID)
+	if key == "" {
+		return
+	}
+	s.requestMu.Lock()
+	active := s.activeRequests[key]
+	s.requestMu.Unlock()
+	if active != nil {
+		active.cancel()
+	}
+}
+
+func (s *Server) cancelAllToolRequests() {
+	s.requestMu.Lock()
+	active := make([]*activeToolRequest, 0, len(s.activeRequests))
+	for _, request := range s.activeRequests {
+		active = append(active, request)
+	}
+	s.requestMu.Unlock()
+	for _, request := range active {
+		request.cancel()
+	}
+}
+
+func (s *Server) handleToolsCallContext(
+	ctx context.Context,
+	req JSONRPCRequest,
+) {
 
 	var params struct {
 		Name      string          `json:"name"`
@@ -797,6 +1425,138 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 	}
 	if err := json.Unmarshal(req.Params, &params); err != nil {
 		s.sendError(req.ID, -32700, "Invalid params")
+		return
+	}
+
+	if params.Name == "haft_onboard" {
+		action, err := decodeMemoryToolAction(params.Arguments)
+		if err != nil ||
+			(action != haftOnboardStatusAction &&
+				action != haftOnboardProfilePrepareAction) {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_onboard request: action must be status or profile_prepare",
+				}},
+				IsError: true,
+			})
+			return
+		}
+		s.handleDedicatedToolCall(
+			req.ID,
+			ctx,
+			params.Arguments,
+			s.onboardHandler,
+			"Haft onboarding is unavailable",
+		)
+		return
+	}
+
+	if params.Name == "haft_entity" {
+		s.handleDedicatedToolCall(
+			req.ID,
+			ctx,
+			params.Arguments,
+			s.entityHandler,
+			"Haft EntityOfConcern establishment is unavailable",
+		)
+		return
+	}
+
+	if params.Name == "haft_query" {
+		action, err := decodeMemoryToolAction(params.Arguments)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_query request: " + err.Error(),
+				}},
+				IsError: true,
+			})
+			return
+		}
+		if action == memoryQueryAction {
+			if s.memoryReadHandler == nil {
+				s.sendResult(req.ID, CallToolResult{
+					Content: []ContentItem{{
+						Type: "text",
+						Text: "Haft project-memory reads are unavailable",
+					}},
+					IsError: true,
+				})
+				return
+			}
+			output, err := s.memoryReadHandler(ctx, params.Arguments)
+			if err != nil {
+				s.sendResult(req.ID, CallToolResult{
+					Content: []ContentItem{{Type: "text", Text: err.Error()}},
+					IsError: true,
+				})
+				return
+			}
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{Type: "text", Text: output}},
+			})
+			return
+		}
+	}
+
+	if params.Name == "haft_memory" {
+		if s.memoryHandler == nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{Type: "text", Text: "Haft memory validation is unavailable"}},
+				IsError: true,
+			})
+			return
+		}
+
+		memoryRequest, err := unwrapMemoryToolRequest(params.Arguments)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_memory request: " + err.Error(),
+				}},
+				IsError: true,
+			})
+			return
+		}
+		action, err := decodeMemoryToolAction(memoryRequest)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: "Invalid haft_memory request: " + err.Error(),
+				}},
+				IsError: true,
+			})
+			return
+		}
+		if !s.memorySurface.allowsAction(action) {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{
+					Type: "text",
+					Text: fmt.Sprintf(
+						"Haft memory action %q is unavailable on the configured surface",
+						action,
+					),
+				}},
+				IsError: true,
+			})
+			return
+		}
+
+		output, err := s.memoryHandler(ctx, memoryRequest)
+		if err != nil {
+			s.sendResult(req.ID, CallToolResult{
+				Content: []ContentItem{{Type: "text", Text: err.Error()}},
+				IsError: true,
+			})
+			return
+		}
+		s.sendResult(req.ID, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: output}},
+		})
 		return
 	}
 
@@ -820,4 +1580,130 @@ func (s *Server) handleToolsCall(req JSONRPCRequest) {
 			Content: []ContentItem{{Type: "text", Text: output}},
 		})
 	}
+}
+
+func (s *Server) handleDedicatedToolCall(
+	id interface{},
+	ctx context.Context,
+	arguments json.RawMessage,
+	handler MemoryToolHandler,
+	unavailable string,
+) {
+	if handler == nil {
+		s.sendResult(id, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: unavailable}},
+			IsError: true,
+		})
+		return
+	}
+	output, err := handler(ctx, arguments)
+	if err != nil {
+		s.sendResult(id, CallToolResult{
+			Content: []ContentItem{{Type: "text", Text: err.Error()}},
+			IsError: true,
+		})
+		return
+	}
+	s.sendResult(id, CallToolResult{
+		Content: []ContentItem{{Type: "text", Text: output}},
+	})
+}
+
+func unwrapMemoryToolRequest(
+	arguments json.RawMessage,
+) (json.RawMessage, error) {
+	decoder := json.NewDecoder(bytes.NewReader(arguments))
+	start, err := decoder.Token()
+	if err != nil || start != json.Delim('{') {
+		return nil, fmt.Errorf("arguments must be a JSON object")
+	}
+
+	request := json.RawMessage(nil)
+	requestPresent := false
+	for decoder.More() {
+		rawName, nameErr := decoder.Token()
+		if nameErr != nil {
+			return nil, fmt.Errorf("arguments are malformed")
+		}
+		name, nameOK := rawName.(string)
+		if !nameOK {
+			return nil, fmt.Errorf("arguments contain a non-string field name")
+		}
+		rawValue := json.RawMessage(nil)
+		if decodeErr := decoder.Decode(&rawValue); decodeErr != nil {
+			return nil, fmt.Errorf("arguments field %q is malformed", name)
+		}
+		if name != "request" {
+			return nil, fmt.Errorf("arguments field %q is not allowed", name)
+		}
+		if requestPresent {
+			return nil, fmt.Errorf("request field is duplicated")
+		}
+		request = append(json.RawMessage(nil), rawValue...)
+		requestPresent = true
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return nil, fmt.Errorf("arguments are malformed")
+	}
+	trailing := json.RawMessage(nil)
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return nil, fmt.Errorf("arguments contain trailing data")
+	}
+	if !requestPresent {
+		return nil, fmt.Errorf("request is required")
+	}
+	return request, nil
+}
+
+func decodeMemoryToolAction(
+	arguments json.RawMessage,
+) (string, error) {
+	decoder := json.NewDecoder(bytes.NewReader(arguments))
+	start, err := decoder.Token()
+	if err != nil {
+		return "", fmt.Errorf("arguments must be a JSON object")
+	}
+	if start != json.Delim('{') {
+		return "", fmt.Errorf("arguments must be a JSON object")
+	}
+
+	action := ""
+	actionPresent := false
+	for decoder.More() {
+		rawName, nameErr := decoder.Token()
+		if nameErr != nil {
+			return "", fmt.Errorf("arguments are malformed")
+		}
+		name, nameOK := rawName.(string)
+		if !nameOK {
+			return "", fmt.Errorf("arguments contain a non-string field name")
+		}
+		rawValue := json.RawMessage(nil)
+		if decodeErr := decoder.Decode(&rawValue); decodeErr != nil {
+			return "", fmt.Errorf("arguments field %q is malformed", name)
+		}
+		if name != "action" {
+			continue
+		}
+		if actionPresent {
+			return "", fmt.Errorf("action field is duplicated")
+		}
+		if decodeErr := json.Unmarshal(rawValue, &action); decodeErr != nil {
+			return "", fmt.Errorf("action must be a string")
+		}
+		actionPresent = true
+	}
+	end, err := decoder.Token()
+	if err != nil || end != json.Delim('}') {
+		return "", fmt.Errorf("arguments are malformed")
+	}
+	trailing := json.RawMessage(nil)
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		return "", fmt.Errorf("arguments contain trailing data")
+	}
+	if !actionPresent || action == "" {
+		return "", fmt.Errorf("action is required")
+	}
+	return action, nil
 }

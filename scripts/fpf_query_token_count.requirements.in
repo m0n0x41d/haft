@@ -1,0 +1,4 @@
+# Direct tokenizer dependency for the v9 FPF Query quantitative gate.
+# Regenerate the universal, cutoff-pinned hash lock with:
+# task fpf-query-token-lock
+tiktoken==0.9.0

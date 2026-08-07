@@ -5,6 +5,7 @@ import (
 
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/graph"
 )
 
 // A small fused graph:
@@ -28,7 +29,14 @@ func TestBuildAndRankRelated(t *testing.T) {
 		{ID: "symC", FilePath: "f2.go"},
 	}
 
-	g, kind := buildFusedGraph(edges, links, affected, syms)
+	g, kind := buildFusedGraph(
+		edges,
+		links,
+		affected,
+		nil,
+		syms,
+		moduleFusionInputs{},
+	)
 	seed := map[string]float64{fileNode("f1.go"): 1}
 	got := rankRelated(g, kind, seed, 0)
 
@@ -67,7 +75,14 @@ func TestRankRelatedDeterministicAndBounded(t *testing.T) {
 	edges := []codebase.CodeEdge{{SrcID: "symA", DstID: "symB", Kind: codebase.EdgeCall}}
 	affected := []artifact.AffectedFileRef{{ArtifactID: "dec-X", FilePath: "f1.go"}}
 	syms := []codebase.SymbolRef{{ID: "symA", FilePath: "f1.go"}, {ID: "symB", FilePath: "f1.go"}}
-	g, kind := buildFusedGraph(edges, nil, affected, syms)
+	g, kind := buildFusedGraph(
+		edges,
+		nil,
+		affected,
+		nil,
+		syms,
+		moduleFusionInputs{},
+	)
 	seed := map[string]float64{fileNode("f1.go"): 1}
 
 	first := rankRelated(g, kind, seed, 2)
@@ -88,11 +103,109 @@ func TestRankRelatedDeterministicAndBounded(t *testing.T) {
 }
 
 func TestRankRelatedOffGraphSeedEmpty(t *testing.T) {
-	g, kind := buildFusedGraph(nil, nil,
-		[]artifact.AffectedFileRef{{ArtifactID: "dec-X", FilePath: "f1.go"}}, nil)
+	g, kind := buildFusedGraph(
+		nil,
+		nil,
+		[]artifact.AffectedFileRef{
+			{ArtifactID: "dec-X", FilePath: "f1.go"},
+		},
+		nil,
+		nil,
+		moduleFusionInputs{},
+	)
 	got := rankRelated(g, kind, map[string]float64{fileNode("does/not/exist.go"): 1}, 0)
 	if len(got) != 0 {
 		t.Fatalf("off-graph seed must yield no related nodes, got %v", got)
+	}
+}
+
+func TestBuildFusedGraphUsesOnlyCurrentDurableSymbolBindings(t *testing.T) {
+	symbols := []codebase.SymbolRef{
+		{
+			ID:       "internal/x.go#Current#10",
+			AnchorID: "sym:v2:current",
+			FilePath: "internal/x.go",
+		},
+	}
+	bindings := []artifact.SymbolBindingRef{
+		{
+			ArtifactID: "dec-current",
+			AnchorID:   "sym:v2:current",
+		},
+		{
+			ArtifactID: "dec-stale",
+			AnchorID:   "sym:v2:stale",
+		},
+	}
+	graph, kind := buildFusedGraph(
+		nil,
+		nil,
+		nil,
+		bindings,
+		symbols,
+		moduleFusionInputs{},
+	)
+	ranked := rankRelated(
+		graph,
+		kind,
+		map[string]float64{"dec-current": 1},
+		0,
+	)
+	if len(ranked) == 0 ||
+		ranked[0].ID != "internal/x.go#Current#10" {
+		t.Fatalf("current exact binding rank = %+v", ranked)
+	}
+	if graph.Has("dec-stale") {
+		t.Fatal("stale anchor binding became a graph edge")
+	}
+}
+
+func TestBuildFusedGraphUsesOnlyMostSpecificModuleContext(t *testing.T) {
+	modules := []codebase.Module{
+		{ID: "mod-root", Path: ""},
+		{ID: "mod-cli", Path: "internal/cli"},
+		{ID: "mod-nested", Path: "internal/cli/nested"},
+	}
+	symbols := []codebase.SymbolRef{
+		{ID: "sym-cli", FilePath: "internal/cli/main.go"},
+		{ID: "sym-nested", FilePath: "internal/cli/nested/main.go"},
+	}
+	moduleFusion, err := resolveModuleFusionInputs(
+		modules,
+		[]graph.DecisionModuleContext{{
+			DecisionID: "dec-cli",
+			ModuleID:   "mod-cli",
+			ModulePath: "internal/cli",
+			Source:     "explicit_module_binding",
+		}},
+		symbols,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fused, kinds := buildFusedGraph(
+		nil,
+		nil,
+		nil,
+		nil,
+		symbols,
+		moduleFusion,
+	)
+	ranked := rankRelated(
+		fused,
+		kinds,
+		map[string]float64{"dec-cli": 1},
+		0,
+	)
+	ids := make(map[string]bool)
+	for _, item := range ranked {
+		ids[item.ID] = true
+	}
+	if !ids["sym-cli"] {
+		t.Fatalf("module decision did not reach owned symbol: %+v", ranked)
+	}
+	if ids["sym-nested"] {
+		t.Fatalf("parent module stole nested symbol: %+v", ranked)
 	}
 }
 

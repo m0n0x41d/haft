@@ -104,6 +104,145 @@ func TestSymbolStore_GetByDirIncludesRootPackageFiles(t *testing.T) {
 	}
 }
 
+func TestSymbolStoreGetByDirTreatsPercentAndUnderscoreLiterally(
+	t *testing.T,
+) {
+	store, root := newSymbolStore(t)
+	ctx := context.Background()
+	files := map[string]string{
+		"pkg/a_%/literal.go": "package literal\nfunc Literal() {}\n",
+		"pkg/abx/sibling.go": "package sibling\nfunc Sibling() {}\n",
+		"pkg/a_X/other.go":   "package other\nfunc Other() {}\n",
+	}
+	for name, source := range files {
+		fullPath := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(
+			filepath.Dir(fullPath),
+			0o755,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(
+			fullPath,
+			[]byte(source),
+			0o644,
+		); err != nil {
+			t.Fatal(err)
+		}
+		if err := store.IndexFileSymbols(
+			ctx,
+			root,
+			name,
+		); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	symbols, err := store.GetByDir(ctx, `pkg\a_%`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(symbols) != 1 ||
+		symbols[0].Name != "Literal" ||
+		symbols[0].FilePath != "pkg/a_%/literal.go" {
+		t.Fatalf("literal directory lookup = %+v", symbols)
+	}
+}
+
+func TestSymbolStore_AnchorSurvivesLineShift(t *testing.T) {
+	st, root := newSymbolStore(t)
+	ctx := context.Background()
+	rel := "service.ts"
+	initial := "export function run(input: string): string {\n  return input\n}\n"
+	if err := os.WriteFile(filepath.Join(root, rel), []byte(initial), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.IndexFileSymbols(ctx, root, rel); err != nil {
+		t.Fatal(err)
+	}
+	first, err := st.GetByName(ctx, "run")
+	if err != nil || len(first) != 1 {
+		t.Fatalf("first index = %+v / %v", first, err)
+	}
+	if first[0].AnchorID == "" || first[0].ID != first[0].AnchorID || first[0].AnchorVersion != SymbolAnchorVersion {
+		t.Fatalf("first symbol lacks canonical anchor: %+v", first[0])
+	}
+
+	shifted := "// inserted header\n// second line\n" + initial
+	if err := os.WriteFile(filepath.Join(root, rel), []byte(shifted), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.IndexFileSymbols(ctx, root, rel); err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.GetByName(ctx, "run")
+	if err != nil || len(second) != 1 {
+		t.Fatalf("second index = %+v / %v", second, err)
+	}
+	if first[0].AnchorID != second[0].AnchorID {
+		t.Fatalf("line shift changed anchor: %s != %s", first[0].AnchorID, second[0].AnchorID)
+	}
+	if first[0].StartLine == second[0].StartLine {
+		t.Fatalf("test did not shift source coordinates: %d == %d", first[0].StartLine, second[0].StartLine)
+	}
+}
+
+func TestSymbolStore_EnsureSchemaUpgradesLegacyDerivedTable(t *testing.T) {
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "legacy.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	_, err = database.Exec(`CREATE TABLE code_symbols (
+		id TEXT PRIMARY KEY,
+		file_path TEXT NOT NULL,
+		name TEXT NOT NULL,
+		kind TEXT,
+		receiver TEXT,
+		start_line INTEGER NOT NULL,
+		end_line INTEGER,
+		start_byte INTEGER,
+		end_byte INTEGER,
+		hash TEXT,
+		exported INTEGER DEFAULT 0,
+		lang TEXT,
+		UNIQUE (file_path, name, start_line)
+	)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := NewSymbolStore(database)
+	if err := store.EnsureSchema(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for _, column := range []string{"anchor_id", "anchor_version", "qualified_name", "signature_hash"} {
+		if !codeSymbolColumnExists(t, database, column) {
+			t.Fatalf("legacy schema missing upgraded column %q", column)
+		}
+	}
+}
+
+func codeSymbolColumnExists(t *testing.T, database *sql.DB, wanted string) bool {
+	t.Helper()
+	rows, err := database.Query(`PRAGMA table_info(code_symbols)`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, primaryKey int
+		var name, columnType string
+		var defaultValue sql.NullString
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
+			t.Fatal(err)
+		}
+		if name == wanted {
+			return true
+		}
+	}
+	return false
+}
+
 // TestSymbolStore_OverloadNodesAndByteExactSlice is the P0 gate for the node
 // store: two same-name methods persist as DISTINCT nodes, and each node's
 // stored byte offsets slice the file back to its EXACT body.

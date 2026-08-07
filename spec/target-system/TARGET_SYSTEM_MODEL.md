@@ -4,19 +4,25 @@
 >
 > **Start here if you're an agent:** read [AGENT_CONTRACT.md](../AGENT_CONTRACT.md) first — it tells you what you may edit and what rules apply.
 
+This document set is Haft's local practice for Agentic SWE. `TargetSystemSpec`,
+`SoftwareSystemSpec`, and the target/enabling distinction are project carriers,
+not normative kinds defined by FPF A.1. Their subjects may be typed with FPF
+primitives such as `U.Entity`, `U.Holon`, or `U.System` and scoped through an
+`EntityOfConcernSlot`.
+
 ## Layer 1: Context (10 min)
 
 | # | Document | What you learn |
 |---|----------|---------------|
 | 1 | [SYSTEM_CONTEXT.md](SYSTEM_CONTEXT.md) | Why Haft exists, who it's for, what it's not, supersystem diagram |
 | 2 | [TERM_MAP.md](TERM_MAP.md) | Canonical vocabulary — one meaning per term |
-| 3 | [SCOPE_FREEZE.md](SCOPE_FREEZE.md) | What's in v6 / v7 / v8 / later / never |
+| 3 | [SCOPE_FREEZE.md](SCOPE_FREEZE.md) | Historical v6-v8 planning archive; not a current implementation contract |
 
 ## Layer 2: Domain Ontologies (30 min)
 
 | # | Document | What you learn |
 |---|----------|---------------|
-| 4 | [SPECIFICATION_ONTOLOGY.md](SPECIFICATION_ONTOLOGY.md) | ProjectSpecificationSet, TargetSystemSpec, EnablingSystemSpec, SpecCoverage, semantic architecture |
+| 4 | [SPECIFICATION_ONTOLOGY.md](SPECIFICATION_ONTOLOGY.md) | ProjectSpecificationSet, TargetSystemSpec, SoftwareSystemSpec, SpecCoverage, semantic architecture |
 | 5 | [MODE_ONTOLOGY.md](MODE_ONTOLOGY.md) | The 5 engineering modes, depth calibration, interaction modes |
 | 6 | [ARTIFACT_ONTOLOGY.md](ARTIFACT_ONTOLOGY.md) | Artifact kinds, lifecycle states, relationships |
 | 7 | [EVIDENCE_ONTOLOGY.md](EVIDENCE_ONTOLOGY.md) | R_eff, CL, decay, claims, verdicts, measurement |
@@ -35,7 +41,10 @@
 |---|----------|---------------|
 | 11 | [OPEN_QUESTIONS.md](OPEN_QUESTIONS.md) | Unresolved design questions |
 
-## Enabling System
+## Enabling System Support
+
+These documents describe the people, methods, architecture, and tooling that
+create and maintain Haft. They are not members of ProjectSpecificationSet.
 
 | Document | What you learn |
 |----------|---------------|

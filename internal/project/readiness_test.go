@@ -120,9 +120,9 @@ func TestInspectReadinessClassifiesMinimumSpecSetAsReady(t *testing.T) {
 	}
 	writeFixture(t, filepath.Join(haftDir, "project.yaml"), "id: qnt_test\nname: test\n")
 	writeFixture(t, filepath.Join(haftDir, "workflow.md"), "# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n")
-	writeFixture(t, filepath.Join(specDir, "target-system.md"), readinessSpecSection("TS.use.001", "environment-change"))
-	writeFixture(t, filepath.Join(specDir, "enabling-system.md"), readinessSpecSection("ES.creator.001", "creator-role"))
-	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ndomain: enabling\ndefinition: A project with active specs.\n```\n")
+	writeFixture(t, filepath.Join(specDir, "target-system.md"), minimumTargetReadinessSpec())
+	writeFixture(t, filepath.Join(specDir, "software-system.md"), minimumSoftwareReadinessSpec())
+	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ncategory: enabling\ndefinition: A project with active specs.\n```\n")
 
 	facts, err := InspectReadiness(root)
 	if err != nil {
@@ -137,6 +137,50 @@ func TestInspectReadinessClassifiesMinimumSpecSetAsReady(t *testing.T) {
 	}
 }
 
+func TestInspectReadinessRoleOnlySoftwareSpecNeedsOnboard(t *testing.T) {
+	root := t.TempDir()
+	haftDir := filepath.Join(root, ".haft")
+	specDir := filepath.Join(haftDir, "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, filepath.Join(haftDir, "project.yaml"), "id: qnt_test\nname: test\n")
+	writeFixture(t, filepath.Join(haftDir, "workflow.md"), "# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n")
+	writeFixture(t, filepath.Join(specDir, "target-system.md"), minimumTargetReadinessSpec())
+	writeFixture(t, filepath.Join(specDir, "software-system.md"), readinessSpecSection("SS.role.001", "software.role"))
+	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ncategory: enabling\ndefinition: A project with active specs.\n```\n")
+
+	facts, err := InspectReadiness(root)
+	if err != nil {
+		t.Fatalf("InspectReadiness: %v", err)
+	}
+	if facts.Status != ReadinessNeedsOnboard || facts.HasSpecs {
+		t.Fatalf("facts = %+v, want incomplete software spine", facts)
+	}
+}
+
+func TestInspectReadinessLegacyEnablingCarrierRequiresMigration(t *testing.T) {
+	root := t.TempDir()
+	haftDir := filepath.Join(root, ".haft")
+	specDir := filepath.Join(haftDir, "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(t, filepath.Join(haftDir, "project.yaml"), "id: qnt_test\nname: test\n")
+	writeFixture(t, filepath.Join(haftDir, "workflow.md"), "# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n")
+	writeFixture(t, filepath.Join(specDir, "target-system.md"), readinessSpecSection("TS.use.001", "environment-change"))
+	writeFixture(t, filepath.Join(specDir, "enabling-system.md"), readinessSpecSection("ES.architecture.001", "enabling.architecture"))
+	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ncategory: enabling\ndefinition: A project with active specs.\n```\n")
+
+	facts, err := InspectReadiness(root)
+	if err != nil {
+		t.Fatalf("InspectReadiness: %v", err)
+	}
+	if facts.Status != ReadinessNeedsOnboard || facts.HasSpecs {
+		t.Fatalf("facts = %+v, want migration-blocked needs_onboard", facts)
+	}
+}
+
 func TestInspectReadinessClassifiesMalformedActiveSpecAsNeedsOnboard(t *testing.T) {
 	root := t.TempDir()
 	haftDir := filepath.Join(root, ".haft")
@@ -148,7 +192,7 @@ func TestInspectReadinessClassifiesMalformedActiveSpecAsNeedsOnboard(t *testing.
 	writeFixture(t, filepath.Join(haftDir, "workflow.md"), "# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n")
 	writeFixture(t, filepath.Join(specDir, "target-system.md"), malformedActiveReadinessSpecSection("TS.use.001", "environment-change"))
 	writeFixture(t, filepath.Join(specDir, "enabling-system.md"), readinessSpecSection("ES.creator.001", "creator-role"))
-	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ndomain: enabling\ndefinition: A project with active specs.\n```\n")
+	writeFixture(t, filepath.Join(specDir, "term-map.md"), "```yaml\nterm: HarnessableProject\ncategory: enabling\ndefinition: A project with active specs.\n```\n")
 
 	facts, err := InspectReadiness(root)
 	if err != nil {
@@ -188,6 +232,125 @@ func TestInspectReadinessClassifiesMissingTermMapAsNeedsOnboard(t *testing.T) {
 	}
 }
 
+func TestScopedReadinessRequirementsFollowCapabilityMatrix(t *testing.T) {
+	nonSoftware := mustSpecificationApplicability(
+		t,
+		mustProjectProfileNonSoftwareScope(t, "documents"),
+		"documents",
+	)
+	nonSoftwareRequirements, err := readinessActiveSpecKindRequirementsFor(
+		nonSoftware,
+	)
+	if err != nil {
+		t.Fatalf("non-software readiness requirements: %v", err)
+	}
+	if len(nonSoftwareRequirements) != 1 ||
+		nonSoftwareRequirements[0].documentKind != string(SpecDocumentKindTargetSystem) {
+		t.Fatalf(
+			"non-software readiness requirements = %#v, want one target-system requirement",
+			nonSoftwareRequirements,
+		)
+	}
+
+	software := mustSpecificationApplicability(
+		t,
+		mustProjectProfileSoftwareScope(t, "software"),
+		"software",
+	)
+	softwareRequirements, err := readinessActiveSpecKindRequirementsFor(
+		software,
+	)
+	if err != nil {
+		t.Fatalf("software readiness requirements: %v", err)
+	}
+	if len(softwareRequirements) != 2 {
+		t.Fatalf(
+			"software readiness requirements = %#v, want target and software requirements",
+			softwareRequirements,
+		)
+	}
+	if softwareRequirements[0].documentKind != string(SpecDocumentKindTargetSystem) ||
+		softwareRequirements[1].documentKind != string(SpecDocumentKindSoftwareSystem) {
+		t.Fatalf(
+			"software readiness document kinds = %#v",
+			softwareRequirements,
+		)
+	}
+}
+
+func TestInspectReadinessForNonSoftwareScopeAvoidsSoftwarePressure(
+	t *testing.T,
+) {
+	root := t.TempDir()
+	haftDir := filepath.Join(root, ".haft")
+	specDir := filepath.Join(haftDir, "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFixture(
+		t,
+		filepath.Join(haftDir, "project.yaml"),
+		"id: qnt_test\nname: test\n",
+	)
+	writeFixture(
+		t,
+		filepath.Join(haftDir, "workflow.md"),
+		"# Workflow\n\n## Defaults\n\n```yaml\nmode: standard\n```\n",
+	)
+	writeFixture(
+		t,
+		filepath.Join(specDir, "enabling-system.md"),
+		"# Historical software-only migration input\n",
+	)
+	writeFixture(
+		t,
+		filepath.Join(specDir, "target-system.md"),
+		readinessSpecSection("TS.environment.001", "target.environment")+
+			readinessSpecSection("TS.role.001", "target.role")+
+			readinessSpecSection("TS.boundary.001", "target.boundary"),
+	)
+	writeFixture(
+		t,
+		filepath.Join(specDir, "term-map.md"),
+		validTermMapCarrier(),
+	)
+	applicability := mustSpecificationApplicability(
+		t,
+		mustProjectProfileNonSoftwareScope(t, "documents"),
+		"documents",
+	)
+
+	facts, err := InspectReadinessForScope(root, applicability)
+	if err != nil {
+		t.Fatalf("InspectReadinessForScope: %v", err)
+	}
+	if facts.Status != ReadinessReady || !facts.HasSpecs {
+		t.Fatalf("facts = %+v, want target-only non-software readiness", facts)
+	}
+
+	report, err := CheckSpecificationSetForScope(root, applicability)
+	if err != nil {
+		t.Fatalf("CheckSpecificationSetForScope: %v", err)
+	}
+	if hasSpecCheckFinding(report, SpecMigrationRequiredFindingCode) {
+		t.Fatalf("non-software readiness retained migration pressure: %+v", report.Findings)
+	}
+	if hasSpecCheckFinding(report, "spec_carrier_no_active_sections") ||
+		hasSpecCheckFinding(report, "profile_capability_applicability_underdetermined") {
+		t.Fatalf("non-software readiness retained software or relation pressure: %+v", report.Findings)
+	}
+}
+
+func TestInspectReadinessForScopeRejectsZeroApplicability(t *testing.T) {
+	_, err := InspectReadinessForScope(
+		t.TempDir(),
+		ProjectSpecificationSetApplicability{},
+	)
+	if err == nil {
+		t.Fatal("zero applicability reached readiness evaluation")
+	}
+}
+
 func writeFixture(t *testing.T, path string, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -205,6 +368,19 @@ func readinessSpecSection(id string, kind string) string {
 		"owner: human\n" +
 		"status: active\n" +
 		"```\n"
+}
+
+func minimumTargetReadinessSpec() string {
+	return readinessSpecSection("TS.environment.001", "target.environment") +
+		readinessSpecSection("TS.role.001", "target.role") +
+		readinessSpecSection("TS.boundary.001", "target.boundary")
+}
+
+func minimumSoftwareReadinessSpec() string {
+	return readinessSpecSection("SS.role.001", "software.role") +
+		readinessSpecSection("SS.functional.001", "software.functional_behavior") +
+		readinessSpecSection("SS.interfaces.001", "software.interfaces") +
+		readinessSpecSection("SS.constraints.001", "software.constraints")
 }
 
 func malformedActiveReadinessSpecSection(id string, kind string) string {

@@ -5,24 +5,38 @@ import (
 	"database/sql"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/projectpath"
 	"github.com/m0n0x41d/haft/logger"
 )
 
+// Resolve concurrency is a runtime thermal policy, not part of the persisted
+// index basis. Keeping it separate from IndexBudget avoids forcing a full
+// rebuild merely because an interactive host lowers its active CPU fan-out.
+const defaultMaxResolveWorkers = int64(2)
+
 // Scanner detects modules and builds the dependency graph for a project.
 type Scanner struct {
-	db       *sql.DB
-	registry *Registry
+	db                     *sql.DB
+	registry               *Registry
+	indexBudget            IndexBudget
+	maxResolveWorkers      WorkerCount
+	projectSnapshotFactory func(map[string]AdmittedSource, tsProjectResolution) *projectIndexSnapshot
+	projectSnapshot        *projectIndexSnapshot
+	projectSnapshotRoot    string
+	publicationCheckpoint  func(context.Context, *sql.Tx, indexPublicationStage) error
 }
 
 // NewScanner creates a new codebase scanner.
 func NewScanner(db *sql.DB) *Scanner {
+	maxResolveWorkers, _ := NewWorkerCount(defaultMaxResolveWorkers)
 	return &Scanner{
-		db:       db,
-		registry: NewRegistry(),
+		db:                     db,
+		registry:               NewRegistry(),
+		indexBudget:            DefaultIndexBudget(),
+		maxResolveWorkers:      maxResolveWorkers,
+		projectSnapshotFactory: newProjectIndexSnapshot,
 	}
 }
 
@@ -41,15 +55,21 @@ func (s *Scanner) ScanModules(ctx context.Context, projectRoot string) ([]Module
 		}
 		// Filter out ignored modules
 		for _, m := range modules {
+			modulePath, err := projectpath.ParseModule(m.Path)
+			if err != nil {
+				return nil, fmt.Errorf(
+					"detector %s returned invalid module path %q: %w",
+					detector.Language(),
+					m.Path,
+					err,
+				)
+			}
+			m.Path = modulePath.String()
 			if m.Path != "" && ignoreChecker.IsIgnored(m.Path) {
 				continue
 			}
 			allModules = append(allModules, m)
 		}
-	}
-
-	if len(allModules) == 0 {
-		return nil, nil
 	}
 
 	// Store in DB
@@ -87,7 +107,6 @@ func (s *Scanner) ScanModules(ctx context.Context, projectRoot string) ([]Module
 // ScanDependencies parses imports across all modules and builds the dependency graph.
 func (s *Scanner) ScanDependencies(ctx context.Context, projectRoot string) ([]ImportEdge, error) {
 	scanStart := time.Now()
-	ignoreChecker := NewIgnoreChecker(projectRoot)
 
 	// Get all known modules for import resolution
 	modules, err := s.GetModules(ctx)
@@ -100,31 +119,50 @@ func (s *Scanner) ScanDependencies(ctx context.Context, projectRoot string) ([]I
 	}
 
 	var allEdges []ImportEdge
+	usage := EmptyAdmissionUsage()
 
 	// Walk all source files and parse imports
-	err = filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if IsExcludedDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			// Check .gitignore
-			if relDir, err := filepath.Rel(projectRoot, path); err == nil && ignoreChecker.IsIgnored(relDir) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
+	err = walkProjectFiles(projectRoot, func(
+		path string,
+		relPath string,
+		_ os.DirEntry,
+	) error {
 		parser := s.registry.ParserForFile(path)
 		if parser == nil {
 			return nil
 		}
-
-		edges, err := parser.ParseImports(path, projectRoot)
+		admission, nextUsage, err := s.registry.ReadSourceAdmission(
+			projectRoot,
+			relPath,
+			DefaultIndexBudget(),
+			usage,
+		)
 		if err != nil {
+			return err
+		}
+		usage = nextUsage
+		if admission.Kind().String() == "source_skipped" {
+			info, err := SkippedSourceInfo(admission)
+			if err != nil {
+				return err
+			}
+			if info.Reason == "read_failure" ||
+				info.Reason == "source_changed" {
+				return fmt.Errorf(
+					"observe import source %s: %s",
+					relPath,
+					info.Detail,
+				)
+			}
 			return nil
+		}
+		source, err := AdmittedSourceFrom(admission)
+		if err != nil {
+			return err
+		}
+		edges, err := parser.ParseImports(source, projectRoot)
+		if err != nil {
+			return fmt.Errorf("parse imports %s: %w", relPath, err)
 		}
 
 		// Filter: only keep edges where target is a known local module
@@ -177,42 +215,62 @@ func (s *Scanner) ScanDependencies(ctx context.Context, projectRoot string) ([]I
 // ScanSymbols extracts and stores code symbols for every supported source file,
 // populating the code_symbols node layer of the code graph. Respects the same
 // ignore/exclusion rules as ScanModules; idempotent per file (delete-then-insert).
-// Per-file failures are skipped, not fatal. (Per-file transactions here — the P5
-// incremental layer narrows this to touched files; a full scan is the cold path.)
+// Files excluded by the admission policy are not indexed. Observation and parse
+// failures remain visible to the caller rather than becoming false empty files.
+// Per-file transactions here remain the cold path; RefreshIncremental owns
+// atomic candidate-epoch publication.
 func (s *Scanner) ScanSymbols(ctx context.Context, projectRoot string) (int, error) {
 	scanStart := time.Now()
 	store := NewSymbolStore(s.db)
 	if err := store.EnsureSchema(ctx); err != nil {
 		return 0, err
 	}
-	ignoreChecker := NewIgnoreChecker(projectRoot)
+	budget := DefaultIndexBudget()
+	usage := EmptyAdmissionUsage()
 	indexed := 0
 
-	err := filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
+	err := walkProjectFiles(projectRoot, func(
+		path string,
+		relPath string,
+		_ os.DirEntry,
+	) error {
+		if !s.registry.SupportsSymbols(path) {
 			return nil
 		}
-		if d.IsDir() {
-			if IsExcludedDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			if relDir, err := filepath.Rel(projectRoot, path); err == nil && ignoreChecker.IsIgnored(relDir) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		if _, ok := languages[filepath.Ext(path)]; !ok {
-			return nil
-		}
-		relPath, err := filepath.Rel(projectRoot, path)
+		admission, nextUsage, err := s.registry.ReadSourceAdmission(
+			projectRoot,
+			relPath,
+			budget,
+			usage,
+		)
 		if err != nil {
+			return err
+		}
+		usage = nextUsage
+		if admission.Kind().String() == "source_skipped" {
+			info, err := SkippedSourceInfo(admission)
+			if err != nil {
+				return err
+			}
+			if info.RequiresRetry() {
+				return fmt.Errorf(
+					"observe symbol source %s: %s",
+					relPath,
+					info.Detail,
+				)
+			}
 			return nil
 		}
-		if ignoreChecker.IsIgnored(relPath) {
-			return nil
+		source, err := AdmittedSourceFrom(admission)
+		if err != nil {
+			return err
 		}
-		if err := store.IndexFileSymbols(ctx, projectRoot, relPath); err != nil {
-			return nil // skip files that fail to parse
+		if err := store.IndexAdmittedFileSymbolsWithRegistry(
+			ctx,
+			source,
+			s.registry,
+		); err != nil {
+			return fmt.Errorf("index symbols for %s: %w", relPath, err)
 		}
 		indexed++
 		return nil
@@ -228,7 +286,8 @@ func (s *Scanner) ScanSymbols(ctx context.Context, projectRoot string) (int, err
 // ScanEdges builds the code_edges layer for every file with a registered
 // EdgeResolver, via the language-agnostic port (Go today; other languages add
 // an adapter). Must run AFTER ScanSymbols — cross-file/dispatch resolution
-// reads the full node store. Idempotent per file; per-file failures skipped.
+// reads the full node store. Idempotent per file. Observation and resolver
+// failures remain visible to the caller.
 func (s *Scanner) ScanEdges(ctx context.Context, projectRoot string) (int, error) {
 	scanStart := time.Now()
 	edgeStore := NewEdgeStore(s.db)
@@ -236,36 +295,64 @@ func (s *Scanner) ScanEdges(ctx context.Context, projectRoot string) (int, error
 		return 0, err
 	}
 	symbols := NewSymbolStore(s.db)
-	ignoreChecker := NewIgnoreChecker(projectRoot)
+	budget := DefaultIndexBudget()
+	usage := EmptyAdmissionUsage()
 	total := 0
 
-	err := filepath.WalkDir(projectRoot, func(path string, d os.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return nil
-		}
-		if d.IsDir() {
-			if IsExcludedDir(d.Name()) {
-				return filepath.SkipDir
-			}
-			if relDir, err := filepath.Rel(projectRoot, path); err == nil && ignoreChecker.IsIgnored(relDir) {
-				return filepath.SkipDir
-			}
-			return nil
-		}
+	err := walkProjectFiles(projectRoot, func(
+		path string,
+		relPath string,
+		_ os.DirEntry,
+	) error {
 		resolver := s.registry.ResolverForFile(path)
 		if resolver == nil {
 			return nil // no edge resolver for this language yet
 		}
-		relPath, err := filepath.Rel(projectRoot, path)
-		if err != nil || ignoreChecker.IsIgnored(relPath) {
-			return nil
-		}
-		edges, err := resolver.ResolveFileEdges(ctx, projectRoot, relPath, symbols)
+		admission, nextUsage, err := s.registry.ReadSourceAdmission(
+			projectRoot,
+			relPath,
+			budget,
+			usage,
+		)
 		if err != nil {
+			return err
+		}
+		usage = nextUsage
+		if admission.Kind().String() == "source_skipped" {
+			info, err := SkippedSourceInfo(admission)
+			if err != nil {
+				return err
+			}
+			if info.RequiresRetry() {
+				return fmt.Errorf(
+					"observe edge source %s: %s",
+					relPath,
+					info.Detail,
+				)
+			}
 			return nil
 		}
-		if err := edgeStore.ReplaceFileEdges(ctx, relPath, edges); err != nil {
-			return nil
+		source, err := AdmittedSourceFrom(admission)
+		if err != nil {
+			return err
+		}
+		outcomes, err := s.resolveIndexFile(
+			ctx,
+			projectRoot,
+			source,
+			symbols,
+			nil,
+		)
+		if err != nil {
+			return fmt.Errorf("resolve edges for %s: %w", relPath, err)
+		}
+		edges, _ := PartitionEdgeResolutions(outcomes)
+		if err := edgeStore.ReplaceFileResolutions(
+			ctx,
+			relPath,
+			outcomes,
+		); err != nil {
+			return err
 		}
 		total += len(edges)
 		return nil
@@ -288,11 +375,32 @@ func (s *Scanner) GetModules(ctx context.Context) ([]Module, error) {
 	defer rows.Close()
 
 	var modules []Module
+	modulePathOwners := make(map[string]string)
 	for rows.Next() {
 		var m Module
 		if err := rows.Scan(&m.ID, &m.Path, &m.Name, &m.Lang, &m.FileCount); err != nil {
 			return nil, err
 		}
+		modulePath, err := projectpath.ParseModule(m.Path)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"stored module %s has invalid path %q: %w",
+				m.ID,
+				m.Path,
+				err,
+			)
+		}
+		m.Path = modulePath.String()
+		if owner, exists := modulePathOwners[m.Path]; exists &&
+			owner != m.ID {
+			return nil, fmt.Errorf(
+				"stored module path %q has ambiguous identities %q and %q",
+				m.Path,
+				owner,
+				m.ID,
+			)
+		}
+		modulePathOwners[m.Path] = m.ID
 		modules = append(modules, m)
 	}
 	return modules, rows.Err()
@@ -320,32 +428,31 @@ func (s *Scanner) GetDependents(ctx context.Context, moduleID string) ([]string,
 
 // ResolveFileToModule finds the most specific module for a file path (longest prefix match).
 func (s *Scanner) ResolveFileToModule(ctx context.Context, filePath string) (string, error) {
+	candidate, err := projectpath.Parse(filePath)
+	if err != nil {
+		return "", fmt.Errorf("resolve file to module: %w", err)
+	}
 	modules, err := s.GetModules(ctx)
 	if err != nil {
 		return "", err
 	}
 
-	bestMatch := ""
-	bestLen := -1
+	refs := make([]projectpath.ModuleRef, 0, len(modules))
 	for _, m := range modules {
-		prefix := m.Path
-		if prefix == "" {
-			// Root module matches everything
-			if bestLen < 0 {
-				bestMatch = m.ID
-				bestLen = 0
-			}
-			continue
+		moduleRef, err := projectpath.NewModuleRef(m.ID, m.Path)
+		if err != nil {
+			return "", err
 		}
-		if strings.HasPrefix(filePath, prefix+"/") || strings.HasPrefix(filePath, prefix+string(filepath.Separator)) {
-			if len(prefix) > bestLen {
-				bestMatch = m.ID
-				bestLen = len(prefix)
-			}
-		}
+		refs = append(refs, moduleRef)
 	}
-
-	return bestMatch, nil
+	resolved, ok, err := projectpath.ResolveMostSpecificModule(
+		refs,
+		candidate,
+	)
+	if err != nil || !ok {
+		return "", err
+	}
+	return resolved.ID(), nil
 }
 
 // ModulesLastScanned returns the time of the last module scan, or zero if never scanned.

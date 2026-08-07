@@ -183,7 +183,7 @@ func TestRequireGuardLocationAcceptsCanonicalKinds(t *testing.T) {
 	check := RequireGuardLocation{}
 	for _, kind := range ValidGuardLocations {
 		section := project.SpecSection{
-			ID: "tgt-1",
+			ID:               "tgt-1",
 			EvidenceRequired: []project.SpecEvidenceRequirement{{Kind: kind}},
 		}
 		findings := check.RunOn(section, project.ProjectSpecificationSet{})

@@ -4,6 +4,2713 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [9.0.0] — 2026-08-06
+
+The last published release is
+[v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
+The v8.2.0 candidate was never published; its candidate lineage is incorporated
+into this v9.0.0 release entry.
+
+### Changed
+
+- **FPF Query recall is measured, and non-English concerns now state their
+  requirement.** A recall@k harness scores the shipped concern path on two
+  query sets built to avoid circularity: hand-written questions in deliberately
+  foreign wording, and author phrases mechanically stripped of their target's
+  title words. Baseline on `3dbce51`: paraphrase R@1 0.50 / R@10 0.73,
+  degraded R@1 0.16 / R@10 0.86. The floors are regression guards below the
+  measurement, not targets, and the harness compares Haft only with itself — it
+  licenses no retrieval superiority claim and does not lift the deferred
+  research label. The same measurement showed raw non-English concerns abstain
+  with zero candidates, 6 of 6, while the same concerns carrying English
+  `known_context` resolved to the exact card at rank 1, so `h-reason`, the Pi
+  skill, the installed project template, and the `haft_query` schema now
+  require those terms and keep the operator's wording in `query`.
+- **Coverage collection stops serialising the CI test job.** The per-package
+  loop gave up Go's package-level parallelism; one invocation over the same
+  package set produces a byte-identical profile. Measured at GOMAXPROCS=4,
+  matching a standard runner: 40.3s looped versus 14.7s in one call for ten
+  packages, identical 73.9% total coverage.
+- **Tests racing on package-level variables no longer run in parallel.** 103
+  tests were marked parallel while writing shared package state; they did not
+  fail deterministically and would have surfaced later in CI on unrelated
+  commits. Neither grep nor a call-graph walk detects this class, because the
+  hazard is an assignment rather than a call, so the analysis now tracks writes
+  to package-level variables across the full dependency closure. `internal/cli`
+  keeps 509 parallel tests at 533s isolated wall time against a 737s baseline.
+
+- **Race qualification no longer multiplies the same suite locally and at
+  release.** `task test:race` now reads P13's bounded 37-test critical profile
+  instead of launching the full repository; the old behavior is explicit as
+  `task test:race-full`. CI remains the single owner of full race closure and
+  its exact-SHA aggregate. Release now fails closed unless that CI run passed
+  and its aggregate is still available, then packages without rerunning full
+  race, coverage-equivalent source checks, or lint. A manual P13 dispatch skips
+  the ordinary CI matrix rather than running both qualification contours.
+  Race package discovery now consumes only `go list` stdout, so cold-cache
+  module-download diagnostics cannot be mistaken for package IDs.
+- **V9 removes the built-in execution product and BEAM dependency.** The
+  `haft run` and `haft harness` commands, the complete `open-sleigh/` source
+  tree, Open-Sleigh CI/release/archive machinery, and Elixir/OTP/BEAM
+  toolchain requirements are gone. Haft retains runner-neutral
+  WorkCommission/RuntimeRunRecord governance, `haft commission`, the typed
+  `haft_commission` lifecycle API, and `complete-external`. A successful
+  upgrade removes only `~/.haft/runtimes/open-sleigh/current`; it preserves
+  `~/.open-sleigh/` user data and the independent `haft-embed` runtime, which
+  remains outside the v9 contract and P14 acceptance basis. Process telemetry
+  schema v2 also removes the obsolete `haft run` command-count fields.
+- **Specification recovery no longer dead-ends in onboarding.** Onboarding
+  `ready` now names its domain and explicitly covers only the canonical profile
+  plus structured project memory. When one declared scope lacks the
+  target-system relation required by spec applicability, `haft_onboard`
+  prepares a one-relation, predecessor-pinned review and
+  `haft onboard profile change apply` records a separate `profile.change`
+  operator effect. Stale reviews fail closed, successful applies consume the
+  ephemeral carrier, and the original `h-spec` request resumes against fresh
+  applicability instead of rebuilding the whole profile.
+- **Specification workflow and health are separate status results.**
+  `haft spec status` now exposes a named onboarding `workflow` beside bounded
+  read-only spec `health`. Legacy top-level lifecycle fields remain compatible,
+  while workflow `ready` can no longer be mistaken for a clean spec check or a
+  release-readiness verdict.
+- **Code-graph refresh is shared across concurrent project servers.** Multiple
+  Codex tasks or other MCP clients may run `haft serve` for the same project
+  without multiplying parser work. One server publishes a changed source
+  epoch; followers recheck the completed publication, remain responsive, and
+  retain the last complete epoch with an explicit degraded/unavailable result
+  when their bounded wait cannot establish freshness. Process exit is
+  recoverable without manual cleanup, distinct projects still refresh in
+  parallel, and `haft doctor` no longer treats several current-project servers
+  as a defect by count alone.
+- **Fresh FPF source is no longer vetoed by source-dependent Query fixtures.**
+  `task fpf-refresh` now retains and recoverably applies a complete verified
+  candidate when semantic compatibility, exact PatternID/query-smoke,
+  token-budget, parser-label, or frozen-expectation checks need review. New
+  recognizable result-label families retain their exact raw source in the
+  index and surface as degraded parser warnings. The command prints a prominent
+  review-warning banner with exact diagnostics and reproduction commands;
+  those findings may still block release or quality claims. Hard rejection is
+  reserved for cases where no complete structurally supported and internally
+  coherent source/DB/lock publication can be built, so ordinary FPF content
+  evolution cannot strand Haft on a stale embedded corpus. A candidate that
+  retains less than 50% of the preceding verified source-unit projection is an
+  explicit hard structural-collapse boundary rather than a silently accepted
+  parser result.
+- **Explicit and interactive `haft init` contract.** Bare `haft init` now opens
+  a zero-preselection host multi-select only when stdin and stdout are
+  terminals. Bare non-interactive/CI invocation fails before writes. Each
+  stable `--claude` or `--codex` flag performs that host's full MCP,
+  transformed-skill, and managed-instruction integration; experimental host
+  adapters retain their explicitly documented surfaces. `--mcp-only` is an
+  explicit compatibility modifier for host config only; `--core-only`
+  initializes or migrates the project core without publishing host files.
+- **Explicit `.agents/skills` publication modes.** Full `haft init --codex`
+  publishes Codex-transformed skills under `.agents/skills`, while `--agents`
+  remains an independent skills-only target that may compose with host flags.
+  Combining `--codex --agents` coalesces the identical skill projection into
+  one publication rather than creating competing writes.
+  `--all` means exactly the full Claude and Codex integrations and does not add
+  a second independent `--agents` target. Project-local Antigravity skills stay
+  under `.gemini/skills`.
+- **Safe host projection replacement.** Re-init replaces recognized legacy
+  Haft skills and refreshes only the managed Haft sections of `AGENTS.md` and
+  `CLAUDE.md`. Foreign skill-path collisions fail before writes; project text
+  outside Haft markers is preserved.
+- **V9 CONTRACT — source-native FPF delivery.** The v9 contract
+  treats versioned FPF source and provenance as the reasoning input. PatternUse
+  and PatternRecall are no longer v9 product concepts or required routing
+  layers; any remaining implementation surfaces are compatibility/migration
+  work, not semantic authority.
+- **Retained embedding compatibility is outside v9 acceptance.** The optional
+  `haft-embed` implementation and runtime remain available for older
+  semantic-recall compatibility paths. They are outside the v9 contract and
+  P14 acceptance basis; their presence carries no v9 PatternRecall,
+  route-vector, or retrieval-quality claim.
+- **V9 CONTRACT — reliance-bearing typed project memory.** Durable Haft
+  artifacts connect to concrete receiving uses such as handoff, replay,
+  automation, evidence, and later verification. The use may be named by the
+  operator or inferred by the agent from current Work; empty memory or generic
+  possible future usefulness is not sufficient.
+- **V9 identity changes are alias-only.** The public `identity_change` union
+  contains only context-bound `admit_alias` and `supersede_alias`. Exact-ID and
+  alias collisions remain explicit candidates, and no lexical, semantic, PPR,
+  dense, or other retrieval score may merge identities. Reviewed entity
+  merge/split is deferred to a separate v9.1 reconciliation contract while
+  historical records remain readable.
+- **Performed-Work attribution follows current FPF.** Active specifications
+  name the actual performer `U.System`, the covering `U.RoleAssignment`, and
+  `performedUnderAssignment` separately; an assignment never acts or enacts a
+  method. The ClaimGraph codec requirement is scoped to the C.2.1
+  `EpistemeConstitutionRelationSignature`, not inferred onto every C.2.1
+  relation signature.
+- **Default project memory and proactive entity orientation.** `haft init`
+  installs the package-default project-memory model automatically, without an
+  enable/defer prompt or an internal-schema choice. Existing projects now
+  advance to every exact bundled ProjectTypeEnv successor proven compatible at
+  the transaction-current head, graph, profile, assertion, projection-profile,
+  and runtime boundary. This `compatible_successor_policy` path creates no
+  prompt, review carrier, or operator-request provenance; incompatible,
+  incomplete, stale, or underdetermined candidates leave the head unchanged.
+  Schema 57 carries the distinction through the complete audit closure: new
+  activation deltas, authority uses, and typed-memory graph events record
+  `compatible_successor_policy` for automatic transitions or
+  `host_routed_operator_request` for explicit transitions, while legacy
+  `manual_type_env_activation` rows remain read-only history.
+  When current Work has a concrete durability-requiring receiving use and
+  stable identity is recoverable, agents establish the minimum non-binding
+  EntityOfConcern proactively. Explicit authority remains required for
+  decisions, specifications, commissions, profile changes, incompatible model
+  selection, and rollback.
+- **Deterministic initial project-profile bootstrap.** Fresh init may admit a
+  complete, non-truncated, supported singleton detector result as
+  `origin=detector_default` only when no canonical profile or human/foreign
+  review exists. Mixed, multiple-scope, insufficient, truncated, or reviewed
+  bases still require one direct operator choice; an eligible automatic
+  profile may be superseded through that ordinary-language choice without a
+  command-only confirmation ritual.
+- **Task-level memory UX no longer exposes implementation schemas.** Public
+  onboarding, entity, status, reasoning, spec, Pi, README, and generated host
+  carriers describe setup, identity, readiness, and later model changes in
+  project language. Legacy low-level validation and replay machinery remains
+  available for exact diagnostics but is no longer presented as a choice that
+  ordinary users must understand.
+- **EXACT-CANDIDATE EVIDENCE and release authority remain separate.** Source,
+  schema, skill, or local-test presence is not installed-runtime proof.
+  Readiness claims require current P14 evidence tied to one exact candidate;
+  that evidence does not itself grant RC or release status, which additionally
+  requires release authority.
+- **Relation-first semantics with separate planning.** Text, card, skill, and
+  graph order no longer imply causal, temporal, method, planning, or
+  performed-work order. Explicit causal claims, method descriptions,
+  ImplementationPlans, WorkCommissions, and work relations carry those orders.
+  `TargetSystemSpec` and `SoftwareSystemSpec` are now stated as Haft
+  local-practice carriers for Agentic SWE, not normative FPF A.1 kinds.
+- **`h-verify` safe drain autonomy.** The bundled `h-verify` skill now treats an
+  operator request to verify stale/refresh-due backlog as sufficient authority
+  to apply kernel-classified machine-safe closures: rung-1 deterministic
+  auto-baselines and rung-2 allowlisted machine evidence/revalidation. Material
+  drift, semantic uncertainty, reopen/supersede choices, weak waivers, and
+  public/authority/security-sensitive cases remain operator-facing, with
+  applied automatic closures reported alongside undo commands.
+- **README onboarding flow.** README now leads with the practical Haft
+  installation/onboarding path, a shorter FPF explanation, explicit `h-reason`
+  and host-agent guidance, updated host tables, and a leaner roadmap section
+  that points release history back to this changelog.
+- **Markdown carriers round-trip structured artifact data through `haft sync`.**
+  Artifact markdown projections now include a hidden `structured_data` carrier
+  block when structured JSON exists. The shared artifact parser extracts that
+  block back into SQLite on `haft sync`; legacy ProblemCard markdown without an
+  envelope imports as `legacy` with audit warnings instead of being promoted to
+  exact v3 semantics.
+- **Default `h-status` is now an operator cockpit.** `haft_query(action="status")`
+  renders capped high-signal lanes for operator attention, active work,
+  decision-health counts, and a one-line coverage cue; detailed status remains
+  available through `full=true`, full module coverage through
+  `haft_query(action="coverage")`, drift/stale detail through
+  `haft_refresh(action="scan", verbose=true)`, and maintenance work orders
+  through `haft_refresh(action="plan")`. MCP initialize instructions, the
+  bundled `h-status` skill, the interface catalog, Pi carriers, and installed
+  instruction templates now spell out that compact omission is not evidence of
+  absence.
+- **MCP defaults now stay compact by default.** `tools/list` trims
+  non-load-bearing schema descriptions and points agents at `haft interface`
+  for full contracts; `haft_refresh(action="scan")`, `haft_query(status)`,
+  and `haft_query(code_context)` now return capped summaries unless callers
+  explicitly request `verbose=true` or `full=true`.
+- **Bundled haft skills now teach the compact CLI path.** The frame, explore,
+  compare, decide, note, reason, and status skills route agents through
+  `haft interface` and input-file artifact creation instead of inlining long
+  schemas; MCP write tools remain the compatible fallback.
+- **MCP initialize instructions surface autonomous maintenance explicitly.**
+  Agents are now told to relay autonomous-maintenance actions, undo commands,
+  and typed maintenance work orders instead of silently absorbing overseer
+  changes.
+- **Bundled FPF publication and source-derived index updated.** Advanced
+  `data/FPF` from `0990ff1` through `8b727cb` to `3dbce51` and regenerated the
+  committed `internal/cli/fpf.db` from that exact source snapshot. The shipped
+  bundle contains 8,087 source units at spec digest
+  `sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf`,
+  Base TypeEnv `typeenv:sha256:1b6b04c1…`, database digest
+  `sha256:620e73e4…`. Earlier entries in this release that name `8b727cb`
+  describe the intermediate candidate, not the shipped publication.
+  The practical-use catalog now has 16 cards: source-owned
+  `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` replace the retired
+  `SYSTEM-IN-CONTEXT` route. The source also adds A.1.SCR and A.1.STM and
+  removes A.6.8, then incorporates the current measurement-relation and
+  problem-relation corrections; no compatibility alias was invented for a
+  removed identifier.
+- **Compiled memory-basis edition V5.** Updated the source compiler for current
+  C.2.1 empirical-grounding semantics: `covered=C` and the maximal continuous
+  coverage interval are predicate and occurrence-identity content, not a third
+  participant `SlotSpec`. The aligned Base has content identity
+  `sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786`.
+  The existing Local-Practice 1.4.0 carrier remains byte-stable on its
+  historical Base. The separate non-binding 1.5.0 successor preserves its
+  declaration set while updating exact source and Base coordinates; it does
+  not change an active project-memory model or establish installed-runtime
+  readiness.
+
+### Added
+
+- **Candidate-first, recoverable FPF refresh.** Added one shared maintainer
+  command that resolves an exact upstream commit without changing the live
+  checkout, builds two isolated byte-identical candidate indexes, emits a
+  closed compatibility report, and applies only verified source/DB/lock bytes
+  through a resumable or restorable receipt. A generated integration lock now
+  binds the exact source documents, database, source-unit count, index schema,
+  compiled memory basis/compiler, and token-gate fixture identity. Query expectations
+  and the 30% token-reduction policy remain explicit test data rather than
+  generated semantic claims.
+- **Native TypeScript/JavaScript/Vue code graph with durable symbol anchors.**
+  Added a Go-native tree-sitter index for project-aware symbols, calls,
+  references, type relations, re-exports, aliases, callbacks, receiver flows,
+  and Vue template use. Incremental refresh publishes atomic SQLite epochs and
+  preserves the previous complete graph on degradation. Stable `SymbolAnchor`
+  identities now connect exact declarations to decisions, specs, drift checks,
+  `code_context`, node, explore, callers/callees, and typed impact traversal.
+  The frozen parity corpus resolves 31/31 required relations with no admitted
+  forbidden edges, compared with 24/31 and one false positive in the pinned
+  CodeGraph 1.3.1 reference; no Node, tsserver, or CodeGraph runtime dependency
+  was added to Haft.
+- **SoftwareSystemSpec and guarded development-spec migration.** Replaced the
+  overloaded EnablingSystemSpec onboarding spine with a SoftwareSystemSpec for
+  software role, responsibility allocation, functional/procedural behavior,
+  interfaces, constraints, and selected structure. The state-driven
+  `haft spec migrate` command now resolves its exact internal candidate,
+  previews legacy carrier mappings, preserves stable
+  section IDs for safe architecture migrations, and blocks apply while agent,
+  commission, runtime, evidence, or mixed effect-boundary policy remains
+  unresolved. Packet paths, hashes, targets, apply switches, and recovery
+  switches are not part of the human interface. Haft materializes
+  `.haft/specs/software-system.md` only when the admitted software scope marks
+  that carrier required; fresh no-basis init remains core-only until onboarding
+  establishes the project basis. Legacy carriers remain readable as
+  development-version migration input.
+- **Typed project-memory core and exact project memory model.** Added closed
+  algebraic types for entities, aliases, relational assertions, retractions,
+  provenance, context slices, by-reference and registered-codec by-value
+  fillers, plus project-local memory-model selection and compatibility checks.
+  Validation and admission are separate operations: validation is read-only;
+  admission is non-binding, idempotent, transactionally persisted, and cannot
+  mint schema, bind decisions, approve specifications, or create evidence
+  truth. SQLite migrations preserve replay, compare-and-swap head selection,
+  failure-before-commit behavior, ambiguous-commit recovery, and exact
+  project-basis diagnostics across process restarts.
+- **Task-level onboarding and entity establishment.** Added always-advertised
+  `haft_onboard` and `haft_entity` MCP capabilities so agents can inspect
+  setup, prepare review carriers, apply an explicitly reviewed project profile,
+  rely on the default memory installed by `haft init`, and establish the first
+  `U.EntityRef` without assembling internal schema or raw `MemoryChangeSet`
+  payloads. Entity-plus-alias admission is atomic; collisions,
+  stale bases, missing onboarding, restart requirements, replays, rejected
+  requests, and unknown commit outcomes are typed results rather than guessed
+  success.
+- **Scoped project-memory reads.** Added exact entity resolution, bounded
+  neighborhood projection, and scoped recall under `haft.memory.v1`.
+  Project-current and exact-project bases expose graph revision and exact model
+  identity; projection profiles and read budgets bound facets, excerpts,
+  relation paths, and provenance depth. Results distinguish complete, partial,
+  stale, unavailable, not-applicable, known-absent, retry-required, and
+  abstained posture without turning retrieval rank into identity selection,
+  recommendation, authority, or permission to persist.
+- **Source-native FPF Query.** Added concern retrieval, exact lookup, and exact
+  inspect modes over the versioned FPF source with source snapshot identity,
+  PatternID/name anchoring, full source ranges, provenance, replay checks, and
+  explicit abstention. The public query returns source candidates rather than a
+  hidden routing decision. A pinned token gate verifies bounded concern
+  retrieval against full-source context. Dense/hybrid superiority remains
+  deferred.
+- **Exact V4 compiled-basis replay archive.** Added the immutable 139,574-byte
+  artifact compiled from FPF `0990ff1` under compiler V4, keyed by content
+  identity `sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6`.
+  Exact lookup has no latest or fallback route.
+- **Exact V5 compiled-basis replay archive.** Added the immutable 133,848-byte
+  artifact compiled from FPF `2ada413` under compiler V5, keyed by content
+  identity `sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e`.
+  This preserves exact replay for the byte-stable Local-Practice 1.4.0 basis
+  after the current package default advances to the `8b727cb` successor.
+- **Typed-memory Local-Practice candidate 1.4.0.** Added a non-binding successor
+  carrying the 1.3.0 declaration set on the exact `2ada413` V5 Base. Its exact
+  bytes and compiled basis remain available for historical replay.
+- **Typed-memory Local-Practice candidate 1.5.0.** Added the current non-binding
+  successor carrying the same declaration set on the exact `8b727cb` V5 Base.
+  Package-default initialization and later preparation use its exact source
+  bytes. Neither carrier selects a project-memory model, provides P13/P14
+  evidence, or grants release authority merely by existing in the package.
+- **Versioned documentation source.** Added the `docs` submodule and aligned its
+  public guides with the Haft v9 CLI, skills, onboarding, and migration surface.
+- **Compact twelve-tool MCP contract.** The v9 server advertises exactly twelve
+  public capabilities: note, problem, solution, decision, refresh, query,
+  method, commission, spec section, onboarding, entity establishment, and raw
+  typed-memory validation/admission. Nested request variants are closed
+  schemas; Codex, Claude, Pi compatibility carriers, generated interface
+  fragments, and tests share the same catalog digest and authority wording.
+- **Zed init support.** Added `haft init --zed`, which merges a `Haft`
+  context server into global Zed settings at `~/.config/zed/settings.json`.
+  Because Zed settings are global but context servers may start outside the
+  workspace cwd, the entry writes `HAFT_PROJECT_ROOT` and
+  `HAFT_EXPECTED_PROJECT_ID` for the project where init was run. Zed's JSONC
+  settings files (comments and trailing commas) are accepted during merge.
+- **Google Antigravity init support.** Added `haft init --agy`, which merges
+  `mcpServers.haft` into Antigravity's shared MCP config at
+  `~/.gemini/config/mcp_config.json`. The generated entry starts
+  `haft serve --project-root <root> --expected-project-id <id>` so global
+  Antigravity MCP startup is bound to the initialized Haft project without
+  relying on cwd or env propagation. Antigravity skills are installed under
+  `~/.gemini/skills/`, or under workspace `.agents/skills/` when `--local` is
+  used, with MCP tool references adapted to Antigravity's bare `haft_*` names.
+- **Explicit project binding flags for `haft serve`.** Added
+  `--project-root` and `--expected-project-id` as host-level MCP startup inputs
+  that feed the existing ProjectBinding resolver and expected-project guard.
+- **TermMap category field with legacy domain compatibility.** Term-map
+  carriers now use canonical `category` instead of `domain`, while legacy
+  `domain` still parses as a compatibility alias and is mirrored in API output
+  until older carriers and consumers migrate. Conflicting `category`/`domain`
+  values are reported as explicit spec-check findings.
+- **MethodPack source-pattern bridge.** MethodPack definitions now carry
+  optional documentary `source_pattern_refs` such as `fpf:A.10`; these refs are
+  exposed through method pull/catalog surfaces and materialized carriers, but
+  cannot satisfy hard gates, evidence requirements, approval, or FPF/DPF source
+  authority. The `swe-core` manifest now matches all nine current builtin
+  method cards.
+- **PatternAtlas source-card substrate.** Added a deterministic structural
+  PatternAtlas over the FPF Markdown corpus. The index stores full pattern-card
+  ranges in `fpf.db`, including source commit, source line ranges, content
+  hashes, root node IDs, and lints. PatternAtlas is a retrieval/source-card
+  substrate only: it does not create evidence, approval, gate passage,
+  applicability, selection, or recommendation.
+- **Deterministic P13 source acceptance.** Added a separate consolidated
+  source-acceptance harness with frozen source identity, eleven suites,
+  sequential bounded race packages, lint/build/test/toolchain checks, no-clobber
+  evidence carriers, and an independent freshness verifier. Ordinary
+  `go test ./...` deliberately does not masquerade as a P13 run.
+- **Installed-candidate P14 matrix.** Added a digest-bound installed-runtime
+  harness spanning CLI, live MCP, host restart/resume, initialization,
+  project-path, code-graph, typed-memory, v8.1 upgrade/restore, and failure
+  recovery. The source contract contains 26 top-level scenarios;
+  `fresh_initialization` retains six nested host/init subcases. Prepared
+  requests and source tests are not recorded as live installed evidence.
+- **Goal-free exact-task restart support.** Added `haft-restart-checkpoint` and
+  `haft-restart-supervisor` binaries plus predecessor-checkpoint compatibility.
+  Restart requests bind an exact task, repository, candidate, intent digest,
+  process generation, and one durable resume lease; preflight fails before any
+  process signal, the default path is graceful-only, and host transition
+  remains a separate human gate.
+- **Release and v8.1 upgrade harness.** Added deterministic archive smoke
+  checks, installer exercise, checksum and tag-validation separation,
+  source/submodule identity guards, and backup → migrate → read/write/retry →
+  restore coverage from the actually published v8.1.0 predecessor. These
+  carriers validate a candidate; they do not publish a tag or GitHub Release.
+- **Spec fit and binding preflight records.** Problem framing, exploration,
+  comparison, and decision paths now carry advisory spec-fit/spec-binding
+  records when active SpecSections exist. `spec_fit_probe` surfaces
+  `relates_existing`, `spec_gap`, `conflict`, and
+  `outside_current_spec` posture, while decision preflight records selected
+  section refs, missing-section proposals, status debt, and blocked next
+  actions without becoming spec approval, evidence, or a gate decision.
+- **Spec trace and repair diagnostics.** Added read-only spec trace and
+  edition-repair diagnostics so agents can inspect section baseline
+  currentness, current governing authority, code bindings, missing links, and
+  SQL edition semantic-hash mismatches without treating those diagnostics as
+  approval, rebaseline, evidence, claim truth, or publication.
+- **Process telemetry baseline.** Added `haft process telemetry --json` as a
+  read-only MethodPack/MethodRun baseline surface. It reports project
+  MethodRun counts, long-open runs, waiver and missing-verification signals,
+  optional Codex/Claude session JSONL MethodPack invocation lanes/anomalies,
+  and broad `affected_files` decisions that lack explicit governance,
+  drift-watch, or binding targets. The report is observation-only and does not
+  create process authority, evidence truth, gate passage, or operator
+  authorization.
+- **Operator-burden telemetry proxies.** `haft process telemetry --json` now
+  includes bounded `operator_burden_proxies` derived only from MethodRun
+  structured data and structured `haft_method` session arguments: waiver item
+  counts, repeated-close repair rounds, carry-through item counts, and pending
+  carry-through counts. These are labeled as process proxies, not product-value
+  proof or a scalar maturity score.
+- **Process value-slice report.** Added `haft process value-slice --input FILE
+  --json` as a read-only equal-budget observation report for comparing
+  `haft_methodpack` and `baseline_agent` AI SWE task outcomes. The report
+  preserves the observed vector (unresolved accepted findings, review findings,
+  rework, operator corrections, status action lines, escaped drift, and
+  tokens/calls/wallclock), returns `continue` / `simplify` /
+  `pause_checkpoint` / `insufficient_data` policy labels, and explicitly does
+  not create product-value proof, evidence truth, approval, gate passage,
+  global truth, publication, or a scalar TPF maturity score.
+- **Process check results.** Added `haft process check --json --profile core`
+  with stable read-only `ProcessCheckResult` records for MethodRun hard-gate
+  closeouts, carry-through acceptance posture, generated contract/runtime
+  schema sync, binding-action fail-closed behavior, default status compactness,
+  interface discovery compactness, and MethodPack carrier currentness.
+  Results include explicit authority boundaries and actionable `next_action`
+  text without adding a default-status or MCP `tools/list` payload.
+- **Carry-through acceptance posture.** `haft_method` carry-through items now
+  carry normalized `acceptance_ref_kind` and `acceptance_ref_status` posture so
+  strings such as `operator:accepted` remain allowed but are labeled
+  `externally_asserted`, while local receipt-shaped refs can be labeled
+  `verified`. Missing or malformed acceptance refs fail validation unless the
+  carry-through disposition gate is explicitly waived.
+- **MethodPack carrier currentness check.** `haft process check --profile core`
+  now includes a read-only `methodpack_carrier_currentness` result that hashes
+  MethodPack carrier refs and reports missing or stale materialized method
+  carriers as degraded advisory findings. Carrier findings do not create method
+  authority, evidence truth, approval, or gate passage.
+- **MethodPack lifecycle catalog.** Added lifecycle/discovery metadata to
+  MethodPack definitions and exposed it through `haft method catalog --status
+  current --json`, `haft interface method.catalog --json`, and
+  `haft_method(action="catalog", method_status="current")`. The catalog is
+  read-only, keeps superseded/deprecated methods discoverable as history, and
+  does not create `ProcessPattern`, enforcement authority, approval, or gate
+  passage.
+- **Process authority index.** Added `haft process authority --json` as a
+  read-only derived `ProcessAuthorityEntry` view over current MethodPack
+  definitions and kernel interface contracts. The index exposes method steps,
+  hard gates, authority boundaries, and interface contracts for explicit
+  drill-down without becoming a source of truth, `ProcessPattern`,
+  enforcement authority, approval, evidence truth, or gate passage.
+- **MethodRun carry-through closeout.** Added optional `carry_through` items to
+  `haft_method` pull/close payloads so agents can carry explicit source review
+  items through a MethodRun and close them with `applied`, `rejected`,
+  `deferred`, or `superseded` dispositions. `applied` items must name target
+  refs, non-applied dispositions must give a reason, and the
+  `carry_through_disposition_recorded` gate can only be waived explicitly.
+- **Process reconciliation report.** Added `haft process reconcile --json` as a
+  read-only reconciliation report over derived process-authority entries. It
+  flags duplicate current authority, non-current history, and missing carrier
+  refs without creating a `ProcessPattern`, mutating MethodPack definitions, or
+  authorizing apply actions.
+- **MethodRun checkpoint pilot.** Added CLI-only `haft method checkpoint
+  open|close|trace` as append-only attention telemetry for long or high-risk
+  MethodRuns. Checkpoint close tokens expire, close is by token, trace reports
+  derived open/closed/expired state, and the records explicitly do not create
+  evidence truth, gate passage, correctness proof, or work authorization.
+- **Problem closure hygiene checks.** Added MethodPack/status hygiene for
+  active ProblemCards that already have supporting evidence but lack a graph
+  path through a SolutionPortfolio, DecisionRecord, or explicit waiver. Method
+  close can now require the problem closure path before work is claimed done.
+- **RETAINED COMPATIBILITY/MIGRATION — embed sidecar status command.** Added
+  `haft embed status` with `--json`
+  and optional `--footprint` as a read-only local-footprint diagnostic for
+  shared embedding sidecar processes, sockets, locks, cache dirs, stale or
+  process-only entries, and macOS memory footprint without starting the model.
+  This diagnostic is outside the v9 contract and P14 acceptance basis.
+- **Spec apply-change dry-run preview.** `haft spec apply-change --dry-run`
+  now runs the same typed carrier parser, SQL freshness/conflict guard, and
+  planned-edition projection as a real sync-back without writing the SQL
+  edition store, so scalar/relationship carrier edits can be reviewed before
+  becoming source-truth editions.
+- **Reconciliation review packet writer.** `haft decision reconcile
+  selection-draft --write-review-packet review.json` now writes the bounded
+  report-only draft with decision carrier hints, review commands, omitted
+  counts, mutation boundaries, and the non-approved embedded selection template,
+  so R9 scope-enrichment review can be persisted without creating approval or
+  apply authority.
+- **Product-value evidence packet.** `spec/target-system/PRODUCT_VALUE_EVIDENCE.md`
+  now records the 2026-06-24 bounded dogfood evidence packet for stale
+  reconciliation fail-closed behavior, default-surface bloat guards, and
+  baseline-audit cleanup, while explicitly preserving the no-score,
+  not-approval, not-gate, and not-equal-budget-proof boundaries.
+- **Spec SQL-edition export surface.** `haft spec export SECTION_ID` now
+  renders one current SQL SpecSection edition as a deterministic Markdown
+  carrier projection, with `--json` for exact hashes/audit metadata and
+  `--markdown` for carrier bytes, while preserving the boundary that export is
+  not approval, rebaseline, evidence, or prose authority.
+- **Spec sync-back field registry guard.** SpecSection carrier change
+  classification now has regression coverage proving every exported
+  `SpecSection` JSON field is explicitly classified as scalar, relationship,
+  carrier-only, or high-risk, so future canonical fields cannot silently bypass
+  SQL sync-back posture.
+- **Spec apply-change text audit output.** Human-readable
+  `haft spec apply-change` now prints the source episteme, publication
+  projection, carrier bytes, imported semantic mutation, and carrier-only
+  disposition, so SQL truth versus carrier/projection boundaries are visible
+  without switching to JSON.
+- **Overseer after-action authority guard.** Maintenance run regression
+  coverage now asserts after-action reports remain report-only and do not carry
+  reconciliation apply or binding lifecycle mutation cues while listing
+  auto-closed, evidence-checked, and remaining operator-judgment items.
+- **Generated contract no-default-bloat guard.** Compact interface, status, and
+  code-context regression helpers now also reject generated contract virtual
+  carrier paths, keeping generated host/schema surface inventory behind
+  explicit carrier/contract drill-downs.
+- **Spec PublicationUnit round-trip guard.** SpecSection publication regression
+  coverage now proves carrier path changes do not change the semantic source
+  edition or publication hash, while semantic edits do, keeping SQL truth,
+  publication projection, and carrier metadata separated.
+- **Spec sync-back stale-carrier conflict guard.** `haft spec apply-change`
+  now fails closed when an existing current SQL SpecSection edition has a
+  different semantic hash than the reviewed `--before` carrier, returning a
+  conflict payload and preserving SQL truth instead of overwriting a newer
+  edition.
+- **Decision reconciliation text audit cues.** Human-readable
+  `haft decision reconcile selection-review` output now prints the read-only
+  mutation boundary, and `haft decision reconcile apply` summaries print
+  lineage relation labels plus claim lifecycle updates, so operator review can
+  see the authority and after-action effects without switching to JSON.
+- **Spec sync-back fail-closed preservation guard.** `haft spec apply-change`
+  regression coverage now proves an unknown/high-risk carrier edit cannot
+  overwrite an existing current SQL SpecSection edition.
+- **Generated contract carrier semio guard.** `haft carrier check` now includes
+  virtual surfaces for `contract_generation` preview and schema fragments, so
+  generated host/plugin/Pi carrier text is authority-boundary checked before
+  materialization.
+- **Pi runtime-carrier materialization guard.** `haft init --pi` regression
+  coverage now pins the embedded package boundary: runtime extension, prompt,
+  skill, README, and package metadata are materialized, while tests, scripts,
+  lockfile, tsconfig, and `node_modules` stay out.
+- **Contract-generation schema fragments.** `haft interface contract-generation`
+  and `haft_query(action="contract_generation")` now emit read-only generated
+  MCP action schema fragments with schema digests, transport required fields,
+  action-specific handler-validated fields, and the explicit boundary that
+  schema visibility is not operator authorization or host materialization.
+- **Generated schema fragment parity guard.** Generated MCP schema fragments
+  are now tested against `tools/list` action enums, required fields, and
+  top-level properties so `contract_generation` cannot drift into a fantasy
+  schema surface.
+- **Generated schema property fidelity.** `contract_generation`
+  `generated_schema_fragments` now copy the actual `tools/list` property schema
+  subsets for generated per-action fragments instead of placeholder field
+  descriptions.
+- **Pi generated schema mirror parity.** The generated MCP schema fragments are
+  now compared against the materialized Pi `haft_query` TypeBox schema, so Pi
+  action, field, and required-field drift is caught before release.
+- **Contract-audit required-field parity.** `haft interface contract-audit` and
+  `haft_query(action="contract_audit")` now report MCP `required` coverage for
+  transport-level required fields, including missing required schema fields and
+  action-specific required fields that remain validated by handlers.
+- **Contract-audit default-bloat guards.** Default status, default
+  `code_context`, and MCP `tools/list` tests now reject inline
+  contract-audit required-coverage fragments, keeping required-field parity in
+  explicit drill-downs only.
+- **Pi package contract-carrier guard.** The Pi README/package metadata now
+  point maintainers at the read-only `contract_generation` fragments before
+  editing Pi tool, skill, or prompt wording, with regression coverage preserving
+  the boundary that generated text and schema visibility are not approval
+  receipts.
+- **Pi h-status generated-query carrier guard.** The Pi `h-status` skill now
+  points at `contract_generation`, DriftEvent, decision reconciliation, and
+  governing-set drill-downs, with regression coverage tied to the same
+  generated fragments as the bundled skill carriers.
+- **Pi generated-query contract sync guard.** Pi tool metadata now carries
+  compact generated-fragment hints for contract generation, DriftEvents,
+  decision reconciliation, and governing-set drill-downs, with a regression test
+  tying those hints back to the kernel contract-generation manifest.
+- **Bundled skill generated-query contract sync guard.** Embedded `h-status`,
+  `h-verify`, and `h-reason` now carry compact generated-fragment drill-down
+  hints for contract generation, DriftEvents, decision reconciliation, and
+  governing-set queries, with regression coverage tied to the kernel manifest.
+- **Decision reconciliation selection-draft cues.**
+  `haft decision reconcile selection-draft` now emits report-only candidate
+  posture, confidence, suggested review action, and blocking questions so
+  agents can drop ambiguous scope-enrichment candidates instead of guessing
+  operator-approved selections; compact output includes posture/confidence.
+- **Contract-generation preview fragments.** `haft interface contract-generation`
+  now emits read-only generated preview fragments from the kernel interface
+  catalog for host/skill/plugin/Pi synchronization, while keeping compact
+  output count-only and preserving the authority boundary that generated text
+  and schema visibility are not operator approval.
+- **Pi generated-contract authority guards.** The bundled Pi tool metadata and
+  manual-gate prompts now carry the generated-contract authority boundary for
+  read-only and binding surfaces, with Go and Pi tests proving the wording
+  stays aligned with the `contract_generation` manifest instead of treating
+  schema visibility as operator approval.
+- **Bundled skill/template authority guards.** Embedded `h-decide`,
+  `h-commission`, `h-reason`, the current `AGENTS.md`/`CLAUDE.md`, and the
+  `haft init` project template now carry the same generated-contract binding
+  boundary, with a regression test tying the carrier wording back to the
+  kernel manifest.
+- **Contract-generation manifest evidence.** The read-only
+  `contract_generation` manifest now hashes the full kernel interface catalog
+  source and always reports validation refs, so an empty generator-target queue
+  is an evidenced state instead of a bare `targets: []` projection.
+- **Spec-use current-authority gate input.** `haft spec use` and
+  `haft_query(action="spec_use")` now include a read-only
+  `current_authority` frontier posture for the SpecSection target, and
+  OperationalGate evaluation fails closed on current-authority conflicts or
+  overlap that requires operator review.
+- **Spec-section `section_id` drift target evaluators.** Semantic binding
+  targets now recognize `section_id` in YAML and JSON carriers, so
+  spec-section targets can bind to bounded target ranges instead of falling
+  back to file-level drift when carriers use `section_id` rather than `id`.
+- **Measurement evidence formality posture.** `Measure` now applies the current
+  F0-F9 formality scale metadata to measurement evidence before claim
+  recomputation and persistence, avoiding bare numeric F2 evidence in exact and
+  audit paths.
+- **WLNK formality projection diagnostics.** Assurance/WLNK summaries no longer
+  promote evidence items with missing formality scale metadata to the current
+  F0-F9 scale; unversioned evidence is reported with an explicit
+  `unversioned-formality` scale and source-scale gap bridge loss.
+- **Value-space evidence-missing summary.** `haft value space` compact output
+  now shows the declared measurement window, method ref, distinct evidence-ref
+  count, and the number of value characteristics still blocked by missing
+  evidence refs, while preserving the no-single-score authority boundary.
+- **Bounded product-value evidence packet.** Target-system docs now include a
+  current Haft product-value evidence packet for the semantic-spine rewrite,
+  with explicit evidence refs, missing-evidence boundaries, simplify/kill
+  criteria, and unmeasured gaps; the evidence ontology and term map now name
+  current F0-F9 formality with legacy F0-F3 bridge/loss wording.
+- **Product-value stale-footer evidence refresh.** The semantic-spine
+  product-value evidence
+  packet now includes the read-only query stale-footer fallback guard as
+  compact-status/noise-control evidence.
+- **Equal-budget product-value comparison protocol.** The product-value
+  evidence packet now defines a parity protocol for comparing Haft against an
+  AI agent using ADRs plus tests, while explicitly marking the comparison as
+  designed but not yet run and preserving the no-single-score policy.
+- **Runtime identity and stale-footer hygiene.** Dev builds now surface VCS
+  commit/source metadata in `haft version`, `scripts/build.sh --install`
+  stamps commit/build date via ldflags, and read-only MCP query footers now use
+  the same typed stale snapshot as `haft_query(action="status")` instead of
+  raw terminal-decision stale counts.
+- **Evidence/WLNK authority boundary.** `haft_decision(action="evidence")` and
+  measurement responses now state that evidence and WLNK/formality display are
+  not approval, not gate passage, and not global truth, and route stronger
+  attempted-use reliance through EvidencePath.
+- **EvidencePath claim/publication boundary.** EvidencePath authority
+  boundaries now explicitly state that evidence/formality diagnostics do not
+  create claim truth or publication, in addition to not creating approval,
+  gate passage, or global truth.
+- **MCP tools/list output-shape guard.** The MCP `tools/list` context-budget
+  tests now reject rich interface output fragments such as EvidencePath
+  reliance-disposition and authority-boundary values, keeping exact/audit
+  examples behind explicit interface drill-downs.
+- **Default status/code-context output-shape guards.** Compact status and
+  default `code_context` tests now reject rich interface output fragments,
+  preserving drill-down-only exact/audit examples outside normal cockpit and
+  agent-context payloads.
+- **Compact interface catalog output-shape guard.** The default `haft interface`
+  catalog test now rejects generated-manifest and rich output-shape fragments,
+  keeping top-level CLI discovery as a capability list plus JSON drill-down
+  pointer.
+- **Binding-denial receipt candidates.** `operator_confirmation_required`
+  payloads now include explicit authorization receipt candidates: manual CLI as
+  the default accepted binding path and host receipts only when a registered
+  kernel verifier can confirm principal, session, action, payload hash, expiry,
+  and source.
+- **Read-only reconciliation selection review.** `haft decision reconcile
+  selection-review SELECTION.json` now validates a proposed or
+  operator-approved reconciliation selection against the same core rules as
+  `apply`, reports `apply_ready`, item-level errors, and the apply command only
+  when authority is already `operator_approved_reconciliation_selection`,
+  without creating approval or mutating DecisionRecords.
+- **Current-plan reconciliation selection validation.** Reconciliation
+  selection review and apply now reject stale or fictional `reviewed_group_id`
+  values and require each selected decision to belong to the reviewed current
+  `DecisionReconciliationPlan` group before any mutation can run.
+- **Code-context invariant authority precision.** File-level
+  `haft_query(action="code_context")` and `lane="invariants"` now label
+  invariants as file-level relevance candidates, cap the default candidate
+  list, and point agents to symbol narrowing or `full=true` audit instead of
+  presenting historical file/module fanout as local must-hold constraints.
+- **Code-context high-fanout invariant summary.** `lane="invariants"` now
+  summarizes very large invariant fanouts by decision/source group by default,
+  avoiding hundreds of invariant sentences in normal agent context while
+  preserving the complete invariant audit list behind `full=true`.
+- **Compact drift-events CLI summary.** `haft drift events` now caps the
+  default text event list and points to `--json` for the full audit payload,
+  preserving DriftEvent grouping without dumping every per-event tail into
+  normal operator context.
+- **Compact MCP drift-events drill-down.** `haft_query(action="drift_events")`
+  now returns a compact JSON report by default: complete summary counts, capped
+  event rows, omitted counters, and a `full=true` audit command. Passing
+  `full=true` preserves the complete `source_items` and compatibility report.
+- **Compact MCP reconciliation drill-downs.**
+  `haft_query(action="decision_reconcile")` and
+  `haft_query(action="governing_set")` now return compact JSON projections by
+  default, preserving summary counts, top rows, omission counters, and
+  `full=true` audit commands for complete group/set payloads.
+- **Governing-set answer-path parity guard.** The MCP
+  `haft_query(action="governing_set")` tests now prove that emitted
+  `answer_paths[].mcp_call` / `source_refs` drill-downs filter the current
+  governing frontier to the exact advertised `target_ref`.
+- **Pi extension carrier wording guard.** `haft carrier check` now scans the
+  Pi extension runtime/tool source files in addition to package metadata,
+  prompts, skills, docs, generated interface fragments, and MCP tool
+  descriptions, so host package tool wording cannot imply binding authority
+  outside the checked carrier set.
+- **Pi query schema mirror refresh.** The Pi bundle `haft_query` and
+  `haft_refresh` tool schemas now mirror the current read-only drill-down
+  actions, maintenance review/drain actions, and common optional fields used by
+  spec-use, drift, reconciliation, evidence-path, blocked-use, and value-space
+  surfaces.
+- **Pi schema drift guard.** The MCP `ToolCatalog()` tests now compare the
+  kernel `haft_query` and `haft_refresh` action enums against the Pi bundle
+  TypeScript schema mirror, so new kernel actions cannot silently leave the Pi
+  host package stale.
+- **Overseer judgment reconciliation cues.** `haft overseer judgment` and
+  `haft overseer judgment --json` now include read-only reconciliation proposal
+  cues from the existing high-fanout/fallback review pipeline, with proposal
+  counts, kind counts, inspect-only commands, and an explicit
+  `read_only_reconciliation_proposal_not_binding_authority` boundary.
+- **SQL-first spec structural checks.** `haft spec check`, `haft check`, and
+  `haft spec coverage` now derive structural SpecSection checks from current
+  SQL SpecSection editions when present, while preserving typed carrier
+  term-map entries as support data.
+- **SQL-first spec read-path guard.** CLI runtime spec surfaces now have a
+  regression test that rejects direct carrier parsing unless the file is the
+  SQL-first compatibility helper, the explicit `spec sync` carrier import
+  path, or the read-only `spec classify-change` before/after review path.
+- **SQL-first WorkCommission spec snapshots.** `create_from_decision` now
+  resolves `spec_section_refs` and revision hashes through current SQL
+  SpecSection editions when a `project_root` is supplied, preserving carrier
+  fallback for unsynced projects.
+- **Assurance calculator F0-F9 formality preservation.** The legacy
+  `assurance` WLNK calculator now preserves `formality_level` on the current
+  FPF F0-F9 ordinal instead of folding F4-F9 into old F0-F3 buckets, and
+  reports unversioned scale/bridge diagnostics for SQL evidence rows that lack
+  an explicit `formality_scale_id`.
+- **Host receipt verifier boundary.** Authorization receipt evaluation now has
+  an explicit source-keyed host verifier registry: structurally complete host
+  receipts still fail closed unless a kernel verifier is registered, and tests
+  cover verifier success, denial, and malformed verifier results.
+- **Baseline audit typed-legacy precision.** `haft baseline audit` now treats
+  explicit `UnknownLegacyBaseline` compatibility model references as typed
+  baseline model surface and classifies SQL onboarding missing-baseline test
+  wording as SpecSection approval-baseline diagnostics, reducing false
+  `legacy_ambiguous_baseline` noise.
+- **SQL-first SpecSection baseline mutations.** Operator-invoked
+  `haft_spec_section` / `haft spec onboard` approve/rebaseline/reopen paths now
+  baseline current SQL SpecSection editions when present, with carrier fallback
+  preserved for unsynced projects.
+- **SQL-first spec health findings.** `haft check` / `haft_query(action="check")`
+  now compute SpecSection drift, missing-baseline, and staleness health against
+  current SQL SpecSection editions, matching the SQL-first structural
+  SpecSection check path.
+- **SQL-first spec onboarding reads.** Read-only `haft spec onboard` now uses
+  current SQL SpecSection editions before Markdown carriers while keeping
+  missing-baseline findings as the human approval gate.
+- **SQL-first spec reads preserve term-map carriers.** SQL-backed SpecSection
+  reads now keep typed carrier term-map entries as support data, and
+  `haft_query(action="resolve_term")` resolves section refs from SQL editions
+  without dropping term-map definitions.
+- **SQL-first SpecificationUseRecord reads.** `haft spec use` and
+  `haft_query(action="spec_use")` now read current SQL SpecSection editions
+  before Markdown carriers while preserving baseline-currentness and
+  GateDecision authority boundaries.
+- **SQL-first SpecSection next-step reads.** `haft_spec_section(action="next_step")`
+  now uses current SQL SpecSection editions before Markdown carriers, matching
+  the existing CLI lifecycle projection while preserving missing-baseline
+  blocking semantics.
+- **Contract-generation code-context budget guard.** Default
+  `haft_query(action="code_context")` regression tests now reject hidden
+  contract-generation manifest fragments so generated-schema drill-downs cannot
+  bloat normal code-context traces.
+- **Governing-set answer-path precision.** `haft decision governing-set --json`
+  now classifies exact answer paths for `spec_section`, API-contract, symbol,
+  fallback, file-fallback, and unscoped targets, with explicit read-only
+  drill-down hints for stronger-use review.
+- **Baseline audit tail-surface classification.** `haft baseline audit` now
+  classifies agent lifecycle text, decision/commission skill references,
+  parity action lists, legacy-binding tests, SpecSection projection/staleness
+  text, and remaining test fixture examples without hiding source-level
+  `UnknownLegacyBaseline` diagnostics.
+- **Baseline audit code-tail classification.** `haft baseline audit` now
+  classifies binding-surface inventories, spec-review/apply/sync
+  no-authority text, reconciliation metrics, comparison/value parity wording,
+  overseer maintenance guardrails, symbol-drift context, and ordinary
+  score/graph baseline wording while preserving explicit legacy diagnostics.
+- **Baseline audit carrier/protocol wording classification.** `haft baseline
+  audit` now classifies current README, AGENTS/CLAUDE guardrails, Pi
+  h-verify prompts, MCP protocol docs, and v8 migration wording as existing
+  carrier, lifecycle, verified-state, or DecisionRecord API surfaces instead of
+  legacy ambiguous baseline debt.
+- **Baseline audit artifact verification/maintenance classification.** `haft
+  baseline audit` now classifies artifact verification tests and maintenance
+  plan baseline wording as verified-state or autonomous-maintenance surfaces
+  without hiding explicit `BaselineKindUnknownLegacy` diagnostics.
+- **Baseline audit workflow-skill routing classification.** `haft baseline
+  audit` now classifies `h-onboard`, `h-reason`, and `h-spec` baseline
+  routing text as workflow lifecycle guidance instead of legacy ambiguous debt.
+- **Baseline audit drift-repair routing classification.** `haft baseline audit`
+  now classifies drift-event repair, maintenance-review, reconciliation, and
+  drift-route rebaseline/no-mutation wording as lifecycle or maintenance
+  routing terminology instead of unresolved baseline debt.
+- **Baseline audit benchmark/presentation test classification.** `haft
+  baseline audit` now classifies retrieval/projection benchmark test wording
+  as comparison baseline terminology and presentation-output assertions as
+  presentation surface terminology.
+- **Baseline audit MCP/tool API classification.** `haft baseline audit` now
+  classifies MCP server schema text and haft tool baseline-output tests as
+  DecisionRecord baseline API surface terminology.
+- **Baseline audit overseer/MethodPack classification.** `haft baseline audit`
+  now classifies overseer maintenance rebaseline wording as autonomous
+  maintenance terminology and built-in MethodPack baseline evidence wording as
+  a separate method-pack surface.
+- **Baseline audit symbol-drift classification.** `haft baseline audit` now
+  classifies `internal/codebase/symhash.go` baseline/current symbol snapshot
+  wording as verified-state drift comparison terminology.
+- **Baseline audit artifact drift classification.** `haft baseline audit` now
+  classifies DecisionRecord drift/query/refresh baseline wording as
+  verified-state snapshot terminology without hiding explicit
+  `BaselineKindUnknownLegacy` debt.
+- **Baseline audit SpecSection lifecycle/schema classification.** `haft
+  baseline audit` now classifies remaining SpecSection lifecycle, sync,
+  missing-baseline check, and schema wording under current SpecSection
+  lifecycle/approval surfaces while preserving explicit unknown-legacy findings.
+- **Baseline audit lockfile exclusion.** `haft baseline audit` now skips
+  generated dependency lockfiles such as `package-lock.json` so package names
+  like `baseline-browser-mapping` do not appear as semantic baseline debt.
+- **Baseline audit project-spec carrier classification.** `haft baseline audit`
+  now separates project specification carriers such as `.haft/specs/*` and
+  `spec/target-system/*` from upstream source-spec references and legacy
+  ambiguous baseline debt.
+- **Baseline audit presentation helper classification.** `haft baseline audit`
+  now classifies `noBaselineCount` and safe rebaseline display wording as
+  presentation-surface terminology rather than unresolved baseline debt.
+- **Baseline audit skill/guardrail surface classification.** `haft baseline
+  audit` now classifies `h-spec`, `h-verify`, and agent guardrail baseline
+  wording as current lifecycle/verification surfaces instead of legacy
+  ambiguous baseline debt.
+- **Baseline audit interface-contract classification.** `haft baseline audit`
+  now classifies baseline wording inside the interface contract catalog as
+  contract-surface terminology rather than unresolved baseline semantics.
+- **Baseline audit integration-test fixture classification.** `haft baseline
+  audit` now recognizes baseline helper wording in CLI integration and golden
+  tests as test-fixture surface without hiding explicit unknown-legacy baseline
+  diagnostics.
+- **Baseline audit SpecSection drift classification.** `haft baseline audit`
+  now classifies SpecSection missing-baseline and drift-finding wording under
+  SpecSection approval baseline terminology.
+- **Baseline audit maintenance execution classification.** `haft baseline audit`
+  now classifies autonomous maintenance executor, undo, and rebaseline test
+  wording as autonomous-maintenance baseline terminology.
+- **Baseline audit verified-state decision vocabulary.** `haft baseline audit`
+  now recognizes remaining DecisionRecord drift, symbol-baseline, CL3
+  verification-pass, and baseline-test wording as verified-state snapshot
+  terminology.
+- **Baseline audit parity BaselineSet classification.** `haft baseline audit`
+  now recognizes camel-case `BaselineSet` and parity-plan baseline wording as
+  comparison/benchmark baseline terminology.
+- **Baseline audit SpecState freshness classification.** `haft baseline audit`
+  now classifies SpecSection state/freshness enforcement wording under
+  SpecSection approval baseline terminology instead of legacy ambiguous debt.
+- **Baseline audit presentation-surface classification.** `haft baseline audit`
+  now classifies baseline/drift response formatting vocabulary separately from
+  legacy ambiguous baseline debt.
+- **Baseline audit decision API classification.** `haft baseline audit` now
+  classifies `haft_decision(baseline)`, host-tool schema, and DecisionRecord
+  baseline handler/test wording separately from legacy ambiguous baseline debt.
+- **Baseline audit spec lifecycle CLI classification.** `haft baseline audit`
+  now classifies spec approval/rebaseline CLI and SpecSection handler test
+  wording as baseline lifecycle-authority terminology.
+- **Baseline audit legacy-binding scope vocabulary.** `haft baseline audit` now
+  classifies old-decision symbol-baseline enrichment and binding-target
+  rebaseline terminology separately from legacy ambiguous baseline debt.
+- **Baseline audit SpecUse currentness vocabulary.** `haft baseline audit` now
+  classifies SpecificationUse baseline currentness and admission terminology
+  separately from legacy ambiguous baseline debt.
+- **Baseline audit autonomous-maintenance vocabulary.** `haft baseline audit`
+  now classifies auto-baseline, auto-rebaseline, maintenance undo, and baseline
+  snapshot/restore terminology separately from legacy ambiguous baseline debt.
+- **Baseline audit retrieval benchmark vocabulary.** `haft baseline audit` now
+  recognizes deterministic retrieval/golden baseline terms such as
+  `baselineResults`, `baselineHits`, `topBaseline`, and baseline search errors
+  as comparison/benchmark terminology.
+- **Baseline audit SpecSection lifecycle handler surface.** `haft baseline
+  audit` now classifies remaining `internal/cli/serve_spec_section.go`
+  lifecycle helper vocabulary such as `baselineMutation` and `baselineContext`
+  as lifecycle-authority surface rather than legacy ambiguous baseline debt.
+- **Baseline audit decision baseline vocabulary.** `haft baseline audit` now
+  recognizes decision baseline API and drift materiality terms such as
+  `BaselineProfile`, `DriftNoBaseline`, `noBaselineMateriality`,
+  `missingFileMateriality`, baseline operation log keys, and binding-target
+  rebaseline prompts as verified-state snapshot terminology.
+- **Baseline audit SpecSection store surface classification.** `haft baseline
+  audit` now treats `internal/project/specflow/baseline.go` implementation
+  vocabulary as SpecSection approval baseline store terminology after explicit
+  unknown-legacy and typed-model checks have had a chance to classify it.
+- **Baseline audit test-fixture surface classification.** `haft baseline audit`
+  now classifies explicit `_test.go` helper and fixture vocabulary such as
+  `newBaselineTestProject` separately from product terminology debt, while
+  still scanning test files.
+- **Baseline audit SpecSection approval vocabulary.** `haft baseline audit` now
+  recognizes SpecSection lifecycle terms such as `spec_lifecycle_approval_baseline`,
+  `PutSpecSectionApproval`, `projectBaseline`, `DeriveStateWithBaselines`, and
+  baseline recorded/current/overwritten messages as SpecSection approval
+  baseline terminology.
+- **Baseline audit verified-state vocabulary.** `haft baseline audit` now
+  recognizes decision drift/file-hash baseline vocabulary such as
+  `BaselineInput`, `HasBaseline`, `DriftNoBaseline`, stored baseline hashes,
+  and symbol-level baselines as verified-state snapshot terminology.
+- **Baseline audit self-surface classification.** `haft baseline audit` now
+  classifies the audit command implementation and its tests as a dedicated
+  audit-tool surface, so classifier vocabulary does not report itself as
+  legacy ambiguous terminology debt.
+- **Baseline audit release-notes carrier classification.** `haft baseline audit`
+  now classifies `CHANGELOG.md` baseline mentions as release-notes provenance,
+  so release history remains audit-visible without dominating current legacy
+  terminology diagnostics.
+- **Baseline audit lifecycle-authority classification.** `haft baseline audit`
+  now separates approve/rebaseline and human-gate wording from legacy ambiguous
+  baseline terminology, keeping authority-boundary text visible without
+  treating it as an untyped baseline object.
+- **Baseline audit typed-model classification.** `haft baseline audit` now
+  classifies explicit `BaselineKind`, `SectionBaseline`, `BaselineStore`, and
+  baseline-shaped compatibility/projection terminology as typed baseline model
+  surface rather than legacy-ambiguous debt, while keeping actual unknown legacy
+  posture visible as legacy.
+- **Baseline audit source-spec classification.** `haft baseline audit` now
+  classifies upstream FPF source specification carriers under
+  `data/FPF/` separately from current legacy-ambiguous baseline terminology
+  debt, preserving source-spec audit visibility without making imported
+  vocabulary look like live Haft rewrite work.
+- **Baseline audit support/archive carrier classification.** `haft baseline
+  audit` now classifies `.haft` MethodPack, night-run, plan, and Pi bundle
+  carriers separately from current legacy-ambiguous baseline terminology debt,
+  keeping those carriers visible without letting archived/support text dominate
+  diagnostics.
+- **Baseline audit historical governance classification.** `haft baseline audit`
+  now classifies baseline mentions inside historical `.haft` governance carriers
+  separately from current `legacy_ambiguous` terminology debt, and skips nested
+  `node_modules` dependency noise regardless of directory depth.
+- **Batchable reconciliation selection drafts.** `haft decision reconcile
+  selection-draft` now supports read-only `--limit`, `--group-id`, and
+  `--decision-ref` filters so old-decision scope-enrichment approval packets
+  can be kept small and reviewable without becoming operator approval or
+  applying reconciliation mutations.
+- **Legacy file-scope drift binding fallback.** DriftEvent reports now classify
+  legacy whole-file decision bindings as explicit `whole_file_fallback`
+  `binding_target_missing` events that require scope enrichment, instead of
+  reporting them as undifferentiated `unknown_high_risk`; material drift stays
+  visible and routes to `haft decision reconcile --json`.
+- **Spec carrier-change field registry.** SpecSection carrier-change
+  classification now uses a single typed registry for high-risk, semantic
+  scalar, relationship, and carrier-only fields. This preserves the current
+  read-only classifier behavior while making future canonical fields and
+  relations extend through one mechanism instead of scattered one-off checks.
+- **Contract fragment posture in interface audit.** `haft interface
+  contract-audit` and `haft_query(action="contract_audit")` now classify every
+  interface fragment as validated, generated-target, legacy/manual, or
+  unvalidated, with summary counts kept in the explicit drill-down report. This
+  makes generated/validated/legacy contract posture visible without generating
+  schemas or expanding default status payloads.
+- **EvidencePath stronger-use formality enforcement.** `haft evidence path` and
+  `haft_query(action="evidence_path")` now expose explicit
+  `formality_diagnostics` for current F0-F9, legacy lossy, and unversioned
+  formality readings. Stronger uses that require current F0-F9 formality now
+  block unversioned evidence instead of silently treating missing scale metadata
+  as current.
+- **Engineering value simplify/kill criteria.** `haft value space` and
+  `haft_query(action="value_space")` now include read-only
+  `simplify_kill_criteria` review triggers for scope violations, missing
+  parity comparisons, evidence gaps, false blocking, ceremony without measured
+  value movement, and scalarized proxy-value claims. The criteria remain
+  explicit review input only: they are not automatic gates, evidence, approval,
+  `GateDecision`, or product-value proof.
+- **Contract-generation no-default-bloat guards.** Added regressions proving
+  the read-only contract generation manifest remains drill-down only and is not
+  inlined into default `haft_query(status)` or MCP `tools/list` payloads.
+- **Pi package metadata carrier guard.** `haft carrier check` now includes
+  `packages/haft-pi/package.json` in the semio scan set while still excluding
+  package-lock dependency noise, so plugin/Pi metadata cannot imply operator
+  authorization or evidence authority unchecked.
+- **Baseline audit legacy diagnostics.** `haft baseline audit` now emits
+  explicit read-only diagnostics for legacy ambiguous baseline terminology,
+  including affected file count, examples, and next-action guidance to classify
+  wording without mutating baseline state.
+- **Decision reconciliation preview cues.** Compact
+  `haft decision reconcile` text now surfaces read-only preview cues for top
+  groups, including lineage relation count, downstream dependents, downstream
+  migration requirement, successor workflow posture, and claim lifecycle count,
+  while keeping the full reconciliation record behind `--json`.
+- **SQL-first spec read compatibility.** `haft spec review` and
+  `haft spec status` now read current `spec_section_editions` from the SQL
+  project graph before falling back to markdown carriers, while preserving the
+  existing read-only review/lifecycle projections and failing closed when a
+  present SQL edition cannot be projected back into the canonical spec set.
+- **Host authorization receipt fail-closed shape.** Authority receipt
+  evaluation now validates future host receipts for explicit source,
+  principal, session, action, payload hash, and expiry, but still fails closed
+  unless a real kernel verifier exists; model-supplied arguments remain
+  non-receipts.
+- **Generated MCP tool carrier guard.** `haft carrier check` now treats MCP
+  `tools/list` tool descriptions and input-schema descriptions as generated
+  virtual carrier surfaces, so host-facing schema text is checked for forbidden
+  operator-authorization wording before materialization.
+- **Decision reconciliation selection draft.** Added read-only
+  `haft decision reconcile selection-draft` / `--json` to generate
+  operator-reviewable `enrich_scope` candidate skeletons from reconciliation
+  scope-repair groups without creating an operator-approved apply document or
+  mutating decision authority.
+- **Baseline terminology audit.** Added read-only `haft baseline audit`
+  / `--json` to classify repository `baseline` wording across code, tests,
+  docs, skills, templates, and `.haft` carriers as spec approval, pre-work
+  reference, verified-state snapshot, comparison, ordinary-language, or legacy
+  ambiguous usage while skipping generated dependency noise.
+- **Baseline split rewrite regression.** Added compatibility coverage proving
+  pre-work reference and verified-state snapshots cannot rewrite an existing
+  `SpecSectionApprovalBaseline` row for the same spec section.
+- **Baseline split measurement regression.** Added coverage proving impact
+  measurement records evidence without rewriting the decision drift baseline
+  hashes, preserving verified-state snapshots as drift references rather than
+  turning measurement into an implicit rebaseline.
+- **Decision drift baseline profiles.** Drift reports and `haft check --json`
+  now label stored decision file-hash baselines as
+  `verified_state_snapshot` with an authority boundary, making the legacy
+  `affected_files.hash` carrier explicit as a drift-detection snapshot rather
+  than spec approval or a pre-work reference baseline.
+- **EvidencePath current-formality guard.** `haft evidence path` and
+  `haft_query(action="evidence_path")` now accept an explicit
+  current-formality requirement for stronger attempted uses. When enabled,
+  legacy or undeclared/lossy formality blocks bounded reliance instead of being
+  treated as current F0-F9 evidence; the record remains read-only and still
+  cannot create approval, gate passage, or global truth.
+- **Audit projection formality scale labels.** Audit/evidence projections now
+  print `F_eff` with the associated formality scale id and bridge-loss posture,
+  so projection consumers no longer see a bare F-level without knowing whether
+  it came from current F0-F9 or a legacy/lossy reading.
+- **Assurance summary formality scale labels.** WLNK assurance summaries now
+  retain the existing `F_eff` display while adding the scale id and bridge-loss
+  posture for the evidence item that determines the weakest formality reading.
+  Legacy F0-F3 evidence remains readable as lossy legacy formality rather than
+  being silently presented as current F0-F9 authority.
+- **EvidencePath text/discovery formality labeling.** The read-only
+  `haft evidence path`
+  text summary and `query.evidence_path` discovery contract now name evidence
+  formality scale, bridge, and loss posture explicitly. Legacy or undeclared
+  F-levels stay diagnostic-only and still cannot create approval, gate passage,
+  or global truth.
+- **DriftEvent resolution target binding.** `haft drift events resolve` now
+  stores the current event target identity (`changed_target_ref`, `target_kind`,
+  `target_status`, and `root_cause`) in the non-binding resolution ledger.
+  Applying the ledger keeps old records visible for audit but no longer lets a
+  resolved/waived overlay close a different target after retargeting, rename,
+  or root-cause changes.
+- **DriftEvent source claim/evidence refs.** Drift reports now carry
+  `claim_refs` and `evidence_refs` on `source_items` when a DecisionClaim
+  explicitly names the changed governance target and evidence is bound to that
+  exact claim. This is explicit-only metadata: prose is not mined, superseded or
+  deprecated claims are ignored, and drift verdicts do not change.
+- **YAML semantic target evaluator.** Explicit spec-section, API-contract, and
+  invariant binding targets can now attach bounded evaluators from YAML-style
+  carrier blocks using `id:` or `target_ref:`. Drift outside the matching YAML
+  object remains audit-only; changes inside the object become semantic-target
+  drift without falling back to whole-file scope.
+- **Fuzzy edited-symbol retarget candidates.** When an old governed symbol file
+  disappears and exact moved-symbol matching fails, drift detection now surfaces
+  a low-confidence `retarget_candidate` if exactly one same-name symbol exists
+  elsewhere with a changed body. Ambiguous matches stay unretargeted, and fuzzy
+  candidates always require binding resolution rather than moving authority.
+- **JSON semantic target evaluator.** Explicit spec-section, API-contract, and
+  invariant binding targets can now attach bounded evaluators from JSON carrier
+  objects using structured `id` or `target_ref` fields. Sibling JSON object
+  edits remain audit-only; matching object edits become semantic-target drift.
+- **Decision reconciliation lineage labels.** Reconciliation previews and
+  operator-approved apply outcomes now expose explicit `lineage_relations` for
+  `mergedFrom`, `supersedes`, `retiredWithSuccessor`, and
+  `retiredWithoutSuccessor`, keeping authority-frontier cleanup auditable
+  without treating preview text as a binding mutation.
+- **Decision reconciliation downstream migration report.** Read-only
+  reconciliation previews now include `downstream_migration_report` with
+  before-apply review policy, dependent refs, selection impact, and an explicit
+  `auto_relink=false` boundary so successor/retirement selections cannot hide
+  downstream dependency work.
+- **Decision reconciliation successor workflow preview.** Merge/supersede
+  previews now include a read-only `consolidated_successor_workflow` contract
+  that names required successor packet fields such as retained/withdrawn claims,
+  changed assumptions, evidence, scope, drift watch targets, and `valid_until`
+  without creating or approving a successor.
+- **Decision reconciliation claim lifecycle apply.** Operator-approved
+  reconciliation selections now support `claim_lifecycle_update` for explicit
+  claims, allowing partial claim supersede, retire, or reopen without changing
+  the parent DecisionRecord's current authority.
+- **Current governing frontier provenance.** Read-only governing-set JSON now
+  carries a `snapshot` envelope with source, projection, status-policy, terminal
+  history policy, filter posture, and generated timestamp so audit views can
+  distinguish historical decisions from current authority without relying on
+  prose status summaries.
+- **Current governing-set answer paths.** Governing-set JSON entries now expose
+  read-only `answer_paths` for claim, spec-section, API-contract, invariant,
+  symbol, fallback, and unscoped targets, giving agents exact CLI/MCP drill-downs
+  without treating the path itself as evidence or a gate decision.
+- **Overseer reconciliation proposals and after-action reports.** Maintenance
+  runs and drain JSON now include read-only `reconciliation_proposals` for
+  high-fanout/fallback groups plus an `after_action` report listing auto-closed
+  items, evidence refs, remaining operator judgment, and undo commands, without
+  giving overseer authority to apply reconciliation selections.
+- **FPF provenance and MethodPack source posture.** FPF retrieval JSON now
+  carries explicit source provenance for source kind, edition/hash,
+  profile-validity, normativity, schema version, and retrieval mode while
+  compact text stays compact. MethodPack definitions/cards now carry
+  `source_posture` metadata and MCP pull/show responses label method cards as
+  non-normative support carriers, so task-local method guidance cannot
+  masquerade as authoritative FPF source material.
+- **Read-only interface contract audit.** Added
+  `haft interface contract-audit --json`, `haft_query(action="contract_audit")`,
+  and `haft interface query.contract_audit` as a Phase F0 audit surface over the
+  kernel-owned `haft interface` catalog. The report classifies contract sources,
+  MCP schema posture, CLI availability, binding-sensitive authority posture,
+  validation refs, and documented legacy transport exceptions without generating
+  schemas or changing binding authority.
+- **MCP schema validation guard.** Exposed the MCP server's compact tool catalog
+  through a pure `ToolCatalog()` method and added a contract test that compares
+  every MCP tool/action declared by `haftInterfaceCatalog()` against the
+  `tools/list` action enums. This is the first Phase F1 validation step: it
+  catches host-schema drift before generated schemas exist and does not change
+  default status or binding authority.
+- **MCP schema property guard.** Added a second contract test that compares
+  top-level required/optional fields declared by `haftInterfaceCatalog()` with
+  the advertised MCP `tools/list` schema properties. The guard caught stale
+  `haft_decision` schema coverage for decision subject, scope, binding target,
+  drift-watch, footprint, and claim fields; those fields are now advertised as
+  compact properties while the tools/list budget test remains green.
+- **Contract audit schema coverage.** `haft interface contract-audit --json`
+  and `haft_query(action="contract_audit")` now include per-surface
+  `schema_coverage` plus summary counts for covered surfaces, missing schema
+  surfaces, and explicit compatibility exclusions. Agents can inspect schema
+  drift posture from a read-only drill-down instead of inferring it from tests
+  or expanding default status.
+- **Contract audit nested shape coverage.** The contract audit drill-down now
+  compares input-like `field_shapes` with nested MCP schema properties and
+  reports `shape_coverage` per surface plus covered/missing/skipped shape
+  counts. Output-only shapes are skipped explicitly; missing nested fields are
+  exposed as generator targets without changing runtime behavior or binding
+  authority.
+- **Contract audit dynamic shape classification.** The nested-shape audit now
+  treats `solution.compare` score variant IDs as an explicit dynamic-shape
+  skip instead of a false missing-schema finding. Real nested generator targets
+  remain visible for decision scope/claim shapes and spec-use operational gate
+  shapes, while the MCP `tools/list` context-budget guard remains green.
+- **Contract audit generator-target classification.** Remaining real nested
+  shape gaps are now classified as explicit `generator_targets` instead of
+  `missing_shape_fields`. The report surfaces generator target fields and
+  summary counts for `decision.decide` scope/claim/footprint shapes and
+  `query.spec_use` operational-gate shapes, keeping schema drift visible
+  without bloating MCP `tools/list` or treating planned generation work as a
+  failing audit.
+- **Contract generation target manifest.** Added the read-only
+  `haft interface contract-generation --json` /
+  `haft_query(action="contract_generation")` manifest. It derives the remaining
+  nested schema generator targets from the kernel interface catalog and
+  contract audit, exposes a stable source digest plus field-level target list,
+  and preserves the boundary that schema visibility is not operator
+  authorization, evidence, or gate passage.
+- **Nested MCP schema coverage for current generator targets.** The current
+  `decision.decide` scope/claim/footprint shapes and `query.spec_use`
+  operational-gate shape now have explicit nested MCP schema properties. The
+  contract audit reports zero remaining generator target surfaces, and the
+  contract generation manifest returns an empty queue while the `tools/list`
+  context-budget guard remains green.
+- **Generated-surface authority wording guard.** `haft carrier check` now
+  flags current/support/compat carrier wording that implies prompt text,
+  model-supplied MCP arguments, tool descriptions, or schema visibility create
+  operator authorization. Explicit denial wording remains allowed, keeping
+  README, specs, generated skills, and Pi bundle carriers lintable without
+  adding noise to default status. The check also scans generated interface
+  descriptions as virtual surfaces and reports them through
+  `checked_generated_surfaces`, so host-facing catalog text is covered before it
+  is materialized into tool/schema carriers.
+- **Contract generation surface policy.** The read-only
+  `haft interface contract-generation --json` manifest now carries a typed
+  `surface_policy` naming the no-default-bloat rules for status, code_context,
+  tools/list, compact CLI output, and future generated descriptions. The policy
+  keeps generation targets as explicit drill-down data and requires carrier
+  semio authority-boundary checks before host materialization.
+- **Spec carrier change classifier.** Added a pure project-level
+  `SpecSection` carrier change classifier for the future Markdown sync-back
+  path. It distinguishes carrier-only movement, recognized semantic scalar
+  updates, relationship updates, mixed updates, and unknown/high-risk edits that
+  must abstain/block, without mutating SQL or treating arbitrary prose as
+  authority.
+- **Read-only spec carrier change review.** Added
+  `haft spec classify-change --before <file> --after <file> --section <id>` as
+  an explicit before/after review surface over the classifier. The command
+  supports JSON/text output and stays classification-only: it does not sync SQL,
+  approve sections, rebaseline drift, or promote surrounding Markdown prose to
+  authority.
+- **SpecSection SQL edition storage.** Added additive
+  `spec_section_editions` storage for current project-local SpecSection source
+  editions. The new store persists the typed section JSON, semantic hash, source
+  kind, carrier path, and timestamp for future Markdown sync-back without
+  reusing SpecSectionApprovalBaseline hashes or switching existing spec readers
+  away from carrier parsing.
+- **Typed spec carrier sync into SQL editions.** Added `haft spec sync` as an
+  explicit import from `.haft/specs/*` fenced `yaml spec-section` blocks into
+  `spec_section_editions`. The command refuses carriers with structural findings
+  and records only parsed typed sections; it does not approve, rebaseline,
+  reopen, create evidence, or promote surrounding Markdown prose to authority.
+- **Reviewed spec carrier change apply.** Added `haft spec apply-change` for
+  explicit before/after SpecSection carrier changes. It reuses the classifier
+  and writes the after-section to `spec_section_editions` only for recognized
+  semantic scalar, relationship, or mixed updates; carrier-only edits are no-op
+  and unknown/high-risk changes block.
+- **Spec sync/apply audit posture.** `haft spec sync --json` and
+  `haft spec apply-change --json` now distinguish the SQL source edition,
+  typed YAML publication projection, carrier bytes, imported semantic mutation,
+  and carrier-only no-op disposition in explicit audit fields without creating
+  approval, rebaseline, evidence, or gate authority.
+- **SpecSection edition publication round-trip.** Added a deterministic
+  SQL-edition-to-Markdown renderer for typed `yaml spec-section` publication
+  projections. The renderer validates its own DB -> Markdown -> parser
+  round-trip against the source semantic hash and fails closed on lossy
+  projections, proving carrier bytes can rebuild an empty SQL edition store
+  without creating approval, rebaseline, evidence, or gate authority.
+- **Markdown fenced semantic-target drift evaluator.** Explicit
+  `spec_section`, `api_contract`, and `invariant` binding targets in Markdown
+  can now attach bounded evaluators from fenced semantic YAML blocks carrying
+  `id`, `section_id`, or `target_ref`. Edits to sibling fenced blocks remain
+  audit-only; edits inside the governed fenced section become semantic-target
+  drift instead of whole-file fallback.
+- **Decision reconciliation metrics packet.** Added read-only
+  `haft decision reconcile metrics --json` for R9 dogfood cleanup. The packet
+  combines reconciliation, current governing-set, and DriftEvent metrics so
+  scope-enrichment batches can record before/after fallback scope, fanout,
+  material/audit drift, and current-authority conflict counts without applying
+  or authorizing any reconciliation selection.
+- **Overseer reconciliation autonomy guard.** Strengthened maintenance
+  reconciliation tests so overseer/drain proposals are verified as proposal-only
+  outputs and cannot suggest `decision reconcile apply`, operator-approved
+  selection authority, merge/supersede/retire operations, or claim lifecycle
+  mutation.
+- **Contract audit host-fragment posture.** The interface contract audit now
+  labels every surface with `contract_source_posture` and `host_schema_posture`
+  so MCP/CLI fragments are mechanically classified as kernel-catalog source,
+  validated MCP mirror, validated MCP mirror with generator targets, or manual
+  CLI contract. The report summarizes validated mirrors, manual contracts, and
+  unvalidated host fragments while staying a read-only drill-down.
+- **Spec review interface discovery.** Added `haft interface
+  query.spec_review --json` as the discoverable contract for the existing
+  advisory `haft_query(action="spec_review")` / `haft spec review --json`
+  surface. The contract names the semantic review v2 profile, advisory-only
+  authority boundary, claim/state-reading cues, and stronger-use abstain/block
+  posture without adding a new MCP action.
+- **DriftEvent resolution metadata ledger.** Added a non-binding DriftEvent
+  resolution overlay with `resolved` and scoped `waived_until` records. The new
+  `haft drift events resolve EVENT_ID --status ... --reason ...` path writes a
+  local resolution ledger, and `haft drift events --resolution-ledger ...`
+  overlays that metadata into the report without changing DecisionRecord
+  status, lineage, baselines, evidence, gates, or carrier authority.
+- **Non-markdown semantic target evaluator markers.** Explicit
+  `api_contract`, `invariant`, and `spec_section` binding targets can now attach
+  bounded evaluator hashes from exact `haft-target: <target_ref>` markers in
+  non-markdown carriers. This keeps semantic drift scoped to the declared target
+  block and preserves fail-closed `needs_binding_resolution` behavior when no
+  marker, markdown heading, fenced spec-section, or explicit hash exists.
+- **Symbol-precise decision binding.** Decision baselines now resolve
+  code-governing `affected_files` through an additive `binding_targets` model:
+  supported languages prefer symbol targets, no-symbol source falls back to a
+  stable range target, explicit module/whole-file scope is typed, and
+  whole-file fallback records why narrower binding failed. Drift now separates
+  unresolved whole-file fallback into a compact needs-binding lane instead of
+  treating it as proved material symbol drift.
+- **Legacy decision symbol-binding dry-run.** `haft drift bindings` now reports
+  active decisions with broad file baselines and proposes read-only symbol
+  binding candidates, separating high-confidence rebaseline proposals from
+  ambiguous cases that still need explicit symbol-boundary selection.
+  `--apply-high-confidence` persists resolver-proven binding targets when the
+  safe set is non-empty, and `--apply-selection <json>` lets an agent apply a
+  reviewed selection document deterministically without changing evidence,
+  approvals, file hashes, or markdown carriers. Haft's own dogfood batches now
+  bind six historical decisions to explicit symbol targets, reducing unresolved
+  legacy selection cases from 35 to 29.
+- **OperationalGate v1 for spec use.** `SpecificationUseRecord` can now include
+  an explicit read-only OperationalGate profile and derived gate decision for a
+  declared use context. CLI callers pass `haft spec use --gate-file <json>`;
+  MCP callers pass `operational_gate` to `haft_query(action="spec_use")`. The
+  first gate rule, `require_current_source_and_admitted_use`, passes only when
+  the source edition is current, the admission policy grants the declared use,
+  the bearer/use context match, and the gate is not expired. Gate decisions
+  remain derived readings, not spec approval, evidence creation, or work
+  authority.
+- **Read-only maintenance judgment packet.** `haft_refresh(action="review")`
+  and `haft overseer judgment --json` now build a grouped packet for rung-3
+  maintenance tasks that need judgment. The packet classifies tasks by
+  recommendation, confidence, source, and category, includes exact drill-down
+  calls plus suggested command candidates, and explicitly labels itself as
+  not mutation, not approval, and not evidence.
+- **Bounded maintenance drain for `$h-verify`.** `haft_refresh(action="drain")`
+  and `haft overseer drain` now run the existing maintenance executor only
+  behind an explicit invocation: rung-1 deterministic drift may rebaseline,
+  rung-2 allowlisted observables may attach machine evidence and revalidate,
+  and all semantic/material/judgment cases return as `needs_operator`.
+  `dry_run=true` / `--dry-run` previews the same report without mutation.
+- **`haft init --hermes`.** Hermes initialization now materializes a
+  Hermes-adapted haft skills tree with bare `haft_*` tool references, appends
+  it to `skills.external_dirs` in `~/.hermes/config.yaml` (or
+  `$HERMES_HOME/config.yaml` / `--profile`), and installs the `haft` MCP server
+  with absolute `HAFT_PROJECT_ROOT` plus `HAFT_EXPECTED_PROJECT_ID` in the
+  user-local Hermes config. Existing Hermes config keys, other MCP servers, and
+  foreign external skill directories are preserved; the legacy `quint-code`
+  MCP server key is removed.
+- **ProblemCard semantic-spine first slice.** New ProblemCards now carry an
+  additive semantic envelope in `structured_data` with explicit profile
+  provenance, semantic-edition identity, carrier binding, reference scheme,
+  publication projection, and `exact`/`legacy` status. `haft_query(action=
+  "related", ref="prob-...")` keeps the legacy payload shape while adding
+  `semantic` plus `views.working`, `views.exact`, and `views.audit`, and
+  `haft interface query.related --json` documents the compact discovery
+  contract.
+- **Haft's own spec spine.** The repository now tracks `.haft/specs/`
+  carriers for the target system, enabling system, and term map while keeping
+  runtime governance state ignored. The active sections cover Haft's
+  governance boundary, layered substrate architecture, artifact production
+  rules, mutation authority, host-agent policy, commission/runtime policy, and
+  evidence freshness policy.
+- **ChoiceResult compatibility slice.** `DecisionRecord` structured data can
+  now carry an exact `choice_result` with `next_move` values
+  (`choose_now`, `reject_current_set`, `probe_again`, `reroute`), while
+  `ComparisonResult.selected_ref` stays a legacy advisory recommendation.
+  `legacy_recommendation_ref` is the preferred advisory alias for comparison
+  output; compare never creates a bound human choice or execution authority.
+- **Read-only spec semantic review.** `haft spec review` and the MCP
+  drill-down `haft_query(action="spec_review")` now run an advisory semantic
+  review over active `SpecSection` records. Findings return FPF-oriented hints
+  for missing bearers, frame mismatches, unsupported strong claims, and
+  description/authority confusion; the review is explicitly non-authoritative
+  and does not create evidence, approvals, rebaselines, `GateDecision`, or
+  `SpecUseAdmission`.
+- **FPF retrieval provenance metadata.** FPF section retrieval now carries
+  explicit profile/index provenance (profile id, source kind, source edition,
+  source hash, profile validity, normativity, index schema version, and
+  retrieval mode) through the internal retrieval path. `haft fpf search --json`
+  exposes those fields structurally, while explain/exact text views name
+  route/related carriers as non-normative projections over FPF sections.
+  Default search output stays compact.
+- **Spec ClaimRegister v1.** SpecSection carriers may now declare explicit
+  `claims:` entries with stable IDs, L/A/D/E class labels, claim-scoped support,
+  evidence, validity, and governing-pattern refs. `haft spec review --json`
+  exposes the read-only claim register and advisory findings for mixed,
+  unclassified, or unsupported declared claims; no prose is extracted into
+  canonical claims.
+- **ProblemCard PublicationUnit v1.** Exact ProblemCard semantic envelopes now
+  carry source-edition pins, source/publication/carrier hashes, and explicit
+  omission/loss/recoverability fields. `haft_query(action="related")` exact and
+  audit views distinguish source episteme, publication projection, and carrier
+  bytes; markdown sync rejects future semantic/publication-unit schema versions
+  instead of importing them as exact.
+- **Spec SystemReferenceFrame v1.** SpecSection parsing now derives a typed
+  `system_frame` object from explicit `system_frame`, existing `spec`, or the
+  carrier kind compatibility fallback. `haft spec review --json` reports that
+  frame and frame diagnostics now compare declared target/enabling frame against
+  the carrier frame instead of inferring authority from TS/ES or kind prefixes.
+  The parser and review profile now also support typed `carrier` and `sidekick`
+  frames, with `publication_system` and `external_system` normalized to those
+  canonical frame kinds.
+- **ProblemCard C.22.2 profile fields.** Problem framing now records
+  cue/thin/deep profile level, source posture, why-now, scope, acceptance
+  probe, freshness disposition, computed P2W readiness, and blockers. Wish,
+  ticket, and chosen-method sources cannot become P2W-ready without an explicit
+  boundary, and `query.related` working views expose the profile/readiness
+  labels without changing compact defaults.
+- **TransformationRecord v1 compatibility payload.** `DecisionRecord`
+  structured data may now carry an explicit `transformation_record` describing
+  the transformed entity, initial state, post state, relation, context/window,
+  and outward method/work/evidence/publication refs. The field is validated and
+  discoverable through `haft_decision` and `haft interface decision.decide
+  --json`, but no record is synthesized from legacy prose, post-conditions,
+  method runs, WorkCommissions, evidence, or publication units, and refs do not
+  prove occurrence, approval, evidence truth, or publication.
+- **ChoiceRecord C.11 compatibility fields.** The existing `choice_result`
+  payload now carries explicit C.11 fields for subject, option set, comparison
+  basis, choice rule, next move, reversibility, and reopen condition. Fresh
+  h-decide DecisionRecords populate option/basis/rule fields from explicit DRR
+  inputs and derive `reopen_condition` from rollback triggers when no explicit
+  `choice_result` is supplied. Explicit `choice_result` carriers persist
+  `reversibility` and `reopen_condition` through CLI/MCP paths; legacy or
+  minimal carriers continue to parse as compatibility projections and no
+  ComparisonResult `selected_ref` is promoted into a bound choice.
+- **StateReadings v1 for spec semantic review.** `haft spec review --json`
+  now emits per-section `state_reading` objects that name the reading profile,
+  bearer, frame, use, reading, and reopen condition. The compact text summary
+  names this qualified-reading policy instead of implying global
+  ready/pass/current authority.
+- **Spec semantic review v2 profile.** `haft spec review` now exposes a
+  read-only `spec_semantic_review_v2` profile that names which semantic-spine
+  inputs are used, boundary-preserved, or explicitly abstained. The review uses
+  ClaimRegister, SystemReferenceFrame, and StateReadings signals, preserves
+  PublicationUnit and TransformationRecord authority boundaries, and blocks
+  high-risk licensing/legal/compliance/privacy/security sections from stronger
+  use until explicit L/A/D/E claims and support refs exist. Findings now carry
+  an explicit `category` such as `claim_posture`, `publication_boundary`,
+  `frame`, or `unknown_abstain`, so agents can route review input without
+  treating the finding as evidence, approval, GateDecision, or
+  SpecUseAdmission.
+- **SpecificationUseRecord v1.** `haft spec use SECTION_ID` and
+  `haft_query(action="spec_use")` now build a read-only spec-use admission
+  record for a declared use context and policy. The payload separates source
+  edition, baseline currentness, admission policy, waiver expiry, and
+  `gate_decision=not_applicable_no_operational_gate` so a current baseline
+  cannot masquerade as admission and a spec-use admission cannot masquerade as
+  an OperationalGate pass.
+- **EvidencePath/RelianceDisposition v1.** `haft evidence path ARTIFACT_REF
+  EVIDENCE_REF` and `haft_query(action="evidence_path")` now build a read-only
+  reliance record for one existing evidence item and declared attempted use.
+  The payload binds claim refs, producer/method/work trace refs, currentness
+  windows, and authority boundaries; evidence presence cannot create approval,
+  `GateDecision`, or global truth.
+- **EngineeringChangeCase v1 projection.** `haft change case DECISION_REF` and
+  `haft_query(action="change_case")` now derive a read-only case aggregate over
+  one DecisionRecord's ProblemCard refs, TransformationRecord payload,
+  ChoiceResult, evidence item refs, and optional EvidencePath records. The case
+  is explicitly a projection, not a new FPF root kind, proof, approval,
+  `GateDecision`, work occurrence, or global truth.
+- **Qualified correspondence graph v1.** `haft correspondence graph
+  DECISION_REF` and `haft_query(action="correspondence_graph")` now derive a
+  read-only expected-vs-observed graph from DecisionRecord claims,
+  TransformationRecord, affected files, and claim-bound evidence. Every edge is
+  qualified by origin/source refs and `path_status=graph_path_not_proof`, so a
+  graph path cannot masquerade as evidence, proof, approval, `GateDecision`, or
+  global truth.
+- **Semantic drift route v1.** `haft drift route DRIFT_KIND` and
+  `haft_query(action="drift_route")` now map the semantic-spine drift taxonomy
+  to read-only candidate repair actions and language-state moves. Evidence,
+  publication, and description-layer drift do not route directly to code repair,
+  unknown drift kinds fail closed, and the route never mutates code, carriers,
+  evidence, decisions, baselines, or gates.
+- **Blocked-use attention item v1.** `haft attention blocked BEARER_REF` and
+  `haft_query(action="blocked_use")` now build a read-only object-first
+  attention item with exact source-return refs, blocked-use context, admissible
+  next-action invitations, and authority boundaries. The item is not a WorkPlan,
+  evidence, approval, `GateDecision`, or global truth, and it is available only
+  through explicit drill-down surfaces.
+- **Haft engineering-value characteristic space v1.** `haft value space
+  BEARER_REF` and `haft_query(action="value_space")` now build a read-only
+  `HaftEngineeringValueECS` projection with no single Haft/FPF score. Every
+  characteristic names bearer, method, window, denominator, evidence refs,
+  protected trade-offs, and reopen condition; healthy reopening is not counted
+  as simple failure, and missing evidence blocks value claims instead of
+  fabricating movement.
+- **Repository-move audit and repair in `haft doctor`.** `haft doctor
+  --moved-from <old-root>` now reports stale project-root carriers after a
+  checkout move, and `--repair` performs an explicit exact-match repair for
+  supported carriers. The repair path covers Codex user project trust entries,
+  Claude user project state exact JSON string literals, project-local MCP
+  configs, and OpenCode config; default `doctor` remains read-only and
+  `--repair` is rejected unless the old root is supplied.
+- **Project-id guarded binding diagnostics.** MCP host configs produced by
+  `haft init` now include `HAFT_EXPECTED_PROJECT_ID` alongside portable
+  `HAFT_PROJECT_ROOT` values where the project identity is available, and
+  `haft serve` resolves binding through the shared ProjectBinding path before
+  exposing mutation-capable tools. `haft doctor` now reports the resolved root,
+  project id, expected id, DB path/state, and artifact count so moved checkouts
+  can distinguish "wrong cwd" from "wrong project identity".
+- **Experimental `@haft/pi` compatibility package.** `packages/haft-pi` ships
+  a Pi extension with a small NDJSON MCP bridge to `haft serve` and mirrors the
+  twelve current kernel tools: `haft_note`, `haft_problem`, `haft_solution`,
+  `haft_decision`, `haft_refresh`, `haft_query`, `haft_method`,
+  `haft_commission`, `haft_spec_section`, `haft_onboard`, `haft_entity`, and
+  expert-only raw `haft_memory`. It carries the same twelve public prompts and
+  skills (`h-reason`, `h-frame`, `h-diagnose`, `h-explore`, `h-compare`,
+  auto-routed `h-decide`, manual `h-commission`, `h-verify`, `h-status`, `h-spec`,
+  `h-onboard`, and `h-note`), a `before_agent_start` governor fed by the
+  kernel's compact projection, and cockpit surfaces. The bridge handles
+  concurrent starts, spawn failures with retry, and tools absent from older
+  binaries. Pi remains experimental compatibility, not stable-host parity or
+  installed-runtime evidence for Claude/Codex acceptance.
+- **`haft init --pi`.** The `@haft/pi` package is embedded into the haft
+  binary; `haft init --pi` materializes it under `.haft/pi/haft-pi` and
+  idempotently registers the local-path entry in `.pi/settings.json`
+  (project-local, loads after Pi project trust). The entry is written as
+  `../.haft/pi/haft-pi` because pi resolves project-scope local package
+  paths relative to the `.pi` directory itself; a broken root-relative
+  entry from earlier builds is migrated in place. `--pi` explicitly selects
+  only the Pi adapter; it does not implicitly select Claude or Codex. No npm step:
+  the extension's only runtime import (`typebox`) is a Pi-bundled core
+  package resolved via `peerDependencies`.
+- **Kernel governor projection: `haft_query(action="status",
+  view="governor")`.** A compact, prompt-budgeted status slice for host-side
+  prompt governors: overseer signal counts,
+  pending/unassessed/refresh-due/drift decision counts, top attention items,
+  active problems, and open method runs — capped lists, no coverage section,
+  no navigation strip. Replaces client-side clipping of the full dashboard
+  in host integrations.
+- **Opt-in overseer post-commit review loop.** New `internal/overseer`
+  subsystem (packet/run/finding lifecycle, queue, maintenance classifier,
+  risk heuristics) with `haft init --overseer` and `haft overseer` commands:
+  a soft post-commit hook builds review packets, a local daemon runs reviews
+  through the project's host agent, and overseer signals surface read-only
+  in `haft_query(action="status")`. `haft init --no-claude-md` is renamed to
+  `--no-file-instructions` (the old flag remains as a deprecated alias).
+- **MethodPack V1: task-local SWE method gates.** Added the built-in
+  `swe-core` method catalog with seven compact methods:
+  `verification-before-completion`, `systematic-debugging-before-fix`,
+  `behavior-first-testing`, `refactor-only-under-tests`,
+  `domain-port-before-adapter`, `functional-core-imperative-shell`, and
+  `make-illegal-states-unrepresentable`. New `MethodRun` artifacts use the
+  `mpull-*` prefix and persist under `.haft/method-runs`. The new
+  `haft_method` MCP tool supports `pull`, `close`, `show`, `detail`, and
+  `status`; `pull` creates compact task-local cards and `close` validates hard
+  gate evidence or explicit waivers before completion. `haft init`
+  materializes `.haft/methods/swe-core` by default, `haft interface` exposes
+  compact method contracts, generated instructions route agents through the
+  pull/close loop, and MCP initialize instructions now advertise the MethodPack
+  habit trigger before code work.
+- **Compact Haft interface discovery and input-file artifact creation.**
+  `haft interface <capability> --json` now exposes small machine-readable
+  contracts for agent workflows, and `haft artifact create <capability>
+  --input-file <input.json> --json` can create/update ProblemCards,
+  SolutionPortfolios, DecisionRecords, and Notes via the same artifact core as
+  MCP. Supported capabilities: `problem.frame`, `solution.explore`,
+  `solution.compare`, `decision.decide`, and `note.record`.
+- **Read-only overseer status command.** `haft overseer status` now renders
+  the latest overseer signals and autonomous-maintenance ledger without
+  re-running the maintenance loop; `--json` exposes the same snapshot for
+  tooling.
+- **Spec lifecycle projection and `h-spec` skill.** Added typed spec lifecycle
+  CLI projections (`haft spec status`, `next`, `approve`, `rebaseline`,
+  `reopen`) plus the bundled `h-spec` skill surface so spec readiness,
+  carrier edits, and human baseline gates share one kernel-backed workflow.
+
+### Fixed
+
+- **Fresh-init memory readiness and partial-install repair.** The public init
+  core effect now creates the exact package-default project-memory basis as
+  part of initialization and verifies its committed readiness before reporting
+  success. Re-init repairs a partial or legacy installation through the same
+  idempotent package-owned effect; onboarding and entity recovery direct users
+  back to `haft init` instead of presenting enable/defer or schema-selection
+  choices.
+- **Host-routed authority provenance without command rituals.** Direct,
+  unambiguous operator choices for DecisionRecords, manual profile application,
+  incompatible project-memory model selection, and rollback are recorded as
+  `host_routed_operator_request` by their dedicated effect sinks. Proven-
+  compatible bundled successors use the separate automatic
+  `compatible_successor_policy` generation. Legacy strict CLI-source and local
+  speech-act simulations are sealed as history; generated text, tool output,
+  visible schemas, recommendations, and skill invocation remain non-authorizing.
+- **Recoverable missing-binding repair.** Added `haft project
+  recover-binding` for one exact binding-aware ledger whose immutable project
+  identity row is missing. It creates and verifies a SQLite backup first and
+  rejects pre-binding or newer schemas, already-bound ledgers, root/identity
+  mismatches, integrity failures, and foreign-key failures; it never repairs an
+  already-bound worktree-root mismatch or changes host projections.
+- **Memory guidance and source-pin regression cleanup.** Canonical, generated,
+  Pi, README, and installed-skill carriers now agree that a concrete receiving
+  use may be inferred from current Work and that default memory is automatic.
+  Current Local-Practice candidate identities, compiled-basis references, FPF
+  body ranges, body digests, and whole-source pins were refreshed from the
+  exact `8b727cb` publication instead of leaving stale test expectations.
+- **Embedded FPF query verification reuse.** The immutable bundled source index
+  is now fully verified once per process and the exact result is replayed for
+  later query, lookup, and inspect calls. Synthetic or replaced test databases
+  still use uncached verification, preserving corruption detection while
+  avoiding repeated whole-index scans in normal agent use and integration
+  tests.
+- **Bounded full-suite execution for large source indexes.** The default local
+  test task and CI coverage loop now give each package a 90-minute ceiling,
+  accommodating recoverable-refresh interruption cases that each execute the
+  production full-index replay path. The change removes false global
+  ten-minute timeouts rather than weakening an assertion or replacing an exact
+  verification with a mock.
+- **Pre-binding project-ledger migration during explicit init.** `haft init`
+  can now inspect and migrate a genuine schema-35 project ledger that predates
+  `project_ledger_binding`. The schema-37 binding table and exact configured
+  project identity commit atomically before later additive migrations.
+  Read-only planning remains non-mutating, and a missing binding at schema 37
+  or newer still fails closed instead of being silently repaired.
+- **Shared user-scope skills across multiple Haft projects.** Default
+  `haft init --codex` and other user-scope, skills-only host publications now
+  reuse and refresh the existing global installation binding without
+  transferring its owner to each newly initialized project. Project-scoped
+  MCP, instructions, and skills remain project-bound, and `haft host status`
+  evaluates the shared skills installation from every consuming project while
+  checking each split project binding against its own installed component
+  selection.
+- **Portable Codex MCP migration.** `haft init --codex` now recognizes the
+  exact earlier portable `[mcp_servers.haft]` block, replaces it with the
+  current project-bound Haft MCP tables, and preserves unrelated Codex
+  settings and MCP servers. Near-miss or operator-customized Haft blocks remain
+  foreign and fail before any write.
+- **Fail-closed predecessor snapshots and optional FPF retrieval.** Predecessor
+  compiler probing and envelope loading now share one opened read-only SQLite
+  snapshot, so path replacement cannot mix compiler and artifact identities
+  while legacy-V1 and exact-rebuild behavior remain intact. Optional candidate
+  producers can no longer claim authored-source grounding, and successful
+  pattern-body fallback retains their bounded weak candidates plus accurate
+  omission and truncation metadata without promoting retrieval rank to
+  applicability.
+- **Source-current FPF query and conformance oracles.** Rebased exact source
+  ranges, provenance assertions, P13 current-candidate anchors,
+  A.15.6/E.18.NET navigation, and category-error boundaries to FPF `8b727cb`;
+  the unchanged pinned token-gate corpus also passes on that publication,
+  including the reviewed measurement,
+  evidence-provenance, episteme-edition, problem, and role-assignment relation
+  corrections. These are source-test results; they are not installed P14
+  evidence or release authority.
+- **Idempotent source-index regeneration.** Exact `fpf-index` rebuilds now
+  preserve the prior non-self memory-model compatibility assessment when the
+  compiled artifact is unchanged, while a stored self-comparison fails closed.
+  Rebuilding the committed FPF `8b727cb` index therefore retains its V4-to-V5
+  assessment and byte-identical database digest.
+- **Exact source phrases outrank weak token unions.** A candidate admitted only
+  by separate heading, keyword, or FTS tokens can no longer suppress stronger
+  contiguous pattern-body phrase navigation. The real “target system” concern
+  reaches the source-owned `SYSTEM-RECOGNITION` and `SYSTEM-DELIMITATION` cards
+  plus their current C.26 and C.32.PAD witnesses.
+- **Deterministic lossless race qualification.** Replaced the serial
+  package-isolated CI loop with one shared 12-shard runner used by CI and the
+  explicit `test:race-full` local adapter. The default `test:race` adapter
+  instead consumes P13's bounded critical profile, and release reuses the
+  successful exact-SHA CI aggregate rather than running a second matrix. On the executing
+  platform, the validated plan assigns every current non-desktop package to
+  exactly one contour: configured split packages assign every platform-visible
+  top-level Test, Example, or Fuzz target to exactly one shard, while all
+  remaining packages are assigned whole to exactly one shard. Subtests remain
+  with their parent. Shard execution preserves `-race -count=1` and the sole
+  deliberate `TestP13ConsolidatedAcceptance` skip. Missing or duplicate work,
+  invalid partitioning, shard failure, timeout, interruption, or a missing
+  observation prevents aggregate success. Plan, shard, and bounded local-all
+  modes emit machine-readable observations; CI retains each shard observation
+  and exposes one aggregate check that fails unless the complete matrix
+  succeeds. No measured speedup or hosted-run result is claimed here.
+- **Actionable project-profile recovery with bounded automatic bootstrap.**
+  `profile_underdetermined` projections name `haft_onboard` as the recovery
+  surface and preserve the originating scope. During `haft init`, only a
+  complete, non-truncated, supported singleton detector result with no existing
+  canonical or reviewed basis is admitted automatically as `detector_default`.
+  Every mixed, ambiguous, multi-scope, insufficient, truncated, or already
+  reviewed basis remains a non-binding review plus direct operator choice;
+  spec reads and ordinary status calls never create or admit a profile.
+- **Source-first agent guidance without ritual governance calls.** Canonical,
+  installed-agent, and Pi skill carriers now omit FPF queries for mechanical
+  probes, require concern retrieval to be followed by exact `inspect` before
+  source reliance, and keep several candidates live or abstain when the basis
+  is insufficient. Status is requested only for a current status, resumption,
+  coverage, or recorded-reliance question; post-hoc queries no longer stand in
+  for evidence of reasoning already performed.
+- **Explicit MCP effects and complete dedicated-note contracts.** Full and
+  compact tool descriptions distinguish read-oriented operations from durable
+  carrier or lifecycle writes. Generated authority boundaries separately
+  repeat that model-supplied fields are not approval receipts. Interface audit
+  and generated schema validation now cover the actionless `haft_note` tool,
+  including `task_context` correlation and optional `valid_until`; problem,
+  solution, and decision carriers preserve their available task context
+  instead of hiding it from schema parity.
+- **Recoverable MethodRuns and truthful projection effects.** Method status
+  prints an exact recovery call containing each open `pull_id`, while
+  task-memory responses report durable carrier persistence separately from
+  typed-projection admission or write effects. The unused solution-explore
+  response helper that implied automatic lightweight-problem creation was
+  removed.
+- **Root-layout maintenance paths and current repository links.** Optional
+  reference-repository discovery now resolves the project-local
+  `.context/repos` path after the root-level Go-module move. Contributor setup
+  points to `m0n0x41d/haft`, public profile fixtures use a neutral absolute
+  root, and obsolete `src/mcp` ignore and binary-attribute entries are gone.
+- **Portable installation and current health diagnostics.** `task install`
+  resolves its stale-binary cleanup target through `GOBIN` or `GOPATH`, creates
+  the selected binary directory before building, and no longer embeds a
+  maintainer-specific path. `haft doctor` now checks the current CLI, project
+  database, binding, and MCP-process contour instead of requiring a JavaScript
+  runtime or reporting removed standalone-agent auth, provider, hook, and skill
+  surfaces.
+- **Published v8 Go safeguards retained.** Ported the safeguards absent from
+  the divergent v9 development ancestry: recursive trailing-slash scopes,
+  fail-closed commission lifecycle commands, and idempotent replay of passed
+  running preflight events. Open-Sleigh-only safeguards are not part of the v9
+  product because the complete executor contour is removed.
+- **Historical changelog restoration.** Restored the pre-v5 quint-code release
+  history under a distinct `[Unreleased - pre-v5]` heading, preserving the
+  recovered v1-v4 notes without presenting them as the current release entry.
+- **MethodRun structured-data lint compatibility.** MethodRun open/close update
+  paths now store encoded structured data in the native carrier field shape
+  instead of converting it through string casts that break current lint/type
+  expectations.
+- **Value-slice task digest contract.** `haft process value-slice` now accepts
+  `task_text_digest` as an explicit input identity route, after
+  `comparison_group_ref` and `task_id` and before deriving a digest from
+  `task_text`, so release-facing pairing docs and behavior match.
+- **README public surface sync.** README now matches the v9 public catalog:
+  twelve MCP tools and twelve independent public skills, including task-level
+  `haft_onboard` / `haft_entity` and expert-only raw `haft_memory`.
+- **Maintenance and spec safety gates.** Maintenance drain through MCP is now
+  preview-only unless explicitly dry-run, allowlisted `go`/`rg` commands reject
+  unsafe execution/preprocessor flags, SpecSection baselines include system
+  frame and claim identity, and spec export preserves scalar evidence
+  requirements without widening carrier authority.
+- **Artifact write migration guard.** Artifact CLI write paths now migrate the
+  artifact store before mutation, preventing legacy stores from failing only
+  after a create/update command has already entered the write path.
+- **MethodPack verification fallback gate.** The fallback MethodPack card now
+  always carries the verification-before-completion hard gate, so unmatched
+  non-trivial work cannot close without fresh verification evidence or an
+  explicit waiver.
+- **Maintenance, overseer, and Pi review hardening.** Maintenance review/drain
+  findings, overseer review edge cases, lifecycle revalidation, and Pi proxy
+  metadata now preserve explicit proposal/review boundaries instead of
+  surfacing ambiguous apply, approval, or stale metadata cues.
+- **RETAINED COMPATIBILITY/MIGRATION — shared sidecar launch hygiene.** Shared
+  `haft-embed` startup now avoids
+  inherited stdio traps, resolves the sidecar binary path for shared daemons,
+  and degrades optional recall paths instead of hanging when the resolved
+  sidecar cannot serve the requested protocol. This retained runtime is
+  outside the v9 contract and P14 acceptance basis.
+- **Decision baseline semantics.** Decision drift reports now distinguish
+  direct hash captures as `observed_state_snapshot`; `verified_state_snapshot`
+  is reserved for baselines with supporting verification, measurement, audit,
+  or test evidence. Drift hashes and mechanics are unchanged.
+- **Default status noise.** Compact status now keeps audit-only drift and
+  migration-only reconciliation detail out of the default attention lanes while
+  preserving drill-down access through full status, drift events, judgment, and
+  drain previews.
+- **Mixed drift status headlines.** Default status now summarizes compact drift
+  attention from material/actionable events only, keeping audit-only fanout in
+  drill-downs, and overseer compact drift signals now name material operator
+  review instead of presenting grouped drift as an undifferentiated pile.
+- **Drift counter consistency.** DriftEvent summaries now keep material,
+  audit-only, and binding-resolution buckets non-overlapping, and default
+  overseer status replaces stale stored drift groups with a live current
+  DriftEvent signal while preserving full JSON access to historical run detail.
+  The default status body now also builds `DriftEvents` from the full current
+  drift report, so binding-resolution events are not dropped by the legacy
+  baselined-only `Drift` lane.
+- **Host discipline wording.** `AGENTS.md`, the embedded init template, and
+  packaged `h-reason` now distinguish useful unpersisted chat reasoning from
+  durable governance, evidence, or authority.
+- **Method close discovery.** `haft interface method.close --json` now tells
+  agents to derive changed files, command traces, test status, and governed
+  decision intersections before asking the operator for waivers or residual
+  judgment.
+- **Decision baseline target projection.** `haft_decision(action="baseline")`
+  now projects stored `affected_files` from explicit drift/governance binding
+  targets when present, preventing scope-enriched decisions from reintroducing
+  stale whole-file drift via historical implementation-footprint files.
+- **Decision footprint drift authority.** New decisions with `affected_files`
+  but no precise governance, drift-watch, binding target, or explicit binding
+  request now record those files as `implementation_footprint` and skip
+  auto-baseline drift authority. Explicit `binding_targets`, binding hints, or
+  `binding_scope` can still opt into drift baselines with a repairable audit
+  trail.
+- **MethodRun structured-data preservation.** MethodRun update paths now merge
+  known fields over existing structured JSON while preserving unknown
+  top-level extension fields. This keeps new carrier fields such as checkpoint
+  telemetry from being dropped by later close/update operations in the same
+  binary line, and adds a regression test for forward-compatible MethodRun
+  updates.
+- **Process check carry-through replay.** `haft process check` now replays
+  closed MethodRuns with `Closeout.CarryThrough`, preventing valid applied
+  carry-through dispositions from being reported as hard-gate closeout gaps.
+  Regression fixtures cover both the replay false-positive path and the
+  end-to-end `haft_method` pull/close/default-status closure discipline path
+  while preserving the missing-gate failure case.
+- **Method carry-through schema parity.** The `haft_method` MCP schema,
+  interface catalog, Pi tool mirror, close template, and handler tests now
+  all expose the same typed `carry_through` item shape so accepted review
+  items cannot disappear because one advertised surface omitted the field.
+- **Default status action-line budget.** `haft process check --profile core`
+  now guards default `haft_query(status)` by operator-facing action/drill-down
+  lines as well as byte size and forbidden process fragments. This protects
+  human scan cost without moving process authority, reconciliation, checkpoint,
+  or generated-contract details into the default cockpit.
+- **Default status product target.** The process check now separates the hard
+  status action-line ceiling from an ergonomic product target: `<=8` action
+  lines passes, `9..20` degrades with an explicit finding, and `>20` fails.
+  The degraded band keeps real drift/stale governance signals visible instead
+  of hiding them to satisfy a token budget.
+- **Method close purpose sync.** `method.close` interface/help wording now
+  names accepted-basis carry-through dispositions alongside changed files,
+  hard-gate results, verification evidence, and explicit waivers, matching the
+  actual close contract without implying approval or evidence truth.
+- **Generated contract carrier sync.** Materialized `AGENTS.md`, `CLAUDE.md`,
+  bundled skill, and Pi prompt/tool carriers now carry the current
+  `kernel_interface_catalog` source digest after contract-generation sync.
+- **Value-slice evidence integrity.** `haft process value-slice` policy labels
+  are now computed only from equal-budget paired `haft_methodpack` /
+  `baseline_agent` groups. Unpaired favorable cases can no longer produce
+  `continue`, and missing required observed metrics now return
+  `insufficient_data` instead of being treated as zero.
+- **Value-slice release-readiness pairing.** Value-slice policy groups now
+  require a comparable task or `comparison_group_ref` plus complete model,
+  host, tool budget, and time window fields before they can become
+  `equal_budget_pair=true`. Required policy metrics must be numeric and
+  non-null in the input; `observed_fields` can document source posture but can
+  no longer invent a metric value.
+- **Checkpoint close-token persistence.** New MethodRun checkpoint records now
+  persist `close_token_hash` instead of raw `close_token`; the raw token is
+  returned only in the open response. Close still accepts legacy raw-token
+  records, while trace output sanitizes raw tokens and exposes hash posture for
+  audit/debug use.
+- **Related evidence formality discovery.** `haft interface query.related
+  --json` now documents DecisionRecord audit/evidence WLNK formality scale and
+  bridge/loss fields, making exact/audit formality posture discoverable outside
+  `EvidencePath`.
+- **Baseline audit interface discovery.** `haft interface baseline.audit
+  --json` now exposes the existing read-only baseline term audit as a CLI-only
+  contract, including spec-approval, pre-work, verified-state, comparison, and
+  legacy-ambiguous categories plus non-mutation authority boundaries.
+- **Decision reconciliation selection summary counters.** `haft decision
+  reconcile selection-draft` now reports explicit
+  `review_required_candidates`, `apply_ready_candidates`, and `template_items`
+  counters so operator-review work cannot be mistaken for apply-ready
+  selections.
+- **Decision reconciliation selection template boundary.** `haft decision
+  reconcile selection-draft --json` now emits
+  `selection_document_template_boundary`, making explicit that template items
+  are emitted review candidates, not selected or apply-ready candidates.
+- **Decision reconciliation apply help boundary.** `haft decision reconcile
+  apply --help` now names apply authority as limited to the selected
+  reconciliation mutation, not evidence, GateDecision, claim truth, global
+  truth, or publication.
+- **Decision reconciliation selection-review help boundary.** `haft decision
+  reconcile selection-review --help` now names validation reports as context,
+  not operator approval, not evidence, not GateDecision, not claim truth, not
+  global truth, not publication, and not apply authority.
+- **Decision reconciliation help boundary.** `haft decision reconcile --help`
+  now names reconciliation plans as review context, not operator approval, not
+  evidence, not GateDecision, not claim truth, not global truth, not
+  publication, and not apply authority.
+- **Decision reconciliation metrics help boundary.** `haft decision reconcile
+  metrics --help` now names metrics packets as review context, not operator
+  approval, not evidence, not GateDecision, not claim truth, not global truth,
+  not publication, and not apply authority.
+- **Overseer drain help boundary.** `haft overseer drain --help` now names drain
+  as opt-in, machine-safe-only, not semantic approval, evidence, GateDecision,
+  claim truth, global truth, publication, or reconciliation apply authority.
+- **Overseer judgment help boundary.** `haft overseer judgment --help` now names
+  judgment packets as read-only review metadata that do not mutate, approve, or
+  create evidence.
+- **Carrier manifest help boundary.** `haft carrier manifest --help` now names
+  carrier classes as review/discovery metadata, not binding authority by
+  themselves.
+- **Carrier check help boundary.** `haft carrier check --help` now names semio
+  findings as review inputs, not evidence, approval, or GateDecision.
+- **Drift events help boundary.** `haft drift events --help` now names computed
+  `root_cause`, `resolution_status`, and `suggested_next_command` as review
+  posture, not evidence, approval, or gate passage.
+- **Reconciliation selection-draft help boundary.** `haft decision reconcile
+  selection-draft --help` now names operator-approval, evidence-truth,
+  gate-passage, and apply-authority boundaries for draft/current-metrics review
+  aids.
+- **Governing-set help boundary.** `haft decision governing-set --help` now
+  names evidence, approval, gate, claim-truth, global-truth, publication, and
+  reconciliation-apply authority boundaries.
+- **Value space help boundary.** `haft value space --help` now names evidence,
+  approval, gate, claim-truth, global-truth, publication, and product-value
+  proof boundaries.
+- **Evidence path help boundary.** `haft evidence path --help` now names claim
+  truth and publication alongside evidence, approval, gate, and global-truth
+  non-authority boundaries.
+- **Spec lifecycle help boundaries.** `haft spec sync`, `haft spec export`,
+  `haft spec apply-change`, and `haft spec classify-change` help now name
+  evidence, gate, claim-truth, global-truth, and prose-authority boundaries.
+- **Drift route compact boundary.** `haft drift route` text output now names
+  the same `claim_truth` and `publication` non-authority posture already
+  present in JSON.
+- **Blocked-use attention compact boundary.** `haft attention blocked` text
+  output now names the same `claim_truth` and `publication` non-authority
+  posture already present in JSON.
+- **Baseline audit spec-review classification.** `haft baseline audit` now
+  classifies spec-review `authority_boundary.rebaseline` vocabulary as
+  read-only lifecycle authority instead of legacy ambiguous baseline debt.
+- **Spec review authority boundary.** `haft spec review` and
+  `haft_query(action="spec_review")` now expose fielded authority-boundary
+  posture for advisory semantic review packets, making findings explicitly not
+  evidence, approval, rebaseline, GateDecision, SpecUseAdmission, claim truth,
+  global truth, or publication.
+- **Spec use publication boundary.** `haft spec use` and
+  `haft_query(action="spec_use")` now include publication posture in
+  `current_authority` and OperationalGate/no-OperationalGate authority
+  boundaries, keeping SpecificationUseRecord exact/audit output aligned with
+  other read-only projection surfaces that are not evidence, approval,
+  GateDecision, claim truth, global truth, or publication.
+- **Generated contract marker refresh.** The compatibility flag `haft interface
+  contract-generation --sync-materialized-carriers` rewrites only kernel
+  interface catalog source-digest marker lines in listed repo carriers. Its v2
+  report is explicitly a marker refresh: it does not render, synchronize,
+  compare, or verify semantic carrier bytes and cannot claim semantic
+  currentness. The report also remains outside host runtime materialization,
+  binding authority, evidence, approval, GateDecision, claim truth, global
+  truth, and publication.
+- **Contract-audit authority boundary.** `haft interface contract-audit` and
+  `haft_query(action="contract_audit")` now expose a top-level read-only
+  authority boundary stating that the contract inventory is not evidence,
+  approval, GateDecision, claim truth, global truth, publication, schema
+  generation, or host materialization.
+- **Maintenance drain authority boundary.** `haft overseer drain --json`,
+  `haft_refresh(action="drain")`, and `haft interface refresh.drain` now state
+  that drain reports, reconciliation proposals, and after-action reports are
+  not claim truth, global truth, or publication authority. Compact JSON remains
+  bounded and drain mutation behavior is unchanged.
+- **Read-only route/attention authority boundaries.** `haft drift route`,
+  `haft attention blocked`, and their MCP discovery surfaces now expose
+  advisory route and blocked-use attention boundaries as not evidence,
+  approval, GateDecision, claim truth, global truth, or publication. This keeps
+  repair suggestions and action invitations from looking like performed work,
+  approval, or published truth.
+- **Governing-set authority boundary.** `haft decision governing-set` and
+  `haft_query(action="governing_set")` now expose current-authority frontier,
+  snapshot, and answer-path boundaries as read-only projections that are not
+  evidence, approval, GateDecision, claim truth, global truth, or publication.
+  Text summaries now print the full frontier boundary instead of truncating it
+  back into an ambiguous gate-only cue.
+- **Spec use authority boundary.** `haft spec use` and
+  `haft_query(action="spec_use")` now expose `current_authority` as a
+  read-only frontier that is not evidence, approval, GateDecision, claim truth,
+  or global truth. The no-OperationalGate case now emits an explicit
+  non-authority boundary instead of an empty boundary object, and text
+  summaries print the full gate boundary including WorkCommission and
+  claim-truth posture.
+- **Spec sync/apply top-level authority boundary.** `haft spec sync` and
+  `haft spec apply-change` now state that SQL edition mutations are not
+  approval, rebaseline, evidence, GateDecision, claim truth, global truth, or
+  prose authority. This matches the strengthened source/publication/carrier
+  audit subrecord boundary.
+- **Spec export publication boundary.** SpecSection export/sync exact-audit
+  records now distinguish publication projection metadata from approval,
+  rebaseline, evidence, GateDecision, claim truth, and global truth. The
+  `--markdown` carrier projection still omits audit metadata, while JSON/text
+  views expose the stronger authority boundary.
+- **Baseline audit authority boundary.** `haft baseline audit --json` now
+  includes an explicit `mutation_boundary`, and the text summary prints the
+  same read-only boundary. Interface contract test fragments such as
+  `missing_symbol_baseline` and
+  `propose_rebaseline_with_binding_targets` are classified as legacy binding
+  scope vocabulary instead of false-positive ambiguous baseline debt.
+- **Decision reconciliation draft counter clarity.** R9 selection drafts now
+  distinguish broad `plan_scope_enrichment_candidates` from draftable
+  `reviewable_scope_enrichment_candidates`, while keeping the existing
+  `scope_enrichment_candidates` field as the draftable compatibility count.
+  This prevents embedded `current_metrics` from appearing to contradict the
+  selection-draft summary when the reconciliation plan also contains non-apply
+  review work.
+- **Decision reconciliation selection draft metrics context.** R9
+  `haft decision reconcile selection-draft --json` now embeds a read-only
+  `current_metrics` snapshot from the reconciliation metrics surface, so
+  operator-reviewed scope-enrichment selections carry visible before/after
+  context without making drafts apply-ready or copying metrics into the
+  operator-approved selection template.
+- **DriftEvent binding drill-down routing.** DriftEvents with
+  `root_cause=binding_target_missing` now point `suggested_next_command` at
+  ranked `haft drift bindings --dry-run --json` review before reconciliation,
+  instead of sending operators to the broader decision-reconcile report first.
+- **Drift binding candidate review ranking.** Compact
+  `haft drift bindings --dry-run --json` items now include review-only
+  `ranking_policy`, ranked candidate previews, and file-level
+  `candidate_review_groups` so old-decision binding reviews surface the most
+  relevant symbols first without creating binding authority or changing the
+  full audit path.
+- **Drift binding dry-run review load.** `haft drift bindings --dry-run
+  --json` now keeps compact review packets token-bounded by projecting
+  candidate symbols and diagnostics as previews with omitted counts. Long
+  diagnostic messages and full candidate lists remain available through the
+  explicit full audit path, `haft drift bindings --json`.
+- **Projection authority boundary completeness.** `haft correspondence graph`,
+  `haft change case`, and their `haft_query(...)`/`haft interface ...`
+  surfaces now explicitly report that these read-only projections are not
+  claim truth and not publication, matching the existing non-proof,
+  non-evidence/non-work, non-approval, non-gate, and non-global-truth
+  boundaries.
+- **Value-space authority boundary completeness.** `haft value space` and
+  `haft_query(action="value_space")` now explicitly report that engineering
+  value projections are not claim truth and not publication, matching the
+  existing not-score/not-evidence/not-approval/not-gate/not-global-truth
+  boundary.
+- **Decision reconciliation fallback target cleanup.** R9
+  `enrich_scope` reconciliation selections now support explicit
+  `remove_whole_file_fallback_targets` entries for named existing
+  whole-file fallback `binding_targets`. Selection drafts surface those
+  removable fallback keys as review hints, `selection-review` rejects unknown
+  or non-fallback removals, and apply removes only the operator-approved
+  fallback targets while preserving precise governance/symbol targets.
+- **Decision reconciliation draft subject preservation.** R9
+  `haft decision reconcile selection-draft --json` now preserves an existing
+  `decision_subject_ref` in proposed `enrich_scope` selections instead of
+  replacing it with a TODO placeholder. The draft remains report-only:
+  `operator_approval_ref` and review reasons are still required, and whole-file
+  fallback targets still require operator review before apply.
+- **Drift binding dry-run command parity.** `haft drift bindings --dry-run
+  --json` is now accepted as an explicit read-only alias for the default
+  binding-target review report, matching the command surfaced by status and
+  overseer drill-down hints. Its JSON output is compact by default with
+  omitted-item counts and a `full_audit_command`, while plain
+  `haft drift bindings --json` remains the full audit report. Combining
+  `--dry-run` with binding mutation flags now fails closed. `haft interface
+  drift.binding_review --json` now documents the CLI-only review/mutation
+  boundary, and generated-contract carrier digest markers were synced to the
+  updated kernel interface catalog.
+- **Spec health plus retained-recall compatibility regressions.** Added focused
+  regression
+  coverage for spec drift `section_id` reporting, CLI/MCP spec-onboarding JSON
+  key parity, cross-project recall history injection for paraphrased hits, and
+  the live CrossHybrid recall floor against the current decision corpus. The
+  CrossHybrid check is compatibility coverage outside the v9 contract and P14
+  acceptance basis; it is not v9 retrieval-quality or release evidence.
+- **Generated-contract materialized carrier marker check.** `haft interface
+  contract-generation --check-materialized-carriers` checks only whether every
+  listed host/skill/plugin/Pi repo carrier contains the required source-digest
+  and authority-boundary marker strings. The compact read-only result explicitly
+  reports `semantic_bytes_verified=false`; marker presence is not semantic
+  currentness.
+- **Overseer drain compact JSON projection.** `haft overseer drain --dry-run
+  --json` now emits a compact audit projection by default while preserving
+  complete summary counts, explicit omitted counters, and
+  `full_audit_command`. Use `--json --full` for the full audit payload and
+  `--limit N` to tune the compact sample size.
+- **Decision reconciliation approval-readiness review metadata.** R9
+  `haft decision reconcile selection-draft --json` now includes structured
+  per-candidate `approval_readiness` metadata: why the draft is not
+  apply-ready, which placeholders remain, what operator checks are required,
+  and which selection fields must be confirmed. Compact text shows
+  `readiness` and blocker count while preserving `operator_approved=false`,
+  `selected_candidates=0`, and the separate fail-closed `selection-review` /
+  `apply` boundary.
+- **Decision reconciliation draft structured proposed selection.** R9
+  `haft decision reconcile selection-draft --json` now exposes a
+  `proposed_selection` object for each review candidate in addition to the
+  legacy escaped `selection_template` string, so agents and operators can
+  inspect the exact proposed `enrich_scope` item without parsing JSON text.
+  The field remains report-only, keeps `operator_approved=false`, and does not
+  copy review-only hints or create apply authority.
+- **Overseer status JSON compact projection.** `haft overseer status --json`
+  now emits the same grouped drift/stale signal projection as compact text by
+  default, with `--full` preserving the raw per-decision signal list for exact
+  drill-down.
+- **Product-value diagnostics evidence refresh.** The 2026-06-24 product-value
+  evidence
+  packet now includes the stale `haft serve` diagnostic and contract-audit
+  authority-inventory guard, with updated value-space evidence-ref counts and
+  current drift metrics while preserving the equal-budget comparison gap.
+- **Contract-audit authority inventory guard.** Contract-audit regression tests
+  now pin the binding and lifecycle/semantic mutation surfaces
+  (`decision.decide`, `decision.reconcile_apply`, and `spec.apply_change`) so
+  they cannot silently disappear from the read-only surface inventory.
+- **Doctor stale serve diagnostics.** `haft doctor` now reports current-project
+  `haft serve` processes, warning when duplicate or older MCP servers are still
+  running from a different executable than `PATH` resolves, so rebuild/restart
+  drift is visible before agents trust stale status output.
+- **Spec export interface contract.** `haft interface spec.export --json` now
+  documents the existing `haft spec export` publication projection surface,
+  including SQL source edition, publication hash, carrier bytes, markdown-only
+  output, and the read-only authority boundary.
+- **README product-claim boundary.** The public README now describes Haft as a
+  bounded project-local FPF governance substrate for human-authorized AI
+  engineering work, not as a complete FPF operating system.
+- **Product-value evidence ref count.** The 2026-06-24 product-value evidence
+  packet now reports the actual public `haft value space` evidence-ref count
+  (`15`) instead of the stale earlier packet count.
+- **Status maintenance-plan drill-down wording.** Default status now labels
+  `haft_refresh(action="plan")` as compact and names
+  `haft_refresh(action="plan", verbose=true)` as the full work-order route.
+- **Status runtime provenance.** `haft_query(action="status")` now includes a
+  bounded `haft serve` runtime fingerprint with PID, process start time,
+  executable path, and executable mtime so agents can distinguish stale MCP
+  server processes from freshly rebuilt binaries.
+- **Maintenance plan compact default.** `haft_refresh(action="plan")` now
+  keeps deterministic and machine-checkable work visible while sampling the
+  Rung-3 judgment tail by default, with `verbose=true` retaining the full work
+  order. This prevents the MCP maintenance plan from dumping dozens of
+  operator-judgment tasks into agent context.
+- **Baseline audit bounded JSON projection.** `haft baseline audit --json
+  --limit N` now keeps full summary/diagnostic counts while truncating the
+  emitted findings with explicit `projection.omitted_findings` and a
+  `full_audit_command`, so agents can check `legacy_ambiguous_baseline`
+  without dumping the full repository audit into context.
+- **Product-value scope-violation evidence.** The 2026-06-24 product-value
+  packet now records a deliberate R9 scope/authority violation attempt as a
+  read-only blocked-use attention item with exact source-return requirements,
+  without claiming runtime gate passage, approval, evidence truth, or global
+  product proof.
+- **Contract-generation discovery shape counts.** The
+  `query.contract_generation` interface discovery example now matches the live
+  manifest counts after `spec.apply_change`, with a regression test comparing
+  the illustrative summary to the generated report.
+- **Spec sync-back no-bloat guards.** Default status, default
+  `code_context`, MCP `tools/list`, and compact contract-generation summaries
+  now regression-test that the long `spec.apply_change` dry-run contract shape
+  stays behind explicit interface/contract drill-downs.
+- **Spec sync-back interface contract.** `haft interface spec.apply_change`
+  now documents the CLI-only Markdown-to-SQL sync-back path, including the
+  required classify/dry-run/apply sequence, authority boundary, `planned_edition`
+  dry-run shape, and the guarantee that sync-back is not approval, rebaseline,
+  evidence, GateDecision, or prose authority.
+- **Root spec carrier semio coverage.** `haft carrier check` now scans
+  root-level `spec/*.md` support docs, and the root workflow/agent contracts no
+  longer describe removed `haft agent` or desktop surfaces as current runtime
+  paths.
+- **Enabling-system carrier semio coverage.** `haft carrier check` now scans
+  `spec/enabling-system/*.md`, treats the desktop layer contract as an explicit
+  archived carrier, and keeps current enabling-system architecture/stack docs
+  aligned to the v8 host-skills + MCP + CLI surface model.
+- **Dead-surface carrier semio guard.** Carrier semio checks no longer treat a
+  neighboring "supported hosts" phrase as permission to present the desktop
+  wrapper or standalone-agent TUI as current, and target-system support docs
+  now state the v8 current surface as host skills/prompts + MCP + CLI while
+  keeping desktop references archived/provenance-only.
+- **Product-value evidence post-rebuild packet.** The 2026-06-24 product-value
+  evidence now reflects the rebuilt installed CLI, the latest autonomous
+  maintenance run/undo command, the read-only overseer drill-down fix, the host
+  discipline carrier guard, and current reconciliation metrics without
+  presenting the packet as approval, gate passage, global truth, or solved
+  authority-frontier noise.
+- **Overseer status read-only drill-down hints.** Compact overseer/status output
+  no longer advertises mutating `haft overseer maintain --json` as an
+  inspection path; it now points drift/stale/suppression review at bounded
+  judgment, dry-run drain, status JSON, or `haft_refresh` read-only drill-downs.
+- **Host discipline carrier semio coverage.** `haft carrier manifest` now
+  classifies root `CLAUDE.md` as a current host discipline mirror, and
+  `haft carrier check` scans it for prompt/schema/model authority-boundary
+  violations alongside `AGENTS.md`, README, templates, skills, generated
+  surfaces, and Pi bundle carriers.
+- **WLNK assurance boundary wording.** The older assurance one-liner now labels
+  evidence/formality/reliability displays as diagnostic-only, not approval, gate
+  passage, claim truth, global truth, or publication.
+- **Maintenance reconciliation proposal drill-downs.** Read-only maintenance
+  reconciliation proposals now suggest bounded
+  `haft decision reconcile --json --limit 5` / governing-set `--limit 5`
+  inspection commands instead of full audit JSON dumps.
+- **Decision reconciliation CLI compact limits.** Read-only
+  `haft decision reconcile --json --limit N` and
+  `haft decision governing-set --json --limit N` now return bounded compact
+  projections matching the MCP drill-down behavior while preserving legacy
+  `--json` full-audit output.
+- **Overseer status bounded judgment drill-down.** `haft overseer status` now
+  points compact drift-confirmation signals at
+  `haft overseer judgment --json --limit 20` instead of the full audit JSON
+  packet.
+- **Bounded overseer judgment JSON.** `haft overseer judgment --json --limit N`
+  now returns a compact read-only review packet with omitted task/proposal
+  counts and a `full_audit_command`, and status/interface hints point agents to
+  the bounded drill-down instead of forcing a full needs-judgment dump.
+- **Default status needs-binding drift count.** The default cockpit Decision
+  Health line now classifies legacy whole-file fallback DriftEvents as
+  needs-binding resolution work, matching the DriftEvent summary instead of
+  reporting them as material drift or `0 needs-binding` noise.
+- **SQL-first spec check document summaries.** `haft spec check --json` now
+  aggregates repeated SQL-first SpecSection carrier rows by path/kind so the
+  `documents` list reports each carrier once while preserving section counts,
+  active counts, term-map counts, and findings.
+- **Carrier-only semantic drift routing.** `haft drift route carrier_only` and
+  `haft_query(action="drift_route", drift_kind="carrier_only")` now classify
+  carrier-only changes as recognized carrier-layer drift instead of unknown
+  high-risk drift, preserving semantic authority while keeping the route
+  read-only.
+- **Product-value evidence live rebuild refresh.** The 2026-06-24 product-value
+  evidence packet now matches rebuilt live metrics and includes the
+  report-only reconciliation review packet slice as evidence without claiming
+  approval, gate passage, global truth, or solved authority-frontier noise.
+- **Current governing frontier snapshot checks.** `haft decision governing-set`
+  now supports `--write-snapshot` and `--check-snapshot` JSON carriers so agents
+  can compare read-only authority-frontier digests across slices without
+  creating approval, evidence truth, gate passage, or reconciliation authority.
+- **Bounded reconciliation selection drafts.** `haft decision reconcile
+  selection-draft --json` now emits a compact review slice by default with
+  emitted/omitted candidate counts and an explicit `--full` audit command,
+  preventing R9 scope-enrichment review candidates from flooding agents while
+  preserving the complete report-only draft.
+- **Reviewable reconciliation draft ordering.** Bounded reconciliation
+  selection drafts now put higher-confidence, precise-target enrichment
+  candidates before low-confidence TODO-heavy candidates, keeping the default
+  review packet focused without changing apply authority.
+- **Selection document templates for reconciliation drafts.** Report-only
+  reconciliation selection drafts now include a top-level
+  `selection_document_template` assembled from the emitted bounded items, with
+  an empty `operator_approval_ref` so review/apply still reject it until the
+  operator explicitly approves the packet.
+- **Reconciliation selection template export.** `haft decision reconcile
+  selection-draft --write-template selection.json` now writes the bounded
+  `selection_document_template` to a review file while preserving the empty
+  `operator_approval_ref`, so `selection-review` and `apply` remain
+  fail-closed until explicit operator approval exists.
+- **Reconciliation selection placeholder validation.** `selection-review` and
+  `apply` now reject `TODO_...` placeholder values in reconciliation selection
+  documents, so exported templates cannot become apply-ready by filling only
+  `operator_approval_ref`.
+- **Reconciliation subject-ref review hints.** Selection drafts now include
+  report-only `decision_subject_ref_suggestions` derived from decision metadata
+  to reduce R9 review friction, while exported apply templates still keep TODO
+  placeholders and require explicit reviewed values.
+- **Reconciliation carrier review hints.** Selection drafts now include
+  `decision_carrier_hint` and `review_commands` so R9 reviewers can jump back
+  to the source DecisionRecord and narrowed draft view without treating carrier
+  text as approval or apply authority.
+- **Current-operation reconciliation selection validation.** `selection-review`
+  and `apply` now reject stale `enrich_scope` selections when the current
+  reviewed group no longer advertises `apply_operation=enrich_scope`, forcing
+  agents to rebuild the packet from the current reconciliation plan.
+- **Stale reconciliation group diagnostics.** `selection-review` and `apply`
+  now explain when an old `reviewed_group_id` is gone but the same
+  `decision_refs` match a current reconciliation group, including the current
+  group id and apply operation while keeping the stale packet fail-closed.
+- **Default status contract-generation bloat guard.** Default
+  `haft_query(action="status")` now has regression coverage proving it does not
+  inline generated contract-generation manifests, fragments, schema digests, or
+  runtime schema-audit details.
+- **Compact contract-generation CLI bloat guard.** Compact
+  `haft interface contract-generation` output now has regression coverage
+  proving it stays at summary counts and does not inline generated fragment,
+  schema, or materialized-carrier detail.
+- **Baseline audit autonomous rebaseline classification.** `haft baseline
+  audit` now classifies human-readable autonomous maintenance titles such as
+  "Autonomous additive rebaseline" as autonomous maintenance wording instead
+  of unresolved legacy ambiguous baseline debt.
+- **DriftEvent resolution record posture.** DriftEvent reports now expose a
+  read-only `resolution_record_posture` so agents can distinguish applied
+  resolution ledger records from stale target bindings, inactive waivers, and
+  unsupported ledger statuses without treating the record as decision authority.
+- **DriftEvent resolution posture binding.** DriftEvent resolution ledger
+  records now bind to the event's materiality and audit-only posture, so an old
+  resolved/waived record remains visible for audit but no longer closes the
+  event after the same target becomes materially different.
+- **Value-space simplify/kill dashboard visibility.** `haft value space` now
+  prints the read-only simplify/kill review triggers in compact text output
+  instead of hiding them behind a count, while preserving the no-score and
+  not-gate/not-approval authority boundaries.
+- **Compact drift/reconciliation drill-down limits.**
+  `haft_query(action="drift_events"|"decision_reconcile"|"governing_set",
+  limit=N)` now applies `limit` to compact MCP projections while preserving
+  `full=true` audit views untruncated.
+- **Host-style integer compact limits.** DriftEvents compact-projection tests now
+  cover both JSON-decoded numeric limits and host-supplied integer limits, so
+  bounded `limit=5` drill-downs stay bounded across MCP client adapters.
+- **Bounded DriftEvent fanout payloads.** Compact DriftEvent reports now cap
+  each event's inlined `impacted_decisions` and expose
+  `omitted_impacted_decisions`, so `haft_query(action="drift_events", limit=5)`
+  stays bounded while `full=true` retains the full audit payload.
+- **Budgeted status drill-down recommendations.** Compact status,
+  reconciliation cues, and prompt-governor attention now recommend bounded
+  `limit=5` drift/reconciliation/governing-set drill-downs, while keeping
+  explicit `full=true` audit routes for untruncated inspection.
+- **Bundled status carrier drill-down sync.** The bundled `/h-status`,
+  `/h-reason`, `/h-verify`, and Pi `h-status` carriers now point agents at the
+  same bounded compact drift/reconciliation/governing-set drill-downs, and the
+  interface catalog documents `limit`/`full` for those MCP actions.
+- **Contract-generation runtime schema audit.** `haft interface
+  contract-generation --json` and `haft_query(action="contract_generation")`
+  now include a read-only `runtime_schema_audit` that validates generated MCP
+  schema fragments against the live `ToolCatalog` action enum, required fields,
+  properties, and schema digests, while compact output keeps only mirror/drift
+  counts.
+- **Runtime schema audit no-default-bloat guards.** Default status,
+  `code_context`, MCP `tools/list`, and compact contract-generation text now
+  reject inline `runtime_schema_audit` detail while preserving summary counts
+  behind the explicit contract-generation surface.
+- **Contract-generation materialized carrier manifest.** `haft interface
+  contract-generation --json` and `haft_query(action="contract_generation")`
+  now list materialized host/skill/plugin/Pi carrier files with source-contract,
+  source-digest guarded sync posture, required markers, fragment refs, and
+  validation refs, while compact text keeps only counts and default status still
+  omits the manifest.
+- **Generated MCP schema fragment materialization.** `haft interface
+  contract-generation --write-schema-fragments <path>` now writes a
+  deterministic JSON carrier for generated MCP action schema fragments with
+  source and carrier digests, giving host/schema sync checks a real generated
+  artifact without making it runtime schema authority.
+- **Generated description fragment materialization.** `haft interface
+  contract-generation --write-description-fragments <path>` now writes a
+  deterministic JSON carrier for generated host/skill/plugin/Pi description
+  fragments with source and carrier digests, so wording sync can be checked as
+  generated artifact bytes without treating generated text as approval.
+- **Generated contract carrier drift checks.** `haft interface
+  contract-generation --check-schema-fragments <path>` and
+  `--check-description-fragments <path>` now compare materialized carrier files
+  with the current kernel interface catalog and fail on drift without rewriting
+  the files.
+- **Governing frontier snapshot digest.** `haft decision governing-set --json`
+  and `haft_query(action="governing_set")` now include a stable
+  `snapshot_digest` in the read-only snapshot metadata, so current-authority
+  frontier projections can be referenced and compared without relying on
+  status prose or volatile `generated_at` values.
+- **Overseer reconciliation posture summary.** Maintenance-run JSON now includes
+  a compact read-only `reconciliation_summary` with proposal counts, kind
+  counts, fallback/high-fanout posture, max fanout, suggested commands, and the
+  proposal authority boundary so agents do not need to dump every proposal to
+  see the maintenance posture.
+- **Overseer autonomous action allowlist.** Maintenance-run normalization now
+  accepts only maintenance effects (`auto_rebaseline`, `observable_run`,
+  `revalidate_stale`) as executed autonomous actions, with regression coverage
+  rejecting lifecycle/binding kinds such as supersede, retire, merge, and
+  approve.
+- **Overseer autonomous ledger retention.** Status loading now retains the
+  newest maintenance run with executed autonomous actions even after a later
+  report-only `overseer maintain` run becomes `latest-maintenance`, so the
+  operator still sees the exact undo commands for applied autonomous work.
+- **Pi contract-source digest guard.** The bundled Pi tool metadata now carries
+  the current kernel interface catalog `source_digest`, and regression coverage
+  compares it against the read-only `contract_generation` manifest so Pi
+  descriptions cannot silently drift from kernel-owned interface contracts.
+- **MCP status autonomous-maintenance disclosure guard.** Regression coverage now
+  proves `haft_query(action="status")` surfaces latest overseer maintenance
+  actions, including the `AUTONOMOUS MAINTENANCE` block and exact
+  `haft overseer undo <run-id> <action-id>` command, before the normal Haft
+  cockpit.
+- **Projection assurance authority boundary.** Audit/evidence projections now
+  state that displayed `R_eff`, `F_eff`, formality scale, and bridge-loss
+  diagnostics are not approval, gate passage, claim truth, global truth, or
+  publication.
+- **Governing frontier history split.** `haft decision governing-set` and
+  `haft_query(action="governing_set")` now expose an explicit
+  `authority_frontier` separating current governing DecisionRecord refs from
+  terminal historical refs, so audit consumers do not infer live authority from
+  superseded/deprecated history.
+- **Decision reconciliation draft selection boundary.** `haft decision reconcile
+  selection-draft` now keeps low/medium-confidence scope-enrichment candidates
+  as review candidates instead of counting them as selected apply candidates;
+  compact text prints both review-candidate and selected-candidate counts.
+- **Pi generated schema mirror coverage.** Pi TypeBox schema regression coverage
+  now validates every generated MCP schema fragment, not only `haft_query`, and
+  the packaged Pi mirrors now include the missing ProblemCard, ChoiceResult,
+  semantic-spine decision, and binding-target fields from the kernel interface
+  catalog.
+- **Formality schema wording boundary.** Decision evidence schema text now names
+  current F0-F9 formality, `formality_scale_id`, legacy/unversioned bridge/loss
+  posture, and the non-authority boundary, while MCP `tools/list` remains under
+  the compact context budget.
+- **MCP DriftEvent compact source-items guard.** Default
+  `haft_query(action="drift_events")` JSON now omits serialized
+  `source_items` audit detail and reports `omitted_source_items` instead,
+  preserving `source_items` only for `full=true` audit drill-downs.
+- **Baseline audit authority-boundary classification.** `haft baseline audit`
+  now classifies explicit `not_approval_not_rebaseline` spec sync/apply
+  authority-boundary tokens as lifecycle-authority wording instead of legacy
+  ambiguous baseline debt, eliminating false-positive status/audit noise for
+  those surfaces.
+- **Carrier authority receipt wording guard.** Carrier semio checks now flag
+  prompt text, model-supplied arguments, generated text/schema, skill
+  descriptions, plugin metadata, and Pi metadata when they are described as
+  authorization receipts, approval evidence, binding authority, or gate
+  passage, while preserving the valid host receipt verifier boundary.
+- **Contract-generation materialized schema filtering.** Generated MCP schema
+  fragments now omit fields explicitly excluded from MCP schema coverage and
+  skip CLI/input-file-only apply contracts, preventing read-only discovery
+  actions from masquerading as materialized host schemas.
+- **MCP DriftEvent resolution ledger parity.** `haft_query(action="drift_events")`
+  and compact status/governor status now apply the same default
+  `.haft/drift-event-resolutions.json` read-only overlay as `haft drift
+  events`, so resolved or unexpired waived DriftEvents are not reported as open
+  cockpit noise through MCP while remaining non-binding metadata in drill-downs.
+- **DriftEvent scope-manifest root cause.** Scope-manifest adjacent file churn
+  now reports `root_cause=implementation_footprint_churn` instead of
+  `schema_changed`, while material scope-manifest events keep the
+  `schema_changed` root cause.
+- **Decision reconciliation interface discovery.** Interface contracts now
+  expose `claim_lifecycle_update` selection documents and the exact
+  `lineage_relations` labels restored by full reconciliation preview, so
+  agents can discover the existing operator-approved claim lifecycle and
+  lineage paths without inferring them from code.
+- **Pi query action mirror guard.** The MCP tool catalog tests now compare the
+  Pi/plugin `haft_query` action enum against the kernel `tools/list` enum, so
+  new read-only query actions fail tests if the bundled Pi schema mirror drifts.
+- **Read-only query stale footer fallback.** If the typed status stale lane is
+  unavailable while rendering MCP query footers, Haft now suppresses raw stale
+  debt instead of falling back to `FindStaleDecisions` counts that can disagree
+  with the compact status cockpit.
+- **Reconciliation selection-draft target prefills.** `haft decision reconcile
+  selection-draft` now reuses already-known governance targets in read-only
+  `selection_template` output instead of forcing `TODO_target_kind` placeholders
+  when a candidate only needs an explicit `decision_subject_ref`.
+- **Baseline target authority reuse.** Re-baselining now reuses existing
+  effective drift binding targets, hydrating symbol hashes and ranges from
+  current source, unless the caller supplies new binding targets, hints, or
+  scope instructions. Historical `affected_files` stay a footprint instead of
+  forcing ambiguous binding re-inference.
+- **Baseline failure atomicity.** `artifact.Baseline` now resolves binding
+  targets before persisting affected-file hashes, so a failed ambiguous binding
+  resolution records diagnostics without moving the prior drift baseline or
+  replacing existing binding targets.
+- **Symbol-aware drift noise budget.** Decision drift now records additive
+  `materiality` and `trigger_kind` fields, distinguishes material governed
+  symbol changes from adjacent file churn, carrier-only edits, generated/local
+  runtime noise, and unknown legacy file-scope baselines, and keeps compact
+  status focused on material drift while grouping audit-only fan-out into one
+  trigger-path summary line. Symbol `binding_targets` now compare their own
+  `body_hash` and receiver identity directly, so receiver methods such as
+  `SQLiteBaselineStore.Get` and `MemoryBaselineStore.Get` no longer collapse
+  through the legacy receiver-less `affected_symbols` projection.
+- **Read-only DriftEvent aggregation.** Added `haft drift events` / `--json`
+  and `haft_query(action="drift_events")` as a read-only projection over
+  existing per-decision drift reports. The projection groups drift by
+  file-level changed target, trigger, and materiality, exposes `fanout` and
+  `impacted_decisions`, preserves the old `DriftReport` shape as
+  `compatibility_reports`, and keeps symbol details inside source items instead
+  of multiplying one file change into dozens of top-level events. Compact
+  `h-status` now renders unique DriftEvents, impacted decision count, and max
+  fanout while leaving full status and refresh scan compatibility reports
+  available as drill-downs. DriftEvent drill-downs now also expose
+  `needs_binding_resolution_events` plus `fallback_kind` / `fallback_reason`
+  when an unresolved whole-file or imprecise binding must be fixed before the
+  event is treated as proved material authority drift. DriftEvent JSON is now
+  schema v2: symbol-level changed targets are used when material symbol evidence
+  exists, file targets remain a labeled fallback, and events carry
+  machine-readable `root_cause`, `root_cause_detail`, summary counts for
+  semantic targets / file fallback / unknown high-risk events, and
+  `resolution_status` values such as `needs_scope_enrichment`,
+  `needs_rebaseline`, `needs_operator_judgment`, and `resolved`. Events now
+  include read-only `suggested_next_command` hints that point to drill-down or
+  review surfaces such as `haft decision reconcile --json` or
+  `haft_refresh(action="review")`; the hint is not evidence, approval, or a
+  mutation. Scope-manifest drift now reports `root_cause=schema_changed` while
+  preserving audit-only/resolved posture for additive schema/scope cues.
+- **Read-only DecisionReconciliationPlan.** Added `haft decision reconcile` /
+  `--json`, `haft_query(action="decision_reconcile")`, and
+  `haft interface query.decision_reconcile` as a deterministic report-only
+  authority-frontier projection. It groups active/refresh_due decisions only
+  when an explicit `decision_subject_ref`, bounded context, and explicit
+  governance-target overlap are present; shared `affected_files` remain
+  implementation-footprint hints and never become merge/supersede evidence by
+  themselves. Reconciliation and current-governing-set drill-downs now expose
+  `scope_enrichment_candidates`, `scope_enrichment_sets`,
+  `fallback_target_sets`, and `scope_repair_hints` so old decisions with
+  missing subjects, missing targets, or whole-file fallback posture point to
+  an operator-approved `enrich_scope` repair path without mutating lineage.
+  Each reconciliation group now also carries a read-only `preview` diff with
+  current/proposed status or scope effects, required selection fields, downstream
+  review cues, and an explicit mutation boundary so agents can show an
+  approveable packet before any `apply` document is used. Preview records now
+  include `validation_notes` that explain apply-readiness, missing successor
+  or scope requirements, and judgment-only conflict cases without creating a
+  selection document or authorizing mutation. Preview records also include
+  read-only `downstream_impact` counts and dependent refs from links/backlinks
+  so successor/retire/merge reviews can see what would need relinking or
+  follow-up before apply; the report itself does not relink anything.
+- **Decision reconciliation apply path.** Added
+  `haft decision reconcile apply SELECTION.json` as an explicit CLI-only
+  lineage mutation path for reviewed selections. Selection documents must carry
+  `authority=operator_approved_reconciliation_selection`,
+  `operator_approval_ref`, `reviewed_group_id`, affected decisions, operation,
+  and reason; successor-based operations require an already-created successor
+  DecisionRecord. The validator checks the whole batch before mutating, and MCP
+  still has only the read-only `decision_reconcile` planning action in this
+  slice.
+- **Decision scope enrichment apply path.** The same operator-approved
+  reconciliation apply document now supports `operation=enrich_scope` for
+  precision enrichment of old DecisionRecords. The operation requires exactly
+  one decision plus `decision_subject_ref` and governance or drift-watch
+  targets, can attach claim governance refs, validates the whole batch before
+  mutation, and updates only scope fields without changing status, lineage,
+  evidence, baselines, or gates. Reconciliation/governing-set projections now
+  read semantic governance/watch target refs even when no concrete code binding
+  target is present yet.
+- **Decision scope split.** DecisionRecords can now carry additive
+  `implementation_footprint`, `governance_targets`, and `drift_watch_targets`
+  alongside legacy `affected_files` / `binding_targets`. Drift detection uses
+  watch targets first, governance targets second, legacy binding targets third,
+  and treats explicit footprint-only files as provenance rather than governance
+  drift authority. Binding targets now expose an explicit resolver strategy
+  order, a supported-language matrix, `target_ref` for explicit semantic
+  targets, and semantic target kinds (`api_contract`, `invariant`,
+  `spec_section`) that do not require a file path. Receiver-qualified symbol
+  targets remain distinct during normalization, and whole-file fallback carries
+  an explicit low-confidence resolution source. Explicit semantic targets with
+  concrete carrier/range hashes now participate in drift evaluation:
+  unchanged normalized carrier text is audit-only, changed semantic target text
+  is `material_semantic_target`, and semantic targets without evaluator hashes
+  fail closed as `needs_binding_resolution`. Explicit semantic targets that
+  point at an unambiguous markdown heading or fenced `yaml spec-section` id now
+  auto-attach bounded line ranges and text hashes, so edits outside the governed
+  section remain audit-only while section body changes are material semantic
+  drift. When an auto-attached semantic target disappears from its carrier,
+  DriftEvent now keys the event by the semantic target and reports
+  `target_status=removed` with `root_cause=target_deleted` instead of treating
+  the change as anonymous file fallback. Unsupported-language fallback now has
+  matrix fixtures proving `.rb`, `.java`, and `.php` changes stay labeled as
+  low-confidence whole-file fallback and drift to `needs_binding_resolution`,
+  not material symbol drift. New DecisionRecords with `affected_files` now
+  auto-enrich `binding_targets` at creation time when the resolver can safely
+  pick a precise target; ambiguous multi-symbol files remain unenriched instead
+  of blocking `decide` or inventing a whole-file fallback. Markdown-heading
+  evaluator fixtures now cover `api_contract` and `invariant` targets as well
+  as fenced spec sections, proving bounded drift classification is available
+  for all explicit semantic target kinds when the carrier exposes an
+  unambiguous heading. Exact moved-symbol continuity now recognizes a governed
+  symbol target whose original file disappears but whose same kind/name/receiver
+  and body hash appears in another source file, producing a target-level
+  DriftEvent with `target_status=renamed` and `root_cause=target_renamed`.
+  Edited same-identity moves now surface as
+  `target_status=retarget_candidate`,
+  `fallback_kind=edited_symbol_move_candidate`,
+  `root_cause=retarget_candidate`, and
+  `resolution_status=needs_operator_judgment` instead of silently preserving
+  authority or retargeting the DecisionRecord.
+  Legacy decisions without the new fields keep their existing drift behavior.
+- **Read-only CurrentGoverningSet.** Added
+  `haft decision governing-set` / `--json`,
+  `haft_query(action="governing_set")`, and
+  `haft interface query.governing_set` as a derived current-authority frontier.
+  It groups active/refresh_due decisions by decision subject, bounded context,
+  and effective governance/drift target; terminal decisions remain searchable
+  history refs instead of live authority, and overlaps or explicit conflicts
+  surface as operator-review cues without lineage, baseline, evidence, or gate
+  mutations. The governing-set drill-down now supports focused read-only
+  filters: CLI `--query`, `--subject-ref`, and `--target-ref`, plus MCP
+  `query`, `bearer_ref`, and `source_refs`, so agents can answer "what
+  currently governs this symbol/contract/spec section?" without expanding
+  default status.
+- **Read-only reconciliation cues in status/governor.** Status data now derives
+  a compact `ReconciliationCueReport` from DriftEvents,
+  DecisionReconciliationPlan, and CurrentGoverningSet. Default cockpit status
+  and prompt-governor status can point to high-fanout drift events,
+  reconciliation candidates, and current-authority conflicts with drill-down
+  commands, while keeping lineage apply, baseline, evidence, and gate mutation
+  paths separate and operator-approved.
+- **Compact governor drift policy.** The prompt-governor status path now reports
+  drift as unique DriftEvents with impacted decision count and max fanout
+  instead of emitting one attention row per drifted DecisionRecord. Governor
+  attention keeps a single drift-events drill-down line, preserving the
+  evidence-debt cue without multiplying shared-file fanout into prompt noise.
+- **Compact overseer status grouping.** `haft overseer status` now keeps the
+  autonomous-maintenance undo disclosure visible while grouping per-decision
+  drift and stale findings into compact category lines with exact drill-down
+  commands. The detailed decision-level items remain available through
+  `haft overseer maintain --json`, `haft overseer judgment --json`,
+  `haft_refresh(action="scan", verbose=true)`, and
+  `haft_refresh(action="review")`.
+- **Claim-level lifecycle v1.** `DecisionClaim` now supports additive
+  `lifecycle_status`, `successor_ref`, `retired_reason`, and
+  `governance_target_refs` fields. Empty legacy lifecycle reads as active
+  without forcing old records to persist `active`; explicit `claims` can be
+  supplied through the decision input-file path, with `predictions` retained as
+  a compatibility projection. Decision reconciliation items include a
+  read-only claim lifecycle summary so partial claim retirement/supersession is
+  visible without retiring the whole DecisionRecord.
+- **Overseer drift auto-baseline safety.** Maintenance planning now uses drift
+  materiality and decision health before proposing deterministic rebaseline:
+  only proven non-material churn can auto-resolve, while material symbol drift
+  and unknown legacy file-scope drift remain operator-review work.
+- **Golden E2E module cache reuse.** The golden CLI subprocess test now
+  preserves the host Go module cache before switching `HOME` to a temp project,
+  avoiding false timeouts from cold `modernc.org/sqlite` downloads while still
+  keeping the build cache and project root isolated.
+- **BaselineKind compatibility layer.** SpecSection lifecycle and
+  approve/rebaseline/reopen JSON projections now expose
+  `baseline_kind=spec_section_approval_baseline`, while legacy untyped baseline
+  posture has an explicit `unknown_legacy_baseline` parser representation.
+  This starts the baseline split without a storage migration or new compact
+  status lane.
+- **Typed baseline snapshot split.** Spec lifecycle writes now go through
+  `SpecSectionApprovalBaseline`, while `PreWorkReferenceSnapshot` and
+  `VerifiedStateSnapshot` are separate typed objects that cannot be written to
+  `spec_section_baselines` through the normal store boundary. Drill-down
+  lifecycle and mutation JSON include `baseline_profile` so approval baselines,
+  work-reference snapshots, verified-state evidence, and unknown legacy
+  posture remain distinguishable.
+- **Carrier authority manifest.** Added `haft carrier manifest` /
+  `--json` as an explicit drill-down over current authority, support,
+  compatibility, provenance, archive, and sidekick carriers. The manifest keeps
+  `/h-reason` as a current umbrella skill, marks Pi as compatibility packaging,
+  labels the standalone-agent TUI and desktop wrappers as archive, recognizes
+  `haft board` as current CLI presentation support, and does not advertise a
+  built-in executor.
+- **Carrier semio guard.** Added `haft carrier check` / `--json` as a focused
+  fixed-point wording check over current/support/compat carrier text. It fails
+  dead standalone-agent TUI/desktop runtime-surface mentions that are not
+  explicitly labeled dropped, archive, provenance, support, or not-current,
+  while keeping default status free of carrier-manifest noise. MCP parity is
+  available through read-only `haft_query(action="carrier_manifest")` and
+  `haft_query(action="carrier_check")` drill-down actions, and `haft interface`
+  documents both carrier query contracts as read-only, non-status surfaces.
+- **MCP binding authority boundary.** MCP dispatch now fails binding governance
+  acts closed by default with a structured `operator_confirmation_required`
+  response: `haft_decision(action="decide")`, WorkCommission creation actions,
+  `haft_spec_section(approve|rebaseline|reopen)`, and authority-changing
+  `haft_refresh(waive|reopen|supersede|deprecate)` no longer treat
+  model-supplied arguments as proof of operator authorization. Manual CLI/host
+  paths remain the binding path; an additive authorization receipt model now
+  names `manual_cli` as the only v1-valid receipt kind and marks MCP
+  receipt-backed binding unsupported until a future host verifier exists. MCP
+  tool/interface descriptions now state that boundary.
+- **Binding surface inventory guard.** MCP binding-gate enforcement now reads a
+  classified inventory of read-only, draft, evidence-recording, binding,
+  lifecycle, and execution-authority surfaces. Focused tests keep known
+  authority mutations covered by `operator_confirmation_required` and scan the
+  README, target/enabling specs, h-decide/h-commission skills, and tool
+  descriptions for wording that would imply model-supplied prompt text is proof
+  of operator authorization.
+- **Formality F0-F9 preservation.** Evidence formality now preserves the
+  current FPF F0-F9 ordinal directly instead of folding F4-F9 values into the
+  old F0-F3 scale. Legacy F0-F3 records remain readable as lower-scale values,
+  while out-of-range inputs clamp only at the scale endpoints.
+- **Versioned formality scale metadata.** Evidence items now carry explicit
+  `formality_scale` / `formality_bridge` metadata alongside the legacy
+  `formality_level` projection. New evidence writes use
+  `fpf-2026-f0-f9`; legacy unversioned F0-F3 rows are surfaced as
+  `haft-legacy-f0-f3` with a loss-bearing bridge instead of being silently
+  promoted. EvidencePath records expose the scale while preserving the existing
+  `not_approval` / `not_gate_decision` / `not_global_truth` authority boundary.
+- **OperationalGate admission posture.** `require_current_source_and_admitted_use`
+  now passes only for current-source stronger-use admission; documentary-only
+  reading and temporary waiver admission remain admitted/waived for their own
+  contexts but block derived gate passage.
+- **Operator-facing Haft artifact transparency.** Agent-facing workflow,
+  status, refresh, projection, maintenance, baseline, evidence, and measure
+  responses now pair governance artifact refs with human-readable titles, for
+  example `**Decision title** \`dec-...\`` instead of bare IDs. Linked
+  ProblemCard/SolutionPortfolio/DecisionRecord refs in status and adoption
+  flows resolve to titles when available, missing projection refs render as
+  explicit untitled artifacts, generated `Variant.ID` values remain visible for
+  direct compare calls, and malformed direct compare payloads now fail instead
+  of being silently dropped.
+- **Overseer review schema.** The structured-output schema for
+  `haft overseer review` now requires every declared strict location property
+  and drops optional location fields that the reviewer did not require,
+  preventing strict JSON schema rejection before review execution starts.
+- **ProblemCard semantic identity sync coverage.** `haft sync` tests now pin a
+  richer DB -> Markdown carrier -> empty DB round-trip, covering typed
+  ProblemCard profile fields, semantic edition pins, source-of-truth binding,
+  and exact publication recoverability instead of only the minimal signal
+  envelope.
+- **Drift added-file noise.** Module-scope drift detection now lists current
+  scope files through `git ls-files --cached --others --exclude-standard` when
+  available, preserving modified/missing checks for baselined files while
+  keeping nested-gitignored build output and local governance/runtime carrier
+  directories out of added-file drift.
+- **Maintenance evidence cooldown date basis.** The maintenance plan cooldown
+  now compares today's evidence using the same local date prefix that
+  `AttachEvidence` writes into `evid-YYYYMMDD-*` IDs, avoiding duplicate
+  machine-check tasks around local/UTC day boundaries.
+- `haft init` instruction carriers restore the peer-engineering communication
+  style from the original `CLAUDE.md`: dry technical humor is allowed when it
+  helps, and agents are told to sound like pairing engineers rather than
+  executive-presenting bots. Fixes [#92](https://github.com/m0n0x41d/haft/issues/92).
+- **RETAINED COMPATIBILITY/MIGRATION — shared-sidecar cwd isolation.** Shared
+  `haft-embed` daemons no longer
+  inherit the first client project's
+  working directory; the launcher now starts them from the private socket
+  directory and resolves configured cache paths to absolute paths before
+  launch. This retained runtime is outside the v9 contract and P14 acceptance
+  basis.
+- **RETAINED COMPATIBILITY/MIGRATION — shared-sidecar memory retention.** Shared
+  `haft-embed` daemons no longer
+  retain multi-gigabyte allocator arenas indefinitely after cold corpus warms:
+  hybrid recall batches corpus embedding misses, the Rust sidecar disables the
+  ORT CPU memory arena by default (`--cpu-arena` restores the old allocator
+  mode), and socket daemon idle timeout now tracks active embedding requests
+  rather than open idle clients. This retained runtime is outside the v9
+  contract and P14 acceptance basis and carries no v9 retrieval-quality claim.
+
+### Removed
+
+- **Built-in Open-Sleigh execution contour.** Removed the `haft run` and
+  `haft harness` commands, their Go execution/TUI helpers, the complete
+  `open-sleigh/` Elixir application and tests, its smoke scripts, and all
+  Elixir/OTP/BEAM setup and packaging from CI, P13, installers, and release
+  archives. Haft still governs runner-neutral WorkCommission and
+  RuntimeRunRecord lifecycle through `haft commission`, `haft_commission`, and
+  `complete-external`; execution now belongs to the host agent or an external
+  runner. The v9 installer removes only the exact Haft-managed legacy runtime
+  and preserves user-owned Open-Sleigh data and the independent embedding
+  sidecar, which remains outside the v9 contract and P14 acceptance basis.
+- **Obsolete `src/mcp` hook stack.** Removed the tracked shell hook,
+  `pre-commit` configuration, and setup script that targeted a deleted module,
+  pinned an obsolete linter, and incorrectly claimed exact CI parity. Current
+  contributor guidance now describes bounded local checks without presenting
+  them as release evidence.
+- **PatternUse and PatternRecall product surfaces.** Removed the transient
+  route-card, route-vector, hybrid gateway, `pattern-use`, `pattern_recall`,
+  compiled recommendation, behavior-corpus, and shadow pattern-description
+  stacks from the final v9 product. FPF use now starts from exact source-native
+  concern/lookup/inspect retrieval; source candidates do not select a method or
+  establish applicability. Dense/hybrid superiority remains deferred.
+- **Universal public workflow phases.** Removed the redundant public
+  MethodPack phase entry, abductive, boundary-unpacking, semantic-review, and
+  standalone spec-coverage entrypoints plus the Pi FPF development and
+  semiotics skills. The internal SWE MethodPack remains task-local engineering
+  guidance, while abductive, boundary, semantic-fanout, and spec-coverage
+  routines stay inside the independent public capability that owns the current
+  question.
+- **Remaining standalone-agent implementation.** Removed the unreachable
+  prompt-cycle, guardrail, evidence, subagent, LLM-provider, tool registry,
+  file/bash/web tool, LSP client, MCP client, task-manager, hook-executor, and
+  legacy skill-loader packages left after the v8 governance-substrate pivot.
+  The optional OpenAI embedding adapter retains its embeddings client and a
+  local direct-API-key resolver; no agent/chat provider transport remains.
+  `haft board` remains presentation-only; `haft run` is removed with the
+  execution contour. Haft v9 is consumed through host skills, CLI, and MCP over
+  one project artifact graph.
+- **EnablingSystemSpec as the software implementation carrier.** Removed the
+  overloaded `.haft/specs/enabling-system.md` software carrier from current
+  onboarding. `SoftwareSystemSpec` now carries the software-system boundary;
+  historical enabling-system carriers remain migration input rather than
+  current v9 authority.
+
 ## [8.1.0] — 2026-06-06 — shared embedding runtime
 
 Architectural pivot recorded in
@@ -381,7 +3088,7 @@ plugged into Claude Code / Codex / OpenCode / Cursor over their native skill
   and the umbrella entry point was missed by users with v6/v7 muscle
   memory. The new `/h-reason` carries the full reasoning palette in one
   place — framing, exploration, comparison, verification, notes, plus
-  the slideument patterns that don't have dedicated skills (Goldilocks
+	  the source-derived patterns that don't have dedicated skills (Goldilocks
   problem selection, NQD discipline, Bitter-Lesson Preference,
   Scaling-Law Lens, stepping stones, Anti-Goodhart indicator roles).
   Description is broad enough to also fire as fallback on ambiguous
@@ -568,7 +3275,20 @@ Flagship release. New v8 agent TUI on Bun + @opentui/core + SolidJS, talking to 
 
 ### Fixed
 
-- (No fixes in this release — the v8 work is purely additive on top of the v7.1.0 foundation.)
+- **Open-Sleigh runtime writers serialize nested structs.** Runtime log and
+  status JSON conversion recursively passes structs through
+  `Map.from_struct/1` instead of rejecting nested struct fields.
+- **Commission lifecycle and directory scope authorization.** Go and
+  Open-Sleigh both treat a trailing-slash scope such as `docs/` as that
+  directory plus descendants without admitting sibling prefixes. Open-Sleigh
+  rejects commission lifecycle bash/MCP spellings before command execution.
+- **Replayed preflight lifecycle is idempotent only after a passed running
+  preflight.** Replayed `record_preflight` and `start_after_preflight` events
+  are accepted only for a running commission whose preflight already passed;
+  queued, blocked, failed, and unrelated replays remain fail-closed.
+- **Linux ARM64 release Beam setup.** Release builds on
+  `ubuntu-24.04-arm` normalize `ImageOS=ubuntu24` for `erlef/setup-beam` while
+  retaining Erlang/OTP 27 and Elixir 1.18.3.
 
 ## [7.1.0] — 2026-05-13
 
@@ -701,10 +3421,10 @@ This is a major release. v6 artifacts (decisions, problems, notes, evidence, com
 
 - **Desktop frontend migrated from Wails v2 to Tauri v2** — Rust shell + React 19 + TypeScript; faster launch, smaller binary, native per-platform packaging. `haft desktop` launcher finds the installed app or falls back to `desktop-tauri/target/release/bundle/` in dev.
 - **`parity_plan` JSON Schema unified** — both transports now share a single `artifact.ParityPlanJSONSchema` helper instead of two parallel maps in `tools/haft.go` and `fpf/server.go`.
-- **Pattern attribution cleaned up** — patterns sourced from Levenchuk material (slideument + semiotics slideument) relabeled from generic "Haft operational pattern" to specific source references (FRAME-06/07, CHR-02/06/07/08, CMP-07, EXP-07, VER-09, X-TERM-QUALITY, X-GLOSSARY, X-BITTER-LESSON).
-- **FRAME-07 Goldilocks** — fabricated "10-20% beyond current capability" replaced with zone-of-proximal-development framing per slideument slide 7.
+- **Pattern attribution cleaned up** — source-derived patterns relabeled from generic "Haft operational pattern" to specific source references (FRAME-06/07, CHR-02/06/07/08, CMP-07, EXP-07, VER-09, X-TERM-QUALITY, X-GLOSSARY, X-BITTER-LESSON).
+- **FRAME-07 Goldilocks** — fabricated "10-20% beyond current capability" replaced with source-backed zone-of-proximal-development framing.
 - **FRAME-08 unified with X-STATEMENT-TYPE** — question 3 of the Reading Checklist delegates to the X-STATEMENT-TYPE taxonomy (rule/promise/explanation/gate/evidence) instead of duplicating a parallel list.
-- **CHR-11 source clarity** — explicit note distinguishing the slideument slide 35 didactic 5-step compression from the canonical FPF-Spec A.6.P:4 four-layer structure (Stable lens → Kind-explicit relation tokens → Slot-explicit qualified relation records → Change-class lexicon → Lexical guardrails). Each didactic step carries a canonical A.6.P:4.x reference.
+- **CHR-11 source clarity** — explicit note distinguishing an earlier didactic five-step compression from the canonical FPF-Spec A.6.P:4 four-layer structure (Stable lens → Kind-explicit relation tokens → Slot-explicit qualified relation records → Change-class lexicon → Lexical guardrails). Each didactic step carries a canonical A.6.P:4.x reference.
 - **h-reason SKILL.md trimmed** — 400 → 359 lines. Removed Concept Index (duplicated routes matchers), merged RAG search reference into FPF spec lookup, compacted Feature Maturity table into a status-keyed list. Micro-patterns preserved as direct-response floor.
 - **Removed "Mandatory FPF retrieval (MUST execute before reasoning)" section** from h-reason SKILL.md — contradicted the interaction-mode protocol and doubled the auto-hint cost.
 - **Hint query keywords dynamized** — per-phase example retrieval keywords now derived from the first N matchers of the corresponding `phase-*` route in `fpf-routes.json` instead of a hardcoded Go map. Matcher rename propagates to hint automatically.
@@ -717,7 +3437,7 @@ This is a major release. v6 artifacts (decisions, problems, notes, evidence, com
 - **`haft run` — full implementation pipeline from CLI** — reads a DecisionRecord, plans tasks via an agent, executes each with build verification, runs final invariant review, baselines on success. One command: `haft run dec-001`. Two modes: interactive (pauses between tasks) and `--auto` (full pipeline). `-c` for extra context files, `-p` for extra instructions. Task plan persisted as `.haft/plans/{ref}.md`, human-editable before execution. Per-task `go build` verification; on failure, a fix agent is spawned automatically. Final review runs invariants + build + tests; on failure, a fix agent is spawned and review re-runs.
 - **Haft Design System (desktop Tauri frontend)** — lifted the design-system kit from the `haft-design-system` bundle into production: eight typed primitives (`Eyebrow`, `Button`, `Badge`, `Card`, `Input`, `StatCard`, `MonoId`, `Pill`) under `desktop/frontend/src/components/primitives/` consuming the existing Tailwind `@theme` tokens; shell components (`RailBtn`, `SidebarTask`, `StatusDot`) extracted from `App.tsx` into `components/shell/`; `ComparisonTable` component (border-first Pareto-front grid with accent highlighting and recommendation banner) replaces the legacy inline `<table>`. Dashboard, Decisions (with new `DecayWindow` progress bar computed from `created_at` + `valid_until`), Jobs, and Portfolios pages migrated to primitives.
 - **`governance_mode` field on DecisionRecord** — declares whether `affected_files` are governed at the file level (`exact`) or widened to module-level scope (`module`, default — preserves pre-6.2.x behavior). Exact mode skips the silent directory inflation in baseline / drift detection. Honors FPF X-SCOPE: every claim has explicit where + under what + when.
-- **FPF semiotic patterns** — 7 new patterns distilled from Levenchuk's semiotics slideument: FRAME-08 Reading Checklist (6 pre-reasoning questions), FRAME-09 Strict Distinction Quad (Role/Capability/Method/Work), CHR-10 Boundary Norm Square (L/A/D/E), CHR-11 Relational Precision Restoration Pipeline (A.6.P), CHR-12 Umbrella-word Family (quality / action / service / sameness / wholeness specializations), X-STATEMENT-TYPE (classify every load-bearing sentence), X-FANOUT-AUDIT (sweep all carriers on concept rename).
+- **FPF semiotic patterns** — 7 patterns distilled from source-backed semiotic-engineering guidance: FRAME-08 Reading Checklist (6 pre-reasoning questions), FRAME-09 Strict Distinction Quad (Role/Capability/Method/Work), CHR-10 Boundary Norm Square (L/A/D/E), CHR-11 Relational Precision Restoration Pipeline (A.6.P), CHR-12 Umbrella-word Family (quality / action / service / sameness / wholeness specializations), X-STATEMENT-TYPE (classify every load-bearing sentence), X-FANOUT-AUDIT (sweep all carriers on concept rename).
 - **Compiled FPF pattern index** — 65 pattern chunks indexed alongside 4625 FPF spec chunks. Phase-keyed routes (frame / characterize / explore / compare / decide / verify / cross-cutting) in `fpf-routes.json`. 7 pattern files under `internal/fpf/patterns/`.
 - **Auto-injected FPF hints in reasoning tool responses** — `haft_problem`, `haft_solution`, `haft_decision` responses include compact pattern ID citations for the current phase with retrieval guidance. Hints derive from embedded pattern files at runtime via `//go:embed` — renaming a pattern heading propagates automatically.
 - **Core pattern markers** — `**Core:** true | <phase>` frontmatter in pattern markdown selectively surfaces top patterns per phase in auto-injected hints. Supports cross-phase citation (e.g. CHR-01 core in both frame and characterize).
@@ -1006,3 +3726,859 @@ Complete product redesign. v5 is not backward-compatible with v4.
 ### Architecture Decisions
 
 ADR-1 through ADR-19 documented in `.context/v5-architecture-decisions.md`
+
+
+## Historical pre-v5 quint-code changelog
+
+Recovered from `9e8f5d8a^:CHANGELOG.md`, the last tracked changelog state before `9e8f5d8a` replaced the v1-v4 history with the v5 changelog. The original pre-v5 top section was named `[Unreleased]`; it is labeled `[Unreleased - pre-v5]` below so it cannot be mistaken for a current release entry.
+
+## [Unreleased - pre-v5]
+
+### Added
+
+- **Formality Level (F-G-R Triad)**: Evidence formality tracking per FPF B.3/C.2
+  - `formality_level` column in evidence table (0-9 scale, default 5)
+  - `F_eff = min(F_i)` — effective formality is minimum across all evidence
+  - Audit output now displays F_eff alongside R_eff
+  - Schema migration v10: adds `formality_level` column
+  - Agent assigns formality based on evidence rigor (F2-3: external docs, F4-5: code inspection, F6-7: tests, F8-9: formal proofs)
+
+- **Decision Contexts**: Groups of hypotheses for specific decisions
+  - **Context-based workflow**: Each decision has its own context with up to 3 active contexts allowed
+  - **Context stage**: Derived per-context state (EMPTY, NEEDS_VERIFICATION, NEEDS_VALIDATION, NEEDS_AUDIT, READY_TO_DECIDE)
+  - **Explicit creation required**: `quint_context` must be called first to create a `dc-*` ID
+  - **`quint_propose` requires context**: No auto-creation; must provide `decision_context` from `quint_context`
+  - **Context closure**: `quint_decide` closes context by default (`close_context=true`), or keeps it open for multi-DRR workflows (`close_context=false`)
+  - **Context abandonment**: `quint_reset` supports `context_id` and `abandon_all` parameters
+  - **Active context listing**: `/q-internalize` shows active decision contexts with hypothesis counts
+  - New DB fields: `holons.context_status` (open/closed/abandoned)
+  - New DB methods: `CreateContext`, `CloseContext`, `AbandonContext`
+  - Schema migration v11: adds `context_status` column and indexes
+
+- **DB-only Hypotheses**: Hypotheses no longer projected to filesystem
+  - `quint_propose` returns holon ID (slug) instead of file path
+  - `MoveHypothesis` updates DB layer only (no file operations)
+  - `InitProject` no longer creates `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
+  - Existing hypotheses become queryable via DB, not filesystem
+
+- **Database Compaction**: `quint_compact` tool for managing database size
+  - **Preview mode** (default): Shows archived holons eligible for compaction
+  - **Execute mode**: Performs compaction, removing verbose data
+  - **Retention period**: Configurable days after decision resolution (default 90)
+  - **What's removed**: Evidence records, characteristics, waivers, detailed content
+  - **What's preserved**: Holon ID/title/type/layer, relations, audit log
+  - Compacted holons marked with `[COMPACTED]` content
+
+- **DRR Affected Scope Tracking**: Implementation change detection via file hashes
+  - `affected_scope` in DRR contract specifies files covered by decision
+  - File hashes captured at decision time
+  - `/q-internalize` warns when affected files change after decision finalization
+  - Prompts re-evaluation or `quint_resolve` acknowledgment
+
+- **Dependency Discovery & Linking**: Automatic detection of semantic dependencies
+  - `quint_propose` uses FTS5 semantic search to detect related holons
+  - `quint_link` tool: Add dependencies after creation without re-proposing
+  - Output shows "POTENTIAL DEPENDENCIES DETECTED" with suggestions
+
+- **`quint_implement` tool**: Transform DRR contracts into implementation directives
+  - Programs agent's internal planning with invariants, anti-patterns, acceptance criteria
+  - **WLNK for constraints**: Inherits constraints from dependency chain
+  - Validates acceptance criteria before `quint_resolve` allows "implemented" resolution
+
+- **`/q-internalize` command**: Unified entry point replacing init/status/decay commands
+  - Auto-initializes new projects, detects stale context, surfaces decaying evidence
+  - Shows active decision contexts with stages and hypothesis counts
+  - **Affected scope warnings**: Detects file changes in open DRRs since decision finalization
+  - Safe to call in any phase (Observer role)
+
+- **DRR Lifecycle Tracking**: Complete decision lifecycle management
+  - **`quint_resolve` tool**: Record outcomes (implemented, abandoned, superseded)
+  - **Decision status in `/q-internalize`**: Shows open decisions and recent resolutions
+  - **`status_filter` in `quint_search`**: Filter by status
+
+- **File Logging**: Structured zerolog output to `~/.quint-code/logs/<project>.log`
+  - Automatic log rotation (10MB max, keeps 3 backups)
+
+- **Phase Gates & Role Enforcement (FPF Governance)**:
+  - New `roles.go` with implicit role system — roles derived from tool name, not passed by agent.
+  - New roles: `Initializer`, `Observer`, `Maintainer` (added to existing ADI roles).
+  - Phase gates block mutation tools in wrong phases
+  - Read-only tools allowed in any phase
+  - L2 refresh: `quint_test` on L2 holons bypasses phase gate
+  - Audit log now records actual role instead of generic "agent"
+
+- **FTS5 AND-based Search**: `quint_search` now uses token-based AND matching by default
+  - Unquoted queries split into tokens joined with AND (all terms must match)
+  - Quoted queries still perform exact phrase search
+  - Fixes search failing to find holons when query terms exist but not in exact sequence
+
+- **Predictions Tracking (FPF B.5)**: Testable predictions linked from L1 to L2
+  - `quint_verify` now requires `predictions` array for PASS verdict
+  - Predictions stored in `predictions` table, linked to L1 hypothesis
+  - `quint_test` validates prediction coverage via `tests_prediction` field in observations
+  - L1→L2 promotion blocked if any prediction is uncovered
+  - Closes reasoning chain: predictions → observations → audit trail
+  - Schema migration v9: adds `predictions` table
+
+### Changed
+
+- **Evidence valid_until Now Optional**: Per FPF B.3.4, valid_until defaults to NULL (perpetual)
+  - Code evidence validity tied to code changes (DRR affected_scope), not arbitrary time periods
+  - NULL valid_until = perpetual evidence (no decay)
+  - Explicit valid_until still triggers decay when expired
+  - Removed `computeValidUntil()` function with arbitrary 90/60 day defaults
+  - Removed forced 90-day default in `ManageEvidence()`
+
+- **`quint_audit` Expanded Scope**: Now accepts L0 decision contexts and DRRs (not just L2 hypotheses)
+  - Audit on decision context: Shows tree of all hypotheses in the context
+  - Audit on DRR: Shows winner, rejected alternatives, and their evidence chains
+
+- **Global Phase Removed**: Stage is now derived per-context, not global
+  - Removed `Phase` type and constants (`PhaseIdle`, `PhaseAbduction`, etc.)
+  - Removed `GetPhase()`, `SetPhase()`, `GetSuggestedPhase()`
+  - Removed `ToolPhaseGate` map
+  - `DerivePhase()` simplified to informational display only
+  - Tools no longer blocked by phase — only by holon layer requirements
+
+- **`quint_reset` Enhanced**: Now supports context abandonment
+  - `context_id` parameter: Abandon specific context
+  - `abandon_all` parameter: Abandon all open contexts
+  - Default (no params): End session without abandoning contexts
+
+- **FSM State Migrated to SQLite (FPF Governance)**: Session state now stored in `fpf_state` table.
+  - Eliminates `state.json` file — agent cannot read/manipulate FSM state directly.
+  - New `LoadState(contextID, db)` and `SaveState(contextID)` APIs use SQLite.
+  - Added migration #3 for existing databases.
+  - Enforces Transformer Mandate: state is opaque to the agent.
+
+- **MCP config simplified**: Removed redundant `QUINT_PROJECT_ROOT` env var
+
+- **FPF tools.go Decomposition**: Split monolithic 3904-line file into domain-specific modules
+  - `types.go`: Struct definitions
+  - `utils.go`: Utility methods (GetFPFDir, Slugify, AuditLog)
+  - `git.go`: Git operations (detectCodeChanges, hashCarrierFiles)
+  - `relations.go`: Graph operations (LinkHolons, CreateContext)
+  - `search.go`: Query methods (Search, GetOpenDecisions)
+  - `audit.go`: Tree building (buildAuditTree)
+  - `evidence.go`: Evidence management (ManageEvidence, UnifiedAudit)
+  - `hypothesis.go`: Core FPF flow (Propose, Verify, Validate)
+  - `decision.go`: DRR creation (FinalizeDecision, Resolve)
+  - `implement.go`: Implementation directives
+  - `session.go`: Session management (Internalize, GetStatus)
+  - `lifecycle.go`: Project setup (InitProject, Compact, ResetCycle)
+  - `tools.go` now contains only Tools struct and NewTools (34 lines)
+  - All files under 600 lines, no API changes
+
+### Fixed
+
+- **Stage Derivation for Mixed-Layer Contexts**: Fixed incorrect stage when context has hypotheses at different layers
+  - Previously: L0 + L2 → StageNeedsAudit (wrong, ignored L0)
+  - Now: L0 + L2 → StageNeedsVerify (correct, uses min stage)
+  - Stage checks now ordered from lowest to highest (L0 → L1 → L2)
+
+- **DB as Source of Truth**: Database is now the authoritative source for holon state
+  - `getHolonLayer()` queries DB only (removed filesystem fallback)
+  - `MoveHypothesis()` updates DB only (no file operations)
+  - Precondition checks validate against DB
+
+- **`quint_decide` winner validation**: Validates `winner_id` exists and is in L2 layer
+
+- **`quint_link` preconditions**: Parameter validation, self-link prevention, holon existence check
+
+- **`quint_implement` preconditions**: Decision ID validation, DRR type verification
+
+- **Relation type validation**: `createRelation()` validates against allowed set
+
+- **Type mismatch in DB methods**: Fixed `type = 'context'` to `type = 'decision_context'` in store.go
+
+### Removed
+
+- **`/q1-add` command**: Redundant — `quint_propose` handles both agent and user hypotheses
+- **Filesystem projection**: No more `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
+- **Global phase**: Stage is now per-context
+- **Carrier-file staleness detection**: Removed hash-based staleness in favor of time-based decay only
+  - Removed `is_stale`, `stale_reason`, `stale_since` from evidence tracking
+  - Removed `MarkEvidenceStale`, `ClearEvidenceStale`, `ClearAllEvidenceStaleForHolon`
+  - Removed `GetStaleEvidenceByHolon`, `CountStaleEvidence`, `GetAllStaleEvidence`
+  - Removed `CountArchivedStaleEvidence`, `GetArchivedStaleEvidence`
+  - Time-based decay via `valid_until` remains per FPF B.3.4
+  - DRR `affected_scope` tracking provides implementation change warnings
+- **Unused code cleanup**: Removed `getChangedFiles`, `fileChangedBetween`, `carrierRefContainsFile`, `detectStaleEvidenceByCarrierCommit`
+- **state.json file**: FSM state no longer persisted to JSON file.
+  - All state (active role, last commit, assurance threshold) now in SQLite.
+  - Documentation updated to reflect SQLite-only state management.
+
+### Breaking Changes
+
+- **No more `knowledge/` filesystem structure** — hypotheses are DB-only
+- **Global phase removed** — stage is per-context (derived from hypothesis layers)
+- **`quint_propose` requires context** — no auto-creation; must call `quint_context` first
+- **`quint_reset` signature changed** — now accepts `(reason, contextID, abandonAll)`
+- **Existing hypotheses become orphans** — need assignment to contexts or archive
+
+### Documentation
+
+- **q-internalize.md**: Updated with Active Decision Contexts, lifecycle mapping, and Context Stage ↔ Reasoning Lifecycle section
+- **q1-hypothesize.md**: Self-contained documentation with falsifiability examples, anti-patterns, and Method section
+- **q2-verify.md**: Self-contained with predictions flow, anti-patterns, and verification examples
+- **q3-validate.md**: Self-contained with tests_prediction linking, anti-patterns, and validation examples
+- **q-implement.md**: Critical file change handling documentation
+  - "File Change Warnings Are NOT Suggestions" section with mandatory verification steps
+  - "What Counts as Significant Change" classification table
+  - "Deletions Are NEVER Cosmetic" rule with examples
+  - "The Cosmetic Checklist" (5 verification checkboxes)
+  - Anti-patterns: dismissing warnings, mislabeling structural as cosmetic
+- **q-reset.md**: Updated with context abandonment parameters
+
+---
+
+## [4.1.0]
+
+### Added
+
+- **DRR Linking (FPF E.9)**: Decision records now create graph relations to hypotheses.
+  - `quint_decide` accepts new `rejected_ids` parameter for rejected alternatives.
+  - Creates `selects` relation: DRR → winner hypothesis.
+  - Creates `rejects` relations: DRR → each rejected alternative.
+  - Enables queries: "What alternatives were considered for this DRR?"
+
+- **Context Markdown Formatting**: `quint_record_context` now normalizes input to proper markdown.
+  - Vocabulary entries formatted as definition list (`- **Term**: definition`).
+  - Invariants formatted as numbered list with line breaks.
+
+- **Audit Tree Shows MemberOf Relations**: `quint_audit_tree` now displays `memberOf` groupings.
+  - Decision context alternatives are shown under `[members]` section.
+  - Member R scores displayed for comparison (no WLNK propagation per FPF spec).
+
+- **Improved Tool Descriptions**: `quint_propose` parameters now have actionable descriptions.
+  - `depends_on`: Explains WLNK impact and when to use.
+  - `decision_context`: Explains grouping purpose and when to use.
+  - `q1-hypothesize.md`: Added "Linking Checklist" before proposing hypotheses.
+
+- **Merged `/q-audit` into `/q-query`**: Simplified command set.
+  - `/q-query` now shows R_eff and dependency trees for found holons.
+  - Removed standalone `/q-audit` utility (redundant with enhanced `/q-query`).
+  - `/q4-audit` (FPF phase) remains unchanged.
+
+- **sqlc Integration**: Type-safe database queries generated from SQL.
+  - All database operations now use sqlc-generated code with proper type safety.
+  - New `db/store.go` wrapper provides clean API while preserving schema bootstrap.
+  - Added comprehensive test suite for database operations (`db/store_test.go`).
+
+- **GetHolon Query**: Added query to fetch hypothesis metadata by ID (foundation for future Kind-CAL work).
+
+- **New MCP Tools for Trust Calculus (B.3)**:
+  - `quint_audit_tree`: Visualize assurance tree with R scores, dependencies, and CL penalties.
+  - `quint_calculate_r`: Compute R_eff with detailed breakdown (self score, weakest link, decay penalties).
+  - `quint_check_decay`: Identify holons with expired evidence (epistemic debt detection).
+
+- **Parent ID Chain (FPF Enforcement)**:
+  - Added `parent_id` foreign key to holons table for L0→L1→L2 progression tracking.
+  - New queries: `GetHolonsByParent`, `GetHolonLineage` for traversing hypothesis chains.
+  - `CreateHolon` now accepts parent_id parameter for linking hypothesis progression.
+  - Enables auditable chain from L2 decision back to original L0 hypothesis.
+
+- **Derived Phase (FPF Enforcement)**:
+  - Phase is now computed from holons.layer data instead of stored in state.json.
+  - New `DerivePhase()` method computes phase from database state.
+  - New `GetPhase()` returns derived phase when DB available, falls back to State.Phase.
+  - Prevents AI bypass of FPF phase controls via direct file manipulation.
+
+- **Audit Logging (FPF Enforcement)**:
+  - New `audit_log` table tracks all MCP tool invocations.
+  - Captures: tool name, operation, actor, target ID, input hash, result, and details.
+  - Instrumented tools: `quint_propose`, `quint_verify`, `quint_decide`, `quint_move`.
+  - Enables detection of FPF bypasses through audit trail analysis.
+  - Context-aware logging supports multi-session isolation.
+
+- **Self-Healing Signed Projections (FPF Enforcement)**:
+  - All hypothesis/evidence/DRR files now include `content_hash` in YAML frontmatter.
+  - New `WriteWithHash()` function adds cryptographic hash (SHA-256 truncated) on write.
+  - New `ValidateFile()` detects tampering by comparing stored vs computed hash.
+  - New `ReadWithValidation()` on Tools automatically detects and logs tampering.
+  - When tampering detected: regenerates file from DB (DB is source of truth).
+  - Tampering events logged to audit_log for violation tracking.
+
+- **DRR Holon Tracking**:
+  - `FinalizeDecision` now creates DRR holon in database (enables derived phase detection).
+  - DRR holons linked to winner hypothesis via parent_id.
+
+- **Tool Preconditions (FPF Enforcement)**:
+  - All MCP tools now validate preconditions before execution.
+  - `quint_propose`: Validates title, content, and kind fields.
+  - `quint_verify`: Confirms hypothesis exists in L0, validates verdict.
+  - `quint_test`: Ensures hypothesis is in L1 (not L0), validates verdict.
+  - `quint_audit`: Confirms hypothesis is in L2 before audit.
+  - `quint_decide`: Requires L2 hypotheses exist, validates winner_id and title.
+  - `quint_calculate_r` / `quint_audit_tree`: Validates holon existence in DB.
+  - Precondition failures logged to audit_log with BLOCKED status.
+  - Each error includes actionable suggestion for the user.
+
+- **Command Contracts (FPF Enforcement)**:
+  - All FPF command prompts (q0-q5) now include formal enforcement contracts.
+  - YAML frontmatter with `pre`, `post`, `invariant`, and `required_tools` fields.
+  - RFC 2119 bindings (MUST, MUST NOT, SHALL) for mandatory behaviors.
+  - "Invalid Behaviors" section explicitly lists protocol violations.
+  - "Checkpoint" section with verification checklist before phase transition.
+  - Success/failure path examples with few-shot learning.
+  - "State machine executor" mechanical persona to reduce AI improvisation.
+  - Defense in depth: soft gate (prompts) + hard gate (preconditions).
+
+- **Inline Schema Migrations**:
+  - Existing databases automatically upgraded on startup.
+  - Adds `parent_id` and `cached_r_score` columns to existing `holons` table.
+  - Safe to run multiple times (idempotent).
+
+- **Holon Linking in `quint_propose`**:
+  - New `depends_on` parameter to declare dependencies on other holons.
+  - New `decision_context` parameter to group alternatives under a decision.
+  - New `dependency_cl` parameter (1-3) for congruence level of dependencies.
+  - Creates `ComponentOf` relations for system holons, `ConstituentOf` for episteme.
+  - Creates `MemberOf` relations for decision grouping (no R propagation).
+  - Added SQL indexes for efficient WLNK traversal.
+  - Documented structural relations (B.1.1) in CLAUDE.md.
+
+- **Evidence Freshness Management (FPF B.3.4)**:
+  - New `waivers` table for tracking temporary risk acceptance with full audit trail.
+  - `quint_check_decay` now supports three modes:
+    - **Report mode** (default): Shows freshness report with STALE/FRESH/WAIVED holons.
+    - **Deprecate mode**: Downgrades hypothesis (L2→L1 or L1→L0) when evidence is terminally stale.
+    - **Waive mode**: Records explicit risk acceptance with rationale and expiration date.
+  - `quint_test` now accepts L2 hypotheses for evidence refresh (L2 + PASS stays L2 with fresh evidence).
+  - Freshness report now shows individual evidence IDs (not just counts) for actionable output.
+  - Implements WLNK principle: one expired evidence item = entire holon is STALE.
+  - Natural language support: users can say "waive the benchmark until February" and the agent handles ID resolution.
+  - New documentation: `docs/evidence-freshness.md` — practical guide to managing stale evidence.
+  - Updated command documentation: `q-decay.md` and `q3-validate.md`.
+
+- **CI/CD Pipeline**:
+  - New GitHub Actions workflow (`.github/workflows/ci.yml`) for pull requests.
+  - Triggers on PRs and pushes to `main` and `dev` branches.
+  - Runs tests with race detector and coverage reporting.
+  - Runs `golangci-lint` for code quality (errcheck, govet, staticcheck, unused, misspell).
+  - Uses `golangci-lint-action@v7` with golangci-lint v2 config schema.
+  - Added `.golangci.yml` configuration for consistent linting.
+
+- **Pre-commit Hooks**:
+  - Added `.pre-commit-config.yaml` for use with pre-commit tool.
+  - Added `.githooks/pre-commit` for simple git-native hooks (no dependencies).
+  - Hooks include: gofmt, goimports, go build, go test, golangci-lint.
+  - Setup via `./scripts/setup-hooks.sh` or `./scripts/setup-hooks.sh --precommit`.
+  - Also checks: trailing whitespace, end-of-file, yaml syntax, large files, merge conflicts, private keys.
+
+### Changed
+
+- **Updated FPF Commands**: Commands now leverage new MCP tools for computed data:
+  - `/q4-audit`: Now calls `quint_calculate_r` and `quint_audit_tree` before recording findings.
+  - `/q5-decide`: Now uses `quint_calculate_r` for final R_eff comparison before decision.
+  - `/q-audit`: Updated to use visualization tools.
+  - `/q-decay`: Updated to use `quint_check_decay` for proactive decay detection.
+  - `/q-status`: Now proactively checks for expired evidence.
+
+- **SQLite Driver Migration**: Replaced CGO-based `mattn/go-sqlite3` with pure Go `modernc.org/sqlite`.
+  - Enables `CGO_ENABLED=0` builds for simplified cross-compilation.
+  - Cross-compilation now works for linux/amd64, linux/arm64, darwin/*, windows/amd64.
+  - Unblocks single-runner GoReleaser builds.
+  - No functional changes to database behavior.
+
+- **FSM Phase Derivation**: `CanTransition()` now uses `GetPhase()` (derived from DB) instead of `State.Phase`.
+  - Phase transitions are validated against actual database state.
+  - Hardens FPF enforcement against state.json manipulation.
+
+### Fixed
+
+- **Evidence Decay Bug**: Evidence was stored with `NULL` `valid_until`, making `/q-decay` always report "no expired evidence."
+  - `ManageEvidence` now sets a default 90-day validity period when `validUntil` is empty.
+  - Affects all evidence added via `quint_verify`, `quint_test`, and `quint_audit`.
+
+- **Go Module Import Paths**: Standardized import paths to use the correct module name across all packages. (PR #16, @blib)
+
+---
+
+## [4.0.0] - 2025-12-18
+
+### Added
+
+- **MCP Server Architecture**:
+  - This release introduces the MCP (Model Context Protocol) server as the core of Quint Code, replacing the previous prompt-only approach. The server provides structured tools for AI assistants to interact with the FPF knowledge base.
+  - The MCP server has been restructured into `cmd` and `internal` packages for better organization and maintainability.
+- **New Commands**:
+  - `/q-audit`: Visualize assurance tree with R-scores.
+  - `/q-decay`: Calculate epistemic debt from expired evidence.
+- **Command Updates**:
+  - `/q-actualize`: Reconcile the knowledge base with recent code changes. This command has been updated for better performance and accuracy.
+- **Renamed Commands**:
+  - `/q2-check` is now `/q2-verify`.
+  - `/q3-research` and `/q3-test` are consolidated into `/q3-validate`.
+  - `/q1-add` has been added for manually adding hypotheses.
+- **SQLite Database (`quint.db`)**:
+  - The project now uses SQLite for deterministic FPF, ensuring consistency and reproducibility.
+  - `holons` table now includes `scope`, `kind`, and `cached_r_score` columns to support advanced FPF features.
+  - `evidence` table now includes a `valid_until` column for evidence decay tracking.
+  - `relations` table now includes a `congruence_level` column for WLNK calculation.
+- **Trust & Assurance Calculator (B.3)**:
+  - Implemented the FPF B.3 standard for calculating trust and assurance.
+  - **Weakest Link (WLNK)**: R-score is now capped by the lowest-scoring dependency in the evidence chain.
+  - **Congruence Penalty**: Low-congruence relations between artifacts now reduce the overall reliability score.
+  - **Evidence Decay**: Expired evidence, as determined by the `valid_until` field, now penalizes the R-score, introducing the concept of "epistemic debt."
+  - **Cycle Detection**: The calculator now detects and flags circular dependencies in the evidence graph.
+- **Typed Reasoning (Kind-CAL)**:
+  - Hypotheses are now classified by `kind` as either `system` (for code and architecture) or `episteme` (for knowledge and theory).
+  - Validation logic now branches based on the hypothesis kind, allowing for more targeted and relevant analysis.
+- **Characteristic Space (C.16)**:
+  - Success metrics are now defined upfront, before testing, as part of the `Characteristic Space`.
+  - These metrics are measured during the induction phase (`/q3-validate`).
+  - The results are recorded in the Design Rationale Record (DRR) for full traceability.
+- **CI/CD**:
+  - A new GitHub Actions workflow has been added to automate the build and release process.
+- **Testing**:
+  - Added integration tests for the assurance calculator to ensure correctness and stability.
+- **Error Handling**:
+  - Improved error handling to surface previously-silent errors with warnings.
+
+### Changed
+
+- **Project Directory**: Renamed from `.fpf` to `.quint`. Migration: run `/q-actualize` to migrate, then delete `.fpf`.
+- **Multi-platform Support**:
+  - Installer now supports Claude Code, Cursor, Gemini CLI, and Codex CLI.
+  - Commands are now sourced from `src/commands/` and built to platform-specific formats in `dist/`.
+
+### Removed
+
+- **Redundant Agents**: Removed legacy standalone agent files for a cleaner codebase.
+
+---
+
+## [3.4.0] - 2025-12-15
+
+### Security: Executable Phase Gating
+
+#### Physics-First Enforcement (`/q1-hypothesize`)
+
+- **Vulnerability Closed:** Previous prompts used "soft" text instructions to prevent adding hypotheses mid-cycle, which "helpful" AI models would bypass.
+- **Executable Gate:** Now injects a bash script that checks `.quint/session.md`. If the phase is locked (Deduction/Induction complete), the script exits with `1`.
+- **Hard Stop:** The prompt explicitly instructs the AI to treat a script failure as a hard stop ("Physics says no"), preventing "helpfulness bias" overrides.
+
+## [3.3.0] - 2025-12-15
+
+### Added: Legacy Project Repair
+
+#### Smart Initialization (`/q0-init`)
+
+- **Self-Healing Capability:** The init command now detects incomplete FPF setups (e.g., legacy projects missing `context.md` from v2.x).
+- **Deterministic Diagnostic:** Injects a bash script to verify file existence before deciding actions, preventing AI "hallucinated" skips.
+- **Repair Mode:** If `.quint/` exists but is incomplete, it triggers a surgical repair (generating only missing files) while preserving existing session data.
+
+## [3.2.0] - 2025-12-15
+
+### Added: Process Hardening & Flexibility
+
+#### Strict Phase Gating (FPF Integrity)
+
+- **Hard Block in `/q1-hypothesize`:** Explicitly forbids generating new hypotheses if the cycle has passed Deduction. This prevents the "Helpfulness Bias" vulnerability where AI assistants might break process integrity to be "nice".
+- **Conditional Logic in `/q2-check`:** The cycle phase now only advances to `DEDUCTION_COMPLETE` when *all* active L0 hypotheses are resolved. If any remain unchecked, the door stays open for extensions.
+
+#### New Command: `/q1-extend`
+
+- **Legitimate Extension Path:** A dedicated command to add a missed hypothesis during the `ABDUCTION_COMPLETE` phase.
+- **Safety Rails:** Strictly blocked once `DEDUCTION_COMPLETE` is reached, ensuring evidence integrity (WLNK validity) during testing.
+
+### Changed
+
+- **Updated `/q-status`:** State machine visualization now includes the `(q1-extend)` loop.
+- **Refined `/q3-test` & `/q3-research`:** Reinforced checks to ensure testing only happens after deduction is fully complete.
+
+## [3.1.0] - 2025-12-14
+
+### Added: Deep Reasoning Capabilities
+
+#### Context Slicing (A.2.6)
+
+- **Structured Context:** `.quint/context.md` is now structured into explicit slices:
+  - **Slice: Grounding** (Infrastructure, Region)
+  - **Slice: Tech Stack** (Language, Frameworks)
+  - **Slice: Constraints** (Compliance, Budget, Team)
+- **Context-Aware Init:** `/q0-init` now scans `package.json`, `Dockerfile`, etc., to auto-populate slices.
+
+#### Explicit Role Injection (A.2)
+
+- **Role-Swapping Prompts:** Commands now enforce specific FPF roles to prevent "AI drift":
+  - `/q1-hypothesize`: **ExplorerRole** (Creative, Abductive)
+  - `/q2-check`: **LogicianRole** (Strict, Deductive)
+  - `/q4-audit`: **AuditorRole** (Adversarial, Normative)
+
+#### Context Drift Analysis
+
+- **New Audit Step:** `/q4-audit` now includes a mandatory **Context Drift Check**.
+- **Validation:** Verifies that hypotheses generated in step 1 still match the constraints in step 4 (preventing "works on my machine" architecture).
+
+### Changed
+
+- **Command Prompts:** Updated `q0`, `q1`, `q2`, `q4` to enforce the new reasoning standards.
+
+---
+
+## [3.0.0] - 2025-12-14
+
+### Major Breaking Change: Rebrand to Quint Code
+
+**Crucible Code is now Quint Code.**
+
+### Why the Name Change?
+
+1. **Avoid Collision:** "Crucible" is an existing code review tool by Atlassian. We want a distinct identity.
+2. **Not Just Code:** This tool melts *ideas* and *reasoning*, not just source code.
+3. **The "Quintessence":** Anatoly Levenchuk described this project as a "distillate of FPF" (~5% of the full framework). It is the *quintessence*—the concentrated essence of the methodology.
+4. **The Invariant Quintet:** FPF is built on five invariants (IDEM, COMM, LOC, WLNK, MONO). Quint Code enforces a rigid 5-step sequence (`q1`–`q5`) to preserve these invariants in your reasoning.
+
+### Changed
+
+- **Project Name**: `crucible-code` → `quint-code`
+- **Commands Prefix**: `/fpf-*` → `/q*`
+  - `/q0-init`
+  - `/q1-hypothesize`
+  - `/q2-check`
+  - `/q3-test`
+  - `/q3-research`
+  - `/q4-audit`
+  - `/q5-decide`
+- **Utility Commands**:
+  - `/fpf-status` → `/q-status`
+  - `/fpf-query` → `/q-query`
+  - `/fpf-decay` → `/q-decay`
+  - `/fpf-discard` → `/q-reset` (Renamed to avoid tab-completion clash with decay)
+
+### Migration Guide
+
+1. **Delete old commands**: Run the uninstall script or manually delete `~/.claude/commands/fpf-*`.
+2. **Install new commands**: Run `./install.sh`.
+3. **Update mental model**: Think "Quintet" (5 invariants, 5 steps).
+
+---
+
+## [2.2.0] - 2025-12-14
+
+### Added
+
+#### Multi-Platform Support
+
+- **Four AI coding tools supported**: Claude Code, Cursor, Gemini CLI, Codex CLI
+- **Adapter-based build system**: Source commands in `src/commands/`, platform-specific outputs in `dist/`
+- **Platform adapters**: Transform markdown to platform-specific formats (TOML for Gemini, etc.)
+
+#### Interactive TUI Installer
+
+- **`curl | bash` one-liner install**: `curl -fsSL https://...install.sh | bash -s -- -g`
+- **Interactive platform selection**: Choose which AI tools to install commands for
+- **Global and per-project modes**: `-g` flag for global install, default for project-local
+- **Vim-style navigation**: Arrow keys and j/k for selection
+- **Bash 3.x compatibility**: Works on macOS default shell (no associative arrays)
+
+#### Uninstall Functionality
+
+- **`--uninstall` flag**: Remove installed FPF commands
+- **Auto-detection**: Finds commands in both global and local locations
+- **Platform-specific cleanup**: Only removes selected platforms
+
+#### CI/CD
+
+- **GitHub Actions workflow**: Verifies `dist/` stays in sync with `src/commands/`
+- **Build check on PR/push**: Fails if `./build.sh` produces uncommitted changes
+
+#### Visual Improvements
+
+- **Melted steel gradient**: Red → orange → yellow → white color scheme for ASCII banner
+- **SVG banner for GitHub**: `assets/banner.svg` with same gradient colors
+- **Cleaner TUI**: Simplified instructions, highlighted keys
+
+### Changed
+
+- **Directory structure**: Commands moved from `commands/` to `src/commands/` (source of truth)
+- **Installation targets**: Installer copies from `dist/{platform}/` not source
+- **README**: Updated with new install instructions and SVG banner
+
+---
+
+## [2.1.0] - 2025-12-13
+
+### Added
+
+#### Agentic Initialization
+
+- **Smart `/fpf-0-init`**: Now scans the repository (package.json, Dockerfile, etc.) to infer tech stack.
+- **Interactive Interview**: Asks the user clarifying questions about Scale, Budget, and Constraints to build a robust Context.
+- **`.quint/context.md`**: New foundational file that grounds all reasoning in the project's specific reality.
+
+#### Repository Context Integration
+
+- **Context Awareness**: All commands (`hypothesize`, `research`, `test`) now read `.quint/context.md` to make decisions relevant.
+- **CLAUDE.md Update**: Instructions for Claude to check `.quint/context.md` first.
+
+#### Enhanced Hypothesis Structure
+
+- **Formality (F-Score)**: Added `formality: [0-9]` to hypothesis frontmatter.
+- **NQD Tags**: Added `novelty` and `complexity` to hypothesis frontmatter for diversity tracking.
+- **Strict Method/Work Split**: Hypothesis body restructured into "1. The Method (Design-Time)" and "2. The Validation (Run-Time)" to enforce A.15.
+
+#### Documentation
+
+- **F-Score Definitions**: Added explanation of F0-F9 ranges to README.
+- **Concepts**: Added simple explanations for NQD and Method vs. Work.
+
+## [2.0.0] - 2025-12-13
+
+### Added
+
+#### ADI Cycle Strictness Documentation
+
+- **Phase strictness clearly documented in README** with visual annotations in the cycle diagram
+- Phases 1→2→3 marked as `(REQUIRED)` in diagram
+- Phase 4 (Audit) marked as `(OPTIONAL - but recommended)`
+- New "Phase Strictness" section explaining:
+  - Sequential enforcement for phases 1-3
+  - When skipping audit is acceptable vs. not recommended
+  - Commands enforce prerequisites and error on invalid transitions
+- Commands Reference table updated with "Required" column and footnotes
+
+#### Phase Gate Enforcement
+
+- **All commands now verify phase prerequisites** before executing
+- Invalid phase transitions are blocked with clear error messages
+- Phase state machine documented in `/fpf-0-init` and `/fpf-status`
+- Transitions logged in session file for audit trail
+
+#### Transformer Mandate Enforcement
+
+- **Explicit "AWAIT HUMAN INPUT" sections** at all decision points
+- `/fpf-1-hypothesize` now pauses for human approval of generated hypotheses
+- `/fpf-5-decide` requires explicit human selection of winning hypothesis
+- Clear separation: Claude generates options, human decides
+
+#### WLNK Calculation in Audit
+
+- **Quantitative R_eff calculation** with formula: `R_eff = R_base - Φ(CL)`
+- Evidence chain table showing base R, congruence, penalty, and effective R
+- Weakest link identification with specific evidence file reference
+- Impact analysis on hypothesis reliability
+
+#### Congruence Penalty System
+
+- **Formal Φ(CL) penalty values**: High=0.00, Medium=0.15, Low=0.35
+- Congruence assessment required for all external evidence
+- Penalty table in `/fpf-3-research` and `/fpf-4-audit`
+- Low-congruence evidence flagged as WLNK risk
+
+#### Plausibility Filters
+
+- **Four-filter assessment** in `/fpf-1-hypothesize`:
+  - Simplicity (Occam's razor)
+  - Explanatory Power (does it resolve the core problem?)
+  - Consistency (compatible with L2 knowledge?)
+  - Falsifiability (can we disprove it?)
+- Plausibility verdict: PLAUSIBLE / MARGINAL / IMPLAUSIBLE
+- Ranking table for hypothesis comparison
+
+#### Enhanced Evidence Templates
+
+- **Mandatory fields**: `valid_until`, `scope`, `congruence` (for external)
+- Structured verdict section with checkboxes
+- Re-test triggers documentation
+- Environment and method reproducibility sections
+
+#### Project Configuration
+
+- **Optional `.quint/config.yaml`** for project-level settings
+- Configurable validity defaults by evidence type
+- Congruence penalty values customizable
+- Epistemic debt thresholds
+
+#### Improved Session Tracking
+
+- **Phase transitions log** in session.md
+- Valid phase transition diagram
+- Previous cycle reference after completion
+- State machine visualization in `/fpf-status`
+
+#### Better Learning Preservation
+
+- `/fpf-discard` now captures key insights before cleanup
+- Optional learning note creation for significant findings
+- Preservation options: L2-only (default), L1+, all, none
+- "Don't repeat" section for mistakes to avoid
+
+#### Documentation Improvements
+
+- **"Common Mistakes to Avoid"** section in each command
+- Anti-pattern tables with explanations
+- Quality checklists for evidence and DRRs
+- Quick start guide in README
+
+### Changed
+
+#### Command Structure
+
+- All commands now start with Phase Gate section
+- Consistent output format across commands
+- Clearer section headers and structure
+- More actionable next steps guidance
+
+#### Hypothesis Template
+
+- Added plausibility assessment table
+- Scope section now has explicit applies_to / not_valid_for
+- Weakest link analysis required
+- Author attribution (Claude generated, Human reviewed)
+
+#### Evidence Template
+
+- Congruence assessment now mandatory for external evidence
+- Validity window required with decay action
+- Scope conditions more detailed
+- Structured verdict with confidence level
+
+#### DRR Template
+
+- WLNK R_eff included in evidence summary
+- Trade-off analysis table for alternatives
+- Validity conditions with re-evaluation triggers
+- Audit trail section with cycle statistics
+
+#### Audit Command
+
+- WLNK calculation now quantitative, not just qualitative
+- Bias check more systematic with specific bias types
+- Adversarial analysis section expanded
+- Evidence quality audit with freshness check
+
+#### Status Command
+
+- Shows phase state machine diagram
+- Evidence health summary
+- Congruence warnings for low-CL evidence
+- Quick status one-liner format
+
+#### Query Command
+
+- Confidence assessment for search results
+- Validity status shown for each result
+- Related decisions linked
+- Pre-investigation check workflow
+
+#### Decay Command
+
+- Epistemic debt calculation
+- Debt severity thresholds
+- Impact on L2 claims shown
+- Action items prioritized
+
+### Removed
+
+- Advisory-only checklists (replaced with mandatory gates)
+- Vague "ensure" language (replaced with specific checks)
+
+### Fixed
+
+- Phase skipping now actually blocked, not just warned
+- Human decision points clearly marked
+- Evidence without validity no longer silently ages
+- Congruence impact now quantified
+
+---
+
+## [1.0.0] - 2025-12-11
+
+### Added
+
+Initial release of Quint Code.
+
+#### Core Commands
+
+- `/fpf-0-init` — Initialize FPF structure
+- `/fpf-1-hypothesize` — Generate hypotheses (Abduction phase)
+- `/fpf-2-check` — Verify logical consistency (Deduction phase)
+- `/fpf-3-test` — Internal empirical testing (Induction phase)
+- `/fpf-3-research` — External evidence gathering (Induction phase)
+- `/fpf-4-audit` — Critical review and WLNK analysis
+- `/fpf-5-decide` — Finalize decision and create DRR
+
+#### Utility Commands
+
+- `/fpf-status` — Show current state
+- `/fpf-query` — Search knowledge base
+- `/fpf-decay` — Check evidence freshness
+- `/fpf-discard` — Abandon cycle
+
+#### Knowledge Structure
+
+- L0/L1/L2/invalid assurance levels
+- Evidence directory for test results and research
+- Decisions directory for DRRs
+- Sessions directory for archived cycles
+
+#### Core Concepts
+
+- ADI (Abduction-Deduction-Induction) cycle
+- WLNK (Weakest Link) principle
+- Congruence levels for external evidence
+- Evidence validity windows
+- Transformer Mandate (human decides)
+
+#### Documentation
+
+- README with usage guide
+- CLAUDE.md template for project integration
+- Installation script
+- Examples for common scenarios
+
+### Notes
+
+This was the initial implementation based on the First Principles Framework (FPF) specification. The focus was on establishing the core workflow and making FPF accessible to developers through Claude Code commands.
+
+Key design decisions:
+
+- Commands over subagents (human must be in the loop)
+- File-based persistence (git-trackable)
+- Minimal tooling (no external dependencies)
+- Advisory guidance (not enforced gates)
+
+---
+
+## Upgrade Notes
+
+### 4.x → 5.0.0
+
+**Breaking changes:**
+
+1. **Hypotheses are DB-only** — no more `knowledge/L0`, `knowledge/L1`, `knowledge/L2` directories
+2. **Global phase removed** — stage is now per-context
+3. **`quint_reset` signature changed** — now accepts `(reason, contextID, abandonAll)`
+
+**Migration:**
+
+1. Run `/q-internalize` to initialize decision contexts
+2. Existing hypotheses will work but are "orphans" (not in any context)
+3. Create contexts explicitly with `quint_context` before calling `quint_propose`
+
+### 1.0.0 → 2.0.0
+
+**Session file format changed.** Existing `.quint/session.md` files should be updated to include:
+
+- Phase Transitions Log table
+- Valid Phase Transitions diagram reference
+
+**Evidence files should add:**
+
+- `congruence:` block for external evidence
+- `valid_until:` if not already present
+
+**No breaking changes to:**
+
+- Knowledge directory structure
+- DRR format (only additions)
+- Command names and basic arguments
+
+**Recommended migration:**
+
+1. Run `/fpf-decay` to identify evidence needing validity dates
+2. Add congruence assessment to existing external evidence
+3. No need to re-run completed cycles

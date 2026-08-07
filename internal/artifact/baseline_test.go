@@ -7,10 +7,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/codebase"
 )
 
 func TestBaselineStoresHashes(t *testing.T) {
@@ -115,6 +119,167 @@ func TestBaselineWithReplacedFiles(t *testing.T) {
 	}
 }
 
+func TestBaselineBindingFailurePreservesPriorBaseline(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-test-002b", "Storage choice")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 1 {
+		t.Fatalf("baseline files = %+v, want one", result)
+	}
+	priorHash := result[0].Hash
+
+	artifactBefore, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsBefore := artifactBefore.UnmarshalDecisionFields()
+	if len(fieldsBefore.BindingTargets) != 1 || fieldsBefore.BindingTargets[0].SymbolName != "Run" {
+		t.Fatalf("initial binding targets = %+v, want Run", fieldsBefore.BindingTargets)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+
+func Stop() string {
+	return "stop"
+}
+`)
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef:  dec.Meta.ID,
+		BindingScope: BindingScopeAuto,
+	})
+	if err == nil {
+		t.Fatal("expected ambiguous binding resolution to fail")
+	}
+	if !strings.Contains(err.Error(), "multiple parseable symbols") {
+		t.Fatalf("error = %q, want multiple parseable symbols", err.Error())
+	}
+
+	storedFiles, err := store.GetAffectedFiles(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(storedFiles) != 1 {
+		t.Fatalf("stored files = %+v, want one", storedFiles)
+	}
+	if storedFiles[0].Hash != priorHash {
+		t.Fatalf("stored hash = %q, want prior hash %q", storedFiles[0].Hash, priorHash)
+	}
+
+	artifactAfter, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsAfter := artifactAfter.UnmarshalDecisionFields()
+	if len(fieldsAfter.BindingTargets) != 1 || fieldsAfter.BindingTargets[0].SymbolName != "Run" {
+		t.Fatalf("binding targets = %+v, want prior Run target", fieldsAfter.BindingTargets)
+	}
+	if len(fieldsAfter.BindingDiagnostics) == 0 {
+		t.Fatal("expected binding diagnostics to be persisted")
+	}
+}
+
+func TestBaselineReusesExistingBindingTargetsForFootprintFiles(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+	writeTestFile(t, projectRoot, "support.go", `package main
+
+func Build() string {
+	return "build"
+}
+
+func Stop() string {
+	return "stop"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-test-002c", "Storage choice")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{
+		{Path: "app.go"},
+		{Path: "support.go"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	artifactBefore, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsBefore := artifactBefore.UnmarshalDecisionFields()
+	fieldsBefore.BindingTargets = []BindingTarget{{
+		Kind:             BindingTargetSymbol,
+		FilePath:         "app.go",
+		Language:         "go",
+		SymbolName:       "Run",
+		SymbolKind:       "func",
+		Line:             99,
+		EndLine:          101,
+		BodyHash:         "stale-hash",
+		Confidence:       "high",
+		ResolutionSource: "existing_binding_target",
+	}}
+	if err := persistDecisionFields(ctx, store, artifactBefore, fieldsBefore); err != nil {
+		t.Fatal(err)
+	}
+
+	expectedRun := findTestSymbolSnapshot(t, projectRoot, "app.go", "Run")
+	result, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("baseline files = %+v, want both footprint files hashed", result)
+	}
+
+	artifactAfter, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fieldsAfter := artifactAfter.UnmarshalDecisionFields()
+	if len(fieldsAfter.BindingDiagnostics) != 0 {
+		t.Fatalf("binding diagnostics = %+v, want none", fieldsAfter.BindingDiagnostics)
+	}
+	if len(fieldsAfter.BindingTargets) != 1 {
+		t.Fatalf("binding targets = %+v, want one reused target", fieldsAfter.BindingTargets)
+	}
+	target := fieldsAfter.BindingTargets[0]
+	if target.SymbolName != "Run" || target.BodyHash != expectedRun.Hash {
+		t.Fatalf("binding target = %+v, want current Run hash %q", target, expectedRun.Hash)
+	}
+	if target.Line != expectedRun.Line || target.EndLine != expectedRun.EndLine {
+		t.Fatalf("binding target lines = %d-%d, want %d-%d", target.Line, target.EndLine, expectedRun.Line, expectedRun.EndLine)
+	}
+}
+
 func TestBaselineFailsOnMissingFile(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -186,6 +351,15 @@ func TestCheckDriftDetectsModifiedFile(t *testing.T) {
 	if !r.HasBaseline {
 		t.Error("expected HasBaseline=true")
 	}
+	if r.BaselineKind != BaselineKindObservedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want observed-state snapshot", r.BaselineKind)
+	}
+	if r.BaselineProfile == nil {
+		t.Fatal("baseline_profile missing")
+	}
+	if r.BaselineProfile.AuthorityBoundary != "drift_detection_reference_not_verification_or_approval" {
+		t.Fatalf("baseline_profile = %+v", r.BaselineProfile)
+	}
 	if len(r.Files) != 1 {
 		t.Fatalf("expected 1 drifted file, got %d", len(r.Files))
 	}
@@ -194,7 +368,57 @@ func TestCheckDriftDetectsModifiedFile(t *testing.T) {
 	}
 }
 
-func TestCheckDriftFailsSafeWhenAddedSymbolsAccompanyNonSymbolEdits(t *testing.T) {
+func TestCheckDriftDoesNotStrengthenFailedMeasurementBaseline(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"before\" }\n")
+
+	dec, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Keep failed measurement scoped",
+		WhySelected:   "Failed verification must not turn a reference snapshot into a verified-state snapshot.",
+		WeakestLink:   "Drift presentation could overstate evidence from a failed measurement.",
+		PostConditions: []string{
+			"app.go behavior is measured after implementation",
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Measure(ctx, store, haftDir, MeasureInput{
+		DecisionRef:    dec.Meta.ID,
+		Findings:       "Verification failed after the baseline snapshot.",
+		CriteriaNotMet: []string{"app.go behavior is measured after implementation"},
+		Verdict:        "failed",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", "package main\nfunc Run() string { return \"after\" }\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("drift reports = %+v, want one report", reports)
+	}
+	if reports[0].BaselineKind != BaselineKindObservedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want observed-state snapshot", reports[0].BaselineKind)
+	}
+}
+
+func TestCheckDriftClassifiesAddedSymbolsAsAdjacentChurn(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	projectRoot := t.TempDir()
@@ -241,11 +465,104 @@ func Extra() string {
 	if file.Status != DriftModified {
 		t.Fatalf("status = %s, want %s", file.Status, DriftModified)
 	}
-	if len(file.Symbols) != 0 {
-		t.Fatalf("symbols = %+v, want fail-safe empty evidence", file.Symbols)
+	if file.Materiality != DriftMaterialityAdjacentFileChurn {
+		t.Fatalf("materiality = %s, want %s", file.Materiality, DriftMaterialityAdjacentFileChurn)
 	}
-	if got := reports[0].SymbolVerdict(); got != SymbolVerdictNeedsReview {
-		t.Fatalf("SymbolVerdict() = %q, want %q", got, SymbolVerdictNeedsReview)
+	if !file.AuditOnly {
+		t.Fatal("added-symbol churn should be audit-only in compact status")
+	}
+	if len(file.Symbols) != 1 || file.Symbols[0].Status != "added" || file.Symbols[0].SymbolName != "Extra" {
+		t.Fatalf("symbols = %+v, want one added Extra symbol", file.Symbols)
+	}
+	if got := reports[0].SymbolVerdict(); got != SymbolVerdictAdditiveOnly {
+		t.Fatalf("SymbolVerdict() = %q, want %q", got, SymbolVerdictAdditiveOnly)
+	}
+}
+
+func TestCheckDriftClassifiesUnchangedGovernedSymbolsAsAdjacentChurn(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+func Run() string {
+	return "run"
+}
+`)
+
+	dec := createTestDecision(t, store, "dec-test-010c", "App runner")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "app.go"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "app.go", `package main
+
+var enabled = true
+
+func Run() string {
+	return "run"
+}
+`)
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 1 {
+		t.Fatalf("expected 1 drift report, got %d", len(reports))
+	}
+
+	file := reports[0].Files[0]
+	if file.Materiality != DriftMaterialityAdjacentFileChurn {
+		t.Fatalf("materiality = %s, want %s", file.Materiality, DriftMaterialityAdjacentFileChurn)
+	}
+	if !file.AuditOnly {
+		t.Fatal("unchanged-symbol file churn should be audit-only")
+	}
+	if len(file.Symbols) != 0 {
+		t.Fatalf("symbols = %+v, want no changed governed symbols", file.Symbols)
+	}
+	if got := reports[0].SymbolVerdict(); got != SymbolVerdictAdditiveOnly {
+		t.Fatalf("SymbolVerdict() = %q, want %q", got, SymbolVerdictAdditiveOnly)
+	}
+}
+
+func TestAssessModifiedFileDriftClassifiesGeneratedAndCarrierPaths(t *testing.T) {
+	cases := []struct {
+		path string
+		want DriftMateriality
+	}{
+		{path: "internal/cli/fpf.db", want: DriftMaterialityGeneratedOrIgnored},
+		{path: "data/FPF", want: DriftMaterialityGeneratedOrIgnored},
+		{path: "embed-sidecar/target/debug/libhaft_embed.a", want: DriftMaterialityGeneratedOrIgnored},
+		{path: "CHANGELOG.md", want: DriftMaterialityCarrierOnly},
+		{path: ".context/current.plan", want: DriftMaterialityCarrierOnly},
+		{path: ".haft/specs/target-system.md", want: DriftMaterialityCarrierOnly},
+		{path: "internal/cli/skill/h-frame/SKILL.md", want: DriftMaterialityCarrierOnly},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := assessModifiedFileDrift("", tc.path, nil)
+			if got.Materiality != tc.want {
+				t.Fatalf("materiality = %s, want %s", got.Materiality, tc.want)
+			}
+			if !got.AuditOnly {
+				t.Fatal("generated/carrier drift should be audit-only")
+			}
+		})
+	}
+}
+
+func TestAssessModifiedFileDriftDoesNotTreatEveryTextFileAsCarrier(t *testing.T) {
+	got := assessModifiedFileDrift("", "notes.txt", nil)
+
+	if got.Materiality == DriftMaterialityCarrierOnly {
+		t.Fatal("plain text files should not be globally treated as carrier-only")
 	}
 }
 
@@ -452,6 +769,37 @@ func TestCheckDriftIgnoresAddedFilesExcludedByGitignore(t *testing.T) {
 	}
 }
 
+func TestCheckDriftIgnoresAddedFilesExcludedByNestedGitignore(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	initTestGitRepository(t, projectRoot)
+
+	writeTestFile(t, projectRoot, "embed-sidecar/.gitignore", "/target\n")
+	writeTestFile(t, projectRoot, "README.md", "# governed root\n")
+
+	dec := createTestDecision(t, store, "dec-test-016b", "Governed root with nested ignores")
+	err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "README.md"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: dec.Meta.ID})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	writeTestFile(t, projectRoot, "embed-sidecar/target/release/libhaft_embed.a", "ignored build artifact\n")
+
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("expected nested-gitignored build artifact to stay out of drift, got %#v", reports)
+	}
+}
+
 func TestScanStaleIncludesDrift(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -571,6 +919,15 @@ func writeTestFile(t *testing.T, root, path, content string) {
 	}
 }
 
+func initTestGitRepository(t *testing.T, root string) {
+	t.Helper()
+	cmd := exec.Command("git", "-C", root, "init")
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git init: %v\n%s", err, string(output))
+	}
+}
+
 func hashTestFile(t *testing.T, root, path string) string {
 	t.Helper()
 	data, err := os.ReadFile(filepath.Join(root, path))
@@ -579,6 +936,21 @@ func hashTestFile(t *testing.T, root, path string) string {
 	}
 	h := sha256.Sum256(data)
 	return hex.EncodeToString(h[:])
+}
+
+func findTestSymbolSnapshot(t *testing.T, root, path, symbolName string) codebase.SymbolSnapshot {
+	t.Helper()
+	snapshots, err := codebase.ExtractSymbolSnapshots(root, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, snapshot := range snapshots {
+		if snapshot.SymbolName == symbolName {
+			return snapshot
+		}
+	}
+	t.Fatalf("symbol %s not found in %s: %+v", symbolName, path, snapshots)
+	return codebase.SymbolSnapshot{}
 }
 
 func createTestDecision(t *testing.T, store *Store, id, title string) *Artifact {

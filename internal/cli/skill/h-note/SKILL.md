@@ -1,69 +1,91 @@
 ---
 name: h-note
 description: |
-  Records a micro-decision with rationale into the haft artifact graph — lighter than a full DecisionRecord but persisted so future sessions and conflict detection can surface it. Make sure to use this skill whenever the user says "remember that", "FYI for later", "note that we chose X", "side note", "let's record we ruled out Y", "remember we decided X", "for the record", "worth noting", "TIL", "important caveat", "save this thought" — or whenever a small choice with stated rationale belongs in project memory but does not justify the full DRR ceremony. The kernel rejects content-free notes — rationale is required. For binding choices use h-decide (manual-only). For framing problems use h-frame.
+  Persist a fact, observation, caveat, or small non-binding rationale in Haft project memory when the operator explicitly asks or current Work supplies a concrete operator-named or agent-inferred receiving use that needs a lightweight addressable fact. Use for "remember this", "запиши", or "note for later". Do not auto-persist ordinary reasoning. A note is not a choice, ProblemCard, evidence verdict, approval, or WorkPlan.
 when_to_use: |
-  Small choice or observation with rationale, worth persisting across sessions, but lighter than a binding DecisionRecord.
-argument-hint: "[note text — what + why]"
-allowed-tools: mcp__haft__haft_problem mcp__haft__haft_query
+  The operator explicitly asks to save a non-binding project fact, or identifies a receiving use that needs it to remain addressable.
+argument-hint: "[fact or observation to save]"
+allowed-tools: Bash mcp__haft__haft_entity mcp__haft__haft_onboard mcp__haft__haft_note mcp__haft__haft_query
 ---
 
-# h-note — Record a micro-decision
+# h-note — Save a lightweight project-memory item
 
-You are recording a Note via the kernel. Notes are lightweight artifacts in the graph — they don't have the DRR ceremony but they do require rationale per FPF DEC-01 (no rationale-free decision capture).
+Confirm that the payload contains at least one atomic observation or a
+non-binding rationale. Preserve source and uncertainty when known. If the text
+binds a choice, route the direct operator request through `h-decide`; if it frames an unresolved problem, use
+`h-frame` only when problem shaping is current.
 
-The Note tool lives under `haft_problem` action `select` does not write notes; the note-write surface is exposed through dedicated handlers in the MCP server. Check the actual tool name available — at present notes are written via the haft note CLI subcommand and via certain MCP integrations.
+## Conditional project-memory orientation
 
-## Step 1 — Confirm intent
+The explicit save request authorizes persistence of this note, but it does not
+make an EntityOfConcern identity safe to guess. When the note is
+context-heavy or multi-session and that identity is not already current,
+resolve it with `haft_query(action="memory",
+memory_request={"mode":"resolve","contract_version":"haft.memory.v1",
+"basis":{"kind":"project_current"},"query":"...","max_candidates":5})`, select
+the exact candidate by current use rather than rank, and hydrate the smallest
+relevant neighborhood through the closed `memory_request` neighborhood branch
+advertised by the tool schema with
+`projection_profile_ref="agent_orientation.v2"`.
 
-The operator said something note-worthy. Before persisting:
-- Verify the note has substantive content: a fact OR a choice OR an observation with rationale
-- Reject: "FYI" alone, "we should remember this" with no payload
-- Accept: "We chose X over Y because Z" / "Observation: tests run 30s slower on M1 baseline since dependency update"
+Inspect `result_kind` first. If the note needs a stable concern and resolve
+returns `known_absent`, the explicit save request is sufficient persistence
+provenance for the task-level entity route:
 
-## Step 2 — Capture rationale explicitly
-
-Every Note must answer:
-- WHAT was decided / observed
-- WHY (the rationale)
-- WHEN (optional — kernel adds timestamp automatically; only add a domain timestamp if relevant)
-
-## Step 3 — Persist
-
-Use the appropriate note-write tool. Currently:
-
-```
-mcp__haft__haft_problem(
-  action="frame",
-  problem_type="optimization",
-  title="<short title>",
-  signal="<the observation or choice>",
-  acceptance="N/A — recorded as note for future recall",
-  mode="tactical"
+```text
+mcp__haft__haft_entity(
+  action="establish",
+  entity_id="<stable proposed id>",
+  label="<readable label>",
+  bounded_context_ref="<exact bounded context>",
+  aliases=["<known alias, in canonical order>"],
+  persistence_reason="explicit_operator_request",
+  request_provenance_ref="<this save request>",
+  idempotency_key="<stable key for this exact request>"
 )
 ```
 
-(Notes use the lightweight tactical-mode problem record OR a dedicated note write surface depending on what the kernel exposes at runtime. The kernel rejects empty rationale.)
+The tool owns alias-conflict checking, validation, admission, and exact
+post-commit resolution. Use only the returned canonical `entity_ref`.
+`identity_conflict`, `alias_conflict`, or `idempotency_conflict` must remain
+visible; do not guess. Route `onboarding_required` through
+`mcp__haft__haft_onboard(action="status")`; repair a partial or legacy default
+memory installation with `haft init` rather than presenting a schema choice.
+On `restart_required`, reconnect and retry the unchanged request and key.
 
-For richer note support, prefer the `haft note` CLI command when available.
+If the note does not need a stable concern, or setup is deferred, save the note
+without invented concern fields. Missing setup and explicit abstention are
+non-blocking. This read does not replace code-graph preflight before a later
+code edit. The dedicated `haft_note` surface performs the note persistence, but
+model-supplied fields are not proof of operator authorization. Preserve the
+request or named receiving-use reference in `task_context` for correlation.
 
-## Step 4 — Confirm to operator
+Persist through the dedicated note surface:
 
-Surface:
-- The note ID (the recorded artifact)
-- A reminder that future `/h-status` or related-query lookups will surface this note when relevant context arises
+```text
+mcp__haft__haft_note(
+  title="<short title>",
+  observations=["<atomic fact>"],
+  rationale="<why it matters, when current>",
+  anchors=[{"type":"relates_to","ref":"<artifact ref>"}],
+  task_context="<operator request or named receiving-use reference>",
+  valid_until="<RFC3339 expiry when this fact is time-bounded>",
+  entity_ref={
+    "ref_kind_id":"U.EntityRef",
+    "reference_id":"<exact current EntityOfConcern>"
+  },
+  bounded_context_ref="<exact current bounded context>"
+)
+```
 
-## What NOT to do
+Supply the concern fields only when their exact identity is known. A committed
+typed projection returns an exact `record_reference` with
+`ref_kind_id="Haft.ProjectRecordRef"`; preserve that value for later typed
+relations instead of deriving `record:<note-id>`. If the concern basis is
+absent, the note may remain a useful legacy carrier while typed projection is
+`underdetermined`.
 
-- DO NOT persist notes that lack rationale. Force the operator to articulate WHY, or refuse and ask for the rationale.
-- DO NOT use h-note for binding choices — those go through `/h-decide` (manual-only).
-- DO NOT use h-note for full problem framing — that's `/h-frame`.
-- DO NOT silently expand a note into a DecisionRecord. If the operator's intent is bigger than a note, recommend `/h-decide` and let them invoke it explicitly.
-- DO NOT capture meta-notes about agent behavior ("agent helped me with X") — those are session telemetry, not project knowledge.
-
-## FPF spec references
-
-- DEC-01 — Decision record structure (notes are the lightweight cousin — same problem-frame + decision + rationale + consequences minimum, just compressed)
-- E.9 — Design-Rationale Record (full DRR; notes are sub-DRR but still rationale-bearing)
-
-Look up via `mcp__haft__haft_query(action="fpf", query="DEC-01")`.
+Do not emulate notes with ProblemCards. Do not convert a conversational aside
+into durable memory unless the operator asked or named a receiving reliance.
+After saving, return the note ID paired with its title, the exact
+`record_reference` when present, and state that it is non-binding.

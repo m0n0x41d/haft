@@ -1,19 +1,27 @@
 package cli
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
 func TestApplyReadinessReminder_AppendsOnNeedsOnboard(t *testing.T) {
 	root := newReadinessTestProject(t, readinessTestProjectInit)
 	haftDir := filepath.Join(root, ".haft")
 
-	result := applyReadinessReminder("ProblemCard framed: ...", "haft_problem", haftDir)
+	result := applyProfileAwareReadinessReminder(
+		context.Background(),
+		"ProblemCard framed: ...",
+		"haft_problem",
+		haftDir,
+		map[string]any{},
+	)
 
 	if !strings.Contains(result, "Project readiness") {
 		t.Fatalf("expected readiness reminder appended; got %q", result)
@@ -21,8 +29,11 @@ func TestApplyReadinessReminder_AppendsOnNeedsOnboard(t *testing.T) {
 	if !strings.Contains(result, "needs_onboard") {
 		t.Fatalf("reminder should explain needs_onboard state; got %q", result)
 	}
+	if !strings.Contains(result, "/h-spec") {
+		t.Fatalf("reminder should point at /h-spec; got %q", result)
+	}
 	if !strings.Contains(result, "/h-onboard") {
-		t.Fatalf("reminder should point at /h-onboard; got %q", result)
+		t.Fatalf("reminder should preserve /h-onboard compatibility; got %q", result)
 	}
 	// Original result is preserved in front.
 	if !strings.HasPrefix(result, "ProblemCard framed: ...") {
@@ -35,7 +46,13 @@ func TestApplyReadinessReminder_SkipsToolsNotInReasoningLoop(t *testing.T) {
 	haftDir := filepath.Join(root, ".haft")
 
 	for _, tool := range []string{"haft_query", "haft_refresh", "haft_commission", "haft_spec_section"} {
-		result := applyReadinessReminder("payload", tool, haftDir)
+		result := applyProfileAwareReadinessReminder(
+			context.Background(),
+			"payload",
+			tool,
+			haftDir,
+			map[string]any{},
+		)
 		if strings.Contains(result, "Project readiness") {
 			t.Fatalf("tool %q should not receive readiness reminder; got %q", tool, result)
 		}
@@ -47,7 +64,13 @@ func TestApplyReadinessReminder_SkipsMachineJSONResponse(t *testing.T) {
 	haftDir := filepath.Join(root, ".haft")
 
 	jsonResult := `{"id":"prob-20260428-abc","title":"x"}`
-	result := applyReadinessReminder(jsonResult, "haft_problem", haftDir)
+	result := applyProfileAwareReadinessReminder(
+		context.Background(),
+		jsonResult,
+		"haft_problem",
+		haftDir,
+		map[string]any{},
+	)
 
 	if result != jsonResult {
 		t.Fatalf("JSON response must not be polluted; got %q", result)
@@ -57,18 +80,53 @@ func TestApplyReadinessReminder_SkipsMachineJSONResponse(t *testing.T) {
 func TestApplyReadinessReminder_SkipsReadyProject(t *testing.T) {
 	root := newReadinessTestProject(t, readinessTestProjectReady)
 	haftDir := filepath.Join(root, ".haft")
+	readiness, err := inspectCanonicalProjectReadiness(
+		context.Background(),
+		root,
+		automaticProjectSpecificationScopeRequest(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if readiness.facts.Status != project.ReadinessReady {
+		applicability, _ := readiness.resolvedApplicability()
+		report, reportErr := project.CheckSpecificationSetForScope(
+			root,
+			applicability,
+		)
+		t.Fatalf(
+			"ready fixture status = %q; report_error=%v; report=%#v",
+			readiness.facts.Status,
+			reportErr,
+			report,
+		)
+	}
 
-	result := applyReadinessReminder("payload", "haft_decision", haftDir)
+	result := applyProfileAwareReadinessReminder(
+		context.Background(),
+		"payload",
+		"haft_decision",
+		haftDir,
+		map[string]any{},
+	)
 	if strings.Contains(result, "Project readiness") {
 		t.Fatalf("ready project should not receive reminder; got %q", result)
 	}
 }
 
 func TestApplyReadinessReminder_SkipsNeedsInitProject(t *testing.T) {
+	t.Parallel()
+
 	root := t.TempDir() // no .haft at all → needs_init
 	haftDir := filepath.Join(root, ".haft")
 
-	result := applyReadinessReminder("payload", "haft_problem", haftDir)
+	result := applyProfileAwareReadinessReminder(
+		context.Background(),
+		"payload",
+		"haft_problem",
+		haftDir,
+		map[string]any{},
+	)
 	if strings.Contains(result, "Project readiness") {
 		t.Fatalf("needs_init project should not receive needs_onboard reminder; got %q", result)
 	}
@@ -79,7 +137,13 @@ func TestApplyReadinessReminder_AppliesToAllReasoningTools(t *testing.T) {
 	haftDir := filepath.Join(root, ".haft")
 
 	for _, tool := range []string{"haft_problem", "haft_solution", "haft_decision", "haft_note"} {
-		result := applyReadinessReminder("payload", tool, haftDir)
+		result := applyProfileAwareReadinessReminder(
+			context.Background(),
+			"payload",
+			tool,
+			haftDir,
+			map[string]any{},
+		)
 		if !strings.Contains(result, "Project readiness") {
 			t.Fatalf("tool %q should receive readiness reminder; got %q", tool, result)
 		}
@@ -104,14 +168,14 @@ func newReadinessTestProject(t *testing.T, mode readinessTestProjectMode) string
 	t.Helper()
 
 	root := t.TempDir()
+	harness := profileadmissionfixture.New(t, root)
+	harness.AdmitSoftwareRevisionWithTargetEntity(
+		t,
+		"readiness-reminder",
+		"entity:readiness-reminder-target",
+	)
+	root = harness.Root().String()
 	haftDir := filepath.Join(root, ".haft")
-	if err := os.MkdirAll(haftDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-
-	if _, err := project.Create(haftDir, root); err != nil {
-		t.Fatalf("project.Create: %v", err)
-	}
 
 	if mode == readinessTestProjectReady {
 		writeReadinessReadyFixture(t, haftDir)
@@ -122,9 +186,8 @@ func newReadinessTestProject(t *testing.T, mode readinessTestProjectMode) string
 
 // writeReadinessReadyFixture lays down the minimum carriers
 // `project.hasMinimumSpecificationSet` checks: workflow.md with the
-// "## Defaults" marker, plus one active target-system section, one
-// active enabling-system section, and one term-map entry that pass
-// `CheckSpecificationSet` cleanly.
+// "## Defaults" marker, the required target and software sections,
+// and one term-map entry that pass `CheckSpecificationSet` cleanly.
 func writeReadinessReadyFixture(t *testing.T, haftDir string) {
 	t.Helper()
 
@@ -133,37 +196,16 @@ func writeReadinessReadyFixture(t *testing.T, haftDir string) {
 		t.Fatal(err)
 	}
 
+	targetCarrier := readinessReadyTargetCarrier()
+	softwareCarrier := readinessReadySoftwareCarrier()
 	files := map[string]string{
-		filepath.Join(haftDir, "workflow.md"): "# workflow\n\n## Defaults\n\nmode: standard\n",
-		filepath.Join(specsDir, "target-system.md"): "## TS.environment.001\n\n" +
-			"```yaml spec-section\n" +
-			"id: TS.environment.001\n" +
-			"spec: target-system\n" +
-			"kind: environment-change\n" +
-			"title: Test environment change\n" +
-			"statement_type: definition\n" +
-			"claim_layer: object\n" +
-			"owner: human\n" +
-			"status: active\n" +
-			"valid_until: 2099-12-31\n" +
-			"```\n",
-		filepath.Join(specsDir, "enabling-system.md"): "## ES.creator.001\n\n" +
-			"```yaml spec-section\n" +
-			"id: ES.creator.001\n" +
-			"spec: enabling-system\n" +
-			"kind: creator-role\n" +
-			"title: Test creator role\n" +
-			"statement_type: explanation\n" +
-			"claim_layer: carrier\n" +
-			"owner: human\n" +
-			"status: active\n" +
-			"valid_until: 2099-12-31\n" +
-			"```\n",
-		filepath.Join(specsDir, "term-map.md"): "```yaml term-map\n" +
-			"entries:\n" +
-			"  - term: TestProject\n" +
-			"    domain: target\n" +
-			"    definition: A project under readiness test fixture.\n" +
+		filepath.Join(haftDir, "workflow.md"):         "# workflow\n\n## Defaults\n\nmode: standard\n",
+		filepath.Join(specsDir, "target-system.md"):   targetCarrier,
+		filepath.Join(specsDir, "software-system.md"): softwareCarrier,
+		filepath.Join(specsDir, "term-map.md"): "```yaml\n" +
+			"term: TestProject\n" +
+			"category: enabling\n" +
+			"definition: A project under readiness test fixture.\n" +
 			"```\n",
 	}
 
@@ -172,4 +214,43 @@ func writeReadinessReadyFixture(t *testing.T, haftDir string) {
 			t.Fatalf("write %s: %v", path, err)
 		}
 	}
+}
+
+func readinessReadyTargetCarrier() string {
+	sections := []string{
+		readinessReadySection("TS.environment.001", "target-system", "target.environment", "Test target environment"),
+		readinessReadySection("TS.role.001", "target-system", "target.role", "Test target role"),
+		readinessReadySection("TS.boundary.001", "target-system", "target.boundary", "Test target boundary"),
+	}
+
+	return strings.Join(sections, "")
+}
+
+func readinessReadySoftwareCarrier() string {
+	sections := []string{
+		readinessReadySection("SS.role.001", "software-system", "software.role", "Test software role"),
+		readinessReadySection("SS.functional.001", "software-system", "software.functional_behavior", "Test software behavior"),
+		readinessReadySection("SS.interfaces.001", "software-system", "software.interfaces", "Test software interfaces"),
+		readinessReadySection("SS.constraints.001", "software-system", "software.constraints", "Test software constraints"),
+	}
+
+	return strings.Join(sections, "")
+}
+
+func readinessReadySection(id string, spec string, kind string, title string) string {
+	lines := []string{
+		"## " + id,
+		"",
+		"```yaml spec-section",
+		"id: " + id,
+		"kind: " + kind,
+		"statement_type: definition",
+		"claim_layer: object",
+		"owner: human",
+		"status: active",
+		"```",
+		"",
+	}
+
+	return strings.Join(lines, "\n")
 }

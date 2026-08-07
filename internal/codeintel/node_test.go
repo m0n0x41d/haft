@@ -5,29 +5,12 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	"github.com/m0n0x41d/haft/internal/codebase"
 
 	_ "modernc.org/sqlite"
 )
-
-func TestMatchSymbol_ClosestLineSameReceiver(t *testing.T) {
-	orig := codebase.CodeSymbol{Name: "Do", Receiver: "Store", StartLine: 40}
-	syms := []codebase.CodeSymbol{
-		{Name: "Do", Receiver: "Cache", StartLine: 41}, // wrong receiver
-		{Name: "Do", Receiver: "Store", StartLine: 48}, // shifted by edit — should win
-		{Name: "Other", Receiver: "Store", StartLine: 42},
-	}
-	got, ok := matchSymbol(syms, orig)
-	if !ok || got.StartLine != 48 || got.Receiver != "Store" {
-		t.Fatalf("expected Store.Do@48, got %+v (ok=%v)", got, ok)
-	}
-	if _, ok := matchSymbol(syms, codebase.CodeSymbol{Name: "Gone"}); ok {
-		t.Fatalf("removed symbol should not match")
-	}
-}
 
 func TestMethodsOfAndContainerKind(t *testing.T) {
 	syms := []codebase.CodeSymbol{
@@ -40,7 +23,7 @@ func TestMethodsOfAndContainerKind(t *testing.T) {
 	if len(got) != 2 {
 		t.Fatalf("Store has 2 methods, got %d", len(got))
 	}
-	for _, k := range []string{"type", "interface", "class", "struct"} {
+	for _, k := range []string{"type", "type_alias", "interface", "class", "struct", "enum"} {
 		if !isContainerKind(k) {
 			t.Fatalf("%q should be a container kind", k)
 		}
@@ -52,8 +35,9 @@ func TestMethodsOfAndContainerKind(t *testing.T) {
 
 // The P3 keystone, end-to-end: a file edited after indexing must yield a
 // byte-exact body from the NEW content (re-indexed), never the stale offsets'
-// bytes — proving re-read + re-hash, not a stored-hash compare.
-func TestFreshBody_ReReadsEditedFile(t *testing.T) {
+// bytes — proving re-read + re-hash, while refusing a private per-file write
+// outside the atomic index epoch transaction.
+func TestFreshBody_RejectsEditedFileUntilAtomicRefresh(t *testing.T) {
 	ctx := context.Background()
 	root := t.TempDir()
 	db, err := sql.Open("sqlite", filepath.Join(root, "cg.db"))
@@ -91,17 +75,14 @@ func TestFreshBody_ReReadsEditedFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reindexed {
-		t.Fatalf("an edited file must trigger a re-index")
+	if reindexed {
+		t.Fatalf("freshBody must not publish a private per-file re-index")
 	}
-	if !fresh {
-		t.Fatalf("after re-index the body must verify byte-exact")
+	if fresh || body != nil {
+		t.Fatalf("edited source must remain unverified until the next atomic refresh")
 	}
-	if !strings.Contains(string(body), "return 42") {
-		t.Fatalf("body must reflect the EDITED source, got %q", body)
-	}
-	if freshSym.StartLine <= stale.StartLine {
-		t.Fatalf("re-resolved symbol should have shifted down: stale=%d fresh=%d", stale.StartLine, freshSym.StartLine)
+	if freshSym.ID != stale.ID {
+		t.Fatalf("freshBody must preserve the stored symbol, got %+v", freshSym)
 	}
 	// The stale offsets, sliced from the NEW content, would NOT verify — the
 	// whole point of re-reading.

@@ -1,0 +1,29 @@
+schema_version: haft.project-profile/v1
+profile:
+  kind: declared
+  scopes:
+    - kind: non_software
+      scope_id: knowledge-model
+      entity_ref: entity:knowledge-model
+      admitted_kind_ref: U.Episteme
+      governing_pattern_refs:
+        - A.7
+        - A.6.B
+      contract_refs:
+        - TS.model.001
+    - kind: software
+      scope_id: model-tooling
+      entity_ref: entity:model-tooling
+  declaration_record:
+    kind: onboarding_agent_declared_record
+    declaration_authority_basis_ref: authority-basis:onboard:2
+    candidate_provenance_digest: sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee
+    admission_event_ref: admission:event:profile:2
+    project_root: /workspace/haft
+    scope_payload_digest: sha256:fe6f8ea8ae09263c9318cdf556ed07fb8a563ade7c7b55204037b867f0e98e6d
+    observed_basis_digest: sha256:7898cc20a8a8d699fc52dac31607e327f485d3bb70edc0032423f383c5d4f418
+    observation_window:
+      execution_context_ref: codex:thread:019f
+      from: "2026-07-14T12:00:00+04:00"
+      until: "2026-07-14T12:30:00+04:00"
+    carrier_revision: 2

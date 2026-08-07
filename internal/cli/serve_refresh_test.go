@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +11,8 @@ import (
 )
 
 func TestApplyRefreshReminderSkipsCommissionProtocol(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -24,6 +27,8 @@ func TestApplyRefreshReminderSkipsCommissionProtocol(t *testing.T) {
 }
 
 func TestApplyRefreshReminderSkipsMachineJSON(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -38,6 +43,8 @@ func TestApplyRefreshReminderSkipsMachineJSON(t *testing.T) {
 }
 
 func TestApplyRefreshReminderKeepsHumanReadableReminder(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -47,6 +54,168 @@ func TestApplyRefreshReminderKeepsHumanReadableReminder(t *testing.T) {
 
 	if !strings.Contains(got, "Refresh reminder") {
 		t.Fatalf("expected refresh reminder, got:\n%s", got)
+	}
+}
+
+func TestHandleQuintRefreshReviewBuildsReadOnlyJudgmentPacket(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	before := countArtifacts(t, fixture)
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action": "review",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(review) returned error: %v", err)
+	}
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("artifact count changed: before=%d after=%d", before, after)
+	}
+
+	for _, want := range []string{
+		"Maintenance Judgment Review",
+		"not_mutation",
+		"operator_approval_required",
+		"review_material_drift",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("review response missing %q:\n%s", want, result)
+		}
+	}
+}
+
+func TestHandleQuintRefreshPlanDefaultsCompactAndVerboseKeepsFullPlan(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	compact, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action": "plan",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(plan) returned error: %v", err)
+	}
+	if !strings.Contains(compact, "Compact view") {
+		t.Fatalf("default plan should be compact:\n%s", compact)
+	}
+
+	verbose, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "plan",
+		"verbose": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(plan verbose) returned error: %v", err)
+	}
+	if strings.Contains(verbose, "Compact view") {
+		t.Fatalf("verbose plan should use full renderer:\n%s", verbose)
+	}
+	if !strings.Contains(verbose, "Maintenance Plan") {
+		t.Fatalf("verbose plan missing title:\n%s", verbose)
+	}
+}
+
+func TestHandleQuintRefreshDrainDryRunBuildsSafePreview(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	before := countArtifacts(t, fixture)
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "drain",
+		"dry_run": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(drain dry-run) returned error: %v", err)
+	}
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("dry-run artifact count changed: before=%d after=%d", before, after)
+	}
+
+	for _, want := range []string{
+		"Maintenance Drain (dry-run)",
+		"not_mutation",
+		"Needs operator:",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("drain dry-run response missing %q:\n%s", want, result)
+		}
+	}
+
+	staleItems, err := artifact.ScanStale(context.Background(), fixture.store)
+	if err != nil {
+		t.Fatalf("ScanStale returned error: %v", err)
+	}
+	wantFooter := fmt.Sprintf("Evidence pressure: %d decision(s) need refresh", len(staleItems))
+	if len(staleItems) > 0 && !strings.Contains(result, wantFooter) {
+		t.Fatalf("drain footer should use typed stale lane %q:\n%s", wantFooter, result)
+	}
+}
+
+func TestHandleQuintRefreshDrainDefaultsToDryRunPreview(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	seedGovernanceDebt(t, fixture)
+
+	before := countArtifacts(t, fixture)
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action": "drain",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(drain default) returned error: %v", err)
+	}
+	after := countArtifacts(t, fixture)
+	if after != before {
+		t.Fatalf("default drain artifact count changed: before=%d after=%d", before, after)
+	}
+	if !strings.Contains(result, "Maintenance Drain (dry-run)") {
+		t.Fatalf("default drain should be a dry-run preview:\n%s", result)
+	}
+}
+
+func TestHandleQuintRefreshDrainRejectsNonDryRunMCPCall(t *testing.T) {
+	fixture := newCheckTestProject(t)
+
+	_, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "drain",
+		"dry_run": false,
+	})
+	if err == nil {
+		t.Fatal("expected non-dry MCP drain to be rejected")
+	}
+	for _, want := range []string{"dry_run=true", "haft overseer drain"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
+	}
+}
+
+func TestHandleQuintRefreshDrainFooterUsesTypedStaleSnapshot(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	decision := mustCreateDecision(t, fixture, artifact.DecideInput{
+		SelectedTitle:   "Deprecated expired decision",
+		WhySelected:     "Need a terminal decision that raw nav would count as stale.",
+		SelectionPolicy: "Prefer a single decision with no active operator work.",
+		CounterArgument: "Terminal decisions should not surface as current stale debt.",
+		WeakestLink:     "Footer stale count must follow the typed status snapshot.",
+		WhyNotOthers: []artifact.RejectionReason{{
+			Variant: "Active expired decision",
+			Reason:  "Would be legitimate stale debt and would not prove footer filtering.",
+		}},
+		Rollback: &artifact.RollbackSpec{
+			Triggers: []string{"Deprecated decisions resurface in compact status footers."},
+		},
+	})
+	mustSetValidUntil(t, fixture, decision.Meta.ID, time.Now().Add(-72*time.Hour).Format("2006-01-02"))
+	mustSetArtifactStatus(t, fixture, decision.Meta.ID, artifact.StatusDeprecated)
+
+	result, err := handleQuintRefresh(context.Background(), fixture.store, fixture.haftDir, map[string]any{
+		"action":  "drain",
+		"dry_run": true,
+	})
+	if err != nil {
+		t.Fatalf("handleQuintRefresh(drain dry-run) returned error: %v", err)
+	}
+	if strings.Contains(result, "Evidence pressure: 1 decision(s) need refresh") {
+		t.Fatalf("drain footer used raw stale decision count instead of typed snapshot:\n%s", result)
 	}
 }
 

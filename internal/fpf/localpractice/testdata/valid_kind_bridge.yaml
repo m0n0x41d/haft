@@ -1,0 +1,52 @@
+schema_version: haft.local-practice/v1
+carrier:
+  id: haft.auth-bridge
+  edition: 1.0.0
+base_type_env_ref: typeenv:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bounded_context_ref: frontend
+compiler_version: haft.local-practice.compiler/v1
+signature_manifest:
+  id: haft.auth-bridge
+  version: 1.0.0
+  publication_state: candidate
+  imports: []
+  provides:
+    - Haft.Bridge.AuthenticatedRequestToFrontendRequest
+signature:
+  subject_block:
+    subject_kind: U.KindBridge
+    ranged_value_kind: U.Kind
+    slice_set: ContextSliceSet
+    extent_rule: haft.rule.kind-bridge.extent/v1
+  vocabulary:
+    declarations:
+      - kind: kind_bridge
+        symbol: Haft.Bridge.AuthenticatedRequestToFrontendRequest
+        endpoints:
+          source:
+            bounded_context_ref: auth-service
+            edition: AuthStandard-v2.3
+          target:
+            bounded_context_ref: frontend
+            edition: FrontendAuth-v1.4
+        mapping:
+          kind: named_target
+          source_kind: Auth.AuthenticatedRequest
+          target_kind: Frontend.VerifiedRequest
+        direction: one_way
+        order_preservation: no_links_covered
+        kind_congruence: 2
+        loss_notes:
+          - The x-auth header representation is not preserved.
+        definedness_area:
+          - AuthStandard v2.3 and FrontendAuth v1.4 are both active.
+          - Target membership is re-evaluated in the frontend ContextSlice.
+  laws:
+    constraint_refs: []
+    invariants:
+      - KindBridge changes neither ClaimScope G nor Formality F.
+      - Target-context membership is evaluated by the target KindSignature.
+  applicability:
+    bounded_context_ref: frontend
+    assumptions:
+      - The exact endpoint editions remain available.

@@ -3,6 +3,7 @@ package artifact
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 )
@@ -129,6 +130,151 @@ func TestFetchStatusData_Dashboard(t *testing.T) {
 	}
 	if !containsString(data.CommissionAttention[0].SuggestedActions, "requeue") {
 		t.Fatalf("commission actions = %#v, want requeue", data.CommissionAttention[0].SuggestedActions)
+	}
+}
+
+func TestFetchStatusData_AccountsForAllDecisionsAndDerivesClaimSummary(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	for index := 0; index < 12; index++ {
+		fields := DecisionFields{}
+		if index == 0 {
+			fields.Claims = []DecisionClaim{
+				{ID: "claim-active", Claim: "Active claim", Observable: "active observable", Threshold: "active threshold", Status: ClaimStatusUnverified, VerifyAfter: "2026-08-02"},
+				{ID: "claim-refresh", Claim: "Refresh claim", Observable: "refresh observable", Threshold: "refresh threshold", Status: ClaimStatusUnverified, LifecycleStatus: ClaimLifecycleRefreshDue, VerifyAfter: "2026-08-01"},
+				{ID: "claim-supported", Claim: "Supported claim", Observable: "supported observable", Threshold: "supported threshold", Status: ClaimStatusSupported},
+				{ID: "claim-old", Claim: "Old claim", Observable: "old observable", Threshold: "old threshold", Status: ClaimStatusUnverified, LifecycleStatus: ClaimLifecycleSuperseded, VerifyAfter: "2026-07-01"},
+			}
+		}
+		structured, err := json.Marshal(fields)
+		if err != nil {
+			t.Fatal(err)
+		}
+		item := &Artifact{
+			Meta: Meta{
+				ID:    fmt.Sprintf("dec-20260711-%02d", index),
+				Kind:  KindDecisionRecord,
+				Title: fmt.Sprintf("Decision %02d", index),
+			},
+			StructuredData: string(structured),
+		}
+		if err := store.Create(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	data, err := FetchStatusData(ctx, store, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.UnassessedDecisions) != 12 {
+		t.Fatalf("unassessed decisions = %d, want 12", len(data.UnassessedDecisions))
+	}
+
+	summary := data.DecisionVerification["dec-20260711-00"]
+	if summary.ActiveClaims != 3 || summary.UnverifiedClaims != 2 {
+		t.Fatalf("verification summary = %#v, want 3 active and 2 unverified", summary)
+	}
+	if summary.NextScheduledCheck != "2026-08-01" {
+		t.Fatalf("next scheduled check = %q, want 2026-08-01", summary.NextScheduledCheck)
+	}
+}
+
+func TestFetchStatusData_DriftEventsIncludeNoBaselineBindingResolution(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+
+	dec := createTestDecision(t, store, "dec-status-binding", "Needs binding scope")
+	if err := store.SetAffectedFiles(ctx, dec.Meta.ID, []AffectedFile{{Path: "legacy.txt"}}); err != nil {
+		t.Fatal(err)
+	}
+	artifact, err := store.Get(ctx, dec.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := artifact.UnmarshalDecisionFields()
+	fields.BindingTargets = []BindingTarget{{
+		Kind:             BindingTargetWholeFileFallback,
+		FilePath:         "legacy.txt",
+		ResolutionSource: BindingResolutionSourceWholeFileFallback,
+	}}
+	if err := persistDecisionFields(ctx, store, artifact, fields); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := FetchStatusData(ctx, store, "", projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(data.Drift) != 0 {
+		t.Fatalf("legacy Drift = %#v, want baselined-only compatibility surface", data.Drift)
+	}
+	if data.DriftEvents.Summary.NeedsBindingResolutionEvents != 1 {
+		t.Fatalf("needs_binding_resolution_events = %d, want 1", data.DriftEvents.Summary.NeedsBindingResolutionEvents)
+	}
+	if data.DriftEvents.Summary.MaterialEvents != 0 {
+		t.Fatalf("material_events = %d, want 0", data.DriftEvents.Summary.MaterialEvents)
+	}
+}
+
+func TestFetchStatusData_FlagsBacklogProblemWithSupportingEvidence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Done but unlinked",
+		Signal:     "Implementation evidence exists but graph closure is missing.",
+		Acceptance: "Status flags the hygiene issue.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := AttachEvidence(ctx, store, EvidenceInput{
+		ArtifactRef:     problem.Meta.ID,
+		Type:            "test",
+		Content:         "Implementation evidence exists.",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := FetchStatusData(ctx, store, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.ProblemHygiene) != 1 {
+		t.Fatalf("problem hygiene count = %d, want 1", len(data.ProblemHygiene))
+	}
+	if data.ProblemHygiene[0].Problem.Meta.ID != problem.Meta.ID {
+		t.Fatalf("problem hygiene ref = %s, want %s", data.ProblemHygiene[0].Problem.Meta.ID, problem.Meta.ID)
+	}
+
+	if err := store.Create(ctx, &Artifact{
+		Meta: Meta{
+			ID:     "sol-linked",
+			Kind:   KindSolutionPortfolio,
+			Status: StatusActive,
+			Title:  "Linked portfolio",
+		},
+		Body: "# Linked portfolio",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.AddLink(ctx, "sol-linked", problem.Meta.ID, "based_on"); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err = FetchStatusData(ctx, store, "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data.ProblemHygiene) != 0 {
+		t.Fatalf("problem hygiene after backlink = %d, want 0", len(data.ProblemHygiene))
 	}
 }
 

@@ -1,0 +1,22 @@
+{
+  "schema": "haft.codegraph-reference-qualification/v1",
+  "posture": "frozen_external_observation_not_product_dependency",
+  "result_semantics": "A reproducible observation of the pinned external reference on the exact synthetic fixture. This carrier is a comparison baseline, not a product dependency, current external-runtime evidence, or a superiority claim.",
+  "source": {
+    "package": "@colbymchenry/codegraph",
+    "version": "1.3.1",
+    "revision": "e76a355df5a3489c4cd6ee26cb8bd967893b4348"
+  },
+  "fixture_digest": "sha256:53618d0145827e68cad4157351c9019a8ec6bba8d4fa1bff4cfb940f05e7ed48",
+  "manifest_digest": "sha256:35356b3efeba58612606836e69f9f2486e9bb12a90b8b7906d462ce5dec966ac",
+  "observed": {
+    "required_seeds": 12,
+    "required_relations": 24,
+    "forbidden_relations": 1
+  },
+  "declared_fixture": {
+    "required_seeds": 12,
+    "required_relations": 31,
+    "forbidden_relations": 3
+  }
+}

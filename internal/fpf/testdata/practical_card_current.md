@@ -1,0 +1,7 @@
+- **Situation and question.** A named decision depends on whether one exact entity is a system.
+- **First route.** Open `A.1.SCR` and recover the exact entity before evaluating it.
+- **Template A — direct-owner exit.** Return non-system subjects to `A.15.1` or their other exact direct owner.
+- **Template B — system recognition.** Apply the complete `A.1` criterion and return recognized, rejected, or unknown.
+- **Boundaries.** Stop at the direct-owner exit, recognized system, rejected reading, or exact missing-information blocker.
+- **Result test.** Name the entity, dependent decision, direct result, governor, and concrete action now allowed.
+- **Public coarsening.** "System recognition" restores to the exact source-owned branch.

@@ -9,93 +9,402 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: update-fpf
+  cancel-in-progress: false
+
 jobs:
   update-fpf:
     runs-on: ubuntu-latest
+    env:
+      BASE_BRANCH: dev
     steps:
       - uses: actions/checkout@v6
         with:
+          ref: dev
           submodules: true
           fetch-depth: 0
 
       - uses: actions/setup-go@v6
         with:
-          go-version: '1.25'
+          go-version-file: go.mod
 
-      - name: Get current submodule commit
-        id: current
-        run: echo "sha=$(git -C data/FPF rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Update FPF submodule to latest
+      - name: Verify clean refresh basis
+        shell: bash
         run: |
-          git -C data/FPF fetch origin
-          git -C data/FPF checkout origin/main
-          echo "Updated to: $(git -C data/FPF rev-parse HEAD)"
-
-      - name: Check if FPF changed
-        id: check
-        run: |
-          NEW_SHA=$(git -C data/FPF rev-parse HEAD)
-          OLD_SHA=${{ steps.current.outputs.sha }}
-          if [ "$NEW_SHA" = "$OLD_SHA" ]; then
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "FPF is up to date ($NEW_SHA). Nothing to do."
-          else
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "new_sha=$NEW_SHA" >> "$GITHUB_OUTPUT"
-            echo "new_sha_short=${NEW_SHA:0:7}" >> "$GITHUB_OUTPUT"
-            echo "old_sha=$OLD_SHA" >> "$GITHUB_OUTPUT"
-            echo "old_sha_short=${OLD_SHA:0:7}" >> "$GITHUB_OUTPUT"
-            echo "FPF updated: ${OLD_SHA:0:7} → ${NEW_SHA:0:7}"
+          set -euo pipefail
+          root_status="$(git status --porcelain=v1 --untracked-files=all)"
+          source_status="$(git -C data/FPF status --porcelain=v1 --untracked-files=all)"
+          if [[ -n "$root_status" || -n "$source_status" ]]; then
+            echo "::error::The scheduled refresh requires clean root and FPF source worktrees."
+            printf '%s\n' "$root_status" "$source_status"
+            exit 1
           fi
 
-      - name: Set up Rust
-        if: steps.check.outputs.changed == 'true'
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Build embedding sidecar
-        if: steps.check.outputs.changed == 'true'
-        run: cargo build --release --manifest-path embed-sidecar/Cargo.toml
-
-      - name: Rebuild FPF index
-        if: steps.check.outputs.changed == 'true'
+      - name: Check exact upstream candidate
+        id: refresh
+        shell: bash
         env:
-          HAFT_EMBED_BIN: ${{ github.workspace }}/embed-sidecar/target/release/haft-embed
+          REPORT_PATH: ${{ runner.temp }}/fpf-refresh-report.json
         run: |
-          NEW_SHA=${{ steps.check.outputs.new_sha }}
-          go run ./cmd/indexer/ data/FPF/FPF-Spec.md internal/cli/fpf.db "$NEW_SHA"
+          set -euo pipefail
 
-      - name: Create pull request
-        if: steps.check.outputs.changed == 'true'
+          set +e
+          go run ./cmd/fpf-refresh check \
+            --repo . \
+            --candidate-ref origin/main \
+            --report "$REPORT_PATH"
+          check_status=$?
+          set -e
+
+          printf 'check_status=%s\n' "$check_status" >> "$GITHUB_OUTPUT"
+          if [[ ! -s "$REPORT_PATH" ]]; then
+            echo "::error::FPF refresh check returned $check_status without a compatibility report."
+            if [[ "$check_status" -eq 0 ]]; then
+              exit 1
+            fi
+            exit "$check_status"
+          fi
+
+          jq -e '.schema == "haft.fpf-refresh-report/v1"' "$REPORT_PATH" >/dev/null
+          state="$(
+            jq -er '
+              .result.state
+              | select(
+                  . == "no_change"
+                  or . == "candidate_rejected"
+                  or . == "review_ready"
+                  or . == "apply_ready"
+                )
+            ' "$REPORT_PATH"
+          )"
+          candidate_sha="$(
+            jq -er '
+              .candidate.source.revision
+              | select(test("^([0-9a-f]{40}|[0-9a-f]{64})$"))
+            ' "$REPORT_PATH"
+          )"
+          predecessor_sha="$(
+            jq -er '
+              .predecessor.source.revision
+              | select(test("^([0-9a-f]{40}|[0-9a-f]{64})$"))
+            ' "$REPORT_PATH"
+          )"
+
+          printf 'state=%s\n' "$state" >> "$GITHUB_OUTPUT"
+          printf 'candidate_sha=%s\n' "$candidate_sha" >> "$GITHUB_OUTPUT"
+          printf 'predecessor_sha=%s\n' "$predecessor_sha" >> "$GITHUB_OUTPUT"
+
+          root_status="$(git status --porcelain=v1 --untracked-files=all)"
+          source_status="$(git -C data/FPF status --porcelain=v1 --untracked-files=all)"
+          if [[ -n "$root_status" || -n "$source_status" ]]; then
+            echo "::error::Candidate check mutated the root or FPF source worktree."
+            printf '%s\n' "$root_status" "$source_status"
+            exit 1
+          fi
+
+          case "$state" in
+            candidate_rejected)
+              if [[ "$check_status" -ne 1 ]]; then
+                echo "::error::CandidateRejected must return status 1; got $check_status."
+                exit 1
+              fi
+              echo "::error::The exact FPF candidate was rejected. The report will be uploaded."
+              ;;
+            review_ready)
+              if [[ "$check_status" -ne 0 ]]; then
+                echo "::error::ReviewReady check returned unexpected status $check_status."
+                exit "$check_status"
+              fi
+              echo "::notice::The exact FPF candidate has semantic deltas; refresh will apply the fresh source baseline and preserve the report."
+              ;;
+            no_change | apply_ready)
+              if [[ "$check_status" -ne 0 ]]; then
+                echo "::error::$state check returned unexpected status $check_status."
+                exit "$check_status"
+              fi
+              ;;
+          esac
+
+          {
+            echo "## FPF refresh check"
+            echo
+            printf -- '- Result: `%s`\n' "$state"
+            printf -- '- Predecessor: `%s`\n' "$predecessor_sha"
+            printf -- '- Candidate: `%s`\n' "$candidate_sha"
+            printf -- '- Compatibility report: `%s`\n' "fpf-refresh-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Apply exact source-current candidate
+        if: ${{ steps.refresh.outputs.state == 'apply_ready' || steps.refresh.outputs.state == 'review_ready' }}
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ steps.refresh.outputs.candidate_sha }}
+          REPORT_PATH: ${{ runner.temp }}/fpf-refresh-report.json
         run: |
-          SHORT=${{ steps.check.outputs.new_sha_short }}
-          OLD_SHORT=${{ steps.check.outputs.old_sha_short }}
-          NEW_SHA=${{ steps.check.outputs.new_sha }}
-          OLD_SHA=${{ steps.check.outputs.old_sha }}
-          BRANCH="chore/update-fpf-${SHORT}"
+          set -euo pipefail
+
+          go run ./cmd/fpf-refresh apply \
+            --repo . \
+            --candidate-ref "$CANDIDATE_SHA" \
+            --no-fetch \
+            --report "$REPORT_PATH"
+
+          report_state="$(jq -er '.result.state' "$REPORT_PATH")"
+          report_candidate="$(jq -er '.candidate.source.revision' "$REPORT_PATH")"
+          observed_source="$(git -C data/FPF rev-parse HEAD^{commit})"
+          if [[ "$report_state" != "apply_ready" && "$report_state" != "review_ready" ]]; then
+            echo "::error::Exact apply re-check returned non-applicable state $report_state."
+            exit 1
+          fi
+          if [[ "$report_candidate" != "$CANDIDATE_SHA" || "$observed_source" != "$CANDIDATE_SHA" ]]; then
+            echo "::error::Applied source/report coordinates differ from the checked candidate."
+            exit 1
+          fi
+
+          go run ./cmd/fpf-refresh verify --repo .
+
+          required_publication_paths=(
+            "data/FPF"
+            "data/haft/fpf-integration.lock.json"
+            "internal/cli/fpf.db"
+          )
+          allowed_publication_paths=(
+            "${required_publication_paths[@]}"
+            "data/haft/local-practice/typed-memory/candidates/1.5.0.yaml"
+          )
+          mapfile -t changed_paths < <(
+            {
+              git diff --name-only
+              git diff --cached --name-only
+              git ls-files --others --exclude-standard
+            } | LC_ALL=C sort -u
+          )
+          for changed_path in "${changed_paths[@]}"; do
+            allowed=false
+            for allowed_path in "${allowed_publication_paths[@]}"; do
+              if [[ "$changed_path" == "$allowed_path" ]]; then
+                allowed=true
+                break
+              fi
+            done
+            if [[ "$allowed" != true ]]; then
+              echo "::error::Apply changed a path outside the explicit FPF publication allowlist."
+              printf 'observed: %s\n' "${changed_paths[@]}"
+              exit 1
+            fi
+          done
+          for required_path in "${required_publication_paths[@]}"; do
+            if ! printf '%s\n' "${changed_paths[@]}" | grep -Fxq "$required_path"; then
+              echo "::error::Apply omitted required FPF publication path $required_path."
+              printf 'observed: %s\n' "${changed_paths[@]}"
+              exit 1
+            fi
+          done
+
+      - name: Create or reuse source-current draft PR
+        if: ${{ steps.refresh.outputs.state == 'apply_ready' || steps.refresh.outputs.state == 'review_ready' }}
+        shell: bash
+        env:
+          CANDIDATE_SHA: ${{ steps.refresh.outputs.candidate_sha }}
+          PREDECESSOR_SHA: ${{ steps.refresh.outputs.predecessor_sha }}
+          REPORT_PATH: ${{ runner.temp }}/fpf-refresh-report.json
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          publication_paths=(
+            "data/FPF"
+            "data/haft/fpf-integration.lock.json"
+            "data/haft/local-practice/typed-memory/candidates/1.5.0.yaml"
+            "internal/cli/fpf.db"
+          )
+          short_sha="${CANDIDATE_SHA:0:12}"
+          branch="chore/update-fpf-${short_sha}"
+          body_path="$RUNNER_TEMP/fpf-refresh-pr-body.md"
+          report_digest="sha256:$(sha256sum "$REPORT_PATH" | awk '{print $1}')"
+
+          {
+            echo "## FPF upstream refresh"
+            echo
+            jq -r '
+              "- Result: `" + .result.state + "`",
+              "- Predecessor: `" + .predecessor.source.revision + "`",
+              "- Candidate: `" + .candidate.source.revision + "`",
+              "- Candidate DB: `" + .candidate.derived.database_digest + "`",
+              "- Candidate source units: `" + (.candidate.derived.source_unit_count | tostring) + "`",
+              "- Candidate Base TypeEnv: `" + .candidate.derived.base_type_env_ref
+                + "` (`" + .candidate.derived.base_type_env_digest + "`)",
+              "- Delta count: `" + (.deltas | length | tostring) + "`",
+              "- Diagnostic count: `" + (.diagnostics | length | tostring) + "`"
+            ' "$REPORT_PATH"
+            printf -- '- Report digest: `%s`\n' "$report_digest"
+            printf -- '- Workflow run: %s/%s/actions/runs/%s\n' \
+              "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_RUN_ID"
+            echo
+            jq -r '
+              if (.deltas | length) == 0 then
+                "### Delta families\n\n- None"
+              else
+                "### Delta families\n",
+                (
+                  .deltas
+                  | sort_by(.family)
+                  | group_by(.family)[]
+                  | "- `" + .[0].family + "`: " + (length | tostring)
+                )
+              end,
+              if (.diagnostics | length) == 0 then
+                "\n### Diagnostic codes\n\n- None"
+              else
+                "\n### Diagnostic codes\n",
+                (
+                  .diagnostics
+                  | sort_by(.code)
+                  | group_by(.code)[]
+                  | "- `" + .[0].code + "`: " + (length | tostring)
+                )
+              end
+            ' "$REPORT_PATH"
+            cat <<'EOF'
+
+          ### Authority boundary
+
+          This is a draft technical refresh only. It is not semantic approval, P13 or
+          P14 evidence, an install/restart result, release readiness, or release
+          authority. The canonical compatibility report is attached to the workflow run.
+          EOF
+          } > "$body_path"
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git add -- "${publication_paths[@]}"
 
-          git checkout -b "$BRANCH"
-          git add data/FPF internal/cli/fpf.db
-          git commit -m "chore: update FPF spec index to ${SHORT}
+          mapfile -t staged_paths < <(git diff --cached --name-only | LC_ALL=C sort)
+          if [[ "${#staged_paths[@]}" -ne "${#publication_paths[@]}" ]]; then
+            echo "::error::Staged refresh path set is incomplete."
+            printf 'staged: %s\n' "${staged_paths[@]}"
+            exit 1
+          fi
+          for index in "${!publication_paths[@]}"; do
+            if [[ "${staged_paths[$index]}" != "${publication_paths[$index]}" ]]; then
+              echo "::error::Staging escaped the explicit FPF publication allowlist."
+              printf 'staged: %s\n' "${staged_paths[@]}"
+              exit 1
+            fi
+          done
 
-          FPF upstream: ${OLD_SHORT} → ${SHORT}
-          https://github.com/ailev/FPF/commit/$NEW_SHA"
+          git commit -m "chore: update FPF spec index to ${short_sha}
 
-          git push origin "$BRANCH"
+          FPF upstream: ${PREDECESSOR_SHA:0:12} -> ${short_sha}
+          https://github.com/ailev/FPF/commit/${CANDIDATE_SHA}"
 
-          gh pr create \
-            --title "chore: update FPF spec index to ${SHORT}" \
-            --body "## FPF Upstream Update
+          branch_probe="$RUNNER_TEMP/fpf-refresh-branch-probe"
+          set +e
+          git ls-remote --exit-code --heads origin "refs/heads/$branch" > "$branch_probe"
+          branch_status=$?
+          set -e
 
-          Submodule \`data/FPF\` updated to [\`${SHORT}\`](https://github.com/ailev/FPF/commit/$NEW_SHA).
+          case "$branch_status" in
+            0)
+              git fetch --no-tags origin \
+                "refs/heads/$branch:refs/remotes/origin/$branch" \
+                "refs/heads/$BASE_BRANCH:refs/remotes/origin/$BASE_BRANCH"
 
-          FPF index rebuilt: \`internal/cli/fpf.db\` (FTS5 + baked vectors)
+              if ! git diff --quiet "refs/remotes/origin/$branch" HEAD -- "${publication_paths[@]}"; then
+                echo "::error::Existing refresh branch has different publication bytes; refusing overwrite."
+                exit 1
+              fi
 
-          **Previous:** [\`${OLD_SHORT}\`](https://github.com/ailev/FPF/commit/$OLD_SHA)
-          **New:** [\`${SHORT}\`](https://github.com/ailev/FPF/commit/$NEW_SHA)" \
-            --base dev
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+              mapfile -t remote_paths < <(
+                git diff --name-only \
+                  "refs/remotes/origin/$BASE_BRANCH...refs/remotes/origin/$branch" |
+                  LC_ALL=C sort -u
+              )
+              if [[ "${#remote_paths[@]}" -ne "${#publication_paths[@]}" ]]; then
+                echo "::error::Existing refresh branch contains paths outside the publication allowlist."
+                printf 'remote branch: %s\n' "${remote_paths[@]}"
+                exit 1
+              fi
+              for index in "${!publication_paths[@]}"; do
+                if [[ "${remote_paths[$index]}" != "${publication_paths[$index]}" ]]; then
+                  echo "::error::Existing refresh branch contains paths outside the publication allowlist."
+                  printf 'remote branch: %s\n' "${remote_paths[@]}"
+                  exit 1
+                fi
+              done
+
+              existing_pr_json="$(
+                gh pr list \
+                  --state all \
+                  --base "$BASE_BRANCH" \
+                  --head "$branch" \
+                  --json isDraft,state,url \
+                  --limit 100
+              )"
+              existing_pr_count="$(jq -r 'length' <<<"$existing_pr_json")"
+              case "$existing_pr_count" in
+                0)
+                  gh pr create \
+                    --draft \
+                    --base "$BASE_BRANCH" \
+                    --head "$branch" \
+                    --title "chore: update FPF spec index to ${short_sha}" \
+                    --body-file "$body_path"
+                  ;;
+                1)
+                  existing_pr="$(
+                    jq -er '
+                      .[0]
+                      | select(.state == "OPEN" and .isDraft == true)
+                      | .url
+                    ' \
+                      <<<"$existing_pr_json"
+                  )" || {
+                    existing_pr_state="$(
+                      jq -r '.[0] | "\(.state), draft=\(.isDraft)"' \
+                        <<<"$existing_pr_json"
+                    )"
+                    echo "::error::Exact refresh branch has a prior PR ($existing_pr_state); refusing to override its human disposition."
+                    exit 1
+                  }
+                  gh pr edit "$existing_pr" --body-file "$body_path"
+                  printf 'Reusing exact existing draft PR: %s\n' "$existing_pr"
+                  ;;
+                *)
+                  echo "::error::Exact refresh branch has multiple open PRs; refusing ambiguous reuse."
+                  exit 1
+                  ;;
+              esac
+              ;;
+            2)
+              git push origin "HEAD:refs/heads/$branch"
+              gh pr create \
+                --draft \
+                --base "$BASE_BRANCH" \
+                --head "$branch" \
+                --title "chore: update FPF spec index to ${short_sha}" \
+                --body-file "$body_path"
+              ;;
+            *)
+              echo "::error::Could not determine whether refresh branch exists (status $branch_status)."
+              exit "$branch_status"
+              ;;
+          esac
+
+      - name: Preserve compatibility report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: fpf-refresh-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/fpf-refresh-report.json
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Fail rejected candidate after preserving diagnostics
+        if: ${{ always() && steps.refresh.outputs.state == 'candidate_rejected' }}
+        shell: bash
+        run: |
+          echo "::error::The exact upstream FPF candidate was rejected; inspect the uploaded compatibility report."
+          exit 1

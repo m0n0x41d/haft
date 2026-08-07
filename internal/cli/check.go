@@ -42,12 +42,14 @@ type checkStaleFinding struct {
 }
 
 type checkDriftFinding struct {
-	DecisionID        string               `json:"decision_id"`
-	DecisionTitle     string               `json:"decision_title"`
-	HasBaseline       bool                 `json:"has_baseline"`
-	LikelyImplemented bool                 `json:"likely_implemented,omitempty"`
-	Summary           string               `json:"summary"`
-	Files             []artifact.DriftItem `json:"files,omitempty"`
+	DecisionID        string                    `json:"decision_id"`
+	DecisionTitle     string                    `json:"decision_title"`
+	HasBaseline       bool                      `json:"has_baseline"`
+	BaselineKind      artifact.BaselineKind     `json:"baseline_kind,omitempty"`
+	BaselineProfile   *artifact.BaselineProfile `json:"baseline_profile,omitempty"`
+	LikelyImplemented bool                      `json:"likely_implemented,omitempty"`
+	Summary           string                    `json:"summary"`
+	Files             []artifact.DriftItem      `json:"files,omitempty"`
 }
 
 type checkDecisionFinding struct {
@@ -161,7 +163,7 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 	report.Drifted = mapCheckDriftFindings(driftReports)
 	report.Unassessed = collectUnassessedFindings(ctx, store, activeDecisions)
 	report.CoverageGaps = collectCoverageGapFindings(ctx, store, activeDecisions)
-	report.SpecHealth = collectSpecHealthFindings(projectRoot)
+	report.SpecHealth = collectSpecHealthFindings(ctx, projectRoot)
 	report.Summary = checkSummary{
 		TotalFindings: len(report.Stale) + len(report.Drifted) + len(report.Unassessed) + len(report.CoverageGaps) + len(report.SpecHealth),
 	}
@@ -173,13 +175,24 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 // `haft check` report so CI gates on the union of governance debt and
 // spec health. The single helper used here is also used by the MCP
 // haft_query(action="check") handler — JSON parity is a contract test.
-func collectSpecHealthFindings(projectRoot string) []project.SpecCheckFinding {
-	specCheckReport, err := project.CheckSpecificationSet(projectRoot)
+func collectSpecHealthFindings(
+	ctx context.Context,
+	projectRoot string,
+) []project.SpecCheckFinding {
+	specSet, canonicalRoot, err := loadCheckSpecificationSet(
+		ctx,
+		projectRoot,
+	)
 	if err != nil {
 		return nil
 	}
 
-	specCheckReport = appendSpecHealthFindings(specCheckReport, projectRoot)
+	specCheckReport := project.SpecCheckReportFromSpecificationSet(specSet)
+	specCheckReport = appendSpecHealthFindingsFromSet(
+		specCheckReport,
+		specSet,
+		canonicalRoot,
+	)
 	if len(specCheckReport.Findings) == 0 {
 		return nil
 	}
@@ -187,6 +200,32 @@ func collectSpecHealthFindings(projectRoot string) []project.SpecCheckFinding {
 	out := make([]project.SpecCheckFinding, len(specCheckReport.Findings))
 	copy(out, specCheckReport.Findings)
 	return out
+}
+
+// loadCheckSpecificationSet applies the canonical project-profile matrix only
+// when automatic scope selection resolves one exact scope. A resolved
+// non-software scope therefore cannot produce SoftwareSystemSpec findings.
+// Missing profile authority and multi-scope ambiguity stay conservative: the
+// legacy unscoped check remains in force instead of silently hiding debt.
+func loadCheckSpecificationSet(
+	ctx context.Context,
+	projectRoot string,
+) (project.ProjectSpecificationSet, string, error) {
+	specSet, resolution, err := loadProjectSpecificationSetSQLFirstFromCanonicalProfile(
+		ctx,
+		projectRoot,
+		automaticProjectSpecificationScopeRequest(),
+	)
+	if err != nil {
+		specSet, fallbackErr := loadProjectSpecificationSetSQLFirst(projectRoot)
+		return specSet, projectRoot, fallbackErr
+	}
+	if _, _, resolved := resolution.Resolved(); resolved {
+		return specSet, resolution.ProjectRoot().String(), nil
+	}
+
+	specSet, err = loadProjectSpecificationSetSQLFirst(projectRoot)
+	return specSet, projectRoot, err
 }
 
 func filterCheckActiveDecisions(decisions []*artifact.Artifact) []*artifact.Artifact {
@@ -230,6 +269,8 @@ func mapCheckDriftFindings(reports []artifact.DriftReport) []checkDriftFinding {
 			DecisionID:        report.DecisionID,
 			DecisionTitle:     report.DecisionTitle,
 			HasBaseline:       report.HasBaseline,
+			BaselineKind:      report.BaselineKind,
+			BaselineProfile:   report.BaselineProfile,
 			LikelyImplemented: report.LikelyImplemented,
 			Summary:           summarizeCheckDrift(report),
 			Files:             report.Files,

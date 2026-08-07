@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"path/filepath"
 
 	"github.com/m0n0x41d/haft/internal/project"
@@ -20,22 +21,16 @@ var readinessReminderTools = map[string]struct{}{
 	"haft_note":     {},
 }
 
-// applyReadinessReminder appends a soft nudge to a tool result when the
-// project is initialized but has no active SpecSections — i.e. the
-// project is `needs_onboard`. Decisions made in this state cannot link
-// to spec refs and downstream commission/harness paths will block. The
-// reminder tells the operator to run /h-onboard or to mark the work
-// tactical with explicit reason.
-//
-// Skipped when:
-//   - the tool is not in readinessReminderTools (avoids spamming reads,
-//     scans, and surface tools that already enforce readiness);
-//   - the result is a machine-readable JSON payload (do not corrupt
-//     deserialization on the consumer side);
-//   - the project has no .haft (`needs_init` or `missing` — different
-//     conversation, not this nudge);
-//   - the project is `ready` (no nudge needed).
-func applyReadinessReminder(result, toolName, haftDir string) string {
+// applyProfileAwareReadinessReminder appends one scope-local profile or
+// readiness cue to human-readable reasoning-tool results. It never blocks the
+// underlying call and never alters machine-readable JSON.
+func applyProfileAwareReadinessReminder(
+	ctx context.Context,
+	result string,
+	toolName string,
+	haftDir string,
+	args map[string]any,
+) string {
 	if _, ok := readinessReminderTools[toolName]; !ok {
 		return result
 	}
@@ -44,22 +39,46 @@ func applyReadinessReminder(result, toolName, haftDir string) string {
 	}
 
 	projectRoot := filepath.Dir(haftDir)
-	facts, err := project.InspectReadiness(projectRoot)
+	request, err := projectSpecificationScopeRequestFromFlag(
+		stringArg(args, "scope_id"),
+	)
 	if err != nil {
 		return result
 	}
-	if facts.Status != project.ReadinessNeedsOnboard {
+	readiness, err := inspectCanonicalProjectReadiness(
+		ctx,
+		projectRoot,
+		request,
+	)
+	if err != nil {
 		return result
 	}
+	if cue := readiness.profileCue(); cue != "" {
+		return result + "\n\n" +
+			"── Project profile ─────────────\n" +
+			cue + "\n" +
+			"This does not block the completed operation and requires no action now.\n" +
+			"Use /h-onboard only when onboarding or profile-dependent capability review is the current question.\n" +
+			"────────────────────────────────"
+	}
+	applicability, resolved := readiness.resolvedApplicability()
+	if !resolved ||
+		readiness.facts.Status != project.ReadinessNeedsOnboard ||
+		len(requiredCommissionAuthorityDocumentKinds(applicability)) == 0 {
+		return result
+	}
+	return appendReadinessReminder(result)
+}
 
+func appendReadinessReminder(result string) string {
 	return result + "\n\n" +
 		"── ⚠ Project readiness ─────────\n" +
 		"This project is `needs_onboard` — `.haft/` exists but the\n" +
 		"ProjectSpecificationSet has no active SpecSections yet. Decisions\n" +
 		"made now cannot link to spec refs and downstream\n" +
-		"WorkCommissions / harness runs will block until specs are in\n" +
-		"place. Run /h-onboard to draft TargetSystemSpec and\n" +
-		"EnablingSystemSpec, or proceed and record the work as tactical\n" +
+		"WorkCommission execution starts will block until specs are in\n" +
+		"place. Run /h-spec to follow the typed spec lifecycle\n" +
+		"(/h-onboard remains a bootstrap alias), or proceed and record the work as tactical\n" +
 		"so coverage will not later confuse it with spec-driven work.\n" +
 		"────────────────────────────────"
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -62,17 +63,177 @@ func TestSharedSidecarReusesOneDaemon(t *testing.T) {
 	}
 }
 
+func TestSharedSidecarDaemonDoesNotInheritClientCWD(t *testing.T) {
+	helper := writeSharedSidecarHelper(t)
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	cwdLog := filepath.Join(t.TempDir(), "cwd.log")
+	clientDir := t.TempDir()
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(clientDir); err != nil {
+		t.Fatalf("chdir client dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+
+	t.Setenv(sidecarBinaryEnv, helper)
+	t.Setenv(sharedSocketDirEnv, socketDir)
+	t.Setenv(sharedIdleTimeoutEnv, "1")
+	t.Setenv(sharedStartupTimeoutEnv, "5")
+	t.Setenv("HAFT_TEST_SHARED_SIDECAR_CWD_LOG", cwdLog)
+
+	embedder, err := New(Config{Provider: ProviderLocal, Model: "fake", Dim: 2})
+	if err != nil {
+		t.Fatalf("New(local): %v", err)
+	}
+	t.Cleanup(func() { _ = embedder.Close() })
+
+	data, err := os.ReadFile(cwdLog)
+	if err != nil {
+		t.Fatalf("read cwd log: %v", err)
+	}
+	got := filepath.Clean(strings.TrimSpace(string(data)))
+	want := filepath.Clean(socketDir)
+	if got != want {
+		t.Fatalf("daemon cwd = %q, want %q", got, want)
+	}
+}
+
+func TestSharedSidecarDaemonStartsRelativeDevBuildAfterChangingCWD(t *testing.T) {
+	repoDir := t.TempDir()
+	helper := filepath.Join(repoDir, "embed-sidecar", "target", "debug", sidecarBinaryName)
+	writeSharedSidecarHelperAt(t, helper)
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "home"))
+
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	startLog := filepath.Join(t.TempDir(), "starts.log")
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(repoDir); err != nil {
+		t.Fatalf("chdir repo dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+
+	t.Setenv(sidecarBinaryEnv, "")
+	t.Setenv(sharedSocketDirEnv, socketDir)
+	t.Setenv(sharedIdleTimeoutEnv, "1")
+	t.Setenv(sharedStartupTimeoutEnv, "5")
+	t.Setenv("HAFT_TEST_SHARED_SIDECAR_STARTS", startLog)
+
+	embedder, err := New(Config{Provider: ProviderLocal, Model: "fake", Dim: 2})
+	if err != nil {
+		t.Fatalf("New(local): %v", err)
+	}
+	t.Cleanup(func() { _ = embedder.Close() })
+
+	starts := readStartLog(t, startLog)
+	if starts != 1 {
+		t.Fatalf("daemon starts = %d, want 1", starts)
+	}
+}
+
+func TestSharedSidecarDaemonDoesNotInheritClientStderr(t *testing.T) {
+	helper := writeSharedSidecarHelper(t)
+	socketDir := filepath.Join("/tmp", fmt.Sprintf("haft-test-%d-%d", os.Getpid(), time.Now().UnixNano()))
+	t.Cleanup(func() { _ = os.RemoveAll(socketDir) })
+
+	t.Setenv(sidecarBinaryEnv, helper)
+	t.Setenv(sharedSocketDirEnv, socketDir)
+	t.Setenv(sharedIdleTimeoutEnv, "10")
+	t.Setenv(sharedStartupTimeoutEnv, "5")
+
+	stderrReader, stderrWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("stderr pipe: %v", err)
+	}
+	t.Cleanup(func() { _ = stderrReader.Close() })
+
+	originalStderr := os.Stderr
+	os.Stderr = stderrWriter
+	embedder, newErr := New(Config{Provider: ProviderLocal, Model: "fake", Dim: 2})
+	os.Stderr = originalStderr
+
+	if err := stderrWriter.Close(); err != nil {
+		t.Fatalf("close captured stderr writer: %v", err)
+	}
+	if newErr != nil {
+		t.Fatalf("New(local): %v", newErr)
+	}
+	t.Cleanup(func() { _ = embedder.Close() })
+
+	type readResult struct {
+		n   int
+		err error
+	}
+
+	done := make(chan readResult, 1)
+	go func() {
+		buffer := make([]byte, 1)
+		n, err := stderrReader.Read(buffer)
+		done <- readResult{n: n, err: err}
+	}()
+
+	select {
+	case result := <-done:
+		if result.err != io.EOF {
+			t.Fatalf("captured stderr read = n %d err %v, want EOF", result.n, result.err)
+		}
+	case <-time.After(200 * time.Millisecond):
+		t.Fatal("captured stderr pipe stayed open; shared sidecar inherited client stderr")
+	}
+}
+
+func TestSidecarSpecFromConfigAbsolutizesCacheDir(t *testing.T) {
+	clientDir := t.TempDir()
+	originalDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get cwd: %v", err)
+	}
+	if err := os.Chdir(clientDir); err != nil {
+		t.Fatalf("chdir client dir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(originalDir) })
+
+	spec := sidecarSpecFromConfig(Config{
+		Provider: ProviderLocal,
+		Model:    "fake",
+		CacheDir: "models",
+	})
+
+	want, err := filepath.Abs("models")
+	if err != nil {
+		t.Fatalf("abs cache dir: %v", err)
+	}
+	if spec.CacheDir != want {
+		t.Fatalf("cache dir = %q, want %q", spec.CacheDir, want)
+	}
+}
+
 func writeSharedSidecarHelper(t *testing.T) string {
+	t.Helper()
+	return writeSharedSidecarHelperAt(t, filepath.Join(t.TempDir(), "fake-haft-embed"))
+}
+
+func writeSharedSidecarHelperAt(t *testing.T, path string) string {
 	t.Helper()
 	binary, err := os.Executable()
 	if err != nil {
 		t.Fatalf("test executable: %v", err)
 	}
-	path := filepath.Join(t.TempDir(), "fake-haft-embed")
 	script := fmt.Sprintf(
 		"#!/usr/bin/env bash\nHAFT_TEST_SHARED_SIDECAR=1 exec %q -test.run=TestSharedSidecarHelperProcess -- \"$@\"\n",
 		binary,
 	)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir helper dir: %v", err)
+	}
 	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
 		t.Fatalf("write helper script: %v", err)
 	}
@@ -110,6 +271,11 @@ func TestSharedSidecarHelperProcess(t *testing.T) {
 		if err == nil {
 			_, _ = fmt.Fprintln(file, os.Getpid())
 			_ = file.Close()
+		}
+	}
+	if cwdLogPath := os.Getenv("HAFT_TEST_SHARED_SIDECAR_CWD_LOG"); cwdLogPath != "" {
+		if cwd, err := os.Getwd(); err == nil {
+			_ = os.WriteFile(cwdLogPath, []byte(cwd+"\n"), 0o600)
 		}
 	}
 

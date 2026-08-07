@@ -28,6 +28,7 @@ func (s *Store) ComputeImpactSet(ctx context.Context, moduleID string) ([]Impact
 				DecisionTitle: dec.Name,
 				Distance:      0,
 				IsDirect:      true,
+				ContextLane:   "module_context",
 			})
 		}
 	}
@@ -54,6 +55,7 @@ func (s *Store) ComputeImpactSet(ctx context.Context, moduleID string) ([]Impact
 					DecisionTitle: dec.Name,
 					Distance:      1, // simplified: not computing exact hop count
 					IsDirect:      false,
+					ContextLane:   "module_context",
 				})
 			}
 		}
@@ -66,8 +68,12 @@ func (s *Store) ComputeImpactSet(ctx context.Context, moduleID string) ([]Impact
 func (s *Store) ComputeImpactForFile(ctx context.Context, filePath string) ([]ImpactItem, error) {
 	module, err := s.FindModuleForFile(ctx, filePath)
 	if err != nil || module == nil {
-		// File not in any module — fall back to direct decision lookup
-		decisions, err := s.FindDecisionsForFile(ctx, filePath)
+		// File not in any module — preserve the exact affected-path backlinks as
+		// context, explicitly not module or binding authority.
+		decisions, err := s.FindAffectedPathContextDecisions(
+			ctx,
+			filePath,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -78,6 +84,7 @@ func (s *Store) ComputeImpactForFile(ctx context.Context, filePath string) ([]Im
 				DecisionTitle: dec.Name,
 				Distance:      0,
 				IsDirect:      true,
+				ContextLane:   "affected_path_context",
 			})
 		}
 		return result, nil

@@ -151,7 +151,7 @@ func ParseSpecCatalog(r io.Reader) (map[string]SpecCatalogEntry, error) {
 		}
 
 		cells := splitMarkdownTableRow(line)
-		if len(cells) < 2 || isMarkdownSeparatorRow(cells) {
+		if len(cells) < 2 || isMarkdownSeparatorRow(cells) || isCatalogDividerRow(cells) {
 			continue
 		}
 
@@ -195,6 +195,22 @@ func ParseSpecCatalog(r io.Reader) (map[string]SpecCatalogEntry, error) {
 		return nil, fmt.Errorf("scan catalog: %w", err)
 	}
 	return catalog, nil
+}
+
+func isCatalogDividerRow(cells []string) bool {
+	if len(cells) == 0 {
+		return false
+	}
+	first := strings.ToLower(cleanMarkdownText(cells[0]))
+	if !strings.Contains(first, "cluster") {
+		return false
+	}
+	for _, cell := range cells[1:] {
+		if strings.TrimSpace(cleanMarkdownText(cell)) != "" {
+			return false
+		}
+	}
+	return true
 }
 
 // EnrichChunks overlays table-of-contents metadata onto parsed sections.

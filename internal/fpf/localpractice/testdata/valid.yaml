@@ -1,0 +1,116 @@
+schema_version: haft.local-practice/v1
+carrier:
+  id: haft.typed-memory
+  edition: 1.0.0
+base_type_env_ref: typeenv:sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+bounded_context_ref: haft-project
+compiler_version: haft.local-practice.compiler/v1
+signature_manifest:
+  id: haft.typed-memory
+  version: 1.0.0
+  publication_state: candidate
+  imports: []
+  # base_type_env_ref is not a SignatureManifest import.
+  provides:
+    - Haft.ProjectConcern
+    - Haft.ProjectConcernRef
+    - Haft.ProjectEntities
+    - Haft.ProjectConcern.Signature
+    - Haft.ConcernMemory
+    - ConcernSlot
+    - EvidenceSlot
+    - Haft.Shape.Text
+    - Haft.Codec.Text
+    - Haft.Constraint.RequiredConcern
+    - Haft.Constraint.OptionalEvidence
+    - Haft.Constraint.ConcernOrEvidence
+signature:
+  subject_block:
+    subject_kind: Haft.ProjectConcern
+    ranged_value_kind: U.Entity
+    slice_set: ContextSliceSet
+    extent_rule: haft.project.concern.extent
+  vocabulary:
+    declarations:
+      - kind: value_kind
+        symbol: Haft.ProjectConcern
+      - kind: ref_kind
+        symbol: Haft.ProjectConcernRef
+        value_kind: Haft.ProjectConcern
+      - kind: entity_set_definition
+        symbol: Haft.ProjectEntities
+        enumeration_rule: haft.rule.project-entities/v1
+        candidate_policy:
+          kind: persisted_entities_only
+      - kind: kind_signature_definition
+        symbol: Haft.ProjectConcern.Signature
+        value_kind: Haft.ProjectConcern
+        formality: F3
+        assumptions: []
+        definedness_rule: haft.rule.project-concern-defined/v1
+        evaluator_rule: haft.rule.project-concern-member/v1
+        membership_basis: {kind: carrier_first, adapter_rule: haft.member-of.project-record-carrier/v1}
+        entity_set: Haft.ProjectEntities
+      - kind: relation_signature
+        symbol: Haft.ConcernMemory
+        slots:
+          - slot_kind: ConcernSlot
+            value_kind: Haft.ProjectConcern
+            ref_mode:
+              kind: reference
+              ref_kind: Haft.ProjectConcernRef
+          - slot_kind: EvidenceSlot
+            value_kind: U.ClaimGraph
+            ref_mode:
+              kind: by_value
+      - kind: value_shape
+        symbol: Haft.Shape.Text
+        shape:
+          kind: scalar
+          scalar_kind: text
+      - kind: codec_binding
+        symbol: Haft.Codec.Text
+        value_kind: Haft.ProjectConcern
+        value_shape: Haft.Shape.Text
+        canonicalization_version: v1
+        contract:
+          - Equal conceptual values produce equal canonical bytes.
+          - Decode then encode preserves canonical bytes.
+      - kind: constraint
+        symbol: Haft.Constraint.RequiredConcern
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ConcernMemory
+          slot: ConcernSlot
+          cardinality:
+            minimum: 1
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.OptionalEvidence
+        rule:
+          kind: slot_cardinality
+          relation: Haft.ConcernMemory
+          slot: EvidenceSlot
+          cardinality:
+            minimum: 0
+            maximum: 1
+      - kind: constraint
+        symbol: Haft.Constraint.ConcernOrEvidence
+        rule:
+          kind: slot_group
+          relation: Haft.ConcernMemory
+          slots:
+            - ConcernSlot
+            - EvidenceSlot
+          mode: at_least_one
+  laws:
+    constraint_refs:
+      - Haft.Constraint.RequiredConcern
+      - Haft.Constraint.OptionalEvidence
+      - Haft.Constraint.ConcernOrEvidence
+    invariants:
+      - Schema declarations remain outside MemoryChangeSet.
+  applicability:
+    bounded_context_ref: haft-project
+    assumptions:
+      - The project profile admits typed project memory.

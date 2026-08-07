@@ -72,6 +72,15 @@ func TestBuildCheckReport_FindsGovernanceDebt(t *testing.T) {
 	if !strings.Contains(report.Drifted[0].Summary, "code drift") {
 		t.Fatalf("drift summary = %q, want code drift summary", report.Drifted[0].Summary)
 	}
+	if report.Drifted[0].BaselineKind != artifact.BaselineKindVerifiedStateSnapshot {
+		t.Fatalf("baseline_kind = %q, want verified-state snapshot", report.Drifted[0].BaselineKind)
+	}
+	if report.Drifted[0].BaselineProfile == nil {
+		t.Fatal("baseline_profile missing from drift finding")
+	}
+	if report.Drifted[0].BaselineProfile.AuthorityBoundary != "drift_detection_snapshot_not_spec_approval_or_pre_work_reference" {
+		t.Fatalf("baseline_profile = %+v", report.Drifted[0].BaselineProfile)
+	}
 
 	if got := len(report.Unassessed); got != 1 {
 		t.Fatalf("len(Unassessed) = %d, want 1", got)
@@ -98,6 +107,82 @@ func TestBuildCheckReport_FindsGovernanceDebt(t *testing.T) {
 
 	if got := report.Summary.TotalFindings; got != 4 {
 		t.Fatalf("total_findings = %d, want 4", got)
+	}
+}
+
+func TestAppendSpecHealthFindingsFromSetReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.health.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		Title:         "SQL health section",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	specificationSet, err := loadProjectSpecificationSetSQLFirst(root)
+	if err != nil {
+		t.Fatalf("load SQL-first specification set: %v", err)
+	}
+	report := appendSpecHealthFindingsFromSet(
+		project.SpecCheckReport{},
+		specificationSet,
+		root,
+	)
+	for _, finding := range report.Findings {
+		if finding.SectionID == "TS.sql.health.001" && finding.Code == "spec_section_needs_baseline" {
+			return
+		}
+	}
+	t.Fatalf("spec health should use SQL edition section; findings = %#v", report.Findings)
+}
+
+func TestAppendSpecHealthFindingsFromSetReportsSingleDriftedSectionID(t *testing.T) {
+	root, haftDir := newBaselineTestProject(t)
+
+	_ = callHandleSpecSection(t, haftDir, map[string]any{
+		"action":       "approve",
+		"project_root": root,
+		"section_id":   baselineTestSectionID,
+		"approved_by":  "human",
+	})
+	mutateCarrierTitle(t, root)
+
+	specificationSet, err := loadProjectSpecificationSetSQLFirst(root)
+	if err != nil {
+		t.Fatalf("load SQL-first specification set: %v", err)
+	}
+	report := appendSpecHealthFindingsFromSet(
+		project.SpecCheckReport{},
+		specificationSet,
+		root,
+	)
+
+	driftFindings := make([]project.SpecCheckFinding, 0)
+	for _, finding := range report.Findings {
+		if finding.Code == "spec_section_drifted" {
+			driftFindings = append(driftFindings, finding)
+		}
+	}
+	if len(driftFindings) != 1 {
+		t.Fatalf("drift findings = %d, want 1; all findings = %#v", len(driftFindings), report.Findings)
+	}
+	if driftFindings[0].SectionID != baselineTestSectionID {
+		t.Fatalf("section_id = %q, want %q", driftFindings[0].SectionID, baselineTestSectionID)
 	}
 }
 
@@ -163,6 +248,8 @@ func TestRunCheck_JSONExitsOneWhenFindingsExist(t *testing.T) {
 }
 
 func TestWriteCheckJSON_ZeroValueUsesStableSchema(t *testing.T) {
+	t.Parallel()
+
 	var output bytes.Buffer
 
 	err := writeCheckJSON(&output, checkReport{})
@@ -323,6 +410,14 @@ func createCheckSchema(t *testing.T, db *sql.DB) {
 			symbol_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path, symbol_name)
 		)`,
+		`CREATE TABLE codebase_modules (
+			module_id TEXT PRIMARY KEY,
+			path TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			lang TEXT,
+			file_count INTEGER DEFAULT 0,
+			last_scanned TEXT NOT NULL
+		)`,
 		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, search_keywords, tokenize='porter unicode61')`,
 		`CREATE TRIGGER artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
 			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
@@ -427,6 +522,10 @@ func mustFrameProblem(t *testing.T, fixture checkTestProject, input artifact.Pro
 func mustCreateDecision(t *testing.T, fixture checkTestProject, input artifact.DecideInput) *artifact.Artifact {
 	t.Helper()
 
+	if input.ProblemRef == "" && len(input.ProblemRefs) == 0 && input.PortfolioRef == "" && input.ProblemStatement == "" {
+		input.ProblemStatement = "The CLI test fixture requires an explicit problem basis without a linked ProblemCard."
+	}
+
 	ctx := context.Background()
 	decision, _, err := artifact.Decide(ctx, fixture.store, fixture.haftDir, input)
 	if err != nil {
@@ -475,6 +574,21 @@ func mustSetValidUntil(t *testing.T, fixture checkTestProject, artifactID string
 	item.Meta.ValidUntil = validUntil
 	if err := fixture.store.Update(ctx, item); err != nil {
 		t.Fatalf("update valid_until for %s: %v", artifactID, err)
+	}
+}
+
+func mustSetArtifactStatus(t *testing.T, fixture checkTestProject, artifactID string, status artifact.Status) {
+	t.Helper()
+
+	ctx := context.Background()
+	item, err := fixture.store.Get(ctx, artifactID)
+	if err != nil {
+		t.Fatalf("load artifact %s: %v", artifactID, err)
+	}
+
+	item.Meta.Status = status
+	if err := fixture.store.Update(ctx, item); err != nil {
+		t.Fatalf("update status for %s: %v", artifactID, err)
 	}
 }
 
@@ -564,26 +678,26 @@ func writeCheckTestSpecCarriers(t *testing.T, fixture checkTestProject) {
 		t.Fatal(err)
 	}
 
-	enabling := "## ES.creator.001\n\n" +
+	software := "## SS.role.001\n\n" +
 		"```yaml spec-section\n" +
-		"id: ES.creator.001\n" +
-		"spec: enabling-system\n" +
-		"kind: creator-role\n" +
-		"title: Test creator role\n" +
-		"statement_type: explanation\n" +
-		"claim_layer: carrier\n" +
+		"id: SS.role.001\n" +
+		"spec: software-system\n" +
+		"kind: software.role\n" +
+		"title: Test software role\n" +
+		"statement_type: definition\n" +
+		"claim_layer: object\n" +
 		"owner: human\n" +
 		"status: active\n" +
 		"valid_until: 2099-12-31\n" +
 		"```\n"
-	if err := os.WriteFile(filepath.Join(specsDir, "enabling-system.md"), []byte(enabling), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(specsDir, "software-system.md"), []byte(software), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
 	termMap := "```yaml term-map\n" +
 		"entries:\n" +
 		"  - term: TestProject\n" +
-		"    domain: target\n" +
+		"    category: target\n" +
 		"    definition: A project under check_test fixture.\n" +
 		"```\n"
 	if err := os.WriteFile(filepath.Join(specsDir, "term-map.md"), []byte(termMap), 0o644); err != nil {

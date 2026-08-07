@@ -3,12 +3,15 @@ package cli
 import "testing"
 
 // TestParseDimensions_PreservesRoleAndValidUntil locks the fix for the live MCP
-// characterize path. The server dispatches haft_problem -> handleQuintProblem ->
-// parseDimensions (NOT tools.HaftProblemTool.Execute), and parseDimensions
+// characterize path. The server dispatches haft_problem ->
+// handleQuintProblemWithCreatedRef -> parseDimensions (NOT
+// tools.HaftProblemTool.Execute), and parseDimensions
 // previously mapped name/scale_type/unit/polarity/how_to_measure but DROPPED role
 // and valid_until — so every characterized dimension persisted as role="target"
 // with no valid_until, which made /h-compare ignore constraint/observation roles.
 func TestParseDimensions_PreservesRoleAndValidUntil(t *testing.T) {
+	t.Parallel()
+
 	raw := []any{
 		map[string]any{
 			"name":        "must_pass",

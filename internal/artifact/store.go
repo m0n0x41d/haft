@@ -4,8 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
-	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -262,31 +262,22 @@ func (s *Store) ListActive(ctx context.Context, limit int) ([]*Artifact, error) 
 	return scanArtifacts(rows)
 }
 
-// Search performs FTS5 full-text search across artifacts.
-// artifactIDPattern matches the leading prefix-date shape shared by every haft
-// artifact ID (prob-/dec-/sol-/note-/evid-/wc-/rr- followed by a date).
-var artifactIDPattern = regexp.MustCompile(`(?i)^[a-z]+-\d{6,}`)
-
-// isArtifactIDQuery reports whether the whole query is a single artifact-ID
-// token — searched as one precise token, never split into fragments.
-func isArtifactIDQuery(query string) bool {
-	return !strings.ContainsAny(query, " \t\n") && artifactIDPattern.MatchString(query)
-}
-
-// compactAlnum lower-cases s and drops every non-alphanumeric rune.
-func compactAlnum(s string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(s) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		}
-	}
-	return b.String()
-}
-
+// Search performs exact lookup for artifact IDs and FTS5 full-text search for
+// discovery queries.
 func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifact, error) {
 	if limit <= 0 {
 		limit = 20
+	}
+	exactID := strings.TrimSpace(query)
+	if IsArtifactID(exactID) {
+		item, err := s.Get(ctx, exactID)
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, err
+		}
+		return []*Artifact{item}, nil
 	}
 
 	// Phase-1 term prep (dec-20260604-3aaad199): split compound identifiers
@@ -297,20 +288,11 @@ func (s *Store) Search(ctx context.Context, query string, limit int) ([]*Artifac
 	// safe (no manual special-char stripping needed). A `kind:` qualifier narrows
 	// the reasoning lane to one or more artifact kinds.
 	//
-	// EXCEPTION: a bare artifact-ID query (prob-YYYYMMDD-<hash>) is kept as one
-	// compacted token. Splitting an ID into prefix/date/hash fragments would
-	// cross-match every sibling artifact sharing that date or prefix — precisely
-	// the noise an ID lookup must avoid (IDs resolve via links / GetByID, not FTS).
 	var ftsTerms []string
-	var kindFilter []Kind
-	if id := strings.TrimSpace(query); isArtifactIDQuery(id) {
-		ftsTerms = []string{fmt.Sprintf(`"%s"*`, compactAlnum(id))}
-	} else {
-		pq := textsearch.ParseQuery(query)
-		kindFilter = matchArtifactKinds(pq.Kinds)
-		for _, t := range textsearch.Terms(pq.Text, textsearch.Options{Stems: false}) {
-			ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, t))
-		}
+	pq := textsearch.ParseQuery(query)
+	kindFilter := matchArtifactKinds(pq.Kinds)
+	for _, term := range textsearch.Terms(pq.Text, textsearch.Options{Stems: false}) {
+		ftsTerms = append(ftsTerms, fmt.Sprintf(`"%s"*`, term))
 	}
 
 	// A kind-only query ("kind:DecisionRecord", no free text) has no FTS terms —
@@ -396,7 +378,9 @@ func (s *Store) searchFTS(ctx context.Context, ftsQuery string, kinds []Kind, li
 		}
 		sb.WriteByte(')')
 	}
-	sb.WriteString(" ORDER BY bm25(artifacts_fts, 0.0, 10.0, 1.0, 5.0, 3.0) LIMIT ?")
+	sb.WriteString(
+		" ORDER BY bm25(artifacts_fts, 0.0, 10.0, 1.0, 5.0, 3.0), a.id LIMIT ?",
+	)
 	args = append(args, limit)
 
 	rows, err := s.db.QueryContext(ctx, sb.String(), args...)
@@ -432,19 +416,56 @@ func matchArtifactKinds(raw []string) []Kind {
 
 // SearchByAffectedFile finds artifacts linked to a specific file path.
 func (s *Store) SearchByAffectedFile(ctx context.Context, filePath string) ([]*Artifact, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
-		FROM artifacts a
-		JOIN affected_files af ON a.id = af.artifact_id
-		WHERE af.file_path = ?
-		ORDER BY a.updated_at DESC`,
-		filePath,
+	target, err := canonicalAffectedFile(AffectedFile{Path: filePath})
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT artifact_id, file_path
+		 FROM affected_files
+		 ORDER BY artifact_id, file_path`,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanArtifacts(rows)
+
+	ids := make([]string, 0)
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var artifactID, rawPath string
+		if err := rows.Scan(&artifactID, &rawPath); err != nil {
+			return nil, err
+		}
+		canonical, err := canonicalAffectedFile(
+			AffectedFile{Path: rawPath},
+		)
+		if err != nil ||
+			canonical.Path != target.Path ||
+			seen[artifactID] {
+			continue
+		}
+		seen[artifactID] = true
+		ids = append(ids, artifactID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]*Artifact, 0, len(ids))
+	for _, artifactID := range ids {
+		item, err := s.Get(ctx, artifactID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	sort.SliceStable(result, func(left, right int) bool {
+		return result[left].Meta.UpdatedAt.After(
+			result[right].Meta.UpdatedAt,
+		)
+	})
+	return result, nil
 }
 
 // SearchByAffectedSymbol returns artifacts linked to a specific symbol via
@@ -454,19 +475,35 @@ func (s *Store) SearchByAffectedFile(ctx context.Context, filePath string) ([]*A
 // filePath is non-empty, results are scoped to that file so same-named symbols
 // in different files don't collide.
 func (s *Store) SearchByAffectedSymbol(ctx context.Context, symbolName, filePath string) ([]*Artifact, error) {
-	query := `
-		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
-		FROM artifacts a
-		JOIN affected_symbols asym ON a.id = asym.artifact_id
-		WHERE asym.symbol_name = ?`
-	queryArgs := []any{symbolName}
-	if filePath != "" {
-		query += ` AND asym.file_path = ?`
-		queryArgs = append(queryArgs, filePath)
-	}
-	query += ` ORDER BY a.updated_at DESC`
+	return s.searchByAffectedSymbolContext(
+		ctx,
+		symbolName,
+		filePath,
+		0,
+		false,
+	)
+}
 
-	rows, err := s.db.QueryContext(ctx, query, queryArgs...)
+// SearchBySymbolAnchor resolves the authority-bearing governance join. Unlike
+// the legacy affected_symbols projection it cannot conflate overloads or move
+// when source lines shift.
+func (s *Store) SearchBySymbolAnchor(ctx context.Context, anchorID string) ([]*Artifact, error) {
+	hasBindings, err := s.tableHasColumn(ctx, "artifact_symbol_bindings", "anchor_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasBindings {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at, a.structured_data
+		FROM artifacts a
+		JOIN artifact_symbol_bindings binding ON a.id = binding.artifact_id
+		WHERE binding.anchor_id = ? AND binding.binding_status = ?
+		ORDER BY a.updated_at DESC`,
+		anchorID,
+		SymbolBindingActive,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -484,23 +521,94 @@ func (s *Store) SearchByAffectedSymbol(ctx context.Context, symbolName, filePath
 // falls back to the line-blind SearchByAffectedSymbol and LABELS the result as
 // file+name granularity rather than presenting false per-symbol precision.
 func (s *Store) SearchByAffectedSymbolAt(ctx context.Context, symbolName, filePath string, line int) ([]*Artifact, error) {
+	return s.searchByAffectedSymbolContext(
+		ctx,
+		symbolName,
+		filePath,
+		line,
+		true,
+	)
+}
+
+func (s *Store) searchByAffectedSymbolContext(
+	ctx context.Context,
+	symbolName string,
+	filePath string,
+	line int,
+	requireLine bool,
+) ([]*Artifact, error) {
+	var target AffectedFile
+	var err error
+	if filePath != "" {
+		target, err = canonicalAffectedFile(AffectedFile{Path: filePath})
+		if err != nil {
+			return nil, err
+		}
+	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT DISTINCT a.id, a.kind, a.version, a.status, a.context, a.mode, a.title, a.content, a.valid_until, a.created_at, a.updated_at
-		FROM artifacts a
-		JOIN affected_symbols asym ON a.id = asym.artifact_id
-		WHERE asym.symbol_name = ?
-		  AND asym.file_path = ?
-		  AND asym.symbol_end_line >= asym.symbol_line
-		  AND ? >= asym.symbol_line
-		  AND ? <= asym.symbol_end_line
-		ORDER BY a.updated_at DESC`,
-		symbolName, filePath, line, line,
+		SELECT artifact_id, file_path, symbol_line, symbol_end_line
+		FROM affected_symbols
+		WHERE symbol_name = ?
+		ORDER BY artifact_id, file_path`,
+		symbolName,
 	)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	return scanArtifacts(rows)
+
+	ids := make([]string, 0)
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var artifactID, rawPath string
+		var startLine, endLine sql.NullInt64
+		if err := rows.Scan(
+			&artifactID,
+			&rawPath,
+			&startLine,
+			&endLine,
+		); err != nil {
+			return nil, err
+		}
+		if filePath != "" {
+			canonical, err := canonicalAffectedFile(
+				AffectedFile{Path: rawPath},
+			)
+			if err != nil || canonical.Path != target.Path {
+				continue
+			}
+		}
+		if requireLine &&
+			(!startLine.Valid ||
+				!endLine.Valid ||
+				endLine.Int64 < startLine.Int64 ||
+				int64(line) < startLine.Int64 ||
+				int64(line) > endLine.Int64) {
+			continue
+		}
+		if seen[artifactID] {
+			continue
+		}
+		seen[artifactID] = true
+		ids = append(ids, artifactID)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	result := make([]*Artifact, 0, len(ids))
+	for _, artifactID := range ids {
+		item, err := s.Get(ctx, artifactID)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	sort.SliceStable(result, func(left, right int) bool {
+		return result[left].Meta.UpdatedAt.After(
+			result[right].Meta.UpdatedAt,
+		)
+	})
+	return result, nil
 }
 
 // FindStaleDecisions returns decisions past their valid_until or with refresh_due status.
@@ -666,6 +774,15 @@ type AffectedFileRef struct {
 	FilePath   string
 }
 
+// SymbolBindingRef is the minimum durable artifact<->symbol relation required
+// by the fused graph. AnchorID is resolved against the current code-symbol
+// epoch before an edge is admitted; a stale binding therefore remains visible
+// to diagnostics but never becomes a wrong code edge.
+type SymbolBindingRef struct {
+	ArtifactID string
+	AnchorID   string
+}
+
 // AllAffectedFiles enumerates every (artifact, file) pair in one pass, stably
 // ordered — the artifact<->file half of the fused-graph bridge.
 func (s *Store) AllAffectedFiles(ctx context.Context) ([]AffectedFileRef, error) {
@@ -675,13 +792,69 @@ func (s *Store) AllAffectedFiles(ctx context.Context) ([]AffectedFileRef, error)
 		return nil, err
 	}
 	defer rows.Close()
-	var out []AffectedFileRef
+	out := make([]AffectedFileRef, 0)
+	seen := make(map[string]bool)
 	for rows.Next() {
 		var r AffectedFileRef
 		if err := rows.Scan(&r.ArtifactID, &r.FilePath); err != nil {
 			return nil, err
 		}
+		canonical, err := canonicalAffectedFile(
+			AffectedFile{Path: r.FilePath},
+		)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"stored affected file for %s: %w",
+				r.ArtifactID,
+				err,
+			)
+		}
+		r.FilePath = canonical.Path
+		key := r.ArtifactID + "\x00" + r.FilePath
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// AllActiveSymbolBindingRefs enumerates current authority-bearing
+// artifact<->symbol bindings in stable order. Older databases without the
+// binding table legitimately return an empty compatibility projection.
+func (s *Store) AllActiveSymbolBindingRefs(
+	ctx context.Context,
+) ([]SymbolBindingRef, error) {
+	hasBindings, err := s.tableHasColumn(
+		ctx,
+		"artifact_symbol_bindings",
+		"anchor_id",
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !hasBindings {
+		return nil, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT artifact_id, anchor_id
+		FROM artifact_symbol_bindings
+		WHERE binding_status = ?
+		ORDER BY artifact_id, anchor_id`,
+		SymbolBindingActive,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]SymbolBindingRef, 0)
+	for rows.Next() {
+		var ref SymbolBindingRef
+		if err := rows.Scan(&ref.ArtifactID, &ref.AnchorID); err != nil {
+			return nil, err
+		}
+		out = append(out, ref)
 	}
 	return out, rows.Err()
 }
@@ -690,6 +863,10 @@ func (s *Store) AllAffectedFiles(ctx context.Context) ([]AffectedFileRef, error)
 
 // SetAffectedFiles replaces the affected files list for an artifact.
 func (s *Store) SetAffectedFiles(ctx context.Context, artifactID string, files []AffectedFile) error {
+	canonical, err := canonicalAffectedFiles(files)
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -700,7 +877,7 @@ func (s *Store) SetAffectedFiles(ctx context.Context, artifactID string, files [
 		return err
 	}
 
-	for _, f := range files {
+	for _, f := range canonical {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO affected_files (artifact_id, file_path, file_hash) VALUES (?, ?, ?)`,
 			artifactID, f.Path, f.Hash); err != nil {
 			return err
@@ -718,13 +895,34 @@ func (s *Store) GetAffectedFiles(ctx context.Context, artifactID string) ([]Affe
 	}
 	defer rows.Close()
 
-	var files []AffectedFile
+	files := make([]AffectedFile, 0)
+	seen := make(map[string]string)
 	for rows.Next() {
 		var f AffectedFile
 		if err := rows.Scan(&f.Path, &f.Hash); err != nil {
 			return nil, err
 		}
-		files = append(files, f)
+		canonical, err := canonicalAffectedFile(f)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"stored affected file for %s: %w",
+				artifactID,
+				err,
+			)
+		}
+		hash, exists := seen[canonical.Path]
+		if exists && hash != canonical.Hash {
+			return nil, fmt.Errorf(
+				"stored affected file %q for %s has conflicting hashes",
+				canonical.Path,
+				artifactID,
+			)
+		}
+		if exists {
+			continue
+		}
+		seen[canonical.Path] = canonical.Hash
+		files = append(files, canonical)
 	}
 	return files, rows.Err()
 }
@@ -733,21 +931,60 @@ func (s *Store) GetAffectedFiles(ctx context.Context, artifactID string) ([]Affe
 
 // SetAffectedSymbols replaces the symbol snapshots for an artifact.
 func (s *Store) SetAffectedSymbols(ctx context.Context, artifactID string, symbols []AffectedSymbol) error {
+	canonical, err := canonicalAffectedSymbols(symbols)
+	if err != nil {
+		return err
+	}
+	symbols = canonical
+	hasBindings, err := s.tableHasColumn(ctx, "artifact_symbol_bindings", "anchor_id")
+	if err != nil {
+		return err
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
 
+	previousBindings := make([]SymbolBinding, 0)
+	if hasBindings {
+		previousBindings, err = getSymbolBindingsWithQueryer(ctx, tx, artifactID)
+		if err != nil {
+			return err
+		}
+	}
+
 	if _, err := tx.ExecContext(ctx, `DELETE FROM affected_symbols WHERE artifact_id = ?`, artifactID); err != nil {
 		return err
 	}
+	if hasBindings {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM artifact_symbol_bindings WHERE artifact_id = ?`, artifactID); err != nil {
+			return err
+		}
+	}
 
+	projectionSeen := make(map[string]bool)
 	for _, sym := range symbols {
-		if _, err := tx.ExecContext(ctx,
-			`INSERT INTO affected_symbols (artifact_id, file_path, symbol_name, symbol_kind, symbol_line, symbol_end_line, symbol_hash)
-			 VALUES (?, ?, ?, ?, ?, ?, ?)`,
-			artifactID, sym.FilePath, sym.SymbolName, sym.SymbolKind, sym.Line, sym.EndLine, sym.Hash); err != nil {
+		projectionKey := sym.FilePath + "\x00" + sym.SymbolName
+		if !projectionSeen[projectionKey] {
+			if _, err := tx.ExecContext(ctx,
+				`INSERT INTO affected_symbols (artifact_id, file_path, symbol_name, symbol_kind, symbol_line, symbol_end_line, symbol_hash)
+				 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+				artifactID, sym.FilePath, sym.SymbolName, sym.SymbolKind, sym.Line, sym.EndLine, sym.Hash); err != nil {
+				return err
+			}
+			projectionSeen[projectionKey] = true
+		}
+		if sym.AnchorID == "" || !hasBindings {
+			continue
+		}
+		binding := symbolBindingFromAffectedSymbol(artifactID, sym)
+		if err := insertSymbolBinding(ctx, tx, binding); err != nil {
+			return err
+		}
+	}
+	if hasBindings {
+		if err := recordAutomaticRebinds(ctx, tx, previousBindings, symbolBindingsFromAffectedSymbols(artifactID, symbols)); err != nil {
 			return err
 		}
 	}
@@ -757,6 +994,19 @@ func (s *Store) SetAffectedSymbols(ctx context.Context, artifactID string, symbo
 
 // GetAffectedSymbols returns the symbol snapshots for an artifact.
 func (s *Store) GetAffectedSymbols(ctx context.Context, artifactID string) ([]AffectedSymbol, error) {
+	hasBindings, err := s.tableHasColumn(ctx, "artifact_symbol_bindings", "anchor_id")
+	if err != nil {
+		return nil, err
+	}
+	if hasBindings {
+		bindings, err := s.GetSymbolBindings(ctx, artifactID)
+		if err != nil {
+			return nil, err
+		}
+		if len(bindings) > 0 {
+			return affectedSymbolsFromSymbolBindings(bindings), nil
+		}
+	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT file_path, symbol_name, symbol_kind, symbol_line, symbol_end_line, symbol_hash
 		 FROM affected_symbols WHERE artifact_id = ? ORDER BY file_path, symbol_line`, artifactID)
@@ -771,9 +1021,227 @@ func (s *Store) GetAffectedSymbols(ctx context.Context, artifactID string) ([]Af
 		if err := rows.Scan(&sym.FilePath, &sym.SymbolName, &sym.SymbolKind, &sym.Line, &sym.EndLine, &sym.Hash); err != nil {
 			return nil, err
 		}
-		symbols = append(symbols, sym)
+		canonical, err := canonicalAffectedSymbol(sym)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"stored affected symbol for %s: %w",
+				artifactID,
+				err,
+			)
+		}
+		symbols = append(symbols, canonical)
 	}
 	return symbols, rows.Err()
+}
+
+// GetSymbolBindings returns the durable authority-bearing symbol bindings for
+// an artifact. Legacy artifacts may legitimately have none.
+func (s *Store) GetSymbolBindings(ctx context.Context, artifactID string) ([]SymbolBinding, error) {
+	hasBindings, err := s.tableHasColumn(ctx, "artifact_symbol_bindings", "anchor_id")
+	if err != nil {
+		return nil, err
+	}
+	if !hasBindings {
+		return nil, nil
+	}
+	return getSymbolBindingsWithQueryer(ctx, s.db, artifactID)
+}
+
+// GetSymbolRebindHistory returns append-only anchor transitions for audit and
+// sync. No current binding is inferred from this history.
+func (s *Store) GetSymbolRebindHistory(ctx context.Context, artifactID string) ([]SymbolRebind, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT artifact_id, previous_anchor_id, current_anchor_id, reason, created_at
+		FROM symbol_rebind_history
+		WHERE artifact_id = ?
+		ORDER BY id`,
+		artifactID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	history := make([]SymbolRebind, 0)
+	for rows.Next() {
+		var item SymbolRebind
+		if err := rows.Scan(&item.ArtifactID, &item.PreviousAnchorID, &item.CurrentAnchorID, &item.Reason, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		history = append(history, item)
+	}
+	return history, rows.Err()
+}
+
+func getSymbolBindingsWithQueryer(ctx context.Context, queryer sqlQueryer, artifactID string) ([]SymbolBinding, error) {
+	rows, err := queryer.QueryContext(ctx, `
+		SELECT artifact_id, anchor_id, anchor_version, file_path, language, symbol_name, symbol_kind,
+		       receiver, qualified_name, signature_hash, symbol_line, symbol_end_line, body_hash,
+		       binding_status, resolution_source
+		FROM artifact_symbol_bindings
+		WHERE artifact_id = ?
+		ORDER BY file_path, qualified_name, signature_hash`,
+		artifactID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	bindings := make([]SymbolBinding, 0)
+	for rows.Next() {
+		var binding SymbolBinding
+		if err := rows.Scan(
+			&binding.ArtifactID,
+			&binding.AnchorID,
+			&binding.AnchorVersion,
+			&binding.FilePath,
+			&binding.Language,
+			&binding.SymbolName,
+			&binding.SymbolKind,
+			&binding.Receiver,
+			&binding.QualifiedName,
+			&binding.SignatureHash,
+			&binding.Line,
+			&binding.EndLine,
+			&binding.BodyHash,
+			&binding.Status,
+			&binding.ResolutionSource,
+		); err != nil {
+			return nil, err
+		}
+		canonical, err := canonicalSymbolBinding(binding)
+		if err != nil {
+			return nil, fmt.Errorf(
+				"stored symbol binding for %s: %w",
+				artifactID,
+				err,
+			)
+		}
+		bindings = append(bindings, canonical)
+	}
+	return bindings, rows.Err()
+}
+
+func symbolBindingsFromAffectedSymbols(artifactID string, symbols []AffectedSymbol) []SymbolBinding {
+	bindings := make([]SymbolBinding, 0, len(symbols))
+	for _, symbol := range symbols {
+		if symbol.AnchorID == "" {
+			continue
+		}
+		bindings = append(bindings, symbolBindingFromAffectedSymbol(artifactID, symbol))
+	}
+	return bindings
+}
+
+func affectedSymbolsFromSymbolBindings(bindings []SymbolBinding) []AffectedSymbol {
+	symbols := make([]AffectedSymbol, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding.Status != SymbolBindingActive {
+			continue
+		}
+		symbols = append(symbols, AffectedSymbol{
+			AnchorID:      binding.AnchorID,
+			AnchorVersion: binding.AnchorVersion,
+			FilePath:      binding.FilePath,
+			Language:      binding.Language,
+			SymbolName:    binding.SymbolName,
+			SymbolKind:    binding.SymbolKind,
+			Receiver:      binding.Receiver,
+			QualifiedName: binding.QualifiedName,
+			SignatureHash: binding.SignatureHash,
+			Line:          binding.Line,
+			EndLine:       binding.EndLine,
+			Hash:          binding.BodyHash,
+		})
+	}
+	return symbols
+}
+
+func symbolBindingFromAffectedSymbol(artifactID string, symbol AffectedSymbol) SymbolBinding {
+	return SymbolBinding{
+		ArtifactID:       artifactID,
+		AnchorID:         symbol.AnchorID,
+		AnchorVersion:    symbol.AnchorVersion,
+		FilePath:         symbol.FilePath,
+		Language:         symbol.Language,
+		SymbolName:       symbol.SymbolName,
+		SymbolKind:       symbol.SymbolKind,
+		Receiver:         symbol.Receiver,
+		QualifiedName:    symbol.QualifiedName,
+		SignatureHash:    symbol.SignatureHash,
+		Line:             symbol.Line,
+		EndLine:          symbol.EndLine,
+		BodyHash:         symbol.Hash,
+		Status:           SymbolBindingActive,
+		ResolutionSource: "affected_symbol_projection",
+	}
+}
+
+func insertSymbolBinding(ctx context.Context, tx *sql.Tx, binding SymbolBinding) error {
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO artifact_symbol_bindings (
+			artifact_id, anchor_id, anchor_version, file_path, language, symbol_name, symbol_kind,
+			receiver, qualified_name, signature_hash, symbol_line, symbol_end_line, body_hash,
+			binding_status, resolution_source
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		binding.ArtifactID,
+		binding.AnchorID,
+		binding.AnchorVersion,
+		binding.FilePath,
+		binding.Language,
+		binding.SymbolName,
+		binding.SymbolKind,
+		binding.Receiver,
+		binding.QualifiedName,
+		binding.SignatureHash,
+		binding.Line,
+		binding.EndLine,
+		binding.BodyHash,
+		binding.Status,
+		binding.ResolutionSource,
+	)
+	return err
+}
+
+func recordAutomaticRebinds(ctx context.Context, tx *sql.Tx, previous, current []SymbolBinding) error {
+	previousByIdentity := uniqueSymbolBindingsByLogicalIdentity(previous)
+	currentByIdentity := uniqueSymbolBindingsByLogicalIdentity(current)
+	for identity, oldBinding := range previousByIdentity {
+		newBinding, ok := currentByIdentity[identity]
+		if !ok || oldBinding.AnchorID == newBinding.AnchorID {
+			continue
+		}
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO symbol_rebind_history (artifact_id, previous_anchor_id, current_anchor_id, reason)
+			VALUES (?, ?, ?, ?)`,
+			oldBinding.ArtifactID,
+			oldBinding.AnchorID,
+			newBinding.AnchorID,
+			"binding_refresh_same_logical_symbol",
+		); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func uniqueSymbolBindingsByLogicalIdentity(bindings []SymbolBinding) map[string]SymbolBinding {
+	grouped := make(map[string][]SymbolBinding)
+	for _, binding := range bindings {
+		key := strings.Join([]string{
+			binding.FilePath,
+			binding.Language,
+			binding.SymbolKind,
+			binding.QualifiedName,
+		}, "\x00")
+		grouped[key] = append(grouped[key], binding)
+	}
+	unique := make(map[string]SymbolBinding)
+	for key, group := range grouped {
+		if len(group) == 1 {
+			unique[key] = group[0]
+		}
+	}
+	return unique
 }
 
 // --- Evidence Items ---
@@ -786,7 +1254,8 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 }
 
 func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, item *EvidenceItem, artifactRef string) error {
-	formality := normalizeFormalityLevel(item.FormalityLevel)
+	formalityScale := storedEvidenceFormalityScale(item, item.FormalityLevel)
+	formality := formalityScale.Level
 	storedVerdict := canonicalStoredEvidenceVerdict(item.Type, item.Verdict)
 	err := validateEvidenceCongruenceAtIngest(storedVerdict, item.CongruenceLevel)
 	if err != nil {
@@ -797,6 +1266,18 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		return err
 	}
 	hasClaimRefs, err := s.tableHasColumn(ctx, "evidence_items", "claim_refs")
+	if err != nil {
+		return err
+	}
+	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	if err != nil {
+		return err
+	}
+	hasFormalityScaleID, err := s.tableHasColumn(ctx, "evidence_items", "formality_scale_id")
+	if err != nil {
+		return err
+	}
+	hasFormalityBridge, err := s.tableHasColumn(ctx, "evidence_items", "formality_bridge")
 	if err != nil {
 		return err
 	}
@@ -817,6 +1298,18 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 			return fmt.Errorf("marshal claim_refs: %w", err)
 		}
 		claimRefsJSON = string(data)
+	}
+	formalityBridge := item.FormalityBridge
+	if formalityBridge == nil {
+		formalityBridge = evidenceFormalityBridge(formalityScale)
+	}
+	formalityBridgeJSON := ""
+	if formalityBridge != nil {
+		data, err := json.Marshal(formalityBridge)
+		if err != nil {
+			return fmt.Errorf("marshal formality_bridge: %w", err)
+		}
+		formalityBridgeJSON = string(data)
 	}
 
 	columns := []string{
@@ -841,6 +1334,18 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		columns = append(columns, "claim_refs")
 		args = append(args, claimRefsJSON)
 	}
+	if hasProvenance {
+		columns = append(columns, "provenance")
+		args = append(args, normalizeEvidenceProvenance(item.Provenance))
+	}
+	if hasFormalityScaleID {
+		columns = append(columns, "formality_scale_id")
+		args = append(args, formalityScale.ScaleID)
+	}
+	if hasFormalityBridge {
+		columns = append(columns, "formality_bridge")
+		args = append(args, formalityBridgeJSON)
+	}
 
 	columns = append(columns, "valid_until", "created_at")
 	args = append(args, item.ValidUntil, time.Now().UTC().Format(time.RFC3339))
@@ -858,6 +1363,9 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 
 	_, err = execer.ExecContext(ctx, query, args...)
 	item.Verdict = storedVerdict
+	item.FormalityLevel = formality
+	item.FormalityScale = &formalityScale
+	item.FormalityBridge = formalityBridge
 	return err
 }
 
@@ -872,6 +1380,18 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		return nil, err
 	}
 	hasClaimRefs, err := s.tableHasColumn(ctx, "evidence_items", "claim_refs")
+	if err != nil {
+		return nil, err
+	}
+	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	if err != nil {
+		return nil, err
+	}
+	hasFormalityScaleID, err := s.tableHasColumn(ctx, "evidence_items", "formality_scale_id")
+	if err != nil {
+		return nil, err
+	}
+	hasFormalityBridge, err := s.tableHasColumn(ctx, "evidence_items", "formality_bridge")
 	if err != nil {
 		return nil, err
 	}
@@ -891,6 +1411,15 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	if hasClaimRefs {
 		columns = append(columns, "claim_refs")
 	}
+	if hasProvenance {
+		columns = append(columns, "provenance")
+	}
+	if hasFormalityScaleID {
+		columns = append(columns, "formality_scale_id")
+	}
+	if hasFormalityBridge {
+		columns = append(columns, "formality_bridge")
+	}
 	columns = append(columns, "valid_until")
 
 	query := "SELECT " +
@@ -906,7 +1435,8 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	var items []EvidenceItem
 	for rows.Next() {
 		var e EvidenceItem
-		var verdict, carrierRef, claimScope, claimRefs, validUntil sql.NullString
+		var verdict, carrierRef, claimScope, claimRefs, provenance sql.NullString
+		var formalityScaleID, formalityBridge, validUntil sql.NullString
 		dest := []any{
 			&e.ID,
 			&e.Type,
@@ -922,13 +1452,25 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		if hasClaimRefs {
 			dest = append(dest, &claimRefs)
 		}
+		if hasProvenance {
+			dest = append(dest, &provenance)
+		}
+		if hasFormalityScaleID {
+			dest = append(dest, &formalityScaleID)
+		}
+		if hasFormalityBridge {
+			dest = append(dest, &formalityBridge)
+		}
 		dest = append(dest, &validUntil)
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
+		e.Provenance = normalizeEvidenceProvenance(provenance.String)
 		e.Verdict = canonicalStoredEvidenceVerdict(e.Type, verdict.String)
 		e.CarrierRef = carrierRef.String
 		e.FormalityLevel = normalizeFormalityLevel(e.FormalityLevel)
+		e.FormalityScale = readEvidenceFormalityScale(e.FormalityLevel, formalityScaleID.String)
+		e.FormalityBridge = readEvidenceFormalityBridge(e.FormalityLevel, formalityScaleID.String, formalityBridge.String)
 		if claimScope.String != "" {
 			_ = json.Unmarshal([]byte(claimScope.String), &e.ClaimScope)
 			e.ClaimScope = normalizeClaimScope(e.ClaimScope)
@@ -967,6 +1509,51 @@ func validateEvidenceCongruenceAtIngest(storedVerdict string, congruenceLevel in
 	}
 
 	return nil
+}
+
+func storedEvidenceFormalityScale(item *EvidenceItem, level int) reff.FormalityScale {
+	if item.FormalityScale == nil {
+		return reff.CurrentFormalityScale(level)
+	}
+
+	scale := *item.FormalityScale
+	scale.Level = level
+	return reff.NormalizeFormalityScale(scale)
+}
+
+func readEvidenceFormalityScale(level int, scaleID string) *reff.FormalityScale {
+	trimmed := strings.TrimSpace(scaleID)
+	if trimmed != "" {
+		scale := reff.NormalizeFormalityScale(reff.FormalityScale{
+			ScaleID: trimmed,
+			Level:   level,
+		})
+		return &scale
+	}
+
+	scale := reff.UnversionedFormalityScale(level)
+	if level >= 0 && level <= 3 {
+		scale = reff.LegacyFormalityScale(level)
+	}
+
+	return &scale
+}
+
+func readEvidenceFormalityBridge(level int, scaleID string, rawBridge string) *reff.FormalityBridge {
+	trimmedBridge := strings.TrimSpace(rawBridge)
+	if trimmedBridge != "" {
+		var bridge reff.FormalityBridge
+		if err := json.Unmarshal([]byte(trimmedBridge), &bridge); err == nil {
+			return &bridge
+		}
+	}
+
+	scale := readEvidenceFormalityScale(level, scaleID)
+	if scale == nil {
+		return nil
+	}
+
+	return evidenceFormalityBridge(*scale)
 }
 
 // SupersedeEvidenceByType marks all evidence items of the given type on an artifact as superseded.
@@ -1209,14 +1796,36 @@ func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string
 }
 
 func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+
 	var result []*Artifact
 	for rows.Next() {
 		var a Artifact
 		var kind, status, mode, validUntil, ctx, createdAt, updatedAt string
-		if err := rows.Scan(
-			&a.Meta.ID, &kind, &a.Meta.Version, &status, &ctx, &mode,
-			&a.Meta.Title, &a.Body, &validUntil, &createdAt, &updatedAt,
-		); err != nil {
+		var structuredData sql.NullString
+		destinations := []any{
+			&a.Meta.ID,
+			&kind,
+			&a.Meta.Version,
+			&status,
+			&ctx,
+			&mode,
+			&a.Meta.Title,
+			&a.Body,
+			&validUntil,
+			&createdAt,
+			&updatedAt,
+		}
+		if len(columns) == len(destinations)+1 && columns[len(columns)-1] == "structured_data" {
+			destinations = append(destinations, &structuredData)
+		}
+		if len(columns) != len(destinations) {
+			return nil, fmt.Errorf("scan artifacts: unexpected column count %d", len(columns))
+		}
+		if err := rows.Scan(destinations...); err != nil {
 			return nil, err
 		}
 		a.Meta.Kind, _ = ParseKind(kind)
@@ -1226,6 +1835,9 @@ func scanArtifacts(rows *sql.Rows) ([]*Artifact, error) {
 		a.Meta.ValidUntil = validUntil
 		a.Meta.CreatedAt, _ = time.Parse(time.RFC3339, createdAt)
 		a.Meta.UpdatedAt, _ = time.Parse(time.RFC3339, updatedAt)
+		if structuredData.Valid {
+			a.StructuredData = structuredData.String
+		}
 		result = append(result, &a)
 	}
 	return result, rows.Err()

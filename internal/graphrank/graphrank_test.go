@@ -2,6 +2,7 @@ package graphrank
 
 import (
 	"math"
+	"strings"
 	"testing"
 )
 
@@ -115,5 +116,47 @@ func TestAddEdgeIgnoresSelfLoopAndNonPositive(t *testing.T) {
 	g.AddEdge("A", "D", 2)  // kept
 	if g.Len() != 2 {       // only A and D registered
 		t.Fatalf("expected 2 nodes (A,D), got %d: %v", g.Len(), g.Nodes())
+	}
+}
+
+func TestInduceIsDeterministicBoundedAndLeavesCanonicalGraphUntouched(
+	t *testing.T,
+) {
+	graph := NewGraph()
+	graph.AddEdge("A", "B", 1)
+	graph.AddEdge("B", "C", 1)
+	graph.AddEdge("C", "D", 1)
+	graph.AddEdge("C", "B", 1)
+	graph.AddEdge("B", "E", 1)
+	budget, err := NewInductionBudget(2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first := graph.Induce([]string{"A"}, budget)
+	second := graph.Induce([]string{"A"}, budget)
+	if !first.NodeCapReached ||
+		first.Graph.Len() != 3 ||
+		graph.Len() != 5 {
+		t.Fatalf(
+			"induced=%v/%d canonical=%d",
+			first.NodeCapReached,
+			first.Graph.Len(),
+			graph.Len(),
+		)
+	}
+	if strings.Join(first.Graph.Nodes(), ",") !=
+		strings.Join(second.Graph.Nodes(), ",") {
+		t.Fatalf(
+			"induction drift: %v vs %v",
+			first.Graph.Nodes(),
+			second.Graph.Nodes(),
+		)
+	}
+	if len(first.Graph.out["C"]) != 1 ||
+		first.Graph.out["C"][0].To != "B" {
+		t.Fatalf(
+			"boundary-to-internal edge was not preserved: %v",
+			first.Graph.out["C"],
+		)
 	}
 }

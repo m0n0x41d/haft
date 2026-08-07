@@ -1,3 +1,6 @@
 [submodule "data/FPF"]
 	path = data/FPF
 	url = https://github.com/ailev/FPF.git
+[submodule "docs"]
+	path = docs
+	url = git@github.com:m0n0x41d/haft-docs.git

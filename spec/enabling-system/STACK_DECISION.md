@@ -7,9 +7,9 @@
 | Layer | Technology | Why | Alternatives considered |
 |-------|-----------|-----|----------------------|
 | **Language (backend)** | Go 1.25 | Fast compilation, single binary, excellent concurrency, stdlib quality (go/parser for module detection). AI agents generate good Go. | Rust (too slow to iterate solo), TypeScript (can't do single binary easily) |
-| **Language (desktop frontend)** | TypeScript + React | Proven UI framework, AI agents generate excellent React. shadcn/ui for components. | Svelte (smaller ecosystem), vanilla (too slow to build) |
-| **Language (TUI)** | TypeScript + Ink | React-like model for terminal UI. Consistent mental model with desktop frontend. | Bubbletea/Go (was v5.3 choice, deprecated — Go TUI libs are less productive than Ink) |
-| **Desktop framework** | Tauri v2 | Native WebView shell with a Rust command boundary and React frontend. Keeps Desktop as a surface over the Haft CLI/Core instead of a second semantic kernel. | Wails v2 (retired after IPC/runtime mismatch), Electron (too heavy) |
+| **Archived desktop frontend language** | TypeScript + React | Historical archived choice for the removed desktop wrapper; retained as provenance only. | Svelte (smaller ecosystem), vanilla (too slow to build) |
+| **Archived TUI language** | TypeScript + Ink | Historical archived choice for the removed TUI wrapper. | Bubbletea/Go (was v5.3 choice, deprecated — Go TUI libs are less productive than Ink) |
+| **Archived desktop framework** | Tauri v2 | Historical archived WebView shell choice; not current runtime scope after the v8 pivot. | Wails v2 (retired after IPC/runtime mismatch), Electron (too heavy) |
 | **Database** | SQLite (modernc.org/sqlite, pure Go) | Zero dependencies, local-first, per-project isolation. WAL mode + busy_timeout for concurrency. | PostgreSQL (overkill for local-first, server mode deferred) |
 | **FPF search** | FTS5 (SQLite built-in) | Full-text search with ranking. Embedded, no external service. Route-aware tiered retrieval. | Tantivy (Rust, FFI overhead), Bleve (Go, but heavier than FTS5) |
 | **MCP protocol** | JSON-RPC over stdin/stdout | MCP standard. v7 product support targets Claude Code and Codex; Cursor/Gemini/Air remain experimental or legacy carriers. | HTTP (more overhead, less standard for MCP) |
@@ -31,11 +31,14 @@
 | **Release** | goreleaser v2 | Cross-platform binary builds, GitHub releases, checksums |
 | **CI** | GitHub Actions | Standard, free for open source |
 | **Lint** | golangci-lint v2 | Comprehensive Go linting |
-| **Desktop build** | Tauri CLI (`cargo tauri build`) | Native app packaging for the Rust shell plus React frontend |
+| **Archived desktop build** | Tauri CLI (`cargo tauri build`) | Historical archived native app packaging for the removed Rust shell plus React frontend |
 
-## Harness Batch Execution
+## Historical Harness Batch Execution (removed in v9)
 
-Decision record: `dec-20260428-harness-drain-v3-16bf21f3`.
+Decision record `dec-20260428-harness-drain-v3-16bf21f3` is superseded by
+`dec-20260805-haft-v9-remove-built-in-execution-contour-a1eb55b6`. The table
+below is retained as provenance for the v7/v8 design; none of these runtime
+components or commands ships in v9.
 
 | Component | Technology / policy | Why | Alternatives considered |
 |-----------|---------------------|-----|-------------------------|

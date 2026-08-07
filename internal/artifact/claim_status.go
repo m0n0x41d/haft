@@ -13,6 +13,13 @@ var validClaimStatuses = map[ClaimStatus]struct{}{
 	ClaimStatusInconclusive: {},
 }
 
+var validClaimLifecycleStatuses = map[ClaimLifecycleStatus]struct{}{
+	ClaimLifecycleActive:     {},
+	ClaimLifecycleRefreshDue: {},
+	ClaimLifecycleSuperseded: {},
+	ClaimLifecycleDeprecated: {},
+}
+
 // PredictionMeasureMatch captures how one measurement run touches one prediction.
 type PredictionMeasureMatch struct {
 	MeasurementRecorded bool
@@ -28,6 +35,25 @@ func normalizeClaimStatus(value ClaimStatus) ClaimStatus {
 	}
 
 	return ClaimStatusUnverified
+}
+
+func normalizeClaimLifecycleStatus(value ClaimLifecycleStatus) ClaimLifecycleStatus {
+	normalized := ClaimLifecycleStatus(strings.TrimSpace(string(value)))
+	if normalized == "" {
+		return ""
+	}
+	if _, ok := validClaimLifecycleStatuses[normalized]; ok {
+		return normalized
+	}
+	return ""
+}
+
+func EffectiveClaimLifecycleStatus(claim DecisionClaim) ClaimLifecycleStatus {
+	normalized := normalizeClaimLifecycleStatus(claim.LifecycleStatus)
+	if normalized == "" {
+		return ClaimLifecycleActive
+	}
+	return normalized
 }
 
 func normalizeClaimRefs(refs []string) []string {
@@ -70,6 +96,7 @@ func newDecisionClaims(inputs []PredictionInput) []DecisionClaim {
 			VerifyAfter:   strings.TrimSpace(input.VerifyAfter),
 			Realizability: realizability,
 			Probability:   input.Probability,
+			Command:       strings.TrimSpace(input.Command),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -79,6 +106,14 @@ func newDecisionClaims(inputs []PredictionInput) []DecisionClaim {
 	}
 
 	return normalizeDecisionClaims(claims)
+}
+
+func decisionInputClaims(input DecideInput) []DecisionClaim {
+	claims := normalizeDecisionClaims(input.Claims)
+	if len(claims) > 0 {
+		return claims
+	}
+	return newDecisionClaims(input.Predictions)
 }
 
 func decisionClaimsFromPredictions(values []DecisionPrediction) []DecisionClaim {
@@ -94,6 +129,7 @@ func decisionClaimsFromPredictions(values []DecisionPrediction) []DecisionClaim 
 			VerifyAfter:   strings.TrimSpace(value.VerifyAfter),
 			Realizability: realizability,
 			Probability:   value.Probability,
+			Command:       strings.TrimSpace(value.Command),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -112,14 +148,19 @@ func normalizeDecisionClaims(values []DecisionClaim) []DecisionClaim {
 	for _, value := range values {
 		realizability, _ := ParseRealizabilityVerdict(string(value.Realizability))
 		claim := DecisionClaim{
-			ID:            strings.TrimSpace(value.ID),
-			Claim:         strings.TrimSpace(value.Claim),
-			Observable:    strings.TrimSpace(value.Observable),
-			Threshold:     strings.TrimSpace(value.Threshold),
-			Status:        normalizeClaimStatus(value.Status),
-			VerifyAfter:   strings.TrimSpace(value.VerifyAfter),
-			Realizability: realizability,
-			Probability:   value.Probability,
+			ID:                   strings.TrimSpace(value.ID),
+			Claim:                strings.TrimSpace(value.Claim),
+			Observable:           strings.TrimSpace(value.Observable),
+			Threshold:            strings.TrimSpace(value.Threshold),
+			Status:               normalizeClaimStatus(value.Status),
+			LifecycleStatus:      normalizeClaimLifecycleStatus(value.LifecycleStatus),
+			SuccessorRef:         strings.TrimSpace(value.SuccessorRef),
+			RetiredReason:        strings.TrimSpace(value.RetiredReason),
+			GovernanceTargetRefs: normalizeClaimRefs(value.GovernanceTargetRefs),
+			VerifyAfter:          strings.TrimSpace(value.VerifyAfter),
+			Realizability:        realizability,
+			Probability:          value.Probability,
+			Command:              strings.TrimSpace(value.Command),
 		}
 		if claim.Claim == "" && claim.Observable == "" && claim.Threshold == "" {
 			continue
@@ -173,15 +214,36 @@ func decisionPredictionsFromClaims(values []DecisionClaim) []DecisionPrediction 
 			VerifyAfter:   claim.VerifyAfter,
 			Realizability: claim.Realizability,
 			Probability:   claim.Probability,
+			Command:       claim.Command,
 		})
 	}
 
 	return predictions
 }
 
-//nolint:unused // exercised by package tests
-func newDecisionPredictions(inputs []PredictionInput) []DecisionPrediction {
-	return decisionPredictionsFromClaims(newDecisionClaims(inputs))
+func buildClaimLifecycleSummary(claims []DecisionClaim) *ClaimLifecycleSummary {
+	normalized := normalizeDecisionClaims(claims)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	summary := ClaimLifecycleSummary{}
+	targetRefs := []string{}
+	for _, claim := range normalized {
+		switch EffectiveClaimLifecycleStatus(claim) {
+		case ClaimLifecycleRefreshDue:
+			summary.RefreshDue++
+		case ClaimLifecycleSuperseded:
+			summary.Superseded++
+		case ClaimLifecycleDeprecated:
+			summary.Deprecated++
+		default:
+			summary.Active++
+		}
+		targetRefs = append(targetRefs, claim.GovernanceTargetRefs...)
+	}
+	summary.GovernanceTargetRefs = normalizeClaimRefs(targetRefs)
+	return &summary
 }
 
 func canonicalDecisionClaimID(index int) string {
@@ -538,51 +600,6 @@ func ClaimStatusFromPredictionMeasureMatch(match PredictionMeasureMatch) ClaimSt
 	}
 
 	return ClaimStatusUnverified
-}
-
-//nolint:unused // exercised by package tests
-func adjudicateDecisionClaims(
-	claims []DecisionClaim,
-	measuredClaimRefs []string,
-	criteriaMet []string,
-	criteriaMetScope []string,
-	criteriaNotMet []string,
-	criteriaNotMetScope []string,
-) []DecisionClaim {
-	normalized := normalizeDecisionClaims(claims)
-	if len(normalized) == 0 {
-		return nil
-	}
-
-	aliasIndex := buildDecisionClaimAliasIndex(normalized)
-	metMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaMet, criteriaMetScope)
-	notMetMatches := matchPredictionCriteria(aliasIndex, len(normalized), criteriaNotMet, criteriaNotMetScope)
-	measuredRefs := normalizeClaimRefs(measuredClaimRefs)
-	measuredRefSet := make(map[string]struct{}, len(measuredRefs))
-	updated := make([]DecisionClaim, 0, len(normalized))
-
-	for _, ref := range measuredRefs {
-		measuredRefSet[ref] = struct{}{}
-	}
-
-	for index, claim := range normalized {
-		_, measuredByRef := measuredRefSet[claim.ID]
-		measurementRecorded := measuredByRef || metMatches[index] || notMetMatches[index]
-		if !measurementRecorded {
-			updated = append(updated, claim)
-			continue
-		}
-
-		match := PredictionMeasureMatch{
-			MeasurementRecorded: measurementRecorded,
-			CriteriaMet:         metMatches[index],
-			CriteriaNotMet:      notMetMatches[index],
-		}
-		claim.Status = ClaimStatusFromPredictionMeasureMatch(match)
-		updated = append(updated, claim)
-	}
-
-	return updated
 }
 
 func rebuildDecisionClaimsFromEvidence(

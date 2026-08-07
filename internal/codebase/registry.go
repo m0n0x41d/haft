@@ -9,21 +9,23 @@ import (
 	ignore "github.com/sabhiram/go-gitignore"
 )
 
-// Registry maps file extensions to language detectors, import parsers, and
-// code-graph edge resolvers. Adding a language = one adapter type + entries
-// here; orchestration codes against the interfaces, never a specific language.
+// Registry maps file extensions to language detectors, import parsers, symbol
+// adapters, and code-graph edge resolvers. Adding a language = one adapter type
+// plus entries here; orchestration codes against ports, never a specific language.
 type Registry struct {
-	detectors map[string]ModuleDetector // lang -> detector
-	parsers   map[string]ImportParser   // extension -> parser
-	resolvers map[string]EdgeResolver   // extension -> code-graph edge resolver
+	detectors      map[string]ModuleDetector // lang -> detector
+	parsers        map[string]ImportParser   // extension -> parser
+	resolvers      map[string]EdgeResolver   // extension -> code-graph edge resolver
+	symbolAdapters map[string]SymbolAdapter  // extension -> canonical symbol extractor
 }
 
 // NewRegistry creates a registry with all supported languages.
 func NewRegistry() *Registry {
 	r := &Registry{
-		detectors: make(map[string]ModuleDetector),
-		parsers:   make(map[string]ImportParser),
-		resolvers: make(map[string]EdgeResolver),
+		detectors:      make(map[string]ModuleDetector),
+		parsers:        make(map[string]ImportParser),
+		resolvers:      make(map[string]EdgeResolver),
+		symbolAdapters: make(map[string]SymbolAdapter),
 	}
 
 	// Register Go (detector + import parser + code-graph edge resolver)
@@ -42,6 +44,12 @@ func NewRegistry() *Registry {
 	for _, ext := range jsImpl.Extensions() {
 		r.parsers[ext] = jsImpl
 		r.resolvers[ext] = jsImpl
+		r.symbolAdapters[ext] = jsImpl
+	}
+	vueImpl := &VueLang{}
+	for _, ext := range vueImpl.Extensions() {
+		r.resolvers[ext] = vueImpl
+		r.symbolAdapters[ext] = vueImpl
 	}
 
 	// Register Python (detector + import parser + code-graph edge resolver:
@@ -169,8 +177,42 @@ func GetIgnoreChecker(projectRoot string) *IgnoreChecker {
 func IsExcludedDir(name string) bool {
 	// Minimal hardcoded set — only things that should NEVER be scanned
 	switch name {
-	case ".git", ".haft", ".claude", ".context":
+	case ".git", ".haft", ".claude", ".context", "node_modules":
 		return true
 	}
 	return false
+}
+
+// walkProjectFiles is the canonical filesystem boundary for derived project
+// indexes. Every consumer sees the same hard exclusions and ignore carriers,
+// so a project model cannot accidentally traverse dependency trees that the
+// symbol scanner excludes.
+func walkProjectFiles(
+	projectRoot string,
+	visit func(path string, relPath string, entry os.DirEntry) error,
+) error {
+	ignoreChecker := NewIgnoreChecker(projectRoot)
+	return filepath.WalkDir(projectRoot, func(path string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		relPath, err := filepath.Rel(projectRoot, path)
+		if err != nil {
+			return err
+		}
+		relPath = filepath.ToSlash(relPath)
+		if entry.IsDir() {
+			if IsExcludedDir(entry.Name()) {
+				return filepath.SkipDir
+			}
+			if relPath != "." && ignoreChecker.IsIgnored(relPath) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if ignoreChecker.IsIgnored(relPath) {
+			return nil
+		}
+		return visit(path, relPath, entry)
+	})
 }

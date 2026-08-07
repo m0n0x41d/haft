@@ -39,15 +39,20 @@ type Config struct {
 //
 // Either sentinel means "run FTS5+PPR only" — never a hard recall failure.
 func New(cfg Config) (Embedder, error) {
-	switch strings.ToLower(strings.TrimSpace(cfg.Provider)) {
-	case "", ProviderLocal:
+	provider, err := normalizeProvider(cfg.Provider)
+	if err != nil {
+		return nil, err
+	}
+
+	switch provider {
+	case ProviderLocal:
 		return newSidecarAdapter(cfg)
 	case ProviderOpenAI:
 		return newOpenAIAdapter(cfg)
 	case ProviderNone:
 		return nil, ErrDisabled
 	default:
-		return nil, fmt.Errorf("unknown embedding provider %q", cfg.Provider)
+		return nil, fmt.Errorf("embedding provider %q has no adapter", provider)
 	}
 }
 
@@ -56,4 +61,24 @@ func New(cfg Config) (Embedder, error) {
 // silently fall back or surface the error.
 func Degraded(err error) bool {
 	return errors.Is(err, ErrDisabled) || errors.Is(err, ErrSidecarUnavailable)
+}
+
+// ValidateProvider checks the provider selector without constructing an
+// adapter. It lets diagnostics validate configuration without requiring local
+// model binaries or remote credentials.
+func ValidateProvider(provider string) error {
+	_, err := normalizeProvider(provider)
+	return err
+}
+
+func normalizeProvider(provider string) (string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	switch normalized {
+	case "", ProviderLocal:
+		return ProviderLocal, nil
+	case ProviderOpenAI, ProviderNone:
+		return normalized, nil
+	default:
+		return "", fmt.Errorf("unknown embedding provider %q", provider)
+	}
 }

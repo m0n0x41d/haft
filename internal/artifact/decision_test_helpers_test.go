@@ -1,6 +1,9 @@
 package artifact
 
 func completeDecision(input DecideInput) DecideInput {
+	if input.ProblemRef == "" && len(input.ProblemRefs) == 0 && input.PortfolioRef == "" && input.ProblemStatement == "" {
+		input.ProblemStatement = "The decision test requires an explicit problem basis without a linked ProblemCard."
+	}
 	if input.SelectionPolicy == "" {
 		input.SelectionPolicy = "Prefer the option that best satisfies the active acceptance criteria with the least avoidable complexity."
 	}

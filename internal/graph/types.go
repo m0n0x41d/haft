@@ -51,4 +51,5 @@ type ImpactItem struct {
 	DecisionTitle string `json:"decision_title"`
 	Distance      int    `json:"distance"` // hops from changed module
 	IsDirect      bool   `json:"is_direct"`
+	ContextLane   string `json:"context_lane"` // affected_path_context | module_context
 }

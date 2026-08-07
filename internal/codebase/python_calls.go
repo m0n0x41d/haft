@@ -201,9 +201,10 @@ func extractPythonCallsAndCallbacks(root *sitter.Node, content []byte) ([]CallSi
 // callback whose enclosing function is wired to it through indirect dispatch.
 // callee is the called name, used to gate on callback-shaped sinks.
 type callbackRef struct {
-	callee string
-	name   string
-	line   int
+	callee   string
+	name     string
+	line     int
+	shadowed bool
 }
 
 // callbackSinkNames are call targets that conventionally ACCEPT a callback — a
@@ -243,6 +244,9 @@ func synthesizeCallbackEdges(relPath string, fileSyms []CodeSymbol, refs []callb
 	seen := map[string]bool{}
 	var edges []CodeEdge
 	for _, r := range refs {
+		if r.shadowed {
+			continue
+		}
 		if !looksLikeCallbackSink(r.callee) {
 			continue // the call is not a callback sink — the arg is plain data, not a callback
 		}

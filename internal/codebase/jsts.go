@@ -14,7 +14,7 @@ type JSTSLang struct{}
 
 func (j *JSTSLang) Language() string { return "jsts" }
 func (j *JSTSLang) Extensions() []string {
-	return []string{".js", ".jsx", ".ts", ".tsx", ".mjs", ".mts"}
+	return []string{".js", ".jsx", ".mjs", ".cjs", ".ts", ".tsx", ".mts", ".cts"}
 }
 
 // DetectModules discovers JS/TS packages by looking for package.json files.
@@ -101,15 +101,13 @@ var (
 )
 
 // ParseImports extracts import/require edges from a JS/TS file.
-func (j *JSTSLang) ParseImports(filePath string, projectRoot string) ([]ImportEdge, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, nil
-	}
-
-	relFile, _ := filepath.Rel(projectRoot, filePath)
+func (j *JSTSLang) ParseImports(
+	source AdmittedSource,
+	_ string,
+) ([]ImportEdge, error) {
+	relFile := source.Path().String()
 	sourceDir := filepath.Dir(relFile)
-	content := string(data)
+	content := string(source.bytes())
 
 	var edges []ImportEdge
 	seen := make(map[string]bool)
@@ -198,7 +196,10 @@ func (j *JSTSLang) readPackageName(pkgPath string) string {
 }
 
 func countJSTSFiles(dir string) int {
-	jsExts := map[string]bool{".js": true, ".jsx": true, ".ts": true, ".tsx": true, ".mjs": true, ".mts": true}
+	jsExts := map[string]bool{
+		".js": true, ".jsx": true, ".mjs": true, ".cjs": true,
+		".ts": true, ".tsx": true, ".mts": true, ".cts": true,
+	}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return 0

@@ -37,6 +37,8 @@ type SpecCheckFinding struct {
 	NextAction string `json:"next_action,omitempty"`
 }
 
+const SpecMigrationRequiredFindingCode = "spec_migration_required"
+
 type SpecCheckSummary struct {
 	TotalFindings      int `json:"total_findings"`
 	SpecSections       int `json:"spec_sections"`
@@ -55,6 +57,10 @@ type SpecDocumentKind string
 
 const (
 	SpecDocumentKindTargetSystem   SpecDocumentKind = "target-system"
+	SpecDocumentKindSoftwareSystem SpecDocumentKind = "software-system"
+	// SpecDocumentKindEnablingSystem is retained only so migration diagnostics can
+	// identify development-version carriers. It is not part of the current
+	// ProjectSpecificationSet.
 	SpecDocumentKindEnablingSystem SpecDocumentKind = "enabling-system"
 	SpecDocumentKindTermMap        SpecDocumentKind = "term-map"
 )
@@ -80,6 +86,7 @@ const (
 type SpecSection struct {
 	ID               string                    `json:"id"`
 	Spec             string                    `json:"spec"`
+	SystemFrame      SystemReferenceFrame      `json:"system_frame"`
 	Kind             string                    `json:"kind"`
 	Title            string                    `json:"title,omitempty"`
 	StatementType    string                    `json:"statement_type"`
@@ -91,10 +98,28 @@ type SpecSection struct {
 	DependsOn        []string                  `json:"depends_on,omitempty"`
 	TargetRefs       []string                  `json:"target_refs,omitempty"`
 	EvidenceRequired []SpecEvidenceRequirement `json:"evidence_required,omitempty"`
+	Claims           []SpecClaim               `json:"claims,omitempty"`
 	DocumentKind     string                    `json:"document_kind"`
 	Path             string                    `json:"path"`
 	Line             int                       `json:"line,omitempty"`
 	Malformed        bool                      `json:"malformed,omitempty"`
+}
+
+type SystemReferenceFrame struct {
+	ID     string `json:"id"`
+	Kind   string `json:"kind"`
+	Source string `json:"source,omitempty"`
+}
+
+type SpecClaim struct {
+	ID                   string   `json:"id"`
+	Class                string   `json:"class"`
+	Statement            string   `json:"statement,omitempty"`
+	Scope                []string `json:"scope,omitempty"`
+	SupportRefs          []string `json:"support_refs,omitempty"`
+	EvidenceRefs         []string `json:"evidence_refs,omitempty"`
+	ValidUntil           string   `json:"valid_until,omitempty"`
+	GoverningPatternRefs []string `json:"governing_pattern_refs,omitempty"`
 }
 
 type SpecEvidenceRequirement struct {
@@ -103,8 +128,11 @@ type SpecEvidenceRequirement struct {
 }
 
 type TermMapEntry struct {
-	Term         string   `json:"term"`
-	Domain       string   `json:"domain"`
+	Term     string `json:"term"`
+	Category string `json:"category"`
+	// Deprecated: Domain is a compatibility mirror for Category while older
+	// term-map carriers and API consumers migrate away from `domain`.
+	Domain       string   `json:"domain,omitempty"`
 	Definition   string   `json:"definition"`
 	Not          []string `json:"not,omitempty"`
 	Aliases      []string `json:"aliases,omitempty"`
@@ -140,7 +168,7 @@ type termMapAlias struct {
 
 var specCheckCarriers = []specCheckCarrier{
 	{relativePath: filepath.Join(".haft", "specs", "target-system.md"), kind: "target-system"},
-	{relativePath: filepath.Join(".haft", "specs", "enabling-system.md"), kind: "enabling-system"},
+	{relativePath: filepath.Join(".haft", "specs", "software-system.md"), kind: "software-system"},
 	{relativePath: filepath.Join(".haft", "specs", "term-map.md"), kind: "term-map"},
 }
 
@@ -175,6 +203,27 @@ var SpecSectionValidClaimLayers = []string{
 	"evidence",
 }
 
+// SpecSectionValidOwners is the canonical set of owner values accepted by
+// the carrier parser and published by the draft contract. Keeping the values
+// here prevents a public contract from shadowing parser behavior.
+var SpecSectionValidOwners = []string{
+	"human",
+	"haft",
+	"agent",
+	"ci",
+	"external-carrier",
+}
+
+// SpecSectionValidStatuses is the canonical set of status values accepted by
+// the carrier parser. Draft validation consumes the same set without
+// promoting a draft to an active or approved section.
+var SpecSectionValidStatuses = []string{
+	"draft",
+	"active",
+	"deprecated",
+	"superseded",
+}
+
 // SpecSectionValidGuardLocations is the canonical set of guard_location
 // values for evidence_required[].kind on invariant / illegal-state
 // sections. Mirrors the FPF / Levenchuk layer vocabulary.
@@ -192,19 +241,8 @@ var SpecSectionValidGuardLocations = []string{
 var specSectionValueSets = map[string]map[string]struct{}{
 	"statement_type": stringSliceToSet(SpecSectionValidStatementTypes),
 	"claim_layer":    stringSliceToSet(SpecSectionValidClaimLayers),
-	"owner": {
-		"human":            {},
-		"haft":             {},
-		"agent":            {},
-		"ci":               {},
-		"external-carrier": {},
-	},
-	"status": {
-		"draft":      {},
-		"active":     {},
-		"deprecated": {},
-		"superseded": {},
-	},
+	"owner":          stringSliceToSet(SpecSectionValidOwners),
+	"status":         stringSliceToSet(SpecSectionValidStatuses),
 }
 
 func stringSliceToSet(values []string) map[string]struct{} {
@@ -237,6 +275,42 @@ func CheckSpecificationSet(projectRoot string) (SpecCheckReport, error) {
 	return normalizeSpecCheckReport(report), nil
 }
 
+// CheckSpecificationSetForScope reads and checks only the built-in carriers
+// that the supplied canonical profile projection marks Required. A
+// NotApplicable carrier is absent from the read set rather than waived after
+// a failing check. Capability-local Underdetermined state remains a visible
+// finding and cannot produce readiness.
+func CheckSpecificationSetForScope(
+	projectRoot string,
+	applicability ProjectSpecificationSetApplicability,
+) (SpecCheckReport, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return newSpecCheckReport(), fmt.Errorf("project root is required")
+	}
+
+	report := newSpecCheckReport()
+	documents, findings, err := loadSpecDocumentInputsForScope(
+		root,
+		applicability,
+	)
+	if err != nil {
+		return report, err
+	}
+
+	report.Findings = append(report.Findings, findings...)
+
+	checked, err := CheckSpecDocumentsForScope(documents, applicability)
+	if err != nil {
+		return report, err
+	}
+	report.Documents = checked.Documents
+	report.Findings = append(report.Findings, checked.Findings...)
+	report.Summary = summarizeSpecCheck(report)
+
+	return normalizeSpecCheckReport(report), nil
+}
+
 func LoadSpecSections(projectRoot string) ([]SpecSection, error) {
 	root := strings.TrimSpace(projectRoot)
 	if root == "" {
@@ -249,6 +323,42 @@ func LoadSpecSections(projectRoot string) ([]SpecSection, error) {
 	}
 
 	return SpecSectionsFromDocuments(documents), nil
+}
+
+func LoadSpecSectionsForScope(
+	projectRoot string,
+	applicability ProjectSpecificationSetApplicability,
+) ([]SpecSection, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return nil, fmt.Errorf("project root is required")
+	}
+
+	documents, _, err := loadSpecDocumentInputsForScope(root, applicability)
+	if err != nil {
+		return nil, err
+	}
+
+	specSet, err := ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+	if err != nil {
+		return nil, err
+	}
+	sections := append([]SpecSection{}, specSet.Sections...)
+	sort.SliceStable(sections, func(i int, j int) bool {
+		left := sections[i]
+		right := sections[j]
+		if left.Path != right.Path {
+			return left.Path < right.Path
+		}
+		if left.Line != right.Line {
+			return left.Line < right.Line
+		}
+		return left.ID < right.ID
+	})
+	return sections, nil
 }
 
 // LoadProjectSpecificationSet parses the project's spec carriers and
@@ -272,12 +382,93 @@ func LoadProjectSpecificationSet(projectRoot string) (ProjectSpecificationSet, e
 	return normalizeProjectSpecificationSet(specSet), nil
 }
 
+// LoadProjectSpecificationSetForScope composes the profile-aware carrier
+// loader with the pure scoped projection. It does not resolve a profile or
+// mutate lifecycle state.
+func LoadProjectSpecificationSetForScope(
+	projectRoot string,
+	applicability ProjectSpecificationSetApplicability,
+) (ProjectSpecificationSet, error) {
+	root := strings.TrimSpace(projectRoot)
+	if root == "" {
+		return ProjectSpecificationSet{}, fmt.Errorf("project root is required")
+	}
+
+	documents, loadFindings, err := loadSpecDocumentInputsForScope(
+		root,
+		applicability,
+	)
+	if err != nil {
+		return ProjectSpecificationSet{}, err
+	}
+
+	specSet, err := ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+	if err != nil {
+		return ProjectSpecificationSet{}, err
+	}
+	specSet.Findings = append(loadFindings, specSet.Findings...)
+
+	return normalizeProjectSpecificationSet(specSet), nil
+}
+
 func CheckSpecDocuments(documents []SpecDocumentInput) SpecCheckReport {
 	specSet := ProjectSpecificationSetFromDocuments(documents)
 	return SpecCheckReportFromSpecificationSet(specSet)
 }
 
+// CheckSpecDocumentsForScope applies the central profile matrix before
+// parsing/checking built-in specification members. Exclusion is normal
+// applicability, not a waived finding.
+func CheckSpecDocumentsForScope(
+	documents []SpecDocumentInput,
+	applicability ProjectSpecificationSetApplicability,
+) (SpecCheckReport, error) {
+	specSet, err := ProjectSpecificationSetFromDocumentsForScope(
+		documents,
+		applicability,
+	)
+	if err != nil {
+		return newSpecCheckReport(), err
+	}
+	return SpecCheckReportFromSpecificationSet(specSet), nil
+}
+
 func ProjectSpecificationSetFromDocuments(documents []SpecDocumentInput) ProjectSpecificationSet {
+	return projectSpecificationSetFromDocuments(documents)
+}
+
+// ProjectSpecificationSetFromDocumentsForScope is the first read-only
+// consumer of the central capability matrix. It neither resolves the profile
+// nor mutates carriers; callers must supply a scope-local projection derived
+// from the canonical admission result.
+func ProjectSpecificationSetFromDocumentsForScope(
+	documents []SpecDocumentInput,
+	applicability ProjectSpecificationSetApplicability,
+) (ProjectSpecificationSet, error) {
+	if !applicability.Valid() {
+		return ProjectSpecificationSet{}, fmt.Errorf(
+			"project specification applicability is invalid",
+		)
+	}
+	selected := applicableSpecDocumentInputs(documents, applicability)
+	specSet := projectSpecificationSetFromDocuments(selected)
+	underdetermined := applicability.UnderdeterminedDocumentKinds()
+	if len(underdetermined) > 0 {
+		specSet.Findings = append(
+			specSet.Findings,
+			profileApplicabilityUnderdeterminedFinding(
+				applicability,
+				underdetermined,
+			),
+		)
+	}
+	return normalizeProjectSpecificationSet(specSet), nil
+}
+
+func projectSpecificationSetFromDocuments(documents []SpecDocumentInput) ProjectSpecificationSet {
 	specSet := newProjectSpecificationSet()
 	seenSectionIDs := make(map[string]SpecSection)
 	seenTerms := make(map[string]TermMapEntry)
@@ -302,9 +493,7 @@ func ProjectSpecificationSetFromDocuments(documents []SpecDocumentInput) Project
 func SpecCheckReportFromSpecificationSet(specSet ProjectSpecificationSet) SpecCheckReport {
 	report := newSpecCheckReport()
 
-	for _, document := range specSet.Documents {
-		report.Documents = append(report.Documents, specCheckDocumentFromSpecDocument(document))
-	}
+	report.Documents = specCheckDocumentsFromSpecDocuments(specSet.Documents)
 	report.Findings = append(report.Findings, specSet.Findings...)
 
 	report.Summary = summarizeSpecCheck(report)
@@ -363,13 +552,90 @@ func specCheckDocumentFromSpecDocument(document SpecDocument) SpecCheckDocument 
 	}
 }
 
-func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFinding, error) {
-	documents := make([]SpecDocumentInput, 0, len(specCheckCarriers))
-	findings := ignoredSpecCarrierFindings(root)
+func specCheckDocumentsFromSpecDocuments(documents []SpecDocument) []SpecCheckDocument {
+	out := []SpecCheckDocument{}
+	indexByKey := map[string]int{}
 
-	for _, carrier := range specCheckCarriers {
+	for _, document := range documents {
+		summary := specCheckDocumentFromSpecDocument(document)
+		key := specCheckDocumentKey(summary)
+		index, ok := indexByKey[key]
+		if ok {
+			out[index] = mergeSpecCheckDocument(out[index], summary)
+			continue
+		}
+		indexByKey[key] = len(out)
+		out = append(out, summary)
+	}
+
+	return out
+}
+
+func specCheckDocumentKey(document SpecCheckDocument) string {
+	return document.Path + "\x00" + document.Kind
+}
+
+func mergeSpecCheckDocument(left SpecCheckDocument, right SpecCheckDocument) SpecCheckDocument {
+	return SpecCheckDocument{
+		Path:               left.Path,
+		Kind:               left.Kind,
+		SpecSections:       left.SpecSections + right.SpecSections,
+		ActiveSpecSections: left.ActiveSpecSections + right.ActiveSpecSections,
+		TermMapEntries:     left.TermMapEntries + right.TermMapEntries,
+	}
+}
+
+func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFinding, error) {
+	return loadSelectedSpecDocumentInputs(root, specCheckCarriers)
+}
+
+func loadSpecDocumentInputsForScope(
+	root string,
+	applicability ProjectSpecificationSetApplicability,
+) ([]SpecDocumentInput, []SpecCheckFinding, error) {
+	carriers, err := requiredSpecCheckCarriers(applicability)
+	if err != nil {
+		return nil, nil, err
+	}
+	return loadSelectedSpecDocumentInputs(root, carriers)
+}
+
+func loadSelectedSpecDocumentInputs(
+	root string,
+	carriers []specCheckCarrier,
+) ([]SpecDocumentInput, []SpecCheckFinding, error) {
+	documents := make([]SpecDocumentInput, 0, len(carriers))
+	findings := ignoredSpecCarrierFindings(root)
+	legacyRelativePath := filepath.Join(".haft", "specs", "enabling-system.md")
+	legacyPath := filepath.Join(root, legacyRelativePath)
+	softwareRequired := containsSpecCheckCarrier(
+		carriers,
+		string(SpecDocumentKindSoftwareSystem),
+	)
+	legacyContent, legacyPresent := loadLegacySoftwareCarrier(
+		legacyPath,
+		softwareRequired,
+	)
+	if legacyPresent {
+		findings = append(findings, SpecCheckFinding{
+			Level:      "error",
+			Code:       SpecMigrationRequiredFindingCode,
+			Path:       filepath.ToSlash(legacyRelativePath),
+			Message:    "development-version enabling-system spec must be migrated before software-system readiness can pass",
+			NextAction: "run `haft spec migrate`; Haft resolves and continues the exact registered migration, then run `haft spec sync` after completion",
+		})
+	}
+
+	for _, carrier := range carriers {
 		path := filepath.Join(root, carrier.relativePath)
 		content, err := os.ReadFile(path)
+		if os.IsNotExist(err) && carrier.kind == string(SpecDocumentKindSoftwareSystem) {
+			if legacyPresent {
+				path = legacyPath
+				content = []byte(RenderSoftwareSystemCarrier(string(legacyContent)))
+				err = nil
+			}
+		}
 		switch {
 		case err == nil:
 			documents = append(documents, SpecDocumentInput{
@@ -390,6 +656,29 @@ func loadSpecDocumentInputs(root string) ([]SpecDocumentInput, []SpecCheckFindin
 	}
 
 	return documents, findings, nil
+}
+
+func containsSpecCheckCarrier(
+	carriers []specCheckCarrier,
+	kind string,
+) bool {
+	for _, carrier := range carriers {
+		if carrier.kind == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func loadLegacySoftwareCarrier(
+	path string,
+	softwareRequired bool,
+) ([]byte, bool) {
+	if !softwareRequired {
+		return nil, false
+	}
+	content, err := os.ReadFile(path)
+	return content, err == nil
 }
 
 func ignoredSpecCarrierFindings(root string) []SpecCheckFinding {
@@ -559,17 +848,17 @@ func projectSpecificationReadinessFindings(specSet ProjectSpecificationSet) []Sp
 	if targetOK && !targetActive {
 		findings = append(findings, noActiveSpecSectionFinding(
 			target.Path,
-			"target-system spec has no active sections; draft placeholders do not make the product specified",
+			"target-system spec has no active sections; draft sections remain review material and do not make the product specified",
 			"run target-system onboarding and add human-approved active sections for environment change, target role, boundaries, interfaces, invariants, risks, and acceptance evidence",
 		))
 	}
 
-	enabling, enablingOK := specDocumentByKind(specSet.Documents, SpecDocumentKindEnablingSystem)
-	if enablingOK && !targetActive && countActiveSpecSections(enabling.Sections) == 0 {
+	software, softwareOK := specDocumentByKind(specSet.Documents, SpecDocumentKindSoftwareSystem)
+	if softwareOK && countActiveSpecSections(software.Sections) == 0 {
 		findings = append(findings, noActiveSpecSectionFinding(
-			enabling.Path,
-			"enabling-system spec has no active sections; draft placeholders do not authorize engineering governance",
-			"after the target spec is admissible, add active enabling sections for creator roles, repo architecture, effect boundaries, test strategy, surfaces, and runtime policy",
+			software.Path,
+			"software-system spec has no active sections; draft sections remain review material and do not specify the software that realizes the target system",
+			"after the target spec is admissible, add active software sections for role, functional behavior, interfaces, constraints, and selected structure where needed",
 		))
 	}
 
@@ -601,6 +890,38 @@ func noActiveSpecSectionFinding(
 		Message:    message,
 		NextAction: nextAction,
 	}
+}
+
+func profileApplicabilityUnderdeterminedFinding(
+	applicability ProjectSpecificationSetApplicability,
+	documentKinds []SpecDocumentKind,
+) SpecCheckFinding {
+	names := make([]string, len(documentKinds))
+	fillSpecDocumentKindNames(documentKinds, names, 0)
+	return SpecCheckFinding{
+		Level:     "L1",
+		Code:      "profile_capability_applicability_underdetermined",
+		Path:      filepath.ToSlash(filepath.Join(".haft", "project-profile.yaml")),
+		FieldPath: "$.scopes",
+		Message: fmt.Sprintf(
+			"scope %q cannot yet determine applicability for %s from the canonical profile alone",
+			applicability.ScopeID().String(),
+			strings.Join(names, ", "),
+		),
+		NextAction: "recover and admit the missing capability-specific relation basis; do not infer it from repository shape",
+	}
+}
+
+func fillSpecDocumentKindNames(
+	documentKinds []SpecDocumentKind,
+	result []string,
+	index int,
+) {
+	if index == len(documentKinds) {
+		return
+	}
+	result[index] = string(documentKinds[index])
+	fillSpecDocumentKindNames(documentKinds, result, index+1)
 }
 
 func validateSpecSectionFields(
@@ -654,13 +975,18 @@ func validateSpecSectionFields(
 	if title, ok := scalarString(fields["title"]); ok {
 		section.Title = title
 	}
+	if spec, ok := scalarString(fields["spec"]); ok {
+		section.Spec = spec
+	}
 	if validUntil, ok := specSectionValidUntilString(fields["valid_until"]); ok {
 		section.ValidUntil = validUntil
 	}
+	section.SystemFrame = specSectionSystemFrame(fields, section.Spec, documentKind)
 	section.Terms = specSectionStringList(fields, "terms")
 	section.DependsOn = specSectionRefList(fields, "depends_on")
 	section.TargetRefs = specSectionRefList(fields, "target_refs")
 	section.EvidenceRequired = specSectionEvidenceRequirements(fields)
+	section.Claims = specSectionClaims(fields)
 
 	for field, allowed := range specSectionValueSets {
 		value, ok := scalarString(fields[field])
@@ -772,13 +1098,169 @@ func specSectionEvidenceRequirements(fields map[string]any) []SpecEvidenceRequir
 	return requirements
 }
 
+func specSectionClaims(fields map[string]any) []SpecClaim {
+	raw, ok := fields["claims"]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	claims := make([]SpecClaim, 0, len(items))
+	for _, item := range items {
+		itemFields, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+
+		claim := SpecClaim{}
+		if id, ok := strictString(itemFields["id"]); ok {
+			claim.ID = id
+		}
+		if class, ok := strictString(itemFields["class"]); ok {
+			claim.Class = class
+		}
+		if statement, ok := strictString(itemFields["statement"]); ok {
+			claim.Statement = statement
+		}
+		if claim.Statement == "" {
+			if statement, ok := strictString(itemFields["claim"]); ok {
+				claim.Statement = statement
+			}
+		}
+		if validUntil, ok := specSectionValidUntilString(itemFields["valid_until"]); ok {
+			claim.ValidUntil = validUntil
+		}
+		claim.Scope = specClaimStringList(itemFields, "scope")
+		claim.SupportRefs = specClaimStringList(itemFields, "support_refs")
+		claim.EvidenceRefs = specClaimStringList(itemFields, "evidence_refs")
+		claim.GoverningPatternRefs = specClaimStringList(itemFields, "governing_pattern_refs")
+
+		claims = append(claims, claim)
+	}
+
+	return claims
+}
+
+func specSectionSystemFrame(fields map[string]any, spec string, documentKind string) SystemReferenceFrame {
+	if raw, ok := fields["system_frame"]; ok {
+		frame := systemFrameFromRaw(raw, "system_frame")
+		if frame.Kind != "" {
+			return frame
+		}
+	}
+	if spec, ok := strictString(fields["spec"]); ok {
+		frame := systemFrameFromString(spec, "spec")
+		if frame.Kind != "" {
+			return frame
+		}
+	}
+	if frame := systemFrameFromString(spec, "spec_default"); frame.Kind != "" {
+		return frame
+	}
+
+	return systemFrameFromString(documentKind, "carrier_kind")
+}
+
+func systemFrameFromRaw(raw any, source string) SystemReferenceFrame {
+	if value, ok := strictString(raw); ok {
+		return systemFrameFromString(value, source)
+	}
+
+	fields, ok := raw.(map[string]any)
+	if !ok {
+		return SystemReferenceFrame{Source: source}
+	}
+
+	if kind, ok := strictString(fields["kind"]); ok {
+		frame := systemFrameFromString(kind, source)
+		if frame.ID == "" {
+			if id, ok := strictString(fields["id"]); ok {
+				frame.ID = id
+			}
+		}
+		return frame
+	}
+	if id, ok := strictString(fields["id"]); ok {
+		return systemFrameFromString(id, source)
+	}
+
+	return SystemReferenceFrame{Source: source}
+}
+
+func systemFrameFromString(value string, source string) SystemReferenceFrame {
+	kind := normalizeSystemFrameKind(value)
+	if kind == "" {
+		return SystemReferenceFrame{Source: source}
+	}
+
+	return SystemReferenceFrame{
+		ID:     kind,
+		Kind:   kind,
+		Source: source,
+	}
+}
+
+func normalizeSystemFrameKind(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+
+	switch normalized {
+	case "target_system", "target":
+		return "target_system"
+	case "software_system", "software":
+		return "software_system"
+	case "enabling_system", "enabling":
+		return "enabling_system"
+	case "carrier", "carrier_system", "publication", "publication_system":
+		return "carrier"
+	case "sidekick", "external_sidekick", "external_system":
+		return "sidekick"
+	default:
+		return ""
+	}
+}
+
+func allowedSystemFrameKindsDescription() string {
+	return "target_system, software_system, carrier, or sidekick; enabling_system is legacy migration input"
+}
+
+func specClaimStringList(fields map[string]any, field string) []string {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+
+	values := make([]string, 0, len(items))
+	for _, item := range items {
+		value, ok := strictString(item)
+		if !ok {
+			continue
+		}
+
+		values = append(values, value)
+	}
+
+	return sortedUniqueStrings(values)
+}
+
 func validateSpecSectionShape(path string, line int, documentKind string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	findings := make([]SpecCheckFinding, 0)
 
+	findings = append(findings, validateOptionalSpecSystemFrame(path, line, section.ID, fields)...)
 	findings = append(findings, validateOptionalSpecStringList(path, line, section.ID, fields, "terms", "spec_section_invalid_terms")...)
 	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "depends_on", "spec_section_invalid_depends_on")...)
 	findings = append(findings, validateOptionalRefList(path, line, section.ID, fields, "target_refs", "spec_section_invalid_target_refs")...)
 	findings = append(findings, validateOptionalEvidenceRequired(path, line, section.ID, fields)...)
+	findings = append(findings, validateOptionalSpecClaims(path, line, section.ID, fields)...)
 	findings = append(findings, validateOptionalValidUntil(path, line, section.ID, fields, section)...)
 	findings = append(findings, validateCarrierClaimAllowance(path, line, documentKind, fields, section)...)
 
@@ -848,21 +1330,22 @@ func validateTermMapEntry(path string, line int, entryPath string, fields map[st
 	}
 
 	term, termFindings := requiredTermMapStringField(path, line, entryPath, fields, "term", "term_map_missing_term")
-	domain, domainFindings := requiredTermMapStringField(path, line, entryPath, fields, "domain", "term_map_missing_domain")
+	category, categoryFindings := termMapCategoryField(path, line, entryPath, fields)
 	definition, definitionFindings := requiredTermMapStringField(path, line, entryPath, fields, "definition", "term_map_missing_definition")
 	notFindings := validateOptionalStringList(path, line, entryPath, fields, "not", "term_map_invalid_not")
 	aliases, aliasFindings := extractTermMapAliases(path, line, entryPath, fields, term)
 	ownersFindings := validateOptionalStringList(path, line, entryPath, fields, "owners", "term_map_invalid_owners")
 
 	findings = append(findings, termFindings...)
-	findings = append(findings, domainFindings...)
+	findings = append(findings, categoryFindings...)
 	findings = append(findings, definitionFindings...)
 	findings = append(findings, notFindings...)
 	findings = append(findings, aliasFindings...)
 	findings = append(findings, ownersFindings...)
 
 	entry.Term = term
-	entry.Domain = domain
+	entry.Category = category
+	entry.Domain = category
 	entry.Definition = definition
 	entry.Not = termMapStringList(fields, "not")
 	entry.Aliases = termMapAliasValues(aliases)
@@ -942,6 +1425,44 @@ func duplicateAliasFindings(path string, entries []TermMapEntry, seen map[string
 	}
 
 	return findings
+}
+
+func validateOptionalSpecSystemFrame(path string, line int, sectionID string, fields map[string]any) []SpecCheckFinding {
+	raw, ok := fields["system_frame"]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := "$.system_frame"
+	if value, ok := strictString(raw); ok {
+		if normalizeSystemFrameKind(value) != "" {
+			return nil
+		}
+
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "spec-section `system_frame` must be "+allowedSystemFrameKindsDescription())}
+	}
+
+	itemFields, ok := raw.(map[string]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "spec-section `system_frame` must be a string or mapping")}
+	}
+
+	if kind, ok := strictString(itemFields["kind"]); ok {
+		if normalizeSystemFrameKind(kind) != "" {
+			return nil
+		}
+
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "kind"), "spec_section_invalid_system_frame", "system_frame.kind must be "+allowedSystemFrameKindsDescription())}
+	}
+	if id, ok := strictString(itemFields["id"]); ok {
+		if normalizeSystemFrameKind(id) != "" {
+			return nil
+		}
+
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(fieldPath, "id"), "spec_section_invalid_system_frame", "system_frame.id must be "+allowedSystemFrameKindsDescription())}
+	}
+
+	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_system_frame", "system_frame mapping must include `kind` or `id`")}
 }
 
 func validateOptionalRefList(path string, line int, sectionID string, fields map[string]any, field string, code string) []SpecCheckFinding {
@@ -1043,6 +1564,106 @@ func validateOptionalEvidenceRequired(path string, line int, sectionID string, f
 	return findings
 }
 
+func validateOptionalSpecClaims(path string, line int, sectionID string, fields map[string]any) []SpecCheckFinding {
+	raw, ok := fields["claims"]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := "$.claims"
+	items, ok := raw.([]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_claims", "spec-section `claims` must be a YAML list")}
+	}
+
+	findings := make([]SpecCheckFinding, 0)
+	for index, item := range items {
+		itemPath := indexedFieldPath(fieldPath, index)
+		itemFields, ok := item.(map[string]any)
+		if !ok {
+			findings = append(findings, invalidSpecSectionShapeFinding(path, line, sectionID, itemPath, "spec_section_invalid_claims", "claim entries must be mappings with stable `id` and non-empty `class`"))
+			continue
+		}
+
+		findings = append(findings, validateSpecClaimRequiredString(path, line, sectionID, itemPath, itemFields, "id")...)
+		findings = append(findings, validateSpecClaimRequiredString(path, line, sectionID, itemPath, itemFields, "class")...)
+		findings = append(findings, validateOptionalSpecClaimString(path, line, sectionID, itemPath, itemFields, "statement")...)
+		findings = append(findings, validateOptionalSpecClaimString(path, line, sectionID, itemPath, itemFields, "claim")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "scope")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "support_refs")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "evidence_refs")...)
+		findings = append(findings, validateOptionalSpecClaimStringList(path, line, sectionID, itemPath, itemFields, "governing_pattern_refs")...)
+		findings = append(findings, validateOptionalSpecClaimValidUntil(path, line, sectionID, itemPath, itemFields)...)
+	}
+
+	return findings
+}
+
+func validateSpecClaimRequiredString(path string, line int, sectionID string, itemPath string, fields map[string]any, field string) []SpecCheckFinding {
+	value, ok := strictString(fields[field])
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, field), "spec_section_invalid_claims", fmt.Sprintf("claim `%s` must be a non-empty string", field))}
+	}
+	if field == "id" && !isStableSpecSectionID(value) {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, field), "spec_section_invalid_claims", "claim `id` must be a stable non-empty token without whitespace")}
+	}
+
+	return nil
+}
+
+func validateOptionalSpecClaimString(path string, line int, sectionID string, itemPath string, fields map[string]any, field string) []SpecCheckFinding {
+	if _, ok := fields[field]; !ok {
+		return nil
+	}
+	if _, ok := strictString(fields[field]); ok {
+		return nil
+	}
+
+	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, field), "spec_section_invalid_claims", fmt.Sprintf("claim `%s` must be a non-empty string", field))}
+}
+
+func validateOptionalSpecClaimStringList(path string, line int, sectionID string, itemPath string, fields map[string]any, field string) []SpecCheckFinding {
+	raw, ok := fields[field]
+	if !ok {
+		return nil
+	}
+
+	fieldPath := joinFieldPath(itemPath, field)
+	items, ok := raw.([]any)
+	if !ok {
+		return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, fieldPath, "spec_section_invalid_claims", fmt.Sprintf("claim `%s` must be a YAML list of non-empty strings", field))}
+	}
+
+	findings := make([]SpecCheckFinding, 0)
+	for index, item := range items {
+		if _, ok := strictString(item); ok {
+			continue
+		}
+
+		findings = append(findings, invalidSpecSectionShapeFinding(
+			path,
+			line,
+			sectionID,
+			indexedFieldPath(fieldPath, index),
+			"spec_section_invalid_claims",
+			fmt.Sprintf("claim `%s` entries must be non-empty strings", field),
+		))
+	}
+
+	return findings
+}
+
+func validateOptionalSpecClaimValidUntil(path string, line int, sectionID string, itemPath string, fields map[string]any) []SpecCheckFinding {
+	if _, ok := fields["valid_until"]; !ok {
+		return nil
+	}
+	if _, ok := specSectionValidUntilString(fields["valid_until"]); ok {
+		return nil
+	}
+
+	return []SpecCheckFinding{invalidSpecSectionShapeFinding(path, line, sectionID, joinFieldPath(itemPath, "valid_until"), "spec_section_invalid_claims", "claim `valid_until` must be YYYY-MM-DD or RFC3339")}
+}
+
 func validateOptionalValidUntil(path string, line int, sectionID string, fields map[string]any, section SpecSection) []SpecCheckFinding {
 	raw, ok := fields["valid_until"]
 	if !ok {
@@ -1119,6 +1740,37 @@ func validateCarrierClaimAllowance(path string, line int, documentKind string, f
 	}}
 }
 
+func termMapCategoryField(path string, line int, entryPath string, fields map[string]any) (string, []SpecCheckFinding) {
+	category, categoryOK, categoryFindings := optionalTermMapStringField(path, line, entryPath, fields, "category")
+	domain, domainOK, domainFindings := optionalTermMapStringField(path, line, entryPath, fields, "domain")
+
+	findings := make([]SpecCheckFinding, 0)
+	findings = append(findings, categoryFindings...)
+	findings = append(findings, domainFindings...)
+
+	if categoryOK && domainOK && category != domain {
+		findings = append(findings, termMapCategoryDomainConflictFinding(path, line, entryPath))
+		return category, findings
+	}
+
+	if categoryOK {
+		return category, findings
+	}
+
+	if domainOK {
+		return domain, findings
+	}
+
+	if len(findings) > 0 {
+		return "", findings
+	}
+
+	fieldPath := joinFieldPath(entryPath, "category")
+	findings = append(findings, missingTermMapFieldFinding(path, line, fieldPath, "category", "term_map_missing_category"))
+
+	return "", findings
+}
+
 func requiredTermMapStringField(path string, line int, entryPath string, fields map[string]any, field string, missingCode string) (string, []SpecCheckFinding) {
 	raw, exists := fields[field]
 	fieldPath := joinFieldPath(entryPath, field)
@@ -1136,6 +1788,28 @@ func requiredTermMapStringField(path string, line int, entryPath string, fields 
 	}
 
 	return "", []SpecCheckFinding{{
+		Level:     "L1.5",
+		Code:      "term_map_invalid_field",
+		Path:      filepath.ToSlash(path),
+		FieldPath: fieldPath,
+		Line:      line,
+		Message:   fmt.Sprintf("term-map field `%s` must be a non-empty string", field),
+	}}
+}
+
+func optionalTermMapStringField(path string, line int, entryPath string, fields map[string]any, field string) (string, bool, []SpecCheckFinding) {
+	raw, exists := fields[field]
+	if !exists || raw == nil {
+		return "", false, nil
+	}
+
+	value, ok := strictString(raw)
+	if ok {
+		return value, true, nil
+	}
+
+	fieldPath := joinFieldPath(entryPath, field)
+	return "", false, []SpecCheckFinding{{
 		Level:     "L1.5",
 		Code:      "term_map_invalid_field",
 		Path:      filepath.ToSlash(path),
@@ -1267,6 +1941,17 @@ func missingTermMapFieldFinding(path string, line int, fieldPath string, field s
 		FieldPath: fieldPath,
 		Line:      line,
 		Message:   fmt.Sprintf("term-map entry missing required field `%s`", field),
+	}
+}
+
+func termMapCategoryDomainConflictFinding(path string, line int, entryPath string) SpecCheckFinding {
+	return SpecCheckFinding{
+		Level:     "L1.5",
+		Code:      "term_map_category_domain_conflict",
+		Path:      filepath.ToSlash(path),
+		FieldPath: joinFieldPath(entryPath, "domain"),
+		Line:      line,
+		Message:   "term-map entry has both canonical `category` and legacy `domain` with different values",
 	}
 }
 
@@ -1563,6 +2248,8 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 	switch finding.Code {
 	case "spec_carriers_gitignored":
 		return "unignore .haft/specs and other reviewable projections, or keep the carriers local and record the dogfood state in tracked specs/tests"
+	case SpecMigrationRequiredFindingCode:
+		return "run `haft spec migrate`; Haft resolves and continues the exact registered migration, then run `haft spec sync` after completion"
 	case "spec_carrier_no_active_sections":
 		return "keep placeholders draft and add human-approved active spec sections before treating readiness as passing"
 	case "spec_carrier_missing_file":
@@ -1583,6 +2270,8 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 		return "replace the field value with one of the canonical spec-section enum values"
 	case "spec_section_invalid_terms":
 		return "make `terms` a YAML list of non-empty strings"
+	case "spec_section_invalid_system_frame":
+		return "set `system_frame` to target_system, software_system, carrier, or sidekick; use enabling_system only as legacy migration input"
 	case "spec_section_invalid_depends_on", "spec_section_invalid_target_refs":
 		return "make the reference field a YAML list of stable spec-section ids"
 	case "spec_section_invalid_evidence_required":
@@ -1594,15 +2283,17 @@ func defaultSpecCheckNextAction(finding SpecCheckFinding) string {
 	case "spec_section_mixed_authority":
 		return "change active target claims to claim_layer object/description/evidence, or explicitly mark a carrier-only section with carrier_claim_allowed"
 	case "term_map_missing_term":
-		return "add at least one term-map entry with term, domain, and definition before treating the spec set as ready"
-	case "term_map_missing_domain", "term_map_missing_definition":
-		return "complete the term-map entry with term, domain, and definition"
+		return "add at least one term-map entry with term, category, and definition before treating the spec set as ready"
+	case "term_map_missing_category", "term_map_missing_domain", "term_map_missing_definition":
+		return "complete the term-map entry with term, category, and definition; legacy domain is accepted only for compatibility"
+	case "term_map_category_domain_conflict":
+		return "keep one classification value: prefer `category`, or make legacy `domain` match before removing it"
 	case "term_map_invalid_entries":
 		return "make `entries` a YAML list of term-map entry objects"
 	case "term_map_invalid_not", "term_map_invalid_aliases", "term_map_invalid_owners":
 		return "make the term-map field a YAML list of non-empty strings"
 	case "term_map_duplicate_term":
-		return "merge or domain-qualify duplicate term definitions"
+		return "merge or category-qualify duplicate term definitions"
 	case "term_map_duplicate_alias":
 		return "remove the duplicate alias or attach it to one canonical term"
 	case "spec_section_duplicate_id":

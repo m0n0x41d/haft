@@ -6,27 +6,30 @@
 
 | Kind | Created by | Purpose | Lifecycle |
 |------|-----------|---------|-----------|
-| **ProjectSpecificationSet** | Onboarding flow + human principal | Governing parseable spec set for target/enabling systems, term map, workflow policy, and coverage | Draft → Active → Stale → Superseded/Deprecated |
-| **SpecSection** | Onboarding flow, spec edit, or sync | Stable-id unit inside TargetSystemSpec or EnablingSystemSpec | Draft → Active → Stale → Superseded/Deprecated |
+| **ProjectSpecificationSet** | Onboarding flow + human principal | Governing parseable set of TargetSystemSpec, SoftwareSystemSpec, and TermMap | Draft → Active → Stale → Superseded/Deprecated |
+| **SpecSection** | Onboarding flow, spec edit, or sync | Stable-id unit inside TargetSystemSpec or SoftwareSystemSpec | Draft → Active → Stale → Superseded/Deprecated |
 | **SpecCoverageEdge** | Spec parser, decision tools, commission tools, evidence tools | Link from spec sections to reasoning artifacts, code, tests, runtime, and evidence | Active → Stale/Superseded |
-| **ProblemCard** | Understand mode | Frames what's broken: signal, constraints, acceptance | Backlog → In Progress → Addressed |
-| **SolutionPortfolio** | Explore mode | Contains 2+ variants + optional characterization + comparison | Active → Superseded/Deprecated |
-| **DecisionRecord** | Execute mode | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
-| **EvidencePack** | Verify mode | Measurement data with verdict, CL, valid_until | Active → Superseded (when new measurement replaces) |
+| **ProblemCard** | Explicit problem-frame persistence | Frames what's broken: signal, constraints, acceptance | Backlog → In Progress → Addressed |
+| **SolutionPortfolio** | Explicit solution-portfolio persistence | Contains 2+ variants + optional characterization + comparison | Active → Superseded/Deprecated |
+| **DecisionRecord** | Direct unambiguous operator request routed through `h-decide` | Records what was chosen: rationale, invariants, claims, rollback | Pending → Shipped → Active → Stale → Superseded/Deprecated |
+| **EvidencePack** | Explicit verification or measurement persistence | Measurement data with verdict, CL, valid_until | Active → Superseded (when new measurement replaces) |
 | **Note** | Note fast path | Micro-decision with rationale | Active → (auto-expires 90 days) → Deprecated |
-| **RefreshReport** | Verify mode | Documents lifecycle action (waive, reopen, etc.) | Active (immutable log) |
+| **RefreshReport** | Explicit lifecycle action | Documents lifecycle action (waive, reopen, etc.) | Active (immutable log) |
+
+Artifact kinds are independent carriers with distinct receiving uses. Their
+table order does not define a lifecycle or execution sequence.
 
 ## Execution Records (vNext Model)
 
-These records are part of the target model for the Haft/Open-Sleigh
-integration. They are listed separately because the current artifact store does
-not yet implement these kinds.
+These records form the runner-neutral commission model. They are listed
+separately from reasoning artifacts because execution may be performed by a
+separately operated runner.
 
 | Record | Created by | Purpose | Lifecycle |
 |--------|-----------|---------|-----------|
 | **ImplementationPlan** | Human-assisted planning from active DecisionRecord(s) | DAG of WorkCommissions with dependencies, locksets, evidence requirements, and scheduler policy | Draft → Approved → Running → Partially Blocked → Completed/Cancelled |
 | **WorkCommission** | Human/User via Haft UI/CLI/agent draft | Bounded authorization to execute a selected DecisionRecord in a declared scope | Draft → Queued → Ready → Preflighting → Running → Completed/CompletedWithProjectionDebt/Failed/Blocked/Cancelled/Expired |
-| **RuntimeRun** | Runner such as Open-Sleigh | One execution attempt against a WorkCommission, including phase outcomes and evidence refs | Claimed → Running → Passed/Failed/Cancelled/Stalled |
+| **RuntimeRun** | External runner | One execution attempt against a WorkCommission, including phase outcomes and evidence refs | Claimed → Running → Passed/Failed/Cancelled/Stalled |
 | **ExternalProjection** | Haft projection engine | Idempotent external tracker binding for observers | Desired → Drafted → Published → Synced/Drifted/Blocked/ProjectionDebt |
 | **AutonomyEnvelope** | Human principal | Batch/YOLO permission bounds for an ImplementationPlan | Draft → Approved → Active → Exhausted/Revoked/Expired |
 
@@ -92,13 +95,13 @@ ProjectSpecificationSet
     ├──→ TargetSystemSpec
     │         └──→ SpecSection*
     │
-    ├──→ EnablingSystemSpec
+    ├──→ SoftwareSystemSpec
     │         └──→ SpecSection*
     │
-    ├──→ TermMap
-    │
+    └──→ TermMap
+
+SpecSection
     └──→ SpecCoverageEdge*
-              │
               ├──→ ProblemCard
               ├──→ DecisionRecord
               ├──→ WorkCommission

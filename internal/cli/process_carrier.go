@@ -1,0 +1,363 @@
+package cli
+
+import (
+	"crypto/sha256"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	methodpkg "github.com/m0n0x41d/haft/internal/method"
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
+	"gopkg.in/yaml.v3"
+)
+
+type processMethodPackCarrierObservation struct {
+	MethodRef  string `json:"method_ref"`
+	CarrierRef string `json:"carrier_ref"`
+	Status     string `json:"status"`
+	Digest     string `json:"digest,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+}
+
+func processCheckMethodPackCarriers(
+	projectRoot string,
+	observedAt string,
+	validUntil string,
+) ProcessCheckResult {
+	observations := processMethodPackCarrierObservations(projectRoot)
+	var checked int
+	var missing int
+	var stale int
+	var samples []string
+	for _, observation := range observations {
+		checked++
+		switch observation.Status {
+		case "missing":
+			missing++
+			samples = append(samples, processMethodPackCarrierSample(observation))
+		case "stale":
+			stale++
+			samples = append(samples, processMethodPackCarrierSample(observation))
+		}
+	}
+	if missing > 0 || stale > 0 {
+		return processCheckResult(
+			"methodpack_carrier_currentness",
+			"MethodPack.carrier_refs",
+			"builtin_methodpack_carriers",
+			processCheckStatusDegraded,
+			"medium",
+			observedAt,
+			validUntil,
+			fmt.Sprintf("MethodPack carrier refs need currentness review: checked=%d missing=%d stale=%d.", checked, missing, stale),
+			processSampleStrings(samples, 10),
+			"Run haft init or refresh MethodPack carriers, then rerun haft process check; carrier findings are advisory and do not create method authority.",
+		)
+	}
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusPass,
+		"low",
+		observedAt,
+		validUntil,
+		fmt.Sprintf("MethodPack carrier refs are present and current: checked=%d.", checked),
+		processMethodPackCarrierDigestEvidence(observations),
+		"No action.",
+	)
+}
+
+func processCheckMethodPackCarriersForApplicability(
+	projectRoot string,
+	observedAt string,
+	validUntil string,
+	applicability project.ProjectSpecificationSetApplicability,
+) (ProcessCheckResult, error) {
+	processApplicability, err := applicability.ScopedCapabilityApplicability(
+		projectprofile.ProcessChecksCapability,
+	)
+	if err != nil {
+		return ProcessCheckResult{}, err
+	}
+	methodPackApplicability, err := applicability.ScopedCapabilityApplicability(
+		projectprofile.SWEMethodPackCapability,
+	)
+	if err != nil {
+		return ProcessCheckResult{}, err
+	}
+	applicabilities := []projectprofile.ScopedCapabilityApplicability{
+		processApplicability,
+		methodPackApplicability,
+	}
+	if scopedCapabilitiesContain(
+		applicabilities,
+		projectprofile.CapabilityUnderdetermined,
+	) {
+		return processCheckMethodPackApplicabilityUnderdetermined(
+			observedAt,
+			validUntil,
+			applicabilities,
+		), nil
+	}
+	if scopedCapabilitiesContain(
+		applicabilities,
+		projectprofile.CapabilityNotApplicable,
+	) {
+		return processCheckMethodPackNotApplicable(
+			observedAt,
+			validUntil,
+			applicabilities,
+		), nil
+	}
+	result := processCheckMethodPackCarriers(projectRoot, observedAt, validUntil)
+	result.EvidenceRefs = append(
+		result.EvidenceRefs,
+		scopedCapabilityApplicabilityEvidence(applicabilities)...,
+	)
+	return result, nil
+}
+
+func processCheckMethodPackForProfileResolution(
+	projectRoot string,
+	observedAt string,
+	validUntil string,
+	resolution projectSpecificationApplicabilityResolution,
+) (ProcessCheckResult, error) {
+	applicability, _, resolved := resolution.Resolved()
+	if resolved {
+		return processCheckMethodPackCarriersForApplicability(
+			projectRoot,
+			observedAt,
+			validUntil,
+			applicability,
+		)
+	}
+	readiness := canonicalProjectReadiness{
+		facts:            project.ReadinessFacts{},
+		profileEvaluated: true,
+		resolution:       resolution,
+	}
+	return processCheckMethodPackProfileCue(
+		observedAt,
+		validUntil,
+		readiness.profileCue(),
+	), nil
+}
+
+func processCheckMethodPackProfileUnavailable(
+	observedAt string,
+	validUntil string,
+) ProcessCheckResult {
+	readiness := canonicalProjectReadiness{
+		facts:              project.ReadinessFacts{},
+		profileEvaluated:   true,
+		profileUnavailable: true,
+	}
+	return processCheckMethodPackProfileCue(
+		observedAt,
+		validUntil,
+		readiness.profileCue(),
+	)
+}
+
+func processCheckMethodPackProfileCue(
+	observedAt string,
+	validUntil string,
+	cue string,
+) ProcessCheckResult {
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusUnknown,
+		"info",
+		observedAt,
+		validUntil,
+		cue+" SWE MethodPack carriers were not scanned.",
+		nil,
+		"No SWE carrier action; establish canonical profile applicability only when this capability is current.",
+	)
+}
+
+func scopedCapabilitiesContain(
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+	kind projectprofile.CapabilityApplicabilityKind,
+) bool {
+	for _, applicability := range applicabilities {
+		if applicability.Kind() == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func processCheckMethodPackNotApplicable(
+	observedAt string,
+	validUntil string,
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+) ProcessCheckResult {
+	scopeID := applicabilities[0].ScopeID().String()
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusNotApplicable,
+		"info",
+		observedAt,
+		validUntil,
+		fmt.Sprintf(
+			"SWE MethodPack carrier currentness is not applicable in exact project-profile scope %q.",
+			scopeID,
+		),
+		scopedCapabilityApplicabilityEvidence(applicabilities),
+		"No action; NotApplicable is normal for this scope and does not require SWE carriers or a waiver.",
+	)
+}
+
+func processCheckMethodPackApplicabilityUnderdetermined(
+	observedAt string,
+	validUntil string,
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+) ProcessCheckResult {
+	scopeID := applicabilities[0].ScopeID().String()
+	return processCheckResult(
+		"methodpack_carrier_currentness",
+		"MethodPack.carrier_refs",
+		"builtin_methodpack_carriers",
+		processCheckStatusUnknown,
+		"info",
+		observedAt,
+		validUntil,
+		fmt.Sprintf(
+			"SWE MethodPack carrier applicability is underdetermined in exact project-profile scope %q; carriers were not scanned.",
+			scopeID,
+		),
+		scopedCapabilityApplicabilityEvidence(applicabilities),
+		"No SWE carrier action; establish the named missing basis only when this capability is current.",
+	)
+}
+
+func scopedCapabilityApplicabilityEvidence(
+	applicabilities []projectprofile.ScopedCapabilityApplicability,
+) []string {
+	if len(applicabilities) == 0 {
+		return nil
+	}
+	evidence := []string{
+		"profile_scope_id=" + applicabilities[0].ScopeID().String(),
+		"profile_payload_digest=" + applicabilities[0].ProfilePayloadDigest().String(),
+	}
+	for _, applicability := range applicabilities {
+		item := fmt.Sprintf(
+			"capability:%s=%s",
+			applicability.Capability(),
+			applicability.Kind(),
+		)
+		if missingBasis, present := applicability.MissingBasis(); present {
+			item += " missing_basis=" + string(missingBasis)
+		}
+		evidence = append(evidence, item)
+	}
+	return evidence
+}
+
+func processMethodPackCarrierObservations(projectRoot string) []processMethodPackCarrierObservation {
+	catalog := methodpkg.BuiltinCatalog()
+	observations := make([]processMethodPackCarrierObservation, 0, len(catalog.Methods)*2)
+	for _, definition := range catalog.Methods {
+		for _, carrierRef := range definition.CarrierRefs {
+			observations = append(observations, processMethodPackCarrierObservationFor(projectRoot, definition, carrierRef))
+		}
+	}
+	return observations
+}
+
+func processMethodPackCarrierObservationFor(
+	projectRoot string,
+	definition methodpkg.Definition,
+	carrierRef string,
+) processMethodPackCarrierObservation {
+	observation := processMethodPackCarrierObservation{
+		MethodRef:  definition.ID,
+		CarrierRef: carrierRef,
+	}
+	if processCarrierRefExternal(carrierRef) {
+		observation.Status = "external_unchecked"
+		observation.Reason = "external carrier refs are not fetched by process check"
+		return observation
+	}
+	path := filepath.Join(projectRoot, filepath.Clean(carrierRef))
+	data, err := os.ReadFile(path)
+	if err != nil {
+		observation.Status = "missing"
+		observation.Reason = "carrier file is missing or unreadable"
+		return observation
+	}
+	observation.Digest = processSHA256(data)
+	if !strings.HasPrefix(filepath.ToSlash(carrierRef), ".haft/methods/") {
+		observation.Status = "present"
+		return observation
+	}
+	var carrier methodpkg.Definition
+	if err := yaml.Unmarshal(data, &carrier); err != nil {
+		observation.Status = "stale"
+		observation.Reason = "method carrier YAML is unreadable"
+		return observation
+	}
+	if carrier.ID != definition.ID ||
+		carrier.Version != definition.Version ||
+		carrier.SourcePosture.SourceEdition != definition.SourcePosture.SourceEdition ||
+		carrier.Lifecycle.Status != definition.Lifecycle.Status ||
+		!sameStringSet(carrier.SourcePatternRefs, definition.SourcePatternRefs) {
+		observation.Status = "stale"
+		observation.Reason = "method carrier YAML does not match current builtin MethodPack identity, lifecycle, source posture, or source pattern refs"
+		return observation
+	}
+	observation.Status = "present"
+	return observation
+}
+
+func processCarrierRefExternal(ref string) bool {
+	lower := strings.ToLower(strings.TrimSpace(ref))
+	return strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://")
+}
+
+func processSHA256(data []byte) string {
+	sum := sha256.Sum256(data)
+	return "sha256:" + fmt.Sprintf("%x", sum[:])
+}
+
+func sameStringSet(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	counts := map[string]int{}
+	for _, value := range left {
+		counts[value]++
+	}
+	for _, value := range right {
+		counts[value]--
+		if counts[value] < 0 {
+			return false
+		}
+	}
+	return true
+}
+
+func processMethodPackCarrierSample(observation processMethodPackCarrierObservation) string {
+	return fmt.Sprintf("%s:%s status=%s reason=%s", observation.MethodRef, observation.CarrierRef, observation.Status, observation.Reason)
+}
+
+func processMethodPackCarrierDigestEvidence(observations []processMethodPackCarrierObservation) []string {
+	evidence := make([]string, 0, len(observations))
+	for _, observation := range observations {
+		if observation.Digest == "" {
+			continue
+		}
+		evidence = append(evidence, fmt.Sprintf("%s:%s %s", observation.MethodRef, observation.CarrierRef, observation.Digest))
+	}
+	return processSampleStrings(evidence, 8)
+}

@@ -2,8 +2,8 @@ package codeintel
 
 import (
 	"context"
-	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
@@ -35,14 +35,17 @@ func (h FusedHop) Governed() bool {
 // the candidates and Hops is empty — an honest "which one?" instead of a
 // wrong-seed answer (the keystone discipline: overloads are never conflated).
 type FlowResult struct {
-	Seed      codebase.CodeSymbol
-	SeedFound bool
-	Ambiguous []codebase.CodeSymbol
-	Fuzzy     bool // seed/candidates came from the fuzzy fallback (no exact-name match)
-	Direction Direction
-	Depth     int
-	Hops      []FusedHop
-	ColdBuilt bool // a one-time index build ran to answer this query
+	Seed           codebase.CodeSymbol
+	SeedResolution SeedResolution
+	Candidates     []codebase.CodeSymbol
+	Direction      Direction
+	Profile        TraversalProfile
+	Depth          int
+	Hops           []FusedHop
+	ColdBuilt      bool // a one-time index build ran to answer this query
+	IndexRefresh   IndexCoordinationResult
+	Resolution     codebase.ResolutionCounts
+	Index          codebase.IndexState
 }
 
 // Service is the imperative shell of the code-graph query surface: it owns the
@@ -54,6 +57,11 @@ type Service struct {
 	edges   *codebase.EdgeStore
 	art     *artifact.Store
 	graph   *graph.Store
+	seeds   ConcernExactSeedSource
+
+	beforeBasisConfirm func(context.Context) error
+	coordinatorMu      sync.Mutex
+	coordinator        *ProjectIndexCoordinator
 }
 
 // NewService wires a code-graph service over the artifact store's DB.
@@ -65,81 +73,118 @@ func NewService(store *artifact.Store) *Service {
 		edges:   codebase.NewEdgeStore(db),
 		art:     store,
 		graph:   graph.NewStore(db),
+		seeds:   NoConcernExactSeedSource{},
 	}
 }
 
-// buildMu serializes index builds across the process. Service is created per
-// request (and one runs at server startup), so the lock cannot live on the
-// struct — it must be package-scoped. With double-checked staleness inside the
-// lock, a query arriving during the startup rebuild waits, then sees a fresh
-// index instead of triggering a second build.
-var buildMu sync.Mutex
-
-// EnsureIndex (re)builds the symbol + edge layers when the index is empty OR the
-// source tree has changed since the last build (fingerprint mismatch). Returns
-// whether a build ran. The staleness check is a stat-only fingerprint — cheap on
-// the warm path (no rebuild, just a tree walk) — so the index stays fresh
-// without a manual rebuild after code changes. (A full rebuild on staleness;
-// closure-scoped partial rebuild is a later latency optimization — edges are
-// non-local, so per-file rebuild would be unsound.)
-func (s *Service) EnsureIndex(ctx context.Context, projectRoot string) (bool, error) {
-	buildMu.Lock()
-	defer buildMu.Unlock()
-
-	if err := s.symbols.EnsureSchema(ctx); err != nil {
-		return false, err
-	}
-	if err := s.edges.EnsureSchema(ctx); err != nil {
-		return false, err
-	}
-	if err := s.scanner.EnsureIndexMetaSchema(ctx); err != nil {
-		return false, err
-	}
-
-	stale, fp, err := s.indexStale(ctx, projectRoot)
-	if err != nil {
-		return false, err
-	}
-	if !stale {
-		return false, nil
-	}
-	if _, err := s.scanner.ScanSymbols(ctx, projectRoot); err != nil {
-		return false, fmt.Errorf("index (symbols): %w", err)
-	}
-	if _, err := s.scanner.ScanEdges(ctx, projectRoot); err != nil {
-		return false, fmt.Errorf("index (edges): %w", err)
-	}
-	if err := s.scanner.SetFingerprint(ctx, fp); err != nil {
-		return false, fmt.Errorf("record index fingerprint: %w", err)
-	}
-	return true, nil
+// NewServiceWithIndexCoordinator wires the checked project-scoped coordinator
+// used by every production startup and request path that can refresh the code
+// index. Tests and narrow in-process consumers may continue to use NewService;
+// its lazy fallback is process-scoped and never fabricates a ledger binding.
+func NewServiceWithIndexCoordinator(
+	store *artifact.Store,
+	coordinator *ProjectIndexCoordinator,
+) *Service {
+	service := NewService(store)
+	service.coordinator = coordinator
+	return service
 }
 
-// indexStale reports whether the index must be rebuilt: never built (no
-// fingerprint recorded — set only after a successful build, so it correctly
-// distinguishes "never built" from "built but zero edges resolved"), or a
-// current source fingerprint that differs from the stored one. Returns the
-// freshly-computed fingerprint so the caller can store it after a rebuild.
-func (s *Service) indexStale(ctx context.Context, projectRoot string) (bool, string, error) {
-	fp, err := s.scanner.SourceFingerprint(projectRoot)
-	if err != nil {
-		return false, "", err
-	}
-	stored, err := s.scanner.StoredFingerprint(ctx)
-	if err != nil {
-		return false, fp, err
-	}
-	if stored == "" {
-		return true, fp, nil // never built
-	}
-	return stored != fp, fp, nil
+// NewServiceWithConcernExactSeeds adds an optional exact-seed adapter without
+// making the draft typed-memory runtime a dependency of core concern
+// discovery. The ordinary NewService path always uses the explicit null
+// adapter.
+func NewServiceWithConcernExactSeeds(
+	store *artifact.Store,
+	seeds ConcernExactSeedSource,
+) *Service {
+	service := NewService(store)
+	service.seeds = seeds
+	return service
 }
 
 // Flow runs a callers/callees traversal from the named seed, fusing the
 // reasoning graph onto every reached symbol. Impact is the Callers direction
 // (who breaks if this changes); Callees is the forward dependency set.
 func (s *Service) Flow(ctx context.Context, projectRoot, name, file string, line, depth int, dir Direction) (FlowResult, error) {
-	cold, err := s.EnsureIndex(ctx, projectRoot)
+	return s.FlowWithProfile(ctx, projectRoot, name, file, line, depth, dir, TraversalCallFlow)
+}
+
+// FlowWithProfile runs a fused traversal over one declared semantic relation
+// family. The compatibility Flow entrypoint remains call_flow.
+func (s *Service) FlowWithProfile(
+	ctx context.Context,
+	projectRoot string,
+	name string,
+	file string,
+	line int,
+	depth int,
+	dir Direction,
+	profile TraversalProfile,
+) (FlowResult, error) {
+	return retryIndexQuery(func() (FlowResult, error) {
+		return s.flowWithProfileOnce(
+			ctx,
+			projectRoot,
+			name,
+			file,
+			line,
+			depth,
+			dir,
+			profile,
+		)
+	})
+}
+
+func (s *Service) flowWithProfileOnce(
+	ctx context.Context,
+	projectRoot string,
+	name string,
+	file string,
+	line int,
+	depth int,
+	dir Direction,
+	profile TraversalProfile,
+) (result FlowResult, resultErr error) {
+	indexRefresh, err := s.EnsureIndex(ctx, projectRoot)
+	if err != nil {
+		return FlowResult{}, err
+	}
+	releaseIndexRead, err := s.acquireIndexRead(projectRoot)
+	if err != nil {
+		return FlowResult{}, err
+	}
+	defer releaseIndexRead()
+	publishedIndexState, err := s.scanner.CurrentIndexState(ctx)
+	if err != nil {
+		return FlowResult{}, err
+	}
+	indexState := indexRefresh.EffectiveIndexState(publishedIndexState)
+	defer func() {
+		if resultErr != nil {
+			return
+		}
+		if err := s.ConfirmIndexState(ctx, publishedIndexState); err != nil {
+			result = FlowResult{}
+			resultErr = err
+		}
+	}()
+	if indexState.Epoch == 0 {
+		resolution, err := unavailableSeedForIndex(name, indexState)
+		if err != nil {
+			return FlowResult{}, err
+		}
+		return FlowResult{
+			SeedResolution: resolution,
+			Direction:      dir,
+			Profile:        profile,
+			Depth:          depth,
+			ColdBuilt:      indexRefresh.Rebuilt(),
+			IndexRefresh:   indexRefresh,
+			Index:          indexState,
+		}, nil
+	}
+	scope, err := traversalScopeForIndex(indexState)
 	if err != nil {
 		return FlowResult{}, err
 	}
@@ -147,18 +192,38 @@ func (s *Service) Flow(ctx context.Context, projectRoot, name, file string, line
 	if err != nil {
 		return FlowResult{}, err
 	}
-	res := FlowResult{Direction: dir, Depth: depth, ColdBuilt: cold, Fuzzy: fuzzy}
-	if len(candidates) > 0 {
-		res.Ambiguous = candidates
+	seedResolution, displayCandidates, err := classifySeedResolution(
+		name,
+		file,
+		line,
+		seed,
+		candidates,
+		fuzzy,
+		scope,
+	)
+	if err != nil {
+		return FlowResult{}, err
+	}
+	res := FlowResult{
+		SeedResolution: seedResolution,
+		Candidates:     displayCandidates,
+		Direction:      dir,
+		Profile:        profile,
+		Depth:          depth,
+		ColdBuilt:      indexRefresh.Rebuilt(),
+		IndexRefresh:   indexRefresh,
+		Index:          indexState,
+	}
+	if seedResolution.Kind().String() != "resolved_seed" {
 		return res, nil
 	}
-	if seed.ID == "" {
-		return res, nil // not found — SeedFound stays false
-	}
 	res.Seed = seed
-	res.SeedFound = true
+	res.Resolution, err = s.edges.ResolutionCountsForSource(ctx, seed.ID)
+	if err != nil {
+		return FlowResult{}, err
+	}
 
-	hops, err := Traverse(ctx, s.edges, seed.ID, dir, depth, MaxResults)
+	hops, err := TraverseWithProfile(ctx, s.edges, seed.ID, dir, depth, MaxResults, profile)
 	if err != nil {
 		return FlowResult{}, err
 	}
@@ -176,6 +241,125 @@ func (s *Service) Flow(ctx context.Context, projectRoot, name, file string, line
 	return res, nil
 }
 
+func unavailableSeedForIndex(
+	query string,
+	indexState codebase.IndexState,
+) (SeedResolution, error) {
+	observation, err := NewIndexObservation(
+		indexState.Epoch,
+		indexState.Basis.CoverageRef(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	reason, err := ParseSeedUnavailableReason("index_unavailable")
+	if err != nil {
+		return nil, err
+	}
+	return NewSeedUnavailable(query, reason, observation)
+}
+
+func traversalScopeForIndex(
+	indexState codebase.IndexState,
+) (TraversalScope, error) {
+	return NewTraversalScopeWithCoverage(
+		indexState.Epoch,
+		indexState.Basis.CoverageRef(),
+		indexState.SupportsKnownAbsence(),
+	)
+}
+
+// classifySeedResolution is the pure identity boundary shared by Explore,
+// ExploreBag, and Flow. A fuzzy hit remains a candidate set even when it has
+// one item; lexical rank is never automatic identity selection.
+func classifySeedResolution(
+	query string,
+	file string,
+	line int,
+	seed codebase.CodeSymbol,
+	candidates []codebase.CodeSymbol,
+	fuzzy bool,
+	scope TraversalScope,
+) (SeedResolution, []codebase.CodeSymbol, error) {
+	displayCandidates := append([]codebase.CodeSymbol(nil), candidates...)
+	if fuzzy && seed.ID != "" {
+		displayCandidates = append(displayCandidates, seed)
+		seed = codebase.CodeSymbol{}
+	}
+	sort.SliceStable(
+		displayCandidates,
+		func(left int, right int) bool {
+			return displayCandidates[left].ID < displayCandidates[right].ID
+		},
+	)
+	if len(displayCandidates) > 0 {
+		stableCandidates, err := stableSymbols(displayCandidates)
+		if err != nil {
+			return nil, nil, err
+		}
+		basisCode := "ambiguous_exact_name"
+		if fuzzy {
+			basisCode = "fuzzy_candidates"
+		}
+		basis, err := ParseCandidateSetBasis(basisCode)
+		if err != nil {
+			return nil, nil, err
+		}
+		outcome, err := NewCandidateSet(stableCandidates, basis, scope)
+		return outcome, displayCandidates, err
+	}
+	if seed.ID == "" {
+		if scope.SupportsKnownAbsence() {
+			outcome, err := NewSeedNotFound(query, scope)
+			return outcome, nil, err
+		}
+		observation, err := NewIndexObservation(
+			scope.Epoch(),
+			scope.CoverageRef(),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+		reason, err := ParseSeedUnavailableReason("index_incomplete")
+		if err != nil {
+			return nil, nil, err
+		}
+		outcome, err := NewSeedUnavailable(query, reason, observation)
+		return outcome, nil, err
+	}
+	stableSeed, err := NewStableSymbol(seed.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	basisCode := "unique_exact_name"
+	if file != "" && line > 0 {
+		basisCode = "exact_anchor"
+	}
+	if strings.Contains(query, ".") {
+		basisCode = "exact_qualified_name"
+	}
+	basis, err := ParseResolvedSeedBasis(basisCode)
+	if err != nil {
+		return nil, nil, err
+	}
+	outcome, err := NewResolvedSeed(stableSeed, basis, scope)
+	return outcome, nil, err
+}
+
+func stableSymbols(
+	symbols []codebase.CodeSymbol,
+) ([]StableSymbol, error) {
+	out := make([]StableSymbol, 0, len(symbols))
+	for _, symbol := range symbols {
+		stable, err := NewStableSymbol(symbol.ID)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, stable)
+	}
+	return out, nil
+}
+
 // fuse resolves a hop's node id back to its symbol and attaches the reasoning
 // graph. ok=false when the symbol is gone (the edge is stale) — the caller
 // drops it rather than emitting a half-resolved row.
@@ -185,9 +369,10 @@ func (s *Service) fuse(ctx context.Context, h Hop) (FusedHop, bool, error) {
 		return FusedHop{}, false, err
 	}
 	cc, err := contextgraph.FetchCodeContext(ctx, s.art, s.graph, contextgraph.Target{
-		File:   sym.FilePath,
-		Symbol: sym.Name,
-		Line:   sym.StartLine,
+		File:     sym.FilePath,
+		Symbol:   sym.Name,
+		AnchorID: sym.AnchorID,
+		Line:     sym.StartLine,
 	})
 	if err != nil {
 		return FusedHop{}, false, err
@@ -215,10 +400,12 @@ func (s *Service) resolveSeed(ctx context.Context, name, file string, line int) 
 		}
 	}
 	// Exact name first (existing behavior): one → seed, many → overload candidates.
-	exact, err := s.symbols.GetByName(ctx, name)
+	bareName, receiver := splitQualifiedSymbolName(name)
+	exact, err := s.symbols.GetByName(ctx, bareName)
 	if err != nil {
 		return codebase.CodeSymbol{}, nil, false, err
 	}
+	exact = filterByReceiver(exact, receiver)
 	if file != "" {
 		exact = filterByFile(exact, file)
 	}
@@ -231,10 +418,11 @@ func (s *Service) resolveSeed(ctx context.Context, name, file string, line int) 
 	// No exact match → fuzzy substring fallback. Exactly one fuzzy match is used
 	// (labeled fuzzy so the caller can say so); more than one is returned as
 	// candidates — NEVER silently pick among ambiguous fuzzy matches.
-	fuzzyHits, err := s.symbols.SearchSymbols(ctx, name, 12)
+	fuzzyHits, err := s.symbols.SearchSymbols(ctx, bareName, 12)
 	if err != nil {
 		return codebase.CodeSymbol{}, nil, false, err
 	}
+	fuzzyHits = filterByReceiver(fuzzyHits, receiver)
 	if file != "" {
 		fuzzyHits = filterByFile(fuzzyHits, file)
 	}
@@ -246,6 +434,32 @@ func (s *Service) resolveSeed(ctx context.Context, name, file string, line int) 
 	default:
 		return codebase.CodeSymbol{}, fuzzyHits, true, nil
 	}
+}
+
+// splitQualifiedSymbolName accepts the natural `Receiver.member` seed form
+// used by Go methods and TypeScript object/class members. Storage keeps name and
+// receiver separate so the code node remains canonical; query parsing never
+// mints a duplicate dotted-name node.
+func splitQualifiedSymbolName(name string) (bareName, receiver string) {
+	trimmed := strings.TrimSpace(name)
+	index := strings.LastIndex(trimmed, ".")
+	if index <= 0 || index+1 >= len(trimmed) {
+		return trimmed, ""
+	}
+	return trimmed[index+1:], trimmed[:index]
+}
+
+func filterByReceiver(syms []codebase.CodeSymbol, receiver string) []codebase.CodeSymbol {
+	if receiver == "" {
+		return syms
+	}
+	out := make([]codebase.CodeSymbol, 0, len(syms))
+	for _, sym := range syms {
+		if sym.Receiver == receiver {
+			out = append(out, sym)
+		}
+	}
+	return out
 }
 
 // symbolCoveringLine returns the innermost symbol whose [StartLine, EndLine]

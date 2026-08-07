@@ -12,16 +12,177 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 )
 
+// BaselineKind names the governance object a baseline-like record belongs to.
+// It is a compatibility-layer discriminator, not a storage migration.
+type BaselineKind string
+
+const (
+	BaselineKindUnknownLegacy       BaselineKind = "unknown_legacy_baseline"
+	BaselineKindSpecSectionApproval BaselineKind = "spec_section_approval_baseline"
+	BaselineKindPreWorkReference    BaselineKind = "pre_work_reference_snapshot"
+	BaselineKindVerifiedState       BaselineKind = "verified_state_snapshot"
+)
+
+type BaselineKindProfile struct {
+	Kind              BaselineKind `json:"kind"`
+	Object            string       `json:"object"`
+	AuthorityBoundary string       `json:"authority_boundary"`
+	StorageSurface    string       `json:"storage_surface"`
+	Diagnostic        string       `json:"diagnostic,omitempty"`
+}
+
+// ParseBaselineKind preserves legacy/unknown posture explicitly instead of
+// guessing a concrete semantic kind from an absent or unrecognized carrier.
+func ParseBaselineKind(raw string) BaselineKind {
+	kind := BaselineKind(strings.TrimSpace(raw))
+	switch kind {
+	case BaselineKindSpecSectionApproval:
+		return BaselineKindSpecSectionApproval
+	case BaselineKindPreWorkReference:
+		return BaselineKindPreWorkReference
+	case BaselineKindVerifiedState:
+		return BaselineKindVerifiedState
+	case BaselineKindUnknownLegacy:
+		return BaselineKindUnknownLegacy
+	default:
+		return BaselineKindUnknownLegacy
+	}
+}
+
+func DescribeBaselineKind(kind BaselineKind) BaselineKindProfile {
+	parsed := ParseBaselineKind(string(kind))
+	switch parsed {
+	case BaselineKindSpecSectionApproval:
+		return BaselineKindProfile{
+			Kind:              parsed,
+			Object:            "SpecSectionApprovalBaseline",
+			AuthorityBoundary: "spec_lifecycle_approval_baseline",
+			StorageSurface:    "spec_section_baselines",
+			Diagnostic:        "approved carrier hash for an active SpecSection",
+		}
+	case BaselineKindPreWorkReference:
+		return BaselineKindProfile{
+			Kind:              parsed,
+			Object:            "PreWorkReferenceSnapshot",
+			AuthorityBoundary: "work_reference_only",
+			StorageSurface:    "work/evidence carrier, not spec_section_baselines",
+			Diagnostic:        "planned or reference state before work; not a spec approval baseline",
+		}
+	case BaselineKindVerifiedState:
+		return BaselineKindProfile{
+			Kind:              parsed,
+			Object:            "VerifiedStateSnapshot",
+			AuthorityBoundary: "evidence_measurement_only",
+			StorageSurface:    "evidence/measurement carrier, not spec_section_baselines",
+			Diagnostic:        "observed post-work state; does not rewrite a plan or approve a SpecSection",
+		}
+	default:
+		return BaselineKindProfile{
+			Kind:              BaselineKindUnknownLegacy,
+			Object:            "UnknownLegacyBaseline",
+			AuthorityBoundary: "unknown_legacy_do_not_strengthen",
+			StorageSurface:    "legacy carrier",
+			Diagnostic:        "legacy baseline-like record has no declared semantic kind",
+		}
+	}
+}
+
 // SectionBaseline is the recorded canonical hash of an active SpecSection
 // at the moment of approval. Drift detection compares the current carrier
 // hash against this baseline; mismatch surfaces a typed finding so the
 // operator can triage as valid evolution, error, or section-reopen.
 type SectionBaseline struct {
+	Kind       BaselineKind
 	ProjectID  string
 	SectionID  string
 	Hash       string
 	CapturedAt time.Time
 	ApprovedBy string
+}
+
+// SpecSectionApprovalBaseline is the typed baseline that belongs to the spec
+// lifecycle approval gate. It is the only snapshot kind this package may write
+// to spec_section_baselines.
+type SpecSectionApprovalBaseline struct {
+	ProjectID  string
+	SectionID  string
+	Hash       string
+	CapturedAt time.Time
+	ApprovedBy string
+}
+
+// PreWorkReferenceSnapshot is a planned/reference snapshot cited by work before
+// execution. It is not a spec approval baseline and must not be written to
+// spec_section_baselines.
+type PreWorkReferenceSnapshot struct {
+	WorkRef    string
+	TargetRef  string
+	Hash       string
+	CapturedAt time.Time
+	CarrierRef string
+}
+
+// VerifiedStateSnapshot is an observed post-work state. It is evidence or
+// measurement input, not a rewrite of the plan or a spec approval baseline.
+type VerifiedStateSnapshot struct {
+	EvidenceRef string
+	TargetRef   string
+	Hash        string
+	CapturedAt  time.Time
+	CarrierRef  string
+}
+
+func NewSpecSectionApprovalBaseline(projectID string, section project.SpecSection, approvedBy string, capturedAt time.Time) SpecSectionApprovalBaseline {
+	if capturedAt.IsZero() {
+		capturedAt = time.Now().UTC()
+	}
+	return SpecSectionApprovalBaseline{
+		ProjectID:  strings.TrimSpace(projectID),
+		SectionID:  strings.TrimSpace(section.ID),
+		Hash:       HashSection(section),
+		CapturedAt: capturedAt,
+		ApprovedBy: strings.TrimSpace(approvedBy),
+	}
+}
+
+func (baseline SpecSectionApprovalBaseline) SectionBaseline() SectionBaseline {
+	return SectionBaseline{
+		Kind:       BaselineKindSpecSectionApproval,
+		ProjectID:  baseline.ProjectID,
+		SectionID:  baseline.SectionID,
+		Hash:       baseline.Hash,
+		CapturedAt: baseline.CapturedAt,
+		ApprovedBy: baseline.ApprovedBy,
+	}
+}
+
+func (baseline SectionBaseline) SpecSectionApprovalBaseline() (SpecSectionApprovalBaseline, error) {
+	normalized, err := normalizeSpecSectionApprovalBaseline(baseline)
+	if err != nil {
+		return SpecSectionApprovalBaseline{}, err
+	}
+	return SpecSectionApprovalBaseline{
+		ProjectID:  normalized.ProjectID,
+		SectionID:  normalized.SectionID,
+		Hash:       normalized.Hash,
+		CapturedAt: normalized.CapturedAt,
+		ApprovedBy: normalized.ApprovedBy,
+	}, nil
+}
+
+func normalizeStoredSectionBaseline(baseline SectionBaseline) SectionBaseline {
+	baseline.Kind = BaselineKindSpecSectionApproval
+	return baseline
+}
+
+func normalizeSpecSectionApprovalBaseline(baseline SectionBaseline) (SectionBaseline, error) {
+	kind := ParseBaselineKind(string(baseline.Kind))
+	if strings.TrimSpace(string(baseline.Kind)) != "" && kind != BaselineKindSpecSectionApproval {
+		return SectionBaseline{}, fmt.Errorf("spec section baseline store accepts only %s, got %s", BaselineKindSpecSectionApproval, baseline.Kind)
+	}
+
+	baseline.Kind = BaselineKindSpecSectionApproval
+	return baseline, nil
 }
 
 // ErrBaselineNotFound is returned by stores when no baseline exists for a
@@ -36,6 +197,7 @@ var ErrBaselineNotFound = errors.New("spec section baseline not found")
 type BaselineStore interface {
 	Get(projectID, sectionID string) (SectionBaseline, error)
 	Put(baseline SectionBaseline) error
+	PutSpecSectionApproval(baseline SpecSectionApprovalBaseline) error
 	Delete(projectID, sectionID string) error
 	ListForProject(projectID string) ([]SectionBaseline, error)
 }
@@ -56,9 +218,12 @@ func HashSection(section project.SpecSection) string {
 
 func canonicalSectionString(section project.SpecSection) string {
 	var b strings.Builder
+	frameID, frameKind := canonicalSectionSystemFrame(section)
 
 	writeField(&b, "id", section.ID)
 	writeField(&b, "spec", section.Spec)
+	writeField(&b, "system_frame.id", frameID)
+	writeField(&b, "system_frame.kind", frameKind)
 	writeField(&b, "kind", section.Kind)
 	writeField(&b, "title", section.Title)
 	writeField(&b, "statement_type", section.StatementType)
@@ -75,8 +240,66 @@ func canonicalSectionString(section project.SpecSection) string {
 		writeField(&b, fmt.Sprintf("evidence_required[%d].kind", index), requirement.Kind)
 		writeField(&b, fmt.Sprintf("evidence_required[%d].description", index), requirement.Description)
 	}
+	for index, claim := range section.Claims {
+		writeField(&b, fmt.Sprintf("claims[%d].id", index), claim.ID)
+		writeField(&b, fmt.Sprintf("claims[%d].class", index), claim.Class)
+		writeField(&b, fmt.Sprintf("claims[%d].statement", index), claim.Statement)
+		writeListField(&b, fmt.Sprintf("claims[%d].scope", index), claim.Scope)
+		writeListField(&b, fmt.Sprintf("claims[%d].support_refs", index), claim.SupportRefs)
+		writeListField(&b, fmt.Sprintf("claims[%d].evidence_refs", index), claim.EvidenceRefs)
+		writeField(&b, fmt.Sprintf("claims[%d].valid_until", index), claim.ValidUntil)
+		writeListField(&b, fmt.Sprintf("claims[%d].governing_pattern_refs", index), claim.GoverningPatternRefs)
+	}
 
 	return b.String()
+}
+
+func canonicalSectionSystemFrame(section project.SpecSection) (string, string) {
+	frameID := strings.TrimSpace(section.SystemFrame.ID)
+	frameKind := strings.TrimSpace(section.SystemFrame.Kind)
+	if frameID != "" || frameKind != "" {
+		if normalized := normalizeSectionSystemFrameKind(firstNonEmptyString(frameKind, frameID)); normalized != "" {
+			return normalized, normalized
+		}
+		return frameID, frameKind
+	}
+
+	if normalized := normalizeSectionSystemFrameKind(section.Spec); normalized != "" {
+		return normalized, normalized
+	}
+	if normalized := normalizeSectionSystemFrameKind(section.DocumentKind); normalized != "" {
+		return normalized, normalized
+	}
+	return "", ""
+}
+
+func normalizeSectionSystemFrameKind(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, "-", "_")
+
+	switch normalized {
+	case "target_system", "target":
+		return "target_system"
+	case "software_system", "software":
+		return "software_system"
+	case "enabling_system", "enabling":
+		return "enabling_system"
+	case "carrier", "carrier_system", "publication", "publication_system":
+		return "carrier"
+	case "sidekick", "external_sidekick", "external_system":
+		return "sidekick"
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func writeField(b *strings.Builder, key, value string) {
@@ -126,11 +349,16 @@ func (s *SQLiteBaselineStore) Get(projectID, sectionID string) (SectionBaseline,
 		return SectionBaseline{}, fmt.Errorf("read spec section baseline: %w", err)
 	}
 
+	baseline = normalizeStoredSectionBaseline(baseline)
 	baseline.CapturedAt = captured
 	return baseline, nil
 }
 
 func (s *SQLiteBaselineStore) Put(baseline SectionBaseline) error {
+	baseline, err := normalizeSpecSectionApprovalBaseline(baseline)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(baseline.ProjectID) == "" {
 		return fmt.Errorf("project_id is required")
 	}
@@ -146,7 +374,7 @@ func (s *SQLiteBaselineStore) Put(baseline SectionBaseline) error {
 		captured = time.Now().UTC()
 	}
 
-	_, err := s.db.Exec(
+	_, err = s.db.Exec(
 		`INSERT INTO spec_section_baselines (project_id, section_id, hash, captured_at, approved_by)
 		 VALUES (?, ?, ?, ?, ?)
 		 ON CONFLICT(project_id, section_id) DO UPDATE SET
@@ -164,6 +392,10 @@ func (s *SQLiteBaselineStore) Put(baseline SectionBaseline) error {
 	}
 
 	return nil
+}
+
+func (s *SQLiteBaselineStore) PutSpecSectionApproval(baseline SpecSectionApprovalBaseline) error {
+	return s.Put(baseline.SectionBaseline())
 }
 
 func (s *SQLiteBaselineStore) Delete(projectID, sectionID string) error {
@@ -199,6 +431,7 @@ func (s *SQLiteBaselineStore) ListForProject(projectID string) ([]SectionBaselin
 		if err := rows.Scan(&baseline.ProjectID, &baseline.SectionID, &baseline.Hash, &captured, &baseline.ApprovedBy); err != nil {
 			return nil, fmt.Errorf("scan spec section baseline: %w", err)
 		}
+		baseline = normalizeStoredSectionBaseline(baseline)
 		baseline.CapturedAt = captured
 		baselines = append(baselines, baseline)
 	}
@@ -229,10 +462,14 @@ func (s *MemoryBaselineStore) Get(projectID, sectionID string) (SectionBaseline,
 	if !ok {
 		return SectionBaseline{}, ErrBaselineNotFound
 	}
-	return baseline, nil
+	return normalizeStoredSectionBaseline(baseline), nil
 }
 
 func (s *MemoryBaselineStore) Put(baseline SectionBaseline) error {
+	baseline, err := normalizeSpecSectionApprovalBaseline(baseline)
+	if err != nil {
+		return err
+	}
 	if strings.TrimSpace(baseline.ProjectID) == "" {
 		return fmt.Errorf("project_id is required")
 	}
@@ -249,6 +486,7 @@ func (s *MemoryBaselineStore) Put(baseline SectionBaseline) error {
 	}
 
 	s.rows[memoryBaselineKey(baseline.ProjectID, baseline.SectionID)] = SectionBaseline{
+		Kind:       baseline.Kind,
 		ProjectID:  baseline.ProjectID,
 		SectionID:  baseline.SectionID,
 		Hash:       baseline.Hash,
@@ -256,6 +494,10 @@ func (s *MemoryBaselineStore) Put(baseline SectionBaseline) error {
 		ApprovedBy: baseline.ApprovedBy,
 	}
 	return nil
+}
+
+func (s *MemoryBaselineStore) PutSpecSectionApproval(baseline SpecSectionApprovalBaseline) error {
+	return s.Put(baseline.SectionBaseline())
 }
 
 func (s *MemoryBaselineStore) Delete(projectID, sectionID string) error {
@@ -267,7 +509,7 @@ func (s *MemoryBaselineStore) ListForProject(projectID string) ([]SectionBaselin
 	var baselines []SectionBaseline
 	for _, baseline := range s.rows {
 		if baseline.ProjectID == projectID {
-			baselines = append(baselines, baseline)
+			baselines = append(baselines, normalizeStoredSectionBaseline(baseline))
 		}
 	}
 	return baselines, nil

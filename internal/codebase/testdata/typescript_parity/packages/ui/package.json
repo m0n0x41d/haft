@@ -1,0 +1,11 @@
+{
+  "name": "@parity/ui",
+  "exports": {
+    ".": "./src/index.ts",
+    "./sub": {
+      "types": "./src/sub.ts",
+      "import": "./src/sub.ts"
+    }
+  },
+  "types": "./src/index.ts"
+}

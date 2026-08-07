@@ -2,9 +2,13 @@ package codebase
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	_ "modernc.org/sqlite"
 )
 
 const aGo = `package p
@@ -175,5 +179,128 @@ func TestP1aOverResolutionDropsAmbiguous(t *testing.T) {
 	edges := ResolveIntraPackageCallEdges("a.go", fileSyms, pkg, sites)
 	if len(edges) != 0 {
 		t.Fatalf("ambiguous callee (2 candidates) must drop, not fan out; got %+v", edges)
+	}
+}
+
+func TestEdgeStorePersistsResolutionMetadataAndDiagnostics(t *testing.T) {
+	store, _ := newSymbolStore(t)
+	ctx := context.Background()
+	edges := NewEdgeStore(store.db)
+	if err := edges.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	outcomes := []EdgeResolution{
+		ResolvedEdge{Edge: CodeEdge{
+			SrcID:              "source",
+			DstID:              "target",
+			Kind:               EdgeCall,
+			FilePath:           "src/app.ts",
+			Line:               12,
+			Provenance:         ProvenanceStatic,
+			Origin:             EdgeOriginNamedImport,
+			ResolutionMethod:   ResolutionMethodImportMap,
+			Confidence:         ConfidenceExact,
+			ResolverVersion:    "typescript-v2",
+			SourceSnapshotHash: "sha256:source",
+		}},
+		AmbiguousEdge{
+			SourceID:           "source",
+			Kind:               EdgeCall,
+			FilePath:           "src/app.ts",
+			Line:               20,
+			Reason:             ResolutionReasonMultipleCandidates,
+			CandidateIDs:       []string{"candidate-a", "candidate-b"},
+			Origin:             EdgeOriginASTCall,
+			ResolverVersion:    "typescript-v2",
+			SourceSnapshotHash: "sha256:source",
+		},
+		UnresolvedEdge{
+			SourceID:           "source",
+			Kind:               EdgeTypeReference,
+			FilePath:           "src/app.ts",
+			Line:               30,
+			Reason:             ResolutionReasonNoCandidate,
+			Origin:             EdgeOriginASTTypeReference,
+			ResolverVersion:    "typescript-v2",
+			SourceSnapshotHash: "sha256:source",
+		},
+	}
+	if err := edges.ReplaceFileResolutions(ctx, "src/app.ts", outcomes); err != nil {
+		t.Fatal(err)
+	}
+
+	stored, err := edges.OutEdges(ctx, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 || stored[0].Origin != EdgeOriginNamedImport || stored[0].Confidence != ConfidenceExact {
+		t.Fatalf("stored resolved edge = %+v", stored)
+	}
+	diagnostics, err := edges.DiagnosticsByFile(ctx, "src/app.ts")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(diagnostics) != 2 || diagnostics[0].Status != ResolutionAmbiguous || diagnostics[1].Status != ResolutionUnresolved {
+		t.Fatalf("stored diagnostics = %+v", diagnostics)
+	}
+	if !reflect.DeepEqual(diagnostics[0].CandidateIDs, []string{"candidate-a", "candidate-b"}) {
+		t.Fatalf("candidate ids = %+v", diagnostics[0].CandidateIDs)
+	}
+	counts, err := edges.ResolutionCountsForSource(ctx, "source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if counts.Resolved != 1 || counts.Ambiguous != 1 || counts.Unresolved != 1 {
+		t.Fatalf("resolution counts = %+v", counts)
+	}
+}
+
+func TestEdgeStoreUpgradesLegacySchema(t *testing.T) {
+	ctx := context.Background()
+	database, err := sql.Open("sqlite", filepath.Join(t.TempDir(), "legacy-edges.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = database.Close() })
+	_, err = database.ExecContext(ctx, `
+		CREATE TABLE code_edges (
+			src_id TEXT NOT NULL,
+			dst_id TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			file_path TEXT NOT NULL,
+			line INTEGER NOT NULL DEFAULT 0,
+			provenance TEXT NOT NULL,
+			PRIMARY KEY (src_id, dst_id, kind, file_path, line)
+		);
+		INSERT INTO code_edges (src_id, dst_id, kind, file_path, line, provenance)
+		VALUES ('a', 'b', 'call', 'legacy.ts', 1, 'static');
+	`)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	edges := NewEdgeStore(database)
+	if err := edges.EnsureSchema(ctx); err != nil {
+		t.Fatal(err)
+	}
+	stored, err := edges.OutEdges(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("legacy edge count = %d", len(stored))
+	}
+	if stored[0].Origin != "" || stored[0].ResolutionMethod != "" || stored[0].Confidence != "" {
+		t.Fatalf("schema upgrade must not fabricate persisted metadata: %+v", stored[0])
+	}
+	if err := edges.ReplaceFileEdges(ctx, "legacy.ts", stored); err != nil {
+		t.Fatal(err)
+	}
+	rewritten, err := edges.OutEdges(ctx, "a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rewritten[0].Origin != EdgeOriginLegacyStatic || rewritten[0].ResolutionMethod != ResolutionMethodLegacy {
+		t.Fatalf("rewritten legacy metadata = %+v", rewritten[0])
 	}
 }

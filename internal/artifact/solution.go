@@ -16,18 +16,20 @@ import (
 
 // ExploreInput is the input for creating a SolutionPortfolio with variants.
 type ExploreInput struct {
-	ProblemRef               string    `json:"problem_ref,omitempty"`
-	TaskContext              string    `json:"task_context,omitempty"`
-	Variants                 []Variant `json:"variants"`
-	Context                  string    `json:"context,omitempty"`
-	Mode                     string    `json:"mode,omitempty"`
-	NoSteppingStoneRationale string    `json:"no_stepping_stone_rationale,omitempty"`
+	ProblemRef               string         `json:"problem_ref,omitempty"`
+	TaskContext              string         `json:"task_context,omitempty"`
+	Variants                 []Variant      `json:"variants"`
+	Context                  string         `json:"context,omitempty"`
+	Mode                     string         `json:"mode,omitempty"`
+	NoSteppingStoneRationale string         `json:"no_stepping_stone_rationale,omitempty"`
+	SpecFit                  *SpecFitRecord `json:"spec_fit,omitempty"`
 }
 
 // CompareInput is the input for running a parity comparison.
 type CompareInput struct {
 	PortfolioRef string           `json:"portfolio_ref,omitempty"`
 	Results      ComparisonResult `json:"results"`
+	SpecFit      *SpecFitRecord   `json:"spec_fit,omitempty"`
 }
 
 // ExploreSolutions creates a SolutionPortfolio artifact with variants.
@@ -181,6 +183,14 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		if v.RollbackNotes != "" {
 			body.WriteString(fmt.Sprintf("**Rollback:** %s\n\n", v.RollbackNotes))
 		}
+
+		if v.ProjectRecordRef != nil {
+			body.WriteString(fmt.Sprintf(
+				"**Typed project record:** `%s/%s`\n\n",
+				v.ProjectRecordRef.RefKindID,
+				v.ProjectRecordRef.ReferenceID,
+			))
+		}
 	}
 
 	// Summary table
@@ -205,6 +215,8 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		body.WriteString(fmt.Sprintf("**Stepping-stone assessment:** none identified yet — %s\n\n", input.NoSteppingStoneRationale))
 	}
 
+	appendSpecFitSection(&body, input.SpecFit)
+
 	a := &Artifact{
 		Meta: Meta{
 			ID:        ectx.ID,
@@ -224,6 +236,7 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 	sd, _ := json.Marshal(PortfolioFields{
 		ProblemRef:               input.ProblemRef,
 		Variants:                 cloneVariants(materializedVariants),
+		SpecFit:                  cloneSpecFitRecord(input.SpecFit),
 		NoSteppingStoneRationale: input.NoSteppingStoneRationale,
 	})
 	a.StructuredData = string(sd)
@@ -244,7 +257,7 @@ func BuildPortfolioArtifact(ectx ExploreContext, input ExploreInput, diversityWa
 		a.Body += "Before deciding, have you surveyed existing solutions?\n"
 		a.Body += "- **Web search** — industry patterns, blog posts, case studies\n"
 		a.Body += "- **Library docs** — check current API/usage patterns for relevant libraries\n"
-		a.Body += "- **FPF spec search** — `haft_query(action=\"fpf\", query=\"<topic>\")` for methodology patterns\n"
+		a.Body += "- **FPF source navigation** — start with `haft_query(action=\"fpf\", mode=\"concern\", query=\"<current question>\")`, then inspect one selected exact PatternID before relying on it\n"
 		a.Body += "\n## Evidence Collection\n\n"
 		a.Body += "Research each variant before comparing. Run tests, check benchmarks, validate claims.\n"
 		a.Body += fmt.Sprintf("Attach findings: `haft_decision(action=\"evidence\", artifact_ref=\"%s\", evidence_content=\"...\", evidence_type=\"research\", evidence_verdict=\"supports\")`\n", a.Meta.ID)
@@ -395,6 +408,10 @@ func CompareSolutions(ctx context.Context, store ArtifactStore, haftDir string, 
 		validatedResults.NonDominatedSet = append([]string(nil), validation.ComputedParetoFront...)
 	}
 	validatedResults.ParityPlan = cloneParityPlan(validation.EffectiveParity)
+	validatedResults.VariantSpecFit = cloneSpecFitVariantRecords(input.Results.VariantSpecFit)
+	if len(validatedResults.VariantSpecFit) == 0 && input.SpecFit != nil {
+		validatedResults.VariantSpecFit = cloneSpecFitVariantRecords(input.SpecFit.VariantSpecFit)
+	}
 
 	// Merge constraint-eliminated variants into the dominated_variants list so the UI
 	// can display them with a clear reason even though they never entered dominance comparison.
@@ -486,7 +503,12 @@ func parityPlanWarning(mode Mode, source parityPlanSource) string {
 	)
 }
 
-// ValidateCompareInput applies FPF compare-time validation without side effects.
+// ValidateCompareInput applies Haft's local-practice compare-time validation
+// without side effects. It does not by itself materialize an A.19.CPM actual
+// binary application or an A.19.SelectorMechanism application: those require
+// exact scope/predicate/plane/window bindings, a finite covered CPM basis, and
+// comparison-token provenance that this legacy portfolio carrier does not
+// represent.
 func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (CompareValidationResult, error) {
 	result := CompareValidationResult{}
 	if len(input.Results.Dimensions) == 0 {
@@ -495,7 +517,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 
 	rawScoredVariants := comparedVariantsFromScores(input.Results.Scores)
 	if len(rawScoredVariants) == 0 {
-		return result, fmt.Errorf("scores must include at least one compared variant")
+		return result, fmt.Errorf("scores must include at least one compared variant; expected shape: %s", compareScoresShapeHint())
 	}
 
 	var warnings []string
@@ -545,7 +567,7 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 		if containsString(comparedVariants, variantID) {
 			continue
 		}
-		return result, fmt.Errorf("scored variant %q is outside the declared compare set; expected one of: %s", variantID, expected)
+		return result, fmt.Errorf("scored variant %q is outside the declared compare set; expected one of: %s; scores shape is %s", variantID, expected, compareScoresShapeHint())
 	}
 
 	for _, variantID := range input.Results.NonDominatedSet {
@@ -727,10 +749,14 @@ func ValidateCompareInput(input CompareInput, ctx CompareValidationContext) (Com
 	return result, nil
 }
 
+func compareScoresShapeHint() string {
+	return `{"V1":{"latency":"10ms","cost":"$5"}} (variant_id -> dimension_name -> string score)`
+}
+
 // BuildComparisonBody appends comparison results to an existing portfolio body. Pure.
 func BuildComparisonBody(existingBody string, results ComparisonResult, comparedVariants []string, warnings []string) string {
 	var section strings.Builder
-	displayLabels := portfolioVariantDisplayLabels(existingBody)
+	displayLabels := portfolioVariantComparisonLabels(existingBody)
 	section.WriteString("\n## Comparison\n\n")
 
 	header := "| Variant |"
@@ -776,6 +802,8 @@ func BuildComparisonBody(existingBody string, results ComparisonResult, compared
 		}
 		section.WriteString("\n")
 	}
+
+	appendVariantSpecFitSection(&section, results.VariantSpecFit)
 
 	section.WriteString(fmt.Sprintf("## Non-Dominated Set\n\n**Computed Pareto front:** %s\n\n",
 		strings.Join(displayVariantLabels(results.NonDominatedSet, displayLabels), ", ")))
@@ -1171,7 +1199,7 @@ func extractPortfolioVariantRefs(body string) []portfolioVariantRef {
 	return refs
 }
 
-func portfolioVariantDisplayLabels(body string) map[string]string {
+func portfolioVariantComparisonLabels(body string) map[string]string {
 	labels := make(map[string]string)
 	for _, ref := range extractPortfolioVariantRefs(body) {
 		key := strings.TrimSpace(ref.ID)
@@ -1182,14 +1210,19 @@ func portfolioVariantDisplayLabels(body string) map[string]string {
 			continue
 		}
 
-		label := strings.TrimSpace(ref.Title)
+		title := strings.TrimSpace(ref.Title)
+		refID := strings.TrimSpace(ref.ID)
+		label := title
+		if title != "" && refID != "" {
+			label = fmt.Sprintf("%s `%s`", title, refID)
+		}
 		if label == "" {
 			label = key
 		}
 
 		labels[key] = label
-		if strings.TrimSpace(ref.Title) != "" {
-			labels[strings.TrimSpace(ref.Title)] = label
+		if title != "" {
+			labels[title] = title
 		}
 	}
 	return labels
@@ -1421,13 +1454,14 @@ func subjectiveComparisonDimensionWarnings(compareDimensions []string, character
 	return warnings
 }
 
-// nonDiscriminatingDimensionWarnings flags TARGET dimensions on which every
-// scored variant has the same value — a target that does not separate the
-// variants is dead weight (or a hidden parity condition mislabeled as a
-// target). Per FPF A.19.ECS discriminating-case discipline. Constraints are
-// skipped (all variants satisfying a hard limit identically is correct, not a
-// defect) and observations are watch-only. Needs >=2 scored variants;
-// single-scored dimensions are a missing-data concern handled elsewhere.
+// nonDiscriminatingDimensionWarnings applies a Haft-local heuristic to TARGET
+// dimensions on which every currently scored variant has the same value. The
+// heuristic is informed by the A.19.ECS:4.2 move to remove false coordinates,
+// but identical values in one candidate set are not themselves the
+// A.19.ECS:4.4 discriminating-case test. Constraints are skipped (all variants
+// satisfying a hard limit identically is correct, not a defect) and
+// observations are watch-only. Needs >=2 scored variants; single-scored
+// dimensions are a missing-data concern handled elsewhere.
 func nonDiscriminatingDimensionWarnings(comparedVariants []string, scores map[string]map[string]string, compareDimensions []string, characterized map[string]charDim) []string {
 	var warnings []string
 	for _, dimension := range compareDimensions {
@@ -1452,7 +1486,7 @@ func nonDiscriminatingDimensionWarnings(comparedVariants []string, scores map[st
 		}
 		if allEqual {
 			warnings = append(warnings, fmt.Sprintf(
-				"target dimension '%s' scores identically across all variants (%q) — it does not discriminate; drop it or it is a hidden parity condition, not a target (FPF A.19.ECS discriminating-case)",
+				"target dimension '%s' scores identically across all variants (%q) — it does not discriminate; drop it or it is a hidden parity condition, not a target (Haft-local heuristic informed by FPF A.19.ECS:4.2 move 5)",
 				dimension, values[0]))
 		}
 	}
@@ -1653,9 +1687,11 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	cloned := &ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
 		NonDominatedSet:         append([]string(nil), result.NonDominatedSet...),
+		VariantSpecFit:          cloneSpecFitVariantRecords(result.VariantSpecFit),
 		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
 		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
 		PolicyApplied:           result.PolicyApplied,
+		LegacyRecommendationRef: result.LegacyRecommendationRef,
 		SelectedRef:             result.SelectedRef,
 		RecommendationRationale: result.RecommendationRationale,
 		ParityPlan:              cloneParityPlan(result.ParityPlan),
@@ -1676,6 +1712,37 @@ func cloneComparisonResult(result ComparisonResult) *ComparisonResult {
 	}
 
 	return cloned
+}
+
+func normalizeComparisonRecommendationAlias(result ComparisonResult) ComparisonResult {
+	selectedRef := strings.TrimSpace(result.SelectedRef)
+	legacyRecommendationRef := strings.TrimSpace(result.LegacyRecommendationRef)
+
+	recommendationRef := selectedRef
+	if recommendationRef == "" {
+		recommendationRef = legacyRecommendationRef
+	}
+
+	result.SelectedRef = recommendationRef
+	result.LegacyRecommendationRef = recommendationRef
+	return result
+}
+
+func normalizeComparisonRecommendationAliasStrict(result ComparisonResult, aliasMap map[string]string) (ComparisonResult, error) {
+	selectedRef := normalizeVariantReference(result.SelectedRef, aliasMap)
+	legacyRecommendationRef := normalizeVariantReference(result.LegacyRecommendationRef, aliasMap)
+
+	if selectedRef != "" && legacyRecommendationRef != "" && selectedRef != legacyRecommendationRef {
+		return ComparisonResult{}, fmt.Errorf(
+			"selected_ref %q conflicts with legacy_recommendation_ref %q — comparison may recommend only one advisory candidate",
+			selectedRef,
+			legacyRecommendationRef,
+		)
+	}
+
+	result.SelectedRef = selectedRef
+	result.LegacyRecommendationRef = legacyRecommendationRef
+	return normalizeComparisonRecommendationAlias(result), nil
 }
 
 func cloneDominatedVariantExplanations(notes []DominatedVariantExplanation) []DominatedVariantExplanation {
@@ -1726,16 +1793,23 @@ func normalizeParetoTradeoffNotes(notes []ParetoTradeoffNote, aliasMap map[strin
 
 func normalizeComparisonVariantReferences(result ComparisonResult, identities []portfolioVariantIdentity) (ComparisonResult, error) {
 	aliasMap := portfolioVariantAliasMap(identities)
+	result, err := normalizeComparisonRecommendationAliasStrict(result, aliasMap)
+	if err != nil {
+		return ComparisonResult{}, err
+	}
+
 	normalized := ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
 		Incomparable:            make([][]string, 0, len(result.Incomparable)),
 		DominatedVariants:       normalizeDominatedVariantExplanations(result.DominatedVariants, aliasMap),
 		ParetoTradeoffs:         normalizeParetoTradeoffNotes(result.ParetoTradeoffs, aliasMap),
 		PolicyApplied:           result.PolicyApplied,
+		LegacyRecommendationRef: normalizeVariantReference(result.LegacyRecommendationRef, aliasMap),
 		SelectedRef:             normalizeVariantReference(result.SelectedRef, aliasMap),
 		RecommendationRationale: strings.TrimSpace(result.RecommendationRationale),
 		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
+	normalized = normalizeComparisonRecommendationAlias(normalized)
 
 	normalized.NonDominatedSet = normalizeVariantReferences(result.NonDominatedSet, aliasMap)
 	normalized.NonDominatedSet = dedupeTrimmedStrings(normalized.NonDominatedSet)
@@ -1813,13 +1887,16 @@ func normalizeComparisonResult(result ComparisonResult, comparedVariants []strin
 	normalized := ComparisonResult{
 		Dimensions:              append([]string(nil), result.Dimensions...),
 		NonDominatedSet:         append([]string(nil), result.NonDominatedSet...),
+		VariantSpecFit:          cloneSpecFitVariantRecords(result.VariantSpecFit),
 		DominatedVariants:       cloneDominatedVariantExplanations(result.DominatedVariants),
 		ParetoTradeoffs:         cloneParetoTradeoffNotes(result.ParetoTradeoffs),
 		PolicyApplied:           result.PolicyApplied,
+		LegacyRecommendationRef: result.LegacyRecommendationRef,
 		SelectedRef:             result.SelectedRef,
 		RecommendationRationale: result.RecommendationRationale,
 		ParityPlan:              cloneParityPlan(result.ParityPlan),
 	}
+	normalized = normalizeComparisonRecommendationAlias(normalized)
 
 	for _, pair := range result.Incomparable {
 		normalized.Incomparable = append(normalized.Incomparable, append([]string(nil), pair...))
@@ -1861,9 +1938,20 @@ func cloneVariants(variants []Variant) []Variant {
 			AssumptionNotes:    variant.AssumptionNotes,
 			RollbackNotes:      variant.RollbackNotes,
 			EvidenceRefs:       append([]string(nil), variant.EvidenceRefs...),
+			ProjectRecordRef:   cloneVariantProjectRecordRef(variant.ProjectRecordRef),
 		})
 	}
 	return cloned
+}
+
+func cloneVariantProjectRecordRef(
+	reference *VariantProjectRecordRef,
+) *VariantProjectRecordRef {
+	if reference == nil {
+		return nil
+	}
+	cloned := *reference
+	return &cloned
 }
 
 func cloneDimensions(dimensions []ComparisonDimension) []ComparisonDimension {

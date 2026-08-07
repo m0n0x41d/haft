@@ -97,15 +97,13 @@ var (
 )
 
 // ParseImports extracts import edges from a Python source file.
-func (p *PythonLang) ParseImports(filePath string, projectRoot string) ([]ImportEdge, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, nil
-	}
-
-	relFile, _ := filepath.Rel(projectRoot, filePath)
+func (p *PythonLang) ParseImports(
+	source AdmittedSource,
+	_ string,
+) ([]ImportEdge, error) {
+	relFile := source.Path().String()
 	sourceDir := filepath.Dir(relFile)
-	content := string(data)
+	content := string(source.bytes())
 
 	var edges []ImportEdge
 	seen := make(map[string]bool)

@@ -1,0 +1,4263 @@
+package cli
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"regexp"
+	"sort"
+	"strings"
+	"testing"
+
+	"github.com/m0n0x41d/haft/internal/fpf"
+	"github.com/m0n0x41d/haft/internal/projectmemory"
+)
+
+func TestInterfaceCatalogJSONListsCapabilities(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+
+	if err := writeInterfaceCatalogJSON(&output, haftInterfaceCatalog()); err != nil {
+		t.Fatalf("writeInterfaceCatalogJSON returned error: %v", err)
+	}
+
+	response := interfaceCatalogResponse{}
+	if err := json.Unmarshal(output.Bytes(), &response); err != nil {
+		t.Fatalf("unmarshal catalog JSON: %v\n%s", err, output.String())
+	}
+
+	if response.Kind != "haft_interface_catalog" {
+		t.Fatalf("kind = %q, want haft_interface_catalog", response.Kind)
+	}
+
+	ids := make(map[string]bool)
+	for _, capability := range response.Capabilities {
+		ids[capability.ID] = true
+	}
+
+	for _, want := range []string{"problem.characterize", "decision.decide", "decision.reconcile_apply", "note.record", "method.pull", "method.close", "method.status", "method.catalog", "query.status", "query.node", "query.related", "query.carrier_manifest", "query.carrier_check", "baseline.audit", "query.contract_audit", "query.contract_generation", "query.spec_review", "spec.draft_contract", "query.spec_validate", "spec.export", "query.drift_events", "drift.binding_review", "query.decision_reconcile", "query.governing_set", "refresh.scan", "refresh.review", "refresh.drain"} {
+		if !ids[want] {
+			t.Fatalf("catalog missing capability %q in %#v", want, response.Capabilities)
+		}
+	}
+}
+
+func TestMemoryReadOutputContractMirrorsKernelCatalogAndPi(t *testing.T) {
+	t.Parallel()
+
+	want := projectmemory.MemoryReadOutputContractV1()
+	wantJSON, err := json.Marshal(want)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, capabilityID := range []string{
+		"memory.resolve",
+		"memory.neighborhood",
+		"memory.recall",
+	} {
+		capability, found := findInterfaceCapability(
+			haftInterfaceCatalog(),
+			capabilityID,
+		)
+		if !found {
+			t.Fatalf("interface capability %q missing", capabilityID)
+		}
+		gotJSON, marshalErr := json.Marshal(capability.OutputContract)
+		if marshalErr != nil {
+			t.Fatal(marshalErr)
+		}
+		if !bytes.Equal(gotJSON, wantJSON) {
+			t.Fatalf("%s output contract drifted\ngot:  %s\nwant: %s", capabilityID, gotJSON, wantJSON)
+		}
+	}
+
+	piSource := readRepoFile(
+		t,
+		"packages",
+		"haft-pi",
+		"extensions",
+		"haft",
+		"tools.ts",
+	)
+	pattern := regexp.MustCompile(
+		"(?s)export const HAFT_MEMORY_READ_OUTPUT_CONTRACT_JSON = `([^`]*)`;",
+	)
+	matches := pattern.FindStringSubmatch(piSource)
+	if len(matches) != 2 {
+		t.Fatal("Pi memory-read output contract mirror missing")
+	}
+	var piContract projectmemory.MemoryReadOutputContract
+	if err := json.Unmarshal([]byte(matches[1]), &piContract); err != nil {
+		t.Fatalf("decode Pi memory-read output contract: %v", err)
+	}
+	piJSON, err := json.Marshal(piContract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(piJSON, wantJSON) {
+		t.Fatalf("Pi memory-read output contract drifted\ngot:  %s\nwant: %s", piJSON, wantJSON)
+	}
+}
+
+func TestMemoryReadInterfaceSeparatesMCPModeFromDedicatedCLIRequest(t *testing.T) {
+	t.Parallel()
+
+	for _, capabilityID := range []string{
+		"memory.resolve",
+		"memory.neighborhood",
+		"memory.recall",
+	} {
+		capability, found := findInterfaceCapability(
+			haftInterfaceCatalog(),
+			capabilityID,
+		)
+		if !found {
+			t.Fatalf("interface capability %q missing", capabilityID)
+		}
+		if containsString(capability.InputContract.RequiredFields, "mode") ||
+			containsString(capability.InputContract.OptionalFields, "mode") {
+			t.Fatalf(
+				"%s exposes legacy flat public mode: %#v",
+				capabilityID,
+				capability.InputContract,
+			)
+		}
+		if !containsString(
+			capability.InputContract.RequiredFields,
+			"memory_request.mode",
+		) {
+			t.Fatalf(
+				"%s closed MCP branch lost nested mode: %#v",
+				capabilityID,
+				capability.InputContract,
+			)
+		}
+		if !strings.Contains(
+			capability.CurrentExecution.MCPCall,
+			`memory_request={"mode":"`,
+		) {
+			t.Fatalf(
+				"%s MCP wrapper lost closed memory_request mode: %#v",
+				capabilityID,
+				capability,
+			)
+		}
+		notes := strings.Join(capability.InputContract.Notes, "\n")
+		if !strings.Contains(notes, "dedicated CLI file") ||
+			!strings.Contains(notes, "flat action=") {
+			t.Fatalf("%s does not state the transport split", capabilityID)
+		}
+	}
+}
+
+func TestInterfaceCatalogTextStaysCompact(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+
+	if err := writeInterfaceCatalogText(&output, haftInterfaceCatalog()); err != nil {
+		t.Fatalf("writeInterfaceCatalogText returned error: %v", err)
+	}
+
+	result := output.String()
+	for _, want := range []string{
+		"Haft interface capabilities:",
+		"query.contract_generation",
+		"Use `haft interface <capability> --json`",
+	} {
+		if !strings.Contains(result, want) {
+			t.Fatalf("compact interface catalog missing %q:\n%s", want, result)
+		}
+	}
+	assertNoContractGenerationManifestInline(t, "compact interface catalog", result)
+}
+
+func TestInterfaceContractAuditReportsSourcesAndAuthorityPosture(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+
+	if report.Kind != "haft_interface_contract_audit" {
+		t.Fatalf("kind = %q", report.Kind)
+	}
+	if report.Authority != "read_only_contract_inventory_not_schema_generation" {
+		t.Fatalf("authority = %q", report.Authority)
+	}
+	assertInterfaceContractAuditAuthorityBoundary(t, report.AuthorityBoundary)
+	if report.Summary.KernelOwnedContracts != report.Summary.Capabilities {
+		t.Fatalf("kernel_owned = %d, capabilities = %d", report.Summary.KernelOwnedContracts, report.Summary.Capabilities)
+	}
+	if report.Summary.BindingAuthoritySurfaces == 0 {
+		t.Fatalf("expected binding-sensitive surfaces in summary: %#v", report.Summary)
+	}
+	if report.Summary.ReadOnlySurfaces == 0 {
+		t.Fatalf("expected read-only surfaces in summary: %#v", report.Summary)
+	}
+	if report.Summary.ValidatedMCPMirrors == 0 {
+		t.Fatalf("expected validated MCP mirrors in summary: %#v", report.Summary)
+	}
+	if report.Summary.ManualCLIContracts == 0 {
+		t.Fatalf("expected manual CLI contracts in summary: %#v", report.Summary)
+	}
+	if report.Summary.UnvalidatedHostFragments != 0 {
+		t.Fatalf("unexpected unvalidated host fragments in summary: %#v", report.Summary)
+	}
+	if report.Summary.UnvalidatedFragments != 0 {
+		t.Fatalf("unexpected unvalidated contract fragments in summary: %#v", report.Summary)
+	}
+	if report.Summary.ValidatedFragments == 0 {
+		t.Fatalf("expected validated contract fragments in summary: %#v", report.Summary)
+	}
+	if report.Summary.LegacyFragments == 0 {
+		t.Fatalf("expected legacy/manual contract fragments in summary: %#v", report.Summary)
+	}
+	if got := report.Summary.GeneratedTargetFragments + report.Summary.ValidatedFragments + report.Summary.LegacyFragments + report.Summary.UnvalidatedFragments; got != report.Summary.Capabilities {
+		t.Fatalf("fragment posture counts = %d, capabilities = %d: %#v", got, report.Summary.Capabilities, report.Summary)
+	}
+
+	decide, ok := findContractAuditSurface(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide missing from contract audit")
+	}
+	if decide.ContractSourcePosture != "kernel_interface_catalog_source" {
+		t.Fatalf("decision.decide contract source posture = %q", decide.ContractSourcePosture)
+	}
+	if decide.HostSchemaPosture != "validated_mcp_mirror" {
+		t.Fatalf("decision.decide host schema posture = %q", decide.HostSchemaPosture)
+	}
+	if decide.ContractFragmentPosture != "validated_fragment" {
+		t.Fatalf("decision.decide contract fragment posture = %q", decide.ContractFragmentPosture)
+	}
+	if decide.AuthorityPosture != "binding_denied_by_default_mcp" {
+		t.Fatalf("decision.decide authority posture = %q", decide.AuthorityPosture)
+	}
+	if decide.SchemaCoverage.Status != "covered" {
+		t.Fatalf("decision.decide schema coverage = %#v", decide.SchemaCoverage)
+	}
+	if len(decide.SchemaCoverage.MissingFields) != 0 {
+		t.Fatalf("decision.decide missing schema fields = %#v", decide.SchemaCoverage.MissingFields)
+	}
+	if !contractAuditTestContains(decide.SchemaCoverage.MCPRequiredFields, "action") {
+		t.Fatalf("decision.decide required fields missing action: %#v", decide.SchemaCoverage)
+	}
+	if len(decide.SchemaCoverage.MissingRequiredFields) != 0 {
+		t.Fatalf("decision.decide missing required schema fields = %#v", decide.SchemaCoverage)
+	}
+	if decide.SchemaCoverage.RequiredPosture != "transport_action_required_action_specific_fields_validated_by_handler" {
+		t.Fatalf("decision.decide required posture = %#v", decide.SchemaCoverage)
+	}
+	if !contractAuditTestContains(decide.SchemaCoverage.ActionRequiredFields, "selected_title") {
+		t.Fatalf("decision.decide action required fields missing selected_title: %#v", decide.SchemaCoverage)
+	}
+	if len(decide.SchemaCoverage.ExcludedFields) != 0 {
+		t.Fatalf("decision.decide still hides schema fields: %#v", decide.SchemaCoverage)
+	}
+	if decide.ShapeCoverage.Status != "covered" {
+		t.Fatalf("decision.decide shape coverage = %#v", decide.ShapeCoverage)
+	}
+	if len(decide.ShapeCoverage.MissingShapeFields) != 0 {
+		t.Fatalf("decision.decide should not report missing shape fields: %#v", decide.ShapeCoverage)
+	}
+	if len(decide.ShapeCoverage.GeneratorTargetFields) != 0 {
+		t.Fatalf("decision.decide should not expose generator targets after nested schema coverage: %#v", decide.ShapeCoverage)
+	}
+	for _, want := range []string{"kernel_interface_catalog"} {
+		if !contractAuditTestContains(decide.ContractSources, want) {
+			t.Fatalf("decision.decide contract sources missing %q: %#v", want, decide.ContractSources)
+		}
+	}
+	for _, want := range []string{"internal/cli/interface_test.go", "internal/fpf/server_test.go"} {
+		if !contractAuditTestContains(decide.ValidationRefs, want) {
+			t.Fatalf("decision.decide validation refs missing %q: %#v", want, decide.ValidationRefs)
+		}
+	}
+
+	audit, ok := findContractAuditSurface(report, "query.contract_audit")
+	if !ok {
+		t.Fatal("query.contract_audit missing from contract audit")
+	}
+	if audit.SchemaPosture != "mcp_schema_mirrored" {
+		t.Fatalf("query.contract_audit schema posture = %q", audit.SchemaPosture)
+	}
+	if audit.HostSchemaPosture != "validated_mcp_mirror" {
+		t.Fatalf("query.contract_audit host schema posture = %q", audit.HostSchemaPosture)
+	}
+	if audit.ContractFragmentPosture != "validated_fragment" {
+		t.Fatalf("query.contract_audit contract fragment posture = %q", audit.ContractFragmentPosture)
+	}
+	if audit.AuthorityPosture != "read_only_drill_down" {
+		t.Fatalf("query.contract_audit authority posture = %q", audit.AuthorityPosture)
+	}
+	if audit.SchemaCoverage.Status != "covered" {
+		t.Fatalf("query.contract_audit schema coverage = %#v", audit.SchemaCoverage)
+	}
+	if audit.ShapeCoverage.Status != "no_input_shapes" {
+		t.Fatalf("query.contract_audit shape coverage = %#v", audit.ShapeCoverage)
+	}
+	if !audit.LegacyException {
+		t.Fatalf("query.contract_audit should document standalone transport exception: %#v", audit)
+	}
+
+	compare, ok := findContractAuditSurface(report, "solution.compare")
+	if !ok {
+		t.Fatal("solution.compare missing from contract audit")
+	}
+	if compare.ShapeCoverage.Status != "covered" {
+		t.Fatalf("solution.compare shape coverage = %#v", compare.ShapeCoverage)
+	}
+	if !contractAuditTestContains(compare.ShapeCoverage.SkippedFields, "scores") {
+		t.Fatalf("solution.compare should explicitly skip dynamic score keys: %#v", compare.ShapeCoverage)
+	}
+
+	specUse, ok := findContractAuditSurface(report, "query.spec_use")
+	if !ok {
+		t.Fatal("query.spec_use missing from contract audit")
+	}
+	if specUse.ShapeCoverage.Status != "covered" {
+		t.Fatalf("query.spec_use shape coverage = %#v", specUse.ShapeCoverage)
+	}
+	if len(specUse.ShapeCoverage.GeneratorTargetFields) != 0 {
+		t.Fatalf("query.spec_use should not expose operational_gate generator targets after nested schema coverage: %#v", specUse.ShapeCoverage)
+	}
+	if report.Summary.ShapeMissingSurfaces != 0 {
+		t.Fatalf("contract audit should not count generator targets as missing surfaces: %#v", report.Summary)
+	}
+	if report.Summary.ShapeGeneratorTargets != 0 || report.Summary.ShapeGeneratorTargetFields != 0 {
+		t.Fatalf("contract audit should have no remaining generator targets: %#v", report.Summary)
+	}
+	if report.Summary.SchemaRequiredMissing != 0 || report.Summary.SchemaMissingRequiredFields != 0 {
+		t.Fatalf("contract audit should have no missing required MCP schema fields: %#v", report.Summary)
+	}
+	if report.Summary.SchemaRequiredCovered == 0 {
+		t.Fatalf("contract audit should count required-field coverage: %#v", report.Summary)
+	}
+	specReview, ok := findContractAuditSurface(report, "query.spec_review")
+	if !ok {
+		t.Fatal("query.spec_review missing from contract audit")
+	}
+	if specReview.HostSchemaPosture != "validated_mcp_mirror" {
+		t.Fatalf("query.spec_review host schema posture = %q", specReview.HostSchemaPosture)
+	}
+	if specReview.AuthorityPosture != "read_only_drill_down" {
+		t.Fatalf("query.spec_review authority posture = %q", specReview.AuthorityPosture)
+	}
+
+	notes := strings.Join(report.Notes, " ")
+	if !strings.Contains(notes, "Schema visibility is not operator authorization") {
+		t.Fatalf("audit notes missing authority boundary:\n%s", notes)
+	}
+	if !strings.Contains(notes, "Host schema posture classifies each fragment") {
+		t.Fatalf("audit notes missing host schema posture boundary:\n%s", notes)
+	}
+	if !strings.Contains(notes, "Contract fragment posture classifies every fragment") {
+		t.Fatalf("audit notes missing contract fragment posture boundary:\n%s", notes)
+	}
+	if !strings.Contains(notes, "MCP required-field coverage checks transport-level required fields") {
+		t.Fatalf("audit notes missing required-field boundary:\n%s", notes)
+	}
+}
+
+func TestInterfaceContractAuditTreatsDedicatedNoteToolAsMCPBacked(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	note, ok := findContractAuditSurface(report, "note.record")
+	if !ok {
+		t.Fatal("note.record missing from contract audit")
+	}
+	if note.MCPTool != "haft_note" || note.MCPAction != "" {
+		t.Fatalf("note.record MCP target = %#v", note)
+	}
+	if note.SchemaCoverage.Status != "covered" ||
+		note.HostSchemaPosture != "validated_mcp_mirror" ||
+		note.ContractFragmentPosture != "validated_fragment" {
+		t.Fatalf("dedicated note tool was not validated as an MCP mirror: %#v", note)
+	}
+	if note.SchemaCoverage.ActionSchemaPosture != "direct_tool_without_action" {
+		t.Fatalf(
+			"note.record schema posture = %q",
+			note.SchemaCoverage.ActionSchemaPosture,
+		)
+	}
+	if len(note.SchemaCoverage.ExcludedFields) != 0 {
+		t.Fatalf(
+			"note.record still hides schema fields: %#v",
+			note.SchemaCoverage.ExcludedFields,
+		)
+	}
+
+	generation := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	fragment, ok := findContractGeneratedSchemaFragment(
+		generation,
+		"note.record",
+	)
+	if !ok {
+		t.Fatal("note.record generated schema fragment missing")
+	}
+	if fragment.MCPTool != "haft_note" || fragment.MCPAction != "" {
+		t.Fatalf("note.record generated MCP target = %#v", fragment)
+	}
+	for _, field := range []string{"title", "task_context", "valid_until"} {
+		if !stringSliceContains(fragment.AllowedTopLevelFields, field) {
+			t.Fatalf(
+				"note.record generated fields omit %q: %#v",
+				field,
+				fragment.AllowedTopLevelFields,
+			)
+		}
+	}
+	if !stringSliceContains(fragment.RequiredFields, "title") {
+		t.Fatalf(
+			"note.record required fields = %#v",
+			fragment.RequiredFields,
+		)
+	}
+	properties, _ := fragment.Schema["properties"].(map[string]any)
+	if _, invented := properties["action"]; invented {
+		t.Fatalf("note.record generated schema invented action: %#v", properties)
+	}
+}
+
+func TestInterfaceContractAuditInventoriesAuthorityMutationSurfaces(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+
+	for _, tc := range []struct {
+		capabilityID     string
+		authorityPosture string
+		hostPosture      string
+		validationRefs   []string
+	}{
+		{
+			capabilityID:     "decision.decide",
+			authorityPosture: "binding_denied_by_default_mcp",
+			hostPosture:      "validated_mcp_mirror",
+			validationRefs:   []string{"internal/cli/interface_test.go", "internal/fpf/server_test.go"},
+		},
+		{
+			capabilityID:     "decision.reconcile_apply",
+			authorityPosture: "cli_operator_approved_binding_apply",
+			hostPosture:      "validated_mcp_mirror",
+			validationRefs:   []string{"internal/cli/interface_test.go", "internal/fpf/server_test.go", "internal/cli/decision_reconcile_test.go"},
+		},
+		{
+			capabilityID:     "spec.apply_change",
+			authorityPosture: "sql_edition_sync_back_mutation_not_approval",
+			hostPosture:      "manual_cli_contract_not_generated",
+			validationRefs:   []string{"internal/cli/interface_test.go", "internal/cli/spec_apply_change_test.go"},
+		},
+	} {
+		surface, ok := findContractAuditSurface(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s missing from contract audit", tc.capabilityID)
+		}
+		if surface.AuthorityPosture != tc.authorityPosture {
+			t.Fatalf("%s authority posture = %q", tc.capabilityID, surface.AuthorityPosture)
+		}
+		if surface.HostSchemaPosture != tc.hostPosture {
+			t.Fatalf("%s host posture = %q", tc.capabilityID, surface.HostSchemaPosture)
+		}
+		for _, ref := range tc.validationRefs {
+			if !contractAuditTestContains(surface.ValidationRefs, ref) {
+				t.Fatalf("%s validation refs missing %q: %#v", tc.capabilityID, ref, surface.ValidationRefs)
+			}
+		}
+	}
+}
+
+func TestInterfaceContractAuditClassifiesEveryHostFragment(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+
+	for _, surface := range report.Surfaces {
+		if surface.ContractSourcePosture == "" || surface.ContractSourcePosture == "unclassified_contract_source" {
+			t.Fatalf("%s has unclassified contract source posture: %#v", surface.CapabilityID, surface)
+		}
+		if surface.HostSchemaPosture == "" || surface.HostSchemaPosture == "unvalidated_host_schema_fragment" {
+			t.Fatalf("%s has unvalidated host schema posture: %#v", surface.CapabilityID, surface)
+		}
+		if surface.ContractFragmentPosture == "" || surface.ContractFragmentPosture == "unvalidated_fragment" {
+			t.Fatalf("%s has unvalidated contract fragment posture: %#v", surface.CapabilityID, surface)
+		}
+		if surface.MCPTool != "" && !strings.HasPrefix(surface.HostSchemaPosture, "validated_mcp_mirror") {
+			t.Fatalf("%s MCP-backed surface should be a validated mirror, got %q", surface.CapabilityID, surface.HostSchemaPosture)
+		}
+		if surface.MCPTool != "" &&
+			surface.ContractFragmentPosture != "validated_fragment" &&
+			surface.ContractFragmentPosture != "generated_target_fragment" {
+			t.Fatalf("%s MCP-backed fragment posture = %q", surface.CapabilityID, surface.ContractFragmentPosture)
+		}
+		if surface.MCPTool == "" && surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+			t.Fatalf("%s CLI/manual surface posture = %q", surface.CapabilityID, surface.HostSchemaPosture)
+		}
+		if surface.MCPTool == "" && surface.ContractFragmentPosture != "legacy_fragment" {
+			t.Fatalf("%s CLI/manual fragment posture = %q", surface.CapabilityID, surface.ContractFragmentPosture)
+		}
+	}
+}
+
+func TestInterfaceContractValidationRefsExist(t *testing.T) {
+	t.Parallel()
+
+	catalog := haftInterfaceCatalog()
+	generation := buildInterfaceContractGenerationReport(catalog)
+	audit := buildInterfaceContractAuditReport(catalog)
+	refs := append([]string(nil), generation.ValidationRefs...)
+	for _, surface := range audit.Surfaces {
+		refs = append(refs, surface.ValidationRefs...)
+	}
+	refs = uniqueInterfaceContractAuditStrings(refs)
+
+	root := testProjectRoot(t)
+	for _, ref := range refs {
+		path := filepath.Join(root, filepath.FromSlash(ref))
+		info, err := os.Stat(path)
+		if err != nil {
+			t.Fatalf("validation ref %q is not readable: %v", ref, err)
+		}
+		if info.IsDir() {
+			t.Fatalf("validation ref %q resolves to a directory", ref)
+		}
+	}
+}
+
+func TestInterfaceContractGenerationManifestListsGeneratorTargets(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	if report.Kind != "haft_interface_contract_generation_manifest" {
+		t.Fatalf("kind = %q", report.Kind)
+	}
+	if report.Authority != "read_only_generation_manifest_not_host_materialization" {
+		t.Fatalf("authority = %q", report.Authority)
+	}
+	if report.Source != "kernel_interface_catalog" {
+		t.Fatalf("source = %q", report.Source)
+	}
+	if !strings.HasPrefix(report.SourceDigest, "sha256:") {
+		t.Fatalf("source digest = %q", report.SourceDigest)
+	}
+	if len(report.ValidationRefs) == 0 {
+		t.Fatalf("validation_refs missing from generation manifest")
+	}
+	if !stringSliceContains(report.ValidationRefs, "internal/cli/interface_test.go") {
+		t.Fatalf("validation_refs missing interface test: %#v", report.ValidationRefs)
+	}
+	if report.Summary.GeneratorTargetSurfaces != 0 || report.Summary.GeneratorTargetFields != 0 {
+		t.Fatalf("expected empty generator target queue after nested schema coverage: %#v", report.Summary)
+	}
+	if report.Summary.GeneratedPreviewFragments != report.Summary.Capabilities {
+		t.Fatalf("generated preview fragments = %d, capabilities = %d", report.Summary.GeneratedPreviewFragments, report.Summary.Capabilities)
+	}
+	if report.Summary.GeneratedSchemaFragments == 0 {
+		t.Fatalf("expected generated MCP schema fragments in generation manifest: %#v", report.Summary)
+	}
+	if report.Summary.BindingPreviewFragments == 0 {
+		t.Fatalf("expected binding preview fragments in generation manifest: %#v", report.Summary)
+	}
+	if report.Summary.MaterializedCarriers == 0 {
+		t.Fatalf("expected materialized carrier list in generation manifest: %#v", report.Summary)
+	}
+	if report.Summary.DigestGuardedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("expected all materialized carriers source-digest guarded: %#v", report.Summary)
+	}
+	if report.Summary.AuthorityGuardedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("expected all materialized carriers authority-guarded: %#v", report.Summary)
+	}
+	if report.SurfacePolicy.DefaultStatus != "cue_or_count_only_never_inline_generation_manifest" {
+		t.Fatalf("default status policy = %q", report.SurfacePolicy.DefaultStatus)
+	}
+	if report.SurfacePolicy.DefaultCodeContext != "lane_index_only_never_inline_generated_descriptions" {
+		t.Fatalf("code_context policy = %q", report.SurfacePolicy.DefaultCodeContext)
+	}
+	if report.SurfacePolicy.ToolsList != "action_enum_and_compact_description_only_no_generated_schema_fragments" {
+		t.Fatalf("tools/list policy = %q", report.SurfacePolicy.ToolsList)
+	}
+	if !stringSliceContains(report.SurfacePolicy.RequiredGuards, "carrier_semio_authority_boundary") {
+		t.Fatalf("surface policy missing semio guard: %#v", report.SurfacePolicy.RequiredGuards)
+	}
+
+	if len(report.Targets) != 0 {
+		t.Fatalf("expected no current generator targets: %#v", report.Targets)
+	}
+	if len(report.Carriers) != report.Summary.MaterializedCarriers {
+		t.Fatalf("materialized carriers = %d, summary = %#v", len(report.Carriers), report.Summary)
+	}
+	if len(report.Fragments) != report.Summary.GeneratedPreviewFragments {
+		t.Fatalf("generated fragments = %d, summary = %#v", len(report.Fragments), report.Summary)
+	}
+	if len(report.SchemaFragments) != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("generated schema fragments = %d, summary = %#v", len(report.SchemaFragments), report.Summary)
+	}
+	notes := strings.Join(report.Notes, "\n")
+	for _, want := range []string{"--write-schema-fragments", "--write-description-fragments", "--check-schema-fragments", "--check-description-fragments", "--check-materialized-carriers", "--sync-materialized-carriers"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("contract_generation report notes missing %q:\n%s", want, notes)
+		}
+	}
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+	for _, want := range []string{
+		"kernel_interface_catalog",
+		"binding actions require effect-specific operator authority",
+		"not operator authorization and are not approval receipts",
+	} {
+		if !strings.Contains(decide.GeneratedText, want) && !strings.Contains(decide.AuthorityBoundary, want) {
+			t.Fatalf("decision.decide generated fragment missing %q:\n%#v", want, decide)
+		}
+	}
+	if !stringSliceContains(decide.InputFields, "choice_result") {
+		t.Fatalf("decision.decide generated fragment missing choice_result input field: %#v", decide.InputFields)
+	}
+	decideSchema, ok := findContractGeneratedSchemaFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated schema fragment missing")
+	}
+	if decideSchema.FragmentKind != "mcp_action_schema_fragment" {
+		t.Fatalf("decision.decide schema fragment kind = %#v", decideSchema)
+	}
+	if decideSchema.MCPTool != "haft_decision" || decideSchema.MCPAction != "decide" {
+		t.Fatalf("decision.decide schema fragment MCP target = %#v", decideSchema)
+	}
+	if !stringSliceContains(decideSchema.RequiredFields, "action") {
+		t.Fatalf("decision.decide schema fragment required fields = %#v", decideSchema.RequiredFields)
+	}
+	if !stringSliceContains(decideSchema.ActionRequiredFields, "selected_title") {
+		t.Fatalf("decision.decide schema fragment action required fields = %#v", decideSchema.ActionRequiredFields)
+	}
+	if !stringSliceContains(decideSchema.HandlerValidatedFields, "selected_title") {
+		t.Fatalf("decision.decide schema fragment handler fields = %#v", decideSchema.HandlerValidatedFields)
+	}
+	if !strings.HasPrefix(decideSchema.SchemaDigest, "sha256:") {
+		t.Fatalf("decision.decide schema digest = %q", decideSchema.SchemaDigest)
+	}
+	if !strings.Contains(decideSchema.AuthorityBoundary, "not operator authorization") {
+		t.Fatalf("decision.decide schema fragment authority boundary = %q", decideSchema.AuthorityBoundary)
+	}
+
+	authorityNotes := strings.Join(report.Notes, " ")
+	if !strings.Contains(authorityNotes, "not host materialization") ||
+		!strings.Contains(authorityNotes, "not operator authorization") ||
+		!strings.Contains(authorityNotes, "generated_schema_fragments") {
+		t.Fatalf("generation manifest notes missing authority boundary:\n%s", authorityNotes)
+	}
+}
+
+func TestInterfaceContractGeneratedSchemaFragmentsMatchToolsList(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	toolActionEnums := fpfToolActionEnums(t)
+	toolProperties := fpfToolProperties(t)
+	toolRequired := fpfToolRequiredFields(t)
+	exclusions := interfaceContractAuditSchemaFieldExclusions()
+
+	if len(report.SchemaFragments) == 0 {
+		t.Fatal("expected generated schema fragments")
+	}
+	for _, fragment := range report.SchemaFragments {
+		if fragment.MCPAction != "" &&
+			!contractAuditTestContains(
+				toolActionEnums[fragment.MCPTool],
+				fragment.MCPAction,
+			) {
+			t.Fatalf("%s generated schema action %q missing from %s enum %v", fragment.CapabilityID, fragment.MCPAction, fragment.MCPTool, toolActionEnums[fragment.MCPTool])
+		}
+		for _, field := range fragment.RequiredFields {
+			if !toolRequired[fragment.MCPTool][field] {
+				t.Fatalf("%s generated schema required field %q missing from %s required %v", fragment.CapabilityID, field, fragment.MCPTool, sortedStringSetKeys(toolRequired[fragment.MCPTool]))
+			}
+		}
+		for _, field := range fragment.AllowedTopLevelFields {
+			if exclusions[fragment.CapabilityID][field] {
+				continue
+			}
+			if _, ok := toolProperties[fragment.MCPTool][field]; !ok {
+				t.Fatalf("%s generated schema field %q missing from %s properties %s", fragment.CapabilityID, field, fragment.MCPTool, sortedMapKeys(toolProperties[fragment.MCPTool]))
+			}
+		}
+		schemaProperties, ok := fragment.Schema["properties"].(map[string]any)
+		if !ok {
+			t.Fatalf("%s generated schema properties missing: %#v", fragment.CapabilityID, fragment.Schema)
+		}
+		actionProperty, hasAction := schemaProperties["action"].(map[string]any)
+		if fragment.MCPAction == "" {
+			if hasAction {
+				t.Fatalf("%s direct-tool schema invented action: %#v", fragment.CapabilityID, actionProperty)
+			}
+		} else {
+			if !hasAction {
+				t.Fatalf("%s generated schema action property missing: %#v", fragment.CapabilityID, schemaProperties)
+			}
+			if actionProperty["const"] != fragment.MCPAction {
+				t.Fatalf("%s generated schema action const = %#v, want %q", fragment.CapabilityID, actionProperty["const"], fragment.MCPAction)
+			}
+		}
+		if fragment.CapabilityID == "decision.decide" {
+			selectedTitle, ok := schemaProperties["selected_title"].(map[string]any)
+			if !ok {
+				t.Fatalf("decision.decide generated schema selected_title property missing: %#v", schemaProperties)
+			}
+			if selectedTitle["type"] != "string" {
+				t.Fatalf("decision.decide selected_title generated schema = %#v, want tools/list string schema", selectedTitle)
+			}
+		}
+	}
+}
+
+func TestInterfaceContractGenerationRuntimeSchemaAuditValidatesLiveToolCatalog(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	if report.RuntimeAudit.Authority != "read_only_runtime_schema_validation_not_generation_authority" {
+		t.Fatalf("runtime audit authority = %q", report.RuntimeAudit.Authority)
+	}
+	if report.RuntimeAudit.Status != "clean" {
+		t.Fatalf("runtime audit status = %q, audit = %#v", report.RuntimeAudit.Status, report.RuntimeAudit)
+	}
+	if report.RuntimeAudit.RuntimeSchemaMirrors != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("runtime mirrors = %d, summary = %#v", report.RuntimeAudit.RuntimeSchemaMirrors, report.Summary)
+	}
+	if report.Summary.RuntimeSchemaMirrors != report.RuntimeAudit.RuntimeSchemaMirrors {
+		t.Fatalf("summary runtime mirrors = %d, audit = %d", report.Summary.RuntimeSchemaMirrors, report.RuntimeAudit.RuntimeSchemaMirrors)
+	}
+	if report.Summary.RuntimeSchemaDrift != 0 {
+		t.Fatalf("summary runtime drift = %d, audit = %#v", report.Summary.RuntimeSchemaDrift, report.RuntimeAudit)
+	}
+	if len(report.RuntimeAudit.ValidationRefs) == 0 {
+		t.Fatalf("runtime audit validation refs missing")
+	}
+}
+
+func TestInterfaceContractGenerationRuntimeSchemaAuditDetectsFragmentDrift(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.SchemaFragments) == 0 {
+		t.Fatal("expected generated schema fragments")
+	}
+	report.SchemaFragments[0].SchemaDigest = "sha256:stale"
+
+	audit := interfaceContractRuntimeSchemaAuditFor(report)
+
+	if audit.Status != "drift" {
+		t.Fatalf("runtime audit status = %q, want drift", audit.Status)
+	}
+	if audit.RuntimeSchemaDrift == 0 {
+		t.Fatalf("runtime audit did not count drift: %#v", audit)
+	}
+	if !stringSliceContains(audit.SchemaDigestMismatches, report.SchemaFragments[0].CapabilityID) {
+		t.Fatalf("runtime audit mismatches = %#v, want %q", audit.SchemaDigestMismatches, report.SchemaFragments[0].CapabilityID)
+	}
+}
+
+func TestInterfaceContractGenerationManifestListsMaterializedCarriers(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	toolsCarrier, ok := findContractMaterializedCarrier(report, "packages/haft-pi/extensions/haft/tools.ts")
+	if !ok {
+		t.Fatalf("Pi tool carrier missing from materialized_carriers: %#v", report.Carriers)
+	}
+	if toolsCarrier.ExpectedSourceDigest != report.SourceDigest {
+		t.Fatalf("Pi tool carrier source digest = %q, report digest = %q", toolsCarrier.ExpectedSourceDigest, report.SourceDigest)
+	}
+	if toolsCarrier.SyncPosture != "digest_marker_presence_only_not_semantic_sync" {
+		t.Fatalf("Pi tool carrier sync posture = %q", toolsCarrier.SyncPosture)
+	}
+	if !stringSliceContains(toolsCarrier.GeneratedFragmentRefs, "query.contract_generation") {
+		t.Fatalf("Pi tool carrier missing contract_generation fragment ref: %#v", toolsCarrier.GeneratedFragmentRefs)
+	}
+	if !stringSliceContains(toolsCarrier.GeneratedFragmentRefs, "query.node") {
+		t.Fatalf("Pi tool carrier missing query.node fragment ref: %#v", toolsCarrier.GeneratedFragmentRefs)
+	}
+
+	piReasonSkill, ok := findContractMaterializedCarrier(report, "packages/haft-pi/skills/h-reason/SKILL.md")
+	if !ok {
+		t.Fatalf("Pi h-reason skill missing from materialized_carriers: %#v", report.Carriers)
+	}
+	if !stringSliceContains(piReasonSkill.GeneratedFragmentRefs, "query.node") {
+		t.Fatalf("Pi h-reason skill missing query.node fragment ref: %#v", piReasonSkill.GeneratedFragmentRefs)
+	}
+
+	for _, carrier := range report.Carriers {
+		source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+		normalizedSource := normalizeInterfaceContractMarkerText(source)
+		for _, marker := range carrier.RequiredMarkers {
+			normalizedMarker := normalizeInterfaceContractMarkerText(marker)
+			if !strings.Contains(normalizedSource, normalizedMarker) {
+				t.Fatalf("%s missing required generated-contract marker %q", carrier.CarrierPath, marker)
+			}
+		}
+		if carrier.SourceContract != "kernel_interface_catalog" {
+			t.Fatalf("%s source contract = %q", carrier.CarrierPath, carrier.SourceContract)
+		}
+		if carrier.AuthorityBoundary == "" {
+			t.Fatalf("%s missing authority boundary", carrier.CarrierPath)
+		}
+		if len(carrier.ValidationRefs) == 0 {
+			t.Fatalf("%s missing validation refs", carrier.CarrierPath)
+		}
+	}
+}
+
+func TestInterfaceContractGenerationChecksMaterializedCarriers(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	result, err := checkInterfaceContractMaterializedCarriers(report)
+	if err != nil {
+		t.Fatalf("check materialized carriers: %v\nresult=%#v", err, result)
+	}
+
+	if !result.Summary.RequiredMarkersPresent {
+		t.Fatalf("materialized carrier check did not find all required markers: %#v", result.Summary)
+	}
+	if result.Summary.MaterializedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("materialized carrier count = %d, summary = %#v", result.Summary.MaterializedCarriers, report.Summary)
+	}
+	if result.Summary.CheckedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("checked carrier count = %d, summary = %#v", result.Summary.CheckedCarriers, report.Summary)
+	}
+	if result.Summary.MissingCarrierFiles != 0 || result.Summary.MissingMarkers != 0 {
+		t.Fatalf("unexpected missing carrier data: %#v", result.Summary)
+	}
+	if result.SemanticBytesVerified || result.Summary.SemanticBytesVerified {
+		t.Fatalf("marker presence check claimed semantic-byte verification: %#v", result)
+	}
+}
+
+func TestInterfaceContractGenerationMaterializedCarrierCheckDetectsMissingMarkers(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.Carriers) == 0 {
+		t.Fatal("expected materialized carriers")
+	}
+
+	carrier := report.Carriers[0]
+	source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+	source = strings.ReplaceAll(source, carrier.ExpectedSourceDigest, "sha256:stale-generated-contract-digest")
+	path := filepath.Join(t.TempDir(), "tools.ts")
+	if err := os.WriteFile(path, []byte(source), 0o644); err != nil {
+		t.Fatalf("write temp carrier: %v", err)
+	}
+	carrier.CarrierPath = path
+	report.Carriers = []interfaceContractMaterializedCarrier{carrier}
+
+	result, err := checkInterfaceContractMaterializedCarriers(report)
+	if err == nil {
+		t.Fatalf("expected materialized carrier check to fail")
+	}
+	if result.Summary.RequiredMarkersPresent {
+		t.Fatalf("carrier with a missing marker unexpectedly passed marker presence: %#v", result)
+	}
+	if result.Summary.MissingMarkers == 0 {
+		t.Fatalf("missing marker count not reported: %#v", result)
+	}
+	if !stringSliceContains(result.Carriers[0].MissingMarkers, carrier.ExpectedSourceDigest) {
+		t.Fatalf("missing markers = %#v, want source digest", result.Carriers[0].MissingMarkers)
+	}
+}
+
+func TestInterfaceContractGenerationSyncsMaterializedCarrierMarkers(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.Carriers) < 2 {
+		t.Fatalf("expected at least two materialized carriers: %#v", report.Carriers)
+	}
+
+	staleDigest := "sha256:" + strings.Repeat("1", 64)
+	tempReport := report
+	tempReport.Carriers = make([]interfaceContractMaterializedCarrier, 0, 2)
+	tempDir := t.TempDir()
+	for _, carrier := range report.Carriers[:2] {
+		source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+		source = interfaceContractDigestMarkerRE.ReplaceAllString(source, staleDigest)
+		carrier.CarrierPath = filepath.Join(tempDir, strings.ReplaceAll(carrier.CarrierPath, "/", "_"))
+		if err := os.WriteFile(carrier.CarrierPath, []byte(source), 0o644); err != nil {
+			t.Fatalf("write temp carrier: %v", err)
+		}
+		tempReport.Carriers = append(tempReport.Carriers, carrier)
+	}
+
+	result, err := syncInterfaceContractMaterializedCarriers(tempReport)
+	if err != nil {
+		t.Fatalf("sync materialized carriers: %v\n%#v", err, result)
+	}
+
+	if !result.Summary.RequiredMarkersPresent || !result.Check.RequiredMarkersPresent {
+		t.Fatalf("post-refresh marker check did not find all required markers: %#v", result)
+	}
+	if result.Summary.MarkerRefreshedCarriers != len(tempReport.Carriers) {
+		t.Fatalf("marker-refreshed carriers = %d, want %d: %#v", result.Summary.MarkerRefreshedCarriers, len(tempReport.Carriers), result)
+	}
+	if result.Summary.UpdatedDigestMarkers != len(tempReport.Carriers) {
+		t.Fatalf("updated digest markers = %d, want %d: %#v", result.Summary.UpdatedDigestMarkers, len(tempReport.Carriers), result)
+	}
+	if result.SemanticBytesRewritten || result.SemanticBytesVerified ||
+		result.Summary.SemanticBytesRewritten || result.Summary.SemanticBytesVerified {
+		t.Fatalf("marker refresh claimed semantic-byte work: %#v", result)
+	}
+
+	for _, carrier := range tempReport.Carriers {
+		source, err := os.ReadFile(carrier.CarrierPath)
+		if err != nil {
+			t.Fatalf("read synced carrier: %v", err)
+		}
+		text := string(source)
+		if !strings.Contains(text, report.SourceDigest) {
+			t.Fatalf("%s missing synced source digest", carrier.CarrierPath)
+		}
+		if strings.Contains(text, staleDigest) {
+			t.Fatalf("%s still contains stale digest", carrier.CarrierPath)
+		}
+	}
+}
+
+func TestInterfaceContractGenerationMarkerRefreshCannotClaimSemanticCurrentness(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if len(report.Carriers) == 0 {
+		t.Fatal("expected materialized carriers")
+	}
+
+	staleDigest := "sha256:" + strings.Repeat("1", 64)
+	semanticDivergence := "\n// deliberately divergent semantic bytes outside the digest marker\n"
+	carrier := report.Carriers[0]
+	source := readRepoFile(t, strings.Split(carrier.CarrierPath, "/")...)
+	source = interfaceContractDigestMarkerRE.ReplaceAllString(source, staleDigest)
+	source += semanticDivergence
+	carrier.CarrierPath = filepath.Join(t.TempDir(), "semantic-divergence.ts")
+	if err := os.WriteFile(carrier.CarrierPath, []byte(source), 0o644); err != nil {
+		t.Fatalf("write divergent carrier: %v", err)
+	}
+	report.Carriers = []interfaceContractMaterializedCarrier{carrier}
+
+	result, err := syncInterfaceContractMaterializedCarriers(report)
+	if err != nil {
+		t.Fatalf("refresh materialized carrier markers: %v\n%#v", err, result)
+	}
+	if !result.Summary.RequiredMarkersPresent {
+		t.Fatalf("required marker presence should pass after marker refresh: %#v", result)
+	}
+	if result.SemanticBytesRewritten || result.SemanticBytesVerified ||
+		result.Summary.SemanticBytesRewritten || result.Summary.SemanticBytesVerified {
+		t.Fatalf("marker refresh claimed semantic-byte work: %#v", result)
+	}
+
+	updated, err := os.ReadFile(carrier.CarrierPath)
+	if err != nil {
+		t.Fatalf("read marker-refreshed carrier: %v", err)
+	}
+	if !strings.Contains(string(updated), semanticDivergence) {
+		t.Fatalf("marker refresh rewrote divergent semantic bytes:\n%s", string(updated))
+	}
+
+	payload, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal marker refresh result: %v", err)
+	}
+	jsonText := string(payload)
+	for _, forbidden := range []string{`"match"`, `"synced"`, `"sync_posture"`, `"post_sync_check"`} {
+		if strings.Contains(jsonText, forbidden) {
+			t.Fatalf("marker refresh result contains ambiguous semantic-sync field %s:\n%s", forbidden, jsonText)
+		}
+	}
+	for _, want := range []string{
+		`"kind":"haft_interface_materialized_carrier_marker_refresh"`,
+		`"mutation_scope":"kernel_interface_catalog_source_digest_marker_lines_only"`,
+		`"semantic_bytes_rewritten":false`,
+		`"semantic_bytes_verified":false`,
+		`"required_markers_present":true`,
+		`"post_refresh_marker_check"`,
+	} {
+		if !strings.Contains(jsonText, want) {
+			t.Fatalf("marker refresh result missing %s:\n%s", want, jsonText)
+		}
+	}
+
+	var text bytes.Buffer
+	if err := writeInterfaceContractMaterializedCarrierSyncText(&text, result); err != nil {
+		t.Fatalf("write marker refresh text: %v", err)
+	}
+	for _, want := range []string{
+		"digest-marker refresh",
+		"marker_refreshed_carriers=1",
+		"semantic_bytes_rewritten=false",
+		"semantic_bytes_verified=false",
+	} {
+		if !strings.Contains(text.String(), want) {
+			t.Fatalf("marker refresh text missing %q:\n%s", want, text.String())
+		}
+	}
+	for _, forbidden := range []string{"match=", "synced_carriers="} {
+		if strings.Contains(text.String(), forbidden) {
+			t.Fatalf("marker refresh text contains ambiguous semantic-sync claim %q:\n%s", forbidden, text.String())
+		}
+	}
+}
+
+func TestInterfaceContractGenerationMarkerFlagsDescribeNonSemanticScope(t *testing.T) {
+	t.Parallel()
+
+	for _, name := range []string{"check-materialized-carriers", "sync-materialized-carriers"} {
+		flag := interfaceCmd.Flags().Lookup(name)
+		if flag == nil {
+			t.Fatalf("interface flag --%s missing", name)
+		}
+		usage := strings.ToLower(flag.Usage)
+		if !strings.Contains(usage, "marker") || !strings.Contains(usage, "semantic bytes") {
+			t.Fatalf("--%s usage does not disclose marker-only non-semantic scope: %q", name, flag.Usage)
+		}
+	}
+}
+
+func TestInterfaceContractGenerationSyncOnlyUpdatesCatalogDigestLine(t *testing.T) {
+	t.Parallel()
+
+	sourceDigest := "sha256:" + strings.Repeat("2", 64)
+	staleDigest := "sha256:" + strings.Repeat("1", 64)
+	otherDigest := "sha256:" + strings.Repeat("3", 64)
+	source := strings.Join([]string{
+		"<!-- haft-contract-source: kernel_interface_catalog source_digest=" + staleDigest + " -->",
+		"unrelated_hash=" + otherDigest,
+		"",
+	}, "\n")
+
+	updated, updatedMarkers := syncInterfaceContractMaterializedCarrierData([]byte(source), sourceDigest)
+	if updatedMarkers != 1 {
+		t.Fatalf("updated markers = %d, want 1: %s", updatedMarkers, string(updated))
+	}
+	if !strings.Contains(string(updated), sourceDigest) {
+		t.Fatalf("updated carrier missing source digest: %s", string(updated))
+	}
+	if !strings.Contains(string(updated), otherDigest) {
+		t.Fatalf("unrelated digest was rewritten: %s", string(updated))
+	}
+}
+
+func TestInterfaceContractGenerationMaterializesSchemaFragmentsCarrier(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	path := filepath.Join(t.TempDir(), "generated", "mcp-schema-fragments.json")
+
+	result, err := materializeInterfaceContractSchemaFragments(report, path)
+	if err != nil {
+		t.Fatalf("materialize schema fragments: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized schema fragments: %v", err)
+	}
+	if result.Path != path {
+		t.Fatalf("materialized path = %q, want %q", result.Path, path)
+	}
+	if result.SourceDigest != report.SourceDigest {
+		t.Fatalf("materialized source digest = %q, report digest = %q", result.SourceDigest, report.SourceDigest)
+	}
+	if result.CarrierDigest != interfaceContractGenerationDigestBytes(data) {
+		t.Fatalf("carrier digest = %q, bytes digest = %q", result.CarrierDigest, interfaceContractGenerationDigestBytes(data))
+	}
+	if result.SchemaFragments != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("schema fragment count = %d, summary = %#v", result.SchemaFragments, report.Summary)
+	}
+	if strings.Contains(string(data), "generated_at") {
+		t.Fatalf("materialized schema carrier should be deterministic and omit generated_at:\n%s", string(data))
+	}
+
+	var carrier interfaceContractSchemaFragmentsCarrier
+	if err := json.Unmarshal(data, &carrier); err != nil {
+		t.Fatalf("decode materialized schema fragments: %v\n%s", err, string(data))
+	}
+	if carrier.Kind != "haft_interface_generated_mcp_schema_fragments" {
+		t.Fatalf("carrier kind = %q", carrier.Kind)
+	}
+	if carrier.Authority != "generated_validation_carrier_not_runtime_schema_authority" {
+		t.Fatalf("carrier authority = %q", carrier.Authority)
+	}
+	if carrier.SourceDigest != report.SourceDigest {
+		t.Fatalf("carrier source digest = %q, report digest = %q", carrier.SourceDigest, report.SourceDigest)
+	}
+	if len(carrier.SchemaFragments) != len(report.SchemaFragments) {
+		t.Fatalf("carrier schema fragments = %d, report = %d", len(carrier.SchemaFragments), len(report.SchemaFragments))
+	}
+	contractGeneration, ok := findCarrierGeneratedSchemaFragment(carrier, "query.contract_generation")
+	if !ok {
+		t.Fatalf("query.contract_generation schema fragment missing from materialized carrier")
+	}
+	if contractGeneration.SchemaDigest == "" || !strings.HasPrefix(contractGeneration.SchemaDigest, "sha256:") {
+		t.Fatalf("contract_generation schema digest = %q", contractGeneration.SchemaDigest)
+	}
+
+	checkResult, err := checkInterfaceContractSchemaFragments(report, path)
+	if err != nil {
+		t.Fatalf("check materialized schema fragments: %v", err)
+	}
+	if !checkResult.Match {
+		t.Fatalf("schema carrier check did not match: %#v", checkResult)
+	}
+	if err := os.WriteFile(path, append(data, []byte("\n{\"drift\":true}\n")...), 0o644); err != nil {
+		t.Fatalf("corrupt materialized schema fragments: %v", err)
+	}
+	if _, err := checkInterfaceContractSchemaFragments(report, path); err == nil {
+		t.Fatalf("expected schema carrier drift check to fail after file corruption")
+	}
+}
+
+func TestInterfaceContractGenerationMaterializesDescriptionFragmentsCarrier(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	path := filepath.Join(t.TempDir(), "generated", "description-fragments.json")
+
+	result, err := materializeInterfaceContractDescriptionFragments(report, path)
+	if err != nil {
+		t.Fatalf("materialize description fragments: %v", err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read materialized description fragments: %v", err)
+	}
+	if result.Path != path {
+		t.Fatalf("materialized path = %q, want %q", result.Path, path)
+	}
+	if result.SourceDigest != report.SourceDigest {
+		t.Fatalf("materialized source digest = %q, report digest = %q", result.SourceDigest, report.SourceDigest)
+	}
+	if result.CarrierDigest != interfaceContractGenerationDigestBytes(data) {
+		t.Fatalf("carrier digest = %q, bytes digest = %q", result.CarrierDigest, interfaceContractGenerationDigestBytes(data))
+	}
+	if result.DescriptionFragments != report.Summary.GeneratedPreviewFragments {
+		t.Fatalf("description fragment count = %d, summary = %#v", result.DescriptionFragments, report.Summary)
+	}
+	if strings.Contains(string(data), "generated_at") {
+		t.Fatalf("materialized description carrier should be deterministic and omit generated_at:\n%s", string(data))
+	}
+
+	var carrier interfaceContractDescriptionFragmentsCarrier
+	if err := json.Unmarshal(data, &carrier); err != nil {
+		t.Fatalf("decode materialized description fragments: %v\n%s", err, string(data))
+	}
+	if carrier.Kind != "haft_interface_generated_description_fragments" {
+		t.Fatalf("carrier kind = %q", carrier.Kind)
+	}
+	if carrier.Authority != "generated_text_carrier_not_operator_authorization" {
+		t.Fatalf("carrier authority = %q", carrier.Authority)
+	}
+	if carrier.SourceDigest != report.SourceDigest {
+		t.Fatalf("carrier source digest = %q, report digest = %q", carrier.SourceDigest, report.SourceDigest)
+	}
+	if len(carrier.DescriptionFragments) != len(report.Fragments) {
+		t.Fatalf("carrier description fragments = %d, report = %d", len(carrier.DescriptionFragments), len(report.Fragments))
+	}
+	contractGeneration, ok := findCarrierGeneratedDescriptionFragment(carrier, "query.contract_generation")
+	if !ok {
+		t.Fatalf("query.contract_generation description fragment missing from materialized carrier")
+	}
+	if !strings.Contains(contractGeneration.AuthorityBoundary, "discovery only") {
+		t.Fatalf("contract_generation description authority boundary = %q", contractGeneration.AuthorityBoundary)
+	}
+
+	checkResult, err := checkInterfaceContractDescriptionFragments(report, path)
+	if err != nil {
+		t.Fatalf("check materialized description fragments: %v", err)
+	}
+	if !checkResult.Match {
+		t.Fatalf("description carrier check did not match: %#v", checkResult)
+	}
+}
+
+func TestInterfaceContractGenerationTextIsCompact(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+
+	if err := writeInterfaceContractGenerationText(&output, report); err != nil {
+		t.Fatalf("writeInterfaceContractGenerationText returned error: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Haft interface contract generation manifest v1",
+		"read_only_generation_manifest_not_host_materialization",
+		"source: kernel_interface_catalog sha256:",
+		"generator_target_surfaces=",
+		"generator_target_fields=",
+		"generated_preview_fragments=",
+		"generated_schema_fragments=",
+		"binding_preview_fragments=",
+		"materialized_carriers=",
+		"digest_marker_guarded_carriers=",
+		"authority_boundary_guarded_carriers=",
+		"validation_refs=",
+		"no current generator targets",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("contract generation text missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestHandleQuintQueryContractGenerationReturnsReadOnlyManifest(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "contract_generation",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery contract_generation returned error: %v", err)
+	}
+
+	var report interfaceContractGenerationReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode contract generation manifest: %v\n%s", err, result)
+	}
+	if report.Authority != "read_only_generation_manifest_not_host_materialization" {
+		t.Fatalf("authority = %q", report.Authority)
+	}
+	if report.SurfacePolicy.GeneratedDescriptions != "drill_down_only_validate_with_carrier_semio_before_host_materialization" {
+		t.Fatalf("generated description policy = %q", report.SurfacePolicy.GeneratedDescriptions)
+	}
+	if len(report.ValidationRefs) == 0 {
+		t.Fatalf("validation_refs missing from MCP manifest")
+	}
+	if len(report.Targets) != 0 {
+		t.Fatalf("expected empty generator target manifest from MCP query: %#v", report.Targets)
+	}
+	if len(report.Fragments) == 0 {
+		t.Fatalf("expected generated fragments from MCP manifest")
+	}
+	if len(report.SchemaFragments) == 0 {
+		t.Fatalf("expected generated schema fragments from MCP manifest")
+	}
+}
+
+func TestPiToolMetadataCarriesGeneratedContractAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+	contractGeneration, ok := findContractGeneratedFragment(report, "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation generated fragment missing")
+	}
+
+	for _, want := range []string{
+		decide.AuthorityBoundary,
+		contractGeneration.AuthorityBoundary,
+		report.SourceDigest,
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi tool metadata missing generated-contract marker %q", want)
+		}
+	}
+	if !strings.Contains(source, "contract_generation") {
+		t.Fatalf("Pi tool metadata missing contract_generation action")
+	}
+}
+
+func TestPiToolSchemasMirrorGeneratedSchemaFragments(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	piSchemas := make(map[string]piTypeObjectSchemaMirror)
+
+	for _, fragment := range report.SchemaFragments {
+		piSchema, ok := piSchemas[fragment.MCPTool]
+		if !ok {
+			piSchema = parsePiToolSchemaMirror(t, source, fragment.MCPTool)
+			piSchemas[fragment.MCPTool] = piSchema
+		}
+		if fragment.MCPAction != "" && !piSchema.Actions[fragment.MCPAction] {
+			t.Fatalf("%s generated action %q missing from Pi %s action enum", fragment.CapabilityID, fragment.MCPAction, fragment.MCPTool)
+		}
+		for _, field := range fragment.AllowedTopLevelFields {
+			if !piSchema.Fields[field] {
+				t.Fatalf("%s generated field %q missing from Pi %s parameters", fragment.CapabilityID, field, fragment.MCPTool)
+			}
+		}
+		for _, field := range fragment.RequiredFields {
+			if !piSchema.RequiredFields[field] {
+				t.Fatalf("%s generated required field %q is optional or missing in Pi %s parameters", fragment.CapabilityID, field, fragment.MCPTool)
+			}
+		}
+	}
+}
+
+func parsePiToolSchemaMirror(t *testing.T, source string, tool string) piTypeObjectSchemaMirror {
+	t.Helper()
+
+	if tool == "haft_memory" {
+		return mergePiTypeObjectSchemaMirrors(
+			parsePiTypeObjectSchema(
+				t,
+				source,
+				"memoryValidationRequestSchema",
+			),
+			parsePiTypeObjectSchema(
+				t,
+				source,
+				"memoryAdmissionRequestSchema",
+			),
+		)
+	}
+
+	constByTool := map[string]string{
+		"haft_query":        "haftQueryParameters",
+		"haft_problem":      "haftProblemParameters",
+		"haft_solution":     "haftSolutionParameters",
+		"haft_decision":     "haftDecisionParameters",
+		"haft_note":         "haftNoteParameters",
+		"haft_refresh":      "haftRefreshParameters",
+		"haft_method":       "haftMethodParameters",
+		"haft_commission":   "haftCommissionParameters",
+		"haft_spec_section": "haftSpecSectionParameters",
+	}
+	constName, ok := constByTool[tool]
+	if !ok {
+		t.Fatalf("no Pi schema const mapping for %s", tool)
+	}
+	return parsePiTypeObjectSchema(t, source, constName)
+}
+
+func mergePiTypeObjectSchemaMirrors(
+	values ...piTypeObjectSchemaMirror,
+) piTypeObjectSchemaMirror {
+	merged := piTypeObjectSchemaMirror{
+		Actions:        make(map[string]bool),
+		Fields:         make(map[string]bool),
+		RequiredFields: make(map[string]bool),
+	}
+	for _, value := range values {
+		for action := range value.Actions {
+			merged.Actions[action] = true
+		}
+		for field := range value.Fields {
+			merged.Fields[field] = true
+		}
+		for field := range value.RequiredFields {
+			merged.RequiredFields[field] = true
+		}
+	}
+	return merged
+}
+
+func TestPiToolMetadataCarriesSelectedGeneratedQueryFragments(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+
+	for _, tc := range []struct {
+		capabilityID string
+		action       string
+		carrierHint  string
+	}{
+		{
+			capabilityID: "query.contract_generation",
+			action:       "contract_generation",
+			carrierHint:  "generated fragments are read-only previews",
+		},
+		{
+			capabilityID: "query.drift_events",
+			action:       "drift_events",
+			carrierHint:  "drift fanout",
+		},
+		{
+			capabilityID: "query.decision_reconcile",
+			action:       "decision_reconcile",
+			carrierHint:  "reconciliation",
+		},
+		{
+			capabilityID: "query.governing_set",
+			action:       "governing_set",
+			carrierHint:  "current-authority drill-downs",
+		},
+	} {
+		fragment, ok := findContractGeneratedFragment(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s generated fragment missing", tc.capabilityID)
+		}
+		for _, want := range []string{
+			fragment.AuthorityBoundary,
+			tc.action,
+			tc.carrierHint,
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("Pi tool metadata missing generated-fragment carrier text %q for %s", want, tc.capabilityID)
+			}
+		}
+	}
+}
+
+func TestPiPromptCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+
+	source := strings.Join([]string{
+		readRepoFile(t, "packages", "haft-pi", "prompts", "h-decide.md"),
+		readRepoFile(t, "packages", "haft-pi", "prompts", "h-commission.md"),
+		readRepoFile(t, "packages", "haft-pi", "prompts", "h-reason.md"),
+	}, "\n")
+
+	for _, want := range []string{
+		decide.AuthorityBoundary,
+		"operator_confirmation_required",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi prompt carriers missing generated-contract authority boundary %q", want)
+		}
+	}
+}
+
+func TestPiReasoningPromptUsesSourceNativeFPFQuery(t *testing.T) {
+	t.Parallel()
+
+	source := readRepoFile(t, "packages", "haft-pi", "prompts", "h-reason.md")
+
+	for _, want := range []string{
+		`"action": "fpf"`,
+		`"mode": "concern"`,
+		`"mode": "lookup"`,
+		`"mode": "inspect"`,
+		"Returned source material",
+		"not applicability",
+		"not a project sequence",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi h-reason prompt missing source-native FPF Query fragment %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"should_use_pattern",
+		"suggested_haft_surface",
+		"recommended_pattern_use",
+		"route_match_strategy",
+		"operator_confirmation_required",
+	} {
+		if strings.Contains(source, banned) {
+			t.Fatalf("Pi h-reason prompt contains retired router field %q", banned)
+		}
+	}
+}
+
+func TestPiReasoningCarriersTeachIdentifierNamespaces(t *testing.T) {
+	t.Parallel()
+
+	for _, path := range [][]string{
+		{"packages", "haft-pi", "prompts", "h-reason.md"},
+		{"packages", "haft-pi", "skills", "h-reason", "SKILL.md"},
+	} {
+		source := readRepoFile(t, path...)
+		for _, want := range []string{
+			"wrong_identifier_namespace",
+			"same_call_retryable=false",
+			"memory_request",
+			`"mode":"resolve"`,
+			`haft_onboard(action="status")`,
+			"haft_entity",
+			"known_absent",
+			"recovery_call",
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("%s missing identifier namespace guidance %q", strings.Join(path, "/"), want)
+			}
+		}
+		if !strings.Contains(source, `action="related"`) && !strings.Contains(source, `"action": "related"`) {
+			t.Fatalf("%s missing related action namespace guidance", strings.Join(path, "/"))
+		}
+		if !strings.Contains(source, `artifact_ref="<id>"`) && !strings.Contains(source, `"artifact_ref": "<id>"`) {
+			t.Fatalf("%s missing artifact_ref namespace guidance", strings.Join(path, "/"))
+		}
+		for _, banned := range []string{
+			"selected project TypeEnv",
+			"memory typeenv",
+		} {
+			if strings.Contains(source, banned) {
+				t.Fatalf("%s exposes retired setup UX %q", strings.Join(path, "/"), banned)
+			}
+		}
+	}
+}
+
+func TestBundledReasoningSkillUsesSourceNativeFPFQuery(t *testing.T) {
+	t.Parallel()
+
+	source := readRepoFile(t, "internal", "cli", "skill", "h-reason", "SKILL.md")
+
+	for _, want := range []string{
+		`action="fpf"`,
+		`mode="concern"`,
+		"wrong_identifier_namespace",
+		`action="related"`,
+		`artifact_ref="<id>"`,
+		`action="memory"`,
+		"memory_request",
+		`"mode":"resolve"`,
+		`mcp__haft__haft_onboard(action="status")`,
+		`mcp__haft__haft_entity`,
+		"known_absent",
+		"retrieval rank != applicability",
+		"ordinaryBounded",
+		"h-decide may route a direct operator request; h-commission remains manual-only",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("bundled h-reason skill missing source-native FPF Query fragment %q", want)
+		}
+	}
+	for _, banned := range []string{
+		"operator_confirmation_required",
+		"should_use_pattern",
+		"recommended_pattern_use",
+		"route_match_strategy",
+		"memory typeenv",
+	} {
+		if strings.Contains(source, banned) {
+			t.Fatalf("bundled h-reason skill contains retired router or automatic binding marker %q", banned)
+		}
+	}
+}
+
+func TestPiPackageDocsCarryGeneratedContractAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	contractGeneration, ok := findContractGeneratedFragment(report, "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation generated fragment missing")
+	}
+
+	readme := readRepoFile(t, "packages", "haft-pi", "README.md")
+	metadata := readRepoFile(t, "packages", "haft-pi", "package.json")
+
+	for _, want := range []string{
+		"haft interface contract-generation --json",
+		"haft_query(action=\"contract_generation\")",
+		contractGeneration.AuthorityBoundary,
+		"provider tool-calling ergonomics, not as a second authority",
+	} {
+		if !strings.Contains(readme, want) {
+			t.Fatalf("Pi README missing generated-contract boundary %q", want)
+		}
+	}
+	if !strings.Contains(metadata, "kernel-validated prompt guidance") {
+		t.Fatalf("Pi package metadata missing kernel-validated contract hint")
+	}
+}
+
+func TestPiSkillCarriersCarrySelectedGeneratedQueryFragments(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := readRepoFile(t, "packages", "haft-pi", "skills", "h-status", "SKILL.md")
+
+	for _, tc := range []struct {
+		capabilityID string
+		action       string
+		carrierHint  string
+	}{
+		{
+			capabilityID: "query.contract_generation",
+			action:       "contract_generation",
+			carrierHint:  "generated-fragment",
+		},
+		{
+			capabilityID: "query.drift_events",
+			action:       "drift_events",
+			carrierHint:  "drift fanout",
+		},
+		{
+			capabilityID: "query.decision_reconcile",
+			action:       "decision_reconcile",
+			carrierHint:  "reconciliation",
+		},
+		{
+			capabilityID: "query.governing_set",
+			action:       "governing_set",
+			carrierHint:  "current-authority drill-downs",
+		},
+	} {
+		fragment, ok := findContractGeneratedFragment(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s generated fragment missing", tc.capabilityID)
+		}
+		for _, want := range []string{
+			fragment.AuthorityBoundary,
+			tc.action,
+			tc.carrierHint,
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("Pi skill carrier missing generated-fragment carrier text %q for %s", want, tc.capabilityID)
+			}
+		}
+	}
+}
+
+func TestBundledSkillCarriersCarryGeneratedContractAuthorityBoundaries(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	decide, ok := findContractGeneratedFragment(report, "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+
+	source := strings.Join([]string{
+		readRepoFile(t, "internal", "cli", "skill", "h-decide", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-commission", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-reason", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "claude_md_template.md"),
+		readRepoFile(t, "CLAUDE.md"),
+		readRepoFile(t, "AGENTS.md"),
+	}, "\n")
+
+	for _, want := range []string{
+		decide.AuthorityBoundary,
+		"operator_confirmation_required",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("bundled skill/template carriers missing generated-contract authority boundary %q", want)
+		}
+	}
+}
+
+func TestBundledSkillCarriersCarrySelectedGeneratedQueryFragments(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	source := strings.Join([]string{
+		readRepoFile(t, "internal", "cli", "skill", "h-status", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-verify", "SKILL.md"),
+		readRepoFile(t, "internal", "cli", "skill", "h-reason", "SKILL.md"),
+	}, "\n")
+
+	for _, tc := range []struct {
+		capabilityID string
+		action       string
+		carrierHint  string
+	}{
+		{
+			capabilityID: "query.contract_generation",
+			action:       "contract_generation",
+			carrierHint:  "generated-fragment",
+		},
+		{
+			capabilityID: "query.drift_events",
+			action:       "drift_events",
+			carrierHint:  "drift fanout",
+		},
+		{
+			capabilityID: "query.decision_reconcile",
+			action:       "decision_reconcile",
+			carrierHint:  "reconciliation",
+		},
+		{
+			capabilityID: "query.governing_set",
+			action:       "governing_set",
+			carrierHint:  "current-authority drill-downs",
+		},
+	} {
+		fragment, ok := findContractGeneratedFragment(report, tc.capabilityID)
+		if !ok {
+			t.Fatalf("%s generated fragment missing", tc.capabilityID)
+		}
+		for _, want := range []string{
+			fragment.AuthorityBoundary,
+			tc.action,
+			tc.carrierHint,
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("bundled skill carriers missing generated-fragment carrier text %q for %s", want, tc.capabilityID)
+			}
+		}
+	}
+}
+
+func TestDefaultStatusDoesNotInlineContractGenerationManifest(t *testing.T) {
+	fixture := newCheckTestProject(t)
+
+	result, err := handleQuintQuery(context.Background(), fixture.store, nil, fixture.haftDir, map[string]any{
+		"action": "status",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery status returned error: %v", err)
+	}
+
+	for _, forbidden := range []string{
+		"haft_interface_contract_generation_manifest",
+		"read_only_generation_manifest_not_host_materialization",
+		"generator_target_surfaces",
+		"generator_target_fields",
+		"generated_preview_fragments",
+		"generated_schema_fragments",
+		"runtime_schema_audit",
+		"runtime_schema_drift",
+		"generated_fragments",
+		"materialized_carriers",
+		"digest_guarded_carriers",
+		"digest_marker_guarded_carriers",
+		"authority_boundary_guarded_carriers",
+		"surface_policy",
+	} {
+		if strings.Contains(result, forbidden) {
+			t.Fatalf("default status inlined contract generation manifest fragment %q:\n%s", forbidden, result)
+		}
+	}
+	assertNoContractAuditInline(t, "default status", result)
+	assertNoInterfaceOutputShapeInline(t, "default status", result)
+}
+
+func TestInterfaceContractGenerationCompactTextDoesNotInlineRuntimeSchemaAudit(t *testing.T) {
+	t.Parallel()
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	var text strings.Builder
+
+	if err := writeInterfaceContractGenerationText(&text, report); err != nil {
+		t.Fatalf("write contract generation text: %v", err)
+	}
+
+	body := text.String()
+	for _, want := range []string{"runtime_schema_mirrors=", "runtime_schema_drift=0"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("compact contract generation text missing count %q:\n%s", want, body)
+		}
+	}
+	for _, forbidden := range []string{
+		"runtime_schema_audit",
+		"missing_runtime_tools",
+		"schema_digest_mismatches",
+		"live_mcp_tools_list_tool_catalog",
+		"fragment_kind",
+		"generated_text",
+		"input_fields",
+		"schema_digest",
+		"handler_validated_fields",
+		"carrier_path",
+		"generated_fragment_refs",
+		"planned_edition",
+		"markdown_sync_back",
+		"semantic_field_update",
+		"relationship_update",
+		"sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority",
+		"generated/contract-generation/preview/",
+		"generated/contract-generation/schema/",
+	} {
+		if strings.Contains(body, forbidden) {
+			t.Fatalf("compact contract generation text inlined generated detail %q:\n%s", forbidden, body)
+		}
+	}
+}
+
+func TestInterfaceContractGenerationDiscoveryShapeNamesSurfacePolicy(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation capability missing")
+	}
+
+	shape := capability.InputContract.FieldShapes[0].Shape
+	if !strings.Contains(shape, "surface_policy") {
+		t.Fatalf("contract generation discovery fields missing surface_policy: %s", shape)
+	}
+	if !strings.Contains(shape, "validation_refs") {
+		t.Fatalf("contract generation discovery fields missing validation_refs: %s", shape)
+	}
+}
+
+func TestInterfaceContractGenerationDiscoveryShapeCountsMatchManifest(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_generation")
+	if !ok {
+		t.Fatal("query.contract_generation capability missing")
+	}
+
+	var shape struct {
+		Summary struct {
+			Capabilities              int `json:"capabilities"`
+			GeneratedPreviewFragments int `json:"generated_preview_fragments"`
+			GeneratedSchemaFragments  int `json:"generated_schema_fragments"`
+			MaterializedCarriers      int `json:"materialized_carriers"`
+		} `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(capability.InputContract.FieldShapes[0].Shape), &shape); err != nil {
+		t.Fatalf("contract generation discovery shape is not valid JSON: %v", err)
+	}
+
+	report := buildInterfaceContractGenerationReport(haftInterfaceCatalog())
+	if shape.Summary.Capabilities != report.Summary.Capabilities {
+		t.Fatalf("shape capabilities=%d, report=%d", shape.Summary.Capabilities, report.Summary.Capabilities)
+	}
+	if shape.Summary.GeneratedPreviewFragments != report.Summary.GeneratedPreviewFragments {
+		t.Fatalf("shape generated_preview_fragments=%d, report=%d", shape.Summary.GeneratedPreviewFragments, report.Summary.GeneratedPreviewFragments)
+	}
+	if shape.Summary.GeneratedSchemaFragments != report.Summary.GeneratedSchemaFragments {
+		t.Fatalf("shape generated_schema_fragments=%d, report=%d", shape.Summary.GeneratedSchemaFragments, report.Summary.GeneratedSchemaFragments)
+	}
+	if shape.Summary.MaterializedCarriers != report.Summary.MaterializedCarriers {
+		t.Fatalf("shape materialized_carriers=%d, report=%d", shape.Summary.MaterializedCarriers, report.Summary.MaterializedCarriers)
+	}
+}
+
+func TestInterfaceContractAuditDiscoveryShapeCountsMatchReport(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.contract_audit")
+	if !ok {
+		t.Fatal("query.contract_audit capability missing")
+	}
+
+	var shape struct {
+		AuthorityBoundary interfaceContractAuditAuthorityBoundary `json:"authority_boundary"`
+		Summary           interfaceContractAuditSummary           `json:"summary"`
+	}
+	if err := json.Unmarshal([]byte(capability.InputContract.FieldShapes[0].Shape), &shape); err != nil {
+		t.Fatalf("contract audit discovery shape is not valid JSON: %v", err)
+	}
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	assertInterfaceContractAuditAuthorityBoundary(t, shape.AuthorityBoundary)
+	if shape.Summary != report.Summary {
+		t.Fatalf("shape summary=%#v, report=%#v", shape.Summary, report.Summary)
+	}
+}
+
+func TestInterfaceValueSpaceNamesSimplifyKillCriteriaBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.value_space")
+	if !ok {
+		t.Fatal("query.value_space capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"simplify_kill_criteria",
+		"read_only_review_trigger_not_automatic_gate",
+		"not automatic gates",
+		"claim_truth",
+		"not_claim_truth",
+		"publication",
+		"not_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.value_space shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"not evidence",
+		"GateDecision",
+		"claim truth",
+		"publication",
+		"product-value proof",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.value_space notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceEvidencePathNamesFormalityDiagnostics(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.evidence_path")
+	if !ok {
+		t.Fatal("query.evidence_path capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"formality_diagnostics",
+		"legacy_formality_projection_lossy",
+		"unversioned_formality_source_scale_missing",
+		"current_f0_f9_formality",
+		"claim_truth",
+		"not_claim_truth",
+		"publication",
+		"not_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.evidence_path shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"blocks bounded reliance",
+		"legacy or undeclared/lossy formality",
+		"publication",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.evidence_path notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceRelatedDocumentsDecisionEvidenceFormalityAudit(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.related")
+	if !ok {
+		t.Fatal("query.related capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"decision.evidence.wlnk",
+		"formality_scale_id",
+		"formality_bridge_loss",
+		"fpf-2026-f0-f9",
+		"haft-legacy-f0-f3",
+		"unversioned-formality",
+		"not approval",
+		"claim truth",
+		"publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.related shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"DecisionRecord refs", "WLNK formality scale", "bare F ordinal"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.related notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"WLNK/formality", "not approval", "GateDecision", "claim truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.related invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceChangeCaseNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.change_case")
+	if !ok {
+		t.Fatal("query.change_case capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"proof",
+		"not_proof",
+		"approval",
+		"not_approval",
+		"gate_decision",
+		"not_gate_decision",
+		"work_occurrence",
+		"not_work_occurrence",
+		"claim_truth",
+		"not_claim_truth",
+		"global_truth",
+		"not_global_truth",
+		"publication",
+		"not_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.change_case shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"performed work",
+		"claim truth",
+		"global truth",
+		"publication",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.change_case notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceCorrespondenceGraphNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.correspondence_graph")
+	if !ok {
+		t.Fatal("query.correspondence_graph capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"proof",
+		"not_proof",
+		"evidence",
+		"not_evidence",
+		"approval",
+		"not_approval",
+		"gate_decision",
+		"not_gate_decision",
+		"claim_truth",
+		"not_claim_truth",
+		"global_truth",
+		"not_global_truth",
+		"publication",
+		"not_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.correspondence_graph shapes missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"evidence",
+		"proof",
+		"approval",
+		"gate passage",
+		"claim truth",
+		"global truth",
+		"publication",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("query.correspondence_graph notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceSpecReviewNamesAdvisoryBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_review")
+	if !ok {
+		t.Fatal("query.spec_review capability missing")
+	}
+	if capability.CurrentExecution.MCPCall != `haft_query(action="spec_review")` {
+		t.Fatalf("spec_review MCP call = %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft spec review --json") {
+		t.Fatalf("spec_review CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.Purpose, "does not compare their meaning with a newer FPF source") {
+		t.Fatalf("spec_review purpose hides source-currentness boundary: %q", capability.Purpose)
+	}
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"advisory_only", "authority_boundary", "not_publication", "claim_truth", "spec_semantic_review_v2", "claim_register", "state_reading", "blocked_for_stronger_use_findings", "category", "claim_posture|publication_boundary|frame|unknown_abstain"} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("spec_review contract missing %q:\n%s", want, contract)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"not evidence", "claim truth", "global truth", "publication", "source-currentness assessment are separate", "Default status", "abstains/blocks stronger use"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec_review invariant missing %q:\n%s", want, invariants)
+		}
+	}
+	notes := strings.Join(capability.InputContract.Notes, "\n")
+	for _, want := range []string{"existing claim register", "does not establish compatibility with a newer FPF source", "source-baseline currentness"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("spec_review notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceSpecValidateNamesCarrierAndLifecycleBoundaries(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_validate")
+	if !ok {
+		t.Fatal("query.spec_validate capability missing")
+	}
+	if capability.CurrentExecution.MCPCall != `haft_query(action="spec_validate")` {
+		t.Fatalf("spec_validate MCP call = %#v", capability.CurrentExecution)
+	}
+	if capability.CurrentExecution.CLICommand != "haft spec validate --json" {
+		t.Fatalf("spec_validate CLI command = %#v", capability.CurrentExecution)
+	}
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"authored_carriers_without_profile_applicability_filter",
+		"spec_draft_semantic_review_v1",
+		"not_applicability_determination_or_admission",
+		"not_approval_or_baseline",
+		"lifecycle_observations",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("spec_validate contract missing %q:\n%s", want, contract)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"independent of canonical profile applicability", "does not activate", "Draft lifecycle status", "active-only spec review"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec_validate invariant missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceCatalogMCPActionsExistInToolsListSchemas(t *testing.T) {
+	t.Parallel()
+
+	toolActionEnums := fpfToolActionEnums(t)
+
+	for _, capability := range haftInterfaceCatalog() {
+		toolName := capability.CurrentExecution.MCPTool
+		action := capability.CurrentExecution.MCPAction
+		if toolName == "" || action == "" {
+			continue
+		}
+
+		enum, ok := toolActionEnums[toolName]
+		if !ok {
+			t.Fatalf("%s declares unknown MCP tool %q", capability.ID, toolName)
+		}
+		if !contractAuditTestContains(enum, action) {
+			t.Fatalf("%s declares %s(action=%q), but tools/list enum is %#v", capability.ID, toolName, action, enum)
+		}
+	}
+}
+
+func TestInterfaceCatalogMCPFieldsExistInToolsListSchemas(t *testing.T) {
+	t.Parallel()
+
+	toolProperties := fpfToolProperties(t)
+	exclusions := interfaceContractAuditSchemaFieldExclusions()
+
+	for _, capability := range haftInterfaceCatalog() {
+		toolName := capability.CurrentExecution.MCPTool
+		if toolName == "" {
+			continue
+		}
+
+		properties, ok := toolProperties[toolName]
+		if !ok {
+			t.Fatalf("%s declares unknown MCP tool %q", capability.ID, toolName)
+		}
+
+		for _, field := range topLevelInterfaceContractFields(capability.InputContract) {
+			if exclusions[capability.ID][field] {
+				continue
+			}
+			if _, ok := properties[field]; !ok {
+				t.Fatalf("%s declares field %q, but %s tools/list schema properties are %s", capability.ID, field, toolName, sortedMapKeys(properties))
+			}
+		}
+	}
+}
+
+func TestInterfaceCatalogMCPRequiredFieldsExistInToolsListSchemas(t *testing.T) {
+	t.Parallel()
+
+	toolRequired := fpfToolRequiredFields(t)
+
+	for _, capability := range haftInterfaceCatalog() {
+		toolName := capability.CurrentExecution.MCPTool
+		if toolName == "" {
+			continue
+		}
+
+		required, ok := toolRequired[toolName]
+		if !ok {
+			t.Fatalf("%s declares unknown MCP tool %q", capability.ID, toolName)
+		}
+		for _, field := range interfaceContractAuditExpectedMCPRequiredFields(capability) {
+			if !required[field] {
+				t.Fatalf("%s expects %s tools/list schema to require %q; required=%v", capability.ID, toolName, field, sortedStringSetKeys(required))
+			}
+		}
+	}
+}
+
+func TestInterfaceContractAuditTextIsCompact(t *testing.T) {
+	t.Parallel()
+
+	var output bytes.Buffer
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+
+	if err := writeInterfaceContractAuditText(&output, report); err != nil {
+		t.Fatalf("writeInterfaceContractAuditText returned error: %v", err)
+	}
+
+	text := output.String()
+	for _, want := range []string{
+		"Haft interface contract audit v1",
+		"read_only_contract_inventory_not_schema_generation",
+		"authority_boundary: inventory=read_only_contract_inventory schema_generation=not_schema_generation host_materialization=not_host_materialization evidence=not_evidence approval=not_approval gate_decision=not_gate_decision claim_truth=not_claim_truth global_truth=not_global_truth publication=not_publication",
+		"binding_sensitive=",
+		"schema_coverage=",
+		"required_coverage=",
+		"shape_coverage=",
+		"generator_targets=",
+		"host_fragments=",
+		"fragment_posture=",
+		"host_schema=",
+		"fragment=",
+		"query.contract_audit",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("contract audit text missing %q:\n%s", want, text)
+		}
+	}
+}
+
+func TestHandleQuintQueryContractAuditReturnsReadOnlyReport(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+
+	result, err := handleQuintQuery(context.Background(), store, nil, t.TempDir(), map[string]any{
+		"action": "contract_audit",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQuery contract_audit returned error: %v", err)
+	}
+
+	var report interfaceContractAuditReport
+	if err := json.Unmarshal([]byte(result), &report); err != nil {
+		t.Fatalf("decode contract audit: %v\n%s", err, result)
+	}
+	if report.Authority != "read_only_contract_inventory_not_schema_generation" {
+		t.Fatalf("authority = %q", report.Authority)
+	}
+	assertInterfaceContractAuditAuthorityBoundary(t, report.AuthorityBoundary)
+	if _, ok := findContractAuditSurface(report, "decision.decide"); !ok {
+		t.Fatalf("decision.decide missing from MCP contract audit: %#v", report.Surfaces)
+	}
+}
+
+func assertInterfaceContractAuditAuthorityBoundary(
+	t *testing.T,
+	boundary interfaceContractAuditAuthorityBoundary,
+) {
+	t.Helper()
+	if boundary.Inventory != "read_only_contract_inventory" {
+		t.Fatalf("contract audit inventory boundary = %#v", boundary)
+	}
+	if boundary.SchemaGeneration != "not_schema_generation" {
+		t.Fatalf("contract audit schema generation boundary = %#v", boundary)
+	}
+	if boundary.HostMaterialization != "not_host_materialization" {
+		t.Fatalf("contract audit host materialization boundary = %#v", boundary)
+	}
+	if boundary.Evidence != "not_evidence" {
+		t.Fatalf("contract audit evidence boundary = %#v", boundary)
+	}
+	if boundary.Approval != "not_approval" {
+		t.Fatalf("contract audit approval boundary = %#v", boundary)
+	}
+	if boundary.GateDecision != "not_gate_decision" {
+		t.Fatalf("contract audit gate boundary = %#v", boundary)
+	}
+	if boundary.ClaimTruth != "not_claim_truth" {
+		t.Fatalf("contract audit claim truth boundary = %#v", boundary)
+	}
+	if boundary.GlobalTruth != "not_global_truth" {
+		t.Fatalf("contract audit global truth boundary = %#v", boundary)
+	}
+	if boundary.Publication != "not_publication" {
+		t.Fatalf("contract audit publication boundary = %#v", boundary)
+	}
+}
+
+func findContractAuditSurface(report interfaceContractAuditReport, id string) (interfaceContractAuditSurface, bool) {
+	for _, surface := range report.Surfaces {
+		if surface.CapabilityID == id {
+			return surface, true
+		}
+	}
+	return interfaceContractAuditSurface{}, false
+}
+
+func findContractGenerationTarget(report interfaceContractGenerationReport, id string) (interfaceContractGenerationTarget, bool) {
+	for _, target := range report.Targets {
+		if target.CapabilityID == id {
+			return target, true
+		}
+	}
+	return interfaceContractGenerationTarget{}, false
+}
+
+func findContractGeneratedFragment(report interfaceContractGenerationReport, id string) (interfaceContractGeneratedFragment, bool) {
+	for _, fragment := range report.Fragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedFragment{}, false
+}
+
+func findContractMaterializedCarrier(report interfaceContractGenerationReport, path string) (interfaceContractMaterializedCarrier, bool) {
+	for _, carrier := range report.Carriers {
+		if carrier.CarrierPath == path {
+			return carrier, true
+		}
+	}
+	return interfaceContractMaterializedCarrier{}, false
+}
+
+func findContractGeneratedSchemaFragment(report interfaceContractGenerationReport, id string) (interfaceContractGeneratedSchemaFragment, bool) {
+	for _, fragment := range report.SchemaFragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedSchemaFragment{}, false
+}
+
+func findCarrierGeneratedSchemaFragment(carrier interfaceContractSchemaFragmentsCarrier, id string) (interfaceContractGeneratedSchemaFragment, bool) {
+	for _, fragment := range carrier.SchemaFragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedSchemaFragment{}, false
+}
+
+func findCarrierGeneratedDescriptionFragment(carrier interfaceContractDescriptionFragmentsCarrier, id string) (interfaceContractGeneratedFragment, bool) {
+	for _, fragment := range carrier.DescriptionFragments {
+		if fragment.CapabilityID == id {
+			return fragment, true
+		}
+	}
+	return interfaceContractGeneratedFragment{}, false
+}
+
+// repoFileExists reports whether a repository-relative carrier is present.
+// Installed carriers under untracked directories are absent in a fresh
+// checkout, so callers distinguish "missing because untracked" from "missing
+// because broken".
+func repoFileExists(elem ...string) bool {
+	_, err := os.Stat(filepath.Join(append([]string{"..", ".."}, elem...)...))
+	return err == nil
+}
+
+func readRepoFile(t *testing.T, elem ...string) string {
+	t.Helper()
+
+	path := filepath.Join(append([]string{"..", ".."}, elem...)...)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read repo file %s: %v", path, err)
+	}
+	return string(data)
+}
+
+type piTypeObjectSchemaMirror struct {
+	Actions        map[string]bool
+	Fields         map[string]bool
+	RequiredFields map[string]bool
+}
+
+func parsePiTypeObjectSchema(t *testing.T, source string, constName string) piTypeObjectSchemaMirror {
+	t.Helper()
+
+	bodyPattern := regexp.MustCompile(
+		`(?s)const\s+` +
+			regexp.QuoteMeta(constName) +
+			`\s*=\s*Type\.Object\(\{(.*?)\n\}(?:,\s*\{[^\n]*\})?\);`,
+	)
+	matches := bodyPattern.FindStringSubmatch(source)
+	if len(matches) != 2 {
+		t.Fatalf("Pi Type.Object schema %s not found", constName)
+	}
+
+	fieldPattern := regexp.MustCompile(`(?m)^\s*([A-Za-z_][A-Za-z0-9_]*):\s*([^\n]+)`)
+	fields := map[string]bool{}
+	requiredFields := map[string]bool{}
+	for _, match := range fieldPattern.FindAllStringSubmatch(matches[1], -1) {
+		field := match[1]
+		value := strings.TrimSpace(match[2])
+		fields[field] = true
+		if strings.HasPrefix(value, "Opt") || strings.HasPrefix(value, "Type.Optional") {
+			continue
+		}
+		requiredFields[field] = true
+	}
+	if len(fields) == 0 {
+		t.Fatalf("Pi Type.Object schema %s has no fields", constName)
+	}
+
+	actionPattern := regexp.MustCompile(`(?s)action:\s*enumOf\((.*?)\),`)
+	actionMatches := actionPattern.FindStringSubmatch(matches[1])
+	actions := map[string]bool{}
+	if len(actionMatches) == 2 {
+		actionValuePattern := regexp.MustCompile(`"([^"]+)"`)
+		for _, match := range actionValuePattern.FindAllStringSubmatch(actionMatches[1], -1) {
+			actions[match[1]] = true
+		}
+		if len(actions) == 0 {
+			t.Fatalf("Pi Type.Object schema %s action enum is empty", constName)
+		}
+	}
+
+	return piTypeObjectSchemaMirror{
+		Actions:        actions,
+		Fields:         fields,
+		RequiredFields: requiredFields,
+	}
+}
+
+func contractAuditTestContains(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+	return false
+}
+
+func fpfToolActionEnums(t *testing.T) map[string][]string {
+	t.Helper()
+
+	toolSchemas := interfaceContractAuditToolSchemas()
+	toolActionEnums := make(map[string][]string)
+
+	for toolName, schema := range toolSchemas {
+		values := make([]string, 0, len(schema.Actions))
+		for action := range schema.Actions {
+			values = append(values, action)
+		}
+		sort.Strings(values)
+		toolActionEnums[toolName] = values
+	}
+
+	return toolActionEnums
+}
+
+func fpfToolProperties(t *testing.T) map[string]map[string]interface{} {
+	t.Helper()
+
+	server := fpf.NewServer("test")
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	server.SetMemoryFullHandler(func(_ context.Context, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	server.SetMemoryReadHandler(func(_ context.Context, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+
+	toolProperties := make(map[string]map[string]interface{})
+	for _, tool := range server.ToolCatalog() {
+		inputSchema, ok := tool.InputSchema.(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s input schema has wrong type: %#v", tool.Name, tool.InputSchema)
+		}
+		properties, ok := inputSchema["properties"].(map[string]interface{})
+		if !ok {
+			continue
+		}
+		auditSchema := interfaceContractAuditToolSchemaFromInput(inputSchema)
+		if auditSchema.ActionUnion {
+			properties = make(map[string]interface{})
+			for _, branch := range auditSchema.ActionBranches {
+				for name, property := range branch.Properties {
+					properties[name] = property
+				}
+			}
+		}
+		toolProperties[tool.Name] = properties
+	}
+
+	return toolProperties
+}
+
+func fpfToolRequiredFields(t *testing.T) map[string]map[string]bool {
+	t.Helper()
+
+	server := fpf.NewServer("test")
+	server.SetV5Handler(func(_ context.Context, _ string, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	server.SetMemoryFullHandler(func(_ context.Context, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+	server.SetMemoryReadHandler(func(_ context.Context, _ json.RawMessage) (string, error) {
+		return "", nil
+	})
+
+	toolRequired := make(map[string]map[string]bool)
+	for _, tool := range server.ToolCatalog() {
+		inputSchema, ok := tool.InputSchema.(map[string]interface{})
+		if !ok {
+			t.Fatalf("%s input schema has wrong type: %#v", tool.Name, tool.InputSchema)
+		}
+		auditSchema := interfaceContractAuditToolSchemaFromInput(inputSchema)
+		required := auditSchema.Required
+		if auditSchema.ActionUnion {
+			required = make(map[string]bool)
+			for _, branch := range auditSchema.ActionBranches {
+				for field := range branch.Required {
+					required[field] = true
+				}
+			}
+		}
+		toolRequired[tool.Name] = required
+	}
+
+	return toolRequired
+}
+
+func sortedMapKeys(values map[string]interface{}) string {
+	keys := make([]string, 0, len(values))
+	for key := range values {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return strings.Join(keys, ", ")
+}
+
+func TestInterfaceDecisionContractExposesHostRoutedCLIInvariant(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "decision.decide")
+	if !ok {
+		t.Fatal("decision.decide capability missing")
+	}
+
+	if capability.CurrentExecution.CLIStatus != "input_file_execution_shipped" {
+		t.Fatalf("CLI status = %q, want shipped input-file execution", capability.CurrentExecution.CLIStatus)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft artifact create decision.decide") {
+		t.Fatalf("decision capability should name CLI input-file execution:\n%#v", capability.CurrentExecution)
+	}
+	output := bytes.Buffer{}
+	if err := writeInterfaceCapabilityText(&output, capability); err != nil {
+		t.Fatalf("write decision interface text: %v", err)
+	}
+	if strings.Contains(output.String(), "Resume:") {
+		t.Fatalf("decision interface still exposes a retired resume surface:\n%s", output.String())
+	}
+	routingFlow := strings.Join(capability.CurrentExecution.InputFileFlow, " ")
+	for _, want := range []string{"direct operator request", "exact effect, subject, selected option, and scope", "Human Gate Brief", "natural-language answer"} {
+		if !strings.Contains(routingFlow, want) {
+			t.Fatalf("decision routing flow omitted %q:\n%s", want, routingFlow)
+		}
+	}
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `haft_decision(action="decide"`) {
+		t.Fatalf("decision capability should name current MCP execution:\n%#v", capability.CurrentExecution)
+	}
+
+	required := strings.Join(capability.InputContract.RequiredFields, " ")
+	for _, want := range []string{"selected_title", "rollback", "valid_until"} {
+		if !strings.Contains(required, want) {
+			t.Fatalf("decision required fields missing %q in %q", want, required)
+		}
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	if !strings.Contains(optionals, "choice_result") {
+		t.Fatalf("decision optional fields missing choice_result in %q", optionals)
+	}
+	if !strings.Contains(optionals, "transformation_record") {
+		t.Fatalf("decision optional fields missing transformation_record in %q", optionals)
+	}
+	if !strings.Contains(optionals, "problem_statement") {
+		t.Fatalf("decision optional fields missing problem_statement in %q", optionals)
+	}
+	for _, want := range []string{"decision_subject_ref", "implementation_footprint", "governance_targets", "drift_watch_targets"} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("decision optional fields missing %q in %q", want, optionals)
+		}
+	}
+	if !strings.Contains(optionals, "claims") {
+		t.Fatalf("decision optional fields missing claims in %q", optionals)
+	}
+
+	fieldShapes := ""
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
+	}
+	for _, want := range []string{"problem_basis", "problem_statement", "direct decision without real linked problem provenance", "choice_result", "option_set", "comparison_basis", "choice_rule", "next_move", "reversibility", "reopen_condition", "transformation_record", "transformed_entity", "initial_state", "post_state", "relation", "context", "window", "method_refs", "work_refs", "evidence_refs", "publication_refs", "implementation_footprint", "Footprint-only files are not governance drift authority", "governance_targets", "drift_watch_targets", "binding_targets", "target_ref", "api_contract|invariant|spec_section", "haft-target: <target_ref>", "fenced yaml spec-section id", "text_hash", "needs binding resolution", "affected_files auto-enrich binding_targets", "ambiguous files remain unenriched", "schema_or_behavior_changed", "claims[]", "lifecycle_status", "successor_ref", "governance_target_refs", "predictions remain the compatibility projection"} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("decision field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	if !strings.Contains(invariants, "Human binding remains mandatory") {
+		t.Fatalf("decision interface must preserve manual binding invariant:\n%s", invariants)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	if !strings.Contains(notes, "C.11 subject, option_set, comparison_basis, choice_rule, next_move, reversibility, and reopen_condition") {
+		t.Fatalf("decision interface notes missing C.11 choice_result warning:\n%s", notes)
+	}
+	if !strings.Contains(notes, "not a MethodRun, WorkCommission, evidence item, or publication unit") {
+		t.Fatalf("decision interface notes missing transformation separation warning:\n%s", notes)
+	}
+	if !strings.Contains(notes, "refs point outward and do not prove occurrence") {
+		t.Fatalf("decision interface notes missing transformation refs boundary:\n%s", notes)
+	}
+	if !strings.Contains(notes, "does not require manufacturing a ProblemCard or SolutionPortfolio") {
+		t.Fatalf("decision interface notes missing direct-decision boundary:\n%s", notes)
+	}
+	for _, want := range []string{"MCP decide is fail-closed", "host_routed_operator_request", "do not claim independent proof of U.SpeechAct", "bare yes is usable only for one current unambiguous Human Gate Brief"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("decision interface notes missing project authority policy %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestDecisionSkillCarriersExposeHostRoutedProtocol(t *testing.T) {
+	t.Parallel()
+
+	bundle, err := currentSkillSourceBundle()
+	if err != nil {
+		t.Fatalf("build current skill source bundle: %v", err)
+	}
+	bundledProjection := ""
+	for _, skill := range bundle.Skills() {
+		if skill.Name() == "h-decide" {
+			bundledProjection = string(skill.Content())
+			break
+		}
+	}
+	if bundledProjection == "" {
+		t.Fatal("h-decide is absent from current skill source bundle")
+	}
+	carriers := map[string]string{
+		"canonical":     readRepoFile(t, "internal", "cli", "skill", "h-decide", "SKILL.md"),
+		"source-bundle": bundledProjection,
+	}
+	for name, source := range carriers {
+		for _, want := range []string{
+			"disable-model-invocation: false",
+			"host_routed_operator_request",
+			"direct, unambiguous",
+			"compatible route hint",
+			"without a confirmation round trip",
+			"skill name",
+			"DecisionRecord route",
+			"internal effect sink",
+			"operator_confirmation_required",
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("%s h-decide carrier omitted %q", name, want)
+			}
+		}
+		for _, forbidden := range []string{
+			"explicit_h_decide",
+			"strict_cli_speech_act",
+			"DECIDE THIS REVIEWED CHOICE",
+			"haft artifact resume-decision",
+		} {
+			if strings.Contains(source, forbidden) {
+				t.Fatalf("%s h-decide carrier retains retired authority surface %q", name, forbidden)
+			}
+		}
+		for _, forbidden := range []string{
+			"ProjectTypeEnvHead",
+			"TypeEnv",
+			"haft memory typeenv",
+		} {
+			if strings.Contains(source, forbidden) {
+				t.Fatalf("%s h-decide carrier exposes low-level memory UX %q", name, forbidden)
+			}
+		}
+	}
+}
+
+func TestInterfaceProblemFrameExposesProblemProfileAdmissionFields(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "problem.frame")
+	if !ok {
+		t.Fatal("problem.frame capability missing")
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{
+		"problem_profile",
+		"source_kind",
+		"why_now",
+		"scope",
+		"acceptance_probe",
+		"freshness_disposition",
+	} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("problem.frame optional fields missing %q in %q", want, optionals)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"P2W readiness is computed", "wish/ticket/chosen_method"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("problem.frame notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceStatusNamesCockpitAndDetailCalls(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.status")
+	if !ok {
+		t.Fatal("query.status capability missing")
+	}
+
+	if !strings.Contains(capability.Purpose, "operator cockpit") {
+		t.Fatalf("status purpose should name cockpit default:\n%s", capability.Purpose)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"compact operator cockpit",
+		"not evidence of absence",
+		"full=true for detailed status",
+		`haft_query(action="coverage")`,
+		`haft_refresh(action="scan", verbose=true)`,
+		`haft_refresh(action="plan")`,
+		`haft_refresh(action="review")`,
+		`haft_refresh(action="drain", dry_run=true)`,
+		"not a project-wide Work gate",
+		"Continue unrelated already-authorized Work",
+		"exact semantic choice",
+		"Bare acknowledgement prompts",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("status interface notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{
+		"does not imply project-wide interruption",
+		"exact current-use binding, authority, or human lifecycle conflict",
+	} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("status interface invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	outputVolume := strings.Join(capability.OutputVolume, " ")
+	for _, want := range []string{
+		"default: compact cockpit",
+		"one-line coverage cue",
+		"full=true: detailed status",
+		"complete coverage projection",
+	} {
+		if !strings.Contains(outputVolume, want) {
+			t.Fatalf("status output volume missing %q:\n%s", want, outputVolume)
+		}
+	}
+}
+
+func TestInterfaceFPFDocumentsSourceNativeRetrievalBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.fpf")
+	if !ok {
+		t.Fatal("query.fpf capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "haft_query" {
+		t.Fatalf("MCP tool = %q", capability.CurrentExecution.MCPTool)
+	}
+	if capability.CurrentExecution.MCPAction != "fpf" {
+		t.Fatalf("MCP action = %q", capability.CurrentExecution.MCPAction)
+	}
+	fields := strings.Join(append(capability.InputContract.RequiredFields, capability.InputContract.OptionalFields...), " ")
+	for _, want := range []string{"mode", "query", "identifier", "roles", "max_excerpt_characters", "max_relations_per_candidate", "view", "trace_ref"} {
+		if !strings.Contains(fields, want) {
+			t.Fatalf("FPF Query contract fields missing %q:\n%s", want, fields)
+		}
+	}
+	execution := capability.CurrentExecution.MCPCall + "\n" + capability.CurrentExecution.CLICommand
+	for _, want := range []string{`view="working"`, "--view working"} {
+		if !strings.Contains(execution, want) {
+			t.Fatalf("FPF Query execution contract missing %q:\n%s", want, execution)
+		}
+	}
+
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"working_response",
+		"trace_response",
+		"diagnostic_response",
+		"replay_mismatch",
+		"exact_hit",
+		"candidate_set",
+		"abstained",
+		"missing_basis",
+		"authored_phrase",
+		"heading_keyword",
+		"role_local_fts",
+		"excerpt_truncated",
+		"source_role",
+		"pattern_scope",
+		"provenance",
+		"practical_use_card and toc_row",
+		"strict per-candidate total across excerpt and practical-use cue text",
+		"--replay-ref",
+		"not a global enum",
+		"source_snapshot_mismatch",
+		"query_request_mismatch",
+		"query_result_mismatch",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("FPF Query contract missing %q:\n%s", want, contract)
+		}
+	}
+
+	workingShape := ""
+	for _, shape := range capability.InputContract.FieldShapes {
+		if shape.Field == "working_response" {
+			workingShape = shape.Shape
+			break
+		}
+	}
+	if workingShape == "" {
+		t.Fatal("FPF Query working_response shape missing")
+	}
+	for _, forbidden := range []string{
+		"provenance",
+		"source_path",
+		"start_line",
+		"end_line",
+		"content_hash",
+		"source_revision",
+		"match_grounds",
+		"producer_ids",
+	} {
+		if strings.Contains(workingShape, forbidden) {
+			t.Fatalf("FPF Query working_response exposes internal field %q:\n%s", forbidden, workingShape)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"independent closed dimensions", "publication roles", "not ranking", "work order", "never returns a selected or recommended pattern", "abstain", "Working view never exposes", "fail-closed"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("FPF Query invariant missing %q:\n%s", want, invariants)
+		}
+	}
+	for _, banned := range []string{"recommended_pattern_use", "suggested_haft_surface", "required_next_action", "matched_route_id"} {
+		if strings.Contains(contract, banned) {
+			t.Fatalf("FPF Query contract contains retired router field %q", banned)
+		}
+	}
+}
+
+func TestInterfaceNodeDocumentsExactIdentifierNamespaces(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.node")
+	if !ok {
+		t.Fatal("query.node capability missing")
+	}
+	if capability.CurrentExecution.MCPTool != "haft_query" || capability.CurrentExecution.MCPAction != "node" {
+		t.Fatalf("query.node MCP execution = %#v", capability.CurrentExecution)
+	}
+
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"PatternID|SourceID|UnitID",
+		"action=related",
+		"artifact_ref=",
+		"code symbol|SymbolAnchor",
+		"EntityID|EntityAlias",
+		"action=memory",
+		"memory_request",
+		"mode:resolve",
+		"haft memory resolve --input-file request.json",
+		"wrong_identifier_namespace",
+		"same_call_retryable",
+		"false",
+		"recovery_call",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("query.node identifier contract missing %q:\n%s", want, contract)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{
+		"fails before code-index access",
+		"never coerced into code symbols",
+		"does not authorize fallback",
+	} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.node identifier invariant missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceCarrierSurfacesAreReadOnlyDrillDowns(t *testing.T) {
+	t.Parallel()
+
+	for _, capabilityID := range []string{"query.carrier_manifest", "query.carrier_check"} {
+		t.Run(capabilityID, func(t *testing.T) {
+			capability, ok := findInterfaceCapability(haftInterfaceCatalog(), capabilityID)
+			if !ok {
+				t.Fatalf("%s capability missing", capabilityID)
+			}
+			if capability.CurrentExecution.MCPTool != "haft_query" {
+				t.Fatalf("%s MCP tool = %q", capabilityID, capability.CurrentExecution.MCPTool)
+			}
+			if capability.CurrentExecution.CLIStatus != "available" {
+				t.Fatalf("%s CLI status = %q", capabilityID, capability.CurrentExecution.CLIStatus)
+			}
+			if !strings.Contains(capability.CurrentExecution.CLICommand, "haft carrier") {
+				t.Fatalf("%s CLI command missing carrier path: %#v", capabilityID, capability.CurrentExecution)
+			}
+			outputVolume := strings.Join(capability.OutputVolume, " ")
+			if !strings.Contains(outputVolume, "never in compact status") {
+				t.Fatalf("%s output volume must preserve compact status boundary: %s", capabilityID, outputVolume)
+			}
+			invariants := strings.Join(capability.Invariants, " ")
+			for _, want := range []string{"read-only", "Default status"} {
+				if !strings.Contains(invariants, want) {
+					t.Fatalf("%s invariants missing %q:\n%s", capabilityID, want, invariants)
+				}
+			}
+		})
+	}
+}
+
+func TestInterfaceBaselineAuditDocumentsTermSplitBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "baseline.audit")
+	if !ok {
+		t.Fatal("baseline.audit capability missing")
+	}
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("baseline.audit should be CLI-only in this slice: %#v", capability.CurrentExecution)
+	}
+	if capability.CurrentExecution.CLICommand != "haft baseline audit --json" {
+		t.Fatalf("baseline.audit CLI command = %#v", capability.CurrentExecution.CLICommand)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"read_only_term_audit_not_baseline_mutation",
+		"spec_section_approval_baseline",
+		"pre_work_reference_snapshot",
+		"verified_state_snapshot",
+		"comparison_or_benchmark_baseline",
+		"legacy_ambiguous_baseline",
+		"does_not_mutate_baselines_decisions_evidence_or_carriers",
+		"does_not_create_approval_gate_decision_claim_truth_global_truth_or_publication",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("baseline.audit contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"which kind", "skips node_modules", "`--limit` caps emitted findings", "read-only"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("baseline.audit notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "SpecSectionApprovalBaseline", "DecisionRecord baselines", "Default status"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("baseline.audit invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	report := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	surface, ok := findInterfaceContractAuditSurface(report, "baseline.audit")
+	if !ok {
+		t.Fatal("baseline.audit audit surface missing")
+	}
+	if surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+		t.Fatalf("host schema posture = %q", surface.HostSchemaPosture)
+	}
+	if surface.AuthorityPosture != "read_only_term_audit" {
+		t.Fatalf("authority posture = %q", surface.AuthorityPosture)
+	}
+	if surface.SchemaCoverage.Status != "not_mcp_backed" {
+		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+	if !stringSliceContains(surface.ValidationRefs, "internal/cli/baseline_audit_test.go") {
+		t.Fatalf("validation refs missing baseline_audit_test.go: %#v", surface.ValidationRefs)
+	}
+}
+
+func TestInterfaceGoverningSetNamesAuthorityFrontier(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.governing_set")
+	if !ok {
+		t.Fatal("query.governing_set capability missing")
+	}
+
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `haft_query(action="governing_set"`) {
+		t.Fatalf("governing_set MCP call = %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "limit") || !containsString(capability.InputContract.OptionalFields, "full") {
+		t.Fatalf("governing_set optional fields = %#v, want limit and full", capability.InputContract.OptionalFields)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision governing-set") ||
+		!strings.Contains(capability.CurrentExecution.CLICommand, "--query") {
+		t.Fatalf("governing_set CLI command missing governing-set drill-down:\n%#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "--json --limit 5") {
+		t.Fatalf("governing_set CLI command missing compact JSON limit:\n%#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "--write-snapshot") ||
+		!strings.Contains(capability.CurrentExecution.CLICommand, "--check-snapshot") {
+		t.Fatalf("governing_set CLI command missing snapshot write/check:\n%#v", capability.CurrentExecution)
+	}
+
+	fieldShapes := ""
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
+	}
+	for _, want := range []string{
+		"read_only_current_authority_frontier",
+		"authority_frontier",
+		"current_decision_refs_are_governing_authority_terminal_history_refs_are_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"answer_path_is_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"derived_read_only_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"single_current_authority",
+		"conflict_requires_operator",
+		"fallback_target_sets",
+		"scope_enrichment_sets",
+		"derived_from_section_refs",
+		"whole_file_fallback_requires_scope_enrichment",
+		"scope_repair_hints",
+		"Terminal decisions are history refs",
+		"bearer_ref",
+		"source_refs",
+		"--subject-ref",
+		"--target-ref",
+		"limit caps compact sets",
+		"limit=5",
+		"read_only_current_governing_frontier_snapshot_check",
+		"snapshot_digest",
+		"Snapshot carriers are comparison aids",
+	} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("governing_set field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"active/refresh_due", "fallback_target_sets", "scope_enrichment_sets", "Read-only", "does not supersede", "create evidence", "approve claims", "publish truth", "focused drill-down", "--write-snapshot", "--check-snapshot"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("governing_set notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "not evidence", "approval", "GateDecision", "claim truth", "global truth", "publication", "not live authority", "operator review"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("governing_set invariant missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceDriftRouteNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.drift_route")
+	if !ok {
+		t.Fatal("query.drift_route capability missing")
+	}
+
+	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"not_mutation",
+		"not_evidence",
+		"not_approval",
+		"not_gate_decision",
+		"not_claim_truth",
+		"not_global_truth",
+		"not_publication",
+	} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("drift_route field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "not mutation", "evidence", "approval", "GateDecision", "claim truth", "global truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("drift_route invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceBlockedUseNamesCompleteAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.blocked_use_attention")
+	if !ok {
+		t.Fatal("query.blocked_use_attention capability missing")
+	}
+
+	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"not_work_plan",
+		"not_evidence",
+		"not_approval",
+		"not_gate_decision",
+		"not_claim_truth",
+		"not_global_truth",
+		"not_publication",
+	} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("blocked_use field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"read-only", "not WorkPlans", "evidence", "approval", "GateDecision", "claim truth", "global truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("blocked_use invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceRefreshReviewNamesAuthorityBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.review")
+	if !ok {
+		t.Fatal("refresh.review capability missing")
+	}
+
+	if capability.CurrentExecution.MCPCall != `haft_refresh(action="review")` {
+		t.Fatalf("refresh.review MCP call = %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft overseer judgment --json --limit 20") {
+		t.Fatalf("refresh.review CLI command missing judgment path:\n%#v", capability.CurrentExecution)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"rung-3", "--limit", "not evidence", "approval", "mutation"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("refresh.review notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"outside automated execution", "review metadata, not authority"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("refresh.review invariant missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceRefreshDrainNamesSafeClosureBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "refresh.drain")
+	if !ok {
+		t.Fatal("refresh.drain capability missing")
+	}
+
+	if capability.CurrentExecution.MCPCall != `haft_refresh(action="drain", dry_run=true)` {
+		t.Fatalf("refresh.drain MCP call = %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft overseer drain --dry-run --json") {
+		t.Fatalf("refresh.drain CLI command missing drain path:\n%#v", capability.CurrentExecution)
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"dry_run=true", "rung-1/rung-2", "needs_operator", "claim truth", "publication"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("refresh.drain notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"opt-in", "not create semantic approval", "claim truth", "publication"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("refresh.drain invariant missing %q:\n%s", want, invariants)
+		}
+	}
+
+	var fieldShapes strings.Builder
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes.WriteString(shape.Shape)
+		fieldShapes.WriteString(" ")
+		fieldShapes.WriteString(shape.Note)
+		fieldShapes.WriteString(" ")
+	}
+	for _, want := range []string{
+		`"claim_truth":"not_claim_truth"`,
+		`"global_truth":"not_global_truth"`,
+		`"publication":"not_publication"`,
+		"read_only_reconciliation_proposal_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
+		"after_action_report_only_not_binding_authority_not_mutation_not_evidence_not_approval_not_gate_decision_not_claim_truth_not_global_truth_not_publication",
+	} {
+		if !strings.Contains(fieldShapes.String(), want) {
+			t.Fatalf("refresh.drain field shape missing %q:\n%s", want, fieldShapes.String())
+		}
+	}
+}
+
+func TestInterfaceCodeContextNamesLaneEscalation(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.code_context")
+	if !ok {
+		t.Fatal("query.code_context capability missing")
+	}
+
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `lane="index"`) {
+		t.Fatalf("code_context interface should show lane=index default:\n%#v", capability.CurrentExecution)
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{"file", "files", "anchor_id", "lane", "limit", "full"} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("code_context optional fields missing %q in %q", want, optionals)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"Exactly one of file or files is required", "capped at 8 targets", "Default output is lane=index", "symbols, decisions, invariants, notes, problems, portfolios, all", "Prefer one typed lane"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("code_context notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	outputVolume := strings.Join(capability.OutputVolume, " ")
+	if !strings.Contains(outputVolume, "default: lane=index") {
+		t.Fatalf("code_context interface should name lane index default:\n%s", outputVolume)
+	}
+	if !strings.Contains(outputVolume, "typed lanes") || !strings.Contains(outputVolume, "full=true: complete audit dump") {
+		t.Fatalf("code_context interface should name typed lanes and audit dump:\n%s", outputVolume)
+	}
+}
+
+func TestInterfaceRelatedDocumentsSemanticViews(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.related")
+	if !ok {
+		t.Fatal("query.related capability missing")
+	}
+
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `action="related"`) {
+		t.Fatalf("related interface should name related action:\n%#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.MCPCall, `artifact_ref="prob-..."`) {
+		t.Fatalf("related interface should name canonical artifact_ref:\n%#v", capability.CurrentExecution)
+	}
+	optionalFields := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{"artifact_ref", "ref", "artifact_id", "file"} {
+		if !strings.Contains(optionalFields, want) {
+			t.Fatalf("related optional fields missing %q: %s", want, optionalFields)
+		}
+	}
+
+	fieldShapes := ""
+	for _, shape := range capability.InputContract.FieldShapes {
+		fieldShapes += shape.Field + " " + shape.Shape + " " + shape.Note + " "
+	}
+	for _, want := range []string{"problem_card.semantic", "publication_unit", "source_edition_pin", "problem_card.views", "source_episteme", "publication_projection", "carrier_bytes"} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("related field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{
+		"artifact_ref is canonical",
+		"related(file=",
+		"binding-time receipt",
+		"SQLite remains runtime source of truth",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("related notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestInterfaceMethodCloseNamesEvidenceAndWaiverContract(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.close")
+	if !ok {
+		t.Fatal("method.close capability missing")
+	}
+
+	required := strings.Join(capability.InputContract.RequiredFields, " ")
+	if !strings.Contains(required, "pull_id") {
+		t.Fatalf("method.close required fields = %q, want pull_id", required)
+	}
+	if !strings.Contains(capability.Purpose, "accepted-basis carry-through dispositions") {
+		t.Fatalf("method.close purpose does not name carry-through dispositions:\n%s", capability.Purpose)
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	for _, want := range []string{"gate_results", "verification", "waivers", "carry_through"} {
+		if !strings.Contains(optionals, want) {
+			t.Fatalf("method.close optional fields = %q, missing %q", optionals, want)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"gate_results[] shape", "evidence_refs", "waivers[] shape", "verification shape", "carry_through[] shape", "acceptance_ref_kind", "acceptance_ref_status", "externally_asserted", "close_template", "Derive changed_files", "irreducible judgment", "carry_through_disposition_recorded"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("method.close notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	outputVolume := strings.Join(capability.OutputVolume, " ")
+	if !strings.Contains(outputVolume, "close_template") {
+		t.Fatalf("method.close should name show close_template recovery:\n%s", outputVolume)
+	}
+}
+
+func TestInterfaceMethodPullNamesCarryThroughContract(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.pull")
+	if !ok {
+		t.Fatal("method.pull capability missing")
+	}
+
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	if !strings.Contains(optionals, "carry_through") {
+		t.Fatalf("method.pull optional fields = %q, want carry_through", optionals)
+	}
+
+	fieldShapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"carry_through[]", "source_ref", "source_item_ref", "acceptance_ref", "acceptance_ref_kind", "acceptance_ref_status", "operator:accepted", "externally_asserted"} {
+		if !strings.Contains(fieldShapes, want) {
+			t.Fatalf("method.pull field shapes missing %q:\n%s", want, fieldShapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"pending accepted-basis inventory", "apply/reject/defer/supersede", "acceptance_ref_kind/status"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("method.pull notes missing %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestPiMethodSchemaMirrorsCarryThroughItemShape(t *testing.T) {
+	t.Parallel()
+
+	source := readRepoFile(t, "packages", "haft-pi", "extensions", "haft", "tools.ts")
+	for _, want := range []string{
+		"const carryThroughItemSchema = Type.Object({",
+		"source_ref: Type.String()",
+		"source_item_ref: Type.String()",
+		"acceptance_ref: Type.String()",
+		`acceptance_ref_kind: Type.Optional(enumOf("operator_message", "review_disposition", "decision_record", "manual_cli_receipt", "external_unverified", "unknown"))`,
+		`acceptance_ref_status: Type.Optional(enumOf("verified", "externally_asserted", "missing", "malformed"))`,
+		`disposition: Type.Optional(enumOf("pending", "applied", "rejected", "deferred", "superseded"))`,
+		"target_refs: OptStrList()",
+		"evidence_refs: OptStrList()",
+		"carry_through: Type.Optional(Type.Array(carryThroughItemSchema))",
+	} {
+		if !strings.Contains(source, want) {
+			t.Fatalf("Pi method schema mirror missing %q", want)
+		}
+	}
+}
+
+func TestInterfaceMethodCatalogNamesLifecycleDiscoveryContract(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "method.catalog")
+	if !ok {
+		t.Fatal("method.catalog capability missing")
+	}
+
+	if capability.CurrentExecution.MCPAction != "catalog" {
+		t.Fatalf("method.catalog MCP action = %q", capability.CurrentExecution.MCPAction)
+	}
+	optionals := strings.Join(capability.InputContract.OptionalFields, " ")
+	if !strings.Contains(optionals, "method_status") {
+		t.Fatalf("method.catalog optional fields = %q, want method_status", optionals)
+	}
+
+	contractText := capability.Purpose + " " +
+		strings.Join(capability.InputContract.Notes, " ") + " " +
+		strings.Join(capability.OutputVolume, " ") + " " +
+		strings.Join(capability.Invariants, " ")
+	for _, want := range []string{
+		"MethodPack",
+		"ProcessPattern",
+		"current methods",
+		"pull matching",
+		"source_pattern_refs",
+		"never satisfy hard gates or evidence requirements",
+		"Skills may point to carrier_refs but do not become enforcement authority",
+	} {
+		if !strings.Contains(contractText, want) {
+			t.Fatalf("method.catalog contract missing %q:\n%s", want, contractText)
+		}
+	}
+}
+
+func TestInterfaceNestedContractsExposeShapesAndTemplates(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		capability string
+		field      string
+		template   string
+		fragment   string
+	}{
+		{
+			capability: "problem.characterize",
+			field:      "dimensions[]",
+			template:   "characterize_problem",
+			fragment:   "parity_plan",
+		},
+		{
+			capability: "solution.explore",
+			field:      "variants[]",
+			template:   "explore_variants",
+			fragment:   "stepping_stone_basis",
+		},
+		{
+			capability: "solution.compare",
+			field:      "scores",
+			template:   "flat_compare",
+			fragment:   "dimension_name",
+		},
+		{
+			capability: "decision.decide",
+			field:      "predictions[]",
+			template:   "decide",
+			fragment:   "rollback",
+		},
+		{
+			capability: "method.close",
+			field:      "gate_results[]",
+			template:   "",
+			fragment:   "Use gate_id, not gate",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.capability, func(t *testing.T) {
+			capability, ok := findInterfaceCapability(haftInterfaceCatalog(), tc.capability)
+			if !ok {
+				t.Fatalf("%s capability missing", tc.capability)
+			}
+
+			shapes, templates := marshalContractFragments(t, capability.InputContract)
+			if !strings.Contains(shapes, tc.field) {
+				t.Fatalf("%s field_shapes missing %q:\n%s", tc.capability, tc.field, shapes)
+			}
+			if !strings.Contains(shapes, tc.fragment) && !strings.Contains(templates, tc.fragment) {
+				t.Fatalf("%s contract missing fragment %q:\nshapes=%s\ntemplates=%s", tc.capability, tc.fragment, shapes, templates)
+			}
+			if tc.template != "" && !strings.Contains(templates, tc.template) {
+				t.Fatalf("%s input_templates missing %q:\n%s", tc.capability, tc.template, templates)
+			}
+		})
+	}
+}
+
+func TestInterfaceProblemCharacterizeUsesArtifactPolarityVocabulary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "problem.characterize")
+	if !ok {
+		t.Fatal("problem.characterize capability missing")
+	}
+
+	shapes, templates := marshalContractFragments(t, capability.InputContract)
+	contract := shapes + "\n" + templates
+	for _, want := range []string{"lower_better", "higher_better"} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("problem.characterize contract missing artifact polarity %q:\n%s", want, contract)
+		}
+	}
+	for _, retired := range []string{"lower_is_better", "higher_is_better"} {
+		if strings.Contains(contract, retired) {
+			t.Fatalf("problem.characterize contract advertises unsupported polarity %q:\n%s", retired, contract)
+		}
+	}
+}
+
+func TestInterfaceSpecUseDocumentsOperationalGate(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.spec_use")
+	if !ok {
+		t.Fatal("query.spec_use capability missing")
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"operational_gate",
+		"current_authority",
+		"read_only_current_authority_frontier_not_evidence_approval_gate_decision_claim_truth_global_truth_or_publication",
+		"no_operational_gate_profile_not_gate_decision",
+		"publication",
+		"not_publication",
+		"claim_truth",
+		"not_claim_truth",
+		"not_work_commission",
+		"require_current_source_and_admitted_use",
+		"current_authority_conflict_requires_operator",
+		"passed|blocked",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.spec_use contract missing %q:\n%s", want, shapes)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	if !strings.Contains(invariants, "GateDecision remains a derived reading") {
+		t.Fatalf("query.spec_use invariants missing derived-reading boundary:\n%s", invariants)
+	}
+	for _, want := range []string{
+		"Current-authority conflict posture",
+		"claim truth",
+		"global truth",
+		"publication",
+		"WorkCommission",
+	} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.spec_use invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestHumanGateBriefContractIsSelfContainedAcrossOperatorSurfaces(t *testing.T) {
+	t.Parallel()
+
+	catalog := haftInterfaceCatalog()
+	for _, want := range []string{
+		"human engineer's assessment",
+		"natural language",
+		"Accept ordinary language as the substantive answer",
+		"host_routed_operator_request",
+		"without requiring a skill name or second confirmation",
+		"command-only instruction",
+	} {
+		if !strings.Contains(humanGateBriefRequirement, want) {
+			t.Fatalf("canonical Human Gate Brief omits Engineer Consultation field %q", want)
+		}
+	}
+	for _, capabilityID := range []string{
+		"decision.decide",
+		"query.status",
+		"spec.apply_change",
+	} {
+		capability, found := findInterfaceCapability(catalog, capabilityID)
+		if !found {
+			t.Fatalf("human-gated capability %q missing", capabilityID)
+		}
+		notes := strings.Join(capability.InputContract.Notes, "\n")
+		if !strings.Contains(notes, humanGateBriefRequirement) {
+			t.Fatalf("%s omits canonical Human Gate Brief requirement:\n%s", capabilityID, notes)
+		}
+	}
+
+	report := buildInterfaceContractGenerationReport(catalog)
+	fragment, found := findContractGeneratedFragment(report, "decision.decide")
+	if !found {
+		t.Fatal("decision.decide generated fragment missing")
+	}
+	if !strings.Contains(fragment.GeneratedText, humanGateBriefRequirement) {
+		t.Fatalf("decision.decide generated fragment omits Human Gate Brief:\n%s", fragment.GeneratedText)
+	}
+
+	coreCarriers := [][]string{
+		{"AGENTS.md"},
+		{".agents", "skills", "h-reason", "SKILL.md"},
+		{".agents", "skills", "h-decide", "SKILL.md"},
+		{".agents", "skills", "h-commission", "SKILL.md"},
+		{".agents", "skills", "h-spec", "SKILL.md"},
+		{".agents", "skills", "h-status", "SKILL.md"},
+		{"internal", "cli", "claude_md_template.md"},
+		{"internal", "cli", "skill", "h-reason", "SKILL.md"},
+		{"internal", "cli", "skill", "h-decide", "SKILL.md"},
+		{"internal", "cli", "skill", "h-commission", "SKILL.md"},
+		{"internal", "cli", "skill", "h-spec", "SKILL.md"},
+		{"internal", "cli", "skill", "h-status", "SKILL.md"},
+	}
+	for _, path := range coreCarriers {
+		// `.agents/skills` — установленная копия, которую создаёт `haft init`.
+		// Она не отслеживается git, поэтому в свежем чекауте её нет. Источник
+		// тех же носителей лежит в internal/cli/skill и проверяется этим же
+		// циклом всегда, так что пропуск копии ничего не теряет.
+		if path[0] == ".agents" && !repoFileExists(path...) {
+			t.Logf("installed carrier %s absent — checking its tracked source only",
+				strings.Join(path, "/"))
+			continue
+		}
+		source := readRepoFile(t, path...)
+		for _, want := range []string{
+			"Human Gate Brief",
+			"change",
+			"unchanged",
+			"weakest",
+			"Pareto",
+			"engineer",
+			"assessment",
+			"natural language",
+			"substantive answer",
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("%s omits Engineer Consultation field %q", strings.Join(path, "/"), want)
+			}
+		}
+	}
+
+	decisionSkill := readRepoFile(t, "internal", "cli", "skill", "h-decide", "SKILL.md")
+	for _, want := range []string{
+		"bind nothing",
+		"without a confirmation round trip",
+		"skill name",
+	} {
+		if !strings.Contains(decisionSkill, want) {
+			t.Fatalf("h-decide ambiguity guard missing %q", want)
+		}
+	}
+	commissionSkill := readRepoFile(t, "internal", "cli", "skill", "h-commission", "SKILL.md")
+	for _, want := range []string{
+		"argumentless invocation",
+		"create nothing",
+		"not a second confirmation",
+	} {
+		if !strings.Contains(commissionSkill, want) {
+			t.Fatalf("h-commission ambiguity guard missing %q", want)
+		}
+	}
+
+	piCarriers := [][]string{
+		{"packages", "haft-pi", "extensions", "haft", "tools.ts"},
+		{"packages", "haft-pi", "prompts", "h-reason.md"},
+		{"packages", "haft-pi", "prompts", "h-decide.md"},
+		{"packages", "haft-pi", "prompts", "h-commission.md"},
+		{"packages", "haft-pi", "prompts", "h-spec.md"},
+		{"packages", "haft-pi", "prompts", "h-status.md"},
+		{"packages", "haft-pi", "skills", "h-reason", "SKILL.md"},
+		{"packages", "haft-pi", "skills", "h-decide", "SKILL.md"},
+		{"packages", "haft-pi", "skills", "h-commission", "SKILL.md"},
+		{"packages", "haft-pi", "skills", "h-spec", "SKILL.md"},
+		{"packages", "haft-pi", "skills", "h-status", "SKILL.md"},
+	}
+	for _, path := range piCarriers {
+		source := readRepoFile(t, path...)
+		for _, want := range []string{
+			"Human Gate Brief",
+			"Pareto",
+			"engineer",
+			"assessment",
+			"natural language",
+			"substantive answer",
+		} {
+			if !strings.Contains(source, want) {
+				t.Fatalf("%s omits Engineer Consultation marker %q", strings.Join(path, "/"), want)
+			}
+		}
+	}
+}
+
+func TestInstalledHostGateSkillsCarryEngineerConsultationContract(t *testing.T) {
+	t.Parallel()
+
+	gatedSkills := map[string]struct{}{
+		"h-reason":     {},
+		"h-decide":     {},
+		"h-commission": {},
+		"h-spec":       {},
+		"h-status":     {},
+	}
+	requiredFragments := []string{
+		"Human Gate Brief",
+		"engineer",
+		"assessment",
+		"natural language",
+		"substantive answer",
+	}
+
+	adapters, err := buildCurrentSkillAdapterRegistry()
+	if err != nil {
+		t.Fatalf("build host skill adapters: %v", err)
+	}
+	for _, adapter := range adapters {
+		for _, skill := range allSkills {
+			if _, gated := gatedSkills[skill.Name]; !gated {
+				continue
+			}
+			rendered, err := adapter.rewrite.Apply(skill.Content)
+			if err != nil {
+				t.Fatalf(
+					"render %s for %s: %v",
+					skill.Name,
+					adapter.definition.platform,
+					err,
+				)
+			}
+			for _, want := range requiredFragments {
+				if !strings.Contains(string(rendered), want) {
+					t.Fatalf(
+						"%s/%s omits Engineer Consultation marker %q",
+						adapter.definition.platform,
+						skill.Name,
+						want,
+					)
+				}
+			}
+		}
+	}
+}
+
+func TestInterfaceSpecApplyChangeDocumentsSyncBackBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "spec.apply_change")
+	if !ok {
+		t.Fatal("spec.apply_change capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("spec.apply_change should be CLI-only in this slice: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft spec apply-change --dry-run") {
+		t.Fatalf("spec.apply_change CLI command missing dry-run:\n%#v", capability.CurrentExecution)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"planned_edition", "markdown_sync_back", "semantic_field_update", "relationship_update", "unknown_high_risk", "sql_edition_update_not_approval_rebaseline_evidence_gate_claim_truth_global_truth_or_prose_authority"} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("spec.apply_change contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"current FPF source", "source meaning separately", "surrounding Markdown prose is never SQL truth", "Carrier-only changes are no-op", "never approves"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("spec.apply_change notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"SQL edition store remains the source of truth", "FPF source compatibility are separate", "not approval", "claim truth", "global truth", "Default status must not inline"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec.apply_change invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	audit := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	surface, ok := findInterfaceContractAuditSurface(audit, "spec.apply_change")
+	if !ok {
+		t.Fatal("spec.apply_change audit surface missing")
+	}
+	if surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+		t.Fatalf("host schema posture = %q", surface.HostSchemaPosture)
+	}
+	if surface.AuthorityPosture != "sql_edition_sync_back_mutation_not_approval" {
+		t.Fatalf("authority posture = %q", surface.AuthorityPosture)
+	}
+	if surface.SchemaCoverage.Status != "not_mcp_backed" {
+		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+}
+
+func TestInterfaceSpecExportDocumentsPublicationProjectionBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "spec.export")
+	if !ok {
+		t.Fatal("spec.export capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("spec.export should be CLI-only in this slice: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft spec export TS.x --markdown") {
+		t.Fatalf("spec.export CLI command missing markdown projection:\n%#v", capability.CurrentExecution)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"source_edition_hash",
+		"publication_hash",
+		"publication_projection",
+		"carrier_path",
+		"markdown",
+		"publication_projection_only_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
+		"source_publication_carrier_audit_not_approval_rebaseline_evidence_gate_claim_truth_or_global_truth",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("spec.export contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	notes := strings.Join(capability.InputContract.Notes, " ")
+	for _, want := range []string{"Run `haft spec sync` first", "read-only", "fails closed", "`--markdown` intentionally omits audit fields"} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("spec.export notes missing %q:\n%s", want, notes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, " ")
+	for _, want := range []string{"SQL edition store remains the source of truth", "not approval", "claim truth", "global truth", "Carrier bytes are separated", "Default status must not inline"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("spec.export invariants missing %q:\n%s", want, invariants)
+		}
+	}
+
+	audit := buildInterfaceContractAuditReport(haftInterfaceCatalog())
+	surface, ok := findInterfaceContractAuditSurface(audit, "spec.export")
+	if !ok {
+		t.Fatal("spec.export audit surface missing")
+	}
+	if surface.HostSchemaPosture != "manual_cli_contract_not_generated" {
+		t.Fatalf("host schema posture = %q", surface.HostSchemaPosture)
+	}
+	if surface.AuthorityPosture != "read_only_publication_projection" {
+		t.Fatalf("authority posture = %q", surface.AuthorityPosture)
+	}
+	if surface.SchemaCoverage.Status != "not_mcp_backed" {
+		t.Fatalf("schema coverage = %#v", surface.SchemaCoverage)
+	}
+	if !stringSliceContains(surface.ValidationRefs, "internal/cli/spec_export_test.go") {
+		t.Fatalf("validation refs missing spec_export_test.go: %#v", surface.ValidationRefs)
+	}
+}
+
+func TestInterfaceDriftEventsDocumentsFanoutBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.drift_events")
+	if !ok {
+		t.Fatal("query.drift_events capability missing")
+	}
+
+	if capability.CurrentExecution.MCPCall != `haft_query(action="drift_events", limit=5)` {
+		t.Fatalf("drift_events MCP call = %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "limit") || !containsString(capability.InputContract.OptionalFields, "full") {
+		t.Fatalf("drift_events optional fields = %#v, want limit and full", capability.InputContract.OptionalFields)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft drift events --json") {
+		t.Fatalf("drift_events CLI command missing: %#v", capability.CurrentExecution)
+	}
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{"schema_version", "unique_events", "impacted_decisions", "omitted_impacted_decisions", "needs_binding_resolution_events", "semantic_target_events", "file_fallback_events", "unknown_high_risk_events", "root_cause", "semantic_target_changed", "target_renamed", "retarget_candidate", "implementation_footprint_churn", "schema_changed", "target_status", "modified|removed|renamed|retarget_candidate", "edited_symbol_move_candidate", "needs_scope_enrichment", "suggested_next_command", "haft drift bindings --dry-run --json", "haft decision reconcile --json", "haft_refresh(action=", "fallback_kind", "fallback_reason", "max_fanout", "compatibility_reports", "resolution_record", "resolution_record_posture", "stale_event_binding", "inactive_waiver", "materiality", "audit_only", "limit caps compact events", "inlined impacted_decisions", "limit=5", "complete impacted_decisions"} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.drift_events contract missing %q:\n%s", want, shapes)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"read-only", "Fanout is not independent debt count", "Compatibility per-decision drift reports remain available"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.drift_events invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceDriftBindingReviewDocumentsDryRunBoundary(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "drift.binding_review")
+	if !ok {
+		t.Fatal("drift.binding_review capability missing")
+	}
+
+	if capability.CurrentExecution.MCPTool != "" || capability.CurrentExecution.MCPAction != "" {
+		t.Fatalf("drift.binding_review should be CLI-only: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft drift bindings --dry-run --json") {
+		t.Fatalf("drift.binding_review dry-run command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft drift bindings --json") {
+		t.Fatalf("drift.binding_review full audit command missing: %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "dry_run") || !containsString(capability.InputContract.OptionalFields, "limit") {
+		t.Fatalf("drift.binding_review optional fields = %#v, want dry_run and limit", capability.InputContract.OptionalFields)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"binding_target_review_proposal",
+		"view",
+		"compact",
+		"omitted_items",
+		"full_audit_command",
+		"haft drift bindings --json",
+		"legacy_binding_report.v2",
+		"ambiguous_file_scope",
+		"missing_symbol_baseline",
+		"needs_operator_symbol_selection",
+		"propose_rebaseline_with_binding_targets",
+		"candidate_symbol_preview",
+		"candidate_symbols_omitted",
+		"diagnostic_preview",
+		"diagnostics_omitted",
+		"full_candidate_audit_command",
+		"ranking_policy",
+		"review_only_title_file_kind_rank_not_binding_authority",
+		"review_rank",
+		"review_score",
+		"matched_terms",
+		"ranking_signals",
+		"candidate_review_groups",
+		"candidate_review_groups_omitted",
+		"Ranking is review-only and not binding authority",
+		"long diagnostic messages stay in the full audit path",
+		"--apply-high-confidence",
+		"--apply-selection selection.json",
+		"mutually exclusive with --dry-run",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("drift.binding_review contract missing %q:\n%s", want, shapes)
+		}
+	}
+
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{"Binding review is not decision authority", "bounded candidate/diagnostic previews", "Dry-run cannot be combined with binding mutation flags"} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("drift.binding_review invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceDecisionReconcileIsReadOnlyAndRejectsFileOverlapMerge(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "query.decision_reconcile")
+	if !ok {
+		t.Fatal("query.decision_reconcile capability missing")
+	}
+
+	if capability.CurrentExecution.MCPCall != `haft_query(action="decision_reconcile", limit=5)` {
+		t.Fatalf("decision_reconcile MCP call = %#v", capability.CurrentExecution)
+	}
+	if !containsString(capability.InputContract.OptionalFields, "limit") || !containsString(capability.InputContract.OptionalFields, "full") {
+		t.Fatalf("decision_reconcile optional fields = %#v, want limit and full", capability.InputContract.OptionalFields)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile --json") {
+		t.Fatalf("decision_reconcile CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile --json --limit 5") {
+		t.Fatalf("decision_reconcile compact CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile metrics --json") {
+		t.Fatalf("decision_reconcile metrics CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --json") {
+		t.Fatalf("decision_reconcile selection-draft CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --write-template selection.json --json") {
+		t.Fatalf("decision_reconcile selection-draft write-template CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --write-review-packet review.json --json") {
+		t.Fatalf("decision_reconcile selection-draft write-review-packet CLI command missing: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-draft --json --full") {
+		t.Fatalf("decision_reconcile full selection-draft CLI command missing: %#v", capability.CurrentExecution)
+	}
+
+	shapes, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"report_only_not_binding_authority",
+		"affected_files are footprint hints",
+		"never merge evidence",
+		"scope_enrichment_candidates",
+		"scope_repair_hints",
+		"enrich_scope",
+		"preview",
+		"report_only_preview_not_binding_authority",
+		"required_selection_fields",
+		"items[].successor_ref",
+		"validation_notes",
+		"lineage_relations",
+		"mergedFrom/supersedes/retiredWithSuccessor/retiredWithoutSuccessor",
+		"preview is advisory and cannot authorize apply",
+		"downstream_impact",
+		"does not relink downstream artifacts",
+		"read_only_reconciliation_metrics_not_binding_authority",
+		"capture_before_and_after_operator_approved_reconciliation_apply",
+		"fallback_target_sets",
+		"max_fanout",
+		"report_only_selection_draft_not_operator_approval",
+		"emitted_candidates",
+		"review_required_candidates",
+		"apply_ready_candidates",
+		"template_items",
+		"omitted_candidates",
+		"plan_scope_enrichment_candidates",
+		"reviewable_scope_enrichment_candidates",
+		"broader reconciliation-plan count",
+		"distinguish review work from candidates that can pass apply validation",
+		"not a selected/apply-ready count",
+		"full_audit_command",
+		"current_metrics",
+		"read-only before/after context",
+		"not copied into selection_document_template",
+		"selection-draft --json --full",
+		"candidate_posture",
+		"confidence",
+		"decision_carrier_hint",
+		"decision_subject_ref_suggestions",
+		"review_commands",
+		"review hints only",
+		"discovery aids, not approval or apply authority",
+		"not copied into proposed_selection or apply templates",
+		"suggested_review_action",
+		"blocking_questions",
+		"proposed_selection",
+		"structured copy of the per-item template",
+		"remove_whole_file_fallback_targets",
+		"top-level whole-file fallback binding_targets",
+		"must confirm",
+		"selection_document_template",
+		"selection_document_template_boundary",
+		"emitted review candidates, not selected candidates",
+		"--write-review-packet review.json",
+		"writes the bounded report-only draft with review hints",
+		"not an approval document",
+		"--write-template selection.json",
+		"writes only the bounded selection_document_template to a file",
+		"TODO_... placeholders are rejected",
+		"operator_approval_ref",
+		"TODO_operator_reviewed_scope_enrichment_reason",
+		"not apply-ready",
+		"Selection drafts are read-only review aids",
+		"Default output is bounded",
+		"does not create approval",
+		"must be replaced before the selection can become apply-ready",
+		"limit caps compact groups",
+		"limit=5",
+	} {
+		if !strings.Contains(shapes, want) {
+			t.Fatalf("query.decision_reconcile contract missing %q:\n%s", want, shapes)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{
+		"read-only",
+		"File overlap alone is not a merge/supersede signal",
+		"Operator approval is required",
+		"Preview generation is read-only",
+	} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("query.decision_reconcile invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceDecisionReconcileApplyRequiresOperatorApprovedCLISelection(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "decision.reconcile_apply")
+	if !ok {
+		t.Fatal("decision.reconcile_apply capability missing")
+	}
+
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile apply") {
+		t.Fatalf("CLI command missing apply path: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.CLICommand, "haft decision reconcile selection-review") {
+		t.Fatalf("CLI command missing selection-review preflight: %#v", capability.CurrentExecution)
+	}
+	if !strings.Contains(capability.CurrentExecution.MCPCall, "MCP has no apply action") {
+		t.Fatalf("MCP call must name no-apply boundary: %#v", capability.CurrentExecution)
+	}
+
+	contract, _ := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{
+		"operator_approved_reconciliation_selection",
+		"operator_approval_ref",
+		"merge_through_successor",
+		"claim_lifecycle_update",
+		"claim_lifecycle_updates",
+		"lifecycle_status",
+		"keeps the parent DecisionRecord current",
+		"remove_whole_file_fallback_targets",
+		"whole_file_fallback:.haft/solutions/sol-old.md",
+		"existing whole_file_fallback binding_targets",
+		"read_only_selection_review_not_apply_authority",
+		"review does not create operator approval",
+		"does not create binding decisions",
+	} {
+		if !strings.Contains(contract, want) {
+			t.Fatalf("decision.reconcile_apply contract missing %q:\n%s", want, contract)
+		}
+	}
+	invariants := strings.Join(capability.Invariants, "\n")
+	for _, want := range []string{
+		"MCP has no reconciliation apply action",
+		"Operator approval ref is required",
+		"Selection review is read-only",
+		"Old decision IDs remain searchable",
+		"Whole-file fallback removal is explicit",
+	} {
+		if !strings.Contains(invariants, want) {
+			t.Fatalf("decision.reconcile_apply invariants missing %q:\n%s", want, invariants)
+		}
+	}
+}
+
+func TestInterfaceCompareTemplateUsesFlatCanonicalScores(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
+	if !ok {
+		t.Fatal("solution.compare capability missing")
+	}
+
+	_, templates := marshalContractFragments(t, capability.InputContract)
+	for _, want := range []string{`"scores"`, `"V1"`, `"latency"`, `"dominated_variants"`, `"pareto_tradeoffs"`, `"legacy_recommendation_ref"`} {
+		if !strings.Contains(templates, want) {
+			t.Fatalf("solution.compare template missing %q:\n%s", want, templates)
+		}
+	}
+	if strings.Contains(templates, `"results"`) {
+		t.Fatalf("solution.compare should advertise flat canonical fields, not legacy results carrier:\n%s", templates)
+	}
+}
+
+func TestInterfaceCompareJSONStaysUnderPlanningBudget(t *testing.T) {
+	t.Parallel()
+
+	capability, ok := findInterfaceCapability(haftInterfaceCatalog(), "solution.compare")
+	if !ok {
+		t.Fatal("solution.compare capability missing")
+	}
+
+	var output bytes.Buffer
+	if err := writeJSON(&output, capability); err != nil {
+		t.Fatalf("write solution.compare JSON: %v", err)
+	}
+
+	const maxInterfaceBytes = 5000
+	if output.Len() > maxInterfaceBytes {
+		t.Fatalf("solution.compare interface JSON = %d bytes, want <= %d", output.Len(), maxInterfaceBytes)
+	}
+}
+
+func TestMemoryAdmissionInterfaceSelectsV2AssertionContract(t *testing.T) {
+	t.Parallel()
+
+	admit, ok := findInterfaceCapability(haftInterfaceCatalog(), "memory.admit")
+	if !ok {
+		t.Fatal("memory.admit capability missing")
+	}
+	if !strings.Contains(
+		admit.CurrentExecution.MCPCall,
+		`"contract_version":"haft.memory.v2"`,
+	) {
+		t.Fatalf("memory.admit MCP call does not select v2: %s", admit.CurrentExecution.MCPCall)
+	}
+	if strings.Contains(admit.CurrentExecution.MCPCall, "haft.memory.v1") {
+		t.Fatalf("memory.admit MCP call exposes v1 as fresh admission: %s", admit.CurrentExecution.MCPCall)
+	}
+
+	responseShape := ""
+	for _, shape := range admit.InputContract.FieldShapes {
+		if shape.Field == "response" {
+			responseShape = shape.Shape
+		}
+	}
+	if !strings.Contains(responseShape, `"contract_version":"haft.memory.v2"`) {
+		t.Fatalf("memory.admit response shape does not preserve v2:\n%s", responseShape)
+	}
+	if strings.Contains(responseShape, "instantiate_relation") {
+		t.Fatalf("memory.admit response shape exposes frozen v1 relation input:\n%s", responseShape)
+	}
+
+	notes := strings.Join(admit.InputContract.Notes, "\n")
+	for _, want := range []string{
+		"assert_relation",
+		"affirms_obtaining",
+		"denies_obtaining",
+		"obtaining_unknown",
+		"exact replay-only",
+		"not selectable",
+	} {
+		if !strings.Contains(notes, want) {
+			t.Fatalf("memory.admit notes omit %q:\n%s", want, notes)
+		}
+	}
+}
+
+func TestMemoryValidationInterfaceMatchesV2ToolSchema(t *testing.T) {
+	t.Parallel()
+
+	validation, ok := findInterfaceCapability(
+		haftInterfaceCatalog(),
+		"memory.validate",
+	)
+	if !ok {
+		t.Fatal("memory.validate capability missing")
+	}
+	contract, err := json.Marshal(validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body := string(contract)
+	for _, want := range []string{
+		`contract_version\":\"haft.memory.v2\"`,
+		`\"kind\":\"assert_relation\"`,
+		"affirms_obtaining",
+		"denies_obtaining",
+		"obtaining_unknown",
+		`\"contract_version\":\"haft.memory.v2\"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("memory.validate discovery omits %q:\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "instantiate_relation") ||
+		strings.Contains(body, `contract_version=\"haft.memory.v1\"`) {
+		t.Fatalf("memory.validate discovery exposes frozen v1 input:\n%s", body)
+	}
+}
+
+func marshalContractFragments(t *testing.T, contract interfaceContract) (string, string) {
+	t.Helper()
+
+	shapes, err := json.Marshal(contract.FieldShapes)
+	if err != nil {
+		t.Fatalf("marshal field shapes: %v", err)
+	}
+
+	templates, err := json.Marshal(contract.InputTemplates)
+	if err != nil {
+		t.Fatalf("marshal input templates: %v", err)
+	}
+
+	return string(shapes), string(templates)
+}
+
+func findInterfaceContractAuditSurface(report interfaceContractAuditReport, capabilityID string) (interfaceContractAuditSurface, bool) {
+	for _, surface := range report.Surfaces {
+		if surface.CapabilityID == capabilityID {
+			return surface, true
+		}
+	}
+	return interfaceContractAuditSurface{}, false
+}

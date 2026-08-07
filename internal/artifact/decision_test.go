@@ -56,7 +56,20 @@ func TestDecide_FullDRR(t *testing.T) {
 			Steps:       []string{"Feature flag: route events back to DB polling", "Drain NATS queues"},
 			BlastRadius: "All 12 services see temporary dual-delivery",
 		},
-		AffectedFiles: []string{"internal/events/producer.go", "internal/events/consumer.go"},
+		AffectedFiles:      []string{"internal/events/producer.go", "internal/events/consumer.go"},
+		DecisionSubjectRef: "subject:event-infrastructure",
+		ImplementationFootprint: ImplementationFootprint{
+			Files:    []string{"internal/events/producer.go"},
+			WorkRefs: []string{"wc-event-migration"},
+		},
+		GovernanceTargets: []GovernanceTarget{{
+			Kind: "api_contract",
+			Ref:  "events/producer-contract",
+		}},
+		DriftWatchTargets: []DriftWatchTarget{{
+			TargetRef: "events/producer-contract",
+			Trigger:   "schema_or_behavior_changed",
+		}},
 	}
 
 	a, filePath, err := Decide(ctx, store, haftDir, input)
@@ -144,6 +157,39 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(fields.ProblemRefs, []string{prob.Meta.ID}) {
 		t.Fatalf("problem refs in structured state = %#v, want [%q]", fields.ProblemRefs, prob.Meta.ID)
 	}
+	if fields.ChoiceResult == nil {
+		t.Fatal("expected h-decide to persist exact choice_result")
+	}
+	if fields.ChoiceResult.NextMove != ChoiceNextMoveChooseNow {
+		t.Fatalf("choice_result.next_move = %q, want %q", fields.ChoiceResult.NextMove, ChoiceNextMoveChooseNow)
+	}
+	if fields.ChoiceResult.SubjectRef != "operator" {
+		t.Fatalf("choice_result.subject_ref = %q, want operator", fields.ChoiceResult.SubjectRef)
+	}
+	if !reflect.DeepEqual(fields.ChoiceResult.OptionSet, []string{"NATS JetStream", "Kafka"}) {
+		t.Fatalf("choice_result.option_set = %#v, want selected plus rejected variants", fields.ChoiceResult.OptionSet)
+	}
+	if fields.ChoiceResult.ChoiceRule != input.SelectionPolicy {
+		t.Fatalf("choice_result.choice_rule = %q, want selection policy", fields.ChoiceResult.ChoiceRule)
+	}
+	if !stringInSlice(fields.ChoiceResult.ComparisonBasis, "selected NATS JetStream: 2x throughput headroom, minimal ops for 4-person team") {
+		t.Fatalf("choice_result.comparison_basis missing selected rationale: %#v", fields.ChoiceResult.ComparisonBasis)
+	}
+	if !stringInSlice(fields.ChoiceResult.ComparisonBasis, "rejected Kafka: Ops burden disproportionate at current scale") {
+		t.Fatalf("choice_result.comparison_basis missing rejected rationale: %#v", fields.ChoiceResult.ComparisonBasis)
+	}
+	if fields.ChoiceResult.VariantRef != "NATS JetStream" {
+		t.Fatalf("choice_result.variant_ref = %q, want selected title", fields.ChoiceResult.VariantRef)
+	}
+	if !reflect.DeepEqual(fields.ChoiceResult.ProblemRefs, []string{prob.Meta.ID}) {
+		t.Fatalf("choice_result.problem_refs = %#v, want [%q]", fields.ChoiceResult.ProblemRefs, prob.Meta.ID)
+	}
+	if fields.ChoiceResult.PortfolioRef != portfolio.Meta.ID {
+		t.Fatalf("choice_result.portfolio_ref = %q, want %q", fields.ChoiceResult.PortfolioRef, portfolio.Meta.ID)
+	}
+	if fields.ChoiceResult.ReopenCondition != "reopen choice if rollback triggers occur: Producer error rate > 1% for > 5 minutes" {
+		t.Fatalf("choice_result.reopen_condition = %q", fields.ChoiceResult.ReopenCondition)
+	}
 	if fields.SelectionPolicy == "" {
 		t.Error("expected selection_policy in structured data")
 	}
@@ -165,6 +211,18 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(fields.RefreshTriggers, input.RefreshTriggers) {
 		t.Fatalf("refresh triggers in structured state = %#v, want %#v", fields.RefreshTriggers, input.RefreshTriggers)
 	}
+	if fields.DecisionSubjectRef != input.DecisionSubjectRef {
+		t.Fatalf("decision_subject_ref = %q, want %q", fields.DecisionSubjectRef, input.DecisionSubjectRef)
+	}
+	if !reflect.DeepEqual(fields.ImplementationFootprint.Files, input.ImplementationFootprint.Files) {
+		t.Fatalf("implementation_footprint.files = %#v, want %#v", fields.ImplementationFootprint.Files, input.ImplementationFootprint.Files)
+	}
+	if len(fields.GovernanceTargets) != 1 || fields.GovernanceTargets[0].Ref != "events/producer-contract" {
+		t.Fatalf("governance_targets = %#v", fields.GovernanceTargets)
+	}
+	if len(fields.DriftWatchTargets) != 1 || fields.DriftWatchTargets[0].Trigger != "schema_or_behavior_changed" {
+		t.Fatalf("drift_watch_targets = %#v", fields.DriftWatchTargets)
+	}
 
 	reloaded, err := store.Get(ctx, a.Meta.ID)
 	if err != nil {
@@ -175,6 +233,9 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(reloadedFields.ProblemRefs, fields.ProblemRefs) {
 		t.Fatalf("reloaded problem refs = %#v, want %#v", reloadedFields.ProblemRefs, fields.ProblemRefs)
 	}
+	if !reflect.DeepEqual(reloadedFields.ChoiceResult, fields.ChoiceResult) {
+		t.Fatalf("reloaded choice_result = %#v, want %#v", reloadedFields.ChoiceResult, fields.ChoiceResult)
+	}
 	if !reflect.DeepEqual(reloadedFields.PreConditions, fields.PreConditions) {
 		t.Fatalf("reloaded pre-conditions = %#v, want %#v", reloadedFields.PreConditions, fields.PreConditions)
 	}
@@ -184,11 +245,582 @@ func TestDecide_FullDRR(t *testing.T) {
 	if !reflect.DeepEqual(reloadedFields.RefreshTriggers, fields.RefreshTriggers) {
 		t.Fatalf("reloaded refresh triggers = %#v, want %#v", reloadedFields.RefreshTriggers, fields.RefreshTriggers)
 	}
+	if !reflect.DeepEqual(reloadedFields.ImplementationFootprint, fields.ImplementationFootprint) {
+		t.Fatalf("reloaded implementation footprint = %#v, want %#v", reloadedFields.ImplementationFootprint, fields.ImplementationFootprint)
+	}
+	if !reflect.DeepEqual(reloadedFields.GovernanceTargets, fields.GovernanceTargets) {
+		t.Fatalf("reloaded governance targets = %#v, want %#v", reloadedFields.GovernanceTargets, fields.GovernanceTargets)
+	}
+	if !reflect.DeepEqual(reloadedFields.DriftWatchTargets, fields.DriftWatchTargets) {
+		t.Fatalf("reloaded drift watch targets = %#v, want %#v", reloadedFields.DriftWatchTargets, fields.DriftWatchTargets)
+	}
 
 	// Check affected files in DB
 	files, _ := store.GetAffectedFiles(ctx, a.Meta.ID)
 	if len(files) != 2 {
 		t.Errorf("expected 2 affected files, got %d", len(files))
+	}
+}
+
+func TestDecide_DirectProblemStatementRendersWithoutProblemRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	problemStatement := "The compiled PatternUse router hides source provenance and imposes a project order that FPF does not prescribe."
+
+	input := completeDecision(DecideInput{
+		ProblemStatement: problemStatement,
+		SelectedTitle:    "Use source-native FPF Query",
+		WhySelected:      "The agent can inspect author-owned navigation layers without a shadow ontology.",
+		SelectionPolicy:  "Prefer source provenance and no hidden pattern selection.",
+		WhyNotOthers: []RejectionReason{{
+			Variant: "Keep compiled PatternUse",
+			Reason:  "Its authored routes can drift from the FPF source.",
+		}},
+		ChoiceResult: &ChoiceResult{
+			SubjectRef: "operator",
+			OptionSet:  []string{"Use source-native FPF Query", "Keep compiled PatternUse"},
+			ChoiceRule: "Prefer source provenance and no hidden pattern selection.",
+			NextMove:   ChoiceNextMoveChooseNow,
+			VariantRef: "Use source-native FPF Query",
+			Reason:     "The agent can inspect author-owned navigation layers without a shadow ontology.",
+		},
+	})
+
+	decision, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(decision.Body, "**Problem statement:** "+problemStatement) {
+		t.Fatalf("direct decision did not render its inline Problem Frame:\n%s", decision.Body)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.ProblemStatement != problemStatement {
+		t.Fatalf("problem_statement = %q, want %q", fields.ProblemStatement, problemStatement)
+	}
+	if len(fields.ProblemRefs) != 0 {
+		t.Fatalf("direct decision invented problem refs: %#v", fields.ProblemRefs)
+	}
+	if fields.ChoiceResult == nil || !reflect.DeepEqual(fields.ChoiceResult.OptionSet, input.ChoiceResult.OptionSet) {
+		t.Fatalf("choice_result.option_set = %#v, want %#v", fields.ChoiceResult, input.ChoiceResult.OptionSet)
+	}
+}
+
+func TestDecide_RejectsMissingProblemBasis(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	input := completeDecision(DecideInput{
+		SelectedTitle: "Use source-native FPF Query",
+		WhySelected:   "The source-native path removes the shadow router.",
+	})
+	input.ProblemStatement = ""
+
+	_, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err == nil {
+		t.Fatal("expected a decision without problem refs or problem_statement to fail")
+	}
+	if !strings.Contains(err.Error(), "problem_statement") {
+		t.Fatalf("missing direct problem-basis guidance in error: %v", err)
+	}
+	if !strings.Contains(err.Error(), "problem_ref/problem_refs") {
+		t.Fatalf("error does not explain the linked ProblemCard alternative: %v", err)
+	}
+}
+
+func TestDecide_RejectsChoiceCorrelationDriftBeforePersistence(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	input := completeDecision(DecideInput{
+		ProblemStatement: "Duplicated decision fields can disagree before projection.",
+		SelectedTitle:    "Keep one canonical choice",
+		WhySelected:      "The persisted decision and its choice projection must agree.",
+		SelectionPolicy:  "Prefer one canonical decision representation.",
+		CounterArgument:  "Correlation checks add validation work at the boundary.",
+		WeakestLink:      "A new duplicated field could escape the correlation set.",
+		WhyNotOthers:     []RejectionReason{{Variant: "Permit drift", Reason: "Late projection failure leaves partial state."}},
+		Rollback:         &RollbackSpec{Triggers: []string{"Canonical projection no longer round-trips."}},
+		ChoiceResult: &ChoiceResult{
+			SubjectRef: "operator",
+			OptionSet: []string{
+				"Keep one canonical choice",
+				"Permit drift",
+			},
+			ChoiceRule: "A contradictory rule that must be rejected.",
+			NextMove:   ChoiceNextMoveChooseNow,
+			VariantRef: "Keep one canonical choice",
+			Reason:     "The persisted decision and its choice projection must agree.",
+		},
+	})
+
+	decision, filePath, err := Decide(ctx, store, haftDir, input)
+	if err == nil {
+		t.Fatal("expected contradictory choice fields to fail")
+	}
+	if decision != nil || filePath != "" {
+		t.Fatalf("failed decision returned artifact=%#v file=%q", decision, filePath)
+	}
+	if !strings.Contains(
+		err.Error(),
+		"choice_result.choice_rule must equal selection_policy",
+	) {
+		t.Fatalf("error = %v, want choice correlation diagnostic", err)
+	}
+
+	decisions, listErr := store.ListByKind(
+		ctx,
+		KindDecisionRecord,
+		10,
+	)
+	if listErr != nil {
+		t.Fatal(listErr)
+	}
+	if len(decisions) != 0 {
+		t.Fatalf(
+			"invalid decision persisted %d DecisionRecord(s)",
+			len(decisions),
+		)
+	}
+}
+
+func TestDecide_LinkedProblemCardRemainsValidWithoutInlineStatement(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:      "Source provenance is hidden",
+		Signal:     "Compiled routes cannot show the exact author source that justified a candidate.",
+		Acceptance: "A decision can still bind directly to a persisted ProblemCard.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		ProblemRef:    problem.Meta.ID,
+		SelectedTitle: "Use source-native FPF Query",
+		WhySelected:   "The source-native path preserves author provenance.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(decision.Body, "Compiled routes cannot show the exact author source") {
+		t.Fatalf("linked ProblemCard no longer renders in the Problem Frame:\n%s", decision.Body)
+	}
+	if fields := decision.UnmarshalDecisionFields(); fields.ProblemStatement != "" {
+		t.Fatalf("linked legacy-style decision invented problem_statement %q", fields.ProblemStatement)
+	}
+}
+
+func TestDecide_PortfolioResolvedProblemCardSuppliesProblemBasis(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	problem, _, err := FrameProblem(ctx, store, haftDir, ProblemFrameInput{
+		Title:  "Compiled routes drift",
+		Signal: "The route catalog can disagree with the author-owned FPF source.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	portfolio, _, err := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		ProblemRef: problem.Meta.ID,
+		Variants: []Variant{
+			testVariant("Source-native query", "publication grammar changes", "Keeps provenance on every candidate"),
+			testVariant("Compiled routes", "semantic drift", "Keeps the existing interface"),
+		},
+		NoSteppingStoneRationale: "Both variants are complete replacement choices.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		PortfolioRef:  portfolio.Meta.ID,
+		SelectedTitle: "Source-native query",
+		WhySelected:   "Every retrieval candidate retains its author source.",
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(decision.Body, "The route catalog can disagree with the author-owned FPF source") {
+		t.Fatalf("portfolio-derived ProblemCard was not rendered:\n%s", decision.Body)
+	}
+	if strings.Contains(decision.Body, "**Problem statement:** \n") {
+		t.Fatalf("portfolio-derived decision rendered an empty inline Problem Frame:\n%s", decision.Body)
+	}
+}
+
+func TestDecideEnrichesAffectedFilesWithPreciseBindingTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", "package main\n\nfunc Run() string { return \"ok\" }\n")
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker Run",
+		WhySelected:   "The worker entry point is the governed code object.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 {
+		t.Fatalf("binding_targets = %+v, want one precise target", fields.BindingTargets)
+	}
+	target := fields.BindingTargets[0]
+	if target.Kind != BindingTargetSymbol || target.SymbolName != "Run" || target.BodyHash == "" {
+		t.Fatalf("binding target = %+v, want Run symbol with body_hash", target)
+	}
+	if target.ResolutionSource != BindingResolutionSourceSingleSymbolFile {
+		t.Fatalf("resolution_source = %q, want %q", target.ResolutionSource, BindingResolutionSourceSingleSymbolFile)
+	}
+
+	symbols, err := store.GetAffectedSymbols(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(symbols) != 0 {
+		t.Fatalf("affected symbols = %+v, want no baseline symbol mutation during Decide", symbols)
+	}
+}
+
+func TestDecideDoesNotInventFallbackForAmbiguousAffectedFile(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker file",
+		WhySelected:   "The decision names the file but not a specific governed symbol.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 0 {
+		t.Fatalf("binding_targets = %+v, want no invented fallback for ambiguous file", fields.BindingTargets)
+	}
+	if !reflect.DeepEqual(fields.ImplementationFootprint.Files, []string{"worker.go"}) {
+		t.Fatalf("implementation_footprint.files = %+v, want worker.go", fields.ImplementationFootprint.Files)
+	}
+
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "changed" }
+func Stop() string { return "stop" }
+`)
+	reports, err := CheckDrift(ctx, store, projectRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(reports) != 0 {
+		t.Fatalf("drift reports = %+v, want footprint-only decision skipped", reports)
+	}
+}
+
+func TestBaselineRejectsFootprintOnlyDecisionWithoutExplicitAuthority(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker file",
+		WhySelected:   "The decision names the implementation footprint but not a governed symbol.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = Baseline(ctx, store, projectRoot, BaselineInput{DecisionRef: decision.Meta.ID})
+	if err == nil {
+		t.Fatal("expected footprint-only baseline without explicit authority to fail closed")
+	}
+	if !strings.Contains(err.Error(), "implementation_footprint only") {
+		t.Fatalf("error = %q, want implementation_footprint repair hint", err.Error())
+	}
+}
+
+func TestBaselineAllowsExplicitWholeFileAuthorityForFootprintOnlyDecision(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Use worker file",
+		WhySelected:   "The decision starts as implementation footprint until explicit authority is supplied.",
+		AffectedFiles: []string{"worker.go"},
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	files, err := Baseline(ctx, store, projectRoot, BaselineInput{
+		DecisionRef:           decision.Meta.ID,
+		BindingScope:          BindingScopeWholeFile,
+		BindingFallbackReason: "operator explicitly chose whole-file governance for this legacy file",
+	})
+	if err != nil {
+		t.Fatalf("Baseline: %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "worker.go" || files[0].Hash == "" {
+		t.Fatalf("baseline files = %+v, want worker.go hash", files)
+	}
+}
+
+func TestDecidePreservesExplicitBindingTargets(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	projectRoot := t.TempDir()
+	haftDir := filepath.Join(projectRoot, ".haft")
+	writeTestFile(t, projectRoot, "worker.go", `package main
+
+func Start() string { return "start" }
+func Stop() string { return "stop" }
+`)
+	explicit := BindingTarget{
+		Kind:             BindingTargetSymbol,
+		FilePath:         "worker.go",
+		SymbolName:       "Stop",
+		SymbolKind:       "func",
+		BodyHash:         "explicit-hash",
+		ResolutionSource: BindingResolutionSourceExplicitTargets,
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle:      "Use explicit Stop",
+		WhySelected:        "The operator selected the exact governed symbol.",
+		AffectedFiles:      []string{"worker.go"},
+		DecisionSubjectRef: "subject:worker-stop",
+		BindingTargets:     []BindingTarget{explicit},
+		BindingHints:       []string{"Start"},
+		BindingScope:       BindingScopeAuto,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.BindingTargets) != 1 {
+		t.Fatalf("binding_targets = %+v, want explicit target", fields.BindingTargets)
+	}
+	if fields.BindingTargets[0].SymbolName != "Stop" || fields.BindingTargets[0].BodyHash != "explicit-hash" {
+		t.Fatalf("binding target = %+v, want explicit Stop target preserved", fields.BindingTargets[0])
+	}
+}
+
+func TestValidateChoiceResultRejectsUnknownNextMove(t *testing.T) {
+	err := ValidateChoiceResult(&ChoiceResult{
+		SubjectRef: "operator",
+		NextMove:   ChoiceNextMove("approve_this"),
+		VariantRef: "V1",
+	})
+	if err == nil {
+		t.Fatal("expected invalid next_move error")
+	}
+	if !strings.Contains(err.Error(), "choose_now") {
+		t.Fatalf("expected valid next_move values in error, got %v", err)
+	}
+}
+
+func TestNormalizeChoiceResultPreservesReversibilityAndReopenCondition(t *testing.T) {
+	choice := NormalizeChoiceResult(&ChoiceResult{
+		SubjectRef:      " operator ",
+		NextMove:        ChoiceNextMoveChooseNow,
+		VariantRef:      " V1 ",
+		Reversibility:   " two-week rollback ",
+		ReopenCondition: " reopen if rollback triggers occur ",
+	})
+
+	if choice.Reversibility != "two-week rollback" {
+		t.Fatalf("reversibility = %q", choice.Reversibility)
+	}
+	if choice.ReopenCondition != "reopen if rollback triggers occur" {
+		t.Fatalf("reopen_condition = %q", choice.ReopenCondition)
+	}
+}
+
+func TestValidateChoiceResultRequiresVariantForChooseNow(t *testing.T) {
+	err := ValidateChoiceResult(&ChoiceResult{
+		SubjectRef: "operator",
+		NextMove:   ChoiceNextMoveChooseNow,
+	})
+	if err == nil {
+		t.Fatal("expected missing variant_ref error")
+	}
+	if !strings.Contains(err.Error(), "variant_ref") {
+		t.Fatalf("expected variant_ref error, got %v", err)
+	}
+}
+
+func TestValidateChoiceResultRejectsVariantOutsideOptionSet(t *testing.T) {
+	err := ValidateChoiceResult(&ChoiceResult{
+		SubjectRef: "operator",
+		OptionSet:  []string{"V1", "V2"},
+		NextMove:   ChoiceNextMoveChooseNow,
+		VariantRef: "V3",
+	})
+	if err == nil {
+		t.Fatal("expected variant outside option_set error")
+	}
+	if !strings.Contains(err.Error(), "option_set") {
+		t.Fatalf("expected option_set error, got %v", err)
+	}
+}
+
+func TestDecide_PersistsExplicitTransformationRecord(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	record := &TransformationRecord{
+		TransformedEntity: "ProblemCard profile",
+		InitialState:      "Problem posture is implicit prose.",
+		PostState:         "Problem posture is typed as cue/thin/deep with readiness blockers.",
+		Relation:          "makes explicit",
+		Context:           "semantic-spine ProblemCard slice",
+		Window:            "2026-Q3",
+		MethodRefs:        []string{" mpull-problem-profile ", ""},
+		WorkRefs:          []string{"wc-problem-profile"},
+		EvidenceRefs:      []string{"evid-problem-profile"},
+		PublicationRefs:   []string{"pub-problem-profile"},
+	}
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle:        "Add ProblemCard profile fields",
+		WhySelected:          "The target transformation needs to be explicit without implying work or evidence authority.",
+		TransformationRecord: record,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TransformationRecord == nil {
+		t.Fatal("transformation_record missing")
+	}
+	if fields.TransformationRecord.SchemaVersion != TransformationRecordSchemaVersion {
+		t.Fatalf("schema_version = %d, want %d", fields.TransformationRecord.SchemaVersion, TransformationRecordSchemaVersion)
+	}
+	if fields.TransformationRecord.TransformedEntity != record.TransformedEntity {
+		t.Fatalf("transformed_entity = %q, want %q", fields.TransformationRecord.TransformedEntity, record.TransformedEntity)
+	}
+	if fields.TransformationRecord.Window != "2026-Q3" {
+		t.Fatalf("window = %q, want 2026-Q3", fields.TransformationRecord.Window)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.MethodRefs, []string{"mpull-problem-profile"}) {
+		t.Fatalf("method_refs = %#v", fields.TransformationRecord.MethodRefs)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.WorkRefs, []string{"wc-problem-profile"}) {
+		t.Fatalf("work_refs = %#v", fields.TransformationRecord.WorkRefs)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.EvidenceRefs, []string{"evid-problem-profile"}) {
+		t.Fatalf("evidence_refs = %#v", fields.TransformationRecord.EvidenceRefs)
+	}
+	if !reflect.DeepEqual(fields.TransformationRecord.PublicationRefs, []string{"pub-problem-profile"}) {
+		t.Fatalf("publication_refs = %#v", fields.TransformationRecord.PublicationRefs)
+	}
+	if !strings.Contains(decision.Body, "Transformation record") {
+		t.Fatalf("decision body missing transformation section:\n%s", decision.Body)
+	}
+	if !strings.Contains(decision.Body, "not method, work authorization, evidence, or publication") {
+		t.Fatalf("decision body does not preserve separation boundary:\n%s", decision.Body)
+	}
+	for _, want := range []string{
+		"Window: 2026-Q3",
+		"Method refs: mpull-problem-profile",
+		"Work refs: wc-problem-profile",
+		"Evidence refs: evid-problem-profile",
+		"Publication refs: pub-problem-profile",
+	} {
+		if !strings.Contains(decision.Body, want) {
+			t.Fatalf("decision body missing %q:\n%s", want, decision.Body)
+		}
+	}
+
+	reloaded, err := store.Get(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloadedFields := reloaded.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(reloadedFields.TransformationRecord, fields.TransformationRecord) {
+		t.Fatalf("reloaded transformation_record = %#v, want %#v", reloadedFields.TransformationRecord, fields.TransformationRecord)
+	}
+}
+
+func TestValidateTransformationRecordRejectsIncompleteRecord(t *testing.T) {
+	err := ValidateTransformationRecord(&TransformationRecord{
+		TransformedEntity: "DecisionRecord",
+		InitialState:      "Legacy aggregate",
+		Relation:          "separates",
+		Context:           "semantic spine",
+	})
+	if err == nil {
+		t.Fatal("expected incomplete transformation_record error")
+	}
+	if !strings.Contains(err.Error(), "post_state") {
+		t.Fatalf("expected post_state validation error, got %v", err)
+	}
+}
+
+func TestValidateTransformationRecordRejectsUnsupportedSchemaVersion(t *testing.T) {
+	err := ValidateTransformationRecord(&TransformationRecord{
+		SchemaVersion:     2,
+		TransformedEntity: "DecisionRecord",
+		InitialState:      "Legacy aggregate",
+		PostState:         "Typed transformation object",
+		Relation:          "separates",
+		Context:           "semantic spine",
+	})
+	if err == nil {
+		t.Fatal("expected unsupported transformation_record schema error")
+	}
+	if !strings.Contains(err.Error(), "unsupported") {
+		t.Fatalf("expected unsupported schema error, got %v", err)
+	}
+}
+
+func TestArtifact_UnmarshalDecisionFields_DoesNotInventTransformationRecord(t *testing.T) {
+	decision := &Artifact{
+		Meta: Meta{ID: "dec-legacy", Kind: KindDecisionRecord, Title: "Legacy decision"},
+		StructuredData: `{
+			"selected_title":"Legacy decision",
+			"why_selected":"Already shipped",
+			"post_conditions":["new state exists"]
+		}`,
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if fields.TransformationRecord != nil {
+		t.Fatalf("legacy decision invented transformation_record: %#v", fields.TransformationRecord)
+	}
+	if fields.ProblemStatement != "" {
+		t.Fatalf("legacy decision invented problem_statement: %q", fields.ProblemStatement)
 	}
 }
 
@@ -241,7 +873,7 @@ func TestDecide_ContextDoesNotChangeDefaultIDFormat(t *testing.T) {
 	}
 }
 
-func TestDecide_PersistsSpecSectionRefsAsStructuredStateAndLinks(t *testing.T) {
+func TestDecide_PersistsSpecSectionRefsWithoutInvalidArtifactLinks(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -269,21 +901,120 @@ func TestDecide_PersistsSpecSectionRefsAsStructuredStateAndLinks(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	seen := map[string]bool{}
 	for _, link := range links {
-		if link.Type != "governs" {
-			continue
+		if link.Type == "governs" {
+			t.Fatalf("DecisionRecord projected cross-carrier SpecSection ref as artifact link: %#v", link)
 		}
+	}
+}
 
-		seen[link.Ref] = true
+func TestDecide_SpecBindingPreflightSuppliesSectionRefs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	decision, _, err := Decide(ctx, store, haftDir, completeDecision(DecideInput{
+		SelectedTitle: "Bind through preflight",
+		WhySelected:   "Spec binding preflight selected the governing section.",
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State:               SpecBindingStateBoundExisting,
+			SelectedSectionRefs: []string{"TS.checkout.001"},
+		},
+		SpecBindingRequired: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	for _, ref := range sectionRefs {
-		if seen[ref] {
-			continue
-		}
+	fields := decision.UnmarshalDecisionFields()
+	if !reflect.DeepEqual(fields.SectionRefs, []string{"TS.checkout.001"}) {
+		t.Fatalf("section_refs = %#v, want preflight-selected section", fields.SectionRefs)
+	}
+	if fields.SpecBindingPreflight == nil || fields.SpecBindingPreflight.State != SpecBindingStateBoundExisting {
+		t.Fatalf("spec_binding_preflight = %#v, want persisted bound_existing receipt", fields.SpecBindingPreflight)
+	}
+	if !strings.Contains(decision.Body, "TS.checkout.001") {
+		t.Fatalf("decision body missing preflight-supplied section refs:\n%s", decision.Body)
+	}
+}
 
-		t.Fatalf("decision links = %#v, want governs link to %s", links, ref)
+func TestDecide_SpecBindingPreflightBlocksInvalidStates(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	for _, state := range []string{
+		SpecBindingStateInvalidRefs,
+		SpecBindingStateConflict,
+		SpecBindingStateAmbiguous,
+		SpecBindingStateDraftNeeded,
+	} {
+		_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+			SelectedTitle: "Blocked spec binding",
+			WhySelected:   "The preflight state should block this DecisionRecord.",
+			SpecBindingPreflight: &SpecBindingPreflight{
+				State:                  state,
+				OperatorActionRequired: "choose_section",
+			},
+		}))
+		if err == nil {
+			t.Fatalf("state %s: expected decision creation to fail", state)
+		}
+		if !strings.Contains(err.Error(), "spec_binding_preflight blocks decision creation") {
+			t.Fatalf("state %s: error = %v", state, err)
+		}
+	}
+}
+
+func TestDecide_SpecBindingPreflightAllowsNoSpecs(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "No specs tactical compatibility",
+		WhySelected:   "Haft must allow ordinary decisions in projects without specs.",
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State: SpecBindingStateNoSpecs,
+		},
+		SpecBindingRequired: true,
+	}))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDecide_SpecBindingPreflightAllowsTacticalOutOfSpecOnly(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _, err := Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "Standard out of spec",
+		WhySelected:   "Standard decisions cannot silently sit outside the active spec.",
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State: SpecBindingStateOutOfSpec,
+			StatusDebt: SpecBindingStatusDebt{
+				Severity: "high",
+				Message:  "out of spec",
+			},
+		},
+	}))
+	if err == nil {
+		t.Fatal("expected standard out-of-spec decision to fail")
+	}
+
+	_, _, err = Decide(ctx, store, t.TempDir(), completeDecision(DecideInput{
+		SelectedTitle: "Tactical out of spec",
+		WhySelected:   "Tactical decisions can carry explicit out-of-spec debt.",
+		Mode:          string(ModeTactical),
+		SpecBindingPreflight: &SpecBindingPreflight{
+			State: SpecBindingStateOutOfSpec,
+			StatusDebt: SpecBindingStatusDebt{
+				Severity: "high",
+				Message:  "out of spec",
+			},
+		},
+	}))
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -312,10 +1043,11 @@ func TestDecide_Tactical(t *testing.T) {
 	ctx := context.Background()
 
 	a, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:   "x/time/rate for rate limiting",
-		WhySelected:     "Zero deps, per-IP tracking testable in Go",
-		SelectionPolicy: "Prefer the least operationally complex limiter that still keeps per-IP enforcement local to the service.",
-		CounterArgument: "An in-process limiter could fragment enforcement if traffic shifts toward multi-instance bursts.",
+		ProblemStatement: "The service needs per-IP rate limiting without adding an external coordination dependency.",
+		SelectedTitle:    "x/time/rate for rate limiting",
+		WhySelected:      "Zero deps, per-IP tracking testable in Go",
+		SelectionPolicy:  "Prefer the least operationally complex limiter that still keeps per-IP enforcement local to the service.",
+		CounterArgument:  "An in-process limiter could fragment enforcement if traffic shifts toward multi-instance bursts.",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Redis-backed limiter", Reason: "Cross-process coordination was unnecessary at current traffic levels."},
 		},
@@ -348,10 +1080,11 @@ func TestDecide_EscapesRejectedAlternativeTableCells(t *testing.T) {
 	ctx := context.Background()
 
 	a, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:   "gRPC | v2",
-		WhySelected:     "Line 1\nLine 2 | more",
-		SelectionPolicy: "Prefer the transport that stays within the latency budget with the fewest avoidable moving parts.",
-		CounterArgument: "Migration friction could outweigh the latency gain if the rollout path is rougher than expected.",
+		ProblemStatement: "The current transport no longer stays within the latency budget.",
+		SelectedTitle:    "gRPC | v2",
+		WhySelected:      "Line 1\nLine 2 | more",
+		SelectionPolicy:  "Prefer the transport that stays within the latency budget with the fewest avoidable moving parts.",
+		CounterArgument:  "Migration friction could outweigh the latency gain if the rollout path is rougher than expected.",
 		WhyNotOthers: []RejectionReason{
 			{
 				Variant: "REST | v1\nlegacy",
@@ -647,10 +1380,11 @@ func TestApply_ReturnsBody(t *testing.T) {
 	ctx := context.Background()
 
 	dec, _, _ := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle:   "NATS JetStream",
-		WhySelected:     "Ops simplicity",
-		SelectionPolicy: "Prefer the messaging option that reduces operator load without sacrificing delivery guarantees.",
-		CounterArgument: "Operational simplicity could hide capacity limits that only appear under real production traffic.",
+		ProblemStatement: "The current event transport imposes more operational load than the team can sustain.",
+		SelectedTitle:    "NATS JetStream",
+		WhySelected:      "Ops simplicity",
+		SelectionPolicy:  "Prefer the messaging option that reduces operator load without sacrificing delivery guarantees.",
+		CounterArgument:  "Operational simplicity could hide capacity limits that only appear under real production traffic.",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Kafka", Reason: "The extra operating surface was not justified at the current scale."},
 		},
@@ -745,7 +1479,7 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 
 	fields := decision.UnmarshalDecisionFields()
 	wantClaims := newDecisionClaims(input.Predictions)
-	wantPredictions := newDecisionPredictions(input.Predictions)
+	wantPredictions := decisionPredictionsFromClaims(newDecisionClaims(input.Predictions))
 	if !reflect.DeepEqual(fields.Claims, wantClaims) {
 		t.Fatalf("claims in structured state = %#v, want %#v", fields.Claims, wantClaims)
 	}
@@ -780,6 +1514,68 @@ func TestDecide_PersistsPredictionsInStructuredStateAndReload(t *testing.T) {
 	}
 	if !reflect.DeepEqual(reloadedFields.Predictions, wantPredictions) {
 		t.Fatalf("reloaded predictions = %#v, want %#v", reloadedFields.Predictions, wantPredictions)
+	}
+}
+
+func TestDecide_PersistsExplicitClaimLifecycleState(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+
+	input := completeDecision(DecideInput{
+		SelectedTitle: "Claim lifecycle",
+		WhySelected:   "Explicit claim lifecycle lets one stale claim stop governing without retiring the whole decision.",
+		Claims: []DecisionClaim{
+			{
+				ID:                   "claim-current",
+				Claim:                "Current invariant still holds",
+				Observable:           "invariant check",
+				Threshold:            "passes",
+				GovernanceTargetRefs: []string{"invariant:current"},
+			},
+			{
+				ID:              "claim-old",
+				Claim:           "Old invariant was replaced",
+				Observable:      "replacement decision exists",
+				Threshold:       "successor present",
+				LifecycleStatus: ClaimLifecycleSuperseded,
+				SuccessorRef:    "dec-new#claim-replacement",
+				RetiredReason:   "superseded by narrower invariant",
+			},
+		},
+	})
+
+	decision, _, err := Decide(ctx, store, t.TempDir(), input)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := decision.UnmarshalDecisionFields()
+	if len(fields.Claims) != 2 {
+		t.Fatalf("claims = %#v, want two explicit claims", fields.Claims)
+	}
+	if fields.Claims[0].LifecycleStatus != "" {
+		t.Fatalf("legacy-active lifecycle should stay omitted, got %q", fields.Claims[0].LifecycleStatus)
+	}
+	if EffectiveClaimLifecycleStatus(fields.Claims[0]) != ClaimLifecycleActive {
+		t.Fatalf("effective current lifecycle = %q", EffectiveClaimLifecycleStatus(fields.Claims[0]))
+	}
+	if fields.Claims[1].LifecycleStatus != ClaimLifecycleSuperseded {
+		t.Fatalf("claim-old lifecycle = %q", fields.Claims[1].LifecycleStatus)
+	}
+	if fields.Claims[1].SuccessorRef != "dec-new#claim-replacement" {
+		t.Fatalf("successor_ref = %q", fields.Claims[1].SuccessorRef)
+	}
+	if fields.Claims[1].RetiredReason != "superseded by narrower invariant" {
+		t.Fatalf("retired_reason = %q", fields.Claims[1].RetiredReason)
+	}
+	if len(fields.Predictions) != 2 {
+		t.Fatalf("compatibility predictions = %#v, want two", fields.Predictions)
+	}
+	if !strings.Contains(decision.StructuredData, "\"lifecycle_status\":\"superseded\"") {
+		t.Fatalf("structured data missing lifecycle status:\n%s", decision.StructuredData)
+	}
+	if strings.Contains(decision.StructuredData, "\"predictions\"") {
+		t.Fatalf("structured data should keep predictions as compatibility projection only:\n%s", decision.StructuredData)
 	}
 }
 

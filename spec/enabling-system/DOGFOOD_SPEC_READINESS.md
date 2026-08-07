@@ -1,22 +1,24 @@
-# Dogfood Spec Readiness State
+# Historical Dogfood Spec Readiness State
 
-This note records the current Haft repository dogfood state. It is not a
-`yaml spec-section` carrier and does not create active target-system or
+This note records the Haft repository dogfood state as of 2026-04-26. It is a
+historical enabling-system note, not a current `ProjectSpecificationSet`
+contract. It does not create active target-system, software-system, or
 enabling-system authority.
 
-As of 2026-04-26, this repository has local `.haft/specs/*` carriers, but the
-root `.gitignore` ignores `.haft/`. Edits to those local carriers are therefore
-not captured in a normal repository patch. The local carriers are generated
+As of 2026-04-26, this repository had local `.haft/specs/*` carriers, but the
+root `.gitignore` ignored `.haft/`. Edits to those local carriers were therefore
+not captured in a normal repository patch. The local carriers were generated
 draft placeholders from `internal/project/spec_carriers.go`:
 
 - `.haft/specs/target-system.md` has one draft target placeholder.
 - `.haft/specs/enabling-system.md` has one draft enabling placeholder.
 - `.haft/specs/term-map.md` has an empty draft `entries: []` term map.
 
-The honest readiness state is `needs_onboard`, not ready. Operators should keep
-the placeholders draft, run `haft spec check --json`, and either unignore the
-reviewable `.haft/specs` carriers or continue recording dogfood state in
-tracked specs/tests until the project-local carrier policy is reconciled.
+The recorded readiness state was `needs_onboard`, not ready. At that point,
+operators needed to keep the placeholders draft, run `haft spec check --json`,
+and either unignore the reviewable `.haft/specs` carriers or continue recording
+dogfood state in tracked specs/tests until they reconciled the project-local
+carrier policy.
 
 ## Batch Drainer Readiness Target
 
@@ -26,8 +28,8 @@ target for batch WorkCommission execution. This note records the readiness
 target only; it is not runtime evidence that the harness or Open-Sleigh
 implementation already satisfies the target.
 
-The readiness state remains `needs_onboard` until the Measure phase observes all
-of the following on the target system:
+As of 2026-04-29, the recorded readiness state remained `needs_onboard` until
+the Measure phase observed all of the following on the target system:
 
 - `haft harness run --drain --concurrency N` is opt-in and does not change the
   existing single-commission `haft harness run` behavior when `--drain` is
@@ -51,7 +53,8 @@ of the following on the target system:
 - Operator intervention through `harness apply`, `harness requeue`, or
   `harness cancel` remains available without SIGKILL or SQLite surgery.
 
-The evidence gate for moving this repository beyond `needs_onboard` is the
-bounded command set carried by the active WorkCommission, including the mixed
-delivery-policy end-to-end batch dogfood run. Until that evidence exists, the
-batch-drainer behavior is a readiness target, not a verified project fact.
+The recorded evidence gate for moving this repository beyond `needs_onboard`
+was the bounded command set carried by the active WorkCommission, including the
+mixed delivery-policy end-to-end batch dogfood run. Until that evidence existed,
+the note treated the batch-drainer behavior as a readiness target, not a
+verified project fact.

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // TestTSPathAliasResolution confirms a tsconfig `paths` alias (`@/*` → `src/*`)
@@ -89,6 +90,84 @@ func TestTSWorkspaceResolution(t *testing.T) {
 	}
 	if !hasCallEdge(t, ctx, st, edges, "run", "widget") {
 		t.Errorf("workspace import '@scope/ui' should resolve to call edge run->widget; got %v", edges)
+	}
+}
+
+func TestTSInheritedAliasesAndMultipleTargets(t *testing.T) {
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "configs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "configs", "base.json"), []byte(`{
+		"compilerOptions": {
+			"baseUrl": "..",
+			"paths": {"@inherited/*": ["lib/*"]}
+		}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tsconfig.json"), []byte(`{
+		"extends": "./configs/base.json",
+		"compilerOptions": {
+			"baseUrl": ".",
+			"paths": {"@core/*": ["missing/*", "src/*"]}
+		}
+	}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolution := loadTSProjectResolution(root)
+	core, ok := resolveTSModuleSpecifiers("@core/domain", "src", resolution)
+	if !ok || len(core) != 2 || core[0] != "missing/domain" || core[1] != "src/domain" {
+		t.Fatalf("core alias targets = %+v, ok=%v", core, ok)
+	}
+	inherited, ok := resolveTSModuleSpecifiers("@inherited/helper", "src", resolution)
+	if !ok || len(inherited) != 1 || inherited[0] != "lib/helper" {
+		t.Fatalf("inherited alias targets = %+v, ok=%v", inherited, ok)
+	}
+	basePath := filepath.Join(root, "configs", "base.json")
+	updatedBase := `{
+		"compilerOptions": {
+			"baseUrl": "..",
+			"paths": {"@inherited/*": ["lib-updated/*"]}
+		}
+	}`
+	if err := os.WriteFile(basePath, []byte(updatedBase), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	changedAt := time.Now().Add(time.Second)
+	if err := os.Chtimes(basePath, changedAt, changedAt); err != nil {
+		t.Fatal(err)
+	}
+	refreshed := loadTSProjectResolution(root)
+	inherited, ok = resolveTSModuleSpecifiers("@inherited/helper", "src", refreshed)
+	if !ok || len(inherited) != 1 || inherited[0] != "lib-updated/helper" {
+		t.Fatalf("refreshed inherited alias targets = %+v, ok=%v", inherited, ok)
+	}
+}
+
+func TestTSBarrelClosureTerminatesCyclesWithoutHopLimit(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "a.ts"), []byte(`export * from "./b"\n`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "b.ts"), []byte(`
+export * from "./a"
+export function terminal(): string { return "ok" }
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	resolution := loadTSProjectResolution(root)
+	model, err := loadTSProjectModel(root, resolution)
+	if err != nil {
+		t.Fatal(err)
+	}
+	targets := model.ResolveExport("a", "terminal")
+	if len(targets) != 1 || targets[0].fileBase != "b" || targets[0].symbolName != "terminal" {
+		t.Fatalf("cycle-safe barrel targets = %+v", targets)
+	}
+	missing := model.ResolveExport("a", "missing")
+	if len(missing) != 0 {
+		t.Fatalf("cycle-safe missing export = %+v", missing)
 	}
 }
 

@@ -11,6 +11,11 @@
 // set, no maps iterated for accumulation, no randomness.
 package graphrank
 
+import (
+	"fmt"
+	"sort"
+)
+
 // Edge is a weighted directed out-edge.
 type Edge struct {
 	To     string
@@ -63,11 +68,117 @@ func (g *Graph) Nodes() []string { return g.order }
 // Len returns the node count.
 func (g *Graph) Len() int { return len(g.order) }
 
+// InductionBudget bounds the graph projection walked by one concern query.
+// The canonical graph remains unchanged; the result is a deterministic read
+// projection around exact existing seed nodes.
+type InductionBudget struct {
+	maxHops  int
+	maxNodes int
+}
+
+func NewInductionBudget(
+	maxHops int,
+	maxNodes int,
+) (InductionBudget, error) {
+	if maxHops < 0 {
+		return InductionBudget{}, fmt.Errorf(
+			"graph induction max hops must be non-negative",
+		)
+	}
+	if maxNodes < 1 {
+		return InductionBudget{}, fmt.Errorf(
+			"graph induction max nodes must be positive",
+		)
+	}
+	return InductionBudget{
+		maxHops:  maxHops,
+		maxNodes: maxNodes,
+	}, nil
+}
+
+func (b InductionBudget) MaxHops() int {
+	return b.maxHops
+}
+
+func (b InductionBudget) MaxNodes() int {
+	return b.maxNodes
+}
+
+type InducedProjection struct {
+	Graph          *Graph
+	NodeCapReached bool
+}
+
+// Induce returns the deterministic bounded neighborhood of the supplied seed
+// nodes. Off-graph seeds are ignored. The fused adapter publishes related
+// edges bidirectionally, so directed traversal preserves that current graph.
+func (g *Graph) Induce(
+	seedIDs []string,
+	budget InductionBudget,
+) InducedProjection {
+	projected := NewGraph()
+	seeds := append([]string{}, seedIDs...)
+	sort.Strings(seeds)
+	type queuedNode struct {
+		id       string
+		distance int
+	}
+	queue := make([]queuedNode, 0, len(seeds))
+	seen := make(map[string]bool)
+	nodeCapReached := false
+	for _, seedID := range seeds {
+		if !g.Has(seedID) || seen[seedID] {
+			continue
+		}
+		if len(seen) >= budget.maxNodes {
+			nodeCapReached = true
+			break
+		}
+		seen[seedID] = true
+		projected.register(seedID)
+		queue = append(queue, queuedNode{id: seedID})
+	}
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+		if current.distance >= budget.maxHops {
+			continue
+		}
+		for _, edge := range g.out[current.id] {
+			if !seen[edge.To] {
+				if len(seen) >= budget.maxNodes {
+					nodeCapReached = true
+					continue
+				}
+				seen[edge.To] = true
+				queue = append(queue, queuedNode{
+					id:       edge.To,
+					distance: current.distance + 1,
+				})
+			}
+		}
+	}
+	for _, nodeID := range g.order {
+		if !seen[nodeID] {
+			continue
+		}
+		for _, edge := range g.out[nodeID] {
+			if seen[edge.To] {
+				projected.AddEdge(nodeID, edge.To, edge.Weight)
+			}
+		}
+	}
+	return InducedProjection{
+		Graph:          projected,
+		NodeCapReached: nodeCapReached,
+	}
+}
+
 // Params controls the random walk.
 type Params struct {
-	Restart float64 // teleport-to-seed probability per step (damping = 1-Restart)
-	MaxIter int     // power-iteration cap
-	Tol     float64 // L1 convergence threshold across one iteration
+	Restart float64 `json:"restart"`   // teleport-to-seed probability
+	MaxIter int     `json:"max_iter"`  // power-iteration cap
+	Tol     float64 `json:"tolerance"` // L1 convergence threshold
 }
 
 // DefaultParams are sane PPR defaults: 0.15 restart (the classic PageRank

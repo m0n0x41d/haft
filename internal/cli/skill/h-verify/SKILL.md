@@ -8,27 +8,96 @@ argument-hint: "[decision-ref or 'what's stale' for full project verification]"
 allowed-tools: Bash Read Grep Glob mcp__haft__haft_decision mcp__haft__haft_query mcp__haft__haft_refresh
 ---
 
+<!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:26e174fdd87993d53721c925be9727239d77e8a425b7c52d28fd9f833b6d1153 -->
+
 # h-verify — Verify a decision still holds
 
 You are running the FPF verification loop: baseline → measure → evidence → record. Drift detection compares current state against baselined affected_files; evidence decay reports surface when valid_until passes; measure verdict is recorded for the predictions the decide step declared.
+
+Verification already has a selected object and a named evidence use. Do not run
+a generic pattern router first. When an unfamiliar evidence, causal-use, or
+temporal distinction becomes material, query the exact concern with
+`mcp__haft__haft_query(action="fpf", mode="concern", query="...")` and inspect the full direct
+pattern body before applying it.
+
+## Conditional project-memory orientation
+
+When verification is context-heavy, multi-session, or otherwise
+reliance-bearing and the exact EntityOfConcern is not already current, resolve
+its identity with `haft_query(action="memory",
+memory_request={"mode":"resolve","contract_version":"haft.memory.v1",
+"basis":{"kind":"project_current"},"query":"...","max_candidates":5})`. Select
+the exact candidate by the current use rather than rank, then use the closed
+`memory_request` neighborhood branch advertised by the tool schema with
+`projection_profile_ref="agent_orientation.v2"`.
+
+Inspect `result_kind` before relying on content. `project_basis_unavailable`,
+known absence, or explicit abstention is visible but non-blocking: continue
+with the exact artifact/evidence surfaces available to this verification and
+do not invent a profile, entity, artifact, or human gate. This read does not
+replace code-graph preflight before a later code edit. Never persist typed
+memory merely because a read failed; persistence requires an explicit operator
+save request or a concrete operator-named or agent-inferred receiving use
+supplied by current Work, with request provenance.
 
 ## Step 1 — Identify the decision
 
 If `decision_ref` is given, use it. Otherwise:
 - `mcp__haft__haft_query(action="status")` — surfaces stale/refresh-due decisions
+- `mcp__haft__haft_refresh(action="drain", dry_run=true)` — preview machine-safe maintenance closures and needs_operator groups
+- `mcp__haft__haft_query(action="contract_generation")` — read-only generated-fragment carrier hints for host/skill/plugin/Pi sync
+- `mcp__haft__haft_query(action="drift_events", limit=5)`, `mcp__haft__haft_query(action="decision_reconcile", limit=5)`, and `mcp__haft__haft_query(action="governing_set", limit=5)` — compact drift fanout, reconciliation, and current-authority drill-downs
+- add `full=true` to those drill-down calls only when you need the full audit payload
 - `mcp__haft__haft_query(action="list", kind="DecisionRecord")` — full list
 - Ask the operator which decision to verify
 
-## Step 2 — Read the decision's predictions
+read-only/generated text is discovery only; it is not evidence truth, gate passage, global approval, or operator authorization.
 
-`mcp__haft__haft_query(action="search", query="<decision_ref>")` returns the DecisionRecord including its `predictions` field. Each prediction has:
+When the operator asks to verify/drain the project maintenance backlog, do not
+stop after status and do not ask for extra approval to apply closures that the
+kernel has already classified as machine-safe. The operator's request to run
+`h-verify` on stale/refresh-due status is sufficient authority for rung-1
+deterministic auto-baselines and rung-2 allowlisted machine evidence/revalidation.
+Use the explicit drain loop:
+
+1. `mcp__haft__haft_refresh(action="drain", dry_run=true)` to preview closed /
+   failed / needs_operator classes.
+2. If the preview contains only kernel-classified machine-safe closures for an
+   item, apply them by default with
+   `mcp__haft__haft_refresh(action="drain", dry_run=false)`.
+   If MCP times out on a large backlog, use the equivalent CLI drain command and
+   save the JSON evidence in `.context`.
+3. Report every applied automatic closure, including undo commands when present,
+   and every needs_operator item. The drain may
+   close only rung-1 deterministic drift and rung-2 allowlisted machine
+   evidence/revalidation. Material drift, semantic uncertainty, reopen/supersede
+   choices, public/authority/security-sensitive cases, and weak waivers stay
+   operator-facing.
+
+## Step 2 — Read the decision's claims and predictions
+
+Recover the selected DecisionRecord through the exact artifact surface:
+
+```
+mcp__haft__haft_query(action="related", artifact_ref="<decision_ref>")
+```
+
+Read the full payload, especially `status`, `valid_until`, `body`, and
+`structured_data`. The canonical structured payload exposes `claims` (and
+legacy-compatible `predictions`) with:
 - `claim` — the falsifiable statement
 - `observable` — what to measure
 - `threshold` — pass/fail boundary
 - `verify_after` — when async evidence should be available (if any)
 
+`search` is discovery only. A compact search hit or miss does not establish
+whether claims, predictions, observables, or thresholds exist. Do not read the
+project SQLite database directly while kernel exact recovery is available.
+
 If predictions are empty (the decision was recorded tactical with `_skips: ["predictions"]`), there's nothing to measure — report that to operator and recommend either:
-- `/h-refresh` action=reopen to add predictions and re-decide properly
+- ask the operator for a direct choice of a replacement with testable claims,
+  route it through `/h-decide`, then supersede the old record with
+  `haft decision supersede <old-dec-...> --new <new-dec-...> --reason "..."`
 - Just attach evidence directly via `haft_decision(action="evidence", ...)`
 
 ## Step 3 — Baseline (if drift detection wanted)
@@ -86,6 +155,14 @@ CL impacts R_eff per FPF B.3:3 — never average across CL.
 
 ## Step 6 — Record the measurement verdict
 
+**What-got-worse check (FPF E.13).** Before recording an `accepted` or
+`partial` verdict, ask: the measured proxy improved — what got worse? Check
+the protected qualities the decision did NOT optimize (usability, footprint,
+maintainability, signal honesty, adjacent modules). Put the answer in
+`findings`: either the concrete regression you found, or a reasoned
+"none worsened: checked X, Y, Z" — a reflexive "nothing worsened" without
+named loci is the Goodhart failure mode this check exists to catch.
+
 After all evidence is attached, record the overall verdict:
 
 ```
@@ -105,6 +182,24 @@ Kernel ties the verdict back to the predictions and surfaces:
 - Partial → some predictions held, some didn't → consider reopen or supersede
 - Failed → decision invalidated → consider supersede or rollback per the decision's rollback spec
 
+## Step 6.5 — Loop verdict (FPF E.23)
+
+After the measure verdict, classify what the improvement loop does next. The
+admissible verdict set is exactly:
+
+- **stop** — further movement is dominated, unavailable, or out of scope.
+  "Good enough" is a legitimate terminal state: a decision measured adequate
+  does NOT owe an endless refresh cycle. Name WHY movement is dominated.
+- **continue** — evidence gathering or improvement continues on the same frame.
+- **switch-method** — same problem, different solution method → supersede.
+- **open-new-frame** — the problem itself shifted → reopen with a new ProblemCard.
+- **hold** — defer with an explicit revisit condition → waive with new_valid_until.
+
+**Narrowing is NOT a verdict.** Shrinking scan scope, suppressing signals, or
+restricting the evaluation window to make the picture look better is false
+improvement — any scope reduction must carry an explicit dominance
+justification ("movement on X is dominated because Y"), or it doesn't happen.
+
 If any verified prediction carried a `probability` forecast (set at `/h-decide`),
 the measure response also appends a **Calibration** read: the decomposed-Brier
 profile (Brier = reliability − resolution + uncertainty) over all verified
@@ -117,7 +212,7 @@ operator but do not over-read a sparse profile.
 If verification reveals:
 - **Evidence decayed** (valid_until passed): `mcp__haft__haft_refresh(action="waive", artifact_ref=..., evidence="<new evidence>", new_valid_until="...")` to extend validity, OR `action=reopen` to start a new problem cycle
 - **Drift detected** (affected_files changed since baseline): classify drift as cosmetic / incidental / material via `haft_query(action="status")` and decide whether to re-baseline or reopen
-- **Verdict failed**: `mcp__haft__haft_refresh(action="supersede", artifact_ref=<old>, new_artifact_ref=<replacement>)` after recording the replacement decision via `/h-decide`
+- **Verdict failed**: `mcp__haft__haft_refresh(action="supersede", artifact_ref=<old>, new_artifact_ref=<replacement>)` after the operator directly requests and `/h-decide` routes the replacement decision
 
 ## Step 8 — Present to operator
 
@@ -126,7 +221,10 @@ Surface:
 - Verdict (accepted / partial / failed)
 - Evidence attached with CL
 - Drift status if baseline existed
-- Recommended next action (waive / reopen / supersede / nothing — decision still good)
+- Loop verdict (stop / continue / switch-method / open-new-frame / hold) with
+  its kernel mapping: stop → leave active with rationale recorded; continue →
+  schedule next verify; switch-method → supersede; open-new-frame → reopen;
+  hold → waive with new_valid_until
 
 **Re-grounding discipline (FPF A.7).** When you reference decision IDs
 (`dec-20260525-...`), prediction labels, or evidence refs in the verdict
@@ -144,6 +242,7 @@ CLAUDE.md Critical Reminders for the project-wide rule.
 - Do NOT skip baseline if the decision has affected_files and drift matters — without baseline, drift is invisible.
 - Do NOT silently change a decision's verify_after to "kick the can". Use `action="waive"` with `evidence` parameter so the extension is auditable.
 - Do NOT mark verdict=accepted when predictions were skipped — verify what was declared, not what was hoped.
+- Do NOT use raw SQLite as a fallback for DecisionRecord recovery while `related(artifact_ref=...)` is available from the kernel.
 
 ## FPF spec references
 
@@ -154,4 +253,4 @@ CLAUDE.md Critical Reminders for the project-wide rule.
 - VER-01 (evidence graph), VER-02 (decay), VER-03 (R_eff), VER-07 (refresh triggers)
 - C.27 — Temporal Claim Adequacy (state reading vs trend vs intervention claim)
 
-Look up via `mcp__haft__haft_query(action="fpf", query="B.3")`.
+Inspect via `mcp__haft__haft_query(action="fpf", mode="inspect", identifier="B.3")`.

@@ -98,19 +98,22 @@ func TestBaseline_ExactModeSkipsModuleScopeManifests(t *testing.T) {
 
 	// Decide with GovernanceMode=exact.
 	a, _, err := Decide(ctx, store, haftDir, DecideInput{
-		SelectedTitle:   "Track login.go only",
-		WhySelected:     "this decision is specifically about login.go, not the whole auth package",
-		SelectionPolicy: "narrow scope; sibling files are not governed",
-		CounterArgument: "scope might widen later; force re-decide if so",
-		WeakestLink:     "future contributors may add files assuming module-level governance",
+		ProblemStatement: "The login-specific decision must not silently govern unrelated auth package files.",
+		SelectedTitle:    "Track login.go only",
+		WhySelected:      "this decision is specifically about login.go, not the whole auth package",
+		SelectionPolicy:  "narrow scope; sibling files are not governed",
+		CounterArgument:  "scope might widen later; force re-decide if so",
+		WeakestLink:      "future contributors may add files assuming module-level governance",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Module-level governance", Reason: "would silently capture sibling files as governed drift"},
 		},
 		Rollback: &RollbackSpec{
 			Triggers: []string{"if scope creep makes file-level tracking infeasible"},
 		},
-		AffectedFiles:  []string{"pkg/auth/login.go"},
-		GovernanceMode: string(GovernanceModeExact),
+		AffectedFiles:         []string{"pkg/auth/login.go"},
+		GovernanceMode:        string(GovernanceModeExact),
+		BindingScope:          BindingScopeWholeFile,
+		BindingFallbackReason: "operator explicitly chose file-level governance for this exact-mode fixture",
 	})
 	if err != nil {
 		t.Fatalf("Decide failed: %v", err)
@@ -135,9 +138,9 @@ func TestBaseline_ExactModeSkipsModuleScopeManifests(t *testing.T) {
 	}
 }
 
-// TestBaseline_ModuleModeBuildsScopeManifests verifies that module mode (the
-// default) preserves the pre-6.2.x behavior of capturing sibling files as
-// governed scope. Required to keep backward compatibility intact.
+// TestBaseline_ModuleModeBuildsScopeManifests verifies that module mode captures
+// sibling files as governed scope after the decision explicitly asks for module
+// binding authority.
 func TestBaseline_ModuleModeBuildsScopeManifests(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
@@ -153,11 +156,12 @@ func TestBaseline_ModuleModeBuildsScopeManifests(t *testing.T) {
 	}
 
 	a, _, err := Decide(ctx, store, haftDir, DecideInput{
-		SelectedTitle:   "Track billing module",
-		WhySelected:     "billing module is governed as a unit",
-		SelectionPolicy: "module-level governance preferred for cohesive subsystems",
-		CounterArgument: "may capture unrelated sibling additions as governed drift",
-		WeakestLink:     "module boundary is implicit, not declared",
+		ProblemStatement: "The billing decision must detect sibling files that join the governed module.",
+		SelectedTitle:    "Track billing module",
+		WhySelected:      "billing module is governed as a unit",
+		SelectionPolicy:  "module-level governance preferred for cohesive subsystems",
+		CounterArgument:  "may capture unrelated sibling additions as governed drift",
+		WeakestLink:      "module boundary is implicit, not declared",
 		WhyNotOthers: []RejectionReason{
 			{Variant: "Exact file tracking", Reason: "would miss new files that join the module"},
 		},
@@ -165,7 +169,8 @@ func TestBaseline_ModuleModeBuildsScopeManifests(t *testing.T) {
 			Triggers: []string{"module split makes single-scope tracking misleading"},
 		},
 		AffectedFiles: []string{"pkg/billing/invoice.go"},
-		// GovernanceMode unset → defaults to module
+		BindingScope:  BindingScopeModule,
+		// GovernanceMode unset -> defaults to module
 	})
 	if err != nil {
 		t.Fatalf("Decide failed: %v", err)

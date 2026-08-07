@@ -1,0 +1,411 @@
+package cli
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strings"
+
+	"github.com/spf13/cobra"
+
+	"github.com/m0n0x41d/haft/internal/operatorrequest"
+	"github.com/m0n0x41d/haft/internal/profiledetector"
+	"github.com/m0n0x41d/haft/internal/profileonboarding"
+	"github.com/m0n0x41d/haft/internal/projectledger"
+)
+
+const profileDeclarationRecordKind = "haft_project_profile_declaration"
+
+var profileDeclareJSON bool
+var profileDeclareInputFile string
+
+type profileLedgerRevalidation = func(context.Context) error
+
+var profileDeclareCmd = &cobra.Command{
+	Use:   "declare",
+	Short: "Declare the reviewed project profile",
+	Long: `Declare the readable project-profile review candidate.
+
+By default this reads .haft/profile-declaration-review.json produced by
+"haft profile propose". The command is an internal effect sink after the host
+has routed one direct, unambiguous operator request for this exact profile. No
+skill token or project-local authority config is required.`,
+	Args: cobra.NoArgs,
+	RunE: runProfileDeclare,
+}
+
+func init() {
+	profileDeclareCmd.Flags().BoolVar(
+		&profileDeclareJSON,
+		"json",
+		false,
+		"print the declaration result as structured JSON",
+	)
+	profileDeclareCmd.Flags().StringVar(
+		&profileDeclareInputFile,
+		"input-file",
+		"",
+		"read an explicit review carrier instead of the default proposal",
+	)
+	profileCmd.AddCommand(profileDeclareCmd)
+}
+
+type profileDeclarationRuntime interface {
+	declare(
+		context.Context,
+		*sql.DB,
+		string,
+		profileonboarding.ProfileOnboardingWorkInput,
+		profileonboarding.ProfileDeclarationPolicy,
+		profileLedgerRevalidation,
+	) (profileOnboardOutcome, error)
+}
+
+type canonicalProfileDeclarationRuntime struct{}
+
+func (canonicalProfileDeclarationRuntime) declare(
+	ctx context.Context,
+	database *sql.DB,
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+	policy profileonboarding.ProfileDeclarationPolicy,
+	revalidate profileLedgerRevalidation,
+) (profileOnboardOutcome, error) {
+	result, err := profileonboarding.RunProfileDeclaration(
+		ctx,
+		database,
+		projectRoot,
+		input,
+		policy,
+		func(revalidationContext context.Context) error {
+			return revalidate(revalidationContext)
+		},
+	)
+	if err != nil {
+		return profileOnboardOutcome{}, err
+	}
+	return normalizeProfileOnboardResult(result)
+}
+
+type canonicalProfileChangeRuntime struct{}
+
+func (canonicalProfileChangeRuntime) declare(
+	ctx context.Context,
+	database *sql.DB,
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+	policy profileonboarding.ProfileDeclarationPolicy,
+	revalidate profileLedgerRevalidation,
+) (profileOnboardOutcome, error) {
+	result, err := profileonboarding.RunProfileEntityRelationChange(
+		ctx,
+		database,
+		projectRoot,
+		input,
+		policy,
+		func(revalidationContext context.Context) error {
+			return revalidate(revalidationContext)
+		},
+	)
+	if err != nil {
+		return profileOnboardOutcome{}, err
+	}
+	return normalizeProfileOnboardResult(result)
+}
+
+func runProfileDeclare(cmd *cobra.Command, _ []string) error {
+	return runProfileDeclarationCommand(
+		cmd,
+		profileDeclareInputFile,
+		profileDeclareJSON,
+	)
+}
+
+func runProfileDeclarationCommand(
+	cmd *cobra.Command,
+	requestedInput string,
+	asJSON bool,
+) error {
+	projectRoot, err := findProjectRoot()
+	if err != nil {
+		return fmt.Errorf("not a haft project: %w", err)
+	}
+	response, runErr := executeReviewedProfileDeclaration(
+		commandContext(cmd),
+		projectRoot,
+		requestedInput,
+	)
+	if response.Kind != "" {
+		writeErr := writeProfileOnboardResponse(
+			cmd.OutOrStdout(),
+			response,
+			asJSON,
+		)
+		runErr = errors.Join(runErr, writeErr)
+	}
+	return runErr
+}
+
+// executeReviewedProfileDeclaration is the typed effect boundary shared by
+// the low-level diagnostic command and the task-level onboarding adapter. It
+// returns the exact closed result even when the canonical admission committed
+// but a later projection or attachment check needs attention.
+func executeReviewedProfileDeclaration(
+	ctx context.Context,
+	projectRoot string,
+	requestedInput string,
+) (profileOnboardResponse, error) {
+	inputPath := resolveProfileDeclarationInputPath(
+		projectRoot,
+		requestedInput,
+	)
+	content, err := readProfileDeclarationInput(inputPath)
+	if err != nil {
+		return profileOnboardResponse{}, err
+	}
+	suggestion, err := profiledetector.Inspect(projectRoot)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"inspect current project-profile evidence: %w",
+			err,
+		)
+	}
+	input, err := profileonboarding.DecodeProfileOnboardingWorkInput(
+		content,
+		suggestion,
+	)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"review candidate no longer matches current repository evidence: %w; run `haft profile propose` again after deliberately removing or archiving the stale candidate",
+			err,
+		)
+	}
+	policy, err := hostRoutedProfileDeclarationPolicy(projectRoot, input)
+	if err != nil {
+		return profileOnboardResponse{}, err
+	}
+	response, runErr := executeProfileDeclaration(
+		ctx,
+		projectRoot,
+		input,
+		policy,
+		canonicalProfileDeclarationRuntime{},
+	)
+	if response.Kind != "" {
+		response.ReviewInput = profileDeclarationDisplayPath(
+			projectRoot,
+			inputPath,
+		)
+		response.AuthorityMode = policy.Mode()
+	}
+	if runErr != nil {
+		return response, runErr
+	}
+	return response, profileOnboardOutcomeError(response)
+}
+
+func executeReviewedProfileChange(
+	ctx context.Context,
+	projectRoot string,
+) (profileOnboardResponse, error) {
+	inputPath := profileChangeReviewPath(projectRoot)
+	content, err := readProfileChangeInput(inputPath)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"read profile-change review: %w",
+			err,
+		)
+	}
+	suggestion, err := profiledetector.Inspect(projectRoot)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"inspect current profile-change evidence: %w",
+			err,
+		)
+	}
+	input, err := profileonboarding.DecodeProfileOnboardingWorkInput(
+		content,
+		suggestion,
+	)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"profile-change review no longer matches current repository evidence: %w; prepare a fresh review after deliberately removing or archiving the stale carrier",
+			err,
+		)
+	}
+	if _, ok := input.ProfileChangeBasis(); !ok {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"profile-change review is not a predecessor-pinned relation change",
+		)
+	}
+	policy, err := hostRoutedProfileChangePolicy(projectRoot, input)
+	if err != nil {
+		return profileOnboardResponse{}, err
+	}
+	response, runErr := executeProfileDeclaration(
+		ctx,
+		projectRoot,
+		input,
+		policy,
+		canonicalProfileChangeRuntime{},
+	)
+	if response.Kind != "" {
+		response.ReviewInput = profileChangeReviewRelativePath()
+		response.AuthorityMode = policy.Mode()
+	}
+	if runErr != nil {
+		return response, runErr
+	}
+	return response, profileOnboardOutcomeError(response)
+}
+
+func executeProfileDeclaration(
+	ctx context.Context,
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+	policy profileonboarding.ProfileDeclarationPolicy,
+	runtime profileDeclarationRuntime,
+) (response profileOnboardResponse, runErr error) {
+	if ctx == nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"profile declaration requires a context",
+		)
+	}
+	if runtime == nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"profile declaration runtime is unavailable",
+		)
+	}
+	handle, err := projectledger.OpenExisting(
+		ctx,
+		projectRoot,
+		projectledger.ReadWrite,
+	)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"open checked project ledger: %w",
+			err,
+		)
+	}
+	defer func() {
+		runErr = errors.Join(runErr, handle.Close())
+	}()
+	canonicalRoot := handle.ProjectRoot().String()
+	outcome, err := runtime.declare(
+		ctx,
+		handle.Database(),
+		canonicalRoot,
+		input,
+		policy,
+		func(revalidationContext context.Context) error {
+			return handle.Revalidate(revalidationContext)
+		},
+	)
+	if err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"declare canonical project profile: %w",
+			err,
+		)
+	}
+	if err := validateProfileOnboardOutcome(outcome); err != nil {
+		return profileOnboardResponse{}, fmt.Errorf(
+			"validate canonical profile outcome: %w",
+			err,
+		)
+	}
+	response = profileOnboardResponse{
+		Kind:          profileDeclarationRecordKind,
+		State:         outcome.State,
+		ProjectRoot:   canonicalRoot,
+		ProjectID:     handle.ProjectID().String(),
+		AuthorityMode: policy.Mode(),
+		Admission:     outcome.Admission,
+		Revision:      outcome.Revision,
+		Projection:    outcome.Projection,
+		Rejections:    outcome.Rejections,
+		Failure:       outcome.Failure,
+	}
+	return response, nil
+}
+
+func hostRoutedProfileDeclarationPolicy(
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+) (profileonboarding.ProfileDeclarationPolicy, error) {
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileDeclaration,
+		"project-profile:"+filepath.Clean(projectRoot),
+		input.CanonicalJSON(),
+	)
+	if err != nil {
+		return profileonboarding.ProfileDeclarationPolicy{}, err
+	}
+	return profileonboarding.NewProfileDeclarationPolicy(request)
+}
+
+func hostRoutedProfileChangePolicy(
+	projectRoot string,
+	input profileonboarding.ProfileOnboardingWorkInput,
+) (profileonboarding.ProfileDeclarationPolicy, error) {
+	request, err := operatorrequest.New(
+		operatorrequest.ProfileChange,
+		"project-profile:"+filepath.Clean(projectRoot),
+		input.CanonicalJSON(),
+	)
+	if err != nil {
+		return profileonboarding.ProfileDeclarationPolicy{}, err
+	}
+	return profileonboarding.NewProfileChangePolicy(request)
+}
+
+func resolveProfileDeclarationInputPath(
+	projectRoot string,
+	requested string,
+) string {
+	if requested == "" {
+		return profileDeclarationReviewPath(projectRoot)
+	}
+	if filepath.IsAbs(requested) {
+		return filepath.Clean(requested)
+	}
+	return filepath.Clean(filepath.Join(projectRoot, requested))
+}
+
+func readProfileDeclarationInput(path string) ([]byte, error) {
+	content, present, err := readOptionalRegularProfileReview(path)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, fmt.Errorf(
+			"project-profile review candidate %s is absent; run `haft profile propose` first",
+			path,
+		)
+	}
+	return content, nil
+}
+
+func readProfileChangeInput(path string) ([]byte, error) {
+	content, present, err := readOptionalRegularProfileReview(path)
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		return nil, fmt.Errorf(
+			"profile-change review %s is absent; prepare it with haft_onboard action=profile_change_prepare after selecting the exact scope_id and entity_ref",
+			path,
+		)
+	}
+	return content, nil
+}
+
+func profileDeclarationDisplayPath(projectRoot string, inputPath string) string {
+	relative, err := filepath.Rel(projectRoot, inputPath)
+	outside := relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator))
+	if err == nil && !outside && !filepath.IsAbs(relative) {
+		return filepath.ToSlash(relative)
+	}
+	return inputPath
+}

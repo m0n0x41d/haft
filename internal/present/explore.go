@@ -15,29 +15,38 @@ import (
 // at a dispatch boundary says so rather than implying completeness.
 func ExploreResponse(res codeintel.ExploreResult, seedName, lang string) string {
 	var b strings.Builder
+	renderIndexState(&b, res.Index)
+	renderIndexCoordination(&b, res.IndexRefresh)
 
-	if len(res.Ambiguous) > 0 {
-		if res.Fuzzy {
+	switch seedResolutionKind(res.SeedResolution) {
+	case "candidate_set":
+		if seedResolutionDetail(res.SeedResolution) == "fuzzy_candidates" {
 			fmt.Fprintf(&b, "## Explore — no exact match for `%s`; did you mean:\n\n", seedName)
 		} else {
 			fmt.Fprintf(&b, "## Explore — `%s` is ambiguous\n\n", seedName)
-			fmt.Fprintf(&b, "%d symbols share this name. Re-query with `file` (and `line`):\n\n", len(res.Ambiguous))
+			fmt.Fprintf(&b, "%d symbols share this name. Re-query with `file` (and `line`):\n\n", len(res.Candidates))
 		}
-		for _, c := range res.Ambiguous {
+		for _, c := range res.Candidates {
 			fmt.Fprintf(&b, "- `%s` `%s:%d`%s\n", c.Name, c.FilePath, c.StartLine, receiverSuffix(c))
 		}
 		return b.String()
-	}
-	if !res.SeedFound {
+	case "seed_not_found":
 		fmt.Fprintf(&b, "## Explore — `%s` not found\n\n", seedName)
 		b.WriteString("No symbol whose name matches that is in the code index (exact or substring). Check spelling, or pass `file` to scope it.\n")
+		return b.String()
+	case "seed_unavailable":
+		fmt.Fprintf(&b, "## Explore — `%s` unavailable\n\n", seedName)
+		fmt.Fprintf(
+			&b,
+			"Seed resolution is unavailable (%s); this is not evidence that the symbol is absent. Retry after the index capability is restored.\n",
+			seedResolutionDetail(res.SeedResolution),
+		)
 		return b.String()
 	}
 
 	fmt.Fprintf(&b, "## Explore `%s` — %s:%d\n\n", res.Seed.Name, res.Seed.FilePath, res.Seed.StartLine)
-	if res.Fuzzy {
-		fmt.Fprintf(&b, "_(no exact match for `%s` — using the single fuzzy match `%s`)_\n\n", seedName, res.Seed.Name)
-	}
+	fmt.Fprintf(&b, "Resolution: %d resolved • %d ambiguous • %d unresolved\n\n",
+		res.Resolution.Resolved, res.Resolution.Ambiguous, res.Resolution.Unresolved)
 
 	renderChain(&b, res)
 	renderBlastRadius(&b, res.BlastRadius)
@@ -51,8 +60,9 @@ func ExploreResponse(res codeintel.ExploreResult, seedName, lang string) string 
 
 func renderChain(b *strings.Builder, res codeintel.ExploreResult) {
 	fmt.Fprintf(b, "### Flow — spine of %d symbol(s)", len(res.Chain))
-	if res.BridgesUsed > 0 {
-		fmt.Fprintf(b, ", crosses %d interface boundary", res.BridgesUsed)
+	bridges := res.ChainOutcome.Stats().BridgeCount()
+	if bridges > 0 {
+		fmt.Fprintf(b, ", crosses %d interface boundary", bridges)
 	}
 	b.WriteString("\n")
 
@@ -76,8 +86,13 @@ func renderChain(b *strings.Builder, res codeintel.ExploreResult) {
 		fmt.Fprintf(b, "%s **%s%s** `%s:%d`%s\n", arrow, recv, step.Symbol.Name, step.Symbol.FilePath, step.Symbol.StartLine, via)
 		renderChainGovernance(b, step.Context)
 	}
-	if res.UnresolvedEnd {
+	switch res.ChainOutcome.Termination().String() {
+	case "unresolved_dispatch_boundary":
 		b.WriteString("⚠ chain ends at an unresolved dispatch boundary — the flow continues through a dynamic call the static graph cannot resolve. Not shown rather than guessed.\n")
+	case "max_hops_reached":
+		b.WriteString("⚠ chain reached the configured hop bound — this is a truncated path, not a complete-flow claim.\n")
+	case "visit_budget_reached":
+		b.WriteString("⚠ chain search reached the visit budget — this partial spine is not a longest-path or no-more-callers claim.\n")
 	}
 	b.WriteString("\n")
 	renderInvariantsInPlay(b, res.Chain)
@@ -94,9 +109,13 @@ func renderChainGovernance(b *strings.Builder, cc contextgraph.CodeContext) {
 		for _, d := range cc.Decisions {
 			titles = append(titles, fmt.Sprintf("%s `%s`", d.Meta.Title, d.Meta.ID))
 		}
-		fmt.Fprintf(b, "    ⮡ governed: %s\n", strings.Join(titles, "; "))
+		fmt.Fprintf(b, "    ⮡ `exact_binding`: %s\n", strings.Join(titles, "; "))
 	case len(cc.ModuleDecisions) > 0:
-		fmt.Fprintf(b, "    ⮡ module governed by %s\n", moduleDecisionList(cc.ModuleDecisions))
+		fmt.Fprintf(b, "    ⮡ `module_context`: %s\n", moduleDecisionList(cc.ModuleDecisions))
+	case len(cc.AffectedPathContextDecisions) > 0:
+		b.WriteString(
+			"    ⮡ `affected_path_context` only (not binding authority)\n",
+		)
 	}
 }
 
@@ -142,14 +161,16 @@ func renderBlastRadius(b *strings.Builder, callers []codeintel.FusedHop) {
 		fmt.Fprintf(b, "- `%s` (%s:%d)", h.Symbol.Name, h.Symbol.FilePath, h.Symbol.StartLine)
 		switch {
 		case len(h.Context.Decisions) > 0:
-			b.WriteString(" — governed: ")
+			b.WriteString(" — `exact_binding`: ")
 			ids := make([]string, 0, len(h.Context.Decisions))
 			for _, d := range h.Context.Decisions {
 				ids = append(ids, d.Meta.ID)
 			}
 			b.WriteString(strings.Join(ids, ", "))
 		case len(h.Context.ModuleDecisions) > 0:
-			b.WriteString(" — module governed")
+			b.WriteString(" — `module_context`")
+		case len(h.Context.AffectedPathContextDecisions) > 0:
+			b.WriteString(" — `affected_path_context` only")
 		}
 		b.WriteString("\n")
 	}
@@ -171,7 +192,10 @@ func renderSeedSource(b *strings.Builder, res codeintel.ExploreResult, lang stri
 // for the caller to disambiguate.
 func ExploreBagResponse(res codeintel.ExploreBagResult) string {
 	var b strings.Builder
+	renderIndexState(&b, res.Index)
 	b.WriteString("## Explore — connecting flow among seeds\n\n")
+	fmt.Fprintf(&b, "Resolution across resolved seeds: %d resolved • %d ambiguous • %d unresolved\n\n",
+		res.Resolution.Resolved, res.Resolution.Ambiguous, res.Resolution.Unresolved)
 
 	if len(res.Unresolved) > 0 {
 		fmt.Fprintf(&b, "Could not place these seeds (not found, or ambiguous — re-query each precisely): %s\n\n", strings.Join(res.Unresolved, ", "))
@@ -182,12 +206,21 @@ func ExploreBagResponse(res codeintel.ExploreBagResult) string {
 	}
 
 	for _, leg := range res.Legs {
-		if !leg.Connected {
-			fmt.Fprintf(&b, "### %s ⇸ %s — no static path\nNo call/dispatch path connects these in the graph (a dynamic/runtime hop, or genuinely unrelated). Not bridged with a guess.\n\n", leg.From.Name, leg.To.Name)
+		if leg.Direction.String() == "none" {
+			fmt.Fprintf(
+				&b,
+				"### %s ⇸ %s — no selected static path\nForward: %s (%s); reverse: %s (%s). No path was invented across a missing or bounded result.\n\n",
+				leg.From.Name,
+				leg.To.Name,
+				pathOutcomeKind(leg.Forward),
+				pathOutcomeDetail(leg.Forward),
+				pathOutcomeKind(leg.Reverse),
+				pathOutcomeDetail(leg.Reverse),
+			)
 			continue
 		}
 		heading := fmt.Sprintf("%s → %s", leg.From.Name, leg.To.Name)
-		if leg.Reversed {
+		if leg.Direction.String() == "reverse" {
 			heading = fmt.Sprintf("%s → %s (the call path runs this direction)", leg.To.Name, leg.From.Name)
 		}
 		fmt.Fprintf(&b, "### %s — %d hop(s)\n", heading, maxInt(len(leg.Steps)-1, 0))

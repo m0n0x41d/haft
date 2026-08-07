@@ -9,6 +9,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/m0n0x41d/haft/internal/reff"
 )
 
 // Kind identifies the type of artifact.
@@ -20,6 +22,7 @@ const (
 	KindSolutionPortfolio Kind = "SolutionPortfolio"
 	KindDecisionRecord    Kind = "DecisionRecord"
 	KindWorkCommission    Kind = "WorkCommission"
+	KindMethodRun         Kind = "MethodRun"
 	KindEvidencePack      Kind = "EvidencePack"
 	KindRefreshReport     Kind = "RefreshReport"
 )
@@ -27,11 +30,26 @@ const (
 // validKinds is the set of all valid artifact kinds (unexported — use ParseKind at boundaries).
 var validKinds = map[Kind]bool{
 	KindNote: true, KindProblemCard: true, KindSolutionPortfolio: true,
-	KindDecisionRecord: true, KindWorkCommission: true, KindEvidencePack: true, KindRefreshReport: true,
+	KindDecisionRecord: true, KindWorkCommission: true, KindMethodRun: true,
+	KindEvidencePack: true, KindRefreshReport: true,
 }
 
 // IsValid returns true if the kind is a recognized artifact kind.
 func (k Kind) IsValid() bool { return validKinds[k] }
+
+// ValidKindNames returns recognized artifact kind names in stable display order.
+func ValidKindNames() []string {
+	return []string{
+		string(KindNote),
+		string(KindProblemCard),
+		string(KindSolutionPortfolio),
+		string(KindDecisionRecord),
+		string(KindWorkCommission),
+		string(KindMethodRun),
+		string(KindEvidencePack),
+		string(KindRefreshReport),
+	}
+}
 
 // ParseKind validates and returns a Kind, or an error if unrecognized.
 func ParseKind(s string) (Kind, error) {
@@ -55,6 +73,8 @@ func (k Kind) IDPrefix() string {
 		return "dec"
 	case KindWorkCommission:
 		return "wc"
+	case KindMethodRun:
+		return "mpull"
 	case KindEvidencePack:
 		return "evid"
 	case KindRefreshReport:
@@ -77,6 +97,8 @@ func (k Kind) Dir() string {
 		return "decisions"
 	case KindWorkCommission:
 		return "commissions"
+	case KindMethodRun:
+		return "method-runs"
 	case KindEvidencePack:
 		return "evidence"
 	case KindRefreshReport:
@@ -97,6 +119,8 @@ func (k Kind) UserFacingLabel() string {
 		return "decision"
 	case KindWorkCommission:
 		return "work commission"
+	case KindMethodRun:
+		return "method run"
 	case KindEvidencePack:
 		return "evidence pack"
 	case KindRefreshReport:
@@ -129,6 +153,11 @@ func (k Kind) UserFacingHeading(count int) string {
 			return "Work Commission"
 		}
 		return "Work Commissions"
+	case KindMethodRun:
+		if count == 1 {
+			return "Method Run"
+		}
+		return "Method Runs"
 	case KindEvidencePack:
 		if count == 1 {
 			return "Evidence Pack"
@@ -197,18 +226,82 @@ func ParseMode(s string) (Mode, error) {
 	return m, nil
 }
 
-// DerivedStatus is computed from artifact completeness, never stored.
-type DerivedStatus string
+// ProjectArtifactState is a read-only projection of one current governance
+// artifact. It deliberately carries no position in a project-wide phase
+// sequence: several artifact kinds can be current at the same time.
+type ProjectArtifactState struct {
+	ID     string
+	Title  string
+	Status Status
+	Mode   Mode
+}
 
-const (
-	DerivedUnderframed DerivedStatus = "UNDERFRAMED"
-	DerivedFramed      DerivedStatus = "FRAMED"
-	DerivedExploring   DerivedStatus = "EXPLORING"
-	DerivedCompared    DerivedStatus = "COMPARED"
-	DerivedDecided     DerivedStatus = "DECIDED"
-	DerivedApplied     DerivedStatus = "APPLIED"
-	DerivedRefreshDue  DerivedStatus = "REFRESH_DUE"
-)
+// ProjectOptionSetState adds the local lifecycle fact that a particular
+// option set has a recorded comparison. ComparisonRecorded is not a project
+// phase and does not prescribe what the project must do next.
+type ProjectOptionSetState struct {
+	Artifact           ProjectArtifactState
+	ComparisonRecorded bool
+}
+
+// ProjectProblemFacet reports current open problem descriptions.
+type ProjectProblemFacet struct {
+	Known bool
+	Open  []ProjectArtifactState
+}
+
+// ProjectOptionFacet reports current option sets, compared and uncompared.
+type ProjectOptionFacet struct {
+	Known bool
+	Sets  []ProjectOptionSetState
+}
+
+// ProjectDecisionFacet reports current decisions independently of problems,
+// option sets, work, and evidence pressure.
+type ProjectDecisionFacet struct {
+	Known  bool
+	Active []ProjectArtifactState
+}
+
+// ProjectWorkFacet reports non-terminal commissions. SuggestedActions remain
+// local to each WorkCommission lifecycle; they are not a global next action.
+type ProjectWorkFacet struct {
+	Known  bool
+	Active []WorkCommissionStatus
+}
+
+// ProjectPressureFacet reports evidence refresh and drift pressure without
+// turning either into a project phase. StaleCount and StaleItems remain
+// promoted compatibility fields for callers that replace the status snapshot.
+type ProjectPressureFacet struct {
+	EvidenceKnown bool
+	StaleCount    int
+	StaleItems    []string
+	DriftKnown    bool
+	DriftCount    int
+	DriftItems    []string
+}
+
+// ProjectSpecHealthFacet is populated only by callers that actually possess
+// specification-health evidence. Unknown and healthy are intentionally
+// distinct states.
+type ProjectSpecHealthFacet struct {
+	Known        bool
+	FindingCount int
+	Findings     []string
+}
+
+// ProjectStateView is a read-only coexistence view over project governance.
+// It has no terminal phase and no single global next action.
+type ProjectStateView struct {
+	Context   string
+	Problems  ProjectProblemFacet
+	Options   ProjectOptionFacet
+	Decisions ProjectDecisionFacet
+	Work      ProjectWorkFacet
+	ProjectPressureFacet
+	SpecHealth ProjectSpecHealthFacet
+}
 
 // Link represents a relationship between two artifacts.
 type Link struct {
@@ -310,6 +403,8 @@ func ParseProblemType(value string) (ProblemType, error) {
 type ProblemFields struct {
 	ProblemType           ProblemType                `json:"problem_type,omitempty"`
 	Signal                string                     `json:"signal"`
+	Profile               *ProblemCardProfile        `json:"profile,omitempty"`
+	SpecFit               *SpecFitRecord             `json:"spec_fit,omitempty"`
 	Constraints           []string                   `json:"constraints,omitempty"`
 	OptimizationTargets   []string                   `json:"optimization_targets,omitempty"`
 	ObservationIndicators []string                   `json:"observation_indicators,omitempty"`
@@ -317,34 +412,163 @@ type ProblemFields struct {
 	BlastRadius           string                     `json:"blast_radius,omitempty"`
 	Reversibility         string                     `json:"reversibility,omitempty"`
 	Characterizations     []CharacterizationSnapshot `json:"characterizations,omitempty"`
+	Semantic              *SemanticEnvelope          `json:"semantic,omitempty"`
+}
+
+type SpecFitRecord struct {
+	SchemaVersion        int                    `json:"schema_version"`
+	RecordKind           string                 `json:"record_kind"`
+	Authority            string                 `json:"authority"`
+	AuthorityBoundary    string                 `json:"authority_boundary"`
+	State                string                 `json:"state"`
+	CandidateSectionRefs []string               `json:"candidate_section_refs,omitempty"`
+	ConflictRefs         []string               `json:"conflict_refs,omitempty"`
+	NextExpectedAction   string                 `json:"next_expected_action,omitempty"`
+	VariantSpecFit       []SpecFitVariantRecord `json:"variant_spec_fit,omitempty"`
+}
+
+type SpecFitVariantRecord struct {
+	VariantRef     string   `json:"variant_ref,omitempty"`
+	State          string   `json:"state"`
+	SectionRefs    []string `json:"section_refs,omitempty"`
+	ConflictRefs   []string `json:"conflict_refs,omitempty"`
+	ProposedDelta  string   `json:"proposed_delta,omitempty"`
+	ExpectedAction string   `json:"expected_action,omitempty"`
+}
+
+type ProblemCardProfile struct {
+	Level                string   `json:"level"`
+	SourceKind           string   `json:"source_kind,omitempty"`
+	Readiness            string   `json:"readiness"`
+	BoundaryStatus       string   `json:"boundary_status"`
+	WhyNow               string   `json:"why_now,omitempty"`
+	Scope                string   `json:"scope,omitempty"`
+	AcceptanceProbe      string   `json:"acceptance_probe,omitempty"`
+	FreshnessDisposition string   `json:"freshness_disposition,omitempty"`
+	Blockers             []string `json:"blockers,omitempty"`
+}
+
+type SemanticStatus string
+
+const (
+	SemanticStatusExact    SemanticStatus = "exact"
+	SemanticStatusLegacy   SemanticStatus = "legacy"
+	SemanticStatusDegraded SemanticStatus = "degraded"
+)
+
+type SemanticEnvelope struct {
+	SchemaVersion         int                   `json:"schema_version"`
+	Status                SemanticStatus        `json:"status"`
+	Profile               FPFProfileRef         `json:"profile"`
+	SemanticEdition       SemanticEditionRef    `json:"semantic_edition"`
+	ReferenceScheme       ReferenceScheme       `json:"reference_scheme"`
+	CarrierBinding        CarrierBinding        `json:"carrier_binding"`
+	PublicationProjection PublicationProjection `json:"publication_projection"`
+	PublicationUnit       PublicationUnit       `json:"publication_unit"`
+	EvidencePathRefs      []string              `json:"evidence_path_refs,omitempty"`
+	Warnings              []string              `json:"warnings,omitempty"`
+}
+
+type FPFProfileRef struct {
+	ID         string `json:"id"`
+	SourceKind string `json:"source_kind"`
+	SourceRef  string `json:"source_ref"`
+	Hash       string `json:"hash"`
+	ValidUntil string `json:"valid_until,omitempty"`
+}
+
+type SemanticEditionRef struct {
+	ID        string `json:"id"`
+	Family    string `json:"family"`
+	Version   int    `json:"version"`
+	CreatedAt string `json:"created_at,omitempty"`
+	Hash      string `json:"hash,omitempty"`
+}
+
+type ReferenceScheme struct {
+	Primary string   `json:"primary"`
+	Anchors []string `json:"anchors,omitempty"`
+}
+
+type CarrierBinding struct {
+	CarrierKind   string `json:"carrier_kind"`
+	CarrierRef    string `json:"carrier_ref"`
+	StorageKind   string `json:"storage_kind"`
+	SourceOfTruth string `json:"source_of_truth"`
+}
+
+type PublicationProjection struct {
+	ProjectionKind string   `json:"projection_kind"`
+	Views          []string `json:"views,omitempty"`
+	SyncPolicy     string   `json:"sync_policy"`
+	Hash           string   `json:"hash,omitempty"`
+}
+
+type PublicationUnit struct {
+	SchemaVersion    int                       `json:"schema_version"`
+	SourceEditionPin SourceEditionPin          `json:"source_edition_pin"`
+	PublicationHash  string                    `json:"publication_hash"`
+	CarrierHash      string                    `json:"carrier_hash"`
+	OmittedFields    []string                  `json:"omitted_fields,omitempty"`
+	Losses           []PublicationLoss         `json:"losses,omitempty"`
+	Recoverability   PublicationRecoverability `json:"recoverability"`
+}
+
+type SourceEditionPin struct {
+	Ref    string `json:"ref"`
+	Hash   string `json:"hash,omitempty"`
+	Status string `json:"status"`
+}
+
+type PublicationLoss struct {
+	Field       string `json:"field"`
+	Reason      string `json:"reason"`
+	Recoverable bool   `json:"recoverable"`
+}
+
+type PublicationRecoverability struct {
+	Status    string   `json:"status"`
+	Mechanism []string `json:"mechanism,omitempty"`
 }
 
 // DecisionFields holds structured data for a DecisionRecord. Stored as JSON in StructuredData.
 type DecisionFields struct {
-	ProblemRefs          []string             `json:"problem_refs,omitempty"`
-	SelectedTitle        string               `json:"selected_title"`
-	WhySelected          string               `json:"why_selected"`
-	SelectionPolicy      string               `json:"selection_policy,omitempty"`
-	CounterArgument      string               `json:"counterargument,omitempty"`
-	WeakestLink          string               `json:"weakest_link,omitempty"`
-	TaskContext          string               `json:"task_context,omitempty"`
-	SectionRefs          []string             `json:"section_refs,omitempty"`
-	WhyNotOthers         []RejectionReason    `json:"why_not_others,omitempty"`
-	Claims               []DecisionClaim      `json:"claims,omitempty"`
-	Predictions          []DecisionPrediction `json:"predictions,omitempty"`
-	PreConditions        []string             `json:"pre_conditions,omitempty"`
-	RollbackTriggers     []string             `json:"rollback_triggers,omitempty"`
-	RollbackSteps        []string             `json:"rollback_steps,omitempty"`
-	RollbackBlastRadius  string               `json:"rollback_blast_radius,omitempty"`
-	Invariants           []string             `json:"invariants,omitempty"`
-	PostConds            []string             `json:"post_conditions,omitempty"`
-	Admissibility        []string             `json:"admissibility,omitempty"`
-	EvidenceRequirements []string             `json:"evidence_requirements,omitempty"`
-	RefreshTriggers      []string             `json:"refresh_triggers,omitempty"`
-	Skips                []string             `json:"_skips,omitempty"`
-	SkipReason           string               `json:"_skip_reason,omitempty"`
-	FirstModuleCoverage  bool                 `json:"first_module_coverage,omitempty"`
-	DriftManifests       []DriftScopeManifest `json:"drift_manifests,omitempty"`
+	ProblemRefs             []string                `json:"problem_refs,omitempty"`
+	ProblemStatement        string                  `json:"problem_statement,omitempty"`
+	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
+	AuthorityProvenance     string                  `json:"authority_provenance,omitempty"`
+	ChoiceResult            *ChoiceResult           `json:"choice_result,omitempty"`
+	TransformationRecord    *TransformationRecord   `json:"transformation_record,omitempty"`
+	SelectedTitle           string                  `json:"selected_title"`
+	WhySelected             string                  `json:"why_selected"`
+	SelectionPolicy         string                  `json:"selection_policy,omitempty"`
+	CounterArgument         string                  `json:"counterargument,omitempty"`
+	WeakestLink             string                  `json:"weakest_link,omitempty"`
+	TaskContext             string                  `json:"task_context,omitempty"`
+	SectionRefs             []string                `json:"section_refs,omitempty"`
+	SpecBindingPreflight    *SpecBindingPreflight   `json:"spec_binding_preflight,omitempty"`
+	SpecBindingRequired     bool                    `json:"spec_binding_preflight_required,omitempty"`
+	WhyNotOthers            []RejectionReason       `json:"why_not_others,omitempty"`
+	Claims                  []DecisionClaim         `json:"claims,omitempty"`
+	Predictions             []DecisionPrediction    `json:"predictions,omitempty"`
+	PreConditions           []string                `json:"pre_conditions,omitempty"`
+	RollbackTriggers        []string                `json:"rollback_triggers,omitempty"`
+	RollbackSteps           []string                `json:"rollback_steps,omitempty"`
+	RollbackBlastRadius     string                  `json:"rollback_blast_radius,omitempty"`
+	Invariants              []string                `json:"invariants,omitempty"`
+	PostConds               []string                `json:"post_conditions,omitempty"`
+	Admissibility           []string                `json:"admissibility,omitempty"`
+	EvidenceRequirements    []string                `json:"evidence_requirements,omitempty"`
+	RefreshTriggers         []string                `json:"refresh_triggers,omitempty"`
+	Skips                   []string                `json:"_skips,omitempty"`
+	SkipReason              string                  `json:"_skip_reason,omitempty"`
+	FirstModuleCoverage     bool                    `json:"first_module_coverage,omitempty"`
+	ImplementationFootprint ImplementationFootprint `json:"implementation_footprint,omitempty"`
+	GovernanceTargets       []GovernanceTarget      `json:"governance_targets,omitempty"`
+	DriftWatchTargets       []DriftWatchTarget      `json:"drift_watch_targets,omitempty"`
+	DriftManifests          []DriftScopeManifest    `json:"drift_manifests,omitempty"`
+	BindingTargets          []BindingTarget         `json:"binding_targets,omitempty"`
+	BindingDiagnostics      []BindingDiagnostic     `json:"binding_diagnostics,omitempty"`
 	// GovernanceMode declares how affected_files relate to drift detection.
 	// "module" (default, preserves pre-6.2.x behavior): each affected_file
 	// widens to its parent directory; sibling additions count as governed
@@ -352,11 +576,67 @@ type DecisionFields struct {
 	GovernanceMode GovernanceMode `json:"governance_mode,omitempty"`
 }
 
+type ImplementationFootprint struct {
+	Files    []string `json:"files,omitempty"`
+	Commits  []string `json:"commits,omitempty"`
+	WorkRefs []string `json:"work_refs,omitempty"`
+}
+
+type GovernanceTarget struct {
+	Kind          string         `json:"kind"`
+	Ref           string         `json:"ref,omitempty"`
+	BindingTarget *BindingTarget `json:"binding_target,omitempty"`
+}
+
+type DriftWatchTarget struct {
+	TargetRef     string         `json:"target_ref"`
+	Trigger       string         `json:"trigger"`
+	BindingTarget *BindingTarget `json:"binding_target,omitempty"`
+}
+
+// BindingTarget is the canonical code-object binding model for decision drift.
+// affected_files and affected_symbols remain backward-compatible projections.
+type BindingTarget struct {
+	Kind             string `json:"kind"`
+	TargetRef        string `json:"target_ref,omitempty"`
+	AnchorID         string `json:"anchor_id,omitempty"`
+	AnchorVersion    int    `json:"anchor_version,omitempty"`
+	FilePath         string `json:"file_path,omitempty"`
+	Language         string `json:"language,omitempty"`
+	SymbolName       string `json:"symbol_name,omitempty"`
+	SymbolKind       string `json:"symbol_kind,omitempty"`
+	Receiver         string `json:"receiver,omitempty"`
+	QualifiedName    string `json:"qualified_name,omitempty"`
+	SignatureHash    string `json:"signature_hash,omitempty"`
+	Line             int    `json:"line,omitempty"`
+	EndLine          int    `json:"end_line,omitempty"`
+	BodyHash         string `json:"body_hash,omitempty"`
+	AnchorHash       string `json:"anchor_hash,omitempty"`
+	TextHash         string `json:"text_hash,omitempty"`
+	NearestSymbol    string `json:"nearest_symbol,omitempty"`
+	ModulePath       string `json:"module_path,omitempty"`
+	ModuleHash       string `json:"module_hash,omitempty"`
+	Reason           string `json:"reason,omitempty"`
+	WhySymbolFailed  string `json:"why_symbol_failed,omitempty"`
+	WhyRangeFailed   string `json:"why_range_failed,omitempty"`
+	LanguageSupport  string `json:"language_support,omitempty"`
+	Confidence       string `json:"confidence,omitempty"`
+	ResolutionSource string `json:"resolution_source,omitempty"`
+}
+
+type BindingDiagnostic struct {
+	FilePath string `json:"file_path,omitempty"`
+	Kind     string `json:"kind"`
+	Severity string `json:"severity"`
+	Message  string `json:"message"`
+}
+
 type decisionFieldsJSON DecisionFields
 
 func (df DecisionFields) MarshalJSON() ([]byte, error) {
 	encoded := decisionFieldsJSON(df)
 	encoded.Claims = normalizeDecisionClaims(encoded.Claims)
+	encoded.TransformationRecord = NormalizeTransformationRecord(encoded.TransformationRecord)
 
 	if len(encoded.Claims) == 0 {
 		encoded.Claims = decisionClaimsFromPredictions(encoded.Predictions)
@@ -380,6 +660,7 @@ func (df *DecisionFields) UnmarshalJSON(data []byte) error {
 	}
 
 	decoded.Predictions = decisionPredictionsFromClaims(decoded.Claims)
+	decoded.TransformationRecord = NormalizeTransformationRecord(decoded.TransformationRecord)
 	*df = DecisionFields(decoded)
 
 	return nil
@@ -422,6 +703,7 @@ func (a *Artifact) UnmarshalDecisionFields() DecisionFields {
 	}
 	var df DecisionFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &df)
+	df.ChoiceResult = NormalizeChoiceResult(df.ChoiceResult)
 	df.Claims = normalizeDecisionClaims(df.Claims)
 	if len(df.Claims) == 0 {
 		df.Claims = decisionClaimsFromPredictions(df.Predictions)
@@ -437,6 +719,10 @@ func (a *Artifact) UnmarshalPortfolioFields() PortfolioFields {
 	}
 	var pf PortfolioFields
 	_ = json.Unmarshal([]byte(a.StructuredData), &pf)
+	if pf.Comparison != nil {
+		normalized := normalizeComparisonRecommendationAlias(*pf.Comparison)
+		pf.Comparison = &normalized
+	}
 	return pf
 }
 
@@ -552,19 +838,28 @@ func randomIDSuffix() string {
 
 // Variant represents a solution option in a SolutionPortfolio.
 type Variant struct {
-	ID                 string   `json:"id"`
-	Title              string   `json:"title"`
-	Description        string   `json:"description"`
-	Strengths          []string `json:"strengths,omitempty"`
-	WeakestLink        string   `json:"weakest_link"`
-	NoveltyMarker      string   `json:"novelty_marker,omitempty"`
-	Risks              []string `json:"risks,omitempty"`
-	SteppingStone      bool     `json:"stepping_stone,omitempty"`
-	SteppingStoneBasis string   `json:"stepping_stone_basis,omitempty"`
-	DiversityRole      string   `json:"diversity_role,omitempty"`
-	AssumptionNotes    string   `json:"assumption_notes,omitempty"`
-	RollbackNotes      string   `json:"rollback_notes,omitempty"`
-	EvidenceRefs       []string `json:"evidence_refs,omitempty"`
+	ID                 string                   `json:"id"`
+	Title              string                   `json:"title"`
+	Description        string                   `json:"description"`
+	Strengths          []string                 `json:"strengths,omitempty"`
+	WeakestLink        string                   `json:"weakest_link"`
+	NoveltyMarker      string                   `json:"novelty_marker,omitempty"`
+	Risks              []string                 `json:"risks,omitempty"`
+	SteppingStone      bool                     `json:"stepping_stone,omitempty"`
+	SteppingStoneBasis string                   `json:"stepping_stone_basis,omitempty"`
+	DiversityRole      string                   `json:"diversity_role,omitempty"`
+	AssumptionNotes    string                   `json:"assumption_notes,omitempty"`
+	RollbackNotes      string                   `json:"rollback_notes,omitempty"`
+	EvidenceRefs       []string                 `json:"evidence_refs,omitempty"`
+	ProjectRecordRef   *VariantProjectRecordRef `json:"project_record_ref,omitempty"`
+}
+
+// VariantProjectRecordRef names the independently addressable typed-memory
+// record that carries one solution option. The option text embedded in a
+// legacy portfolio is not silently promoted into a graph entity.
+type VariantProjectRecordRef struct {
+	RefKindID   string `json:"ref_kind_id"`
+	ReferenceID string `json:"reference_id"`
 }
 
 const (
@@ -608,6 +903,7 @@ type CharacterizationSnapshot struct {
 type PortfolioFields struct {
 	ProblemRef               string            `json:"problem_ref,omitempty"`
 	Variants                 []Variant         `json:"variants,omitempty"`
+	SpecFit                  *SpecFitRecord    `json:"spec_fit,omitempty"`
 	Comparison               *ComparisonResult `json:"comparison,omitempty"`
 	NoSteppingStoneRationale string            `json:"no_stepping_stone_rationale,omitempty"`
 }
@@ -623,15 +919,252 @@ type ParetoTradeoffNote struct {
 	Summary string `json:"summary"`
 }
 
+// ChoiceNextMove is the exact next action produced by a human choice.
+type ChoiceNextMove string
+
+const (
+	ChoiceNextMoveChooseNow        ChoiceNextMove = "choose_now"
+	ChoiceNextMoveRejectCurrentSet ChoiceNextMove = "reject_current_set"
+	ChoiceNextMoveProbeAgain       ChoiceNextMove = "probe_again"
+	ChoiceNextMoveReroute          ChoiceNextMove = "reroute"
+)
+
+// ValidChoiceNextMoveNames returns exact ChoiceResult next_move values.
+func ValidChoiceNextMoveNames() []string {
+	return []string{
+		string(ChoiceNextMoveChooseNow),
+		string(ChoiceNextMoveRejectCurrentSet),
+		string(ChoiceNextMoveProbeAgain),
+		string(ChoiceNextMoveReroute),
+	}
+}
+
+// ChoiceResult records the human-side choice outcome. ComparisonResult may
+// recommend; it does not create this object.
+type ChoiceResult struct {
+	SubjectRef      string         `json:"subject_ref"`
+	OptionSet       []string       `json:"option_set,omitempty"`
+	ComparisonBasis []string       `json:"comparison_basis,omitempty"`
+	ChoiceRule      string         `json:"choice_rule,omitempty"`
+	NextMove        ChoiceNextMove `json:"next_move"`
+	VariantRef      string         `json:"variant_ref,omitempty"`
+	ProblemRefs     []string       `json:"problem_refs,omitempty"`
+	PortfolioRef    string         `json:"portfolio_ref,omitempty"`
+	Reason          string         `json:"reason,omitempty"`
+	Reversibility   string         `json:"reversibility,omitempty"`
+	ReopenCondition string         `json:"reopen_condition,omitempty"`
+}
+
+const TransformationRecordSchemaVersion = 1
+
+// TransformationRecord describes the target object-state transformation only.
+// Method, work authorization, evidence, and publication remain separate
+// record families.
+type TransformationRecord struct {
+	SchemaVersion     int      `json:"schema_version"`
+	TransformedEntity string   `json:"transformed_entity"`
+	InitialState      string   `json:"initial_state"`
+	PostState         string   `json:"post_state"`
+	Relation          string   `json:"relation"`
+	Context           string   `json:"context"`
+	Window            string   `json:"window,omitempty"`
+	MethodRefs        []string `json:"method_refs,omitempty"`
+	WorkRefs          []string `json:"work_refs,omitempty"`
+	EvidenceRefs      []string `json:"evidence_refs,omitempty"`
+	PublicationRefs   []string `json:"publication_refs,omitempty"`
+}
+
+func NormalizeTransformationRecord(record *TransformationRecord) *TransformationRecord {
+	if record == nil {
+		return nil
+	}
+
+	normalized := &TransformationRecord{
+		SchemaVersion:     record.SchemaVersion,
+		TransformedEntity: strings.TrimSpace(record.TransformedEntity),
+		InitialState:      strings.TrimSpace(record.InitialState),
+		PostState:         strings.TrimSpace(record.PostState),
+		Relation:          strings.TrimSpace(record.Relation),
+		Context:           strings.TrimSpace(record.Context),
+		Window:            strings.TrimSpace(record.Window),
+		MethodRefs:        compactStrings(record.MethodRefs),
+		WorkRefs:          compactStrings(record.WorkRefs),
+		EvidenceRefs:      compactStrings(record.EvidenceRefs),
+		PublicationRefs:   compactStrings(record.PublicationRefs),
+	}
+	if normalized.SchemaVersion == 0 {
+		normalized.SchemaVersion = TransformationRecordSchemaVersion
+	}
+
+	return normalized
+}
+
+func ValidateTransformationRecord(record *TransformationRecord) error {
+	normalized := NormalizeTransformationRecord(record)
+	if normalized == nil {
+		return nil
+	}
+
+	if normalized.SchemaVersion != TransformationRecordSchemaVersion {
+		return fmt.Errorf("transformation_record.schema_version %d is unsupported; expected %d",
+			normalized.SchemaVersion,
+			TransformationRecordSchemaVersion)
+	}
+
+	missing := []string{}
+	if normalized.TransformedEntity == "" {
+		missing = append(missing, "transformed_entity")
+	}
+	if normalized.InitialState == "" {
+		missing = append(missing, "initial_state")
+	}
+	if normalized.PostState == "" {
+		missing = append(missing, "post_state")
+	}
+	if normalized.Relation == "" {
+		missing = append(missing, "relation")
+	}
+	if normalized.Context == "" {
+		missing = append(missing, "context")
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("transformation_record missing required field(s): %s", strings.Join(missing, ", "))
+	}
+
+	return nil
+}
+
+// NormalizeChoiceResult trims a choice without inventing one from legacy data.
+func NormalizeChoiceResult(choice *ChoiceResult) *ChoiceResult {
+	if choice == nil {
+		return nil
+	}
+
+	normalized := &ChoiceResult{
+		SubjectRef:      strings.TrimSpace(choice.SubjectRef),
+		OptionSet:       compactStrings(choice.OptionSet),
+		ComparisonBasis: compactStrings(choice.ComparisonBasis),
+		ChoiceRule:      strings.TrimSpace(choice.ChoiceRule),
+		NextMove:        ChoiceNextMove(strings.TrimSpace(string(choice.NextMove))),
+		VariantRef:      strings.TrimSpace(choice.VariantRef),
+		ProblemRefs:     compactStrings(choice.ProblemRefs),
+		PortfolioRef:    strings.TrimSpace(choice.PortfolioRef),
+		Reason:          strings.TrimSpace(choice.Reason),
+		Reversibility:   strings.TrimSpace(choice.Reversibility),
+		ReopenCondition: strings.TrimSpace(choice.ReopenCondition),
+	}
+
+	return normalized
+}
+
+// ValidateChoiceResult enforces exact choice next_move semantics.
+func ValidateChoiceResult(choice *ChoiceResult) error {
+	normalized := NormalizeChoiceResult(choice)
+	if normalized == nil {
+		return nil
+	}
+
+	if normalized.SubjectRef == "" {
+		return fmt.Errorf("choice_result.subject_ref is required — subject is the chooser-bearing human/team/system, not the decision question text")
+	}
+	if !isValidChoiceNextMove(normalized.NextMove) {
+		return fmt.Errorf("choice_result.next_move %q is invalid; expected one of: %s",
+			normalized.NextMove,
+			strings.Join(ValidChoiceNextMoveNames(), ", "))
+	}
+	if normalized.NextMove == ChoiceNextMoveChooseNow && normalized.VariantRef == "" {
+		return fmt.Errorf("choice_result.variant_ref is required when next_move=choose_now")
+	}
+	if len(normalized.OptionSet) > 0 && normalized.VariantRef != "" && !stringInSlice(normalized.OptionSet, normalized.VariantRef) {
+		return fmt.Errorf("choice_result.variant_ref %q is outside choice_result.option_set", normalized.VariantRef)
+	}
+
+	return nil
+}
+
+type DecisionChoiceResultInput struct {
+	ProblemRefs     []string
+	PortfolioRef    string
+	SelectedTitle   string
+	WhySelected     string
+	WhyNotOthers    []RejectionReason
+	SelectionPolicy string
+	ReopenCondition string
+}
+
+// NewDecisionChoiceResult creates the exact choice emitted by explicit h-decide.
+func NewDecisionChoiceResult(input DecisionChoiceResultInput) *ChoiceResult {
+	choice := &ChoiceResult{
+		SubjectRef:      "operator",
+		OptionSet:       decisionChoiceOptionSet(input),
+		ComparisonBasis: decisionChoiceComparisonBasis(input),
+		ChoiceRule:      strings.TrimSpace(input.SelectionPolicy),
+		NextMove:        ChoiceNextMoveChooseNow,
+		VariantRef:      strings.TrimSpace(input.SelectedTitle),
+		ProblemRefs:     compactStrings(input.ProblemRefs),
+		PortfolioRef:    strings.TrimSpace(input.PortfolioRef),
+		Reason:          strings.TrimSpace(input.WhySelected),
+		ReopenCondition: strings.TrimSpace(input.ReopenCondition),
+	}
+
+	return choice
+}
+
+func decisionChoiceOptionSet(input DecisionChoiceResultInput) []string {
+	options := []string{input.SelectedTitle}
+	for _, rejected := range input.WhyNotOthers {
+		options = append(options, rejected.Variant)
+	}
+
+	return compactStrings(options)
+}
+
+func decisionChoiceComparisonBasis(input DecisionChoiceResultInput) []string {
+	basis := []string{}
+	if input.WhySelected != "" {
+		basis = append(basis, fmt.Sprintf("selected %s: %s", input.SelectedTitle, input.WhySelected))
+	}
+	for _, rejected := range input.WhyNotOthers {
+		if rejected.Variant == "" || rejected.Reason == "" {
+			continue
+		}
+		basis = append(basis, fmt.Sprintf("rejected %s: %s", rejected.Variant, rejected.Reason))
+	}
+
+	return compactStrings(basis)
+}
+
+func stringInSlice(values []string, want string) bool {
+	for _, value := range values {
+		if value == want {
+			return true
+		}
+	}
+
+	return false
+}
+
+func isValidChoiceNextMove(nextMove ChoiceNextMove) bool {
+	for _, valid := range ValidChoiceNextMoveNames() {
+		if string(nextMove) == valid {
+			return true
+		}
+	}
+
+	return false
+}
+
 // ComparisonResult holds the outcome of comparing variants.
 type ComparisonResult struct {
 	Dimensions              []string                      `json:"dimensions"`
 	Scores                  map[string]map[string]string  `json:"scores"` // variant_id -> dimension -> value
 	NonDominatedSet         []string                      `json:"non_dominated_set"`
+	VariantSpecFit          []SpecFitVariantRecord        `json:"variant_spec_fit,omitempty"`
 	Incomparable            [][]string                    `json:"incomparable,omitempty"`
 	DominatedVariants       []DominatedVariantExplanation `json:"dominated_variants,omitempty"`
 	ParetoTradeoffs         []ParetoTradeoffNote          `json:"pareto_tradeoffs,omitempty"`
 	PolicyApplied           string                        `json:"policy_applied,omitempty"`
+	LegacyRecommendationRef string                        `json:"legacy_recommendation_ref,omitempty"`
 	SelectedRef             string                        `json:"selected_ref,omitempty"`
 	RecommendationRationale string                        `json:"recommendation_rationale,omitempty"`
 	ParityPlan              *ParityPlan                   `json:"parity_plan,omitempty"`
@@ -648,20 +1181,48 @@ const (
 	ClaimStatusInconclusive ClaimStatus = "inconclusive"
 )
 
+// ClaimLifecycleStatus is the governance lifecycle of a decision claim. Empty
+// legacy values read as active through EffectiveClaimLifecycleStatus.
+type ClaimLifecycleStatus string
+
+const (
+	ClaimLifecycleActive     ClaimLifecycleStatus = "active"
+	ClaimLifecycleRefreshDue ClaimLifecycleStatus = "refresh_due"
+	ClaimLifecycleSuperseded ClaimLifecycleStatus = "superseded"
+	ClaimLifecycleDeprecated ClaimLifecycleStatus = "deprecated"
+)
+
 // DecisionClaim is the canonical stored runtime state for one decision claim.
 type DecisionClaim struct {
-	ID            string               `json:"id"`
-	Claim         string               `json:"claim"`
-	Observable    string               `json:"observable"`
-	Threshold     string               `json:"threshold"`
-	Status        ClaimStatus          `json:"status,omitempty"`
-	VerifyAfter   string               `json:"verify_after,omitempty"`  // RFC3339 or YYYY-MM-DD — when async evidence should be gathered
-	Realizability RealizabilityVerdict `json:"realizability,omitempty"` // C.28 CounterfactualSamplingRealizabilityProfile verdict
+	ID                   string               `json:"id"`
+	Claim                string               `json:"claim"`
+	Observable           string               `json:"observable"`
+	Threshold            string               `json:"threshold"`
+	Status               ClaimStatus          `json:"status,omitempty"`
+	LifecycleStatus      ClaimLifecycleStatus `json:"lifecycle_status,omitempty"`
+	SuccessorRef         string               `json:"successor_ref,omitempty"`
+	RetiredReason        string               `json:"retired_reason,omitempty"`
+	GovernanceTargetRefs []string             `json:"governance_target_refs,omitempty"`
+	VerifyAfter          string               `json:"verify_after,omitempty"`  // RFC3339 or YYYY-MM-DD — when async evidence should be gathered
+	Realizability        RealizabilityVerdict `json:"realizability,omitempty"` // C.28 CounterfactualSamplingRealizabilityProfile verdict
 	// Probability is the optional elicited p(this claim holds) in [0,1], a noisy
 	// forecast captured at /h-decide time. Paired with the verified Status
 	// (supported→1 / refuted→0) it forms a Forecast for decomposed-Brier
 	// calibration (dec-20260603-c3c7fa88). Additive: nil means no forecast.
 	Probability *float64 `json:"probability,omitempty"`
+	// Command is the optional machine-checkable form of Observable: an
+	// allowlist-class command (go test/build/vet, grep/rg) the maintenance
+	// loop may execute out-of-band (dec-20260611-overseer-maintenance-executor).
+	// Empty means the observable needs judgment. Additive.
+	Command string `json:"command,omitempty"`
+}
+
+type ClaimLifecycleSummary struct {
+	Active               int      `json:"active"`
+	RefreshDue           int      `json:"refresh_due"`
+	Superseded           int      `json:"superseded"`
+	Deprecated           int      `json:"deprecated"`
+	GovernanceTargetRefs []string `json:"governance_target_refs,omitempty"`
 }
 
 // DecisionPrediction is a compatibility projection of a stored decision claim.
@@ -673,6 +1234,7 @@ type DecisionPrediction struct {
 	VerifyAfter   string               `json:"verify_after,omitempty"`
 	Realizability RealizabilityVerdict `json:"realizability,omitempty"`
 	Probability   *float64             `json:"probability,omitempty"`
+	Command       string               `json:"command,omitempty"`
 }
 
 // EvidenceItem represents a single piece of evidence.
@@ -683,11 +1245,19 @@ type EvidenceItem struct {
 	Verdict            string                     `json:"verdict,omitempty"` // supports, weakens, refutes
 	CarrierRef         string                     `json:"carrier_ref,omitempty"`
 	CongruenceLevel    int                        `json:"congruence_level,omitempty"` // 0-3
-	FormalityLevel     int                        `json:"formality_level,omitempty"`  // F0-F3 (legacy 0-9 normalized on read)
+	FormalityLevel     int                        `json:"formality_level,omitempty"`  // F0-F9; legacy F0-F3 remains readable
+	FormalityScale     *reff.FormalityScale       `json:"formality_scale,omitempty"`
+	FormalityBridge    *reff.FormalityBridge      `json:"formality_bridge,omitempty"`
 	ClaimRefs          []string                   `json:"claim_refs,omitempty"`
 	ClaimScope         []string                   `json:"claim_scope,omitempty"`
 	ValidUntil         string                     `json:"valid_until,omitempty"`
 	CausalSupportBasis CausalEvidenceSupportBasis `json:"causal_support_basis,omitempty"` // C.28 basis for causal-use claim support
+	// Provenance distinguishes who collected this evidence: "" (human/agent in
+	// session), "machine" (maintenance loop ran an allowlisted observable), or
+	// "llm-review" (overseer reviewer proposal). Machine evidence must always
+	// be distinguishable from human-reviewed evidence (invariant of
+	// dec-20260611-overseer-maintenance-executor). Additive.
+	Provenance string `json:"provenance,omitempty"`
 }
 
 // WriteWarning is returned when the operation succeeded but with non-fatal warnings.
@@ -709,12 +1279,52 @@ type AffectedFile struct {
 // AffectedSymbol captures a symbol-level baseline snapshot.
 // Used for tree-sitter powered drift detection at function/type granularity.
 type AffectedSymbol struct {
-	FilePath   string `json:"file_path"`
-	SymbolName string `json:"symbol_name"`
-	SymbolKind string `json:"symbol_kind"` // func, type, class, interface, method
-	Line       int    `json:"line"`
-	EndLine    int    `json:"end_line"`
-	Hash       string `json:"hash"` // SHA256 of symbol source
+	AnchorID      string `json:"anchor_id,omitempty"`
+	AnchorVersion int    `json:"anchor_version,omitempty"`
+	FilePath      string `json:"file_path"`
+	Language      string `json:"language,omitempty"`
+	SymbolName    string `json:"symbol_name"`
+	SymbolKind    string `json:"symbol_kind"` // func, type, class, interface, method
+	Receiver      string `json:"receiver,omitempty"`
+	QualifiedName string `json:"qualified_name,omitempty"`
+	SignatureHash string `json:"signature_hash,omitempty"`
+	Line          int    `json:"line"`
+	EndLine       int    `json:"end_line"`
+	Hash          string `json:"hash"` // SHA256 of symbol source
+}
+
+const (
+	SymbolBindingActive                 = "active"
+	SymbolBindingNeedsBindingResolution = "needs_binding_resolution"
+)
+
+// SymbolBinding is the authority-bearing governance link to a durable code
+// declaration. affected_symbols remains its backward-compatible projection.
+type SymbolBinding struct {
+	ArtifactID       string `json:"artifact_id"`
+	AnchorID         string `json:"anchor_id"`
+	AnchorVersion    int    `json:"anchor_version"`
+	FilePath         string `json:"file_path"`
+	Language         string `json:"language"`
+	SymbolName       string `json:"symbol_name"`
+	SymbolKind       string `json:"symbol_kind"`
+	Receiver         string `json:"receiver,omitempty"`
+	QualifiedName    string `json:"qualified_name"`
+	SignatureHash    string `json:"signature_hash"`
+	Line             int    `json:"line"`
+	EndLine          int    `json:"end_line"`
+	BodyHash         string `json:"body_hash"`
+	Status           string `json:"status"`
+	ResolutionSource string `json:"resolution_source,omitempty"`
+}
+
+// SymbolRebind records an anchor transition without overwriting its history.
+type SymbolRebind struct {
+	ArtifactID       string `json:"artifact_id"`
+	PreviousAnchorID string `json:"previous_anchor_id"`
+	CurrentAnchorID  string `json:"current_anchor_id"`
+	Reason           string `json:"reason"`
+	CreatedAt        string `json:"created_at"`
 }
 
 // DriftStatus represents the state of a file relative to its baseline.
@@ -728,13 +1338,48 @@ const (
 	DriftNoBaseline DriftStatus = "no_baseline"
 )
 
+// DriftMateriality names the semantic posture of a drift item. It is additive
+// presentation metadata: legacy consumers can ignore it and keep reading status.
+type DriftMateriality string
+
+const (
+	DriftMaterialityMaterialSymbol         DriftMateriality = "material_symbol"
+	DriftMaterialityMaterialSemanticTarget DriftMateriality = "material_semantic_target"
+	DriftMaterialityAdjacentFileChurn      DriftMateriality = "adjacent_file_churn"
+	DriftMaterialityCarrierOnly            DriftMateriality = "carrier_only"
+	DriftMaterialityGeneratedOrIgnored     DriftMateriality = "generated_or_ignored"
+	DriftMaterialityUnknownLegacyFileScope DriftMateriality = "unknown_legacy_file_scope"
+	DriftMaterialityNeedsBindingResolution DriftMateriality = "needs_binding_resolution"
+)
+
+// DriftTriggerKind describes the mechanical trigger that made the item appear.
+type DriftTriggerKind string
+
+const (
+	DriftTriggerFileHash        DriftTriggerKind = "file_hash"
+	DriftTriggerMissingFile     DriftTriggerKind = "missing_file"
+	DriftTriggerMissingBaseline DriftTriggerKind = "missing_baseline"
+	DriftTriggerScopeManifest   DriftTriggerKind = "scope_manifest"
+)
+
 // DriftItem describes drift for a single file.
 type DriftItem struct {
-	Path         string            `json:"path"`
-	Status       DriftStatus       `json:"status"`
-	LinesChanged string            `json:"lines_changed,omitempty"` // e.g., "+8 -2"
-	Invariants   []string          `json:"invariants,omitempty"`
-	Symbols      []SymbolDriftItem `json:"symbols,omitempty"` // symbol-level breakdown for a modified file
+	Path             string            `json:"path"`
+	Status           DriftStatus       `json:"status"`
+	LinesChanged     string            `json:"lines_changed,omitempty"` // e.g., "+8 -2"
+	Invariants       []string          `json:"invariants,omitempty"`
+	ClaimRefs        []string          `json:"claim_refs,omitempty"`
+	EvidenceRefs     []string          `json:"evidence_refs,omitempty"`
+	Symbols          []SymbolDriftItem `json:"symbols,omitempty"` // symbol-level breakdown for a modified file
+	Materiality      DriftMateriality  `json:"materiality,omitempty"`
+	TriggerKind      DriftTriggerKind  `json:"trigger_kind,omitempty"`
+	ChangedTargetRef string            `json:"changed_target_ref,omitempty"`
+	TargetKind       string            `json:"target_kind,omitempty"`
+	TargetStatus     string            `json:"target_status,omitempty"`
+	FallbackKind     string            `json:"fallback_kind,omitempty"`
+	FallbackReason   string            `json:"fallback_reason,omitempty"`
+	AuditOnly        bool              `json:"audit_only,omitempty"`
+	SuppressedReason string            `json:"suppressed_reason,omitempty"`
 }
 
 // SymbolDriftItem is the per-symbol change inside a modified governed file.
@@ -742,19 +1387,88 @@ type DriftItem struct {
 // a file whose only symbol drift is "added" is structurally additive; any
 // "modified" or "removed" symbol means a governed body changed.
 type SymbolDriftItem struct {
-	SymbolName string `json:"symbol_name"`
-	SymbolKind string `json:"symbol_kind"` // func, type, class, interface, method
-	Status     string `json:"status"`      // "added", "modified", "removed"
+	SymbolName   string   `json:"symbol_name"`
+	SymbolKind   string   `json:"symbol_kind"` // func, type, class, interface, method
+	Status       string   `json:"status"`      // "added", "modified", "removed"
+	ClaimRefs    []string `json:"claim_refs,omitempty"`
+	EvidenceRefs []string `json:"evidence_refs,omitempty"`
 }
 
 // DriftReport describes drift for a single decision.
 type DriftReport struct {
-	DecisionID        string         `json:"decision_id"`
-	DecisionTitle     string         `json:"decision_title"`
-	HasBaseline       bool           `json:"has_baseline"`
-	LikelyImplemented bool           `json:"likely_implemented,omitempty"` // no baseline but files changed in git since decision
-	Files             []DriftItem    `json:"files,omitempty"`
-	ImpactedModules   []ModuleImpact `json:"impacted_modules,omitempty"` // Level C: impact propagation
+	DecisionID        string           `json:"decision_id"`
+	DecisionTitle     string           `json:"decision_title"`
+	HasBaseline       bool             `json:"has_baseline"`
+	BaselineKind      BaselineKind     `json:"baseline_kind,omitempty"`
+	BaselineProfile   *BaselineProfile `json:"baseline_profile,omitempty"`
+	LikelyImplemented bool             `json:"likely_implemented,omitempty"` // no baseline but files changed in git since decision
+	Files             []DriftItem      `json:"files,omitempty"`
+	ImpactedModules   []ModuleImpact   `json:"impacted_modules,omitempty"` // Level C: impact propagation
+}
+
+// BaselineKind names the governance meaning of a baseline-like snapshot.
+// Decision drift hashes are reference data until supporting evidence makes a
+// verified-state projection honest; spec approval baselines live in
+// project/specflow.
+type BaselineKind string
+
+const (
+	BaselineKindUnknownLegacy         BaselineKind = "unknown_legacy_baseline"
+	BaselineKindPreWorkReference      BaselineKind = "pre_work_reference_snapshot"
+	BaselineKindObservedStateSnapshot BaselineKind = "observed_state_snapshot"
+	BaselineKindSpecSectionApproval   BaselineKind = "spec_section_approval_baseline"
+	BaselineKindVerifiedStateSnapshot BaselineKind = "verified_state_snapshot"
+)
+
+type BaselineProfile struct {
+	Kind              BaselineKind `json:"kind"`
+	Object            string       `json:"object"`
+	AuthorityBoundary string       `json:"authority_boundary"`
+	Diagnostic        string       `json:"diagnostic"`
+}
+
+func DecisionBaselineProfile(evidenceItems []EvidenceItem) BaselineProfile {
+	if hasVerifiedStateEvidence(evidenceItems) {
+		return VerifiedStateBaselineProfile()
+	}
+	return ObservedStateBaselineProfile()
+}
+
+func ObservedStateBaselineProfile() BaselineProfile {
+	return BaselineProfile{
+		Kind:              BaselineKindObservedStateSnapshot,
+		Object:            "ObservedStateSnapshot",
+		AuthorityBoundary: "drift_detection_reference_not_verification_or_approval",
+		Diagnostic:        "affected_files hashes are observed reference data for drift detection; they do not prove verification without supporting evidence",
+	}
+}
+
+func VerifiedStateBaselineProfile() BaselineProfile {
+	return BaselineProfile{
+		Kind:              BaselineKindVerifiedStateSnapshot,
+		Object:            "VerifiedStateSnapshot",
+		AuthorityBoundary: "drift_detection_snapshot_not_spec_approval_or_pre_work_reference",
+		Diagnostic:        "affected_files hashes have supporting evidence and are projected as verified-state snapshots for decision drift detection",
+	}
+}
+
+func hasVerifiedStateEvidence(items []EvidenceItem) bool {
+	for _, item := range items {
+		verdict := strings.ToLower(strings.TrimSpace(item.Verdict))
+		if verdict != "supports" && verdict != "accepted" {
+			continue
+		}
+		evidenceType := strings.ToLower(strings.TrimSpace(item.Type))
+		switch evidenceType {
+		case "verification", "measurement", "audit", "test", "focused_regression_tests", "focused_tests_and_public_behavior_check":
+			return true
+		}
+		content := strings.ToLower(item.Content)
+		if strings.Contains(content, "verification pass") || strings.Contains(content, "go test") || strings.Contains(content, "passed") {
+			return true
+		}
+	}
+	return false
 }
 
 // Symbol-level triage verdicts for a drift report. These partition session-start
@@ -783,10 +1497,25 @@ func (r DriftReport) SymbolVerdict() string {
 	sawAdditive := false
 	needsReview := false
 	for _, f := range r.Files {
+		materiality := f.EffectiveMateriality()
 		switch f.Status {
 		case DriftMissing:
+			if materiality == DriftMaterialityUnknownLegacyFileScope {
+				needsReview = true
+				continue
+			}
 			return SymbolVerdictGovernedModified
 		case DriftModified:
+			switch materiality {
+			case DriftMaterialityMaterialSymbol, DriftMaterialityMaterialSemanticTarget:
+				return SymbolVerdictGovernedModified
+			case DriftMaterialityAdjacentFileChurn, DriftMaterialityCarrierOnly, DriftMaterialityGeneratedOrIgnored:
+				sawAdditive = true
+				continue
+			case DriftMaterialityUnknownLegacyFileScope, DriftMaterialityNeedsBindingResolution:
+				needsReview = true
+				continue
+			}
 			if len(f.Symbols) == 0 {
 				// File changed but no symbol evidence: extraction unavailable
 				// or the change sits outside any tracked symbol body. Cannot
@@ -801,6 +1530,10 @@ func (r DriftReport) SymbolVerdict() string {
 			}
 			sawAdditive = true
 		case DriftAdded:
+			if materiality == DriftMaterialityUnknownLegacyFileScope || materiality == DriftMaterialityNeedsBindingResolution {
+				needsReview = true
+				continue
+			}
 			sawAdditive = true
 		case DriftNoBaseline:
 			needsReview = true
@@ -815,10 +1548,75 @@ func (r DriftReport) SymbolVerdict() string {
 	return SymbolVerdictNeedsReview
 }
 
+func (f DriftItem) EffectiveMateriality() DriftMateriality {
+	if f.Materiality != "" {
+		return f.Materiality
+	}
+	switch f.Status {
+	case DriftMissing:
+		return DriftMaterialityMaterialSymbol
+	case DriftNoBaseline:
+		return DriftMaterialityUnknownLegacyFileScope
+	case DriftAdded:
+		return DriftMaterialityAdjacentFileChurn
+	case DriftModified:
+		if len(f.Symbols) == 0 {
+			return DriftMaterialityUnknownLegacyFileScope
+		}
+		for _, symbol := range f.Symbols {
+			if symbol.Status != "added" {
+				return DriftMaterialityMaterialSymbol
+			}
+		}
+		return DriftMaterialityAdjacentFileChurn
+	default:
+		return ""
+	}
+}
+
+func (r DriftReport) EffectiveMateriality() DriftMateriality {
+	sawUnknown := false
+	sawNeedsResolution := false
+	sawAdjacent := false
+	sawCarrier := false
+	sawGenerated := false
+	for _, file := range r.Files {
+		switch file.EffectiveMateriality() {
+		case DriftMaterialityMaterialSymbol, DriftMaterialityMaterialSemanticTarget:
+			return file.EffectiveMateriality()
+		case DriftMaterialityUnknownLegacyFileScope:
+			sawUnknown = true
+		case DriftMaterialityNeedsBindingResolution:
+			sawNeedsResolution = true
+		case DriftMaterialityAdjacentFileChurn:
+			sawAdjacent = true
+		case DriftMaterialityCarrierOnly:
+			sawCarrier = true
+		case DriftMaterialityGeneratedOrIgnored:
+			sawGenerated = true
+		}
+	}
+	switch {
+	case sawNeedsResolution:
+		return DriftMaterialityNeedsBindingResolution
+	case sawUnknown:
+		return DriftMaterialityUnknownLegacyFileScope
+	case sawAdjacent:
+		return DriftMaterialityAdjacentFileChurn
+	case sawCarrier:
+		return DriftMaterialityCarrierOnly
+	case sawGenerated:
+		return DriftMaterialityGeneratedOrIgnored
+	default:
+		return ""
+	}
+}
+
 // ModuleImpact describes a dependent module affected by drift propagation.
 type ModuleImpact struct {
-	ModuleID    string   `json:"module_id"`
-	ModulePath  string   `json:"module_path"`
-	DecisionIDs []string `json:"decision_ids,omitempty"` // decisions governing this module
-	IsBlind     bool     `json:"is_blind"`               // no decisions = unmonitored impact
+	ModuleID       string            `json:"module_id"`
+	ModulePath     string            `json:"module_path"`
+	DecisionIDs    []string          `json:"decision_ids,omitempty"`    // decisions governing this module
+	DecisionTitles map[string]string `json:"decision_titles,omitempty"` // decision ID -> title, presentation support
+	IsBlind        bool              `json:"is_blind"`                  // no decisions = unmonitored impact
 }

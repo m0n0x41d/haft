@@ -18,6 +18,33 @@ const (
 	Callers                  // inbound: what calls the seed
 )
 
+// ParseTraversalProfile validates the public query value. Empty preserves the
+// compatibility default; unknown values are rejected by the query boundary.
+func ParseTraversalProfile(raw string) (TraversalProfile, bool) {
+	if raw == "" {
+		return TraversalCallFlow, true
+	}
+	profiles := map[string]TraversalProfile{
+		string(TraversalCallFlow):        TraversalCallFlow,
+		string(TraversalTypeImpact):      TraversalTypeImpact,
+		string(TraversalReferenceImpact): TraversalReferenceImpact,
+		string(TraversalAllCode):         TraversalAllCode,
+	}
+	profile, ok := profiles[raw]
+	return profile, ok
+}
+
+// TraversalProfile names a semantic relation family. Traversal never mixes
+// call flow with type hierarchy merely because both happen to be code edges.
+type TraversalProfile string
+
+const (
+	TraversalCallFlow        TraversalProfile = "call_flow"
+	TraversalTypeImpact      TraversalProfile = "type_impact"
+	TraversalReferenceImpact TraversalProfile = "reference_impact"
+	TraversalAllCode         TraversalProfile = "all_code"
+)
+
 // Traversal caps. The hard ceiling on depth is the safety net against runaway
 // walks; the defaults keep responses small and fast (the latency objective).
 const (
@@ -46,6 +73,20 @@ type Hop struct {
 // Depth is clamped to [1, MaxDepthCeiling] (default DefaultDepth), results to
 // MaxResults; a visited-set prevents cycles. Pure relative to the EdgeSource.
 func Traverse(ctx context.Context, src EdgeSource, seedID string, dir Direction, maxDepth, limit int) ([]Hop, error) {
+	return TraverseWithProfile(ctx, src, seedID, dir, maxDepth, limit, TraversalCallFlow)
+}
+
+// TraverseWithProfile performs a bounded BFS over exactly one semantic edge
+// family. Unknown profiles admit no edges instead of silently widening scope.
+func TraverseWithProfile(
+	ctx context.Context,
+	src EdgeSource,
+	seedID string,
+	dir Direction,
+	maxDepth int,
+	limit int,
+	profile TraversalProfile,
+) ([]Hop, error) {
 	if maxDepth <= 0 {
 		maxDepth = DefaultDepth
 	}
@@ -79,6 +120,9 @@ func Traverse(ctx context.Context, src EdgeSource, seedID string, dir Direction,
 		}
 
 		for _, e := range edges {
+			if !edgeAllowed(profile, e.Kind) {
+				continue
+			}
 			next := e.DstID
 			if dir == Callers {
 				next = e.SrcID
@@ -96,4 +140,30 @@ func Traverse(ctx context.Context, src EdgeSource, seedID string, dir Direction,
 		}
 	}
 	return out, nil
+}
+
+func edgeAllowed(profile TraversalProfile, kind codebase.EdgeKind) bool {
+	allowed := map[TraversalProfile]map[codebase.EdgeKind]struct{}{
+		TraversalCallFlow: {
+			codebase.EdgeCall:              {},
+			codebase.EdgeInterfaceDispatch: {},
+			codebase.EdgeCallback:          {},
+		},
+		TraversalTypeImpact: {
+			codebase.EdgeImplements: {},
+			codebase.EdgeExtends:    {},
+			codebase.EdgeEmbeds:     {},
+		},
+		TraversalReferenceImpact: {
+			codebase.EdgeInstantiates:   {},
+			codebase.EdgeValueReference: {},
+			codebase.EdgeTypeReference:  {},
+			codebase.EdgeTemplateUse:    {},
+		},
+	}
+	if profile == TraversalAllCode {
+		return true
+	}
+	_, ok := allowed[profile][kind]
+	return ok
 }

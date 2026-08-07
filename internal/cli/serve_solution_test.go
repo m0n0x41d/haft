@@ -9,6 +9,8 @@ import (
 )
 
 func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -22,7 +24,7 @@ func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.
 		t.Fatal(err)
 	}
 
-	_, err = handleQuintProblem(ctx, store, haftDir, map[string]any{
+	_, _, err = handleQuintProblemWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":      "characterize",
 		"problem_ref": problem.Meta.ID,
 		"dimensions": []any{
@@ -52,11 +54,13 @@ func TestHandleQuintProblem_CharacterizePersistsStructuredParityPlan(t *testing.
 }
 
 func TestHandleQuintProblem_FramePersistsProblemType(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 
-	result, err := handleQuintProblem(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintProblemWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":       "frame",
 		"title":        "Search for a transport",
 		"problem_type": "search",
@@ -87,12 +91,14 @@ func TestHandleQuintProblem_FramePersistsProblemType(t *testing.T) {
 }
 
 func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
 
-	result, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":        "compare",
 		"portfolio_ref": portfolio.Meta.ID,
 		"dimensions":    []any{"latency"},
@@ -123,13 +129,64 @@ func TestHandleQuintSolution_CompareSurfacesMissingParityPlanWarning(t *testing.
 	}
 }
 
+func TestHandleQuintSolution_CompareAcceptsLegacyRecommendationRef(t *testing.T) {
+	t.Parallel()
+
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
+
+	_, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
+		"action":        "compare",
+		"portfolio_ref": portfolio.Meta.ID,
+		"dimensions":    []any{"latency"},
+		"scores": map[string]any{
+			"REST": map[string]any{"latency": "42ms"},
+			"gRPC": map[string]any{"latency": "18ms"},
+		},
+		"non_dominated_set": []any{"gRPC"},
+		"dominated_variants": []map[string]any{{
+			"variant":      "REST",
+			"dominated_by": []string{"gRPC"},
+			"summary":      "Higher latency with no compensating benefit in this comparison.",
+		}},
+		"pareto_tradeoffs": []map[string]any{{
+			"variant": "gRPC",
+			"summary": "Lowest latency result among the compared variants.",
+		}},
+		"legacy_recommendation_ref": "gRPC",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	reloaded, err := store.Get(ctx, portfolio.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	comparison := reloaded.UnmarshalPortfolioFields().Comparison
+	if comparison == nil {
+		t.Fatal("expected persisted comparison")
+	}
+	if comparison.LegacyRecommendationRef != "V2" {
+		t.Fatalf("legacy_recommendation_ref = %q, want V2", comparison.LegacyRecommendationRef)
+	}
+	if comparison.SelectedRef != "V2" {
+		t.Fatalf("selected_ref compatibility alias = %q, want V2", comparison.SelectedRef)
+	}
+}
+
 func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
 	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "deep")
 
-	result, err := handleQuintSolution(ctx, store, haftDir, map[string]any{
+	result, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
 		"action":        "compare",
 		"portfolio_ref": portfolio.Meta.ID,
 		"dimensions":    []any{"latency"},
@@ -158,6 +215,35 @@ func TestHandleQuintSolution_CompareSurfacesUnstructuredParityPlanWarning(t *tes
 	}
 	if !strings.Contains(result, "received an unstructured parity_plan") {
 		t.Fatalf("expected unstructured parity-plan warning, got %s", result)
+	}
+}
+
+func TestHandleQuintSolution_CompareRejectsDimensionFirstScoresWithShapeHint(t *testing.T) {
+	t.Parallel()
+
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	portfolio := mustExploreServeComparePortfolio(t, ctx, store, haftDir, "")
+
+	_, _, err := handleQuintSolutionWithCreatedRef(ctx, store, haftDir, map[string]any{
+		"action":        "compare",
+		"portfolio_ref": portfolio.Meta.ID,
+		"dimensions":    []any{"latency"},
+		"scores": map[string]any{
+			"latency": map[string]any{
+				"REST": "42ms",
+				"gRPC": "18ms",
+			},
+		},
+	})
+	if err == nil {
+		t.Fatal("expected dimension-first scores to fail")
+	}
+	for _, want := range []string{"scores shape", "variant_id -> dimension_name -> string score"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error missing %q: %v", want, err)
+		}
 	}
 }
 

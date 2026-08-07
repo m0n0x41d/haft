@@ -1,0 +1,338 @@
+{
+  "schema": "haft.p14.request-oracle-contract/v3",
+  "status": "prepared_not_executed",
+  "plan_ref": ".context/haft-v9-deterministic-closeout.plan.md",
+  "plan_span": "heading:## P14 — installed candidate and live host acceptance",
+  "checklist_ref": ".context/haft-v9-p14-live-rehearsal-checklist.md",
+  "release_claim": false,
+  "result_semantics": "This contract declares the complete P14 installed-runtime request and oracle families. It is a design-time execution input, not performed Work, a passing observation, release evidence, or authority.",
+  "exact_request_materialization": "post_p13_pending",
+  "binding_groups": [
+    "candidate_basis",
+    "p13_evidence",
+    "selected_project_basis",
+    "golden_memory_fixture",
+    "init_matrix",
+    "identifier_fixture",
+    "restart_checkpoint",
+    "live_mcp_process"
+  ],
+  "scenarios": [
+    {
+      "id": "runtime_identity",
+      "family": "runtime_identity",
+      "request_builder": "runtime.identity.v1",
+      "surfaces": ["installed_cli", "live_mcp", "host_process"],
+      "oracle_kind": "live_predicate",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "live_mcp_process"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/agenthostrestart::TestRuntimeVerificationRejectsEveryProcessAndCarrierIdentityMismatch",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14MCPProtocolDiscoveryRejectsAnyArrayAndFlatMemorySchema"
+      ]
+    },
+    {
+      "id": "fpf_query_projection",
+      "family": "fpf_query_projection",
+      "request_builder": "fpf.query-projection-matrix.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/fpf::TestWorkingProjectionRecursivelyExcludesInternalQueryFields",
+        "github.com/m0n0x41d/haft/internal/fpf::TestTraceProjectionDeduplicatesAndReconstructsCanonicalProvenance",
+        "github.com/m0n0x41d/haft/internal/fpf::TestDiagnosticProjectionAloneExposesRetrievalInternals",
+        "github.com/m0n0x41d/haft/internal/cli::TestSourceNativeFPFQueryIntegration"
+      ]
+    },
+    {
+      "id": "fresh_initialization",
+      "family": "fresh_initialization",
+      "request_builder": "init.profile-matrix.v1",
+      "surfaces": ["installed_cli"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "fixture_write",
+      "required_bindings": ["candidate_basis", "p13_evidence", "init_matrix"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/cli::TestTypedPublicCorePlanAndEffectInstallOnlyRequiredProfileCapabilities",
+        "github.com/m0n0x41d/haft/internal/cli::TestTypedPublicLegacyCommandCleanupRemovesExactFilesAndPreservesForeignEntries",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14InitLegacyCommandFixturesExerciseExistingSixCaseMatrix",
+        "github.com/m0n0x41d/haft/internal/cli::TestOnboardProfileMatrixRunsReviewThroughPublicApplyCommand"
+      ]
+    },
+    {
+      "id": "positive_typed_write",
+      "family": "positive_typed_write",
+      "request_builder": "memory.admit-valid.v2",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "fixture_semantic_write",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestProductionGoldenConcernBundleRecoversExactHaftSoftwareSystemMemory",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14HistoricalAdmissionDispositionSeparatesRuntimeFromSemantics",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14HistoricalMismatchDispositionsAreClosedAndComplete"
+      ]
+    },
+    {
+      "id": "invalid",
+      "family": "invalid",
+      "request_builder": "memory.validate-invalid.v2",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/typedmemory::TestDiagnosticSeparatesContradictionFromMissingBasis",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14HistoricalNegativeValidationFixturesExerciseClosedOracles"
+      ]
+    },
+    {
+      "id": "underdetermined",
+      "family": "underdetermined",
+      "request_builder": "memory.validate-underdetermined.v2",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/projectmemoryconstitution::TestEvaluateKeepsMissingRuntimeBasisUnderdetermined",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14HistoricalNegativeValidationFixturesExerciseClosedOracles"
+      ]
+    },
+    {
+      "id": "authority_rejection",
+      "family": "authority_rejection",
+      "request_builder": "memory.authority-rejection.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/typedmemory::TestExternalCodeCannotPutSchemaChangeInMemoryChangeSet"]
+    },
+    {
+      "id": "concurrency_idempotency",
+      "family": "concurrency_idempotency",
+      "request_builder": "memory.concurrent-replay.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "fixture_semantic_write",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/typedmemorystore::TestSQLiteAdapterTwoConnectionsCASOneExpectedRevisionZeroCommit",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14HistoricalAdmissionDispositionSeparatesRuntimeFromSemantics"
+      ]
+    },
+    {
+      "id": "existing_record_backfill",
+      "family": "existing_record_backfill",
+      "request_builder": "memory.existing-record-backfill.v1",
+      "surfaces": ["installed_cli"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "fixture_semantic_write",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/cli::TestMemoryBackfillDryRunThenApplyUsesSourceOwnedProjection",
+        "github.com/m0n0x41d/haft/internal/cli::TestMemoryBackfillInterfaceIsCLIOnlyAndNamesAuthorityBoundary",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14HistoricalBackfillPrettyJSONUsesDedicatedDocumentParser"
+      ]
+    },
+    {
+      "id": "legacy_read",
+      "family": "legacy_read",
+      "request_builder": "memory.legacy-read.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/projectmemory/legacyimport::TestImportPlanDoesNotFabricateTypedSemanticsOrAuthority",
+        "github.com/m0n0x41d/haft/internal/projectmemory/localpracticeruntime::TestCurrentClassificationAdaptsSealedHistoricalRecordDeliveryWithoutUsingMembershipJudgement",
+        "github.com/m0n0x41d/haft/internal/typedmemorystore::TestSealedHistoricalClassificationSourcesRemainEphemeralAndDeduplicated"
+      ]
+    },
+    {
+      "id": "exact_profile_neighborhood",
+      "family": "exact_profile_neighborhood",
+      "request_builder": "memory.neighborhood-exact-profile.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/projecttypeenvselectioneffect/sqlite::TestProductionGoldenConcernBundleRecoversExactHaftSoftwareSystemMemory"]
+    },
+    {
+      "id": "unknown_eoc",
+      "family": "unknown_eoc",
+      "request_builder": "memory.resolve-unknown.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/projectmemory::TestCurrentReadRuntimeKeepsUnknownEntityAndRecallAsSeparateAbstentions"]
+    },
+    {
+      "id": "known_eoc_recall",
+      "family": "known_eoc_recall",
+      "request_builder": "memory.recall-known.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/projectmemory/scopedrecall::TestLexicalRecallScopesBeforeRankingAcrossRussianText"]
+    },
+    {
+      "id": "facet_coverage",
+      "family": "facet_coverage",
+      "request_builder": "memory.neighborhood-facet-matrix.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/projectmemory/neighborhood::TestFacetCoverageKeepsFivePosturesDistinct"]
+    },
+    {
+      "id": "retry_required",
+      "family": "retry_required",
+      "request_builder": "memory.stale-basis-retry.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/projectmemory::TestCurrentReadRuntimeRejectsStaleProcessAcrossTypeEnvTransitionAndReusesRollbackSnapshot"]
+    },
+    {
+      "id": "read_affordance",
+      "family": "read_affordance",
+      "request_builder": "memory.read-affordance.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "golden_memory_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/projectmemory::TestMemoryReadOutputContractNamesClosedRuntimeFamilies"]
+    },
+    {
+      "id": "identifier_namespace",
+      "family": "identifier_namespace",
+      "request_builder": "query.node-artifact-rejection.v1",
+      "surfaces": ["live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "identifier_fixture"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/cli::TestNodeWrongNamespaceSurvivesV5MCPBoundary"]
+    },
+    {
+      "id": "spec_section_read_protocol",
+      "family": "spec_section_read_protocol",
+      "request_builder": "spec.lifecycle-exact-section-rejection.v1",
+      "surfaces": ["live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "live_mcp_process"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/cli::TestHandleHaftSpecSection_ProjectLifecycleRejectsExactSectionID"]
+    },
+    {
+      "id": "host_resume",
+      "family": "host_resume",
+      "request_builder": "host.supervised-resume.v1",
+      "surfaces": ["host_process"],
+      "oracle_kind": "live_predicate",
+      "expected_effect": "host_process_transition",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "restart_checkpoint", "live_mcp_process"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/agenthostrestart::TestSupervisorFallbackWakesExactThreadOnceAndClearsAfterResumeLease"]
+    },
+    {
+      "id": "loop_cleanup",
+      "family": "loop_cleanup",
+      "request_builder": "host.loop-cleanup.v1",
+      "surfaces": ["host_process"],
+      "oracle_kind": "live_predicate",
+      "expected_effect": "host_process_transition",
+      "required_bindings": ["candidate_basis", "p13_evidence", "restart_checkpoint"],
+      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/agenthostrestart::TestStoreAttemptHistoryRejectsVerifiedAAfterTerminalB"]
+    },
+    {
+      "id": "code_graph_exact_explore",
+      "family": "code_graph_exact_explore",
+      "request_builder": "code.explore-exact.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis"],
+    "local_oracle_tests": [
+      "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CodeExploreBuildersCloseInstalledAndLiveSurfaces",
+      "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CodeExploreNormalizerRejectsMissingModuleAndAdvisorySemantics",
+      "github.com/m0n0x41d/haft/internal/codebase::TestCodeGovernancePathResolutionAndCoverageMatrix"
+    ]
+    },
+    {
+      "id": "code_graph_concern_explore",
+      "family": "code_graph_concern_explore",
+      "request_builder": "code.explore-concern.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CodeExploreBuildersCloseInstalledAndLiveSurfaces",
+        "github.com/m0n0x41d/haft/internal/codeintel::TestPublishedExploreWorkingConcernIsBoundedAndScoreFree"
+      ]
+    },
+    {
+      "id": "code_graph_ambiguous_concern",
+      "family": "code_graph_ambiguous_concern",
+      "request_builder": "code.explore-ambiguous.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CodeExploreNormalizerRejectsMissingModuleAndAdvisorySemantics",
+        "github.com/m0n0x41d/haft/internal/codeintel::TestDiscoverConcernReturnsCandidatesWithoutSelectingIdentity"
+      ]
+    },
+    {
+      "id": "code_graph_coverage_diagnostic",
+      "family": "code_graph_coverage_diagnostic",
+      "request_builder": "code.explore-coverage-diagnostic.v1",
+      "surfaces": ["installed_cli", "live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "none",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CodeExploreBuildersCloseInstalledAndLiveSurfaces",
+        "github.com/m0n0x41d/haft/internal/codeintel::TestPublishedExploreTraceIsDeterministicAndDiagnosticIsExplicit"
+      ]
+    },
+    {
+      "id": "agent_code_graph_orientation",
+      "family": "agent_code_graph_orientation",
+      "request_builder": "agent.orientation-code-graph.v1",
+      "surfaces": ["host_process", "installed_cli", "live_mcp"],
+      "oracle_kind": "live_predicate",
+      "expected_effect": "host_process_observation",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "live_mcp_process"],
+    "local_oracle_tests": [
+      "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14AgentOrientationRequiresInstalledAndActualHostSurfaces",
+      "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14AgentOrientationNormalizerRequiresExplicitEntityRoundTrip",
+      "github.com/m0n0x41d/haft/internal/cli::TestHandleQuintQueryExploreExactKeepsSourceAndPathSemantics"
+    ]
+    },
+    {
+      "id": "agent_typed_memory_orientation",
+      "family": "agent_typed_memory_orientation",
+      "request_builder": "agent.orientation-typed-memory.v1",
+      "surfaces": ["host_process", "installed_cli", "live_mcp"],
+      "oracle_kind": "live_predicate",
+      "expected_effect": "host_process_observation_and_non_binding_entity_establishment",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "live_mcp_process"],
+    "local_oracle_tests": [
+      "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14AgentOrientationRequiresInstalledAndActualHostSurfaces",
+      "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14AgentOrientationNormalizerRequiresExplicitEntityRoundTrip",
+      "github.com/m0n0x41d/haft/internal/projectmemory::TestEntityEstablishedResponseCarriesVerbatimCanonicalEntityRef",
+      "github.com/m0n0x41d/haft/internal/projectmemory::TestMemoryReadOutputContractNamesClosedRuntimeFamilies"
+    ]
+    }
+  ]
+}

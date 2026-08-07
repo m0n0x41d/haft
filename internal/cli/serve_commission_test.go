@@ -10,9 +10,14 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/artifact"
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/testsupport/profileadmissionfixture"
 )
 
 func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -46,7 +51,7 @@ func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
 	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-cli-001",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -77,6 +82,8 @@ func TestHandleHaftCommission_CreateListAndClaim(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -119,6 +126,8 @@ func TestHandleHaftCommission_ShowReturnsOneCommission(t *testing.T) {
 }
 
 func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -133,7 +142,7 @@ func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-requeue-001",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -197,6 +206,8 @@ func TestHandleHaftCommission_RequeueClearsLeaseAndRecordsEvent(t *testing.T) {
 }
 
 func TestHandleHaftCommission_RequeueRejectsTerminalCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -225,6 +236,8 @@ func TestHandleHaftCommission_RequeueRejectsTerminalCommissions(t *testing.T) {
 }
 
 func TestHandleHaftCommission_RequeueRequiresReasonForRecoverableState(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -249,6 +262,8 @@ func TestHandleHaftCommission_RequeueRequiresReasonForRecoverableState(t *testin
 }
 
 func TestHandleHaftCommission_RequeueRejectsExpiredOpenCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -274,6 +289,8 @@ func TestHandleHaftCommission_RequeueRejectsExpiredOpenCommission(t *testing.T) 
 }
 
 func TestHandleHaftCommission_CancelRejectsTerminalCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -302,6 +319,8 @@ func TestHandleHaftCommission_CancelRejectsTerminalCommissions(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -395,6 +414,8 @@ func TestHandleHaftCommission_ListStaleAndCancel(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ListStaleIncludesBlockedAndRunningTooLong(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -466,6 +487,8 @@ func TestHandleHaftCommission_ListStaleIncludesBlockedAndRunningTooLong(t *testi
 }
 
 func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -499,7 +522,7 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -508,7 +531,7 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	})
@@ -519,7 +542,7 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 	result, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "phase_blocked",
 		"verdict":       "blocked",
 		"reason":        "semantic gate failed",
@@ -556,6 +579,8 @@ func TestHandleHaftCommission_CompleteOrBlockMarksCommissionBlocked(t *testing.T
 }
 
 func TestHandleHaftCommission_CompleteOrBlockRecordsProjectionDebtForExternalRequired(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -573,7 +598,7 @@ func TestHandleHaftCommission_CompleteOrBlockRecordsProjectionDebtForExternalReq
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": "wc-external-required",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "pass",
 		"payload": map[string]any{
@@ -624,49 +649,25 @@ func TestHandleHaftCommission_CompleteOrBlockRecordsProjectionDebtForExternalReq
 }
 
 func TestCompleteExternalWorkCommission_CompletesPreflightingCommission(t *testing.T) {
-	store := setupCLIArtifactStore(t)
+	projectRoot := t.TempDir()
+	harness := profileadmissionfixture.New(t, projectRoot)
+	harness.AdmitNonSoftwareRevision(t, "commission-external-completion")
+	store := artifact.NewStore(harness.Database())
 	ctx := context.Background()
-	haftDir := t.TempDir()
-
-	decision := createCommissionDecisionFixture(t, ctx, store, haftDir, "External lifecycle", "internal/cli/commission.go")
-	createdResult, err := handleHaftCommission(ctx, store, map[string]any{
-		"action":        "create_from_decision",
-		"decision_ref":  decision.Meta.ID,
-		"repo_ref":      "local:haft",
-		"base_sha":      "base-r1",
-		"target_branch": "dev",
-		"valid_until":   "2099-01-01T00:00:00Z",
-		"spec_readiness_override": map[string]any{
-			"kind":              "tactical",
-			"out_of_spec":       true,
-			"project_readiness": "needs_onboard",
-			"reason":            "unit test fixture without project spec carriers",
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-	created := map[string]map[string]any{}
-	if err := json.Unmarshal([]byte(createdResult), &created); err != nil {
-		t.Fatal(err)
-	}
-	commissionID := created["commission"]["id"].(string)
-
-	_, err = handleHaftCommission(ctx, store, map[string]any{
-		"action":        "claim_for_preflight",
-		"commission_id": commissionID,
-		"runner_id":     "external:test",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	commissionID := createProfileAwareClaimedCommission(
+		t,
+		ctx,
+		store,
+		projectRoot,
+	)
 
 	result, err := completeExternalWorkCommission(ctx, store, map[string]any{
 		"commission_id": commissionID,
-		"runner_id":     "external:test",
+		"runner_id":     "profile-aware-test",
 		"event":         "external_runtime_terminal",
 		"verdict":       "completed",
 		"reason":        "external_runtime_succeeded_diff_pending_reviewer",
+		"project_root":  projectRoot,
 		"payload": map[string]any{
 			"final_message_path": "logs/wc.last-message.txt",
 		},
@@ -702,6 +703,8 @@ func TestCompleteExternalWorkCommission_CompletesPreflightingCommission(t *testi
 }
 
 func TestCompleteExternalWorkCommissionIsIdempotentForMatchingTerminalState(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -734,6 +737,8 @@ func TestCompleteExternalWorkCommissionIsIdempotentForMatchingTerminalState(t *t
 }
 
 func TestCompleteExternalWorkCommissionRejectsQueuedCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -761,6 +766,8 @@ func TestCompleteExternalWorkCommissionRejectsQueuedCommission(t *testing.T) {
 }
 
 func TestHandleHaftCommission_CompleteOrBlockKeepsLocalOnlyCompletionUnaffected(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -775,7 +782,7 @@ func TestHandleHaftCommission_CompleteOrBlockKeepsLocalOnlyCompletionUnaffected(
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": "wc-local-only-pass",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "pass",
 	})
@@ -798,6 +805,8 @@ func TestHandleHaftCommission_CompleteOrBlockKeepsLocalOnlyCompletionUnaffected(
 }
 
 func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -831,7 +840,7 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -840,7 +849,7 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	result, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "record_run_event",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "phase_outcome",
 		"verdict":       "pass",
 		"payload": map[string]any{
@@ -873,12 +882,14 @@ func TestHandleHaftCommission_RecordRunEventPersistsRuntimeRunRefDuringPreflight
 	if event["runtime_run_id"] != commissionID+"#runtime-run-001" {
 		t.Fatalf("runtime_run_id = %#v, want deterministic attempt ref", event["runtime_run_id"])
 	}
-	if event["runner_id"] != "open-sleigh:test" {
-		t.Fatalf("runner_id = %#v, want open-sleigh:test", event["runner_id"])
+	if event["runner_id"] != "external:test" {
+		t.Fatalf("runner_id = %#v, want external:test", event["runner_id"])
 	}
 }
 
 func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -912,7 +923,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -921,7 +932,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	})
@@ -932,7 +943,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "record_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_checked",
 		"verdict":       "pass",
 	})
@@ -943,7 +954,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	result, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	})
@@ -976,7 +987,7 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "record_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_checked",
 		"verdict":       "blocked",
 		"reason":        "late stale replay",
@@ -987,6 +998,8 @@ func TestHandleHaftCommission_PreflightLifecycleIsIdempotentOnceRunning(t *testi
 }
 
 func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -1002,7 +1015,7 @@ func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *test
 		_, err = handleHaftCommission(ctx, store, map[string]any{
 			"action":        action,
 			"commission_id": "wc-lifecycle-order",
-			"runner_id":     "open-sleigh:test",
+			"runner_id":     "external:test",
 			"event":         "phase_outcome",
 			"verdict":       "pass",
 		})
@@ -1035,6 +1048,8 @@ func TestHandleHaftCommission_CommissionLifecycleRejectsOutOfOrderEvents(t *test
 }
 
 func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1042,7 +1057,7 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 
 	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
 		Title:      "Harness intake",
-		Signal:     "Open-Sleigh needs runnable work without hand-written commission JSON.",
+		Signal:     "external runner needs runnable work without hand-written commission JSON.",
 		Acceptance: "A DecisionRecord can become a bounded WorkCommission.",
 	})
 	if err != nil {
@@ -1056,7 +1071,7 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 		SelectionPolicy:     "Prefer the shortest path that keeps DecisionRecord and WorkCommission distinct.",
 		CounterArgument:     "A direct prompt runner would be simpler for a one-off local task.",
 		WeakestLink:         "Scope must remain explicit enough that the runner cannot widen authority.",
-		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Hand-written JSON", Reason: "Too error-prone for repeated harness runs."}},
+		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Hand-written JSON", Reason: "Too error-prone for repeated external runs."}},
 		Rollback:            &artifact.RollbackSpec{Triggers: []string{"Commission creation produces invalid scope."}},
 		EvidenceReqs:        []string{"go test ./internal/cli"},
 		AffectedFiles:       []string{"internal/cli/commission.go", "internal/cli/serve_commission.go"},
@@ -1175,7 +1190,162 @@ func TestHandleHaftCommission_CreateFromDecisionBuildsRunnableCommission(t *test
 	}
 }
 
+func TestHandleHaftCommission_CreateFromDecisionReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	projectRoot := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, projectRoot)
+	defer database.Close()
+
+	section := project.SpecSection{
+		ID:            "TS.sql.commission.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "target.environment",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	sqlStore := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	if err := sqlStore.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	problem, _, err := artifact.FrameProblem(ctx, store, haftDir, artifact.ProblemFrameInput{
+		Title:      "SQL commission spec snapshot",
+		Signal:     "Spec sync-back can update the current section before commission creation.",
+		Acceptance: "Commission snapshot resolves against the SQL source of truth.",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		ProblemRef:          problem.Meta.ID,
+		SelectedTitle:       "Snapshot SQL spec editions",
+		WhySelected:         "WorkCommission preflight needs the current SpecSection revision, not stale carrier sections.",
+		SelectionPolicy:     "Prefer SQL source of truth when present.",
+		CounterArgument:     "Carrier-only lookup is simpler.",
+		WeakestLink:         "Unsynced projects must still fall back to carriers.",
+		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Carrier-only snapshot", Reason: "It misses current SQL sync-back edits."}},
+		Rollback:            &artifact.RollbackSpec{Triggers: []string{"Commission snapshot ignores SQL sections."}},
+		AffectedFiles:       []string{"internal/cli/serve_commission.go"},
+		SectionRefs:         []string{"TS.sql.commission.001"},
+		ValidUntil:          "2099-01-01T00:00:00Z",
+		FirstModuleCoverage: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":          "create_from_decision",
+		"decision_ref":    decision.Meta.ID,
+		"repo_ref":        "local:haft",
+		"base_sha":        "base-r1",
+		"target_branch":   "dev",
+		"allowed_actions": []any{"edit_files", "run_tests"},
+		"project_root":    projectRoot,
+		"valid_until":     "2099-01-01T00:00:00Z",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+	commission := created["commission"]
+	if !containsAnyString(commission["spec_section_refs"], "TS.sql.commission.001") {
+		t.Fatalf("spec_section_refs = %#v, want SQL edition ref", commission["spec_section_refs"])
+	}
+	revisionHashes, ok := commission["spec_revision_hashes"].(map[string]any)
+	if !ok {
+		t.Fatalf("spec_revision_hashes = %#v, want object", commission["spec_revision_hashes"])
+	}
+	if !hexLike(revisionHashes["TS.sql.commission.001"]) {
+		t.Fatalf("spec revision hash = %#v, want sha256 hex", revisionHashes["TS.sql.commission.001"])
+	}
+	if _, exists := revisionHashes["TS.sync.001"]; exists {
+		t.Fatalf("carrier section leaked into SQL-first snapshot: %#v", revisionHashes)
+	}
+}
+
+func TestHandleHaftCommission_CreateFromDirectDecisionSnapshotsInlineProblemBasis(t *testing.T) {
+	t.Parallel()
+
+	store := setupCLIArtifactStore(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+	statement := "Choose the smallest source-native FPF Query carrier that remains parseable."
+
+	decision, _, err := artifact.Decide(ctx, store, haftDir, artifact.DecideInput{
+		ProblemStatement:    statement,
+		SelectedTitle:       "Use a closed query-result union",
+		WhySelected:         "Consumers can distinguish exact hits, candidate sets, and abstentions without prose parsing.",
+		SelectionPolicy:     "Prefer the smallest source-faithful public contract.",
+		CounterArgument:     "A ProblemCard would provide a reusable problem identity.",
+		WeakestLink:         "Callers that assumed appended prose must migrate.",
+		WhyNotOthers:        []artifact.RejectionReason{{Variant: "Require a ProblemCard", Reason: "This bounded choice has no receiving use for a separate problem artifact."}},
+		Rollback:            &artifact.RollbackSpec{Triggers: []string{"A supported client cannot parse the result union."}},
+		AffectedFiles:       []string{"internal/fpf/source_query.go"},
+		ValidUntil:          "2099-01-01T00:00:00Z",
+		FirstModuleCoverage: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := handleHaftCommission(ctx, store, map[string]any{
+		"action":          "create_from_decision",
+		"decision_ref":    decision.Meta.ID,
+		"repo_ref":        "local:haft",
+		"base_sha":        "base-direct-r1",
+		"target_branch":   "dev",
+		"allowed_actions": []any{"edit_files", "run_tests"},
+		"valid_until":     "2099-01-01T00:00:00Z",
+		"spec_readiness_override": map[string]any{
+			"kind":              "tactical",
+			"out_of_spec":       true,
+			"project_readiness": "needs_onboard",
+			"reason":            "isolated direct-decision fixture without spec carriers",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created := map[string]map[string]any{}
+	if err := json.Unmarshal([]byte(result), &created); err != nil {
+		t.Fatal(err)
+	}
+	commission := created["commission"]
+	if _, exists := commission["problem_card_ref"]; exists {
+		t.Fatalf("direct decision commission invented problem_card_ref: %#v", commission["problem_card_ref"])
+	}
+	basis, ok := commission["problem_basis"].(map[string]any)
+	if !ok {
+		t.Fatalf("problem_basis = %#v, want object", commission["problem_basis"])
+	}
+	if basis["kind"] != "inline_statement" || basis["problem_statement"] != statement {
+		t.Fatalf("problem_basis = %#v, want inline statement snapshot", basis)
+	}
+	if !hexLike(basis["revision_hash"]) {
+		t.Fatalf("problem basis revision_hash = %#v, want sha256 hex", basis["revision_hash"])
+	}
+	if issues, err := problemFreshnessIssues(ctx, store, commission); err != nil || len(issues) != 0 {
+		t.Fatalf("inline problem basis freshness = %#v / %v, want current", issues, err)
+	}
+}
+
 func TestHandleHaftCommission_CreateFromDecisionRequiresSpecRefsOrTacticalOverride(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1253,6 +1423,8 @@ func TestHandleHaftCommission_CreateFromDecisionRequiresSpecRefsOrTacticalOverri
 }
 
 func TestHandleHaftCommission_StartAfterPreflightBlocksFreshnessDrift(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		wantCode  string
@@ -1332,7 +1504,7 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksFreshnessDrift(t *testing
 			args := map[string]any{
 				"action":        "start_after_preflight",
 				"commission_id": fixture.CommissionID,
-				"runner_id":     "open-sleigh:test",
+				"runner_id":     "external:test",
 				"event":         "preflight_passed",
 				"verdict":       "pass",
 				"project_root":  fixture.ProjectRoot,
@@ -1367,6 +1539,8 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksFreshnessDrift(t *testing
 }
 
 func TestHandleHaftCommission_StartAfterPreflightRecordsDeferredPlanGap(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1413,6 +1587,8 @@ func TestHandleHaftCommission_StartAfterPreflightRecordsDeferredPlanGap(t *testi
 }
 
 func TestHandleHaftCommission_CreateBatchFromDecisionsBuildsRunnableCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1473,6 +1649,8 @@ func TestHandleHaftCommission_CreateBatchFromDecisionsBuildsRunnableCommissions(
 }
 
 func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1554,6 +1732,8 @@ func TestHandleHaftCommission_CreateFromPlanBuildsRunnableCommissions(t *testing
 }
 
 func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1618,7 +1798,7 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": secondID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err == nil || !strings.Contains(err.Error(), "commission_not_runnable") {
 		t.Fatalf("claim error = %v, want dependency-blocked commission_not_runnable", err)
@@ -1647,7 +1827,7 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 	claimed := map[string]map[string]any{}
 	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":    "claim_for_preflight",
-		"runner_id": "open-sleigh:test",
+		"runner_id": "external:test",
 		"plan_ref":  "plan-cli-deps",
 	})
 	if err != nil {
@@ -1662,6 +1842,8 @@ func TestHandleHaftCommission_CreateFromPlanSchedulesDependencies(t *testing.T) 
 }
 
 func TestHandleHaftCommission_CreateFromPlanRejectsUnknownDependency(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1691,6 +1873,8 @@ func TestHandleHaftCommission_CreateFromPlanRejectsUnknownDependency(t *testing.
 }
 
 func TestHandleHaftCommission_CreateFromPlanRejectsDependencyCycle(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1725,6 +1909,8 @@ func TestHandleHaftCommission_CreateFromPlanRejectsDependencyCycle(t *testing.T)
 }
 
 func TestHandleHaftCommission_RunnableFilterMatchesPlanRevision(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -1765,7 +1951,7 @@ func TestHandleHaftCommission_RunnableFilterMatchesPlanRevision(t *testing.T) {
 	claimed := map[string]map[string]any{}
 	claimResult, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"plan_ref":      "plan-revisioned",
 		"plan_revision": "p2",
 	})
@@ -1781,6 +1967,8 @@ func TestHandleHaftCommission_RunnableFilterMatchesPlanRevision(t *testing.T) {
 }
 
 func TestHandleHaftCommission_CreateFromDecisionRequiresScope(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1823,13 +2011,15 @@ func TestHandleHaftCommission_CreateFromDecisionRequiresScope(t *testing.T) {
 }
 
 func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
 	for _, commission := range []map[string]any{
 		workCommissionFixtureWithLockset("wc-lock-a", "queued", "2099-01-01T00:00:00Z", []any{"internal/cli/**"}),
 		workCommissionFixtureWithLockset("wc-lock-b", "queued", "2099-01-01T00:00:00Z", []any{"internal/cli/serve.go"}),
-		workCommissionFixtureWithLockset("wc-lock-c", "queued", "2099-01-01T00:00:00Z", []any{"open-sleigh/**"}),
+		workCommissionFixtureWithLockset("wc-lock-c", "queued", "2099-01-01T00:00:00Z", []any{"external-runner/**"}),
 	} {
 		_, err := handleHaftCommission(ctx, store, map[string]any{
 			"action":     "create",
@@ -1843,7 +2033,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	_, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-lock-a",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -1852,7 +2042,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-lock-b",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err == nil || !strings.Contains(err.Error(), "commission_lock_conflict") {
 		t.Fatalf("claim error = %v, want commission_lock_conflict", err)
@@ -1861,7 +2051,7 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-lock-c",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatalf("non-overlapping claim error = %v", err)
@@ -1869,6 +2059,8 @@ func TestHandleHaftCommission_ClaimRejectsActiveLocksetConflict(t *testing.T) {
 }
 
 func TestHandleHaftCommission_AutonomyEnvelopeRejectsOutOfEnvelopeAction(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -1897,6 +2089,8 @@ func TestHandleHaftCommission_AutonomyEnvelopeRejectsOutOfEnvelopeAction(t *test
 }
 
 func TestHandleHaftCommission_AutonomyEnvelopeCannotSkipRequiredGates(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -1918,6 +2112,8 @@ func TestHandleHaftCommission_AutonomyEnvelopeCannotSkipRequiredGates(t *testing
 }
 
 func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name   string
 		code   string
@@ -1969,7 +2165,7 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(
 			_, err = handleHaftCommission(ctx, store, map[string]any{
 				"action":        "claim_for_preflight",
 				"commission_id": commissionID,
-				"runner_id":     "open-sleigh:test",
+				"runner_id":     "external:test",
 			})
 			if err != nil {
 				t.Fatal(err)
@@ -1987,7 +2183,7 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(
 			_, err = handleHaftCommission(ctx, store, map[string]any{
 				"action":        "start_after_preflight",
 				"commission_id": commissionID,
-				"runner_id":     "open-sleigh:test",
+				"runner_id":     "external:test",
 				"event":         "preflight_passed",
 				"verdict":       "pass",
 			})
@@ -2013,6 +2209,8 @@ func TestHandleHaftCommission_StartAfterPreflightBlocksExpiredOrRevokedEnvelope(
 }
 
 func TestHandleHaftCommission_NoEnvelopeRemainsManualRunnable(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2044,6 +2242,8 @@ func TestHandleHaftCommission_NoEnvelopeRemainsManualRunnable(t *testing.T) {
 }
 
 func TestHandleQuintCommission_AutoApply(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2062,7 +2262,7 @@ func TestHandleQuintCommission_AutoApply(t *testing.T) {
 	result, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": "wc-auto-apply",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "pass",
 	})
@@ -2101,13 +2301,15 @@ func TestHandleQuintCommission_AutoApply(t *testing.T) {
 }
 
 func TestStaleLeaseCap(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
 
 	stale := workCommissionFixture("wc-stale-lease", "queued", "2099-01-01T00:00:00Z")
 	stale["lease"] = map[string]any{
-		"runner_id":  "open-sleigh:old",
+		"runner_id":  "external:old",
 		"state":      "claimed_for_preflight",
 		"claimed_at": now.Add(-25 * time.Hour).Format(time.RFC3339),
 	}
@@ -2153,7 +2355,7 @@ func TestStaleLeaseCap(t *testing.T) {
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": "wc-stale-lease",
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"lease_age_cap": "24h",
 	})
 	if err == nil || !strings.Contains(err.Error(), "lease_too_old") {
@@ -2183,7 +2385,9 @@ func TestStaleLeaseCap(t *testing.T) {
 	}
 }
 
-func TestHarnessRun_Drain(t *testing.T) {
+func TestExternalRunnerDrainStatus(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	now := time.Now().UTC()
@@ -2192,7 +2396,7 @@ func TestHarnessRun_Drain(t *testing.T) {
 	stale := workCommissionFixture("wc-drain-stale", "queued", "2099-01-01T00:00:00Z")
 	stale["decision_ref"] = "dec-drain-stale"
 	stale["lease"] = map[string]any{
-		"runner_id":  "open-sleigh:old",
+		"runner_id":  "external:old",
 		"state":      "claimed_for_preflight",
 		"claimed_at": now.Add(-25 * time.Hour).Format(time.RFC3339),
 	}
@@ -2305,7 +2509,7 @@ func createClaimedFreshnessCommission(
 		SelectedTitle:   "Gate commission freshness",
 		WhySelected:     "The runtime needs Haft to enforce the snapshot before Execute.",
 		SelectionPolicy: "Block hard deterministic mismatches at start_after_preflight.",
-		CounterArgument: "Open-Sleigh already has structural gates.",
+		CounterArgument: "external runner already has structural gates.",
 		WeakestLink:     "The Go lifecycle transition must not admit stale snapshots.",
 		WhyNotOthers: []artifact.RejectionReason{{
 			Variant: "Advisory warning",
@@ -2346,7 +2550,7 @@ func createClaimedFreshnessCommission(
 	_, err = handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2512,7 +2716,7 @@ func runCommissionThroughPreflight(
 	_, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "complete_or_block",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "workflow_terminal",
 		"verdict":       "completed",
 	})
@@ -2533,7 +2737,7 @@ func runCommissionStartAfterPreflight(
 	_, err := handleHaftCommission(ctx, store, map[string]any{
 		"action":        "claim_for_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -2542,7 +2746,7 @@ func runCommissionStartAfterPreflight(
 	args := map[string]any{
 		"action":        "start_after_preflight",
 		"commission_id": commissionID,
-		"runner_id":     "open-sleigh:test",
+		"runner_id":     "external:test",
 		"event":         "preflight_passed",
 		"verdict":       "pass",
 	}
@@ -2600,6 +2804,8 @@ func createCommissionDecisionFixture(
 }
 
 func TestHandleHaftCommission_ListRunnableFiltersExpiredAndTerminal(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 
@@ -2735,6 +2941,8 @@ func workCommissionFixture(id, state, validUntil string) map[string]any {
 }
 
 func TestHandleHaftCommission_CreateFromDecisionRequiresSliceDescriptionOnSecondCommission(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()
@@ -2818,6 +3026,8 @@ func TestHandleHaftCommission_CreateFromDecisionRequiresSliceDescriptionOnSecond
 }
 
 func TestHandleHaftCommission_CreateFromDecisionAcceptsExplicitSliceDescription(t *testing.T) {
+	t.Parallel()
+
 	store := setupCLIArtifactStore(t)
 	ctx := context.Background()
 	haftDir := t.TempDir()

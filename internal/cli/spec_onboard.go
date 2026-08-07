@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -8,7 +9,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
@@ -23,25 +23,38 @@ func runSpecOnboard(cmd *cobra.Command, _ []string) error {
 	}
 
 	if action, sectionID, args := specOnboardMutationArgs(); action != "" {
-		return runSpecOnboardMutation(cmd, projectRoot, action, sectionID, args)
+		return runSpecOnboardMutation(cmd, projectRoot, action, sectionID, args, specOnboardJSON)
 	}
 
-	specSet, err := project.LoadProjectSpecificationSet(projectRoot)
+	request, err := projectSpecificationScopeRequestFromFlag(specOnboardScopeID)
 	if err != nil {
 		return err
 	}
-
-	store, projectID, closeFn, _ := projectBaseline(projectRoot)
-	defer closeFn()
-
-	intent := specflow.NextStep(specflow.DeriveStateWithBaselines(specSet, store, projectID))
-
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	lifecycle, err := buildPublicSpecLifecycle(
+		ctx,
+		projectRoot,
+		request,
+	)
+	if err != nil {
+		return err
+	}
+	result := publicSpecNextStepFromLifecycle(lifecycle)
 	output := cmd.OutOrStdout()
 	if specOnboardJSON {
-		return writeSpecOnboardJSON(output, intent)
+		return writeSpecOnboardJSON(output, result)
 	}
-
-	return writeSpecOnboardSummary(output, intent)
+	if result.WorkflowIntent != nil {
+		return writeSpecOnboardSummary(output, *result.WorkflowIntent)
+	}
+	return writeProjectSpecificationApplicabilityCue(
+		output,
+		"haft spec onboard",
+		result.ProfileApplicability,
+	)
 }
 
 func mutationFlagCount() int {
@@ -79,7 +92,7 @@ func specOnboardMutationArgs() (action, sectionID string, args map[string]any) {
 	return "", "", nil
 }
 
-func runSpecOnboardMutation(cmd *cobra.Command, projectRoot, action, sectionID string, args map[string]any) error {
+func runSpecOnboardMutation(cmd *cobra.Command, projectRoot, action, sectionID string, args map[string]any, jsonOutput bool) error {
 	var (
 		raw string
 		err error
@@ -104,7 +117,7 @@ func runSpecOnboardMutation(cmd *cobra.Command, projectRoot, action, sectionID s
 	}
 
 	output := cmd.OutOrStdout()
-	if specOnboardJSON {
+	if jsonOutput {
 		_, err := fmt.Fprintln(output, raw)
 		return err
 	}
@@ -137,10 +150,13 @@ func writeSpecOnboardBaselineSummary(w io.Writer, result SpecSectionBaselineResu
 	return err
 }
 
-func writeSpecOnboardJSON(w io.Writer, intent specflow.WorkflowIntent) error {
+func writeSpecOnboardJSON(
+	w io.Writer,
+	result publicSpecNextStepResult,
+) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(intent)
+	return encoder.Encode(result)
 }
 
 func writeSpecOnboardSummary(w io.Writer, intent specflow.WorkflowIntent) error {

@@ -42,6 +42,10 @@ linters:
         - G306 # WriteFile permissions 0644 — fine for markdown/config files
         - G703 # path traversal — we construct paths from project root intentionally
   exclusions:
+    # v2.11.4 already defaults to strict generated-file detection. Keep the
+    # frozen production-Go contour explicit instead of depending on that
+    # loader default.
+    generated: strict
     paths:
       - desktop/
     rules:
@@ -63,22 +67,42 @@ linters:
       - linters:
           - errcheck
         source: "defer .*(Close|Rollback)\\(\\)"
-      - path: internal/provider/openai.go
-        linters:
-          - gosec
-        text: "G117:"
-      - path: internal/cli/login.go
-        linters:
-          - gosec
-        text: "G117:"
-      - path: internal/cli/term_echo_linux.go
-        linters:
-          - gosec
-        text: "G115:"
       - path: cmd/indexer/main.go
         linters:
           - gosec
         text: "G702:"
+      # The preceding carrier-length check proves this uint64 is a valid slice
+      # index; keep the generator source bytes stable because they are pinned.
+      - path: internal/fpfrefresh/local_practice_rebase.go
+        linters:
+          - gosec
+        text: "G115:"
+      # These compatibility adapters are part of the pinned refresh-generator
+      # input closure; current production paths use their context-aware forms.
+      - path: internal/codebase/symhash.go
+        linters:
+          - unused
+        text: "extractLegacySymbolSnapshots"
+      - path: internal/codebase/ts_symbols.go
+        linters:
+          - unused
+        text: "extractTSSymbolSnapshotsFromContent"
+      - path: internal/fpf/source_adapter.go
+        linters:
+          - unused
+        text: "removeString"
+      - path: internal/artifact/drift_symbol_corpus.go
+        linters:
+          - unused
+        text: "complete"
+      # Stat_t.Nlink is uint16 on darwin and uint64 on linux, so this one
+      # conversion is required on one supported platform and redundant on the
+      # other. A //nolint would itself be unused on darwin and trip nolintlint,
+      # so the cross-platform difference is recorded here instead.
+      - path: internal/codeintel/index_lease_supported.go
+        linters:
+          - unconvert
+        text: "unnecessary conversion"
 
 formatters:
   enable:

@@ -16,30 +16,36 @@
 | **EvidencePack** | Artifact containing measurement data attached to a decision: type, verdict, congruence level, valid_until | Not a test report. Not a PR review. | "evidence" |
 | **Note** | Micro-decision artifact: what was decided and why, with rationale validation. Auto-expires in 90 days. | Not a comment. Not a log entry. Not a TODO. | — |
 | **RefreshReport** | Artifact documenting a lifecycle action (waive, reopen, supersede, deprecate) | Not an audit log entry (though audit log exists separately). | — |
+| **Reliance-bearing project memory** | Project-local records materialized because a concrete receiving use, operator-named or agent-inferred from current Work, depends on handoff, replay, authority, automation, evidence, or later verification. The minimum non-binding EntityOfConcern is established proactively when stable identity is recoverable. | Not a transcript archive. Not persistence from known absence, an empty graph, or generic future usefulness alone. Not a grant of binding authority. | "durable project memory" when the reliance boundary is already clear |
 
 ## Project Specification & Harnessability
 
 | Term | Definition | NOT this | Aliases allowed |
 |------|------------|----------|-----------------|
-| **HarnessableProject** | A project whose TargetSystemSpec, EnablingSystemSpec, TermMap, workflow policy, and SpecCoverage are parseable enough for decisions and WorkCommissions to be created without inventing authority. | Not merely a repo with `.haft/`. Not a project with a README. Not a tracker project. | "harness-ready project" |
-| **ProjectSpecificationSet** | The project-local set of parseable specs: TargetSystemSpec, EnablingSystemSpec, TermMap, SpecCoverage, and WorkflowPolicy. | Not generic documentation. Not a single Markdown file. Not the SQLite artifact graph. | "spec set" |
-| **TargetSystemSpec** | Parseable specification of the target system: environment change, method, target role, materials, boundaries, interfaces, invariants, acceptance, risks, and target-domain terms. | Not implementation plan. Not repo architecture. Not a backlog. | "target spec" |
-| **EnablingSystemSpec** | Parseable specification of the engineering system that produces and maintains the target system: repository architecture, work methods, tests, agents, CI, hooks, runtime, release policy, and evidence methods. | Not the product spec. Not agent instructions alone. Not build docs alone. | "enabling spec" |
-| **SpecSection** | One stable-id unit inside a target/enabling spec with kind, statement_type, claim_layer, owner, status, valid_until, terms, dependencies, and evidence requirements. | Not a heading by itself. Not arbitrary prose. Not a TODO bullet. | "section" when context is clear |
+| **HarnessableProject** | A project whose TargetSystemSpec, SoftwareSystemSpec, TermMap, workflow policy, and SpecCoverage links are parseable enough for decisions and WorkCommissions to be created without inventing authority. | Not merely a repo with `.haft/`. Not a project with a README. Not a tracker project. | "harness-ready project" |
+| **ProjectSpecificationSet** | The project-local set of parseable specs: TargetSystemSpec, SoftwareSystemSpec, and TermMap. | Not generic documentation. Not SpecCoverage or WorkflowPolicy. Not the SQLite artifact graph. | "spec set" |
+| **TargetSystemSpec** | Haft local-practice carrier for Agentic SWE that describes the system whose behavior or value this project intends to change: desired environment change, method, target role, actors, scenarios, boundaries, acceptance, risks, and target-domain terms. | Not an FPF A.1 normative kind. Not implementation plan, software or repo architecture, or backlog. | "target spec" |
+| **SoftwareSystemSpec** | Haft local-practice carrier for the idealized software system that realizes the target role: software role, responsibility allocation, functional and procedural behavior, interfaces, constraints, and selected structure. | Not an FPF A.1 normative kind. Not repository layout, build/test/agent/CI/release/external-runner policy, or DecisionRecord rationale. | "software spec", "SWE spec" in casual speech |
+| **EnablingSystem** | The people, agents, methods, repository workflows, tests, CI, and any separately operated external runner that create and maintain the software system. | Not the target system. Not the SoftwareSystemSpec. Not a ProjectSpecificationSet member. | "creator system" in explanatory contexts |
+| **SpecSection** | One stable-id unit inside a target or software spec with kind, statement_type, claim_layer, owner, status, valid_until, terms, dependencies, and evidence requirements. | Not a heading by itself. Not arbitrary prose. Not a TODO bullet. | "section" when context is clear |
 | **SpecCoverage** | Derived graph connecting spec sections to ProblemCards, DecisionRecords, WorkCommissions, RuntimeRuns, EvidencePacks, files, modules, functions, and tests. | Not code coverage. Not decision coverage alone. Not a percentage without edges. | "spec coverage" |
 | **SemanticArchitecture** | Explicit relation model that preserves term meanings and system boundaries: composition, dependencies, governance, verification, projection, supersession, and blocking relations. | Not folder architecture. Not an ontology diagram detached from execution. | — |
 | **SpecCheck** | Deterministic validation pass over spec carriers and parsed spec objects. Current CLI coverage is L0/L1/L1.5: syntax, required structural fields, stable IDs, term-map entry shape, optional section field shape, duplicate terms/aliases, and obvious carrier/object authority confusion. | Not LLM review. Not proof the product is correct. Not runtime evidence. | `haft spec check` |
 | **OnboardingAgent** | Bounded host-agent workflow that reads repo carriers, asks the human principal for missing decisions, drafts ProjectSpecificationSet sections, and explains why formal spec depth is required. | Not autonomous product owner. Not runtime executor. Not semantic authority. | "onboarder" |
-| **SpecPlan** | Proposed grouping from uncovered/changed spec sections into coherent DecisionRecord drafts. | Not WorkPlan. Not one decision per bullet. Not execution scheduling. | `haft spec plan` |
+| **SpecPlan** | Human-requested review proposal that groups already identified applied choices into coherent DecisionRecord drafts. | Not automatic choice detection or routing. Not WorkPlan. Not one decision per bullet. Not execution scheduling or approval. | `haft spec plan` |
 
-## Engineering Modes (User-Facing)
+## Independent Work Surfaces (User-Facing)
+
+These names select work relevant to the current concern. They are not lifecycle
+stages, and their table order does not prescribe temporal, causal, method, or
+execution order.
 
 | Term | Definition | NOT this | FPF mapping (internal only) |
 |------|-----------|----------|---------------------------|
 | **Understand** | Activity of framing the problem before solving it | Not "requirements gathering." Not "reading code." | Problem framing, characterization |
 | **Explore** | Activity of generating genuinely distinct solution variants | Not "brainstorming." Not "asking the agent for ideas." | Solution portfolio construction |
 | **Choose** | Activity of comparing variants honestly and deciding readiness | Not "picking the first one." Not "asking the agent to recommend." | Pareto comparison, probe-or-commit |
-| **Execute** | Activity of recording the decision as a contract and implementing | Not "just coding it." The decision record comes first. | DRR creation, baseline |
+| **Execute** | Activity of performing explicitly authorized work | Not decision recording and not planning. A DecisionRecord, ImplementationPlan, or WorkCommission carries any required authority and order. | Performed work, baseline |
 | **Verify** | Activity of checking whether decisions still hold | Not "running tests." Broader: drift, staleness, evidence decay, pending claims. | Refresh, measurement, evidence attachment |
 | **Note** | Fast-path: capture a micro-decision without full ceremony | Not a sticky note. Has rationale validation and conflict check. | Note artifact |
 
@@ -73,9 +79,9 @@
 | **Core** | Architecture module: artifact graph, knowledge graph, FPF search, evidence engine, codebase analysis. Pure domain logic + persistence. No UI dependencies. | Not "core team." Not "core features." The domain kernel. |
 | **Flow** | Architecture module: task runner, worktree lifecycle, agent spawning, invariant injection, post-execution verification. | Not "workflow tool." The execution orchestration layer. |
 | **Governor** | Architecture module: background scanner, drift detection, stale refresh, invariant verification, problem factory. | Not "governance framework." The automated post-merge integrity system. |
-| **Surface** | A user-facing entry point over the same Haft Core artifact graph: Desktop Cockpit, MCP Plugin, or CLI Harness. | Not "interface" in the Go sense. Not semantic authority. A product delivery channel. |
-| **Desktop Cockpit** | Primary human surface for onboarding, approvals, navigation, runtime visibility, evidence, and governance. | Not semantic authority. Not the only way to operate Haft. |
-| **MCP Plugin** | Embedded agent surface for Claude Code and Codex to reason, draft, query, create decisions, and create/inspect commissions through explicit tool contracts. | Not owner of long-running runtime lifecycle. Not generic MCP product support for every host. |
+| **Surface** | A current user-facing entry point over the same Haft Core artifact graph: host skills/prompts, MCP server, or CLI. Historical desktop cockpit is archived provenance. | Not "interface" in the Go sense. Not semantic authority. A product delivery channel. |
+| **Archived Desktop Cockpit** | Historical human surface retained as archive/provenance after the v8 pivot. | Not current runtime scope. Not semantic authority. Not a feature-parity target. |
+| **MCP Server** | Embedded agent surface for Claude Code and Codex to reason, draft, query, create decisions, and create/inspect commissions through explicit tool contracts. | Not owner of long-running runtime lifecycle. Not generic MCP product support for every host. |
 | **CLI Harness** | Operator/runtime surface for prepare, run, status, watch, tail, result, apply, requeue, and cancel. | Not a second source of truth. Not the runtime implementation itself. |
 | **WorkflowIntent** | Typed meaning of a surface action before any prompt or command runs. | Not button text. Not an opaque prompt. |
 | **ArtifactTransition** | Explicit artifact proposal or mutation produced by a workflow: draft section, active section, DecisionRecord, WorkCommission, RuntimeRun, Evidence, or derived coverage update. | Not chat output. Not UI-only state. |
@@ -85,11 +91,11 @@
 
 | Term | Definition | NOT this |
 |------|-----------|----------|
-| **ImplementationPlan** | A graph of intended execution work derived from one or more active DecisionRecords. Contains WorkCommissions, dependencies, locksets, evidence requirements, and scheduling policy. | Not a DecisionRecord. Not a flat TODO list. Not a tracker epic. |
+| **ImplementationPlan** | A separate graph of intended execution work derived from one or more active DecisionRecords. It is the carrier that states WorkCommissions, dependencies, locksets, evidence requirements, and scheduling policy. | Not a DecisionRecord, FPF application trace, artifact insertion order, flat TODO list, or tracker epic. |
 | **WorkCommission** | Human-authorized, bounded permission to execute a selected DecisionRecord in a declared Scope. It records repo, branch/base SHA, scope hash, gates, evidence requirements, projection policy, freshness snapshot, and allowed runner policy. | Not the decision itself. Not a Linear/Jira issue. Not a RuntimeRun. Not a prompt hint. |
 | **Scope** | Closed authorization object for what a WorkCommission may touch: repo/ref, base SHA, target branch policy, allowed paths, forbidden paths, affected files/modules, allowed actions, optional allowed modules, and associated lockset. Its canonical serialized form is hashed into the commission snapshot. | Not a fuzzy task description. Not merely affected_files. Not a workspace safety check. |
-| **CommissionSnapshot** | Deterministic equality set frozen when a WorkCommission is queued: DecisionRecord revision/hash, ProblemCard ref/revision, Scope hash, base SHA, ImplementationPlan revision, AutonomyEnvelope revision, projection policy, and lease state. Preflight compares this set before Execute. | Not runtime evidence. Not semantic freshness judgement. |
-| **RuntimeRun** | One concrete execution attempt against a WorkCommission by a runner such as Open-Sleigh. Carries runner id, lease, phase outcomes, logs/evidence refs, and terminal result. | Not the WorkCommission. Not proof that the decision is correct. |
+| **CommissionSnapshot** | Deterministic equality set frozen when a WorkCommission is queued: DecisionRecord revision/hash; a discriminated `problem_basis` snapshot that is either `problem_card` (`problem_card_ref`, `revision_hash`) or `inline_statement` (`decision_ref`, `problem_statement`, `revision_hash`); Scope hash; base SHA; ImplementationPlan revision; AutonomyEnvelope revision; projection policy; and lease state. Preflight compares this set before Execute. | Not runtime evidence. Not semantic freshness judgement. Does not fabricate a ProblemCard for an inline DecisionRecord problem statement. |
+| **RuntimeRun** | One concrete execution attempt against a WorkCommission by a separately operated external runner. Carries runner id, lease, phase outcomes, logs/evidence refs, and terminal result. | Not the WorkCommission. Not proof that the decision is correct or that the submitted result is true. |
 | **Preflight** | Mandatory readiness check before a WorkCommission can enter RuntimeRun execution. Checks commission state, linked DecisionRecord freshness, scope drift, lease ownership, policies, and runner eligibility. | Not implementation. Not a best-effort agent summary. |
 | **AutonomyEnvelope** | Explicit human-approved bounds for batch/YOLO execution: max commissions, concurrency, paths/repos allowed, forbidden actions, risk ceiling, failure strategy, and one-way-door exclusions. | Not unlimited permission. Not a way to skip freshness, evidence, lock, or policy gates. |
 | **Lease** | Short-lived exclusive claim on a WorkCommission or RuntimeRun phase held by one runner. Prevents two agents from executing the same work or overlapping locksets concurrently. | Not ownership of the decision. Not long-term assignment. |
@@ -112,7 +118,7 @@
 | Term | Definition | NOT this |
 |------|-----------|----------|
 | **Projection** | Markdown file in `.haft/` generated from the database. Human-readable, git-tracked, reviewable in PRs. Unqualified "Projection" means this artifact projection. | Not semantic authority by itself. Not editable (overwritten on next artifact change). Not ExternalProjection. |
-| **Artifact graph** | The DAG of artifacts: problems link to portfolios link to decisions link to evidence. Stored in SQLite. | Not a file tree. Not a git graph. A semantic relationship graph. |
+| **Artifact graph** | Typed project relations among problems, portfolios, decisions, evidence, specs, code, and work artifacts. Stored in SQLite; each edge states its own meaning. | Not a file tree, git graph, universal workflow, or execution plan. |
 | **.haft/ directory** | Project-local directory containing projections, project.yaml, and subdirectories for each artifact kind. Git-tracked. | Not the database. Not config. The shared-with-team surface. |
 | **~/.haft/** | User-local directory: project databases, cross-project index, config, registry. NOT git-tracked. | Not project-specific. Global to the user. |
 
@@ -120,9 +126,9 @@
 
 | Term | Definition | When to use |
 |------|-----------|-------------|
-| **FPF** | First Principles Framework by Anatoly Levenchuk. The theoretical engine powering Haft's reasoning discipline. | Internal docs, architecture discussions. Never in user-facing text. |
+| **FPF source** | Versioned upstream First Principles Framework material by Anatoly Levenchuk. Haft retrieves and cites this source rather than defining a substitute pattern ontology. | Internal docs, architecture discussions, and source-grounded agent context. |
 | **L1 / L2 / L3** | Delivery layers: L1 = Detect+Ask (skill instructions), L2 = Persist+Enforce (tools/validators), L3 = Watchdog (agent loop checks). | Architecture discussions about where to enforce a pattern. |
-| **Pattern** | A named FPF concept (214 total). Mapped to delivery layers. Most stay as L0 RAG, ~80 become L1, ~25 become L2, ~15 become L3. | Mapping FPF to features. Never in user-facing text (say "mode" or "capability" instead). |
+| **FPF method description** | A source-defined `U.MethodDescription` that may apply to a concern. Its textual position or retrieval rank does not make it the next step or prove that work occurred. | Source-grounded method application. Never automatic authority, evidence, plan, or performed work. |
 | **Transformer Mandate** | Agent generates options; human decides. No self-validation of one's own work. | Architecture principle. In user-facing text: "you choose, the agent recommends." |
 
 ## Comparison & Evidence (Runtime Vocabulary)
@@ -134,15 +140,15 @@
 | **ParityPlan** | Statement of what must be equal across all variants for fair comparison. Currently stored as rules text. | Not a formal report (v6). A structured parity report with evidence trace is planned (v7+). |
 | **Advisory recommendation** | The `selected_ref` + `recommendation_rationale` persisted by the compare action. Advisory only — does NOT cross the human choice boundary. | Not "the decision." The decision happens at `/h-decide` after human confirmation. |
 | **Coverage gap** | A claim on a DecisionRecord that has no evidence attached. Surfaced in UI and `/h-verify`. | Not "missing test." Any claim without evidence, regardless of claim type. |
-| **Derived health** | Computed view-state of a DecisionRecord: Maturity (Unassessed / Pending / Shipped) + Freshness (Healthy / Stale / AT RISK). Never stored. | Not "status." Status is stored (`active`, `superseded`, etc.). Phase is derived from status + evidence. |
-| **F_eff (Formality)** | How structured is the evidence? F0 (anecdote) → F3 (formal proof). View concern for evidence decomposition. | Not a separate trust score. Decomposes R_eff inputs. |
+| **Derived health** | Independently computed view facets of a DecisionRecord: Maturity (Unassessed / Pending / Shipped) and Freshness (Healthy / Stale / AT RISK). Never stored. | Not "status" and not a universal Phase. Stored lifecycle status (`active`, `superseded`, etc.), maturity, and freshness remain distinct facets. |
+| **F_eff (Formality)** | How structured is the evidence? Current scale is F0-F9; legacy F0-F3 records remain readable only through an explicit/lossy bridge. View concern for evidence decomposition. | Not a separate trust score. Decomposes R_eff inputs. Legacy scale display is not current-formality proof. |
 | **G_eff (Groundedness)** | How close is the evidence to the thing it verifies? Derived from CL. View concern. | Not a separate trust score. Decomposes R_eff inputs. |
 
-## Desktop Surfaces
+## Historical Desktop Surfaces (archived, not current)
 
 | Term | Definition | NOT this |
 |------|-----------|----------|
-| **Dashboard** | The single unified operator page in the desktop app. Shows active decisions, governance findings, automations, and recent activity. | Not "Problem Board." Problems appear as cards within the dashboard. |
+| **Dashboard** | The historical unified operator page in the archived desktop app. Shows active decisions, governance findings, automations, and recent activity. | Not "Problem Board." Problems appear as cards within the dashboard. |
 | **Implement** | Dashboard action on a DecisionRecord: spawns agent in worktree with invariants + rationale + workflow.md. | Not "run task." Implement is decision-anchored — the agent gets full reasoning context. |
 | **Adopt** | Dashboard action on a governance finding (stale/drifted): creates agent task/thread with decision context + drift report for interactive resolution. | Not auto-fix. Human resolves with agent assistance, then re-baselines, reopens, or waives. |
 | **Automation** | A configured trigger that auto-creates ProblemCards: CI fail, dependency update, scheduled, manual. The "problem factory." | Not a workflow engine. Creates problems, doesn't execute solutions. |

@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/embedding"
+	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
 
 // fakeEmbedder maps text topics to fixed orthogonal unit vectors so the test
@@ -19,17 +19,21 @@ import (
 // Embed is mutex-guarded like the real sidecar adapter, so background warms race
 // cleanly under -race.
 type fakeEmbedder struct {
-	mu    sync.Mutex
-	calls int
+	mu         sync.Mutex
+	calls      int
+	roles      []embedding.Role
+	batchSizes []int
 }
 
 func (f *fakeEmbedder) Descriptor() embedding.Descriptor {
 	return embedding.Descriptor{Provider: "fake", Model: "topic-v1", Dimensions: 3}
 }
 
-func (f *fakeEmbedder) Embed(_ context.Context, _ embedding.Role, texts []string) ([][]float32, error) {
+func (f *fakeEmbedder) Embed(_ context.Context, role embedding.Role, texts []string) ([][]float32, error) {
 	f.mu.Lock()
 	f.calls++
+	f.roles = append(f.roles, role)
+	f.batchSizes = append(f.batchSizes, len(texts))
 	f.mu.Unlock()
 	out := make([][]float32, len(texts))
 	for i, text := range texts {
@@ -42,6 +46,18 @@ func (f *fakeEmbedder) callCount() int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.calls
+}
+
+func (f *fakeEmbedder) documentBatchSizes() []int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []int{}
+	for index, role := range f.roles {
+		if role == embedding.RoleDocument {
+			out = append(out, f.batchSizes[index])
+		}
+	}
+	return out
 }
 
 func (f *fakeEmbedder) Close() error { return nil }
@@ -114,6 +130,32 @@ type fakeSource struct {
 	ftsOrder []*artifact.Artifact
 }
 
+type exactAwareSource struct {
+	target    *artifact.Artifact
+	neighbors []*artifact.Artifact
+}
+
+func (s exactAwareSource) Search(_ context.Context, query string, limit int) ([]*artifact.Artifact, error) {
+	if query == s.target.Meta.ID {
+		return []*artifact.Artifact{s.target}, nil
+	}
+	if artifact.IsArtifactID(query) {
+		return nil, nil
+	}
+	return truncate(s.neighbors, limit), nil
+}
+
+func (s exactAwareSource) ListByKind(_ context.Context, kind artifact.Kind, _ int) ([]*artifact.Artifact, error) {
+	items := append([]*artifact.Artifact{s.target}, s.neighbors...)
+	result := make([]*artifact.Artifact, 0, len(items))
+	for _, item := range items {
+		if item.Meta.Kind == kind {
+			result = append(result, item)
+		}
+	}
+	return result, nil
+}
+
 func (s fakeSource) Search(_ context.Context, _ string, limit int) ([]*artifact.Artifact, error) {
 	return truncate(s.ftsOrder, limit), nil
 }
@@ -169,7 +211,9 @@ func decisionArtifact(id, title, body string) *artifact.Artifact {
 
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	store, err := db.NewStore(filepath.Join(t.TempDir(), "recall.db"))
+	store, err := kerneldbfixture.OpenCurrentStore(
+		filepath.Join(t.TempDir(), "recall.db"),
+	)
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -222,6 +266,36 @@ func TestHybridPromotesSemanticHit(t *testing.T) {
 	}
 }
 
+func TestHybridExactArtifactIDReturnsOnlyExactBeforeAndAfterWarm(t *testing.T) {
+	target := decisionArtifact("dec-20260711-exact", "Exact embedding decision", "embedding vector target")
+	neighbor := decisionArtifact("dec-20260711-neighbor", "Semantic neighbor", "embedding vector neighbor")
+	source := exactAwareSource{target: target, neighbors: []*artifact.Artifact{neighbor}}
+	hybrid := NewHybrid(source, staticFactory(&fakeEmbedder{}), testDB(t))
+
+	assertExact := func(phase string) {
+		results, err := hybrid.Search(context.Background(), target.Meta.ID, 20)
+		if err != nil {
+			t.Fatalf("%s exact search: %v", phase, err)
+		}
+		if len(results) != 1 || results[0].Meta.ID != target.Meta.ID {
+			t.Fatalf("%s exact search = %s, want only %s", phase, orderIDs(results), target.Meta.ID)
+		}
+	}
+
+	assertExact("cold")
+	if err := hybrid.Warm(context.Background()); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+	assertExact("warm")
+	missing, err := hybrid.Search(context.Background(), "dec-20260711-missing", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("warm exact miss = %s, want no semantic fallback", orderIDs(missing))
+	}
+}
+
 // TestHybridCachesCorpusEmbeddings proves the second warm reuses the cache: a
 // fresh Hybrid over the same DB embeds only the query, not the corpus again.
 func TestHybridCachesCorpusEmbeddings(t *testing.T) {
@@ -256,6 +330,29 @@ func TestHybridCachesCorpusEmbeddings(t *testing.T) {
 	// Second run: corpus hits the cache, so only the query is embedded.
 	if second.callCount() != 1 {
 		t.Fatalf("second run embed calls = %d, want 1 (query only — corpus cached)", second.callCount())
+	}
+}
+
+func TestHybridBatchesCorpusMissEmbeddings(t *testing.T) {
+	count := corpusEmbeddingBatch + 3
+	corpus := make([]*artifact.Artifact, 0, count)
+	for index := 0; index < count; index++ {
+		id := "dec-" + string(rune('a'+index))
+		item := decisionArtifact(id, "Rust embedding sidecar", "fastembed gemma local vectors")
+		corpus = append(corpus, item)
+	}
+	source := fakeSource{corpus: corpus, ftsOrder: corpus}
+	embedder := &fakeEmbedder{}
+	hybrid := NewHybrid(source, staticFactory(embedder), testDB(t))
+
+	if err := hybrid.Warm(context.Background()); err != nil {
+		t.Fatalf("warm: %v", err)
+	}
+
+	got := embedder.documentBatchSizes()
+	want := []int{corpusEmbeddingBatch, 3}
+	if !sameInts(got, want) {
+		t.Fatalf("document batch sizes = %v, want %v", got, want)
 	}
 }
 
@@ -408,6 +505,7 @@ func TestHybridInvalidateDuringWarmRewarms(t *testing.T) {
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
+	waitForHybridIdle(t, hybrid)
 
 	results, err := hybrid.Search(context.Background(), "rotate authentication credentials", 5)
 	if err != nil {
@@ -432,4 +530,16 @@ func orderIDs(items []*artifact.Artifact) string {
 		ids[i] = item.Meta.ID
 	}
 	return strings.Join(ids, ",")
+}
+
+func sameInts(left, right []int) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
 }

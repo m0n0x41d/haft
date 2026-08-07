@@ -78,6 +78,15 @@ func TestExploreSolutions_Success(t *testing.T) {
 	if !strings.Contains(a.Body, "## Summary") {
 		t.Error("missing summary table")
 	}
+	if !strings.Contains(
+		a.Body,
+		`haft_query(action="fpf", mode="concern", query="<current question>")`,
+	) {
+		t.Errorf("portfolio guidance omits the executable FPF concern call:\n%s", a.Body)
+	}
+	if strings.Contains(a.Body, `haft_query(action="fpf", query=`) {
+		t.Errorf("portfolio guidance advertises the retired FPF query shape:\n%s", a.Body)
+	}
 
 	// Check links
 	links, _ := store.GetLinks(ctx, a.Meta.ID)
@@ -304,7 +313,7 @@ func TestCompareSolutions_Success(t *testing.T) {
 	if !strings.Contains(a.Body, "## Non-Dominated Set") {
 		t.Error("missing Non-Dominated Set section")
 	}
-	if !strings.Contains(a.Body, "Kafka, NATS") {
+	if !strings.Contains(a.Body, "Kafka `V1`, NATS `V2`") {
 		t.Error("missing Pareto front members")
 	}
 	if !strings.Contains(a.Body, "## Dominated Variant Elimination") {
@@ -326,6 +335,12 @@ func TestCompareSolutions_Success(t *testing.T) {
 	fields := a.UnmarshalPortfolioFields()
 	if fields.Comparison == nil {
 		t.Fatal("expected structured comparison payload")
+	}
+	if fields.Comparison.SelectedRef != "V2" {
+		t.Fatalf("expected selected_ref to stay canonical advisory recommendation, got %q", fields.Comparison.SelectedRef)
+	}
+	if fields.Comparison.LegacyRecommendationRef != "V2" {
+		t.Fatalf("expected legacy_recommendation_ref alias, got %q", fields.Comparison.LegacyRecommendationRef)
 	}
 	if len(fields.Comparison.DominatedVariants) != 1 {
 		t.Fatalf("expected 1 dominated variant explanation, got %+v", fields.Comparison.DominatedVariants)
@@ -1100,6 +1115,143 @@ func TestCompareSolutions_ReplacesExisting(t *testing.T) {
 	}
 	if !strings.Contains(a.Body, "**Recommendation (advisory):** B") {
 		t.Error("missing updated recommendation")
+	}
+}
+
+func TestCompareSolutions_LegacyRecommendationRefAliasesSelectedRef(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("A", "x", "Keep the runtime surface small"),
+			testVariant("B", "y", "Bias toward operational elasticity"),
+		},
+		NoSteppingStoneRationale: "Both options are direct candidates.",
+	})
+
+	a, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"cost"},
+			Scores: map[string]map[string]string{
+				"A": {"cost": "high"},
+				"B": {"cost": "low"},
+			},
+			NonDominatedSet: []string{"B"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "A",
+					DominatedBy: []string{"B"},
+					Summary:     "Higher cost with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "B", Summary: "Lowest cost option in the current comparison set."},
+			},
+			LegacyRecommendationRef: "B",
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	fields := a.UnmarshalPortfolioFields()
+	if fields.Comparison == nil {
+		t.Fatal("expected structured comparison payload")
+	}
+	if fields.Comparison.SelectedRef != "V2" {
+		t.Fatalf("selected_ref compatibility alias = %q, want V2", fields.Comparison.SelectedRef)
+	}
+	if fields.Comparison.LegacyRecommendationRef != "V2" {
+		t.Fatalf("legacy_recommendation_ref = %q, want V2", fields.Comparison.LegacyRecommendationRef)
+	}
+	if !strings.Contains(a.Body, "**Recommendation (advisory):** B") {
+		t.Fatalf("expected advisory recommendation render, body: %s", a.Body)
+	}
+}
+
+func TestCompareSolutions_RejectsConflictingRecommendationAliases(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("A", "x", "Keep the runtime surface small"),
+			testVariant("B", "y", "Bias toward operational elasticity"),
+		},
+		NoSteppingStoneRationale: "Both options are direct candidates.",
+	})
+
+	_, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"cost"},
+			Scores: map[string]map[string]string{
+				"A": {"cost": "high"},
+				"B": {"cost": "low"},
+			},
+			NonDominatedSet:         []string{"B"},
+			LegacyRecommendationRef: "B",
+			SelectedRef:             "A",
+		},
+	})
+	if err == nil {
+		t.Fatal("expected conflicting recommendation alias error")
+	}
+	if !strings.Contains(err.Error(), "legacy_recommendation_ref") {
+		t.Fatalf("expected alias conflict error, got %v", err)
+	}
+}
+
+func TestCompareSolutions_AllowsEquivalentRecommendationAliases(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	haftDir := t.TempDir()
+
+	portfolio, _, _ := ExploreSolutions(ctx, store, haftDir, ExploreInput{
+		Variants: []Variant{
+			testVariant("A", "x", "Keep the runtime surface small"),
+			testVariant("B", "y", "Bias toward operational elasticity"),
+		},
+		NoSteppingStoneRationale: "Both options are direct candidates.",
+	})
+
+	comparison, _, err := CompareSolutions(ctx, store, haftDir, CompareInput{
+		PortfolioRef: portfolio.Meta.ID,
+		Results: ComparisonResult{
+			Dimensions: []string{"cost"},
+			Scores: map[string]map[string]string{
+				"A": {"cost": "high"},
+				"B": {"cost": "low"},
+			},
+			NonDominatedSet: []string{"B"},
+			DominatedVariants: []DominatedVariantExplanation{
+				{
+					Variant:     "A",
+					DominatedBy: []string{"B"},
+					Summary:     "Higher cost with no compensating benefit in this comparison.",
+				},
+			},
+			ParetoTradeoffs: []ParetoTradeoffNote{
+				{Variant: "B", Summary: "Lowest cost option in the current comparison set."},
+			},
+			LegacyRecommendationRef: "B",
+			SelectedRef:             "V2",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CompareSolutions returned error: %v", err)
+	}
+
+	fields := comparison.UnmarshalPortfolioFields()
+	if fields.Comparison.SelectedRef != "V2" {
+		t.Fatalf("selected_ref = %q, want V2", fields.Comparison.SelectedRef)
+	}
+	if fields.Comparison.LegacyRecommendationRef != "V2" {
+		t.Fatalf("legacy_recommendation_ref = %q, want V2", fields.Comparison.LegacyRecommendationRef)
 	}
 }
 
@@ -2057,7 +2209,7 @@ func TestCompare_PersistsStructuredComparison(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(a.Body, "Baseline set: REST, gRPC") {
+	if !strings.Contains(a.Body, "Baseline set: REST `V1`, gRPC `V2`") {
 		t.Fatalf("expected parity plan baseline to render human-readable labels, body: %s", a.Body)
 	}
 
@@ -2213,7 +2365,7 @@ func TestCompare_AcceptsGeneratedVariantIDs(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !strings.Contains(a.Body, "**Recommendation (advisory):** NATS") {
+	if !strings.Contains(a.Body, "**Recommendation (advisory):** NATS `V2`") {
 		t.Fatalf("expected human-readable recommended title, body: %s", a.Body)
 	}
 
@@ -2458,6 +2610,9 @@ func TestValidateCompareInput_ErrorsIncludeExpectedVariantList(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), `expected one of: ["V1", "V2"]`) {
 		t.Fatalf("expected canonical compare-set list inline in error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "variant_id -> dimension_name -> string score") {
+		t.Fatalf("expected scores shape hint inline in error, got: %v", err)
 	}
 }
 

@@ -1,6 +1,8 @@
-# Desktop Layer Contract
+# Historical Desktop Layer Contract
 
-Status: target contract with current audit notes.
+Status: archived v7/v8 design carrier. The desktop wrapper was removed in v8;
+its Harness/Open-Sleigh execution model was removed in v9. This document is
+retained only as design provenance and is not a current product contract.
 
 ## Clarifying Answers
 
@@ -23,7 +25,7 @@ Status: target contract with current audit notes.
 The desktop shell is no longer modeled as a generic dashboard plus a separate primary Harness page.
 
 - `Core` is the project cockpit: identity, operator triage, active runtime, and quiet jumps to details.
-- `Onboarding` is the spec construction workspace: target spec, enabling spec, term map, and coverage gaps.
+- `Onboarding` is the spec construction workspace: target spec, software spec, term map, and coverage gaps.
 - `Conversations` are long-lived operator threads; runtime turns are embedded cards, not terminal endings.
 - `Runtime` remains a detail/operator surface for WorkCommissions and apply/requeue/cancel actions.
 - `Artifacts` remain the governance graph: problems, decisions, comparison, evidence, commissions.
@@ -97,7 +99,7 @@ Inexpressible:
 - A harness commission with no next operator action.
 - A status string used directly by UI logic.
 - A generic dashboard item shown in Core without an operator-facing reason.
-- A project marked runnable for broad harness work while target/enabling specs are missing.
+- A project marked runnable for broad harness work while target/software specs are missing.
 - A spec coverage gap shown without a next operator action.
 - A Desktop button that directly sends an opaque prompt and marks semantic state ready.
 
@@ -251,7 +253,7 @@ The invalid state `{"status": "completed", "write_to_pty": True}` must not be co
   - task input capability from each terminal/runnable status.
   - terminal task follow-up compiles to continuation, not closed input.
   - project readiness from `(exists, has_haft)`.
-  - spec readiness from target/enabling/spec-check states.
+  - spec readiness from target/software/spec-check states.
   - spec coverage summary groups uncovered/reasoned/commissioned/verified/stale deterministically.
   - Core attention treats blocked commissions as operator work.
   - Core runtime hides terminal commissions by default.

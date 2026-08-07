@@ -71,9 +71,21 @@ func setupContextDB(t *testing.T) (*artifact.Store, *graph.Store, *sql.DB) {
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, symbol_name TEXT NOT NULL,
 			symbol_kind TEXT, symbol_line INTEGER, symbol_end_line INTEGER, symbol_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path, symbol_name))`,
+		`CREATE TABLE artifact_symbol_bindings (
+			artifact_id TEXT NOT NULL, anchor_id TEXT NOT NULL, anchor_version INTEGER NOT NULL,
+			file_path TEXT NOT NULL, language TEXT NOT NULL, symbol_name TEXT NOT NULL,
+			symbol_kind TEXT NOT NULL, receiver TEXT NOT NULL DEFAULT '', qualified_name TEXT NOT NULL,
+			signature_hash TEXT NOT NULL, symbol_line INTEGER NOT NULL DEFAULT 0,
+			symbol_end_line INTEGER NOT NULL DEFAULT 0, body_hash TEXT NOT NULL DEFAULT '',
+			binding_status TEXT NOT NULL DEFAULT 'active', resolution_source TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (artifact_id, anchor_id))`,
 		`CREATE TABLE codebase_modules (
 			module_id TEXT PRIMARY KEY, path TEXT NOT NULL UNIQUE,
 			name TEXT NOT NULL, lang TEXT, file_count INTEGER DEFAULT 0, last_scanned TEXT NOT NULL)`,
+		`CREATE TABLE code_files (
+			file_path TEXT PRIMARY KEY
+		)`,
 		`CREATE TABLE module_dependencies (
 			source_module TEXT NOT NULL, target_module TEXT NOT NULL,
 			dep_type TEXT NOT NULL DEFAULT 'import', file_path TEXT, last_scanned TEXT NOT NULL,
@@ -129,7 +141,10 @@ func TestFetchCodeContext_FileAndSymbol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(cc.Decisions) != 1 || len(cc.Problems) != 1 || len(cc.Portfolios) != 1 {
+	if len(cc.Decisions) != 0 ||
+		len(cc.AffectedPathContextDecisions) != 1 ||
+		len(cc.Problems) != 1 ||
+		len(cc.Portfolios) != 1 {
 		t.Fatalf("file-level grouping wrong: %+v", cc)
 	}
 	if cc.Empty() {
@@ -141,11 +156,70 @@ func TestFetchCodeContext_FileAndSymbol(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(ccSym.Decisions) != 1 || ccSym.Decisions[0].Meta.ID != "dec-login" {
-		t.Fatalf("symbol-scoped context lost the decision: %+v", ccSym)
+	if len(ccSym.Decisions) != 0 ||
+		len(ccSym.AffectedPathContextDecisions) != 1 ||
+		ccSym.AffectedPathContextDecisions[0].Meta.ID != "dec-login" {
+		t.Fatalf("symbol-scoped context classification wrong: %+v", ccSym)
 	}
-	total := len(ccSym.Decisions) + len(ccSym.Problems) + len(ccSym.Portfolios)
+	total := len(ccSym.AffectedPathContextDecisions) +
+		len(ccSym.Problems) +
+		len(ccSym.Portfolios)
 	if total != 3 {
 		t.Fatalf("symbol union should dedupe to 3 artifacts, got %d", total)
+	}
+}
+
+func TestFetchCodeContextPrefersAuthorityBearingSymbolAnchor(t *testing.T) {
+	store, g, db := setupContextDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	decision := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:        "dec-anchor",
+			Kind:      artifact.KindDecisionRecord,
+			Status:    artifact.StatusActive,
+			Title:     "Anchor precise decision",
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Body: "x",
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+	_, err := db.ExecContext(ctx, `
+		INSERT INTO artifact_symbol_bindings (
+			artifact_id, anchor_id, anchor_version, file_path, language, symbol_name, symbol_kind,
+			qualified_name, signature_hash, binding_status
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"dec-anchor",
+		"sym:v2:run",
+		2,
+		"src/app.ts",
+		"typescript",
+		"run",
+		"func",
+		"run",
+		"signature",
+		artifact.SymbolBindingActive,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cc, err := FetchCodeContext(ctx, store, g, Target{
+		File:     "src/app.ts",
+		Symbol:   "run",
+		AnchorID: "sym:v2:run",
+		Line:     200,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cc.Decisions) != 1 || cc.Decisions[0].Meta.ID != "dec-anchor" {
+		t.Fatalf("anchor-linked decisions = %+v", cc.Decisions)
+	}
+	if cc.SymbolGranularity != "anchor-precise" {
+		t.Fatalf("symbol granularity = %q", cc.SymbolGranularity)
 	}
 }

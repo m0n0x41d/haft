@@ -97,19 +97,23 @@ func decisionCandidatesForAdoption(
 
 // StatusData holds all data needed to render the status dashboard.
 type StatusData struct {
-	HealthyDecisions    []*Artifact
-	PendingDecisions    []*Artifact
-	UnassessedDecisions []*Artifact
-	DecisionHealth      map[string]DecisionHealth // decision ID -> derived maturity/freshness
-	StaleItems          []StaleItem
-	OpenCommissions     []WorkCommissionStatus
-	CommissionAttention []WorkCommissionStatus
-	InProgressProblems  []*Artifact
-	InProgressBy        map[string]string // problem ID -> portfolio ID
-	BacklogProblems     []*Artifact
-	AddressedProblems   []*Artifact
-	AddressedBy         map[string]string // problem ID -> decision ID
-	RecentNotes         []*Artifact
+	HealthyDecisions     []*Artifact
+	PendingDecisions     []*Artifact
+	UnassessedDecisions  []*Artifact
+	DecisionHealth       map[string]DecisionHealth              // decision ID -> derived maturity/freshness
+	DecisionVerification map[string]DecisionVerificationSummary // decision ID -> active claim verification summary
+	StaleItems           []StaleItem
+	OpenCommissions      []WorkCommissionStatus
+	CommissionAttention  []WorkCommissionStatus
+	InProgressProblems   []*Artifact
+	InProgressBy         map[string]string // problem ID -> portfolio ID
+	PortfolioTitles      map[string]string // portfolio ID -> title
+	BacklogProblems      []*Artifact
+	ProblemHygiene       []ProblemHygieneItem
+	AddressedProblems    []*Artifact
+	AddressedBy          map[string]string // problem ID -> decision ID
+	DecisionTitles       map[string]string // decision ID -> title
+	RecentNotes          []*Artifact
 
 	// Drift reports for active decisions whose baselined affected_files
 	// have moved since baseline (H1 of V2 — reality-aware decisions).
@@ -117,6 +121,69 @@ type StatusData struct {
 	// projectRoot. Otherwise nil (drift surfacing skipped, kernel computes
 	// nothing). See dec-20260526-9fdd33ed (PRIME of sol-20260526-744c6381).
 	Drift []DriftReport
+
+	// DriftProjection states whether Drift was derived from one complete current
+	// symbol-index basis. Partial/unavailable results remain useful attention
+	// surfaces but never support a known-absence or release-readiness claim.
+	DriftProjection DriftProjection
+
+	// DriftEvents groups the full current drift report by changed
+	// target/trigger/materiality so compact status can show unique events and
+	// fanout without multiplying one shared change across many decisions.
+	// Compatibility consumers still read Drift, which remains baselined-only.
+	DriftEvents DriftEventReport
+
+	// ReconciliationCues is a derived read-only attention lane over DriftEvents,
+	// DecisionReconciliationPlan, and CurrentGoverningSet. It only points to
+	// drill-downs; it never performs lineage, evidence, baseline, or gate
+	// mutations.
+	ReconciliationCues ReconciliationCueReport
+
+	// SpecBindingDebt is a read-only attention lane over DecisionRecords whose
+	// relation to active SpecSections is missing, invalid, unresolved, or
+	// explicitly out-of-spec. It is populated by project-aware shells that can
+	// read the current ProjectSpecificationSet.
+	SpecBindingDebt SpecBindingDebtReport
+}
+
+type StatusFetchOptions struct {
+	ProjectRoot       string
+	DriftSymbolCorpus *DriftSymbolCorpus
+}
+
+type ProblemHygieneItem struct {
+	Problem *Artifact
+	Reason  string
+	Action  string
+}
+
+type SpecBindingDebtReport struct {
+	SchemaVersion int                    `json:"schema_version"`
+	Authority     string                 `json:"authority"`
+	Summary       SpecBindingDebtSummary `json:"summary"`
+	Items         []SpecBindingDebtItem  `json:"items,omitempty"`
+}
+
+type SpecBindingDebtSummary struct {
+	DecisionsMissingSpecBinding  int `json:"decisions_missing_spec_binding"`
+	DecisionsWithInvalidSpecRefs int `json:"decisions_with_invalid_spec_refs"`
+	DraftSectionNeededDebt       int `json:"draft_section_needed_debt"`
+	OutOfSpecDecisionDebt        int `json:"out_of_spec_decision_debt"`
+}
+
+type SpecBindingDebtItem struct {
+	DecisionRef string   `json:"decision_ref"`
+	Title       string   `json:"title"`
+	Kind        string   `json:"kind"`
+	SectionRefs []string `json:"section_refs,omitempty"`
+	Message     string   `json:"message"`
+}
+
+func (summary SpecBindingDebtSummary) Total() int {
+	return summary.DecisionsMissingSpecBinding +
+		summary.DecisionsWithInvalidSpecRefs +
+		summary.DraftSectionNeededDebt +
+		summary.OutOfSpecDecisionDebt
 }
 
 // FetchStatusData gathers all dashboard data without formatting.
@@ -127,10 +194,27 @@ type StatusData struct {
 // and Drift stays nil. The production MCP path (cli/serve.go status case)
 // passes filepath.Dir(haftDir).
 func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter string, projectRoot string) (StatusData, error) {
+	return FetchStatusDataWithOptions(ctx, store, contextFilter, StatusFetchOptions{
+		ProjectRoot: projectRoot,
+	})
+}
+
+// FetchStatusDataWithOptions gathers status data using an optional exact
+// request-local drift corpus supplied by the project-aware shell.
+func FetchStatusDataWithOptions(
+	ctx context.Context,
+	store ArtifactStore,
+	contextFilter string,
+	options StatusFetchOptions,
+) (StatusData, error) {
+	projectRoot := strings.TrimSpace(options.ProjectRoot)
 	var data StatusData
 	data.InProgressBy = make(map[string]string)
 	data.AddressedBy = make(map[string]string)
+	data.PortfolioTitles = make(map[string]string)
+	data.DecisionTitles = make(map[string]string)
 	data.DecisionHealth = make(map[string]DecisionHealth)
+	data.DecisionVerification = make(map[string]DecisionVerificationSummary)
 
 	// Active decisions
 	var decisions []*Artifact
@@ -142,12 +226,17 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 			}
 		}
 	} else {
-		decisions, _ = store.ListByKind(ctx, KindDecisionRecord, 10)
+		decisions, _ = store.ListByKind(ctx, KindDecisionRecord, 0)
 	}
 	activeDecisions := filterActive(decisions)
-	for _, d := range activeDecisions {
+	for _, listedDecision := range activeDecisions {
+		d := listedDecision
+		if fullDecision, err := store.Get(ctx, listedDecision.Meta.ID); err == nil {
+			d = fullDecision
+		}
 		health := DeriveDecisionHealth(ctx, store, d.Meta.ID)
 		data.DecisionHealth[d.Meta.ID] = health
+		data.DecisionVerification[d.Meta.ID] = DeriveDecisionVerificationSummary(d)
 
 		if health.Maturity == DecisionMaturityUnassessed {
 			data.UnassessedDecisions = append(data.UnassessedDecisions, d)
@@ -211,9 +300,11 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 					if linked.Meta.Kind == KindDecisionRecord {
 						hasDecision = true
 						data.AddressedBy[p.Meta.ID] = linked.Meta.ID
+						data.DecisionTitles[linked.Meta.ID] = linked.Meta.Title
 					} else if linked.Meta.Kind == KindSolutionPortfolio {
 						hasPortfolio = true
 						data.InProgressBy[p.Meta.ID] = linked.Meta.ID
+						data.PortfolioTitles[linked.Meta.ID] = linked.Meta.Title
 					}
 				}
 			}
@@ -224,6 +315,9 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 			data.InProgressProblems = append(data.InProgressProblems, p)
 		} else {
 			data.BacklogProblems = append(data.BacklogProblems, p)
+			if item, ok := problemClosureHygieneItem(ctx, store, p); ok {
+				data.ProblemHygiene = append(data.ProblemHygiene, item)
+			}
 		}
 	}
 
@@ -233,25 +327,45 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	// swallowed so /h-status remains responsive even if drift compute
 	// fails (drift is informational, not gating).
 	if strings.TrimSpace(projectRoot) != "" {
-		if reports, err := CheckDrift(ctx, store, projectRoot); err == nil {
+		data.DriftProjection = options.DriftSymbolCorpus.Projection()
+		if reports, err := CheckDriftWithSymbolCorpus(ctx, store, projectRoot, options.DriftSymbolCorpus); err == nil {
+			data.DriftProjection = options.DriftSymbolCorpus.Projection()
+			eventReports := make([]DriftReport, 0, len(reports))
 			if contextFilter == "" {
 				for _, r := range reports {
-					if r.HasBaseline && len(r.Files) > 0 {
+					if len(r.Files) == 0 {
+						continue
+					}
+					eventReports = append(eventReports, r)
+					if r.HasBaseline {
 						data.Drift = append(data.Drift, r)
 					}
 				}
 			} else {
 				// Filter to decisions in the matching context
 				for _, r := range reports {
-					if !r.HasBaseline || len(r.Files) == 0 {
+					if len(r.Files) == 0 {
 						continue
 					}
 					if a, err := store.Get(ctx, r.DecisionID); err == nil && a.Meta.Context == contextFilter {
-						data.Drift = append(data.Drift, r)
+						eventReports = append(eventReports, r)
+						if r.HasBaseline {
+							data.Drift = append(data.Drift, r)
+						}
 					}
 				}
 			}
+			data.DriftEvents = BuildDriftEventReport(eventReports)
+			data.ReconciliationCues = BuildStatusReconciliationCueReport(ctx, store, data.DriftEvents)
+		} else {
+			data.DriftProjection = DriftProjection{
+				State:            DriftProjectionUnavailable,
+				Reason:           err.Error(),
+				OmittedDecisions: len(activeDecisions),
+			}
 		}
+	} else {
+		data.DriftProjection = DriftProjection{State: DriftProjectionSkipped}
 	}
 
 	// Recent notes (active only, context-filtered if set)
@@ -280,10 +394,60 @@ func FetchStatusData(ctx context.Context, store ArtifactStore, contextFilter str
 	return data, nil
 }
 
+func problemClosureHygieneItem(ctx context.Context, store ArtifactStore, problem *Artifact) (ProblemHygieneItem, bool) {
+	if problem == nil || problem.Meta.Kind != KindProblemCard || problem.Meta.Status != StatusActive {
+		return ProblemHygieneItem{}, false
+	}
+
+	evidence, err := store.GetEvidenceItems(ctx, problem.Meta.ID)
+	if err != nil {
+		return ProblemHygieneItem{}, false
+	}
+	if !hasSupportingEvidence(evidence) {
+		return ProblemHygieneItem{}, false
+	}
+
+	return ProblemHygieneItem{
+		Problem: problem,
+		Reason:  "supporting evidence exists but no based_on SolutionPortfolio or DecisionRecord links this active problem",
+		Action:  "link an existing portfolio/decision, attach the missing evidence to that artifact, or explicitly deprecate/supersede/waive with operator rationale",
+	}, true
+}
+
+func hasSupportingEvidence(items []EvidenceItem) bool {
+	for _, item := range items {
+		switch strings.TrimSpace(strings.ToLower(item.Verdict)) {
+		case "supports", "accepted":
+			return true
+		}
+	}
+	return false
+}
+
+func BuildStatusReconciliationCueReport(
+	ctx context.Context,
+	store ArtifactStore,
+	driftEvents DriftEventReport,
+) ReconciliationCueReport {
+	reconciliation := DecisionReconciliationPlan{}
+	if plan, err := BuildDecisionReconciliationPlan(ctx, store); err == nil {
+		reconciliation = plan
+	}
+
+	governing := CurrentGoverningSetReport{}
+	if report, err := BuildCurrentGoverningSetReport(ctx, store); err == nil {
+		governing = report
+	}
+
+	return BuildReconciliationCueReport(driftEvents, reconciliation, governing)
+}
+
 type WorkCommissionStatus struct {
 	ID               string
+	Title            string
 	State            string
 	DecisionRef      string
+	DecisionTitle    string
 	PlanRef          string
 	ValidUntil       string
 	FetchedAt        string
@@ -315,7 +479,14 @@ func FetchWorkCommissionStatuses(ctx context.Context, store ArtifactStore) ([]Wo
 			payload["id"] = item.Meta.ID
 		}
 
-		statuses = append(statuses, workCommissionStatusFromPayload(payload, now))
+		status := workCommissionStatusFromPayload(payload, now)
+		status.Title = item.Meta.Title
+		if status.DecisionRef != "" {
+			if decision, err := store.Get(ctx, status.DecisionRef); err == nil {
+				status.DecisionTitle = decision.Meta.Title
+			}
+		}
+		statuses = append(statuses, status)
 	}
 
 	return statuses, nil
@@ -454,8 +625,9 @@ type ListData struct {
 
 // FetchListData returns artifacts of a given kind.
 func FetchListData(ctx context.Context, store ArtifactStore, kindStr string, limit int) (ListData, error) {
+	validKinds := strings.Join(ValidKindNames(), ", ")
 	if kindStr == "" {
-		return ListData{}, fmt.Errorf("kind is required — use: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport")
+		return ListData{}, fmt.Errorf("kind is required — use: %s", validKinds)
 	}
 	if limit <= 0 {
 		limit = 50
@@ -463,7 +635,7 @@ func FetchListData(ctx context.Context, store ArtifactStore, kindStr string, lim
 
 	kind, err := ParseKind(kindStr)
 	if err != nil {
-		return ListData{}, fmt.Errorf("%w (valid: Note, ProblemCard, SolutionPortfolio, DecisionRecord, EvidencePack, RefreshReport)", err)
+		return ListData{}, fmt.Errorf("%w (valid: %s)", err, validKinds)
 	}
 	artifacts, err := store.ListByKind(ctx, kind, limit)
 	if err != nil {

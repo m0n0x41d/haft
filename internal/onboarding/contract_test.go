@@ -1,0 +1,661 @@
+package onboarding
+
+import (
+	"context"
+	"fmt"
+	"slices"
+	"testing"
+
+	"github.com/m0n0x41d/haft/internal/projectprofile"
+)
+
+type scriptedRuntime struct {
+	observation        Observation
+	profile            Preparation
+	profileChange      Preparation
+	memory             Preparation
+	observeCalls       int
+	profileCalls       int
+	profileChangeCalls int
+	memoryCalls        int
+	observationUpdate  func() Observation
+}
+
+func (runtime *scriptedRuntime) Observe(
+	context.Context,
+) (Observation, error) {
+	runtime.observeCalls++
+	if runtime.observationUpdate != nil {
+		return runtime.observationUpdate(), nil
+	}
+	return runtime.observation, nil
+}
+
+func (runtime *scriptedRuntime) PrepareProfile(
+	context.Context,
+	Request,
+) (Preparation, error) {
+	runtime.profileCalls++
+	return runtime.profile, nil
+}
+
+func (runtime *scriptedRuntime) PrepareProfileChange(
+	context.Context,
+	Request,
+) (Preparation, error) {
+	runtime.profileChangeCalls++
+	return runtime.profileChange, nil
+}
+
+func (runtime *scriptedRuntime) PrepareMemory(
+	context.Context,
+) (Preparation, error) {
+	runtime.memoryCalls++
+	return runtime.memory, nil
+}
+
+func TestStatusProjectsClosedReadableStatesWithoutAuthorityEffects(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	scope := mustScope(t, "app", "Application", Software, nil)
+	fixtures := []struct {
+		name        string
+		observation ObservationInput
+		result      Result
+		status      Status
+		choices     []string
+	}{
+		{
+			name: "needs init",
+			observation: ObservationInput{
+				Initialized: false,
+			},
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
+		},
+		{
+			name: "needs profile",
+			observation: ObservationInput{
+				Initialized: true,
+				Scopes:      []Scope{scope},
+			},
+			result: ResultNeedsProfile,
+			status: StatusNeedsProfile,
+		},
+		{
+			name: "automatic bootstrap eligible",
+			observation: ObservationInput{
+				Initialized:           true,
+				AutoBootstrapEligible: true,
+				ProfileReviewReady:    true,
+				Scopes:                []Scope{scope},
+			},
+			result: ResultNeedsProfile,
+			status: StatusNeedsProfile,
+		},
+		{
+			name: "profile review",
+			observation: ObservationInput{
+				Initialized:        true,
+				ProfileReviewReady: true,
+				Scopes:             []Scope{scope},
+			},
+			result: ResultProfileReviewReady,
+			status: StatusProfileReviewReady,
+		},
+		{
+			name: "legacy missing memory requires init repair",
+			observation: ObservationInput{
+				Initialized:     true,
+				ProfileDeclared: true,
+				Scopes:          []Scope{scope},
+			},
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
+		},
+		{
+			name: "legacy memory review requires init repair",
+			observation: ObservationInput{
+				Initialized:       true,
+				ProfileDeclared:   true,
+				MemoryReviewReady: true,
+				Scopes:            []Scope{scope},
+			},
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
+		},
+		{
+			name: "legacy deferral requires init repair",
+			observation: ObservationInput{
+				Initialized:     true,
+				ProfileDeclared: true,
+				MemoryDeferred:  true,
+				Scopes:          []Scope{scope},
+			},
+			result: ResultOnboardingRequired,
+			status: StatusNeedsInit,
+		},
+		{
+			name: "ready",
+			observation: ObservationInput{
+				Initialized:     true,
+				ProfileDeclared: true,
+				MemoryReady:     true,
+				Scopes:          []Scope{scope},
+			},
+			result: ResultReady,
+			status: StatusReady,
+		},
+	}
+	for _, fixture := range fixtures {
+		fixture := fixture
+		t.Run(fixture.name, func(t *testing.T) {
+			t.Parallel()
+			observation, err := NewObservation(
+				fixture.observation,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			runtime := &scriptedRuntime{
+				observation: observation,
+			}
+			service, err := NewService(
+				runtime,
+				fixture.observation.MemoryReady,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request, err := NewRequest(
+				RequestInput{
+					Action: string(ActionStatus),
+				},
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			outcome, err := service.Execute(
+				context.Background(),
+				request,
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if outcome.Result() != fixture.result ||
+				outcome.Status() != fixture.status {
+				t.Fatalf(
+					"result/status = %q/%q, want %q/%q",
+					outcome.Result(),
+					outcome.Status(),
+					fixture.result,
+					fixture.status,
+				)
+			}
+			if !slices.Equal(
+				outcome.Choices(),
+				fixture.choices,
+			) {
+				t.Fatalf(
+					"choices = %#v, want %#v",
+					outcome.Choices(),
+					fixture.choices,
+				)
+			}
+			effects := outcome.Effects()
+			if effects.CanonicalProfileChanged ||
+				effects.StructuredMemoryEnabled ||
+				effects.AuthorityGranted ||
+				effects.ReviewCarrierCreated ||
+				effects.ReviewCarrierReused {
+				t.Fatalf(
+					"status crossed effect boundary: %#v",
+					effects,
+				)
+			}
+			if runtime.profileCalls != 0 ||
+				runtime.profileChangeCalls != 0 ||
+				runtime.memoryCalls != 0 {
+				t.Fatalf(
+					"status invoked preparation: %d/%d/%d",
+					runtime.profileCalls,
+					runtime.profileChangeCalls,
+					runtime.memoryCalls,
+				)
+			}
+			if outcome.StateDomain() != StateDomainProjectSetupReadiness {
+				t.Fatalf("state domain = %q", outcome.StateDomain())
+			}
+			if fixture.result == ResultReady {
+				if !slices.Equal(outcome.ReadyFor(), projectSetupReadyFor) ||
+					!slices.Equal(
+						outcome.DoesNotEstablish(),
+						projectSetupDoesNotEstablish,
+					) {
+					t.Fatalf(
+						"ready semantics = %#v / %#v",
+						outcome.ReadyFor(),
+						outcome.DoesNotEstablish(),
+					)
+				}
+			}
+		})
+	}
+}
+
+func TestProfileChangePreparationIsSeparateAndNonBinding(t *testing.T) {
+	t.Parallel()
+
+	scope := mustScope(t, "app", "Application", Software, nil)
+	observation, err := NewObservation(
+		ObservationInput{
+			Initialized:     true,
+			ProfileDeclared: true,
+			MemoryReady:     true,
+			Scopes:          []Scope{scope},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := NewPreparation(
+		PreparationCreated,
+		"review:onboard-profile-change",
+		[]Scope{scope},
+		"Prepared one relation change.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &scriptedRuntime{
+		observation:   observation,
+		profileChange: prepared,
+	}
+	service, err := NewService(runtime, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(
+		RequestInput{
+			Action:           string(ActionProfileChangePrepare),
+			ScopeIDPresent:   true,
+			ScopeID:          "app",
+			EntityRefPresent: true,
+			EntityRef:        "entity:target-system",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := service.Execute(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Result() != ResultProfileChangeReviewCreated ||
+		outcome.Status() != StatusProfileChangeReviewReady ||
+		outcome.ReviewRef() != "review:onboard-profile-change" {
+		t.Fatalf("profile change preparation = %#v", outcome)
+	}
+	effects := outcome.Effects()
+	if !effects.ReviewCarrierCreated ||
+		effects.CanonicalProfileChanged ||
+		effects.AuthorityGranted {
+		t.Fatalf("profile change effects = %#v", effects)
+	}
+	if runtime.profileCalls != 0 || runtime.profileChangeCalls != 1 {
+		t.Fatalf(
+			"preparation calls = initial:%d change:%d",
+			runtime.profileCalls,
+			runtime.profileChangeCalls,
+		)
+	}
+}
+
+func TestServiceRequiresRestartWhenMemoryBecameReadyAfterStartup(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	observation, err := NewObservation(
+		ObservationInput{
+			Initialized:     true,
+			ProfileDeclared: true,
+			MemoryReady:     true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &scriptedRuntime{
+		observation: observation,
+	}
+	service, err := NewService(runtime, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(
+		RequestInput{
+			Action: string(ActionMemoryPrepare),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := service.Execute(
+		context.Background(),
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Result() != ResultRestartRequired ||
+		outcome.Status() != StatusReady {
+		t.Fatalf(
+			"result/status = %q/%q",
+			outcome.Result(),
+			outcome.Status(),
+		)
+	}
+	if runtime.memoryCalls != 0 {
+		t.Fatalf(
+			"stale process invoked preparation %d time(s)",
+			runtime.memoryCalls,
+		)
+	}
+	effects := outcome.Effects()
+	if effects.StructuredMemoryEnabled ||
+		effects.AuthorityGranted ||
+		effects.ReviewCarrierCreated ||
+		effects.ReviewCarrierReused {
+		t.Fatalf(
+			"restart result crossed effect boundary: %#v",
+			effects,
+		)
+	}
+}
+
+func TestPreparationResultsKeepBindingEffectsFalse(t *testing.T) {
+	t.Parallel()
+
+	scope := mustScope(
+		t,
+		"docs",
+		"Documentation",
+		NonSoftware,
+		[]string{"README.md"},
+	)
+	observation, err := NewObservation(
+		ObservationInput{
+			Initialized: true,
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := NewPreparation(
+		PreparationCreated,
+		"review:onboard-profile",
+		[]Scope{scope},
+		"Prepared.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &scriptedRuntime{
+		observation: observation,
+		profile:     profile,
+	}
+	service, err := NewService(runtime, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(
+		RequestInput{
+			Action: string(ActionProfilePrepare),
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := service.Execute(
+		context.Background(),
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Result() != ResultProfileReviewCreated ||
+		outcome.Status() != StatusProfileReviewReady {
+		t.Fatalf(
+			"result/status = %q/%q",
+			outcome.Result(),
+			outcome.Status(),
+		)
+	}
+	effects := outcome.Effects()
+	if !effects.ReviewCarrierCreated ||
+		effects.CanonicalProfileChanged ||
+		effects.StructuredMemoryEnabled ||
+		effects.AuthorityGranted {
+		t.Fatalf(
+			"preparation effects = %#v",
+			effects,
+		)
+	}
+}
+
+func TestProfilePrepareAllowsExplicitReviewForDetectorDefaultProfile(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	scope := mustScope(t, "app", "Application", Software, nil)
+	observation, err := NewObservation(
+		ObservationInput{
+			Initialized:             true,
+			ProfileDeclared:         true,
+			ProfileOverrideEligible: true,
+			ProfileOrigin: projectprofile.
+				ProfileAdmissionOriginDetectorDefault,
+			Scopes: []Scope{scope},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profile, err := NewPreparation(
+		PreparationCreated,
+		"review:onboard-profile",
+		[]Scope{scope},
+		"Prepared explicit replacement review.",
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	runtime := &scriptedRuntime{
+		observation: observation,
+		profile:     profile,
+	}
+	service, err := NewService(runtime, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, err := NewRequest(
+		RequestInput{Action: string(ActionProfilePrepare)},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outcome, err := service.Execute(
+		context.Background(),
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome.Result() != ResultProfileReviewCreated ||
+		outcome.ProfileOrigin() !=
+			projectprofile.ProfileAdmissionOriginDetectorDefault ||
+		!outcome.ProfileOverrideEligible() ||
+		runtime.profileCalls != 1 {
+		t.Fatalf(
+			"detector-default preparation = %#v calls=%d",
+			outcome,
+			runtime.profileCalls,
+		)
+	}
+}
+
+func TestObservationRejectsOverrideEligibilityForNonDetectorProfile(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	_, err := NewObservation(
+		ObservationInput{
+			Initialized:             true,
+			ProfileDeclared:         true,
+			ProfileOverrideEligible: true,
+			ProfileOrigin: projectprofile.
+				ProfileAdmissionOriginExplicitOperator,
+		},
+	)
+	if err == nil {
+		t.Fatal("explicit profile was marked eligible for initial override")
+	}
+}
+
+func TestRequestRejectsCrossActionAndIncompleteFallbackFields(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	scope := mustScope(
+		t,
+		"app",
+		"Application",
+		Software,
+		nil,
+	)
+	fixtures := []RequestInput{
+		{
+			Action:       string(ActionStatus),
+			BasisPresent: true,
+			Basis:        "not applicable",
+		},
+		{
+			Action:        string(ActionMemoryPrepare),
+			ScopesPresent: true,
+			Scopes:        []Scope{scope},
+		},
+		{
+			Action:        string(ActionProfilePrepare),
+			ScopesPresent: true,
+			Scopes:        []Scope{scope},
+		},
+		{
+			Action:       string(ActionProfilePrepare),
+			BasisPresent: true,
+			Basis:        "Manual classification.",
+		},
+	}
+	for index, fixture := range fixtures {
+		if _, err := NewRequest(fixture); err == nil {
+			t.Fatalf(
+				"invalid request %d was accepted: %#v",
+				index,
+				fixture,
+			)
+		}
+	}
+}
+
+func TestScopeEvidencePathCountMatchesPublicSchemaBound(t *testing.T) {
+	t.Parallel()
+
+	atLimit := make([]string, MaximumEvidencePaths)
+	for index := range atLimit {
+		atLimit[index] = fmt.Sprintf("docs/evidence-%03d.md", index)
+	}
+	if _, err := NewScope(
+		"docs",
+		"Documentation",
+		NonSoftware,
+		atLimit,
+	); err != nil {
+		t.Fatalf("scope at evidence-path limit: %v", err)
+	}
+
+	overLimit := append(
+		append([]string{}, atLimit...),
+		"docs/evidence-over-limit.md",
+	)
+	if _, err := NewScope(
+		"docs",
+		"Documentation",
+		NonSoftware,
+		overLimit,
+	); err == nil {
+		t.Fatal("scope above evidence-path limit was accepted")
+	}
+}
+
+func TestProjectedScopePreservesTotalWhenEvidencePathsAreBounded(t *testing.T) {
+	t.Parallel()
+
+	retained := make([]string, MaximumEvidencePaths)
+	for index := range retained {
+		retained[index] = fmt.Sprintf("internal/evidence-%03d.go", index)
+	}
+	scope, err := NewProjectedScope(
+		"software",
+		"Software",
+		Software,
+		retained,
+		MaximumEvidencePaths+37,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if scope.EvidencePathCount() != MaximumEvidencePaths+37 ||
+		!scope.EvidencePathsTruncated() ||
+		len(scope.EvidencePaths()) != MaximumEvidencePaths {
+		t.Fatalf(
+			"projection = count:%d truncated:%t retained:%d",
+			scope.EvidencePathCount(),
+			scope.EvidencePathsTruncated(),
+			len(scope.EvidencePaths()),
+		)
+	}
+	if _, err := NewProjectedScope(
+		"software",
+		"Software",
+		Software,
+		retained[:MaximumEvidencePaths-1],
+		MaximumEvidencePaths+37,
+	); err == nil {
+		t.Fatal("short truncated evidence projection was accepted")
+	}
+}
+
+func mustScope(
+	t *testing.T,
+	scopeID string,
+	label string,
+	kind RealizationKind,
+	evidence []string,
+) Scope {
+	t.Helper()
+	scope, err := NewScope(
+		scopeID,
+		label,
+		kind,
+		evidence,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return scope
+}

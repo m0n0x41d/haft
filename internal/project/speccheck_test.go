@@ -41,6 +41,59 @@ func TestCheckSpecDocumentsAcceptsValidSpecSet(t *testing.T) {
 	}
 }
 
+func TestSpecCheckReportAggregatesRepeatedSQLFirstCarrierDocuments(t *testing.T) {
+	specSet := ProjectSpecificationSet{
+		Documents: []SpecDocument{
+			{
+				Path: ".haft/specs/target-system.md",
+				Kind: SpecDocumentKindTargetSystem,
+				Sections: []SpecSection{
+					{ID: "TS.use.001", Status: string(SpecSectionStateActive)},
+				},
+			},
+			{
+				Path: ".haft/specs/target-system.md",
+				Kind: SpecDocumentKindTargetSystem,
+				Sections: []SpecSection{
+					{ID: "TS.use.002", Status: string(SpecSectionStateDraft)},
+				},
+			},
+			{
+				Path: ".haft/specs/term-map.md",
+				Kind: SpecDocumentKindTermMap,
+				TermMapEntries: []TermMapEntry{
+					{Term: "TargetSystem"},
+				},
+			},
+		},
+	}
+
+	report := SpecCheckReportFromSpecificationSet(specSet)
+
+	if len(report.Documents) != 2 {
+		t.Fatalf("documents = %#v, want one target carrier and one term-map carrier", report.Documents)
+	}
+	target := report.Documents[0]
+	if target.Path != ".haft/specs/target-system.md" {
+		t.Fatalf("target document path = %q", target.Path)
+	}
+	if target.SpecSections != 2 {
+		t.Fatalf("target spec_sections = %d, want 2", target.SpecSections)
+	}
+	if target.ActiveSpecSections != 1 {
+		t.Fatalf("target active_spec_sections = %d, want 1", target.ActiveSpecSections)
+	}
+	if report.Summary.SpecSections != 2 {
+		t.Fatalf("summary spec_sections = %d, want 2", report.Summary.SpecSections)
+	}
+	if report.Summary.ActiveSpecSections != 1 {
+		t.Fatalf("summary active_spec_sections = %d, want 1", report.Summary.ActiveSpecSections)
+	}
+	if report.Summary.TermMapEntries != 1 {
+		t.Fatalf("summary term_map_entries = %d, want 1", report.Summary.TermMapEntries)
+	}
+}
+
 func TestCheckSpecDocumentsFindsMissingRequiredSpecSectionField(t *testing.T) {
 	report := CheckSpecDocuments([]SpecDocumentInput{
 		{
@@ -68,7 +121,7 @@ func TestCheckSpecDocumentsFindsTermMapEntryMissingTerm(t *testing.T) {
 			Kind: "term-map",
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
-				"  - domain: enabling\n" +
+				"  - category: enabling\n" +
 				"    definition: A project with parseable specs.\n" +
 				"```\n",
 		},
@@ -86,7 +139,7 @@ func TestCheckSpecDocumentsAcceptsPlainYamlTermMapEntry(t *testing.T) {
 			Kind: "term-map",
 			Content: "```yaml\n" +
 				"term: HarnessableProject\n" +
-				"domain: enabling\n" +
+				"category: enabling\n" +
 				"definition: A project with active specs.\n" +
 				"```\n",
 		},
@@ -98,6 +151,54 @@ func TestCheckSpecDocumentsAcceptsPlainYamlTermMapEntry(t *testing.T) {
 	if report.Summary.TermMapEntries != 1 {
 		t.Fatalf("term_map_entries = %d, want 1", report.Summary.TermMapEntries)
 	}
+}
+
+func TestCheckSpecDocumentsAcceptsLegacyDomainTermMapEntry(t *testing.T) {
+	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/term-map.md",
+			Kind: "term-map",
+			Content: "```yaml term-map\n" +
+				"entries:\n" +
+				"  - term: HarnessableProject\n" +
+				"    domain: enabling\n" +
+				"    definition: A project with active specs.\n" +
+				"```\n",
+		},
+	})
+
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none for legacy domain alias", specSet.Findings)
+	}
+	if len(specSet.TermMapEntries) != 1 {
+		t.Fatalf("term map entries = %#v, want one", specSet.TermMapEntries)
+	}
+
+	entry := specSet.TermMapEntries[0]
+	if entry.Category != "enabling" {
+		t.Fatalf("category = %q, want enabling", entry.Category)
+	}
+	if entry.Domain != "enabling" {
+		t.Fatalf("legacy domain mirror = %q, want enabling", entry.Domain)
+	}
+}
+
+func TestCheckSpecDocumentsRejectsConflictingTermMapCategoryAndDomain(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/term-map.md",
+			Kind: "term-map",
+			Content: "```yaml term-map\n" +
+				"entries:\n" +
+				"  - term: HarnessableProject\n" +
+				"    category: enabling\n" +
+				"    domain: target\n" +
+				"    definition: A project with active specs.\n" +
+				"```\n",
+		},
+	})
+
+	assertSpecCheckFindingAt(t, report, "term_map_category_domain_conflict", "$.entries[0].domain")
 }
 
 func TestCheckSpecDocumentsAcceptsValidL15Shapes(t *testing.T) {
@@ -129,7 +230,7 @@ func TestCheckSpecDocumentsAcceptsValidL15Shapes(t *testing.T) {
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
 				"  - term: HarnessableProject\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: A project with active specs.\n" +
 				"    not:\n" +
 				"      - repo with only README\n" +
@@ -181,7 +282,7 @@ func TestProjectSpecificationSetParsesCanonicalSectionFields(t *testing.T) {
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
 				"  - term: WorkCommission\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: Human-authorized bounded permission to execute a DecisionRecord.\n" +
 				"    not:\n" +
 				"      - DecisionRecord\n" +
@@ -254,8 +355,11 @@ func TestProjectSpecificationSetParsesCanonicalSectionFields(t *testing.T) {
 	if term.Term != "WorkCommission" {
 		t.Fatalf("term = %q, want WorkCommission", term.Term)
 	}
+	if term.Category != "enabling" {
+		t.Fatalf("category = %q, want enabling", term.Category)
+	}
 	if term.Domain != "enabling" {
-		t.Fatalf("domain = %q, want enabling", term.Domain)
+		t.Fatalf("legacy domain mirror = %q, want enabling", term.Domain)
 	}
 	if term.Definition == "" {
 		t.Fatalf("definition = %q, want non-empty definition", term.Definition)
@@ -268,6 +372,168 @@ func TestProjectSpecificationSetParsesCanonicalSectionFields(t *testing.T) {
 	}
 	if !sameStrings(term.Owners, []string{"haft"}) {
 		t.Fatalf("owners = %#v, want haft", term.Owners)
+	}
+}
+
+func TestProjectSpecificationSetParsesExplicitClaims(t *testing.T) {
+	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.claims.001 Explicit claims\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.claims.001\n" +
+				"kind: acceptance\n" +
+				"title: Explicit claims\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"claims:\n" +
+				"  - id: TS.claims.001.A1\n" +
+				"    class: A\n" +
+				"    statement: Gate claim is admissible after review.\n" +
+				"    scope:\n" +
+				"      - target-boundary\n" +
+				"    support_refs:\n" +
+				"      - dec-20260618-example\n" +
+				"    evidence_refs:\n" +
+				"      - evid-20260618-example\n" +
+				"    valid_until: 2026-08-01\n" +
+				"    governing_pattern_refs:\n" +
+				"      - A.6.B\n" +
+				"  - id: TS.claims.001.mixed\n" +
+				"    class: A/D\n" +
+				"    claim: Mixed claim stays explicit and unresolved until review.\n" +
+				"```\n",
+		},
+	})
+
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none", specSet.Findings)
+	}
+	if len(specSet.Sections) != 1 {
+		t.Fatalf("sections = %#v, want one section", specSet.Sections)
+	}
+
+	claims := specSet.Sections[0].Claims
+	if len(claims) != 2 {
+		t.Fatalf("claims = %#v, want two claims", claims)
+	}
+	if claims[0].ID != "TS.claims.001.A1" || claims[0].Class != "A" {
+		t.Fatalf("first claim identity = %#v", claims[0])
+	}
+	if claims[0].Statement != "Gate claim is admissible after review." {
+		t.Fatalf("first claim statement = %q", claims[0].Statement)
+	}
+	if !sameStrings(claims[0].SupportRefs, []string{"dec-20260618-example"}) {
+		t.Fatalf("support_refs = %#v", claims[0].SupportRefs)
+	}
+	if !sameStrings(claims[0].EvidenceRefs, []string{"evid-20260618-example"}) {
+		t.Fatalf("evidence_refs = %#v", claims[0].EvidenceRefs)
+	}
+	if !sameStrings(claims[0].GoverningPatternRefs, []string{"A.6.B"}) {
+		t.Fatalf("governing_pattern_refs = %#v", claims[0].GoverningPatternRefs)
+	}
+	if claims[1].Class != "A/D" {
+		t.Fatalf("mixed class = %q", claims[1].Class)
+	}
+	if claims[1].Statement != "Mixed claim stays explicit and unresolved until review." {
+		t.Fatalf("mixed claim statement = %q", claims[1].Statement)
+	}
+}
+
+func TestProjectSpecificationSetParsesSystemReferenceFrame(t *testing.T) {
+	specSet := ProjectSpecificationSetFromDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.001 System frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.001\n" +
+				"spec: target-system\n" +
+				"system_frame:\n" +
+				"  id: target_system\n" +
+				"  kind: target_system\n" +
+				"kind: target.frame\n" +
+				"title: System frame\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/enabling-system.md",
+			Kind: "enabling-system",
+			Content: "## ES.frame.001 System frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: ES.frame.001\n" +
+				"spec: enabling-system\n" +
+				"system_frame: enabling_system\n" +
+				"kind: enabling.frame\n" +
+				"title: System frame\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.002 Carrier frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.002\n" +
+				"system_frame: publication_system\n" +
+				"kind: carrier.frame\n" +
+				"title: Carrier frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/enabling-system.md",
+			Kind: "enabling-system",
+			Content: "## ES.frame.002 Sidekick frame\n\n" +
+				"```yaml spec-section\n" +
+				"id: ES.frame.002\n" +
+				"system_frame:\n" +
+				"  id: external_system\n" +
+				"kind: sidekick.frame\n" +
+				"title: Sidekick frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"```\n",
+		},
+	})
+
+	if len(specSet.Findings) != 0 {
+		t.Fatalf("findings = %+v, want none", specSet.Findings)
+	}
+	if got := specSet.Sections[0].SystemFrame.Kind; got != "target_system" {
+		t.Fatalf("target system frame = %q, want target_system", got)
+	}
+	if got := specSet.Sections[0].SystemFrame.Source; got != "system_frame" {
+		t.Fatalf("target system frame source = %q, want system_frame", got)
+	}
+	if got := specSet.Sections[1].SystemFrame.Kind; got != "enabling_system" {
+		t.Fatalf("enabling system frame = %q, want enabling_system", got)
+	}
+	if got := specSet.Sections[2].SystemFrame.Kind; got != "carrier" {
+		t.Fatalf("carrier frame = %q, want carrier", got)
+	}
+	if got := specSet.Sections[3].SystemFrame.Kind; got != "sidekick" {
+		t.Fatalf("sidekick frame = %q, want sidekick", got)
 	}
 }
 
@@ -305,9 +571,9 @@ func TestCheckSpecDocumentsReportsDraftCarrierReadinessGaps(t *testing.T) {
 			Content: targetSystemSpecCarrierContent(),
 		},
 		{
-			Path:    ".haft/specs/enabling-system.md",
-			Kind:    "enabling-system",
-			Content: enablingSystemSpecCarrierContent(),
+			Path:    ".haft/specs/software-system.md",
+			Kind:    "software-system",
+			Content: softwareSystemSpecCarrierContent(),
 		},
 		{
 			Path:    ".haft/specs/term-map.md",
@@ -333,14 +599,14 @@ func TestCheckSpecDocumentsValidatesTermMapShapeAndDuplicateAliases(t *testing.T
 			Content: "```yaml term-map\n" +
 				"entries:\n" +
 				"  - term: HarnessableProject\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: A project with active specs.\n" +
 				"    not: tracker ticket\n" +
 				"    aliases:\n" +
 				"      - spec set\n" +
 				"      - spec set\n" +
 				"  - term: ProjectSpecificationSet\n" +
-				"    domain: enabling\n" +
+				"    category: enabling\n" +
 				"    definition: Project-local specs and workflow policy.\n" +
 				"    aliases:\n" +
 				"      - spec set\n" +
@@ -352,7 +618,7 @@ func TestCheckSpecDocumentsValidatesTermMapShapeAndDuplicateAliases(t *testing.T
 	assertSpecCheckFindingAt(t, report, "term_map_invalid_not", "$.entries[0].not")
 	assertSpecCheckFindingAt(t, report, "term_map_duplicate_alias", "$.entries[0].aliases[1]")
 	assertSpecCheckFindingAt(t, report, "term_map_duplicate_alias", "$.entries[1].aliases[0]")
-	assertSpecCheckFindingAt(t, report, "term_map_missing_domain", "$.entries[2].domain")
+	assertSpecCheckFindingAt(t, report, "term_map_missing_category", "$.entries[2].category")
 	assertSpecCheckFindingAt(t, report, "term_map_missing_definition", "$.entries[2].definition")
 }
 
@@ -386,6 +652,104 @@ func TestCheckSpecDocumentsValidatesSectionOptionalFieldShapes(t *testing.T) {
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_depends_on", "$.depends_on")
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_target_refs", "$.target_refs[1]")
 	assertSpecCheckFindingAt(t, report, "spec_section_invalid_evidence_required", "$.evidence_required[0].description")
+}
+
+func TestCheckSpecDocumentsValidatesExplicitClaimShapes(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.claims.001\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.claims.001\n" +
+				"kind: acceptance\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"claims:\n" +
+				"  - id: bad id\n" +
+				"    class: A\n" +
+				"  - id: TS.claims.001.C2\n" +
+				"    class: \"\"\n" +
+				"  - not-a-mapping\n" +
+				"  - id: TS.claims.001.C4\n" +
+				"    class: E\n" +
+				"    support_refs: dec-20260618-example\n" +
+				"```\n",
+		},
+	})
+
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[0].id")
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[1].class")
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[2]")
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_claims", "$.claims[3].support_refs")
+}
+
+func TestCheckSpecDocumentsValidatesSystemReferenceFrame(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.001\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.001\n" +
+				"kind: target.frame\n" +
+				"statement_type: definition\n" +
+				"claim_layer: object\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"system_frame:\n" +
+				"  kind: third_system\n" +
+				"```\n",
+		},
+	})
+
+	assertSpecCheckFindingAt(t, report, "spec_section_invalid_system_frame", "$.system_frame.kind")
+}
+
+func TestCheckSpecDocumentsAllowsCarrierAndSidekickSystemFrames(t *testing.T) {
+	report := CheckSpecDocuments([]SpecDocumentInput{
+		{
+			Path: ".haft/specs/target-system.md",
+			Kind: "target-system",
+			Content: "## TS.frame.002\n\n" +
+				"```yaml spec-section\n" +
+				"id: TS.frame.002\n" +
+				"kind: carrier.frame\n" +
+				"title: Carrier frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"system_frame: carrier_system\n" +
+				"```\n",
+		},
+		{
+			Path: ".haft/specs/enabling-system.md",
+			Kind: "enabling-system",
+			Content: "## ES.frame.002\n\n" +
+				"```yaml spec-section\n" +
+				"id: ES.frame.002\n" +
+				"kind: sidekick.frame\n" +
+				"title: Sidekick frame\n" +
+				"statement_type: explanation\n" +
+				"claim_layer: description\n" +
+				"owner: human\n" +
+				"status: active\n" +
+				"valid_until: 2026-07-24\n" +
+				"system_frame:\n" +
+				"  kind: external_system\n" +
+				"```\n",
+		},
+	})
+
+	if report.HasFindings() {
+		t.Fatalf("report has findings: %+v", report.Findings)
+	}
 }
 
 func TestCheckSpecDocumentsGuardsActiveTargetCarrierClaims(t *testing.T) {
@@ -448,6 +812,27 @@ func TestCheckSpecificationSetFindsMissingTermMapFile(t *testing.T) {
 	if !hasSpecCheckFinding(report, "term_map_missing_file") {
 		t.Fatalf("report findings = %+v, want missing term-map file finding", report.Findings)
 	}
+}
+
+func TestCheckSpecificationSetLegacyCarrierRequiresSoftwareMigration(t *testing.T) {
+	root := t.TempDir()
+	specDir := filepath.Join(root, ".haft", "specs")
+	if err := os.MkdirAll(specDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	writeSpecCheckFixture(t, filepath.Join(specDir, "target-system.md"), validSpecSectionCarrier("TS.use.001", "environment-change", "active"))
+	writeSpecCheckFixture(t, filepath.Join(specDir, "enabling-system.md"), validSpecSectionCarrier("ES.architecture.001", "enabling.architecture", "active"))
+	writeSpecCheckFixture(t, filepath.Join(specDir, "term-map.md"), validTermMapCarrier())
+
+	report, err := CheckSpecificationSet(root)
+	if err != nil {
+		t.Fatalf("CheckSpecificationSet: %v", err)
+	}
+	if !hasSpecCheckFinding(report, SpecMigrationRequiredFindingCode) {
+		t.Fatalf("report findings = %+v, want migration-required finding", report.Findings)
+	}
+	assertAllSpecCheckFindingsHaveNextAction(t, report)
 }
 
 func TestCheckSpecificationSetReportsIgnoredSpecCarriers(t *testing.T) {
@@ -588,7 +973,7 @@ func validTermMapCarrier() string {
 	return "```yaml term-map\n" +
 		"entries:\n" +
 		"  - term: HarnessableProject\n" +
-		"    domain: enabling\n" +
+		"    category: enabling\n" +
 		"    definition: A project with active specs.\n" +
 		"```\n"
 }

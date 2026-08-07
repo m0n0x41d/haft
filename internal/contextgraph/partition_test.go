@@ -7,6 +7,32 @@ import (
 	"github.com/m0n0x41d/haft/internal/graph"
 )
 
+func partitionInvariants(
+	invariants []graph.Invariant,
+	symbol string,
+	symbolLinked []*artifact.Artifact,
+) (binding []graph.Invariant, contextInv []graph.Invariant) {
+	if symbol == "" {
+		return invariants, nil
+	}
+	symbolDecisions := make(map[string]bool, len(symbolLinked))
+	for _, item := range symbolLinked {
+		if item == nil ||
+			item.Meta.Kind != artifact.KindDecisionRecord {
+			continue
+		}
+		symbolDecisions[item.Meta.ID] = true
+	}
+	for _, invariant := range invariants {
+		if symbolDecisions[invariant.DecisionID] {
+			binding = append(binding, invariant)
+			continue
+		}
+		contextInv = append(contextInv, invariant)
+	}
+	return binding, contextInv
+}
+
 // TestPartitionInvariants is the regression for the over-surfacing fix: a symbol
 // view asserts "must hold here" only for invariants whose decision governs the
 // symbol directly; a module-level (e.g. roadmap) invariant becomes context.

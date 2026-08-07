@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"math"
+	"sort"
 	"strings"
 	"time"
 
@@ -11,13 +12,16 @@ import (
 )
 
 type AssuranceReport struct {
-	HolonID        string
-	FinalScore     float64
-	SelfScore      float64 // Score based on own evidence
-	FormalityScore int     // F_eff = min(F_i) after normalizing legacy data to F0-F3
-	WeakestLink    string  // ID of the dependency pulling the score down
-	DecayPenalty   float64
-	Factors        []string // Textual explanations for AI
+	HolonID              string
+	FinalScore           float64
+	SelfScore            float64 // Score based on own evidence
+	FormalityScore       int     // F_eff = min(F_i) on the FPF F0-F9 scale
+	FormalityScaleID     string
+	FormalityBridgeLoss  string
+	FormalityDiagnostics []string
+	WeakestLink          string // ID of the dependency pulling the score down
+	DecayPenalty         float64
+	Factors              []string // Textual explanations for AI
 }
 
 type Calculator struct {
@@ -60,7 +64,10 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 	defer func() { _ = rows.Close() }()
 
 	minScore := 1.0
-	minFormality := 3
+	minFormality := 9
+	formalityScaleID := ""
+	formalityBridgeLoss := ""
+	formalityDiagnostics := map[string]bool{}
 	var hasEvidence bool
 	for rows.Next() {
 		var evidenceID, evidenceType, verdict string
@@ -92,15 +99,26 @@ func (c *Calculator) calculateReliabilityWithVisited(ctx context.Context, holonI
 			minScore = score
 		}
 
-		normalizedFormality := normalizeFormalityLevel(formalityLevel)
-		if normalizedFormality < minFormality {
-			minFormality = normalizedFormality
+		formality := projectUnversionedFormality(formalityLevel)
+		if formality.level < minFormality {
+			minFormality = formality.level
+			formalityScaleID = formality.scaleID
+			formalityBridgeLoss = formality.bridgeLoss
+		}
+		if formality.diagnostic != "" {
+			formalityDiagnostics[formality.diagnostic] = true
 		}
 	}
 
 	if hasEvidence {
 		report.SelfScore = minScore
 		report.FormalityScore = minFormality
+		report.FormalityScaleID = formalityScaleID
+		report.FormalityBridgeLoss = formalityBridgeLoss
+		report.FormalityDiagnostics = sortedFormalityDiagnostics(formalityDiagnostics)
+		if len(report.FormalityDiagnostics) > 0 {
+			report.Factors = append(report.Factors, "Formality source scale undeclared; F_eff preserved on F0-F9 with diagnostic bridge")
+		}
 	} else {
 		report.SelfScore = 0.0
 		report.FormalityScore = 0
@@ -228,17 +246,32 @@ func congruencePenaltyFactor(evidenceType string, stored int, effective int) str
 	return "Evidence congruence penalty applied"
 }
 
-func normalizeFormalityLevel(level int) int {
-	switch {
-	case level < 0:
-		return 0
-	case level <= 3:
-		return level
-	case level <= 5:
-		return 1
-	case level <= 8:
-		return 2
-	default:
-		return 3
+type projectedFormality struct {
+	level      int
+	scaleID    string
+	bridgeLoss string
+	diagnostic string
+}
+
+func projectUnversionedFormality(level int) projectedFormality {
+	bridge := reff.UnversionedFormalityBridge(level)
+	return projectedFormality{
+		level:      bridge.TargetLevel,
+		scaleID:    bridge.SourceScaleID,
+		bridgeLoss: bridge.Loss,
+		diagnostic: bridge.Diagnostic,
 	}
+}
+
+func sortedFormalityDiagnostics(diagnostics map[string]bool) []string {
+	if len(diagnostics) == 0 {
+		return nil
+	}
+
+	items := make([]string, 0, len(diagnostics))
+	for diagnostic := range diagnostics {
+		items = append(items, diagnostic)
+	}
+	sort.Strings(items)
+	return items
 }

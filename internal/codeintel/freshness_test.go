@@ -23,6 +23,16 @@ func TestEnsureIndex_RebuildsOnStaleness(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	if _, err := db.Exec(`CREATE TABLE codebase_modules (
+		module_id TEXT PRIMARY KEY,
+		path TEXT NOT NULL UNIQUE,
+		name TEXT NOT NULL,
+		lang TEXT,
+		file_count INTEGER DEFAULT 0,
+		last_scanned TEXT NOT NULL
+	)`); err != nil {
+		t.Fatal(err)
+	}
 
 	// indexStale + EnsureIndex's build path only touch scanner/symbols/edges.
 	svc := &Service{
@@ -41,29 +51,29 @@ func TestEnsureIndex_RebuildsOnStaleness(t *testing.T) {
 	}
 
 	write("package a\nfunc A() { B() }\nfunc B() {}\n")
-	built, err := svc.EnsureIndex(ctx, root)
+	result, err := svc.EnsureIndex(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !built {
+	if !result.Rebuilt() {
 		t.Fatal("first EnsureIndex must build (empty index)")
 	}
 
-	built, err = svc.EnsureIndex(ctx, root)
+	result, err = svc.EnsureIndex(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if built {
+	if result.Rebuilt() {
 		t.Fatal("unchanged tree must NOT rebuild")
 	}
 
 	// Source change (different size) → detected stale → rebuilt.
 	write("package a\nfunc A() { B(); C() }\nfunc B() {}\nfunc C() {}\n")
-	built, err = svc.EnsureIndex(ctx, root)
+	result, err = svc.EnsureIndex(ctx, root)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !built {
+	if !result.Rebuilt() {
 		t.Fatal("a source change must trigger a rebuild")
 	}
 }

@@ -17,9 +17,10 @@ func TestDecide_TacticalSkipMechanism_BypassRequiredFields(t *testing.T) {
 	// Tactical decision skipping all anti-self-deception fields with an
 	// explicit operator-acknowledged reason.
 	_, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle: "Use sync.Map",
-		WhySelected:   "Concurrent reads dominate; sync.Map is idiomatic.",
-		Mode:          string(ModeTactical),
+		ProblemStatement: "The current map implementation does not provide safe concurrent access.",
+		SelectedTitle:    "Use sync.Map",
+		WhySelected:      "Concurrent reads dominate; sync.Map is idiomatic.",
+		Mode:             string(ModeTactical),
 		Skips: []string{
 			"selection_policy",
 			"counterargument",
@@ -47,11 +48,12 @@ func TestDecide_TacticalSkipMechanism_PersistsAcknowledgement(t *testing.T) {
 	reason := "Tactical 5-line change, reversible by file revert; full DRR ceremony overhead exceeds decision blast radius"
 
 	decision, _, err := Decide(ctx, store, t.TempDir(), DecideInput{
-		SelectedTitle: "Use sync.Map",
-		WhySelected:   "Concurrent reads dominate; sync.Map is idiomatic.",
-		Mode:          string(ModeTactical),
-		Skips:         skips,
-		SkipReason:    reason,
+		ProblemStatement: "The current map implementation does not provide safe concurrent access.",
+		SelectedTitle:    "Use sync.Map",
+		WhySelected:      "Concurrent reads dominate; sync.Map is idiomatic.",
+		Mode:             string(ModeTactical),
+		Skips:            skips,
+		SkipReason:       reason,
 	})
 	if err != nil {
 		t.Fatalf("tactical-mode decision with explicit skips should accept; got error: %v", err)
@@ -184,10 +186,14 @@ func TestDecide_StructuredErrorIncludesReferences(t *testing.T) {
 		"_skip_reason\":",
 		"References:",
 		"FPF E.9",
-		"haft_query(action=\"fpf\"",
+		"haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"E.9\")",
+		"haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"DEC-01\")",
 	} {
 		if !strings.Contains(got, marker) {
 			t.Errorf("validation error missing %q in output:\n%s", marker, got)
 		}
+	}
+	if strings.Contains(got, `haft_query(action="fpf", query=`) {
+		t.Fatalf("validation error advertises the retired FPF query shape:\n%s", got)
 	}
 }

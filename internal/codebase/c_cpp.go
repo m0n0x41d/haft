@@ -257,15 +257,17 @@ var (
 
 // ParseImports extracts #include "..." edges from a C/C++ source file.
 // System includes (#include <...>) are skipped since they're external.
-func (c *CCppLang) ParseImports(filePath string, projectRoot string) ([]ImportEdge, error) {
-	data, err := os.ReadFile(filePath)
-	if err != nil {
-		return nil, nil
-	}
-
-	relFile, _ := filepath.Rel(projectRoot, filePath)
+func (c *CCppLang) ParseImports(
+	source AdmittedSource,
+	projectRoot string,
+) ([]ImportEdge, error) {
+	relFile := source.Path().String()
+	filePath := filepath.Join(
+		projectRoot,
+		filepath.FromSlash(relFile),
+	)
 	sourceDir := filepath.Dir(relFile)
-	content := string(data)
+	content := string(source.bytes())
 
 	// Try to load include paths from compile_commands.json for better resolution
 	includePaths := c.extractIncludePaths(filePath, projectRoot)

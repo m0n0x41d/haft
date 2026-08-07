@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m0n0x41d/haft/internal/reff"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -35,6 +37,7 @@ func setupTestDB(t *testing.T) *Store {
 			id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL, type TEXT NOT NULL,
 			content TEXT NOT NULL, verdict TEXT, carrier_ref TEXT,
 			congruence_level INTEGER DEFAULT 3, formality_level INTEGER DEFAULT 5,
+			formality_scale_id TEXT DEFAULT '', formality_bridge TEXT DEFAULT '',
 			claim_refs TEXT DEFAULT '[]',
 			claim_scope TEXT DEFAULT '[]',
 			valid_until TEXT, created_at TEXT NOT NULL)`,
@@ -45,6 +48,19 @@ func setupTestDB(t *testing.T) *Store {
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, symbol_name TEXT NOT NULL,
 			symbol_kind TEXT NOT NULL, symbol_line INTEGER, symbol_end_line INTEGER, symbol_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path, symbol_name))`,
+		`CREATE TABLE artifact_symbol_bindings (
+			artifact_id TEXT NOT NULL, anchor_id TEXT NOT NULL, anchor_version INTEGER NOT NULL,
+			file_path TEXT NOT NULL, language TEXT NOT NULL, symbol_name TEXT NOT NULL,
+			symbol_kind TEXT NOT NULL, receiver TEXT NOT NULL DEFAULT '', qualified_name TEXT NOT NULL,
+			signature_hash TEXT NOT NULL, symbol_line INTEGER NOT NULL DEFAULT 0,
+			symbol_end_line INTEGER NOT NULL DEFAULT 0, body_hash TEXT NOT NULL DEFAULT '',
+			binding_status TEXT NOT NULL DEFAULT 'active', resolution_source TEXT NOT NULL DEFAULT '',
+			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			PRIMARY KEY (artifact_id, anchor_id))`,
+		`CREATE TABLE symbol_rebind_history (
+			id INTEGER PRIMARY KEY AUTOINCREMENT, artifact_id TEXT NOT NULL,
+			previous_anchor_id TEXT NOT NULL, current_anchor_id TEXT NOT NULL,
+			reason TEXT NOT NULL, created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`,
 		`CREATE TABLE fpf_state (
 			context_id TEXT PRIMARY KEY,
 			active_role TEXT,
@@ -113,6 +129,158 @@ func TestCreateAndGet(t *testing.T) {
 	}
 	if got.Meta.Version != 1 {
 		t.Errorf("version = %d, want 1", got.Meta.Version)
+	}
+}
+
+func TestSymbolBindingsAreAuthoritativeAndKeepRebindHistory(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	decision := &Artifact{
+		Meta: Meta{ID: "dec-anchor", Kind: KindDecisionRecord, Title: "Anchor binding"},
+		Body: "bind one symbol",
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+	first := AffectedSymbol{
+		AnchorID:      "sym:v2:first",
+		AnchorVersion: 2,
+		FilePath:      "src/app.ts",
+		Language:      "typescript",
+		SymbolName:    "run",
+		SymbolKind:    "func",
+		QualifiedName: "run",
+		SignatureHash: "sig-first",
+		Line:          10,
+		EndLine:       14,
+		Hash:          "body-first",
+	}
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{first}); err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := store.GetSymbolBindings(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 1 || bindings[0].AnchorID != first.AnchorID || bindings[0].Status != SymbolBindingActive {
+		t.Fatalf("symbol bindings = %+v", bindings)
+	}
+	hits, err := store.SearchBySymbolAnchor(ctx, first.AnchorID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) != 1 || hits[0].Meta.ID != decision.Meta.ID {
+		t.Fatalf("anchor search = %+v", hits)
+	}
+
+	lineShifted := first
+	lineShifted.Line = 30
+	lineShifted.EndLine = 34
+	lineShifted.Hash = "body-second"
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{lineShifted}); err != nil {
+		t.Fatal(err)
+	}
+	history, err := store.GetSymbolRebindHistory(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 0 {
+		t.Fatalf("line/body change must not create rebind history: %+v", history)
+	}
+
+	signatureChanged := lineShifted
+	signatureChanged.AnchorID = "sym:v2:second"
+	signatureChanged.SignatureHash = "sig-second"
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{signatureChanged}); err != nil {
+		t.Fatal(err)
+	}
+	history, err = store.GetSymbolRebindHistory(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(history) != 1 || history[0].PreviousAnchorID != first.AnchorID || history[0].CurrentAnchorID != signatureChanged.AnchorID {
+		t.Fatalf("rebind history = %+v", history)
+	}
+}
+
+func TestSymbolBindingsPreserveOverloadsBeyondLegacyProjection(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	decision := &Artifact{
+		Meta: Meta{ID: "dec-overloads", Kind: KindDecisionRecord, Title: "Overload binding"},
+		Body: "bind overloads",
+	}
+	if err := store.Create(ctx, decision); err != nil {
+		t.Fatal(err)
+	}
+	base := AffectedSymbol{
+		AnchorVersion: 2,
+		FilePath:      "src/app.ts",
+		Language:      "typescript",
+		SymbolName:    "parse",
+		SymbolKind:    "func",
+		QualifiedName: "parse",
+		EndLine:       2,
+	}
+	first := base
+	first.AnchorID = "sym:v2:parse-string"
+	first.SignatureHash = "sig-string"
+	first.Line = 1
+	second := base
+	second.AnchorID = "sym:v2:parse-number"
+	second.SignatureHash = "sig-number"
+	second.Line = 4
+	second.EndLine = 5
+	if err := store.SetAffectedSymbols(ctx, decision.Meta.ID, []AffectedSymbol{first, second}); err != nil {
+		t.Fatal(err)
+	}
+	bindings, err := store.GetSymbolBindings(ctx, decision.Meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(bindings) != 2 {
+		t.Fatalf("authority bindings collapsed overloads: %+v", bindings)
+	}
+	var projectionCount int
+	if err := store.DB().QueryRowContext(ctx, `SELECT COUNT(*) FROM affected_symbols WHERE artifact_id = ?`, decision.Meta.ID).Scan(&projectionCount); err != nil {
+		t.Fatal(err)
+	}
+	if projectionCount != 1 {
+		t.Fatalf("legacy projection count = %d, want one compatible row", projectionCount)
+	}
+}
+
+func TestSearchExactArtifactIDUsesDirectLookup(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	target := &Artifact{
+		Meta: Meta{ID: "dec-20260711-exact", Kind: KindDecisionRecord, Title: "Exact target"},
+		Body: "shared words that also occur in a semantic neighbor",
+	}
+	neighbor := &Artifact{
+		Meta: Meta{ID: "dec-20260711-neighbor", Kind: KindDecisionRecord, Title: "Neighbor"},
+		Body: "shared words that also occur in the exact target",
+	}
+	for _, item := range []*Artifact{target, neighbor} {
+		if err := store.Create(ctx, item); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	results, err := store.Search(ctx, target.Meta.ID, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 1 || results[0].Meta.ID != target.Meta.ID {
+		t.Fatalf("exact search = %#v, want only %s", results, target.Meta.ID)
+	}
+
+	missing, err := store.Search(ctx, "dec-20260711-missing", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(missing) != 0 {
+		t.Fatalf("exact miss = %#v, want no fallback results", missing)
 	}
 }
 
@@ -329,7 +497,11 @@ func TestAffectedFiles(t *testing.T) {
 	store := setupTestDB(t)
 	ctx := context.Background()
 
-	store.Create(ctx, &Artifact{Meta: Meta{ID: "dec-001", Kind: KindDecisionRecord, Title: "D"}, Body: "d"})
+	store.Create(ctx, &Artifact{
+		Meta:           Meta{ID: "dec-001", Kind: KindDecisionRecord, Title: "D"},
+		Body:           "d",
+		StructuredData: `{"section_refs":["TS.environment.001"]}`,
+	})
 
 	files := []AffectedFile{
 		{Path: "internal/events/producer.go", Hash: "abc123"},
@@ -346,6 +518,12 @@ func TestAffectedFiles(t *testing.T) {
 	results, _ := store.SearchByAffectedFile(ctx, "internal/events/producer.go")
 	if len(results) != 1 || results[0].Meta.ID != "dec-001" {
 		t.Errorf("expected dec-001 for file search")
+	}
+	if results[0].StructuredData == "" {
+		t.Errorf("expected file search to preserve structured data")
+	}
+	if got := results[0].UnmarshalDecisionFields().SectionRefs; len(got) != 1 || got[0] != "TS.environment.001" {
+		t.Errorf("expected section refs from file search, got %#v", got)
 	}
 }
 
@@ -463,8 +641,20 @@ func TestEvidenceItems(t *testing.T) {
 	if items[0].Content != "Load test: 100k events/sec, p99 < 50ms" {
 		t.Errorf("content mismatch")
 	}
-	if items[0].FormalityLevel != 2 {
-		t.Errorf("formality mismatch: got %d want 2", items[0].FormalityLevel)
+	if items[0].FormalityLevel != 7 {
+		t.Errorf("formality mismatch: got %d want 7", items[0].FormalityLevel)
+	}
+	if items[0].FormalityScale == nil {
+		t.Fatal("formality scale missing")
+	}
+	if items[0].FormalityScale.ScaleID != reff.FormalityScaleCurrent {
+		t.Fatalf("formality scale = %q, want %q", items[0].FormalityScale.ScaleID, reff.FormalityScaleCurrent)
+	}
+	if items[0].FormalityScale.Level != 7 {
+		t.Fatalf("formality scale level = %d, want 7", items[0].FormalityScale.Level)
+	}
+	if items[0].FormalityBridge != nil {
+		t.Fatalf("current formality should not require bridge: %#v", items[0].FormalityBridge)
 	}
 	if got := strings.Join(items[0].ClaimScope, ","); got != "latency,throughput" {
 		t.Errorf("claim scope mismatch: got %q", got)
@@ -493,7 +683,7 @@ func TestGetEvidenceItems_LegacySchemaWithoutClaimScope(t *testing.T) {
 	if _, err := store.DB().ExecContext(ctx, `
 		INSERT INTO evidence_items (id, artifact_ref, type, content, verdict, carrier_ref, congruence_level, formality_level, valid_until, created_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		"evid-legacy", "dec-legacy", "measurement", "legacy row", "supports", "carrier-1", 3, 5, "", time.Now().UTC().Format(time.RFC3339)); err != nil {
+		"evid-legacy", "dec-legacy", "measurement", "legacy row", "supports", "carrier-1", 3, 2, "", time.Now().UTC().Format(time.RFC3339)); err != nil {
 		t.Fatalf("insert legacy evidence item: %v", err)
 	}
 
@@ -509,6 +699,18 @@ func TestGetEvidenceItems_LegacySchemaWithoutClaimScope(t *testing.T) {
 	}
 	if len(items[0].ClaimRefs) != 0 {
 		t.Fatalf("expected empty claim refs, got %v", items[0].ClaimRefs)
+	}
+	if items[0].FormalityScale == nil {
+		t.Fatal("legacy formality scale missing")
+	}
+	if items[0].FormalityScale.ScaleID != reff.FormalityScaleLegacy {
+		t.Fatalf("legacy F2 scale = %q, want %q", items[0].FormalityScale.ScaleID, reff.FormalityScaleLegacy)
+	}
+	if items[0].FormalityBridge == nil {
+		t.Fatal("legacy unversioned formality bridge missing")
+	}
+	if items[0].FormalityBridge.Loss != reff.FormalityBridgeLegacyLoss {
+		t.Fatalf("legacy bridge loss = %q", items[0].FormalityBridge.Loss)
 	}
 }
 

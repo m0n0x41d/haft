@@ -80,8 +80,60 @@ func TestDeriveFormality_UsesExplicitLevelBeforeType(t *testing.T) {
 		HasFormality:   true,
 	})
 
-	if got != 2 {
-		t.Fatalf("DeriveFormality(explicit=7) = %d, want 2", got)
+	if got != 7 {
+		t.Fatalf("DeriveFormality(explicit=7) = %d, want 7", got)
+	}
+}
+
+func TestFormalityScaleNormalizationKeepsLegacyLossExplicit(t *testing.T) {
+	current := NormalizeFormalityScale(FormalityScale{
+		ScaleID: FormalityScaleCurrent,
+		Level:   9,
+	})
+	if current.Level != 9 {
+		t.Fatalf("current level = %d, want 9", current.Level)
+	}
+
+	legacy := NormalizeFormalityScale(FormalityScale{
+		ScaleID: FormalityScaleLegacy,
+		Level:   9,
+	})
+	if legacy.Level != 3 {
+		t.Fatalf("legacy level = %d, want clamped F3", legacy.Level)
+	}
+
+	bridge := LegacyFormalityBridge(legacy.Level)
+	if bridge.Loss != FormalityBridgeLegacyLoss {
+		t.Fatalf("bridge loss = %q", bridge.Loss)
+	}
+}
+
+func TestComputeDecisionAssurance_PreservesExplicitF7(t *testing.T) {
+	now := time.Date(2026, 4, 14, 12, 0, 0, 0, time.UTC)
+
+	got, err := ComputeDecisionAssurance(
+		[]string{"claim-machine-checkable"},
+		[]Evidence{
+			{
+				ClaimRefs:       []string{"claim-machine-checkable"},
+				Type:            "documentation",
+				Verdict:         "supports",
+				CongruenceLevel: 3,
+				FormalityLevel:  7,
+				HasFormality:    true,
+				ValidUntil:      "2026-05-01T00:00:00Z",
+			},
+		},
+		now,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FEff != 7 {
+		t.Fatalf("decision F_eff = %d, want 7", got.FEff)
+	}
+	if got.Claims[0].FEff != 7 {
+		t.Fatalf("claim F_eff = %d, want 7", got.Claims[0].FEff)
 	}
 }
 

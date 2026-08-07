@@ -123,6 +123,45 @@ func TestClassifyAutoBaseline_NoBaselineFailsSafe(t *testing.T) {
 	}
 }
 
+func TestClassifyAutoBaseline_MaterialityMapping(t *testing.T) {
+	cases := []struct {
+		name string
+		file DriftItem
+		want AutoBaselineAction
+	}{
+		{
+			name: "adjacent churn resolves silently",
+			file: DriftItem{Path: "shared.go", Status: DriftModified, Materiality: DriftMaterialityAdjacentFileChurn},
+			want: AutoResolveSilent,
+		},
+		{
+			name: "carrier churn resolves silently",
+			file: DriftItem{Path: "CHANGELOG.md", Status: DriftModified, Materiality: DriftMaterialityCarrierOnly},
+			want: AutoResolveSilent,
+		},
+		{
+			name: "generated churn resolves silently",
+			file: DriftItem{Path: "internal/cli/fpf.db", Status: DriftModified, Materiality: DriftMaterialityGeneratedOrIgnored},
+			want: AutoResolveSilent,
+		},
+		{
+			name: "unknown legacy still reviews",
+			file: DriftItem{Path: "shared.go", Status: DriftModified, Materiality: DriftMaterialityUnknownLegacyFileScope},
+			want: SurfaceForReview,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			report := DriftReport{HasBaseline: true, Files: []DriftItem{tc.file}}
+			got := ClassifyAutoBaseline([]DriftReport{report})
+			if got[0].Action != tc.want {
+				t.Fatalf("Action = %q, want %q", got[0].Action, tc.want)
+			}
+		})
+	}
+}
+
 // TestClassifyAutoBaseline_CorpusReplay models this session's drift corpus shape
 // (a mix of additive churn, freshly-shipped governed changes, and one seeded
 // breakage) and asserts the safety invariant holds across the whole set: no

@@ -1,0 +1,690 @@
+# Target System Spec — active v9 carrier
+
+Status: current specification carrier. Lifecycle authority belongs to each
+typed `spec-section`: `TS.environment.001`, `TS.role.001`, and
+`TS.boundary.001` are active and baselined; `TS.placeholder.001` remains an
+explicit draft placeholder.
+
+Only the typed `claims` entries inside each active `spec-section` block are
+normative statements. Surrounding prose is an informative traversal of those
+claims; it creates no additional law, admissibility gate, duty, evidence
+assertion, method, migration authority, or performed Work.
+
+## TS.placeholder.001 Target system placeholder
+
+```yaml spec-section
+id: TS.placeholder.001
+kind: environment-change
+title: Target system placeholder
+statement_type: explanation
+claim_layer: carrier
+owner: human
+status: draft
+valid_until: null
+depends_on: []
+supersedes: []
+terms: []
+target_refs: []
+evidence_required: []
+```
+
+This placeholder only reserves a parseable carrier for onboarding. It is not
+an active target-system claim. Its historical disposition belongs in the
+reviewed migration packet and apply receipt, not in an unparsed `supersedes`
+field.
+
+## TS.environment.001 Profile-applicable project environment
+
+```yaml spec-section
+id: TS.environment.001
+spec: target-system
+kind: target.environment
+title: Profile-applicable project environment
+statement_type: definition
+claim_layer: object
+owner: human
+status: active
+valid_until: 2026-09-18
+depends_on: []
+supersedes: []
+terms: []
+target_refs: []
+evidence_required:
+  - kind: review
+    description: Human directly and unambiguously selects an environment change scoped by an admitted project-profile declaration, or the closed supported-singleton init policy applies the detector default; the repository container alone never selects it.
+  - kind: runtime
+    description: Software, non-software, mixed, and undetermined fixtures expose the expected applicability, FPF Query, and typed project-memory behavior through CLI or MCP surfaces.
+claims:
+  - id: TS.environment.001.L1
+    class: L
+    statement: A project realization scope is identified by a stable ScopeID and explicit profile basis, not by a repository path or file extension.
+    scope:
+      - project-profile
+      - realization-scope
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.L5
+    class: L
+    statement: TargetSystemSpec is Required for every declared realization scope. An EntityRef may relate that scope to an exact EntityOfConcern for memory, traceability, and stronger identity-bearing use, but the relation is not an applicability gate and its absence does not authorize a profile mutation.
+    scope:
+      - target-system-applicability
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.L6
+    class: L
+    statement: SoftwareSystemSpec applicability and software-engineering readiness pressure for a scope are derived from the admitted SoftwareRealization classification. An optional target EntityRef can strengthen identity-bearing use but does not determine this capability result.
+    scope:
+      - software-system-applicability
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.L2
+    class: L
+    statement: An Applicability result for one capability and ScopeID is exactly one of Required, NotApplicable, or Underdetermined and carries its profile basis or missing basis.
+    scope:
+      - capability-applicability
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.L3
+    class: L
+    statement: NotApplicable is a successful applicability result for the excluded capability and is not readiness debt.
+    scope:
+      - capability-applicability
+    governing_pattern_refs:
+      - A.6.B
+  - id: TS.environment.001.L4
+    class: L
+    statement: Underdetermined denotes missing applicability basis and is neither a Required nor a NotApplicable result.
+    scope:
+      - capability-applicability
+    governing_pattern_refs:
+      - A.6.B
+  - id: TS.environment.001.L7
+    class: L
+    statement: A canonical project-profile admission has exactly one origin—detector_default, host_routed_operator_request, or the readable legacy provenance explicit_operator or legacy_unknown—and that origin describes its admission path without changing its realization-scope payload or capability-applicability semantics.
+    scope:
+      - project-profile
+      - profile-origin
+    support_refs:
+      - TS.environment.001.L1
+      - TS.environment.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.L8
+    class: L
+    statement: InitialProfileBootstrapDecision is exactly KeepExisting, ApplySupportedSingleton, or HumanReviewRequired; ApplySupportedSingleton requires a complete non-truncated observation, supported confidence, exactly one suggested scope, no canonical profile, and no human-authored or foreign profile review.
+    scope:
+      - project-profile
+      - initial-profile-bootstrap
+    support_refs:
+      - TS.environment.001.L1
+      - TS.environment.001.L2
+      - TS.environment.001.L4
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.D1
+    class: D
+    statement: HaftSoftwareSystem, acting in the ProjectGovernanceSubstrate role, must expose source-native FPF retrieval and typed project memory for every admitted project scope.
+    scope:
+      - fpf-query
+      - typed-project-memory
+    support_refs:
+      - TS.environment.001.L1
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.environment.001.D2
+    class: D
+    statement: HaftSoftwareSystem, through its applicability-resolution capability allocated to the Haft Core component, must supply the same canonical Applicability result for the selected ScopeID to the init, status, readiness, and execution-preflight adapters.
+    scope:
+      - applicability-consumers
+    support_refs:
+      - TS.environment.001.L5
+      - TS.environment.001.L6
+      - TS.environment.001.L2
+    governing_pattern_refs:
+      - A.6.B
+  - id: TS.environment.001.D3
+    class: D
+    statement: HaftSoftwareSystem, through the Haft Core init capability, must apply an initial detector_default profile only for TS.environment.001.L8 ApplySupportedSingleton; mixed, multiple-scope, insufficient, truncated, or human-reviewed bases must preserve the ledger and require one direct, unambiguous operator selection routed as host_routed_operator_request.
+    scope:
+      - initial-profile-bootstrap
+      - profile-origin
+    support_refs:
+      - TS.environment.001.L7
+      - TS.environment.001.L8
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+```
+
+Informatively, the environment claim is scope-specific: a repository path is
+not a scope identity, and a target or software specification follows the exact
+target relation, context-local kind-classification basis, and Applicability result rather than the mere
+presence of a repository (`TS.environment.001.L1`,
+`TS.environment.001.L5`, `TS.environment.001.L6`).
+
+The changed environment makes source-native FPF retrieval and typed project
+memory available through HaftSoftwareSystem while it holds the
+ProjectGovernanceSubstrate role (`TS.environment.001.D1`). These are
+capabilities of the role holder, not capabilities owned by the role, additional
+roles, or a prescribed sequence of project work.
+
+The three-valued Applicability result explains why an excluded software
+carrier is not debt and why missing basis remains visible without becoming a
+fabricated classification (`TS.environment.001.L2`,
+`TS.environment.001.L3`, `TS.environment.001.L4`). All adapters consume that
+same result (`TS.environment.001.D2`).
+
+### Observable Change
+
+- Each `ScopeID` has one profile basis (`TS.environment.001.L1`).
+- Each capability and scope has one three-valued result
+  (`TS.environment.001.L2`).
+- `NotApplicable` is not debt (`TS.environment.001.L3`).
+- `Underdetermined` retains missing basis (`TS.environment.001.L4`).
+- The HaftSoftwareSystem adapters receive one canonical result
+  (`TS.environment.001.D2`).
+
+## TS.role.001 Governance substrate for admissible work
+
+```yaml spec-section
+id: TS.role.001
+spec: target-system
+kind: target.role
+title: Governance substrate for admissible work
+statement_type: definition
+claim_layer: object
+owner: human
+status: active
+valid_until: 2026-09-18
+depends_on:
+  - TS.environment.001
+supersedes: []
+terms: []
+target_refs: []
+evidence_required:
+  - kind: review
+    description: Human confirms the single Haft role holder and context, and confirms that source retrieval, applicability, semantic admission, projection, and execution mechanics remain distinct capabilities or behaviors.
+  - kind: runtime
+    description: CLI and MCP tests show source provenance, tri-state validation, authority rejection, canonical semantic writes, and separately observable projection state.
+claims:
+  - id: TS.role.001.L5
+    class: L
+    statement: HaftSoftwareSystem is the whole shipped target system and holder of the canonical ProjectGovernanceSubstrate role in one profile-selected project BoundedContext; GovernanceSubstrate is only a display alias for that same role.
+    scope:
+      - haft-software-system
+      - project-governance-substrate-role
+      - project-bounded-context
+    support_refs:
+      - TS.environment.001.L1
+      - TS.environment.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.L1
+    class: L
+    statement: HaftSoftwareSystem, while holding the ProjectGovernanceSubstrate role in a project BoundedContext, has the source-native FPF Query capability over pinned README, Preface, Table of Contents, and full pattern source units; the Haft Core component bears the implementation-responsibility allocation for this capability, and that part-whole relation does not assign the whole-system role to the component.
+    scope:
+      - fpf-query
+    support_refs:
+      - TS.role.001.L5
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.L2
+    class: L
+    statement: HaftSoftwareSystem, while holding the ProjectGovernanceSubstrate role in a project BoundedContext, has the typed-project-memory capability over semantic entities, ContextKindAvailability projections, KindClassificationJudgements, optional KindExtension representations, n-ary relations, assertions, authority receipts, and evidence references; the Haft Core component bears the implementation-responsibility allocation for this capability, and that part-whole relation does not assign the whole-system role to the component.
+    scope:
+      - typed-project-memory
+    support_refs:
+      - TS.role.001.L5
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.L3
+    class: L
+    statement: TargetSystemSpec and SoftwareSystemSpec are distinct specification descriptions of the same HaftSoftwareSystem under target-role and software-realization viewpoints respectively; their publication carriers are distinct from those descriptions and from the system and create neither identity nor viewpoint.
+    scope:
+      - haft-software-system
+      - haft-core-component
+      - target-system-spec-carrier
+      - software-system-spec-carrier
+    support_refs:
+      - TS.role.001.L5
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.L4
+    class: L
+    statement: The value of the ProjectGovernanceSubstrate role is that source-grounded orientation and reliance-bearing project memory remain available under explicit type and authority boundaries in its profile-selected project scope.
+    scope:
+      - project-governance-substrate-role
+      - role-value
+    support_refs:
+      - TS.role.001.L1
+      - TS.role.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.A1
+    class: A
+    statement: An FPF Query result is admissible as retrieved source material but not as pattern applicability, pattern selection, evidence, approval, or work order.
+    scope:
+      - fpf-query-result
+    support_refs:
+      - TS.role.001.L1
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.A2
+    class: A
+    statement: A typed-memory mutation is semantically admissible only under the project-active TypeEnv, current graph revision, declared bounded context, and applicable scope; this semantic predicate neither establishes nor substitutes for any action-specific authority basis required by the mutation's direct contract.
+    scope:
+      - semantic-admission
+    support_refs:
+      - TS.role.001.L2
+    governing_pattern_refs:
+      - A.2.8
+      - A.2.9
+      - A.6.B
+      - A.7
+  - id: TS.role.001.D1
+    class: D
+    statement: HaftSoftwareSystem, through its FPF Query capability allocated to the Haft Core component, must keep exact source identity and provenance kernel-recoverable while returning a bounded default working description with stable source identity, source role, and explicit ambiguity, truncation, or abstention posture. Exact provenance and replay must be addressable through an explicit trace/audit description, and raw retrieval internals only through an explicit diagnostic description.
+    scope:
+      - fpf-query-provenance
+      - fpf-query-working-projection
+    support_refs:
+      - TS.role.001.A1
+    governing_pattern_refs:
+      - A.6.B
+  - id: TS.role.001.A3
+    class: A
+    statement: Persistence of a typed-memory ChangeSet is admissible only when semantic validation returns Valid; Invalid and Underdetermined are non-persisting results.
+    scope:
+      - typed-memory-validation
+    support_refs:
+      - TS.role.001.A2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.role.001.D3
+    class: D
+    statement: HaftSoftwareSystem, through its semantic-persistence capability allocated to the Haft Core component, must persist an admitted ChangeSet in the canonical semantic store.
+    scope:
+      - canonical-memory
+    support_refs:
+      - TS.role.001.A2
+      - TS.role.001.A3
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+```
+
+Informatively, HaftSoftwareSystem is the whole shipped target system and holds one canonical
+`ProjectGovernanceSubstrate` role in one profile-selected project scope;
+`GovernanceSubstrate` is only its display alias (`TS.role.001.L5`). The
+TargetSystemSpec and SoftwareSystemSpec are distinct specification
+descriptions/views of that same system under the target-role and
+software-realization viewpoints respectively. Their publication carriers are
+separately distinct and create neither identity nor viewpoint
+(`TS.role.001.L3`). Haft Core remains an internal component whose allocation
+does not transfer the whole-system role (`TS.role.001.L1`,
+`TS.role.001.L2`). The role value is stated separately from the capabilities
+that realize it (`TS.role.001.L4`).
+
+FPF Query is a capability of HaftSoftwareSystem in that context, not a
+capability owned or supplied by the role or inherited by a component merely by
+parthood. Its result remains
+source material rather than applicability, selection, evidence, approval, or
+work order
+(`TS.role.001.L1`, `TS.role.001.A1`, `TS.role.001.D1`).
+
+Typed project memory is the other capability of HaftSoftwareSystem required by
+the role contract. Its canonical values and mutation boundary are stated by
+`TS.role.001.L2`,
+`TS.role.001.A2`, `TS.role.001.A3`, and `TS.role.001.D3`.
+
+Nothing in the role or its two capabilities defines a universal workflow. This
+sentence explains the retrieval-result boundary in `TS.role.001.A1`; it does
+not introduce a MethodDescription or report performed Work.
+
+### Role Boundaries
+
+- Holder: HaftSoftwareSystem (`TS.role.001.L5`).
+- Context: one profile-selected project scope (`TS.role.001.L5`).
+- Role: canonical `ProjectGovernanceSubstrate`; `GovernanceSubstrate` is its
+  display alias (`TS.role.001.L5`).
+- Role value: source-grounded orientation plus reliance-bearing project memory
+  under explicit type and authority boundaries (`TS.role.001.L4`).
+- Capabilities of HaftSoftwareSystem required by the role contract:
+  source-native FPF
+  Query (`TS.role.001.L1`) and typed project memory (`TS.role.001.L2`).
+- Software realization and carrier boundary: `TS.role.001.L3`.
+- Mutation boundary: `TS.role.001.A2` and `TS.role.001.A3`.
+
+## TS.boundary.001 Governance boundary of Haft
+
+```yaml spec-section
+id: TS.boundary.001
+spec: target-system
+kind: target.boundary
+title: Governance boundary of Haft
+statement_type: definition
+claim_layer: object
+owner: human
+status: active
+valid_until: 2026-09-18
+depends_on:
+  - TS.role.001
+supersedes: []
+terms: []
+target_refs:
+  - TS.boundary.001.L1
+  - TS.boundary.001.A3
+  - TS.boundary.001.D1
+  - TS.boundary.001.E1
+evidence_required:
+  - kind: review
+    description: Human confirms the profile, FPF authority, semantic admission, projection, runtime, and operator-authority boundaries.
+  - kind: runtime
+    description: CLI and MCP surfaces reject inapplicable or ill-typed writes, preserve explicit human gates, and report projection debt without confusing it with semantic rollback.
+claims:
+  - id: TS.boundary.001.L1
+    class: L
+    statement: The canonical project-memory write model consists of admitted semantic records; graph, Markdown, status, search, and code-link structures are derived projections or carriers.
+    scope:
+      - canonical-write-model
+      - projections
+    support_refs:
+      - TS.role.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.L2
+    class: L
+    statement: HaftSoftwareSystem ships no coding-agent execution runtime. A separately operated external runner may consume WorkCommissions and report lifecycle observations, but remains outside both HaftSoftwareSystem and the product or other EntityOfConcern that a user constructs with HaftSoftwareSystem.
+    scope:
+      - haft-runtime
+      - external-runner
+      - user-target-runtime
+    support_refs:
+      - TS.role.001.L3
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.L3
+    class: L
+    statement: A RuntimeRun is a dated occurrence of commissioned Work performed through a separately operated external runner; a RuntimeRunRecord is the description of that occurrence; a result carrier carries or represents the RuntimeRunRecord and is distinct from the runner, the record, and the Work occurrence.
+    scope:
+      - runtime-run
+      - runtime-run-record
+      - performed-work
+    support_refs:
+      - TS.boundary.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.L4
+    class: L
+    statement: An observation or episteme supplies a possible basis; Evidence is the context-bound use of that basis in a support-or-weakening relation to a claim; an EvidenceRecord describes that evidence-use relation; an evidence carrier carries or represents the EvidenceRecord and is distinct from the record, relation, and supporting basis.
+    scope:
+      - evidence
+      - evidence-record
+      - evidence-carrier
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.L5
+    class: L
+    statement: Each authority-gated mutation uses an action-specific provenance basis named by its direct contract. Human profile application uses an exact HostRoutedOperatorRequest binding effect, reviewed subject, payload digest and project scope without asserting hidden intent or independently proven U.SpeechAct; automatic initial bootstrap uses the disjoint InitialProfileBootstrapAuthorityBasis with exact detector, policy, suggestion, observation, project binding and deterministic-predicate provenance. Neither basis fabricates or substitutes for the other, and no basis for one action authorizes another.
+    scope:
+      - profile-authority
+      - capability-applicability
+    support_refs:
+      - TS.environment.001.L5
+      - TS.environment.001.L6
+      - TS.environment.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.2.8
+      - A.2.9
+      - A.7
+  - id: TS.boundary.001.A4
+    class: A
+    statement: A repository-inferred project-profile suggestion alone is admissible only for non-binding orientation and cannot establish binding capability applicability; the closed initial-bootstrap contract may use the exact suggestion and observation only as constituents of an admitted InitialProfileBootstrapAuthorityBasis satisfying TS.environment.001.L8.
+    scope:
+      - profile-orientation
+      - capability-applicability
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.environment.001.L8
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.A5
+    class: A
+    statement: >-
+      An onboarding ProfileDeclarationCandidate is authority-admissible only
+      when one exact HostRoutedOperatorRequest has host_routed_operator_request
+      provenance, the profile-declaration effect, the exact reviewed candidate
+      as subject, and the exact payload digest; its request digest and project
+      scope match the current ledger binding; and the durable
+      ProfileOnboardingWorkRecord has matching actual performer system,
+      covering RoleAssignment, performedUnderAssignment, executedWithin, Work
+      interval, assignment coverage, basis-observation window, payload
+      digest, and observed-basis digest. The host request records routing
+      provenance only and does not prove U.SpeechAct or hidden mental intent.
+    scope:
+      - profile-onboarding-authority
+      - profile-admissibility
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A4
+    governing_pattern_refs:
+      - A.2.1
+      - A.3.1
+      - A.3.2
+      - A.7
+      - A.15.1
+  - id: TS.boundary.001.L6
+    class: L
+    statement: EntityOfConcernSlot is a SlotKind whose EntityOfConcern filler is a U.Entity represented project-locally by entityOfConcernRef of kind U.EntityRef; BoundedContextRef remains a separate member of DescriptionContext.
+    scope:
+      - entity-of-concern
+      - bounded-context
+    support_refs:
+      - TS.role.001.L2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.L8
+    class: L
+    statement: A project-memory recall key has the form of an entityOfConcernRef and BoundedContextRef pair for retrieval; this key does not redefine EntityOfConcern, make BoundedContextRef part of U.Entity identity, or introduce an EntityOfConcern kind.
+    scope:
+      - entity-of-concern-recall
+      - bounded-context
+    support_refs:
+      - TS.boundary.001.L6
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.A3
+    class: A
+    statement: A new semantic assertion is type-admissible only when every required ContextKindAvailability, KindClassificationJudgement=true, relation signature, slot constraint, source reference, and applicability result resolves under the exact project-active TypeEnv; a false or unknown classification remains distinct from the receiving admission refusal, and TypeEnv does not resolve project authorization acts or their records.
+    scope:
+      - semantic-admission
+    support_refs:
+      - TS.role.001.A2
+      - TS.boundary.001.L5
+      - TS.boundary.001.L6
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.A6
+    class: A
+    statement: A project-state mutation classified as authority-gated by its direct contract is authority-admissible only when the verifier accepts that contract's exact action-specific provenance basis with the same effect kind, subject, project scope, canonical payload and request digests, judgement time and validity window. For profile declaration the single-use key must be unused at transaction judgement time. Semantic validity, a skill token, and a basis admitted for another action do not satisfy this predicate.
+    scope:
+      - authority-admission
+      - semantic-mutation
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A5
+    governing_pattern_refs:
+      - A.2.1
+      - A.2.8
+      - A.2.9
+      - A.3.1
+      - A.3.2
+      - A.6.B
+      - A.7
+      - A.15.1
+  - id: TS.boundary.001.A7
+    class: A
+    statement: An automatic initial profile admission is authority-admissible only when the exact action is profile.apply_supported_singleton_default, the authority mode is automatic_supported_singleton_init, the resolution is deterministic_policy_satisfaction, Haft Core is the verifier and executor, the detector and policy versions plus suggestion and observation digests match the current complete observation, TS.environment.001.L8 evaluates to ApplySupportedSingleton, and no canonical profile revision exists at transaction judgement time.
+    scope:
+      - profile-admissibility
+      - initial-profile-bootstrap-authority
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A4
+      - TS.boundary.001.A6
+      - TS.environment.001.L8
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.A8
+    class: A
+    statement: An automatic ProjectTypeEnv successor activation is authority-admissible only when the exact action is project_typeenv_head.select, the authority generation is compatible_successor_policy, the predecessor is the transaction-current exact project head, the target is the exact package-bundled B and ordered E DAG and X and verified C, existing-assertion revalidation is clean, the current project profile is Compatible, no installed projection profile is blocked, and project binding, Stage, graph, profile and runtime currentness are revalidated inside the same atomic compare-and-swap. It requires no operator request or human review; the activation delta, authority-use record, and typed-memory graph event all record compatible_successor_policy rather than manual or host-routed provenance. Every false, missing, stale, incompatible or underdetermined predicate leaves the head unchanged.
+    scope:
+      - project-typeenv-head-selection
+      - automatic-compatible-successor-authority
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A6
+      - TS.role.001.A2
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.D1
+    class: D
+    statement: HaftSoftwareSystem, through its semantic-validation capability allocated to the Haft Core component, must return Underdetermined with exact missing-basis diagnostics when required type or applicability basis is absent.
+    scope:
+      - validation-result
+    support_refs:
+      - TS.boundary.001.A3
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.L7
+    class: L
+    statement: Failure of an asynchronous carrier or read-projection update leaves a committed canonical semantic record unchanged and creates durable projection debt.
+    scope:
+      - projection-debt
+      - semantic-commit
+    support_refs:
+      - TS.boundary.001.L1
+    governing_pattern_refs:
+      - A.6.B
+      - A.7
+  - id: TS.boundary.001.D3
+    class: D
+    statement: HaftSoftwareSystem, through its authority-gate capability allocated to the Haft Core component, must reject a project-profile declaration unless TS.boundary.001.A6 and exactly one path-specific predicate are satisfied—TS.boundary.001.A5 for a host-routed direct operator selection or TS.boundary.001.A7 for automatic initial bootstrap; generated rationale, model-supplied references, schema-visible fields, tool possession, carriers, and shape-valid receipts satisfy neither predicate merely by existing.
+    scope:
+      - human-authority
+    support_refs:
+      - TS.boundary.001.L5
+      - TS.boundary.001.A5
+      - TS.boundary.001.A6
+      - TS.boundary.001.A7
+    governing_pattern_refs:
+      - A.6.B
+      - A.2.9
+      - A.7
+  - id: TS.boundary.001.E1
+    class: E
+    statement: Under exact-carrier semantic review, completed migration-receipt inspection, and active-section review on 2026-07-15, the law, admissibility, and deontic boundary claims selected by TS.boundary.001.target_refs were found internally coherent for the human specification reviewer in the boundary-contract viewpoint; this observation is not runtime evidence that the future typed-memory implementation already realizes those claims.
+    scope:
+      - boundary-contract-evidence
+    support_refs:
+      - TS.boundary.001.L1
+      - TS.boundary.001.A3
+      - TS.boundary.001.D1
+    evidence_refs:
+      - "carrier:.context/haft-v9-migration-v2/semantic-review.m1-final-candidate.md"
+      - "carrier:.haft/spec-migration-v2.b3887ad7825d964872fa4fdcefa8c68c8f8ab25fec4b4191c38100f8c73272a3.receipt.json"
+      - "command:haft spec review --json"
+    valid_until: 2026-07-21
+    governing_pattern_refs:
+      - A.10
+      - B.3
+```
+
+Informatively, HaftSoftwareSystem's boundary contains its Query and typed-memory
+capabilities (`TS.role.001.L1`, `TS.role.001.L2`) plus their semantic and
+authority gates (`TS.boundary.001.A3`, `TS.boundary.001.A5`,
+`TS.boundary.001.D1`, `TS.boundary.001.D3`). The explicit admitted profile
+defines binding applicability. During explicitly invoked onboarding Work an
+acting host agent may classify the repository basis and propose declaration
+data; HaftSoftwareSystem admits and materializes the declaration only after the
+authorizing U.SpeechAct, its utterance content, the permission it instituted,
+and the action-specific authority basis resolve. Raw
+repository inference remains orientation only (`TS.boundary.001.L5`,
+`TS.boundary.001.A4`, `TS.boundary.001.A5`, `TS.boundary.001.D3`).
+
+The canonical/projection distinction and projection-failure invariant are
+fully stated by `TS.boundary.001.L1` and `TS.boundary.001.L7`. This prose adds
+no alternate persistence or recovery requirement.
+
+A separately operated external runner remains outside HaftSoftwareSystem and
+the user's target runtime (`TS.boundary.001.L2`). The dated Work occurrence,
+its RuntimeRunRecord description, and the result carrier that carries that
+record remain distinct. The observation or episteme basis, the contextual
+Evidence relation, its EvidenceRecord description, and the evidence carrier
+that carries that record likewise remain distinct (`TS.boundary.001.L3`,
+`TS.boundary.001.L4`).
+
+The remaining boundary explanation follows from the Query-result restriction
+and explicit authority gate (`TS.role.001.A1`, `TS.boundary.001.D3`):
+HaftSoftwareSystem does not become FPF authority, the human principal, or the
+runtime of the user's target merely by carrying descriptions or recording
+observations submitted by an external runner.
+
+### Boundary Perspectives
+
+- Canonical versus projected values: `TS.boundary.001.L1`.
+- HaftSoftwareSystem, an external runner, and the user's target runtime:
+  `TS.boundary.001.L2`.
+- Work occurrence versus RuntimeRunRecord versus result carrier:
+  `TS.boundary.001.L3`.
+- Observation or episteme basis versus contextual Evidence relation versus
+  EvidenceRecord versus evidence carrier: `TS.boundary.001.L4`.
+- Profile and orientation boundary: `TS.boundary.001.L5` and
+  `TS.boundary.001.A4`.
+- Semantic and authority gates: `TS.boundary.001.A3`,
+  `TS.boundary.001.D1`, and `TS.boundary.001.D3`.
+
+### Exclusions
+
+- Repository inference cannot bind applicability (`TS.boundary.001.A4`).
+- `NotApplicable` is not debt (`TS.environment.001.L3`).
+- `Underdetermined` preserves missing basis (`TS.environment.001.L4`,
+  `TS.boundary.001.D1`).
+- Query output cannot become selection or approval (`TS.role.001.A1`).
+- `EntityOfConcernSlot`, its `U.Entity` filler, `entityOfConcernRef`, and the
+  separate `BoundedContextRef` retain their declared types
+  (`TS.boundary.001.L6`, `TS.boundary.001.L8`).
+- A carrier or projection is not the canonical semantic record
+  (`TS.boundary.001.L1`).
+- Binding mutations require operator authority (`TS.boundary.001.D3`).
+- A RuntimeRunRecord is not performed Work, and a result carrier is neither
+  that record nor Work. An EvidenceRecord describes the contextual
+  evidence-use relation, while an evidence carrier is distinct from that
+  record, the Evidence relation, and its observation or episteme basis
+  (`TS.boundary.001.L3`, `TS.boundary.001.L4`).

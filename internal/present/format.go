@@ -10,47 +10,141 @@ import (
 	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
-// NavStrip renders the nav state as a compact text block.
-func NavStrip(state artifact.NavState) string {
+// ProjectStateStrip renders independent project-state facets. It does not
+// derive a phase, terminal state, or global next action.
+func ProjectStateStrip(state artifact.ProjectStateView) string {
 	var sb strings.Builder
 
-	sb.WriteString("\n── Haft ───────────────────────────\n")
+	sb.WriteString("\n── Haft project state ─────────────\n")
 
 	if state.Context != "" {
 		sb.WriteString(fmt.Sprintf("Context: %s\n", state.Context))
 	}
-	if state.Mode != "" {
-		sb.WriteString(fmt.Sprintf("Mode: %s\n", state.Mode))
-	}
 
-	sb.WriteString(fmt.Sprintf("Status: %s\n", state.DerivedStatus))
-
-	if state.ProblemTitle != "" {
-		sb.WriteString(fmt.Sprintf("Problem: %s", state.ProblemTitle))
-		if state.ProblemStatus != "" {
-			sb.WriteString(fmt.Sprintf(" [%s]", state.ProblemStatus))
-		}
-		sb.WriteString("\n")
-	}
-	if state.PortfolioInfo != "" {
-		sb.WriteString(fmt.Sprintf("Portfolio: %s\n", state.PortfolioInfo))
-	}
-	if state.DecisionInfo != "" {
-		sb.WriteString(fmt.Sprintf("Decision: %s\n", state.DecisionInfo))
-	}
+	writeProjectArtifactFacet(&sb, "Open problems", state.Problems.Open)
+	writeProjectOptionFacet(&sb, state.Options.Sets)
+	writeProjectArtifactFacet(&sb, "Active decisions", state.Decisions.Active)
+	writeProjectWorkFacet(&sb, state.Work.Active)
 
 	if state.StaleCount > 0 {
-		sb.WriteString(fmt.Sprintf("Stale: %d decision(s) need refresh\n", state.StaleCount))
+		sb.WriteString(fmt.Sprintf("Evidence pressure: %d decision(s) need refresh\n", state.StaleCount))
 	}
-
-	if state.NextAction != "" {
-		sb.WriteString(fmt.Sprintf("Available: %s\n", state.NextAction))
-		sb.WriteString("↑ Present to user — do not auto-execute.\n")
+	if state.DriftKnown && state.DriftCount > 0 {
+		sb.WriteString(fmt.Sprintf("Drift pressure: %d current finding(s)\n", state.DriftCount))
+	}
+	if state.SpecHealth.Known {
+		sb.WriteString(fmt.Sprintf("Spec health: %d current finding(s)\n", state.SpecHealth.FindingCount))
+	}
+	if projectStateViewEmpty(state) {
+		sb.WriteString("Current facets: none recorded\n")
 	}
 
 	sb.WriteString("───────────────────────────────────\n")
 
 	return sb.String()
+}
+
+// NavStrip preserves the existing shell call site while rendering the new
+// coexistence view. There is no navigation instruction in the returned text.
+func NavStrip(state artifact.ProjectStateView) string {
+	return ProjectStateStrip(state)
+}
+
+func writeProjectArtifactFacet(
+	sb *strings.Builder,
+	label string,
+	items []artifact.ProjectArtifactState,
+) {
+	if len(items) == 0 {
+		return
+	}
+
+	summary := summarizeProjectArtifacts(items)
+	sb.WriteString(fmt.Sprintf("%s: %d — %s\n", label, len(items), summary))
+}
+
+func summarizeProjectArtifacts(items []artifact.ProjectArtifactState) string {
+	labels := make([]string, 0, min(len(items), 2))
+	for index, item := range items {
+		if index == 2 {
+			break
+		}
+
+		label := formatArtifactLabel(item.Title, item.ID)
+		labels = append(labels, label)
+	}
+
+	return summarizeProjectFacetLabels(labels, len(items))
+}
+
+func writeProjectOptionFacet(
+	sb *strings.Builder,
+	items []artifact.ProjectOptionSetState,
+) {
+	if len(items) == 0 {
+		return
+	}
+
+	labels := make([]string, 0, min(len(items), 2))
+	for index, item := range items {
+		if index == 2 {
+			break
+		}
+
+		comparison := "comparison not recorded"
+		if item.ComparisonRecorded {
+			comparison = "comparison recorded"
+		}
+		artifactLabel := formatArtifactLabel(item.Artifact.Title, item.Artifact.ID)
+		label := fmt.Sprintf("%s [%s]", artifactLabel, comparison)
+		labels = append(labels, label)
+	}
+
+	summary := summarizeProjectFacetLabels(labels, len(items))
+	sb.WriteString(fmt.Sprintf("Option sets: %d — %s\n", len(items), summary))
+}
+
+func writeProjectWorkFacet(
+	sb *strings.Builder,
+	items []artifact.WorkCommissionStatus,
+) {
+	if len(items) == 0 {
+		return
+	}
+
+	labels := make([]string, 0, min(len(items), 2))
+	for index, item := range items {
+		if index == 2 {
+			break
+		}
+
+		artifactLabel := formatArtifactLabel(item.Title, item.ID)
+		label := fmt.Sprintf("%s [%s]", artifactLabel, item.State)
+		labels = append(labels, label)
+	}
+
+	summary := summarizeProjectFacetLabels(labels, len(items))
+	sb.WriteString(fmt.Sprintf("Active work: %d — %s\n", len(items), summary))
+}
+
+func summarizeProjectFacetLabels(labels []string, total int) string {
+	summary := strings.Join(labels, "; ")
+	remaining := total - len(labels)
+	if remaining <= 0 {
+		return summary
+	}
+
+	return fmt.Sprintf("%s; +%d more", summary, remaining)
+}
+
+func projectStateViewEmpty(state artifact.ProjectStateView) bool {
+	return len(state.Problems.Open) == 0 &&
+		len(state.Options.Sets) == 0 &&
+		len(state.Decisions.Active) == 0 &&
+		len(state.Work.Active) == 0 &&
+		state.StaleCount == 0 &&
+		state.DriftCount == 0 &&
+		state.SpecHealth.FindingCount == 0
 }
 
 // NoteResponse builds the MCP tool response for a note.
@@ -64,8 +158,7 @@ func NoteResponse(a *artifact.Artifact, filePath string, validation artifact.Not
 		sb.WriteString("\n")
 	}
 
-	sb.WriteString(fmt.Sprintf("Recorded: %s\n", a.Meta.Title))
-	sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+	sb.WriteString(fmt.Sprintf("Recorded: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 	if filePath != "" {
 		sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 	}
@@ -143,7 +236,7 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 			kindLabel = "DecisionRecord"
 		}
 		kindLabel = UserFacingArtifactKindLabel(kindLabel)
-		sb.WriteString(fmt.Sprintf("%d. **%s** [%s] (%s)\n", i+1, item.Title, item.ID, kindLabel))
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, formatArtifactLabel(item.Title, item.ID), kindLabel))
 		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
 	}
 
@@ -153,6 +246,43 @@ func ScanResponse(items []artifact.StaleItem, navStrip string) string {
 	sb.WriteString("- `supersede` — replace with another artifact\n")
 	sb.WriteString("- `deprecate` — archive as no longer relevant\n")
 	sb.WriteString("\nUse `artifact_ref` parameter with any artifact ID (note, problem, decision, portfolio).\n")
+
+	sb.WriteString(navStrip)
+	return sb.String()
+}
+
+// ScanResponseSummary formats stale scan results for default agent output.
+// The full stale list remains available through ScanResponse when the caller
+// explicitly asks for verbose refresh output.
+func ScanResponseSummary(items []artifact.StaleItem, navStrip string) string {
+	var sb strings.Builder
+
+	if len(items) == 0 {
+		sb.WriteString("No stale artifacts found. All decisions, problems, and notes are current.\n")
+		sb.WriteString(navStrip)
+		return sb.String()
+	}
+
+	const topStaleItems = 10
+	sb.WriteString(fmt.Sprintf("## Refresh Due (%d artifact(s)) — summary\n\n", len(items)))
+	for i, item := range items {
+		if i >= topStaleItems {
+			break
+		}
+		kindLabel := item.Kind
+		if kindLabel == "" {
+			kindLabel = "DecisionRecord"
+		}
+		kindLabel = UserFacingArtifactKindLabel(kindLabel)
+		sb.WriteString(fmt.Sprintf("%d. %s (%s)\n", i+1, formatArtifactLabel(item.Title, item.ID), kindLabel))
+		sb.WriteString(fmt.Sprintf("   Reason: %s\n\n", item.Reason))
+	}
+	if omitted := len(items) - topStaleItems; omitted > 0 {
+		sb.WriteString(fmt.Sprintf("... and %d more refresh-due artifact(s) omitted from summary\n\n", omitted))
+	}
+
+	sb.WriteString("Full stale list: pass `verbose: true` to haft_refresh(action=\"scan\").\n")
+	sb.WriteString("Actions: waive | reopen | supersede | deprecate with `artifact_ref`.\n")
 
 	sb.WriteString(navStrip)
 	return sb.String()
@@ -216,9 +346,9 @@ func RefreshActionResponse(action artifact.RefreshAction, dec *artifact.Artifact
 }
 
 // BaselineResponse formats the result of a baseline action.
-func BaselineResponse(decisionRef string, files []artifact.AffectedFile, navStrip string) string {
+func BaselineResponse(decisionTitle string, decisionRef string, files []artifact.AffectedFile, navStrip string) string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", decisionRef, len(files)))
+	sb.WriteString(fmt.Sprintf("Baseline set for %s. Monitoring %d file(s).\n\n", formatArtifactLabel(decisionTitle, decisionRef), len(files)))
 	for _, f := range files {
 		sb.WriteString(fmt.Sprintf("  %s — %s\n", f.Path, f.Hash[:12]))
 	}
@@ -264,14 +394,26 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 	}
 
 	const topModifiedPerReport = 5
+	const topDriftReports = 5
+	const topImpactReports = 3
+	const topImpactedModulesPerReport = 5
+	const topDecisionIDsPerImpact = 4
 
 	if driftCount > 0 {
 		sb.WriteString(fmt.Sprintf("## Drift Detected (%d decision(s)) — summary\n\n", driftCount))
 		sb.WriteString("Counts per baselined decision. For full per-file dump pass `verbose: true` to haft_refresh.\n\n")
+		renderedDriftReports := 0
+		omittedDriftReports := 0
 		for _, r := range reports {
 			if !r.HasBaseline {
 				continue
 			}
+			if renderedDriftReports >= topDriftReports {
+				omittedDriftReports++
+				continue
+			}
+			renderedDriftReports++
+
 			var modified, added, missing int
 			var modifiedPaths []string
 			var changedSymbols []string // non-added symbols across modified files — the actionable ones
@@ -293,7 +435,7 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 					missing++
 				}
 			}
-			sb.WriteString(fmt.Sprintf("### %s [%s]\n", r.DecisionTitle, r.DecisionID))
+			sb.WriteString(fmt.Sprintf("### %s\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			sb.WriteString(fmt.Sprintf("  %d modified, %d added, %d missing\n", modified, added, missing))
 			sb.WriteString(fmt.Sprintf("  Symbol verdict: %s%s\n", r.SymbolVerdict(), symbolVerdictHint(r.SymbolVerdict())))
 			if len(changedSymbols) > 0 {
@@ -313,19 +455,39 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 			}
 			sb.WriteString("\n")
 		}
+		if omittedDriftReports > 0 {
+			sb.WriteString(fmt.Sprintf("... and %d more drifted decision(s) omitted from summary\n\n", omittedDriftReports))
+		}
+		impactReports := 0
+		omittedImpactReports := 0
 		for _, r := range reports {
 			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
-			for _, impact := range r.ImpactedModules {
+			if impactReports >= topImpactReports {
+				omittedImpactReports++
+				continue
+			}
+			impactReports++
+
+			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
+			for i, impact := range r.ImpactedModules {
+				if i >= topImpactedModulesPerReport {
+					break
+				}
 				if impact.IsBlind {
 					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
 				} else {
-					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, summarizedDecisionLabels(impact.DecisionIDs, impact.DecisionTitles, topDecisionIDsPerImpact)))
 				}
 			}
+			if omitted := len(r.ImpactedModules) - topImpactedModulesPerReport; omitted > 0 {
+				sb.WriteString(fmt.Sprintf("  ... and %d more impacted module(s)\n", omitted))
+			}
 			sb.WriteString("\n")
+		}
+		if omittedImpactReports > 0 {
+			sb.WriteString(fmt.Sprintf("... and %d more decision(s) with impact propagation omitted from summary\n\n", omittedImpactReports))
 		}
 		sb.WriteString("**Classify each:** cosmetic (re-baseline) | material (flag to user or reopen) | incidental (shared file changed by unrelated work — re-baseline)\n\n")
 		sb.WriteString("For one specific decision use `haft_query(action=\"related\", file=...)`; for full dump pass `verbose: true` to haft_refresh.\n\n")
@@ -341,14 +503,32 @@ func DriftResponseSummary(reports []artifact.DriftReport, navStrip string) strin
 			if r.LikelyImplemented {
 				gitHint = "git activity detected after decision date"
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
+			sb.WriteString(fmt.Sprintf("- %s — %d file(s) unmonitored, %s\n",
+				formatArtifactLabel(r.DecisionTitle, r.DecisionID), len(r.Files), gitHint))
 		}
 		sb.WriteString("\n")
 	}
 
 	sb.WriteString(navStrip)
 	return sb.String()
+}
+
+func summarizedDecisionLabels(ids []string, titles map[string]string, limit int) string {
+	if len(ids) == 0 {
+		return ""
+	}
+	if limit <= 0 || limit > len(ids) {
+		limit = len(ids)
+	}
+
+	shown := make([]string, 0, limit+1)
+	for _, id := range ids[:limit] {
+		shown = append(shown, formatArtifactLabel(titles[id], id))
+	}
+	if len(ids) > limit {
+		shown = append(shown, fmt.Sprintf("... +%d", len(ids)-limit))
+	}
+	return strings.Join(shown, ", ")
 }
 
 // DriftResponse formats drift check results for the agent (verbose: full
@@ -382,7 +562,7 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 			if !r.HasBaseline {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("### %s [%s]\n\n", r.DecisionTitle, r.DecisionID))
+			sb.WriteString(fmt.Sprintf("### %s\n\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			for _, f := range r.Files {
 				switch f.Status {
 				case artifact.DriftModified:
@@ -399,12 +579,12 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 			if !r.HasBaseline || len(r.ImpactedModules) == 0 {
 				continue
 			}
-			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", r.DecisionID))
+			sb.WriteString(fmt.Sprintf("**Impact propagation for %s:**\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID)))
 			for _, impact := range r.ImpactedModules {
 				if impact.IsBlind {
 					sb.WriteString(fmt.Sprintf("  ⚠ %s (blind) — no decisions, potential unmonitored impact\n", impact.ModulePath))
 				} else {
-					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, strings.Join(impact.DecisionIDs, ", ")))
+					sb.WriteString(fmt.Sprintf("  → %s — governed by %s\n", impact.ModulePath, summarizedDecisionLabels(impact.DecisionIDs, impact.DecisionTitles, len(impact.DecisionIDs))))
 				}
 			}
 			sb.WriteString("\n")
@@ -423,8 +603,8 @@ func DriftResponse(reports []artifact.DriftReport, navStrip string) string {
 			if r.LikelyImplemented {
 				gitHint = "git activity detected after decision date"
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** [%s] — %d file(s) unmonitored, %s\n",
-				r.DecisionTitle, r.DecisionID, len(r.Files), gitHint))
+			sb.WriteString(fmt.Sprintf("- %s — %d file(s) unmonitored, %s\n",
+				formatArtifactLabel(r.DecisionTitle, r.DecisionID), len(r.Files), gitHint))
 		}
 		sb.WriteString("\n**Action:** Verify implementation status by reading affected files before baselining.\n\n")
 	}
@@ -439,7 +619,7 @@ func DecisionResponse(action string, a *artifact.Artifact, filePath string, extr
 
 	switch action {
 	case "decide":
-		sb.WriteString(fmt.Sprintf("Decision recorded: %s\nID: %s\n", a.Meta.Title, a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Decision recorded: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		if a.Meta.ValidUntil != "" {
 			sb.WriteString(fmt.Sprintf("Valid until: %s\n", a.Meta.ValidUntil))
 		}
@@ -451,8 +631,7 @@ func DecisionResponse(action string, a *artifact.Artifact, filePath string, extr
 	case "apply":
 		sb.WriteString(extra)
 	case "measure":
-		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Impact measured: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		sb.WriteString(extra)
 	case "evidence":
 		sb.WriteString(extra)
@@ -468,15 +647,13 @@ func SolutionResponse(action string, a *artifact.Artifact, filePath string, navS
 
 	switch action {
 	case "explore":
-		sb.WriteString(fmt.Sprintf("Portfolio created: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Portfolio created: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
 		sb.WriteString(formatVariantsIndex(a))
 	case "compare":
-		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Comparison added to: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		if filePath != "" {
 			sb.WriteString(fmt.Sprintf("File: %s\n", filePath))
 		}
@@ -638,7 +815,7 @@ func solutionVariantLabels(variants []artifact.Variant) map[string]string {
 		title := strings.TrimSpace(variant.Title)
 		id := strings.TrimSpace(variant.ID)
 		if id != "" && title != "" {
-			labels[id] = title
+			labels[id] = fmt.Sprintf("%s `%s`", title, id)
 		}
 		if title != "" {
 			labels[title] = title
@@ -666,25 +843,13 @@ func displayComparisonVariantLabel(value string, labels map[string]string) strin
 	return trimmed
 }
 
-// MissingProblemResponse returns prescriptive guidance when problem is missing.
-func MissingProblemResponse(navStrip string) string {
-	return "No active problem found.\n\n" +
-		"Frame the problem first:\n" +
-		"  /h-frame — define what's anomalous, constraints, acceptance criteria\n\n" +
-		"Or explore directly in tactical mode:\n" +
-		"  haft_solution(action=\"explore\", variants=[...])\n" +
-		"  → will create a lightweight problem from context\n" +
-		navStrip
-}
-
 // ProblemResponse builds the MCP tool response for a framed problem.
 func ProblemResponse(action string, a *artifact.Artifact, filePath string, navStrip string) string {
 	var sb strings.Builder
 
 	switch action {
 	case "frame":
-		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Problem framed: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 		sb.WriteString(fmt.Sprintf("Mode: %s\n", a.Meta.Mode))
 		if problemType := artifact.ProblemTypeLabel(a); problemType != "" {
 			sb.WriteString(fmt.Sprintf("Type: %s\n", problemType))
@@ -701,8 +866,7 @@ func ProblemResponse(action string, a *artifact.Artifact, filePath string, navSt
 			sb.WriteString("\n" + a.Body[idx:])
 		}
 	case "characterize":
-		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", a.Meta.Title))
-		sb.WriteString(fmt.Sprintf("ID: %s\n", a.Meta.ID))
+		sb.WriteString(fmt.Sprintf("Characterization added to: %s\n", formatArtifactLabel(a.Meta.Title, a.Meta.ID)))
 	}
 
 	sb.WriteString(navStrip)
@@ -750,6 +914,7 @@ func SearchResponse(results []*artifact.Artifact, query string) string {
 func StatusResponse(data artifact.StatusData) string {
 	var sb strings.Builder
 	sb.WriteString("## Haft Status\n\n")
+	appendStatusDriftProjection(&sb, data.DriftProjection)
 
 	formatDecisionList := func(items []*artifact.Artifact, cap int) {
 		for i, d := range items {
@@ -757,13 +922,18 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(items)-cap))
 				break
 			}
-			line := fmt.Sprintf("- **%s** `%s`", d.Meta.Title, d.Meta.ID)
+			line := "- " + formatArtifactLabel(d.Meta.Title, d.Meta.ID)
 			if d.Meta.ValidUntil != "" {
 				vu := d.Meta.ValidUntil
 				if len(vu) > 10 {
 					vu = vu[:10]
 				}
 				line += fmt.Sprintf(" (valid until %s)", vu)
+			}
+			verification := data.DecisionVerification[d.Meta.ID]
+			line += " — " + formatDecisionVerificationSummary(verification)
+			if health, ok := data.DecisionHealth[d.Meta.ID]; ok && health.Maturity == artifact.DecisionMaturityUnassessed {
+				line += "; " + formatUnassessedReason(health.EvidenceState)
 			}
 			sb.WriteString(line + "\n")
 		}
@@ -795,11 +965,29 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more (use /h-refresh to see all)\n", len(data.StaleItems)-cap))
 				break
 			}
-			line := fmt.Sprintf("- **%s** `%s`", s.Title, s.ID)
+			line := "- " + formatArtifactLabel(s.Title, s.ID)
 			if health, ok := data.DecisionHealth[s.ID]; ok {
 				line += fmt.Sprintf(" — %s", health.Label())
 			}
 			line += fmt.Sprintf(" — %s", s.Reason)
+			sb.WriteString(line + "\n")
+		}
+		sb.WriteString("\n")
+	}
+
+	if data.SpecBindingDebt.Summary.Total() > 0 {
+		sb.WriteString(fmt.Sprintf("### Spec Binding Debt (%d)\n\n", data.SpecBindingDebt.Summary.Total()))
+		cap := 8
+		for i, item := range data.SpecBindingDebt.Items {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.SpecBindingDebt.Items)-cap))
+				break
+			}
+			line := "- " + formatArtifactLabel(item.Title, item.DecisionRef)
+			line += fmt.Sprintf(" — %s: %s", item.Kind, item.Message)
+			if len(item.SectionRefs) > 0 {
+				line += fmt.Sprintf(" (%s)", strings.Join(item.SectionRefs, ", "))
+			}
 			sb.WriteString(line + "\n")
 		}
 		sb.WriteString("\n")
@@ -842,7 +1030,7 @@ func StatusResponse(data artifact.StatusData) string {
 			if summary == "" {
 				summary = "no file changes"
 			}
-			sb.WriteString(fmt.Sprintf("- **%s** `%s` — %s\n", r.DecisionTitle, r.DecisionID, summary))
+			sb.WriteString(fmt.Sprintf("- %s — %s\n", formatArtifactLabel(r.DecisionTitle, r.DecisionID), summary))
 		}
 		sb.WriteString("\n→ Run /h-verify on a drifted decision to gather evidence; /h-refresh scan for full file-level diff.\n\n")
 	}
@@ -879,7 +1067,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.InProgressProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), data.InProgressBy[p.Meta.ID]))
+			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), statusPortfolioLabel(data, p.Meta.ID)))
 		}
 		sb.WriteString("\n")
 	}
@@ -897,6 +1085,24 @@ func StatusResponse(data artifact.StatusData) string {
 		sb.WriteString("\n")
 	}
 
+	if len(data.ProblemHygiene) > 0 {
+		sb.WriteString(fmt.Sprintf("### Problem Closure Hygiene (%d)\n\n", len(data.ProblemHygiene)))
+		cap := 5
+		for i, item := range data.ProblemHygiene {
+			if i >= cap {
+				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.ProblemHygiene)-cap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf(
+				"- %s — %s. Action: %s.\n",
+				formatProblemListEntry(item.Problem),
+				item.Reason,
+				item.Action,
+			))
+		}
+		sb.WriteString("\n")
+	}
+
 	if len(data.AddressedProblems) > 0 {
 		sb.WriteString(fmt.Sprintf("### Addressed (%d)\n\n", len(data.AddressedProblems)))
 		cap := 3
@@ -905,7 +1111,7 @@ func StatusResponse(data artifact.StatusData) string {
 				sb.WriteString(fmt.Sprintf("- ... and %d more\n", len(data.AddressedProblems)-cap))
 				break
 			}
-			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), data.AddressedBy[p.Meta.ID]))
+			sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(p), statusDecisionLabel(data, p.Meta.ID)))
 		}
 		sb.WriteString("\n")
 	}
@@ -913,7 +1119,7 @@ func StatusResponse(data artifact.StatusData) string {
 	if len(data.RecentNotes) > 0 {
 		sb.WriteString(fmt.Sprintf("### Recent Notes (%d)\n\n", len(data.RecentNotes)))
 		for _, n := range data.RecentNotes {
-			sb.WriteString(fmt.Sprintf("- %s `%s` (%s)\n", n.Meta.Title, n.Meta.ID, n.Meta.CreatedAt.Format("2006-01-02")))
+			sb.WriteString(fmt.Sprintf("- %s (%s)\n", formatArtifactLabel(n.Meta.Title, n.Meta.ID), n.Meta.CreatedAt.Format("2006-01-02")))
 		}
 		sb.WriteString("\n")
 	}
@@ -927,6 +1133,7 @@ func StatusResponse(data artifact.StatusData) string {
 		len(data.CommissionAttention) > 0 ||
 		len(data.InProgressProblems) > 0 ||
 		len(data.BacklogProblems) > 0 ||
+		len(data.ProblemHygiene) > 0 ||
 		len(data.AddressedProblems) > 0 ||
 		len(data.RecentNotes) > 0
 	if !hasAny {
@@ -936,10 +1143,428 @@ func StatusResponse(data artifact.StatusData) string {
 	return sb.String()
 }
 
+// CockpitStatusResponse formats the default operator status surface.
+// It preserves StatusResponse as the detailed renderer for explicit full=true
+// calls, while keeping the default path bounded and drill-down oriented.
+func CockpitStatusResponse(data artifact.StatusData) string {
+	var sb strings.Builder
+	sb.WriteString("## Haft Status\n\n")
+	sb.WriteString("### Operator Cockpit\n\n")
+	appendStatusDriftProjection(&sb, data.DriftProjection)
+
+	appendCockpitAttention(&sb, data)
+	appendCockpitActiveWork(&sb, data)
+	appendCockpitDecisionHealth(&sb, data)
+	appendCockpitDrillDown(&sb)
+
+	return sb.String()
+}
+
+func appendCockpitAttention(sb *strings.Builder, data artifact.StatusData) {
+	driftEvents := cockpitDriftEvents(data)
+	openDriftEvents := artifact.OpenDriftEvents(driftEvents.Events)
+	driftPartitions := artifact.PartitionDriftEvents(openDriftEvents)
+	reconciliationNeedsAttention := cockpitReconciliationNeedsOperator(data.ReconciliationCues)
+	hasAttention := len(data.StaleItems) > 0 ||
+		(data.DriftProjection.State != "" &&
+			data.DriftProjection.State != artifact.DriftProjectionSkipped &&
+			data.DriftProjection.State != artifact.DriftProjectionComplete) ||
+		len(data.ProblemHygiene) > 0 ||
+		data.SpecBindingDebt.Summary.Total() > 0 ||
+		len(driftPartitions.Material) > 0 ||
+		len(driftPartitions.NeedsBindingResolution) > 0 ||
+		reconciliationNeedsAttention ||
+		len(data.CommissionAttention) > 0
+
+	if !hasAttention {
+		sb.WriteString("- No active refresh, drift, binding, reconciliation, or commission attention items in this status payload.\n\n")
+		return
+	}
+
+	sb.WriteString(
+		"- **Interruption boundary**: attention below is not a project-wide gate. " +
+			"Continue unrelated already-authorized Work; interrupt only an affected " +
+			"binding or authority mutation, an explicit human lifecycle gate, or a " +
+			"current use that relies on unresolved contradictory binding content.\n",
+	)
+	if data.DriftProjection.State == artifact.DriftProjectionPartial ||
+		data.DriftProjection.State == artifact.DriftProjectionUnavailable {
+		sb.WriteString(fmt.Sprintf(
+			"- **Drift projection %s**: %s. This does not support a known-absence or release-readiness claim.\n",
+			data.DriftProjection.State,
+			firstNonEmptyStatusText(data.DriftProjection.Reason, "complete current symbol basis was not established"),
+		))
+	}
+
+	const staleCap = 2
+	if len(data.StaleItems) > 0 {
+		sb.WriteString(fmt.Sprintf("- **Refresh due** (%d):\n", len(data.StaleItems)))
+		for i, stale := range data.StaleItems {
+			if i >= staleCap {
+				break
+			}
+			line := "  - " + formatArtifactLabel(stale.Title, stale.ID)
+			if health, ok := data.DecisionHealth[stale.ID]; ok {
+				line += fmt.Sprintf(" — %s", health.Label())
+			}
+			line += fmt.Sprintf(" — %s", stale.Reason)
+			sb.WriteString(line + "\n")
+		}
+		if len(data.StaleItems) > staleCap {
+			sb.WriteString(fmt.Sprintf("  - ... and %d more.\n", len(data.StaleItems)-staleCap))
+		}
+	}
+
+	const driftCap = 2
+	if len(openDriftEvents) > 0 {
+		if len(driftPartitions.Material) > 0 {
+			materialSummary := artifact.SummarizeDriftEventGroup(driftPartitions.Material)
+			auditSuffix := ""
+			if len(driftPartitions.AuditOnly) > 0 {
+				auditSuffix = fmt.Sprintf("; %d audit-only in drill-down", len(driftPartitions.AuditOnly))
+			}
+			sb.WriteString(fmt.Sprintf(
+				"- **Drift events** (%d material; %d impacted decision(s); max fanout %d%s):\n",
+				materialSummary.UniqueEvents,
+				materialSummary.ImpactedDecisions,
+				materialSummary.MaxFanout,
+				auditSuffix,
+			))
+		}
+		for i, event := range driftPartitions.Material {
+			if i >= driftCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more event(s).\n", len(driftPartitions.Material)-driftCap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf(
+				"  - %s — fanout=%d materiality=%s resolution=%s\n",
+				event.ChangedTargetRef,
+				event.Fanout,
+				event.Materiality,
+				event.ResolutionStatus,
+			))
+		}
+		if len(driftPartitions.NeedsBindingResolution) > 0 {
+			sb.WriteString(fmt.Sprintf(
+				"- **Binding resolution needed**: %s.\n",
+				formatBindingResolutionDriftEventSummary(driftPartitions.NeedsBindingResolution),
+			))
+		}
+	}
+
+	if reconciliationNeedsAttention {
+		sb.WriteString("- **Scoped decision reconciliation contains an operator-required selection**: ")
+		sb.WriteString(cockpitReconciliationActionSummary(data.ReconciliationCues))
+		sb.WriteString("\n")
+	}
+
+	if data.SpecBindingDebt.Summary.Total() > 0 {
+		summary := data.SpecBindingDebt.Summary
+		sb.WriteString(fmt.Sprintf(
+			"- **Spec binding debt**: missing=%d invalid_refs=%d draft_section_needed=%d out_of_spec=%d.\n",
+			summary.DecisionsMissingSpecBinding,
+			summary.DecisionsWithInvalidSpecRefs,
+			summary.DraftSectionNeededDebt,
+			summary.OutOfSpecDecisionDebt,
+		))
+	}
+
+	const hygieneCap = 2
+	if len(data.ProblemHygiene) > 0 {
+		sb.WriteString(fmt.Sprintf("- **Problem closure hygiene** (%d):\n", len(data.ProblemHygiene)))
+		for i, item := range data.ProblemHygiene {
+			if i >= hygieneCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more.\n", len(data.ProblemHygiene)-hygieneCap))
+				break
+			}
+			sb.WriteString(fmt.Sprintf(
+				"  - %s — %s.\n",
+				formatProblemListEntry(item.Problem),
+				item.Reason,
+			))
+		}
+	}
+
+	const commissionCap = 2
+	if len(data.CommissionAttention) > 0 {
+		sb.WriteString(fmt.Sprintf("- **WorkCommissions need attention** (%d):\n", len(data.CommissionAttention)))
+		for i, commission := range data.CommissionAttention {
+			if i >= commissionCap {
+				sb.WriteString(fmt.Sprintf("  - ... and %d more.\n", len(data.CommissionAttention)-commissionCap))
+				break
+			}
+			sb.WriteString("  " + formatCommissionStatusEntry(commission) + "\n")
+		}
+	}
+
+	sb.WriteString("\n")
+}
+
+func appendStatusDriftProjection(
+	sb *strings.Builder,
+	projection artifact.DriftProjection,
+) {
+	if projection.State == "" || projection.State == artifact.DriftProjectionSkipped {
+		return
+	}
+	line := fmt.Sprintf("- Drift projection: `%s`", projection.State)
+	if projection.SourceIndexEpoch > 0 {
+		line += fmt.Sprintf("; code-index epoch=%d", projection.SourceIndexEpoch)
+	}
+	if projection.Reason != "" {
+		line += "; " + projection.Reason
+	}
+	if projection.OmittedDecisions > 0 {
+		line += fmt.Sprintf("; omitted_decisions=%d", projection.OmittedDecisions)
+	}
+	sb.WriteString(line + ".\n\n")
+}
+
+func firstNonEmptyStatusText(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func appendCockpitActiveWork(sb *strings.Builder, data artifact.StatusData) {
+	if len(data.InProgressProblems) == 0 && len(data.BacklogProblems) == 0 {
+		return
+	}
+
+	sb.WriteString("### Active Work\n\n")
+
+	const progressCap = 3
+	for i, problem := range data.InProgressProblems {
+		if i >= progressCap {
+			sb.WriteString(fmt.Sprintf("- ... and %d more in progress.\n", len(data.InProgressProblems)-progressCap))
+			break
+		}
+		sb.WriteString(fmt.Sprintf("- %s → %s\n", formatProblemListEntry(problem), statusPortfolioLabel(data, problem.Meta.ID)))
+	}
+
+	if len(data.BacklogProblems) > 0 {
+		sb.WriteString(fmt.Sprintf("- Backlog: %d problem(s).\n", len(data.BacklogProblems)))
+	}
+
+	sb.WriteString("\n")
+}
+
+func appendCockpitDecisionHealth(sb *strings.Builder, data artifact.StatusData) {
+	driftEvents := cockpitDriftEvents(data)
+	openDriftEvents := artifact.OpenDriftEvents(driftEvents.Events)
+	totalDecisions := len(data.HealthyDecisions) +
+		len(data.PendingDecisions) +
+		len(data.UnassessedDecisions)
+
+	if totalDecisions == 0 && len(data.StaleItems) == 0 && len(openDriftEvents) == 0 {
+		return
+	}
+
+	sb.WriteString("### Decision Health\n\n")
+	noEvidence, evidenceUnavailable := unassessedReasonCounts(data)
+	verification := aggregateDecisionVerification(data.DecisionVerification)
+	verificationSuffix := fmt.Sprintf(
+		" Claims: %d active, %d unverified",
+		verification.ActiveClaims,
+		verification.UnverifiedClaims,
+	)
+	if verification.NextScheduledCheck != "" {
+		verificationSuffix += "; next scheduled check: " + verification.NextScheduledCheck
+	}
+	verificationSuffix += fmt.Sprintf(
+		". Unassessed reasons: %d no active evidence, %d evidence unavailable.",
+		noEvidence,
+		evidenceUnavailable,
+	)
+	driftPartitions := artifact.PartitionDriftEvents(openDriftEvents)
+	if len(driftPartitions.AuditOnly) > 0 || len(driftPartitions.NeedsBindingResolution) > 0 {
+		sb.WriteString(fmt.Sprintf(
+			"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s), %d audit-only event(s), %d needs-binding event(s).%s\n\n",
+			len(data.HealthyDecisions),
+			len(data.PendingDecisions),
+			len(data.UnassessedDecisions),
+			len(data.StaleItems),
+			len(driftPartitions.Material),
+			len(driftPartitions.AuditOnly),
+			len(driftPartitions.NeedsBindingResolution),
+			verificationSuffix,
+		))
+		return
+	}
+	sb.WriteString(fmt.Sprintf(
+		"- Healthy: %d; Pending: %d; Unassessed: %d; Refresh due: %d; Drift: %d material event(s).%s\n\n",
+		len(data.HealthyDecisions),
+		len(data.PendingDecisions),
+		len(data.UnassessedDecisions),
+		len(data.StaleItems),
+		len(driftPartitions.Material),
+		verificationSuffix,
+	))
+}
+
+func formatDecisionVerificationSummary(summary artifact.DecisionVerificationSummary) string {
+	label := fmt.Sprintf("claims: %d active, %d unverified", summary.ActiveClaims, summary.UnverifiedClaims)
+	if summary.NextScheduledCheck != "" {
+		label += "; next scheduled check: " + summary.NextScheduledCheck
+	}
+	return label
+}
+
+func formatUnassessedReason(state artifact.DecisionEvidenceState) string {
+	if state == artifact.DecisionEvidenceUnavailable {
+		return "evidence unavailable"
+	}
+	return "no active evidence"
+}
+
+func unassessedReasonCounts(data artifact.StatusData) (int, int) {
+	noEvidence := 0
+	evidenceUnavailable := 0
+	for _, decision := range data.UnassessedDecisions {
+		health := data.DecisionHealth[decision.Meta.ID]
+		if health.EvidenceState == artifact.DecisionEvidenceUnavailable {
+			evidenceUnavailable++
+			continue
+		}
+		noEvidence++
+	}
+	return noEvidence, evidenceUnavailable
+}
+
+func aggregateDecisionVerification(summaries map[string]artifact.DecisionVerificationSummary) artifact.DecisionVerificationSummary {
+	aggregate := artifact.DecisionVerificationSummary{}
+	for _, summary := range summaries {
+		aggregate.ActiveClaims += summary.ActiveClaims
+		aggregate.UnverifiedClaims += summary.UnverifiedClaims
+		if summary.NextScheduledCheck == "" {
+			continue
+		}
+		if aggregate.NextScheduledCheck == "" || summary.NextScheduledCheck < aggregate.NextScheduledCheck {
+			aggregate.NextScheduledCheck = summary.NextScheduledCheck
+		}
+	}
+	return aggregate
+}
+
+func appendCockpitDrillDown(sb *strings.Builder) {
+	sb.WriteString("### Drill-down\n\n")
+	sb.WriteString("- Core details: `haft_query(action=\"status\", full=true)`, `haft_query(action=\"coverage\")`, `haft_refresh(action=\"scan\", verbose=true)`, `haft_refresh(action=\"plan\", verbose=true)`.\n")
+	sb.WriteString(fmt.Sprintf("- Governance details: `%s`, `%s`, `%s`, `haft_refresh(action=\"review\")`, `haft overseer judgment --json --limit 20`, `haft_refresh(action=\"drain\", dry_run=true)`.\n",
+		artifact.StatusCompactDriftEventsCommand,
+		artifact.StatusCompactDecisionReconcileCommand,
+		artifact.StatusCompactGoverningSetCommand,
+	))
+	sb.WriteString("\nDefault status omits shipped/pending decision lists, full module coverage, recent notes, and full drift/stale tails.\n")
+}
+
+func ReconciliationCueSummary(report artifact.ReconciliationCueReport) string {
+	parts := []string{}
+	if report.Summary.HighFanoutEvents > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d high-fanout drift event(s), max fanout %d",
+			report.Summary.HighFanoutEvents,
+			report.Summary.MaxFanout,
+		))
+	}
+	if report.Summary.ReconciliationGroups > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d reconciliation group(s), %d operator-required",
+			report.Summary.ReconciliationGroups,
+			report.Summary.OperatorRequiredGroups,
+		))
+	}
+	if report.Summary.GoverningConflictSets > 0 || report.Summary.GoverningOverlapSets > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d governing conflict set(s), %d overlap set(s)",
+			report.Summary.GoverningConflictSets,
+			report.Summary.GoverningOverlapSets,
+		))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	if len(report.Commands) == 0 {
+		return strings.Join(parts, "; ")
+	}
+	return strings.Join(parts, "; ") + "; detail commands are in Drill-down"
+}
+
+func cockpitReconciliationActionSummary(report artifact.ReconciliationCueReport) string {
+	parts := []string{}
+	if report.Summary.OperatorRequiredGroups > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d operator-required reconciliation group(s)",
+			report.Summary.OperatorRequiredGroups,
+		))
+	}
+	if report.Summary.GoverningConflictSets > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d governing conflict set(s)",
+			report.Summary.GoverningConflictSets,
+		))
+	}
+	if report.Summary.GoverningOverlapSets > 0 {
+		parts = append(parts, fmt.Sprintf(
+			"%d governing overlap review set(s)",
+			report.Summary.GoverningOverlapSets,
+		))
+	}
+	if len(parts) == 0 {
+		if report.Summary.ReconciliationGroups == 0 && report.Summary.HighFanoutEvents == 0 {
+			return ""
+		}
+		parts = append(parts, "audit-only reconciliation detail available")
+	}
+	if len(report.Commands) == 0 {
+		return strings.Join(parts, "; ")
+	}
+	return strings.Join(parts, "; ") + "; detail commands are in Drill-down"
+}
+
+func cockpitReconciliationNeedsOperator(report artifact.ReconciliationCueReport) bool {
+	return report.Summary.OperatorRequiredGroups > 0 ||
+		report.Summary.GoverningConflictSets > 0 ||
+		report.Summary.GoverningOverlapSets > 0
+}
+
+func cockpitDriftEvents(data artifact.StatusData) artifact.DriftEventReport {
+	if len(data.DriftEvents.Events) > 0 || data.DriftEvents.SchemaVersion != 0 {
+		return data.DriftEvents
+	}
+	if len(data.Drift) == 0 {
+		return artifact.DriftEventReport{}
+	}
+	return artifact.BuildDriftEventReport(data.Drift)
+}
+
+func formatBindingResolutionDriftEventSummary(events []artifact.DriftEvent) string {
+	return fmt.Sprintf(
+		"%d unique event(s), %d impacted decision(s) need precise binding targets",
+		len(events),
+		countDriftEventImpactedDecisions(events),
+	)
+}
+
+func countDriftEventImpactedDecisions(events []artifact.DriftEvent) int {
+	seen := map[string]struct{}{}
+	for _, event := range events {
+		for _, decision := range event.ImpactedDecisions {
+			if decision.DecisionID == "" {
+				continue
+			}
+			seen[decision.DecisionID] = struct{}{}
+		}
+	}
+	return len(seen)
+}
+
 func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) string {
-	line := fmt.Sprintf("- `%s` %s", commission.ID, commission.State)
+	line := fmt.Sprintf("- %s %s", formatArtifactLabel(commission.Title, commission.ID), commission.State)
 	if commission.DecisionRef != "" {
-		line += fmt.Sprintf(" → %s", commission.DecisionRef)
+		line += fmt.Sprintf(" → %s", formatArtifactLabel(commission.DecisionTitle, commission.DecisionRef))
 	}
 	if commission.AttentionReason != "" {
 		line += " — " + commission.AttentionReason
@@ -948,6 +1573,16 @@ func formatCommissionStatusEntry(commission artifact.WorkCommissionStatus) strin
 		line += " — actions: " + strings.Join(commission.SuggestedActions, ", ")
 	}
 	return line
+}
+
+func statusPortfolioLabel(data artifact.StatusData, problemID string) string {
+	ref := strings.TrimSpace(data.InProgressBy[problemID])
+	return formatArtifactLabel(data.PortfolioTitles[ref], ref)
+}
+
+func statusDecisionLabel(data artifact.StatusData, problemID string) string {
+	ref := strings.TrimSpace(data.AddressedBy[problemID])
+	return formatArtifactLabel(data.DecisionTitles[ref], ref)
 }
 
 // ListResponse formats artifacts of a given kind as markdown.
@@ -977,7 +1612,11 @@ func ListResponse(data artifact.ListData) string {
 			line += fmt.Sprintf(" (valid until %s)", vu)
 		}
 		if a.Meta.Context != "" {
-			line += fmt.Sprintf(" ctx:%s", a.Meta.Context)
+			if data.Kind == artifact.KindDecisionRecord {
+				line += fmt.Sprintf(" recorded context: %s", a.Meta.Context)
+			} else {
+				line += fmt.Sprintf(" ctx:%s", a.Meta.Context)
+			}
 		}
 		sb.WriteString(line + "\n")
 	}
@@ -1134,8 +1773,30 @@ func ProblemsListResponse(items []artifact.ProblemListItem, navStrip string) str
 	return sb.String()
 }
 
+func formatArtifactLabel(title string, ref string) string {
+	title = strings.TrimSpace(title)
+	ref = strings.TrimSpace(ref)
+
+	switch {
+	case title != "" && ref != "":
+		return fmt.Sprintf("**%s** `%s`", title, ref)
+	case title != "":
+		return fmt.Sprintf("**%s**", title)
+	case ref != "":
+		return fmt.Sprintf("**untitled artifact** `%s`", ref)
+	default:
+		return "**unnamed artifact**"
+	}
+}
+
+// ArtifactLabel renders an operator-facing artifact reference with semantic
+// context first and the stable ref second.
+func ArtifactLabel(title string, ref string) string {
+	return formatArtifactLabel(title, ref)
+}
+
 func formatProblemListEntry(problem *artifact.Artifact) string {
-	return fmt.Sprintf("**%s** `%s`", formatProblemTitleWithType(problem), problem.Meta.ID)
+	return formatArtifactLabel(formatProblemTitleWithType(problem), problem.Meta.ID)
 }
 
 func formatProblemTitleWithType(problem *artifact.Artifact) string {

@@ -7,9 +7,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/project/specflow"
 )
 
 func TestHandleQuintQueryResolveTerm_RejectsMissingTerm(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	haftDir := filepath.Join(root, ".haft")
 
@@ -20,6 +26,8 @@ func TestHandleQuintQueryResolveTerm_RejectsMissingTerm(t *testing.T) {
 }
 
 func TestHandleQuintQueryResolveTerm_AbsentWhenNoMatches(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	haftDir := filepath.Join(root, ".haft")
 
@@ -44,8 +52,10 @@ func TestHandleQuintQueryResolveTerm_AbsentWhenNoMatches(t *testing.T) {
 }
 
 func TestHandleQuintQueryResolveTerm_ResolvedWhenSingleTermMapEntry(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
-	writeResolveTermMap(t, root, "Harnessability\n    domain: target\n    definition: Project ready for harness engineering.")
+	writeResolveTermMap(t, root, "Harnessability\n    category: target\n    definition: Project ready for harness engineering.")
 	haftDir := filepath.Join(root, ".haft")
 
 	raw, err := handleQuintQueryResolveTerm(context.Background(), nil, haftDir, map[string]any{
@@ -69,13 +79,21 @@ func TestHandleQuintQueryResolveTerm_ResolvedWhenSingleTermMapEntry(t *testing.T
 	if result.TermMapEntries[0].Term != "Harnessability" {
 		t.Fatalf("term = %q, want Harnessability", result.TermMapEntries[0].Term)
 	}
+	if result.TermMapEntries[0].Category != "target" {
+		t.Fatalf("category = %q, want target", result.TermMapEntries[0].Category)
+	}
+	if result.TermMapEntries[0].Domain != "target" {
+		t.Fatalf("legacy domain mirror = %q, want target", result.TermMapEntries[0].Domain)
+	}
 }
 
 func TestHandleQuintQueryResolveTerm_AmbiguousWithMultipleSpecSections(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
 	// One term-map entry + two sections that mention the term — agent must
 	// surface both candidates instead of guessing.
-	writeResolveTermMap(t, root, "Harnessability\n    domain: target\n    definition: Defined.")
+	writeResolveTermMap(t, root, "Harnessability\n    category: target\n    definition: Defined.")
 	writeResolveTermSections(t, root)
 
 	haftDir := filepath.Join(root, ".haft")
@@ -103,8 +121,10 @@ func TestHandleQuintQueryResolveTerm_AmbiguousWithMultipleSpecSections(t *testin
 }
 
 func TestHandleQuintQueryResolveTerm_CaseInsensitiveTermMap(t *testing.T) {
+	t.Parallel()
+
 	root := newResolveTermProject(t)
-	writeResolveTermMap(t, root, "HarnessableProject\n    domain: target\n    definition: Foo.")
+	writeResolveTermMap(t, root, "HarnessableProject\n    category: target\n    definition: Foo.")
 	haftDir := filepath.Join(root, ".haft")
 
 	raw, err := handleQuintQueryResolveTerm(context.Background(), nil, haftDir, map[string]any{
@@ -121,6 +141,51 @@ func TestHandleQuintQueryResolveTerm_CaseInsensitiveTermMap(t *testing.T) {
 
 	if len(result.TermMapEntries) != 1 {
 		t.Fatalf("case-insensitive lookup should find term; got %d entries", len(result.TermMapEntries))
+	}
+}
+
+func TestHandleQuintQueryResolveTermReadsSQLSectionsAndCarrierTermMap(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	haftDir := filepath.Join(root, ".haft")
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.resolve.001",
+		Spec:          "target-system",
+		Kind:          "target.environment",
+		Title:         "SQL resolve section",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		ValidUntil:    "2026-12-31",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+		Terms:         []string{"HarnessableProject"},
+	}
+	edition := specflow.NewSpecSectionEdition("qnt_5eec5eec", section, specflow.SpecSectionSourceSQL, time.Now().UTC())
+	if err := store.PutCurrent(edition); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+
+	raw, err := handleQuintQueryResolveTerm(context.Background(), nil, haftDir, map[string]any{
+		"term": "HarnessableProject",
+	})
+	if err != nil {
+		t.Fatalf("handleQuintQueryResolveTerm: %v", err)
+	}
+
+	var result ResolveTermResult
+	if err := json.Unmarshal([]byte(raw), &result); err != nil {
+		t.Fatalf("decode: %v\nraw: %s", err, raw)
+	}
+	if len(result.TermMapEntries) != 1 {
+		t.Fatalf("term-map carrier entry was not preserved: %#v", result.TermMapEntries)
+	}
+	if len(result.SpecSectionRefs) != 1 || result.SpecSectionRefs[0].ID != "TS.sql.resolve.001" {
+		t.Fatalf("spec refs should come from SQL editions: %#v", result.SpecSectionRefs)
 	}
 }
 

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/codebase"
+	"github.com/m0n0x41d/haft/internal/projectpath"
 
 	"github.com/m0n0x41d/haft/internal/reff"
 	"github.com/m0n0x41d/haft/logger"
@@ -23,31 +24,46 @@ import (
 
 // DecideInput is the input for creating a DecisionRecord.
 type DecideInput struct {
-	ProblemRef          string            `json:"problem_ref,omitempty"`  // single problem (backward compat)
-	ProblemRefs         []string          `json:"problem_refs,omitempty"` // multiple problems
-	PortfolioRef        string            `json:"portfolio_ref,omitempty"`
-	SelectedTitle       string            `json:"selected_title"`
-	WhySelected         string            `json:"why_selected"`
-	SelectionPolicy     string            `json:"selection_policy"`
-	CounterArgument     string            `json:"counterargument"`
-	WhyNotOthers        []RejectionReason `json:"why_not_others,omitempty"`
-	Invariants          []string          `json:"invariants,omitempty"`
-	PreConditions       []string          `json:"pre_conditions,omitempty"`
-	PostConditions      []string          `json:"post_conditions,omitempty"`
-	Admissibility       []string          `json:"admissibility,omitempty"`
-	EvidenceReqs        []string          `json:"evidence_requirements,omitempty"`
-	Rollback            *RollbackSpec     `json:"rollback,omitempty"`
-	RefreshTriggers     []string          `json:"refresh_triggers,omitempty"`
-	WeakestLink         string            `json:"weakest_link,omitempty"`
-	ValidUntil          string            `json:"valid_until,omitempty"`
-	Context             string            `json:"context,omitempty"`
-	TaskContext         string            `json:"task_context,omitempty"`
-	Mode                string            `json:"mode,omitempty"`
-	SectionRefs         []string          `json:"section_refs,omitempty"`
-	AffectedFiles       []string          `json:"affected_files,omitempty"`
-	Predictions         []PredictionInput `json:"predictions,omitempty"`
-	SearchKeywords      string            `json:"search_keywords,omitempty"`
-	FirstModuleCoverage bool              `json:"first_module_coverage,omitempty"`
+	ProblemRef              string                  `json:"problem_ref,omitempty"`  // single problem (backward compat)
+	ProblemRefs             []string                `json:"problem_refs,omitempty"` // multiple problems
+	ProblemStatement        string                  `json:"problem_statement,omitempty"`
+	PortfolioRef            string                  `json:"portfolio_ref,omitempty"`
+	ChoiceResult            *ChoiceResult           `json:"choice_result,omitempty"`
+	TransformationRecord    *TransformationRecord   `json:"transformation_record,omitempty"`
+	SelectedTitle           string                  `json:"selected_title"`
+	WhySelected             string                  `json:"why_selected"`
+	SelectionPolicy         string                  `json:"selection_policy"`
+	CounterArgument         string                  `json:"counterargument"`
+	WhyNotOthers            []RejectionReason       `json:"why_not_others,omitempty"`
+	Invariants              []string                `json:"invariants,omitempty"`
+	PreConditions           []string                `json:"pre_conditions,omitempty"`
+	PostConditions          []string                `json:"post_conditions,omitempty"`
+	Admissibility           []string                `json:"admissibility,omitempty"`
+	EvidenceReqs            []string                `json:"evidence_requirements,omitempty"`
+	Rollback                *RollbackSpec           `json:"rollback,omitempty"`
+	RefreshTriggers         []string                `json:"refresh_triggers,omitempty"`
+	WeakestLink             string                  `json:"weakest_link,omitempty"`
+	ValidUntil              string                  `json:"valid_until,omitempty"`
+	Context                 string                  `json:"context,omitempty"`
+	TaskContext             string                  `json:"task_context,omitempty"`
+	Mode                    string                  `json:"mode,omitempty"`
+	SectionRefs             []string                `json:"section_refs,omitempty"`
+	SpecBindingPreflight    *SpecBindingPreflight   `json:"spec_binding_preflight,omitempty"`
+	SpecBindingRequired     bool                    `json:"spec_binding_preflight_required,omitempty"`
+	AffectedFiles           []string                `json:"affected_files,omitempty"`
+	DecisionSubjectRef      string                  `json:"decision_subject_ref,omitempty"`
+	AuthorityProvenance     string                  `json:"authority_provenance,omitempty"`
+	ImplementationFootprint ImplementationFootprint `json:"implementation_footprint,omitempty"`
+	GovernanceTargets       []GovernanceTarget      `json:"governance_targets,omitempty"`
+	DriftWatchTargets       []DriftWatchTarget      `json:"drift_watch_targets,omitempty"`
+	BindingTargets          []BindingTarget         `json:"binding_targets,omitempty"`
+	BindingHints            []string                `json:"binding_hints,omitempty"`
+	BindingScope            string                  `json:"binding_scope,omitempty"`
+	BindingFallbackReason   string                  `json:"binding_fallback_reason,omitempty"`
+	Predictions             []PredictionInput       `json:"predictions,omitempty"`
+	Claims                  []DecisionClaim         `json:"claims,omitempty"`
+	SearchKeywords          string                  `json:"search_keywords,omitempty"`
+	FirstModuleCoverage     bool                    `json:"first_module_coverage,omitempty"`
 	// GovernanceMode is "module" | "exact" | "" (default "module"). Controls
 	// whether affected_files widen to module scope at baseline time.
 	GovernanceMode string `json:"governance_mode,omitempty"`
@@ -67,6 +83,38 @@ type DecideInput struct {
 	Skips      []string `json:"_skips,omitempty"`
 	SkipReason string   `json:"_skip_reason,omitempty"`
 }
+
+type SpecBindingPreflight struct {
+	SchemaVersion          int                   `json:"schema_version,omitempty"`
+	RecordKind             string                `json:"record_kind,omitempty"`
+	ProjectSpecState       string                `json:"project_spec_state,omitempty"`
+	DecisionMode           string                `json:"decision_mode,omitempty"`
+	LoadBearingLevel       string                `json:"load_bearing_level,omitempty"`
+	State                  string                `json:"state"`
+	SelectedSectionRefs    []string              `json:"selected_section_refs,omitempty"`
+	ConflictRefs           []string              `json:"conflict_refs,omitempty"`
+	OperatorActionRequired string                `json:"operator_action_required,omitempty"`
+	StatusDebt             SpecBindingStatusDebt `json:"status_debt,omitempty"`
+	AuthorityBoundary      string                `json:"authority_boundary,omitempty"`
+	DecisionDraftDigest    string                `json:"decision_draft_digest,omitempty"`
+}
+
+type SpecBindingStatusDebt struct {
+	Severity string `json:"severity,omitempty"`
+	Message  string `json:"message,omitempty"`
+}
+
+const (
+	SpecBindingStateNoSpecs           = "no_specs"
+	SpecBindingStateNoActiveSections  = "no_active_sections"
+	SpecBindingStateProvidedRefsValid = "provided_refs_valid"
+	SpecBindingStateInvalidRefs       = "invalid_refs"
+	SpecBindingStateBoundExisting     = "bound_existing"
+	SpecBindingStateAmbiguous         = "ambiguous"
+	SpecBindingStateDraftNeeded       = "draft_section_needed"
+	SpecBindingStateOutOfSpec         = "out_of_spec"
+	SpecBindingStateConflict          = "conflict"
+)
 
 // validRequiredFieldSkips is the canonical set of fields a tactical
 // decision may explicitly skip. Names outside this set are rejected to
@@ -96,6 +144,9 @@ type PredictionInput struct {
 	// forecast sampled at /h-decide time, fed into decomposed-Brier calibration
 	// once verified (dec-20260603-c3c7fa88). nil means the operator declined.
 	Probability *float64 `json:"probability,omitempty"`
+	// Command is the optional allowlist-class command form of Observable,
+	// executable by the maintenance loop (test/build/vet/grep classes only).
+	Command string `json:"command,omitempty"`
 }
 
 // RejectionReason explains why a variant was not selected.
@@ -125,7 +176,8 @@ type DecideContext struct {
 	ProblemBody       string // pre-fetched problem markdown (fallback for older artifacts)
 	ProblemStructured string // pre-fetched structured_data JSON (preferred, no re-parsing)
 	Links             []Link
-	ProblemRefs       []string // merged refs
+	ProblemRefs       []string // merged explicit refs persisted on the decision
+	ProblemBasisRefs  []string // explicit refs plus refs resolved from a linked portfolio
 }
 
 // extractSection extracts a markdown section by heading from a body string. Pure.
@@ -212,6 +264,7 @@ func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
 			VerifyAfter:   strings.TrimSpace(value.VerifyAfter),
 			Realizability: strings.TrimSpace(value.Realizability),
 			Probability:   value.Probability,
+			Command:       strings.TrimSpace(value.Command),
 		}
 
 		normalized = append(normalized, prediction)
@@ -223,6 +276,7 @@ func normalizePredictionInputs(values []PredictionInput) []PredictionInput {
 func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.ProblemRef = strings.TrimSpace(input.ProblemRef)
 	input.ProblemRefs = compactStrings(input.ProblemRefs)
+	input.ProblemStatement = strings.TrimSpace(input.ProblemStatement)
 	input.PortfolioRef = strings.TrimSpace(input.PortfolioRef)
 	input.SelectedTitle = strings.TrimSpace(input.SelectedTitle)
 	input.WhySelected = strings.TrimSpace(input.WhySelected)
@@ -234,6 +288,8 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.TaskContext = strings.TrimSpace(input.TaskContext)
 	input.Mode = strings.TrimSpace(input.Mode)
 	input.SearchKeywords = strings.TrimSpace(input.SearchKeywords)
+	input.ChoiceResult = NormalizeChoiceResult(input.ChoiceResult)
+	input.TransformationRecord = NormalizeTransformationRecord(input.TransformationRecord)
 
 	input.WhyNotOthers = normalizeRejectionReasons(input.WhyNotOthers)
 	input.Invariants = compactStrings(input.Invariants)
@@ -242,15 +298,168 @@ func normalizeDecisionInput(input DecideInput) DecideInput {
 	input.Admissibility = compactStrings(input.Admissibility)
 	input.EvidenceReqs = compactStrings(input.EvidenceReqs)
 	input.RefreshTriggers = compactStrings(input.RefreshTriggers)
-	input.SectionRefs = compactStrings(input.SectionRefs)
+	input.SectionRefs = compactSortedStrings(input.SectionRefs)
+	input.SpecBindingPreflight = normalizeSpecBindingPreflight(input.SpecBindingPreflight)
+	if len(input.SectionRefs) == 0 && specBindingPreflightCanSupplySectionRefs(input.SpecBindingPreflight) {
+		input.SectionRefs = cloneStringSlice(input.SpecBindingPreflight.SelectedSectionRefs)
+	}
 	input.AffectedFiles = compactStrings(input.AffectedFiles)
+	input.ImplementationFootprint = normalizeImplementationFootprint(
+		input.ImplementationFootprint,
+	)
+	input.GovernanceTargets = normalizeGovernanceTargets(
+		input.GovernanceTargets,
+	)
+	input.DriftWatchTargets = normalizeDriftWatchTargets(
+		input.DriftWatchTargets,
+	)
+	input.BindingTargets = normalizeBindingTargets(input.BindingTargets)
+	input.BindingHints = compactStrings(input.BindingHints)
+	input.BindingScope = strings.TrimSpace(input.BindingScope)
+	input.BindingFallbackReason = strings.TrimSpace(input.BindingFallbackReason)
 	input.Predictions = normalizePredictionInputs(input.Predictions)
+	input.Claims = normalizeDecisionClaims(input.Claims)
 	input.Rollback = normalizeRollbackSpec(input.Rollback)
 
 	return input
 }
 
-func validateDecisionInput(input DecideInput) error {
+func normalizeSpecBindingPreflight(preflight *SpecBindingPreflight) *SpecBindingPreflight {
+	if preflight == nil {
+		return nil
+	}
+	normalized := *preflight
+	normalized.RecordKind = strings.TrimSpace(normalized.RecordKind)
+	normalized.ProjectSpecState = strings.TrimSpace(normalized.ProjectSpecState)
+	normalized.DecisionMode = strings.TrimSpace(normalized.DecisionMode)
+	normalized.LoadBearingLevel = strings.TrimSpace(normalized.LoadBearingLevel)
+	normalized.State = strings.TrimSpace(normalized.State)
+	normalized.SelectedSectionRefs = compactSortedStrings(normalized.SelectedSectionRefs)
+	normalized.ConflictRefs = compactStrings(normalized.ConflictRefs)
+	normalized.OperatorActionRequired = strings.TrimSpace(normalized.OperatorActionRequired)
+	normalized.StatusDebt.Severity = strings.TrimSpace(normalized.StatusDebt.Severity)
+	normalized.StatusDebt.Message = strings.TrimSpace(normalized.StatusDebt.Message)
+	normalized.AuthorityBoundary = strings.TrimSpace(normalized.AuthorityBoundary)
+	normalized.DecisionDraftDigest = strings.TrimSpace(normalized.DecisionDraftDigest)
+	return &normalized
+}
+
+func specBindingPreflightCanSupplySectionRefs(preflight *SpecBindingPreflight) bool {
+	if preflight == nil || len(preflight.SelectedSectionRefs) == 0 {
+		return false
+	}
+	switch preflight.State {
+	case SpecBindingStateProvidedRefsValid, SpecBindingStateBoundExisting:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateDecisionSpecBindingPreflight(input DecideInput) error {
+	preflight := normalizeSpecBindingPreflight(input.SpecBindingPreflight)
+	if input.SpecBindingRequired && preflight == nil {
+		return fmt.Errorf("spec_binding_preflight_required: provide haft_query(action=\"spec_binding_preflight\", decision_draft=...) result or explicitly mark this as no_specs/no_active_sections/out_of_spec via preflight")
+	}
+	if preflight == nil {
+		return nil
+	}
+
+	switch preflight.State {
+	case SpecBindingStateProvidedRefsValid, SpecBindingStateBoundExisting:
+		if len(preflight.SelectedSectionRefs) == 0 && len(input.SectionRefs) == 0 {
+			return fmt.Errorf("spec_binding_preflight state %q requires selected_section_refs or explicit section_refs", preflight.State)
+		}
+		if len(preflight.SelectedSectionRefs) > 0 && len(input.SectionRefs) > 0 && !sameCompactStringSet(preflight.SelectedSectionRefs, input.SectionRefs) {
+			return fmt.Errorf("spec_binding_preflight selected_section_refs do not match decision section_refs: preflight=%s decision=%s", strings.Join(preflight.SelectedSectionRefs, ","), strings.Join(input.SectionRefs, ","))
+		}
+		return nil
+	case SpecBindingStateNoSpecs, SpecBindingStateNoActiveSections:
+		return nil
+	case SpecBindingStateOutOfSpec:
+		mode := strings.TrimSpace(input.Mode)
+		if mode == "" {
+			mode = string(ModeStandard)
+		}
+		if mode != string(ModeTactical) && mode != string(ModeNote) {
+			return fmt.Errorf("spec_binding_preflight state out_of_spec is allowed only for tactical/note decisions with explicit rationale, got mode=%q", mode)
+		}
+		if strings.TrimSpace(preflight.StatusDebt.Message) == "" && strings.TrimSpace(input.BindingFallbackReason) == "" {
+			return fmt.Errorf("spec_binding_preflight state out_of_spec requires status_debt.message or binding_fallback_reason")
+		}
+		return nil
+	case SpecBindingStateInvalidRefs, SpecBindingStateConflict, SpecBindingStateAmbiguous, SpecBindingStateDraftNeeded:
+		return fmt.Errorf("spec_binding_preflight blocks decision creation: state=%s operator_action_required=%s", preflight.State, preflight.OperatorActionRequired)
+	default:
+		return fmt.Errorf("spec_binding_preflight has unsupported state %q", preflight.State)
+	}
+}
+
+func sameCompactStringSet(left []string, right []string) bool {
+	left = compactSortedStrings(left)
+	right = compactSortedStrings(right)
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+// DecisionChoiceCorrelationInput is the canonical domain port for duplicated
+// DecisionRecord and ChoiceResult fields. Adapters call this same validator
+// instead of owning a second projection policy.
+type DecisionChoiceCorrelationInput struct {
+	SelectionPolicy string
+	WhySelected     string
+	ProblemRefs     []string
+	ChoiceResult    *ChoiceResult
+}
+
+// ValidateDecisionChoiceCorrelation rejects contradictory duplicated choice
+// fields before a DecisionRecord can be persisted or projected.
+func ValidateDecisionChoiceCorrelation(
+	input DecisionChoiceCorrelationInput,
+) error {
+	choice := NormalizeChoiceResult(input.ChoiceResult)
+	if choice == nil {
+		return nil
+	}
+
+	selectionPolicy := strings.TrimSpace(input.SelectionPolicy)
+	if choice.ChoiceRule != selectionPolicy {
+		return fmt.Errorf(
+			"choice_result.choice_rule must equal selection_policy",
+		)
+	}
+
+	whySelected := strings.TrimSpace(input.WhySelected)
+	if choice.Reason != whySelected {
+		return fmt.Errorf(
+			"choice_result.reason must equal why_selected",
+		)
+	}
+
+	if !sameCompactStringSet(choice.ProblemRefs, input.ProblemRefs) {
+		return fmt.Errorf(
+			"choice_result.problem_refs must equal decision problem_refs",
+		)
+	}
+
+	return nil
+}
+
+func validateDecisionInput(dctx DecideContext, input DecideInput) error {
+	if err := validateDecisionProjectPaths(input); err != nil {
+		return err
+	}
+	if err := validateDecisionSpecBindingPreflight(input); err != nil {
+		return err
+	}
+
 	// Build skip set + validate skip names + reject skips outside tactical mode.
 	skipSet, skipErr := buildSkipSet(input)
 	if skipErr != nil {
@@ -264,6 +473,16 @@ func validateDecisionInput(input DecideInput) error {
 			return
 		}
 		missing = append(missing, missingField{Field: field, Hint: hint})
+	}
+
+	problemBasisRefs := cloneStringSlice(dctx.ProblemRefs)
+	problemBasisRefs = append(problemBasisRefs, dctx.ProblemBasisRefs...)
+	problemBasisRefs = compactStrings(problemBasisRefs)
+	if len(problemBasisRefs) == 0 && input.ProblemStatement == "" {
+		missing = append(missing, missingField{
+			Field: "problem_statement",
+			Hint:  "state the problem directly when no ProblemCard is linked; provide problem_ref/problem_refs, a portfolio that resolves to a ProblemCard, or this inline statement",
+		})
 	}
 
 	if input.SelectedTitle == "" {
@@ -292,6 +511,30 @@ func validateDecisionInput(input DecideInput) error {
 	}
 	if input.Rollback == nil || len(input.Rollback.Triggers) == 0 {
 		addMissing("rollback", "at least one trigger that would force reversal (FPF DEC-05)")
+	}
+	if err := ValidateChoiceResult(input.ChoiceResult); err != nil {
+		missing = append(missing, missingField{
+			Field: "choice_result",
+			Hint:  err.Error(),
+		})
+	}
+	correlation := DecisionChoiceCorrelationInput{
+		SelectionPolicy: input.SelectionPolicy,
+		WhySelected:     input.WhySelected,
+		ProblemRefs:     dctx.ProblemRefs,
+		ChoiceResult:    input.ChoiceResult,
+	}
+	if err := ValidateDecisionChoiceCorrelation(correlation); err != nil {
+		missing = append(missing, missingField{
+			Field: "choice_result",
+			Hint:  err.Error(),
+		})
+	}
+	if err := ValidateTransformationRecord(input.TransformationRecord); err != nil {
+		missing = append(missing, missingField{
+			Field: "transformation_record",
+			Hint:  err.Error(),
+		})
 	}
 
 	// Structural checks on present fields — not subject to skip.
@@ -432,8 +675,8 @@ func formatStructuredValidationError(missing []missingField, input DecideInput) 
 	b.WriteString("\nReferences:\n")
 	b.WriteString("- FPF E.9 — Design Rationale Record minimum kernel\n")
 	b.WriteString("- FPF C.11 — Decision Theory requirements\n")
-	b.WriteString("- haft_query(action=\"fpf\", query=\"E.9\") — full pattern text\n")
-	b.WriteString("- haft_query(action=\"fpf\", query=\"DEC-01\") — DRR structure micro-pattern\n")
+	b.WriteString("- haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"E.9\") — full pattern text\n")
+	b.WriteString("- haft_query(action=\"fpf\", mode=\"inspect\", identifier=\"DEC-01\") — DRR structure micro-pattern\n")
 
 	return fmt.Errorf("%s", b.String())
 }
@@ -466,11 +709,42 @@ func predictionValidationProblems(index int, prediction PredictionInput) []strin
 	return problems
 }
 
+func renderTransformationRecord(body *strings.Builder, record *TransformationRecord) {
+	normalized := NormalizeTransformationRecord(record)
+	if normalized == nil {
+		return
+	}
+
+	body.WriteString("**Transformation record:**\n")
+	body.WriteString("- Kind: target-state transformation only; not method, work authorization, evidence, or publication.\n")
+	body.WriteString(fmt.Sprintf("- Transformed entity: %s\n", normalized.TransformedEntity))
+	body.WriteString(fmt.Sprintf("- Initial state: %s\n", normalized.InitialState))
+	body.WriteString(fmt.Sprintf("- Post state: %s\n", normalized.PostState))
+	body.WriteString(fmt.Sprintf("- Relation: %s\n", normalized.Relation))
+	body.WriteString(fmt.Sprintf("- Context: %s\n", normalized.Context))
+	if normalized.Window != "" {
+		body.WriteString(fmt.Sprintf("- Window: %s\n", normalized.Window))
+	}
+	renderTransformationRefs(body, "Method refs", normalized.MethodRefs)
+	renderTransformationRefs(body, "Work refs", normalized.WorkRefs)
+	renderTransformationRefs(body, "Evidence refs", normalized.EvidenceRefs)
+	renderTransformationRefs(body, "Publication refs", normalized.PublicationRefs)
+	body.WriteString("\n")
+}
+
+func renderTransformationRefs(body *strings.Builder, label string, refs []string) {
+	if len(refs) == 0 {
+		return
+	}
+
+	body.WriteString(fmt.Sprintf("- %s: %s\n", label, strings.Join(refs, ", ")))
+}
+
 // BuildDecisionArtifact constructs a DecisionRecord from input and pre-fetched context. Pure — no side effects.
 func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, error) {
 	input = normalizeDecisionInput(input)
 
-	if err := validateDecisionInput(input); err != nil {
+	if err := validateDecisionInput(dctx, input); err != nil {
 		return nil, err
 	}
 
@@ -482,12 +756,14 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 
 	// === Component 1: Problem Frame ===
 	body.WriteString("\n## 1. Problem Frame\n\n")
+	problemFrameRendered := false
 	if dctx.ProblemStructured != "" {
 		// Prefer structured data — canonical, no re-parsing
 		var pf ProblemFields
 		if err := json.Unmarshal([]byte(dctx.ProblemStructured), &pf); err == nil {
 			if pf.Signal != "" {
 				body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", pf.Signal))
+				problemFrameRendered = true
 			}
 			if len(pf.Constraints) > 0 {
 				body.WriteString("**Constraints:**\n")
@@ -495,22 +771,32 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 					body.WriteString(fmt.Sprintf("- %s\n", c))
 				}
 				body.WriteString("\n")
+				problemFrameRendered = true
 			}
 			if pf.Acceptance != "" {
 				body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", pf.Acceptance))
+				problemFrameRendered = true
 			}
 		}
 	} else if dctx.ProblemBody != "" {
 		// Fallback: parse markdown for older artifacts without structured_data
 		if signal := extractSection(dctx.ProblemBody, "Signal"); signal != "" {
 			body.WriteString(fmt.Sprintf("**Signal:** %s\n\n", signal))
+			problemFrameRendered = true
 		}
 		if constraints := extractSection(dctx.ProblemBody, "Constraints"); constraints != "" {
 			body.WriteString(fmt.Sprintf("**Constraints:**\n%s\n\n", constraints))
+			problemFrameRendered = true
 		}
 		if acceptance := extractSection(dctx.ProblemBody, "Acceptance"); acceptance != "" {
 			body.WriteString(fmt.Sprintf("**Acceptance:** %s\n\n", acceptance))
+			problemFrameRendered = true
 		}
+	}
+	if !problemFrameRendered {
+		body.WriteString("**Problem statement:** ")
+		body.WriteString(input.ProblemStatement)
+		body.WriteString("\n\n")
 	}
 
 	// === Component 2: Decision (the contract) ===
@@ -518,6 +804,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	body.WriteString(fmt.Sprintf("**Selected:** %s\n\n", input.SelectedTitle))
 	body.WriteString(fmt.Sprintf("**Selection policy:** %s\n\n", input.SelectionPolicy))
 	body.WriteString(fmt.Sprintf("**Why selected:** %s\n\n", input.WhySelected))
+	if input.TransformationRecord != nil {
+		renderTransformationRecord(&body, input.TransformationRecord)
+	}
 
 	rollbackTriggers := []string(nil)
 	rollbackSteps := []string(nil)
@@ -528,30 +817,54 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		rollbackBlastRadius = input.Rollback.BlastRadius
 	}
 
+	choiceResult := input.ChoiceResult
+	if choiceResult == nil {
+		choiceResult = NewDecisionChoiceResult(DecisionChoiceResultInput{
+			ProblemRefs:     dctx.ProblemRefs,
+			PortfolioRef:    input.PortfolioRef,
+			SelectedTitle:   input.SelectedTitle,
+			WhySelected:     input.WhySelected,
+			WhyNotOthers:    input.WhyNotOthers,
+			SelectionPolicy: input.SelectionPolicy,
+			ReopenCondition: choiceReopenCondition(rollbackTriggers),
+		})
+	}
+
 	decisionFields := DecisionFields{
-		ProblemRefs:          dctx.ProblemRefs,
-		SelectedTitle:        input.SelectedTitle,
-		WhySelected:          input.WhySelected,
-		SelectionPolicy:      input.SelectionPolicy,
-		CounterArgument:      input.CounterArgument,
-		WeakestLink:          input.WeakestLink,
-		TaskContext:          sanitizeIDSlug(input.TaskContext),
-		SectionRefs:          input.SectionRefs,
-		WhyNotOthers:         input.WhyNotOthers,
-		Claims:               newDecisionClaims(input.Predictions),
-		PreConditions:        input.PreConditions,
-		RollbackTriggers:     rollbackTriggers,
-		RollbackSteps:        rollbackSteps,
-		RollbackBlastRadius:  rollbackBlastRadius,
-		Invariants:           input.Invariants,
-		PostConds:            input.PostConditions,
-		Admissibility:        input.Admissibility,
-		EvidenceRequirements: input.EvidenceReqs,
-		RefreshTriggers:      input.RefreshTriggers,
-		Skips:                cloneStringSlice(input.Skips),
-		SkipReason:           input.SkipReason,
-		FirstModuleCoverage:  input.FirstModuleCoverage,
-		GovernanceMode:       GovernanceMode(strings.TrimSpace(input.GovernanceMode)),
+		ProblemRefs:             dctx.ProblemRefs,
+		ProblemStatement:        input.ProblemStatement,
+		DecisionSubjectRef:      strings.TrimSpace(input.DecisionSubjectRef),
+		AuthorityProvenance:     strings.TrimSpace(input.AuthorityProvenance),
+		ChoiceResult:            NormalizeChoiceResult(choiceResult),
+		TransformationRecord:    NormalizeTransformationRecord(input.TransformationRecord),
+		SelectedTitle:           input.SelectedTitle,
+		WhySelected:             input.WhySelected,
+		SelectionPolicy:         input.SelectionPolicy,
+		CounterArgument:         input.CounterArgument,
+		WeakestLink:             input.WeakestLink,
+		TaskContext:             sanitizeIDSlug(input.TaskContext),
+		SectionRefs:             input.SectionRefs,
+		SpecBindingPreflight:    normalizeSpecBindingPreflight(input.SpecBindingPreflight),
+		SpecBindingRequired:     input.SpecBindingRequired,
+		WhyNotOthers:            input.WhyNotOthers,
+		Claims:                  decisionInputClaims(input),
+		PreConditions:           input.PreConditions,
+		RollbackTriggers:        rollbackTriggers,
+		RollbackSteps:           rollbackSteps,
+		RollbackBlastRadius:     rollbackBlastRadius,
+		Invariants:              input.Invariants,
+		PostConds:               input.PostConditions,
+		Admissibility:           input.Admissibility,
+		EvidenceRequirements:    input.EvidenceReqs,
+		RefreshTriggers:         input.RefreshTriggers,
+		Skips:                   cloneStringSlice(input.Skips),
+		SkipReason:              input.SkipReason,
+		FirstModuleCoverage:     input.FirstModuleCoverage,
+		ImplementationFootprint: normalizeImplementationFootprint(input.ImplementationFootprint),
+		GovernanceTargets:       normalizeGovernanceTargets(input.GovernanceTargets),
+		DriftWatchTargets:       normalizeDriftWatchTargets(input.DriftWatchTargets),
+		GovernanceMode:          GovernanceMode(strings.TrimSpace(input.GovernanceMode)),
+		BindingTargets:          normalizeBindingTargets(input.BindingTargets),
 	}
 	decisionFields.Predictions = decisionPredictionsFromClaims(decisionFields.Claims)
 
@@ -670,6 +983,9 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 		body.WriteString(strings.Join(input.AffectedFiles, ", "))
 		body.WriteString("\n")
 	}
+	if len(input.BindingTargets) > 0 {
+		decisionFields.BindingTargets = normalizeBindingTargets(input.BindingTargets)
+	}
 
 	a := &Artifact{
 		Meta: Meta{
@@ -693,6 +1009,15 @@ func BuildDecisionArtifact(dctx DecideContext, input DecideInput) (*Artifact, er
 	a.StructuredData = string(sd)
 
 	return a, nil
+}
+
+func choiceReopenCondition(rollbackTriggers []string) string {
+	triggers := compactStrings(rollbackTriggers)
+	if len(triggers) == 0 {
+		return ""
+	}
+
+	return "reopen choice if rollback triggers occur: " + strings.Join(triggers, "; ")
 }
 
 // MergeProblemRefs merges single ProblemRef with ProblemRefs array, deduplicating. Pure.
@@ -875,104 +1200,35 @@ func BuildLinks(problemRefs []string, portfolioRef string) []Link {
 	return links
 }
 
-func BuildLinksWithSectionRefs(problemRefs []string, portfolioRef string, sectionRefs []string) []Link {
-	links := BuildLinks(problemRefs, portfolioRef)
-	sectionLinks := BuildSpecSectionLinks(sectionRefs)
-	links = append(links, sectionLinks...)
-
-	return links
-}
-
-func BuildSpecSectionLinks(sectionRefs []string) []Link {
-	links := make([]Link, 0, len(sectionRefs))
-	seen := map[string]struct{}{}
-
-	for _, ref := range compactStrings(sectionRefs) {
-		if _, ok := seen[ref]; ok {
-			continue
-		}
-
-		seen[ref] = struct{}{}
-		links = append(links, Link{Ref: ref, Type: "governs"})
-	}
-
-	return links
-}
-
 // Decide creates a DecisionRecord artifact. Orchestrates effects around BuildDecisionArtifact.
 func Decide(ctx context.Context, store ArtifactStore, haftDir string, input DecideInput) (*Artifact, string, error) {
-	input = normalizeDecisionInput(input)
-
-	if _, err := ParseGovernanceMode(input.GovernanceMode); err != nil {
+	reservation, err := ReserveDecisionIdentity(input.TaskContext)
+	if err != nil {
 		return nil, "", err
 	}
-
-	problemRefs := MergeProblemRefs(input.ProblemRef, input.ProblemRefs)
-	if err := validateNoActiveDecisionConflict(ctx, store, problemRefs, input.PortfolioRef); err != nil {
-		return nil, "", err
-	}
-
-	// GenerateID uses a crypto/rand suffix since #63; no need for sequence
-	// lookup. The seq parameter is preserved on GenerateID for call-site
-	// backward compat — pass 0.
-	id := GenerateIDWithTaskContext(KindDecisionRecord, 0, input.TaskContext)
-	now := time.Now().UTC()
-
-	// Pure: merge refs
-	links := BuildLinksWithSectionRefs(problemRefs, input.PortfolioRef, input.SectionRefs)
-
-	// Effects: compute mode from chain
-	var declaredMode Mode
-	if input.Mode == "" {
-		declaredMode = ModeStandard
-	} else {
-		var err error
-		declaredMode, err = ParseMode(input.Mode)
+	projectRoot := projectRootFromHaftDir(haftDir)
+	bindingProjectRoot := projectRoot
+	if projectRoot == "" {
+		if strings.TrimSpace(haftDir) == "" {
+			return nil, "", fmt.Errorf("resolve legacy decision project root: haft directory is required")
+		}
+		projectRoot, err = filepath.Abs(filepath.Clean(strings.TrimSpace(haftDir)))
 		if err != nil {
-			return nil, "", fmt.Errorf("%w (valid: note, tactical, standard, deep)", err)
+			return nil, "", fmt.Errorf("resolve legacy decision project root: %w", err)
 		}
 	}
-	chainMode := inferModeFromChain(ctx, store, problemRefs, input.PortfolioRef)
-	mode := maxMode(declaredMode, chainMode)
-
-	// Effects: inherit context from linked artifacts
-	resolvedContext := input.Context
-	if resolvedContext == "" {
-		if input.PortfolioRef != "" {
-			if p, err := store.Get(ctx, input.PortfolioRef); err == nil {
-				resolvedContext = p.Meta.Context
-			}
-		} else if len(problemRefs) > 0 {
-			if p, err := store.Get(ctx, problemRefs[0]); err == nil {
-				resolvedContext = p.Meta.Context
-			}
-		}
+	prepared, err := prepareDecision(
+		ctx,
+		store,
+		reservation,
+		input,
+		projectRoot,
+		bindingProjectRoot,
+	)
+	if err != nil {
+		return nil, "", err
 	}
-
-	// Effects: pre-fetch problem body
-	primaryRef := input.ProblemRef
-	if primaryRef == "" && len(problemRefs) > 0 {
-		primaryRef = problemRefs[0]
-	}
-	var problemBody, problemStructured string
-	if primaryRef != "" {
-		if prob, err := store.Get(ctx, primaryRef); err == nil {
-			problemBody = prob.Body
-			problemStructured = prob.StructuredData
-		}
-	}
-
-	// Pure construction
-	a, err := BuildDecisionArtifact(DecideContext{
-		ID:                id,
-		Now:               now,
-		Mode:              mode,
-		Context:           resolvedContext,
-		ProblemBody:       problemBody,
-		ProblemStructured: problemStructured,
-		Links:             links,
-		ProblemRefs:       problemRefs,
-	}, input)
+	a, err := prepared.artifactAt(time.Now().UTC())
 	if err != nil {
 		return nil, "", err
 	}
@@ -982,17 +1238,18 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 		return nil, "", fmt.Errorf("store decision: %w", err)
 	}
 
-	logger.ArtifactOp("create", id, string(KindDecisionRecord))
+	logger.ArtifactOp("create", a.Meta.ID, string(KindDecisionRecord))
 
 	var warnings []string
 
-	if len(input.AffectedFiles) > 0 {
-		warnings = append(warnings, WarnSharedFiles(input.AffectedFiles)...)
-		var files []AffectedFile
-		for _, f := range input.AffectedFiles {
-			files = append(files, AffectedFile{Path: f})
+	affectedFiles, _ := prepared.AffectedFiles()
+	if len(affectedFiles) > 0 {
+		paths := make([]string, 0, len(affectedFiles))
+		for _, file := range affectedFiles {
+			paths = append(paths, file.Path)
 		}
-		if err := store.SetAffectedFiles(ctx, id, files); err != nil {
+		warnings = append(warnings, WarnSharedFiles(paths)...)
+		if err := store.SetAffectedFiles(ctx, a.Meta.ID, affectedFiles); err != nil {
 			warnings = append(warnings, fmt.Sprintf("failed to track affected files: %v", err))
 		}
 	}
@@ -1009,10 +1266,228 @@ func Decide(ctx context.Context, store ArtifactStore, haftDir string, input Deci
 	return a, filePath, nil
 }
 
+func projectRootFromHaftDir(haftDir string) string {
+	clean := filepath.Clean(strings.TrimSpace(haftDir))
+	if filepath.Base(clean) != ".haft" {
+		return ""
+	}
+	return filepath.Dir(clean)
+}
+
+func enrichDecisionInputBindingTargets(projectRoot string, input DecideInput) DecideInput {
+	if projectRoot == "" || len(input.AffectedFiles) == 0 || len(input.BindingTargets) > 0 {
+		if shouldProjectAffectedFilesAsImplementationFootprint(input) {
+			input = projectAffectedFilesAsImplementationFootprint(input)
+		}
+		return input
+	}
+
+	files := make([]AffectedFile, 0, len(input.AffectedFiles))
+	for _, path := range input.AffectedFiles {
+		files = append(files, AffectedFile{Path: path})
+	}
+	resolution, err := ResolveBindingTargets(projectRoot, files, BindingResolutionOptions{
+		Hints:          input.BindingHints,
+		Scope:          input.BindingScope,
+		FallbackReason: input.BindingFallbackReason,
+		DecisionText:   decisionBindingResolutionText(input),
+	})
+	if err != nil || len(resolution.Targets) == 0 {
+		if shouldProjectAffectedFilesAsImplementationFootprint(input) {
+			input = projectAffectedFilesAsImplementationFootprint(input)
+		}
+		return input
+	}
+
+	targets := decisionAutoBindingAuthorityTargets(input, resolution.Targets)
+	if len(targets) == 0 {
+		if shouldProjectAffectedFilesAsImplementationFootprint(input) {
+			input = projectAffectedFilesAsImplementationFootprint(input)
+		}
+		return input
+	}
+
+	input.BindingTargets = targets
+	return input
+}
+
+func shouldProjectAffectedFilesAsImplementationFootprint(input DecideInput) bool {
+	return len(input.AffectedFiles) > 0 &&
+		len(input.GovernanceTargets) == 0 &&
+		len(input.DriftWatchTargets) == 0 &&
+		len(input.BindingTargets) == 0 &&
+		!decisionInputRequestsExplicitBindingAuthority(input)
+}
+
+func projectAffectedFilesAsImplementationFootprint(input DecideInput) DecideInput {
+	input.ImplementationFootprint.Files = appendUniqueCompactStrings(
+		input.ImplementationFootprint.Files,
+		input.AffectedFiles,
+	)
+	return input
+}
+
+func decisionInputRequestsExplicitBindingAuthority(input DecideInput) bool {
+	return len(input.BindingHints) > 0 ||
+		strings.TrimSpace(input.BindingScope) != "" ||
+		strings.TrimSpace(input.BindingFallbackReason) != ""
+}
+
+func decisionAutoBindingAuthorityTargets(input DecideInput, targets []BindingTarget) []BindingTarget {
+	if decisionInputRequestsExplicitBindingAuthority(input) {
+		return normalizeBindingTargets(targets)
+	}
+
+	out := make([]BindingTarget, 0, len(targets))
+	for _, target := range normalizeBindingTargets(targets) {
+		if autoResolvedTargetIsDriftAuthority(target) {
+			out = append(out, target)
+		}
+	}
+	return out
+}
+
+func autoResolvedTargetIsDriftAuthority(target BindingTarget) bool {
+	switch target.Kind {
+	case BindingTargetSymbol, BindingTargetRange, BindingTargetModule,
+		BindingTargetSpecSection, BindingTargetAPIContract, BindingTargetInvariant:
+		return true
+	default:
+		return false
+	}
+}
+
+func appendUniqueCompactStrings(existing []string, additions []string) []string {
+	out := compactStrings(existing)
+	seen := make(map[string]struct{}, len(out))
+	for _, value := range out {
+		seen[value] = struct{}{}
+	}
+	for _, value := range compactStrings(additions) {
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		out = append(out, value)
+		seen[value] = struct{}{}
+	}
+	return out
+}
+
+func decisionBindingResolutionText(input DecideInput) string {
+	fragments := []string{
+		input.SelectedTitle,
+		input.WhySelected,
+		input.Context,
+		input.TaskContext,
+	}
+	fragments = append(fragments, input.Invariants...)
+	fragments = append(fragments, input.PreConditions...)
+	fragments = append(fragments, input.PostConditions...)
+	return strings.Join(compactStrings(fragments), "\n")
+}
+
 // BaselineInput is the input for snapshotting file hashes after implementation.
 type BaselineInput struct {
-	DecisionRef   string   `json:"decision_ref"`
-	AffectedFiles []string `json:"affected_files,omitempty"` // optional: replace file list before hashing
+	DecisionRef           string          `json:"decision_ref"`
+	AffectedFiles         []string        `json:"affected_files,omitempty"` // optional: replace file list before hashing
+	BindingTargets        []BindingTarget `json:"binding_targets,omitempty"`
+	BindingHints          []string        `json:"binding_hints,omitempty"`
+	BindingScope          string          `json:"binding_scope,omitempty"`
+	BindingFallbackReason string          `json:"binding_fallback_reason,omitempty"`
+}
+
+func baselineBindingResolutionTargets(projectRoot string, input BaselineInput, fields DecisionFields) []BindingTarget {
+	if len(input.BindingTargets) > 0 {
+		return input.BindingTargets
+	}
+	if baselineInputRequestsBindingResolution(input) {
+		return nil
+	}
+	return hydrateBaselineBindingTargets(projectRoot, fields.EffectiveDriftBindingTargets())
+}
+
+func baselineInputRequestsBindingResolution(input BaselineInput) bool {
+	return len(input.BindingHints) > 0 ||
+		strings.TrimSpace(input.BindingScope) != "" ||
+		strings.TrimSpace(input.BindingFallbackReason) != ""
+}
+
+func hydrateBaselineBindingTargets(projectRoot string, targets []BindingTarget) []BindingTarget {
+	out := make([]BindingTarget, 0, len(targets))
+	for _, target := range targets {
+		out = append(out, hydrateBaselineBindingTarget(projectRoot, target))
+	}
+	return normalizeBindingTargets(out)
+}
+
+func hydrateBaselineBindingTarget(projectRoot string, target BindingTarget) BindingTarget {
+	if target.Kind != BindingTargetSymbol {
+		return target
+	}
+	if strings.TrimSpace(target.FilePath) == "" || strings.TrimSpace(target.SymbolName) == "" {
+		return target
+	}
+
+	snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, target.FilePath)
+	if err != nil {
+		return target
+	}
+	for _, snapshot := range snapshots {
+		if !symbolSnapshotSameIdentity(snapshot, target) {
+			continue
+		}
+		source := strings.TrimSpace(target.ResolutionSource)
+		if source == "" {
+			source = BindingResolutionSourceExplicitTargets
+		}
+		language := strings.TrimSpace(target.Language)
+		if language == "" {
+			if detected, ok := codebase.LanguageForPath(target.FilePath); ok {
+				language = detected
+			}
+		}
+		return symbolBindingTarget(snapshot, language, source)
+	}
+	return target
+}
+
+func affectedFilesFromBindingTargets(targets []BindingTarget) []AffectedFile {
+	seen := make(map[string]struct{})
+	files := make([]AffectedFile, 0, len(targets))
+	for _, target := range normalizeBindingTargets(targets) {
+		path := strings.TrimSpace(target.FilePath)
+		if path == "" {
+			continue
+		}
+		path = normalizeProjectPath(path)
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		files = append(files, AffectedFile{Path: path})
+	}
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].Path < files[j].Path
+	})
+	return files
+}
+
+func baselineAffectedFilesProjection(
+	input BaselineInput,
+	files []AffectedFile,
+	resolution BindingResolution,
+	fields DecisionFields,
+) []AffectedFile {
+	if len(input.AffectedFiles) > 0 {
+		return files
+	}
+	hasAuthorityTargets := len(fields.DriftWatchTargets) > 0 ||
+		len(fields.GovernanceTargets) > 0 ||
+		len(input.BindingTargets) > 0
+	if !hasAuthorityTargets {
+		return files
+	}
+	return affectedFilesFromBindingTargets(resolution.Targets)
 }
 
 // Baseline snapshots the current state of affected files as the baseline for drift detection.
@@ -1030,30 +1505,69 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		return nil, fmt.Errorf("%s is %s — baseline only works on decisions and notes", input.DecisionRef, a.Meta.Kind)
 	}
 
-	// If new files provided, replace the list
-	if len(input.AffectedFiles) > 0 {
-		var files []AffectedFile
-		for _, f := range input.AffectedFiles {
-			files = append(files, AffectedFile{Path: f})
-		}
-		if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
-			return nil, fmt.Errorf("replace affected files: %w", err)
-		}
-	}
-
-	// Get current affected files
+	decisionFields := a.UnmarshalDecisionFields()
 	files, err := store.GetAffectedFiles(ctx, input.DecisionRef)
 	if err != nil {
 		return nil, fmt.Errorf("get affected files: %w", err)
 	}
-	if len(files) == 0 {
+	if len(input.AffectedFiles) > 0 {
+		files, err = canonicalAffectedFilePaths(input.AffectedFiles)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if decisionFields.IsImplementationFootprintOnly() && !baselineInputRequestsBindingResolution(input) && len(input.BindingTargets) == 0 {
+		return nil, fmt.Errorf(
+			"decision %s records affected_files as implementation_footprint only; no drift baseline is created without explicit binding_targets, governance_targets/drift_watch_targets, binding_hints, or binding_scope=whole_file with binding_fallback_reason",
+			input.DecisionRef,
+		)
+	}
+	bindingTargets := baselineBindingResolutionTargets(projectRoot, input, decisionFields)
+	if len(files) == 0 && len(bindingTargets) == 0 {
 		return nil, fmt.Errorf("decision %s has no affected_files — nothing to baseline", input.DecisionRef)
 	}
+
+	decisionText := strings.Join([]string{
+		a.Meta.Title,
+		decisionFields.SelectedTitle,
+		decisionFields.WhySelected,
+		decisionFields.SelectionPolicy,
+		decisionFields.WeakestLink,
+		strings.Join(decisionFields.Invariants, "\n"),
+		strings.Join(decisionFields.PostConds, "\n"),
+	}, "\n")
+	resolution, err := ResolveBindingTargets(projectRoot, files, BindingResolutionOptions{
+		ExplicitTargets: bindingTargets,
+		Hints:           input.BindingHints,
+		Scope:           input.BindingScope,
+		FallbackReason:  input.BindingFallbackReason,
+		DecisionText:    decisionText,
+	})
+	decisionFields.BindingDiagnostics = resolution.Diagnostics
+	if err != nil {
+		if persistErr := persistDecisionFields(ctx, store, a, decisionFields); persistErr != nil {
+			logger.Warn().Str("decision_ref", input.DecisionRef).Err(persistErr).Msg("baseline.binding_diagnostics_failed")
+		}
+		return nil, err
+	}
+	decisionFields.BindingTargets = resolution.Targets
+	files = baselineAffectedFilesProjection(input, files, resolution, decisionFields)
 
 	// Compute SHA-256 for each file (skip directories)
 	var hashableFiles []AffectedFile
 	for i := range files {
-		absPath := filepath.Join(projectRoot, files[i].Path)
+		absPath, resolveErr := resolveAffectedFile(projectRoot, files[i])
+		if resolveErr != nil {
+			if !os.IsNotExist(resolveErr) {
+				return nil, fmt.Errorf(
+					"resolve baseline file %s: %w",
+					files[i].Path,
+					resolveErr,
+				)
+			}
+			logger.Debug().Str("path", files[i].Path).Err(resolveErr).Msg("baseline.skip_file")
+			continue
+		}
 		hash, err := hashFile(absPath)
 		if err != nil {
 			// Skip directories and missing files gracefully
@@ -1065,31 +1579,12 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 	}
 	files = hashableFiles
 
-	// Store updated file hashes
 	if err := store.SetAffectedFiles(ctx, input.DecisionRef, files); err != nil {
 		return nil, fmt.Errorf("store baseline hashes: %w", err)
 	}
 
-	// Extract and store symbol-level snapshots (tree-sitter powered)
-	var symbols []AffectedSymbol
-	for _, f := range files {
-		snapshots, err := codebase.ExtractSymbolSnapshots(projectRoot, f.Path)
-		if err != nil || snapshots == nil {
-			continue
-		}
-		for _, s := range snapshots {
-			symbols = append(symbols, AffectedSymbol{
-				FilePath:   s.FilePath,
-				SymbolName: s.SymbolName,
-				SymbolKind: s.SymbolKind,
-				Line:       s.Line,
-				EndLine:    s.EndLine,
-				Hash:       s.Hash,
-			})
-		}
-	}
-	if len(symbols) > 0 {
-		if err := store.SetAffectedSymbols(ctx, input.DecisionRef, symbols); err != nil {
+	if len(resolution.Symbols) > 0 {
+		if err := store.SetAffectedSymbols(ctx, input.DecisionRef, resolution.Symbols); err != nil {
 			logger.Warn().Str("decision_ref", input.DecisionRef).Err(err).Msg("baseline.symbols_failed")
 		}
 	}
@@ -1106,15 +1601,16 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 		}
 	}
 
-	err = persistDriftManifests(ctx, store, a, driftManifests)
-	if err != nil {
-		return nil, fmt.Errorf("persist drift manifests: %w", err)
+	decisionFields.DriftManifests = driftManifests
+	if err := persistDecisionFields(ctx, store, a, decisionFields); err != nil {
+		return nil, fmt.Errorf("persist decision fields: %w", err)
 	}
 
 	logger.ArtifactOp("baseline", input.DecisionRef, string(a.Meta.Kind))
 	logger.Debug().Str("decision_ref", input.DecisionRef).
 		Int("files", len(files)).
-		Int("symbols", len(symbols)).
+		Int("symbols", len(resolution.Symbols)).
+		Int("binding_targets", len(resolution.Targets)).
 		Msg("baseline.complete")
 
 	return files, nil
@@ -1122,6 +1618,19 @@ func Baseline(ctx context.Context, store ArtifactStore, projectRoot string, inpu
 
 // CheckDrift compares current file state against stored baseline hashes for all active decisions.
 func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([]DriftReport, error) {
+	return CheckDriftWithSymbolCorpus(ctx, store, projectRoot, nil)
+}
+
+// CheckDriftWithSymbolCorpus compares current state against decision baselines
+// while resolving missing-file symbol moves from one request-local corpus.
+// A nil corpus keeps direct artifact callers compatible by building one source
+// snapshot lazily on the first missing file.
+func CheckDriftWithSymbolCorpus(
+	ctx context.Context,
+	store ArtifactStore,
+	projectRoot string,
+	corpus *DriftSymbolCorpus,
+) ([]DriftReport, error) {
 	decisions, err := store.ListActiveByKind(ctx, KindDecisionRecord, 0)
 	if err != nil {
 		return nil, fmt.Errorf("list decisions: %w", err)
@@ -1135,11 +1644,36 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	// once per such decision — the dominant cost of the session-mandatory status
 	// check. One walk per distinct scope per drift pass.
 	scopeCache := map[string][]string{}
+	corpusInitialized := corpus != nil
+	loadCorpus := func() *DriftSymbolCorpus {
+		if corpusInitialized {
+			return corpus
+		}
+		corpusInitialized = true
+		built, buildErr := buildDriftSymbolCorpusFromSource(ctx, projectRoot)
+		if buildErr != nil {
+			corpus = NewUnavailableDriftSymbolCorpus(buildErr.Error())
+			return corpus
+		}
+		corpus = built
+		return corpus
+	}
 
 	for _, d := range decisions {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		decisionArtifact, err := store.Get(ctx, d.Meta.ID)
 		if err != nil {
 			return nil, fmt.Errorf("get decision %s: %w", d.Meta.ID, err)
+		}
+		decisionFields := decisionArtifact.UnmarshalDecisionFields()
+		if decisionFields.IsImplementationFootprintOnly() {
+			continue
+		}
+		evidenceItems, err := store.GetEvidenceItems(ctx, d.Meta.ID)
+		if err != nil {
+			return nil, fmt.Errorf("get evidence for decision %s: %w", d.Meta.ID, err)
 		}
 
 		files, err := store.GetAffectedFiles(ctx, d.Meta.ID)
@@ -1147,12 +1681,11 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			continue
 		}
 
-		decisionFields := decisionArtifact.UnmarshalDecisionFields()
-
 		// Load the stored symbol-level baseline once per decision and group it
 		// by file. Activates the symbol-drift path so CheckDrift can partition a
 		// modified file into added-only (benign) vs governed-body-modified.
 		baselineSymbolsByFile := groupSymbolsByFile(store.GetAffectedSymbols(ctx, d.Meta.ID))
+		bindingTargetsByFile := groupBindingTargetsByFile(decisionFields.EffectiveDriftBindingTargets())
 
 		report := DriftReport{
 			DecisionID:    d.Meta.ID,
@@ -1168,14 +1701,21 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 			}
 		}
 		report.HasBaseline = hasAnyHash
+		if hasAnyHash {
+			profile := DecisionBaselineProfile(evidenceItems)
+			report.BaselineKind = profile.Kind
+			report.BaselineProfile = &profile
+		}
 
 		if !hasAnyHash {
 			// No baseline set — check git to distinguish "forgot to close loop" from "not started"
 			anyChanged := false
 			for _, f := range files {
 				report.Files = append(report.Files, DriftItem{
-					Path:   f.Path,
-					Status: DriftNoBaseline,
+					Path:        f.Path,
+					Status:      DriftNoBaseline,
+					Materiality: noBaselineMateriality(bindingTargetsByFile[f.Path]),
+					TriggerKind: DriftTriggerMissingBaseline,
 				})
 				if projectRoot != "" && gitFileModifiedSince(projectRoot, f.Path, d.Meta.CreatedAt) {
 					anyChanged = true
@@ -1189,51 +1729,106 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 		// Compare current state to baseline
 		hasDrift := false
 		for _, f := range files {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
 			if f.Hash == "" {
 				// File was added to affected_files after baseline — treat as no_baseline
 				report.Files = append(report.Files, DriftItem{
-					Path:   f.Path,
-					Status: DriftNoBaseline,
+					Path:        f.Path,
+					Status:      DriftNoBaseline,
+					Materiality: noBaselineMateriality(bindingTargetsByFile[f.Path]),
+					TriggerKind: DriftTriggerMissingBaseline,
 				})
 				continue
 			}
 
-			absPath := filepath.Join(projectRoot, f.Path)
+			absPath, resolveErr := resolveAffectedFile(projectRoot, f)
+			if resolveErr != nil {
+				assessment := assessMissingFileDrift(f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path], loadCorpus())
+				item := DriftItem{
+					Path:             f.Path,
+					Status:           DriftMissing,
+					Invariants:       copyDriftInvariants(decisionFields.Invariants),
+					Materiality:      assessment.Materiality,
+					TriggerKind:      DriftTriggerMissingFile,
+					ChangedTargetRef: assessment.ChangedTargetRef,
+					TargetKind:       assessment.TargetKind,
+					TargetStatus:     assessment.TargetStatus,
+					FallbackKind:     assessment.FallbackKind,
+					FallbackReason:   assessment.FallbackReason,
+					AuditOnly:        assessment.AuditOnly,
+					SuppressedReason: assessment.SuppressedReason,
+				}
+				report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
+				hasDrift = true
+				continue
+			}
 			currentHash, err := hashFile(absPath)
 			if err != nil {
 				// File doesn't exist or can't be read
-				report.Files = append(report.Files, DriftItem{
-					Path:       f.Path,
-					Status:     DriftMissing,
-					Invariants: copyDriftInvariants(decisionFields.Invariants),
-				})
+				assessment := assessMissingFileDrift(f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path], loadCorpus())
+				item := DriftItem{
+					Path:             f.Path,
+					Status:           DriftMissing,
+					Invariants:       copyDriftInvariants(decisionFields.Invariants),
+					Materiality:      assessment.Materiality,
+					TriggerKind:      DriftTriggerMissingFile,
+					ChangedTargetRef: assessment.ChangedTargetRef,
+					TargetKind:       assessment.TargetKind,
+					TargetStatus:     assessment.TargetStatus,
+					FallbackKind:     assessment.FallbackKind,
+					FallbackReason:   assessment.FallbackReason,
+					AuditOnly:        assessment.AuditOnly,
+					SuppressedReason: assessment.SuppressedReason,
+				}
+				report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
 				hasDrift = true
 				continue
 			}
 
 			if currentHash != f.Hash {
 				lines := gitDiffStat(projectRoot, f.Path)
-				report.Files = append(report.Files, DriftItem{
-					Path:         f.Path,
-					Status:       DriftModified,
-					LinesChanged: lines,
-					Invariants:   copyDriftInvariants(decisionFields.Invariants),
-					Symbols:      computeSymbolDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path]),
-				})
+				assessment := assessModifiedFileDrift(projectRoot, f.Path, baselineSymbolsByFile[f.Path], bindingTargetsByFile[f.Path])
+				item := DriftItem{
+					Path:             f.Path,
+					Status:           DriftModified,
+					LinesChanged:     lines,
+					Invariants:       copyDriftInvariants(decisionFields.Invariants),
+					Symbols:          assessment.Symbols,
+					Materiality:      assessment.Materiality,
+					TriggerKind:      DriftTriggerFileHash,
+					ChangedTargetRef: assessment.ChangedTargetRef,
+					TargetKind:       assessment.TargetKind,
+					TargetStatus:     assessment.TargetStatus,
+					FallbackKind:     assessment.FallbackKind,
+					FallbackReason:   assessment.FallbackReason,
+					AuditOnly:        assessment.AuditOnly,
+					SuppressedReason: assessment.SuppressedReason,
+				}
+				report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
 				hasDrift = true
 			}
 		}
 
 		addedFiles, err := detectAddedFiles(projectRoot, files, decisionFields.DriftManifests, scopeCache)
 		if err != nil {
-			return nil, fmt.Errorf("detect added files for %s: %w", d.Meta.ID, err)
+			loadCorpus().markPartial(
+				fmt.Sprintf("detect added files for %s: %v", d.Meta.ID, err),
+				1,
+			)
+			addedFiles = nil
 		}
 		for _, path := range addedFiles {
-			report.Files = append(report.Files, DriftItem{
-				Path:       path,
-				Status:     DriftAdded,
-				Invariants: copyDriftInvariants(decisionFields.Invariants),
-			})
+			item := DriftItem{
+				Path:        path,
+				Status:      DriftAdded,
+				Invariants:  copyDriftInvariants(decisionFields.Invariants),
+				Materiality: DriftMaterialityAdjacentFileChurn,
+				TriggerKind: DriftTriggerScopeManifest,
+				AuditOnly:   true,
+			}
+			report.Files = append(report.Files, attachDriftClaimEvidenceRefs(item, decisionFields.Claims, evidenceItems))
 			hasDrift = true
 		}
 
@@ -1246,6 +1841,81 @@ func CheckDrift(ctx context.Context, store ArtifactStore, projectRoot string) ([
 	logger.Debug().Int("drift_reports", len(reports)).Msg("drift.check.complete")
 
 	return reports, nil
+}
+
+func attachDriftClaimEvidenceRefs(
+	item DriftItem,
+	claims []DecisionClaim,
+	evidenceItems []EvidenceItem,
+) DriftItem {
+	item.ClaimRefs = driftClaimRefsForTarget(claims, item.ChangedTargetRef)
+	item.EvidenceRefs = driftEvidenceRefsForClaims(evidenceItems, item.ClaimRefs)
+	for index, symbol := range item.Symbols {
+		symbolTarget := driftEventSymbolTarget(item.Path, symbol)
+		item.Symbols[index].ClaimRefs = driftClaimRefsForTarget(claims, symbolTarget)
+		item.Symbols[index].EvidenceRefs = driftEvidenceRefsForClaims(evidenceItems, item.Symbols[index].ClaimRefs)
+	}
+	return item
+}
+
+func driftClaimRefsForTarget(claims []DecisionClaim, targetRef string) []string {
+	targetRef = strings.TrimSpace(targetRef)
+	if targetRef == "" {
+		return nil
+	}
+	var refs []string
+	for _, claim := range claims {
+		lifecycle := EffectiveClaimLifecycleStatus(claim)
+		if lifecycle == ClaimLifecycleSuperseded || lifecycle == ClaimLifecycleDeprecated {
+			continue
+		}
+		if !driftClaimHasTargetRef(claim, targetRef) {
+			continue
+		}
+		refs = append(refs, claim.ID)
+	}
+	sort.Strings(refs)
+	return normalizeClaimRefs(refs)
+}
+
+func driftClaimHasTargetRef(claim DecisionClaim, targetRef string) bool {
+	for _, ref := range claim.GovernanceTargetRefs {
+		if strings.TrimSpace(ref) == targetRef {
+			return true
+		}
+	}
+	return false
+}
+
+func driftEvidenceRefsForClaims(evidenceItems []EvidenceItem, claimRefs []string) []string {
+	claimSet := map[string]struct{}{}
+	for _, ref := range normalizeClaimRefs(claimRefs) {
+		claimSet[ref] = struct{}{}
+	}
+	if len(claimSet) == 0 {
+		return nil
+	}
+	refs := make([]string, 0, len(evidenceItems))
+	for _, item := range evidenceItems {
+		if strings.TrimSpace(item.ID) == "" {
+			continue
+		}
+		if !driftEvidenceItemBindsAnyClaim(item, claimSet) {
+			continue
+		}
+		refs = append(refs, item.ID)
+	}
+	sort.Strings(refs)
+	return compactStrings(refs)
+}
+
+func driftEvidenceItemBindsAnyClaim(item EvidenceItem, claimSet map[string]struct{}) bool {
+	for _, ref := range normalizeClaimRefs(item.ClaimRefs) {
+		if _, ok := claimSet[ref]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // groupSymbolsByFile buckets a decision's stored symbol baseline by file path.
@@ -1262,22 +1932,69 @@ func groupSymbolsByFile(symbols []AffectedSymbol, err error) map[string][]Affect
 	return byFile
 }
 
-// computeSymbolDrift partitions a modified file's change at symbol granularity
-// against its stored baseline. It returns nil — which SymbolVerdict reads as
-// needs-review (fail-safe to the operator) — whenever the file cannot be proven
-// benign: no symbol baseline, an unanalyzable/empty current parse, a change
-// outside any tracked symbol body, or an existing file whose only symbol delta is
-// additions. Without a stored non-symbol baseline, added symbols in a modified
-// file cannot prove imports/package vars/comments stayed unchanged.
-func computeSymbolDrift(projectRoot, relPath string, baseline []AffectedSymbol) []SymbolDriftItem {
-	if len(baseline) == 0 {
+func groupBindingTargetsByFile(targets []BindingTarget) map[string][]BindingTarget {
+	if len(targets) == 0 {
 		return nil
+	}
+	byFile := make(map[string][]BindingTarget)
+	for _, target := range targets {
+		if target.FilePath == "" {
+			continue
+		}
+		byFile[target.FilePath] = append(byFile[target.FilePath], target)
+	}
+	return byFile
+}
+
+type modifiedFileAssessment struct {
+	Symbols          []SymbolDriftItem
+	Materiality      DriftMateriality
+	ChangedTargetRef string
+	TargetKind       string
+	TargetStatus     string
+	FallbackKind     string
+	FallbackReason   string
+	AuditOnly        bool
+	SuppressedReason string
+}
+
+// assessModifiedFileDrift partitions a modified file's change at symbol
+// granularity against its stored baseline. File-hash drift is only material
+// when a baselined symbol was modified or removed; unchanged governed symbols
+// turn the file change into audit-only adjacent churn.
+func assessModifiedFileDrift(projectRoot, relPath string, baseline []AffectedSymbol, targetGroups ...[]BindingTarget) modifiedFileAssessment {
+	targets := flattenBindingTargetGroups(targetGroups)
+	if generatedOrIgnoredPath(relPath) {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityGeneratedOrIgnored,
+			AuditOnly:        true,
+			SuppressedReason: "generated or local runtime path changed; no code-object symbol drift",
+		}
+	}
+	if carrierOnlyPath(relPath) {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityCarrierOnly,
+			AuditOnly:        true,
+			SuppressedReason: "carrier path changed; no code-object symbol drift",
+		}
+	}
+	if targetAssessment, ok := assessBindingTargetDrift(projectRoot, relPath, targets); ok {
+		return targetAssessment
+	}
+	if len(baseline) == 0 {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityUnknownLegacyFileScope,
+			SuppressedReason: "no symbol baseline for changed file",
+		}
 	}
 	current, err := codebase.ExtractSymbolSnapshots(projectRoot, relPath)
 	if err != nil || len(current) == 0 {
 		// Unsupported language, oversized file, or no parseable symbols: cannot
 		// classify — fail-safe rather than mislabel every baseline symbol removed.
-		return nil
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityUnknownLegacyFileScope,
+			SuppressedReason: "symbol extraction unavailable for changed file",
+		}
 	}
 	baseSnaps := make([]codebase.SymbolSnapshot, 0, len(baseline))
 	for _, s := range baseline {
@@ -1291,37 +2008,504 @@ func computeSymbolDrift(projectRoot, relPath string, baseline []AffectedSymbol) 
 	}
 	drifts := codebase.CompareSymbolSnapshots(baseSnaps, current)
 	if len(drifts) == 0 {
-		// File hash changed but no tracked symbol did — the change sits outside
-		// symbol bodies (imports, package vars, comments). Not provably benign.
-		return nil
-	}
-	if onlyAddedSymbolDrift(drifts) {
-		// The file hash changed and the only visible symbol deltas are additions.
-		// Because the baseline stores symbol hashes, not the old non-symbol gaps,
-		// this could also include import/package-var/comment edits. Fail safe.
-		return nil
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityAdjacentFileChurn,
+			AuditOnly:        true,
+			SuppressedReason: "baselined symbols unchanged; file hash drift is outside governed symbol bodies",
+		}
 	}
 	items := make([]SymbolDriftItem, 0, len(drifts))
+	material := false
 	for _, d := range drifts {
 		items = append(items, SymbolDriftItem{
 			SymbolName: d.SymbolName,
 			SymbolKind: d.SymbolKind,
 			Status:     d.Status,
 		})
+		if d.Status != "added" {
+			material = true
+		}
+	}
+	if material {
+		return modifiedFileAssessment{
+			Symbols:     items,
+			Materiality: DriftMaterialityMaterialSymbol,
+		}
+	}
+	return modifiedFileAssessment{
+		Symbols:          items,
+		Materiality:      DriftMaterialityAdjacentFileChurn,
+		AuditOnly:        true,
+		SuppressedReason: "only new symbols were detected; existing governed symbols are unchanged",
+	}
+}
+
+func flattenBindingTargetGroups(groups [][]BindingTarget) []BindingTarget {
+	for _, group := range groups {
+		if len(group) > 0 {
+			return group
+		}
+	}
+	return nil
+}
+
+func assessMissingFileDrift(
+	relPath string,
+	baseline []AffectedSymbol,
+	targets []BindingTarget,
+	corpus *DriftSymbolCorpus,
+) modifiedFileAssessment {
+	if moved, ok := findMovedSymbolTarget(corpus, relPath, targets); ok {
+		return modifiedFileAssessment{
+			Materiality: DriftMaterialityMaterialSymbol,
+			ChangedTargetRef: driftEventSymbolTarget(moved.FilePath, SymbolDriftItem{
+				SymbolName: moved.SymbolName,
+				SymbolKind: moved.SymbolKind,
+				Status:     "renamed",
+			}),
+			TargetKind:       BindingTargetSymbol,
+			TargetStatus:     "renamed",
+			SuppressedReason: fmt.Sprintf("governed symbol %s moved from %s to %s with identical body hash", moved.SymbolName, relPath, moved.FilePath),
+		}
+	}
+	if candidate, ok := findEditedMovedSymbolTarget(corpus, relPath, targets); ok {
+		return modifiedFileAssessment{
+			Materiality: DriftMaterialityNeedsBindingResolution,
+			ChangedTargetRef: driftEventSymbolTarget(candidate.FilePath, SymbolDriftItem{
+				SymbolName: candidate.SymbolName,
+				SymbolKind: candidate.SymbolKind,
+				Status:     "retarget_candidate",
+			}),
+			TargetKind:       BindingTargetSymbol,
+			TargetStatus:     "retarget_candidate",
+			FallbackKind:     "edited_symbol_move_candidate",
+			FallbackReason:   fmt.Sprintf("governed symbol %s disappeared from %s and a same-name symbol exists in %s with changed body hash; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
+			SuppressedReason: fmt.Sprintf("governed symbol %s may have moved from %s to %s with edits; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
+		}
+	}
+	if candidate, ok := findFuzzyEditedMovedSymbolTarget(corpus, relPath, targets); ok {
+		return modifiedFileAssessment{
+			Materiality: DriftMaterialityNeedsBindingResolution,
+			ChangedTargetRef: driftEventSymbolTarget(candidate.FilePath, SymbolDriftItem{
+				SymbolName: candidate.SymbolName,
+				SymbolKind: candidate.SymbolKind,
+				Status:     "retarget_candidate",
+			}),
+			TargetKind:       BindingTargetSymbol,
+			TargetStatus:     "retarget_candidate",
+			FallbackKind:     "fuzzy_edited_symbol_move_candidate",
+			FallbackReason:   fmt.Sprintf("governed symbol %s disappeared from %s and exactly one same-name candidate exists in %s, but kind/receiver identity changed; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
+			SuppressedReason: fmt.Sprintf("governed symbol %s may have moved from %s to %s with changed kind/receiver identity; retarget requires operator review", candidate.SymbolName, relPath, candidate.FilePath),
+		}
+	}
+	return modifiedFileAssessment{
+		Materiality: missingFileMateriality(baseline, targets),
+	}
+}
+
+func findMovedSymbolTarget(corpus *DriftSymbolCorpus, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+	for _, target := range targets {
+		if target.Kind != BindingTargetSymbol {
+			continue
+		}
+		if strings.TrimSpace(target.BodyHash) == "" {
+			continue
+		}
+		moved, ok := corpus.exactMoved(relPath, target)
+		if ok {
+			return moved, true
+		}
+	}
+	return codebase.SymbolSnapshot{}, false
+}
+
+func findEditedMovedSymbolTarget(corpus *DriftSymbolCorpus, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+	for _, target := range targets {
+		if target.Kind != BindingTargetSymbol {
+			continue
+		}
+		if strings.TrimSpace(target.SymbolName) == "" {
+			continue
+		}
+		moved, ok := corpus.editedMoved(relPath, target, symbolSnapshotSameIdentity)
+		if ok {
+			return moved, true
+		}
+	}
+	return codebase.SymbolSnapshot{}, false
+}
+
+func findFuzzyEditedMovedSymbolTarget(corpus *DriftSymbolCorpus, relPath string, targets []BindingTarget) (codebase.SymbolSnapshot, bool) {
+	for _, target := range targets {
+		if target.Kind != BindingTargetSymbol {
+			continue
+		}
+		if strings.TrimSpace(target.SymbolName) == "" {
+			continue
+		}
+		moved, ok := corpus.editedMoved(relPath, target, symbolSnapshotSameNameOnly)
+		if ok {
+			return moved, true
+		}
+	}
+	return codebase.SymbolSnapshot{}, false
+}
+
+func symbolSnapshotMatchesBindingTarget(snapshot codebase.SymbolSnapshot, target BindingTarget) bool {
+	if !symbolSnapshotSameIdentity(snapshot, target) {
+		return false
+	}
+	return strings.TrimSpace(snapshot.Hash) == strings.TrimSpace(target.BodyHash)
+}
+
+func symbolSnapshotSameIdentity(snapshot codebase.SymbolSnapshot, target BindingTarget) bool {
+	if strings.TrimSpace(target.AnchorID) != "" {
+		language := strings.TrimSpace(target.Language)
+		if language == "" {
+			language, _ = codebase.LanguageForPath(snapshot.FilePath)
+		}
+		anchor := codebase.BuildSymbolAnchor(snapshot, language)
+		return anchor.ID == strings.TrimSpace(target.AnchorID)
+	}
+	if snapshot.SymbolName != target.SymbolName {
+		return false
+	}
+	if target.SymbolKind != "" && snapshot.SymbolKind != target.SymbolKind {
+		return false
+	}
+	if strings.TrimSpace(snapshot.Receiver) != strings.TrimSpace(target.Receiver) {
+		return false
+	}
+	return true
+}
+
+func symbolSnapshotSameNameOnly(snapshot codebase.SymbolSnapshot, target BindingTarget) bool {
+	return strings.TrimSpace(snapshot.SymbolName) == strings.TrimSpace(target.SymbolName)
+}
+
+func assessBindingTargetDrift(projectRoot, relPath string, targets []BindingTarget) (modifiedFileAssessment, bool) {
+	if len(targets) == 0 {
+		return modifiedFileAssessment{}, false
+	}
+	hasPreciseTarget := false
+	hasInspectablePreciseTarget := false
+	for _, target := range targets {
+		switch target.Kind {
+		case BindingTargetWholeFileFallback:
+			reason := bindingFallbackReason(target)
+			return modifiedFileAssessment{
+				Materiality:      DriftMaterialityNeedsBindingResolution,
+				FallbackKind:     BindingTargetWholeFileFallback,
+				FallbackReason:   reason,
+				SuppressedReason: "whole-file fallback binding changed; resolve a symbol/range/module target before treating this as material drift",
+			}, true
+		case BindingTargetGenerated:
+			return modifiedFileAssessment{
+				Materiality:      DriftMaterialityGeneratedOrIgnored,
+				AuditOnly:        true,
+				SuppressedReason: "generated binding target changed; no code-object symbol drift",
+			}, true
+		case BindingTargetCarrier:
+			return modifiedFileAssessment{
+				Materiality:      DriftMaterialityCarrierOnly,
+				AuditOnly:        true,
+				SuppressedReason: "carrier binding target changed; no code-object symbol drift",
+			}, true
+		case BindingTargetRange:
+			hasPreciseTarget = true
+			hasInspectablePreciseTarget = true
+			if !rangeTargetUnchanged(projectRoot, relPath, target) {
+				return modifiedFileAssessment{
+					Materiality: DriftMaterialityMaterialSymbol,
+				}, true
+			}
+		case BindingTargetSymbol:
+			hasPreciseTarget = true
+			hasInspectablePreciseTarget = true
+			assessment, ok := assessSymbolBindingTargetDrift(projectRoot, relPath, target)
+			if ok {
+				return assessment, true
+			}
+		case BindingTargetModule:
+			hasPreciseTarget = true
+		case BindingTargetSpecSection, BindingTargetAPIContract, BindingTargetInvariant:
+			return assessSemanticBindingTargetDrift(projectRoot, relPath, target), true
+		}
+	}
+	if hasInspectablePreciseTarget {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityAdjacentFileChurn,
+			AuditOnly:        true,
+			SuppressedReason: "binding target symbols/ranges unchanged; file hash drift is outside governed code objects",
+			Symbols:          addedSymbolsOutsideBindingTargets(projectRoot, relPath, targets),
+		}, true
+	}
+	if hasPreciseTarget {
+		return modifiedFileAssessment{}, false
+	}
+	return modifiedFileAssessment{
+		Materiality:      DriftMaterialityNeedsBindingResolution,
+		FallbackKind:     "imprecise_binding_target",
+		FallbackReason:   "binding target posture is not precise enough to classify drift",
+		SuppressedReason: "binding target posture is not precise enough to classify drift",
+	}, true
+}
+
+func assessSemanticBindingTargetDrift(projectRoot, relPath string, target BindingTarget) modifiedFileAssessment {
+	targetRef := strings.TrimSpace(target.TargetRef)
+	if targetRef == "" {
+		targetRef = strings.TrimSpace(target.Kind)
+	}
+	if strings.TrimSpace(target.TextHash) == "" {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityNeedsBindingResolution,
+			FallbackKind:     "semantic_target_missing_evaluator",
+			FallbackReason:   "semantic target " + targetRef + " has no text_hash/carrier evaluator",
+			SuppressedReason: "semantic target has no text_hash/carrier evaluator; add a concrete binding target before classifying drift",
+		}
+	}
+	if rangeTargetUnchanged(projectRoot, relPath, target) {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityAdjacentFileChurn,
+			AuditOnly:        true,
+			SuppressedReason: "semantic target " + targetRef + " is unchanged; file hash drift is outside the governed target",
+		}
+	}
+	changedRef := semanticBindingTargetRef(target)
+	if semanticBindingTargetDeleted(projectRoot, relPath, target) {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityMaterialSemanticTarget,
+			ChangedTargetRef: changedRef,
+			TargetKind:       strings.TrimSpace(target.Kind),
+			TargetStatus:     "removed",
+			SuppressedReason: "semantic target " + targetRef + " was removed",
+		}
+	}
+	return modifiedFileAssessment{
+		Materiality:      DriftMaterialityMaterialSemanticTarget,
+		ChangedTargetRef: changedRef,
+		TargetKind:       strings.TrimSpace(target.Kind),
+		TargetStatus:     "modified",
+		SuppressedReason: "semantic target " + targetRef + " changed",
+	}
+}
+
+func semanticBindingTargetDeleted(projectRoot, relPath string, target BindingTarget) bool {
+	if target.ResolutionSource != BindingResolutionSourceMarkdownSection {
+		return false
+	}
+	_, ok := extractMarkdownTargetRange(projectRoot, relPath, target.TargetRef)
+	return !ok
+}
+
+func semanticBindingTargetRef(target BindingTarget) string {
+	targetRef := strings.TrimSpace(target.TargetRef)
+	if targetRef == "" {
+		return strings.TrimSpace(target.Kind)
+	}
+	if strings.Contains(targetRef, ":") {
+		return targetRef
+	}
+	kind := strings.TrimSpace(target.Kind)
+	if kind == "" {
+		return targetRef
+	}
+	return kind + ":" + targetRef
+}
+
+func bindingFallbackReason(target BindingTarget) string {
+	for _, candidate := range []string{
+		target.Reason,
+		target.WhySymbolFailed,
+		target.WhyRangeFailed,
+		target.LanguageSupport,
+		target.ResolutionSource,
+	} {
+		candidate = strings.TrimSpace(candidate)
+		if candidate != "" {
+			return candidate
+		}
+	}
+	return "whole-file fallback binding"
+}
+
+func addedSymbolsOutsideBindingTargets(projectRoot, relPath string, targets []BindingTarget) []SymbolDriftItem {
+	current, err := codebase.ExtractSymbolSnapshots(projectRoot, relPath)
+	if err != nil || len(current) == 0 {
+		return nil
+	}
+
+	targetKeys := make(map[string]struct{})
+	for _, target := range targets {
+		if target.Kind != BindingTargetSymbol {
+			continue
+		}
+		targetKeys[symbolBindingTargetKey(target.SymbolKind, target.SymbolName, target.Receiver)] = struct{}{}
+	}
+	if len(targetKeys) == 0 {
+		return nil
+	}
+
+	items := make([]SymbolDriftItem, 0)
+	for _, snapshot := range current {
+		key := symbolBindingTargetKey(snapshot.SymbolKind, snapshot.SymbolName, snapshot.Receiver)
+		if _, ok := targetKeys[key]; ok {
+			continue
+		}
+		items = append(items, SymbolDriftItem{
+			SymbolName: snapshot.SymbolName,
+			SymbolKind: snapshot.SymbolKind,
+			Status:     "added",
+		})
 	}
 	return items
 }
 
-func onlyAddedSymbolDrift(drifts []codebase.SymbolDrift) bool {
-	if len(drifts) == 0 {
+func symbolBindingTargetKey(kind, name, receiver string) string {
+	return strings.TrimSpace(kind) + "\x00" + strings.TrimSpace(name) + "\x00" + strings.TrimSpace(receiver)
+}
+
+func assessSymbolBindingTargetDrift(projectRoot, relPath string, target BindingTarget) (modifiedFileAssessment, bool) {
+	if strings.TrimSpace(target.BodyHash) == "" {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityNeedsBindingResolution,
+			SuppressedReason: "symbol binding target has no body_hash; rebaseline the binding target before classifying drift",
+		}, true
+	}
+
+	current, err := codebase.ExtractSymbolSnapshots(projectRoot, relPath)
+	if err != nil || len(current) == 0 {
+		return modifiedFileAssessment{
+			Materiality:      DriftMaterialityUnknownLegacyFileScope,
+			SuppressedReason: "symbol extraction unavailable for binding target",
+		}, true
+	}
+
+	for _, snapshot := range current {
+		if !symbolSnapshotSameIdentity(snapshot, target) {
+			continue
+		}
+		if snapshot.Hash == target.BodyHash {
+			return modifiedFileAssessment{}, false
+		}
+		return modifiedFileAssessment{
+			Materiality: DriftMaterialityMaterialSymbol,
+			Symbols: []SymbolDriftItem{
+				{
+					SymbolName: target.SymbolName,
+					SymbolKind: target.SymbolKind,
+					Status:     "modified",
+				},
+			},
+		}, true
+	}
+
+	return modifiedFileAssessment{
+		Materiality: DriftMaterialityMaterialSymbol,
+		Symbols: []SymbolDriftItem{
+			{
+				SymbolName: target.SymbolName,
+				SymbolKind: target.SymbolKind,
+				Status:     "removed",
+			},
+		},
+	}, true
+}
+
+func rangeTargetUnchanged(projectRoot, relPath string, target BindingTarget) bool {
+	if target.Line > 0 && target.EndLine >= target.Line {
+		current, ok := bindingTargetRangeTextHash(projectRoot, relPath, target.Line, target.EndLine)
+		return ok && current == target.TextHash
+	}
+	current, err := codebase.ExtractStableFileRange(projectRoot, relPath)
+	if err != nil {
 		return false
 	}
-	for _, d := range drifts {
-		if d.Status != "added" {
-			return false
+	return current.TextHash == target.TextHash
+}
+
+func bindingTargetRangeTextHash(projectRoot, relPath string, startLine, endLine int) (string, bool) {
+	content, err := readProjectFile(projectRoot, relPath)
+	if err != nil {
+		return "", false
+	}
+	lines := splitBindingTextLines(string(content))
+	if startLine <= 0 || endLine < startLine || startLine > len(lines) {
+		return "", false
+	}
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+	normalized := normalizeBindingRangeText(strings.Join(lines[startLine-1:endLine], "\n"))
+	sum := sha256.Sum256([]byte(normalized))
+	return hex.EncodeToString(sum[:]), true
+}
+
+func noBaselineMateriality(targets []BindingTarget) DriftMateriality {
+	if bindingTargetsNeedResolution(targets) {
+		return DriftMaterialityNeedsBindingResolution
+	}
+	return DriftMaterialityUnknownLegacyFileScope
+}
+
+func missingFileMateriality(baseline []AffectedSymbol, targets []BindingTarget) DriftMateriality {
+	if bindingTargetsNeedResolution(targets) {
+		return DriftMaterialityNeedsBindingResolution
+	}
+	if len(baseline) == 0 {
+		return DriftMaterialityUnknownLegacyFileScope
+	}
+	return DriftMaterialityMaterialSymbol
+}
+
+func bindingTargetsNeedResolution(targets []BindingTarget) bool {
+	for _, target := range targets {
+		if target.Kind == BindingTargetWholeFileFallback {
+			return true
 		}
 	}
-	return true
+	return false
+}
+
+func carrierOnlyPath(path string) bool {
+	clean := filepath.ToSlash(strings.TrimSpace(path))
+	if clean == "" {
+		return false
+	}
+	if clean == "CHANGELOG.md" {
+		return true
+	}
+	if strings.HasPrefix(clean, ".context/") {
+		return true
+	}
+	if strings.HasPrefix(clean, ".haft/specs/") || strings.HasPrefix(clean, ".haft/decisions/") {
+		return true
+	}
+	if strings.HasPrefix(clean, "docs/") {
+		return true
+	}
+	if strings.HasSuffix(clean, "/SKILL.md") || clean == "AGENTS.md" || clean == "CLAUDE.md" {
+		return true
+	}
+	return false
+}
+
+func generatedOrIgnoredPath(path string) bool {
+	clean := filepath.ToSlash(strings.TrimSpace(path))
+	if clean == "" {
+		return false
+	}
+	if clean == "data/FPF" || strings.HasSuffix(clean, ".db") {
+		return true
+	}
+	parts := strings.Split(clean, "/")
+	for _, part := range parts {
+		switch part {
+		case "node_modules", "target", "_build", "deps", "vendor":
+			return true
+		}
+	}
+	return false
 }
 
 func persistDriftManifests(
@@ -1337,6 +2521,15 @@ func persistDriftManifests(
 	fields := artifact.UnmarshalDecisionFields()
 	fields.DriftManifests = manifests
 
+	return persistDecisionFields(ctx, store, artifact, fields)
+}
+
+func persistDecisionFields(
+	ctx context.Context,
+	store ArtifactStore,
+	artifact *Artifact,
+	fields DecisionFields,
+) error {
 	data, err := json.Marshal(fields)
 	if err != nil {
 		return fmt.Errorf("marshal decision fields: %w", err)
@@ -1428,7 +2621,10 @@ func detectAddedFiles(
 // drift pass, so a scope walked for many decisions (especially the whole-repo
 // ".") is walked only once. nil cache falls through to a direct walk.
 func listScopeFilesCached(projectRoot, scope string, cache map[string][]string) ([]string, error) {
-	scope = normalizeDriftScope(scope)
+	scope, err := canonicalDriftScope(scope)
+	if err != nil {
+		return nil, err
+	}
 	if cache != nil {
 		if v, ok := cache[scope]; ok {
 			return v, nil
@@ -1445,12 +2641,26 @@ func listScopeFilesCached(projectRoot, scope string, cache map[string][]string) 
 }
 
 func listScopeFiles(projectRoot string, scope string) ([]string, error) {
-	scope = normalizeDriftScope(scope)
-	scopePath := filepath.Join(projectRoot, scope)
-	entries := make([]string, 0)
-	ignoreChecker := codebase.NewIgnoreChecker(projectRoot)
+	scope, err := canonicalDriftScope(scope)
+	if err != nil {
+		return nil, err
+	}
+	scopePath, err := resolveDriftScope(projectRoot, scope)
+	if err != nil {
+		return nil, err
+	}
+	physicalRoot, err := resolveDriftScope(projectRoot, ".")
+	if err != nil {
+		return nil, err
+	}
+	if files, ok := listGitScopeFiles(projectRoot, scope); ok {
+		return files, nil
+	}
 
-	err := filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
+	entries := make([]string, 0)
+	ignoreChecker := codebase.NewIgnoreChecker(physicalRoot)
+
+	err = filepath.WalkDir(scopePath, func(path string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			if os.IsNotExist(walkErr) {
 				return nil
@@ -1458,12 +2668,18 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 			return walkErr
 		}
 
-		relPath, err := filepath.Rel(projectRoot, path)
+		relPath, err := filepath.Rel(physicalRoot, path)
 		if err != nil {
 			return err
 		}
 		normalizedPath := normalizeProjectPath(relPath)
 
+		if driftPathNeverScanned(normalizedPath) {
+			if entry.IsDir() {
+				return filepath.SkipDir
+			}
+			return nil
+		}
 		if entry.IsDir() {
 			if codebase.IsExcludedDir(entry.Name()) {
 				return filepath.SkipDir
@@ -1492,12 +2708,96 @@ func listScopeFiles(projectRoot string, scope string) ([]string, error) {
 	return entries, nil
 }
 
+func listGitScopeFiles(projectRoot string, scope string) ([]string, bool) {
+	if strings.TrimSpace(projectRoot) == "" {
+		return nil, false
+	}
+
+	cmd := exec.Command("git", "ls-files", "--cached", "--others", "--exclude-standard", "--", scope)
+	cmd.Dir = projectRoot
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, false
+	}
+
+	seen := map[string]struct{}{}
+	files := make([]string, 0)
+	for _, line := range strings.Split(string(output), "\n") {
+		path := normalizeProjectPath(line)
+		if path == "." || path == "" {
+			continue
+		}
+		if driftPathNeverScanned(path) {
+			continue
+		}
+		if !driftPathExistsAsFile(projectRoot, path) {
+			continue
+		}
+		if _, ok := seen[path]; ok {
+			continue
+		}
+		seen[path] = struct{}{}
+		files = append(files, path)
+	}
+
+	sort.Strings(files)
+	return files, true
+}
+
+func driftPathExistsAsFile(projectRoot string, relPath string) bool {
+	resolved, err := resolveProjectFile(projectRoot, relPath)
+	if err != nil {
+		return false
+	}
+	info, err := os.Stat(resolved)
+	if err != nil {
+		return false
+	}
+	return !info.IsDir()
+}
+
+func driftPathNeverScanned(relPath string) bool {
+	normalized := normalizeProjectPath(relPath)
+	if normalized == "." || normalized == "" {
+		return false
+	}
+	for _, part := range strings.Split(normalized, "/") {
+		if codebase.IsExcludedDir(part) {
+			return true
+		}
+	}
+	return false
+}
+
 func normalizeDriftScope(scope string) string {
 	scope = filepath.ToSlash(filepath.Clean(strings.TrimSpace(scope)))
 	if scope == "" || scope == "/" {
 		return "."
 	}
 	return scope
+}
+
+func canonicalDriftScope(scope string) (string, error) {
+	trimmed := strings.TrimSpace(scope)
+	if trimmed == "" || trimmed == "." {
+		return ".", nil
+	}
+	canonical, err := projectpath.Parse(trimmed)
+	if err != nil {
+		return "", fmt.Errorf("drift scope: %w", err)
+	}
+	return canonical.String(), nil
+}
+
+func resolveDriftScope(projectRoot string, scope string) (string, error) {
+	if scope != "." {
+		return resolveProjectFile(projectRoot, scope)
+	}
+	absolute, err := filepath.Abs(projectRoot)
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(absolute)
 }
 
 func normalizeProjectPath(path string) string {
@@ -1598,11 +2898,13 @@ type EvidenceInput struct {
 	Verdict            string   `json:"verdict"` // supports, weakens, refutes
 	CarrierRef         string   `json:"carrier_ref,omitempty"`
 	CongruenceLevel    int      `json:"congruence_level"` // 0-3; -1 = not provided (defaults to 3)
-	FormalityLevel     int      `json:"formality_level"`  // F0-F3; legacy 0-9 inputs are normalized
+	FormalityLevel     int      `json:"formality_level"`  // F0-F9; -1 = not provided (defaults by evidence type)
+	FormalityScaleID   string   `json:"formality_scale_id,omitempty"`
 	ClaimRefs          []string `json:"claim_refs,omitempty"`
 	ClaimScope         []string `json:"claim_scope,omitempty"`
 	ValidUntil         string   `json:"valid_until,omitempty"`
 	CausalSupportBasis string   `json:"causal_support_basis,omitempty"` // C.28; accepts canonical or alias form
+	Provenance         string   `json:"provenance,omitempty"`           // "", "machine", "llm-review"
 }
 
 // Measure records post-implementation impact against the DRR's acceptance criteria.
@@ -1646,6 +2948,7 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		// No affected_files — can't verify via baseline, treat as unverified
 		hasBaseline = false
 	}
+	measureCL := measurementCongruenceLevel(hasBaseline)
 
 	scopeCandidates := measurementScopeCandidates(ctx, store, a)
 	criteriaMetScope := measuredCriteriaScope(input.CriteriaMet, nil, scopeCandidates)
@@ -1686,6 +2989,11 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		*evidenceItem,
 		claimEvidence,
 	)
+	applyMeasurementEvidencePosture(evidenceItem, measureCL)
+	for index := range measurementItems {
+		applyMeasurementEvidencePosture(&measurementItems[index], measureCL)
+	}
+
 	activeEvidence, err := decisionActiveClaimEvidenceAfterMeasurement(
 		ctx,
 		store,
@@ -1736,20 +3044,6 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 
 	a.Body += section.String()
 
-	// Record as evidence item
-	// CL based on verification quality: baseline exists = CL3, no baseline = CL1 (self-evidence, FPF A.12)
-	measureCL := 1 // default: self-evidence (no independent verification)
-	if hasBaseline {
-		measureCL = 3 // baseline exists = independent file-level verification
-	}
-
-	evidenceItem.CongruenceLevel = measureCL
-	evidenceItem.FormalityLevel = 2
-	for index := range measurementItems {
-		measurementItems[index].CongruenceLevel = measureCL
-		measurementItems[index].FormalityLevel = 2
-	}
-
 	if err := store.CommitMeasurement(ctx, a, measurementItems); err != nil {
 		return nil, fmt.Errorf("record measurement: %w", err)
 	}
@@ -1760,6 +3054,24 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 		return a, &WriteWarning{Warnings: measureWarnings}
 	}
 	return a, nil
+}
+
+func measurementCongruenceLevel(hasBaseline bool) int {
+	if hasBaseline {
+		return 3
+	}
+	return 1
+}
+
+func applyMeasurementEvidencePosture(item *EvidenceItem, congruenceLevel int) {
+	if item == nil {
+		return
+	}
+	formalityScale := reff.CurrentFormalityScale(defaultEvidenceFormalityLevel("measurement"))
+	item.CongruenceLevel = congruenceLevel
+	item.FormalityLevel = formalityScale.Level
+	item.FormalityScale = &formalityScale
+	item.FormalityBridge = evidenceFormalityBridge(formalityScale)
 }
 
 func decisionActiveClaimEvidenceAfterMeasurement(
@@ -1932,6 +3244,9 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 	if input.FormalityLevel < 0 {
 		input.FormalityLevel = defaultEvidenceFormalityLevel(input.Type)
 	}
+	formalityScale := evidenceInputFormalityScale(input.FormalityScaleID, input.FormalityLevel)
+	formalityLevel := formalityScale.Level
+	formalityBridge := evidenceFormalityBridge(formalityScale)
 	storedVerdict := canonicalStoredEvidenceVerdict(input.Type, input.Verdict)
 	err = validateEvidenceCongruenceAtIngest(storedVerdict, input.CongruenceLevel)
 	if err != nil {
@@ -1952,11 +3267,14 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		Verdict:            storedVerdict,
 		CarrierRef:         input.CarrierRef,
 		CongruenceLevel:    input.CongruenceLevel,
-		FormalityLevel:     normalizeFormalityLevel(input.FormalityLevel),
+		FormalityLevel:     formalityLevel,
+		FormalityScale:     &formalityScale,
+		FormalityBridge:    formalityBridge,
 		ClaimRefs:          input.ClaimRefs,
 		ClaimScope:         input.ClaimScope,
 		ValidUntil:         input.ValidUntil,
 		CausalSupportBasis: causalBasis,
+		Provenance:         normalizeEvidenceProvenance(input.Provenance),
 	}
 
 	if err := store.AddEvidenceItem(ctx, item, input.ArtifactRef); err != nil {
@@ -1970,22 +3288,24 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 // R_eff is computed per FPF B.3: min(effective_score_i) across all evidence,
 // where effective_score = max(0, base_score - clPenalty).
 type WLNKSummary struct {
-	ArtifactID    string
-	EvidenceCount int
-	Supporting    int
-	Weakening     int
-	Refuting      int
-	HasEvidence   bool     // true if at least one evidence item exists
-	FEff          int      // computed: min(formality_level_i) across evidence chain
-	GEff          []string // computed: union(claim_scope_i) across evidence chain
-	REff          float64  // computed: min(effective_score) across evidence chain
-	MinFreshness  string   // earliest parsed valid_until across all evidence, preserving the original carrier string
-	WeakestCL     int      // minimum congruence level
-	WeakestF      int      // compatibility alias for FEff
-	ExpectedScope []string // explicit acceptance identifiers, when available
-	CoverageGaps  []string // expected scope not covered by GEff
-	CoverageKnown bool     // false when the problem frame has no explicit identifiers
-	Summary       string   // human-readable one-liner
+	ArtifactID          string
+	EvidenceCount       int
+	Supporting          int
+	Weakening           int
+	Refuting            int
+	HasEvidence         bool     // true if at least one evidence item exists
+	FEff                int      // computed: min(formality_level_i) across evidence chain
+	FormalityScaleID    string   // scale id for the evidence item that determines FEff
+	FormalityBridgeLoss string   // bridge/loss label for the evidence item that determines FEff
+	GEff                []string // computed: union(claim_scope_i) across evidence chain
+	REff                float64  // computed: min(effective_score) across evidence chain
+	MinFreshness        string   // earliest parsed valid_until across all evidence, preserving the original carrier string
+	WeakestCL           int      // minimum congruence level
+	WeakestF            int      // compatibility alias for FEff
+	ExpectedScope       []string // explicit acceptance identifiers, when available
+	CoverageGaps        []string // expected scope not covered by GEff
+	CoverageKnown       bool     // false when the problem frame has no explicit identifiers
+	Summary             string   // human-readable one-liner
 }
 
 // ComputeWLNKSummary returns a WLNK summary for an artifact based on its evidence items.
@@ -2034,7 +3354,7 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 	result.HasEvidence = true
 	now := time.Now().UTC()
 	minREff := 1.0
-	minFormality := 3
+	minFormality := 9
 	minFreshnessAt := time.Time{}
 	hasMinFreshness := false
 
@@ -2053,6 +3373,9 @@ func ComputeWLNKSummary(ctx context.Context, store ArtifactStore, artifactID str
 		}
 		if e.FormalityLevel < minFormality {
 			minFormality = e.FormalityLevel
+			formalityScale := evidenceItemFormalityScale(e)
+			result.FormalityScaleID = formalityScale.ScaleID
+			result.FormalityBridgeLoss = evidenceItemFormalityBridgeLoss(e, formalityScale)
 		}
 
 		expiry, ok := reff.ParseValidUntil(e.ValidUntil)
@@ -2144,18 +3467,47 @@ func defaultEvidenceFormalityLevel(evidenceType string) int {
 }
 
 func normalizeFormalityLevel(level int) int {
-	switch {
-	case level < 0:
-		return 0
-	case level <= 3:
-		return level
-	case level <= 5:
-		return 1
-	case level <= 8:
-		return 2
-	default:
-		return 3
+	return reff.NormalizeFormalityLevel(level)
+}
+
+func evidenceInputFormalityScale(scaleID string, level int) reff.FormalityScale {
+	scale := reff.FormalityScale{
+		ScaleID: scaleID,
+		Level:   level,
 	}
+	return reff.NormalizeFormalityScale(scale)
+}
+
+func evidenceFormalityBridge(scale reff.FormalityScale) *reff.FormalityBridge {
+	switch scale.ScaleID {
+	case reff.FormalityScaleLegacy:
+		bridge := reff.LegacyFormalityBridge(scale.Level)
+		return &bridge
+	case reff.FormalityScaleUnversioned:
+		bridge := reff.UnversionedFormalityBridge(scale.Level)
+		return &bridge
+	default:
+		return nil
+	}
+}
+
+func evidenceItemFormalityScale(item EvidenceItem) reff.FormalityScale {
+	if item.FormalityScale != nil {
+		return reff.NormalizeFormalityScale(*item.FormalityScale)
+	}
+
+	return reff.UnversionedFormalityScale(item.FormalityLevel)
+}
+
+func evidenceItemFormalityBridgeLoss(item EvidenceItem, scale reff.FormalityScale) string {
+	if item.FormalityBridge != nil {
+		return item.FormalityBridge.Loss
+	}
+	if bridge := evidenceFormalityBridge(scale); bridge != nil {
+		return bridge.Loss
+	}
+
+	return reff.FormalityBridgeNoLoss
 }
 
 func normalizeClaimScope(scope []string) []string {
@@ -2495,7 +3847,22 @@ func trimTrailingCriterionGroup(value string, open byte, close byte) (string, bo
 }
 
 func formatAssuranceSummary(summary WLNKSummary) string {
-	formality := fmt.Sprintf("F%d (%s)", summary.FEff, formalityLabel(summary.FEff))
+	scaleID := summary.FormalityScaleID
+	if scaleID == "" {
+		scaleID = reff.FormalityScaleCurrent
+	}
+	bridgeLoss := summary.FormalityBridgeLoss
+	if bridgeLoss == "" {
+		bridgeLoss = reff.FormalityBridgeNoLoss
+	}
+
+	formality := fmt.Sprintf(
+		"F%d (%s) scale=%s bridge_loss=%s",
+		summary.FEff,
+		formalityLabel(summary.FEff),
+		scaleID,
+		bridgeLoss,
+	)
 	coverage := "G: no claim scope"
 	switch {
 	case summary.CoverageKnown:
@@ -2507,18 +3874,35 @@ func formatAssuranceSummary(summary WLNKSummary) string {
 	case len(summary.GEff) > 0:
 		coverage = fmt.Sprintf("G: %d covered (acceptance ids unavailable)", len(summary.GEff))
 	}
-	return fmt.Sprintf("Assurance: %s | %s | R: %.2f", formality, coverage, summary.REff)
+	return fmt.Sprintf(
+		"Assurance: %s | %s | R: %.2f | boundary=diagnostic_not_approval_gate_claim_truth_global_truth_or_publication",
+		formality,
+		coverage,
+		summary.REff,
+	)
 }
 
 func formalityLabel(level int) string {
 	switch level {
 	case 0:
-		return "unsubstantiated"
+		return "informal-or-unsubstantiated"
 	case 1:
-		return "structured-informal"
+		return "structured-narrative"
 	case 2:
-		return "structured-formal"
+		return "structured-schema-or-test"
 	case 3:
+		return "formalizable"
+	case 4:
+		return "predicate-like"
+	case 5:
+		return "executable-semantics"
+	case 6:
+		return "checked-model"
+	case 7:
+		return "machine-checkable-obligations"
+	case 8:
+		return "machine-checked-proof"
+	case 9:
 		return "proof-grade"
 	default:
 		return "unknown"

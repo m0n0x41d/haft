@@ -1,0 +1,23 @@
+schema_version: haft.project-profile/v1
+profile:
+  kind: declared
+  scopes:
+    - kind: non_software
+      scope_id: knowledge-model
+      admitted_kind_ref: U.Episteme
+      governing_pattern_refs:
+        - A.7
+      contract_refs:
+        - TS.model.001
+  declaration_record:
+    kind: operator_declared_record
+    declaration_authority_basis_ref: authority-basis:operator-profile-approval
+    declaration_work_ref: work:operator-profile-declaration
+    project_root: /workspace/haft
+    scope_payload_digest: sha256:bca92e9d07d44a946346c5ef670bbb1958406073645a71b16a0d3585f8514469
+    observed_basis_digest: sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    observation_window:
+      execution_context_ref: operator:session:profile
+      from: "2026-07-14T12:00:00+04:00"
+      until: "2026-07-14T12:30:00+04:00"
+    carrier_revision: 3

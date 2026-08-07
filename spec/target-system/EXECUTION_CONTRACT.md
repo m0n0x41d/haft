@@ -1,4 +1,4 @@
-# Execution Contract — v6.2 + Commissioned Execution Draft
+# Runner-neutral Commission Contract — v9
 
 > What Implement, Adopt, and verification are allowed to do.
 > BDD scenarios define the authority boundaries.
@@ -20,8 +20,9 @@ The distinction is load-bearing:
 - RuntimeRun = one actual attempt by a runner.
 - Evidence = what was verified after execution.
 
-`Open-Sleigh` is the current runtime implementation of `haft harness`. It is
-the execution subsystem of Haft, not a peer source of truth.
+Haft v9 ships no execution runtime. A separately operated runner may claim and
+perform a WorkCommission through the typed lifecycle, but remains outside the
+Haft product and authority boundary.
 
 A DecisionRecord may have zero WorkCommissions. Creating a decision does not
 mean the work is scheduled. A WorkCommission may be queued for later, and must
@@ -47,7 +48,7 @@ Scenario: Spec-linked work carries section authority
 ```gherkin
 Scenario: Missing spec coverage blocks broad autonomous execution
   Given a project is marked "needs_onboard" or has uncovered required target sections
-  When the user attempts batch/YOLO harness execution
+  When an external runner attempts broad batch execution
   Then Haft blocks autonomous execution by default
   And shows the missing spec sections or coverage gaps
   And allows only explicit tactical override with a recorded out-of-spec commission reason
@@ -74,7 +75,7 @@ Scenario: Queue work without executing it
     | decision_revision_hash | current DecisionRecord content/revision     |
     | spec_section_refs      | spec sections governed by the decision, if any |
     | spec_revision_hashes   | current revisions for those sections        |
-    | problem_ref            | linked ProblemCard                          |
+    | problem_basis          | `problem_card` snapshot or `inline_statement` snapshot from the DecisionRecord |
     | scope                  | closed Scope object: repo, branch, base SHA, paths, actions |
     | scope_hash             | canonical hash of the Scope object          |
     | base_sha               | repository commit pinned at queue time      |
@@ -87,6 +88,13 @@ Scenario: Queue work without executing it
   And the WorkCommission is "queued"
   And no RuntimeRun starts
 ```
+
+`problem_basis` is a closed discriminated union:
+
+| `kind` | Required snapshot fields | Meaning |
+|--------|--------------------------|---------|
+| `problem_card` | `problem_card_ref`, `revision_hash` | The DecisionRecord is grounded by a linked ProblemCard. |
+| `inline_statement` | `decision_ref`, `problem_statement`, `revision_hash` | The DecisionRecord carries its own inline problem statement. No ProblemCard is fabricated. |
 
 ```gherkin
 Scenario: Scope is authorization, not prompt context
@@ -103,7 +111,7 @@ Scenario: Scope is authorization, not prompt context
     | allowed_modules   | optional module-level slice               |
     | affected_files    | expected mutation/evidence surface        |
     | lockset           | concurrency-control projection            |
-  And Open-Sleigh must carry the Scope in Session and AdapterSession
+  And the external runner must carry the Scope in its execution context
   And every file-mutating adapter call must check the target path/action
       against the Scope before executing
   And terminal diff validation must prove every mutation stayed inside Scope
@@ -114,24 +122,26 @@ Scenario: Start a fresh commission
   Given a WorkCommission in "queued" or "ready"
   And its linked DecisionRecord is still active
   And the decision_revision_hash still matches
-  And the problem_ref/revision still matches
+  And the problem_basis still resolves to the same problem statement
+  And its revision_hash still matches
   And the scope_hash still matches the current commission Scope
   And the base_sha still matches the admitted repository context
   And the implementation_plan_revision still matches, if present
   And the autonomy_envelope_revision still matches, if present
   And the commission valid_until is in the future
-  And no linked ProblemCard or governing DecisionRecord was superseded
+  And no linked ProblemCard, when problem_basis.kind is "problem_card", was superseded
+  And the governing DecisionRecord was not superseded
   When the user starts the WorkCommission
   Then Haft moves it to "preflighting"
   And grants exactly one runner lease
-  And Open-Sleigh may run the Preflight phase
+  And the external runner may run the Preflight phase
 ```
 
 ```gherkin
 Scenario: Block a stale commission before execution
   Given a WorkCommission created from DecisionRecord revision R1
   And the DecisionRecord was superseded to revision R2 before execution
-  When the user or YOLO scheduler attempts to start the WorkCommission
+  When an operator or external scheduler attempts to start the WorkCommission
   Then Haft marks the WorkCommission "blocked_stale"
   And no RuntimeRun enters Execute
   And the block reason names the invalidating artifact
@@ -140,8 +150,8 @@ Scenario: Block a stale commission before execution
 ```gherkin
 Scenario: Block a commission after snapshot drift
   Given a WorkCommission was queued with CommissionSnapshot C1
-  And a human approval or YOLO lease was recorded for C1
-  When the DecisionRecord revision, ProblemCard revision, Scope hash, base SHA,
+  And a human approval or external-runner lease was recorded for C1
+  When the DecisionRecord revision, problem_basis revision, Scope hash, base SHA,
       ImplementationPlan revision, AutonomyEnvelope revision, or lease state
       changes before Execute
   Then the previous approval is no longer reusable
@@ -162,7 +172,7 @@ Scenario: Runtime mutation outside Scope is terminal
 
 ## Preflight
 
-Preflight is mandatory before execution, including YOLO/batch runs. It has two
+Preflight is mandatory before execution, including externally scheduled batch runs. It has two
 parts:
 
 | Layer | May do | May NOT do |
@@ -175,7 +185,7 @@ The deterministic equality set is closed for MVP-1R:
 | Field | Owner | Drift outcome |
 |-------|-------|---------------|
 | DecisionRecord ref/revision/hash | Haft | block stale |
-| ProblemCard ref/revision/hash | Haft | block stale or human review |
+| `problem_basis`: `problem_card` (`problem_card_ref`, `revision_hash`) or `inline_statement` (`decision_ref`, `problem_statement`, `revision_hash`) | Haft | block stale or human review |
 | SpecSection refs/revisions/hashes | Haft | block stale or re-plan |
 | Scope hash | Haft | block policy |
 | base SHA / admitted repo context | Haft + repo adapter | re-preflight or block stale |
@@ -185,7 +195,7 @@ The deterministic equality set is closed for MVP-1R:
 
 ```gherkin
 Scenario: Runner cannot bypass Haft authority
-  Given Open-Sleigh has a commission_id
+  Given an external runner has a commission_id
   When it starts work
   Then it first calls Haft to claim a preflight lease
   And it receives a signed/structured preflight context
@@ -198,28 +208,30 @@ Scenario: Uncertain preflight needs human review
   But the preflight agent reports material context change it cannot classify
   When Haft validates the PreflightReport
   Then the WorkCommission becomes "needs_human_review"
-  And Open-Sleigh stops before Execute
+  And the external runner stops before Execute
 ```
 
-## ImplementationPlan and YOLO Mode
+## ImplementationPlan and external batch scheduling
 
-YOLO mode is batch continuation inside a human-approved AutonomyEnvelope. It
-does not skip freshness, evidence, lease, lockset, or one-way-door gates.
+External batch scheduling may continue only inside a human-approved
+AutonomyEnvelope. Haft stores the governing records but does not own or run the
+scheduler. The scheduler cannot skip freshness, evidence, lease, lockset, or
+one-way-door gates.
 
 ```gherkin
-Scenario: Run an approved implementation plan in YOLO mode
+Scenario: An external runner consumes an approved implementation plan
   Given an ImplementationPlan with 20 WorkCommissions
   And an AutonomyEnvelope approved by the human principal:
     | property        | example                         |
     | max_concurrency | 4                               |
     | allowed_repos   | current project                 |
-    | allowed_paths   | internal/**, desktop/**         |
+    | allowed_paths   | internal/**, cmd/**             |
     | forbidden_paths | release/**, migrations/**       |
     | allowed_actions | edit_files, run_tests, commit   |
     | forbidden_actions | merge_pr, tag_release, delete_data |
     | on_failure      | continue_independent            |
     | on_stale        | block_node                      |
-  When Open-Sleigh starts the plan
+  When the external runner starts the plan
   Then it schedules only dependency-ready WorkCommissions
   And it never runs two commissions with overlapping locksets
   And it preflights every commission immediately before Execute
@@ -228,7 +240,7 @@ Scenario: Run an approved implementation plan in YOLO mode
 ```
 
 ```gherkin
-Scenario: YOLO cannot expand its own authority
+Scenario: An external runner cannot expand its own authority
   Given an AutonomyEnvelope forbids schema changes and release tagging
   When an agent discovers the chosen implementation requires a schema change
   Then the current WorkCommission becomes "needs_human_review"
@@ -239,7 +251,7 @@ Scenario: YOLO cannot expand its own authority
 Scenario: ImplementationPlan changes after a commission is leased
   Given a WorkCommission was leased under ImplementationPlan revision P1
   And the plan is revised to P2 before the commission reaches Execute
-  When Open-Sleigh calls start_after_preflight
+  When the external runner calls start_after_preflight
   Then Haft rejects the start with "plan_revision_changed"
   And the scheduler must release or re-preflight the node under P2
 ```
@@ -253,7 +265,7 @@ per workspace and per WorkCommission.
 Scenario: Local-only commission
   Given a WorkCommission with projection_policy "local_only"
   When it runs and completes
-  Then Desktop/CLI/.haft status are updated
+  Then CLI and .haft status are updated
   And no external tracker call is required
 ```
 
@@ -462,7 +474,7 @@ These are deferred per 5.4 review:
 
 | Feature | Why deferred |
 |---------|-------------|
-| Project harnessability onboarding | Requires dedicated TargetSystemSpec / EnablingSystemSpec / TermMap / SpecCoverage workflow, now scoped as v7 Project Harnessability MVP |
+| Project harnessability onboarding | Requires dedicated TargetSystemSpec / SoftwareSystemSpec / TermMap / SpecCoverage workflow, now scoped as v7 Project Harnessability MVP |
 | Spec parser/checker and SpecCoverage graph | Needs strict markdown carrier, section ids, term validation, and coverage edge model before runtime gating |
 | Automation triggers (CI fail, dep update, scheduled) | Mixing problem factory + execution in one release = scope sprawl |
 | DecisionRecord→WorkCommission→RuntimeRun Pipeline with broad auto-advance | Single spec-linked commission must work first; batch execution follows after spec readiness gates |

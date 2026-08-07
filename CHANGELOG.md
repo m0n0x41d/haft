@@ -4,12 +4,46 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [9.0.0] — 2026-08-06
+## [9.0.1] — 2026-08-07
 
-The last published release is
-[v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
-The v8.2.0 candidate was never published; its candidate lineage is incorporated
-into this v9.0.0 release entry.
+A patch release for one defect: a single stored row that the v9 path invariant
+cannot express denied every caller the fused artifact-to-file bridge.
+
+### Fixed
+
+- **One pre-invariant `affected_files` row no longer fails the whole fused
+  graph.** v9 introduced the canonical project-relative path invariant and
+  enforced it on both the write and read paths, but shipped no migration for
+  rows admitted before it existed. A database carrying one absolute or
+  traversing path — for example an agent attachment recorded as an affected
+  file — returned `fuse concern reasoning: stored affected file for <id>: …
+  must be a canonical project-relative path` for **every** concern-seeded
+  `explore` call. Symbol-seeded calls were unaffected, which is why the defect
+  read as intermittent. `AllAffectedFiles` and `GetAffectedFiles` now exclude
+  such a row instead of failing: the projection carries the expressible rows
+  plus a named `Skipped` entry per excluded row, and the concern fusion basis
+  reports the count as `unexpressible_affected_files`. Fresh installations were
+  never affected; both write paths have canonicalized since v9.0.0.
+
+### Changed
+
+- **Kernel migration 58 drops `affected_files` rows that are not
+  project-relative.** The invariant is owned by `internal/projectpath`, so the
+  migration asks that package rather than restating the rule in SQL, and it
+  names every dropped row and artifact rather than deleting silently. Migration
+  58 applies during `haft init`; `haft serve` and the read-only surfaces
+  continue to require an already-current schema. **An existing project must run
+  `haft init` once after upgrading**, otherwise commands report `kernel schema
+  is not current`. A database that never carried such a row pays nothing and
+  reports nothing.
+
+## [9.0.0] — 2026-08-07
+
+[v9.0.0](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0) is the
+published current release. Its published predecessor is
+[v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0). The v8.2.0
+candidate was never published; its candidate lineage is incorporated into this
+v9.0.0 release entry.
 
 ### Changed
 

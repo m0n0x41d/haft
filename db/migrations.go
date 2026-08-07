@@ -2003,4 +2003,5 @@ var kernelMigrations = []Migration{
 	profileAutomaticBootstrapMigration55,
 	hostRoutedOperatorAuthorityMigration56,
 	projectTypeEnvCompatibleSuccessorMigration57,
+	legacyAffectedPathMigration58,
 }

@@ -123,6 +123,10 @@ jobs:
     needs: [guard]
     runs-on: ${{ matrix.runner }}
     strategy:
+      # A packaging or smoke failure is per-platform evidence. Cancelling the
+      # siblings hides whether the same defect reaches them, and every retry
+      # costs a fresh main CI cycle plus a retag, so let all three report.
+      fail-fast: false
       matrix:
         include:
           - { runner: ubuntu-latest,    goos: linux,  goarch: amd64 }

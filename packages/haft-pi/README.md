@@ -26,8 +26,8 @@ authority. Dense/hybrid retrieval and any superiority claim remain
   `haft_solution`, `haft_decision`, `haft_note`, `haft_refresh`,
   `haft_method`, `haft_commission`, and `haft_spec_section`
 - Prompt templates and Agent Skills expose the same twelve public entries:
-  `h-reason`, `h-frame`, `h-diagnose`, `h-explore`, `h-compare`, manual
-  `h-decide`, manual `h-commission`, `h-verify`, `h-status`, `h-spec`,
+  `h-reason`, `h-frame`, `h-diagnose`, `h-explore`, `h-compare`, auto-routed
+  `h-decide`, manual-only `h-commission`, `h-verify`, `h-status`, `h-spec`,
   `h-onboard`, and `h-note`. They are independent capabilities, not phases.
   MethodPack orchestration and semiotic/abductive routines remain internal to
   the relevant public entry rather than adding public skills.

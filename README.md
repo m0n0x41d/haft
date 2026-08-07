@@ -22,8 +22,8 @@ without replacing FPF with a second pattern catalog.
 <!-- haft:truth-labels:start -->
 
 - **CURRENT PRODUCT** — the published
-  [v8.1.0 release](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0).
-  No v8.2 release was published.
+  [v9.0.0 release](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0).
+  Its published predecessor is v8.1.0; no v8.2 release was published.
 - **V9 CONTRACT** — source-native FPF Query, fused code-graph orientation,
   project-profile onboarding, task-level EntityOfConcern establishment, typed
   project memory, neighborhood, and recall are included in the v9 contract.
@@ -39,8 +39,9 @@ without replacing FPF with a second pattern catalog.
 <!-- haft:truth-labels:end -->
 
 These distinctions separate contract inclusion, exact-candidate evidence,
-published-product status, and release authority. No source file, local test, or
-matrix result silently promotes a contract to CURRENT PRODUCT, an RC, or a
+published-product status, and release authority. v9.0.0 is CURRENT PRODUCT
+because that exact release was published; no source file, local test, or matrix
+result silently promotes another candidate to CURRENT PRODUCT, an RC, or a
 release.
 
 ---
@@ -287,7 +288,9 @@ Haft is consumed through three surfaces over one `.haft/` artifact graph:
 - **Skills** in your agent. Capability skills may trigger from the current
   operator request; `h-decide` may route a direct unambiguous binding request,
   while `h-commission` still requires manual invocation.
-- **CLI** (`haft problem`, `haft solution`, `haft decision`, ...) — manual access. Those might be used manually, but usually it is just another surface for your agent to use.
+- **CLI** (`haft artifact`, `haft decision`, `haft spec`, `haft memory`,
+  `haft commission`, ...) — direct manual access to the current command
+  families.
 - **MCP server** (`haft serve`) — programmatic access for any LLM agent over the Model Context Protocol
 
 The kernel MCP server is the cross-host enforcement surface: it validates
@@ -433,7 +436,7 @@ restart, and rollback boundaries.
 
 | Tool | What it does |
 |------|-------------|
-| `haft_note` | Micro-decisions — atomic facts with typed anchors, validation, auto-expiry |
+| `haft_note` | Non-binding facts, observations, caveats, and rationale with typed anchors, validation, and optional freshness |
 | `haft_problem` | Frame problems, declare comparison dimensions with indicator roles |
 | `haft_solution` | Explore variants with diversity check, compare under parity |
 | `haft_decision` | Decision contracts: invariants, claims, evidence, baseline lifecycle |

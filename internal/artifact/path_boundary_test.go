@@ -132,13 +132,16 @@ func TestAffectedFileReadersCanonicalizeLegacyRowsWithoutMigration(
 	if len(files) != 1 || files[0].Path != "pkg/a_%/main.go" {
 		t.Fatalf("canonical affected files = %+v", files)
 	}
-	refs, err := store.AllAffectedFiles(ctx)
+	projection, err := store.AllAffectedFiles(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(refs) != 1 ||
-		refs[0].FilePath != "pkg/a_%/main.go" {
-		t.Fatalf("canonical affected-file refs = %+v", refs)
+	if len(projection.Rows) != 1 ||
+		projection.Rows[0].FilePath != "pkg/a_%/main.go" {
+		t.Fatalf("canonical affected-file refs = %+v", projection.Rows)
+	}
+	if !projection.Complete() {
+		t.Fatalf("canonical rows reported as skipped: %+v", projection.Skipped)
 	}
 	linked, err := store.SearchByAffectedFile(
 		ctx,
@@ -405,4 +408,75 @@ func decisionPathContractInput() DecideInput {
 			Reason:     reason,
 		},
 	})
+}
+
+// A row stored before canonicalAffectedFile existed must not deny every reader
+// the rest of the table. The projection excludes it and names it; it never
+// fails the read.
+func TestAffectedFileReadsDegradeOnPreInvariantStoredRow(t *testing.T) {
+	store := setupTestDB(t)
+	ctx := context.Background()
+	now := time.Now().UTC()
+	item := &Artifact{
+		Meta: Meta{
+			ID:        "note-pre-invariant-path",
+			Kind:      KindNote,
+			Status:    StatusActive,
+			Title:     "Pre-invariant affected path",
+			CreatedAt: now,
+			UpdatedAt: now,
+		},
+		Body: "fixture",
+	}
+	if err := store.Create(ctx, item); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.SetAffectedFiles(
+		ctx,
+		item.Meta.ID,
+		[]AffectedFile{{Path: "internal/cli/main.go"}},
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	// SetAffectedFiles rejects this path today, so the fixture reaches the
+	// table directly — exactly how the row was admitted before the invariant.
+	const legacyPath = "/Users/someone/.agent/attachments/pasted-text.txt"
+	if _, err := store.db.ExecContext(
+		ctx,
+		`INSERT INTO affected_files (artifact_id, file_path, file_hash)
+		 VALUES (?, ?, '')`,
+		item.Meta.ID,
+		legacyPath,
+	); err != nil {
+		t.Fatal(err)
+	}
+
+	projection, err := store.AllAffectedFiles(ctx)
+	if err != nil {
+		t.Fatalf("one pre-invariant row failed the whole projection: %v", err)
+	}
+	if len(projection.Rows) != 1 ||
+		projection.Rows[0].FilePath != "internal/cli/main.go" {
+		t.Fatalf("expressible rows = %+v", projection.Rows)
+	}
+	if projection.Complete() {
+		t.Fatal("excluded row was not named in the projection")
+	}
+	if len(projection.Skipped) != 1 ||
+		projection.Skipped[0].RawPath != legacyPath ||
+		projection.Skipped[0].ArtifactID != item.Meta.ID {
+		t.Fatalf("skipped rows = %+v", projection.Skipped)
+	}
+	if projection.Skipped[0].Reason == "" {
+		t.Fatal("skipped row carries no reason")
+	}
+
+	files, err := store.GetAffectedFiles(ctx, item.Meta.ID)
+	if err != nil {
+		t.Fatalf("per-artifact read failed on a pre-invariant row: %v", err)
+	}
+	if len(files) != 1 || files[0].Path != "internal/cli/main.go" {
+		t.Fatalf("per-artifact affected files = %+v", files)
+	}
 }

@@ -1215,9 +1215,9 @@ func requireOneP13Anchor(
 }
 
 func validateIdentitySpec(spec identitySpec) error {
-	if spec.RequiredSchemaVersion != 57 {
+	if spec.RequiredSchemaVersion != 58 {
 		return fmt.Errorf(
-			"P13 schema version = %d, want exactly 57",
+			"P13 schema version = %d, want exactly 58",
 			spec.RequiredSchemaVersion,
 		)
 	}

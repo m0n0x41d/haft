@@ -154,16 +154,26 @@ jobs:
             embed-sidecar/target
           key: ${{ runner.os }}-${{ matrix.goarch }}-embed-cargo-${{ hashFiles('embed-sidecar/Cargo.lock') }}
 
+      # Commit comes from the guard, not from a local `git rev-parse --short`.
+      # This job checks out at fetch-depth 1, so its pack holds ~2.5k objects
+      # against ~38k in the guard's full clone, and Git's auto-abbreviation
+      # picks 7 characters here against 8 there. Recomputing locally embeds a
+      # shorter SHA than the one `smoke-archive.sh` is handed, and the
+      # `commit:  <short_sha>` assertion fails.
       - name: Build binary
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: '1'
+          CANDIDATE_SHORT_SHA: ${{ needs.guard.outputs.short_sha }}
         run: |
+          test -n "$CANDIDATE_SHORT_SHA"
+          test "$(git rev-parse HEAD)" = "${{ needs.guard.outputs.sha }}"
+
           go build -trimpath \
             -ldflags "-s -w \
               -X github.com/m0n0x41d/haft/internal/cli.Version=${{ needs.guard.outputs.version }} \
-              -X github.com/m0n0x41d/haft/internal/cli.Commit=$(git rev-parse --short HEAD) \
+              -X github.com/m0n0x41d/haft/internal/cli.Commit=$CANDIDATE_SHORT_SHA \
               -X github.com/m0n0x41d/haft/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             -o haft ./cmd/haft/
 

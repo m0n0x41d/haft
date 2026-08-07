@@ -783,31 +783,66 @@ type SymbolBindingRef struct {
 	AnchorID   string
 }
 
+// SkippedAffectedFile is one stored affected_files row the current path
+// invariant cannot express. Rows admitted before canonicalAffectedFile existed
+// may hold absolute or traversing paths, so a strict read names them instead of
+// failing every caller of the projection.
+type SkippedAffectedFile struct {
+	ArtifactID string
+	RawPath    string
+	Reason     string
+}
+
+// AffectedFileProjection is one complete read of affected_files under the
+// current path invariant. Skipped carries the rows the invariant excluded, so
+// an empty Skipped is the only evidence that the projection covers the table.
+type AffectedFileProjection struct {
+	Rows    []AffectedFileRef
+	Skipped []SkippedAffectedFile
+}
+
+// Complete reports whether the current path invariant expressed every stored
+// row. A false result is a named coverage limit, not a failure.
+func (p AffectedFileProjection) Complete() bool {
+	return len(p.Skipped) == 0
+}
+
 // AllAffectedFiles enumerates every (artifact, file) pair in one pass, stably
 // ordered — the artifact<->file half of the fused-graph bridge.
-func (s *Store) AllAffectedFiles(ctx context.Context) ([]AffectedFileRef, error) {
+//
+// A row the current path invariant cannot express is excluded and named in
+// Skipped rather than failing the projection: one pre-invariant row must not
+// deny every caller the rest of the bridge.
+func (s *Store) AllAffectedFiles(ctx context.Context) (AffectedFileProjection, error) {
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT artifact_id, file_path FROM affected_files ORDER BY artifact_id, file_path`)
 	if err != nil {
-		return nil, err
+		return AffectedFileProjection{}, err
 	}
 	defer rows.Close()
-	out := make([]AffectedFileRef, 0)
+	projection := AffectedFileProjection{
+		Rows:    make([]AffectedFileRef, 0),
+		Skipped: make([]SkippedAffectedFile, 0),
+	}
 	seen := make(map[string]bool)
 	for rows.Next() {
 		var r AffectedFileRef
 		if err := rows.Scan(&r.ArtifactID, &r.FilePath); err != nil {
-			return nil, err
+			return AffectedFileProjection{}, err
 		}
 		canonical, err := canonicalAffectedFile(
 			AffectedFile{Path: r.FilePath},
 		)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"stored affected file for %s: %w",
-				r.ArtifactID,
-				err,
+			projection.Skipped = append(
+				projection.Skipped,
+				SkippedAffectedFile{
+					ArtifactID: r.ArtifactID,
+					RawPath:    r.FilePath,
+					Reason:     err.Error(),
+				},
 			)
+			continue
 		}
 		r.FilePath = canonical.Path
 		key := r.ArtifactID + "\x00" + r.FilePath
@@ -815,9 +850,12 @@ func (s *Store) AllAffectedFiles(ctx context.Context) ([]AffectedFileRef, error)
 			continue
 		}
 		seen[key] = true
-		out = append(out, r)
+		projection.Rows = append(projection.Rows, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return AffectedFileProjection{}, err
+	}
+	return projection, nil
 }
 
 // AllActiveSymbolBindingRefs enumerates current authority-bearing
@@ -887,7 +925,10 @@ func (s *Store) SetAffectedFiles(ctx context.Context, artifactID string, files [
 	return tx.Commit()
 }
 
-// GetAffectedFiles returns the affected files for an artifact.
+// GetAffectedFiles returns the affected files for an artifact that the current
+// path invariant can express. A row admitted before that invariant existed is
+// excluded rather than failing the read; AllAffectedFiles is the projection
+// that also names what was excluded.
 func (s *Store) GetAffectedFiles(ctx context.Context, artifactID string) ([]AffectedFile, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT file_path, file_hash FROM affected_files WHERE artifact_id = ?`, artifactID)
 	if err != nil {
@@ -904,11 +945,7 @@ func (s *Store) GetAffectedFiles(ctx context.Context, artifactID string) ([]Affe
 		}
 		canonical, err := canonicalAffectedFile(f)
 		if err != nil {
-			return nil, fmt.Errorf(
-				"stored affected file for %s: %w",
-				artifactID,
-				err,
-			)
+			continue
 		}
 		hash, exists := seen[canonical.Path]
 		if exists && hash != canonical.Hash {

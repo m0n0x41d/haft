@@ -423,7 +423,7 @@ func (s *Service) relatedViewOnce(
 	g, kind := buildFusedGraph(
 		edges,
 		links,
-		affected,
+		affected.Rows,
 		bindings,
 		syms,
 		moduleFusion,

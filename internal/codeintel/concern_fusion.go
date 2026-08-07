@@ -536,26 +536,30 @@ func (b ConcernCandidateBatch) Budget() codebase.DiscoveryBudget {
 }
 
 type ConcernFusionBasis struct {
-	Schema                 string           `json:"schema"`
-	CodeEpoch              int64            `json:"code_epoch"`
-	GraphDigest            string           `json:"graph_digest"`
-	QueryDigest            string           `json:"query_digest"`
-	ReplayRef              string           `json:"replay_ref"`
-	FullGraphNodes         int              `json:"full_graph_nodes"`
-	GraphNodes             int              `json:"induced_graph_nodes"`
-	GraphInductionMaxHops  int              `json:"graph_induction_max_hops"`
-	GraphInductionMaxNodes int              `json:"graph_induction_max_nodes"`
-	GraphNodeCapReached    bool             `json:"graph_node_cap_reached"`
-	CodeEdges              int              `json:"code_edges"`
-	ReasoningLinks         int              `json:"reasoning_links"`
-	AffectedFileBridges    int              `json:"affected_file_bridges"`
-	ExactSymbolBridges     int              `json:"exact_symbol_bridges"`
-	ModuleContextBridges   int              `json:"module_context_bridges"`
-	StaleSymbolBindings    int              `json:"stale_symbol_bindings"`
-	ArtifactSeedLimit      int              `json:"artifact_seed_limit"`
-	AppliedCandidateBudget int              `json:"applied_candidate_budget"`
-	PPR                    graphrank.Params `json:"ppr"`
-	Seeds                  []ConcernSeed    `json:"seeds"`
+	Schema                 string `json:"schema"`
+	CodeEpoch              int64  `json:"code_epoch"`
+	GraphDigest            string `json:"graph_digest"`
+	QueryDigest            string `json:"query_digest"`
+	ReplayRef              string `json:"replay_ref"`
+	FullGraphNodes         int    `json:"full_graph_nodes"`
+	GraphNodes             int    `json:"induced_graph_nodes"`
+	GraphInductionMaxHops  int    `json:"graph_induction_max_hops"`
+	GraphInductionMaxNodes int    `json:"graph_induction_max_nodes"`
+	GraphNodeCapReached    bool   `json:"graph_node_cap_reached"`
+	CodeEdges              int    `json:"code_edges"`
+	ReasoningLinks         int    `json:"reasoning_links"`
+	AffectedFileBridges    int    `json:"affected_file_bridges"`
+	// UnexpressibleAffectedFiles counts stored artifact<->file rows the current
+	// path invariant cannot express. They are absent from the bridge, so a
+	// non-zero count is a named coverage limit on this fused graph.
+	UnexpressibleAffectedFiles int              `json:"unexpressible_affected_files"`
+	ExactSymbolBridges         int              `json:"exact_symbol_bridges"`
+	ModuleContextBridges       int              `json:"module_context_bridges"`
+	StaleSymbolBindings        int              `json:"stale_symbol_bindings"`
+	ArtifactSeedLimit          int              `json:"artifact_seed_limit"`
+	AppliedCandidateBudget     int              `json:"applied_candidate_budget"`
+	PPR                        graphrank.Params `json:"ppr"`
+	Seeds                      []ConcernSeed    `json:"seeds"`
 }
 
 type concernFusionInputs struct {
@@ -563,11 +567,15 @@ type concernFusionInputs struct {
 	edges     []codebase.CodeEdge
 	links     []artifact.LinkEdge
 	affected  []artifact.AffectedFileRef
-	bindings  []artifact.SymbolBindingRef
-	symbols   []codebase.CodeSymbol
-	refs      []codebase.SymbolRef
-	modules   moduleFusionInputs
-	external  []ConcernExternalSeed
+	// skippedAffected carries artifact<->file rows the current path invariant
+	// cannot express. They are excluded from the bridge, so the concern result
+	// must report the gap instead of presenting a silently narrower graph.
+	skippedAffected []artifact.SkippedAffectedFile
+	bindings        []artifact.SymbolBindingRef
+	symbols         []codebase.CodeSymbol
+	refs            []codebase.SymbolRef
+	modules         moduleFusionInputs
+	external        []ConcernExternalSeed
 }
 
 type concernGraphScores struct {
@@ -764,15 +772,16 @@ func (s *Service) loadConcernFusionInputs(
 		)
 	}
 	return concernFusionInputs{
-		artifacts: artifacts,
-		edges:     edges,
-		links:     links,
-		affected:  affected,
-		bindings:  bindings,
-		symbols:   symbols,
-		refs:      refs,
-		modules:   moduleFusion,
-		external:  external.Items(),
+		artifacts:       artifacts,
+		edges:           edges,
+		links:           links,
+		affected:        affected.Rows,
+		skippedAffected: affected.Skipped,
+		bindings:        bindings,
+		symbols:         symbols,
+		refs:            refs,
+		modules:         moduleFusion,
+		external:        external.Items(),
 	}, nil
 }
 
@@ -1597,6 +1606,9 @@ func concernFusionBasis(
 		CodeEdges:              len(inputs.edges),
 		ReasoningLinks:         len(inputs.links),
 		AffectedFileBridges:    len(inputs.affected),
+
+		UnexpressibleAffectedFiles: len(inputs.skippedAffected),
+
 		ExactSymbolBridges:     currentBindings,
 		ModuleContextBridges:   len(inputs.modules.Contexts),
 		StaleSymbolBindings:    staleBindings,

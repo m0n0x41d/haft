@@ -41,8 +41,7 @@ without replacing FPF with a second pattern catalog.
 These distinctions separate contract inclusion, exact-candidate evidence,
 published-product status, and release authority. v9.0.0 is CURRENT PRODUCT
 because that exact release was published; no source file, local test, or matrix
-result silently promotes another candidate to CURRENT PRODUCT, an RC, or a
-release.
+result silently promotes a contract to CURRENT PRODUCT, an RC, or a release.
 
 ---
 

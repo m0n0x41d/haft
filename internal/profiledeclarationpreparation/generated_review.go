@@ -11,12 +11,14 @@ var generatedReviewDetectorVersions = []string{
 	"haft.project-profile-detector/file-paths-v1",
 	"haft.project-profile-detector/file-metadata-v2",
 	"haft.project-profile-detector/file-metadata-v3",
+	"haft.project-profile-detector/file-metadata-v4",
 }
 
 var generatedReviewPolicyVersions = []string{
 	"haft.project-profile-detector-policy/file-paths-v1",
 	"haft.project-profile-detector-policy/supported-singleton-v2",
 	"haft.project-profile-detector-policy/supported-singleton-v3",
+	"haft.project-profile-detector-policy/supported-singleton-v4",
 }
 
 // GeneratedProfileReview identifies an exact, unedited review carrier emitted

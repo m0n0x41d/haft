@@ -18,23 +18,29 @@ import (
 const testProfileWorkInputSchema = "haft.profile-onboarding.work-input/v1"
 
 type testProfileWorkInputJSON struct {
-	Schema            string                      `json:"schema"`
-	ProjectRoot       string                      `json:"project_root"`
-	SuggestionRef     string                      `json:"suggestion_ref"`
-	DetectorVersion   string                      `json:"detector_version"`
-	PolicyVersion     string                      `json:"policy_version"`
-	ObservationDigest string                      `json:"observation_digest"`
-	Scopes            []testProfileScopeInputJSON `json:"scopes"`
+	Schema                     string                      `json:"schema"`
+	ProjectRoot                string                      `json:"project_root"`
+	SuggestionRef              string                      `json:"suggestion_ref"`
+	DetectorVersion            string                      `json:"detector_version"`
+	PolicyVersion              string                      `json:"policy_version"`
+	ObservationDetectorVersion string                      `json:"observation_detector_version,omitempty"`
+	ObservationPolicyVersion   string                      `json:"observation_policy_version,omitempty"`
+	ObservationDigest          string                      `json:"observation_digest"`
+	ProposalSource             string                      `json:"proposal_source,omitempty"`
+	ManualBasis                string                      `json:"manual_basis,omitempty"`
+	Scopes                     []testProfileScopeInputJSON `json:"scopes"`
 }
 
 type testProfileScopeInputJSON struct {
 	ComponentCandidateRef string   `json:"component_candidate_ref"`
 	ScopeID               string   `json:"scope_id"`
 	RealizationKind       string   `json:"realization_kind"`
+	Label                 string   `json:"label,omitempty"`
 	EntityRef             string   `json:"entity_ref,omitempty"`
 	AdmittedKindRef       string   `json:"admitted_kind_ref,omitempty"`
 	GoverningPatternRefs  []string `json:"governing_pattern_refs,omitempty"`
 	ContractRefs          []string `json:"contract_refs,omitempty"`
+	EvidencePaths         []string `json:"evidence_paths,omitempty"`
 }
 
 func prepareV3AdmissionRequest(
@@ -116,17 +122,13 @@ func newV3TestWorkInput(
 		t.Fatalf("NewSnapshot: %v", err)
 	}
 	suggestion := profiledetector.Detect(snapshot)
-	declarations := testScopeDeclarations(t, scopes, suggestion.SuggestedScopes())
-	document := testProfileWorkInputJSON{
-		Schema:            testProfileWorkInputSchema,
-		ProjectRoot:       root.String(),
-		SuggestionRef:     suggestion.SuggestionRef(),
-		DetectorVersion:   suggestion.DetectorVersion(),
-		PolicyVersion:     profiledetector.PolicyVersion,
-		ObservationDigest: snapshot.ObservationDigest(),
-		Scopes:            declarations,
-	}
-	data, err := json.Marshal(document)
+	data, err := testProfileWorkInputBytes(
+		t,
+		root,
+		scopes,
+		files,
+		suggestion,
+	)
 	if err != nil {
 		t.Fatalf("marshal profile Work input: %v", err)
 	}
@@ -138,6 +140,90 @@ func newV3TestWorkInput(
 		t.Fatalf("DecodeProfileOnboardingWorkInput: %v", err)
 	}
 	return input
+}
+
+func testProfileWorkInputBytes(
+	t testing.TB,
+	root projectprofile.ProjectRootV1,
+	scopes []projectprofile.RealizationScope,
+	files []string,
+	suggestion profiledetector.Suggestion,
+) ([]byte, error) {
+	t.Helper()
+	if suggestion.ScopeIdentityPosture() ==
+		profiledetector.StableScopeIdentity {
+		declarations := testScopeDeclarations(
+			t,
+			scopes,
+			suggestion.SuggestedScopes(),
+		)
+		document := testProfileWorkInputJSON{
+			Schema:            testProfileWorkInputSchema,
+			ProjectRoot:       root.String(),
+			SuggestionRef:     suggestion.SuggestionRef(),
+			DetectorVersion:   suggestion.DetectorVersion(),
+			PolicyVersion:     profiledetector.PolicyVersion,
+			ObservationDigest: suggestion.Snapshot().ObservationDigest(),
+			Scopes:            declarations,
+		}
+		return json.Marshal(document)
+	}
+	manualScopes := make(
+		[]profiledeclarationpreparation.ManualProfileScopeInput,
+		len(scopes),
+	)
+	for index, scope := range scopes {
+		scopeID := scope.ScopeID().String()
+		manualScopes[index] =
+			profiledeclarationpreparation.ManualProfileScopeInput{
+				ScopeID:         scopeID,
+				Label:           scopeID,
+				RealizationKind: testRealizationKind(t, scope),
+				EvidencePaths:   append([]string{}, files...),
+			}
+	}
+	data, err := profiledeclarationpreparation.
+		ProposeManualProfileOnboardingWorkInput(
+			suggestion,
+			profiledeclarationpreparation.ManualProfileProposalInput{
+				Basis:  "Mixed profile fixture with explicitly reviewed scopes.",
+				Scopes: manualScopes,
+			},
+		)
+	if err != nil {
+		return nil, err
+	}
+	document := testProfileWorkInputJSON{}
+	if err := json.Unmarshal(data, &document); err != nil {
+		return nil, err
+	}
+	for index, declaration := range document.Scopes {
+		scope := testScopeByID(t, scopes, declaration.ScopeID)
+		enriched := testScopeDeclaration(
+			t,
+			declaration.ComponentCandidateRef,
+			scope,
+		)
+		enriched.Label = declaration.Label
+		enriched.EvidencePaths = declaration.EvidencePaths
+		document.Scopes[index] = enriched
+	}
+	return json.Marshal(document)
+}
+
+func testScopeByID(
+	t testing.TB,
+	scopes []projectprofile.RealizationScope,
+	scopeID string,
+) projectprofile.RealizationScope {
+	t.Helper()
+	for _, scope := range scopes {
+		if scope.ScopeID().String() == scopeID {
+			return scope
+		}
+	}
+	t.Fatalf("fixture scope %q is absent", scopeID)
+	return scopes[0]
 }
 
 func testDetectorFilesForScopes(

@@ -12,23 +12,29 @@ import (
 const fixtureProfileWorkInputSchema = "haft.profile-onboarding.work-input/v1"
 
 type fixtureProfileWorkInputJSON struct {
-	Schema            string                           `json:"schema"`
-	ProjectRoot       string                           `json:"project_root"`
-	SuggestionRef     string                           `json:"suggestion_ref"`
-	DetectorVersion   string                           `json:"detector_version"`
-	PolicyVersion     string                           `json:"policy_version"`
-	ObservationDigest string                           `json:"observation_digest"`
-	Scopes            []fixtureProfileScopeDeclaration `json:"scopes"`
+	Schema                     string                           `json:"schema"`
+	ProjectRoot                string                           `json:"project_root"`
+	SuggestionRef              string                           `json:"suggestion_ref"`
+	DetectorVersion            string                           `json:"detector_version"`
+	PolicyVersion              string                           `json:"policy_version"`
+	ObservationDetectorVersion string                           `json:"observation_detector_version,omitempty"`
+	ObservationPolicyVersion   string                           `json:"observation_policy_version,omitempty"`
+	ObservationDigest          string                           `json:"observation_digest"`
+	ProposalSource             string                           `json:"proposal_source,omitempty"`
+	ManualBasis                string                           `json:"manual_basis,omitempty"`
+	Scopes                     []fixtureProfileScopeDeclaration `json:"scopes"`
 }
 
 type fixtureProfileScopeDeclaration struct {
 	ComponentCandidateRef string   `json:"component_candidate_ref"`
 	ScopeID               string   `json:"scope_id"`
 	RealizationKind       string   `json:"realization_kind"`
+	Label                 string   `json:"label,omitempty"`
 	EntityRef             string   `json:"entity_ref,omitempty"`
 	AdmittedKindRef       string   `json:"admitted_kind_ref,omitempty"`
 	GoverningPatternRefs  []string `json:"governing_pattern_refs,omitempty"`
 	ContractRefs          []string `json:"contract_refs,omitempty"`
+	EvidencePaths         []string `json:"evidence_paths,omitempty"`
 }
 
 func newFixtureProfileWorkInput(
@@ -39,18 +45,7 @@ func newFixtureProfileWorkInput(
 	t.Helper()
 	scopes := payload.Scopes().Values()
 	suggestion := fixtureProfileSuggestion(t, root, scopes)
-	declarations := fixtureProfileScopeDeclarations(t, suggestion, scopes)
-	snapshot := suggestion.Snapshot()
-	document := fixtureProfileWorkInputJSON{
-		Schema:            fixtureProfileWorkInputSchema,
-		ProjectRoot:       snapshot.ProjectRoot(),
-		SuggestionRef:     suggestion.SuggestionRef(),
-		DetectorVersion:   suggestion.DetectorVersion(),
-		PolicyVersion:     profiledetector.PolicyVersion,
-		ObservationDigest: snapshot.ObservationDigest(),
-		Scopes:            declarations,
-	}
-	encoded, err := json.Marshal(document)
+	encoded, err := fixtureProfileWorkInputBytes(t, suggestion, scopes)
 	if err != nil {
 		t.Fatalf("marshal fixture profile WorkInput: %v", err)
 	}
@@ -62,6 +57,88 @@ func newFixtureProfileWorkInput(
 		t.Fatalf("decode fixture profile WorkInput: %v", err)
 	}
 	return input
+}
+
+func fixtureProfileWorkInputBytes(
+	t testing.TB,
+	suggestion profiledetector.Suggestion,
+	scopes []projectprofile.RealizationScope,
+) ([]byte, error) {
+	t.Helper()
+	snapshot := suggestion.Snapshot()
+	if suggestion.ScopeIdentityPosture() ==
+		profiledetector.StableScopeIdentity {
+		declarations := fixtureProfileScopeDeclarations(
+			t,
+			suggestion,
+			scopes,
+		)
+		document := fixtureProfileWorkInputJSON{
+			Schema:            fixtureProfileWorkInputSchema,
+			ProjectRoot:       snapshot.ProjectRoot(),
+			SuggestionRef:     suggestion.SuggestionRef(),
+			DetectorVersion:   suggestion.DetectorVersion(),
+			PolicyVersion:     profiledetector.PolicyVersion,
+			ObservationDigest: snapshot.ObservationDigest(),
+			Scopes:            declarations,
+		}
+		return json.Marshal(document)
+	}
+	files := snapshot.RelativeFiles()
+	manualScopes := make(
+		[]profileonboarding.ManualProfileScopeInput,
+		len(scopes),
+	)
+	for index, scope := range scopes {
+		scopeID := scope.ScopeID().String()
+		manualScopes[index] = profileonboarding.ManualProfileScopeInput{
+			ScopeID:         scopeID,
+			Label:           scopeID,
+			RealizationKind: fixtureRealizationKind(t, scope),
+			EvidencePaths:   append([]string{}, files...),
+		}
+	}
+	encoded, err := profileonboarding.ProposeManualProfileOnboardingWorkInput(
+		suggestion,
+		profileonboarding.ManualProfileProposalInput{
+			Basis:  "Mixed profile fixture with explicitly reviewed scopes.",
+			Scopes: manualScopes,
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+	document := fixtureProfileWorkInputJSON{}
+	if err := json.Unmarshal(encoded, &document); err != nil {
+		return nil, err
+	}
+	for index, declaration := range document.Scopes {
+		scope := fixtureScopeByID(t, scopes, declaration.ScopeID)
+		enriched := fixtureScopeDeclaration(
+			t,
+			declaration.ComponentCandidateRef,
+			scope,
+		)
+		enriched.Label = declaration.Label
+		enriched.EvidencePaths = declaration.EvidencePaths
+		document.Scopes[index] = enriched
+	}
+	return json.Marshal(document)
+}
+
+func fixtureScopeByID(
+	t testing.TB,
+	scopes []projectprofile.RealizationScope,
+	scopeID string,
+) projectprofile.RealizationScope {
+	t.Helper()
+	for _, scope := range scopes {
+		if scope.ScopeID().String() == scopeID {
+			return scope
+		}
+	}
+	t.Fatalf("fixture scope %q is absent", scopeID)
+	return scopes[0]
 }
 
 func fixtureProfileSuggestion(

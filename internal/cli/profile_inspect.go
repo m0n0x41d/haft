@@ -512,13 +512,15 @@ func profileSuggestionOutcome(
 	fullEvidence bool,
 ) (string, []profileSuggestedScopeView, []profileSuggestedScopeView, []string) {
 	views := profileSuggestedScopeViews(suggestion.SuggestedScopes(), fullEvidence)
-	if suggestion.Classification() == profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() ==
+		profiledetector.StableScopeIdentity {
+		return "suggested_scopes", views, []profileSuggestedScopeView{}, []string{}
+	}
+	if suggestion.Classification() ==
+		profiledetector.InsufficientDetectorBasis {
 		return "underdetermined", []profileSuggestedScopeView{}, views, []string{"classification_basis"}
 	}
-	if suggestion.Classification() == profiledetector.MixedSignals {
-		return "underdetermined", []profileSuggestedScopeView{}, views, []string{"stable_scope_identity"}
-	}
-	return "suggested_scopes", views, []profileSuggestedScopeView{}, []string{}
+	return "underdetermined", []profileSuggestedScopeView{}, views, []string{"stable_scope_identity"}
 }
 
 func profileSuggestedScopeViews(

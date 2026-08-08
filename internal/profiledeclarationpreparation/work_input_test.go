@@ -3,6 +3,7 @@ package profiledeclarationpreparation
 import (
 	"encoding/json"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -144,7 +145,9 @@ func TestProfileEntityRelationChangeReviewPinsPredecessorAndOneDelta(
 	}
 }
 
-func TestProfileOnboardingWorkInputMapsEveryMixedCandidateExactlyOnce(t *testing.T) {
+func TestProfileOnboardingWorkInputRejectsDetectedMixedCandidatesAsStableScopes(
+	t *testing.T,
+) {
 	root := canonicalWorkInputTestRoot(t)
 	suggestion := workInputTestSuggestion(t, root, []string{
 		"go.mod",
@@ -170,24 +173,12 @@ func TestProfileOnboardingWorkInputMapsEveryMixedCandidateExactlyOnce(t *testing
 		declarations = append(declarations, declaration)
 	}
 	dto := profileWorkInputTestDTO(root, suggestion, declarations)
-	input, err := DecodeProfileOnboardingWorkInput(
+	_, err := DecodeProfileOnboardingWorkInput(
 		marshalProfileWorkInputTest(t, dto),
 		suggestion,
 	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if input.Payload().Scopes().Len() != 2 {
-		t.Fatalf("payload scopes = %d", input.Payload().Scopes().Len())
-	}
-
-	dto.Scopes = dto.Scopes[:1]
-	_, err = DecodeProfileOnboardingWorkInput(
-		marshalProfileWorkInputTest(t, dto),
-		suggestion,
-	)
-	if err == nil || !strings.Contains(err.Error(), "maps 1 scope") {
-		t.Fatalf("partial mixed declaration error = %v", err)
+	if err == nil || !strings.Contains(err.Error(), "explicit reviewed manual scope") {
+		t.Fatalf("mixed detector declaration error = %v", err)
 	}
 }
 
@@ -243,7 +234,6 @@ func TestProposeProfileOnboardingWorkInputProducesReadableRoundTrip(t *testing.T
 	suggestion := workInputTestSuggestion(t, root, []string{
 		"go.mod",
 		"internal/kernel.go",
-		"models/current.onnx",
 	})
 	data, err := ProposeProfileOnboardingWorkInput(suggestion)
 	if err != nil {
@@ -256,16 +246,61 @@ func TestProposeProfileOnboardingWorkInputProducesReadableRoundTrip(t *testing.T
 	if err != nil {
 		t.Fatalf("decode proposed Work input: %v", err)
 	}
-	if input.Payload().Scopes().Len() != 2 {
+	if input.Payload().Scopes().Len() != 1 {
 		t.Fatalf("proposed scope count = %d", input.Payload().Scopes().Len())
 	}
 	got := []string{}
 	for _, scope := range input.Payload().Scopes().Values() {
 		got = append(got, scope.ScopeID().String())
 	}
-	if !strings.Contains(strings.Join(got, ","), "software") ||
-		!strings.Contains(strings.Join(got, ","), "models") {
+	if !reflect.DeepEqual(got, []string{"software"}) {
 		t.Fatalf("proposed scope IDs = %#v", got)
+	}
+}
+
+func TestMixedProfileSuggestionRequiresReviewedManualScopes(t *testing.T) {
+	root := canonicalWorkInputTestRoot(t)
+	suggestion := workInputTestSuggestion(t, root, []string{
+		"apps/web/package.json",
+		"DESIGN.md",
+		"PRODUCT.md",
+		"photojan_prd_fpf.md",
+	})
+	if suggestion.Classification() != profiledetector.MixedSignals ||
+		suggestion.ScopeIdentityPosture() !=
+			profiledetector.ScopeIdentityNeedsReview {
+		t.Fatalf(
+			"mixed fixture posture = %q/%q",
+			suggestion.Classification(),
+			suggestion.ScopeIdentityPosture(),
+		)
+	}
+	_, err := ProposeProfileOnboardingWorkInput(suggestion)
+	if err == nil || !strings.Contains(err.Error(), "stable scopes") {
+		t.Fatalf("automatic mixed proposal error = %v", err)
+	}
+	proposal, err := ProposeManualProfileOnboardingWorkInput(
+		suggestion,
+		ManualProfileProposalInput{
+			Basis: "The complete observation is mixed; the product implementation is the PhotoJan web application.",
+			Scopes: []ManualProfileScopeInput{{
+				ScopeID:         "photojan",
+				Label:           "PhotoJan",
+				RealizationKind: profiledetector.SoftwareRealization,
+				EvidencePaths:   []string{"apps/web/package.json"},
+			}},
+		},
+	)
+	if err != nil {
+		t.Fatalf("manual mixed proposal: %v", err)
+	}
+	input, err := DecodeProfileOnboardingWorkInput(proposal, suggestion)
+	if err != nil {
+		t.Fatalf("decode manual mixed proposal: %v", err)
+	}
+	values := input.Payload().Scopes().Values()
+	if len(values) != 1 || values[0].ScopeID().String() != "photojan" {
+		t.Fatalf("manual mixed scopes = %#v", values)
 	}
 }
 
@@ -459,7 +494,7 @@ func TestManualProfileFallbackRejectsUnobservedEvidenceAndSupportedOverride(
 	)
 	if err == nil || !strings.Contains(
 		err.Error(),
-		"only when detector classification is insufficient",
+		"only when detector scope identity needs review",
 	) {
 		t.Fatalf("supported override error = %v", err)
 	}

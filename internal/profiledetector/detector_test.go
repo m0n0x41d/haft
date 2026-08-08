@@ -23,6 +23,19 @@ func TestDetectorClassifiesRequiredRepositoryFixturesWithoutBinding(t *testing.T
 			orientations:   []string{"software"},
 		},
 		{
+			name: "conventional_monorepo_software_with_product_documents",
+			files: []string{
+				"apps/web/package.json",
+				"apps/web/src/main.tsx",
+				"DESIGN.md",
+				"PRODUCT.md",
+				"photojan_prd_fpf.md",
+			},
+			classification: SoftwareSignals,
+			confidence:     SupportedConfidence,
+			orientations:   []string{"software"},
+		},
+		{
 			name: "software_with_embedded_document_artifacts",
 			files: []string{
 				"go.mod",
@@ -99,6 +112,37 @@ func TestDetectorClassifiesRequiredRepositoryFixturesWithoutBinding(t *testing.T
 			gotOrientations := orientations(result.SuggestedScopes())
 			if !reflect.DeepEqual(gotOrientations, test.orientations) {
 				t.Fatalf("orientations = %#v, want %#v", gotOrientations, test.orientations)
+			}
+		})
+	}
+}
+
+func TestProductionSourceMatchesConventionalMonorepoWithoutBroadeningExcludedRoots(
+	t *testing.T,
+) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{path: "apps/web/src/main.tsx", want: true},
+		{path: "apps/admin/src/server/index.ts", want: true},
+		{path: "scripts/src/generate.ts", want: false},
+		{path: "tests/fixtures/src/main.tsx", want: false},
+		{path: "generated/client/src/client.ts", want: false},
+		{path: "apps/web/test/main.tsx", want: false},
+		{path: "apps/web/generated/client.ts", want: false},
+	}
+	for _, test := range tests {
+		t.Run(test.path, func(t *testing.T) {
+			file := mustObservedFile(t, test.path, 1)
+			got := matchesProductionSource(file)
+			if got != test.want {
+				t.Fatalf(
+					"matchesProductionSource(%q) = %t, want %t",
+					test.path,
+					got,
+					test.want,
+				)
 			}
 		})
 	}

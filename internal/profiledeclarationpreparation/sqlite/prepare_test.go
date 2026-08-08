@@ -97,7 +97,7 @@ func TestPrepareBeforeAdmissionRecoversAfterPostAuthorityRevalidationFailure(t *
 	input := newPreparationInput(
 		t,
 		root,
-		[]string{"go.mod", "internal/kernel.go", "models/current.onnx"},
+		[]string{"go.mod", "internal/kernel.go"},
 	)
 	policy := newPreparationPolicy(t, input, "recovery")
 	checkedAt := time.Date(2026, 7, 19, 10, 0, 0, 0, time.UTC)

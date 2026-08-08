@@ -591,14 +591,15 @@ func TestOnboardMCPManualFallbackCoversUnsupportedDocsEmptyAndMultipleScopes(
 	}
 }
 
-func TestOnboardMCPDetectedMixedProjectPreparesNormalMultiScopeReview(
+func TestOnboardMCPMixedPartialSuggestionRequiresExplicitScopeReview(
 	t *testing.T,
 ) {
 	project := newCLIProfileOnboardLedgerFixture(t)
 	for _, relative := range []string{
-		"go.mod",
-		"internal/kernel.go",
-		"models/current.onnx",
+		"apps/web/package.json",
+		"DESIGN.md",
+		"PRODUCT.md",
+		"photojan_prd_fpf.md",
 	} {
 		writeProfileInspectionFixture(
 			t,
@@ -611,10 +612,13 @@ func TestOnboardMCPDetectedMixedProjectPreparesNormalMultiScopeReview(
 		t.Fatal(err)
 	}
 	if suggestion.Classification() !=
-		profiledetector.MixedSignals {
+		profiledetector.MixedSignals ||
+		suggestion.ScopeIdentityPosture() !=
+			profiledetector.ScopeIdentityNeedsReview {
 		t.Fatalf(
-			"fixture classification = %q",
+			"fixture posture = %q/%q",
 			suggestion.Classification(),
+			suggestion.ScopeIdentityPosture(),
 		)
 	}
 	surface, err := openSealedProjectOnboardSurface(
@@ -625,42 +629,75 @@ func TestOnboardMCPDetectedMixedProjectPreparesNormalMultiScopeReview(
 		t.Fatal(err)
 	}
 	defer surface.Close()
-	output := callOnboardHandler(
+	statusOutput := callOnboardHandler(
+		t,
+		surface.Handler(),
+		`{"action":"status"}`,
+	)
+	status := decodeOnboardResponse(t, statusOutput)
+	if status.Result != "needs_profile" ||
+		status.Status != "needs_profile" ||
+		len(status.Scopes) != 0 ||
+		!strings.Contains(status.NextAction, "explicit scopes") {
+		t.Fatalf("mixed status = %#v", status)
+	}
+	autoOutput := callOnboardHandler(
 		t,
 		surface.Handler(),
 		`{"action":"profile_prepare"}`,
 	)
-	response := decodeOnboardResponse(t, output)
-	if response.Result != "profile_review_prepared" ||
-		response.Status != "profile_review_ready" ||
-		len(response.Scopes) != 2 {
+	auto := decodeOnboardResponse(t, autoOutput)
+	if auto.Result != "needs_scope_review" ||
+		auto.Status != "needs_profile" ||
+		len(auto.Scopes) != 0 {
 		t.Fatalf(
-			"mixed prepare = %#v",
-			response,
+			"automatic mixed prepare = %#v",
+			auto,
 		)
 	}
-	kinds := []string{
-		response.Scopes[0].RealizationKind,
-		response.Scopes[1].RealizationKind,
+	if _, err := os.Lstat(
+		profileDeclarationReviewPath(project.root),
+	); !os.IsNotExist(err) {
+		t.Fatalf("mixed automatic prepare wrote review: %v", err)
 	}
-	if !reflect.DeepEqual(
-		kinds,
-		[]string{"non_software", "software"},
-	) && !reflect.DeepEqual(
-		kinds,
-		[]string{"software", "non_software"},
-	) {
-		t.Fatalf(
-			"mixed scope kinds = %#v",
-			kinds,
-		)
+	scopes := []onboardScopeWire{{
+		ScopeID:         "photojan",
+		Label:           "PhotoJan",
+		RealizationKind: "software",
+		EvidencePaths:   []string{"apps/web/package.json"},
+	}}
+	request := onboardRequestWire{
+		Action: "profile_prepare",
+		Basis: stringPointer(
+			"The complete observation is mixed; apps/web is the PhotoJan product implementation.",
+		),
+		Scopes: &scopes,
+	}
+	requestBytes, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manualOutput := callOnboardHandler(
+		t,
+		surface.Handler(),
+		string(requestBytes),
+	)
+	manual := decodeOnboardResponse(t, manualOutput)
+	if manual.Result != "profile_review_prepared" ||
+		manual.Status != "profile_review_ready" ||
+		len(manual.Scopes) != 1 ||
+		manual.Scopes[0].ScopeID != "photojan" ||
+		manual.Scopes[0].Label != "PhotoJan" ||
+		manual.Scopes[0].RealizationKind != "software" {
+		t.Fatalf("manual mixed prepare = %#v", manual)
 	}
 	assertCLIProfileOnboardMutationCounts(
 		t,
 		project.root,
 		0,
 	)
-	assertOnboardOutputHasNoInternalJargon(t, output)
+	assertOnboardOutputHasNoInternalJargon(t, autoOutput)
+	assertOnboardOutputHasNoInternalJargon(t, manualOutput)
 }
 
 func TestOnboardLegacyMemoryPreparationRemainsNonBindingButStatusRequiresInitRepair(

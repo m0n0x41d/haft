@@ -331,6 +331,87 @@ func TestPrepareProfileReviewCandidateCreatesReadableNoClobberCarrier(t *testing
 	}
 }
 
+func TestPrepareProfileReviewCandidateRefreshesOnlyUneditedGeneratedCarrier(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	root := mustCLIProfileOnboardPhysicalPath(t, t.TempDir())
+	if err := os.MkdirAll(filepath.Join(root, ".haft"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, relative := range []string{
+		"DESIGN.md",
+		"PRODUCT.md",
+		"photojan_prd_fpf.md",
+	} {
+		writeProfileInspectionFixture(t, root, relative)
+	}
+	documents, err := profiledetector.Inspect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if documents.Classification() != profiledetector.NonSoftwareSignals {
+		t.Fatalf("initial classification = %q", documents.Classification())
+	}
+	if _, err := prepareProfileReviewCandidate(root, documents); err != nil {
+		t.Fatal(err)
+	}
+	path := profileDeclarationReviewPath(root)
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := bytes.ReplaceAll(
+		before,
+		[]byte(profiledetector.Version),
+		[]byte("haft.project-profile-detector/file-metadata-v3"),
+	)
+	legacy = bytes.ReplaceAll(
+		legacy,
+		[]byte(profiledetector.PolicyVersion),
+		[]byte("haft.project-profile-detector-policy/supported-singleton-v3"),
+	)
+	if err := os.WriteFile(path, legacy, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	before = legacy
+	writeProfileInspectionFixture(t, root, "apps/web/package.json")
+	writeProfileInspectionFixture(t, root, "apps/web/src/main.tsx")
+	software, err := profiledetector.Inspect(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if software.Classification() != profiledetector.SoftwareSignals {
+		t.Fatalf("updated classification = %q", software.Classification())
+	}
+	refreshed, err := prepareProfileReviewCandidate(root, software)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshed.State != "created" {
+		t.Fatalf("refreshed review candidate = %#v", refreshed)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Equal(before, after) {
+		t.Fatal("generated review did not change with the detector observation")
+	}
+	input, err := profileonboarding.DecodeProfileOnboardingWorkInput(
+		after,
+		software,
+	)
+	if err != nil {
+		t.Fatalf("decode refreshed review: %v", err)
+	}
+	values := input.Payload().Scopes().Values()
+	if len(values) != 1 || values[0].ScopeID().String() != "software" {
+		t.Fatalf("refreshed review scopes = %#v", values)
+	}
+}
+
 func writeProfileInspectionFixture(t *testing.T, root string, relative string) {
 	t.Helper()
 	path := filepath.Join(root, filepath.FromSlash(relative))

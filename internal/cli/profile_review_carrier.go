@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/profileonboarding"
 )
@@ -70,10 +71,34 @@ func installProfileReviewCandidate(
 	projectRoot string,
 	content []byte,
 ) (string, error) {
-	return installProfileReviewCandidateAt(
-		profileDeclarationReviewPath(projectRoot),
-		profileDeclarationReviewRelativePath(),
-		".profile-declaration-review-stage-",
+	target := profileDeclarationReviewPath(projectRoot)
+	displayPath := profileDeclarationReviewRelativePath()
+	stagePrefix := ".profile-declaration-review-stage-"
+	current, present, err := readOptionalRegularProfileReview(target)
+	if err != nil {
+		return "", err
+	}
+	if !present || bytes.Equal(current, content) {
+		return installProfileReviewCandidateAt(
+			target,
+			displayPath,
+			stagePrefix,
+			content,
+		)
+	}
+	_, generated := profiledeclarationpreparation.
+		InspectGeneratedProfileReview(current)
+	if !generated {
+		return "", fmt.Errorf(
+			"%s already contains a different review candidate; declare or deliberately remove that readable file before preparing another one",
+			displayPath,
+		)
+	}
+	return replaceGeneratedProfileReviewCandidateAt(
+		target,
+		displayPath,
+		stagePrefix,
+		current,
 		content,
 	)
 }
@@ -196,6 +221,69 @@ func installProfileReviewCandidateAt(
 	if !installedPresent || !bytes.Equal(installed, content) {
 		return "", fmt.Errorf(
 			"project-profile review candidate installation could not be verified",
+		)
+	}
+	return "created", nil
+}
+
+func replaceGeneratedProfileReviewCandidateAt(
+	target string,
+	displayPath string,
+	stagePrefix string,
+	expected []byte,
+	content []byte,
+) (string, error) {
+	directory := filepath.Dir(target)
+	stage, err := os.CreateTemp(directory, stagePrefix)
+	if err != nil {
+		return "", fmt.Errorf("create project-profile review replacement stage: %w", err)
+	}
+	stagePath := stage.Name()
+	stageOpen := true
+	defer func() {
+		if stageOpen {
+			_ = stage.Close()
+		}
+		_ = os.Remove(stagePath)
+	}()
+	if err := writeAndSyncProfileReviewStage(stage, content); err != nil {
+		return "", err
+	}
+	stageOpen = false
+	current, present, err := readOptionalRegularProfileReview(target)
+	if err != nil {
+		return "", err
+	}
+	if !present || !bytes.Equal(current, expected) {
+		return "", fmt.Errorf(
+			"%s changed while its generated candidate was being refreshed; the current readable file was retained",
+			displayPath,
+		)
+	}
+	_, generated := profiledeclarationpreparation.
+		InspectGeneratedProfileReview(current)
+	if !generated {
+		return "", fmt.Errorf(
+			"%s is no longer an unchanged Haft-generated review; the current readable file was retained",
+			displayPath,
+		)
+	}
+	if err := os.Rename(stagePath, target); err != nil {
+		return "", fmt.Errorf("atomically refresh generated project-profile review candidate: %w", err)
+	}
+	if err := syncProfileReviewDirectory(directory); err != nil {
+		return "", fmt.Errorf(
+			"generated project-profile review may already be refreshed, but directory synchronization failed: %w",
+			err,
+		)
+	}
+	installed, installedPresent, err := readOptionalRegularProfileReview(target)
+	if err != nil {
+		return "", err
+	}
+	if !installedPresent || !bytes.Equal(installed, content) {
+		return "", fmt.Errorf(
+			"generated project-profile review refresh could not be verified",
 		)
 	}
 	return "created", nil

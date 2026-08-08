@@ -182,15 +182,35 @@ func TestOnboardProfileMatrixRunsReviewThroughPublicApplyCommand(
 			},
 		},
 		{
-			name: "mixed software and model",
+			name:   "mixed software and model manual review",
+			manual: true,
 			files: []string{
 				"package.json",
 				"src/index.ts",
 				"models/current.onnx",
 			},
+			manualScopes: []onboardScopeWire{
+				{
+					ScopeID:         "application",
+					Label:           "Application",
+					RealizationKind: "software",
+					EvidencePaths: []string{
+						"package.json",
+						"src/index.ts",
+					},
+				},
+				{
+					ScopeID:         "current-model",
+					Label:           "Current model",
+					RealizationKind: "non_software",
+					EvidencePaths: []string{
+						"models/current.onnx",
+					},
+				},
+			},
 			wantScopeKind: []string{
-				"non_software",
 				"software",
+				"non_software",
 			},
 		},
 		{

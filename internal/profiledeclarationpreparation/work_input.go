@@ -182,8 +182,8 @@ type profileScopeDeclarationJSON struct {
 }
 
 // ManualProfileScopeInput is an operator-reviewable fallback scope used only
-// when the path detector cannot classify a complete repository snapshot. The
-// paths are observation references, not evidence-truth claims.
+// when a complete detector observation cannot establish stable scope identity.
+// The paths are observation references, not evidence-truth claims.
 type ManualProfileScopeInput struct {
 	ScopeID         string
 	Label           string
@@ -237,10 +237,10 @@ func ProposeProfileOnboardingWorkInput(
 	suggestion profiledetector.Suggestion,
 ) ([]byte, error) {
 	snapshot := suggestion.Snapshot()
-	if snapshot.Truncated() ||
-		suggestion.Classification() == profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.StableScopeIdentity {
 		return nil, fmt.Errorf(
-			"profile detector basis is insufficient; no declaration proposal can be prepared",
+			"profile detector basis is insufficient for stable scopes; no declaration proposal can be prepared",
 		)
 	}
 	suggested := suggestion.SuggestedScopes()
@@ -279,9 +279,10 @@ func ProposeProfileOnboardingWorkInput(
 }
 
 // ProposeManualProfileOnboardingWorkInput produces a non-binding review
-// carrier for a complete detector snapshot whose language or repository shape
-// is unsupported, too small, documentation-only, or empty. It never guesses a
-// scope: the caller supplies the readable basis and exact realization kinds.
+// carrier for a complete detector snapshot whose language, repository shape,
+// or conflicting signals leave scope identity underdetermined. It never
+// guesses a scope: the caller supplies the readable basis and exact
+// realization kinds.
 func ProposeManualProfileOnboardingWorkInput(
 	suggestion profiledetector.Suggestion,
 	proposal ManualProfileProposalInput,
@@ -292,10 +293,10 @@ func ProposeManualProfileOnboardingWorkInput(
 			"manual profile fallback requires a complete repository observation",
 		)
 	}
-	if suggestion.Classification() !=
-		profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.ScopeIdentityNeedsReview {
 		return nil, fmt.Errorf(
-			"manual profile fallback is available only when detector classification is insufficient",
+			"manual profile fallback is available only when detector scope identity needs review",
 		)
 	}
 	basis, err := validateManualProfileBasis(proposal.Basis)
@@ -881,10 +882,10 @@ func validateProfileSuggestionBinding(
 		)
 	}
 	if dto.ProposalSource == profileProposalSourceManual {
-		if suggestion.Classification() !=
-			profiledetector.InsufficientDetectorBasis {
+		if suggestion.ScopeIdentityPosture() !=
+			profiledetector.ScopeIdentityNeedsReview {
 			return fmt.Errorf(
-				"manual profile fallback requires an insufficient detector classification",
+				"manual profile fallback requires detector scope identity that needs review",
 			)
 		}
 		return nil
@@ -892,10 +893,10 @@ func validateProfileSuggestionBinding(
 	if dto.ProposalSource == profileProposalSourceRelation {
 		return nil
 	}
-	if suggestion.Classification() ==
-		profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.StableScopeIdentity {
 		return fmt.Errorf(
-			"profile detector basis is insufficient; declaration requires an explicit reviewed manual scope",
+			"profile detector basis is insufficient for stable scopes; declaration requires an explicit reviewed manual scope",
 		)
 	}
 	return nil
@@ -1313,10 +1314,10 @@ func validateManualProfileScopeCoverage(
 	dto profileOnboardingWorkInputJSON,
 	suggestion profiledetector.Suggestion,
 ) error {
-	if suggestion.Classification() !=
-		profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.ScopeIdentityNeedsReview {
 		return fmt.Errorf(
-			"manual profile fallback cannot replace a supported detector classification",
+			"manual profile fallback cannot replace a stable detector scope identity",
 		)
 	}
 	snapshot := suggestion.Snapshot()

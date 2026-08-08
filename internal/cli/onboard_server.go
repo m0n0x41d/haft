@@ -572,8 +572,8 @@ func (runtime *projectOnboardingRuntime) observePendingProfile(
 		onboarding.ObservationInput{
 			Initialized:        true,
 			ProfileReviewReady: reviewReady,
-			DetectionNeedsHelp: suggestion.Classification() ==
-				profiledetector.InsufficientDetectorBasis,
+			DetectionNeedsHelp: suggestion.ScopeIdentityPosture() !=
+				profiledetector.StableScopeIdentity,
 			AutoBootstrapEligible: autoBootstrapEligible,
 			Scopes:                scopes,
 			Detail:                detail,
@@ -641,13 +641,13 @@ func (runtime *projectOnboardingRuntime) PrepareProfile(
 			request,
 		)
 	}
-	if suggestion.Classification() ==
-		profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.StableScopeIdentity {
 		return onboarding.NewPreparation(
 			onboarding.PreparationNeedsScopeReview,
 			"",
 			detected,
-			"Repository detection cannot establish a reliable project scope; no review carrier was written.",
+			"Repository detection cannot establish stable project scope identity; no review carrier was written.",
 		)
 	}
 	review, err := prepareProfileReviewCandidate(
@@ -847,13 +847,13 @@ func (runtime *projectOnboardingRuntime) prepareManualProfileReview(
 	suggestion profiledetector.Suggestion,
 	request onboarding.Request,
 ) (onboarding.Preparation, error) {
-	if suggestion.Classification() !=
-		profiledetector.InsufficientDetectorBasis {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.ScopeIdentityNeedsReview {
 		return onboarding.NewPreparation(
 			onboarding.PreparationBlocked,
 			"",
 			request.Scopes(),
-			"Explicit fallback scopes are available only when repository detection is insufficient; the current detected scopes were retained.",
+			"Explicit fallback scopes are available only when a complete repository observation leaves scope identity underdetermined; the current detected scopes were retained.",
 		)
 	}
 	proposalScopes := make(
@@ -1095,6 +1095,10 @@ func profileRealizationKind(
 func onboardScopesFromSuggestion(
 	suggestion profiledetector.Suggestion,
 ) ([]onboarding.Scope, error) {
+	if suggestion.ScopeIdentityPosture() !=
+		profiledetector.StableScopeIdentity {
+		return []onboarding.Scope{}, nil
+	}
 	values := suggestion.SuggestedScopes()
 	result := make([]onboarding.Scope, len(values))
 	for index, value := range values {

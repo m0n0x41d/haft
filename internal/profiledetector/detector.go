@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	Version       = "haft.project-profile-detector/file-metadata-v3"
-	PolicyVersion = "haft.project-profile-detector-policy/supported-singleton-v3"
+	Version       = "haft.project-profile-detector/file-metadata-v4"
+	PolicyVersion = "haft.project-profile-detector-policy/supported-singleton-v4"
 )
 
 type Classification string
@@ -34,6 +34,14 @@ const (
 	SupportedConfidence    ConfidencePosture = "supported"
 	ConflictingConfidence  ConfidencePosture = "conflicting"
 	InsufficientConfidence ConfidencePosture = "insufficient"
+)
+
+type ScopeIdentityPosture string
+
+const (
+	StableScopeIdentity        ScopeIdentityPosture = "stable"
+	ScopeIdentityNeedsReview   ScopeIdentityPosture = "needs_review"
+	ScopeObservationIncomplete ScopeIdentityPosture = "observation_incomplete"
 )
 
 type RealizationKind string
@@ -112,7 +120,7 @@ func (scope SuggestedScope) NegativeSignals() []Signal {
 	return append([]Signal{}, scope.negativeSignals...)
 }
 
-// Snapshot is the complete input to the file-metadata detector v2. It contains no
+// Snapshot is the complete input to the file-metadata detector v4. It contains no
 // declaration, performed Work, or evidence-truth claim.
 type Snapshot struct {
 	projectRoot       string
@@ -202,6 +210,16 @@ func (suggestion Suggestion) Classification() Classification {
 }
 func (suggestion Suggestion) ConfidencePosture() ConfidencePosture {
 	return suggestion.confidence
+}
+func (suggestion Suggestion) ScopeIdentityPosture() ScopeIdentityPosture {
+	if suggestion.snapshot.truncated {
+		return ScopeObservationIncomplete
+	}
+	if suggestion.confidence != SupportedConfidence ||
+		len(suggestion.scopes) == 0 {
+		return ScopeIdentityNeedsReview
+	}
+	return StableScopeIdentity
 }
 func (suggestion Suggestion) SuggestedScopes() []SuggestedScope {
 	return append([]SuggestedScope{}, suggestion.scopes...)
@@ -617,7 +635,21 @@ func matchesProductionSource(file ObservedFile) bool {
 	if len(segments) == 1 {
 		return true
 	}
-	return slices.Contains([]string{"app", "cmd", "internal", "lib", "pkg", "src"}, segments[0])
+	directSourceRoot := slices.Contains(
+		[]string{"app", "cmd", "internal", "lib", "pkg", "src"},
+		segments[0],
+	)
+	if directSourceRoot {
+		return true
+	}
+	return matchesConventionalMonorepoSource(segments)
+}
+
+func matchesConventionalMonorepoSource(segments []string) bool {
+	if len(segments) < 4 {
+		return false
+	}
+	return segments[0] == "apps" && segments[2] == "src"
 }
 
 func matchesDocumentPrimaryManifest(file ObservedFile) bool {

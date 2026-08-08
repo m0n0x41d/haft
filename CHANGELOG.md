@@ -4,6 +4,35 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [9.0.2] — 2026-08-08
+
+A patch release for one profile-onboarding defect: a conventional monorepo
+could expose a real software manifest and source tree while Haft prepared only
+a partial document review and rejected the explicit recovery scope.
+
+### Fixed
+
+- **Conventional monorepo source now establishes a software scope.** Files
+  under `apps/<component>/src/**` carry the same production-source signal as
+  the existing top-level source roots. A manifest such as
+  `apps/web/package.json` plus that source produces one supported `software`
+  scope; ordinary product and design Markdown remains material about that
+  realization instead of becoming a separate document scope. Existing helper,
+  test-root, generated-root, dependency, and build-output exclusions remain in
+  force.
+- **Automatic onboarding no longer turns partial detector output into an exact
+  review.** Detector results now state whether scope identity is stable, needs
+  review, or comes from an incomplete observation. `profile_prepare` writes an
+  automatic carrier only for stable scope identity. A complete mixed or
+  otherwise underdetermined observation returns `needs_scope_review` without
+  projected partial scopes and accepts explicit reviewed scopes; a truncated
+  observation cannot use that fallback, and stable detection cannot be
+  overridden through it.
+- **Stale generated reviews can recover without weakening no-clobber.** When a
+  detector upgrade changes the exact suggestion, `profile_prepare` atomically
+  replaces an unchanged Haft-generated review. A manual, enriched, or foreign
+  review still blocks replacement and remains untouched.
+
 ## [9.0.1] — 2026-08-07
 
 A patch release for one defect: a single stored row that the v9 path invariant

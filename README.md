@@ -1,47 +1,19 @@
 <img src="assets/banner.svg" alt="Haft" width="600">
 
-*formerly [quint-code](https://github.com/m0n0x41d/quint-code)*
+**FPF project memory and governance for AI-assisted engineering.**
 
-**Source-native FPF delivery and reliance-bearing project memory for
-AI-assisted software engineering.**
+Haft is a local governance layer for AI coding agents. It gives your agent a
+durable project memory: what problem is being solved, which options were
+compared, which decisions the human made, what evidence supports them, and
+what has gone stale. Small, reversible reasoning can stay in conversation;
+results that later work must rely on become typed project records.
 
-Haft brings a versioned FPF source into an agent's working context and keeps a
-local project graph when later work must rely on the result. A small,
-reversible exchange can remain in conversation. A decision that authorizes
-work, a handoff that another session must replay, or a claim that needs fresh
-evidence becomes a typed project record.
-
-Under the hood Haft is built on [FPF](https://github.com/ailev/FPF) by
-[Anatoly Levenchuk](https://www.linkedin.com/in/ailev/). FPF is a rigorous
-architecture for thinking about systems, and it is not small. Haft delivers
-the pinned source, project-local application surfaces, and durable records
-without replacing FPF with a second pattern catalog.
-
-## Runtime truth labels
-
-<!-- haft:truth-labels:start -->
-
-- **CURRENT PRODUCT** — the published
-  [v9.0.0 release](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0).
-  Its published predecessor is v8.1.0; no v8.2 release was published.
-- **V9 CONTRACT** — source-native FPF Query, fused code-graph orientation,
-  project-profile onboarding, task-level EntityOfConcern establishment, typed
-  project memory, neighborhood, and recall are included in the v9 contract.
-  Contract inclusion specifies behavior; it is not delivery evidence.
-- **EXACT-CANDIDATE EVIDENCE** — installed-runtime readiness claims require
-  current P14 evidence tied to one exact candidate. Source, schema, skill, or
-  local-test presence is not installed-runtime proof. That evidence does not
-  grant RC or release status; either additionally requires release authority.
-- **DEFERRED RESEARCH** — dense/hybrid retrieval and any claim that Haft
-  retrieves or helps an agent better than a pinned FPF file, `rg`, or built-in
-  RAG. No such superiority claim is made before the separate benchmark.
-
-<!-- haft:truth-labels:end -->
-
-These distinctions separate contract inclusion, exact-candidate evidence,
-published-product status, and release authority. v9.0.0 is CURRENT PRODUCT
-because that exact release was published; no source file, local test, or matrix
-result silently promotes a contract to CURRENT PRODUCT, an RC, or a release.
+Haft is built on the [First Principles Framework (FPF)](https://github.com/ailev/FPF)
+by [Anatoly Levenchuk](https://www.linkedin.com/in/ailev/). FPF is a rigorous
+architecture for thinking about systems, and it is not small. Haft is the
+practical handle: it brings the versioned FPF source into your agent's working
+context and adds the project-local skills, MCP gates, and memory needed to use
+it in engineering work.
 
 ---
 
@@ -152,14 +124,13 @@ artifact graph, baselines, indexes, and runtime state that agents query through
 CLI/MCP.
 
 The Rust `haft-embed` sidecar is retained as an optional compatibility
-component for older semantic-recall paths. It is outside the v9 contract and
-P14 acceptance basis; its presence carries no v9 retrieval-quality claim. If
-one of those compatibility paths uses it, Haft may start a shared local
+component for older semantic-recall paths; core v9 governance does not depend
+on it. If one of those paths uses it, Haft may start a shared local
 EmbeddingGemma process and cache models under `~/.haft/`; a warm sidecar can
 reasonably take around 1-2 GB of RAM depending on platform, model, and
-workload. If the sidecar is absent or disabled, core governance still works
-and the older compatibility path falls back to keyword/graph recall. Set
-`embedding.provider: none` in `~/.haft/config.yaml` to keep that path off.
+workload. If the sidecar is absent or disabled, the compatibility path falls
+back to keyword/graph recall. Set `embedding.provider: none` in
+`~/.haft/config.yaml` to keep that path off.
 
 v9 no longer ships Elixir, OTP, BEAM, or the Open-Sleigh runtime. During a
 successful upgrade the installer removes only the exact legacy managed path
@@ -246,19 +217,14 @@ semantic judgment, no LLM review, and no L3 runtime claim.
 
 ## What is Haft?
 
-The v9 target contract is a **source-native FPF delivery and project-memory
-substrate** for principal-led engineering work. It includes source-native FPF
-Query, project-profile onboarding, and typed project memory. Source presence is
-not installed-runtime proof: readiness claims require current P14 evidence tied
-to one exact candidate, while RC or release status additionally requires
-release authority. The target contract exposes the versioned FPF source to the
-host agent, then materializes problem frames, comparisons, decisions, notes,
-commissions, specs, methods, and evidence only when a receiving use depends on
-them.
+Haft sits between the human principal, the coding agent, and the repository. It
+brings the versioned FPF source into the agent's working context, keeps project
+reasoning connected to the code it governs, and makes durable records only
+when later work needs to rely on them.
 
-Haft is not a coding agent, and it is not an AI documentation generator. It is
-the handle between the human principal, the agent, the repository, and the
-evolution lifecycle of your project.
+Haft is not a coding agent or an AI documentation generator. It is the handle
+that keeps problems, options, human decisions, specifications, work authority,
+and evidence connected as the project changes.
 
 ## What Makes It Different
 
@@ -383,7 +349,7 @@ binds a decision, changes a SpecSection lifecycle, changes the active
 project-memory model, installs or restarts Haft, runs P13/P14, pushes, tags, or
 releases.
 
-### Fused code-graph Explore (v9 contract)
+### Fused code and reasoning graph
 
 Explore accepts exactly one input shape: an exact symbol, or a bounded concern
 query. The concern route returns advisory candidates and never selects a code

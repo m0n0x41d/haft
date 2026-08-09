@@ -4,7 +4,38 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+### Fixed
+
+- **Unowned host skill roots now expose currentness without rewriting local
+  installations.** `haft host status` compares each discovered, manifest-free
+  skill root with the canonical bundle and reports matching, differing,
+  missing, and non-comparable skills in a separate read-only field. Existing
+  manifest currentness values and exit codes are unchanged.
+- **Specification review now names SQL-edition and Markdown-carrier drift.**
+  `haft spec review` reports section hashes and added, removed, or changed
+  claim IDs while keeping SQL editions canonical. The delta is diagnostic: it
+  does not choose truth, change lifecycle state, or turn a clear health result
+  into a failure.
+- **Evidence freshness debt is visible without changing evidence policy.**
+  `haft check` and evidence-path output classify dated, expired, explicitly
+  perpetual, legacy-blank, and non-assurance evidence. Existing rows, scoring,
+  admission, findings, and exit codes are unchanged.
+- **Release history identifies v9.0.2 as the only published current release.**
+  The v9.0.0 entry is now explicitly historical.
+
+### Changed
+
+- **Public documentation uses the simpler product story selected for v9.**
+  README and the documentation site omit internal release-status vocabulary;
+  managed agent instructions, specifications, and regression tests retain the
+  contract, evidence, installed-runtime, and release-authority boundaries.
+
 ## [9.0.2] — 2026-08-08
+
+[v9.0.2](https://github.com/m0n0x41d/haft/releases/tag/v9.0.2) is the
+published current release.
 
 A patch release for one profile-onboarding defect: a conventional monorepo
 could expose a real software manifest and source tree while Haft prepared only
@@ -68,8 +99,8 @@ cannot express denied every caller the fused artifact-to-file bridge.
 
 ## [9.0.0] — 2026-08-07
 
-[v9.0.0](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0) is the
-published current release. Its published predecessor is
+[v9.0.0](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0) was the first
+published v9 release. Its published predecessor was
 [v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0). The v8.2.0
 candidate was never published; its candidate lineage is incorporated into this
 v9.0.0 release entry.

@@ -21,6 +21,15 @@ import (
 const (
 	hostStatusSchema          = "haft.host-status/v1"
 	hostStatusMaxCarrierBytes = int64(4 << 20)
+
+	hostSkillRootMatchesCanonical = "matches_canonical"
+	hostSkillRootDiffersCanonical = "differs_from_canonical"
+	hostSkillRootNotComparable    = "not_comparable"
+
+	hostSkillMatchesCanonical = "matches_canonical"
+	hostSkillDiffersCanonical = "differs_from_canonical"
+	hostSkillMissingFromRoot  = "missing_from_root"
+	hostSkillNotComparable    = "not_comparable"
 )
 
 var hostStatusJSON bool
@@ -56,16 +65,17 @@ func init() {
 }
 
 type hostStatusReport struct {
-	Schema                    string                     `json:"schema"`
-	Project                   hostStatusProject          `json:"project"`
-	ManifestLocationsChecked  int                        `json:"manifest_locations_checked"`
-	Manifests                 []hostManifestStatus       `json:"manifests"`
-	SkillRootObservations     []hostSkillRootObservation `json:"skill_root_observations"`
-	ActiveSkillRoots          []hostActiveSkillRoot      `json:"active_skill_roots"`
-	DuplicateSkillRoots       []hostDuplicateSkillRoot   `json:"duplicate_skill_roots"`
-	SkillRootInspectionIssues []hostSkillRootIssue       `json:"skill_root_inspection_issues"`
-	FilesystemPresenceMeaning string                     `json:"filesystem_presence_meaning"`
-	MutationsPerformed        bool                       `json:"mutations_performed"`
+	Schema                      string                            `json:"schema"`
+	Project                     hostStatusProject                 `json:"project"`
+	ManifestLocationsChecked    int                               `json:"manifest_locations_checked"`
+	Manifests                   []hostManifestStatus              `json:"manifests"`
+	SkillRootObservations       []hostSkillRootObservation        `json:"skill_root_observations"`
+	UnownedSkillRootCurrentness []hostUnownedSkillRootCurrentness `json:"unowned_skill_root_currentness"`
+	ActiveSkillRoots            []hostActiveSkillRoot             `json:"active_skill_roots"`
+	DuplicateSkillRoots         []hostDuplicateSkillRoot          `json:"duplicate_skill_roots"`
+	SkillRootInspectionIssues   []hostSkillRootIssue              `json:"skill_root_inspection_issues"`
+	FilesystemPresenceMeaning   string                            `json:"filesystem_presence_meaning"`
+	MutationsPerformed          bool                              `json:"mutations_performed"`
 }
 
 type hostStatusProject struct {
@@ -177,6 +187,31 @@ type hostSkillRootObservation struct {
 	EvidenceDigest string                    `json:"evidence_digest"`
 	ExpectedCount  int                       `json:"expected_count"`
 	ObservedCount  int                       `json:"observed_count"`
+}
+
+type hostUnownedSkillRootCurrentness struct {
+	Root                  string                        `json:"root"`
+	Host                  initplanning.HostID           `json:"host"`
+	Scope                 initplanning.InstallScope     `json:"scope"`
+	OwnershipPosture      string                        `json:"ownership_posture"`
+	ComparisonBasis       string                        `json:"comparison_basis"`
+	CanonicalBundleDigest string                        `json:"canonical_bundle_digest"`
+	Outcome               string                        `json:"outcome"`
+	ExpectedCount         int                           `json:"expected_count"`
+	ObservedCount         int                           `json:"observed_count"`
+	MatchingCount         int                           `json:"matching_count"`
+	DifferingCount        int                           `json:"differing_count"`
+	MissingCount          int                           `json:"missing_count"`
+	NotComparableCount    int                           `json:"not_comparable_count"`
+	Skills                []hostUnownedSkillCurrentness `json:"skills"`
+}
+
+type hostUnownedSkillCurrentness struct {
+	Name            string `json:"name"`
+	Path            string `json:"path"`
+	Outcome         string `json:"outcome"`
+	ObservedDigest  string `json:"observed_digest,omitempty"`
+	CanonicalDigest string `json:"canonical_digest,omitempty"`
 }
 
 type hostActiveSkillRoot struct {
@@ -311,6 +346,11 @@ func buildHostStatusReport(
 		candidates,
 		inspector,
 	)
+	unownedCurrentness := compareUnownedSkillRootCurrentness(
+		candidates,
+		observations,
+		manifestRoots,
+	)
 	activeRoots := mergeManifestAndDiscoveredSkillRoots(
 		manifestRoots,
 		discoveredRoots,
@@ -329,14 +369,15 @@ func buildHostStatusReport(
 			SchemaVersion: schemaVersion,
 			CorePosture:   "current_read_only",
 		},
-		ManifestLocationsChecked:  checked,
-		Manifests:                 manifests,
-		SkillRootObservations:     projectSkillRootObservations(observations),
-		ActiveSkillRoots:          projectActiveSkillRoots(activeRoots),
-		DuplicateSkillRoots:       projectDuplicateSkillRoots(duplicates),
-		SkillRootInspectionIssues: issues,
-		FilesystemPresenceMeaning: "discovery_evidence_only_without_valid_manifest",
-		MutationsPerformed:        false,
+		ManifestLocationsChecked:    checked,
+		Manifests:                   manifests,
+		SkillRootObservations:       projectSkillRootObservations(observations),
+		UnownedSkillRootCurrentness: unownedCurrentness,
+		ActiveSkillRoots:            projectActiveSkillRoots(activeRoots),
+		DuplicateSkillRoots:         projectDuplicateSkillRoots(duplicates),
+		SkillRootInspectionIssues:   issues,
+		FilesystemPresenceMeaning:   "discovery_evidence_only_without_valid_manifest",
+		MutationsPerformed:          false,
 	}, nil
 }
 
@@ -840,6 +881,129 @@ func inspectCurrentSkillRoots(
 	return observations, roots, issues
 }
 
+func compareUnownedSkillRootCurrentness(
+	candidates []currentStandardSkillCandidate,
+	observations []initplanning.SkillRootObservation,
+	manifestRoots []initplanning.ActiveSkillRoot,
+) []hostUnownedSkillRootCurrentness {
+	owned := make(map[string]struct{}, len(manifestRoots))
+	for _, root := range manifestRoots {
+		owned[skillRootBindingKey(root)] = struct{}{}
+	}
+	observed := make(
+		map[string]initplanning.SkillRootObservation,
+		len(observations),
+	)
+	for _, observation := range observations {
+		observed[skillRootObservationKey(observation)] = observation
+	}
+
+	result := make([]hostUnownedSkillRootCurrentness, 0)
+	for _, candidate := range candidates {
+		plan, err := initplanning.BuildSkillRootObservationPlan(
+			candidate.projection,
+			candidate.scope,
+		)
+		if err != nil {
+			continue
+		}
+		key := plan.Root() + "\x00" +
+			string(candidate.host) + "\x00" +
+			string(candidate.scope)
+		observation, available := observed[key]
+		if !available || observation.ObservedCount() == 0 {
+			continue
+		}
+		if _, manifested := owned[key]; manifested {
+			continue
+		}
+		result = append(
+			result,
+			compareUnownedSkillRoot(candidate, observation),
+		)
+	}
+	sort.Slice(result, func(left int, right int) bool {
+		leftKey := result[left].Root + "\x00" +
+			string(result[left].Host) + "\x00" +
+			string(result[left].Scope)
+		rightKey := result[right].Root + "\x00" +
+			string(result[right].Host) + "\x00" +
+			string(result[right].Scope)
+		return leftKey < rightKey
+	})
+	return result
+}
+
+func skillRootObservationKey(
+	observation initplanning.SkillRootObservation,
+) string {
+	return observation.Root() + "\x00" +
+		string(observation.Host()) + "\x00" +
+		string(observation.Scope())
+}
+
+func compareUnownedSkillRoot(
+	candidate currentStandardSkillCandidate,
+	observation initplanning.SkillRootObservation,
+) hostUnownedSkillRootCurrentness {
+	desired := make(
+		map[string]initplanning.RenderedSkillRecord,
+		len(candidate.projection.Records()),
+	)
+	for _, record := range candidate.projection.Records() {
+		desired[record.Name] = record
+	}
+	currentness := hostUnownedSkillRootCurrentness{
+		Root:                  observation.Root(),
+		Host:                  observation.Host(),
+		Scope:                 observation.Scope(),
+		OwnershipPosture:      "unowned_discovered_root",
+		ComparisonBasis:       "per_skill_rendered_digest",
+		CanonicalBundleDigest: candidate.projection.BundleDigest(),
+		Outcome:               hostSkillRootMatchesCanonical,
+		ExpectedCount:         observation.ExpectedCount(),
+		ObservedCount:         observation.ObservedCount(),
+		Skills:                make([]hostUnownedSkillCurrentness, 0, observation.ExpectedCount()),
+	}
+	for _, exposure := range observation.ExposureObservations() {
+		comparison := hostUnownedSkillCurrentness{
+			Name:           exposure.Name,
+			Path:           exposure.Path,
+			ObservedDigest: exposure.Digest,
+		}
+		record, comparable := desired[exposure.Name]
+		if comparable {
+			comparison.CanonicalDigest = record.RenderedSkillDigest
+			comparable = record.RenderedSkillPath == exposure.Path &&
+				record.RenderedSkillDigest != ""
+		}
+		switch {
+		case !comparable:
+			comparison.Outcome = hostSkillNotComparable
+			currentness.NotComparableCount++
+		case exposure.State == initplanning.PathObservedMissing:
+			comparison.Outcome = hostSkillMissingFromRoot
+			currentness.MissingCount++
+		case exposure.State != initplanning.PathObservedPresent:
+			comparison.Outcome = hostSkillNotComparable
+			currentness.NotComparableCount++
+		case exposure.Digest == record.RenderedSkillDigest:
+			comparison.Outcome = hostSkillMatchesCanonical
+			currentness.MatchingCount++
+		default:
+			comparison.Outcome = hostSkillDiffersCanonical
+			currentness.DifferingCount++
+		}
+		currentness.Skills = append(currentness.Skills, comparison)
+	}
+	if currentness.NotComparableCount > 0 {
+		currentness.Outcome = hostSkillRootNotComparable
+	} else if currentness.DifferingCount > 0 || currentness.MissingCount > 0 {
+		currentness.Outcome = hostSkillRootDiffersCanonical
+	}
+	return currentness
+}
+
 func canonicalHostStatusHosts() []initplanning.HostID {
 	return []initplanning.HostID{
 		initplanning.HostAir,
@@ -1016,6 +1180,25 @@ func writeHostStatusText(
 			root.Scope,
 			root.Origin,
 			len(root.SkillNames),
+		)
+	}
+	fmt.Fprintf(
+		&builder,
+		"Unowned skill-root currentness: %d discovered root(s) compared with the current rendered bundle\n",
+		len(report.UnownedSkillRootCurrentness),
+	)
+	for _, currentness := range report.UnownedSkillRootCurrentness {
+		fmt.Fprintf(
+			&builder,
+			"  - %s [%s/%s]: %s (matching=%d differing=%d missing=%d not_comparable=%d)\n",
+			currentness.Root,
+			currentness.Host,
+			currentness.Scope,
+			currentness.Outcome,
+			currentness.MatchingCount,
+			currentness.DifferingCount,
+			currentness.MissingCount,
+			currentness.NotComparableCount,
 		)
 	}
 	if len(report.DuplicateSkillRoots) > 0 {

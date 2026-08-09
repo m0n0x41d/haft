@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -18,12 +19,13 @@ import (
 )
 
 type checkReport struct {
-	Stale        []checkStaleFinding        `json:"stale"`
-	Drifted      []checkDriftFinding        `json:"drifted"`
-	Unassessed   []checkDecisionFinding     `json:"unassessed"`
-	CoverageGaps []checkCoverageGapFinding  `json:"coverage_gaps"`
-	SpecHealth   []project.SpecCheckFinding `json:"spec_health,omitempty"`
-	Summary      checkSummary               `json:"summary"`
+	Stale             []checkStaleFinding                 `json:"stale"`
+	Drifted           []checkDriftFinding                 `json:"drifted"`
+	Unassessed        []checkDecisionFinding              `json:"unassessed"`
+	CoverageGaps      []checkCoverageGapFinding           `json:"coverage_gaps"`
+	SpecHealth        []project.SpecCheckFinding          `json:"spec_health,omitempty"`
+	EvidenceFreshness artifact.EvidenceFreshnessInventory `json:"evidence_freshness"`
+	Summary           checkSummary                        `json:"summary"`
 }
 
 type checkSummary struct {
@@ -164,6 +166,14 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 	report.Unassessed = collectUnassessedFindings(ctx, store, activeDecisions)
 	report.CoverageGaps = collectCoverageGapFindings(ctx, store, activeDecisions)
 	report.SpecHealth = collectSpecHealthFindings(ctx, projectRoot)
+	report.EvidenceFreshness, err = artifact.BuildEvidenceFreshnessInventory(
+		ctx,
+		store,
+		time.Now().UTC(),
+	)
+	if err != nil {
+		return report, fmt.Errorf("scan evidence freshness debt: %w", err)
+	}
 	report.Summary = checkSummary{
 		TotalFindings: len(report.Stale) + len(report.Drifted) + len(report.Unassessed) + len(report.CoverageGaps) + len(report.SpecHealth),
 	}
@@ -423,6 +433,16 @@ func writeCheckSummary(w io.Writer, report checkReport) error {
 	sb.WriteString(fmt.Sprintf("unassessed: %d\n", len(report.Unassessed)))
 	sb.WriteString(fmt.Sprintf("coverage gaps: %d\n", len(report.CoverageGaps)))
 	sb.WriteString(fmt.Sprintf("spec health: %d\n", len(report.SpecHealth)))
+	sb.WriteString(fmt.Sprintf(
+		"evidence freshness (diagnostic only): total=%d dated=%d expired=%d explicit_perpetual_with_rationale=%d legacy_blank_unknown=%d not_assurance_applicable=%d findings_added=%d\n",
+		report.EvidenceFreshness.TotalItems,
+		report.EvidenceFreshness.Dated,
+		report.EvidenceFreshness.Expired,
+		report.EvidenceFreshness.ExplicitPerpetualWithRationale,
+		report.EvidenceFreshness.LegacyBlankUnknown,
+		report.EvidenceFreshness.NotAssuranceApplicable,
+		report.EvidenceFreshness.FindingsAdded,
+	))
 
 	appendStaleSection(&sb, report.Stale)
 	appendDriftSection(&sb, report.Drifted)

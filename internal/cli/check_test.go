@@ -47,6 +47,75 @@ func TestBuildCheckReport_CleanProject(t *testing.T) {
 	}
 }
 
+func TestBuildCheckReportAddsReadOnlyEvidenceFreshnessInventoryWithoutFindings(
+	t *testing.T,
+) {
+	fixture := newCheckTestProject(t)
+	createdAt := time.Date(2026, time.August, 9, 12, 0, 0, 0, time.UTC).
+		Format(time.RFC3339)
+	rows := []struct {
+		id         string
+		validUntil any
+	}{
+		{id: "evid-dated", validUntil: "2099-01-01"},
+		{id: "evid-expired", validUntil: "2020-01-01"},
+		{id: "evid-legacy-blank", validUntil: nil},
+	}
+	for _, row := range rows {
+		if _, err := fixture.db.Exec(
+			`INSERT INTO evidence_items
+			 (id, artifact_ref, type, content, verdict, valid_until, created_at)
+			 VALUES (?, ?, 'test', 'fixture', 'supports', ?, ?)`,
+			row.id,
+			"dec-freshness-fixture",
+			row.validUntil,
+			createdAt,
+		); err != nil {
+			t.Fatalf("seed evidence freshness row %s: %v", row.id, err)
+		}
+	}
+	before := checkEvidenceFreshnessCarrierSnapshot(t, fixture.db)
+	report, err := buildCheckReport(
+		context.Background(),
+		fixture.store,
+		fixture.root,
+	)
+	if err != nil {
+		t.Fatalf("buildCheckReport returned error: %v", err)
+	}
+	after := checkEvidenceFreshnessCarrierSnapshot(t, fixture.db)
+	if before != after {
+		t.Fatalf("evidence freshness inventory mutated rows: before=%q after=%q", before, after)
+	}
+	if report.Summary.TotalFindings != 0 || report.hasFindings() {
+		t.Fatalf("freshness inventory changed check findings: %#v", report)
+	}
+	inventory := report.EvidenceFreshness
+	if inventory.TotalItems != 3 ||
+		inventory.Dated != 1 ||
+		inventory.Expired != 1 ||
+		inventory.LegacyBlankUnknown != 1 ||
+		inventory.FindingsAdded != 0 ||
+		inventory.LegacyBlankUnknownIsCCED1Violation ||
+		inventory.ScoringChanged ||
+		inventory.AdmissionChanged ||
+		inventory.MutationsPerformed {
+		t.Fatalf("evidence freshness inventory = %#v", inventory)
+	}
+}
+
+func checkEvidenceFreshnessCarrierSnapshot(t *testing.T, database *sql.DB) string {
+	t.Helper()
+	var snapshot sql.NullString
+	if err := database.QueryRow(`
+		SELECT group_concat(id || ':' || coalesce(valid_until, '<null>'), '|')
+		FROM (SELECT id, valid_until FROM evidence_items ORDER BY id)
+	`).Scan(&snapshot); err != nil {
+		t.Fatalf("snapshot evidence freshness carriers: %v", err)
+	}
+	return snapshot.String
+}
+
 func TestBuildCheckReport_FindsGovernanceDebt(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seeded := seedGovernanceDebt(t, fixture)

@@ -52,17 +52,18 @@ type EvidencePathInput struct {
 }
 
 type EvidencePathRecord struct {
-	SchemaVersion       int                       `json:"schema_version"`
-	RecordKind          string                    `json:"record_kind"`
-	Authority           string                    `json:"authority"`
-	ArtifactRef         string                    `json:"artifact_ref"`
-	Evidence            EvidencePathEvidence      `json:"evidence"`
-	ClaimBinding        EvidenceClaimBinding      `json:"claim_binding"`
-	TraceBinding        EvidenceTraceBinding      `json:"trace_binding"`
-	CurrentnessWindow   EvidenceCurrentnessWindow `json:"currentness_window"`
-	AttemptedUse        EvidenceAttemptedUse      `json:"attempted_use"`
-	RelianceDisposition RelianceDisposition       `json:"reliance_disposition"`
-	AuthorityBoundary   EvidenceAuthorityBoundary `json:"authority_boundary"`
+	SchemaVersion       int                             `json:"schema_version"`
+	RecordKind          string                          `json:"record_kind"`
+	Authority           string                          `json:"authority"`
+	ArtifactRef         string                          `json:"artifact_ref"`
+	Evidence            EvidencePathEvidence            `json:"evidence"`
+	ClaimBinding        EvidenceClaimBinding            `json:"claim_binding"`
+	TraceBinding        EvidenceTraceBinding            `json:"trace_binding"`
+	CurrentnessWindow   EvidenceCurrentnessWindow       `json:"currentness_window"`
+	FreshnessDebt       EvidenceFreshnessClassification `json:"freshness_debt"`
+	AttemptedUse        EvidenceAttemptedUse            `json:"attempted_use"`
+	RelianceDisposition RelianceDisposition             `json:"reliance_disposition"`
+	AuthorityBoundary   EvidenceAuthorityBoundary       `json:"authority_boundary"`
 }
 
 type EvidencePathEvidence struct {
@@ -135,14 +136,21 @@ func BuildEvidencePathRecord(
 	}
 
 	return EvidencePathRecord{
-		SchemaVersion:       EvidencePathRecordSchemaVersion,
-		RecordKind:          EvidencePathRecordKind,
-		Authority:           EvidencePathAuthority,
-		ArtifactRef:         normalized.ArtifactRef,
-		Evidence:            evidence,
-		ClaimBinding:        claimBinding,
-		TraceBinding:        traceBinding,
-		CurrentnessWindow:   currentness,
+		SchemaVersion:     EvidencePathRecordSchemaVersion,
+		RecordKind:        EvidencePathRecordKind,
+		Authority:         EvidencePathAuthority,
+		ArtifactRef:       normalized.ArtifactRef,
+		Evidence:          evidence,
+		ClaimBinding:      claimBinding,
+		TraceBinding:      traceBinding,
+		CurrentnessWindow: currentness,
+		FreshnessDebt: ClassifyEvidenceFreshness(
+			EvidenceFreshnessClassificationInput{
+				ValidUntil:          item.ValidUntil,
+				AssuranceApplicable: true,
+			},
+			now,
+		),
 		AttemptedUse:        attemptedUse,
 		RelianceDisposition: evidenceRelianceDisposition(item, attemptedUse, claimBinding, traceBinding, currentness),
 		AuthorityBoundary: EvidenceAuthorityBoundary{

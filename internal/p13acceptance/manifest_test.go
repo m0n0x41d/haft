@@ -2307,7 +2307,7 @@ func exactGateContract() []gateContract {
 			ClaimsDigest: "sha256:5923088099b8e3032714734f7b032db13ffc023eea0eaf11065e687a34fc3b1c",
 			SuiteIDs:     []string{"fpf_index_exact", "query_token_gate", "go_normal", "go_vet", "pi_test", "pi_typecheck", "gofmt_check", "git_diff_check"},
 			AnchorKeys: []string{
-				"github.com/m0n0x41d/haft/internal/streamtruth::TestREADMEDeclaresExactlyTheFourStreamTruthLabels",
+				"github.com/m0n0x41d/haft/internal/streamtruth::TestREADMEOpensWithProductAndFPFAttribution",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestCurrentFacingCarriersMakeNoRetrievalSuperiorityClaim",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestAgentDisciplineTemplateKeepsOneTruthContract",

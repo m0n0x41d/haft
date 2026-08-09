@@ -20,7 +20,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   into a failure.
 - **Evidence freshness debt is visible without changing evidence policy.**
   `haft check` and evidence-path output classify dated, expired, explicitly
-  perpetual, legacy-blank, and non-assurance evidence. Existing rows, scoring,
+  perpetual, legacy-blank, and non-assurance evidence. If the auxiliary
+  inventory scan is unavailable, `haft check` reports that posture without
+  suppressing the rest of the governance report. Existing rows, scoring,
   admission, findings, and exit codes are unchanged.
 - **Release history identifies v9.0.2 as the only published current release.**
   The v9.0.0 entry is now explicitly historical.

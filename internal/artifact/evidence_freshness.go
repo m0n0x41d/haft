@@ -12,12 +12,20 @@ import (
 
 type EvidenceFreshnessClass string
 
+// EvidenceFreshnessInventoryPosture states whether every reported count was
+// collected from one complete scan. Unavailable inventories never expose
+// partial counts as if they were a complete observation.
+type EvidenceFreshnessInventoryPosture string
+
 const (
 	EvidenceFreshnessDated                       EvidenceFreshnessClass = "dated"
 	EvidenceFreshnessExpired                     EvidenceFreshnessClass = "expired"
 	EvidenceFreshnessExplicitPerpetualWithReason EvidenceFreshnessClass = "explicit_perpetual_with_rationale"
 	EvidenceFreshnessLegacyBlankUnknown          EvidenceFreshnessClass = "legacy_blank_unknown"
 	EvidenceFreshnessNotAssuranceApplicable      EvidenceFreshnessClass = "not_assurance_applicable"
+
+	EvidenceFreshnessInventoryPostureAvailable   EvidenceFreshnessInventoryPosture = "available"
+	EvidenceFreshnessInventoryPostureUnavailable EvidenceFreshnessInventoryPosture = "unavailable"
 
 	EvidenceFreshnessDiagnosticAuthority = "read_only_classification_not_finding_or_policy"
 )
@@ -39,20 +47,22 @@ type EvidenceFreshnessClassification struct {
 }
 
 type EvidenceFreshnessInventory struct {
-	Authority                          string `json:"authority"`
-	CheckedAt                          string `json:"checked_at"`
-	TotalItems                         int    `json:"total_items"`
-	Dated                              int    `json:"dated"`
-	Expired                            int    `json:"expired"`
-	ExplicitPerpetualWithRationale     int    `json:"explicit_perpetual_with_rationale"`
-	LegacyBlankUnknown                 int    `json:"legacy_blank_unknown"`
-	NotAssuranceApplicable             int    `json:"not_assurance_applicable"`
-	UnparseableValidUntil              int    `json:"unparseable_valid_until"`
-	LegacyBlankUnknownIsCCED1Violation bool   `json:"legacy_blank_unknown_is_cc_ed_1_violation"`
-	FindingsAdded                      int    `json:"findings_added"`
-	ScoringChanged                     bool   `json:"scoring_changed"`
-	AdmissionChanged                   bool   `json:"admission_changed"`
-	MutationsPerformed                 bool   `json:"mutations_performed"`
+	Posture                            EvidenceFreshnessInventoryPosture `json:"posture"`
+	Authority                          string                            `json:"authority"`
+	CheckedAt                          string                            `json:"checked_at"`
+	Diagnostic                         string                            `json:"diagnostic,omitempty"`
+	TotalItems                         int                               `json:"total_items"`
+	Dated                              int                               `json:"dated"`
+	Expired                            int                               `json:"expired"`
+	ExplicitPerpetualWithRationale     int                               `json:"explicit_perpetual_with_rationale"`
+	LegacyBlankUnknown                 int                               `json:"legacy_blank_unknown"`
+	NotAssuranceApplicable             int                               `json:"not_assurance_applicable"`
+	UnparseableValidUntil              int                               `json:"unparseable_valid_until"`
+	LegacyBlankUnknownIsCCED1Violation bool                              `json:"legacy_blank_unknown_is_cc_ed_1_violation"`
+	FindingsAdded                      int                               `json:"findings_added"`
+	ScoringChanged                     bool                              `json:"scoring_changed"`
+	AdmissionChanged                   bool                              `json:"admission_changed"`
+	MutationsPerformed                 bool                              `json:"mutations_performed"`
 }
 
 func ClassifyEvidenceFreshness(
@@ -111,6 +121,7 @@ func BuildEvidenceFreshnessInventory(
 		checkedAt = time.Now().UTC()
 	}
 	inventory := EvidenceFreshnessInventory{
+		Posture:   EvidenceFreshnessInventoryPostureUnavailable,
 		Authority: EvidenceFreshnessDiagnosticAuthority,
 		CheckedAt: checkedAt.UTC().Format(time.RFC3339),
 	}
@@ -119,13 +130,19 @@ func BuildEvidenceFreshnessInventory(
 		"SELECT valid_until FROM evidence_items ORDER BY id",
 	)
 	if err != nil {
-		return inventory, fmt.Errorf("read evidence freshness carriers: %w", err)
+		return unavailableEvidenceFreshnessInventory(
+			checkedAt,
+			fmt.Errorf("read evidence freshness carriers: %w", err),
+		)
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var validUntil sql.NullString
 		if err := rows.Scan(&validUntil); err != nil {
-			return inventory, fmt.Errorf("scan evidence freshness carrier: %w", err)
+			return unavailableEvidenceFreshnessInventory(
+				checkedAt,
+				fmt.Errorf("scan evidence freshness carrier: %w", err),
+			)
 		}
 		classification := ClassifyEvidenceFreshness(
 			EvidenceFreshnessClassificationInput{
@@ -153,7 +170,23 @@ func BuildEvidenceFreshnessInventory(
 		}
 	}
 	if err := rows.Err(); err != nil {
-		return inventory, fmt.Errorf("iterate evidence freshness carriers: %w", err)
+		return unavailableEvidenceFreshnessInventory(
+			checkedAt,
+			fmt.Errorf("iterate evidence freshness carriers: %w", err),
+		)
 	}
+	inventory.Posture = EvidenceFreshnessInventoryPostureAvailable
 	return inventory, nil
+}
+
+func unavailableEvidenceFreshnessInventory(
+	checkedAt time.Time,
+	err error,
+) (EvidenceFreshnessInventory, error) {
+	return EvidenceFreshnessInventory{
+		Posture:    EvidenceFreshnessInventoryPostureUnavailable,
+		Authority:  EvidenceFreshnessDiagnosticAuthority,
+		CheckedAt:  checkedAt.UTC().Format(time.RFC3339),
+		Diagnostic: err.Error(),
+	}, err
 }

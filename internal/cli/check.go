@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -166,7 +167,7 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 	report.Unassessed = collectUnassessedFindings(ctx, store, activeDecisions)
 	report.CoverageGaps = collectCoverageGapFindings(ctx, store, activeDecisions)
 	report.SpecHealth = collectSpecHealthFindings(ctx, projectRoot)
-	report.EvidenceFreshness, err = artifact.BuildEvidenceFreshnessInventory(
+	report.EvidenceFreshness, err = collectCheckEvidenceFreshness(
 		ctx,
 		store,
 		time.Now().UTC(),
@@ -179,6 +180,21 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 	}
 
 	return report, nil
+}
+
+func collectCheckEvidenceFreshness(
+	ctx context.Context,
+	store *artifact.Store,
+	now time.Time,
+) (artifact.EvidenceFreshnessInventory, error) {
+	inventory, err := artifact.BuildEvidenceFreshnessInventory(ctx, store, now)
+	if err == nil {
+		return inventory, nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return inventory, err
+	}
+	return inventory, nil
 }
 
 // collectSpecHealthFindings rolls SpecSection drift + staleness into the
@@ -433,16 +449,27 @@ func writeCheckSummary(w io.Writer, report checkReport) error {
 	sb.WriteString(fmt.Sprintf("unassessed: %d\n", len(report.Unassessed)))
 	sb.WriteString(fmt.Sprintf("coverage gaps: %d\n", len(report.CoverageGaps)))
 	sb.WriteString(fmt.Sprintf("spec health: %d\n", len(report.SpecHealth)))
-	sb.WriteString(fmt.Sprintf(
-		"evidence freshness (diagnostic only): total=%d dated=%d expired=%d explicit_perpetual_with_rationale=%d legacy_blank_unknown=%d not_assurance_applicable=%d findings_added=%d\n",
-		report.EvidenceFreshness.TotalItems,
-		report.EvidenceFreshness.Dated,
-		report.EvidenceFreshness.Expired,
-		report.EvidenceFreshness.ExplicitPerpetualWithRationale,
-		report.EvidenceFreshness.LegacyBlankUnknown,
-		report.EvidenceFreshness.NotAssuranceApplicable,
-		report.EvidenceFreshness.FindingsAdded,
-	))
+	if report.EvidenceFreshness.Posture != artifact.EvidenceFreshnessInventoryPostureAvailable {
+		diagnostic := report.EvidenceFreshness.Diagnostic
+		if diagnostic == "" {
+			diagnostic = "inventory_not_collected"
+		}
+		sb.WriteString(fmt.Sprintf(
+			"evidence freshness (diagnostic only): unavailable diagnostic=%q\n",
+			diagnostic,
+		))
+	} else {
+		sb.WriteString(fmt.Sprintf(
+			"evidence freshness (diagnostic only): total=%d dated=%d expired=%d explicit_perpetual_with_rationale=%d legacy_blank_unknown=%d not_assurance_applicable=%d findings_added=%d\n",
+			report.EvidenceFreshness.TotalItems,
+			report.EvidenceFreshness.Dated,
+			report.EvidenceFreshness.Expired,
+			report.EvidenceFreshness.ExplicitPerpetualWithRationale,
+			report.EvidenceFreshness.LegacyBlankUnknown,
+			report.EvidenceFreshness.NotAssuranceApplicable,
+			report.EvidenceFreshness.FindingsAdded,
+		))
+	}
 
 	appendStaleSection(&sb, report.Stale)
 	appendDriftSection(&sb, report.Drifted)

@@ -8,6 +8,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **Snapshot-backed TypeScript resolution no longer walks the project once per
+  indexed file.** The incremental code index now uses its immutable epoch
+  snapshot without first computing and discarding the standalone
+  project-resolution fingerprint. TypeScript, JavaScript, and Vue files avoid
+  the repeated full-tree walk and ignore-matcher rebuild reported in
+  [#106](https://github.com/m0n0x41d/haft/issues/106); standalone resolution
+  keeps its existing config-invalidation path.
 - **`--no-file-instructions` now preserves existing managed instruction
   carriers.** Combined local reruns such as `haft init --agents --local
   --no-file-instructions --codex --claude` retain `AGENTS.md` and `CLAUDE.md`

@@ -264,11 +264,13 @@ func resolveTSContentEdgeOutcomes(
 		s, _ := symbols.GetByName(ctx, name)
 		return s
 	}
-	projectResolution := loadTSProjectResolution(projectRoot)
+	var projectResolution tsProjectResolution
 	var projectModel *tsProjectModel
 	if snapshot != nil {
 		projectResolution = snapshot.resolution
 		projectModel = snapshot.model
+	} else {
+		projectResolution = loadTSProjectResolution(projectRoot)
 	}
 	if projectModel == nil {
 		projectModel, err = loadTSProjectModel(

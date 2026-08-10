@@ -35,6 +35,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Compatible project-ledger migrations activate when `haft serve` starts.**
+  Each migration now declares its startup policy; the zero value remains
+  manual. The first admitted chain is schema 57 to 58. Every project path that
+  crosses migration 58 (`serve`, init, or `haft project migrate`) holds one
+  shared process/file lease and publishes a verified private SQLite snapshot
+  before the data rewrite. Current schemas remain a no-op. Manual chains,
+  missing bindings, future or invalid schemas, unhealthy ledgers, lease
+  timeouts, and stale WAL/SHM generations keep MCP alive with distinct recovery
+  instructions instead of opening project-backed tools. Other legacy CLI store
+  opens are current-only and cannot bypass the migration coordinator.
 - **Public documentation uses the simpler product story selected for v9.**
   README and the documentation site omit internal release-status vocabulary;
   managed agent instructions, specifications, and regression tests retain the

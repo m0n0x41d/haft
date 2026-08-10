@@ -23,9 +23,10 @@ it in engineering work.
 curl -fsSL https://raw.githubusercontent.com/m0n0x41d/haft/main/install.sh | bash
 ```
 
-Then initialize Haft in your project. Bare `haft init` opens an interactive
-multi-select when stdin and stdout are terminals; no host is preselected.
-Scripts and CI must name their intent explicitly:
+For a project that has not used Haft before, initialize it once. Bare
+`haft init` opens an interactive multi-select when stdin and stdout are
+terminals; no host is preselected. Scripts and CI must name their intent
+explicitly:
 
 ```bash
 haft init                    # Interactive host multi-select (TTY only)
@@ -61,15 +62,25 @@ write rather than treated as two competing targets.
 `--all` means exactly the full Claude and Codex integrations; it does not add a
 second independent `--agents` target.
 
-For an already initialized project that only needs an additive database
-upgrade, use the explicit core-only recovery command:
+For an already initialized project, install the new binary and fully restart
+or reconnect the coding-agent host. A new `haft serve` process automatically
+applies only migration boundaries that the release explicitly marks as
+startup-safe. The current `57 -> 58` transition first publishes a verified
+`0600` SQLite snapshot beside the project ledger; a current database is a
+no-op. Re-running `haft init` is not routine database maintenance.
+
+If startup reports a manual migration boundary, use the exact fallback command
+from that diagnostic:
 
 ```bash
 haft project migrate --project-root /absolute/project/root --project-id qnt_........
 ```
 
-It verifies the exact project binding and changes no agent-host config, skill,
-instruction, hook, or package carrier.
+It verifies the exact project binding, shares the same migration lease as
+`haft serve` and `haft init`, and changes no agent-host config, skill,
+instruction, hook, or package carrier. Future-schema, missing-binding,
+integrity, and stale WAL/SHM diagnostics have different recovery paths; do not
+replace them with a generic migration run.
 
 Claude Code and Codex are the stable supported hosts. Grok, Pi, Hermes, Zed,
 Antigravity, Cursor, Gemini CLI, and OpenCode remain experimental or legacy
@@ -164,8 +175,9 @@ evidence has gone stale, when spec drift needs review, and when execution needs
 an authorized plan or commission. It does not infer a universal next step from
 the order of skills or artifacts.
 
-Existing project? Run `haft init --core-only`. A complete, non-truncated,
-supported singleton detector result is admitted as `origin=detector_default`;
+Existing codebase that has never been initialized with Haft? Run
+`haft init --core-only`. A complete, non-truncated, supported singleton
+detector result is admitted as `origin=detector_default`;
 Haft then installs only the specification and MethodPack carriers applicable
 to that scope. Mixed, multiple-scope, insufficient, truncated, or manually
 reviewed bases remain profile-review work, and init never changes an existing

@@ -912,6 +912,17 @@ func compilePublicHostInitPlan(
 		if projectionErr != nil {
 			return initplanning.InitPlan{}, projectionErr
 		}
+		effectiveBinding := binding
+		projection, effectiveBinding, projectionErr =
+			retainOmittedPublicInstructionFragments(
+				request,
+				binding,
+				store,
+				projection,
+			)
+		if projectionErr != nil {
+			return initplanning.InitPlan{}, projectionErr
+		}
 		legacy, managedLegacy, legacyErr :=
 			currentPublicTakeoverRegistries(projection)
 		if legacyErr != nil {
@@ -928,9 +939,9 @@ func compilePublicHostInitPlan(
 			return initplanning.InitPlan{}, hostPlanErr
 		}
 		capability, capabilityErr :=
-			initplanning.NewAdapterCapabilityBuilder(binding.host).
+			initplanning.NewAdapterCapabilityBuilder(effectiveBinding.host).
 				AtEdition(projection.Edition()).
-				Allow(binding.scope, binding.components).
+				Allow(effectiveBinding.scope, effectiveBinding.components).
 				Build()
 		if capabilityErr != nil {
 			return initplanning.InitPlan{}, capabilityErr
@@ -939,7 +950,7 @@ func compilePublicHostInitPlan(
 		capabilities = append(capabilities, capability)
 		weakHosts = append(
 			weakHosts,
-			weakPublicHostSelection(binding),
+			weakPublicHostSelection(effectiveBinding),
 		)
 	}
 	intent, err := initplanning.ParseInitIntent(
@@ -963,6 +974,116 @@ func compilePublicHostInitPlan(
 		hostPlans,
 		catalog,
 	)
+}
+
+func retainOmittedPublicInstructionFragments(
+	request publicInitRequest,
+	binding publicHostBinding,
+	store initfs.ManifestStore,
+	projection initplanning.HostAdapterProjection,
+) (
+	initplanning.HostAdapterProjection,
+	publicHostBinding,
+	error,
+) {
+	if request.instructions != publicInstructionsOmit {
+		return projection, binding, nil
+	}
+	recoveryArgv := projection.Recovery().Argv()
+	if !currentStringSliceContains(
+		recoveryArgv,
+		"--no-file-instructions",
+	) {
+		recoveryArgv = append(
+			recoveryArgv,
+			"--no-file-instructions",
+		)
+	}
+	recovery, err := initplanning.NewRecoveryOperation(recoveryArgv)
+	if err != nil {
+		return initplanning.HostAdapterProjection{}, publicHostBinding{}, err
+	}
+
+	retainInstructions := false
+	read, err := store.Read()
+	if err != nil {
+		return initplanning.HostAdapterProjection{}, publicHostBinding{}, err
+	}
+	if read.Kind() == initfs.ManifestReadPresent {
+		manifest := read.Manifest()
+		sameBinding := manifest.Host() == binding.host &&
+			manifest.Scope() == binding.scope &&
+			manifest.ProjectRoot() == projection.ProjectRoot() &&
+			manifest.ProjectID() == projection.ProjectID().String()
+		if sameBinding {
+			for _, path := range manifest.RenderedPaths() {
+				if path.Component == initplanning.ComponentInstructions {
+					return initplanning.HostAdapterProjection{},
+						publicHostBinding{},
+						fmt.Errorf(
+							"managed whole-file instruction carrier %s cannot be retained by --no-file-instructions; rerun with file instructions enabled to migrate it first",
+							path.Path,
+						)
+				}
+			}
+			for _, fragment := range manifest.ManagedFragments() {
+				if fragment.Component == initplanning.ComponentInstructions {
+					retainInstructions = true
+				}
+			}
+		}
+	}
+
+	effectiveBinding := binding
+	retainedComponents := projection.RetainedManagedFragmentComponents()
+	if retainInstructions {
+		components := append(
+			binding.components.Values(),
+			initplanning.ComponentInstructions,
+		)
+		effectiveBinding.components, err =
+			parseCurrentCoherentComponents(components)
+		if err != nil {
+			return initplanning.HostAdapterProjection{},
+				publicHostBinding{}, err
+		}
+		retainedComponents = append(
+			retainedComponents,
+			initplanning.ComponentInstructions,
+		)
+	}
+
+	builder := initplanning.NewHostAdapterProjectionBuilder(
+		projection.Host(),
+	).
+		AtEdition(projection.Edition()).
+		PublishedFrom(projection.Publication()).
+		ForProject(
+			projection.ProjectRoot(),
+			projection.ProjectID().String(),
+		).
+		WithSelection(
+			projection.Scope(),
+			effectiveBinding.components,
+		)
+	for _, component := range retainedComponents {
+		builder = builder.RetainInstalledManagedFragments(component)
+	}
+	for _, root := range projection.TargetRoots() {
+		builder = builder.AddTargetRoot(root)
+	}
+	for _, output := range projection.Outputs() {
+		builder = builder.AddOutput(output)
+	}
+	for _, fragment := range projection.ManagedFragments() {
+		builder = builder.AddManagedFragment(fragment)
+	}
+	builder = builder.RecoverWith(recovery)
+	effectiveProjection, err := builder.Build()
+	if err != nil {
+		return initplanning.HostAdapterProjection{}, publicHostBinding{}, err
+	}
+	return effectiveProjection, effectiveBinding, nil
 }
 
 func resolvePublicHostBindingOwner(

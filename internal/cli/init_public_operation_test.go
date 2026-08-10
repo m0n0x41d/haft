@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -171,6 +172,238 @@ func TestTypedPublicCodexOperationInitializesFullCodexIntegration(
 	if secondOutcome.Kind() != publicInitAlreadyCurrent {
 		t.Fatalf("second outcome = %#v", secondOutcome)
 	}
+}
+
+func TestTypedPublicClaudeCodexLocalNoFileInstructionsRetainsManagedCarriers(
+	t *testing.T,
+) {
+	homeRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve home root: %v", err)
+	}
+	projectRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve project root: %v", err)
+	}
+	t.Setenv("HOME", homeRoot)
+	runtime, err := currentHostPublicationRuntimeFromProcess()
+	if err != nil {
+		t.Fatalf("currentHostPublicationRuntimeFromProcess: %v", err)
+	}
+	runtime.userHomeRoot = homeRoot
+
+	initialRequest, err := compilePublicInitRequest(
+		weakPublicInitRequest{
+			invocation:  initplanning.InvocationExplicit,
+			projectRoot: projectRoot,
+			projectID:   "qnt_e3149c17",
+			hosts: initHostOptions{
+				claude: true,
+				codex:  true,
+			},
+			local:    true,
+			agents:   true,
+			overseer: publicOverseerWeakDisabled(),
+		},
+	)
+	if err != nil {
+		t.Fatalf("compile initial request: %v", err)
+	}
+	_, initialOutcome := applyTypedPublicInitRequestForTest(
+		t,
+		initialRequest,
+		runtime,
+	)
+	if initialOutcome.Kind() != publicInitApplied {
+		t.Fatalf("initial outcome = %#v", initialOutcome)
+	}
+
+	instructionPaths := []string{
+		filepath.Join(projectRoot, "CLAUDE.md"),
+		filepath.Join(projectRoot, "AGENTS.md"),
+	}
+	retainedBytes := make(map[string][]byte, len(instructionPaths))
+	for _, path := range instructionPaths {
+		content, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read installed instructions %s: %v", path, readErr)
+		}
+		updated := bytes.Replace(
+			content,
+			[]byte("# Haft Project Discipline"),
+			[]byte("# Retained Haft Project Discipline"),
+			1,
+		)
+		if bytes.Equal(updated, content) {
+			t.Fatalf("instruction fixture %s lacked managed heading", path)
+		}
+		updated = append(
+			[]byte("# Operator-owned prelude\r\n\r\n"),
+			updated...,
+		)
+		if writeErr := os.WriteFile(path, updated, 0o640); writeErr != nil {
+			t.Fatalf("change installed instructions %s: %v", path, writeErr)
+		}
+		retainedBytes[path] = bytes.Clone(updated)
+	}
+
+	omitRequest, err := compilePublicInitRequest(
+		weakPublicInitRequest{
+			invocation:  initplanning.InvocationExplicit,
+			projectRoot: projectRoot,
+			projectID:   "qnt_e3149c17",
+			hosts: initHostOptions{
+				claude: true,
+				codex:  true,
+			},
+			local:            true,
+			agents:           true,
+			omitInstructions: true,
+			overseer:         publicOverseerWeakDisabled(),
+		},
+	)
+	if err != nil {
+		t.Fatalf("compile omit-instructions request: %v", err)
+	}
+	preview, omitOutcome := applyTypedPublicInitRequestForTest(
+		t,
+		omitRequest,
+		runtime,
+	)
+	if omitOutcome.Kind() != publicInitApplied {
+		t.Fatalf("omit-instructions outcome = %#v", omitOutcome)
+	}
+	if len(preview.Base.Hosts) != 2 {
+		t.Fatalf("omit-instructions hosts = %#v", preview.Base.Hosts)
+	}
+	for _, host := range preview.Base.Hosts {
+		if !slices.Contains(
+			host.Components,
+			initplanning.ComponentInstructions,
+		) || !slices.Contains(
+			host.RecoveryArgv,
+			"--no-file-instructions",
+		) {
+			t.Fatalf("retained host preview = %#v", host)
+		}
+		preservedInstruction := false
+		for _, fragment := range host.ManagedFragments {
+			if fragment.Component == initplanning.ComponentInstructions &&
+				fragment.Effect == initplanning.ManagedFragmentPreserve {
+				preservedInstruction = true
+			}
+		}
+		if !preservedInstruction {
+			t.Fatalf("host did not preserve managed instructions: %#v", host)
+		}
+	}
+	for path, want := range retainedBytes {
+		got, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read retained instructions %s: %v", path, readErr)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("--no-file-instructions changed %s", path)
+		}
+	}
+	for _, path := range []string{
+		filepath.Join(projectRoot, ".claude", "skills", "h-reason", "SKILL.md"),
+		filepath.Join(projectRoot, ".agents", "skills", "h-reason", "SKILL.md"),
+	} {
+		if _, statErr := os.Stat(path); statErr != nil {
+			t.Fatalf("local selected skill missing %s: %v", path, statErr)
+		}
+	}
+	for _, host := range []string{"claude", "codex"} {
+		manifestPath := filepath.Join(
+			projectRoot,
+			".haft",
+			"host-installations",
+			host+".project.json",
+		)
+		raw, readErr := os.ReadFile(manifestPath)
+		if readErr != nil {
+			t.Fatalf("read %s manifest: %v", host, readErr)
+		}
+		manifest, parseErr := initplanning.ParseInstallationManifest(raw)
+		if parseErr != nil {
+			t.Fatalf("parse %s manifest: %v", host, parseErr)
+		}
+		instructionReceipts := 0
+		for _, fragment := range manifest.ManagedFragments() {
+			if fragment.Component == initplanning.ComponentInstructions {
+				instructionReceipts++
+			}
+		}
+		if instructionReceipts != 1 {
+			t.Fatalf(
+				"%s instruction receipts = %d, want 1",
+				host,
+				instructionReceipts,
+			)
+		}
+	}
+
+	_, currentOutcome := applyTypedPublicInitRequestForTest(
+		t,
+		omitRequest,
+		runtime,
+	)
+	if currentOutcome.Kind() != publicInitAlreadyCurrent {
+		t.Fatalf("second omit-instructions outcome = %#v", currentOutcome)
+	}
+	for path, want := range retainedBytes {
+		got, readErr := os.ReadFile(path)
+		if readErr != nil || !bytes.Equal(got, want) {
+			t.Fatalf(
+				"second --no-file-instructions rerun changed %s: %v",
+				path,
+				readErr,
+			)
+		}
+	}
+}
+
+func applyTypedPublicInitRequestForTest(
+	t *testing.T,
+	request publicInitRequest,
+	runtime currentHostPublicationRuntime,
+) (typedPublicInitPreview, typedPublicInitOutcome) {
+	t.Helper()
+	prepared, err := prepareTypedPublicInitOperation(
+		context.Background(),
+		request,
+		runtime,
+		io.Discard,
+		1<<20,
+	)
+	if err != nil {
+		t.Fatalf("prepare typed public init operation: %v", err)
+	}
+	preview, err := prepared.Preview()
+	if err != nil {
+		t.Fatalf("preview typed public init operation: %v", err)
+	}
+	confirmed, err := prepared.ConfirmPreview(preview)
+	if err != nil {
+		t.Fatalf("confirm typed public init operation: %v", err)
+	}
+	executor, err := newTypedPublicInitExecutor(
+		request,
+		io.Discard,
+		1<<20,
+	)
+	if err != nil {
+		t.Fatalf("build typed public init executor: %v", err)
+	}
+	outcome, err := confirmed.Apply(
+		context.Background(),
+		executor,
+	)
+	if err != nil {
+		t.Fatalf("apply typed public init operation: %v", err)
+	}
+	return preview, outcome
 }
 
 func TestTypedPublicCodexOperationSharesUserSkillsAcrossProjects(

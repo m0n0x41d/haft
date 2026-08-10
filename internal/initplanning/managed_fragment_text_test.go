@@ -226,6 +226,102 @@ func TestManagedHTMLCommentSectionLocalEditIsReplacedInsideMarkersOnly(
 	}
 }
 
+func TestManagedHTMLCommentSectionRetentionUsesExactObservedSnapshot(
+	t *testing.T,
+) {
+	carrierPath := t.TempDir() + "/AGENTS.md"
+	installed := mustHTMLCommentSectionFragment(
+		t,
+		carrierPath,
+		ComponentInstructions,
+		"installed instructions",
+	)
+	observedSection := mustHTMLCommentSectionFragment(
+		t,
+		carrierPath,
+		ComponentInstructions,
+		"locally changed instructions that must be retained",
+	)
+	prefix := []byte("# Operator prefix\r\n\r\n")
+	suffix := []byte("\r\n\r\n## Operator suffix\r\n")
+	content := make([]byte, 0)
+	content = append(content, prefix...)
+	content = append(content, observedSection.Content()...)
+	content = append(content, suffix...)
+	input := mustPresentManagedCarrierBytes(t, carrierPath, content)
+	baseline := mustManagedFragmentBaseline(
+		t,
+		[]ManagedFragmentRecord{installed.Record()},
+		mustManifestOwnershipBasis(t),
+	)
+	observationPlan, err := BuildManagedFragmentObservationPlan(
+		nil,
+		baseline,
+		NoManagedFragmentLegacyRegistry(),
+	)
+	if err != nil {
+		t.Fatalf("BuildManagedFragmentObservationPlan: %v", err)
+	}
+	observationPlan.retainedManagedFragmentComponents = []Component{
+		ComponentInstructions,
+	}
+	retainedPlan, err := materializeRetainedManagedFragments(
+		observationPlan,
+		input,
+	)
+	if err != nil {
+		t.Fatalf("materializeRetainedManagedFragments: %v", err)
+	}
+	if len(retainedPlan.desired) != 1 ||
+		!bytes.Equal(
+			retainedPlan.desired[0].Content(),
+			observedSection.Content(),
+		) {
+		t.Fatalf(
+			"retained desired fragments = %#v",
+			retainedPlan.desired,
+		)
+	}
+	observation, err := ObserveManagedCarrier(retainedPlan, input)
+	if err != nil {
+		t.Fatalf("ObserveManagedCarrier: %v", err)
+	}
+	currentness, err := ClassifyManagedFragmentCurrentness(
+		retainedPlan,
+		observation,
+	)
+	if err != nil {
+		t.Fatalf("ClassifyManagedFragmentCurrentness: %v", err)
+	}
+	assertSingleManagedState(t, currentness, ManagedFragmentCurrentOwned)
+	reconciliation, err := CompileManagedCarrierReconciliation(currentness)
+	if err != nil {
+		t.Fatalf("CompileManagedCarrierReconciliation: %v", err)
+	}
+	result, err := ApplyManagedCarrierReconciliation(
+		reconciliation,
+		input,
+	)
+	if err != nil {
+		t.Fatalf("ApplyManagedCarrierReconciliation: %v", err)
+	}
+	if result.Changed() || !bytes.Equal(result.Content(), content) {
+		t.Fatal("retained managed section changed its observed carrier")
+	}
+
+	concurrent := mustPresentManagedCarrierBytes(
+		t,
+		carrierPath,
+		append(bytes.Clone(content), []byte("concurrent change")...),
+	)
+	if _, err := ApplyManagedCarrierReconciliation(
+		reconciliation,
+		concurrent,
+	); err == nil {
+		t.Fatal("retained managed section accepted a changed predecessor")
+	}
+}
+
 func TestManagedHTMLCommentSectionPreManifestVersionIsReplaced(
 	t *testing.T,
 ) {

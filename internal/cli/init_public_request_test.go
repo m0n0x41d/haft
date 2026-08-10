@@ -65,6 +65,21 @@ func TestCompilePublicInitRequestPreservesExplicitFlagPublicationContract(
 			wantAgents: publicAgentSkillsNone,
 		},
 		{
+			name: "claude and codex local omit instructions coalesces agents",
+			hosts: initHostOptions{
+				claude: true,
+				codex:  true,
+			},
+			local:            true,
+			agents:           true,
+			omitInstructions: true,
+			wantBindings: []string{
+				"claude/project:mcp,skills",
+				"codex/project:mcp,skills",
+			},
+			wantAgents: publicAgentSkillsNone,
+		},
+		{
 			name:    "codex mcp only compatibility suppresses skills and instructions",
 			hosts:   initHostOptions{codex: true},
 			mcpOnly: true,

@@ -212,6 +212,47 @@ func locateManagedHTMLCommentSection(
 	}, nil
 }
 
+func retainedHTMLCommentSectionFragment(
+	record ManagedFragmentRecord,
+	input ManagedCarrierInput,
+	createMode fs.FileMode,
+) (ManagedFragment, bool, error) {
+	if record.coordinate.kind != ManagedHTMLCommentSection ||
+		record.coordinate.carrierPath != input.path {
+		return ManagedFragment{}, false, fmt.Errorf(
+			"managed HTML-comment section retention input is invalid",
+		)
+	}
+	if input.kind == ManagedCarrierMissing {
+		return ManagedFragment{}, false, nil
+	}
+	if input.kind != ManagedCarrierPresent {
+		return ManagedFragment{}, false, fmt.Errorf(
+			"managed HTML-comment section retention carrier is invalid",
+		)
+	}
+	span, err := locateManagedHTMLCommentSection(
+		input.content,
+		record.coordinate,
+	)
+	if err != nil {
+		return ManagedFragment{}, false, err
+	}
+	if !span.found {
+		return ManagedFragment{}, false, nil
+	}
+	fragment, err := newManagedFragment(
+		record.coordinate,
+		record.component,
+		input.content[span.start:span.end],
+		createMode,
+	)
+	if err != nil {
+		return ManagedFragment{}, false, err
+	}
+	return fragment, true, nil
+}
+
 func applyManagedTextEffects(
 	effects []ManagedFragmentEffect,
 	input ManagedCarrierInput,

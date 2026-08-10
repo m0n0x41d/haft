@@ -139,6 +139,66 @@ func TestHostAdapterProjectionCanonicalizesManagedFragmentsWithoutOwningCarrier(
 	}
 }
 
+func TestHostAdapterProjectionRetainsOnlySelectedManagedFragmentComponents(
+	t *testing.T,
+) {
+	root := canonicalTempRoot(t)
+	fragment := mustProjectionJSONObjectEntryFragment(
+		t,
+		filepath.Join(root, ".codex", "settings.json"),
+		[]string{"mcpServers", "haft"},
+		`{"command":"haft","args":["serve"]}`,
+		"semantic-merge-v1",
+	)
+	builder := baseManagedProjectionBuilder(t, root).
+		AddManagedFragment(fragment).
+		RetainInstalledManagedFragments(ComponentMCP)
+	projection, err := builder.Build()
+	if err != nil {
+		t.Fatalf("HostAdapterProjectionBuilder.Build: %v", err)
+	}
+	want := []Component{ComponentMCP}
+	if !reflect.DeepEqual(
+		projection.RetainedManagedFragmentComponents(),
+		want,
+	) {
+		t.Fatalf(
+			"retained managed-fragment components = %v, want %v",
+			projection.RetainedManagedFragmentComponents(),
+			want,
+		)
+	}
+	changed := projection.RetainedManagedFragmentComponents()
+	changed[0] = ComponentSkills
+	if !reflect.DeepEqual(
+		projection.RetainedManagedFragmentComponents(),
+		want,
+	) {
+		t.Fatal("retained component getter exposed projection storage")
+	}
+	if _, err := BuildProjectionInstallationManifest(projection); err == nil {
+		t.Fatal("unresolved retained projection produced a manifest")
+	}
+	if _, err := BuildFirstCoherentManagedCarrierObservationPlans(
+		projection,
+		NoManagedFragmentLegacyRegistry(),
+	); err == nil {
+		t.Fatal("retained installed fragments accepted a first-install basis")
+	}
+
+	if _, err := baseManagedProjectionBuilder(t, root).
+		AddManagedFragment(fragment).
+		RetainInstalledManagedFragments(ComponentSkills).
+		Build(); err == nil {
+		t.Fatal("projection retained managed fragments for an unselected component")
+	}
+	if _, err := builder.
+		RetainInstalledManagedFragments(ComponentMCP).
+		Build(); err == nil {
+		t.Fatal("projection repeated a retained managed-fragment component")
+	}
+}
+
 func TestHostAdapterProjectionRejectsIllegalManagedFragmentShape(t *testing.T) {
 	root := canonicalTempRoot(t)
 	carrierPath := filepath.Join(root, ".codex", "settings.json")

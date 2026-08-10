@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- **`--no-file-instructions` now preserves existing managed instruction
+  carriers.** Combined local reruns such as `haft init --agents --local
+  --no-file-instructions --codex --claude` retain `AGENTS.md` and `CLAUDE.md`
+  byte-for-byte while reconciling the selected MCP and skill surfaces. The
+  retained fragments remain manifest-owned and use the same exact filesystem
+  snapshot and precondition checks as the rest of host publication.
 - **Unowned host skill roots now expose currentness without rewriting local
   installations.** `haft host status` compares each discovered, manifest-free
   skill root with the canonical bundle and reports matching, differing,

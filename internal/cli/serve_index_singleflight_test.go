@@ -24,7 +24,7 @@ import (
 // This fixture runs four race-instrumented server subprocesses. Its bound is
 // deliberately separate from the product status deadline, which has a focused
 // contract test; here the observable is single-flight completion, not latency.
-const stdioSingleFlightResponseTimeout = 60 * time.Second
+const stdioSingleFlightResponseTimeout = 2 * time.Minute
 
 func TestServeStdioMultiProcessAutomaticMigrationSingleFlight(t *testing.T) {
 	root := setupSpecSyncProject(t)

@@ -912,8 +912,7 @@ func compilePublicHostInitPlan(
 		if projectionErr != nil {
 			return initplanning.InitPlan{}, projectionErr
 		}
-		effectiveBinding := binding
-		projection, effectiveBinding, projectionErr =
+		projection, effectiveBinding, projectionErr :=
 			retainOmittedPublicInstructionFragments(
 				request,
 				binding,

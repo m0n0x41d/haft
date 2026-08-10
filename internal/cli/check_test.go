@@ -54,6 +54,17 @@ func TestBuildCheckReportAddsReadOnlyEvidenceFreshnessInventoryWithoutFindings(
 	t *testing.T,
 ) {
 	fixture := newCheckTestProject(t)
+	evidenceCarrier := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "note-freshness-fixture",
+			Kind:  artifact.KindNote,
+			Title: "Evidence freshness test carrier",
+		},
+		Body: "Parent carrier for evidence freshness inventory rows.",
+	}
+	if err := fixture.store.Create(context.Background(), evidenceCarrier); err != nil {
+		t.Fatalf("create evidence freshness carrier: %v", err)
+	}
 	createdAt := time.Date(2026, time.August, 9, 12, 0, 0, 0, time.UTC).
 		Format(time.RFC3339)
 	rows := []struct {
@@ -70,7 +81,7 @@ func TestBuildCheckReportAddsReadOnlyEvidenceFreshnessInventoryWithoutFindings(
 			 (id, artifact_ref, type, content, verdict, valid_until, created_at)
 			 VALUES (?, ?, 'test', 'fixture', 'supports', ?, ?)`,
 			row.id,
-			"dec-freshness-fixture",
+			evidenceCarrier.Meta.ID,
 			row.validUntil,
 			createdAt,
 		); err != nil {

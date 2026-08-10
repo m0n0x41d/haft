@@ -108,8 +108,8 @@ func requireRegularAttachedMigrationLease(
 	}
 	expectedUID := uint32(effectiveUID) // #nosec G115 -- Unix effective UIDs are nonnegative uid_t values.
 	if !safeMigrationLeaseMetadata(
-		uint32(held.Mode),
-		uint64(held.Nlink),
+		migrationStatMode(held.Mode),
+		migrationStatLinkCount(held.Nlink),
 		held.Uid,
 		expectedUID,
 	) {
@@ -140,6 +140,16 @@ func requireRegularAttachedMigrationLease(
 		)
 	}
 	return nil
+}
+
+// Stat_t uses uint16 for Mode and Nlink on Darwin, but uint32 and uint64 on
+// Linux. These widening helpers keep the shared lease check type-safe on both.
+func migrationStatMode[T ~uint16 | ~uint32](mode T) uint32 {
+	return uint32(mode)
+}
+
+func migrationStatLinkCount[T ~uint16 | ~uint64](linkCount T) uint64 {
+	return uint64(linkCount)
 }
 
 func safeMigrationLeaseMetadata(

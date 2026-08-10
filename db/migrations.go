@@ -1,11 +1,63 @@
 package db
 
-import "database/sql"
+import (
+	"database/sql"
+	"fmt"
+)
 
 // RunMigrations applies all pending kernel migrations to the database.
 // Uses the shared Migrate runner with version tracking.
 func RunMigrations(conn *sql.DB) error {
 	return Migrate(conn, "schema_version", kernelMigrations)
+}
+
+// RunMigrationsThrough applies the exact compiled kernel prefix ending at the
+// requested version. Project-ledger orchestration uses it to stop immediately
+// before a migration whose recovery contract requires a verified snapshot.
+func RunMigrationsThrough(conn *sql.DB, frontier int) error {
+	versions, err := currentKernelSchemaVersions()
+	if err != nil {
+		return err
+	}
+	if frontier < 1 || frontier > versions[len(versions)-1] {
+		return fmt.Errorf(
+			"kernel migration frontier %d is outside the compiled catalog",
+			frontier,
+		)
+	}
+	return Migrate(
+		conn,
+		"schema_version",
+		kernelMigrations[:frontier],
+	)
+}
+
+// NextRecoverySnapshotMigrationVersion returns the first pending migration
+// whose declared startup policy requires a verified pre-apply snapshot.
+func NextRecoverySnapshotMigrationVersion(
+	observedSchema int,
+) (int, bool, error) {
+	versions, err := currentKernelSchemaVersions()
+	if err != nil {
+		return 0, false, err
+	}
+	current := versions[len(versions)-1]
+	if observedSchema < 1 || observedSchema > current {
+		return 0, false, fmt.Errorf(
+			"observed schema %d is outside the compiled catalog",
+			observedSchema,
+		)
+	}
+	for _, migration := range kernelMigrations {
+		if migration.Version <= observedSchema {
+			continue
+		}
+		if migration.ServeActivation == ServeActivationManualWithSnapshot ||
+			migration.ServeActivation == ServeActivationAutomaticWithSnapshot {
+			return migration.Version, true, nil
+		}
+	}
+	return 0, false, nil
 }
 
 // kernelMigrations defines the kernel schema evolution.

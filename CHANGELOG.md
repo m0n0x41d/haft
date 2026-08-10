@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [9.0.3] — 2026-08-10
+
+[v9.0.3](https://github.com/m0n0x41d/haft/releases/tag/v9.0.3) is a patch
+release. Its published predecessor is
+[v9.0.2](https://github.com/m0n0x41d/haft/releases/tag/v9.0.2).
+
 ### Fixed
 
 - **Snapshot-backed TypeScript resolution no longer walks the project once per
@@ -37,8 +43,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   inventory scan is unavailable, `haft check` reports that posture without
   suppressing the rest of the governance report. Existing rows, scoring,
   admission, findings, and exit codes are unchanged.
-- **Release history identifies v9.0.2 as the only published current release.**
-  The v9.0.0 entry is now explicitly historical.
+- **Release history no longer labels v9.0.0 current.** v9.0.0 is explicitly
+  historical; v9.0.2 is the published predecessor of v9.0.3.
 
 ### Changed
 
@@ -59,8 +65,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [9.0.2] — 2026-08-08
 
-[v9.0.2](https://github.com/m0n0x41d/haft/releases/tag/v9.0.2) is the
-published current release.
+[v9.0.2](https://github.com/m0n0x41d/haft/releases/tag/v9.0.2) was the
+published predecessor of v9.0.3.
 
 A patch release for one profile-onboarding defect: a conventional monorepo
 could expose a real software manifest and source tree while Haft prepared only

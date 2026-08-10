@@ -4,7 +4,69 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [Unreleased]
+
+## [9.0.3] — 2026-08-10
+
+[v9.0.3](https://github.com/m0n0x41d/haft/releases/tag/v9.0.3) is a patch
+release. Its published predecessor is
+[v9.0.2](https://github.com/m0n0x41d/haft/releases/tag/v9.0.2).
+
+### Fixed
+
+- **Snapshot-backed TypeScript resolution no longer walks the project once per
+  indexed file.** The incremental code index now uses its immutable epoch
+  snapshot without first computing and discarding the standalone
+  project-resolution fingerprint. TypeScript, JavaScript, and Vue files avoid
+  the repeated full-tree walk and ignore-matcher rebuild reported in
+  [#106](https://github.com/m0n0x41d/haft/issues/106); standalone resolution
+  keeps its existing config-invalidation path.
+- **`--no-file-instructions` now preserves existing managed instruction
+  carriers.** Combined local reruns such as `haft init --agents --local
+  --no-file-instructions --codex --claude` retain `AGENTS.md` and `CLAUDE.md`
+  byte-for-byte while reconciling the selected MCP and skill surfaces. The
+  retained fragments remain manifest-owned and use the same exact filesystem
+  snapshot and precondition checks as the rest of host publication.
+- **Unowned host skill roots now expose currentness without rewriting local
+  installations.** `haft host status` compares each discovered, manifest-free
+  skill root with the canonical bundle and reports matching, differing,
+  missing, and non-comparable skills in a separate read-only field. Existing
+  manifest currentness values and exit codes are unchanged.
+- **Specification review now names SQL-edition and Markdown-carrier drift.**
+  `haft spec review` reports section hashes and added, removed, or changed
+  claim IDs while keeping SQL editions canonical. The delta is diagnostic: it
+  does not choose truth, change lifecycle state, or turn a clear health result
+  into a failure.
+- **Evidence freshness debt is visible without changing evidence policy.**
+  `haft check` and evidence-path output classify dated, expired, explicitly
+  perpetual, legacy-blank, and non-assurance evidence. If the auxiliary
+  inventory scan is unavailable, `haft check` reports that posture without
+  suppressing the rest of the governance report. Existing rows, scoring,
+  admission, findings, and exit codes are unchanged.
+- **Release history no longer labels v9.0.0 current.** v9.0.0 is explicitly
+  historical; v9.0.2 is the published predecessor of v9.0.3.
+
+### Changed
+
+- **Compatible project-ledger migrations activate when `haft serve` starts.**
+  Each migration now declares its startup policy; the zero value remains
+  manual. The first admitted chain is schema 57 to 58. Every project path that
+  crosses migration 58 (`serve`, init, or `haft project migrate`) holds one
+  shared process/file lease and publishes a verified private SQLite snapshot
+  before the data rewrite. Current schemas remain a no-op. Manual chains,
+  missing bindings, future or invalid schemas, unhealthy ledgers, lease
+  timeouts, and stale WAL/SHM generations keep MCP alive with distinct recovery
+  instructions instead of opening project-backed tools. Other legacy CLI store
+  opens are current-only and cannot bypass the migration coordinator.
+- **Public documentation uses the simpler product story selected for v9.**
+  README and the documentation site omit internal release-status vocabulary;
+  managed agent instructions, specifications, and regression tests retain the
+  contract, evidence, installed-runtime, and release-authority boundaries.
+
 ## [9.0.2] — 2026-08-08
+
+[v9.0.2](https://github.com/m0n0x41d/haft/releases/tag/v9.0.2) was the
+published predecessor of v9.0.3.
 
 A patch release for one profile-onboarding defect: a conventional monorepo
 could expose a real software manifest and source tree while Haft prepared only
@@ -68,8 +130,8 @@ cannot express denied every caller the fused artifact-to-file bridge.
 
 ## [9.0.0] — 2026-08-07
 
-[v9.0.0](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0) is the
-published current release. Its published predecessor is
+[v9.0.0](https://github.com/m0n0x41d/haft/releases/tag/v9.0.0) was the first
+published v9 release. Its published predecessor was
 [v8.1.0](https://github.com/m0n0x41d/haft/releases/tag/v8.1.0). The v8.2.0
 candidate was never published; its candidate lineage is incorporated into this
 v9.0.0 release entry.

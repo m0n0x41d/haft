@@ -3,6 +3,7 @@ package initplanning
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -161,16 +162,29 @@ type skillRootObservationWire struct {
 }
 
 type SkillRootObservation struct {
-	root           string
-	host           HostID
-	scope          InstallScope
-	evidenceRef    string
-	evidenceDigest string
-	canonical      []byte
-	expectedCount  int
-	observedCount  int
-	activeRoot     ActiveSkillRoot
-	active         bool
+	root                 string
+	host                 HostID
+	scope                InstallScope
+	evidenceRef          string
+	evidenceDigest       string
+	canonical            []byte
+	exposureObservations []SkillRootExposureObservation
+	expectedCount        int
+	observedCount        int
+	activeRoot           ActiveSkillRoot
+	active               bool
+}
+
+// SkillRootExposureObservation is the read-only per-skill filesystem
+// observation behind a SkillRootObservation. It deliberately carries only
+// observed state. Desired/currentness semantics belong to the caller's exact
+// host projection and are not inferred from filesystem presence.
+type SkillRootExposureObservation struct {
+	Name   string
+	Path   string
+	State  PathObservationKind
+	Digest string
+	Mode   fs.FileMode
 }
 
 func ProjectSkillRootObservation(
@@ -191,7 +205,7 @@ func ProjectSkillRootObservation(
 	if err := validateSkillRootObservations(observedByPath, exposureByPath); err != nil {
 		return SkillRootObservation{}, err
 	}
-	wire, activeExposures := buildSkillRootObservationWire(
+	wire, exposureObservations, activeExposures := buildSkillRootObservationWire(
 		plan,
 		observedByPath,
 	)
@@ -202,14 +216,15 @@ func ProjectSkillRootObservation(
 	digest := digestBytesForManifest(canonical)
 	evidenceRef := "skill-root-observation:" + strings.TrimPrefix(digest, "sha256:")
 	result := SkillRootObservation{
-		root:           plan.root,
-		host:           plan.host,
-		scope:          plan.scope,
-		evidenceRef:    evidenceRef,
-		evidenceDigest: digest,
-		canonical:      canonical,
-		expectedCount:  len(plan.exposures),
-		observedCount:  len(activeExposures),
+		root:                 plan.root,
+		host:                 plan.host,
+		scope:                plan.scope,
+		evidenceRef:          evidenceRef,
+		evidenceDigest:       digest,
+		canonical:            canonical,
+		exposureObservations: exposureObservations,
+		expectedCount:        len(plan.exposures),
+		observedCount:        len(activeExposures),
 	}
 	if len(activeExposures) == 0 {
 		return result, nil
@@ -268,8 +283,17 @@ func validateSkillRootObservations(
 func buildSkillRootObservationWire(
 	plan SkillRootObservationPlan,
 	observedByPath map[string]PathObservation,
-) (skillRootObservationWire, []SkillExposure) {
+) (
+	skillRootObservationWire,
+	[]SkillRootExposureObservation,
+	[]SkillExposure,
+) {
 	exposures := make([]skillRootExposureObservationWire, 0, len(plan.exposures))
+	observedExposures := make(
+		[]SkillRootExposureObservation,
+		0,
+		len(plan.exposures),
+	)
 	active := make([]SkillExposure, 0, len(observedByPath))
 	for _, exposure := range plan.exposures {
 		observation, present := observedByPath[exposure.path]
@@ -285,6 +309,16 @@ func buildSkillRootObservationWire(
 			active = append(active, exposure)
 		}
 		exposures = append(exposures, wire)
+		observedExposures = append(
+			observedExposures,
+			SkillRootExposureObservation{
+				Name:   wire.Name,
+				Path:   wire.Path,
+				State:  wire.State,
+				Digest: wire.Digest,
+				Mode:   fs.FileMode(wire.Mode),
+			},
+		)
 	}
 	return skillRootObservationWire{
 		Schema:    skillRootObservationSchema,
@@ -292,7 +326,7 @@ func buildSkillRootObservationWire(
 		Host:      plan.host,
 		Scope:     plan.scope,
 		Exposures: exposures,
-	}, active
+	}, observedExposures, active
 }
 
 func (observation SkillRootObservation) Root() string {
@@ -317,6 +351,10 @@ func (observation SkillRootObservation) EvidenceDigest() string {
 
 func (observation SkillRootObservation) CanonicalBytes() []byte {
 	return slices.Clone(observation.canonical)
+}
+
+func (observation SkillRootObservation) ExposureObservations() []SkillRootExposureObservation {
+	return slices.Clone(observation.exposureObservations)
 }
 
 func (observation SkillRootObservation) ExpectedCount() int {

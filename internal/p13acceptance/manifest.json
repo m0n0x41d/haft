@@ -1391,7 +1391,7 @@
       "anchors": [
         {
           "package": "github.com/m0n0x41d/haft/internal/streamtruth",
-          "test": "TestREADMEDeclaresExactlyTheFourStreamTruthLabels"
+          "test": "TestREADMEOpensWithProductAndFPFAttribution"
         },
         {
           "package": "github.com/m0n0x41d/haft/internal/streamtruth",

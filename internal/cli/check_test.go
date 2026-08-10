@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -13,9 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 type checkTestProject struct {
@@ -44,6 +47,170 @@ func TestBuildCheckReport_CleanProject(t *testing.T) {
 	}
 	if report.Summary.TotalFindings != 0 {
 		t.Fatalf("total_findings = %d, want 0", report.Summary.TotalFindings)
+	}
+}
+
+func TestBuildCheckReportAddsReadOnlyEvidenceFreshnessInventoryWithoutFindings(
+	t *testing.T,
+) {
+	fixture := newCheckTestProject(t)
+	evidenceCarrier := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:    "note-freshness-fixture",
+			Kind:  artifact.KindNote,
+			Title: "Evidence freshness test carrier",
+		},
+		Body: "Parent carrier for evidence freshness inventory rows.",
+	}
+	if err := fixture.store.Create(context.Background(), evidenceCarrier); err != nil {
+		t.Fatalf("create evidence freshness carrier: %v", err)
+	}
+	createdAt := time.Date(2026, time.August, 9, 12, 0, 0, 0, time.UTC).
+		Format(time.RFC3339)
+	rows := []struct {
+		id         string
+		validUntil any
+	}{
+		{id: "evid-dated", validUntil: "2099-01-01"},
+		{id: "evid-expired", validUntil: "2020-01-01"},
+		{id: "evid-legacy-blank", validUntil: nil},
+	}
+	for _, row := range rows {
+		if _, err := fixture.db.Exec(
+			`INSERT INTO evidence_items
+			 (id, artifact_ref, type, content, verdict, valid_until, created_at)
+			 VALUES (?, ?, 'test', 'fixture', 'supports', ?, ?)`,
+			row.id,
+			evidenceCarrier.Meta.ID,
+			row.validUntil,
+			createdAt,
+		); err != nil {
+			t.Fatalf("seed evidence freshness row %s: %v", row.id, err)
+		}
+	}
+	before := checkEvidenceFreshnessCarrierSnapshot(t, fixture.db)
+	report, err := buildCheckReport(
+		context.Background(),
+		fixture.store,
+		fixture.root,
+	)
+	if err != nil {
+		t.Fatalf("buildCheckReport returned error: %v", err)
+	}
+	after := checkEvidenceFreshnessCarrierSnapshot(t, fixture.db)
+	if before != after {
+		t.Fatalf("evidence freshness inventory mutated rows: before=%q after=%q", before, after)
+	}
+	if report.Summary.TotalFindings != 0 || report.hasFindings() {
+		t.Fatalf("freshness inventory changed check findings: %#v", report)
+	}
+	inventory := report.EvidenceFreshness
+	if inventory.Posture != artifact.EvidenceFreshnessInventoryPostureAvailable ||
+		inventory.Diagnostic != "" ||
+		inventory.TotalItems != 3 ||
+		inventory.Dated != 1 ||
+		inventory.Expired != 1 ||
+		inventory.LegacyBlankUnknown != 1 ||
+		inventory.FindingsAdded != 0 ||
+		inventory.LegacyBlankUnknownIsCCED1Violation ||
+		inventory.ScoringChanged ||
+		inventory.AdmissionChanged ||
+		inventory.MutationsPerformed {
+		t.Fatalf("evidence freshness inventory = %#v", inventory)
+	}
+}
+
+func TestBuildCheckReportKeepsEvidenceFreshnessFailureDiagnosticOnly(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	dropCheckEvidenceItemsTable(t, fixture.db)
+
+	report, err := buildCheckReport(
+		context.Background(),
+		fixture.store,
+		fixture.root,
+	)
+	if err != nil {
+		t.Fatalf("buildCheckReport returned error: %v", err)
+	}
+	if report.Summary.TotalFindings != 0 || report.hasFindings() {
+		t.Fatalf("unavailable freshness changed findings: %#v", report)
+	}
+	inventory := report.EvidenceFreshness
+	if inventory.Posture != artifact.EvidenceFreshnessInventoryPostureUnavailable ||
+		!strings.Contains(inventory.Diagnostic, "read evidence freshness carriers") ||
+		inventory.TotalItems != 0 ||
+		inventory.FindingsAdded != 0 ||
+		inventory.ScoringChanged ||
+		inventory.AdmissionChanged ||
+		inventory.MutationsPerformed {
+		t.Fatalf("unavailable freshness inventory = %#v", inventory)
+	}
+}
+
+func TestCollectCheckEvidenceFreshnessPropagatesContextTermination(t *testing.T) {
+	tests := []struct {
+		name       string
+		newContext func() (context.Context, context.CancelFunc)
+		want       error
+	}{
+		{
+			name: "cancelled",
+			newContext: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx, func() {}
+			},
+			want: context.Canceled,
+		},
+		{
+			name: "deadline exceeded",
+			newContext: func() (context.Context, context.CancelFunc) {
+				return context.WithDeadline(
+					context.Background(),
+					time.Unix(0, 0),
+				)
+			},
+			want: context.DeadlineExceeded,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			fixture := newCheckTestProject(t)
+			ctx, cancel := test.newContext()
+			defer cancel()
+
+			inventory, err := collectCheckEvidenceFreshness(
+				ctx,
+				fixture.store,
+				time.Date(2026, time.August, 9, 12, 0, 0, 0, time.UTC),
+			)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want %v", err, test.want)
+			}
+			if inventory.Posture !=
+				artifact.EvidenceFreshnessInventoryPostureUnavailable {
+				t.Fatalf("terminated inventory posture = %q", inventory.Posture)
+			}
+		})
+	}
+}
+
+func checkEvidenceFreshnessCarrierSnapshot(t *testing.T, database *sql.DB) string {
+	t.Helper()
+	var snapshot sql.NullString
+	if err := database.QueryRow(`
+		SELECT group_concat(id || ':' || coalesce(valid_until, '<null>'), '|')
+		FROM (SELECT id, valid_until FROM evidence_items ORDER BY id)
+	`).Scan(&snapshot); err != nil {
+		t.Fatalf("snapshot evidence freshness carriers: %v", err)
+	}
+	return snapshot.String
+}
+
+func dropCheckEvidenceItemsTable(t *testing.T, database *sql.DB) {
+	t.Helper()
+	if _, err := database.Exec(`DROP TABLE evidence_items`); err != nil {
+		t.Fatalf("drop evidence_items: %v", err)
 	}
 }
 
@@ -214,6 +381,35 @@ func TestRunCheck_CleanProjectPrintsSummaryAndStaysZero(t *testing.T) {
 	}
 }
 
+func TestRunCheckEvidenceFreshnessUnavailablePrintsPostureAndStaysZero(
+	t *testing.T,
+) {
+	fixture := newCheckTestProject(t)
+	dropCheckEvidenceItemsTable(t, fixture.db)
+	restore := enterTestProjectRoot(t, fixture.root)
+	defer restore()
+
+	var output bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&output)
+	restoreJSON := stubCheckJSON(t, false)
+	defer restoreJSON()
+	exitCode := stubCheckExit(t)
+
+	if err := runCheck(cmd, nil); err != nil {
+		t.Fatalf("runCheck returned error: %v", err)
+	}
+	if *exitCode != 0 {
+		t.Fatalf("exit code = %d, want 0", *exitCode)
+	}
+	result := output.String()
+	if !strings.Contains(result, "haft check: clean") ||
+		!strings.Contains(result, "evidence freshness (diagnostic only): unavailable") ||
+		strings.Contains(result, "evidence freshness (diagnostic only): total=0") {
+		t.Fatalf("summary output = %q", result)
+	}
+}
+
 func TestRunCheck_JSONExitsOneWhenFindingsExist(t *testing.T) {
 	fixture := newCheckTestProject(t)
 	seedGovernanceDebt(t, fixture)
@@ -279,6 +475,9 @@ func TestWriteCheckJSON_ZeroValueUsesStableSchema(t *testing.T) {
 			t.Fatalf("%s = %s, want %s", field, string(got), want)
 		}
 	}
+	if _, ok := payload["evidence_freshness"]; !ok {
+		t.Fatal("missing top-level field \"evidence_freshness\"")
+	}
 
 	gotSummary, ok := payload["summary"]
 	if !ok {
@@ -295,13 +494,86 @@ func TestWriteCheckJSON_ZeroValueUsesStableSchema(t *testing.T) {
 	}
 }
 
+func TestWriteCheckJSONEvidenceFreshnessPostureContract(t *testing.T) {
+	t.Parallel()
+	now := "2026-08-09T12:00:00Z"
+	tests := []struct {
+		name           string
+		inventory      artifact.EvidenceFreshnessInventory
+		wantPosture    string
+		wantDiagnostic bool
+	}{
+		{
+			name: "available omits diagnostic",
+			inventory: artifact.EvidenceFreshnessInventory{
+				Posture:   artifact.EvidenceFreshnessInventoryPostureAvailable,
+				Authority: artifact.EvidenceFreshnessDiagnosticAuthority,
+				CheckedAt: now,
+			},
+			wantPosture: "available",
+		},
+		{
+			name: "unavailable includes diagnostic",
+			inventory: artifact.EvidenceFreshnessInventory{
+				Posture:    artifact.EvidenceFreshnessInventoryPostureUnavailable,
+				Authority:  artifact.EvidenceFreshnessDiagnosticAuthority,
+				CheckedAt:  now,
+				Diagnostic: "read evidence freshness carriers: fixture failure",
+			},
+			wantPosture:    "unavailable",
+			wantDiagnostic: true,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := writeCheckJSON(&output, checkReport{
+				EvidenceFreshness: test.inventory,
+			}); err != nil {
+				t.Fatalf("writeCheckJSON returned error: %v", err)
+			}
+
+			var payload struct {
+				EvidenceFreshness map[string]json.RawMessage `json:"evidence_freshness"`
+			}
+			if err := json.Unmarshal(output.Bytes(), &payload); err != nil {
+				t.Fatalf("decode JSON output: %v", err)
+			}
+			var posture string
+			if err := json.Unmarshal(
+				payload.EvidenceFreshness["posture"],
+				&posture,
+			); err != nil {
+				t.Fatalf("decode posture: %v", err)
+			}
+			if posture != test.wantPosture {
+				t.Fatalf("posture = %q, want %q", posture, test.wantPosture)
+			}
+			_, hasDiagnostic := payload.EvidenceFreshness["diagnostic"]
+			if hasDiagnostic != test.wantDiagnostic {
+				t.Fatalf(
+					"diagnostic presence = %t, want %t",
+					hasDiagnostic,
+					test.wantDiagnostic,
+				)
+			}
+		})
+	}
+}
+
 func newCheckTestProject(t *testing.T) checkTestProject {
 	t.Helper()
 
-	homeDir := t.TempDir()
+	homeDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve physical test home: %v", err)
+	}
 	t.Setenv("HOME", homeDir)
 
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve physical project root: %v", err)
+	}
 	haftDir := filepath.Join(root, ".haft")
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {
 		t.Fatalf("create .haft dir: %v", err)
@@ -319,125 +591,30 @@ func newCheckTestProject(t *testing.T) checkTestProject {
 		t.Fatalf("resolve DB path: %v", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	kernelStore, err := kerneldb.NewStore(dbPath)
 	if err != nil {
-		t.Fatalf("open sqlite DB: %v", err)
+		t.Fatalf("initialize current kernel store: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	createCheckSchema(t, db)
-
-	// SpecSectionBaseline storage from migration v28 (slice 3). The bespoke
-	// fixture schema doesn't run RunMigrations; declare the table inline so
-	// writeCheckTestSpecCarriers can baseline its active sections.
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS spec_section_baselines (
-		project_id TEXT NOT NULL,
-		section_id TEXT NOT NULL,
-		hash TEXT NOT NULL,
-		captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		approved_by TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY (project_id, section_id)
-	)`); err != nil {
-		t.Fatalf("create spec_section_baselines: %v", err)
+	t.Cleanup(func() { _ = kernelStore.Close() })
+	if err := projectledger.BindInitialized(
+		context.Background(),
+		root,
+		time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+	); err != nil {
+		t.Fatalf("bind current kernel store: %v", err)
 	}
+	database := kernelStore.GetRawDB()
 
 	fixture := checkTestProject{
 		root:    root,
 		haftDir: haftDir,
-		store:   artifact.NewStore(db),
-		db:      db,
+		store:   artifact.NewStore(database),
+		db:      database,
 	}
 
 	writeCheckTestSpecCarriers(t, fixture)
 
 	return fixture
-}
-
-func createCheckSchema(t *testing.T, db *sql.DB) {
-	t.Helper()
-
-	statements := []string{
-		`CREATE TABLE artifacts (
-			id TEXT PRIMARY KEY,
-			kind TEXT NOT NULL,
-			version INTEGER NOT NULL DEFAULT 1,
-			status TEXT NOT NULL DEFAULT 'active',
-			context TEXT,
-			mode TEXT,
-			title TEXT NOT NULL,
-			content TEXT NOT NULL,
-			file_path TEXT,
-			valid_until TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			search_keywords TEXT DEFAULT '',
-			structured_data TEXT DEFAULT ''
-		)`,
-		`CREATE TABLE artifact_links (
-			source_id TEXT NOT NULL,
-			target_id TEXT NOT NULL,
-			link_type TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			PRIMARY KEY (source_id, target_id, link_type)
-		)`,
-		`CREATE TABLE evidence_items (
-			id TEXT PRIMARY KEY,
-			artifact_ref TEXT NOT NULL,
-			type TEXT NOT NULL,
-			content TEXT NOT NULL,
-			verdict TEXT,
-			carrier_ref TEXT,
-			congruence_level INTEGER DEFAULT 3,
-			formality_level INTEGER DEFAULT 5,
-			claim_refs TEXT DEFAULT '[]',
-			claim_scope TEXT DEFAULT '[]',
-			valid_until TEXT,
-			created_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE affected_files (
-			artifact_id TEXT NOT NULL,
-			file_path TEXT NOT NULL,
-			file_hash TEXT,
-			PRIMARY KEY (artifact_id, file_path)
-		)`,
-		`CREATE TABLE affected_symbols (
-			artifact_id TEXT NOT NULL,
-			file_path TEXT NOT NULL,
-			symbol_name TEXT NOT NULL,
-			symbol_kind TEXT NOT NULL,
-			symbol_line INTEGER,
-			symbol_end_line INTEGER,
-			symbol_hash TEXT,
-			PRIMARY KEY (artifact_id, file_path, symbol_name)
-		)`,
-		`CREATE TABLE codebase_modules (
-			module_id TEXT PRIMARY KEY,
-			path TEXT NOT NULL UNIQUE,
-			name TEXT NOT NULL,
-			lang TEXT,
-			file_count INTEGER DEFAULT 0,
-			last_scanned TEXT NOT NULL
-		)`,
-		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, search_keywords, tokenize='porter unicode61')`,
-		`CREATE TRIGGER artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
-			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
-			VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
-		END`,
-		`CREATE TRIGGER artifacts_fts_update AFTER UPDATE ON artifacts BEGIN
-			DELETE FROM artifacts_fts WHERE id = old.id;
-			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
-			VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
-		END`,
-		`CREATE TRIGGER artifacts_fts_delete AFTER DELETE ON artifacts BEGIN
-			DELETE FROM artifacts_fts WHERE id = old.id;
-		END`,
-	}
-
-	for _, statement := range statements {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("create schema: %v\nSQL: %s", err, statement)
-		}
-	}
 }
 
 func seedGovernanceDebt(t *testing.T, fixture checkTestProject) checkSeedData {

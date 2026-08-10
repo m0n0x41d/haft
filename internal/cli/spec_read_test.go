@@ -3,6 +3,7 @@ package cli
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,78 @@ import (
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 	"github.com/m0n0x41d/haft/internal/projectprofile"
 )
+
+func TestCompareSpecEditionsWithCarriersReportsClaimDeltaWithoutJudgment(
+	t *testing.T,
+) {
+	sqlSection := cliSpecDeltaSection("SS.delta.001", []project.SpecClaim{
+		{ID: "SS.delta.001.L1", Class: "L", Statement: "unchanged"},
+		{ID: "SS.delta.001.L2", Class: "L", Statement: "SQL meaning"},
+		{ID: "SS.delta.001.L3", Class: "L", Statement: "SQL only"},
+	})
+	matching := compareSpecEditionsWithCarriers(
+		project.ProjectSpecificationSet{Sections: []project.SpecSection{sqlSection}},
+		project.ProjectSpecificationSet{Sections: []project.SpecSection{sqlSection}},
+	)
+	if matching.Posture != "matches" || len(matching.Sections) != 0 {
+		t.Fatalf("matching edition/carrier delta = %#v", matching)
+	}
+
+	carrierSection := sqlSection
+	carrierSection.Claims = []project.SpecClaim{
+		{ID: "SS.delta.001.L1", Class: "L", Statement: "unchanged"},
+		{ID: "SS.delta.001.L2", Class: "L", Statement: "carrier meaning"},
+		{ID: "SS.delta.001.L4", Class: "L", Statement: "carrier only"},
+	}
+	delta := compareSpecEditionsWithCarriers(
+		project.ProjectSpecificationSet{Sections: []project.SpecSection{sqlSection}},
+		project.ProjectSpecificationSet{Sections: []project.SpecSection{carrierSection}},
+	)
+	if delta.Posture != "differs" ||
+		delta.Judgment != specEditionCarrierDeltaJudgment ||
+		delta.SQLClaimCount != 3 ||
+		delta.CarrierClaimCount != 3 ||
+		len(delta.Sections) != 1 {
+		t.Fatalf("edition/carrier delta envelope = %#v", delta)
+	}
+	section := delta.Sections[0]
+	if section.SectionID != "SS.delta.001" ||
+		section.SQLSemanticHash == "" ||
+		section.CarrierSemanticHash == "" ||
+		section.SQLSemanticHash == section.CarrierSemanticHash ||
+		!slices.Equal(
+			section.CarrierAddedClaimIDs,
+			[]string{"SS.delta.001.L4"},
+		) ||
+		!slices.Equal(
+			section.CarrierRemovedClaimIDs,
+			[]string{"SS.delta.001.L3"},
+		) ||
+		!slices.Equal(
+			section.CarrierChangedClaimIDs,
+			[]string{"SS.delta.001.L2"},
+		) {
+		t.Fatalf("edition/carrier section delta = %#v", section)
+	}
+}
+
+func cliSpecDeltaSection(
+	id string,
+	claims []project.SpecClaim,
+) project.SpecSection {
+	return project.SpecSection{
+		ID:            id,
+		Spec:          "software-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "software_system", Kind: "software_system"},
+		Kind:          "allocation",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "human",
+		Status:        "active",
+		Claims:        claims,
+		DocumentKind:  "software-system",
+	}
+}
 
 func TestSpecRuntimeReadPathsDoNotBypassSQLEditionSource(t *testing.T) {
 	t.Parallel()

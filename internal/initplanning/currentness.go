@@ -437,6 +437,18 @@ func validateFirstInstallationProjection(
 		len(projection.recovery.argv) == 0 {
 		return nil, nil, fmt.Errorf("first-install host adapter projection is invalid")
 	}
+	retained, err := canonicalRetainedManagedFragmentComponents(
+		projection.retainedManagedFragmentComponents,
+		projection.components,
+	)
+	if err != nil || !slices.Equal(
+		retained,
+		projection.retainedManagedFragmentComponents,
+	) {
+		return nil, nil, fmt.Errorf(
+			"first-install host adapter projection retained managed fragments are invalid",
+		)
+	}
 	managedRoots, err := mergeManagedRoots(projection.targetRoots, nil)
 	if err != nil {
 		return nil, nil, err
@@ -509,6 +521,18 @@ func validateProjectionBinding(
 		projection.host != manifest.wire.Host ||
 		projection.scope != manifest.wire.InstallScope {
 		return fmt.Errorf("host adapter projection belongs to another installation binding")
+	}
+	retained, err := canonicalRetainedManagedFragmentComponents(
+		projection.retainedManagedFragmentComponents,
+		projection.components,
+	)
+	if err != nil || !slices.Equal(
+		retained,
+		projection.retainedManagedFragmentComponents,
+	) {
+		return fmt.Errorf(
+			"host adapter projection retained managed fragments are invalid",
+		)
 	}
 	outputs, err := validateProjectionOutputs(
 		projection.outputs,

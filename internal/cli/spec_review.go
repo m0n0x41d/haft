@@ -13,6 +13,11 @@ import (
 
 var specReviewJSON bool
 
+type specReviewPacket struct {
+	specflow.ReviewPacket
+	SpecEditionCarrierDelta specEditionCarrierDelta `json:"spec_edition_carrier_delta"`
+}
+
 var specReviewCmd = &cobra.Command{
 	Use:   "review",
 	Short: "Run read-only semantic review over active SpecSections",
@@ -44,23 +49,28 @@ func runSpecReview(cmd *cobra.Command, _ []string) error {
 	return writeSpecReviewSummary(output, packet)
 }
 
-func buildSpecReviewPacket(projectRoot string) (specflow.ReviewPacket, error) {
-	specSet, err := loadProjectSpecificationSetSQLFirst(projectRoot)
+func buildSpecReviewPacket(projectRoot string) (specReviewPacket, error) {
+	specSet, delta, err := loadProjectSpecificationSetSQLFirstWithCarrierDelta(
+		projectRoot,
+	)
 	if err != nil {
-		return specflow.ReviewPacket{}, err
+		return specReviewPacket{}, err
 	}
 
-	return specflow.ReviewSpecificationSet(specSet), nil
+	return specReviewPacket{
+		ReviewPacket:            specflow.ReviewSpecificationSet(specSet),
+		SpecEditionCarrierDelta: delta,
+	}, nil
 }
 
-func writeSpecReviewJSON(w io.Writer, packet specflow.ReviewPacket) error {
+func writeSpecReviewJSON(w io.Writer, packet specReviewPacket) error {
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")
 
 	return encoder.Encode(packet)
 }
 
-func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
+func writeSpecReviewSummary(w io.Writer, packet specReviewPacket) error {
 	builder := strings.Builder{}
 
 	builder.WriteString(fmt.Sprintf(
@@ -99,6 +109,9 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 		packet.AuthorityBoundary.Publication,
 	))
 	builder.WriteString("state_readings: per-section profile names bearer, frame, use, and reopen_condition; not global ready/pass/current\n")
+	builder.WriteString(formatSpecEditionCarrierDelta(
+		packet.SpecEditionCarrierDelta,
+	))
 
 	if len(packet.Findings) > 0 {
 		builder.WriteString("\nFindings:\n")
@@ -111,6 +124,40 @@ func writeSpecReviewSummary(w io.Writer, packet specflow.ReviewPacket) error {
 	_, err := io.WriteString(w, builder.String())
 
 	return err
+}
+
+func formatSpecEditionCarrierDelta(delta specEditionCarrierDelta) string {
+	builder := strings.Builder{}
+	builder.WriteString(fmt.Sprintf(
+		"spec_edition_carrier_delta: %s sql_sections=%d carrier_sections=%d sql_claims=%d sql_stored_claims=%d carrier_claims=%d claim_count_basis=%s judgment=%s\n",
+		delta.Posture,
+		delta.SQLSectionCount,
+		delta.CarrierSectionCount,
+		delta.SQLClaimCount,
+		delta.SQLStoredClaimCount,
+		delta.CarrierClaimCount,
+		delta.ClaimCountBasis,
+		delta.Judgment,
+	))
+	builder.WriteString(fmt.Sprintf(
+		"carrier_observation: %s findings=%d\n",
+		delta.CarrierObservation.Posture,
+		delta.CarrierObservation.FindingCount,
+	))
+	for _, section := range delta.Sections {
+		builder.WriteString(fmt.Sprintf(
+			"  - %s sql_hash=%s carrier_hash=%s carrier_added_claims=%s carrier_removed_claims=%s carrier_changed_claims=%s non_claim_fields_changed=%t claim_order_changed=%t\n",
+			section.SectionID,
+			section.SQLSemanticHash,
+			section.CarrierSemanticHash,
+			strings.Join(section.CarrierAddedClaimIDs, ","),
+			strings.Join(section.CarrierRemovedClaimIDs, ","),
+			strings.Join(section.CarrierChangedClaimIDs, ","),
+			section.NonClaimFieldsChanged,
+			section.ClaimOrderChanged,
+		))
+	}
+	return builder.String()
 }
 
 func formatSpecReviewProfile(profile specflow.ReviewProfile) string {

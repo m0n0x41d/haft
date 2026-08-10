@@ -248,6 +248,35 @@ func TestBuildEvidencePathRecordBlocksExpiredEvidence(t *testing.T) {
 	}
 }
 
+func TestBuildEvidencePathRecordNamesLegacyBlankWithoutChangingLegacyReliance(
+	t *testing.T,
+) {
+	item := evidencePathItem()
+	item.ValidUntil = ""
+	record := BuildEvidencePathRecord(
+		EvidencePathInput{
+			ArtifactRef:  "dec-1",
+			EvidenceRef:  "evid-1",
+			ClaimRef:     "claim-1",
+			AttemptedUse: "commission preflight",
+			ProducerRef:  "agent:local",
+			MethodRef:    "mpull-1",
+			WorkRef:      "wc-1",
+		},
+		item,
+		evidencePathNow(),
+	)
+	if record.FreshnessDebt.Class != EvidenceFreshnessLegacyBlankUnknown {
+		t.Fatalf("freshness debt = %#v", record.FreshnessDebt)
+	}
+	if record.CurrentnessWindow.Status != EvidenceCurrentnessPerpetual {
+		t.Fatalf("legacy currentness changed = %#v", record.CurrentnessWindow)
+	}
+	if record.RelianceDisposition.Disposition != EvidenceRelianceBounded {
+		t.Fatalf("legacy reliance changed = %#v", record.RelianceDisposition)
+	}
+}
+
 func TestBuildEvidencePathRecordBlocksUnboundClaim(t *testing.T) {
 	record := BuildEvidencePathRecord(
 		EvidencePathInput{

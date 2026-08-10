@@ -2,7 +2,8 @@
 # Haft Installer
 #
 # Installs the haft binary globally.
-# After installation, run `haft init` in each project.
+# New projects run `haft init` once. Existing initialized projects restart the
+# host; explicitly compatible project-ledger migrations activate on serve.
 #
 # Usage:
 #   curl -fsSL https://quint.codes/install.sh | bash
@@ -297,7 +298,9 @@ main() {
     printf "${GREEN}    ╚════════════════════════════════════════════════════════════╝${RESET}\n"
     echo ""
     printf "   ${WHITE}${BOLD}Next step:${RESET}\n"
-    printf "   In your project directory, run: ${WHITE}haft init${RESET}\n"
+    printf "   New project: run ${WHITE}haft init${RESET} in the project directory.\n"
+    printf "   Existing Haft project: fully restart or reconnect your coding-agent host.\n"
+    printf "   Compatible database migrations activate automatically when ${WHITE}haft serve${RESET} starts.\n"
     echo ""
 }
 

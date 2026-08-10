@@ -131,6 +131,21 @@ func TestHostStatusCommandReadsManifestCurrentnessAndDuplicateRootsWithoutMutati
 		candidate.targetRoot,
 		filepath.Dir(filepath.Dir(globalReasonPath)),
 	)
+	if len(first.UnownedSkillRootCurrentness) != 1 {
+		t.Fatalf(
+			"unowned skill-root currentness count = %d, want 1: %#v",
+			len(first.UnownedSkillRootCurrentness),
+			first.UnownedSkillRootCurrentness,
+		)
+	}
+	unowned := first.UnownedSkillRootCurrentness[0]
+	if unowned.Root != filepath.Dir(filepath.Dir(globalReasonPath)) ||
+		unowned.Outcome != hostSkillRootDiffersCanonical ||
+		unowned.DifferingCount != 1 ||
+		unowned.MissingCount != unowned.ExpectedCount-1 ||
+		unowned.OwnershipPosture != "unowned_discovered_root" {
+		t.Fatalf("unowned skill-root currentness = %#v", unowned)
+	}
 
 	tamperedPath := projection.Outputs()[0].Path()
 	writeHostStatusFixtureFile(
@@ -168,6 +183,139 @@ func TestHostStatusCommandReadsManifestCurrentnessAndDuplicateRootsWithoutMutati
 			"tampered currentness reasons = %#v",
 			second.Manifests[0].Currentness.Reasons,
 		)
+	}
+}
+
+func TestUnownedSkillRootCurrentnessDistinguishesAbsentMatchingAndDifferingRoots(
+	t *testing.T,
+) {
+	projectRoot := filepath.Join(t.TempDir(), "project")
+	if err := os.MkdirAll(projectRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", filepath.Join(t.TempDir(), "home"))
+	runtime, err := currentHostPublicationRuntimeFromProcess()
+	if err != nil {
+		t.Fatalf("currentHostPublicationRuntimeFromProcess: %v", err)
+	}
+	bundle, err := currentSkillSourceBundle()
+	if err != nil {
+		t.Fatalf("currentSkillSourceBundle: %v", err)
+	}
+	candidates, err := currentStandardSkillCandidates(
+		projectRoot,
+		bundle,
+		runtime,
+	)
+	if err != nil {
+		t.Fatalf("currentStandardSkillCandidates: %v", err)
+	}
+	candidate, found := findCurrentStandardSkillCandidate(
+		candidates,
+		initplanning.HostCodex,
+		initplanning.ScopeProject,
+	)
+	if !found {
+		t.Fatal("current Codex project skill candidate is missing")
+	}
+	inspector, err := initfs.NewHostStatusInspector(
+		hostStatusMaxCarrierBytes,
+	)
+	if err != nil {
+		t.Fatalf("NewHostStatusInspector: %v", err)
+	}
+
+	observations, _, issues := inspectCurrentSkillRoots(
+		[]currentStandardSkillCandidate{candidate},
+		inspector,
+	)
+	if len(issues) != 0 {
+		t.Fatalf("absent-root inspection issues = %#v", issues)
+	}
+	if currentness := compareUnownedSkillRootCurrentness(
+		[]currentStandardSkillCandidate{candidate},
+		observations,
+		nil,
+	); len(currentness) != 0 {
+		t.Fatalf("absent root produced currentness = %#v", currentness)
+	}
+
+	for _, output := range candidate.projection.Outputs() {
+		writeHostStatusFixtureFile(
+			t,
+			output.Path(),
+			output.Content(),
+			output.Mode(),
+		)
+	}
+	before := snapshotHostStatusFixture(
+		t,
+		nil,
+		candidate.projection.Outputs(),
+	)
+	observations, _, issues = inspectCurrentSkillRoots(
+		[]currentStandardSkillCandidate{candidate},
+		inspector,
+	)
+	after := snapshotHostStatusFixture(
+		t,
+		nil,
+		candidate.projection.Outputs(),
+	)
+	if !slices.Equal(before, after) {
+		t.Fatal("matching-root currentness inspection mutated carriers")
+	}
+	if len(issues) != 0 {
+		t.Fatalf("matching-root inspection issues = %#v", issues)
+	}
+	matching := compareUnownedSkillRootCurrentness(
+		[]currentStandardSkillCandidate{candidate},
+		observations,
+		nil,
+	)
+	if len(matching) != 1 ||
+		matching[0].Outcome != hostSkillRootMatchesCanonical ||
+		matching[0].MatchingCount != len(candidate.projection.Records()) ||
+		matching[0].DifferingCount != 0 ||
+		matching[0].MissingCount != 0 {
+		t.Fatalf("matching root currentness = %#v", matching)
+	}
+
+	record := candidate.projection.Records()[0]
+	writeHostStatusFixtureFile(
+		t,
+		record.RenderedSkillPath,
+		[]byte("locally stale unowned skill\n"),
+		0o644,
+	)
+	tamperedBefore, err := os.ReadFile(record.RenderedSkillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	observations, _, issues = inspectCurrentSkillRoots(
+		[]currentStandardSkillCandidate{candidate},
+		inspector,
+	)
+	tamperedAfter, err := os.ReadFile(record.RenderedSkillPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(tamperedBefore, tamperedAfter) {
+		t.Fatal("differing-root currentness inspection mutated carrier")
+	}
+	if len(issues) != 0 {
+		t.Fatalf("differing-root inspection issues = %#v", issues)
+	}
+	differing := compareUnownedSkillRootCurrentness(
+		[]currentStandardSkillCandidate{candidate},
+		observations,
+		nil,
+	)
+	if len(differing) != 1 ||
+		differing[0].Outcome != hostSkillRootDiffersCanonical ||
+		differing[0].DifferingCount != 1 ||
+		differing[0].MatchingCount != len(candidate.projection.Records())-1 {
+		t.Fatalf("differing root currentness = %#v", differing)
 	}
 }
 
@@ -1028,6 +1176,7 @@ func TestHostStatusJSONUsesStableNestedFieldNames(
 		`"haft_version"`,
 		`"vacant_targets"`,
 		`"desired_digest"`,
+		`"unowned_skill_root_currentness"`,
 	} {
 		if !strings.Contains(rendered, expected) {
 			t.Fatalf("host status JSON is missing %s: %s", expected, rendered)

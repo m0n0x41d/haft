@@ -41,6 +41,14 @@ func ClassifyCoherentInstallationCurrentness(
 	if err != nil {
 		return CoherentInstallationCurrentness{}, err
 	}
+	effectiveProjection, err := projectionWithClassifiedManagedFragments(
+		projection,
+		carriers,
+	)
+	if err != nil {
+		return CoherentInstallationCurrentness{}, err
+	}
+	whole.projection = effectiveProjection
 	return CoherentInstallationCurrentness{
 		whole:    whole,
 		carriers: cloneManagedCarrierCurrentnessValues(carriers),
@@ -72,10 +80,47 @@ func ClassifyFirstCoherentInstallationCurrentness(
 	if err != nil {
 		return CoherentInstallationCurrentness{}, err
 	}
+	effectiveProjection, err := projectionWithClassifiedManagedFragments(
+		projection,
+		carriers,
+	)
+	if err != nil {
+		return CoherentInstallationCurrentness{}, err
+	}
+	whole.projection = effectiveProjection
 	return CoherentInstallationCurrentness{
 		whole:    whole,
 		carriers: cloneManagedCarrierCurrentnessValues(carriers),
 	}, nil
+}
+
+func projectionWithClassifiedManagedFragments(
+	projection HostAdapterProjection,
+	carriers []ManagedCarrierCurrentness,
+) (HostAdapterProjection, error) {
+	fragments := make([]ManagedFragment, 0, len(projection.fragments))
+	for _, carrier := range carriers {
+		fragments = append(
+			fragments,
+			cloneManagedFragments(carrier.plan.desired)...,
+		)
+	}
+	validated, err := validateProjectionManagedFragments(
+		fragments,
+		projection.components,
+		projection.targetRoots,
+		projection.outputs,
+	)
+	if err != nil {
+		return HostAdapterProjection{}, fmt.Errorf(
+			"materialize retained managed fragments: %w",
+			err,
+		)
+	}
+	next := cloneHostAdapterProjection(projection)
+	next.fragments = validated
+	next.retainedManagedFragmentComponents = nil
+	return next, nil
 }
 
 func (currentness CoherentInstallationCurrentness) WholePaths() InstallationCurrentness {
@@ -333,6 +378,11 @@ func BuildFirstCoherentManagedCarrierObservationPlans(
 	projection HostAdapterProjection,
 	legacy ManagedFragmentLegacyRegistry,
 ) ([]ManagedFragmentObservationPlan, error) {
+	if len(projection.retainedManagedFragmentComponents) != 0 {
+		return nil, fmt.Errorf(
+			"installed managed-fragment retention requires a prior manifest",
+		)
+	}
 	if _, _, err := validateFirstInstallationProjection(projection); err != nil {
 		return nil, err
 	}
@@ -450,6 +500,9 @@ func buildCoherentManagedCarrierObservationPlans(
 		if err != nil {
 			return nil, err
 		}
+		observationPlan.retainedManagedFragmentComponents = slices.Clone(
+			projection.retainedManagedFragmentComponents,
+		)
 		plans = append(plans, observationPlan)
 	}
 	return plans, nil
@@ -484,6 +537,13 @@ func classifyCoherentManagedCarrierInputs(
 				"managed carrier %s has no exact input",
 				plan.carrierPath,
 			)
+		}
+		plan, err = materializeRetainedManagedFragments(
+			plan,
+			input,
+		)
+		if err != nil {
+			return nil, err
 		}
 		observation, err := ObserveManagedCarrier(
 			plan,

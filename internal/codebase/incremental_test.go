@@ -314,6 +314,8 @@ func TestRefreshIncrementalConfigChangeForcesFullRebuild(t *testing.T) {
 
 func TestRefreshIncrementalBuildsOneProjectSnapshotAndSkipsNodeModules(t *testing.T) {
 	store, root := newSymbolStore(t)
+	tsResolutionCache.Delete(root)
+	t.Cleanup(func() { tsResolutionCache.Delete(root) })
 	ctx := context.Background()
 	writeTestFile(t, root, "src/a.ts", `export function a(): number { return 1 }
 `)
@@ -351,6 +353,9 @@ export function b(): number { return a() }
 	}
 	if snapshotBuilds != 1 {
 		t.Fatalf("project snapshots = %d, want one per published refresh", snapshotBuilds)
+	}
+	if _, cached := tsResolutionCache.Load(root); cached {
+		t.Fatal("snapshot-backed resolution populated the per-file TypeScript resolution cache")
 	}
 	for _, path := range snapshotFiles {
 		if strings.HasPrefix(path, "node_modules/") {

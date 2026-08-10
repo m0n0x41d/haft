@@ -9,31 +9,33 @@ import (
 )
 
 type HostAdapterProjection struct {
-	host        HostID
-	edition     string
-	publication PublicationIdentity
-	projectRoot string
-	projectID   projectidentity.ProjectID
-	scope       InstallScope
-	components  ComponentSet
-	targetRoots []string
-	outputs     []RenderedOutput
-	fragments   []ManagedFragment
-	recovery    RecoveryOperation
+	host                              HostID
+	edition                           string
+	publication                       PublicationIdentity
+	projectRoot                       string
+	projectID                         projectidentity.ProjectID
+	scope                             InstallScope
+	components                        ComponentSet
+	retainedManagedFragmentComponents []Component
+	targetRoots                       []string
+	outputs                           []RenderedOutput
+	fragments                         []ManagedFragment
+	recovery                          RecoveryOperation
 }
 
 type HostAdapterProjectionBuilder struct {
-	host        HostID
-	edition     string
-	publication PublicationIdentity
-	projectRoot string
-	projectID   string
-	scope       InstallScope
-	components  ComponentSet
-	targetRoots []string
-	outputs     []RenderedOutput
-	fragments   []ManagedFragment
-	recovery    RecoveryOperation
+	host                              HostID
+	edition                           string
+	publication                       PublicationIdentity
+	projectRoot                       string
+	projectID                         string
+	scope                             InstallScope
+	components                        ComponentSet
+	retainedManagedFragmentComponents []Component
+	targetRoots                       []string
+	outputs                           []RenderedOutput
+	fragments                         []ManagedFragment
+	recovery                          RecoveryOperation
 }
 
 func NewHostAdapterProjectionBuilder(host HostID) HostAdapterProjectionBuilder {
@@ -100,6 +102,22 @@ func (builder HostAdapterProjectionBuilder) AddManagedFragment(
 	return next
 }
 
+// RetainInstalledManagedFragments preserves already-installed managed
+// HTML-comment sections for one selected component without supplying
+// replacement content. The exact observed sections are materialized from the
+// same filesystem snapshot used by reconciliation, so the resulting plan
+// remains CAS-safe. Other managed-fragment kinds fail closed.
+func (builder HostAdapterProjectionBuilder) RetainInstalledManagedFragments(
+	component Component,
+) HostAdapterProjectionBuilder {
+	next := builder
+	next.retainedManagedFragmentComponents = appendCopy(
+		builder.retainedManagedFragmentComponents,
+		component,
+	)
+	return next
+}
+
 func (builder HostAdapterProjectionBuilder) RecoverWith(
 	operation RecoveryOperation,
 ) HostAdapterProjectionBuilder {
@@ -131,6 +149,14 @@ func (builder HostAdapterProjectionBuilder) Build() (HostAdapterProjection, erro
 	}
 	if len(builder.components.values) == 0 {
 		return HostAdapterProjection{}, fmt.Errorf("host adapter projection component set is empty")
+	}
+	retainedManagedFragmentComponents, err :=
+		canonicalRetainedManagedFragmentComponents(
+			builder.retainedManagedFragmentComponents,
+			builder.components,
+		)
+	if err != nil {
+		return HostAdapterProjection{}, err
 	}
 	targetRoots, err := canonicalTargetRoots(builder.targetRoots)
 	if err != nil {
@@ -169,11 +195,46 @@ func (builder HostAdapterProjectionBuilder) Build() (HostAdapterProjection, erro
 		projectID:   projectID,
 		scope:       builder.scope,
 		components:  ComponentSet{values: builder.components.Values()},
+		retainedManagedFragmentComponents: slices.Clone(
+			retainedManagedFragmentComponents,
+		),
 		targetRoots: slices.Clone(targetRoots),
 		outputs:     outputs,
 		fragments:   fragments,
 		recovery:    RecoveryOperation{argv: builder.recovery.Argv()},
 	}, nil
+}
+
+func canonicalRetainedManagedFragmentComponents(
+	raw []Component,
+	selected ComponentSet,
+) ([]Component, error) {
+	result := slices.Clone(raw)
+	sort.Slice(result, func(left int, right int) bool {
+		return result[left] < result[right]
+	})
+	previous := Component("")
+	for _, component := range result {
+		if _, known := knownComponents[component]; !known {
+			return nil, fmt.Errorf(
+				"host adapter projection retained managed-fragment component is not closed",
+			)
+		}
+		if !selected.contains(component) {
+			return nil, fmt.Errorf(
+				"host adapter projection retains managed fragments for unselected component %s",
+				component,
+			)
+		}
+		if component == previous {
+			return nil, fmt.Errorf(
+				"host adapter projection repeats retained managed-fragment component %s",
+				component,
+			)
+		}
+		previous = component
+	}
+	return result, nil
 }
 
 func validateProjectionOutputs(
@@ -276,6 +337,9 @@ func cloneHostAdapterProjection(
 		projectID:   projection.projectID,
 		scope:       projection.scope,
 		components:  ComponentSet{values: projection.components.Values()},
+		retainedManagedFragmentComponents: slices.Clone(
+			projection.retainedManagedFragmentComponents,
+		),
 		targetRoots: slices.Clone(projection.targetRoots),
 		outputs:     cloneRenderedOutputs(projection.outputs),
 		fragments:   cloneManagedFragments(projection.fragments),
@@ -309,6 +373,10 @@ func (projection HostAdapterProjection) Scope() InstallScope {
 
 func (projection HostAdapterProjection) Components() ComponentSet {
 	return ComponentSet{values: projection.components.Values()}
+}
+
+func (projection HostAdapterProjection) RetainedManagedFragmentComponents() []Component {
+	return slices.Clone(projection.retainedManagedFragmentComponents)
 }
 
 func (projection HostAdapterProjection) TargetRoots() []string {

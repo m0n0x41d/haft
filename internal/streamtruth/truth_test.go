@@ -30,43 +30,35 @@ var exactV9MCPToolNames = []string{
 	"haft_memory",
 }
 
-func TestREADMEDeclaresExactlyTheFourStreamTruthLabels(t *testing.T) {
+func TestREADMEOpensWithProductAndFPFAttribution(t *testing.T) {
 	readme := readTruthRepoFile(t, "README.md")
-	section := exactMarkedSection(
-		t,
-		readme,
-		"<!-- haft:truth-labels:start -->",
-		"<!-- haft:truth-labels:end -->",
-	)
-	lines := strings.Split(section, "\n")
-	actual := make([]string, 0, len(exactStreamTruthLabels))
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "- **") {
-			continue
-		}
-		labelEnd := strings.Index(strings.TrimPrefix(trimmed, "- **"), "**")
-		if labelEnd < 0 {
-			t.Fatalf("malformed stream truth label line %q", line)
-		}
-		actual = append(actual, strings.TrimPrefix(trimmed, "- **")[:labelEnd])
+	installHeading := strings.Index(readme, "## Install")
+	if installHeading < 0 {
+		t.Fatal("README has no Install heading")
 	}
-	if strings.Join(actual, "\x00") != strings.Join(exactStreamTruthLabels, "\x00") {
-		t.Fatalf("stream truth labels = %#v, want exact ordered set %#v", actual, exactStreamTruthLabels)
-	}
-
-	normalizedReadme := normalizeTruthProse(readme)
-	for _, requiredBoundary := range []string{
-		"Contract inclusion specifies behavior; it is not delivery evidence",
-		"installed-runtime readiness claims require current P14 evidence tied to one exact candidate",
-		"Source, schema, skill, or local-test presence is not installed-runtime proof",
-		"does not grant RC or release status",
-		"additionally requires release authority",
-		"No such superiority claim is made before the separate benchmark",
-		"silently promotes a contract to CURRENT PRODUCT",
+	opening := readme[:installHeading]
+	for _, requiredProductClaim := range []string{
+		"FPF project memory and governance for AI-assisted engineering",
+		"durable project memory",
+		"First Principles Framework",
+		"Anatoly Levenchuk",
 	} {
-		if !strings.Contains(normalizedReadme, requiredBoundary) {
-			t.Fatalf("README truth boundary missing %q", requiredBoundary)
+		if !strings.Contains(opening, requiredProductClaim) {
+			t.Fatalf("README product opening missing %q", requiredProductClaim)
+		}
+	}
+	for _, internalReleaseLabel := range exactStreamTruthLabels {
+		if strings.Contains(readme, internalReleaseLabel) {
+			t.Errorf("README leaks internal release label %q", internalReleaseLabel)
+		}
+	}
+	for _, retiredOpening := range []string{
+		"formerly [quint-code]",
+		"Runtime truth labels",
+		"haft:truth-labels",
+	} {
+		if strings.Contains(readme, retiredOpening) {
+			t.Errorf("README retains retired opening content %q", retiredOpening)
 		}
 	}
 }

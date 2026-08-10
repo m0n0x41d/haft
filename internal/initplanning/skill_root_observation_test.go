@@ -51,6 +51,17 @@ func TestSkillRootObservationProjectsBoundedActiveExposureEvidence(
 		projected.EvidenceDigest() == "" {
 		t.Fatalf("skill-root observation identity = %#v", projected)
 	}
+	exposureObservations := projected.ExposureObservations()
+	if len(exposureObservations) != 2 ||
+		exposureObservations[0].State != PathObservedMissing ||
+		exposureObservations[1].State != PathObservedPresent ||
+		exposureObservations[1].Digest != observation.Digest() ||
+		exposureObservations[1].Mode != 0o640 {
+		t.Fatalf(
+			"skill-root exposure observations = %#v",
+			exposureObservations,
+		)
+	}
 	active, exists := projected.ActiveRoot()
 	if !exists {
 		t.Fatal("present skill carrier did not activate the discovery root")

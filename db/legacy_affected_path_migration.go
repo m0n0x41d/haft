@@ -12,7 +12,8 @@ import (
 const legacyAffectedPathSchemaVersion58 = 58
 
 var legacyAffectedPathMigration58 = Migration{
-	Version: legacyAffectedPathSchemaVersion58,
+	Version:         legacyAffectedPathSchemaVersion58,
+	ServeActivation: ServeActivationAutomaticWithSnapshot,
 	Description: "Drop pre-invariant affected_files rows that are not " +
 		"project-relative",
 	Apply: applyLegacyAffectedPathMigration58,

@@ -194,6 +194,11 @@ func BuildInstallationManifest(
 func BuildProjectionInstallationManifest(
 	projection HostAdapterProjection,
 ) (InstallationManifest, error) {
+	if len(projection.retainedManagedFragmentComponents) != 0 {
+		return InstallationManifest{}, fmt.Errorf(
+			"cannot manifest a projection with unresolved retained managed fragments",
+		)
+	}
 	if !projection.publication.valid() {
 		return InstallationManifest{}, fmt.Errorf(
 			"cannot manifest a projection without publication identity",

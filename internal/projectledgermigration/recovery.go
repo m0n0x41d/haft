@@ -190,6 +190,18 @@ func requireHealthyRecoveryDatabase(
 	ctx context.Context,
 	database *sql.DB,
 ) error {
+	return requireHealthyProjectDatabase(
+		ctx,
+		database,
+		"binding recovery",
+	)
+}
+
+func requireHealthyProjectDatabase(
+	ctx context.Context,
+	database *sql.DB,
+	operation string,
+) error {
 	var integrity string
 	err := database.QueryRowContext(
 		ctx,
@@ -197,13 +209,15 @@ func requireHealthyRecoveryDatabase(
 	).Scan(&integrity)
 	if err != nil {
 		return fmt.Errorf(
-			"inspect project ledger integrity for binding recovery: %w",
+			"inspect project ledger integrity for %s: %w",
+			operation,
 			err,
 		)
 	}
 	if integrity != "ok" {
 		return fmt.Errorf(
-			"project ledger integrity blocks binding recovery: %s",
+			"project ledger integrity blocks %s: %s",
+			operation,
 			integrity,
 		)
 	}
@@ -214,14 +228,16 @@ func requireHealthyRecoveryDatabase(
 	).Scan(&foreignKeyViolations)
 	if err != nil {
 		return fmt.Errorf(
-			"inspect project ledger foreign keys for binding recovery: %w",
+			"inspect project ledger foreign keys for %s: %w",
+			operation,
 			err,
 		)
 	}
 	if foreignKeyViolations != 0 {
 		return fmt.Errorf(
-			"project ledger has %d foreign-key violation(s); binding recovery was not attempted",
+			"project ledger has %d foreign-key violation(s); %s was not attempted",
 			foreignKeyViolations,
+			operation,
 		)
 	}
 	return nil

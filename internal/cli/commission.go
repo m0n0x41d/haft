@@ -12,9 +12,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
-	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 var (
@@ -497,28 +496,20 @@ func withCommissionProject(fn func(context.Context, *artifact.Store, string) err
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
-	haftDir := filepath.Join(projectRoot, ".haft")
-	projCfg, err := project.Load(haftDir)
+	ctx := context.Background()
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		projectRoot,
+		projectledger.ReadWrite,
+		"commission operation",
+	)
 	if err != nil {
-		return fmt.Errorf("load project config: %w", err)
+		return err
 	}
-	if projCfg == nil {
-		return fmt.Errorf("project not initialized — run 'haft init' first")
-	}
+	defer ledger.Close()
 
-	dbPath, err := projCfg.DBPath()
-	if err != nil {
-		return fmt.Errorf("get DB path: %w", err)
-	}
-
-	database, err := db.NewStore(dbPath)
-	if err != nil {
-		return fmt.Errorf("open DB: %w", err)
-	}
-	defer database.Close()
-
-	store := artifact.NewStore(database.GetRawDB())
-	return fn(context.Background(), store, projectRoot)
+	store := artifact.NewStore(ledger.Database())
+	return fn(ctx, store, ledger.ProjectRoot().String())
 }
 
 func readCommissionJSONPayload(stdin io.Reader, path string) (map[string]any, error) {

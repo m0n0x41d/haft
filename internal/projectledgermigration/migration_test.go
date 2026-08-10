@@ -20,7 +20,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
-const bundledPrebindingSchema35Digest = "sha256:e50a51b40d266a62678129820116eb1f55cd92b3f8f6cae073c1c5fa78b35cd7"
+const bundledPrebindingSchema35Digest = "sha256:3377719306d4ae76e4db7cf1286ae985b92d85f20b5278bd1622b1ad7edf0828"
 
 func TestApplyIsIdempotentAndHasNoHostCarrierEffects(t *testing.T) {
 	fixture := newCurrentProjectFixture(t)

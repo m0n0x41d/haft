@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	"github.com/spf13/cobra"
+
+	"github.com/m0n0x41d/haft/internal/artifact"
 )
 
 func TestHandleQuintQuery_CheckActionReturnsCheckReport(t *testing.T) {
@@ -74,6 +76,59 @@ func TestHandleQuintQuery_CheckMatchesCLIJSON(t *testing.T) {
 	}
 	if len(mcpReport.SpecHealth) != len(cliReport.SpecHealth) {
 		t.Fatalf("spec_health parity: MCP=%d CLI=%d", len(mcpReport.SpecHealth), len(cliReport.SpecHealth))
+	}
+	if mcpReport.EvidenceFreshness.Posture != cliReport.EvidenceFreshness.Posture {
+		t.Fatalf(
+			"evidence_freshness posture parity: MCP=%q CLI=%q",
+			mcpReport.EvidenceFreshness.Posture,
+			cliReport.EvidenceFreshness.Posture,
+		)
+	}
+}
+
+func TestHandleQuintQueryCheckKeepsUnavailableEvidenceFreshnessInParity(
+	t *testing.T,
+) {
+	fixture := newCheckTestProject(t)
+	dropCheckEvidenceItemsTable(t, fixture.db)
+
+	mcpResult, err := handleQuintQuery(
+		context.Background(),
+		fixture.store,
+		nil,
+		fixture.haftDir,
+		map[string]any{"action": "check"},
+	)
+	if err != nil {
+		t.Fatalf("MCP check: %v", err)
+	}
+
+	restoreCwd := enterTestProjectRoot(t, fixture.root)
+	defer restoreCwd()
+	restoreJSON := stubCheckJSON(t, true)
+	defer restoreJSON()
+	_ = stubCheckExit(t)
+
+	var cliBuf bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&cliBuf)
+	if err := runCheck(cmd, nil); err != nil {
+		t.Fatalf("CLI check: %v", err)
+	}
+
+	var mcpReport, cliReport checkReport
+	if err := json.Unmarshal([]byte(mcpResult), &mcpReport); err != nil {
+		t.Fatalf("decode MCP JSON: %v", err)
+	}
+	if err := json.Unmarshal(cliBuf.Bytes(), &cliReport); err != nil {
+		t.Fatalf("decode CLI JSON: %v", err)
+	}
+	if mcpReport.EvidenceFreshness.Posture !=
+		artifact.EvidenceFreshnessInventoryPostureUnavailable ||
+		cliReport.EvidenceFreshness.Posture !=
+			artifact.EvidenceFreshnessInventoryPostureUnavailable ||
+		mcpReport.Summary != cliReport.Summary {
+		t.Fatalf("unavailable parity: MCP=%#v CLI=%#v", mcpReport, cliReport)
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -35,7 +36,7 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 		t.Fatalf("runSpecReview returned error: %v", err)
 	}
 
-	var packet specflow.ReviewPacket
+	var packet specReviewPacket
 	if err := json.Unmarshal(output.Bytes(), &packet); err != nil {
 		t.Fatalf("decode review JSON: %v\n%s", err, output.String())
 	}
@@ -63,7 +64,11 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	if packet.Summary.ExplicitClaims != 1 {
 		t.Fatalf("explicit_claims = %d, want 1", packet.Summary.ExplicitClaims)
 	}
-	section := specReviewSectionByID(t, packet, "TS.environment.001")
+	section := specReviewSectionByID(
+		t,
+		packet.ReviewPacket,
+		"TS.environment.001",
+	)
 	if section.ClaimRegister.ExplicitClaims != 1 {
 		t.Fatalf("section claim register = %+v, want one explicit claim", section.ClaimRegister)
 	}
@@ -81,6 +86,15 @@ func TestRunSpecReviewJSONReturnsAdvisoryPacket(t *testing.T) {
 	}
 	if strings.Contains(output.String(), `"status":"ready"`) || strings.Contains(output.String(), `"verdict":"pass"`) {
 		t.Fatalf("review JSON must not expose ready/pass authority: %s", output.String())
+	}
+	if packet.SpecEditionCarrierDelta.Posture !=
+		"not_applicable_no_sql_editions" ||
+		packet.SpecEditionCarrierDelta.Judgment !=
+			specEditionCarrierDeltaJudgment {
+		t.Fatalf(
+			"carrier delta without SQL editions = %#v",
+			packet.SpecEditionCarrierDelta,
+		)
 	}
 }
 
@@ -117,6 +131,12 @@ func TestRunSpecReviewSummaryNamesAdvisoryBoundary(t *testing.T) {
 	if !strings.Contains(result, "profile: spec_semantic_review_v2; value_slice=abstain") {
 		t.Fatalf("summary missing profile boundary:\n%s", result)
 	}
+	if !strings.Contains(
+		result,
+		"spec_edition_carrier_delta: not_applicable_no_sql_editions",
+	) || !strings.Contains(result, specEditionCarrierDeltaJudgment) {
+		t.Fatalf("summary missing carrier-delta boundary:\n%s", result)
+	}
 }
 
 func TestBuildSpecReviewPacketReadsCurrentSQLEditionsBeforeCarriers(t *testing.T) {
@@ -148,11 +168,70 @@ func TestBuildSpecReviewPacketReadsCurrentSQLEditionsBeforeCarriers(t *testing.T
 	if packet.Summary.CheckedSections != 1 {
 		t.Fatalf("checked_sections = %d, want SQL edition only", packet.Summary.CheckedSections)
 	}
-	if _, ok := findSpecReviewSection(packet, "TS.sql.001"); !ok {
+	if _, ok := findSpecReviewSection(packet.ReviewPacket, "TS.sql.001"); !ok {
 		t.Fatalf("review packet did not include SQL section: %#v", packet.Sections)
 	}
-	if _, ok := findSpecReviewSection(packet, "TS.sync.001"); ok {
+	if _, ok := findSpecReviewSection(packet.ReviewPacket, "TS.sync.001"); ok {
 		t.Fatalf("review packet included carrier section despite SQL editions: %#v", packet.Sections)
+	}
+	if packet.SpecEditionCarrierDelta.Posture != "differs" ||
+		packet.SpecEditionCarrierDelta.Judgment !=
+			specEditionCarrierDeltaJudgment ||
+		len(packet.SpecEditionCarrierDelta.Sections) == 0 {
+		t.Fatalf(
+			"SQL/carrier delta = %#v",
+			packet.SpecEditionCarrierDelta,
+		)
+	}
+}
+
+func TestBuildSpecReviewPacketKeepsMalformedCarrierAsObservation(
+	t *testing.T,
+) {
+	root := setupSpecSyncProject(t)
+	database := openSpecSyncDB(t, root)
+	defer database.Close()
+	store := specflow.NewSQLiteSpecSectionEditionStore(database.GetRawDB())
+	section := project.SpecSection{
+		ID:            "TS.sql.001",
+		Spec:          "target-system",
+		SystemFrame:   project.SystemReferenceFrame{ID: "target_system", Kind: "target_system", Source: "declared"},
+		Kind:          "acceptance",
+		StatementType: "definition",
+		ClaimLayer:    "object",
+		Owner:         "haft",
+		Status:        "active",
+		DocumentKind:  "target-system",
+		Path:          ".haft/specs/target-system.md",
+	}
+	if err := store.PutCurrent(specflow.NewSpecSectionEdition(
+		"qnt_5eec5eec",
+		section,
+		specflow.SpecSectionSourceSQL,
+		time.Now().UTC(),
+	)); err != nil {
+		t.Fatalf("seed SQL spec section edition: %v", err)
+	}
+	writeSpecCheckCLIFile(
+		t,
+		filepath.Join(root, ".haft", "specs", "target-system.md"),
+		"```yaml spec-section\nid: [broken\n```\n",
+	)
+
+	packet, err := buildSpecReviewPacket(root)
+	if err != nil {
+		t.Fatalf("buildSpecReviewPacket: %v", err)
+	}
+	observation := packet.SpecEditionCarrierDelta.CarrierObservation
+	if observation.Posture != "parsed_with_findings" ||
+		observation.FindingCount == 0 ||
+		!slices.Contains(observation.FindingCodes, "spec_section_invalid_yaml") {
+		t.Fatalf("malformed carrier observation = %#v", observation)
+	}
+	if packet.Summary.CheckedSections != 1 ||
+		packet.SpecEditionCarrierDelta.Judgment !=
+			specEditionCarrierDeltaJudgment {
+		t.Fatalf("canonical SQL review was displaced: %#v", packet)
 	}
 }
 
@@ -165,7 +244,7 @@ func TestHandleQuintQuerySpecReviewReturnsPacket(t *testing.T) {
 		t.Fatalf("handleQuintQuery spec_review returned error: %v", err)
 	}
 
-	var packet specflow.ReviewPacket
+	var packet specReviewPacket
 	if err := json.Unmarshal([]byte(result), &packet); err != nil {
 		t.Fatalf("decode MCP spec_review packet: %v\n%s", err, result)
 	}

@@ -945,15 +945,16 @@ type managedFragmentProbe struct {
 }
 
 type ManagedFragmentObservationPlan struct {
-	carrierPath  string
-	syntax       managedCarrierSyntax
-	mergeEdition string
-	createMode   fs.FileMode
-	components   ComponentSet
-	desired      []ManagedFragment
-	baseline     ManagedFragmentBaseline
-	legacy       ManagedFragmentLegacyRegistry
-	probes       []managedFragmentProbe
+	carrierPath                       string
+	syntax                            managedCarrierSyntax
+	mergeEdition                      string
+	createMode                        fs.FileMode
+	components                        ComponentSet
+	retainedManagedFragmentComponents []Component
+	desired                           []ManagedFragment
+	baseline                          ManagedFragmentBaseline
+	legacy                            ManagedFragmentLegacyRegistry
+	probes                            []managedFragmentProbe
 }
 
 func (plan ManagedFragmentObservationPlan) CarrierPath() string {
@@ -2168,11 +2169,77 @@ func cloneManagedFragmentObservationPlan(
 		mergeEdition: plan.mergeEdition,
 		createMode:   plan.createMode,
 		components:   ComponentSet{values: plan.components.Values()},
-		desired:      cloneManagedFragments(plan.desired),
-		baseline:     cloneManagedFragmentBaseline(plan.baseline),
-		legacy:       cloneManagedFragmentLegacyRegistry(plan.legacy),
-		probes:       cloneManagedFragmentProbes(plan.probes),
+		retainedManagedFragmentComponents: slices.Clone(
+			plan.retainedManagedFragmentComponents,
+		),
+		desired:  cloneManagedFragments(plan.desired),
+		baseline: cloneManagedFragmentBaseline(plan.baseline),
+		legacy:   cloneManagedFragmentLegacyRegistry(plan.legacy),
+		probes:   cloneManagedFragmentProbes(plan.probes),
 	}
+}
+
+func materializeRetainedManagedFragments(
+	plan ManagedFragmentObservationPlan,
+	input ManagedCarrierInput,
+) (ManagedFragmentObservationPlan, error) {
+	if len(plan.retainedManagedFragmentComponents) == 0 {
+		return cloneManagedFragmentObservationPlan(plan), nil
+	}
+	if input.path != plan.carrierPath {
+		return ManagedFragmentObservationPlan{}, fmt.Errorf(
+			"managed fragment retention input belongs to another carrier",
+		)
+	}
+	desired := cloneManagedFragments(plan.desired)
+	desiredByKey := managedFragmentsByKey(desired)
+	for _, record := range plan.baseline.records {
+		if !slices.Contains(
+			plan.retainedManagedFragmentComponents,
+			record.component,
+		) {
+			continue
+		}
+		key := managedFragmentCoordinateKey(record.coordinate)
+		if _, alreadyDesired := desiredByKey[key]; alreadyDesired {
+			continue
+		}
+		if record.coordinate.kind != ManagedHTMLCommentSection {
+			return ManagedFragmentObservationPlan{}, fmt.Errorf(
+				"installed managed-fragment retention does not support kind %s",
+				record.coordinate.kind,
+			)
+		}
+		createMode := plan.createMode
+		if createMode == 0 && input.kind == ManagedCarrierPresent {
+			createMode = input.mode
+		}
+		fragment, found, err := retainedHTMLCommentSectionFragment(
+			record,
+			input,
+			createMode,
+		)
+		if err != nil {
+			return ManagedFragmentObservationPlan{}, err
+		}
+		if !found {
+			continue
+		}
+		desired = append(desired, fragment)
+		desiredByKey[key] = fragment
+	}
+	next, err := BuildManagedFragmentObservationPlan(
+		desired,
+		plan.baseline,
+		plan.legacy,
+	)
+	if err != nil {
+		return ManagedFragmentObservationPlan{}, err
+	}
+	next.retainedManagedFragmentComponents = slices.Clone(
+		plan.retainedManagedFragmentComponents,
+	)
+	return next, nil
 }
 
 func cloneManagedCarrierObservation(

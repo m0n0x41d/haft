@@ -18,13 +18,13 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/governance"
 	"github.com/m0n0x41d/haft/internal/graph"
 	"github.com/m0n0x41d/haft/internal/overseer"
 	"github.com/m0n0x41d/haft/internal/present"
 	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectpath"
 	"github.com/m0n0x41d/haft/logger"
 )
@@ -336,27 +336,19 @@ func runOverseerPacket(cmd *cobra.Command, _ []string) error {
 		return fmt.Errorf("not a haft project: %w", err)
 	}
 
-	haftDir := filepath.Join(projectRoot, ".haft")
-	projCfg, err := project.Load(haftDir)
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		projectRoot,
+		projectledger.ReadWrite,
+		"overseer packet",
+	)
 	if err != nil {
-		return fmt.Errorf("load project config: %w", err)
+		return err
 	}
-	if projCfg == nil {
-		return fmt.Errorf("project not initialized — run 'haft init' first")
-	}
+	defer ledger.Close()
 
-	dbPath, err := projCfg.DBPath()
-	if err != nil {
-		return fmt.Errorf("get DB path: %w", err)
-	}
-
-	database, err := db.NewStore(dbPath)
-	if err != nil {
-		return fmt.Errorf("open DB: %w", err)
-	}
-	defer database.Close()
-
-	store := artifact.NewStore(database.GetRawDB())
+	projectRoot = ledger.ProjectRoot().String()
+	store := artifact.NewStore(ledger.Database())
 	packet, err := buildOverseerPacket(ctx, store, projectRoot, overseerPacketCommit, Version)
 	if err != nil {
 		return err
@@ -1331,29 +1323,23 @@ func openOverseerProjectStore() (string, *artifact.Store, func(), error) {
 		return "", nil, func() {}, fmt.Errorf("not a haft project: %w", err)
 	}
 
-	haftDir := filepath.Join(projectRoot, ".haft")
-	projCfg, err := project.Load(haftDir)
+	ledger, err := openCurrentProjectLedger(
+		context.Background(),
+		projectRoot,
+		projectledger.ReadWrite,
+		"overseer operation",
+	)
 	if err != nil {
-		return "", nil, func() {}, fmt.Errorf("load project config: %w", err)
-	}
-	if projCfg == nil {
-		return "", nil, func() {}, fmt.Errorf("project not initialized — run 'haft init' first")
-	}
-
-	dbPath, err := projCfg.DBPath()
-	if err != nil {
-		return "", nil, func() {}, fmt.Errorf("get DB path: %w", err)
-	}
-
-	database, err := db.NewStore(dbPath)
-	if err != nil {
-		return "", nil, func() {}, fmt.Errorf("open DB: %w", err)
+		return "", nil, func() {}, err
 	}
 
 	closeStore := func() {
-		_ = database.Close()
+		_ = ledger.Close()
 	}
-	return projectRoot, artifact.NewStore(database.GetRawDB()), closeStore, nil
+	return ledger.ProjectRoot().String(),
+		artifact.NewStore(ledger.Database()),
+		closeStore,
+		nil
 }
 
 func buildOverseerPacket(

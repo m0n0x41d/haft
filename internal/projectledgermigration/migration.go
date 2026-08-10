@@ -66,6 +66,8 @@ type Result struct {
 	BeforeSchema int
 	AfterSchema  int
 	Outcome      Outcome
+	BackupPath   string
+	BackupDigest string
 }
 
 type SchemaObservation struct {
@@ -109,9 +111,10 @@ func Observe(
 		ctx,
 		handle.Database(),
 	)
+	compiled, compiledErr := db.CurrentSchemaVersion()
 	var prefixErr error
 	var bindingErr error
-	if observeErr == nil {
+	if observeErr == nil && compiledErr == nil && observed <= compiled {
 		prefixErr = db.RequireSchemaPrefixReadOnly(
 			ctx,
 			handle.Database(),
@@ -125,7 +128,6 @@ func Observe(
 			)
 		}
 	}
-	compiled, compiledErr := db.CurrentSchemaVersion()
 	closeErr := handle.Close()
 	if err := errors.Join(
 		observeErr,
@@ -146,7 +148,7 @@ func Observe(
 }
 
 func Apply(ctx context.Context, request Request) (Result, error) {
-	return apply(
+	return applyWithLease(
 		ctx,
 		request,
 		transitionExpectation{kind: transitionAnyAdditive},
@@ -188,7 +190,7 @@ func ApplyExact(
 	if transition.before <= 0 || transition.after <= transition.before {
 		return Result{}, fmt.Errorf("migrate project ledger: exact transition is invalid")
 	}
-	return apply(
+	return applyWithLease(
 		ctx,
 		request,
 		transitionExpectation{
@@ -212,7 +214,47 @@ type transitionExpectation struct {
 	after  int
 }
 
-func apply(
+func applyWithLease(
+	ctx context.Context,
+	request Request,
+	expectation transitionExpectation,
+) (Result, error) {
+	if ctx == nil {
+		return Result{}, fmt.Errorf("migrate project ledger: context is required")
+	}
+	observation, err := Observe(ctx, request)
+	if err != nil {
+		return Result{}, err
+	}
+	if err := requireTransitionExpectation(
+		expectation,
+		observation.ObservedSchema,
+		observation.CompiledSchema,
+	); err != nil {
+		return Result{}, err
+	}
+	if observation.ObservedSchema == observation.CompiledSchema {
+		return applyUnlocked(ctx, request, expectation)
+	}
+	coordinator, err := newMigrationCoordinator(observation)
+	if err != nil {
+		return Result{}, err
+	}
+	waitContext, cancel := boundedMigrationWaitContext(ctx)
+	defer cancel()
+	lease, _, err := coordinator.acquire(waitContext)
+	if err != nil {
+		return Result{}, err
+	}
+	result, applyErr := applyUnlocked(ctx, request, expectation)
+	releaseErr := lease.release()
+	if err := errors.Join(applyErr, releaseErr); err != nil {
+		return result, err
+	}
+	return result, nil
+}
+
+func applyUnlocked(
 	ctx context.Context,
 	request Request,
 	expectation transitionExpectation,
@@ -239,15 +281,16 @@ func apply(
 	if err != nil {
 		return Result{}, fmt.Errorf("open exact project ledger: %w", err)
 	}
-	result, applyErr := applyToHandle(
+	result, applyErr := applyToHandleAt(
 		ctx,
 		request,
 		handle,
 		expectation,
+		time.Now().UTC(),
 	)
 	closeErr := handle.Close()
 	if applyErr != nil {
-		return Result{}, errors.Join(applyErr, closeErr)
+		return result, errors.Join(applyErr, closeErr)
 	}
 	if closeErr != nil {
 		return Result{}, fmt.Errorf("close migrated project ledger: %w", closeErr)
@@ -255,11 +298,12 @@ func apply(
 	return result, nil
 }
 
-func applyToHandle(
+func applyToHandleAt(
 	ctx context.Context,
 	request Request,
 	handle *projectledger.Handle,
 	expectation transitionExpectation,
+	at time.Time,
 ) (Result, error) {
 	before, err := observeSchemaFrontier(ctx, handle.Database())
 	if err != nil {
@@ -297,8 +341,15 @@ func applyToHandle(
 	); err != nil {
 		return Result{}, err
 	}
+	partial := Result{
+		ProjectRoot:  request.root.String(),
+		ProjectID:    request.project.String(),
+		DatabasePath: handle.DatabasePath(),
+		BeforeSchema: before,
+		AfterSchema:  before,
+	}
 	if before < db.ProjectLedgerBindingSchemaVersion {
-		bindingAt := time.Now().UTC()
+		bindingAt := at.UTC()
 		bindingTransitionRan := false
 		if err := db.RunMigrationsThroughProjectLedgerBinding(
 			handle.Database(),
@@ -314,46 +365,204 @@ func applyToHandle(
 				return nil
 			},
 		); err != nil {
-			return Result{}, fmt.Errorf(
+			return partial, fmt.Errorf(
 				"apply migrations through project binding: %w",
 				err,
 			)
 		}
 		if err := handle.Revalidate(ctx); err != nil {
 			if bindingTransitionRan {
-				return Result{}, errors.Join(
+				return partial, errors.Join(
 					projectledger.ErrBindingCommittedTopologyChanged,
 					err,
 				)
 			}
-			return Result{}, fmt.Errorf(
+			return partial, fmt.Errorf(
 				"verify concurrently migrated project identity: %w",
 				err,
 			)
 		}
 	}
+	snapshot, err := applyRecoverySnapshotBoundaries(
+		ctx,
+		request,
+		handle,
+		before,
+		at,
+	)
+	if err != nil {
+		partial.BackupPath = snapshot.path
+		partial.BackupDigest = snapshot.digest
+		return partial, err
+	}
+	partial.BackupPath = snapshot.path
+	partial.BackupDigest = snapshot.digest
 	if err := db.RunMigrations(handle.Database()); err != nil {
-		return Result{}, fmt.Errorf("apply additive project migrations: %w", err)
+		return partial, migrationErrorWithSnapshot(
+			fmt.Errorf("apply additive project migrations: %w", err),
+			snapshot,
+		)
 	}
 	if err := db.RequireCurrentSchemaReadOnly(ctx, handle.Database()); err != nil {
-		return Result{}, fmt.Errorf("verify migrated project schema: %w", err)
+		return partial, migrationErrorWithSnapshot(
+			fmt.Errorf("verify migrated project schema: %w", err),
+			snapshot,
+		)
 	}
 	if err := handle.RequireAttachedIdentity(ctx); err != nil {
-		return Result{}, fmt.Errorf("verify migrated project identity: %w", err)
+		return partial, migrationErrorWithSnapshot(
+			fmt.Errorf("verify migrated project identity: %w", err),
+			snapshot,
+		)
 	}
 	if err := handle.Revalidate(ctx); err != nil {
-		return Result{}, fmt.Errorf("revalidate migrated project topology: %w", err)
+		return partial, migrationErrorWithSnapshot(
+			fmt.Errorf("revalidate migrated project topology: %w", err),
+			snapshot,
+		)
 	}
 	after, err := observeSchemaFrontier(ctx, handle.Database())
 	if err != nil {
-		return Result{}, err
+		return partial, migrationErrorWithSnapshot(err, snapshot)
 	}
-	return newResult(
+	result, err := newResult(
 		request,
 		handle.DatabasePath(),
 		before,
 		after,
 		current,
+	)
+	if err != nil {
+		return partial, migrationErrorWithSnapshot(err, snapshot)
+	}
+	result.BackupPath = snapshot.path
+	result.BackupDigest = snapshot.digest
+	return result, nil
+}
+
+func applyRecoverySnapshotBoundaries(
+	ctx context.Context,
+	request Request,
+	handle *projectledger.Handle,
+	observedSchema int,
+	at time.Time,
+) (serveMigrationSnapshot, error) {
+	frontier := observedSchema
+	latest := serveMigrationSnapshot{}
+	for {
+		snapshotVersion, required, err :=
+			db.NextRecoverySnapshotMigrationVersion(frontier)
+		if err != nil {
+			return latest, migrationErrorWithSnapshot(err, latest)
+		}
+		if !required {
+			return latest, nil
+		}
+		snapshot, err := applyRecoverySnapshotBoundary(
+			ctx,
+			request,
+			handle,
+			snapshotVersion,
+			at,
+		)
+		if err != nil {
+			if snapshot.path != "" {
+				return snapshot, err
+			}
+			return latest, migrationErrorWithSnapshot(err, latest)
+		}
+		latest = snapshot
+		frontier = snapshotVersion
+	}
+}
+
+func applyRecoverySnapshotBoundary(
+	ctx context.Context,
+	request Request,
+	handle *projectledger.Handle,
+	snapshotVersion int,
+	at time.Time,
+) (serveMigrationSnapshot, error) {
+	predecessor := snapshotVersion - 1
+	if err := db.RunMigrationsThrough(
+		handle.Database(),
+		predecessor,
+	); err != nil {
+		return serveMigrationSnapshot{}, fmt.Errorf(
+			"apply project migrations through recovery-snapshot predecessor %d: %w",
+			predecessor,
+			err,
+		)
+	}
+	if err := db.RequireSchemaPrefixReadOnly(
+		ctx,
+		handle.Database(),
+		predecessor,
+	); err != nil {
+		return serveMigrationSnapshot{}, fmt.Errorf(
+			"verify recovery-snapshot predecessor schema: %w",
+			err,
+		)
+	}
+	if err := handle.RequireAttachedIdentity(ctx); err != nil {
+		return serveMigrationSnapshot{}, fmt.Errorf(
+			"verify recovery-snapshot project identity: %w",
+			err,
+		)
+	}
+	if err := handle.Revalidate(ctx); err != nil {
+		return serveMigrationSnapshot{}, fmt.Errorf(
+			"revalidate project topology before recovery snapshot: %w",
+			err,
+		)
+	}
+	if err := requireHealthyProjectDatabase(
+		ctx,
+		handle.Database(),
+		"project migration snapshot",
+	); err != nil {
+		return serveMigrationSnapshot{}, err
+	}
+	snapshot, err := createServeMigrationSnapshot(
+		ctx,
+		handle.Database(),
+		handle.DatabasePath(),
+		request,
+		predecessor,
+		snapshotVersion,
+		at,
+	)
+	if err != nil {
+		return serveMigrationSnapshot{}, err
+	}
+	if err := db.RunMigrationsThrough(
+		handle.Database(),
+		snapshotVersion,
+	); err != nil {
+		return snapshot, migrationErrorWithSnapshot(
+			fmt.Errorf(
+				"apply recovery-snapshotted migration %d: %w",
+				snapshotVersion,
+				err,
+			),
+			snapshot,
+		)
+	}
+	return snapshot, nil
+}
+
+func migrationErrorWithSnapshot(
+	cause error,
+	snapshot serveMigrationSnapshot,
+) error {
+	if cause == nil || snapshot.path == "" {
+		return cause
+	}
+	return fmt.Errorf(
+		"%w; verified pre-migration snapshot retained at %s (%s)",
+		cause,
+		snapshot.path,
+		snapshot.digest,
 	)
 }
 

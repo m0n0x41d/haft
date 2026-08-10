@@ -5,6 +5,7 @@ package cli
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +24,105 @@ import (
 // This fixture runs four race-instrumented server subprocesses. Its bound is
 // deliberately separate from the product status deadline, which has a focused
 // contract test; here the observable is single-flight completion, not latency.
-const stdioSingleFlightResponseTimeout = 60 * time.Second
+const stdioSingleFlightResponseTimeout = 2 * time.Minute
+
+func TestServeStdioMultiProcessAutomaticMigrationSingleFlight(t *testing.T) {
+	root := setupSpecSyncProject(t)
+	input, err := absProjectRootInput(root, "stdio-migration-singleflight-test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding, err := resolveProjectBindingFromInput(input, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	database, err := sql.Open("sqlite", binding.DBPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, mutationErr := database.Exec(`
+		DELETE FROM schema_version WHERE version = 58;
+		INSERT INTO artifacts (
+			id, kind, title, content, created_at, updated_at
+		) VALUES (
+			'stdio-migration-fixture', 'decision', 'fixture', 'fixture',
+			'2026-08-10T00:00:00Z', '2026-08-10T00:00:00Z'
+		);
+		INSERT INTO affected_files (artifact_id, file_path)
+		VALUES ('stdio-migration-fixture', '/legacy/stdio.go')`)
+	closeErr := database.Close()
+	if mutationErr != nil || closeErr != nil {
+		t.Fatalf(
+			"prepare schema-57 stdio fixture: mutate=%v close=%v",
+			mutationErr,
+			closeErr,
+		)
+	}
+
+	const servers = 4
+	processes := make([]*stdioServeProcess, 0, servers)
+	for range servers {
+		processes = append(processes, startStdioServeProcess(t, root))
+	}
+	for _, process := range processes {
+		process.send(t, `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{}}`)
+		process.send(t, `{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"haft_query","arguments":{"action":"status","view":"governor"}}}`)
+	}
+	for _, process := range processes {
+		response := process.waitForResponse(t, 2)
+		if response.Error != nil || response.Result == nil {
+			t.Fatalf("stdio status after migration failed: %#v", response)
+		}
+		var toolResult struct {
+			IsError bool `json:"isError"`
+		}
+		if err := json.Unmarshal(response.Result, &toolResult); err != nil {
+			t.Fatal(err)
+		}
+		if toolResult.IsError {
+			t.Fatalf("stdio status after migration is an error: %s", response.Result)
+		}
+	}
+	for _, process := range processes {
+		process.closeAndWait(t)
+		if strings.Contains(strings.ToUpper(process.stderr.String()), "SQLITE_BUSY") {
+			t.Fatalf("stdio migration server reported SQLite contention: %s", process.stderr.String())
+		}
+	}
+
+	check, err := sql.Open("sqlite", "file:"+binding.DBPath+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer check.Close()
+	var frontier int
+	if err := check.QueryRow(
+		"SELECT COALESCE(MAX(version), 0) FROM schema_version",
+	).Scan(&frontier); err != nil {
+		t.Fatal(err)
+	}
+	if frontier != 58 {
+		t.Fatalf("stdio-migrated schema frontier = %d, want 58", frontier)
+	}
+	var invalidRows int
+	if err := check.QueryRow(
+		"SELECT COUNT(*) FROM affected_files WHERE file_path = '/legacy/stdio.go'",
+	).Scan(&invalidRows); err != nil {
+		t.Fatal(err)
+	}
+	if invalidRows != 0 {
+		t.Fatalf("stdio-migrated invalid path rows = %d, want 0", invalidRows)
+	}
+	backups, err := filepath.Glob(
+		filepath.Join(filepath.Dir(binding.DBPath), "*.pre-serve-migration-v57-to-v58-*.bak"),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(backups) != 1 {
+		t.Fatalf("stdio migration backups = %v, want exactly one", backups)
+	}
+}
 
 func TestServeStdioMultiProcessIndexSingleFlight(t *testing.T) {
 	root := setupSpecSyncProject(t)

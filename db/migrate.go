@@ -35,6 +35,21 @@ const (
 // independently witnessed polymorphic relation that its schema admits.
 type MigrationForeignKeyVerifier func(MigrationTransaction) error
 
+// ServeActivationPolicy declares whether an already initialized project may
+// cross this migration boundary while a new haft serve process is starting,
+// together with the boundary's pre-apply recovery posture. Snapshot variants
+// apply to every migration effect, including explicit init and project migrate.
+// The zero value is deliberately manual: every future migration must opt in
+// explicitly after its online-compatibility and recovery boundary are known.
+type ServeActivationPolicy uint8
+
+const (
+	ServeActivationManual ServeActivationPolicy = iota
+	ServeActivationAutomatic
+	ServeActivationManualWithSnapshot
+	ServeActivationAutomaticWithSnapshot
+)
+
 // Migration defines a single versioned schema change.
 type Migration struct {
 	Version            int
@@ -43,6 +58,7 @@ type Migration struct {
 	Apply              func(MigrationTransaction, []Migration) error
 	ApplyBoundary      MigrationApplyBoundary
 	ForeignKeyVerifier MigrationForeignKeyVerifier
+	ServeActivation    ServeActivationPolicy
 }
 
 // Migrate applies all pending migrations to the database.
@@ -50,8 +66,9 @@ type Migration struct {
 // Skips already-applied versions. Idempotent for ALTER TABLE / CREATE TABLE
 // statements (catches "duplicate column" and "already exists" errors).
 //
-// Statement migrations use only their supplied SQL. Custom Apply callbacks are
-// serialized through SQLite BEGIN IMMEDIATE and may be backend-specific.
+// Every migration version, including statement-only migrations, is serialized
+// through SQLite BEGIN IMMEDIATE and commits its effects with its version row.
+// Custom Apply callbacks may be backend-specific.
 func Migrate(conn *sql.DB, versionTable string, migrations []Migration) error {
 	if err := rejectFutureMigrationEdition(
 		conn,
@@ -103,28 +120,91 @@ func Migrate(conn *sql.DB, versionTable string, migrations []Migration) error {
 			)
 		}
 
-		// Execute all statements for this migration
-		for _, stmt := range m.Statements {
-			stmt = strings.TrimSpace(stmt)
-			if stmt == "" {
-				continue
-			}
-			if _, execErr := conn.Exec(stmt); execErr != nil {
-				if !isIdempotentError(execErr) {
-					return fmt.Errorf("migration %d (%s) failed: %w", m.Version, m.Description, execErr)
-				}
-			}
-		}
-
-		// Record applied version
-		if _, err := conn.Exec(
-			fmt.Sprintf("INSERT INTO %s (version) VALUES (?)", versionTable),
-			m.Version,
+		if err := applyStatementMigration(
+			conn,
+			versionTable,
+			m,
 		); err != nil {
-			return fmt.Errorf("record migration %d: %w", m.Version, err)
+			return err
 		}
 	}
 
+	return nil
+}
+
+func applyStatementMigration(
+	connection *sql.DB,
+	versionTable string,
+	migration Migration,
+) error {
+	transaction, err := beginImmediateMigrationTransaction(connection)
+	if err != nil {
+		return fmt.Errorf(
+			"begin migration %d (%s): %w",
+			migration.Version,
+			migration.Description,
+			err,
+		)
+	}
+	alreadyApplied, err := migrationVersionExists(
+		transaction,
+		versionTable,
+		migration.Version,
+	)
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("recheck migration %d: %w", migration.Version, err),
+			transaction.Rollback(),
+		)
+	}
+	if alreadyApplied {
+		if err := transaction.Commit(); err != nil {
+			return fmt.Errorf(
+				"commit concurrent migration %d recheck: %w",
+				migration.Version,
+				err,
+			)
+		}
+		return nil
+	}
+	for _, statement := range migration.Statements {
+		statement = strings.TrimSpace(statement)
+		if statement == "" {
+			continue
+		}
+		if _, err := transaction.Exec(statement); err != nil {
+			if isIdempotentError(err) {
+				continue
+			}
+			return errors.Join(
+				fmt.Errorf(
+					"migration %d (%s) failed: %w",
+					migration.Version,
+					migration.Description,
+					err,
+				),
+				transaction.Rollback(),
+			)
+		}
+	}
+	_, err = transaction.Exec(
+		fmt.Sprintf("INSERT INTO %s (version) VALUES (?)", versionTable),
+		migration.Version,
+	)
+	if err != nil {
+		return errors.Join(
+			fmt.Errorf("record migration %d: %w", migration.Version, err),
+			transaction.Rollback(),
+		)
+	}
+	if err := transaction.Commit(); err != nil {
+		return fmt.Errorf(
+			"commit migration %d (%s): %w",
+			migration.Version,
+			migration.Description,
+			err,
+		)
+	}
 	return nil
 }
 

@@ -11,9 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
-	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
@@ -237,31 +235,22 @@ func openArtifactCLIStore() (string, *artifact.Store, func(), error) {
 	if err != nil {
 		return "", nil, func() {}, fmt.Errorf("not a haft project: %w", err)
 	}
-
-	haftDir := filepath.Join(projectRoot, ".haft")
-	cfg, err := project.Load(haftDir)
+	ledger, err := openCurrentProjectLedger(
+		context.Background(),
+		projectRoot,
+		projectledger.ReadWrite,
+		"artifact CLI operation",
+	)
 	if err != nil {
-		return "", nil, func() {}, fmt.Errorf("load project config: %w", err)
+		return "", nil, func() {}, err
 	}
-	if cfg == nil {
-		return "", nil, func() {}, fmt.Errorf("project not initialized — run 'haft init' first")
-	}
-
-	dbPath, err := cfg.DBPath()
-	if err != nil {
-		return "", nil, func() {}, fmt.Errorf("get DB path: %w", err)
-	}
-
-	database, err := db.NewStore(dbPath)
-	if err != nil {
-		return "", nil, func() {}, fmt.Errorf("open DB: %w", err)
-	}
-
 	closeStore := func() {
-		_ = database.Close()
+		_ = ledger.Close()
 	}
-
-	return projectRoot, artifact.NewStore(database.GetRawDB()), closeStore, nil
+	return ledger.ProjectRoot().String(),
+		artifact.NewStore(ledger.Database()),
+		closeStore,
+		nil
 }
 
 func createArtifactFromInput(

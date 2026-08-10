@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -10,9 +11,10 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/projectledgermigration"
 )
 
-func TestOpenServeProjectLedgerRejectsOldSchemaWithoutMigration(
+func TestOpenServeProjectLedgerRemainsCurrentOnlyAfterActivationBoundary(
 	t *testing.T,
 ) {
 	fixture := newReadOnlyProjectValidationFixture(t, "qnt_6eadbeef")
@@ -40,9 +42,9 @@ func TestOpenServeProjectLedgerRejectsOldSchemaWithoutMigration(
 	}
 	presented := serveProjectLedgerError(fixture.binding, err).Error()
 	for _, want := range []string{
-		"haft project migrate",
+		"became unavailable after startup activation",
 		fixture.binding.ProjectRoot,
-		"no startup migration was attempted",
+		"do not run `haft project migrate` unless",
 	} {
 		if !strings.Contains(presented, want) {
 			t.Fatalf("serve repair error missing %q:\n%s", want, presented)
@@ -67,6 +69,145 @@ func TestOpenServeProjectLedgerRejectsOldSchemaWithoutMigration(
 			beforeFiles,
 			afterFiles,
 		)
+	}
+}
+
+func TestServeProjectActivationErrorRoutesExactRecovery(t *testing.T) {
+	fixture := newReadOnlyProjectValidationFixture(t, "qnt_6eadbabe")
+	tests := []struct {
+		name       string
+		result     projectledgermigration.ServeActivationResult
+		contains   []string
+		notContain []string
+	}{
+		{
+			name: "manual chain",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome:             projectledgermigration.ServeActivationManualRequired,
+				Blocker:             projectledgermigration.ServeBlockerManualChain,
+				FirstBlockedVersion: 57,
+			},
+			contains: []string{
+				"migration 57",
+				"haft project migrate --project-root",
+			},
+		},
+		{
+			name: "missing binding",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome: projectledgermigration.ServeActivationBlocked,
+				Blocker: projectledgermigration.ServeBlockerMissingBinding,
+			},
+			contains: []string{"haft project recover-binding"},
+			notContain: []string{
+				"haft project migrate --project-root",
+			},
+		},
+		{
+			name: "future schema",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome:      projectledgermigration.ServeActivationBlocked,
+				Blocker:      projectledgermigration.ServeBlockerFutureSchema,
+				BeforeSchema: 59,
+				AfterSchema:  58,
+			},
+			contains: []string{
+				"schema 59 newer",
+				"equal or newer Haft binary",
+				"do not run `haft project migrate`",
+			},
+			notContain: []string{
+				"haft project migrate --project-root",
+			},
+		},
+		{
+			name: "invalid prefix",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome: projectledgermigration.ServeActivationBlocked,
+				Blocker: projectledgermigration.ServeBlockerInvalidSchema,
+			},
+			contains: []string{
+				"inspect or restore",
+				"do not run `haft project migrate`",
+			},
+			notContain: []string{
+				"haft project migrate --project-root",
+			},
+		},
+		{
+			name: "lease timeout",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome: projectledgermigration.ServeActivationRetryRequired,
+				Blocker: projectledgermigration.ServeBlockerLeaseTimeout,
+			},
+			contains: []string{
+				"timed out waiting",
+				"retry or reconnect",
+			},
+		},
+		{
+			name: "snapshot failure",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome: projectledgermigration.ServeActivationBlocked,
+				Blocker: projectledgermigration.ServeBlockerSnapshot,
+			},
+			contains: []string{
+				"healthy verified snapshot",
+				"`.partial` snapshot",
+				"do not run a generic migration",
+			},
+			notContain: []string{
+				"haft project migrate --project-root",
+			},
+		},
+		{
+			name: "atomic migration failure",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome:      projectledgermigration.ServeActivationBlocked,
+				Blocker:      projectledgermigration.ServeBlockerMigration,
+				BackupPath:   "/tmp/haft.db.pre-serve-v57-to-v58.bak",
+				BackupDigest: "sha256-fixture",
+			},
+			contains: []string{
+				"verified pre-migration snapshot retained",
+				"/tmp/haft.db.pre-serve-v57-to-v58.bak",
+				"sha256-fixture",
+				"migration version is atomic",
+			},
+		},
+		{
+			name: "unsafe lease carrier",
+			result: projectledgermigration.ServeActivationResult{
+				Outcome: projectledgermigration.ServeActivationBlocked,
+				Blocker: projectledgermigration.ServeBlockerLeaseUnavailable,
+			},
+			contains: []string{
+				"invalid or uncoordinated schema",
+				"do not run `haft project migrate`",
+			},
+			notContain: []string{
+				"haft project migrate --project-root",
+			},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			presented := serveProjectActivationError(
+				fixture.binding,
+				test.result,
+				fmt.Errorf("fixture cause"),
+			).Error()
+			for _, fragment := range test.contains {
+				if !strings.Contains(presented, fragment) {
+					t.Fatalf("activation error missing %q:\n%s", fragment, presented)
+				}
+			}
+			for _, fragment := range test.notContain {
+				if strings.Contains(presented, fragment) {
+					t.Fatalf("activation error unexpectedly contains %q:\n%s", fragment, presented)
+				}
+			}
+		})
 	}
 }
 

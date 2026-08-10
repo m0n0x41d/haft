@@ -9,9 +9,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
-	"github.com/m0n0x41d/haft/internal/project"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 var syncCmd = &cobra.Command{
@@ -43,29 +42,24 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("not a haft project (no .haft/ directory found): %w", err)
 	}
 
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	ledger, err := openCurrentProjectLedger(
+		ctx,
+		projectRoot,
+		projectledger.ReadWrite,
+		"carrier sync",
+	)
+	if err != nil {
+		return err
+	}
+	defer ledger.Close()
+
+	projectRoot = ledger.ProjectRoot().String()
 	haftDir := filepath.Join(projectRoot, ".haft")
-
-	projCfg, err := project.Load(haftDir)
-	if err != nil {
-		return fmt.Errorf("load project config: %w", err)
-	}
-	if projCfg == nil {
-		return fmt.Errorf("project not initialized — run 'haft init' first")
-	}
-
-	dbPath, err := projCfg.DBPath()
-	if err != nil {
-		return fmt.Errorf("get DB path: %w", err)
-	}
-
-	database, err := db.NewStore(dbPath)
-	if err != nil {
-		return fmt.Errorf("open DB: %w", err)
-	}
-	defer database.Close()
-
-	store := artifact.NewStore(database.GetRawDB())
-	ctx := context.Background()
+	store := artifact.NewStore(ledger.Database())
 
 	// Scan all .haft/ subdirectories for .md files
 	dirs := []string{"problems", "decisions", "solutions", "notes", "evidence", "refresh"}

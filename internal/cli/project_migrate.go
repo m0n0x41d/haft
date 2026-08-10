@@ -77,5 +77,15 @@ func runProjectMigrate(cmd *cobra.Command, _ []string) error {
 	); err != nil {
 		return fmt.Errorf("write project migration result: %w", err)
 	}
+	if result.BackupPath != "" {
+		if _, err := fmt.Fprintf(
+			output,
+			"Verified backup: %s\nBackup digest: %s\n",
+			result.BackupPath,
+			result.BackupDigest,
+		); err != nil {
+			return fmt.Errorf("write project migration backup result: %w", err)
+		}
+	}
 	return nil
 }

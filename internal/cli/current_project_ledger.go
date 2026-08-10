@@ -11,9 +11,10 @@ import (
 )
 
 // openCurrentProjectLedger is the ordinary-runtime ledger boundary. It never
-// creates schema objects or applies migrations. Explicit `haft init` and
-// `haft project migrate` are the only CLI effects that upgrade the durable
-// project database.
+// creates schema objects or applies migrations. `haft serve` owns its separate
+// startup activation boundary before opening project-backed surfaces;
+// explicit `haft init` and `haft project migrate` remain the non-server
+// upgrade effects.
 func openCurrentProjectLedger(
 	ctx context.Context,
 	projectRoot string,

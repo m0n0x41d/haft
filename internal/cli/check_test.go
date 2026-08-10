@@ -14,9 +14,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	kerneldb "github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 )
 
 type checkTestProject struct {
@@ -551,10 +553,16 @@ func TestWriteCheckJSONEvidenceFreshnessPostureContract(t *testing.T) {
 func newCheckTestProject(t *testing.T) checkTestProject {
 	t.Helper()
 
-	homeDir := t.TempDir()
+	homeDir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve physical test home: %v", err)
+	}
 	t.Setenv("HOME", homeDir)
 
-	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatalf("resolve physical project root: %v", err)
+	}
 	haftDir := filepath.Join(root, ".haft")
 	if err := os.MkdirAll(haftDir, 0o755); err != nil {
 		t.Fatalf("create .haft dir: %v", err)
@@ -572,125 +580,30 @@ func newCheckTestProject(t *testing.T) checkTestProject {
 		t.Fatalf("resolve DB path: %v", err)
 	}
 
-	db, err := sql.Open("sqlite", dbPath)
+	kernelStore, err := kerneldb.NewStore(dbPath)
 	if err != nil {
-		t.Fatalf("open sqlite DB: %v", err)
+		t.Fatalf("initialize current kernel store: %v", err)
 	}
-	t.Cleanup(func() { _ = db.Close() })
-
-	createCheckSchema(t, db)
-
-	// SpecSectionBaseline storage from migration v28 (slice 3). The bespoke
-	// fixture schema doesn't run RunMigrations; declare the table inline so
-	// writeCheckTestSpecCarriers can baseline its active sections.
-	if _, err := db.Exec(`CREATE TABLE IF NOT EXISTS spec_section_baselines (
-		project_id TEXT NOT NULL,
-		section_id TEXT NOT NULL,
-		hash TEXT NOT NULL,
-		captured_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-		approved_by TEXT NOT NULL DEFAULT '',
-		PRIMARY KEY (project_id, section_id)
-	)`); err != nil {
-		t.Fatalf("create spec_section_baselines: %v", err)
+	t.Cleanup(func() { _ = kernelStore.Close() })
+	if err := projectledger.BindInitialized(
+		context.Background(),
+		root,
+		time.Date(2026, time.July, 1, 0, 0, 0, 0, time.UTC),
+	); err != nil {
+		t.Fatalf("bind current kernel store: %v", err)
 	}
+	database := kernelStore.GetRawDB()
 
 	fixture := checkTestProject{
 		root:    root,
 		haftDir: haftDir,
-		store:   artifact.NewStore(db),
-		db:      db,
+		store:   artifact.NewStore(database),
+		db:      database,
 	}
 
 	writeCheckTestSpecCarriers(t, fixture)
 
 	return fixture
-}
-
-func createCheckSchema(t *testing.T, db *sql.DB) {
-	t.Helper()
-
-	statements := []string{
-		`CREATE TABLE artifacts (
-			id TEXT PRIMARY KEY,
-			kind TEXT NOT NULL,
-			version INTEGER NOT NULL DEFAULT 1,
-			status TEXT NOT NULL DEFAULT 'active',
-			context TEXT,
-			mode TEXT,
-			title TEXT NOT NULL,
-			content TEXT NOT NULL,
-			file_path TEXT,
-			valid_until TEXT,
-			created_at TEXT NOT NULL,
-			updated_at TEXT NOT NULL,
-			search_keywords TEXT DEFAULT '',
-			structured_data TEXT DEFAULT ''
-		)`,
-		`CREATE TABLE artifact_links (
-			source_id TEXT NOT NULL,
-			target_id TEXT NOT NULL,
-			link_type TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			PRIMARY KEY (source_id, target_id, link_type)
-		)`,
-		`CREATE TABLE evidence_items (
-			id TEXT PRIMARY KEY,
-			artifact_ref TEXT NOT NULL,
-			type TEXT NOT NULL,
-			content TEXT NOT NULL,
-			verdict TEXT,
-			carrier_ref TEXT,
-			congruence_level INTEGER DEFAULT 3,
-			formality_level INTEGER DEFAULT 5,
-			claim_refs TEXT DEFAULT '[]',
-			claim_scope TEXT DEFAULT '[]',
-			valid_until TEXT,
-			created_at TEXT NOT NULL
-		)`,
-		`CREATE TABLE affected_files (
-			artifact_id TEXT NOT NULL,
-			file_path TEXT NOT NULL,
-			file_hash TEXT,
-			PRIMARY KEY (artifact_id, file_path)
-		)`,
-		`CREATE TABLE affected_symbols (
-			artifact_id TEXT NOT NULL,
-			file_path TEXT NOT NULL,
-			symbol_name TEXT NOT NULL,
-			symbol_kind TEXT NOT NULL,
-			symbol_line INTEGER,
-			symbol_end_line INTEGER,
-			symbol_hash TEXT,
-			PRIMARY KEY (artifact_id, file_path, symbol_name)
-		)`,
-		`CREATE TABLE codebase_modules (
-			module_id TEXT PRIMARY KEY,
-			path TEXT NOT NULL UNIQUE,
-			name TEXT NOT NULL,
-			lang TEXT,
-			file_count INTEGER DEFAULT 0,
-			last_scanned TEXT NOT NULL
-		)`,
-		`CREATE VIRTUAL TABLE artifacts_fts USING fts5(id, title, content, kind, search_keywords, tokenize='porter unicode61')`,
-		`CREATE TRIGGER artifacts_fts_insert AFTER INSERT ON artifacts BEGIN
-			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
-			VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
-		END`,
-		`CREATE TRIGGER artifacts_fts_update AFTER UPDATE ON artifacts BEGIN
-			DELETE FROM artifacts_fts WHERE id = old.id;
-			INSERT INTO artifacts_fts(id, title, content, kind, search_keywords)
-			VALUES (new.id, new.title, new.content, new.kind, new.search_keywords);
-		END`,
-		`CREATE TRIGGER artifacts_fts_delete AFTER DELETE ON artifacts BEGIN
-			DELETE FROM artifacts_fts WHERE id = old.id;
-		END`,
-	}
-
-	for _, statement := range statements {
-		if _, err := db.Exec(statement); err != nil {
-			t.Fatalf("create schema: %v\nSQL: %s", err, statement)
-		}
-	}
 }
 
 func seedGovernanceDebt(t *testing.T, fixture checkTestProject) checkSeedData {

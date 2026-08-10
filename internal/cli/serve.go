@@ -26,6 +26,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/project"
 	"github.com/m0n0x41d/haft/internal/project/specflow"
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/projectledgermigration"
 	"github.com/m0n0x41d/haft/internal/recall"
 	"github.com/m0n0x41d/haft/internal/ui"
 	"github.com/m0n0x41d/haft/logger"
@@ -138,6 +139,39 @@ func runServe(cmd *cobra.Command, args []string) error {
 		server.Start()
 		return nil
 	}
+	activationRequest, err := projectledgermigration.NewRequest(
+		binding.ProjectRoot,
+		binding.ProjectID,
+	)
+	if err != nil {
+		return fmt.Errorf("prepare serve project activation: %w", err)
+	}
+	activation, activationErr := projectledgermigration.EnsureCurrentForServe(
+		cmd.Context(),
+		activationRequest,
+		time.Now().UTC(),
+	)
+	if activationErr != nil || !activation.Ready() {
+		presented := serveProjectActivationError(
+			binding,
+			activation,
+			activationErr,
+		)
+		setServeProjectUnavailableHandlers(server, presented)
+		server.Start()
+		return nil
+	}
+	activationEvent := logger.Info().
+		Str("outcome", string(activation.Outcome)).
+		Int("before_schema", activation.BeforeSchema).
+		Int("after_schema", activation.AfterSchema).
+		Dur("wait", activation.WaitDuration)
+	if activation.BackupPath != "" {
+		activationEvent = activationEvent.
+			Str("backup_path", activation.BackupPath).
+			Str("backup_digest", activation.BackupDigest)
+	}
+	activationEvent.Msg("serve project schema activated")
 
 	onboardSurface, onboardSurfaceErr := openServeProjectOnboardSurface(
 		cmd.Context(),
@@ -346,16 +380,125 @@ func serveProjectLedgerError(binding ProjectBinding, cause error) error {
 			formatProjectBindingDiagnostic(binding),
 		)
 	}
-	migrationCommand := fmt.Sprintf(
-		"haft project migrate --project-root %q --project-id %s",
-		binding.ProjectRoot,
-		binding.ProjectID,
-	)
 	return fmt.Errorf(
-		"haft project database is not ready for this Haft binary: %w; run `%s` to apply the explicit host-free database upgrade, then restart the MCP server; no startup migration was attempted; %s",
+		"haft project database became unavailable after startup activation: %w; restart the Haft MCP process so it reopens and revalidates the exact ledger; do not run `haft project migrate` unless a fresh startup diagnostic explicitly reports a manual migration chain; no migration or repair was attempted; %s",
 		cause,
-		migrationCommand,
 		formatProjectBindingDiagnostic(binding),
+	)
+}
+
+func setServeProjectUnavailableHandlers(
+	server *fpf.Server,
+	presented error,
+) {
+	handler := func(
+		context.Context,
+		json.RawMessage,
+	) (string, error) {
+		return "", presented
+	}
+	server.SetOnboardHandler(handler)
+	server.SetEntityHandler(handler)
+	server.SetV5Handler(func(
+		context.Context,
+		string,
+		json.RawMessage,
+	) (string, error) {
+		return "", presented
+	})
+}
+
+func serveProjectActivationError(
+	binding ProjectBinding,
+	result projectledgermigration.ServeActivationResult,
+	cause error,
+) error {
+	diagnostic := formatProjectBindingDiagnostic(binding)
+	if cause == nil {
+		cause = fmt.Errorf("serve project activation returned %s", result.Outcome)
+	}
+	switch result.Blocker {
+	case projectledgermigration.ServeBlockerManualChain:
+		migrationCommand := fmt.Sprintf(
+			"haft project migrate --project-root %q --project-id %s",
+			binding.ProjectRoot,
+			binding.ProjectID,
+		)
+		return fmt.Errorf(
+			"haft serve cannot automatically cross project schema migration %d: %w; run `%s`, then restart or reconnect the host; no automatic migration was attempted; %s",
+			result.FirstBlockedVersion,
+			cause,
+			migrationCommand,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerMissingBinding:
+		recoveryCommand := fmt.Sprintf(
+			"haft project recover-binding --project-root %q --project-id %s",
+			binding.ProjectRoot,
+			binding.ProjectID,
+		)
+		return fmt.Errorf(
+			"haft serve found a binding-aware project database without its exact durable binding: %w; run `%s`, then restart or reconnect the host; no migration was attempted; %s",
+			cause,
+			recoveryCommand,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerFutureSchema:
+		return fmt.Errorf(
+			"haft serve found project schema %d newer than this binary schema %d: %w; install an equal or newer Haft binary and restart or reconnect the host; do not run `haft project migrate`; no mutation was attempted; %s",
+			result.BeforeSchema,
+			result.AfterSchema,
+			cause,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerLeaseTimeout:
+		return fmt.Errorf(
+			"haft serve timed out waiting for another project migration owner: %w; retry or reconnect the host after the active migration finishes; no mutation was attempted by this process; %s",
+			cause,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerStaleSidecar:
+		return serveProjectLedgerError(binding, cause)
+	case projectledgermigration.ServeBlockerSnapshot:
+		return fmt.Errorf(
+			"haft serve refused the project migration because a healthy verified snapshot could not be established: %w; inspect the ledger and any `.partial` snapshot, resolve the storage or integrity fault, then restart or reconnect the host; do not run a generic migration against an unhealthy ledger; no schema migration was attempted; %s",
+			cause,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerMigration:
+		backup := serveActivationBackupDiagnostic(result)
+		return fmt.Errorf(
+			"haft serve could not complete the admitted project migration: %w; %sinspect the failure and retry with the same or newer Haft binary; the migration version is atomic; %s",
+			cause,
+			backup,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerInvalidSchema,
+		projectledgermigration.ServeBlockerLeaseUnavailable:
+		return fmt.Errorf(
+			"haft serve refused project database activation: %w; inspect or restore the exact ledger before retrying; do not run `haft project migrate` against an invalid or uncoordinated schema; no migration was attempted; %s",
+			cause,
+			diagnostic,
+		)
+	default:
+		return fmt.Errorf(
+			"haft serve project database activation failed: %w; no project-backed MCP surface was opened; %s",
+			cause,
+			diagnostic,
+		)
+	}
+}
+
+func serveActivationBackupDiagnostic(
+	result projectledgermigration.ServeActivationResult,
+) string {
+	if result.BackupPath == "" {
+		return "no verified migration snapshot was published; "
+	}
+	return fmt.Sprintf(
+		"verified pre-migration snapshot retained at %s (%s); ",
+		result.BackupPath,
+		result.BackupDigest,
 	)
 }
 

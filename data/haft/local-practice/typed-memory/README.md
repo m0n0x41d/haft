@@ -35,12 +35,17 @@ candidate that preserves the 1.3.0 declaration set on exact FPF Base TypeEnv
 and FPF source revision
 `2ada413629b846ef308222d16489a82cb5b40a71`.
 
-[`candidates/1.5.0.yaml`](candidates/1.5.0.yaml) is the current non-binding
-candidate. It preserves the 1.4.0 declaration set while moving its exact FPF
+[`candidates/1.5.0.yaml`](candidates/1.5.0.yaml) is the byte-stable historical
+candidate that preserves the declaration set on FPF source revision
+`3dbce51436bfd718bf49cb0356eebce70c4fc015` and Base TypeEnv
+`typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc`.
+
+[`candidates/1.6.0.yaml`](candidates/1.6.0.yaml) is the current non-binding
+candidate. It preserves the 1.5.0 declaration set while moving its exact FPF
 source pins to revision
-`8b727cba9e893a467b82aab9da84fb7d6d945480` and Base TypeEnv
-`typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786`.
-`SourceV1_4()` remains byte-stable for replay; `SourceV1_5()` returns the
+`036c056e98c38522172c6b7b3ad08214281cc4e4` and Base TypeEnv
+`typeenv:sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565`.
+`SourceV1_5()` remains byte-stable for replay; `SourceV1_6()` returns the
 separate successor carrier.
 
 The shared additive declaration set contains:
@@ -89,7 +94,7 @@ tokens, Completed/InFlight interval algebra, and canonical-instant contract
 remain candidate choices pending their reviewed specification decision and
 the separate human-gated head selection.
 
-The 1.1.0 through 1.5.0 basis carriers are not the source C.2.1
+The 1.1.0 through 1.6.0 basis carriers are not the source C.2.1
 `EpistemeConstitutionRelationSignature`, an obtaining relation occurrence, or
 proof that the constitution predicate obtains. Its
 `runtime_evaluator_requirement` declarations state required E-to-X

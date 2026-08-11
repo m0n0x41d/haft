@@ -351,7 +351,7 @@ func buildPracticalUseSourceUnits(document SourceDocument, atlas PatternAtlas) (
 		)
 		unit.AuthoredPhrases = extractReadmeAuthoredPhrases(source.Body)
 		unit.Keywords = sourceKeywords(source.Title, source.Body)
-		projection, _, err := parsePracticalUseCardSourceForIndex(source)
+		projection, _, err := ProjectPracticalUseCardSource(source)
 		if err != nil {
 			return nil, err
 		}
@@ -416,7 +416,7 @@ func inspectSourceGrammarDiagnostics(
 	}
 	diagnostics := make([]SourceGrammarDiagnostic, 0)
 	for _, source := range sources {
-		_, observed, err := parsePracticalUseCardSourceForIndex(source)
+		_, observed, err := ProjectPracticalUseCardSource(source)
 		if err != nil {
 			return nil, err
 		}

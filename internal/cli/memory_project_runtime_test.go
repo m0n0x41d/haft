@@ -17,7 +17,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/typedmemorywire"
 )
 
-func TestProjectMemoryRuntimeCatalogRetainsHistoricalV1_4(t *testing.T) {
+func TestProjectMemoryRuntimeCatalogRetainsHistoricalEditions(t *testing.T) {
 	t.Parallel()
 
 	database, err := openCurrentKernelTestStore(
@@ -35,30 +35,48 @@ func TestProjectMemoryRuntimeCatalogRetainsHistoricalV1_4(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build project-memory runtime basis: %v", err)
 	}
-	historicalRef, err := typedmemory.ParseTypeEnvRef(
-		basetypeenvartifacts.HistoricalV5Ref,
-	)
-	if err != nil {
-		t.Fatalf("parse historical 1.4.0 Base TypeEnv ref: %v", err)
+	tests := []struct {
+		edition string
+		baseRef string
+		source  []byte
+	}{
+		{
+			edition: "1.4.0",
+			baseRef: basetypeenvartifacts.HistoricalV5Ref,
+			source:  typedmemorycandidates.SourceV1_4(),
+		},
+		{
+			edition: "1.5.0",
+			baseRef: basetypeenvartifacts.HistoricalV6Ref,
+			source:  typedmemorycandidates.SourceV1_5(),
+		},
 	}
-	historicalBase, err := basetypeenvartifacts.LoadExact(historicalRef)
-	if err != nil {
-		t.Fatalf("load historical 1.4.0 Base TypeEnv: %v", err)
-	}
-	historicalTarget, err := localpracticeruntime.Build(
-		historicalBase,
-		typedmemorycandidates.SourceV1_4(),
-	)
-	if err != nil {
-		t.Fatalf("build historical 1.4.0 Local-Practice target: %v", err)
-	}
-	composite := historicalTarget.Composite().Ref().String()
-	installed, present := basis.targetsByTypeEnv[composite]
-	if !present {
-		t.Fatalf("installed runtime catalog omitted historical 1.4.0 composite %s", composite)
-	}
-	if installed.RuntimeBasis().Ref() != historicalTarget.RuntimeBasis().Ref() {
-		t.Fatal("installed historical 1.4.0 runtime uses another exact X basis")
+	for _, test := range tests {
+		t.Run(test.edition, func(t *testing.T) {
+			historicalRef, err := typedmemory.ParseTypeEnvRef(test.baseRef)
+			if err != nil {
+				t.Fatalf("parse historical %s Base TypeEnv ref: %v", test.edition, err)
+			}
+			historicalBase, err := basetypeenvartifacts.LoadExact(historicalRef)
+			if err != nil {
+				t.Fatalf("load historical %s Base TypeEnv: %v", test.edition, err)
+			}
+			historicalTarget, err := localpracticeruntime.Build(
+				historicalBase,
+				test.source,
+			)
+			if err != nil {
+				t.Fatalf("build historical %s Local-Practice target: %v", test.edition, err)
+			}
+			composite := historicalTarget.Composite().Ref().String()
+			installed, present := basis.targetsByTypeEnv[composite]
+			if !present {
+				t.Fatalf("installed runtime catalog omitted historical %s composite %s", test.edition, composite)
+			}
+			if installed.RuntimeBasis().Ref() != historicalTarget.RuntimeBasis().Ref() {
+				t.Fatalf("installed historical %s runtime uses another exact X basis", test.edition)
+			}
+		})
 	}
 }
 

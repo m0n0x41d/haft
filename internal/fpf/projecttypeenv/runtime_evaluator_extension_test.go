@@ -14,7 +14,7 @@ import (
 
 const (
 	runtimeEvaluatorCandidateV1Path  = "../../../data/haft/local-practice/typed-memory/candidates/1.0.0.yaml"
-	runtimeEvaluatorCandidateV15Path = "../../../data/haft/local-practice/typed-memory/candidates/1.5.0.yaml"
+	runtimeEvaluatorCandidateV16Path = "../../../data/haft/local-practice/typed-memory/candidates/1.6.0.yaml"
 )
 
 var runtimeEvaluatorRequirementCoordinates = map[RuntimeMechanismInvocationContract]string{
@@ -316,7 +316,7 @@ func newRuntimeEvaluatorExtensionFixture(
 ) runtimeEvaluatorExtensionFixture {
 	t.Helper()
 	base := loadBaseArtifact(t)
-	source, err := os.ReadFile(runtimeEvaluatorCandidateV15Path)
+	source, err := os.ReadFile(runtimeEvaluatorCandidateV16Path)
 	if err != nil {
 		t.Fatalf("read runtime evaluator production carrier: %v", err)
 	}

@@ -1,6 +1,6 @@
 {
   "schema_version": "haft.fpf-query-token-gate-corpus/v1",
-  "fixture_revision": "fpf-d1f696e-query-behavior/v1",
+  "fixture_revision": "fpf-036c056-query-behavior/v1",
   "cases": [
     {
       "case_id": "relation-occurrence-assertion",
@@ -35,14 +35,16 @@
         "query": "pattern use working situation"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 4,
+      "expected_candidate_count": 5,
       "expected_candidate_ids": [
+        "readme:practical_use_card:dpf-authoring",
         "readme:practical_use_card:working-documents",
         "readme:practical_use_card:architecture",
         "spec:toc_row:e-11-pua",
         "spec:toc_row:e-8-ecspf"
       ],
       "expected_candidate_source_ids": [
+        "DPF-AUTHORING",
         "WORKING-DOCUMENTS",
         "ARCHITECTURE",
         "",
@@ -112,10 +114,9 @@
         "query": "entity of concern reference scheme claim graph"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 10,
+      "expected_candidate_count": 9,
       "expected_candidate_ids": [
         "readme:practical_use_card:wording",
-        "readme:practical_use_card:dpf-authoring",
         "readme:practical_use_card:architecture",
         "readme:practical_use_card:description-use",
         "readme:practical_use_card:naming",
@@ -127,7 +128,6 @@
       ],
       "expected_candidate_source_ids": [
         "WORDING",
-        "DPF-AUTHORING",
         "ARCHITECTURE",
         "DESCRIPTION-USE",
         "NAMING",
@@ -138,7 +138,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 8,
+      "expected_omitted_at_least": 6,
       "expected_truncation_basis": [
         "response_budget"
       ]
@@ -149,16 +149,14 @@
         "query": "authority speech act permission"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 5,
+      "expected_candidate_count": 4,
       "expected_candidate_ids": [
         "spec:toc_row:a-2-9",
         "spec:toc_row:a-6-c",
         "spec:toc_row:e-16",
-        "spec:toc_row:e-17-efp",
         "spec:toc_row:a-2-8-per"
       ],
       "expected_candidate_source_ids": [
-        "",
         "",
         "",
         "",
@@ -201,7 +199,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 48,
+      "expected_omitted_at_least": 51,
       "expected_truncation_basis": [
         "role_local_fts_producer_limit",
         "role_local_fts:toc_row",

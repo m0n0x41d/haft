@@ -38,6 +38,15 @@ release. Its published predecessor is
   remain intact as an explicit projection conflict. Sync returns non-zero if
   any carrier cannot be reconstructed or imported.
 
+### Fixed
+
+- **FPF refresh no longer aborts on structurally recognizable new
+  practical-use result labels.** Index construction and compatibility analysis
+  now consume one domain projection: admitted label families preserve their
+  source-owned blocks, future result-like labels remain source-preserving
+  review diagnostics, and the strict parser still rejects unsupported or
+  malformed source.
+
 ### Changed
 
 - **Kernel schema 59 adds lossless EvidenceRecord projection fields and queues
@@ -53,6 +62,10 @@ release. Its published predecessor is
   MCP request fields and response JSON are unchanged; carrier paths and
   projection warnings are additive output. Existing parent Markdown schemas
   are not rewritten to embed evidence arrays.
+- **The bundled FPF source and query index now track revision `036c056e`.** The
+  index contains 8,119 source units. Typed-memory carrier `1.6.0` pins the new
+  Base TypeEnv while `1.5.0` and its exact base artifact remain byte-stable for
+  historical replay.
 
 ## [9.0.3] — 2026-08-10
 

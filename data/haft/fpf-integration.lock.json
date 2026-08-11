@@ -1,19 +1,19 @@
 {
   "schema_version": "haft.fpf-integration-lock/v1",
-  "generated_by": "fpf-refresh-inputs/v1:sha256:d4218b5e88875e214e2eb9183d6a6ea0e06c20b80d965486129e8f746f25524f",
+  "generated_by": "fpf-refresh-inputs/v1:sha256:8889536e602928ee3ff366b76428eb680732cdb2c8fa92390329e4320905e63e",
   "coordinates": {
-    "source_revision": "3dbce51436bfd718bf49cb0356eebce70c4fc015",
+    "source_revision": "036c056e98c38522172c6b7b3ad08214281cc4e4",
     "readme_document_digest": "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",
-    "spec_document_digest": "sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf",
-    "database_digest": "sha256:620e73e49adce378b9122dea7dbaac9ebda6c7e66c44000fcea345f017863d7d",
-    "source_unit_count": 8087,
+    "spec_document_digest": "sha256:691692b7a638874e4ea66acd8df6e18bf22d6ffcac01a96d7ff7c93a8a330891",
+    "database_digest": "sha256:d201a5ce8e3330e05f38949e1c516123d437eae9d7254747ec4facc858c917ff",
+    "source_unit_count": 8119,
     "index_schema_version": "11",
-    "base_type_env_ref": "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
-    "base_type_env_digest": "sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
+    "base_type_env_ref": "typeenv:sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565",
+    "base_type_env_digest": "sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565",
     "type_env_compiler_edition": "fpf-base-typeenv.cov2.v5"
   },
   "token_gate": {
-    "fixture_revision": "fpf-d1f696e-query-behavior/v1",
-    "fixture_digest": "sha256:1e986728aae1e471c7f78265e6f6ced276b8900d5b02fca419781506ea3831cc"
+    "fixture_revision": "fpf-036c056-query-behavior/v1",
+    "fixture_digest": "sha256:e9bb8de65d3bd4ed9b839df256d2b9d3b7b63bd5072be7d44b3bfc4369c40b48"
   }
 }

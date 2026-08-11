@@ -1,0 +1,9 @@
+- **Situation and question.** A domain may benefit from a reusable framework, but another framework is not automatically useful.
+- **First route.** Test a cheaper route before opening proposal or dependency machinery.
+- **Architecture-answer branch.** Record the selected outcome in one `E.9` DRR using `E.4.PFAD`.
+- **Optional organization-proposal branch.** Create the `C.2.1` proposal only when a named review use needs candidate organization claims.
+- **Optional dependency-description branch.** Create the `C.2.1` dependency description only when a named next use needs it.
+- **Existing-framework continuation.** Use `C.30.AD Solution -> ArchitectureDescriptionUseCard@Project` only after the framework and architecture relation exist.
+- **Boundaries.** Stop at the first useful result; the branches are conditional alternatives, not stages.
+- **Result test.** Name the current result, the use it answers, and the fact that selects its branch.
+- **Public coarsening.** "DPF authoring" is a reader cue for this route.

@@ -490,8 +490,11 @@ func restoreP14AcceptedP13Environment(
 	if err != nil {
 		return nil, err
 	}
-	restored = replaceP14EnvironmentValue(restored, "GOFLAGS", "")
-	restored = replaceP14EnvironmentValue(restored, "GOMAXPROCS", "")
+	// P13 binds these exact values into its acceptance identity. Recreate that
+	// frozen execution contour for the nested freshness check instead of
+	// stripping it and making every canonical P13 carrier appear stale.
+	restored = replaceP14EnvironmentValue(restored, "GOFLAGS", "-p=1")
+	restored = replaceP14EnvironmentValue(restored, "GOMAXPROCS", "1")
 	return restored, nil
 }
 
@@ -607,12 +610,12 @@ func TestRestoreP14AcceptedP13EnvironmentRecoversAcceptedExecutionBasis(
 		)
 	}
 	goFlags, found := p14EnvironmentValue(restored, "GOFLAGS")
-	if !found || goFlags != "" {
-		t.Fatal("restored nested P13 environment retained outer GOFLAGS")
+	if !found || goFlags != "-p=1" {
+		t.Fatal("restored nested P13 environment omitted canonical GOFLAGS")
 	}
 	goMaxProcs, found := p14EnvironmentValue(restored, "GOMAXPROCS")
-	if !found || goMaxProcs != "" {
-		t.Fatal("restored nested P13 environment retained outer GOMAXPROCS")
+	if !found || goMaxProcs != "1" {
+		t.Fatal("restored nested P13 environment omitted canonical GOMAXPROCS")
 	}
 }
 

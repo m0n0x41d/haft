@@ -429,6 +429,8 @@ jobs:
       - name: Verify fresh P13 evidence against the unchanged candidate
         run: |
           HOME="$P13_REMOTE_HOME" \
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
           HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE="$P13_ACCEPTANCE_CARRIER" \
           HAFT_P13_VERIFY_ACCEPTANCE_DIGEST="$P13_ACCEPTANCE_DIGEST" \
             go test -count=1 -timeout=5m -v ./internal/p13acceptance \

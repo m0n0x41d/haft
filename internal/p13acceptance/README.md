@@ -133,6 +133,8 @@ After automatic activation exists, those exact accepted coordinates have been
 frozen, and the manifest status is `frozen_for_execution`, run exactly:
 
 ```bash
+GOMAXPROCS=1 \
+GOFLAGS=-p=1 \
 HAFT_P13_RUN_CONSOLIDATED=1 \
   go test -count=1 -timeout=12h -v ./internal/p13acceptance \
   -run '^TestP13ConsolidatedAcceptance$'
@@ -151,6 +153,8 @@ passing v3 carrier whose exact dependency digest still matches:
 ```bash
 HAFT_P13_REUSE_ACCEPTANCE_EVIDENCE=.context/p13/<PRIOR_P13_EVIDENCE>.json \
 HAFT_P13_REUSE_ACCEPTANCE_DIGEST=sha256:<PRIOR_CARRIER_DIGEST> \
+GOMAXPROCS=1 \
+GOFLAGS=-p=1 \
 HAFT_P13_RUN_CONSOLIDATED=1 \
   go test -count=1 -timeout=12h -v ./internal/p13acceptance \
   -run '^TestP13ConsolidatedAcceptance$'
@@ -171,6 +175,8 @@ manifest, full acceptance identity, frozen selection, suites, gates, and
 anchors are still current:
 
 ```bash
+GOMAXPROCS=1 \
+GOFLAGS=-p=1 \
 HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE=.context/p13/<P13_EVIDENCE>.json \
 HAFT_P13_VERIFY_ACCEPTANCE_DIGEST=sha256:<P13_CARRIER_DIGEST> \
   go test -count=1 -v ./internal/p13acceptance \

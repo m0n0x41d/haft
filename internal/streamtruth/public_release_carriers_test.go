@@ -224,11 +224,19 @@ func TestRaceTasksKeepCriticalLocalAndFullCIContoursDistinct(t *testing.T) {
 func TestManualP13DoesNotAlsoStartTheFullCIMatrix(t *testing.T) {
 	workflow := readTruthRepoFile(t, ".github/workflows/ci.yml")
 	const exclusion = "github.event_name != 'workflow_dispatch' || !inputs.run_p13"
-	if count := strings.Count(workflow, exclusion); count != 4 {
+	if count := strings.Count(workflow, exclusion); count != 5 {
 		t.Fatalf(
-			"full CI jobs excluding manual P13 = %d, want 4 exact guards",
+			"full CI jobs excluding manual P13 = %d, want 5 exact guards",
 			count,
 		)
+	}
+	for _, required := range []string{
+		"supported-target-build:",
+		"needs: [supported-target-build]",
+	} {
+		if !strings.Contains(workflow, required) {
+			t.Fatalf("race matrix omits supported-target build gate %q", required)
+		}
 	}
 }
 

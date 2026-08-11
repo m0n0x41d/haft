@@ -1252,6 +1252,11 @@ type EvidenceItem struct {
 	ClaimScope         []string                   `json:"claim_scope,omitempty"`
 	ValidUntil         string                     `json:"valid_until,omitempty"`
 	CausalSupportBasis CausalEvidenceSupportBasis `json:"causal_support_basis,omitempty"` // C.28 basis for causal-use claim support
+	// CreatedAt and UpdatedAt are retained for lossless carrier round-trips but
+	// intentionally stay out of public transport responses, whose shape
+	// predates durable EvidenceRecord carriers.
+	CreatedAt string `json:"-"`
+	UpdatedAt string `json:"-"`
 	// Provenance distinguishes who collected this evidence: "" (human/agent in
 	// session), "machine" (maintenance loop ran an allowlisted observable), or
 	// "llm-review" (overseer reviewer proposal). Machine evidence must always

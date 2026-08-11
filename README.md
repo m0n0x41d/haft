@@ -65,9 +65,10 @@ second independent `--agents` target.
 For an already initialized project, install the new binary and fully restart
 or reconnect the coding-agent host. A new `haft serve` process automatically
 applies only migration boundaries that the release explicitly marks as
-startup-safe. The current `57 -> 58` transition first publishes a verified
-`0600` SQLite snapshot beside the project ledger; a current database is a
-no-op. Re-running `haft init` is not routine database maintenance.
+startup-safe. The current chain covers `57 -> 58` and `58 -> 59`; Haft first
+publishes a verified `0600` SQLite snapshot beside the project ledger at each
+boundary it crosses. A current database is a no-op. Re-running `haft init` is
+not routine database maintenance.
 
 If startup reports a manual migration boundary, use the exact fallback command
 from that diagnostic:
@@ -498,6 +499,22 @@ Attach evidence with `haft_decision(action="evidence", ...)`. Evidence carries
 formality levels (F0–F9), congruence levels (CL0–CL3), and expiry dates. Trust
 scores (R_eff) degrade as evidence ages; stale evidence triggers refresh. Use
 `haft_decision(action="measure", ...)` for post-implementation verification.
+
+Each EvidenceRecord is also published as its own
+`.haft/evidence/<evidence-id>.md` carrier. SQLite is the local query projection;
+the Markdown carrier is the version-controlled collaboration surface. An
+evidence attachment changes its own carrier and does not rewrite the parent
+carrier solely to add evidence.
+
+After pulling another engineer's changes, run `haft sync`. Haft imports each
+evidence carrier only after its exact parent exists, preserves its identity and
+evidence metadata, and never reconstructs an absent WorkCommission or MethodRun
+from evidence. A carrier write that fails after the SQLite row commits is
+reported as evidence carrier projection debt by `haft check`; a later
+`haft sync` imports valid pulled carriers before retrying any remaining
+publication debt. If an existing carrier conflicts with the exact pending
+SQLite projection, sync preserves both sides and requires explicit
+reconciliation.
 
 ### External runners and WorkCommission lifecycle
 

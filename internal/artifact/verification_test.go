@@ -2,6 +2,8 @@ package artifact
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -101,6 +103,9 @@ func TestRecordVerificationPassBaselinesFilesAndAttachesCL3Evidence(t *testing.T
 	}
 	if items[0].ID != result.Evidence.ID {
 		t.Fatalf("stored evidence id = %q, want %q", items[0].ID, result.Evidence.ID)
+	}
+	if _, err := os.Stat(filepath.Join(projectRoot, ".haft", "evidence", result.Evidence.ID+".md")); err != nil {
+		t.Fatalf("verification evidence carrier missing: %v", err)
 	}
 }
 

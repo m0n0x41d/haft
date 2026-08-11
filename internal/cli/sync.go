@@ -61,8 +61,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	haftDir := filepath.Join(projectRoot, ".haft")
 	store := artifact.NewStore(ledger.Database())
 
-	// Scan all .haft/ subdirectories for .md files
-	dirs := []string{"problems", "decisions", "solutions", "notes", "evidence", "refresh"}
+	// Scan ordinary parent carriers before evidence. Authority-bearing
+	// WorkCommission and MethodRun carriers remain outside this generic import
+	// path and must already exist through their effect-specific boundaries.
+	dirs := []string{"problems", "decisions", "solutions", "notes", "refresh", "evidence"}
 	var synced, skipped, failed int
 
 	for _, dir := range dirs {
@@ -101,6 +103,22 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	if failed > 0 {
+		fmt.Printf("\nSync complete: %d synced, %d unchanged, %d failed\n", synced, skipped, failed)
+		return fmt.Errorf("sync failed closed: %d carrier(s) could not be imported", failed)
+	}
+
+	// Existing git carriers win the reconciliation race: import and validate
+	// them before retrying DB-to-file projection debt. This prevents a legacy
+	// backfill row from overwriting a collaborator's pulled carrier. Any invalid
+	// carrier returns above, so debt repair never masks the conflict.
+	repaired, err := artifact.RepairEvidenceCarrierProjectionDebt(ctx, store, haftDir)
+	if err != nil {
+		return fmt.Errorf("repair evidence carrier projection debt after sync: %w", err)
+	}
+	if repaired > 0 {
+		fmt.Printf("  repaired %d evidence carrier projection debt item(s)\n", repaired)
+	}
 	fmt.Printf("\nSync complete: %d synced, %d unchanged, %d failed\n", synced, skipped, failed)
 	return nil
 }
@@ -118,6 +136,16 @@ func syncOneFile(ctx context.Context, store *artifact.Store, filePath string) (s
 
 	if art.Meta.ID == "" || art.Meta.Kind == "" {
 		return "", fmt.Errorf("missing id or kind in frontmatter")
+	}
+	if art.Meta.Kind == artifact.KindEvidencePack {
+		carrier, err := artifact.ParseEvidenceCarrier(art, filePath)
+		if err != nil {
+			return "", err
+		}
+		if err := store.CheckEvidenceCarrierImportProjectionDebt(ctx, carrier.Evidence.ID, data); err != nil {
+			return "", err
+		}
+		return store.ImportEvidenceCarrier(ctx, art, carrier)
 	}
 
 	// Check if artifact already exists

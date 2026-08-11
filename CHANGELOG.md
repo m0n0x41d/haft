@@ -6,6 +6,38 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [9.1.0] — 2026-08-11
+
+[v9.1.0](https://github.com/m0n0x41d/haft/releases/tag/v9.1.0) is a minor
+release. Its published predecessor is
+[v9.0.3](https://github.com/m0n0x41d/haft/releases/tag/v9.0.3).
+
+### Added
+
+- **EvidenceRecords have independent version-controlled Markdown carriers.**
+  Every new evidence attachment, decision measurement, maintenance observation,
+  and recorded verification pass projects one
+  `.haft/evidence/<evidence-id>.md` file. The carrier preserves stable evidence
+  identity, exact parent binding, content, verdict, source carrier, claim
+  bindings, validity, formality, causal support basis, provenance, and record
+  timestamps. Separate evidence additions no longer depend on a shared parent
+  file or local SQLite state for git collaboration. This addresses
+  [#100](https://github.com/m0n0x41d/haft/issues/100).
+- **`haft sync` imports evidence through the evidence domain path.** It validates
+  the carrier envelope and parent link, preserves derived evidence posture on
+  round-trip, rejects reparenting, and fails closed when the exact parent is
+  absent. It does not create an authority-bearing WorkCommission or MethodRun.
+  An exact generic `EvidencePack` row created when a 9.0.x client encountered a
+  9.1 carrier is removed and re-imported as evidence; conflicting rows remain
+  untouched and fail closed.
+- **Carrier publication failures become durable governance debt.** The semantic
+  evidence row remains committed, the caller receives a projection warning,
+  and `haft check` reports the open debt. `haft sync` validates and imports
+  pulled carriers before repairing remaining debt, so backfill cannot overwrite
+  a collaborator's carrier. A differing file and exact pending SQLite digest
+  remain intact as an explicit projection conflict. Sync returns non-zero if
+  any carrier cannot be reconstructed or imported.
+
 ### Fixed
 
 - **FPF refresh no longer aborts on structurally recognizable new
@@ -17,6 +49,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Kernel schema 59 adds lossless EvidenceRecord projection fields and queues
+  legacy carrier backfill.** The additive migration preserves existing
+  `evidence_items`, stores causal-support and update-time fields, creates the
+  carrier projection-debt table, and queues every pre-9.1 evidence row for
+  carrier publication. `haft serve` can migrate schema 58 automatically only
+  after Haft writes and verifies the snapshot-backed rollback carrier; `haft
+  init` and `haft project migrate` remain the explicit CLI upgrade paths. Run
+  `haft sync` once after migration to publish queued carriers. A binary
+  downgrade to 9.0.3 requires restoring the verified schema-58 snapshot.
+- **Public evidence attachment contracts remain compatible.** Existing CLI and
+  MCP request fields and response JSON are unchanged; carrier paths and
+  projection warnings are additive output. Existing parent Markdown schemas
+  are not rewritten to embed evidence arrays.
 - **The bundled FPF source and query index now track revision `036c056e`.** The
   index contains 8,119 source units. Typed-memory carrier `1.6.0` pins the new
   Base TypeEnv while `1.5.0` and its exact base artifact remain byte-stable for

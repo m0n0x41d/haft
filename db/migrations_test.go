@@ -83,6 +83,7 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 		"migration_review_speech_acts",
 		"migration_review_admissions",
 		"project_ledger_binding",
+		"evidence_carrier_projection_debt",
 	} {
 		var name string
 		err := store.conn.QueryRow(
@@ -92,6 +93,26 @@ func TestRunMigrations_FreshDatabase(t *testing.T) {
 		if err != nil || name != table {
 			t.Fatalf("migration missing table %s: name=%q err=%v", table, name, err)
 		}
+	}
+	var causalColumnCount int
+	if err := store.conn.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('evidence_items')
+		WHERE name = 'causal_support_basis'`,
+	).Scan(&causalColumnCount); err != nil {
+		t.Fatalf("inspect evidence_items causal_support_basis: %v", err)
+	}
+	if causalColumnCount != 1 {
+		t.Fatalf("causal_support_basis columns = %d, want 1", causalColumnCount)
+	}
+	var evidenceUpdatedAtColumnCount int
+	if err := store.conn.QueryRow(`
+		SELECT COUNT(*) FROM pragma_table_info('evidence_items')
+		WHERE name = 'updated_at'`,
+	).Scan(&evidenceUpdatedAtColumnCount); err != nil {
+		t.Fatalf("inspect evidence_items updated_at: %v", err)
+	}
+	if evidenceUpdatedAtColumnCount != 1 {
+		t.Fatalf("evidence updated_at columns = %d, want 1", evidenceUpdatedAtColumnCount)
 	}
 	for _, forbidden := range []string{
 		"profile_declaration_candidates",

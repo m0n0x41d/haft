@@ -40,7 +40,12 @@ func setupTestDB(t *testing.T) *Store {
 			formality_scale_id TEXT DEFAULT '', formality_bridge TEXT DEFAULT '',
 			claim_refs TEXT DEFAULT '[]',
 			claim_scope TEXT DEFAULT '[]',
+			provenance TEXT DEFAULT '', causal_support_basis TEXT DEFAULT '',
 			valid_until TEXT, created_at TEXT NOT NULL)`,
+		`CREATE TABLE evidence_carrier_projection_debt (
+			evidence_id TEXT PRIMARY KEY, artifact_ref TEXT NOT NULL,
+			carrier_path TEXT NOT NULL, desired_digest TEXT NOT NULL,
+			last_error TEXT NOT NULL, opened_at TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		`CREATE TABLE affected_files (
 			artifact_id TEXT NOT NULL, file_path TEXT NOT NULL, file_hash TEXT,
 			PRIMARY KEY (artifact_id, file_path))`,

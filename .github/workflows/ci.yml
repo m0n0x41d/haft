@@ -115,9 +115,43 @@ jobs:
           fail_ci_if_error: false
         continue-on-error: true
 
+  supported-target-build:
+    name: Build ${{ matrix.goos }}-${{ matrix.goarch }}
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_p13 }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { runner: ubuntu-latest,    goos: linux,  goarch: amd64 }
+          - { runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
+          - { runner: macos-latest,     goos: darwin, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - name: Prepare desktop embed placeholder
+        run: |
+          mkdir -p desktop/frontend/dist
+          printf 'ci placeholder\n' > desktop/frontend/dist/.ci-placeholder
+
+      - name: Compile supported target
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -o "$RUNNER_TEMP/haft-${GOOS}-${GOARCH}" ./cmd/haft/
+
   race-shard:
     name: Race shard ${{ matrix.shard_index }}
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.run_p13 }}
+    needs: [supported-target-build]
     runs-on: ubuntu-latest
     timeout-minutes: 180
     permissions:

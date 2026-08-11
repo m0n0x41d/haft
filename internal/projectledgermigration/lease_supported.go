@@ -142,13 +142,14 @@ func requireRegularAttachedMigrationLease(
 	return nil
 }
 
-// Stat_t uses uint16 for Mode and Nlink on Darwin, but uint32 and uint64 on
-// Linux. These widening helpers keep the shared lease check type-safe on both.
+// Stat_t uses uint16 or uint32 for Mode and uint16, uint32, or uint64 for
+// Nlink across the supported Darwin and Linux architectures. These widening
+// helpers keep the shared lease check type-safe on all of them.
 func migrationStatMode[T ~uint16 | ~uint32](mode T) uint32 {
 	return uint32(mode)
 }
 
-func migrationStatLinkCount[T ~uint16 | ~uint64](linkCount T) uint64 {
+func migrationStatLinkCount[T ~uint16 | ~uint32 | ~uint64](linkCount T) uint64 {
 	return uint64(linkCount)
 }
 

@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -65,8 +67,15 @@ func TestHandleQuintDecision_EvidencePersistsValidUntil(t *testing.T) {
 	if len(items) != 1 {
 		t.Fatalf("expected 1 evidence item, got %d", len(items))
 	}
+	if !strings.Contains(result, filepath.ToSlash(filepath.Join(".haft", "evidence", items[0].ID+".md"))) {
+		t.Fatalf("evidence response missing carrier path:\n%s", result)
+	}
 	if items[0].ValidUntil != validUntil {
 		t.Fatalf("valid_until = %q, want %q", items[0].ValidUntil, validUntil)
+	}
+	carrierPath := filepath.Join(haftDir, "evidence", items[0].ID+".md")
+	if _, err := os.Stat(carrierPath); err != nil {
+		t.Fatalf("MCP evidence carrier missing: %v", err)
 	}
 }
 

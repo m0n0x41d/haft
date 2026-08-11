@@ -16,7 +16,7 @@ on:
       version:
         description: Semver to embed in dry-run artifacts, without the v prefix
         required: true
-        default: '9.0.0'
+        default: '9.1.0'
         type: string
       tag:
         description: Existing annotated v9 tag to publish

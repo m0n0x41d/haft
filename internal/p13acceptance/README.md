@@ -92,8 +92,8 @@ predecessor rather than relabeling it. The activated target Stage remains schema
 and byte-match the current canonical profile basis, compatible ProfileFit, and
 installed transition-profile closure when final freeze input is captured. The
 same preflight requires the exact selected FPF checkout plus embedded index
-metadata, schema 58 with its exact writer-54 marker (independently verified), and an
-explicitly empty excluded-Go-package set. Any
+metadata, schema 59 with its exact writer-54 marker (independently verified),
+and an explicitly empty excluded-Go-package set. Any
 changed coordinate, missing anchor, skipped anchor, non-empty waiver set, or
 failed command blocks the run.
 

@@ -751,7 +751,11 @@ func assertTableRowByID(t *testing.T, database *sql.DB, table string, id string)
 
 func assertCanonicalAuthorityProfileSchema(t *testing.T, database *sql.DB) {
 	t.Helper()
-	versions := statementMigrationVersionsFrom(kernelMigrations, 34)
+	// This fixture owns the authority-profile contract introduced through
+	// schema 37. Later unrelated statement migrations must not be replayed into
+	// its deliberately partial schema.
+	authorityProfileMigrations := migrationsBeforeVersion(kernelMigrations, 38, 0, nil)
+	versions := statementMigrationVersionsFrom(authorityProfileMigrations, 34)
 	contract, err := buildAuthorityProfileSchemaContract(kernelMigrations, versions)
 	if err != nil {
 		t.Fatalf("load canonical schema contract: %v", err)

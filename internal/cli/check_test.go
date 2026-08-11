@@ -50,6 +50,60 @@ func TestBuildCheckReport_CleanProject(t *testing.T) {
 	}
 }
 
+func TestBuildCheckReportIncludesEvidenceCarrierProjectionDebtAsFinding(t *testing.T) {
+	fixture := newCheckTestProject(t)
+	ctx := context.Background()
+	parent := &artifact.Artifact{
+		Meta: artifact.Meta{
+			ID:     "note-check-evidence-projection-debt",
+			Kind:   artifact.KindNote,
+			Status: artifact.StatusActive,
+			Title:  "Evidence projection debt parent",
+		},
+		Body: "Parent for an evidence carrier that cannot be published.",
+	}
+	if err := fixture.store.Create(ctx, parent); err != nil {
+		t.Fatal(err)
+	}
+	blockedHaftDir := filepath.Join(t.TempDir(), "not-a-directory")
+	if err := os.WriteFile(blockedHaftDir, []byte("blocked"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	item, err := artifact.AttachEvidenceWithCarrier(ctx, fixture.store, blockedHaftDir, artifact.EvidenceInput{
+		ArtifactRef:     parent.Meta.ID,
+		Content:         "Semantic evidence committed while publication failed.",
+		Type:            "test",
+		Verdict:         "supports",
+		CongruenceLevel: 3,
+		FormalityLevel:  5,
+	})
+	var warning *artifact.WriteWarning
+	if !errors.As(err, &warning) || item == nil {
+		t.Fatalf("AttachEvidenceWithCarrier = %#v, %v; want committed item and warning", item, err)
+	}
+
+	report, err := buildCheckReport(ctx, fixture.store, fixture.root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.hasFindings() || report.Summary.TotalFindings != 1 {
+		t.Fatalf("projection debt did not become a finding: %#v", report)
+	}
+	if len(report.EvidenceCarrierProjectionDebt) != 1 ||
+		report.EvidenceCarrierProjectionDebt[0].EvidenceID != item.ID ||
+		report.EvidenceCarrierProjectionDebt[0].ArtifactRef != parent.Meta.ID {
+		t.Fatalf("projection debt = %#v", report.EvidenceCarrierProjectionDebt)
+	}
+	var output bytes.Buffer
+	if err := writeCheckSummary(&output, report); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(output.String(), "Evidence Carrier Projection Debt") ||
+		!strings.Contains(output.String(), item.ID) {
+		t.Fatalf("summary omitted projection debt:\n%s", output.String())
+	}
+}
+
 func TestBuildCheckReportAddsReadOnlyEvidenceFreshnessInventoryWithoutFindings(
 	t *testing.T,
 ) {

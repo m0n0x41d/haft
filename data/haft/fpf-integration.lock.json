@@ -1,6 +1,6 @@
 {
   "schema_version": "haft.fpf-integration-lock/v1",
-  "generated_by": "fpf-refresh-inputs/v1:sha256:6137d484435274e34dada4f7dde0adae528287c5f7888f381c7d4c57ad5519dd",
+  "generated_by": "fpf-refresh-inputs/v1:sha256:d4218b5e88875e214e2eb9183d6a6ea0e06c20b80d965486129e8f746f25524f",
   "coordinates": {
     "source_revision": "3dbce51436bfd718bf49cb0356eebce70c4fc015",
     "readme_document_digest": "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",

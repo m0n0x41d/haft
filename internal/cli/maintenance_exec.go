@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os/exec"
 	"path/filepath"
@@ -188,7 +189,7 @@ func executeObservables(
 
 		content := fmt.Sprintf("Maintenance loop ran `%s` for %s (%s). Exit: %s. Output tail:\n%s",
 			task.Command, task.ClaimID, task.Threshold, exitLabel(runErr), output)
-		evidence, evidenceErr := artifact.AttachEvidence(ctx, store, artifact.EvidenceInput{
+		evidence, evidenceErr := artifact.AttachEvidenceWithCarrier(ctx, store, filepath.Join(projectRoot, ".haft"), artifact.EvidenceInput{
 			ArtifactRef:        task.DecisionRef,
 			Content:            content,
 			Type:               "test",
@@ -201,6 +202,11 @@ func executeObservables(
 			CausalSupportBasis: "observational",
 			Provenance:         artifact.ProvenanceMachine,
 		})
+		var projectionWarning *artifact.WriteWarning
+		if errors.As(evidenceErr, &projectionWarning) {
+			action.Detail = fmt.Sprintf("%s — evidence attached with projection debt: %s", task.Command, strings.Join(projectionWarning.Warnings, "; "))
+			evidenceErr = nil
+		}
 		switch {
 		case evidenceErr != nil:
 			action.Outcome = "failed"
@@ -209,6 +215,11 @@ func executeObservables(
 		case runErr != nil:
 			action.Outcome = "evidence_attached"
 			action.Detail = fmt.Sprintf("%s — observable FAILED (weakens evidence attached)", task.Command)
+			if projectionWarning != nil {
+				action.Detail += "; carrier projection debt recorded: " + strings.Join(projectionWarning.Warnings, "; ")
+			}
+		case projectionWarning != nil:
+			action.Outcome = "evidence_attached"
 		default:
 			action.Outcome = "evidence_attached"
 			action.Detail = fmt.Sprintf("%s — green (supports evidence attached)", task.Command)

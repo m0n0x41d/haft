@@ -1828,14 +1828,24 @@ func handleQuintDecision(ctx context.Context, store *artifact.Store, haftDir str
 			return "", "", err
 		}
 
-		item, err := artifact.AttachEvidence(ctx, store, input)
+		item, err := artifact.AttachEvidenceWithCarrier(ctx, store, haftDir, input)
+		evidenceWarning := ""
+		var writeWarning *artifact.WriteWarning
+		if errors.As(err, &writeWarning) {
+			evidenceWarning = strings.Join(writeWarning.Warnings, "\n")
+			err = nil
+		}
 		if err != nil {
 			return "", "", err
 		}
 
 		wlnk := artifact.ComputeWLNKSummary(ctx, store, input.ArtifactRef)
 		navStrip := present.NavStrip(artifact.ComputeNavState(ctx, store, contextName))
-		extra := fmt.Sprintf("Evidence attached: %s [%s]\nVerdict: %s\nWLNK: %s\n%s", item.ID, item.Type, item.Verdict, wlnk.Summary, evidenceRelianceBoundaryLine())
+		carrierPath := filepath.ToSlash(filepath.Join(".haft", "evidence", item.ID+".md"))
+		extra := fmt.Sprintf("Evidence attached: %s [%s]\nCarrier: %s\nVerdict: %s\nWLNK: %s\n%s", item.ID, item.Type, carrierPath, item.Verdict, wlnk.Summary, evidenceRelianceBoundaryLine())
+		if evidenceWarning != "" {
+			extra += "\nProjection warning: " + evidenceWarning + "\n"
+		}
 		if warning := evidenceCausalUseWarning(input, item); warning != "" {
 			extra += "\n" + warning + "\n"
 		}

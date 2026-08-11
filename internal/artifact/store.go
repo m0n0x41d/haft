@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/m0n0x41d/haft/internal/reff"
@@ -17,8 +18,9 @@ import (
 // Store handles artifact persistence in SQLite.
 // Implements ArtifactStore interface.
 type Store struct {
-	db       *sql.DB
-	colCache map[string]bool // cached tableHasColumn results: "table.column" → exists
+	db         *sql.DB
+	colCache   map[string]bool // cached tableHasColumn results: "table.column" → exists
+	colCacheMu sync.RWMutex
 }
 
 type sqlExecer interface {
@@ -27,6 +29,11 @@ type sqlExecer interface {
 
 type sqlQueryer interface {
 	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+}
+
+type sqlReadWriter interface {
+	sqlExecer
+	sqlQueryer
 }
 
 // Compile-time check: Store must implement ArtifactStore.
@@ -1290,7 +1297,7 @@ func (s *Store) AddEvidenceItem(ctx context.Context, item *EvidenceItem, artifac
 	return s.addEvidenceItemWithExec(ctx, s.db, item, artifactRef)
 }
 
-func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, item *EvidenceItem, artifactRef string) error {
+func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlReadWriter, item *EvidenceItem, artifactRef string) error {
 	formalityScale := storedEvidenceFormalityScale(item, item.FormalityLevel)
 	formality := formalityScale.Level
 	storedVerdict := canonicalStoredEvidenceVerdict(item.Type, item.Verdict)
@@ -1298,23 +1305,31 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 	if err != nil {
 		return err
 	}
-	hasClaimScope, err := s.tableHasColumn(ctx, "evidence_items", "claim_scope")
+	hasClaimScope, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "claim_scope")
 	if err != nil {
 		return err
 	}
-	hasClaimRefs, err := s.tableHasColumn(ctx, "evidence_items", "claim_refs")
+	hasClaimRefs, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "claim_refs")
 	if err != nil {
 		return err
 	}
-	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	hasProvenance, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "provenance")
 	if err != nil {
 		return err
 	}
-	hasFormalityScaleID, err := s.tableHasColumn(ctx, "evidence_items", "formality_scale_id")
+	hasFormalityScaleID, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "formality_scale_id")
 	if err != nil {
 		return err
 	}
-	hasFormalityBridge, err := s.tableHasColumn(ctx, "evidence_items", "formality_bridge")
+	hasFormalityBridge, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "formality_bridge")
+	if err != nil {
+		return err
+	}
+	hasCausalSupportBasis, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "causal_support_basis")
+	if err != nil {
+		return err
+	}
+	hasUpdatedAt, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "updated_at")
 	if err != nil {
 		return err
 	}
@@ -1383,9 +1398,33 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 		columns = append(columns, "formality_bridge")
 		args = append(args, formalityBridgeJSON)
 	}
+	if hasCausalSupportBasis {
+		columns = append(columns, "causal_support_basis")
+		args = append(args, string(item.CausalSupportBasis))
+	} else if item.CausalSupportBasis != "" {
+		return fmt.Errorf("evidence_items schema cannot preserve causal_support_basis")
+	}
 
+	createdAt := strings.TrimSpace(item.CreatedAt)
+	if createdAt == "" {
+		createdAt = time.Now().UTC().Format(time.RFC3339)
+	} else if _, err := time.Parse(time.RFC3339, createdAt); err != nil {
+		return fmt.Errorf("evidence created_at must be RFC3339: %w", err)
+	}
+	updatedAt := strings.TrimSpace(item.UpdatedAt)
+	if updatedAt == "" {
+		updatedAt = createdAt
+	} else if _, err := time.Parse(time.RFC3339, updatedAt); err != nil {
+		return fmt.Errorf("evidence updated_at must be RFC3339: %w", err)
+	}
 	columns = append(columns, "valid_until", "created_at")
-	args = append(args, item.ValidUntil, time.Now().UTC().Format(time.RFC3339))
+	args = append(args, item.ValidUntil, createdAt)
+	if hasUpdatedAt {
+		columns = append(columns, "updated_at")
+		args = append(args, updatedAt)
+	} else if updatedAt != createdAt {
+		return fmt.Errorf("evidence_items schema cannot preserve updated_at")
+	}
 
 	placeholders := make([]string, len(columns))
 	for index := range placeholders {
@@ -1403,6 +1442,8 @@ func (s *Store) addEvidenceItemWithExec(ctx context.Context, execer sqlExecer, i
 	item.FormalityLevel = formality
 	item.FormalityScale = &formalityScale
 	item.FormalityBridge = formalityBridge
+	item.CreatedAt = createdAt
+	item.UpdatedAt = updatedAt
 	return err
 }
 
@@ -1412,23 +1453,31 @@ func (s *Store) GetEvidenceItems(ctx context.Context, artifactRef string) ([]Evi
 }
 
 func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQueryer, artifactRef string) ([]EvidenceItem, error) {
-	hasClaimScope, err := s.tableHasColumn(ctx, "evidence_items", "claim_scope")
+	hasClaimScope, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "claim_scope")
 	if err != nil {
 		return nil, err
 	}
-	hasClaimRefs, err := s.tableHasColumn(ctx, "evidence_items", "claim_refs")
+	hasClaimRefs, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "claim_refs")
 	if err != nil {
 		return nil, err
 	}
-	hasProvenance, err := s.tableHasColumn(ctx, "evidence_items", "provenance")
+	hasProvenance, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "provenance")
 	if err != nil {
 		return nil, err
 	}
-	hasFormalityScaleID, err := s.tableHasColumn(ctx, "evidence_items", "formality_scale_id")
+	hasFormalityScaleID, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "formality_scale_id")
 	if err != nil {
 		return nil, err
 	}
-	hasFormalityBridge, err := s.tableHasColumn(ctx, "evidence_items", "formality_bridge")
+	hasFormalityBridge, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "formality_bridge")
+	if err != nil {
+		return nil, err
+	}
+	hasCausalSupportBasis, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "causal_support_basis")
+	if err != nil {
+		return nil, err
+	}
+	hasUpdatedAt, err := s.tableHasColumnWithQueryer(ctx, queryer, "evidence_items", "updated_at")
 	if err != nil {
 		return nil, err
 	}
@@ -1457,7 +1506,13 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	if hasFormalityBridge {
 		columns = append(columns, "formality_bridge")
 	}
-	columns = append(columns, "valid_until")
+	if hasCausalSupportBasis {
+		columns = append(columns, "causal_support_basis")
+	}
+	columns = append(columns, "valid_until", "created_at")
+	if hasUpdatedAt {
+		columns = append(columns, "updated_at")
+	}
 
 	query := "SELECT " +
 		strings.Join(columns, ", ") +
@@ -1473,7 +1528,7 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 	for rows.Next() {
 		var e EvidenceItem
 		var verdict, carrierRef, claimScope, claimRefs, provenance sql.NullString
-		var formalityScaleID, formalityBridge, validUntil sql.NullString
+		var formalityScaleID, formalityBridge, causalSupportBasis, validUntil, createdAt, updatedAt sql.NullString
 		dest := []any{
 			&e.ID,
 			&e.Type,
@@ -1498,7 +1553,13 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 		if hasFormalityBridge {
 			dest = append(dest, &formalityBridge)
 		}
-		dest = append(dest, &validUntil)
+		if hasCausalSupportBasis {
+			dest = append(dest, &causalSupportBasis)
+		}
+		dest = append(dest, &validUntil, &createdAt)
+		if hasUpdatedAt {
+			dest = append(dest, &updatedAt)
+		}
 		if err := rows.Scan(dest...); err != nil {
 			return nil, err
 		}
@@ -1517,6 +1578,12 @@ func (s *Store) getEvidenceItemsWithQueryer(ctx context.Context, queryer sqlQuer
 			e.ClaimRefs = normalizeClaimRefs(e.ClaimRefs)
 		}
 		e.ValidUntil = validUntil.String
+		e.CausalSupportBasis = CausalEvidenceSupportBasis(causalSupportBasis.String)
+		e.CreatedAt = createdAt.String
+		e.UpdatedAt = updatedAt.String
+		if e.UpdatedAt == "" {
+			e.UpdatedAt = e.CreatedAt
+		}
 		items = append(items, e)
 	}
 	return items, rows.Err()
@@ -1599,18 +1666,35 @@ func (s *Store) SupersedeEvidenceByType(ctx context.Context, artifactRef string,
 	return s.supersedeEvidenceByTypeWithExec(ctx, s.db, artifactRef, evidenceType)
 }
 
-func (s *Store) supersedeEvidenceByTypeWithExec(ctx context.Context, execer sqlExecer, artifactRef string, evidenceType string) error {
-	_, err := execer.ExecContext(ctx,
-		`UPDATE evidence_items SET verdict = 'superseded' WHERE artifact_ref = ? AND type = ? AND verdict != 'superseded'`,
-		artifactRef, evidenceType)
+func (s *Store) supersedeEvidenceByTypeWithExec(ctx context.Context, execer sqlReadWriter, artifactRef string, evidenceType string) error {
+	hasUpdatedAt, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "updated_at")
+	if err != nil {
+		return err
+	}
+	query := `UPDATE evidence_items SET verdict = 'superseded' WHERE artifact_ref = ? AND type = ? AND verdict != 'superseded'`
+	args := []any{artifactRef, evidenceType}
+	if hasUpdatedAt {
+		query = `UPDATE evidence_items SET verdict = 'superseded', updated_at = ? WHERE artifact_ref = ? AND type = ? AND verdict != 'superseded'`
+		args = []any{time.Now().UTC().Format(time.RFC3339), artifactRef, evidenceType}
+	}
+	_, err = execer.ExecContext(ctx, query, args...)
 	return err
 }
 
-func (s *Store) supersedeEvidenceByIDWithExec(ctx context.Context, execer sqlExecer, ids []string) error {
+func (s *Store) supersedeEvidenceByIDWithExec(ctx context.Context, execer sqlReadWriter, ids []string) error {
+	hasUpdatedAt, err := s.tableHasColumnWithQueryer(ctx, execer, "evidence_items", "updated_at")
+	if err != nil {
+		return err
+	}
+	updatedAt := time.Now().UTC().Format(time.RFC3339)
 	for _, id := range ids {
-		_, err := execer.ExecContext(ctx,
-			`UPDATE evidence_items SET verdict = 'superseded' WHERE id = ? AND verdict != 'superseded'`,
-			id)
+		query := `UPDATE evidence_items SET verdict = 'superseded' WHERE id = ? AND verdict != 'superseded'`
+		args := []any{id}
+		if hasUpdatedAt {
+			query = `UPDATE evidence_items SET verdict = 'superseded', updated_at = ? WHERE id = ? AND verdict != 'superseded'`
+			args = []any{updatedAt, id}
+		}
+		_, err := execer.ExecContext(ctx, query, args...)
 		if err != nil {
 			return err
 		}
@@ -1797,12 +1881,24 @@ func (s *Store) EpistemicDebtBudget(ctx context.Context) (float64, error) {
 // --- helpers ---
 
 func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string) (bool, error) {
+	return s.tableHasColumnWithQueryer(ctx, s.db, tableName, columnName)
+}
+
+func (s *Store) tableHasColumnWithQueryer(
+	ctx context.Context,
+	queryer sqlQueryer,
+	tableName,
+	columnName string,
+) (bool, error) {
 	cacheKey := tableName + "." + columnName
+	s.colCacheMu.RLock()
 	if result, ok := s.colCache[cacheKey]; ok {
+		s.colCacheMu.RUnlock()
 		return result, nil
 	}
+	s.colCacheMu.RUnlock()
 
-	rows, err := s.db.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", tableName))
+	rows, err := queryer.QueryContext(ctx, fmt.Sprintf("PRAGMA table_info(%s)", tableName))
 	if err != nil {
 		return false, fmt.Errorf("inspect table %s: %w", tableName, err)
 	}
@@ -1823,12 +1919,19 @@ func (s *Store) tableHasColumn(ctx context.Context, tableName, columnName string
 			return false, fmt.Errorf("scan table info %s: %w", tableName, err)
 		}
 		if name == columnName {
+			s.colCacheMu.Lock()
 			s.colCache[cacheKey] = true
+			s.colCacheMu.Unlock()
 			return true, nil
 		}
 	}
+	if err := rows.Err(); err != nil {
+		return false, fmt.Errorf("scan table info %s: %w", tableName, err)
+	}
 
+	s.colCacheMu.Lock()
 	s.colCache[cacheKey] = false
+	s.colCacheMu.Unlock()
 	return false, nil
 }
 

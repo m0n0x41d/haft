@@ -60,7 +60,7 @@ func TestLegacyCLIStoresCannotBypassProjectMigrationCoordinator(
 			executeReadOnlyProjectValidationFixtureSQL(
 				t,
 				fixture.database,
-				"DELETE FROM schema_version WHERE version = 58",
+				"DELETE FROM schema_version WHERE version >= 58",
 			)
 			beforeSchema := readOnlyProjectValidationSchema(
 				t,

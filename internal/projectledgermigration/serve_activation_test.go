@@ -42,7 +42,7 @@ func TestEnsureCurrentForServeMigrates57AfterVerifiedSnapshot(
 	if result.Outcome != ServeActivationMigrated ||
 		!result.Ready() ||
 		result.BeforeSchema != 57 ||
-		result.AfterSchema != 58 ||
+		result.AfterSchema != 59 ||
 		result.BackupPath == "" ||
 		result.BackupDigest == "" {
 		t.Fatalf("activation result = %#v", result)
@@ -50,12 +50,28 @@ func TestEnsureCurrentForServeMigrates57AfterVerifiedSnapshot(
 	if !strings.HasSuffix(result.BackupPath, ".bak") {
 		t.Fatalf("backup path = %s, want .bak", result.BackupPath)
 	}
-	assertSecureServeSnapshot(t, result.BackupPath)
+	_, schema58Snapshot := serveMigrationSnapshotPaths(
+		databasePath,
+		57,
+		58,
+		serveMigrationTestTime,
+	)
+	_, schema59Snapshot := serveMigrationSnapshotPaths(
+		databasePath,
+		58,
+		59,
+		serveMigrationTestTime,
+	)
+	if result.BackupPath != schema59Snapshot {
+		t.Fatalf("reported backup path = %s, want latest boundary %s", result.BackupPath, schema59Snapshot)
+	}
+	assertSecureServeSnapshot(t, schema58Snapshot)
+	assertSecureServeSnapshot(t, schema59Snapshot)
 	if got := digestFileForTest(t, result.BackupPath); got != result.BackupDigest {
 		t.Fatalf("backup digest = %s, want %s", got, result.BackupDigest)
 	}
-	if frontier := readSchemaFrontierForTest(t, databasePath); frontier != 58 {
-		t.Fatalf("live schema frontier = %d, want 58", frontier)
+	if frontier := readSchemaFrontierForTest(t, databasePath); frontier != 59 {
+		t.Fatalf("live schema frontier = %d, want 59", frontier)
 	}
 	if count := affectedPathCountForServeTest(
 		t,
@@ -66,16 +82,26 @@ func TestEnsureCurrentForServeMigrates57AfterVerifiedSnapshot(
 	}
 	if frontier := readSchemaFrontierForTest(
 		t,
-		result.BackupPath,
+		schema58Snapshot,
 	); frontier != 57 {
-		t.Fatalf("backup schema frontier = %d, want 57", frontier)
+		t.Fatalf("schema-58 boundary backup frontier = %d, want 57", frontier)
 	}
 	if count := affectedPathCountForServeTest(
 		t,
-		result.BackupPath,
+		schema58Snapshot,
 		"/legacy/absolute.go",
 	); count != 1 {
-		t.Fatalf("backup legacy affected path count = %d, want 1", count)
+		t.Fatalf("schema-58 boundary backup legacy path count = %d, want 1", count)
+	}
+	if frontier := readSchemaFrontierForTest(t, schema59Snapshot); frontier != 58 {
+		t.Fatalf("schema-59 boundary backup frontier = %d, want 58", frontier)
+	}
+	if count := affectedPathCountForServeTest(
+		t,
+		schema59Snapshot,
+		"/legacy/absolute.go",
+	); count != 0 {
+		t.Fatalf("schema-59 boundary backup legacy path count = %d, want 0", count)
 	}
 }
 
@@ -124,7 +150,7 @@ func TestApplyUsesSharedLeaseAndRecoverySnapshotBoundary(t *testing.T) {
 	}
 	if result.Outcome != OutcomeApplied ||
 		result.BeforeSchema != 57 ||
-		result.AfterSchema != 58 ||
+		result.AfterSchema != 59 ||
 		result.BackupPath == "" ||
 		result.BackupDigest == "" {
 		t.Fatalf("manual migration result = %#v", result)
@@ -302,7 +328,7 @@ func TestEnsureCurrentForServeFutureSchemaNeverMigrates(t *testing.T) {
 	execServeMigrationFixtureSQL(
 		t,
 		databasePath,
-		"INSERT INTO schema_version(version) VALUES (59)",
+		"INSERT INTO schema_version(version) VALUES (60)",
 	)
 	before := digestFileForTest(t, databasePath)
 	result, err := EnsureCurrentForServe(
@@ -314,8 +340,8 @@ func TestEnsureCurrentForServeFutureSchemaNeverMigrates(t *testing.T) {
 		t.Fatal("future schema was accepted")
 	}
 	if result.Blocker != ServeBlockerFutureSchema ||
-		result.BeforeSchema != 59 ||
-		result.AfterSchema != 58 {
+		result.BeforeSchema != 60 ||
+		result.AfterSchema != 59 {
 		t.Fatalf("future activation result = %#v, error = %v", result, err)
 	}
 	if after := digestFileForTest(t, databasePath); after != before {
@@ -411,11 +437,11 @@ func TestEnsureCurrentForServeSerializesConcurrentCallers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(backups) != 1 {
-		t.Fatalf("serve migration backups = %v, want exactly one", backups)
+	if len(backups) != 2 {
+		t.Fatalf("serve migration backups = %v, want one per snapshot boundary", backups)
 	}
-	if frontier := readSchemaFrontierForTest(t, databasePath); frontier != 58 {
-		t.Fatalf("concurrent live schema frontier = %d, want 58", frontier)
+	if frontier := readSchemaFrontierForTest(t, databasePath); frontier != 59 {
+		t.Fatalf("concurrent live schema frontier = %d, want 59", frontier)
 	}
 }
 
@@ -456,7 +482,7 @@ func newSchema57ServeFixture(
 	execServeMigrationFixtureSQL(
 		t,
 		databasePath,
-		"DELETE FROM schema_version WHERE version = 58",
+		"DELETE FROM schema_version WHERE version >= 58",
 	)
 	if withInvalidAffectedPath {
 		execServeMigrationFixtureSQL(
@@ -553,14 +579,14 @@ func assertNoServeMigrationArtifacts(t *testing.T, directory string) {
 	}
 }
 
-func TestServeMigrationPolicyStillTargetsCurrentSchema58(t *testing.T) {
+func TestServeMigrationPolicyStillTargetsCurrentSchema59(t *testing.T) {
 	current, err := db.CurrentSchemaVersion()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if current != 58 {
+	if current != 59 {
 		t.Fatalf(
-			"test fixture requires schema 58, compiled schema is %d; declare and test the new serve activation policy",
+			"test fixture requires schema 59, compiled schema is %d; declare and test the new serve activation policy",
 			current,
 		)
 	}

@@ -42,6 +42,18 @@ func TestSafeMigrationLeaseMetadata(t *testing.T) {
 	}
 }
 
+func TestMigrationStatLinkCountSupportsPlatformWidths(t *testing.T) {
+	for name, linkCount := range map[string]uint64{
+		"uint16": migrationStatLinkCount(uint16(1)),
+		"uint32": migrationStatLinkCount(uint32(1)),
+		"uint64": migrationStatLinkCount(uint64(1)),
+	} {
+		if linkCount != 1 {
+			t.Fatalf("%s link count = %d, want 1", name, linkCount)
+		}
+	}
+}
+
 func TestEnsureCurrentForServeRejectsUnsafeLeaseCarrier(t *testing.T) {
 	tests := []struct {
 		name    string

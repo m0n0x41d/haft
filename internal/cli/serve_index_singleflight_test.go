@@ -41,7 +41,7 @@ func TestServeStdioMultiProcessAutomaticMigrationSingleFlight(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, mutationErr := database.Exec(`
-		DELETE FROM schema_version WHERE version = 58;
+		DELETE FROM schema_version WHERE version >= 58;
 		INSERT INTO artifacts (
 			id, kind, title, content, created_at, updated_at
 		) VALUES (
@@ -101,8 +101,8 @@ func TestServeStdioMultiProcessAutomaticMigrationSingleFlight(t *testing.T) {
 	).Scan(&frontier); err != nil {
 		t.Fatal(err)
 	}
-	if frontier != 58 {
-		t.Fatalf("stdio-migrated schema frontier = %d, want 58", frontier)
+	if frontier != 59 {
+		t.Fatalf("stdio-migrated schema frontier = %d, want 59", frontier)
 	}
 	var invalidRows int
 	if err := check.QueryRow(
@@ -113,14 +113,16 @@ func TestServeStdioMultiProcessAutomaticMigrationSingleFlight(t *testing.T) {
 	if invalidRows != 0 {
 		t.Fatalf("stdio-migrated invalid path rows = %d, want 0", invalidRows)
 	}
-	backups, err := filepath.Glob(
-		filepath.Join(filepath.Dir(binding.DBPath), "*.pre-serve-migration-v57-to-v58-*.bak"),
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(backups) != 1 {
-		t.Fatalf("stdio migration backups = %v, want exactly one", backups)
+	for _, boundary := range []string{"v57-to-v58", "v58-to-v59"} {
+		backups, err := filepath.Glob(
+			filepath.Join(filepath.Dir(binding.DBPath), "*.pre-serve-migration-"+boundary+"-*.bak"),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(backups) != 1 {
+			t.Fatalf("stdio migration %s backups = %v, want exactly one", boundary, backups)
+		}
 	}
 }
 

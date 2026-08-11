@@ -66,7 +66,7 @@ func TestTransitionPriorFixtureBuildsDistinctExactTarget(t *testing.T) {
 	prior := transitionPriorTarget(t)
 	current, err := localpracticeruntime.Build(
 		runtime.Artifact(),
-		typedmemorycandidates.SourceV1_5(),
+		typedmemorycandidates.SourceV1_6(),
 	)
 	if err != nil {
 		t.Fatalf("build current target: %v", err)

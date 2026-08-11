@@ -22,7 +22,7 @@ const (
 	DefaultIntegrationLockRelativePath     = "data/haft/fpf-integration.lock.json"
 	DefaultTokenGateFixtureRelativePath    = "internal/cli/testdata/fpf_query_token_gate_corpus.json" // #nosec G101 -- repository fixture path, not a credential.
 	DefaultRefreshStateRelativeDirectory   = ".context/fpf-refresh"
-	DefaultLocalPracticeCandidateRelative  = "data/haft/local-practice/typed-memory/candidates/1.5.0.yaml"
+	DefaultLocalPracticeCandidateRelative  = "data/haft/local-practice/typed-memory/candidates/1.6.0.yaml"
 	DefaultCandidateRef                    = "origin/main"
 	DefaultRefreshReportFilename           = "latest-report.json"
 	DefaultRefreshReceiptFilename          = "apply-receipt.json"

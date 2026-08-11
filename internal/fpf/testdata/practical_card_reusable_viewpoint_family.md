@@ -1,0 +1,6 @@
+- **Situation and question.** A description needs one exact viewpoint or a reusable viewpoint family.
+- **Template A.** `E.17.0 Solution -> EpistemeViewpointConformanceRelation occurrence`.
+- **Reusable viewpoint-family branch.** Open `E.17.1` and return one exact library edition and the needed `U.ViewpointRef` subset. Use `E.17.2` only as the project-local authoring template.
+- **Boundaries.** Stop at the smallest exact viewpoint or reusable-family result.
+- **Result test.** Return only the result required by the selected branch.
+- **Public coarsening.** "Description use" restores to the selected result.

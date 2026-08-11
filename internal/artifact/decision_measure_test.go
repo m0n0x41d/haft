@@ -3,6 +3,8 @@ package artifact
 import (
 	"context"
 	"math"
+	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strings"
@@ -85,6 +87,9 @@ func TestMeasure_Success(t *testing.T) {
 	}
 	if len(items[0].ClaimRefs) != 0 {
 		t.Errorf("evidence claim_refs = %#v, want none without structured claims", items[0].ClaimRefs)
+	}
+	if _, err := os.Stat(filepath.Join(haftDir, "evidence", items[0].ID+".md")); err != nil {
+		t.Fatalf("measurement evidence carrier missing: %v", err)
 	}
 }
 
@@ -524,6 +529,23 @@ func TestMeasure_KeepsUntouchedPredictionsWhenLaterMeasurementSupersedesOnlyMatc
 	}
 	if got := verdictsByClaimRef["claim-002"]; !reflect.DeepEqual(got, []string{"refutes", "superseded"}) {
 		t.Fatalf("claim-002 verdict history = %#v, want [refutes superseded]", got)
+	}
+	for _, item := range items {
+		data, err := os.ReadFile(filepath.Join(haftDir, "evidence", item.ID+".md"))
+		if err != nil {
+			t.Fatalf("read measurement carrier %s: %v", item.ID, err)
+		}
+		carrierArtifact, err := ParseFile(string(data))
+		if err != nil {
+			t.Fatal(err)
+		}
+		carrier, err := ParseEvidenceCarrier(carrierArtifact, filepath.Join(haftDir, "evidence", item.ID+".md"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if carrier.Evidence.Verdict != item.Verdict {
+			t.Fatalf("carrier verdict for %s = %q, want %q", item.ID, carrier.Evidence.Verdict, item.Verdict)
+		}
 	}
 }
 

@@ -3049,6 +3049,14 @@ func Measure(ctx context.Context, store ArtifactStore, haftDir string, input Mea
 	}
 
 	writeFileQuiet(haftDir, a)
+	storedEvidence, evidenceErr := store.GetEvidenceItems(ctx, a.Meta.ID)
+	if evidenceErr != nil {
+		measureWarnings = append(measureWarnings,
+			fmt.Sprintf("Evidence carriers were not projected: reload committed evidence: %v", evidenceErr))
+	} else {
+		measureWarnings = append(measureWarnings,
+			projectEvidenceCarriers(ctx, store, haftDir, a.Meta.ID, storedEvidence)...)
+	}
 
 	if len(measureWarnings) > 0 {
 		return a, &WriteWarning{Warnings: measureWarnings}
@@ -3258,7 +3266,9 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		return nil, err
 	}
 
-	id := fmt.Sprintf("evid-%s-%09d", time.Now().Format("20060102"), time.Now().UnixNano()%1000000000)
+	now := time.Now()
+	id := fmt.Sprintf("evid-%s-%09d", now.Format("20060102"), now.UnixNano()%1000000000)
+	recordedAt := now.UTC().Format(time.RFC3339)
 
 	item := &EvidenceItem{
 		ID:                 id,
@@ -3275,12 +3285,35 @@ func AttachEvidence(ctx context.Context, store ArtifactStore, input EvidenceInpu
 		ValidUntil:         input.ValidUntil,
 		CausalSupportBasis: causalBasis,
 		Provenance:         normalizeEvidenceProvenance(input.Provenance),
+		CreatedAt:          recordedAt,
+		UpdatedAt:          recordedAt,
 	}
 
 	if err := store.AddEvidenceItem(ctx, item, input.ArtifactRef); err != nil {
 		return nil, fmt.Errorf("store evidence: %w", err)
 	}
 
+	return item, nil
+}
+
+// AttachEvidenceWithCarrier commits one EvidenceRecord through the existing
+// domain validation path, then publishes its independent git-facing carrier.
+// A carrier failure returns the committed item plus WriteWarning after durable
+// projection debt has been recorded by the concrete store.
+func AttachEvidenceWithCarrier(
+	ctx context.Context,
+	store ArtifactStore,
+	haftDir string,
+	input EvidenceInput,
+) (*EvidenceItem, error) {
+	item, err := AttachEvidence(ctx, store, input)
+	if err != nil {
+		return nil, err
+	}
+	warnings := projectEvidenceCarriers(ctx, store, haftDir, input.ArtifactRef, []EvidenceItem{*item})
+	if len(warnings) > 0 {
+		return item, &WriteWarning{Warnings: warnings}
+	}
 	return item, nil
 }
 

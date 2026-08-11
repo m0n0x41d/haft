@@ -17,27 +17,27 @@ func TestCompileServeMigrationPlanUsesExplicitPolicies(t *testing.T) {
 		snapshotRequired bool
 	}{
 		{
-			name:             "schema 57 activates schema 58 with snapshot",
+			name:             "schema 57 activates schemas 58 and 59 with snapshot",
 			observed:         57,
 			kind:             ServeMigrationAutomatic,
-			pending:          []int{58},
+			pending:          []int{58, 59},
 			snapshotRequired: true,
 		},
 		{
 			name:     "schema 56 stops at manual schema 57",
 			observed: 56,
 			kind:     ServeMigrationManualRequired,
-			pending:  []int{57, 58},
+			pending:  []int{57, 58, 59},
 			blocked:  57,
 		},
 		{
 			name:     "current schema is a no-op",
-			observed: 58,
+			observed: 59,
 			kind:     ServeMigrationCurrent,
 		},
 		{
 			name:     "future schema never migrates backward",
-			observed: 59,
+			observed: 60,
 			kind:     ServeMigrationFutureSchema,
 		},
 	}

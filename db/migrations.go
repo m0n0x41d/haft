@@ -2056,4 +2056,5 @@ var kernelMigrations = []Migration{
 	hostRoutedOperatorAuthorityMigration56,
 	projectTypeEnvCompatibleSuccessorMigration57,
 	legacyAffectedPathMigration58,
+	evidenceCarrierMigration59,
 }

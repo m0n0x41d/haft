@@ -45,6 +45,20 @@ func TestParsePracticalUseCardSourceAcceptsLegacyAndCurrentGrammar(t *testing.T)
 			wantMinimumBlocks: 9,
 		},
 		{
+			name:              "reusable viewpoint family branch",
+			fixture:           "practical_card_reusable_viewpoint_family.md",
+			wantCueFragments:  []string{"Template A", "Reusable viewpoint-family branch", "Result test"},
+			wantDirectRefs:    []string{"E.17.0", "E.17.1", "E.17.2"},
+			wantMinimumBlocks: 6,
+		},
+		{
+			name:              "dpf authoring result branches",
+			fixture:           "practical_card_dpf_authoring.md",
+			wantCueFragments:  []string{"First route", "Architecture-answer branch", "Optional organization-proposal branch", "Optional dependency-description branch", "Existing-framework continuation", "Result test"},
+			wantDirectRefs:    []string{"E.9", "E.4.PFAD", "C.2.1", "C.30.AD"},
+			wantMinimumBlocks: 8,
+		},
+		{
 			name:              "inadmissible example reference",
 			fixture:           "practical_card_inadmissible_ref.md",
 			wantCueFragments:  []string{"Template A", "Result test"},
@@ -161,9 +175,9 @@ func TestParsePracticalUseCardSourceRejectsMalformedAndUnsupportedGrammarSeparat
 
 func TestIndexProjectionRetainsRecognizableUnknownResultLabelForReview(t *testing.T) {
 	source := practicalUseFixtureSource(t, "practical_card_unknown_label.md")
-	projection, diagnostics, err := parsePracticalUseCardSourceForIndex(source)
+	projection, diagnostics, err := ProjectPracticalUseCardSource(source)
 	if err != nil {
-		t.Fatalf("parsePracticalUseCardSourceForIndex() error = %v", err)
+		t.Fatalf("ProjectPracticalUseCardSource() error = %v", err)
 	}
 	if len(diagnostics) != 1 ||
 		diagnostics[0].Class != SourceGrammarUnsupported {
@@ -191,9 +205,9 @@ func TestIndexProjectionRetainsRecognizableUnknownResultLabelForReview(t *testin
 
 func TestIndexProjectionRetainsIncompleteCardForDegradedReview(t *testing.T) {
 	source := practicalUseFixtureSource(t, "practical_card_missing_result.md")
-	projection, diagnostics, err := parsePracticalUseCardSourceForIndex(source)
+	projection, diagnostics, err := ProjectPracticalUseCardSource(source)
 	if err != nil {
-		t.Fatalf("parsePracticalUseCardSourceForIndex() error = %v", err)
+		t.Fatalf("ProjectPracticalUseCardSource() error = %v", err)
 	}
 	if len(diagnostics) != 1 ||
 		diagnostics[0].Class != SourceGrammarMalformed {

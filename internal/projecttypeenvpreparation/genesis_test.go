@@ -224,7 +224,7 @@ func genesisCandidateTarget(
 	t.Helper()
 	target, err := localpracticeruntime.Build(
 		base,
-		typedmemorycandidates.SourceV1_5(),
+		typedmemorycandidates.SourceV1_6(),
 	)
 	if err != nil {
 		t.Fatal(err)

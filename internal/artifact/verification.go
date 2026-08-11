@@ -2,7 +2,9 @@ package artifact
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 )
 
@@ -55,7 +57,7 @@ func RecordVerificationPass(
 		return nil, err
 	}
 
-	evidence, err := AttachEvidence(ctx, store, EvidenceInput{
+	evidence, err := AttachEvidenceWithCarrier(ctx, store, filepath.Join(projectRoot, ".haft"), EvidenceInput{
 		ArtifactRef:     decisionRef,
 		Content:         verificationPassEvidenceContent(decision, baseline, input.Summary),
 		Type:            "audit",
@@ -65,14 +67,18 @@ func RecordVerificationPass(
 		FormalityLevel:  2,
 		ValidUntil:      decision.Meta.ValidUntil,
 	})
-	if err != nil {
+	var writeWarning *WriteWarning
+	if err != nil && !errors.As(err, &writeWarning) {
 		return nil, err
 	}
-
-	return &VerificationPassResult{
+	result := &VerificationPassResult{
 		Baseline: baseline,
 		Evidence: evidence,
-	}, nil
+	}
+	if writeWarning != nil {
+		return result, writeWarning
+	}
+	return result, nil
 }
 
 func verificationPassEvidenceContent(decision *Artifact, baseline []AffectedFile, summary string) string {

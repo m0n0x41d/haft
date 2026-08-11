@@ -20,13 +20,14 @@ import (
 )
 
 type checkReport struct {
-	Stale             []checkStaleFinding                 `json:"stale"`
-	Drifted           []checkDriftFinding                 `json:"drifted"`
-	Unassessed        []checkDecisionFinding              `json:"unassessed"`
-	CoverageGaps      []checkCoverageGapFinding           `json:"coverage_gaps"`
-	SpecHealth        []project.SpecCheckFinding          `json:"spec_health,omitempty"`
-	EvidenceFreshness artifact.EvidenceFreshnessInventory `json:"evidence_freshness"`
-	Summary           checkSummary                        `json:"summary"`
+	Stale                         []checkStaleFinding                      `json:"stale"`
+	Drifted                       []checkDriftFinding                      `json:"drifted"`
+	Unassessed                    []checkDecisionFinding                   `json:"unassessed"`
+	CoverageGaps                  []checkCoverageGapFinding                `json:"coverage_gaps"`
+	SpecHealth                    []project.SpecCheckFinding               `json:"spec_health,omitempty"`
+	EvidenceFreshness             artifact.EvidenceFreshnessInventory      `json:"evidence_freshness"`
+	EvidenceCarrierProjectionDebt []artifact.EvidenceCarrierProjectionDebt `json:"evidence_carrier_projection_debt"`
+	Summary                       checkSummary                             `json:"summary"`
 }
 
 type checkSummary struct {
@@ -175,8 +176,12 @@ func buildCheckReport(ctx context.Context, store *artifact.Store, projectRoot st
 	if err != nil {
 		return report, fmt.Errorf("scan evidence freshness debt: %w", err)
 	}
+	report.EvidenceCarrierProjectionDebt, err = store.ListEvidenceCarrierProjectionDebt(ctx)
+	if err != nil {
+		return report, fmt.Errorf("scan evidence carrier projection debt: %w", err)
+	}
 	report.Summary = checkSummary{
-		TotalFindings: len(report.Stale) + len(report.Drifted) + len(report.Unassessed) + len(report.CoverageGaps) + len(report.SpecHealth),
+		TotalFindings: len(report.Stale) + len(report.Drifted) + len(report.Unassessed) + len(report.CoverageGaps) + len(report.SpecHealth) + len(report.EvidenceCarrierProjectionDebt),
 	}
 
 	return report, nil
@@ -431,6 +436,9 @@ func normalizeCheckReport(report checkReport) checkReport {
 	if report.SpecHealth == nil {
 		report.SpecHealth = []project.SpecCheckFinding{}
 	}
+	if report.EvidenceCarrierProjectionDebt == nil {
+		report.EvidenceCarrierProjectionDebt = []artifact.EvidenceCarrierProjectionDebt{}
+	}
 
 	return report
 }
@@ -449,6 +457,7 @@ func writeCheckSummary(w io.Writer, report checkReport) error {
 	sb.WriteString(fmt.Sprintf("unassessed: %d\n", len(report.Unassessed)))
 	sb.WriteString(fmt.Sprintf("coverage gaps: %d\n", len(report.CoverageGaps)))
 	sb.WriteString(fmt.Sprintf("spec health: %d\n", len(report.SpecHealth)))
+	sb.WriteString(fmt.Sprintf("evidence carrier projection debt: %d\n", len(report.EvidenceCarrierProjectionDebt)))
 	if report.EvidenceFreshness.Posture != artifact.EvidenceFreshnessInventoryPostureAvailable {
 		diagnostic := report.EvidenceFreshness.Diagnostic
 		if diagnostic == "" {
@@ -476,9 +485,30 @@ func writeCheckSummary(w io.Writer, report checkReport) error {
 	appendUnassessedSection(&sb, report.Unassessed)
 	appendCoverageSection(&sb, report.CoverageGaps)
 	appendSpecHealthSection(&sb, report.SpecHealth)
+	appendEvidenceCarrierProjectionDebtSection(&sb, report.EvidenceCarrierProjectionDebt)
 
 	_, err := io.WriteString(w, sb.String())
 	return err
+}
+
+func appendEvidenceCarrierProjectionDebtSection(
+	sb *strings.Builder,
+	debts []artifact.EvidenceCarrierProjectionDebt,
+) {
+	if len(debts) == 0 {
+		return
+	}
+
+	sb.WriteString("\nEvidence Carrier Projection Debt\n")
+	for _, debt := range debts {
+		sb.WriteString(fmt.Sprintf(
+			"- %s -> %s: %s (%s)\n",
+			debt.EvidenceID,
+			debt.ArtifactRef,
+			debt.LastError,
+			debt.CarrierPath,
+		))
+	}
 }
 
 func appendStaleSection(sb *strings.Builder, findings []checkStaleFinding) {

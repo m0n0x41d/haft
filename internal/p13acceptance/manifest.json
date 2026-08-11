@@ -11,7 +11,7 @@
   "single_command": "HAFT_P13_RUN_CONSOLIDATED=1 go test -count=1 -timeout=12h -v ./internal/p13acceptance -run '^TestP13ConsolidatedAcceptance$'",
   "waivers": [],
   "identity": {
-    "required_schema_version": 58,
+    "required_schema_version": 59,
     "required_writer_generation": 54,
     "required_fpf": {
       "revision": "3dbce51436bfd718bf49cb0356eebce70c4fc015",

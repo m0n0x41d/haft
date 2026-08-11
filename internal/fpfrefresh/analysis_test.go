@@ -352,6 +352,55 @@ func TestAnalyzeSnapshotCompatibilityClassifiesSQLiteFixtureChanges(t *testing.T
 	}
 }
 
+func TestComparePracticalUseGrammarProjectsUnknownResultLabelForReview(t *testing.T) {
+	t.Parallel()
+
+	const predecessorBody = `- **Situation and question.** A source-owned result is needed.
+- **Template A.** A.1 Solution -> U.System.
+- **Boundaries.** Stop at the exact result.
+- **Result test.** Return the selected result.`
+	const candidateBody = `- **Situation and question.** A source-owned result is needed.
+- **Template A.** A.1 Solution -> U.System.
+- **Fresh outcome route.** A.2 Solution -> U.Episteme.
+- **Boundaries.** Stop at the exact result.
+- **Result test.** Return the selected result.`
+
+	index := func(revision, body string) analysisIndex {
+		return analysisIndex{
+			meta: map[string]string{"fpf_commit": revision},
+			units: map[string]analysisSourceUnit{
+				"card": {
+					UnitID:         "card",
+					SourceID:       "SOURCE-OWNED-ROUTE",
+					Role:           string(fpf.SourceUnitRolePracticalUseCard),
+					Title:          "Source-owned route",
+					Body:           body,
+					SourcePath:     "data/FPF/FPF-Spec.md",
+					SourceRevision: revision,
+					StartLine:      10,
+					EndLine:        20,
+				},
+			},
+		}
+	}
+
+	delta, exists, err := comparePracticalUseGrammar(
+		index(strings.Repeat("a", 40), predecessorBody),
+		index(strings.Repeat("b", 40), candidateBody),
+	)
+	if err != nil {
+		t.Fatalf("comparePracticalUseGrammar() error = %v", err)
+	}
+	if !exists {
+		t.Fatal("unknown source-owned result label produced no reviewable grammar delta")
+	}
+	if delta.Family() != DeltaPublicationGrammar ||
+		delta.Kind() != DeltaPublicationGrammarExtended ||
+		!strings.Contains(delta.After(), "result_branch:fresh outcome route") {
+		t.Fatalf("grammar delta = %#v, want degraded result-branch family", delta)
+	}
+}
+
 func TestCandidateTypeEnvDeltasKeepsDeclarationChangeNeutral(t *testing.T) {
 	t.Parallel()
 
@@ -643,7 +692,7 @@ func TestProductionCorpusCarriesExactE11SplitContinuitySpan(t *testing.T) {
 			"SYSTEM-DELIMITATION",
 			"WORDING",
 			"ARCHITECTURE",
-		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:76918-76918" {
+		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:77128-77128" {
 		t.Fatalf("production E.11 split = %#v", splits[0])
 	}
 }
@@ -736,7 +785,7 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 
 	historicalRef := mustAnalysisTypeEnvRef(
 		t,
-		basetypeenvartifacts.HistoricalV5Ref,
+		basetypeenvartifacts.HistoricalV6Ref,
 	)
 	historicalArtifact, err := basetypeenvartifacts.LoadExact(historicalRef)
 	if err != nil {
@@ -784,7 +833,7 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 			"local-practice",
 			"typed-memory",
 			"candidates",
-			"1.4.0.yaml",
+			"1.5.0.yaml",
 		),
 		historicalEnvironment,
 		currentEnvironment,
@@ -826,7 +875,7 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 			"local-practice",
 			"typed-memory",
 			"candidates",
-			"1.5.0.yaml",
+			"1.6.0.yaml",
 		),
 		currentDatabase,
 		currentDatabase,

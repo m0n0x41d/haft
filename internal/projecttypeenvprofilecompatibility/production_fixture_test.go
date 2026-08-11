@@ -21,7 +21,7 @@ func TestProductionHistoricalToCurrentSuccessorKeepsInstalledProfilesCompatible(
 	t *testing.T,
 ) {
 	historicalBaseRef := mustProductionProfileTest(
-		typedmemory.ParseTypeEnvRef(basetypeenvartifacts.HistoricalV5Ref),
+		typedmemory.ParseTypeEnvRef(basetypeenvartifacts.HistoricalV6Ref),
 	)
 	historicalBase := mustProductionProfileTest(
 		basetypeenvartifacts.LoadExact(historicalBaseRef),
@@ -41,8 +41,8 @@ func TestProductionHistoricalToCurrentSuccessorKeepsInstalledProfilesCompatible(
 		database,
 	))
 
-	priorSource := typedmemorycandidates.SourceV1_4()
-	currentSource := typedmemorycandidates.SourceV1_5()
+	priorSource := typedmemorycandidates.SourceV1_5()
+	currentSource := typedmemorycandidates.SourceV1_6()
 	if bytes.Equal(priorSource, currentSource) {
 		t.Fatal("historical and current Local-Practice carriers are byte-identical")
 	}
@@ -54,15 +54,15 @@ func TestProductionHistoricalToCurrentSuccessorKeepsInstalledProfilesCompatible(
 	)
 	assertProductionCarrierBytesStable(
 		t,
-		"historical Local-Practice 1.4.0",
+		"historical Local-Practice 1.5.0",
 		priorSource,
-		typedmemorycandidates.SourceV1_4(),
+		typedmemorycandidates.SourceV1_5(),
 	)
 	assertProductionCarrierBytesStable(
 		t,
-		"current Local-Practice 1.5.0",
+		"current Local-Practice 1.6.0",
 		currentSource,
-		typedmemorycandidates.SourceV1_5(),
+		typedmemorycandidates.SourceV1_6(),
 	)
 
 	priorEnvironment, present := prior.Preparation().Environment()

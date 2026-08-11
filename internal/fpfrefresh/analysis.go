@@ -796,7 +796,7 @@ func practicalUseGrammarFamilies(
 		if unit.Role != string(fpf.SourceUnitRolePracticalUseCard) || unit.Body == "" {
 			continue
 		}
-		projection, err := fpf.ParsePracticalUseCardSource(fpf.PracticalUseCardSource{
+		projection, _, err := fpf.ProjectPracticalUseCardSource(fpf.PracticalUseCardSource{
 			SourceID:       unit.SourceID,
 			Title:          unit.Title,
 			Body:           unit.Body,

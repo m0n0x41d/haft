@@ -414,7 +414,7 @@ func TestReportEncodingAndRenderingAreDeterministic(t *testing.T) {
 		testDiagnostic(
 			t,
 			DiagnosticLocalPracticeRebaseRequired,
-			"typed-memory candidate 1.5.0",
+			"typed-memory candidate 1.6.0",
 			"candidate Base TypeEnv differs from the pinned base",
 		),
 		testDiagnostic(

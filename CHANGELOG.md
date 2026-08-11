@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- **FPF refresh no longer aborts on structurally recognizable new
+  practical-use result labels.** Index construction and compatibility analysis
+  now consume one domain projection: admitted label families preserve their
+  source-owned blocks, future result-like labels remain source-preserving
+  review diagnostics, and the strict parser still rejects unsupported or
+  malformed source.
+
+### Changed
+
+- **The bundled FPF source and query index now track revision `036c056e`.** The
+  index contains 8,119 source units. Typed-memory carrier `1.6.0` pins the new
+  Base TypeEnv while `1.5.0` and its exact base artifact remain byte-stable for
+  historical replay.
+
 ## [9.0.3] — 2026-08-10
 
 [v9.0.3](https://github.com/m0n0x41d/haft/releases/tag/v9.0.3) is a patch

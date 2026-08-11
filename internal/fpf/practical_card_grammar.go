@@ -127,11 +127,13 @@ func ParsePracticalUseCardSource(source PracticalUseCardSource) (SourceUseCuePro
 	return projectPracticalUseBlocks(source, blocks, discovered, recognized)
 }
 
-// parsePracticalUseCardSourceForIndex preserves a source-owned result-like
-// block with a new label family as a degraded result projection and returns an
-// exact diagnostic for refresh review. Missing core categories remain a hard
-// error because no coherent practical-use projection can be produced.
-func parsePracticalUseCardSourceForIndex(
+// ProjectPracticalUseCardSource preserves a source-owned result-like block
+// with a new label family as a degraded result projection and returns an exact
+// diagnostic for review. Missing core categories remain a hard error because
+// no coherent practical-use projection can be produced. Indexing and refresh
+// analysis share this domain port so adapters cannot silently disagree about
+// the source-owned block projection.
+func ProjectPracticalUseCardSource(
 	source PracticalUseCardSource,
 ) (SourceUseCueProjection, []SourceGrammarDiagnostic, error) {
 	blocks, discovered, recognized, unsupported := parsePracticalUseBlocks(source)
@@ -374,7 +376,7 @@ func classifyPracticalUseLabel(label string) (SourceBlockKind, bool) {
 		return SourceBlockConditionCue, true
 	case "first route", "overloaded-word routes":
 		return SourceBlockEntryRoute, true
-	case "conditional walkthrough", "conditional continuation", "relation-like continuation":
+	case "conditional walkthrough", "conditional continuation", "relation-like continuation", "existing-framework continuation":
 		return SourceBlockConditionalContinuation, true
 	case "result test":
 		return SourceBlockResultTest, true
@@ -384,6 +386,11 @@ func classifyPracticalUseLabel(label string) (SourceBlockKind, bool) {
 		return SourceBlockPublicCoarsening, true
 	case "optional obstacle":
 		return SourceBlockOtherAuthored, true
+	case "reusable viewpoint-family branch",
+		"architecture-answer branch",
+		"optional organization-proposal branch",
+		"optional dependency-description branch":
+		return SourceBlockResultBranch, true
 	}
 	for _, family := range []string{"template", "direct", "leading", "branch"} {
 		if hasPracticalUseLabelFamily(normalized, family) {

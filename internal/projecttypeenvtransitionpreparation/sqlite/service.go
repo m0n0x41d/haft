@@ -123,7 +123,7 @@ func (service *Service) PrepareAtBase(
 	}
 	target, err := localpracticeruntime.Build(
 		base,
-		typedmemorycandidates.SourceV1_5(),
+		typedmemorycandidates.SourceV1_6(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("prepare Transition project TypeEnv target: %w", err)

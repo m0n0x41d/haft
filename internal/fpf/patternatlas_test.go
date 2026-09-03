@@ -66,6 +66,34 @@ func TestPatternAtlasLintDetectsMalformedMarkdownHeading(t *testing.T) {
 	t.Fatalf("expected leading-space heading lint, got %#v", atlas.Lints)
 }
 
+func TestPatternAtlasIgnoresHeadingsInsideFencedCodeBlocks(t *testing.T) {
+	markdown := strings.Join([]string{
+		"# Publication",
+		"```text",
+		"# fenced root example",
+		"### fenced section example",
+		"```",
+		"## Section",
+		"~~~yaml",
+		"  # fenced comment",
+		"~~~~",
+		"### Child",
+	}, "\n")
+	atlas, err := BuildPatternAtlas([]byte(markdown), "fixture.md", "fixture-revision")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"Publication", "Section", "Child"}
+	if len(atlas.Nodes) != len(want) {
+		t.Fatalf("nodes = %#v, want headings %q", atlas.Nodes, want)
+	}
+	for index, heading := range want {
+		if atlas.Nodes[index].Heading != heading {
+			t.Errorf("node[%d] heading = %q, want %q", index, atlas.Nodes[index].Heading, heading)
+		}
+	}
+}
+
 func TestPatternAtlasProductionSourceHasKnownAddressableCards(t *testing.T) {
 	path := filepath.Join("..", "..", "data", "FPF", "FPF-Spec.md")
 	markdown, err := os.ReadFile(path)

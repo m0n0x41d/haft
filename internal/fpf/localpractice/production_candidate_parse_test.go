@@ -16,6 +16,7 @@ const (
 	productionCandidateCarrierV1_4Path   = "../../../data/haft/local-practice/typed-memory/candidates/1.4.0.yaml"
 	productionCandidateCarrierV1_5Path   = "../../../data/haft/local-practice/typed-memory/candidates/1.5.0.yaml"
 	productionCandidateCarrierV1_6Path   = "../../../data/haft/local-practice/typed-memory/candidates/1.6.0.yaml"
+	productionCandidateCarrierV1_7Path   = "../../../data/haft/local-practice/typed-memory/candidates/1.7.0.yaml"
 	productionCandidateCarrierV1Digest   = "4f80253dedf46d40ca63662bb0e48c39991a36e1554028b00ed87ad242b4a7f7"
 	productionCandidateCarrierV1_1Digest = "bf0c00131ac84cca8dc62a3e3631b56415b4946fe868f1c286df1253c397393c"
 	productionCandidateCarrierV1_2Digest = "3d4cfaef710daf2ec70a43970ef4ebff2a0cdeac4d26da0486947a4a15ed4d2e"
@@ -23,12 +24,14 @@ const (
 	productionCandidateCarrierV1_4Digest = "8c4544660446dff9de3edb8ac93b6ccd9378e69e2909bb57c47d107a0900a2b7"
 	productionCandidateCarrierV1_5Digest = "a0c633b8d088ae2acddfd367bab572a94c7209d834ecb364ac38665ced74ced3"
 	productionCandidateCarrierV1_6Digest = "9d43be568fff986c3ab664b88f85e4533de68d2147faa4a60b85d5acd3c9a8c2"
+	productionCandidateCarrierV1_7Digest = "e60321abbf42d3a22e691c57bc7bb4595ccc81c782f4d4bad9558ec791b8b5ef"
 	productionCandidateBaseV1_1          = "typeenv:sha256:a5223d5018230095652543f0378a1fc3f64175f21d01309e6f4084088d5d2804"
 	productionCandidateBaseV1_2          = "typeenv:sha256:973eeeed8e234b4ff0194662d80e204fe27ad5ba92c87840a6d1ed3a9d5d742d"
 	productionCandidateBaseV1_3          = "typeenv:sha256:28c7650b8933cbf6feb5d87965d48b4a8c7b80ae71c9c0ca4990d8ae7b6a36b6"
 	productionCandidateBaseV1_4          = "typeenv:sha256:effff65cae9eaf1aba287245df79c460fbeaee5f666dcaa7992bfeb251c1e35e"
 	productionCandidateBaseV1_5          = "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc"
 	productionCandidateBaseV1_6          = "typeenv:sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565"
+	productionCandidateBaseV1_7          = "typeenv:sha256:4a6709fc7a90de2373637b7987403da23fd491315324442db82038da5bcd22c9"
 )
 
 func TestProductionCandidateCarrierV1RemainsByteStableAndReplayable(t *testing.T) {
@@ -126,16 +129,29 @@ func TestHistoricalCandidateCarrierV1_5RemainsByteStableAndUsesKindClassificatio
 	)
 }
 
-func TestCurrentCandidateCarrierV1_6RemainsByteStableAndUsesKindClassification(
+func TestHistoricalCandidateCarrierV1_6RemainsByteStableAndUsesKindClassification(
+	t *testing.T,
+) {
+	assertKindClassificationCandidate(
+		t,
+		"historical",
+		productionCandidateCarrierV1_6Path,
+		productionCandidateCarrierV1_6Digest,
+		"1.6.0",
+		productionCandidateBaseV1_6,
+	)
+}
+
+func TestCurrentCandidateCarrierV1_7RemainsByteStableAndUsesKindClassification(
 	t *testing.T,
 ) {
 	assertKindClassificationCandidate(
 		t,
 		"current",
-		productionCandidateCarrierV1_6Path,
-		productionCandidateCarrierV1_6Digest,
-		"1.6.0",
-		productionCandidateBaseV1_6,
+		productionCandidateCarrierV1_7Path,
+		productionCandidateCarrierV1_7Digest,
+		"1.7.0",
+		productionCandidateBaseV1_7,
 	)
 }
 

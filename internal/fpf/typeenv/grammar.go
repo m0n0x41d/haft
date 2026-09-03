@@ -356,10 +356,10 @@ const (
 	C3SubkindRelationContract C3ContractKind = iota + 1
 	C3SubkindOrderContract
 	C3KindSignatureContract
-	C3KindClassificationJudgementContract
+	C3KindClassificationContract
 	C3KindExtensionContract
 	C3KindBridgeContract
-	C3RoleMaskContract
+	C3KindUseAdaptationContract
 	C3KindGuardSeparationContract
 )
 
@@ -371,14 +371,14 @@ func (kind C3ContractKind) String() string {
 		return "subkind_order"
 	case C3KindSignatureContract:
 		return "kind_signature"
-	case C3KindClassificationJudgementContract:
-		return "kind_classification_judgement"
+	case C3KindClassificationContract:
+		return "kind_classification"
 	case C3KindExtensionContract:
 		return "kind_extension"
 	case C3KindBridgeContract:
 		return "kind_bridge"
-	case C3RoleMaskContract:
-		return "role_mask"
+	case C3KindUseAdaptationContract:
+		return "kind_use_adaptation"
 	case C3KindGuardSeparationContract:
 		return "kind_guard_separation"
 	default:
@@ -502,14 +502,14 @@ func parseSlotRules(unit fpf.SourceUnit) GrammarOutcome {
 		)
 	}
 	declarations := make([]StructuralDeclaration, 0, len(matches))
-	expected := currentSlotRuleLabels()
+	expected := acceptedSlotRuleLabels()
 	seen := make(map[string]struct{}, len(matches))
 	for _, match := range matches {
 		ruleID := strings.TrimSpace(match[1])
 		label := strings.TrimSpace(match[2])
-		expectedLabel, known := expected[ruleID]
+		acceptedLabels, known := expected[ruleID]
 		_, duplicate := seen[ruleID]
-		if !known || duplicate || label != expectedLabel {
+		if !known || duplicate || !slices.Contains(acceptedLabels, label) {
 			return malformedGrammar(
 				unit,
 				"slot_rule_set_mismatch",
@@ -540,7 +540,7 @@ type currentRelationGrammarSpec struct {
 	relationName      string
 	signatureName     string
 	slots             []currentRelationSlotSpec
-	semanticWitnesses []string
+	semanticProfiles  [][]string
 }
 
 type currentRelationSlotSpec struct {
@@ -561,10 +561,10 @@ func currentRelationGrammarSpecs() []currentRelationGrammarSpec {
 				{slotKind: "EntityOfConcernSlot", valueKind: "U.Entity", refMode: "U.EntityRef"},
 				{slotKind: "ReferenceSchemeSlot", valueKind: "U.ReferenceScheme", refMode: "ByValue"},
 			},
-			semanticWitnesses: []string{
+			semanticProfiles: [][]string{{
 				"`EpistemeConstitutionRelation` obtains exactly when",
 				"relation occurrence is participant-determined",
-			},
+			}},
 		},
 		{
 			signatureSourceID: "C.2.1:4.3",
@@ -575,13 +575,13 @@ func currentRelationGrammarSpecs() []currentRelationGrammarSpec {
 				{slotKind: "GroundedEpistemeSlot", valueKind: "U.Episteme", refMode: "U.EpistemeRef"},
 				{slotKind: "GroundingHolonSlot", valueKind: "U.Holon", refMode: "U.HolonRef"},
 			},
-			semanticWitnesses: []string{
+			semanticProfiles: [][]string{{
 				"`EpistemeEmpiricalGroundingRelation` over participants `(E,H)`",
 				"with `covered=C`",
 				"obtains exactly while every empirical claim",
 				"One occurrence is identified by `<episteme, exact covered claim subgraph, grounding holon,",
 				"maximal continuous interval during which the complete coverage predicate is true>`",
-			},
+			}},
 		},
 		{
 			signatureSourceID: "C.2.1:4.5",
@@ -592,9 +592,22 @@ func currentRelationGrammarSpecs() []currentRelationGrammarSpec {
 				{slotKind: "EarlierEpistemeSlot", valueKind: "U.Episteme", refMode: "U.EpistemeRef"},
 				{slotKind: "LaterEpistemeSlot", valueKind: "U.Episteme", refMode: "U.EpistemeRef"},
 			},
-			semanticWitnesses: []string{
-				"The relation obtains when",
-				"One occurrence is participant-determined",
+			semanticProfiles: [][]string{
+				{
+					"The relation obtains when the two epistemes have different C.2.1 identities and one exact system performed revision, refinement, or supersession work under a method whose semantics establish historical continuation.",
+					"One occurrence is participant-determined by the exact `<earlier episteme, later episteme>` pair.",
+					"Two work occurrences that establish the same historical continuation do not create two edition-relation occurrences.",
+				},
+				{
+					"The relation obtains only when all of these conditions hold:",
+					"the two epistemes have different C.2.1 identities;",
+					"the later episteme actually uses the earlier episteme as the source for the claimed revision, refinement, or supersession;",
+					"one applicable edition-continuity policy or rule states which claim, EntityOfConcern, and effective-reference-scheme features must be preserved, which may deliberately change, and what counts as continuation for this episteme family;",
+					"the exact preserved and deliberately changed features satisfy that rule;",
+					"no failure condition in that rule classifies the case as a fork, translation, retargeting, or independent reconstruction instead.",
+					"One occurrence is identified by the exact `<earlier episteme, later episteme>` pair.",
+					"Two revision Work occurrences do not create two edition occurrences for the same pair.",
+				},
 			},
 		},
 	}
@@ -708,13 +721,7 @@ func parseCurrentRelationSemantics(unit fpf.SourceUnit) GrammarOutcome {
 		if unit.SourceID != spec.semanticsSourceID {
 			continue
 		}
-		missingWitness := slices.ContainsFunc(
-			spec.semanticWitnesses,
-			func(witness string) bool {
-				return !strings.Contains(unit.Body, witness)
-			},
-		)
-		if missingWitness {
+		if !matchesCompleteWitnessProfile(unit.Body, spec.semanticProfiles) {
 			return malformedGrammar(
 				unit,
 				"relation_semantics_source_malformed",
@@ -735,15 +742,23 @@ func parseCurrentRelationSemantics(unit fpf.SourceUnit) GrammarOutcome {
 	return GrammarNoMatch{unitID: unit.UnitID}
 }
 
-func currentSlotRuleLabels() map[string]string {
-	return map[string]string{
-		"A6.5-S1": "CompleteSlotSpec",
-		"A6.5-S2": "LocalSlotKind",
-		"A6.5-S3": "ExactParticipantKind",
-		"A6.5-S4": "HonestReference",
-		"A6.5-S5": "DirectPredicateGovernance",
-		"A6.5-S6": "NoHiddenUnion",
-		"A6.5-S7": "RepresentationBoundary",
+func matchesCompleteWitnessProfile(body string, profiles [][]string) bool {
+	return slices.ContainsFunc(profiles, func(profile []string) bool {
+		return !slices.ContainsFunc(profile, func(witness string) bool {
+			return !strings.Contains(body, witness)
+		})
+	})
+}
+
+func acceptedSlotRuleLabels() map[string][]string {
+	return map[string][]string{
+		"A6.5-S1": {"CompleteSlotSpec"},
+		"A6.5-S2": {"LocalSlotKind"},
+		"A6.5-S3": {"ExactParticipantKind"},
+		"A6.5-S4": {"HonestReference"},
+		"A6.5-S5": {"DirectPredicateGovernance", "DirectPredicateDefinition"},
+		"A6.5-S6": {"NoHiddenUnion"},
+		"A6.5-S7": {"RepresentationBoundary"},
 	}
 }
 
@@ -752,8 +767,12 @@ func isExactStructuralSection(unit fpf.SourceUnit, owner, sourceID string) bool 
 }
 
 type c3ContractGrammarSpec struct {
-	owner       string
-	sourceID    string
+	owner    string
+	sourceID string
+	profiles []c3ContractGrammarProfile
+}
+
+type c3ContractGrammarProfile struct {
 	kind        C3ContractKind
 	designator  string
 	coordinates []string
@@ -763,185 +782,415 @@ type c3ContractGrammarSpec struct {
 func currentC3ContractGrammarSpecs() []c3ContractGrammarSpec {
 	return []c3ContractGrammarSpec{
 		{
-			owner:      "C.3.1",
-			sourceID:   "C.3.1:4",
-			kind:       C3SubkindRelationContract,
-			designator: "U.SubkindOf",
-			coordinates: []string{
-				"narrower_kind",
-				"broader_kind",
-				"effective_reference_scheme_edition",
-				"SubkindOfObtains",
-				"participant_and_reference_scheme_occurrence_identity",
-				"separate_c2_1_assertion_episteme",
-			},
-			required: []string{
-				"| `U.SubkindOf` |",
-				"`SubkindOfObtains(k1, k2; RS)`",
-				"`R_sub : U.SubkindOf`",
-				"subkind assertion episteme",
-				"Participant identities plus the exact effective reference-scheme edition determine its identity.",
-			},
-		},
-		{
-			owner:      "C.3.1",
-			sourceID:   "C.3.1:5",
-			kind:       C3SubkindOrderContract,
-			designator: "SubkindOfObtains",
-			coordinates: []string{
-				"reflexive",
-				"transitive",
-				"antisymmetric",
-				"same_candidate",
-				"same_context_slice",
-				"aligned_kind_signature_editions",
-				"unknown_is_non_settlement",
-			},
-			required: []string{
-				"Keep a partial order over obtaining facts.",
-				"Reflexivity, transitivity, and antisymmetry",
-				"same candidate and context slice",
-				"`unknown` remains non-settlement",
-			},
-		},
-		{
-			owner:      "C.3.2",
-			sourceID:   "C.3.2:5",
-			kind:       C3KindSignatureContract,
-			designator: "KindSignature",
-			coordinates: []string{
-				"local_kind_entity_of_concern",
-				"candidate_value_kind",
-				"direct_feature_criterion",
-				"context_slice_conditions",
-				"effective_reference_scheme",
-				"assumptions_dependencies_versions_units_temporal_policy",
-				"formality",
-				"optional_extent_rule",
-			},
-			required: []string{
-				"the exact local kind that is its `EntityOfConcern`",
-				"the candidate `ValueKind`",
-				"direct governed candidate qualities, relations, constructive grounding, or other features",
-				"the exact `U.ContextSlice` conditions",
-				"the effective `U.ReferenceScheme`",
-				"named assumptions, dependencies, standards, versions, units, and temporal policy",
-				"its `U.Formality`",
-				"an optional `ExtentRule`",
+			owner:    "C.3.1",
+			sourceID: "C.3.1:4",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3SubkindRelationContract,
+					designator: "U.SubkindOf",
+					coordinates: []string{
+						"narrower_kind",
+						"broader_kind",
+						"declared_applicability",
+						"SubkindOfObtains",
+						"criterion_entailment_branch",
+						"exhaustive_closed_finite_domain_branch",
+						"participant_determined_occurrence_identity",
+						"scheme_signature_applicability_qualifiers",
+						"separate_c2_1_assertion_episteme",
+					},
+					required: []string{
+						"| `U.SubkindOf` |",
+						"within declared applicability",
+						"`SubkindOfObtains(k1, k2)`",
+						"It holds either because the exact membership criterion",
+						"or because every candidate in a deliberately closed finite domain",
+						"`R_sub : U.SubkindOf`",
+						"The ordered kind participants determine occurrence identity; schemes, signatures, evidence, assertions, and publications do not.",
+						"subkind assertion episteme",
+						"The assertion does not make the relation obtain",
+					},
+				},
+				{
+					kind:       C3SubkindRelationContract,
+					designator: "U.SubkindOf",
+					coordinates: []string{
+						"narrower_kind",
+						"broader_kind",
+						"effective_reference_scheme_edition",
+						"SubkindOfObtains",
+						"participant_and_reference_scheme_occurrence_identity",
+						"separate_c2_1_assertion_episteme",
+					},
+					required: []string{
+						"| `U.SubkindOf` |",
+						"`SubkindOfObtains(k1, k2; RS)`",
+						"`R_sub : U.SubkindOf`",
+						"subkind assertion episteme",
+						"Participant identities plus the exact effective reference-scheme edition determine its identity.",
+					},
+				},
 			},
 		},
 		{
-			owner:      "C.3.2",
-			sourceID:   "C.3.2:6",
-			kind:       C3KindClassificationJudgementContract,
-			designator: "J",
-			coordinates: []string{
-				"candidate",
-				"local_kind",
-				"kind_signature_edition",
-				"context_slice",
-				"true",
-				"false",
-				"unknown",
-				"direct_features_separate_from_evidence",
-				"guard_disposition_separate",
-			},
-			required: []string{
-				"`J(candidate, kind, signatureEdition, slice) ∈ {true, false, unknown}`",
-				"Pin all four inputs.",
-				"Evaluate direct governed features.",
-				"gives `unknown`, not `false`",
-				"Separate support from satisfaction.",
-				"Separate guard disposition.",
-			},
-		},
-		{
-			owner:      "C.3.2",
-			sourceID:   "C.3.2:7",
-			kind:       C3KindExtensionContract,
-			designator: "KindExtension",
-			coordinates: []string{
-				"local_kind",
-				"kind_signature_edition",
-				"context_slice",
-				"declared_candidate_domain",
-				"true_candidates_only",
-				"named_receiving_use",
-			},
-			required: []string{
-				"Materialize `KindExtension(k, slice)` only when",
-				"Pin the `KindSignature` edition",
-				"without inventing `U.EntitySet`",
-				"whose pinned judgment is `true`",
-				"They do not create a collection holon, an A.14 membership occurrence, a direct classification relation, or the candidate features.",
-			},
-		},
-		{
-			owner:      "C.3.3",
-			sourceID:   "C.3.3:5",
-			kind:       C3KindBridgeContract,
-			designator: "KindBridge",
-			coordinates: []string{
-				"source_local_kind",
-				"target_local_kind",
-				"source_reference_scheme_edition",
-				"target_reference_scheme_edition",
-				"direction",
-				"definedness",
-				"separate_bridge_assertion",
-				"fresh_target_judgement",
-			},
-			required: []string{
-				"A `KindBridge` occurrence is an obtaining direct relation between one exact source local `U.Kind` and one exact target local `U.Kind`.",
-				"source and target scheme editions",
-				"Keep the direct relation separate from the C.2.1 bridge-assertion episteme",
-				"`J(candidate, targetKind, targetSignatureEdition, TargetSlice) ∈ {true, false, unknown}`",
-				"is never reused as target truth",
+			owner:    "C.3.1",
+			sourceID: "C.3.1:5",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3SubkindOrderContract,
+					designator: "SubkindOfObtains",
+					coordinates: []string{
+						"admissibility_first",
+						"criterion_entailment_branch",
+						"exhaustive_closed_finite_domain_branch",
+						"preorder",
+						"reflexive",
+						"transitive",
+						"mutual_facts_classification_equivalence",
+						"distinct_kind_identity_preserved",
+						"optional_partial_order_over_equivalence_groups",
+						"separate_relation_predicate_assertion",
+					},
+					required: []string{
+						"Check admissibility first.",
+						"`not-applicable` forms no C.3.2 judgment.",
+						"Select one obtaining branch.",
+						"exact criterion entailment",
+						"exhaustive evaluation only for a deliberately closed finite domain",
+						"Keep a preorder over obtaining facts.",
+						"Reflexivity and transitivity apply.",
+						"Mutual facts between distinct kinds record classification equivalence",
+						"they do not imply kind identity",
+						"Use the equivalence groups only when a receiver needs a partial order.",
+						"Separate relation, predicate, and assertion.",
+					},
+				},
+				{
+					kind:       C3SubkindOrderContract,
+					designator: "SubkindOfObtains",
+					coordinates: []string{
+						"reflexive",
+						"transitive",
+						"antisymmetric",
+						"same_candidate",
+						"same_context_slice",
+						"aligned_kind_signature_editions",
+						"unknown_is_non_settlement",
+					},
+					required: []string{
+						"Keep a partial order over obtaining facts.",
+						"Reflexivity, transitivity, and antisymmetry",
+						"same candidate and context slice",
+						"`unknown` remains non-settlement",
+					},
+				},
 			},
 		},
 		{
-			owner:      "C.3.4",
-			sourceID:   "C.3.4:5",
-			kind:       C3RoleMaskContract,
-			designator: "RoleMask",
-			coordinates: []string{
-				"candidate",
-				"base_local_kind",
-				"kind_signature_edition",
-				"role_mask_edition",
-				"context_slice",
-				"direct_candidate_feature_constraints",
-				"scope_expectations_separate",
-				"true_false_unknown",
-			},
-			required: []string{
-				"A `RoleMask` is a named, versioned C.2.1 declaration episteme.",
-				"additional direct candidate-feature predicates",
-				"routed separately to USM Scope",
-				"`J_mask(candidate, kind, kindSignatureEdition, roleMaskEdition, slice) ∈ {true, false, unknown}`",
-				"that refusal is not a `false` classification",
+			owner:    "C.3.2",
+			sourceID: "C.3.2:5",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3KindSignatureContract,
+					designator: "KindSignature",
+					coordinates: []string{
+						"kind_entity_of_concern",
+						"candidate_value_kind_or_exact_value_interpretation",
+						"membership_condition",
+						"context_slice_applicability",
+						"effective_reference_scheme",
+						"assumptions_dependencies_standards_versions_units_temporal_policy",
+						"formality",
+						"optional_extent_rule",
+						"pre_judgement_not_applicable",
+					},
+					required: []string{
+						"the exact kind that is its `EntityOfConcern`",
+						"the candidate `ValueKind` or exact value interpretation admitted as input",
+						"the membership condition in terms of directly governed candidate qualities, relations, constructive grounding, epistemes, registrations, certifications, publications, legal statuses, or other exact conditions",
+						"the exact `U.ContextSlice` applicability in which the evaluation may be formed",
+						"the effective `U.ReferenceScheme`",
+						"named assumptions, dependencies, standards, versions, units, and temporal policy",
+						"its `U.Formality`",
+						"an optional `ExtentRule` for a named extension-consuming use",
+						"`not-applicable` is returned before this ranged evaluation",
+					},
+				},
+				{
+					kind:       C3KindSignatureContract,
+					designator: "KindSignature",
+					coordinates: []string{
+						"local_kind_entity_of_concern",
+						"candidate_value_kind",
+						"direct_feature_criterion",
+						"context_slice_conditions",
+						"effective_reference_scheme",
+						"assumptions_dependencies_versions_units_temporal_policy",
+						"formality",
+						"optional_extent_rule",
+					},
+					required: []string{
+						"the exact local kind that is its `EntityOfConcern`",
+						"the candidate `ValueKind`",
+						"direct governed candidate qualities, relations, constructive grounding, or other features",
+						"the exact `U.ContextSlice` conditions",
+						"the effective `U.ReferenceScheme`",
+						"named assumptions, dependencies, standards, versions, units, and temporal policy",
+						"its `U.Formality`",
+						"an optional `ExtentRule`",
+					},
+				},
 			},
 		},
 		{
-			owner:      "C.3.A",
-			sourceID:   "C.3.A:3",
-			kind:       C3KindGuardSeparationContract,
-			designator: "GuardDisposition",
-			coordinates: []string{
-				"declaration_compatibility",
-				"candidate_classification",
-				"scope_coverage",
-				"evidence_freshness",
-				"bridge_applicability",
-				"action_disposition",
-				"true_false_unknown",
+			owner:    "C.3.2",
+			sourceID: "C.3.2:6",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3KindClassificationContract,
+					designator: "ClassificationAdmissibility/J",
+					coordinates: []string{
+						"candidate",
+						"kind",
+						"kind_signature_edition",
+						"context_slice",
+						"admissible",
+						"not_applicable_no_judgement",
+						"true",
+						"false",
+						"unknown",
+						"governed_condition",
+						"condition_separate_from_evidentiary_use",
+						"guard_disposition_separate",
+					},
+					required: []string{
+						"`A(candidate, kind, signatureEdition, slice) ∈ {admissible, not-applicable}`",
+						"only when `A = admissible`",
+						"`J(candidate, kind, signatureEdition, slice) ∈ {true, false, unknown}`",
+						"Pin the inputs.",
+						"return `not-applicable` and stop. Do not form `J`.",
+						"Evaluate the governed condition.",
+						"Missing support or an unavailable declared dependency gives `unknown`, not `false`.",
+						"Distinguish condition from evidentiary use.",
+						"Separate guard disposition.",
+					},
+				},
+				{
+					kind:       C3KindClassificationContract,
+					designator: "J",
+					coordinates: []string{
+						"candidate",
+						"local_kind",
+						"kind_signature_edition",
+						"context_slice",
+						"true",
+						"false",
+						"unknown",
+						"direct_features_separate_from_evidence",
+						"guard_disposition_separate",
+					},
+					required: []string{
+						"`J(candidate, kind, signatureEdition, slice) ∈ {true, false, unknown}`",
+						"Pin all four inputs.",
+						"Evaluate direct governed features.",
+						"gives `unknown`, not `false`",
+						"Separate support from satisfaction.",
+						"Separate guard disposition.",
+					},
+				},
 			},
-			required: []string{
-				"Three classification values.",
-				"Separate guard disposition.",
-				"Both `false` and `unknown` normally cause fail-closed refusal",
-				"Scope separation.",
-				"Bridge separation.",
+		},
+		{
+			owner:    "C.3.2",
+			sourceID: "C.3.2:7",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3KindExtensionContract,
+					designator: "KindExtension",
+					coordinates: []string{
+						"kind",
+						"kind_signature_edition",
+						"context_slice",
+						"candidate_domain",
+						"admissible_true_candidates_only",
+						"unknown_and_not_applicable_exclusions_distinct",
+						"representation_not_collection_membership_relation_or_condition",
+						"named_receiving_use",
+					},
+					required: []string{
+						"Materialize `KindExtension(k, slice)` only when",
+						"Pin the signature edition",
+						"candidate domain without inventing `U.EntitySet`",
+						"Include exactly admissible candidates whose judgment is `true`.",
+						"Keep `unknown` and `not-applicable` distinct",
+						"They create neither a collection holon, A.14 membership occurrence, direct classification relation, nor criterion condition.",
+					},
+				},
+				{
+					kind:       C3KindExtensionContract,
+					designator: "KindExtension",
+					coordinates: []string{
+						"local_kind",
+						"kind_signature_edition",
+						"context_slice",
+						"declared_candidate_domain",
+						"true_candidates_only",
+						"named_receiving_use",
+					},
+					required: []string{
+						"Materialize `KindExtension(k, slice)` only when",
+						"Pin the `KindSignature` edition",
+						"without inventing `U.EntitySet`",
+						"whose pinned judgment is `true`",
+						"They do not create a collection holon, an A.14 membership occurrence, a direct classification relation, or the candidate features.",
+					},
+				},
+			},
+		},
+		{
+			owner:    "C.3.3",
+			sourceID: "C.3.3:5",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3KindBridgeContract,
+					designator: "KindBridge",
+					coordinates: []string{
+						"source_kind",
+						"target_kind",
+						"distinct_kinds",
+						"directional_correspondence_predicate",
+						"definedness",
+						"participant_determined_occurrence_identity",
+						"scheme_and_signature_qualifiers",
+						"separate_bridge_assertion",
+						"receiving_admissibility",
+						"fresh_receiving_judgement",
+						"source_judgement_not_receiving_truth",
+						"r_only_reliance_consequence",
+					},
+					required: []string{
+						"Compare kind definitions.",
+						"Stop on same-kind reuse.",
+						"A `KindBridge` occurrence is an obtaining direct relation between one exact source kind and one exact target kind.",
+						"Its directional predicate states the correspondence and definedness",
+						"paired `KindSignature` editions",
+						"First return `admissible` or `not-applicable` under the receiving signature and slice.",
+						"A source judgment may support the bridge assertion or reliance but is never copied as receiving truth.",
+						"The kinds are the direct relation participants.",
+						"They do not identify the occurrence.",
+						"For the ordered kind pair, the direct relation is participant-determined.",
+						"apply only the justified `CL^k` consequence to R",
+					},
+				},
+				{
+					kind:       C3KindBridgeContract,
+					designator: "KindBridge",
+					coordinates: []string{
+						"source_local_kind",
+						"target_local_kind",
+						"source_reference_scheme_edition",
+						"target_reference_scheme_edition",
+						"direction",
+						"definedness",
+						"separate_bridge_assertion",
+						"fresh_target_judgement",
+					},
+					required: []string{
+						"A `KindBridge` occurrence is an obtaining direct relation between one exact source local `U.Kind` and one exact target local `U.Kind`.",
+						"source and target scheme editions",
+						"Keep the direct relation separate from the C.2.1 bridge-assertion episteme",
+						"`J(candidate, targetKind, targetSignatureEdition, TargetSlice) ∈ {true, false, unknown}`",
+						"is never reused as target truth",
+					},
+				},
+			},
+		},
+		{
+			owner:    "C.3.4",
+			sourceID: "C.3.4:5",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3KindUseAdaptationContract,
+					designator: "KindUseAdaptationDeclaration",
+					coordinates: []string{
+						"base_kind",
+						"base_kind_signature_edition",
+						"receiving_use",
+						"adaptation_type",
+						"directly_governed_candidate_conditions",
+						"vocabulary_or_notation_bindings",
+						"candidate_and_slice_applicability",
+						"dependencies",
+						"scope_expectations_separate",
+						"intended_guard_use",
+						"formality",
+						"adaptation_admissibility",
+						"true_false_unknown",
+						"vocabulary_only_preserves_base_judgement",
+						"no_new_kind_or_bridge",
+					},
+					required: []string{
+						"A `KindUseAdaptationDeclaration` is a named, versioned C.2.1 declaration episteme",
+						"the exact base kind and pinned base `KindSignature` edition",
+						"the receiving use and adaptation type: constraint, vocabulary, or composite",
+						"additional directly governed candidate conditions",
+						"vocabulary or notation bindings",
+						"exact candidate and slice applicability plus dependencies",
+						"scope expectations routed separately through A.2.6",
+						"First evaluate adaptation admissibility.",
+						"`J_kindUse(candidate, kind, kindSignatureEdition, adaptationDeclarationEdition, slice) ∈ {true, false, unknown}`",
+						"A vocabulary-only declaration adds no predicate and preserves the base judgment.",
+						"A guard may decline use on `not-applicable` or `unknown` without rewriting either.",
+						"A declaration, correspondence, judgment, catalog row, or representation creates neither.",
+					},
+				},
+				{
+					kind:       C3KindUseAdaptationContract,
+					designator: "RoleMask",
+					coordinates: []string{
+						"candidate",
+						"base_local_kind",
+						"kind_signature_edition",
+						"role_mask_edition",
+						"context_slice",
+						"direct_candidate_feature_constraints",
+						"scope_expectations_separate",
+						"true_false_unknown",
+					},
+					required: []string{
+						"A `RoleMask` is a named, versioned C.2.1 declaration episteme.",
+						"additional direct candidate-feature predicates",
+						"routed separately to USM Scope",
+						"`J_mask(candidate, kind, kindSignatureEdition, roleMaskEdition, slice) ∈ {true, false, unknown}`",
+						"that refusal is not a `false` classification",
+					},
+				},
+			},
+		},
+		{
+			owner:    "C.3.A",
+			sourceID: "C.3.A:3",
+			profiles: []c3ContractGrammarProfile{
+				{
+					kind:       C3KindGuardSeparationContract,
+					designator: "GuardDisposition",
+					coordinates: []string{
+						"declaration_compatibility",
+						"candidate_classification",
+						"scope_coverage",
+						"evidence_freshness",
+						"bridge_applicability",
+						"action_disposition",
+						"true_false_unknown",
+					},
+					required: []string{
+						"Three classification values.",
+						"Separate guard disposition.",
+						"Both `false` and `unknown` normally cause fail-closed refusal",
+						"Scope separation.",
+						"Bridge separation.",
+					},
+				},
 			},
 		},
 	}
@@ -952,23 +1201,48 @@ func parseCurrentC3Contract(unit fpf.SourceUnit) GrammarOutcome {
 		if !isExactStructuralSection(unit, spec.owner, spec.sourceID) {
 			continue
 		}
-		missing := missingSourceCues(unit.Body, spec.required)
-		if len(missing) > 0 {
+		if len(spec.profiles) == 0 {
 			return malformedGrammar(
 				unit,
 				"current_c3_contract_malformed",
-				fmt.Sprintf(
-					"recognized %s contract is missing current source cue %q",
-					spec.kind.String(),
-					missing[0],
-				),
+				fmt.Sprintf("recognized %s contract has no supported semantic profiles", spec.sourceID),
 			)
 		}
+		matching := make([]c3ContractGrammarProfile, 0, 1)
+		closestKind := C3ContractKind(0)
+		closestMissing := []string(nil)
+		for _, profile := range spec.profiles {
+			missing := missingSourceCues(unit.Body, profile.required)
+			if len(missing) == 0 {
+				matching = append(matching, profile)
+				continue
+			}
+			if closestMissing == nil || len(missing) < len(closestMissing) {
+				closestKind = profile.kind
+				closestMissing = missing
+			}
+		}
+		if len(matching) != 1 {
+			detail := "matches more than one supported semantic profile"
+			if len(matching) == 0 {
+				detail = fmt.Sprintf(
+					"matches no complete supported semantic profile; closest %s profile is missing source cue %q",
+					closestKind.String(),
+					closestMissing[0],
+				)
+			}
+			return malformedGrammar(
+				unit,
+				"current_c3_contract_malformed",
+				fmt.Sprintf("recognized %s contract %s", spec.sourceID, detail),
+			)
+		}
+		profile := matching[0]
 		declaration := C3ContractDeclaration{
 			source:      unit,
-			kind:        spec.kind,
-			designator:  spec.designator,
-			coordinates: append([]string(nil), spec.coordinates...),
+			kind:        profile.kind,
+			designator:  profile.designator,
+			coordinates: append([]string(nil), profile.coordinates...),
 		}
 		return GrammarParsed{
 			unitID:       unit.UnitID,

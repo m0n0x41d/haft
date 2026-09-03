@@ -440,7 +440,7 @@ Haft installs 12 skills with independent trigger conditions:
 
 | Skill | Mode | What it does |
 |---|---|---|
-| **h-reason** | auto (umbrella) | Minimum FPF distillate and source-query entry point. It helps choose one current capability without imposing a project sequence. |
+| **h-reason** | auto (umbrella) | Minimum FPF distillate and source-query entry point. It selects the minimal current capability set; complementary uses stay unordered unless an explicit basis supports coordination, and the catalog imposes no project sequence. |
 | **h-frame** | auto | Shape the current problem conversationally; persist a ProblemCard only on explicit save intent or a named durable receiving use. |
 | **h-diagnose** | auto | Diagnose a failure with parallel hypothesis testing (one Agent subagent per hypothesis to prevent anchoring) |
 | **h-explore** | auto | Generate genuinely distinct candidate variants when exploration is the current task; record only when durability is warranted. |

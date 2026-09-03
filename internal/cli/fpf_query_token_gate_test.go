@@ -388,10 +388,12 @@ func assertEmbeddedTokenGateCanonicalResult(
 	ids := embeddedTokenGateCanonicalCandidateIDs(result)
 	if len(ids) != testCase.ExpectedCandidateCount || !reflect.DeepEqual(ids, testCase.ExpectedCandidateIDs) {
 		t.Fatalf(
-			"%s candidate identity = %#v (%d), want %#v (%d)",
+			"%s candidate identity = %#v (%d), source IDs = %#v, truncation = %#v; want %#v (%d)",
 			testCase.CaseID,
 			ids,
 			len(ids),
+			embeddedTokenGateCanonicalCandidateSourceIDs(result),
+			result.Truncation,
 			testCase.ExpectedCandidateIDs,
 			testCase.ExpectedCandidateCount,
 		)

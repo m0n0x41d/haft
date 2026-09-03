@@ -1,12 +1,19 @@
 # P13 consolidated acceptance harness
 
-Status: the exact current FPF `8b727cb` / COV2 v5 source identity is pinned and
-source-built dogfood `haft init --core-only` automatically activated its
-proven-compatible successor under `compatible_successor_policy`. The project
-ledger now records head revision 3 and graph revision 9 with zero host-routed
-TypeEnv requests. Freeze capture and verification passed, and the manifest is
-`frozen_for_execution` on those exact coordinates. This makes P13 executable;
-it does not itself claim that the consolidated P13 run passed.
+Status: the exact target FPF `036c056e` / COV2 v5 source identity and Base
+TypeEnv `dffe960a...` are pinned. Source-built dogfood initialization observed
+the proven-compatible successor activate automatically from predecessor FPF
+`3dbce514` at head revision 4 to target head revision 5 and graph revision 11.
+The manifest carries those exact selected coordinates and is
+`frozen_for_execution`. A consolidated P13 run completed on 2026-08-13 against
+dirty source identity
+`sha256:4461ec8e61ba8d4c448ade7ebf1b0335a1343c6a5e05e2e81493619deff82c27`;
+its carrier digest is
+`sha256:e3eb86aa8a920aca2761cc1732745a4d04c66814573477a548d478eb452b2f78`,
+all G0-G8 gates passed, and `release_claim=false`. That receipt proves only
+those exact source bytes. Any later source, test, manifest, carrier, or clean
+candidate commit requires a new freeze-candidate capture, verification, and
+consolidated run; no older P13 carrier is evidence for the changed bytes.
 
 The active execution carrier is
 `.context/haft-v9-deterministic-closeout.plan.md`, specifically
@@ -84,11 +91,12 @@ The manifest is a three-state fail-closed carrier:
 
 The consolidated command fails before package discovery or suite execution in
 the first two states. Candidate Stage coordinates are not activation authority
-and must not be copied into the frozen state. The preceding P12E Transition
-advanced the exact revision-1 project head from FPF `44dd881`
-(`C=d6097b...`, `B=aa1eec...`) to the now-predecessor `0990ff1` candidate at
-head revision 2. The current automatic activation advanced from that exact
-predecessor rather than relabeling it. The activated target Stage remains schema v5
+and must not be copied into the frozen state. Historical transitions advanced
+the project through `0990ff1` and then to predecessor `3dbce514` at head
+revision 4. That exact head, with executable snapshot digest `7b27ea39...` and
+lowered-environment digest `d1873fe0...`, is the mechanically read predecessor
+for the automatically activated `036c056e` successor; it was not relabeled as
+the target. The activated target Stage remains schema v5
 and byte-match the current canonical profile basis, compatible ProfileFit, and
 installed transition-profile closure when final freeze input is captured. The
 same preflight requires the exact selected FPF checkout plus embedded index
@@ -106,7 +114,7 @@ HAFT_P13_CAPTURE_FREEZE_INPUT=1 \
   -run '^TestP13CaptureFreezeInputCandidate$'
 ```
 
-Compatible-successor activation is already complete before capture, but a
+Run freeze capture only after compatible-successor activation is complete. A
 capture made before the current manifest and source bytes is stale because the
 carrier binds both the manifest and full acceptance identity. This read-only capture uses the same identity
 loader and closure checks as the consolidated runner. It atomically publishes a no-clobber

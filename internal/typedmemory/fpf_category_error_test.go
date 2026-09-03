@@ -15,8 +15,8 @@ import (
 // TypeEnv. The exact source snapshot is pinned so a changed FPF publication
 // forces a fresh semantic review instead of silently preserving these rules.
 const (
-	sourceConformanceFPFRevision   = "036c056e98c38522172c6b7b3ad08214281cc4e4"
-	sourceConformanceFPFSpecDigest = "sha256:691692b7a638874e4ea66acd8df6e18bf22d6ffcac01a96d7ff7c93a8a330891"
+	sourceConformanceFPFRevision   = "59c455329e49715c64dc1b16f22c1efba6a3cf6f"
+	sourceConformanceFPFSpecDigest = "sha256:5f3381f62d6c652cf57489a2d83f12aa2d1ebec47ccb156e9499c9e96d675bcf"
 )
 
 type sourceConformanceSourceRange struct {
@@ -39,46 +39,46 @@ type sourceConformanceNetworkSelection struct {
 }
 
 var sourceConformanceSourceRanges = []sourceConformanceSourceRange{
-	{pattern: "A.1", start: 1475, end: 1830, digest: "sha256:c2022fcb43120f35217fe2cf6503891583a42c7293b9ca1be14dcb54e844aa48"},
-	{pattern: "A.2.1", start: 2987, end: 3302, digest: "sha256:46339a090e017792ca4f3fd5fec9975389c926b4182a867ee2a65976b11d0c7a"},
-	{pattern: "A.2.8", start: 6158, end: 6501, digest: "sha256:4781ef360662edbe38bf367b64fc60c1c91e9fc52326e9b1332b1b66485f7b14"},
-	{pattern: "A.2.8.PER", start: 6502, end: 6796, digest: "sha256:e684e2cbc8af12d64a914b0ea9588e0f1bebce72e9a3c7778c28cff788932ea7"},
-	{pattern: "A.3.1", start: 7390, end: 7824, digest: "sha256:f72c4b6ac6a1f5af3b0a46466dbbee5508ea008c41a7d649ffe142eac3901c43"},
-	{pattern: "A.3.2", start: 7825, end: 8151, digest: "sha256:cf47f9b9b208f775785b7298f97cbf2c887248ef93b735deb1521baa67087ebb"},
-	{pattern: "A.3.4", start: 8479, end: 8871, digest: "sha256:ffc48e1f415ff674ed51b6c2d384a3dcae71527b837159d54a955f7233e3816a"},
-	{pattern: "A.6.REL", start: 11371, end: 11763, digest: "sha256:3cb3082cd874089268c64fbb4b814fe4a15adbcc3174247f7969feddb3c1ad01"},
-	{pattern: "A.6.0", start: 11764, end: 12168, digest: "sha256:6be5122b7698a5dbb9d2f2ab33693c5bc38b9eadc0f13a9ed67ff85ff7f27505"},
-	{pattern: "A.6.1", start: 12169, end: 12691, digest: "sha256:946668db562ee4447896a8ff7a3e92105413d66e1f34f488ba7402aacd4ac591"},
-	{pattern: "A.6.P.WMR", start: 16285, end: 16716, digest: "sha256:f10bec7846dad284439a15f74d46f9d898dc53e5d9dd38bdac493dfe6f478e67"},
-	{pattern: "A.6.5", start: 18918, end: 19282, digest: "sha256:e98c56aa0e8cf17f4ffb31f44ab7f1639e4793eb0f6a614b6a16a0cbce53bc04"},
-	{pattern: "A.10", start: 22700, end: 23074, digest: "sha256:9e6a9991e58c50c2b03d88e28a6e526380dd67f2be45e372907800969b6b2c6f"},
-	{pattern: "A.14", start: 23666, end: 23957, digest: "sha256:1973fcdcb4e7d3f4966ba203089fc079af7f6517b46b1b7144566ce0fbc7fa44"},
-	{pattern: "A.15.1", start: 24425, end: 24969, digest: "sha256:874a4fc8c1f99a6c05b8c38ff526d8db5c63a5b1018b95260bfa7be1711027d2"},
-	{pattern: "A.15.2", start: 24970, end: 25269, digest: "sha256:799fd65740de85cd67fa7636487a89ca33e734b86fda899601a0aa294f7ba1d1"},
-	{pattern: "A.15.3", start: 25270, end: 25588, digest: "sha256:855b07fd09219bbff05c56721b2a65877e073ded18bb4713289201f37ec4e46e"},
-	{pattern: "A.15.PROD", start: 26598, end: 27012, digest: "sha256:743bd9dea2ed22003518749f03f6137e57173d99f6132d52c0e7e5eeb42854a5"},
-	{pattern: "A.18", start: 28295, end: 28446, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
-	{pattern: "A.19.UNM", start: 31419, end: 31840, digest: "sha256:5b1df287a027422c99c11a5880483dcb21497ddae925838c94ab0a04ae2c15b9"},
-	{pattern: "A.19.UINDM", start: 31841, end: 32129, digest: "sha256:321c2a9493ca65d49d9d7092415aa1132bbeb9f9e99a7190de5bf8efe6f2d431"},
-	{pattern: "A.19.USCM", start: 32130, end: 32457, digest: "sha256:32a4ab65a48be8dd504009bd25f1a299e6a4afaac73abac18ba95adb191d5a62"},
-	{pattern: "A.19.ULSAM", start: 32458, end: 32752, digest: "sha256:7de5e87ad2eb0c0c78b880f6d000e6187529cfcdd1a174843e513e6776c5a24a"},
-	{pattern: "A.19.CPM", start: 32753, end: 33131, digest: "sha256:163ad299dbd0b09bb55e3603c7676556f2262b2e44056933a2100636e1490843"},
-	{pattern: "A.19.SelectorMechanism", start: 33132, end: 33552, digest: "sha256:4cba7db789460a08dcf8e8f57a5f80e18852133240883ef3d40615f30af9261e"},
-	{pattern: "C.2.1", start: 41130, end: 41664, digest: "sha256:cecf2e397e1920a01e788aa6f4cade027ec254ce8d1661cadaebd08edd3f36ed"},
-	{pattern: "C.11", start: 46172, end: 46887, digest: "sha256:0392af9f4fba33106ea0c86dd0ffe322e2a8b9121a2ad3f9239d7ac0de0b431c"},
-	{pattern: "C.16", start: 47139, end: 47434, digest: "sha256:c017e22af795e1ec92e490662060614614444e0155a792cbd474e418bf4eadcb"},
-	{pattern: "C.18", start: 49253, end: 49531, digest: "sha256:394e7c911d2023a318282ffc300415647fd26f8ba911b10644805935c13c5790"},
-	{pattern: "C.22", start: 50962, end: 51337, digest: "sha256:3c234451a2b1756d402140df4d7f5e173e0db7145e086cc74202b96c6db3e10e"},
-	{pattern: "C.22.2", start: 51820, end: 52464, digest: "sha256:1cdc449ac27caf1480f11099e91d32bae3e0404e0badae26c1d7c5c0818cc4de"},
-	{pattern: "C.28", start: 57278, end: 58144, digest: "sha256:6230a3f10570a5a445bd7b053e85c0e62ee92f3b0a2c651a84421ccb25bd2cfd"},
-	{pattern: "C.30", start: 59509, end: 60189, digest: "sha256:116a0aba71fd731b4ea88ced7024b519c297cd9b81b845511ca297316e29e424"},
-	{pattern: "E.11.PUR", start: 77869, end: 78157, digest: "sha256:35cf14bfe57c2973781d4ff3f9ef5b8e173a297b731a2027b42b85a49a00755f"},
-	{pattern: "E.17", start: 80472, end: 81060, digest: "sha256:3edd4df3efddb6abb1978bedbcf42552e7454771ec98e2ecae969b3ba9b3d9cf"},
-	{pattern: "E.18", start: 83321, end: 83981, digest: "sha256:da2c59aecb8d5a6ee9fa1ce4953da77fc9541f146c0a3b83efd3efcf8c2dbf4a"},
-	{pattern: "E.18.NET", start: 85229, end: 85624, digest: "sha256:20939dc9795f8a6ad682d56fd7d60632a33e82775ea12554cbeacefced10b4fe"},
-	{pattern: "E.24.PUB", start: 89003, end: 89282, digest: "sha256:dc353f9af0dee36b3b74b8414a3a61cf73e84911c75de6878a0b06830d19163f"},
-	{pattern: "E.24.UK", start: 89283, end: 89753, digest: "sha256:fedfbcfa395728cbac1d581a8c42aee97591aa37c61dcbfe19b8e7338ede6f20"},
-	{pattern: "F.6", start: 91603, end: 91920, digest: "sha256:f5df0818e5c611431c177e498a0812ce7eeac41bb08da7c5934a93a99e98fc47"},
+	{pattern: "A.1", start: 1488, end: 1848, digest: "sha256:161d9ae6e9ae47f679c80b3c73f687f61213e220faffa41a966a7fcad6c3c908"},
+	{pattern: "A.2.1", start: 3404, end: 3752, digest: "sha256:6b585cfd060767d855376f479289c50139a0c8e38df2b6c68fe890333e0ea91d"},
+	{pattern: "A.2.8", start: 6688, end: 7016, digest: "sha256:1024331b6962afb75d01df2673b2cf9e92997da6e63e6455ad58f22a168df705"},
+	{pattern: "A.2.8.PER", start: 7017, end: 7332, digest: "sha256:333f52fe0a2bfbdd0ec2d992eb84857728053500f141670b2088f2015e0a4017"},
+	{pattern: "A.3.1", start: 7954, end: 8412, digest: "sha256:4fcfa192bbb823cf1d39d31095e40f40da073fcf63b5e795e9b8ea08fa2142ad"},
+	{pattern: "A.3.2", start: 8619, end: 8950, digest: "sha256:737181fac774febb83353201179958910a4bb7a2e847969deae27689b53ea56f"},
+	{pattern: "A.3.4", start: 9275, end: 9665, digest: "sha256:ac471a764c25596eebb0ebc59b2afc8898a69d9d2086c4a271bdd2a7d7e3ad6c"},
+	{pattern: "A.6.REL", start: 12165, end: 12557, digest: "sha256:14c72fb1432631a55f9d9f130bab9104b8bc1e2df07899143ca4ef5b963c0be7"},
+	{pattern: "A.6.0", start: 12558, end: 12974, digest: "sha256:6de81923e4712c4a375e4cf200d7a8fce212f9a435d6ee331448185115e6c3ac"},
+	{pattern: "A.6.1", start: 12975, end: 13495, digest: "sha256:2e2a64099a23babd1e3990489e58d01cb4fea1a5ba716020075d366adb81244e"},
+	{pattern: "A.6.P.WMR", start: 16515, end: 16945, digest: "sha256:b9dc3b3f800c04b0aee527975bf6560f58744b69e956569a7adc200254b7daa6"},
+	{pattern: "A.6.5", start: 19176, end: 19546, digest: "sha256:a840af771d466e34710f0d676d3e6a23ad114b9a13408b5c52dab30d9d2559ef"},
+	{pattern: "A.10", start: 22645, end: 23024, digest: "sha256:7ad6698498ffec3f0c9bb4868eac013521c7e92406c456132c0262fab9e2a586"},
+	{pattern: "A.14", start: 24197, end: 24556, digest: "sha256:c6efcb8d43bc4f96a95dd6b9a1200b70b122d353d148bb2fc681cdf56dac404a"},
+	{pattern: "A.15.1", start: 24956, end: 25550, digest: "sha256:b5eb867468054a9f9d6f977603ce46f2135258c84ac9361831d203d52065ee2a"},
+	{pattern: "A.15.2", start: 25551, end: 25862, digest: "sha256:33b85898c4d0a3a2fe45b245bdbcc4f621b74de0258ba7a8d0d9f460fa981da4"},
+	{pattern: "A.15.3", start: 25863, end: 26181, digest: "sha256:b81586c6895f1029c170e81ce459fdb361ba41b51d1563a3ec92cdac95a6359a"},
+	{pattern: "A.15.PROD", start: 27882, end: 28443, digest: "sha256:9532791b4879c4713398bb2309c980c6e3ea959dfb08ad1cb31e16f90118a39f"},
+	{pattern: "A.18", start: 29608, end: 29759, digest: "sha256:b868bdbd0f495a6b65ea7721b2e2cbc6e6236c056bdb7fa7aac51ffe7ab91e4e"},
+	{pattern: "A.19.UNM", start: 32778, end: 33194, digest: "sha256:6ab506c49ee47472f0228a395cebe3cf7f8bd91296bdff796206e24a21fd7679"},
+	{pattern: "A.19.UINDM", start: 33195, end: 33482, digest: "sha256:6f2f511e4432ccb29a8b8756d4f4ecc274b4d7c56126e29e3af7a10f93684115"},
+	{pattern: "A.19.USCM", start: 33483, end: 33811, digest: "sha256:15cc863820ee814e55d3eaf15b289c3f2d177a9d8183b95d5bdf0fee1c0a7681"},
+	{pattern: "A.19.ULSAM", start: 33812, end: 34107, digest: "sha256:df1186f4faf6af34b7bfbf2e446c3ddc9a0de9fe267fa885296fb76149100e62"},
+	{pattern: "A.19.CPM", start: 34108, end: 34486, digest: "sha256:163ad299dbd0b09bb55e3603c7676556f2262b2e44056933a2100636e1490843"},
+	{pattern: "A.19.SelectorMechanism", start: 34487, end: 34907, digest: "sha256:4cba7db789460a08dcf8e8f57a5f80e18852133240883ef3d40615f30af9261e"},
+	{pattern: "C.2.1", start: 41905, end: 42497, digest: "sha256:0dc904083ece1841ebc3426025e0d003fac47c1336b8167f4aba49f6e55b4a20"},
+	{pattern: "C.11", start: 46888, end: 47607, digest: "sha256:39b9dffcb6cb17573de3fa61a0c1485aca44912759b47cd9cae1cbea3125788f"},
+	{pattern: "C.16", start: 48064, end: 48359, digest: "sha256:8d3094e45d3f66b45fc41b3c17d80b795d858d011da933236d2609909efe1ba0"},
+	{pattern: "C.18", start: 49866, end: 50168, digest: "sha256:f236017dab806e47b33956f503364dcbf77bedd7ca40f758d8b41493ae3e72f4"},
+	{pattern: "C.22", start: 51645, end: 52028, digest: "sha256:13ec100015b89aeeb25127421d8d38ead2992ba8bf27dcc6a896eb8d7800a83c"},
+	{pattern: "C.22.2", start: 52511, end: 53168, digest: "sha256:e406442362b1d6e9007499c195a993a31656043ddf253d1dd2b66aaf3ca82ea7"},
+	{pattern: "C.28", start: 56495, end: 57251, digest: "sha256:e6241de7b037be154e367ff8b5621ce71be5345f0a619c434bc05cacff0866f2"},
+	{pattern: "C.30", start: 58619, end: 59326, digest: "sha256:adef223abb4d30c4a52c4ba1306efd5b17ac5004f0300fc3bae3790e8a74c908"},
+	{pattern: "E.11.PUR", start: 79499, end: 79787, digest: "sha256:35cf14bfe57c2973781d4ff3f9ef5b8e173a297b731a2027b42b85a49a00755f"},
+	{pattern: "E.17", start: 82706, end: 83294, digest: "sha256:3c67a248dea5efc1c4abcd57486497c5933cc5ad3db34e2d3841008582468718"},
+	{pattern: "E.18", start: 85557, end: 86151, digest: "sha256:4017d6001db978b9c080e0fe98d1168f65611052883b169be54c55aeaf87e961"},
+	{pattern: "E.18.NET", start: 87420, end: 87837, digest: "sha256:7208116c9a3ffa22d94f24f91088d4e733789a7414f1b4b9b130e7396376a295"},
+	{pattern: "E.24.PUB", start: 91920, end: 92201, digest: "sha256:4b1a831eb690d99800ca3a2ef395a6623c3ba00398f3fc2dd4ad54604a3301cf"},
+	{pattern: "E.24.UK", start: 92202, end: 92678, digest: "sha256:1d5efe3a4c4fbef8152d63de2607dac3b27813aaf3820db6fb0dfbf990400cb7"},
+	{pattern: "F.6", start: 94536, end: 94897, digest: "sha256:6c660424932acc75c6c608f9ef7409f7b49a148abbd802def01c404ea0bad333"},
 }
 
 type sourceConformanceSource struct {
@@ -151,16 +151,15 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 		},
 	},
 	{
-		key:     "role_assignment",
+		key:     "simple_system_role_assignment",
 		pattern: "A.2.1",
-		// A.2.1 owns the four world-side participants; A.6.5 supplies the
-		// signature discipline and E.24.UK settles the dependent relation kind.
-		// AssignmentInterval is assertion or occurrence-description content.
+		// This oracle-local signature represents one directly declared simple
+		// species under U.SystemRoleAssignment. The family has no permissive root
+		// signature. Taxonomy, scheme, and interval stay in assertion or
+		// interpretation content rather than becoming generic participants.
 		slots: []sourceConformanceSlotSpec{
 			{name: "HolderSystemSlot", kind: "U.System"},
-			{name: "RoleValueSlot", kind: "U.Role"},
-			{name: "RoleTaxonomyEpistemeSlot", kind: "U.Episteme"},
-			{name: "EffectiveReferenceSchemeSlot", kind: "U.ReferenceScheme"},
+			{name: "AssignedSystemRoleKindSlot", kind: "G3.AssignedSystemRoleKind"},
 		},
 	},
 	{
@@ -168,7 +167,7 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 		pattern: "F.6",
 		slots: []sourceConformanceSlotSpec{
 			{name: "WorkOccurrenceSlot", kind: "U.Work"},
-			{name: "RoleAssignmentSlot", kind: "U.RoleAssignment"},
+			{name: "SystemRoleAssignmentSlot", kind: "U.SystemRoleAssignment"},
 		},
 	},
 	{
@@ -339,14 +338,13 @@ var sourceConformanceRelationSpecs = []sourceConformanceRelationSpec{
 	{
 		key:     "work_occurrence_basis",
 		pattern: "A.15.1",
-		// This oracle-local admission boundary exposes the minimum current facts
-		// used by this case. It does not turn them into fields of Work, make the
-		// relations obtain, or absorb optional work-to-referent, resource-use,
-		// and declaration-local binding facts.
+		// This oracle-local admission boundary includes the A.13 performer core,
+		// including its obtaining assignment, plus the independent A.15.1 Work
+		// basis. It does not encode the optional F.6 assignment-bound attribution.
 		slots: []sourceConformanceSlotSpec{
 			{name: "WorkOccurrenceSlot", kind: "U.Work"},
 			{name: "ActualPerformerSystemSlot", kind: "U.System"},
-			{name: "CoveringRoleAssignmentSlot", kind: "U.RoleAssignment"},
+			{name: "AgencyBasisAssignmentSlot", kind: "U.SystemRoleAssignment"},
 			{name: "EnactedMethodSlot", kind: "U.Method"},
 			{name: "TemporalExtentSlot", kind: "G3.TemporalExtent"},
 			{name: "ContainingSystemSlot", kind: "U.System"},
@@ -487,35 +485,27 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		assertSourceConformanceTypeAdmission(t, valid)
 	})
 
-	t.Run("role assignment needs all four current relation participants", func(t *testing.T) {
+	t.Run("simple system-role assignment species needs holder and assigned-kind participants", func(t *testing.T) {
 		snapshot := fixture.snapshot()
 		system := fixture.reference(t, snapshot, "case2-system", "U.System")
-		role := fixture.reference(t, snapshot, "case2-role", "U.Role")
-		taxonomy := fixture.reference(t, snapshot, "case2-role-taxonomy", "U.Episteme")
-		referenceScheme := fixture.reference(t, snapshot, "case2-reference-scheme", "U.ReferenceScheme")
+		role := fixture.reference(t, snapshot, "case2-role", "G3.AssignedSystemRoleKind")
 		unknown := fixture.reference(t, snapshot, "case2-unclassified-holder", "")
 
-		invalid := fixture.validate(t, snapshot, "role_assignment", []sourceConformanceBinding{
+		invalid := fixture.validate(t, snapshot, "simple_system_role_assignment", []sourceConformanceBinding{
 			{slot: "HolderSystemSlot", filler: role},
-			{slot: "RoleValueSlot", filler: role},
-			{slot: "RoleTaxonomyEpistemeSlot", filler: taxonomy},
-			{slot: "EffectiveReferenceSchemeSlot", filler: referenceScheme},
+			{slot: "AssignedSystemRoleKindSlot", filler: role},
 		})
 		assertSourceConformanceRejected(t, invalid, ValidationInvalid, DiagnosticEntityKindMismatch)
 
-		valid := fixture.validate(t, snapshot, "role_assignment", []sourceConformanceBinding{
+		valid := fixture.validate(t, snapshot, "simple_system_role_assignment", []sourceConformanceBinding{
 			{slot: "HolderSystemSlot", filler: system},
-			{slot: "RoleValueSlot", filler: role},
-			{slot: "RoleTaxonomyEpistemeSlot", filler: taxonomy},
-			{slot: "EffectiveReferenceSchemeSlot", filler: referenceScheme},
+			{slot: "AssignedSystemRoleKindSlot", filler: role},
 		})
 		assertSourceConformanceTypeAdmission(t, valid)
 
-		underdetermined := fixture.validate(t, snapshot, "role_assignment", []sourceConformanceBinding{
+		underdetermined := fixture.validate(t, snapshot, "simple_system_role_assignment", []sourceConformanceBinding{
 			{slot: "HolderSystemSlot", filler: unknown},
-			{slot: "RoleValueSlot", filler: role},
-			{slot: "RoleTaxonomyEpistemeSlot", filler: taxonomy},
-			{slot: "EffectiveReferenceSchemeSlot", filler: referenceScheme},
+			{slot: "AssignedSystemRoleKindSlot", filler: role},
 		})
 		assertSourceConformanceRejected(t, underdetermined, ValidationUnderdetermined, DiagnosticTypeRuleUnavailable)
 	})
@@ -530,18 +520,18 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		snapshot := fixture.snapshot()
 		plan := fixture.reference(t, snapshot, "case3-plan", "U.WorkPlan")
 		work := fixture.reference(t, snapshot, "case3-work", "U.Work")
-		assignment := fixture.reference(t, snapshot, "case3-role-assignment", "U.RoleAssignment")
+		assignment := fixture.reference(t, snapshot, "case3-role-assignment", "U.SystemRoleAssignment")
 
 		invalid := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: plan},
-			{slot: "RoleAssignmentSlot", filler: assignment},
+			{slot: "SystemRoleAssignmentSlot", filler: assignment},
 		})
 		assertSourceConformanceRejected(t, invalid, ValidationInvalid, DiagnosticEntityKindMismatch)
 		assertSourceConformanceTypeAdmission(
 			t,
 			fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 				{slot: "WorkOccurrenceSlot", filler: work},
-				{slot: "RoleAssignmentSlot", filler: assignment},
+				{slot: "SystemRoleAssignmentSlot", filler: assignment},
 			}),
 		)
 		assertSourceConformanceTypeAdmission(
@@ -645,7 +635,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		snapshot := fixture.snapshot()
 		signature := fixture.reference(t, snapshot, "case5-task-signature", "C.22.TaskSignature")
 		problem := fixture.reference(t, snapshot, "case5-problem-card", "C.22.2.ProblemCard")
-		assignment := fixture.reference(t, snapshot, "case5-role-assignment", "U.RoleAssignment")
+		assignment := fixture.reference(t, snapshot, "case5-role-assignment", "U.SystemRoleAssignment")
 
 		for label, candidate := range map[string]ByReferenceCandidate{
 			"task-signature": signature,
@@ -654,7 +644,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			t.Run(label, func(t *testing.T) {
 				performed := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 					{slot: "WorkOccurrenceSlot", filler: candidate},
-					{slot: "RoleAssignmentSlot", filler: assignment},
+					{slot: "SystemRoleAssignmentSlot", filler: assignment},
 				})
 				assertSourceConformanceRejected(t, performed, ValidationInvalid, DiagnosticEntityKindMismatch)
 			})
@@ -792,17 +782,13 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{label: "carrier-field", kind: "G3.CarrierField"},
 			{label: "participant-designation", kind: "G3.ParticipantDesignation"},
 		}
-		role := fixture.reference(t, snapshot, "case11-role", "U.Role")
-		taxonomy := fixture.reference(t, snapshot, "case11-taxonomy", "U.Episteme")
-		referenceScheme := fixture.reference(t, snapshot, "case11-reference-scheme", "U.ReferenceScheme")
+		role := fixture.reference(t, snapshot, "case11-role", "G3.AssignedSystemRoleKind")
 		for _, candidate := range wrongParticipantCandidates {
 			t.Run(candidate.label, func(t *testing.T) {
 				filler := fixture.reference(t, snapshot, "case11-"+candidate.label, candidate.kind)
-				verdict := fixture.validate(t, snapshot, "role_assignment", []sourceConformanceBinding{
+				verdict := fixture.validate(t, snapshot, "simple_system_role_assignment", []sourceConformanceBinding{
 					{slot: "HolderSystemSlot", filler: filler},
-					{slot: "RoleValueSlot", filler: role},
-					{slot: "RoleTaxonomyEpistemeSlot", filler: taxonomy},
-					{slot: "EffectiveReferenceSchemeSlot", filler: referenceScheme},
+					{slot: "AssignedSystemRoleKindSlot", filler: role},
 				})
 				assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 			})
@@ -826,11 +812,9 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		if designation.Reference().ReferenceKey() == participant.Entity().String() {
 			t.Fatal("designation reference collapsed into its world-side participant")
 		}
-		resolvedAssignment := fixture.validate(t, snapshot, "role_assignment", []sourceConformanceBinding{
+		resolvedAssignment := fixture.validate(t, snapshot, "simple_system_role_assignment", []sourceConformanceBinding{
 			{slot: "HolderSystemSlot", filler: designation},
-			{slot: "RoleValueSlot", filler: role},
-			{slot: "RoleTaxonomyEpistemeSlot", filler: taxonomy},
-			{slot: "EffectiveReferenceSchemeSlot", filler: referenceScheme},
+			{slot: "AssignedSystemRoleKindSlot", filler: role},
 		})
 		assertSourceConformanceTypeAdmission(t, resolvedAssignment)
 	})
@@ -1058,7 +1042,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			"U.System",
 			"G3.TargetSystemLabel",
 			"G3.SystemOfInterestLabel",
-			"U.RoleAssignment",
+			"U.SystemRoleAssignment",
 			"U.Work",
 		})
 		for _, forbiddenKind := range []string{
@@ -1080,7 +1064,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}{
 			{label: "target-system-label", kind: "G3.TargetSystemLabel"},
 			{label: "system-of-interest-label", kind: "G3.SystemOfInterestLabel"},
-			{label: "role-assignment", kind: "U.RoleAssignment"},
+			{label: "role-assignment", kind: "U.SystemRoleAssignment"},
 			{label: "project-work", kind: "U.Work"},
 		}
 		for _, confused := range confusedActors {
@@ -1095,14 +1079,11 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 
 		system := fixture.reference(t, snapshot, "case16-system", "U.System")
-		role := fixture.reference(t, snapshot, "case16-role", "U.Role")
-		taxonomy := fixture.reference(t, snapshot, "case16-taxonomy", "U.Episteme")
+		role := fixture.reference(t, snapshot, "case16-role", "G3.AssignedSystemRoleKind")
 		referenceScheme := fixture.reference(t, snapshot, "case16-reference-scheme", "U.ReferenceScheme")
-		assignment := fixture.validate(t, snapshot, "role_assignment", []sourceConformanceBinding{
+		assignment := fixture.validate(t, snapshot, "simple_system_role_assignment", []sourceConformanceBinding{
 			{slot: "HolderSystemSlot", filler: system},
-			{slot: "RoleValueSlot", filler: role},
-			{slot: "RoleTaxonomyEpistemeSlot", filler: taxonomy},
-			{slot: "EffectiveReferenceSchemeSlot", filler: referenceScheme},
+			{slot: "AssignedSystemRoleKindSlot", filler: role},
 		})
 		assertSourceConformanceTypeAdmission(t, assignment)
 
@@ -1235,7 +1216,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 		assertSourceConformanceDistinctKinds(t, fixture, resultKinds)
 		snapshot := fixture.snapshot()
-		assignment := fixture.reference(t, snapshot, "case19-role-assignment", "U.RoleAssignment")
+		assignment := fixture.reference(t, snapshot, "case19-role-assignment", "U.SystemRoleAssignment")
 		for _, kind := range resultKinds {
 			if kind == "U.Work" {
 				continue
@@ -1243,7 +1224,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			candidate := fixture.reference(t, snapshot, "case19-work-as-"+kind, kind)
 			verdict := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 				{slot: "WorkOccurrenceSlot", filler: candidate},
-				{slot: "RoleAssignmentSlot", filler: assignment},
+				{slot: "SystemRoleAssignmentSlot", filler: assignment},
 			})
 			assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 		}
@@ -1251,7 +1232,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		work := fixture.reference(t, snapshot, "case19-performed-work", "U.Work")
 		typedWork := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: work},
-			{slot: "RoleAssignmentSlot", filler: assignment},
+			{slot: "SystemRoleAssignmentSlot", filler: assignment},
 		})
 		assertSourceConformanceTypeAdmission(t, typedWork)
 	})
@@ -1353,7 +1334,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		}
 		assertSourceConformanceDistinctKinds(t, fixture, semanticKinds)
 		snapshot := fixture.snapshot()
-		assignment := fixture.reference(t, snapshot, "case21-role-assignment", "U.RoleAssignment")
+		assignment := fixture.reference(t, snapshot, "case21-role-assignment", "U.SystemRoleAssignment")
 		for _, kind := range semanticKinds {
 			if kind == "U.Work" {
 				continue
@@ -1361,7 +1342,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			candidate := fixture.reference(t, snapshot, "case21-work-as-"+kind, kind)
 			verdict := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 				{slot: "WorkOccurrenceSlot", filler: candidate},
-				{slot: "RoleAssignmentSlot", filler: assignment},
+				{slot: "SystemRoleAssignmentSlot", filler: assignment},
 			})
 			assertSourceConformanceRejected(t, verdict, ValidationInvalid, DiagnosticEntityKindMismatch)
 		}
@@ -1390,7 +1371,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 
 		performed := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: work},
-			{slot: "RoleAssignmentSlot", filler: assignment},
+			{slot: "SystemRoleAssignmentSlot", filler: assignment},
 		})
 		assertSourceConformanceTypeAdmission(t, performed)
 	})
@@ -1713,7 +1694,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 	t.Run("work records logs field bundles and successful commands are not work occurrences", func(t *testing.T) {
 		snapshot := fixture.snapshot()
 		actualPerformer := fixture.reference(t, snapshot, "case28-actual-performer", "U.System")
-		assignment := fixture.reference(t, snapshot, "case28-covering-assignment", "U.RoleAssignment")
+		assignment := fixture.reference(t, snapshot, "case28-covering-assignment", "U.SystemRoleAssignment")
 		method := fixture.reference(t, snapshot, "case28-method", "U.Method")
 		extent := fixture.reference(t, snapshot, "case28-temporal-extent", "G3.TemporalExtent")
 		system := fixture.reference(t, snapshot, "case28-containing-system", "U.System")
@@ -1732,7 +1713,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 				verdict := fixture.validate(t, snapshot, "work_occurrence_basis", []sourceConformanceBinding{
 					{slot: "WorkOccurrenceSlot", filler: candidate},
 					{slot: "ActualPerformerSystemSlot", filler: actualPerformer},
-					{slot: "CoveringRoleAssignmentSlot", filler: assignment},
+					{slot: "AgencyBasisAssignmentSlot", filler: assignment},
 					{slot: "EnactedMethodSlot", filler: method},
 					{slot: "TemporalExtentSlot", filler: extent},
 					{slot: "ContainingSystemSlot", filler: system},
@@ -1745,7 +1726,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		unknown := fixture.validate(t, snapshot, "work_occurrence_basis", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: unknownWork},
 			{slot: "ActualPerformerSystemSlot", filler: actualPerformer},
-			{slot: "CoveringRoleAssignmentSlot", filler: assignment},
+			{slot: "AgencyBasisAssignmentSlot", filler: assignment},
 			{slot: "EnactedMethodSlot", filler: method},
 			{slot: "TemporalExtentSlot", filler: extent},
 			{slot: "ContainingSystemSlot", filler: system},
@@ -1756,7 +1737,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 		identified := fixture.validate(t, snapshot, "work_occurrence_basis", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: work},
 			{slot: "ActualPerformerSystemSlot", filler: actualPerformer},
-			{slot: "CoveringRoleAssignmentSlot", filler: assignment},
+			{slot: "AgencyBasisAssignmentSlot", filler: assignment},
 			{slot: "EnactedMethodSlot", filler: method},
 			{slot: "TemporalExtentSlot", filler: extent},
 			{slot: "ContainingSystemSlot", filler: system},
@@ -1785,10 +1766,10 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			})
 		}
 
-		assignment := fixture.reference(t, snapshot, "case29-role-assignment", "U.RoleAssignment")
+		assignment := fixture.reference(t, snapshot, "case29-role-assignment", "U.SystemRoleAssignment")
 		futureAsWork := fixture.validate(t, snapshot, "work_performed_under_assignment", []sourceConformanceBinding{
 			{slot: "WorkOccurrenceSlot", filler: future},
-			{slot: "RoleAssignmentSlot", filler: assignment},
+			{slot: "SystemRoleAssignmentSlot", filler: assignment},
 		})
 		assertSourceConformanceRejected(t, futureAsWork, ValidationUnderdetermined, DiagnosticTypeRuleUnavailable)
 
@@ -1915,7 +1896,7 @@ func TestSourceConformanceCategoryErrorCorpus(t *testing.T) {
 			{label: "repository", kind: "G3.RepositoryCarrier"},
 			{label: "profile", kind: "G3.Profile"},
 			{label: "target-label", kind: "G3.TargetSystemLabel"},
-			{label: "role-assignment", kind: "U.RoleAssignment"},
+			{label: "role-assignment", kind: "U.SystemRoleAssignment"},
 			{label: "capability", kind: "G3.Capability"},
 			{label: "component-name", kind: "G3.ComponentName"},
 			{label: "host-agent-reference", kind: "G3.HostAgentReference"},
@@ -2061,8 +2042,9 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{kind: "U.Episteme", pattern: "C.2.1"},
 		{kind: "U.Relation", pattern: "A.6.REL"},
 		{kind: "U.Signature", pattern: "A.6.0"},
-		{kind: "U.Role", pattern: "E.24.UK"},
-		{kind: "U.RoleAssignment", pattern: "E.24.UK"},
+		{kind: "U.Kind", pattern: "E.24.UK"},
+		{kind: "G3.AssignedSystemRoleKind", pattern: "A.2.1"},
+		{kind: "U.SystemRoleAssignment", pattern: "A.2.1"},
 		{kind: "U.ReferenceScheme", pattern: "C.2.1"},
 		{kind: "U.Method", pattern: "A.3.1"},
 		{kind: "U.MethodDescription", pattern: "A.3.2"},
@@ -2258,8 +2240,9 @@ func newSourceConformanceFixture(t *testing.T) sourceConformanceFixture {
 		{subkind: "U.Episteme", superkind: "U.Holon", pattern: "C.2.1"},
 		{subkind: "U.Relation", superkind: "U.Entity", pattern: "A.6.REL"},
 		{subkind: "U.Signature", superkind: "U.Episteme", pattern: "A.6.0"},
-		{subkind: "U.Role", superkind: "U.Entity", pattern: "E.24.UK"},
-		{subkind: "U.RoleAssignment", superkind: "U.Relation", pattern: "E.24.UK"},
+		{subkind: "U.Kind", superkind: "U.Entity", pattern: "E.24.UK"},
+		{subkind: "G3.AssignedSystemRoleKind", superkind: "U.Kind", pattern: "A.2.1"},
+		{subkind: "U.SystemRoleAssignment", superkind: "U.Relation", pattern: "A.2.1"},
 		{subkind: "U.ReferenceScheme", superkind: "U.Entity", pattern: "C.2.1"},
 		{subkind: "U.Method", superkind: "U.Holon", pattern: "A.3.1"},
 		{subkind: "U.MethodDescription", superkind: "U.Episteme", pattern: "A.3.2"},
@@ -2639,7 +2622,7 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		}
 	}
 	addNotMember("U.WorkPlan", "U.System", "A.14")
-	addNotMember("U.Role", "U.System", "A.2.1")
+	addNotMember("G3.AssignedSystemRoleKind", "U.System", "A.2.1")
 	addNotMember("U.WorkPlan", "U.Work", "A.15.1")
 	addNotMember("U.PresentationCarrier", "U.Episteme", "E.17")
 	addNotMember("U.Episteme", "U.PresentationCarrier", "E.24.PUB")
@@ -2681,7 +2664,7 @@ func (fixture sourceConformanceFixture) snapshot() *sourceConformanceSnapshot {
 		"G3.RepositoryCarrier",
 		"G3.TargetSystemLabel",
 		"G3.SystemOfInterestLabel",
-		"U.RoleAssignment",
+		"U.SystemRoleAssignment",
 		"U.Work",
 	}, "U.System", "A.1")
 	addNotMembers([]string{

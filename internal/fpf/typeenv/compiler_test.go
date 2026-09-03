@@ -19,11 +19,11 @@ func TestPinnedPublicationCompilesArtifactAndRuntimeTypeEnv(t *testing.T) {
 	if !ok {
 		t.Fatalf("CompileBaseTypeEnv() = %T, diagnostics = %v", result, result.Diagnostics())
 	}
-	if result.CompilerSchemaVersion().String() != BaseTypeEnvCompilerSchemaV5 {
-		t.Fatalf("compiler schema = %q, want v5", result.CompilerSchemaVersion().String())
+	if result.CompilerSchemaVersion().String() != BaseTypeEnvCompilerSchemaV6 {
+		t.Fatalf("compiler schema = %q, want v6", result.CompilerSchemaVersion().String())
 	}
-	if BaseTypeEnvCompilerSchemaV4 == BaseTypeEnvCompilerSchemaV5 {
-		t.Fatal("v5 compiler silently relabelled the historical v4 edition")
+	if BaseTypeEnvCompilerSchemaV5 == BaseTypeEnvCompilerSchemaV6 {
+		t.Fatal("v6 compiler silently relabelled the historical v5 edition")
 	}
 	artifact, exists := accepted.Artifact()
 	if !exists {

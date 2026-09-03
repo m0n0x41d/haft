@@ -8,6 +8,197 @@ import (
 	"testing"
 )
 
+func TestValidateReadmeCarrierRootsAcceptsExactHistoricalAndEcosystemTitles(t *testing.T) {
+	t.Parallel()
+
+	spec := []byte(strings.Join([]string{
+		"# First Principles Framework (FPF) - Core Conceptual Specification",
+		"# Table of Contents",
+		"# First Principles Framework (FPF) Readme",
+		"# **Preface** (non-normative)",
+	}, "\n"))
+	specAtlas, err := BuildPatternAtlas(spec, "FPF-Spec.md", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name    string
+		readme  string
+		wantErr bool
+	}{
+		{
+			name:   "historical Core title",
+			readme: "# First Principles Framework (FPF) - Core Conceptual Specification\n",
+		},
+		{
+			name:   "current ecosystem title",
+			readme: "# First Principles Framework (FPF)\n",
+		},
+		{
+			name: "fenced H1 example is not a publication root",
+			readme: strings.Join([]string{
+				"# First Principles Framework (FPF)",
+				"```text",
+				"# Example shell comment",
+				"```",
+			}, "\n"),
+		},
+		{
+			name:    "unrelated leading H1",
+			readme:  "# Unrelated publication\n",
+			wantErr: true,
+		},
+		{
+			name:    "supported H1 after front matter",
+			readme:  "intro\n# First Principles Framework (FPF)\n",
+			wantErr: true,
+		},
+		{
+			name: "multiple H1 roots",
+			readme: strings.Join([]string{
+				"# First Principles Framework (FPF)",
+				"# Another product",
+			}, "\n"),
+			wantErr: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			readmeAtlas, err := BuildPatternAtlas(
+				[]byte(test.readme),
+				"Readme.md",
+				"candidate",
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = validateReadmeCarrierRoots(readmeAtlas, specAtlas)
+			if test.wantErr && err == nil {
+				t.Fatal("validateReadmeCarrierRoots() accepted unsupported root structure")
+			}
+			if !test.wantErr && err != nil {
+				t.Fatalf("validateReadmeCarrierRoots() error = %v", err)
+			}
+		})
+	}
+}
+
+func TestPracticalUseCardSourcesAcceptsOneEntrySetWithTwoForms(t *testing.T) {
+	t.Parallel()
+
+	markdown := []byte(strings.Join([]string{
+		"# First Principles Framework (FPF) - Core Conceptual Specification",
+		"# First Principles Framework (FPF) Readme",
+		"## Practical entries",
+		"These are examples, not a catalogue.",
+		"### DIRECT-ENTRY — Use one direct pattern",
+		"- **Situation:** One direct question is current.",
+		"- **Question:** What is the direct result?",
+		"- **First useful result or honest blocker:** One direct result.",
+		"- **Start with:** `A.1`.",
+		"- **Stop or return:** Stop at that result.",
+		"### Practical-Use Cards",
+		"Selected examples of extended cross-pattern use.",
+		"#### COMPOSED-CARD — Keep several contributions visible",
+		"- **Situation:** Several contributions are current.",
+		"- **Question:** Which result is needed?",
+		"- **First useful result or honest blocker:** One bounded result.",
+		"- **Mantra:** Keep each contribution distinct.",
+		"- **Start with:** `A.7` and `E.11`.",
+		"- **Stop or return:** Stop at the bounded result.",
+		"##### Expansion for COMPOSED-CARD",
+		"Optional explanation.",
+		"# **Preface** (non-normative)",
+	}, "\n"))
+	document := SourceDocument{
+		Path:           "FPF-Spec.md",
+		SourceRevision: "candidate",
+		Markdown:       markdown,
+	}
+	atlas, err := BuildPatternAtlas(markdown, document.Path, document.SourceRevision)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sources, err := practicalUseCardSources(document, atlas)
+	if err != nil {
+		t.Fatalf("practicalUseCardSources() error = %v", err)
+	}
+	if len(sources) != 2 {
+		t.Fatalf("practical entry sources = %d, want 2: %#v", len(sources), sources)
+	}
+	if sources[0].SourceID != "DIRECT-ENTRY" || sources[1].SourceID != "COMPOSED-CARD" {
+		t.Fatalf("practical entry identities = %q, %q", sources[0].SourceID, sources[1].SourceID)
+	}
+	if strings.Contains(sources[0].Body, "Practical-Use Cards") {
+		t.Fatal("ordinary H3 entry absorbed the selected-card group")
+	}
+	if !strings.Contains(sources[1].Body, "Expansion for COMPOSED-CARD") {
+		t.Fatal("selected H4 card lost its same-key H5 expansion")
+	}
+}
+
+func TestPracticalUseCardSourcesRejectsEmptyCardGroupAndDuplicateKey(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		entryLines []string
+		want       string
+	}{
+		{
+			name: "empty selected-card group",
+			entryLines: []string{
+				"### DIRECT — Direct entry",
+				"### Practical-Use Cards",
+				"Group explanation without a card.",
+			},
+			want: "contains no H4 cards",
+		},
+		{
+			name: "duplicate key across forms",
+			entryLines: []string{
+				"### SAME-KEY — Direct entry",
+				"### Practical-Use Cards",
+				"Selected cards.",
+				"#### SAME-KEY — Selected card",
+			},
+			want: "duplicates line",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			lines := []string{
+				"# First Principles Framework (FPF) - Core Conceptual Specification",
+				"# First Principles Framework (FPF) Readme",
+				"## Practical entries",
+			}
+			lines = append(lines, test.entryLines...)
+			lines = append(lines, "# **Preface** (non-normative)")
+			markdown := []byte(strings.Join(lines, "\n"))
+			document := SourceDocument{
+				Path:           "FPF-Spec.md",
+				SourceRevision: "candidate",
+				Markdown:       markdown,
+			}
+			atlas, err := BuildPatternAtlas(markdown, document.Path, document.SourceRevision)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = practicalUseCardSources(document, atlas)
+			if err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("practicalUseCardSources() error = %v, want %q", err, test.want)
+			}
+		})
+	}
+}
+
 func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 	readmePath := filepath.Join("..", "..", "data", "FPF", "Readme.md")
 	specPath := filepath.Join("..", "..", "data", "FPF", "FPF-Spec.md")
@@ -74,8 +265,8 @@ func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 	if counts[SourceUnitRolePracticalUseCard] == 0 || counts[SourceUnitRolePreface] == 0 || counts[SourceUnitRoleTOCRow] == 0 || counts[SourceUnitRolePatternBody] == 0 || counts[SourceUnitRolePatternSection] == 0 {
 		t.Fatalf("missing required source roles: %#v", counts)
 	}
-	if counts[SourceUnitRolePracticalUseCard] != 16 {
-		t.Fatalf("practical-use card count = %d, want exact current publication count 16", counts[SourceUnitRolePracticalUseCard])
+	if counts[SourceUnitRolePracticalUseCard] != 22 {
+		t.Fatalf("practical-use entry count = %d, want exact current publication count 22", counts[SourceUnitRolePracticalUseCard])
 	}
 	if legacySystemInContext.UnitID != "" {
 		t.Fatal("removed SYSTEM-IN-CONTEXT card remained a current practical-use source unit")
@@ -89,8 +280,8 @@ func TestLoadSourceUnits_ProductionGrammarAndProvenance(t *testing.T) {
 		}
 	}
 	if !containsSourceString(systemRecognition.DirectRefs, "A.1.SCR") ||
-		!containsSourceString(systemRecognition.DirectRefs, "A.1") {
-		t.Fatalf("SYSTEM-RECOGNITION direct refs = %#v, want A.1.SCR and A.1", systemRecognition.DirectRefs)
+		containsSourceString(systemRecognition.DirectRefs, "A.1") {
+		t.Fatalf("SYSTEM-RECOGNITION direct refs = %#v, want exact current ref A.1.SCR", systemRecognition.DirectRefs)
 	}
 	for _, want := range []string{"B.1.2", "A.14", "C.13"} {
 		if !containsSourceString(systemDelimitation.DirectRefs, want) {
@@ -156,9 +347,9 @@ func TestBuildSourceUnits_PracticalUseCardsComeFromEmbeddedReadmeCarrier(t *test
 		t.Fatalf("architecture card source path = %q; want embedded carrier %q", architecture.Provenance.SourcePath, specPath)
 	}
 
-	const sourcePhrase = "Architecture-relevant problem pressure"
+	const standalonePhrase = "Architecture, an architecture description, and an architecture decision"
 	const standaloneMarker = "STANDALONE-COMPANION-ONLY"
-	mutatedReadme := strings.Replace(string(readme), sourcePhrase, standaloneMarker, 1)
+	mutatedReadme := strings.Replace(string(readme), standalonePhrase, standaloneMarker, 1)
 	if mutatedReadme == string(readme) {
 		t.Fatal("standalone README fixture did not contain the architecture-card phrase")
 	}
@@ -177,8 +368,9 @@ func TestBuildSourceUnits_PracticalUseCardsComeFromEmbeddedReadmeCarrier(t *test
 		t.Fatal("standalone companion text became practical-use semantic authority")
 	}
 
+	const embeddedPhrase = "A system or another architecture subject must produce an outside result"
 	const embeddedMarker = "EMBEDDED-CURRENT-CARD"
-	mutatedSpec := strings.Replace(string(spec), sourcePhrase, embeddedMarker, 1)
+	mutatedSpec := strings.Replace(string(spec), embeddedPhrase, embeddedMarker, 1)
 	if mutatedSpec == string(spec) {
 		t.Fatal("embedded README fixture did not contain the architecture-card phrase")
 	}

@@ -28,6 +28,8 @@ const (
 	p14HistoricalMismatchExtractCompressedDigest = "sha256:753ca7a6ec8e6d6fc2f200d1a6e39d86fb1d8433daf603fafd50c96d1bc649a2"
 	p14HistoricalMismatchExtractEncoding         = "gzip+base64"
 	p14HistoricalMismatchExtractLimit            = 1 << 20
+	p14HistoricalPreparedCarrierSchema           = "haft.p14.prepared-request-oracle/v1"
+	p14HistoricalPreparedInputSchema             = "haft.p14.prepared-request-oracle-input/v1"
 )
 
 type p14HistoricalMismatchDisposition uint8
@@ -1019,11 +1021,11 @@ func verifyP14HistoricalExtractPreparedHeader(
 	source p14HistoricalMismatchEvidenceSource,
 	header p14HistoricalMismatchPreparedHeader,
 ) error {
-	if header.Schema != p14PreparedCarrierSchema ||
+	if header.Schema != p14HistoricalPreparedCarrierSchema ||
 		header.Status != p14ContractStatus ||
 		header.CarrierPath != source.PreparedPath ||
 		header.PreparationDigest != source.PreparationDigest ||
-		header.Preparation.Schema != p14PreparedInputSchema ||
+		header.Preparation.Schema != p14HistoricalPreparedInputSchema ||
 		header.Preparation.Status != p14ContractStatus ||
 		header.Preparation.ContractRef == "" ||
 		!validP14Digest(header.Preparation.ContractDigest) ||
@@ -1784,16 +1786,27 @@ func p14HistoricalPreparationDigest(
 	raw []byte,
 ) (string, error) {
 	var envelope struct {
-		Preparation preparedRequestOracleInput `json:"preparation"`
+		Schema      string          `json:"schema"`
+		Preparation json.RawMessage `json:"preparation"`
 	}
 	if err := json.Unmarshal(raw, &envelope); err != nil {
 		return "", fmt.Errorf("decode historical P14 preparation envelope: %w", err)
 	}
-	canonical, err := marshalP14CanonicalJSON(envelope.Preparation)
-	if err != nil {
-		return "", err
+	var header struct {
+		Schema string `json:"schema"`
 	}
-	return p14Digest(canonical), nil
+	if err := json.Unmarshal(envelope.Preparation, &header); err != nil {
+		return "", fmt.Errorf("decode historical P14 preparation header: %w", err)
+	}
+	if envelope.Schema != p14HistoricalPreparedCarrierSchema ||
+		header.Schema != p14HistoricalPreparedInputSchema {
+		return "", fmt.Errorf("historical P14 preparation schema differs")
+	}
+	var canonical bytes.Buffer
+	if err := json.Compact(&canonical, envelope.Preparation); err != nil {
+		return "", fmt.Errorf("compact historical P14 v1 preparation: %w", err)
+	}
+	return p14Digest(canonical.Bytes()), nil
 }
 
 func findP14HistoricalCapturedScenario(

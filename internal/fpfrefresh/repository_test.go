@@ -904,7 +904,7 @@ func cachedEffectsQueryDatabase(
 		[]string{
 			effectsQueryDatabaseCacheContract,
 			fpf.SpecIndexSchemaVersion,
-			typeenv.BaseTypeEnvCompilerSchemaV5,
+			typeenv.BaseTypeEnvCompilerSchemaV6,
 			revision,
 			digestBytesSHA256(readme),
 			digestBytesSHA256(specification),

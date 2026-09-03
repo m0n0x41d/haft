@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	buildinfo "debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
+	"runtime/debug"
 	"slices"
 	"strings"
 	"testing"
@@ -21,16 +24,19 @@ import (
 )
 
 const (
-	p14SealInputEnvironmentKey = "HAFT_P14_SEAL_PREPARED_INPUT"
-	p14P13EvidencePathKey      = "HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE"
-	p14P13EvidenceDigestKey    = "HAFT_P13_VERIFY_ACCEPTANCE_DIGEST"
-	p14PreparedInputSchema     = "haft.p14.prepared-request-oracle-input/v1"
-	p14PreparedCarrierSchema   = "haft.p14.prepared-request-oracle/v1"
-	p14RequiredP13Schema       = "haft.p13.acceptance-evidence/v3"
-	p14PreparedSemantics       = "Exact P14 requests and pre-install oracles prepared for later installed execution. This carrier is not performed Work, a live observation, passing evidence, release authority, or a release claim."
-	p14BindingEmbeddedFrozen   = "embedded_frozen"
-	p14BindingCarrierDigest    = "carrier_digest"
-	p14BindingExecutionTime    = "execution_time_required"
+	p14SealInputEnvironmentKey  = "HAFT_P14_SEAL_PREPARED_INPUT"
+	p14P13EvidencePathKey       = "HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE"
+	p14P13EvidenceDigestKey     = "HAFT_P13_VERIFY_ACCEPTANCE_DIGEST"
+	p14PreparedInputSchema      = "haft.p14.prepared-request-oracle-input/v2"
+	p14PreparedCarrierSchema    = "haft.p14.prepared-request-oracle/v2"
+	p14RequiredP13Schema        = "haft.p13.acceptance-evidence/v3"
+	p14PreparedSemantics        = "Exact P14 requests and pre-install oracles prepared for later installed execution. This carrier is not performed Work, a live observation, passing evidence, release authority, or a release claim."
+	p14BindingEmbeddedFrozen    = "embedded_frozen"
+	p14BindingCarrierDigest     = "carrier_digest"
+	p14BindingExecutionTime     = "execution_time_required"
+	p14RequiredCandidateVersion = "9.2.0"
+	p14CleanGitStatusDigest     = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	p14SyntheticBuildVCSTime    = "2026-08-11T14:19:50Z"
 )
 
 type preparedRequestOracleInput struct {
@@ -67,6 +73,13 @@ type frozenP14Basis struct {
 
 type candidateP14Basis struct {
 	GitHead             string `json:"git_head"`
+	Version             string `json:"version,omitempty"`
+	VersionCommit       string `json:"version_commit,omitempty"`
+	VersionModified     *bool  `json:"version_modified,omitempty"`
+	BuildVCS            string `json:"build_vcs"`
+	BuildVCSRevision    string `json:"build_vcs_revision"`
+	BuildVCSModified    *bool  `json:"build_vcs_modified"`
+	BuildVCSTime        string `json:"build_vcs_time"`
 	P13GitStatusDigest  string `json:"p13_git_status_digest"`
 	DirtyStateDigest    string `json:"dirty_state_digest"`
 	ExecutablePath      string `json:"executable_path"`
@@ -158,6 +171,7 @@ type p13IdentityEnvelope struct {
 type p13GitEnvelope struct {
 	Head         string `json:"head"`
 	StatusDigest string `json:"status_digest"`
+	StatusBytes  int    `json:"status_bytes"`
 }
 
 type p13FPFEnvelope struct {
@@ -731,9 +745,16 @@ func validateP13EvidenceBinding(binding p13EvidenceBinding) error {
 
 func validateFrozenP14Basis(basis frozenP14Basis) error {
 	candidate := basis.Candidate
-	if candidate.GitHead == "" || !filepath.IsAbs(candidate.ExecutablePath) ||
+	if !fullP14GitRevision.MatchString(candidate.GitHead) ||
+		!filepath.IsAbs(candidate.ExecutablePath) ||
 		candidate.FPFRevision == "" || candidate.BaseTypeEnvRef == "" {
 		return fmt.Errorf("P14 candidate basis identity is incomplete")
+	}
+	if err := validateP14CandidateBuildIdentity(candidate); err != nil {
+		return err
+	}
+	if candidate.P13GitStatusDigest != p14CleanGitStatusDigest {
+		return fmt.Errorf("P14 candidate P13 identity is not a clean Git checkout")
 	}
 	candidateDigests := []string{
 		candidate.P13GitStatusDigest,
@@ -784,6 +805,543 @@ func validateFrozenP14Basis(basis frozenP14Basis) error {
 		seenPaths[carrier.Path] = struct{}{}
 	}
 	return nil
+}
+
+func validateP14CandidateBuildIdentity(candidate candidateP14Basis) error {
+	if candidate.Version != p14RequiredCandidateVersion ||
+		candidate.VersionCommit != candidate.GitHead ||
+		candidate.VersionModified == nil || *candidate.VersionModified ||
+		candidate.BuildVCS != "git" ||
+		candidate.BuildVCSRevision != candidate.GitHead ||
+		candidate.BuildVCSModified == nil || *candidate.BuildVCSModified ||
+		candidate.BuildVCSTime == "" {
+		return fmt.Errorf("P14 candidate build identity is incomplete or inconsistent")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, candidate.BuildVCSTime); err != nil {
+		return fmt.Errorf("P14 candidate embedded VCS time is invalid: %w", err)
+	}
+	return nil
+}
+
+func validP14CandidateVersion(version string) bool {
+	return version != "" && version == strings.TrimSpace(version) &&
+		len(version) <= 128 && !strings.ContainsAny(version, "\r\n\t ")
+}
+
+type p14CandidateVersionObservation struct {
+	Version          string
+	Commit           string
+	Modified         bool
+	SourceTime       string
+	BuildVCS         string
+	BuildVCSRevision string
+	BuildVCSModified bool
+	BuildVCSTime     string
+}
+
+type p14CandidateVersionObserver func(
+	string,
+) (p14CandidateVersionObservation, error)
+
+func syntheticP14CandidateVersionObservation(
+	version string,
+	revision string,
+) p14CandidateVersionObservation {
+	return p14CandidateVersionObservation{
+		Version:          version,
+		Commit:           revision,
+		Modified:         false,
+		SourceTime:       p14SyntheticBuildVCSTime,
+		BuildVCS:         "git",
+		BuildVCSRevision: revision,
+		BuildVCSModified: false,
+		BuildVCSTime:     p14SyntheticBuildVCSTime,
+	}
+}
+
+type p14BuildVCSProvenance struct {
+	VCS      string
+	Revision string
+	Modified bool
+	Time     string
+}
+
+func observeP14CandidateVersion(
+	executable string,
+) (p14CandidateVersionObservation, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, executable, "version")
+	output, err := command.Output()
+	if ctx.Err() != nil {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"observe P14 candidate version: %w",
+			ctx.Err(),
+		)
+	}
+	if err != nil {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"observe P14 candidate version: %w",
+			err,
+		)
+	}
+	observation, err := parseP14CandidateVersionOutput(output)
+	if err != nil {
+		return p14CandidateVersionObservation{}, err
+	}
+	info, err := buildinfo.ReadFile(executable)
+	if err != nil {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"read P14 candidate embedded Go build identity: %w",
+			err,
+		)
+	}
+	provenance, err := p14BuildVCSProvenanceFromInfo(info)
+	if err != nil {
+		return p14CandidateVersionObservation{}, err
+	}
+	if observation.Commit != provenance.Revision ||
+		observation.Modified != provenance.Modified ||
+		observation.SourceTime != provenance.Time ||
+		provenance.Modified {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"P14 candidate printed identity differs from embedded Go VCS identity",
+		)
+	}
+	observation.BuildVCS = provenance.VCS
+	observation.BuildVCSRevision = provenance.Revision
+	observation.BuildVCSModified = provenance.Modified
+	observation.BuildVCSTime = provenance.Time
+	return observation, nil
+}
+
+func parseP14CandidateVersionOutput(
+	output []byte,
+) (p14CandidateVersionObservation, error) {
+	if len(output) == 0 || output[len(output)-1] != '\n' ||
+		strings.ContainsRune(string(output), '\r') {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"P14 candidate version output is invalid",
+		)
+	}
+	lines := strings.Split(strings.TrimSuffix(string(output), "\n"), "\n")
+	if len(lines) < 3 || !strings.HasPrefix(lines[0], "haft ") {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"P14 candidate version output is invalid",
+		)
+	}
+	observation := p14CandidateVersionObservation{
+		Version: strings.TrimPrefix(lines[0], "haft "),
+	}
+	commitSeen := false
+	builtSeen := false
+	sourceSeen := false
+	for _, line := range lines[1:] {
+		switch {
+		case strings.HasPrefix(line, "  commit:  ") && !commitSeen:
+			observation.Commit = strings.TrimPrefix(line, "  commit:  ")
+			commitSeen = true
+		case strings.HasPrefix(line, "  built:   ") && !builtSeen:
+			if strings.TrimPrefix(line, "  built:   ") == "" {
+				return p14CandidateVersionObservation{}, fmt.Errorf(
+					"P14 candidate version output is invalid",
+				)
+			}
+			builtSeen = true
+		case strings.HasPrefix(line, "  source:  ") && !sourceSeen:
+			observation.SourceTime = strings.TrimPrefix(line, "  source:  ")
+			if observation.SourceTime == "" {
+				return p14CandidateVersionObservation{}, fmt.Errorf(
+					"P14 candidate version output is invalid",
+				)
+			}
+			sourceSeen = true
+		case line == "  modified: true" && !observation.Modified:
+			observation.Modified = true
+		default:
+			return p14CandidateVersionObservation{}, fmt.Errorf(
+				"P14 candidate version output is invalid",
+			)
+		}
+	}
+	if !validP14CandidateVersion(observation.Version) ||
+		!commitSeen || !builtSeen ||
+		!fullP14GitRevision.MatchString(observation.Commit) {
+		return p14CandidateVersionObservation{}, fmt.Errorf(
+			"P14 candidate version identity is invalid",
+		)
+	}
+	return observation, nil
+}
+
+func p14BuildVCSProvenanceFromInfo(
+	info *debug.BuildInfo,
+) (p14BuildVCSProvenance, error) {
+	if info == nil ||
+		info.Path != "github.com/m0n0x41d/haft/cmd/haft" ||
+		info.Main.Path != "github.com/m0n0x41d/haft" {
+		return p14BuildVCSProvenance{}, fmt.Errorf(
+			"P14 candidate embedded Go build identity or module path is absent",
+		)
+	}
+	values := make(map[string]string, 4)
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs", "vcs.revision", "vcs.modified", "vcs.time":
+			if _, duplicate := values[setting.Key]; duplicate {
+				return p14BuildVCSProvenance{}, fmt.Errorf(
+					"P14 candidate embedded Go build identity repeats %s",
+					setting.Key,
+				)
+			}
+			values[setting.Key] = setting.Value
+		}
+	}
+	if values["vcs.modified"] != "false" {
+		return p14BuildVCSProvenance{}, fmt.Errorf(
+			"P14 candidate embedded vcs.modified must be the canonical false literal",
+		)
+	}
+	provenance := p14BuildVCSProvenance{
+		VCS:      values["vcs"],
+		Revision: values["vcs.revision"],
+		Modified: false,
+		Time:     values["vcs.time"],
+	}
+	if provenance.VCS != "git" ||
+		!fullP14GitRevision.MatchString(provenance.Revision) ||
+		provenance.Time == "" {
+		return p14BuildVCSProvenance{}, fmt.Errorf(
+			"P14 candidate embedded Go VCS identity is incomplete",
+		)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, provenance.Time); err != nil {
+		return p14BuildVCSProvenance{}, fmt.Errorf(
+			"P14 candidate embedded vcs.time is invalid: %w",
+			err,
+		)
+	}
+	return provenance, nil
+}
+
+func TestP14CandidateVersionObservationRequiresExactBuildIdentity(t *testing.T) {
+	commit := strings.Repeat("1", 40)
+	sourceTime := "2026-08-11T14:19:50Z"
+	clean, err := parseP14CandidateVersionOutput([]byte(
+		"haft 9.2.0\n  commit:  " + commit +
+			"\n  built:   exact\n  source:  " + sourceTime + "\n",
+	))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if clean.Version != "9.2.0" || clean.Commit != commit || clean.Modified ||
+		clean.SourceTime != sourceTime {
+		t.Fatalf("P14 candidate version identity differs: %#v", clean)
+	}
+
+	modified, err := parseP14CandidateVersionOutput([]byte(
+		"haft 9.2.0\n  commit:  " + commit +
+			"\n  built:   exact\n  source:  " + sourceTime +
+			"\n  modified: true\n",
+	))
+	if err != nil || !modified.Modified {
+		t.Fatalf("P14 candidate modified state was not observed: %#v, %v", modified, err)
+	}
+
+	for name, output := range map[string]string{
+		"short_commit":   "haft 9.2.0\n  commit:  1111111\n  built:   exact\n",
+		"missing_commit": "haft 9.2.0\n  built:   exact\n",
+		"unknown_line":   "haft 9.2.0\n  commit:  " + commit + "\n  built:   exact\n  trusted: yes\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseP14CandidateVersionOutput([]byte(output)); err == nil {
+				t.Fatal("P14 candidate version observation accepted open build identity")
+			}
+		})
+	}
+}
+
+func TestP14EmbeddedGoBuildIdentityRejectsOpenOrNonCanonicalVCSSettings(
+	t *testing.T,
+) {
+	valid := func() *debug.BuildInfo {
+		return &debug.BuildInfo{
+			Path: "github.com/m0n0x41d/haft/cmd/haft",
+			Main: debug.Module{Path: "github.com/m0n0x41d/haft"},
+			Settings: []debug.BuildSetting{
+				{Key: "vcs", Value: "git"},
+				{Key: "vcs.revision", Value: strings.Repeat("1", 40)},
+				{Key: "vcs.modified", Value: "false"},
+				{Key: "vcs.time", Value: p14SyntheticBuildVCSTime},
+			},
+		}
+	}
+	if _, err := p14BuildVCSProvenanceFromInfo(valid()); err != nil {
+		t.Fatalf("canonical embedded Go VCS identity rejected: %v", err)
+	}
+	if _, err := p14BuildVCSProvenanceFromInfo(nil); err == nil {
+		t.Fatal("nil Go build identity accepted")
+	}
+
+	tests := map[string]func(*debug.BuildInfo){
+		"wrong_command_path": func(info *debug.BuildInfo) {
+			info.Path = "github.com/m0n0x41d/haft/cmd/other"
+		},
+		"wrong_module_path": func(info *debug.BuildInfo) {
+			info.Main.Path = "example.invalid/haft"
+		},
+		"missing_vcs": func(info *debug.BuildInfo) {
+			info.Settings = info.Settings[1:]
+		},
+		"duplicate_vcs": func(info *debug.BuildInfo) {
+			info.Settings = append(
+				info.Settings,
+				debug.BuildSetting{Key: "vcs", Value: "git"},
+			)
+		},
+		"wrong_vcs": func(info *debug.BuildInfo) {
+			info.Settings[0].Value = "hg"
+		},
+		"missing_revision": func(info *debug.BuildInfo) {
+			info.Settings[1].Key = "unrelated"
+		},
+		"bad_revision": func(info *debug.BuildInfo) {
+			info.Settings[1].Value = "1111111"
+		},
+		"missing_time": func(info *debug.BuildInfo) {
+			info.Settings[3].Key = "unrelated"
+		},
+		"bad_time": func(info *debug.BuildInfo) {
+			info.Settings[3].Value = "yesterday"
+		},
+		"modified_true": func(info *debug.BuildInfo) {
+			info.Settings[2].Value = "true"
+		},
+		"modified_uppercase": func(info *debug.BuildInfo) {
+			info.Settings[2].Value = "FALSE"
+		},
+		"modified_numeric": func(info *debug.BuildInfo) {
+			info.Settings[2].Value = "0"
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			info := valid()
+			mutate(info)
+			if _, err := p14BuildVCSProvenanceFromInfo(info); err == nil {
+				t.Fatal("open or non-canonical embedded Go VCS identity accepted")
+			}
+		})
+	}
+}
+
+type p14BuildInfoTestRepository struct {
+	Root     string
+	Revision string
+	VCSTime  string
+}
+
+func newP14BuildInfoTestRepository(
+	t *testing.T,
+	marker string,
+) p14BuildInfoTestRepository {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "source")
+	commandRoot := filepath.Join(root, "cmd", "haft")
+	if err := os.MkdirAll(commandRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	goMod := []byte("module github.com/m0n0x41d/haft\n\ngo 1.22\n")
+	mainSource := []byte(fmt.Sprintf(`package main
+
+import (
+	"fmt"
+	"os"
+)
+
+const buildMarker = %q
+
+var (
+	version = "dev"
+	commit = "unknown"
+	sourceTime = "unknown"
+	modified = "false"
+)
+
+func main() {
+	_ = buildMarker
+	if len(os.Args) != 2 || os.Args[1] != "version" {
+		os.Exit(2)
+	}
+	fmt.Printf("haft %%s\n  commit:  %%s\n  built:   fixture\n  source:  %%s\n", version, commit, sourceTime)
+	if modified == "true" {
+		fmt.Println("  modified: true")
+	}
+}
+`, marker))
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), goMod, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(commandRoot, "main.go"), mainSource, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{
+		{"init", "-q"},
+		{"config", "user.email", "p14@example.invalid"},
+		{"config", "user.name", "P14 fixture"},
+		{"add", "go.mod", "cmd/haft/main.go"},
+		{"commit", "-q", "-m", "P14 buildinfo fixture"},
+	} {
+		command := exec.Command("git", args...)
+		command.Dir = root
+		command.Env = append(
+			os.Environ(),
+			"GIT_AUTHOR_DATE="+p14SyntheticBuildVCSTime,
+			"GIT_COMMITTER_DATE="+p14SyntheticBuildVCSTime,
+		)
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("git %s: %v\n%s", strings.Join(args, " "), err, output)
+		}
+	}
+	revisionCommand := exec.Command("git", "rev-parse", "HEAD")
+	revisionCommand.Dir = root
+	revisionRaw, err := revisionCommand.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return p14BuildInfoTestRepository{
+		Root:     root,
+		Revision: strings.TrimSpace(string(revisionRaw)),
+		VCSTime:  p14SyntheticBuildVCSTime,
+	}
+}
+
+func (repository p14BuildInfoTestRepository) build(
+	t *testing.T,
+	name string,
+	goos string,
+	goarch string,
+	buildVCS bool,
+	printedRevision string,
+) (string, []byte) {
+	t.Helper()
+	outputRoot := filepath.Join(t.TempDir(), "bin")
+	if err := os.MkdirAll(outputRoot, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	outputPath := filepath.Join(outputRoot, name)
+	buildVCSValue := "false"
+	if buildVCS {
+		buildVCSValue = "true"
+	}
+	ldflags := strings.Join([]string{
+		"-X=main.version=" + p14RequiredCandidateVersion,
+		"-X=main.commit=" + printedRevision,
+		"-X=main.sourceTime=" + repository.VCSTime,
+		"-X=main.modified=false",
+	}, " ")
+	command := exec.Command(
+		"go", "build",
+		"-buildvcs="+buildVCSValue,
+		"-trimpath",
+		"-ldflags", ldflags,
+		"-o", outputPath,
+		"./cmd/haft",
+	)
+	command.Dir = repository.Root
+	command.Env = append(
+		os.Environ(),
+		"GOWORK=off",
+		"CGO_ENABLED=0",
+		"GOOS="+goos,
+		"GOARCH="+goarch,
+	)
+	if output, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("build P14 buildinfo fixture: %v\n%s", err, output)
+	}
+	raw, err := os.ReadFile(outputPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return outputPath, raw
+}
+
+func TestP14CandidateVersionObservationRequiresStampedGoVCS(t *testing.T) {
+	repository := newP14BuildInfoTestRepository(t, "candidate")
+	canonicalPath, _ := repository.build(
+		t,
+		"canonical",
+		runtime.GOOS,
+		runtime.GOARCH,
+		true,
+		repository.Revision,
+	)
+	observation, err := observeP14CandidateVersion(canonicalPath)
+	if err != nil {
+		t.Fatalf("canonical Go VCS candidate rejected: %v", err)
+	}
+	if observation.BuildVCSRevision != repository.Revision ||
+		observation.BuildVCSTime != repository.VCSTime {
+		t.Fatalf("canonical Go VCS candidate differs: %#v", observation)
+	}
+
+	withoutVCSPath, _ := repository.build(
+		t,
+		"without-vcs",
+		runtime.GOOS,
+		runtime.GOARCH,
+		false,
+		repository.Revision,
+	)
+	if _, err := observeP14CandidateVersion(withoutVCSPath); err == nil {
+		t.Fatal("P14 candidate accepted spoofed printed identity built with -buildvcs=false")
+	}
+
+	mismatchedPath, _ := repository.build(
+		t,
+		"mismatched",
+		runtime.GOOS,
+		runtime.GOARCH,
+		true,
+		strings.Repeat("2", 40),
+	)
+	if _, err := observeP14CandidateVersion(mismatchedPath); err == nil {
+		t.Fatal("P14 candidate accepted printed identity differing from embedded VCS")
+	}
+}
+
+func TestP14FrozenBasisRejectsDirtyP13EvenWhenVersionClaimsClean(t *testing.T) {
+	repositoryRoot, err := p14RepositoryRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	contract, rawContract, err := loadRequestOracleContract(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	input, err := completePreparedInputForTest(contract, p14Digest(rawContract))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := validateFrozenP14Basis(input.FrozenBasis); err != nil {
+		t.Fatalf("clean synthetic P14 basis rejected: %v", err)
+	}
+	if input.FrozenBasis.Candidate.VersionModified == nil ||
+		*input.FrozenBasis.Candidate.VersionModified {
+		t.Fatal("synthetic P14 candidate must make the spoofed clean-version case explicit")
+	}
+
+	dirty := input.FrozenBasis
+	dirty.Candidate.P13GitStatusDigest = p14TestDigest("non-empty-git-status")
+	if err := validateFrozenP14Basis(dirty); err == nil {
+		t.Fatal("P14 frozen basis accepted dirty P13 while candidate version claimed clean")
+	}
+
+	wrongVersion := input.FrozenBasis
+	wrongVersion.Candidate.Version = "9.1.0"
+	if err := validateFrozenP14Basis(wrongVersion); err == nil {
+		t.Fatal("P14 frozen basis accepted a predecessor candidate version")
+	}
 }
 
 func validatePreparedP14Scenario(
@@ -841,6 +1399,7 @@ func p14ExecutableScenarioValidators() map[string]p14PreparedScenarioValidator {
 		p14FPFProjectionBuilderID:          validateP14FPFProjectionPreparedScenario,
 		p14IdentifierNamespaceBuilderID:    validateP14IdentifierNamespacePreparedScenario,
 		p14InitMatrixBuilderID:             validateP14InitMatrixPreparedScenario,
+		p14OnboardProfileChangeBuilderID:   validateP14OnboardProfileChangePreparedScenario,
 		p14SpecSectionProtocolBuilderID:    validateP14SpecSectionProtocolPreparedScenario,
 	}
 	for _, builderID := range p14CodeExploreBuilderIDs {
@@ -950,23 +1509,28 @@ func verifyPreparedInputAgainstP13(
 	if err := json.Unmarshal(raw, &evidence); err != nil {
 		return fmt.Errorf("decode P13 evidence for P14: %w", err)
 	}
-	if evidence.Schema != p14RequiredP13Schema ||
-		evidence.Status != "passed" || evidence.ReleaseClaim ||
-		!evidence.IdentityUnchanged ||
-		evidence.CarrierPath != input.P13Evidence.CarrierPath ||
-		evidence.IdentityDigest != input.P13Evidence.IdentityDigest ||
-		evidence.StartIdentity.Digest != evidence.IdentityDigest ||
-		evidence.EndIdentity.Digest != evidence.IdentityDigest {
-		return fmt.Errorf("P14 input is not bound to one passing unchanged P13 identity")
+	if err := validatePassingP13Evidence(input.P13Evidence, evidence); err != nil {
+		return fmt.Errorf(
+			"P14 input is not bound to one passing unchanged P13 identity: %w",
+			err,
+		)
 	}
 	return comparePreparedBasisToP13(input.FrozenBasis, evidence.StartIdentity)
 }
 
 func syntheticFrozenP14BasisForP13() frozenP14Basis {
+	clean := false
 	return frozenP14Basis{
 		Candidate: candidateP14Basis{
 			GitHead:            strings.Repeat("1", 40),
-			P13GitStatusDigest: p14TestDigest("git-status"),
+			Version:            p14RequiredCandidateVersion,
+			VersionCommit:      strings.Repeat("1", 40),
+			VersionModified:    &clean,
+			BuildVCS:           "git",
+			BuildVCSRevision:   strings.Repeat("1", 40),
+			BuildVCSModified:   &clean,
+			BuildVCSTime:       p14SyntheticBuildVCSTime,
+			P13GitStatusDigest: p14CleanGitStatusDigest,
 			FPFRevision:        strings.Repeat("2", 40),
 			FPFSpecDigest:      p14TestDigest("fpf-spec"),
 			FPFReadmeDigest:    p14TestDigest("fpf-readme"),
@@ -1082,6 +1646,7 @@ func verifyPreparedInputCurrentBasis(
 		repositoryRoot,
 		input,
 		observer.CapturePreparation,
+		observeP14CandidateVersion,
 	)
 }
 
@@ -1095,6 +1660,7 @@ func verifyPreparedInputCurrentBasisWithObserver(
 	repositoryRoot string,
 	input preparedRequestOracleInput,
 	observe p14PreparationEvidenceObserver,
+	observeCandidate p14CandidateVersionObserver,
 ) error {
 	candidate := input.FrozenBasis.Candidate
 	carriers := input.FrozenBasis.Carriers
@@ -1113,11 +1679,24 @@ func verifyPreparedInputCurrentBasisWithObserver(
 	if err != nil {
 		return fmt.Errorf("capture current P14 restart basis: %w", err)
 	}
+	version, err := observeCandidate(candidate.ExecutablePath)
+	if err != nil {
+		return err
+	}
 	selectedDigest := strings.TrimPrefix(
 		input.FrozenBasis.SelectedProject.SelectedCompositeRef,
 		"typeenv:",
 	)
 	matches := []bool{
+		version.Version == candidate.Version,
+		version.Commit == candidate.VersionCommit,
+		candidate.VersionModified != nil &&
+			version.Modified == *candidate.VersionModified,
+		version.BuildVCS == candidate.BuildVCS,
+		version.BuildVCSRevision == candidate.BuildVCSRevision,
+		candidate.BuildVCSModified != nil &&
+			version.BuildVCSModified == *candidate.BuildVCSModified,
+		version.BuildVCSTime == candidate.BuildVCSTime,
 		evidence.RepositoryHead == candidate.GitHead,
 		evidence.DirtyStateDigest == candidate.DirtyStateDigest,
 		evidence.DesiredHaftBinaryDigest == candidate.ExecutableDigest,
@@ -1401,12 +1980,14 @@ func completePreparedInputForTest(
 	contract requestOracleContract,
 	contractDigest string,
 ) (preparedRequestOracleInput, error) {
+	clean := false
 	memoryFixture := syntheticP14MemoryReadFixture()
 	sources := p14PreparedScenarioSources{
 		Context:               context.Background(),
 		Executable:            "/synthetic/haft",
 		ProjectRoot:           "/synthetic/project",
 		ExecutableDigest:      p14TestDigest("synthetic-candidate"),
+		CandidateVersion:      p14RequiredCandidateVersion,
 		ExpectedFPFRevision:   strings.Repeat("a", 40),
 		MemoryFixture:         memoryFixture,
 		InitMatrixFixture:     syntheticP14InitMatrixFixture(),
@@ -1434,7 +2015,14 @@ func completePreparedInputForTest(
 		FrozenBasis: frozenP14Basis{
 			Candidate: candidateP14Basis{
 				GitHead:             strings.Repeat("1", 40),
-				P13GitStatusDigest:  p14TestDigest("git-status"),
+				Version:             p14RequiredCandidateVersion,
+				VersionCommit:       strings.Repeat("1", 40),
+				VersionModified:     &clean,
+				BuildVCS:            "git",
+				BuildVCSRevision:    strings.Repeat("1", 40),
+				BuildVCSModified:    &clean,
+				BuildVCSTime:        p14SyntheticBuildVCSTime,
+				P13GitStatusDigest:  p14CleanGitStatusDigest,
 				DirtyStateDigest:    p14TestDigest("dirty-state"),
 				ExecutablePath:      "/private/tmp/haft-v9-p14-candidate",
 				ExecutableDigest:    p14TestDigest("candidate"),
@@ -1474,6 +2062,7 @@ type p14PreparedScenarioSources struct {
 	Executable            string
 	ProjectRoot           string
 	ExecutableDigest      string
+	CandidateVersion      string
 	ExpectedFPFRevision   string
 	MemoryFixture         p14MemoryReadFixture
 	InitMatrixFixture     p14InitMatrixFixture
@@ -1555,6 +2144,11 @@ func p14PreparedScenarioBuilders(
 		) (preparedP14Scenario, error) {
 			return buildP14SpecSectionProtocolScenario(declared)
 		},
+		p14OnboardProfileChangeBuilderID: func(
+			declared scenarioContract,
+		) (preparedP14Scenario, error) {
+			return buildP14OnboardProfileChangeScenario(declared)
+		},
 	}
 	for _, builderID := range p14CodeExploreBuilderIDs {
 		builders[builderID] = func(
@@ -1599,7 +2193,10 @@ func p14PreparedScenarioBuilders(
 		builders[builderID] = func(
 			declared scenarioContract,
 		) (preparedP14Scenario, error) {
-			return buildP14LiveProtocolScenario(declared)
+			return buildP14LiveProtocolScenarioWithCandidateVersion(
+				declared,
+				sources.CandidateVersion,
+			)
 		}
 	}
 	return builders

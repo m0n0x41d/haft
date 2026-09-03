@@ -42,6 +42,15 @@ type p14HostProcessReceipt struct {
 	Checks                []p14InstalledCLICheckReceipt `json:"checks"`
 }
 
+type p14ClaudeAgentFPFSurfaceReceipt struct {
+	Schema                      string                         `json:"schema"`
+	ScenarioID                  string                         `json:"scenario_id"`
+	RequestPayloadDigest        string                         `json:"request_payload_digest"`
+	ClaudeHostEvidenceDigest    string                         `json:"claude_host_evidence_digest"`
+	ClaudeSessionEvidenceDigest string                         `json:"claude_session_evidence_digest"`
+	SemanticBindings            []p14ClaudeSemanticCaseBinding `json:"semantic_bindings"`
+}
+
 type p14FinalizationCaptureSet struct {
 	InstalledCLI map[string]p14InstalledCLIScenarioCapture
 	CodexMCP     map[string]p14CodexMCPScenarioCapture
@@ -142,11 +151,19 @@ func TestP14FinalizeInstalledObservationCarrier(t *testing.T) {
 		CarrierDigest:  claudeProofDigest,
 		EvidenceDigest: claudeProof.EvidenceDigest,
 	}
+	claudeAgentFPF, err := buildP14ClaudeAgentFPFSurfaceObservation(
+		prepared.Preparation,
+		claudeProof,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
 	observations, err := assembleP14InstalledObservations(
 		prepared.Preparation,
 		runtime,
 		installedCLI.Capture.ScenarioCaptures,
 		codexMCP.ScenarioCaptures,
+		&claudeAgentFPF,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -203,11 +220,13 @@ func TestP14InstalledObservationFinalizerMergesExactCaptureSet(
 	all := syntheticPassingP14InstalledObservations(prepared, runtime)
 	installedCLI := p14SyntheticInstalledCLICaptures(all)
 	codexMCP := p14SyntheticCodexMCPCaptures(all)
+	claudeHost := p14SyntheticClaudeAgentFPFSurface(all)
 	observations, err := assembleP14InstalledObservations(
 		prepared,
 		runtime,
 		installedCLI,
 		codexMCP,
+		&claudeHost,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -230,6 +249,7 @@ func TestP14InstalledObservationFinalizerMergesExactCaptureSet(
 		runtime,
 		installedCLI[:len(installedCLI)-1],
 		codexMCP,
+		&claudeHost,
 	)
 	if err == nil {
 		t.Fatal("P14 finalizer accepted an incomplete installed CLI capture set")
@@ -642,6 +662,7 @@ func assembleP14InstalledObservations(
 	runtime p14RuntimeObservationBinding,
 	installedCLI []p14InstalledCLIScenarioCapture,
 	codexMCP []p14CodexMCPScenarioCapture,
+	claudeAgentFPF *p14InstalledSurfaceObservation,
 ) ([]p14InstalledScenarioObservation, error) {
 	captures, err := indexP14FinalizationCaptures(
 		installedCLI,
@@ -660,6 +681,7 @@ func assembleP14InstalledObservations(
 			scenario,
 			runtime,
 			captures,
+			claudeAgentFPF,
 		)
 		if assembleErr != nil {
 			return nil, assembleErr
@@ -708,6 +730,7 @@ func assembleP14InstalledScenario(
 	scenario preparedP14Scenario,
 	runtime p14RuntimeObservationBinding,
 	captures p14FinalizationCaptureSet,
+	claudeAgentFPF *p14InstalledSurfaceObservation,
 ) (p14InstalledScenarioObservation, error) {
 	handlers := map[string]func(
 		preparedP14Scenario,
@@ -752,6 +775,21 @@ func assembleP14InstalledScenario(
 				request,
 				runtime,
 			)
+		},
+		"claude_host": func(
+			current preparedP14Scenario,
+			request preparedP14Request,
+		) (p14InstalledSurfaceObservation, error) {
+			if current.ID != "agent_fpf_pattern_use" ||
+				claudeAgentFPF == nil ||
+				claudeAgentFPF.Surface != request.Surface ||
+				claudeAgentFPF.RequestPayloadDigest != request.PayloadDigest {
+				return p14InstalledSurfaceObservation{}, fmt.Errorf(
+					"P14 finalizer lacks Claude semantic scenario %q",
+					current.ID,
+				)
+			}
+			return *claudeAgentFPF, nil
 		},
 	}
 	surfaces := make(
@@ -834,6 +872,76 @@ func buildP14HostProcessObservation(
 		Outcome:              p14SurfaceOutcomeObserved,
 		ObservationCanonical: string(raw),
 		ObservationDigest:    digest,
+	}, nil
+}
+
+func buildP14ClaudeAgentFPFSurfaceObservation(
+	prepared preparedRequestOracleInput,
+	proof p14ClaudeHostProofCarrier,
+) (p14InstalledSurfaceObservation, error) {
+	var scenario preparedP14Scenario
+	var request preparedP14Request
+	for _, candidate := range prepared.Scenarios {
+		if candidate.ID != "agent_fpf_pattern_use" {
+			continue
+		}
+		scenario = candidate
+		request, _ = p14PreparedSurfaceRequest(candidate, "claude_host")
+		break
+	}
+	if scenario.ID == "" || request.Surface != "claude_host" ||
+		!validP14Digest(proof.EvidenceDigest) ||
+		!validP14Digest(proof.SessionHistory.EvidenceDigest) {
+		return p14InstalledSurfaceObservation{}, fmt.Errorf(
+			"P14 Claude agent FPF surface basis is absent",
+		)
+	}
+	_, testCases, _, err := p14ClaudeExpectedToolCallsForPrepared(prepared)
+	if err != nil {
+		return p14InstalledSurfaceObservation{}, err
+	}
+	bindings := proof.SessionHistory.SemanticBindings
+	if len(bindings) != len(testCases) {
+		return p14InstalledSurfaceObservation{}, fmt.Errorf(
+			"P14 Claude agent FPF semantic coverage is incomplete",
+		)
+	}
+	for index, binding := range bindings {
+		testCase := testCases[index]
+		if binding.CaseID != testCase.ID ||
+			binding.ScenarioDigest != testCase.ScenarioDigest ||
+			binding.ObservedFPFCallCount != testCase.ExpectedFPFCalls ||
+			!validP14Digest(binding.ObservedSemanticDigest) {
+			return p14InstalledSurfaceObservation{}, fmt.Errorf(
+				"P14 Claude agent FPF semantic binding %q differs",
+				testCase.ID,
+			)
+		}
+	}
+	receipt := p14ClaudeAgentFPFSurfaceReceipt{
+		Schema:                      "haft.p14.claude-agent-fpf-surface-receipt/v1",
+		ScenarioID:                  scenario.ID,
+		RequestPayloadDigest:        request.PayloadDigest,
+		ClaudeHostEvidenceDigest:    proof.EvidenceDigest,
+		ClaudeSessionEvidenceDigest: proof.SessionHistory.EvidenceDigest,
+		SemanticBindings: append(
+			[]p14ClaudeSemanticCaseBinding(nil),
+			bindings...,
+		),
+	}
+	raw, err := marshalP14CanonicalJSON(receipt)
+	if err != nil {
+		return p14InstalledSurfaceObservation{}, err
+	}
+	return p14InstalledSurfaceObservation{
+		Surface:              request.Surface,
+		RequestPayloadDigest: request.PayloadDigest,
+		Source:               p14ObservationSourceClaudeHost,
+		SourceReceiptDigest:  proof.EvidenceDigest,
+		ObservedAt:           proof.ObservedAt,
+		Outcome:              p14SurfaceOutcomeObserved,
+		ObservationCanonical: string(raw),
+		ObservationDigest:    p14Digest(raw),
 	}, nil
 }
 
@@ -960,6 +1068,9 @@ func p14RuntimePredicate(
 		"p14.agent.memory.host_generation.v1": validP14Digest(
 			runtime.LiveMCPReceiptDigest,
 		),
+		"p14.agent.fpf.host_generation.v1": validP14Digest(
+			runtime.LiveMCPReceiptDigest,
+		),
 	}
 	value, present := values[id]
 	return value, present
@@ -1002,6 +1113,30 @@ func p14AgentOrientationPredicate(
 		},
 		"p14.agent.memory.non_authorizing_interpretation.v1": {
 			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.installed_surface.v1": {
+			Surface: "installed_cli",
+		},
+		"p14.agent.fpf.semantic_corpus_bound.v1": {
+			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.mechanical_abstention.v1": {
+			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.pua_closure.v1": {
+			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.pur_five_aspect_aggregate.v1": {
+			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.no_rank_selection.v1": {
+			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.no_unauthorized_effects.v1": {
+			Surface: "live_mcp",
+		},
+		"p14.agent.fpf.claude_same_corpus.v1": {
+			Surface: "claude_host",
 		},
 	}
 	source, present := values[id]
@@ -1086,4 +1221,20 @@ func p14SyntheticCodexMCPCaptures(
 		}
 	}
 	return captures
+}
+
+func p14SyntheticClaudeAgentFPFSurface(
+	observations []p14InstalledScenarioObservation,
+) p14InstalledSurfaceObservation {
+	for _, observation := range observations {
+		if observation.ID != "agent_fpf_pattern_use" {
+			continue
+		}
+		for _, surface := range observation.SurfaceObservations {
+			if surface.Surface == "claude_host" {
+				return surface
+			}
+		}
+	}
+	return p14InstalledSurfaceObservation{}
 }

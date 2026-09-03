@@ -311,8 +311,8 @@ func c3SourceContractSymbol(
 			return typedmemory.SchemaSymbolRef{}, err
 		}
 		return typedmemory.KindSignatureSymbolRef(id)
-	case C3KindClassificationJudgementContract:
-		id, err := typedmemory.NewShapeID("FPF.C3.KindClassificationJudgement")
+	case C3KindClassificationContract:
+		id, err := typedmemory.NewShapeID("FPF.C3.KindClassification")
 		if err != nil {
 			return typedmemory.SchemaSymbolRef{}, err
 		}
@@ -324,13 +324,13 @@ func c3SourceContractSymbol(
 		}
 		return typedmemory.ValueShapeSymbolRef(id)
 	case C3KindBridgeContract:
-		id, err := typedmemory.NewContextBridgeID("FPF.C3.KindBridge")
+		id, err := typedmemory.NewSignatureID("FPF.C3.KindBridge")
 		if err != nil {
 			return typedmemory.SchemaSymbolRef{}, err
 		}
-		return typedmemory.ContextBridgeSymbolRef(id)
-	case C3RoleMaskContract:
-		id, err := typedmemory.NewShapeID("FPF.C3.RoleMaskDeclaration")
+		return typedmemory.RelationSymbolRef(id)
+	case C3KindUseAdaptationContract:
+		id, err := typedmemory.NewShapeID("FPF.C3.KindUseAdaptationDeclaration")
 		if err != nil {
 			return typedmemory.SchemaSymbolRef{}, err
 		}

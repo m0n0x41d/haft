@@ -9,7 +9,7 @@ import (
 	"github.com/m0n0x41d/haft/internal/typedmemory"
 )
 
-const baseTypeEnvCompilerSchema = "fpf-base-typeenv.cov2.v5"
+const baseTypeEnvCompilerSchema = "fpf-base-typeenv.cov2.v6"
 
 // BaseTypeEnvCompilation is the closed result family for source compilation.
 // Source rejection is a normal result; implementation/invariant failures are
@@ -182,10 +182,10 @@ const (
 	familySubkindRelationContract
 	familySubkindOrderContract
 	familyKindSignatureContract
-	familyKindClassificationJudgementContract
+	familyKindClassificationContract
 	familyKindExtensionContract
 	familyKindBridgeContract
-	familyRoleMaskContract
+	familyKindUseAdaptationContract
 	familyKindGuardSeparationContract
 )
 
@@ -211,14 +211,14 @@ func (family structuralFamily) String() string {
 		return "subkind_order_contract"
 	case familyKindSignatureContract:
 		return "kind_signature_contract"
-	case familyKindClassificationJudgementContract:
-		return "kind_classification_judgement_contract"
+	case familyKindClassificationContract:
+		return "kind_classification_contract"
 	case familyKindExtensionContract:
 		return "kind_extension_contract"
 	case familyKindBridgeContract:
 		return "kind_bridge_contract"
-	case familyRoleMaskContract:
-		return "role_mask_contract"
+	case familyKindUseAdaptationContract:
+		return "kind_use_adaptation_contract"
 	case familyKindGuardSeparationContract:
 		return "kind_guard_separation_contract"
 	default:
@@ -240,15 +240,15 @@ var structuralCompletenessContract = map[string]map[structuralFamily]int{
 		familySubkindOrderContract:    1,
 	},
 	"C.3.2": {
-		familyKindSignatureContract:               1,
-		familyKindClassificationJudgementContract: 1,
-		familyKindExtensionContract:               1,
+		familyKindSignatureContract:      1,
+		familyKindClassificationContract: 1,
+		familyKindExtensionContract:      1,
 	},
 	"C.3.3": {
 		familyKindBridgeContract: 1,
 	},
 	"C.3.4": {
-		familyRoleMaskContract: 1,
+		familyKindUseAdaptationContract: 1,
 	},
 	"C.3.A": {
 		familyKindGuardSeparationContract: 1,
@@ -342,14 +342,14 @@ func c3ContractStructuralFamily(kind C3ContractKind) structuralFamily {
 		return familySubkindOrderContract
 	case C3KindSignatureContract:
 		return familyKindSignatureContract
-	case C3KindClassificationJudgementContract:
-		return familyKindClassificationJudgementContract
+	case C3KindClassificationContract:
+		return familyKindClassificationContract
 	case C3KindExtensionContract:
 		return familyKindExtensionContract
 	case C3KindBridgeContract:
 		return familyKindBridgeContract
-	case C3RoleMaskContract:
-		return familyRoleMaskContract
+	case C3KindUseAdaptationContract:
+		return familyKindUseAdaptationContract
 	case C3KindGuardSeparationContract:
 		return familyKindGuardSeparationContract
 	default:

@@ -111,8 +111,23 @@ func parsePatternAtlasNodes(lines []string, sourceRef, fpfCommit string) ([]Patt
 	headings := make([]parsedHeading, 0)
 	lints := make([]PatternAtlasLint, 0)
 	stack := make([]int, 0)
+	var fenceMarker byte
+	fenceWidth := 0
 
 	for index, line := range lines {
+		marker, width, remainder, isFence := parsePatternAtlasFence(line)
+		if fenceWidth > 0 {
+			if isFence && marker == fenceMarker && width >= fenceWidth && strings.TrimSpace(remainder) == "" {
+				fenceMarker = 0
+				fenceWidth = 0
+			}
+			continue
+		}
+		if isFence {
+			fenceMarker = marker
+			fenceWidth = width
+			continue
+		}
 		level, heading, leadingPad, ok := parsePatternAtlasHeading(line)
 		if !ok {
 			continue
@@ -190,6 +205,24 @@ func parsePatternAtlasNodes(lines []string, sourceRef, fpfCommit string) ([]Patt
 	}
 
 	return nodes, lints
+}
+
+func parsePatternAtlasFence(line string) (marker byte, width int, remainder string, ok bool) {
+	trimmed := strings.TrimLeft(line, " ")
+	if len(line)-len(trimmed) > 3 || len(trimmed) < 3 {
+		return 0, 0, "", false
+	}
+	marker = trimmed[0]
+	if marker != '`' && marker != '~' {
+		return 0, 0, "", false
+	}
+	for width < len(trimmed) && trimmed[width] == marker {
+		width++
+	}
+	if width < 3 {
+		return 0, 0, "", false
+	}
+	return marker, width, trimmed[width:], true
 }
 
 func parsePatternAtlasHeading(line string) (level int, heading string, leadingSpace bool, ok bool) {

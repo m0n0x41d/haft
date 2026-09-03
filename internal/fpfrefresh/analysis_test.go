@@ -692,7 +692,7 @@ func TestProductionCorpusCarriesExactE11SplitContinuitySpan(t *testing.T) {
 			"SYSTEM-DELIMITATION",
 			"WORDING",
 			"ARCHITECTURE",
-		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:77128-77128" {
+		}) || splits[0].sourceRef != "data/FPF/FPF-Spec.md:78747-78747" {
 		t.Fatalf("production E.11 split = %#v", splits[0])
 	}
 }
@@ -785,7 +785,7 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 
 	historicalRef := mustAnalysisTypeEnvRef(
 		t,
-		basetypeenvartifacts.HistoricalV6Ref,
+		basetypeenvartifacts.HistoricalV7Ref,
 	)
 	historicalArtifact, err := basetypeenvartifacts.LoadExact(historicalRef)
 	if err != nil {
@@ -833,7 +833,7 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 			"local-practice",
 			"typed-memory",
 			"candidates",
-			"1.5.0.yaml",
+			"1.6.0.yaml",
 		),
 		historicalEnvironment,
 		currentEnvironment,
@@ -875,7 +875,7 @@ func TestProductionLocalPracticeCompatibilityUsesExecutableSuccessor(t *testing.
 			"local-practice",
 			"typed-memory",
 			"candidates",
-			"1.6.0.yaml",
+			"1.7.0.yaml",
 		),
 		currentDatabase,
 		currentDatabase,

@@ -472,6 +472,37 @@ func TestCurrentMigrationsPreserveExactNineWitnessedLegacySpecRelations(
 	assertOnlyWitnessedLegacyForeignKeyViolations(t, database, 9)
 }
 
+func TestRequireOnlyAdmittedLegacyForeignKeyWitnessesReturnsCanonicalSet(
+	t *testing.T,
+) {
+	t.Parallel()
+
+	database := openLegacyV34Database(
+		t,
+		filepath.Join(t.TempDir(), "canonical-legacy-witnesses.db"),
+	)
+	defer database.Close()
+	seedWitnessedLegacyDecisionSpecSectionRelations(t, database, 2)
+
+	witnesses, err := RequireOnlyAdmittedLegacyForeignKeyWitnesses(database)
+	if err != nil {
+		t.Fatalf("load admitted legacy witnesses: %v", err)
+	}
+	want := []LegacyDecisionSpecSectionForeignKeyWitness{
+		{
+			DecisionRef: "dec-personal-brand-shape",
+			SectionRef:  "TS.personal-brand.001",
+		},
+		{
+			DecisionRef: "dec-personal-brand-shape",
+			SectionRef:  "TS.personal-brand.002",
+		},
+	}
+	if !slices.Equal(witnesses, want) {
+		t.Fatalf("canonical legacy witnesses = %#v, want %#v", witnesses, want)
+	}
+}
+
 func TestAuthorityProfileReconciliationRejectsUnwitnessedDecisionSpecSectionRelation(t *testing.T) {
 	t.Parallel()
 

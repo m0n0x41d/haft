@@ -17,7 +17,7 @@ import (
 
 const (
 	p14ContractRelativePath  = "internal/p14acceptance/contract.json"
-	p14ContractSchema        = "haft.p14.request-oracle-contract/v3"
+	p14ContractSchema        = "haft.p14.request-oracle-contract/v4"
 	p14ContractStatus        = "prepared_not_executed"
 	p14ModulePath            = "github.com/m0n0x41d/haft"
 	p14PlanRelativePath      = ".context/haft-v9-deterministic-closeout.plan.md"
@@ -25,7 +25,7 @@ const (
 	p14PlanSectionRef        = "heading:" + p14PlanHeading
 	p14ChecklistPath         = ".context/haft-v9-p14-live-rehearsal-checklist.md"
 	p14ChecklistHeading      = "# Haft v9 P14 installed-runtime rehearsal"
-	p14TopLevelScenarioCount = 26
+	p14TopLevelScenarioCount = 28
 )
 
 type requestOracleContract struct {
@@ -561,6 +561,7 @@ func expectedP14ScenarioOrder() []string {
 		"retry_required",
 		"read_affordance",
 		"identifier_namespace",
+		"onboard_profile_change_prepare",
 		"spec_section_read_protocol",
 		"host_resume",
 		"loop_cleanup",
@@ -568,6 +569,7 @@ func expectedP14ScenarioOrder() []string {
 		"code_graph_concern_explore",
 		"code_graph_ambiguous_concern",
 		"code_graph_coverage_diagnostic",
+		"agent_fpf_pattern_use",
 		"agent_code_graph_orientation",
 		"agent_typed_memory_orientation",
 	}
@@ -661,6 +663,11 @@ func expectedP14Scenarios() map[string]expectedScenarioContract {
 			OracleKind:     "normalized_digest",
 			ExpectedEffect: "none",
 		},
+		"onboard_profile_change_prepare": {
+			Surfaces:       []string{"live_mcp"},
+			OracleKind:     "normalized_digest",
+			ExpectedEffect: "fixture_non_binding_review_write",
+		},
 		"spec_section_read_protocol": {
 			Surfaces:       []string{"live_mcp"},
 			OracleKind:     "normalized_digest",
@@ -701,6 +708,16 @@ func expectedP14Scenarios() map[string]expectedScenarioContract {
 				"host_process",
 				"installed_cli",
 				"live_mcp",
+			},
+			OracleKind:     "live_predicate",
+			ExpectedEffect: "host_process_observation",
+		},
+		"agent_fpf_pattern_use": {
+			Surfaces: []string{
+				"host_process",
+				"installed_cli",
+				"live_mcp",
+				"claude_host",
 			},
 			OracleKind:     "live_predicate",
 			ExpectedEffect: "host_process_observation",

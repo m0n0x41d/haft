@@ -17,6 +17,7 @@ func TestSourcesForExactBaseTypeEnvRefPreserveEveryShippedEdition(t *testing.T) 
 		{base: baseTypeEnvRefV1_4, source: SourceV1_4()},
 		{base: baseTypeEnvRefV1_5, source: SourceV1_5()},
 		{base: baseTypeEnvRefV1_6, source: SourceV1_6()},
+		{base: baseTypeEnvRefV1_7, source: SourceV1_7()},
 	}
 	for _, test := range tests {
 		resolved := SourcesForExactBaseTypeEnvRef(test.base)

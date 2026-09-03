@@ -315,9 +315,12 @@ func validateSourceBundle(bundle SourceBundle) error {
 }
 
 func validateReadmeCarrierRoots(readmeAtlas, specAtlas PatternAtlas) error {
-	standaloneRoot, ok := findAtlasNode(readmeAtlas.Nodes, isStandaloneReadmeRoot)
-	if !ok || standaloneRoot.StartLine != 1 {
-		return fmt.Errorf("FPF README grammar: expected one leading H1 publication heading")
+	standaloneRoot, h1Count := standaloneReadmeH1(readmeAtlas.Nodes)
+	if h1Count != 1 || standaloneRoot.StartLine != 1 || !isStandaloneReadmeRoot(standaloneRoot) {
+		return fmt.Errorf(
+			"FPF README grammar: expected exactly one supported H1 publication heading at line 1 in %s",
+			readmeAtlas.SourceRef,
+		)
 	}
 	embeddedRoot, ok := findAtlasNode(specAtlas.Nodes, isEmbeddedReadmeRoot)
 	if !ok {
@@ -366,21 +369,57 @@ func practicalUseCardSources(
 	document SourceDocument,
 	atlas PatternAtlas,
 ) ([]PracticalUseCardSource, error) {
-	root, ok := findAtlasNode(atlas.Nodes, isPracticalUseRoot)
-	if !ok {
-		return nil, fmt.Errorf("FPF README grammar: Practical-Use Cards H2 not found")
+	root, rootCount := findPracticalUseRoots(atlas.Nodes)
+	if rootCount != 1 {
+		return nil, fmt.Errorf(
+			"FPF README grammar: expected exactly one Practical entries or Practical-Use Cards H2, found %d",
+			rootCount,
+		)
+	}
+	embeddedRoot, ok := findAtlasNode(atlas.Nodes, isEmbeddedReadmeRoot)
+	if !ok || root.ParentNodeID != embeddedRoot.NodeID {
+		return nil, fmt.Errorf("FPF README grammar: practical-entry H2 must belong to the embedded README H1")
+	}
+
+	cardGroup, cardGroupCount := findPracticalUseCardGroups(atlas.Nodes, root)
+	if cardGroupCount > 1 {
+		return nil, fmt.Errorf(
+			"FPF README grammar: Practical entries contains %d Practical-Use Cards H3 groups",
+			cardGroupCount,
+		)
 	}
 
 	lines := splitPatternAtlasLines(document.Markdown)
 	sources := make([]PracticalUseCardSource, 0)
+	seenSourceIDs := make(map[string]int)
+	selectedCardCount := 0
 	for _, node := range atlas.Nodes {
-		if node.ParentNodeID != root.NodeID || node.Level != 3 {
+		ordinaryEntry := node.ParentNodeID == root.NodeID &&
+			node.Level == 3 &&
+			!isPracticalUseCardGroup(node)
+		selectedCard := cardGroupCount == 1 &&
+			node.ParentNodeID == cardGroup.NodeID &&
+			node.Level == 4
+		if !ordinaryEntry && !selectedCard {
 			continue
 		}
 
 		sourceID, title := splitPracticalUseHeading(node.Heading)
 		if sourceID == "" || title == "" {
 			return nil, fmt.Errorf("FPF README grammar: practical-use heading %q lacks source id and title", node.Heading)
+		}
+		key := sourceReferenceKey(sourceID)
+		if previousLine, duplicate := seenSourceIDs[key]; duplicate {
+			return nil, fmt.Errorf(
+				"FPF README grammar: practical-entry key %s at line %d duplicates line %d",
+				sourceID,
+				node.StartLine,
+				previousLine,
+			)
+		}
+		seenSourceIDs[key] = node.StartLine
+		if selectedCard {
+			selectedCardCount++
 		}
 		body := patternAtlasLineRange(lines, node.StartLine, node.EndLine)
 		sources = append(sources, PracticalUseCardSource{
@@ -394,7 +433,10 @@ func practicalUseCardSources(
 		})
 	}
 	if len(sources) == 0 {
-		return nil, fmt.Errorf("FPF README grammar: Practical-Use Cards contains no H3 cards")
+		return nil, fmt.Errorf("FPF README grammar: practical-entry set contains no H3 entries or H4 cards")
+	}
+	if cardGroupCount == 1 && selectedCardCount == 0 {
+		return nil, fmt.Errorf("FPF README grammar: Practical-Use Cards H3 group contains no H4 cards")
 	}
 	return sources, nil
 }
@@ -854,6 +896,13 @@ func newSourceUnit(unitID, sourceID string, role SourceUnitRole, title, body, pa
 func extractReadmeAuthoredPhrases(body string) []string {
 	phrases := make([]string, 0)
 	for _, line := range strings.Split(body, "\n") {
+		if match := practicalUseLabeledBlockRE.FindStringSubmatch(line); len(match) == 3 &&
+			normalizePracticalUseLabel(match[1]) == "question" {
+			phrase := strings.TrimSpace(cleanMarkdownText(match[2]))
+			if phrase != "" {
+				phrases = append(phrases, phrase)
+			}
+		}
 		clean := cleanMarkdownText(line)
 		for _, marker := range []string{"Ask first ", "Ask: ", "Ask ", "ask first ", "ask: ", "ask "} {
 			index := strings.Index(clean, marker)
@@ -1094,8 +1143,30 @@ func findAtlasNode(nodes []PatternAtlasNode, predicate func(PatternAtlasNode) bo
 	return PatternAtlasNode{}, false
 }
 
+func standaloneReadmeH1(nodes []PatternAtlasNode) (PatternAtlasNode, int) {
+	var root PatternAtlasNode
+	count := 0
+	for _, node := range nodes {
+		if node.Level != 1 {
+			continue
+		}
+		root = node
+		count++
+	}
+	return root, count
+}
+
 func isStandaloneReadmeRoot(node PatternAtlasNode) bool {
-	return node.Level == 1 && strings.Contains(strings.ToLower(cleanMarkdownText(node.Heading)), "core conceptual specification")
+	if node.Level != 1 {
+		return false
+	}
+	switch strings.ToLower(cleanMarkdownText(node.Heading)) {
+	case "first principles framework (fpf)",
+		"first principles framework (fpf) - core conceptual specification":
+		return true
+	default:
+		return false
+	}
 }
 
 func isEmbeddedReadmeRoot(node PatternAtlasNode) bool {
@@ -1114,7 +1185,41 @@ func isTOCRoot(node PatternAtlasNode) bool {
 
 func isPracticalUseRoot(node PatternAtlasNode) bool {
 	heading := strings.ToLower(cleanMarkdownText(node.Heading))
-	return node.Level == 2 && (heading == "practical-use cards" || heading == "practical use cards")
+	return node.Level == 2 && (heading == "practical entries" || heading == "practical-use cards" || heading == "practical use cards")
+}
+
+func findPracticalUseRoots(nodes []PatternAtlasNode) (PatternAtlasNode, int) {
+	var root PatternAtlasNode
+	count := 0
+	for _, node := range nodes {
+		if !isPracticalUseRoot(node) {
+			continue
+		}
+		root = node
+		count++
+	}
+	return root, count
+}
+
+func isPracticalUseCardGroup(node PatternAtlasNode) bool {
+	heading := strings.ToLower(cleanMarkdownText(node.Heading))
+	return node.Level == 3 && (heading == "practical-use cards" || heading == "practical use cards")
+}
+
+func findPracticalUseCardGroups(
+	nodes []PatternAtlasNode,
+	root PatternAtlasNode,
+) (PatternAtlasNode, int) {
+	var group PatternAtlasNode
+	count := 0
+	for _, node := range nodes {
+		if node.ParentNodeID != root.NodeID || !isPracticalUseCardGroup(node) {
+			continue
+		}
+		group = node
+		count++
+	}
+	return group, count
 }
 
 func sourceUnitSlug(value string) string {

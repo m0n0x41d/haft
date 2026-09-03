@@ -683,6 +683,62 @@ test("Pi h-reason keeps routine working identity separate from trace provenance"
   });
 });
 
+test("Pi h-reason applies current PUA and PUR without a shadow router", () => {
+  const carriers = [
+    readFileSync(new URL("../prompts/h-reason.md", import.meta.url), "utf8"),
+    readFileSync(new URL("../skills/h-reason/SKILL.md", import.meta.url), "utf8")
+  ];
+
+  carriers.forEach((carrier) => {
+    [
+      "E.11.PUR",
+      "problemFrame",
+      "forces",
+      "solutionConditions",
+      "ordinaryBoundary",
+      "resultAndReceivingUse",
+      "applicable",
+      "inapplicable",
+      "insufficientBasis",
+      "E.11.PUA",
+      "newlyCurrentSubjectResult",
+      "preExistingWithGrounding",
+      "expectedSubjectResultAbsent",
+      "minimal current capability set",
+      "planning draft",
+      "C.2.1/A.15.2",
+      "Haft-local",
+      "U.MethodDescription",
+      "bounded coordination",
+      "C.22.PFR",
+      "Move identity",
+      "Transformation",
+      "A.15.1-grounded",
+      "A.15.PROD",
+      "genuine stop has no receiver",
+      "opens a named return",
+      "actual-result assertion"
+    ].forEach((fragment) => assert.match(carrier, new RegExp(fragment)));
+
+    const aggregate = carrier.indexOf("aggregate");
+    const recommendation = carrier.indexOf("Recommend only");
+    assert.ok(aggregate >= 0 && recommendation > aggregate,
+      "candidate aggregate must precede recommendation");
+
+    [
+      "measured 6 of 6 Russian concerns",
+      "U.WorkPlan-shaped",
+      "Choose one current capability",
+      "matched_route_id",
+      "choose only the capability that is current",
+      "precise source-language or FPF terms",
+      "unsupported raw language may abstain",
+      "binding actions remain manual",
+      "Decisions and commissions are manual"
+    ].forEach((fragment) => assert.doesNotMatch(carrier, new RegExp(fragment)));
+  });
+});
+
 test("Pi h-status carriers preserve exact mixed-scope retry semantics", () => {
   const carriers = [
     readFileSync(new URL("../prompts/h-status.md", import.meta.url), "utf8"),

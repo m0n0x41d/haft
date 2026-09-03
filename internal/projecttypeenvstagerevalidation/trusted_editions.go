@@ -131,6 +131,17 @@ func currentBaseV5GenesisTrustedStageEditionCatalog() TrustedStageEditionCatalog
 	)
 }
 
+func currentBaseV6GenesisTrustedStageEditionCatalog() TrustedStageEditionCatalog {
+	return newTrustedStageEditionCatalog(
+		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV4,
+		projecttypeenvselection.StageCompilerEditionV4(),
+		typeenv.BaseTypeEnvCompilerSchemaV6,
+		projecttypeenvselection.StageProducerEditionV4(),
+		projecttypeenvselection.StageRevalidatorEditionV4(),
+		projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
+	)
+}
+
 func currentTransitionTrustedStageEditionCatalog() TrustedStageEditionCatalog {
 	return newTrustedStageEditionCatalog(
 		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
@@ -158,6 +169,17 @@ func currentBaseV5TransitionTrustedStageEditionCatalog() TrustedStageEditionCata
 		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
 		projecttypeenvselection.StageCompilerEditionV5(),
 		typeenv.BaseTypeEnvCompilerSchemaV5,
+		projecttypeenvselection.StageProducerEditionV5(),
+		projecttypeenvselection.StageRevalidatorEditionV5(),
+		projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
+	)
+}
+
+func currentBaseV6TransitionTrustedStageEditionCatalog() TrustedStageEditionCatalog {
+	return newTrustedStageEditionCatalog(
+		projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
+		projecttypeenvselection.StageCompilerEditionV5(),
+		typeenv.BaseTypeEnvCompilerSchemaV6,
 		projecttypeenvselection.StageProducerEditionV5(),
 		projecttypeenvselection.StageRevalidatorEditionV5(),
 		projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
@@ -402,6 +424,9 @@ func trustedStageEditionCatalogForPredecessor(
 	observation staticStageEditionObservation,
 ) TrustedStageEditionCatalog {
 	if _, transition := predecessor.(projecttypeenvselection.TransitionStagePredecessor); transition {
+		if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV6 {
+			return currentBaseV6TransitionTrustedStageEditionCatalog()
+		}
 		if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV5 {
 			return currentBaseV5TransitionTrustedStageEditionCatalog()
 		}
@@ -409,6 +434,9 @@ func trustedStageEditionCatalogForPredecessor(
 			return currentBaseV4TransitionTrustedStageEditionCatalog()
 		}
 		return currentTransitionTrustedStageEditionCatalog()
+	}
+	if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV6 {
+		return currentBaseV6GenesisTrustedStageEditionCatalog()
 	}
 	if observation.baseCompiler == typeenv.BaseTypeEnvCompilerSchemaV5 {
 		return currentBaseV5GenesisTrustedStageEditionCatalog()

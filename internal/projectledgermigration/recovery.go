@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -202,42 +203,65 @@ func requireHealthyProjectDatabase(
 	database *sql.DB,
 	operation string,
 ) error {
+	_, err := healthyProjectDatabaseWitnesses(ctx, database, operation)
+	return err
+}
+
+func healthyProjectDatabaseWitnesses(
+	ctx context.Context,
+	database *sql.DB,
+	operation string,
+) ([]db.LegacyDecisionSpecSectionForeignKeyWitness, error) {
 	var integrity string
 	err := database.QueryRowContext(
 		ctx,
 		"PRAGMA integrity_check",
 	).Scan(&integrity)
 	if err != nil {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"inspect project ledger integrity for %s: %w",
 			operation,
 			err,
 		)
 	}
 	if integrity != "ok" {
-		return fmt.Errorf(
+		return nil, fmt.Errorf(
 			"project ledger integrity blocks %s: %s",
 			operation,
 			integrity,
 		)
 	}
-	var foreignKeyViolations int
-	err = database.QueryRowContext(
-		ctx,
-		"SELECT COUNT(*) FROM pragma_foreign_key_check",
-	).Scan(&foreignKeyViolations)
+	witnesses, err := db.RequireOnlyAdmittedLegacyForeignKeyWitnesses(database)
 	if err != nil {
-		return fmt.Errorf(
-			"inspect project ledger foreign keys for %s: %w",
+		return nil, fmt.Errorf(
+			"project ledger foreign keys block %s: %w",
 			operation,
 			err,
 		)
 	}
-	if foreignKeyViolations != 0 {
+	return witnesses, nil
+}
+
+func requirePreservedProjectDatabaseWitnesses(
+	ctx context.Context,
+	database *sql.DB,
+	operation string,
+	expected []db.LegacyDecisionSpecSectionForeignKeyWitness,
+) error {
+	observed, err := healthyProjectDatabaseWitnesses(
+		ctx,
+		database,
+		operation,
+	)
+	if err != nil {
+		return err
+	}
+	if !slices.Equal(observed, expected) {
 		return fmt.Errorf(
-			"project ledger has %d foreign-key violation(s); %s was not attempted",
-			foreignKeyViolations,
+			"project ledger legacy foreign-key witness set changed during %s: found %v, want %v",
 			operation,
+			observed,
+			expected,
 		)
 	}
 	return nil

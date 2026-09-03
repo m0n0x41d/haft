@@ -1,7 +1,7 @@
 ---
 name: h-reason
 description: |
-  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF source, inspect the governing pattern body, and choose only the capability that is current. Ordinary reasoning stays conversational; proactively persist the minimum needed memory when current Work supplies a concrete durable receiving use. h-decide may route a direct operator request; h-commission remains manual-only.
+  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF source, inspect the governing pattern body, and choose the minimal current capability set. Ordinary reasoning stays conversational; proactively persist the minimum needed memory when current Work supplies a concrete durable receiving use. h-decide may route a direct operator request; h-commission remains manual-only.
 when_to_use: |
   The operator asks to reason with FPF or Haft, says "let's think", "помоги разобраться", or presents a concern that could belong to several narrower skills. Prefer a narrower skill when its condition is already clear.
 argument-hint: "[current project question]"
@@ -32,7 +32,9 @@ alone.
 Keep these distinctions live before choosing a pattern:
 
 - object != description != representation != carrier;
-- method != MethodDescription != WorkPlan != performed Work;
+- method != MethodDescription != WorkPlan != performed Work. A skill or pattern
+  carrier does not prove `U.MethodDescription` membership; establish that
+  separate A.3.2 claim only when it changes the current result;
 - plan != reality; promise != delivery; claim != evidence;
 - a practical-use card, mantra, or demonstrative traversal != project order;
 - retrieval rank != applicability, recommendation, authorization, or work
@@ -245,7 +247,7 @@ material or uncertain, a neighborhood exposes an unfamiliar kind or missing
 method basis, or the direct governing pattern is unclear, continue with source
 retrieval.
 
-If the operator names an exact SourceID or UnitID, use non-broadening
+If the operator names an exact PatternID, SourceID, or UnitID, use non-broadening
 `mode="inspect", identifier="<exact id>"`. Otherwise query with the object,
 current question, and the important domain words:
 
@@ -258,12 +260,12 @@ mcp__haft__haft_query(
 ```
 
 For a non-English concern, preserve the operator's original `query`. Add
-`entity_of_concern`, `known_context`, and `intended_use` with precise
-source-language or FPF terms when they are already known. Do not translate the
-question into a hidden Haft route or invent a bilingual catalog. An unsupported
-raw-language query abstains: a measured 6 of 6 Russian concerns returned zero
-candidates, while the same concerns with English `known_context` resolved to the
-exact card at rank 1. Supplying those terms is therefore required, not optional.
+`entity_of_concern`, `known_context`, and `intended_use` with precise English or
+FPF terms when they are already known. Do not translate the question into a
+hidden Haft route or invent a bilingual catalog. A raw non-English concern may
+return insufficient source basis because the bundled source is English; keep
+that diagnostic visible and add only known context explicitly. Do not turn an
+unversioned benchmark observation into a permanent routing rule.
 
 The result is source material, not applicability, selection, recommendation,
 evidence, precedence, or authority. Use the source-owned navigation:
@@ -275,7 +277,8 @@ evidence, precedence, or authority. Use the source-owned navigation:
 3. recover an exact source unit with `mode="lookup"` and its `identifier`, or
    use non-broadening `mode="inspect"` when the identifier must match exactly;
 4. inspect the selected pattern's full Problem frame, Problem, Forces,
-   Solution, ordinary boundary, worked slices, and checklist.
+   Solution, Consequences, ordinary boundary, nearest stronger neighbor,
+   worked slices, and checklist.
 
 README practical-use lists are ordinary walkthroughs, not literal mantra
 objects or `DemonstrativeUnfoldingSlice` instances unless the source identifies
@@ -292,23 +295,98 @@ discriminate them. Abstain when the source basis is insufficient.
 FPF patterns. Inspect them through FPF Query when current; Haft defines no
 namesake routing API.
 
-### 3. Select the governing pattern
+### 3. Judge applicability, then use the selected pattern
 
-Select by the current condition and exact first-result kind, not by score,
-familiarity, identifier order, or the skill the agent happens to know. State:
+Retrieval produces candidates, not an applicability judgement. When the current
+claim is applicability, recommendation, or coordination among candidate uses,
+inspect current `E.11.PUR` before recommending anything. For every candidate
+that is actually evaluated:
+
+1. inspect that candidate's full `Solution` and recover its current concern,
+   expected first result, ordinary boundary, stronger neighbor, and return
+   condition;
+2. give a compact rationale for all five current fit aspects:
+   `problemFrame`, `forces`, `solutionConditions`, `ordinaryBoundary`, and
+   `resultAndReceivingUse`;
+3. combine those aspects into exactly one aggregate: `applicable`,
+   `inapplicable`, or `insufficientBasis`. Keep the missing or conflicting
+   basis visible; never turn a retrieval score or absent finding into fit;
+4. recommend only an `applicable` candidate, and only after comparing its
+   expected first result with the live alternatives for this concern.
+
+If several applicable uses are complementary, coordinate them as `unordered`,
+`partialOrder`, or `totalOrder`. Every coordinated member must answer the same
+bounded coordination question while remaining a distinct candidate use. Add a
+pairwise precedence relation only from a declared current basis.
+`prerequisiteResult` additionally requires the exact PUA expectation and a
+current closure showing that prerequisite result exists or obtains with its
+category-correct direct basis. Do not
+silently select a sole candidate or infer order from the catalog, retrieval
+rank, display order, or this explanation. Ordinary judgement remains
+conversational; separate five-aspect findings plus an applicability finding are
+materialized only for a named reliance-bearing receiving use.
+
+Keep the PUR boundary explicit. Problem-frame fit or a ProblemCard is not an
+actual Problem; when an actual Problem is relied on, resolve one exact
+`C.22.PFR` Problem occurrence. Plain wording such as *next move* names only an
+advisory recommendation or conditional continuation; it creates no Move identity
+and performs no Work or Transformation. Recommendation and
+coordination likewise assert no plan, gate, decision, authorization, actual
+Problem, Transformation, or subject result.
+
+Once one direct pattern is selected, use current `E.11.PUA` to carry it to the
+smallest honest subject result. Name the working subject or relation and
+practical question in domain language before its PatternID; use an exact kind
+only when a nearby distinction changes the result. State:
 
 - selected direct pattern by `PatternID`, title, and stable source reference;
 - source span, provenance, hashes, or repository-local paths only when the
-  current use explicitly requires trace or audit;
-- why its condition fits;
-- exact first useful result;
-- what the result permits now;
-- stop, return, wrong-turn, and stronger-neighbor boundaries.
+  current use explicitly requires trace or audit; pin edition or revision when
+  reliance-bearing replay needs it;
+- why its condition fits and the exact expected first useful result;
+- the inspected `Solution`, `Consequences`, ordinary boundary, nearest stronger
+  neighbor, and what would cause a wrong-turn return;
+- what actually exists or obtains after using the `Solution`;
+- what that closure permits now, plus the stop or return condition.
 
-A recommendation is advisory. It is not evidence, a gate, a DecisionRecord, a
-WorkCommission, or authorization.
+Close with exactly one honest disposition:
 
-### 4. Choose one current capability
+- `newlyCurrentSubjectResult` — the subject result now exists or obtains under
+  its direct rule and basis;
+- `preExistingWithGrounding` — the subject already existed and only its
+  grounding for this use became adequate; do not claim that pattern use
+  produced it;
+- `expectedSubjectResultAbsent` — the expected subject result remains absent;
+  name the honest interim result or blocker and the exact return condition.
+
+Ordinary selected use remains conversational. Materialize a support record
+only when it names the exact later reliance that consumes it.
+
+An expectation, recommendation, plan, evaluation, grounding, authorization,
+or support record is not an achieved subject result or performed Work. A
+recommendation or coordination result is advisory: it creates no evidence,
+gate, DecisionRecord, WorkCommission, authorization, WorkPlan, Work, actual
+Problem, Transformation, or downstream result.
+
+Keep Work integrity separate from pattern-use closure. A `U.Work` claim needs
+one exact A.15.1-grounded occurrence and is never inferred from planning,
+setup, authorization, or another Work. Claim that the Work's actual changes
+first constituted another entity only with current A.15.PROD and the exact
+work-to-change basis. For a later use, distinguish an intended continuation
+from a realized one: intent asserts no obtaining relation, a realized use names
+the exact later object and basis, and a genuine stop has no receiver. A changed
+concern, basis, result, pattern, or receiving use opens a named return instead
+of silently reinterpreting the same use.
+
+For reliance-bearing replay, pin the exact EntityOfConcern and effective
+reference scheme, practical question, source edition/revision or digest,
+selected `Solution` locator, expected result kind and pattern locator, the
+grounded actual-result assertion or honest interim entity, relative object when
+relevant, direct basis, closure disposition, receiving use, and stop/return
+boundary. This trace records what another use needs; it grants no permission
+and does not make the expected result actual.
+
+### 4. Choose the minimal current capability set
 
 Capabilities are independent entries, not phases:
 
@@ -324,22 +402,39 @@ Capabilities are independent entries, not phases:
 - `h-onboard` — Haft/spec bootstrap is current;
 - `h-note` — the operator explicitly wants a non-binding fact saved.
 
-There is no public `h-plan` phase. When composing a plan is the current
-question, inspect the exact WorkPlan source (`A.15.2`) and return an ordinary
-`U.WorkPlan`-shaped result conversationally. Keep WorkPlan, performed Work, and
-WorkCommission distinct. Route to manual `h-commission` only when bounded
-execution authority is separately current; typed WorkPlan persistence remains
-outside this skill until a receiving lifecycle exists.
+Choose the smallest set that answers the current question. One capability is
+the normal sufficient case. Several may remain current only for genuinely
+complementary uses; leave them `unordered` unless an explicit pairwise basis
+supports a `partialOrder` or `totalOrder`. The catalog supplies no prerequisite
+relation and no project-work order.
 
-Invoke a capability only while its condition is current. Completion of one
-does not imply that another must follow. A concrete method or WorkPlan may
+There is no public `h-plan` phase. When composing intended-work content is the
+current question, inspect the exact WorkPlan source (`A.15.2`) and return a
+`planning draft` or `planning cue` conversationally. Call it a `U.WorkPlan`
+only when its C.2.1/A.15.2 membership basis identifies the present
+EntityOfConcern, effective reference scheme, horizon, and at least one
+substantive `PlanItem` with intended performance, method, window, performer or
+role, plus enough current constraints, resources, dependencies, commitments,
+targets, or baseline to make one coordination decision. A merely similar shape
+is not membership.
+Keep a planning result, conforming WorkPlan, performed Work, and WorkCommission
+distinct. Route to manual `h-commission` only when bounded execution authority
+is separately current; typed WorkPlan persistence remains outside this skill
+until a receiving lifecycle exists.
+
+Invoke each capability only while its own condition is current. Completion of
+one does not imply that another must follow. A concrete method or WorkPlan may
 state order locally; that order belongs to that method or plan, not to this
 catalog.
 
 ### 5. Interrupt only when a human choice is current
 
-Before asking the operator, use the A.6 boundary discipline to separate
-description and evidence from admissibility, binding choice, and authority.
+The Human Gate Brief below is Haft-local governance UX; naming it does not grant
+authority. Before asking the operator, separate description and evidence from
+admissibility, binding choice, permission, readiness, gate passage, and
+authority under the direct contract that owns each current claim. Use A.6/A.6.B
+L/A/D/E unpacking only when one mixed-normativity boundary package actually
+needs that separation; do not cite A.6 as generic gate or authority ownership.
 Cockpit drift, refresh debt, missing bindings, stale prose, or reconciliation
 cues are attention signals; they are not project-wide stop conditions.
 
@@ -389,7 +484,8 @@ without this brief is an invalid operator request.
 ### 6. Decide whether to persist
 
 Default to `ordinaryBounded`: reason in the conversation and produce the
-smallest useful result without creating Haft artifacts.
+smallest useful result without creating Haft artifacts. This persistence rule
+is Haft-local in-scope policy, not permission supplied by FPF.
 
 Persist only when either condition holds:
 
@@ -402,6 +498,8 @@ Persist only when either condition holds:
 The second condition is proactive: when it is satisfied, do not ask the
 operator whether memory should be used. Establish the minimum stable
 EntityOfConcern and materialize only the records that the concrete use needs.
+A receiving use never weakens effect-specific authority or authorizes a
+binding, approval, commission, profile change, or other governed effect.
 
 When persistence is justified, materialize only the records that receiving use
 needs. Do not automatically create ProblemCard, SolutionPortfolio,

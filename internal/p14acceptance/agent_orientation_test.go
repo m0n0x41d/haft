@@ -135,6 +135,7 @@ func p14AgentOrientationPriorScenario(
 	values := map[string]string{
 		"agent_code_graph_orientation":   "code_graph_exact_explore",
 		"agent_typed_memory_orientation": "unknown_eoc",
+		"agent_fpf_pattern_use":          "fpf_query_projection",
 	}
 	prior := values[scenarioID]
 	if prior == "" {

@@ -39,6 +39,7 @@ const (
 	previousBaseTypeEnvCompilerSchemaV2 = typeenv.BaseTypeEnvCompilerSchemaV2
 	previousBaseTypeEnvCompilerSchemaV3 = typeenv.BaseTypeEnvCompilerSchemaV3
 	previousBaseTypeEnvCompilerSchemaV4 = typeenv.BaseTypeEnvCompilerSchemaV4
+	previousBaseTypeEnvCompilerSchemaV5 = typeenv.BaseTypeEnvCompilerSchemaV5
 	fpfSourceCommitEpochEnvironment     = "HAFT_FPF_SOURCE_COMMIT_EPOCH"
 )
 
@@ -343,15 +344,17 @@ func comparePreviousTypeEnvSnapshot(
 	if previousCompiler != currentCompiler &&
 		previousCompiler != previousBaseTypeEnvCompilerSchemaV2 &&
 		previousCompiler != previousBaseTypeEnvCompilerSchemaV3 &&
-		previousCompiler != previousBaseTypeEnvCompilerSchemaV4 {
+		previousCompiler != previousBaseTypeEnvCompilerSchemaV4 &&
+		previousCompiler != previousBaseTypeEnvCompilerSchemaV5 {
 		return nil, fmt.Errorf(
-			"previous FPF TypeEnv compiler schema %q is neither current %q nor a known predecessor (%q, %q, %q, %q)",
+			"previous FPF TypeEnv compiler schema %q is neither current %q nor a known predecessor (%q, %q, %q, %q, %q)",
 			previousCompiler,
 			currentCompiler,
 			legacyBaseTypeEnvCompilerSchemaV1,
 			previousBaseTypeEnvCompilerSchemaV2,
 			previousBaseTypeEnvCompilerSchemaV3,
 			previousBaseTypeEnvCompilerSchemaV4,
+			previousBaseTypeEnvCompilerSchemaV5,
 		)
 	}
 	previousEnvelope, exists, err := loadPreviousTypeEnvEnvelopeSnapshot(transaction)

@@ -138,7 +138,7 @@ func TestClassifyCandidateBuildDiagnosticRejectsUnbuildableCompilerLineageGap(t 
 	t.Parallel()
 
 	err := errors.New(
-		`candidate compiler version "fpf-base-typeenv.cov2.v99" is neither current "fpf-base-typeenv.cov2.v5" nor a known predecessor`,
+		`candidate compiler version "fpf-base-typeenv.cov2.v99" is neither current "fpf-base-typeenv.cov2.v6" nor a known predecessor`,
 	)
 	if got := classifyCandidateBuildDiagnostic(err); got != DiagnosticCandidateVerificationFailed {
 		t.Fatalf(
@@ -146,6 +146,53 @@ func TestClassifyCandidateBuildDiagnosticRejectsUnbuildableCompilerLineageGap(t 
 			got.String(),
 			DiagnosticCandidateVerificationFailed.String(),
 		)
+	}
+}
+
+func TestCandidateBuildFailureSourceRefDistinguishesReadmeFromSpecification(t *testing.T) {
+	t.Parallel()
+
+	const revision = "353d59d1c2167344cfff99cadbf413c587c14a66"
+	tests := []struct {
+		name    string
+		message string
+		want    string
+	}{
+		{
+			name:    "README grammar",
+			message: "build publication source units: FPF README grammar: expected exactly one supported H1 publication heading at line 1 in /candidate/Readme.md",
+			want:    candidateLogicalReadmePath + "@" + revision,
+		},
+		{
+			name:    "embedded README grammar belongs to specification",
+			message: "build publication source units: FPF README grammar: practical-entry H2 must belong to the embedded README H1",
+			want:    candidateLogicalSpecPath + "@" + revision,
+		},
+		{
+			name:    "embedded heading cannot imitate standalone carrier path",
+			message: `build publication source units: FPF README grammar: practical-use heading "Readme.md" lacks source id and title`,
+			want:    candidateLogicalSpecPath + "@" + revision,
+		},
+		{
+			name:    "README atlas",
+			message: "parse FPF README structure: invalid heading",
+			want:    candidateLogicalReadmePath + "@" + revision,
+		},
+		{
+			name:    "specification grammar",
+			message: "FPF specification grammar: Preface H1 not found",
+			want:    candidateLogicalSpecPath + "@" + revision,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			got := candidateBuildFailureSourceRef(errors.New(test.message), revision)
+			if got != test.want {
+				t.Fatalf("candidateBuildFailureSourceRef() = %q, want %q", got, test.want)
+			}
+		})
 	}
 }
 

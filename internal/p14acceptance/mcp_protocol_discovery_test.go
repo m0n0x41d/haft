@@ -434,6 +434,30 @@ func validateP14MCPInitializeResponse(raw []byte) error {
 	return nil
 }
 
+func p14MCPProtocolServerVersion(
+	discovery p14MCPProtocolDiscovery,
+) (string, error) {
+	if len(discovery.Exchanges) != 2 {
+		return "", fmt.Errorf("P14 MCP protocol discovery has no initialize exchange")
+	}
+	_, response, err := validateP14MCPProtocolExchange(
+		discovery.Exchanges[0],
+		"initialize",
+	)
+	if err != nil {
+		return "", err
+	}
+	_, result, err := decodeP14MCPResponse(response, "p14-initialize")
+	if err != nil {
+		return "", err
+	}
+	version := p14JSONText(p14JSONMap(result["serverInfo"])["version"])
+	if !validP14CandidateVersion(version) {
+		return "", fmt.Errorf("P14 MCP initialize version is invalid")
+	}
+	return version, nil
+}
+
 func validateP14MCPToolsListResponse(raw []byte) error {
 	_, result, err := decodeP14MCPResponse(raw, "p14-tools-list")
 	if err != nil {
@@ -1237,7 +1261,7 @@ func syntheticP14MCPProtocolDiscovery(
 				},
 				"serverInfo": map[string]any{
 					"name":    "haft",
-					"version": "v9",
+					"version": p14RequiredCandidateVersion,
 				},
 				"instructions": strings.Join([]string{
 					"# Haft project memory",

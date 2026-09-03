@@ -173,6 +173,59 @@ func TestLinkerKeepsSameParentSymbolicRelationsIndependentAndSourceOnly(t *testi
 	}
 }
 
+func TestCurrentC3ContractsUseExactSourceOnlySymbols(t *testing.T) {
+	tests := []struct {
+		name       string
+		kind       C3ContractKind
+		designator string
+		wantSymbol string
+	}{
+		{
+			name:       "classification includes admissibility",
+			kind:       C3KindClassificationContract,
+			designator: "ClassificationAdmissibility/J",
+			wantSymbol: "shape:FPF.C3.KindClassification",
+		},
+		{
+			name:       "KindBridge is a direct relation",
+			kind:       C3KindBridgeContract,
+			designator: "KindBridge",
+			wantSymbol: "signature:FPF.C3.KindBridge",
+		},
+		{
+			name:       "kind-use adaptation succeeds RoleMask",
+			kind:       C3KindUseAdaptationContract,
+			designator: "KindUseAdaptationDeclaration",
+			wantSymbol: "shape:FPF.C3.KindUseAdaptationDeclaration",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			declaration := C3ContractDeclaration{
+				source: linkerSourceUnit(
+					"fixture:c3:"+test.kind.String(),
+					"Fixture.C3",
+					"C.3",
+					200,
+				),
+				kind:        test.kind,
+				designator:  test.designator,
+				coordinates: []string{"fixture_coordinate"},
+			}
+			linked, coverage, err := linkC3SourceContract(declaration)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if linked.Symbol().String() != test.wantSymbol {
+				t.Fatalf("linked symbol = %q, want %q", linked.Symbol().String(), test.wantSymbol)
+			}
+			if coverage.Posture() != typedmemory.CoverageSourceOnly {
+				t.Fatalf("coverage posture = %q, want source_only", coverage.Posture())
+			}
+		})
+	}
+}
+
 func TestCoverageDedupRejectsConflictingEntry(t *testing.T) {
 	unit := linkerSourceUnit("fixture:coverage", "Fixture.Coverage", "Fixture.Owner", 40)
 	first, err := sourceOnlyUnitGap(unit, "first_reason")

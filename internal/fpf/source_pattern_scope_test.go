@@ -78,6 +78,82 @@ func TestValidateSourceReferences_PatternScopeResolvesTOCDirectReference(t *test
 	}
 }
 
+func TestParsePatternScopeDeclarationsAcceptsIdentityDeclaredByExactHeading(t *testing.T) {
+	t.Parallel()
+
+	markdown := []byte(strings.Join([]string{
+		"# Specification",
+		"## G.12 - Dashboard patterns",
+		"#### G.12:4.9 - Optional Extensions",
+		"##### `G.12:Ext.SoTAPalette` — SoTA palette alignment",
+		"* `PatternScopeId`: `G.12:Ext.SoTAPalette`",
+		"* `GPatternExtensionKind`: `InteropSpecific`",
+		"* `GoverningPatternId`: `G.2`",
+	}, "\n"))
+	atlas, err := BuildPatternAtlas(markdown, "FPF-Spec.md", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	declarations, err := parsePatternScopeDeclarations(
+		splitPatternAtlasLines(markdown),
+		atlas,
+	)
+	if err != nil {
+		t.Fatalf("parsePatternScopeDeclarations() error = %v", err)
+	}
+	if len(declarations) != 1 ||
+		declarations[0].sourceID != "G.12:Ext.SoTAPalette" ||
+		declarations[0].parentPatternID != "G.12" {
+		t.Fatalf("pattern scope declarations = %#v", declarations)
+	}
+}
+
+func TestParsePatternScopeDeclarationsStillRequiresIndependentIdentityBasis(t *testing.T) {
+	t.Parallel()
+
+	markdown := []byte(strings.Join([]string{
+		"# Specification",
+		"## G.12 - Dashboard patterns",
+		"##### GPatternExtension — SoTA palette alignment",
+		"* `PatternScopeId`: `G.12:Ext.SoTAPalette`",
+		"* `GPatternExtensionKind`: `InteropSpecific`",
+		"* `GoverningPatternId`: `G.2`",
+	}, "\n"))
+	atlas, err := BuildPatternAtlas(markdown, "FPF-Spec.md", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = parsePatternScopeDeclarations(splitPatternAtlasLines(markdown), atlas)
+	if err == nil || !strings.Contains(err.Error(), "lacks GPatternExtensionId") {
+		t.Fatalf("parsePatternScopeDeclarations() error = %v, want missing identity failure", err)
+	}
+}
+
+func TestParsePatternScopeDeclarationsRejectsMalformedExplicitExtensionID(t *testing.T) {
+	t.Parallel()
+
+	markdown := []byte(strings.Join([]string{
+		"# Specification",
+		"## G.12 - Dashboard patterns",
+		"##### `G.12:Ext.SoTAPalette` — SoTA palette alignment",
+		"* `PatternScopeId`: `G.12:Ext.SoTAPalette`",
+		"* `GPatternExtensionId`: `---`",
+		"* `GPatternExtensionKind`: `InteropSpecific`",
+		"* `GoverningPatternId`: `G.2`",
+	}, "\n"))
+	atlas, err := BuildPatternAtlas(markdown, "FPF-Spec.md", "candidate")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = parsePatternScopeDeclarations(splitPatternAtlasLines(markdown), atlas)
+	if err == nil || !strings.Contains(err.Error(), "malformed GPatternExtensionId") {
+		t.Fatalf("parsePatternScopeDeclarations() error = %v, want malformed identity failure", err)
+	}
+}
+
 func countPatternScopeDeclarations(markdown []byte) int {
 	count := 0
 	lines := splitPatternAtlasLines(markdown)

@@ -1430,13 +1430,17 @@ func (s *Server) handleToolsCallContext(
 
 	if params.Name == "haft_onboard" {
 		action, err := decodeMemoryToolAction(params.Arguments)
-		if err != nil ||
-			(action != haftOnboardStatusAction &&
-				action != haftOnboardProfilePrepareAction) {
+		invalidReason := ""
+		if err != nil {
+			invalidReason = err.Error()
+		} else if !isHaftOnboardAdvertisedAction(action) {
+			invalidReason = haftOnboardActionRequirement()
+		}
+		if invalidReason != "" {
 			s.sendResult(req.ID, CallToolResult{
 				Content: []ContentItem{{
 					Type: "text",
-					Text: "Invalid haft_onboard request: action must be status or profile_prepare",
+					Text: "Invalid haft_onboard request: " + invalidReason,
 				}},
 				IsError: true,
 			})

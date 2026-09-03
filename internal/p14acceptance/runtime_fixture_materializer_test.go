@@ -28,6 +28,13 @@ type p14RuntimeFixtureMaterializationRequest struct {
 	CandidateExecutablePath string `json:"candidate_executable_path"`
 }
 
+type p14RuntimeFixtureMaterializationResult struct {
+	MemoryPath   string
+	MemoryDigest string
+	InitPath     string
+	InitDigest   string
+}
+
 func TestP14MaterializeRuntimeFixtureCarriers(t *testing.T) {
 	requestPath := os.Getenv(p14RuntimeFixtureMaterializationEnvironmentKey)
 	if requestPath == "" {
@@ -44,31 +51,54 @@ func TestP14MaterializeRuntimeFixtureCarriers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	result, err := materializeP14RuntimeFixtureCarriers(
+		t,
+		repositoryRoot,
+		request,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf(
+		"P14_RUNTIME_FIXTURES memory=%s:%s init=%s:%s",
+		result.MemoryPath,
+		result.MemoryDigest,
+		result.InitPath,
+		result.InitDigest,
+	)
+}
+
+func materializeP14RuntimeFixtureCarriers(
+	t *testing.T,
+	repositoryRoot string,
+	request p14RuntimeFixtureMaterializationRequest,
+) (p14RuntimeFixtureMaterializationResult, error) {
+	t.Helper()
 	p13Binding, p13Evidence, err := loadP14PassingP13Evidence(
 		repositoryRoot,
 		request.P13EvidencePath,
 	)
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	if err := verifyP13EvidenceFreshViaHarness(
 		repositoryRoot,
 		p13Binding,
 	); err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	candidateDigest, err := digestP14File(request.CandidateExecutablePath)
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	memoryFixturePath, initFixturePath, err :=
 		p14RuntimeFixtureCarrierPaths(candidateDigest)
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	originalHome, err := os.UserHomeDir()
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	memoryFixture, err := materializeP14GoldenMemoryFixture(
 		repositoryRoot,
@@ -77,7 +107,7 @@ func TestP14MaterializeRuntimeFixtureCarriers(t *testing.T) {
 		p13Evidence.StartIdentity,
 	)
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	initFixture, err := materializeP14InitMatrixFixture(
 		t,
@@ -85,38 +115,37 @@ func TestP14MaterializeRuntimeFixtureCarriers(t *testing.T) {
 		candidateDigest,
 	)
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	memoryRaw, err := json.MarshalIndent(memoryFixture, "", "  ")
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	memoryRaw = append(memoryRaw, '\n')
 	initRaw, err := marshalP14CanonicalJSON(initFixture)
 	if err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	if err := publishP14NoClobber(
 		repositoryRoot,
 		memoryFixturePath,
 		memoryRaw,
 	); err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
 	if err := publishP14NoClobber(
 		repositoryRoot,
 		initFixturePath,
 		initRaw,
 	); err != nil {
-		t.Fatal(err)
+		return p14RuntimeFixtureMaterializationResult{}, err
 	}
-	t.Logf(
-		"P14_RUNTIME_FIXTURES memory=%s:%s init=%s:%s",
-		memoryFixturePath,
-		p14Digest(memoryRaw),
-		initFixturePath,
-		p14Digest(initRaw),
-	)
+	return p14RuntimeFixtureMaterializationResult{
+		MemoryPath:   memoryFixturePath,
+		MemoryDigest: p14Digest(memoryRaw),
+		InitPath:     initFixturePath,
+		InitDigest:   p14Digest(initRaw),
+	}, nil
 }
 
 func p14RuntimeFixtureCarrierPaths(
@@ -172,6 +201,56 @@ func TestP14RuntimeFixtureCarrierPathsAreCandidateScoped(
 	}
 	if _, _, err := p14RuntimeFixtureCarrierPaths("not-a-digest"); err == nil {
 		t.Fatal("P14 runtime fixture paths accepted an invalid candidate")
+	}
+}
+
+func TestP14RuntimeFixtureMaterializerRejectsDirtyP13BeforeWrites(t *testing.T) {
+	repositoryRoot, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	basis := syntheticFrozenP14BasisForP13()
+	basis.SelectedProject.ProjectRoot = repositoryRoot
+	identityDigest := p14TestDigest("dirty-materializer-p13-identity")
+	carrierPath := ".context/p13/p13-acceptance-dirty.json"
+	evidence := syntheticP13EvidenceForP14(
+		basis,
+		identityDigest,
+		p14RequiredP13Schema,
+		carrierPath,
+	)
+	evidence.StartIdentity.Git.StatusDigest = p14TestDigest("dirty-status")
+	evidence.StartIdentity.Git.StatusBytes = 1
+	evidence.EndIdentity.Git = evidence.StartIdentity.Git
+	raw, err := json.Marshal(evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	absoluteCarrier := filepath.Join(
+		repositoryRoot,
+		filepath.FromSlash(carrierPath),
+	)
+	if err := os.MkdirAll(filepath.Dir(absoluteCarrier), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(absoluteCarrier, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = materializeP14RuntimeFixtureCarriers(
+		t,
+		repositoryRoot,
+		p14RuntimeFixtureMaterializationRequest{
+			Schema:                  p14RuntimeFixtureMaterializationSchema,
+			P13EvidencePath:         carrierPath,
+			CandidateExecutablePath: filepath.Join(repositoryRoot, "absent-haft"),
+		},
+	)
+	if err == nil {
+		t.Fatal("P14 runtime fixture materializer accepted dirty P13 evidence")
+	}
+	if _, statErr := os.Stat(filepath.Join(repositoryRoot, ".context", "p14")); !os.IsNotExist(statErr) {
+		t.Fatalf("dirty P13 materialization wrote P14 state: %v", statErr)
 	}
 }
 

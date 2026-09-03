@@ -40,22 +40,23 @@ const (
 	releaseBlockerRelativePath       = ".context/current-plan-issue-report.md"
 	releaseBlockerSpan               = "document:full"
 	releaseBlockerHeading            = "# V9 release blocker: internal FPF Query provenance leaks into MCP working responses"
-	// Предшественник текущей приёмки — голова 3 на FPF 8b727cb, от которой
-	// compatible_successor_policy автоматически перевела проект на голову 4
-	// (FPF 3dbce51, Base 1b6b04c1). Значения сняты из живого project ledger
+	// Предшественник текущей приёмки — голова 4 на FPF 3dbce51, от которой
+	// compatible_successor_policy должен автоматически перевести проект на
+	// следующий exact FPF 036c056e / Base dffe960a. Значения сняты read-only
+	// из живого project ledger
 	// через LoadExecutableSnapshotTx, а не выведены из прозы.
 	//
 	// Эти константы задают ОДИН принимаемый переход. Тесты рядом параметризованы
 	// ими и продолжают доказывать своё свойство — что произвольный, исторический
 	// или второй переход отвергается, — относительно нового пина.
-	requiredPriorHeadRevision   = int64(3)
-	requiredPriorCompositeRef   = "typeenv:sha256:3ccfcdbc97f1a6f4a8241f03357ebcacf827868a35343cb19f88fd0ec07da615"
-	requiredPriorBaseRef        = "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
-	requiredPriorBaseDigest     = "sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786"
-	requiredPriorFPFRevision    = "8b727cba9e893a467b82aab9da84fb7d6d945480"
+	requiredPriorHeadRevision   = int64(4)
+	requiredPriorCompositeRef   = "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49"
+	requiredPriorBaseRef        = "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc"
+	requiredPriorBaseDigest     = "sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc"
+	requiredPriorFPFRevision    = "3dbce51436bfd718bf49cb0356eebce70c4fc015"
 	requiredPriorCompilerSchema = "fpf-base-typeenv.cov2.v5"
-	requiredPriorSnapshotDigest = "sha256:4aa850110aa7f5a0bfbc94a0a747cba461aed8fc7316ff7a2f958072d5539c40"
-	requiredPriorLoweredDigest  = "sha256:89fab8411e61205f39ea5bacc11fcadc789dc33e7aff3495c04e12c1028ff0f0"
+	requiredPriorSnapshotDigest = "sha256:7b27ea39432b698a39da30823927dfc15e9f104e519ed44eb536f47a12e7b59d"
+	requiredPriorLoweredDigest  = "sha256:d1873fe015927dae892d6dc6f0fef7391ff6cb22c2ae7a1bcafbd71bf61a3b66"
 	requiredStageSchemaEdition  = "haft.project-typeenv.stage-schema/v5"
 )
 
@@ -2044,7 +2045,7 @@ func exactGateContract() []gateContract {
 			ID:           "G0P",
 			Title:        "Project-profile and applicability",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:37e9009bb18cd148243dfd2c33619a57ad67566a551859440dd237e24ad0d4bd",
+			ClaimsDigest: "sha256:fc9ceca86bc15eb6295d8a937a7ac348b595478c924abfbb0a9f1dc9e3632377",
 			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/profileonboarding::TestRunProfileDeclarationExplicitPolicyAdmitsAndReplaysAfterRestart",
@@ -2055,6 +2056,8 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/cli::TestCanonicalProjectSpecificationApplicabilityIsUnderdeterminedWithoutAdmission",
 				"github.com/m0n0x41d/haft/internal/cli::TestHandleHaftCommissionForProjectAdmitsNonSoftwareWithoutFakeSWESpec",
 				"github.com/m0n0x41d/haft/internal/cli::TestProfileDeclarationFreshReviewedCandidateReplaysAfterLedgerRestart",
+				"github.com/m0n0x41d/haft/internal/cli::TestOnboardProfileChangePrepareAndApplyRepairsSpecApplicability",
+				"github.com/m0n0x41d/haft/internal/p14acceptance::TestP14OnboardProfileChangePrepareBuilderClosesReplayAndNoApply",
 				"github.com/m0n0x41d/haft/internal/p13acceptance::TestStageProfileBindingRejectsPostStageProfileDrift",
 			},
 		},
@@ -2165,7 +2168,7 @@ func exactGateContract() []gateContract {
 			ID:           "G4",
 			Title:        "MCP validation and admission",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:ca09580608bf336099b98ab71aa03d7d9fbd819b8ff0eba7bae0a867e264ec27",
+			ClaimsDigest: "sha256:2f9eb49beb48a744ae8c50b50ad3e532b0777a5a01e9eeeaaef0ba718951c4ef",
 			SuiteIDs:     []string{"go_normal", "go_vet", "pi_test", "pi_typecheck"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/typedmemory::TestGenericKernelHasNoHaftProductCarrierDependency",
@@ -2178,6 +2181,9 @@ func exactGateContract() []gateContract {
 				"github.com/m0n0x41d/haft/internal/cli::TestProjectMemoryCommitUnknownHasCLIAndMCPDeliveryParity",
 				"github.com/m0n0x41d/haft/internal/cli::TestSourceNativeFPFQueryIntegration",
 				"github.com/m0n0x41d/haft/internal/cli::TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject",
+				"github.com/m0n0x41d/haft/internal/fpf::TestHaftOnboardEveryAdvertisedActionCrossesJSONRPCDispatcher",
+				"github.com/m0n0x41d/haft/internal/fpf::TestHaftOnboardProfileChangePrepareCrossesJSONRPCDispatcher",
+				"github.com/m0n0x41d/haft/internal/p14acceptance::TestP14IdentifierNamespaceBuilderClosesExecutableRecoveryMatrix",
 			},
 		},
 		{
@@ -2304,15 +2310,22 @@ func exactGateContract() []gateContract {
 			ID:           "G8",
 			Title:        "Stream and release truth",
 			PlanSpan:     p13PlanSpan,
-			ClaimsDigest: "sha256:5923088099b8e3032714734f7b032db13ffc023eea0eaf11065e687a34fc3b1c",
+			ClaimsDigest: "sha256:6474849f6d4f949139bd4ea516bdd081d8252e7ac36f6dff4a5c6de7f364871d",
 			SuiteIDs:     []string{"fpf_index_exact", "query_token_gate", "go_normal", "go_vet", "pi_test", "pi_typecheck", "gofmt_check", "git_diff_check"},
 			AnchorKeys: []string{
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestREADMEOpensWithProductAndFPFAttribution",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestCurrentFacingV9ProseHasNoUnsupportedTruthClaim",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestCurrentFacingCarriersMakeNoRetrievalSuperiorityClaim",
 				"github.com/m0n0x41d/haft/internal/streamtruth::TestAgentDisciplineTemplateKeepsOneTruthContract",
+				"github.com/m0n0x41d/haft/internal/streamtruth::TestCandidateBuildCarriersStampExactVersionAndFullCommit",
 				"github.com/m0n0x41d/haft/internal/cli::TestHReasonSkill_IsSourceFirstUmbrella",
 				"github.com/m0n0x41d/haft/internal/cli::TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics",
+				"github.com/m0n0x41d/haft/internal/cli::TestHReasonSemanticCorpusContract",
+				"github.com/m0n0x41d/haft/internal/cli::TestHReasonSemanticCorpusRelianceBearingMaterializesOneAddressableSupportNote",
+				"github.com/m0n0x41d/haft/internal/p14acceptance::TestP14AgentFPFPatternUseBuilderConsumesSealedCorpusSubset",
+				"github.com/m0n0x41d/haft/internal/p14acceptance::TestP14PassingP13EvidenceRequiresCanonicalCleanGitIdentity",
+				"github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CandidateVersionObservationRequiresStampedGoVCS",
+				"github.com/m0n0x41d/haft/internal/p14acceptance::TestP14ReleaseArchivesBindQualifiedExecutable",
 				"github.com/m0n0x41d/haft/internal/p13acceptance::TestRelevantByteIdentityIncludesUntrackedRootGoBuildInput",
 				"github.com/m0n0x41d/haft/internal/p13acceptance::TestDependencyIdentityBindsInstalledTreeBytes",
 				"github.com/m0n0x41d/haft/internal/p13acceptance::TestHGAdversarialAcceptance",

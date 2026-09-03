@@ -1,6 +1,6 @@
 ---
 name: h-reason
-description: Source-first umbrella for FPF-aware reasoning in a Haft project. Use for ambiguous engineering, management, architecture, specification, or project questions when no narrower Haft capability is already current. Ordinary reasoning stays conversational; persistence is conditional and binding actions remain manual.
+description: Source-first umbrella for FPF-aware reasoning in a Haft project. Use for ambiguous engineering, management, architecture, specification, or project questions when no narrower Haft capability is already current. Ordinary reasoning stays conversational; persistence is conditional, h-decide may route a direct operator request, and h-commission remains manual-only.
 ---
 
 <!-- haft-contract-source: kernel_interface_catalog source_digest=sha256:26e174fdd87993d53721c925be9727239d77e8a425b7c52d28fd9f833b6d1153 -->
@@ -27,15 +27,18 @@ smallest useful result. Query `haft_query(action="fpf", mode="concern",
 query="<object + question + terms>")`; compare README practical-use cards, use
 the source ToC as the identifier/keyword index, recover exact source units with
 `mode="lookup"` or non-broadening `mode="inspect"`, and inspect the selected
-pattern's full body. Retrieval returns source candidates. Returned source
+pattern's Problem frame, Problem, Forces, Solution, Consequences, ordinary
+boundary, nearest stronger neighbor, worked slices, and checklist. Retrieval
+returns source candidates. Returned source
 material is not applicability, selection, recommendation, evidence,
 precedence, or authority.
 
 For a non-English concern, keep the operator's wording in `query` and add
-precise English or FPF terms in `known_context`. Those terms are required: the
-bundled source is English, a measured 6 of 6 Russian concerns returned zero
-candidates without them, and the same concerns with English `known_context`
-resolved to the exact card at rank 1. Do not translate `query` itself.
+precise English or FPF terms already known in `entity_of_concern`,
+`known_context`, and `intended_use`. The bundled source is English, so raw
+non-English input may return insufficient basis; keep that diagnostic visible.
+Do not translate `query`, invent a bilingual route, or turn an unversioned
+benchmark observation into a permanent routing rule.
 
 In ordinary working use, identify the selected direct pattern by `PatternID`,
 title, and stable source reference. Do not routinely reproduce source spans,
@@ -115,27 +118,73 @@ governed code, use `code_context` or `impact` on the actual target. Purely
 mechanical work may explicitly abstain and record `not_applicable`. Code-graph
 and typed-memory orientation are separate; neither substitutes for the other.
 
-Preserve the operator's original non-English query. Add `entity_of_concern`,
-`known_context`, and `intended_use` with precise source-language or FPF terms
-when known. Never translate into a hidden bilingual route catalog; unsupported
-raw language may abstain.
-
 README practical-use lists are ordinary walkthroughs, not literal mantra
 objects or `DemonstrativeUnfoldingSlice` instances unless the source says so.
 Query returns candidates; select by current condition and apply the direct
 Solution. v9 Query uses authored phrases, headings/keywords, and role-local FTS;
 dense retrieval is **DEFERRED RESEARCH**.
 
+When applicability, recommendation, or coordination among candidates is
+current, inspect current `E.11.PUR` and every evaluated candidate's full
+`Solution`. Give a compact rationale for `problemFrame`, `forces`,
+`solutionConditions`, `ordinaryBoundary`, and `resultAndReceivingUse`, then
+aggregate the candidate as `applicable`, `inapplicable`, or
+`insufficientBasis`. Recommend only an applicable candidate after comparing its
+expected first result with live alternatives. Keep complementary uses
+`unordered` unless a declared basis supports `partialOrder` or `totalOrder`;
+`prerequisiteResult` also needs an exact PUA expectation and current closure
+with its category-correct direct basis.
+Every coordinated member answers the same bounded coordination question while
+remaining a distinct candidate use. Never infer a winner or order from score,
+display, or catalog position. Problem-frame fit or a ProblemCard is not an
+actual Problem; a relied-on actual Problem resolves to one exact `C.22.PFR`
+occurrence. Plain *next move* wording is only advice or a conditional
+continuation: it creates no Move identity and performs no Work or
+Transformation.
+
+For one selected pattern, use current `E.11.PUA`. Name the subject, question,
+expected first result, inspected Solution and Consequences, ordinary boundary,
+stronger neighbor, and stop/return. Close as exactly one of
+`newlyCurrentSubjectResult`, `preExistingWithGrounding`, or
+`expectedSubjectResultAbsent`; in the last case name the interim result or
+blocker and return condition. An expectation, recommendation, planning draft,
+grounding, or support record is not an achieved result or performed Work.
+Ordinary selected use remains conversational; materialize a support record only
+when it names the exact later reliance that consumes it.
+Recommendation and coordination create no evidence, gate, DecisionRecord,
+WorkCommission, authorization, WorkPlan, Work, actual Problem,
+Transformation, or downstream result. A `U.Work` claim needs one exact
+A.15.1-grounded occurrence and is never inferred from planning, setup,
+authorization, or another Work. Entity inception by Work also needs current
+A.15.PROD and the exact work-to-change basis. Intended later use asserts no
+obtaining relation; realized use names the exact later object and basis; a
+genuine stop has no receiver. A changed concern, basis, result, pattern, or use
+opens a named return.
+
+For reliance-bearing replay, pin exact EntityOfConcern/reference scheme,
+question, source edition/revision or digest, selected Solution locator,
+expected result kind and locator, grounded actual-result assertion or honest
+interim entity, relative object when relevant, direct basis, closure
+disposition, receiving use, and stop/return. Materialize separate fit and
+applicability findings only for that named receiving use. This is Haft-local
+persistence policy, not FPF permission; receiving use never weakens
+effect-specific authority.
+
 FPF navigation is relation-first. Text, graph, card, skill, or walkthrough
 order does not prescribe causal, temporal, method, or performed-work order.
 Explicit causal claims, MethodDescriptions, WorkPlans, and Work relations may
-still state order. Do not call FPF an acausal ontology.
+still state order. A skill or pattern carrier does not itself prove
+`U.MethodDescription` membership under A.3.2. Do not call FPF an acausal
+ontology.
 
-Choose only the capability currently needed. Public skills are independent,
-not phases. Keep ordinary reasoning conversational; persist on explicit save
-intent or for a concrete receiving use, operator-named or agent-inferred from
-current Work. `haft_method` remains internal task-local
-code guidance, not a public skill. Decisions and commissions are manual.
+Choose the minimal current capability set. One capability is normally enough;
+complementary uses may remain `unordered` unless an explicit pairwise basis
+supports `partialOrder` or `totalOrder`. Public skills are independent, not
+phases or a project sequence. Keep ordinary reasoning conversational; persist
+on explicit save intent or for a concrete receiving use, operator-named or
+agent-inferred from current Work. `haft_method` remains internal task-local
+code guidance, not a public skill. A direct, unambiguous operator request may
+route through h-decide; h-commission remains manual-only.
 
 Cockpit drift, refresh debt, stale prose, missing bindings, and reconciliation
 cues are attention, not project-wide human gates. Continue reversible
@@ -146,6 +195,11 @@ material human-reserved choice, or rely on unresolved contradictory binding
 content. Stop only the affected operation and name the exact choice. Never ask
 for bare `OK`, `yes`, or `да` merely to acknowledge evidence, historicity,
 cleanup, or already-authorized continuation.
+
+The Human Gate Brief is Haft-local governance UX, not authority. Use A.6/A.6.B
+L/A/D/E unpacking only for an actually mixed-normativity boundary package;
+permission, SpeechAct, readiness, gate, and spec lifecycle stay with their
+direct governing contracts.
 
 Before making a human-gate request, publish a self-contained
 **Human Gate Brief**. State the gate kind, readable subject, affected operation and blocker;
@@ -169,9 +223,11 @@ readable meaning, and the brief itself is explanation rather than authority.
 A bare `h-decide needed`, `approval required`, or `spec gate open` request is
 invalid.
 
-There is no public `h-plan`. When composing a plan is current, inspect the
-exact WorkPlan source and return an ordinary `U.WorkPlan`-shaped result here.
-Do not confuse it with performed Work or manual execution authority.
+There is no public `h-plan`. When composing intended-work content is current,
+inspect the exact WorkPlan source and return a `planning draft` or `planning
+cue`. Call it a `U.WorkPlan` only when its C.2.1/A.15.2 identity and membership
+basis is established; a merely similar shape is not membership. Planning
+content, WorkPlan, performed Work, and manual execution authority stay distinct.
 
 `E.11.PUA` and `E.11.PUR` are authoritative FPF patterns. Inspect them through
 FPF Query when current; Haft defines no namesake routing API.

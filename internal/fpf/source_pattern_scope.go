@@ -7,7 +7,8 @@ import (
 )
 
 var patternScopeIDFieldRE = regexp.MustCompile(`(?i)\bPatternScopeId\b[^A-Za-z0-9]*(G\.[0-9]+:Ext\.[A-Za-z0-9_]+)\b`)
-var patternExtensionIDFieldRE = regexp.MustCompile(`(?i)\bGPatternExtensionId\b[^A-Za-z0-9]*([A-Za-z0-9_]+)\b`)
+var patternExtensionIDMarkerRE = regexp.MustCompile(`(?i)\bGPatternExtensionId\b`)
+var patternExtensionIDFieldRE = regexp.MustCompile(`(?i)\bGPatternExtensionId\b[^A-Za-z0-9\r\n]*([A-Za-z0-9_]+)\b`)
 
 type patternScopeDeclaration struct {
 	sourceID        string
@@ -91,7 +92,15 @@ func parsePatternScopeDeclarations(lines []string, atlas PatternAtlas) ([]patter
 		endLine := findPatternScopeEndLine(lines, markerLine, card.CardEndLine)
 		body := patternAtlasLineRange(lines, markerLine, endLine)
 		extensionID, extensionFound := extractPatternExtensionIDField(body)
-		if !extensionFound {
+		if patternExtensionIDMarkerRE.MatchString(body) && !extensionFound {
+			return nil, fmt.Errorf(
+				"pattern_scope_source_malformed[%s:%d]: PatternScopeId %s has malformed GPatternExtensionId",
+				atlas.SourceRef,
+				declarationLine,
+				sourceID,
+			)
+		}
+		if !extensionFound && !patternScopeHeadingDeclaresID(lines[markerLine-1], sourceID) {
 			return nil, fmt.Errorf(
 				"pattern_scope_source_malformed[%s:%d]: PatternScopeId %s lacks GPatternExtensionId",
 				atlas.SourceRef,
@@ -99,7 +108,7 @@ func parsePatternScopeDeclarations(lines []string, atlas PatternAtlas) ([]patter
 				sourceID,
 			)
 		}
-		if extensionID != patternScopeExtensionID(sourceID) {
+		if extensionFound && extensionID != patternScopeExtensionID(sourceID) {
 			return nil, fmt.Errorf(
 				"pattern_scope_source_malformed[%s:%d]: PatternScopeId %s disagrees with GPatternExtensionId %s",
 				atlas.SourceRef,
@@ -187,6 +196,22 @@ func isPatternScopeIDHeading(line, sourceID string) bool {
 	headingKey := sourceReferenceKey(heading)
 	sourceKey := sourceReferenceKey(sourceID)
 	return strings.Contains(headingKey, sourceKey)
+}
+
+func patternScopeHeadingDeclaresID(line, sourceID string) bool {
+	_, heading, _, isHeading := parsePatternAtlasHeading(line)
+	if !isHeading {
+		return false
+	}
+	clean := cleanMarkdownText(heading)
+	for _, separator := range []string{" - ", " — "} {
+		parts := strings.SplitN(clean, separator, 2)
+		if len(parts) == 2 {
+			clean = strings.TrimSpace(parts[0])
+			break
+		}
+	}
+	return strings.EqualFold(clean, strings.TrimSpace(sourceID))
 }
 
 func isPatternScopeMarker(line string) bool {

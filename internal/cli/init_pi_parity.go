@@ -59,7 +59,8 @@ func currentPiSemanticAssertions() map[string]currentPiSemanticAssertion {
 			skillMarkers: []string{
 				"source-first",
 				"persistence is conditional",
-				"binding actions remain manual",
+				"h-decide may route a direct operator request",
+				"h-commission remains manual-only",
 				"human gate brief",
 			},
 			promptMarkers: []string{
@@ -324,10 +325,9 @@ func verifyPiSkillAndPromptCoverage(
 				frontmatter.Name,
 			)
 		}
-		manualMarker := strings.Contains(
-			strings.ToLower(frontmatter.Description),
-			"manual-only",
-		)
+		description := strings.TrimSpace(strings.ToLower(frontmatter.Description))
+		manualMarker := strings.HasPrefix(description, "manual-only") ||
+			strings.Contains(description, "manual only:")
 		shouldBeManual := source.InvocationPolicy() ==
 			initplanning.SkillInvocationManualOnly
 		if manualMarker != shouldBeManual {

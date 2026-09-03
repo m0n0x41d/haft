@@ -43,15 +43,15 @@ func TestCurrentCandidateBuildsAllFiveExactReferenceSchemeRegistries(
 ) {
 	t.Parallel()
 	base := loadCurrentBaseArtifact(t)
-	target, err := Build(base, typedmemorycandidates.SourceV1_6())
+	target, err := Build(base, typedmemorycandidates.SourceV1_7())
 	if err != nil {
 		t.Fatalf("Build(current candidate) error = %v", err)
 	}
-	const wantExtension = "typeenv-extension:haft.typed-memory@sha256:88245a4948d6160f34fc2395d49d38d0f8e5298bf2c0c1dfc64b6a77144c40a8"
+	const wantExtension = "typeenv-extension:haft.typed-memory@sha256:644ea54e09d3587e647592db608863cbe7c8e2f9e02a69d245db75c485e88978"
 	if got := target.Extension().Ref().String(); got != wantExtension {
 		t.Fatalf("current candidate E = %s, want %s", got, wantExtension)
 	}
-	const wantComposite = "typeenv:sha256:1d084a5f058b5ef68c245b25060e4cedd7a494129f4ba0ffe1cd5bf87f15495e"
+	const wantComposite = "typeenv:sha256:254f6f353f91a5c122914a569a27546acbc80a5f85add63953a6896949b278a9"
 	if got := target.Composite().Ref().String(); got != wantComposite {
 		t.Fatalf("current candidate C = %s, want %s", got, wantComposite)
 	}

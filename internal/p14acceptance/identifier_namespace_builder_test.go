@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -14,16 +15,23 @@ import (
 )
 
 const (
-	p14IdentifierNamespaceBuilderID     = "query.node-artifact-rejection.v1"
-	p14IdentifierSemanticSchema         = "haft.p14.identifier-namespace-semantic/v1"
-	p14IdentifierMCPSurfaceSchema       = "haft.p14.identifier-namespace-mcp/v1"
-	p14IdentifierNormalizedOutputSchema = "haft.p14.identifier-namespace-output/v1"
-	p14IdentifierLocalOracleSchema      = "haft.p14.identifier-namespace-local-oracle/v1"
+	p14IdentifierNamespaceBuilderID     = "query.identifier-namespace-matrix.v2"
+	p14IdentifierSemanticSchema         = "haft.p14.identifier-namespace-semantic/v2"
+	p14IdentifierMCPSurfaceSchema       = "haft.p14.identifier-namespace-mcp/v2"
+	p14IdentifierNormalizedOutputSchema = "haft.p14.identifier-namespace-output/v2"
+	p14IdentifierLocalOracleSchema      = "haft.p14.identifier-namespace-local-oracle/v2"
 	p14IdentifierFixtureSchema          = "haft.p14.identifier-fixture/v1"
-	p14IdentifierNormalizationID        = "p14.identifier-namespace.semantic-error.v1"
-	p14IdentifierCaseID                 = "node_rejects_artifact_id"
-	p14IdentifierLocalOracleTest        = "github.com/m0n0x41d/haft/internal/cli::TestNodeWrongNamespaceSurvivesV5MCPBoundary"
+	p14IdentifierNormalizationID        = "p14.identifier-namespace.semantic-recovery.v2"
+	p14IdentifierFPFRef                 = "A.7"
+	p14IdentifierCodeSymbol             = "NeighborhoodRead"
+	p14IdentifierMemoryRef              = "entity:haft"
 )
+
+var p14IdentifierLocalOracleTests = []string{
+	"github.com/m0n0x41d/haft/internal/cli::TestEveryEmittedQueryRecoveryCallPassesPublicSchemaAndStrictDecoder",
+	"github.com/m0n0x41d/haft/internal/cli::TestExactIdentifierNamespaceMatrixRecoversAndExecutesUnchanged",
+	"github.com/m0n0x41d/haft/internal/cli::TestExactIdentifierNamespaceMatrixDoesNotGuess",
+}
 
 type p14IdentifierFixture struct {
 	Schema                string `json:"schema"`
@@ -45,26 +53,25 @@ type p14IdentifierSemanticCase struct {
 }
 
 type p14IdentifierSemanticMCPRequest struct {
-	Action string `json:"action"`
-	Symbol string `json:"symbol"`
+	Tool string         `json:"tool"`
+	Args map[string]any `json:"args"`
 }
 
 type p14IdentifierSemanticExpectedResult struct {
-	Outcome           string `json:"outcome"`
-	Code              string `json:"code"`
-	SameCallRetryable bool   `json:"same_call_retryable"`
-	RecoveryAction    string `json:"recovery_action"`
+	Outcome          string                       `json:"outcome"`
+	Error            p14IdentifierNormalizedError `json:"error"`
+	RecoveryExecuted bool                         `json:"recovery_executed"`
 }
 
 type p14IdentifierMCPSurface struct {
 	Schema                string                     `json:"schema"`
 	SemanticRequestDigest string                     `json:"semantic_request_digest"`
-	Tool                  string                     `json:"tool"`
 	Cases                 []p14IdentifierMCPCallCase `json:"cases"`
 }
 
 type p14IdentifierMCPCallCase struct {
 	ID   string         `json:"id"`
+	Tool string         `json:"tool"`
 	Args map[string]any `json:"args"`
 }
 
@@ -74,9 +81,10 @@ type p14IdentifierNormalizedOutput struct {
 }
 
 type p14IdentifierNormalizedCaseOutput struct {
-	ID      string                       `json:"id"`
-	Outcome string                       `json:"outcome"`
-	Error   p14IdentifierNormalizedError `json:"error"`
+	ID               string                       `json:"id"`
+	Outcome          string                       `json:"outcome"`
+	Error            p14IdentifierNormalizedError `json:"error"`
+	RecoveryExecuted bool                         `json:"recovery_executed"`
 }
 
 type p14IdentifierNormalizedError struct {
@@ -92,20 +100,70 @@ type p14IdentifierNormalizedError struct {
 }
 
 type p14IdentifierNormalizedRecoveryCall struct {
-	Tool      string                                   `json:"tool"`
-	Arguments p14IdentifierNormalizedRecoveryArguments `json:"arguments"`
-}
-
-type p14IdentifierNormalizedRecoveryArguments struct {
-	Action      string `json:"action"`
-	ArtifactRef string `json:"artifact_ref"`
+	Tool      string         `json:"tool"`
+	Arguments map[string]any `json:"arguments"`
 }
 
 type p14IdentifierLocalOracle struct {
-	Schema                string `json:"schema"`
-	SemanticRequestDigest string `json:"semantic_request_digest"`
-	ExpectedResultDigest  string `json:"expected_result_digest"`
-	LocalOracleTest       string `json:"local_oracle_test"`
+	Schema                string   `json:"schema"`
+	SemanticRequestDigest string   `json:"semantic_request_digest"`
+	ExpectedResultDigest  string   `json:"expected_result_digest"`
+	LocalOracleTests      []string `json:"local_oracle_tests"`
+}
+
+type p14IdentifierRoute struct {
+	Action    string
+	Parameter string
+	Namespace string
+	Args      func(string) map[string]any
+	Recovery  func(string) map[string]any
+}
+
+func p14IdentifierRoutes() []p14IdentifierRoute {
+	return []p14IdentifierRoute{
+		{
+			Action: "node", Parameter: "symbol", Namespace: "code_symbol",
+			Args: func(identifier string) map[string]any {
+				return map[string]any{"action": "node", "symbol": identifier}
+			},
+			Recovery: func(identifier string) map[string]any {
+				return map[string]any{"action": "node", "symbol": identifier}
+			},
+		},
+		{
+			Action: "fpf", Parameter: "identifier", Namespace: "fpf_source_identifier",
+			Args: func(identifier string) map[string]any {
+				return map[string]any{"action": "fpf", "mode": "inspect", "identifier": identifier}
+			},
+			Recovery: func(identifier string) map[string]any {
+				return map[string]any{"action": "fpf", "mode": "inspect", "identifier": identifier}
+			},
+		},
+		{
+			Action: "related", Parameter: "artifact_ref", Namespace: "haft_artifact_id",
+			Args: func(identifier string) map[string]any {
+				return map[string]any{"action": "related", "artifact_ref": identifier}
+			},
+			Recovery: func(identifier string) map[string]any {
+				return map[string]any{"action": "related", "artifact_ref": identifier}
+			},
+		},
+		{
+			Action: "memory", Parameter: "query", Namespace: "typed_memory_entity_id",
+			Recovery: func(identifier string) map[string]any {
+				return map[string]any{
+					"action": "memory",
+					"memory_request": map[string]any{
+						"contract_version": "haft.memory.v1",
+						"mode":             "resolve",
+						"basis":            map[string]any{"kind": "project_current"},
+						"query":            identifier,
+						"max_candidates":   8,
+					},
+				}
+			},
+		},
+	}
 }
 
 func buildP14IdentifierNamespaceScenario(
@@ -135,25 +193,24 @@ func buildP14IdentifierNamespaceScenario(
 		Schema:                p14IdentifierLocalOracleSchema,
 		SemanticRequestDigest: semanticDigest,
 		ExpectedResultDigest:  expectedDigest,
-		LocalOracleTest:       p14IdentifierLocalOracleTest,
+		LocalOracleTests:      slices.Clone(p14IdentifierLocalOracleTests),
 	}
 	localOracleBytes, err := marshalP14CanonicalJSON(localOracle)
 	if err != nil {
 		return preparedP14Scenario{}, err
 	}
-	request := preparedP14Request{
-		Surface:               "live_mcp",
-		Builder:               p14IdentifierNamespaceBuilderID,
-		Encoding:              "canonical_json",
-		CanonicalPayload:      string(surfaceBytes),
-		PayloadDigest:         p14Digest(surfaceBytes),
-		SemanticRequestDigest: semanticDigest,
-	}
 	return preparedP14Scenario{
 		ID:                       declared.ID,
 		SemanticRequestCanonical: string(semanticBytes),
 		SemanticRequestDigest:    semanticDigest,
-		Requests:                 []preparedP14Request{request},
+		Requests: []preparedP14Request{{
+			Surface:               "live_mcp",
+			Builder:               p14IdentifierNamespaceBuilderID,
+			Encoding:              "canonical_json",
+			CanonicalPayload:      string(surfaceBytes),
+			PayloadDigest:         p14Digest(surfaceBytes),
+			SemanticRequestDigest: semanticDigest,
+		}},
 		Oracle: preparedP14Oracle{
 			Kind:                    declared.OracleKind,
 			NormalizationID:         p14IdentifierNormalizationID,
@@ -167,78 +224,110 @@ func buildP14IdentifierNamespaceScenario(
 func canonicalP14IdentifierSemanticRequest(
 	artifactRef string,
 ) p14IdentifierSemanticRequest {
+	routes := p14IdentifierRoutes()
+	identifiers := []struct {
+		Name       string
+		Value      string
+		RouteIndex int
+	}{
+		{Name: "artifact", Value: artifactRef, RouteIndex: 2},
+		{Name: "fpf", Value: p14IdentifierFPFRef, RouteIndex: 1},
+		{Name: "code", Value: p14IdentifierCodeSymbol, RouteIndex: 0},
+		{Name: "memory", Value: p14IdentifierMemoryRef, RouteIndex: 3},
+	}
+	cases := make([]p14IdentifierSemanticCase, 0, 9)
+	for targetIndex := 0; targetIndex < 3; targetIndex++ {
+		target := routes[targetIndex]
+		for _, identifier := range identifiers {
+			if identifier.RouteIndex == targetIndex {
+				continue
+			}
+			source := routes[identifier.RouteIndex]
+			id := identifier.Name + "_in_" + p14IdentifierTargetName(target.Action)
+			errorValue := p14IdentifierNormalizedError{
+				Code:              "wrong_identifier_namespace",
+				Tool:              "haft_query",
+				Action:            target.Action,
+				Parameter:         target.Parameter,
+				Identifier:        identifier.Value,
+				ReceivedNamespace: source.Namespace,
+				ExpectedNamespace: target.Namespace,
+				SameCallRetryable: false,
+				RecoveryCall: p14IdentifierNormalizedRecoveryCall{
+					Tool:      "haft_query",
+					Arguments: source.Recovery(identifier.Value),
+				},
+			}
+			cases = append(cases, p14IdentifierSemanticCase{
+				ID: id,
+				Request: p14IdentifierSemanticMCPRequest{
+					Tool: "haft_query",
+					Args: target.Args(identifier.Value),
+				},
+				Expected: p14IdentifierSemanticExpectedResult{
+					Outcome:          "error_then_recovery",
+					Error:            errorValue,
+					RecoveryExecuted: true,
+				},
+			})
+		}
+	}
 	return p14IdentifierSemanticRequest{
 		Schema:      p14IdentifierSemanticSchema,
 		ArtifactRef: artifactRef,
-		Cases: []p14IdentifierSemanticCase{
-			{
-				ID: p14IdentifierCaseID,
-				Request: p14IdentifierSemanticMCPRequest{
-					Action: "node",
-					Symbol: artifactRef,
-				},
-				Expected: p14IdentifierSemanticExpectedResult{
-					Outcome:           "error",
-					Code:              "wrong_identifier_namespace",
-					SameCallRetryable: false,
-					RecoveryAction:    "related",
-				},
-			},
-		},
+		Cases:       cases,
 	}
+}
+
+func p14IdentifierTargetName(action string) string {
+	if action == "related" {
+		return "artifact"
+	}
+	return action
 }
 
 func buildP14IdentifierMCPSurface(
 	semantic p14IdentifierSemanticRequest,
 	semanticDigest string,
 ) ([]byte, error) {
-	cases := make([]p14IdentifierMCPCallCase, 0, len(semantic.Cases))
+	cases := make([]p14IdentifierMCPCallCase, 0, len(semantic.Cases)*2)
 	for _, testCase := range semantic.Cases {
-		cases = append(cases, p14IdentifierMCPCallCase{
-			ID: testCase.ID,
-			Args: map[string]any{
-				"action": testCase.Request.Action,
-				"symbol": testCase.Request.Symbol,
+		cases = append(cases,
+			p14IdentifierMCPCallCase{
+				ID:   testCase.ID + "_reject",
+				Tool: testCase.Request.Tool,
+				Args: testCase.Request.Args,
 			},
-		})
+			p14IdentifierMCPCallCase{
+				ID:   testCase.ID + "_recovery",
+				Tool: testCase.Expected.Error.RecoveryCall.Tool,
+				Args: testCase.Expected.Error.RecoveryCall.Arguments,
+			},
+		)
 	}
-	payload := p14IdentifierMCPSurface{
+	return marshalP14CanonicalJSON(p14IdentifierMCPSurface{
 		Schema:                p14IdentifierMCPSurfaceSchema,
 		SemanticRequestDigest: semanticDigest,
-		Tool:                  "haft_query",
 		Cases:                 cases,
-	}
-	return marshalP14CanonicalJSON(payload)
+	})
 }
 
 func canonicalP14IdentifierNormalizedOutput(
 	artifactRef string,
 ) p14IdentifierNormalizedOutput {
+	semantic := canonicalP14IdentifierSemanticRequest(artifactRef)
+	cases := make([]p14IdentifierNormalizedCaseOutput, 0, len(semantic.Cases))
+	for _, testCase := range semantic.Cases {
+		cases = append(cases, p14IdentifierNormalizedCaseOutput{
+			ID:               testCase.ID,
+			Outcome:          testCase.Expected.Outcome,
+			Error:            testCase.Expected.Error,
+			RecoveryExecuted: testCase.Expected.RecoveryExecuted,
+		})
+	}
 	return p14IdentifierNormalizedOutput{
 		Schema: p14IdentifierNormalizedOutputSchema,
-		Cases: []p14IdentifierNormalizedCaseOutput{
-			{
-				ID:      p14IdentifierCaseID,
-				Outcome: "error",
-				Error: p14IdentifierNormalizedError{
-					Code:              "wrong_identifier_namespace",
-					Tool:              "haft_query",
-					Action:            "node",
-					Parameter:         "symbol",
-					Identifier:        artifactRef,
-					ReceivedNamespace: "haft_artifact_id",
-					ExpectedNamespace: "code_symbol",
-					SameCallRetryable: false,
-					RecoveryCall: p14IdentifierNormalizedRecoveryCall{
-						Tool: "haft_query",
-						Arguments: p14IdentifierNormalizedRecoveryArguments{
-							Action:      "related",
-							ArtifactRef: artifactRef,
-						},
-					},
-				},
-			},
-		},
+		Cases:  cases,
 	}
 }
 
@@ -255,51 +344,43 @@ func validateP14IdentifierNamespacePreparedScenario(
 	if err != nil {
 		return err
 	}
-	expectedSemantic := canonicalP14IdentifierSemanticRequest(semantic.ArtifactRef)
-	actualSemanticBytes, err := marshalP14CanonicalJSON(semantic)
-	if err != nil {
-		return err
+	want := canonicalP14IdentifierSemanticRequest(semantic.ArtifactRef)
+	wantSemantic, _ := marshalP14CanonicalJSON(want)
+	gotSemantic, _ := marshalP14CanonicalJSON(semantic)
+	if !bytes.Equal(gotSemantic, wantSemantic) ||
+		!artifact.IsCanonicalArtifactID(semantic.ArtifactRef) ||
+		len(semantic.Cases) != 9 {
+		return fmt.Errorf("P14 identifier semantic carrier is not the closed matrix v2")
 	}
-	expectedSemanticBytes, err := marshalP14CanonicalJSON(expectedSemantic)
-	if err != nil {
-		return err
-	}
-	if !bytes.Equal(actualSemanticBytes, expectedSemanticBytes) ||
-		!artifact.IsCanonicalArtifactID(semantic.ArtifactRef) {
-		return fmt.Errorf("P14 identifier semantic carrier is not the closed artifact rejection case")
-	}
-	expectedSurface, err := buildP14IdentifierMCPSurface(
-		expectedSemantic,
-		scenario.SemanticRequestDigest,
-	)
+	wantSurface, err := buildP14IdentifierMCPSurface(want, scenario.SemanticRequestDigest)
 	if err != nil {
 		return err
 	}
 	if len(scenario.Requests) != 1 ||
-		scenario.Requests[0].CanonicalPayload != string(expectedSurface) ||
+		scenario.Requests[0].CanonicalPayload != string(wantSurface) ||
 		scenario.Requests[0].Encoding != "canonical_json" {
-		return fmt.Errorf("P14 identifier MCP request is not derived from the semantic carrier")
+		return fmt.Errorf("P14 identifier MCP calls are not derived from matrix v2")
 	}
-	expectedOutput := canonicalP14IdentifierNormalizedOutput(semantic.ArtifactRef)
-	expectedOutputBytes, err := marshalP14CanonicalJSON(expectedOutput)
+	wantOutput, err := marshalP14CanonicalJSON(
+		canonicalP14IdentifierNormalizedOutput(semantic.ArtifactRef),
+	)
 	if err != nil {
 		return err
 	}
-	expectedDigest := p14Digest(expectedOutputBytes)
-	localOracle := p14IdentifierLocalOracle{
+	wantDigest := p14Digest(wantOutput)
+	localOracle, err := marshalP14CanonicalJSON(p14IdentifierLocalOracle{
 		Schema:                p14IdentifierLocalOracleSchema,
 		SemanticRequestDigest: scenario.SemanticRequestDigest,
-		ExpectedResultDigest:  expectedDigest,
-		LocalOracleTest:       p14IdentifierLocalOracleTest,
-	}
-	localOracleBytes, err := marshalP14CanonicalJSON(localOracle)
+		ExpectedResultDigest:  wantDigest,
+		LocalOracleTests:      slices.Clone(p14IdentifierLocalOracleTests),
+	})
 	if err != nil {
 		return err
 	}
 	if scenario.Oracle.NormalizationID != p14IdentifierNormalizationID ||
-		scenario.Oracle.ExpectedResultDigest != expectedDigest ||
-		scenario.Oracle.LocalOracleOutputDigest != p14Digest(localOracleBytes) {
-		return fmt.Errorf("P14 identifier oracle is not the closed normalized error")
+		scenario.Oracle.ExpectedResultDigest != wantDigest ||
+		scenario.Oracle.LocalOracleOutputDigest != p14Digest(localOracle) {
+		return fmt.Errorf("P14 identifier matrix v2 oracle differs")
 	}
 	return nil
 }
@@ -310,6 +391,7 @@ func decodeP14IdentifierSemanticRequest(
 	reader := bytes.NewReader(raw)
 	decoder := json.NewDecoder(reader)
 	decoder.DisallowUnknownFields()
+	decoder.UseNumber()
 	var semantic p14IdentifierSemanticRequest
 	if err := decoder.Decode(&semantic); err != nil {
 		return p14IdentifierSemanticRequest{}, fmt.Errorf(
@@ -318,8 +400,7 @@ func decodeP14IdentifierSemanticRequest(
 		)
 	}
 	var trailing any
-	err := decoder.Decode(&trailing)
-	if err != io.EOF {
+	if err := decoder.Decode(&trailing); err != io.EOF {
 		return p14IdentifierSemanticRequest{}, fmt.Errorf(
 			"P14 identifier semantic carrier has trailing JSON",
 		)
@@ -335,13 +416,11 @@ func validateP14IdentifierFixtureShape(fixture p14IdentifierFixture) error {
 	}
 	clean := filepath.Clean(filepath.FromSlash(fixture.ArtifactCarrierPath))
 	portable := filepath.ToSlash(clean)
-	if filepath.IsAbs(clean) ||
-		strings.HasPrefix(portable, "../") ||
+	if filepath.IsAbs(clean) || strings.HasPrefix(portable, "../") ||
 		!strings.HasPrefix(portable, ".haft/") {
 		return fmt.Errorf("P14 identifier artifact carrier path is invalid")
 	}
-	base := filepath.Base(clean)
-	if !strings.HasPrefix(base, fixture.ArtifactRef+".") {
+	if !strings.HasPrefix(filepath.Base(clean), fixture.ArtifactRef+".") {
 		return fmt.Errorf("P14 identifier artifact carrier does not name its artifact")
 	}
 	return nil
@@ -355,8 +434,10 @@ func verifyP14IdentifierFixtureBinding(
 	if err != nil {
 		return err
 	}
-	path := filepath.Join(repositoryRoot, filepath.FromSlash(binding.CarrierPath))
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(filepath.Join(
+		repositoryRoot,
+		filepath.FromSlash(binding.CarrierPath),
+	))
 	if err != nil {
 		return fmt.Errorf("read P14 identifier fixture: %w", err)
 	}
@@ -367,11 +448,10 @@ func verifyP14IdentifierFixtureBinding(
 	if err := validateP14IdentifierFixtureShape(fixture); err != nil {
 		return err
 	}
-	artifactPath := filepath.Join(
-		repositoryRoot,
-		filepath.FromSlash(fixture.ArtifactCarrierPath),
-	)
-	if err := verifyP14FileDigest(artifactPath, fixture.ArtifactCarrierDigest); err != nil {
+	if err := verifyP14FileDigest(
+		filepath.Join(repositoryRoot, filepath.FromSlash(fixture.ArtifactCarrierPath)),
+		fixture.ArtifactCarrierDigest,
+	); err != nil {
 		return fmt.Errorf("verify P14 identifier artifact carrier: %w", err)
 	}
 	scenario, err := preparedP14ScenarioByID(input.Scenarios, "identifier_namespace")
@@ -399,8 +479,7 @@ func decodeP14IdentifierFixture(raw []byte) (p14IdentifierFixture, error) {
 		return p14IdentifierFixture{}, fmt.Errorf("decode P14 identifier fixture: %w", err)
 	}
 	var trailing any
-	err := decoder.Decode(&trailing)
-	if err != io.EOF {
+	if err := decoder.Decode(&trailing); err != io.EOF {
 		return p14IdentifierFixture{}, fmt.Errorf("P14 identifier fixture has trailing JSON")
 	}
 	canonical, err := json.MarshalIndent(fixture, "", "  ")
@@ -447,12 +526,12 @@ func syntheticP14IdentifierFixture() p14IdentifierFixture {
 	}
 }
 
-func TestP14IdentifierNamespaceBuilderClosesExactRecovery(t *testing.T) {
-	repositoryRoot, err := p14RepositoryRoot()
+func TestP14IdentifierNamespaceBuilderClosesExecutableRecoveryMatrix(t *testing.T) {
+	root, err := p14RepositoryRoot()
 	if err != nil {
 		t.Fatal(err)
 	}
-	contract, _, err := loadRequestOracleContract(repositoryRoot)
+	contract, _, err := loadRequestOracleContract(root)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -470,17 +549,31 @@ func TestP14IdentifierNamespaceBuilderClosesExactRecovery(t *testing.T) {
 	if err := validateP14IdentifierNamespacePreparedScenario(declared, scenario); err != nil {
 		t.Fatal(err)
 	}
-	tampered := scenario
-	tampered.SemanticRequestCanonical = strings.Replace(
-		scenario.SemanticRequestCanonical,
-		`"recovery_action":"related"`,
-		`"recovery_action":"node"`,
-		1,
+	semantic, err := decodeP14IdentifierSemanticRequest(
+		[]byte(scenario.SemanticRequestCanonical),
 	)
-	tampered.SemanticRequestDigest = p14Digest([]byte(tampered.SemanticRequestCanonical))
-	if err := validateP14IdentifierNamespacePreparedScenario(declared, tampered); err == nil {
-		t.Fatal("P14 identifier validator accepted same-call retry recovery")
+	if err != nil {
+		t.Fatal(err)
 	}
+	definitions, err := p14CodexMCPIdentifierCalls(scenario, scenario.Requests[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(semantic.Cases) != 9 || len(definitions) != 18 {
+		t.Fatalf("P14 identifier matrix = semantic:%d calls:%d", len(semantic.Cases), len(definitions))
+	}
+	for index, testCase := range semantic.Cases {
+		recovery := definitions[index*2+1]
+		want, _ := marshalP14CanonicalJSON(testCase.Expected.Error.RecoveryCall.Arguments)
+		got, _ := marshalP14CanonicalJSON(recovery.Args)
+		if !bytes.Equal(got, want) {
+			t.Fatalf("P14 recovery %q changed arguments", testCase.ID)
+		}
+	}
+}
+
+func TestP14IdentifierNamespaceBuilderClosesExactRecovery(t *testing.T) {
+	TestP14IdentifierNamespaceBuilderClosesExecutableRecoveryMatrix(t)
 }
 
 func findP14ScenarioContract(

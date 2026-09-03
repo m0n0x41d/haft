@@ -772,7 +772,7 @@ func rejectedCandidateReport(
 		code,
 		"candidate "+candidateSource.CommitSHA(),
 		message,
-		candidateLogicalSpecPath+"@"+candidateSource.CommitSHA(),
+		candidateBuildFailureSourceRef(buildErr, candidateSource.CommitSHA()),
 		"go run ./cmd/fpf-refresh check --candidate-ref "+candidateSource.CommitSHA()+" --no-fetch",
 	)
 	if err != nil {
@@ -790,6 +790,19 @@ func rejectedCandidateReport(
 		[]Diagnostic{diagnostic},
 		nil,
 	)
+}
+
+func candidateBuildFailureSourceRef(buildErr error, candidateRevision string) string {
+	path := candidateLogicalSpecPath
+	message := buildErr.Error()
+	if strings.Contains(
+		message,
+		"FPF README grammar: expected exactly one supported H1 publication heading at line 1 in ",
+	) ||
+		strings.Contains(message, "parse FPF README structure") {
+		path = candidateLogicalReadmePath
+	}
+	return path + "@" + candidateRevision
 }
 
 func predecessorReportSnapshot(

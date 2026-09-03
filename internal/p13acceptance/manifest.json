@@ -14,22 +14,22 @@
     "required_schema_version": 59,
     "required_writer_generation": 54,
     "required_fpf": {
-      "revision": "3dbce51436bfd718bf49cb0356eebce70c4fc015",
-      "spec_digest": "sha256:1d4b0836bc1126092570f6609d1c4e3fc16a2fda60ef88c6c978c9c78e576bdf",
+      "revision": "036c056e98c38522172c6b7b3ad08214281cc4e4",
+      "spec_digest": "sha256:691692b7a638874e4ea66acd8df6e18bf22d6ffcac01a96d7ff7c93a8a330891",
       "readme_digest": "sha256:6c8d87a641f36d34a9d84aa0ab8e7565dcca2a691482a0cee31bd28a743eb3fd",
-      "base_type_env_ref": "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
-      "base_type_env_digest": "sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
+      "base_type_env_ref": "typeenv:sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565",
+      "base_type_env_digest": "sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565",
       "compiler_schema": "fpf-base-typeenv.cov2.v5"
     },
     "required_predecessor": {
-      "head_revision": 3,
-      "composite_ref": "typeenv:sha256:3ccfcdbc97f1a6f4a8241f03357ebcacf827868a35343cb19f88fd0ec07da615",
-      "base_type_env_ref": "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786",
-      "base_type_env_digest": "sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786",
-      "fpf_revision": "8b727cba9e893a467b82aab9da84fb7d6d945480",
+      "head_revision": 4,
+      "composite_ref": "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49",
+      "base_type_env_ref": "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
+      "base_type_env_digest": "sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
+      "fpf_revision": "3dbce51436bfd718bf49cb0356eebce70c4fc015",
       "compiler_schema": "fpf-base-typeenv.cov2.v5",
-      "executable_snapshot_digest": "sha256:4aa850110aa7f5a0bfbc94a0a747cba461aed8fc7316ff7a2f958072d5539c40",
-      "lowered_environment_digest": "sha256:89fab8411e61205f39ea5bacc11fcadc789dc33e7aff3495c04e12c1028ff0f0"
+      "executable_snapshot_digest": "sha256:7b27ea39432b698a39da30823927dfc15e9f104e519ed44eb536f47a12e7b59d",
+      "lowered_environment_digest": "sha256:d1873fe015927dae892d6dc6f0fef7391ff6cb22c2ae7a1bcafbd71bf61a3b66"
     },
     "required_excluded_go_packages": [],
     "source_roots": [
@@ -102,59 +102,59 @@
     "profile_ledger_digest": "sha256:a3bb6f0a530831c5127a4e22afe6009410a509dbd22f896e014c15b4e2af44b6",
     "profile_support_dag_digest": "sha256:caa2e3a2bba61c9278ddd685910ca8001720c932116f9708e58aec0b298c38c4",
     "head_ref": "project-typeenv-head:qnt_e3149c17",
-    "head_revision": 4,
-    "selected_composite_ref": "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49",
-    "head_state_digest": "sha256:7dba13ac1b9a1fc8af73ace7c51e17231e39e07381ed19de3ea4d4b6d6833325",
-    "selection_closure_ref": "project-typeenv-head-selection-closure:sha256:b74ffd180f83338cb908cdc1fab9f4f96ea7667be5c8a7cb2843f0e9c0169d12",
-    "selection_closure_digest": "sha256:b74ffd180f83338cb908cdc1fab9f4f96ea7667be5c8a7cb2843f0e9c0169d12",
+    "head_revision": 5,
+    "selected_composite_ref": "typeenv:sha256:1d084a5f058b5ef68c245b25060e4cedd7a494129f4ba0ffe1cd5bf87f15495e",
+    "head_state_digest": "sha256:514c70b66947e5970ad53b064e2ab9fe1a7a484ca8437325b604c19d4d9bcf9c",
+    "selection_closure_ref": "project-typeenv-head-selection-closure:sha256:22ddfdb067fd4f6080e6babb9399aeeab01f3e8498cb7aa77192e1296bd90f8d",
+    "selection_closure_digest": "sha256:22ddfdb067fd4f6080e6babb9399aeeab01f3e8498cb7aa77192e1296bd90f8d",
     "selection_request_schema": "haft.project-typeenv.head-selection-request.v2",
-    "selection_request_ref": "project-typeenv-head-selection-request:sha256:c58ec7fa0cb578c5b2824fdd1369dabbab6b91e15d00b4e7b0af371e3aa88974",
-    "selection_request_digest": "sha256:c58ec7fa0cb578c5b2824fdd1369dabbab6b91e15d00b4e7b0af371e3aa88974",
-    "selection_stage_ref": "project-typeenv-stage:sha256:50a64c6388b7a7f4e9fc2f7b28e5a8a98dc716f6f7f4a8c3ff155ba70ca05cbf",
-    "selection_stage_digest": "sha256:50a64c6388b7a7f4e9fc2f7b28e5a8a98dc716f6f7f4a8c3ff155ba70ca05cbf",
-    "selection_ready_closure_digest": "sha256:9ac971a49ac8d931a407842a3811f84191accfa2abdc9a90a8bc617778c32a19",
+    "selection_request_ref": "project-typeenv-head-selection-request:sha256:f237c575b440dbbe6aef05c870b18e314a076735bcc9b4c0e620c2a43f7bde08",
+    "selection_request_digest": "sha256:f237c575b440dbbe6aef05c870b18e314a076735bcc9b4c0e620c2a43f7bde08",
+    "selection_stage_ref": "project-typeenv-stage:sha256:e424b5137d802d849282411343dab7314c75d8cdaa3127af8c5ae97d8b45079d",
+    "selection_stage_digest": "sha256:e424b5137d802d849282411343dab7314c75d8cdaa3127af8c5ae97d8b45079d",
+    "selection_ready_closure_digest": "sha256:c6e4f7012cfbe56a515c6f49d2898109844c997591e115d4983ef235546a9233",
     "selection_predecessor_kind": "transition",
     "prior_head_ref": "project-typeenv-head:qnt_e3149c17",
-    "prior_head_revision": 3,
-    "prior_selected_composite_ref": "typeenv:sha256:3ccfcdbc97f1a6f4a8241f03357ebcacf827868a35343cb19f88fd0ec07da615",
-    "prior_head_state_digest": "sha256:06f2b40965ba2d7bd4f276af066d6415c0171e0210f22134086a46224b496816",
-    "prior_composite_digest": "sha256:3ccfcdbc97f1a6f4a8241f03357ebcacf827868a35343cb19f88fd0ec07da615",
-    "prior_base_ref": "typeenv:sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786",
-    "prior_base_digest": "sha256:36e74f905065438532da7d486099c6a745dc82190f46c9f8958d13e3c44d2786",
-    "prior_fpf_revision": "8b727cba9e893a467b82aab9da84fb7d6d945480",
+    "prior_head_revision": 4,
+    "prior_selected_composite_ref": "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49",
+    "prior_head_state_digest": "sha256:7dba13ac1b9a1fc8af73ace7c51e17231e39e07381ed19de3ea4d4b6d6833325",
+    "prior_composite_digest": "sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49",
+    "prior_base_ref": "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
+    "prior_base_digest": "sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
+    "prior_fpf_revision": "3dbce51436bfd718bf49cb0356eebce70c4fc015",
     "prior_compiler_schema": "fpf-base-typeenv.cov2.v5",
-    "prior_executable_snapshot_digest": "sha256:4aa850110aa7f5a0bfbc94a0a747cba461aed8fc7316ff7a2f958072d5539c40",
-    "prior_lowered_environment_digest": "sha256:89fab8411e61205f39ea5bacc11fcadc789dc33e7aff3495c04e12c1028ff0f0",
-    "target_base_ref": "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc",
-    "target_ordered_extensions_digest": "sha256:8eec4b4d5f18f1822cdf9f1351a42644b40376f10d1dcd59c72d987fd0942915",
-    "target_runtime_basis_ref": "runtime-evaluation-basis:sha256:f6f06818a9e76fcef8c149696ec0e734d76288433aa738fc382b1ce14d65bf11",
-    "target_composite_ref": "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49",
-    "selection_receipt_ref": "project-typeenv-head-selection-receipt:sha256:bf0cad0a225f62ba50ac75f55a628688cf2ada5c5e26ae54ecb7ef93e7b351ef",
-    "selection_receipt_digest": "sha256:bf0cad0a225f62ba50ac75f55a628688cf2ada5c5e26ae54ecb7ef93e7b351ef",
-    "selection_authority_use_ref": "project-typeenv-head-selection-authority-use:sha256:b1d2aa466454919ec5acf287b8b30e09bc0df0295d02b14289e23584d318abeb",
-    "selection_authority_use_digest": "sha256:0babf41930625682f0bd8d2d13b88963231ad3dfc3e333ecc4a56b713e026d74",
-    "selection_graph_revision": 10,
-    "selection_graph_event_ref": "typed-memory-event:7f764b04b27e670f19e10379ee6007b8cf24a48c379e5eb013f31f0ff17553d8",
-    "selection_graph_commit_ref": "typed-memory-commit:7e7ee7992d1a5fed0f01007cf5d8d8593d24cbd81dd512f71fe4385b36958390",
+    "prior_executable_snapshot_digest": "sha256:7b27ea39432b698a39da30823927dfc15e9f104e519ed44eb536f47a12e7b59d",
+    "prior_lowered_environment_digest": "sha256:d1873fe015927dae892d6dc6f0fef7391ff6cb22c2ae7a1bcafbd71bf61a3b66",
+    "target_base_ref": "typeenv:sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565",
+    "target_ordered_extensions_digest": "sha256:aeca69eb0cb15c1236196af26a98832fd25dcab5044c41dca913b91cc47d5b63",
+    "target_runtime_basis_ref": "runtime-evaluation-basis:sha256:aed39f1084fd399a49d2dcb6d42fb7f5ee0a10dd3b25323b2691910108b932a5",
+    "target_composite_ref": "typeenv:sha256:1d084a5f058b5ef68c245b25060e4cedd7a494129f4ba0ffe1cd5bf87f15495e",
+    "selection_receipt_ref": "project-typeenv-head-selection-receipt:sha256:619c89844005e7688447536a174c2a38e2e495f4e1f574df2741a72653bec3e8",
+    "selection_receipt_digest": "sha256:619c89844005e7688447536a174c2a38e2e495f4e1f574df2741a72653bec3e8",
+    "selection_authority_use_ref": "project-typeenv-head-selection-authority-use:sha256:92b256cfc61da3a9e6a25c11713b407cf2129f14ab1cb2aa8d06a3130dd99222",
+    "selection_authority_use_digest": "sha256:06f3df805bef41d7e35f546f832da136b7fff38ddeb4dc4219a88a338f0aaf56",
+    "selection_graph_revision": 11,
+    "selection_graph_event_ref": "typed-memory-event:2af6024411b7c8805e93e62c278657df4ec7e7b65440f1e5e006f3ec7ea22874",
+    "selection_graph_commit_ref": "typed-memory-commit:5fc64d9b3ba598070a15a1268bb097091008ebfa1d79e881c609702cd0b1826e",
     "stage_schema_edition": "haft.project-typeenv.stage-schema/v5",
     "stage_profile_ledger_revision": 1,
     "stage_profile_ledger_digest": "sha256:a3bb6f0a530831c5127a4e22afe6009410a509dbd22f896e014c15b4e2af44b6",
-    "stage_profile_fit_ref": "project-typeenv-profile-fit:sha256:201b23ba752dc3eacb5e01515b989dcfec3ea117aac87d361a685d2c84dee01c",
-    "stage_profile_fit_digest": "sha256:201b23ba752dc3eacb5e01515b989dcfec3ea117aac87d361a685d2c84dee01c",
+    "stage_profile_fit_ref": "project-typeenv-profile-fit:sha256:6ca3bde648d59b4cf34f5ea37d6e4b0a57cc460be2d55cb9fc77b66d3b20ba37",
+    "stage_profile_fit_digest": "sha256:6ca3bde648d59b4cf34f5ea37d6e4b0a57cc460be2d55cb9fc77b66d3b20ba37",
     "stage_profile_fit_rule_edition": "haft.project-typeenv.profile-fit-rules/v1",
     "stage_profile_fit_posture": "compatible",
-    "transition_profiles_ref": "transition-projection-profile-compatibility-set:sha256:05352d32585104b4b39436cc9eb3522905d94026170e1b32bc8a9d4b354c860c",
-    "transition_profiles_digest": "sha256:05352d32585104b4b39436cc9eb3522905d94026170e1b32bc8a9d4b354c860c",
-    "transition_profile_set_digest": "sha256:9bde64fd1c2705782005abd0c84230ba20dc1641111276ad3252916db10c0980",
+    "transition_profiles_ref": "transition-projection-profile-compatibility-set:sha256:ebb705f5c7a579b42e5b4b762f739c7280add72818e8d62a7f3ea80a8ca5392d",
+    "transition_profiles_digest": "sha256:ebb705f5c7a579b42e5b4b762f739c7280add72818e8d62a7f3ea80a8ca5392d",
+    "transition_profile_set_digest": "sha256:4dd6f898ebd2aba6dac553ff26f0a983445b090483200759a0a098adf2aa8c6a",
     "transition_profile_count": 6,
     "transition_postures_digest": "sha256:4787f607e4b0293109efa79f67ab2c41c478eeeb8875dbe1380f334b28081ac9",
-    "graph_revision": 10,
-    "graph_active_type_env_ref": "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49",
-    "graph_snapshot_basis_ref": "project-graph-snapshot-basis:sha256:017932785c631ee39802c5319afdf292a273b273fd67718a5bb1826ea0e9a508",
-    "graph_snapshot_basis_digest": "sha256:017932785c631ee39802c5319afdf292a273b273fd67718a5bb1826ea0e9a508",
-    "graph_last_event_ref": "typed-memory-event:7f764b04b27e670f19e10379ee6007b8cf24a48c379e5eb013f31f0ff17553d8",
-    "graph_last_commit_ref": "typed-memory-commit:7e7ee7992d1a5fed0f01007cf5d8d8593d24cbd81dd512f71fe4385b36958390",
-    "graph_materialization_digest": "sha256:1a2c602c1e513652ad73c9013b71b1fc1ed3909ef4ad3eb21546a2accc0140b2"
+    "graph_revision": 11,
+    "graph_active_type_env_ref": "typeenv:sha256:1d084a5f058b5ef68c245b25060e4cedd7a494129f4ba0ffe1cd5bf87f15495e",
+    "graph_snapshot_basis_ref": "project-graph-snapshot-basis:sha256:1008567c9dc346bcdf96c36c3d8e2aaed7f7e6e196b8b18f3ee57d784a39f28a",
+    "graph_snapshot_basis_digest": "sha256:1008567c9dc346bcdf96c36c3d8e2aaed7f7e6e196b8b18f3ee57d784a39f28a",
+    "graph_last_event_ref": "typed-memory-event:2af6024411b7c8805e93e62c278657df4ec7e7b65440f1e5e006f3ec7ea22874",
+    "graph_last_commit_ref": "typed-memory-commit:5fc64d9b3ba598070a15a1268bb097091008ebfa1d79e881c609702cd0b1826e",
+    "graph_materialization_digest": "sha256:5a2cfcd76bbf344ed0ef10bdd1990ad5d0891db73268bb3e2276e69d3ec386e0"
   },
   "planned_graph_contracts": [
     {
@@ -497,6 +497,7 @@
         "host-routed v5 profile declaration and automatic singleton bootstrap are atomic, replay-safe, restart-safe, and projection debt cannot become Auto",
         "software, non-software, mixed, helper-code, Markdown-only, and ambiguous fixtures retain distinct policy results",
         "TargetSystemSpec is Required for every admitted declared scope and its optional entity relation does not gate applicability",
+        "profile_change_prepare may create or reuse only a non-binding review carrier and leaves the canonical profile, structured memory, authority, and apply effects unchanged",
         "the selected Transition Stage v5 is bound to the exact current profile basis, compatible ProfileFit, and unblocked installed projection-profile set"
       ],
       "suite_ids": [
@@ -537,6 +538,14 @@
         {
           "package": "github.com/m0n0x41d/haft/internal/cli",
           "test": "TestProfileDeclarationFreshReviewedCandidateReplaysAfterLedgerRestart"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/cli",
+          "test": "TestOnboardProfileChangePrepareAndApplyRepairsSpecApplicability"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/p14acceptance",
+          "test": "TestP14OnboardProfileChangePrepareBuilderClosesReplayAndNoApply"
         },
         {
           "package": "github.com/m0n0x41d/haft/internal/p13acceptance",
@@ -904,7 +913,9 @@
         "current four-input KindClassification prerequisites and RuleRef dispatch are exact and fail closed without using historical MemberOf judgement",
         "the generic kernel has two independent consumers and no exact Haft product dependency",
         "generic admission cannot bind authority or mint TypeEnv/schema declarations",
-        "source-native FPF Query crosses the installed CLI and MCP kernel surfaces from the embedded publication without a shadow route"
+        "source-native FPF Query crosses the installed CLI and MCP kernel surfaces from the embedded publication without a shadow route",
+        "every advertised onboarding action, including profile_change_prepare, crosses the real JSON-RPC dispatcher with exact arguments",
+        "identifier namespace recovery is emitted only for one uniquely proven alternative and the matrix-v2 returned call executes unchanged, including the nested memory request"
       ],
       "suite_ids": [
         "go_normal",
@@ -952,6 +963,18 @@
         {
           "package": "github.com/m0n0x41d/haft/internal/cli",
           "test": "TestEmbeddedFPFQueryWorksFromEmptyDownstreamProject"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/fpf",
+          "test": "TestHaftOnboardEveryAdvertisedActionCrossesJSONRPCDispatcher"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/fpf",
+          "test": "TestHaftOnboardProfileChangePrepareCrossesJSONRPCDispatcher"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/p14acceptance",
+          "test": "TestP14IdentifierNamespaceBuilderClosesExecutableRecoveryMatrix"
         }
       ]
     },
@@ -1375,8 +1398,10 @@
         "current-facing carriers use exactly CURRENT PRODUCT, WORKING V9 DEV, V9 DESIGN DRAFT, or DEFERRED RESEARCH",
         "no unsupported retrieval-superiority, release, or acausal-ontology claim is present",
         "all mapped suites run between identical source, FPF, profile, TypeEnv, graph, and schema captures with zero waivers",
-        "h-reason and every installed host carrier preserve the independent source-first Query contract",
-        "acceptance identity changes for untracked Go build inputs, installed dependency bytes, and every invoked executable closure"
+        "h-reason and every source carrier preserve the independent source-first Query contract; this source gate does not prove installed-agent behavior",
+        "the sealed semantic corpus, executable reliance-bearing support-note behavior, and P14 agent pattern-use builder bind mechanical abstention, direct PUA closure, PUR five-aspect aggregation, no rank selection, and zero unauthorized effects without treating fixtures as live evidence",
+        "acceptance identity changes for untracked Go build inputs, installed dependency bytes, and every invoked executable closure",
+        "exact-candidate preparation rejects dirty P13, predecessor versions, absent or noncanonical embedded Go VCS provenance, and release archive members not built from the frozen full SHA"
       ],
       "suite_ids": [
         "fpf_index_exact",
@@ -1406,12 +1431,40 @@
           "test": "TestAgentDisciplineTemplateKeepsOneTruthContract"
         },
         {
+          "package": "github.com/m0n0x41d/haft/internal/streamtruth",
+          "test": "TestCandidateBuildCarriersStampExactVersionAndFullCommit"
+        },
+        {
           "package": "github.com/m0n0x41d/haft/internal/cli",
           "test": "TestHReasonSkill_IsSourceFirstUmbrella"
         },
         {
           "package": "github.com/m0n0x41d/haft/internal/cli",
           "test": "TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/cli",
+          "test": "TestHReasonSemanticCorpusContract"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/cli",
+          "test": "TestHReasonSemanticCorpusRelianceBearingMaterializesOneAddressableSupportNote"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/p14acceptance",
+          "test": "TestP14AgentFPFPatternUseBuilderConsumesSealedCorpusSubset"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/p14acceptance",
+          "test": "TestP14PassingP13EvidenceRequiresCanonicalCleanGitIdentity"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/p14acceptance",
+          "test": "TestP14CandidateVersionObservationRequiresStampedGoVCS"
+        },
+        {
+          "package": "github.com/m0n0x41d/haft/internal/p14acceptance",
+          "test": "TestP14ReleaseArchivesBindQualifiedExecutable"
         },
         {
           "package": "github.com/m0n0x41d/haft/internal/p13acceptance",

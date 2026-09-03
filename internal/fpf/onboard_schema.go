@@ -2,6 +2,7 @@ package fpf
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/m0n0x41d/haft/internal/onboarding"
 )
@@ -11,6 +12,30 @@ const (
 	haftOnboardProfilePrepareAction       = "profile_prepare"
 	haftOnboardProfileChangePrepareAction = "profile_change_prepare"
 )
+
+func haftOnboardAdvertisedActions() [3]string {
+	return [3]string{
+		haftOnboardStatusAction,
+		haftOnboardProfilePrepareAction,
+		haftOnboardProfileChangePrepareAction,
+	}
+}
+
+func isHaftOnboardAdvertisedAction(action string) bool {
+	for _, advertised := range haftOnboardAdvertisedActions() {
+		if action == advertised {
+			return true
+		}
+	}
+	return false
+}
+
+func haftOnboardActionRequirement() string {
+	actions := haftOnboardAdvertisedActions()
+	return "action must be " +
+		strings.Join(actions[:len(actions)-1], ", ") +
+		", or " + actions[len(actions)-1]
+}
 
 func haftOnboardTool() Tool {
 	schema := onboardRequestSchema()
@@ -23,11 +48,8 @@ func haftOnboardTool() Tool {
 }
 
 func onboardRequestSchema() map[string]interface{} {
-	action := stringEnumSchema(
-		haftOnboardStatusAction,
-		haftOnboardProfilePrepareAction,
-		haftOnboardProfileChangePrepareAction,
-	)
+	actions := haftOnboardAdvertisedActions()
+	action := stringEnumSchema(actions[:]...)
 	action["description"] = "status never writes and accepts only action. " +
 		"profile_prepare accepts action alone for advisory repository detection, " +
 		"or action plus both basis and non-empty scopes for an explicit fallback. " +

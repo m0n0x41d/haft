@@ -78,9 +78,12 @@ claims:
       - human-principal
   - id: SS.allocation.001.L2
     class: L
-    statement: The host caller owns the current question, candidate construction, FPF pattern applicability judgement, recognition of whether current Work supplies a concrete durability-requiring receiving use, and routing of direct operator requests to their exact effect-specific interfaces. The receiving use may be operator-named or agent-inferred; when exact stable identity is recoverable, its non-binding EntityOfConcern establishment requires no separate operator permission. Host routing records provenance but creates no authority or U.SpeechAct proof.
+    statement: The host caller owns the current question, candidate construction, inspection of every evaluated candidate's current FPF Solution, five-aspect pattern-use applicability judgement, recommendation only after an applicable aggregate and expected-first-result comparison, explicit coordination of complementary uses without order unless a declared basis supports it, recognition of whether current Work supplies a concrete durability-requiring receiving use, and routing of direct operator requests to their exact effect-specific interfaces. Retrieval rank and catalog order decide none of those judgements. The receiving use may be operator-named or agent-inferred; when exact stable identity is recoverable, its non-binding EntityOfConcern establishment requires no separate operator permission. Host routing records provenance but creates no authority or U.SpeechAct proof.
     scope:
       - host-caller
+    governing_pattern_refs:
+      - E.11.PUA
+      - E.11.PUR
   - id: SS.allocation.001.L3
     class: L
     statement: HaftSoftwareSystem owns deterministic parsing, validation, authority checks, semantic admission, canonical persistence, and read-only projections of admitted project state.
@@ -1189,7 +1192,7 @@ claims:
       - A.7
   - id: SS.interfaces.hosts.001.D2
     class: D
-    statement: Managed host instructions must present source-first FPF use, independent capabilities, conditional persistence, direct operator-request routing for effect-specific human gates, and the separate manual WorkCommission gate without embedding a second FPF route catalog.
+    statement: Managed host instructions must present source-first FPF use under the current E.11.PUA and E.11.PUR bodies, keep retrieval separate from candidate applicability, recommendation, and coordination, require every evaluated candidate's current Solution and five-aspect aggregate before recommendation, preserve honest selected-use closure and unordered complementary capabilities unless an explicit coordination basis exists, present conditional persistence as Haft-local policy, route direct operator requests only to effect-specific human gates, and preserve the separate manual WorkCommission gate without embedding a second FPF route catalog, capability order, or authority path.
     scope:
       - managed-host-carrier
     support_refs:
@@ -1199,6 +1202,7 @@ claims:
       - SS.interfaces.query.001.D2
     governing_pattern_refs:
       - E.11.PUA
+      - E.11.PUR
       - A.7
   - id: SS.interfaces.hosts.001.D3
     class: D

@@ -97,7 +97,7 @@ func (diagnostic SourceGrammarDiagnostic) Error() string {
 	)
 }
 
-var practicalUseLabeledBlockRE = regexp.MustCompile(`^\s*-\s+\*\*(.+?)\.\*\*\s*(.*)$`)
+var practicalUseLabeledBlockRE = regexp.MustCompile(`^\s*-\s+\*\*(.+?)[.:]\*\*\s*(.*)$`)
 var practicalUseBranchHeadingRE = regexp.MustCompile(`^\s*\*\*(Branch\s+.+?)\.\*\*\s*$`)
 var practicalUseBranchResultChildRE = regexp.MustCompile(
 	"^\\s*-\\s+(`[^`]*Solution ->[^`]*`.*)\\s*$",
@@ -372,19 +372,21 @@ func parsePracticalUseBlocks(source PracticalUseCardSource) (
 func classifyPracticalUseLabel(label string) (SourceBlockKind, bool) {
 	normalized := normalizePracticalUseLabel(label)
 	switch normalized {
-	case "situation and question":
+	case "situation", "question", "situation and question":
 		return SourceBlockConditionCue, true
-	case "first route", "overloaded-word routes":
+	case "first route", "overloaded-word routes", "start with":
 		return SourceBlockEntryRoute, true
+	case "first useful result or honest blocker":
+		return SourceBlockResultBranch, true
 	case "conditional walkthrough", "conditional continuation", "relation-like continuation", "existing-framework continuation":
 		return SourceBlockConditionalContinuation, true
 	case "result test":
 		return SourceBlockResultTest, true
-	case "boundaries":
+	case "boundaries", "stop or return":
 		return SourceBlockBoundaryCue, true
 	case "public coarsening":
 		return SourceBlockPublicCoarsening, true
-	case "optional obstacle":
+	case "mantra", "optional obstacle":
 		return SourceBlockOtherAuthored, true
 	case "reusable viewpoint-family branch",
 		"architecture-answer branch",

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -264,6 +265,81 @@ func TestEnsureCurrentForServeRejectsUnhealthyLedgerBeforeSnapshot(
 	}
 }
 
+func TestEnsureCurrentForServePreservesAdmittedLegacyWitnessesAcrossSchema59Snapshot(
+	t *testing.T,
+) {
+	fixture, databasePath := newSchema58ServeFixture(t)
+	seedServeLegacyDecisionSpecSectionProjection(t, databasePath, true)
+	witnessesBefore := admittedLegacyWitnessesForServeTest(t, databasePath)
+	if len(witnessesBefore) != 1 {
+		t.Fatalf("pre-migration admitted witnesses = %#v, want one", witnessesBefore)
+	}
+
+	result, err := EnsureCurrentForServe(
+		context.Background(),
+		serveFixtureRequest(t, fixture),
+		serveMigrationTestTime,
+	)
+	if err != nil {
+		t.Fatalf("EnsureCurrentForServe: %v", err)
+	}
+	if result.Outcome != ServeActivationMigrated ||
+		result.BeforeSchema != 58 ||
+		result.AfterSchema != 59 ||
+		result.BackupPath == "" {
+		t.Fatalf("activation result = %#v", result)
+	}
+	witnessesSnapshot := admittedLegacyWitnessesForServeTest(
+		t,
+		result.BackupPath,
+	)
+	witnessesAfter := admittedLegacyWitnessesForServeTest(t, databasePath)
+	if !slices.Equal(witnessesSnapshot, witnessesBefore) {
+		t.Fatalf(
+			"snapshot legacy witnesses = %#v, want %#v",
+			witnessesSnapshot,
+			witnessesBefore,
+		)
+	}
+	if !slices.Equal(witnessesAfter, witnessesBefore) {
+		t.Fatalf(
+			"migrated legacy witnesses = %#v, want %#v",
+			witnessesAfter,
+			witnessesBefore,
+		)
+	}
+}
+
+func TestEnsureCurrentForServeRejectsUnadmittedLegacyWitnessBeforeSchema59Snapshot(
+	t *testing.T,
+) {
+	fixture, databasePath := newSchema58ServeFixture(t)
+	seedServeLegacyDecisionSpecSectionProjection(t, databasePath, false)
+
+	result, err := EnsureCurrentForServe(
+		context.Background(),
+		serveFixtureRequest(t, fixture),
+		serveMigrationTestTime,
+	)
+	if err == nil ||
+		result.Blocker != ServeBlockerSnapshot ||
+		!strings.Contains(err.Error(), "foreign-key violation") {
+		t.Fatalf("unadmitted activation = %#v, %v", result, err)
+	}
+	if frontier := readSchemaFrontierForTest(t, databasePath); frontier != 58 {
+		t.Fatalf("unadmitted schema frontier = %d, want 58", frontier)
+	}
+	snapshots, globErr := filepath.Glob(
+		filepath.Join(filepath.Dir(databasePath), "*.pre-serve-migration-*"),
+	)
+	if globErr != nil {
+		t.Fatal(globErr)
+	}
+	if len(snapshots) != 0 {
+		t.Fatalf("unadmitted witness produced snapshots: %v", snapshots)
+	}
+}
+
 func TestEnsureCurrentForServeCurrentSchemaCreatesNoMigrationArtifacts(
 	t *testing.T,
 ) {
@@ -499,6 +575,80 @@ func newSchema57ServeFixture(
 		)
 	}
 	return fixture, databasePath
+}
+
+func newSchema58ServeFixture(t *testing.T) (currentProjectFixture, string) {
+	t.Helper()
+	fixture := newCurrentProjectFixture(t)
+	databasePath, err := fixture.config.DBPath()
+	if err != nil {
+		t.Fatal(err)
+	}
+	execServeMigrationFixtureSQL(
+		t,
+		databasePath,
+		"DELETE FROM schema_version WHERE version >= 59",
+	)
+	return fixture, databasePath
+}
+
+func seedServeLegacyDecisionSpecSectionProjection(
+	t *testing.T,
+	databasePath string,
+	witnessed bool,
+) {
+	t.Helper()
+	database, err := sql.Open("sqlite", databasePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	database.SetMaxOpenConns(1)
+	defer database.Close()
+	if _, err := database.Exec("PRAGMA foreign_keys = OFF"); err != nil {
+		t.Fatalf("disable fixture foreign keys: %v", err)
+	}
+	sectionRefs := `[]`
+	if witnessed {
+		sectionRefs = `["TS.snapshot.legacy.001"]`
+	}
+	_, err = database.Exec(`
+		INSERT INTO artifacts (
+			id, kind, title, content, created_at, updated_at, structured_data
+		) VALUES (
+			'dec-snapshot-legacy', 'DecisionRecord',
+			'Legacy snapshot relation', 'fixture',
+			'2026-08-10T00:00:00Z', '2026-08-10T00:00:00Z',
+			json_object('section_refs', json(?))
+		);
+		INSERT INTO artifact_links (
+			source_id, target_id, link_type, created_at
+		) VALUES (
+			'dec-snapshot-legacy', 'TS.snapshot.legacy.001', 'governs',
+			'2026-08-10T00:00:00Z'
+		)`, sectionRefs)
+	if err != nil {
+		t.Fatalf("seed legacy snapshot relation: %v", err)
+	}
+	if _, err := database.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		t.Fatalf("restore fixture foreign keys: %v", err)
+	}
+}
+
+func admittedLegacyWitnessesForServeTest(
+	t *testing.T,
+	databasePath string,
+) []db.LegacyDecisionSpecSectionForeignKeyWitness {
+	t.Helper()
+	database, err := sql.Open("sqlite", "file:"+databasePath+"?mode=ro")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer database.Close()
+	witnesses, err := db.RequireOnlyAdmittedLegacyForeignKeyWitnesses(database)
+	if err != nil {
+		t.Fatalf("load admitted legacy witnesses: %v", err)
+	}
+	return witnesses
 }
 
 func serveFixtureRequest(

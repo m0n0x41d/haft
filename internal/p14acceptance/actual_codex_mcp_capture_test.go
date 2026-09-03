@@ -109,6 +109,16 @@ type p14CodexMCPPromptTranscriptProjection struct {
 	HistoryReadAt string `json:"history_read_at"`
 }
 
+type p14CodexMCPAssistantTranscriptProjection struct {
+	PromptID      string `json:"prompt_id"`
+	ThreadID      string `json:"thread_id"`
+	TurnID        string `json:"turn_id"`
+	Role          string `json:"role"`
+	TextCanonical string `json:"text_canonical"`
+	TextDigest    string `json:"text_digest"`
+	HistoryReadAt string `json:"history_read_at"`
+}
+
 type p14CodexMCPResponseCapture struct {
 	ToolCallID string `json:"tool_call_id"`
 	CapturedAt string `json:"captured_at"`
@@ -118,15 +128,16 @@ type p14CodexMCPResponseCapture struct {
 }
 
 type p14CodexMCPCallEvidence struct {
-	Sequence      int                                    `json:"sequence"`
-	ScenarioID    string                                 `json:"scenario_id"`
-	CaseID        string                                 `json:"case_id"`
-	ExchangeID    string                                 `json:"exchange_id"`
-	ExchangeRole  string                                 `json:"exchange_role"`
-	ParallelGroup string                                 `json:"parallel_group,omitempty"`
-	AgentPrompt   *p14CodexMCPPromptTranscriptProjection `json:"agent_prompt,omitempty"`
-	Transcript    p14CodexMCPTranscriptProjection        `json:"transcript"`
-	Response      p14CodexMCPResponseCapture             `json:"response"`
+	Sequence      int                                       `json:"sequence"`
+	ScenarioID    string                                    `json:"scenario_id"`
+	CaseID        string                                    `json:"case_id"`
+	ExchangeID    string                                    `json:"exchange_id"`
+	ExchangeRole  string                                    `json:"exchange_role"`
+	ParallelGroup string                                    `json:"parallel_group,omitempty"`
+	AgentPrompt   *p14CodexMCPPromptTranscriptProjection    `json:"agent_prompt,omitempty"`
+	AgentResponse *p14CodexMCPAssistantTranscriptProjection `json:"agent_response,omitempty"`
+	Transcript    p14CodexMCPTranscriptProjection           `json:"transcript"`
+	Response      p14CodexMCPResponseCapture                `json:"response"`
 }
 
 type p14CodexMCPCaptureInput struct {
@@ -445,6 +456,7 @@ func p14CodexMCPScenarioExecutionOrder(
 	noEffect := make([]preparedP14Scenario, 0)
 	writes := make(map[string]preparedP14Scenario)
 	var agentMemory preparedP14Scenario
+	var onboardPrepare preparedP14Scenario
 	for _, scenario := range scenarios {
 		if _, present := p14PreparedSurfaceRequest(scenario, "live_mcp"); !present {
 			continue
@@ -454,9 +466,12 @@ func p14CodexMCPScenarioExecutionOrder(
 			writes[scenario.ID] = scenario
 		case "agent_typed_memory_orientation":
 			agentMemory = scenario
+		case "onboard_profile_change_prepare":
+			onboardPrepare = scenario
 		default:
 			agentObservation := scenario.ID ==
-				"agent_code_graph_orientation"
+				"agent_code_graph_orientation" ||
+				scenario.ID == "agent_fpf_pattern_use"
 			if scenario.Oracle.ExpectedEffect != "none" &&
 				!agentObservation {
 				return nil, fmt.Errorf(
@@ -474,6 +489,13 @@ func p14CodexMCPScenarioExecutionOrder(
 			"agent_typed_memory_orientation",
 		)
 	}
+	if onboardPrepare.ID == "" {
+		return nil, fmt.Errorf(
+			"P14 live MCP execution order omits %q",
+			"onboard_profile_change_prepare",
+		)
+	}
+	noEffect = append(noEffect, onboardPrepare)
 	for _, required := range []string{
 		"positive_typed_write",
 		"concurrency_idempotency",
@@ -499,15 +521,20 @@ func p14CodexMCPCallDefinitions(
 		preparedP14Scenario,
 		preparedP14Request,
 	) ([]p14CodexMCPCallDefinition, error){
-		p14RuntimeIdentityBuilderID:     p14CodexMCPLiveProtocolCalls,
-		p14FPFProjectionBuilderID:       p14CodexMCPFPFCalls,
-		p14IdentifierNamespaceBuilderID: p14CodexMCPIdentifierCalls,
-		p14SpecSectionProtocolBuilderID: p14CodexMCPSpecSectionCalls,
+		p14RuntimeIdentityBuilderID:      p14CodexMCPLiveProtocolCalls,
+		p14FPFProjectionBuilderID:        p14CodexMCPFPFCalls,
+		p14IdentifierNamespaceBuilderID:  p14CodexMCPIdentifierCalls,
+		p14OnboardProfileChangeBuilderID: p14CodexMCPOnboardProfileChangeCalls,
+		p14SpecSectionProtocolBuilderID:  p14CodexMCPSpecSectionCalls,
 	}
 	for _, builderID := range p14CodeExploreBuilderIDs {
 		builders[builderID] = p14CodexMCPCodeExploreCalls
 	}
 	for _, builderID := range p14AgentOrientationBuilderIDs {
+		if builderID == p14AgentFPFBuilderID {
+			builders[builderID] = p14CodexMCPAgentFPFCalls
+			continue
+		}
 		builders[builderID] = p14CodexMCPLiveProtocolCalls
 	}
 	for _, builderID := range p14MemoryReadBuilderIDs {
@@ -793,7 +820,7 @@ func p14CodexMCPIdentifierCalls(
 		}
 		result = append(result, p14CodexMCPCallDefinition{
 			CaseID: testCase.ID,
-			Tool:   surface.Tool,
+			Tool:   testCase.Tool,
 			Args:   args,
 		})
 	}
@@ -967,7 +994,8 @@ func validateP14CodexMCPPlannedCalls(
 			}
 			prompt := *call.AgentPrompt
 			promptCase := call.CaseID == "orientation_probe" ||
-				call.CaseID == "explicit_save_establish"
+				call.CaseID == "explicit_save_establish" ||
+				p14AgentFPFPromptCase(call.CaseID)
 			if !promptCase ||
 				prompt.ID == "" ||
 				strings.TrimSpace(prompt.TextCanonical) == "" ||
@@ -975,7 +1003,7 @@ func validateP14CodexMCPPlannedCalls(
 					strings.TrimSpace(prompt.TextCanonical) ||
 				p14Digest([]byte(prompt.TextCanonical)) !=
 					prompt.TextDigest ||
-				prompt.ExpectedToolCallCount != 1 {
+				prompt.ExpectedToolCallCount <= 0 {
 				return fmt.Errorf(
 					"P14 agent prompt differs for %q",
 					key,
@@ -999,6 +1027,7 @@ func validateP14CodexMCPPlannedCalls(
 	for _, scenarioID := range []string{
 		"agent_code_graph_orientation",
 		"agent_typed_memory_orientation",
+		"agent_fpf_pattern_use",
 	} {
 		if _, present := promptScenarios[scenarioID]; !present {
 			return fmt.Errorf(
@@ -1047,6 +1076,22 @@ func buildP14CodexMCPCaptureCarrier(
 		request, present := p14PreparedSurfaceRequest(scenario, "live_mcp")
 		if !present {
 			continue
+		}
+		if request.Builder == p14AgentFPFBuilderID {
+			var surface p14LiveProtocolSurface
+			if err := decodeP14StrictCompactJSON(
+				request.CanonicalPayload,
+				&surface,
+				"actual Codex agent FPF candidate version",
+			); err != nil {
+				return p14CodexMCPCaptureCarrier{}, err
+			}
+			if err := validateP14AgentFPFCandidateProtocolVersion(
+				surface.AgentFPFCases,
+				protocolDiscovery,
+			); err != nil {
+				return p14CodexMCPCaptureCarrier{}, err
+			}
 		}
 		normalizer := normalizers[request.Builder]
 		if normalizer == nil {
@@ -1341,6 +1386,7 @@ func validateP14CodexMCPCallEvidence(
 	if err := validateP14CodexMCPPromptEvidence(
 		planned.AgentPrompt,
 		evidence.AgentPrompt,
+		evidence.AgentResponse,
 		transcript,
 	); err != nil {
 		return err
@@ -1377,9 +1423,10 @@ func validateP14CodexMCPCallEvidence(
 func validateP14CodexMCPPromptEvidence(
 	planned *p14CodexMCPPlannedAgentPrompt,
 	evidence *p14CodexMCPPromptTranscriptProjection,
+	response *p14CodexMCPAssistantTranscriptProjection,
 	tool p14CodexMCPTranscriptProjection,
 ) error {
-	if planned == nil && evidence == nil {
+	if planned == nil && evidence == nil && response == nil {
 		return nil
 	}
 	if planned == nil || evidence == nil {
@@ -1417,6 +1464,29 @@ func validateP14CodexMCPPromptEvidence(
 		return fmt.Errorf(
 			"P14 Codex MCP prompt and tool history reads differ",
 		)
+	}
+	requiresResponse := strings.HasPrefix(
+		planned.ID,
+		"agent_fpf_pattern_use_",
+	)
+	if !requiresResponse && response != nil {
+		return fmt.Errorf(
+			"P14 Codex MCP assistant response appears outside the semantic FPF protocol",
+		)
+	}
+	if requiresResponse {
+		if response == nil ||
+			response.PromptID != planned.ID ||
+			response.ThreadID != tool.ThreadID ||
+			response.TurnID != tool.TurnID ||
+			response.Role != "assistant" ||
+			strings.TrimSpace(response.TextCanonical) == "" ||
+			p14Digest([]byte(response.TextCanonical)) != response.TextDigest ||
+			response.HistoryReadAt != evidence.HistoryReadAt {
+			return fmt.Errorf(
+				"P14 Codex MCP assistant semantic response differs",
+			)
+		}
 	}
 	return nil
 }
@@ -1517,7 +1587,7 @@ func validateAndRecomputeP14CodexMCPCaptureCarrier(
 				scenario,
 				request,
 				capture.SurfaceObservation,
-				carrier.ProtocolDiscovery.EvidenceDigest,
+				carrier.ProtocolDiscovery,
 			)
 		if err != nil {
 			return nil, err
@@ -1605,7 +1675,7 @@ func recomputeP14CodexMCPScenarioObservation(
 	scenario preparedP14Scenario,
 	request preparedP14Request,
 	observation p14InstalledSurfaceObservation,
-	protocolDiscoveryDigest string,
+	protocolDiscovery p14MCPProtocolDiscovery,
 ) (
 	p14InstalledSurfaceObservation,
 	[]p14CodexMCPCallEvidence,
@@ -1635,7 +1705,7 @@ func recomputeP14CodexMCPScenarioObservation(
 	}
 	expectedProtocolDigest := ""
 	if scenario.ID == "runtime_identity" {
-		expectedProtocolDigest = protocolDiscoveryDigest
+		expectedProtocolDigest = protocolDiscovery.EvidenceDigest
 	}
 	if receipt.ProtocolDiscoveryDigest != expectedProtocolDigest {
 		return p14InstalledSurfaceObservation{}, nil, fmt.Errorf(
@@ -1673,6 +1743,22 @@ func recomputeP14CodexMCPScenarioObservation(
 			request.Builder,
 		)
 	}
+	if request.Builder == p14AgentFPFBuilderID {
+		var surface p14LiveProtocolSurface
+		if err := decodeP14StrictCompactJSON(
+			request.CanonicalPayload,
+			&surface,
+			"recomputed Codex agent FPF candidate version",
+		); err != nil {
+			return p14InstalledSurfaceObservation{}, nil, err
+		}
+		if err := validateP14AgentFPFCandidateProtocolVersion(
+			surface.AgentFPFCases,
+			protocolDiscovery,
+		); err != nil {
+			return p14InstalledSurfaceObservation{}, nil, err
+		}
+	}
 	targetCalls := p14CodexMCPTargetCalls(receipt.Calls)
 	result, err := normalizer(
 		prepared,
@@ -1694,7 +1780,7 @@ func recomputeP14CodexMCPScenarioObservation(
 		request,
 		receipt.Calls,
 		result,
-		protocolDiscoveryDigest,
+		protocolDiscovery.EvidenceDigest,
 	)
 	if err != nil {
 		return p14InstalledSurfaceObservation{}, nil, err
@@ -2057,7 +2143,7 @@ func TestP14CodexMCPRequestPacketClosesActualTaskCallsAndOrdering(
 		!strings.Contains(statusProbe.ArgsCanonical, `"action":"status"`) {
 		t.Fatal("P14 Codex MCP request omitted exact resumed-task status probe")
 	}
-	promptCallIndexes := make([]int, 0, 3)
+	promptCallIndexes := make([]int, 0, 7)
 	memoryOrientationCalls := 0
 	for index, call := range packet.Packet.Calls {
 		if call.AgentPrompt != nil {
@@ -2068,7 +2154,7 @@ func TestP14CodexMCPRequestPacketClosesActualTaskCallsAndOrdering(
 			memoryOrientationCalls++
 		}
 	}
-	if len(promptCallIndexes) != 3 ||
+	if len(promptCallIndexes) != 7 ||
 		memoryOrientationCalls != 8 {
 		t.Fatal(
 			"P14 Codex MCP request omitted prompt-gated entity round-trip calls",
@@ -2508,8 +2594,65 @@ func syntheticP14CodexMCPCaptureInput(
 					TextDigest:    planned.AgentPrompt.TextDigest,
 					HistoryReadAt: historyReadAt,
 				}
+			if caseID, semantic := p14AgentFPFCaseIDFromPromptID(
+				planned.AgentPrompt.ID,
+			); semantic {
+				testCase, err := p14AgentFPFCaseByID(caseID)
+				if err != nil {
+					panic(err)
+				}
+				if testCase.ID == "mechanical_exact_lookup" {
+					testCase.ExpectedResultAssertion = "v9"
+				}
+				observationRaw, err := marshalP14CanonicalJSON(
+					p14ExpectedAgentFPFCaseObservation(testCase),
+				)
+				if err != nil {
+					panic(err)
+				}
+				responseText := p14AgentFPFObservationPrefix +
+					string(observationRaw)
+				evidence.AgentResponse =
+					&p14CodexMCPAssistantTranscriptProjection{
+						PromptID:      planned.AgentPrompt.ID,
+						ThreadID:      packet.Packet.Runtime.ThreadID,
+						TurnID:        turnID,
+						Role:          "assistant",
+						TextCanonical: responseText,
+						TextDigest:    p14Digest([]byte(responseText)),
+						HistoryReadAt: historyReadAt,
+					}
+			}
 		}
 		calls = append(calls, evidence)
+	}
+	for index := 0; index < len(calls); index++ {
+		planned := packet.Packet.Calls[index]
+		if planned.AgentPrompt == nil ||
+			planned.AgentPrompt.ExpectedToolCallCount <= 1 {
+			continue
+		}
+		count := planned.AgentPrompt.ExpectedToolCallCount
+		if index+count > len(calls) {
+			panic("synthetic P14 prompt call span escapes packet")
+		}
+		turnID := calls[index].Transcript.TurnID
+		for ordinal := 0; ordinal < count; ordinal++ {
+			call := calls[index+ordinal]
+			if call.ScenarioID != planned.ScenarioID {
+				panic("synthetic P14 prompt call span crosses scenario")
+			}
+			call.Transcript.TurnID = turnID
+			call.Transcript.TurnToolCallOrdinal = ordinal + 1
+			call.Transcript.TurnToolCallCount = count
+			if call.AgentPrompt != nil {
+				call.AgentPrompt.TurnID = turnID
+			}
+			if call.AgentResponse != nil {
+				call.AgentResponse.TurnID = turnID
+			}
+			calls[index+ordinal] = call
+		}
 	}
 	for index := 0; index < len(calls); {
 		exchangeID := calls[index].ExchangeID

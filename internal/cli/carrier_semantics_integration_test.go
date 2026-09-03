@@ -1,11 +1,15 @@
 package cli
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/m0n0x41d/haft/internal/initplanning"
 )
 
 func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testing.T) {
@@ -17,17 +21,23 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 	restoreFlags := captureInitHostFlagState()
 	defer restoreFlags.apply()
 	clearInitHostFlags()
+	initClaude = true
+	initCodex = true
 	initAgents = true
 	initLocal = true
 	initPi = true
 	cmd := newPublicInitTestCommand()
 	var agents bool
+	var selectedClaude bool
+	var selectedCodex bool
 	var local bool
 	var selectedPi bool
+	cmd.Flags().BoolVar(&selectedClaude, "claude", false, "")
+	cmd.Flags().BoolVar(&selectedCodex, "codex", false, "")
 	cmd.Flags().BoolVar(&agents, "agents", false, "")
 	cmd.Flags().BoolVar(&local, "local", false, "")
 	cmd.Flags().BoolVar(&selectedPi, "pi", false, "")
-	for _, flag := range []string{"agents", "local", "pi"} {
+	for _, flag := range []string{"claude", "codex", "agents", "local", "pi"} {
 		if err := cmd.Flags().Set(flag, "true"); err != nil {
 			t.Fatalf("set %s flag: %v", flag, err)
 		}
@@ -36,6 +46,7 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		t.Fatalf("install fresh typed carriers: %v", err)
 	}
 	hostRoot := filepath.Join(projectRoot, ".agents", "skills")
+	claudeRoot := filepath.Join(projectRoot, ".claude", "skills")
 	piRoot := filepath.Join(projectRoot, ".haft", "pi", "haft-pi")
 
 	wantNames := []string{
@@ -53,13 +64,18 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"h-verify",
 	}
 	assertCarrierDirectoryNames(t, hostRoot, wantNames)
+	assertCarrierDirectoryNames(t, claudeRoot, wantNames)
 	piSkillRoot := filepath.Join(piRoot, "skills")
 	assertCarrierDirectoryNames(t, piSkillRoot, wantNames)
 	piPromptRoot := filepath.Join(piRoot, "prompts")
 	assertCarrierPromptNames(t, piPromptRoot, wantNames)
 
 	host := readMaterializedSkillSet(t, hostRoot, wantNames)
+	claude := readMaterializedSkillSet(t, claudeRoot, wantNames)
 	pi := readMaterializedPiSet(t, piRoot, wantNames)
+	if claude["h-reason"] != host["h-reason"] {
+		t.Fatal("fresh Claude and Codex/agents h-reason carriers differ from the canonical projection")
+	}
 
 	assertCarrierFragments(t, "host h-onboard", host["h-onboard"], []string{
 		"direct, unambiguous operator request",
@@ -96,6 +112,20 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"There is no public `h-plan` phase",
 		"attention signals; they are not project-wide stop conditions",
 		"Never ask for bare `OK`, `yes`, or `да`",
+		"inspect current `E.11.PUR` before recommending anything",
+		"`problemFrame`, `forces`, `solutionConditions`, `ordinaryBoundary`",
+		"`applicable`,",
+		"`newlyCurrentSubjectResult`",
+		"Choose the minimal current capability set",
+		"`planning draft` or `planning cue`",
+		"Haft-local governance UX",
+		"same bounded coordination question",
+		"`C.22.PFR` Problem occurrence",
+		"creates no Move identity",
+		"A.15.1-grounded occurrence",
+		"A.15.PROD",
+		"genuine stop has no receiver",
+		"grounded actual-result assertion",
 	})
 	assertCarrierFragments(t, "Pi h-reason", pi["h-reason"], []string{
 		`"action": "fpf"`,
@@ -111,6 +141,19 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		"There is no public `h-plan`",
 		"attention, not project-wide human gates",
 		"Never ask for bare `OK`, `yes`, or `да`",
+		"every evaluated candidate's full",
+		"`problemFrame`, `forces`",
+		"`newlyCurrentSubjectResult`",
+		"minimal current capability set",
+		"`planning draft` or `planning",
+		"Haft-local governance UX",
+		"same bounded coordination question",
+		"`C.22.PFR`",
+		"creates no Move identity",
+		"A.15.1-grounded occurrence",
+		"A.15.PROD",
+		"genuine stop has no receiver",
+		"grounded actual-result assertion",
 	})
 
 	assertCarrierFragments(t, "host h-frame", host["h-frame"], []string{
@@ -255,6 +298,59 @@ func TestFreshHostAndPiCarriersPreserveIndependentSourceFirstSemantics(t *testin
 		t.Fatal("Pi h-status claims a read-only posture but still invokes mutating haft_refresh")
 	}
 	assertNoRetiredRoutingSurface(t, host, pi)
+	assertFreshHReasonHostStatusDigest(
+		t,
+		runHostStatusJSONForTest(t),
+		projectRoot,
+		map[initplanning.HostID]string{
+			initplanning.HostClaude: filepath.Join(claudeRoot, "h-reason", "SKILL.md"),
+			initplanning.HostCodex:  filepath.Join(hostRoot, "h-reason", "SKILL.md"),
+		},
+	)
+}
+
+func assertFreshHReasonHostStatusDigest(
+	t *testing.T,
+	report hostStatusReport,
+	projectRoot string,
+	want map[initplanning.HostID]string,
+) {
+	t.Helper()
+	for host, carrierPath := range want {
+		manifestPath := filepath.Join(
+			projectRoot,
+			".haft",
+			"host-installations",
+			string(host)+".project.json",
+		)
+		manifest := findHostManifestStatus(t, report.Manifests, manifestPath)
+		if manifest.Currentness == nil ||
+			manifest.Currentness.Posture != initplanning.HostInstallationCurrent {
+			t.Fatalf("fresh %s host currentness = %#v", host, manifest)
+		}
+		carrierBytes, err := os.ReadFile(carrierPath)
+		if err != nil {
+			t.Fatalf("read fresh %s h-reason carrier: %v", host, err)
+		}
+		carrierSum := sha256.Sum256(carrierBytes)
+		wantDigest := fmt.Sprintf("sha256:%x", carrierSum)
+		found := false
+		for _, path := range manifest.Currentness.Paths {
+			if filepath.Clean(path.Path) != filepath.Clean(carrierPath) {
+				continue
+			}
+			found = true
+			if path.State != initplanning.PathCurrentOwned ||
+				path.ObservedDigest != wantDigest ||
+				path.ManifestDigest != wantDigest ||
+				path.DesiredDigest != wantDigest {
+				t.Fatalf("fresh %s h-reason digest readback = %#v, want %s", host, path, wantDigest)
+			}
+		}
+		if !found {
+			t.Fatalf("fresh %s host status omitted h-reason carrier %s", host, carrierPath)
+		}
+	}
 }
 
 func assertCarrierDirectoryNames(t *testing.T, root string, want []string) {

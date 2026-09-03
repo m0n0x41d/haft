@@ -516,11 +516,12 @@ func applyRecoverySnapshotBoundary(
 			err,
 		)
 	}
-	if err := requireHealthyProjectDatabase(
+	witnesses, err := healthyProjectDatabaseWitnesses(
 		ctx,
 		handle.Database(),
 		"project migration snapshot",
-	); err != nil {
+	)
+	if err != nil {
 		return serveMigrationSnapshot{}, err
 	}
 	snapshot, err := createServeMigrationSnapshot(
@@ -531,6 +532,7 @@ func applyRecoverySnapshotBoundary(
 		predecessor,
 		snapshotVersion,
 		at,
+		witnesses,
 	)
 	if err != nil {
 		return serveMigrationSnapshot{}, err
@@ -547,6 +549,14 @@ func applyRecoverySnapshotBoundary(
 			),
 			snapshot,
 		)
+	}
+	if err := requirePreservedProjectDatabaseWitnesses(
+		ctx,
+		handle.Database(),
+		fmt.Sprintf("project migration %d", snapshotVersion),
+		witnesses,
+	); err != nil {
+		return snapshot, migrationErrorWithSnapshot(err, snapshot)
 	}
 	return snapshot, nil
 }

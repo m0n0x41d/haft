@@ -33,6 +33,10 @@ type p14PreparedInputGenerationRequest struct {
 	IdentifierFixturePath   string `json:"identifier_fixture_path"`
 }
 
+func p14Bool(value bool) *bool {
+	return &value
+}
+
 type p14PreparedFixtureSet struct {
 	Memory     p14MemoryReadFixture
 	InitMatrix p14InitMatrixFixture
@@ -41,11 +45,12 @@ type p14PreparedFixtureSet struct {
 }
 
 type p14PreparedInputGeneratorDependencies struct {
-	ObservePreparation  p14PreparationEvidenceObserver
-	FPFExecutor         p14FPFProjectionExecutor
-	CodeExploreExecutor p14CodeExploreExecutor
-	MemoryReadExecutor  p14MemoryReadExecutor
-	VerifyP13Fresh      func(string, p13EvidenceBinding) error
+	ObservePreparation      p14PreparationEvidenceObserver
+	ObserveCandidateVersion p14CandidateVersionObserver
+	FPFExecutor             p14FPFProjectionExecutor
+	CodeExploreExecutor     p14CodeExploreExecutor
+	MemoryReadExecutor      p14MemoryReadExecutor
+	VerifyP13Fresh          func(string, p13EvidenceBinding) error
 }
 
 func TestP14GeneratePreparedRequestOracleInput(t *testing.T) {
@@ -73,11 +78,12 @@ func TestP14GeneratePreparedRequestOracleInput(t *testing.T) {
 	}
 	observer := agenthostrestart.NewOSEvidence()
 	dependencies := p14PreparedInputGeneratorDependencies{
-		ObservePreparation:  observer.CapturePreparation,
-		FPFExecutor:         executeP14FPFProjectionCandidate,
-		CodeExploreExecutor: executeP14CodeExploreCandidate,
-		MemoryReadExecutor:  executeP14MemoryReadCandidate,
-		VerifyP13Fresh:      verifyP13EvidenceFreshViaHarness,
+		ObservePreparation:      observer.CapturePreparation,
+		ObserveCandidateVersion: observeP14CandidateVersion,
+		FPFExecutor:             executeP14FPFProjectionCandidate,
+		CodeExploreExecutor:     executeP14CodeExploreCandidate,
+		MemoryReadExecutor:      executeP14MemoryReadCandidate,
+		VerifyP13Fresh:          verifyP13EvidenceFreshViaHarness,
 	}
 	path, digest, err := generateP14PreparedRequestOracleInput(
 		context.Background(),
@@ -134,6 +140,14 @@ func TestP14PreparedInputGeneratorBuildsOneClosedNoClobberCarrier(
 			_ agenthostrestart.PreparationRequest,
 		) (agenthostrestart.PreparationEvidence, error) {
 			return preparation, nil
+		},
+		ObserveCandidateVersion: func(
+			_ string,
+		) (p14CandidateVersionObservation, error) {
+			return syntheticP14CandidateVersionObservation(
+				p14RequiredCandidateVersion,
+				strings.Repeat("1", 40),
+			), nil
 		},
 		FPFExecutor:         executeSyntheticP14FPFProjectionCandidate,
 		CodeExploreExecutor: executeSyntheticP14CodeExploreCandidate,
@@ -194,6 +208,55 @@ func TestP14PreparedInputGeneratorBuildsOneClosedNoClobberCarrier(
 	}
 }
 
+func TestP14FrozenBasisBuildRequiresExactCandidateVersion(t *testing.T) {
+	sourceRoot, err := p14RepositoryRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, rawContract, err := loadRequestOracleContract(sourceRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repositoryRoot, request, preparation := prepareP14GeneratorTestRepository(
+		t,
+		rawContract,
+	)
+	predecessor := []byte(
+		"#!/bin/sh\nprintf 'haft 9.1.0\\n  commit:  " +
+			strings.Repeat("1", 40) +
+			"\\n  built:   synthetic\\n'\n",
+	)
+	if err := os.WriteFile(
+		request.CandidateExecutablePath,
+		predecessor,
+		0o700,
+	); err != nil {
+		t.Fatal(err)
+	}
+	preparation.DesiredHaftBinaryDigest = p14Digest(predecessor)
+	_, evidence, err := loadP14PassingP13Evidence(
+		repositoryRoot,
+		request.P13EvidencePath,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := buildP14FrozenBasis(
+		repositoryRoot,
+		request,
+		evidence.StartIdentity,
+		preparation,
+		func(_ string) (p14CandidateVersionObservation, error) {
+			return syntheticP14CandidateVersionObservation(
+				"9.1.0",
+				strings.Repeat("1", 40),
+			), nil
+		},
+	); err == nil {
+		t.Fatal("P14 generation accepted a predecessor candidate version")
+	}
+}
+
 func generateP14PreparedRequestOracleInput(
 	ctx context.Context,
 	repositoryRoot string,
@@ -206,6 +269,7 @@ func generateP14PreparedRequestOracleInput(
 		return "", "", err
 	}
 	if dependencies.ObservePreparation == nil ||
+		dependencies.ObserveCandidateVersion == nil ||
 		dependencies.FPFExecutor == nil ||
 		dependencies.CodeExploreExecutor == nil ||
 		dependencies.MemoryReadExecutor == nil ||
@@ -252,6 +316,7 @@ func generateP14PreparedRequestOracleInput(
 		canonicalRequest,
 		p13Evidence.StartIdentity,
 		preparation,
+		dependencies.ObserveCandidateVersion,
 	)
 	if err != nil {
 		return "", "", err
@@ -271,6 +336,7 @@ func generateP14PreparedRequestOracleInput(
 		Executable:            basis.Candidate.ExecutablePath,
 		ProjectRoot:           basis.SelectedProject.ProjectRoot,
 		ExecutableDigest:      basis.Candidate.ExecutableDigest,
+		CandidateVersion:      basis.Candidate.Version,
 		ExpectedFPFRevision:   basis.Candidate.FPFRevision,
 		MemoryFixture:         fixtures.Memory,
 		InitMatrixFixture:     fixtures.InitMatrix,
@@ -306,6 +372,7 @@ func generateP14PreparedRequestOracleInput(
 		repositoryRoot,
 		input,
 		dependencies.ObservePreparation,
+		dependencies.ObserveCandidateVersion,
 	); err != nil {
 		return "", "", err
 	}
@@ -543,7 +610,63 @@ func validatePassingP13Evidence(
 			"P14 generation requires one unchanged P13 identity and carrier path",
 		)
 	}
+	if err := validateCleanP13GitIdentity(evidence.StartIdentity.Git); err != nil {
+		return err
+	}
+	if err := validateCleanP13GitIdentity(evidence.EndIdentity.Git); err != nil {
+		return err
+	}
 	return validateP13EvidenceBinding(binding)
+}
+
+func validateCleanP13GitIdentity(identity p13GitEnvelope) error {
+	if identity.StatusBytes != 0 ||
+		identity.StatusDigest != p14CleanGitStatusDigest {
+		return fmt.Errorf(
+			"P14 requires P13 evidence from a canonical clean Git checkout",
+		)
+	}
+	return nil
+}
+
+func TestP14PassingP13EvidenceRequiresCanonicalCleanGitIdentity(t *testing.T) {
+	basis := syntheticFrozenP14BasisForP13()
+	identityDigest := p14TestDigest("clean-p13-identity")
+	carrierPath := ".context/p13/p13-acceptance-clean.json"
+	evidence := syntheticP13EvidenceForP14(
+		basis,
+		identityDigest,
+		p14RequiredP13Schema,
+		carrierPath,
+	)
+	binding := p13EvidenceBinding{
+		CarrierPath:    carrierPath,
+		CarrierDigest:  p14TestDigest("clean-p13-carrier"),
+		IdentityDigest: identityDigest,
+	}
+	if err := validatePassingP13Evidence(binding, evidence); err != nil {
+		t.Fatalf("canonical clean P13 evidence rejected: %v", err)
+	}
+
+	tests := map[string]func(*p13EvidenceEnvelope){
+		"non_empty_digest": func(value *p13EvidenceEnvelope) {
+			value.StartIdentity.Git.StatusDigest = p14TestDigest("dirty-status")
+			value.EndIdentity.Git.StatusDigest = value.StartIdentity.Git.StatusDigest
+		},
+		"non_zero_bytes": func(value *p13EvidenceEnvelope) {
+			value.StartIdentity.Git.StatusBytes = 1
+			value.EndIdentity.Git.StatusBytes = 1
+		},
+	}
+	for name, mutate := range tests {
+		t.Run(name, func(t *testing.T) {
+			dirty := evidence
+			mutate(&dirty)
+			if err := validatePassingP13Evidence(binding, dirty); err == nil {
+				t.Fatal("P14 accepted P13 evidence without canonical empty Git status")
+			}
+		})
+	}
 }
 
 func loadP14PreparedFixtureSet(
@@ -675,6 +798,7 @@ func buildP14FrozenBasis(
 	request p14PreparedInputGenerationRequest,
 	identity p13IdentityEnvelope,
 	preparation agenthostrestart.PreparationEvidence,
+	observeCandidate p14CandidateVersionObserver,
 ) (frozenP14Basis, error) {
 	selectedDigest := strings.TrimPrefix(
 		identity.TypeEnv.SelectedCompositeRef,
@@ -725,9 +849,28 @@ func buildP14FrozenBasis(
 	if err != nil {
 		return frozenP14Basis{}, err
 	}
+	candidateVersion, err := observeCandidate(
+		request.CandidateExecutablePath,
+	)
+	if err != nil {
+		return frozenP14Basis{}, err
+	}
+	if candidateVersion.Version != p14RequiredCandidateVersion {
+		return frozenP14Basis{}, fmt.Errorf(
+			"P14 generation requires exact candidate version %s",
+			p14RequiredCandidateVersion,
+		)
+	}
 	basis := frozenP14Basis{
 		Candidate: candidateP14Basis{
 			GitHead:             identity.Git.Head,
+			Version:             candidateVersion.Version,
+			VersionCommit:       candidateVersion.Commit,
+			VersionModified:     p14Bool(candidateVersion.Modified),
+			BuildVCS:            candidateVersion.BuildVCS,
+			BuildVCSRevision:    candidateVersion.BuildVCSRevision,
+			BuildVCSModified:    p14Bool(candidateVersion.BuildVCSModified),
+			BuildVCSTime:        candidateVersion.BuildVCSTime,
 			P13GitStatusDigest:  identity.Git.StatusDigest,
 			DirtyStateDigest:    preparation.DirtyStateDigest,
 			ExecutablePath:      request.CandidateExecutablePath,
@@ -881,8 +1024,12 @@ func prepareP14GeneratorTestRepository(
 	writeP14GeneratorTestFile(t, contractPath, rawContract)
 
 	candidatePath := filepath.Join(repositoryRoot, "bin", "haft")
-	writeP14GeneratorTestFile(t, candidatePath, []byte("candidate"))
-	candidateDigest := p14Digest([]byte("candidate"))
+	candidateRaw := []byte("#!/bin/sh\nprintf 'haft 9.2.0\\n  commit:  1111111111111111111111111111111111111111\\n  built:   synthetic\\n'\n")
+	writeP14GeneratorTestFile(t, candidatePath, candidateRaw)
+	if err := os.Chmod(candidatePath, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	candidateDigest := p14Digest(candidateRaw)
 	instructionPath := filepath.Join(repositoryRoot, "AGENTS.md")
 	writeP14GeneratorTestFile(t, instructionPath, []byte("instructions"))
 	skillRoot := filepath.Join(repositoryRoot, "skills")

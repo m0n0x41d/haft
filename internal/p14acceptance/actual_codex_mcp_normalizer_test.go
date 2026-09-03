@@ -26,15 +26,20 @@ type p14CodexMCPIdentifierErrorWire struct {
 
 func p14CodexMCPFamilyNormalizers() map[string]p14CodexMCPFamilyNormalizer {
 	normalizers := map[string]p14CodexMCPFamilyNormalizer{
-		p14RuntimeIdentityBuilderID:     normalizeP14CodexMCPRuntimeIdentity,
-		p14FPFProjectionBuilderID:       normalizeP14CodexMCPFPFProjection,
-		p14IdentifierNamespaceBuilderID: normalizeP14CodexMCPIdentifier,
-		p14SpecSectionProtocolBuilderID: normalizeP14CodexMCPSpecSection,
+		p14RuntimeIdentityBuilderID:      normalizeP14CodexMCPRuntimeIdentity,
+		p14FPFProjectionBuilderID:        normalizeP14CodexMCPFPFProjection,
+		p14IdentifierNamespaceBuilderID:  normalizeP14CodexMCPIdentifier,
+		p14OnboardProfileChangeBuilderID: normalizeP14CodexMCPOnboardProfileChange,
+		p14SpecSectionProtocolBuilderID:  normalizeP14CodexMCPSpecSection,
 	}
 	for _, builderID := range p14CodeExploreBuilderIDs {
 		normalizers[builderID] = normalizeP14CodexMCPCodeExplore
 	}
 	for _, builderID := range p14AgentOrientationBuilderIDs {
+		if builderID == p14AgentFPFBuilderID {
+			normalizers[builderID] = normalizeP14CodexMCPAgentFPFPatternUse
+			continue
+		}
 		normalizers[builderID] = normalizeP14CodexMCPAgentOrientation
 	}
 	for _, builderID := range p14MemoryReadBuilderIDs {
@@ -196,50 +201,76 @@ func normalizeP14CodexMCPIdentifier(
 	if err != nil {
 		return p14CodexMCPFamilyResult{}, err
 	}
-	if len(evidence) != 1 || !evidence[0].Response.IsError {
+	if len(evidence) != len(semantic.Cases)*2 {
 		return p14CodexMCPNormalizedFailure(
 			"identifier_namespace_mismatch",
-			"wrong-namespace request was not rejected",
+			"identifier rejection/recovery response count differs",
 			"closed_identifier_namespace_normalizer",
 		), nil
 	}
-	body, err := p14CodexMCPResponseBody(evidence[0])
-	if err != nil {
-		return p14CodexMCPFamilyResult{}, err
-	}
-	wire := p14CodexMCPIdentifierErrorWire{}
-	if err := decodeP14StrictCompactJSON(
-		string(bytes.TrimSpace(body)),
-		&wire,
-		"actual Codex MCP identifier error",
-	); err != nil {
-		return p14CodexMCPNormalizedFailure(
-			"identifier_namespace_mismatch",
-			err.Error(),
-			"closed_identifier_namespace_normalizer",
-		), nil
-	}
-	expected := canonicalP14IdentifierNormalizedOutput(semantic.ArtifactRef)
-	expectedError := expected.Cases[0].Error
-	if wire.Code != expectedError.Code ||
-		wire.Tool != expectedError.Tool ||
-		wire.Action != expectedError.Action ||
-		wire.Parameter != expectedError.Parameter ||
-		wire.Identifier != expectedError.Identifier ||
-		wire.ReceivedNamespace != expectedError.ReceivedNamespace ||
-		wire.ExpectedNamespace != expectedError.ExpectedNamespace ||
-		wire.SameCallRetryable != expectedError.SameCallRetryable ||
-		wire.RecoveryCall != expectedError.RecoveryCall ||
-		strings.TrimSpace(wire.Message) == "" {
-		return p14CodexMCPNormalizedFailure(
-			"identifier_namespace_mismatch",
-			"wrong-namespace error fields differ",
-			"closed_identifier_namespace_normalizer",
-		), nil
+	for index, testCase := range semantic.Cases {
+		rejection := evidence[index*2]
+		recovery := evidence[index*2+1]
+		if rejection.CaseID != testCase.ID+"_reject" ||
+			recovery.CaseID != testCase.ID+"_recovery" ||
+			!rejection.Response.IsError || recovery.Response.IsError {
+			return p14CodexMCPNormalizedFailure(
+				"identifier_namespace_mismatch",
+				"wrong-namespace rejection or unchanged recovery posture differs",
+				"closed_identifier_namespace_normalizer",
+			), nil
+		}
+		body, bodyErr := p14CodexMCPResponseBody(rejection)
+		if bodyErr != nil {
+			return p14CodexMCPFamilyResult{}, bodyErr
+		}
+		wire := p14CodexMCPIdentifierErrorWire{}
+		if err := decodeP14StrictCompactJSON(
+			string(bytes.TrimSpace(body)),
+			&wire,
+			"actual Codex MCP identifier error",
+		); err != nil {
+			return p14CodexMCPNormalizedFailure(
+				"identifier_namespace_mismatch",
+				err.Error(),
+				"closed_identifier_namespace_normalizer",
+			), nil
+		}
+		expectedError := testCase.Expected.Error
+		wireRecovery, _ := marshalP14CanonicalJSON(wire.RecoveryCall)
+		wantRecovery, _ := marshalP14CanonicalJSON(expectedError.RecoveryCall)
+		if wire.Code != expectedError.Code ||
+			wire.Tool != expectedError.Tool ||
+			wire.Action != expectedError.Action ||
+			wire.Parameter != expectedError.Parameter ||
+			wire.Identifier != expectedError.Identifier ||
+			wire.ReceivedNamespace != expectedError.ReceivedNamespace ||
+			wire.ExpectedNamespace != expectedError.ExpectedNamespace ||
+			wire.SameCallRetryable != expectedError.SameCallRetryable ||
+			!bytes.Equal(wireRecovery, wantRecovery) ||
+			strings.TrimSpace(wire.Message) == "" {
+			return p14CodexMCPNormalizedFailure(
+				"identifier_namespace_mismatch",
+				"wrong-namespace error fields differ",
+				"closed_identifier_namespace_normalizer",
+			), nil
+		}
+		recoveryBody, recoveryErr := p14CodexMCPResponseBody(recovery)
+		if recoveryErr != nil {
+			return p14CodexMCPFamilyResult{}, recoveryErr
+		}
+		if len(bytes.TrimSpace(recoveryBody)) == 0 {
+			return p14CodexMCPNormalizedFailure(
+				"identifier_namespace_mismatch",
+				"unchanged recovery returned no observable result",
+				"closed_identifier_namespace_normalizer",
+			), nil
+		}
 	}
 	return p14CodexMCPNormalizedResult(
-		expected,
+		canonicalP14IdentifierNormalizedOutput(semantic.ArtifactRef),
 		nil,
+		"every_emitted_recovery_executed_unchanged",
 		"closed_identifier_namespace_normalizer",
 	)
 }
@@ -533,32 +564,37 @@ func TestP14CodexMCPOwnNormalizersAcceptExactResponses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		expected := canonicalP14IdentifierNormalizedOutput(
-			semantic.ArtifactRef,
-		)
-		expectedError := expected.Cases[0].Error
-		wire := p14CodexMCPIdentifierErrorWire{
-			Code:              expectedError.Code,
-			Tool:              expectedError.Tool,
-			Action:            expectedError.Action,
-			Parameter:         expectedError.Parameter,
-			Identifier:        expectedError.Identifier,
-			ReceivedNamespace: expectedError.ReceivedNamespace,
-			ExpectedNamespace: expectedError.ExpectedNamespace,
-			SameCallRetryable: expectedError.SameCallRetryable,
-			Message:           "identifier belongs to Haft project memory",
-			RecoveryCall:      expectedError.RecoveryCall,
-		}
-		body, err := marshalP14CanonicalJSON(wire)
-		if err != nil {
-			t.Fatal(err)
-		}
-		evidence := []p14CodexMCPCallEvidence{
-			p14CodexMCPNormalizerEvidence(
-				p14IdentifierCaseID,
-				true,
-				body,
-			),
+		evidence := make([]p14CodexMCPCallEvidence, 0, len(semantic.Cases)*2)
+		for _, testCase := range semantic.Cases {
+			expectedError := testCase.Expected.Error
+			wire := p14CodexMCPIdentifierErrorWire{
+				Code:              expectedError.Code,
+				Tool:              expectedError.Tool,
+				Action:            expectedError.Action,
+				Parameter:         expectedError.Parameter,
+				Identifier:        expectedError.Identifier,
+				ReceivedNamespace: expectedError.ReceivedNamespace,
+				ExpectedNamespace: expectedError.ExpectedNamespace,
+				SameCallRetryable: expectedError.SameCallRetryable,
+				Message:           "identifier belongs to one exact namespace",
+				RecoveryCall:      expectedError.RecoveryCall,
+			}
+			body, err := marshalP14CanonicalJSON(wire)
+			if err != nil {
+				t.Fatal(err)
+			}
+			evidence = append(evidence,
+				p14CodexMCPNormalizerEvidence(
+					testCase.ID+"_reject",
+					true,
+					body,
+				),
+				p14CodexMCPNormalizerEvidence(
+					testCase.ID+"_recovery",
+					false,
+					[]byte(`{"result":"observed"}`),
+				),
+			)
 		}
 		result, err := normalizeP14CodexMCPIdentifier(
 			prepared,

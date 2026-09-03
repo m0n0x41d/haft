@@ -6,6 +6,85 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Added
+
+- **A deterministic, source-pinned `h-reason` corpus prepares semantic
+  qualification.** Twenty-one scenarios cover ordinary abstention, single- and
+  multi-pattern use, insufficient and inapplicable candidates, complementary
+  coordination, honest PUA closure, planning boundaries, non-English concerns,
+  exact identifier recovery, and non-binding profile-change preparation. The
+  contract records tool calls, responses, writes, and effects separately. P14
+  builders consume selected sealed scenarios, but installed-host execution
+  remains a separate gate.
+- **Release validation now binds evidence bytes to one candidate before
+  packaging.** The workflow requires exact P13 and P14 run, artifact, and
+  digest identities; verifies source-run lineage; rechecks the P13 basis and
+  final installed-observation carrier; seals one validation bundle; and
+  verifies that bundle again at publication time. Tag pushes cannot bypass the
+  evidence-bound dispatch. The trusted P13-basis and P14 producer workflows
+  are intentionally absent from this candidate, so publication remains
+  fail-closed until those producers and fresh evidence exist.
+
+### Fixed
+
+- **A uniquely proven identifier-namespace mismatch now returns one executable
+  read-only recovery call.** `haft_query` distinguishes artifact, FPF source,
+  current code-index, and typed-memory identifiers. The structured
+  `wrong_identifier_namespace` response preserves the exact input, sets
+  `same_call_retryable=false`, and supplies the correct `related`, FPF
+  `inspect`, code `node`, or nested `memory_request` call. Unknown identifiers,
+  collisions, and unavailable proof do not produce a guessed route. This
+  replaces fall-through abstention and recovery shapes that the closed wire
+  contract could not execute for the proven mismatch. Only a public
+  `anchor_id` is recovered as an anchor; an internal legacy row ID is not
+  promoted into a non-executable public call. Symbols retained across an
+  incremental index publication remain recoverable at their write-time epoch.
+  A long-lived MCP handler verifies and materializes the immutable FPF
+  identifier set once instead of extracting the embedded SQLite image on every
+  code-symbol miss; typed-memory resolution remains live because project memory
+  can change while the server runs.
+- **The advertised onboarding surface now dispatches
+  `profile_change_prepare`.** Strict MCP validation accepts the exact
+  `scope_id` and `entity_ref` request, passes its JSON unchanged to the handler,
+  and preserves prepared and reused review results. The action creates or
+  reuses only a non-binding review carrier; it does not apply a profile, change
+  the canonical profile, enable structured memory, or grant authority.
+- **Project-ledger migration preserves the exact admitted legacy foreign-key
+  witness set.** Snapshot-backed migration records the known historical
+  `DecisionRecord` to missing `SpecSection` projections before mutation and
+  requires the same logical pairs afterward. Any new, removed, or changed
+  violation still blocks the migration and retains the recovery snapshot.
+- **FPF refresh accepts the current publication layout without weakening its
+  structural boundary.** The parser recognizes one leading H1 publication
+  heading and the current practical-use card hierarchy, and ignores headings
+  inside fenced examples while still rejecting duplicate, empty, or malformed
+  groups. Source revision `59c4553` produces 8,656 indexed units and Base
+  TypeEnv compiler edition `cov2.v6`. C.3 profile matching rejects missing or
+  multiple semantic profiles without panicking. Failure diagnostics distinguish
+  the standalone README from the embedded README owned by `FPF-Spec.md`. Local
+  practice `1.7.0` pins that exact Base; the prior `036c056e`/`cov2.v5` Base
+  remains archived for replay.
+
+### Changed
+
+- **`h-reason` now applies source-first E.11.PUA and E.11.PUR semantics across
+  canonical, Pi, and managed host carriers.** Candidate retrieval remains
+  distinct from applicability and recommendation. Evaluated candidates receive
+  explicit fit judgements before recommendation; complementary uses require an
+  explicit coordination basis; selected-pattern use closes with an honest
+  result or return condition. The public catalog selects the minimal current
+  capability set without imposing a project sequence.
+
+### Qualification status
+
+- The retained P13 receipt covers an earlier dirty `036c056e` candidate only;
+  it is stale for the current `59c4553` source and code bytes. Fresh P13,
+  installed-runtime P14, RC, tag, publication, and release authority remain
+  pending for the final exact candidate. The two edited specification claims
+  are not current SQL editions; their existing SQL editions still match their
+  baselines, so no approve, reopen, or rebaseline gate is currently open. This
+  changelog entry is neither an edition-import request nor lifecycle evidence.
+
 ## [9.1.0] — 2026-08-11
 
 [v9.1.0](https://github.com/m0n0x41d/haft/releases/tag/v9.1.0) is a minor

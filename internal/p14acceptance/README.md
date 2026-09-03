@@ -3,7 +3,7 @@
 Status: prepared, not executed. Nothing in this package is installed-runtime
 evidence, performed Work, a release claim, or restart authority.
 
-`contract.json` (`haft.p14.request-oracle-contract/v3`) closes the P14 scenario
+`contract.json` (`haft.p14.request-oracle-contract/v4`) closes the P14 scenario
 set before the live boundary. Each
 scenario names its installed surface, deterministic request builder, oracle
 kind, permitted fixture effect, required frozen binding groups, and the local
@@ -22,8 +22,9 @@ normalized local-oracle digests to the P13 evidence and candidate basis. Live
 execution then creates a separate observation carrier; it never edits the
 prepared carrier or retrofits an expected result after installation.
 
-The exact input is a generated `haft.p14.prepared-request-oracle-input/v1`
-value, not a hand-filled placeholder document. It contains one canonical
+The exact input is a generated `haft.p14.prepared-request-oracle-input/v2`
+value, sealed as `haft.p14.prepared-request-oracle/v2`, not a hand-filled
+placeholder document. It contains one canonical
 payload per declared surface, one shared semantic-request digest per scenario,
 and either a normalized expected-result digest or a closed live-predicate set.
 Its binding table is also closed: candidate, P13, and selected-project bases
@@ -162,7 +163,8 @@ SQLite ledger through a consistent `VACUUM INTO`, binds memory writes to the
 exact selected project root, and creates six isolated fresh init templates at
 their sealed future physical roots. It publishes the golden-memory and
 init-matrix fixtures no-clobber. A copied ledger is never rebound to another
-project root.
+project root. Before creating any `.context/p14/` path, it also requires P13's
+canonical empty Git-status digest and `status_bytes=0`.
 
 The complete generator consumes one canonical coordinate-only request. It does
 not accept hand-authored semantic requests, oracle digests, scenario lists, or
@@ -187,8 +189,19 @@ passing, unchanged v3 carrier for this exact project. Fixture paths must be
 canonical carriers directly under `.context/p14/fixtures/`; the generator
 decodes their closed schemas, binds their byte digests, and verifies the
 selected TypeEnv/graph and referenced template/artifact bytes. It captures the
-candidate, FPF, dirty-state, instructions, skill-root, and MCP-config basis
-through the production restart observer.
+candidate, exact `haft version` value, its full commit identity, FPF,
+dirty-state, instructions, skill-root, and MCP-config basis through the
+production restart observer. The executable's reported commit must equal the
+full P13 candidate Git SHA, its version must equal exactly `9.2.0`, and it must
+report `modified=false`. Independently, its embedded Go build information must
+identify command `github.com/m0n0x41d/haft/cmd/haft`, main module
+`github.com/m0n0x41d/haft`, VCS `git`, the same full candidate SHA, canonical
+`vcs.modified=false`, and a non-empty parseable `vcs.time` equal to the printed
+source time. Missing or duplicate VCS settings fail closed. Independently, P13's
+`git status --porcelain=v1 --untracked-files=all` digest must equal the SHA-256
+of empty bytes and `status_bytes` must equal zero. All checks are required so a
+build with suppressed VCS metadata cannot make a dirty source tree look like a
+clean P14 candidate.
 
 Generate the exact input after P13 and the fixtures exist:
 
@@ -199,7 +212,7 @@ HAFT_P14_GENERATE_PREPARED_INPUT=.context/p14/prepared-input-generation-request.
   -run '^TestP14GeneratePreparedRequestOracleInput$'
 ```
 
-One shared builder registry derives all 26 top-level scenarios. The
+One shared builder registry derives all 28 top-level scenarios. The
 `fresh_initialization` scenario contains exactly six nested init subcases:
 `--core-only`, full `--claude`, full `--codex`, `--codex --mcp-only`,
 skills-only `--agents`, and full stable-host `--all`. There is no implicit
@@ -320,8 +333,11 @@ Commandless normalized receipts, copied oracle digests, and self-selected
 check IDs fail closed. Commandless runtime/agent predicates are accepted only
 when their exact captured dependency scenarios are present and valid. The
 partial carrier cannot contain a release claim or substitute for live MCP or
-restart evidence. The exact installed candidate has not yet been executed
-because final P13 identity and the sealed real prepared carrier do not exist.
+restart evidence. The exact installed candidate has not yet been executed. A
+passing consolidated P13 receipt exists for the earlier exact dirty-source
+identity, but no clean-candidate P13 receipt or sealed real prepared carrier
+exists; creating that candidate changes Git identity and therefore requires a
+fresh freeze and consolidated P13 run before P14 preparation.
 
 Typed-memory write preparation now distinguishes the two real execution
 contexts instead of applying fixture language to both. Installed CLI requests
@@ -350,10 +366,10 @@ The resulting `p14-codex-mcp-request-<digest>.json`
 (`haft.p14.codex-mcp-request/v3`) is
 `capture_requested_not_executed`. It binds the sealed preparation, verified
 resumed-task/process receipt, exact ordered tool arguments, request digests,
-predecessors, concurrency groups, and the two sealed natural-language
-orientation prompts. Execute its calls through the current resumed Codex task
-in packet order. Calls in one non-empty `parallel_group` belong to the same
-concurrent invocation batch.
+predecessors, concurrency groups, the two orientation prompts, and four
+same-corpus FPF semantic prompts. Execute its calls through the current resumed
+Codex task in packet order. Calls in one non-empty `parallel_group` belong to
+the same concurrent invocation batch.
 
 The capture input still projects the prompt, tool call, and response fields
 needed by the closed family normalizers:
@@ -422,11 +438,21 @@ shared host-compatible schema.
 Before finalization, capture the separate actual-host Claude proof. Install the
 same candidate with the full Claude adapter, establish the restart checkpoint,
 and start one new main Claude session in the selected project. In that session,
-make exactly these three Haft calls, sequentially and without another Haft call
-between the checkpoint and capture:
+make the boundary status call, replay the four sealed
+`agent_fpf_pattern_use` prompts, then make the onboarding/status boundary
+calls, sequentially and without another Haft call between the checkpoint and
+capture:
 
 ```text
 mcp__haft__haft_query(action="status", full=false)
+mcp__haft__haft_query(action="status", full=false) # mechanical case, zero FPF calls
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="E.11.PUA")
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="A.10")
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="E.11.PUR")
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="A.10")
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="B.3")
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="E.11.PUR")
+mcp__haft__haft_query(action="fpf", mode="inspect", identifier="A.10")
 mcp__haft__haft_onboard(action="status")
 mcp__haft__haft_query(action="status", full=false)
 ```
@@ -469,10 +495,15 @@ protocol-byte proof, not evidence that its PID is the host-owned MCP PID and
 not imported Codex proof.
 
 The harness then requires exact direct `tool_use` / matching `tool_result`
-pairs for status → bounded onboarding status → status. The first pair must
-bracket the private live-MCP receipt fulfillment; all three must be successful,
-sequential, non-empty, and bounded to 30 seconds. Both status response bodies
-must contain the server-emitted runtime line, whose PID, start time, and
+pairs for the full eleven-call sequence. Each semantic prompt must have one
+unique observation-only terminal assistant response after its final tool
+result. Those observations return the useful result/basis/stop boundary,
+aspect-specific rationales, aggregate, and mutation ledger; the single PUA case
+also returns the complete derived A.10 path, while mechanical, PUR, and
+recommendation cases cannot fabricate one. The first boundary pair must bracket
+the private live-MCP receipt fulfillment; every call must be successful,
+sequential, non-empty, and bounded to 30 seconds. Both boundary status response
+bodies must contain the server-emitted runtime line, whose PID, start time, and
 physical executable path exactly match the live-MCP receipt. Missing,
 unmatched, extra, stale, errored, hung, or wrong-runtime Haft events fail
 closed. The selected MCP PID must equal the live challenge receipt PID, retain
@@ -526,12 +557,14 @@ verification, and actual-host Claude proof may the complete installed
 observation carrier be finalized.
 
 The seal is fail-closed on builder coverage. The executable registry now covers
-all 26 declared top-level scenarios: FPF Query, identifier namespace, the
+all 28 declared top-level scenarios: FPF Query, identifier namespace, the
 exact SpecSection read-protocol rejection, seven read-only memory scenarios,
 the six-subcase initialization matrix, five typed-memory operation protocols,
 one CLI-only existing-record backfill protocol, four code-graph scenarios, and
-five closed live-observation protocols for runtime identity, host resume,
-cleanup, code-graph agent orientation, and typed-memory agent orientation.
+six closed live-observation protocols for runtime identity, host resume,
+cleanup, FPF-pattern-use, code-graph agent orientation, and typed-memory agent
+orientation, plus the no-apply onboarding profile-change prepare/replay
+protocol.
 Generic
 scenario/surface JSON cannot pass as an exact request. The operation protocols
 separately freeze
@@ -560,3 +593,61 @@ structurally against their full-file SHA-256 identities:
 
 The historical capture files are unchanged and are not retroactively called
 passing.
+
+## Release evidence transport
+
+The Release workflow accepts final P14 only as bytes from one successful,
+same-repository `workflow_dispatch` run of the fixed trusted producer
+`.github/workflows/p14-evidence.yml`. Its artifact name must be
+`p14-final-evidence-<full-candidate-SHA>` and its extracted tree must contain
+exactly these seven regular files, with no symlinks:
+
+```text
+release-evidence.json
+repository/.context/p13/<passing-P13-carrier>.json
+repository/.context/p14/<sealed-prepared-carrier>.json
+repository/.context/p14/<passed-final-installed-observation>.json
+release-artifacts/haft-linux-amd64.tar.gz
+release-artifacts/haft-linux-arm64.tar.gz
+release-artifacts/haft-darwin-arm64.tar.gz
+```
+
+`release-evidence.json` is the canonical
+`haft.p14.release-evidence-bundle/v1` input consumed by
+`TestP14VerifyReleaseEvidenceBundle`. The release validation job independently
+downloads the exact P13 carrier and frozen basis, reruns P13 freeze, manifest,
+and freshness verification against the unchanged candidate, then runs the P14
+read-only verifier. It requires the prepared candidate version to equal the
+validation version, rejects future or older-than-24-hour semantic observations,
+and requires the qualified Darwin archive's `haft` member to be byte-identical
+to the installed P14 executable. Every Linux and Darwin `haft` member is also
+parsed independently as a Go executable and must carry the same command path,
+main module, Git revision, canonical unmodified state, and non-empty VCS time as
+the frozen candidate. P14 does not claim the Linux members were executed on the
+Darwin host. Embedded Go build information does not provide a mechanically
+validated exact product version for every cross-platform archive. A future
+trusted producer must therefore supply a native exact `haft version` receipt
+for each archive, or another mechanically validated exact-version carrier,
+before publication can be enabled. Run IDs, artifact names, or caller-supplied
+digests without the downloaded bytes cannot pass.
+
+The successful validation bundle contains a canonical
+`haft.release.validation-evidence/v1` manifest. It binds the exact candidate,
+source run IDs, artifact IDs, artifact transport digests, P13 carrier digest,
+P14 prepared/final carrier paths and digests, exact semantic validity window,
+qualified executable digest, all three archive digests, and the fixed P14
+producer workflow. `checksums.txt` covers this manifest together with those
+exact P14-carried release archives. Publication rechecks the validation-run
+lineage, manifest digests, semantic expiry, archive bytes, and that every
+source artifact remains unique and unexpired. Immediately before
+`gh release create`, it also re-fetches `main` and the tag, confirms the tag
+still peels to the sealed candidate, reruns candidate validation, and rechecks
+semantic expiry.
+
+There are intentionally no `.github/workflows/p13-basis.yml` or
+`.github/workflows/p14-evidence.yml` producers in the current candidate.
+Therefore validation and publication remain an explicit manual **NO-GO** until
+candidate-owned trusted producer lanes and the per-archive exact-version proof
+above are added.
+Tag pushes are rejected because they cannot supply the required exact evidence
+identities; they do not regain the older evidence-blind validation behavior.

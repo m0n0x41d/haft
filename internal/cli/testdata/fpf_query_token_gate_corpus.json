@@ -1,6 +1,6 @@
 {
   "schema_version": "haft.fpf-query-token-gate-corpus/v1",
-  "fixture_revision": "fpf-036c056-query-behavior/v1",
+  "fixture_revision": "fpf-353d59d-query-behavior/v1",
   "cases": [
     {
       "case_id": "relation-occurrence-assertion",
@@ -10,9 +10,9 @@
       "expected_kind": "candidate_set",
       "expected_candidate_count": 5,
       "expected_candidate_ids": [
-        "spec:toc_row:a-6-rsir",
-        "spec:toc_row:c-3-1",
-        "spec:toc_row:c-3-3",
+        "spec:toc_row:a-6-6",
+        "spec:toc_row:a-6-s",
+        "spec:toc_row:c-30-strat",
         "spec:toc_row:a-15-2",
         "spec:toc_row:a-3"
       ],
@@ -35,18 +35,20 @@
         "query": "pattern use working situation"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 5,
+      "expected_candidate_count": 6,
       "expected_candidate_ids": [
-        "readme:practical_use_card:dpf-authoring",
         "readme:practical_use_card:working-documents",
-        "readme:practical_use_card:architecture",
+        "spec:toc_row:a-13",
+        "spec:toc_row:e-4-dpf",
+        "spec:toc_row:e-10-d1",
         "spec:toc_row:e-11-pua",
-        "spec:toc_row:e-8-ecspf"
+        "spec:toc_row:f-16"
       ],
       "expected_candidate_source_ids": [
-        "DPF-AUTHORING",
         "WORKING-DOCUMENTS",
-        "ARCHITECTURE",
+        "",
+        "",
+        "",
         "",
         ""
       ],
@@ -60,15 +62,11 @@
         "query": "evidence decay decision verification"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 3,
+      "expected_candidate_count": 1,
       "expected_candidate_ids": [
-        "readme:practical_use_card:costly-action",
-        "readme:practical_use_card:time",
         "spec:toc_row:b-3-4"
       ],
       "expected_candidate_source_ids": [
-        "COSTLY-ACTION",
-        "TIME",
         ""
       ],
       "expected_truncation_applied": false,
@@ -81,21 +79,17 @@
         "query": "work plan performed work evidence"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 8,
+      "expected_candidate_count": 6,
       "expected_candidate_ids": [
-        "readme:practical_use_card:costly-action",
-        "readme:practical_use_card:working-documents",
-        "readme:practical_use_card:system-recognition",
+        "readme:practical_use_card:practice-architecture",
         "spec:toc_row:f-6",
-        "spec:toc_row:a-15",
         "spec:toc_row:a-15-5",
+        "spec:toc_row:a-15",
         "spec:toc_row:a-15-1",
-        "spec:toc_row:a-2-9"
+        "spec:toc_row:f-11"
       ],
       "expected_candidate_source_ids": [
-        "COSTLY-ACTION",
-        "WORKING-DOCUMENTS",
-        "SYSTEM-RECOGNITION",
+        "PRACTICE-ARCHITECTURE",
         "",
         "",
         "",
@@ -103,7 +97,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 6,
+      "expected_omitted_at_least": 4,
       "expected_truncation_basis": [
         "response_budget"
       ]
@@ -114,12 +108,9 @@
         "query": "entity of concern reference scheme claim graph"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 9,
+      "expected_candidate_count": 6,
       "expected_candidate_ids": [
-        "readme:practical_use_card:wording",
-        "readme:practical_use_card:architecture",
-        "readme:practical_use_card:description-use",
-        "readme:practical_use_card:naming",
+        "readme:practical_use_card:mathematical-modeling",
         "spec:toc_row:a-6-3",
         "spec:toc_row:a-6-3-cr",
         "spec:toc_row:a-6-3-rt",
@@ -127,10 +118,7 @@
         "spec:toc_row:e-10-d2"
       ],
       "expected_candidate_source_ids": [
-        "WORDING",
-        "ARCHITECTURE",
-        "DESCRIPTION-USE",
-        "NAMING",
+        "MATHEMATICAL-MODELING",
         "",
         "",
         "",
@@ -138,7 +126,7 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 6,
+      "expected_omitted_at_least": 10,
       "expected_truncation_basis": [
         "response_budget"
       ]
@@ -149,22 +137,28 @@
         "query": "authority speech act permission"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 4,
+      "expected_candidate_count": 6,
       "expected_candidate_ids": [
+        "readme:practical_use_card:communication-for-use",
         "spec:toc_row:a-2-9",
         "spec:toc_row:a-6-c",
         "spec:toc_row:e-16",
-        "spec:toc_row:a-2-8-per"
+        "spec:toc_row:d-3",
+        "spec:toc_row:a-10-1"
       ],
       "expected_candidate_source_ids": [
+        "COMMUNICATION-FOR-USE",
+        "",
         "",
         "",
         "",
         ""
       ],
-      "expected_truncation_applied": false,
-      "expected_omitted_at_least": 0,
-      "expected_truncation_basis": null
+      "expected_truncation_applied": true,
+      "expected_omitted_at_least": 1,
+      "expected_truncation_basis": [
+        "response_budget"
+      ]
     },
     {
       "case_id": "russian-plan-work-evidence",
@@ -177,21 +171,19 @@
         "intended_use": "выбрать прямой FPF pattern для проверки"
       },
       "expected_kind": "candidate_set",
-      "expected_candidate_count": 8,
+      "expected_candidate_count": 7,
       "expected_candidate_ids": [
-        "readme:practical_use_card:costly-action",
+        "readme:practical_use_card:practice-architecture",
         "readme:practical_use_card:working-documents",
-        "readme:practical_use_card:system-recognition",
         "spec:toc_row:f-6",
-        "spec:toc_row:a-15",
         "spec:toc_row:a-15-5",
+        "spec:toc_row:a-15",
         "spec:toc_row:a-15-1",
-        "spec:toc_row:a-2-9"
+        "spec:toc_row:f-11"
       ],
       "expected_candidate_source_ids": [
-        "COSTLY-ACTION",
+        "PRACTICE-ARCHITECTURE",
         "WORKING-DOCUMENTS",
-        "SYSTEM-RECOGNITION",
         "",
         "",
         "",
@@ -199,9 +191,10 @@
         ""
       ],
       "expected_truncation_applied": true,
-      "expected_omitted_at_least": 51,
+      "expected_omitted_at_least": 85,
       "expected_truncation_basis": [
         "role_local_fts_producer_limit",
+        "role_local_fts:practical_use_card",
         "role_local_fts:toc_row",
         "response_budget"
       ]

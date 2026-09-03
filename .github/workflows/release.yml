@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       operation:
-        description: Validate current main, or publish artifacts from one successful tag-validation run
+        description: Validate current main with exact evidence, or publish one evidence-bound validation run
         required: true
         default: validate
         type: choice
@@ -23,7 +23,43 @@ on:
         required: false
         type: string
       validation_run_id:
-        description: Successful tag-validation workflow run whose artifacts will be published
+        description: Successful evidence-bound validation workflow run whose artifacts will be published
+        required: false
+        type: string
+      validation_run_attempt:
+        description: Exact attempt number of the successful validation workflow run
+        required: false
+        type: string
+      validation_artifact_id:
+        description: Immutable artifact ID of the sealed validation bundle
+        required: false
+        type: string
+      validation_artifact_digest:
+        description: Exact sha256 digest reported by GitHub for the sealed validation bundle artifact
+        required: false
+        type: string
+      p13_run_id:
+        description: Successful CI dispatch run containing exact-candidate P13 evidence
+        required: false
+        type: string
+      p13_basis_run_id:
+        description: Exact same-repository run containing the frozen basis used by P13
+        required: false
+        type: string
+      p13_evidence_digest:
+        description: Exact sha256 digest of the passing P13 carrier
+        required: false
+        type: string
+      p14_run_id:
+        description: Successful trusted P14 producer run containing sanitized final evidence
+        required: false
+        type: string
+      p14_artifact_name:
+        description: Exact P14 artifact name (must be p14-final-evidence-CANDIDATE_SHA)
+        required: false
+        type: string
+      p14_final_digest:
+        description: Exact sha256 digest of the passed final installed-observation carrier
         required: false
         type: string
 
@@ -32,9 +68,19 @@ permissions:
   contents: read
 
 jobs:
+  tag-push-no-go:
+    name: Reject unbound tag validation
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require an evidence-bound validation dispatch
+        run: |
+          echo "::error::MANUAL NO-GO: tag events cannot supply exact P13/P14 artifact identities. Run the validation operation with verifiable bytes before publication."
+          exit 1
+
   guard:
     name: Validate release candidate
-    if: ${{ github.event_name == 'push' || inputs.operation == 'validate' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'validate' }}
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.candidate.outputs.version }}
@@ -63,19 +109,7 @@ jobs:
             version="$INPUT_VERSION"
           fi
 
-          if [ "$EVENT_NAME" = "push" ]; then
-            test "$(git cat-file -t "$GITHUB_REF")" = "tag"
-          fi
-
           scripts/release/validate-candidate.sh "$version" "$candidate_sha" "$main_sha"
-
-          if [ "$EVENT_NAME" = "push" ]; then
-            version_pattern=${version//./\\.}
-            test -f ".github/release-notes/${version}.md"
-            grep -Eq \
-              "^## \\[${version_pattern}\\]([[:space:]]|$)" \
-              CHANGELOG.md
-          fi
 
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "sha=$candidate_sha" >> "$GITHUB_OUTPUT"
@@ -108,126 +142,419 @@ jobs:
 
           artifacts_json="$RUNNER_TEMP/ci-artifacts.json"
           gh api \
-            "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+            --method GET \
+            -f name="race-aggregate-${CANDIDATE_SHA}" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
             > "$artifacts_json"
           jq -e \
             --arg name "race-aggregate-${CANDIDATE_SHA}" \
-            'any(.artifacts[];
-                 .name == $name and .expired == false)' \
+            '.total_count == 1 and
+             ([.artifacts[] | select(.name == $name and .expired == false)] | length) == 1' \
             "$artifacts_json" >/dev/null
 
           echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
 
-  build:
-    name: Build CLI ${{ matrix.goos }}-${{ matrix.goarch }}
+  evidence:
+    name: Verify exact P13 and final P14 evidence
     needs: [guard]
-    runs-on: ${{ matrix.runner }}
-    strategy:
-      # A packaging or smoke failure is per-platform evidence. Cancelling the
-      # siblings hides whether the same defect reaches them, and every retry
-      # costs a fresh main CI cycle plus a retag, so let all three report.
-      fail-fast: false
-      matrix:
-        include:
-          - { runner: ubuntu-latest,    goos: linux,  goarch: amd64 }
-          - { runner: ubuntu-24.04-arm, goos: linux,  goarch: arm64 }
-          - { runner: macos-latest,     goos: darwin, goarch: arm64 }
-          # darwin-amd64 (Intel Mac) CLI build dropped at v7.0.0:
-          # GitHub-hosted macos-13 runners (last Intel Mac image) deprecated
-          # by GitHub, scheduling priority lowered, jobs queue 30+ min during
-          # peak hours. Apple Silicon now ~95%+ of dev Mac fleet. Intel users
-          # can stay on v6.2.1 or request a v7.0.x patch with hand-built
-          # darwin-amd64 artifact uploaded via `gh release upload`.
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           submodules: true
+
       - uses: actions/setup-go@v6
         with:
           go-version: '1.25'
           cache-dependency-path: go.sum
-      - name: Install Rust toolchain (embedding sidecar)
-        uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache cargo (embedding sidecar)
-        uses: actions/cache@v4
+      - uses: actions/setup-node@v6
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            embed-sidecar/target
-          key: ${{ runner.os }}-${{ matrix.goarch }}-embed-cargo-${{ hashFiles('embed-sidecar/Cargo.lock') }}
+          node-version: '24'
+          cache: npm
 
-      # Commit comes from the guard, not from a local `git rev-parse --short`.
-      # This job checks out at fetch-depth 1, so its pack holds ~2.5k objects
-      # against ~38k in the guard's full clone, and Git's auto-abbreviation
-      # picks 7 characters here against 8 there. Recomputing locally embeds a
-      # shorter SHA than the one `smoke-archive.sh` is handed, and the
-      # `commit:  <short_sha>` assertion fails.
-      - name: Build binary
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
+
+      - name: Require exact evidence identities and an enabled trusted P14 producer
         env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '1'
-          CANDIDATE_SHORT_SHA: ${{ needs.guard.outputs.short_sha }}
+          CANDIDATE_SHA: ${{ needs.guard.outputs.sha }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          P13_RUN_ID: ${{ inputs.p13_run_id }}
+          P13_ARTIFACT_NAME: p13-acceptance-${{ needs.guard.outputs.sha }}
+          P13_BASIS_RUN_ID: ${{ inputs.p13_basis_run_id }}
+          P13_BASIS_ARTIFACT_NAME: p13-frozen-basis
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          P14_RUN_ID: ${{ inputs.p14_run_id }}
+          P14_ARTIFACT_NAME: ${{ inputs.p14_artifact_name }}
+          P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
         run: |
-          test -n "$CANDIDATE_SHORT_SHA"
-          test "$(git rev-parse HEAD)" = "${{ needs.guard.outputs.sha }}"
+          require_decimal() {
+            case "$2" in
+              ''|*[!0-9]*)
+                echo "$1 must contain only decimal digits" >&2
+                exit 1
+                ;;
+            esac
+          }
+          require_digest() {
+            if [[ ! "$2" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+              echo "$1 must be one sha256 digest" >&2
+              exit 1
+            fi
+          }
 
-          go build -trimpath \
-            -ldflags "-s -w \
-              -X github.com/m0n0x41d/haft/internal/cli.Version=${{ needs.guard.outputs.version }} \
-              -X github.com/m0n0x41d/haft/internal/cli.Commit=$CANDIDATE_SHORT_SHA \
-              -X github.com/m0n0x41d/haft/internal/cli.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            -o haft ./cmd/haft/
+          require_decimal p13_run_id "$P13_RUN_ID"
+          require_decimal p13_basis_run_id "$P13_BASIS_RUN_ID"
+          require_decimal p14_run_id "$P14_RUN_ID"
+          require_digest p13_evidence_digest "$P13_EVIDENCE_DIGEST"
+          require_digest p14_final_digest "$P14_FINAL_DIGEST"
+          test "$P13_ARTIFACT_NAME" = "p13-acceptance-${CANDIDATE_SHA}"
+          test "$P13_BASIS_ARTIFACT_NAME" = "p13-frozen-basis"
+          test "$P14_ARTIFACT_NAME" = "p14-final-evidence-${CANDIDATE_SHA}"
 
-      # Optional embedding sidecar (haft-embed). ort statically links onnxruntime
-      # so the output is a single self-contained binary (no libonnxruntime to
-      # ship). continue-on-error: embeddings are OPTIONAL — a sidecar build
-      # failure must not block the release; search degrades to FTS5+PPR and
-      # install.sh can still source-build it where cargo is present.
-      - name: Build embedding sidecar
-        id: embed
-        continue-on-error: true
+          for producer in \
+            .github/workflows/p13-basis.yml \
+            .github/workflows/p14-evidence.yml; do
+            if ! git cat-file -e "${CANDIDATE_SHA}:${producer}"; then
+              echo "::error::MANUAL NO-GO: candidate ${CANDIDATE_SHA} has no enabled trusted evidence producer at ${producer}; run IDs and digest text cannot substitute for verified evidence bytes."
+              exit 1
+            fi
+          done
+
+      - name: Verify source-run and artifact lineage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CANDIDATE_SHA: ${{ needs.guard.outputs.sha }}
+          P13_RUN_ID: ${{ inputs.p13_run_id }}
+          P13_ARTIFACT_NAME: p13-acceptance-${{ needs.guard.outputs.sha }}
+          P13_BASIS_RUN_ID: ${{ inputs.p13_basis_run_id }}
+          P13_BASIS_ARTIFACT_NAME: p13-frozen-basis
+          P14_RUN_ID: ${{ inputs.p14_run_id }}
+          P14_ARTIFACT_NAME: ${{ inputs.p14_artifact_name }}
         run: |
-          cd embed-sidecar
-          rm -f target/release/haft-embed
-          cargo build --release
+          fetch_lineage() {
+            label="$1"
+            run_id="$2"
+            workflow="$3"
+            event="$4"
+            artifact="$5"
+            run_json="$RUNNER_TEMP/${label}-run.json"
+            artifacts_json="$RUNNER_TEMP/${label}-artifacts.json"
 
-      - name: Package
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > "$run_json"
+            gh api --method GET -f name="$artifact" \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" > "$artifacts_json"
+            bash scripts/release/validate-evidence-lineage.sh \
+              "$run_json" "$artifacts_json" "$run_id" "$CANDIDATE_SHA" \
+              "$workflow" "$event" "$artifact" "$GITHUB_REPOSITORY"
+          }
+
+          fetch_lineage p13 "$P13_RUN_ID" .github/workflows/ci.yml workflow_dispatch "$P13_ARTIFACT_NAME"
+          fetch_lineage p13-basis "$P13_BASIS_RUN_ID" .github/workflows/p13-basis.yml workflow_dispatch "$P13_BASIS_ARTIFACT_NAME"
+          fetch_lineage p14 "$P14_RUN_ID" .github/workflows/p14-evidence.yml workflow_dispatch "$P14_ARTIFACT_NAME"
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p13-acceptance-${{ needs.guard.outputs.sha }}
+          path: ${{ runner.temp }}/p13-evidence
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.p13_run_id }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: p13-frozen-basis
+          path: ${{ runner.temp }}/p13-frozen-basis
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.p13_basis_run_id }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.p14_artifact_name }}
+          path: ${{ runner.temp }}/p14-final-evidence
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.p14_run_id }}
+
+      - name: Restore the P13 basis and exact passing carrier
+        id: p13
+        env:
+          CANDIDATE_SHA: ${{ needs.guard.outputs.sha }}
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          EVIDENCE_ROOT: ${{ runner.temp }}/p13-evidence
+          BASIS_ROOT: ${{ runner.temp }}/p13-frozen-basis
         run: |
-          mkdir -p _dist
-          mkdir -p runtimes/haft-embed/bin
-          sidecar_path=embed-sidecar/target/release/haft-embed
-          if [ "${{ steps.embed.outcome }}" = "success" ] && [ -x "$sidecar_path" ]; then
-            cp "$sidecar_path" runtimes/haft-embed/bin/haft-embed
-            echo "bundled haft-embed sidecar ($(du -h "$sidecar_path" | cut -f1))"
-          else
-            echo "::warning::haft-embed sidecar not built for ${{ matrix.goos }}-${{ matrix.goarch }} — semantic recall will fall back to FTS5+PPR or install.sh source build"
+          if find "$EVIDENCE_ROOT" "$BASIS_ROOT" -type l -print -quit | grep -q .; then
+            echo "P13 evidence artifacts contain a symlink" >&2
+            exit 1
           fi
-          tar czf _dist/haft-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz \
-            haft runtimes README.md LICENSE CHANGELOG.md
 
-      - name: Smoke packaged archive
+          mapfile -t p13_files < <(find "$EVIDENCE_ROOT" -type f -print | sort)
+          test "${#p13_files[@]}" = 1
+          p13_source="${p13_files[0]}"
+          p13_carrier_path=$(jq -er '.carrier_path' "$p13_source")
+          if [[ ! "$p13_carrier_path" =~ ^\.context/p13/[A-Za-z0-9][A-Za-z0-9._-]*\.json$ ]]; then
+            echo "P13 carrier path is outside the closed .context/p13 filename space" >&2
+            exit 1
+          fi
+          test "sha256:$(sha256sum "$p13_source" | awk '{print $1}')" = "$P13_EVIDENCE_DIGEST"
+          jq -e \
+            '.schema == "haft.p13.acceptance-evidence/v3" and
+             .status == "passed" and
+             .identity_unchanged == true and
+             .release_claim == false' \
+            "$p13_source" >/dev/null
+
+          basis_manifest="$BASIS_ROOT/basis.json"
+          repository_tree="$BASIS_ROOT/repository"
+          basis_home="$BASIS_ROOT/home"
+          test -f "$basis_manifest"
+          test -d "$repository_tree/.context"
+          test -d "$basis_home/.haft/projects"
+          jq -e \
+            --arg sha "$CANDIDATE_SHA" \
+            --arg version "$VERSION" \
+            '.schema == "haft.p13.remote-frozen-basis/v1" and .candidate_sha == $sha' \
+            "$basis_manifest" >/dev/null
+
+          freeze_candidate=$(jq -er '.freeze_candidate_path' "$basis_manifest")
+          if [[ ! "$freeze_candidate" =~ ^\.context/p13/[A-Za-z0-9][A-Za-z0-9._-]*\.json$ ]]; then
+            echo "freeze_candidate_path must be one closed .context/p13 JSON filename" >&2
+            exit 1
+          fi
+
+          test -f "$repository_tree/$freeze_candidate"
+          test -f "$repository_tree/.context/current-plan-issue-report.md"
+          test -f "$repository_tree/.context/haft-v9-deterministic-closeout.plan.md"
+          test -d "$repository_tree/.agents/skills"
+          test -f "$repository_tree/.haft/config.yaml"
+          test -f "$repository_tree/.haft/project-profile.yaml"
+          test -f "$repository_tree/.haft/project.yaml"
+
+          project_id=$(awk '$1 == "id:" { print $2; exit }' "$repository_tree/.haft/project.yaml")
+          printf '%s\n' "$project_id" | grep -Eq '^qnt_[0-9a-f]{8}$'
+          test -f "$basis_home/.haft/projects/$project_id/haft.db"
+
+          mkdir -p .context .agents .haft
+          cp -R "$repository_tree/.context/." .context/
+          cp -R "$repository_tree/.agents/skills" .agents/
+          cp "$repository_tree/.haft/config.yaml" .haft/config.yaml
+          cp "$repository_tree/.haft/project-profile.yaml" .haft/project-profile.yaml
+          cp "$repository_tree/.haft/project.yaml" .haft/project.yaml
+          mkdir -p "$(dirname "$p13_carrier_path")"
+          cp "$p13_source" "$p13_carrier_path"
+
+          printf 'P13_REMOTE_HOME=%s\n' "$basis_home" >> "$GITHUB_ENV"
+          printf 'P13_FREEZE_CANDIDATE=%s\n' "$freeze_candidate" >> "$GITHUB_ENV"
+          printf 'P13_ACCEPTANCE_CARRIER=%s\n' "$p13_carrier_path" >> "$GITHUB_ENV"
+          printf 'carrier_path=%s\n' "$p13_carrier_path" >> "$GITHUB_OUTPUT"
+
+      - name: Restore frozen dependency inputs
+        run: npm ci --prefix packages/haft-pi
+
+      - name: Reverify P13 against the unchanged candidate
+        env:
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
         run: |
-          scripts/release/smoke-archive.sh \
-            "_dist/haft-${{ matrix.goos }}-${{ matrix.goarch }}.tar.gz" \
-            "${{ needs.guard.outputs.version }}" \
-            "${{ needs.guard.outputs.short_sha }}"
+          HOME="$P13_REMOTE_HOME" \
+          HAFT_P13_VERIFY_FREEZE_INPUT="$P13_FREEZE_CANDIDATE" \
+            bash scripts/release/run-evidence-verifier-test.sh \
+            ./internal/p13acceptance TestP13VerifyFreezeInputCandidate
+          HOME="$P13_REMOTE_HOME" \
+            bash scripts/release/run-evidence-verifier-test.sh \
+            ./internal/p13acceptance TestP13ManifestStructureAndAnchors
+          HOME="$P13_REMOTE_HOME" \
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
+          HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE="$P13_ACCEPTANCE_CARRIER" \
+          HAFT_P13_VERIFY_ACCEPTANCE_DIGEST="$P13_EVIDENCE_DIGEST" \
+            bash scripts/release/run-evidence-verifier-test.sh \
+            ./internal/p13acceptance TestP13VerifyAcceptanceEvidenceFresh
+
+      - name: Verify sanitized final P14 evidence read-only
+        id: p14
+        env:
+          CANDIDATE_SHA: ${{ needs.guard.outputs.sha }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
+          P14_ROOT: ${{ runner.temp }}/p14-final-evidence
+        run: |
+          if find "$P14_ROOT" -type l -print -quit | grep -q .; then
+            echo "P14 evidence artifact contains a symlink" >&2
+            exit 1
+          fi
+          test "$(find "$P14_ROOT" -type f | wc -l | tr -d ' ')" = 7
+
+          bundle="$P14_ROOT/release-evidence.json"
+          test -f "$bundle"
+          jq -e \
+            --arg sha "$CANDIDATE_SHA" \
+            --arg p13 "$P13_EVIDENCE_DIGEST" \
+            --arg p14 "$P14_FINAL_DIGEST" \
+            '.schema == "haft.p14.release-evidence-bundle/v1" and
+             .status == "passed" and
+             .candidate_sha == $sha and
+             .p13_carrier_digest == $p13 and
+             .final_carrier_digest == $p14 and
+             (.valid_until | type) == "string" and
+             (.release_archives | length) == 3 and
+             .qualified_archive == "haft-darwin-arm64.tar.gz" and
+             .qualified_member == "haft"' \
+            "$bundle" >/dev/null
+
+          for field in p13_carrier_path prepared_carrier_path final_carrier_path; do
+            relative=$(jq -er ".${field}" "$bundle")
+            test -f "$P14_ROOT/repository/$relative"
+          done
+
+          HAFT_P14_VERIFY_RELEASE_EVIDENCE="$bundle" \
+          HAFT_P14_VERIFY_RELEASE_CANDIDATE_SHA="$CANDIDATE_SHA" \
+          HAFT_P14_VERIFY_RELEASE_VERSION="$VERSION" \
+          HAFT_P14_VERIFY_RELEASE_P13_DIGEST="$P13_EVIDENCE_DIGEST" \
+          HAFT_P14_VERIFY_RELEASE_FINAL_DIGEST="$P14_FINAL_DIGEST" \
+            bash scripts/release/run-evidence-verifier-test.sh \
+            ./internal/p14acceptance TestP14VerifyReleaseEvidenceBundle
+
+          mkdir -p _validated
+          while IFS=$'\t' read -r archive_name archive_path; do
+            test -f "$P14_ROOT/$archive_path"
+            cp "$P14_ROOT/$archive_path" "_validated/$archive_name"
+          done < <(jq -er '.release_archives[] | [.name, .path] | @tsv' "$bundle")
+
+          printf 'bundle_path=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
+          printf 'bundle_digest=sha256:%s\n' "$(sha256sum "$bundle" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          printf 'prepared_path=%s\n' "$(jq -er '.prepared_carrier_path' "$bundle")" >> "$GITHUB_OUTPUT"
+          printf 'prepared_digest=%s\n' "$(jq -er '.prepared_carrier_digest' "$bundle")" >> "$GITHUB_OUTPUT"
+          printf 'final_path=%s\n' "$(jq -er '.final_carrier_path' "$bundle")" >> "$GITHUB_OUTPUT"
+          printf 'valid_until=%s\n' "$(jq -er '.valid_until' "$bundle")" >> "$GITHUB_OUTPUT"
+          printf 'qualified_executable_digest=%s\n' "$(jq -er '.qualified_executable_digest' "$bundle")" >> "$GITHUB_OUTPUT"
+
+      - name: Seal verified evidence identities
+        env:
+          CANDIDATE_SHA: ${{ needs.guard.outputs.sha }}
+          VERSION: ${{ needs.guard.outputs.version }}
+          P13_RUN_ID: ${{ inputs.p13_run_id }}
+          P13_ARTIFACT_NAME: p13-acceptance-${{ needs.guard.outputs.sha }}
+          P13_BASIS_RUN_ID: ${{ inputs.p13_basis_run_id }}
+          P13_BASIS_ARTIFACT_NAME: p13-frozen-basis
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          P13_CARRIER_PATH: ${{ steps.p13.outputs.carrier_path }}
+          P14_RUN_ID: ${{ inputs.p14_run_id }}
+          P14_ARTIFACT_NAME: ${{ inputs.p14_artifact_name }}
+          P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
+          P14_BUNDLE_DIGEST: ${{ steps.p14.outputs.bundle_digest }}
+          P14_PREPARED_PATH: ${{ steps.p14.outputs.prepared_path }}
+          P14_PREPARED_DIGEST: ${{ steps.p14.outputs.prepared_digest }}
+          P14_FINAL_PATH: ${{ steps.p14.outputs.final_path }}
+          P14_VALID_UNTIL: ${{ steps.p14.outputs.valid_until }}
+          P14_QUALIFIED_EXECUTABLE_DIGEST: ${{ steps.p14.outputs.qualified_executable_digest }}
+          P14_BUNDLE_PATH: ${{ steps.p14.outputs.bundle_path }}
+        run: |
+          artifact_value() {
+            jq -er --arg name "$2" \
+              '[.artifacts[] | select(.name == $name)] | .[0].'"$3" \
+              "$RUNNER_TEMP/$1-artifacts.json"
+          }
+
+          p13_artifact_id=$(artifact_value p13 "$P13_ARTIFACT_NAME" id)
+          p13_artifact_digest=$(artifact_value p13 "$P13_ARTIFACT_NAME" digest)
+          basis_artifact_id=$(artifact_value p13-basis "$P13_BASIS_ARTIFACT_NAME" id)
+          basis_artifact_digest=$(artifact_value p13-basis "$P13_BASIS_ARTIFACT_NAME" digest)
+          basis_workflow=$(jq -er '.path' "$RUNNER_TEMP/p13-basis-run.json")
+          test "$basis_workflow" = .github/workflows/p13-basis.yml
+          p14_artifact_id=$(artifact_value p14 "$P14_ARTIFACT_NAME" id)
+          p14_artifact_digest=$(artifact_value p14 "$P14_ARTIFACT_NAME" digest)
+
+          mkdir -p _validated
+          jq -S -n \
+            --arg sha "$CANDIDATE_SHA" \
+            --arg version "$VERSION" \
+            --arg p13_run "$P13_RUN_ID" \
+            --arg p13_name "$P13_ARTIFACT_NAME" \
+            --argjson p13_id "$p13_artifact_id" \
+            --arg p13_artifact_digest "$p13_artifact_digest" \
+            --arg basis_run "$P13_BASIS_RUN_ID" \
+            --arg basis_name "$P13_BASIS_ARTIFACT_NAME" \
+            --argjson basis_id "$basis_artifact_id" \
+            --arg basis_digest "$basis_artifact_digest" \
+            --arg basis_workflow "$basis_workflow" \
+            --arg p13_path "$P13_CARRIER_PATH" \
+            --arg p13_digest "$P13_EVIDENCE_DIGEST" \
+            --arg p14_run "$P14_RUN_ID" \
+            --arg p14_name "$P14_ARTIFACT_NAME" \
+            --argjson p14_id "$p14_artifact_id" \
+            --arg p14_artifact_digest "$p14_artifact_digest" \
+            --arg p14_bundle_digest "$P14_BUNDLE_DIGEST" \
+            --arg prepared_path "$P14_PREPARED_PATH" \
+            --arg prepared_digest "$P14_PREPARED_DIGEST" \
+            --arg final_path "$P14_FINAL_PATH" \
+            --arg final_digest "$P14_FINAL_DIGEST" \
+            --arg valid_until "$P14_VALID_UNTIL" \
+            --arg qualified_executable_digest "$P14_QUALIFIED_EXECUTABLE_DIGEST" \
+            --argjson release_archives "$(jq -c '[.release_archives[] | {name, digest}]' "$P14_BUNDLE_PATH")" \
+            '{
+              schema: "haft.release.validation-evidence/v1",
+              status: "passed",
+              candidate_sha: $sha,
+              version: $version,
+              tag: ("v" + $version),
+              p13: {
+                run_id: $p13_run,
+                artifact_name: $p13_name,
+                artifact_id: $p13_id,
+                artifact_digest: $p13_artifact_digest,
+                basis_run_id: $basis_run,
+                basis_artifact_name: $basis_name,
+                basis_artifact_id: $basis_id,
+                basis_artifact_digest: $basis_digest,
+                basis_workflow: $basis_workflow,
+                carrier_path: $p13_path,
+                carrier_digest: $p13_digest
+              },
+              p14: {
+                producer_workflow: ".github/workflows/p14-evidence.yml",
+                run_id: $p14_run,
+                artifact_name: $p14_name,
+                artifact_id: $p14_id,
+                artifact_digest: $p14_artifact_digest,
+                bundle_digest: $p14_bundle_digest,
+                prepared_carrier_path: $prepared_path,
+                prepared_carrier_digest: $prepared_digest,
+                final_carrier_path: $final_path,
+                final_carrier_digest: $final_digest,
+                valid_until: $valid_until,
+                qualified_executable_digest: $qualified_executable_digest,
+                release_archives: $release_archives
+              }
+            }' > _validated/release-evidence.json
+
+          bash scripts/release/validate-release-evidence-manifest.sh \
+            _validated/release-evidence.json "$CANDIDATE_SHA" "$VERSION" \
+            "$P13_EVIDENCE_DIGEST" "$P14_FINAL_DIGEST"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: haft-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: _dist/*.tar.gz
+          name: validated-release-evidence-${{ needs.guard.outputs.sha }}
+          path: _validated/
           if-no-files-found: error
-          overwrite: true
+          retention-days: 14
 
   bundle:
     name: Seal validated release artifacts
-    if: ${{ github.event_name == 'push' || inputs.operation == 'validate' }}
-    needs: [guard, build]
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.operation == 'validate' }}
+    needs: [guard, evidence]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v6
+
       - uses: actions/download-artifact@v4
         with:
           path: _artifacts
@@ -242,25 +569,36 @@ jobs:
             haft-darwin-arm64.tar.gz
           )
 
+          test -f release-evidence.json
           test "$(find . -maxdepth 1 -name 'haft-*.tar.gz' | wc -l | tr -d ' ')" = "${#expected_archives[@]}"
           for archive in "${expected_archives[@]}"; do
             test -f "$archive"
+            expected_digest=$(jq -er --arg name "$archive" \
+              '.p14.release_archives[] | select(.name == $name) | .digest' \
+              release-evidence.json)
+            test "sha256:$(sha256sum "$archive" | awk '{print $1}')" = "$expected_digest"
           done
+          bash ../scripts/release/validate-release-evidence-manifest.sh \
+            release-evidence.json \
+            "${{ needs.guard.outputs.sha }}" \
+            "${{ needs.guard.outputs.version }}" \
+            "${{ inputs.p13_evidence_digest }}" \
+            "${{ inputs.p14_final_digest }}"
 
-          sha256sum "${expected_archives[@]}" > checksums.txt
+          sha256sum "${expected_archives[@]}" release-evidence.json > checksums.txt
           sha256sum -c checksums.txt
 
       - name: Upload sealed release bundle
         uses: actions/upload-artifact@v4
         with:
-          name: release-bundle
+          name: release-bundle-${{ needs.guard.outputs.sha }}
           path: |
             _artifacts/checksums.txt
+            _artifacts/release-evidence.json
             _artifacts/haft-linux-amd64.tar.gz
             _artifacts/haft-linux-arm64.tar.gz
             _artifacts/haft-darwin-arm64.tar.gz
           if-no-files-found: error
-          overwrite: true
           retention-days: 14
 
   publish:
@@ -278,10 +616,16 @@ jobs:
           ref: ${{ inputs.tag }}
 
       - name: Verify tag and validation-run lineage
+        id: lineage
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
           VALIDATION_RUN_ID: ${{ inputs.validation_run_id }}
+          VALIDATION_RUN_ATTEMPT: ${{ inputs.validation_run_attempt }}
+          VALIDATION_ARTIFACT_ID: ${{ inputs.validation_artifact_id }}
+          VALIDATION_ARTIFACT_DIGEST: ${{ inputs.validation_artifact_digest }}
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
         run: |
           test -n "$TAG"
           test -n "$VALIDATION_RUN_ID"
@@ -292,12 +636,33 @@ jobs:
               exit 1
               ;;
           esac
+          case "$VALIDATION_RUN_ATTEMPT" in
+            ''|*[!0-9]*)
+              echo "validation_run_attempt must contain only decimal digits" >&2
+              exit 1
+              ;;
+          esac
+          case "$VALIDATION_ARTIFACT_ID" in
+            ''|*[!0-9]*)
+              echo "validation_artifact_id must contain only decimal digits" >&2
+              exit 1
+              ;;
+          esac
+          if [[ ! "$VALIDATION_ARTIFACT_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "validation_artifact_digest must be one sha256 digest" >&2
+            exit 1
+          fi
           case "$VALIDATION_RUN_ID" in
-            *[!0-9]*)
+            ''|*[!0-9]*)
               echo "validation_run_id must contain only decimal digits" >&2
               exit 1
               ;;
           esac
+          if [[ ! "$P13_EVIDENCE_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+             [[ ! "$P14_FINAL_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "publish requires the exact verified P13 and final-P14 digests" >&2
+            exit 1
+          fi
 
           git fetch origin main --tags
           tag_ref="refs/tags/$TAG"
@@ -312,15 +677,31 @@ jobs:
           gh api \
             "repos/${GITHUB_REPOSITORY}/actions/runs/${VALIDATION_RUN_ID}" \
             > "$run_json"
+          artifacts_json="$RUNNER_TEMP/validation-artifacts.json"
+          gh api \
+            --method GET \
+            -f name="release-bundle-${tag_sha}" \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${VALIDATION_RUN_ID}/artifacts" \
+            > "$artifacts_json"
+          bundle_name="release-bundle-${tag_sha}"
+          bash scripts/release/validate-evidence-lineage.sh \
+            "$run_json" "$artifacts_json" "$VALIDATION_RUN_ID" "$tag_sha" \
+            .github/workflows/release.yml workflow_dispatch "$bundle_name" \
+            "$GITHUB_REPOSITORY"
           jq -e \
-            --arg sha "$tag_sha" \
-            --arg tag "$TAG" \
-            '.event == "push" and
-             .conclusion == "success" and
-             .head_sha == $sha and
-             .head_branch == $tag and
-             .path == ".github/workflows/release.yml"' \
+            --argjson attempt "$VALIDATION_RUN_ATTEMPT" \
+            '.run_attempt == $attempt' \
             "$run_json" >/dev/null
+          jq -e \
+            --arg name "$bundle_name" \
+            --argjson id "$VALIDATION_ARTIFACT_ID" \
+            --arg digest "$VALIDATION_ARTIFACT_DIGEST" \
+            '([.artifacts[] | select(.name == $name)]) as $matches |
+             ($matches | length) == 1 and
+             $matches[0].id == $id and
+             $matches[0].digest == $digest and
+             $matches[0].expired == false' \
+            "$artifacts_json" >/dev/null
 
           notes_file=".github/release-notes/${version}.md"
           test -f "$notes_file"
@@ -334,17 +715,24 @@ jobs:
             exit 1
           fi
 
+          echo "tag_sha=$tag_sha" >> "$GITHUB_OUTPUT"
+          echo "bundle_name=$bundle_name" >> "$GITHUB_OUTPUT"
+          echo "bundle_artifact_id=$VALIDATION_ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+
       - uses: actions/download-artifact@v4
         with:
-          name: release-bundle
+          artifact-ids: ${{ steps.lineage.outputs.bundle_artifact_id }}
           path: _artifacts
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.validation_run_id }}
 
-      - name: Verify and publish the sealed bundle
+      - name: Verify sealed evidence, source-artifact freshness, and archives
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ inputs.tag }}
+          TAG_SHA: ${{ steps.lineage.outputs.tag_sha }}
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
         run: |
           cd _artifacts
           expected_archives=(
@@ -353,16 +741,102 @@ jobs:
             haft-darwin-arm64.tar.gz
           )
 
+          if find . -type l -print -quit | grep -q .; then
+            echo "sealed release bundle contains a symlink" >&2
+            exit 1
+          fi
+          test "$(find . -maxdepth 1 -type f | wc -l | tr -d ' ')" = 5
           sha256sum -c checksums.txt
           test "$(find . -maxdepth 1 -name 'haft-*.tar.gz' | wc -l | tr -d ' ')" = "${#expected_archives[@]}"
           for archive in "${expected_archives[@]}"; do
             test -f "$archive"
+            expected_digest=$(jq -er --arg name "$archive" \
+              '.p14.release_archives[] | select(.name == $name) | .digest' \
+              release-evidence.json)
+            test "sha256:$(sha256sum "$archive" | awk '{print $1}')" = "$expected_digest"
           done
 
+          bash ../scripts/release/validate-release-evidence-manifest.sh \
+            release-evidence.json "$TAG_SHA" "${TAG#v}" \
+            "$P13_EVIDENCE_DIGEST" "$P14_FINAL_DIGEST"
+
+          verify_source_artifact() {
+            label="$1"
+            run_id="$2"
+            workflow="$3"
+            event="$4"
+            artifact_name="$5"
+            artifact_id="$6"
+            artifact_digest="$7"
+            run_json="$RUNNER_TEMP/publish-${label}-run.json"
+            artifacts_json="$RUNNER_TEMP/publish-${label}-artifacts.json"
+
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > "$run_json"
+            gh api --method GET -f name="$artifact_name" \
+              "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" > "$artifacts_json"
+            bash ../scripts/release/validate-evidence-lineage.sh \
+              "$run_json" "$artifacts_json" "$run_id" "$TAG_SHA" \
+              "$workflow" "$event" "$artifact_name" "$GITHUB_REPOSITORY"
+            jq -e \
+              --arg name "$artifact_name" \
+              --argjson id "$artifact_id" \
+              --arg digest "$artifact_digest" \
+              '[.artifacts[] | select(.name == $name)] |
+               length == 1 and .[0].id == $id and .[0].digest == $digest' \
+              "$artifacts_json" >/dev/null
+          }
+
+          p13_run=$(jq -er '.p13.run_id' release-evidence.json)
+          p13_name=$(jq -er '.p13.artifact_name' release-evidence.json)
+          p13_id=$(jq -er '.p13.artifact_id' release-evidence.json)
+          p13_artifact_digest=$(jq -er '.p13.artifact_digest' release-evidence.json)
+          verify_source_artifact p13 "$p13_run" .github/workflows/ci.yml workflow_dispatch \
+            "$p13_name" "$p13_id" "$p13_artifact_digest"
+
+          basis_run=$(jq -er '.p13.basis_run_id' release-evidence.json)
+          basis_workflow=$(jq -er '.p13.basis_workflow' release-evidence.json)
+          basis_name=$(jq -er '.p13.basis_artifact_name' release-evidence.json)
+          basis_id=$(jq -er '.p13.basis_artifact_id' release-evidence.json)
+          basis_digest=$(jq -er '.p13.basis_artifact_digest' release-evidence.json)
+          test "$basis_workflow" = .github/workflows/p13-basis.yml
+          verify_source_artifact p13-basis "$basis_run" "$basis_workflow" workflow_dispatch \
+            "$basis_name" "$basis_id" "$basis_digest"
+
+          p14_run=$(jq -er '.p14.run_id' release-evidence.json)
+          p14_name=$(jq -er '.p14.artifact_name' release-evidence.json)
+          p14_id=$(jq -er '.p14.artifact_id' release-evidence.json)
+          p14_artifact_digest=$(jq -er '.p14.artifact_digest' release-evidence.json)
+          verify_source_artifact p14 "$p14_run" .github/workflows/p14-evidence.yml workflow_dispatch \
+            "$p14_name" "$p14_id" "$p14_artifact_digest"
+
+      - name: Publish the verified sealed bundle
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ inputs.tag }}
+          TAG_SHA: ${{ steps.lineage.outputs.tag_sha }}
+          P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
+          P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
+        run: |
+          cd _artifacts
+          expected_archives=(
+            haft-linux-amd64.tar.gz
+            haft-linux-arm64.tar.gz
+            haft-darwin-arm64.tar.gz
+          )
+
+          git fetch origin main --tags
+          test "$(git rev-parse "refs/tags/$TAG^{commit}")" = "$TAG_SHA"
+          main_sha=$(git rev-parse origin/main)
           version="${TAG#v}"
+          ../scripts/release/validate-candidate.sh "$version" "$TAG_SHA" "$main_sha"
+          bash ../scripts/release/validate-release-evidence-manifest.sh \
+            release-evidence.json "$TAG_SHA" "$version" \
+            "$P13_EVIDENCE_DIGEST" "$P14_FINAL_DIGEST"
+
           gh release create "$TAG" \
             --verify-tag \
             --title "Haft $TAG" \
             --notes-file "../.github/release-notes/${version}.md" \
             checksums.txt \
+            release-evidence.json \
             "${expected_archives[@]}"

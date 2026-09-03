@@ -238,8 +238,8 @@ func TestPrepareCandidateArtifactRetainsSourceSpecificQueryDriftForReview(t *tes
 	)
 	source.specificationBytes = bytes.Replace(
 		source.specificationBytes,
-		[]byte("- **Template A.**"),
-		[]byte("- **Fresh outcome route.**"),
+		[]byte("- **Situation:**"),
+		[]byte("- **Fresh outcome route:**"),
 		1,
 	)
 	predecessorPath := candidateArtifactPredecessorDatabase(t)

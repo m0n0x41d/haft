@@ -26,6 +26,7 @@ git cat-file -e "${candidate_sha}^{commit}"
 
 public_decision_carriers=(
   ".haft/decisions/dec-20260716-318cdec5.md"
+  ".haft/decisions/dec-20260804-ebf1a001.md"
   ".haft/decisions/dec-20260716-11f33e36.md"
 )
 
@@ -61,12 +62,18 @@ for carrier in "${public_release_carriers[@]}"; do
   fi
 done
 
-archive_entries=$(
-  git archive --format=tar "$candidate_sha" -- "${public_release_carriers[@]}" \
-    | tar -tf -
-)
+archive_path=$(mktemp "${TMPDIR:-/tmp}/haft-public-release-carriers.XXXXXX.tar")
+archive_entries_path=$(mktemp "${TMPDIR:-/tmp}/haft-public-release-carriers.XXXXXX.entries")
+cleanup() {
+  rm -f -- "$archive_path" "$archive_entries_path"
+}
+trap cleanup EXIT
+
+git archive --format=tar "$candidate_sha" -- "${public_release_carriers[@]}" \
+  >"$archive_path"
+tar -tf "$archive_path" >"$archive_entries_path"
 for carrier in "${public_release_carriers[@]}"; do
-  if ! printf '%s\n' "$archive_entries" | grep -Fxq -- "$carrier"; then
+  if ! grep -Fxq -- "$carrier" "$archive_entries_path"; then
     echo "public release carrier is absent from git archive $candidate_sha: $carrier" >&2
     exit 1
   fi

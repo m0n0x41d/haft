@@ -166,7 +166,7 @@ func TestBuildIndex_KnownLegacyTypeEnvStartsFreshCompatibility(t *testing.T) {
 	}
 }
 
-func TestBuildIndex_KnownCompilerPredecessorsGetComparedIntoV5(t *testing.T) {
+func TestBuildIndex_KnownCompilerPredecessorsGetComparedIntoV6(t *testing.T) {
 	tests := []struct {
 		name     string
 		compiler string
@@ -174,6 +174,7 @@ func TestBuildIndex_KnownCompilerPredecessorsGetComparedIntoV5(t *testing.T) {
 		{name: "v2", compiler: previousBaseTypeEnvCompilerSchemaV2},
 		{name: "v3", compiler: previousBaseTypeEnvCompilerSchemaV3},
 		{name: "v4", compiler: previousBaseTypeEnvCompilerSchemaV4},
+		{name: "v5", compiler: previousBaseTypeEnvCompilerSchemaV5},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1286,9 +1287,11 @@ One occurrence is identified by ` + "`<episteme, exact covered claim subgraph, g
 | ` + "`EarlierEpistemeSlot`" + ` | exact earlier episteme | ` + "`U.Episteme`" + ` | ` + "`U.EpistemeRef`" + ` |
 | ` + "`LaterEpistemeSlot`" + ` | exact later episteme | ` + "`U.Episteme`" + ` | ` + "`U.EpistemeRef`" + ` |
 
-The relation obtains when the two epistemes have different identities and governed revision, refinement, or supersession work establishes continuation.
+The relation obtains when the two epistemes have different C.2.1 identities and one exact system performed revision, refinement, or supersession work under a method whose semantics establish historical continuation.
 
-One occurrence is participant-determined by the exact earlier and later episteme pair.
+One occurrence is participant-determined by the exact ` + "`<earlier episteme, later episteme>`" + ` pair.
+
+Two work occurrences that establish the same historical continuation do not create two edition-relation occurrences.
 ` + currentC3TypeEnvFixture()
 }
 

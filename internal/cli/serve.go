@@ -275,11 +275,15 @@ func runServe(cmd *cobra.Command, args []string) error {
 		server,
 		binding,
 	)
+	var identifierMemoryResolver exactMemoryIdentifierResolver
 	if memorySurfaceErr != nil {
 		logger.Warn().
 			Err(memorySurfaceErr).
 			Msg("typed project-memory surface remains unavailable; validate-only surface retained")
 	} else {
+		identifierMemoryResolver = newQueryMemoryExactIdentifierResolver(
+			memorySurface.ReadOnlyQueryMCPHandler(),
+		)
 		defer memorySurface.Close()
 	}
 
@@ -322,7 +326,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		)
 	}
 
-	v5Handler := makeV5HandlerWithTaskMemoryProjectionAndCodeIntel(
+	v5Handler := makeV5HandlerWithTaskMemoryProjectionAndCodeIntelAndIdentifierResolver(
 		artStore,
 		searcher,
 		crossHybrid,
@@ -331,6 +335,7 @@ func runServe(cmd *cobra.Command, args []string) error {
 		indexStore,
 		taskMemorySurface,
 		codeIntelService,
+		identifierMemoryResolver,
 	)
 	server.SetV5Handler(makeRevalidatedServeV5Handler(
 		binding,
@@ -700,6 +705,31 @@ func makeV5HandlerWithTaskMemoryProjectionAndCodeIntel(
 	taskProjector taskMemoryProjector,
 	codeIntelService *codeintel.Service,
 ) fpf.V5ToolHandler {
+	return makeV5HandlerWithTaskMemoryProjectionAndCodeIntelAndIdentifierResolver(
+		store,
+		searcher,
+		crossHybrid,
+		haftDir,
+		projCfg,
+		indexStore,
+		taskProjector,
+		codeIntelService,
+		nil,
+	)
+}
+
+func makeV5HandlerWithTaskMemoryProjectionAndCodeIntelAndIdentifierResolver(
+	store *artifact.Store,
+	searcher recall.Searcher,
+	crossHybrid *project.CrossHybrid,
+	haftDir string,
+	projCfg *project.Config,
+	indexStore *project.IndexStore,
+	taskProjector taskMemoryProjector,
+	codeIntelService *codeintel.Service,
+	identifierMemoryResolver exactMemoryIdentifierResolver,
+) fpf.V5ToolHandler {
+	identifierFPFResolver := newCachedExactFPFIdentifierResolver(openFPFDBFunc)
 	return func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
 		var params struct {
 			Name      string         `json:"name"`
@@ -714,7 +744,7 @@ func makeV5HandlerWithTaskMemoryProjectionAndCodeIntel(
 		start := time.Now()
 
 		// Dispatch
-		result, createdRef, toolErr := dispatchToolWithCodeIntel(
+		result, createdRef, toolErr := dispatchToolWithCodeIntelAndIdentifierResolvers(
 			ctx,
 			store,
 			searcher,
@@ -722,6 +752,8 @@ func makeV5HandlerWithTaskMemoryProjectionAndCodeIntel(
 			params.Name,
 			params.Arguments,
 			codeIntelService,
+			identifierMemoryResolver,
+			identifierFPFResolver,
 		)
 
 		// Post-dispatch hooks
@@ -786,6 +818,52 @@ func dispatchToolWithCodeIntel(
 	args map[string]any,
 	codeIntelService *codeintel.Service,
 ) (string, string, error) {
+	return dispatchToolWithCodeIntelAndIdentifierResolver(
+		ctx,
+		store,
+		searcher,
+		haftDir,
+		name,
+		args,
+		codeIntelService,
+		nil,
+	)
+}
+
+func dispatchToolWithCodeIntelAndIdentifierResolver(
+	ctx context.Context,
+	store *artifact.Store,
+	searcher recall.Searcher,
+	haftDir string,
+	name string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+	identifierMemoryResolver exactMemoryIdentifierResolver,
+) (string, string, error) {
+	return dispatchToolWithCodeIntelAndIdentifierResolvers(
+		ctx,
+		store,
+		searcher,
+		haftDir,
+		name,
+		args,
+		codeIntelService,
+		identifierMemoryResolver,
+		nil,
+	)
+}
+
+func dispatchToolWithCodeIntelAndIdentifierResolvers(
+	ctx context.Context,
+	store *artifact.Store,
+	searcher recall.Searcher,
+	haftDir string,
+	name string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+	identifierMemoryResolver exactMemoryIdentifierResolver,
+	identifierFPFResolver exactFPFIdentifierResolver,
+) (string, string, error) {
 	if err := rejectMCPBindingAction(name, args); err != nil {
 		return "", "", err
 	}
@@ -819,13 +897,15 @@ func dispatchToolWithCodeIntel(
 		)
 		return result, "", err
 	case "haft_query":
-		result, err := handleQuintQueryWithCodeIntel(
+		result, err := handleQuintQueryWithCodeIntelAndIdentifierResolvers(
 			ctx,
 			store,
 			searcher,
 			haftDir,
 			args,
 			codeIntelService,
+			identifierMemoryResolver,
+			identifierFPFResolver,
 		)
 		return result, "", err
 	case "haft_commission":
@@ -2504,8 +2584,57 @@ func handleQuintQueryWithCodeIntel(
 	args map[string]any,
 	codeIntelService *codeintel.Service,
 ) (string, error) {
+	return handleQuintQueryWithCodeIntelAndIdentifierResolver(
+		ctx,
+		store,
+		searcher,
+		haftDir,
+		args,
+		codeIntelService,
+		nil,
+	)
+}
+
+func handleQuintQueryWithCodeIntelAndIdentifierResolver(
+	ctx context.Context,
+	store *artifact.Store,
+	searcher recall.Searcher,
+	haftDir string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+	identifierMemoryResolver exactMemoryIdentifierResolver,
+) (string, error) {
+	return handleQuintQueryWithCodeIntelAndIdentifierResolvers(
+		ctx,
+		store,
+		searcher,
+		haftDir,
+		args,
+		codeIntelService,
+		identifierMemoryResolver,
+		nil,
+	)
+}
+
+func handleQuintQueryWithCodeIntelAndIdentifierResolvers(
+	ctx context.Context,
+	store *artifact.Store,
+	searcher recall.Searcher,
+	haftDir string,
+	args map[string]any,
+	codeIntelService *codeintel.Service,
+	identifierMemoryResolver exactMemoryIdentifierResolver,
+	identifierFPFResolver exactFPFIdentifierResolver,
+) (string, error) {
 	action, _ := args["action"].(string)
-	if err := rejectWrongIdentifierNamespaceForQueryAction(ctx, store, action, args); err != nil {
+	if err := rejectWrongIdentifierNamespaceForQueryAction(
+		ctx,
+		store,
+		action,
+		args,
+		identifierMemoryResolver,
+		identifierFPFResolver,
+	); err != nil {
 		return "", err
 	}
 	contextName, _ := args["context"].(string)

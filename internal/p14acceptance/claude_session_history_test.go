@@ -17,7 +17,7 @@ import (
 )
 
 const (
-	p14ClaudeSessionHistorySchema = "haft.p14.claude-session-history/v1"
+	p14ClaudeSessionHistorySchema = "haft.p14.claude-session-history/v2"
 	p14ClaudeSessionHistoryLimit  = int64(512 << 20)
 	p14ClaudeToolResultTimeout    = 30 * time.Second
 )
@@ -42,7 +42,23 @@ type p14ClaudeSessionHistoryEvidence struct {
 	ProtocolEvidenceDigest string                           `json:"protocol_evidence_digest"`
 	StartupBindings        []p14ClaudeStartupHistoryBinding `json:"startup_bindings"`
 	CallBindings           []p14ClaudeToolHistoryBinding    `json:"call_bindings"`
+	SemanticBindings       []p14ClaudeSemanticCaseBinding   `json:"semantic_bindings"`
 	EvidenceDigest         string                           `json:"evidence_digest"`
+}
+
+type p14ClaudeSemanticCaseBinding struct {
+	CaseID                 string `json:"case_id"`
+	ScenarioDigest         string `json:"scenario_digest"`
+	PromptLine             int    `json:"prompt_line"`
+	PromptLineDigest       string `json:"prompt_line_digest"`
+	PromptTextDigest       string `json:"prompt_text_digest"`
+	ResponseLine           int    `json:"response_line"`
+	ResponseLineDigest     string `json:"response_line_digest"`
+	ResponseTextDigest     string `json:"response_text_digest"`
+	ObservedSemanticDigest string `json:"observed_semantic_digest"`
+	FirstToolUseLine       int    `json:"first_tool_use_line,omitempty"`
+	LastToolResultLine     int    `json:"last_tool_result_line,omitempty"`
+	ObservedFPFCallCount   int    `json:"observed_fpf_call_count"`
 }
 
 type p14ClaudeStartupHistoryBinding struct {
@@ -118,9 +134,10 @@ type p14ClaudeExpectedToolCall struct {
 	Role               string
 	Tool               string
 	ArgumentsCanonical string
+	SemanticCaseID     string
 }
 
-var p14ClaudeExpectedToolCalls = []p14ClaudeExpectedToolCall{
+var p14ClaudeBoundaryToolCalls = []p14ClaudeExpectedToolCall{
 	{
 		Role:               p14ClaudeCallStatusBefore,
 		Tool:               "mcp__haft__haft_query",
@@ -136,6 +153,79 @@ var p14ClaudeExpectedToolCalls = []p14ClaudeExpectedToolCall{
 		Tool:               "mcp__haft__haft_query",
 		ArgumentsCanonical: `{"action":"status","full":false}`,
 	},
+}
+
+type p14ClaudeSemanticPromptEvent struct {
+	Line        int
+	LineDigest  string
+	OccurredAt  time.Time
+	SessionID   string
+	ProjectRoot string
+	Text        string
+}
+
+type p14ClaudeSemanticResponseEvent struct {
+	Line        int
+	LineDigest  string
+	OccurredAt  time.Time
+	SessionID   string
+	ProjectRoot string
+	Text        string
+	Observation p14AgentFPFCaseObservation
+}
+
+func p14ClaudeExpectedToolCallsForPrepared(
+	prepared preparedRequestOracleInput,
+) ([]p14ClaudeExpectedToolCall, []p14AgentFPFPatternUseCase, string, error) {
+	if len(p14ClaudeBoundaryToolCalls) != 3 {
+		return nil, nil, "", fmt.Errorf("P14 Claude boundary call contract differs")
+	}
+	var surface p14LiveProtocolSurface
+	found := false
+	for _, scenario := range prepared.Scenarios {
+		if scenario.ID != "agent_fpf_pattern_use" {
+			continue
+		}
+		request, present := p14PreparedSurfaceRequest(scenario, "live_mcp")
+		if !present || request.Builder != p14AgentFPFBuilderID {
+			return nil, nil, "", fmt.Errorf("P14 Claude semantic live surface is absent")
+		}
+		if err := decodeP14StrictCompactJSON(
+			request.CanonicalPayload,
+			&surface,
+			"actual Claude agent FPF protocol",
+		); err != nil {
+			return nil, nil, "", err
+		}
+		found = true
+		break
+	}
+	if !found || surface.AgentPrompt == nil ||
+		!validP14CandidateVersion(surface.CandidateVersion) ||
+		len(surface.AgentFPFCases) != len(p14AgentFPFPatternUseCaseIDs) {
+		return nil, nil, "", fmt.Errorf("P14 Claude semantic corpus binding is absent")
+	}
+	calls := make([]p14ClaudeExpectedToolCall, 0, 10)
+	calls = append(calls, p14ClaudeBoundaryToolCalls[0])
+	for _, testCase := range surface.AgentFPFCases {
+		if err := validateP14SealedAgentFPFPatternUseCase(testCase); err != nil {
+			return nil, nil, "", err
+		}
+		for _, call := range testCase.Calls {
+			args, err := marshalP14CanonicalJSON(call.Args)
+			if err != nil {
+				return nil, nil, "", err
+			}
+			calls = append(calls, p14ClaudeExpectedToolCall{
+				Role:               "agent_fpf_" + testCase.ID,
+				Tool:               "mcp__haft__" + call.Tool,
+				ArgumentsCanonical: string(args),
+				SemanticCaseID:     testCase.ID,
+			})
+		}
+	}
+	calls = append(calls, p14ClaudeBoundaryToolCalls[1:]...)
+	return calls, surface.AgentFPFCases, surface.AgentPrompt.Text, nil
 }
 
 func captureP14ClaudeSessionHistory(
@@ -415,9 +505,22 @@ func deriveP14ClaudeSessionHistoryEvidence(
 	if err != nil {
 		return p14ClaudeSessionHistoryEvidence{}, err
 	}
+	expectedCalls, semanticCases, semanticPromptBase, err :=
+		p14ClaudeExpectedToolCallsForPrepared(prepared)
+	if err != nil {
+		return p14ClaudeSessionHistoryEvidence{}, err
+	}
+	if err := validateP14AgentFPFCandidateProtocolVersion(
+		semanticCases,
+		protocol,
+	); err != nil {
+		return p14ClaudeSessionHistoryEvidence{}, err
+	}
 	startups := make([]p14ClaudeStartupEvent, 0, 2)
-	uses := make([]p14ClaudeToolUseEvent, 0, 3)
+	uses := make([]p14ClaudeToolUseEvent, 0, len(expectedCalls))
 	results := make(map[string][]p14ClaudeToolResultEvent)
+	semanticPrompts := make([]p14ClaudeSemanticPromptEvent, 0, len(semanticCases))
+	semanticResponses := make([]p14ClaudeSemanticResponseEvent, 0, len(semanticCases))
 	lines := bytes.Split(raw, []byte{'\n'})
 	for index, line := range lines {
 		if len(bytes.TrimSpace(line)) == 0 {
@@ -463,6 +566,28 @@ func deriveP14ClaudeSessionHistoryEvidence(
 		}
 		if present {
 			startups = append(startups, startup)
+		}
+		prompt, present, err := p14ClaudeSemanticPromptFromLine(
+			root,
+			lineNumber,
+			lineDigest,
+		)
+		if err != nil {
+			return p14ClaudeSessionHistoryEvidence{}, err
+		}
+		if present {
+			semanticPrompts = append(semanticPrompts, prompt)
+		}
+		response, present, err := p14ClaudeSemanticResponseFromLine(
+			root,
+			lineNumber,
+			lineDigest,
+		)
+		if err != nil {
+			return p14ClaudeSessionHistoryEvidence{}, err
+		}
+		if present {
+			semanticResponses = append(semanticResponses, response)
 		}
 		lineUses, err := p14ClaudeToolUsesFromLine(
 			root,
@@ -516,7 +641,7 @@ func deriveP14ClaudeSessionHistoryEvidence(
 			return left.ItemIndex - right.ItemIndex
 		},
 	)
-	if len(uses) != len(p14ClaudeExpectedToolCalls) {
+	if len(uses) != len(expectedCalls) {
 		return p14ClaudeSessionHistoryEvidence{}, fmt.Errorf(
 			"P14 Claude transcript Haft tool count is %d",
 			len(uses),
@@ -537,7 +662,7 @@ func deriveP14ClaudeSessionHistoryEvidence(
 	)
 	var previousResultAt time.Time
 	for index, use := range uses {
-		expected := p14ClaudeExpectedToolCalls[index]
+		expected := expectedCalls[index]
 		if use.Tool != expected.Tool ||
 			use.ArgumentsCanonical != expected.ArgumentsCanonical {
 			return p14ClaudeSessionHistoryEvidence{}, fmt.Errorf(
@@ -619,6 +744,17 @@ func deriveP14ClaudeSessionHistoryEvidence(
 			RuntimeIdentity:      runtimeIdentity,
 		})
 	}
+	semanticBindings, err := buildP14ClaudeSemanticBindings(
+		semanticCases,
+		semanticPromptBase,
+		semanticPrompts,
+		semanticResponses,
+		uses,
+		results,
+	)
+	if err != nil {
+		return p14ClaudeSessionHistoryEvidence{}, err
+	}
 	first := callBindings[0]
 	firstUseAt, err := time.Parse(time.RFC3339Nano, first.ToolUseAt)
 	if err != nil {
@@ -682,6 +818,7 @@ func deriveP14ClaudeSessionHistoryEvidence(
 		ProtocolEvidenceDigest: protocol.EvidenceDigest,
 		StartupBindings:        startupBindings,
 		CallBindings:           callBindings,
+		SemanticBindings:       semanticBindings,
 	}
 	basis, err := p14ClaudeSessionHistoryDigestBasis(evidence)
 	if err != nil {
@@ -895,6 +1032,232 @@ func p14ClaudeToolUsesFromLine(
 		})
 	}
 	return result, nil
+}
+
+func p14ClaudeSemanticPromptFromLine(
+	root map[string]any,
+	line int,
+	lineDigest string,
+) (p14ClaudeSemanticPromptEvent, bool, error) {
+	if p14JSONText(root["type"]) != "user" {
+		return p14ClaudeSemanticPromptEvent{}, false, nil
+	}
+	message := p14JSONMap(root["message"])
+	sidechain, sidechainPresent := root["isSidechain"].(bool)
+	if !sidechainPresent || sidechain ||
+		p14JSONText(root["entrypoint"]) != "cli" ||
+		p14JSONText(message["role"]) != "user" {
+		return p14ClaudeSemanticPromptEvent{}, false, nil
+	}
+	texts := make([]string, 0, 1)
+	switch content := message["content"].(type) {
+	case string:
+		if strings.TrimSpace(content) != "" {
+			texts = append(texts, content)
+		}
+	case []any:
+		for _, raw := range content {
+			item := p14JSONMap(raw)
+			if p14JSONText(item["type"]) != "text" {
+				continue
+			}
+			if text, ok := item["text"].(string); ok && strings.TrimSpace(text) != "" {
+				texts = append(texts, text)
+			}
+		}
+	}
+	if len(texts) == 0 {
+		return p14ClaudeSemanticPromptEvent{}, false, nil
+	}
+	if len(texts) != 1 {
+		return p14ClaudeSemanticPromptEvent{}, false, fmt.Errorf(
+			"P14 Claude semantic prompt text count differs",
+		)
+	}
+	occurredAt, err := p14ClaudeRelevantLineBasis(root)
+	if err != nil {
+		return p14ClaudeSemanticPromptEvent{}, false, err
+	}
+	projectRoot, err := p14ClaudeCanonicalProjectRoot(p14JSONText(root["cwd"]))
+	if err != nil {
+		return p14ClaudeSemanticPromptEvent{}, false, err
+	}
+	return p14ClaudeSemanticPromptEvent{
+		Line:        line,
+		LineDigest:  lineDigest,
+		OccurredAt:  occurredAt,
+		SessionID:   p14JSONText(root["sessionId"]),
+		ProjectRoot: projectRoot,
+		Text:        texts[0],
+	}, true, nil
+}
+
+func p14ClaudeSemanticResponseFromLine(
+	root map[string]any,
+	line int,
+	lineDigest string,
+) (p14ClaudeSemanticResponseEvent, bool, error) {
+	if p14JSONText(root["type"]) != "assistant" {
+		return p14ClaudeSemanticResponseEvent{}, false, nil
+	}
+	message := p14JSONMap(root["message"])
+	sidechain, sidechainPresent := root["isSidechain"].(bool)
+	if !sidechainPresent || sidechain ||
+		p14JSONText(root["entrypoint"]) != "cli" ||
+		p14JSONText(message["role"]) != "assistant" {
+		return p14ClaudeSemanticResponseEvent{}, false, nil
+	}
+	texts := make([]string, 0, 1)
+	for _, raw := range p14JSONArray(message["content"]) {
+		item := p14JSONMap(raw)
+		if p14JSONText(item["type"]) != "text" {
+			continue
+		}
+		if text, ok := item["text"].(string); ok && strings.Contains(
+			text,
+			p14AgentFPFObservationPrefix,
+		) {
+			texts = append(texts, text)
+		}
+	}
+	if len(texts) == 0 {
+		return p14ClaudeSemanticResponseEvent{}, false, nil
+	}
+	if len(texts) != 1 {
+		return p14ClaudeSemanticResponseEvent{}, false, fmt.Errorf(
+			"P14 Claude semantic response text count differs",
+		)
+	}
+	observation, err := parseP14AgentFPFCaseObservation(texts[0])
+	if err != nil {
+		return p14ClaudeSemanticResponseEvent{}, false, err
+	}
+	occurredAt, err := p14ClaudeRelevantLineBasis(root)
+	if err != nil {
+		return p14ClaudeSemanticResponseEvent{}, false, err
+	}
+	projectRoot, err := p14ClaudeCanonicalProjectRoot(p14JSONText(root["cwd"]))
+	if err != nil {
+		return p14ClaudeSemanticResponseEvent{}, false, err
+	}
+	return p14ClaudeSemanticResponseEvent{
+		Line:        line,
+		LineDigest:  lineDigest,
+		OccurredAt:  occurredAt,
+		SessionID:   p14JSONText(root["sessionId"]),
+		ProjectRoot: projectRoot,
+		Text:        texts[0],
+		Observation: observation,
+	}, true, nil
+}
+
+func buildP14ClaudeSemanticBindings(
+	testCases []p14AgentFPFPatternUseCase,
+	promptBase string,
+	prompts []p14ClaudeSemanticPromptEvent,
+	responses []p14ClaudeSemanticResponseEvent,
+	uses []p14ClaudeToolUseEvent,
+	results map[string][]p14ClaudeToolResultEvent,
+) ([]p14ClaudeSemanticCaseBinding, error) {
+	if len(prompts) != len(testCases) || len(responses) != len(testCases) {
+		return nil, fmt.Errorf(
+			"P14 Claude semantic prompt/response count differs: prompts=%d responses=%d want=%d",
+			len(prompts),
+			len(responses),
+			len(testCases),
+		)
+	}
+	bindings := make([]p14ClaudeSemanticCaseBinding, 0, len(testCases))
+	for index, testCase := range testCases {
+		prompt := prompts[index]
+		response := responses[index]
+		expectedPrompt := p14AgentFPFPromptText(promptBase, testCase)
+		if prompt.Text != expectedPrompt ||
+			response.Observation.CaseID != testCase.ID ||
+			prompt.Line >= response.Line ||
+			prompt.SessionID == "" ||
+			prompt.SessionID != response.SessionID ||
+			prompt.ProjectRoot != response.ProjectRoot ||
+			validateP14AgentFPFCaseObservation(testCase, response.Observation) != nil {
+			return nil, fmt.Errorf(
+				"P14 Claude semantic case %q differs",
+				testCase.ID,
+			)
+		}
+		caseUses := make([]p14ClaudeToolUseEvent, 0)
+		lastResultLine := 0
+		for _, use := range uses {
+			if use.Line <= prompt.Line || use.Line >= response.Line {
+				continue
+			}
+			caseUses = append(caseUses, use)
+			matches := results[use.ToolUseID]
+			if len(matches) != 1 || matches[0].Line >= response.Line {
+				return nil, fmt.Errorf(
+					"P14 Claude semantic tool result differs for %q",
+					testCase.ID,
+				)
+			}
+			if matches[0].Line > lastResultLine {
+				lastResultLine = matches[0].Line
+			}
+		}
+		if len(caseUses) != len(testCase.Calls) {
+			return nil, fmt.Errorf(
+				"P14 Claude semantic call count for %q is %d, want %d",
+				testCase.ID,
+				len(caseUses),
+				len(testCase.Calls),
+			)
+		}
+		observedFPFCalls := 0
+		for callIndex, use := range caseUses {
+			call := testCase.Calls[callIndex]
+			args, err := marshalP14CanonicalJSON(call.Args)
+			if err != nil {
+				return nil, err
+			}
+			if use.Tool != "mcp__haft__"+call.Tool ||
+				use.ArgumentsCanonical != string(args) {
+				return nil, fmt.Errorf(
+					"P14 Claude semantic call %q/%d differs",
+					testCase.ID,
+					callIndex+1,
+				)
+			}
+			if call.Args["action"] == "fpf" {
+				observedFPFCalls++
+			}
+		}
+		if observedFPFCalls != testCase.ExpectedFPFCalls {
+			return nil, fmt.Errorf(
+				"P14 Claude semantic FPF call count for %q differs",
+				testCase.ID,
+			)
+		}
+		observedRaw, err := marshalP14CanonicalJSON(response.Observation)
+		if err != nil {
+			return nil, err
+		}
+		binding := p14ClaudeSemanticCaseBinding{
+			CaseID:                 testCase.ID,
+			ScenarioDigest:         testCase.ScenarioDigest,
+			PromptLine:             prompt.Line,
+			PromptLineDigest:       prompt.LineDigest,
+			PromptTextDigest:       p14Digest([]byte(prompt.Text)),
+			ResponseLine:           response.Line,
+			ResponseLineDigest:     response.LineDigest,
+			ResponseTextDigest:     p14Digest([]byte(response.Text)),
+			ObservedSemanticDigest: p14Digest(observedRaw),
+			ObservedFPFCallCount:   observedFPFCalls,
+			LastToolResultLine:     lastResultLine,
+		}
+		if len(caseUses) > 0 {
+			binding.FirstToolUseLine = caseUses[0].Line
+		}
+		bindings = append(bindings, binding)
+	}
+	return bindings, nil
 }
 
 func p14ClaudeToolResultsFromLine(
@@ -1213,6 +1576,17 @@ func validateP14ClaudeSessionHistoryEvidence(
 	protocol p14MCPProtocolDiscovery,
 	evidence p14ClaudeSessionHistoryEvidence,
 ) error {
+	expectedCalls, semanticCases, semanticPromptBase, err :=
+		p14ClaudeExpectedToolCallsForPrepared(prepared)
+	if err != nil {
+		return err
+	}
+	if err := validateP14AgentFPFCandidateProtocolVersion(
+		semanticCases,
+		protocol,
+	); err != nil {
+		return err
+	}
 	root, err := p14CanonicalClaudeProjectsRoot()
 	if err != nil {
 		return err
@@ -1239,7 +1613,8 @@ func validateP14ClaudeSessionHistoryEvidence(
 		!validP14Digest(evidence.SourcePrefixDigest) ||
 		evidence.ProtocolEvidenceDigest != protocol.EvidenceDigest ||
 		len(evidence.StartupBindings) != 2 ||
-		len(evidence.CallBindings) != len(p14ClaudeExpectedToolCalls) ||
+		len(evidence.CallBindings) != len(expectedCalls) ||
+		len(evidence.SemanticBindings) != len(semanticCases) ||
 		!validP14Digest(evidence.EvidenceDigest) {
 		return fmt.Errorf(
 			"P14 Claude session history evidence basis differs",
@@ -1291,7 +1666,7 @@ func validateP14ClaudeSessionHistoryEvidence(
 	}
 	var previousResultAt time.Time
 	for index, call := range evidence.CallBindings {
-		expected := p14ClaudeExpectedToolCalls[index]
+		expected := expectedCalls[index]
 		runtimeIdentityExpected :=
 			expected.Role == p14ClaudeCallStatusBefore ||
 				expected.Role == p14ClaudeCallStatusAfter
@@ -1348,6 +1723,40 @@ func validateP14ClaudeSessionHistoryEvidence(
 			seenLines[line] = struct{}{}
 		}
 		previousResultAt = resultAt
+	}
+	for index, binding := range evidence.SemanticBindings {
+		testCase := semanticCases[index]
+		expectedPrompt := p14AgentFPFPromptText(
+			semanticPromptBase,
+			testCase,
+		)
+		if binding.CaseID != testCase.ID ||
+			binding.ScenarioDigest != testCase.ScenarioDigest ||
+			binding.PromptLine <= 0 ||
+			binding.ResponseLine <= binding.PromptLine ||
+			!validP14Digest(binding.PromptLineDigest) ||
+			binding.PromptTextDigest != p14Digest([]byte(expectedPrompt)) ||
+			!validP14Digest(binding.ResponseLineDigest) ||
+			!validP14Digest(binding.ResponseTextDigest) ||
+			!validP14Digest(binding.ObservedSemanticDigest) ||
+			binding.ObservedFPFCallCount != testCase.ExpectedFPFCalls ||
+			(len(testCase.Calls) == 0 &&
+				(binding.FirstToolUseLine != 0 || binding.LastToolResultLine != 0)) ||
+			(len(testCase.Calls) > 0 &&
+				(binding.FirstToolUseLine <= binding.PromptLine ||
+					binding.LastToolResultLine < binding.FirstToolUseLine ||
+					binding.LastToolResultLine >= binding.ResponseLine)) {
+			return fmt.Errorf(
+				"P14 Claude semantic binding %q differs",
+				testCase.ID,
+			)
+		}
+		for _, line := range []int{binding.PromptLine, binding.ResponseLine} {
+			if _, duplicate := seenLines[line]; duplicate {
+				return fmt.Errorf("P14 Claude transcript line is reused")
+			}
+			seenLines[line] = struct{}{}
+		}
 	}
 	first := evidence.CallBindings[0]
 	firstUseAt, err := time.Parse(time.RFC3339Nano, first.ToolUseAt)
@@ -1473,8 +1882,13 @@ func TestP14ClaudeSessionHistoryRejectsForgeryExtraAndHungCalls(
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(evidence.CallBindings) != 3 ||
-		len(evidence.StartupBindings) != 2 {
+	expectedCalls, _, _, err := p14ClaudeExpectedToolCallsForPrepared(prepared)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(evidence.CallBindings) != len(expectedCalls) ||
+		len(evidence.StartupBindings) != 2 ||
+		len(evidence.SemanticBindings) != len(p14AgentFPFPatternUseCaseIDs) {
 		t.Fatal("P14 Claude transcript proof omitted required bindings")
 	}
 	for _, mode := range []string{
@@ -1664,16 +2078,23 @@ func syntheticP14ClaudeSessionBasis(
 	if err := os.WriteFile(executable, content, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	prepared := preparedRequestOracleInput{
-		FrozenBasis: frozenP14Basis{
-			Candidate: candidateP14Basis{
-				ExecutableDigest: p14Digest(content),
-			},
-			SelectedProject: selectedProjectP14Basis{
-				ProjectRoot: root,
-			},
-		},
+	repositoryRoot, err := p14RepositoryRoot()
+	if err != nil {
+		t.Fatal(err)
 	}
+	contract, rawContract, err := loadRequestOracleContract(repositoryRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared, err := completePreparedInputForTest(
+		contract,
+		p14Digest(rawContract),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	prepared.FrozenBasis.Candidate.ExecutableDigest = p14Digest(content)
+	prepared.FrozenBasis.SelectedProject.ProjectRoot = root
 	runtime := p14RuntimeObservationBinding{
 		RestartCheckpointCreatedAt: "2026-07-28T10:00:00Z",
 		LiveMCPPID:                 410,
@@ -1767,22 +2188,21 @@ func syntheticP14ClaudeSessionJSONL(
 			},
 		}),
 	}
-	useTimes := []time.Time{
-		time.Date(2026, 7, 28, 10, 0, 2, 0, time.UTC),
-		time.Date(2026, 7, 28, 10, 0, 5, 0, time.UTC),
-		time.Date(2026, 7, 28, 10, 0, 7, 0, time.UTC),
+	expectedCalls, semanticCases, semanticPromptBase, err :=
+		p14ClaudeExpectedToolCallsForPrepared(prepared)
+	if err != nil {
+		t.Fatal(err)
 	}
-	resultTimes := []time.Time{
-		time.Date(2026, 7, 28, 10, 0, 4, 0, time.UTC),
-		time.Date(2026, 7, 28, 10, 0, 6, 0, time.UTC),
-		time.Date(2026, 7, 28, 10, 0, 8, 0, time.UTC),
-	}
-	if mode == "hung_result" {
-		resultTimes[1] = useTimes[1].Add(p14ClaudeToolResultTimeout + time.Second)
-	}
-	for index, expected := range p14ClaudeExpectedToolCalls {
-		toolUseID := fmt.Sprintf("toolu_p14_claude_%d", index+1)
-		useUUID := fmt.Sprintf("use-%d", index+1)
+	baseTime := time.Date(2026, 7, 28, 10, 0, 0, 0, time.UTC)
+	callIndex := 0
+	appendToolCall := func(
+		expected p14ClaudeExpectedToolCall,
+		useAt time.Time,
+		resultAt time.Time,
+	) {
+		callIndex++
+		toolUseID := fmt.Sprintf("toolu_p14_claude_%d", callIndex)
+		useUUID := fmt.Sprintf("use-%d", callIndex)
 		args := map[string]any{}
 		if err := json.Unmarshal(
 			[]byte(expected.ArgumentsCanonical),
@@ -1792,11 +2212,11 @@ func syntheticP14ClaudeSessionJSONL(
 		}
 		lines = append(lines, mustP14JSONLine(t, map[string]any{
 			"type":        "assistant",
-			"timestamp":   useTimes[index].Format(time.RFC3339Nano),
+			"timestamp":   useAt.Format(time.RFC3339Nano),
 			"sessionId":   sessionID,
 			"cwd":         projectRoot,
 			"uuid":        useUUID,
-			"parentUuid":  fmt.Sprintf("result-%d", index),
+			"parentUuid":  fmt.Sprintf("result-%d", callIndex-1),
 			"isSidechain": false,
 			"version":     "9.0.0-p14",
 			"entrypoint":  "cli",
@@ -1813,8 +2233,8 @@ func syntheticP14ClaudeSessionJSONL(
 				},
 			},
 		}))
-		if mode == "missing_result" && index == 1 {
-			continue
+		if mode == "missing_result" && expected.Role == p14ClaudeCallBoundedRead {
+			return
 		}
 		response := `{"kind":"ok"}`
 		if expected.Role == p14ClaudeCallStatusBefore ||
@@ -1822,7 +2242,7 @@ func syntheticP14ClaudeSessionJSONL(
 			statusPID := runtime.LiveMCPPID
 			statusStartedAt := runtime.LiveMCPStartedAt
 			statusExecutable := runtime.LiveMCPExecutablePath
-			if index == 2 {
+			if expected.Role == p14ClaudeCallStatusAfter {
 				switch mode {
 				case "wrong_status_pid":
 					statusPID++
@@ -1859,12 +2279,14 @@ func syntheticP14ClaudeSessionJSONL(
 			)
 		}
 		lines = append(lines, mustP14JSONLine(t, map[string]any{
-			"type":       "user",
-			"timestamp":  resultTimes[index].Format(time.RFC3339Nano),
-			"sessionId":  sessionID,
-			"cwd":        projectRoot,
-			"uuid":       fmt.Sprintf("result-%d", index+1),
-			"parentUuid": useUUID,
+			"type":        "user",
+			"timestamp":   resultAt.Format(time.RFC3339Nano),
+			"sessionId":   sessionID,
+			"cwd":         projectRoot,
+			"uuid":        fmt.Sprintf("result-%d", callIndex),
+			"parentUuid":  useUUID,
+			"isSidechain": false,
+			"entrypoint":  "cli",
 			"message": map[string]any{
 				"role": "user",
 				"content": []any{
@@ -1878,10 +2300,75 @@ func syntheticP14ClaudeSessionJSONL(
 			},
 		}))
 	}
+
+	firstResultAt := baseTime.Add(4 * time.Second)
+	appendToolCall(
+		expectedCalls[0],
+		baseTime.Add(2*time.Second),
+		firstResultAt,
+	)
+	cursor := firstResultAt.Add(time.Second)
+	for _, testCase := range semanticCases {
+		promptText := p14AgentFPFPromptText(semanticPromptBase, testCase)
+		lines = append(lines, mustP14JSONLine(t, map[string]any{
+			"type":        "user",
+			"timestamp":   cursor.Format(time.RFC3339Nano),
+			"sessionId":   sessionID,
+			"cwd":         projectRoot,
+			"uuid":        "semantic-prompt-" + testCase.ID,
+			"parentUuid":  fmt.Sprintf("result-%d", callIndex),
+			"isSidechain": false,
+			"entrypoint":  "cli",
+			"message": map[string]any{
+				"role":    "user",
+				"content": promptText,
+			},
+		}))
+		cursor = cursor.Add(time.Second)
+		for range testCase.Calls {
+			expected := expectedCalls[callIndex]
+			appendToolCall(expected, cursor, cursor.Add(500*time.Millisecond))
+			cursor = cursor.Add(time.Second)
+		}
+		observationRaw, err := marshalP14CanonicalJSON(
+			p14ExpectedAgentFPFCaseObservation(testCase),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		responseText := p14AgentFPFObservationPrefix + string(observationRaw)
+		lines = append(lines, mustP14JSONLine(t, map[string]any{
+			"type":        "assistant",
+			"timestamp":   cursor.Format(time.RFC3339Nano),
+			"sessionId":   sessionID,
+			"cwd":         projectRoot,
+			"uuid":        "semantic-response-" + testCase.ID,
+			"parentUuid":  fmt.Sprintf("result-%d", callIndex),
+			"isSidechain": false,
+			"version":     "9.0.0-p14",
+			"entrypoint":  "cli",
+			"message": map[string]any{
+				"role": "assistant",
+				"content": []any{map[string]any{
+					"type": "text",
+					"text": responseText,
+				}},
+			},
+		}))
+		cursor = cursor.Add(time.Second)
+	}
+	for _, expected := range expectedCalls[callIndex:] {
+		resultAt := cursor.Add(500 * time.Millisecond)
+		if mode == "hung_result" && expected.Role == p14ClaudeCallBoundedRead {
+			resultAt = cursor.Add(p14ClaudeToolResultTimeout + time.Second)
+		}
+		appendToolCall(expected, cursor, resultAt)
+		cursor = resultAt.Add(500 * time.Millisecond)
+	}
 	if mode == "extra_haft_call" {
 		lines = append(lines, mustP14JSONLine(t, map[string]any{
 			"type":        "assistant",
-			"timestamp":   "2026-07-28T10:00:09Z",
+			"timestamp":   cursor.Format(time.RFC3339Nano),
 			"sessionId":   sessionID,
 			"cwd":         projectRoot,
 			"uuid":        "extra-use",
@@ -1906,6 +2393,5 @@ func syntheticP14ClaudeSessionJSONL(
 			},
 		}))
 	}
-	_ = runtime
 	return append(bytes.Join(lines, []byte{'\n'}), '\n')
 }

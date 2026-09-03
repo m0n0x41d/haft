@@ -239,6 +239,53 @@ func TestParsePracticalUseCardSourcePublicCoarseningCannotGroundResult(t *testin
 	}
 }
 
+func TestParsePracticalUseCardSourceAcceptsCurrentPracticalEntryFields(t *testing.T) {
+	t.Parallel()
+
+	source := PracticalUseCardSource{
+		SourceID: "LIVE-WORK-STEERING",
+		Title:    "Choose the next action while Work is changing",
+		Body: strings.Join([]string{
+			"### LIVE-WORK-STEERING — Choose the next action while Work is changing",
+			"",
+			"- **Situation:** Ongoing Work has an applicable domain Method.",
+			"- **Question:** What should the deciding System choose now?",
+			"- **First useful result or honest blocker:** One bounded decision or an exact blocker.",
+			"- **Mantra:** Do not project `A.999` from mnemonic prose.",
+			"- **Start with:** `A.15.7`.",
+			"- **Stop or return:** Stop when the action and return condition are clear.",
+		}, "\n"),
+		SourcePath:     "FPF-Spec.md",
+		SourceRevision: "candidate",
+		StartLine:      100,
+		EndLine:        107,
+	}
+
+	projection, err := ParsePracticalUseCardSource(source)
+	if err != nil {
+		t.Fatalf("ParsePracticalUseCardSource() error = %v", err)
+	}
+	if !strings.Contains(projection.UseCues.ConditionText, "Ongoing Work") ||
+		!strings.Contains(projection.UseCues.ConditionText, "What should") {
+		t.Fatalf("condition cues = %q", projection.UseCues.ConditionText)
+	}
+	if !strings.Contains(projection.UseCues.FirstResultText, "First useful result or honest blocker") ||
+		!strings.Contains(projection.UseCues.FirstResultText, "Start with") {
+		t.Fatalf("first-result cues = %q", projection.UseCues.FirstResultText)
+	}
+	if !strings.Contains(projection.UseCues.StopReturnText, "Stop when") {
+		t.Fatalf("boundary cues = %q", projection.UseCues.StopReturnText)
+	}
+	refs := extractSourcePatternLinks(projection.DirectReferenceText)
+	if !containsSourceString(refs, "A.15.7") || containsSourceString(refs, "A.999") {
+		t.Fatalf("direct refs = %#v, want A.15.7 without mantra-only A.999", refs)
+	}
+	phrases := extractReadmeAuthoredPhrases(source.Body)
+	if !containsSourceString(phrases, "What should the deciding System choose now?") {
+		t.Fatalf("authored phrases = %#v, want exact Question field", phrases)
+	}
+}
+
 func TestParsePracticalUseCardSourceRejectsBranchProseAndDetachedChildren(
 	t *testing.T,
 ) {

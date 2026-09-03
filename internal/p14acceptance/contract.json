@@ -1,5 +1,5 @@
 {
-  "schema": "haft.p14.request-oracle-contract/v3",
+  "schema": "haft.p14.request-oracle-contract/v4",
   "status": "prepared_not_executed",
   "plan_ref": ".context/haft-v9-deterministic-closeout.plan.md",
   "plan_span": "heading:## P14 — installed candidate and live host acceptance",
@@ -215,12 +215,31 @@
     {
       "id": "identifier_namespace",
       "family": "identifier_namespace",
-      "request_builder": "query.node-artifact-rejection.v1",
+      "request_builder": "query.identifier-namespace-matrix.v2",
       "surfaces": ["live_mcp"],
       "oracle_kind": "normalized_digest",
       "expected_effect": "none",
       "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "identifier_fixture"],
-      "local_oracle_tests": ["github.com/m0n0x41d/haft/internal/cli::TestNodeWrongNamespaceSurvivesV5MCPBoundary"]
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/cli::TestEveryEmittedQueryRecoveryCallPassesPublicSchemaAndStrictDecoder",
+        "github.com/m0n0x41d/haft/internal/cli::TestExactIdentifierNamespaceMatrixRecoversAndExecutesUnchanged",
+        "github.com/m0n0x41d/haft/internal/cli::TestExactIdentifierNamespaceMatrixDoesNotGuess",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14IdentifierNamespaceBuilderClosesExecutableRecoveryMatrix"
+      ]
+    },
+    {
+      "id": "onboard_profile_change_prepare",
+      "family": "onboard_profile_change_prepare",
+      "request_builder": "onboard.profile-change-prepare-replay.v1",
+      "surfaces": ["live_mcp"],
+      "oracle_kind": "normalized_digest",
+      "expected_effect": "fixture_non_binding_review_write",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "live_mcp_process"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/fpf::TestHaftOnboardProfileChangePrepareCrossesJSONRPCDispatcher",
+        "github.com/m0n0x41d/haft/internal/cli::TestOnboardProfileChangePrepareAndApplyRepairsSpecApplicability",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14OnboardProfileChangePrepareBuilderClosesReplayAndNoApply"
+      ]
     },
     {
       "id": "spec_section_read_protocol",
@@ -303,6 +322,19 @@
       "local_oracle_tests": [
         "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14CodeExploreBuildersCloseInstalledAndLiveSurfaces",
         "github.com/m0n0x41d/haft/internal/codeintel::TestPublishedExploreTraceIsDeterministicAndDiagnosticIsExplicit"
+      ]
+    },
+    {
+      "id": "agent_fpf_pattern_use",
+      "family": "agent_fpf_pattern_use",
+      "request_builder": "agent.fpf-pattern-use.v1",
+      "surfaces": ["host_process", "installed_cli", "live_mcp", "claude_host"],
+      "oracle_kind": "live_predicate",
+      "expected_effect": "host_process_observation",
+      "required_bindings": ["candidate_basis", "p13_evidence", "selected_project_basis", "live_mcp_process"],
+      "local_oracle_tests": [
+        "github.com/m0n0x41d/haft/internal/cli::TestHReasonSemanticCorpusContract",
+        "github.com/m0n0x41d/haft/internal/p14acceptance::TestP14AgentFPFPatternUseBuilderConsumesSealedCorpusSubset"
       ]
     },
     {

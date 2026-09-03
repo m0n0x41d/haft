@@ -1015,6 +1015,23 @@ func TestOnboardProfileChangePrepareAndApplyRepairsSpecApplicability(
 	if len(status.Scopes) != 1 {
 		t.Fatalf("profile scopes = %#v", status.Scopes)
 	}
+	beforePrepare, err := executeProfileInspection(
+		context.Background(),
+		fixture.binding.ProjectRoot,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileProjectionPath := filepath.Join(
+		fixture.binding.ProjectRoot,
+		".haft",
+		"project-profile.yaml",
+	)
+	beforeProjection, err := os.ReadFile(profileProjectionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
 	request := onboardRequestWire{
 		Action:    "profile_change_prepare",
 		ScopeID:   stringPointer(status.Scopes[0].ScopeID),
@@ -1034,8 +1051,52 @@ func TestOnboardProfileChangePrepareAndApplyRepairsSpecApplicability(
 		prepared.Status != "profile_change_review_ready" ||
 		prepared.ReviewRef != "review:onboard-profile-change" ||
 		!prepared.Effects.ReviewCarrierCreated ||
-		prepared.Effects.CanonicalProfileChanged {
+		prepared.Effects.ReviewCarrierReused ||
+		prepared.Effects.CanonicalProfileChanged ||
+		prepared.Effects.StructuredMemoryEnabled ||
+		prepared.Effects.AuthorityGranted {
 		t.Fatalf("profile change prepare = %#v", prepared)
+	}
+	reusedOutput := callOnboardHandler(
+		t,
+		fixture.surface.Handler(),
+		string(requestBytes),
+	)
+	reused := decodeOnboardResponse(t, reusedOutput)
+	if reused.Result != "profile_change_review_reused" ||
+		reused.Status != "profile_change_review_ready" ||
+		reused.ReviewRef != "review:onboard-profile-change" ||
+		reused.Effects.ReviewCarrierCreated ||
+		!reused.Effects.ReviewCarrierReused ||
+		reused.Effects.CanonicalProfileChanged ||
+		reused.Effects.StructuredMemoryEnabled ||
+		reused.Effects.AuthorityGranted {
+		t.Fatalf("profile change prepare reuse = %#v", reused)
+	}
+	afterPrepare, err := executeProfileInspection(
+		context.Background(),
+		fixture.binding.ProjectRoot,
+		false,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(
+		beforePrepare.CanonicalProfile,
+		afterPrepare.CanonicalProfile,
+	) {
+		t.Fatalf(
+			"profile change prepare changed canonical profile\n before: %#v\n  after: %#v",
+			beforePrepare.CanonicalProfile,
+			afterPrepare.CanonicalProfile,
+		)
+	}
+	afterProjection, err := os.ReadFile(profileProjectionPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(beforeProjection, afterProjection) {
+		t.Fatal("profile change prepare changed canonical receipt projection")
 	}
 	if _, err := os.Stat(profileChangeReviewPath(fixture.binding.ProjectRoot)); err != nil {
 		t.Fatalf("profile change review: %v", err)

@@ -12,10 +12,11 @@ builds:
     binary: haft
     flags:
       - -trimpath
+      - -buildvcs=true
     ldflags:
       - -s -w
       - -X github.com/m0n0x41d/haft/internal/cli.Version={{ .Version }}
-      - -X github.com/m0n0x41d/haft/internal/cli.Commit={{ .ShortCommit }}
+      - -X github.com/m0n0x41d/haft/internal/cli.Commit={{ .FullCommit }}
       - -X github.com/m0n0x41d/haft/internal/cli.BuildDate={{ .Date }}
     goos:
       - linux

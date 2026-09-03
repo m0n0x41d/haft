@@ -2,6 +2,7 @@ package typeenv
 
 import (
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -23,10 +24,10 @@ func TestPinnedPublicationStructuralGrammarOutcomes(t *testing.T) {
 		{sourceID: "C.3.1:4", declaration: C3ContractDeclaration{kind: C3SubkindRelationContract}},
 		{sourceID: "C.3.1:5", declaration: C3ContractDeclaration{kind: C3SubkindOrderContract}},
 		{sourceID: "C.3.2:5", declaration: C3ContractDeclaration{kind: C3KindSignatureContract}},
-		{sourceID: "C.3.2:6", declaration: C3ContractDeclaration{kind: C3KindClassificationJudgementContract}},
+		{sourceID: "C.3.2:6", declaration: C3ContractDeclaration{kind: C3KindClassificationContract}},
 		{sourceID: "C.3.2:7", declaration: C3ContractDeclaration{kind: C3KindExtensionContract}},
 		{sourceID: "C.3.3:5", declaration: C3ContractDeclaration{kind: C3KindBridgeContract}},
-		{sourceID: "C.3.4:5", declaration: C3ContractDeclaration{kind: C3RoleMaskContract}},
+		{sourceID: "C.3.4:5", declaration: C3ContractDeclaration{kind: C3KindUseAdaptationContract}},
 		{sourceID: "C.3.A:3", declaration: C3ContractDeclaration{kind: C3KindGuardSeparationContract}},
 	}
 	for _, test := range tests {
@@ -42,11 +43,199 @@ func TestPinnedPublicationStructuralGrammarOutcomes(t *testing.T) {
 	}
 }
 
+func TestCurrentC3SemanticProfilesAreExactAndSourceOnly(t *testing.T) {
+	tests := []struct {
+		sourceID        string
+		owner           string
+		kind            C3ContractKind
+		designator      string
+		wantCoordinates []string
+	}{
+		{
+			sourceID:   "C.3.1:4",
+			owner:      "C.3.1",
+			kind:       C3SubkindRelationContract,
+			designator: "U.SubkindOf",
+			wantCoordinates: []string{
+				"narrower_kind", "broader_kind", "declared_applicability",
+				"SubkindOfObtains", "criterion_entailment_branch",
+				"exhaustive_closed_finite_domain_branch",
+				"participant_determined_occurrence_identity",
+				"scheme_signature_applicability_qualifiers",
+				"separate_c2_1_assertion_episteme",
+			},
+		},
+		{
+			sourceID:   "C.3.1:5",
+			owner:      "C.3.1",
+			kind:       C3SubkindOrderContract,
+			designator: "SubkindOfObtains",
+			wantCoordinates: []string{
+				"admissibility_first", "criterion_entailment_branch",
+				"exhaustive_closed_finite_domain_branch", "preorder", "reflexive",
+				"transitive", "mutual_facts_classification_equivalence",
+				"distinct_kind_identity_preserved",
+				"optional_partial_order_over_equivalence_groups",
+				"separate_relation_predicate_assertion",
+			},
+		},
+		{
+			sourceID:   "C.3.2:5",
+			owner:      "C.3.2",
+			kind:       C3KindSignatureContract,
+			designator: "KindSignature",
+			wantCoordinates: []string{
+				"kind_entity_of_concern",
+				"candidate_value_kind_or_exact_value_interpretation",
+				"membership_condition", "context_slice_applicability",
+				"effective_reference_scheme",
+				"assumptions_dependencies_standards_versions_units_temporal_policy",
+				"formality", "optional_extent_rule", "pre_judgement_not_applicable",
+			},
+		},
+		{
+			sourceID:   "C.3.2:6",
+			owner:      "C.3.2",
+			kind:       C3KindClassificationContract,
+			designator: "ClassificationAdmissibility/J",
+			wantCoordinates: []string{
+				"candidate", "kind", "kind_signature_edition", "context_slice",
+				"admissible", "not_applicable_no_judgement", "true", "false",
+				"unknown", "governed_condition",
+				"condition_separate_from_evidentiary_use",
+				"guard_disposition_separate",
+			},
+		},
+		{
+			sourceID:   "C.3.2:7",
+			owner:      "C.3.2",
+			kind:       C3KindExtensionContract,
+			designator: "KindExtension",
+			wantCoordinates: []string{
+				"kind", "kind_signature_edition", "context_slice", "candidate_domain",
+				"admissible_true_candidates_only",
+				"unknown_and_not_applicable_exclusions_distinct",
+				"representation_not_collection_membership_relation_or_condition",
+				"named_receiving_use",
+			},
+		},
+		{
+			sourceID:   "C.3.3:5",
+			owner:      "C.3.3",
+			kind:       C3KindBridgeContract,
+			designator: "KindBridge",
+			wantCoordinates: []string{
+				"source_kind", "target_kind", "distinct_kinds",
+				"directional_correspondence_predicate", "definedness",
+				"participant_determined_occurrence_identity",
+				"scheme_and_signature_qualifiers", "separate_bridge_assertion",
+				"receiving_admissibility", "fresh_receiving_judgement",
+				"source_judgement_not_receiving_truth", "r_only_reliance_consequence",
+			},
+		},
+		{
+			sourceID:   "C.3.4:5",
+			owner:      "C.3.4",
+			kind:       C3KindUseAdaptationContract,
+			designator: "KindUseAdaptationDeclaration",
+			wantCoordinates: []string{
+				"base_kind", "base_kind_signature_edition", "receiving_use",
+				"adaptation_type", "directly_governed_candidate_conditions",
+				"vocabulary_or_notation_bindings", "candidate_and_slice_applicability",
+				"dependencies", "scope_expectations_separate", "intended_guard_use",
+				"formality", "adaptation_admissibility", "true_false_unknown",
+				"vocabulary_only_preserves_base_judgement", "no_new_kind_or_bridge",
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.sourceID, func(t *testing.T) {
+			profile := currentC3ProfileForSourceID(t, test.sourceID)
+			if profile.kind != test.kind || profile.designator != test.designator ||
+				!slices.Equal(profile.coordinates, test.wantCoordinates) {
+				t.Fatalf("current profile = %#v, want kind %s designator %q coordinates %#v", profile, test.kind, test.designator, test.wantCoordinates)
+			}
+			unit := fpf.SourceUnit{
+				UnitID:          "fixture:current-c3:" + test.sourceID,
+				SourceID:        test.sourceID,
+				Role:            fpf.SourceUnitRolePatternSection,
+				ParentPatternID: test.owner,
+				Body:            strings.Join(profile.required, "\n"),
+			}
+			parsed, ok := ParseStructuralUnit(unit).(GrammarParsed)
+			if !ok {
+				t.Fatalf("current profile parse = %T, want GrammarParsed", ParseStructuralUnit(unit))
+			}
+			declaration := findC3Contract(t, parsed.Declarations())
+			if declaration.Kind() != test.kind || declaration.Designator() != test.designator ||
+				!slices.Equal(declaration.Coordinates(), test.wantCoordinates) {
+				t.Fatalf("current declaration = %#v", declaration)
+			}
+			for index, cue := range profile.required {
+				mutated := unit
+				mutated.Body = strings.Replace(mutated.Body, cue, "removed semantic cue", 1)
+				malformed, ok := ParseStructuralUnit(mutated).(GrammarMalformed)
+				if !ok || malformed.Diagnostics()[0].Code() != "current_c3_contract_malformed" {
+					t.Fatalf("missing cue[%d] %q = %#v", index, cue, ParseStructuralUnit(mutated))
+				}
+			}
+		})
+	}
+}
+
+func currentC3ProfileForSourceID(t *testing.T, sourceID string) c3ContractGrammarProfile {
+	t.Helper()
+	for _, spec := range currentC3ContractGrammarSpecs() {
+		if spec.sourceID == sourceID && len(spec.profiles) > 0 {
+			return spec.profiles[0]
+		}
+	}
+	t.Fatalf("current C.3 source profile %s not found", sourceID)
+	return c3ContractGrammarProfile{}
+}
+
+func TestCurrentC3ContractSpecsDeclareProfiles(t *testing.T) {
+	for _, spec := range currentC3ContractGrammarSpecs() {
+		if len(spec.profiles) == 0 {
+			t.Errorf("current C.3 source profile %s has no supported semantic profile", spec.sourceID)
+		}
+	}
+}
+
+func TestCurrentC3ContractRejectsMultipleMatchingProfiles(t *testing.T) {
+	var target c3ContractGrammarSpec
+	for _, spec := range currentC3ContractGrammarSpecs() {
+		if spec.sourceID == "C.3.4:5" {
+			target = spec
+			break
+		}
+	}
+	if len(target.profiles) < 2 {
+		t.Fatalf("C.3.4:5 profiles = %d, want at least 2", len(target.profiles))
+	}
+
+	required := append([]string(nil), target.profiles[0].required...)
+	required = append(required, target.profiles[1].required...)
+	unit := fpf.SourceUnit{
+		UnitID:          "fixture:current-c3:multiple-profiles",
+		SourceID:        target.sourceID,
+		Role:            fpf.SourceUnitRolePatternSection,
+		ParentPatternID: target.owner,
+		Body:            strings.Join(required, "\n"),
+	}
+	outcome := ParseStructuralUnit(unit)
+	malformed, ok := outcome.(GrammarMalformed)
+	if !ok || malformed.Diagnostics()[0].Code() != "current_c3_contract_malformed" {
+		t.Fatalf("multiple matching profiles = %#v, want current_c3_contract_malformed", outcome)
+	}
+}
+
 func TestPinnedA65RuleSetIsExactAndMultiline(t *testing.T) {
 	snapshot := loadPinnedGrammarSnapshot(t)
 	unit := resolveGrammarSourceID(t, snapshot, "A.6.5:4.3")
 	parsed := ParseStructuralUnit(unit).(GrammarParsed)
-	want := currentSlotRuleLabels()
+	want := acceptedSlotRuleLabels()
 	got := map[string]string{}
 	for _, declaration := range parsed.Declarations() {
 		rule, ok := declaration.(SlotRuleDeclaration)
@@ -61,10 +250,105 @@ func TestPinnedA65RuleSetIsExactAndMultiline(t *testing.T) {
 	if len(got) != 7 {
 		t.Fatalf("parsed rule count = %d, want 7", len(got))
 	}
-	for ruleID, label := range want {
-		if got[ruleID] != label {
-			t.Fatalf("rule %s label = %q, want %q", ruleID, got[ruleID], label)
+	for ruleID, labels := range want {
+		if !slices.Contains(labels, got[ruleID]) {
+			t.Fatalf("rule %s label = %q, want one of %q", ruleID, got[ruleID], labels)
 		}
+	}
+}
+
+func TestRecognizedRuleSetAcceptsOnlyKnownS5Editions(t *testing.T) {
+	snapshot := loadPinnedGrammarSnapshot(t)
+	unit := resolveGrammarSourceID(t, snapshot, "A.6.5:4.3")
+	current := "A6.5-S5 DirectPredicateDefinition:"
+	if strings.Count(unit.Body, current) != 1 {
+		t.Fatalf("pinned source contains %d copies of %q, want 1", strings.Count(unit.Body, current), current)
+	}
+
+	legacy := unit
+	legacy.Body = strings.Replace(
+		legacy.Body,
+		current,
+		"A6.5-S5 DirectPredicateGovernance:",
+		1,
+	)
+	parsed, ok := ParseStructuralUnit(legacy).(GrammarParsed)
+	if !ok {
+		t.Fatalf("legacy S5 edition = %T, want GrammarParsed", ParseStructuralUnit(legacy))
+	}
+	gotLabel := ""
+	for _, declaration := range parsed.Declarations() {
+		rule, isRule := declaration.(SlotRuleDeclaration)
+		if isRule && rule.RuleID() == "A6.5-S5" {
+			gotLabel = rule.Label()
+		}
+	}
+	if gotLabel != "DirectPredicateGovernance" {
+		t.Fatalf("legacy S5 label = %q", gotLabel)
+	}
+
+	unknown := unit
+	unknown.Body = strings.Replace(
+		unknown.Body,
+		current,
+		"A6.5-S5 DirectPredicateAlias:",
+		1,
+	)
+	malformed, ok := ParseStructuralUnit(unknown).(GrammarMalformed)
+	if !ok || malformed.Diagnostics()[0].Code() != "slot_rule_set_mismatch" {
+		t.Fatalf("unknown S5 edition = %#v, want slot_rule_set_mismatch", ParseStructuralUnit(unknown))
+	}
+}
+
+func TestEditionRelationSemanticProfilesRejectIncompleteAndHybridSources(t *testing.T) {
+	snapshot := loadPinnedGrammarSnapshot(t)
+	legacy := resolveGrammarSourceID(t, snapshot, "C.2.1:4.5")
+	legacyPredicate := "The relation obtains when the two epistemes have different C.2.1 identities and one exact system performed revision, refinement, or supersession work under a method whose semantics establish historical continuation."
+	legacyIdentity := "One occurrence is participant-determined by the exact `<earlier episteme, later episteme>` pair."
+	legacyNonDuplication := "Two work occurrences that establish the same historical continuation do not create two edition-relation occurrences."
+	candidatePredicate := strings.Join([]string{
+		"The relation obtains only when all of these conditions hold:",
+		"",
+		"1. the two epistemes have different C.2.1 identities;",
+		"2. the later episteme actually uses the earlier episteme as the source for the claimed revision, refinement, or supersession;",
+		"3. one applicable edition-continuity policy or rule states which claim, EntityOfConcern, and effective-reference-scheme features must be preserved, which may deliberately change, and what counts as continuation for this episteme family;",
+		"4. the exact preserved and deliberately changed features satisfy that rule;",
+		"5. no failure condition in that rule classifies the case as a fork, translation, retargeting, or independent reconstruction instead.",
+	}, "\n")
+	candidateIdentity := "One occurrence is identified by the exact `<earlier episteme, later episteme>` pair."
+	candidateNonDuplication := "Two revision Work occurrences do not create two edition occurrences for the same pair."
+
+	candidate := legacy
+	candidate.Body = strings.Replace(candidate.Body, legacyPredicate, candidatePredicate, 1)
+	candidate.Body = strings.Replace(candidate.Body, legacyIdentity, candidateIdentity, 1)
+	candidate.Body = strings.Replace(candidate.Body, legacyNonDuplication, candidateNonDuplication, 1)
+	if _, ok := ParseStructuralUnit(candidate).(GrammarParsed); !ok {
+		t.Fatalf("complete candidate edition profile = %T, want GrammarParsed", ParseStructuralUnit(candidate))
+	}
+
+	for _, witness := range []string{
+		"the two epistemes have different C.2.1 identities;",
+		"the later episteme actually uses the earlier episteme as the source for the claimed revision, refinement, or supersession;",
+		"one applicable edition-continuity policy or rule states which claim, EntityOfConcern, and effective-reference-scheme features must be preserved, which may deliberately change, and what counts as continuation for this episteme family;",
+		"the exact preserved and deliberately changed features satisfy that rule;",
+		"no failure condition in that rule classifies the case as a fork, translation, retargeting, or independent reconstruction instead.",
+		candidateIdentity,
+		candidateNonDuplication,
+	} {
+		t.Run(witness, func(t *testing.T) {
+			mutated := candidate
+			mutated.Body = strings.Replace(mutated.Body, witness, "removed candidate semantic witness", 1)
+			malformed, ok := ParseStructuralUnit(mutated).(GrammarMalformed)
+			if !ok || malformed.Diagnostics()[0].Code() != "relation_semantics_source_malformed" {
+				t.Fatalf("missing candidate witness = %#v", ParseStructuralUnit(mutated))
+			}
+		})
+	}
+
+	hybrid := candidate
+	hybrid.Body = strings.Replace(hybrid.Body, candidateIdentity, legacyIdentity, 1)
+	if _, ok := ParseStructuralUnit(hybrid).(GrammarMalformed); !ok {
+		t.Fatalf("hybrid edition profile = %T, want GrammarMalformed", ParseStructuralUnit(hybrid))
 	}
 }
 
@@ -380,6 +664,20 @@ func findSymbolicSlot(
 	}
 	t.Fatalf("signature %s has no %s", declaration.SignatureName(), slotKind)
 	return SymbolicRelationSlotSpec{}
+}
+
+func findC3Contract(
+	t *testing.T,
+	declarations []StructuralDeclaration,
+) C3ContractDeclaration {
+	t.Helper()
+	for _, declaration := range declarations {
+		if contract, ok := declaration.(C3ContractDeclaration); ok {
+			return contract
+		}
+	}
+	t.Fatal("parsed declarations contain no C.3 source contract")
+	return C3ContractDeclaration{}
 }
 
 func assertGrammarDeclarationType(

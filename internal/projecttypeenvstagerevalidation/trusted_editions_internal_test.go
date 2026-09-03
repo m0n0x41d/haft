@@ -79,11 +79,13 @@ func TestPackageOwnedCatalogsKeepGenesisV2AndRouteFreshBaseV3Exactly(t *testing.
 	assertTrustedStageEditionCatalogWellFormed(t, transition)
 }
 
-func TestPackageOwnedCatalogsAddBaseV5WithoutRelabelingBaseV4(t *testing.T) {
+func TestPackageOwnedCatalogsAddBaseV6WithoutRelabelingEarlierBases(t *testing.T) {
 	baseV4Genesis := currentBaseV4GenesisTrustedStageEditionCatalog()
 	baseV5Genesis := currentBaseV5GenesisTrustedStageEditionCatalog()
+	baseV6Genesis := currentBaseV6GenesisTrustedStageEditionCatalog()
 	baseV4Transition := currentBaseV4TransitionTrustedStageEditionCatalog()
 	baseV5Transition := currentBaseV5TransitionTrustedStageEditionCatalog()
+	baseV6Transition := currentBaseV6TransitionTrustedStageEditionCatalog()
 
 	testCases := []struct {
 		name    string
@@ -115,6 +117,18 @@ func TestPackageOwnedCatalogsAddBaseV5WithoutRelabelingBaseV4(t *testing.T) {
 			},
 		},
 		{
+			name:    "current Base-v6 Genesis",
+			catalog: baseV6Genesis,
+			want: trustedStageEditionCatalogCoordinates{
+				stageSchema:      projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV4,
+				stageCompiler:    projecttypeenvselection.StageCompilerEditionV4(),
+				baseCompiler:     typeenv.BaseTypeEnvCompilerSchemaV6,
+				stageProducer:    projecttypeenvselection.StageProducerEditionV4(),
+				stageRevalidator: projecttypeenvselection.StageRevalidatorEditionV4(),
+				compositeLowerer: projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
+			},
+		},
+		{
 			name:    "historical Base-v4 Transition",
 			catalog: baseV4Transition,
 			want: trustedStageEditionCatalogCoordinates{
@@ -138,6 +152,18 @@ func TestPackageOwnedCatalogsAddBaseV5WithoutRelabelingBaseV4(t *testing.T) {
 				compositeLowerer: projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
 			},
 		},
+		{
+			name:    "current Base-v6 Transition",
+			catalog: baseV6Transition,
+			want: trustedStageEditionCatalogCoordinates{
+				stageSchema:      projecttypeenvselection.ProjectTypeEnvStageSchemaEditionV5,
+				stageCompiler:    projecttypeenvselection.StageCompilerEditionV5(),
+				baseCompiler:     typeenv.BaseTypeEnvCompilerSchemaV6,
+				stageProducer:    projecttypeenvselection.StageProducerEditionV5(),
+				stageRevalidator: projecttypeenvselection.StageRevalidatorEditionV5(),
+				compositeLowerer: projecttypeenv.ProjectTypeEnvCompositeLowererSchemaV2,
+			},
+		},
 	}
 	for _, testCase := range testCases {
 		t.Run(testCase.name, func(t *testing.T) {
@@ -149,12 +175,14 @@ func TestPackageOwnedCatalogsAddBaseV5WithoutRelabelingBaseV4(t *testing.T) {
 		})
 	}
 	if baseV4Genesis.digest == baseV5Genesis.digest ||
-		baseV4Transition.digest == baseV5Transition.digest {
-		t.Fatal("Base-v4 and Base-v5 catalog identities collapsed")
+		baseV5Genesis.digest == baseV6Genesis.digest ||
+		baseV4Transition.digest == baseV5Transition.digest ||
+		baseV5Transition.digest == baseV6Transition.digest {
+		t.Fatal("distinct Base compiler catalog identities collapsed")
 	}
 }
 
-func TestTrustedStageEditionCatalogRoutingSelectsBaseV5AndKeepsBaseV4Exact(
+func TestTrustedStageEditionCatalogRoutingSelectsBaseV6AndKeepsEarlierBasesExact(
 	t *testing.T,
 ) {
 	genesis := projecttypeenvselection.NewGenesisStagePredecessor()
@@ -179,6 +207,12 @@ func TestTrustedStageEditionCatalogRoutingSelectsBaseV5AndKeepsBaseV4Exact(
 			want:         currentBaseV5GenesisTrustedStageEditionCatalog().digest,
 		},
 		{
+			name:         "Base-v6 Genesis",
+			predecessor:  genesis,
+			baseCompiler: typeenv.BaseTypeEnvCompilerSchemaV6,
+			want:         currentBaseV6GenesisTrustedStageEditionCatalog().digest,
+		},
+		{
 			name:         "Base-v4 Transition",
 			predecessor:  transition,
 			baseCompiler: typeenv.BaseTypeEnvCompilerSchemaV4,
@@ -189,6 +223,12 @@ func TestTrustedStageEditionCatalogRoutingSelectsBaseV5AndKeepsBaseV4Exact(
 			predecessor:  transition,
 			baseCompiler: typeenv.BaseTypeEnvCompilerSchemaV5,
 			want:         currentBaseV5TransitionTrustedStageEditionCatalog().digest,
+		},
+		{
+			name:         "Base-v6 Transition",
+			predecessor:  transition,
+			baseCompiler: typeenv.BaseTypeEnvCompilerSchemaV6,
+			want:         currentBaseV6TransitionTrustedStageEditionCatalog().digest,
 		},
 	}
 	for _, testCase := range testCases {

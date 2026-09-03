@@ -261,9 +261,9 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 	}
 	descriptionSet := descriptionResult.(CandidateSet)
 	assertDefaultConcernRoles(t, descriptionSet)
-	if !candidateSetHasUnitID(descriptionSet, "readme:practical_use_card:description-use") ||
+	if !candidateSetHasUnitID(descriptionSet, "spec:toc_row:a-6-h") ||
 		!candidateSetHasRole(descriptionSet, SourceUnitRoleTOCRow) {
-		t.Fatalf("description/carrier navigation omits DESCRIPTION-USE card or ToC: %#v", descriptionSet.Groups)
+		t.Fatalf("description/carrier navigation omits the current A.6.H ToC route: %#v", descriptionSet.Groups)
 	}
 
 	targetResult, err := Query(index, ConcernQuery{Text: "What is the target system here?"})
@@ -276,7 +276,6 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 	assertNavigationExpansionGround(t, recognitionCard, "system")
 	assertCandidateDirectRefs(t, recognitionCard, []string{
 		"A.1.SCR",
-		"A.1",
 	})
 	delimitationCard := findSourceCandidateByUnitID(t, targetSet, "readme:practical_use_card:system-delimitation")
 	assertNavigationExpansionGround(t, delimitationCard, "system")
@@ -284,10 +283,8 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 		"B.1.2",
 		"A.14",
 		"C.13",
-		"A.1",
 		"C.11",
 		"C.32.PAD",
-		"C.2.1",
 		"A.22",
 	})
 	targetWitness := findSourceCandidateByPatternID(t, targetSet, "C.26")
@@ -308,18 +305,10 @@ func TestSQLiteQueryIndex_SourceNativeTiersAndExactHydration(t *testing.T) {
 	if err != nil {
 		t.Fatalf("system-vignette concern query error: %v", err)
 	}
-	vignetteSet := vignetteResult.(CandidateSet)
-	assertDefaultConcernRoles(t, vignetteSet)
-	vignetteCard := findSourceCandidateByUnitID(t, vignetteSet, "readme:practical_use_card:system-recognition")
-	assertNavigationExpansionGround(t, vignetteCard, "system")
-	vignetteWitness := findSourceCandidateByPatternID(t, vignetteSet, "A.21")
-	assertProjectedPatternBodyPhraseGround(
-		t,
-		vignetteWitness,
-		"system vignette",
-		"A.21",
-		SourcePhraseKindExactProbeSpan,
-	)
+	vignetteAbstention, abstained := vignetteResult.(Abstained)
+	if !abstained || vignetteAbstention.Reason != "insufficient_source_grounded_match" {
+		t.Fatalf("removed system-vignette phrase returned %#v, want source-grounded abstention", vignetteResult)
+	}
 
 	changeResult, err := Query(index, ConcernQuery{
 		Text: "Which exact entities are parts of this system and which relations only cross its boundary?",

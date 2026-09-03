@@ -27,6 +27,7 @@ const (
 	p14ObservationSourceInstalledCLI = "installed_cli_execution"
 	p14ObservationSourceLiveMCP      = "actual_codex_mcp_capture"
 	p14ObservationSourceHostProcess  = "restart_checkpoint_verification"
+	p14ObservationSourceClaudeHost   = "actual_claude_host_proof"
 
 	p14SurfaceOutcomeObserved       = "observed"
 	p14SurfaceOutcomeExecutionError = "execution_error"
@@ -525,6 +526,7 @@ func p14ObservationSourceForSurface(surface string) string {
 		"installed_cli": p14ObservationSourceInstalledCLI,
 		"live_mcp":      p14ObservationSourceLiveMCP,
 		"host_process":  p14ObservationSourceHostProcess,
+		"claude_host":   p14ObservationSourceClaudeHost,
 	}
 	return sources[surface]
 }

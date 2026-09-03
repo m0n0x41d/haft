@@ -66,8 +66,8 @@ func TestBuildPublicationSnapshotRetainsRecognizableGrammarDrift(t *testing.T) {
 	spec := mustReadSourceFixture(t, specPath)
 	mutatedSpec := bytes.Replace(
 		spec,
-		[]byte("- **Template A.**"),
-		[]byte("- **Fresh outcome route.**"),
+		[]byte("- **Situation:**"),
+		[]byte("- **Fresh outcome route:**"),
 		1,
 	)
 	if bytes.Equal(mutatedSpec, spec) {

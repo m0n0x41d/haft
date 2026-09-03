@@ -127,7 +127,7 @@ func currentLocalPracticeTarget(t *testing.T) localpracticeruntime.Target {
 	if err != nil {
 		t.Fatalf("LoadArtifactReadOnlyDB() error = %v", err)
 	}
-	target, err := localpracticeruntime.Build(base, typedmemorycandidates.SourceV1_6())
+	target, err := localpracticeruntime.Build(base, typedmemorycandidates.SourceV1_7())
 	if err != nil {
 		t.Fatalf("Build(current Local-Practice target) error = %v", err)
 	}

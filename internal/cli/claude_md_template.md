@@ -35,7 +35,8 @@ ontology.
 Never collapse:
 
 - object, description, representation, and carrier;
-- method, MethodDescription, WorkPlan, and performed Work;
+- method, MethodDescription, WorkPlan, and performed Work. A skill or pattern
+  carrier does not by itself prove `U.MethodDescription` membership;
 - plan and reality; promise and delivery; claim and evidence;
 - retrieval rank and applicability, recommendation, precedence, or authority;
 - a walkthrough or mantra and the wider constrained structure it explains;
@@ -67,11 +68,10 @@ mcp__haft__haft_query(
 
 For non-English concerns, preserve the operator's original query and add
 `entity_of_concern`, `known_context`, and `intended_use` with precise English or
-FPF terms. Those terms are required, not optional: the bundled source is
-English, a measured 6 of 6 Russian concerns returned zero candidates without
-them, and the same concerns with English `known_context` resolved to the exact
-card at rank 1. Do not translate the query itself into a hidden Haft route or
-invent a bilingual catalog.
+FPF terms already known. A raw concern may return insufficient basis because
+the bundled source is English; keep that diagnostic visible. Do not translate
+the query itself into a hidden Haft route, invent a bilingual catalog, or turn
+an unversioned benchmark observation into a permanent routing rule.
 
 This returns source material, never applicability, selection, recommendation,
 or evidence. Then:
@@ -82,10 +82,23 @@ or evidence. Then:
 3. recover an exact source unit with `mode="lookup"` and its `identifier`, or
    use non-broadening `mode="inspect"` when the identifier must match exactly;
 4. inspect the selected pattern's full Problem frame, Problem, Forces,
-   Solution, ordinary boundary, worked slices, and checklist;
+   Solution, Consequences, ordinary boundary, nearest stronger neighbor,
+   worked slices, and checklist;
 5. select by current condition and exact result kind, not by retrieval score or
    display order;
 6. keep several candidates live or abstain when the basis is insufficient.
+
+When applicability, recommendation, or coordination is current, inspect
+`E.11.PUR` and every evaluated candidate's `Solution`. Judge `problemFrame`,
+`forces`, `solutionConditions`, `ordinaryBoundary`, and
+`resultAndReceivingUse`; aggregate each candidate as `applicable`,
+`inapplicable`, or `insufficientBasis` before recommending. Recommend only an
+applicable candidate after comparing its expected first result with live
+alternatives. Complementary uses may be `unordered`, `partialOrder`, or
+`totalOrder`; pairwise order needs an explicit current basis and never follows
+from rank or catalog order. Use `E.11.PUA` for one selected pattern and close it
+honestly as a newly current subject result, a pre-existing subject with new
+grounding, or an absent expected result with an interim result and return.
 
 README practical-use lists are ordinary walkthroughs, not literal mantra
 objects or `DemonstrativeUnfoldingSlice` instances unless the source says so.
@@ -104,7 +117,8 @@ Haft defines no namesake routing API.
 ## Persistence is conditional
 
 Default to ordinary bounded use: reason in the conversation and produce the
-smallest useful result without creating artifacts.
+smallest useful result without creating artifacts. This is Haft-local
+persistence policy, not permission supplied by FPF.
 
 Persist only when:
 
@@ -259,6 +273,11 @@ continue without it. Never ask for bare `OK`, `yes`, or `да` merely to
 acknowledge evidence, historicity, technical cleanup, or continuation that was
 already authorized.
 
+The Human Gate Brief is Haft-local governance UX; it is not authority. Use
+A.6/A.6.B L/A/D/E unpacking only when one mixed-normativity boundary package is
+actually current. Permission, SpeechAct, readiness, gate, and spec-lifecycle
+claims remain with their direct governing contracts.
+
 Before requesting any human gate, give the operator a self-contained
 **Human Gate Brief** in ordinary language. The operator must not be expected to infer
 hidden state, alternatives, rationale, IDs, or hashes. State:
@@ -313,17 +332,22 @@ The public capabilities are independent entries, not phases:
 | auto | `/h-note` | The operator asks to save a non-binding fact |
 
 Completion of one skill does not imply another must follow. A specialized
-skill may be invoked directly. Local ordered procedures inside a skill are
-MethodDescriptions for that capability, not the order of project work.
+skill may be invoked directly. Choose the minimal current capability set: one
+is normally sufficient; complementary uses may remain unordered unless an
+explicit basis supports a partial or total order. A local ordered procedure may
+describe a method for that capability, but its carrier alone does not prove
+`U.MethodDescription` membership or the order of project work.
 
 Internal routines such as abductive rival generation, L/A/D/E boundary
 unpacking, and semantic fanout review remain inside the relevant public skill;
 they are not separate public entries.
 
-There is no public `h-plan` phase. When composing a plan is current, `h-reason`
-inspects the direct WorkPlan source and returns an ordinary `U.WorkPlan`-shaped
-result conversationally. WorkPlan, performed Work, and manual execution
-authority through a WorkCommission remain distinct.
+There is no public `h-plan` phase. When composing intended-work content is
+current, `h-reason` inspects the direct WorkPlan source and returns a planning
+draft or cue conversationally. Call it a `U.WorkPlan` only when its C.2.1 and
+A.15.2 identity/membership basis is established. Planning content, WorkPlan,
+performed Work, and manual execution authority through a WorkCommission remain
+distinct.
 
 ## Authority and evidence
 

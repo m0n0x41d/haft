@@ -14,6 +14,7 @@ const (
 	p14LoopCleanupBuilderID     = "host.loop-cleanup.v1"
 	p14AgentCodeGraphBuilderID  = "agent.orientation-code-graph.v1"
 	p14AgentMemoryBuilderID     = "agent.orientation-typed-memory.v1"
+	p14AgentFPFBuilderID        = "agent.fpf-pattern-use.v1"
 
 	p14LiveProtocolSemanticSchema = "haft.p14.live-protocol-semantic/v1"
 	p14LiveProtocolSurfaceSchema  = "haft.p14.live-protocol-surface/v1"
@@ -35,11 +36,13 @@ var p14LiveProtocolBuilderIDs = []string{
 	p14LoopCleanupBuilderID,
 	p14AgentCodeGraphBuilderID,
 	p14AgentMemoryBuilderID,
+	p14AgentFPFBuilderID,
 }
 
 var p14AgentOrientationBuilderIDs = []string{
 	p14AgentCodeGraphBuilderID,
 	p14AgentMemoryBuilderID,
+	p14AgentFPFBuilderID,
 }
 
 type p14LiveProtocolPolicy struct {
@@ -63,15 +66,19 @@ type p14LiveProtocolSemanticRequest struct {
 }
 
 type p14LiveProtocolSurface struct {
-	Schema                string                      `json:"schema"`
-	SemanticRequestDigest string                      `json:"semantic_request_digest"`
-	Surface               string                      `json:"surface"`
-	Observer              string                      `json:"observer"`
-	RequiredBindings      []string                    `json:"required_bindings"`
-	CheckIDs              []string                    `json:"check_ids"`
-	Probe                 *p14LiveProtocolProbe       `json:"probe,omitempty"`
-	AgentPrompt           *p14LiveProtocolAgentPrompt `json:"agent_prompt,omitempty"`
-	PersistencePrompt     *p14LiveProtocolAgentPrompt `json:"persistence_prompt,omitempty"`
+	Schema                 string                      `json:"schema"`
+	SemanticRequestDigest  string                      `json:"semantic_request_digest"`
+	Surface                string                      `json:"surface"`
+	Observer               string                      `json:"observer"`
+	RequiredBindings       []string                    `json:"required_bindings"`
+	CheckIDs               []string                    `json:"check_ids"`
+	Probe                  *p14LiveProtocolProbe       `json:"probe,omitempty"`
+	AgentPrompt            *p14LiveProtocolAgentPrompt `json:"agent_prompt,omitempty"`
+	PersistencePrompt      *p14LiveProtocolAgentPrompt `json:"persistence_prompt,omitempty"`
+	SemanticCorpusDigest   string                      `json:"semantic_corpus_digest,omitempty"`
+	SemanticCorpusRevision string                      `json:"semantic_corpus_revision,omitempty"`
+	CandidateVersion       string                      `json:"candidate_version,omitempty"`
+	AgentFPFCases          []p14AgentFPFPatternUseCase `json:"agent_fpf_cases,omitempty"`
 }
 
 type p14LiveProtocolProbe struct {
@@ -409,11 +416,71 @@ func p14LiveProtocolPolicies() map[string]p14LiveProtocolPolicy {
 					p14AgentMemoryIdempotencyKey + ".",
 			},
 		},
+		p14AgentFPFBuilderID: {
+			ScenarioID:     "agent_fpf_pattern_use",
+			BuilderID:      p14AgentFPFBuilderID,
+			ExpectedEffect: "host_process_observation",
+			PredicateIDs: []string{
+				"p14.agent.fpf.host_generation.v1",
+				"p14.agent.fpf.installed_surface.v1",
+				"p14.agent.fpf.semantic_corpus_bound.v1",
+				"p14.agent.fpf.mechanical_abstention.v1",
+				"p14.agent.fpf.pua_closure.v1",
+				"p14.agent.fpf.pur_five_aspect_aggregate.v1",
+				"p14.agent.fpf.no_rank_selection.v1",
+				"p14.agent.fpf.no_unauthorized_effects.v1",
+				"p14.agent.fpf.claude_same_corpus.v1",
+			},
+			SurfaceObservers: map[string]string{
+				"host_process":  "restart_checkpoint.verify.agent_fpf_pattern_use.v1",
+				"installed_cli": "installed_cli.verify.agent_fpf_pattern_use.v1",
+				"live_mcp":      "actual_codex.verify.agent_fpf_pattern_use.v1",
+				"claude_host":   "actual_claude.verify.agent_fpf_pattern_use.v1",
+			},
+			SurfaceChecks: map[string][]string{
+				"host_process": {
+					"frozen_project_basis_match",
+					"new_process_generation_is_observed",
+				},
+				"installed_cli": {
+					"installed_fpf_surface_observed",
+					"semantic_corpus_digest_bound",
+				},
+				"live_mcp": {
+					"actual_task_tool_call_projection_bound",
+					"captured_response_digest_bound",
+					"agent_prompt_transcript_bound",
+					"assistant_final_response_bound",
+					"mechanical_control_made_no_fpf_call",
+					"single_candidate_inspected_pua_and_direct_pattern",
+					"multi_candidate_inspected_pur_and_every_candidate",
+					"five_aspect_aggregate_and_no_rank_selection_bound",
+					"zero_unauthorized_effects_bound",
+					"closed_agent_fpf_pattern_use",
+				},
+				"claude_host": {
+					"claude_same_corpus_prompts_bound",
+					"claude_assistant_final_responses_bound",
+					"claude_exact_fpf_calls_and_results_bound",
+				},
+			},
+			AgentPrompt: &p14LiveProtocolAgentPrompt{
+				ID:   "agent_fpf_pattern_use_prompt",
+				Text: "Using only the installed Haft guidance and MCP tools available in this task, answer the sealed source-first reasoning case. Do not edit files, persist project memory, bind a decision, grant authority, or select a pattern from retrieval rank.",
+			},
+		},
 	}
 }
 
 func buildP14LiveProtocolScenario(
 	declared scenarioContract,
+) (preparedP14Scenario, error) {
+	return buildP14LiveProtocolScenarioWithCandidateVersion(declared, "")
+}
+
+func buildP14LiveProtocolScenarioWithCandidateVersion(
+	declared scenarioContract,
+	candidateVersion string,
 ) (preparedP14Scenario, error) {
 	policies := p14LiveProtocolPolicies()
 	policy, present := policies[declared.RequestBuilder]
@@ -458,7 +525,28 @@ func buildP14LiveProtocolScenario(
 			CheckIDs:              slices.Clone(policy.SurfaceChecks[surface]),
 			Probe:                 probeRef,
 		}
-		if surface == "live_mcp" && policy.AgentPrompt != nil {
+		if declared.ID == "agent_fpf_pattern_use" {
+			cases, corpusDigest, corpusRevision, caseErr :=
+				loadP14AgentFPFPatternUseCases()
+			if caseErr != nil {
+				return preparedP14Scenario{}, caseErr
+			}
+			if candidateVersion != "" {
+				cases, caseErr = sealP14AgentFPFCandidateVersion(
+					cases,
+					candidateVersion,
+				)
+				if caseErr != nil {
+					return preparedP14Scenario{}, caseErr
+				}
+				payload.CandidateVersion = candidateVersion
+			}
+			payload.AgentFPFCases = cases
+			payload.SemanticCorpusDigest = corpusDigest
+			payload.SemanticCorpusRevision = corpusRevision
+		}
+		if (surface == "live_mcp" || surface == "claude_host") &&
+			policy.AgentPrompt != nil {
 			copiedPrompt := *policy.AgentPrompt
 			payload.AgentPrompt = &copiedPrompt
 		}
@@ -561,6 +649,18 @@ func validateP14LiveProtocolPolicy(
 			declared.ID,
 		)
 	}
+	if declared.ID == "agent_fpf_pattern_use" {
+		cases, digest, revision, err := loadP14AgentFPFPatternUseCases()
+		if err != nil {
+			return err
+		}
+		if len(cases) != 4 || !validP14Digest(digest) || revision == "" ||
+			len(policy.SurfaceProbes) != 0 {
+			return fmt.Errorf(
+				"P14 agent FPF semantic corpus binding is invalid",
+			)
+		}
+	}
 	persistencePromptExpected := declared.ID ==
 		"agent_typed_memory_orientation"
 	if persistencePromptExpected &&
@@ -585,7 +685,38 @@ func validateP14LiveProtocolPreparedScenario(
 	declared scenarioContract,
 	scenario preparedP14Scenario,
 ) error {
-	expected, err := buildP14LiveProtocolScenario(declared)
+	candidateVersion := ""
+	if declared.ID == "agent_fpf_pattern_use" {
+		for _, request := range scenario.Requests {
+			var surface p14LiveProtocolSurface
+			if err := decodeP14StrictCompactJSON(
+				request.CanonicalPayload,
+				&surface,
+				"P14 agent FPF prepared surface",
+			); err != nil {
+				return err
+			}
+			if candidateVersion == "" {
+				candidateVersion = surface.CandidateVersion
+			}
+			if surface.CandidateVersion != candidateVersion {
+				return fmt.Errorf("P14 agent FPF candidate version differs across surfaces")
+			}
+			for _, testCase := range surface.AgentFPFCases {
+				validator := validateP14AgentFPFPatternUseCase
+				if candidateVersion != "" {
+					validator = validateP14SealedAgentFPFPatternUseCase
+				}
+				if err := validator(testCase); err != nil {
+					return err
+				}
+			}
+		}
+	}
+	expected, err := buildP14LiveProtocolScenarioWithCandidateVersion(
+		declared,
+		candidateVersion,
+	)
 	if err != nil {
 		return err
 	}

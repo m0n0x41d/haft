@@ -15,9 +15,16 @@ const BaseTypeEnvCompilerSchemaV3 = "fpf-base-typeenv.cov2.v3"
 // families. Current source does not silently relabel its artifacts.
 const BaseTypeEnvCompilerSchemaV4 = "fpf-base-typeenv.cov2.v4"
 
-// BaseTypeEnvCompilerSchemaV5 identifies the current source-to-B compiler
-// interpretation used by CompileBaseTypeEnv. It recognizes the explicit
-// covered-claim semantics of C.2.1 empirical grounding while keeping the
-// covered subgraph outside the two participant SlotSpecs. This is an
-// implementation edition, not a source revision or a TypeEnv selection act.
-const BaseTypeEnvCompilerSchemaV5 = baseTypeEnvCompilerSchema
+// BaseTypeEnvCompilerSchemaV5 remains the historical compiler edition that
+// recognized the explicit covered-claim semantics of C.2.1 empirical
+// grounding and the predecessor C.3 source contracts. Current source does not
+// silently relabel its artifacts.
+const BaseTypeEnvCompilerSchemaV5 = "fpf-base-typeenv.cov2.v5"
+
+// BaseTypeEnvCompilerSchemaV6 identifies the current source-to-B compiler
+// interpretation used by CompileBaseTypeEnv. It distinguishes classification
+// admissibility from judgement, treats KindBridge as a direct relation, and
+// recognizes KindUseAdaptationDeclaration as the current C.3.4 contract. This
+// is an implementation edition, not a source revision or a TypeEnv selection
+// act.
+const BaseTypeEnvCompilerSchemaV6 = baseTypeEnvCompilerSchema

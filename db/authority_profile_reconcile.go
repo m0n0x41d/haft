@@ -4,10 +4,12 @@ import (
 	"crypto/sha256"
 	"database/sql"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"hash"
 	"reflect"
 	"slices"
+	"sort"
 	"strings"
 )
 
@@ -529,19 +531,52 @@ func verifyRequiredColumns(
 }
 
 func verifyForeignKeys(tx MigrationTransaction) error {
+	_, err := RequireOnlyAdmittedLegacyForeignKeyWitnesses(tx)
+	return err
+}
+
+// LegacyDecisionSpecSectionForeignKeyWitness is the stable logical identity
+// of one admitted historical DecisionRecord -> SpecSection projection. SQLite
+// rowids are intentionally excluded because VACUUM may reassign them.
+type LegacyDecisionSpecSectionForeignKeyWitness struct {
+	DecisionRef string
+	SectionRef  string
+}
+
+// RequireOnlyAdmittedLegacyForeignKeyWitnesses validates the complete
+// foreign-key witness set and returns the exact legacy projections that may be
+// preserved. Every other foreign-key violation remains fail-closed.
+func RequireOnlyAdmittedLegacyForeignKeyWitnesses(
+	tx MigrationTransaction,
+) ([]LegacyDecisionSpecSectionForeignKeyWitness, error) {
 	rows, err := tx.Query("PRAGMA foreign_key_check")
 	if err != nil {
-		return fmt.Errorf("verify reconciled schema foreign keys: %w", err)
+		return nil, fmt.Errorf("verify reconciled schema foreign keys: %w", err)
 	}
 	violations, err := loadForeignKeyViolations(rows, nil)
 	closeErr := rows.Close()
 	if err != nil {
-		return fmt.Errorf("read reconciled schema foreign-key violation: %w", err)
+		return nil, fmt.Errorf("read reconciled schema foreign-key violation: %w", err)
 	}
 	if closeErr != nil {
-		return fmt.Errorf("close reconciled schema foreign-key scan: %w", closeErr)
+		return nil, fmt.Errorf("close reconciled schema foreign-key scan: %w", closeErr)
 	}
-	return verifyForeignKeyViolations(tx, violations, 0)
+	witnesses, err := collectAdmittedLegacyForeignKeyWitnesses(
+		tx,
+		violations,
+		0,
+		nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+	sort.Slice(witnesses, func(left int, right int) bool {
+		if witnesses[left].DecisionRef != witnesses[right].DecisionRef {
+			return witnesses[left].DecisionRef < witnesses[right].DecisionRef
+		}
+		return witnesses[left].SectionRef < witnesses[right].SectionRef
+	})
+	return witnesses, nil
 }
 
 type foreignKeyViolation struct {
@@ -570,24 +605,36 @@ func loadForeignKeyViolations(
 	return loadForeignKeyViolations(rows, append(accumulator, violation))
 }
 
-func verifyForeignKeyViolations(
+func collectAdmittedLegacyForeignKeyWitnesses(
 	tx MigrationTransaction,
 	violations []foreignKeyViolation,
 	index int,
-) error {
+	witnesses []LegacyDecisionSpecSectionForeignKeyWitness,
+) ([]LegacyDecisionSpecSectionForeignKeyWitness, error) {
 	if index >= len(violations) {
-		return nil
+		return witnesses, nil
 	}
 	violation := violations[index]
-	admitted, err := isLegacyDecisionSpecSectionProjection(tx, violation)
+	witness, admitted, err := legacyDecisionSpecSectionProjectionWitness(
+		tx,
+		violation,
+	)
 	if err != nil {
-		return fmt.Errorf("verify legacy DecisionRecord SpecSection projection: %w", err)
+		return nil, fmt.Errorf(
+			"verify legacy DecisionRecord SpecSection projection: %w",
+			err,
+		)
 	}
 	if admitted {
-		return verifyForeignKeyViolations(tx, violations, index+1)
+		return collectAdmittedLegacyForeignKeyWitnesses(
+			tx,
+			violations,
+			index+1,
+			append(witnesses, witness),
+		)
 	}
-	return fmt.Errorf(
-		"verify reconciled schema foreign keys: table %s row %v violates parent %s foreign key %d",
+	return nil, fmt.Errorf(
+		"verify reconciled schema foreign keys: foreign-key violation in table %s row %v violates parent %s foreign key %d",
 		violation.table,
 		violation.rowID,
 		violation.parent,
@@ -606,33 +653,45 @@ func isLegacyDecisionSpecSectionProjection(
 	tx MigrationTransaction,
 	violation foreignKeyViolation,
 ) (bool, error) {
+	_, admitted, err := legacyDecisionSpecSectionProjectionWitness(
+		tx,
+		violation,
+	)
+	return admitted, err
+}
+
+func legacyDecisionSpecSectionProjectionWitness(
+	tx MigrationTransaction,
+	violation foreignKeyViolation,
+) (LegacyDecisionSpecSectionForeignKeyWitness, bool, error) {
 	if violation.table != "artifact_links" ||
 		violation.parent != "artifacts" ||
 		violation.foreignKeyID != 0 {
-		return false, nil
+		return LegacyDecisionSpecSectionForeignKeyWitness{}, false, nil
 	}
-	var count int
+	var witness LegacyDecisionSpecSectionForeignKeyWitness
 	err := tx.QueryRow(`
-		SELECT EXISTS (
-			SELECT 1
-			FROM artifact_links AS link
-			JOIN artifacts AS source
-				ON source.id = link.source_id
-			JOIN json_each(json_extract(source.structured_data, '$.section_refs')) AS section_ref
-				ON section_ref.value = link.target_id
-				AND section_ref.type = 'text'
-			WHERE link.rowid = ?
-				AND link.link_type = 'governs'
-				AND source.kind = 'DecisionRecord'
-				AND json_valid(source.structured_data) = 1
-				AND json_type(source.structured_data, '$.section_refs') = 'array'
-		)`,
+		SELECT link.source_id, link.target_id
+		FROM artifact_links AS link
+		JOIN artifacts AS source
+			ON source.id = link.source_id
+		JOIN json_each(json_extract(source.structured_data, '$.section_refs')) AS section_ref
+			ON section_ref.value = link.target_id
+			AND section_ref.type = 'text'
+		WHERE link.rowid = ?
+			AND link.link_type = 'governs'
+			AND source.kind = 'DecisionRecord'
+			AND json_valid(source.structured_data) = 1
+			AND json_type(source.structured_data, '$.section_refs') = 'array'`,
 		violation.rowID,
-	).Scan(&count)
-	if err != nil {
-		return false, err
+	).Scan(&witness.DecisionRef, &witness.SectionRef)
+	if errors.Is(err, sql.ErrNoRows) {
+		return LegacyDecisionSpecSectionForeignKeyWitness{}, false, nil
 	}
-	return count == 1, nil
+	if err != nil {
+		return LegacyDecisionSpecSectionForeignKeyWitness{}, false, err
+	}
+	return witness, true, nil
 }
 
 func quoteSQLiteIdentifier(value string) string {

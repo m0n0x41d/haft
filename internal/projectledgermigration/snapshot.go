@@ -26,6 +26,7 @@ func createServeMigrationSnapshot(
 	beforeSchema int,
 	afterSchema int,
 	at time.Time,
+	expectedWitnesses []db.LegacyDecisionSpecSectionForeignKeyWitness,
 ) (serveMigrationSnapshot, error) {
 	if at.IsZero() {
 		return serveMigrationSnapshot{}, fmt.Errorf(
@@ -69,6 +70,7 @@ func createServeMigrationSnapshot(
 		partialPath,
 		request,
 		beforeSchema,
+		expectedWitnesses,
 	); err != nil {
 		return serveMigrationSnapshot{}, err
 	}
@@ -173,6 +175,7 @@ func verifyServeMigrationSnapshot(
 	path string,
 	request Request,
 	expectedSchema int,
+	expectedWitnesses []db.LegacyDecisionSpecSectionForeignKeyWitness,
 ) error {
 	if err := requireSecureSnapshotFile(path); err != nil {
 		return err
@@ -189,10 +192,11 @@ func verifyServeMigrationSnapshot(
 		return fmt.Errorf("open serve migration snapshot: %w", err)
 	}
 	defer database.Close()
-	if err := requireHealthyProjectDatabase(
+	if err := requirePreservedProjectDatabaseWitnesses(
 		ctx,
 		database,
 		"serve migration snapshot verification",
+		expectedWitnesses,
 	); err != nil {
 		return err
 	}

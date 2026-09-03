@@ -250,7 +250,7 @@ func buildProjectMemoryRuntimeBasisAtSources(
 	}
 	target, err := localpracticeruntime.Build(
 		base.Artifact(),
-		typedmemorycandidates.SourceV1_6(),
+		typedmemorycandidates.SourceV1_7(),
 	)
 	if err != nil {
 		return projectMemoryRuntimeBasis{}, fmt.Errorf(
@@ -400,6 +400,7 @@ func installedLocalPracticeSources() ([][]byte, error) {
 		typedmemorycandidates.SourceV1_4(),
 		typedmemorycandidates.SourceV1_5(),
 		typedmemorycandidates.SourceV1_6(),
+		typedmemorycandidates.SourceV1_7(),
 	}
 	result := make([][]byte, 0, len(known))
 	for index, source := range known {

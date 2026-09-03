@@ -47,6 +47,8 @@ type p14CodexSessionHistoryCallBinding struct {
 	EndLineDigest          string `json:"end_line_digest"`
 	PromptLine             int    `json:"prompt_line,omitempty"`
 	PromptLineDigest       string `json:"prompt_line_digest,omitempty"`
+	AssistantLine          int    `json:"assistant_line,omitempty"`
+	AssistantLineDigest    string `json:"assistant_line_digest,omitempty"`
 	ExchangeEvidenceDigest string `json:"exchange_evidence_digest"`
 }
 
@@ -73,6 +75,13 @@ type p14CodexMemoryBasisProof struct {
 }
 
 type p14CodexSessionUserEvent struct {
+	Line       int
+	LineDigest string
+	TurnID     string
+	Text       string
+}
+
+type p14CodexSessionAssistantEvent struct {
 	Line       int
 	LineDigest string
 	TurnID     string
@@ -345,6 +354,7 @@ func deriveP14CodexSessionHistoryEvidence(
 	}
 	lines := bytes.Split(raw, []byte{'\n'})
 	users := make(map[string][]p14CodexSessionUserEvent)
+	assistants := make(map[string][]p14CodexSessionAssistantEvent)
 	begins := make(map[string]p14CodexSessionToolBegin)
 	ends := make(map[string]p14CodexSessionToolEvent)
 	candidateBegins := make([]string, 0)
@@ -390,6 +400,18 @@ func deriveP14CodexSessionHistoryEvidence(
 			currentTurnID = user.TurnID
 			users[user.TurnID] = append(users[user.TurnID], user)
 			continue
+		}
+		assistant, present := p14CodexSessionAssistantFromLine(
+			root,
+			currentTurnID,
+			lineNumber,
+			lineDigest,
+		)
+		if present {
+			assistants[assistant.TurnID] = append(
+				assistants[assistant.TurnID],
+				assistant,
+			)
 		}
 		counter, present := p14CodexSessionFunctionCallCounter(
 			root,
@@ -480,6 +502,12 @@ func deriveP14CodexSessionHistoryEvidence(
 		0,
 		len(input.Calls),
 	)
+	lastEndLineByTurn := make(map[string]int)
+	for _, tool := range ends {
+		if tool.Line > lastEndLineByTurn[tool.TurnID] {
+			lastEndLineByTurn[tool.TurnID] = tool.Line
+		}
+	}
 	for index, evidence := range input.Calls {
 		planned := packet.Packet.Calls[index]
 		callID := evidence.Transcript.ToolCallID
@@ -528,6 +556,18 @@ func deriveP14CodexSessionHistoryEvidence(
 			}
 			binding.PromptLine = prompt.Line
 			binding.PromptLineDigest = prompt.LineDigest
+			if evidence.AgentResponse != nil {
+				assistant, err := selectP14CodexSessionAssistant(
+					assistants[tool.TurnID],
+					*evidence.AgentResponse,
+					lastEndLineByTurn[tool.TurnID],
+				)
+				if err != nil {
+					return p14CodexSessionHistoryEvidence{}, err
+				}
+				binding.AssistantLine = assistant.Line
+				binding.AssistantLineDigest = assistant.LineDigest
+			}
 		}
 		bindings = append(bindings, binding)
 	}
@@ -661,6 +701,71 @@ func p14CodexSessionUserFromLine(
 		TurnID:     turnID,
 		Text:       texts[0],
 	}, true
+}
+
+func p14CodexSessionAssistantFromLine(
+	root map[string]any,
+	currentTurnID string,
+	line int,
+	lineDigest string,
+) (p14CodexSessionAssistantEvent, bool) {
+	if p14JSONText(root["type"]) != "response_item" {
+		return p14CodexSessionAssistantEvent{}, false
+	}
+	payload := p14JSONMap(root["payload"])
+	if p14JSONText(payload["type"]) != "message" ||
+		p14JSONText(payload["role"]) != "assistant" {
+		return p14CodexSessionAssistantEvent{}, false
+	}
+	metadata := p14JSONMap(
+		payload["internal_chat_message_metadata_passthrough"],
+	)
+	turnID := p14JSONText(metadata["turn_id"])
+	if turnID == "" {
+		turnID = currentTurnID
+	}
+	texts := make([]string, 0, 1)
+	for _, raw := range p14JSONArray(payload["content"]) {
+		item := p14JSONMap(raw)
+		if p14JSONText(item["type"]) != "output_text" {
+			continue
+		}
+		if text, ok := item["text"].(string); ok && text != "" {
+			texts = append(texts, text)
+		}
+	}
+	if turnID == "" || len(texts) != 1 {
+		return p14CodexSessionAssistantEvent{}, false
+	}
+	return p14CodexSessionAssistantEvent{
+		Line:       line,
+		LineDigest: lineDigest,
+		TurnID:     turnID,
+		Text:       texts[0],
+	}, true
+}
+
+func selectP14CodexSessionAssistant(
+	candidates []p14CodexSessionAssistantEvent,
+	expected p14CodexMCPAssistantTranscriptProjection,
+	lastToolLine int,
+) (p14CodexSessionAssistantEvent, error) {
+	matches := make([]p14CodexSessionAssistantEvent, 0, 1)
+	for _, candidate := range candidates {
+		if candidate.Line > lastToolLine &&
+			candidate.TurnID == expected.TurnID &&
+			candidate.Text == expected.TextCanonical &&
+			p14Digest([]byte(candidate.Text)) == expected.TextDigest {
+			matches = append(matches, candidate)
+		}
+	}
+	if len(matches) != 1 {
+		return p14CodexSessionAssistantEvent{}, fmt.Errorf(
+			"P14 Codex session assistant response match count is %d",
+			len(matches),
+		)
+	}
+	return matches[0], nil
 }
 
 func p14CodexSessionFunctionCallCounter(
@@ -1073,6 +1178,7 @@ func validateP14CodexSessionHistoryEvidence(
 	for index, binding := range evidence.CallBindings {
 		call := input.Calls[index]
 		promptExpected := call.AgentPrompt != nil
+		assistantExpected := call.AgentResponse != nil
 		if binding.Sequence != call.Sequence ||
 			binding.ToolCallID != call.Transcript.ToolCallID ||
 			binding.TurnID != call.Transcript.TurnID ||
@@ -1082,7 +1188,9 @@ func validateP14CodexSessionHistoryEvidence(
 			!validP14Digest(binding.EndLineDigest) ||
 			!validP14Digest(binding.ExchangeEvidenceDigest) ||
 			(binding.PromptLine > 0) != promptExpected ||
-			(binding.PromptLineDigest != "") != promptExpected {
+			(binding.PromptLineDigest != "") != promptExpected ||
+			(binding.AssistantLine > 0) != assistantExpected ||
+			(binding.AssistantLineDigest != "") != assistantExpected {
 			return fmt.Errorf(
 				"P14 Codex session history call binding differs",
 			)
@@ -1093,10 +1201,18 @@ func validateP14CodexSessionHistoryEvidence(
 				"P14 Codex session prompt binding differs",
 			)
 		}
+		if assistantExpected &&
+			(!validP14Digest(binding.AssistantLineDigest) ||
+				binding.AssistantLine <= binding.EndLine) {
+			return fmt.Errorf(
+				"P14 Codex session assistant binding differs",
+			)
+		}
 		for _, line := range []int{
 			binding.BeginLine,
 			binding.EndLine,
 			binding.PromptLine,
+			binding.AssistantLine,
 		} {
 			if line == 0 {
 				continue
@@ -1709,6 +1825,19 @@ func syntheticP14CodexSessionJSONL(
 					),
 				)
 			}
+			if response := p14CodexSyntheticAssistantForTurn(
+				input.Calls,
+				group[0].Transcript.TurnID,
+			); response != nil {
+				lines = append(
+					lines,
+					syntheticP14CodexSessionAssistantLine(
+						t,
+						group[len(group)-1],
+						*response,
+					),
+				)
+			}
 			index = end
 			continue
 		}
@@ -1731,9 +1860,67 @@ func syntheticP14CodexSessionJSONL(
 				mustP14Time(t, call.Response.CapturedAt),
 			),
 		)
+		nextSharesTurn := index+1 < len(input.Calls) &&
+			input.Calls[index+1].Transcript.TurnID ==
+				call.Transcript.TurnID
+		if !nextSharesTurn {
+			if response := p14CodexSyntheticAssistantForTurn(
+				input.Calls,
+				call.Transcript.TurnID,
+			); response != nil {
+				lines = append(
+					lines,
+					syntheticP14CodexSessionAssistantLine(
+						t,
+						call,
+						*response,
+					),
+				)
+			}
+		}
 		index++
 	}
 	return append(bytes.Join(lines, []byte{'\n'}), '\n')
+}
+
+func p14CodexSyntheticAssistantForTurn(
+	calls []p14CodexMCPCallEvidence,
+	turnID string,
+) *p14CodexMCPAssistantTranscriptProjection {
+	for _, call := range calls {
+		if call.Transcript.TurnID == turnID && call.AgentResponse != nil {
+			return call.AgentResponse
+		}
+	}
+	return nil
+}
+
+func syntheticP14CodexSessionAssistantLine(
+	t *testing.T,
+	lastCall p14CodexMCPCallEvidence,
+	response p14CodexMCPAssistantTranscriptProjection,
+) []byte {
+	t.Helper()
+	return mustP14JSONLine(t, map[string]any{
+		"timestamp": mustP14Time(t, lastCall.Response.CapturedAt).
+			Add(time.Nanosecond).
+			UTC().
+			Format(time.RFC3339Nano),
+		"type": "response_item",
+		"payload": map[string]any{
+			"type": "message",
+			"role": "assistant",
+			"content": []any{
+				map[string]any{
+					"type": "output_text",
+					"text": response.TextCanonical,
+				},
+			},
+			"internal_chat_message_metadata_passthrough": map[string]any{
+				"turn_id": response.TurnID,
+			},
+		},
+	})
 }
 
 func syntheticP14CodexSessionUserLine(

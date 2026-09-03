@@ -18,7 +18,7 @@ import (
 )
 
 const (
-	typedMemoryCandidateCarrierPath           = "../../../data/haft/local-practice/typed-memory/candidates/1.6.0.yaml"
+	typedMemoryCandidateCarrierPath           = "../../../data/haft/local-practice/typed-memory/candidates/1.7.0.yaml"
 	historicalTypedMemoryCandidateCarrierPath = "../../../data/haft/local-practice/typed-memory/candidates/1.4.0.yaml"
 )
 
@@ -42,7 +42,7 @@ func TestTypedMemoryCandidateCarrierParsesCompilesAndSeals(t *testing.T) {
 		t,
 		parsed,
 		base,
-		"haft.typed-memory@1.6.0",
+		"haft.typed-memory@1.7.0",
 	)
 }
 

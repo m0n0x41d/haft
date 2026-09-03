@@ -115,6 +115,11 @@ func TestReleaseCandidateValidationGuardsTrackedArchiveCarriers(t *testing.T) {
 			wantFailure:   "public release carrier is absent from git archive",
 		},
 		{
+			name:          "tracked active successor decision but export ignored",
+			exportIgnored: publicActiveDecisionCarrierPaths[1],
+			wantFailure:   "public release carrier is absent from git archive",
+		},
+		{
 			name:           "present execution plan but untracked",
 			leaveUntracked: publicExecutionCarrierPaths[0],
 			wantFailure:    "public release carrier is not tracked",
@@ -154,12 +159,63 @@ func TestReleaseCandidateValidationGuardsTrackedArchiveCarriers(t *testing.T) {
 
 func TestReleaseWorkflowUsesCandidateGuardForValidationAndPublication(t *testing.T) {
 	workflow := readTruthRepoFile(t, ".github/workflows/release.yml")
-	const invocation = `scripts/release/validate-candidate.sh`
-	if count := strings.Count(workflow, invocation); count != 2 {
+	checks := []struct {
+		step       string
+		invocation string
+	}{
+		{
+			step:       "Require exact main SHA and semver",
+			invocation: `scripts/release/validate-candidate.sh "$version" "$candidate_sha" "$main_sha"`,
+		},
+		{
+			step:       "Verify tag and validation-run lineage",
+			invocation: `scripts/release/validate-candidate.sh "$version" "$tag_sha" "$main_sha"`,
+		},
+		{
+			step:       "Publish the verified sealed bundle",
+			invocation: `../scripts/release/validate-candidate.sh "$version" "$TAG_SHA" "$main_sha"`,
+		},
+	}
+	if count := strings.Count(workflow, "validate-candidate.sh"); count != len(checks) {
 		t.Fatalf(
-			"release workflow candidate guard invocation count = %d, want 2",
+			"release workflow candidate guard invocation count = %d, want %d",
 			count,
+			len(checks),
 		)
+	}
+
+	previousStep := -1
+	previousInvocation := -1
+	for _, check := range checks {
+		stepMarker := "      - name: " + check.step
+		stepStart := strings.Index(workflow, stepMarker)
+		if stepStart < 0 {
+			t.Fatalf("release workflow omits candidate-guard step %q", check.step)
+		}
+		stepEnd := len(workflow)
+		if relativeEnd := strings.Index(
+			workflow[stepStart+len(stepMarker):],
+			"\n      - ",
+		); relativeEnd >= 0 {
+			stepEnd = stepStart + len(stepMarker) + relativeEnd
+		}
+		step := workflow[stepStart:stepEnd]
+		if count := strings.Count(step, check.invocation); count != 1 {
+			t.Fatalf(
+				"release workflow step %q candidate guard count = %d, want 1",
+				check.step,
+				count,
+			)
+		}
+		invocation := stepStart + strings.Index(step, check.invocation)
+		if stepStart <= previousStep || invocation <= previousInvocation {
+			t.Fatalf(
+				"release workflow candidate guard step %q is out of order",
+				check.step,
+			)
+		}
+		previousStep = stepStart
+		previousInvocation = invocation
 	}
 
 	candidateGuard := readTruthRepoFile(t, "scripts/release/validate-candidate.sh")
@@ -168,6 +224,53 @@ func TestReleaseWorkflowUsesCandidateGuardForValidationAndPublication(t *testing
 		`validate-public-release-carriers.sh`,
 	) {
 		t.Fatal("release candidate guard omits public release carrier validation")
+	}
+
+	publicCarrierGuard := readTruthRepoFile(
+		t,
+		"scripts/release/validate-public-release-carriers.sh",
+	)
+	for _, carrier := range publicReleaseCarrierPaths {
+		if count := strings.Count(publicCarrierGuard, `"`+carrier+`"`); count != 1 {
+			t.Fatalf(
+				"public release carrier guard occurrence count for %s = %d, want 1",
+				carrier,
+				count,
+			)
+		}
+	}
+}
+
+func TestCandidateBuildCarriersStampExactVersionAndFullCommit(t *testing.T) {
+	buildScript := readTruthRepoFile(t, "scripts/build.sh")
+	for _, required := range []string{
+		`BUILD_VERSION="${HAFT_BUILD_VERSION:-dev}"`,
+		`git rev-parse HEAD`,
+		`git status --porcelain=v1 --untracked-files=all`,
+		`go build -buildvcs=true`,
+		`internal/cli.Version=${BUILD_VERSION}`,
+		`internal/cli.Commit=${COMMIT}`,
+	} {
+		if !strings.Contains(buildScript, required) {
+			t.Fatalf("candidate build script omits exact identity fragment %q", required)
+		}
+	}
+	if strings.Contains(buildScript, "git rev-parse --short") {
+		t.Fatal("candidate build script still stamps a short Git commit")
+	}
+
+	goReleaser := readTruthRepoFile(t, ".goreleaser.yaml")
+	for _, required := range []string{
+		`-buildvcs=true`,
+		`internal/cli.Version={{ .Version }}`,
+		`internal/cli.Commit={{ .FullCommit }}`,
+	} {
+		if !strings.Contains(goReleaser, required) {
+			t.Fatalf("GoReleaser config omits exact identity fragment %q", required)
+		}
+	}
+	if strings.Contains(goReleaser, "internal/cli.Commit={{ .ShortCommit }}") {
+		t.Fatal("GoReleaser config still stamps a short Git commit")
 	}
 }
 

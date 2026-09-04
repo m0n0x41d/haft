@@ -40,23 +40,23 @@ const (
 	releaseBlockerRelativePath       = ".context/current-plan-issue-report.md"
 	releaseBlockerSpan               = "document:full"
 	releaseBlockerHeading            = "# V9 release blocker: internal FPF Query provenance leaks into MCP working responses"
-	// Предшественник текущей приёмки — голова 4 на FPF 3dbce51, от которой
-	// compatible_successor_policy должен автоматически перевести проект на
-	// следующий exact FPF 036c056e / Base dffe960a. Значения сняты read-only
+	// Предшественник текущей приёмки — голова 5 на FPF 036c056e, от которой
+	// compatible_successor_policy автоматически перевёл проект на
+	// следующий exact FPF 59c4553 / Base 4a6709fc. Значения сняты read-only
 	// из живого project ledger
 	// через LoadExecutableSnapshotTx, а не выведены из прозы.
 	//
 	// Эти константы задают ОДИН принимаемый переход. Тесты рядом параметризованы
 	// ими и продолжают доказывать своё свойство — что произвольный, исторический
 	// или второй переход отвергается, — относительно нового пина.
-	requiredPriorHeadRevision   = int64(4)
-	requiredPriorCompositeRef   = "typeenv:sha256:1e23069cc232c1234dfada5d9059ba23f53ab4f420ee9c6f19d4ecf0b1249e49"
-	requiredPriorBaseRef        = "typeenv:sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc"
-	requiredPriorBaseDigest     = "sha256:1b6b04c14aa43bea396aafdbd810eb0345f7f9e9be37a5aee874a328c3b26efc"
-	requiredPriorFPFRevision    = "3dbce51436bfd718bf49cb0356eebce70c4fc015"
+	requiredPriorHeadRevision   = int64(5)
+	requiredPriorCompositeRef   = "typeenv:sha256:1d084a5f058b5ef68c245b25060e4cedd7a494129f4ba0ffe1cd5bf87f15495e"
+	requiredPriorBaseRef        = "typeenv:sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565"
+	requiredPriorBaseDigest     = "sha256:dffe960ad95df0f16c66c4040dfcb3c20ea19dc1aa1a4d506bb1dae77e514565"
+	requiredPriorFPFRevision    = "036c056e98c38522172c6b7b3ad08214281cc4e4"
 	requiredPriorCompilerSchema = "fpf-base-typeenv.cov2.v5"
-	requiredPriorSnapshotDigest = "sha256:7b27ea39432b698a39da30823927dfc15e9f104e519ed44eb536f47a12e7b59d"
-	requiredPriorLoweredDigest  = "sha256:d1873fe015927dae892d6dc6f0fef7391ff6cb22c2ae7a1bcafbd71bf61a3b66"
+	requiredPriorSnapshotDigest = "sha256:b2cef503f6c6629c64b53ca7cfd722429536844b799522a20768b01eeba7a3e6"
+	requiredPriorLoweredDigest  = "sha256:d198db2c59883470345bdc52f8d7f5b9d76beb1ef9458c6bb701f8bf8046604b"
 	requiredStageSchemaEdition  = "haft.project-typeenv.stage-schema/v5"
 )
 
@@ -1216,9 +1216,9 @@ func requireOneP13Anchor(
 }
 
 func validateIdentitySpec(spec identitySpec) error {
-	if spec.RequiredSchemaVersion != 59 {
+	if spec.RequiredSchemaVersion != 60 {
 		return fmt.Errorf(
-			"P13 schema version = %d, want exactly 59",
+			"P13 schema version = %d, want exactly 60",
 			spec.RequiredSchemaVersion,
 		)
 	}

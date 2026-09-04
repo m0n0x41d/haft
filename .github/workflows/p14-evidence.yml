@@ -1,0 +1,214 @@
+name: P14 Release Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact candidate version, without the v prefix
+        required: true
+        default: '9.2.0'
+        type: string
+      p13_carrier_path:
+        description: Passing P13 carrier under .context/p13
+        required: true
+        type: string
+      prepared_carrier_path:
+        description: Sealed P14 prepared carrier under .context/p14
+        required: true
+        type: string
+      final_carrier_path:
+        description: Passing final installed-observation carrier under .context/p14
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: haft-release-evidence-host
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  native-linux:
+    name: Build and execute ${{ matrix.goos }}-${{ matrix.goarch }} candidate
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - { runner: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { runner: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Require exact current-main candidate
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          git fetch origin main --no-tags
+          bash scripts/release/validate-candidate.sh \
+            "$VERSION" "$GITHUB_SHA" "$(git rev-parse origin/main)"
+
+      - name: Build, execute, and package natively
+        env:
+          VERSION: ${{ inputs.version }}
+          TARGET_OS: ${{ matrix.goos }}
+          TARGET_ARCH: ${{ matrix.goarch }}
+        run: |
+          output="$RUNNER_TEMP/haft-$TARGET_OS-$TARGET_ARCH"
+          stage="$RUNNER_TEMP/p14-native-$TARGET_OS-$TARGET_ARCH"
+          scripts/release/build-native-candidate.sh "$VERSION" "$output"
+          scripts/release/package-native-archive.sh \
+            "$VERSION" "$GITHUB_SHA" "$TARGET_OS" "$TARGET_ARCH" \
+            "$output" "$stage"
+
+      - name: Preserve exact native receipt and archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: p14-native-${{ github.sha }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: ${{ runner.temp }}/p14-native-${{ matrix.goos }}-${{ matrix.goarch }}/
+          if-no-files-found: error
+          retention-days: 1
+
+  assemble:
+    name: Bind installed Darwin candidate and final P14 evidence
+    needs: [native-linux]
+    runs-on: [self-hosted, macOS, ARM64, haft-release]
+    environment: release-evidence
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: p14-native-${{ github.sha }}-linux-*
+          path: ${{ runner.temp }}/p14-native
+          merge-multiple: true
+
+      - name: Require trusted physical candidate and carrier paths
+        env:
+          PROJECT_ROOT: ${{ vars.HAFT_RELEASE_PROJECT_ROOT }}
+          VERSION: ${{ inputs.version }}
+          P13_CARRIER_PATH: ${{ inputs.p13_carrier_path }}
+          PREPARED_CARRIER_PATH: ${{ inputs.prepared_carrier_path }}
+          FINAL_CARRIER_PATH: ${{ inputs.final_carrier_path }}
+        run: |
+          test -n "$PROJECT_ROOT"
+          test "$(cd "$PROJECT_ROOT" && pwd -P)" = "$PROJECT_ROOT"
+          if [[ ! "$P13_CARRIER_PATH" =~ ^\.context/p13/[A-Za-z0-9][A-Za-z0-9._-]*\.json$ ]] ||
+             [[ ! "$PREPARED_CARRIER_PATH" =~ ^\.context/p14/[A-Za-z0-9][A-Za-z0-9._-]*\.json$ ]] ||
+             [[ ! "$FINAL_CARRIER_PATH" =~ ^\.context/p14/[A-Za-z0-9][A-Za-z0-9._-]*\.json$ ]]; then
+            echo "P14 producer carrier path is outside its closed namespace" >&2
+            exit 1
+          fi
+          cd "$PROJECT_ROOT"
+          git fetch origin main --no-tags
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          status_bytes=$(git status --porcelain=v1 --untracked-files=all)
+          test -z "$status_bytes"
+          bash scripts/release/validate-candidate.sh \
+            "$VERSION" "$GITHUB_SHA" "$(git rev-parse origin/main)"
+          printf 'P14_PROJECT_ROOT=%s\n' "$PROJECT_ROOT" >> "$GITHUB_ENV"
+          printf 'P14_P13_CARRIER=%s\n' "$P13_CARRIER_PATH" >> "$GITHUB_ENV"
+          printf 'P14_PREPARED_CARRIER=%s\n' "$PREPARED_CARRIER_PATH" >> "$GITHUB_ENV"
+          printf 'P14_FINAL_CARRIER=%s\n' "$FINAL_CARRIER_PATH" >> "$GITHUB_ENV"
+
+      - name: Package the byte-identical installed Darwin executable
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd "$P14_PROJECT_ROOT"
+          if [ -L "$P14_PREPARED_CARRIER" ] || [ ! -f "$P14_PREPARED_CARRIER" ]; then
+            echo "prepared P14 carrier must be a regular file, not a symlink" >&2
+            exit 1
+          fi
+          installed=$(jq -er \
+            '.preparation.frozen_basis.candidate.executable_path' \
+            "$P14_PREPARED_CARRIER")
+          candidate_root="$P14_PROJECT_ROOT/.context/p14/candidate"
+          test "$(cd "$candidate_root" && pwd -P)" = "$candidate_root"
+          if [ -L "$installed" ] || [ ! -f "$installed" ] || [ ! -x "$installed" ]; then
+            echo "installed candidate must be one executable regular file, not a symlink" >&2
+            exit 1
+          fi
+          physical_installed="$(cd "$(dirname "$installed")" && pwd -P)/$(basename "$installed")"
+          case "$physical_installed" in
+            "$candidate_root"/*) ;;
+            *)
+              echo "installed candidate escapes the trusted candidate root: $installed" >&2
+              exit 1
+              ;;
+          esac
+          expected_digest=$(jq -er \
+            '.preparation.frozen_basis.candidate.executable_digest' \
+            "$P14_PREPARED_CARRIER")
+          actual_digest=$(shasum -a 256 "$physical_installed" | awk '{print "sha256:" $1}')
+          test "$actual_digest" = "$expected_digest"
+          scripts/release/package-native-archive.sh \
+            "$VERSION" "$GITHUB_SHA" darwin arm64 "$physical_installed" \
+            "$RUNNER_TEMP/p14-native"
+
+      - name: Assemble and verify the closed release-evidence bundle
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd "$P14_PROJECT_ROOT"
+          output="$RUNNER_TEMP/p14-final-evidence"
+          scripts/release/assemble-p14-release-evidence.sh \
+            "$P14_PROJECT_ROOT" \
+            "$P14_P13_CARRIER" \
+            "$P14_PREPARED_CARRIER" \
+            "$P14_FINAL_CARRIER" \
+            "$RUNNER_TEMP/p14-native" \
+            "$output" \
+            "$GITHUB_SHA" \
+            "$VERSION"
+
+          bundle="$output/release-evidence.json"
+          p13_digest=$(jq -er '.p13_carrier_digest' "$bundle")
+          final_digest=$(jq -er '.final_carrier_digest' "$bundle")
+          HAFT_P14_VERIFY_RELEASE_EVIDENCE="$bundle" \
+          HAFT_P14_VERIFY_RELEASE_CANDIDATE_SHA="$GITHUB_SHA" \
+          HAFT_P14_VERIFY_RELEASE_VERSION="$VERSION" \
+          HAFT_P14_VERIFY_RELEASE_P13_DIGEST="$p13_digest" \
+          HAFT_P14_VERIFY_RELEASE_FINAL_DIGEST="$final_digest" \
+            bash scripts/release/run-evidence-verifier-test.sh \
+            ./internal/p14acceptance TestP14VerifyReleaseEvidenceBundle
+
+      - name: Preserve non-publishing final P14 evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: p14-final-evidence-${{ github.sha }}
+          path: ${{ runner.temp }}/p14-final-evidence/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

@@ -869,6 +869,16 @@ func assertUpgradeTriggersPreserved(
 			}
 			continue
 		}
+		if len(beforeSQL) == 1 &&
+			len(afterSQL) == 1 &&
+			strings.Contains(beforeSQL[0], "project_ledger_binding") &&
+			afterSQL[0] == strings.ReplaceAll(
+				beforeSQL[0],
+				"project_ledger_binding",
+				projectLedgerCurrentBindingView,
+			) {
+			continue
+		}
 		if !slices.Equal(beforeSQL, afterSQL) {
 			t.Fatalf(
 				"pre-existing trigger %s changed unexpectedly: before=%v after=%v",

@@ -52,7 +52,7 @@ func currentProjectLedgerError(
 	}
 	repair := currentProjectLedgerRepair(projectRoot, projectID, cause)
 	return fmt.Errorf(
-		"haft project database is not ready for %s: %w; run `%s` to %s, then retry; no migration was attempted and no binding recovery was attempted by %s",
+		"haft project database is not ready for %s: %w; run `%s` to %s, then retry; no migration was attempted, no binding recovery was attempted, and no root relocation was attempted by %s",
 		operation,
 		cause,
 		repair.command,
@@ -80,6 +80,19 @@ func currentProjectLedgerRepair(
 		return projectLedgerRepair{
 			command: command,
 			effect:  "recover the exact missing durable binding from a consistent backup",
+		}
+	}
+	var rootMismatch *projectledger.BindingRootMismatchError
+	if errors.As(cause, &rootMismatch) {
+		command := fmt.Sprintf(
+			"haft project relocate --from-root %q --project-root %q --project-id %s",
+			rootMismatch.StoredRoot,
+			projectRoot,
+			projectID,
+		)
+		return projectLedgerRepair{
+			command: command,
+			effect:  "append the exact successor root after creating a verified backup",
 		}
 	}
 	command := fmt.Sprintf(

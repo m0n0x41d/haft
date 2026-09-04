@@ -42,6 +42,8 @@ import (
 	_ "modernc.org/sqlite"
 )
 
+const p13ProjectHomeEnvironmentKey = "HAFT_P13_PROJECT_HOME"
+
 type acceptanceIdentity struct {
 	Schema      string            `json:"schema"`
 	ProjectID   string            `json:"project_id"`
@@ -1836,9 +1838,9 @@ func isExecutableFile(path string) bool {
 }
 
 func openProjectDatabaseReadOnly(projectID string) (*sql.DB, error) {
-	home, err := os.UserHomeDir()
+	home, err := p13ProjectHome()
 	if err != nil {
-		return nil, fmt.Errorf("resolve user home for project database: %w", err)
+		return nil, err
 	}
 	path := filepath.Join(home, ".haft", "projects", projectID, "haft.db")
 	info, err := os.Stat(path)
@@ -1853,6 +1855,52 @@ func openProjectDatabaseReadOnly(projectID string) (*sql.DB, error) {
 		return nil, fmt.Errorf("open project database read-only: %w", err)
 	}
 	return database, nil
+}
+
+func p13ProjectHome() (string, error) {
+	if override, present := os.LookupEnv(p13ProjectHomeEnvironmentKey); present {
+		if override == "" || !filepath.IsAbs(override) || filepath.Clean(override) != override {
+			return "", fmt.Errorf(
+				"%s must be one clean absolute directory",
+				p13ProjectHomeEnvironmentKey,
+			)
+		}
+		info, err := os.Stat(override)
+		if err != nil {
+			return "", fmt.Errorf("inspect P13 project-home override: %w", err)
+		}
+		if !info.IsDir() {
+			return "", fmt.Errorf("P13 project-home override is not a directory")
+		}
+		return override, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve user home for project database: %w", err)
+	}
+	return home, nil
+}
+
+func TestP13ProjectHomeOverrideIsClosed(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv(p13ProjectHomeEnvironmentKey, home)
+	resolved, err := p13ProjectHome()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resolved != home {
+		t.Fatalf("P13 project home = %q, want %q", resolved, home)
+	}
+
+	t.Setenv(p13ProjectHomeEnvironmentKey, "relative")
+	if _, err := p13ProjectHome(); err == nil {
+		t.Fatal("P13 project-home override accepted a relative path")
+	}
+
+	t.Setenv(p13ProjectHomeEnvironmentKey, home+string(os.PathSeparator)+".")
+	if _, err := p13ProjectHome(); err == nil {
+		t.Fatal("P13 project-home override accepted a non-canonical path")
+	}
 }
 
 func openSQLiteReadOnly(path string) (*sql.DB, error) {

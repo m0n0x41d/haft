@@ -111,9 +111,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 	if bindingErr != nil {
 		instructions := composeServerInstructionParts(nil, nil)
 		server.SetInstructions(instructions)
-		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
-			return "", projectBindingError(binding, bindingErr)
-		})
+		server.SetV5Handler(makeProjectUnavailableV5Handler(
+			projectBindingError(binding, bindingErr),
+		))
 		server.Start()
 		return nil
 	}
@@ -133,9 +133,12 @@ func runServe(cmd *cobra.Command, args []string) error {
 	server.SetInstructions(instructions)
 
 	if _, err := os.Stat(binding.DBPath); err != nil {
-		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
-			return "", fmt.Errorf("haft project database is missing; run `haft init` in %s to create %s; %s", binding.ProjectRoot, binding.DBPath, formatProjectBindingDiagnostic(binding))
-		})
+		server.SetV5Handler(makeProjectUnavailableV5Handler(fmt.Errorf(
+			"haft project database is missing; run `haft init` in %s to create %s; %s",
+			binding.ProjectRoot,
+			binding.DBPath,
+			formatProjectBindingDiagnostic(binding),
+		)))
 		server.Start()
 		return nil
 	}
@@ -242,9 +245,9 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	ledger, err := openServeProjectLedger(cmd.Context(), binding)
 	if err != nil {
-		server.SetV5Handler(func(ctx context.Context, toolName string, rawParams json.RawMessage) (string, error) {
-			return "", serveProjectLedgerError(binding, err)
-		})
+		server.SetV5Handler(makeProjectUnavailableV5Handler(
+			serveProjectLedgerError(binding, err),
+		))
 		server.Start()
 		return nil
 	}
@@ -404,13 +407,37 @@ func setServeProjectUnavailableHandlers(
 	}
 	server.SetOnboardHandler(handler)
 	server.SetEntityHandler(handler)
-	server.SetV5Handler(func(
-		context.Context,
-		string,
-		json.RawMessage,
+	server.SetV5Handler(makeProjectUnavailableV5Handler(presented))
+}
+
+// makeProjectUnavailableV5Handler keeps the source-native FPF query lane
+// available when the project-bound ledger cannot be activated. FPF source is
+// bundled independently of a project's SQLite ledger; every other V5 action
+// remains fail-closed behind the exact activation diagnostic.
+func makeProjectUnavailableV5Handler(
+	presented error,
+) fpf.V5ToolHandler {
+	return func(
+		ctx context.Context,
+		toolName string,
+		rawParams json.RawMessage,
 	) (string, error) {
-		return "", presented
-	})
+		if toolName != "haft_query" {
+			return "", presented
+		}
+		var params struct {
+			Name      string         `json:"name"`
+			Arguments map[string]any `json:"arguments"`
+		}
+		if err := json.Unmarshal(rawParams, &params); err != nil {
+			return "", fmt.Errorf("invalid params: %w", err)
+		}
+		action, _ := params.Arguments["action"].(string)
+		if params.Name != "haft_query" || action != "fpf" {
+			return "", presented
+		}
+		return handleEmbeddedFPFQuery(ctx, params.Arguments)
+	}
 }
 
 func serveProjectActivationError(
@@ -446,6 +473,28 @@ func serveProjectActivationError(
 			"haft serve found a binding-aware project database without its exact durable binding: %w; run `%s`, then restart or reconnect the host; no migration was attempted; %s",
 			cause,
 			recoveryCommand,
+			diagnostic,
+		)
+	case projectledgermigration.ServeBlockerRootRelocation:
+		var rootMismatch *projectledger.BindingRootMismatchError
+		if !errors.As(cause, &rootMismatch) {
+			return fmt.Errorf(
+				"haft serve found a project-root mismatch: %w; inspect the exact ledger before retrying; no relocation or migration was attempted; %s",
+				cause,
+				diagnostic,
+			)
+		}
+		relocationCommand := fmt.Sprintf(
+			"haft project relocate --from-root %q --project-root %q --project-id %s",
+			rootMismatch.StoredRoot,
+			binding.ProjectRoot,
+			binding.ProjectID,
+		)
+		return fmt.Errorf(
+			"haft serve found a valid project ledger attached to the previous root %q: %w; if the directory was intentionally moved and the previous root no longer exists, run `%s`, then restart or reconnect the host; no relocation or migration was attempted; %s",
+			rootMismatch.StoredRoot,
+			cause,
+			relocationCommand,
 			diagnostic,
 		)
 	case projectledgermigration.ServeBlockerFutureSchema:
@@ -3084,23 +3133,7 @@ func handleQuintQueryWithCodeIntelAndIdentifierResolvers(
 		return response + navStrip, nil
 
 	case "fpf":
-		request, err := fpfQueryRequestFromArgs(args)
-		if err != nil {
-			return "", err
-		}
-		publicationRequest, err := fpfQueryPublicationRequestFromArgs(args)
-		if err != nil {
-			return "", err
-		}
-		payload, err := encodeEmbeddedFPFQuery(
-			request,
-			publicationRequest,
-			fpf.PublishedQueryJSONCompact,
-		)
-		if err != nil {
-			return "", fmt.Errorf("FPF query: %w", err)
-		}
-		return string(payload), nil
+		return handleEmbeddedFPFQuery(ctx, args)
 
 	case "check":
 		projectRoot := filepath.Dir(haftDir)
@@ -3424,6 +3457,29 @@ func handleQuintQueryWithCodeIntelAndIdentifierResolvers(
 	default:
 		return "", fmt.Errorf("unknown action %q — use 'search', 'status', 'related', 'code_context', 'callees', 'callers', 'impact', 'node', 'explore', 'ceremony', 'projection', 'list', 'coverage', 'fpf', 'check', 'carrier_manifest', 'carrier_check', 'contract_audit', 'contract_generation', 'spec_review', 'spec_validate', 'spec_use', 'spec_trace', 'spec_binding_preflight', 'spec_fit_probe', 'change_case', 'correspondence_graph', 'drift_route', 'drift_events', 'decision_reconcile', 'governing_set', 'blocked_use', 'value_space', 'evidence_path', or 'resolve_term'", action)
 	}
+}
+
+func handleEmbeddedFPFQuery(
+	_ context.Context,
+	args map[string]any,
+) (string, error) {
+	request, err := fpfQueryRequestFromArgs(args)
+	if err != nil {
+		return "", err
+	}
+	publicationRequest, err := fpfQueryPublicationRequestFromArgs(args)
+	if err != nil {
+		return "", err
+	}
+	payload, err := encodeEmbeddedFPFQuery(
+		request,
+		publicationRequest,
+		fpf.PublishedQueryJSONCompact,
+	)
+	if err != nil {
+		return "", fmt.Errorf("FPF query: %w", err)
+	}
+	return string(payload), nil
 }
 
 func statusWithLiveMCPReceipt(projectRoot string, response string) (string, error) {

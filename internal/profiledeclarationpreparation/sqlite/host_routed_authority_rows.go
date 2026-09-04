@@ -254,7 +254,9 @@ func loadProjectBindingDigest(
 	raw := ""
 	err := transaction.ScanOne(
 		ctx,
-		`SELECT binding_digest FROM project_ledger_binding WHERE project_root = ?`,
+		`SELECT binding_digest
+		 FROM project_ledger_current_binding
+		 WHERE project_root = ?`,
 		[]any{root.String()},
 		[]any{&raw},
 	)

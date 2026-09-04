@@ -6,8 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [9.2.0] — 2026-09-03
+
+[v9.2.0](https://github.com/m0n0x41d/haft/releases/tag/v9.2.0) is the prepared
+minor successor to
+[v9.1.0](https://github.com/m0n0x41d/haft/releases/tag/v9.1.0). Publication is
+still conditional on fresh exact-candidate P13 and installed-runtime P14
+evidence and a separate release-authority act.
+
 ### Added
 
+- **Moved project directories can be reattached without rewriting their
+  identity history.** `haft project relocate` requires the exact previous
+  root, current root, and project ID; refuses to choose while the previous root
+  still exists; creates and verifies a mode-0600 SQLite backup; and appends one
+  digest-chained successor root. The immutable genesis binding and sealed
+  historical root records remain unchanged. The host must be restarted or
+  reconnected after the operation.
 - **A deterministic, source-pinned `h-reason` corpus prepares semantic
   qualification.** Twenty-one scenarios cover ordinary abstention, single- and
   multi-pattern use, insufficient and inapplicable candidates, complementary
@@ -21,12 +36,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   digest identities; verifies source-run lineage; rechecks the P13 basis and
   final installed-observation carrier; seals one validation bundle; and
   verifies that bundle again at publication time. Tag pushes cannot bypass the
-  evidence-bound dispatch. The trusted P13-basis and P14 producer workflows
-  are intentionally absent from this candidate, so publication remains
-  fail-closed until those producers and fresh evidence exist.
+  evidence-bound dispatch. The candidate now includes trusted P13-basis and
+  P14 producer workflows. Root-bound P13 runs and P13 reverification execute on
+  one configured self-hosted macOS/ARM64 checkout; P14 additionally requires
+  native exact-version receipts for Linux amd64, Linux arm64, and the
+  byte-identical installed Darwin arm64 executable. These workflows transport
+  evidence but do not create a passing P13/P14 claim until the final clean
+  candidate actually runs them.
 
 ### Fixed
 
+- **Embedded FPF Query remains available when the project ledger cannot be
+  activated.** `haft_query(action="fpf")` now reads the bundled publication
+  even when the project database uses a newer schema or its directory has not
+  yet been reattached. Every project-backed action keeps the original
+  fail-closed activation error, so this fallback grants no project-memory,
+  code-index, or mutation access.
 - **A uniquely proven identifier-namespace mismatch now returns one executable
   read-only recovery call.** `haft_query` distinguishes artifact, FPF source,
   current code-index, and typed-memory identifiers. The structured
@@ -67,6 +92,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- **Kernel schema 60 adds append-only project-root relocation.** Ordinary
+  attached projects migrate from schema 59 only after a verified snapshot.
+  Active project-root guards follow the relocation lineage head; the original
+  binding and sealed historical rows retain their exact recorded roots. This
+  migration does not change typed-memory writer generation 54.
 - **`h-reason` now applies source-first E.11.PUA and E.11.PUR semantics across
   canonical, Pi, and managed host carriers.** Candidate retrieval remains
   distinct from applicability and recommendation. Evaluated candidates receive
@@ -78,12 +108,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Qualification status
 
 - The retained P13 receipt covers an earlier dirty `036c056e` candidate only;
-  it is stale for the current `59c4553` source and code bytes. Fresh P13,
-  installed-runtime P14, RC, tag, publication, and release authority remain
-  pending for the final exact candidate. The two edited specification claims
-  are not current SQL editions; their existing SQL editions still match their
-  baselines, so no approve, reopen, or rebaseline gate is currently open. This
-  changelog entry is neither an edition-import request nor lifecycle evidence.
+  it is stale for the current `59c4553` source and code bytes. The P13 manifest
+  now freezes the automatically activated `59c4553` / `cov2.v6` successor at
+  project TypeEnv head revision 6 and graph revision 12, but the eventual
+  release commit still requires a new root-bound freeze capture, consolidated
+  P13 run, installed-runtime P14 run, and evidence validation. RC, tag,
+  publication, and release authority remain pending. The two edited
+  specification claims are not current SQL editions; their existing SQL
+  editions still match their baselines, so no approve, reopen, or rebaseline
+  gate is currently open. This changelog entry is neither an edition-import
+  request nor lifecycle evidence.
 
 ## [9.1.0] — 2026-08-11
 

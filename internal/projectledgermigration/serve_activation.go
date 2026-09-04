@@ -29,6 +29,7 @@ const (
 	ServeBlockerNone             ServeActivationBlocker = ""
 	ServeBlockerManualChain      ServeActivationBlocker = "manual_chain"
 	ServeBlockerMissingBinding   ServeActivationBlocker = "missing_binding"
+	ServeBlockerRootRelocation   ServeActivationBlocker = "root_relocation"
 	ServeBlockerFutureSchema     ServeActivationBlocker = "future_schema"
 	ServeBlockerInvalidSchema    ServeActivationBlocker = "invalid_schema"
 	ServeBlockerLeaseTimeout     ServeActivationBlocker = "lease_timeout"
@@ -320,6 +321,10 @@ func blockedServeObservation(
 func classifyServeObservationBlocker(cause error) ServeActivationBlocker {
 	if errors.Is(cause, projectledger.ErrBindingMissing) {
 		return ServeBlockerMissingBinding
+	}
+	var rootMismatch *projectledger.BindingRootMismatchError
+	if errors.As(cause, &rootMismatch) {
+		return ServeBlockerRootRelocation
 	}
 	if errors.Is(cause, projectledger.ErrSQLiteSidecarGenerationChanged) {
 		return ServeBlockerStaleSidecar

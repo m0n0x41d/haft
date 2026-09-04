@@ -84,6 +84,34 @@ func TestCurrentProjectLedgerRepairRoutesMissingBindingToRecovery(
 	}
 
 	repair = currentProjectLedgerRepair(
+		"/current/project",
+		"qnt_12345678",
+		&projectledger.BindingRootMismatchError{
+			StoredProjectID:    "qnt_12345678",
+			StoredRoot:         "/previous/project",
+			RequestedProjectID: "qnt_12345678",
+			RequestedRoot:      "/current/project",
+		},
+	)
+	for _, fragment := range []string{
+		"project relocate",
+		`--from-root "/previous/project"`,
+		`--project-root "/current/project"`,
+		"--project-id qnt_12345678",
+	} {
+		if !strings.Contains(repair.command, fragment) {
+			t.Fatalf(
+				"root-mismatch repair command missing %q: %s",
+				fragment,
+				repair.command,
+			)
+		}
+	}
+	if strings.Contains(repair.command, "recover-binding") {
+		t.Fatalf("root mismatch routes to binding recovery: %q", repair.command)
+	}
+
+	repair = currentProjectLedgerRepair(
 		"/project",
 		"qnt_12345678",
 		errors.New("schema is old"),

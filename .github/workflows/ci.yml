@@ -16,10 +16,15 @@ on:
         description: Workflow run containing the p13-frozen-basis artifact
         required: false
         type: string
+      p13_version:
+        description: Exact candidate version for the manual P13 run
+        required: true
+        default: '9.2.0'
+        type: string
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ${{ (github.event_name == 'workflow_dispatch' && inputs.run_p13) && format('ci-p13-{0}', github.ref) || format('ci-{0}', github.ref) }}
+  cancel-in-progress: ${{ !(github.event_name == 'workflow_dispatch' && inputs.run_p13) }}
 
 jobs:
   test-and-build:
@@ -309,7 +314,11 @@ jobs:
     name: P13 consolidated acceptance
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.run_p13 }}
     timeout-minutes: 60
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, haft-release]
+    environment: release-evidence
+    concurrency:
+      group: haft-release-evidence-host
+      cancel-in-progress: false
     permissions:
       actions: read
       contents: read
@@ -337,6 +346,8 @@ jobs:
       - name: Require an explicit frozen-basis artifact
         env:
           P13_BASIS_RUN_ID: ${{ inputs.p13_basis_run_id }}
+          VERSION: ${{ inputs.p13_version }}
+          PROJECT_ROOT: ${{ vars.HAFT_RELEASE_PROJECT_ROOT }}
         run: |
           test -n "$P13_BASIS_RUN_ID"
           case "$P13_BASIS_RUN_ID" in
@@ -345,6 +356,31 @@ jobs:
               exit 1
               ;;
           esac
+          test -n "$PROJECT_ROOT"
+          test "$(cd "$PROJECT_ROOT" && pwd -P)" = "$PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
+          git fetch origin main --no-tags
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          status_bytes=$(git status --porcelain=v1 --untracked-files=all)
+          test -z "$status_bytes"
+          bash scripts/release/validate-candidate.sh \
+            "$VERSION" "$GITHUB_SHA" "$(git rev-parse origin/main)"
+          printf 'P13_PROJECT_ROOT=%s\n' "$PROJECT_ROOT" >> "$GITHUB_ENV"
+
+      - name: Verify frozen-basis producer lineage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          P13_BASIS_RUN_ID: ${{ inputs.p13_basis_run_id }}
+        run: |
+          run_json="$RUNNER_TEMP/p13-basis-run.json"
+          artifacts_json="$RUNNER_TEMP/p13-basis-artifacts.json"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${P13_BASIS_RUN_ID}" > "$run_json"
+          gh api --method GET -f name=p13-frozen-basis \
+            "repos/${GITHUB_REPOSITORY}/actions/runs/${P13_BASIS_RUN_ID}/artifacts" > "$artifacts_json"
+          bash scripts/release/validate-evidence-lineage.sh \
+            "$run_json" "$artifacts_json" "$P13_BASIS_RUN_ID" "$GITHUB_SHA" \
+            .github/workflows/p13-basis.yml workflow_dispatch p13-frozen-basis \
+            "$GITHUB_REPOSITORY"
 
       - uses: actions/download-artifact@v4
         with:
@@ -353,9 +389,10 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.p13_basis_run_id }}
 
-      - name: Verify and provision the frozen basis
+      - name: Verify the root-bound frozen basis
         env:
           BASIS_ROOT: ${{ runner.temp }}/p13-frozen-basis
+          VERSION: ${{ inputs.p13_version }}
         run: |
           basis_manifest="$BASIS_ROOT/basis.json"
           repository_tree="$BASIS_ROOT/repository"
@@ -367,7 +404,14 @@ jobs:
 
           jq -e \
             --arg sha "$GITHUB_SHA" \
-            '.schema == "haft.p13.remote-frozen-basis/v1" and .candidate_sha == $sha' \
+            --arg version "$VERSION" \
+            --arg root "$P13_PROJECT_ROOT" \
+            '.schema == "haft.p13.remote-frozen-basis/v2" and
+             .candidate_sha == $sha and .version == $version and
+             .project_root == $root and
+             (.project_id | test("^qnt_[0-9a-f]{8}$")) and
+             (.freeze_candidate_digest | test("^sha256:[0-9a-f]{64}$")) and
+             (.database_digest | test("^sha256:[0-9a-f]{64}$"))' \
             "$basis_manifest" >/dev/null
 
           freeze_candidate=$(jq -er '.freeze_candidate_path' "$basis_manifest")
@@ -383,44 +427,65 @@ jobs:
           test -f "$repository_tree/.context/current-plan-issue-report.md"
           test -f "$repository_tree/.context/haft-v9-deterministic-closeout.plan.md"
           test -d "$repository_tree/.agents/skills"
-          test -f "$repository_tree/.haft/config.yaml"
           test -f "$repository_tree/.haft/project-profile.yaml"
           test -f "$repository_tree/.haft/project.yaml"
 
-          project_id=$(
-            awk '$1 == "id:" { print $2; exit }' \
-              "$repository_tree/.haft/project.yaml"
-          )
+          project_id=$(jq -er '.project_id' "$basis_manifest")
           printf '%s\n' "$project_id" | grep -Eq '^qnt_[0-9a-f]{8}$'
+          test "$(awk '$1 == "id:" { print $2; exit }' "$repository_tree/.haft/project.yaml")" = "$project_id"
           test -f "$basis_home/.haft/projects/$project_id/haft.db"
 
-          mkdir -p .context
-          mkdir -p .agents
-          mkdir -p .haft
-          cp -R "$repository_tree/.context/." .context/
-          cp -R "$repository_tree/.agents/skills" .agents/
-          cp "$repository_tree/.haft/config.yaml" .haft/config.yaml
-          cp "$repository_tree/.haft/project-profile.yaml" .haft/project-profile.yaml
-          cp "$repository_tree/.haft/project.yaml" .haft/project.yaml
+          basis_symlink=$(find "$BASIS_ROOT" -type l -print -quit) || {
+            echo "unable to inspect the frozen-basis artifact for symlinks" >&2
+            exit 1
+          }
+          if [ -n "$basis_symlink" ]; then
+            echo "p13-frozen-basis artifact contains a symlink" >&2
+            exit 1
+          fi
 
-          printf 'P13_REMOTE_HOME=%s\n' "$basis_home" >> "$GITHUB_ENV"
+          cd "$P13_PROJECT_ROOT"
+          cmp "$repository_tree/.context/current-plan-issue-report.md" .context/current-plan-issue-report.md
+          cmp "$repository_tree/.context/haft-v9-deterministic-closeout.plan.md" .context/haft-v9-deterministic-closeout.plan.md
+          cmp "$repository_tree/$freeze_candidate" "$freeze_candidate"
+          cmp "$repository_tree/.haft/project-profile.yaml" .haft/project-profile.yaml
+          cmp "$repository_tree/.haft/project.yaml" .haft/project.yaml
+          diff -qr "$repository_tree/.agents/skills" .agents/skills
+
+          digest_file() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | awk '{print "sha256:" $1}'
+            else
+              shasum -a 256 "$1" | awk '{print "sha256:" $1}'
+            fi
+          }
+          test "$(digest_file "$freeze_candidate")" = "$(jq -er '.freeze_candidate_digest' "$basis_manifest")"
+          test "$(digest_file "$basis_home/.haft/projects/$project_id/haft.db")" = "$(jq -er '.database_digest' "$basis_manifest")"
+
+          printf 'P13_PROJECT_HOME=%s\n' "$basis_home" >> "$GITHUB_ENV"
           printf 'P13_FREEZE_CANDIDATE=%s\n' "$freeze_candidate" >> "$GITHUB_ENV"
 
       - name: Restore frozen dependency inputs
-        run: npm ci --prefix packages/haft-pi
+        run: npm ci --prefix "$P13_PROJECT_ROOT/packages/haft-pi"
 
       - name: Verify frozen-basis currentness
         run: |
-          HOME="$P13_REMOTE_HOME" \
+          cd "$P13_PROJECT_ROOT"
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
           HAFT_P13_VERIFY_FREEZE_INPUT="$P13_FREEZE_CANDIDATE" \
             go test -count=1 -timeout=5m -v ./internal/p13acceptance \
             -run '^TestP13VerifyFreezeInputCandidate$'
-          HOME="$P13_REMOTE_HOME" \
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
             go test -count=1 -timeout=5m -v ./internal/p13acceptance \
             -run '^TestP13ManifestStructureAndAnchors$'
 
       - name: Run consolidated P13 on one frozen identity
         run: |
+          cd "$P13_PROJECT_ROOT"
           before="$RUNNER_TEMP/p13-evidence-before"
           after="$RUNNER_TEMP/p13-evidence-after"
           created="$RUNNER_TEMP/p13-evidence-created"
@@ -432,9 +497,9 @@ jobs:
             -print |
             sort > "$before"
 
-          HOME="$P13_REMOTE_HOME" \
           GOMAXPROCS=1 \
           GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
           HAFT_P13_RUN_CONSOLIDATED=1 \
             go test -count=1 -timeout=50m -v ./internal/p13acceptance \
             -run '^TestP13ConsolidatedAcceptance$'
@@ -449,7 +514,11 @@ jobs:
           test "$(wc -l < "$created" | tr -d ' ')" = "1"
 
           evidence_path=$(sed -n '1p' "$created")
-          evidence_digest="sha256:$(sha256sum "$evidence_path" | awk '{print $1}')"
+          if command -v sha256sum >/dev/null 2>&1; then
+            evidence_digest="sha256:$(sha256sum "$evidence_path" | awk '{print $1}')"
+          else
+            evidence_digest="sha256:$(shasum -a 256 "$evidence_path" | awk '{print $1}')"
+          fi
           jq -e \
             '.schema == "haft.p13.acceptance-evidence/v3" and
              .status == "passed" and
@@ -462,9 +531,10 @@ jobs:
 
       - name: Verify fresh P13 evidence against the unchanged candidate
         run: |
-          HOME="$P13_REMOTE_HOME" \
+          cd "$P13_PROJECT_ROOT"
           GOMAXPROCS=1 \
           GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
           HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE="$P13_ACCEPTANCE_CARRIER" \
           HAFT_P13_VERIFY_ACCEPTANCE_DIGEST="$P13_ACCEPTANCE_DIGEST" \
             go test -count=1 -timeout=5m -v ./internal/p13acceptance \
@@ -474,6 +544,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: p13-acceptance-${{ github.sha }}
-          path: ${{ env.P13_ACCEPTANCE_CARRIER }}
+          path: ${{ env.P13_PROJECT_ROOT }}/${{ env.P13_ACCEPTANCE_CARRIER }}
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 14

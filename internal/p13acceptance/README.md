@@ -1,19 +1,20 @@
 # P13 consolidated acceptance harness
 
-Status: the exact target FPF `036c056e` / COV2 v5 source identity and Base
-TypeEnv `dffe960a...` are pinned. Source-built dogfood initialization observed
+Status: the exact target FPF `59c4553` / COV2 v6 source identity and Base
+TypeEnv `4a6709fc...` are pinned. Source-built dogfood initialization observed
 the proven-compatible successor activate automatically from predecessor FPF
-`3dbce514` at head revision 4 to target head revision 5 and graph revision 11.
+`036c056e` at head revision 5 to target head revision 6 and graph revision 12.
 The manifest carries those exact selected coordinates and is
-`frozen_for_execution`. A consolidated P13 run completed on 2026-08-13 against
-dirty source identity
+`frozen_for_execution`. It is not a passing P13 result. The most recent
+consolidated P13 run remains the 2026-08-13 historical run against dirty
+`036c056e` source identity
 `sha256:4461ec8e61ba8d4c448ade7ebf1b0335a1343c6a5e05e2e81493619deff82c27`;
 its carrier digest is
 `sha256:e3eb86aa8a920aca2761cc1732745a4d04c66814573477a548d478eb452b2f78`,
 all G0-G8 gates passed, and `release_claim=false`. That receipt proves only
-those exact source bytes. Any later source, test, manifest, carrier, or clean
-candidate commit requires a new freeze-candidate capture, verification, and
-consolidated run; no older P13 carrier is evidence for the changed bytes.
+those historical bytes. The final clean 9.2.0 candidate requires a new
+freeze-candidate capture, verification, and consolidated run; no older P13
+carrier is evidence for the changed bytes.
 
 The active execution carrier is
 `.context/haft-v9-deterministic-closeout.plan.md`, specifically
@@ -100,8 +101,10 @@ the target. The activated target Stage remains schema v5
 and byte-match the current canonical profile basis, compatible ProfileFit, and
 installed transition-profile closure when final freeze input is captured. The
 same preflight requires the exact selected FPF checkout plus embedded index
-metadata, schema 59 with its exact writer-54 marker (independently verified),
-and an explicitly empty excluded-Go-package set. Any
+metadata, schema 60 with its exact writer-54 marker (independently verified),
+and an explicitly empty excluded-Go-package set. Schema 60 adds only the
+append-only project-root relocation lineage; it does not change the typed-memory
+writer generation. Any
 changed coordinate, missing anchor, skipped anchor, non-empty waiver set, or
 failed command blocks the run.
 
@@ -216,11 +219,20 @@ preserves its non-publishing evidence artifact; it does not tag or release.
 
 ### Manual remote consolidated P13
 
-`.github/workflows/ci.yml` exposes the manual
-`run_p13` input and gives that named consolidated-acceptance job a 60-minute
-operational cap. It requires `p13_basis_run_id` to identify an existing
-same-repository workflow run containing an artifact named `p13-frozen-basis`.
-The downloaded artifact must have this shape:
+`.github/workflows/p13-basis.yml` is the fixed non-publishing basis producer.
+It and the manual `run_p13` job in `.github/workflows/ci.yml` share the
+`haft-release-evidence-host` concurrency group and require the protected
+`release-evidence` environment. Both run on a trusted self-hosted macOS/ARM64
+runner against the physical checkout named by `HAFT_RELEASE_PROJECT_ROOT`.
+This is required because `project_root` belongs to the frozen identity; a
+GitHub-hosted checkout at another path is not the same candidate.
+
+The basis producer restores locked dependencies, captures or byte-identically
+reuses and verifies one freeze-input carrier on the clean current-main
+candidate, and uploads the
+private basis as `p13-frozen-basis`. The manual P13 job has a 60-minute cap and
+requires `p13_basis_run_id` to identify that exact same-repository workflow
+run. The downloaded artifact has this shape:
 
 ```text
 basis.json
@@ -228,7 +240,6 @@ repository/.agents/skills/<current generated skill tree>
 repository/.context/current-plan-issue-report.md
 repository/.context/haft-v9-deterministic-closeout.plan.md
 repository/.context/p13/<freeze-input-candidate>.json
-repository/.haft/config.yaml
 repository/.haft/project-profile.yaml
 repository/.haft/project.yaml
 home/.haft/projects/<project-id>/haft.db
@@ -238,24 +249,33 @@ home/.haft/projects/<project-id>/haft.db
 
 ```json
 {
-  "schema": "haft.p13.remote-frozen-basis/v1",
+  "schema": "haft.p13.remote-frozen-basis/v2",
   "candidate_sha": "<full workflow commit SHA>",
-  "freeze_candidate_path": ".context/p13/<freeze-input-candidate>.json"
+  "version": "9.2.0",
+  "project_root": "<physical trusted checkout>",
+  "project_id": "qnt_<8 hex>",
+  "freeze_candidate_path": ".context/p13/<freeze-input-candidate>.json",
+  "freeze_candidate_digest": "sha256:<64 hex>",
+  "database_digest": "sha256:<64 hex>"
 }
 ```
 
 The ignored `.agents`, `.context`, and project-basis `.haft` inputs are part of
-the frozen source identity; a clean checkout cannot synthesize them. The job
-fails closed when the run ID, candidate SHA, generated skill tree, required
-carriers, project-basis files, candidate path, or project database is absent.
-It verifies the freeze input and manifest, then runs
+the frozen source identity; a separate clean checkout cannot synthesize them.
+The P13 job compares the downloaded private bytes to the configured physical
+root instead of copying them over another checkout. The snapshot database is
+selected only through `HAFT_P13_PROJECT_HOME`; `HOME`, `PATH`, and the other
+captured toolchain coordinates remain unchanged. The job fails closed when the
+run ID, candidate SHA, physical root, generated skill tree, required carriers,
+project-basis files, carrier/database digest, or project database is absent or
+different. It verifies the freeze input and manifest, then runs
 `TestP13ConsolidatedAcceptance` once with `GOMAXPROCS=1` and `GOFLAGS=-p=1`.
 Exactly one new passing evidence carrier must appear; the same job immediately
 runs `TestP13VerifyAcceptanceEvidenceFresh` and uploads only that carrier as a
 14-day workflow artifact. The upload is evidence transport, not a GitHub
-Release or a public release claim. No producer for the sensitive frozen-basis
-input artifact is enabled by default; until one is explicitly provisioned, the
-manual P13 lane is unavailable rather than falsely green.
+Release or a public release claim. A missing runner, protected environment, or
+configured physical root leaves the lane unavailable rather than falsely
+green.
 
 Before the consolidated run, the same manifest-owned bounded race profile may
 be exercised directly without publishing a P13 evidence carrier:

@@ -613,23 +613,29 @@ release-artifacts/haft-darwin-arm64.tar.gz
 ```
 
 `release-evidence.json` is the canonical
-`haft.p14.release-evidence-bundle/v1` input consumed by
+`haft.p14.release-evidence-bundle/v2` input consumed by
 `TestP14VerifyReleaseEvidenceBundle`. The release validation job independently
 downloads the exact P13 carrier and frozen basis, reruns P13 freeze, manifest,
 and freshness verification against the unchanged candidate, then runs the P14
-read-only verifier. It requires the prepared candidate version to equal the
-validation version, rejects future or older-than-24-hour semantic observations,
-and requires the qualified Darwin archive's `haft` member to be byte-identical
-to the installed P14 executable. Every Linux and Darwin `haft` member is also
-parsed independently as a Go executable and must carry the same command path,
-main module, Git revision, canonical unmodified state, and non-empty VCS time as
-the frozen candidate. P14 does not claim the Linux members were executed on the
-Darwin host. Embedded Go build information does not provide a mechanically
-validated exact product version for every cross-platform archive. A future
-trusted producer must therefore supply a native exact `haft version` receipt
-for each archive, or another mechanically validated exact-version carrier,
-before publication can be enabled. Run IDs, artifact names, or caller-supplied
-digests without the downloaded bytes cannot pass.
+read-only verifier without adding files to the downloaded evidence tree. It
+requires the prepared candidate version to equal the validation version,
+rejects future or older-than-24-hour semantic observations, and requires the
+qualified Darwin archive's `haft` member to be byte-identical to the installed
+P14 executable. Every Linux and Darwin `haft` member is parsed independently as
+a Go executable and must carry the same command path, main module, Git
+revision, canonical unmodified state, and non-empty VCS time as the frozen
+candidate.
+
+The v2 bundle also embeds one
+`haft.p14.native-version-receipt/v1` record for each archive in fixed target
+order. Each native job executes that archive member's exact bytes, retains the
+canonical `haft version` output and its digest, and binds version, commit,
+source time, target, executable digest, and archive digest. Linux amd64 and
+Linux arm64 execute on their native GitHub-hosted runners. Darwin arm64 is the
+already installed and P14-qualified executable on the trusted host, not a
+replacement cross-build. P14 does not claim that either Linux binary ran on
+the Darwin host. Run IDs, artifact names, or caller-supplied digests without
+the downloaded bytes cannot pass.
 
 The successful validation bundle contains a canonical
 `haft.release.validation-evidence/v1` manifest. It binds the exact candidate,
@@ -644,10 +650,11 @@ source artifact remains unique and unexpired. Immediately before
 still peels to the sealed candidate, reruns candidate validation, and rechecks
 semantic expiry.
 
-There are intentionally no `.github/workflows/p13-basis.yml` or
-`.github/workflows/p14-evidence.yml` producers in the current candidate.
-Therefore validation and publication remain an explicit manual **NO-GO** until
-candidate-owned trusted producer lanes and the per-archive exact-version proof
-above are added.
+`.github/workflows/p13-basis.yml` and
+`.github/workflows/p14-evidence.yml` are now candidate-owned trusted producer
+lanes. They are non-publishing capabilities. Validation and publication remain
+an explicit manual **NO-GO** until the final clean current-main commit produces
+a fresh root-bound P13 carrier, a passing installed-runtime P14 carrier, the
+three native receipts, and a successfully reverified validation bundle.
 Tag pushes are rejected because they cannot supply the required exact evidence
 identities; they do not regain the older evidence-blind validation behavior.

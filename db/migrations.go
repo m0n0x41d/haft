@@ -2057,4 +2057,5 @@ var kernelMigrations = []Migration{
 	projectTypeEnvCompatibleSuccessorMigration57,
 	legacyAffectedPathMigration58,
 	evidenceCarrierMigration59,
+	projectRootRelocationMigration60,
 }

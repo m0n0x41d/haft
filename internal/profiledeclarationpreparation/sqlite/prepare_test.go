@@ -13,9 +13,70 @@ import (
 	"github.com/m0n0x41d/haft/internal/profiledeclarationpreparation"
 	"github.com/m0n0x41d/haft/internal/profiledetector"
 	"github.com/m0n0x41d/haft/internal/projectledger"
+	"github.com/m0n0x41d/haft/internal/projectprofile"
 	"github.com/m0n0x41d/haft/internal/sqlitetransaction"
 	"github.com/m0n0x41d/haft/internal/testsupport/kerneldbfixture"
 )
+
+func TestLoadProjectBindingDigestUsesRelocatedCurrentRoot(t *testing.T) {
+	database, previousRoot := newPreparationDatabase(t)
+	currentRoot := previousRoot + "-moved"
+	if err := os.Rename(previousRoot, currentRoot); err != nil {
+		t.Fatal(err)
+	}
+	handle, err := projectledger.OpenForExplicitMigration(
+		context.Background(),
+		currentRoot,
+		projectledger.ReadWrite,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := handle.RelocateRoot(
+		context.Background(),
+		previousRoot,
+		time.Now().UTC().Add(time.Minute),
+	); err != nil {
+		_ = handle.Close()
+		t.Fatal(err)
+	}
+	state, err := handle.InspectPersistedRootState(context.Background())
+	if err != nil {
+		_ = handle.Close()
+		t.Fatal(err)
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	root, err := projectprofile.NewProjectRootV1(currentRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := sqlitetransaction.BeginRead(
+		context.Background(),
+		database,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest, loadErr := loadProjectBindingDigest(
+		context.Background(),
+		transaction,
+		root,
+	)
+	finish := transaction.Rollback(context.Background())
+	if loadErr != nil || finish.Err() != nil {
+		t.Fatalf("load relocated binding digest: load=%v finish=%v", loadErr, finish.Err())
+	}
+	if digest.String() != state.BindingDigest {
+		t.Fatalf(
+			"relocated project binding digest = %s, want stable genesis %s",
+			digest.String(),
+			state.BindingDigest,
+		)
+	}
+}
 
 func TestPrepareBeforeAdmissionCommitsV3AuthorityThenV2WorkAndReplays(t *testing.T) {
 	database, root := newPreparationDatabase(t)

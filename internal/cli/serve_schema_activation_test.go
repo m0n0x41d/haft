@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/m0n0x41d/haft/db"
+	"github.com/m0n0x41d/haft/internal/projectledger"
 	"github.com/m0n0x41d/haft/internal/projectledgermigration"
 )
 
@@ -208,6 +209,40 @@ func TestServeProjectActivationErrorRoutesExactRecovery(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestServeProjectActivationErrorRoutesMovedRootToRelocation(
+	t *testing.T,
+) {
+	fixture := newReadOnlyProjectValidationFixture(t, "qnt_6eadb00b")
+	previousRoot := "/previous/project"
+	presented := serveProjectActivationError(
+		fixture.binding,
+		projectledgermigration.ServeActivationResult{
+			Outcome: projectledgermigration.ServeActivationBlocked,
+			Blocker: projectledgermigration.ServeBlockerRootRelocation,
+		},
+		&projectledger.BindingRootMismatchError{
+			StoredProjectID:    fixture.binding.ProjectID,
+			StoredRoot:         previousRoot,
+			RequestedProjectID: fixture.binding.ProjectID,
+			RequestedRoot:      fixture.binding.ProjectRoot,
+		},
+	).Error()
+	for _, fragment := range []string{
+		"valid project ledger attached to the previous root",
+		"haft project relocate",
+		`--from-root "` + previousRoot + `"`,
+		`--project-root "` + fixture.binding.ProjectRoot + `"`,
+		"no relocation or migration was attempted",
+	} {
+		if !strings.Contains(presented, fragment) {
+			t.Fatalf("relocation diagnostic missing %q:\n%s", fragment, presented)
+		}
+	}
+	if strings.Contains(presented, "recover-binding") {
+		t.Fatalf("relocation diagnostic routes to binding recovery:\n%s", presented)
 	}
 }
 

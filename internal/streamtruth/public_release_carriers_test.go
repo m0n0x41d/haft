@@ -168,6 +168,11 @@ func TestReleaseWorkflowUsesCandidateGuardForValidationAndPublication(t *testing
 			invocation: `scripts/release/validate-candidate.sh "$version" "$candidate_sha" "$main_sha"`,
 		},
 		{
+			step: "Restore the P13 basis and exact passing carrier",
+			invocation: "bash scripts/release/validate-candidate.sh \\\n" +
+				`            "$VERSION" "$CANDIDATE_SHA" "$(git rev-parse origin/main)"`,
+		},
+		{
 			step:       "Verify tag and validation-run lineage",
 			invocation: `scripts/release/validate-candidate.sh "$version" "$tag_sha" "$main_sha"`,
 		},

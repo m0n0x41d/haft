@@ -215,18 +215,17 @@ func verifyServeMigrationSnapshot(
 	); err != nil {
 		return fmt.Errorf("verify serve migration snapshot binding: %w", err)
 	}
-	var projectRoot string
-	if err := database.QueryRowContext(
+	rootState, err := projectledger.InspectPersistedRootStateDatabase(
 		ctx,
-		`SELECT project_root FROM project_ledger_binding
-		 WHERE binding_slot = 1`,
-	).Scan(&projectRoot); err != nil {
+		database,
+	)
+	if err != nil {
 		return fmt.Errorf("read serve migration snapshot project root: %w", err)
 	}
-	if projectRoot != request.root.String() {
+	if rootState.CurrentRoot != request.root.String() {
 		return fmt.Errorf(
 			"serve migration snapshot is bound to project root %q, want %q",
-			projectRoot,
+			rootState.CurrentRoot,
 			request.root.String(),
 		)
 	}

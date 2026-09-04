@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,6 +15,65 @@ import (
 	"github.com/m0n0x41d/haft/internal/fpf"
 	_ "modernc.org/sqlite"
 )
+
+func TestProjectUnavailableV5HandlerKeepsOnlyFPFQueryAvailable(t *testing.T) {
+	dbPath := buildFPFSourceQueryTestDB(t)
+	restoreOpen := stubSourceQueryDB(t, dbPath)
+	defer restoreOpen()
+
+	projectBlocker := errors.New("fixture project schema is newer than this binary")
+	handler := makeProjectUnavailableV5Handler(projectBlocker)
+	result, err := handler(
+		context.Background(),
+		"haft_query",
+		json.RawMessage(`{
+			"name":"haft_query",
+			"arguments":{
+				"action":"fpf",
+				"mode":"lookup",
+				"identifier":"A.7"
+			}
+		}`),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(result, `"kind":"exact_hit"`) {
+		t.Fatalf("degraded FPF query result = %s", result)
+	}
+
+	for _, call := range []struct {
+		toolName string
+		params   string
+	}{
+		{
+			toolName: "haft_query",
+			params:   `{"name":"haft_query","arguments":{"action":"status"}}`,
+		},
+		{
+			toolName: "haft_query",
+			params:   `{"name":"haft_query","arguments":{"action":" fpf "}}`,
+		},
+		{
+			toolName: "haft_note",
+			params:   `{"name":"haft_note","arguments":{"content":"blocked"}}`,
+		},
+	} {
+		blockedResult, blockedErr := handler(
+			context.Background(),
+			call.toolName,
+			json.RawMessage(call.params),
+		)
+		if blockedResult != "" || !errors.Is(blockedErr, projectBlocker) {
+			t.Fatalf(
+				"project-backed call %s result = %q, error = %v; want exact activation blocker",
+				call.toolName,
+				blockedResult,
+				blockedErr,
+			)
+		}
+	}
+}
 
 func TestHandleQuintQuery_FPFReturnsClosedSourceNativeUnion(t *testing.T) {
 	dbPath := buildFPFSourceQueryTestDB(t)

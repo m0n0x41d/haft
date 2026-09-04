@@ -434,7 +434,7 @@ func loadBoundProjectRootTx(
 	err := transaction.ScanOne(
 		ctx,
 		`SELECT project_root
-		 FROM project_ledger_binding
+		 FROM project_ledger_current_binding
 		 WHERE project_id = ?`,
 		[]any{projectID},
 		[]any{&raw},

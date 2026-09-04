@@ -29,6 +29,29 @@ const firstDurableBindingPredecessorSchema = 36
 var ErrBindingMissing = errors.New("project ledger has no durable project identity binding; run haft init from the canonical project root")
 var ErrBindingCommittedTopologyChanged = errors.New("project ledger binding committed to the anchored database, but project topology changed before post-commit verification")
 
+// BindingRootMismatchError reports a structurally valid persisted root that
+// does not match the physical project root presented by the caller. The
+// persisted path may no longer exist after an intentional directory move.
+type BindingRootMismatchError struct {
+	StoredProjectID    string
+	StoredRoot         string
+	RequestedProjectID string
+	RequestedRoot      string
+}
+
+func (err *BindingRootMismatchError) Error() string {
+	if err == nil {
+		return "project ledger root mismatch"
+	}
+	return fmt.Sprintf(
+		"project ledger is durably bound to id %q root %q, not id %q root %q",
+		err.StoredProjectID,
+		err.StoredRoot,
+		err.RequestedProjectID,
+		err.RequestedRoot,
+	)
+}
+
 type Access string
 
 const (
@@ -50,8 +73,9 @@ type ProjectRoot struct {
 }
 
 func NewProjectRoot(raw string) (ProjectRoot, error) {
-	if raw != strings.TrimSpace(raw) || !filepath.IsAbs(raw) || filepath.Clean(raw) != raw {
-		return ProjectRoot{}, fmt.Errorf("project root must be a canonical absolute path")
+	root, err := parseRecordedProjectRoot(raw)
+	if err != nil {
+		return ProjectRoot{}, err
 	}
 	info, err := os.Lstat(raw)
 	if err != nil {
@@ -66,6 +90,17 @@ func NewProjectRoot(raw string) (ProjectRoot, error) {
 	}
 	if filepath.Clean(physical) != raw {
 		return ProjectRoot{}, fmt.Errorf("project root must use canonical physical form; symlink aliases are not admitted")
+	}
+	return root, nil
+}
+
+func parseRecordedProjectRoot(raw string) (ProjectRoot, error) {
+	if raw != strings.TrimSpace(raw) ||
+		!filepath.IsAbs(raw) ||
+		filepath.Clean(raw) != raw {
+		return ProjectRoot{}, fmt.Errorf(
+			"project root must be a canonical absolute path",
+		)
 	}
 	return ProjectRoot{value: raw}, nil
 }
@@ -845,6 +880,11 @@ type queryRow interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
+type bindingReader interface {
+	queryRows
+	queryRow
+}
+
 // PersistedBindingReader is the narrow read capability needed to verify the
 // immutable project-ledger binding inside a caller-owned transaction.
 type PersistedBindingReader interface {
@@ -897,25 +937,14 @@ func RequireExactPersistedBinding(
 	if err != nil {
 		return fmt.Errorf("read persisted project ledger binding: %w", err)
 	}
-	storedProject, err := ParseProjectID(row.projectID)
+	validatedProject, _, err := validateLedgerBindingRowCanonical(row)
 	if err != nil {
-		return fmt.Errorf("parse persisted project ledger identity: %w", err)
-	}
-	storedRoot, err := NewProjectRoot(row.projectRoot)
-	if err != nil {
-		return fmt.Errorf("parse persisted project ledger root: %w", err)
-	}
-	storedIdentity := Identity{
-		root: storedRoot,
-		id:   storedProject,
-	}
-	if err := validateLedgerBindingRow(row, storedIdentity); err != nil {
 		return fmt.Errorf("verify persisted project ledger binding: %w", err)
 	}
-	if storedProject != canonicalProject {
+	if validatedProject != canonicalProject {
 		return fmt.Errorf(
 			"project ledger is durably bound to id %q, not requested id %q",
-			storedProject.String(),
+			validatedProject.String(),
 			canonicalProject.String(),
 		)
 	}
@@ -1004,29 +1033,29 @@ func quoteSQLiteIdentifier(value string) string {
 
 func requireAttachedIdentity(
 	ctx context.Context,
-	database queryRow,
+	database bindingReader,
 	identity Identity,
 ) error {
-	row := ledgerBindingRow{}
-	err := database.QueryRowContext(
-		ctx,
-		`SELECT binding_slot, project_id, project_root, binding_digest, binding_json, bound_at
-		 FROM project_ledger_binding WHERE binding_slot = 1`,
-	).Scan(
-		&row.slot,
-		&row.projectID,
-		&row.projectRoot,
-		&row.bindingDigest,
-		&row.bindingJSON,
-		&row.boundAt,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrBindingMissing
-	}
+	state, err := readPersistedRootState(ctx, database)
 	if err != nil {
-		return fmt.Errorf("read durable project ledger binding: %w", err)
+		return err
 	}
-	return validateLedgerBindingRow(row, identity)
+	if state.ProjectID != identity.id.String() {
+		return fmt.Errorf(
+			"project ledger is durably bound to id %q, not requested id %q",
+			state.ProjectID,
+			identity.id.String(),
+		)
+	}
+	if state.CurrentRoot != identity.root.String() {
+		return &BindingRootMismatchError{
+			StoredProjectID:    state.ProjectID,
+			StoredRoot:         state.CurrentRoot,
+			RequestedProjectID: identity.id.String(),
+			RequestedRoot:      identity.root.String(),
+		}
+	}
+	return nil
 }
 
 type ledgerBindingDTO struct {
@@ -1071,39 +1100,38 @@ func newLedgerBindingRecord(identity Identity, at time.Time) (ledgerBindingRecor
 	}, nil
 }
 
-func validateLedgerBindingRow(row ledgerBindingRow, identity Identity) error {
+func validateLedgerBindingRowCanonical(
+	row ledgerBindingRow,
+) (ProjectID, ProjectRoot, error) {
 	if row.slot != 1 {
-		return fmt.Errorf("project ledger binding slot is invalid")
+		return ProjectID{}, ProjectRoot{}, fmt.Errorf(
+			"project ledger binding slot is invalid",
+		)
 	}
 	id, err := ParseProjectID(row.projectID)
 	if err != nil {
-		return err
+		return ProjectID{}, ProjectRoot{}, err
 	}
-	root, err := NewProjectRoot(row.projectRoot)
+	root, err := parseRecordedProjectRoot(row.projectRoot)
 	if err != nil {
-		return err
+		return ProjectID{}, ProjectRoot{}, err
 	}
 	boundAt, err := time.Parse(time.RFC3339Nano, row.boundAt)
 	if err != nil || boundAt.Location() != time.UTC {
-		return fmt.Errorf("project ledger binding time is not canonical UTC RFC3339Nano")
+		return ProjectID{}, ProjectRoot{}, fmt.Errorf(
+			"project ledger binding time is not canonical UTC RFC3339Nano",
+		)
 	}
 	record, err := newLedgerBindingRecord(Identity{root: root, id: id}, boundAt)
 	if err != nil {
-		return err
+		return ProjectID{}, ProjectRoot{}, err
 	}
 	if !bytes.Equal(record.canonical, []byte(row.bindingJSON)) || record.digest != row.bindingDigest {
-		return fmt.Errorf("project ledger binding canonical bytes or digest are invalid")
-	}
-	if id.String() != identity.id.String() || root.String() != identity.root.String() {
-		return fmt.Errorf(
-			"project ledger is durably bound to id %q root %q, not id %q root %q",
-			id.String(),
-			root.String(),
-			identity.id.String(),
-			identity.root.String(),
+		return ProjectID{}, ProjectRoot{}, fmt.Errorf(
+			"project ledger binding canonical bytes or digest are invalid",
 		)
 	}
-	return nil
+	return id, root, nil
 }
 
 func canonicalPhysicalHome() (string, error) {

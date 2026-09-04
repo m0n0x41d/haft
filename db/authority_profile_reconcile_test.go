@@ -796,11 +796,22 @@ func assertCanonicalAuthorityProfileSchema(t *testing.T, database *sql.DB) {
 	if err != nil {
 		t.Fatalf("fingerprint canonical migration-review schema: %v", err)
 	}
-	if actualMigrationReviewFingerprint != contract.migrationReviewFingerprint {
+	expectedMigrationReviewFingerprint := contract.migrationReviewFingerprint
+	var relocationSchema int
+	if err := database.QueryRow(
+		`SELECT COUNT(*) FROM schema_version WHERE version = ?`,
+		ProjectRootRelocationSchemaVersion,
+	).Scan(&relocationSchema); err != nil {
+		t.Fatalf("inspect project-root relocation schema receipt: %v", err)
+	}
+	if relocationSchema == 1 {
+		expectedMigrationReviewFingerprint = fullyMigratedMigrationReviewFingerprint(t)
+	}
+	if actualMigrationReviewFingerprint != expectedMigrationReviewFingerprint {
 		t.Fatalf(
 			"migration-review fingerprint = %s, want %s",
 			actualMigrationReviewFingerprint,
-			contract.migrationReviewFingerprint,
+			expectedMigrationReviewFingerprint,
 		)
 	}
 	assertSQLiteMasterObjectCount(t, database, "table", reconciledRequiredTables, 9)
@@ -845,6 +856,27 @@ func fullyMigratedAuthorityProfileFingerprint(t *testing.T) string {
 	fingerprint, err := authorityProfileSchemaFingerprint(database)
 	if err != nil {
 		t.Fatalf("fingerprint fully migrated schema fixture: %v", err)
+	}
+	return fingerprint
+}
+
+func fullyMigratedMigrationReviewFingerprint(t *testing.T) string {
+	t.Helper()
+	database, err := sql.Open("sqlite", ":memory:")
+	if err != nil {
+		t.Fatalf("open fully migrated review-schema fixture: %v", err)
+	}
+	database.SetMaxOpenConns(1)
+	defer database.Close()
+	if _, err := database.Exec(schema); err != nil {
+		t.Fatalf("install base schema in review-schema fixture: %v", err)
+	}
+	if err := RunMigrations(database); err != nil {
+		t.Fatalf("install migrations in review-schema fixture: %v", err)
+	}
+	fingerprint, err := migrationReviewSchemaFingerprint(database)
+	if err != nil {
+		t.Fatalf("fingerprint fully migrated review schema: %v", err)
 	}
 	return fingerprint
 }

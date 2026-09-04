@@ -585,6 +585,29 @@ func requireBindingForObservedSchema(
 		return nil
 	}
 	if err := handle.RequireAttachedIdentity(ctx); err != nil {
+		var rootMismatch *projectledger.BindingRootMismatchError
+		if errors.As(err, &rootMismatch) {
+			relocationCommand := fmt.Sprintf(
+				"haft project relocate --from-root %q --project-root %q --project-id %s",
+				rootMismatch.StoredRoot,
+				handle.ProjectRoot().String(),
+				handle.ProjectID().String(),
+			)
+			return fmt.Errorf(
+				"schema %d is attached to previous project root %q: %w; if the directory was intentionally moved and the previous root no longer exists, run `%s`",
+				observedSchema,
+				rootMismatch.StoredRoot,
+				err,
+				relocationCommand,
+			)
+		}
+		if !errors.Is(err, projectledger.ErrBindingMissing) {
+			return fmt.Errorf(
+				"schema %d requires a durable project identity binding, but its binding is invalid: %w; inspect or restore the exact ledger before retrying",
+				observedSchema,
+				err,
+			)
+		}
 		recoveryCommand := fmt.Sprintf(
 			"haft project recover-binding --project-root %q --project-id %s",
 			handle.ProjectRoot().String(),

@@ -16,7 +16,7 @@ on:
       version:
         description: Semver to embed in dry-run artifacts, without the v prefix
         required: true
-        default: '9.1.0'
+        default: '9.2.0'
         type: string
       tag:
         description: Existing annotated v9 tag to publish
@@ -157,7 +157,11 @@ jobs:
   evidence:
     name: Verify exact P13 and final P14 evidence
     needs: [guard]
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, macOS, ARM64, haft-release]
+    environment: release-evidence
+    concurrency:
+      group: haft-release-evidence-host
+      cancel-in-progress: false
     timeout-minutes: 30
     permissions:
       actions: read
@@ -287,24 +291,36 @@ jobs:
         id: p13
         env:
           CANDIDATE_SHA: ${{ needs.guard.outputs.sha }}
+          VERSION: ${{ needs.guard.outputs.version }}
           P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
           EVIDENCE_ROOT: ${{ runner.temp }}/p13-evidence
           BASIS_ROOT: ${{ runner.temp }}/p13-frozen-basis
+          PROJECT_ROOT: ${{ vars.HAFT_RELEASE_PROJECT_ROOT }}
         run: |
-          if find "$EVIDENCE_ROOT" "$BASIS_ROOT" -type l -print -quit | grep -q .; then
+          p13_symlink=$(find "$EVIDENCE_ROOT" "$BASIS_ROOT" -type l -print -quit) || {
+            echo "unable to inspect P13 evidence artifacts for symlinks" >&2
+            exit 1
+          }
+          if [ -n "$p13_symlink" ]; then
             echo "P13 evidence artifacts contain a symlink" >&2
             exit 1
           fi
 
-          mapfile -t p13_files < <(find "$EVIDENCE_ROOT" -type f -print | sort)
-          test "${#p13_files[@]}" = 1
-          p13_source="${p13_files[0]}"
+          test "$(find "$EVIDENCE_ROOT" -type f | wc -l | tr -d ' ')" = 1
+          p13_source=$(find "$EVIDENCE_ROOT" -type f -print)
           p13_carrier_path=$(jq -er '.carrier_path' "$p13_source")
           if [[ ! "$p13_carrier_path" =~ ^\.context/p13/[A-Za-z0-9][A-Za-z0-9._-]*\.json$ ]]; then
             echo "P13 carrier path is outside the closed .context/p13 filename space" >&2
             exit 1
           fi
-          test "sha256:$(sha256sum "$p13_source" | awk '{print $1}')" = "$P13_EVIDENCE_DIGEST"
+          digest_file() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | awk '{print "sha256:" $1}'
+            else
+              shasum -a 256 "$1" | awk '{print "sha256:" $1}'
+            fi
+          }
+          test "$(digest_file "$p13_source")" = "$P13_EVIDENCE_DIGEST"
           jq -e \
             '.schema == "haft.p13.acceptance-evidence/v3" and
              .status == "passed" and
@@ -318,10 +334,18 @@ jobs:
           test -f "$basis_manifest"
           test -d "$repository_tree/.context"
           test -d "$basis_home/.haft/projects"
+          test -n "$PROJECT_ROOT"
+          test "$(cd "$PROJECT_ROOT" && pwd -P)" = "$PROJECT_ROOT"
           jq -e \
             --arg sha "$CANDIDATE_SHA" \
             --arg version "$VERSION" \
-            '.schema == "haft.p13.remote-frozen-basis/v1" and .candidate_sha == $sha' \
+            --arg root "$PROJECT_ROOT" \
+            '.schema == "haft.p13.remote-frozen-basis/v2" and
+             .candidate_sha == $sha and .version == $version and
+             .project_root == $root and
+             (.project_id | test("^qnt_[0-9a-f]{8}$")) and
+             (.freeze_candidate_digest | test("^sha256:[0-9a-f]{64}$")) and
+             (.database_digest | test("^sha256:[0-9a-f]{64}$"))' \
             "$basis_manifest" >/dev/null
 
           freeze_candidate=$(jq -er '.freeze_candidate_path' "$basis_manifest")
@@ -334,45 +358,63 @@ jobs:
           test -f "$repository_tree/.context/current-plan-issue-report.md"
           test -f "$repository_tree/.context/haft-v9-deterministic-closeout.plan.md"
           test -d "$repository_tree/.agents/skills"
-          test -f "$repository_tree/.haft/config.yaml"
           test -f "$repository_tree/.haft/project-profile.yaml"
           test -f "$repository_tree/.haft/project.yaml"
 
-          project_id=$(awk '$1 == "id:" { print $2; exit }' "$repository_tree/.haft/project.yaml")
+          project_id=$(jq -er '.project_id' "$basis_manifest")
           printf '%s\n' "$project_id" | grep -Eq '^qnt_[0-9a-f]{8}$'
+          test "$(awk '$1 == "id:" { print $2; exit }' "$repository_tree/.haft/project.yaml")" = "$project_id"
           test -f "$basis_home/.haft/projects/$project_id/haft.db"
 
-          mkdir -p .context .agents .haft
-          cp -R "$repository_tree/.context/." .context/
-          cp -R "$repository_tree/.agents/skills" .agents/
-          cp "$repository_tree/.haft/config.yaml" .haft/config.yaml
-          cp "$repository_tree/.haft/project-profile.yaml" .haft/project-profile.yaml
-          cp "$repository_tree/.haft/project.yaml" .haft/project.yaml
-          mkdir -p "$(dirname "$p13_carrier_path")"
-          cp "$p13_source" "$p13_carrier_path"
+          cd "$PROJECT_ROOT"
+          git fetch origin main --no-tags
+          test "$(git rev-parse HEAD)" = "$CANDIDATE_SHA"
+          status_bytes=$(git status --porcelain=v1 --untracked-files=all)
+          test -z "$status_bytes"
+          bash scripts/release/validate-candidate.sh \
+            "$VERSION" "$CANDIDATE_SHA" "$(git rev-parse origin/main)"
+          cmp "$repository_tree/.context/current-plan-issue-report.md" .context/current-plan-issue-report.md
+          cmp "$repository_tree/.context/haft-v9-deterministic-closeout.plan.md" .context/haft-v9-deterministic-closeout.plan.md
+          cmp "$repository_tree/$freeze_candidate" "$freeze_candidate"
+          cmp "$repository_tree/.haft/project-profile.yaml" .haft/project-profile.yaml
+          cmp "$repository_tree/.haft/project.yaml" .haft/project.yaml
+          diff -qr "$repository_tree/.agents/skills" .agents/skills
+          if [ ! -f "$p13_carrier_path" ]; then
+            echo "root-bound P13 carrier $p13_carrier_path is absent from $PROJECT_ROOT; run the CI P13 consolidated job for this candidate on this host first" >&2
+            exit 1
+          fi
+          cmp "$p13_source" "$p13_carrier_path"
+          test "$(digest_file "$freeze_candidate")" = "$(jq -er '.freeze_candidate_digest' "$basis_manifest")"
+          test "$(digest_file "$basis_home/.haft/projects/$project_id/haft.db")" = "$(jq -er '.database_digest' "$basis_manifest")"
 
-          printf 'P13_REMOTE_HOME=%s\n' "$basis_home" >> "$GITHUB_ENV"
+          printf 'P13_PROJECT_ROOT=%s\n' "$PROJECT_ROOT" >> "$GITHUB_ENV"
+          printf 'P13_PROJECT_HOME=%s\n' "$basis_home" >> "$GITHUB_ENV"
           printf 'P13_FREEZE_CANDIDATE=%s\n' "$freeze_candidate" >> "$GITHUB_ENV"
           printf 'P13_ACCEPTANCE_CARRIER=%s\n' "$p13_carrier_path" >> "$GITHUB_ENV"
           printf 'carrier_path=%s\n' "$p13_carrier_path" >> "$GITHUB_OUTPUT"
 
       - name: Restore frozen dependency inputs
-        run: npm ci --prefix packages/haft-pi
+        run: npm ci --prefix "$P13_PROJECT_ROOT/packages/haft-pi"
 
       - name: Reverify P13 against the unchanged candidate
         env:
           P13_EVIDENCE_DIGEST: ${{ inputs.p13_evidence_digest }}
         run: |
-          HOME="$P13_REMOTE_HOME" \
+          cd "$P13_PROJECT_ROOT"
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
           HAFT_P13_VERIFY_FREEZE_INPUT="$P13_FREEZE_CANDIDATE" \
             bash scripts/release/run-evidence-verifier-test.sh \
             ./internal/p13acceptance TestP13VerifyFreezeInputCandidate
-          HOME="$P13_REMOTE_HOME" \
-            bash scripts/release/run-evidence-verifier-test.sh \
-            ./internal/p13acceptance TestP13ManifestStructureAndAnchors
-          HOME="$P13_REMOTE_HOME" \
           GOMAXPROCS=1 \
           GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
+            bash scripts/release/run-evidence-verifier-test.sh \
+            ./internal/p13acceptance TestP13ManifestStructureAndAnchors
+          GOMAXPROCS=1 \
+          GOFLAGS=-p=1 \
+          HAFT_P13_PROJECT_HOME="$P13_PROJECT_HOME" \
           HAFT_P13_VERIFY_ACCEPTANCE_EVIDENCE="$P13_ACCEPTANCE_CARRIER" \
           HAFT_P13_VERIFY_ACCEPTANCE_DIGEST="$P13_EVIDENCE_DIGEST" \
             bash scripts/release/run-evidence-verifier-test.sh \
@@ -387,7 +429,12 @@ jobs:
           P14_FINAL_DIGEST: ${{ inputs.p14_final_digest }}
           P14_ROOT: ${{ runner.temp }}/p14-final-evidence
         run: |
-          if find "$P14_ROOT" -type l -print -quit | grep -q .; then
+          cd "$P13_PROJECT_ROOT"
+          p14_symlink=$(find "$P14_ROOT" -type l -print -quit) || {
+            echo "unable to inspect the P14 evidence artifact for symlinks" >&2
+            exit 1
+          }
+          if [ -n "$p14_symlink" ]; then
             echo "P14 evidence artifact contains a symlink" >&2
             exit 1
           fi
@@ -399,13 +446,14 @@ jobs:
             --arg sha "$CANDIDATE_SHA" \
             --arg p13 "$P13_EVIDENCE_DIGEST" \
             --arg p14 "$P14_FINAL_DIGEST" \
-            '.schema == "haft.p14.release-evidence-bundle/v1" and
+            '.schema == "haft.p14.release-evidence-bundle/v2" and
              .status == "passed" and
              .candidate_sha == $sha and
              .p13_carrier_digest == $p13 and
              .final_carrier_digest == $p14 and
              (.valid_until | type) == "string" and
              (.release_archives | length) == 3 and
+             (.native_version_receipts | length) == 3 and
              .qualified_archive == "haft-darwin-arm64.tar.gz" and
              .qualified_member == "haft"' \
             "$bundle" >/dev/null
@@ -423,14 +471,19 @@ jobs:
             bash scripts/release/run-evidence-verifier-test.sh \
             ./internal/p14acceptance TestP14VerifyReleaseEvidenceBundle
 
-          mkdir -p _validated
+          mkdir -p "$GITHUB_WORKSPACE/_validated"
           while IFS=$'\t' read -r archive_name archive_path; do
             test -f "$P14_ROOT/$archive_path"
-            cp "$P14_ROOT/$archive_path" "_validated/$archive_name"
+            cp "$P14_ROOT/$archive_path" "$GITHUB_WORKSPACE/_validated/$archive_name"
           done < <(jq -er '.release_archives[] | [.name, .path] | @tsv' "$bundle")
 
           printf 'bundle_path=%s\n' "$bundle" >> "$GITHUB_OUTPUT"
-          printf 'bundle_digest=sha256:%s\n' "$(sha256sum "$bundle" | awk '{print $1}')" >> "$GITHUB_OUTPUT"
+          if command -v sha256sum >/dev/null 2>&1; then
+            bundle_digest="sha256:$(sha256sum "$bundle" | awk '{print $1}')"
+          else
+            bundle_digest="sha256:$(shasum -a 256 "$bundle" | awk '{print $1}')"
+          fi
+          printf 'bundle_digest=%s\n' "$bundle_digest" >> "$GITHUB_OUTPUT"
           printf 'prepared_path=%s\n' "$(jq -er '.prepared_carrier_path' "$bundle")" >> "$GITHUB_OUTPUT"
           printf 'prepared_digest=%s\n' "$(jq -er '.prepared_carrier_digest' "$bundle")" >> "$GITHUB_OUTPUT"
           printf 'final_path=%s\n' "$(jq -er '.final_carrier_path' "$bundle")" >> "$GITHUB_OUTPUT"
@@ -741,7 +794,11 @@ jobs:
             haft-darwin-arm64.tar.gz
           )
 
-          if find . -type l -print -quit | grep -q .; then
+          bundle_symlink=$(find . -type l -print -quit) || {
+            echo "unable to inspect the sealed release bundle for symlinks" >&2
+            exit 1
+          }
+          if [ -n "$bundle_symlink" ]; then
             echo "sealed release bundle contains a symlink" >&2
             exit 1
           fi

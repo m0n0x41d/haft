@@ -89,6 +89,189 @@ func TestProjectLedgerRejectsCopiedRootWithSameID(t *testing.T) {
 	}
 }
 
+func TestAttachedIdentityDoesNotClassifyProjectIDMismatchAsRelocation(
+	t *testing.T,
+) {
+	fixture := newProjectLedgerFixture(t, "qnt_b7f3b2c2")
+	if err := BindInitialized(
+		context.Background(),
+		fixture.root,
+		time.Now().UTC(),
+	); err != nil {
+		t.Fatalf("BindInitialized: %v", err)
+	}
+	handle, err := OpenExisting(context.Background(), fixture.root, ReadOnly)
+	if err != nil {
+		t.Fatalf("OpenExisting: %v", err)
+	}
+	defer handle.Close()
+	otherID, err := ParseProjectID("qnt_b7f3b2c3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = requireAttachedIdentity(
+		context.Background(),
+		handle.Database(),
+		Identity{root: handle.identity.root, id: otherID},
+	)
+	var mismatch *BindingRootMismatchError
+	if err == nil || errors.As(err, &mismatch) ||
+		!strings.Contains(err.Error(), "not requested id") {
+		t.Fatalf("project-ID mismatch classification = %T %v", err, err)
+	}
+}
+
+func TestProjectLedgerRelocatesMissingPredecessorWithAppendOnlyLineage(
+	t *testing.T,
+) {
+	fixture := newProjectLedgerFixture(t, "qnt_b8f3b2c1")
+	boundAt := time.Date(2026, time.September, 3, 8, 0, 0, 0, time.UTC)
+	if err := BindInitialized(context.Background(), fixture.root, boundAt); err != nil {
+		t.Fatalf("BindInitialized: %v", err)
+	}
+
+	successorRoot := fixture.root + "-moved"
+	if err := os.Rename(fixture.root, successorRoot); err != nil {
+		t.Fatalf("rename project root: %v", err)
+	}
+	_, err := OpenExisting(context.Background(), successorRoot, ReadOnly)
+	var mismatch *BindingRootMismatchError
+	if !errors.As(err, &mismatch) ||
+		mismatch.StoredRoot != fixture.root ||
+		mismatch.RequestedRoot != successorRoot {
+		t.Fatalf("pre-relocation mismatch = %#v / %v", mismatch, err)
+	}
+
+	handle, err := OpenForExplicitMigration(
+		context.Background(),
+		successorRoot,
+		ReadWrite,
+	)
+	if err != nil {
+		t.Fatalf("OpenForExplicitMigration: %v", err)
+	}
+	relocatedAt := boundAt.Add(time.Hour)
+	relocation, err := handle.RelocateRoot(
+		context.Background(),
+		fixture.root,
+		relocatedAt,
+	)
+	if err != nil {
+		_ = handle.Close()
+		t.Fatalf("RelocateRoot: %v", err)
+	}
+	if relocation.Sequence != 1 ||
+		relocation.FromRoot != fixture.root ||
+		relocation.ToRoot != successorRoot ||
+		relocation.ProjectID != fixture.id {
+		_ = handle.Close()
+		t.Fatalf("relocation = %#v", relocation)
+	}
+	state, err := handle.InspectPersistedRootState(context.Background())
+	if err != nil {
+		_ = handle.Close()
+		t.Fatalf("InspectPersistedRootState: %v", err)
+	}
+	if state.GenesisRoot != fixture.root ||
+		state.CurrentRoot != successorRoot ||
+		state.RelocationCount != 1 ||
+		state.CurrentDigest != relocation.Digest {
+		_ = handle.Close()
+		t.Fatalf("root state = %#v", state)
+	}
+	var genesisRoot string
+	var currentRoot string
+	var currentBindingDigest string
+	if err := handle.Database().QueryRow(
+		"SELECT project_root FROM project_ledger_binding WHERE binding_slot = 1",
+	).Scan(&genesisRoot); err != nil {
+		_ = handle.Close()
+		t.Fatal(err)
+	}
+	if err := handle.Database().QueryRow(
+		`SELECT project_root, binding_digest
+		 FROM project_ledger_current_binding WHERE binding_slot = 1`,
+	).Scan(&currentRoot, &currentBindingDigest); err != nil {
+		_ = handle.Close()
+		t.Fatal(err)
+	}
+	if genesisRoot != fixture.root ||
+		currentRoot != successorRoot ||
+		currentBindingDigest != state.BindingDigest {
+		_ = handle.Close()
+		t.Fatalf(
+			"genesis/current/digest = %q / %q / %q, want %q / %q / %q",
+			genesisRoot,
+			currentRoot,
+			currentBindingDigest,
+			fixture.root,
+			successorRoot,
+			state.BindingDigest,
+		)
+	}
+	for _, statement := range []string{
+		"UPDATE project_ledger_root_relocations SET relocated_at = relocated_at",
+		"DELETE FROM project_ledger_root_relocations",
+	} {
+		if _, err := handle.Database().Exec(statement); err == nil {
+			_ = handle.Close()
+			t.Fatalf("append-only relocation accepted %q", statement)
+		}
+	}
+	if err := handle.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	reopened, err := OpenExisting(
+		context.Background(),
+		successorRoot,
+		ReadOnly,
+	)
+	if err != nil {
+		t.Fatalf("OpenExisting successor: %v", err)
+	}
+	if err := reopened.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	copiedRoot := canonicalTempDirectory(t)
+	writeProjectIdentity(t, copiedRoot, fixture.id)
+	_, err = OpenExisting(context.Background(), copiedRoot, ReadOnly)
+	if !errors.As(err, &mismatch) || mismatch.StoredRoot != successorRoot {
+		t.Fatalf("copied-root mismatch after relocation = %#v / %v", mismatch, err)
+	}
+}
+
+func TestProjectLedgerRelocationRejectsStillLivePredecessor(t *testing.T) {
+	fixture := newProjectLedgerFixture(t, "qnt_b9f3b2c1")
+	if err := BindInitialized(
+		context.Background(),
+		fixture.root,
+		time.Now().UTC(),
+	); err != nil {
+		t.Fatal(err)
+	}
+	successorRoot := canonicalTempDirectory(t)
+	writeProjectIdentity(t, successorRoot, fixture.id)
+	handle, err := OpenForExplicitMigration(
+		context.Background(),
+		successorRoot,
+		ReadWrite,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer handle.Close()
+	_, err = handle.RelocateRoot(
+		context.Background(),
+		fixture.root,
+		time.Now().UTC(),
+	)
+	if err == nil || !strings.Contains(err.Error(), "two live roots") {
+		t.Fatalf("live-predecessor relocation error = %v", err)
+	}
+}
+
 func TestProjectLedgerRejectsSymlinkAndNonRegularDatabase(t *testing.T) {
 	fixture := newProjectLedgerFixture(t, "qnt_c7f3b2c1")
 	target := fixture.dbPath + ".target"

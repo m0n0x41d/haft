@@ -243,8 +243,19 @@ func TestFreezeInputCandidateIsNonAuthorizingAndNoClobber(t *testing.T) {
 	if path != candidate.CarrierPath || digest == "" {
 		t.Fatalf("persisted freeze candidate = %q %q", path, digest)
 	}
+	secondPath, secondDigest, err := persistFreezeInputCandidate(root, candidate)
+	if err != nil {
+		t.Fatalf("idempotent freeze candidate publication failed: %v", err)
+	}
+	if secondPath != path || secondDigest != digest {
+		t.Fatal("idempotent freeze candidate publication changed identity")
+	}
+	carrier := filepath.Join(root, filepath.FromSlash(candidate.CarrierPath))
+	if err := os.WriteFile(carrier, []byte("different"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if _, _, err := persistFreezeInputCandidate(root, candidate); err == nil {
-		t.Fatal("second freeze candidate publication replaced existing bytes")
+		t.Fatal("freeze candidate publication replaced different existing bytes")
 	}
 	tampered := candidate
 	tampered.FreezeInput.HeadRevision++
@@ -502,7 +513,16 @@ func persistFreezeInputCandidate(
 		return "", "", fmt.Errorf("close P13 freeze candidate temporary: %w", err)
 	}
 	if err := freezeRoot.Link(temporaryName, finalName); err != nil {
-		return "", "", fmt.Errorf("publish P13 freeze candidate without replacement: %w", err)
+		if !os.IsExist(err) {
+			return "", "", fmt.Errorf("publish P13 freeze candidate without replacement: %w", err)
+		}
+		existing, readErr := freezeRoot.ReadFile(finalName)
+		if readErr != nil {
+			return "", "", fmt.Errorf("read existing P13 freeze candidate: %w", readErr)
+		}
+		if !bytes.Equal(existing, canonical) {
+			return "", "", fmt.Errorf("existing P13 freeze candidate has different bytes")
+		}
 	}
 	if err := freezeRoot.Remove(temporaryName); err != nil {
 		return "", "", fmt.Errorf("remove P13 freeze candidate temporary: %w", err)

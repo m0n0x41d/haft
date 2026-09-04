@@ -1,0 +1,165 @@
+name: P13 Frozen Basis
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact 9.2 candidate version, without the v prefix
+        required: true
+        default: '9.2.0'
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: haft-release-evidence-host
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  capture:
+    name: Capture exact root-bound P13 basis
+    runs-on: [self-hosted, macOS, ARM64, haft-release]
+    environment: release-evidence
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          submodules: true
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: '1.25'
+          cache-dependency-path: go.sum
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: packages/haft-pi/package-lock.json
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: scripts/fpf_query_token_count.requirements.txt
+
+      - name: Require the trusted physical candidate root
+        env:
+          PROJECT_ROOT: ${{ vars.HAFT_RELEASE_PROJECT_ROOT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          test -n "$PROJECT_ROOT"
+          test "$(cd "$PROJECT_ROOT" && pwd -P)" = "$PROJECT_ROOT"
+          cd "$PROJECT_ROOT"
+          git fetch origin main --no-tags
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          status_bytes=$(git status --porcelain=v1 --untracked-files=all)
+          test -z "$status_bytes"
+          bash scripts/release/validate-candidate.sh \
+            "$VERSION" "$GITHUB_SHA" "$(git rev-parse origin/main)"
+          printf 'P13_PROJECT_ROOT=%s\n' "$PROJECT_ROOT" >> "$GITHUB_ENV"
+
+      - name: Restore frozen dependency inputs
+        run: npm ci --prefix "$P13_PROJECT_ROOT/packages/haft-pi"
+
+      - name: Capture and verify one exact freeze-input carrier
+        run: |
+          cd "$P13_PROJECT_ROOT"
+          capture_log="$RUNNER_TEMP/p13-freeze-capture.log"
+          GOMAXPROCS=1 GOFLAGS=-p=1 HAFT_P13_CAPTURE_FREEZE_INPUT=1 \
+            go test -count=1 -timeout=5m -v ./internal/p13acceptance \
+            -run '^TestP13CaptureFreezeInputCandidate$' | tee "$capture_log"
+          freeze_candidate=$(sed -n \
+            's/.*P13 freeze-input review candidate path=\([^ ]*\) carrier_digest=.*/\1/p' \
+            "$capture_log")
+          test "$(printf '%s\n' "$freeze_candidate" | grep -c .)" = 1
+          if [[ ! "$freeze_candidate" =~ ^\.context/p13/p13-freeze-input-candidate-[0-9a-f]+\.json$ ]]; then
+            echo "capture returned an invalid P13 freeze-input carrier path" >&2
+            exit 1
+          fi
+          test -f "$freeze_candidate"
+
+          GOMAXPROCS=1 GOFLAGS=-p=1 \
+          HAFT_P13_VERIFY_FREEZE_INPUT="$freeze_candidate" \
+            go test -count=1 -timeout=5m -v ./internal/p13acceptance \
+            -run '^TestP13VerifyFreezeInputCandidate$'
+          printf 'P13_FREEZE_CANDIDATE=%s\n' "$freeze_candidate" >> "$GITHUB_ENV"
+
+      - name: Seal private basis transport without changing the project
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          cd "$P13_PROJECT_ROOT"
+          stage="$RUNNER_TEMP/p13-frozen-basis"
+          test ! -e "$stage"
+          mkdir -p "$stage/repository/.agents"
+          mkdir -p "$stage/repository/.context/p13"
+          mkdir -p "$stage/repository/.haft"
+          mkdir -p "$stage/home/.haft/projects"
+
+          cp -R .agents/skills "$stage/repository/.agents/skills"
+          cp .context/current-plan-issue-report.md "$stage/repository/.context/current-plan-issue-report.md"
+          cp .context/haft-v9-deterministic-closeout.plan.md "$stage/repository/.context/haft-v9-deterministic-closeout.plan.md"
+          cp "$P13_FREEZE_CANDIDATE" "$stage/repository/$P13_FREEZE_CANDIDATE"
+          cp .haft/project-profile.yaml "$stage/repository/.haft/project-profile.yaml"
+          cp .haft/project.yaml "$stage/repository/.haft/project.yaml"
+
+          project_id=$(awk '$1 == "id:" { print $2; exit }' .haft/project.yaml)
+          printf '%s\n' "$project_id" | grep -Eq '^qnt_[0-9a-f]{8}$'
+          project_home="$HOME/.haft/projects/$project_id"
+          test -f "$project_home/haft.db"
+          mkdir -p "$stage/home/.haft/projects/$project_id"
+          sqlite3 "$project_home/haft.db" ".backup '$stage/home/.haft/projects/$project_id/haft.db'"
+          chmod 0600 "$stage/home/.haft/projects/$project_id/haft.db"
+
+          digest_file() {
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$1" | awk '{print "sha256:" $1}'
+            else
+              shasum -a 256 "$1" | awk '{print "sha256:" $1}'
+            fi
+          }
+          freeze_digest=$(digest_file "$P13_FREEZE_CANDIDATE")
+          database_digest=$(digest_file "$stage/home/.haft/projects/$project_id/haft.db")
+          jq -S -n \
+            --arg sha "$GITHUB_SHA" \
+            --arg version "$VERSION" \
+            --arg root "$P13_PROJECT_ROOT" \
+            --arg project_id "$project_id" \
+            --arg freeze "$P13_FREEZE_CANDIDATE" \
+            --arg freeze_digest "$freeze_digest" \
+            --arg database_digest "$database_digest" \
+            '{
+              schema: "haft.p13.remote-frozen-basis/v2",
+              candidate_sha: $sha,
+              version: $version,
+              project_root: $root,
+              project_id: $project_id,
+              freeze_candidate_path: $freeze,
+              freeze_candidate_digest: $freeze_digest,
+              database_digest: $database_digest
+            }' > "$stage/basis.json"
+
+          stage_symlink=$(find "$stage" -type l -print -quit) || {
+            echo "unable to inspect the P13 frozen basis for symlinks" >&2
+            exit 1
+          }
+          if [ -n "$stage_symlink" ]; then
+            echo "P13 frozen basis contains a symlink" >&2
+            exit 1
+          fi
+
+      - name: Preserve non-publishing frozen basis
+        uses: actions/upload-artifact@v4
+        with:
+          name: p13-frozen-basis
+          path: ${{ runner.temp }}/p13-frozen-basis/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14

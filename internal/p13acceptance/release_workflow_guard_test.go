@@ -12,7 +12,7 @@ import (
 
 const (
 	releaseGuardCandidateSHA = "1111111111111111111111111111111111111111"
-	releaseGuardVersion      = "9.1.0"
+	releaseGuardVersion      = "9.2.0"
 	releaseGuardP13Digest    = "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	releaseGuardP14Digest    = "sha256:3333333333333333333333333333333333333333333333333333333333333333"
 )
@@ -178,10 +178,10 @@ func TestReleaseEvidenceManifestVerifierFailsClosed(t *testing.T) {
 			return releaseGuardVersion, releaseGuardP13Digest, releaseGuardP14Digest
 		},
 		"version_mismatch": func(_ map[string]any) (string, string, string) {
-			return "9.2.0", releaseGuardP13Digest, releaseGuardP14Digest
+			return "9.1.0", releaseGuardP13Digest, releaseGuardP14Digest
 		},
 		"tag_mismatch": func(manifest map[string]any) (string, string, string) {
-			manifest["tag"] = "v9.2.0"
+			manifest["tag"] = "v9.1.0"
 			return releaseGuardVersion, releaseGuardP13Digest, releaseGuardP14Digest
 		},
 		"digest_mismatch": func(_ map[string]any) (string, string, string) {
@@ -231,7 +231,7 @@ func TestReleaseWorkflowStaticallyPinsEvidenceAndPreservesPreparationDefault(
 	}
 	guardedRelease := workflow + "\n" + string(runnerRaw)
 	required := []string{
-		"default: '9.1.0'",
+		"default: '9.2.0'",
 		".github/workflows/p13-basis.yml",
 		".github/workflows/p14-evidence.yml",
 		"validate-evidence-lineage.sh",
@@ -252,6 +252,11 @@ func TestReleaseWorkflowStaticallyPinsEvidenceAndPreservesPreparationDefault(
 		".run_attempt == $attempt",
 		"qualified_executable_digest",
 		"release_archives",
+		"native_version_receipts",
+		"haft.p14.release-evidence-bundle/v2",
+		"HAFT_P13_PROJECT_HOME",
+		"runs-on: [self-hosted, macOS, ARM64, haft-release]",
+		"environment: release-evidence",
 		"valid_until",
 		"needs: [guard, evidence]",
 		"version: $version",
@@ -300,6 +305,76 @@ func TestReleaseWorkflowStaticallyPinsEvidenceAndPreservesPreparationDefault(
 			t.Fatalf("final publish step orders %q after the release effect", fragment)
 		}
 		previous = index
+	}
+}
+
+func TestReleaseEvidenceProducerWorkflowsAreClosed(t *testing.T) {
+	root, err := repositoryRoot()
+	if err != nil {
+		t.Fatal(err)
+	}
+	read := func(relative string) string {
+		t.Helper()
+		raw, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(relative)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(raw)
+	}
+
+	p13Basis := read(".github/workflows/p13-basis.yml")
+	p13Run := read(".github/workflows/ci.yml")
+	p14 := read(".github/workflows/p14-evidence.yml")
+	producerScripts := strings.Join([]string{
+		read("scripts/release/build-native-candidate.sh"),
+		read("scripts/release/package-native-archive.sh"),
+		read("scripts/release/assemble-p14-release-evidence.sh"),
+	}, "\n")
+	all := p13Basis + "\n" + p13Run + "\n" + p14 + "\n" + producerScripts
+	required := []string{
+		"haft.p13.remote-frozen-basis/v2",
+		"HAFT_RELEASE_PROJECT_ROOT",
+		"HAFT_P13_PROJECT_HOME",
+		"sqlite3 \"$project_home/haft.db\" \".backup",
+		"chmod 0600 \"$stage/home/.haft/projects/$project_id/haft.db\"",
+		"cache-dependency-path: packages/haft-pi/package-lock.json",
+		"status_bytes=$(git status --porcelain=v1 --untracked-files=all)",
+		"basis_symlink=$(find \"$BASIS_ROOT\" -type l -print -quit)",
+		"runs-on: [self-hosted, macOS, ARM64, haft-release]",
+		"group: haft-release-evidence-host",
+		"environment: release-evidence",
+		"p13-frozen-basis",
+		"p13-acceptance-${{ github.sha }}",
+		"p14-final-evidence-${{ github.sha }}",
+		"ubuntu-24.04-arm",
+		"build-native-candidate.sh",
+		"CGO_ENABLED=1 GOOS=\"$host_os\" GOARCH=\"$host_arch\"",
+		"package-native-archive.sh",
+		"assemble-p14-release-evidence.sh",
+		"haft.p14.native-version-receipt/v1",
+		"haft.p14.release-evidence-bundle/v2",
+		"native_version_receipts",
+		"tarfile.USTAR_FORMAT",
+		"native archive must contain exactly one haft member",
+		"P14 release carrier must be a regular file",
+		"prepared P14 carrier must be a regular file, not a symlink",
+		"installed candidate escapes the trusted candidate root",
+		"include-hidden-files: true",
+	}
+	for _, fragment := range required {
+		if !strings.Contains(all, fragment) {
+			t.Fatalf("release evidence producers omit closed fragment %q", fragment)
+		}
+	}
+	for _, workflow := range []string{p13Basis, p13Run, p14} {
+		if strings.Contains(workflow, "\n          HOME=\"$P13_") ||
+			strings.Contains(workflow, "remote-frozen-basis/v1") ||
+			strings.Contains(workflow, ".haft/config.yaml") {
+			t.Fatal("release evidence producer retains an identity-changing or absent basis input")
+		}
+	}
+	if strings.Contains(producerScripts, "CGO_ENABLED=0") {
+		t.Fatal("native release producer disables required tree-sitter CGO")
 	}
 }
 

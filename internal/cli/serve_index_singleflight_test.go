@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/m0n0x41d/haft/db"
 	"github.com/m0n0x41d/haft/internal/artifact"
 	"github.com/m0n0x41d/haft/internal/codeintel"
 	"github.com/spf13/cobra"
@@ -101,8 +102,16 @@ func TestServeStdioMultiProcessAutomaticMigrationSingleFlight(t *testing.T) {
 	).Scan(&frontier); err != nil {
 		t.Fatal(err)
 	}
-	if frontier != 59 {
-		t.Fatalf("stdio-migrated schema frontier = %d, want 59", frontier)
+	currentSchema, err := db.CurrentSchemaVersion()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if frontier != currentSchema {
+		t.Fatalf(
+			"stdio-migrated schema frontier = %d, want %d",
+			frontier,
+			currentSchema,
+		)
 	}
 	var invalidRows int
 	if err := check.QueryRow(

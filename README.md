@@ -65,9 +65,10 @@ second independent `--agents` target.
 For an already initialized project, install the new binary and fully restart
 or reconnect the coding-agent host. A new `haft serve` process automatically
 applies only migration boundaries that the release explicitly marks as
-startup-safe. The current chain covers `57 -> 58` and `58 -> 59`; Haft first
-publishes a verified `0600` SQLite snapshot beside the project ledger at each
-boundary it crosses. A current database is a no-op. Re-running `haft init` is
+startup-safe. The current chain covers `57 -> 58`, `58 -> 59`, and `59 -> 60`;
+Haft first publishes a verified `0600` SQLite snapshot beside the project
+ledger at each boundary it crosses. Schema 60 supplies the project-root
+relocation lineage. A current database is a no-op. Re-running `haft init` is
 not routine database maintenance.
 
 If startup reports a manual migration boundary, use the exact fallback command
@@ -82,6 +83,21 @@ It verifies the exact project binding, shares the same migration lease as
 instruction, hook, or package carrier. Future-schema, missing-binding,
 integrity, and stale WAL/SHM diagnostics have different recovery paths; do not
 replace them with a generic migration run.
+
+If an intentional directory rename leaves the ledger attached to the previous
+root, use the exact relocation command from the diagnostic:
+
+```bash
+haft project relocate \
+  --from-root /absolute/previous/root \
+  --project-root /absolute/current/root \
+  --project-id qnt_........
+```
+
+The previous root must no longer exist. Haft verifies a `0600` backup, keeps
+the genesis binding and historical root records unchanged, and appends the new
+root to the ledger lineage. Restart or reconnect the coding-agent host after a
+successful relocation.
 
 Claude Code and Codex are the stable supported hosts. Grok, Pi, Hermes, Zed,
 Antigravity, Cursor, Gemini CLI, and OpenCode remain experimental or legacy

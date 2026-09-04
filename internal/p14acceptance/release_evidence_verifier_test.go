@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	buildinfo "debug/buildinfo"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,7 +23,8 @@ const (
 	p14ReleaseVersionEnvironmentKey     = "HAFT_P14_VERIFY_RELEASE_VERSION"
 	p14ReleaseP13DigestEnvironmentKey   = "HAFT_P14_VERIFY_RELEASE_P13_DIGEST"
 	p14ReleaseFinalDigestEnvironmentKey = "HAFT_P14_VERIFY_RELEASE_FINAL_DIGEST"
-	p14ReleaseEvidenceBundleSchema      = "haft.p14.release-evidence-bundle/v1"
+	p14ReleaseEvidenceBundleSchema      = "haft.p14.release-evidence-bundle/v2"
+	p14NativeVersionReceiptSchema       = "haft.p14.native-version-receipt/v1"
 	p14ReleaseEvidenceMaximumAge        = 24 * time.Hour
 )
 
@@ -41,6 +43,7 @@ type p14ReleaseEvidenceBundle struct {
 	QualifiedMember           string                     `json:"qualified_member"`
 	QualifiedExecutableDigest string                     `json:"qualified_executable_digest"`
 	ReleaseArchives           []p14ReleaseArchiveBinding `json:"release_archives"`
+	NativeVersionReceipts     []p14NativeVersionReceipt  `json:"native_version_receipts"`
 }
 
 type p14ReleaseArchiveBinding struct {
@@ -49,6 +52,19 @@ type p14ReleaseArchiveBinding struct {
 	Digest string `json:"digest"`
 	GOOS   string `json:"goos"`
 	GOARCH string `json:"goarch"`
+}
+
+type p14NativeVersionReceipt struct {
+	Schema              string `json:"schema"`
+	ArchiveName         string `json:"archive_name"`
+	ArchiveDigest       string `json:"archive_digest"`
+	CandidateSHA        string `json:"candidate_sha"`
+	Version             string `json:"version"`
+	GOOS                string `json:"goos"`
+	GOARCH              string `json:"goarch"`
+	ExecutableDigest    string `json:"executable_digest"`
+	VersionOutputBase64 string `json:"version_output_base64"`
+	VersionOutputDigest string `json:"version_output_digest"`
 }
 
 func TestP14VerifyReleaseEvidenceBundle(t *testing.T) {
@@ -102,10 +118,6 @@ func verifyP14ReleaseEvidenceBundle(
 	if err != nil {
 		return err
 	}
-	stagedRepository := filepath.Join(bundleRoot, "repository")
-	if err := os.MkdirAll(stagedRepository, 0o700); err != nil {
-		return err
-	}
 	paths := []string{
 		bundle.P13CarrierPath,
 		bundle.PreparedCarrierPath,
@@ -116,11 +128,43 @@ func verifyP14ReleaseEvidenceBundle(
 			return fmt.Errorf("P14 release evidence carrier path %q is invalid", path)
 		}
 	}
+	sourceRepository := filepath.Join(bundleRoot, "repository")
+	p13Raw, err := readP14ReleaseCarrier(
+		sourceRepository,
+		bundle.P13CarrierPath,
+		bundle.P13CarrierDigest,
+	)
+	if err != nil {
+		return err
+	}
+	preparedRaw, err := readP14ReleaseCarrier(
+		sourceRepository,
+		bundle.PreparedCarrierPath,
+		bundle.PreparedCarrierDigest,
+	)
+	if err != nil {
+		return err
+	}
+	finalRaw, err := readP14ReleaseCarrier(
+		sourceRepository,
+		bundle.FinalCarrierPath,
+		bundle.FinalCarrierDigest,
+	)
+	if err != nil {
+		return err
+	}
+	verificationRoot, err := os.MkdirTemp("", "haft-p14-release-verify-")
+	if err != nil {
+		return fmt.Errorf("create P14 release verification root: %w", err)
+	}
+	defer os.RemoveAll(verificationRoot)
+	stagedRepository := filepath.Join(verificationRoot, "repository")
+	if err := os.MkdirAll(stagedRepository, 0o700); err != nil {
+		return err
+	}
 	modulePath := filepath.Join(stagedRepository, "go.mod")
-	if _, err := os.Stat(modulePath); os.IsNotExist(err) {
-		if err := os.WriteFile(modulePath, []byte("module evidence.invalid\n"), 0o600); err != nil {
-			return err
-		}
+	if err := os.WriteFile(modulePath, []byte("module evidence.invalid\n"), 0o600); err != nil {
+		return err
 	}
 	contractPath := filepath.Join(
 		stagedRepository,
@@ -132,29 +176,18 @@ func verifyP14ReleaseEvidenceBundle(
 	if err := os.WriteFile(contractPath, contractRaw, 0o600); err != nil {
 		return err
 	}
-	p13Raw, err := readP14ReleaseCarrier(
-		stagedRepository,
-		bundle.P13CarrierPath,
-		bundle.P13CarrierDigest,
-	)
-	if err != nil {
-		return err
-	}
-	preparedRaw, err := readP14ReleaseCarrier(
-		stagedRepository,
-		bundle.PreparedCarrierPath,
-		bundle.PreparedCarrierDigest,
-	)
-	if err != nil {
-		return err
-	}
-	finalRaw, err := readP14ReleaseCarrier(
-		stagedRepository,
-		bundle.FinalCarrierPath,
-		bundle.FinalCarrierDigest,
-	)
-	if err != nil {
-		return err
+	for path, raw := range map[string][]byte{
+		bundle.P13CarrierPath:      p13Raw,
+		bundle.PreparedCarrierPath: preparedRaw,
+		bundle.FinalCarrierPath:    finalRaw,
+	} {
+		target := filepath.Join(stagedRepository, filepath.FromSlash(path))
+		if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+			return err
+		}
+		if err := os.WriteFile(target, raw, 0o600); err != nil {
+			return err
+		}
 	}
 	prepared, err := decodePreparedRequestOracleCarrier(contract, preparedRaw)
 	if err != nil {
@@ -225,8 +258,7 @@ func verifyP14ReleaseEvidenceBundle(
 		}
 		gotIDs = append(gotIDs, observation.ID)
 	}
-	if !slices.Equal(gotIDs, wantIDs) ||
-		!bytes.Equal(p13Raw, mustReadP14ReleaseCarrier(stagedRepository, bundle.P13CarrierPath)) {
+	if !slices.Equal(gotIDs, wantIDs) {
 		return fmt.Errorf("P14 final release evidence scenario closure differs")
 	}
 	return nil
@@ -296,7 +328,8 @@ func loadP14ReleaseEvidenceBundle(
 		!validP14Digest(bundle.PreparedCarrierDigest) ||
 		!validP14Digest(bundle.FinalCarrierDigest) ||
 		!validP14Digest(bundle.QualifiedExecutableDigest) ||
-		len(bundle.ReleaseArchives) != 3 {
+		len(bundle.ReleaseArchives) != 3 ||
+		len(bundle.NativeVersionReceipts) != 3 {
 		return p14ReleaseEvidenceBundle{}, "", fmt.Errorf("P14 release evidence bundle header is invalid")
 	}
 	return bundle, filepath.Dir(absolute), nil
@@ -431,6 +464,7 @@ func TestP14ReleaseArchivesBindQualifiedExecutable(t *testing.T) {
 		{Name: "haft-darwin-arm64.tar.gz", GOOS: "darwin", GOARCH: "arm64"},
 	}
 	bindings := make([]p14ReleaseArchiveBinding, 0, len(targets))
+	receipts := make([]p14NativeVersionReceipt, 0, len(targets))
 	archiveMembers := make(map[string][]byte, len(targets))
 	var qualifiedExecutable []byte
 	for _, target := range targets {
@@ -452,9 +486,28 @@ func TestP14ReleaseArchivesBindQualifiedExecutable(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		bindings = append(bindings, p14ReleaseArchiveBinding{
+		binding := p14ReleaseArchiveBinding{
 			Name: target.Name, Path: "release-artifacts/" + target.Name,
 			Digest: digest, GOOS: target.GOOS, GOARCH: target.GOARCH,
+		}
+		bindings = append(bindings, binding)
+		versionOutput := []byte(
+			"haft " + p14RequiredCandidateVersion + "\n" +
+				"  commit:  " + repository.Revision + "\n" +
+				"  built:   test\n" +
+				"  source:  " + repository.VCSTime + "\n",
+		)
+		receipts = append(receipts, p14NativeVersionReceipt{
+			Schema:              p14NativeVersionReceiptSchema,
+			ArchiveName:         binding.Name,
+			ArchiveDigest:       binding.Digest,
+			CandidateSHA:        repository.Revision,
+			Version:             p14RequiredCandidateVersion,
+			GOOS:                binding.GOOS,
+			GOARCH:              binding.GOARCH,
+			ExecutableDigest:    p14Digest(member),
+			VersionOutputBase64: base64.StdEncoding.EncodeToString(versionOutput),
+			VersionOutputDigest: p14Digest(versionOutput),
 		})
 	}
 	clean := false
@@ -474,6 +527,7 @@ func TestP14ReleaseArchivesBindQualifiedExecutable(t *testing.T) {
 		QualifiedMember:           "haft",
 		QualifiedExecutableDigest: candidate.ExecutableDigest,
 		ReleaseArchives:           bindings,
+		NativeVersionReceipts:     receipts,
 	}
 	if err := validateP14ReleaseArchives(
 		root,
@@ -490,6 +544,12 @@ func TestP14ReleaseArchivesBindQualifiedExecutable(t *testing.T) {
 		candidate,
 	); err == nil {
 		t.Fatal("P14 release archives accepted another qualified executable")
+	}
+	wrongReceipt := bundle
+	wrongReceipt.NativeVersionReceipts = slices.Clone(bundle.NativeVersionReceipts)
+	wrongReceipt.NativeVersionReceipts[0].Version = "9.1.0"
+	if err := validateP14ReleaseArchives(root, wrongReceipt, candidate); err == nil {
+		t.Fatal("P14 release archives accepted another native product version")
 	}
 
 	withoutVCS := bundle
@@ -544,6 +604,14 @@ func TestP14ReleaseArchivesBindQualifiedExecutable(t *testing.T) {
 	if _, err := readP14ReleaseArchiveMember(unsafe, "haft"); err == nil {
 		t.Fatal("P14 release archive accepted an unsafe member")
 	}
+	unexpected := filepath.Join(root, "unexpected.tar.gz")
+	writeP14ReleaseArchiveMembers(t, unexpected, []p14TestArchiveMember{
+		{Name: "haft", Mode: 0o755, Content: qualifiedExecutable},
+		{Name: "README", Mode: 0o644, Content: []byte("extra")},
+	})
+	if _, err := readP14ReleaseArchiveMember(unexpected, "haft"); err == nil {
+		t.Fatal("P14 release archive accepted an unexpected extra member")
+	}
 }
 
 func rewriteP14ReleaseArchiveBinding(
@@ -569,6 +637,23 @@ func writeP14ReleaseArchive(
 	content []byte,
 ) {
 	t.Helper()
+	writeP14ReleaseArchiveMembers(t, path, []p14TestArchiveMember{{
+		Name: member, Mode: 0o755, Content: content,
+	}})
+}
+
+type p14TestArchiveMember struct {
+	Name    string
+	Mode    int64
+	Content []byte
+}
+
+func writeP14ReleaseArchiveMembers(
+	t *testing.T,
+	path string,
+	members []p14TestArchiveMember,
+) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -578,13 +663,16 @@ func writeP14ReleaseArchive(
 	}
 	compressed := gzip.NewWriter(file)
 	archive := tar.NewWriter(compressed)
-	if err := archive.WriteHeader(&tar.Header{
-		Name: member, Mode: 0o755, Size: int64(len(content)), Typeflag: tar.TypeReg,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := archive.Write(content); err != nil {
-		t.Fatal(err)
+	for _, member := range members {
+		if err := archive.WriteHeader(&tar.Header{
+			Name: member.Name, Mode: member.Mode,
+			Size: int64(len(member.Content)), Typeflag: tar.TypeReg,
+		}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := archive.Write(member.Content); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if err := archive.Close(); err != nil {
 		t.Fatal(err)
@@ -614,7 +702,8 @@ func validateP14ReleaseArchives(
 		bundle.QualifiedArchive != "haft-darwin-arm64.tar.gz" ||
 		bundle.QualifiedMember != "haft" ||
 		bundle.QualifiedExecutableDigest != candidate.ExecutableDigest ||
-		len(bundle.ReleaseArchives) != len(want) {
+		len(bundle.ReleaseArchives) != len(want) ||
+		len(bundle.NativeVersionReceipts) != len(want) {
 		return fmt.Errorf("P14 release archive qualification basis differs")
 	}
 	for index, archive := range bundle.ReleaseArchives {
@@ -665,6 +754,56 @@ func validateP14ReleaseArchives(
 			p14Digest(member) != bundle.QualifiedExecutableDigest {
 			return fmt.Errorf("P14 qualified archive executable digest differs")
 		}
+		if err := validateP14NativeVersionReceipt(
+			bundle.NativeVersionReceipts[index],
+			archive,
+			candidate,
+			member,
+		); err != nil {
+			return fmt.Errorf(
+				"validate P14 release archive %s native version receipt: %w",
+				archive.Name,
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func validateP14NativeVersionReceipt(
+	receipt p14NativeVersionReceipt,
+	archive p14ReleaseArchiveBinding,
+	candidate candidateP14Basis,
+	member []byte,
+) error {
+	if receipt.Schema != p14NativeVersionReceiptSchema ||
+		receipt.ArchiveName != archive.Name ||
+		receipt.ArchiveDigest != archive.Digest ||
+		receipt.CandidateSHA != candidate.GitHead ||
+		receipt.Version != candidate.Version ||
+		receipt.GOOS != archive.GOOS ||
+		receipt.GOARCH != archive.GOARCH ||
+		receipt.ExecutableDigest != p14Digest(member) ||
+		!validP14Digest(receipt.VersionOutputDigest) ||
+		receipt.VersionOutputBase64 == "" {
+		return fmt.Errorf("native version receipt identity differs")
+	}
+	output, err := base64.StdEncoding.DecodeString(receipt.VersionOutputBase64)
+	if err != nil || base64.StdEncoding.EncodeToString(output) != receipt.VersionOutputBase64 {
+		return fmt.Errorf("native version output is not canonical base64")
+	}
+	if p14Digest(output) != receipt.VersionOutputDigest {
+		return fmt.Errorf("native version output digest differs")
+	}
+	observation, err := parseP14CandidateVersionOutput(output)
+	if err != nil {
+		return err
+	}
+	if observation.Version != candidate.Version ||
+		observation.Commit != candidate.GitHead ||
+		observation.Modified ||
+		observation.SourceTime != candidate.BuildVCSTime {
+		return fmt.Errorf("native version output differs from the frozen candidate")
 	}
 	return nil
 }
@@ -696,7 +835,7 @@ func readP14ReleaseArchiveMember(path string, memberName string) ([]byte, error)
 			return nil, fmt.Errorf("P14 release archive contains an unsafe member")
 		}
 		if clean != memberName {
-			continue
+			return nil, fmt.Errorf("P14 release archive contains an unexpected member")
 		}
 		if header.Typeflag != tar.TypeReg || header.Mode&0o111 == 0 || member != nil ||
 			header.Size <= 0 || header.Size > 256<<20 {
@@ -735,9 +874,4 @@ func readP14ReleaseCarrier(
 		return nil, fmt.Errorf("P14 release carrier %q digest differs", path)
 	}
 	return raw, nil
-}
-
-func mustReadP14ReleaseCarrier(root string, path string) []byte {
-	raw, _ := os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
-	return raw
 }

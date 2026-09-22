@@ -12,7 +12,7 @@ import (
 func publicPreviousCodexStartupRecords(
 	projection initplanning.HostAdapterProjection,
 ) ([]initplanning.ManagedFragmentRecord, error) {
-	if projection.Host() != initplanning.HostCodex {
+	if projection.Host() != initplanning.HostCodex && projection.Host() != initplanning.HostAir {
 		return nil, nil
 	}
 	records := make([]initplanning.ManagedFragmentRecord, 0, 1)

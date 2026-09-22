@@ -720,11 +720,8 @@ func currentCodexCoherentFace(
 	platform string,
 ) (currentCoherentHostFace, error) {
 	path := filepath.Join(context.projectRoot, ".codex", "config.toml")
-	startupTimeout := 20
-	if host == initplanning.HostAir {
-		startupTimeout = 10
-	}
-	content, err := currentCodexTOMLFragmentWithStartup(context, startupTimeout)
+	// Codex and Air share these exact tables, so they must render one value.
+	content, err := currentCodexTOMLFragmentContent(context)
 	if err != nil {
 		return currentCoherentHostFace{}, err
 	}

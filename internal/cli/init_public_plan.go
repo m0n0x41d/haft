@@ -1328,6 +1328,14 @@ func currentPublicTakeoverRegistries(
 			initplanning.ManagedFragmentLegacyRegistry{},
 			err
 	}
+	// Either host can upgrade the shared Codex/Air tables first. Reconcile
+	// only the exact old generated receipt when the observed tables already
+	// equal the current generated fragment; other owned edits still block.
+	managed, err = managed.WithSharedReceiptPredecessors(startupLegacy)
+	if err != nil {
+		return initplanning.LegacyRegistrySelection{},
+			initplanning.ManagedFragmentLegacyRegistry{}, err
+	}
 	return whole, managed, nil
 }
 

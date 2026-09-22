@@ -740,9 +740,10 @@ func (baseline ManagedFragmentBaseline) OwnershipBasis() OwnershipBasis {
 }
 
 type ManagedFragmentLegacyRegistry struct {
-	selected bool
-	records  []ManagedFragmentRecord
-	basis    OwnershipBasis
+	selected                  bool
+	records                   []ManagedFragmentRecord
+	basis                     OwnershipBasis
+	sharedReceiptPredecessors []ManagedFragmentRecord
 }
 
 func NoManagedFragmentLegacyRegistry() ManagedFragmentLegacyRegistry {
@@ -1099,7 +1100,7 @@ func validateManagedFragmentLegacyRegistry(
 	registry ManagedFragmentLegacyRegistry,
 ) error {
 	if !registry.selected {
-		if len(registry.records) != 0 || registry.basis.valid() {
+		if len(registry.records) != 0 || registry.basis.valid() || len(registry.sharedReceiptPredecessors) != 0 {
 			return fmt.Errorf("unselected managed fragment legacy registry carries ownership")
 		}
 		return nil
@@ -1115,7 +1116,7 @@ func validateManagedFragmentLegacyRegistry(
 	if len(records) == 0 {
 		return fmt.Errorf("managed fragment legacy registry is empty")
 	}
-	return nil
+	return validateSharedReceiptPredecessors(registry.records, registry.sharedReceiptPredecessors)
 }
 
 func validateManagedFragmentGroup(
@@ -1257,9 +1258,10 @@ func cloneManagedFragmentLegacyRegistry(
 	registry ManagedFragmentLegacyRegistry,
 ) ManagedFragmentLegacyRegistry {
 	return ManagedFragmentLegacyRegistry{
-		selected: registry.selected,
-		records:  cloneManagedFragmentRecords(registry.records),
-		basis:    registry.basis,
+		selected:                  registry.selected,
+		records:                   cloneManagedFragmentRecords(registry.records),
+		basis:                     registry.basis,
+		sharedReceiptPredecessors: cloneManagedFragmentRecords(registry.sharedReceiptPredecessors),
 	}
 }
 
@@ -1838,6 +1840,7 @@ func ClassifyManagedFragmentCurrentness(
 	desiredByKey := managedFragmentsByKey(plan.desired)
 	manifestByKey := managedFragmentRecordsByKey(plan.baseline.records)
 	legacyByKey := managedFragmentRecordSetsByKey(plan.legacy.records)
+	sharedPredecessorsByKey := managedFragmentRecordSetsByKey(plan.legacy.sharedReceiptPredecessors)
 	states := make([]ManagedFragmentCurrentness, 0, len(plan.probes))
 	vacant := make([]ManagedFragmentVacantTarget, 0, len(plan.desired))
 	for _, probe := range plan.probes {
@@ -1860,6 +1863,7 @@ func ClassifyManagedFragmentCurrentness(
 			manifest,
 			manifestOwned,
 			legacy,
+			sharedPredecessorsByKey[key],
 			plan.baseline.basis,
 			plan.legacy.basis,
 		)
@@ -1897,6 +1901,7 @@ func classifyManagedFragment(
 	manifest ManagedFragmentRecord,
 	manifestOwned bool,
 	legacy []ManagedFragmentRecord,
+	sharedPredecessors []ManagedFragmentRecord,
 	manifestBasis OwnershipBasis,
 	legacyBasis OwnershipBasis,
 ) (
@@ -1926,6 +1931,7 @@ func classifyManagedFragment(
 			manifest,
 			manifestBasis,
 		)
+		state = reconcileSharedManagedFragmentReceipt(state, legacy, sharedPredecessors, legacyBasis)
 		return state, ManagedFragmentVacantTarget{}, managedFragmentStateEmitted, nil
 	}
 	if observed.kind == ManagedFragmentObservedPresent {

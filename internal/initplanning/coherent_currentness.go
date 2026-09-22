@@ -305,9 +305,10 @@ func classifyCoherentWholeCurrentness(
 }
 
 type coherentManagedFragmentGroup struct {
-	desired  []ManagedFragment
-	manifest []ManagedFragmentRecord
-	legacy   []ManagedFragmentRecord
+	desired                   []ManagedFragment
+	manifest                  []ManagedFragmentRecord
+	legacy                    []ManagedFragmentRecord
+	sharedReceiptPredecessors []ManagedFragmentRecord
 }
 
 func classifyCoherentManagedCarriers(
@@ -443,6 +444,13 @@ func buildCoherentManagedCarrierObservationPlans(
 		)
 		groups[path] = group
 	}
+	for _, record := range legacy.sharedReceiptPredecessors {
+		path := record.coordinate.carrierPath
+		group := groups[path]
+		predecessor := cloneManagedFragmentRecord(record)
+		group.sharedReceiptPredecessors = append(group.sharedReceiptPredecessors, predecessor)
+		groups[path] = group
+	}
 	if len(groups) == 0 {
 		return nil, fmt.Errorf(
 			"coherent installation has no managed fragment groups",
@@ -491,6 +499,10 @@ func buildCoherentManagedCarrierObservationPlans(
 			if err != nil {
 				return nil, err
 			}
+		}
+		groupLegacy, err = groupLegacy.WithSharedReceiptPredecessors(group.sharedReceiptPredecessors)
+		if err != nil {
+			return nil, err
 		}
 		observationPlan, err := BuildManagedFragmentObservationPlan(
 			group.desired,

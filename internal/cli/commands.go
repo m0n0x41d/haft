@@ -145,6 +145,10 @@ var deprecatedCommands = []string{
 // individual skill folders live (one folder per skill name).
 func skillsRoot(platform string, local bool, projectRoot string) (string, bool) {
 	homeDir, _ := os.UserHomeDir()
+	return skillsRootForHome(platform, local, projectRoot, homeDir)
+}
+
+func skillsRootForHome(platform string, local bool, projectRoot string, homeDir string) (string, bool) {
 	switch platform {
 	case "claude":
 		if local {

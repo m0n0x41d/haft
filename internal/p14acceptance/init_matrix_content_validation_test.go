@@ -588,7 +588,7 @@ func expectedP14InitMCPFragment(
 		content := fmt.Sprintf(`[mcp_servers.haft]
 command = "haft"
 args = ["serve"]
-startup_timeout_sec = 10
+startup_timeout_sec = 20
 tool_timeout_sec = 60
 
 [mcp_servers.haft.env]

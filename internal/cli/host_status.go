@@ -579,6 +579,18 @@ func inspectOneHostManifest(
 		result.Reasons = []string{err.Error()}
 		return result
 	}
+	observations, err := observePublicProjectionPaths(projection, hostStatusMaxCarrierBytes)
+	if err != nil {
+		result.BindingPosture = "currentness_unavailable"
+		result.Reasons = []string{err.Error()}
+		return result
+	}
+	projection, err = installedPublicCodexProjectSkillProjection(projection, manifest, observations)
+	if err != nil {
+		result.BindingPosture = "desired_projection_unavailable"
+		result.Reasons = []string{err.Error()}
+		return result
+	}
 	inspection, err := inspector.InspectCoherentBinding(
 		store,
 		projection,

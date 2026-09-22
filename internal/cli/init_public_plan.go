@@ -912,6 +912,11 @@ func compilePublicHostInitPlan(
 		if projectionErr != nil {
 			return initplanning.InitPlan{}, projectionErr
 		}
+		projection, binding, duplicateDigests, projectionErr :=
+			reconcilePublicCodexProjectSkills(request, binding, store, projection, candidates, maxCarrierBytes)
+		if projectionErr != nil {
+			return initplanning.InitPlan{}, projectionErr
+		}
 		projection, effectiveBinding, projectionErr :=
 			retainOmittedPublicInstructionFragments(
 				request,
@@ -923,7 +928,7 @@ func compilePublicHostInitPlan(
 			return initplanning.InitPlan{}, projectionErr
 		}
 		legacy, managedLegacy, legacyErr :=
-			currentPublicTakeoverRegistries(projection)
+			currentPublicTakeoverRegistries(projection, duplicateDigests)
 		if legacyErr != nil {
 			return initplanning.InitPlan{}, legacyErr
 		}
@@ -1217,12 +1222,13 @@ func weakPublicHostSelection(
 
 func currentPublicTakeoverRegistries(
 	projection initplanning.HostAdapterProjection,
+	exactSkillDigests map[string]string,
 ) (
 	initplanning.LegacyRegistrySelection,
 	initplanning.ManagedFragmentLegacyRegistry,
 	error,
 ) {
-	whole, basis, err := currentPublicWholeTakeoverRegistry(projection)
+	whole, basis, err := currentPublicWholeTakeoverRegistry(projection, exactSkillDigests)
 	if err != nil {
 		return initplanning.LegacyRegistrySelection{},
 			initplanning.ManagedFragmentLegacyRegistry{},
@@ -1257,6 +1263,12 @@ func currentPublicTakeoverRegistries(
 	for _, fragment := range fragments {
 		records = append(records, fragment.Record())
 	}
+	startupLegacy, err := publicPreviousCodexStartupRecords(projection)
+	if err != nil {
+		return initplanning.LegacyRegistrySelection{},
+			initplanning.ManagedFragmentLegacyRegistry{}, err
+	}
+	records = append(records, startupLegacy...)
 	legacyCodex, present, err :=
 		currentPublicLegacyCodexQuintFragment(projection)
 	if err != nil {
@@ -1640,6 +1652,7 @@ func isPublicLegacyCodexQuintFamily(
 
 func currentPublicWholeTakeoverRegistry(
 	projection initplanning.HostAdapterProjection,
+	exactSkillDigests map[string]string,
 ) (
 	initplanning.LegacyRegistrySelection,
 	initplanning.OwnershipBasis,
@@ -1654,6 +1667,10 @@ func currentPublicWholeTakeoverRegistry(
 	legacyDigests := make(map[string]string, len(outputs))
 	recognizedSkillRoots := make(map[string]struct{})
 	for _, output := range outputs {
+		if digest, exact := exactSkillDigests[output.Path()]; exact {
+			legacyDigests[output.Path()] = digest
+			continue
+		}
 		digest, recognized, err := observePublicLegacyHaftSkill(output)
 		if err != nil {
 			return initplanning.LegacyRegistrySelection{},

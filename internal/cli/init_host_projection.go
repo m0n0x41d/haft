@@ -215,10 +215,11 @@ func currentSkillProjectionRoots(
 			true,
 			projectRoot,
 		)
-		userSkillRoot, userSupported := skillsRoot(
+		userSkillRoot, userSupported := skillsRootForHome(
 			platform,
 			false,
 			projectRoot,
+			userHomeRoot,
 		)
 		if !projectSupported || !userSupported {
 			return nil, fmt.Errorf(
@@ -719,7 +720,11 @@ func currentCodexCoherentFace(
 	platform string,
 ) (currentCoherentHostFace, error) {
 	path := filepath.Join(context.projectRoot, ".codex", "config.toml")
-	content, err := currentCodexTOMLFragmentContent(context)
+	startupTimeout := 20
+	if host == initplanning.HostAir {
+		startupTimeout = 10
+	}
+	content, err := currentCodexTOMLFragmentWithStartup(context, startupTimeout)
 	if err != nil {
 		return currentCoherentHostFace{}, err
 	}
@@ -1188,6 +1193,14 @@ func currentJSONObjectEntryFragmentAtEdition(
 func currentCodexTOMLFragmentContent(
 	context currentCoherentHostContext,
 ) ([]byte, error) {
+	// Cold startup after a schema migration exceeded the old ten-second budget.
+	return currentCodexTOMLFragmentWithStartup(context, 20)
+}
+
+func currentCodexTOMLFragmentWithStartup(
+	context currentCoherentHostContext,
+	startupTimeout int,
+) ([]byte, error) {
 	command, err := currentTOMLString(currentPortableExecutable)
 	if err != nil {
 		return nil, err
@@ -1199,13 +1212,13 @@ func currentCodexTOMLFragmentContent(
 	content := fmt.Sprintf(`[mcp_servers.haft]
 command = %s
 args = ["serve"]
-startup_timeout_sec = 10
+startup_timeout_sec = %d
 tool_timeout_sec = 60
 
 [mcp_servers.haft.env]
 HAFT_PROJECT_ROOT = "."
 HAFT_EXPECTED_PROJECT_ID = %s
-`, command, projectID)
+`, command, startupTimeout, projectID)
 	return []byte(content), nil
 }
 

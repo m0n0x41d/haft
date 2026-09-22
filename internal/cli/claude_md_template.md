@@ -56,7 +56,12 @@ Query and do the bounded work directly. This is not a fabricated
 material or uncertain, query the source.
 
 For a substantive FPF question, use `/h-reason` or the exact specialized
-skill. Query the bundled source:
+skill. The bundled read corpus distinguishes FPF Core from Engineering DPF
+publications. When ecosystem orientation is needed, inspect `fpf-usage-guide`
+(the source-owned `USING-FPF.md`) and follow its publication and Suite guidance.
+`fpf-ecosystem`, `engineering-suite`, and `engineering-suite-reference` are
+exact publication locators for that navigation. Fresh source access or compiler
+acceptance does not activate a project-memory successor. Query the source:
 
 ```text
 mcp__haft__haft_query(
@@ -76,8 +81,9 @@ an unversioned benchmark observation into a permanent routing rule.
 This returns source material, never applicability, selection, recommendation,
 or evidence. Then:
 
-1. compare the relevant README practical-use cards by recognizable situation,
-   first-result difference, direct pattern, and stop/return boundary;
+1. compare relevant source-owned README or Suite practical-use cards by
+   recognizable situation, first-result difference, direct pattern, and
+   stop/return boundary;
 2. use the Table of Contents as the source-owned PatternID/keyword/query index;
 3. recover an exact source unit with `mode="lookup"` and its `identifier`, or
    use non-broadening `mode="inspect"` when the identifier must match exactly;

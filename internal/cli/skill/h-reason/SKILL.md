@@ -1,7 +1,7 @@
 ---
 name: h-reason
 description: |
-  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF source, inspect the governing pattern body, and choose the minimal current capability set. Ordinary reasoning stays conversational; proactively persist the minimum needed memory when current Work supplies a concrete durable receiving use. h-decide may route a direct operator request; h-commission remains manual-only.
+  Source-first umbrella for FPF-aware reasoning in a Haft project. Use when the operator asks to think through an ambiguous engineering, management, architecture, specification, or project question without naming a narrower Haft capability. Recover the current object and question, query the bundled FPF and DPF publications, inspect the governing pattern body, and choose the minimal current capability set. Ordinary reasoning stays conversational; proactively persist the minimum needed memory when current Work supplies a concrete durable receiving use. h-decide may route a direct operator request; h-commission remains manual-only.
 when_to_use: |
   The operator asks to reason with FPF or Haft, says "let's think", "помоги разобраться", or presents a concern that could belong to several narrower skills. Prefer a narrower skill when its condition is already clear.
 argument-hint: "[current project question]"
@@ -47,7 +47,7 @@ Keep these distinctions live before choosing a pattern:
 
 Classify an exact identifier before choosing a query field:
 
-- FPF `PatternID`, `SourceID`, or `UnitID` ->
+- FPF/DPF `PatternID`, `SourceID`, `UnitID`, or source publication ID ->
   `mcp__haft__haft_query(action="fpf", mode="lookup|inspect", identifier="<id>")`;
 - canonical Haft artifact ID ->
   `mcp__haft__haft_query(action="related", artifact_ref="<id>")`;
@@ -247,6 +247,16 @@ material or uncertain, a neighborhood exposes an unfamiliar kind or missing
 method basis, or the direct governing pattern is unclear, continue with source
 retrieval.
 
+When the current question needs ecosystem orientation or a choice between Core
+and a DPF, inspect `fpf-usage-guide`, the source-owned `USING-FPF.md` publication.
+Follow its guidance through `fpf-ecosystem` and the relevant Suite navigation;
+`engineering-suite` and `engineering-suite-reference` expose the bundled
+Engineering Suite's own README and Reference. These are source locators, not
+Haft's selection policy or a prescribed sequence. Keep the returned publication
+identity visible when distinguishing Core from a DPF. Fresh source access and
+successful source compilation do not activate a project-memory successor;
+use trace only when the exact source and memory bases are needed.
+
 If the operator names an exact PatternID, SourceID, or UnitID, use non-broadening
 `mode="inspect", identifier="<exact id>"`. Otherwise query with the object,
 current question, and the important domain words:
@@ -270,8 +280,8 @@ unversioned benchmark observation into a permanent routing rule.
 The result is source material, not applicability, selection, recommendation,
 evidence, precedence, or authority. Use the source-owned navigation:
 
-1. compare relevant README practical-use cards by situation, first-result
-   difference, direct pattern, and stop/return boundary;
+1. compare relevant source-owned README or Suite practical-use cards by
+   situation, first-result difference, direct pattern, and stop/return boundary;
 2. use the Table of Contents for PatternID, title, keywords, queries, and
    dependencies;
 3. recover an exact source unit with `mode="lookup"` and its `identifier`, or

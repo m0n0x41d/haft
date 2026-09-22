@@ -2,6 +2,7 @@ package fpf
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"sort"
 )
@@ -91,6 +92,18 @@ func LoadQuerySourceSnapshot(db *sql.DB) (QuerySourceSnapshot, error) {
 	)
 	if err != nil {
 		return QuerySourceSnapshot{}, err
+	}
+	var basisJSON string
+	err = db.QueryRow(`SELECT value FROM meta WHERE key = 'source_access_basis'`).Scan(&basisJSON)
+	if err != nil && err != sql.ErrNoRows {
+		return QuerySourceSnapshot{}, err
+	}
+	if err == nil {
+		var basis SourceAccessBasis
+		if err := json.Unmarshal([]byte(basisJSON), &basis); err != nil {
+			return QuerySourceSnapshot{}, err
+		}
+		snapshot.sourceAccess = &basis
 	}
 	if err := verifyQuerySnapshotRevisionProjection(db, snapshot); err != nil {
 		return QuerySourceSnapshot{}, err

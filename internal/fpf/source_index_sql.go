@@ -1492,6 +1492,9 @@ func loadSourceUnits(db *sql.DB, query string, args []any) ([]SourceUnit, error)
 	if err := hydrateSourceRelations(db, units); err != nil {
 		return nil, err
 	}
+	if err := hydrateSourcePublications(db, units); err != nil {
+		return nil, err
+	}
 	return units, nil
 }
 

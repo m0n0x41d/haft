@@ -26,6 +26,8 @@ const (
 	SourceUnitRolePatternBody      SourceUnitRole = "pattern_body"
 	SourceUnitRolePatternSection   SourceUnitRole = "pattern_section"
 	SourceUnitRolePatternScope     SourceUnitRole = "pattern_scope"
+	SourceUnitRolePublication      SourceUnitRole = "publication"
+	SourceUnitRoleNavigation       SourceUnitRole = "navigation"
 )
 
 var sourceUnitRoleOrder = []SourceUnitRole{
@@ -35,14 +37,20 @@ var sourceUnitRoleOrder = []SourceUnitRole{
 	SourceUnitRolePatternBody,
 	SourceUnitRolePatternSection,
 	SourceUnitRolePatternScope,
+	SourceUnitRolePublication,
+	SourceUnitRoleNavigation,
 }
 
 type SourceProvenance struct {
-	SourcePath     string `json:"source_path"`
-	StartLine      int    `json:"start_line"`
-	EndLine        int    `json:"end_line"`
-	ContentHash    string `json:"content_hash"`
-	SourceRevision string `json:"source_revision"`
+	PublicationID   string `json:"publication_id,omitempty"`
+	PublicationKind string `json:"publication_kind,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
+	DocumentDigest  string `json:"document_digest,omitempty"`
+	SourcePath      string `json:"source_path"`
+	StartLine       int    `json:"start_line"`
+	EndLine         int    `json:"end_line"`
+	ContentHash     string `json:"content_hash"`
+	SourceRevision  string `json:"source_revision"`
 }
 
 // SourceRelationKind is copied from an explicit relation label in the

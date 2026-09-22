@@ -37,10 +37,14 @@ func run(
 ) (int, error) {
 	if len(args) == 0 {
 		return 2, fmt.Errorf(
-			"usage: fpf-refresh <check|apply|rebase-local-practice|resume|restore|verify> [options]",
+			"usage: fpf-refresh <check|apply|rebase-local-practice|resume|restore|verify|source-check|source-apply|source-verify|source-fetch> [options]",
 		)
 	}
 	switch args[0] {
+	case "source-fetch":
+		return runSourceFetch(ctx, args[1:], stdout, stderr)
+	case "source-check", "source-apply", "source-verify":
+		return runSourceAccess(ctx, args[0], args[1:], stdout, stderr)
 	case "check":
 		return runCheck(ctx, args[1:], stdout, stderr, false)
 	case "apply":

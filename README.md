@@ -326,57 +326,97 @@ versioned source as addressable publication units. Concern retrieval reports
 observable authored-phrase, heading/keyword, and role-local FTS grounds;
 lookup tries exact identity before returning compact candidates; inspect is
 exact-only. Source roles (`practical_use_card`, `toc_row`, `preface`,
-`pattern_body`, `pattern_section`, `pattern_scope`) control progressive disclosure. Candidates
-are not selected patterns, and their order is not a causal or work order.
+`pattern_body`, `pattern_section`, `pattern_scope`, `publication`, `navigation`)
+control progressive disclosure. Candidates are not selected patterns, and their
+order is not a causal or work order.
 
-#### Maintaining the pinned FPF publication
+#### Maintaining source access and compiled memory
 
-Start with `task fpf-refresh-check`. It fetches and resolves one exact upstream
-candidate, builds private temporary artifacts, and writes
-`.context/fpf-refresh/latest-report.json` without changing the checked-out
-source, embedded database, integration lock, typed-memory candidate, or specs.
-The report has one closed result:
+`task fpf-refresh-check` fetches upstream, resolves one candidate (default
+`origin/main`), and prepares the source corpus privately. Its JSON report lists
+the exact revision, publications, digests, and separate Core compiler result.
+`task fpf-refresh` prepares one pinned candidate, atomically replaces
+`internal/cli/fpf-source.db.gz`, and verifies that exact publication. The archive
+contains Core, the ecosystem README and usage guide, and the declared
+Engineering DPF Suite. Other DPF suites are outside this corpus.
 
-| Result | Meaning | Next action |
-|---|---|---|
-| `no_change` | Candidate and current publication are the same. | Nothing to apply. |
-| `apply_ready` | The technical compatibility checks admit the candidate. | Run `task fpf-refresh`. |
-| `review_ready` | A complete candidate built and verified, while parser, semantic, Query-behavior, token-budget, or expectation findings need later review. | `task fpf-refresh` prints a prominent warning, applies the fresh source baseline, and retains every finding for downstream review. |
-| `candidate_rejected` | The required source publication is missing, its structure is unsupported, or no deterministic and internally coherent source/index publication could be built and verified. | Adapt the source parser/compiler or repair the integrity failure, then check again. |
+Source refresh leaves `data/FPF` at its existing checkout, preserves
+`internal/cli/fpf.db` and `data/haft/fpf-integration.lock.json`, and activates no
+memory successor. The source archive records the unchanged memory basis and
+prints the compiler outcome and any exact diagnostics. Compiler edition v7
+accepts source revision `21296c8aaf3611b63ee6a2bb11e439e828ffb9a3`, preserving
+C.3.A's separate admissibility, no-judgment, and refusal distinctions as a
+source-only contract. The archive records this as `accepted_not_activated`.
+The existing project-stage trust catalog remains on its previously admitted
+editions; source compilation does not establish project-memory compatibility
+or admit a v7 successor.
 
-`task fpf-refresh` repeats the check, pins the resolved candidate SHA, and
-recoverably applies the coherent source, database, and generated
-integration-lock publication for both `apply_ready` and `review_ready`.
-`review_ready` is an auditable semantic-delta classification, not a veto on
-adopting fresh FPF as Haft's source baseline. Query/token fixture drift is also
-`review_ready`: the command prints a large `FPF REFRESH REVIEW WARNING`, keeps
-the exact diagnostics and reproduction commands in the report, and continues
-the recoverable apply. Exact PatternID/query-smoke drift, token fixtures, and
-semantic compatibility gaps belong here when the generic source-query runtime
-and derived publication are still coherent. A new recognizable result-label
-family is indexed with its exact raw source, flagged as degraded parser review,
-and does not veto refresh. Such findings may block release or query-quality
-claims, but they do not leave Haft on stale FPF source. Applying the candidate
-records no semantic approval and grants no release authority. A hard rejection is
-reserved for the absence of a complete structurally supported candidate — for
-example a missing required publication, source structure too incomplete to
-derive the required roles/categories, a derived source-unit projection below
-50% of the preceding verified count, failed derivation, or failed source/DB/lock
-integrity verification. The apply also
-rebases only the repo-owned Local-Practice compiled memory basis and
-`FPF-Spec.md` source pins,
-then proves that the carrier parses, compiles, seals, verifies, and links
-against the fresh basis. `task fpf-refresh` finishes with the exact read-only
-integration verification. After a low-level recovery, run
-`task fpf-verify`. If an apply is interrupted, keep the receipt unchanged and
-use `task fpf-refresh-resume` to continue or `task fpf-refresh-restore` to
-restore its exact predecessor; never delete or hand-edit the receipt.
+`task fpf-verify` is read-only and rebuilds deterministically from the archive's
+own Git revision. It neither fetches nor follows `origin/main`. On a fresh
+checkout, run `task fpf-source-fetch` first to acquire that exact commit without
+moving the checkout; CI performs this acquisition as a separate step. Missing
+objects produce a diagnostic naming the pin and a concrete fetch command.
 
-Generated hashes, counts, and compatibility results remain distinct from
-human-reviewed semantic and changelog claims. None of these commands commits,
-binds a decision, changes a SpecSection lifecycle, changes the active
-project-memory model, installs or restarts Haft, runs P13/P14, pushes, tags, or
-releases.
+Pass explicit options after `--`:
+
+```sh
+task fpf-refresh-check -- --candidate-ref <commit> --no-fetch
+task fpf-refresh -- --candidate-ref <commit> --no-fetch
+task fpf-verify -- --source-repo /path/to/fetched/FPF
+```
+
+Check/apply also accept `--source-repo`, `--fetch-remote`, and `--report` for an
+optional report copy (for example `.context/fpf-refresh/latest-source-report.json`).
+Use `--no-fetch`
+when the object provider must remain read-only. Verify's optional
+`--candidate-ref` asserts an expected revision; it cannot repin the archive.
+The source commands print JSON to stdout and diagnostics to stderr.
+
+After rebuilding Haft, recover source-owned navigation and exact bodies with:
+
+```sh
+haft fpf inspect fpf-usage-guide
+haft fpf inspect engineering-suite
+haft fpf inspect engineering-suite-reference
+haft fpf inspect SYSE.25 --view trace
+```
+
+The guide and Suite publications retain their own identities and complete
+bodies. They supply source navigation, not a second Haft routing catalog.
+Working views carry stable publication identity; trace adds revision, path,
+hash, range, and the separate memory/compiler basis.
+
+The explicit **memory integration** tasks retain the older workflow:
+
+| Task | Effect |
+|---|---|
+| `fpf-memory-refresh-check` | Fetch and evaluate an integrated source/compiler candidate; write `.context/fpf-refresh/latest-report.json`. |
+| `fpf-memory-refresh` | Run the integrated check, then recoverably apply an admitted source checkout, memory DB, integration lock, and repo-owned Local-Practice basis. |
+| `fpf-memory-verify` | Independently verify the existing coherent source checkout, memory DB, lock, TypeEnv, and token fixture. |
+| `fpf-memory-refresh-resume` / `fpf-memory-refresh-restore` | Resume the exact interrupted integrated apply or restore its receipt-pinned predecessor. Preserve the recovery receipt. |
+
+The strict memory verifier also checks the current generator fingerprint.
+Changing refresh implementation can therefore report `snapshot_pin_stale`
+even when the old memory DB and lock remain byte-identical. Source verification
+does not waive that separate check or rewrite its lock.
+
+These tasks keep the original `fpf-refresh check|apply|verify|resume|restore`
+command semantics and compiler checks. Integrated reports distinguish
+`no_change`, `apply_ready`, `review_ready`, and `candidate_rejected`.
+`review_ready` retains reviewable grammar, semantic, Query, and token findings;
+a rejected compilation cannot produce an integrated memory publication.
+Compiler v7's source acceptance does not waive integrated generator checks,
+stage trust, or project-compatibility checks. The old
+`fpf-refresh-resume` and `fpf-refresh-restore` task names remain aliases for
+integrated recovery. The scheduled `update-fpf.yml` automation also remains an
+explicit integrated-memory workflow.
+
+After a separately authorized memory refresh changes the embedded memory
+bytes, regenerate the source archive against that new memory basis and verify
+both artifacts. None of these commands approves semantics, changes a
+SpecSection lifecycle, selects an active project-memory model, installs or
+restarts Haft, or establishes release readiness. Rebuild/install and fresh
+runtime verification are separate steps.
 
 ### Fused code and reasoning graph
 

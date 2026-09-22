@@ -75,6 +75,7 @@ func parseQueryPublicationView(raw string) (QueryPublicationView, error) {
 // canonical QueryResult was retrieved. Its fields remain internal until an
 // explicit trace or diagnostic projection is selected.
 type QuerySourceSnapshot struct {
+	sourceAccess       *SourceAccessBasis
 	indexSchemaVersion string
 	revision           string
 	readmeDigest       string
@@ -294,6 +295,9 @@ type publishedExactSourceUnit interface {
 }
 
 type publishedLookupSourceUnit struct {
+	PublicationID            string                            `json:"publication_id,omitempty"`
+	PublicationKind          string                            `json:"publication_kind,omitempty"`
+	Namespace                string                            `json:"namespace,omitempty"`
 	UnitID                   string                            `json:"unit_id"`
 	SourceID                 string                            `json:"source_id,omitempty"`
 	SourceRole               SourceUnitRole                    `json:"source_role"`
@@ -312,6 +316,9 @@ type publishedLookupSourceUnit struct {
 func (publishedLookupSourceUnit) isPublishedExactSourceUnit() {}
 
 type publishedInspectSourceUnit struct {
+	PublicationID     string                    `json:"publication_id,omitempty"`
+	PublicationKind   string                    `json:"publication_kind,omitempty"`
+	Namespace         string                    `json:"namespace,omitempty"`
 	UnitID            string                    `json:"unit_id"`
 	SourceID          string                    `json:"source_id,omitempty"`
 	SourceRole        SourceUnitRole            `json:"source_role"`
@@ -334,6 +341,9 @@ type PublishedExactRelationProjection struct {
 }
 
 type PublishedCandidateSourceUnit struct {
+	PublicationID            string                                `json:"publication_id,omitempty"`
+	PublicationKind          string                                `json:"publication_kind,omitempty"`
+	Namespace                string                                `json:"namespace,omitempty"`
 	UnitID                   string                                `json:"unit_id"`
 	SourceID                 string                                `json:"source_id,omitempty"`
 	SourceRole               SourceUnitRole                        `json:"source_role"`
@@ -558,18 +568,23 @@ func (queryReplayMismatch) PublishedKind() PublishedQueryResultKind {
 func (queryReplayMismatch) isPublishedQueryResult() {}
 
 type TraceSourceSnapshot struct {
-	IndexSchemaVersion   string `json:"index_schema_version"`
-	SourceRevision       string `json:"source_revision"`
-	ReadmeDocumentDigest string `json:"readme_document_digest"`
-	SpecificationDigest  string `json:"specification_document_digest"`
+	SourceAccess         *SourceAccessBasis `json:"source_access,omitempty"`
+	IndexSchemaVersion   string             `json:"index_schema_version"`
+	SourceRevision       string             `json:"source_revision"`
+	ReadmeDocumentDigest string             `json:"readme_document_digest"`
+	SpecificationDigest  string             `json:"specification_document_digest"`
 }
 
 type TraceProvenanceEntry struct {
-	Ref         string `json:"ref"`
-	SourcePath  string `json:"source_path"`
-	StartLine   int    `json:"start_line"`
-	EndLine     int    `json:"end_line"`
-	ContentHash string `json:"content_hash"`
+	PublicationID   string `json:"publication_id,omitempty"`
+	PublicationKind string `json:"publication_kind,omitempty"`
+	Namespace       string `json:"namespace,omitempty"`
+	DocumentDigest  string `json:"document_digest,omitempty"`
+	Ref             string `json:"ref"`
+	SourcePath      string `json:"source_path"`
+	StartLine       int    `json:"start_line"`
+	EndLine         int    `json:"end_line"`
+	ContentHash     string `json:"content_hash"`
 }
 
 type TraceUnitBinding struct {
@@ -913,6 +928,9 @@ func projectLookupSourceUnit(
 		budget.MaxExcerptCharacters,
 	)
 	return publishedLookupSourceUnit{
+		PublicationID:            unit.Provenance.PublicationID,
+		PublicationKind:          unit.Provenance.PublicationKind,
+		Namespace:                unit.Provenance.Namespace,
 		UnitID:                   unit.UnitID,
 		SourceID:                 unit.SourceID,
 		SourceRole:               unit.Role,
@@ -934,6 +952,9 @@ func projectLookupSourceUnit(
 
 func projectInspectSourceUnit(unit SourceUnit) publishedInspectSourceUnit {
 	return publishedInspectSourceUnit{
+		PublicationID:     unit.Provenance.PublicationID,
+		PublicationKind:   unit.Provenance.PublicationKind,
+		Namespace:         unit.Provenance.Namespace,
 		UnitID:            unit.UnitID,
 		SourceID:          unit.SourceID,
 		SourceRole:        unit.Role,
@@ -1007,6 +1028,9 @@ func projectSourceCandidateGroup(group SourceCandidateGroup) PublishedSourceCand
 func projectCandidateSourceUnit(unit CandidateSourceUnit) PublishedCandidateSourceUnit {
 	directRefs, directRefsTruncated, directRefsOmitted := projectDirectRefs(unit.DirectRefs)
 	return PublishedCandidateSourceUnit{
+		PublicationID:            unit.Provenance.PublicationID,
+		PublicationKind:          unit.Provenance.PublicationKind,
+		Namespace:                unit.Provenance.Namespace,
 		UnitID:                   unit.UnitID,
 		SourceID:                 unit.SourceID,
 		SourceRole:               unit.SourceRole,
@@ -1132,11 +1156,13 @@ func buildQueryReplayCoordinates(
 	result QueryResult,
 ) (queryTraceCoordinates, error) {
 	snapshotDigest, err := digestQueryTraceValue("source-snapshot", struct {
-		IndexSchemaVersion string `json:"index_schema_version"`
-		Revision           string `json:"revision"`
-		ReadmeDigest       string `json:"readme_digest"`
-		SpecDigest         string `json:"spec_digest"`
+		SourceAccess       *SourceAccessBasis `json:"source_access,omitempty"`
+		IndexSchemaVersion string             `json:"index_schema_version"`
+		Revision           string             `json:"revision"`
+		ReadmeDigest       string             `json:"readme_digest"`
+		SpecDigest         string             `json:"spec_digest"`
 	}{
+		SourceAccess:       snapshot.sourceAccess,
 		IndexSchemaVersion: snapshot.IndexSchemaVersion(),
 		Revision:           snapshot.Revision(),
 		ReadmeDigest:       snapshot.ReadmeDigest(),
@@ -1320,11 +1346,15 @@ func (collector *queryTraceCollector) bindRelation(
 func (collector *queryTraceCollector) addProvenance(provenance SourceProvenance) string {
 	ref := provenanceTraceRef(provenance)
 	collector.provenanceByRef[ref] = TraceProvenanceEntry{
-		Ref:         ref,
-		SourcePath:  provenance.SourcePath,
-		StartLine:   provenance.StartLine,
-		EndLine:     provenance.EndLine,
-		ContentHash: provenance.ContentHash,
+		PublicationID:   provenance.PublicationID,
+		PublicationKind: provenance.PublicationKind,
+		Namespace:       provenance.Namespace,
+		DocumentDigest:  provenance.DocumentDigest,
+		Ref:             ref,
+		SourcePath:      provenance.SourcePath,
+		StartLine:       provenance.StartLine,
+		EndLine:         provenance.EndLine,
+		ContentHash:     provenance.ContentHash,
 	}
 	return ref
 }
@@ -1358,6 +1388,7 @@ func (collector *queryTraceCollector) result() QueryResultTrace {
 	})
 	return QueryResultTrace{
 		SourceSnapshot: TraceSourceSnapshot{
+			SourceAccess:         collector.snapshot.sourceAccess,
 			IndexSchemaVersion:   collector.snapshot.IndexSchemaVersion(),
 			SourceRevision:       collector.snapshot.Revision(),
 			ReadmeDocumentDigest: collector.snapshot.ReadmeDigest(),

@@ -70,9 +70,19 @@ tasks:
         go run ./cmd/indexer -verify "$fpf_db" "$fpf_spec" "$fpf_revision"
 
   fpf-verify:
-    desc: Read-only verification that checked-out FPF source, DB, integration lock, TypeEnv, and token fixture share one exact basis
+    desc: Read-only deterministic source archive verification against its own pinned Git revision and unchanged memory digest
     cmds:
-      - go run ./cmd/fpf-refresh verify --repo .
+      - go run ./cmd/fpf-refresh source-verify --repo . {{.CLI_ARGS}}
+
+  fpf-source-fetch:
+    desc: Fetch the committed source archive's exact Git objects without moving the source checkout; run before offline source verification
+    cmds:
+      - go run ./cmd/fpf-refresh source-fetch --repo . {{.CLI_ARGS}}
+
+  fpf-memory-verify:
+    desc: Read-only verification of the separate coherent memory source checkout, DB, integration lock, TypeEnv, and token fixture
+    cmds:
+      - go run ./cmd/fpf-refresh verify --repo . {{.CLI_ARGS}}
 
   fpf-query-token-gate:
     desc: Verify the pinned embedded 1d5 concern corpus saves at least 30% o200k_base tokens; also run the separate synthetic calculus check
@@ -99,34 +109,53 @@ tasks:
         --output-file scripts/fpf_query_token_count.requirements.txt
 
   fpf-refresh-check:
-    desc: Fetch and evaluate an exact upstream FPF candidate in private temporary artifacts without changing the live publication
+    desc: Fetch and pin upstream Core, usage guide, and Engineering DPF source; prepare privately and report the separate memory compiler result
     cmds:
-      - go run ./cmd/fpf-refresh check --repo .
+      - go run ./cmd/fpf-refresh source-check --repo . {{.CLI_ARGS}}
 
   fpf-refresh:
-    desc: Recoverably apply every structurally supported fresh FPF source/index publication; parser, semantic, query, and token findings print review warnings but do not stop refresh
+    desc: Fetch one source candidate, atomically publish its read archive, and verify the exact pin; retain memory DB, integration lock, and compiler diagnostics
     cmds:
-      - go run ./cmd/fpf-refresh apply --repo .
+      - go run ./cmd/fpf-refresh source-apply --repo . {{.CLI_ARGS}}
+
+  fpf-memory-refresh-check:
+    desc: Maintainer integrated refresh check; require a coherent compiled memory candidate and retain all compatibility checks
+    cmds:
+      - go run ./cmd/fpf-refresh check --repo . {{.CLI_ARGS}}
+
+  fpf-memory-refresh:
+    desc: Maintainer integrated refresh; recoverably apply source checkout, compiled memory DB, lock, and repo-owned Local-Practice basis
+    cmds:
+      - go run ./cmd/fpf-refresh apply --repo . {{.CLI_ARGS}}
       - go run ./cmd/fpf-refresh verify --repo .
 
-  fpf-refresh-resume:
-    desc: Resume only the exact interrupted FPF apply named by its recovery receipt
+  fpf-memory-refresh-resume:
+    desc: Resume only the exact interrupted integrated memory apply named by its recovery receipt
     cmds:
-      - go run ./cmd/fpf-refresh resume --repo .
+      - go run ./cmd/fpf-refresh resume --repo . {{.CLI_ARGS}}
       - go run ./cmd/fpf-refresh rebase-local-practice --repo .
       - go run ./cmd/fpf-refresh verify --repo .
 
-  fpf-refresh-restore:
-    desc: Restore only the exact predecessor publication named by an interrupted FPF apply receipt
+  fpf-memory-refresh-restore:
+    desc: Restore only the exact predecessor publication named by an interrupted integrated memory apply receipt
     cmds:
-      - go run ./cmd/fpf-refresh restore --repo .
+      - go run ./cmd/fpf-refresh restore --repo . {{.CLI_ARGS}}
 
-  # build/install/dev use the COMMITTED internal/cli/fpf.db (go:embed'd into the
-  # binary), the same source of truth CI verifies but never rebuilds. A
-  # maintainer refresh recoverably updates the coherent source + DB + generated
-  # integration-lock publication; it does not itself commit or release it.
+  fpf-refresh-resume:
+    desc: Legacy alias for fpf-memory-refresh-resume; source archive replacement needs no recovery receipt
+    cmds:
+      - task: fpf-memory-refresh-resume
+
+  fpf-refresh-restore:
+    desc: Legacy alias for fpf-memory-refresh-restore; retains the integrated receipt semantics
+    cmds:
+      - task: fpf-memory-refresh-restore
+
+  # Build/install embed the source-access archive and the separate memory DB.
+  # Source refresh replaces only the archive; explicit memory refresh retains
+  # integrated compiler checks. Neither workflow commits or releases artifacts.
   build:
-    desc: Build Go binary (uses the committed FPF index; run `task fpf-refresh` to refresh the coherent publication)
+    desc: Build Go binary with the source-access archive and separate compiled memory DB
     cmds:
       - go build -o {{.BIN_NAME}} -trimpath ./cmd/haft/
     generates:

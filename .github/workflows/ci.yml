@@ -58,7 +58,13 @@ jobs:
           go mod tidy
           git diff --exit-code go.mod go.sum || (echo "go.mod/go.sum not tidy — run 'go mod tidy'" && exit 1)
 
-      - name: Verify committed FPF source, index, and integration lock
+      - name: Fetch the committed source archive's pinned Git objects
+        run: go run ./cmd/fpf-refresh source-fetch --repo .
+
+      - name: Verify committed source access against its own pin
+        run: go run ./cmd/fpf-refresh source-verify --repo .
+
+      - name: Verify the separate compiled memory source, index, and integration lock
         run: go run ./cmd/fpf-refresh verify --repo .
 
       - name: Verify FPF Query working-view token gate

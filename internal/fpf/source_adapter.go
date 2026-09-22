@@ -322,6 +322,12 @@ func validateReadmeCarrierRoots(readmeAtlas, specAtlas PatternAtlas) error {
 			readmeAtlas.SourceRef,
 		)
 	}
+	for _, predicate := range []func(PatternAtlasNode) bool{isEmbeddedReadmeRoot, isPrefaceRoot, isTOCRoot} {
+		count := countAtlasRoots(specAtlas.Nodes, predicate)
+		if count > 1 {
+			return fmt.Errorf("FPF specification grammar: duplicate publication navigation root")
+		}
+	}
 	embeddedRoot, ok := findAtlasNode(specAtlas.Nodes, isEmbeddedReadmeRoot)
 	if !ok {
 		return fmt.Errorf("FPF specification grammar: embedded README H1 not found")
@@ -331,6 +337,16 @@ func validateReadmeCarrierRoots(readmeAtlas, specAtlas PatternAtlas) error {
 		return fmt.Errorf("FPF specification grammar: Preface H1 must follow embedded README H1")
 	}
 	return nil
+}
+
+func countAtlasRoots(nodes []PatternAtlasNode, predicate func(PatternAtlasNode) bool) int {
+	count := 0
+	for _, node := range nodes {
+		if predicate(node) {
+			count++
+		}
+	}
+	return count
 }
 
 func buildPracticalUseSourceUnits(document SourceDocument, atlas PatternAtlas) ([]SourceUnit, error) {
@@ -1162,6 +1178,7 @@ func isStandaloneReadmeRoot(node PatternAtlasNode) bool {
 	}
 	switch strings.ToLower(cleanMarkdownText(node.Heading)) {
 	case "first principles framework (fpf)",
+		"first principles framework (fpf) ecosystem",
 		"first principles framework (fpf) - core conceptual specification":
 		return true
 	default:

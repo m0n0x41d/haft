@@ -95,7 +95,7 @@ func (cache *fpfQueryIndexVerificationCache) Verify(db *sql.DB) error {
 	return cache.err
 }
 
-var openFPFDBFunc = openFPFDB
+var openFPFDBFunc = openFPFSourceDB
 
 var embeddedFPFQueryIndexVerification = newFPFQueryIndexVerificationCache(fpf.VerifySourceQueryIndexReadOnlyDB)
 

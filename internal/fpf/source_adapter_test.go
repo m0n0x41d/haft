@@ -36,6 +36,10 @@ func TestValidateReadmeCarrierRootsAcceptsExactHistoricalAndEcosystemTitles(t *t
 			readme: "# First Principles Framework (FPF)\n",
 		},
 		{
+			name:   "September ecosystem root",
+			readme: "# First Principles Framework (FPF) Ecosystem\n",
+		},
+		{
 			name: "fenced H1 example is not a publication root",
 			readme: strings.Join([]string{
 				"# First Principles Framework (FPF)",

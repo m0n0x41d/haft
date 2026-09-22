@@ -611,3 +611,64 @@ func writeCoordinatorSource(t *testing.T, root string, source string) {
 		t.Fatal(err)
 	}
 }
+
+func TestEnsureIndexOwnerOutlivesFollowerWaitAndPublishes(t *testing.T) {
+	fixture := newIndexCoordinatorFixture(t, "qnt_20260922")
+	writeCoordinatorSource(t, fixture.root, "package sample\nfunc A() {}\n")
+	service := NewServiceWithIndexCoordinator(fixture.store, fixture.coordinator)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	initial, err := service.EnsureIndex(ctx, fixture.root)
+	if err != nil || !initial.Rebuilt() {
+		t.Fatalf("initial = %#v, %v", initial, err)
+	}
+	writeCoordinatorSource(t, fixture.root, "package sample\nfunc A() {}\nfunc B() {}\n")
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	fixture.coordinator.hooks.beforeRefresh = func(owner context.Context) error {
+		close(entered)
+		select {
+		case <-release:
+			return owner.Err()
+		case <-owner.Done():
+			return owner.Err()
+		}
+	}
+	done := make(chan IndexCoordinationResult, 1)
+	go func() {
+		result, _ := service.EnsureIndex(ctx, fixture.root)
+		done <- result
+	}()
+	select {
+	case <-entered:
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	follower, err := service.EnsureIndex(ctx, fixture.root)
+	if err != nil || follower.Outcome != IndexRetainedAfterFailure || follower.PublishedEpoch != initial.PublishedEpoch {
+		t.Fatalf("follower = %#v, %v", follower, err)
+	}
+	if follower.WaitDuration < defaultIndexFollowerWait || follower.WaitDuration > 3*time.Second {
+		t.Fatalf("follower wait = %s", follower.WaitDuration)
+	}
+	state, err := service.CurrentIndexState(ctx)
+	if err != nil || state.Epoch != initial.PublishedEpoch || state.Degraded {
+		t.Fatalf("follower changed publication: %#v, %v", state, err)
+	}
+	unblock()
+	select {
+	case owner := <-done:
+		if !owner.Rebuilt() || owner.PublishedEpoch != initial.PublishedEpoch+1 {
+			t.Fatalf("owner after follower timeout = %#v", owner)
+		}
+	case <-ctx.Done():
+		t.Fatal(ctx.Err())
+	}
+	repeated, err := service.EnsureIndex(ctx, fixture.root)
+	if err != nil || repeated.Outcome != IndexAlreadyFresh {
+		t.Fatalf("read after completion = %#v, %v", repeated, err)
+	}
+}

@@ -297,9 +297,18 @@ func runServe(cmd *cobra.Command, args []string) error {
 
 	_ = project.PopulateContextFacts(context.Background(), rawDatabase, binding.ProjectName)
 
+	// The startup owner follows the server lifetime, independently of request
+	// follower waits. Join it before the deferred ledger close on every exit.
+	indexContext, cancelIndex := context.WithCancel(cmd.Context())
+	indexDone := make(chan struct{})
+	defer func() {
+		cancelIndex()
+		<-indexDone
+	}()
 	go func() {
+		defer close(indexDone)
 		if _, err := codeIntelService.EnsureIndexForStartup(
-			context.Background(),
+			indexContext,
 			binding.ProjectRoot,
 		); err != nil {
 			logger.Warn().Err(err).Msg("code-graph startup refresh failed")

@@ -1128,6 +1128,10 @@ func (s *Scanner) resolveIndexFiles(
 	if len(files) == 0 {
 		return batch, nil
 	}
+	prepared, err := prepareGoPackageContexts(ctx, projectRoot, files, view, projectSnapshot)
+	if err != nil {
+		return resolvedIndexBatch{}, err
+	}
 	jobs := make(chan indexResolveJob, len(files))
 	results := make(chan indexResolveResult, len(files))
 	workerCount := indexResolveWorkerCount(
@@ -1140,7 +1144,7 @@ func (s *Scanner) resolveIndexFiles(
 			projectRoot,
 			admissions,
 			view,
-			projectSnapshot,
+			prepared,
 			jobs,
 			results,
 		)
@@ -1237,6 +1241,9 @@ func (s *Scanner) resolveIndexFile(
 	view SymbolView,
 	projectSnapshot *projectIndexSnapshot,
 ) ([]EdgeResolution, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	path := source.Path().String()
 	resolver := s.registry.ResolverForFile(path)
 	if resolver == nil {

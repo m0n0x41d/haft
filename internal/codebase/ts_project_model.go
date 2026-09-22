@@ -53,6 +53,7 @@ type tsProjectSnapshot struct {
 type projectIndexSnapshot struct {
 	typescript *tsProjectSnapshot
 	sources    map[string]AdmittedSource
+	goPackages map[string]goPackageContext
 }
 
 func newProjectIndexSnapshot(

@@ -101,13 +101,17 @@ func (g *GoLang) ResolveAdmittedFileEdges(
 	source AdmittedSource,
 	symbols SymbolView,
 ) ([]CodeEdge, error) {
-	return g.resolveAdmittedFileEdges(
-		ctx,
-		projectRoot,
-		source,
-		symbols,
-		nil,
-	)
+	sourcePath := source.Path().String()
+	directory := filepath.Dir(sourcePath)
+	pkgSyms, err := symbols.GetByDir(ctx, directory)
+	if err != nil {
+		return nil, err
+	}
+	packageContext, err := collectGoPackageContext(ctx, projectRoot, pkgSyms, nil)
+	if err != nil {
+		return nil, err
+	}
+	return g.resolveAdmittedFileEdges(ctx, projectRoot, source, symbols, packageContext)
 }
 
 func (g *GoLang) ResolveAdmittedFileEdgeOutcomesWithProjectSnapshot(
@@ -117,13 +121,11 @@ func (g *GoLang) ResolveAdmittedFileEdgeOutcomesWithProjectSnapshot(
 	symbols SymbolView,
 	snapshot *projectIndexSnapshot,
 ) ([]EdgeResolution, error) {
-	edges, err := g.resolveAdmittedFileEdges(
-		ctx,
-		projectRoot,
-		source,
-		symbols,
-		snapshot.sources,
-	)
+	packageContext, err := snapshot.goPackageContext(ctx, projectRoot, source, symbols)
+	if err != nil {
+		return nil, err
+	}
+	edges, err := g.resolveAdmittedFileEdges(ctx, projectRoot, source, symbols, packageContext)
 	if err != nil {
 		return nil, err
 	}
@@ -139,17 +141,14 @@ func (g *GoLang) resolveAdmittedFileEdges(
 	projectRoot string,
 	source AdmittedSource,
 	symbols SymbolView,
-	projectSources map[string]AdmittedSource,
+	packageContext goPackageContext,
 ) ([]CodeEdge, error) {
 	relPath := source.Path().String()
 	fileSyms, err := symbols.GetByFile(ctx, relPath)
 	if err != nil {
 		return nil, err
 	}
-	pkgSyms, err := symbols.GetByDir(ctx, filepath.Dir(relPath))
-	if err != nil {
-		return nil, err
-	}
+	pkgSyms := packageContext.symbols
 	sites, err := ExtractCallSitesFromSource(source)
 	if err != nil {
 		return nil, err
@@ -175,30 +174,8 @@ func (g *GoLang) resolveAdmittedFileEdges(
 	// package). Type-facts let dispatch resolve `:=`-inferred receivers (e.g.
 	// `resolver := registry.ResolverForFile(p)` → EdgeResolver), not only
 	// declared ones. Package scope keeps the facts collision-free.
-	interfaces := map[string]InterfaceDef{}
-	facts := NewTypeFacts()
-	for _, pf := range distinctFiles(pkgSyms) {
-		packageSource, err := admittedProjectSource(
-			projectRoot,
-			pf,
-			projectSources,
-		)
-		if err != nil {
-			return nil, err
-		}
-		defs, err := ExtractGoInterfacesFromSource(packageSource)
-		if err != nil {
-			return nil, err
-		}
-		for _, d := range defs {
-			interfaces[d.Name] = d
-		}
-		fileFacts, err := ExtractGoTypeFactsFromSource(packageSource)
-		if err != nil {
-			return nil, err
-		}
-		facts.merge(fileFacts)
-	}
+	interfaces := packageContext.interfaces
+	facts := packageContext.facts
 	sigs, err := ExtractGoSignaturesWithLocalsFromSource(source, facts)
 	if err != nil {
 		return nil, err

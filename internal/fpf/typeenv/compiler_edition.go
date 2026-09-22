@@ -21,10 +21,18 @@ const BaseTypeEnvCompilerSchemaV4 = "fpf-base-typeenv.cov2.v4"
 // silently relabel its artifacts.
 const BaseTypeEnvCompilerSchemaV5 = "fpf-base-typeenv.cov2.v5"
 
-// BaseTypeEnvCompilerSchemaV6 identifies the current source-to-B compiler
-// interpretation used by CompileBaseTypeEnv. It distinguishes classification
-// admissibility from judgement, treats KindBridge as a direct relation, and
+// BaseTypeEnvCompilerSchemaV6 remains the historical source-to-B compiler
+// interpretation preceding the complete C.3.A admissibility profile. It
+// distinguishes classification admissibility from judgement, treats KindBridge
+// as a direct relation, and
 // recognizes KindUseAdaptationDeclaration as the current C.3.4 contract. This
 // is an implementation edition, not a source revision or a TypeEnv selection
 // act.
-const BaseTypeEnvCompilerSchemaV6 = baseTypeEnvCompilerSchema
+const BaseTypeEnvCompilerSchemaV6 = "fpf-base-typeenv.cov2.v6"
+
+// BaseTypeEnvCompilerSchemaV7 adds the complete C.3.A:3 candidate-admissibility
+// profile while preserving the older guard profile. The new source-only
+// coordinates distinguish not-applicable/no judgement, admissible
+// true/false/unknown, and separate refusal. This edition grants no executable
+// classification policy, stage trust, compatibility, or TypeEnv activation.
+const BaseTypeEnvCompilerSchemaV7 = baseTypeEnvCompilerSchema

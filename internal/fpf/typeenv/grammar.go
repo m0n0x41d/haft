@@ -772,7 +772,16 @@ type c3ContractGrammarSpec struct {
 	profiles []c3ContractGrammarProfile
 }
 
+type c3ContractMatchPolicy uint8
+
+const (
+	c3RequiredCues c3ContractMatchPolicy = iota
+	c3CompleteBody
+)
+
 type c3ContractGrammarProfile struct {
+	matchPolicy c3ContractMatchPolicy
+	excluded    []string
 	kind        C3ContractKind
 	designator  string
 	coordinates []string
@@ -1171,9 +1180,12 @@ func currentC3ContractGrammarSpecs() []c3ContractGrammarSpec {
 			owner:    "C.3.A",
 			sourceID: "C.3.A:3",
 			profiles: []c3ContractGrammarProfile{
+				c3GuardAdmissibilityProfile(),
 				{
 					kind:       C3KindGuardSeparationContract,
 					designator: "GuardDisposition",
+					// New admissibility clauses must never fall back to the older profile.
+					excluded: []string{"Admissibility, then three classification values.", "not-applicable"},
 					coordinates: []string{
 						"declaration_compatibility",
 						"candidate_classification",
@@ -1212,7 +1224,7 @@ func parseCurrentC3Contract(unit fpf.SourceUnit) GrammarOutcome {
 		closestKind := C3ContractKind(0)
 		closestMissing := []string(nil)
 		for _, profile := range spec.profiles {
-			missing := missingSourceCues(unit.Body, profile.required)
+			missing := missingC3ProfileCues(unit.Body, profile)
 			if len(missing) == 0 {
 				matching = append(matching, profile)
 				continue
@@ -1250,6 +1262,30 @@ func parseCurrentC3Contract(unit fpf.SourceUnit) GrammarOutcome {
 		}
 	}
 	return GrammarNoMatch{unitID: unit.UnitID}
+}
+
+func missingC3ProfileCues(body string, profile c3ContractGrammarProfile) []string {
+	missing := missingSourceCues(body, profile.required)
+	if len(missing) > 0 {
+		return missing
+	}
+	for _, excluded := range profile.excluded {
+		if strings.Contains(body, excluded) {
+			return []string{"absence of conflicting source clause: " + excluded}
+		}
+	}
+	if profile.matchPolicy != c3CompleteBody {
+		return missing
+	}
+	bodyWords := strings.Fields(body)
+	normalizedBody := strings.Join(bodyWords, " ")
+	profileBody := strings.Join(profile.required, " ")
+	profileWords := strings.Fields(profileBody)
+	normalizedProfile := strings.Join(profileWords, " ")
+	if normalizedBody != normalizedProfile {
+		return []string{"complete authored body without additional, reordered, or contradictory clauses"}
+	}
+	return missing
 }
 
 func missingSourceCues(body string, required []string) []string {

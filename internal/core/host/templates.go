@@ -87,6 +87,25 @@ and its code via context. For an existing Go project, a read-only example is:
 
 {"format":"haft.api/1","operation":"context","ref":"file:order.go"}
 
+To author new memory, use remember with a stable request_id and Markdown carrier.
+The frontmatter is YAML (or JSON) between --- lines; the body preserves rationale
+and scope. A proposed spec uses format: haft/1, kind: spec, title, about (the
+domain subject), slug, receiving_use, and claims. A claim needs a stable id,
+kind (law, definition, guard or prescription) and text. Laws and guards need
+either checks or unchecked with an explicit reason for strict validation.
+implemented_by and checks are lists of {ref, covers};
+examples are {id, given, when, then}. Use sym:path.go::Type.Method for a method,
+test:path_test.go::TestName for a scenario, or pbt:path_test.go::TestName for a
+finite property. Preserve supplied limitations in covers and the body. Initial
+records may omit id, created_at, status and origin for proposed agent defaults.
+Read data.exact_ref from recall; alias spec:<slug> resolves the current candidate.
+
+Explicit term meanings use remember/action terms with frontmatter
+{"format":"haft.terms/1","terms":[{"id":"Domain.Term","definition":"<meaning>","aliases":["<word>"],"exclusions":["<excluded meaning>"]}]}.
+Record and claim terms list those qualified IDs. The terms write creates the
+initial map without replacing an existing map. Inspect existing terms before
+reusing them; preserve changed meanings with their historical snapshots.
+
 Validate current carriers without executing a check:
 
 {"format":"haft.api/1","operation":"check","action":"structural","strict":true}
@@ -131,7 +150,7 @@ scope. This example matches the order fixture when that fixture is present:
 
 {"format":"haft.api/1","operation":"check","action":"prepare","ref":"spec:order-cancel#total-preserved","check_ref":"pbt:order_test.go::TestCancelPreservesTotal","scope":"Generated new and paid orders; cancellation preserves total","seed":23}
 
-Read expected, command, run_environment, code_complete, diagnostics and limits. Preparation does
+Read expected, command, run_environment, basis_capture, code_complete, diagnostics and limits. Preparation does
 not run anything. Judge whether the oracle actually covers the claim. If the
 current task authorizes the test, run the returned exact command in the intended
 environment using the returned run_environment. Independently capture and compare
@@ -140,6 +159,13 @@ actual environment and toolchain. Preserve raw stdout/stderr, exit code, selecto
 and full observed basis. Never copy expected basis fields into an observation
 without establishing them from those captures. If the basis changes during the
 run, retain that diagnostic and do not attribute the result to the earlier basis.
+Use basis_capture's exact JSON preimage bytes, file digests and oracle byte span
+to verify the expected hashes against actual files; do not reverse-engineer a
+hash or mistake a symbol-span digest for the whole test-file digest. Preserve
+the before/after capture and the actual build tags, toolchain and environment.
+Use .context/verification for temporary runner reports and captures, which are
+outside the code-index scope. For a durable handoff, embed the needed raw bytes
+in the published evidence body; an ignored scratch file alone is not portable.
 Submit operation check/action observe with observation containing that exact
 expected contract and independently captured observed run, and inspect the
 returned current_basis after the run. Byte fields are base64 JSON strings. The

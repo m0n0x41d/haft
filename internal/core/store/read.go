@@ -293,7 +293,7 @@ func buildView(c capture, stable bool) View {
 		v.Documents = append(v.Documents, d)
 		v.DocumentPaths = append(v.DocumentPaths, p)
 	}
-	v.Projection = carrier.Project(v.Documents, v.AllSnapshots())
+	v.Projection = carrier.ProjectCaptured(v.Documents, v.CurrentSnapshots, v.Snapshots)
 	for i, e := range v.Projection.Entries {
 		if e.State == carrier.Invalid || len(e.Diagnostics) > 0 {
 			for _, d := range e.Diagnostics {

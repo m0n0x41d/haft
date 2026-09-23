@@ -42,12 +42,28 @@ type Resolution struct {
 // Project consumes a captured collection, not a mutable store. File order and
 // timestamps never choose a winner. Unknown and invalid bytes remain in Entries.
 func Project(documents []Document, snapshots map[string][]byte) Projection {
+	return ProjectCaptured(documents, snapshots, snapshots)
+}
+
+// ProjectCaptured separates live edition verification from exact pinned
+// dependency resolution. A current snapshot proves the captured live bytes but
+// cannot repair absent pinned history. Callers preparing a publication may pass
+// the exact persisted-plus-staged snapshot set as pinnedSnapshots; ordinary
+// readers pass only persisted snapshots. Project retains its pure single-set API.
+func ProjectCaptured(documents []Document, currentSnapshots, pinnedSnapshots map[string][]byte) Projection {
+	captured := make(map[string][]byte, len(currentSnapshots)+len(pinnedSnapshots))
+	for digest, raw := range currentSnapshots {
+		captured[digest] = raw
+	}
+	for digest, raw := range pinnedSnapshots {
+		captured[digest] = raw
+	}
 	invalid := map[int][]Diagnostic{}
 	// Reject resolved forbidden dependencies before relying on their successors.
 	// Rebuilding after each newly invalid record restores any predecessor that
 	// the invalid successor would otherwise have suppressed.
 	for pass := 0; pass <= len(documents); pass++ {
-		p := projectOnce(documents, snapshots, invalid)
+		p := projectOnce(documents, captured, pinnedSnapshots, invalid)
 		changed := false
 		for i, e := range p.Entries {
 			if e.State == Invalid {
@@ -66,10 +82,10 @@ func Project(documents []Document, snapshots map[string][]byte) Projection {
 			return p
 		}
 	}
-	return projectOnce(documents, snapshots, invalid)
+	return projectOnce(documents, captured, pinnedSnapshots, invalid)
 }
 
-func projectOnce(documents []Document, snapshots map[string][]byte, invalid map[int][]Diagnostic) Projection {
+func projectOnce(documents []Document, captured, snapshots map[string][]byte, invalid map[int][]Diagnostic) Projection {
 	p := Projection{ByID: map[string][]int{}, Aliases: map[string][]int{}, snapshots: map[string][]byte{}, lineageByID: map[string]int{}}
 	for k, v := range snapshots {
 		p.snapshots[k] = bytes.Clone(v)
@@ -96,7 +112,7 @@ func projectOnce(documents []Document, snapshots map[string][]byte, invalid map[
 			e.Diagnostics = append(e.Diagnostics, diagnostic("invalid_edition", "", "Captured edition is not a full digest"))
 		}
 		if doc.Edition != "" {
-			material, exists := p.snapshots[doc.Edition]
+			material, exists := captured[doc.Edition]
 			if !exists {
 				e.State = Invalid
 				e.Diagnostics = append(e.Diagnostics, diagnostic("unresolved_captured_edition", "edition", "An explicit captured edition requires its exact snapshot bytes"))
@@ -610,6 +626,9 @@ func (p Projection) UsesFor(target string) []EvidenceUse {
 	if err != nil || !r.Pinned() {
 		return nil
 	}
+	if p.Resolve(target).Kind != "found" {
+		return nil
+	}
 	var out []EvidenceUse
 	for _, e := range p.Entries {
 		if (e.State != Active && e.State != Contested) || e.Document.Record.Kind != "evidence" {
@@ -625,9 +644,10 @@ func (p Projection) UsesFor(target string) []EvidenceUse {
 }
 
 type EvidenceUseMatch struct {
-	OwnerRef string      `json:"owner_ref"`
-	State    string      `json:"state"`
-	Use      EvidenceUse `json:"use"`
+	OwnerRef     string      `json:"owner_ref"`
+	State        string      `json:"state"`
+	TargetStatus string      `json:"target_status"`
+	Use          EvidenceUse `json:"use"`
 }
 
 // EvidenceUsesFor includes historical and superseded evidence explicitly with
@@ -638,13 +658,14 @@ func (p Projection) EvidenceUsesFor(target string) []EvidenceUseMatch {
 		return nil
 	}
 	var out []EvidenceUseMatch
+	targetStatus := p.Resolve(target).Kind
 	for _, e := range p.Entries {
 		if e.State == Invalid || e.Document.Record.Kind != "evidence" {
 			continue
 		}
 		for _, u := range e.Document.Record.Uses {
 			if u.Target == target {
-				out = append(out, EvidenceUseMatch{OwnerRef: e.Ref, State: e.State, Use: u})
+				out = append(out, EvidenceUseMatch{OwnerRef: e.Ref, State: e.State, TargetStatus: targetStatus, Use: u})
 			}
 		}
 	}
@@ -655,6 +676,18 @@ func (p Projection) EvidenceUsesFor(target string) []EvidenceUseMatch {
 // captured endpoints. It cannot decide whether a declared dependency is true.
 func (p Projection) ValidateReferences(r Record) []Diagnostic {
 	var ds []Diagnostic
+	if r.OptionsRef != "" {
+		resolved := p.Resolve(r.OptionsRef)
+		if resolved.Kind != "found" || resolved.Document == nil || resolved.Document.Record.Kind != "options" {
+			ds = append(ds, diagnostic("unresolved_options", "options_ref", "Exact selected option set is unavailable"))
+		}
+	}
+	for i, link := range r.Links {
+		ref, err := ParseRef(link.Target)
+		if err == nil && ref.Pinned() && p.Resolve(link.Target).Kind != "found" {
+			ds = append(ds, diagnostic("unresolved_pinned_link", fmt.Sprintf("links[%d].target", i), "Exact linked edition is unavailable; no live fallback"))
+		}
+	}
 	for i, c := range r.Claims {
 		for j, s := range c.Refs {
 			if !strings.ContainsAny(s, "#:@") {

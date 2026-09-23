@@ -90,12 +90,12 @@ type PreviewResult struct {
 	Digest      string               `json:"digest"`
 }
 type Metadata struct {
-	ID                string
-	CreatedAt         string
-	Origin            string
-	Status            string
-	OperatorConfirmed bool
-	Supersedes        []string
-	SupersedeReason   string
-	Receipt           *carrier.WriteReceipt
+	ID                string                `json:"id,omitempty"`
+	CreatedAt         string                `json:"created_at,omitempty"`
+	Origin            string                `json:"origin,omitempty"`
+	Status            string                `json:"status,omitempty"`
+	OperatorConfirmed bool                  `json:"operator_confirmed,omitempty"`
+	Supersedes        []string              `json:"supersedes,omitempty"`
+	SupersedeReason   string                `json:"supersede_reason,omitempty"`
+	Receipt           *carrier.WriteReceipt `json:"receipt,omitempty"`
 }

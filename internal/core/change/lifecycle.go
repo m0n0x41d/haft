@@ -10,18 +10,18 @@ import (
 )
 
 type Revision struct {
-	Action     string
-	ID         string
-	CreatedAt  string
-	Reason     string
-	CurrentRef string
-	Patches    []SectionPatch
-	Intent     *string
-	Tasks      *[]Task
+	Action     string         `json:"action,omitempty"`
+	ID         string         `json:"id,omitempty"`
+	CreatedAt  string         `json:"created_at,omitempty"`
+	Reason     string         `json:"reason"`
+	CurrentRef string         `json:"current_ref,omitempty"`
+	Patches    []SectionPatch `json:"patches,omitempty"`
+	Intent     *string        `json:"intent,omitempty"`
+	Tasks      *[]Task        `json:"tasks,omitempty"`
 	// Synced is supplied by the application from publication history, not a task
 	// checkbox. It only affects an archive warning, never spec acceptance.
-	Synced  bool
-	Receipt *carrier.WriteReceipt
+	Synced  bool                  `json:"synced,omitempty"`
+	Receipt *carrier.WriteReceipt `json:"receipt,omitempty"`
 }
 type RevisionResult struct {
 	Kind        string               `json:"kind"`

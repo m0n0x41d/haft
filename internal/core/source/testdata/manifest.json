@@ -1,0 +1,194 @@
+{
+  "format": "haft.source-fixture-manifest/1",
+  "qualification": "Authored synthetic fixtures; not FPF/DPF source authority. Expected hashes describe literal fixture bytes.",
+  "files": [
+    {
+      "path": "capture/after/FPF-Spec.md",
+      "bytes": 134,
+      "sha256": "c1a14d45f76a83b98f94c32e22d877f06963f4c1a19035f188b8211a82aed3d5",
+      "line_endings": "LF"
+    },
+    {
+      "path": "capture/before/FPF-Spec.md",
+      "bytes": 134,
+      "sha256": "e46fd607a983233127e10bfe8b5dd5f59886cfe867b5ae5b5ea19fd88047381b",
+      "line_endings": "LF"
+    },
+    {
+      "path": "malformed/duplicate-across/Engineering DPF Suite/SYSTEMS-ENGINEERING-PRINCIPLES-FRAMEWORK.md",
+      "bytes": 159,
+      "sha256": "56e25fa2e395d6a9ac549088cf5fc95852d62f39a8c5edb65b35606f20a51982",
+      "line_endings": "LF"
+    },
+    {
+      "path": "malformed/duplicate-across/FPF-Spec.md",
+      "bytes": 142,
+      "sha256": "737faa184b27e1565267ee6aa05a48e2d0b4e2515a3fff5aad66d4d07d09f749",
+      "line_endings": "LF"
+    },
+    {
+      "path": "malformed/duplicate-end/FPF-Spec.md",
+      "bytes": 173,
+      "sha256": "fe56c68b9d7bfa0233006ff72d8ac0853f74eb6e8af7642b3be6886b88d0ebb3",
+      "line_endings": "LF"
+    },
+    {
+      "path": "malformed/duplicate-within/FPF-Spec.md",
+      "bytes": 234,
+      "sha256": "696ce7bf836d1d25a604837d94e912c48b9914045b9068c7a05f26a61f8ca0af",
+      "line_endings": "LF"
+    },
+    {
+      "path": "malformed/mismatched-end/FPF-Spec.md",
+      "bytes": 149,
+      "sha256": "76897303dab90553d766658fe0ae46867064ab3bf35e63080c9c7fc4e8de0160",
+      "line_endings": "LF"
+    },
+    {
+      "path": "malformed/missing-end/FPF-Spec.md",
+      "bytes": 295,
+      "sha256": "50ce85f680b0cc6f7b651e16bade0c60fafda1ce80279f8d3a9383df9d7176b0",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-a/Engineering DPF Suite/ENGINEERING-DPF-SUITE-REFERENCE.md",
+      "bytes": 223,
+      "sha256": "dcb80a52766ef2adb934d49a529add59bdea550a34d91f0e45a33eb5a0eca32c",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-a/Engineering DPF Suite/README.md",
+      "bytes": 247,
+      "sha256": "6a3ed847a91e7c4c888ad10ea895263ef74ed1ea1f07d5e605291d844eb6ca1d",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-a/Engineering DPF Suite/SYSTEMS-ENGINEERING-PRINCIPLES-FRAMEWORK.md",
+      "bytes": 564,
+      "sha256": "bc8bc9d29902c0c737024fbc00362e512abae314595825f68821a6c04b919901",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-a/FPF-Spec.md",
+      "bytes": 1175,
+      "sha256": "7168a2ae6308f54f0084f6c50a74d937c84d6dfc13faca0029045ec2b2fb8c90",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-a/Readme.md",
+      "bytes": 230,
+      "sha256": "f2a7af1cac939ddd17b3a115e1d5680497237af84ea3c8036ede28246bcb47ce",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-a/USING-FPF.md",
+      "bytes": 195,
+      "sha256": "6aad8df64071ba9ff2cb492312a664247308abd3cc56d23d8ecf3b1a835b2136",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-b/Engineering DPF Suite/ENGINEERING-DPF-SUITE-REFERENCE.md",
+      "bytes": 223,
+      "sha256": "dcb80a52766ef2adb934d49a529add59bdea550a34d91f0e45a33eb5a0eca32c",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-b/Engineering DPF Suite/README.md",
+      "bytes": 247,
+      "sha256": "6a3ed847a91e7c4c888ad10ea895263ef74ed1ea1f07d5e605291d844eb6ca1d",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-b/Engineering DPF Suite/SYSTEMS-ENGINEERING-PRINCIPLES-FRAMEWORK.md",
+      "bytes": 584,
+      "sha256": "23cb7bbe7cd8f44952283751afd89b0f1f6cc57b299b2902a1a2e158d60fca24",
+      "line_endings": "CRLF"
+    },
+    {
+      "path": "pin-b/FPF-Spec.md",
+      "bytes": 1175,
+      "sha256": "8f1ba2c5249d28d3b52bc79825ef287537a4fd1548e2126a7657cb0743f6c80f",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-b/Readme.md",
+      "bytes": 230,
+      "sha256": "f2a7af1cac939ddd17b3a115e1d5680497237af84ea3c8036ede28246bcb47ce",
+      "line_endings": "LF"
+    },
+    {
+      "path": "pin-b/USING-FPF.md",
+      "bytes": 195,
+      "sha256": "6aad8df64071ba9ff2cb492312a664247308abd3cc56d23d8ecf3b1a835b2136",
+      "line_endings": "LF"
+    }
+  ],
+  "expected_inspect": [
+    {
+      "pin": "pin-a",
+      "ref": "A.1",
+      "publication_path": "FPF-Spec.md",
+      "lines": [
+        10,
+        30
+      ],
+      "bytes": 549,
+      "body_digest": "sha256:d2350325c0db6bc2615b59f8fc93c1e52a7850c44539ba02bd03f66e06c78285"
+    },
+    {
+      "pin": "pin-a",
+      "ref": "A.10",
+      "publication_path": "FPF-Spec.md",
+      "lines": [
+        34,
+        45
+      ],
+      "bytes": 325,
+      "body_digest": "sha256:fa6cf8d633bd853ef8f9a2305e337b0200c0e7ad7d2ac65fdcc29ee1a4db8e11"
+    },
+    {
+      "pin": "pin-a",
+      "ref": "SYSE.31",
+      "publication_path": "Engineering DPF Suite/SYSTEMS-ENGINEERING-PRINCIPLES-FRAMEWORK.md",
+      "lines": [
+        3,
+        20
+      ],
+      "bytes": 519,
+      "body_digest": "sha256:672b74a578591423b87fc2bf69c39a7b37bad4bc0a02ab8c161b3f460fe5b349"
+    },
+    {
+      "pin": "pin-b",
+      "ref": "A.1",
+      "publication_path": "FPF-Spec.md",
+      "lines": [
+        10,
+        30
+      ],
+      "bytes": 549,
+      "body_digest": "sha256:3cef8f1159ee07ccd21066b82d858d00978645ed2a10197a42be6a9c1a062511"
+    },
+    {
+      "pin": "pin-b",
+      "ref": "A.10",
+      "publication_path": "FPF-Spec.md",
+      "lines": [
+        34,
+        45
+      ],
+      "bytes": 325,
+      "body_digest": "sha256:fa6cf8d633bd853ef8f9a2305e337b0200c0e7ad7d2ac65fdcc29ee1a4db8e11"
+    },
+    {
+      "pin": "pin-b",
+      "ref": "SYSE.31",
+      "publication_path": "Engineering DPF Suite/SYSTEMS-ENGINEERING-PRINCIPLES-FRAMEWORK.md",
+      "lines": [
+        3,
+        20
+      ],
+      "bytes": 537,
+      "body_digest": "sha256:0014fed2e9254b24aebef6f382821a2df91a682ee354d87939d0fae2e842803e"
+    }
+  ]
+}

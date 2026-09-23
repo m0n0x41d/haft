@@ -100,6 +100,22 @@ preview_digest and expected_generation returned by that preview, plus a new
 request_id. A stale basis requires another review; never substitute newer heads.
 Read tool schema for complete fields. Application does not infer acceptance.
 
+The carrier is Markdown with YAML frontmatter between two --- lines. JSON is
+also valid YAML. For a clarification, copy the complete claim object from
+recall's data.resolution.document.record.claims, change only intended fields,
+and use this frontmatter shape (replace angle-bracket placeholders):
+
+{"format":"haft.change/1","title":"<readable title>","intent":"<intended effect>","patches":[{"base":"<data.exact_ref of the spec, without #claim>","operations":[{"op":"MODIFIED","claim_id":"<existing claim ID>","claim":<complete revised claim object>,"reason":"<why this change>"}]}]}
+
+Omit id, change_key, state and created_at on initial creation to use API defaults.
+Supplied IDs require chg-YYYYMMDD-xxxxxxxx with eight hexadecimal suffix digits.
+Operation names are uppercase ADDED, MODIFIED, REMOVED and RENAMED. MODIFIED
+replaces the complete claim; omitted examples are preserved, explicit removals
+need remove_examples and a reason. RENAMED uses claim_id and new_id. Omit patch
+body to preserve spec prose; replacing it requires expected_body_digest and
+body_change_reason. Inspect preview losses before applying. Remembered records
+use format haft/1; change carriers use the separate haft.change/1 format.
+
 Preserve authored checks and implementation selectors. Rename or ambiguity needs
 explicit repair; do not silently redirect a claim. Archive, sync and apply have
 separate meanings. A completed task checkbox is not evidence that a claim holds.
@@ -140,6 +156,18 @@ and later supply that returned code_capture as prior_code. Token-equivalent
 formatting can update navigation while the raw evidence basis changes. Persist
 only the exact observation and portable snapshots needed by the receiving use;
 the observe operation itself does not publish an evidence record.
+
+To retain a real observation, use remember with a haft/1 evidence carrier. Its
+frontmatter needs kind: evidence, a readable title, about, claim (the bounded
+observation), observed_at, method, source (where the raw report lives), basis
+with kind: code and ref equal to the observation ID, and uses. Each use contains
+id, target (the exact claim ref including its edition), check, polarity
+(supports, weakens or inconclusive), and scope. Put the complete observation,
+raw outputs and capture report in the Markdown body or a preserved addressable
+report. ID, created_at and origin may use remember defaults. An observational
+record may have status: active; this does not accept its proposed target spec.
+Do not set operator_confirmed for an observation. Preserve the original claim
+snapshot and full scope even when a later run changes the support relation.
 `,
 	}
 }

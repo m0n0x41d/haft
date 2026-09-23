@@ -44,7 +44,7 @@ for label, selector, mutation, expected in scenarios:
     env.update(HOME=str(child_home), XDG_CACHE_HOME=str(child_home / 'cache'),
                XDG_CONFIG_HOME=str(child_home / 'config'), XDG_DATA_HOME=str(child_home / 'data'),
                GOCACHE=str(a.output.resolve() / 'go-build'), GOWORK='off')
-    cmd = ['go', 'test', '-count=1', '-json', '-run', '^' + selector + '$', './...']
+    cmd = ['go', 'test', '-count=1', '-json', '-run', '^' + selector + '$', 'example.test/orders']
     run = subprocess.run(cmd, cwd=case, env=env, capture_output=True)
     (case / 'stdout.jsonl').write_bytes(run.stdout)
     (case / 'stderr.txt').write_bytes(run.stderr)

@@ -148,7 +148,7 @@ func GoTestObservation(input ObservationInput) Observation {
 	if !reflect.DeepEqual(run.Basis, expected.Basis) {
 		return finish(Unattributable, "basis_mismatch")
 	}
-	if !exactCommand(run.Command, run.Selector) {
+	if !exactCommand(run.Command, expected) {
 		return finish(Unattributable, "runner_command_mismatch")
 	}
 	if malformed {
@@ -291,6 +291,9 @@ func validateContract(c Contract) error {
 	if len(c.Basis.Conditions) == 0 || len(c.Basis.Environment) == 0 {
 		return fmt.Errorf("declared conditions and environment basis required")
 	}
+	if tags, exists := c.Basis.Environment["build_tags"]; !exists || !validBuildTagsValue(tags) {
+		return fmt.Errorf("explicit canonical build_tags environment basis required")
+	}
 	if c.Scope == "" || c.Selector.Package == "" || c.Selector.Test == "" || strings.ContainsAny(c.Selector.Test, "\x00\r\n") {
 		return fmt.Errorf("explicit scope and exact package/test selector required")
 	}
@@ -319,35 +322,97 @@ func validateContract(c Contract) error {
 	}
 	return nil
 }
-func exactCommand(command []string, selector Selector) bool {
+
+// GoTestCommand constructs the narrow uncached command supported by this
+// adapter. Extra runner/build flags require a separately captured adapter basis.
+func GoTestCommand(selector Selector, tags []string) ([]string, error) {
+	value := strings.Join(tags, ",")
+	if !validBuildTagsValue(value) {
+		return nil, fmt.Errorf("unsupported build tag names")
+	}
+	for _, tag := range tags {
+		if tag == "" || strings.Contains(tag, ",") {
+			return nil, fmt.Errorf("each build tag must be one nonempty name")
+		}
+	}
+	if selector.Package == "" || strings.HasPrefix(selector.Package, "-") || strings.ContainsAny(selector.Package, " \t\r\n") || strings.Contains(selector.Package, "...") {
+		return nil, fmt.Errorf("one exact package identity is required")
+	}
+	command := []string{"go", "test", "-json", "-count=1", "-run", ExactRunPattern(selector.Test)}
+	if value != "" {
+		command = append(command, "-tags="+value)
+	}
+	return append(command, selector.Package), nil
+}
+
+func validBuildTagsValue(value string) bool {
+	if value == "" {
+		return true
+	}
+	previous := ""
+	for _, tag := range strings.Split(value, ",") {
+		if tag == "" || tag <= previous {
+			return false
+		}
+		for _, r := range tag {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '_' || r == '.') {
+				return false
+			}
+		}
+		previous = tag
+	}
+	return true
+}
+
+func exactCommand(command []string, expected Contract) bool {
 	if len(command) < 3 || filepath.Base(command[0]) != "go" || command[1] != "test" {
 		return false
 	}
-	run := ""
-	jsonFlag := false
-	uncached := false
+	seen := map[string]bool{}
+	values := map[string]string{}
+	packageSeen := false
 	for n := 2; n < len(command); n++ {
 		arg := command[n]
-		switch {
-		case arg == "-args" || arg == "--" || arg == "-exec" || strings.HasPrefix(arg, "-exec="):
-			return false
-		case arg == "-json" || arg == "-json=true":
-			jsonFlag = true
-		case arg == "-json=false":
-			jsonFlag = false
-		case strings.HasPrefix(arg, "-count="):
-			uncached = arg == "-count=1"
-		case arg == "-count" && n+1 < len(command):
-			n++
-			uncached = command[n] == "1"
-		case arg == "-run" && n+1 < len(command):
-			n++
-			run = command[n]
-		case strings.HasPrefix(arg, "-run="):
-			run = strings.TrimPrefix(arg, "-run=")
+		if !strings.HasPrefix(arg, "-") {
+			if packageSeen || n != len(command)-1 || arg != expected.Selector.Package {
+				return false
+			}
+			packageSeen = true
+			continue
 		}
+		if packageSeen {
+			return false
+		}
+		flag, value, assigned := strings.Cut(arg, "=")
+		if seen[flag] {
+			return false
+		}
+		seen[flag] = true
+		switch flag {
+		case "-json":
+			if !assigned {
+				value = "true"
+			}
+			if value != "true" {
+				return false
+			}
+		case "-count", "-run", "-tags":
+			if !assigned {
+				if n+1 >= len(command) {
+					return false
+				}
+				n++
+				value = command[n]
+			}
+		default:
+			return false
+		}
+		values[flag] = value
 	}
-	return jsonFlag && uncached && run == ExactRunPattern(selector.Test)
+	tags, declared := expected.Basis.Environment["build_tags"]
+	return declared && validBuildTagsValue(tags) && packageSeen && seen["-json"] &&
+		values["-count"] == "1" && values["-run"] == ExactRunPattern(expected.Selector.Test) &&
+		values["-tags"] == tags && (tags == "" || seen["-tags"])
 }
 func decodeEvent(raw []byte) (Event, error) {
 	var e Event

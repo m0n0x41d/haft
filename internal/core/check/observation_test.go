@@ -39,7 +39,7 @@ func loadProbe(t *testing.T, name string) ObservationInput {
 	}
 	seed := int64(23)
 	selector := Selector{Package: "example.test/orders", Test: fixture.Selector}
-	basis := Basis{Claim: "spec-20260923-12345678@" + carrier.Digest([]byte("adapter-test claim: cancellation preserves total")) + "#preserves-total", Code: idx.Basis, Check: carrier.Digest(fixture.Sources["order_test.go"]), Dependencies: carrier.Digest(append(bytes.Clone(fixture.Sources["policy.go"]), fixture.Sources["go.mod"]...)), Conditions: []string{"direct domain cancellation; finite quick.Check sample; no transport/persistence coverage"}, Environment: map[string]string{"toolchain": "go1.25.8", "goos": "darwin", "goarch": "arm64"}, Seed: &seed}
+	basis := Basis{Claim: "spec-20260923-12345678@" + carrier.Digest([]byte("adapter-test claim: cancellation preserves total")) + "#preserves-total", Code: idx.Basis, Check: carrier.Digest(fixture.Sources["order_test.go"]), Dependencies: carrier.Digest(append(bytes.Clone(fixture.Sources["policy.go"]), fixture.Sources["go.mod"]...)), Conditions: []string{"direct domain cancellation; finite quick.Check sample; no transport/persistence coverage"}, Environment: map[string]string{"build_tags": "", "toolchain": "go1.25.8", "goos": "darwin", "goarch": "arm64"}, Seed: &seed}
 	contract := Contract{Ref: "sym:order_test.go::" + fixture.Selector, Selector: selector, Basis: basis, Scope: fixture.Scope, FailureContract: "fixture order oracle: testing/quick Check error reported by t.Fatal, reviewed against order_test.go", FailurePattern: `(?m)^\s+order_test\.go:\d+: #\d+: failed on input `}
 	return ObservationInput{Expected: contract, Observed: Run{Started: true, ExitCode: &fixture.ExitCode, Command: fixture.Command, Selector: selector, Basis: basis, Stdout: fixture.Stdout, Stderr: fixture.Stderr}}
 }
@@ -94,7 +94,7 @@ func TestPassCannotCrossExactBasesOrSelector(t *testing.T) {
 		{"dependencies", func(i *ObservationInput) { i.Expected.Basis.Dependencies = carrier.Digest([]byte("changed sibling")) }},
 		{"conditions", func(i *ObservationInput) { i.Expected.Basis.Conditions = []string{"changed assumptions"} }},
 		{"seed", func(i *ObservationInput) { seed := int64(42); i.Expected.Basis.Seed = &seed }},
-		{"environment", func(i *ObservationInput) { i.Expected.Basis.Environment = map[string]string{"toolchain": "other"} }},
+		{"environment", func(i *ObservationInput) { i.Expected.Basis.Environment = map[string]string{"toolchain": "other", "build_tags": ""} }},
 	}
 	for _, mutation := range mutations {
 		t.Run(mutation.name, func(t *testing.T) {
@@ -181,7 +181,7 @@ func TestStableSubtestAndObservationCopies(t *testing.T) {
 	input.Expected.Selector.Test = "TestCancelStates/new"
 	input.Expected.Ref = "sym:order_test.go::TestCancelStates"
 	input.Observed.Selector = input.Expected.Selector
-	input.Observed.Command = []string{"go", "test", "-count=1", "-json", "-run", ExactRunPattern(input.Observed.Selector.Test), "./..."}
+	input.Observed.Command = []string{"go", "test", "-count=1", "-json", "-run", ExactRunPattern(input.Observed.Selector.Test), input.Observed.Selector.Package}
 	result := GoTestObservation(input)
 	if result.Status != Passed {
 		t.Fatalf("exact subtest: %s/%s", result.Status, result.ReasonCode)
@@ -196,5 +196,68 @@ func TestStableSubtestAndObservationCopies(t *testing.T) {
 	input.Expected.Basis.Environment["toolchain"] = "other"
 	if !bytes.Equal(saved, result.Input.Observed.Stdout) || result.Input.Expected.Basis.Environment["toolchain"] == "other" {
 		t.Fatal("input aliases escaped pure adapter")
+	}
+}
+
+func TestRunnerCommandRejectsUncapturedFlagsAndPackageScope(t *testing.T) {
+	mutations := []struct {
+		name string
+		edit func(*ObservationInput)
+	}{
+		{"wrong_tags", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-tags=alternate", i.Observed.Selector.Package)
+		}},
+		{"broad_package", func(i *ObservationInput) { i.Observed.Command[len(i.Observed.Command)-1] = "./..." }},
+		{"wrong_package", func(i *ObservationInput) { i.Observed.Command[len(i.Observed.Command)-1] = "example.test/other" }},
+		{"extra_package", func(i *ObservationInput) { i.Observed.Command = append(i.Observed.Command, "example.test/other") }},
+		{"missing_package", func(i *ObservationInput) { i.Observed.Command = i.Observed.Command[:len(i.Observed.Command)-1] }},
+		{"race", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-race", i.Observed.Selector.Package)
+		}},
+		{"compiler_flags", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-gcflags=all=-N", i.Observed.Selector.Package)
+		}},
+		{"overlay", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-overlay=other.json", i.Observed.Selector.Package)
+		}},
+		{"duplicate_json", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-json=true", i.Observed.Selector.Package)
+		}},
+		{"duplicate_count", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-count=1", i.Observed.Selector.Package)
+		}},
+		{"duplicate_run", func(i *ObservationInput) {
+			i.Observed.Command = append(i.Observed.Command[:len(i.Observed.Command)-1], "-run="+ExactRunPattern(i.Observed.Selector.Test), i.Observed.Selector.Package)
+		}},
+	}
+	for _, tc := range mutations {
+		t.Run(tc.name, func(t *testing.T) {
+			i := loadProbe(t, "property_pass")
+			tc.edit(&i)
+			r := GoTestObservation(i)
+			if r.Status != Unattributable || r.ReasonCode != "runner_command_mismatch" {
+				t.Fatal(r.Status, r.ReasonCode)
+			}
+		})
+	}
+	input := loadProbe(t, "property_pass")
+	input.Expected.Basis.Environment["build_tags"] = "alternate,enterprise"
+	input.Observed.Basis = input.Expected.Basis
+	command, err := GoTestCommand(input.Expected.Selector, []string{"alternate", "enterprise"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	input.Observed.Command = command
+	if got := GoTestObservation(input); got.Status != Passed {
+		t.Fatal("matching explicit tag basis rejected", got.Status, got.ReasonCode)
+	}
+	input.Observed.Command = append(command[:len(command)-1], "-tags=alternate,enterprise", input.Expected.Selector.Package)
+	if got := GoTestObservation(input); got.Status != Unattributable {
+		t.Fatal("duplicate tags accepted")
+	}
+	for _, tags := range [][]string{{""}, {"one,two"}, {"enterprise", "alternate"}, {"same", "same"}, {"space tag"}} {
+		if _, err := GoTestCommand(input.Expected.Selector, tags); err == nil {
+			t.Fatal("ambiguous tag set generated", tags)
+		}
 	}
 }
